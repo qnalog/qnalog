@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
+import { pluginSourceText } from "./plugin-source";
 import { describe, expect, it } from "vitest";
 
 const mainSource = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+// 实现已拆分到多个模块；只断言"字符串存在于插件源码中"的用例改用全文，
+// 避免断言因文件位置变化而失效（强度不变：字符串仍须真实存在）。
+const pluginSource = pluginSourceText();
+// 合并流水线已抽到独立模块：需要断言"同一文件内先后顺序"的用例读该文件本身。
+const mergePipelineSource = readFileSync(new URL("../src/briefing/merge-pipeline.ts", import.meta.url), "utf8");
 
 describe("release runtime contracts", () => {
   it("does not retain calls to the excluded video time-link helper", () => {
@@ -9,13 +15,13 @@ describe("release runtime contracts", () => {
   });
 
   it("builds realtime-outline and merge anchors from the existing audio helpers", () => {
-    expect(mainSource).toContain(
+    expect(pluginSource).toContain(
       "getAudioTimeLink(s.audioName, getSegmentAudioLinkOffsetMs(s))",
     );
-    expect(mainSource).toContain(
+    expect(pluginSource).toContain(
       "getAudioTimeLink(segment && segment.audioName, getSegmentAudioLinkOffsetMs(segment))",
     );
-    expect(mainSource).toContain(
+    expect(pluginSource).toContain(
       "getAudioTimeLink(seg.audioName, getSegmentAudioLinkOffsetMs(seg))",
     );
   });
@@ -35,39 +41,39 @@ describe("release runtime contracts", () => {
   });
 
   it("refreshes the recent-note folder view after external file changes", () => {
-    expect(mainSource).toContain('this.app.vault.on("create"');
-    expect(mainSource).toContain('this.app.vault.on("rename"');
-    expect(mainSource).toContain('this.app.vault.on("delete"');
-    expect(mainSource).toContain('this.app.metadataCache.on("changed"');
-    expect(mainSource).toContain("queueRecentVaultRefresh(delayMs = 180)");
+    expect(pluginSource).toContain('this.app.vault.on("create"');
+    expect(pluginSource).toContain('this.app.vault.on("rename"');
+    expect(pluginSource).toContain('this.app.vault.on("delete"');
+    expect(pluginSource).toContain('this.app.metadataCache.on("changed"');
+    expect(pluginSource).toContain("queueRecentVaultRefresh(delayMs = 180)");
   });
 
   it("connects repolish work to visible pipeline progress", () => {
-    expect(mainSource).toContain("createBriefingLlmActivityOptions(plugin, computedMeta, patch)");
-    expect(mainSource).toContain("_taskActivityId: taskId");
-    expect(mainSource).toContain('stageLabel: "正在生成新版本"');
-    expect(mainSource).toContain('stageLabel: "正在完成文件处理"');
+    expect(pluginSource).toContain("createBriefingLlmActivityOptions(plugin, computedMeta, patch)");
+    expect(pluginSource).toContain("_taskActivityId: taskId");
+    expect(pluginSource).toContain('stageLabel: "正在生成新版本"');
+    expect(pluginSource).toContain('stageLabel: "正在完成文件处理"');
   });
 
   it("separates synthesis coverage from source-scaled detail repair", () => {
-    expect(mainSource).toContain("buildBriefingFidelityContract");
-    expect(mainSource).toContain('return "balanced"');
-    expect(mainSource).toContain("assessBriefingPartFidelity(plan.chars, parsed.body, fidelityInput)");
-    expect(mainSource).toContain('"llm.briefing_part_under_detailed"');
-    expect(mainSource).toContain('purpose: "briefing-part-detail-repair"');
-    expect(mainSource).toContain("buildSynthesisConsolidationPrompt");
-    expect(mainSource).toContain("buildPromotionReviewConsolidationPrompt");
-    expect(mainSource).toContain(
+    expect(pluginSource).toContain("buildBriefingFidelityContract");
+    expect(pluginSource).toContain('return "balanced"');
+    expect(pluginSource).toContain("assessBriefingPartFidelity(plan.chars, parsed.body, fidelityInput)");
+    expect(pluginSource).toContain('"llm.briefing_part_under_detailed"');
+    expect(pluginSource).toContain('purpose: "briefing-part-detail-repair"');
+    expect(pluginSource).toContain("buildSynthesisConsolidationPrompt");
+    expect(pluginSource).toContain("buildPromotionReviewConsolidationPrompt");
+    expect(pluginSource).toContain(
       'mode === "promotion-review" ? "promotion-review-consolidation" : "briefing-synthesis-consolidation"',
     );
-    expect(mainSource).toContain("checkpoint.consolidationStatus");
+    expect(pluginSource).toContain("checkpoint.consolidationStatus");
   });
 
   it("persists a usable briefing draft before optional detail repair", () => {
-    const initialDraft = mainSource.indexOf("const initialBody = normalizeBriefingPartBody");
-    const initialCheckpoint = mainSource.indexOf("await store.save(checkpoint);", initialDraft);
-    const optionalRepair = mainSource.indexOf('purpose: "briefing-part-detail-repair"', initialDraft);
-    const preservedFallback = mainSource.indexOf('"llm.briefing_part_repair_failed_preserved"', optionalRepair);
+    const initialDraft = mergePipelineSource.indexOf("const initialBody = normalizeBriefingPartBody");
+    const initialCheckpoint = mergePipelineSource.indexOf("await store.save(checkpoint);", initialDraft);
+    const optionalRepair = mergePipelineSource.indexOf('purpose: "briefing-part-detail-repair"', initialDraft);
+    const preservedFallback = mergePipelineSource.indexOf('"llm.briefing_part_repair_failed_preserved"', optionalRepair);
 
     expect(initialDraft).toBeGreaterThan(-1);
     expect(initialCheckpoint).toBeGreaterThan(initialDraft);
@@ -82,11 +88,11 @@ describe("release runtime contracts", () => {
   });
 
   it("keeps long-meeting chunks internal and presents one continuous meeting", () => {
-    expect(mainSource).toContain("同一场会议中的一个内部时间窗口");
-    expect(mainSource).toContain("内部窗口只用于控制请求体量，不代表会议被拆成多场");
-    expect(mainSource).toContain("text: body,");
-    expect(mainSource).not.toContain("const wrappedBody = partPlans.length > 1");
-    expect(mainSource).not.toContain("summaries.map((summary, index)");
+    expect(pluginSource).toContain("同一场会议中的一个内部时间窗口");
+    expect(pluginSource).toContain("内部窗口只用于控制请求体量，不代表会议被拆成多场");
+    expect(pluginSource).toContain("text: body,");
+    expect(pluginSource).not.toContain("const wrappedBody = partPlans.length > 1");
+    expect(pluginSource).not.toContain("summaries.map((summary, index)");
   });
 
   it("keeps hidden sediment extraction out of the primary briefing response", () => {

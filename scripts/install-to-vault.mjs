@@ -6,15 +6,18 @@
 // 一次误点就会覆盖本项目。
 //
 // 覆盖前把目标插件目录整份留档，并在首次安装时按优先级沿用已有插件的设置（data.json）。
-import { cpSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveBuildIdentity } from "./build-identity.mjs";
 
 const PLUGIN_ID = "qnalog";
 const UPSTREAM_PLUGIN_ID = "lexvoice";
 const BACKUP_ROOT = "qnalog-install-backups";
 // LICENSE 随插件一起安装：MIT 要求副本随附版权与许可声明。
 const ARTIFACTS = ["main.js", "manifest.json", "styles.css", "LICENSE", "NOTICE"];
+// 开发构建的标识文件（仅由本脚本写入知识库；仓库里不存在，也不进版本控制）。
+const BUILD_INFO_FILE = "build-info.json";
 const BACKUP_FILES = [...ARTIFACTS, "data.json"];
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -105,6 +108,31 @@ if (existsSync(targetDir)) {
 mkdirSync(targetDir, { recursive: true });
 for (const name of ARTIFACTS) {
   cpSync(path.join(repoRoot, name), path.join(targetDir, name));
+}
+
+// 开发分支编译出的构建：把构建标识写进知识库里这份 manifest，这样 Obsidian 自己的
+// 插件列表也能看出当前跑的是开发版，而不只是插件设置页。
+// 只改知识库里的副本；仓库里的 manifest.json 保持发版身份不变（CI 会校验它与
+// package.json / package-lock.json / versions.json 一致）。
+const buildIdentity = resolveBuildIdentity();
+if (buildIdentity.channel === "dev") {
+  const stampedPath = path.join(targetDir, "manifest.json");
+  const stamped = readJson(stampedPath);
+  stamped.version = buildIdentity.displayVersion;
+  writeFileSync(stampedPath, `${JSON.stringify(stamped, null, 2)}\n`);
+  // 插件启动时读这个文件来显示构建来源，所以它必须与 manifest 一起安装；
+  // 通过 Obsidian / BRAT 安装的正式发布没有它，此时显示 manifest 版本即可。
+  writeFileSync(path.join(targetDir, BUILD_INFO_FILE), `${JSON.stringify({
+    version: buildIdentity.version,
+    displayVersion: buildIdentity.displayVersion,
+    channel: buildIdentity.channel,
+    branch: buildIdentity.branch,
+    sha: buildIdentity.sha,
+    dirty: buildIdentity.dirty,
+    builtAt: new Date().toISOString(),
+  }, null, 2)}\n`);
+  console.log(`[install] 开发构建：知识库中的 manifest 版本标为 ${buildIdentity.displayVersion}
+[install] （分支 ${buildIdentity.branch}${buildIdentity.dirty ? "，有未提交改动" : ""}；仓库里的 manifest.json 仍是 ${buildIdentity.version}）`);
 }
 
 // 首次安装时沿用已有插件的设置：data.json 跟着插件目录走，id 变了就默认读不到旧设置。

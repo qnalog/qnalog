@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { pluginSourceText } from "./plugin-source";
 
 const root = path.resolve(__dirname, "..");
 
@@ -73,7 +74,9 @@ describe("import finalization contract", () => {
 
   it("keeps final briefings matter-centered and speaker attribution selective", () => {
     const discipline = fs.readFileSync(path.join(root, "src/prompts/discipline.ts"), "utf8");
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
+    
+    // 提示词实现已拆到 src/prompts/briefing-prompts.ts 等模块：这里断言的是"插件源码中存在该纪律文本"。
+    const source = pluginSourceText();
 
     expect(discipline).toContain("以事为主轴");
     expect(discipline).toContain("案例必须落位");

@@ -417,7 +417,12 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const head = page.createDiv({ cls: "lexvoice-home-head" });
     const titleLine = head.createDiv({ cls: "lexvoice-home-title-line" });
     titleLine.createEl("h2", { text: "QnALog" });
-    titleLine.createDiv({ cls: "lexvoice-home-version", text: this.plugin.manifest.version || "" });
+    const versionEl = titleLine.createDiv({ cls: "lexvoice-home-version", text: this.plugin.getDisplayVersion() });
+    const buildSource = this.plugin.getBuildSourceLabel();
+    if (buildSource) {
+      versionEl.addClass("is-dev");
+      versionEl.setAttr("title", buildSource);
+    }
     head.createDiv({
       cls: "lexvoice-home-summary",
       text: "录音、转写并整理为 Markdown 纪要。配置转写服务即可开始；需要结构化纪要、问一问和沉淀时，再配置 AI 整理服务。",
@@ -2239,12 +2244,15 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
   renderUpdates(c) {
     new obsidian.Setting(c).setName("插件更新").setHeading();
-    const currentVersion = this.plugin.manifest.version || "0.0.0";
+    // 与首页同源：Obsidian 只在启动时读 manifest，直接用 manifest.version 会显示上一次安装的版本。
+    const currentVersion = this.plugin.getDisplayVersion();
+    const buildSource = this.plugin.getBuildSourceLabel();
     const update = this.plugin.settings.availableUpdate;
     const rawBases = resolveUpdateRawBases(this.plugin.settings);
     const installedUpdateVersion = this.plugin.settings.installedUpdateVersion || "";
     const status = [
       "当前版本：" + currentVersion,
+      buildSource ? "构建来源：" + buildSource : "",
       installedUpdateVersion && compareVersions(installedUpdateVersion, currentVersion) > 0
         ? "检测到 " + installedUpdateVersion + " 已就位，重启或重新启用后生效"
         : "",

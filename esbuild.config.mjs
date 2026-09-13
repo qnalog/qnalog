@@ -5,6 +5,8 @@ import path from "path";
 const production = process.argv[2] === "production";
 // 构建时把当前 manifest 版本号注入 main.js（LEXVOICE_BUILD_VERSION），供运行时自检「版本错位」：
 // 若它与磁盘 manifest.json 的版本不一致，说明上次更新只换了 manifest、没换 main.js。
+// 这里刻意不注入分支/提交：产物必须与 git 状态无关，才能满足"main.js 可由源码逐字节重建"。
+// 开发分支的标识由安装期元数据承担，见 scripts/install-to-vault.mjs 与 src/shared/build-info.ts。
 const buildVersion = JSON.parse(readFileSync("./manifest.json", "utf8")).version || "0.0.0";
 
 // 桌面端真正启用流式 ASR 时，懒加载 ws 的 Node 实现以设置 Authorization 请求头。
