@@ -58,13 +58,18 @@ export function computeBuildIdentity(input) {
   };
 }
 
+// 由构建自身重新生成的已跟踪产物。它们的改动不代表"源码未提交"，
+// 否则每次 npm run build 都会让构建被标成 dirty，标识就失去意义了。
+const BUILD_OUTPUTS = ["main.js"];
+
 /**
- * 工作树是否有"会进打包"的未提交改动。
- * 只看两类：已跟踪文件的改动，以及 src/ 下的未跟踪文件。
- * 不把仓库里任何未跟踪文件都算脏——那样每加一个草稿文件都会让构建被标成开发版，标识就失去意义了。
+ * 工作树是否有"会进打包且尚未提交"的改动。
+ * 只看两类：已跟踪文件的改动（构建产物除外），以及 src/ 下的未跟踪文件。
+ * 不把仓库里任意未跟踪文件都算脏——那样每加一个草稿文件都会让构建被标成开发版。
  */
 function hasBundledChanges() {
-  if (git(["status", "--porcelain", "--untracked-files=no"]).length > 0) return true;
+  const excludeArgs = BUILD_OUTPUTS.map((file) => `:(exclude)${file}`);
+  if (git(["status", "--porcelain", "--untracked-files=no", "--", ".", ...excludeArgs]).length > 0) return true;
   return git(["ls-files", "--others", "--exclude-standard", "src"]).length > 0;
 }
 
