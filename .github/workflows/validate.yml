@@ -1,0 +1,57 @@
+# 纯校验 CI：只验证，不发布。
+#
+# 本仓库不发 Release（见 MAINTAINING.md §3），因此这里没有任何发布步骤，
+# 只有构建可复现性、测试与主线隔离检查。权限也仅需只读。
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # 用 npm ci 而不是 npm install：package-lock.json 是构建可复现的前提，
+      # 本仓库要求「仓库里的 main.js 能由仓库源码逐字节重建」，锁定安装是这条约束的一部分。
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # build 内含：版本四处对齐、@ts-nocheck 文件的漏引用检查、类型检查、esbuild 打包、
+      # 移动端可加载性检查（不依赖 Node/Electron 全局）。
+      - name: Build and typecheck
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      # 代码与产物不得指向上游仓库，否则插件内的检查更新会把闭源版本装回来。
+      - name: Check mainline isolation
+        run: node scripts/check-mainline-isolation.mjs
+
+      # 产物必须与源码一致：构建后工作区应无改动。
+      - name: Verify committed bundle matches source
+        run: |
+          if [ -n "$(git status --porcelain main.js)" ]; then
+            echo "::error::main.js 与当前源码不一致。请本地运行 npm run build 并提交产物。"
+            git --no-pager diff --stat main.js
+            exit 1
+          fi

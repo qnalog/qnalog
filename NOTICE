@@ -1,0 +1,43 @@
+QnALog — notice and attribution
+===============================
+
+QnALog is an Obsidian plugin that records and transcribes conversations and
+turns them into structured Markdown knowledge.
+
+Origin
+------
+
+This project is derived from LexVoice, an Obsidian plugin by Lynnx, and is
+based on its last MIT-licensed release: tag 2.1.2, commit d924e439
+(https://github.com/Lynn-x/LexVoice). It is an independent project, not a
+continuation of that repository's release line.
+
+Copyright and licensing
+-----------------------
+
+The original work is copyright (c) 2026 Lynnx and is licensed under the MIT
+License. The full license text is in LICENSE, reproduced verbatim and
+unmodified, as the MIT License requires.
+
+Modifications and new work in this repository are copyright (c) 2026 Q&A Log
+Team and are distributed under the same MIT License.
+
+LexVoice releases from 2.2.0 onward are distributed by their author under a
+separate proprietary license. That license does not cover this repository, and
+it does not affect the MIT grant recorded in LICENSE.
+
+What this project must not do
+-----------------------------
+
+Do not port code, text, assets, or documentation from LexVoice 2.2.0 or later
+builds into this repository. Equivalent functionality must be implemented
+independently. See MAINTAINING.md for the maintenance policy and the check
+that verifies this separation.
+
+Trademarks
+----------
+
+"LexVoice" is used only to identify the origin of the code this project is
+based on. QnALog is not affiliated with, endorsed by, or sponsored by the
+LexVoice author. Obsidian and other product names mentioned in the
+documentation are the trademarks of their respective owners.
