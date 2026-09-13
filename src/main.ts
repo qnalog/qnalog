@@ -62,7 +62,7 @@ import { SETTINGS_SCHEMA_VERSION, LEGACY_VOCABULARY_FILE, normalizeLexVoiceSetti
 import { buildSettingsMigrationReport } from "./shared/settings-migration-report";
 
 import type { LexVoiceSettings, RecordingSession } from "./shared/types";
-import { getBuildIdentity } from "./shared/build-identity";
+import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import { getLearnedLlmOutputCeiling } from "./llm/output-budget";
 
@@ -166,8 +166,35 @@ import { cleanTranscript, mergeAndPolish, polishTranscript } from "./briefing/me
 
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
+  /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
+  buildInfo: PluginBuildInfo | null = null;
+
+  /** 界面上显示的版本串：开发版用安装时的标识，否则用 manifest 版本。 */
+  getDisplayVersion(): string {
+    return resolveDisplayVersion(this.buildInfo, this.manifest && this.manifest.version);
+  }
+
+  /** 当前构建的来源描述，供设置页与诊断报告使用。 */
+  getBuildSourceLabel(): string {
+    return this.buildInfo ? describeBuildSource(this.buildInfo) : "";
+  }
+
+  // 读插件目录下的 build-info.json。缺失或损坏都按"正式发布"处理，不影响启动。
+  async loadBuildInfo(): Promise<void> {
+    try {
+      const dir = `${String(this.app.vault.configDir || "")}/plugins/${this.manifest.id}`;
+      const path = obsidian.normalizePath(`${dir}/build-info.json`);
+      if (!(await this.app.vault.adapter.exists(path))) return;
+      const raw = await this.app.vault.adapter.read(path);
+      this.buildInfo = normalizePluginBuildInfo(JSON.parse(raw));
+    } catch (e) {
+      console.warn("[QnALog] build-info read failed", e);
+    }
+  }
+
   async onload() {
     await this.loadAll();
+    await this.loadBuildInfo();
     this.updateService = new UpdateService({
       settings: this.settings,
       manifest: this.manifest,
@@ -193,7 +220,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       normalizePath: (path) => obsidian.normalizePath(path),
       setTimeout: (handler, delayMs) => window.setTimeout(handler, delayMs),
       clearTimeout: (handle) => window.clearTimeout(handle),
-      buildVersion: getBuildIdentity().version,
+      buildVersion: this.manifest && this.manifest.version ? this.manifest.version : "",
     });
     this.register(() => this.updateService.dispose());
     this.taskActivityStore = new TaskActivityStore();
@@ -867,7 +894,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       "# QnALog 诊断报告",
       "",
       "## 环境",
-      `- QnALog: ${this.manifest && this.manifest.version || "unknown"}${getBuildIdentity().isDev ? `（${getBuildIdentity().sourceDescription}）` : ""}`,
+      `- QnALog: ${this.getDisplayVersion()}${this.buildInfo && this.buildInfo.channel === "dev" ? `（${this.getBuildSourceLabel()}）` : ""}`,
       `- Obsidian API: ${obsidian.apiVersion || "unknown"}`,
       `- 平台: ${redactDiagnosticText(obsidian.Platform.isMacOS ? "macOS" : obsidian.Platform.isWin ? "Windows" : obsidian.Platform.isLinux ? "Linux" : obsidian.Platform.isIosApp ? "iOS" : obsidian.Platform.isAndroidApp ? "Android" : "unknown")}`,
       "",

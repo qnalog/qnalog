@@ -1,6 +1,6 @@
 import type { AvailableUpdate, PluginSettings } from "./shared/types";
 import { compareVersions } from "./shared/version";
-import { baseVersion } from "./shared/build-identity";
+import { baseVersion } from "./shared/build-info";
 import { resolveUpdateRawBase, resolveUpdateRawBases } from "./update-source";
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;

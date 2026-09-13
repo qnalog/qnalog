@@ -1,16 +1,13 @@
 import esbuild from "esbuild";
 import { readFileSync } from "fs";
 import path from "path";
-import { describeBuildIdentity, resolveBuildIdentity } from "./scripts/build-identity.mjs";
 
 const production = process.argv[2] === "production";
-// 构建时注入构建身份，供运行时显示与自检：
-//   LEXVOICE_BUILD_VERSION  仓库 manifest 的版本（发版身份）
-//   LEXVOICE_BUILD_CHANNEL  "release"（main 且工作树干净）或 "dev"
-//   LEXVOICE_BUILD_DISPLAY  界面展示用的完整版本串；dev 时带分支与提交标识
-// 另见 scripts/build-identity.mjs：本地安装时会把 display 版本写进知识库的 manifest.json。
-const buildIdentity = resolveBuildIdentity();
-console.log(`[build] ${buildIdentity.channel === "dev" ? "开发构建" : "发版构建"}：${buildIdentity.displayVersion}`);
+// 构建时把当前 manifest 版本号注入 main.js（LEXVOICE_BUILD_VERSION），供运行时自检「版本错位」：
+// 若它与磁盘 manifest.json 的版本不一致，说明上次更新只换了 manifest、没换 main.js。
+// 这里刻意不注入分支/提交：产物必须与 git 状态无关，才能满足"main.js 可由源码逐字节重建"。
+// 开发分支的标识由安装期元数据承担，见 scripts/install-to-vault.mjs 与 src/shared/build-info.ts。
+const buildVersion = JSON.parse(readFileSync("./manifest.json", "utf8")).version || "0.0.0";
 
 // 桌面端真正启用流式 ASR 时，懒加载 ws 的 Node 实现以设置 Authorization 请求头。
 // 不能在模块顶层初始化 ws：Obsidian 移动端没有 Node/Buffer/process，顶层加载会让整个插件启动失败。
@@ -31,10 +28,7 @@ const context = await esbuild.context({
   format: "cjs",
   target: "es2018",
   define: {
-    LEXVOICE_BUILD_VERSION: JSON.stringify(buildIdentity.version),
-    LEXVOICE_BUILD_CHANNEL: JSON.stringify(buildIdentity.channel),
-    LEXVOICE_BUILD_DISPLAY: JSON.stringify(buildIdentity.displayVersion),
-    LEXVOICE_BUILD_SOURCE: JSON.stringify(describeBuildIdentity(buildIdentity)),
+    LEXVOICE_BUILD_VERSION: JSON.stringify(buildVersion),
   },
   charset: "utf8",
   logLevel: "info",

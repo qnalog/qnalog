@@ -7,7 +7,6 @@ import { genId } from '../shared/util-common';
 import { canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint } from '../shared/util-llm-endpoint';
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isLexVoiceMobileRuntime } from '../shared/util-platform';
-import { getBuildIdentity } from '../shared/build-identity';
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
 import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
 import { fetchLlmModelList, getLlmConfigIssue, testLlmConnection } from '../llm/core';
@@ -418,14 +417,11 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const head = page.createDiv({ cls: "lexvoice-home-head" });
     const titleLine = head.createDiv({ cls: "lexvoice-home-title-line" });
     titleLine.createEl("h2", { text: "QnALog" });
-    const buildIdentity = getBuildIdentity();
-    const versionEl = titleLine.createDiv({
-      cls: "lexvoice-home-version",
-      text: buildIdentity.isDev ? buildIdentity.displayVersion : (this.plugin.manifest.version || ""),
-    });
-    if (buildIdentity.isDev) {
+    const versionEl = titleLine.createDiv({ cls: "lexvoice-home-version", text: this.plugin.getDisplayVersion() });
+    const buildSource = this.plugin.getBuildSourceLabel();
+    if (buildSource) {
       versionEl.addClass("is-dev");
-      versionEl.setAttr("title", buildIdentity.sourceDescription);
+      versionEl.setAttr("title", buildSource);
     }
     head.createDiv({
       cls: "lexvoice-home-summary",
@@ -2249,13 +2245,13 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
   renderUpdates(c) {
     new obsidian.Setting(c).setName("插件更新").setHeading();
     const currentVersion = this.plugin.manifest.version || "0.0.0";
-    const buildIdentity = getBuildIdentity();
+    const buildSource = this.plugin.getBuildSourceLabel();
     const update = this.plugin.settings.availableUpdate;
     const rawBases = resolveUpdateRawBases(this.plugin.settings);
     const installedUpdateVersion = this.plugin.settings.installedUpdateVersion || "";
     const status = [
       "当前版本：" + currentVersion,
-      buildIdentity.isDev ? "构建来源：" + buildIdentity.sourceDescription : "",
+      buildSource ? "构建来源：" + buildSource : "",
       installedUpdateVersion && compareVersions(installedUpdateVersion, currentVersion) > 0
         ? "检测到 " + installedUpdateVersion + " 已就位，重启或重新启用后生效"
         : "",
