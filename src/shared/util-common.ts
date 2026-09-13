@@ -5,6 +5,21 @@ export function isRecord(value) {
   return value && typeof value === "object" && !Array.isArray(value);
 }
 
+export function primitiveText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return "";
+}
+
+export function getErrorMessage(error) {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  if (error && typeof error.message === "string") return error.message;
+  try { return String(error); } catch { return ""; }
+}
+
 export function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
