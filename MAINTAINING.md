@@ -186,7 +186,7 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 - [ ] 设置页不得静默改写用户配置：`src/ui/settings-tab.ts` 的 `renderSpeaker` 在服务不可用时直接改写 `importTranscribeProvider`，应改为保留用户选择并给出提示。
 - [ ] 自定义服务的密钥必填判定：未知 provider id 一律按 `requiresKey: false` 处理，导致密钥栏显示"可选"，但导入时运行时会因缺 key 报错；应改为按 endpoint 推断。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
-- [ ] 类型检查盲区：6 个文件带 `@ts-nocheck`（其中 `src/main.ts` 24k 行），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。
+- [ ] 类型检查盲区：6 个文件带 `@ts-nocheck`（`src/main.ts` 24.7k 行、`src/ui/modals.ts` 2995 行、`src/ui/settings-tab.ts` 2659 行、`src/report/render.ts`、`src/recruit/bases-view.ts`、`src/asr/clients.ts`），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。
 - [x] ~~移除自更新~~：已完成。仅检查版本并提示，安装交给 Obsidian / BRAT（开发者政策硬要求）。
 - [x] ~~回滚路径脚本化~~：已完成。`npm run restore:vault`，安装改为整目录留档。
 - [x] ~~迁移结果自检~~：已完成。首次加载输出对照表。

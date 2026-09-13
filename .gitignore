@@ -33,6 +33,9 @@ _tmp_*
 _imports/
 .tmp-*
 
+# 本地代理/工具说明：只在本机生效，不随仓库分发（面向贡献者的约定写在 MAINTAINING.md）
+AGENTS.md
+
 # Logs and OS files
 *.log
 .DS_Store
