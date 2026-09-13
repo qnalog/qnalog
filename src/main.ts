@@ -24,7 +24,7 @@ import { JOBPORTRAIT_DIMENSIONS, DEFAULT_RECRUIT_QUALITIES, isRecruitFeatureUnlo
 import { buildPromotionReviewConsolidationPrompt, buildPromotionReviewContextPrefix, buildPromotionReviewPartContextPrefix, buildPromotionReviewPartInstruction, detectPromotionReviewPhase, generatePromotionPreReview, normalizePromotionReviewContext } from "./promotion";
 import { registerRecruitBoardView, recommendationTone } from "./recruit/bases-view";
 import { normalizeAsrConcurrency, decodeAudioBlob, renderAudioBufferSliceToWav, resolveTranscribeProvider, makeRecordingIssue, isApimimoAsrProvider, transcribeAudio } from "./asr/transcribe";
-import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown, LEARNING_CARD_TAG, CONCEPT_CARD_TAG, TODO_CARD_TAG, ensureTodayDailyNoteFile } from "./shared/util-note";
+import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown, ensureTodayDailyNoteFile } from "./shared/util-note";
 import { PEOPLE_SUGGESTION_CACHE_LIMIT, splitPersonFieldValue, normalizePersonLookupText, loadPeopleDirectory, buildPeopleContextForLlm, ensurePeopleNoteRelatedBaseSection, formatPeopleBaseYaml, formatPeopleNoteMarkdown, mergeUniqueStrings, normalizePeopleSuggestion, normalizePeopleSuggestionIgnores, isPeopleSuggestionIgnored, addPeopleSuggestionIgnore, removePeopleSuggestionIgnores, getPeopleSuggestionCacheKey, normalizePeopleSuggestionCache, makePeopleSuggestionCacheRecord, isPeopleSuggestionCacheRecordCurrent, peopleSuggestionRecordToSuggestion, peopleSuggestionIgnoreRecordToSuggestion, findMatchingPersonEntry, arePeopleSuggestionsRelated, mergePeopleSuggestions, mergeSourceNoteRelatedPeopleFrontmatter, mergePersonFrontmatter, generatePeopleDirectorySuggestions, normalizePersonNameForEmail, parsePeopleFromOutput, personEntryFromFrontmatter } from "./people";
 import { getSedimentTodoId, getSedimentCardId, getSedimentHotwordId, getSedimentPersonId, withSedimentCandidateIds, removeSedimentGroupDone, sanitizeSedimentText, normalizeSedimentTodoSubtasks, normalizeSedimentExtractionModel, stripSedimentPreExtractionBlocks, extractSedimentPreExtractionBlock, splitOutSedimentBlock, appendSedimentPreExtractionBlock, upsertSedimentPreExtractionBlockInFile, generateSedimentObjects, writeSedimentObjectCards } from "./sediment";
 import { createVocabularyGroups, parseVocabularyGroups, flattenVocabularyGroups, countVocabularyGroups, normalizeVocabularyInput, mergeVocabularyGroups, isStructuredVocabularyMarkdown, loadVocabularyGroups, formatVocabularyMarkdown, applyVocabularyCorrections } from "./vocabulary";
@@ -101,13 +101,26 @@ import {
   shouldImportExternalInboxFile,
 } from "./audio/external-inbox";
 import { verifyTranscriptCheckpoint } from "./imports/transcript-checkpoint";
-
-
+// 以下 1 个声明已抽到 ./views/base-definitions（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
+import {
+  LV_BASE_DEFINITIONS,
+} from "./views/base-definitions";
+// 以下 11 个声明已抽到 ./views/wall-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
+import {
+  CONCEPT_WALL_FILE,
+  LEARNING_WALL_FILE,
+  OBJECT_WALL_FILE,
+  TODO_WALL_FILE,
+  formatConceptWallMarkdown,
+  formatLearningWallMarkdown,
+  formatObjectWallMarkdown,
+  formatTodoWallMarkdown,
+  getLexVoiceBasesFolder,
+  getLexVoiceWallPath,
+  insertGeneratedWallMarker,
+} from "./views/wall-markdown";
 
 const QUICK_INTERIM_CUTS_MS = [10 * 1000, 60 * 1000, 3 * 60 * 1000];
-
-
-
 
 const SHORT_RECORDING_FILTER_MS = 3000;
 const KNOWLEDGE_EXTRACTION_BATCH_LIMIT = 20;
@@ -125,13 +138,6 @@ function primitiveText(value: unknown): string {
 
 // 「一个 Key 通用」供应商：同一把 Key 同时支持语音转写 + 大模型对话。首页快速配置一处填 Key + 选供应商即可两边都配好。
 // asrProvider 对应 transcribeProviders 里的 id；llmPreset 对应 LLM_SERVICE_PRESETS 里的 id。
-
-
-
-
-
-
-
 
 function knowledgeExtractionRecordForFile(file) {
   return {
@@ -151,18 +157,10 @@ function isKnowledgeSourceAlreadyScanned(settings, kind, file) {
   return Number(record.mtime) === mtime && Number(record.size) === size;
 }
 
-
-
-
-
-
-
 // 已保存 LLM 配置库的读写辅助
 // 规范化转写快照（API 方案里可选携带的转写 provider 配置）。无 providerId 视为无快照。
 
-
 // API 方案是否「一个 Key 通用」：带转写快照、且转写与 LLM 同一把 Key、同一 host（如 MiMo 两边都 api.xiaomimimo.com）。
-
 
 // 把工作字段（llmEndpoint/llmApiKey/llmModel）的当前值回写到指定配置
 
@@ -173,17 +171,10 @@ function isKnowledgeSourceAlreadyScanned(settings, kind, file) {
 
 // 把指定配置灌进工作字段；若方案带转写快照，同时切换转写服务。
 
-
-
-
-
-
-
 function resolveRuntimeAudioInputMode(mode) {
   const normalized = normalizeAudioInputMode(mode || "mic");
   return isLexVoiceMobileRuntime() ? "mic" : normalized;
 }
-
 
 // 更新源固定指向官方仓库。曾是设置项，但 normalize 始终把它们重置为默认值（用户值从未生效），
 // 实为常量装成设置，故收编为模块常量；自定义更新源如有真实需求应连同 UI 一起正式设计。
@@ -192,17 +183,6 @@ function resolveRuntimeAudioInputMode(mode) {
 // huddle 是 meeting 的子风格，不再单列在新建录音下拉，但老 huddle 笔记仍能被识别和打开。
 
 // 新建录音下拉里出现的公开意图 + 1 个彩蛋；huddle 不出现（仅旧笔记兜底使用）
-
-
-
-
-
-
-
-
-
-
-
 
 function legacyPromptFieldForMode(mode) {
   const map = {
@@ -217,618 +197,8 @@ function legacyPromptFieldForMode(mode) {
   return map[mode] || "";
 }
 
-
-
-
 // 结构化程度三档 —— 控制主体内容的层级深度
 // QnALog 视图（.base 文件）—— 默认创建到资料库的视图目录，可在设置里修改。
-function getLexVoiceBasesFolder(settings) {
-  return obsidian.normalizePath((settings && settings.lexVoiceBasesFolder) || DEFAULT_SETTINGS.lexVoiceBasesFolder || DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder);
-}
-
-const LEARNING_WALL_FILE = "学习卡片瀑布墙.md";
-const CONCEPT_WALL_FILE = "概念墙.md";
-const TODO_WALL_FILE = "待办墙.md";
-const OBJECT_WALL_FILE = "对象总览.md";
-
-function getLexVoiceWallPath(settings, fileName) {
-  const folder = getLexVoiceBasesFolder(settings);
-  return obsidian.normalizePath(folder + "/" + fileName);
-}
-
-function insertGeneratedWallMarker(markdown) {
-  const marker = "<!-- lexvoice-generated-wall -->";
-  const text = String(markdown || "");
-  if (text.includes(marker)) return text;
-  const fm = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  if (!fm) return marker + "\n" + text;
-  const frontmatter = fm[0].replace(/\s*$/, "\n");
-  const body = text.slice(fm[0].length).replace(/^\n*/, "");
-  return frontmatter + "\n" + marker + "\n" + body;
-}
-
-function formatLexVoiceWallMarkdown(title, folder, tag, emptyText) {
-  const folderQuery = JSON.stringify('"' + obsidian.normalizePath(folder || "") + '"');
-  const tagQuery = JSON.stringify("#" + String(tag || "").replace(/^#/, ""));
-  return [
-    "---", "cssclasses:", "  - lvwall-page", "---", "", "# " + title, "", "```dataviewjs",
-    "const root = dv.el(\"div\", \"\", { cls: \"lvwall\" });",
-    "const folderQuery = " + folderQuery + ";",
-    "const targetTag = " + tagQuery + ";",
-    "const esc = s => String(s ?? \"\").replace(/[&<>\\\"]/g, c => c === \"&\" ? \"&amp;\" : c === \"<\" ? \"&lt;\" : c === \">\" ? \"&gt;\" : \"&quot;\");",
-    "function columnCount(width){ if (width >= 1320) return 4; if (width >= 960) return 3; if (width >= 620) return 2; return 1; }",
-    "function layoutWidth(){ const selectors = [\".workspace-leaf-content\", \".view-content\", \".markdown-preview-view\", \".markdown-reading-view\", \".markdown-source-view\"]; const nodes = selectors.map(sel => root.closest(sel)).filter(Boolean); nodes.push(root.parentElement, root); for (const node of nodes) { const rect = node && node.getBoundingClientRect ? node.getBoundingClientRect() : null; const width = Math.floor(Math.max(node && node.clientWidth || 0, rect && rect.width || 0)); if (width > 120) return width; } return window.innerWidth || 0; }",
-    "function cardWeight(card){ return 10 + card.title.length * 1.5 + card.sum.length * 0.38 + card.src.length * 0.18 + card.tagCount * 3; }",
-    "const pages = dv.pages(folderQuery).where(p => (p.file.tags || []).includes(targetTag)).sort(p => p.file.ctime, \"desc\");",
-    "const cards = [];",
-    "for (const p of pages) {",
-    "  const type = esc(p[\"卡片类型\"] || p[\"类型\"] || p[\"状态\"] || \"卡片\");",
-    "  const title = esc(p[\"标题\"] || p[\"事项\"] || p.file.name);",
-    "  const sum = esc(p[\"摘要\"] || p[\"说明\"] || p[\"任务\"] || p[\"事项\"] || \"\");",
-    "  const srcR = p[\"来源笔记\"] || p[\"来源\"]; let src = \"\";",
-    "  if (srcR) src = esc(String(srcR.path ?? srcR).split(\"/\").pop().replace(/\\.md$|[\\[\\]]/g, \"\"));",
-    "  const rawTags = p.file.tags || [];",
-    "  const tags = rawTags.map(t => '<span class=\\\"lvwall-tag\\\">' + esc(String(t).replace(/^#/, \"\")) + '</span>').join(\"\");",
-    "  const ct = p.file.ctime ? p.file.ctime.toFormat(\"yyyy-MM-dd HH:mm\") : \"\";",
-    "  const html = '<div class=\\\"lvwall-card\\\" data-path=\\\"' + esc(p.file.path) + '\\\">' + '<div class=\\\"lvwall-head\\\"><span class=\\\"lvwall-type\\\">' + type + '</span><span class=\\\"lvwall-brand\\\">LEXVOICE CARD</span></div>' + '<div class=\\\"lvwall-title\\\">' + title + '</div>' + (sum ? '<div class=\\\"lvwall-k\\\">摘要</div><div class=\\\"lvwall-sum\\\">' + sum + '</div>' : '') + (src ? '<div class=\\\"lvwall-k\\\">来源</div><div class=\\\"lvwall-src\\\">' + src + '</div>' : '') + (tags ? '<div class=\\\"lvwall-tags\\\">' + tags + '</div>' : '') + (ct ? '<div class=\\\"lvwall-time\\\">' + ct + '</div>' : '') + '</div>';",
-    "  cards.push({ html, title, sum, src, tagCount: rawTags.length });",
-    "}",
-    "let lastCols = 0; let raf = 0;",
-    "function bindCards(){ root.querySelectorAll(\".lvwall-card\").forEach(el => el.addEventListener(\"click\", () => app.workspace.openLinkText(el.dataset.path, \"\", false))); }",
-    "function renderWall(){",
-    "  const width = layoutWidth();",
-    "  const cols = columnCount(width);",
-    "  root.style.setProperty(\"--lvwall-columns\", String(cols));",
-    "  root.style.setProperty(\"--lvwall-gutter\", (width < 680 ? 18 : 24) + \"px\");",
-    "  if (!cards.length) { root.classList.add(\"is-empty\"); root.innerHTML = " + JSON.stringify("<p>" + emptyText + "</p>") + "; return; }",
-    "  root.classList.remove(\"is-empty\");",
-    "  const buckets = Array.from({ length: cols }, () => ({ weight: 0, html: \"\" }));",
-    "  for (const card of cards) {",
-    "    let target = 0;",
-    "    for (let i = 1; i < buckets.length; i++) if (buckets[i].weight < buckets[target].weight) target = i;",
-    "    buckets[target].html += card.html;",
-    "    buckets[target].weight += cardWeight(card);",
-    "  }",
-    "  root.innerHTML = buckets.map(b => '<div class=\\\"lvwall-col\\\">' + b.html + '</div>').join(\"\");",
-    "  bindCards();",
-    "  lastCols = cols;",
-    "}",
-    "function scheduleLayout(){",
-    "  if (raf) cancelAnimationFrame(raf);",
-    "  raf = requestAnimationFrame(() => {",
-    "    raf = 0;",
-    "    const width = layoutWidth();",
-    "    const cols = columnCount(width);",
-    "    root.style.setProperty(\"--lvwall-columns\", String(cols));",
-    "    root.style.setProperty(\"--lvwall-gutter\", (width < 680 ? 18 : 24) + \"px\");",
-    "    if (cols !== lastCols) renderWall();",
-    "  });",
-    "}",
-    "renderWall();",
-    "if (typeof ResizeObserver !== \"undefined\") { const ro = new ResizeObserver(scheduleLayout); [root, root.parentElement, root.closest(\".markdown-preview-view\"), root.closest(\".markdown-reading-view\"), root.closest(\".markdown-source-view\"), root.closest(\".view-content\"), root.closest(\".workspace-leaf-content\")].filter(Boolean).forEach(el => ro.observe(el)); }",
-    "window.addEventListener(\"resize\", scheduleLayout, { passive: true });",
-    "```", "",
-  ].join("\n");
-}
-
-function formatLexVoiceObjectWallMarkdown(settings, options = {}) {
-  const title = options.title || "对象总览";
-  const initialFilter = options.initialFilter || "all";
-  const showFilters = options.showFilters !== false;
-  const emptyText = options.emptyText || "还没有找到沉淀对象。完成纪要沉淀后，学习卡片、概念和待办会出现在这里。";
-  const learningFolderQuery = JSON.stringify('"' + obsidian.normalizePath(settings && settings.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder || "") + '"');
-  const todoFolderQuery = JSON.stringify('"' + obsidian.normalizePath(settings && settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder || "") + '"');
-  const learningTag = JSON.stringify("#" + LEARNING_CARD_TAG);
-  const conceptTag = JSON.stringify("#" + CONCEPT_CARD_TAG);
-  const todoTag = JSON.stringify("#" + TODO_CARD_TAG);
-  return [
-    "---", "cssclasses:", "  - lvwall-page", "---", "", "# " + title, "", "```dataviewjs",
-    "const shell = dv.el(\"div\", \"\", { cls: \"lvwall-shell\" });",
-    "const toolbar = document.createElement(\"div\");",
-    "toolbar.className = \"lvwall-filterbar\";",
-    "const root = document.createElement(\"div\");",
-    "root.className = \"lvwall lvwall-object\";",
-    "shell.appendChild(toolbar);",
-    "shell.appendChild(root);",
-    "const learningFolderQuery = " + learningFolderQuery + ";",
-    "const todoFolderQuery = " + todoFolderQuery + ";",
-    "const learningTag = " + learningTag + ";",
-    "const conceptTag = " + conceptTag + ";",
-    "const todoTag = " + todoTag + ";",
-    "const showFilters = " + (showFilters ? "true" : "false") + ";",
-    "let activeFilter = " + JSON.stringify(initialFilter) + ";",
-    "const labels = { all: \"全部\", learning: \"学习卡片\", concept: \"概念\", todo: \"待办\" };",
-    "const records = [];",
-    "const seen = new Set();",
-    "const esc = s => String(s ?? \"\").replace(/[&<>\\\"]/g, c => c === \"&\" ? \"&amp;\" : c === \"<\" ? \"&lt;\" : c === \">\" ? \"&gt;\" : \"&quot;\");",
-    "const cleanTag = t => String(t || \"\").replace(/^#/, \"\");",
-    "const hasTag = (p, tag) => (p.file.tags || []).map(cleanTag).includes(cleanTag(tag));",
-    "const sourceName = src => src ? String(src.path ?? src).split(\"/\").pop().replace(/\\.md$|[\\[\\]]/g, \"\") : \"\";",
-    "function pushRecord(record){ if (!record || !record.id || seen.has(record.id)) return; seen.add(record.id); records.push(record); }",
-    "function columnCount(width, mode){ if (mode === \"todo\") return width >= 720 ? 2 : 1; if (width >= 1320) return 4; if (width >= 960) return 3; if (width >= 620) return 2; return 1; }",
-    "function layoutWidth(){ const selectors = [\".workspace-leaf-content\", \".view-content\", \".markdown-preview-view\", \".markdown-reading-view\", \".markdown-source-view\"]; const nodes = selectors.map(sel => root.closest(sel)).filter(Boolean); nodes.push(root.parentElement, root); for (const node of nodes) { const rect = node && node.getBoundingClientRect ? node.getBoundingClientRect() : null; const width = Math.floor(Math.max(node && node.clientWidth || 0, rect && rect.width || 0)); if (width > 120) return width; } return window.innerWidth || 0; }",
-    "function cardWeight(card){ return 10 + String(card.title || \"\").length * 1.2 + String(card.sum || \"\").length * 0.34 + String(card.src || \"\").length * 0.16 + (card.tagCount || 0) * 3; }",
-    "function addPageCard(p, kind){",
-    "  const kindLabel = kind === \"concept\" ? \"概念\" : \"学习卡片\";",
-    "  const type = String(p[\"卡片类型\"] || p[\"类型\"] || kindLabel);",
-    "  const title = String(p[\"标题\"] || p[\"事项\"] || p.file.name || kindLabel);",
-    "  const sum = String(p[\"摘要\"] || p[\"说明\"] || p[\"任务\"] || p[\"事项\"] || \"\");",
-    "  const src = sourceName(p[\"来源笔记\"] || p[\"来源\"]);",
-    "  const tags = (p.file.tags || []).map(t => '<span class=\\\"lvwall-tag\\\">' + esc(cleanTag(t)) + '</span>').join(\"\");",
-    "  const ct = p.file.ctime ? p.file.ctime.toFormat(\"yyyy-MM-dd HH:mm\") : \"\";",
-    "  pushRecord({ id: kind + \":\" + p.file.path, kind, type, title, sum, src, tags, time: ct, path: p.file.path, tagCount: (p.file.tags || []).length });",
-    "}",
-    "function stripTodoMarker(text){ return String(text || \"\").replace(/<!--\\s*lexvoice-todo:[\\s\\S]*?-->/g, \"\").trim(); }",
-    "function readField(text, label){ const m = String(text || \"\").match(new RegExp(label + \"：([^\\\\n]+?)(?=\\\\s+(?:日期|责任人|事项|截止|时间)：|\\\\s+👤|\\\\s+\\\\(来源:|$)\")); return m ? m[1].trim() : \"\"; }",
-    "function addTodoRecord(p, task){",
-    "  const raw = stripTodoMarker(task && task.text || \"\");",
-    "  const markerMatch = String(task && task.text || \"\").match(/lexvoice-todo:([^\\s>]+)/);",
-    "  const marker = markerMatch ? markerMatch[1] : \"\";",
-    "  const title = String(p[\"事项\"] || readField(raw, \"事项\") || raw || p.file.name || \"未命名待办\").replace(/^[-*]\\s*/, \"\");",
-    "  const owner = String(p[\"责任人\"] || readField(raw, \"责任人\") || (raw.match(/👤\\s*([^\\s]+)/) || [])[1] || \"\").trim();",
-    "  const due = String(p[\"截止\"] || readField(raw, \"截止\") || \"\").trim();",
-    "  const src = sourceName(p[\"来源笔记\"] || p[\"来源\"]);",
-    "  const children = Array.from(task && task.children || []).map(item => stripTodoMarker(item.text)).filter(Boolean).slice(0, 4);",
-    "  const line = Number(task && task.line);",
-    "  const id = \"todo:\" + p.file.path + \":\" + (Number.isFinite(line) ? line : marker || title);",
-    "  pushRecord({ id, kind: \"todo\", type: \"待办\", title, sum: owner || due ? [owner && \"责任人：\" + owner, due && \"截止：\" + due].filter(Boolean).join(\" · \") : \"\", owner, due, src, subtasks: children, path: p.file.path, line, marker, completed: !!(task && task.completed), tagCount: 0 });",
-    "}",
-    "for (const p of dv.pages(learningFolderQuery)) {",
-    "  const concept = hasTag(p, conceptTag);",
-    "  const learning = hasTag(p, learningTag);",
-    "  if (concept) addPageCard(p, \"concept\");",
-    "  else if (learning) addPageCard(p, \"learning\");",
-    "}",
-    "for (const p of dv.pages(todoFolderQuery)) {",
-    "  if (!hasTag(p, todoTag)) continue;",
-    "  const tasks = Array.from(p.file.tasks || []).filter(t => !t.parent);",
-    "  if (tasks.length) tasks.forEach(t => addTodoRecord(p, t));",
-    "  else pushRecord({ id: \"todo-page:\" + p.file.path, kind: \"todo\", type: \"待办\", title: String(p[\"事项\"] || p.file.name), sum: [p[\"责任人\"] && \"责任人：\" + p[\"责任人\"], p[\"截止\"] && \"截止：\" + p[\"截止\"]].filter(Boolean).join(\" · \"), path: p.file.path, completed: String(p[\"状态\"] || \"\") === \"完成\", tagCount: 0 });",
-    "}",
-    "for (const p of dv.pages()) {",
-    "  for (const task of Array.from(p.file.tasks || [])) {",
-    "    if (String(task.text || \"\").includes(\"lexvoice-todo:\")) addTodoRecord(p, task);",
-    "  }",
-    "}",
-    "records.sort((a, b) => String(b.time || b.path || \"\").localeCompare(String(a.time || a.path || \"\")));",
-    "function filteredRecords(){ return activeFilter === \"all\" ? records : records.filter(r => r.kind === activeFilter); }",
-    "function recordHtml(record){",
-    "  if (record.kind === \"todo\") {",
-    "    const subtasks = (record.subtasks || []).map(item => '<li>' + esc(item) + '</li>').join(\"\");",
-    "    return '<div class=\\\"lvwall-card lvwall-todo-card' + (record.completed ? ' is-completed' : '') + '\\\" data-kind=\\\"todo\\\" data-id=\\\"' + esc(record.id) + '\\\" data-path=\\\"' + esc(record.path) + '\\\">' + '<label class=\\\"lvwall-todo-check\\\" title=\\\"切换完成状态\\\"><input type=\\\"checkbox\\\" data-id=\\\"' + esc(record.id) + '\\\" ' + (record.completed ? 'checked' : '') + '><span></span></label>' + '<div class=\\\"lvwall-todo-body\\\"><div class=\\\"lvwall-head\\\"><span class=\\\"lvwall-type\\\">待办</span><span class=\\\"lvwall-brand\\\">ACTION</span></div><div class=\\\"lvwall-title\\\">' + esc(record.title) + '</div>' + (record.sum ? '<div class=\\\"lvwall-sum\\\">' + esc(record.sum) + '</div>' : '') + (subtasks ? '<ul class=\\\"lvwall-subtasks\\\">' + subtasks + '</ul>' : '') + (record.src ? '<div class=\\\"lvwall-k\\\">来源</div><div class=\\\"lvwall-src\\\">' + esc(record.src) + '</div>' : '') + '</div></div>';",
-    "  }",
-    "  return '<div class=\\\"lvwall-card\\\" data-kind=\\\"' + esc(record.kind) + '\\\" data-path=\\\"' + esc(record.path) + '\\\">' + '<div class=\\\"lvwall-head\\\"><span class=\\\"lvwall-type\\\">' + esc(record.type) + '</span><span class=\\\"lvwall-brand\\\">' + (record.kind === 'concept' ? 'CONCEPT' : 'LEARNING') + '</span></div>' + '<div class=\\\"lvwall-title\\\">' + esc(record.title) + '</div>' + (record.sum ? '<div class=\\\"lvwall-k\\\">摘要</div><div class=\\\"lvwall-sum\\\">' + esc(record.sum) + '</div>' : '') + (record.src ? '<div class=\\\"lvwall-k\\\">来源</div><div class=\\\"lvwall-src\\\">' + esc(record.src) + '</div>' : '') + (record.tags ? '<div class=\\\"lvwall-tags\\\">' + record.tags + '</div>' : '') + (record.time ? '<div class=\\\"lvwall-time\\\">' + esc(record.time) + '</div>' : '') + '</div>';",
-    "}",
-    "async function setTaskDone(record, done){",
-    "  if (!record || !record.path) return;",
-    "  const file = app.vault.getAbstractFileByPath(record.path);",
-    "  if (!file) return;",
-    "  const text = await app.vault.cachedRead(file);",
-    "  const eol = text.includes(\"\\r\\n\") ? \"\\r\\n\" : \"\\n\";",
-    "  const lines = text.split(/\\r?\\n/);",
-    "  let idx = Number(record.line);",
-    "  if (!Number.isFinite(idx) || !lines[idx] || !/^\\s*-\\s\\[[ xX/-]\\]/.test(lines[idx])) {",
-    "    idx = record.marker ? lines.findIndex(line => line.includes(\"lexvoice-todo:\" + record.marker)) : -1;",
-    "  }",
-    "  if (idx < 0 || !lines[idx]) return;",
-    "  lines[idx] = lines[idx].replace(/^(\\s*-\\s\\[)[ xX/-](\\]\\s*)/, '$1' + (done ? 'x' : ' ') + '$2');",
-    "  await app.vault.modify(file, lines.join(eol));",
-    "  record.completed = done;",
-    "}",
-    "function renderToolbar(){",
-    "  toolbar.innerHTML = \"\";",
-    "  if (!showFilters) { toolbar.style.display = \"none\"; return; }",
-    "  const filters = [\"all\", \"learning\", \"concept\", \"todo\"];",
-    "  for (const key of filters) {",
-    "    const count = key === \"all\" ? records.length : records.filter(r => r.kind === key).length;",
-    "    const btn = document.createElement(\"button\");",
-    "    btn.type = \"button\";",
-    "    btn.className = \"lvwall-filter\" + (activeFilter === key ? \" is-active\" : \"\");",
-    "    btn.textContent = labels[key] + \" \" + count;",
-    "    btn.addEventListener(\"click\", () => { activeFilter = key; renderToolbar(); renderWall(); });",
-    "    toolbar.appendChild(btn);",
-    "  }",
-    "}",
-    "function bindCards(){",
-    "  root.querySelectorAll(\".lvwall-card\").forEach(el => el.addEventListener(\"click\", event => { if (event.target && event.target.closest && event.target.closest(\"input,label,button\")) return; const path = el.dataset.path; if (path) app.workspace.openLinkText(path, \"\", false); }));",
-    "  root.querySelectorAll(\".lvwall-todo-check input\").forEach(input => input.addEventListener(\"change\", async event => { event.stopPropagation(); const record = records.find(r => r.id === input.dataset.id); if (!record) return; const card = input.closest(\".lvwall-todo-card\"); try { await setTaskDone(record, input.checked); if (card) card.classList.toggle(\"is-completed\", input.checked); } catch(e) { console.error(e); new Notice(\"待办状态写回失败：\" + (e.message || e)); input.checked = !input.checked; } }));",
-    "}",
-    "let lastCols = 0; let raf = 0;",
-    "function renderWall(){",
-    "  const visible = filteredRecords();",
-    "  const width = layoutWidth();",
-    "  const cols = columnCount(width, activeFilter);",
-    "  root.className = \"lvwall lvwall-object\" + (activeFilter === \"todo\" ? \" lvwall-todos\" : \"\");",
-    "  root.style.setProperty(\"--lvwall-columns\", String(cols));",
-    "  root.style.setProperty(\"--lvwall-gutter\", (width < 680 ? 18 : 24) + \"px\");",
-    "  if (!visible.length) { root.classList.add(\"is-empty\"); root.innerHTML = " + JSON.stringify("<p>" + emptyText + "</p>") + "; return; }",
-    "  root.classList.remove(\"is-empty\");",
-    "  const buckets = Array.from({ length: cols }, () => ({ weight: 0, html: \"\" }));",
-    "  for (const record of visible) {",
-    "    let target = 0;",
-    "    for (let i = 1; i < buckets.length; i++) if (buckets[i].weight < buckets[target].weight) target = i;",
-    "    buckets[target].html += recordHtml(record);",
-    "    buckets[target].weight += cardWeight(record);",
-    "  }",
-    "  root.innerHTML = buckets.map(b => '<div class=\\\"lvwall-col\\\">' + b.html + '</div>').join(\"\");",
-    "  bindCards();",
-    "  lastCols = cols;",
-    "}",
-    "function scheduleLayout(){ if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { raf = 0; const width = layoutWidth(); const cols = columnCount(width, activeFilter); root.style.setProperty(\"--lvwall-columns\", String(cols)); root.style.setProperty(\"--lvwall-gutter\", (width < 680 ? 18 : 24) + \"px\"); if (cols !== lastCols) renderWall(); }); }",
-    "renderToolbar();",
-    "renderWall();",
-    "if (typeof ResizeObserver !== \"undefined\") { const ro = new ResizeObserver(scheduleLayout); [root, root.parentElement, shell, shell.parentElement, root.closest(\".markdown-preview-view\"), root.closest(\".markdown-reading-view\"), root.closest(\".markdown-source-view\"), root.closest(\".view-content\"), root.closest(\".workspace-leaf-content\")].filter(Boolean).forEach(el => ro.observe(el)); }",
-    "window.addEventListener(\"resize\", scheduleLayout, { passive: true });",
-    "```", "",
-  ].join("\n");
-}
-function formatLearningWallMarkdown(settings) {
-  return formatLexVoiceWallMarkdown("学习卡片瀑布墙", settings && settings.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder, LEARNING_CARD_TAG, "没有找到学习卡片。完成学习类纪要后，可从信息提取面板保存学习卡片。");
-}
-
-function formatConceptWallMarkdown(settings) {
-  const root = settings && settings.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder;
-  return formatLexVoiceWallMarkdown("概念墙", root, CONCEPT_CARD_TAG, "没有找到概念卡片。会中用 #概念 标记或从学习纪要中提取概念后，会出现在这里。");
-}
-
-function formatTodoWallMarkdown(settings) {
-  return formatLexVoiceObjectWallMarkdown(settings, {
-    title: "待办墙",
-    initialFilter: "todo",
-    showFilters: false,
-    emptyText: "没有找到待办卡片。会议纪要中的明确行动项可在确认后沉淀为待办。"
-  });
-}
-
-function formatObjectWallMarkdown(settings) {
-  return formatLexVoiceObjectWallMarkdown(settings, {
-    title: "对象总览",
-    initialFilter: "all",
-    showFilters: true,
-    emptyText: "还没有找到沉淀对象。完成纪要沉淀后，学习卡片、概念和待办会出现在这里。"
-  });
-}
-
-const LV_BASE_DEFINITIONS = [
-  // —— 按模式 ——
-  {
-    relPath: "按模式/所有会议.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/meeting")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.主题:
-    displayName: 主题
-  note.参会人:
-    displayName: 参会人
-  note.tags:
-    displayName: 标签
-views:
-  - type: table
-    name: 列表
-    order:
-      - file.name
-      - note.time
-      - note.主题
-      - note.参会人
-      - note.tags
-    sort:
-      - property: note.time
-        direction: DESC
-`,
-  },
-  {
-    relPath: "按模式/内部小会.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/huddle")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.议题:
-    displayName: 议题
-  note.当事人:
-    displayName: 当事人
-  note.参谋:
-    displayName: 参谋
-views:
-  - type: table
-    name: 列表
-    order:
-      - file.name
-      - note.time
-      - note.议题
-      - note.当事人
-      - note.参谋
-    sort:
-      - property: note.time
-        direction: DESC
-`,
-  },
-  {
-    relPath: "按模式/所有访谈.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/interview")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.主题:
-    displayName: 主题
-  note.受访者:
-    displayName: 受访者
-  note.访问者:
-    displayName: 访问者
-views:
-  - type: table
-    name: 列表
-    order:
-      - file.name
-      - note.time
-      - note.主题
-      - note.受访者
-      - note.访问者
-    sort:
-      - property: note.time
-        direction: DESC
-`,
-  },
-  {
-    relPath: "按模式/招聘面试.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/recruit")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.候选人:
-    displayName: 候选人
-  note.应聘岗位:
-    displayName: 岗位
-  note.轮次:
-    displayName: 轮次
-  note.录用建议:
-    displayName: 录用建议
-views:
-  - type: table
-    name: 列表
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-      - note.录用建议
-    sort:
-      - property: note.time
-        direction: DESC
-  - type: table
-    name: 强烈推荐
-    filters:
-      and:
-        - note.录用建议 == "强烈推荐"
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-  - type: table
-    name: 推荐
-    filters:
-      and:
-        - note.录用建议 == "推荐"
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-  - type: table
-    name: 倾向不推荐
-    filters:
-      or:
-        - note.录用建议 == "倾向不推荐"
-        - note.录用建议 == "倾向不推荐（条件性）"
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-`,
-  },
-  {
-    relPath: "按模式/独白手记.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/monologue")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.主题:
-    displayName: 主题
-views:
-  - type: table
-    name: 列表
-    order:
-      - file.name
-      - note.time
-      - note.主题
-    sort:
-      - property: note.time
-        direction: DESC
-`,
-  },
-
-  // —— 场景 ——
-  {
-    relPath: "场景/本周纪要.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice")
-    - date(note.time) >= date("today") - "7 days"
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.mode:
-    displayName: 模式
-  note.主题:
-    displayName: 主题
-  note.tags:
-    displayName: 标签
-views:
-  - type: table
-    name: 本周
-    order:
-      - file.name
-      - note.time
-      - note.mode
-      - note.主题
-      - note.tags
-    sort:
-      - property: note.time
-        direction: DESC
-`,
-  },
-  {
-    relPath: "场景/招聘看板.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/recruit")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.候选人:
-    displayName: 候选人
-  note.应聘岗位:
-    displayName: 岗位
-  note.轮次:
-    displayName: 轮次
-  note.录用建议:
-    displayName: 建议
-  note.tags:
-    displayName: 主题词
-views:
-  - type: table
-    name: 全部候选人
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-      - note.录用建议
-      - note.tags
-    sort:
-      - property: note.time
-        direction: DESC
-  - type: cards
-    name: 卡片视图
-    order:
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-      - note.录用建议
-      - note.time
-`,
-  },
-  {
-    relPath: "场景/决策与待办.base",
-    yaml: `filters:
-  or:
-    - file.hasTag("lexvoice/meeting")
-    - file.hasTag("lexvoice/huddle")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.mode:
-    displayName: 类型
-  note.主题:
-    displayName: 主题
-  note.议题:
-    displayName: 议题
-  note.参会人:
-    displayName: 参会人
-  note.当事人:
-    displayName: 当事人
-  note.tags:
-    displayName: 标签
-views:
-  - type: table
-    name: 列表
-    order:
-      - file.name
-      - note.time
-      - note.mode
-      - note.主题
-      - note.议题
-      - note.参会人
-      - note.当事人
-      - note.tags
-    sort:
-      - property: note.time
-        direction: DESC
-`,
-  },
-  {
-    relPath: "场景/全部纪要总览.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.mode:
-    displayName: 模式
-  note.主题:
-    displayName: 主题
-  note.议题:
-    displayName: 议题
-  note.候选人:
-    displayName: 候选人
-  note.tags:
-    displayName: 主题词
-views:
-  - type: table
-    name: 全部
-    order:
-      - file.name
-      - note.time
-      - note.mode
-      - note.主题
-      - note.议题
-      - note.候选人
-      - note.tags
-    sort:
-      - property: note.time
-        direction: DESC
-`,
-  },
-];
-
-
-
 function buildStructureLevelInstruction(level) {
   return STRUCTURE_LEVEL_INSTRUCTIONS[level] || STRUCTURE_LEVEL_INSTRUCTIONS.balanced;
 }
@@ -924,13 +294,6 @@ ${SHARED_DISCIPLINE}
 {{TRANSCRIPT}}`;
 }
 
-
-
-
-
-
-
-
 const POLISH_PROMPTS = {
   synthesis: buildPrompt(MODE_BODIES.synthesis, false, "synthesis"),
   learning: buildPrompt(MODE_BODIES.learning, false, "learning"),
@@ -942,9 +305,6 @@ const POLISH_PROMPTS = {
   recruit: buildPrompt(MODE_BODIES.recruit, false, "recruit"),
   "promotion-review": buildPrompt(MODE_BODIES["promotion-review"], false, "promotion-review"),
 };
-
-
-
 
 const MERGE_PROMPTS = {
   synthesis: buildPrompt(MODE_BODIES.synthesis, true, "synthesis"),
@@ -2003,7 +1363,6 @@ function buildPlaybackTimelineDetails(session) {
   ].join("\n");
 }
 
-
 function extractLexVoiceDetailsBody(markdown, summaryPattern) {
   const text = String(markdown || "");
   const re = /<details>\s*<summary>([\s\S]*?)<\/summary>\s*([\s\S]*?)<\/details>/gi;
@@ -2071,7 +1430,6 @@ function buildRecordingInfoDetails(info) {
   ].join("\n");
 }
 
-
 function getAudioTimeLink(audioName, ms) {
   const name = String(audioName || "").trim();
   if (!name) return "";
@@ -2126,8 +1484,6 @@ function isTimeLabel(text) {
   return new RegExp("^" + time + "(?:\\s*[–-]\\s*" + time + ")?$").test(String(text || "").trim());
 }
 
-
-
 function getAudioLinkCandidates(linkPath) {
   const target = normalizeAudioLinkTarget(linkPath);
   const out = [];
@@ -2179,16 +1535,9 @@ function extractAudioSegmentOffsets(markdown) {
 // 虚拟声卡识别 · 跨平台 audioinput 设备检测
 // ============================================================
 
-
-
-
 // 已移除 pickVirtualCableId / pickRealMicrophoneId：
 // 新哲学是"插件不替用户猜设备"——acquireStream 直接透传用户在设置里选的设备（没选则系统默认/明确提示），
 // 不再用名字启发式自动挑选。名字启发式（isVirtualCableLabel）仅保留给 UI 软提示，不参与任何选择。
-
-
-
-
 
 function stripLexVoiceAutoTitleSuffix(stem, settings) {
   const prefixes = Object.values(MODE_META)
@@ -2318,9 +1667,6 @@ function replaceLexVoiceActiveVersionBlock(markdown, versionMeta, body) {
 // 但它消除了"密钥以 sk-xxx 明文躺在配置文件里"这一最常见的泄露面，且密钥从不离开本地（仅在调用 API 时发往对应服务端点）。
 // 内存中 settings 始终保存明文密钥，所有调用大模型/转写的代码无需改动；只有落盘的 data.json 是混淆态。
 
-
-
-
 // 深度遍历对象，对所有名字以 apiKey 结尾的字符串字段应用 fn（落盘混淆 / 读取还原），路径无关。
 // 覆盖：apiKey / llmApiKey / transcribeApiKey / compatApiKey 以及 providers[].apiKey、profiles[].apiKey 等嵌套。
 function transformApiKeyFieldsDeep(obj, fn, depth) {
@@ -2353,110 +1699,13 @@ function isSyncConflictName(name) {
   return /[(（][^)）]*?(冲突|conflict|conflicted\s*copy)[^(（]*[)）]/i.test(name);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // 从源纪要 frontmatter 取"人物"维度的人名：同时认 ① 新独立属性 人物（people 别名兼容）
 // ② 旧笔记里 tags 的 人物/x 前缀。是"人物单列后"所有消费源纪要人物处的单一收口点。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // 把正文里那段沉淀元数据 HTML 注释「原样」拆出来，返回 { body, block }。
 // 用途：写最终纪要时，把这坨机器可读 JSON 从"正文与原始材料之间"挪到笔记最末尾，
 // 编辑模式下不再夹在中间难看（阅读视图本就因 HTML 注释而隐藏）。保留原始匹配文本不重排，
 // 避免 JSON 轻微不规范时反序列化丢数据。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function normalizeModeFromLabel(settings, label) {
   const text = String(label || "").trim();
@@ -2906,13 +2155,8 @@ function getRecentQueueProcessingState(plugin, file) {
   return null;
 }
 
-
 // \u5265\u6389 <details>...</details> \u6298\u53E0\u5757\uFF08\u542B\u5D4C\u5957\uFF09\uFF0C\u7528\u4E8E\u5224\u5B9A\u5F53\u524D\u6001\u65F6\u8DF3\u8FC7\u5386\u53F2\u5F52\u6863\u3002
 // \u5386\u53F2\u5F52\u6863\u91CC\u6B8B\u7559\u7684\u5931\u8D25\u6807\u8BB0\u4E0D\u5E94\u8BA9"\u5F53\u524D\u5DF2\u6210\u529F"\u7684\u7EAA\u8981\u7EE7\u7EED\u4EAE\u8B66\u544A\u3002
-
-
-
-
 
 function getAudioDurationMs(blob) {
   return new Promise((resolve) => {
@@ -2935,9 +2179,6 @@ function getAudioDurationMs(blob) {
 // 确定性 ASR 错误：格式不被服务端接受 / 本机无法解码 / 超过体积上限 / 4xx 拒绝（密钥、余额、审核）——
 // 重试同样必败，还会对大文件反复解码卡 UI、对服务端反复发必拒请求。队列对这类失败直接吃满重试退出自动重试。
 // 旗标 nonRetryable 由抛错处设置（apimimoPermanentError / HTTP 4xx 分支）；正则兜底匹配已落盘任务的 lastError。
-
-
-
 
 function stripLexVoiceImportAppendices(text) {
   return stripSedimentPreExtractionBlocks(String(text || ""))
@@ -3105,11 +2346,6 @@ function appendLexVoiceAskEntry(markdown, question, answer) {
   return tail ? `${body}\n\n${tail}` : `${body}\n`;
 }
 
-
-
-
-
-
 function buildImportedTextSegment(source, index) {
   const file = source && source.file;
   const name = source && source.name ? source.name : (file && file.name) || `文本 ${index + 1}`;
@@ -3202,7 +2438,6 @@ function buildTextImportSourceDetails(session) {
 // 鉴权：Authorization: bearer <api_key> —— 在 Electron 渲染进程通过
 //   require("ws") 走 Node 端 WebSocket 以支持自定义 header（浏览器原生 WebSocket 不支持）
 // ============================================================
-
 
 // ============================================================
 // OpenAI Realtime · gpt-realtime-whisper（流式 ASR）
@@ -3898,15 +3133,9 @@ class RecorderService {
   }
 }
 
-
 // 解析当前激活的转写 provider 配置（带向后兼容：旧版顶层字段兜底）
 
 // 轻量确认弹窗：危险/不可逆/有成本的操作前二次确认。resolve(true) 仅当用户点了确认按钮。
-
-
-
-
-
 
 function getErrorMessage(error) {
   if (!error) return "";
@@ -3925,8 +3154,6 @@ function classifyRecordingIssue(error) {
   return isNetworkLikeError(error) ? "network" : "service";
 }
 
-
-
 // 官方限额（usage-guide 2026-06-02 + 实测）：单块 base64 编码字符串 ≤ 10MB（≈7.5MB 原始音频）。
 // 留 0.5MB 余量防双方对"10MB"的口径差异。base64 长度 = ceil(bytes/3)*4。
 // MiMo 服务端只收 wav / mp3（实测发 audio/mp4 返回 400："mime type must be one of:
@@ -3941,8 +3168,6 @@ function classifyRecordingIssue(error) {
 // 原生格式 → data URL 用的 MIME 前缀（MiMo 靠 MIME 识别格式，不读 format 字段）。
 // 服务端白名单仅 audio/wav / audio/mp3 / audio/mpeg，其余 MIME 一律 400。
 
-
-
 // 确定性失败：换个时间重试同样必败（格式/解码/超限/4xx 拒绝），标上 nonRetryable 让队列不再空转重试。
 
 // 返回一个或多个待转写块（每块 base64 ≤ 10MB）。
@@ -3951,35 +3176,7 @@ function classifyRecordingIssue(error) {
 // 注意：Electron 的 decodeAudioData 解不了 mp4/AAC——录音侧已配合（选 MiMo 时录 WebM/Opus），
 // 但用其它服务录的旧 m4a 段拿来重转写仍会在此失败，错误信息引导改用 SiliconFlow。
 
-
 // 单块请求：把一个 ≤10MB(base64) 的 prepared 块发给 MiMo，返回原始文本（不做热词修正，留给上层对全文统一修）。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // 解析一行 SSE "data: {...}"，把 delta/message 文本累加到 state.content。返回是否累加了内容。
 // 同时捕获 finish_reason：用于检测"撞 max_tokens 被截断"（finish_reason==="length"），
@@ -3993,34 +3190,20 @@ function classifyRecordingIssue(error) {
 // 兜底：若没解析出任何 SSE 内容，但端点其实返回的是普通 JSON（忽略了 stream 参数），按普通响应取内容。
 // 统一返回 { content, finishReason }。
 
-
-
-
-
 // 拉取 OpenAI 兼容服务的可用模型列表（GET {base}/models）。用 obsidian.requestUrl 绕过 CORS。
 // 让「获取可用模型」对 Poe / OpenRouter / MiMo / 硅基 / 本地 等都通用、永不过期，免去手敲 bot 名。
 
 // 简易搜索 + 点选 Modal：从一串字符串里选一个。onPick(选中值) 在点击后调用。
-
-
-
-
-
-
-
 
 // finish_reason 提取：流式经 requestLlmChatCompletion 透传，普通 JSON 直接来自 API。
 // "length" = 撞 max_tokens 截断；"aborted" = 流被空闲超时/网络中断。两者都意味着输出可能不完整。
 
 // 返回 { text, finishReason }——给最终纪要 merge 用，需要据 finishReason 检测截断并告警。
 
-
 // 最终纪要被 max_tokens 截断时，正文顶部插显式告警——把"静默残缺"变成"用户可见"。守住"不缺漏"底线。
 const BRIEFING_TRUNCATION_WARNING = "> [!warning] 本纪要可能未完整\n> AI 整理在写到输出长度上限时被截断，后半段内容可能缺失。完整原文已保留在本笔记底部的原始转写区；如需完整纪要，可点「重新整理」重试，或把超长录音分段后再整理。";
 // 超长文本导入预压缩告警：原文先被分段摘要再整理，纪要为"摘要的整理"，具体数字/原话以底部原文为准。
 const BRIEFING_PRESUMMARY_NOTICE = "> [!info] 本纪要基于自动摘要稿生成\n> 导入文本过长，已先分段摘要再整理，部分原文细节（具体数字、原话、边角事实）可能未进入纪要。完整原文见本笔记底部折叠区，关键信息请以原文为准。";
-
-
 
 // 标准 Obsidian callout 类型全集 + QnALog 自定义类型。
 // 用全集而非小白名单：DeepSeek 等模型常丢 `>` 前缀，规整器要能认出任意标准 callout 补回前缀。
@@ -4145,12 +3328,6 @@ function normalizeLexVoiceCallouts(markdown) {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-
-
-
-
-
-
 const EMAIL_DRAFT_FOLDER = "LexVoice/邮件草稿";
 const EMAIL_DRAFT_ATTACHMENT_FOLDER = `${EMAIL_DRAFT_FOLDER}/附件`;
 const EMAIL_ATTENDEE_FIELDS = ["参会人", "与会人", "参与者", "出席人", "受访者", "访问者", "面试官", "候选人", "当事人", "相关人员", "人员", "人物"];
@@ -4166,7 +3343,6 @@ function normalizeEmailAddressList(value) {
   }
   return Array.from(new Set(emails.map(e => e.toLowerCase())));
 }
-
 
 function extractMeetingAttendeeNames(frontmatter) {
   if (!frontmatter || typeof frontmatter !== "object") return [];
@@ -4455,85 +3631,10 @@ function buildMeetingEmailBody({ file, markdown, attendeeNames = [], attachments
   return body.join("\n");
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // 纯白弥散报告（recruit 面试评估 / seminar 研讨）：大模型按提取提示词只产出 DATA JSON，注入固定模板的哨兵段。
 // 模型碰不到 CSS/版式（最省 token、最稳）。公司名由 reportBrandName 设置注入（默认空 → 沿用纪要「公司/」标签）；报告不含 logo。
 
 // 报告生成前的配色选择器：预设或自定义颜色 → 返回 hex（取消/关闭返回 null）。报告按所选色相整体重着色。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function cleanLexVoiceTranscriptBlock(block) {
   return String(block || "")
@@ -4618,7 +3719,6 @@ function extractLexVoiceTranscriptSegments(markdown) {
 }
 
 const LEXVOICE_EMPTY_SHORT_LIMIT_MS = 10 * 1000;
-
 
 function getLexVoiceDurationMs(markdown) {
   const text = String(markdown || "");
@@ -4804,7 +3904,6 @@ function analyzeLexVoiceEmptyShortNote(file, markdown, settings) {
   const audioRefs = collectLexVoiceAudioRefs(text);
   return { file, durationMs, audioRefs, audioFiles: [] };
 }
-
 
 // 解析 frontmatter 角色字段中的"代号 → 真名"映射
 // 用户在 yaml 里把 `参会人:` 数组的某项改成 `业务需求方 → 某候选人`，
@@ -5113,10 +4212,8 @@ function upsertDailyMeetingOverview(content, sessionId, entry, settings) {
   return before + entry + after;
 }
 
-
 // 录音开始时据 JD / 简历 / 特殊关注点生成「面试提纲」——供面试官面试中照着提问。
 // 重点围绕"候选人经历 × JD 要求的匹配度"设计针对性问题。无 JD 且无简历则返回空（不生成）。
-
 
 // ====== F3 统一面试提纲：通用段（写回 JD、跨候选人复用）+ 针对段（含上轮待澄清）======
 
@@ -5300,7 +4397,6 @@ function mergeLeadingFrontmatterIntoDocument(documentText, generatedMarkdown) {
     body: generated.body.trim() || buildEmptyLlmOutputFallback(),
   };
 }
-
 
 // 解析 LLM 输出末尾的标签建议注释 <!-- lexvoice-tags: 主题/招聘流程, 项目/晋升提名 -->
 function parseSuggestedTagsFromOutput(text) {
@@ -5580,8 +4676,6 @@ function buildSessionMetaPrefix(meta, mode, options = {}) {
   return sections.join("\n\n---\n\n");
 }
 
-
-
 function buildAdaptiveBriefingLengthInstruction(mode, stats) {
   // 长度分档与 token 配额共用同一判定（src/llm/config.ts classifyBriefingLength），
   // 确保"给多少篇幅指令"和"给多少 max_tokens"始终在同一档位，不会一个说超长、另一个只给短配额。
@@ -5784,10 +4878,6 @@ const TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS = 24;
 const TEXT_IMPORT_RECRUIT_CONTEXT_CHARS = 12000;
 const TEXT_IMPORT_FINAL_CONTEXT_COMPACT_THRESHOLD_CHARS = 120000;
 
-
-
-
-
 function formatMergeSegmentForPrompt(seg, fallbackIndex) {
   const safeIndex = Number.isFinite(Number(seg && seg.index)) ? Number(seg.index) : fallbackIndex;
   const start = Number(seg && seg.startOffsetMs) || 0;
@@ -5964,7 +5054,6 @@ const JOBPORTRAIT_FOLLOWUP_MAX_CARDS = 2;
 
 // 所有招聘需求挖掘 prompt 共享的 system 前缀（spec §5.1）。
 
-
 // 会后整合 prompt（叙述式自然生长，v2）：整场转写 → 依据实际讨论生长出来的 Markdown 岗位画像。
 // 刻意不再用固定 14 格 JSON 表单填空——那会逼模型抠片段硬套、产出稀薄；14 维只作模型内部的"挖全了没"查漏清单。
 
@@ -6020,7 +5109,6 @@ function parseCoverageScanModel(raw, prev, allowFreeze = true) {
     segmentCount: (prev && prev.segmentCount) || 0,
   };
 }
-
 
 // 人物指认幻觉的机械兜底（软提示，不删改）：模型可能把转写里零星出现的称呼提升为贯穿全文的
 // 核心人物（实测案例：把全场只提到三五次的"某称呼"指认为一号位）。这里按 lexvoice-people 名单
@@ -14490,7 +13578,6 @@ class OutlineView extends obsidian.ItemView {
   }
 }
 
-
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   async onload() {
@@ -15624,7 +14711,6 @@ class LexVoicePlugin extends obsidian.Plugin {
     const next = cur.slice(0, startIdx).replace(/\n+$/, "") + cur.slice(endIdx + endMarker.length).replace(/^\n+/, "\n");
     await this.app.vault.modify(file, next);
   }
-
 
   openSettings(tabId = "home") {
     if (this.settingTab) this.settingTab.activeTab = tabId;
@@ -24613,31 +23699,13 @@ ${source}`;
   }
 }
 
-
-
-
-
-
 // 电脑音频捕获安装/配置向导 Modal —— 分平台引导
-
-
-
-
-
-
-
-
-
-
-
-
 
 // ====== 招聘项目化（F2）：JD 项目库扫描 / JD 文档解析 / PDF 文本尽力提取 / 三件套创建 ======
 
 // JD 文件判据：md 且 文件名（去扩展名）== 父文件夹名。不依赖额外字段，重命名免维护。
 
 // 扫 JD 库根下每个子文件夹 = 一个招聘项目；取同名 .md 作 JD 文件，读 frontmatter 状态/职位名/序列。
-
 
 // 解析单个 JD 文件：岗位描述 / 综合素质（frontmatter 对象数组）/ 统一面试提纲。
 // 综合素质格式异常但有数据 → qualitiesError=true（调用方提示"按未配置处理"），不抛错、不阻断。
@@ -24649,7 +23717,6 @@ ${source}`;
 
 // 招聘项目 JD 文件模板（PRD F2.1 + 「类型: 招聘项目」键供聚合 Base 筛选）。jdBody = 粘贴的 JD 正文。
 // 新建招聘项目时 JD 预置的默认综合素质（单一来源：JD 模板的 综合素质 段 + 候选人看板的 素质_* 列都用它）。
-
 
 // 候选人看板 Base 模板（F5）。qualities = 素质名数组（动态追加 素质_<名> 列）。语法均为库内已验证写法：
 // file.folder==this.file.folder + jd!=null 限定本项目候选人纪要；视图级 filters 叠加分页；displayName 把
@@ -24672,8 +23739,6 @@ ${source}`;
 // 招聘面试模式上下文 Modal —— 按录音、导入、重新整理等流程注入 JD/简历/候选人信息
 
 // 提示词库 Modal
-
-
 
 export default LexVoicePlugin;
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
