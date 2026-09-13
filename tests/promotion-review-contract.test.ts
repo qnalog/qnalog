@@ -31,11 +31,11 @@ describe("promotion review runtime contract", () => {
   });
 
   it("提供三输入、晋升初审和开始答辩录音", () => {
-    expect(main).toContain('makeGroup("任职要求")');
-    expect(main).toContain('makeGroup("晋升提名材料")');
-    expect(main).toContain('makeGroup("重点考核能力", true)');
-    expect(main).toContain('generatePromotionPreReview(this.plugin, saved)');
-    expect(main).toContain('primary.createSpan({ text: "开始答辩录音" })');
+    expect(pluginSource).toContain('makeGroup("任职要求")');
+    expect(pluginSource).toContain('makeGroup("晋升提名材料")');
+    expect(pluginSource).toContain('makeGroup("重点考核能力", true)');
+    expect(pluginSource).toContain('generatePromotionPreReview(this.plugin, saved)');
+    expect(pluginSource).toContain('primary.createSpan({ text: "开始答辩录音" })');
   });
 
   it("录音会话冻结上下文，并将初审写入笔记和最终原始材料", () => {

@@ -213,4 +213,15 @@ export function resolveLexVoiceAudioFile(app, settings, ref) {
   return null;
 }
 
+export function getSessionLatestSegmentEndMs(session) {
+  const segments = session && Array.isArray(session.segments) ? session.segments : [];
+  let latest = 0;
+  for (const s of segments) {
+    const end = Number(s && (s.endOffsetMs ?? s.startOffsetMs)) || 0;
+    if (end > latest) latest = end;
+  }
+  return latest;
+}
+
+
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

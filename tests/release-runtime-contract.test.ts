@@ -39,11 +39,11 @@ describe("release runtime contracts", () => {
   });
 
   it("refreshes the recent-note folder view after external file changes", () => {
-    expect(mainSource).toContain('this.app.vault.on("create"');
-    expect(mainSource).toContain('this.app.vault.on("rename"');
-    expect(mainSource).toContain('this.app.vault.on("delete"');
-    expect(mainSource).toContain('this.app.metadataCache.on("changed"');
-    expect(mainSource).toContain("queueRecentVaultRefresh(delayMs = 180)");
+    expect(pluginSource).toContain('this.app.vault.on("create"');
+    expect(pluginSource).toContain('this.app.vault.on("rename"');
+    expect(pluginSource).toContain('this.app.vault.on("delete"');
+    expect(pluginSource).toContain('this.app.metadataCache.on("changed"');
+    expect(pluginSource).toContain("queueRecentVaultRefresh(delayMs = 180)");
   });
 
   it("connects repolish work to visible pipeline progress", () => {
