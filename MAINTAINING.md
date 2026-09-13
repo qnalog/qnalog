@@ -140,6 +140,25 @@ node scripts/check-mainline-isolation.mjs
 - 语义化版本 `x.y.z`，Obsidian 只接受这一格式。
 - 破坏性改动升 minor 或 major，并在发版说明里标注。
 
+### 4.1.1 开发分支的构建标识
+
+开发分支编译出的构建必须能在版本号上看出"这是开发版"，否则本地验证时无法区分手上跑的是哪一份构建。
+规则（`scripts/build-identity.mjs`）：
+
+| 构建位置 | 版本标识 | 怎么产生 |
+|---|---|---|
+| `main` 且无未提交改动 | `1.0.0` | 发版身份，与仓库 `manifest.json` 一致 |
+| 其他分支 / 有改动 | `1.0.0-dev.<分支>.<提交>[.dirty]` | 构建时注入，安装时写进知识库的 `manifest.json` |
+| 游离头指针 | `1.0.0-dev.detached.<提交>` | 同上，分支位用 `detached` |
+
+- **仓库里的 `manifest.json` 始终是发版身份，不随分支变化**——CI 会校验它与 `package.json`、
+  `package-lock.json`、`versions.json` 四处一致，社区目录也只接受这一份。开发标识只出现在两处：
+  构建产物内部（`LEXVOICE_BUILD_*` 常量）与**知识库里的那份 manifest 副本**（`npm run install:vault` 写入）。
+- "有改动"只算两类：已跟踪文件有改动、或 `src/` 下有未跟踪文件。仓库里其他未跟踪草稿文件
+  （`_tmp_*`、`ARCHITECTURE.md` 等）不影响打包，不会把构建标成开发版。
+- 开发版标识不会触发"版本错位"告警：`UpdateService.warnIfBuildManifestSkew` 只比较 `x.y.z`。
+- 查看方式：`node scripts/build-identity.mjs` 直接打印；插件设置页首页与「更新」页也会显示。
+
 ### 4.2 发版步骤
 
 ```bash

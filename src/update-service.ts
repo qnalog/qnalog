@@ -1,5 +1,6 @@
 import type { AvailableUpdate, PluginSettings } from "./shared/types";
 import { compareVersions } from "./shared/version";
+import { baseVersion } from "./shared/build-identity";
 import { resolveUpdateRawBase, resolveUpdateRawBases } from "./update-source";
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -184,8 +185,10 @@ export class UpdateService {
 
   warnIfBuildManifestSkew(): void {
     try {
-      const built = this.runtime.buildVersion;
-      const declared = this.host.manifest.version || "";
+      const built = baseVersion(this.runtime.buildVersion);
+      const declared = baseVersion(this.host.manifest && this.host.manifest.version);
+      // 只比 x.y.z：本地安装的开发版会在 manifest 上带 -dev.<分支>.<提交> 后缀，
+      // 那是刻意标注，不是"只换了 manifest 没换 main.js"的错位。
       if (built && declared && built !== declared) {
         this.runtime.warn(`[QnALog] build/manifest 版本错位：main.js=${built} manifest=${declared}`);
         this.runtime.notice(

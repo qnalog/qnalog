@@ -62,8 +62,7 @@ import { SETTINGS_SCHEMA_VERSION, LEGACY_VOCABULARY_FILE, normalizeLexVoiceSetti
 import { buildSettingsMigrationReport } from "./shared/settings-migration-report";
 
 import type { LexVoiceSettings, RecordingSession } from "./shared/types";
-
-declare const LEXVOICE_BUILD_VERSION: string;
+import { getBuildIdentity } from "./shared/build-identity";
 
 import { getLearnedLlmOutputCeiling } from "./llm/output-budget";
 
@@ -194,7 +193,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       normalizePath: (path) => obsidian.normalizePath(path),
       setTimeout: (handler, delayMs) => window.setTimeout(handler, delayMs),
       clearTimeout: (handle) => window.clearTimeout(handle),
-      buildVersion: typeof LEXVOICE_BUILD_VERSION === "string" ? LEXVOICE_BUILD_VERSION : "",
+      buildVersion: getBuildIdentity().version,
     });
     this.register(() => this.updateService.dispose());
     this.taskActivityStore = new TaskActivityStore();
@@ -868,7 +867,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       "# QnALog 诊断报告",
       "",
       "## 环境",
-      `- QnALog: ${this.manifest && this.manifest.version || "unknown"}`,
+      `- QnALog: ${this.manifest && this.manifest.version || "unknown"}${getBuildIdentity().isDev ? `（${getBuildIdentity().sourceDescription}）` : ""}`,
       `- Obsidian API: ${obsidian.apiVersion || "unknown"}`,
       `- 平台: ${redactDiagnosticText(obsidian.Platform.isMacOS ? "macOS" : obsidian.Platform.isWin ? "Windows" : obsidian.Platform.isLinux ? "Linux" : obsidian.Platform.isIosApp ? "iOS" : obsidian.Platform.isAndroidApp ? "Android" : "unknown")}`,
       "",
