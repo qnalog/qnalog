@@ -2244,7 +2244,8 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
   renderUpdates(c) {
     new obsidian.Setting(c).setName("插件更新").setHeading();
-    const currentVersion = this.plugin.manifest.version || "0.0.0";
+    // 与首页同源：Obsidian 只在启动时读 manifest，直接用 manifest.version 会显示上一次安装的版本。
+    const currentVersion = this.plugin.getDisplayVersion();
     const buildSource = this.plugin.getBuildSourceLabel();
     const update = this.plugin.settings.availableUpdate;
     const rawBases = resolveUpdateRawBases(this.plugin.settings);
