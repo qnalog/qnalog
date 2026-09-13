@@ -6,6 +6,8 @@ const mainSource = readFileSync(new URL("../src/main.ts", import.meta.url), "utf
 // 实现已拆分到多个模块；只断言"字符串存在于插件源码中"的用例改用全文，
 // 避免断言因文件位置变化而失效（强度不变：字符串仍须真实存在）。
 const pluginSource = pluginSourceText();
+// 合并流水线已抽到独立模块：需要断言"同一文件内先后顺序"的用例读该文件本身。
+const mergePipelineSource = readFileSync(new URL("../src/briefing/merge-pipeline.ts", import.meta.url), "utf8");
 
 describe("release runtime contracts", () => {
   it("does not retain calls to the excluded video time-link helper", () => {
@@ -68,10 +70,10 @@ describe("release runtime contracts", () => {
   });
 
   it("persists a usable briefing draft before optional detail repair", () => {
-    const initialDraft = mainSource.indexOf("const initialBody = normalizeBriefingPartBody");
-    const initialCheckpoint = mainSource.indexOf("await store.save(checkpoint);", initialDraft);
-    const optionalRepair = mainSource.indexOf('purpose: "briefing-part-detail-repair"', initialDraft);
-    const preservedFallback = mainSource.indexOf('"llm.briefing_part_repair_failed_preserved"', optionalRepair);
+    const initialDraft = mergePipelineSource.indexOf("const initialBody = normalizeBriefingPartBody");
+    const initialCheckpoint = mergePipelineSource.indexOf("await store.save(checkpoint);", initialDraft);
+    const optionalRepair = mergePipelineSource.indexOf('purpose: "briefing-part-detail-repair"', initialDraft);
+    const preservedFallback = mergePipelineSource.indexOf('"llm.briefing_part_repair_failed_preserved"', optionalRepair);
 
     expect(initialDraft).toBeGreaterThan(-1);
     expect(initialCheckpoint).toBeGreaterThan(initialDraft);
