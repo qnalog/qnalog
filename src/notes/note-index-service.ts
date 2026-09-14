@@ -99,7 +99,7 @@ export class NoteIndexService {
     };
     await this.appendDailyMeetingOverview(session, polished);
   }
-  // 转写完成后的自动沉淀（仅 settings.sedimentAutoExtract 开启时触发）：扫描纪要 → 学习卡片/待办自动入库。
+  // 转写完成后的自动沉淀（仅 settings.sedimentAutoExtract 开启时触发）：扫描纪要 → 待办自动入库。
   // 后台跑、try/catch 静默——绝不影响主流程；沉淀扫描已走续写拼接（callLlmWithContinuation），不会被输出上限截断。
   async autoExtractSedimentAfterFinalize(mdPath) {
     try {
@@ -107,7 +107,7 @@ export class NoteIndexService {
       if (!(file instanceof obsidian.TFile)) return;
       const markdown = await this.host.app.vault.cachedRead(file);
       const objects = await generateSedimentObjects(this.host, file, markdown);
-      await writeSedimentObjectCards(this.host, file, { learningCards: objects.learningCards || [], todos: objects.todos || [] });
+      await writeSedimentObjectCards(this.host, file, { todos: objects.todos || [] });
     } catch (e) { console.error("[QnALog] autoExtractSedimentAfterFinalize", e); }
   }
 }

@@ -38,7 +38,7 @@ const DROPPED_GROUP_ACTIONS: Record<string, string> = {
 const KEPT_GROUP_NOTES: Record<string, string> = {
   speech: "转写服务配置与访问密钥已保留",
   composer: "AI 整理服务与访问密钥已保留",
-  vocabulary: "热词表与人员/学习卡片目录已保留",
+  vocabulary: "热词表与人员/待办目录已保留（其中学习卡片文件夹一项已不再读取）",
   storage: "保存路径与收件箱设置已保留",
 };
 

@@ -6,7 +6,6 @@ export const LEGACY_DEFAULT_LIBRARY_PATHS = {
   vocabularyFile: "LexVoice/词汇表.md",
   peopleDirectoryFolder: "LexVoice/人员",
   peopleBaseFile: "LexVoice/人员库.base",
-  learningCardsFolder: "LexVoice/学习卡片",
   todoCardsFolder: "LexVoice/待办卡片",
   lexVoiceBasesFolder: "LexVoice/视图",
   diagnosticsLogFolder: "LexVoice/诊断日志",
@@ -18,7 +17,6 @@ export const DEFAULT_LIBRARY_PATHS = {
   vocabularyFile: "LexVoice/资料库/词汇表.md",
   peopleDirectoryFolder: "LexVoice/资料库/人员",
   peopleBaseFile: "LexVoice/资料库/视图/人员库.base",
-  learningCardsFolder: "LexVoice/资料库/学习卡片",
   todoCardsFolder: "LexVoice/资料库/待办",
   lexVoiceBasesFolder: "LexVoice/资料库/视图",
   diagnosticsLogFolder: "LexVoice/系统/诊断日志",
@@ -199,7 +197,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   vocabularyFile: DEFAULT_LIBRARY_PATHS.vocabularyFile,
   peopleDirectoryFolder: DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder,
   peopleBaseFile: DEFAULT_LIBRARY_PATHS.peopleBaseFile,
-  learningCardsFolder: DEFAULT_LIBRARY_PATHS.learningCardsFolder,
   todoCardsFolder: DEFAULT_LIBRARY_PATHS.todoCardsFolder,
   sedimentAutoExtract: false,  // 默认关闭：转写完成不自动沉淀，手动点「沉淀」再扫描（省 token）；开启则转写完成后自动扫描并入库
 

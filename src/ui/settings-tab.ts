@@ -618,7 +618,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const betterRows = [
       ["整理提示词", "管理内置和自定义提示词。自定义提示词会出现在录音、导入和重新整理的选择列表中。", hasLlm ? "管理提示词" : "配置 AI 整理", hasLlm ? "ai" : "api"],
       ["多语种会议整理", "在 AI 整理中启用纪要翻译，可由大模型在整理阶段统一输出至目标语言，或保留关键原文形成双语纪要。", "去设置", "ai"],
-      ["资料库", "从纪要中沉淀转写词表、人员资料、学习卡片和待办。纪要用于追溯，资料用于复用和检索。", "打开资料库", "knowledge"],
+      ["资料库", "从纪要中沉淀转写词表、人员资料和待办。纪要用于追溯，资料用于复用和检索。", "打开资料库", "knowledge"],
       ["自动更新", "检查并安装 QnALog 新版本；本地设置、保存路径与自定义提示词不会被覆盖。", "检查更新", "updates"],
     ];
     for (const [name, desc, btnText, target] of betterRows) {
@@ -1952,12 +1952,11 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const pendingPeopleSuggestions = normalizePeopleSuggestionCache(this.plugin.settings.peopleSuggestionCache).pending;
     const ignoredPeopleSuggestions = normalizePeopleSuggestionIgnores(this.plugin.settings.peopleSuggestionIgnores);
     const peopleCount = countMarkdownInFolder(this.plugin.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder);
-    const learningCount = countMarkdownInFolder(this.plugin.settings.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder);
     const todoCount = countMarkdownInFolder(this.plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder);
 
     new obsidian.Setting(c)
       .setName("资料库")
-      .setDesc("从纪要中沉淀人员、学习卡片、待办和转写词表，用于复用和检索；纪要保留原始证据和录音链接。")
+      .setDesc("从纪要中沉淀人员、待办和转写词表，用于复用和检索；纪要保留原始证据和录音链接。")
       .setHeading();
 
     const overview = c.createDiv({ cls: "lexvoice-object-overview-grid" });
@@ -1978,7 +1977,6 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       return btn;
     };
     makeObjectCard("人员", peopleCount, "位", "汇总会议出现的人，一人一页，关联纪要。", "contact", "打开人员库", () => { void this.plugin.library.openPeopleBase(); });
-    makeObjectCard("学习卡片", learningCount, "张", "汇总观点、机制等可复用知识。", "layers-3", "打开学习卡片墙", () => { void this.plugin.library.openLearningWall("learning"); });
     makeObjectCard("待办", todoCount, "条", "从纪要确认的行动项，可勾选追踪。", "list-checks", "打开待办墙", () => { void this.plugin.library.openTodoWall(); });
     const vocabCard = makeObjectCard("转写词表", "…", "个", "汇总术语及易错写法，提升转写准确率。", "notebook-tabs", "打开转写词表", () => { void openVocabularyFile(); });
 
@@ -1996,7 +1994,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     })();
 
     new obsidian.Setting(c).setName("转写完成后自动沉淀")
-      .setDesc("默认关闭以节省 token。开启后，转写/整理完成会自动扫描当前纪要并写入学习卡片与待办；人员和词表仍保留确认/维护流程。")
+      .setDesc("默认关闭以节省 token。开启后，转写/整理完成会自动扫描当前纪要并写入待办；人员和词表仍保留确认/维护流程。")
       .addToggle(t => t.setValue(!!this.plugin.settings.sedimentAutoExtract).onChange(async v => { this.plugin.settings.sedimentAutoExtract = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c)
@@ -2029,14 +2027,11 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c)
       .setName("浏览与维护")
-      .setDesc("打开资料总览和明细表格，或补齐缺失的 Base 视图。")
+      .setDesc("打开待办墙和明细表格，或补齐缺失的 Base 视图。")
       .setHeading();
-    new obsidian.Setting(c).setName("资料总览")
-      .setDesc("日常浏览入口，可按学习、概念和待办分类查看。")
-      .addButton(b => b.setButtonText("打开总览").setCta().onClick(() => { void this.plugin.library.openObjectWall(); }))
-      .addButton(b => b.setButtonText("学习卡片").onClick(() => { void this.plugin.library.openLearningWall("learning"); }))
-      .addButton(b => b.setButtonText("概念").onClick(() => { void this.plugin.library.openLearningWall("concept"); }))
-      .addButton(b => b.setButtonText("待办").onClick(() => { void this.plugin.library.openTodoWall(); }));
+    new obsidian.Setting(c).setName("待办墙")
+      .setDesc("日常浏览入口，按来源与状态查看从纪要确认的行动项。")
+      .addButton(b => b.setButtonText("打开待办墙").setCta().onClick(() => { void this.plugin.library.openTodoWall(); }));
 
     new obsidian.Setting(c).setName("明细表格")
       .setDesc("用于核对和批量筛选，不作为主展示入口。")
@@ -2072,13 +2067,6 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         } catch (e) {
           setting.setDesc(`读取失败：${e.message || e}`);
         }
-      });
-
-    createPathSetting(advancedBody, "学习卡片文件夹", "用于保存概念、机制、案例、QA、追问和观点卡片。", this.plugin.settings.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder, DEFAULT_SETTINGS.learningCardsFolder,
-      async v => { this.plugin.settings.learningCardsFolder = v || DEFAULT_SETTINGS.learningCardsFolder; },
-      async setting => {
-        const count = countMarkdownInFolder(this.plugin.settings.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder);
-        setting.setDesc(`当前 ${count} 张学习卡片。卡片负责复用，原始依据仍回链到纪要。`);
       });
 
     createPathSetting(advancedBody, "待办文件夹", "用于保存从纪要中确认后的行动项。", this.plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder, DEFAULT_SETTINGS.todoCardsFolder,

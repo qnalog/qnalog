@@ -217,10 +217,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.addCommand({ id: "retry-queue-all", name: "重试所有失败任务", callback: () => this.queueRetry.retryQueue() });
     this.addCommand({ id: "copy-diagnostic-report", name: "复制诊断报告", callback: () => this.diagnostics.copyDiagnosticReport() });
     this.addCommand({ id: "suggest-people-directory-updates", name: "AI 扫描纪要库提取人员建议", callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
-    this.addCommand({ id: "open-learning-card-wall", name: "打开学习卡片瀑布墙", callback: () => { void this.library.openLearningWall("learning"); } });
-    this.addCommand({ id: "open-concept-wall", name: "打开概念墙", callback: () => { void this.library.openLearningWall("concept"); } });
     this.addCommand({ id: "open-todo-wall", name: "打开待办墙", callback: () => { void this.library.openTodoWall(); } });
-    this.addCommand({ id: "open-object-wall", name: "打开对象总览", callback: () => { void this.library.openObjectWall(); } });
     this.addCommand({ id: "import-audio", name: "导入已有音频文件转写+润色", callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({
       id: "generate-html-report",

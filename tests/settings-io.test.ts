@@ -61,13 +61,12 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(DEFAULT_SETTINGS.vocabularyFile).toBe("LexVoice/资料库/词汇表.md");
     expect(DEFAULT_SETTINGS.peopleDirectoryFolder).toBe("LexVoice/资料库/人员");
     expect(DEFAULT_SETTINGS.peopleBaseFile).toBe("LexVoice/资料库/视图/人员库.base");
-    expect(DEFAULT_SETTINGS.learningCardsFolder).toBe("LexVoice/资料库/学习卡片");
     expect(DEFAULT_SETTINGS.todoCardsFolder).toBe("LexVoice/资料库/待办");
     expect(DEFAULT_SETTINGS.lexVoiceBasesFolder).toBe("LexVoice/资料库/视图");
     expect(DEFAULT_SETTINGS.diagnosticsLogFolder).toBe("LexVoice/系统/诊断日志");
     expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("LexVoice/资料库/归档");
     expect(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder).toBe("LexVoice/资料库/归档/重复人员");
-    expect(SETTINGS_SCHEMA_VERSION).toBe(5);
+    expect(SETTINGS_SCHEMA_VERSION).toBe(6);
   });
 
   it("serialize 输出携带 schemaVersion", () => {
@@ -102,7 +101,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     a.vocabularyFile = "自定义/词汇表.md";
     a.peopleDirectoryFolder = "自定义/人员";
     a.peopleBaseFile = "自定义/视图/人员库.base";
-    a.learningCardsFolder = "自定义/学习卡片";
     a.todoCardsFolder = "自定义/待办";
     a.lexVoiceBasesFolder = "自定义/视图";
     a.diagnosticsLogFolder = "自定义/诊断日志";
@@ -163,7 +161,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.vocabularyFile).toBe("自定义/词汇表.md");
     expect(b.peopleDirectoryFolder).toBe("自定义/人员");
     expect(b.peopleBaseFile).toBe("自定义/视图/人员库.base");
-    expect(b.learningCardsFolder).toBe("自定义/学习卡片");
     expect(b.todoCardsFolder).toBe("自定义/待办");
     expect(b.lexVoiceBasesFolder).toBe("自定义/视图");
     expect(b.diagnosticsLogFolder).toBe("自定义/诊断日志");
