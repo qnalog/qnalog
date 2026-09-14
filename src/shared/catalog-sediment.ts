@@ -23,17 +23,6 @@ export const SEDIMENT_GROUP_CONFIG = {
     primaryButtonText: (n) => `加入待办（${n}）`,
     secondaryButtonText: "忽略未选",
   },
-  card: {
-    label: "学习",
-    unit: "张",
-    dest: "卡片库",
-    model: "checkbox",
-    decisionModel: "checkbox",
-    defaultAllSelected: true,
-    lead: "知",
-    primaryButtonText: (n) => `加入卡片库（${n}）`,
-    secondaryButtonText: "忽略未选",
-  },
   hotword: {
     label: "热词",
     unit: "个",
@@ -47,7 +36,7 @@ export const SEDIMENT_GROUP_CONFIG = {
   },
 };
 
-export const SEDIMENT_GROUP_ORDER = ["person", "todo", "card", "hotword"];
+export const SEDIMENT_GROUP_ORDER = ["person", "todo", "hotword"];
 
 export const VOCABULARY_SECTIONS = [
   { key: "people", title: "人名", desc: "仅放你明确愿意作为 ASR 提示发送的姓名或称呼；敏感人员关系请放到人员资料。", placeholder: "例如：某负责人、某专家、某候选人" },

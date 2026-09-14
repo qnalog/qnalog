@@ -31,8 +31,9 @@ import type {
 } from "./types";
 
 // 5：移除招聘评估 / 招聘需求挖掘 / 晋升评审三个场景及其设置（recruiting / promotionReview 分组不再读回）。
+// 6：移除学习卡片（概念墙 / 学习卡片墙及其提取、写入与设置键 learningCardsFolder）。
 // 用户已有的笔记文件不在此列处理——迁移只重写 data.json，不触碰知识库内容。
-export const SETTINGS_SCHEMA_VERSION = 5;
+export const SETTINGS_SCHEMA_VERSION = 6;
 export const LEGACY_VOCABULARY_FILE = "lexvoice 词汇表.md";
 
 type UnknownRecord = Record<string, unknown>;
@@ -335,7 +336,6 @@ export function normalizeLexVoiceSettings(savedData: unknown): PluginSettings {
   }
   s.peopleDirectoryFolder = obsidian.normalizePath(firstNonBlankString(defaults.peopleDirectoryFolder, vocabulary.peopleFolder, raw.peopleDirectoryFolder));
   s.peopleBaseFile = obsidian.normalizePath(firstNonBlankString(defaults.peopleBaseFile, vocabulary.peopleBasePath, raw.peopleBaseFile));
-  s.learningCardsFolder = obsidian.normalizePath(firstNonBlankString(defaults.learningCardsFolder, vocabulary.learningCardsFolder, raw.learningCardsFolder));
   s.todoCardsFolder = obsidian.normalizePath(firstNonBlankString(defaults.todoCardsFolder, vocabulary.todoCardsFolder, raw.todoCardsFolder));
   s.peopleContextMode = normalizePeopleContextMode(firstDefined(vocabulary.peopleContextMode, raw.peopleContextMode, defaults.peopleContextMode));
   s.peopleHotwordsConsentAt = firstString(defaults.peopleHotwordsConsentAt, vocabulary.peopleHotwordsConsentAt, raw.peopleHotwordsConsentAt);
@@ -520,7 +520,6 @@ export function serializeLexVoiceSettings(s: PluginSettings): PersistedPluginSet
       notePath: s.vocabularyFile || "",
       peopleFolder: s.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder,
       peopleBasePath: s.peopleBaseFile || DEFAULT_SETTINGS.peopleBaseFile,
-      learningCardsFolder: s.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder,
       todoCardsFolder: s.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder,
       peopleContextMode: normalizePeopleContextMode(s.peopleContextMode),
       peopleHotwordsConsentAt: s.peopleHotwordsConsentAt || "",

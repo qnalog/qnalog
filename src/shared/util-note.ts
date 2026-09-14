@@ -38,10 +38,9 @@ export function upsertFrontmatterInMarkdown(markdown, frontmatter) {
   return "---\n" + yaml + "---\n\n" + text;
 }
 
-export const LEARNING_CARD_TAG = "lexvoice/learning-card";
-
-export const CONCEPT_CARD_TAG = "lexvoice/concept";
-
+// 学习卡片已移除，但 `lexvoice/learning-card` 与 `lexvoice/concept` 这两个标签值
+// 写在用户已有的卡片文件里，属 §3 保护的数据层字面量：不得改动其取值，
+// 也不得把它们重新用于新的对象类型。TODO_CARD_TAG 仍在使用。
 export const TODO_CARD_TAG = "lexvoice/todo-card";
 
 export async function upsertLexVoiceObjectNote(plugin, folder, name, content) {

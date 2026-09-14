@@ -10,7 +10,7 @@ import { extractJsonObject } from '../shared/util-json';
 import { canOmitServiceApiKey } from '../shared/util-llm-endpoint';
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
-import { LEARNING_CARD_TAG, CONCEPT_CARD_TAG, TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertLexVoiceObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
+import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertLexVoiceObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
 
 export const SEDIMENT_PREEXTRACT_BEGIN = "LEXVOICE_SEDIMENT_BEGIN";
 
@@ -35,11 +35,6 @@ export function getSedimentTodoId(item) {
   return makeSedimentStableId("todo", [item && (item.task || item.title), item && item.owner, item && item.due, item && item.sourceTime, item && item.note]);
 }
 
-export function getSedimentCardId(item) {
-  if (item && item.id) return String(item.id);
-  return makeSedimentStableId("card", [item && item.title, item && item.type, item && item.sourceTime, item && (item.summary || item.reusableLine)]);
-}
-
 export function getSedimentHotwordId(sectionKey, term) {
   return makeSedimentStableId("hotword", [sectionKey, term]);
 }
@@ -62,10 +57,6 @@ export function withSedimentCandidateIds(objects, sourcePath, sourceBasename) {
     todos: (normalized.todos || []).map(item => {
       const next = Object.assign({}, item);
       return Object.assign(next, { id: getSedimentTodoId(next) });
-    }),
-    learningCards: (normalized.learningCards || []).map(item => {
-      const next = Object.assign({}, item);
-      return Object.assign(next, { id: getSedimentCardId(next) });
     }),
     hotwords: normalized.hotwords || createVocabularyGroups(),
   };
@@ -132,7 +123,6 @@ export function normalizeSedimentExtractionModel(model) {
   const out = {
     people: normalizePeopleSuggestionsModel(raw.people || raw.persons || raw.peopleSuggestions || []),
     hotwords: createVocabularyGroups(),
-    learningCards: [],
     todos: [],
   };
   const hot = raw.hotwords || raw.vocabulary || raw.asrHotwords || {};
@@ -141,23 +131,6 @@ export function normalizeSedimentExtractionModel(model) {
   }
   if (!out.hotwords.terms.length && Array.isArray(raw.terms)) {
     out.hotwords.terms = normalizeSedimentTextList(raw.terms, 80).slice(0, 18);
-  }
-  const cards = Array.isArray(raw.learningCards) ? raw.learningCards : Array.isArray(raw.cards) ? raw.cards : Array.isArray(raw.concepts) ? raw.concepts : [];
-  for (const item of cards.slice(0, 12)) {
-    const title = sanitizeSedimentText(item && (item.title || item.name || item.concept || item.question), 80);
-    const summary = sanitizeSedimentText(item && (item.summary || item.description || item.answer), 600);
-    if (!title || !summary) continue;
-    const type = sanitizeSedimentText(item && (item.type || item.category || "概念"), 20) || "概念";
-    out.learningCards.push({
-      title,
-      type,
-      summary,
-      // 观点类卡片：标出是谁的观点（holder）；其它类型一般为空
-      holder: sanitizeSedimentText(item && (item.holder || item.speaker || item.owner || item.person || item.by), 40),
-      sourceTime: sanitizeSedimentText(item && (item.sourceTime || item.time || item.timestamp), 20),
-      tags: normalizeSedimentTextList(item && (item.tags || item.keywords), 24).slice(0, 8),
-      reusableLine: sanitizeSedimentText(item && (item.reusableLine || item.quote || item.sentence), 140),
-    });
   }
   const todos = Array.isArray(raw.todos) ? raw.todos : Array.isArray(raw.tasks) ? raw.tasks : [];
   for (const item of todos.slice(0, 12)) {
@@ -215,17 +188,6 @@ export function buildSedimentPreExtractionInstruction() {
       "sourceTime": "如 12:34；没有则空",
       "note": "依据或补充说明",
       "subtasks": ["可勾选的拆分子动作；按执行顺序；至少 2 条，除非任务本身是原子动作"]
-    }
-  ],
-  "learningCards": [
-    {
-      "type": "概念/机制/案例/QA/追问/观点",
-      "title": "卡片标题",
-      "summary": "可独立复用的解释或摘要",
-      "holder": "仅 type=观点 时填：用纪要里真实出现的姓名/称呼标出该观点是谁主张的（占位示例仅说明格式：张三/李四，切勿照抄）；无法判断是谁说的、或非观点类，一律留空",
-      "sourceTime": "如 12:34；没有则空",
-      "tags": ["标签"],
-      "reusableLine": "可复用句；没有则空"
     }
   ],
   "hotwords": {
@@ -337,12 +299,10 @@ export function buildSedimentExtractionPrompt(fileName, markdown) {
 
 总规则：
 - 只根据纪要原文提取，不要编造。
-- 同一篇纪要只做一次综合提炼：人员建议、待办、学习卡片、ASR 热词都在一个 JSON 里输出。
+- 同一篇纪要只做一次综合提炼：人员建议、待办、ASR 热词都在一个 JSON 里输出。
 - 没有明确依据的内容不要输出；闲聊、寒暄、无意义口头禅不要沉淀。
 - 人员建议只输出适合维护为人员资料的姓名、称呼、角色、组织或职责线索。
 - 待办只输出明确可执行事项。没有动作、责任或后续处理含义的句子不要写成待办。
-- 学习卡片只输出可复用的概念、机制、案例、QA、追问或观点；不要把普通段落摘要拆成卡片。
-- 当卡片 type 为「观点」时，必须在 holder 字段标出这是谁的观点（用纪要里出现的姓名或称呼）；观点是带有立场/主张的判断，归属到人才有复用价值。无法判断是谁说的就不要标成观点，可改成概念或机制。
 - ASR 热词只输出后续录音里可能复现、且容易转写错的专名、术语或标准写法。
 - 不要输出 Markdown、代码块或解释文字，只输出合法 JSON。
 
@@ -376,17 +336,6 @@ JSON 结构：
       "subtasks": ["可勾选的拆分子动作；按执行顺序；至少 2 条，除非任务本身是原子动作"]
     }
   ],
-  "learningCards": [
-    {
-      "type": "概念/机制/案例/QA/追问/观点",
-      "title": "卡片标题",
-      "summary": "可独立复用的解释或摘要",
-      "holder": "仅 type=观点 时填：用纪要里真实出现的姓名/称呼标出该观点是谁主张的（占位示例仅说明格式：张三/李四，切勿照抄）；无法判断是谁说的、或非观点类，一律留空",
-      "sourceTime": "如 12:34；没有则空",
-      "tags": ["标签"],
-      "reusableLine": "可复用句；没有则空"
-    }
-  ],
   "hotwords": {
     "people": ["人名或称呼"],
     "brands": ["品牌/机构"],
@@ -404,7 +353,7 @@ ${source}`;
 export async function generateSedimentObjects(plugin, file, markdown) {
   if (!plugin.settings.llmApiKey && !canOmitServiceApiKey(plugin.settings.llmEndpoint)) throw new Error("请先在 API 页配置大模型服务");
   const sys = "你是 QnALog 的纪要沉淀助手。你只根据当前纪要提炼结构化信息对象，输出合法 JSON，不编造，不泄露或要求任何配置。";
-  // 沉淀输出是结构化 JSON，体量大、最易被输出上限截断（见真实产物里 learningCards 被切断）。
+  // 沉淀输出是结构化 JSON，体量大、最易被输出上限截断（真实产物里这份 JSON 曾在中途被切断）。
   // 走续写拼接：截断后让模型从断点续写 JSON，再整体解析，避免沉淀对象不完整。
   const { text: raw } = await callLlmWithContinuation(plugin, sys, buildSedimentExtractionPrompt(file && file.basename ? file.basename : "当前笔记", markdown), { timeoutMs: 90000 }, { maxContinuations: 3 });
   const objects = normalizeSedimentExtractionModel(extractJsonObject(raw));
@@ -417,38 +366,6 @@ export async function generateSedimentObjects(plugin, file, markdown) {
       sourceBasename: file && file.basename ? file.basename : "",
     }));
   return objects;
-}
-
-export function formatSedimentLearningCardMarkdown(sourceFile, card) {
-  const sourceLink = makeFileWikiLink(sourceFile);
-  const holder = sanitizeSedimentText(card && card.holder, 40);
-  const fm = {
-    type: "lexvoice-learning-card",
-    "卡片类型": card.type || "概念",
-    "标题": card.title,
-    "摘要": card.summary,
-    // 观点持有人：观点类卡片标出是谁的观点
-    "观点持有人": holder || "",
-    "来源笔记": sourceLink,
-    "来源时间": card.sourceTime || "",
-    tags: buildLexVoiceObjectTags(LEARNING_CARD_TAG, [CONCEPT_CARD_TAG, ...(card.tags || [])]),
-  };
-  const body = [
-    `# ${card.title}`,
-    "",
-    // 观点类：标题下方一行注明观点持有人
-    holder ? `> [!quote] 观点 · ${holder}` : "",
-    holder ? "" : null,
-    `> [!summary] 摘要`,
-    `> ${card.summary}`,
-    "",
-    card.reusableLine ? `## 可复用句\n\n${card.reusableLine}\n` : "",
-    "## 来源",
-    "",
-    sourceLink ? `- ${sourceLink}${card.sourceTime ? ` · ${card.sourceTime}` : ""}` : "",
-    "",
-  ].filter(v => v !== null && v !== "").join("\n");
-  return upsertFrontmatterInMarkdown(body, fm);
 }
 
 export function formatSedimentTodoCardMarkdown(sourceFile, todo) {
@@ -494,15 +411,8 @@ export function formatSedimentTodoCardMarkdown(sourceFile, todo) {
 }
 
 export async function writeSedimentObjectCards(plugin, sourceFile, objects) {
-  const result = { learning: 0, todos: 0, entries: [] };
+  const result = { todos: 0, entries: [] };
   const baseStem = sanitizeFilename(sourceFile && sourceFile.basename || "QnALog");
-  const learningFolder = obsidian.normalizePath(plugin.settings.learningCardsFolder || DEFAULT_SETTINGS.learningCardsFolder);
-  for (const card of objects.learningCards || []) {
-    const name = `${baseStem}-${sanitizeFilename(card.title) || "学习卡片"}`;
-    const entry = await upsertLexVoiceObjectNote(plugin, learningFolder, name, formatSedimentLearningCardMarkdown(sourceFile, card));
-    result.entries.push(Object.assign({ kind: "card" }, entry));
-    result.learning++;
-  }
   // 待办：优先写入当日日记的"## 待办"段（Tasks / Dataview 双兼容），不再每条建新 MD。
   // 兜底：若 Daily Notes 插件未启用，回退到旧的卡片文件方式。
   const todos = objects.todos || [];

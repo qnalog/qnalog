@@ -250,7 +250,6 @@ export class MigrationService {
     let changed = false;
     const migrations = [
       ["peopleDirectoryFolder", LEGACY_DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder, DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder],
-      ["learningCardsFolder", LEGACY_DEFAULT_LIBRARY_PATHS.learningCardsFolder, DEFAULT_LIBRARY_PATHS.learningCardsFolder],
       ["todoCardsFolder", LEGACY_DEFAULT_LIBRARY_PATHS.todoCardsFolder, DEFAULT_LIBRARY_PATHS.todoCardsFolder],
       ["lexVoiceBasesFolder", LEGACY_DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder, DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder],
       ["peopleBaseFile", LEGACY_DEFAULT_LIBRARY_PATHS.peopleBaseFile, DEFAULT_LIBRARY_PATHS.peopleBaseFile],

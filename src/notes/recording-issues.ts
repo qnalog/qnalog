@@ -207,14 +207,13 @@ export function classifyRecordingIssue(error) {
 // 返回 { text, finishReason }——给最终纪要 merge 用，需要据 finishReason 检测截断并告警。
 
 export function mergeBriefingSedimentObjects(parts) {
-  const merged = { people: [], hotwords: {}, learningCards: [], todos: [] };
+  const merged = { people: [], hotwords: {}, todos: [] };
   let found = false;
   for (const part of (parts || [])) {
     if (!part || !part.sedimentObjects) continue;
     found = true;
     const normalized = normalizeSedimentExtractionModel(part.sedimentObjects);
     merged.people.push(...(normalized.people || []));
-    merged.learningCards.push(...(normalized.learningCards || []));
     merged.todos.push(...(normalized.todos || []));
     for (const [key, values] of Object.entries(normalized.hotwords || {})) {
       if (!Array.isArray(merged.hotwords[key])) merged.hotwords[key] = [];

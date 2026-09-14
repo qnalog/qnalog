@@ -128,7 +128,6 @@ export interface PluginSettings {
   vocabularyFile: string;
   peopleDirectoryFolder: string;
   peopleBaseFile: string;
-  learningCardsFolder: string;
   todoCardsFolder: string;
   sedimentAutoExtract: boolean;
   lexVoiceBasesFolder: string;

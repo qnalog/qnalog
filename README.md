@@ -45,14 +45,13 @@ If a request is interrupted or a model reaches its output limit, completed work 
 The processing panel separates transcription, AI organization, and Markdown writing. It shows the active stage, recent activity, failures, and retry or cancel actions. Failed transcription and failed AI organization remain distinct so you can resume from the step that actually failed.
 
 ### Sediment workflow
-After each note, AI splits the content into four candidate groups you review in order — keep / merge / ignore:
+After each note, AI splits the content into three candidate groups you review in order — keep / merge / ignore:
 - **People** — adjudicated one by one
 - **Todos** — selected by default; edit owner, due date, sub-tasks
-- **Learning** — concepts, mechanisms, cases, opinions, Q&A
 - **Hotwords** — names, organizations, brands, terms, to improve later ASR accuracy
 
 ### Object library
-QnALog turns reusable meeting content into standalone Obsidian objects — people profiles, todo cards, learning cards, ASR hotwords, and concept / todo / learning-card walls. Everything lives in your own vault; the next time the same person comes up, it links to the existing profile.
+QnALog turns reusable meeting content into standalone Obsidian objects — people profiles, ASR hotwords, and a wall of todos assembled from the notes you confirmed. Everything lives in your own vault; the next time the same person comes up, it links to the existing profile.
 
 <p align="center">
   <img width="220" alt="QnALog object" src="docs/images/object-library.webp" />
@@ -87,7 +86,7 @@ The sidebar can organize recent notes by folder or by time. Folder groups can be
 4. Watch the live outline; add in-meeting notes if needed.
 5. Stop recording and follow transcription and AI organization in **Task progress**.
 6. Ask follow-up questions from **Ask this note**, or retry only the failed stage if processing was interrupted.
-7. Open **Sediment** and review people, todos, learning cards, and hotwords.
+7. Open **Sediment** and review people, todos, and hotwords.
 8. If you need to share, generate an HTML report, a PDF report, or an email draft.
 
 <p align="center">
@@ -102,7 +101,6 @@ Default folders (all configurable in settings):
 | Transcribed notes | `LexVoice/转写纪要` |
 | Meeting materials | `LexVoice/会议资料` |
 | People | `LexVoice/人员` |
-| Learning cards | `LexVoice/学习卡片` |
 | Todo cards | `LexVoice/待办卡片` |
 | Views | `LexVoice/视图` |
 | HTML reports | `LexVoice/HTML报告` |

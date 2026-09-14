@@ -6,7 +6,7 @@ import * as obsidian from "obsidian";
 import type { LexVoiceSettings } from "../shared/types";
 import { PeopleDirectoryService } from "../people/people-directory-service";
 import { LV_BASE_DEFINITIONS } from "../views/base-definitions";
-import { CONCEPT_WALL_FILE, LEARNING_WALL_FILE, OBJECT_WALL_FILE, TODO_WALL_FILE, formatConceptWallMarkdown, formatLearningWallMarkdown, formatObjectWallMarkdown, formatTodoWallMarkdown, getLexVoiceBasesFolder, getLexVoiceWallPath, insertGeneratedWallMarker } from "../views/wall-markdown";
+import { TODO_WALL_FILE, formatTodoWallMarkdown, getLexVoiceBasesFolder, getLexVoiceWallPath, insertGeneratedWallMarker } from "../views/wall-markdown";
 import { ensureVaultFolder } from "../shared/util-vault";
 
 /** LibraryViewService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -74,19 +74,8 @@ export class LibraryViewService {
     return file;
   }
 
-  async openLearningWall(scope = "learning") {
-    const isConcept = scope === "concept";
-    const fileName = isConcept ? CONCEPT_WALL_FILE : LEARNING_WALL_FILE;
-    const content = isConcept ? formatConceptWallMarkdown(this.host.settings) : formatLearningWallMarkdown(this.host.settings);
-    return await this.openGeneratedMarkdown(getLexVoiceWallPath(this.host.settings, fileName), content, { overwrite: true });
-  }
-
   async openTodoWall() {
     return await this.openGeneratedMarkdown(getLexVoiceWallPath(this.host.settings, TODO_WALL_FILE), formatTodoWallMarkdown(this.host.settings), { overwrite: true });
-  }
-
-  async openObjectWall() {
-    return await this.openGeneratedMarkdown(getLexVoiceWallPath(this.host.settings, OBJECT_WALL_FILE), formatObjectWallMarkdown(this.host.settings), { overwrite: true });
   }
 
   async openPeopleBase() {

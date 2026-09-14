@@ -4095,12 +4095,6 @@ body .lexvoice-menu .menu-item.selected .menu-item-icon {
   padding-bottom: 8px;
 }
 
-.lexvoice-sediment-list-item.is-card {
-  min-height: 56px;
-  padding-top: 8px;
-  padding-bottom: 8px;
-}
-
 .lexvoice-sediment-list-item.is-todo {
   min-height: 60px;
   padding-top: 10px;
@@ -4161,72 +4155,6 @@ body .lexvoice-menu .menu-item.selected .menu-item-icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 学习卡片标题行：标题在左、带主题色底的「图标+文字」类型标签在同一行右上角。
-   顶部对齐，长标题换行也不挤标签。 */
-.lexvoice-sediment-item-title-row.is-card {
-  align-items: flex-start;
-  gap: 8px;
-}
-.lexvoice-sediment-item-title-row.is-card .lexvoice-sediment-item-title {
-  flex: 1 1 auto;
-}
-.lexvoice-sediment-item-title-row.is-card .lexvoice-sediment-type-pill {
-  margin-left: auto;
-  flex: 0 0 auto;
-  margin-top: 1px;
-  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-  border-color: color-mix(in srgb, var(--interactive-accent) 26%, transparent);
-  color: var(--text-accent);
-}
-.lexvoice-sediment-item-title-row.is-card .lexvoice-sediment-type-pill .lexvoice-sediment-type-icon {
-  color: var(--text-accent);
-}
-
-/* 观点类卡片：标题下方的「谁的观点」一行，主题色、小字、带引号图标 */
-.lexvoice-sediment-card-holder {
-  margin-top: 5px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-accent);
-  font-weight: 560;
-}
-.lexvoice-sediment-card-holder-icon {
-  display: inline-flex;
-  width: 12px;
-  height: 12px;
-  opacity: 0.85;
-}
-.lexvoice-sediment-card-holder-icon svg {
-  width: 12px;
-  height: 12px;
-}
-
-/* 学习卡片：标题允许换行，不再截断 */
-.lexvoice-sediment-item-title.is-card {
-  white-space: normal;
-  text-overflow: clip;
-  overflow: visible;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.4;
-}
-
-/* 学习卡片：摘要允许 2 行，超出再省略；与标题留出呼吸间距 */
-.lexvoice-sediment-item-summary.is-card {
-  margin-top: 6px;
-  white-space: normal;
-  text-overflow: clip;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
 }
 
 .lexvoice-sediment-type-pill {

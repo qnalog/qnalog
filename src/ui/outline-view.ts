@@ -24,7 +24,7 @@ import { getSegmentsDurationMs, parseElapsedMsToken } from "../shared/util-text"
 
 import { generatePeopleDirectorySuggestions, getPeopleSuggestionCacheKey, loadPeopleDirectory, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores, normalizePersonLookupText, peopleSuggestionIgnoreRecordToSuggestion, peopleSuggestionRecordToSuggestion, splitPersonFieldValue } from "../people";
 
-import { generateSedimentObjects, getSedimentCardId, getSedimentHotwordId, getSedimentPersonId, getSedimentTodoId, normalizeSedimentExtractionModel, normalizeSedimentTodoSubtasks, removeSedimentGroupDone, sanitizeSedimentText, upsertSedimentPreExtractionBlockInFile, withSedimentCandidateIds, writeSedimentObjectCards } from "../sediment";
+import { generateSedimentObjects, getSedimentHotwordId, getSedimentPersonId, getSedimentTodoId, normalizeSedimentExtractionModel, normalizeSedimentTodoSubtasks, removeSedimentGroupDone, sanitizeSedimentText, upsertSedimentPreExtractionBlockInFile, withSedimentCandidateIds, writeSedimentObjectCards } from "../sediment";
 
 import { countVocabularyGroups, createVocabularyGroups, formatVocabularyMarkdown, loadVocabularyGroups, mergeVocabularyGroups } from "../vocabulary";
 
@@ -1011,7 +1011,6 @@ export class OutlineView extends obsidian.ItemView {
     this.setSedimentCandidateBucket(file, {
       people: normalized.people || [],
       todos: normalized.todos || [],
-      cards: normalized.learningCards || [],
       hotwords: normalized.hotwords || createVocabularyGroups(),
       scannedAt: new Date(file.stat && file.stat.mtime ? file.stat.mtime : Date.now()).toISOString(),
       source: "pre-extracted",
@@ -1047,7 +1046,6 @@ export class OutlineView extends obsidian.ItemView {
     const pendingCounts = {
       person: currentPeople.length,
       todo: (bucket.todos || []).length,
-      card: (bucket.cards || []).length,
       hotword: this.countSedimentHotwordCandidates(bucket.hotwords),
     };
     const initialCounts = bucket.initialCounts && typeof bucket.initialCounts === "object" ? bucket.initialCounts : {};
@@ -1114,7 +1112,6 @@ export class OutlineView extends obsidian.ItemView {
     return {
       person: (normalized.people || []).length,
       todo: (normalized.todos || []).length,
-      card: (normalized.learningCards || []).length,
       hotword: this.countSedimentHotwordCandidates(normalized.hotwords),
     };
   }
@@ -1147,7 +1144,6 @@ export class OutlineView extends obsidian.ItemView {
         bucket.scannedAt || "",
         (bucket.people || []).length,
         (bucket.todos || []).length,
-        (bucket.cards || []).length,
         this.countSedimentHotwordCandidates(bucket.hotwords),
         JSON.stringify(bucket.initialCounts || {}),
         (bucket.doneGroups || []).join(","),
@@ -1197,13 +1193,12 @@ export class OutlineView extends obsidian.ItemView {
     const bucket = state && state.bucket || {};
     if (groupKey === "person") return state && state.currentPeople || [];
     if (groupKey === "todo") return bucket.todos || [];
-    if (groupKey === "card") return bucket.cards || [];
     if (groupKey === "hotword") return this.getSedimentHotwordItems(bucket.hotwords);
     return [];
   }
 
   getSedimentDisplayItems(state, groupKey) {
-    const iconName = groupKey === "todo" ? "check-square" : (groupKey === "card" ? "library" : (groupKey === "hotword" ? "badge-check" : "user-round"));
+    const iconName = groupKey === "todo" ? "check-square" : (groupKey === "hotword" ? "badge-check" : "user-round");
     if (groupKey === "todo") {
       return (this.getSedimentGroupRawItems(state, groupKey) || []).map(item => ({
         id: getSedimentTodoId(item),
@@ -1213,16 +1208,6 @@ export class OutlineView extends obsidian.ItemView {
         // sub 仅在没有详细字段渲染时作为兜底；owner/due 空时不污染显示
         sub: [item.owner, item.due].filter(Boolean).join(" · "),
         meta: "",
-      }));
-    }
-    if (groupKey === "card") {
-      return (this.getSedimentGroupRawItems(state, groupKey) || []).map(item => ({
-        id: getSedimentCardId(item),
-        raw: item,
-        iconName,
-        title: item.title || "未命名卡片",
-        sub: item.type || "卡片",
-        meta: item.summary || item.reusableLine || "",
       }));
     }
     if (groupKey === "hotword") {
@@ -1407,8 +1392,6 @@ export class OutlineView extends obsidian.ItemView {
       this.renderSedimentPeople(body, file, state);
     } else if (groupKey === "todo") {
       this.renderSedimentObjectList(body, file, state, "todo");
-    } else if (groupKey === "card") {
-      this.renderSedimentObjectList(body, file, state, "card");
     } else {
       this.renderSedimentObjectList(body, file, state, "hotword");
     }
@@ -1705,24 +1688,6 @@ export class OutlineView extends obsidian.ItemView {
       this.renderSedimentTypePill(top, item.sub || "热词", this.getSedimentTypeIcon(groupKey, item.sub, item.sectionKey));
       return;
     }
-    if (groupKey === "card") {
-      const raw = item.raw || {};
-      // 学习卡片：标题在左、带主题色底的「图标+文字」类型标签在同一行右上角；
-      // 标题占满宽度自动换行，标签 flex 不缩、顶部对齐，长标题也不挤标签。
-      const titleRow = content.createDiv({ cls: "lexvoice-sediment-item-title-row is-card" });
-      titleRow.createDiv({ cls: "lexvoice-sediment-item-title is-card", text: item.title || "" });
-      this.renderSedimentTypePill(titleRow, item.sub || "卡片", this.getSedimentTypeIcon(groupKey, item.sub, raw.type));
-      // 观点类卡片：标题下方标出是谁的观点
-      const holder = sanitizeSedimentText(raw.holder, 40);
-      if (holder) {
-        const holderEl = content.createDiv({ cls: "lexvoice-sediment-card-holder" });
-        try { obsidian.setIcon(holderEl.createSpan({ cls: "lexvoice-sediment-card-holder-icon" }), "quote"); } catch { /* intentionally empty */ }
-        holderEl.createSpan({ text: holder });
-      }
-      const summary = raw.summary || raw.reusableLine || item.meta || "";
-      if (summary) content.createDiv({ cls: "lexvoice-sediment-item-summary is-card", text: summary });
-      return;
-    }
     if (groupKey === "todo") {
       const raw = item.raw || {};
       const todoId = getSedimentTodoId(raw);
@@ -1771,7 +1736,6 @@ export class OutlineView extends obsidian.ItemView {
     if (/机制|mechanism|settings/i.test(text)) return "settings-2";
     if (/案例|case/i.test(text)) return "flask";
     if (/问答|qa|question/i.test(text)) return "message-question";
-    if (groupKey === "card") return "bookmark";
     return "tag";
   }
 
@@ -3072,7 +3036,6 @@ export class OutlineView extends obsidian.ItemView {
     return {
       people: bucket.people || [],
       todos: bucket.todos || [],
-      learningCards: bucket.cards || [],
       hotwords: bucket.hotwords || createVocabularyGroups(),
     };
   }
@@ -3110,7 +3073,7 @@ export class OutlineView extends obsidian.ItemView {
       const markdown = await this.app.vault.cachedRead(file);
       this.plugin.tasks.patchTaskActivity(taskId, {
         stage: "extracting",
-        stageLabel: "AI 正在识别人员、待办、学习卡片和热词",
+        stageLabel: "AI 正在识别人员、待办和热词",
         detail: "服务返回前会持续保留本任务状态",
         progress: 25,
         deadlineAt: Date.now() + 180_000,
@@ -3127,8 +3090,7 @@ export class OutlineView extends obsidian.ItemView {
       this.setSedimentCandidateBucket(file, {
         people: normalized.people || [],
         todos: normalized.todos || [],
-        cards: normalized.learningCards || [],
-        hotwords: normalized.hotwords || createVocabularyGroups(),
+          hotwords: normalized.hotwords || createVocabularyGroups(),
         scannedAt: new Date().toISOString(),
         initialCounts: this.getSedimentInitialCountsFromObjects(normalized),
         doneGroups: [],
@@ -3141,7 +3103,7 @@ export class OutlineView extends obsidian.ItemView {
       this.plugin.tasks.patchTaskActivity(taskId, {
         stage: "persisting",
         stageLabel: "保存候选对象",
-        detail: `人员 ${(objects.people || []).length} · 待办 ${(objects.todos || []).length} · 学习 ${(objects.learningCards || []).length} · 热词 ${countVocabularyGroups(objects.hotwords)}`,
+        detail: `人员 ${(objects.people || []).length} · 待办 ${(objects.todos || []).length} · 热词 ${countVocabularyGroups(objects.hotwords)}`,
         progress: 85,
         deadlineAt: 0,
       });
@@ -3152,13 +3114,13 @@ export class OutlineView extends obsidian.ItemView {
       this.sedimentGroup = firstPending ? firstPending.key : "person";
       this.sedimentSwitcherOpen = false;
       this.render();
-      this.showSedimentToast(`扫描完成：人员 ${(objects.people || []).length}，待办 ${(objects.todos || []).length}，学习 ${(objects.learningCards || []).length}，热词 ${countVocabularyGroups(objects.hotwords)}`, {
+      this.showSedimentToast(`扫描完成：人员 ${(objects.people || []).length}，待办 ${(objects.todos || []).length}，热词 ${countVocabularyGroups(objects.hotwords)}`, {
         icon: "check",
       });
       this.plugin.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: "对象扫描完成",
-        detail: `人员 ${(objects.people || []).length} · 待办 ${(objects.todos || []).length} · 学习 ${(objects.learningCards || []).length} · 热词 ${countVocabularyGroups(objects.hotwords)}`,
+        detail: `人员 ${(objects.people || []).length} · 待办 ${(objects.todos || []).length} · 热词 ${countVocabularyGroups(objects.hotwords)}`,
         progress: 100,
         actions: [
           { id: "open-task-note", label: "打开纪要", primary: true },
@@ -3248,7 +3210,6 @@ export class OutlineView extends obsidian.ItemView {
     const restore = {};
     if (groupKey === "person") restore.people = JSON.parse(JSON.stringify(state.currentPeople || []));
     else if (groupKey === "todo") restore.todos = JSON.parse(JSON.stringify((state.bucket && state.bucket.todos) || []));
-    else if (groupKey === "card") restore.cards = JSON.parse(JSON.stringify((state.bucket && state.bucket.cards) || []));
     else if (groupKey === "hotword") restore.hotwords = JSON.parse(JSON.stringify((state.bucket && state.bucket.hotwords) || createVocabularyGroups()));
     return {
       groupKey,
@@ -3390,21 +3351,12 @@ export class OutlineView extends obsidian.ItemView {
       if (groupKey === "todo") {
         const count = selectedItems.length;
         if (!count) return;
-        const result = await writeSedimentObjectCards(this.plugin, file, { todos: selectedItems.map(item => item.raw), learningCards: [] });
+        const result = await writeSedimentObjectCards(this.plugin, file, { todos: selectedItems.map(item => item.raw) });
         undo.entries = result.entries || [];
         this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected, "已加入"));
         this.setSedimentCandidateBucket(file, { todos: [] });
         completed = this.markSedimentGroupDone(file, groupKey, displayItems.length || count);
         successText = `已加入待办：${count} 条`;
-      } else if (groupKey === "card") {
-        const count = selectedItems.length;
-        if (!count) return;
-        const result = await writeSedimentObjectCards(this.plugin, file, { todos: [], learningCards: selectedItems.map(item => item.raw) });
-        undo.entries = result.entries || [];
-        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected, "已加入"));
-        this.setSedimentCandidateBucket(file, { cards: [] });
-        completed = this.markSedimentGroupDone(file, groupKey, displayItems.length || count);
-        successText = `已加入卡片库：${count} 张`;
       } else if (groupKey === "hotword") {
         const hotwordCount = selectedItems.length;
         if (!hotwordCount) return;
@@ -3465,7 +3417,6 @@ export class OutlineView extends obsidian.ItemView {
     const count = displayItems.length;
     this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, new Set(), "已加入"));
     if (groupKey === "todo") this.setSedimentCandidateBucket(file, { todos: [] });
-    else if (groupKey === "card") this.setSedimentCandidateBucket(file, { cards: [] });
     // 忽略热词组时连改名映射一起清：过期映射可能在下次提交时错误回写正文
     else if (groupKey === "hotword") this.setSedimentCandidateBucket(file, { hotwords: createVocabularyGroups(), hotwordTermRenames: {} });
     else return;
@@ -3494,13 +3445,11 @@ export class OutlineView extends obsidian.ItemView {
       // 有完整的 restore 数据：把候选恢复回来
       if (groupKey === "person") patch.people = review.restore.people || [];
       else if (groupKey === "todo") patch.todos = review.restore.todos || [];
-      else if (groupKey === "card") patch.cards = review.restore.cards || [];
       else if (groupKey === "hotword") { patch.hotwords = review.restore.hotwords || createVocabularyGroups(); patch.hotwordTermRenames = {}; }
     } else {
       // 旧版本的 done 状态没存 restore 快照 —— 兜底：清空本组候选并触发重新扫描
       if (groupKey === "person") patch.people = [];
       else if (groupKey === "todo") patch.todos = [];
-      else if (groupKey === "card") patch.cards = [];
       else if (groupKey === "hotword") { patch.hotwords = createVocabularyGroups(); patch.hotwordTermRenames = {}; }
     }
     this.setSedimentCandidateBucket(file, patch);
