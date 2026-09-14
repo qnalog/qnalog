@@ -26,6 +26,7 @@ import {
 import { analyzeRecordedAudioChannels } from '../asr/channel-transcription';
 import { isImportCapableTranscribeProvider } from '../asr/diarization';
 import { fetchImportTranscribeModels, testImportTranscribeProvider } from '../asr/long-audio-transcription';
+import { ensureVaultFolder } from "../shared/util-vault";
 
 function pickChannelProbeMime() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
@@ -1995,7 +1996,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         let file = this.plugin.app.vault.getAbstractFileByPath(norm);
         if (!(file instanceof obsidian.TFile)) {
           const folderPath = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-          if (folderPath) await this.plugin.ensureFolder(folderPath);
+          if (folderPath) await ensureVaultFolder(this.plugin.app, folderPath);
           file = await this.plugin.app.vault.create(norm, formatVocabularyMarkdown([], this.plugin.settings.industryProfile));
           new obsidian.Notice(`已创建：${norm}`);
         }

@@ -14,6 +14,7 @@ import type { LexVoiceSettings, RecordingSession } from "../shared/types";
 import type { PluginBuildInfo } from "../shared/build-info";
 import type { TaskQueue } from "../queue/task-queue";
 import type { RecorderService } from "../audio/recorder-service";
+import { ensureVaultFolder } from "../shared/util-vault";
 
 /** DiagnosticsService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface DiagnosticsHost {
@@ -64,7 +65,7 @@ export class DiagnosticsService {
     if (this.host.settings.diagnosticsLogEnabled === false) return;
     const write = async () => {
       const folder = this.getDiagnosticsFolder();
-      await this.host.ensureFolder(folder);
+      await ensureVaultFolder(this.host.app, folder);
       const moment = window.moment;
       const day = moment ? moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10);
       const path = obsidian.normalizePath(`${folder}/${day}.jsonl`);

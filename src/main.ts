@@ -165,6 +165,7 @@ import { OutlineView } from "./ui/outline-view";
 import { cleanTranscript, mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
+import { ensureVaultFolder, findAvailableVaultPath } from "./shared/util-vault";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -803,7 +804,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const newFile = this.app.vault.getAbstractFileByPath(newPath);
     if (oldFile instanceof obsidian.TFile && !(newFile instanceof obsidian.TFile)) {
       const folderPath = newPath.includes("/") ? newPath.slice(0, newPath.lastIndexOf("/")) : "";
-      if (folderPath) await this.ensureFolder(folderPath);
+      if (folderPath) await ensureVaultFolder(this.app, folderPath);
       await this.app.fileManager.renameFile(oldFile, newPath);
       changed = true;
     }
@@ -843,7 +844,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       }
       if (legacyEntry && !nextEntry) {
         const parentPath = nextPath.includes("/") ? nextPath.slice(0, nextPath.lastIndexOf("/")) : "";
-        if (parentPath) await this.ensureFolder(parentPath);
+        if (parentPath) await ensureVaultFolder(this.app, parentPath);
         await this.app.fileManager.renameFile(legacyEntry, nextPath);
       }
       this.settings[settingKey] = nextPath;
@@ -856,7 +857,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const nextArchiveFolderEntry = this.app.vault.getAbstractFileByPath(nextArchiveFolder);
     if (legacyArchiveFolderEntry && !nextArchiveFolderEntry) {
       const parentPath = nextArchiveFolder.slice(0, nextArchiveFolder.lastIndexOf("/"));
-      await this.ensureFolder(parentPath);
+      await ensureVaultFolder(this.app, parentPath);
       await this.app.fileManager.renameFile(legacyArchiveFolderEntry, nextArchiveFolder);
       changed = true;
     } else {
@@ -865,7 +866,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const legacyArchiveEntry = this.app.vault.getAbstractFileByPath(legacyArchive);
       const nextArchiveEntry = this.app.vault.getAbstractFileByPath(nextArchive);
       if (legacyArchiveEntry && !nextArchiveEntry) {
-        await this.ensureFolder(nextArchiveFolder);
+        await ensureVaultFolder(this.app, nextArchiveFolder);
         await this.app.fileManager.renameFile(legacyArchiveEntry, nextArchive);
         changed = true;
       }
@@ -3330,7 +3331,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const path = obsidian.normalizePath(`${root}/${name}`);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing && !(existing instanceof obsidian.TFolder)) throw new Error("同名文件已存在");
-    if (!existing) await this.ensureFolder(path);
+    if (!existing) await ensureVaultFolder(this.app, path);
     return path;
   }
 
@@ -3340,7 +3341,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const root = obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const folderPath = obsidian.normalizePath(rawFolderPath || root);
     if (!(folderPath === root || folderPath.startsWith(`${root}/`))) throw new Error("目标分组不在纪要目录内");
-    await this.ensureFolder(folderPath);
+    await ensureVaultFolder(this.app, folderPath);
     const currentFolder = file.parent ? obsidian.normalizePath(file.parent.path) : "";
     if (currentFolder === folderPath) return;
 
@@ -3366,7 +3367,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const suffix = snapshot.file.basename.startsWith(oldBase)
         ? snapshot.file.basename.slice(oldBase.length)
         : " · 语义图";
-      const canvasTarget = this.getAvailableVaultPath(`${folderPath}/${newBase}${suffix}.canvas`);
+      const canvasTarget = findAvailableVaultPath(this.app, `${folderPath}/${newBase}${suffix}.canvas`);
       if (!canvasTarget) continue;
       try {
         await this.app.fileManager.renameFile(snapshot.file, canvasTarget);
@@ -3516,8 +3517,8 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
     try {
       this.clearRecordingIssue();
-      await this.ensureFolder(this.settings.audioFolder);
-      await this.ensureFolder(this.settings.mdFolder);
+      await ensureVaultFolder(this.app, this.settings.audioFolder);
+      await ensureVaultFolder(this.app, this.settings.mdFolder);
       const moment = window.moment;
       const startedAt = moment();
       const sessionStamp = startedAt.format("YYYYMMDD-HHmmss");
@@ -4323,8 +4324,8 @@ class LexVoicePlugin extends obsidian.Plugin {
     if (!session || session.masterAudioPath || !seg || !seg.masterBlob) return;
     try {
       const ext = seg.masterExt || extFromMime(seg.masterMime || seg.masterBlob.type || "") || seg.ext || "webm";
-      await this.ensureFolder(this.settings.audioFolder);
-      const target = this.getAvailableVaultPath(obsidian.normalizePath(`${this.settings.audioFolder}/lex-${session.sessionStamp}.${ext}`));
+      await ensureVaultFolder(this.app, this.settings.audioFolder);
+      const target = findAvailableVaultPath(this.app, obsidian.normalizePath(`${this.settings.audioFolder}/lex-${session.sessionStamp}.${ext}`));
       if (!target) throw new Error("无法生成完整录音文件路径");
       const ab = await seg.masterBlob.arrayBuffer();
       await this.app.vault.createBinary(target, ab);
@@ -5850,7 +5851,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const tpl = renderRecruitHomepageTemplate();
       const slash = targetPath.lastIndexOf("/");
       const dir = slash >= 0 ? targetPath.slice(0, slash) : "";
-      if (dir && !(this.app.vault.getAbstractFileByPath(dir) instanceof obsidian.TFolder)) await this.ensureFolder(dir);
+      if (dir && !(this.app.vault.getAbstractFileByPath(dir) instanceof obsidian.TFolder)) await ensureVaultFolder(this.app, dir);
       await ensureRecruitAggregateBase(this.app, root);    // 主页嵌入聚合 base，确保它存在
       const existing = this.app.vault.getAbstractFileByPath(targetPath);
       if (existing instanceof obsidian.TFile) {
@@ -5871,24 +5872,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       console.error("[QnALog] rebuild recruit homepage failed", e);
       new obsidian.Notice(`重建招聘主页失败：${(e && e.message) || e}`);
     }
-  }
-
-  getAvailableVaultPath(targetPath) {
-    let candidate = obsidian.normalizePath(targetPath || "");
-    if (!candidate) return "";
-    const dot = candidate.lastIndexOf(".");
-    const base = dot >= 0 ? candidate.slice(0, dot) : candidate;
-    const ext = dot >= 0 ? candidate.slice(dot) : "";
-    let i = 2;
-    while (this.app.vault.getAbstractFileByPath(candidate)) {
-      candidate = obsidian.normalizePath(`${base}-${i}${ext}`);
-      i++;
-      if (i > 99) return "";
-    }
-    return candidate;
-  }
-
-  openVaultFileInSystem(path) {
+  }  openVaultFileInSystem(path) {
     try {
       const adapter = this.app.vault.adapter;
       const fullPath = adapter && typeof adapter.getFullPath === "function" ? adapter.getFullPath(path) : "";
@@ -6023,8 +6007,8 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
 
   async ensureMarkdownPdfForEmail(file, markdown) {
     const folder = obsidian.normalizePath(EMAIL_DRAFT_ATTACHMENT_FOLDER);
-    await this.ensureFolder(folder);
-    const target = this.getAvailableVaultPath(`${folder}/${sanitizeReportFileStem(file.basename)}-纪要PDF.pdf`);
+    await ensureVaultFolder(this.app, folder);
+    const target = findAvailableVaultPath(this.app, `${folder}/${sanitizeReportFileStem(file.basename)}-纪要PDF.pdf`);
     if (!target) throw new Error("无法生成可用的 PDF 路径");
     const html = await this.renderMarkdownToEmailHtml(file, markdown);
     const pdfBuffer = await this.printHtmlToPdfBuffer(html);
@@ -6079,8 +6063,8 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       });
       const eml = buildEmailDraftContent({ to: recipients, subject, body, attachments });
       const folder = obsidian.normalizePath(EMAIL_DRAFT_FOLDER);
-      await this.ensureFolder(folder);
-      const target = this.getAvailableVaultPath(`${folder}/${sanitizeReportFileStem(file.basename)}-邮件草稿.eml`);
+      await ensureVaultFolder(this.app, folder);
+      const target = findAvailableVaultPath(this.app, `${folder}/${sanitizeReportFileStem(file.basename)}-邮件草稿.eml`);
       if (!target) throw new Error("无法生成可用的邮件草稿路径");
       const draft = await this.app.vault.create(target, eml);
       const opened = this.openVaultFileInSystem(draft.path);
@@ -6127,8 +6111,8 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       const r = await this.produceReportHtmlForFile(file);
       if (!r) return;
       const folder = obsidian.normalizePath(this.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder);
-      await this.ensureFolder(folder);
-      const target = this.getAvailableVaultPath(`${folder}/${sanitizeReportFileStem(file.basename)}-HTML报告.html`);
+      await ensureVaultFolder(this.app, folder);
+      const target = findAvailableVaultPath(this.app, `${folder}/${sanitizeReportFileStem(file.basename)}-HTML报告.html`);
       if (!target) throw new Error("无法生成可用的 HTML 报告路径");
       const outFile = await this.app.vault.create(target, r.html);
       new obsidian.Notice(`QnALog：已生成 HTML 报告：${target}`, 8000);
@@ -6147,8 +6131,8 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       if (!r) return;
       new obsidian.Notice("QnALog：正在渲染整页 PDF…");
       const folder = obsidian.normalizePath(this.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder);
-      await this.ensureFolder(folder);
-      const target = this.getAvailableVaultPath(`${folder}/${sanitizeReportFileStem(file.basename)}-报告.pdf`);
+      await ensureVaultFolder(this.app, folder);
+      const target = findAvailableVaultPath(this.app, `${folder}/${sanitizeReportFileStem(file.basename)}-报告.pdf`);
       if (!target) throw new Error("无法生成可用的 PDF 路径");
       const pdfBuffer = await this.printHtmlToSinglePagePdfBuffer(r.html);
       const bytes = pdfBuffer instanceof Uint8Array ? pdfBuffer : new Uint8Array(pdfBuffer || []);
@@ -6636,9 +6620,9 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
   async createLexVoiceBases(opts) {
     const overwrite = !!(opts && opts.overwrite);
     const basesFolder = getLexVoiceBasesFolder(this.settings);
-    await this.ensureFolder(basesFolder);
-    await this.ensureFolder(basesFolder + "/按模式");
-    await this.ensureFolder(basesFolder + "/场景");
+    await ensureVaultFolder(this.app, basesFolder);
+    await ensureVaultFolder(this.app, basesFolder + "/按模式");
+    await ensureVaultFolder(this.app, basesFolder + "/场景");
     let created = 0, updated = 0, skipped = 0;
     for (const def of LV_BASE_DEFINITIONS) {
       if (!isRecruitFeatureUnlocked(this.settings) && /lexvoice\/recruit|招聘/.test(def.relPath + "\n" + def.yaml)) {
@@ -6665,7 +6649,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
   async upsertGeneratedMarkdownFile(path, content, opts = {}) {
     const norm = obsidian.normalizePath(path);
     const folder = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-    if (folder) await this.ensureFolder(folder);
+    if (folder) await ensureVaultFolder(this.app, folder);
     let file = this.app.vault.getAbstractFileByPath(norm);
     if (file instanceof obsidian.TFile) {
       const current = await this.app.vault.cachedRead(file);
@@ -6712,21 +6696,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
     if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(file);
     else new obsidian.Notice("未找到明细 Base，请先创建视图文件。", 8000);
     return file;
-  }
-
-  async ensureFolder(folderPath) {
-    const norm = obsidian.normalizePath(folderPath);
-    if (!norm || norm === "/") return;
-    const parts = norm.split("/").filter(Boolean);
-    let cur = "";
-    for (const p of parts) {
-      cur = cur ? `${cur}/${p}` : p;
-      const exist = this.app.vault.getAbstractFileByPath(cur);
-      if (!exist) { try { await this.app.vault.createFolder(cur); } catch { /* intentionally empty */ } }
-    }
-  }
-
-  // 单 mode 生成定制 Prompt：调一次 LLM，返回纯文本
+  }  // 单 mode 生成定制 Prompt：调一次 LLM，返回纯文本
   async generateIndustryPromptForMode(mode) {
     const p = this.settings.industryProfile || {};
     if (!p.industry || !p.scenarios) {
@@ -6947,7 +6917,7 @@ ${source}`;
     }
     const norm = obsidian.normalizePath(path);
     const folderPath = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-    if (folderPath) await this.ensureFolder(folderPath);
+    if (folderPath) await ensureVaultFolder(this.app, folderPath);
     const content = formatVocabularyMarkdown(groups, this.settings.industryProfile);
     let file = this.app.vault.getAbstractFileByPath(norm);
     if (file instanceof obsidian.TFile) {
@@ -6962,9 +6932,9 @@ ${source}`;
     const overwrite = !!(opts && opts.overwrite);
     const folder = obsidian.normalizePath(this.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder);
     const basePath = obsidian.normalizePath(this.settings.peopleBaseFile || DEFAULT_SETTINGS.peopleBaseFile);
-    if (folder) await this.ensureFolder(folder);
+    if (folder) await ensureVaultFolder(this.app, folder);
     const baseFolder = basePath.includes("/") ? basePath.slice(0, basePath.lastIndexOf("/")) : "";
-    if (baseFolder) await this.ensureFolder(baseFolder);
+    if (baseFolder) await ensureVaultFolder(this.app, baseFolder);
     const yaml = formatPeopleBaseYaml();
     let file = this.app.vault.getAbstractFileByPath(basePath);
     if (file instanceof obsidian.TFile) {
@@ -6977,7 +6947,7 @@ ${source}`;
 
   async createPeopleDirectoryNote(name) {
     const folder = obsidian.normalizePath(this.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder);
-    if (folder) await this.ensureFolder(folder);
+    if (folder) await ensureVaultFolder(this.app, folder);
     const safeName = sanitizeFilename(String(name || "").trim()) || "未命名人员";
     const exactPath = obsidian.normalizePath(`${folder}/${safeName}.md`);
     const exact = this.app.vault.getAbstractFileByPath(exactPath);
@@ -7105,7 +7075,7 @@ ${source}`;
     if (!duplicateGroups.length) return { groups: 0, merged: 0, updatedLinks: 0 };
 
     const archiveFolder = obsidian.normalizePath(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder);
-    await this.ensureFolder(archiveFolder);
+    await ensureVaultFolder(this.app, archiveFolder);
     const replacements = [];
     let merged = 0;
     for (const group of duplicateGroups) {
@@ -7119,7 +7089,7 @@ ${source}`;
         replacements.push({ fromFile: duplicate.file, toFile: primary.file });
         const archiveMarkdown = this.formatMergedPeopleArchiveMarkdown(duplicate.file, primary.file, duplicate.fm || {});
         await this.app.vault.modify(duplicate.file, archiveMarkdown);
-        const archivePath = this.getAvailableVaultPath(obsidian.normalizePath(`${archiveFolder}/${duplicate.file.basename}.md`));
+        const archivePath = findAvailableVaultPath(this.app, obsidian.normalizePath(`${archiveFolder}/${duplicate.file.basename}.md`));
         if (archivePath && this.app.fileManager && typeof this.app.fileManager.renameFile === "function") {
           await this.app.fileManager.renameFile(duplicate.file, archivePath);
         }
@@ -7492,9 +7462,9 @@ ${source}`;
         updated++;
       } else {
         const folder = obsidian.normalizePath(this.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder);
-        if (folder) await this.ensureFolder(folder);
+        if (folder) await ensureVaultFolder(this.app, folder);
         const safeName = sanitizeFilename(suggestion.name) || "未命名人员";
-        const path = this.getAvailableVaultPath(obsidian.normalizePath(`${folder}/${safeName}.md`));
+        const path = findAvailableVaultPath(this.app, obsidian.normalizePath(`${folder}/${safeName}.md`));
         if (!path) throw new Error("无法创建人员信息文件");
         const fm = mergePersonFrontmatter({ "姓名": suggestion.name }, suggestion, sourceFile);
         const body = formatPeopleNoteMarkdown(suggestion.name, this.settings.mdFolder);
@@ -7672,7 +7642,7 @@ ${source}`;
       new obsidian.Notice("该进阶评审模式尚未启用，无法合并纪要。", 8000);
       return;
     }
-    await this.ensureFolder(this.settings.mdFolder);
+    await ensureVaultFolder(this.app, this.settings.mdFolder);
     const moment = window.moment;
     const startedAtIso = sources[0].startedAt || new Date().toISOString();
     const startedAt = moment ? moment(startedAtIso) : null;
@@ -7774,7 +7744,7 @@ ${source}`;
   }
 
   async writeLexVoiceVersionManifest(folder, manifest) {
-    await this.ensureFolder(folder);
+    await ensureVaultFolder(this.app, folder);
     const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
     const payload = JSON.stringify(Object.assign({ version: 1 }, manifest || {}), null, 2);
     const f = this.app.vault.getAbstractFileByPath(manifestPath);
@@ -7794,7 +7764,7 @@ ${source}`;
   }
 
   async writeLexVoiceVersionFile(folder, fileName, content) {
-    await this.ensureFolder(folder);
+    await ensureVaultFolder(this.app, folder);
     const path = obsidian.normalizePath(`${folder}/${fileName}`);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof obsidian.TFile) {
@@ -8875,8 +8845,8 @@ ${source}`;
         try {
           await this.importAudioFiles([file.path]);
           if (archiveSub) {
-            await this.ensureFolder(`${inboxNorm}/${archiveSub}`);
-            const archivePath = this.getAvailableVaultPath(obsidian.normalizePath(`${inboxNorm}/${archiveSub}/${file.name}`));
+            await ensureVaultFolder(this.app, `${inboxNorm}/${archiveSub}`);
+            const archivePath = findAvailableVaultPath(this.app, obsidian.normalizePath(`${inboxNorm}/${archiveSub}/${file.name}`));
             const stillExists = this.app.vault.getAbstractFileByPath(file.path);
             if (archivePath && stillExists instanceof obsidian.TFile) {
               try { await this.app.fileManager.renameFile(stillExists, archivePath); }
@@ -8976,7 +8946,7 @@ ${source}`;
     const meta = getModeMeta(this.settings, mode);
     const mdName = `${startedAt.format(this.settings.noteFileNameFormatNew)} · 导入`;
     const mdPath = this.getAvailableMarkdownPath(obsidian.normalizePath(`${this.settings.mdFolder}/${mdName}.md`));
-    await this.ensureFolder(this.settings.mdFolder);
+    await ensureVaultFolder(this.app, this.settings.mdFolder);
 
     let recruitContext = null;
     if (mode === "recruit") {
@@ -9507,7 +9477,7 @@ ${source}`;
       if (result.action !== "skip") recruitContext = result.ctx;
     }
 
-    await this.ensureFolder(this.settings.mdFolder);
+    await ensureVaultFolder(this.app, this.settings.mdFolder);
     const mdName = `${startedAt.format(this.settings.noteFileNameFormatNew)} · 文本导入`;
     const mdPath = this.getAvailableMarkdownPath(obsidian.normalizePath(`${this.settings.mdFolder}/${mdName}.md`));
     if (!mdPath) throw new Error("无法生成文本导入笔记路径");

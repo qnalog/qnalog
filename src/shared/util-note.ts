@@ -3,6 +3,7 @@
 import * as obsidian from "obsidian";
 import { sanitizeFilename } from './util-common';
 import { isPrivateNetworkHost } from './util-llm-endpoint';
+import { ensureVaultFolder, findAvailableVaultPath } from "./util-vault";
 
 export function getFrontmatterTags(frontmatter) {
   if (!frontmatter || typeof frontmatter !== "object") return [];
@@ -44,7 +45,7 @@ export const CONCEPT_CARD_TAG = "lexvoice/concept";
 export const TODO_CARD_TAG = "lexvoice/todo-card";
 
 export async function upsertLexVoiceObjectNote(plugin, folder, name, content) {
-  await plugin.ensureFolder(folder);
+  await ensureVaultFolder(plugin.app, folder);
   const path = obsidian.normalizePath(`${folder}/${sanitizeFilename(name) || "未命名"}.md`);
   const file = plugin.app.vault.getAbstractFileByPath(path);
   if (file instanceof obsidian.TFile) {
@@ -52,7 +53,7 @@ export async function upsertLexVoiceObjectNote(plugin, folder, name, content) {
     await plugin.app.vault.modify(file, content);
     return { file, path: file.path, created: false, previousContent };
   }
-  const target = plugin.getAvailableVaultPath(path);
+  const target = findAvailableVaultPath(plugin.app, path);
   if (!target) throw new Error("无法生成可用的对象文件路径");
   const createdFile = await plugin.app.vault.create(target, content);
   return { file: createdFile, path: createdFile.path, created: true, previousContent: "" };
@@ -79,20 +80,6 @@ export function getTodayDailyNoteInfo(app) {
   const dailyPath = obsidian.normalizePath(folder ? `${folder}/${fileName}` : fileName);
   const file = app.vault.getAbstractFileByPath(dailyPath);
   return { path: dailyPath, folder, template, file: file instanceof obsidian.TFile ? file : null };
-}
-
-export async function ensureVaultFolder(app, folderPath) {
-  const norm = obsidian.normalizePath(String(folderPath || "").trim());
-  if (!norm || norm === "." || norm === "/") return;
-  const parts = norm.split("/").filter(Boolean);
-  let cur = "";
-  for (const part of parts) {
-    cur = cur ? `${cur}/${part}` : part;
-    const existing = app.vault.getAbstractFileByPath(cur);
-    if (!existing) {
-      try { await app.vault.createFolder(cur); } catch { /* intentionally empty */ }
-    }
-  }
 }
 
 export async function ensureTodayDailyNoteFile(app) {

@@ -73,6 +73,7 @@ import { clampLexVoiceProgress } from "../notes/note-markdown";
 import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACKS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentModePrefixEntries, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath, normalizeRecentTopicToken, stripRecentDatePrefix } from "../recent/recent-notes";
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendLexVoiceAskEntry, buildLexVoiceAskContext } from "../notes/ask-panel";
+import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 
 // 会中字段树的分组标题（Phase 2 实时大纲用）。
 export const JOBPORTRAIT_GROUP_LABEL = { hard: "硬性要求", soft: "软能力", risk: "风险信号", culture: "文化匹配" };
@@ -3625,7 +3626,7 @@ export class OutlineView extends obsidian.ItemView {
     let file = this.app.vault.getAbstractFileByPath(norm);
     if (!(file instanceof obsidian.TFile)) {
       const folderPath = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-      if (folderPath) await this.plugin.ensureFolder(folderPath);
+      if (folderPath) await ensureVaultFolder(this.plugin.app, folderPath);
       file = await this.app.vault.create(norm, formatVocabularyMarkdown([], this.plugin.settings.industryProfile));
     }
     if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(file);
@@ -4911,13 +4912,13 @@ export class OutlineView extends obsidian.ItemView {
   async addMeetingMaterialFiles(session, files, kind) {
     if (!session || !files || !files.length) return;
     const folder = this.getMeetingMaterialsFolder(session);
-    await this.plugin.ensureFolder(folder);
+    await ensureVaultFolder(this.plugin.app, folder);
     const current = normalizeMeetingWorkbench(session.meetingWorkbench);
     const added = [];
     for (const file of files) {
       if (!file) continue;
       const safeName = sanitizeFilename(file.name || "meeting-material") || "meeting-material";
-      const targetPath = this.plugin.getAvailableVaultPath(obsidian.normalizePath(`${folder}/${safeName}`));
+      const targetPath = findAvailableVaultPath(this.plugin.app, obsidian.normalizePath(`${folder}/${safeName}`));
       if (!targetPath) continue;
       await this.plugin.app.vault.createBinary(targetPath, await file.arrayBuffer());
       added.push({
