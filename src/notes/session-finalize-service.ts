@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：会话收尾：分段转写与沉淀、说话人姓名确认、正文与版本落盘
 
 import * as obsidian from "obsidian";
@@ -8,13 +7,14 @@ import { transcribeAudio } from "../asr/transcribe";
 import { readFileFrontmatter } from "../shared/util-note";
 import { loadVocabularyGroups, applyVocabularyCorrections } from "../vocabulary";
 import { getLlmConfigIssue, isLlmNonRetryableError, formatLlmFailureIssue } from "../llm/core";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { LexVoiceSettings, RecordingSession, PreparedLiveSegment, SessionMetaForMerge, Segment } from "../shared/types";
 import { RecordingService } from "../audio/recording-service";
 import { getErrorMessage, pad, formatElapsed } from "../shared/util-common";
 import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } from "../shared/util-audio";
 import { createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
 import { DEFAULT_SPEAKER_CHANNELS, MAX_SPEAKER_CHANNELS, buildSpeakerMappings, initialAudioChannelRuntimeMode, normalizeAudioChannelMode, normalizeSpeakerMappings, replaceSpeakerDisplayName, resolveAudioChannelRuntimeMode } from "../audio/channel-speakers";
+import type { SpeakerId } from "../audio/channel-speakers";
 import { transcribeAudioByChannels } from "../asr/channel-transcription";
 import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
@@ -75,13 +75,13 @@ export class SessionFinalizeService {
     this.notePanelLoading = null;
   }
 
-  async processSegment(session: RecordingSession, seg: unknown) {
+  async processSegment(session: RecordingSession, seg: PreparedLiveSegment) {
     if (!session) return;
     if (seg && seg.isFinal && seg.masterOnly) {
       // 分段 recorder 已失效但独立 masterRecorder 仍拿到了完整录音。
       // 这里只保存母带并推进最终整理，不能把整场母带再次当作最后一段转写，
       // 否则前面已转写的内容会重复、并额外产生一次整场 ASR 费用。
-      if (seg.masterAudioSavePromise) await seg.masterAudioSavePromise;
+      if (seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
       else await this.host.recording.saveMasterAudio(session, seg);
       this.host.recording.setSessionWorkProgress(session, {
         stage: "transcribe-finalized",
@@ -122,7 +122,7 @@ export class SessionFinalizeService {
     const segmentDurationMs = Math.max(0, displayEndOffsetMs - displayStartOffsetMs);
 
     let spoolResult = null;
-    if (seg.spoolPromise) {
+    if (seg.spoolPromise != null) {
       spoolResult = await seg.spoolPromise;
     } else if (seg.blob) {
       try {
@@ -140,7 +140,7 @@ export class SessionFinalizeService {
     const liveJob = seg.jobId ? this.host.recording.getLiveAsrJobs(session).get(seg.jobId) : null;
     if (liveJob) liveJob.state = "transcribing";
     this.host.recording.updateLiveAsrBacklogPolicy(session, "transcribing");
-    if (seg.masterAudioSavePromise) await seg.masterAudioSavePromise;
+    if (seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
     else if (seg.isFinal) await this.host.recording.saveMasterAudio(session, seg);
 
     let text = ""; let err = null;
@@ -376,7 +376,7 @@ export class SessionFinalizeService {
 
     const playbackAudioName = session.masterAudioName || segmentAudioName;
     const playbackAudioPath = session.masterAudioPath || segmentAudioPath;
-    const segmentRecord = {
+    const segmentRecord: Segment = {
       index: segmentIndex,
       startOffsetMs: displayStartOffsetMs,
       endOffsetMs: displayEndOffsetMs,
@@ -530,7 +530,8 @@ export class SessionFinalizeService {
       const stableAcrossSession = hardwareSeparated
         || !!(profile && profile.speakerLabelScope === "session" && profile.requiresWholeSession)
         || isSpeakerDiarizationProvider(activeProvider);
-      const names = await new Promise((resolve) => {
+      // resolve 收到的确认结果是「说话人标签到姓名」的映射表；用户取消时 resolve(null)。
+      const names = await new Promise<Record<string, string> | null>((resolve) => {
         const modal = new SpeakerNameConfirmModal(
           this.host.app,
           this.host,
@@ -558,7 +559,7 @@ export class SessionFinalizeService {
       let namesPersisted = false;
       try {
         let markdown = await this.host.app.vault.read(file);
-        for (const [speakerId, mapping] of Object.entries(mappings)) {
+        for (const [speakerId, mapping] of Object.entries(mappings) as [SpeakerId, { personName?: string }][]) {
           const personName = String(mapping && mapping.personName || "").trim();
           if (!personName) continue;
           const updated = replaceSpeakerDisplayName(markdown, speakerId, personName);
@@ -700,7 +701,7 @@ export class SessionFinalizeService {
       const llmConfigIssue = getLlmConfigIssue(this.host.settings);
       if (llmConfigIssue) {
         const configurationError = new Error(llmConfigIssue);
-        configurationError.nonRetryable = true;
+        (configurationError as Error & { nonRetryable?: boolean }).nonRetryable = true;
         throw configurationError;
       }
       this.host.recording.setSessionWorkProgress(session, {
@@ -721,7 +722,7 @@ export class SessionFinalizeService {
       }
       const lastSeg = segmentsForFinal[segmentsForFinal.length - 1];
       const textImport = textImportSession;
-      const sessionMeta = {
+      const sessionMeta: SessionMetaForMerge = {
         startedAt: session.startedAt,
         duration: textImport ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
         source: session.source || "",
