@@ -112,11 +112,32 @@ class LexVoicePlugin extends obsidian.Plugin {
   }
 
   async onload() {
-    // 域服务在加载设置之前装配：loadAll 的设置迁移报告要写诊断日志。
+    // 域服务在加载设置之前装配：loadAll 的设置迁移与迁移报告要经 migration / diagnostics 两个服务；
+    // 状态栏与录音器晚于 loadAll 建立，所以 tasks.start()/startStatusBar() 仍留在原位调用。
     this.diagnostics = new DiagnosticsService(this);
     this.delivery = new DeliveryService(this);
     this.recruit = new RecruitService(this);
     this.noteWriter = new NoteWriter(this);
+    this.tasks = new TaskActivityService(this);
+    this.queueRetry = new QueueRetryService(this);
+    this.versions = new VersionStore(this);
+    this.people = new PeopleDirectoryService(this);
+    this.knowledgeExtraction = new KnowledgeExtractionService(this);
+    this.inbox = new InboxWatcherService(this);
+    this.repolish = new RepolishService(this);
+    this.externalInbox = new ExternalInboxService(this);
+    this.imports = new ImportService(this);
+    this.sessionFinalize = new SessionFinalizeService(this);
+    this.recording = new RecordingService(this);
+    this.shell = new ViewShellService(this);
+    this.library = new LibraryViewService(this);
+    this.noteIndex = new NoteIndexService(this);
+    this.audioLinks = new AudioTimeLinkService(this);
+    this.meetingWorkbench = new MeetingWorkbenchService(this);
+    this.outline = new RealtimeOutlineService(this);
+    this.migrations = new MigrationService(this);
+    this.vocabulary = new VocabularyService(this);
+    this.profiles = new TranscribeProfileService(this);
     await this.loadAll();
     await this.loadBuildInfo();
     this.updateService = new UpdateService({
@@ -147,26 +168,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       buildVersion: this.manifest && this.manifest.version ? this.manifest.version : "",
     });
     this.register(() => this.updateService.dispose());
-    this.tasks = new TaskActivityService(this);
-    this.queueRetry = new QueueRetryService(this);
-    this.versions = new VersionStore(this);
-    this.people = new PeopleDirectoryService(this);
-    this.knowledgeExtraction = new KnowledgeExtractionService(this);
-    this.inbox = new InboxWatcherService(this);
-    this.repolish = new RepolishService(this);
-    this.externalInbox = new ExternalInboxService(this);
-    this.imports = new ImportService(this);
-    this.sessionFinalize = new SessionFinalizeService(this);
-    this.recording = new RecordingService(this);
-    this.shell = new ViewShellService(this);
-    this.library = new LibraryViewService(this);
-    this.noteIndex = new NoteIndexService(this);
-    this.audioLinks = new AudioTimeLinkService(this);
-    this.meetingWorkbench = new MeetingWorkbenchService(this);
-    this.outline = new RealtimeOutlineService(this);
-    this.migrations = new MigrationService(this);
-    this.vocabulary = new VocabularyService(this);
-    this.profiles = new TranscribeProfileService(this);
     this.tasks.start();
     this.recorder = new RecorderService(this);
     this.queue = new TaskQueue(this);
@@ -202,6 +203,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
+
     // 浮窗显隐与侧边栏（实时纪要面板）联动
     this.registerEvent(this.app.workspace.on("layout-change", () => this.shell.syncBubbleVisibility()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.shell.syncBubbleVisibility()));

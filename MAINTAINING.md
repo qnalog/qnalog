@@ -27,27 +27,53 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 拆解限定为纯搬迁：方法体逐行不变、搬迁后调用点等价、不改变任何行为语义。这满足 1.1 对改动的约束
 （不改变既有行为语义），因此可以在没有新功能需求时单独推进。
 
-当前规模（2026-09-14 实测，`src` 共 49,850 行）：
+当前规模（2026-09-14 实测，`src` 共 50,802 行）：
 
 | 单体 | 行数 | 形态 |
 |---|---|---|
-| `src/main.ts` 的 `class LexVoicePlugin` | 10,357（类体 10,147 行、272 个成员） | 采集、转写、纪要、落盘、沉淀、交付的状态与流程都在这个类里 |
-| `src/ui/outline-view.ts` 的 `class OutlineView` | 7,257（219 个方法） | 侧边栏视图的界面与业务在同一个类里 |
+| `src/main.ts` 的 `class LexVoicePlugin` | 10,357 → 627（272 个成员 → 17 个） | 现在只剩装配、持久化、构建信息与更新检查转发 |
+| `src/ui/outline-view.ts` 的 `class OutlineView` | 7,257（219 个方法） | 侧边栏视图的界面与业务在同一个类里（P2） |
 
 上一轮（2026-09-13）已把 `src/main.ts` 从 24,679 行降到 10,357 行，抽出 19 个模块；
 `src/ui/modals.ts`（2,995 行）是 12 个互不依赖的 Modal 类的集合，不是单体，拆只改变观感。
 
-已抽出的模块目前不构成边界：`RecorderService`、`TaskQueue`、`OutlineView` 以 `declare plugin: LexVoicePlugin`
+已抽出的模块原先不构成边界：`RecorderService`、`TaskQueue`、`OutlineView` 以 `declare plugin: LexVoicePlugin`
 持有整个插件对象（`src/audio/recorder-service.ts:19`、`src/queue/task-queue.ts:20`、`src/ui/outline-view.ts:100`），
-全仓 `plugin.<成员>` 调用 966 处、涉及 114 个不同成员。因此搬迁文件的同时必须收窄依赖面：
-每个模块只声明自己需要的能力（窄接口），由插件在装配时注入。否则只是把单体摊成分布式的单体。
+全仓 `plugin.<成员>` 调用 966 处、涉及 114 个不同成员。P1 因此把「搬文件」与「收窄依赖面」一起做。
 
-顺序（逐项独立提交，每项按 §4.4 的流程验证）：
+#### 抽取约定（P1 已按此完成，P2 沿用）
+
+- **一个域一个服务类**：文件 `src/<域>/<域>-service.ts`，类名与文件名对应（`XService`）。类里只放该域的方法与该域自己的状态，
+  状态在构造函数里初始化；需要随插件卸载清理的（定时器、监听器、防抖器）由服务提供 `dispose()` 或 `start()`，由插件在 `onload`/`onunload` 调用。
+- **窄接口**：服务自带 `export interface <类名去 Service>Host`，只列该域真正用到的宿主能力，运行时传插件实例。
+  跨域能力不回到插件上再转发，而是挂拥有它的服务（如 `host.noteWriter.insertBeforeSegmentsStart`、`host.recording.startRecording`）。
+- **主体保留装配与生命周期**：插件类只留 `onload`/`onunload`、`loadAll`/`saveAll`/`saveSettings`、构建信息与更新检查转发；
+  域字段按域命名（`this.diagnostics`、`this.recording`…），调用点写 `plugin.<域>.<成员>`。
+- **纯搬迁**：方法体逐行不变，只把对外依赖改成 `this.host.X`；把服务自身当插件对象传给辅助函数时传 `this.host`（辅助函数读的是 `plugin.settings`）；
+  `(this.saveAll || this.saveSettings).call(this)` 这类接收者绑定要跟着改成 `.call(this.host)`。
+- **每个域一次提交**，提交前跑 §4.4 的流程，并逐字符比对搬迁前后的方法体。
+
+#### 已完成的 P1（2026-09-14）
+
+`src/main.ts` 从 10,357 行 / 272 个成员降到 627 行 / 17 个成员，抽出 22 个域服务与 3 个共享辅助：
+
+```
+诊断 DiagnosticsService · 交付 DeliveryService · 招聘 RecruitService · 笔记正文 NoteWriter
+任务状态 TaskActivityService · 队列失败恢复 QueueRetryService · 版本块 VersionStore · 人员库 PeopleDirectoryService
+转写服务配置 TranscribeProfileService · 词汇表与行业提示词 VocabularyService · 迁移与清理 MigrationService
+实时大纲 RealtimeOutlineService · 会中工作台 MeetingWorkbenchService · 回听时间轴 AudioTimeLinkService
+笔记索引 NoteIndexService · 资料库视图 LibraryViewService · 视图外壳 ViewShellService · 录音 RecordingService
+会话收尾 SessionFinalizeService · 导入 ImportService · 外部收件箱 ExternalInboxService · 重新整理 RepolishService
+库内收件箱 InboxWatcherService · 知识提取记录 KnowledgeExtractionService
+共享辅助：src/shared/util-vault.ts（文件夹创建、路径避让）· 录音器 RecorderService · 任务队列 TaskQueue（上一轮已抽）
+```
+
+顺序（P1 已完成，P2 起按此推进；逐项独立提交，每项按 §4.4 的流程验证）：
 
 | 优先级 | 工作 | 完成判据 |
 |---|---|---|
-| P1 | 拆 `LexVoicePlugin`：先定窄接口（设置读写、库访问、通知、诊断、任务状态、模型调用），再按域搬成员与状态 | `main.ts` 只剩装配、生命周期与一层薄转发的宿主面 |
-| P2 | 拆 `OutlineView`（219 个方法 / 7,257 行）：界面与业务分层 | 视图类只处理渲染与交互，数据来源改为 P1 定下的接口 |
+| P1 | 拆 `LexVoicePlugin`：定窄接口，按域搬成员与状态 | ✅ 已完成：`main.ts` 只剩装配、生命周期与宿主面（627 行） |
+| P2 | 拆 `OutlineView`（219 个方法 / 7,257 行）：界面与业务分层 | 视图类只处理渲染与交互，数据来源改为 P1 定下的服务接口 |
 | P3 | 内部标识符改名（`LexVoice*` → `QnALog*`，88 个标识符） | 数据层字面量与 `lexvoice-*` 类名、视图类型不动（见 §3） |
 | P4 | `src/ui/modals.ts` 按域拆包 | 可选，不影响维护 |
 
@@ -227,6 +253,20 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 
 `.github/workflows/validate.yml` 是**纯校验**工作流：`npm ci` → `npm run build` → `npm test` → 主线隔离检查 → 产物与源码一致性检查。权限仅 `contents: read`，不含任何发布步骤；发布走 §4.2 的人工流程。
 
+`npm run build` 内部依次跑四个静态检查，任一失败即中断：
+
+| 命令 | 拦什么 |
+|---|---|
+| `npm run check:versions` | `manifest.json` / `package.json` / `package-lock.json` / `versions.json` 版本不一致 |
+| `npm run check:undefined-symbols` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
+| `npm run check:domain-boundaries` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`this.host.<域>.<不存在的成员>` |
+| `npm run typecheck:core` + `tsc -noEmit` | 严格核心集与其余文件的类型错误 |
+
+`check:domain-boundaries` 的来源：P1 拆分过程中，其它模块里累计出现 176 处指向已搬走成员的 `plugin.<成员>`，
+以及 15 处把服务自身当作插件对象传进辅助函数（辅助函数读 `plugin.settings`，会读到 `undefined` 而静默走默认值）；
+两者在 tsc 与既有检查里都不报错，只在运行时失效。域字段到服务类的对应关系取自 `main.ts` 的
+`this.<字段> = new <类>(this)` 装配语句，新增服务无需维护额外映射。
+
 ---
 
 ## 5. 同步上游
@@ -239,13 +279,17 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 
 ## 6. 待办（按 §1 的优先级排列）
 
-**结构（§1.1.1，当前优先）**
+**结构（§1.1.1）**
 
-- [ ] P1 拆 `LexVoicePlugin`（`src/main.ts`，272 个成员 / 10,147 行）：先定窄接口，再按域搬成员与状态；每域一次提交。
-- [ ] P2 拆 `OutlineView`（`src/ui/outline-view.ts`，219 个方法 / 7,257 行），依赖 P1 定下的接口。
+- [x] P1 拆 `LexVoicePlugin`：已完成（2026-09-14）。`src/main.ts` 627 行 / 17 个成员，域逻辑与状态在 22 个域服务里。
+- [ ] P2 拆 `OutlineView`（`src/ui/outline-view.ts`，219 个方法 / 7,257 行）：界面与业务分层，数据来源改走 P1 的域服务接口。
+      现状：该文件 799 处 `LexVoice` 命名、大量 `this.plugin.<域>.<成员>` 调用；拆法沿用 §1.1.1 的抽取约定，
+      先分渲染（DOM 组装、卡片与列表）与数据（会话、大纲、候选）两层，再按面板拆子模块。
 - [ ] P3 内部标识符改名（88 个 `LexVoice*` → `QnALog*`），数据层字面量、`lexvoice-*` 类名与视图类型不动。
 - [ ] P4 `src/ui/modals.ts`（2,995 行 / 12 个 Modal 类）按域拆包。可选。
-- [ ] 文档债务：`ARCHITECTURE.md` 有 10 处 `main.ts:NNNN` 行号引用已越界（`main.ts` 现 10,357 行），随 P1 逐域修正。
+- [ ] 更新检查的 5 个转发（`getUpdateRawBase(s)`、`checkForUpdates(OnStartup)`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
+      可并入一个更新域服务，属收尾性质。
+- [ ] 文档债务：`ARCHITECTURE.md` 的 `main.ts:NNNN` 行号引用已随 P1 失效（`main.ts` 现 627 行），需要按新的域服务重新标注。
 
 **第一条：稳定性与安全性**
 
@@ -270,5 +314,6 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 
 已完成（记录，不再列在待办里）：自更新已移除（仅检查版本并提示，安装交给 Obsidian / BRAT）；
 回滚路径已脚本化（`npm run restore:vault`，安装改为整目录留档）；迁移结果自检已实现（首次加载输出对照表）；
-`src/main.ts` 首轮分解已完成（24,679 行 → 10,357 行，抽出 19 个模块，2026-09-13）。
+`src/main.ts` 首轮分解已完成（24,679 行 → 10,357 行，抽出 19 个模块，2026-09-13）；
+P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 627 行，抽出 22 个域服务，2026-09-14）。
 
