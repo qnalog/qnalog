@@ -413,7 +413,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] 设置页不得静默改写用户配置：`src/ui/settings-tab.ts` 的 `renderSpeaker` 在服务不可用时直接改写 `importTranscribeProvider`，应改为保留用户选择并给出提示。
 - [ ] 自定义服务的密钥必填判定：未知 provider id 一律按 `requiresKey: false` 处理，导致密钥栏显示"可选"，但导入时运行时会因缺 key 报错；应改为按 endpoint 推断。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
-- [ ] 类型检查盲区：6 个文件带 `@ts-nocheck`（P1 拆分出的域服务默认沿用；`npm run check:undefined-symbols` 按 tsconfig 自动识别，不写死清单），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
+- [ ] 类型检查盲区：3 个文件带 `@ts-nocheck`（P1 拆分出的域服务默认沿用；`npm run check:undefined-symbols` 按 tsconfig 自动识别，不写死清单），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
   - 已完成：2026-09-14 分两批让 26 个文件退出 `@ts-nocheck`（47 → 21）：先 14 个零错误的，再 12 个低错误的（1–7 处）。做法、逐文件成本与修法见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算确认能否通过检查，能通过就不加。
 
 **第二条：提升性功能（按需，不排期）**
@@ -451,7 +451,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | 8–20 | `view-shell-service`(8)、`queue-retry-service`(10)、`diagnostics-service`(11)、`realtime-outline`(11)、`audio-time-link-service`(12)、`delivery-service`(15)、`note-markdown`(15)、`vocabulary-service`(17)、`import-service`(20) |
 | 24 以上 | `external-inbox-service`(24)、`task-queue`(28)、`realtime-outline-service`(30)、`recording-service`(33)、`task-activity-service`(52)、`session-finalize-service`(71)、`main.ts`(135)、`asr/clients`(250)、`recorder-service`(287)、`settings-tab`(471)、`outline-view`(520)、`modals`(551) |
 
-2026-09-14 已完成 41 个，剩余 6 个。错误集中在四类，修法固定：
+2026-09-14 已完成 44 个，剩余 3 个。错误集中在四类，修法固定：
 
 1. **默认参数 `options = {}` 让属性变成不存在（TS2339，占比最大）。** 补一个选项接口，属性声明为可选，
    默认值不动。例：`RefreshNoteIndexOptions`、`UpsertGeneratedMarkdownOptions`、`LexVoiceObjectWallOptions`、
