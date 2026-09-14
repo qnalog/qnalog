@@ -198,15 +198,6 @@ export async function loadVocabularyGroups(plugin) {
   return parseVocabularyGroups(plugin.settings.customVocabulary || "");
 }
 
-export async function loadVocabularyTerms(plugin) {
-  return flattenVocabularyGroups(await loadVocabularyGroups(plugin));
-}
-
-export async function loadVocabularyPrompt(plugin) {
-  const groups = await loadVocabularyGroups(plugin);
-  return buildVocabularyPrompt(groups);
-}
-
 export function buildVocabularyPrompt(groups, peopleHotwords = "") {
   const parts = [];
   for (const def of VOCABULARY_SECTIONS) {

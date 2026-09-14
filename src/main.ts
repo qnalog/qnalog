@@ -61,8 +61,6 @@ import { NoteWriter } from "./notes/note-writer";
 import { QueueRetryService } from "./queue/queue-retry-service";
 import { VersionStore } from "./versions/version-store";
 import { PeopleDirectoryService } from "./people/people-directory-service";
-import { VersionStore } from "./versions/version-store";
-import { PeopleDirectoryService } from "./people/people-directory-service";
 import { TranscribeProfileService } from "./asr/transcribe-profile-service";
 import { VocabularyService } from "./vocabulary/vocabulary-service";
 import { MigrationService } from "./migrations/migration-service";

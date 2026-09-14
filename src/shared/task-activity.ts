@@ -304,10 +304,6 @@ export function deriveTaskActivityStatus(
   return "running";
 }
 
-export function isTaskActivityActive(activity: TaskActivity): boolean {
-  return ACTIVE_STATUSES.has(activity.status);
-}
-
 export class TaskActivityStore {
   private readonly activities = new Map<string, TaskActivity>();
   private readonly listeners = new Set<TaskActivityListener>();

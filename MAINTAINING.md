@@ -27,15 +27,15 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 拆解限定为纯搬迁：方法体逐行不变、搬迁后调用点等价、不改变任何行为语义。这满足 1.1 对改动的约束
 （不改变既有行为语义），因此可以在没有新功能需求时单独推进。
 
-当前规模（2026-09-14 实测，`src` 共 50,802 行）：
+当前规模（2026-09-14 实测，`src` 共 44,993 行）：
 
 | 单体 | 行数 | 形态 |
 |---|---|---|
-| `src/main.ts` 的 `class LexVoicePlugin` | 10,357 → 627（272 个成员 → 17 个） | 现在只剩装配、持久化、构建信息与更新检查转发 |
-| `src/ui/outline-view.ts` 的 `class OutlineView` | 7,257（219 个方法） | 侧边栏视图的界面与业务在同一个类里（P2） |
+| `src/main.ts` 的 `class LexVoicePlugin` | 10,357 → 513（272 个成员 → 17 个） | 现在只剩装配、持久化、构建信息与更新检查转发 |
+| `src/ui/outline-view.ts` 的 `class OutlineView` | 6,468（211 个方法） | 侧边栏视图的界面与业务在同一个类里（P2） |
 
 上一轮（2026-09-13）已把 `src/main.ts` 从 24,679 行降到 10,357 行，抽出 19 个模块；
-`src/ui/modals.ts`（2,995 行）是 12 个互不依赖的 Modal 类的集合，不是单体，拆只改变观感。
+`src/ui/modals.ts`（2,627 行）是 11 个互不依赖的 Modal 类与 1 个悬浮气泡的集合，不是单体，拆只改变观感。
 
 已抽出的模块原先不构成边界：`RecorderService`、`TaskQueue`、`OutlineView` 以 `declare plugin: LexVoicePlugin`
 持有整个插件对象（`src/audio/recorder-service.ts:19`、`src/queue/task-queue.ts:20`、`src/ui/outline-view.ts:100`），
@@ -55,7 +55,8 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 
 #### 已完成的 P1（2026-09-14）
 
-`src/main.ts` 从 10,357 行 / 272 个成员降到 627 行 / 17 个成员，抽出 22 个域服务与 3 个共享辅助
+`src/main.ts` 从 10,357 行 / 272 个成员降到 627 行 / 17 个成员（P1 完成时的实测值；此后随
+§7 的场景裁剪与死代码清理降到 513 行），抽出 22 个域服务与 3 个共享辅助
 （下表为拆分当时的清单；招聘 RecruitService 已随 §7 的场景裁剪移除）：
 
 ```
@@ -73,8 +74,8 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 
 | 优先级 | 工作 | 完成判据 |
 |---|---|---|
-| P1 | 拆 `LexVoicePlugin`：定窄接口，按域搬成员与状态 | ✅ 已完成：`main.ts` 只剩装配、生命周期与宿主面（627 行） |
-| P2 | 拆 `OutlineView`（219 个方法 / 7,257 行）：界面与业务分层 | 视图类只处理渲染与交互，数据来源改为 P1 定下的服务接口 |
+| P1 | 拆 `LexVoicePlugin`：定窄接口，按域搬成员与状态 | ✅ 已完成：`main.ts` 只剩装配、生命周期与宿主面（513 行） |
+| P2 | 拆 `OutlineView`（211 个方法 / 6,468 行）：界面与业务分层 | 视图类只处理渲染与交互，数据来源改为 P1 定下的服务接口 |
 | P3 | 内部标识符改名（`LexVoice*` → `QnALog*`，88 个标识符） | 数据层字面量与 `lexvoice-*` 类名、视图类型不动（见 §3） |
 | P4 | `src/ui/modals.ts` 按域拆包 | 可选，不影响维护 |
 
@@ -315,8 +316,9 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 ## 7. 功能边界：已裁剪的场景
 
-> 状态：2026-09-14 的裁剪已合并进 `main`（PR #5，merge `4d77796`），但**尚未经维护者本地验证**。
-> 本地验证按 §4.3.1 执行；若发现问题，分支 `refactor/drop-hr-scenarios`（`a333db5`）仍在远端，
+> 状态：2026-09-14 的裁剪已合并进 `main`（PR #5，merge `4d77796`），并已由维护者在本机
+> Obsidian 中验证界面正常（2026-09-14，构建 `1.0.0-dev.chore-purge-dead-code.718f9d2`）。
+> 若后续发现问题，分支 `refactor/drop-hr-scenarios`（`a333db5`）仍在远端，
 > 可直接在其上修正后重新走流程，或整体 revert `4d77796`。
 
 
@@ -352,15 +354,16 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 **结构（§1.1.1）**
 
-- [x] P1 拆 `LexVoicePlugin`：已完成（2026-09-14）。`src/main.ts` 627 行 / 17 个成员，域逻辑与状态在 22 个域服务里。
-- [ ] P2 拆 `OutlineView`（`src/ui/outline-view.ts`，219 个方法 / 7,257 行）：界面与业务分层，数据来源改走 P1 的域服务接口。
+- [x] P1 拆 `LexVoicePlugin`：已完成（2026-09-14）。`src/main.ts` 10,357 → 513 行，域逻辑与状态在 22 个域服务里。
+- [ ] P2 拆 `OutlineView`（`src/ui/outline-view.ts`，211 个方法 / 6,468 行）：界面与业务分层，数据来源改走 P1 的域服务接口。
       现状：该文件 799 处 `LexVoice` 命名、大量 `this.plugin.<域>.<成员>` 调用；拆法沿用 §1.1.1 的抽取约定，
       先分渲染（DOM 组装、卡片与列表）与数据（会话、大纲、候选）两层，再按面板拆子模块。
 - [ ] P3 内部标识符改名（88 个 `LexVoice*` → `QnALog*`），数据层字面量、`lexvoice-*` 类名与视图类型不动。
-- [ ] P4 `src/ui/modals.ts`（2,995 行 / 12 个 Modal 类）按域拆包。可选。
+- [ ] P4 `src/ui/modals.ts`（2,627 行 / 11 个 Modal 类 + 悬浮气泡 `BubbleWidget`）按域拆包。可选。
 - [ ] 更新检查的 5 个转发（`getUpdateRawBase(s)`、`checkForUpdates(OnStartup)`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
       可并入一个更新域服务，属收尾性质。
-- [ ] 文档债务：`ARCHITECTURE.md` 的 `main.ts:NNNN` 行号引用已随 P1 失效（`main.ts` 现 627 行），需要按新的域服务重新标注。
+- [x] 文档债务：`ARCHITECTURE.md` 的 `main.ts:NNNN` 行号引用已随 P1 失效，已按域服务重新标注（2026-09-14）。
+      该文件按 §9 仍不进仓库，待整体重构完成后再并入。
 
 **第一条：稳定性与安全性**
 
@@ -386,5 +389,5 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 已完成（记录，不再列在待办里）：自更新已移除（仅检查版本并提示，安装交给 Obsidian / BRAT）；
 回滚路径已脚本化（`npm run restore:vault`，安装改为整目录留档）；迁移结果自检已实现（首次加载输出对照表）；
 `src/main.ts` 首轮分解已完成（24,679 行 → 10,357 行，抽出 19 个模块，2026-09-13）；
-P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 627 行，抽出 22 个域服务，2026-09-14）。
+P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服务，2026-09-14）。
 

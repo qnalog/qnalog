@@ -123,10 +123,4 @@ export function splitLongTextForLlm(text, maxChars) {
   pushCurrent();
   return chunks;
 }
-
-export function stripMarkdownDetailsWrapper(text) {
-  const s = String(text || "").trim();
-  const m = s.match(/^<details(?:\s+[^>]*)?>\s*<summary>[\s\S]*?<\/summary>\s*([\s\S]*?)\s*<\/details>\s*$/i);
-  return m ? String(m[1] || "").trim() : s;
-}
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

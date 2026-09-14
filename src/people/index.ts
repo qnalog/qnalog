@@ -65,22 +65,6 @@ export function normalizePersonLookupText(text) {
     .toLowerCase();
 }
 
-export function getFrontmatterPeople(frontmatter) {
-  if (!frontmatter || typeof frontmatter !== "object") return [];
-  const direct = splitPersonFieldValue(frontmatter["人物"] || frontmatter.people || []);
-  const fromTags = getFrontmatterTags(frontmatter)
-    .filter(t => /^人物\//.test(t))
-    .map(t => t.replace(/^人物\//, "").trim())
-    .filter(Boolean);
-  const seen = new Set();
-  const out = [];
-  for (const n of [...direct, ...fromTags]) {
-    const k = normalizePersonLookupText(n);
-    if (k && !seen.has(k)) { seen.add(k); out.push(n); }
-  }
-  return out;
-}
-
 export function firstPersonField(frontmatter, keys) {
   for (const key of keys) {
     const value = frontmatter && frontmatter[key];

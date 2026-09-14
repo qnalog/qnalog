@@ -20,24 +20,11 @@ export function getErrorMessage(error) {
   try { return String(error); } catch { return ""; }
 }
 
-export function cloneJson(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
 export function pickDefined(...args) {
   for (const value of args) {
     if (value !== undefined) return value;
   }
   return undefined;
-}
-
-export function pickNonBlankString(...args) {
-  for (const value of args) {
-    if (value === undefined || value === null) continue;
-    const text = String(value).trim();
-    if (text) return value;
-  }
-  return "";
 }
 
 export function genId() {

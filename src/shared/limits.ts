@@ -27,7 +27,4 @@ export const TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS = 120000;
 
 export const TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS = 24;
 
-
-export const TEXT_IMPORT_FINAL_CONTEXT_COMPACT_THRESHOLD_CHARS = 120000;
-
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
