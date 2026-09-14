@@ -401,7 +401,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] 设置页不得静默改写用户配置：`src/ui/settings-tab.ts` 的 `renderSpeaker` 在服务不可用时直接改写 `importTranscribeProvider`，应改为保留用户选择并给出提示。
 - [ ] 自定义服务的密钥必填判定：未知 provider id 一律按 `requiresKey: false` 处理，导致密钥栏显示"可选"，但导入时运行时会因缺 key 报错；应改为按 endpoint 推断。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
-- [ ] 类型检查盲区：47 个文件带 `@ts-nocheck`（P1 拆分出的域服务默认沿用；`npm run check:undefined-symbols` 按 tsconfig 自动识别，不写死清单），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
+- [ ] 类型检查盲区：33 个文件带 `@ts-nocheck`（P1 拆分出的域服务默认沿用；`npm run check:undefined-symbols` 按 tsconfig 自动识别，不写死清单），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
+  - 已完成：2026-09-14 让 14 个在 `tsconfig.json` 口径下零错误的文件退出 `@ts-nocheck`（47 → 33）。做法与逐文件成本见 §7。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按上面的试算确认能否通过检查，能通过就不加。
 
 **第二条：提升性功能（按需，不排期）**
 
@@ -422,3 +423,28 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 `src/main.ts` 首轮分解已完成（24,679 行 → 10,357 行，抽出 19 个模块，2026-09-13）；
 P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服务，2026-09-14）。
 
+## 8. 类型检查：逐步退出 `@ts-nocheck`
+
+`@ts-nocheck` 会让 `tsc` 跳过整个文件。要判断某个文件能否退出，先量成本、再只改成本为 0 的：
+用 TypeScript 编译器 API 建 `Program`，在 `host.getSourceFile` 里对目标文件去掉指令行后重新解析，
+再读 `program.getSemanticDiagnostics()`（过滤掉 TS2304，它是 `check:undefined-symbols` 的活）
+与 `getSyntacticDiagnostics()` 的错误数。这一步只读不写，可以一次算出全部文件的成本。
+
+2026-09-14 实测（`tsconfig.json` 口径，按错误数升序）：
+
+| 错误数 | 文件 |
+|---|---|
+| 0（14 个，已退出） | `transcribe-profile-service`、`inbox-watcher-service`、`knowledge-extraction-service`、`ask-panel`、`callout-normalize`、`daily-overview`、`detail-blocks`、`meeting-workbench`、`repolish-service`、`session-progress`、`briefing-prompts`、`limits`、`version-store`、`base-definitions` |
+| 1–7 | `audio-refs`(1)、`recording-issues`(1)、`library-view-service`(1)、`note-index-service`(2)、`merge-pipeline`(3)、`migration-service`(3)、`note-writer`(3)、`render`(3)、`wall-markdown`(4)、`meeting-workbench-service`(6)、`people-directory-service`(6)、`recent-notes`(7) |
+| 8–20 | `view-shell-service`(8)、`queue-retry-service`(10)、`diagnostics-service`(11)、`realtime-outline`(11)、`audio-time-link-service`(12)、`delivery-service`(15)、`note-markdown`(15)、`vocabulary-service`(17)、`import-service`(20) |
+| 24 以上 | `external-inbox-service`(24)、`task-queue`(28)、`realtime-outline-service`(30)、`recording-service`(33)、`task-activity-service`(52)、`session-finalize-service`(71)、`main.ts`(135)、`asr/clients`(250)、`recorder-service`(287)、`settings-tab`(471)、`outline-view`(520)、`modals`(551) |
+
+错误集中在三类，修法固定：给 `options = {}` 这类默认参数补类型、把 `TAbstractFile` 收窄成 `TFile`
+（或先判 `instanceof`）、给 `unknown` 的返回值补断言。第三类里有可能藏真实问题——例如
+`diagnostics-service.ts:173` 读 `RecorderService.state`，而该类没有 `state` 属性（TS2551）。
+
+两道门禁在退出指令后都不会自动覆盖新文件，因此改完必须手动反向验证一次：
+在刚退出的文件里写入一个未定义符号，确认 `tsc` 报 TS2304（不是在 `check:undefined-symbols` 里报）。
+
+**不要用严格档衡量这批文件。** `strictNullChecks` + `noImplicitAny`（`tsconfig.strict-core.json` 的口径）
+下，上述 14 个文件及其依赖闭包实测有 740 处错误，与「能否退出 `@ts-nocheck`」是两个独立目标。
