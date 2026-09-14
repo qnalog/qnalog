@@ -260,7 +260,13 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 | `npm run check:versions` | `manifest.json` / `package.json` / `package-lock.json` / `versions.json` 版本不一致 |
 | `npm run check:undefined-symbols` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
 | `npm run check:domain-boundaries` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`this.host.<域>.<不存在的成员>` |
+| `npm run check:plugin-onload` | 域服务漏装：在模拟宿主里加载 `main.js` 跑 `onload`/`onunload`，逐一确认每个服务已装配且方法可用 |
 | `npm run typecheck:core` + `tsc -noEmit` | 严格核心集与其余文件的类型错误 |
+
+`check:plugin-onload` 的来源：域服务由插件在 `onload` 里手工装配，漏装一个不会有任何编译期报错。
+实际发生过一次：`loadAll` 里的设置迁移依赖 migration 与 diagnostics 两个服务，而它们当时在 `loadAll`
+之后才装配，迁移因此被静默跳过（`catch` 里只打一行警告）。这条检查同时确认命令、视图、设置页与状态栏
+定时器的注册数量没有整体丢失。域服务的字段清单写在脚本顶部的 `DOMAIN_FIELDS`，新增服务时补一行。
 
 `check:domain-boundaries` 的来源：P1 拆分过程中，其它模块里累计出现 176 处指向已搬走成员的 `plugin.<成员>`，
 以及 15 处把服务自身当作插件对象传进辅助函数（辅助函数读 `plugin.settings`，会读到 `undefined` 而静默走默认值）；
