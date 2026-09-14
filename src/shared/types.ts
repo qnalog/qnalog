@@ -54,48 +54,6 @@ export interface IndustryProfile {
   generatedAt: string | null;
 }
 
-export interface PromotionReviewContext {
-  requirements: string;
-  nominationMaterial: string;
-  focusCapabilities: string;
-  preReview: string;
-  revieweeName: string;
-  position: string;
-  jobSequence: string;
-  currentLevel: string;
-  targetLevel: string;
-  savedAt: string | null;
-}
-
-export interface RecruitQuality {
-  素质: string;
-  定义: string;
-  信号: string;
-}
-
-export interface RecruitContext {
-  jd: string;
-  resume: string;
-  candidateName: string;
-  position: string;
-  round: string;
-  interviewer: string;
-  interviewScene: string;
-  seniority: string;
-  customNote: string;
-  previousInterviewNote: string;
-  previousNotePath: string;
-  interviewBrief: string;
-  savedAt: string | null;
-  jdFile?: string;
-  generalOutline?: string;
-  requiredQualities?: RecruitQuality[];
-}
-
-export interface RecruitContextLibraryEntry extends RecruitContext {
-  id?: string;
-  type?: string;
-}
 
 export interface KnowledgeExtractionRecord {
   mtime: number;
@@ -154,7 +112,6 @@ export interface PluginSettings {
   polishPromptSeminar: string;
   polishPromptMonologue: string;
   polishPromptLearning: string;
-  polishPromptRecruit: string;
   promptTemplates: Record<string, PromptTemplate>;
   activeTemplateByMode: Record<string, string>;
   briefingStructureLevel: "loose" | "balanced" | "strict";
@@ -215,15 +172,6 @@ export interface PluginSettings {
   availableUpdate: AvailableUpdate | null;
   lastUpdateError: string;
   installedUpdateVersion: string;
-  promotionReviewContext: PromotionReviewContext;
-  recruitContext: RecruitContext;
-  recruitAlwaysAskOnStart: boolean;
-  recruitContextLibrary: RecruitContextLibraryEntry[];
-  recruitFeatureUnlocked: boolean;
-  recruitJdFolderPath: string;
-  recruitResumeFolderPath: string;
-  recruitResumeDesensitize: boolean;
-  recruitHomepagePath: string;
 }
 
 export type LexVoiceSettings = PluginSettings;
@@ -243,8 +191,6 @@ export interface PersistedPluginSettings {
   retryPolicy: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
   ui: Record<string, unknown>;
-  promotionReview: Record<string, unknown>;
-  recruiting: Record<string, unknown>;
   updates: Record<string, unknown>;
   promptTemplates: Record<string, PromptTemplate>;
   activeTemplateByMode: Record<string, string>;
@@ -334,8 +280,6 @@ export interface MergeQueueTaskPayload {
   sourceMeta?: unknown;
   externalAudioSource?: unknown;
   textImportSources?: unknown[];
-  promotionReviewContext?: PromotionReviewContext | null;
-  recruitContext?: RecruitContext | null;
   sessionMeta?: unknown;
   speakerFrontmatter?: Record<string, unknown> | null;
   temporarySourcePath?: string;
@@ -383,10 +327,6 @@ export interface RecordingSession {
   continuationSourcePath?: string;
   continuationSourceTitle?: string;
   continuationRecordedAt?: string;
-  interviewBrief?: string;
-  promotionReviewPhase?: "presentation" | "qa";
-  promotionReviewContext?: PromotionReviewContext | null;
-  recruitContext?: RecruitContext | null;
   meetingWorkbench?: unknown;
   pendingMeetingWorkbenchInteractions?: unknown[];
   workProgress?: unknown;
@@ -407,8 +347,6 @@ export interface RecordingSession {
   realtimeOutlineNextAllowedAt?: number;
   realtimeOutlineNoChangeCommittedCount?: number;
   realtimeOutlineNoChangeRetryCount?: number;
-  jobPortraitCoverage?: unknown;
-  followupFeedback?: unknown;
   writeQueue?: Promise<void>;
   segmentPersistQueue?: Promise<void>;
   finalizePromise?: Promise<void> | null;

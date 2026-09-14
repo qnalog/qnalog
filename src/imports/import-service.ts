@@ -3,7 +3,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：导入：音频与文本文件的转写整理流程、导入选项弹窗入口
 
 import * as obsidian from "obsidian";
-import { RecruitContextModal, AudioImportOptionsModal } from "../ui/modals";
+import { AudioImportOptionsModal } from "../ui/modals";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { getLlmConfigIssue, formatLlmConfigIssue } from "../llm/core";
 import type { LexVoiceSettings } from "../shared/types";
@@ -110,22 +110,6 @@ export class ImportService {
     const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
 
-    let recruitContext = null;
-    if (mode === "recruit") {
-      const result = await new Promise((resolve) => {
-        const modal = new RecruitContextModal(this.host.app, this.host, {
-          flow: "import",
-          onConfirm: (action, ctx) => resolve({ action, ctx }),
-        });
-        modal.open();
-      });
-      if (result.action === "cancel") {
-        new obsidian.Notice("已取消导入");
-        return;
-      }
-      if (result.action !== "skip") recruitContext = result.ctx;
-    }
-
     const session = {
       id: genId(),
       sessionStamp,
@@ -142,7 +126,6 @@ export class ImportService {
       realtimeOutlineAttemptedAt: "",
       realtimeOutlineWorkbenchSignature: "",
       finalized: false,
-      recruitContext,
       externalAudioSource: externalSource,
       importTranscribeProviderId: importProvider.id,
       importSpeakerDiarization: speakerDiarization,
@@ -624,22 +607,6 @@ export class ImportService {
       return;
     }
 
-    let recruitContext = null;
-    if (mode === "recruit") {
-      const result = await new Promise((resolve) => {
-        const modal = new RecruitContextModal(this.host.app, this.host, {
-          flow: "text-import",
-          onConfirm: (action, ctx) => resolve({ action, ctx }),
-        });
-        modal.open();
-      });
-      if (result.action === "cancel") {
-        new obsidian.Notice("已取消导入文本");
-        return;
-      }
-      if (result.action !== "skip") recruitContext = result.ctx;
-    }
-
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
     const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · 文本导入`;
     const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
@@ -661,7 +628,6 @@ export class ImportService {
       realtimeOutlineAttemptedAt: "",
       realtimeOutlineWorkbenchSignature: "",
       finalized: false,
-      recruitContext,
       textImportSources: sources.map(s => ({ path: s.path, name: s.name, chars: s.text.length })),
     };
 

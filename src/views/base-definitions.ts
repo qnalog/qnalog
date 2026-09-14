@@ -97,73 +97,6 @@ views:
 `,
   },
   {
-    relPath: "按模式/招聘面试.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/recruit")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.候选人:
-    displayName: 候选人
-  note.应聘岗位:
-    displayName: 岗位
-  note.轮次:
-    displayName: 轮次
-  note.录用建议:
-    displayName: 录用建议
-views:
-  - type: table
-    name: 列表
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-      - note.录用建议
-    sort:
-      - property: note.time
-        direction: DESC
-  - type: table
-    name: 强烈推荐
-    filters:
-      and:
-        - note.录用建议 == "强烈推荐"
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-  - type: table
-    name: 推荐
-    filters:
-      and:
-        - note.录用建议 == "推荐"
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-  - type: table
-    name: 倾向不推荐
-    filters:
-      or:
-        - note.录用建议 == "倾向不推荐"
-        - note.录用建议 == "倾向不推荐（条件性）"
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-`,
-  },
-  {
     relPath: "按模式/独白手记.base",
     yaml: `filters:
   and:
@@ -218,50 +151,6 @@ views:
     sort:
       - property: note.time
         direction: DESC
-`,
-  },
-  {
-    relPath: "场景/招聘看板.base",
-    yaml: `filters:
-  and:
-    - file.hasTag("lexvoice/recruit")
-properties:
-  file.name:
-    displayName: 笔记
-  note.time:
-    displayName: 时间
-  note.候选人:
-    displayName: 候选人
-  note.应聘岗位:
-    displayName: 岗位
-  note.轮次:
-    displayName: 轮次
-  note.录用建议:
-    displayName: 建议
-  note.tags:
-    displayName: 主题词
-views:
-  - type: table
-    name: 全部候选人
-    order:
-      - file.name
-      - note.time
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-      - note.录用建议
-      - note.tags
-    sort:
-      - property: note.time
-        direction: DESC
-  - type: cards
-    name: 卡片视图
-    order:
-      - note.候选人
-      - note.应聘岗位
-      - note.轮次
-      - note.录用建议
-      - note.time
 `,
   },
   {
@@ -320,8 +209,6 @@ properties:
     displayName: 主题
   note.议题:
     displayName: 议题
-  note.候选人:
-    displayName: 候选人
   note.tags:
     displayName: 主题词
 views:
@@ -333,7 +220,6 @@ views:
       - note.mode
       - note.主题
       - note.议题
-      - note.候选人
       - note.tags
     sort:
       - property: note.time

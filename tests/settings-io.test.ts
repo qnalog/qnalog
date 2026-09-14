@@ -67,7 +67,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(DEFAULT_SETTINGS.diagnosticsLogFolder).toBe("LexVoice/系统/诊断日志");
     expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("LexVoice/资料库/归档");
     expect(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder).toBe("LexVoice/资料库/归档/重复人员");
-    expect(SETTINGS_SCHEMA_VERSION).toBe(4);
+    expect(SETTINGS_SCHEMA_VERSION).toBe(5);
   });
 
   it("serialize 输出携带 schemaVersion", () => {
@@ -148,10 +148,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     a.importSpeakerCount = 4;
     a.transcribeProviders.siliconflow.apiKey = "sk-asr-test";
 
-    // 招聘模块
-    a.recruitFeatureUnlocked = true;
-    a.recruitJdFolderPath = "岗位JD";
-
     // UI 位置对象
     a.floatingBallPos = { left: 10, top: 20 };
 
@@ -207,9 +203,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.importSpeakerDiarization).toBe(false);
     expect(b.importSpeakerCount).toBe(4);
     expect(b.transcribeProviders.siliconflow.apiKey).toBe("sk-asr-test");
-
-    expect(b.recruitFeatureUnlocked).toBe(true);
-    expect(b.recruitJdFolderPath).toBe("岗位JD");
 
     expect(b.floatingBallPos).toEqual({ left: 10, top: 20 });
   });
@@ -306,57 +299,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(settings.promptTemplates["builtin-meeting"].prompt).toBe("旧版会议提示词");
   });
 
-  it("prompt/provider/招聘上下文/更新状态等合法结构 round-trip 后保持", () => {
-    const settings = normalizeLexVoiceSettings({});
-    settings.transcribeProviders.enterprise = {
-      name: "企业 ASR",
-      endpoint: "https://enterprise.example/asr",
-      apiKey: "enterprise-key",
-      model: "enterprise-model",
-      language: "zh",
-      protocol: "openai-compatible",
-      targetLanguage: "en",
-      hint: "internal",
-    };
-    settings.promptTemplates["meeting-custom"] = {
-      id: "meeting-custom",
-      mode: "meeting",
-      name: "会议自定义模板",
-      prompt: "保留决策和待办",
-      description: "测试模板",
-      isBuiltin: false,
-      createdAt: "2025-01-01T00:00:00.000Z",
-      updatedAt: "2025-01-02T00:00:00.000Z",
-    };
-    settings.activeTemplateByMode.meeting = "meeting-custom";
-    settings.recruitFeatureUnlocked = true;
-    settings.recruitContext = {
-      ...settings.recruitContext,
-      jd: "岗位职责",
-      candidateName: "候选人甲",
-      requiredQualities: [{ 素质: "判断力", 定义: "做出好决策", 信号: "权衡充分" }],
-    };
-    settings.recruitContextLibrary = [{ ...settings.recruitContext, id: "ctx-1", type: "saved" }];
-    settings.availableUpdate = {
-      version: "2.0.0",
-      currentVersion: "1.14.0",
-      rawBaseUrl: "https://raw.githubusercontent.com/qnalog/qnalog/main",
-      manifestUrl: "https://raw.githubusercontent.com/qnalog/qnalog/main/manifest.json",
-      checkedAt: "2025-02-01T00:00:00.000Z",
-    };
-    settings.lastUpdateCheckAt = "2025-02-01T00:00:00.000Z";
-
-    const restored = roundTrip(settings);
-
-    expect(restored.transcribeProviders.enterprise).toEqual(settings.transcribeProviders.enterprise);
-    expect(restored.promptTemplates["meeting-custom"]).toEqual(settings.promptTemplates["meeting-custom"]);
-    expect(restored.activeTemplateByMode.meeting).toBe("meeting-custom");
-    expect(restored.recruitContext).toEqual(settings.recruitContext);
-    expect(restored.recruitContextLibrary).toEqual(settings.recruitContextLibrary);
-    expect(restored.availableUpdate).toEqual(settings.availableUpdate);
-    expect(restored.lastUpdateCheckAt).toBe(settings.lastUpdateCheckAt);
-  });
-
   it("丢弃指向上游仓库的历史更新记录", () => {
     // 从上游版本（2.3.2）迁移过来时，data.json 里会残留这条记录：
     // 设置页会把它显示成"可用版本 2.3.2"，「安装更新」也可能据此去取产物。
@@ -391,37 +333,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
       },
     });
     expect(normalized.availableUpdate?.version).toBe("2.1.6");
-  });
-
-  it("晋升评审上下文和内置模板可完整 round-trip", () => {
-    const settings = normalizeLexVoiceSettings({});
-    settings.promotionReviewContext = {
-      requirements: "P8/P9 任职要求",
-        nominationMaterial: "姓名：候选人丙\n岗位：主策",
-      focusCapabilities: "独立决策",
-      preReview: "# 晋升初审",
-        revieweeName: "候选人丙",
-      position: "主策",
-      jobSequence: "策划",
-      currentLevel: "P8",
-      targetLevel: "P9",
-      savedAt: "2026-08-25T00:00:00.000Z",
-    };
-
-    const restored = roundTrip(settings);
-    expect(restored.promotionReviewContext).toEqual(settings.promotionReviewContext);
-    expect(restored.promptTemplates["builtin-promotion-review"]?.mode).toBe("promotion-review");
-    expect(restored.activeTemplateByMode["promotion-review"]).toBe("builtin-promotion-review");
-  });
-
-  it("未解锁 HR 进阶能力时不会恢复晋升评审为当前模式", () => {
-    const restored = normalizeLexVoiceSettings({
-      polishMode: "promotion-review",
-      recruiting: { unlocked: false },
-    });
-
-    expect(restored.recruitFeatureUnlocked).toBe(false);
-    expect(restored.polishMode).toBe(DEFAULT_SETTINGS.polishMode);
   });
 
   it("二次 round-trip 稳定（不会每次保存都漂移一点）", () => {

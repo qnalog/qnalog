@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   getRecentNoteParentPath,
   getRecentNotePathRelativeToRoot,
-  getRecentNoteTopLevelFolder,
   isPathUnderRecentNoteRoots,
   normalizeRecentNoteRoots,
 } from "../src/recent-note-paths";
@@ -39,11 +38,9 @@ describe("最近纪要索引范围", () => {
     expect(isPathUnderRecentNoteRoots("任意目录/纪要.md", roots)).toBe(true);
   });
 
-  it("能够从纪要路径稳定得到文件夹和项目层级", () => {
-    const path = "JD/HR-SSC负责人/候选人/储立瑗-终面.md";
-    expect(getRecentNoteParentPath(path)).toBe("JD/HR-SSC负责人/候选人");
-    expect(getRecentNotePathRelativeToRoot(path, "JD")).toBe("HR-SSC负责人/候选人/储立瑗-终面.md");
-    expect(getRecentNoteTopLevelFolder(path, "JD")).toBe("HR-SSC负责人");
-    expect(getRecentNoteTopLevelFolder("LexVoice/转写纪要/会议.md", "JD")).toBe("");
+  it("能够从纪要路径稳定得到文件夹层级", () => {
+    const path = "LexVoice/转写纪要/2026-09-14/会议.md";
+    expect(getRecentNoteParentPath(path)).toBe("LexVoice/转写纪要/2026-09-14");
+    expect(getRecentNotePathRelativeToRoot(path, "LexVoice/转写纪要")).toBe("2026-09-14/会议.md");
   });
 });

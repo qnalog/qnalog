@@ -7,8 +7,6 @@ import { getRealtimeOutlineAnchorTime } from "../outline-text";
 import { normalizeAudioInputMode, audioInputModeLabel } from "../ui/helpers";
 import { getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { isLexVoiceMobileRuntime } from "../shared/util-platform";
-import { normalizeRecruitContext, hasRecruitContextContent } from "../recruit";
-import { normalizePromotionReviewContext } from "../promotion";
 import { resolveTranscribeProvider } from "../asr/transcribe";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { LexVoiceSettings, RecordingSession } from "../shared/types";
@@ -24,7 +22,6 @@ import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS, SHORT_RECORDING_FILTER_MS } from "../shared/limits";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
-import { renderRecordingInterviewBriefBlock, renderRecordingPromotionReviewBlock } from "../notes/detail-blocks";
 import { getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName } from "../notes/audio-refs";
 import { extractLexVoiceTranscriptSegments, inferLexVoiceNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
@@ -33,7 +30,6 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { makeRecordingIssue } from "../asr/transcribe";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
-import { RecruitService } from "../recruit/recruit-service";
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
@@ -51,7 +47,6 @@ export interface RecordingHost {
   profiles: TranscribeProfileService;
   queue: TaskQueue | null;
   recorder: RecorderService | null;
-  recruit: RecruitService;
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
   /** 会话收尾服务：切片转写与停止后的收尾。 */
@@ -70,9 +65,6 @@ export class RecordingService {
   /** 转写服务的熔断状态：按服务键区分，连续瞬时失败后暂停批量转写。 */
   declare asrServiceCircuitKey;
   declare asrServiceCircuitState;
-  /** 招聘与晋升评审的上下文：随会话一起写入笔记，会话结束后清空。 */
-  declare _currentRecruitContext;
-  declare _currentPromotionReviewContext;
   /** 当前录音问题（设备/服务/切片），无问题时为空。 */
   declare recordingIssue;
 
@@ -85,8 +77,6 @@ export class RecordingService {
     this._oneShotPolishMode = null;
     this.asrServiceCircuitKey = null;
     this.asrServiceCircuitState = null;
-    this._currentRecruitContext = null;
-    this._currentPromotionReviewContext = null;
   }
 
   async toggleRecording() {
@@ -134,25 +124,9 @@ export class RecordingService {
         return;
       }
     }
-    // 招聘面试模式：先弹 RecruitContextModal 让用户注入 JD/简历，再开始录音
     const mode = continuationInfo && continuationInfo.mode
       ? continuationInfo.mode
       : getEffectivePolishMode(this.host.settings, this._oneShotPolishMode || this.host.settings.polishMode);
-    if (mode === "promotion-review") {
-      const savedContext = normalizePromotionReviewContext(this.host.settings.promotionReviewContext || {});
-      if (!savedContext.requirements || !savedContext.nominationMaterial || !savedContext.preReview) {
-        new obsidian.Notice("请先填写任职要求和晋升提名材料，并生成晋升初审。", 6000);
-        await this.host.shell.openPromotionReviewContextInline();
-        return;
-      }
-      this._currentPromotionReviewContext = savedContext;
-    }
-    if (mode === "recruit") {
-      // 录音前不再弹窗：直接用已存的招聘上下文开录。要改上下文（尤其每场现导当场候选人简历），
-      // 事先点对象卡片的铅笔进内联编辑即可——录音入口不再打断。
-      const savedCtx = normalizeRecruitContext(this.host.settings.recruitContext);
-      this._currentRecruitContext = hasRecruitContextContent(savedCtx) ? savedCtx : null;
-    }
     try {
       this.clearRecordingIssue();
       await ensureVaultFolder(this.host.app, this.host.settings.audioFolder);
@@ -166,10 +140,6 @@ export class RecordingService {
         : obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`);
 
       const meta = getModeMeta(this.host.settings, mode);
-      let recordingInterviewBrief = "";
-      if (!continuationInfo && mode === "recruit" && this._currentRecruitContext && (this._currentRecruitContext.jd || this._currentRecruitContext.resume)) {
-        recordingInterviewBrief = String(this._currentRecruitContext.interviewBrief || "").trim();
-      }
       const oneShotMode = this._oneShotCaptureMode;
       const requestedCaptureMode = oneShotMode || this.host.settings.captureMode || "mic";
       const captureMode = resolveRuntimeAudioInputMode(requestedCaptureMode);
@@ -197,9 +167,6 @@ export class RecordingService {
         realtimeOutlineNextAllowedAt: 0,
         realtimeOutlineNoChangeCommittedCount: -1,
         realtimeOutlineNoChangeRetryCount: 0,
-        interviewBrief: recordingInterviewBrief,
-        promotionReviewContext: this._currentPromotionReviewContext || null,
-        promotionReviewPhase: "presentation",
         writeQueue: Promise.resolve(),
         segmentPersistQueue: Promise.resolve(),
         liveAsrJobs: new Map(),
@@ -210,7 +177,6 @@ export class RecordingService {
         activeSegmentJobs: 0,
         pendingMeetingWorkbenchInteractions: [],
         finalized: false,
-        recruitContext: this._currentRecruitContext || null,
         captureMode,
         audioChannelCount: 1,
         audioChannelMaxCount: 1,
@@ -227,8 +193,6 @@ export class RecordingService {
         percent: null,
         detail: "正在采集音频，分段后会自动转写",
       });
-      this._currentRecruitContext = null;
-      this._currentPromotionReviewContext = null;
 
       const activeProviderId = this.host.settings.activeTranscribeProvider || "siliconflow";
       const activeProvider = (this.host.settings.transcribeProviders || {})[activeProviderId] || {};
@@ -237,27 +201,16 @@ export class RecordingService {
       const titleLine = continuationInfo
         ? `## 续录 ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}（录音中…）`
         : `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}（录音中…）`;
-      const interviewBriefBlock = (!continuationInfo && recordingInterviewBrief)
-        ? renderRecordingInterviewBriefBlock(this.host.session.id, recordingInterviewBrief).trimEnd()
-        : null;
-      const promotionPreReviewBlock = (!continuationInfo && mode === "promotion-review" && this.host.session.promotionReviewContext && this.host.session.promotionReviewContext.preReview)
-        ? renderRecordingPromotionReviewBlock(this.host.session.id, this.host.session.promotionReviewContext.preReview).trimEnd()
-        : null;
       const header = [
         continuationInfo ? "" : null,
         titleLine,
         "",
         `<!-- lexvoice-session:${this.host.session.id} -->`,
-        promotionPreReviewBlock,
-        interviewBriefBlock,
         `<!-- lexvoice-segments-start:${this.host.session.id} -->`,
         `<!-- lexvoice-segments-end:${this.host.session.id} -->`,
         "",
       ].filter(v => v !== null).join("\n");
       await this.host.noteWriter.appendToNote(mdPath, header);
-      if (!continuationInfo && mode === "recruit" && this.host.session && this.host.session.recruitContext && !recordingInterviewBrief && (this.host.session.recruitContext.jd || this.host.session.recruitContext.resume)) {
-        this.host.recruit.scheduleRecruitInterviewBriefBackground(this.host.session);
-      }
 
       const requiresWholeSession = !!(activeProfile && activeProfile.requiresWholeSession)
         || isSpeakerDiarizationProvider(activeProvider);

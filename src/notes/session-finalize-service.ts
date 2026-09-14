@@ -30,7 +30,6 @@ import { TaskQueue } from "../queue/task-queue";
 import { mergeAndPolish } from "../briefing/merge-pipeline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
-import { RecruitService } from "../recruit/recruit-service";
 import { NoteWriter } from "../notes/note-writer";
 import { QueueRetryService } from "../queue/queue-retry-service";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
@@ -54,7 +53,6 @@ export interface SessionFinalizeHost {
   recorder: RecorderService | null;
   /** 录音采集服务：切片缓存与整场音频的落点、录音问题状态。 */
   recording: RecordingService & { setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
-  recruit: RecruitService;
   session: RecordingSession | null;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
@@ -440,7 +438,7 @@ export class SessionFinalizeService {
 
     if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`段 ${segNumber} 已转写`);
 
-    if ((this.host.settings.enableRealtimeOutline || (this.host.session && this.host.session.mode === "recruit-needs")) && text && !err) {
+    if (this.host.settings.enableRealtimeOutline && text && !err) {
       this.host.outline.scheduleRealtimeOutline();
     }
   }
@@ -728,7 +726,6 @@ export class SessionFinalizeService {
         duration: textImport ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
         source: session.source || "",
         sourceMeta: session.sourceMeta || null,
-        promotionReviewContext: session.promotionReviewContext || null,
         meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
       };
       finalSessionMeta = sessionMeta;
@@ -738,10 +735,6 @@ export class SessionFinalizeService {
         percent: 62,
         detail: textImport ? "正在把导入文本交给大模型结构化整理" : "正在把分段转写合并成最终纪要",
       });
-      if (session.mode === "recruit" && session.recruitContext) {
-        session.recruitContext = await this.host.recruit.resolveRecruitProjectContext(session.recruitContext);
-        writeSession.recruitContext = session.recruitContext;
-      }
       taskMeter = this.host.tasks.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
       session._finalizeTaskMeter = taskMeter;
@@ -754,7 +747,7 @@ export class SessionFinalizeService {
         sourcePath: s.sourcePath,
         sourceUrl: s.sourceUrl,
         rawText: s.rawText,
-      })), session.mode, session.recruitContext, sessionMeta, speakerFrontmatter);
+      })), session.mode, sessionMeta, speakerFrontmatter);
       session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
       this.host.recording.setSessionWorkProgress(session, {
         stage: "write-note",
@@ -802,15 +795,13 @@ export class SessionFinalizeService {
         sourceMeta: session.sourceMeta || null,
         externalAudioSource: session.externalAudioSource || null,
         textImportSources: session.textImportSources || [],
-        recruitContext: session.recruitContext || null,
         speakerFrontmatter,
         sessionMeta: finalSessionMeta || {
           startedAt: session.startedAt,
           duration: isTextImportSession(session) ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
           source: session.source || "",
           sourceMeta: session.sourceMeta || null,
-          promotionReviewContext: session.promotionReviewContext || null,
-          meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
+            meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
         },
         lastError: mergeError.message || String(mergeError),
       });
@@ -869,7 +860,6 @@ export class SessionFinalizeService {
           sourceMeta: session.sourceMeta || null,
           externalAudioSource: session.externalAudioSource || null,
           textImportSources: session.textImportSources || [],
-          recruitContext: session.recruitContext || null,
           speakerFrontmatter,
           sessionMeta: finalSessionMeta,
           lastError: `纪要写入失败：${getErrorMessage(writeError)}`,
@@ -901,18 +891,14 @@ export class SessionFinalizeService {
 
     if (!mergeError && polished) {
       const beforeRenamePath = session.mdPath;
-      const recruitRelocate = session.mode === "recruit" && session.recruitContext && session.recruitContext.jdFile;
-      // F4.2：招聘评估且选了 JD 项目 → 移到项目文件夹 + 候选人-轮次-MMDD 命名（替代自动标题改名，保命名干净）
-      const renamed = recruitRelocate
-        ? await this.host.recruit.relocateRecruitNote(session, session.recruitContext)
-        : await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
+      const renamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
       if (renamed instanceof obsidian.TFile) {
         session.mdPath = renamed.path;
         writeSession.mdPath = renamed.path;
       }
       const renamedByPolished = renamed instanceof obsidian.TFile
         && obsidian.normalizePath(renamed.path) !== obsidian.normalizePath(beforeRenamePath);
-      if ((session.source === "import" || session.source === "text-import") && !renamedByPolished && !recruitRelocate) {
+      if ((session.source === "import" || session.source === "text-import") && !renamedByPolished) {
         const rawTitleSource = buildTitleSourceFromSegments(segmentsForFinal);
         if (rawTitleSource) {
           const fallbackRenamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);

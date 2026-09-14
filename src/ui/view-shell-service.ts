@@ -8,7 +8,6 @@ import { VIEW_TYPE_MINUTES_KANBAN } from "../ui/minutes-kanban-view";
 import { BubbleWidget } from "../ui/modals";
 import { getModeMeta } from "../shared/mode-meta";
 import { isLexVoiceMobileRuntime } from "../shared/util-platform";
-import { isRecruitFeatureUnlocked } from "../recruit";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { LexVoiceSettings, RecordingSession } from "../shared/types";
 import { MODE_META } from "../shared/catalog-modes";
@@ -236,26 +235,6 @@ export class ViewShellService {
       return;
     }
     await this.host.app.workspace.getLeaf(false).openFile(recent[0].file);
-  }
-
-  async openPromotionReviewContextInline() {
-    if (!isRecruitFeatureUnlocked(this.host.settings)) {
-      new obsidian.Notice("晋升评审功能未解锁");
-      return;
-    }
-    await this.openOutlineView();
-    const leaves = this.host.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    const view = leaves.length ? leaves[0].view : null;
-    if (view && typeof view.render === "function") { view._promotionReviewEditing = true; view.render(); }
-  }
-
-  // 打开大纲面板并进招聘上下文「内联编辑」视图（替掉原来的 flow:"settings" 弹窗）。
-  async openRecruitContextInline() {
-    if (!isRecruitFeatureUnlocked(this.host.settings)) { new obsidian.Notice("招聘评估功能未解锁"); return; }
-    await this.openOutlineView();
-    const leaves = this.host.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    const view = leaves.length ? leaves[0].view : null;
-    if (view && typeof view.render === "function") { view._recruitEditing = true; view.render(); }
   }
 }
 

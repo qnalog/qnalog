@@ -42,7 +42,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   mdFolder: "LexVoice/转写纪要",
   meetingMaterialsFolder: "LexVoice/会议资料",
   htmlReportFolder: "LexVoice/HTML报告",
-  reportBrandName: "",  // recruit/seminar 报告页脚公司名；留空则用纪要里的「公司/」标签。报告不含 logo。
+  reportBrandName: "",  // seminar 报告页脚公司名；留空则用纪要里的「公司/」标签。报告不含 logo。
   noteFileNameFormatNew: "YYYY-MM-DD HHmm",
 
   // —— 转写：多 provider 注册表 ——
@@ -168,7 +168,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   polishPromptSeminar: "",
   polishPromptMonologue: "",
   polishPromptLearning: "",
-  polishPromptRecruit: "",
 
   // 提示词管理：内置提示词负责稳定底稿，自定义提示词负责用户自己的 Prompt 规则
   promptTemplates: {},  // { [id]: { id, mode, name, description, baseMode, prompt, customMode, createdAt, updatedAt } }
@@ -253,44 +252,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   availableUpdate: null,
   lastUpdateError: "",
   installedUpdateVersion: "",
-
-  promotionReviewContext: {
-    requirements: "",
-    nominationMaterial: "",
-    focusCapabilities: "",
-    preReview: "",
-    revieweeName: "",
-    position: "",
-    jobSequence: "",
-    currentLevel: "",
-    targetLevel: "",
-    savedAt: null,
-  },
-
-  // 招聘面试模式上下文 —— 录音前注入 JD/简历，让 AI 评价有锚点
-  recruitContext: {
-    jd: "",
-    resume: "",
-    candidateName: "",
-    position: "",
-    round: "",
-    interviewer: "",
-    interviewScene: "",
-    seniority: "",  // 初级 / 中级 / 高级 / 资深 / 总监
-    customNote: "",
-    previousInterviewNote: "",
-    previousNotePath: "",
-    interviewBrief: "",
-    savedAt: null,
-  },
-  recruitAlwaysAskOnStart: false,  // 默认「下次直接套用此上下文、不再询问」（设计规范 §6 默认开）；录音前不打断，要改事先点铅笔进内联
-  recruitContextLibrary: [],      // 历史 JD 列表，便于快速复用
-  recruitFeatureUnlocked: false,
-  // HR 招聘项目化模块（仅解锁后可见）：JD 库 / 简历库 / 脱敏 / 主页 路径
-  recruitJdFolderPath: "JD",
-  recruitResumeFolderPath: "简历",
-  recruitResumeDesensitize: true,
-  recruitHomepagePath: "",
 };
 
 export type { LexVoiceSettings, PluginSettings } from "./types";

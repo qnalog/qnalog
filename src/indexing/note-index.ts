@@ -202,7 +202,7 @@ function cleanCoreTitle(value: unknown): string {
     .replace(/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:?\d{2})?\s*[·\-–—:]?\s*/, "")
     .replace(/^\d{4}-\d{2}-\d{2}\s+\d{4}\s*[·\-–—:]?\s*/, "")
     .replace(/^(?:导入|合并|录音)\s*[·\-–—:]\s*/, "")
-    .replace(/^(?:综合纪要|研讨会|学习笔记|招聘评估|个人笔记|访谈纪要)\s*[·\-–—:]\s*/, "")
+    .replace(/^(?:综合纪要|研讨会|学习笔记|个人笔记|访谈纪要)\s*[·\-–—:]\s*/, "")
     .trim(), MAX_CORE_TITLE_CHARS);
 }
 
@@ -244,7 +244,7 @@ export function buildLexVoiceNoteIndex(
     : (abstractSummary || fallbackSummary);
   const h1 = /^#\s+(.+?)\s*$/m.exec(source)?.[1] || "";
   const titleCandidate = cleanCoreTitle(options.noteTitle || h1);
-  const genericTitle = /^(?:综合纪要|研讨会|学习笔记|招聘评估|个人笔记|访谈纪要|导入|合并)?$/.test(titleCandidate);
+  const genericTitle = /^(?:综合纪要|研讨会|学习笔记|个人笔记|访谈纪要|导入|合并)?$/.test(titleCandidate);
   const title = genericTitle || titleCandidate.length < 4
     ? (firstSentence(summary) || extracted.topics[0]?.title || "会议纪要")
     : titleCandidate;

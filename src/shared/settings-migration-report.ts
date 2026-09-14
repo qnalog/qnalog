@@ -28,13 +28,16 @@ export interface SettingsMigrationReport {
 const DROPPED_GROUP_ACTIONS: Record<string, string> = {
   services: "「任务与服务的绑定」（实时转写 / 会后导入转写 / AI 整理分别使用哪个服务）不再被本版本读取。"
     + "服务条目与访问密钥本身已保留，但需要到「设置 → QnALog (MIT) → 转写服务 / 导入音频 / AI 整理」重新选择一次。",
+  recruiting: "招聘与晋升评审场景已从本版本移除，这一组设置不再被读取。"
+    + "已有的招聘/晋升笔记文件不会被删除或改写；如需继续使用这些场景，请停留在旧版本。",
+  promotionReview: "招聘与晋升评审场景已从本版本移除，这一组设置不再被读取。"
+    + "已有的招聘/晋升笔记文件不会被删除或改写；如需继续使用这些场景，请停留在旧版本。",
 };
 
 // 已知分组被保留后的说明（让用户知道不必重填什么）。
 const KEPT_GROUP_NOTES: Record<string, string> = {
   speech: "转写服务配置与访问密钥已保留",
   composer: "AI 整理服务与访问密钥已保留",
-  recruiting: "招聘上下文与资料库已保留",
   vocabulary: "热词表与人员/学习卡片目录已保留",
   storage: "保存路径与收件箱设置已保留",
 };

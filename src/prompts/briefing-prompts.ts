@@ -8,7 +8,6 @@ import { getAudioTimeLink, getSegmentAudioLinkOffsetMs } from "../notes/audio-re
 
 import { getCustomPromptModeTemplate } from "../shared/mode-meta";
 
-import { buildPromotionReviewContextPrefix, buildPromotionReviewPartContextPrefix } from "../promotion";
 
 import { logLlmRequestDiagnostic } from "../llm/core";
 
@@ -61,15 +60,15 @@ ${fmSchema}
 
 \`\`\`html
 <!-- lexvoice-people: 张三, 李四 -->
-<!-- lexvoice-tags: 主题/招聘流程, 主题/AI转型, 项目/晋升提名, 公司/示例科技, 行业/HR -->
+<!-- lexvoice-tags: 主题/上线范围, 主题/AI转型, 项目/示例项目, 公司/示例科技, 行业/互联网 -->
 \`\`\`
 
 **lexvoice-people**：本纪要中**确实出现或被点名**的关键人名（真实姓名或明确角色称呼），逗号分隔，0–6 个；只写转写里真实出现的，不带任何前缀，会写进独立的 \`人物\` 属性。⚠️**上面示例里的"张三/李四"只是占位格式，绝对不要照抄进结果；转写里没有明确人名时，这条注释整行留空（\`<!-- lexvoice-people: -->\`）或不输出——宁可没有，也不要编造或套用任何示例名。**
 
 **lexvoice-tags**：多维度中文 nested 标签，每个用「中文前缀 + 斜杠 + 具体词」，让 Obsidian 标签面板按维度自动分组。维度只剩 4 个（**人物已单列到 lexvoice-people，这里绝不要再写 \`人物/x\`**）：
 
-- **主题** ✅ 必填（3–5 个）：核心议题或讨论领域。例 \`主题/招聘流程\`、\`主题/AI转型\`、\`主题/组织设计\`、\`主题/晋升机制\`
-- **项目**（按需，0–3 个）：转写中明确出现的专有项目名。例 \`项目/晋升提名\`、\`项目/Q2交付\`
+- **主题** ✅ 必填（3–5 个）：核心议题或讨论领域。例 \`主题/上线范围\`、\`主题/AI转型\`、\`主题/组织设计\`、\`主题/复盘机制\`
+- **项目**（按需，0–3 个）：转写中明确出现的专有项目名。例 \`项目/示例项目\`、\`项目/Q2交付\`
 - **公司**（按需，0–2 个）：公司或组织名（必须明确出现）。例 \`公司/示例科技\`、\`公司/示例集团\`
 - **行业**（可选，0–1 个）：行业或职能领域。例 \`行业/HR\`、\`行业/游戏\`
 
@@ -77,9 +76,9 @@ ${fmSchema}
 
 - lexvoice-tags 总数 4–9 个，主题维度至少 3 个
 - 每个 tag 的"具体词"部分 ≤6 个汉字，避免空格和标点（"AI转型" 而非 "AI 转型"）
-- 不要重复 mode 字段语义（**禁止** 输出 \`主题/招聘面试\`、\`主题/会议\`、\`主题/访谈\` 这类与 mode 重复的词）
+- 不要重复 mode 字段语义（**禁止** 输出 \`\`主题/会议\`、\`主题/访谈\` 这类与 mode 重复的词）
 - 转写中**没明确出现**的项目/公司/人物**一律不写**，不要编造
-- 优先具体词（"招聘漏斗指标" 而非 "招聘"；"晋升提名项目" 而非 "项目"）
+- 优先具体词（"转写延迟指标" 而非 "指标"；"迁移计划" 而非 "项目"）
 - 系统标签 \`lexvoice/<mode>\` 由代码自动注入，**不要在标签建议里重复**
 `
     : "";
@@ -99,9 +98,6 @@ ${frontmatterSection}**整体结构原则**：顶部用 callout 做结构化速�
 - \`> [!info]\` 仅在具体模式模板已经给出信息卡时使用；工作纪要模式不要新增元数据卡片
 - \`> [!abstract]\` 顶部摘要散文
 - \`> [!success]\` / \`> [!important]\` 顶部决策清单或一句话定调（仅必要时）
-- \`> [!summary]\` 招聘模式专属置顶「面试评价」
-- \`> [!ai-eval]\` 招聘模式专属 AI 评价
-- \`> [!check]\` 招聘模式专属「重点考核项核验」（仅当上下文标注了特殊关注点时）
 - \`> [!tip]\` 模式不匹配的软建议
 - \`> [!question]\` 悬而未决/待澄清（仅在出现时）
 - 其他正文一律不用 callout
@@ -135,8 +131,6 @@ export const POLISH_PROMPTS = {
   seminar: buildPrompt(MODE_BODIES.seminar, false, "seminar"),
   huddle: buildPrompt(MODE_BODIES.huddle, false, "huddle"),
   monologue: buildPrompt(MODE_BODIES.monologue, false, "monologue"),
-  recruit: buildPrompt(MODE_BODIES.recruit, false, "recruit"),
-  "promotion-review": buildPrompt(MODE_BODIES["promotion-review"], false, "promotion-review"),
 };
 
 export const MERGE_PROMPTS = {
@@ -147,8 +141,6 @@ export const MERGE_PROMPTS = {
   seminar: buildPrompt(MODE_BODIES.seminar, true, "seminar"),
   huddle: buildPrompt(MODE_BODIES.huddle, true, "huddle"),
   monologue: buildPrompt(MODE_BODIES.monologue, true, "monologue"),
-  recruit: buildPrompt(MODE_BODIES.recruit, true, "recruit"),
-  "promotion-review": buildPrompt(MODE_BODIES["promotion-review"], true, "promotion-review"),
 };
 
 // 最终纪要被 max_tokens 截断时，正文顶部插显式告警——把"静默残缺"变成"用户可见"。守住"不缺漏"底线。
@@ -175,12 +167,6 @@ export function buildSessionMetaPrefix(meta, mode, options = {}) {
     lines.push("");
     lines.push("frontmatter 的「日期」「时间」「时长」「mode」字段必须照搬上面给定的值；其他字段（主题、参会人等）根据转写内容推断。");
     sections.push(lines.join("\n"));
-  }
-  if (mode === "promotion-review" && meta && meta.promotionReviewContext) {
-    const promotionContext = options.promotionPart
-      ? buildPromotionReviewPartContextPrefix(meta.promotionReviewContext)
-      : buildPromotionReviewContextPrefix(meta.promotionReviewContext);
-    if (promotionContext) sections.push(promotionContext);
   }
   return sections.join("\n\n---\n\n");
 }
@@ -234,8 +220,8 @@ export function buildAdaptiveBriefingLengthInstruction(mode, stats) {
     lines.push("- 学习笔记尤其要随材料长度扩展：学习要点、概念术语、可收纳卡片和追问问题都应跟随内容密度增加；长课程优先按章节输出全景学习笔记。");
   } else if (mode === "meeting" || mode === "seminar" || mode === "huddle") {
     lines.push("- 会议/研讨类内容应随议题数量扩展：主要议题、观点谱系、决策、风险、待办和悬而未决问题都要按实际出现情况保留，不要为保持短小而合并掉关键差异。");
-  } else if (mode === "interview" || mode === "recruit") {
-    lines.push("- 访谈/招聘类内容应随问题数量和证据密度扩展：保留每个关键问题、回答证据、追问和判断依据，不要只输出总评。");
+  } else if (mode === "interview") {
+    lines.push("- 访谈类内容应随问题数量和证据密度扩展：保留每个关键问题、回答证据和判断依据，不要只输出总评。");
   } else if (mode === "monologue") {
     lines.push("- 个人口述应随思路分叉扩展：保留所有有信息量的判断、问题和延伸方向，不要把长独白压成一段摘要。");
   }
@@ -568,7 +554,6 @@ export function getBriefingPipelineTargetChars(plugin, mode, repolishOptions) {
 export function buildBriefingPipelineOptionsKey(plugin, mode, repolishOptions) {
   return JSON.stringify({
     pipeline: 2,
-    promotionPipeline: mode === "promotion-review" ? 2 : 0,
     mode,
     promptTemplate: String(plugin.settings.activeTemplateByMode && plugin.settings.activeTemplateByMode[mode] || ""),
     structureLevel: String(repolishOptions && repolishOptions.structureLevel || plugin.settings.briefingStructureLevel || "balanced"),

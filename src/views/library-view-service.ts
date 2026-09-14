@@ -3,7 +3,6 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：资料库视图：Base 与卡片墙的生成与打开、生成文件的落盘与打开
 
 import * as obsidian from "obsidian";
-import { isRecruitFeatureUnlocked } from "../recruit";
 import type { LexVoiceSettings } from "../shared/types";
 import { PeopleDirectoryService } from "../people/people-directory-service";
 import { LV_BASE_DEFINITIONS } from "../views/base-definitions";
@@ -36,10 +35,6 @@ export class LibraryViewService {
     await ensureVaultFolder(this.host.app, basesFolder + "/场景");
     let created = 0, updated = 0, skipped = 0;
     for (const def of LV_BASE_DEFINITIONS) {
-      if (!isRecruitFeatureUnlocked(this.host.settings) && /lexvoice\/recruit|招聘/.test(def.relPath + "\n" + def.yaml)) {
-        skipped++;
-        continue;
-      }
       const path = obsidian.normalizePath(basesFolder + "/" + def.relPath);
       const existing = this.host.app.vault.getAbstractFileByPath(path);
       if (existing instanceof obsidian.TFile) {

@@ -31,7 +31,7 @@ export class DeliveryService {
     this.host = host;
   }
 
-  // 报告生成共用：校验 LLM 配置 →（招聘/研讨）弹配色选择 → 调模型产 HTML → 按所选色相整体重着色。
+  // 报告生成共用：校验 LLM 配置 →（研讨模板）弹配色选择 → 调模型产 HTML → 按所选色相整体重着色。
   // 返回 { html } 或 null（未配置/用户取消）。HTML 报告与 PDF 报告共用，保证选色/改色逻辑只有一份。
   async produceReportHtmlForFile(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return null;
@@ -43,10 +43,10 @@ export class DeliveryService {
       new obsidian.Notice("请先配置大模型服务地址和模型标识。", 8000);
       return null;
     }
-    // 招聘评估 / 研讨纪要：纯白弥散数据驱动模板（大模型只产 DATA JSON 注入固定模板），生成前先选配色；其余模式沿用通用 HTML 报告。
+    // 研讨纪要：纯白弥散数据驱动模板（大模型只产 DATA JSON 注入固定模板），生成前先选配色；其余模式沿用通用 HTML 报告。
     const frontmatter = await readFileFrontmatter(this.host, file);
     const mode = detectRecentNoteMode(this.host, file, frontmatter);
-    const styled = mode === "recruit" || mode === "seminar";
+    const styled = mode === "seminar";
     let accentHex = null;
     if (styled) {
       accentHex = await pickReportAccentColor(this.host.app);

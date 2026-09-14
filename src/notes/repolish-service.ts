@@ -3,10 +3,8 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：重新整理：按说话人姓名重排当前纪要、生成清稿
 
 import * as obsidian from "obsidian";
-import { RecruitContextModal } from "../ui/modals";
 import { getModeMeta } from "../shared/mode-meta";
 import { getSessionMetaDurationMs } from "../shared/util-text";
-import { isRecruitFeatureUnlocked } from "../recruit";
 import { stripModeSuggestionBlocks } from "../llm/core";
 import type { LexVoiceSettings } from "../shared/types";
 import { getLearnedLlmOutputCeiling } from "../llm/output-budget";
@@ -43,10 +41,6 @@ export class RepolishService {
 
   async repolishMarkdownFile(file, mode, repolishOptions = null) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
-    if (["promotion-review", "recruit", "recruit-needs"].includes(mode) && !isRecruitFeatureUnlocked(this.host.settings)) {
-      new obsidian.Notice("该扩展模式尚未启用");
-      return;
-    }
     const meta = getModeMeta(this.host.settings, mode);
     let taskMeter = null;
     // 重新整理必须按来源纪要单飞。否则用户连续切换模式/重复点击时，两个
@@ -94,19 +88,6 @@ export class RepolishService {
             }
           }
         }
-      }
-
-      let recruitContext = null;
-      if (mode === "recruit") {
-        const result = await new Promise((resolve) => {
-          const modal = new RecruitContextModal(this.host.app, this.host, {
-            flow: "repolish",
-            onConfirm: (action, ctx) => resolve({ action, ctx }),
-          });
-          modal.open();
-        });
-        if (result.action === "cancel") return;
-        recruitContext = result.action === "skip" ? null : result.ctx;
       }
 
       if (!this._repolishInFlight) this._repolishInFlight = new Set();
@@ -171,7 +152,7 @@ export class RepolishService {
       this.host.tasks.updateBusyStatus();
       taskMeter = this.host.tasks.beginTaskMeter();
       sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter });
-      const polished = await mergeAndPolish(this.host, segments, mode, recruitContext, sessionMeta, originalFmForRegen, repolishOptions);
+      const polished = await mergeAndPolish(this.host, segments, mode, sessionMeta, originalFmForRegen, repolishOptions);
       this.host.tasks.patchTaskActivity(taskId, {
         stage: "writing",
         stageLabel: "正在生成新版本",
