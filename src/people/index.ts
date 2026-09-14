@@ -137,10 +137,10 @@ export async function loadPeopleDirectory(plugin, options: PeopleDirectoryLoadOp
     .map(file => `${obsidian.normalizePath(file.path || "")}:${file.stat && file.stat.mtime || 0}:${file.stat && file.stat.size || 0}`)
     .sort()
     .join("|");
-  if (!options.force && plugin._peopleDirectoryCache
-    && plugin._peopleDirectoryCache.folder === folder
-    && plugin._peopleDirectoryCache.stamp === stamp) {
-    return plugin._peopleDirectoryCache.items || [];
+  if (!options.force && plugin.people._peopleDirectoryCache
+    && plugin.people._peopleDirectoryCache.folder === folder
+    && plugin.people._peopleDirectoryCache.stamp === stamp) {
+    return plugin.people._peopleDirectoryCache.items || [];
   }
   const entries = [];
   for (const file of files) {
@@ -149,7 +149,7 @@ export async function loadPeopleDirectory(plugin, options: PeopleDirectoryLoadOp
     if (item) entries.push(item);
   }
   const items = dedupePeopleEntries(entries);
-  plugin._peopleDirectoryCache = { folder, stamp, items, loadedAt: Date.now() };
+  plugin.people._peopleDirectoryCache = { folder, stamp, items, loadedAt: Date.now() };
   return items;
 }
 
