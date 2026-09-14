@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：笔记 Markdown 的解析与生成（版本块、frontmatter 后处理、逐字稿区块、标题与文件名、邮件草稿）——这几个关注点相互引用，合并为一个模块以避免循环导入
 
 import { collectLexVoiceAudioRefs, getAudioLinkTarget, getLexVoiceDurationMs } from "./audio-refs";
@@ -844,7 +843,7 @@ export function extractRoleMappingFromFrontmatter(frontmatter) {
       const channel = Number(String(speakerId).replace(/^spk-/, "")) || 0;
       if (!channel) continue;
       const personName = item && typeof item === "object"
-        ? String(item.personName || item.name || "").trim()
+        ? String((item as { personName?: string; name?: string }).personName || (item as { personName?: string; name?: string }).name || "").trim()
         : primitiveText(item).trim();
       if (!personName) continue;
       // 历史笔记可能写成「说话人 N」（带空格），两种写法都要能替换。
@@ -1053,6 +1052,9 @@ export function formatYamlDateTime(value) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+/** frontmatter 的可写字段：字符串或字符串数组，键为 YAML 字段名。 */
+export type FrontmatterFields = Record<string, string | string[] | undefined>;
+
 export function normalizeBriefingFrontmatterFields(raw, mode, baseKey) {
   const source = (raw && typeof raw === "object") ? Object.assign({}, raw) : {};
   if (source["录音主题"] && !source["主题"]) source["主题"] = source["录音主题"];
@@ -1211,7 +1213,7 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   const rawBase = (originalFrontmatter && typeof originalFrontmatter === "object")
     ? Object.assign({}, originalFrontmatter)
     : (llmFm && typeof llmFm === "object" ? Object.assign({}, llmFm) : {});
-  const base = normalizeBriefingFrontmatterFields(rawBase, mode, baseKey);
+  const base: FrontmatterFields = normalizeBriefingFrontmatterFields(rawBase, mode, baseKey);
 
   // 强制覆盖系统字段
   base.mode = mode;
@@ -1262,7 +1264,7 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
 
   // 字段输出顺序：mode → time → 时长 → 人物 → 内容字段 → 状态 → tags。
   // time 使用 YAML 可识别的日期时间标量，例如 2026-05-08T12:55:00；不再保留 date/日期。
-  const ordered = {};
+  const ordered: FrontmatterFields = {};
   ordered.mode = base.mode;
   if (base.time) ordered.time = base.time;
   if (base["时长"]) ordered["时长"] = base["时长"];

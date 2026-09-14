@@ -13,6 +13,8 @@ type CustomPromptModeTemplate = {
   mode: string;
   name?: string;
   description?: string;
+  /** 自定义提示词的正文；由 sanitizePromptTemplate 写入并持久化。 */
+  prompt?: string;
   baseMode?: string;
   customMode?: boolean;
 };

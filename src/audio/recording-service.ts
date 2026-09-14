@@ -15,6 +15,7 @@ import { AUDIO_EXT } from "../shared/catalog-import";
 import { getErrorMessage, genId, pad, escapeRegExp } from "../shared/util-common";
 import { extFromMime, isAsrTransportError, isTransientAsrError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS, classifyLiveAsrBacklog, createLiveAsrCircuitState, isLiveAsrCircuitOpen, recordLiveAsrFailure, recordLiveAsrSuccess, summarizeLiveAsrJobs } from "../asr/live-segment-policy";
+import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
 import { audioImportStageFromWorkProgress } from "../shared/activity-progress";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
@@ -64,7 +65,8 @@ export class RecordingService {
   declare _oneShotPolishMode;
   /** 转写服务的熔断状态：按服务键区分，连续瞬时失败后暂停批量转写。 */
   declare asrServiceCircuitKey;
-  declare asrServiceCircuitState;
+  /** 实时转写熔断状态；随转写服务配置变化重建。 */
+  declare asrServiceCircuitState: LiveAsrCircuitState | null;
   /** 当前录音问题（设备/服务/切片），无问题时为空。 */
   declare recordingIssue;
 

@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：回听时间轴：正文时间链接的识别与跳转、内联播放
 
 import * as obsidian from "obsidian";
@@ -19,6 +18,9 @@ export interface AudioTimeLinkHost {
   settings: LexVoiceSettings;
 }
 
+/** 回听链接元素：除标准锚属性外，还挂一个自定义点击处理器用于去重绑定。 */
+type AudioTimeLinkElement = HTMLAnchorElement & { __lexvoiceTimeHandler?: (evt: Event) => void };
+
 export class AudioTimeLinkService {
   declare host: AudioTimeLinkHost;
   constructor(host) {
@@ -26,14 +28,17 @@ export class AudioTimeLinkService {
   }
 
 
-  enhanceAudioTimeLinks(el, ctx) {
-    const links = Array.from(el.querySelectorAll("a.internal-link"));
+  enhanceAudioTimeLinks(el: HTMLElement, ctx: { sourcePath?: string } = {}) {
+    // el 是 HTMLElement，querySelectorAll 的返回元素类型由类型参数指定；
+    // 内容是 Obsidian 正文里的内部链接，取回后按带自定义标记的锚元素处理。
+    const links = Array.from(el.querySelectorAll<AudioTimeLinkElement>("a.internal-link"));
     for (const link of links) {
       const label = (link.textContent || "").trim();
       const linkPath = link.getAttribute("data-href") || link.getAttribute("href") || "";
       if (!isTimeLabel(label) || !getAudioExtFromLinkPath(linkPath)) continue;
       link.classList.add("lexvoice-time-link");
       link.setAttribute("aria-label", `QnALog 回听 ${label}`);
+      // 锚元素上挂自定义处理器，用于重复调用时先解绑上一次（避免叠加多个 click）。
       const anyLink = link;
       if (anyLink.__lexvoiceTimeHandler) {
         link.removeEventListener("click", anyLink.__lexvoiceTimeHandler, true);
@@ -133,7 +138,7 @@ export class AudioTimeLinkService {
   seekOutlineInlineAudio(payload) {
     const leaves = this.host.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
     for (const leaf of leaves) {
-      const view = leaf && leaf.view;
+      const view = leaf && leaf.view as obsidian.View & { seekInlineAudio?: (payload: unknown) => boolean };
       if (view && typeof view.seekInlineAudio === "function") {
         try {
           if (view.seekInlineAudio(payload) === true) return true;

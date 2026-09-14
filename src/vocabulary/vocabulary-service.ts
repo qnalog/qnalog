@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：词汇表与行业提示词：术语抽取、词汇表写入、行业提示词生成与应用
 
 import * as obsidian from "obsidian";
@@ -12,6 +11,18 @@ import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 import { INDUSTRY_META_PROMPT } from "../prompts/industry-meta";
 import { KNOWLEDGE_EXTRACTION_BATCH_LIMIT } from "../shared/limits";
 import { ensureVaultFolder } from "../shared/util-vault";
+import type { IndustryProfile } from "../shared/types";
+
+/** 行业画像的空值；字段与目标类型一致，避免读方拿到缺字段的对象。 */
+function createEmptyIndustryProfile(): IndustryProfile {
+  return { industry: "", scenarios: "", focus: "", outputPreference: "", generatedAt: null };
+}
+
+/** 生成自定义提示词时可选的名称与是否立即启用。 */
+export interface CreateIndustryPromptVariantOptions {
+  name?: string;
+  activate?: boolean;
+}
 
 /** VocabularyService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface VocabularyHost {
@@ -32,7 +43,7 @@ export class VocabularyService {
 
   // 单 mode 生成定制 Prompt：调一次 LLM，返回纯文本
   async generateIndustryPromptForMode(mode) {
-    const p = this.host.settings.industryProfile || {};
+    const p = this.host.settings.industryProfile || createEmptyIndustryProfile();
     if (!p.industry || !p.scenarios) {
       throw new Error("请先在「AI 整理」填写「行业 / 角色」和「主要工作场景」");
     }
@@ -42,11 +53,11 @@ export class VocabularyService {
     const modeLabel = meta && meta.prefix ? meta.prefix : mode;
     const sys = "你是 Prompt 工程师，专门为真实工作和学习场景生成可直接用于录音整理的 Markdown Prompt。输出要克制、清晰、可维护，不要堆砌 callout。";
     const userMsg = INDUSTRY_META_PROMPT
-      .replaceAll("{{INDUSTRY}}", p.industry || "（未指定）")
-      .replaceAll("{{SCENARIOS}}", p.scenarios || "（未指定）")
-      .replaceAll("{{FOCUS}}", p.focus || "（未指定）")
-      .replaceAll("{{OUTPUT_PREFERENCE}}", p.outputPreference || "（未指定）")
-      .replaceAll("{{MODE}}", `${mode}（${modeLabel}）`);
+      .replace(/\{\{INDUSTRY\}\}/g, p.industry || "（未指定）")
+      .replace(/\{\{SCENARIOS\}\}/g, p.scenarios || "（未指定）")
+      .replace(/\{\{FOCUS\}\}/g, p.focus || "（未指定）")
+      .replace(/\{\{OUTPUT_PREFERENCE\}\}/g, p.outputPreference || "（未指定）")
+      .replace(/\{\{MODE\}\}/g, `${mode}（${modeLabel}）`);
     const text = await callLlm(this.host, sys, userMsg);
     let cleaned = text
       .replace(/^```\w*\s*/, "")
@@ -59,11 +70,11 @@ export class VocabularyService {
   }
 
   // 把生成好的 Prompt 保存为新的自定义提示词；不再覆盖内置提示词。
-  async createIndustryPromptVariant(mode, promptText, opts) {
+  async createIndustryPromptVariant(mode, promptText, opts: CreateIndustryPromptVariantOptions = {}) {
     if (!isKnownPolishMode(this.host.settings, mode)) throw new Error("未知的 mode：" + mode);
     const moment = window.moment;
     const stamp = moment ? moment().format("YYYY-MM-DD HH:mm") : new Date().toISOString().slice(0, 16);
-    const profile = this.host.settings.industryProfile || {};
+    const profile = this.host.settings.industryProfile || createEmptyIndustryProfile();
     const meta = getModeMeta(this.host.settings, mode);
     const role = (profile.industry || "自定义").trim();
     const firstScenario = String(profile.scenarios || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || (meta.prefix || "场景");
@@ -88,7 +99,7 @@ export class VocabularyService {
     this.host.settings.promptTemplates[clean.id] = clean;
     this.host.settings.activeTemplateByMode[clean.id] = clean.id;
     if (!opts || opts.activate !== false) this.host.settings.polishMode = clean.id;
-    if (!this.host.settings.industryProfile) this.host.settings.industryProfile = {};
+    if (!this.host.settings.industryProfile) this.host.settings.industryProfile = createEmptyIndustryProfile();
     this.host.settings.industryProfile.generatedAt = new Date().toISOString();
     await this.host.saveSettings();
     return clean;
@@ -118,7 +129,7 @@ export class VocabularyService {
   }
 
   async extractVocabulary(merge) {
-    const p = this.host.settings.industryProfile || {};
+    const p = this.host.settings.industryProfile || createEmptyIndustryProfile();
     if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) throw new Error("请先在 API 页配置大模型服务");
     const customPromptBrief = getCustomPromptModeTemplates(this.host.settings)
       .slice(0, 12)

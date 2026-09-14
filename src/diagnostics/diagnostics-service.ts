@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：诊断日志与诊断报告：jsonl 落盘、内存与队列快照、脱敏报告
 
 import * as obsidian from "obsidian";
@@ -10,11 +9,26 @@ import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { createLiveAsrCircuitState, isLiveAsrCircuitOpen, summarizeLiveAsrJobs } from "../asr/live-segment-policy";
 import { redactDiagnosticText, sanitizeDiagnosticData, diagnosticError } from "../shared/util-key-diag";
 import type { LiveAsrBacklogSummary } from "../asr/live-segment-policy";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { LexVoiceSettings, RecordingSession, RealtimeOutlineInputStats } from "../shared/types";
 import type { PluginBuildInfo } from "../shared/build-info";
 import type { TaskQueue } from "../queue/task-queue";
 import type { RecorderService } from "../audio/recorder-service";
 import { ensureVaultFolder } from "../shared/util-vault";
+
+/** 实时大纲输入统计的空值；字段与 RealtimeOutlineInputStats 一致。 */
+function createEmptyRealtimeOutlineInputStats(): RealtimeOutlineInputStats {
+  return {
+    fullTranscript: false,
+    systemChars: 0,
+    userChars: 0,
+    totalChars: 0,
+    rollingContextChars: 0,
+    transcriptChars: 0,
+    previousOutlineChars: 0,
+    memoryChars: 0,
+    maxTranscriptChars: 0,
+  };
+}
 
 /** DiagnosticsService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface DiagnosticsHost {
@@ -96,7 +110,7 @@ export class DiagnosticsService {
       const folder = this.host.app.vault.getAbstractFileByPath(this.getDiagnosticsFolder());
       if (!(folder instanceof obsidian.TFolder)) return [];
       const files = folder.children
-        .filter(f => f instanceof obsidian.TFile && /jsonl$/i.test(f.extension || ""))
+        .filter((f): f is obsidian.TFile => f instanceof obsidian.TFile && /jsonl$/i.test(f.extension || ""))
         .sort((a, b) => b.stat.mtime - a.stat.mtime)
         .slice(0, 3);
       const lines = [];
@@ -150,7 +164,7 @@ export class DiagnosticsService {
     const recorderBuffer = this.host.recording.getRecorderBufferSummary();
     const runtimeMemory = await this.getRuntimeMemorySummary();
     const circuit = activeSession && activeSession.asrCircuitState ? activeSession.asrCircuitState : createLiveAsrCircuitState();
-    const outlineInput = activeSession && activeSession.realtimeOutlineInput || {};
+    const outlineInput = activeSession && activeSession.realtimeOutlineInput || createEmptyRealtimeOutlineInputStats();
     const mib = (bytes) => (Math.max(0, Number(bytes) || 0) / (1024 * 1024)).toFixed(1);
     return [
       "# QnALog 诊断报告",
