@@ -90,9 +90,9 @@ import { RealtimeOutlineCoordinator, runInOutlineSessionTail } from "./outline-c
 
 import { buildLexVoiceVersionPayload, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitLexVoiceVersionPayload } from "./version-content";
 
-import { appendActivityEvent, audioImportStageFromWorkProgress, buildAudioImportStages, classifyActivityRequest, getDominantActivityLiveness, normalizeAudioImportStage, summarizeActivityRequests, upsertActivityRequest } from "./shared/activity-progress";
+import {audioImportStageFromWorkProgress, upsertActivityRequest } from "./shared/activity-progress";
 
-import { TaskActivityStore, getTaskErrorHint, getTaskErrorMessage } from "./shared/task-activity";
+import {getTaskErrorMessage } from "./shared/task-activity";
 
 import { DEFAULT_SPEAKER_CHANNELS, MAX_SPEAKER_CHANNELS, buildSpeakerMappings, extractSpeakerIdsFromMarkdown, initialAudioChannelRuntimeMode, normalizeAudioChannelMode, normalizeSpeakerMappings, replaceSpeakerDisplayName, resolveAudioChannelRuntimeMode } from "./audio/channel-speakers";
 
@@ -163,6 +163,7 @@ import { OutlineView } from "./ui/outline-view";
 import {cleanTranscript, mergeAndPolish } from "./briefing/merge-pipeline";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
+import { TaskActivityService } from "./tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableVaultPath } from "./shared/util-vault";
 import { DeliveryService } from "./delivery/delivery-service";
 import { RecruitService } from "./recruit/recruit-service";
@@ -231,15 +232,8 @@ class LexVoicePlugin extends obsidian.Plugin {
       buildVersion: this.manifest && this.manifest.version ? this.manifest.version : "",
     });
     this.register(() => this.updateService.dispose());
-    this.taskActivityStore = new TaskActivityStore();
-    this.register(this.taskActivityStore.subscribe(() => {
-      try { this.updateBusyStatus(); } catch { /* task observers must not break work */ }
-      try { this.refreshOutlineView(); } catch { /* task observers must not break work */ }
-    }));
-    this.registerInterval(window.setInterval(() => {
-      try { this.taskActivityStore.prune(); } catch { /* maintenance must not break plugin */ }
-      try { this.updateBusyStatus(); } catch { /* intentionally empty */ }
-    }, 15_000));
+    this.tasks = new TaskActivityService(this);
+    this.tasks.start();
     this.recorder = new RecorderService(this);
     this.asrServiceCircuitKey = "";
     this.asrServiceCircuitState = createLiveAsrCircuitState();
@@ -253,21 +247,12 @@ class LexVoicePlugin extends obsidian.Plugin {
       execute: (request) => this.executeRealtimeOutlineRequest(request),
       onFailure: (request, error) => this.getRealtimeOutlineRetryDecision(request, error),
       onStateChange: (state) => {
-        this.syncOutlineTaskActivity(state);
+        this.tasks.syncOutlineTaskActivity(state);
         this.refreshOutlineView();
       },
     });
 
-    // 转写进度状态栏：常驻、一眼可见队列/转写跑到哪——消解"点了转写就黑盒"的焦虑。点击打开队列。
-    this._importBusy = null;
-    this._busyLabel = null;
-    this._busyContext = null;
-    this.completedWorkLog = []; // 本次启动 OB 后已完成的处理（不持久化，重启清零），供"处理进度"面板展示
-    this._taskMeter = null; // 单任务 token 计量窗口（beginTaskMeter→endTaskMeter）
-    this.progressStatusEl = this.addStatusBarItem();
-    this.progressStatusEl.addClass("lexvoice-statusbar");
-    this.progressStatusEl.addEventListener("click", () => new QueueModal(this.app, this).open());
-    this.updateBusyStatus();
+    this.tasks.startStatusBar();
 
     this.ribbonEl = this.addRibbonIcon("mic", "QnALog：点击开始/停止，悬停展开控件", () => this.toggleRecording());
     this.recorder.on(() => this.refreshOutlineView());
@@ -1186,477 +1171,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         this.settingTab.display();
       }, 0);
     }
-  }
-
-  getTaskActivities(options = {}) {
-    return this.taskActivityStore
-      ? this.taskActivityStore.list(Object.assign({ includeDone: true, includeCancelled: true }, options || {}))
-      : [];
-  }
-
-  getTaskActivityErrorHint(activity) {
-    const raw = getTaskErrorMessage(activity && activity.error, "");
-    if (/file already exists|文件已存在|already exists/i.test(raw)) {
-      return "目标版本文件已存在。已保留原始转写，重新整理不会覆盖原始材料。";
-    }
-    return getTaskErrorHint(activity && activity.errorKind ? activity.errorKind : "");
-  }
-
-  startTaskActivity(input) {
-    if (!this.taskActivityStore || !input || !input.id) return null;
-    const activity = this.taskActivityStore.start(input);
-    this.taskActivityStore.event(activity.id, {
-      type: "start",
-      label: input.stageLabel || input.detail || "任务已开始",
-    });
-    return activity;
-  }
-
-  async runTaskActivity(input, executor, completion = {}) {
-    if (!input || !input.id || typeof executor !== "function") {
-      throw new Error("任务定义不完整");
-    }
-    const taskId = String(input.id);
-    this.startTaskActivity(input);
-    const controls = {
-      patch: (patch = {}) => this.patchTaskActivity(taskId, patch),
-      event: (label, detail = "", type = "update") => {
-        if (!this.taskActivityStore) return null;
-        return this.taskActivityStore.event(taskId, { type, label, detail });
-      },
-    };
-    try {
-      const result = await executor(controls);
-      const current = this.taskActivityStore && this.taskActivityStore.get(taskId);
-      if (current && !["done", "failed", "cancelled"].includes(current.status)) {
-        const successPatch = Object.assign({}, completion);
-        delete successPatch.failureLabel;
-        delete successPatch.failureActions;
-        this.completeTaskActivity(taskId, successPatch);
-      }
-      return result;
-    } catch (error) {
-      const current = this.taskActivityStore && this.taskActivityStore.get(taskId);
-      if (!current || current.status !== "cancelled") {
-        this.failTaskActivity(taskId, error, {
-          stage: "failed",
-          stageLabel: completion.failureLabel || "任务未完成",
-          detail: getTaskErrorMessage(error),
-          actions: completion.failureActions || input.actions || [],
-        });
-      }
-      throw error;
-    }
-  }
-
-  patchTaskActivity(id, patch = {}) {
-    if (!this.taskActivityStore || !id) return null;
-    const current = this.taskActivityStore.get(id);
-    if (!current) return this.startTaskActivity(Object.assign({ id }, patch));
-    return this.taskActivityStore.heartbeat(id, patch);
-  }
-
-  failTaskActivity(id, error, patch = {}) {
-    if (!this.taskActivityStore || !id) return null;
-    const message = getTaskErrorMessage(error);
-    let current = this.taskActivityStore.get(id);
-    if (!current) {
-      current = this.startTaskActivity(Object.assign({
-        id,
-        title: "后台任务",
-        status: "running",
-      }, patch));
-    }
-    const failed = this.taskActivityStore.fail(id, error, patch);
-    this.taskActivityStore.event(id, {
-      type: "error",
-      label: patch.stageLabel || "任务失败",
-      detail: message,
-    });
-    return failed;
-  }
-
-  completeTaskActivity(id, patch = {}) {
-    if (!this.taskActivityStore || !id) return null;
-    const current = this.taskActivityStore.get(id);
-    if (!current) return null;
-    const completed = this.taskActivityStore.complete(id, patch);
-    this.taskActivityStore.event(id, {
-      type: "complete",
-      label: patch.stageLabel || "任务已完成",
-      detail: patch.detail || "",
-    });
-    return completed;
-  }
-
-  cancelTaskActivity(id, detail = "任务已取消") {
-    if (!this.taskActivityStore || !id) return null;
-    const current = this.taskActivityStore.get(id);
-    if (!current) return null;
-    const cancelled = this.taskActivityStore.cancel(id, detail);
-    this.taskActivityStore.event(id, {
-      type: "cancel",
-      label: "任务已取消",
-      detail,
-    });
-    return cancelled;
-  }
-
-  queueTaskActivityId(taskOrId) {
-    const id = typeof taskOrId === "string" ? taskOrId : taskOrId && taskOrId.id;
-    return id ? `queue:${id}` : "";
-  }
-
-  syncQueueTaskActivity(task) {
-    if (!task || !task.id || !this.taskActivityStore) return null;
-    const id = this.queueTaskActivityId(task);
-    const type = String(task.type || "");
-    const title = type === "transcribe"
-      ? (task.wholeFileImport
-        ? `整文件转写 · ${String(task.sourceAudioName || task.audioName || "导入音频")}`
-        : `分段转写 · 第 ${Math.max(0, Number(task.segmentIndex) || 0) + 1} 段`)
-      : type === "merge" ? "AI 整理"
-        : type === "generate-prompt" ? "生成提示词" : "后台任务";
-    const isPartialBriefing = type === "merge" && /纪要整理部分完成/.test(String(task.lastError || ""));
-    const stageLabel = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS ? "正在处理"
-      : task.status === "blocked" ? "等待修复配置"
-        : task.status === "missing" ? "缺少源文件"
-          : task.status === "failed" ? (isPartialBriefing ? "部分完成 · 等待重试" : "本次处理失败") : "等待处理";
-    const status = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS || task.status === "processing"
-      ? "running"
-      : task.status === "failed" || task.status === "blocked" || task.status === "missing"
-        ? "failed" : "queued";
-    const maxAttempts = Math.max(1, Number(this.settings && this.settings.maxRetries) || 3);
-    const actions = status === "failed"
-      ? [
-        { id: "retry-queue-task", label: "重试", primary: true },
-        { id: "cancel-queue-task", label: "取消重试" },
-      ]
-      : status === "queued"
-        ? [{ id: "cancel-queue-task", label: "取消重试" }]
-        : [];
-    const input = {
-      id,
-      kind: `queue-${type || "task"}`,
-      title,
-      subject: String(task.mdPath || task.audioPath || ""),
-      status,
-      stage: String(task.status || "pending"),
-      stageLabel,
-      detail: String(task.lastError || (status === "queued" ? "任务已保存，稍后自动处理" : "")),
-      progress: null,
-      count: task.attempt ? `第 ${task.attempt}/${maxAttempts} 次` : "",
-      attempt: Math.max(0, Number(task.attempt) || Number(task.retries) + 1 || 0),
-      maxAttempts,
-      startedAt: task.startedAt ? Date.parse(task.startedAt) : (task.createdAt ? Date.parse(task.createdAt) : Date.now()),
-      updatedAt: task.updatedAt ? Date.parse(task.updatedAt) : Date.now(),
-      error: status === "failed" ? String(task.lastError || "任务未成功") : "",
-      actions,
-    };
-    const existing = this.taskActivityStore.get(id);
-    const activity = existing
-      ? this.taskActivityStore.patch(id, input)
-      : this.taskActivityStore.start(input);
-    if (activity && (!existing || existing.status !== activity.status || existing.stage !== activity.stage)) {
-      this.taskActivityStore.event(id, {
-        type: `queue-${activity.status}`,
-        label: stageLabel,
-        detail: String(task.lastError || ""),
-      });
-    }
-    return activity;
-  }
-
-  syncOutlineTaskActivity(state) {
-    if (!state || !state.sessionId || !this.taskActivityStore) return null;
-    const id = `outline:${state.sessionId}`;
-    const session = this.session && this.session.id === state.sessionId ? this.session : null;
-    const existing = this.taskActivityStore.get(id);
-    if (state.phase === "idle" && !existing) return null;
-    const subject = session && session.mdPath ? session.mdPath : "";
-    const reason = String(state.reason || "");
-    const reasonLabels = {
-      segment: "等待新增转写",
-      scheduled: "等待刷新",
-      waiting: "等待转写空档",
-      retry: "等待自动重试",
-      backoff: "稍后自动重试",
-      manual: "手动刷新",
-      "manual-refresh": "手动刷新",
-      final: "生成最终大纲",
-    };
-    const actions = state.phase === "running"
-      ? [{ id: "cancel-outline", label: "停止本轮" }]
-      : state.phase === "idle" && state.lastError
-        ? [
-          { id: "retry-outline", label: "重新生成", primary: true },
-          { id: "dismiss-task", label: "关闭记录" },
-        ]
-        : state.phase !== "idle"
-          ? [{ id: "cancel-outline", label: "取消等待" }]
-          : [{ id: "dismiss-task", label: "关闭记录" }];
-    if (!existing) {
-      this.taskActivityStore.start({
-        id,
-        kind: "outline",
-        title: "实时大纲",
-        subject,
-        status: state.phase === "running" ? "running" : "waiting",
-        stage: state.phase,
-        stageLabel: reasonLabels[reason] || (state.phase === "running" ? "正在生成大纲" : "等待刷新"),
-        detail: "",
-        startedAt: state.startedAt || Date.now(),
-        updatedAt: Date.now(),
-        retryAt: state.nextRunAt || 0,
-        actions,
-      });
-    }
-    if (state.phase === "running") {
-      return this.taskActivityStore.heartbeat(id, {
-        status: "running",
-        stage: "running",
-        stageLabel: reasonLabels[reason] || "正在生成大纲",
-        detail: state.queued > 0 ? `本轮完成后还有 ${state.queued} 次更新待合并` : "正在根据最新转写更新结构",
-        count: state.queued > 0 ? `${state.queued} 次更新待合并` : "",
-        startedAt: state.startedAt || existing && existing.startedAt || Date.now(),
-        error: "",
-        errorKind: "",
-        retryAt: 0,
-        actions,
-      });
-    }
-    if (state.phase === "scheduled" || state.phase === "backoff") {
-      return this.taskActivityStore.heartbeat(id, {
-        status: state.phase === "backoff" ? "retrying" : "waiting",
-        stage: state.phase,
-        stageLabel: state.phase === "backoff" ? "等待自动重试" : "等待刷新",
-        detail: state.lastError || reasonLabels[reason] || "新的转写到达后自动继续",
-        retryAt: state.nextRunAt || 0,
-        error: state.lastError || "",
-        actions,
-      });
-    }
-    if (state.lastError && state.queued > 0) {
-      return this.taskActivityStore.heartbeat(id, {
-        status: "retrying",
-        stage: "retrying",
-        stageLabel: "本轮失败，等待重试",
-        detail: state.lastError,
-        error: state.lastError,
-        retryAt: state.nextRunAt || 0,
-        actions,
-      });
-    }
-    if (state.lastError) {
-      return this.failTaskActivity(id, state.lastError, {
-        stage: "failed",
-        stageLabel: "实时大纲未生成",
-        detail: state.lastError,
-        subject,
-        actions,
-      });
-    }
-    return this.completeTaskActivity(id, {
-      stage: "done",
-      stageLabel: "大纲已更新",
-      detail: "已根据当前转写完成本轮更新",
-      subject,
-      progress: 100,
-      actions,
-    });
-  }
-
-  syncSessionTaskActivity(session) {
-    if (!session || !session.id || !this.taskActivityStore) return null;
-    const id = session.source === "import"
-      ? `import:${session.id}`
-      : `finalize:${session.id}`;
-    const wp = session.workProgress || {};
-    const sourceLabel = session.source === "text-import" ? "文本整理"
-        : session.source === "import" ? "导入音频整理" : "录音纪要整理";
-    const failureStages = new Set(["finalize-failed", "transcript-empty", "merge-failed"]);
-    const retryStages = new Set(["merge-retrying"]);
-    const actions = failureStages.has(wp.stage)
-      ? [
-        { id: "open-task-note", label: "打开原始材料", primary: true },
-        { id: "dismiss-task", label: "关闭记录" },
-      ]
-      : [];
-    const patch = {
-      id,
-      kind: "finalize",
-      title: sourceLabel,
-      subject: String(session.mdPath || ""),
-      status: failureStages.has(wp.stage) ? "failed" : retryStages.has(wp.stage) ? "retrying" : "running",
-      stage: String(wp.stage || "preparing"),
-      stageLabel: String(wp.label || "准备 AI 整理"),
-      detail: String(wp.detail || ""),
-      progress: wp.percent == null ? null : Number(wp.percent),
-      startedAt: session.processingStartedAt ? Date.parse(session.processingStartedAt) : Date.parse(session.startedAt || "") || Date.now(),
-      updatedAt: wp.updatedAt ? Date.parse(wp.updatedAt) : Date.now(),
-      error: failureStages.has(wp.stage) ? String(session.finalizationError || wp.detail || wp.label || "纪要整理失败") : "",
-      actions: retryStages.has(wp.stage)
-        ? [{ id: "open-task-note", label: "打开原始材料", primary: true }]
-        : actions,
-    };
-    const existing = this.taskActivityStore.get(id);
-    if (!existing) this.taskActivityStore.start(patch);
-    if (failureStages.has(wp.stage)) return this.failTaskActivity(id, patch.error, patch);
-    if (retryStages.has(wp.stage)) {
-      return this.taskActivityStore.heartbeat(id, Object.assign({}, patch, {
-        status: "retrying",
-        error: String(session.finalizationError || wp.detail || ""),
-        errorKind: session.finalizationError ? undefined : "",
-      }));
-    }
-    if (wp.stage === "done") {
-      return this.completeTaskActivity(id, Object.assign({}, patch, {
-        stageLabel: wp.label || "纪要处理完成",
-        actions: session.mdPath
-          ? [{ id: "open-task-note", label: "打开纪要", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
-          : [{ id: "dismiss-task", label: "关闭记录" }],
-      }));
-    }
-    return this.taskActivityStore.heartbeat(id, Object.assign({}, patch, {
-      status: "running",
-      error: "",
-      errorKind: "",
-    }));
-  }
-
-  syncImportTaskActivity(activity) {
-    if (!activity || !activity.sessionId || !this.taskActivityStore) return null;
-    const id = `import:${activity.sessionId}`;
-    const phase = normalizeAudioImportStage(activity.phase);
-    const labels = {
-      prepare: "准备音频",
-      transcribe: "语音转写",
-      persist: "写入原始转写",
-      organize: "AI 整理",
-      write: "写入纪要",
-    };
-    const total = Math.max(0, Number(activity.segmentTotal) || 0);
-    const done = phase === "persist"
-      ? Math.max(0, Number(activity.writtenSegments) || 0)
-      : Math.max(0, Number(activity.segmentDone) || 0);
-    const failed = Math.max(0, Number(activity.failedSegments) || 0);
-    const finished = Math.min(total, done + failed);
-    const failure = String(activity.error || "");
-    const progressCount = failure ? done : finished;
-    const progress = total > 0 ? Math.max(0, Math.min(100, (progressCount / total) * 100)) : null;
-    const existing = this.taskActivityStore.get(id);
-    const completed = !!activity.completed;
-    const patch = {
-      id,
-      kind: "audio-import",
-      title: activity.file ? `导入音频 · ${activity.file}` : "导入音频",
-      subject: String(activity.mdPath || activity.file || ""),
-      status: failure ? "failed" : completed ? "done" : "running",
-      stage: phase,
-      stageLabel: labels[phase] || "处理音频",
-      detail: failed > 0
-        ? `${failed} 个音频文件未成功，原始音频已保留并进入重试流程`
-        : String(activity.label || ""),
-      progress,
-      count: total > 0 ? `${done}/${total} 个文件` : activity.total > 1 ? `${activity.done || 0}/${activity.total} 个文件` : "",
-      startedAt: Number(activity.startedAt) || Date.now(),
-      updatedAt: Number(activity.updatedAt) || Date.now(),
-      error: failure,
-      actions: failure
-        ? [{ id: "open-task-note", label: "打开原始材料", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
-        : completed
-          ? [{ id: "open-task-note", label: "打开纪要", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
-          : [],
-    };
-    let next = existing
-      ? this.taskActivityStore.heartbeat(id, patch)
-      : this.taskActivityStore.start(patch);
-    if (failure) next = this.failTaskActivity(id, failure, patch);
-    else if (completed) next = this.completeTaskActivity(id, patch);
-    if (next && (!existing || existing.stage !== next.stage)) {
-      this.taskActivityStore.event(id, {
-        type: "stage",
-        label: next.stageLabel,
-        detail: next.detail,
-      });
-    }
-    return next;
-  }
-
-  async handleTaskActivityAction(taskId, actionId) {
-    const activity = this.taskActivityStore && this.taskActivityStore.get(taskId);
-    if (!activity) return;
-    try {
-      if (actionId === "dismiss-task") {
-        this.taskActivityStore.remove(taskId);
-        return;
-      }
-      if (actionId === "open-settings") {
-        this.openSettings("advanced");
-        return;
-      }
-      if (actionId === "retry-outline") {
-        await this.refreshRealtimeOutlineInBackground({ force: true, silent: false, reason: "task-center-retry" });
-        return;
-      }
-      if (actionId === "cancel-outline") {
-        this.cancelRealtimeOutline(taskId.replace(/^outline:/, ""));
-        this.cancelTaskActivity(taskId, "已停止本轮大纲生成");
-        return;
-      }
-      if (actionId === "retry-queue-task") {
-        const queueId = taskId.replace(/^queue:/, "");
-        const task = this.queue && this.queue.tasks.find((item) => item && item.id === queueId);
-        if (!task) throw new Error("对应的待处理任务已不存在");
-        if (task.status === "failed" || task.status === "blocked" || task.status === "missing") {
-          await this.queue.update(task.id, {
-            status: "pending",
-            retries: Math.max(0, Math.min(Number(task.retries) || 0, (this.settings.maxRetries || 3) - 1)),
-          });
-        }
-        if (task.type === "transcribe") this.resetAsrServiceCircuitForManualRetry("task-center");
-        try {
-          await this.queue.processOne(task);
-        } catch (error) {
-          if (task.type === "transcribe" && isAsrTransportError(error)) {
-            this.scheduleTaskQueueRetry(this.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
-          }
-          throw error;
-        }
-        return;
-      }
-      if (actionId === "cancel-queue-task") {
-        const queueId = taskId.replace(/^queue:/, "");
-        await this.queue.remove(queueId);
-        new obsidian.Notice("已取消自动重试；原始材料不会删除。", 5000);
-        return;
-      }
-      if (actionId === "open-task-note") {
-        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(activity.subject || ""));
-        if (!(file instanceof obsidian.TFile)) throw new Error("对应笔记不存在或已被移动");
-        const leaf = this.app.workspace.getLeaf(true);
-        await leaf.openFile(file);
-        await this.app.workspace.revealLeaf(leaf);
-      }
-    } catch (error) {
-      const message = getTaskErrorMessage(error, "操作未完成");
-      this.failTaskActivity(taskId, error, {
-        stageLabel: "操作未完成",
-        detail: message,
-        actions: activity.actions,
-      });
-      try {
-        await this.diagnostics.logDiagnostic("error", "task.action_failed", "任务操作失败", {
-          taskId,
-          actionId,
-          error: diagnosticError(error),
-        });
-      } catch { /* diagnostics must not hide the original failure */ }
-      new obsidian.Notice(`操作未完成：${message}`, 8000);
-    }
-  }
-
-  getUpdateRawBase() {
+  }  getUpdateRawBase() {
     return this.updateService.getUpdateRawBase();
   }
 
@@ -1701,7 +1216,7 @@ class LexVoicePlugin extends obsidian.Plugin {
   }
 
   refreshOutlineView() {
-    try { this.updateBusyStatus(); } catch { /* intentionally empty */ }
+    try { this.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
     for (const leaf of leaves) {
       const v = leaf.view;
@@ -1710,135 +1225,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       if (typeof v.scheduleUpdate === "function") v.scheduleUpdate();
       else if (typeof v.render === "function") v.render();
     }
-  }
-
-  // 转写进度状态栏：从队列 + 当前会话的实时状态渲染一行常驻指示器。
-  // 挂在 refreshOutlineView（统一重绘入口）+ processAll 批量游标上，所有状态变化都能即时反映。
-  updateBusyStatus() {
-    const el = this.progressStatusEl;
-    if (!el) return;
-    const show = (icon, text, spin, muted) => {
-      el.empty();
-      el.removeClass("lexvoice-statusbar-hidden");
-      el.toggleClass("lexvoice-statusbar-idle", !!muted);
-      const ico = el.createSpan({ cls: "lexvoice-statusbar-icon" + (spin ? " lexvoice-statusbar-spin" : "") });
-      try { obsidian.setIcon(ico, icon); } catch { /* intentionally empty */ }
-      el.createSpan({ cls: "lexvoice-statusbar-text", text });
-      el.setAttr("aria-label", text + "（点击查看转写队列）");
-    };
-
-    const q = this.queue;
-    const maxR = (this.settings && this.settings.maxRetries) || 3;
-    const tasks = q && Array.isArray(q.tasks) ? q.tasks : [];
-    const runnable = tasks.filter((t) => t && t.status !== "running" && t.status !== "missing" && t.status !== "blocked" && (Number(t.retries) || 0) < maxR);
-
-    const s = this.session;
-    const wp = s && s.workProgress ? s.workProgress : null;
-    const wpLabel = wp && wp.label ? String(wp.label) : "";
-    const pct = wp && wp.percent != null && Number.isFinite(Number(wp.percent)) ? ` ${Math.round(Number(wp.percent))}%` : "";
-    const postProcessing = !!(wp && (wp.stage === "write-note" || wp.stage === "done"));
-
-    // 0) 导入多文件批量转写
-    if (this._importBusy && Number(this._importBusy.total) > 0) {
-      const ip = this._importBusy;
-      if (ip.workflow === "audio-import") {
-        const phase = normalizeAudioImportStage(ip.phase);
-        const completed = Math.max(0, Number(ip.segmentDone) || 0);
-        const total = Math.max(0, Number(ip.segmentTotal) || 0);
-        const phaseLabel = phase === "prepare" ? "准备音频"
-          : phase === "transcribe" ? "语音转写"
-            : phase === "persist" ? "写入原始转写"
-              : phase === "organize" ? "AI 整理" : "写入纪要";
-        const chunkLabel = phase === "transcribe" && total > 1 ? ` ${completed}/${total} 段` : "";
-        show("loader-2", `${phaseLabel}${chunkLabel}`, true);
-      } else {
-        show("loader-2", ip.label || `导入转写 ${Number(ip.done) || 0}/${ip.total}`, true);
-      }
-      return;
-    }
-    // A) 批量转写处理（重试全部 / 重新转写整篇 / 多任务串行跑）——叠加当前任务的实时阶段标签。
-    // 只看 _batchTotal（processAll 和手动逐条循环都会设它），不要求 q.running，避免漏掉手动循环路径。
-    if (q && Number(q._batchTotal) > 0) {
-      const done = Math.min(Number(q._batchDone) || 0, Number(q._batchTotal));
-      show("loader-2", `转写处理中 ${done}/${q._batchTotal}${wpLabel ? " · " + wpLabel : ""}`, true);
-      return;
-    }
-    // A2) 通用长操作（重新整理 / 整篇重新润色等，无可计数子任务）
-    if (this._busyLabel) {
-      show("loader-2", String(this._busyLabel), true);
-      return;
-    }
-    // B) 会后 AI 整理：多个子阶段（整理上下文 / 生成大纲 / 合并润色…）+ 百分比，跟着 workProgress 实时切换
-    if (s && (s.finalizing || postProcessing)) {
-      show("loader-2", (wpLabel || "AI 整理中") + pct, true);
-      return;
-    }
-    // C) 录音进行中：实时走动的录音时长 + 已转写段数；某段在转写时叠加"转写中"
-    const rec = this.recorder;
-    const recState = rec && typeof rec.state === "string" ? rec.state : "idle";
-    if (s && (recState === "recording" || recState === "paused")) {
-      let elapsed = 0;
-      try { elapsed = (rec.getInfo && rec.getInfo().elapsed) || 0; } catch { /* intentionally empty */ }
-      const segN = Array.isArray(s.segments) ? s.segments.length : 0;
-      if (recState === "paused") {
-        show("pause", `录音已暂停 ${formatElapsed(elapsed)}`, false);
-      } else if (Number(s.activeSegmentJobs) > 0) {
-        show("loader-2", `录音 ${formatElapsed(elapsed)} · 转写中`, true);
-      } else {
-        show("mic", `录音 ${formatElapsed(elapsed)}${segN ? " · 已转写 " + segN + " 段" : ""}`, false);
-      }
-      return;
-    }
-    // C2) 非录音但仍有段落在转写（停止后的尾段收尾）
-    if (s && Number(s.activeSegmentJobs) > 0) {
-      show("loader-2", (wpLabel || "转写中") + pct, true);
-      return;
-    }
-    // C3) 跨模块任务异常：不能因原业务弹窗关闭就消失。失败和卡住状态会常驻到用户处理或关闭记录。
-    const taskActivities = this.getTaskActivities({ includeDone: false, includeCancelled: false });
-    const attention = taskActivities.filter((activity) => activity && (activity.status === "failed" || activity.status === "stalled"));
-    if (attention.length > 0) {
-      show("triangle-alert", `${attention.length} 个任务需要处理`, false);
-      return;
-    }
-    const background = taskActivities.filter((activity) => activity
-      && !String(activity.kind || "").startsWith("queue-")
-      && ["running", "waiting", "slow", "retrying"].includes(activity.status));
-    if (background.length > 0) {
-      const task = background[0];
-      const stateText = task.status === "retrying" ? "等待重试"
-        : task.status === "waiting" ? "等待继续"
-          : task.status === "slow" ? (task.stageLabel || "处理中") : (task.stageLabel || "后台处理中");
-      show(task.status === "waiting" || task.status === "retrying" ? "clock-3" : "loader-2",
-        `${task.title} · ${stateText}`,
-        task.status === "running" || task.status === "slow");
-      return;
-    }
-    // D) 有待处理任务但空闲（可点重试）
-    if (runnable.length > 0) {
-      show("clock", `${runnable.length} 个待转写`, false);
-      return;
-    }
-    // E) 空闲 → 低调常驻锚点
-    show("circle-check", "QnALog 就绪", false, true);
-  }
-
-  // 兼容旧调用名：早期代码里残留 this.renderStatusBar() 调用点，但 renderStatusBar 从未定义
-  // → 运行时抛 TypeError（曾导致"重试失败转写/清空队列"中途崩、完成提示不弹）。统一别名到 updateBusyStatus。
-  renderStatusBar() { try { this.updateBusyStatus(); } catch { /* intentionally empty */ } }
-
-  // 记一笔"本次启动后已完成"的处理（供处理进度面板展示；不持久化，OB 重启清零）。
-  logCompletedWork(title, detail, meter) {
-    if (!Array.isArray(this.completedWorkLog)) this.completedWorkLog = [];
-    const entry = { title: String(title || "完成"), detail: String(detail || ""), at: Date.now() };
-    if (meter && Number(meter.durationMs) > 0) entry.durationMs = Math.round(Number(meter.durationMs));
-    if (meter && Number(meter.tokens) > 0) { entry.tokens = Math.round(Number(meter.tokens)); entry.tokensExact = !!meter.exact; }
-    this.completedWorkLog.unshift(entry);
-    if (this.completedWorkLog.length > 80) this.completedWorkLog.length = 80;
-    try { this.updateBusyStatus(); } catch { /* intentionally empty */ }
-  }
-
-  // 转写完成后的自动沉淀（仅 settings.sedimentAutoExtract 开启时触发）：扫描纪要 → 学习卡片/待办自动入库。
+  }  // 转写完成后的自动沉淀（仅 settings.sedimentAutoExtract 开启时触发）：扫描纪要 → 学习卡片/待办自动入库。
   // 后台跑、try/catch 静默——绝不影响主流程；沉淀扫描已走续写拼接（callLlmWithContinuation），不会被输出上限截断。
   async autoExtractSedimentAfterFinalize(mdPath) {
     try {
@@ -1848,376 +1235,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const objects = await generateSedimentObjects(this, file, markdown);
       await writeSedimentObjectCards(this, file, { learningCards: objects.learningCards || [], todos: objects.todos || [] });
     } catch (e) { console.error("[QnALog] autoExtractSedimentAfterFinalize", e); }
-  }
-
-  // —— 单任务 token 计量 —— beginTaskMeter 开窗，期间所有 LLM 调用经 callLlmWithMeta→addTaskMeter 累计，endTaskMeter 结算。
-  beginTaskMeter() {
-    const meter = { inChars: 0, outChars: 0, exactTokens: 0, calls: 0, hasExact: true, startedAt: Date.now() };
-    this._taskMeter = meter;
-    return meter;
-  }
-  addTaskMeter(inChars, outChars, usage, explicitMeter = null) {
-    const m = explicitMeter || this._taskMeter; if (!m) return;
-    m.calls++;
-    m.inChars += Number(inChars) || 0;
-    m.outChars += Number(outChars) || 0;
-    const t = usage && Number(usage.total_tokens);
-    if (t) m.exactTokens += t; else m.hasExact = false;
-  }
-  endTaskMeter(expectedMeter = null) {
-    const m = expectedMeter || this._taskMeter;
-    if (this._taskMeter === m) this._taskMeter = null;
-    if (!m || !m.calls) return null;
-    const exact = m.hasExact && m.exactTokens > 0;
-    // 流式调用拿不到精确 usage 时按字符估算：中文为主的 MiMo 约 1.6 字/token（粗估、仅供心里有数，精确以模型控制台为准）。
-    const tokens = exact ? m.exactTokens : Math.round((m.inChars + m.outChars) / 1.6);
-    return { tokens, exact, durationMs: m.startedAt ? Math.max(0, Date.now() - m.startedAt) : 0 };
-  }
-
-  // 当前正在进行的处理标签（导入/批量/重整/录音整理/转写/录音），空闲返回 null。供处理进度面板的"处理中"区用。
-  getCurrentActivityLabel() {
-    if (this._importBusy && Number(this._importBusy.total) > 0) {
-      const ip = this._importBusy;
-      if (ip.workflow === "audio-import") {
-        const detail = this.getCurrentActivityDetail();
-        return detail ? [detail.step, detail.count].filter(Boolean).join(" · ") : "导入转写";
-      }
-      return ip.label || `导入转写 ${Number(ip.done) || 0}/${ip.total}`;
-    }
-    if (this.queue && Number(this.queue._batchTotal) > 0) {
-      const done = Math.min(Number(this.queue._batchDone) || 0, Number(this.queue._batchTotal));
-      return `转写处理中 ${done}/${this.queue._batchTotal}`;
-    }
-    if (this._busyLabel) return String(this._busyLabel);
-    const s = this.session;
-    const wp = s && s.workProgress;
-    const postProcessing = !!(wp && (wp.stage === "write-note" || wp.stage === "done"));
-    if (s && (s.finalizing || postProcessing)) return (wp && wp.label) || "AI 整理中";
-    if (s && Number(s.activeSegmentJobs) > 0) return (s.workProgress && s.workProgress.label) || "转写中";
-    if (this.recorder && this.recorder.state === "recording") return "录音中";
-    return null;
-  }
-
-  updateImportActivity(patch = {}) {
-    const current = this._importBusy;
-    if (!current || current.workflow !== "audio-import") return null;
-    const now = Date.now();
-    const event = patch && patch.event ? patch.event : null;
-    const cleanPatch = Object.assign({}, patch);
-    delete cleanPatch.event;
-    const previousPhase = normalizeAudioImportStage(current.phase);
-    const nextPhase = normalizeAudioImportStage(cleanPatch.phase || current.phase);
-    const stageState = Object.assign({}, current.stageState || {});
-    const previousStage = Object.assign({}, stageState[previousPhase] || {});
-    const nextStage = Object.assign({}, stageState[nextPhase] || {});
-
-    if (!previousStage.startedAt) previousStage.startedAt = Number(current.phaseStartedAt) || Number(current.startedAt) || now;
-    if (previousPhase !== nextPhase && !previousStage.completedAt) {
-      previousStage.completedAt = now;
-      previousStage.updatedAt = now;
-      stageState[previousPhase] = previousStage;
-    }
-    if (!nextStage.startedAt) nextStage.startedAt = now;
-    nextStage.updatedAt = now;
-    stageState[nextPhase] = nextStage;
-
-    let requests = Array.isArray(cleanPatch.requests)
-      ? cleanPatch.requests
-      : Array.isArray(current.requests)
-        ? current.requests
-        : [];
-    const nextSegmentTotal = Math.max(0, Number(cleanPatch.segmentTotal ?? current.segmentTotal) || 0);
-    if (nextSegmentTotal > 0) {
-      requests = requests.map((request) => Object.assign({}, request, { chunkCount: nextSegmentTotal }));
-    }
-    let events = Array.isArray(current.events) ? current.events : [];
-    if (previousPhase !== nextPhase) {
-      events = appendActivityEvent(events, {
-        at: now,
-        stageId: nextPhase,
-        type: "stage",
-        label: ({
-          prepare: "开始准备音频",
-          transcribe: "开始语音转写",
-          persist: "开始写入原始转写",
-          organize: "开始 AI 整理",
-          write: "开始写入纪要",
-        })[nextPhase],
-      });
-    }
-    if (event) {
-      events = appendActivityEvent(events, Object.assign({}, event, {
-        stageId: event.stageId || nextPhase,
-        at: event.at || now,
-      }));
-    }
-
-    const next = Object.assign({}, current, cleanPatch, {
-      phase: nextPhase,
-      phaseStartedAt: previousPhase === nextPhase
-        ? Number(current.phaseStartedAt) || Number(current.startedAt) || now
-        : now,
-      stageState,
-      requests,
-      events,
-      updatedAt: now,
-    });
-    this._importBusy = next;
-    try { this.syncImportTaskActivity(next); } catch { /* progress must not interrupt import */ }
-    try { this.updateBusyStatus(); } catch { /* intentionally empty */ }
-    try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
-    return next;
-  }
-
-  updateImportRequest(patch) {
-    const current = this._importBusy;
-    if (!current || current.workflow !== "audio-import" || !patch || !patch.key) return null;
-    const requests = upsertActivityRequest(current.requests, patch, 400);
-    return this.updateImportActivity({ requests });
-  }
-
-  buildAudioImportActivityStages(activity, currentPhase) {
-    const ip = activity && typeof activity === "object" ? activity : {};
-    const phase = normalizeAudioImportStage(currentPhase || ip.phase);
-    const now = Date.now();
-    const prepareDone = Math.max(0, Number(ip.prepareDone) || 0);
-    const prepareTotal = Math.max(0, Number(ip.prepareTotal) || 0);
-    const segmentDone = Math.max(0, Number(ip.segmentDone) || 0);
-    const segmentTotal = Math.max(0, Number(ip.segmentTotal) || 0);
-    const writtenSegments = Math.max(0, Number(ip.writtenSegments) || 0);
-    const failedSegments = Math.max(0, Number(ip.failedSegments) || 0);
-    const processedSegments = Math.min(segmentTotal, segmentDone);
-    const lifecycleRequests = (Array.isArray(ip.requests) ? ip.requests : [])
-      .map((request) => Object.assign({}, request, {
-        liveness: classifyActivityRequest(request, now),
-      }))
-      .sort((a, b) => Number(a.chunkIndex) - Number(b.chunkIndex));
-    const requestSummary = summarizeActivityRequests(lifecycleRequests, now);
-    const stageState = ip.stageState && typeof ip.stageState === "object" ? ip.stageState : {};
-    const lifecycleEvents = Array.isArray(ip.events) ? ip.events : [];
-    const rawStages = buildAudioImportStages(phase, !!ip.completed);
-
-    return rawStages.map((stage) => {
-      const telemetry = stageState[stage.id] || {};
-      const stageEvents = lifecycleEvents
-        .filter((event) => event && event.stageId === stage.id)
-        .slice(-10);
-      let liveness = stage.status === "done" ? "done" : stage.status === "pending" ? "pending" : "running";
-      let summary = "";
-      let detail = "";
-      let requests = [];
-      if (stage.id === "prepare") {
-        summary = prepareTotal > 0 ? `${prepareDone}/${prepareTotal} 个文件已准备` : "";
-        detail = "读取音频并确认文件、格式和时长。";
-      } else if (stage.id === "transcribe") {
-        requests = lifecycleRequests;
-        summary = [
-          stage.status === "active" ? String(ip.transcribeLabel || "") : "",
-          segmentTotal > 0 ? `${processedSegments}/${segmentTotal} 个文件转写成功` : "",
-          requestSummary.running ? `${requestSummary.running} 个请求已发出` : "",
-          requestSummary.waiting ? `${requestSummary.waiting} 个请求等待响应` : "",
-          requestSummary.slow ? `${requestSummary.slow} 个请求处理中` : "",
-          requestSummary.stalled ? `${requestSummary.stalled} 个请求超过预期` : "",
-          requestSummary.retrying ? `${requestSummary.retrying} 个请求等待重试` : "",
-          failedSegments ? `${failedSegments} 个文件待重试` : "",
-        ].filter(Boolean).join(" · ");
-        detail = String(ip.transcribeDetail || "每个音频文件独立提交；失败时保留音频并登记到重试队列。");
-        if (stage.status === "active") {
-          liveness = getDominantActivityLiveness(requestSummary);
-          if (liveness === "pending" || liveness === "done") {
-            const quietMs = now - (Number(telemetry.updatedAt) || Number(ip.phaseStartedAt) || now);
-            liveness = quietMs >= 90_000 ? "stalled" : quietMs >= 20_000 ? "slow" : "running";
-          }
-        } else if (failedSegments > 0 || requestSummary.failed > 0 || requestSummary.stalled > 0) {
-          // “转写步骤已经走完”不等于“所有分段都成功”。失败段进入重试队列后，
-          // 历史步骤仍保留告警状态，用户展开链路时能看见缺口，而不是被绿色完成态掩盖。
-          liveness = "failed";
-        }
-      } else if (stage.id === "persist") {
-        summary = segmentTotal > 0 ? `${writtenSegments}/${segmentTotal} 个文件已写入` : "";
-        detail = "原始转写按时间顺序写入笔记，不会等待最终纪要后再一次性保存。";
-      } else if (stage.id === "organize") {
-        summary = String(ip.organizeLabel || "");
-        detail = String(ip.organizeDetail || "使用已经落盘的原始转写生成结构化纪要。");
-      } else if (stage.id === "write") {
-        summary = String(ip.writeLabel || "");
-        detail = String(ip.writeDetail || "把整理结果写回笔记并完成索引更新。");
-      }
-      if (stage.status === "active" && stage.id !== "transcribe") {
-        const quietMs = now - (Number(telemetry.updatedAt) || Number(ip.updatedAt) || now);
-        liveness = quietMs >= 120_000 ? "stalled" : quietMs >= 30_000 ? "slow" : "running";
-      }
-      if (stage.status === "active" && ip.error) {
-        liveness = "failed";
-        detail = String(ip.error);
-      }
-      return Object.assign({}, stage, {
-        liveness,
-        summary,
-        detail,
-        startedAt: Number(telemetry.startedAt) || null,
-        updatedAt: Number(telemetry.updatedAt) || null,
-        completedAt: Number(telemetry.completedAt) || null,
-        events: stageEvents,
-        requests,
-        requestSummary: stage.id === "transcribe" ? requestSummary : null,
-      });
-    });
-  }
-
-  // 结构化的当前活动详情：任务类型 / 模式 / 当前步骤 / 进度% / 步骤说明。供处理进度面板展开展示。
-  // 与 getCurrentActivityLabel 同源同优先级，只是返回结构而非一行字符串；空闲返回 null。
-  getCurrentActivityDetail() {
-    const modeLabelOf = (m) => { try { return (getModeMeta(this.settings, m) || {}).label || ""; } catch { return ""; } };
-    const pctOf = (wp) => (wp && wp.percent != null && Number.isFinite(Number(wp.percent))) ? Number(wp.percent) : null;
-    // 0) 导入多文件批量转写
-    const ip = this._importBusy;
-    if (ip && Number(ip.total) > 0) {
-      const total = Number(ip.total);
-      const n = Math.min((Number(ip.done) || 0) + 1, total);
-      if (ip.workflow === "audio-import") {
-        const phase = normalizeAudioImportStage(ip.phase);
-        const prepareDone = Math.max(0, Number(ip.prepareDone) || 0);
-        const prepareTotal = Math.max(0, Number(ip.prepareTotal) || 0);
-        const segmentDone = Math.max(0, Number(ip.segmentDone) || 0);
-        const segmentTotal = Math.max(0, Number(ip.segmentTotal) || 0);
-        const writtenSegments = Math.max(0, Number(ip.writtenSegments) || 0);
-        const activeSegments = Math.max(0, Number(ip.activeSegments) || 0);
-        const failedSegments = Math.max(0, Number(ip.failedSegments) || 0);
-        const processedSegments = Math.min(segmentTotal, segmentDone);
-        let step = "准备音频";
-        let stepDetail = ip.file
-          ? `正在读取并分析 ${ip.file}`
-          : "正在读取音频并准备整文件转写任务";
-        let percent = null;
-        let count = total > 1 ? `第 ${n} / ${total} 个文件` : "";
-        if (phase === "prepare" && prepareTotal > 1) {
-          percent = Math.max(0, Math.min(100, (prepareDone / prepareTotal) * 100));
-          count = `已准备 ${prepareDone} / ${prepareTotal} 个文件`;
-        }
-        if (phase === "transcribe") {
-          step = "语音转写";
-          const runningText = activeSegments > 0 ? `${activeSegments} 个文件正在请求转写服务` : "正在等待转写服务返回";
-          stepDetail = failedSegments > 0
-            ? `${runningText}；${failedSegments} 个文件未成功，已保留并进入重试流程`
-            : runningText;
-          if (segmentTotal > 1) {
-            percent = Math.max(0, Math.min(100, (processedSegments / segmentTotal) * 100));
-            count = `成功 ${processedSegments} / ${segmentTotal} 个文件`;
-          } else {
-            count = segmentTotal === 1 && segmentDone > 0 ? "当前音频已转写" : "正在转写当前音频";
-          }
-        } else if (phase === "persist") {
-          step = "写入原始转写";
-          stepDetail = "正在按时间顺序写入 Obsidian 笔记，原始转写会完整保留";
-          if (segmentTotal > 0) {
-            percent = Math.max(0, Math.min(100, (writtenSegments / segmentTotal) * 100));
-            count = `已写入 ${writtenSegments} / ${segmentTotal} 段`;
-          }
-        } else if (phase === "organize") {
-          step = String(ip.organizeLabel || "AI 整理");
-          stepDetail = String(ip.organizeDetail || "原始转写已保留，正在生成最终纪要");
-          percent = Number.isFinite(Number(ip.organizePercent)) ? Number(ip.organizePercent) : null;
-          count = segmentTotal > 0 ? `转写已完成 ${segmentDone} / ${segmentTotal} 段` : "";
-        } else if (phase === "write") {
-          step = String(ip.writeLabel || "写入纪要");
-          stepDetail = String(ip.writeDetail || "正在把整理结果写入 Obsidian");
-          percent = Number.isFinite(Number(ip.writePercent)) ? Number(ip.writePercent) : null;
-          count = segmentTotal > 0 ? `${segmentDone} / ${segmentTotal} 段已转写` : "";
-        }
-        const stages = this.buildAudioImportActivityStages(ip, phase);
-        const lifecycleEvents = Array.isArray(ip.events) ? ip.events : [];
-        const activeStage = stages.find((stage) => stage.status === "active") || null;
-        return {
-          kind: "导入转写",
-          modeLabel: modeLabelOf(ip.mode),
-          step,
-          stepDetail,
-          percent,
-          count,
-          stages,
-          liveness: ip.error ? "failed" : ip.completed ? "done" : activeStage ? activeStage.liveness : "running",
-          events: lifecycleEvents.slice(-20),
-          startedAt: Number(ip.startedAt) || null,
-          stageStartedAt: Number(ip.phaseStartedAt) || null,
-          updatedAt: Number(ip.updatedAt) || null,
-          backgroundHint: "任务会继续在后台运行，可以关闭此窗口继续使用 Obsidian",
-        };
-      }
-      return {
-        kind: "导入转写",
-        modeLabel: modeLabelOf(ip.mode),
-        step: "转写音频中",
-        stepDetail: ip.file ? `当前文件：${ip.file}` : "正在把音频发送到转写服务",
-        percent: null,
-        count: `第 ${n} / ${total} 个文件`,
-      };
-    }
-    // A) 批量转写处理（重试全部 / 整篇重转）——叠加 workProgress 子阶段
-    const q = this.queue;
-    if (q && Number(q._batchTotal) > 0) {
-      const done = Math.min(Number(q._batchDone) || 0, Number(q._batchTotal));
-      const wp = this.session && this.session.workProgress;
-      return {
-        kind: "转写批处理",
-        modeLabel: this.session ? modeLabelOf(this.session.mode) : "",
-        step: (wp && wp.label) || "转写处理中",
-        stepDetail: (wp && wp.detail) || "",
-        percent: pctOf(wp),
-        count: `${done} / ${q._batchTotal} 段`,
-      };
-    }
-    // A2) 通用长操作（重新整理 / 整篇重新润色）
-    if (this._busyLabel) {
-      const context = this._busyContext && typeof this._busyContext === "object"
-        ? this._busyContext
-        : {};
-      return {
-        kind: String(context.kind || "重新整理"),
-        modeLabel: String(context.targetModeLabel || ""),
-        sourceFile: String(context.sourceFile || ""),
-        sourceFolder: String(context.sourceFolder || ""),
-        durationMs: Math.max(0, Number(context.durationMs) || 0),
-        sourceModeLabel: String(context.sourceModeLabel || ""),
-        targetModeLabel: String(context.targetModeLabel || ""),
-        step: String(this._busyLabel),
-        stepDetail: "",
-        percent: null,
-        count: "",
-      };
-    }
-    // B/C) 录音 / 段落转写 / 会后 AI 整理（this.session）
-    const s = this.session;
-    if (s) {
-      const wp = s.workProgress || null;
-      const pct = pctOf(wp);
-      const modeLabel = modeLabelOf(s.mode);
-      const srcKind = s.source === "import" ? "导入整理" : s.source === "text-import" ? "文本整理" : "录音整理";
-      if (s.finalizing) {
-        return { kind: srcKind, modeLabel, step: (wp && wp.label) || "AI 整理中", stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
-      }
-      const rec = this.recorder;
-      const recState = rec && typeof rec.state === "string" ? rec.state : "idle";
-      if (recState === "recording" || recState === "paused") {
-        let elapsed = 0; try { elapsed = (rec.getInfo && rec.getInfo().elapsed) || 0; } catch { /* intentionally empty */ }
-        const segN = Array.isArray(s.segments) ? s.segments.length : 0;
-        const countTxt = segN ? `已转写 ${segN} 段` : "";
-        if (recState === "paused") {
-          return { kind: "录音中", modeLabel, step: `录音已暂停 · ${formatElapsed(elapsed)}`, stepDetail: "", percent: null, count: countTxt };
-        }
-        if (Number(s.activeSegmentJobs) > 0) {
-          return { kind: "录音中", modeLabel, step: `录音 ${formatElapsed(elapsed)} · 转写中`, stepDetail: (wp && wp.detail) || "正在转写已切分的音频段", percent: pct, count: countTxt };
-        }
-        return { kind: "录音中", modeLabel, step: `正在录音 · ${formatElapsed(elapsed)}`, stepDetail: segN ? "" : "等待第一段切分", percent: null, count: countTxt };
-      }
-      if (Number(s.activeSegmentJobs) > 0) {
-        return { kind: srcKind, modeLabel, step: (wp && wp.label) || "转写中", stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
-      }
-    }
-    return null;
-  }
-
-  scheduleRealtimeOutline(opts = {}) {
+  }  scheduleRealtimeOutline(opts = {}) {
     const session = this.session;
     if (!session || !session.id) return;
     const requestedDelay = Number(opts && opts.delayMs);
@@ -3822,18 +2840,18 @@ class LexVoicePlugin extends obsidian.Plugin {
     session.workProgress = Object.assign({}, session.workProgress || {}, patch || {}, {
       updatedAt: new Date().toISOString(),
     });
-    if (this._importBusy
-      && this._importBusy.workflow === "audio-import"
-      && String(this._importBusy.sessionId || "") === String(session.id || "")) {
+    if (this.tasks._importBusy
+      && this.tasks._importBusy.workflow === "audio-import"
+      && String(this.tasks._importBusy.sessionId || "") === String(session.id || "")) {
       const stage = audioImportStageFromWorkProgress(session.workProgress.stage);
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         phase: stage,
-        organizeLabel: stage === "organize" ? String(session.workProgress.label || "AI 整理") : this._importBusy.organizeLabel,
-        organizeDetail: stage === "organize" ? String(session.workProgress.detail || "") : this._importBusy.organizeDetail,
-        organizePercent: stage === "organize" ? Number(session.workProgress.percent) || 0 : this._importBusy.organizePercent,
-        writeLabel: stage === "write" ? String(session.workProgress.label || "写入纪要") : this._importBusy.writeLabel,
-        writeDetail: stage === "write" ? String(session.workProgress.detail || "") : this._importBusy.writeDetail,
-        writePercent: stage === "write" ? Number(session.workProgress.percent) || 0 : this._importBusy.writePercent,
+        organizeLabel: stage === "organize" ? String(session.workProgress.label || "AI 整理") : this.tasks._importBusy.organizeLabel,
+        organizeDetail: stage === "organize" ? String(session.workProgress.detail || "") : this.tasks._importBusy.organizeDetail,
+        organizePercent: stage === "organize" ? Number(session.workProgress.percent) || 0 : this.tasks._importBusy.organizePercent,
+        writeLabel: stage === "write" ? String(session.workProgress.label || "写入纪要") : this.tasks._importBusy.writeLabel,
+        writeDetail: stage === "write" ? String(session.workProgress.detail || "") : this.tasks._importBusy.writeDetail,
+        writePercent: stage === "write" ? Number(session.workProgress.percent) || 0 : this.tasks._importBusy.writePercent,
       });
     }
     try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
@@ -4818,7 +3836,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         session.finalizing = false;
         session.finalizationError = getErrorMessage(e);
         if (session._finalizeTaskMeter) {
-          this.endTaskMeter(session._finalizeTaskMeter);
+          this.tasks.endTaskMeter(session._finalizeTaskMeter);
           session._finalizeTaskMeter = null;
         }
         try {
@@ -5094,7 +4112,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         session.recruitContext = await this.recruit.resolveRecruitProjectContext(session.recruitContext);
         writeSession.recruitContext = session.recruitContext;
       }
-      taskMeter = this.beginTaskMeter();
+      taskMeter = this.tasks.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
       session._finalizeTaskMeter = taskMeter;
       polished = await mergeAndPolish(this, segmentsForLlm.map(s => ({
@@ -5119,7 +4137,7 @@ class LexVoicePlugin extends obsidian.Plugin {
 
     if (mergeError) {
       if (taskMeter) {
-        this.endTaskMeter(taskMeter);
+        this.tasks.endTaskMeter(taskMeter);
         taskMeter = null;
         session._finalizeTaskMeter = null;
       }
@@ -5287,13 +4305,13 @@ class LexVoicePlugin extends obsidian.Plugin {
 
     if (!mergeError) {
       await this.cleanupSuccessfulSegmentAudio(session);
-      const completedTaskMeter = taskMeter ? this.endTaskMeter(taskMeter) : null;
+      const completedTaskMeter = taskMeter ? this.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       session._finalizeTaskMeter = null;
       try {
         const doneLabel = isTextImportSession(session) ? "文本整理完成"
           : session.source === "import" ? "导入音频整理完成" : "录音纪要整理完成";
-        this.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
+        this.tasks.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
       } catch { /* intentionally empty */ }
       // 沉淀开关默认关闭：开启后转写完成自动跑沉淀扫描并入库；关闭则照旧手动点「沉淀」。后台执行、失败静默。
       if (this.settings.sedimentAutoExtract) void this.autoExtractSedimentAfterFinalize(session.mdPath);
@@ -6785,12 +5803,12 @@ ${source}`;
           }
         }
       }
-      this._busyLabel = `重新整理中（${meta.prefix}）…`;
+      this.tasks._busyLabel = `重新整理中（${meta.prefix}）…`;
       const sourceMode = detectRecentNoteMode(this, file, fmCache);
       const sourceModeLabel = sourceMode && sourceMode !== "off"
         ? ((getModeMeta(this.settings, sourceMode) || {}).label || sourceMode)
         : "未标注";
-      this._busyContext = {
+      this.tasks._busyContext = {
         kind: "重新整理",
         sourceFile: file.basename,
         sourceFolder: file.parent && file.parent.path ? file.parent.path : "知识库根目录",
@@ -6801,7 +5819,7 @@ ${source}`;
           .join(" · "),
       };
       taskStarted = true;
-      this.startTaskActivity({
+      this.tasks.startTaskActivity({
         id: taskId,
         kind: "repolish",
         title: `重新整理 · ${meta.prefix}`,
@@ -6813,11 +5831,11 @@ ${source}`;
         progress: 3,
         actions: [],
       });
-      this.updateBusyStatus();
-      taskMeter = this.beginTaskMeter();
+      this.tasks.updateBusyStatus();
+      taskMeter = this.tasks.beginTaskMeter();
       sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter });
       const polished = await mergeAndPolish(this, segments, mode, recruitContext, sessionMeta, originalFmForRegen, repolishOptions);
-      this.patchTaskActivity(taskId, {
+      this.tasks.patchTaskActivity(taskId, {
         stage: "writing",
         stageLabel: "正在生成新版本",
         detail: "AI 正文已经完成，正在写入 Markdown",
@@ -6852,7 +5870,7 @@ ${source}`;
         mode,
         versionStyle,
       );
-      this.patchTaskActivity(taskId, {
+      this.tasks.patchTaskActivity(taskId, {
         stage: "postprocess",
         stageLabel: "正在完成文件处理",
         detail: derivedFile instanceof obsidian.TFile ? derivedFile.path : "新版本已经写入",
@@ -6884,10 +5902,10 @@ ${source}`;
       }
       const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
       new obsidian.Notice(`QnALog：已生成${meta.prefix}派生纪要${preferenceLabel}${roleMapping.length ? `（角色映射 ${roleMapping.length} 条已应用）` : ""}${versionCacheError ? "（版本索引稍后可重建）" : ""}`);
-      const completedTaskMeter = taskMeter ? this.endTaskMeter(taskMeter) : null;
+      const completedTaskMeter = taskMeter ? this.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
-      try { this.logCompletedWork(`重新整理完成 · ${meta.prefix}`, (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
-      this.completeTaskActivity(taskId, {
+      try { this.tasks.logCompletedWork(`重新整理完成 · ${meta.prefix}`, (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
+      this.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: "新版本已生成",
         detail: versionCacheError ? `${outputPath} · 版本索引未同步：${versionCacheError}` : outputPath,
@@ -6901,7 +5919,7 @@ ${source}`;
     } catch (e) {
       console.error("[QnALog] repolish markdown failed", e);
       if (taskStarted) {
-        this.failTaskActivity(taskId, e, {
+        this.tasks.failTaskActivity(taskId, e, {
           stage: "failed",
           stageLabel: "重新整理未完成",
           detail: getTaskErrorMessage(e),
@@ -6915,10 +5933,10 @@ ${source}`;
       new obsidian.Notice(`重新整理失败：${(e && e.message) || e}`, 8000);
     } finally {
       if (repolishLockAcquired && this._repolishInFlight) this._repolishInFlight.delete(taskId);
-      if (taskMeter) this.endTaskMeter(taskMeter);
-      this._busyLabel = null;
-      this._busyContext = null;
-      this.updateBusyStatus();
+      if (taskMeter) this.tasks.endTaskMeter(taskMeter);
+      this.tasks._busyLabel = null;
+      this.tasks._busyContext = null;
+      this.tasks.updateBusyStatus();
     }
   }  // 生成清稿（派生版本·只读快照）：从母本逐字稿忠实清理成可读稿，写成独立文件、双链回指母本。
   // 永远从母本 raw 读（在派生上触发会先跳回母本）；清稿不含 raw、不参与「重新整理」回写。
@@ -6950,10 +5968,10 @@ ${source}`;
       }
       const baseTitle = sourceFile.basename;
       taskId = `clean:${sourceFile.path}`;
-      this._busyLabel = "清稿生成中…";
+      this.tasks._busyLabel = "清稿生成中…";
       const sourceFm = ((this.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
       const sourceMode = detectRecentNoteMode(this, sourceFile, sourceFm);
-      this._busyContext = {
+      this.tasks._busyContext = {
         kind: "生成清稿",
         sourceFile: sourceFile.basename,
         sourceFolder: sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "知识库根目录",
@@ -6964,7 +5982,7 @@ ${source}`;
         targetModeLabel: "清稿",
       };
       taskStarted = true;
-      this.startTaskActivity({
+      this.tasks.startTaskActivity({
         id: taskId,
         kind: "clean-transcript",
         title: "生成清稿",
@@ -6976,9 +5994,9 @@ ${source}`;
         progress: null,
         actions: [],
       });
-      this.updateBusyStatus();
+      this.tasks.updateBusyStatus();
       new obsidian.Notice("QnALog：正在从母本逐字稿生成清稿…");
-      taskMeter = this.beginTaskMeter();
+      taskMeter = this.tasks.beginTaskMeter();
       const { text: cleaned, truncated } = await cleanTranscript(this, segments, getLearnedLlmOutputCeiling(this.settings));
       if (!cleaned) throw new Error("模型没有返回可用清稿");
       const warn = truncated
@@ -6995,10 +6013,10 @@ ${source}`;
       });
       await this.applyLexVoiceVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
       new obsidian.Notice("QnALog：清稿已生成并设为当前显示版本", 6000);
-      const completedTaskMeter = taskMeter ? this.endTaskMeter(taskMeter) : null;
+      const completedTaskMeter = taskMeter ? this.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
-      try { this.logCompletedWork("生成清稿", sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
-      this.completeTaskActivity(taskId, {
+      try { this.tasks.logCompletedWork("生成清稿", sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
+      this.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: "清稿已生成",
         detail: sourceFile.path,
@@ -7011,7 +6029,7 @@ ${source}`;
     } catch (e) {
       console.error("[QnALog] generate clean script failed", e);
       if (taskStarted) {
-        this.failTaskActivity(taskId, e, {
+        this.tasks.failTaskActivity(taskId, e, {
           stage: "failed",
           stageLabel: "清稿未生成",
           detail: getTaskErrorMessage(e),
@@ -7023,10 +6041,10 @@ ${source}`;
       }
       new obsidian.Notice(`清稿生成失败：${(e && e.message) || e}`, 8000);
     } finally {
-      if (taskMeter) this.endTaskMeter(taskMeter);
-      this._busyLabel = null;
-      this._busyContext = null;
-      this.updateBusyStatus();
+      if (taskMeter) this.tasks.endTaskMeter(taskMeter);
+      this.tasks._busyLabel = null;
+      this.tasks._busyContext = null;
+      this.tasks.updateBusyStatus();
     }
   }
 
@@ -7182,7 +6200,7 @@ ${source}`;
     const recorderState = this.recorder && this.recorder.state;
     return !!(
       (recorderState && recorderState !== "idle")
-      || this._importBusy
+      || this.tasks._importBusy
       || (this.session && !this.session.finalized)
     );
   }
@@ -7193,7 +6211,7 @@ ${source}`;
 
   markExternalInboxWaiting(file, detail) {
     const id = this.externalInboxActivityId(file);
-    const current = this.taskActivityStore && this.taskActivityStore.get(id);
+    const current = this.tasks.taskActivityStore && this.tasks.taskActivityStore.get(id);
     const patch = {
       id,
       kind: "external-audio-import",
@@ -7205,8 +6223,8 @@ ${source}`;
       detail,
       progress: 5,
     };
-    if (current) this.patchTaskActivity(id, patch);
-    else this.startTaskActivity(patch);
+    if (current) this.tasks.patchTaskActivity(id, patch);
+    else this.tasks.startTaskActivity(patch);
   }
 
   async scanExternalInboxFolder(options = {}) {
@@ -7385,7 +6403,7 @@ ${source}`;
         error: "",
       });
       await this.saveExternalInboxLedger();
-      this.patchTaskActivity(activityId, {
+      this.tasks.patchTaskActivity(activityId, {
         status: "running",
         stage: "copying-source",
         stageLabel: "读取音频",
@@ -7395,7 +6413,7 @@ ${source}`;
         maxAttempts: 3,
       });
       cachePath = await this.copyExternalInboxFileToCache(file);
-      this.patchTaskActivity(activityId, {
+      this.tasks.patchTaskActivity(activityId, {
         status: "running",
         stage: "transcribing",
         stageLabel: "转写与整理",
@@ -7421,7 +6439,7 @@ ${source}`;
       entry.notePath = result && result.mdPath ? result.mdPath : "";
       entry.error = "";
       await this.saveExternalInboxLedger();
-      this.completeTaskActivity(activityId, {
+      this.tasks.completeTaskActivity(activityId, {
         stage: "done",
         stageLabel: pendingTranscriptionCount ? "纪要已创建" : "自动导入完成",
         detail: pendingTranscriptionCount
@@ -7436,8 +6454,8 @@ ${source}`;
         mdPath: entry.notePath,
       });
     } catch (e) {
-      this._importBusy = null;
-      this.updateBusyStatus();
+      this.tasks._importBusy = null;
+      this.tasks.updateBusyStatus();
       const entry = ledger.entries[file.fingerprint] || {
         fingerprint: file.fingerprint,
         fullPath: file.fullPath,
@@ -7459,7 +6477,7 @@ ${source}`;
       if (changedWhileSyncing) {
         this.markExternalInboxWaiting(file, "文件仍在同步，稍后自动处理");
       } else {
-        this.failTaskActivity(activityId, e, {
+        this.tasks.failTaskActivity(activityId, e, {
           stage: "failed",
           stageLabel: "自动导入未完成",
           detail: entry.error,
@@ -7689,7 +6707,7 @@ ${source}`;
 
     new obsidian.Notice(`开始导入 ${paths.length} 个音频文件…`);
     const importStartedAt = Date.now();
-    this._importBusy = {
+    this.tasks._importBusy = {
       workflow: "audio-import",
       sessionId: session.id,
       mdPath: session.mdPath,
@@ -7712,7 +6730,7 @@ ${source}`;
       stageState: {},
       asrConcurrency: 1,
     };
-    this.updateImportActivity({
+    this.tasks.updateImportActivity({
       event: {
         stageId: "prepare",
         type: "created",
@@ -7747,7 +6765,7 @@ ${source}`;
       const displayName = externalSource && externalSource.name ? externalSource.name : file.name;
       const keepSourceAudio = !externalSource;
       const requestKey = `${session.id}:${i}`;
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         phase: "prepare",
         done: i,
         total: paths.length,
@@ -7785,11 +6803,11 @@ ${source}`;
       }
 
       processedFiles++;
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         phase: "transcribe",
         activeSegments: 1,
         requests: upsertActivityRequest(
-          Array.isArray(this._importBusy && this._importBusy.requests) ? this._importBusy.requests : [],
+          Array.isArray(this.tasks._importBusy && this.tasks._importBusy.requests) ? this.tasks._importBusy.requests : [],
           {
             key: requestKey,
             chunkIndex: i,
@@ -7828,7 +6846,7 @@ ${source}`;
             const phaseChanged = progress.phase !== lastImportProgressPhase;
             lastImportProgressPhase = progress.phase;
             const requests = upsertActivityRequest(
-              Array.isArray(this._importBusy && this._importBusy.requests) ? this._importBusy.requests : [],
+              Array.isArray(this.tasks._importBusy && this.tasks._importBusy.requests) ? this.tasks._importBusy.requests : [],
               {
                 key: requestKey,
                 chunkIndex: i,
@@ -7838,7 +6856,7 @@ ${source}`;
               },
               400,
             );
-            this.updateImportActivity({
+            this.tasks.updateImportActivity({
               phase: "transcribe",
               requests,
               transcribeLabel: progress.label,
@@ -7866,7 +6884,7 @@ ${source}`;
             detectedSpeakerCount: detectedSpeakerIds.length,
             detectedSpeakerIds,
           });
-          this.updateImportActivity({
+          this.tasks.updateImportActivity({
             event: {
               stageId: "transcribe",
               type: "speaker-count-mismatch",
@@ -7876,7 +6894,7 @@ ${source}`;
           });
         }
         successfulTranscriptions++;
-        this.updateImportRequest({
+        this.tasks.updateImportRequest({
           key: requestKey,
           chunkIndex: i,
           chunkCount: paths.length,
@@ -7886,9 +6904,9 @@ ${source}`;
           receivedChars: String(result.text || "").length,
           error: "",
         });
-        this.updateImportActivity({
+        this.tasks.updateImportActivity({
           activeSegments: 0,
-          segmentDone: Math.max(0, Number(this._importBusy && this._importBusy.segmentDone) || 0) + 1,
+          segmentDone: Math.max(0, Number(this.tasks._importBusy && this.tasks._importBusy.segmentDone) || 0) + 1,
         });
         if (externalSource) {
           await this.maybeDeleteSegmentCacheFile(audioPath, undefined, true);
@@ -7902,7 +6920,7 @@ ${source}`;
           ? new Error(`${originalError.message}。本文件超过说话人分离建议的 2 小时，可关闭“区分说话人”后重试`)
           : originalError;
         console.error(error);
-        this.updateImportRequest({
+        this.tasks.updateImportRequest({
           key: requestKey,
           chunkIndex: i,
           chunkCount: paths.length,
@@ -7911,9 +6929,9 @@ ${source}`;
           deadlineAt: 0,
           error: error.message,
         });
-        this.updateImportActivity({
+        this.tasks.updateImportActivity({
           activeSegments: 0,
-          failedSegments: Math.max(0, Number(this._importBusy && this._importBusy.failedSegments) || 0) + 1,
+          failedSegments: Math.max(0, Number(this.tasks._importBusy && this.tasks._importBusy.failedSegments) || 0) + 1,
         });
         await this.diagnostics.logDiagnostic("error", "asr.import_whole_file_failed", "导入音频整文件转写失败", {
           provider: importProvider.id,
@@ -7988,7 +7006,7 @@ ${source}`;
         "",
       ].join("\n");
       await this.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         done: i + 1,
         writtenSegments: session.segments.length,
         prepareDone: i + 1,
@@ -7998,9 +7016,9 @@ ${source}`;
 
     if (processedFiles === 0) {
       const error = new Error("没有可处理的音频文件");
-      this.updateImportActivity({ error: error.message });
-      this._importBusy = null;
-      this.updateBusyStatus();
+      this.tasks.updateImportActivity({ error: error.message });
+      this.tasks._importBusy = null;
+      this.tasks.updateBusyStatus();
       throw error;
     }
 
@@ -8010,7 +7028,7 @@ ${source}`;
       const message = pendingTranscriptionCount > 0
         ? "语音转写未完成；音频已保留，可在处理进度中重试"
         : "没有获得可用于整理的有效转写文本";
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         phase: "transcribe",
         error: message,
         label: "语音转写未完成",
@@ -8033,7 +7051,7 @@ ${source}`;
       const checkpointError = new Error(
         `原始转写尚未完整写入笔记（${transcriptCheckpoint.persistedSegments}/${transcriptCheckpoint.expectedSegments}），已停止 AI 整理`,
       );
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         phase: "persist",
         error: checkpointError.message,
         label: "原始转写写入未完成",
@@ -8053,7 +7071,7 @@ ${source}`;
       transcriptChars: transcriptCheckpoint.expectedChars,
       provider: importProvider.id,
     });
-    this.updateImportActivity({
+    this.tasks.updateImportActivity({
       phase: "organize",
       organizeLabel: "准备 AI 整理",
       organizeDetail: "原始转写已完整写入，正在按当前纪要模板生成正文。",
@@ -8064,12 +7082,12 @@ ${source}`;
         ? "没有获得可用于整理的有效转写文本"
         : "");
     if (finalizationError) {
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         phase: audioImportStageFromWorkProgress(session.workProgress && session.workProgress.stage),
         error: finalizationError,
       });
     } else {
-      this.updateImportActivity({
+      this.tasks.updateImportActivity({
         phase: "write",
         completed: true,
         writeLabel: "处理完成",
@@ -8078,9 +7096,9 @@ ${source}`;
     }
     const completedImportId = session.id;
     window.setTimeout(() => {
-      if (this._importBusy && String(this._importBusy.sessionId || "") === String(completedImportId)) {
-        this._importBusy = null;
-        this.updateBusyStatus();
+      if (this.tasks._importBusy && String(this.tasks._importBusy.sessionId || "") === String(completedImportId)) {
+        this.tasks._importBusy = null;
+        this.tasks.updateBusyStatus();
         this.refreshOutlineView();
       }
     }, finalizationError ? 0 : 1800);
@@ -8361,7 +7379,7 @@ ${source}`;
     // 批量游标喂状态栏：重新转写逐段 done/total 实时可见（之前直接 for 循环没设游标 → 状态栏黑盒）。
     this.queue._batchTotal = batch.length;
     this.queue._batchDone = 0;
-    this.updateBusyStatus();
+    this.tasks.updateBusyStatus();
     this.resetAsrServiceCircuitForManualRetry("note-retry");
     try {
       for (const task of batch) {
@@ -8378,13 +7396,13 @@ ${source}`;
           }
         }
         this.queue._batchDone++;
-        this.updateBusyStatus();
+        this.tasks.updateBusyStatus();
         if (paused) break;
       }
     } finally {
       this.queue._batchTotal = 0;
       this.queue._batchDone = 0;
-      this.updateBusyStatus();
+      this.tasks.updateBusyStatus();
     }
     await this.saveAll();
     this.refreshOutlineView();

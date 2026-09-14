@@ -103,7 +103,7 @@ describe("release runtime contracts", () => {
 
   it("keeps whole-file audio import and progress updates connected at runtime", () => {
     expect(mainSource).toContain("openAudioImportOptions(paths, modeOverride)");
-    expect(mainSource).toContain("updateImportActivity(patch = {})");
+    expect(pluginSource).toContain("updateImportActivity(patch = {})");
     expect(mainSource).toContain("resolveImportTranscribeProvider(this)");
     expect(mainSource).toContain("transcribeImportedAudio(this, blob, mime");
     expect(mainSource).toContain("wholeFileImport: true");
