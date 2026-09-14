@@ -96,12 +96,6 @@ import { ExternalInboxScanner, createExternalInboxLedger, isAbsoluteExternalInbo
 
 import { verifyTranscriptCheckpoint } from "./imports/transcript-checkpoint";
 
-// 以下 1 个声明已抽到 ./views/base-definitions（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { LV_BASE_DEFINITIONS } from "./views/base-definitions";
-
-// 以下 11 个声明已抽到 ./views/wall-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { CONCEPT_WALL_FILE, LEARNING_WALL_FILE, OBJECT_WALL_FILE, TODO_WALL_FILE, formatConceptWallMarkdown, formatLearningWallMarkdown, formatObjectWallMarkdown, formatTodoWallMarkdown, getLexVoiceBasesFolder, getLexVoiceWallPath, insertGeneratedWallMarker } from "./views/wall-markdown";
-
 // 以下 8 个声明已抽到 ./shared/limits（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {EXTERNAL_INBOX_RETRY_DELAYS_MS, EXTERNAL_INBOX_SCAN_INTERVAL_MS, QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS, SHORT_RECORDING_FILTER_MS } from "./shared/limits";
 
@@ -159,6 +153,7 @@ import { RealtimeOutlineService } from "./notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
+import { LibraryViewService } from "./views/library-view-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -227,6 +222,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.library = new LibraryViewService(this);
     this.noteIndex = new NoteIndexService(this);
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
@@ -294,10 +290,10 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.addCommand({ id: "retry-queue-all", name: "重试所有失败任务", callback: () => this.queueRetry.retryQueue() });
     this.addCommand({ id: "copy-diagnostic-report", name: "复制诊断报告", callback: () => this.diagnostics.copyDiagnosticReport() });
     this.addCommand({ id: "suggest-people-directory-updates", name: "AI 扫描纪要库提取人员建议", callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
-    this.addCommand({ id: "open-learning-card-wall", name: "打开学习卡片瀑布墙", callback: () => { void this.openLearningWall("learning"); } });
-    this.addCommand({ id: "open-concept-wall", name: "打开概念墙", callback: () => { void this.openLearningWall("concept"); } });
-    this.addCommand({ id: "open-todo-wall", name: "打开待办墙", callback: () => { void this.openTodoWall(); } });
-    this.addCommand({ id: "open-object-wall", name: "打开对象总览", callback: () => { void this.openObjectWall(); } });
+    this.addCommand({ id: "open-learning-card-wall", name: "打开学习卡片瀑布墙", callback: () => { void this.library.openLearningWall("learning"); } });
+    this.addCommand({ id: "open-concept-wall", name: "打开概念墙", callback: () => { void this.library.openLearningWall("concept"); } });
+    this.addCommand({ id: "open-todo-wall", name: "打开待办墙", callback: () => { void this.library.openTodoWall(); } });
+    this.addCommand({ id: "open-object-wall", name: "打开对象总览", callback: () => { void this.library.openObjectWall(); } });
     this.addCommand({ id: "import-audio", name: "导入已有音频文件转写+润色", callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({
       id: "generate-html-report",
@@ -2772,87 +2768,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       i++;
       if (i > 99) return "";
     }
-  }  // 创建 QnALog 视图（.base 文件）—— 9 个：5 按模式 + 4 场景
-  // overwrite=false：已存在的文件保留；overwrite=true：强制覆盖（用户重置/升级用）
-  async createLexVoiceBases(opts) {
-    const overwrite = !!(opts && opts.overwrite);
-    const basesFolder = getLexVoiceBasesFolder(this.settings);
-    await ensureVaultFolder(this.app, basesFolder);
-    await ensureVaultFolder(this.app, basesFolder + "/按模式");
-    await ensureVaultFolder(this.app, basesFolder + "/场景");
-    let created = 0, updated = 0, skipped = 0;
-    for (const def of LV_BASE_DEFINITIONS) {
-      if (!isRecruitFeatureUnlocked(this.settings) && /lexvoice\/recruit|招聘/.test(def.relPath + "\n" + def.yaml)) {
-        skipped++;
-        continue;
-      }
-      const path = obsidian.normalizePath(basesFolder + "/" + def.relPath);
-      const existing = this.app.vault.getAbstractFileByPath(path);
-      if (existing instanceof obsidian.TFile) {
-        if (overwrite) {
-          await this.app.vault.modify(existing, def.yaml);
-          updated++;
-        } else {
-          skipped++;
-        }
-      } else {
-        await this.app.vault.create(path, def.yaml);
-        created++;
-      }
-    }
-    return { created, updated, skipped };
-  }
-
-  async upsertGeneratedMarkdownFile(path, content, opts = {}) {
-    const norm = obsidian.normalizePath(path);
-    const folder = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-    if (folder) await ensureVaultFolder(this.app, folder);
-    let file = this.app.vault.getAbstractFileByPath(norm);
-    if (file instanceof obsidian.TFile) {
-      const current = await this.app.vault.cachedRead(file);
-      const shouldUpdate = opts.overwrite || current.includes("<!-- lexvoice-generated-wall -->") || current.trim() === "";
-      if (shouldUpdate && current !== content) await this.app.vault.modify(file, content);
-      return file;
-    }
-    file = await this.app.vault.create(norm, content);
-    return file;
-  }
-
-  async openGeneratedMarkdown(path, content, opts = {}) {
-    const withMarker = insertGeneratedWallMarker(content);
-    const file = await this.upsertGeneratedMarkdownFile(path, withMarker, opts);
-    if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(file);
-    return file;
-  }
-
-  async openLearningWall(scope = "learning") {
-    const isConcept = scope === "concept";
-    const fileName = isConcept ? CONCEPT_WALL_FILE : LEARNING_WALL_FILE;
-    const content = isConcept ? formatConceptWallMarkdown(this.settings) : formatLearningWallMarkdown(this.settings);
-    return await this.openGeneratedMarkdown(getLexVoiceWallPath(this.settings, fileName), content, { overwrite: true });
-  }
-
-  async openTodoWall() {
-    return await this.openGeneratedMarkdown(getLexVoiceWallPath(this.settings, TODO_WALL_FILE), formatTodoWallMarkdown(this.settings), { overwrite: true });
-  }
-
-  async openObjectWall() {
-    return await this.openGeneratedMarkdown(getLexVoiceWallPath(this.settings, OBJECT_WALL_FILE), formatObjectWallMarkdown(this.settings), { overwrite: true });
-  }
-
-  async openPeopleBase() {
-    const file = await this.people.ensurePeopleDirectoryFiles({ overwrite: false });
-    if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(file);
-    return file;
-  }
-
-  async openLexVoiceDetailBase() {
-    await this.createLexVoiceBases({ overwrite: false });
-    const path = obsidian.normalizePath(getLexVoiceBasesFolder(this.settings) + "/场景/全部纪要总览.base");
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(file);
-    else new obsidian.Notice("未找到明细 Base，请先创建视图文件。", 8000);
-    return file;
   }  getKnowledgeExtractionSourceFiles(kind) {
     const folder = obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const prefix = folder ? folder + "/" : "";
