@@ -506,7 +506,7 @@ export class SessionFinalizeService {
 
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return { segments, frontmatter: null };
-    const frontmatter = await readFileFrontmatter(this, file) || {};
+    const frontmatter = await readFileFrontmatter(this.host, file) || {};
     const ids = candidates.map(candidate => candidate.id);
     const initialMappings = normalizeSpeakerMappings(
       Object.assign({}, session.speakerChannels || {}, frontmatter.lexvoice_speakers || {}),
@@ -535,7 +535,7 @@ export class SessionFinalizeService {
       const names = await new Promise((resolve) => {
         const modal = new SpeakerNameConfirmModal(
           this.host.app,
-          this,
+          this.host,
           candidates,
           initialMappings,
           { unstableAcrossSegments: !stableAcrossSession },
@@ -745,7 +745,7 @@ export class SessionFinalizeService {
       taskMeter = this.host.tasks.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
       session._finalizeTaskMeter = taskMeter;
-      polished = await mergeAndPolish(this, segmentsForLlm.map(s => ({
+      polished = await mergeAndPolish(this.host, segmentsForLlm.map(s => ({
         index: s.index, startOffsetMs: s.startOffsetMs, endOffsetMs: s.endOffsetMs, text: s.text,
         audioName: s.audioName,
         audioStartOffsetMs: s.audioStartOffsetMs,
@@ -886,7 +886,7 @@ export class SessionFinalizeService {
       await this.host.noteWriter.appendPolishBlock(writeSession, polished, mergeError, nonRetryableMergeError);
     }
     if (!mergeError && finalSessionMeta && finalSessionMeta._briefingCheckpointId) {
-      await clearCommittedBriefingCheckpoint(this, finalSessionMeta);
+      await clearCommittedBriefingCheckpoint(this.host, finalSessionMeta);
       session._briefingCheckpointId = "";
     }
 

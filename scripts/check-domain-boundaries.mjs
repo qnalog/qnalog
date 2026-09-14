@@ -15,6 +15,87 @@ const PLUGIN_EXTENSION_POINTS = ["registerBasesView"];
 // 这些文件里的 `plugin` 是 Obsidian 内部对象（例如日记插件的 internalPlugins 条目），不是本插件。
 const FOREIGN_PLUGIN_FILES = ["src/shared/util-note.ts"];
 
+// 域服务模块的判据：声明了 `XxxHost` 接口的文件。这些文件里的 `this` 是服务自身，不是插件对象。
+function isDomainModule(source) {
+  return /export interface [A-Za-z_$][A-Za-z0-9_$]*Host\b/.test(source);
+}
+
+/**
+ * 哪些函数/类把某个参数当作插件对象使用。
+ *
+ * 判据：参数 P 的成员访问里出现插件才有的一批字段（settings / app / manifest / loadData / saveData …），
+ * 或函数体把 P 原样传给另一个已知「取插件对象」的函数（如 clearCommittedBriefingCheckpoint）。
+ * 后者需要迭代到不动点：转发型辅助函数自己不看 settings，但最终会把参数交给看 settings 的函数。
+ */
+function pluginObjectConsumers(files) {
+  const consumers = new Set();      // 函数名：首个参数是插件对象
+  const classConsumers = new Set(); // 类名：构造函数里某个参数是插件对象
+  const PLUGIN_FIELDS = new Set([
+    "settings", "app", "manifest", "loadData", "saveData", "registerEvent", "registerInterval",
+    "addChild", "addCommand", "addRibbonIcon", "addStatusBarItem", "registerView", "vault",
+  ]);
+  const parsers = [];
+  for (const [file, content] of Object.entries(files)) {
+    const sf = ts.createSourceFile(file, content, ts.ScriptTarget.ES2020, true);
+    const check = (node, paramNames) => {
+      let found = null;
+      const walk = (n) => {
+        if (found) return;
+        if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.expression) && paramNames.has(n.expression.getText(sf))) {
+          const prop = n.name.getText(sf);
+          if (PLUGIN_FIELDS.has(prop) || prop.startsWith("_")) { found = n.expression.getText(sf); return; }
+        }
+        // 转发：把该参数原样交给已知取插件对象的函数
+        if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && consumers.has(n.expression.getText(sf))) {
+          const arg = n.arguments[0];
+          if (arg && ts.isIdentifier(arg) && paramNames.has(arg.getText(sf))) { found = arg.getText(sf); return; }
+        }
+        ts.forEachChild(n, walk);
+      };
+      walk(node.body || node);
+      return found;
+    };
+    parsers.push({ file, sf, check });
+  }
+  // 迭代到不动点：转发型函数在下一轮才被发现
+  for (let round = 0; round < 5; round++) {
+    let changed = false;
+    for (const { file, sf, check } of parsers) {
+      const sfText = files[file];
+      const visit = (node) => {
+        if (ts.isFunctionDeclaration(node) && node.name) {
+          const name = node.name.getText(sf);
+          if (!consumers.has(name) && check(node, new Set([node.parameters[0]?.name?.getText?.(sf)].filter(Boolean)))) {
+            consumers.add(name); changed = true;
+          }
+        }
+        if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer
+            && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
+          const name = node.name.getText(sf);
+          const first = node.initializer.parameters[0];
+          if (!consumers.has(name) && first && first.name && check(node.initializer, new Set([first.name.getText(sf)]))) {
+            consumers.add(name); changed = true;
+          }
+        }
+        if (ts.isClassDeclaration(node) && node.name) {
+          const name = node.name.getText(sf);
+          if (!classConsumers.has(name)) {
+            const ctor = node.members.find((m) => ts.isConstructorDeclaration(m));
+            const names = new Set((ctor?.parameters || []).map((p) => p.name && p.name.getText && p.name.getText(sf)).filter(Boolean));
+            if (names.size && check(ctor || node, names)) { classConsumers.add(name); changed = true; }
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+      void sfText;
+    }
+    if (!changed) break;
+  }
+  return { consumers, classConsumers };
+}
+
+
 function normalize(file) {
   return file.split(path.sep).join("/");
 }
@@ -106,10 +187,37 @@ export function checkDomainBoundaries(files) {
   }
   const names = Object.keys(files);
   const classMembers = serviceClassMembers(names, (f) => files[f]);
+  const { consumers, classConsumers } = pluginObjectConsumers(files);
   const problems = [];
 
   for (const [file, content] of Object.entries(files)) {
     if (normalize(file) === "src/main.ts") continue;
+
+    // 0) 域服务把自身 `this` 当作插件对象传给辅助函数。
+    // 辅助函数读的是 plugin.settings / plugin.app，传服务实例会读到 undefined：
+    // 一部分直接抛 TypeError（如读 settings.briefingStructureLevel），一部分被 try/catch 吞掉后静默失效。
+    if (isDomainModule(String(content))) {
+      const sf = ts.createSourceFile(file, String(content), ts.ScriptTarget.ES2020, true);
+      const lineOfNode = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+      const visit = (node) => {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && consumers.has(node.expression.getText(sf))) {
+          node.arguments.forEach((arg, index) => {
+            if (arg.kind === ts.SyntaxKind.ThisKeyword) {
+              problems.push(`${file}:${lineOfNode(node)} ${node.expression.getText(sf)}(…) 第 ${index + 1} 个实参传了服务自身 this，该函数要的是插件对象，应为 this.host`);
+            }
+          });
+        }
+        if (ts.isNewExpression(node) && classConsumers.has(node.expression.getText(sf))) {
+          (node.arguments || []).forEach((arg, index) => {
+            if (arg.kind === ts.SyntaxKind.ThisKeyword) {
+              problems.push(`${file}:${lineOfNode(node)} new ${node.expression.getText(sf)}(…) 第 ${index + 1} 个实参传了服务自身 this，该构造函数要的是插件对象，应为 this.host`);
+            }
+          });
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+    }
 
     // 1) plugin.<成员> 必须真的在插件对象上
     if (!FOREIGN_PLUGIN_FILES.includes(normalize(file))) {

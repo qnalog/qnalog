@@ -46,7 +46,7 @@ export class RecruitService {
   mountHrBlock(lang, render) {
     this.host.registerMarkdownCodeBlockProcessor(lang, (source, el, ctx) => {
       if (!isRecruitFeatureUnlocked(this.host.settings)) { el.empty(); el.createDiv({ cls: "lexvoice-hr-empty", text: "招聘功能未启用" }); return; }
-      const go = () => Promise.resolve(render.call(this, source, el, ctx)).catch(e => {
+      const go = () => Promise.resolve(render.call(this.host, source, el, ctx)).catch(e => {
         console.error("[QnALog] " + lang + " 渲染失败", e);
         el.empty();
         const box = el.createDiv({ cls: "lexvoice-hr-block-error" });
@@ -465,7 +465,7 @@ export class RecruitService {
       try {
         const ctx = normalizeRecruitContext(session.recruitContext || {});
         if (!ctx.jd && !ctx.resume) return;
-        const brief = await getRecruitInterviewOutline(this, ctx);
+        const brief = await getRecruitInterviewOutline(this.host, ctx);
         const body = String(brief || "").trim();
         if (!body) return;
 

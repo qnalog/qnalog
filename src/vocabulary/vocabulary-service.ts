@@ -47,7 +47,7 @@ export class VocabularyService {
       .replaceAll("{{FOCUS}}", p.focus || "（未指定）")
       .replaceAll("{{OUTPUT_PREFERENCE}}", p.outputPreference || "（未指定）")
       .replaceAll("{{MODE}}", `${mode}（${modeLabel}）`);
-    const text = await callLlm(this, sys, userMsg);
+    const text = await callLlm(this.host, sys, userMsg);
     let cleaned = text
       .replace(/^```\w*\s*/, "")
       .replace(/\s*```\s*$/, "")
@@ -170,7 +170,7 @@ ${customPromptBrief}
 
 ## 其他专有名词
 - <词>`;
-    const result = await callLlm(this, sys, user);
+    const result = await callLlm(this.host, sys, user);
     const cleaned = result
       .replace(/^```\w*\s*/, "")
       .replace(/\s*```\s*$/, "")
@@ -187,7 +187,7 @@ ${customPromptBrief}
 
     let finalGroups = newGroups;
     if (merge) {
-      const existing = await loadVocabularyGroups(this);
+      const existing = await loadVocabularyGroups(this.host);
       finalGroups = mergeVocabularyGroups(existing, newGroups);
     }
     await this.writeVocabularyFile(finalGroups);
@@ -235,7 +235,7 @@ ${customPromptBrief}
 
 笔记正文：
 ${source}`;
-    const result = await callLlm(this, sys, user, { timeoutMs: 60000 });
+    const result = await callLlm(this.host, sys, user, { timeoutMs: 60000 });
     const cleaned = result
       .replace(/^```\w*\s*/, "")
       .replace(/\s*```\s*$/, "")
@@ -250,7 +250,7 @@ ${source}`;
       newTerms = flattenVocabularyGroups(newGroups);
     }
     if (!newTerms.length) return [];
-    const existing = await loadVocabularyGroups(this);
+    const existing = await loadVocabularyGroups(this.host);
     await this.writeVocabularyFile(mergeVocabularyGroups(existing, newGroups));
     return newTerms;
   }

@@ -61,7 +61,7 @@ export class PeopleDirectoryService {
     const exactPath = obsidian.normalizePath(`${folder}/${safeName}.md`);
     const exact = this.host.app.vault.getAbstractFileByPath(exactPath);
     if (exact instanceof obsidian.TFile) return exact;
-    const people = await loadPeopleDirectory(this, { force: true });
+    const people = await loadPeopleDirectory(this.host, { force: true });
     const matched = findMatchingPersonEntry(people, { name: name || safeName, aliases: [] });
     if (matched && matched.path) {
       const file = this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(matched.path));
@@ -173,7 +173,7 @@ export class PeopleDirectoryService {
       });
     const groups = new Map();
     for (const file of files) {
-      const fm = await readFileFrontmatter(this, file);
+      const fm = await readFileFrontmatter(this.host, file);
       const entry = personEntryFromFrontmatter(fm, file);
       const key = normalizePersonLookupText(entry && entry.name);
       if (!key) continue;
@@ -231,12 +231,12 @@ export class PeopleDirectoryService {
 
   async getCachedPeopleDirectorySuggestions() {
     const cache = normalizePeopleSuggestionCache(this.host.settings.peopleSuggestionCache);
-    const people = await loadPeopleDirectory(this);
+    const people = await loadPeopleDirectory(this.host);
     const keptRecords = [];
     const suggestions = [];
     let changed = false;
     for (const record of cache.pending) {
-      if (!isPeopleSuggestionCacheRecordCurrent(this, record) || isPeopleSuggestionIgnored(this.host.settings, record.suggestion)) {
+      if (!isPeopleSuggestionCacheRecordCurrent(this.host, record) || isPeopleSuggestionIgnored(this.host.settings, record.suggestion)) {
         changed = true;
         continue;
       }
@@ -301,7 +301,7 @@ export class PeopleDirectoryService {
       new obsidian.Notice("当前没有待确认的人员建议");
       return false;
     }
-    new PeopleDirectorySuggestionModal(this.host.app, this, null, suggestions, {
+    new PeopleDirectorySuggestionModal(this.host.app, this.host, null, suggestions, {
       fromCache: true,
       cachedCount: suggestions.length,
     }).open();
@@ -314,7 +314,7 @@ export class PeopleDirectoryService {
       new obsidian.Notice("当前没有已忽略的人员建议");
       return false;
     }
-    const people = await loadPeopleDirectory(this);
+    const people = await loadPeopleDirectory(this.host);
     const suggestions = records
       .map(record => peopleSuggestionIgnoreRecordToSuggestion(record))
       .filter(Boolean)
@@ -327,7 +327,7 @@ export class PeopleDirectoryService {
       new obsidian.Notice("已忽略列表里没有可编辑的人员建议");
       return false;
     }
-    new PeopleDirectorySuggestionModal(this.host.app, this, null, suggestions, {
+    new PeopleDirectorySuggestionModal(this.host.app, this.host, null, suggestions, {
       fromIgnored: true,
       ignoredCount: records.length,
     }).open();
@@ -337,7 +337,7 @@ export class PeopleDirectoryService {
   async suggestPeopleDirectoryFromLibrary() {
     const cached = await this.getCachedPeopleDirectorySuggestions();
     if (cached.length) {
-      new PeopleDirectorySuggestionModal(this.host.app, this, null, cached, {
+      new PeopleDirectorySuggestionModal(this.host.app, this.host, null, cached, {
         fromCache: true,
         cachedCount: cached.length,
       }).open();
@@ -361,7 +361,7 @@ export class PeopleDirectoryService {
       for (const file of batch) {
         try {
           const markdown = await this.host.app.vault.cachedRead(file);
-          const items = await generatePeopleDirectorySuggestions(this, file, markdown);
+          const items = await generatePeopleDirectorySuggestions(this.host, file, markdown);
           cachedCount += this.cachePeopleDirectorySuggestions(file, items);
           this.host.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
           processed++;
@@ -378,7 +378,7 @@ export class PeopleDirectoryService {
         return;
       }
       if (failed) new obsidian.Notice(`人员扫描完成，${failed} 篇读取或提取失败，可稍后重试。`, 8000);
-      const modal = new PeopleDirectorySuggestionModal(this.host.app, this, null, suggestions, {
+      const modal = new PeopleDirectorySuggestionModal(this.host.app, this.host, null, suggestions, {
         scannedCount: processed,
         cachedCount,
         remainingCount: Math.max(0, all.length - batch.length),
@@ -417,7 +417,7 @@ export class PeopleDirectoryService {
   async updateSourceNoteRelatedPeopleLinks(sourceFile, personFiles) {
     if (!(sourceFile instanceof obsidian.TFile) || !personFiles || !personFiles.length) return false;
     const content = await this.host.app.vault.read(sourceFile);
-    const fm = await readFileFrontmatter(this, sourceFile) || {};
+    const fm = await readFileFrontmatter(this.host, sourceFile) || {};
     const next = upsertFrontmatterInMarkdown(content, mergeSourceNoteRelatedPeopleFrontmatter(fm, personFiles));
     if (next !== content) {
       await this.host.app.vault.modify(sourceFile, next);
@@ -430,7 +430,7 @@ export class PeopleDirectoryService {
     const folder = obsidian.normalizePath(this.host.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder);
     let existingPeople = [];
     try {
-      existingPeople = await loadPeopleDirectory(this, { force: true });
+      existingPeople = await loadPeopleDirectory(this.host, { force: true });
     } catch (e) {
       console.warn("[QnALog] load people directory before resolving suggestions failed", e);
     }
@@ -497,7 +497,7 @@ export class PeopleDirectoryService {
       let file = matchPath ? this.host.app.vault.getAbstractFileByPath(matchPath) : null;
       if (file instanceof obsidian.TFile) {
         const content = await this.host.app.vault.read(file);
-        const fm = await readFileFrontmatter(this, file) || {};
+        const fm = await readFileFrontmatter(this.host, file) || {};
         const body = ensurePeopleNoteRelatedBaseSection(content, this.host.settings.mdFolder);
         await this.host.app.vault.modify(file, upsertFrontmatterInMarkdown(body, mergePersonFrontmatter(fm, suggestion, sourceFile)));
         linkedPeopleRecords.push({ file, relation: suggestion.relation || "mentioned" });

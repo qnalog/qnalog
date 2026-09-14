@@ -114,7 +114,7 @@ export class ViewShellService {
   getMinutesKanbanItems() {
     const canvasFiles = this.host.app.vault.getFiles().filter((file) => file.extension === "canvas");
     const root = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    return getRecentNotes(this, Number.MAX_SAFE_INTEGER).filter((item) => {
+    return getRecentNotes(this.host, Number.MAX_SAFE_INTEGER).filter((item) => {
       const path = obsidian.normalizePath(item.file.path);
       return path === root || path.startsWith(`${root}/`);
     }).map((item) => {
@@ -230,7 +230,7 @@ export class ViewShellService {
   }
 
   async openRecentNote() {
-    const recent = getRecentNotes(this, 1);
+    const recent = getRecentNotes(this.host, 1);
     if (!recent.length || !(recent[0].file instanceof obsidian.TFile)) {
       new obsidian.Notice("最近没有录音笔记");
       return;

@@ -260,7 +260,7 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 | `npm run check:versions` | `manifest.json` / `package.json` / `package-lock.json` / `versions.json` 版本不一致 |
 | `npm run check:undefined-symbols` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
 | `npm run check:domain-boundaries` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`plugin.<域>.<成员>`、`this.host.<域>.<成员>`（后者以服务类为准，接口里手抄的内联类型不作为依据） |
-| `npm run check:plugin-onload` | 域服务漏装：在模拟宿主里加载 `main.js` 跑 `onload`/`onunload`，逐一确认每个服务已装配且方法可用 |
+| `npm run check:plugin-onload` | 域服务漏装或宿主装错：在模拟宿主里加载 `main.js` 跑 `onload`/`onunload`，确认每个服务已装配、方法可用，且 `service.host` 是插件实例本身 |
 | `npm run typecheck:core` + `tsc -noEmit` | 严格核心集与其余文件的类型错误 |
 
 `check:plugin-onload` 的来源：域服务由插件在 `onload` 里手工装配，漏装一个不会有任何编译期报错。
@@ -269,7 +269,9 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 定时器的注册数量没有整体丢失。域服务的字段清单写在脚本顶部的 `DOMAIN_FIELDS`，新增服务时补一行。
 
 `check:domain-boundaries` 的来源：P1 拆分过程中，其它模块里累计出现 176 处指向已搬走成员的 `plugin.<成员>`、
-15 处把服务自身当作插件对象传进辅助函数（辅助函数读 `plugin.settings`，会读到 `undefined` 而静默走默认值），
+**43 处把服务自身当作插件对象传给辅助函数**（这些辅助函数读 `plugin.settings` / `plugin.app`，传服务实例会读到
+`undefined`：一部分直接抛 `TypeError`（真机日志里的 `llm.merge_failed`：
+`Cannot read properties of undefined (reading 'briefingStructureLevel')`），一部分被 `try/catch` 吞成静默失效），
 以及 1 处把只有会话收尾服务才有的方法挂到录音服务上；三者在 tsc 与既有检查里都不报错，只在运行时失效。
 因此这项检查以「字段指向哪个服务类」为准来校验成员名——接口里手抄的内联类型不算依据，
 否则那处把 `confirmSpeakerNamesBeforeFinal` 挂到 `recording` 上、而它实际在 `sessionFinalize` 上的错误会被放过。域字段到服务类的对应关系取自 `main.ts` 的

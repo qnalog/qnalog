@@ -196,6 +196,17 @@ async function main() {
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(value)).filter((n) => n !== "constructor");
     if (!methods.length) failures.push(`this.${field} 没有任何方法，可能装配成了空对象`);
   }
+  // 每个域服务的宿主必须是插件实例：装配成别的对象（包括服务自身）时，
+  // 服务里读 host.settings / host.app 会读到 undefined，且多数被 try/catch 吞成静默失效。
+  for (const field of DOMAIN_FIELDS) {
+    const service = plugin[field];
+    if (!service || typeof service !== "object") continue;
+    if (!("host" in service)) continue;
+    if (service.host !== plugin) {
+      failures.push(`this.${field}.host 不是插件实例（装配错了宿主对象）`);
+    }
+  }
+
   // 用户可见的装配面没有整体丢失（命令、视图、设置页、状态栏定时器）
   expect(plugin.commands.length >= 30, `注册的命令数异常：${plugin.commands.length}`);
   expect(plugin.views.length >= 2, `注册的视图数异常：${plugin.views.length}`);

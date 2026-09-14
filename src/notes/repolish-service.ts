@@ -99,7 +99,7 @@ export class RepolishService {
       let recruitContext = null;
       if (mode === "recruit") {
         const result = await new Promise((resolve) => {
-          const modal = new RecruitContextModal(this.host.app, this, {
+          const modal = new RecruitContextModal(this.host.app, this.host, {
             flow: "repolish",
             onConfirm: (action, ctx) => resolve({ action, ctx }),
           });
@@ -141,7 +141,7 @@ export class RepolishService {
         }
       }
       this.host.tasks._busyLabel = `重新整理中（${meta.prefix}）…`;
-      const sourceMode = detectRecentNoteMode(this, file, fmCache);
+      const sourceMode = detectRecentNoteMode(this.host, file, fmCache);
       const sourceModeLabel = sourceMode && sourceMode !== "off"
         ? ((getModeMeta(this.host.settings, sourceMode) || {}).label || sourceMode)
         : "未标注";
@@ -171,7 +171,7 @@ export class RepolishService {
       this.host.tasks.updateBusyStatus();
       taskMeter = this.host.tasks.beginTaskMeter();
       sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter });
-      const polished = await mergeAndPolish(this, segments, mode, recruitContext, sessionMeta, originalFmForRegen, repolishOptions);
+      const polished = await mergeAndPolish(this.host, segments, mode, recruitContext, sessionMeta, originalFmForRegen, repolishOptions);
       this.host.tasks.patchTaskActivity(taskId, {
         stage: "writing",
         stageLabel: "正在生成新版本",
@@ -214,7 +214,7 @@ export class RepolishService {
         progress: 98,
         deadlineAt: 0,
       });
-      await clearCommittedBriefingCheckpoint(this, sessionMeta);
+      await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
       let versionCacheError = "";
       try {
         await this.host.versions.saveLexVoiceVersion(dailyTargetFile, latestSourceContent, segments, {
@@ -308,7 +308,7 @@ export class RepolishService {
       taskId = `clean:${sourceFile.path}`;
       this.host.tasks._busyLabel = "清稿生成中…";
       const sourceFm = ((this.host.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
-      const sourceMode = detectRecentNoteMode(this, sourceFile, sourceFm);
+      const sourceMode = detectRecentNoteMode(this.host, sourceFile, sourceFm);
       this.host.tasks._busyContext = {
         kind: "生成清稿",
         sourceFile: sourceFile.basename,
@@ -335,7 +335,7 @@ export class RepolishService {
       this.host.tasks.updateBusyStatus();
       new obsidian.Notice("QnALog：正在从母本逐字稿生成清稿…");
       taskMeter = this.host.tasks.beginTaskMeter();
-      const { text: cleaned, truncated } = await cleanTranscript(this, segments, getLearnedLlmOutputCeiling(this.host.settings));
+      const { text: cleaned, truncated } = await cleanTranscript(this.host, segments, getLearnedLlmOutputCeiling(this.host.settings));
       if (!cleaned) throw new Error("模型没有返回可用清稿");
       const warn = truncated
         ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"

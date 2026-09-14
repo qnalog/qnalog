@@ -168,7 +168,7 @@ export class QueueRetryService {
   }
   async retryTranscribeTasksForMarkdown(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
-    const tasks = getQueueTasksForMarkdown(this, file, { types: ["transcribe"] })
+    const tasks = getQueueTasksForMarkdown(this.host, file, { types: ["transcribe"] })
       .filter((task) => ["failed", "missing", "pending"].includes(task.status || "pending") && !!task.lastError);
     if (!tasks.length) {
       new obsidian.Notice("这篇纪要当前没有可重试的转写任务。", 5000);
@@ -350,7 +350,7 @@ export class QueueRetryService {
     const audio = await this.readTranscribeTaskAudioBlob(task);
     let text = "";
     if (task.wholeFileImport) {
-      const result = await transcribeImportedAudio(this, audio.blob, audio.blob.type || "audio/wav", {
+      const result = await transcribeImportedAudio(this.host, audio.blob, audio.blob.type || "audio/wav", {
         providerId: task.providerId,
         diarization: task.speakerDiarization !== false,
         speakerCount: task.speakerCount,
@@ -368,7 +368,7 @@ export class QueueRetryService {
         : reportedChannelCount;
       const channelTranscription = inspectRecordedChannels
         ? await transcribeAudioByChannels(
-          this,
+          this.host,
           audio.blob,
           audio.blob.type || "audio/wav",
           expectedChannelCount,
@@ -377,7 +377,7 @@ export class QueueRetryService {
         : null;
       text = channelTranscription
         ? channelTranscription.text
-        : await transcribeAudio(this, audio.blob, audio.blob.type || "audio/wav");
+        : await transcribeAudio(this.host, audio.blob, audio.blob.type || "audio/wav");
     }
     if (!String(text || "").trim()) {
       // 重试仍为空 = 失败（不再替换成"暂无有效转写"并删缓存了事）：
@@ -512,7 +512,7 @@ export class QueueRetryService {
   }
   async retryMergeTask(task) {
     const polished = await mergeAndPolish(
-      this,
+          this.host,
       task.segments || [],
       task.mode,
       task.recruitContext || null,
@@ -552,7 +552,7 @@ export class QueueRetryService {
       }
       await this.host.app.vault.modify(file, next);
     }
-    await clearCommittedBriefingCheckpoint(this, task.sessionMeta);
+    await clearCommittedBriefingCheckpoint(this.host, task.sessionMeta);
     let targetFile = file;
     const recruitContext = task.mode === "recruit"
       ? await this.host.recruit.resolveRecruitProjectContext(task.recruitContext || null)

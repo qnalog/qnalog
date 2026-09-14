@@ -320,7 +320,7 @@ export class NoteWriter {
       : fileOrPath;
     if (!(file instanceof obsidian.TFile)) return null;
     try {
-      const tag = await generateTitleTag(this, polished, mode);
+      const tag = await generateTitleTag(this.host, polished, mode);
       if (!tag) return file;
       const target = buildLexVoiceRenamedMarkdownPath(file.path, mode, tag, this.host.settings);
       const newPath = findAvailableMarkdownPath(this.host.app, target, file.path);
@@ -341,7 +341,7 @@ export class NoteWriter {
     try {
       const mode = getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
       const ctx = mode === "recruit" ? this.host.settings.recruitContext : null;
-      const polished = await polishTranscript(this, raw, mode, ctx);
+      const polished = await polishTranscript(this.host, raw, mode, ctx);
       if (sel) editor.replaceSelection(polished); else editor.setValue(polished);
       new obsidian.Notice("润色完成");
     } catch (e) {
@@ -397,7 +397,7 @@ export class NoteWriter {
   findPreviousRecentNoteFile(file) {
     if (!(file instanceof obsidian.TFile)) return null;
     const currentPath = obsidian.normalizePath(file.path);
-    const recents = getRecentNotes(this, 240);
+    const recents = getRecentNotes(this.host, 240);
     const current = recents.find((item) => item && item.file && obsidian.normalizePath(item.file.path) === currentPath);
     if (!current) return null;
     const older = recents
@@ -507,7 +507,7 @@ export class NoteWriter {
       source: "merged-notes",
       meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
     };
-    const polished = await mergeAndPolish(this, segments.map((s) => ({
+    const polished = await mergeAndPolish(this.host, segments.map((s) => ({
       index: s.index,
       startOffsetMs: s.startOffsetMs,
       endOffsetMs: s.endOffsetMs,
@@ -521,7 +521,7 @@ export class NoteWriter {
       rawText: s.rawText,
     })), mode, null, sessionMeta);
     await this.rewriteConsolidated(session, polished);
-    await clearCommittedBriefingCheckpoint(this, sessionMeta);
+    await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
     let finalFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     const renamed = await this.renameMarkdownWithGeneratedTitle(session.mdPath, polished, mode);
     if (renamed instanceof obsidian.TFile) {

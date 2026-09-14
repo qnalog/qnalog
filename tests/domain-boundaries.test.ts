@@ -99,6 +99,50 @@ export class QService {
     expect(problems.some((p) => p.includes("this.host.recording.confirmSpeakerNamesBeforeFinal 不在 RecordingService 上"))).toBe(true);
   });
 
+  it("拦下域服务把自身 this 当作插件对象传给辅助函数", () => {
+    // 真实缺陷：mergeAndPolish(this, …) 传了服务自身，函数里读 plugin.settings.briefingStructureLevel
+    // 会抛 TypeError；这正是真机日志里 llm.merge_failed 的那一条。
+    const problems = checkDomainBoundaries({
+      "src/main.ts": `
+class LexVoicePlugin extends obsidian.Plugin {
+  declare settings;
+  async onload() { this.repolish = new RepolishService(this); }
+  async saveAll() {}
+}
+`,
+      "src/briefing/merge-pipeline.ts": `export async function mergeAndPolish(plugin, segments) {
+  return plugin.settings.briefingStructureLevel;
+}`,
+      "src/notes/repolish-service.ts": `export interface RepolishHost { settings: unknown }
+export class RepolishService {
+  declare host: RepolishHost;
+  async run(segments) { return mergeAndPolish(this, segments); }
+}`,
+    });
+    expect(problems.some((p) => p.includes("传了服务自身 this") && p.includes("mergeAndPolish"))).toBe(true);
+  });
+
+  it("接受经 this.host 传入的插件对象", () => {
+    const problems = checkDomainBoundaries({
+      "src/main.ts": `
+class LexVoicePlugin extends obsidian.Plugin {
+  declare settings;
+  async onload() { this.repolish = new RepolishService(this); }
+  async saveAll() {}
+}
+`,
+      "src/briefing/merge-pipeline.ts": `export async function mergeAndPolish(plugin, segments) {
+  return plugin.settings.briefingStructureLevel;
+}`,
+      "src/notes/repolish-service.ts": `export interface RepolishHost { settings: unknown }
+export class RepolishService {
+  declare host: RepolishHost;
+  async run(segments) { return mergeAndPolish(this.host, segments); }
+}`,
+    });
+    expect(problems).toEqual([]);
+  });
+
   it("接受域服务上真实存在的成员", () => {
     const problems = checkDomainBoundaries(files({
       "src/ui/panel.ts": `export function f(plugin) { plugin.recording.stopRecording(); }`,
