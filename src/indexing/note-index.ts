@@ -1,5 +1,7 @@
-export const LEXVOICE_NOTE_INDEX_START = "<!-- lexvoice-note-index";
-export const LEXVOICE_NOTE_INDEX_END = "lexvoice-note-index-end -->";
+// 取值写在用户笔记里（笔记索引块）。常量名用 QNALOG_，取值保持上游字面量：
+// 改取值会让既有笔记的索引块被重复插入，随数据层命名空间重置一并处理。
+export const QNALOG_NOTE_INDEX_START = "<!-- lexvoice-note-index";
+export const QNALOG_NOTE_INDEX_END = "lexvoice-note-index-end -->";
 
 const NOTE_INDEX_PATTERN = /<!--\s*lexvoice-note-index\s*\n([\s\S]*?)\nlexvoice-note-index-end\s*-->/i;
 const ACTIVE_VERSION_PATTERN = /<!--\s*lexvoice-active-version-start\s*-->([\s\S]*?)<!--\s*lexvoice-active-version-end\s*-->/i;
@@ -288,7 +290,7 @@ export function serializeNoteIndex(index: QnALogNoteIndexCard): string {
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e")
     .replace(/--/g, "\\u002d\\u002d");
-  return `${LEXVOICE_NOTE_INDEX_START}\n${json}\n${LEXVOICE_NOTE_INDEX_END}`;
+  return `${QNALOG_NOTE_INDEX_START}\n${json}\n${QNALOG_NOTE_INDEX_END}`;
 }
 
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {

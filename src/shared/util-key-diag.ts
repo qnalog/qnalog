@@ -20,23 +20,26 @@ function base64ToUtf8(value) {
 export function obfuscateApiKey(plain) {
   const s = String(plain == null ? "" : plain);
   if (!s) return "";
-  if (s.startsWith(LEXVOICE_KEY_OBFUSCATION_MARKER)) return s; // 已混淆，幂等
+  if (s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER)) return s; // 已混淆，幂等
   try {
-    return LEXVOICE_KEY_OBFUSCATION_MARKER + utf8ToBase64(qnalogXorTransform(s));
+    return QNALOG_KEY_OBFUSCATION_MARKER + utf8ToBase64(qnalogXorTransform(s));
   } catch { return s; }
 }
 
 export function deobfuscateApiKey(stored) {
   const s = String(stored == null ? "" : stored);
-  if (!s.startsWith(LEXVOICE_KEY_OBFUSCATION_MARKER)) return s; // 明文（旧数据迁移）→ 原样返回
+  if (!s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER)) return s; // 明文（旧数据迁移）→ 原样返回
   try {
-    return qnalogXorTransform(base64ToUtf8(s.slice(LEXVOICE_KEY_OBFUSCATION_MARKER.length)));
+    return qnalogXorTransform(base64ToUtf8(s.slice(QNALOG_KEY_OBFUSCATION_MARKER.length)));
   } catch { return s; }
 }
 
-export const LEXVOICE_KEY_OBFUSCATION_MARKER = "lvk1:";
+// 取值是数据：marker 前缀写在用户 data.json 的 apiKey 字段里，salt 参与已存密钥的编解码。
+// 改任一个都会让已保存的 API Key 无法解密。常量名用 QNALOG_，取值随数据层命名空间重置再改，
+// 且届时要连带让用户重填密钥。
+export const QNALOG_KEY_OBFUSCATION_MARKER = "lvk1:";
 
-export const LEXVOICE_KEY_OBFUSCATION_SALT = "LexVoice/local-key-obfuscation/v1";
+export const QNALOG_KEY_OBFUSCATION_SALT = "LexVoice/local-key-obfuscation/v1";
 
 export function redactDiagnosticText(value) {
   return String(value == null ? "" : value)
@@ -74,7 +77,7 @@ export function sanitizeDiagnosticData(data, depth = 0) {
 }
 
 export function qnalogXorTransform(text) {
-  const salt = LEXVOICE_KEY_OBFUSCATION_SALT;
+  const salt = QNALOG_KEY_OBFUSCATION_SALT;
   let out = "";
   for (let i = 0; i < text.length; i++) {
     out += String.fromCharCode(text.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));

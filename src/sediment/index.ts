@@ -12,6 +12,8 @@ import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
 import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
 
+// 取值是写在用户笔记里的注释标记，改名会让既有笔记的沉淀块不再被识别：
+// 常量名不带宽泛品牌前缀，取值保持上游的 LEXVOICE_ 字面量（随数据层命名空间重置一起改）。
 export const SEDIMENT_PREEXTRACT_BEGIN = "LEXVOICE_SEDIMENT_BEGIN";
 
 export const SEDIMENT_PREEXTRACT_END = "LEXVOICE_SEDIMENT_END";

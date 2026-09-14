@@ -3,7 +3,7 @@
 
 import { collectAudioRefs, getAudioLinkTarget, getDurationMs } from "./audio-refs";
 
-import { LEXVOICE_ACTIVE_VERSION_END, LEXVOICE_ACTIVE_VERSION_START, QNALOG_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS } from "../shared/limits";
+import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START, QNALOG_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS } from "../shared/limits";
 
 import { normalizeCallouts } from "./callout-normalize";
 
@@ -118,11 +118,11 @@ export function buildActiveVersionBlock(versionMeta, body) {
     sourceHash ? `> 源转写指纹：${sourceHash}` : "",
   ].filter(Boolean).join("\n");
   return [
-    LEXVOICE_ACTIVE_VERSION_START,
+    QNALOG_ACTIVE_VERSION_START,
     metaLines,
     "",
     sanitizeActiveVersionBody(body),
-    LEXVOICE_ACTIVE_VERSION_END,
+    QNALOG_ACTIVE_VERSION_END,
   ].join("\n").replace(/\n{4,}/g, "\n\n\n");
 }
 

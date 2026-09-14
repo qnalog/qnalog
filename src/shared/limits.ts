@@ -16,9 +16,11 @@ export const EXTERNAL_INBOX_RETRY_DELAYS_MS = [60 * 1000, 5 * 60 * 1000, 15 * 60
 // 「一个 Key 通用」供应商：同一把 Key 同时支持语音转写 + 大模型对话。首页快速配置一处填 Key + 选供应商即可两边都配好。
 // asrProvider 对应 transcribeProviders 里的 id；llmPreset 对应 LLM_SERVICE_PRESETS 里的 id。
 
-export const LEXVOICE_ACTIVE_VERSION_START = "<!-- lexvoice-active-version-start -->";
+// 取值写在用户笔记里（版本块标记）。常量名用 QNALOG_，取值保持上游字面量：
+// 改取值会让既有笔记的版本块不再被识别，随数据层命名空间重置一并处理。
+export const QNALOG_ACTIVE_VERSION_START = "<!-- lexvoice-active-version-start -->";
 
-export const LEXVOICE_ACTIVE_VERSION_END = "<!-- lexvoice-active-version-end -->";
+export const QNALOG_ACTIVE_VERSION_END = "<!-- lexvoice-active-version-end -->";
 
 export const QNALOG_EMPTY_SHORT_LIMIT_MS = 10 * 1000;
 
