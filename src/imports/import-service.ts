@@ -71,7 +71,7 @@ export class ImportService {
   }
 
 
-  openAudioImportOptions(paths, modeOverride) {
+  openAudioImportOptions(paths, modeOverride = undefined) {
     const selectedPaths = Array.isArray(paths) ? paths.filter(Boolean) : [];
     if (!selectedPaths.length) return;
     const modal = new AudioImportOptionsModal(this.host.app, this.host, {

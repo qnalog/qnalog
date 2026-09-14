@@ -233,6 +233,74 @@ export interface RecorderSegmentPayload {
   masterExt?: string;
 }
 
+/**
+ * 录音器切片经 recording-service 预处理后交给收尾流程的段落。
+ *
+ * 与 {@link RecorderSegmentPayload} 的区别：那份是录音器直接投递的原始回调参数，
+ * 这一份补上了切片索引、缓存路径、母带保存 promise 与落盘 promise 等收尾阶段要用的字段。
+ */
+export interface PreparedLiveSegment {
+  /** 段落在会话内的序号（含续录偏移）。 */
+  segmentIndex?: number;
+  /** 面向用户的段落编号（从 1 开始）。 */
+  segNumber?: number;
+  startOffsetMs?: number;
+  endOffsetMs?: number;
+  /** 计入续录偏移后的展示时间。 */
+  displayStartOffsetMs?: number;
+  displayEndOffsetMs?: number;
+  durationMs?: number;
+  /** 段落音频在缓存目录下的文件名与路径。 */
+  segmentAudioName?: string;
+  segmentAudioPath?: string;
+  ext?: string;
+  blobType?: string;
+  blobSize?: number;
+  isFinal?: boolean;
+  /** 收尾时为 true：本段没有独立音频，回听要用整场录音。 */
+  masterOnly?: boolean;
+  /** 过滤掉过短录音时标记；此段不参与转写。 */
+  filteredShort?: boolean;
+  /** 音频来源（mic / 电脑音频）。 */
+  source?: string;
+  sourceUrl?: string;
+  sourceTitle?: string;
+  sourcePlatform?: string;
+  /** 母带保存的 promise；收尾时要等它结束再继续。 */
+  masterAudioSavePromise?: Promise<unknown> | null;
+  /** 段落音频落盘到缓存目录的 promise。 */
+  spoolPromise?: Promise<{ persisted?: boolean; queueTaskId?: string; fallbackBlob?: Blob | null; error?: unknown }> | null;
+  /** 落盘后生成的队列任务 id。 */
+  queueTaskId?: string;
+  /** 流式转写的作业 id。 */
+  jobId?: string;
+  /** 段落音频本体；仅在未落盘时保留。 */
+  blob?: Blob | null;
+  /** 由收尾流程写回：本段落对应的转写文本。 */
+  text?: string;
+  audioStartOffsetMs?: number;
+  audioEndOffsetMs?: number;
+  audioName?: string;
+  audioPath?: string;
+  error?: unknown;
+}
+
+/**
+ * 交给整理流水线的会话元信息。
+ * `_taskMeter` 与 `_briefingCheckpointId` 只在进程内传递，不写入笔记。
+ */
+export interface SessionMetaForMerge {
+  startedAt: string;
+  duration: string;
+  source?: string;
+  sourceMeta?: unknown;
+  meetingWorkbench?: unknown;
+  /** 任务计量句柄；由 session-finalize 取好后传给流水线。 */
+  _taskMeter?: unknown;
+  /** 整理检查点 id；merge-pipeline 写入，提示词层读它。 */
+  _briefingCheckpointId?: string;
+}
+
 export interface Segment {
   index: number;
   startOffsetMs: number;
@@ -255,6 +323,8 @@ export interface Segment {
   speakerIds?: string[];
   error?: string | null;
   isFinal?: boolean;
+  /** 本段对应的转写队列任务 id；写入笔记作为 `lexvoice-transcribe-task` 注释。 */
+  queueTaskId?: string;
 }
 
 export type QueueTaskStatus = "pending" | "running" | "processing" | "live" | "failed" | "missing" | "blocked";
@@ -397,15 +467,27 @@ export interface RecordingSession {
   asrDeferredMode?: boolean;
   hasDeferredAsrJobs?: boolean;
   activeSegmentJobs?: number;
-  streamingClient?: unknown;
+  /** 流式转写客户端；不同 provider 的实现各异，这里只声明收尾阶段会用到的成员。 */
+  streamingClient?: { finish(): Promise<unknown>; getFullText(): string; _safeClose?(): void } | null;
   /** 流式转写的累计正文；由 recording-service 写入，会中工作台与收尾阶段读它。 */
   streamingFullText?: string;
+  /** 多声道模式下是否已提示过「已按说话人分离」；避免每次收尾重复提示。 */
+  _channelSpeakersNotified?: boolean;
+  /** 双声道串音去重累计去掉的片段数；写入纪要用。 */
+  channelCrosstalkDeduplicated?: number;
+  /** 是否已提示过「检测到重复声道」。 */
+  _channelDuplicatedNotified?: boolean;
+  /** 本次会话对应的整理检查点 id；由 merge-pipeline 写入，提示词层读它。 */
+  _briefingCheckpointId?: string;
+  /** 任务计量句柄；仅进程内使用，不落盘。 */
+  _taskMeter?: unknown;
   /** 流式翻译/原文缓存；录音过程中逐次覆盖。 */
   streamingTranslatedText?: string;
   streamingSourceText?: string;
   /** 写回「实时转写中」代码块的节流函数；由 meeting-workbench-service 生成并挂到会话上。 */
   scheduleStreamingNoteUpdate?: () => void;
-  pcmEncoder?: unknown;
+  /** 实时 PCM 编码器；收尾时停止并释放。 */
+  pcmEncoder?: { stop(): void } | null;
   finalizing?: boolean;
   finalizationError?: string;
   filteredShortRecording?: boolean;

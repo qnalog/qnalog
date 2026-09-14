@@ -151,7 +151,8 @@ export class RealtimeOutlineService {
     };
   }
 
-  getRealtimeOutlineRetryDecision(request) {
+  /** 失败重试决策；error 由协调器传入但当前实现只依据 request 与会话状态判断。 */
+  getRealtimeOutlineRetryDecision(request, error = undefined) {
     const session = this.host.session;
     if (!request.silent || !session || session.id !== request.sessionId) {
       return { retry: false, reason: "failed" };
