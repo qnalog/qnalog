@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：待办墙的 Markdown 生成（内嵌 dataviewjs 模板，纯字符串）
 
 import * as obsidian from "obsidian";
@@ -97,7 +96,15 @@ export function formatLexVoiceWallMarkdown(title, folder, tag, emptyText) {
 }
 
 
-export function formatLexVoiceObjectWallMarkdown(settings, options = {}) {
+/** 对象墙（待办墙）生成选项；四项都有默认值，缺省即可。 */
+export interface LexVoiceObjectWallOptions {
+  title?: string;
+  initialFilter?: string;
+  showFilters?: boolean;
+  emptyText?: string;
+}
+
+export function formatLexVoiceObjectWallMarkdown(settings, options: LexVoiceObjectWallOptions = {}) {
   const title = options.title || "待办墙";
   const initialFilter = options.initialFilter || "all";
   const showFilters = options.showFilters !== false;

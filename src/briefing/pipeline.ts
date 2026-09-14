@@ -54,7 +54,8 @@ export type BriefingCheckpoint = {
   model: string;
   status: BriefingCheckpointStatus;
   topicMap: string;
-  topicMapSource: "llm" | "timeline" | "";
+  /** 议题映射的来源：llm 由模型生成，timeline 由时间线兜底，part-summaries 由分部摘要汇总。 */
+  topicMapSource: "llm" | "timeline" | "part-summaries" | "";
   topicMapFinishReason: string;
   topicMapUsage: BriefingUsage;
   consolidationStatus: "pending" | "running" | "complete" | "failed";

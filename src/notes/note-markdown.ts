@@ -1190,7 +1190,7 @@ export function parseSuggestedTagsFromOutput(text) {
 //   - 删除末尾的 lexvoice-tags 注释
 //   - originalFrontmatter 非空时（重新整理场景），保留它的内容字段（用户改过的代号映射等），
 //     不让 LLM 的 frontmatter 覆盖；只 merge 新的 tag 建议
-export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, originalFrontmatter, baseKey, topNotice) {
+export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, originalFrontmatter, baseKey, topNotice = "") {
   if (!rawOutput) return rawOutput || "";
   // 先剥人员机器块、再剥标签机器块（cleaned 串联，保证注释不残留在正文末尾）。
   const { people: suggestedPeople, cleaned: afterPeople } = parsePeopleFromOutput(rawOutput);

@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：纪要合并入口：预压缩、分部整理、截断续写与失败回退
 
 import { applyBriefingLanguageInstruction, getSegmentsDurationMs, getSessionMetaDurationMs, truncateForLlmPrompt } from "../shared/util-text";
@@ -331,8 +330,9 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         }
       }
       const body = normalizeBriefingPartBody(parsed.body, { fragmentMode: partPlans.length > 1 });
+      const partStatus = body && !response.truncated ? "complete" : (body ? "partial" : "failed");
       Object.assign(part, {
-        status: body && !response.truncated ? "complete" : (body ? "partial" : "failed"),
+        status: partStatus,
         text: body,
         summary: parsed.summary,
         people: parsed.people,
@@ -352,7 +352,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
           : "本部分没有返回可见正文",
         updatedAt: new Date().toISOString(),
       });
-      if (part.status !== "complete") {
+      if (partStatus !== "complete") {
         checkpoint.status = "partial";
         await store.save(checkpoint);
         await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_incomplete", "纪要分部未完整生成，已保存检查点等待精确重试", {
@@ -536,7 +536,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   return sedimentObjects ? appendSedimentPreExtractionBlock(polished, sedimentObjects) : polished;
 }
 
-export async function mergeAndPolish(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions) {
+export async function mergeAndPolish(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions = null) {
   if (!segments || segments.length === 0) return "";
   if (mode === "off") return segments.map(s => s.text).join("\n\n");
   const segmentsForMerge = await maybePreSummarizeTextImportForMerge(plugin, segments, mode, sessionMeta);

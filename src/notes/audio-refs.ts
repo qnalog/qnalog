@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：音频引用、时间锚与时长计算
 
 import * as obsidian from "obsidian";
@@ -119,7 +118,11 @@ export function getAudioDurationMs(blob) {
   return new Promise((resolve) => {
     try {
       const url = URL.createObjectURL(blob);
-      const audio = activeWindow.createEl("audio");
+      // Obsidian 在运行时把 createEl 挂在 Window 上（弹出窗口里要用它创建元素），但 obsidian.d.ts 只声明了
+      // 模块级的同名函数，因此这里补一个局部类型。createEl 的返回类型由标签名决定，这里显式写 audio。
+      const audio = (activeWindow as Window & {
+        createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K];
+      }).createEl("audio");
       audio.preload = "metadata";
       const cleanup = () => { try { URL.revokeObjectURL(url); } catch { /* intentionally empty */ } };
       audio.addEventListener("loadedmetadata", () => {

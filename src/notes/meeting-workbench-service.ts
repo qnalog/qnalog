@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：会中工作台：互动排队与执行、实时转写块写入
 
 import * as obsidian from "obsidian";
@@ -21,6 +20,11 @@ export interface MeetingWorkbenchHost {
   recorder: RecorderService | null;
   /** 视图外壳服务：互动结果写回后刷新侧边栏。 */
   shell: { refreshOutlineView(): void };
+}
+
+/** 会中互动是否可运行的选项。force=true 时跳过「正在录音/转写」等前置判断，由调用方自行保证安全。 */
+export interface MeetingWorkbenchRunOptions {
+  force?: boolean;
 }
 
 export class MeetingWorkbenchService {
@@ -75,7 +79,7 @@ export class MeetingWorkbenchService {
     return false;
   }
 
-  canRunMeetingWorkbenchInteraction(session, opts = {}) {
+  canRunMeetingWorkbenchInteraction(session, opts: MeetingWorkbenchRunOptions = {}) {
     if (!session) return false;
     if (opts.force) return true;
     if (this.hasActiveRecordingOrTranscription(session)) return false;
@@ -87,10 +91,10 @@ export class MeetingWorkbenchService {
     ) return false;
     const rec = this.host.recorder;
     if (rec && rec.state === "recording") {
-      const info = rec.getInfo ? rec.getInfo() : {};
+      const info = rec.getInfo ? rec.getInfo() : null;
       const nextCutAt = Number(rec.nextCutAtElapsed);
       if (Number.isFinite(nextCutAt)) {
-        const timeToNextCut = nextCutAt - (Number(info.elapsed) || 0);
+        const timeToNextCut = nextCutAt - (Number(info && info.elapsed) || 0);
         if (timeToNextCut > 0 && timeToNextCut < 8000) return false;
       }
     }
@@ -120,7 +124,7 @@ export class MeetingWorkbenchService {
     }, 1000);
   }
 
-  async processPendingMeetingWorkbenchInteractions(session, opts = {}) {
+  async processPendingMeetingWorkbenchInteractions(session, opts: MeetingWorkbenchRunOptions = {}) {
     if (!session) return;
     if (!this.canRunMeetingWorkbenchInteraction(session, opts)) {
       if (!opts.force) this.scheduleMeetingWorkbenchInteraction(session, (session.pendingMeetingWorkbenchInteractions || [])[0]);

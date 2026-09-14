@@ -17,6 +17,22 @@ import { resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 
 export class RecorderService {
   declare plugin: LexVoicePlugin;
+  /**
+   * 以下字段在构造函数里赋值。TypeScript 不推断「仅在构造函数中赋值」的属性，
+   * 未声明时其它模块读 `recorder.state` 会报「属性不存在」，因此显式声明跨模块读取的那几个。
+   */
+  /** 录音器状态；由 start/pause/resume/stop 切换。 */
+  declare state: "idle" | "recording" | "paused";
+  /** 下一次切片的累计录音时长（毫秒）；未开始计时时为 Infinity。 */
+  declare nextCutAtElapsed: number;
+  /** 当前段落的音频分片。 */
+  declare chunks: Blob[];
+  /** 整场录音的音频分片（主录音器）。 */
+  declare masterChunks: Blob[];
+  /** 有声音的计时次数，供「整场几乎没声音」提示使用。 */
+  declare _voicedTicks: number;
+  /** 静音的计时次数。 */
+  declare _silentTicks: number;
   constructor(plugin) {
     this.plugin = plugin;
     this.recorder = null;

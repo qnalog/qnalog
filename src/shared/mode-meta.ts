@@ -71,7 +71,8 @@ export function getModeMeta(settings, mode) {
   return MODE_META.meeting;
 }
 
-export function getEffectivePolishMode(settings, requested, fallback) {
+/** 解析生效的纪要模式：requested 优先，其次设置里的 polishMode，最后用 fallback（默认 meeting）。 */
+export function getEffectivePolishMode(settings, requested, fallback = null) {
   const fb = fallback == null ? "meeting" : fallback;
   const mode = requested || (settings && settings.polishMode) || fb;
   if (mode === "off") return mode;

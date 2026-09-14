@@ -30,6 +30,8 @@ type PeopleSuggestion = {
   sourceMtime?: number;
   sourceSize?: number;
   cacheKey?: string;
+  /** 在人员库中匹配到的条目；由 collectPeopleDirectorySuggestions 等调用方在运行时写入，不参与落盘。 */
+  match?: { path?: string; name?: string } | null;
   matchPath?: string;
   ignoreKey?: string;
   ignoreTerms?: string[];

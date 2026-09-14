@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：资料库视图：Base 与卡片墙的生成与打开、生成文件的落盘与打开
 
 import * as obsidian from "obsidian";
@@ -17,6 +16,11 @@ export interface LibraryViewHost {
   people: PeopleDirectoryService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
+}
+
+/** 生成文件落盘时的选项。overwrite=true 时无条件覆盖；否则仅覆盖带生成标记或内容为空的文件。 */
+export interface UpsertGeneratedMarkdownOptions {
+  overwrite?: boolean;
 }
 
 export class LibraryViewService {
@@ -52,7 +56,7 @@ export class LibraryViewService {
     return { created, updated, skipped };
   }
 
-  async upsertGeneratedMarkdownFile(path, content, opts = {}) {
+  async upsertGeneratedMarkdownFile(path, content, opts: UpsertGeneratedMarkdownOptions = {}) {
     const norm = obsidian.normalizePath(path);
     const folder = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
     if (folder) await ensureVaultFolder(this.host.app, folder);
@@ -67,7 +71,7 @@ export class LibraryViewService {
     return file;
   }
 
-  async openGeneratedMarkdown(path, content, opts = {}) {
+  async openGeneratedMarkdown(path, content, opts: UpsertGeneratedMarkdownOptions = {}) {
     const withMarker = insertGeneratedWallMarker(content);
     const file = await this.upsertGeneratedMarkdownFile(path, withMarker, opts);
     if (file instanceof obsidian.TFile) await this.host.app.workspace.getLeaf(false).openFile(file);
