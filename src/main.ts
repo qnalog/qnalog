@@ -23,7 +23,7 @@ import {SETTINGS_SCHEMA_VERSION, normalizeLexVoiceSettings, serializeLexVoiceSet
 
 import { buildSettingsMigrationReport } from "./shared/settings-migration-report";
 
-import type {LexVoiceSettings } from "./shared/types";
+import type {LexVoiceSettings, RecordingSession } from "./shared/types";
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import {AUDIO_EXT } from "./shared/catalog-import";
@@ -108,6 +108,12 @@ class LexVoicePlugin extends obsidian.Plugin {
   declare semanticCanvas: SemanticCanvasService;
   declare recorder: RecorderService;
   declare queue: TaskQueue;
+  /** 当前录音会话；未在录音时为 null。 */
+  declare session: RecordingSession | null;
+  /** 当前会话的实时大纲协调器。 */
+  declare outlineCoordinator: RealtimeOutlineCoordinator;
+  /** 悬浮气泡；未挂载时为 null。 */
+  declare bubble: BubbleWidget | null;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
   buildInfo: PluginBuildInfo | null = null;
 

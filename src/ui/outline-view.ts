@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：侧边栏实时纪要视图（大纲 / 沉淀 / 问一问 / 纪要列表）
 
 import type LexVoicePlugin from "../main";
@@ -72,8 +71,307 @@ import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } 
 //   模型直接产出 Markdown，不再走 JSON 解析 + 固定模板渲染。会中字段树的结构化覆盖数据仍由
 //   parseCoverageScanModel 维护；web 端结构化画像后续按需二次提取。）
 
+/** 「问一问」的一条问答记录。 */
+type NoteAskEntry = {
+  id: string;
+  question: string;
+  answer: string;
+  ts: number;
+  written?: boolean;
+  expanded?: boolean;
+  selected?: boolean;
+};
+
+/** 「问一问」按纪要维护的会话状态。 */
+type NoteAskState = {
+  question: string;
+  error: string;
+  running: boolean;
+  entries: NoteAskEntry[];
+  followups: string[];
+  multiSelect?: boolean;
+};
+
+/**
+ * 沉淀候选桶的空值。
+ * 用函数返回而不是共享常量：调用方会就地改写返回对象，共享常量会跨纪要串数据。
+ */
+function createEmptySedimentBucket(): SedimentCandidateBucket {
+  return {
+    people: [],
+    todos: [],
+    cards: [],
+    hotwords: createVocabularyGroups(),
+    scannedAt: "",
+    scanStartedAt: "",
+    initialCounts: {},
+    doneGroups: [],
+    selectedByGroup: {},
+    decisionLogByGroup: {},
+    transitionGroup: "",
+    scanning: false,
+  };
+}
+
+/** 沉淀候选桶：某篇纪要的人员/待办/热词候选项与扫描进度。 */
+type SedimentCandidateBucket = {
+  people: unknown[];
+  todos: unknown[];
+  cards: unknown[];
+  hotwords: unknown;
+  scannedAt: string;
+  scanStartedAt?: string;
+  initialCounts: Record<string, number>;
+  doneGroups: string[];
+  selectedByGroup: Record<string, string[]> & { todo?: string[]; hotword?: string[]; person?: string[] };
+  decisionLogByGroup: Record<string, unknown>;
+  transitionGroup: string;
+  scanning: boolean;
+  peopleNameOverrides?: Record<string, string>;
+  hotwordTermRenames?: Record<string, string>;
+  peopleScanned?: boolean;
+  vocabScanned?: boolean;
+  ignoredPeople?: unknown[];
+  currentPeople?: unknown[];
+  otherPeopleCount?: number;
+  hasPipelineStarted?: boolean;
+  error?: string;
+  kind?: string;
+  label?: string;
+  detail?: string;
+  percent?: number;
+  title?: string;
+};
+
+/** 沉淀提示条的选项。 */
+type SedimentToastOptions = {
+  icon?: string;
+  /** 提示条样式变体；有值时加在 class 上。 */
+  variant?: string;
+  /** 提示条上的按钮集合：既支持 { id, label } 形态，也支持 { text, action } 形态。 */
+  actions?: { id?: string; label?: string; primary?: boolean; text?: string; action?: () => void }[];
+  /** 提示条位置参数（由 OpenOutlineContext 透传）。 */
+  onTimeLink?: (payload: unknown) => void;
+  actionText?: string;
+  onAction?: () => void;
+  /** 提示条显示时长（毫秒）。 */
+  duration?: number;
+};
+
+/** 沉淀分组决策的撤销数据：按分组保存被覆盖前的候选。 */
+type SedimentDecisionRestore = {
+  people?: unknown[];
+  todos?: unknown[];
+  hotwords?: unknown;
+};
+
+/** 沉淀候选项的显示形状；不同分组只用到其中一部分字段。 */
+type SedimentItem = {
+  id?: string;
+  /** 分组内的展示文案与副标题。 */
+  title?: string;
+  sub?: string;
+  meta?: string;
+  label?: string;
+  /** 决策记录的状态与时间。 */
+  status?: string;
+  statusText?: string;
+  completedAt?: string;
+  /** 原始候选项，写回笔记时使用。 */
+  raw?: unknown;
+  type?: string;
+  icon?: string;
+};
+
+/** 一次沉淀分组决策的日志记录（可撤销）。 */
+type SedimentGroupReview = {
+  groupKey: string;
+  completedAt: string;
+  restore?: SedimentDecisionRestore;
+  selectedIds?: string[];
+  items?: SedimentItem[];
+};
+
+/** 沉淀面板的渲染状态。 */
+type SedimentPanelState = {
+  bucket: SedimentCandidateBucket;
+  groups: SedimentGroup[];
+  /** 当前纪要的人员候选（已合并缓存与既有桶）。 */
+  currentPeople: unknown[];
+  /** 是否已跑过整理流水线（用于空态文案）。 */
+  hasPipelineStarted?: boolean;
+  otherPeopleCount?: number;
+  ignoredPeople?: unknown[];
+  vocabScanned?: boolean;
+  peopleScanned?: boolean;
+  scanning?: boolean;
+  percent?: number;
+  label?: string;
+  detail?: string;
+  error?: string;
+};
+
+/** 沉淀分组的显示单元。 */
+type SedimentGroup = {
+  key: string;
+  /** 侧边栏显示的文案与单位。 */
+  label: string;
+  unit: string;
+  /** 分组用途说明与目标位置、使用的模型。 */
+  lead?: string;
+  dest?: string;
+  model?: string;
+  /** 候选计数：待处理、总数、已处理。 */
+  pending: number;
+  total: number;
+  done: number;
+  emptyDone?: boolean;
+  status?: string;
+  /** 下一个分组键；null 表示已到最后一组。 */
+  next?: string | null;
+  items?: SedimentItem[];
+};
+
+/** 沉淀分组决策的补丁（只写候选桶的对应字段）。 */
+type SedimentBucketPatch = {
+  people?: unknown[];
+  todos?: unknown[];
+  hotwords?: unknown;
+  hotwordTermRenames?: Record<string, string>;
+  peopleOriginalNames?: Record<string, string>;
+  scanning?: boolean;
+  scannedAt?: string;
+  scanStartedAt?: string;
+  transitionGroup?: string;
+  /** 候选项来源标记（预提取 / 扫描）。 */
+  source?: string;
+  peopleNameOverrides?: Record<string, string>;
+  initialCounts?: Record<string, number>;
+  doneGroups?: string[];
+  selectedByGroup?: Record<string, string[]>;
+  decisionLogByGroup?: Record<string, unknown>;
+  error?: string;
+};
+
+/** 纪要列表行的渲染参数。 */
+type RecentRowOptions = {
+  /** 左侧缩进层级。 */
+  indent?: number;
+  /** 作为列表项渲染（而不是独立分组）。 */
+  asListItem?: boolean;
+  /** 删除记录时一并删除音频。 */
+  deleteAudio?: boolean;
+  /** 关联的纪要文件。 */
+  noteFile?: unknown;
+  [key: string]: unknown;
+};
+
+/** 纪要列表的文件夹树节点。 */
+type RecentFolderNode = {
+  key: string;
+  label?: string;
+  path?: string;
+  total?: number;
+  items?: unknown[];
+  children?: Map<string, RecentFolderNode>;
+};
+
+/** 一次沉淀提交的撤销记录。 */
+type SedimentCommitUndo = {
+  filePath: string;
+  bucketBefore: SedimentCandidateBucket;
+  entries: unknown[];
+  sourceSnapshot?: { path: string; content: string };
+  vocabulary?: unknown;
+};
+
+/** 内联提示浮层：除 DOM 元素外挂一个关闭回调。 */
+type InlinePopover = HTMLElement & { _lexvoiceClose?: () => void };
+
+/** 人员候选项：取 id 与来源路径时用到的最小形状。 */
+type PeopleSuggestionLike = { cacheKey?: string; key?: string; sourcePath?: string };
+
 export class OutlineView extends obsidian.ItemView {
   declare plugin: LexVoicePlugin;
+  // 视图实例字段。TypeScript 不推断「仅在构造函数或方法里赋值」的属性，
+  // 未声明时本文件内所有 this.<字段> 都会报「属性不存在」，其它模块读也一样。
+  // 字段含义见构造函数与各自赋值处的注释。
+  /** 当前会话的实时大纲正文（模型产出，含标签块）。 */
+  declare aiOutline: string;
+  /** 上一次用于生成大纲的分段数；用于判断是否需要重新生成。 */
+  declare lastOutlineSegmentCount: number;
+  /** 上一次的大纲工作量签名；会中补充内容变化时据此重算。 */
+  declare lastOutlineWorkbenchSignature: string;
+  /** 当前视图绑定的会话 id；切换会话时用于重置面板状态。 */
+  declare outlineSessionId: string;
+  /** 下一次渲染的 rAF 句柄；0 表示当前没有排队中的渲染。 */
+  declare _renderRaf: number;
+  /** 纪要列表的合并刷新定时器句柄。 */
+  declare _recentVaultRefreshTimer: number;
+  /** 下一次渲染是否保留滚动位置（筛选/分组切换时用）。 */
+  declare _preserveScrollOnNextRender: boolean;
+  /** 上一次渲染的结构签名；未变化时只刷新计时等高频文本。 */
+  declare _lastSig: string;
+  /** 上一次渲染到 DOM 的大纲正文；避免无变化时替换节点。 */
+  declare _lastRenderedOutline: string;
+  /** 空态下是否显示「最近纪要」首页，而不是大纲面板。 */
+  declare showRecentHome: boolean;
+  /** 空态当前选中的标签页；空串表示跟随会话状态。 */
+  declare idlePanelTab: string;
+  /** 纪要列表的时间/模式筛选条件。 */
+  declare recentFilters: { time?: string; mode?: string };
+  /** 纪要列表的分组方式（folder / time）。 */
+  declare recentGroupBy: string;
+  /** 纪要列表里被折叠的文件夹路径。 */
+  declare recentCollapsedFolders: Set<string>;
+  /** 沉淀面板当前选中的分组（person / todo / hotword）。 */
+  declare sedimentGroup: string;
+  /** 分组切换浮层是否展开。 */
+  declare sedimentSwitcherOpen: boolean;
+  /** 已「展开全部」的候选分组。 */
+  declare sedimentExpandedGroups: Set<string>;
+  /** 各纪要的沉淀候选桶（按文件路径索引），未落盘前的编辑态。 */
+  declare sedimentCandidatesByPath: Record<string, SedimentCandidateBucket>;
+  /** 已完成纪要面板的缓存键（路径 + mtime）。 */
+  declare notePanelCacheKey: string;
+  /** 已完成纪要面板的缓存数据；undefined 表示加载中，null 表示读取失败。 */
+  declare notePanelCacheData: ReturnType<typeof extractLexVoiceNotePanelData> | null | undefined;
+  /** 已完成纪要面板是否正在读取。 */
+  declare notePanelLoading: boolean;
+  /** 内联回听用的 audio 元素。 */
+  declare inlineAudioEl: HTMLAudioElement | null;
+  /** 内联回听对应的音频文件。 */
+  declare inlineAudioFile: unknown;
+  /** 内联回听对应的大纲 DOM 容器。 */
+  declare inlineOutlineBody: unknown;
+  /** 回听进度（毫秒）；null 表示未在回听。 */
+  declare outlineViewingMs: number | null;
+  /** 自动跟随当前段落的去重键。 */
+  declare lastLiveOutlineFocusKey: string;
+  /** 自动滚动到当前条目的 rAF 句柄。 */
+  declare _outlineFollowRaf: number;
+  /** 沉淀提交提示的隐藏定时器。 */
+  declare sedimentToastTimer: number;
+  /** 沉淀分组自动前进的定时器。 */
+  declare sedimentAdvanceTimer: number;
+  /** 沉淀扫描的递增令牌；用于丢弃过期的异步结果。 */
+  declare sedimentScanToken: number;
+  /** 最近一次沉淀提交的撤销信息。 */
+  declare sedimentLastUndo: unknown;
+  /** 各纪要的「问一问」会话状态（按文件路径索引）。 */
+  declare noteAskByPath: Record<string, NoteAskState>;
+  /** 录音器状态订阅的取消函数。 */
+  declare unsubscribeRecorder: (() => void) | null;
+  /** 待办行内编辑后要聚焦的字段。 */
+  declare inlineTodoPendingFocus: { todoId: string; field: string } | null;
+  /** 当前打开的待办行内编辑器。 */
+  declare inlineTodoEditor: { _anchor?: unknown; close(): void } | null;
+  /** 当前打开的待办字段浮层。 */
+  declare _activeTodoFieldPopover: HTMLElement | null;
+  /** 侧边栏「更多」是否展开。 */
+  declare _sidebarMoreExpanded: boolean;
+  /** 纪要列表的搜索关键词。 */
+  declare _recentSearch: string;
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -933,7 +1231,7 @@ export class OutlineView extends obsidian.ItemView {
     return true;
   }
 
-  getSedimentPanelState(file) {
+  getSedimentPanelState(file): SedimentPanelState {
     const currentPath = obsidian.normalizePath(file.path || "");
     const bucket = this.getSedimentCandidateBucket(file);
     const pendingRecords = normalizePeopleSuggestionCache(this.plugin.settings.peopleSuggestionCache).pending || [];
@@ -993,23 +1291,10 @@ export class OutlineView extends obsidian.ItemView {
   getSedimentCandidateBucket(file) {
     const path = file instanceof obsidian.TFile ? obsidian.normalizePath(file.path || "") : "";
     const raw = path && this.sedimentCandidatesByPath ? this.sedimentCandidatesByPath[path] : null;
-    return Object.assign({
-      people: [],
-      todos: [],
-      cards: [],
-      hotwords: createVocabularyGroups(),
-      scannedAt: "",
-      initialCounts: {},
-      doneGroups: [],
-      selectedByGroup: {},
-      decisionLogByGroup: {},
-      transitionGroup: "",
-      scanning: false,
-      scanStartedAt: "",
-    }, raw || {});
+    return Object.assign(createEmptySedimentBucket(), raw || {});
   }
 
-  setSedimentCandidateBucket(file, patch) {
+  setSedimentCandidateBucket(file, patch: SedimentBucketPatch) {
     if (!(file instanceof obsidian.TFile)) return;
     const path = obsidian.normalizePath(file.path || "");
     if (!path) return;
@@ -1026,7 +1311,7 @@ export class OutlineView extends obsidian.ItemView {
     };
   }
 
-  markSedimentGroupDone(file, groupKey, fallbackTotal) {
+  markSedimentGroupDone(file, groupKey: string, fallbackTotal = 0) {
     if (!(file instanceof obsidian.TFile) || !SEDIMENT_GROUP_CONFIG[groupKey]) return false;
     const bucket = this.getSedimentCandidateBucket(file);
     const initialCounts = Object.assign({}, bucket.initialCounts || {});
@@ -1037,7 +1322,7 @@ export class OutlineView extends obsidian.ItemView {
     return true;
   }
 
-  markSedimentGroupDoneIfEmpty(file, groupKey, fallbackTotal) {
+  markSedimentGroupDoneIfEmpty(file, groupKey: string, fallbackTotal = 0) {
     if (!(file instanceof obsidian.TFile) || !SEDIMENT_GROUP_CONFIG[groupKey]) return false;
     const state = this.getSedimentPanelState(file);
     const group = state.groups.find(item => item.key === groupKey);
@@ -1048,7 +1333,7 @@ export class OutlineView extends obsidian.ItemView {
   getSedimentCandidateSignature() {
     const buckets = this.sedimentCandidatesByPath || {};
     return Object.keys(buckets).sort().map((path) => {
-      const bucket = buckets[path] || {};
+      const bucket: SedimentCandidateBucket = buckets[path] || createEmptySedimentBucket();
       return [
         path,
         bucket.scannedAt || "",
@@ -1107,7 +1392,7 @@ export class OutlineView extends obsidian.ItemView {
     return [];
   }
 
-  getSedimentDisplayItems(state, groupKey) {
+  getSedimentDisplayItems(state: SedimentPanelState, groupKey: string): SedimentItem[] {
     const iconName = groupKey === "todo" ? "check-square" : (groupKey === "hotword" ? "badge-check" : "user-round");
     if (groupKey === "todo") {
       return (this.getSedimentGroupRawItems(state, groupKey) || []).map(item => ({
@@ -1137,9 +1422,9 @@ export class OutlineView extends obsidian.ItemView {
     }));
   }
 
-  getSedimentSelectedIds(file, groupKey, items) {
+  getSedimentSelectedIds(file, groupKey: string, items: SedimentItem[]) {
     const bucket = this.getSedimentCandidateBucket(file);
-    const selectedByGroup = Object.assign({}, bucket.selectedByGroup || {});
+    const selectedByGroup: Record<string, string[]> = { ...(bucket.selectedByGroup || {}) };
     const allIds = (items || []).map(item => item.id).filter(Boolean);
     const current = Array.isArray(selectedByGroup[groupKey]) ? selectedByGroup[groupKey].filter(id => allIds.includes(id)) : null;
     if (current) return new Set(current);
@@ -1151,20 +1436,20 @@ export class OutlineView extends obsidian.ItemView {
     return new Set();
   }
 
-  setSedimentSelectedIds(file, groupKey, ids) {
+  setSedimentSelectedIds(file, groupKey: string, ids: string[]) {
     const bucket = this.getSedimentCandidateBucket(file);
-    const selectedByGroup = Object.assign({}, bucket.selectedByGroup || {});
+    const selectedByGroup: Record<string, string[]> = { ...(bucket.selectedByGroup || {}) };
     selectedByGroup[groupKey] = Array.from(new Set(ids || [])).filter(Boolean);
     this.setSedimentCandidateBucket(file, { selectedByGroup });
   }
 
-  getSedimentGroupReview(file, groupKey) {
+  getSedimentGroupReview(file, groupKey): SedimentGroupReview | null {
     const bucket = this.getSedimentCandidateBucket(file);
     const logs = bucket.decisionLogByGroup && typeof bucket.decisionLogByGroup === "object" ? bucket.decisionLogByGroup : {};
-    return logs[groupKey] || null;
+    return (logs as Record<string, SedimentGroupReview>)[groupKey] || null;
   }
 
-  getActiveSedimentGroup(groups) {
+  getActiveSedimentGroup(groups: SedimentGroup[]) {
     const keys = new Set((groups || []).map(group => group.key));
     let key = this.sedimentGroup || "person";
     if (!keys.has(key)) key = "person";
@@ -1192,14 +1477,14 @@ export class OutlineView extends obsidian.ItemView {
     this.render();
   }
 
-  getSedimentNodeState(group, currentKey) {
+  getSedimentNodeState(group: SedimentGroup | null | undefined, currentKey: string) {
     if (!group || !group.total) return "empty";
     if (group.done >= group.total) return "done";
     if (group.key === currentKey) return "current";
     return "pending";
   }
 
-  findSedimentNextPendingGroup(groups, afterKey = "") {
+  findSedimentNextPendingGroup(groups: SedimentGroup[], afterKey = "") {
     const list = (groups || []).filter(Boolean);
     if (!list.length) return null;
     const start = afterKey ? Math.max(0, list.findIndex(group => group.key === afterKey) + 1) : 0;
@@ -1289,7 +1574,7 @@ export class OutlineView extends obsidian.ItemView {
     }
   }
 
-  renderSedimentGroup(parent, file, state, groupKey) {
+  renderSedimentGroup(parent, file, state: SedimentPanelState, groupKey: string) {
     const body = parent.createDiv({ cls: "lexvoice-sediment-body" });
     const group = (state.groups || []).find(item => item.key === groupKey);
     const isReview = group && group.total > 0 && group.done >= group.total;
@@ -1579,7 +1864,7 @@ export class OutlineView extends obsidian.ItemView {
       const selected = this.getSedimentSelectedIds(file, groupKey, items);
       if (selected.has(item.id)) selected.delete(item.id);
       else selected.add(item.id);
-      this.setSedimentSelectedIds(file, groupKey, selected);
+      this.setSedimentSelectedIds(file, groupKey, Array.from(selected) as string[]);
       this.render();
     };
     const content = row.createDiv({ cls: "lexvoice-sediment-item-content" });
@@ -1724,7 +2009,7 @@ export class OutlineView extends obsidian.ItemView {
     const onBlur = () => finish(true, null);
     titleEl.addEventListener("keydown", onKey);
     titleEl.addEventListener("blur", onBlur);
-    this.inlineTodoEditor = { _anchor: titleEl, close: () => finish(true, null) };
+    this.inlineTodoEditor = { _anchor: titleEl, close: () => { void finish(true, null); } };
   }
 
   // 责任人：字段位置改 input，下方展开下拉
@@ -1732,7 +2017,7 @@ export class OutlineView extends obsidian.ItemView {
     if (this.inlineTodoEditor && this.inlineTodoEditor._anchor === fieldEl) return;
     this.closeInlineTodoEditor();
     const todoId = getSedimentTodoId(raw);
-    const input = activeWindow.createEl("input");
+    const input = (activeWindow as Window & { createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K] }).createEl("input");
     input.type = "text";
     input.className = "lexvoice-todo-inline-input is-owner";
     input.placeholder = "搜索或输入新名字";
@@ -1826,7 +2111,7 @@ export class OutlineView extends obsidian.ItemView {
     window.setTimeout(() => activeDocument.addEventListener("mousedown", onOutside, true), 0);
     input.focus();
     input.select();
-    this.inlineTodoEditor = { _anchor: fieldEl, close: () => finish(input.value.trim() || (raw.owner || ""), null) };
+    this.inlineTodoEditor = { _anchor: fieldEl, close: () => { void finish(input.value.trim() || (raw.owner || ""), null); } };
   }
 
   // 截止日：5 个快捷 + native date input
@@ -1901,7 +2186,7 @@ export class OutlineView extends obsidian.ItemView {
       activeDocument.addEventListener("keydown", onKey, true);
       activeDocument.addEventListener("mousedown", onOutside, true);
     }, 0);
-    this.inlineTodoEditor = { _anchor: fieldEl, close: () => finish(raw.due || "", null) };
+    this.inlineTodoEditor = { _anchor: fieldEl, close: () => { void finish(raw.due || "", null); } };
   }
 
   // 常驻子任务列表（Todoist 风格）：永远显示已有子任务，行内可改、× 删除
@@ -2107,7 +2392,7 @@ export class OutlineView extends obsidian.ItemView {
     addInput.addEventListener("keydown", onAddKey);
     window.setTimeout(() => activeDocument.addEventListener("mousedown", onOutside, true), 0);
     addInput.focus();
-    this.inlineTodoEditor = { _anchor: fieldEl, close: () => finish(null) };
+    this.inlineTodoEditor = { _anchor: fieldEl, close: () => { void finish(null); } };
   }
   // ===================== /待办行内编辑 =====================
 
@@ -2127,7 +2412,7 @@ export class OutlineView extends obsidian.ItemView {
       return updated;
     });
     if (!updated) return;
-    const selectedByGroup = Object.assign({}, bucket.selectedByGroup || {});
+    const selectedByGroup: Record<string, string[]> = { ...(bucket.selectedByGroup || {}) };
     if (Array.isArray(selectedByGroup.todo)) {
       const nextId = getSedimentTodoId(updated);
       selectedByGroup.todo = selectedByGroup.todo.map(id => id === oldId ? nextId : id);
@@ -2197,7 +2482,7 @@ export class OutlineView extends obsidian.ItemView {
     // 选择集里用旧 id 的换成新 id
     const oldId = getSedimentHotwordId(item.sectionKey, oldTerm);
     const newId = getSedimentHotwordId(item.sectionKey, next);
-    const selectedByGroup = Object.assign({}, bucket.selectedByGroup || {});
+    const selectedByGroup: Record<string, string[]> = { ...(bucket.selectedByGroup || {}) };
     if (Array.isArray(selectedByGroup.hotword)) {
       selectedByGroup.hotword = selectedByGroup.hotword.map(id => id === oldId ? newId : id);
     }
@@ -2224,7 +2509,7 @@ export class OutlineView extends obsidian.ItemView {
     if (!id) return;
     const bucket = this.getSedimentCandidateBucket(file);
     const overrides = Object.assign({}, bucket.peopleNameOverrides || {});
-    const originals = Object.assign({}, bucket.peopleOriginalNames || {});
+    const originals = Object.assign({}, (bucket as { peopleOriginalNames?: Record<string, string> }).peopleOriginalNames || {});
     // 首次改名时记下"笔记正文/YAML 里写着的那个名字"(此刻 item.name 尚未被任何 override 改过)，
     // 供"加入人员库"时把旧名替换成更正后的名字。后续再改名不覆盖这个原名。
     if (!Object.prototype.hasOwnProperty.call(originals, id)) {
@@ -2242,7 +2527,7 @@ export class OutlineView extends obsidian.ItemView {
   async applyPeopleRenamesToNote(file, items) {
     if (!(file instanceof obsidian.TFile)) return [];
     const bucket = this.getSedimentCandidateBucket(file);
-    const originals = bucket.peopleOriginalNames || {};
+    const originals = (bucket as { peopleOriginalNames?: Record<string, string> }).peopleOriginalNames || {};
     const path = obsidian.normalizePath(file.path || "");
     const renames = [];
     const seen = new Set();
@@ -2371,7 +2656,7 @@ export class OutlineView extends obsidian.ItemView {
       try { this._activeTodoFieldPopover.remove(); } catch { /* intentionally empty */ }
       this._activeTodoFieldPopover = null;
     }
-    const pop = activeDocument.body.createDiv({ cls: `lexvoice-todo-popover is-${field}` });
+    const pop: InlinePopover = activeDocument.body.createDiv({ cls: `lexvoice-todo-popover is-${field}` });
     this._activeTodoFieldPopover = pop;
 
     // 定位：贴近 anchor，向下展开，必要时翻转
@@ -2596,14 +2881,14 @@ export class OutlineView extends obsidian.ItemView {
     window.setTimeout(() => addInput.focus(), 30);
   }
 
-  renderSedimentEmptyList(parent, text) {
+  renderSedimentEmptyList(parent, text = "") {
     const empty = parent.createDiv({ cls: "lexvoice-sediment-empty-line" });
     empty.setText(text || "暂无待加入内容");
   }
 
-  renderSedimentReviewGroup(parent, file, state, groupKey) {
+  renderSedimentReviewGroup(parent, file, state: SedimentPanelState, groupKey: string) {
     const review = this.getSedimentGroupReview(file, groupKey);
-    const items = review && Array.isArray(review.items) ? review.items : [];
+    const items: SedimentItem[] = review && Array.isArray(review.items) ? review.items : [];
     const canRollback = !!(review && review.restore);
     // 顶部说明：只有真有处理记录可看的时候才提"N 条记录可回看"
     const note = parent.createDiv({ cls: "lexvoice-sediment-review-note" });
@@ -2801,7 +3086,7 @@ export class OutlineView extends obsidian.ItemView {
     modal.open();
   }
 
-  showSedimentToast(message, opts = {}) {
+  showSedimentToast(message, opts: SedimentToastOptions = {}) {
     const root = this.containerEl && this.containerEl.children && this.containerEl.children[1];
     if (!root) return;
     const old = root.querySelector(".lexvoice-sediment-toast");
@@ -3073,7 +3358,7 @@ export class OutlineView extends obsidian.ItemView {
 
   setSedimentDecisionLog(file, groupKey, log) {
     const bucket = this.getSedimentCandidateBucket(file);
-    const decisionLogByGroup = Object.assign({}, bucket.decisionLogByGroup || {});
+    const decisionLogByGroup: Record<string, SedimentGroupReview> = { ...(bucket.decisionLogByGroup || {}) } as Record<string, SedimentGroupReview>;
     if (log) decisionLogByGroup[groupKey] = log;
     else delete decisionLogByGroup[groupKey];
     this.setSedimentCandidateBucket(file, { decisionLogByGroup });
@@ -3081,8 +3366,8 @@ export class OutlineView extends obsidian.ItemView {
 
   appendSedimentDecisionItems(file, groupKey, rawItems, status, statusText, state) {
     const bucket = this.getSedimentCandidateBucket(file);
-    const logs = Object.assign({}, bucket.decisionLogByGroup || {});
-    const current = logs[groupKey] || {
+    const logs: Record<string, SedimentGroupReview> = { ...(bucket.decisionLogByGroup || {}) } as Record<string, SedimentGroupReview>;
+    const current: SedimentGroupReview = logs[groupKey] || {
       groupKey,
       completedAt: "",
       restore: {},
@@ -3092,7 +3377,7 @@ export class OutlineView extends obsidian.ItemView {
     if (!current.restore || !Object.keys(current.restore).length) {
       const snapshotState = state || this.getSedimentPanelState(file);
       if (groupKey === "person") current.restore = { people: JSON.parse(JSON.stringify(snapshotState.currentPeople || [])) };
-      else current.restore = (this.buildSedimentDecisionLog(snapshotState, groupKey, new Set()).restore || {});
+      else current.restore = ((this.buildSedimentDecisionLog(snapshotState, groupKey, new Set()) as { restore?: Record<string, unknown> }).restore || {});
     }
     const sourcePath = file instanceof obsidian.TFile ? obsidian.normalizePath(file.path || "") : "";
     for (const raw of rawItems || []) {
@@ -3114,10 +3399,10 @@ export class OutlineView extends obsidian.ItemView {
     this.setSedimentCandidateBucket(file, { decisionLogByGroup: logs });
   }
 
-  buildSedimentDecisionLog(state, groupKey, selectedIds, actionLabel) {
-    const selected = new Set(selectedIds || []);
+  buildSedimentDecisionLog(state: SedimentPanelState, groupKey: string, selectedIds: Set<string>, actionLabel = "") {
+    const selected = new Set<string>(selectedIds || []);
     const displayItems = this.getSedimentDisplayItems(state, groupKey);
-    const restore = {};
+    const restore: SedimentDecisionRestore = {};
     if (groupKey === "person") restore.people = JSON.parse(JSON.stringify(state.currentPeople || []));
     else if (groupKey === "todo") restore.todos = JSON.parse(JSON.stringify((state.bucket && state.bucket.todos) || []));
     else if (groupKey === "hotword") restore.hotwords = JSON.parse(JSON.stringify((state.bucket && state.bucket.hotwords) || createVocabularyGroups()));
@@ -3209,8 +3494,8 @@ export class OutlineView extends obsidian.ItemView {
     this.showSedimentToast(message, {
       icon: "check",
       actions: [
-        { text: "撤销", action: () => this.restoreSedimentUndo(this.sedimentLastUndo) },
-        { text: "查看", action: () => this.openSedimentCommitTarget(this.sedimentLastUndo) },
+        { text: "撤销", action: () => { void this.restoreSedimentUndo(this.sedimentLastUndo); } },
+        { text: "查看", action: () => { void this.openSedimentCommitTarget(this.sedimentLastUndo); } },
       ],
       duration: 5000,
     });
@@ -3253,7 +3538,7 @@ export class OutlineView extends obsidian.ItemView {
       const selectedItems = displayItems.filter(item => selected.has(item.id));
       if (SEDIMENT_GROUP_CONFIG[groupKey] && SEDIMENT_GROUP_CONFIG[groupKey].decisionModel === "checkbox" && !selectedItems.length) return;
       const filePath = obsidian.normalizePath(file.path || "");
-      const undo = {
+      const undo: SedimentCommitUndo = {
         filePath,
         bucketBefore: this.cloneSedimentBucket(file),
         entries: [],
@@ -3263,7 +3548,7 @@ export class OutlineView extends obsidian.ItemView {
         if (!count) return;
         const result = await writeSedimentObjectCards(this.plugin, file, { todos: selectedItems.map(item => item.raw) });
         undo.entries = result.entries || [];
-        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected, "已加入"));
+        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected as Set<string>, "已加入"));
         this.setSedimentCandidateBucket(file, { todos: [] });
         completed = this.markSedimentGroupDone(file, groupKey, displayItems.length || count);
         successText = `已加入待办：${count} 条`;
@@ -3296,7 +3581,7 @@ export class OutlineView extends obsidian.ItemView {
         try { hotwordRenames = await this.applyHotwordRenamesToNote(file, selectedItems); } catch (e) { console.error("[QnALog] rename hotwords in note failed", e); }
         this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
         await this.plugin.saveSettings();
-        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected, "已加入"));
+        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected as Set<string>, "已加入"));
         // 候选全清，未消费的改名映射一并清掉（宿主候选已不存在，留着会在下次提交误回写）
         this.setSedimentCandidateBucket(file, { hotwords: createVocabularyGroups(), hotwordTermRenames: {} });
         completed = this.markSedimentGroupDone(file, groupKey, displayItems.length || hotwordCount);
@@ -3308,7 +3593,7 @@ export class OutlineView extends obsidian.ItemView {
         await this.keepPeopleSuggestions(file, state.currentPeople);
         return;
       }
-      const selectedByGroup = Object.assign({}, this.getSedimentCandidateBucket(file).selectedByGroup || {});
+      const selectedByGroup: Record<string, string[]> = { ...(this.getSedimentCandidateBucket(file).selectedByGroup || {}) };
       selectedByGroup[groupKey] = [];
       this.setSedimentCandidateBucket(file, { selectedByGroup });
       const persisted = await this.persistSedimentCandidateBucket(file);
@@ -3340,14 +3625,14 @@ export class OutlineView extends obsidian.ItemView {
   async reprocessSedimentGroup(file, groupKey) {
     const review = this.getSedimentGroupReview(file, groupKey);
     const bucket = this.getSedimentCandidateBucket(file);
-    const patch = {
+    const patch: SedimentBucketPatch = {
       doneGroups: removeSedimentGroupDone(bucket.doneGroups, groupKey),
       transitionGroup: "",
     };
-    const selectedByGroup = Object.assign({}, bucket.selectedByGroup || {});
+    const selectedByGroup: Record<string, string[]> = { ...(bucket.selectedByGroup || {}) };
     delete selectedByGroup[groupKey];
     patch.selectedByGroup = selectedByGroup;
-    const decisionLogByGroup = Object.assign({}, bucket.decisionLogByGroup || {});
+    const decisionLogByGroup: Record<string, SedimentGroupReview> = { ...(bucket.decisionLogByGroup || {}) } as Record<string, SedimentGroupReview>;
     delete decisionLogByGroup[groupKey];
     patch.decisionLogByGroup = decisionLogByGroup;
     const hasRestore = review && review.restore;
@@ -3379,7 +3664,7 @@ export class OutlineView extends obsidian.ItemView {
     const keys = new Set((suggestions || []).map(item => item && (item.cacheKey || item.key || getPeopleSuggestionCacheKey(item.sourcePath || path, item))).filter(Boolean));
     if (!keys.size) return;
     this.setSedimentCandidateBucket(file, {
-      people: bucket.people.filter(item => !keys.has(item && (item.cacheKey || item.key || getPeopleSuggestionCacheKey(item.sourcePath || path, item)))),
+      people: (bucket.people as PeopleSuggestionLike[]).filter(item => !keys.has(item && (item.cacheKey || item.key || getPeopleSuggestionCacheKey(item.sourcePath || path, item)))),
     });
   }
 
@@ -3577,7 +3862,7 @@ export class OutlineView extends obsidian.ItemView {
       const rendered = obsidian.MarkdownRenderer.render(this.app, data.timeline, timelineBody, file.path, this);
       void Promise.resolve(rendered).then(() => this.plugin.audioLinks.enhanceAudioTimeLinks(timelineBody, {
         sourcePath: file.path,
-        onTimeLink: (payload) => this.seekInlineAudio(payload),
+        onTimeLink: (payload: unknown) => this.seekInlineAudio(payload),
       }));
     }
   }
@@ -3711,30 +3996,30 @@ export class OutlineView extends obsidian.ItemView {
     update();
   }
 
-  getOutlineChapterItems(body) {
+  /** 大纲里的章节条目（带时间锚的 li）；rail 不存在或没有条目时返回空数组。 */
+  getOutlineChapterItems(body: HTMLElement | null): HTMLLIElement[] {
     if (!body) return [];
     const rail = body.querySelector("ul.lexvoice-outline-time-rail");
     if (!rail) return [];
-    return Array.from(rail.children || [])
-      .filter((child) => child && child.tagName === "LI" && child.classList && child.classList.contains("lexvoice-outline-has-leading-time"));
+    return Array.from(rail.children || []) as HTMLLIElement[];
   }
 
-  getOutlineChapterTimeMs(li) {
+  getOutlineChapterTimeMs(li: HTMLElement | null): number {
     if (!li) return NaN;
     const link = li.querySelector(".lexvoice-time-link.lexvoice-outline-leading-time");
     return link ? parseElapsedMsToken((link.textContent || "").trim()) : NaN;
   }
 
-  appendOutlineTitleAdornment(li, node) {
+  appendOutlineTitleAdornment(li: HTMLElement, node: HTMLElement) {
     if (!li || !node) return null;
-    const firstParagraph = Array.from(li.children || []).find((child) => child && child.tagName === "P");
+    const firstParagraph = Array.from(li.children || [] as Element[]).find((child) => child && (child as HTMLElement).tagName === "P");
     if (firstParagraph) {
       firstParagraph.appendChild(activeDocument.createTextNode(" "));
       firstParagraph.appendChild(node);
       return node;
     }
     const firstNestedList = Array.from(li.children || [])
-      .find((child) => child && /^(UL|OL)$/i.test(child.tagName || ""));
+      .find((child) => child && /^(UL|OL)$/i.test((child as HTMLElement).tagName || ""));
     const spacer = activeDocument.createTextNode(" ");
     if (firstNestedList) {
       li.insertBefore(spacer, firstNestedList);
@@ -3748,12 +4033,12 @@ export class OutlineView extends obsidian.ItemView {
 
   addOutlineMiniWave(parent, cls = "", titleLi = null) {
     if (!parent && !titleLi) return null;
-    const wave = activeWindow.createSpan();
+    const wave = (activeWindow as Window & { createSpan(): HTMLElement }).createSpan();
     wave.className = `lexvoice-outline-mini-wave ${cls}`.trim();
     if (titleLi) this.appendOutlineTitleAdornment(titleLi, wave);
     else parent.appendChild(wave);
     for (let i = 0; i < 4; i++) {
-      const bar = activeWindow.createSpan();
+      const bar = (activeWindow as Window & { createSpan(): HTMLElement }).createSpan();
       bar.className = "lexvoice-outline-mini-wave-bar";
       bar.style.animationDelay = `${i * 0.15}s`;
       wave.appendChild(bar);
@@ -3768,7 +4053,7 @@ export class OutlineView extends obsidian.ItemView {
     if (!items.length) return;
     const current = items[items.length - 1];
     const currentMs = this.getOutlineChapterTimeMs(current);
-    const currentItems = Number.isFinite(currentMs)
+    const currentItems: HTMLElement[] = Number.isFinite(currentMs)
       ? items.filter((item) => {
         const ms = this.getOutlineChapterTimeMs(item);
         return Number.isFinite(ms) && Math.abs(ms - currentMs) < 500;
@@ -3784,7 +4069,7 @@ export class OutlineView extends obsidian.ItemView {
       li.removeClass("is-viewing");
       li.onclick = (evt) => {
         const target = evt.target;
-        if (target && target.closest && target.closest("a,button")) return;
+        if (target && (target as HTMLElement).closest && (target as HTMLElement).closest("a,button")) return;
         if (currentSet.has(li)) {
           this.outlineViewingMs = null;
           this.lastLiveOutlineFocusKey = "";
@@ -3800,7 +4085,7 @@ export class OutlineView extends obsidian.ItemView {
     if ((isRecording || isPaused) && current) {
       for (const item of currentItems) item.addClass("is-generating");
       if (!current.querySelector(".lexvoice-outline-live-badge")) {
-        const badge = activeWindow.createSpan();
+        const badge = (activeWindow as Window & { createSpan(): HTMLElement }).createSpan();
         badge.className = "lexvoice-outline-live-badge";
         badge.textContent = isPaused ? "已暂停" : "正在生成";
         this.appendOutlineTitleAdornment(current, badge);
@@ -3809,7 +4094,7 @@ export class OutlineView extends obsidian.ItemView {
     if (viewingItem) {
       viewingItem.addClass("is-viewing");
       if (!viewingItem.querySelector(".lexvoice-outline-viewing-icon")) {
-        const icon = activeWindow.createSpan();
+        const icon = (activeWindow as Window & { createSpan(): HTMLElement }).createSpan();
         icon.className = "lexvoice-outline-viewing-icon";
         try { obsidian.setIcon(icon, "eye"); } catch { icon.textContent = "查看"; }
         this.appendOutlineTitleAdornment(viewingItem, icon);
@@ -3885,7 +4170,8 @@ export class OutlineView extends obsidian.ItemView {
       } else li.addClass("is-upcoming");
       li.onclick = (evt) => {
         const target = evt.target;
-        if (target && target.closest && target.closest("a,button")) return;
+        const targetEl = target as HTMLElement | null;
+        if (targetEl && targetEl.closest && targetEl.closest("a,button")) return;
         const ms = times[i];
         if (!Number.isFinite(ms) || !this.inlineAudioEl) return;
         this.inlineAudioEl.currentTime = ms / 1000;
@@ -3919,7 +4205,7 @@ export class OutlineView extends obsidian.ItemView {
     return true;
   }
 
-  renderTitleRow(head, title, options = {}) {
+  renderTitleRow(head, title, options: { noteFile?: unknown } = {}) {
     const row = head.createDiv({ cls: "lexvoice-outline-title-row" });
     row.createDiv({ cls: "lexvoice-outline-title", text: title });
     const actions = row.createDiv({ cls: "lexvoice-outline-title-actions" });
@@ -4186,9 +4472,9 @@ export class OutlineView extends obsidian.ItemView {
           menu.showAtPosition({ x: r.left, y: r.bottom + 4 });
           // 菜单贴字段宽度 + 左右留白对称 + 标记当前项（仅主题色文字，不用色点）
           try {
-            menu.dom.style.minWidth = Math.round(r.width) + "px";
-            menu.dom.classList.add("lexvoice-ms-menu");
-            const items = menu.dom.querySelectorAll(".menu-item");
+            (menu as unknown as { dom: HTMLElement }).dom.style.minWidth = Math.round(r.width) + "px";
+            (menu as unknown as { dom: HTMLElement }).dom.classList.add("lexvoice-ms-menu");
+            const items = (menu as unknown as { dom: HTMLElement }).dom.querySelectorAll(".menu-item");
             const idx = opts.items.findIndex(it => it.value === curVal);
             if (idx >= 0 && items[idx]) items[idx].classList.add("lex-ms-active");
           } catch { /* intentionally empty */ }
@@ -4424,7 +4710,7 @@ export class OutlineView extends obsidian.ItemView {
     sendBtn.onclick = () => this.addMeetingWorkbenchTextEntry(session, textarea.value);
   }
 
-  renderOutlineAnnotationEntry(parent, session, entry, options = {}) {
+  renderOutlineAnnotationEntry(parent, session, entry, options: { asListItem?: boolean } = {}) {
     const source = entry.source || ((entry.materials && entry.materials.length && !entry.text) ? "material" : "manual");
     const latestEnd = getSessionLatestSegmentEndMs(session);
     const isIntegrated = latestEnd > 0 && (Number(entry.atMs) || 0) <= latestEnd;
@@ -4570,7 +4856,7 @@ export class OutlineView extends obsidian.ItemView {
 
   getMeetingWorkbenchOffsetMs() {
     const info = this.plugin.recorder && this.plugin.recorder.getInfo ? this.plugin.recorder.getInfo() : {};
-    return Math.max(0, Number(info.elapsed) || 0);
+    return Math.max(0, Number((info as { elapsed?: number }).elapsed) || 0);
   }
 
   updateMeetingWorkbenchEntry(session, entryId, updater) {
@@ -4867,17 +5153,17 @@ export class OutlineView extends obsidian.ItemView {
     if (!body || !session) return;
     const workbench = normalizeMeetingWorkbench(session.meetingWorkbench);
     if (!workbench.entries.length) return;
-    const children = Array.from(body.children || []);
+    const children: HTMLElement[] = Array.from(body.children || []);
     const topList = children.find((child) => child && child.classList && child.classList.contains("lexvoice-outline-time-rail"))
       || children.find((child) => child && /^(UL|OL)$/i.test(child.tagName || ""));
     if (!topList) {
       this.renderOutlineAnnotations(body, session);
       return;
     }
-    const timedItems = Array.from(topList.children || [])
+    const timedItems = (Array.from(topList.children || []) as HTMLElement[])
       .filter((child) => child && /^(LI)$/i.test(child.tagName || ""))
       .map((li) => {
-        const links = Array.from(li.querySelectorAll("a.lexvoice-time-link"))
+        const links = (Array.from(li.querySelectorAll("a.lexvoice-time-link")))
           .filter((link) => link.closest("li") === li);
         const leading = links.find((link) => link.classList.contains("lexvoice-outline-leading-time")) || links[0];
         const ms = leading ? parseElapsedMsToken((leading.textContent || "").trim()) : NaN;
@@ -4892,7 +5178,7 @@ export class OutlineView extends obsidian.ItemView {
     for (const entry of entries) {
       const node = this.renderOutlineAnnotationEntry(topList, session, entry, { asListItem: true });
       const atMs = Number(entry.atMs) || 0;
-      const anchor = timedItems.find((item) => item.ms > atMs);
+      const anchor = timedItems.find((item) => Number((item as unknown as { ms?: number }).ms) > atMs);
       if (anchor && anchor.li && node) topList.insertBefore(node, anchor.li);
       else if (node) topList.appendChild(node);
     }
@@ -4970,12 +5256,12 @@ export class OutlineView extends obsidian.ItemView {
 
   promoteOutlineTimeLinks(body) {
     if (!body) return;
-    const listItems = body.querySelectorAll("li");
-    for (const li of listItems) {
+    const listItems = body.querySelectorAll("li") as NodeListOf<HTMLElement>;
+    for (const li of Array.from(listItems)) {
       const list = li.parentElement;
       const listParent = list ? list.parentElement : null;
       const isTopLevel = list && listParent && /^(UL|OL)$/i.test(list.tagName || "") && !listParent.closest("li");
-      const links = Array.from(li.querySelectorAll("a.lexvoice-time-link"))
+      const links = (Array.from(li.querySelectorAll("a.lexvoice-time-link")))
         .filter((link) => link.closest("li") === li);
       if (!links.length) continue;
       if (!isTopLevel) {
@@ -4987,7 +5273,7 @@ export class OutlineView extends obsidian.ItemView {
       if (first.classList.contains("lexvoice-outline-leading-time")) continue;
       first.classList.add("lexvoice-outline-leading-time");
       li.addClass("lexvoice-outline-has-leading-time");
-      const directParagraph = Array.from(li.children || []).find((child) => child && child.tagName === "P");
+      const directParagraph = (Array.from(li.children || []) as HTMLElement[]).find((child) => child && child.tagName === "P");
       const target = directParagraph || li;
       target.insertBefore(first, target.firstChild);
       for (const extra of links.slice(1)) extra.addClass("lexvoice-outline-secondary-time");
@@ -4995,9 +5281,9 @@ export class OutlineView extends obsidian.ItemView {
     // 连续重复时间戳标记：段落切分粗时（如段5是5分钟），多个 L1 可能都只能锚到段起点（同一个 [[file|08:00]]）
     // 视觉上两个相邻 08:00 看像 bug，但实际跳转是对的。给第二个开始的连续重复打 .is-duplicate-time，
     // CSS 把时间文字淡化 / 替换成 ↘ 延续标志；rail 圆点和点击仍正常工作
-    const rails = body.querySelectorAll("ul.lexvoice-outline-time-rail");
-    for (const rail of rails) {
-      for (const child of Array.from(rail.children || [])) {
+    const rails = body.querySelectorAll("ul.lexvoice-outline-time-rail") as NodeListOf<HTMLElement>;
+    for (const rail of Array.from(rails)) {
+      for (const child of Array.from(rail.children || []) as HTMLElement[]) {
         if (!child || child.tagName !== "LI" || !child.classList) continue;
         if (!child.classList.contains("lexvoice-outline-has-leading-time") && !child.classList.contains("lexvoice-outline-annotation-li")) {
           child.classList.add("lexvoice-outline-untimed-top");
@@ -5008,7 +5294,7 @@ export class OutlineView extends obsidian.ItemView {
       const leadingLinks = rail.querySelectorAll(":scope > li .lexvoice-outline-leading-time");
       let prevHref = "";
       let prevText = "";
-      for (const link of leadingLinks) {
+      for (const link of Array.from(leadingLinks)) {
         const href = link.getAttribute("data-href") || link.getAttribute("href") || "";
         const text = (link.textContent || "").trim();
         // 只标连续完全相同的（同 href + 同显示文字）
@@ -5037,9 +5323,10 @@ export class OutlineView extends obsidian.ItemView {
       }
       return null;
     };
-    const listItems = body.querySelectorAll("li");
-    for (const li of listItems) {
-      if (Array.from(li.children || []).some((child) => child.classList && child.classList.contains("lexvoice-outline-source-chip"))) continue;
+    const listItems = body.querySelectorAll("li") as NodeListOf<HTMLElement>;
+    for (const li of Array.from(listItems)) {
+      const childElements: Element[] = Array.from(li.children || []);
+      if (childElements.some((child) => child.classList && child.classList.contains("lexvoice-outline-source-chip"))) continue;
       const textNode = findFirstTextNode(li);
       if (!textNode) continue;
       const raw = textNode.nodeValue || "";
@@ -5049,7 +5336,7 @@ export class OutlineView extends obsidian.ItemView {
       if (!def) continue;
       textNode.nodeValue = raw.slice(match[0].length);
       if (match[2] === "麦克风") continue;
-      const chip = activeWindow.createSpan();
+      const chip = (activeWindow as Window & { createSpan(): HTMLElement }).createSpan();
       chip.className = `lexvoice-outline-source-chip ${def.cls}`;
       chip.setAttribute("title", def.title);
       chip.setAttribute("aria-label", def.title);
@@ -5330,7 +5617,7 @@ export class OutlineView extends obsidian.ItemView {
     }
   }
 
-  renderRecentNoteRow(parent, r, activePath, options = {}) {
+  renderRecentNoteRow(parent, r, activePath, options: RecentRowOptions = {}) {
     const isActive = activePath && obsidian.normalizePath(r.file.path) === activePath;
     const row = parent.createDiv({ cls: `lexvoice-outline-recent-row ${isActive ? "is-active" : ""}` });
     if (options.indent) row.style.setProperty("--lexvoice-recent-indent", `${Math.min(4, Math.max(0, Number(options.indent) || 0))}`);
@@ -5426,7 +5713,7 @@ export class OutlineView extends obsidian.ItemView {
     };
     for (const root of roots.values()) finalizeNode(root);
 
-    const sortNodes = (nodes) => Array.from(nodes.values()).sort((a, b) =>
+    const sortNodes = (nodes: Map<string, RecentFolderNode>) => Array.from(nodes.values()).sort((a, b) =>
       String(a.label || "").localeCompare(String(b.label || ""), "zh-CN"));
     const bindFolderToggle = (title, container, node, toggle, folderIcon) => {
       const collapseKey = `folder:${node.key}`;
@@ -5610,13 +5897,13 @@ export class OutlineView extends obsidian.ItemView {
     const root = scope || (this.containerEl && this.containerEl.children[1]);
     if (!root || typeof root.querySelectorAll !== "function") return;
     const q = String(this._recentSearch || "").trim().toLowerCase();
-    root.querySelectorAll(".lexvoice-outline-recent-row, .lexvoice-outline-recent-variant").forEach((rowEl) => {
+    root.querySelectorAll(".lexvoice-outline-recent-row, .lexvoice-outline-recent-variant").forEach((rowEl: HTMLElement) => {
       const hit = !q || (rowEl.textContent || "").toLowerCase().includes(q);
       rowEl.style.display = hit ? "" : "none";
     });
-    root.querySelectorAll(".lexvoice-outline-recent-group").forEach((g) => {
-      const anyVisible = Array.from(g.querySelectorAll(".lexvoice-outline-recent-row, .lexvoice-outline-recent-variant"))
-        .some((r) => r.style.display !== "none");
+    root.querySelectorAll(".lexvoice-outline-recent-group").forEach((g: HTMLElement) => {
+      const rows: HTMLElement[] = Array.from(g.querySelectorAll(".lexvoice-outline-recent-row, .lexvoice-outline-recent-variant"));
+      const anyVisible = rows.some((r) => r.style.display !== "none");
       g.style.display = anyVisible ? "" : "none";
     });
   }
@@ -5740,7 +6027,7 @@ export class OutlineView extends obsidian.ItemView {
     menu.addItem((item) => {
       item.setTitle(detectedMode ? "重新整理为" : "整理为")
         .setIcon("refresh-cw");
-      const sub = item.setSubmenu();
+      const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
       // 偏好（可选修饰）：点击只在前面打钩/取消，就地更新、菜单不关（捕获阶段拦掉点击，阻止 Obsidian 关菜单）。
       // 没勾偏好就按默认执行。真正触发整理的是下面的"模式"——届时拼接「模式模板 + 已选偏好」两段提示词。
       const prefItems = [];
@@ -5754,7 +6041,7 @@ export class OutlineView extends obsidian.ItemView {
         sub.addItem((presetItem) => {
           presetItem.setTitle(preset.label).setChecked((this.plugin.settings.repolishPreference || "") === key);
           prefItems.push([key, presetItem]);
-          const dom = presetItem.dom;
+          const dom = (presetItem as unknown as { dom: HTMLElement }).dom;
           if (dom) {
             dom.addEventListener("click", (e) => {
               e.preventDefault(); e.stopPropagation();
@@ -5784,7 +6071,7 @@ export class OutlineView extends obsidian.ItemView {
     menu.addItem((item) => {
       item.setTitle("生成")
         .setIcon("file-output");
-      const sub = item.setSubmenu();
+      const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
       sub.addItem((subItem) => subItem
         .setTitle("邮件草稿")
         .onClick(() => this.plugin.delivery.createEmailDraftForMarkdownFile(file)));
@@ -5962,7 +6249,7 @@ export class OutlineView extends obsidian.ItemView {
     return Array.from(map.values());
   }
 
-  async deleteRecentNoteRecord(file, options = {}) {
+  async deleteRecentNoteRecord(file, options: { deleteAudio?: boolean } = {}) {
     if (!(file instanceof obsidian.TFile)) return;
     const mdPath = obsidian.normalizePath(file.path);
     const audioFiles = options.deleteAudio ? this.getAudioFilesForRecentNote(file) : [];
