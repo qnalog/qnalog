@@ -6,7 +6,7 @@
 // 一次误点就会覆盖本项目。
 //
 // 覆盖前把目标插件目录整份留档，并在首次安装时按优先级沿用已有插件的设置（data.json）。
-import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveBuildIdentity } from "./build-identity.mjs";
@@ -133,6 +133,15 @@ if (buildIdentity.channel === "dev") {
   }, null, 2)}\n`);
   console.log(`[install] 开发构建：知识库中的 manifest 版本标为 ${buildIdentity.displayVersion}
 [install] （分支 ${buildIdentity.branch}${buildIdentity.dirty ? "，有未提交改动" : ""}；仓库里的 manifest.json 仍是 ${buildIdentity.version}）`);
+} else {
+  // 发版构建：清掉上一次开发安装留下的标识文件。
+  // 不清的话，知识库里的 manifest 与产物都是发版版本，唯独这个文件还写着开发标识，
+  // 设置页会一直显示 "x.y.z-dev.<分支>.<提交>"，与另外两处对不上（§4.1.1 要求开发标识只出现在开发安装里）。
+  const staleBuildInfo = path.join(targetDir, BUILD_INFO_FILE);
+  if (existsSync(staleBuildInfo)) {
+    rmSync(staleBuildInfo, { force: true });
+    console.log(`[install] 发版构建：已移除上一次开发安装留下的 ${BUILD_INFO_FILE}`);
+  }
 }
 
 // 首次安装时沿用已有插件的设置：data.json 跟着插件目录走，id 变了就默认读不到旧设置。
