@@ -14,7 +14,6 @@ import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-sche
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
 import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabularyMarkdown, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
-import { isRecruitFeatureUnlocked } from '../recruit';
 import { LEXVOICE_UPDATE_REPO_URL, audioInputModeLabel, countKnowledgeExtractionHistory, enumerateAudioDevices, isVirtualCableLabel, lexvoiceConfirm, lexvoicePromptText, normalizeAudioInputMode, openLexVoiceExternalUrl, openLexVoicePickListModal, pluginBasePath, resolveUpdateRawBases, trashLexVoiceFile } from './helpers';
 import { PeopleHotwordsConsentModal, PromptTemplateModal, QueueModal, VirtualCableSetupModal } from './modals';
 import {
@@ -97,18 +96,9 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     super(app, plugin);
     this.plugin = plugin;
     this.activeTab = "home";
-    this._advancedTapCount = 0;
-    this._advancedTapAt = 0;
   }
-  // 同一个隐藏入口控制招聘与晋升评审；招聘 Tab 仅在解锁后进入 DOM。
   getVisibleSettingsTabs() {
-    const tabs = LV_SETTINGS_TABS.slice();
-    if (isRecruitFeatureUnlocked(this.plugin.settings)) {
-      const idx = tabs.findIndex(t => t.id === "advanced");
-      const recruitTab = { id: "recruit", label: "招聘" };
-      if (idx >= 0) tabs.splice(idx, 0, recruitTab); else tabs.push(recruitTab);
-    }
-    return tabs;
+    return LV_SETTINGS_TABS.slice();
   }
   display() {
     this.renderSettings();
@@ -137,7 +127,6 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       case "speaker":  this.renderSpeaker(content); break;
       case "ai":       this.renderAI(content); break;
       case "knowledge": this.renderKnowledge(content); break;
-      case "recruit":  this.renderRecruit(content); break;
       case "advanced": this.renderAdvanced(content); break;
       case "updates":  this.renderUpdates(content); break;
     }
@@ -212,61 +201,10 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
   }
 
   handleSettingsTabClick(tabId) {
-    if (tabId !== "advanced") {
-      this._advancedTapCount = 0;
-      this._advancedTapAt = 0;
-    }
     this.activeTab = tabId;
     this.renderSettings();
-    if (tabId === "advanced") {
-      this.handleAdvancedEasterEggTap().catch((e) => console.error("[QnALog] HR easter egg failed", e));
-    }
   }
 
-  async handleAdvancedEasterEggTap() {
-    if (isRecruitFeatureUnlocked(this.plugin.settings)) return;
-    const now = Date.now();
-    if (!this._advancedTapAt || now - this._advancedTapAt > 4500) this._advancedTapCount = 0;
-    this._advancedTapAt = now;
-    this._advancedTapCount = (this._advancedTapCount || 0) + 1;
-    if (this._advancedTapCount < 5) return;
-
-    this._advancedTapCount = 0;
-    this.plugin.settings.recruitFeatureUnlocked = true;
-    await this.plugin.saveSettings();
-    this.plugin.shell.refreshOutlineView();
-    this.renderSettings();
-    this.showHrUnlockFireworks();
-    new obsidian.Notice("招聘与晋升评审已启用", 6000);
-  }
-
-  showHrUnlockFireworks() {
-    const { containerEl } = this;
-    if (!containerEl) return;
-    const old = containerEl.querySelector(".lexvoice-hr-unlock-burst");
-    if (old) old.remove();
-
-    const burst = containerEl.createDiv({ cls: "lexvoice-hr-unlock-burst" });
-    const sparks = burst.createDiv({ cls: "lexvoice-hr-unlock-sparks" });
-    const points = [
-      [-160, -92], [-118, -132], [-66, -158], [0, -176], [74, -150], [130, -106],
-      [166, -42], [152, 44], [108, 104], [42, 146], [-36, 146], [-108, 104],
-      [-154, 34], [-132, -36], [-72, -86], [82, -72], [44, 82], [-48, 74],
-    ];
-    points.forEach(([x, y], i) => {
-      const spark = sparks.createDiv({ cls: "lexvoice-hr-spark" });
-      spark.style.setProperty("--x", x + "px");
-      spark.style.setProperty("--y", y + "px");
-      spark.style.setProperty("--d", (i % 5) * 38 + "ms");
-    });
-
-    const card = burst.createDiv({ cls: "lexvoice-hr-unlock-card" });
-    card.createDiv({ cls: "lexvoice-hr-unlock-kicker", text: "进阶评审" });
-    card.createDiv({ cls: "lexvoice-hr-unlock-title", text: "招聘与晋升评审已启用" });
-    card.createDiv({ cls: "lexvoice-hr-unlock-copy", text: "现在可以在模板中选择招聘评估或晋升评审。" });
-
-    window.setTimeout(() => burst.remove(), 2000);
-  }
 
   renderDataRiskNotice(parent, variant = "") {
     const cls = ["lexvoice-risk-notice", variant].filter(Boolean).join(" ");
@@ -1358,7 +1296,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c)
       .setName("AI 整理服务")
-      .setDesc("用于纪要整理、问一问、沉淀、招聘提纲、重整和翻译。")
+      .setDesc("用于纪要整理、问一问、沉淀、重整和翻译。")
       .setHeading();
     // 「已保存配置」已升级为顶部「API 方案」（同时含转写 + AI 整理），不再在此处单列 LLM-only 版本。
 
@@ -1911,7 +1849,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         }));
 
     new obsidian.Setting(c).setName("报告页脚公司名（可选）")
-      .setDesc("填写后作为「招聘评估 / 研讨」报告页脚的公司名；留空则用纪要里的「公司/」标签。报告不含公司 logo。")
+      .setDesc("填写后作为「研讨」报告页脚的公司名；留空则用纪要里的「公司/」标签。报告不含公司 logo。")
       .addText(t => t
         .setPlaceholder("（留空＝用纪要的 公司/ 标签）")
         .setValue(this.plugin.settings.reportBrandName || "")
@@ -2352,46 +2290,6 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     return setting;
   }
 
-  renderRecruit(c) {
-    if (!isRecruitFeatureUnlocked(this.plugin.settings)) return;  // 防御：未解锁不渲染
-    const s = this.plugin.settings;
-    new obsidian.Setting(c)
-      .setName("招聘项目")
-      .setDesc("设置岗位项目、候选人简历和招聘主页的保存位置。面试评估会自动归入对应岗位项目。")
-      .setHeading();
-
-    this.addFolderPathSetting(c, {
-      name: "JD（招聘项目）库路径",
-      desc: "每个招聘岗位是这个文件夹下的一个子文件夹，内含同名 JD 文件与候选人看板 Base。",
-      placeholder: "JD",
-      getValue: () => s.recruitJdFolderPath,
-      setValue: async (v) => { s.recruitJdFolderPath = v || "JD"; await this.plugin.saveSettings(); },
-    });
-
-    this.addFolderPathSetting(c, {
-      name: "简历库路径",
-      desc: "从这个文件夹挑选候选人简历 PDF（或手动粘贴）注入面试评估。",
-      placeholder: "简历",
-      getValue: () => s.recruitResumeFolderPath,
-      setValue: async (v) => { s.recruitResumeFolderPath = v || "简历"; await this.plugin.saveSettings(); },
-    });
-
-    this.addFolderPathSetting(c, {
-      name: "招聘主页路径（可选）",
-      desc: "留空则跟随 JD 库根。招聘主页聚合所有在招项目、本周面试与最近纪要。",
-      placeholder: "（留空＝跟随 JD 库根）",
-      getValue: () => s.recruitHomepagePath,
-      setValue: async (v) => { s.recruitHomepagePath = v; await this.plugin.saveSettings(); },
-    });
-
-    new obsidian.Setting(c)
-      .setName("简历脱敏后再注入")
-      .setDesc("开启后，从 PDF 导入的简历文本里的手机号、身份证号、邮箱会替换成占位符再注入评估；原 PDF 不改动。建议保持开启。")
-      .addToggle((t) => t.setValue(s.recruitResumeDesensitize !== false).onChange(async (v) => {
-        s.recruitResumeDesensitize = !!v;
-        await this.plugin.saveSettings();
-      }));
-  }
 
   renderAdvanced(c) {
     // ---- 录音行为 ----

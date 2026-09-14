@@ -12,7 +12,7 @@ const code = readFileSync(new URL("../main.js", import.meta.url), "utf8");
 
 // onload 里应当装配好的域服务字段。新增域服务时在这里补一行。
 const DOMAIN_FIELDS = [
-  "diagnostics", "delivery", "recruit", "noteWriter", "tasks", "queueRetry", "versions", "people",
+  "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "migrations", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
   "library", "shell", "recording", "sessionFinalize", "imports", "externalInbox", "repolish",
   "inbox", "knowledgeExtraction", "recorder", "queue", "bubble",
@@ -230,7 +230,8 @@ async function main() {
   }
 
   // 用户可见的装配面没有整体丢失（命令、视图、设置页、状态栏定时器）
-  expect(plugin.commands.length >= 30, `注册的命令数异常：${plugin.commands.length}`);
+  // 招聘/晋升评审场景已移除，命令数比此前少 5 个（刷新招聘统计×2、重建总览看板、重建招聘主页、招聘/晋升内联编辑）。
+  expect(plugin.commands.length >= 25, `注册的命令数异常：${plugin.commands.length}`);
   expect(plugin.views.length >= 2, `注册的视图数异常：${plugin.views.length}`);
   expect(plugin.settingTabs.length >= 1, "没有注册设置页");
   expect(plugin.intervals.length >= 1, "没有注册状态栏维护定时器");

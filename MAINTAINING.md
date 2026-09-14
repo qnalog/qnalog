@@ -55,10 +55,11 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 
 #### 已完成的 P1（2026-09-14）
 
-`src/main.ts` 从 10,357 行 / 272 个成员降到 627 行 / 17 个成员，抽出 22 个域服务与 3 个共享辅助：
+`src/main.ts` 从 10,357 行 / 272 个成员降到 627 行 / 17 个成员，抽出 22 个域服务与 3 个共享辅助
+（下表为拆分当时的清单；招聘 RecruitService 已随 §7 的场景裁剪移除）：
 
 ```
-诊断 DiagnosticsService · 交付 DeliveryService · 招聘 RecruitService · 笔记正文 NoteWriter
+诊断 DiagnosticsService · 交付 DeliveryService · 笔记正文 NoteWriter
 任务状态 TaskActivityService · 队列失败恢复 QueueRetryService · 版本块 VersionStore · 人员库 PeopleDirectoryService
 转写服务配置 TranscribeProfileService · 词汇表与行业提示词 VocabularyService · 迁移与清理 MigrationService
 实时大纲 RealtimeOutlineService · 会中工作台 MeetingWorkbenchService · 回听时间轴 AudioTimeLinkService
@@ -296,6 +297,35 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 ---
 
+## 7. 功能边界：已裁剪的场景
+
+**QnALog 只做四件事：开箱即用的配置、录音、可靠的转写、知识的沉淀与复用。** 围绕核心链路扩展出来的
+垂直场景不与核心目标竞争，占用的却是同一份维护成本（每个场景都要跟着提示词、设置页、视图与测试一起改）。
+
+2026-09-14 裁掉 HR 场景，即以下三个模式及其专属设施：
+
+| 移除内容 | 说明 |
+|---|---|
+| 模式 `recruit` / `recruit-needs` / `promotion-review` | 招聘评估、招聘需求挖掘、晋升评审 |
+| `src/recruit/`、`src/promotion/`、`src/prompts/recruit-hrbp.ts` | JD 库与项目三件套、候选人看板、招聘主页 code block、晋升初审生成 |
+| 招聘/晋升的 UI | 侧边栏「对象」卡片与内联编辑、招聘上下文弹窗、设置页招聘分组、5 次点击解锁彩蛋、招聘看板 Bases 视图 |
+| 招聘专用的提示词与解析 | 逐行问答协议、14 维画像覆盖扫描、追问卡派生、简历脱敏、JD 章节抽取 |
+| 相关设置键 | `recruit*`、`promotionReviewContext`、`polishPromptRecruit`；`SETTINGS_SCHEMA_VERSION` 4 → 5 |
+
+保留的模式：综合纪要、工作纪要、访谈、个人笔记、学习笔记、研讨会、圆桌讨论（兼容历史笔记）、关闭（仅转写）。
+
+**兼容规则（改这一节前先读）**：
+
+- **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
+  用户已有的招聘/晋升笔记会留在原处，只是不再有对应入口；`data.json` 里残留的 `recruiting` /
+  `promotionReview` 分组不再被读取，首次加载会通过迁移报告告知（§4.2）。
+- **数据层字面量继续按 §3 保护**：`lexvoice/*` 标签、`LexVoice/…` 目录、`类型: LexVoice派生版本`、
+  密钥混淆盐、`LEXVOICE_*` 常量、`lexvoice-*` 类名与视图类型一律不动。
+- **读旧笔记必须安全降级。** 旧笔记的 frontmatter 里可能仍是 `mode: recruit`，未知 mode 一律按
+  「识别不出模式」处理，不得抛错、不得让面板或流水线崩掉（`isKnownPolishMode`、`detectRecentNoteMode`
+  等处的兜底即为此）。
+- **要重新加回某个场景**：按第二条处理——自己实现，并把它当作一等公民补上提示词、设置登记、测试与本文档。
+
 ## 6. 待办（按 §1 的优先级排列）
 
 **结构（§1.1.1）**
@@ -315,7 +345,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] 设置页不得静默改写用户配置：`src/ui/settings-tab.ts` 的 `renderSpeaker` 在服务不可用时直接改写 `importTranscribeProvider`，应改为保留用户选择并给出提示。
 - [ ] 自定义服务的密钥必填判定：未知 provider id 一律按 `requiresKey: false` 处理，导致密钥栏显示"可选"，但导入时运行时会因缺 key 报错；应改为按 endpoint 推断。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
-- [ ] 类型检查盲区：6 个文件带 `@ts-nocheck`（`src/main.ts` 10.4k 行、`src/ui/modals.ts` 2,995 行、`src/ui/settings-tab.ts` 2,667 行、`src/report/render.ts`、`src/recruit/bases-view.ts`、`src/asr/clients.ts`），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
+- [ ] 类型检查盲区：47 个文件带 `@ts-nocheck`（P1 拆分出的域服务默认沿用；`npm run check:undefined-symbols` 按 tsconfig 自动识别，不写死清单），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
 
 **第二条：提升性功能（按需，不排期）**
 

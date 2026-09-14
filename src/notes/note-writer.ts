@@ -5,7 +5,6 @@
 import * as obsidian from "obsidian";
 import { lexvoiceConfirm } from "../ui/helpers";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
-import { isRecruitFeatureUnlocked } from "../recruit";
 import { splitOutSedimentBlock } from "../sediment";
 import { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
@@ -16,7 +15,7 @@ import { splitLeadingFrontmatter } from "../version-content";
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { buildExternalAudioSourceDetails, buildInterviewBriefDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildPromotionPreReviewDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
+import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { buildLexVoiceRenamedMarkdownPath, extractAllRawBlocksFromText, extractLexVoiceTranscriptSegments, generateTitleTag, inferLexVoiceNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
@@ -103,8 +102,6 @@ export class NoteWriter {
     const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
     const audioRow = masterAudioBlock || session.segments.map((s, i) => getAudioSegmentListItem(s, i)).filter(Boolean).join("\n");
     const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
-    const interviewBriefBlock = buildInterviewBriefDetails(session);
-    const promotionPreReviewBlock = buildPromotionPreReviewDetails(session);
     const playbackTimelineBlock = retainAudio ? buildPlaybackTimelineDetails(session) : "";
     const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
     const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.host.settings.llmModel) : buildRecordingInfoDetails({
@@ -149,10 +146,6 @@ export class NoteWriter {
       recordingInfoBlock ? "" : null,
       externalAudioSourceBlock || null,
       externalAudioSourceBlock ? "" : null,
-      promotionPreReviewBlock || null,
-      promotionPreReviewBlock ? "" : null,
-      interviewBriefBlock || null,
-      interviewBriefBlock ? "" : null,
       meetingWorkbenchBlock || null,
       meetingWorkbenchBlock ? "" : null,
       realtimeOutlineBlock || null,
@@ -260,7 +253,7 @@ export class NoteWriter {
       await this.host.app.vault.create(path, content);
     }
   }
-  // 把内容插到 segments-start marker 之前（即分段转写区上方），用于录音期把面试提纲放在段落之上。
+  // 把内容插到 segments-start marker 之前（即分段转写区上方），用于录音期把会中生成的提纲放在段落之上。
   async insertBeforeSegmentsStart(path, content, sessionId) {
     const file = this.host.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
@@ -340,8 +333,7 @@ export class NoteWriter {
     new obsidian.Notice("AI 润色中…");
     try {
       const mode = getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
-      const ctx = mode === "recruit" ? this.host.settings.recruitContext : null;
-      const polished = await polishTranscript(this.host, raw, mode, ctx);
+      const polished = await polishTranscript(this.host, raw, mode, null);
       if (sel) editor.replaceSelection(polished); else editor.setValue(polished);
       new obsidian.Notice("润色完成");
     } catch (e) {
@@ -380,12 +372,6 @@ export class NoteWriter {
       "独白": "monologue",
       "手记": "monologue",
       "个人笔记": "monologue",
-      "招聘面试": "recruit",
-      "招聘评估": "recruit",
-      "面试": "recruit",
-      "晋升评审": "promotion-review",
-      "晋升述职评审": "promotion-review",
-      "述职评审": "promotion-review",
     };
     if (typeToMode[typeStr]) {
       const mode = typeToMode[typeStr];
@@ -468,10 +454,6 @@ export class NoteWriter {
       return;
     }
     const mode = sources[sources.length - 1].mode || sources[0].mode || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
-    if (["promotion-review", "recruit", "recruit-needs"].includes(mode) && !isRecruitFeatureUnlocked(this.host.settings)) {
-      new obsidian.Notice("该进阶评审模式尚未启用，无法合并纪要。", 8000);
-      return;
-    }
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
     const moment = window.moment;
     const startedAtIso = sources[0].startedAt || new Date().toISOString();

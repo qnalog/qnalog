@@ -12,11 +12,8 @@ import {getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
 
 import { UpdateService } from "./update-service";
 
-import { listJDProjects } from "./recruit/jd-projects";
 
-import {DEFAULT_RECRUIT_QUALITIES, isRecruitFeatureUnlocked, parseJdProject, renderRecruitCandidateBase, renderRecruitAggregateBase } from "./recruit";
 
-import {registerRecruitBoardView } from "./recruit/bases-view";
 
 import {DEFAULT_SETTINGS } from "./shared/defaults";
 
@@ -60,7 +57,6 @@ import { OutlineView } from "./ui/outline-view";
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import { TaskActivityService } from "./tasks/task-activity-service";
 import { DeliveryService } from "./delivery/delivery-service";
-import { RecruitService } from "./recruit/recruit-service";
 import { NoteWriter } from "./notes/note-writer";
 import { QueueRetryService } from "./queue/queue-retry-service";
 import { VersionStore } from "./versions/version-store";
@@ -116,7 +112,6 @@ class LexVoicePlugin extends obsidian.Plugin {
     // 状态栏与录音器晚于 loadAll 建立，所以 tasks.start()/startStatusBar() 仍留在原位调用。
     this.diagnostics = new DiagnosticsService(this);
     this.delivery = new DeliveryService(this);
-    this.recruit = new RecruitService(this);
     this.noteWriter = new NoteWriter(this);
     this.tasks = new TaskActivityService(this);
     this.queueRetry = new QueueRetryService(this);
@@ -197,8 +192,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
-    // 自定义 Bases 视图「招聘看板」（@since 1.10.0；内部自带守卫，老版本/未启用 Bases 时安全跳过）。
-    registerRecruitBoardView(this);
     this.addRibbonIcon("list-tree", "QnALog 实时纪要面板", () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
@@ -298,111 +291,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       void this.externalInbox.scanExternalInboxFolder({ manual: false, source: "poll" });
     }, EXTERNAL_INBOX_SCAN_INTERVAL_MS));
 
-    // F4.3：招聘项目统计自动重算——JD 库下候选人纪要 create/modify/delete/rename 时，防抖重算其所在项目文件夹。
-    // 防自激：consider() 过滤掉 JD 文件本身（basename==父文件夹名），故 recalc 写 JD 触发的 modify 不会再触发重算。
-    const recruitFileEvent = (file, oldPath) => {
-      try {
-        if (!isRecruitFeatureUnlocked(this.settings)) return;
-        const root = obsidian.normalizePath(this.settings.recruitJdFolderPath || "JD");
-        const underRoot = (p) => { const np = obsidian.normalizePath(p || ""); return np === root || np.startsWith(root + "/"); };
-        // 文件夹整体重命名/移动：Obsidian 只发一次 rename(TFolder, oldPath)，不逐子文件发——直接对新旧文件夹路径
-        // schedule（recalcRecruitProject 内部"无同名 JD 则早退"，传文件夹路径即可，无需它是 md）。
-        if (file instanceof obsidian.TFolder) {
-          if (underRoot(file.path)) this.recruit.scheduleRecruitRecalc(obsidian.normalizePath(file.path));
-          if (oldPath && underRoot(oldPath)) this.recruit.scheduleRecruitRecalc(obsidian.normalizePath(oldPath));
-          return;
-        }
-        const consider = (p) => {
-          if (!p) return;
-          const np = obsidian.normalizePath(p);
-          if (!underRoot(np)) return;                              // 不在 JD 库下
-          if (!/\.md$/i.test(np)) return;                          // 只看 md（.base 不触发）
-          const parent = np.replace(/\/[^/]*$/, "");
-          const folderName = parent.replace(/^.*\//, "");
-          const base = np.replace(/^.*\//, "").replace(/\.md$/i, "");
-          if (base === folderName) return;                         // JD 文件本身，跳过（防自激）
-          this.recruit.scheduleRecruitRecalc(parent);
-        };
-        consider(file && file.path);
-        if (oldPath) consider(oldPath);                            // rename：源/目标父文件夹都重算（计数才能此消彼长）
-      } catch (e) { console.error("[QnALog] recruit file event", e); }
-    };
-    this.registerEvent(this.app.vault.on("create", (f) => recruitFileEvent(f)));
-    this.registerEvent(this.app.vault.on("modify", (f) => recruitFileEvent(f)));
-    this.registerEvent(this.app.vault.on("delete", (f) => recruitFileEvent(f)));
-    this.registerEvent(this.app.vault.on("rename", (f, oldPath) => recruitFileEvent(f, oldPath)));
-
-    this.addCommand({ id: "refresh-recruit-project", name: "刷新当前招聘项目统计", callback: () => {
-      const file = this.app.workspace.getActiveFile();
-      if (!(file instanceof obsidian.TFile) || !file.parent) { new obsidian.Notice("请先打开招聘项目内的任意文件"); return; }
-      this.recruit.recalcRecruitProject(file.parent.path)
-        .then(ok => new obsidian.Notice(ok ? "已刷新当前招聘项目统计" : "当前文件不在招聘项目文件夹内（需与同名 JD 同目录）"))
-        .catch(e => { console.error(e); new obsidian.Notice("刷新失败，请稍后重试"); });
-    } });
-    this.addCommand({ id: "refresh-all-recruit-projects", name: "刷新全部招聘项目统计", callback: async () => {
-      const projects = listJDProjects(this.app, this.settings.recruitJdFolderPath);
-      let n = 0;
-      for (const p of projects) { if (p.hasJd) { try { await this.recruit.recalcRecruitProject(p.folderPath); n++; } catch (e) { console.error(e); } } }
-      new obsidian.Notice(`已刷新 ${n} 个招聘项目统计`);
-    } });
-
-    // F6：重建 JD 库根的聚合看板（招聘项目总览）。
-    this.addCommand({ id: "rebuild-recruit-aggregate-base", name: "重建招聘项目总览看板", callback: async () => {
-      try {
-        const root = obsidian.normalizePath(this.settings.recruitJdFolderPath || "JD");
-        if (!(this.app.vault.getAbstractFileByPath(root) instanceof obsidian.TFolder)) await this.app.vault.createFolder(root);
-        const basePath = obsidian.normalizePath(`${root}/招聘项目.base`);
-        const existing = this.app.vault.getAbstractFileByPath(basePath);
-        if (existing instanceof obsidian.TFile) await this.app.vault.modify(existing, renderRecruitAggregateBase());
-        else await this.app.vault.create(basePath, renderRecruitAggregateBase());
-        const bf = this.app.vault.getAbstractFileByPath(basePath);
-        if (bf instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(bf);
-        new obsidian.Notice("招聘项目总览看板已重建");
-      } catch (e) { console.error(e); new obsidian.Notice("重建失败，请稍后重试"); }
-    } });
-
-    // F5：右键 JD 项目文件夹 → 打开 / 重建项目看板（解锁后才出现）。
-    this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
-      try {
-        if (!isRecruitFeatureUnlocked(this.settings)) return;
-        if (!(file instanceof obsidian.TFolder)) return;
-        const jdFile = (file.children || []).find(f => f instanceof obsidian.TFile && f.extension === "md" && f.basename === file.name);
-        if (!jdFile) return;  // 不是招聘项目文件夹（无同名 JD）
-        const basePath = obsidian.normalizePath(`${file.path}/${file.name}.base`);
-        const baseExists = this.app.vault.getAbstractFileByPath(basePath) instanceof obsidian.TFile;
-        const buildBase = async (open) => {
-          const parsed = await parseJdProject(this.app, jdFile.path);
-          const names = (parsed.综合素质 || []).map(q => q.素质).filter(Boolean);
-          const content = renderRecruitCandidateBase(names.length ? names : DEFAULT_RECRUIT_QUALITIES.map(q => q.素质));
-          const ex = this.app.vault.getAbstractFileByPath(basePath);
-          if (ex instanceof obsidian.TFile) await this.app.vault.modify(ex, content);
-          else await this.app.vault.create(basePath, content);
-          if (open) { const bf = this.app.vault.getAbstractFileByPath(basePath); if (bf instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(bf); }
-        };
-        menu.addItem(item => item.setTitle(baseExists ? "打开项目看板" : "重建项目看板").setIcon("layout-dashboard").onClick(async () => {
-          try {
-            if (!baseExists) { await buildBase(true); return; }
-            const bf = this.app.vault.getAbstractFileByPath(basePath);
-            if (bf instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(bf);
-          } catch (e) { console.error(e); new obsidian.Notice("打开项目看板失败"); }
-        }));
-        if (baseExists) {
-          menu.addItem(item => item.setTitle("重建项目看板（刷新素质列）").setIcon("refresh-cw").onClick(async () => {
-            try { await buildBase(true); new obsidian.Notice("项目看板已按当前综合素质重建"); }
-            catch (e) { console.error(e); new obsidian.Notice("重建失败"); }
-          }));
-        }
-      } catch (e) { console.error("[QnALog] recruit folder menu", e); }
-    }));
-
-    // F7：招聘主页 4 个 code block 渲染器（实时计算零落盘，外层 try/catch 降级重试）+ 重建主页命令。
-    this.recruit.mountHrBlock("lexvoice-hr-actions", (source, el, ctx) => this.recruit.renderHrActions(source, el, ctx));
-    this.recruit.mountHrBlock("lexvoice-hr-stats", (source, el, ctx) => this.recruit.renderHrStats(source, el, ctx));
-    this.recruit.mountHrBlock("lexvoice-hr-links", (source, el, ctx) => this.recruit.renderHrLinks(source, el, ctx));
-    this.recruit.mountHrBlock("lexvoice-hr-candidates", (source, el, ctx) => this.recruit.renderHrCandidates(source, el, ctx));
-    this.recruit.mountHrBlock("lexvoice-hr-recent", (source, el, ctx) => this.recruit.renderHrRecent(source, el, ctx));
-    this.recruit.mountHrBlock("lexvoice-hr-latest-notes", (source, el, ctx) => this.recruit.renderHrLatest(source, el, ctx));
-    this.addCommand({ id: "rebuild-recruit-homepage", name: "新建 / 重建招聘主页", callback: () => this.recruit.rebuildRecruitHomepage() });
     this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.migrations.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: "清理过期分段音频缓存", callback: async () => {
       const result = await this.recording.cleanupExpiredSegmentCacheFiles();
@@ -495,8 +383,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       try { if (this.recorder && this.recorder.state !== "idle") await this.recorder.stop(); } catch { /* intentionally empty */ }
     })();
     if (this.bubble) this.bubble.unmount();
-    // 清理招聘项目重算 Debouncer，避免卸载后 pending timer 触发已 detach 的实例
-    try { if (this.recruit) this.recruit.dispose(); } catch { /* intentionally empty */ }
   }
 
   async loadAll() {

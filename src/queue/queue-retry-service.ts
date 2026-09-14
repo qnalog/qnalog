@@ -30,7 +30,6 @@ import { NoteIndexService } from "../notes/note-index-service";
 import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
-import { RecruitService } from "../recruit/recruit-service";
 import { NoteWriter } from "../notes/note-writer";
 
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -46,7 +45,6 @@ export interface QueueRetryHost {
   noteWriter: NoteWriter;
   queue: TaskQueue | null;
   recorder: RecorderService | null;
-  recruit: RecruitService;
   /** 视图外壳服务：队列状态变化后刷新侧边栏。 */
   shell: { refreshOutlineView(): void };
 
@@ -515,7 +513,6 @@ export class QueueRetryService {
           this.host,
       task.segments || [],
       task.mode,
-      task.recruitContext || null,
       task.sessionMeta || null,
       task.speakerFrontmatter || null,
     );
@@ -531,7 +528,6 @@ export class QueueRetryService {
       sourceMeta: task.sourceMeta || null,
       externalAudioSource: task.externalAudioSource || null,
       textImportSources: task.textImportSources || [],
-      recruitContext: task.recruitContext || null,
       meetingWorkbench: task.sessionMeta && task.sessionMeta.meetingWorkbench || null,
       segments: Array.isArray(task.segments) ? task.segments : [],
       multiSourceAudio: task.source === "merged-notes",
@@ -554,14 +550,7 @@ export class QueueRetryService {
     }
     await clearCommittedBriefingCheckpoint(this.host, task.sessionMeta);
     let targetFile = file;
-    const recruitContext = task.mode === "recruit"
-      ? await this.host.recruit.resolveRecruitProjectContext(task.recruitContext || null)
-      : task.recruitContext;
-    if (task.mode === "recruit") task.recruitContext = recruitContext;
-    // 招聘评估重试：与 finalizeSession 一致，移到 JD 项目文件夹 + 候选人-轮次-MMDD 命名（否则项目统计漏算这一场）。
-    const renamed = (task.mode === "recruit" && recruitContext && recruitContext.jdFile)
-      ? await this.host.recruit.relocateRecruitNote({ mdPath: file.path, recruitContext }, recruitContext)
-      : await this.host.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, task.mode);
+    const renamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, task.mode);
     if (renamed instanceof obsidian.TFile) targetFile = renamed;
     await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(targetFile, {
       meetingDate: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || "",

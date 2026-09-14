@@ -8,7 +8,6 @@ import { getAudioTimeLink, getSegmentAudioLinkOffsetMs } from "../notes/audio-re
 
 import { getCustomPromptModeTemplate } from "../shared/mode-meta";
 
-import { buildPromotionReviewContextPrefix, buildPromotionReviewPartContextPrefix } from "../promotion";
 
 import { logLlmRequestDiagnostic } from "../llm/core";
 
@@ -135,8 +134,6 @@ export const POLISH_PROMPTS = {
   seminar: buildPrompt(MODE_BODIES.seminar, false, "seminar"),
   huddle: buildPrompt(MODE_BODIES.huddle, false, "huddle"),
   monologue: buildPrompt(MODE_BODIES.monologue, false, "monologue"),
-  recruit: buildPrompt(MODE_BODIES.recruit, false, "recruit"),
-  "promotion-review": buildPrompt(MODE_BODIES["promotion-review"], false, "promotion-review"),
 };
 
 export const MERGE_PROMPTS = {
@@ -147,8 +144,6 @@ export const MERGE_PROMPTS = {
   seminar: buildPrompt(MODE_BODIES.seminar, true, "seminar"),
   huddle: buildPrompt(MODE_BODIES.huddle, true, "huddle"),
   monologue: buildPrompt(MODE_BODIES.monologue, true, "monologue"),
-  recruit: buildPrompt(MODE_BODIES.recruit, true, "recruit"),
-  "promotion-review": buildPrompt(MODE_BODIES["promotion-review"], true, "promotion-review"),
 };
 
 // 最终纪要被 max_tokens 截断时，正文顶部插显式告警——把"静默残缺"变成"用户可见"。守住"不缺漏"底线。
@@ -175,12 +170,6 @@ export function buildSessionMetaPrefix(meta, mode, options = {}) {
     lines.push("");
     lines.push("frontmatter 的「日期」「时间」「时长」「mode」字段必须照搬上面给定的值；其他字段（主题、参会人等）根据转写内容推断。");
     sections.push(lines.join("\n"));
-  }
-  if (mode === "promotion-review" && meta && meta.promotionReviewContext) {
-    const promotionContext = options.promotionPart
-      ? buildPromotionReviewPartContextPrefix(meta.promotionReviewContext)
-      : buildPromotionReviewContextPrefix(meta.promotionReviewContext);
-    if (promotionContext) sections.push(promotionContext);
   }
   return sections.join("\n\n---\n\n");
 }
@@ -234,8 +223,8 @@ export function buildAdaptiveBriefingLengthInstruction(mode, stats) {
     lines.push("- 学习笔记尤其要随材料长度扩展：学习要点、概念术语、可收纳卡片和追问问题都应跟随内容密度增加；长课程优先按章节输出全景学习笔记。");
   } else if (mode === "meeting" || mode === "seminar" || mode === "huddle") {
     lines.push("- 会议/研讨类内容应随议题数量扩展：主要议题、观点谱系、决策、风险、待办和悬而未决问题都要按实际出现情况保留，不要为保持短小而合并掉关键差异。");
-  } else if (mode === "interview" || mode === "recruit") {
-    lines.push("- 访谈/招聘类内容应随问题数量和证据密度扩展：保留每个关键问题、回答证据、追问和判断依据，不要只输出总评。");
+  } else if (mode === "interview") {
+    lines.push("- 访谈类内容应随问题数量和证据密度扩展：保留每个关键问题、回答证据和判断依据，不要只输出总评。");
   } else if (mode === "monologue") {
     lines.push("- 个人口述应随思路分叉扩展：保留所有有信息量的判断、问题和延伸方向，不要把长独白压成一段摘要。");
   }
@@ -568,7 +557,6 @@ export function getBriefingPipelineTargetChars(plugin, mode, repolishOptions) {
 export function buildBriefingPipelineOptionsKey(plugin, mode, repolishOptions) {
   return JSON.stringify({
     pipeline: 2,
-    promotionPipeline: mode === "promotion-review" ? 2 : 0,
     mode,
     promptTemplate: String(plugin.settings.activeTemplateByMode && plugin.settings.activeTemplateByMode[mode] || ""),
     structureLevel: String(repolishOptions && repolishOptions.structureLevel || plugin.settings.briefingStructureLevel || "balanced"),

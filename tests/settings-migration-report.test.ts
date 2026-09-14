@@ -64,6 +64,31 @@ describe("settings migration report", () => {
     expect(report).toBeNull();
   });
 
+  // 场景裁剪（MAINTAINING.md §7）：schemaVersion 4 → 5 移除了招聘/晋升场景。
+  // 用户手里那份 data.json 里这两个分组会消失，报告必须说清"丢了什么"以及"笔记文件不受影响"。
+  it("裁剪 HR 场景时，明确报告被丢弃的招聘/晋升分组且不改动用户笔记", () => {
+    const savedV4 = {
+      schemaVersion: 4,
+      speech: { providers: { siliconflow: { apiKey: "lvk1:x" } } },
+      recruiting: { unlocked: true, jdFolder: "JD", context: { jd: "岗位职责" } },
+      promotionReview: { context: { requirements: "P8/P9" } },
+    };
+    const writtenV5 = { schemaVersion: 5, speech: savedV4.speech };
+
+    const report = buildSettingsMigrationReport(savedV4, writtenV5, { savedVersion: 4, currentVersion: 5 });
+    expect(report).not.toBeNull();
+    expect(report!.direction).toBe("upgrade");
+    expect(report!.droppedGroups.sort()).toEqual(["promotionReview", "recruiting"]);
+    expect(report!.keptGroups).toEqual(["speech"]);
+
+    const actions = report!.actions.join("\n");
+    expect(actions).toContain("招聘与晋升评审场景已从本版本移除");
+    // 兼容底线：只重写设置文件，不碰知识库内容
+    expect(actions).toContain("不会被删除或改写");
+    // 招聘/晋升不再是"已保留"，不得再出现在保留说明里
+    expect(report!.details).not.toContain("招聘上下文与资料库已保留");
+  });
+
   it("未知分组也会被如实列出，不静默吞掉", () => {
     const report = buildSettingsMigrationReport(
       { schemaVersion: 5, somethingNew: { a: 1 } },

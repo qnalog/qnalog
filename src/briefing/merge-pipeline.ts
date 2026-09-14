@@ -4,9 +4,7 @@
 
 import { applyBriefingLanguageInstruction, getSegmentsDurationMs, getSessionMetaDurationMs, truncateForLlmPrompt } from "../shared/util-text";
 
-import { buildCompactRecruitContextPrefix, buildRecruitContextPrefix, buildRecruitTextImportMergePrompt, generateJobPortrait } from "../recruit";
 
-import { buildPromotionReviewConsolidationPrompt, buildPromotionReviewPartInstruction } from "../promotion";
 
 import { buildPeopleContextForLlm, mergeUniqueStrings } from "../people";
 
@@ -28,7 +26,6 @@ import { BriefingPipelineIncompleteError, assembleBriefingParts, assessBriefingP
 
 import { buildSynthesisConsolidationPrompt } from "./synthesis-policy";
 
-import { TEXT_IMPORT_FINAL_CONTEXT_COMPACT_THRESHOLD_CHARS, TEXT_IMPORT_RECRUIT_CONTEXT_CHARS } from "../shared/limits";
 
 import { mergeBriefingSedimentObjects, resolveKnownSpeakerLabels } from "../notes/recording-issues";
 
@@ -44,11 +41,7 @@ export async function polishTranscript(plugin, transcript, mode, recruitContext,
   if (!transcript || !transcript.trim()) return "";
   if (mode === "off") return transcript;
   const tpl = resolveTemplatePromptForMode(plugin, mode, false);
-  const sys = mode === "recruit"
-    ? "你是严格的招聘评估官，立场是替面试官筛掉不达标候选人，而不是替候选人辩护。默认假设候选人不达标，需要看到正向证据才能加分。诚实/不夸大/承认边界是基础职业素养，不计入亮点。结果未闭环、独立主导不清、行业不匹配、关键能力仅'接触过'级别——这些必须列入红旗。"
-    : mode === "promotion-review"
-      ? "你是审慎、中立的晋升评审证据编辑。依据公司提供的具体岗位与两级任职要求分析候选人表现，严格区分已有证据、部分证据、证据不足和反证，不默认通过，也不默认不达标。最终决定由评委作出。"
-      : "你是一位专业的文字编辑助手，擅长整理访谈、会议与口述的录音转写。";
+  const sys = "你是一位专业的文字编辑助手，擅长整理访谈、会议与口述的录音转写。";
   let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", transcript);
   userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
   userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
@@ -71,24 +64,6 @@ export async function polishTranscript(plugin, transcript, mode, recruitContext,
   if (meetingWorkbenchPrompt) userPrompt = meetingWorkbenchPrompt + "\n\n---\n\n" + userPrompt;
   const peopleContext = await buildPeopleContextForLlm(plugin);
   if (peopleContext) userPrompt = peopleContext + "\n\n---\n\n" + userPrompt;
-  if (mode === "recruit" && recruitContext) {
-    const recruitPrefix = buildRecruitContextPrefix(recruitContext);
-    const compactRecruitContext = sessionMeta
-      && sessionMeta.source === "text-import"
-      && recruitPrefix.length + userPrompt.length > TEXT_IMPORT_FINAL_CONTEXT_COMPACT_THRESHOLD_CHARS;
-    if (compactRecruitContext) {
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_recruit_context_compacted", "招聘文本导入上下文过长，已压缩注入", {
-        mode,
-        source: sessionMeta.source,
-        recruitContextChars: recruitPrefix.length,
-        promptCharsBeforeContext: userPrompt.length,
-        compactChars: TEXT_IMPORT_RECRUIT_CONTEXT_CHARS,
-      });
-    }
-    userPrompt = (compactRecruitContext
-      ? truncateForLlmPrompt(recruitPrefix, TEXT_IMPORT_RECRUIT_CONTEXT_CHARS)
-      : recruitPrefix) + "\n\n" + userPrompt;
-  }
   // 流式：merge 是最长、最贵、跑一次的调用。流式 + 空闲超时确保服务端只要在持续输出就不会被
   // 客户端总超时 abort，避免"扣了钱却因超时拿不到结果"的浪费（符合总纲：不因工程缺陷浪费）。
   const raw = await callLlm(plugin, sys, userPrompt, { stream: true, payload: { max_tokens: briefingMergeMaxTokens } });
@@ -96,13 +71,6 @@ export async function polishTranscript(plugin, transcript, mode, recruitContext,
   const polished = postProcessBriefingOutput(sedimentPreExtraction.cleaned, mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin, mode));
   return sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
 }
-
-// ============================================================
-// 招聘需求挖掘模式（recruit-needs）· Phase 1：会后岗位画像生成
-// HRBP × 业务方的"招聘需求沟通会"→ 结构化 JobPortrait。详见产品 spec。
-// ============================================================
-
-// 14 维画像 schema baseline（spec §7.2 / §8.1）。category 决定渲染分区。
 
 // 清稿：把母本 raw 分段转写整理成高保真可读稿（非纪要、不以缩短为目标）。
 // 清稿的输出体量接近有效原文，因此输入块必须给输出留足空间；块过大会在逐块整理时截断并真实丢失内容。
@@ -157,8 +125,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     : preferredTargetChars;
   const partPlans = planBriefingParts(list, targetChars);
   if (!partPlans.length) return null;
-  const promotionMultiPart = mode === "promotion-review" && partPlans.length > 1;
-  const requiresGlobalConsolidation = (mode === "synthesis" || mode === "promotion-review") && partPlans.length > 1;
+  const requiresGlobalConsolidation = mode === "synthesis" && partPlans.length > 1;
 
   const identity = createBriefingJobId({
     segments: list,
@@ -198,9 +165,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     structureLevel: repolishOptions && repolishOptions.structureLevel || plugin.settings.briefingStructureLevel,
   };
   const fidelityPolicy = getBriefingFidelityPolicy(fidelityInput);
-  const partModeGuidance = promotionMultiPart
-    ? buildPromotionReviewPartInstruction({ partIndex: 1, partTotal: partPlans.length })
-    : modeGuidance;
+  const partModeGuidance = modeGuidance;
 
   if (!String(checkpoint.topicMap || "").trim()) {
     checkpoint.topicMap = buildProgrammaticTopicMap(partPlans, formatElapsed);
@@ -211,13 +176,11 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   }
 
   const peopleContext = await buildPeopleContextForLlm(plugin);
-  const metaPrefix = buildSessionMetaPrefix(computedMeta, mode, { promotionPart: promotionMultiPart });
+  const metaPrefix = buildSessionMetaPrefix(computedMeta, mode);
   const meetingWorkbenchPrompt = buildMeetingWorkbenchPrompt(computedMeta && computedMeta.meetingWorkbench);
   const system = mode === "synthesis" && partPlans.length > 1
     ? "你是综合纪要的议题证据编辑。请从当前内部窗口提取并归并可核验的议题材料，供下一阶段统一成文；不要把窗口写成独立会议。"
-    : promotionMultiPart
-      ? "你是晋升评审的现场证据编辑。只整理当前内部窗口的述职与问答证据，严格区分候选人事实和评委观点，供全局评审报告统一成文。"
-      : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
+    : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
   for (const plan of partPlans) {
     const part = checkpoint.parts[plan.index];
     if (part && part.status === "complete" && String(part.text || "").trim()) continue;
@@ -232,9 +195,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     const end = formatElapsed(plan.endOffsetMs);
     let fidelity = assessBriefingPartFidelity(plan.chars, "", fidelityInput);
     const fidelityContract = buildBriefingFidelityContract(fidelity, fidelityPolicy.profile, plan.segments.length, mode);
-    const currentPartGuidance = promotionMultiPart
-      ? buildPromotionReviewPartInstruction({ partIndex: plan.index + 1, partTotal: partPlans.length })
-      : partModeGuidance;
+    const currentPartGuidance = partModeGuidance;
     let prompt = buildChunkMergePrompt(joinedChunk, plan.index + 1, partPlans.length, `${start}–${end}`, checkpoint.topicMap, currentPartGuidance, fidelityContract, mode, fidelityInput.detailLevel);
     const speakerClause = buildKnownSpeakerClause(resolveKnownSpeakerLabels(joinedChunk, originalFrontmatter));
     const sharedContext = [peopleContext, metaPrefix, meetingWorkbenchPrompt, speakerClause].filter(Boolean).join("\n\n---\n\n");
@@ -459,37 +420,28 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         segmentCount: list.length,
       }, plugin.settings, Number(ceiling) || 0);
       try {
-        const consolidationPrompt = mode === "promotion-review"
-          ? buildPromotionReviewConsolidationPrompt({
-              context: computedMeta && computedMeta.promotionReviewContext,
-              parts: synthesisParts,
-              modeGuidance,
-              duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
-            })
-          : buildSynthesisConsolidationPrompt({
-              topicMap: checkpoint.topicMap,
-              parts: synthesisParts,
-              modeGuidance,
-              detailLevel: fidelityInput.detailLevel,
-              duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
-              transcriptChars: fullJoined.length,
-            });
+        const consolidationPrompt = buildSynthesisConsolidationPrompt({
+          topicMap: checkpoint.topicMap,
+          parts: synthesisParts,
+          modeGuidance,
+          detailLevel: fidelityInput.detailLevel,
+          duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
+          transcriptChars: fullJoined.length,
+        });
         const consolidation = await callBriefingMergeLlm(
           plugin,
-          mode === "promotion-review"
-            ? "你是审慎、中立的晋升评审总编辑。请把同一场答辩的全部现场证据与书面材料归并成一份完整报告，不替评委作最终决定。"
-            : "你是综合纪要的总编辑。请把同一场会议的内部议题材料归并为一篇结构清晰、证据充分、以事情为中心的最终纪要。",
+          "你是综合纪要的总编辑。请把同一场会议的内部议题材料归并为一篇结构清晰、证据充分、以事情为中心的最终纪要。",
           consolidationPrompt,
           Object.assign(
             { stream: true, thinkingMode: "fast", payload: { max_tokens: consolidationMaxTokens } },
             createBriefingLlmActivityOptions(plugin, computedMeta, {
               stage: "consolidate",
-              stageLabel: mode === "promotion-review" ? "生成晋升评审报告" : "归并全场议题",
-              detail: mode === "promotion-review" ? "正在归并书面材料、述职和评委问答" : "正在把各时段材料整理成一篇综合纪要",
+              stageLabel: "归并全场议题",
+              detail: "正在把各时段材料整理成一篇综合纪要",
               progress: 88,
             }),
           ),
-          { purpose: mode === "promotion-review" ? "promotion-review-consolidation" : "briefing-synthesis-consolidation", mode, jobId: identity.id, partTotal: partPlans.length, transcriptChars: fullJoined.length },
+          { purpose: "briefing-synthesis-consolidation", mode, jobId: identity.id, partTotal: partPlans.length, transcriptChars: fullJoined.length },
         );
         const parsed = parseBriefingPartResponse(consolidation.text);
         const body = normalizeBriefingPartBody(parsed.body, { fragmentMode: false });
@@ -584,10 +536,10 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   return sedimentObjects ? appendSedimentPreExtractionBlock(polished, sedimentObjects) : polished;
 }
 
-export async function mergeAndPolish(plugin, segments, mode, recruitContext, sessionMeta, originalFrontmatter, repolishOptions) {
+export async function mergeAndPolish(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions) {
   if (!segments || segments.length === 0) return "";
   if (mode === "off") return segments.map(s => s.text).join("\n\n");
-  const segmentsForMerge = await maybePreSummarizeTextImportForMerge(plugin, segments, mode, recruitContext, sessionMeta);
+  const segmentsForMerge = await maybePreSummarizeTextImportForMerge(plugin, segments, mode, sessionMeta);
   // 引用不同 = 触发了超长文本预压缩（原文被分段摘要替换）。最终纪要顶部要据此告知用户"基于摘要稿"。
   const preSummarized = segmentsForMerge !== segments;
   segments = segmentsForMerge;
@@ -598,19 +550,6 @@ export async function mergeAndPolish(plugin, segments, mode, recruitContext, ses
     const last = segments[segments.length - 1];
     computedMeta = { duration: formatElapsed(last.endOffsetMs || 0) };
   }
-  // F4.2：把招聘上下文透传进 meta，供 postProcessBriefingOutput 代码注入 jd/候选人/轮次/素质 frontmatter。
-  if (mode === "recruit" && recruitContext) {
-    computedMeta = Object.assign({}, computedMeta || {}, { recruitContext });
-  }
-  // 招聘需求挖掘：会后产出结构化岗位画像（JobPortrait），走专用路径而非通用 Markdown 纪要。
-  if (mode === "recruit-needs") {
-    const { md: portraitMd, truncated } = await generateJobPortrait(plugin, joined, computedMeta, segments);
-    const auditedPortrait = appendEntityEvidenceWarning(portraitMd, joined);
-    // 过一遍 frontmatter 装配，让画像与其余模式结构一致（mode/time/状态/tags/人物 注入）。
-    // 画像首行是 callout 非 ---，postProcess 匹配不到 frontmatter → 整体当正文、前面拼 YAML。
-    return postProcessBriefingOutput(auditedPortrait, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin, mode), truncated ? BRIEFING_TRUNCATION_WARNING : "");
-  }
-  const isRecruitTextImport = mode === "recruit" && computedMeta && computedMeta.source === "text-import";
   // 自适应 max_tokens：让长会真正能产出更长纪要，而不是被 API 默认上限（~4096）一刀切。
   const runtimeCeiling = getLearnedLlmOutputCeiling(plugin.settings);
   const briefingMergeMaxTokens = getBriefingMergeMaxTokens({
@@ -619,9 +558,8 @@ export async function mergeAndPolish(plugin, segments, mode, recruitContext, ses
     segmentCount: segments.length,
   }, plugin.settings, runtimeCeiling);
   const mergeCeiling = runtimeCeiling;
-  // 普通纪要无论长短都走同一条可恢复流水线。招聘评估/岗位画像仍保留专用的全局研判路径，
-  // 文本导入若已做过预摘要也不再二次分部，避免重复有损压缩。
-  if (mode !== "recruit" && !isRecruitTextImport && !preSummarized) {
+  // 普通纪要无论长短都走同一条可恢复流水线；文本导入若已做过预摘要也不再二次分部，避免重复有损压缩。
+  if (!preSummarized) {
     const pipelined = await mergeAndPolishLongSession(
       plugin,
       segments,
@@ -635,37 +573,19 @@ export async function mergeAndPolish(plugin, segments, mode, recruitContext, ses
     if (pipelined != null) return pipelined;
   }
   const tpl = resolveTemplatePromptForMode(plugin, mode, true);
-  const sys = mode === "recruit"
-    ? "你是严格的招聘评估官，正在合并分段转写并产出最终面试评价。立场是替面试官筛掉不达标候选人，不替候选人辩护。默认假设候选人不达标，需要正向证据才加分。诚实/不夸大/承认边界是基础职业素养，不计入亮点。结果未闭环、独立主导不清、行业不匹配、关键能力仅'接触过'——必须列入红旗。"
-    : mode === "promotion-review"
-      ? "你是审慎、中立的晋升评审证据编辑。请把提名材料、候选人述职和评委问答映射回具体岗位的当前与目标职级任职要求，形成双画像差异报告。无证据不等于不具备，最终决定由评委作出。"
-      : "你是一位专业的文字编辑助手，擅长把分段录音转写合并为连续、干净、忠实原意、结构清晰的 Markdown 文档。";
-  let userPrompt;
-  if (isRecruitTextImport) {
-    userPrompt = buildRecruitTextImportMergePrompt(joined, recruitContext);
-    userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
-    await logLlmRequestDiagnostic(plugin, "info", "llm.merge_recruit_text_import_compact_prompt", "招聘文本导入使用精简评估提示词", {
-      mode,
-      source: computedMeta.source,
-      segmentCount: segments.length,
-      transcriptChars: joined.length,
-      recruitContextChars: buildCompactRecruitContextPrefix(recruitContext).length,
-      promptChars: userPrompt.length,
-    });
-  } else {
-    userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", joined);
-    userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
-    userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
-    userPrompt = userPrompt.replace("{{STRUCTURE_INSTRUCTION}}", "");
-    const adaptiveLength = buildAdaptiveBriefingLengthInstruction(mode, {
-      durationMs: sessionMeta && sessionMeta.source === "text-import"
-        ? getSessionMetaDurationMs(sessionMeta)
-        : (getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta)),
-      transcriptChars: joined.length,
-      segmentCount: segments.length,
-    });
-    if (adaptiveLength) userPrompt = adaptiveLength + "\n\n---\n\n" + userPrompt;
-  }
+  const sys = "你是一位专业的文字编辑助手，擅长把分段录音转写合并为连续、干净、忠实原意、结构清晰的 Markdown 文档。";
+  let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", joined);
+  userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
+  userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
+  userPrompt = userPrompt.replace("{{STRUCTURE_INSTRUCTION}}", "");
+  const adaptiveLength = buildAdaptiveBriefingLengthInstruction(mode, {
+    durationMs: sessionMeta && sessionMeta.source === "text-import"
+      ? getSessionMetaDurationMs(sessionMeta)
+      : (getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta)),
+    transcriptChars: joined.length,
+    segmentCount: segments.length,
+  });
+  if (adaptiveLength) userPrompt = adaptiveLength + "\n\n---\n\n" + userPrompt;
   // 多声道分离出的说话人是既定事实：注入硬约束，覆盖各模式里「弱化/不强制标注说话人」的规则。
   const knownSpeakerClause = buildKnownSpeakerClause(
     resolveKnownSpeakerLabels(joined, originalFrontmatter),
@@ -675,28 +595,8 @@ export async function mergeAndPolish(plugin, segments, mode, recruitContext, ses
   if (metaPrefix) userPrompt = metaPrefix + "\n\n---\n\n" + userPrompt;
   const meetingWorkbenchPrompt = buildMeetingWorkbenchPrompt(computedMeta && computedMeta.meetingWorkbench);
   if (meetingWorkbenchPrompt) userPrompt = meetingWorkbenchPrompt + "\n\n---\n\n" + userPrompt;
-  if (!isRecruitTextImport) {
-    const peopleContext = await buildPeopleContextForLlm(plugin);
-    if (peopleContext) userPrompt = peopleContext + "\n\n---\n\n" + userPrompt;
-  }
-  if (mode === "recruit" && recruitContext && !isRecruitTextImport) {
-    const recruitPrefix = buildRecruitContextPrefix(recruitContext);
-    const compactRecruitContext = computedMeta
-      && computedMeta.source === "text-import"
-      && recruitPrefix.length + userPrompt.length > TEXT_IMPORT_FINAL_CONTEXT_COMPACT_THRESHOLD_CHARS;
-    if (compactRecruitContext) {
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_recruit_context_compacted", "招聘文本导入上下文过长，已压缩注入", {
-        mode,
-        source: computedMeta.source,
-        recruitContextChars: recruitPrefix.length,
-        promptCharsBeforeContext: userPrompt.length,
-        compactChars: TEXT_IMPORT_RECRUIT_CONTEXT_CHARS,
-      });
-    }
-    userPrompt = (compactRecruitContext
-      ? truncateForLlmPrompt(recruitPrefix, TEXT_IMPORT_RECRUIT_CONTEXT_CHARS)
-      : recruitPrefix) + "\n\n" + userPrompt;
-  }
+  const peopleContext = await buildPeopleContextForLlm(plugin);
+  if (peopleContext) userPrompt = peopleContext + "\n\n---\n\n" + userPrompt;
   // 流式：merge 是最长、最贵、跑一次的调用。流式 + 空闲超时确保服务端只要在持续输出就不会被
   // 客户端总超时 abort，避免"扣了钱却因超时拿不到结果"的浪费（符合总纲：不因工程缺陷浪费）。
   let mergeResult;
@@ -717,7 +617,7 @@ export async function mergeAndPolish(plugin, segments, mode, recruitContext, ses
   } catch (e) {
     // 上下文限制不是普通网络重试问题：把同一份超长 prompt 再发一遍只会重复失败或重复计费。
     // 第一次明确收到上下文超限后，立即切换到时间分段路径；分段失败的部分由原始转写保底。
-    if (isLlmContextLimitError(e) && mode !== "recruit" && !isRecruitTextImport && segments.length >= 2) {
+    if (isLlmContextLimitError(e) && segments.length >= 2) {
       await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_context_chunk_retry", "单次整理上下文超限，已切换为分段整理", {
         mode,
         segmentCount: segments.length,

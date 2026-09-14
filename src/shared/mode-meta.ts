@@ -2,13 +2,11 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
 import { MODE_META } from './catalog-modes';
-import { isRecruitFeatureUnlocked } from '../recruit';
 
 export const STANDARD_POLISH_MODES = ["synthesis", "meeting", "seminar", "interview", "monologue", "learning"];
 
-export const ALL_POLISH_MODES = ["synthesis", "meeting", "seminar", "interview", "monologue", "learning", "promotion-review", "recruit", "recruit-needs"];
-
-const HR_GATED_POLISH_MODES = new Set(["promotion-review", "recruit", "recruit-needs"]);
+// 曾用于"必须先解锁才可见"的模式（招聘评估 / 招聘需求挖掘 / 晋升评审），随 HR 场景一并移除；
+// 现在所有可用模式都是标准模式，不再需要第二份清单与门控。
 
 type CustomPromptModeTemplate = {
   id: string;
@@ -21,7 +19,6 @@ type CustomPromptModeTemplate = {
 
 export function isKnownPolishMode(settings, mode) {
   if (mode === "off") return true;
-  if (HR_GATED_POLISH_MODES.has(mode) && !isRecruitFeatureUnlocked(settings)) return false;
   return !!(MODE_META[mode] || getCustomPromptModeTemplate(settings, mode));
 }
 
@@ -55,7 +52,8 @@ export function getCustomPromptModeTemplates(settings) {
 }
 
 export function getBuiltInVisiblePolishModeKeys(settings) {
-  return isRecruitFeatureUnlocked(settings) ? ALL_POLISH_MODES.slice() : STANDARD_POLISH_MODES.slice();
+  void settings;
+  return STANDARD_POLISH_MODES.slice();
 }
 
 export function getVisiblePolishModeKeys(settings) {

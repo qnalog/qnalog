@@ -26,20 +26,18 @@ import type {
   IndustryProfile,
   PersistedPluginSettings,
   PluginSettings,
-  PromotionReviewContext,
   PromptTemplate,
-  RecruitContext,
-  RecruitContextLibraryEntry,
-  RecruitQuality,
   TranscribeProviderSettings,
 } from "./types";
 
-export const SETTINGS_SCHEMA_VERSION = 4;
+// 5：移除招聘评估 / 招聘需求挖掘 / 晋升评审三个场景及其设置（recruiting / promotionReview 分组不再读回）。
+// 用户已有的笔记文件不在此列处理——迁移只重写 data.json，不触碰知识库内容。
+export const SETTINGS_SCHEMA_VERSION = 5;
 export const LEGACY_VOCABULARY_FILE = "lexvoice 词汇表.md";
 
 type UnknownRecord = Record<string, unknown>;
 
-const PROMPT_MODES = ["learning", "interview", "meeting", "seminar", "huddle", "monologue", "recruit", "promotion-review"] as const;
+const PROMPT_MODES = ["learning", "interview", "meeting", "seminar", "huddle", "monologue"] as const;
 const STRUCTURE_LEVELS = ["loose", "balanced", "strict"] as const;
 const THINKING_MODES = ["auto", "reasoning", "fast"] as const;
 const AUDIO_CHANNEL_MODES = ["auto", "mono", "multichannel"] as const;
@@ -148,68 +146,6 @@ function normalizeFloatingBallPosition(value: unknown, fallback: FloatingBallPos
     left: firstNumber(fallback.left, raw.left),
     top: firstNumber(fallback.top, raw.top),
   };
-}
-
-function normalizePromotionReviewContext(value: unknown, fallback: PromotionReviewContext): PromotionReviewContext {
-  const raw = asRecord(value);
-  return {
-    requirements: firstString(fallback.requirements, raw.requirements),
-    nominationMaterial: firstString(fallback.nominationMaterial, raw.nominationMaterial),
-    focusCapabilities: firstString(fallback.focusCapabilities, raw.focusCapabilities),
-    preReview: firstString(fallback.preReview, raw.preReview),
-    revieweeName: firstString(fallback.revieweeName, raw.revieweeName),
-    position: firstString(fallback.position, raw.position),
-    jobSequence: firstString(fallback.jobSequence, raw.jobSequence),
-    currentLevel: firstString(fallback.currentLevel, raw.currentLevel),
-    targetLevel: firstString(fallback.targetLevel, raw.targetLevel),
-    savedAt: firstNullableString(fallback.savedAt, raw.savedAt),
-  };
-}
-
-function normalizeRecruitQuality(value: unknown): RecruitQuality | null {
-  const raw = asRecord(value);
-  if (typeof raw["素质"] !== "string" || typeof raw["定义"] !== "string" || typeof raw["信号"] !== "string") return null;
-  return { 素质: raw["素质"], 定义: raw["定义"], 信号: raw["信号"] };
-}
-
-function normalizeRecruitContext(value: unknown, fallback: RecruitContext): RecruitContext {
-  const raw = asRecord(value);
-  const result: RecruitContext = {
-    jd: firstString(fallback.jd, raw.jd),
-    resume: firstString(fallback.resume, raw.resume),
-    candidateName: firstString(fallback.candidateName, raw.candidateName),
-    position: firstString(fallback.position, raw.position),
-    round: firstString(fallback.round, raw.round),
-    interviewer: firstString(fallback.interviewer, raw.interviewer),
-    interviewScene: firstString(fallback.interviewScene, raw.interviewScene),
-    seniority: firstString(fallback.seniority, raw.seniority),
-    customNote: firstString(fallback.customNote, raw.customNote),
-    previousInterviewNote: firstString(fallback.previousInterviewNote, raw.previousInterviewNote),
-    previousNotePath: firstString(fallback.previousNotePath, raw.previousNotePath),
-    interviewBrief: firstString(fallback.interviewBrief, raw.interviewBrief),
-    savedAt: firstNullableString(fallback.savedAt, raw.savedAt),
-  };
-  for (const key of ["jdFile", "generalOutline"] as const) {
-    const candidate = raw[key];
-    if (typeof candidate === "string") result[key] = candidate;
-    else if (typeof fallback[key] === "string") result[key] = fallback[key];
-  }
-  const qualities = Array.isArray(raw.requiredQualities)
-    ? raw.requiredQualities.map(normalizeRecruitQuality).filter((item): item is RecruitQuality => item !== null)
-    : fallback.requiredQualities;
-  if (qualities) result.requiredQualities = qualities;
-  return result;
-}
-
-function normalizeRecruitContextLibrary(value: unknown): RecruitContextLibraryEntry[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap(item => {
-    if (!isRecord(item)) return [];
-    const context: RecruitContextLibraryEntry = normalizeRecruitContext(item, DEFAULT_SETTINGS.recruitContext);
-    if (typeof item.id === "string") context.id = item.id;
-    if (typeof item.type === "string") context.type = item.type;
-    return [context];
-  });
 }
 
 function normalizeAvailableUpdate(value: unknown): AvailableUpdate | null {
@@ -375,7 +311,6 @@ export function normalizeLexVoiceSettings(savedData: unknown): PluginSettings {
   s.polishPromptSeminar = firstString(defaults.polishPromptSeminar, promptOverrides.seminar, raw.polishPromptSeminar);
   s.polishPromptMonologue = firstString(defaults.polishPromptMonologue, promptOverrides.monologue, raw.polishPromptMonologue);
   s.polishPromptLearning = firstString(defaults.polishPromptLearning, promptOverrides.learning, raw.polishPromptLearning);
-  s.polishPromptRecruit = firstString(defaults.polishPromptRecruit, promptOverrides.recruit, raw.polishPromptRecruit);
   s.briefingStructureLevel = firstEnum(STRUCTURE_LEVELS, defaults.briefingStructureLevel, composer.structureLevel, raw.briefingStructureLevel);
   s.repolishPreferencePromptAddendum = firstString(defaults.repolishPreferencePromptAddendum, composer.repolishPreferencePromptAddendum, raw.repolishPreferencePromptAddendum);
   s.repolishPreference = firstString(defaults.repolishPreference, composer.repolishPreference, raw.repolishPreference);
@@ -435,26 +370,8 @@ export function normalizeLexVoiceSettings(savedData: unknown): PluginSettings {
   s.bubbleSize = firstEnum(["large", "medium", "small"] as const, defaults.bubbleSize, ui.bubbleSize, raw.bubbleSize);
   s.floatingBallPos = normalizeFloatingBallPosition(firstRecord(ui.floatingControlPosition, raw.floatingBallPos), defaults.floatingBallPos);
 
-  const promotionReview = asRecord(raw.promotionReview);
-  s.promotionReviewContext = normalizePromotionReviewContext(
-    firstRecord(promotionReview.context, raw.promotionReviewContext),
-    defaults.promotionReviewContext,
-  );
-
-  const recruiting = asRecord(raw.recruiting);
-  s.recruitContext = normalizeRecruitContext(firstRecord(recruiting.context, raw.recruitContext), defaults.recruitContext);
-  s.recruitAlwaysAskOnStart = firstBoolean(defaults.recruitAlwaysAskOnStart, recruiting.askBeforeCapture, raw.recruitAlwaysAskOnStart);
-  s.recruitContextLibrary = normalizeRecruitContextLibrary(firstArray(recruiting.contextLibrary, raw.recruitContextLibrary));
-  s.recruitFeatureUnlocked = firstBoolean(defaults.recruitFeatureUnlocked, recruiting.unlocked, raw.recruitFeatureUnlocked);
-  if (!s.recruitFeatureUnlocked && ["promotion-review", "recruit", "recruit-needs"].includes(s.polishMode)) {
-    s.polishMode = defaults.polishMode;
-  }
-  // HR 模块路径：空串也算"已定义"，故文件夹路径做非空兜底回默认。
-  s.recruitJdFolderPath = firstString(defaults.recruitJdFolderPath, recruiting.jdFolder, raw.recruitJdFolderPath).trim() || "JD";
-  s.recruitResumeFolderPath = firstString(defaults.recruitResumeFolderPath, recruiting.resumeFolder, raw.recruitResumeFolderPath).trim() || "简历";
-  s.recruitResumeDesensitize = firstBoolean(defaults.recruitResumeDesensitize, recruiting.desensitize, raw.recruitResumeDesensitize);
-  s.recruitHomepagePath = firstString(defaults.recruitHomepagePath, recruiting.homepage, raw.recruitHomepagePath).trim();
-
+  // 招聘 / 晋升评审场景已从本版本移除：data.json 里残留的 recruiting / promotionReview 分组
+  // 不再读取，也不再写回（见 shared/settings-migration-report.ts 的说明）。用户已有的笔记文件不受影响。
   const updates = asRecord(raw.updates);
   // updateRepoUrl/Branch/PluginDir/RawBaseUrl 已收编为模块常量 LEXVOICE_UPDATE_*：
   // 此前 normalize 始终重置为默认值，用户落盘值从未生效过，作为设置项是假象。
@@ -580,7 +497,6 @@ export function serializeLexVoiceSettings(s: PluginSettings): PersistedPluginSet
         seminar: s.polishPromptSeminar || "",
         monologue: s.polishPromptMonologue || "",
         learning: s.polishPromptLearning || "",
-        recruit: s.polishPromptRecruit || "",
       },
       structureLevel: s.briefingStructureLevel || "balanced",
       repolishPreferencePromptAddendum: s.repolishPreferencePromptAddendum || "",
@@ -636,19 +552,6 @@ export function serializeLexVoiceSettings(s: PluginSettings): PersistedPluginSet
       floatingControlEnabled: s.showFloatingBall,
       bubbleSize: s.bubbleSize || "large",
       floatingControlPosition: s.floatingBallPos || {},
-    },
-    promotionReview: {
-      context: s.promotionReviewContext || {},
-    },
-    recruiting: {
-      context: s.recruitContext || {},
-      askBeforeCapture: s.recruitAlwaysAskOnStart,
-      contextLibrary: Array.isArray(s.recruitContextLibrary) ? s.recruitContextLibrary : [],
-      unlocked: !!s.recruitFeatureUnlocked,
-      jdFolder: s.recruitJdFolderPath || "JD",
-      resumeFolder: s.recruitResumeFolderPath || "简历",
-      desensitize: s.recruitResumeDesensitize !== false,
-      homepage: s.recruitHomepagePath || "",
     },
     updates: {
       autoCheck: s.autoCheckUpdates !== false,

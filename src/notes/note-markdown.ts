@@ -4,7 +4,7 @@
 
 import { collectLexVoiceAudioRefs, getAudioLinkTarget, getLexVoiceDurationMs } from "./audio-refs";
 
-import { LEXVOICE_ACTIVE_VERSION_END, LEXVOICE_ACTIVE_VERSION_START, LEXVOICE_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS, TEXT_IMPORT_RECRUIT_CONTEXT_CHARS } from "../shared/limits";
+import { LEXVOICE_ACTIVE_VERSION_END, LEXVOICE_ACTIVE_VERSION_START, LEXVOICE_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS } from "../shared/limits";
 
 import { normalizeLexVoiceCallouts } from "./callout-normalize";
 
@@ -17,9 +17,8 @@ import { stripLexVoiceFrontmatterSimple } from "../ui/helpers";
 
 import { getCustomPromptModeTemplate, getCustomPromptModeTemplates, getModeMeta, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
 
-import { TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS, parseElapsedMsToken, splitLongTextForLlm, truncateForLlmPrompt } from "../shared/util-text";
+import { TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS, parseElapsedMsToken, splitLongTextForLlm } from "../shared/util-text";
 
-import { buildRecruitContextPrefix, parseRecruitQualitiesFromOutput } from "../recruit";
 
 import { mergeUniqueStrings, normalizePersonLookupText, normalizePersonNameForEmail, parsePeopleFromOutput, splitPersonFieldValue } from "../people";
 
@@ -602,7 +601,7 @@ export function buildMeetingEmailBody({ file, markdown, attendeeNames = [], atta
   return body.join("\n");
 }
 
-// 纯白弥散报告（recruit 面试评估 / seminar 研讨）：大模型按提取提示词只产出 DATA JSON，注入固定模板的哨兵段。
+// 纯白弥散报告（seminar 研讨）：大模型按提取提示词只产出 DATA JSON，注入固定模板的哨兵段。
 // 模型碰不到 CSS/版式（最省 token、最稳）。公司名由 reportBrandName 设置注入（默认空 → 沿用纪要「公司/」标签）；报告不含 logo。
 
 // 报告生成前的配色选择器：预设或自定义颜色 → 返回 hex（取消/关闭返回 null）。报告按所选色相整体重着色。
@@ -1030,15 +1029,12 @@ export const FRONTMATTER_CONTENT_KEYS = {
   seminar: ["主题", "研讨对象", "参与者"],
   huddle: ["主题", "当事人", "参谋"],
   monologue: ["主题"],
-  recruit: ["主题", "候选人", "联系方式", "应聘岗位", "轮次", "录用建议", "一句话评价", "待澄清"],
-  "promotion-review": ["主题", "被评审人", "岗位", "当前职级", "目标职级", "综合评价", "待评委确认"],
 };
 
-// 把任意 mode（含 custom-xxx / recruit-needs）映射到用于查 frontmatter schema 表的 baseKey。
-// custom 模式天然带 baseMode（sanitize 强制落到内置模式）；recruit-needs 画像复用 recruit 字段集。
+// 把任意 mode（含 custom-xxx）映射到用于查 frontmatter schema 表的 baseKey。
+// custom 模式天然带 baseMode（sanitize 强制落到内置模式）。
 export function frontmatterBaseModeKey(plugin, mode) {
   if (FRONTMATTER_CONTENT_KEYS[mode]) return mode;
-  if (mode === "recruit-needs") return "recruit";
   const custom = plugin && getCustomPromptModeTemplate(plugin.settings, mode);
   if (custom && custom.baseMode && FRONTMATTER_CONTENT_KEYS[custom.baseMode]) return custom.baseMode;
   return "meeting"; // 默认回退到 meeting（含 主题+参会人），而非裸 ["主题"]，避免 custom 内容字段被裁光
@@ -1151,7 +1147,7 @@ export function mergeLeadingFrontmatterIntoDocument(documentText, generatedMarkd
   };
 }
 
-// 解析 LLM 输出末尾的标签建议注释 <!-- lexvoice-tags: 主题/招聘流程, 项目/晋升提名 -->
+// 解析 LLM 输出末尾的标签建议注释 <!-- lexvoice-tags: 主题/实时转写, 项目/示例 -->
 export function parseSuggestedTagsFromOutput(text) {
   if (!text) return { tags: [], cleaned: text || "" };
   const re = /<!--\s*lexvoice-tags(?:-suggest)?\s*:\s*([\s\S]*?)\s*-->/i;
@@ -1188,9 +1184,6 @@ export function parseSuggestedTagsFromOutput(text) {
 // 解析 LLM 输出末尾的人员机器块 <!-- lexvoice-people: 张三, 李四 -->（纯人名，不带前缀）。
 // 与 tags 物理分离：人物单列成独立 frontmatter 属性，不再挤进 tags。
 
-// F4.2：解析招聘素质三态机器块 <!-- lexvoice-recruit: {"素质":{"聪明":"达到",...}} -->，
-// 映射成 frontmatter 的 素质_<名> 字段（取值仅 达到/未达/本场未验证）。解析失败安全降级为空对象。
-
 // 把 LLM 输出（含 frontmatter + 正文 + 末尾 tags 注释）规整成最终笔记内容：
 //   - 强制覆盖系统字段：mode / time / 时长 / 状态
 //   - merge tags：[lexvoice/<mode>] + LLM 标签建议 + (可选) 已有 tags
@@ -1199,10 +1192,9 @@ export function parseSuggestedTagsFromOutput(text) {
 //     不让 LLM 的 frontmatter 覆盖；只 merge 新的 tag 建议
 export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, originalFrontmatter, baseKey, topNotice) {
   if (!rawOutput) return rawOutput || "";
-  // 先剥人员机器块、再剥招聘素质块、再剥标签机器块（cleaned 串联，保证三条注释都不残留在正文末尾）。
+  // 先剥人员机器块、再剥标签机器块（cleaned 串联，保证注释不残留在正文末尾）。
   const { people: suggestedPeople, cleaned: afterPeople } = parsePeopleFromOutput(rawOutput);
-  const { qualities: recruitQualities, cleaned: afterQualities } = parseRecruitQualitiesFromOutput(afterPeople);
-  const { tags: suggested, people: peopleFromTags, cleaned: stripped } = parseSuggestedTagsFromOutput(afterQualities);
+  const { tags: suggested, people: peopleFromTags, cleaned: stripped } = parseSuggestedTagsFromOutput(afterPeople);
 
   // 解析 LLM 输出的 frontmatter（如有）
   const fmMatch = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
@@ -1268,30 +1260,6 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   people = mergeUniqueStrings(people, existingPeopleFromTags);
   if (people.length) base["人物"] = people; else delete base["人物"];
 
-  if (mode === "promotion-review" && sessionMeta && sessionMeta.promotionReviewContext) {
-    const pc = sessionMeta.promotionReviewContext;
-    if (pc.revieweeName) base["被评审人"] = String(pc.revieweeName).trim();
-    if (pc.position || pc.jobSequence) base["岗位"] = [pc.position, pc.jobSequence].filter(Boolean).join(" / ");
-    if (pc.currentLevel) base["当前职级"] = String(pc.currentLevel).trim();
-    if (pc.targetLevel) base["目标职级"] = String(pc.targetLevel).trim();
-  }
-
-  // F4.2 招聘：代码注入权威字段（jd 链接 / 候选人 / 轮次）+ 素质三态机器注释 → 素质_<名>。
-  // 放在白名单 normalize 之后直接挂 base：jd / 素质_* 不在白名单（否则被裁），候选人/轮次 覆盖模型推断值。
-  if (mode === "recruit" && sessionMeta && sessionMeta.recruitContext) {
-    const rc = sessionMeta.recruitContext;
-    if (rc.jdFile) {
-      const jdLink = obsidian.normalizePath(String(rc.jdFile)).replace(/\.md$/i, "");
-      if (jdLink) base.jd = `[[${jdLink}]]`;
-    }
-    if (rc.candidateName) base["候选人"] = String(rc.candidateName).trim();
-    if (rc.round) base["轮次"] = String(rc.round).trim();
-    if (rc.interviewScene) base["面试场景"] = String(rc.interviewScene).trim();
-  }
-  for (const [qName, qVerdict] of Object.entries(recruitQualities || {})) {
-    if (qName && qVerdict) base["素质_" + qName] = qVerdict;
-  }
-
   // 字段输出顺序：mode → time → 时长 → 人物 → 内容字段 → 状态 → tags。
   // time 使用 YAML 可识别的日期时间标量，例如 2026-05-08T12:55:00；不再保留 date/日期。
   const ordered = {};
@@ -1339,14 +1307,10 @@ export function inferModeFromLegacyNote(filename, content) {
       if (m === "研讨" || m === "研讨会" || m === "学术研讨" || m === "主题沙龙") return "seminar";
       if (m === "小会" || m === "讨论" || m === "圆桌讨论") return "huddle";
       if (m === "独白" || m === "手记" || m === "个人笔记") return "monologue";
-      if (m === "面试" || m === "招聘" || m === "招聘评估") return "recruit";
-      if (m === "晋升评审" || m === "晋升述职评审" || m === "述职评审") return "promotion-review";
     }
   }
 
   // 2. 文件名前缀（"访谈-xxx"、"面试-xxx"等）
-  if (/(?:^|·\s*)晋升评审|晋升述职评审|述职评审/i.test(filename)) return "promotion-review";
-  if (/(?:^|·\s*)面试|招聘/i.test(filename)) return "recruit";
   if (/(?:^|·\s*)学习|视频|课程|讲座/i.test(filename)) return "learning";
   if (/(?:^|·\s*)研讨|沙龙|论坛/i.test(filename)) return "seminar";
   if (/(?:^|·\s*)访谈/i.test(filename)) return "interview";
@@ -1358,7 +1322,6 @@ export function inferModeFromLegacyNote(filename, content) {
   const h1Match = content.match(/^#\s+([^\n]*)/m);
   if (h1Match) {
     const h1 = h1Match[1];
-    if (/🧑‍💼|面试|招聘/.test(h1)) return "recruit";
     if (/📚|学习|视频|课程|讲座/.test(h1)) return "learning";
     if (/研讨|沙龙|论坛/.test(h1)) return "seminar";
     if (/🎤|访谈/.test(h1)) return "interview";
@@ -1371,7 +1334,6 @@ export function inferModeFromLegacyNote(filename, content) {
   const h2Match = content.match(/^##\s+([^\n]*)/m);
   if (h2Match) {
     const h2 = h2Match[1];
-    if (/面试|招聘/.test(h2)) return "recruit";
     if (/学习|视频|课程|讲座/.test(h2)) return "learning";
     if (/研讨|沙龙|论坛/.test(h2)) return "seminar";
     if (/访谈/.test(h2)) return "interview";
@@ -1381,7 +1343,6 @@ export function inferModeFromLegacyNote(filename, content) {
   }
 
   // 5. 内容包含特征性段落
-  if (/候选人画像|JD\s*匹配度|录用建议/.test(content)) return "recruit";
   if (/学习要点|可收纳卡片|概念与术语|学习材料/.test(content)) return "learning";
   if (/观点谱系|研讨摘要|问题意识|争议与分歧/.test(content)) return "seminar";
   if (/受访者|访问者/.test(content)) return "interview";
@@ -1397,11 +1358,11 @@ export function inferTopicFromFilename(filename) {
   // 去掉 "YYYY-MM-DD HHmm · " 或 "YYYY-MM-DD · " 或 "YYYY-MM-DD HHmm "
   stem = stem.replace(/^\d{4}-\d{2}-\d{2}(?:\s+\d{4})?\s*·?\s*/, "");
   // 去掉模式标签前缀（"访谈-"、"面试-"、"会议-"等）
-  stem = stem.replace(/^(访谈|面试|招聘|晋升评审|晋升述职评审|述职评审|会议|研讨|研讨会|沙龙|论坛|小会|独白|手记|纪要)\s*[-—－]?\s*/, "");
+  stem = stem.replace(/^(访谈|会议|研讨|研讨会|沙龙|论坛|小会|独白|手记|纪要)\s*[-—－]?\s*/, "");
   return stem.trim();
 }
 
-export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode, recruitContext, sessionMeta) {
+export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode, sessionMeta) {
   if (!sessionMeta || sessionMeta.source !== "text-import") return segments;
   const joined = (segments || []).map((s, i) => formatMergeSegmentForPrompt(s, i)).join("\n\n");
   if (joined.length <= TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS) return segments;
@@ -1422,16 +1383,10 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
     chunkSize,
   });
 
-  const recruitPrefix = mode === "recruit" && recruitContext
-    ? truncateForLlmPrompt(buildRecruitContextPrefix(recruitContext), TEXT_IMPORT_RECRUIT_CONTEXT_CHARS)
-    : "";
-  const sys = mode === "recruit"
-    ? "你是严格的招聘评估预处理助手。你的任务是把长文本片段压缩为可用于最终招聘评估的证据摘要，不做最终录用结论。"
-    : "你是 QnALog 的长文本预处理助手。你的任务是把长文本片段压缩为可用于最终整理的结构化证据摘要。";
+  const sys = "你是 QnALog 的长文本预处理助手。你的任务是把长文本片段压缩为可用于最终整理的结构化证据摘要。";
   const summaries = [];
   for (let i = 0; i < chunks.length; i++) {
     const user = [
-      recruitPrefix,
       "## 任务",
       "",
       `这是导入文本的第 ${i + 1}/${chunks.length} 个片段。请生成结构化预摘要，供后续最终整理使用。`,
@@ -1439,7 +1394,6 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
       "要求：",
       "- 只依据本片段，不补充片段外事实。",
       "- 保留人物、待办、决策、问题、概念、争议点和明确证据。",
-      "- 如果是招聘评估，重点保留 JD 匹配证据、红旗、追问、简历与陈述不一致处。",
       "- 输出 Markdown bullet，尽量短，但不要丢失关键事实。",
       "",
       "## 片段原文",

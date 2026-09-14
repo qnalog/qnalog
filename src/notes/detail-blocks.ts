@@ -264,46 +264,6 @@ export function buildTextImportSourceDetails(session) {
 //       output_audio.delta 直接丢弃
 // ============================================================
 
-// 把已生成的面试提纲渲染成折叠块，供最终整合版（rewriteConsolidated）放进「原始材料」区保留。
-export function buildInterviewBriefDetails(session) {
-  const brief = session && session.interviewBrief ? String(session.interviewBrief).trim() : "";
-  if (!brief) return "";
-  return ["<details>", "<summary>面试提纲（录音前据 JD / 简历生成）</summary>", "", brief, "", "</details>"].join("\n");
-}
-
-export function buildPromotionPreReviewDetails(session) {
-  const context = session && session.promotionReviewContext;
-  const preReview = context && context.preReview ? String(context.preReview).trim() : "";
-  if (!preReview) return "";
-  return ["<details>", "<summary>晋升初审（答辩前生成）</summary>", "", preReview, "", "</details>"].join("\n");
-}
-
-export function renderRecordingInterviewBriefBlock(sessionId, brief) {
-  const body = String(brief || "").trim();
-  if (!body) return "";
-  return [
-    "",
-    "## 面试提纲（录音前据 JD / 简历生成 · 仅供面试参考）",
-    `<!-- lexvoice-interview-brief-start:${sessionId} -->`,
-    body,
-    `<!-- lexvoice-interview-brief-end:${sessionId} -->`,
-    "",
-  ].join("\n");
-}
-
-export function renderRecordingPromotionReviewBlock(sessionId, preReview) {
-  const body = String(preReview || "").trim();
-  if (!body) return "";
-  return [
-    "",
-    "## 晋升初审（答辩前生成 · 仅供评委参考）",
-    `<!-- lexvoice-promotion-pre-review-start:${sessionId} -->`,
-    body,
-    `<!-- lexvoice-promotion-pre-review-end:${sessionId} -->`,
-    "",
-  ].join("\n");
-}
-
 export function buildExternalAudioSourceDetails(session) {
   const source = session && session.externalAudioSource;
   const name = String(source && source.name || "").trim();
