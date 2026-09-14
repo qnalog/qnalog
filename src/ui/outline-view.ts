@@ -515,14 +515,14 @@ export class OutlineView extends obsidian.ItemView {
         layoutMode: existing.lexvoiceSemantic.layoutMode || "adaptive",
       });
       await this.app.vault.modify(canvasFile, `${JSON.stringify(document, null, 2)}\n`);
-      await this.plugin.logDiagnostic("info", "canvas.semantic_layout_migrated", "旧版语义 Canvas 已更新排版", {
+      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_layout_migrated", "旧版语义 Canvas 已更新排版", {
         sourcePath: sourceFile.path,
         canvasPath: canvasFile.path,
       });
       return true;
     } catch (error) {
       console.warn("[QnALog] migrate semantic canvas layout failed", error);
-      await this.plugin.logDiagnostic("warn", "canvas.semantic_layout_migration_failed", "旧版语义 Canvas 排版更新失败", {
+      await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_layout_migration_failed", "旧版语义 Canvas 排版更新失败", {
         sourcePath: sourceFile.path,
         canvasPath: canvasFile.path,
         error: diagnosticError(error),
@@ -883,7 +883,7 @@ export class OutlineView extends obsidian.ItemView {
       });
       new obsidian.Notice(`问一问失败：${state.error}`, 8000);
       try {
-        await this.plugin.logDiagnostic("warn", "note_ask.failed", "纪要问一问失败", {
+        await this.plugin.diagnostics.logDiagnostic("warn", "note_ask.failed", "纪要问一问失败", {
           file: file.path,
           question: question.slice(0, 160),
           error: diagnosticError(e),
@@ -3750,7 +3750,7 @@ export class OutlineView extends obsidian.ItemView {
     const updateProgress = async (phase, label, current = 0, total = 1) => {
       this.semanticCanvasProgressByPath.set(sourceFile.path, { phase, label, current, total });
       progressNotice.setMessage(total > 1 ? `${label}（${current}/${total}）` : label);
-      await this.plugin.logDiagnostic("info", "canvas.semantic_phase", label, {
+      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_phase", label, {
         sourcePath: sourceFile.path,
         phase,
         current,
@@ -3798,12 +3798,12 @@ export class OutlineView extends obsidian.ItemView {
               });
               const expanded = parseSemanticBranchExpansion(branchRaw, branch, outlineNodes, sourceSections, policy);
               if (expanded) graph = replaceSemanticBranch(graph, branch.key, expanded);
-              else await this.plugin.logDiagnostic("warn", "canvas.semantic_branch_invalid", "主线展开结果无法解析，已保留概览结构", {
+              else await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_invalid", "主线展开结果无法解析，已保留概览结构", {
                 sourcePath: sourceFile.path,
                 branchKey: branch.key,
               });
             } catch (branchError) {
-              await this.plugin.logDiagnostic("warn", "canvas.semantic_branch_failed", "主线展开失败，已保留概览结构", {
+              await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_failed", "主线展开失败，已保留概览结构", {
                 sourcePath: sourceFile.path,
                 branchKey: branch.key,
                 error: diagnosticError(branchError),
@@ -3863,7 +3863,7 @@ export class OutlineView extends obsidian.ItemView {
           await this.app.vault.modify(canvasFile, content);
         }
       }
-      await this.plugin.logDiagnostic("info", "canvas.semantic_generated", "语义 Canvas 已生成", {
+      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_generated", "语义 Canvas 已生成", {
         sourcePath: sourceFile.path,
         canvasPath: state.canvasPath,
         mode: options.mode,
@@ -3881,7 +3881,7 @@ export class OutlineView extends obsidian.ItemView {
       new obsidian.Notice(options.mode === "layout" ? "语义 Canvas 已重新排版。" : "语义 Canvas 已更新。", 4000);
     } catch (error) {
       console.error("[QnALog] generate semantic canvas failed", error);
-      await this.plugin.logDiagnostic("warn", "canvas.semantic_failed", "语义 Canvas 生成失败", {
+      await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_failed", "语义 Canvas 生成失败", {
         sourcePath: sourceFile.path,
         error: diagnosticError(error),
       });
@@ -5039,7 +5039,7 @@ export class OutlineView extends obsidian.ItemView {
           updatedAt: new Date().toISOString(),
         }),
       }));
-      await this.plugin.logDiagnostic("warn", "meeting_workbench.interaction_failed", "会中记录 AI 互动失败", {
+      await this.plugin.diagnostics.logDiagnostic("warn", "meeting_workbench.interaction_failed", "会中记录 AI 互动失败", {
         entryId,
         mode: session.mode,
         error: diagnosticError(e),
@@ -7219,7 +7219,7 @@ export class OutlineView extends obsidian.ItemView {
   cancelOutlineGeneration() {
     const session = this.plugin.session;
     if (session) this.plugin.cancelRealtimeOutline(session.id);
-    void this.plugin.logDiagnostic("warn", "outline.cancel_waiting", "用户停止等待实时大纲生成", {
+    void this.plugin.diagnostics.logDiagnostic("warn", "outline.cancel_waiting", "用户停止等待实时大纲生成", {
       segmentCount: session && session.segments ? session.segments.length : 0,
       lastOutlineSegmentCount: this.lastOutlineSegmentCount,
     });

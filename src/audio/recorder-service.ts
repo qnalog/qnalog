@@ -546,7 +546,7 @@ export class RecorderService {
       });
       try { this.plugin.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
       try {
-        void this.plugin.logDiagnostic("error", "recording.segment_cut_failed", "录音分段切换失败，已暂停并保留完整录音", {
+        void this.plugin.diagnostics.logDiagnostic("error", "recording.segment_cut_failed", "录音分段切换失败，已暂停并保留完整录音", {
           index, startOffsetMs: startOffset, endOffsetMs: endOffset, error: diagnosticError(e),
         });
       } catch { /* intentionally empty */ }

@@ -264,7 +264,7 @@ describe("LLM 请求传输学习", () => {
         llmApiKey: "test-key",
         llmModel: "test-model",
       },
-      logDiagnostic: vi.fn(async () => undefined),
+      diagnostics: { logDiagnostic: vi.fn(async () => undefined) },
     };
     try {
       await requestLlmChatCompletion(plugin, [{ role: "user", content: "first" }], { stream: true });
@@ -272,7 +272,7 @@ describe("LLM 请求传输学习", () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(requestUrlMock).toHaveBeenCalledTimes(2);
-      expect(plugin.logDiagnostic.mock.calls.map((call) => call[1])).toContain("llm.requesturl_preferred");
+      expect(plugin.diagnostics.logDiagnostic.mock.calls.map((call) => call[1])).toContain("llm.requesturl_preferred");
     } finally {
       resetLearnedLlmTransportPreferences();
       requestUrlMock.mockReset();
@@ -427,7 +427,7 @@ describe("最终纪要截断恢复", () => {
           llmModel: "deepseek-v4-flash",
           thinkingMode: "reasoning",
         },
-        logDiagnostic,
+        diagnostics: { logDiagnostic },
       }, "system", "user", { stream: false, thinkingMode: "reasoning" }, { maxContinuations: 1 });
 
       expect(result).toMatchObject({ text: "", truncated: true, continuations: 0, continuationAttempts: 1 });

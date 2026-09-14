@@ -15,7 +15,7 @@ import { LexVoiceSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
-import { getDesktopModule, getDesktopProcess } from "./shared/desktop-runtime";
+import { getDesktopModule } from "./shared/desktop-runtime";
 
 import { pickReportAccentColor, AudioTimeModal, PeopleDirectorySuggestionModal, SpeakerNameConfirmModal, QueueModal, RecruitContextModal, ImportTextModal, ImportAudioModal, AudioImportOptionsModal, BubbleWidget } from "./ui/modals";
 
@@ -41,7 +41,7 @@ import { detectPromotionReviewPhase, normalizePromotionReviewContext } from "./p
 
 import { registerRecruitBoardView, recommendationTone } from "./recruit/bases-view";
 
-import { normalizeAsrConcurrency, decodeAudioBlob, renderAudioBufferSliceToWav, resolveTranscribeProvider, makeRecordingIssue, transcribeAudio } from "./asr/transcribe";
+import {decodeAudioBlob, renderAudioBufferSliceToWav, resolveTranscribeProvider, makeRecordingIssue, transcribeAudio } from "./asr/transcribe";
 
 import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown, ensureTodayDailyNoteFile } from "./shared/util-note";
 
@@ -82,7 +82,7 @@ import { LIVE_ASR_TASK_STATUS, classifyLiveAsrBacklog, createLiveAsrCircuitState
 
 import { canOmitServiceApiKey, isLocalLlmEndpoint } from "./shared/util-llm-endpoint";
 
-import { obfuscateApiKey, deobfuscateApiKey, redactDiagnosticText, sanitizeDiagnosticData, diagnosticError } from "./shared/util-key-diag";
+import {obfuscateApiKey, deobfuscateApiKey, diagnosticError } from "./shared/util-key-diag";
 
 import { INDUSTRY_META_PROMPT } from "./prompts/industry-meta";
 
@@ -164,6 +164,7 @@ import { OutlineView } from "./ui/outline-view";
 // 以下 3 个声明已抽到 ./briefing/merge-pipeline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { cleanTranscript, mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
 
+import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -193,6 +194,8 @@ class LexVoicePlugin extends obsidian.Plugin {
   }
 
   async onload() {
+    // 域服务在加载设置之前装配：loadAll 的设置迁移报告要写诊断日志。
+    this.diagnostics = new DiagnosticsService(this);
     await this.loadAll();
     await this.loadBuildInfo();
     this.updateService = new UpdateService({
@@ -298,7 +301,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     }});
     this.addCommand({ id: "open-queue", name: "打开待处理队列", callback: () => new QueueModal(this.app, this).open() });
     this.addCommand({ id: "retry-queue-all", name: "重试所有失败任务", callback: () => this.retryQueue() });
-    this.addCommand({ id: "copy-diagnostic-report", name: "复制诊断报告", callback: () => this.copyDiagnosticReport() });
+    this.addCommand({ id: "copy-diagnostic-report", name: "复制诊断报告", callback: () => this.diagnostics.copyDiagnosticReport() });
     this.addCommand({ id: "suggest-people-directory-updates", name: "AI 扫描纪要库提取人员建议", callback: () => { void this.suggestPeopleDirectoryFromLibrary(); } });
     this.addCommand({ id: "open-learning-card-wall", name: "打开学习卡片瀑布墙", callback: () => { void this.openLearningWall("learning"); } });
     this.addCommand({ id: "open-concept-wall", name: "打开概念墙", callback: () => { void this.openLearningWall("concept"); } });
@@ -733,7 +736,7 @@ class LexVoicePlugin extends obsidian.Plugin {
           currentVersion: SETTINGS_SCHEMA_VERSION,
         });
         if (report) {
-          void this.logDiagnostic(
+          void this.diagnostics.logDiagnostic(
             report.direction === "downgrade" ? "warn" : "info",
             "settings.migration_report",
             report.summary,
@@ -782,168 +785,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
     await this.saveData(safe);
   }
-  async saveSettings() { await this.saveAll(); }
-
-  getDiagnosticsFolder() {
-    return obsidian.normalizePath(this.settings.diagnosticsLogFolder || DEFAULT_SETTINGS.diagnosticsLogFolder);
-  }
-
-  async logDiagnostic(level, code, message, data) {
-    if (this.settings.diagnosticsLogEnabled === false) return;
-    const write = async () => {
-      const folder = this.getDiagnosticsFolder();
-      await this.ensureFolder(folder);
-      const moment = window.moment;
-      const day = moment ? moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10);
-      const path = obsidian.normalizePath(`${folder}/${day}.jsonl`);
-      const entry = {
-        ts: new Date().toISOString(),
-        level: level || "info",
-        code: code || "event",
-        version: this.manifest && this.manifest.version,
-        message: redactDiagnosticText(message || ""),
-        data: sanitizeDiagnosticData(data || {}),
-      };
-      const line = JSON.stringify(entry) + "\n";
-      const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof obsidian.TFile) {
-        const cur = await this.app.vault.read(file);
-        await this.app.vault.modify(file, cur + line);
-      } else {
-        await this.app.vault.create(path, line);
-      }
-    };
-    // 多个 ASR/LLM 任务会并发记录日志。串行化读改写，避免两个调用都读取旧内容后
-    // 后写者覆盖先写者，导致最关键的故障证据恰好丢失。
-    const previous = this._diagnosticWriteTail || Promise.resolve();
-    const current = previous.catch(() => undefined).then(write);
-    this._diagnosticWriteTail = current;
-    try {
-      await current;
-    } catch (e) {
-      console.warn("[QnALog] diagnostic log failed", e);
-    } finally {
-      if (this._diagnosticWriteTail === current) this._diagnosticWriteTail = null;
-    }
-  }
-
-  async readRecentDiagnosticLines(limit = 80) {
-    try {
-      const folder = this.app.vault.getAbstractFileByPath(this.getDiagnosticsFolder());
-      if (!(folder instanceof obsidian.TFolder)) return [];
-      const files = folder.children
-        .filter(f => f instanceof obsidian.TFile && /jsonl$/i.test(f.extension || ""))
-        .sort((a, b) => b.stat.mtime - a.stat.mtime)
-        .slice(0, 3);
-      const lines = [];
-      for (const file of files.reverse()) {
-        const text = await this.app.vault.read(file);
-        for (const line of text.split("\n")) {
-          if (line.trim()) lines.push(redactDiagnosticText(line));
-        }
-      }
-      return lines.slice(-limit);
-    } catch (e) {
-      console.warn("[QnALog] read diagnostics failed", e);
-      return [];
-    }
-  }
-
-  async getRuntimeMemorySummary() {
-    const result = {
-      jsHeapUsedBytes: 0,
-      jsHeapTotalBytes: 0,
-      rendererPrivateBytes: 0,
-      rendererResidentBytes: 0,
-    };
-    try {
-      const memory = activeWindow.performance && activeWindow.performance["memory"];
-      result.jsHeapUsedBytes = Math.max(0, Number(memory && memory.usedJSHeapSize) || 0);
-      result.jsHeapTotalBytes = Math.max(0, Number(memory && memory.totalJSHeapSize) || 0);
-    } catch { /* unsupported runtime */ }
-    try {
-      const processApi = getDesktopProcess();
-      if (processApi && typeof processApi.getProcessMemoryInfo === "function") {
-        const info = await processApi.getProcessMemoryInfo();
-        // Electron 返回 KB；诊断统一换算为 bytes。
-        result.rendererPrivateBytes = Math.max(0, Number(info && info.private) || 0) * 1024;
-        result.rendererResidentBytes = Math.max(0, Number(info && info.residentSet) || 0) * 1024;
-      }
-    } catch { /* unsupported runtime */ }
-    return result;
-  }
-
-  async buildDiagnosticReport() {
-    const activeId = this.settings.activeTranscribeProvider || "";
-    const provider = (this.settings.transcribeProviders || {})[activeId] || {};
-    const queueItems = this.queue && Array.isArray(this.queue.tasks) ? this.queue.tasks : [];
-    const counts = queueItems.reduce((acc, task) => {
-      const key = task.status || "pending";
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-    const lines = await this.readRecentDiagnosticLines(100);
-    const activeSession = this.session;
-    const liveBacklog = activeSession ? this.getLiveAsrBacklogSummary(activeSession) : summarizeLiveAsrJobs([]);
-    const recorderBuffer = this.getRecorderBufferSummary();
-    const runtimeMemory = await this.getRuntimeMemorySummary();
-    const circuit = activeSession && activeSession.asrCircuitState ? activeSession.asrCircuitState : createLiveAsrCircuitState();
-    const outlineInput = activeSession && activeSession.realtimeOutlineInput || {};
-    const mib = (bytes) => (Math.max(0, Number(bytes) || 0) / (1024 * 1024)).toFixed(1);
-    return [
-      "# QnALog 诊断报告",
-      "",
-      "## 环境",
-      `- QnALog: ${this.getDisplayVersion()}${this.buildInfo && this.buildInfo.channel === "dev" ? `（${this.getBuildSourceLabel()}）` : ""}`,
-      `- Obsidian API: ${obsidian.apiVersion || "unknown"}`,
-      `- 平台: ${redactDiagnosticText(obsidian.Platform.isMacOS ? "macOS" : obsidian.Platform.isWin ? "Windows" : obsidian.Platform.isLinux ? "Linux" : obsidian.Platform.isIosApp ? "iOS" : obsidian.Platform.isAndroidApp ? "Android" : "unknown")}`,
-      "",
-      "## 当前配置摘要",
-      `- 转写服务: ${redactDiagnosticText(activeId)} / ${redactDiagnosticText(provider.name || "")}`,
-      `- 转写模型: ${redactDiagnosticText(provider.model || this.settings.transcribeModel || "")}`,
-      `- 转写端点: ${redactDiagnosticText(provider.endpoint || this.settings.transcribeEndpoint || "")}`,
-      `- ASR 并发数: ${normalizeAsrConcurrency(this.settings.asrConcurrency)}`,
-      `- 音频输入: ${audioInputModeLabel(this.settings.captureMode || "mic")}`,
-      `- 分段间隔: ${this.settings.segmentIntervalMinutes} 分钟`,
-      `- 队列: ${JSON.stringify(counts)}`,
-      "",
-      "## 录音与实时转写状态",
-      `- 录音状态: ${this.recorder && this.recorder.state || "idle"}`,
-      `- 完整录音内存块: ${recorderBuffer.masterChunkCount} 块 / ${mib(recorderBuffer.masterChunkBytes)} MiB`,
-      `- 当前分段内存块: ${recorderBuffer.currentSegmentChunkCount} 块 / ${mib(recorderBuffer.currentSegmentChunkBytes)} MiB`,
-      `- 等待实时转写: ${liveBacklog.count} 段 / ${(liveBacklog.totalDurationMs / 60000).toFixed(1)} 分钟 / ${mib(liveBacklog.totalBytes)} MiB`,
-      `- 最久等待: ${(liveBacklog.oldestAgeMs / 1000).toFixed(1)} 秒`,
-      `- 积压保护: ${activeSession && activeSession.asrDeferredMode ? "已转后台" : (activeSession && activeSession.asrBacklogLevel || "normal")}`,
-      `- 转写熔断: ${isLiveAsrCircuitOpen(circuit) ? "冷却中" : "关闭"} / 连续失败 ${circuit.consecutiveFailures || 0} 次`,
-      `- JS Heap: ${mib(runtimeMemory.jsHeapUsedBytes)} / ${mib(runtimeMemory.jsHeapTotalBytes)} MiB`,
-      `- Renderer 内存: private ${mib(runtimeMemory.rendererPrivateBytes)} MiB / resident ${mib(runtimeMemory.rendererResidentBytes)} MiB`,
-      "",
-      "## 最近一次实时大纲输入",
-      `- 输入模式: ${outlineInput.fullTranscript ? "整场转写" : "增量窗口"}`,
-      `- 总输入字符: ${Math.max(0, Number(outlineInput.totalChars) || 0)}`,
-      `- 新增转写字符: ${Math.max(0, Number(outlineInput.transcriptChars) || 0)}`,
-      `- 旧大纲字符: ${Math.max(0, Number(outlineInput.previousOutlineChars) || 0)}`,
-      `- 主题记忆字符: ${Math.max(0, Number(outlineInput.memoryChars) || 0)}`,
-      "",
-      "## 最近日志",
-      lines.length ? lines.join("\n") : "暂无诊断日志。",
-      "",
-      "> 说明：诊断报告已自动隐藏常见 API Key、Token、用户目录和知识库路径；不会包含音频、转写正文或 Prompt 全文。",
-    ].join("\n");
-  }
-
-  async copyDiagnosticReport() {
-    const report = await this.buildDiagnosticReport();
-    try {
-      await navigator.clipboard.writeText(report);
-      new obsidian.Notice("QnALog 诊断报告已复制，可发给开发者排查。", 6000);
-    } catch (e) {
-      await this.logDiagnostic("error", "diagnostics.copy_failed", "复制诊断报告失败", { error: diagnosticError(e) });
-      new obsidian.Notice(`诊断报告复制失败：${(e && e.message) || e}`, 8000);
-    }
-  }
-
-  async migrateDefaultVocabularyFileLocation(savedData) {
+  async saveSettings() { await this.saveAll(); }  async migrateDefaultVocabularyFileLocation(savedData) {
     const saved = isRecord(savedData) ? savedData : {};
     const raw = isRecord(saved.settings) ? saved.settings : saved;
     const vocabulary = raw.vocabulary || {};
@@ -1799,7 +1641,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         actions: activity.actions,
       });
       try {
-        await this.logDiagnostic("error", "task.action_failed", "任务操作失败", {
+        await this.diagnostics.logDiagnostic("error", "task.action_failed", "任务操作失败", {
           taskId,
           actionId,
           error: diagnosticError(error),
@@ -2497,7 +2339,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       markRealtimeOutlineSuccess(session);
       this.clearRecordingIssue("network");
       this.clearRecordingIssue("service");
-      await this.logDiagnostic("info", "outline.generate_succeeded", "实时大纲生成完成", {
+      await this.diagnostics.logDiagnostic("info", "outline.generate_succeeded", "实时大纲生成完成", {
         silent: !!request.silent,
         force: !!request.force,
         reason: request.reason || "",
@@ -2523,7 +2365,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const retryInMs = request.silent && hasRealtimeOutlineRunnableBacklog(session)
         ? getRealtimeOutlineQueuedDelayMs(session, { local })
         : 0;
-      await this.logDiagnostic("error", "outline.generate_failed", "实时大纲生成失败", {
+      await this.diagnostics.logDiagnostic("error", "outline.generate_failed", "实时大纲生成失败", {
         silent: !!request.silent,
         force: !!request.force,
         reason: request.reason || "",
@@ -2728,7 +2570,7 @@ class LexVoicePlugin extends obsidian.Plugin {
           updatedAt: new Date().toISOString(),
         }),
       }));
-      await this.logDiagnostic("warn", "meeting_workbench.interaction_failed", "会中记录 AI 互动失败", {
+      await this.diagnostics.logDiagnostic("warn", "meeting_workbench.interaction_failed", "会中记录 AI 互动失败", {
         entryId,
         mode: session.mode,
         error: diagnosticError(e),
@@ -2901,7 +2743,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       // transcript, so it is honest, reviewable, and cannot block later audio.
       recruitTransportFallbackError = error;
       try {
-        await this.logDiagnostic("warn", "outline.recruit_transport_fallback", "招聘大纲调用失败，已改用本批原始转写继续推进", {
+        await this.diagnostics.logDiagnostic("warn", "outline.recruit_transport_fallback", "招聘大纲调用失败，已改用本批原始转写继续推进", {
           segmentCount: session.segments.length,
           committedSegmentCount,
           attemptedSegmentCount,
@@ -2978,7 +2820,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
     if (recruitFormatRecovered || recruitFallbackUsed) {
       try {
-        await this.logDiagnostic(
+        await this.diagnostics.logDiagnostic(
           recruitFallbackUsed ? "warn" : "info",
           recruitFallbackUsed ? "outline.recruit_fallback_committed" : "outline.recruit_format_recovered",
           recruitFallbackUsed
@@ -3053,7 +2895,7 @@ class LexVoicePlugin extends obsidian.Plugin {
           mergedRenderedOutline = fallbackMergedRendered;
           semanticChanged = true;
           try {
-            await this.logDiagnostic("warn", "outline.recruit_no_change_fallback", "招聘大纲未体现本批新内容，已追加原始转写待复核节点", {
+            await this.diagnostics.logDiagnostic("warn", "outline.recruit_no_change_fallback", "招聘大纲未体现本批新内容，已追加原始转写待复核节点", {
               segmentCount: session.segments.length,
               committedSegmentCount,
               attemptedSegmentCount,
@@ -3117,7 +2959,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         input: inputMetrics,
       };
       try {
-        await this.logDiagnostic("warn", "outline.soft_rejected", "实时大纲本轮判废", {
+        await this.diagnostics.logDiagnostic("warn", "outline.soft_rejected", "实时大纲本轮判废", {
           reason: validation.reason,
           force: !!opts.force,
           mode: session.mode,
@@ -3208,7 +3050,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     };
     if (noChangeAcknowledged) {
       try {
-        await this.logDiagnostic("warn", "outline.no_change_acknowledged", "实时大纲增量连续无结构变化，已确认该批次以避免队列停滞", {
+        await this.diagnostics.logDiagnostic("warn", "outline.no_change_acknowledged", "实时大纲增量连续无结构变化，已确认该批次以避免队列停滞", {
           mode: session.mode,
           committedSegmentCount,
           attemptedSegmentCount,
@@ -3318,7 +3160,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       } catch (error) {
         markRealtimeOutlineFailure(session);
         console.error("[QnALog] final recruit-needs coverage failed", error);
-        await this.logDiagnostic("warn", "outline.final_generate_failed", "最终纪要写入前生成岗位画像覆盖失败", {
+        await this.diagnostics.logDiagnostic("warn", "outline.final_generate_failed", "最终纪要写入前生成岗位画像覆盖失败", {
           segmentCount: session.segments.length,
           mode: session.mode,
           captureMode: session.captureMode,
@@ -3359,7 +3201,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       },
       onAttemptFailed: async ({ batchIndex, attemptIndex, beforeCommittedCount, error }) => {
         try {
-          await this.logDiagnostic("warn", "outline.final_batch_retry", "最终大纲批次失败", {
+          await this.diagnostics.logDiagnostic("warn", "outline.final_batch_retry", "最终大纲批次失败", {
             batchIndex,
             attempt: attemptIndex + 1,
             maxAttempts: REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS,
@@ -3393,7 +3235,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         completedBatches: drainResult.completedBatches,
         retryCount: drainResult.retryCount,
       });
-      await this.logDiagnostic("info", "outline.final_completed", "最终大纲已覆盖全部转写", {
+      await this.diagnostics.logDiagnostic("info", "outline.final_completed", "最终大纲已覆盖全部转写", {
         segmentCount: totalSegmentCount,
         committedSegmentCount: drainResult.committedSegmentCount,
         completedBatches: drainResult.completedBatches,
@@ -3421,7 +3263,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       `大纲仅覆盖 ${drainResult.committedSegmentCount}/${totalSegmentCount} 段，最终纪要将继续基于完整转写生成。`
     );
     console.error("[QnALog] final realtime outline incomplete", drainResult.lastError);
-    await this.logDiagnostic("warn", "outline.final_incomplete", "最终大纲未覆盖全部转写", {
+    await this.diagnostics.logDiagnostic("warn", "outline.final_incomplete", "最终大纲未覆盖全部转写", {
       segmentCount: totalSegmentCount,
       committedSegmentCount: drainResult.committedSegmentCount,
       mode: session.mode,
@@ -3897,7 +3739,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       }
     } catch (e) {
       console.error(e);
-      await this.logDiagnostic("error", "recording.start_failed", "无法开始录音", {
+      await this.diagnostics.logDiagnostic("error", "recording.start_failed", "无法开始录音", {
         captureMode: this.settings.captureMode,
         requestedMode: this._oneShotCaptureMode || "",
         error: diagnosticError(e),
@@ -4072,7 +3914,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
     if (nextLevel !== previousLevel) {
       const recorderBuffer = this.getRecorderBufferSummary();
-      void this.logDiagnostic(nextLevel === "normal" ? "info" : "warn", "asr.live_backlog_changed", "实时转写积压状态变化", {
+      void this.diagnostics.logDiagnostic(nextLevel === "normal" ? "info" : "warn", "asr.live_backlog_changed", "实时转写积压状态变化", {
         reason,
         previousLevel,
         nextLevel,
@@ -4215,7 +4057,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     });
     session.activeSegmentJobs = (Number(session.activeSegmentJobs) || 0) + 1;
     const summary = this.updateLiveAsrBacklogPolicy(session, "enqueue");
-    void this.logDiagnostic("info", "asr.live_segment_enqueued", "录音分段已进入磁盘转写队列", {
+    void this.diagnostics.logDiagnostic("info", "asr.live_segment_enqueued", "录音分段已进入磁盘转写队列", {
       segmentIndex: descriptor.segmentIndex,
       durationMs: descriptor.durationMs,
       sizeBytes: descriptor.blobSize,
@@ -4234,7 +4076,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         const job = jobs.get(descriptor.jobId);
         if (job) job.state = "queued";
         this.updateLiveAsrBacklogPolicy(session, "persist-failed");
-        await this.logDiagnostic("error", "asr.segment_cache_write_failed", "录音分段写入缓存失败，将临时保留该段内存兜底", {
+        await this.diagnostics.logDiagnostic("error", "asr.segment_cache_write_failed", "录音分段写入缓存失败，将临时保留该段内存兜底", {
           segmentIndex: descriptor.segmentIndex,
           durationMs: descriptor.durationMs,
           sizeBytes: descriptor.blobSize,
@@ -4251,7 +4093,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         // 音频一旦安全落盘，就立即登记任务。即使 Obsidian 此后崩溃，重启时也能从路径恢复。
         queueTask = await this.registerLiveSegmentQueueTask(session, descriptor);
       } catch (e) {
-        await this.logDiagnostic("error", "asr.segment_task_persist_failed", "录音分段已落盘，但持久任务登记失败", {
+        await this.diagnostics.logDiagnostic("error", "asr.segment_task_persist_failed", "录音分段已落盘，但持久任务登记失败", {
           segmentIndex: descriptor.segmentIndex,
           audioPath: descriptor.segmentAudioPath,
           error: diagnosticError(e),
@@ -4330,7 +4172,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const previousFailures = Math.max(0, Number(this.getAsrServiceCircuitState().consecutiveFailures) || 0);
     this.asrServiceCircuitState = recordLiveAsrSuccess();
     if (previousFailures > 0) {
-      void this.logDiagnostic("info", "asr.service_circuit_recovered", "转写服务连接已恢复", { previousFailures });
+      void this.diagnostics.logDiagnostic("info", "asr.service_circuit_recovered", "转写服务连接已恢复", { previousFailures });
     }
   }
 
@@ -4338,7 +4180,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const previousFailures = Math.max(0, Number(this.getAsrServiceCircuitState().consecutiveFailures) || 0);
     this.asrServiceCircuitState = recordLiveAsrSuccess();
     if (previousFailures > 0) {
-      void this.logDiagnostic("info", "asr.service_circuit_manual_probe", "用户发起转写重试，已允许一次立即探测", {
+      void this.diagnostics.logDiagnostic("info", "asr.service_circuit_manual_probe", "用户发起转写重试，已允许一次立即探测", {
         source,
         previousFailures,
       });
@@ -4351,7 +4193,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     session.asrCircuitState = recordLiveAsrSuccess();
     this.recordAsrServiceAttemptSuccess();
     if (previousFailures > 0) {
-      void this.logDiagnostic("info", "asr.live_circuit_recovered", "实时转写服务已恢复", { previousFailures });
+      void this.diagnostics.logDiagnostic("info", "asr.live_circuit_recovered", "实时转写服务已恢复", { previousFailures });
     }
   }
 
@@ -4367,7 +4209,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const afterOpen = isLiveAsrCircuitOpen(session.asrCircuitState);
     if (!beforeOpen && afterOpen) {
       session.hasDeferredAsrJobs = true;
-      void this.logDiagnostic("warn", "asr.live_circuit_opened", "连续转写故障，实时请求已暂时熔断", {
+      void this.diagnostics.logDiagnostic("warn", "asr.live_circuit_opened", "连续转写故障，实时请求已暂时熔断", {
         segmentIndex: descriptor && descriptor.segmentIndex,
         consecutiveFailures: session.asrCircuitState.consecutiveFailures,
         openUntilMs: session.asrCircuitState.openUntilMs,
@@ -4427,7 +4269,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         } catch (queueError) {
           console.error("[QnALog] preserve live segment task after processing failure failed", queueError);
         }
-        try { await this.logDiagnostic("error", "segment.process_failed", "分段处理异常（已吞，避免毒化写入链）", { mode: session.mode, isFinal: !!preparedSeg.isFinal, error: diagnosticError(e) }); } catch { /* intentionally empty */ }
+        try { await this.diagnostics.logDiagnostic("error", "segment.process_failed", "分段处理异常（已吞，避免毒化写入链）", { mode: session.mode, isFinal: !!preparedSeg.isFinal, error: diagnosticError(e) }); } catch { /* intentionally empty */ }
       } finally {
         if (preparedSeg.jobId) this.getLiveAsrJobs(session).delete(preparedSeg.jobId);
         session.activeSegmentJobs = Math.max(0, (Number(session.activeSegmentJobs) || 1) - 1);
@@ -4619,7 +4461,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       }
     }
     if (deleted || failed) {
-      await this.logDiagnostic("info", "segment_cache.cleanup", "已清理过期转写分段", { folderPath, deleted, skipped, failed });
+      await this.diagnostics.logDiagnostic("info", "segment_cache.cleanup", "已清理过期转写分段", { folderPath, deleted, skipped, failed });
     }
     return { deleted, skipped, failed };
   }
@@ -4639,7 +4481,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         detail: "分段录音已停止，完整录音已保留，正在整理已有转写",
       });
       try {
-        await this.logDiagnostic("warn", "recording.master_only_finalize", "最后分段不可用，已用完整录音完成保存并整理已有转写", {
+        await this.diagnostics.logDiagnostic("warn", "recording.master_only_finalize", "最后分段不可用，已用完整录音完成保存并整理已有转写", {
           mode: session.mode,
           segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
           endOffsetMs: Number(seg.endOffsetMs) || 0,
@@ -4795,7 +4637,7 @@ class LexVoicePlugin extends obsidian.Plugin {
               if (channelTranscription.deduplicatedParts > 0) {
                 session.channelCrosstalkDeduplicated = Math.max(0, Number(session.channelCrosstalkDeduplicated) || 0)
                   + channelTranscription.deduplicatedParts;
-                await this.logDiagnostic("info", "asr.channel_crosstalk_deduplicated", "已去除跨声道重复转写", {
+                await this.diagnostics.logDiagnostic("info", "asr.channel_crosstalk_deduplicated", "已去除跨声道重复转写", {
                   segmentIndex,
                   removedParts: channelTranscription.deduplicatedParts,
                   totalRemovedParts: session.channelCrosstalkDeduplicated,
@@ -4806,7 +4648,7 @@ class LexVoicePlugin extends obsidian.Plugin {
                 && !session._channelDuplicatedNotified) {
                 session._channelDuplicatedNotified = true;
                 new obsidian.Notice("各声道内容相同，已按单声道转写。请在接收器上把输出改为「Stereo（立体声）」后重试。", 10000);
-                await this.logDiagnostic("warn", "asr.channel_content_duplicated", "录音多声道内容重复，已回退为单声道转写", {
+                await this.diagnostics.logDiagnostic("warn", "asr.channel_content_duplicated", "录音多声道内容重复，已回退为单声道转写", {
                   actualChannelCount: channelTranscription.actualChannelCount,
                   inputLabel: session.audioChannelLabel || "",
                 });
@@ -4825,14 +4667,14 @@ class LexVoicePlugin extends obsidian.Plugin {
                 new obsidian.Notice(actual > 1
                   ? `检测到 ${actual} 个可用声道，将按声道区分说话人。`
                   : "输入设备为多声道，但录音文件只有单声道。本次将按单声道转写。", 9000);
-                await this.logDiagnostic("warn", "asr.channel_encoder_downmix", "录音编码保留的声道少于设备输入声道", {
+                await this.diagnostics.logDiagnostic("warn", "asr.channel_encoder_downmix", "录音编码保留的声道少于设备输入声道", {
                   expectedChannelCount: expectedHardwareChannels,
                   actualChannelCount: actual,
                   inputLabel: session.audioChannelLabel || "",
                 });
               }
               if (channelTranscription.errors.length) {
-                await this.logDiagnostic("warn", "asr.channel_partial_failure", "部分声道转写失败，已保留其他声道的内容", {
+                await this.diagnostics.logDiagnostic("warn", "asr.channel_partial_failure", "部分声道转写失败，已保留其他声道的内容", {
                   segmentIndex,
                   channelCount: channelTranscription.actualChannelCount,
                   errors: channelTranscription.errors,
@@ -4859,7 +4701,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         this.recordLiveAsrAttemptFailure(session, err, seg);
       }
       try {
-        await this.logDiagnostic("warn", "asr.segment_empty", "录音分段转写返回空结果，已按软失败保留并排队", {
+        await this.diagnostics.logDiagnostic("warn", "asr.segment_empty", "录音分段转写返回空结果，已按软失败保留并排队", {
           segmentIndex,
           startOffsetMs: displayStartOffsetMs,
           endOffsetMs: displayEndOffsetMs,
@@ -4871,7 +4713,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     if (!err && batchAsrAttempted) this.recordLiveAsrAttemptSuccess(session);
     if (err) {
       if (err.asrDeferred) {
-        await this.logDiagnostic("warn", "asr.segment_deferred", "录音分段已跳过实时请求并转入后台队列", {
+        await this.diagnostics.logDiagnostic("warn", "asr.segment_deferred", "录音分段已跳过实时请求并转入后台队列", {
           segmentIndex,
           startOffsetMs: displayStartOffsetMs,
           endOffsetMs: displayEndOffsetMs,
@@ -4886,7 +4728,7 @@ class LexVoicePlugin extends obsidian.Plugin {
           message: getErrorMessage(err),
           startedAtMs: displayStartOffsetMs,
         });
-        await this.logDiagnostic("error", "asr.segment_failed", "录音分段转写失败", {
+        await this.diagnostics.logDiagnostic("error", "asr.segment_failed", "录音分段转写失败", {
           provider: this.settings.activeTranscribeProvider,
           model: this.getActiveTranscribeProfile() && this.getActiveTranscribeProfile().model,
           mime: (transcribeBlob && transcribeBlob.type) || seg.blobType || "",
@@ -4911,7 +4753,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       // 防误报：只在"本场此前从未产生过任何非空转写"时提示。
       // 否则会议中途的合理静默段（开头/中场没人说话）会骚扰正在正常录音的用户。
       const hadAnyText = Array.isArray(session.segments) && session.segments.some((s) => s && s.text && String(s.text).trim());
-      await this.logDiagnostic("warn", "asr.empty_result", "本段无转写内容", {
+      await this.diagnostics.logDiagnostic("warn", "asr.empty_result", "本段无转写内容", {
         segmentIndex, mode: session.mode, hadAnyText,
       });
       if (!hadAnyText && !session._emptyAsrNotified) {
@@ -5026,7 +4868,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         } catch { /* intentionally empty */ }
         console.error("[QnALog] finalize session failed", e);
         try {
-          await this.logDiagnostic("error", "session.finalize_failed", "纪要最终收尾异常，原始材料已保留", {
+          await this.diagnostics.logDiagnostic("error", "session.finalize_failed", "纪要最终收尾异常，原始材料已保留", {
             mode: session.mode,
             mdPath: session.mdPath,
             segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
@@ -5123,7 +4965,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         namesPersisted = true;
       } catch (error) {
         try {
-          await this.logDiagnostic("warn", "speaker.names_persist_failed", "说话人姓名已保存到属性，但正文更新失败", {
+          await this.diagnostics.logDiagnostic("warn", "speaker.names_persist_failed", "说话人姓名已保存到属性，但正文更新失败", {
             mdPath: file.path,
             error: diagnosticError(error),
           });
@@ -5132,7 +4974,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       }
       if (namesPersisted) {
         try {
-          await this.logDiagnostic("info", "speaker.names_persisted", "说话人姓名已写入原始转写", {
+          await this.diagnostics.logDiagnostic("info", "speaker.names_persisted", "说话人姓名已写入原始转写", {
             mdPath: file.path,
             confirmedCount: Object.values(mappings).filter(mapping => String(mapping && mapping.personName || "").trim()).length,
             replacements: persistedReplacements,
@@ -5198,7 +5040,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         detail: "已保留录音，可检查转写服务后从待处理队列重试",
       });
       try {
-        await this.logDiagnostic("error", "session.no_transcript", "整场没有有效转写，已跳过 LLM 整理以避免无效计费", {
+        await this.diagnostics.logDiagnostic("error", "session.no_transcript", "整场没有有效转写，已跳过 LLM 整理以避免无效计费", {
           mode: session.mode,
           segmentCount: segmentsForFinal.length,
           failedSegments: segmentsForFinal.filter(s => s && s.error).length,
@@ -5225,7 +5067,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     } catch (error) {
       console.warn("[QnALog] speaker confirmation failed; continuing with generic labels", error);
       try {
-        await this.logDiagnostic("warn", "speaker.confirmation_failed", "说话人姓名确认未完成，已保留编号继续整理", {
+        await this.diagnostics.logDiagnostic("warn", "speaker.confirmation_failed", "说话人姓名确认未完成，已保留编号继续整理", {
           mdPath: session.mdPath,
           error: diagnosticError(error),
         });
@@ -5319,7 +5161,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         session._finalizeTaskMeter = null;
       }
       nonRetryableMergeError = isLlmNonRetryableError(mergeError);
-      await this.logDiagnostic("error", "llm.merge_failed", "LLM 合并整理失败", {
+      await this.diagnostics.logDiagnostic("error", "llm.merge_failed", "LLM 合并整理失败", {
         mode: session.mode,
         segmentCount: segmentsForFinal.length,
         duration: isTextImportSession(session) ? "" : (segmentsForFinal.length ? formatElapsed(segmentsForFinal[segmentsForFinal.length - 1].endOffsetMs || 0) : ""),
@@ -5391,7 +5233,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         commitError = true;
         mergeError = writeError;
         session.finalizationError = getErrorMessage(writeError);
-        await this.logDiagnostic("error", "briefing.commit_failed", "纪要正文已生成，但写入 Markdown 失败", {
+        await this.diagnostics.logDiagnostic("error", "briefing.commit_failed", "纪要正文已生成，但写入 Markdown 失败", {
           mode: session.mode,
           mdPath: session.mdPath,
           checkpointId: finalSessionMeta && finalSessionMeta._briefingCheckpointId || "",
@@ -5544,7 +5386,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const filePath = typeof fileOrPath === "string" ? fileOrPath : (fileOrPath && fileOrPath.path) || "";
       console.warn("[QnALog] note index refresh failed", error);
       try {
-        await this.logDiagnostic("warn", "note.index_refresh_failed", "纪要索引更新失败，正文不受影响", {
+        await this.diagnostics.logDiagnostic("warn", "note.index_refresh_failed", "纪要索引更新失败，正文不受影响", {
           filePath,
           reason: options.reason || "",
           error: diagnosticError(error),
@@ -8817,7 +8659,7 @@ ${source}`;
     try {
       return await run;
     } catch (e) {
-      await this.logDiagnostic("error", "inbox.external_scan_failed", "外部音频文件夹扫描失败", {
+      await this.diagnostics.logDiagnostic("error", "inbox.external_scan_failed", "外部音频文件夹扫描失败", {
         source: options.source || "manual",
         error: diagnosticError(e),
       });
@@ -8905,7 +8747,7 @@ ${source}`;
         detail: "音频已就绪，正在生成纪要",
         progress: 20,
       });
-      await this.logDiagnostic("info", "inbox.external_import_started", "开始自动导入外部音频", {
+      await this.diagnostics.logDiagnostic("info", "inbox.external_import_started", "开始自动导入外部音频", {
         audioName: file.name,
         size: file.size,
         fingerprint: file.fingerprint,
@@ -8932,7 +8774,7 @@ ${source}`;
           : entry.notePath ? `纪要已写入 ${entry.notePath}` : "纪要已写入库中",
         progress: 100,
       });
-      await this.logDiagnostic("info", "inbox.external_import_completed", "外部音频自动导入完成", {
+      await this.diagnostics.logDiagnostic("info", "inbox.external_import_completed", "外部音频自动导入完成", {
         audioName: file.name,
         size: file.size,
         fingerprint: file.fingerprint,
@@ -8969,7 +8811,7 @@ ${source}`;
           actions: [{ id: "open-settings", label: "检查设置" }],
         });
       }
-      await this.logDiagnostic("error", "inbox.external_import_failed", "外部音频自动导入失败", {
+      await this.diagnostics.logDiagnostic("error", "inbox.external_import_failed", "外部音频自动导入失败", {
         audioName: file.name,
         size: file.size,
         fingerprint: file.fingerprint,
@@ -9268,7 +9110,7 @@ ${source}`;
           : await adapter.readBinary(obsidian.normalizePath(audioPath));
         if (!ab || ab.byteLength === 0) {
           new obsidian.Notice(`跳过：${displayName} 是空文件（0 字节）。请确认文件已完整下载后再试。`, 9000);
-          await this.logDiagnostic("warn", "import.empty_file", "导入音频为空文件", { audioName: displayName, size: 0 });
+          await this.diagnostics.logDiagnostic("warn", "import.empty_file", "导入音频为空文件", { audioName: displayName, size: 0 });
           continue;
         }
         mime = mimeFromExt(file.extension);
@@ -9361,7 +9203,7 @@ ${source}`;
         if (speakerCount >= 2 && String(result.text || "").trim() && detectedSpeakerIds.length < speakerCount) {
           const mismatchMessage = `已指定 ${speakerCount} 位说话人，模型实际区分出 ${detectedSpeakerIds.length} 位`;
           new obsidian.Notice(`${mismatchMessage}。原始转写已保留，可在说话人编辑中核对。`, 9000);
-          await this.logDiagnostic("warn", "asr.import_speaker_count_mismatch", mismatchMessage, {
+          await this.diagnostics.logDiagnostic("warn", "asr.import_speaker_count_mismatch", mismatchMessage, {
             provider: importProvider.id,
             model: importProvider.model || "",
             audioName: displayName,
@@ -9418,7 +9260,7 @@ ${source}`;
           activeSegments: 0,
           failedSegments: Math.max(0, Number(this._importBusy && this._importBusy.failedSegments) || 0) + 1,
         });
-        await this.logDiagnostic("error", "asr.import_whole_file_failed", "导入音频整文件转写失败", {
+        await this.diagnostics.logDiagnostic("error", "asr.import_whole_file_failed", "导入音频整文件转写失败", {
           provider: importProvider.id,
           model: importProvider.model || "",
           audioName: displayName,
@@ -9541,7 +9383,7 @@ ${source}`;
         error: checkpointError.message,
         label: "原始转写写入未完成",
       });
-      await this.logDiagnostic("error", "asr.import_transcript_checkpoint_failed", "导入音频原始转写检查点未通过", {
+      await this.diagnostics.logDiagnostic("error", "asr.import_transcript_checkpoint_failed", "导入音频原始转写检查点未通过", {
         mdPath: session.mdPath,
         expectedSegments: transcriptCheckpoint.expectedSegments,
         persistedSegments: transcriptCheckpoint.persistedSegments,
@@ -9550,7 +9392,7 @@ ${source}`;
       });
       throw checkpointError;
     }
-    await this.logDiagnostic("info", "asr.import_transcript_persisted", "导入音频原始转写已写入，允许进入 AI 整理", {
+    await this.diagnostics.logDiagnostic("info", "asr.import_transcript_persisted", "导入音频原始转写已写入，允许进入 AI 整理", {
       mdPath: session.mdPath,
       segmentCount: transcriptCheckpoint.expectedSegments,
       transcriptChars: transcriptCheckpoint.expectedChars,
@@ -9638,7 +9480,7 @@ ${source}`;
     const meta = getModeMeta(this.settings, mode);
     const llmIssue = getLlmConfigIssue(this.settings);
     if (llmIssue) {
-      await this.logDiagnostic("warn", "text_import.llm_config_missing", "导入文本前大模型配置不完整", {
+      await this.diagnostics.logDiagnostic("warn", "text_import.llm_config_missing", "导入文本前大模型配置不完整", {
         mode,
         llmRoute: "composer.chat-completions",
         llmEndpoint: this.settings.llmEndpoint || "",
@@ -9782,7 +9624,7 @@ ${source}`;
         this.scheduleTaskQueueRetry(30 * 1000, "activity-still-busy");
         return;
       }
-      void this.logDiagnostic("info", "queue.scheduled_retry_started", "开始执行计划中的后台重试", {
+      void this.diagnostics.logDiagnostic("info", "queue.scheduled_retry_started", "开始执行计划中的后台重试", {
         reason,
         taskCount: this.queue && Array.isArray(this.queue.tasks) ? this.queue.tasks.length : 0,
       });
@@ -9902,7 +9744,7 @@ ${source}`;
 
     const recovered = await this.recoverTranscribeTaskAudioBlob(task);
     if (recovered) {
-      await this.logDiagnostic("warn", "queue.transcribe_audio_recovered", "转写重试已从完整录音恢复临时切片", {
+      await this.diagnostics.logDiagnostic("warn", "queue.transcribe_audio_recovered", "转写重试已从完整录音恢复临时切片", {
         audioName: task.audioName || "",
         sourceAudioName: recovered.sourceName || "",
         startOffsetMs: task.startOffsetMs,
@@ -10069,7 +9911,7 @@ ${source}`;
     if (!String(text || "").trim()) {
       // 重试仍为空 = 失败（不再替换成"暂无有效转写"并删缓存了事）：
       // 抛错让队列按失败记录 + 计重试次数，缓存音频保留，后续还能继续重试。
-      await this.logDiagnostic("warn", "queue.transcribe_empty_result", "转写重试返回空文本，视作失败继续排队", {
+      await this.diagnostics.logDiagnostic("warn", "queue.transcribe_empty_result", "转写重试返回空文本，视作失败继续排队", {
         mdPath: task.mdPath || "",
         audioName: task.audioName || "",
         startOffsetMs: task.startOffsetMs,
@@ -10147,7 +9989,7 @@ ${source}`;
         await this.repolishMarkdownFile(mdFile, mode, null);
       } catch (e) {
         try {
-          await this.logDiagnostic("error", "queue.auto_repolish_failed", "补转写后自动重新整理失败", {
+          await this.diagnostics.logDiagnostic("error", "queue.auto_repolish_failed", "补转写后自动重新整理失败", {
             mdPath: mdNorm,
             error: diagnosticError(e),
           });

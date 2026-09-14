@@ -177,7 +177,7 @@ export class TaskQueue {
           // 服务仍在限流/超时，继续扫后续音频只会扩大请求风暴。暂停整批，冷却后从持久化队列续跑。
           const retryDelayMs = this.plugin.getAsrServiceRetryDelayMs();
           try {
-            await this.plugin.logDiagnostic("warn", "queue.asr_circuit_opened", "后台转写连续处理遇到瞬时故障，已暂停批次", {
+            await this.plugin.diagnostics.logDiagnostic("warn", "queue.asr_circuit_opened", "后台转写连续处理遇到瞬时故障，已暂停批次", {
               remaining: Math.max(0, pending.length - this._batchDone),
               cooldownMs: retryDelayMs,
               consecutiveFailures: this.plugin.getAsrServiceCircuitState().consecutiveFailures,
@@ -265,7 +265,7 @@ export class TaskQueue {
         lastError: message,
         lastEventAt: new Date().toISOString(),
       });
-      await this.plugin.logDiagnostic("error", "queue.task_failed", "队列任务失败", {
+      await this.plugin.diagnostics.logDiagnostic("error", "queue.task_failed", "队列任务失败", {
         taskType: task.type,
         retries: nextRetries,
         transportFailures: isTransportAsr ? Math.max(0, Number(task.transportFailures) || 0) + 1 : 0,

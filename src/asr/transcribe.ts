@@ -681,8 +681,8 @@ export async function requestApimimoAsrChunkWithEmptyRetry(
     ) || "").trim();
     if (part) return part;
     try {
-      if (plugin && typeof plugin.logDiagnostic === "function") {
-        await plugin.logDiagnostic("warn", "asr.apimimo_empty_chunk", "APIMiMo 单块转写为空", {
+      if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
+        await plugin.diagnostics.logDiagnostic("warn", "asr.apimimo_empty_chunk", "APIMiMo 单块转写为空", {
           chunkIndex,
           chunkCount,
           chunkBytes: prepared && prepared.blob && prepared.blob.size,

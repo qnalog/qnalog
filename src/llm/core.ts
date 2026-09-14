@@ -143,8 +143,9 @@ export function countLlmMessageChars(messages) {
 
 export async function logLlmRequestDiagnostic(plugin, level, code, message, data) {
   try {
-    if (plugin && typeof plugin.logDiagnostic === "function") {
-      await plugin.logDiagnostic(level, code, message, data);
+    const diagnostics = plugin && plugin.diagnostics;
+    if (diagnostics && typeof diagnostics.logDiagnostic === "function") {
+      await diagnostics.logDiagnostic(level, code, message, data);
     }
   } catch (e) {
     console.warn("[QnALog] llm diagnostic failed", e);

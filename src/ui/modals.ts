@@ -1267,7 +1267,7 @@ export class QueueModal extends obsidian.Modal {
     if (tmTokLabel) foot.createSpan({ cls: "lexvoice-progress-foot-token", text: `${tmTokLabel} token` });
     const footActions = foot.createDiv({ cls: "lexvoice-progress-foot-actions" });
     const logBtn = footActions.createEl("button", { cls: "lexvoice-progress-foot-link", attr: { type: "button" }, text: "查看日志" });
-    logBtn.onclick = async () => { try { await this.plugin.copyDiagnosticReport(); } catch { /* intentionally empty */ } };
+    logBtn.onclick = async () => { try { await this.plugin.diagnostics.copyDiagnosticReport(); } catch { /* intentionally empty */ } };
     const backgroundBtn = footActions.createEl("button", { cls: "lexvoice-progress-foot-link is-primary", attr: { type: "button" }, text: "后台运行" });
     backgroundBtn.onclick = () => this.close();
     if (pending.length) {
@@ -2390,9 +2390,9 @@ export class ImportTextModal extends obsidian.Modal {
       await this.plugin.importTextFiles(paths, mode);
     } catch (e) {
       console.error("[QnALog] import text failed", e);
-      if (this.plugin && this.plugin.logDiagnostic) {
+      if (this.plugin && this.plugin.diagnostics) {
         try {
-          await this.plugin.logDiagnostic("error", "text_import.failed", "导入文本整理失败", {
+          await this.plugin.diagnostics.logDiagnostic("error", "text_import.failed", "导入文本整理失败", {
             mode,
             count: paths.length,
             error: diagnosticError(e),

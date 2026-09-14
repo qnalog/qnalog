@@ -2475,7 +2475,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         this.plugin.settings.diagnosticsLogEnabled = v;
         await this.plugin.saveSettings();
       }))
-      .addButton(b => b.setButtonText("复制诊断报告").onClick(() => this.plugin.copyDiagnosticReport()));
+      .addButton(b => b.setButtonText("复制诊断报告").onClick(() => this.plugin.diagnostics.copyDiagnosticReport()));
 
     new obsidian.Setting(c).setName("诊断日志文件夹")
       .setDesc("Obsidian 库内的相对路径。一般保持默认即可；诊断报告只有在主动复制后才会提供给开发者排查。修改后仅影响新日志文件。")
@@ -2492,7 +2492,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("清空").onClick(async () => {
         const ok = await lexvoiceConfirm(this.app, "清空诊断日志？", "将删除诊断日志文件夹中的全部 .jsonl 日志文件；删除后无法再用于追溯历史问题（文件进入系统废纸篓，可恢复）。", "清空");
         if (!ok) return;
-        const folder = this.app.vault.getAbstractFileByPath(this.plugin.getDiagnosticsFolder());
+        const folder = this.app.vault.getAbstractFileByPath(this.plugin.diagnostics.getDiagnosticsFolder());
         let n = 0;
         if (folder instanceof obsidian.TFolder) {
           const targets = folder.children.filter(f => f instanceof obsidian.TFile && f.extension === "jsonl");
