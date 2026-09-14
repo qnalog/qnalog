@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：外部收件箱：库外文件夹监听、指纹账本、复制与处理
 
 import * as obsidian from "obsidian";
+import type { ImportAudioFilesOptions, ImportAudioFilesResult } from "../imports/import-service";
 import { getDesktopModule } from "../shared/desktop-runtime";
 import { isLexVoiceMobileRuntime } from "../shared/util-platform";
 import type { LexVoiceSettings, RecordingSession } from "../shared/types";
@@ -16,13 +16,44 @@ import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 
+/** 扫描电脑文件夹时的选项。 */
+export interface ExternalInboxScanOptions {
+  /** 用户从命令面板手动触发；手动触发时对不满足条件的来源给出提示。 */
+  manual?: boolean;
+  /** 扫描来源标记，写入台账。 */
+  source?: string;
+}
+
+/** 桌面端 require("fs") 取到的模块里用到的成员。 */
+type DesktopDirent = { name: string; isFile(): boolean; isDirectory(): boolean };
+type DesktopStat = { mtimeMs: number; size: number; isFile(): boolean };
+type DesktopFsModule = {
+  promises?: {
+    readdir(path: string, options: Record<string, unknown>): Promise<DesktopDirent[]>;
+    stat(path: string): Promise<DesktopStat>;
+    copyFile(source: string, target: string): Promise<void>;
+    /** 不传 encoding 时返回 Buffer（Uint8Array 的子类）。 */
+    readFile(path: string): Promise<Uint8Array>;
+  };
+  watch?: (path: string, options: Record<string, unknown>, listener: (event: string, name: string) => void) => unknown;
+};
+
+/** 桌面端 require("path") 取到的模块里用到的成员。 */
+type DesktopPathModule = { join: (...parts: string[]) => string };
+
+/** 桌面端 require("electron") / require("@electron/remote") 取到的模块里用到的成员。 */
+type DesktopElectronModule = {
+  dialog?: { showOpenDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePaths: string[] }> };
+  remote?: DesktopElectronModule;
+};
+
 /** ExternalInboxService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface ExternalInboxHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   diagnostics: DiagnosticsService;
   /** 导入服务：把稳定的文件送进导入流程。 */
-  imports: { importAudioFiles(paths: string[], modeOverride?: string, options?: unknown): Promise<void> };
+  imports: { importAudioFiles(paths: string[], modeOverride?: string, options?: ImportAudioFilesOptions): Promise<ImportAudioFilesResult | undefined> };
   manifest: { version?: string; id: string; dir?: string };
   recorder: RecorderService | null;
   /** 录音采集服务：分段缓存目录与缓存清理。 */
@@ -71,8 +102,8 @@ export class ExternalInboxService {
   }
 
   getExternalInboxRuntime() {
-    const fsModule = getDesktopModule("fs");
-    const pathModule = getDesktopModule("path");
+    const fsModule = getDesktopModule<DesktopFsModule>("fs");
+    const pathModule = getDesktopModule<DesktopPathModule>("path");
     const promises = fsModule && fsModule.promises;
     if (!promises || typeof promises.readdir !== "function" || typeof promises.stat !== "function" || !pathModule) {
       return null;
@@ -109,11 +140,11 @@ export class ExternalInboxService {
       return "";
     }
     let dialog = null;
-    const electron = getDesktopModule("electron");
+    const electron = getDesktopModule<DesktopElectronModule>("electron");
     if (electron && electron.dialog) dialog = electron.dialog;
     if (!dialog && electron && electron.remote && electron.remote.dialog) dialog = electron.remote.dialog;
     if (!dialog) {
-      const remote = getDesktopModule("@electron/remote");
+      const remote = getDesktopModule<DesktopElectronModule>("@electron/remote");
       if (remote && remote.dialog) dialog = remote.dialog;
     }
     if (!dialog || typeof dialog.showOpenDialog !== "function") {
@@ -242,7 +273,7 @@ export class ExternalInboxService {
     else this.host.tasks.startTaskActivity(patch);
   }
 
-  async scanExternalInboxFolder(options = {}) {
+  async scanExternalInboxFolder(options: ExternalInboxScanOptions = {}) {
     const manual = !!options.manual;
     const folder = String(this.host.settings.inboxFolder || "").trim();
     if (!isAbsoluteExternalInboxPath(folder)) {
@@ -368,19 +399,21 @@ export class ExternalInboxService {
     const cachePath = obsidian.normalizePath(`${this.host.recording.getSegmentCacheFolder()}/${cacheName}`);
     const adapter = this.host.app.vault.adapter;
     if (await adapter.exists(cachePath)) await adapter.remove(cachePath);
-    const fullCachePath = typeof adapter.getFullPath === "function" ? adapter.getFullPath(cachePath) : "";
+    const desktopAdapter = adapter as { getFullPath?: (p: string) => string };
+      const fullCachePath = typeof desktopAdapter.getFullPath === "function" ? desktopAdapter.getFullPath(cachePath) : "";
     if (fullCachePath && typeof runtime.promises.copyFile === "function") {
       await runtime.promises.copyFile(file.fullPath, fullCachePath);
     } else {
       const bytes = await runtime.promises.readFile(file.fullPath);
-      const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      // Uint8Array 的 buffer 可能是 SharedArrayBuffer；写入二进制需要 ArrayBuffer 视图。
+      const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
       await adapter.writeBinary(cachePath, arrayBuffer);
     }
     const current = await runtime.fileSystem.stat(file.fullPath);
     if (current.size !== file.size || current.mtimeMs !== file.mtimeMs) {
       try { if (await adapter.exists(cachePath)) await adapter.remove(cachePath); } catch { /* intentionally empty */ }
       const changed = new Error("文件仍在同步，稍后重试");
-      changed.code = "EXTERNAL_FILE_CHANGED";
+      (changed as Error & { code?: string }).code = "EXTERNAL_FILE_CHANGED";
       throw changed;
     }
     const copied = await adapter.stat(cachePath);

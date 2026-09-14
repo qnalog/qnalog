@@ -27,6 +27,15 @@ import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { ViewShellService } from "../ui/view-shell-service";
 import { SessionFinalizeService } from "../notes/session-finalize-service";
 
+/** 导入音频的返回：新建会话的路径、分段数，以及需要重试的转写段数；入参为空或中断时返回 undefined。 */
+export interface ImportAudioFilesResult {
+  mdPath: string;
+  sessionId: string;
+  segmentCount: number;
+  /** 首轮转写失败的段数；大于 0 表示纪要已建立但转写待重试。 */
+  pendingTranscriptionCount: number;
+}
+
 /** 导入音频时的可选参数；三项都缺省，缺省时取设置里的默认值。 */
 export interface ImportAudioFilesOptions {
   /** 外部收件箱来源；自动导入时用于记录来源与去重指纹。 */
@@ -78,7 +87,7 @@ export class ImportService {
     modal.open();
   }
 
-  async importAudioFiles(paths, modeOverride, options: ImportAudioFilesOptions = {}) {
+  async importAudioFiles(paths, modeOverride, options: ImportAudioFilesOptions = {}): Promise<ImportAudioFilesResult | undefined> {
     if (!paths || !paths.length) return;
     paths.sort();
     const externalSource = options && options.externalSource

@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：可持久化任务队列：转写 / 合并 / 提示词生成
 
 import type LexVoicePlugin from "../main";
@@ -127,7 +126,13 @@ export class TaskQueue {
     try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     return task;
   }
-  async remove(id) {
+  /**
+   * 从队列移除任务。
+   * opts.preserveActivity 由调用方传入以表明「保留任务活动记录」，但本方法只改队列、不碰活动记录，
+   * 因此该选项目前不影响行为；保留签名以免调用方语义丢失。
+   */
+  async remove(id, opts: { preserveActivity?: boolean } = {}) {
+    void opts;
     this.tasks = this.tasks.filter(t => t.id !== id);
     await this.plugin.saveAll();
     try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
@@ -220,7 +225,7 @@ export class TaskQueue {
       }
       else if (task.type === "merge") await this.plugin.queueRetry.retryMergeTask(task);
       else if (task.type === "generate-prompt") await this.plugin.queueRetry.runGeneratePromptTask(task);
-      else throw new Error(`未知任务类型：${task.type}`);
+      else throw new Error(`未知任务类型：${(task as QueueTask).type}`);
       try {
         this.plugin.tasks.completeTaskActivity(this.plugin.tasks.queueTaskActivityId(task), {
           stage: "done",
@@ -261,7 +266,7 @@ export class TaskQueue {
         retries: nextRetries,
         transportFailures: isTransportAsr ? Math.max(0, Number(task.transportFailures) || 0) + 1 : task.transportFailures,
         nextRetryAt,
-        deferredReason: isTransportAsr ? "service-unavailable" : task.deferredReason,
+        deferredReason: isTransportAsr ? "service-unavailable" : ("deferredReason" in task ? task.deferredReason : undefined),
         lastError: message,
         lastEventAt: new Date().toISOString(),
       });
@@ -272,7 +277,7 @@ export class TaskQueue {
         nextRetryAt: nextRetryAt || "",
         maxRetries: this.plugin.settings.maxRetries || 3,
         mdPath: task.mdPath || "",
-        audioPath: task.audioPath || "",
+        audioPath: "audioPath" in task ? task.audioPath || "" : "",
         mode: task.mode || "",
         error: diagnosticError(e),
       });
