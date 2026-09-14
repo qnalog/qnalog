@@ -4,14 +4,23 @@ import { describe, expect, it } from "vitest";
 import { pluginSourceText } from "./plugin-source";
 
 const root = path.resolve(__dirname, "..");
+// 队列任务的失败恢复已抽到独立模块；需要断言"同一文件内先后顺序"的用例读该文件本身。
+const queueRetrySource = fs.readFileSync(path.join(root, "src/queue/queue-retry-service.ts"), "utf8");
+// 版本块与派生笔记的实现同样已抽出；顺序断言读该文件本身。
+const versionStoreSource = fs.readFileSync(path.join(root, "src/versions/version-store.ts"), "utf8");
+// 会话收尾（逐字稿校验、说话人姓名确认、正文落盘）已抽到该模块。
+const finalizeSource = fs.readFileSync(path.join(root, "src/notes/session-finalize-service.ts"), "utf8");
+// 导入流程（逐字稿校验、转写提交、进入整理）已抽到该模块。
+const importSource = fs.readFileSync(path.join(root, "src/imports/import-service.ts"), "utf8");
 
 describe("import finalization contract", () => {
   it("persists and verifies the raw transcript before starting AI organization", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
+    const source = importSource;
+    // 断言写在导入服务文件里的顺序：校验逐字稿断点 → 记录持久化事件 → 进入整理阶段 → 收尾。
     const verifyIndex = source.indexOf("const transcriptCheckpoint = verifyTranscriptCheckpoint");
     const persistedIndex = source.indexOf('"asr.import_transcript_persisted"', verifyIndex);
-    const organizeIndex = source.indexOf('phase: "organize"', persistedIndex);
-    const finalizeIndex = source.indexOf("await this.finalizeSession(session);", organizeIndex);
+    const organizeIndex = source.indexOf("phase: \"organize\"", persistedIndex);
+    const finalizeIndex = source.indexOf("await this.host.sessionFinalize.finalizeSession(session);", organizeIndex);
 
     expect(verifyIndex).toBeGreaterThan(-1);
     expect(persistedIndex).toBeGreaterThan(verifyIndex);
@@ -20,11 +29,10 @@ describe("import finalization contract", () => {
   });
 
   it("rebuilds imported notes after both first-pass and queued AI organization", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
-    const firstPassPolicy = source.indexOf("shouldRewriteConsolidatedNote(this.settings, writeSession)");
-    const retryStart = source.indexOf("async retryMergeTask(task)");
-    const retryPolicy = source.indexOf("shouldRewriteConsolidatedNote(this.settings, retrySession)", retryStart);
-    const retryRewrite = source.indexOf("await this.rewriteConsolidated(retrySession, polished)", retryPolicy);
+    const firstPassPolicy = finalizeSource.indexOf("shouldRewriteConsolidatedNote(this.host.settings, writeSession)");
+    const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
+    const retryPolicy = queueRetrySource.indexOf("shouldRewriteConsolidatedNote(this.host.settings, retrySession)", retryStart);
+    const retryRewrite = queueRetrySource.indexOf("await this.host.noteWriter.rewriteConsolidated(retrySession, polished)", retryPolicy);
 
     expect(firstPassPolicy).toBeGreaterThan(-1);
     expect(retryStart).toBeGreaterThan(-1);
@@ -33,24 +41,25 @@ describe("import finalization contract", () => {
   });
 
   it("refreshes the portable note index only after the final file name is known", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
-    const finalizeRename = source.indexOf("const beforeRenamePath = session.mdPath;");
-    const finalizeIndex = source.indexOf('reason: "finalize"', finalizeRename);
-    const retryStart = source.indexOf("async retryMergeTask(task)");
-    const retryRename = source.indexOf("const renamed = (task.mode", retryStart);
-    const retryIndex = source.indexOf('reason: "merge-retry"', retryRename);
-    const derivedStart = source.indexOf("async createLexVoiceDerivedNote");
-    const derivedIndex = source.indexOf('reason: "derived-note"', derivedStart);
+    const finalizeRename = finalizeSource.indexOf("const beforeRenamePath = session.mdPath;");
+    const finalizeIndex = finalizeSource.indexOf('reason: "finalize"', finalizeRename);
+    const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
+    const retryRename = queueRetrySource.indexOf("const renamed = (task.mode", retryStart);
+    const retryIndex = queueRetrySource.indexOf('reason: "merge-retry"', retryRename);
+    const derivedStart = versionStoreSource.indexOf("async createLexVoiceDerivedNote");
+    const derivedIndex = versionStoreSource.indexOf('reason: "derived-note"', derivedStart);
 
     expect(finalizeIndex).toBeGreaterThan(finalizeRename);
     expect(retryIndex).toBeGreaterThan(retryRename);
     expect(derivedIndex).toBeGreaterThan(derivedStart);
-    expect(source).toContain('"note.index_refresh_failed"');
-    expect(source).toContain("纪要索引更新失败，正文不受影响");
+    // 刷新索引的实现在笔记索引模块里，用全文断言这两条证据仍存在。
+    expect(pluginSourceText()).toContain('"note.index_refresh_failed"');
+    expect(pluginSourceText()).toContain("纪要索引更新失败，正文不受影响");
   });
 
   it("keeps AI configuration failures as blocked, manually recoverable merge tasks", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
+    // 合并任务的重试实现已在独立模块里，按本文件的约定用全文断言"字符串存在"。
+    const source = pluginSourceText();
 
     expect(source).toContain('status: nonRetryableMergeError ? "blocked" : "pending"');
     expect(source).toContain("speakerFrontmatter,");
@@ -58,11 +67,11 @@ describe("import finalization contract", () => {
   });
 
   it("writes confirmed speaker names into the note before AI organization", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
+    const source = finalizeSource;
     const confirmStart = source.indexOf("async confirmSpeakerNamesBeforeFinal");
     const frontmatterIndex = source.indexOf("nextFrontmatter.lexvoice_speakers = mappings", confirmStart);
     const replaceIndex = source.indexOf("replaceSpeakerDisplayName(markdown, speakerId, personName)", frontmatterIndex);
-    const persistIndex = source.indexOf("await this.app.vault.modify(file, markdown)", replaceIndex);
+    const persistIndex = source.indexOf("await this.host.app.vault.modify(file, markdown)", replaceIndex);
     const llmCopyIndex = source.indexOf("const llmSegments = hasConfirmedName", persistIndex);
 
     expect(confirmStart).toBeGreaterThan(-1);

@@ -139,8 +139,8 @@ export class RecorderService {
     this.state = "paused";
     this.pausedAt = Date.now();
     try {
-      if (this.plugin && typeof this.plugin.setRecordingIssue === "function") {
-        this.plugin.setRecordingIssue("microphone", this.issue);
+      if (this.plugin && this.plugin.recording && typeof this.plugin.recording.setRecordingIssue === "function") {
+        this.plugin.recording.setRecordingIssue("microphone", this.issue);
       }
     } catch { /* intentionally empty */ }
     this.emit();
@@ -544,9 +544,9 @@ export class RecorderService {
         stoppedAtMs: endOffset,
         message: "录音分段无法继续，已暂停。请停止录音以保存完整音频后重试。",
       });
-      try { this.plugin.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
+      try { this.plugin.recording.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
       try {
-        void this.plugin.logDiagnostic("error", "recording.segment_cut_failed", "录音分段切换失败，已暂停并保留完整录音", {
+        void this.plugin.diagnostics.logDiagnostic("error", "recording.segment_cut_failed", "录音分段切换失败，已暂停并保留完整录音", {
           index, startOffsetMs: startOffset, endOffsetMs: endOffset, error: diagnosticError(e),
         });
       } catch { /* intentionally empty */ }
@@ -603,13 +603,13 @@ export class RecorderService {
         stoppedAtMs: this.getInfo().elapsed,
         message: "录音器未能恢复，仍保持暂停。请停止录音以保存已有音频。",
       });
-      try { this.plugin.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
+      try { this.plugin.recording.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
       this.emit();
       return;
     }
     this.pausedFor += Date.now() - this.pausedAt;
     this.issue = null;
-    try { this.plugin.clearRecordingIssue("service"); } catch { /* intentionally empty */ }
+    try { this.plugin.recording.clearRecordingIssue("service"); } catch { /* intentionally empty */ }
     this.state = "recording";
     this.emit();
   }

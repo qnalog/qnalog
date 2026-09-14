@@ -114,7 +114,7 @@ export class TaskQueue {
         status: task.status || existing.status || "pending",
       });
       await this.plugin.saveAll();
-      try { this.plugin.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
       return existing;
     }
     task.id = task.id || genId();
@@ -124,20 +124,20 @@ export class TaskQueue {
     task.status = task.status || "pending";
     this.tasks.push(task);
     await this.plugin.saveAll();
-    try { this.plugin.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     return task;
   }
   async remove(id) {
     this.tasks = this.tasks.filter(t => t.id !== id);
     await this.plugin.saveAll();
-    try { this.plugin.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
   }
   async update(id, patch) {
     const t = this.tasks.find(x => x.id === id);
     if (!t) return;
     Object.assign(t, patch, { updatedAt: new Date().toISOString() });
     await this.plugin.saveAll();
-    try { this.plugin.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
   }
   async processAll() {
     if (this.running) return;
@@ -159,11 +159,11 @@ export class TaskQueue {
       // 批量进度游标：喂状态栏指示器，让"重试全部 / 多任务"跑到哪一目了然。
       this._batchTotal = pending.length;
       this._batchDone = 0;
-      try { this.plugin.updateBusyStatus(); } catch { /* intentionally empty */ }
+      try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
       for (const t of pending) {
-        if (t.type === "transcribe" && this.plugin.isAsrServiceCircuitOpen()) {
-          const retryDelayMs = this.plugin.getAsrServiceRetryDelayMs();
-          this.plugin.scheduleTaskQueueRetry(retryDelayMs, "asr-service-circuit-open");
+        if (t.type === "transcribe" && this.plugin.recording.isAsrServiceCircuitOpen()) {
+          const retryDelayMs = this.plugin.recording.getAsrServiceRetryDelayMs();
+          this.plugin.queueRetry.scheduleTaskQueueRetry(retryDelayMs, "asr-service-circuit-open");
           continue;
         }
         let transportAsrFailure = null;
@@ -172,20 +172,20 @@ export class TaskQueue {
           if (t && t.type === "transcribe" && isAsrTransportError(e)) transportAsrFailure = e;
         });
         this._batchDone++;
-        try { this.plugin.updateBusyStatus(); } catch { /* intentionally empty */ }
+        try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
         if (transportAsrFailure) {
           // 服务仍在限流/超时，继续扫后续音频只会扩大请求风暴。暂停整批，冷却后从持久化队列续跑。
-          const retryDelayMs = this.plugin.getAsrServiceRetryDelayMs();
+          const retryDelayMs = this.plugin.recording.getAsrServiceRetryDelayMs();
           try {
-            await this.plugin.logDiagnostic("warn", "queue.asr_circuit_opened", "后台转写连续处理遇到瞬时故障，已暂停批次", {
+            await this.plugin.diagnostics.logDiagnostic("warn", "queue.asr_circuit_opened", "后台转写连续处理遇到瞬时故障，已暂停批次", {
               remaining: Math.max(0, pending.length - this._batchDone),
               cooldownMs: retryDelayMs,
-              consecutiveFailures: this.plugin.getAsrServiceCircuitState().consecutiveFailures,
+              consecutiveFailures: this.plugin.recording.getAsrServiceCircuitState().consecutiveFailures,
               error: diagnosticError(transportAsrFailure),
             });
           } catch { /* intentionally empty */ }
-          if (this.plugin && typeof this.plugin.scheduleTaskQueueRetry === "function") {
-            this.plugin.scheduleTaskQueueRetry(retryDelayMs, "transient-asr-failure");
+          if (this.plugin && typeof this.plugin.queueRetry.scheduleTaskQueueRetry === "function") {
+            this.plugin.queueRetry.scheduleTaskQueueRetry(retryDelayMs, "transient-asr-failure");
           }
           break;
         }
@@ -194,7 +194,7 @@ export class TaskQueue {
       this.running = false;
       this._batchTotal = 0;
       this._batchDone = 0;
-      try { this.plugin.updateBusyStatus(); } catch { /* intentionally empty */ }
+      try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
     }
   }
   async processOne(task: QueueTask) {
@@ -215,14 +215,14 @@ export class TaskQueue {
     });
     try {
       if (task.type === "transcribe") {
-        await this.plugin.retryTranscribeTask(task);
-        this.plugin.recordAsrServiceAttemptSuccess();
+        await this.plugin.queueRetry.retryTranscribeTask(task);
+        this.plugin.recording.recordAsrServiceAttemptSuccess();
       }
-      else if (task.type === "merge") await this.plugin.retryMergeTask(task);
-      else if (task.type === "generate-prompt") await this.plugin.runGeneratePromptTask(task);
+      else if (task.type === "merge") await this.plugin.queueRetry.retryMergeTask(task);
+      else if (task.type === "generate-prompt") await this.plugin.queueRetry.runGeneratePromptTask(task);
       else throw new Error(`未知任务类型：${task.type}`);
       try {
-        this.plugin.completeTaskActivity(this.plugin.queueTaskActivityId(task), {
+        this.plugin.tasks.completeTaskActivity(this.plugin.tasks.queueTaskActivityId(task), {
           stage: "done",
           stageLabel: task.type === "transcribe" ? "分段转写完成"
             : task.type === "merge" ? "AI 整理完成"
@@ -239,7 +239,7 @@ export class TaskQueue {
           : task.type === "merge" ? "AI 整理完成"
           : task.type === "generate-prompt" ? "提示词生成完成" : "任务完成";
         const durationMs = Math.max(0, Date.now() - startedAt);
-        this.plugin.logCompletedWork(doneLabel, task.mdPath || "", durationMs > 0 ? { durationMs } : null);
+        this.plugin.tasks.logCompletedWork(doneLabel, task.mdPath || "", durationMs > 0 ? { durationMs } : null);
       } catch { /* intentionally empty */ }
     } catch (e) {
       const message = (e && e.message) || String(e);
@@ -252,7 +252,7 @@ export class TaskQueue {
       const nextRetries = isBlockedMerge ? (task.retries || 0)
         : task.type === "transcribe" ? getNextAsrTaskRetryCount(task.retries, maxR, e)
         : (task.retries || 0) + 1;
-      const serviceCircuit = isTransportAsr ? this.plugin.recordAsrServiceAttemptFailure(e) : null;
+      const serviceCircuit = isTransportAsr ? this.plugin.recording.recordAsrServiceAttemptFailure(e) : null;
       const nextRetryAt = serviceCircuit && serviceCircuit.openUntilMs > Date.now()
         ? new Date(serviceCircuit.openUntilMs).toISOString()
         : undefined;
@@ -265,7 +265,7 @@ export class TaskQueue {
         lastError: message,
         lastEventAt: new Date().toISOString(),
       });
-      await this.plugin.logDiagnostic("error", "queue.task_failed", "队列任务失败", {
+      await this.plugin.diagnostics.logDiagnostic("error", "queue.task_failed", "队列任务失败", {
         taskType: task.type,
         retries: nextRetries,
         transportFailures: isTransportAsr ? Math.max(0, Number(task.transportFailures) || 0) + 1 : 0,

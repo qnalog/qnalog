@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
+import { pluginSourceText } from "./plugin-source";
 import { describe, expect, it } from "vitest";
 
 const modalSource = readFileSync(new URL("../src/ui/modals.ts", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const mainSource = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+const pluginSource = pluginSourceText();
 
 describe("progress modal interaction contract", () => {
   it("shows concrete task context instead of a generic running-health sentence", () => {
@@ -16,10 +18,11 @@ describe("progress modal interaction contract", () => {
     expect(modalSource).toContain('["模式", modeChange]');
     expect(modalSource).toContain('String(detail.liveness || "running") !== "running"');
     expect(modalSource).toContain('running: "",');
-    expect(mainSource).toContain("sourceFolder: file.parent && file.parent.path ? file.parent.path : \"知识库根目录\"");
-    expect(mainSource).toContain("durationMs: getLexVoiceSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta)");
-    expect(mainSource).toContain("sourceModeLabel,");
-    expect(mainSource).toContain("targetModeLabel: [meta.label || meta.prefix, repolishOptions && repolishOptions.label]");
+    // 任务上下文的组装已随重新整理搬到域服务，按本文件既有约定用 src 全文断言。
+    expect(pluginSource).toContain("sourceFolder: file.parent && file.parent.path ? file.parent.path : \"知识库根目录\"");
+    expect(pluginSource).toContain("durationMs: getLexVoiceSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta)");
+    expect(pluginSource).toContain("sourceModeLabel,");
+    expect(pluginSource).toContain("targetModeLabel: [meta.label || meta.prefix, repolishOptions && repolishOptions.label]");
   });
 
   it("uses the available width for task facts and collapses responsively", () => {

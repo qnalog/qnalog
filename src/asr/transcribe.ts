@@ -681,8 +681,8 @@ export async function requestApimimoAsrChunkWithEmptyRetry(
     ) || "").trim();
     if (part) return part;
     try {
-      if (plugin && typeof plugin.logDiagnostic === "function") {
-        await plugin.logDiagnostic("warn", "asr.apimimo_empty_chunk", "APIMiMo 单块转写为空", {
+      if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
+        await plugin.diagnostics.logDiagnostic("warn", "asr.apimimo_empty_chunk", "APIMiMo 单块转写为空", {
           chunkIndex,
           chunkCount,
           chunkBytes: prepared && prepared.blob && prepared.blob.size,
@@ -736,7 +736,7 @@ export async function transcribeAudioWithApimimo(
   const cleaned = cleanApimimoAsrRepeatedLoops(rawText);
   if (cleaned.suppressedChars > 0) {
     try {
-      await plugin.logDiagnostic("warn", "asr.apimimo_repeat_detected", "APIMiMo 转写疑似存在重复循环，已保留原始转写", {
+      await plugin.diagnostics.logDiagnostic("warn", "asr.apimimo_repeat_detected", "APIMiMo 转写疑似存在重复循环，已保留原始转写", {
         suppressedChars: cleaned.suppressedChars,
         suppressedRepeats: cleaned.suppressedRepeats,
         chunkCount: chunks.length,

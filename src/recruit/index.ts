@@ -4,7 +4,7 @@ import * as obsidian from "obsidian";
 import { FRONTMATTER_SCHEMA } from '../shared/catalog-modes';
 import { truncateForLlmPrompt, stripMarkdownDetailsWrapper, applyBriefingLanguageInstruction, getSessionMetaDurationMs, getSegmentsDurationMs } from '../shared/util-text';
 import { serializeRequiredQualities, extractMarkdownSection, sanitizeProjectFolderName } from '../outline-text';
-import { ensureVaultFolder } from '../shared/util-note';
+import { ensureVaultFolder } from '../shared/util-vault';
 import { JOBPORTRAIT_SYSTEM_PROMPT } from '../prompts/recruit-hrbp';
 import { getBriefingMergeMaxTokens } from '../llm/config';
 import { callLlm, callBriefingMergeLlm, stripModeSuggestionBlocks } from '../llm/core';

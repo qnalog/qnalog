@@ -73,6 +73,7 @@ import { clampLexVoiceProgress } from "../notes/note-markdown";
 import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACKS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentModePrefixEntries, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath, normalizeRecentTopicToken, stripRecentDatePrefix } from "../recent/recent-notes";
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendLexVoiceAskEntry, buildLexVoiceAskContext } from "../notes/ask-panel";
+import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
 
 // 会中字段树的分组标题（Phase 2 实时大纲用）。
 export const JOBPORTRAIT_GROUP_LABEL = { hard: "硬性要求", soft: "软能力", risk: "风险信号", culture: "文化匹配" };
@@ -112,7 +113,7 @@ export class OutlineView extends obsidian.ItemView {
     this._lastRenderedOutline = "";
     this.showRecentHome = true;
     this.idlePanelTab = "";
-    this.recentFilters = { time: "week", mode: "all" };
+    this.recentFilters = { time: "all", mode: "all" };
     // 纪要列表默认按文件夹组织；时间线仍可从筛选条切换回来。
     this.recentGroupBy = "folder";
     this.recentCollapsedFolders = new Set();
@@ -182,7 +183,7 @@ export class OutlineView extends obsidian.ItemView {
         && this.plugin.session.segments.length > 0
         && !this.aiOutline) {
       window.setTimeout(() => {
-        this.plugin.scheduleRealtimeOutline({ delayMs: 0, reason: "view-open" });
+        this.plugin.outline.scheduleRealtimeOutline({ delayMs: 0, reason: "view-open" });
       }, 400);
     }
   }
@@ -257,7 +258,7 @@ export class OutlineView extends obsidian.ItemView {
           workbench.materials.map(item => item.path).join(","),
         ].join(":")
       : "";
-    const outlineCoordinatorState = this.plugin.getRealtimeOutlineCoordinatorState();
+    const outlineCoordinatorState = this.plugin.outline.getRealtimeOutlineCoordinatorState();
     const outlineForSignature = (session && session.realtimeOutline) || this.aiOutline || "";
     return [
       session ? session.id : "idle",
@@ -449,7 +450,7 @@ export class OutlineView extends obsidian.ItemView {
     const mdFolder = obsidian.normalizePath(this.plugin.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const path = obsidian.normalizePath(file.path);
     if (path === mdFolder || path.startsWith(mdFolder + "/")) return file;
-    const mode = this.plugin.detectModeFromMarkdown(file);
+    const mode = this.plugin.noteWriter.detectModeFromMarkdown(file);
     return mode ? file : null;
   }
 
@@ -515,14 +516,14 @@ export class OutlineView extends obsidian.ItemView {
         layoutMode: existing.lexvoiceSemantic.layoutMode || "adaptive",
       });
       await this.app.vault.modify(canvasFile, `${JSON.stringify(document, null, 2)}\n`);
-      await this.plugin.logDiagnostic("info", "canvas.semantic_layout_migrated", "旧版语义 Canvas 已更新排版", {
+      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_layout_migrated", "旧版语义 Canvas 已更新排版", {
         sourcePath: sourceFile.path,
         canvasPath: canvasFile.path,
       });
       return true;
     } catch (error) {
       console.warn("[QnALog] migrate semantic canvas layout failed", error);
-      await this.plugin.logDiagnostic("warn", "canvas.semantic_layout_migration_failed", "旧版语义 Canvas 排版更新失败", {
+      await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_layout_migration_failed", "旧版语义 Canvas 排版更新失败", {
         sourcePath: sourceFile.path,
         canvasPath: canvasFile.path,
         error: diagnosticError(error),
@@ -804,7 +805,7 @@ export class OutlineView extends obsidian.ItemView {
     state.running = true;
     state.error = "";
     const taskId = `ask:${file.path}`;
-    this.plugin.startTaskActivity({
+    this.plugin.tasks.startTaskActivity({
       id: taskId,
       kind: "note-ask",
       title: "纪要问一问",
@@ -857,7 +858,7 @@ export class OutlineView extends obsidian.ItemView {
       };
       state.entries.unshift(newEntry);
       state.question = ""; // 清空输入，方便"继续问这段会议"
-      this.plugin.completeTaskActivity(taskId, {
+      this.plugin.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: "回答已生成",
         detail: question,
@@ -871,7 +872,7 @@ export class OutlineView extends obsidian.ItemView {
     } catch (e) {
       console.error("[QnALog] note ask failed", e);
       state.error = (e && e.message) || String(e);
-      this.plugin.failTaskActivity(taskId, e, {
+      this.plugin.tasks.failTaskActivity(taskId, e, {
         stage: "failed",
         stageLabel: "问一问未完成",
         detail: state.error,
@@ -883,7 +884,7 @@ export class OutlineView extends obsidian.ItemView {
       });
       new obsidian.Notice(`问一问失败：${state.error}`, 8000);
       try {
-        await this.plugin.logDiagnostic("warn", "note_ask.failed", "纪要问一问失败", {
+        await this.plugin.diagnostics.logDiagnostic("warn", "note_ask.failed", "纪要问一问失败", {
           file: file.path,
           question: question.slice(0, 160),
           error: diagnosticError(e),
@@ -891,7 +892,7 @@ export class OutlineView extends obsidian.ItemView {
       } catch { /* intentionally empty */ }
     } finally {
       state.running = false;
-      this.plugin.ensureRealtimeOutlineProgress(this.plugin.session, "note-ask-finished");
+      this.plugin.outline.ensureRealtimeOutlineProgress(this.plugin.session, "note-ask-finished");
       this.render();
     }
   }
@@ -2433,7 +2434,7 @@ export class OutlineView extends obsidian.ItemView {
     for (const r of renames) next = next.split(r.from).join(r.to); // 纯字符串全局替换，含正文/YAML/沉淀块
     if (next !== content) {
       await this.app.vault.modify(file, next);
-      try { this.plugin.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     }
     return renames;
   }
@@ -2462,7 +2463,7 @@ export class OutlineView extends obsidian.ItemView {
     for (const r of renames) next = next.split(r.from).join(r.to); // 纯字符串全局替换，含正文/YAML/沉淀块
     if (next !== content) {
       await this.app.vault.modify(file, next);
-      try { this.plugin.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     }
     // 已消费的映射清掉，避免下次提交对同一篇重复替换
     const remaining = Object.assign({}, renameMap);
@@ -2995,7 +2996,7 @@ export class OutlineView extends obsidian.ItemView {
   async extractVocabularyForFile(file) {
     const taskId = `vocabulary:${file.path}`;
     try {
-      const terms = await this.plugin.runTaskActivity({
+      const terms = await this.plugin.tasks.runTaskActivity({
         id: taskId,
         kind: "vocabulary",
         title: "提取转写词表",
@@ -3014,16 +3015,16 @@ export class OutlineView extends obsidian.ItemView {
           progress: 30,
           deadlineAt: Date.now() + 120_000,
         });
-        const extracted = await this.plugin.extractVocabularyFromMarkdown(file, markdown);
+        const extracted = await this.plugin.vocabulary.extractVocabularyFromMarkdown(file, markdown);
         patch({
           stage: "saving",
           stageLabel: "保存词表候选",
           progress: 85,
           deadlineAt: 0,
         });
-        this.plugin.markKnowledgeExtractionSource("vocabulary", file);
+        this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
         await this.plugin.saveSettings();
-        this.plugin.completeTaskActivity(taskId, {
+        this.plugin.tasks.completeTaskActivity(taskId, {
           stage: "done",
           stageLabel: "转写词提取完成",
           detail: `${extracted.length} 个候选词`,
@@ -3052,7 +3053,7 @@ export class OutlineView extends obsidian.ItemView {
   async extractPeopleSuggestionsForFile(file) {
     const taskId = `people-suggestions:${file.path}`;
     try {
-      const added = await this.plugin.runTaskActivity({
+      const added = await this.plugin.tasks.runTaskActivity({
         id: taskId,
         kind: "people-suggestions",
         title: "提取人员建议",
@@ -3078,10 +3079,10 @@ export class OutlineView extends obsidian.ItemView {
           progress: 85,
           deadlineAt: 0,
         });
-        const addedCount = this.plugin.cachePeopleDirectorySuggestions(file, items);
-        this.plugin.markKnowledgeExtractionSource("people", file);
+        const addedCount = this.plugin.people.cachePeopleDirectorySuggestions(file, items);
+        this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
         await this.plugin.saveSettings();
-        this.plugin.completeTaskActivity(taskId, {
+        this.plugin.tasks.completeTaskActivity(taskId, {
           stage: "done",
           stageLabel: "人员建议已生成",
           detail: addedCount ? `${addedCount} 条待确认` : "没有识别到新的人员建议",
@@ -3133,7 +3134,7 @@ export class OutlineView extends obsidian.ItemView {
     const token = ++this.sedimentScanToken;
     const taskId = `sediment:${file.path}`;
     try {
-      this.plugin.startTaskActivity({
+      this.plugin.tasks.startTaskActivity({
         id: taskId,
         kind: "sediment",
         title: "扫描纪要对象",
@@ -3148,7 +3149,7 @@ export class OutlineView extends obsidian.ItemView {
       this.setSedimentCandidateBucket(file, { scanning: true, scanStartedAt: new Date().toISOString() });
       this.render();
       const markdown = await this.app.vault.cachedRead(file);
-      this.plugin.patchTaskActivity(taskId, {
+      this.plugin.tasks.patchTaskActivity(taskId, {
         stage: "extracting",
         stageLabel: "AI 正在识别人员、待办、学习卡片和热词",
         detail: "服务返回前会持续保留本任务状态",
@@ -3159,7 +3160,7 @@ export class OutlineView extends obsidian.ItemView {
       // 不再额外弹底部 toast，避免与上方主面板视觉重复
       const objects = await generateSedimentObjects(this.plugin, file, markdown);
       if (token !== this.sedimentScanToken) {
-        this.plugin.cancelTaskActivity(taskId, "已取消本次扫描；纪要原文未改动");
+        this.plugin.tasks.cancelTaskActivity(taskId, "已取消本次扫描；纪要原文未改动");
         return;
       }
       const path = obsidian.normalizePath(file.path || "");
@@ -3178,7 +3179,7 @@ export class OutlineView extends obsidian.ItemView {
         scanning: false,
         scanStartedAt: "",
       });
-      this.plugin.patchTaskActivity(taskId, {
+      this.plugin.tasks.patchTaskActivity(taskId, {
         stage: "persisting",
         stageLabel: "保存候选对象",
         detail: `人员 ${(objects.people || []).length} · 待办 ${(objects.todos || []).length} · 学习 ${(objects.learningCards || []).length} · 热词 ${countVocabularyGroups(objects.hotwords)}`,
@@ -3195,7 +3196,7 @@ export class OutlineView extends obsidian.ItemView {
       this.showSedimentToast(`扫描完成：人员 ${(objects.people || []).length}，待办 ${(objects.todos || []).length}，学习 ${(objects.learningCards || []).length}，热词 ${countVocabularyGroups(objects.hotwords)}`, {
         icon: "check",
       });
-      this.plugin.completeTaskActivity(taskId, {
+      this.plugin.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: "对象扫描完成",
         detail: `人员 ${(objects.people || []).length} · 待办 ${(objects.todos || []).length} · 学习 ${(objects.learningCards || []).length} · 热词 ${countVocabularyGroups(objects.hotwords)}`,
@@ -3209,7 +3210,7 @@ export class OutlineView extends obsidian.ItemView {
       this.setSedimentCandidateBucket(file, { scanning: false, scanStartedAt: "" });
       this.render();
       console.error("[QnALog] extract sediment from current note failed", e);
-      this.plugin.failTaskActivity(taskId, e, {
+      this.plugin.tasks.failTaskActivity(taskId, e, {
         stage: "failed",
         stageLabel: "对象扫描未完成",
         detail: getTaskErrorMessage(e),
@@ -3226,7 +3227,7 @@ export class OutlineView extends obsidian.ItemView {
   cancelSedimentExtraction(file) {
     this.sedimentScanToken++;
     this.setSedimentCandidateBucket(file, { scanning: false, scanStartedAt: "" });
-    this.plugin.cancelTaskActivity(`sediment:${file.path}`, "已取消本次扫描；纪要原文未改动");
+    this.plugin.tasks.cancelTaskActivity(`sediment:${file.path}`, "已取消本次扫描；纪要原文未改动");
     this.render();
     this.showSedimentToast("已取消本次扫描", { icon: "circle-minus", variant: "muted" });
   }
@@ -3468,11 +3469,11 @@ export class OutlineView extends obsidian.ItemView {
         }
         const existing = await loadVocabularyGroups(this.plugin);
         const selectedGroups = this.buildVocabularyGroupsFromHotwordItems(selectedItems);
-        await this.plugin.writeVocabularyFile(mergeVocabularyGroups(existing, selectedGroups));
+        await this.plugin.vocabulary.writeVocabularyFile(mergeVocabularyGroups(existing, selectedGroups));
         // 用户在侧边栏改对的热词，自动把笔记里的原词替换成更正后的词（撤销由上面的 sourceSnapshot 兜底）。
         let hotwordRenames = [];
         try { hotwordRenames = await this.applyHotwordRenamesToNote(file, selectedItems); } catch (e) { console.error("[QnALog] rename hotwords in note failed", e); }
-        this.plugin.markKnowledgeExtractionSource("vocabulary", file);
+        this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
         await this.plugin.saveSettings();
         this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected, "已加入"));
         // 候选全清，未消费的改名映射一并清掉（宿主候选已不存在，留着会在下次提交误回写）
@@ -3576,15 +3577,15 @@ export class OutlineView extends obsidian.ItemView {
         sourceSnapshot,
       } : null;
       const stateBefore = file instanceof obsidian.TFile ? this.getSedimentPanelState(file) : null;
-      const result = await this.plugin.applyPeopleDirectorySuggestions(file, items);
+      const result = await this.plugin.people.applyPeopleDirectorySuggestions(file, items);
       if (undo) undo.entries = result.entries || [];
       // 用户在侧边栏改对的人名，自动替换回笔记正文 + YAML 人员字段（撤销由上面的 sourceSnapshot 兜底）
       let renames = [];
       try { renames = await this.applyPeopleRenamesToNote(file, items); } catch (e) { console.error("[QnALog] rename people in note failed", e); }
-      this.plugin.removeCachedPeopleSuggestions(items);
+      this.plugin.people.removeCachedPeopleSuggestions(items);
       this.removeSedimentPeopleCandidates(file, items);
       if (file instanceof obsidian.TFile) this.appendSedimentDecisionItems(file, "person", items, "kept", "已加入", stateBefore);
-      this.plugin.markKnowledgeExtractionSource("people", file);
+      this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
       await this.plugin.saveSettings();
       const completed = this.markSedimentGroupDoneIfEmpty(file, "person", items.length);
       await this.persistSedimentCandidateBucket(file);
@@ -3606,7 +3607,7 @@ export class OutlineView extends obsidian.ItemView {
     try {
       let count = 0;
       const stateBefore = file instanceof obsidian.TFile ? this.getSedimentPanelState(file) : null;
-      for (const item of items) if (await this.plugin.ignorePeopleDirectorySuggestion(item)) count++;
+      for (const item of items) if (await this.plugin.people.ignorePeopleDirectorySuggestion(item)) count++;
       if (file instanceof obsidian.TFile) this.removeSedimentPeopleCandidates(file, items);
       if (file instanceof obsidian.TFile) this.appendSedimentDecisionItems(file, "person", items, "ignored", "已忽略", stateBefore);
       const completed = file instanceof obsidian.TFile ? this.markSedimentGroupDoneIfEmpty(file, "person", items.length) : false;
@@ -3625,7 +3626,7 @@ export class OutlineView extends obsidian.ItemView {
     let file = this.app.vault.getAbstractFileByPath(norm);
     if (!(file instanceof obsidian.TFile)) {
       const folderPath = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-      if (folderPath) await this.plugin.ensureFolder(folderPath);
+      if (folderPath) await ensureVaultFolder(this.plugin.app, folderPath);
       file = await this.app.vault.create(norm, formatVocabularyMarkdown([], this.plugin.settings.industryProfile));
     }
     if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(file);
@@ -3750,7 +3751,7 @@ export class OutlineView extends obsidian.ItemView {
     const updateProgress = async (phase, label, current = 0, total = 1) => {
       this.semanticCanvasProgressByPath.set(sourceFile.path, { phase, label, current, total });
       progressNotice.setMessage(total > 1 ? `${label}（${current}/${total}）` : label);
-      await this.plugin.logDiagnostic("info", "canvas.semantic_phase", label, {
+      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_phase", label, {
         sourcePath: sourceFile.path,
         phase,
         current,
@@ -3798,12 +3799,12 @@ export class OutlineView extends obsidian.ItemView {
               });
               const expanded = parseSemanticBranchExpansion(branchRaw, branch, outlineNodes, sourceSections, policy);
               if (expanded) graph = replaceSemanticBranch(graph, branch.key, expanded);
-              else await this.plugin.logDiagnostic("warn", "canvas.semantic_branch_invalid", "主线展开结果无法解析，已保留概览结构", {
+              else await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_invalid", "主线展开结果无法解析，已保留概览结构", {
                 sourcePath: sourceFile.path,
                 branchKey: branch.key,
               });
             } catch (branchError) {
-              await this.plugin.logDiagnostic("warn", "canvas.semantic_branch_failed", "主线展开失败，已保留概览结构", {
+              await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_failed", "主线展开失败，已保留概览结构", {
                 sourcePath: sourceFile.path,
                 branchKey: branch.key,
                 error: diagnosticError(branchError),
@@ -3863,7 +3864,7 @@ export class OutlineView extends obsidian.ItemView {
           await this.app.vault.modify(canvasFile, content);
         }
       }
-      await this.plugin.logDiagnostic("info", "canvas.semantic_generated", "语义 Canvas 已生成", {
+      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_generated", "语义 Canvas 已生成", {
         sourcePath: sourceFile.path,
         canvasPath: state.canvasPath,
         mode: options.mode,
@@ -3875,13 +3876,13 @@ export class OutlineView extends obsidian.ItemView {
           return count(graph.branches);
         })(),
       });
-      await this.plugin.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "semantic-canvas" });
+      await this.plugin.noteIndex.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "semantic-canvas" });
       if (canvasFile instanceof obsidian.TFile) await this.app.workspace.getLeaf(true).openFile(canvasFile);
       progressNotice.hide();
       new obsidian.Notice(options.mode === "layout" ? "语义 Canvas 已重新排版。" : "语义 Canvas 已更新。", 4000);
     } catch (error) {
       console.error("[QnALog] generate semantic canvas failed", error);
-      await this.plugin.logDiagnostic("warn", "canvas.semantic_failed", "语义 Canvas 生成失败", {
+      await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_failed", "语义 Canvas 生成失败", {
         sourcePath: sourceFile.path,
         error: diagnosticError(error),
       });
@@ -3944,7 +3945,7 @@ export class OutlineView extends obsidian.ItemView {
       timelineSec.createDiv({ cls: "lexvoice-outline-section-title", text: "回听时间轴" });
       const timelineBody = timelineSec.createDiv({ cls: "lexvoice-outline-ai-body lexvoice-outline-note-timeline" });
       const rendered = obsidian.MarkdownRenderer.render(this.app, data.timeline, timelineBody, file.path, this);
-      void Promise.resolve(rendered).then(() => this.plugin.enhanceAudioTimeLinks(timelineBody, {
+      void Promise.resolve(rendered).then(() => this.plugin.audioLinks.enhanceAudioTimeLinks(timelineBody, {
         sourcePath: file.path,
         onTimeLink: (payload) => this.seekInlineAudio(payload),
       }));
@@ -3954,7 +3955,7 @@ export class OutlineView extends obsidian.ItemView {
   renderCompletedNotePlayer(root, data, sourceFile) {
     const refs = data && Array.isArray(data.audioRefs) ? data.audioRefs : [];
     const audioFile = refs
-      .map((ref) => this.plugin.resolveAudioLinkFile(ref, sourceFile.path))
+      .map((ref) => this.plugin.audioLinks.resolveAudioLinkFile(ref, sourceFile.path))
       .find((f) => f instanceof obsidian.TFile);
     if (!(audioFile instanceof obsidian.TFile)) {
       this.inlineAudioEl = null;
@@ -4306,7 +4307,7 @@ export class OutlineView extends obsidian.ItemView {
       attr: { "aria-label": "打开纪要看板", title: "打开纪要看板" },
     });
     try { obsidian.setIcon(kanbanBtn, "layout-dashboard"); } catch { kanbanBtn.setText("看板"); }
-    kanbanBtn.onclick = () => { void this.plugin.openMinutesKanban(); };
+    kanbanBtn.onclick = () => { void this.plugin.shell.openMinutesKanban(); };
     const btn = actions.createEl("button", {
       cls: "clickable-icon lexvoice-outline-settings-btn",
       attr: { "aria-label": "打开 QnALog 设置", title: "打开 QnALog 设置" },
@@ -4316,8 +4317,8 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   getRecordingIssue(recInfo) {
-    const issue = this.plugin && typeof this.plugin.getRecordingIssue === "function"
-      ? this.plugin.getRecordingIssue()
+    const issue = this.plugin && typeof this.plugin.recording.getRecordingIssue === "function"
+      ? this.plugin.recording.getRecordingIssue()
       : (recInfo && recInfo.issue);
     if (!issue || !issue.kind) return null;
     if (issue.kind === "microphone") return issue;
@@ -4359,7 +4360,7 @@ export class OutlineView extends obsidian.ItemView {
     });
     if ((isRecording || isPaused) && !isMicBlocked) {
       primary.createSpan({ cls: "lexvoice-recording-stop-square" });
-      primary.onclick = () => this.plugin.stopRecording();
+      primary.onclick = () => this.plugin.recording.stopRecording();
     } else {
       primary.addClass("is-play-icon");
       primary.disabled = true;
@@ -4449,7 +4450,7 @@ export class OutlineView extends obsidian.ItemView {
     steps.createDiv({ text: "2. 回到 QnALog 后重新开始一段录音。" });
     const actions = card.createDiv({ cls: "lexvoice-recording-blocker-actions" });
     const saveOnly = actions.createEl("button", { cls: "lexvoice-recording-blocker-secondary", text: "仅保存录音", attr: { type: "button" } });
-    saveOnly.onclick = () => this.plugin.stopRecording();
+    saveOnly.onclick = () => this.plugin.recording.stopRecording();
     const settings = actions.createEl("button", { cls: "lexvoice-recording-blocker-primary", attr: { type: "button" } });
     try { obsidian.setIcon(settings.createSpan({ cls: "lexvoice-recording-blocker-action-icon" }), "settings"); } catch { /* intentionally empty */ }
     settings.createSpan({ text: "打开系统设置" });
@@ -4715,7 +4716,7 @@ export class OutlineView extends obsidian.ItemView {
     const startBtn = actions.createEl("button", { cls: "mod-cta lexvoice-outline-action-button is-record", attr: { type: "button" } });
     try { obsidian.setIcon(startBtn.createSpan({ cls: "lexvoice-outline-action-icon" }), "mic"); } catch { /* intentionally empty */ }
     startBtn.createSpan({ text: isMobile ? "新建录音" : "新建录音" });
-    startBtn.onclick = () => { void this.plugin.startRecording(); };
+    startBtn.onclick = () => { void this.plugin.recording.startRecording(); };
     const actionCluster = actions.createDiv({ cls: "lexvoice-outline-action-cluster" });
     const importBtn = actionCluster.createEl("button", { cls: "lexvoice-outline-action-button", attr: { type: "button", title: "导入音频", "aria-label": "导入音频" } });
     try { obsidian.setIcon(importBtn.createSpan({ cls: "lexvoice-outline-action-icon" }), "file-audio"); } catch { /* intentionally empty */ }
@@ -4911,13 +4912,13 @@ export class OutlineView extends obsidian.ItemView {
   async addMeetingMaterialFiles(session, files, kind) {
     if (!session || !files || !files.length) return;
     const folder = this.getMeetingMaterialsFolder(session);
-    await this.plugin.ensureFolder(folder);
+    await ensureVaultFolder(this.plugin.app, folder);
     const current = normalizeMeetingWorkbench(session.meetingWorkbench);
     const added = [];
     for (const file of files) {
       if (!file) continue;
       const safeName = sanitizeFilename(file.name || "meeting-material") || "meeting-material";
-      const targetPath = this.plugin.getAvailableVaultPath(obsidian.normalizePath(`${folder}/${safeName}`));
+      const targetPath = findAvailableVaultPath(this.plugin.app, obsidian.normalizePath(`${folder}/${safeName}`));
       if (!targetPath) continue;
       await this.plugin.app.vault.createBinary(targetPath, await file.arrayBuffer());
       added.push({
@@ -5039,7 +5040,7 @@ export class OutlineView extends obsidian.ItemView {
           updatedAt: new Date().toISOString(),
         }),
       }));
-      await this.plugin.logDiagnostic("warn", "meeting_workbench.interaction_failed", "会中记录 AI 互动失败", {
+      await this.plugin.diagnostics.logDiagnostic("warn", "meeting_workbench.interaction_failed", "会中记录 AI 互动失败", {
         entryId,
         mode: session.mode,
         error: diagnosticError(e),
@@ -5077,7 +5078,7 @@ export class OutlineView extends obsidian.ItemView {
     }));
     this.render();
     if (nextEntry.interaction && nextEntry.interaction.kind && !MEETING_METADATA_KINDS.has(nextEntry.interaction.kind)) {
-      this.plugin.scheduleMeetingWorkbenchInteraction(session, nextEntry.id);
+      this.plugin.meetingWorkbench.scheduleMeetingWorkbenchInteraction(session, nextEntry.id);
     }
   }
 
@@ -5112,7 +5113,7 @@ export class OutlineView extends obsidian.ItemView {
     this.render();
     // 只为非元数据 kinds 排队 AI 即时助理
     if (entry.interaction && entry.interaction.kind && !MEETING_METADATA_KINDS.has(entry.interaction.kind)) {
-      this.plugin.scheduleMeetingWorkbenchInteraction(session, entry.id);
+      this.plugin.meetingWorkbench.scheduleMeetingWorkbenchInteraction(session, entry.id);
     }
   }
 
@@ -5136,7 +5137,7 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   renderAIOutline(root, session, recInfo = null, recordingIssue = null) {
-    const outlineRunning = this.plugin.isRealtimeOutlineRunning(session);
+    const outlineRunning = this.plugin.outline.isRealtimeOutlineRunning(session);
     const aiWrap = root.createDiv({ cls: "lexvoice-outline-section lexvoice-outline-ai-section" });
     const aiHead = aiWrap.createDiv({ cls: "lexvoice-outline-ai-head is-utility" });
     const aiTitle = aiHead.createDiv({ cls: "lexvoice-outline-source-title" });
@@ -5547,12 +5548,12 @@ export class OutlineView extends obsidian.ItemView {
         : "录音开始后，AI 会按 14 个画像维度实时标出覆盖进度。" });
     }
     // 点击回听：只调 enhanceAudioTimeLinks（认 a.internal-link[data-href=音频][text=HH:MM]），零额外代码。
-    try { this.plugin.enhanceAudioTimeLinks(body, { sourcePath: (session && session.mdPath) || "" }); } catch { /* intentionally empty */ }
+    try { this.plugin.audioLinks.enhanceAudioTimeLinks(body, { sourcePath: (session && session.mdPath) || "" }); } catch { /* intentionally empty */ }
   }
 
   enhanceRenderedOutline(body, opts) {
     if (!body) return;
-    this.plugin.enhanceAudioTimeLinks(body, opts || {});
+    this.plugin.audioLinks.enhanceAudioTimeLinks(body, opts || {});
     this.decorateOutlineSourceTags(body);
     this.promoteOutlineTimeLinks(body);
   }
@@ -5878,6 +5879,15 @@ export class OutlineView extends obsidian.ItemView {
     const groupChevron = groupChip.createSpan({ cls: "lexvoice-outline-recent-filter-chevron" });
     try { obsidian.setIcon(groupChevron, "chevron-down"); } catch { /* intentionally empty */ }
     groupChip.onclick = (evt) => this.showRecentGroupMenu(evt);
+    // 时间范围筛选：默认"全部日期"。列表会按它过滤，因此必须像模板筛选一样显示出来，
+    // 否则用户只能看到被截短的列表、却找不到是哪个筛选在起作用。
+    const timeValue = filters.time || "all";
+    const timeChip = wrap.createEl("button", {
+      cls: `lexvoice-outline-recent-filter-chip ${this.isRecentFilterActive("time", timeValue) ? "is-active" : ""}`,
+      text: this.getRecentFilterLabel("time", timeValue, allRecents),
+      attr: { type: "button", title: "筛选纪要时间范围" },
+    });
+    timeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "time", RECENT_TIME_FILTER_OPTIONS, timeValue);
     const modeValue = filters.mode || "all";
     const modeChip = wrap.createEl("button", {
       cls: `lexvoice-outline-recent-filter-chip ${this.isRecentFilterActive("mode", modeValue) ? "is-active" : ""}`,
@@ -5960,7 +5970,7 @@ export class OutlineView extends obsidian.ItemView {
         try { obsidian.setIcon(vchip, v.kind === "clean" ? "file-text" : "files"); } catch { /* intentionally empty */ }
         vrow.createDiv({ cls: "lexvoice-outline-recent-variant-name", text: v.label || v.file.basename });
         vrow.addEventListener("click", async () => {
-          try { await this.plugin.switchLexVoiceVersion(v.file, v.sourcePath); } catch (e) { console.error(e); }
+          try { await this.plugin.versions.switchLexVoiceVersion(v.file, v.sourcePath); } catch (e) { console.error(e); }
         });
         vrow.addEventListener("contextmenu", (evt) => {
           evt.preventDefault();
@@ -6256,7 +6266,7 @@ export class OutlineView extends obsidian.ItemView {
           .setIcon("refresh-cw")
           .onClick(() => {
             const pref = this.plugin.settings.repolishPreference || "";
-            void this.plugin.repolishMarkdownFile(file, mode, pref ? getRepolishPreferencePreset(pref) : null);
+            void this.plugin.repolish.repolishMarkdownFile(file, mode, pref ? getRepolishPreferencePreset(pref) : null);
           });
       });
     }
@@ -6274,12 +6284,12 @@ export class OutlineView extends obsidian.ItemView {
         new obsidian.Notice("找不到来源笔记，可能已被改名或移动。", 6000);
       }
     }));
-    menu.addItem((item) => item.setTitle("重新生成清稿").setIcon("refresh-cw").onClick(() => { void this.plugin.generateCleanScript(file); }));
+    menu.addItem((item) => item.setTitle("重新生成清稿").setIcon("refresh-cw").onClick(() => { void this.plugin.repolish.generateCleanScript(file); }));
     menu.addSeparator();
     menu.addItem((item) => item.setTitle("删除此版本").setIcon("trash").onClick(async () => {
       const ok = await lexvoiceConfirm(this.plugin.app, "删除派生版本", `删除「${file.basename}」？母本和逐字稿不受影响。`, "删除");
       if (!ok) return;
-      try { await trashLexVoiceFile(this.plugin.app, file); this.plugin.refreshOutlineView(); }
+      try { await trashLexVoiceFile(this.plugin.app, file); this.plugin.shell.refreshOutlineView(); }
       catch (e) { console.error(e); new obsidian.Notice("删除失败", 6000); }
     }));
     this.showLexVoiceMenuAtMouse(menu, evt);
@@ -6293,7 +6303,7 @@ export class OutlineView extends obsidian.ItemView {
       });
       menu.addSeparator();
     }
-    const detectedMode = this.plugin.detectModeFromMarkdown(file);
+    const detectedMode = this.plugin.noteWriter.detectModeFromMarkdown(file);
     const retryTasks = getQueueTasksForMarkdown(this.plugin, file, { types: ["transcribe"], failedOnly: true });
     if (retryTasks.length) {
       menu.addItem((item) => {
@@ -6306,18 +6316,18 @@ export class OutlineView extends obsidian.ItemView {
     menu.addItem((item) => {
       item.setTitle("继续录音到这篇")
         .setIcon("mic")
-        .onClick(() => { void this.plugin.startRecording({ appendToFile: file }); });
+        .onClick(() => { void this.plugin.recording.startRecording({ appendToFile: file }); });
     });
     menu.addItem((item) => {
       item.setTitle("与上一段录音合并")
         .setIcon("git-merge")
-        .onClick(() => { void this.plugin.mergeMarkdownFileWithPrevious(file); });
+        .onClick(() => { void this.plugin.noteWriter.mergeMarkdownFileWithPrevious(file); });
     });
     menu.addSeparator();
     menu.addItem((item) => {
       item.setTitle("生成清稿")
         .setIcon("file-text")
-        .onClick(() => { void this.plugin.generateCleanScript(file); });
+        .onClick(() => { void this.plugin.repolish.generateCleanScript(file); });
     });
     menu.addItem((item) => {
       item.setTitle(detectedMode ? "重新整理为" : "整理为")
@@ -6357,7 +6367,7 @@ export class OutlineView extends obsidian.ItemView {
             .onClick(() => {
               const pref = this.plugin.settings.repolishPreference || "";
               const preset = pref ? getRepolishPreferencePreset(pref) : null;
-              void this.plugin.repolishMarkdownFile(file, mode, preset);
+              void this.plugin.repolish.repolishMarkdownFile(file, mode, preset);
             });
         });
       }
@@ -6369,13 +6379,13 @@ export class OutlineView extends obsidian.ItemView {
       const sub = item.setSubmenu();
       sub.addItem((subItem) => subItem
         .setTitle("邮件草稿")
-        .onClick(() => this.plugin.createEmailDraftForMarkdownFile(file)));
+        .onClick(() => this.plugin.delivery.createEmailDraftForMarkdownFile(file)));
       sub.addItem((subItem) => subItem
         .setTitle("HTML 报告")
-        .onClick(() => this.plugin.generateHtmlReportForMarkdownFile(file)));
+        .onClick(() => this.plugin.delivery.generateHtmlReportForMarkdownFile(file)));
       sub.addItem((subItem) => subItem
       .setTitle("PDF 报告")
-        .onClick(() => this.plugin.generatePdfReportForMarkdownFile(file)));
+        .onClick(() => this.plugin.delivery.generatePdfReportForMarkdownFile(file)));
     });
     menu.addSeparator();
     menu.addItem((item) => {
@@ -6387,7 +6397,7 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   async retryRecentTranscription(file) {
-    await this.plugin.retryTranscribeTasksForMarkdown(file);
+    await this.plugin.queueRetry.retryTranscribeTasksForMarkdown(file);
     this.render();
   }
 
@@ -6446,7 +6456,7 @@ export class OutlineView extends obsidian.ItemView {
     if (!nextBase) { this.forceRecentRender(); return false; }
     const dir = file.parent && file.parent.path ? file.parent.path : "";
     const target = obsidian.normalizePath(dir && dir !== "/" ? `${dir}/${nextBase}.md` : `${nextBase}.md`);
-    const finalPath = this.plugin.getAvailableMarkdownPath(target, file.path);
+    const finalPath = findAvailableMarkdownPath(this.plugin.app, target, file.path);
     if (!finalPath || obsidian.normalizePath(finalPath) === obsidian.normalizePath(file.path)) {
       this.forceRecentRender(); // 无实际变化 → 复原显示
       return false;
@@ -6761,7 +6771,7 @@ export class OutlineView extends obsidian.ItemView {
       button.addClass("is-busy");
       button.setText("生成中…");
       try {
-        await this.plugin.runTaskActivity({
+        await this.plugin.tasks.runTaskActivity({
           id: `promotion-pre-review:${Date.now()}`,
           kind: "promotion-pre-review",
           title: "生成晋升初审",
@@ -6825,7 +6835,7 @@ export class OutlineView extends obsidian.ItemView {
         this._promotionReviewEditing = false;
         this._promotionReviewDraft = null;
         this.render();
-        await this.plugin.startRecording();
+        await this.plugin.recording.startRecording();
       };
     } else {
       try { obsidian.setIcon(primary.createSpan({ cls: "lexvoice-rcx-btn-icon" }), "sparkles"); } catch { /* intentionally empty */ }
@@ -7126,7 +7136,7 @@ export class OutlineView extends obsidian.ItemView {
       const taskId = `recruit-outline:${taskKey}`;
       if (btn) { btn.classList.add("is-busy"); btn.setText("生成中…"); }
       try {
-        await this.plugin.runTaskActivity({
+        await this.plugin.tasks.runTaskActivity({
           id: taskId,
           kind: "recruit-outline",
           title: "生成面试提纲",
@@ -7203,7 +7213,7 @@ export class OutlineView extends obsidian.ItemView {
       this._recruitDraft = null;
       this._recruitResumePdfName = "";
       this.render();
-      await this.plugin.startRecording();
+      await this.plugin.recording.startRecording();
     };
   }
 
@@ -7218,8 +7228,8 @@ export class OutlineView extends obsidian.ItemView {
 
   cancelOutlineGeneration() {
     const session = this.plugin.session;
-    if (session) this.plugin.cancelRealtimeOutline(session.id);
-    void this.plugin.logDiagnostic("warn", "outline.cancel_waiting", "用户停止等待实时大纲生成", {
+    if (session) this.plugin.outline.cancelRealtimeOutline(session.id);
+    void this.plugin.diagnostics.logDiagnostic("warn", "outline.cancel_waiting", "用户停止等待实时大纲生成", {
       segmentCount: session && session.segments ? session.segments.length : 0,
       lastOutlineSegmentCount: this.lastOutlineSegmentCount,
     });
@@ -7233,11 +7243,11 @@ export class OutlineView extends obsidian.ItemView {
     if (!session || session.segments.length === 0) return;
     this.syncSessionOutline(session);
     if (silent && !force) {
-      this.plugin.scheduleRealtimeOutline({ delayMs: 0, reason: "view-refresh" });
+      this.plugin.outline.scheduleRealtimeOutline({ delayMs: 0, reason: "view-refresh" });
       return;
     }
     try {
-      await this.plugin.refreshRealtimeOutlineInBackground({
+      await this.plugin.outline.refreshRealtimeOutlineInBackground({
         silent,
         force,
         reason: force ? "manual-refresh" : "view-refresh",

@@ -35,8 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      # build 内含：版本四处对齐、@ts-nocheck 文件的漏引用检查、类型检查、esbuild 打包、
-      # 移动端可加载性检查（不依赖 Node/Electron 全局）。
+      # build 内含：版本四处对齐、@ts-nocheck 文件的漏引用检查、插件成员与域服务的引用一致性检查、
+      # 类型检查、esbuild 打包、移动端可加载性检查（不依赖 Node/Electron 全局）、
+      # 以及在模拟宿主里跑 onload 的装配检查（域服务漏装不会编译报错）。
       - name: Build and typecheck
         run: npm run build
 

@@ -20,7 +20,7 @@ import { isDashScopeFileTransProvider, resolveImportTranscribeProvider } from '.
 
 function resolveImportSpeakerSelection(plugin) {
   const provider = resolveImportTranscribeProvider(plugin);
-  const profile = plugin.getTranscribeProviderProfile(provider.id, provider);
+  const profile = plugin.profiles.getTranscribeProviderProfile(provider.id, provider);
   const supportsDiarization = !!(profile && profile.speakerDiarization)
     || isSpeakerDiarizationProvider(provider)
     || isDashScopeFileTransProvider(provider);
@@ -301,7 +301,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       if (this.options.fromIgnored) {
         ignoreBtn.onclick = async () => {
           try {
-            const removed = await this.plugin.restoreIgnoredPeopleDirectorySuggestion(item);
+            const removed = await this.plugin.people.restoreIgnoredPeopleDirectorySuggestion(item);
             if (!removed) {
               new obsidian.Notice("这条建议暂时无法恢复");
               return;
@@ -317,7 +317,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       } else {
         ignoreBtn.onclick = async () => {
           try {
-            const ok = await this.plugin.ignorePeopleDirectorySuggestion(item);
+            const ok = await this.plugin.people.ignorePeopleDirectorySuggestion(item);
             if (!ok) {
               new obsidian.Notice("这条建议暂时无法忽略");
               return;
@@ -411,7 +411,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     const openBtn = actions.createEl("button", { text: "打开人员资料" });
     openBtn.onclick = async () => {
       try {
-        const file = await this.plugin.ensurePeopleDirectoryFiles({ overwrite: false });
+        const file = await this.plugin.people.ensurePeopleDirectoryFiles({ overwrite: false });
         if (file instanceof obsidian.TFile) await this.plugin.app.workspace.getLeaf(false).openFile(file);
       } catch (e) {
         new obsidian.Notice(`打开人员资料失败：${(e && e.message) || e}`);
@@ -460,13 +460,13 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         let updated = 0;
         for (const [sourcePath, items] of grouped.entries()) {
           const file = sourcePath ? this.plugin.app.vault.getAbstractFileByPath(sourcePath) : this.sourceFile;
-          const result = await this.plugin.applyPeopleDirectorySuggestions(file instanceof obsidian.TFile ? file : null, items);
+          const result = await this.plugin.people.applyPeopleDirectorySuggestions(file instanceof obsidian.TFile ? file : null, items);
           created += result.created;
           updated += result.updated;
-          if (file instanceof obsidian.TFile) this.plugin.markKnowledgeExtractionSource("people", file);
+          if (file instanceof obsidian.TFile) this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
         }
-        if (this.options.fromIgnored) this.plugin.removePeopleDirectorySuggestionIgnores(selected);
-        else this.plugin.removeCachedPeopleSuggestions(selected);
+        if (this.options.fromIgnored) this.plugin.people.removePeopleDirectorySuggestionIgnores(selected);
+        else this.plugin.people.removeCachedPeopleSuggestions(selected);
         await this.plugin.saveSettings();
         new obsidian.Notice(`人员归属已确认：新建 ${created}，合并 ${updated}`);
         this.close();
@@ -587,19 +587,19 @@ export class QueueModal extends obsidian.Modal {
     const allTasks = (this.plugin.queue && Array.isArray(this.plugin.queue.tasks)) ? this.plugin.queue.tasks : [];
     const running = allTasks.filter((t) => t && (t.status === "running" || t.status === "live"));
     const pending = allTasks.filter((t) => t && t.status !== "running" && t.status !== "live");
-    const completed = Array.isArray(this.plugin.completedWorkLog) ? this.plugin.completedWorkLog : [];
-    const detail = this.plugin.getCurrentActivityDetail ? this.plugin.getCurrentActivityDetail() : null;
-    const activityLabel = this.plugin.getCurrentActivityLabel ? this.plugin.getCurrentActivityLabel() : null;
+    const completed = Array.isArray(this.plugin.tasks.completedWorkLog) ? this.plugin.tasks.completedWorkLog : [];
+    const detail = this.plugin.tasks.getCurrentActivityDetail ? this.plugin.tasks.getCurrentActivityDetail() : null;
+    const activityLabel = this.plugin.tasks.getCurrentActivityLabel ? this.plugin.tasks.getCurrentActivityLabel() : null;
     const active = !!(detail || activityLabel);
     const activeLiveness = detail && detail.liveness ? String(detail.liveness) : (active ? "running" : "done");
-    const sessionId = this.plugin._importBusy && this.plugin._importBusy.sessionId
-      ? String(this.plugin._importBusy.sessionId)
+    const sessionId = this.plugin.tasks._importBusy && this.plugin.tasks._importBusy.sessionId
+      ? String(this.plugin.tasks._importBusy.sessionId)
       : this.plugin.session && this.plugin.session.id ? String(this.plugin.session.id) : "";
     const currentActivityIds = new Set(sessionId && active
       ? [`import:${sessionId}`, `finalize:${sessionId}`]
       : []);
-    const taskActivities = (this.plugin.getTaskActivities
-      ? this.plugin.getTaskActivities({ includeDone: true, includeCancelled: false })
+    const taskActivities = (this.plugin.tasks.getTaskActivities
+      ? this.plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: false })
       : [])
       .filter((task) => task && !String(task.kind || "").startsWith("queue-"))
       .filter((task) => !currentActivityIds.has(String(task.id || "")));
@@ -720,7 +720,7 @@ export class QueueModal extends obsidian.Modal {
         && !hasNumericProgress
         && !taskActivities.some((task) => Number.isFinite(Number(task.progress)));
     }
-    const _tm = this.plugin._taskMeter;
+    const _tm = this.plugin.tasks._taskMeter;
     const tmTok = _tm ? (Number(_tm.exactTokens) > 0 ? Number(_tm.exactTokens) : Math.round(((Number(_tm.inChars) || 0) + (Number(_tm.outChars) || 0)) / 2)) : 0;
     const tmTokLabel = tokenLabel(tmTok, !!(_tm && _tm.hasExact && Number(_tm.exactTokens) > 0));
 
@@ -956,8 +956,8 @@ export class QueueModal extends obsidian.Modal {
           try { obsidian.setIcon(errorIcon, "triangle-alert"); } catch { errorIcon.setText("!"); }
           errorHead.createSpan({ text: "处理未完成" });
           errorBox.createDiv({ cls: "lexvoice-progress-activity-error-message", text: displayError });
-          const hint = this.plugin.getTaskActivityErrorHint
-            ? this.plugin.getTaskActivityErrorHint(activity)
+          const hint = this.plugin.tasks.getTaskActivityErrorHint
+            ? this.plugin.tasks.getTaskActivityErrorHint(activity)
             : "";
           if (hint && hint !== displayError && !isFileExistsError) {
             errorBox.createDiv({ cls: "lexvoice-progress-activity-error-hint", text: hint });
@@ -989,7 +989,7 @@ export class QueueModal extends obsidian.Modal {
               event.stopPropagation();
               button.disabled = true;
               try {
-                await this.plugin.handleTaskActivityAction(activity.id, action.id);
+                await this.plugin.tasks.handleTaskActivityAction(activity.id, action.id);
               } finally {
                 this.onOpen();
               }
@@ -1236,7 +1236,7 @@ export class QueueModal extends obsidian.Modal {
       queueTitle.createSpan({ cls: "lexvoice-progress-queue-count", text: ` ${pending.length} 项 · 音频均已保留` });
       if (pending.length) {
         const retryAllBtn = queueHead.createEl("button", { cls: "lexvoice-progress-queue-retry", text: "全部重试", attr: { type: "button" } });
-        retryAllBtn.onclick = async () => { retryAllBtn.disabled = true; await this.plugin.retryQueue(); this.onOpen(); };
+        retryAllBtn.onclick = async () => { retryAllBtn.disabled = true; await this.plugin.queueRetry.retryQueue(); this.onOpen(); };
       }
     }
     for (const t of running) {
@@ -1267,7 +1267,7 @@ export class QueueModal extends obsidian.Modal {
     if (tmTokLabel) foot.createSpan({ cls: "lexvoice-progress-foot-token", text: `${tmTokLabel} token` });
     const footActions = foot.createDiv({ cls: "lexvoice-progress-foot-actions" });
     const logBtn = footActions.createEl("button", { cls: "lexvoice-progress-foot-link", attr: { type: "button" }, text: "查看日志" });
-    logBtn.onclick = async () => { try { await this.plugin.copyDiagnosticReport(); } catch { /* intentionally empty */ } };
+    logBtn.onclick = async () => { try { await this.plugin.diagnostics.copyDiagnosticReport(); } catch { /* intentionally empty */ } };
     const backgroundBtn = footActions.createEl("button", { cls: "lexvoice-progress-foot-link is-primary", attr: { type: "button" }, text: "后台运行" });
     backgroundBtn.onclick = () => this.close();
     if (pending.length) {
@@ -1282,7 +1282,7 @@ export class QueueModal extends obsidian.Modal {
         for (const task of cancellable) {
           await this.plugin.queue.remove(task.id);
         }
-        this.plugin.renderStatusBar();
+        this.plugin.tasks.renderStatusBar();
         this.onOpen();
       };
     }
@@ -2387,12 +2387,12 @@ export class ImportTextModal extends obsidian.Modal {
     }
     try {
       this.close();
-      await this.plugin.importTextFiles(paths, mode);
+      await this.plugin.imports.importTextFiles(paths, mode);
     } catch (e) {
       console.error("[QnALog] import text failed", e);
-      if (this.plugin && this.plugin.logDiagnostic) {
+      if (this.plugin && this.plugin.diagnostics) {
         try {
-          await this.plugin.logDiagnostic("error", "text_import.failed", "导入文本整理失败", {
+          await this.plugin.diagnostics.logDiagnostic("error", "text_import.failed", "导入文本整理失败", {
             mode,
             count: paths.length,
             error: diagnosticError(e),
@@ -2740,7 +2740,7 @@ export class ImportAudioModal extends obsidian.Modal {
     if (!paths.length) return;
     const mode = getEffectivePolishMode(this.plugin.settings, this.selectedMode || this.plugin.settings.polishMode, "meeting");
     this.close();
-    await this.plugin.importAudioFiles(paths, mode, {
+    await this.plugin.imports.importAudioFiles(paths, mode, {
       speakerDiarization: this.selectedSpeakerDiarization,
       speakerCount: this.selectedSpeakerDiarization ? this.selectedSpeakerCount : 0,
     });
@@ -2928,14 +2928,14 @@ export class BubbleWidget {
     };
     if (info.state === "idle") {
       this.el.addClass("is-idle");
-      makeDocButton("打开最近纪要", () => this.plugin.openRecentNote());
+      makeDocButton("打开最近纪要", () => this.plugin.shell.openRecentNote());
       const micBtn = this.el.createEl("button", {
         cls: "lexvoice-bubble-main",
         attr: { "aria-label": "开始会议录音", title: "开始会议录音" },
       });
       obsidian.setTooltip(micBtn, "开始会议录音", { placement: "top" });
       this._paintIcon(micBtn, ["mic", "lucide-mic"]);
-      micBtn.onclick = (e) => { e.stopPropagation(); this.plugin.startRecording(); };
+      micBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.startRecording(); };
       if (this.plugin.queue && this.plugin.queue.hasPendingGeneratePrompt && this.plugin.queue.hasPendingGeneratePrompt()) {
         const chip = this.el.createDiv({ cls: "lexvoice-bubble-chip" });
         chip.setText("优化提示词中");
@@ -2945,12 +2945,12 @@ export class BubbleWidget {
       this.el.addClass(info.state === "paused" ? "is-paused" : "is-recording");
       if (info.state === "recording" && this.wrapEl) this.wrapEl.addClass("is-recording-wrap");
       this.show();
-      makeDocButton("跳到当前录音笔记的转写位置", () => this.plugin.openSessionNote());
+      makeDocButton("跳到当前录音笔记的转写位置", () => this.plugin.shell.openSessionNote());
       const ctrl = this.el.createDiv({ cls: "lexvoice-bubble-ctrl" });
       const pauseBtn = ctrl.createEl("button", { cls: `lexvoice-bubble-btn ${info.state === "paused" ? "is-play-icon" : "is-pause-icon"}`, attr: { title: info.state === "paused" ? "继续" : "暂停", "aria-label": info.state === "paused" ? "继续" : "暂停" } });
       pauseBtn.onclick = (e) => { e.stopPropagation(); if (info.state === "paused") this.plugin.recorder.resume(); else this.plugin.recorder.pause(); };
       const stopBtn = ctrl.createEl("button", { cls: "lexvoice-bubble-btn stop is-stop-icon", attr: { title: "停止并合并润色", "aria-label": "停止并合并润色" } });
-      stopBtn.onclick = (e) => { e.stopPropagation(); this.plugin.stopRecording(); };
+      stopBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.stopRecording(); };
       const timer = this.el.createDiv({ cls: "lexvoice-bubble-timer" });
       timer.setText(formatElapsed(info.elapsed));
     }

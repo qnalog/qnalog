@@ -27,17 +27,18 @@ describe("release runtime contracts", () => {
   });
 
   it("keeps failed transcription tasks anchored to their exact note segments", () => {
-    expect(mainSource).toContain(
+    // 段落标记的生成与回填现在分处 main.ts 与笔记写入模块，按本文件约定改用全文断言。
+    expect(pluginSource).toContain(
       "segmentRecord.queueTaskId ? `<!-- lexvoice-transcribe-task:${segmentRecord.queueTaskId} -->`",
     );
-    expect(mainSource).toContain(
+    expect(pluginSource).toContain(
       "const marker = s.queueTaskId ? `<!-- lexvoice-transcribe-task:${s.queueTaskId} -->\\n` : \"\";",
     );
-    expect(mainSource).toContain(
+    expect(pluginSource).toContain(
       "retryTask ? `<!-- lexvoice-transcribe-task:${retryTask.id} -->` : \"\"",
     );
-    expect(mainSource).toContain("const legacySegmentPattern = new RegExp(");
-    expect(mainSource).toContain("cur.replace(legacySegmentPattern, `$1${taskMarker}\\n${text}`)");
+    expect(pluginSource).toContain("const legacySegmentPattern = new RegExp(");
+    expect(pluginSource).toContain("cur.replace(legacySegmentPattern, `$1${taskMarker}\\n${text}`)");
   });
 
   it("refreshes the recent-note folder view after external file changes", () => {
@@ -82,9 +83,10 @@ describe("release runtime contracts", () => {
   });
 
   it("actively schedules bounded retries after merge and note-write failures", () => {
-    expect(mainSource).toContain('this.scheduleTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError');
-    expect(mainSource).toContain('? "briefing-partial"');
-    expect(mainSource).toContain('this.scheduleTaskQueueRetry(1500, "briefing-write-failure")');
+    // 重排期调用点随合并重试实现一起搬到了队列模块，用全文断言调用形状与间隔不变。
+    expect(pluginSource).toContain('scheduleTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError');
+    expect(pluginSource).toContain('? "briefing-partial"');
+    expect(pluginSource).toContain('scheduleTaskQueueRetry(1500, "briefing-write-failure")');
   });
 
   it("keeps long-meeting chunks internal and presents one continuous meeting", () => {
@@ -97,24 +99,25 @@ describe("release runtime contracts", () => {
 
   it("keeps hidden sediment extraction out of the primary briefing response", () => {
     expect(mainSource).not.toContain("appendSedimentPreExtractionInstruction");
-    expect(mainSource).toContain("if (this.settings.sedimentAutoExtract) void this.autoExtractSedimentAfterFinalize");
+    expect(pluginSource).toContain("if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize");
   });
 
   it("keeps whole-file audio import and progress updates connected at runtime", () => {
-    expect(mainSource).toContain("openAudioImportOptions(paths, modeOverride)");
-    expect(mainSource).toContain("updateImportActivity(patch = {})");
-    expect(mainSource).toContain("resolveImportTranscribeProvider(this)");
-    expect(mainSource).toContain("transcribeImportedAudio(this, blob, mime");
-    expect(mainSource).toContain("wholeFileImport: true");
-    expect(mainSource).toContain('detail: "整文件提交，不切分为多个 ASR 任务"');
-    expect(mainSource).toContain('phase: "organize"');
+    // 导入流程已抽到 src/imports/import-service.ts，按本文件约定用全文断言字符串存在。
+    expect(pluginSource).toContain("openAudioImportOptions(paths, modeOverride)");
+    expect(pluginSource).toContain("updateImportActivity(patch = {})");
+    expect(pluginSource).toContain("resolveImportTranscribeProvider(this.host)");
+    expect(pluginSource).toContain("transcribeImportedAudio(this.host, blob, mime");
+    expect(pluginSource).toContain("wholeFileImport: true");
+    expect(pluginSource).toContain('detail: "整文件提交，不切分为多个 ASR 任务"');
+    expect(pluginSource).toContain('phase: "organize"');
   });
 
   it("does not advance an all-failed audio import into AI organization", () => {
-    expect(mainSource).toContain("let successfulTranscriptions = 0;");
-    expect(mainSource).toContain("successfulTranscriptions++;");
-    expect(mainSource).toContain("if (successfulTranscriptions === 0)");
-    expect(mainSource).toContain('phase: "transcribe"');
-    expect(mainSource).toContain("语音转写未完成；音频已保留，可在处理进度中重试");
+    expect(pluginSource).toContain("let successfulTranscriptions = 0;");
+    expect(pluginSource).toContain("successfulTranscriptions++;");
+    expect(pluginSource).toContain("if (successfulTranscriptions === 0)");
+    expect(pluginSource).toContain('phase: "transcribe"');
+    expect(pluginSource).toContain("语音转写未完成；音频已保留，可在处理进度中重试");
   });
 });

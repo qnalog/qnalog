@@ -26,6 +26,7 @@ import {
 import { analyzeRecordedAudioChannels } from '../asr/channel-transcription';
 import { isImportCapableTranscribeProvider } from '../asr/diarization';
 import { fetchImportTranscribeModels, testImportTranscribeProvider } from '../asr/long-audio-transcription';
+import { ensureVaultFolder } from "../shared/util-vault";
 
 function pickChannelProbeMime() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
@@ -233,7 +234,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     this._advancedTapCount = 0;
     this.plugin.settings.recruitFeatureUnlocked = true;
     await this.plugin.saveSettings();
-    this.plugin.refreshOutlineView();
+    this.plugin.shell.refreshOutlineView();
     this.renderSettings();
     this.showHrUnlockFireworks();
     new obsidian.Notice("招聘与晋升评审已启用", 6000);
@@ -444,7 +445,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const aiBtn = primary.createEl("button", { text: hasLlm ? "AI 整理设置" : "配置 AI 整理" });
     aiBtn.onclick = () => jump(hasLlm ? "ai" : "api");
     const panelBtn = primary.createEl("button", { text: "打开 QnALog 侧边栏" });
-    panelBtn.onclick = () => this.plugin.openOutlineView();
+    panelBtn.onclick = () => this.plugin.shell.openOutlineView();
 
     // 快速配置：百炼分别选择导入音频 ASR 与 AI 整理模型。
     const oneCard = page.createDiv({ cls: "lexvoice-home-block lexvoice-home-onecard" });
@@ -1072,7 +1073,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setDesc("开启后常驻显示，可拖动到任意位置；关闭后隐藏。")
       .addToggle(t => t.setValue(this.plugin.settings.showFloatingBall).onChange(async v => {
         this.plugin.settings.showFloatingBall = v; await this.plugin.saveSettings();
-        this.plugin.syncBubbleVisibility();
+        this.plugin.shell.syncBubbleVisibility();
       }));
 
     new obsidian.Setting(c).setName("悬浮按钮大小")
@@ -1084,14 +1085,14 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         .setValue(this.plugin.settings.bubbleSize || "large")
         .onChange(async v => {
           this.plugin.settings.bubbleSize = v; await this.plugin.saveSettings();
-          this.plugin.syncBubbleVisibility();
+          this.plugin.shell.syncBubbleVisibility();
         }));
   }
 
 
 
   getTranscribeProviderProfile(id, provider) {
-    return this.plugin.getTranscribeProviderProfile(id, provider);
+    return this.plugin.profiles.getTranscribeProviderProfile(id, provider);
   }
 
   renderTranscribeProviderGuide(c, activeId, provider, profile) {
@@ -1995,7 +1996,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         let file = this.plugin.app.vault.getAbstractFileByPath(norm);
         if (!(file instanceof obsidian.TFile)) {
           const folderPath = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-          if (folderPath) await this.plugin.ensureFolder(folderPath);
+          if (folderPath) await ensureVaultFolder(this.plugin.app, folderPath);
           file = await this.plugin.app.vault.create(norm, formatVocabularyMarkdown([], this.plugin.settings.industryProfile));
           new obsidian.Notice(`已创建：${norm}`);
         }
@@ -2038,9 +2039,9 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       btn.onclick = onClick;
       return btn;
     };
-    makeObjectCard("人员", peopleCount, "位", "汇总会议出现的人，一人一页，关联纪要。", "contact", "打开人员库", () => { void this.plugin.openPeopleBase(); });
-    makeObjectCard("学习卡片", learningCount, "张", "汇总观点、机制等可复用知识。", "layers-3", "打开学习卡片墙", () => { void this.plugin.openLearningWall("learning"); });
-    makeObjectCard("待办", todoCount, "条", "从纪要确认的行动项，可勾选追踪。", "list-checks", "打开待办墙", () => { void this.plugin.openTodoWall(); });
+    makeObjectCard("人员", peopleCount, "位", "汇总会议出现的人，一人一页，关联纪要。", "contact", "打开人员库", () => { void this.plugin.library.openPeopleBase(); });
+    makeObjectCard("学习卡片", learningCount, "张", "汇总观点、机制等可复用知识。", "layers-3", "打开学习卡片墙", () => { void this.plugin.library.openLearningWall("learning"); });
+    makeObjectCard("待办", todoCount, "条", "从纪要确认的行动项，可勾选追踪。", "list-checks", "打开待办墙", () => { void this.plugin.library.openTodoWall(); });
     const vocabCard = makeObjectCard("转写词表", "…", "个", "汇总术语及易错写法，提升转写准确率。", "notebook-tabs", "打开转写词表", () => { void openVocabularyFile(); });
 
     void (async () => {
@@ -2066,10 +2067,10 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setHeading();
     new obsidian.Setting(c).setName("从历史纪要补全")
       .setDesc(`人员待确认 ${pendingPeopleSuggestions.length} 条，已忽略 ${ignoredPeopleSuggestions.length} 条。扫描会调用当前 AI 整理服务；涉密内容建议使用本地模型。`)
-      .addButton(b => b.setButtonText("提取人员建议").setCta().onClick(async () => this.plugin.suggestPeopleDirectoryFromLibrary()))
+      .addButton(b => b.setButtonText("提取人员建议").setCta().onClick(async () => this.plugin.people.suggestPeopleDirectoryFromLibrary()))
       .addButton(b => b.setButtonText("提取转写词表").onClick(async () => this._extractVocabFromLibrary(async () => { if (vocabPathSetting) await refreshVocabStatus(vocabPathSetting); })))
-      .addButton(b => b.setButtonText("待确认").setDisabled(!pendingPeopleSuggestions.length).onClick(async () => { await this.plugin.openCachedPeopleDirectorySuggestions(); this.renderSettings(); }))
-      .addButton(b => b.setButtonText("已忽略").setDisabled(!ignoredPeopleSuggestions.length).onClick(async () => { await this.plugin.openIgnoredPeopleDirectorySuggestions(); this.renderSettings(); }));
+      .addButton(b => b.setButtonText("待确认").setDisabled(!pendingPeopleSuggestions.length).onClick(async () => { await this.plugin.people.openCachedPeopleDirectorySuggestions(); this.renderSettings(); }))
+      .addButton(b => b.setButtonText("已忽略").setDisabled(!ignoredPeopleSuggestions.length).onClick(async () => { await this.plugin.people.openIgnoredPeopleDirectorySuggestions(); this.renderSettings(); }));
 
     new obsidian.Setting(c).setName("人员去重")
       .setDesc("按姓名合并重复资料，更新纪要引用，并归档带 -1 / -2 后缀的重复页。")
@@ -2077,7 +2078,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         const ok = await lexvoiceConfirm(this.app, "合并重复人员档案？", "QnALog 会把同名人员页合并到主档案，改写所有指向重复页的 wiki 链接，并将重复页移到归档目录。建议先确保同步已完成。", "开始合并");
         if (!ok) return;
         try {
-          const result = await this.plugin.mergeDuplicatePeopleDirectory();
+          const result = await this.plugin.people.mergeDuplicatePeopleDirectory();
           new obsidian.Notice(result.merged
             ? `已合并 ${result.merged} 个重复人员页，更新 ${result.updatedLinks} 篇引用`
             : "没有发现需要合并的重复人员页");
@@ -2094,18 +2095,18 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setHeading();
     new obsidian.Setting(c).setName("资料总览")
       .setDesc("日常浏览入口，可按学习、概念和待办分类查看。")
-      .addButton(b => b.setButtonText("打开总览").setCta().onClick(() => { void this.plugin.openObjectWall(); }))
-      .addButton(b => b.setButtonText("学习卡片").onClick(() => { void this.plugin.openLearningWall("learning"); }))
-      .addButton(b => b.setButtonText("概念").onClick(() => { void this.plugin.openLearningWall("concept"); }))
-      .addButton(b => b.setButtonText("待办").onClick(() => { void this.plugin.openTodoWall(); }));
+      .addButton(b => b.setButtonText("打开总览").setCta().onClick(() => { void this.plugin.library.openObjectWall(); }))
+      .addButton(b => b.setButtonText("学习卡片").onClick(() => { void this.plugin.library.openLearningWall("learning"); }))
+      .addButton(b => b.setButtonText("概念").onClick(() => { void this.plugin.library.openLearningWall("concept"); }))
+      .addButton(b => b.setButtonText("待办").onClick(() => { void this.plugin.library.openTodoWall(); }));
 
     new obsidian.Setting(c).setName("明细表格")
       .setDesc("用于核对和批量筛选，不作为主展示入口。")
-      .addButton(b => b.setButtonText("人员资料").onClick(() => { void this.plugin.openPeopleBase(); }))
-      .addButton(b => b.setButtonText("全部纪要").onClick(() => this.plugin.openLexVoiceDetailBase()))
+      .addButton(b => b.setButtonText("人员资料").onClick(() => { void this.plugin.library.openPeopleBase(); }))
+      .addButton(b => b.setButtonText("全部纪要").onClick(() => this.plugin.library.openLexVoiceDetailBase()))
       .addButton(b => b.setButtonText("补齐视图").onClick(async () => {
         try {
-          const r = await this.plugin.createLexVoiceBases({ overwrite: false });
+          const r = await this.plugin.library.createLexVoiceBases({ overwrite: false });
           new obsidian.Notice(`表格视图创建完成：新建 ${r.created} 个，跳过 ${r.skipped} 个`);
         } catch (e) {
           console.error(e);
@@ -2160,7 +2161,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("清空词表记录").setDisabled(!vocabScanCount).onClick(async () => {
         const ok = await lexvoiceConfirm(this.app, "清空词表扫描记录？", `${vocabScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
         if (!ok) return;
-        this.plugin.clearKnowledgeExtractionHistory("vocabulary");
+        this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("vocabulary");
         await this.plugin.saveSettings();
         new obsidian.Notice("已清空转写词表扫描记录");
         this.renderSettings();
@@ -2168,7 +2169,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("清空人员记录").setDisabled(!peopleScanCount).onClick(async () => {
         const ok = await lexvoiceConfirm(this.app, "清空人员建议扫描记录？", `${peopleScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
         if (!ok) return;
-        this.plugin.clearKnowledgeExtractionHistory("people");
+        this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("people");
         await this.plugin.saveSettings();
         new obsidian.Notice("已清空人员建议扫描记录");
         this.renderSettings();
@@ -2226,7 +2227,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       return;
     }
     try {
-      const result = await this.plugin.extractVocabularyFromLibrary();
+      const result = await this.plugin.vocabulary.extractVocabularyFromLibrary();
       await refreshStatus();
       if (result.processed) {
         const rest = result.remaining ? `，还有 ${result.remaining} 篇待下次扫描` : "";
@@ -2475,7 +2476,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         this.plugin.settings.diagnosticsLogEnabled = v;
         await this.plugin.saveSettings();
       }))
-      .addButton(b => b.setButtonText("复制诊断报告").onClick(() => this.plugin.copyDiagnosticReport()));
+      .addButton(b => b.setButtonText("复制诊断报告").onClick(() => this.plugin.diagnostics.copyDiagnosticReport()));
 
     new obsidian.Setting(c).setName("诊断日志文件夹")
       .setDesc("Obsidian 库内的相对路径。一般保持默认即可；诊断报告只有在主动复制后才会提供给开发者排查。修改后仅影响新日志文件。")
@@ -2492,7 +2493,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("清空").onClick(async () => {
         const ok = await lexvoiceConfirm(this.app, "清空诊断日志？", "将删除诊断日志文件夹中的全部 .jsonl 日志文件；删除后无法再用于追溯历史问题（文件进入系统废纸篓，可恢复）。", "清空");
         if (!ok) return;
-        const folder = this.app.vault.getAbstractFileByPath(this.plugin.getDiagnosticsFolder());
+        const folder = this.app.vault.getAbstractFileByPath(this.plugin.diagnostics.getDiagnosticsFolder());
         let n = 0;
         if (folder instanceof obsidian.TFolder) {
           const targets = folder.children.filter(f => f instanceof obsidian.TFile && f.extension === "jsonl");
@@ -2519,16 +2520,16 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
             await this.plugin.saveSettings();
-            this.plugin.refreshExternalInboxWatcher();
+            this.plugin.externalInbox.refreshExternalInboxWatcher();
           });
       })
       .addButton(b => b.setButtonText("选择").onClick(async () => {
-        const folder = await this.plugin.chooseExternalInboxFolder();
+        const folder = await this.plugin.externalInbox.chooseExternalInboxFolder();
         if (!folder) return;
         this.plugin.settings.inboxFolder = folder;
         inboxFolderInput?.setValue(folder);
         await this.plugin.saveSettings();
-        this.plugin.refreshExternalInboxWatcher();
+        this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
     new obsidian.Setting(c).setName("自动处理新文件")
@@ -2536,7 +2537,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addToggle(t => t.setValue(this.plugin.settings.inboxAutoImport).onChange(async v => {
         this.plugin.settings.inboxAutoImport = v;
         await this.plugin.saveSettings();
-        this.plugin.refreshExternalInboxWatcher();
+        this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
     new obsidian.Setting(c).setName("归档子文件夹")
@@ -2561,11 +2562,11 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName("立即扫描监听文件夹")
       .setDesc("处理所有未归档的音频文件。用于补漏或初次配置后批量处理。")
-      .addButton(b => b.setButtonText("扫描").onClick(() => this.plugin.scanInboxFolder()));
+      .addButton(b => b.setButtonText("扫描").onClick(() => this.plugin.inbox.scanInboxFolder()));
 
     new obsidian.Setting(c).setName("清理空白短录音")
       .setDesc("扫描转写纪要文件夹，将时长不超过 10 秒且没有有效转写文本的 QnALog 条目移入系统废纸篓，并同步处理其引用的录音文件。误删可从系统废纸篓恢复。")
-      .addButton(b => b.setButtonText("扫描并清理").onClick(() => this.plugin.cleanupEmptyShortRecordings()));
+      .addButton(b => b.setButtonText("扫描并清理").onClick(() => this.plugin.migrations.cleanupEmptyShortRecordings()));
 
     // ---- 失败重试 ----
     new obsidian.Setting(c)
@@ -2591,7 +2592,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName("任务队列")
       .setDesc(`当前 ${this.plugin.queue.tasks.length} 个任务。`)
       .addButton(b => b.setButtonText("打开队列").onClick(() => new QueueModal(this.app, this.plugin).open()))
-      .addButton(b => b.setButtonText("重试全部").onClick(() => this.plugin.retryQueue()));
+      .addButton(b => b.setButtonText("重试全部").onClick(() => this.plugin.queueRetry.retryQueue()));
   }
 
   async runAudioDiagnostic() {
