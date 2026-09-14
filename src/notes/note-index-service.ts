@@ -106,8 +106,8 @@ export class NoteIndexService {
       const file = this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(mdPath || ""));
       if (!(file instanceof obsidian.TFile)) return;
       const markdown = await this.host.app.vault.cachedRead(file);
-      const objects = await generateSedimentObjects(this, file, markdown);
-      await writeSedimentObjectCards(this, file, { learningCards: objects.learningCards || [], todos: objects.todos || [] });
+      const objects = await generateSedimentObjects(this.host, file, markdown);
+      await writeSedimentObjectCards(this.host, file, { learningCards: objects.learningCards || [], todos: objects.todos || [] });
     } catch (e) { console.error("[QnALog] autoExtractSedimentAfterFinalize", e); }
   }
 }

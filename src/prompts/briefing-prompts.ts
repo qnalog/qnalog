@@ -585,7 +585,7 @@ export function getBriefingTaskActivityId(computedMeta) {
 export function createBriefingLlmActivityOptions(plugin, computedMeta, patch) {
   const taskId = getBriefingTaskActivityId(computedMeta);
   const taskMeter = computedMeta && computedMeta._taskMeter || null;
-  if (!taskId || !plugin || typeof plugin.patchTaskActivity !== "function") {
+  if (!taskId || !plugin || typeof plugin.tasks.patchTaskActivity !== "function") {
     return taskMeter ? { taskMeter } : {};
   }
   const basePatch = Object.assign({
@@ -597,19 +597,19 @@ export function createBriefingLlmActivityOptions(plugin, computedMeta, patch) {
     const now = Date.now();
     if (now - lastHeartbeatAt < 1500) return;
     lastHeartbeatAt = now;
-    plugin.patchTaskActivity(taskId, Object.assign({}, basePatch, {
+    plugin.tasks.patchTaskActivity(taskId, Object.assign({}, basePatch, {
       detail: detail || basePatch.detail || "模型正在返回内容",
     }));
   };
   return {
     priority: "interactive",
     taskMeter,
-    onQueued: () => plugin.patchTaskActivity(taskId, Object.assign({}, basePatch, {
+    onQueued: () => plugin.tasks.patchTaskActivity(taskId, Object.assign({}, basePatch, {
       stage: "llm-queued",
       stageLabel: "等待 AI 服务",
       detail: "前面的模型任务完成后会自动开始",
     })),
-    onStart: () => plugin.patchTaskActivity(taskId, basePatch),
+    onStart: () => plugin.tasks.patchTaskActivity(taskId, basePatch),
     onActivity: () => heartbeat("模型正在返回内容"),
   };
 }
@@ -618,9 +618,9 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
   const total = Math.max(1, checkpoint.parts.length);
   const completed = checkpoint.parts.filter(part => part.status === "complete").length;
   const taskId = getBriefingTaskActivityId(computedMeta);
-  if (taskId && plugin && typeof plugin.patchTaskActivity === "function") {
+  if (taskId && plugin && typeof plugin.tasks.patchTaskActivity === "function") {
     const finished = completed >= total;
-    plugin.patchTaskActivity(taskId, {
+    plugin.tasks.patchTaskActivity(taskId, {
       status: "running",
       stage: finished ? "assembling" : "llm",
       stageLabel: finished
@@ -634,9 +634,9 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
     });
   }
   const session = plugin && plugin.session;
-  if (!session || typeof plugin.setSessionWorkProgress !== "function") return;
+  if (!session || typeof plugin.recording.setSessionWorkProgress !== "function") return;
   if (computedMeta && computedMeta.startedAt && session.startedAt && computedMeta.startedAt !== session.startedAt) return;
-  plugin.setSessionWorkProgress(session, {
+  plugin.recording.setSessionWorkProgress(session, {
     stage: "llm-merge",
     label: total > 1 ? `AI 整理 · ${completed}/${total} 部分` : "AI 整理中",
     percent: Math.min(86, 48 + Math.round((completed / total) * 38)),
@@ -644,7 +644,7 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
       ? `正在整理第 ${Math.min(total, Math.max(1, currentPart || completed + 1))}/${total} 部分；已完成部分会立即保存`
       : "正在生成纪要正文",
   });
-  try { plugin.refreshOutlineView(); } catch { /* progress rendering must not block briefing */ }
+  try { plugin.shell.refreshOutlineView(); } catch { /* progress rendering must not block briefing */ }
 }
 
 export function buildEmptyLlmOutputFallback() {

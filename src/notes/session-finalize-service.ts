@@ -172,7 +172,7 @@ export class SessionFinalizeService {
         text = session.streamingFullText || "";
       }
       // 提升转写质量：流式整段文本补一遍热词修正（分段批量路径在 transcribeAudio 内部已做，流式此前漏了）
-      try { text = applyVocabularyCorrections(text, await loadVocabularyGroups(this)); } catch { /* intentionally empty */ }
+      try { text = applyVocabularyCorrections(text, await loadVocabularyGroups(this.host)); } catch { /* intentionally empty */ }
       try { await this.host.meetingWorkbench.removeLiveTranscriptBlock(session.mdPath, session.id); } catch { /* intentionally empty */ }
       session.streamingClient = null;
     } else if (isStreamingProvider) {
@@ -213,7 +213,7 @@ export class SessionFinalizeService {
             const expectedChannels = inspectRecordedChannels ? MAX_SPEAKER_CHANNELS : 1;
             if (inspectRecordedChannels) {
               channelTranscription = await transcribeAudioByChannels(
-                this,
+                this.host,
                 transcribeBlob,
                 transcribeMime,
                 expectedChannels,
@@ -294,7 +294,7 @@ export class SessionFinalizeService {
                 });
               }
             } else {
-              text = await transcribeAudio(this, transcribeBlob, transcribeMime);
+              text = await transcribeAudio(this.host, transcribeBlob, transcribeMime);
             }
           } catch (e) {
             err = e;

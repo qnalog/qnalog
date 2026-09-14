@@ -103,20 +103,21 @@ describe("release runtime contracts", () => {
   });
 
   it("keeps whole-file audio import and progress updates connected at runtime", () => {
-    expect(mainSource).toContain("openAudioImportOptions(paths, modeOverride)");
+    // 导入流程已抽到 src/imports/import-service.ts，按本文件约定用全文断言字符串存在。
+    expect(pluginSource).toContain("openAudioImportOptions(paths, modeOverride)");
     expect(pluginSource).toContain("updateImportActivity(patch = {})");
-    expect(mainSource).toContain("resolveImportTranscribeProvider(this)");
-    expect(mainSource).toContain("transcribeImportedAudio(this, blob, mime");
-    expect(mainSource).toContain("wholeFileImport: true");
-    expect(mainSource).toContain('detail: "整文件提交，不切分为多个 ASR 任务"');
-    expect(mainSource).toContain('phase: "organize"');
+    expect(pluginSource).toContain("resolveImportTranscribeProvider(this.host)");
+    expect(pluginSource).toContain("transcribeImportedAudio(this.host, blob, mime");
+    expect(pluginSource).toContain("wholeFileImport: true");
+    expect(pluginSource).toContain('detail: "整文件提交，不切分为多个 ASR 任务"');
+    expect(pluginSource).toContain('phase: "organize"');
   });
 
   it("does not advance an all-failed audio import into AI organization", () => {
-    expect(mainSource).toContain("let successfulTranscriptions = 0;");
-    expect(mainSource).toContain("successfulTranscriptions++;");
-    expect(mainSource).toContain("if (successfulTranscriptions === 0)");
-    expect(mainSource).toContain('phase: "transcribe"');
-    expect(mainSource).toContain("语音转写未完成；音频已保留，可在处理进度中重试");
+    expect(pluginSource).toContain("let successfulTranscriptions = 0;");
+    expect(pluginSource).toContain("successfulTranscriptions++;");
+    expect(pluginSource).toContain("if (successfulTranscriptions === 0)");
+    expect(pluginSource).toContain('phase: "transcribe"');
+    expect(pluginSource).toContain("语音转写未完成；音频已保留，可在处理进度中重试");
   });
 });

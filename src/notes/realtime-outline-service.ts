@@ -25,10 +25,12 @@ export interface RealtimeOutlineHost {
   diagnostics: DiagnosticsService;
   /** 实时大纲的调度器：防抖、串行、退避。 */
   outlineCoordinator: RealtimeOutlineCoordinator | null;
-  refreshOutlineView(): void;
+  /** 视图外壳服务：大纲更新后刷新侧边栏。 */
+  shell: { refreshOutlineView(): void };
   session: RecordingSession | null;
   setRecordingIssue(kind: string, patch?: unknown): void;
-  setSessionWorkProgress(session: RecordingSession, patch: unknown): void;
+  /** 录音采集服务：把大纲进度写进会话。 */
+  recording: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -177,7 +179,7 @@ export class RealtimeOutlineService {
         window: session.realtimeOutlineWindow || null,
         mode: session.mode,
       });
-      this.host.refreshOutlineView();
+      this.host.shell.refreshOutlineView();
       if (request.silent && hasRealtimeOutlineRunnableBacklog(session)) {
         this.scheduleRealtimeOutline({
           delayMs: getRealtimeOutlineQueuedDelayMs(session, { local }),
@@ -369,7 +371,7 @@ export class RealtimeOutlineService {
     let raw = "";
     let recruitTransportFallbackError = null;
     try {
-      raw = await callLlm(this, sys, user, {
+      raw = await callLlm(this.host, sys, user, {
         timeoutMs,
         payload: { max_tokens: maxTokens },
         priority: opts.final ? "normal" : "background",
@@ -761,7 +763,7 @@ export class RealtimeOutlineService {
       input: inputMetrics,
       preflight: true,
     };
-    const raw = await callLlm(this, JOBPORTRAIT_SYSTEM_PROMPT, user, {
+    const raw = await callLlm(this.host, JOBPORTRAIT_SYSTEM_PROMPT, user, {
       timeoutMs,
       payload: { max_tokens: maxTokens },
       priority: "background",
@@ -863,13 +865,13 @@ export class RealtimeOutlineService {
           ? Math.round((committedSegmentCount / totalSegmentCount) * 100)
           : 0;
         updateRealtimeOutlineCoverage(session, "processing");
-        this.host.setSessionWorkProgress(session, {
+        this.host.recording.setSessionWorkProgress(session, {
           stage: "outline",
           label: `补齐大纲 ${committedSegmentCount}/${totalSegmentCount} 段`,
           percent: Math.min(58, 32 + Math.round(coveragePercent * 0.26)),
           detail: `已覆盖 ${coveragePercent}% 的转写内容`,
         });
-        this.host.refreshOutlineView();
+        this.host.shell.refreshOutlineView();
       },
     });
 
@@ -897,7 +899,7 @@ export class RealtimeOutlineService {
       retryCount: drainResult.retryCount,
       error: drainResult.lastError ? diagnosticError(drainResult.lastError) : null,
     });
-    this.host.setSessionWorkProgress(session, {
+    this.host.recording.setSessionWorkProgress(session, {
       stage: "outline",
       label: "大纲未完全补齐",
       percent: 58,

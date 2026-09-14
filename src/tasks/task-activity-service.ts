@@ -30,17 +30,20 @@ export interface TaskActivityHost {
   /** 注册需要随插件卸载清理的定时器。 */
   registerInterval(id: number): number;
   diagnostics: DiagnosticsService;
-  getAsrServiceRetryDelayMs(): number;
+
   openSettings(tabId?: string): void;
   queue: TaskQueue | null;
   /** 队列失败恢复服务：熔断冷却结束后重新排期。 */
   queueRetry: QueueRetryService;
   recorder: RecorderService | null;
-  refreshOutlineView(): void;
-  resetAsrServiceCircuitForManualRetry(source?: string): unknown;
+  /** 视图外壳服务：任务状态变化后刷新侧边栏。 */
+  shell: { refreshOutlineView(): void };
+
   session: RecordingSession | null;
   /** 实时大纲服务：用户取消等待与后台补跑。 */
   outline: RealtimeOutlineService;
+  /** 录音采集服务：熔断状态与冷却时长。 */
+  recording: { isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -64,7 +67,7 @@ export class TaskActivityService {
     this.taskActivityStore = new TaskActivityStore();
     this.host.register(this.taskActivityStore.subscribe(() => {
       try { this.updateBusyStatus(); } catch { /* task observers must not break work */ }
-      try { this.host.refreshOutlineView(); } catch { /* task observers must not break work */ }
+      try { this.host.shell.refreshOutlineView(); } catch { /* task observers must not break work */ }
     }));
     this.host.registerInterval(window.setInterval(() => {
       try { this.taskActivityStore.prune(); } catch { /* maintenance must not break plugin */ }
@@ -499,12 +502,12 @@ export class TaskActivityService {
             retries: Math.max(0, Math.min(Number(task.retries) || 0, (this.host.settings.maxRetries || 3) - 1)),
           });
         }
-        if (task.type === "transcribe") this.host.resetAsrServiceCircuitForManualRetry("task-center");
+        if (task.type === "transcribe") this.host.recording.resetAsrServiceCircuitForManualRetry("task-center");
         try {
           await this.host.queue.processOne(task);
         } catch (error) {
           if (task.type === "transcribe" && isAsrTransportError(error)) {
-            this.host.queueRetry.scheduleTaskQueueRetry(this.host.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
+            this.host.queueRetry.scheduleTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
           }
           throw error;
         }
@@ -743,7 +746,7 @@ export class TaskActivityService {
     this._importBusy = next;
     try { this.syncImportTaskActivity(next); } catch { /* progress must not interrupt import */ }
     try { this.updateBusyStatus(); } catch { /* intentionally empty */ }
-    try { this.host.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     return next;
   }
   updateImportRequest(patch) {

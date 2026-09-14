@@ -37,14 +37,8 @@ export interface DiagnosticsHost {
   /** 当前构建的来源描述。 */
   getBuildSourceLabel(): string;
   /** 会话的实时转写积压统计。 */
-  getLiveAsrBacklogSummary(session: RecordingSession | null): LiveAsrBacklogSummary;
+  recording: { getLiveAsrBacklogSummary(session: RecordingSession | null): LiveAsrBacklogSummary; getRecorderBufferSummary(): { masterChunkCount: number; masterChunkBytes: number; currentSegmentChunkCount: number; currentSegmentChunkBytes: number } };
   /** 录音器当前缓存的内存块统计。 */
-  getRecorderBufferSummary(): {
-    masterChunkCount: number;
-    masterChunkBytes: number;
-    currentSegmentChunkCount: number;
-    currentSegmentChunkBytes: number;
-  };
 }
 
 export class DiagnosticsService {
@@ -152,8 +146,8 @@ export class DiagnosticsService {
     }, {});
     const lines = await this.readRecentDiagnosticLines(100);
     const activeSession = this.host.session;
-    const liveBacklog = activeSession ? this.host.getLiveAsrBacklogSummary(activeSession) : summarizeLiveAsrJobs([]);
-    const recorderBuffer = this.host.getRecorderBufferSummary();
+    const liveBacklog = activeSession ? this.host.recording.getLiveAsrBacklogSummary(activeSession) : summarizeLiveAsrJobs([]);
+    const recorderBuffer = this.host.recording.getRecorderBufferSummary();
     const runtimeMemory = await this.getRuntimeMemorySummary();
     const circuit = activeSession && activeSession.asrCircuitState ? activeSession.asrCircuitState : createLiveAsrCircuitState();
     const outlineInput = activeSession && activeSession.realtimeOutlineInput || {};

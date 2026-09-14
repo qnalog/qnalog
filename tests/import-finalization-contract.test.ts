@@ -10,14 +10,17 @@ const queueRetrySource = fs.readFileSync(path.join(root, "src/queue/queue-retry-
 const versionStoreSource = fs.readFileSync(path.join(root, "src/versions/version-store.ts"), "utf8");
 // 会话收尾（逐字稿校验、说话人姓名确认、正文落盘）已抽到该模块。
 const finalizeSource = fs.readFileSync(path.join(root, "src/notes/session-finalize-service.ts"), "utf8");
+// 导入流程（逐字稿校验、转写提交、进入整理）已抽到该模块。
+const importSource = fs.readFileSync(path.join(root, "src/imports/import-service.ts"), "utf8");
 
 describe("import finalization contract", () => {
   it("persists and verifies the raw transcript before starting AI organization", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
+    const source = importSource;
+    // 断言写在导入服务文件里的顺序：校验逐字稿断点 → 记录持久化事件 → 进入整理阶段 → 收尾。
     const verifyIndex = source.indexOf("const transcriptCheckpoint = verifyTranscriptCheckpoint");
     const persistedIndex = source.indexOf('"asr.import_transcript_persisted"', verifyIndex);
-    const organizeIndex = source.indexOf('phase: "organize"', persistedIndex);
-    const finalizeIndex = source.indexOf("await this.sessionFinalize.finalizeSession(session);", organizeIndex);
+    const organizeIndex = source.indexOf("phase: \"organize\"", persistedIndex);
+    const finalizeIndex = source.indexOf("await this.host.sessionFinalize.finalizeSession(session);", organizeIndex);
 
     expect(verifyIndex).toBeGreaterThan(-1);
     expect(persistedIndex).toBeGreaterThan(verifyIndex);

@@ -736,7 +736,7 @@ export async function transcribeAudioWithApimimo(
   const cleaned = cleanApimimoAsrRepeatedLoops(rawText);
   if (cleaned.suppressedChars > 0) {
     try {
-      await plugin.logDiagnostic("warn", "asr.apimimo_repeat_detected", "APIMiMo 转写疑似存在重复循环，已保留原始转写", {
+      await plugin.diagnostics.logDiagnostic("warn", "asr.apimimo_repeat_detected", "APIMiMo 转写疑似存在重复循环，已保留原始转写", {
         suppressedChars: cleaned.suppressedChars,
         suppressedRepeats: cleaned.suppressedRepeats,
         chunkCount: chunks.length,

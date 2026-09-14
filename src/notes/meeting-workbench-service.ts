@@ -19,7 +19,8 @@ export interface MeetingWorkbenchHost {
   diagnostics: DiagnosticsService;
   outline: RealtimeOutlineService;
   recorder: RecorderService | null;
-  refreshOutlineView(): void;
+  /** 视图外壳服务：互动结果写回后刷新侧边栏。 */
+  shell: { refreshOutlineView(): void };
 }
 
 export class MeetingWorkbenchService {
@@ -45,7 +46,7 @@ export class MeetingWorkbenchService {
     });
     if (!changed) return false;
     session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, { entries }));
-    this.host.refreshOutlineView();
+    this.host.shell.refreshOutlineView();
     return true;
   }
 
@@ -104,7 +105,7 @@ export class MeetingWorkbenchService {
     if (!queue.includes(entryId)) queue.push(entryId);
     session.pendingMeetingWorkbenchInteractions = queue;
     if (!this.canRunMeetingWorkbenchInteraction(session)) {
-      this.host.refreshOutlineView();
+      this.host.shell.refreshOutlineView();
       if (this._meetingWorkbenchInteractionTimer) window.clearTimeout(this._meetingWorkbenchInteractionTimer);
       this._meetingWorkbenchInteractionTimer = window.setTimeout(() => {
         this._meetingWorkbenchInteractionTimer = 0;
@@ -186,7 +187,7 @@ export class MeetingWorkbenchService {
         "- 不要写“未提及”“待确认”这类空字段；信息不足时直接说“现有上下文不足以判断”。",
         "- 不要声称做了声纹识别，不要编造人物责任。",
       ].join("\n");
-      const raw = await callLlm(this, system, user, {
+      const raw = await callLlm(this.host, system, user, {
         timeoutMs: MEETING_INTERACTION_TIMEOUT_MS,
         payload: { max_tokens: getMeetingInteractionMaxTokens(kind) },
         priority: "user",

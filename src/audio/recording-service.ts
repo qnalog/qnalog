@@ -44,16 +44,16 @@ export interface RecordingHost {
   app: obsidian.App;
   clearRecordingIssue(kind: string): void;
   diagnostics: DiagnosticsService;
-  finalizeSession(session: RecordingSession): Promise<void>;
   meetingWorkbench: MeetingWorkbenchService;
   noteWriter: NoteWriter;
-  processSegment(session: RecordingSession, seg: unknown): Promise<void>;
   profiles: TranscribeProfileService;
   queue: TaskQueue | null;
   recorder: RecorderService | null;
   recruit: RecruitService;
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
+  /** 会话收尾服务：切片转写与停止后的收尾。 */
+  sessionFinalize: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
   setRecordingIssue(kind: string, patch?: unknown): void;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
@@ -509,7 +509,7 @@ export class RecordingService {
       console.error("[QnALog] recovered rejected write chain before next segment", e);
     }).then(async () => {
       try {
-        await this.host.processSegment(session, preparedSeg);
+        await this.host.sessionFinalize.processSegment(session, preparedSeg);
       } catch (e) {
         // 本段异常不能毒化后续写入链；processSegment 已尽力保留缓存并加入后台重试。
         console.error("[QnALog] processSegment failed (swallowed to protect write chain)", e);
@@ -535,8 +535,8 @@ export class RecordingService {
     if (preparedSeg.isFinal) {
       // 双分支：无论前序链 fulfilled 还是 rejected，finalizeSession 都必须跑。
       session.writeQueue = session.writeQueue.then(
-        () => this.host.finalizeSession(session),
-        (e) => { console.error("[QnALog] write chain rejected before finalize", e); return this.host.finalizeSession(session); }
+        () => this.host.sessionFinalize.finalizeSession(session),
+        (e) => { console.error("[QnALog] write chain rejected before finalize", e); return this.host.sessionFinalize.finalizeSession(session); }
       );
     }
     // 录音中的普通切段只等音频安全落盘，不应继续 await 慢速 ASR 链。
@@ -963,7 +963,7 @@ export class RecordingService {
 
   getAsrServiceCircuitKey() {
     try {
-      const provider = resolveTranscribeProvider(this);
+      const provider = resolveTranscribeProvider(this.host);
       const endpoint = String(provider && provider.endpoint || "").trim();
       let host = endpoint;
       try { host = new URL(endpoint).host || endpoint; } catch { /* keep normalized raw endpoint */ }

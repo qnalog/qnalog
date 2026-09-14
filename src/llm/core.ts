@@ -778,8 +778,8 @@ export async function callLlmWithMeta(plugin, system, user, options) {
   // 单任务 token 计量：把每次 LLM 调用的输入/输出体量喂给插件计量器（仅在任务窗口内累计；空闲时 no-op）。
   // 流式响应通常不带 usage（这里 usage=null），由计量器按字符估算；非流式有 usage 时取精确值。
   try {
-    if (plugin && typeof plugin.addTaskMeter === "function") {
-      plugin.addTaskMeter(String(system || "").length + String(user || "").length, text.length, usage, options && options.taskMeter);
+    if (plugin && plugin.tasks && typeof plugin.tasks.addTaskMeter === "function") {
+      plugin.tasks.addTaskMeter(String(system || "").length + String(user || "").length, text.length, usage, options && options.taskMeter);
     }
   } catch { /* intentionally empty */ }
   return { text, finishReason: extractLlmFinishReason(data), usage };
@@ -893,8 +893,8 @@ export async function callLlmWithContinuation(plugin, system, user, options, opt
     const piece = stripModeSuggestionBlocks(extractLlmContent(data).trim());
     usage = addLlmUsage(usage, data && data.usage);
     try {
-      if (plugin && typeof plugin.addTaskMeter === "function") {
-        plugin.addTaskMeter(messages.reduce((n, m) => n + String(m.content || "").length, 0), piece.length, (data && data.usage) || null, effectiveOptions && effectiveOptions.taskMeter);
+      if (plugin && plugin.tasks && typeof plugin.tasks.addTaskMeter === "function") {
+        plugin.tasks.addTaskMeter(messages.reduce((n, m) => n + String(m.content || "").length, 0), piece.length, (data && data.usage) || null, effectiveOptions && effectiveOptions.taskMeter);
       }
     } catch { /* intentionally empty */ }
     if (!piece) {

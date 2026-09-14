@@ -44,8 +44,8 @@ export class DeliveryService {
       return null;
     }
     // 招聘评估 / 研讨纪要：纯白弥散数据驱动模板（大模型只产 DATA JSON 注入固定模板），生成前先选配色；其余模式沿用通用 HTML 报告。
-    const frontmatter = await readFileFrontmatter(this, file);
-    const mode = detectRecentNoteMode(this, file, frontmatter);
+    const frontmatter = await readFileFrontmatter(this.host, file);
+    const mode = detectRecentNoteMode(this.host, file, frontmatter);
     const styled = mode === "recruit" || mode === "seminar";
     let accentHex = null;
     if (styled) {
@@ -55,8 +55,8 @@ export class DeliveryService {
     new obsidian.Notice("QnALog：正在生成报告…");
     const markdown = await this.host.app.vault.read(file);
     let html = styled
-      ? await generateStyledReportFromMarkdown(this, mode, markdown)
-      : await generateHtmlReportFromMarkdown(this, file.basename, markdown);
+      ? await generateStyledReportFromMarkdown(this.host, mode, markdown)
+      : await generateHtmlReportFromMarkdown(this.host, file.basename, markdown);
     if (styled && accentHex) html = recolorReportHtml(html, accentHex);
     return { html };
   }
@@ -262,11 +262,11 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
     };
   }
   async resolveEmailRecipientsForMarkdownFile(file) {
-    const frontmatter = await readFileFrontmatter(this, file) || {};
+    const frontmatter = await readFileFrontmatter(this.host, file) || {};
     const attendeeNames = extractMeetingAttendeeNames(frontmatter);
     if (!attendeeNames.length) return { recipients: [], attendeeNames };
     const attendeeKeys = new Set(attendeeNames.map(normalizePersonLookupText).filter(Boolean));
-    const people = await loadPeopleDirectory(this);
+    const people = await loadPeopleDirectory(this.host);
     const recipients = [];
     const seen = new Set();
     for (const person of people || []) {

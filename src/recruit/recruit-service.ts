@@ -20,7 +20,8 @@ export interface RecruitHost {
   getAvailableMarkdownPath(targetPath: string, currentPath: string): string | null;
   /** 笔记正文写入服务：面试提纲块插到分段逐字稿标记之前。 */
   noteWriter: { insertBeforeSegmentsStart(path: string, content: string, sessionId: string): Promise<void> };
-  openRecruitContextInline(): Promise<void>;
+  /** 视图外壳服务：打开招聘上下文弹窗。 */
+  shell: { openRecruitContextInline(): Promise<void> };
   registerMarkdownCodeBlockProcessor(language: string, handler: (source: string, el: HTMLElement, ctx: obsidian.MarkdownPostProcessorContext) => void): void;
   saveSettings(): Promise<void>;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
@@ -58,7 +59,7 @@ export class RecruitService {
   renderHrActions(source, el) {
     el.empty();
     const bar = el.createDiv({ cls: "lexvoice-hr-actions" });
-    bar.createEl("button", { cls: "mod-cta", text: "＋ 新建面试" }).onclick = () => { void this.host.openRecruitContextInline(); };
+    bar.createEl("button", { cls: "mod-cta", text: "＋ 新建面试" }).onclick = () => { void this.host.shell.openRecruitContextInline(); };
     bar.createEl("button", { text: "＋ 新建招聘项目" }).onclick = () => this.openNewRecruitProjectDialog();
   }
   renderHrLinks(source, el) {
@@ -84,7 +85,7 @@ export class RecruitService {
       {
         title: "AGENDA",
         items: [
-          { label: "新建面试", action: () => void this.host.openRecruitContextInline() },
+          { label: "新建面试", action: () => void this.host.shell.openRecruitContextInline() },
           { label: "新建项目", action: () => this.openNewRecruitProjectDialog() },
         ],
       },
