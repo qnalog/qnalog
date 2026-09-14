@@ -385,8 +385,6 @@ export function guessEmailAttachmentMime(file) {
   if (ext === "md") return "text/markdown; charset=utf-8";
   if (ext === "pdf") return "application/pdf";
   if (ext === "html" || ext === "htm") return "text/html; charset=utf-8";
-  if (ext === "pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  if (ext === "ppt") return "application/vnd.ms-powerpoint";
   return "application/octet-stream";
 }
 
@@ -582,7 +580,7 @@ export function buildMeetingEmailBody({ file, markdown, attendeeNames = [], atta
   const body = [
     "你好，",
     "",
-    "以下是本次纪要的简要同步，完整 Markdown、PDF 及已生成的报告 / PPT 已随邮件附上。",
+    "以下是本次纪要的简要同步，完整 Markdown、PDF 及已生成的报告已随邮件附上。",
     "",
     `纪要：${file && file.basename ? file.basename : "QnALog 会议纪要"}.md`,
     `自动匹配参会人：${attendeeNames.length ? attendeeNames.join("、") : "未识别到可匹配人员"}`,
