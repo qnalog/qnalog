@@ -220,8 +220,6 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.profiles = new TranscribeProfileService(this);
     this.tasks.start();
     this.recorder = new RecorderService(this);
-    this.asrServiceCircuitKey = "";
-    this.asrServiceCircuitState = createLiveAsrCircuitState();
     this.queue = new TaskQueue(this);
     this.queue.load(this.persistedQueue);
     this.session = null;
@@ -310,9 +308,9 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.addCommand({ id: "check-updates", name: "检查更新", callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: "打开实时纪要面板", callback: () => this.shell.openOutlineView() });
     this.addCommand({ id: "open-minutes-kanban", name: "打开纪要看板", callback: () => this.shell.openMinutesKanban() });
-    this.addCommand({ id: "record-mic-only", name: "开始录音 · 仅麦克风", callback: () => { this._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
-    this.addCommand({ id: "record-mic-virtual", name: "开始录音 · 麦克风 + 电脑音频", callback: () => { this._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
-    this.addCommand({ id: "record-virtual-only", name: "开始录音 · 仅电脑音频", callback: () => { this._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });
+    this.addCommand({ id: "record-mic-only", name: "开始录音 · 仅麦克风", callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
+    this.addCommand({ id: "record-mic-virtual", name: "开始录音 · 麦克风 + 电脑音频", callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
+    this.addCommand({ id: "record-virtual-only", name: "开始录音 · 仅电脑音频", callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });
     this.addCommand({ id: "import-text", name: "导入已有文本 / MD 结构化整理", callback: () => new ImportTextModal(this.app, this).open() });
 
     this.settingTab = new LexVoiceSettingTab(this.app, this);

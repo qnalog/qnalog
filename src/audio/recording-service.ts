@@ -76,6 +76,8 @@ export class RecordingService {
   constructor(host) {
     this.host = host;
     this._oneShotCaptureMode = null;
+    this.asrServiceCircuitKey = "";
+    this.asrServiceCircuitState = createLiveAsrCircuitState();
     this._oneShotPolishMode = null;
     this.asrServiceCircuitKey = null;
     this.asrServiceCircuitState = null;
