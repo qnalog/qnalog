@@ -49,8 +49,9 @@ describe("import finalization contract", () => {
     expect(finalizeIndex).toBeGreaterThan(finalizeRename);
     expect(retryIndex).toBeGreaterThan(retryRename);
     expect(derivedIndex).toBeGreaterThan(derivedStart);
-    expect(source).toContain('"note.index_refresh_failed"');
-    expect(source).toContain("纪要索引更新失败，正文不受影响");
+    // 刷新索引的实现在笔记索引模块里，用全文断言这两条证据仍存在。
+    expect(pluginSourceText()).toContain('"note.index_refresh_failed"');
+    expect(pluginSourceText()).toContain("纪要索引更新失败，正文不受影响");
   });
 
   it("keeps AI configuration failures as blocked, manually recoverable merge tasks", () => {

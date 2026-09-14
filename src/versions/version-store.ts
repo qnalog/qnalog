@@ -4,6 +4,7 @@
 
 import * as obsidian from "obsidian";
 import type { LexVoiceSettings } from "../shared/types";
+import { NoteIndexService } from "../notes/note-index-service";
 import { sanitizeFilename } from "../shared/util-common";
 import { buildLexVoiceVersionPayload, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitLexVoiceVersionPayload } from "../version-content";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
@@ -16,8 +17,8 @@ export interface VersionStoreHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   getAvailableMarkdownPath(targetPath: string, currentPath?: string): string | null;
-  /** 收尾或切换版本后刷新笔记索引，失败不改写笔记。 */
-  refreshLexVoiceNoteIndexSafely(fileOrPath: unknown, options?: unknown): Promise<void>;
+  /** 笔记索引与当日概要服务。 */
+  noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -195,7 +196,7 @@ export class VersionStore {
       }
     }
     if (existing instanceof obsidian.TFile) {
-      await this.host.refreshLexVoiceNoteIndexSafely(existing, {
+      await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(existing, {
         meetingDate: derivedFm.time || derivedFm["日期"] || derivedFm.date || "",
         reason: "derived-note",
       });
@@ -208,7 +209,7 @@ export class VersionStore {
     const withFrontmatter = replaceLeadingFrontmatter(cur, frontmatter);
     const next = replaceLexVoiceActiveVersionBlock(withFrontmatter, versionMeta, body);
     if (next !== cur) await this.host.app.vault.modify(sourceFile, next);
-    await this.host.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "version-switch" });
+    await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "version-switch" });
   }
 
   async switchLexVoiceVersion(versionFile, fallbackSourcePath) {

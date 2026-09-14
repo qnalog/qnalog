@@ -7,8 +7,6 @@ import {getRealtimeOutlineAnchorTime } from "./outline-text";
 
 import { getSemanticCanvasPath } from "./canvas/semantic-outline-canvas";
 
-import { buildLexVoiceNoteIndex, resolveLexVoiceNoteIndex, upsertLexVoiceNoteIndex } from "./indexing/note-index";
-
 import { LexVoiceSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
@@ -39,9 +37,7 @@ import {registerRecruitBoardView } from "./recruit/bases-view";
 
 import {resolveTranscribeProvider, makeRecordingIssue, transcribeAudio } from "./asr/transcribe";
 
-import {readFileFrontmatter, ensureTodayDailyNoteFile } from "./shared/util-note";
-
-import {generateSedimentObjects, writeSedimentObjectCards } from "./sediment";
+import {readFileFrontmatter } from "./shared/util-note";
 
 import {loadVocabularyGroups, applyVocabularyCorrections } from "./vocabulary";
 
@@ -128,15 +124,10 @@ import {renderRecordingInterviewBriefBlock, renderRecordingPromotionReviewBlock 
 import {getAudioDurationMs, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName } from "./notes/audio-refs";
 
 // 以下 40 个声明已抽到 ./notes/note-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
+import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
 
 // 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {detectRecentNoteMode, getRecentNotes } from "./recent/recent-notes";
-
-// 以下 5 个声明已抽到 ./notes/ask-panel（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-
-// 以下 2 个声明已抽到 ./notes/daily-overview（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { buildDailyMeetingOverviewEntry, upsertDailyMeetingOverview } from "./notes/daily-overview";
 
 // 以下 1 个声明已抽到 ./audio/recorder-service（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { RecorderService } from "./audio/recorder-service";
@@ -167,6 +158,7 @@ import { MigrationService } from "./migrations/migration-service";
 import { RealtimeOutlineService } from "./notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
+import { NoteIndexService } from "./notes/note-index-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -235,6 +227,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.noteIndex = new NoteIndexService(this);
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
     this.outline = new RealtimeOutlineService(this);
@@ -728,16 +721,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       if (typeof v.scheduleUpdate === "function") v.scheduleUpdate();
       else if (typeof v.render === "function") v.render();
     }
-  }  // 转写完成后的自动沉淀（仅 settings.sedimentAutoExtract 开启时触发）：扫描纪要 → 学习卡片/待办自动入库。
-  // 后台跑、try/catch 静默——绝不影响主流程；沉淀扫描已走续写拼接（callLlmWithContinuation），不会被输出上限截断。
-  async autoExtractSedimentAfterFinalize(mdPath) {
-    try {
-      const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(mdPath || ""));
-      if (!(file instanceof obsidian.TFile)) return;
-      const markdown = await this.app.vault.cachedRead(file);
-      const objects = await generateSedimentObjects(this, file, markdown);
-      await writeSedimentObjectCards(this, file, { learningCards: objects.learningCards || [], todos: objects.todos || [] });
-    } catch (e) { console.error("[QnALog] autoExtractSedimentAfterFinalize", e); }
   }  async openOutlineView() {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
     if (existing.length) {
@@ -2733,11 +2716,11 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
 
     if (!mergeError && polished) {
-      await this.refreshLexVoiceNoteIndexSafely(writeSession.mdPath, {
+      await this.noteIndex.refreshLexVoiceNoteIndexSafely(writeSession.mdPath, {
         meetingDate: session.startedAt,
         reason: "finalize",
       });
-      try { await this.appendDailyMeetingOverview(writeSession, polished); }
+      try { await this.noteIndex.appendDailyMeetingOverview(writeSession, polished); }
       catch (e) { console.error("[QnALog] daily overview failed", e); }
     }
 
@@ -2752,7 +2735,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         this.tasks.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
       } catch { /* intentionally empty */ }
       // 沉淀开关默认关闭：开启后转写完成自动跑沉淀扫描并入库；关闭则照旧手动点「沉淀」。后台执行、失败静默。
-      if (this.settings.sedimentAutoExtract) void this.autoExtractSedimentAfterFinalize(session.mdPath);
+      if (this.settings.sedimentAutoExtract) void this.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
     }
 
     new obsidian.Notice(mergeError
@@ -2774,80 +2757,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry.scheduleDeferredAsrRetry(session);
     if (this.session === session) this.session = null;
     this.refreshOutlineView();
-  }
-
-  async refreshLexVoiceNoteIndex(fileOrPath, options = {}) {
-    const file = typeof fileOrPath === "string"
-      ? this.app.vault.getAbstractFileByPath(obsidian.normalizePath(fileOrPath))
-      : fileOrPath;
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return null;
-    const current = await this.app.vault.read(file);
-    const index = buildLexVoiceNoteIndex(current, {
-      noteTitle: file.basename,
-      meetingDate: options.meetingDate || "",
-    });
-    if (!index) return null;
-    const next = upsertLexVoiceNoteIndex(current, index);
-    if (next !== current) await this.app.vault.modify(file, next);
-    const expectedCanvasPath = obsidian.normalizePath(getSemanticCanvasPath(file.path));
-    const canvasFile = this.app.vault.getAbstractFileByPath(expectedCanvasPath);
-    return resolveLexVoiceNoteIndex(
-      index,
-      file.path,
-      canvasFile instanceof obsidian.TFile ? canvasFile.path : null,
-    );
-  }
-
-  async refreshLexVoiceNoteIndexSafely(fileOrPath, options = {}) {
-    try {
-      return await this.refreshLexVoiceNoteIndex(fileOrPath, options);
-    } catch (error) {
-      const filePath = typeof fileOrPath === "string" ? fileOrPath : (fileOrPath && fileOrPath.path) || "";
-      console.warn("[QnALog] note index refresh failed", error);
-      try {
-        await this.diagnostics.logDiagnostic("warn", "note.index_refresh_failed", "纪要索引更新失败，正文不受影响", {
-          filePath,
-          reason: options.reason || "",
-          error: diagnosticError(error),
-        });
-      } catch { /* index diagnostics must never affect note delivery */ }
-      return null;
-    }
-  }
-
-  async appendDailyMeetingOverview(session, polished) {
-    if (!this.settings.writeDailyMeetingOverview) return;
-    if (!session || !polished) return;
-    let dailyFile = null;
-    try {
-      dailyFile = await ensureTodayDailyNoteFile(this.app);
-    } catch (e) {
-      console.error("[QnALog] daily note ensure failed", e);
-    }
-    if (!(dailyFile instanceof obsidian.TFile)) return;
-    if (obsidian.normalizePath(dailyFile.path) === obsidian.normalizePath(session.mdPath)) return;
-    const entry = buildDailyMeetingOverviewEntry(session, polished, this.settings);
-    const cur = await this.app.vault.read(dailyFile);
-    const next = upsertDailyMeetingOverview(cur, session.id, entry, this.settings);
-    if (next !== cur) await this.app.vault.modify(dailyFile, next);
-  }
-
-  async appendDailyMeetingOverviewForMarkdown(file, markdown, polished, mode, segments, sessionMeta) {
-    if (!(file instanceof obsidian.TFile)) return;
-    const startedAt = sessionMeta && sessionMeta.startedAt
-      ? sessionMeta.startedAt
-      : new Date(file.stat && file.stat.ctime ? file.stat.ctime : Date.now()).toISOString();
-    const session = {
-      id: extractLexVoiceSessionId(markdown, obsidian.normalizePath(file.path).replace(/[^A-Za-z0-9_-]+/g, "-")),
-      mdPath: file.path,
-      mode,
-      startedAt,
-      segments: Array.isArray(segments) ? segments : [],
-    };
-    await this.appendDailyMeetingOverview(session, polished);
-  }
-
-  getAvailableMarkdownPath(targetPath, currentPath) {
+  }  getAvailableMarkdownPath(targetPath, currentPath) {
     const current = obsidian.normalizePath(currentPath || "");
     let candidate = obsidian.normalizePath(targetPath || "");
     if (!candidate || candidate === current) return candidate;
@@ -3168,7 +3078,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       try {
         const dailyFile = derivedFile instanceof obsidian.TFile ? derivedFile : dailyTargetFile;
         const dailyContent = await this.app.vault.read(dailyFile);
-        await this.appendDailyMeetingOverviewForMarkdown(dailyFile, dailyContent, polished, mode, segments, sessionMeta);
+        await this.noteIndex.appendDailyMeetingOverviewForMarkdown(dailyFile, dailyContent, polished, mode, segments, sessionMeta);
       } catch (e) {
         console.error("[QnALog] daily overview after repolish failed", e);
       }

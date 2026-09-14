@@ -26,6 +26,8 @@ import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { mergeAndPolish } from "../briefing/merge-pipeline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
+import { NoteIndexService } from "../notes/note-index-service";
+import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { RecruitService } from "../recruit/recruit-service";
 import { NoteWriter } from "../notes/note-writer";
@@ -34,11 +36,8 @@ import { NoteWriter } from "../notes/note-writer";
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  /** 把当日会议概要写入当日日记。 */
-  appendDailyMeetingOverview(session: RecordingSession, polished: string): Promise<void>;
   confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean>;
   diagnostics: DiagnosticsService;
-  generateAndApplyIndustryPrompt(mode: string, options?: unknown): Promise<void>;
   getAsrServiceCircuitState(): unknown;
   getAsrServiceRetryDelayMs(): number;
   isAsrServiceCircuitOpen(): boolean;
@@ -47,8 +46,6 @@ export interface QueueRetryHost {
   queue: TaskQueue | null;
   recorder: RecorderService | null;
   recruit: RecruitService;
-  /** 收尾或切换版本后刷新笔记索引，失败不改写笔记。 */
-  refreshLexVoiceNoteIndexSafely(fileOrPath: unknown, options?: unknown): Promise<void>;
   refreshOutlineView(): void;
   repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void>;
   resetAsrServiceCircuitForManualRetry(source?: string): unknown;
@@ -56,6 +53,10 @@ export interface QueueRetryHost {
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
   settingTab: LexVoiceSettingTab | null;
+  /** 笔记索引与当日概要服务。 */
+  noteIndex: NoteIndexService;
+  /** 词汇表与行业提示词服务。 */
+  vocabulary: VocabularyService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
   tasks: TaskActivityService;
@@ -555,7 +556,7 @@ export class QueueRetryService {
       ? await this.host.recruit.relocateRecruitNote({ mdPath: file.path, recruitContext }, recruitContext)
       : await this.host.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, task.mode);
     if (renamed instanceof obsidian.TFile) targetFile = renamed;
-    await this.host.refreshLexVoiceNoteIndexSafely(targetFile, {
+    await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(targetFile, {
       meetingDate: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || "",
       reason: "merge-retry",
     });
@@ -568,7 +569,7 @@ export class QueueRetryService {
         startedAt: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || new Date().toISOString(),
         segments: Array.isArray(task.segments) ? task.segments : [],
       };
-      await this.host.appendDailyMeetingOverview(session, polished);
+      await this.host.noteIndex.appendDailyMeetingOverview(session, polished);
     } catch (e) {
       console.error("[QnALog] daily overview after merge retry failed", e);
     }
@@ -576,7 +577,7 @@ export class QueueRetryService {
   async runGeneratePromptTask(task) {
     const mode = task.mode;
     if (!mode) throw new Error("缺少 mode");
-    const tpl = await this.host.generateAndApplyIndustryPrompt(mode, { activate: task.activate !== false });
+    const tpl = await this.host.vocabulary.generateAndApplyIndustryPrompt(mode, { activate: task.activate !== false });
     const activated = task.activate !== false;
     new obsidian.Notice("已创建自定义提示词「" + tpl.name + "」" + (activated ? "，并设为当前默认。" : "。"), 7000);
     if (this.host.settingTab) {

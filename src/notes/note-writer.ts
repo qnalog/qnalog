@@ -7,8 +7,9 @@ import { lexvoiceConfirm } from "../ui/helpers";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { isRecruitFeatureUnlocked } from "../recruit";
 import { splitOutSedimentBlock } from "../sediment";
+import { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { LexVoiceSettings } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { splitLeadingFrontmatter } from "../version-content";
@@ -26,11 +27,9 @@ import { ensureVaultFolder } from "../shared/util-vault";
 export interface NoteWriterHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  /** 把当日会议概要写入当日日记。 */
-  appendDailyMeetingOverview(session: RecordingSession, polished: string): Promise<void>;
   getAvailableMarkdownPath(targetPath: string, currentPath?: string): string | null;
-  /** 收尾或切换版本后刷新笔记索引，失败不改写笔记。 */
-  refreshLexVoiceNoteIndexSafely(fileOrPath: unknown, options?: unknown): Promise<void>;
+  /** 笔记索引与当日概要服务。 */
+  noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -532,13 +531,13 @@ export class NoteWriter {
     }
     if (finalFile instanceof obsidian.TFile) {
       await this.appendMergeMetadataBlock(finalFile, session.mergedSources);
-      await this.host.refreshLexVoiceNoteIndexSafely(finalFile, {
+      await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(finalFile, {
         meetingDate: session.startedAt,
         reason: "merge-notes",
       });
       try { await this.host.app.workspace.getLeaf(false).openFile(finalFile); } catch { /* intentionally empty */ }
     }
-    try { await this.host.appendDailyMeetingOverview(session, polished); }
+    try { await this.host.noteIndex.appendDailyMeetingOverview(session, polished); }
     catch (e) { console.error("[QnALog] daily overview after merge notes failed", e); }
     new obsidian.Notice(`已生成合并纪要：${finalFile instanceof obsidian.TFile ? finalFile.basename : "合并纪要"}`);
   }

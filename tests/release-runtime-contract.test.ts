@@ -99,7 +99,7 @@ describe("release runtime contracts", () => {
 
   it("keeps hidden sediment extraction out of the primary briefing response", () => {
     expect(mainSource).not.toContain("appendSedimentPreExtractionInstruction");
-    expect(mainSource).toContain("if (this.settings.sedimentAutoExtract) void this.autoExtractSedimentAfterFinalize");
+    expect(pluginSource).toContain("if (this.settings.sedimentAutoExtract) void this.noteIndex.autoExtractSedimentAfterFinalize");
   });
 
   it("keeps whole-file audio import and progress updates connected at runtime", () => {

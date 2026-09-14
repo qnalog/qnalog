@@ -15,6 +15,7 @@ import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { QueueRetryService } from "../queue/queue-retry-service";
+import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { TaskActivityStore } from "../shared/task-activity";
 import { QueueModal } from "../ui/modals";
 
@@ -28,7 +29,6 @@ export interface TaskActivityHost {
   register(cleanup: () => void): void;
   /** 注册需要随插件卸载清理的定时器。 */
   registerInterval(id: number): number;
-  cancelRealtimeOutline(sessionId: string): unknown;
   diagnostics: DiagnosticsService;
   getAsrServiceRetryDelayMs(): number;
   openSettings(tabId?: string): void;
@@ -37,9 +37,10 @@ export interface TaskActivityHost {
   queueRetry: QueueRetryService;
   recorder: RecorderService | null;
   refreshOutlineView(): void;
-  refreshRealtimeOutlineInBackground(opts?: unknown): Promise<void>;
   resetAsrServiceCircuitForManualRetry(source?: string): unknown;
   session: RecordingSession | null;
+  /** 实时大纲服务：用户取消等待与后台补跑。 */
+  outline: RealtimeOutlineService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -480,11 +481,11 @@ export class TaskActivityService {
         return;
       }
       if (actionId === "retry-outline") {
-        await this.host.refreshRealtimeOutlineInBackground({ force: true, silent: false, reason: "task-center-retry" });
+        await this.host.outline.refreshRealtimeOutlineInBackground({ force: true, silent: false, reason: "task-center-retry" });
         return;
       }
       if (actionId === "cancel-outline") {
-        this.host.cancelRealtimeOutline(taskId.replace(/^outline:/, ""));
+        this.host.outline.cancelRealtimeOutline(taskId.replace(/^outline:/, ""));
         this.cancelTaskActivity(taskId, "已停止本轮大纲生成");
         return;
       }
