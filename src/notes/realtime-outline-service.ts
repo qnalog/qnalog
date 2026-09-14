@@ -21,16 +21,14 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 
 /** RealtimeOutlineService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RealtimeOutlineHost {
-  clearRecordingIssue(kind: string): void;
   diagnostics: DiagnosticsService;
   /** 实时大纲的调度器：防抖、串行、退避。 */
   outlineCoordinator: RealtimeOutlineCoordinator | null;
   /** 视图外壳服务：大纲更新后刷新侧边栏。 */
   shell: { refreshOutlineView(): void };
   session: RecordingSession | null;
-  setRecordingIssue(kind: string, patch?: unknown): void;
   /** 录音采集服务：把大纲进度写进会话。 */
-  recording: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void };
+  recording: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void; setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -166,8 +164,8 @@ export class RealtimeOutlineService {
         signal: request.signal,
       });
       markRealtimeOutlineSuccess(session);
-      this.host.clearRecordingIssue("network");
-      this.host.clearRecordingIssue("service");
+      this.host.recording.clearRecordingIssue("network");
+      this.host.recording.clearRecordingIssue("service");
       await this.host.diagnostics.logDiagnostic("info", "outline.generate_succeeded", "实时大纲生成完成", {
         silent: !!request.silent,
         force: !!request.force,
@@ -210,7 +208,7 @@ export class RealtimeOutlineService {
         error: diagnosticError(e),
       });
       if (!request.silent) {
-        this.host.setRecordingIssue(classifyRecordingIssue(e), {
+        this.host.recording.setRecordingIssue(classifyRecordingIssue(e), {
           source: "outline",
           message: getErrorMessage(e),
           startedAtMs: getSegmentsDurationMs(session.segments),

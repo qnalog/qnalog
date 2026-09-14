@@ -2161,7 +2161,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("清空词表记录").setDisabled(!vocabScanCount).onClick(async () => {
         const ok = await lexvoiceConfirm(this.app, "清空词表扫描记录？", `${vocabScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
         if (!ok) return;
-        this.plugin.clearKnowledgeExtractionHistory("vocabulary");
+        this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("vocabulary");
         await this.plugin.saveSettings();
         new obsidian.Notice("已清空转写词表扫描记录");
         this.renderSettings();
@@ -2169,7 +2169,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("清空人员记录").setDisabled(!peopleScanCount).onClick(async () => {
         const ok = await lexvoiceConfirm(this.app, "清空人员建议扫描记录？", `${peopleScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
         if (!ok) return;
-        this.plugin.clearKnowledgeExtractionHistory("people");
+        this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("people");
         await this.plugin.saveSettings();
         new obsidian.Notice("已清空人员建议扫描记录");
         this.renderSettings();

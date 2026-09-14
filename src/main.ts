@@ -12,15 +12,11 @@ import {getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
 
 import { UpdateService } from "./update-service";
 
-import { normalizeKnowledgeExtractionHistory } from "./shared/util-knowledge";
-
 import { listJDProjects } from "./recruit/jd-projects";
 
 import {DEFAULT_RECRUIT_QUALITIES, isRecruitFeatureUnlocked, parseJdProject, renderRecruitCandidateBase, renderRecruitAggregateBase } from "./recruit";
 
 import {registerRecruitBoardView } from "./recruit/bases-view";
-
-import {makeRecordingIssue } from "./asr/transcribe";
 
 import {DEFAULT_SETTINGS } from "./shared/defaults";
 
@@ -47,7 +43,7 @@ import {ExternalInboxScanner, isAbsoluteExternalInboxPath } from "./audio/extern
 import {EXTERNAL_INBOX_SCAN_INTERVAL_MS } from "./shared/limits";
 
 // 以下 9 个声明已抽到 ./notes/recording-issues（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {isKnowledgeSourceAlreadyScanned, knowledgeExtractionRecordForFile, transformApiKeyFieldsDeep } from "./notes/recording-issues";
+import {transformApiKeyFieldsDeep } from "./notes/recording-issues";
 
 // 以下 39 个声明已抽到 ./notes/realtime-outline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {VIEW_TYPE_OUTLINE } from "./notes/realtime-outline";
@@ -86,6 +82,7 @@ import { ImportService } from "./imports/import-service";
 import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
+import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -154,6 +151,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.knowledgeExtraction = new KnowledgeExtractionService(this);
     this.inbox = new InboxWatcherService(this);
     this.repolish = new RepolishService(this);
     this.externalInbox = new ExternalInboxService(this);
@@ -174,7 +172,6 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queue = new TaskQueue(this);
     this.queue.load(this.persistedQueue);
     this.session = null;
-    this.recordingIssue = null;
     this.outlineCoordinator = new RealtimeOutlineCoordinator({
       getActiveSessionId: () => (this.session && this.session.id) || "",
       evaluate: (request) => this.outline.evaluateRealtimeOutlineRequest(request),
@@ -498,7 +495,9 @@ class LexVoicePlugin extends obsidian.Plugin {
     if (this.bubble) this.bubble.unmount();
     // 清理招聘项目重算 Debouncer，避免卸载后 pending timer 触发已 detach 的实例
     try { if (this.recruit) this.recruit.dispose(); } catch { /* intentionally empty */ }
-  }  async loadAll() {
+  }
+
+  async loadAll() {
     const saved: unknown = (await this.loadData()) || {};
     // 还原密钥：data.json 里的密钥是混淆态，读入内存前先解混淆（旧明文数据会原样通过，下次保存自动转混淆）
     try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
@@ -600,7 +599,9 @@ class LexVoicePlugin extends obsidian.Plugin {
         this.settingTab.display();
       }, 0);
     }
-  }  getUpdateRawBase() {
+  }
+
+  getUpdateRawBase() {
     return this.updateService.getUpdateRawBase();
   }
 
@@ -620,29 +621,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     return this.updateService.warnIfBuildManifestSkew();
   }
 
-  setRecordingIssue(kind, patch) {
-    const current = this.recordingIssue || {};
-    this.recordingIssue = makeRecordingIssue(kind || current.kind || "service", Object.assign({}, current, patch || {}, {
-      kind: kind || current.kind || "service",
-      at: patch && patch.at ? patch.at : (current.at || Date.now()),
-    }));
-    try { this.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
-    try { if (this.bubble && this.bubble.scheduleUpdate) this.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
-  }
-
-  clearRecordingIssue(kind) {
-    if (!this.recordingIssue) return;
-    if (kind && this.recordingIssue.kind !== kind) return;
-    this.recordingIssue = null;
-    try { this.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
-    try { if (this.bubble && this.bubble.scheduleUpdate) this.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
-  }
-
-  getRecordingIssue() {
-    const recorderIssue = this.recorder && this.recorder.getInfo ? (this.recorder.getInfo().issue || null) : null;
-    if (recorderIssue && recorderIssue.kind === "microphone") return recorderIssue;
-    return this.recordingIssue || recorderIssue || null;
-  }  getAvailableMarkdownPath(targetPath, currentPath) {
+  getAvailableMarkdownPath(targetPath, currentPath) {
     const current = obsidian.normalizePath(currentPath || "");
     let candidate = obsidian.normalizePath(targetPath || "");
     if (!candidate || candidate === current) return candidate;
@@ -657,39 +636,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       i++;
       if (i > 99) return "";
     }
-  }  getKnowledgeExtractionSourceFiles(kind) {
-    const folder = obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    const prefix = folder ? folder + "/" : "";
-    return this.app.vault.getMarkdownFiles()
-      .filter(file => {
-        const path = obsidian.normalizePath(file.path || "");
-        if (folder && path !== folder && !path.startsWith(prefix)) return false;
-        if (path === obsidian.normalizePath(this.settings.vocabularyFile || "")) return false;
-        if (this.settings.peopleDirectoryFolder) {
-          const peopleFolder = obsidian.normalizePath(this.settings.peopleDirectoryFolder);
-          if (path === peopleFolder || path.startsWith(peopleFolder + "/")) return false;
-        }
-        return !isKnowledgeSourceAlreadyScanned(this.settings, kind, file);
-      })
-      .sort((a, b) => (b.stat && b.stat.mtime || 0) - (a.stat && a.stat.mtime || 0));
-  }
-
-  markKnowledgeExtractionSource(kind, file) {
-    if (!(file instanceof obsidian.TFile)) return;
-    const safeKind = kind === "people" ? "people" : "vocabulary";
-    const history = normalizeKnowledgeExtractionHistory(this.settings.knowledgeExtractionHistory);
-    history[safeKind][obsidian.normalizePath(file.path)] = knowledgeExtractionRecordForFile(file);
-    this.settings.knowledgeExtractionHistory = history;
-  }
-
-  clearKnowledgeExtractionHistory(kind) {
-    const history = normalizeKnowledgeExtractionHistory(this.settings.knowledgeExtractionHistory);
-    if (kind === "people" || kind === "vocabulary") history[kind] = {};
-    else {
-      history.people = {};
-      history.vocabulary = {};
-    }
-    this.settings.knowledgeExtractionHistory = history;
   }}
 
 // 电脑音频捕获安装/配置向导 Modal —— 分平台引导

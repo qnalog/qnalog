@@ -3022,7 +3022,7 @@ export class OutlineView extends obsidian.ItemView {
           progress: 85,
           deadlineAt: 0,
         });
-        this.plugin.markKnowledgeExtractionSource("vocabulary", file);
+        this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
         await this.plugin.saveSettings();
         this.plugin.tasks.completeTaskActivity(taskId, {
           stage: "done",
@@ -3080,7 +3080,7 @@ export class OutlineView extends obsidian.ItemView {
           deadlineAt: 0,
         });
         const addedCount = this.plugin.people.cachePeopleDirectorySuggestions(file, items);
-        this.plugin.markKnowledgeExtractionSource("people", file);
+        this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
         await this.plugin.saveSettings();
         this.plugin.tasks.completeTaskActivity(taskId, {
           stage: "done",
@@ -3473,7 +3473,7 @@ export class OutlineView extends obsidian.ItemView {
         // 用户在侧边栏改对的热词，自动把笔记里的原词替换成更正后的词（撤销由上面的 sourceSnapshot 兜底）。
         let hotwordRenames = [];
         try { hotwordRenames = await this.applyHotwordRenamesToNote(file, selectedItems); } catch (e) { console.error("[QnALog] rename hotwords in note failed", e); }
-        this.plugin.markKnowledgeExtractionSource("vocabulary", file);
+        this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
         await this.plugin.saveSettings();
         this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected, "已加入"));
         // 候选全清，未消费的改名映射一并清掉（宿主候选已不存在，留着会在下次提交误回写）
@@ -3585,7 +3585,7 @@ export class OutlineView extends obsidian.ItemView {
       this.plugin.people.removeCachedPeopleSuggestions(items);
       this.removeSedimentPeopleCandidates(file, items);
       if (file instanceof obsidian.TFile) this.appendSedimentDecisionItems(file, "person", items, "kept", "已加入", stateBefore);
-      this.plugin.markKnowledgeExtractionSource("people", file);
+      this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
       await this.plugin.saveSettings();
       const completed = this.markSedimentGroupDoneIfEmpty(file, "person", items.length);
       await this.persistSedimentCandidateBucket(file);
@@ -4317,8 +4317,8 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   getRecordingIssue(recInfo) {
-    const issue = this.plugin && typeof this.plugin.getRecordingIssue === "function"
-      ? this.plugin.getRecordingIssue()
+    const issue = this.plugin && typeof this.plugin.recording.getRecordingIssue === "function"
+      ? this.plugin.recording.getRecordingIssue()
       : (recInfo && recInfo.issue);
     if (!issue || !issue.kind) return null;
     if (issue.kind === "microphone") return issue;

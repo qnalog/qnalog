@@ -30,6 +30,7 @@ import { extractLexVoiceTranscriptSegments, inferLexVoiceNoteStartedAtIso, norma
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
+import { makeRecordingIssue } from "../asr/transcribe";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 import { RecruitService } from "../recruit/recruit-service";
@@ -42,7 +43,8 @@ import { ViewShellService } from "../ui/view-shell-service";
 export interface RecordingHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  clearRecordingIssue(kind: string): void;
+  /** 悬浮气泡：录音问题变化时请求刷新。 */
+  bubble: { scheduleUpdate?: () => void } | null;
   diagnostics: DiagnosticsService;
   meetingWorkbench: MeetingWorkbenchService;
   noteWriter: NoteWriter;
@@ -54,7 +56,6 @@ export interface RecordingHost {
   session: RecordingSession | null;
   /** 会话收尾服务：切片转写与停止后的收尾。 */
   sessionFinalize: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
-  setRecordingIssue(kind: string, patch?: unknown): void;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
   shell: ViewShellService;
@@ -72,10 +73,13 @@ export class RecordingService {
   /** 招聘与晋升评审的上下文：随会话一起写入笔记，会话结束后清空。 */
   declare _currentRecruitContext;
   declare _currentPromotionReviewContext;
+  /** 当前录音问题（设备/服务/切片），无问题时为空。 */
+  declare recordingIssue;
 
   constructor(host) {
     this.host = host;
     this._oneShotCaptureMode = null;
+    this.recordingIssue = null;
     this.asrServiceCircuitKey = "";
     this.asrServiceCircuitState = createLiveAsrCircuitState();
     this._oneShotPolishMode = null;
@@ -150,7 +154,7 @@ export class RecordingService {
       this._currentRecruitContext = hasRecruitContextContent(savedCtx) ? savedCtx : null;
     }
     try {
-      this.host.clearRecordingIssue();
+      this.clearRecordingIssue();
       await ensureVaultFolder(this.host.app, this.host.settings.audioFolder);
       await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
       const moment = window.moment;
@@ -281,14 +285,14 @@ export class RecordingService {
           const sampleRate = activeProfile.streamProtocol && activeProfile.streamProtocol.startsWith("openai-realtime") ? 24000 : 16000;
           const client = createStreamingTranscriptionClient(activeProfile, activeProvider, {
             onPartial: (fullText, isFinal) => {
-              this.host.clearRecordingIssue("network");
-              this.host.clearRecordingIssue("service");
+              this.clearRecordingIssue("network");
+              this.clearRecordingIssue("service");
               sessionRef.streamingFullText = fullText || "";
               if (sessionRef.scheduleStreamingNoteUpdate) sessionRef.scheduleStreamingNoteUpdate();
             },
             onError: (e) => {
               console.error("[QnALog] streaming error", e);
-              this.host.setRecordingIssue(classifyRecordingIssue(e), {
+              this.setRecordingIssue(classifyRecordingIssue(e), {
                 source: "streaming-asr",
                 message: getErrorMessage(e),
               });
@@ -305,7 +309,7 @@ export class RecordingService {
             await client.connect();
           } catch (e) {
             console.error("[QnALog] streaming connect failed", e);
-            this.host.setRecordingIssue(classifyRecordingIssue(e), {
+            this.setRecordingIssue(classifyRecordingIssue(e), {
               source: "streaming-asr",
               message: getErrorMessage(e),
             });
@@ -396,7 +400,7 @@ export class RecordingService {
     if (this.host.recorder.state === "idle") return;
     new obsidian.Notice("⏹ 已请求停止，处理最后一段…");
     await this.host.recorder.stop();
-    this.host.clearRecordingIssue();
+    this.clearRecordingIssue();
   }
 
   shouldFilterShortRecording(session, seg) {
@@ -1059,6 +1063,30 @@ export class RecordingService {
       }
     }
   }
+
+  /** 录音问题状态：set/clear/get 三个入口，读的是当前问题的快照。 */
+  setRecordingIssue(kind, patch) {
+    const current = this.recordingIssue || {};
+    this.recordingIssue = makeRecordingIssue(kind || current.kind || "service", Object.assign({}, current, patch || {}, {
+      kind: kind || current.kind || "service",
+      at: patch && patch.at ? patch.at : (current.at || Date.now()),
+    }));
+    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { if (this.host.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
+  }
+  clearRecordingIssue(kind) {
+    if (!this.recordingIssue) return;
+    if (kind && this.recordingIssue.kind !== kind) return;
+    this.recordingIssue = null;
+    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { if (this.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
+  }
+  getRecordingIssue() {
+    const recorderIssue = this.recorder && this.recorder.getInfo ? (this.recorder.getInfo().issue || null) : null;
+    if (recorderIssue && recorderIssue.kind === "microphone") return recorderIssue;
+    return this.recordingIssue || recorderIssue || null;
+  }
+
 }
 
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

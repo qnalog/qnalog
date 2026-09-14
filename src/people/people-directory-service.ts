@@ -8,6 +8,7 @@ import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown } 
 import { PEOPLE_SUGGESTION_CACHE_LIMIT, splitPersonFieldValue, normalizePersonLookupText, loadPeopleDirectory, ensurePeopleNoteRelatedBaseSection, formatPeopleBaseYaml, formatPeopleNoteMarkdown, mergeUniqueStrings, normalizePeopleSuggestion, normalizePeopleSuggestionIgnores, isPeopleSuggestionIgnored, addPeopleSuggestionIgnore, removePeopleSuggestionIgnores, getPeopleSuggestionCacheKey, normalizePeopleSuggestionCache, makePeopleSuggestionCacheRecord, isPeopleSuggestionCacheRecordCurrent, peopleSuggestionRecordToSuggestion, peopleSuggestionIgnoreRecordToSuggestion, findMatchingPersonEntry, arePeopleSuggestionsRelated, mergePeopleSuggestions, mergeSourceNoteRelatedPeopleFrontmatter, mergePersonFrontmatter, generatePeopleDirectorySuggestions, personEntryFromFrontmatter } from "../people";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS } from "../shared/defaults";
 import type { LexVoiceSettings } from "../shared/types";
+import { KnowledgeExtractionService } from "../indexing/knowledge-extraction-service";
 import { sanitizeFilename, escapeRegExp } from "../shared/util-common";
 import { makeFileWikiLink } from "../shared/util-markdown";
 import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
@@ -18,9 +19,9 @@ import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault"
 export interface PeopleDirectoryHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  getKnowledgeExtractionSourceFiles(kind: string): Promise<obsidian.TFile[]>;
-  markKnowledgeExtractionSource(kind: string, file: obsidian.TFile): void;
   saveSettings(): Promise<void>;
+  /** 知识提取服务：扫描记录与文件指纹。 */
+  knowledgeExtraction: KnowledgeExtractionService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -346,7 +347,7 @@ export class PeopleDirectoryService {
       new obsidian.Notice("请先配置大模型服务");
       return;
     }
-    const all = this.host.getKnowledgeExtractionSourceFiles("people");
+    const all = this.host.knowledgeExtraction.getKnowledgeExtractionSourceFiles("people");
     const batch = all.slice(0, KNOWLEDGE_EXTRACTION_BATCH_LIMIT);
     if (!batch.length) {
       new obsidian.Notice("没有需要扫描的新纪要。修改过的纪要会自动重新进入扫描。");
@@ -362,7 +363,7 @@ export class PeopleDirectoryService {
           const markdown = await this.host.app.vault.cachedRead(file);
           const items = await generatePeopleDirectorySuggestions(this, file, markdown);
           cachedCount += this.cachePeopleDirectorySuggestions(file, items);
-          this.host.markKnowledgeExtractionSource("people", file);
+          this.host.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
           processed++;
         } catch (e) {
           failed++;

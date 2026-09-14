@@ -463,7 +463,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
           const result = await this.plugin.people.applyPeopleDirectorySuggestions(file instanceof obsidian.TFile ? file : null, items);
           created += result.created;
           updated += result.updated;
-          if (file instanceof obsidian.TFile) this.plugin.markKnowledgeExtractionSource("people", file);
+          if (file instanceof obsidian.TFile) this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
         }
         if (this.options.fromIgnored) this.plugin.people.removePeopleDirectorySuggestionIgnores(selected);
         else this.plugin.people.removeCachedPeopleSuggestions(selected);

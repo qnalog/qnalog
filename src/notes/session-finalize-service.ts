@@ -43,7 +43,6 @@ import { ViewShellService } from "../ui/view-shell-service";
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  clearRecordingIssue(kind: string): void;
   diagnostics: DiagnosticsService;
   meetingWorkbench: MeetingWorkbenchService;
   noteIndex: NoteIndexService;
@@ -53,11 +52,10 @@ export interface SessionFinalizeHost {
   queue: TaskQueue | null;
   queueRetry: QueueRetryService;
   recorder: RecorderService | null;
-  /** 录音采集服务：切片缓存与整场音频的落点。 */
-  recording: RecordingService;
+  /** 录音采集服务：切片缓存与整场音频的落点、录音问题状态。 */
+  recording: RecordingService & { setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
   recruit: RecruitService;
   session: RecordingSession | null;
-  setRecordingIssue(kind: string, patch?: unknown): void;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
   shell: ViewShellService;
@@ -336,7 +334,7 @@ export class SessionFinalizeService {
         });
       } else {
         const issueKind = classifyRecordingIssue(err);
-        this.host.setRecordingIssue(issueKind, {
+        this.host.recording.setRecordingIssue(issueKind, {
           source: "asr",
           message: getErrorMessage(err),
           startedAtMs: displayStartOffsetMs,
@@ -361,8 +359,8 @@ export class SessionFinalizeService {
     } else if (!text || !String(text).trim()) {
       // 转写成功返回，但内容为空 → 可能音频设备没选对 / 没有声音。
       // 请求既然成功返回，网络/服务是通的，清掉遗留横幅。
-      this.host.clearRecordingIssue("network");
-      this.host.clearRecordingIssue("service");
+      this.host.recording.clearRecordingIssue("network");
+      this.host.recording.clearRecordingIssue("service");
       // 防误报：只在"本场此前从未产生过任何非空转写"时提示。
       // 否则会议中途的合理静默段（开头/中场没人说话）会骚扰正在正常录音的用户。
       const hadAnyText = Array.isArray(session.segments) && session.segments.some((s) => s && s.text && String(s.text).trim());
@@ -374,8 +372,8 @@ export class SessionFinalizeService {
         new obsidian.Notice("本段没有检测到语音。请到「设置 → 常规 → 音频输入」测试所选设备。", 9000);
       }
     } else {
-      this.host.clearRecordingIssue("network");
-      this.host.clearRecordingIssue("service");
+      this.host.recording.clearRecordingIssue("network");
+      this.host.recording.clearRecordingIssue("service");
     }
 
     const playbackAudioName = session.masterAudioName || segmentAudioName;

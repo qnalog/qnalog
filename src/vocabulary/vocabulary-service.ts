@@ -7,6 +7,7 @@ import { isKnownPolishMode, makeCustomPromptModeId, getCustomPromptModeTemplates
 import { parseVocabularyGroups, flattenVocabularyGroups, normalizeVocabularyInput, mergeVocabularyGroups, loadVocabularyGroups, formatVocabularyMarkdown } from "../vocabulary";
 import { callLlm } from "../llm/core";
 import type { LexVoiceSettings } from "../shared/types";
+import { KnowledgeExtractionService } from "../indexing/knowledge-extraction-service";
 import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 import { INDUSTRY_META_PROMPT } from "../prompts/industry-meta";
 import { KNOWLEDGE_EXTRACTION_BATCH_LIMIT } from "../shared/limits";
@@ -16,9 +17,9 @@ import { ensureVaultFolder } from "../shared/util-vault";
 export interface VocabularyHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  getKnowledgeExtractionSourceFiles(kind: string): Promise<obsidian.TFile[]>;
-  markKnowledgeExtractionSource(kind: string, file: obsidian.TFile): void;
   saveSettings(): Promise<void>;
+  /** 知识提取服务：扫描记录与文件指纹。 */
+  knowledgeExtraction: KnowledgeExtractionService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
 }
@@ -281,7 +282,7 @@ ${source}`;
       new obsidian.Notice("请先配置大模型服务");
       return { processed: 0, added: 0, failed: 0, remaining: 0 };
     }
-    const all = this.host.getKnowledgeExtractionSourceFiles("vocabulary");
+    const all = this.host.knowledgeExtraction.getKnowledgeExtractionSourceFiles("vocabulary");
     const batch = all.slice(0, KNOWLEDGE_EXTRACTION_BATCH_LIMIT);
     if (!batch.length) {
       new obsidian.Notice("没有需要扫描的新纪要。修改过的纪要会自动重新进入扫描。");
@@ -297,7 +298,7 @@ ${source}`;
         const terms = await this.extractVocabularyFromMarkdown(file, markdown);
         added += terms.length;
         processed++;
-        this.host.markKnowledgeExtractionSource("vocabulary", file);
+        this.host.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
       } catch (e) {
         failed++;
         console.error("[QnALog] library vocabulary extraction failed", file && file.path, e);
