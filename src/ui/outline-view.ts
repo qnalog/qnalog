@@ -113,7 +113,7 @@ export class OutlineView extends obsidian.ItemView {
     this._lastRenderedOutline = "";
     this.showRecentHome = true;
     this.idlePanelTab = "";
-    this.recentFilters = { time: "week", mode: "all" };
+    this.recentFilters = { time: "all", mode: "all" };
     // 纪要列表默认按文件夹组织；时间线仍可从筛选条切换回来。
     this.recentGroupBy = "folder";
     this.recentCollapsedFolders = new Set();
@@ -5879,6 +5879,15 @@ export class OutlineView extends obsidian.ItemView {
     const groupChevron = groupChip.createSpan({ cls: "lexvoice-outline-recent-filter-chevron" });
     try { obsidian.setIcon(groupChevron, "chevron-down"); } catch { /* intentionally empty */ }
     groupChip.onclick = (evt) => this.showRecentGroupMenu(evt);
+    // 时间范围筛选：默认"全部日期"。列表会按它过滤，因此必须像模板筛选一样显示出来，
+    // 否则用户只能看到被截短的列表、却找不到是哪个筛选在起作用。
+    const timeValue = filters.time || "all";
+    const timeChip = wrap.createEl("button", {
+      cls: `lexvoice-outline-recent-filter-chip ${this.isRecentFilterActive("time", timeValue) ? "is-active" : ""}`,
+      text: this.getRecentFilterLabel("time", timeValue, allRecents),
+      attr: { type: "button", title: "筛选纪要时间范围" },
+    });
+    timeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "time", RECENT_TIME_FILTER_OPTIONS, timeValue);
     const modeValue = filters.mode || "all";
     const modeChip = wrap.createEl("button", {
       cls: `lexvoice-outline-recent-filter-chip ${this.isRecentFilterActive("mode", modeValue) ? "is-active" : ""}`,

@@ -31,10 +31,32 @@ function makeEl() {
     style: {}, classList: { add: noop, remove: noop, toggle: noop }, children: [], textContent: "",
     offsetWidth: 0, offsetHeight: 0, clientWidth: 0, clientHeight: 0, isConnected: true, parentElement: null,
   };
-  el.createEl = () => makeEl();
-  el.createDiv = () => makeEl();
-  el.createSpan = () => makeEl();
+  // 记录子元素与文本：渲染结果可以被断言（例如筛选条上必须出现时间范围按钮）。
+  const record = (child, options) => {
+    el.children.push(child);
+    if (options && typeof options === "object") {
+      if (typeof options.text === "string") child.textContent = options.text;
+      if (typeof options.cls === "string") child.className = options.cls;
+    }
+    return child;
+  };
+  el.createEl = (tag, options) => record(makeEl(), options);
+  el.createDiv = (options) => record(makeEl(), options);
+  el.createSpan = (options) => record(makeEl(), options);
   return el;
+}
+
+/** 收集某个元素树下所有已创建子元素的 className 与文本，供断言。 */
+function collectRenderedText(root) {
+  const out = [];
+  const walk = (el) => {
+    for (const child of el.children || []) {
+      out.push({ cls: String(child.className || ""), text: String(child.textContent || "") });
+      walk(child);
+    }
+  };
+  walk(root);
+  return out;
 }
 
 const notices = [];
@@ -72,7 +94,7 @@ class PluginBase extends ObsidianBase {
   addRibbonIcon() { return makeEl(); }
   addStatusBarItem() { return makeEl(); }
   addSettingTab(tab) { this.settingTabs.push(tab); }
-  registerView(type) { this.views.push(type); }
+  registerView(type, factory) { this.views.push({ type, factory }); }
   registerMarkdownPostProcessor() {}
   registerMarkdownCodeBlockProcessor() {}
   addChild() {}
@@ -215,6 +237,34 @@ async function main() {
 
   // 设置迁移必须真的跑过：迁移服务在 loadAll 之前装配，否则会被静默跳过
   expect(typeof plugin.migrations.migrateDefaultLibraryLayout === "function", "迁移服务未就绪，loadAll 的迁移会被跳过");
+
+  // 侧边栏「纪要」列表：默认不能带隐藏筛选。
+  // 列表按 recentFilters 过滤，但筛选条只渲染分组与模板两个按钮——
+  // 一旦初始值不是声明的默认值（曾为 time: "week"），用户就只会看到被截短的一周列表，
+  // 却看不到、也改不了那个筛选（真机现象：10 篇只显示 2 篇）。
+  const outlineEntry = plugin.views.find((v) => v.type === "lexvoice-outline-view");
+  expect(outlineEntry, "没有注册实时纪要面板视图");
+  if (outlineEntry) {
+    try {
+      const view = outlineEntry.factory({ app, containerEl: makeEl(), view: null });
+      const initial = view.getRecentFilters();
+      const defaults = view.getDefaultRecentFilters();
+      expect(initial.time === defaults.time && initial.mode === defaults.mode,
+        `纪要列表打开时带了非默认筛选：初始 ${JSON.stringify(initial)}，默认 ${JSON.stringify(defaults)}`);
+
+      const bar = makeEl();
+      view.renderRecentFilterBar(bar, []);
+      const rendered = collectRenderedText(bar);
+      const timeLabel = view.getRecentFilterLabel("time", initial.time, []);
+      const cls = (item) => item.cls.split(/\s+/);
+      const hasChip = (label) => rendered.some((item) => cls(item).includes("lexvoice-outline-recent-filter-chip") && item.text === label);
+      expect(hasChip(timeLabel), `筛选条上没有时间范围按钮（列表按它过滤，必须可见）：缺「${timeLabel}」`);
+      expect(hasChip("全部模板"), "筛选条上没有模板筛选按钮");
+      expect(rendered.some((item) => cls(item).includes("lexvoice-outline-recent-group-chip")), "筛选条上没有分组按钮");
+    } catch (error) {
+      failures.push(`纪要面板渲染检查抛错：${(error && error.message) || error}`);
+    }
+  }
 
   try {
     await plugin.onunload();

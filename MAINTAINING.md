@@ -260,7 +260,7 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 | `npm run check:versions` | `manifest.json` / `package.json` / `package-lock.json` / `versions.json` 版本不一致 |
 | `npm run check:undefined-symbols` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
 | `npm run check:domain-boundaries` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`plugin.<域>.<成员>`、`this.host.<域>.<成员>`（后者以服务类为准，接口里手抄的内联类型不作为依据） |
-| `npm run check:plugin-onload` | 域服务漏装或宿主装错：在模拟宿主里加载 `main.js` 跑 `onload`/`onunload`，确认每个服务已装配、方法可用，且 `service.host` 是插件实例本身 |
+| `npm run check:plugin-onload` | 域服务漏装或宿主装错；侧边栏「纪要」列表默认带隐藏筛选、或该筛选在筛选条上不可见 |
 | `npm run check:merge-pipeline` | 会话收尾到合并整理的目标链路跑不通：在模拟宿主里用桩模型真跑一遍，确认整合正文与原始转写都写进笔记 |
 | `npm run typecheck:core` + `tsc -noEmit` | 严格核心集与其余文件的类型错误 |
 
@@ -274,6 +274,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 实际发生过一次：`loadAll` 里的设置迁移依赖 migration 与 diagnostics 两个服务，而它们当时在 `loadAll`
 之后才装配，迁移因此被静默跳过（`catch` 里只打一行警告）。这条检查同时确认命令、视图、设置页与状态栏
 定时器的注册数量没有整体丢失。域服务的字段清单写在脚本顶部的 `DOMAIN_FIELDS`，新增服务时补一行。
+该脚本同时建一个真实的侧边栏视图并断言：纪要列表打开时用的是声明的默认筛选（不带隐藏筛选），
+且筛选条上必须出现时间范围与模板两个按钮——列表按这些筛选过滤，筛选条上看不到就等于用户求助无门。
 
 `check:domain-boundaries` 的来源：P1 拆分过程中，其它模块里累计出现 176 处指向已搬走成员的 `plugin.<成员>`、
 **43 处把服务自身当作插件对象传给辅助函数**（这些辅助函数读 `plugin.settings` / `plugin.app`，传服务实例会读到
