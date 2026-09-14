@@ -398,9 +398,18 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 **结构（§1.1.1）**
 
 - [x] P1 拆 `LexVoicePlugin`：已完成（2026-09-14）。`src/main.ts` 10,357 → 513 行，域逻辑与状态在 22 个域服务里。
-- [ ] P2 拆 `OutlineView`（`src/ui/outline-view.ts`，211 个方法 / 6,468 行）：界面与业务分层，数据来源改走 P1 的域服务接口。
-      现状：该文件 799 处 `LexVoice` 命名、大量 `this.plugin.<域>.<成员>` 调用；拆法沿用 §1.1.1 的抽取约定，
-      先分渲染（DOM 组装、卡片与列表）与数据（会话、大纲、候选）两层，再按面板拆子模块。
+- [x] P2 拆 `OutlineView`：**维护者决定不再继续**（2026-09-14）。
+      - 已完成的部分：语义 Canvas 抽成 `src/canvas/semantic-canvas-service.ts`（`outline-view.ts` 6,468 → 6,263 行）；
+        该文件同日退出 `@ts-nocheck`，现受类型检查。
+      - 停止的理由（实测数据）：拆分只能带走 27% 的类型错误，而补 38 个字段声明消掉 71%；
+        文件退出 `@ts-nocheck` 后，「方法改名但调用点保留」这类漏改会被 `tsc` 当场抓住
+        （此前 `tsc`、`check:undefined-symbols`、`check:domain-boundaries`、`check:plugin-onload` 四道门禁全绿、
+        411 项测试全过）。因此拆分对可维护性的边际收益已经很小。
+      - 剩下的主要代价：88 个沉淀相关方法里 36 个仍读视图私有字段（`sedimentGroup`、`sedimentScanToken`、
+        `sedimentToastTimer`…）。搬这些要把视图状态机一起搬，属重构而非搬迁，且会牵动界面行为——
+        与 §1.1「不改变既有行为语义」相冲突，需要独立的设计与逐项视觉验证。
+      - **重启条件**：若将来出现必须改 `outline-view.ts` 结构性问题的需求（例如某个面板要独立成视图、
+        或某类 bug 反复出现且定位困难），再按 §1.1.1 的抽取约定分簇推进，不要为了「文件变小」而拆。
 - [ ] P3 内部标识符改名（88 个 `LexVoice*` → `QnALog*`），数据层字面量、`lexvoice-*` 类名与视图类型不动。
 - [ ] P4 `src/ui/modals.ts`（2,627 行 / 11 个 Modal 类 + 悬浮气泡 `BubbleWidget`）按域拆包。可选。
 - [ ] 更新检查的 5 个转发（`getUpdateRawBase(s)`、`checkForUpdates(OnStartup)`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
@@ -413,7 +422,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] 设置页不得静默改写用户配置：`src/ui/settings-tab.ts` 的 `renderSpeaker` 在服务不可用时直接改写 `importTranscribeProvider`，应改为保留用户选择并给出提示。
 - [ ] 自定义服务的密钥必填判定：未知 provider id 一律按 `requiresKey: false` 处理，导致密钥栏显示"可选"，但导入时运行时会因缺 key 报错；应改为按 endpoint 推断。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
-- [ ] 类型检查盲区：3 个文件带 `@ts-nocheck`（P1 拆分出的域服务默认沿用；`npm run check:undefined-symbols` 按 tsconfig 自动识别，不写死清单），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
+- [ ] 类型检查盲区：3 个文件带 `@ts-nocheck`（`asr/clients.ts`、`ui/settings-tab.ts`、`ui/modals.ts`），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。2026-09-14 已把其余 44 个清完（47 → 3），做法与逐文件成本见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算，能通过检查就不加。
   - 已完成：2026-09-14 分两批让 26 个文件退出 `@ts-nocheck`（47 → 21）：先 14 个零错误的，再 12 个低错误的（1–7 处）。做法、逐文件成本与修法见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算确认能否通过检查，能通过就不加。
 
 **第二条：提升性功能（按需，不排期）**
@@ -442,16 +451,25 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 再读 `program.getSemanticDiagnostics()`（过滤掉 TS2304，它是 `check:undefined-symbols` 的活）
 与 `getSyntacticDiagnostics()` 的错误数。这一步只读不写，可以一次算出全部文件的成本。
 
-2026-09-14 实测（`tsconfig.json` 口径，按错误数升序）：
+2026-09-14 分五批完成 **47 → 3**。按去指令后的错误数（`tsconfig.json` 口径）分档，
+括号内是当时实测的错误数；已完成的文件不再列出：
 
-| 错误数 | 文件 |
+| 状态 | 文件 |
 |---|---|
-| 0（14 个，已退出） | `transcribe-profile-service`、`inbox-watcher-service`、`knowledge-extraction-service`、`ask-panel`、`callout-normalize`、`daily-overview`、`detail-blocks`、`meeting-workbench`、`repolish-service`、`session-progress`、`briefing-prompts`、`limits`、`version-store`、`base-definitions` |
-| 1–7（12 个，已退出） | `audio-refs`(1)、`recording-issues`(1)、`library-view-service`(1)、`note-index-service`(2)、`merge-pipeline`(3)、`migration-service`(3)、`note-writer`(3)、`render`(3)、`wall-markdown`(4)、`meeting-workbench-service`(6)、`people-directory-service`(6)、`recent-notes`(7) |
-| 8–20 | `view-shell-service`(8)、`queue-retry-service`(10)、`diagnostics-service`(11)、`realtime-outline`(11)、`audio-time-link-service`(12)、`delivery-service`(15)、`note-markdown`(15)、`vocabulary-service`(17)、`import-service`(20) |
-| 24 以上 | `external-inbox-service`(24)、`task-queue`(28)、`realtime-outline-service`(30)、`recording-service`(33)、`task-activity-service`(52)、`session-finalize-service`(71)、`main.ts`(135)、`asr/clients`(250)、`recorder-service`(287)、`settings-tab`(471)、`outline-view`(520)、`modals`(551) |
+| 已完成（44 个） | 错误数 0 的 14 个、1–7 的 12 个、8–20 的 9 个，
+以及 `external-inbox-service`(23)、`task-queue`(28)、`recording-service`(23)、
+`realtime-outline-service`(29)、`task-activity-service`(29)、`recorder-service`(237)、
+`session-finalize-service`(65)、`main.ts`(31)、`outline-view`(398)、`semantic-canvas-service`(1) |
+| **剩余（3 个，暂停）** | `asr/clients`（约 250）、`ui/settings-tab`（约 471）、`ui/modals`（约 508） |
 
-2026-09-14 已完成 44 个，剩余 3 个。错误集中在四类，修法固定：
+**剩余 3 个暂停的理由（2026-09-14 维护者决定）**：这三个都在 250 处以上，且 `settings-tab` 与
+`modals` 是 UI 密集文件，错误多来自 Obsidian DOM API 与动态设置对象——处理方式与其它文件不同，
+需要逐个方法收窄，工作量大且琐碎；`modals.ts` 本身是 11 个互不依赖的 Modal 类的集合，不是单体。
+`@ts-nocheck` 在这三个文件上的实际风险有限（它们的改动频率低，且 `check:undefined-symbols`
+仍覆盖 2304 类悬空引用）。**重启条件**：若某个文件要改结构性问题，或出现只有类型检查才拦得住的
+回归，再单独做那一个。
+
+错误集中在四类，修法固定：
 
 1. **默认参数 `options = {}` 让属性变成不存在（TS2339，占比最大）。** 补一个选项接口，属性声明为可选，
    默认值不动。例：`RefreshNoteIndexOptions`、`UpsertGeneratedMarkdownOptions`、`LexVoiceObjectWallOptions`、
