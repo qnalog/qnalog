@@ -43,7 +43,7 @@ export function upsertFrontmatterInMarkdown(markdown, frontmatter) {
 // 也不得把它们重新用于新的对象类型。TODO_CARD_TAG 仍在使用。
 export const TODO_CARD_TAG = "lexvoice/todo-card";
 
-export async function upsertLexVoiceObjectNote(plugin, folder, name, content) {
+export async function upsertObjectNote(plugin, folder, name, content) {
   await ensureVaultFolder(plugin.app, folder);
   const path = obsidian.normalizePath(`${folder}/${sanitizeFilename(name) || "未命名"}.md`);
   const file = plugin.app.vault.getAbstractFileByPath(path);

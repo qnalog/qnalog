@@ -766,6 +766,6 @@ export function recolorReportHtml(
   if (!s) return s;
   const delta = reportHueDelta(targetHex, baseHex);
   if (!delta) return s;
-  const style = `<style id="lexvoice-report-recolor">body{filter:hue-rotate(${delta}deg)}</style>`;
+  const style = `<style id="qnalog-report-recolor">body{filter:hue-rotate(${delta}deg)}</style>`;
   return s.includes("</head>") ? s.replace("</head>", style + "</head>") : style + s;
 }

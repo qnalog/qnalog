@@ -6,9 +6,9 @@ import { getSemanticCanvasPath } from "../canvas/semantic-outline-canvas";
 import { VIEW_TYPE_MINUTES_KANBAN } from "../ui/minutes-kanban-view";
 import { BubbleWidget } from "../ui/modals";
 import { getModeMeta } from "../shared/mode-meta";
-import { isLexVoiceMobileRuntime } from "../shared/util-platform";
+import { isMobileRuntime } from "../shared/util-platform";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { MODE_META } from "../shared/catalog-modes";
 import { sanitizeFilename } from "../shared/util-common";
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
@@ -25,7 +25,7 @@ export interface ViewShellHost {
   ribbonEl: HTMLElement | null;
   session: RecordingSession | null;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   tasks: TaskActivityService;
 }
 
@@ -42,7 +42,7 @@ export class ViewShellService {
       this.syncBubbleVisibility();
       return;
     }
-    const leaf = isLexVoiceMobileRuntime()
+    const leaf = isMobileRuntime()
       ? this.host.app.workspace.getLeaf(true)
       : (this.host.app.workspace.getRightLeaf(false) || this.host.app.workspace.getLeaf(true));
     await leaf.setViewState({ type: VIEW_TYPE_OUTLINE, active: true });

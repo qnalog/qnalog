@@ -1,5 +1,5 @@
 const VERSION_FRONTMATTER_START = "<!-- lexvoice-version-frontmatter-start";
-const VERSION_FRONTMATTER_END = "lexvoice-version-frontmatter-end -->";
+const VERSION_FRONTMATTER_END = "qnalog-version-frontmatter-end -->";
 const ACTIVE_VERSION_PATTERN = /<!--\s*lexvoice-active-version-start\s*-->[\s\S]*?<!--\s*lexvoice-active-version-end\s*-->/;
 const EMPTY_VERSION_BODY_FALLBACK = "> [!warning] AI 整理未完成\n> 当前版本没有可显示的整理正文；原始转写仍保留在母本中。";
 
@@ -29,7 +29,7 @@ function wrapFrontmatterYaml(yaml: string): string {
   return value ? `---\n${value}\n---\n` : "";
 }
 
-export function splitLexVoiceVersionPayload(content: string): { frontmatter: string; body: string } {
+export function splitVersionPayload(content: string): { frontmatter: string; body: string } {
   const text = String(content || "").replace(/^\uFEFF/, "");
   const markerPattern = new RegExp(
     `^\\s*${VERSION_FRONTMATTER_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\r?\\n([\\s\\S]*?)\\r?\\n${VERSION_FRONTMATTER_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`,
@@ -47,9 +47,9 @@ export function splitLexVoiceVersionPayload(content: string): { frontmatter: str
   return splitLeadingFrontmatter(text);
 }
 
-export function buildLexVoiceVersionPayload(frontmatter: string, body: string): string {
+export function buildVersionPayload(frontmatter: string, body: string): string {
   const yaml = getFrontmatterYaml(frontmatter);
-  const cleanBody = splitLexVoiceVersionPayload(body).body.trim() || EMPTY_VERSION_BODY_FALLBACK;
+  const cleanBody = splitVersionPayload(body).body.trim() || EMPTY_VERSION_BODY_FALLBACK;
   if (!yaml) return cleanBody;
   return [
     VERSION_FRONTMATTER_START,
@@ -60,11 +60,11 @@ export function buildLexVoiceVersionPayload(frontmatter: string, body: string): 
   ].join("\n");
 }
 
-export function sanitizeLexVoiceActiveVersionBody(body: string): string {
-  return splitLexVoiceVersionPayload(body).body.trim() || "_[当前版本无内容]_";
+export function sanitizeActiveVersionBody(body: string): string {
+  return splitVersionPayload(body).body.trim() || "_[当前版本无内容]_";
 }
 
-export function replaceExistingLexVoiceActiveVersionBlock(markdown: string, block: string): string | null {
+export function replaceExistingActiveVersionBlock(markdown: string, block: string): string | null {
   const text = String(markdown || "");
   if (!ACTIVE_VERSION_PATTERN.test(text)) return null;
   return text.replace(ACTIVE_VERSION_PATTERN, String(block || ""));

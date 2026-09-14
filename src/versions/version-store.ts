@@ -2,13 +2,13 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记版本块：清单读写、版本文件落盘、派生笔记、版本切换
 
 import * as obsidian from "obsidian";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { NoteIndexService } from "../notes/note-index-service";
 import { sanitizeFilename } from "../shared/util-common";
-import { buildLexVoiceVersionPayload, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitLexVoiceVersionPayload } from "../version-content";
+import { buildVersionPayload, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitVersionPayload } from "../version-content";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
-import { getLexVoiceSegmentsHash } from "../notes/audio-refs";
-import { buildLexVoiceSegmentStatusList, getLexVoiceSourceIdFromMarkdown, getLexVoiceVersionStoreFolder, normalizeLexVoiceVersionId, replaceLexVoiceActiveVersionBlock } from "../notes/note-markdown";
+import { getSegmentsHash } from "../notes/audio-refs";
+import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 
 /** VersionStore 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -18,7 +18,7 @@ export interface VersionStoreHost {
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class VersionStore {
@@ -27,7 +27,7 @@ export class VersionStore {
     this.host = host;
   }
 
-  async readLexVoiceVersionManifest(folder) {
+  async readVersionManifest(folder) {
     const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
     const f = this.host.app.vault.getAbstractFileByPath(manifestPath);
     if (!(f instanceof obsidian.TFile)) return { version: 1, activeVersionId: "", versions: [] };
@@ -40,7 +40,7 @@ export class VersionStore {
     }
   }
 
-  async writeLexVoiceVersionManifest(folder, manifest) {
+  async writeVersionManifest(folder, manifest) {
     await ensureVaultFolder(this.host.app, folder);
     const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
     const payload = JSON.stringify(Object.assign({ version: 1 }, manifest || {}), null, 2);
@@ -60,7 +60,7 @@ export class VersionStore {
     }
   }
 
-  async writeLexVoiceVersionFile(folder, fileName, content) {
+  async writeVersionFile(folder, fileName, content) {
     await ensureVaultFolder(this.host.app, folder);
     const path = obsidian.normalizePath(`${folder}/${fileName}`);
     const existing = this.host.app.vault.getAbstractFileByPath(path);
@@ -80,15 +80,15 @@ export class VersionStore {
     }
   }
 
-  async saveLexVoiceVersion(sourceFile, sourceContent, segments, versionInput) {
-    const sourceId = getLexVoiceSourceIdFromMarkdown(sourceContent, sourceFile);
-    const sourceHash = getLexVoiceSegmentsHash(segments);
-    const folder = getLexVoiceVersionStoreFolder(this.host.settings, sourceId);
+  async saveVersion(sourceFile, sourceContent, segments, versionInput) {
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const sourceHash = getSegmentsHash(segments);
+    const folder = getVersionStoreFolder(this.host.settings, sourceId);
     const createdAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-    const id = normalizeLexVoiceVersionId(versionInput.idLabel || versionInput.label || versionInput.kind || "version");
+    const id = normalizeVersionId(versionInput.idLabel || versionInput.label || versionInput.kind || "version");
     const fileStem = sanitizeFilename(`${id}`) || id;
     const fileName = `${fileStem}.md`;
-    const versionParts = splitLexVoiceVersionPayload(versionInput.body);
+    const versionParts = splitVersionPayload(versionInput.body);
     const body = versionParts.body.trim() || buildEmptyLlmOutputFallback();
     const frontmatter = versionParts.frontmatter;
     const meta = {
@@ -105,7 +105,7 @@ export class VersionStore {
       containsRaw: false,
       containsFrontmatter: Boolean(frontmatter),
     };
-    const payload = buildLexVoiceVersionPayload(frontmatter, body);
+    const payload = buildVersionPayload(frontmatter, body);
     const versionFileBody = [
       "---",
       "类型: LexVoice版本缓存",
@@ -126,8 +126,8 @@ export class VersionStore {
       payload,
       "",
     ].filter(v => v !== "").join("\n");
-    await this.writeLexVoiceVersionFile(folder, fileName, versionFileBody);
-    const manifest = await this.readLexVoiceVersionManifest(folder);
+    await this.writeVersionFile(folder, fileName, versionFileBody);
+    const manifest = await this.readVersionManifest(folder);
     const versions = Array.isArray(manifest.versions) ? manifest.versions.filter(v => v && v.id !== id) : [];
     versions.push(meta);
     Object.assign(manifest, {
@@ -135,17 +135,17 @@ export class VersionStore {
       sourcePath: sourceFile.path,
       sourceId,
       sourceHash,
-      segments: buildLexVoiceSegmentStatusList(segments),
+      segments: buildSegmentStatusList(segments),
       // 派生文件不改变母本当前显示版本；清稿/历史版本仍可显式激活。
       activeVersionId: versionInput.activate === false ? (manifest.activeVersionId || "") : id,
       updatedAt: createdAt,
       versions,
     });
-    await this.writeLexVoiceVersionManifest(folder, manifest);
+    await this.writeVersionManifest(folder, manifest);
     return { folder, manifest, meta, body, frontmatter };
   }
 
-  async createLexVoiceDerivedNote(sourceFile, sourceContent, version, label, mode, style = "") {
+  async createDerivedNote(sourceFile, sourceContent, version, label, mode, style = "") {
     if (!(sourceFile instanceof obsidian.TFile)) throw new Error("找不到原始纪要");
     const sourceDir = sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "";
     const prefix = String(label || "综合纪要").trim() || "综合纪要";
@@ -194,7 +194,7 @@ export class VersionStore {
       }
     }
     if (existing instanceof obsidian.TFile) {
-      await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(existing, {
+      await this.host.noteIndex.refreshNoteIndexSafely(existing, {
         meetingDate: derivedFm.time || derivedFm["日期"] || derivedFm.date || "",
         reason: "derived-note",
       });
@@ -202,15 +202,15 @@ export class VersionStore {
     return existing instanceof obsidian.TFile ? existing : null;
   }
 
-  async applyLexVoiceVersionToSource(sourceFile, versionMeta, body, frontmatter = "") {
+  async applyVersionToSource(sourceFile, versionMeta, body, frontmatter = "") {
     const cur = await this.host.app.vault.read(sourceFile);
     const withFrontmatter = replaceLeadingFrontmatter(cur, frontmatter);
-    const next = replaceLexVoiceActiveVersionBlock(withFrontmatter, versionMeta, body);
+    const next = replaceActiveVersionBlock(withFrontmatter, versionMeta, body);
     if (next !== cur) await this.host.app.vault.modify(sourceFile, next);
-    await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "version-switch" });
+    await this.host.noteIndex.refreshNoteIndexSafely(sourceFile, { reason: "version-switch" });
   }
 
-  async switchLexVoiceVersion(versionFile, fallbackSourcePath) {
+  async switchVersion(versionFile, fallbackSourcePath) {
     if (!(versionFile instanceof obsidian.TFile)) return;
     const content = await this.host.app.vault.read(versionFile);
     const fm = ((this.host.app.metadataCache.getFileCache(versionFile) || {}).frontmatter) || {};
@@ -221,7 +221,7 @@ export class VersionStore {
       return;
     }
     const parts = splitLeadingFrontmatter(content);
-    const versionParts = splitLexVoiceVersionPayload(parts.body);
+    const versionParts = splitVersionPayload(parts.body);
     const body = versionParts.body.trim() || "_[版本内容为空]_";
     const meta = {
       id: String(fm.version_id || versionFile.basename),
@@ -232,14 +232,14 @@ export class VersionStore {
       sourceHash: String(fm.source_segments_hash || ""),
       createdAt: String(fm.created || ""),
     };
-    await this.applyLexVoiceVersionToSource(sourceFile, meta, body, versionParts.frontmatter);
+    await this.applyVersionToSource(sourceFile, meta, body, versionParts.frontmatter);
     const sourceContent = await this.host.app.vault.read(sourceFile);
-    const sourceId = getLexVoiceSourceIdFromMarkdown(sourceContent, sourceFile);
-    const folder = getLexVoiceVersionStoreFolder(this.host.settings, sourceId);
-    const manifest = await this.readLexVoiceVersionManifest(folder);
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const folder = getVersionStoreFolder(this.host.settings, sourceId);
+    const manifest = await this.readVersionManifest(folder);
     manifest.activeVersionId = meta.id;
     manifest.updatedAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-    await this.writeLexVoiceVersionManifest(folder, manifest);
+    await this.writeVersionManifest(folder, manifest);
     try { await this.host.app.workspace.getLeaf(false).openFile(sourceFile); } catch { /* intentionally empty */ }
     new obsidian.Notice(`已切换到版本：${meta.label}`, 3000);
   }

@@ -2,14 +2,14 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：历史数据迁移与清理：旧版笔记属性补全、默认目录迁移、空白短录音清理
 
 import * as obsidian from "obsidian";
-import { lexvoiceConfirm, trashLexVoiceFile } from "../ui/helpers";
+import { qnalogConfirm, trashVaultFileRef } from "../ui/helpers";
 import { parseVocabularyGroups, isStructuredVocabularyMarkdown, formatVocabularyMarkdown } from "../vocabulary";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS, LEGACY_DEFAULT_LIBRARY_PATHS } from "../shared/defaults";
 import { LEGACY_VOCABULARY_FILE } from "../shared/settings-io";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { isRecord, pickDefined, formatElapsed } from "../shared/util-common";
-import { resolveLexVoiceAudioFile } from "../notes/audio-refs";
-import { analyzeLexVoiceEmptyShortNote, formatYamlDateTime, inferLexVoiceNoteStartedAtIso, inferModeFromLegacyNote, inferTopicFromFilename } from "../notes/note-markdown";
+import { resolveAudioFileRef } from "../notes/audio-refs";
+import { analyzeEmptyShortNote, formatYamlDateTime, inferNoteStartedAtIso, inferModeFromLegacyNote, inferTopicFromFilename } from "../notes/note-markdown";
 import { TaskQueue } from "../queue/task-queue";
 import { ensureVaultFolder } from "../shared/util-vault";
 
@@ -21,7 +21,7 @@ export interface MigrationHost {
   saveAll(): Promise<void>;
   session: RecordingSession | null;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class MigrationService {
@@ -69,7 +69,7 @@ export class MigrationService {
 
         const fmObj: Record<string, string | string[]> = { mode };
         // 统一用 time（ISO datetime），不再写 日期；从文件名日期 + ctime 兜底推断，保证非空、跨模式一致。
-        const tval = formatYamlDateTime(inferLexVoiceNoteStartedAtIso(file, date ? { "日期": date } : {}));
+        const tval = formatYamlDateTime(inferNoteStartedAtIso(file, date ? { "日期": date } : {}));
         if (tval) fmObj.time = tval;
         if (duration) fmObj["时长"] = duration;
         if (topic) fmObj["主题"] = topic; // 统一主键为 主题（含 huddle，不再写 议题）
@@ -123,12 +123,12 @@ export class MigrationService {
       if (currentPath && obsidian.normalizePath(file.path) === currentPath) continue;
       try {
         const content = await this.host.app.vault.read(file);
-        const candidate = analyzeLexVoiceEmptyShortNote(file, content, this.host.settings);
+        const candidate = analyzeEmptyShortNote(file, content, this.host.settings);
         if (!candidate) continue;
         const audioFiles = [];
         const seenAudio = new Set();
         for (const ref of candidate.audioRefs) {
-          const audioFile = resolveLexVoiceAudioFile(this.host.app, this.host.settings, ref);
+          const audioFile = resolveAudioFileRef(this.host.app, this.host.settings, ref);
           if (audioFile && !seenAudio.has(audioFile.path)) {
             seenAudio.add(audioFile.path);
             audioFiles.push(audioFile);
@@ -162,7 +162,7 @@ export class MigrationService {
       .map((c) => `- ${c.file.path}（${formatElapsed(c.durationMs)}，录音 ${c.audioFiles.length} 个）`)
       .join("\n");
     const more = candidates.length > 10 ? `\n...另有 ${candidates.length - 10} 条` : "";
-    const ok = await lexvoiceConfirm(
+    const ok = await qnalogConfirm(
       this.host.app,
       "清理空白短录音",
       `发现 ${candidates.length} 条空白短录音。\n\n条件：时长不超过 10 秒，且没有有效转写文本。\n将移入系统废纸篓：${candidates.length} 篇纪要、${uniqueAudioFiles.length} 个录音文件。\n\n${preview}${more}\n\n继续清理吗？`,
@@ -178,7 +178,7 @@ export class MigrationService {
 
     for (const candidate of candidates) {
       try {
-        await trashLexVoiceFile(this.host.app, candidate.file);
+        await trashVaultFileRef(this.host.app, candidate.file);
         noteDeleted++;
         deletedNotePaths.add(obsidian.normalizePath(candidate.file.path));
       } catch (e) {
@@ -191,7 +191,7 @@ export class MigrationService {
       const current = this.host.app.vault.getAbstractFileByPath(audioFile.path);
       if (!(current instanceof obsidian.TFile)) continue;
       try {
-        await trashLexVoiceFile(this.host.app, current);
+        await trashVaultFileRef(this.host.app, current);
         audioDeleted++;
         deletedAudioPaths.add(obsidian.normalizePath(audioFile.path));
       } catch (e) {
@@ -251,7 +251,7 @@ export class MigrationService {
     const migrations = [
       ["peopleDirectoryFolder", LEGACY_DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder, DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder],
       ["todoCardsFolder", LEGACY_DEFAULT_LIBRARY_PATHS.todoCardsFolder, DEFAULT_LIBRARY_PATHS.todoCardsFolder],
-      ["lexVoiceBasesFolder", LEGACY_DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder, DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder],
+      ["basesFolder", LEGACY_DEFAULT_LIBRARY_PATHS.basesFolder, DEFAULT_LIBRARY_PATHS.basesFolder],
       ["peopleBaseFile", LEGACY_DEFAULT_LIBRARY_PATHS.peopleBaseFile, DEFAULT_LIBRARY_PATHS.peopleBaseFile],
       ["vocabularyFile", LEGACY_DEFAULT_LIBRARY_PATHS.vocabularyFile, DEFAULT_LIBRARY_PATHS.vocabularyFile],
       ["diagnosticsLogFolder", LEGACY_DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder, DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder],

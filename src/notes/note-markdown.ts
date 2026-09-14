@@ -1,18 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：笔记 Markdown 的解析与生成（版本块、frontmatter 后处理、逐字稿区块、标题与文件名、邮件草稿）——这几个关注点相互引用，合并为一个模块以避免循环导入
 
-import { collectLexVoiceAudioRefs, getAudioLinkTarget, getLexVoiceDurationMs } from "./audio-refs";
+import { collectAudioRefs, getAudioLinkTarget, getDurationMs } from "./audio-refs";
 
-import { LEXVOICE_ACTIVE_VERSION_END, LEXVOICE_ACTIVE_VERSION_START, LEXVOICE_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS } from "../shared/limits";
+import { LEXVOICE_ACTIVE_VERSION_END, LEXVOICE_ACTIVE_VERSION_START, QNALOG_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS } from "../shared/limits";
 
-import { normalizeLexVoiceCallouts } from "./callout-normalize";
+import { normalizeCallouts } from "./callout-normalize";
 
 import { buildEmptyLlmOutputFallback, formatMergeSegmentForPrompt } from "../prompts/briefing-prompts";
 
 import * as obsidian from "obsidian";
 import { findLowEvidenceEntities, hashRealtimeOutlineText } from "../outline-text";
 
-import { stripLexVoiceFrontmatterSimple } from "../ui/helpers";
+import { stripFrontmatterSimple } from "../ui/helpers";
 
 import { getCustomPromptModeTemplate, getCustomPromptModeTemplates, getModeMeta, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
 
@@ -33,7 +33,7 @@ import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "..
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import { replaceExistingLexVoiceActiveVersionBlock, sanitizeLexVoiceActiveVersionBody, splitLeadingFrontmatter } from "../version-content";
+import { replaceExistingActiveVersionBlock, sanitizeActiveVersionBody, splitLeadingFrontmatter } from "../version-content";
 
 import { speakerLabelForChannel } from "../audio/channel-speakers";
 
@@ -44,7 +44,7 @@ export function isTimeLabel(text) {
   return new RegExp("^" + time + "(?:\\s*[–-]\\s*" + time + ")?$").test(String(text || "").trim());
 }
 
-export function stripLexVoiceAutoTitleSuffix(stem, settings) {
+export function stripAutoTitleSuffix(stem, settings) {
   const prefixes = Object.values(MODE_META)
     .map(m => sanitizeFilename(m && m.prefix))
     .concat(getCustomPromptModeTemplates(settings || {}).map(t => sanitizeFilename(t.name)))
@@ -55,12 +55,12 @@ export function stripLexVoiceAutoTitleSuffix(stem, settings) {
   return String(stem || "").replace(re, "").trim();
 }
 
-export function buildLexVoiceRenamedMarkdownPath(currentPath, mode, titleTag, settings) {
+export function buildRenamedMarkdownPath(currentPath, mode, titleTag, settings) {
   const norm = obsidian.normalizePath(String(currentPath || ""));
   const slash = norm.lastIndexOf("/");
   const dir = slash >= 0 ? norm.slice(0, slash) : "";
   const name = slash >= 0 ? norm.slice(slash + 1) : norm;
-  const stem = stripLexVoiceAutoTitleSuffix(name.replace(/\.md$/i, ""), settings);
+  const stem = stripAutoTitleSuffix(name.replace(/\.md$/i, ""), settings);
   const meta = getModeMeta(settings, mode);
   const modePrefix = sanitizeFilename(meta.prefix || "自定义") || "自定义";
   const tag = sanitizeFilename(titleTag) || "";
@@ -69,7 +69,7 @@ export function buildLexVoiceRenamedMarkdownPath(currentPath, mode, titleTag, se
   return obsidian.normalizePath(dir ? `${dir}/${nextName}` : nextName);
 }
 
-export function getLexVoiceSourceIdFromMarkdown(markdown, file) {
+export function getSourceIdFromMarkdown(markdown, file) {
   const text = String(markdown || "");
   const sidMatch = text.match(/<!--\s*lexvoice-session:\s*([^\s>]+)\s*-->/);
   if (sidMatch && sidMatch[1]) return sanitizeFilename(sidMatch[1]) || sidMatch[1];
@@ -77,7 +77,7 @@ export function getLexVoiceSourceIdFromMarkdown(markdown, file) {
   return `note-${hashRealtimeOutlineText(basis)}`;
 }
 
-export function buildLexVoiceSegmentStatusList(segments) {
+export function buildSegmentStatusList(segments) {
   return (segments || []).map((seg, i) => {
     const text = String(seg && seg.text || "").trim();
     const start = Number(seg && seg.startOffsetMs) || 0;
@@ -93,19 +93,19 @@ export function buildLexVoiceSegmentStatusList(segments) {
   });
 }
 
-export function getLexVoiceVersionStoreFolder(settings, sourceId) {
+export function getVersionStoreFolder(settings, sourceId) {
   const base = obsidian.normalizePath(String(settings && settings.mdFolder || DEFAULT_SETTINGS.mdFolder || "QnALog"));
   const safeId = sanitizeFilename(sourceId) || "unknown-session";
   return obsidian.normalizePath(`${base}/.versions/${safeId}`);
 }
 
-export function normalizeLexVoiceVersionId(label) {
+export function normalizeVersionId(label) {
   const stamp = window.moment ? window.moment().format("YYYYMMDD-HHmmss") : new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
   const safe = sanitizeFilename(label) || "version";
   return `${stamp}-${safe}`;
 }
 
-export function buildLexVoiceActiveVersionBlock(versionMeta, body) {
+export function buildActiveVersionBlock(versionMeta, body) {
   const label = String(versionMeta && versionMeta.label || versionMeta && versionMeta.kind || "当前版本");
   const mode = String(versionMeta && versionMeta.mode || "");
   const style = String(versionMeta && versionMeta.style || "");
@@ -121,15 +121,15 @@ export function buildLexVoiceActiveVersionBlock(versionMeta, body) {
     LEXVOICE_ACTIVE_VERSION_START,
     metaLines,
     "",
-    sanitizeLexVoiceActiveVersionBody(body),
+    sanitizeActiveVersionBody(body),
     LEXVOICE_ACTIVE_VERSION_END,
   ].join("\n").replace(/\n{4,}/g, "\n\n\n");
 }
 
-export function replaceLexVoiceActiveVersionBlock(markdown, versionMeta, body) {
+export function replaceActiveVersionBlock(markdown, versionMeta, body) {
   const text = String(markdown || "");
-  const block = buildLexVoiceActiveVersionBlock(versionMeta, body);
-  const replaced = replaceExistingLexVoiceActiveVersionBlock(text, block);
+  const block = buildActiveVersionBlock(versionMeta, body);
+  const replaced = replaceExistingActiveVersionBlock(text, block);
   if (replaced !== null) return replaced;
   // First adoption of the version model compacts the mother note:
   // keep only frontmatter, H1, active display block, and raw/source metadata.
@@ -174,13 +174,13 @@ export function normalizeModeFromLabel(settings, label) {
   return "";
 }
 
-export function clampLexVoiceProgress(value) {
+export function clampProgress(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-export function stripLexVoiceImportAppendices(text) {
+export function stripImportAppendices(text) {
   return stripSedimentPreExtractionBlocks(String(text || ""))
     .replace(/<details>\s*<summary>\s*导入文本信息[\s\S]*?<\/details>/gi, "\n")
     .replace(/<details>\s*<summary>\s*导入文本原文[\s\S]*?<\/details>/gi, "\n")
@@ -197,7 +197,7 @@ export function cleanImportedTextForPrompt(text) {
     .trim();
 }
 
-export function extractIntegratedLexVoiceBriefing(text) {
+export function extractIntegratedBriefing(text) {
   const source = String(text || "");
   const matches = [...source.matchAll(/^##\s+(?:✨\s*)?整合版[^\n]*$/gm)];
   if (!matches.length) return "";
@@ -219,8 +219,8 @@ export function extractIntegratedLexVoiceBriefing(text) {
   return cleanImportedTextForPrompt(stop >= 0 ? tail.slice(0, stop) : tail);
 }
 
-export function extractLexVoiceRawTranscriptForImport(text) {
-  const segments = extractLexVoiceTranscriptSegments(text);
+export function extractRawTranscriptForImport(text) {
+  const segments = extractTranscriptSegments(text);
   if (!segments.length) return "";
   return segments
     .map((seg, i) => {
@@ -238,14 +238,14 @@ export function stripImportedTextSource(text) {
     .trim();
   if (!withoutFrontmatter) return "";
 
-  const withoutAppendices = stripLexVoiceImportAppendices(withoutFrontmatter);
-  const hasLexVoiceMarker = /<!--\s*lexvoice-session(?::|\s*--)/.test(withoutFrontmatter)
+  const withoutAppendices = stripImportAppendices(withoutFrontmatter);
+  const hasMarkerNames = /<!--\s*lexvoice-session(?::|\s*--)/.test(withoutFrontmatter)
     || /<!--\s*lexvoice-segments-start/.test(withoutFrontmatter)
     || /##\s+(?:✨\s*)?整合版/.test(withoutFrontmatter);
-  if (hasLexVoiceMarker) {
-    const integrated = extractIntegratedLexVoiceBriefing(withoutAppendices);
+  if (hasMarkerNames) {
+    const integrated = extractIntegratedBriefing(withoutAppendices);
     if (integrated) return integrated;
-    const rawTranscript = extractLexVoiceRawTranscriptForImport(withoutFrontmatter);
+    const rawTranscript = extractRawTranscriptForImport(withoutFrontmatter);
     if (rawTranscript) return rawTranscript;
   }
 
@@ -387,7 +387,7 @@ export function guessEmailAttachmentMime(file) {
 }
 
 export function buildEmailDraftContent({ to = [], subject = "", body = "", attachments = [] }) {
-  const boundary = `----=_LexVoice_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const boundary = `----=_QnALog_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const lines = [
     `To: ${to.map(sanitizeMailHeader).join(", ")}`,
     `Subject: ${encodeMailHeader(subject || "QnALog 会议纪要")}`,
@@ -421,7 +421,7 @@ export function buildEmailDraftContent({ to = [], subject = "", body = "", attac
 }
 
 export function stripMarkdownForEmailBrief(markdown) {
-  let text = stripLexVoiceFrontmatterSimple(String(markdown || ""));
+  let text = stripFrontmatterSimple(String(markdown || ""));
   text = text.replace(/<details[\s\S]*?<\/details>/gi, "\n");
   text = text.replace(/<!--[\s\S]*?-->/g, "\n");
   const rawSplit = text.split(/\n(?=#{1,6}\s+(?:📁\s*)?(?:原始材料|原始转写|逐字稿|录音原文|回听时间轴|录音中实时大纲)\b)/);
@@ -605,7 +605,7 @@ export function buildMeetingEmailBody({ file, markdown, attendeeNames = [], atta
 
 // 报告生成前的配色选择器：预设或自定义颜色 → 返回 hex（取消/关闭返回 null）。报告按所选色相整体重着色。
 
-export function cleanLexVoiceTranscriptBlock(block) {
+export function cleanTranscriptBlock(block) {
   return String(block || "")
     .replace(/<!--[^>]*-->/g, "")
     .replace(/<summary>[\s\S]*?<\/summary>/gi, "")
@@ -620,7 +620,7 @@ export function cleanLexVoiceTranscriptBlock(block) {
     .trim();
 }
 
-export function splitLexVoiceTranscriptSections(markdown) {
+export function splitTranscriptSections(markdown) {
   const text = String(markdown || "");
   const sections = [];
   let searchFrom = 0;
@@ -652,14 +652,14 @@ export function splitLexVoiceTranscriptSections(markdown) {
   return sections;
 }
 
-export function extractLexVoiceTranscriptSegments(markdown) {
-  const sections = splitLexVoiceTranscriptSections(markdown);
+export function extractTranscriptSegments(markdown) {
+  const sections = splitTranscriptSections(markdown);
   const segments = [];
   for (const section of sections) {
     const headingRe = /^###\s+段落\s+(\d+)([^\n]*)$/gm;
     const heads = [...String(section).matchAll(headingRe)];
     if (!heads.length) {
-      const text = cleanLexVoiceTranscriptBlock(section);
+      const text = cleanTranscriptBlock(section);
       if (text) segments.push({ index: segments.length, startOffsetMs: 0, endOffsetMs: 0, text });
       continue;
     }
@@ -667,7 +667,7 @@ export function extractLexVoiceTranscriptSegments(markdown) {
       const head = heads[i];
       const bodyStart = head.index + head[0].length;
       const bodyEnd = i + 1 < heads.length ? heads[i + 1].index : section.length;
-      const body = cleanLexVoiceTranscriptBlock(section.slice(bodyStart, bodyEnd));
+      const body = cleanTranscriptBlock(section.slice(bodyStart, bodyEnd));
       if (!body) continue;
       const timeMatch = head[2].match(/\(([^)]+?)[–-]([^)]+?)\)/);
       const startOffsetMs = timeMatch ? parseElapsedMsToken(timeMatch[1]) : 0;
@@ -687,7 +687,7 @@ export function extractLexVoiceTranscriptSegments(markdown) {
   return segments;
 }
 
-export function inferLexVoiceNoteStartedAtIso(file, frontmatter) {
+export function inferNoteStartedAtIso(file, frontmatter) {
   const moment = window.moment;
   const fm = frontmatter || {};
   const candidates = [
@@ -741,7 +741,7 @@ export function normalizeSegmentsForMergedNote(segments, offsetMs, startIndex, s
   });
 }
 
-export function stripLexVoiceEmptyPlaceholders(text) {
+export function stripEmptyPlaceholders(text) {
   return String(text || "")
     .replace(/!\[\[[^\]]+\]\]/g, "")
     .replace(/_?\[(?:此段无内容|无输出|转写失败|等待后台转写|此段尚未完成转写|合并润色失败)[^\]\n]*\]_?/g, "")
@@ -752,17 +752,17 @@ export function stripLexVoiceEmptyPlaceholders(text) {
     .trim();
 }
 
-export function hasLexVoiceMeaningfulTranscript(text) {
-  return stripLexVoiceEmptyPlaceholders(text).trim().length > 0;
+export function hasMeaningfulTranscript(text) {
+  return stripEmptyPlaceholders(text).trim().length > 0;
 }
 
-export function isStandaloneLexVoiceGeneratedNote(markdown) {
+export function isStandaloneGeneratedNote(markdown) {
   const body = String(markdown || "").replace(/^---\n[\s\S]*?\n---\n?/m, "");
   const firstLine = (body.split(/\r?\n/).find((line) => line.trim()) || "").trim();
   return /^#\s+.+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+·\s+/.test(firstLine);
 }
 
-export function getLexVoiceMeaningfulRemainder(markdown) {
+export function getMeaningfulRemainder(markdown) {
   let text = String(markdown || "");
   text = text
     .replace(/^---\n[\s\S]*?\n---\n?/m, "")
@@ -775,24 +775,24 @@ export function getLexVoiceMeaningfulRemainder(markdown) {
     .replace(/^>\s*(?:开始|时间|合并自)[：:].*$/gm, "")
     .replace(/^>\s*.*(?:时长|模式|分段|模型).*$/gm, "")
     .replace(/^\s*---\s*$/gm, "");
-  text = stripLexVoiceEmptyPlaceholders(text);
+  text = stripEmptyPlaceholders(text);
   return text.replace(/^\s*$/gm, "").trim();
 }
 
-export function analyzeLexVoiceEmptyShortNote(file, markdown, settings) {
+export function analyzeEmptyShortNote(file, markdown, settings) {
   const text = String(markdown || "");
-  const hasLexVoiceMarker = /<!--\s*lexvoice-session(?::|\s*--)/.test(text) || /<!--\s*lexvoice-segments-start/.test(text);
-  if (!hasLexVoiceMarker) return null;
-  if (!isStandaloneLexVoiceGeneratedNote(text)) return null;
+  const hasMarkerNames = /<!--\s*lexvoice-session(?::|\s*--)/.test(text) || /<!--\s*lexvoice-segments-start/.test(text);
+  if (!hasMarkerNames) return null;
+  if (!isStandaloneGeneratedNote(text)) return null;
 
-  const durationMs = getLexVoiceDurationMs(text);
-  if (!(durationMs > 0 && durationMs <= LEXVOICE_EMPTY_SHORT_LIMIT_MS)) return null;
+  const durationMs = getDurationMs(text);
+  if (!(durationMs > 0 && durationMs <= QNALOG_EMPTY_SHORT_LIMIT_MS)) return null;
 
-  const segments = extractLexVoiceTranscriptSegments(text);
-  if (segments.some((seg) => hasLexVoiceMeaningfulTranscript(seg.text))) return null;
-  if (hasLexVoiceMeaningfulTranscript(getLexVoiceMeaningfulRemainder(text))) return null;
+  const segments = extractTranscriptSegments(text);
+  if (segments.some((seg) => hasMeaningfulTranscript(seg.text))) return null;
+  if (hasMeaningfulTranscript(getMeaningfulRemainder(text))) return null;
 
-  const audioRefs = collectLexVoiceAudioRefs(text);
+  const audioRefs = collectAudioRefs(text);
   return { file, durationMs, audioRefs, audioFiles: [] };
 }
 
@@ -873,7 +873,7 @@ export function applyRoleMappingToSegments(segments, mapping) {
   });
 }
 
-export function extractLexVoiceSessionId(content, fallback) {
+export function extractSessionId(content, fallback) {
   const match = String(content || "").match(/<!--\s*lexvoice-session:([^>\s]+)\s*-->/);
   return match ? match[1].trim() : fallback;
 }
@@ -1206,7 +1206,7 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
     try { llmFm = obsidian.parseYaml(fmMatch[1]); } catch { llmFm = null; }
     body = stripped.slice(fmMatch[0].length).replace(/^\n+/, "");
   }
-  body = scrubBriefingTodoPlaceholders(normalizeLexVoiceCallouts(body));
+  body = scrubBriefingTodoPlaceholders(normalizeCallouts(body));
 
   // base frontmatter 选择：重整时优先用 originalFrontmatter（保留用户改动），首次用 LLM 输出。
   // 随后只保留当前模式 schema 内的内容字段，避免 LLM 擅自加入 date/location/decision 等重复字段。
@@ -1227,7 +1227,7 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   // time 第三路兜底：前两路都拿不到时（典型：重整一篇本就缺 time 的 custom 笔记），从 fm 的
   // 日期/时间/文件名线索推断，最终回退当天——保证 time 永远非空，打断 custom 模式"缺 time 自锁"。
   if (!base.time) {
-    const inferred = formatYamlDateTime(inferLexVoiceNoteStartedAtIso(null, originalFrontmatter || llmFm || {}));
+    const inferred = formatYamlDateTime(inferNoteStartedAtIso(null, originalFrontmatter || llmFm || {}));
     if (inferred) base.time = inferred;
   }
   if (sessionMeta && sessionMeta.duration) {

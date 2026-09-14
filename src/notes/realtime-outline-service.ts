@@ -7,7 +7,7 @@ import { drainRealtimeOutlineBacklog } from "../outline-finalizer";
 import { getModeMeta } from "../shared/mode-meta";
 import { buildBriefingLanguageInstruction, getSegmentsDurationMs } from "../shared/util-text";
 import { callLlm } from "../llm/core";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { primitiveText, getErrorMessage } from "../shared/util-common";
 import { isLocalLlmEndpoint } from "../shared/util-llm-endpoint";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -51,7 +51,7 @@ export interface RealtimeOutlineHost {
   /** 录音采集服务：把大纲进度写进会话。 */
   recording: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void; setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class RealtimeOutlineService {
@@ -334,8 +334,8 @@ export class RealtimeOutlineService {
             "",
             "【格式修复重试】",
             "上一次同一批内容因输出结构不合格被程序拒绝。请重新整理本批内容；不要解释原因。",
-            "必须保留 <lexvoice-memory> 与 <lexvoice-outline> 两个完整标签。",
-            "<lexvoice-outline> 内每个一级条目必须以 `- ` 开头，每个子要点必须以两个空格加 `- ` 开头。",
+            "必须保留 <qnalog-memory> 与 <qnalog-outline> 两个完整标签。",
+            "<qnalog-outline> 内每个一级条目必须以 `- ` 开头，每个子要点必须以两个空格加 `- ` 开头。",
           ].join("\n");
     }
     const inputMetrics = {

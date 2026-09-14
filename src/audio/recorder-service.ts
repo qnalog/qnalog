@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：录音采集：双录音器切片、电平表、流与声道协商
 
-import type LexVoicePlugin from "../main";
-import { isLexVoiceMobileRuntime } from "../shared/util-platform";
+import type QnALogPlugin from "../main";
+import { isMobileRuntime } from "../shared/util-platform";
 
 import { isApimimoAsrProvider, makeRecordingIssue, resolveTranscribeProvider } from "../asr/transcribe";
 
@@ -41,7 +41,7 @@ type AudioLevelMeter = {
 };
 
 export class RecorderService {
-  declare plugin: LexVoicePlugin;
+  declare plugin: QnALogPlugin;
   /**
    * 以下字段在构造函数里赋值。TypeScript 不推断「仅在构造函数中赋值」的属性，
    * 未声明时其它模块读 `recorder.state` 会报「属性不存在」，因此显式声明跨模块读取的那几个。
@@ -496,7 +496,7 @@ export class RecorderService {
     let micStream = null, virtStream = null;
 
     if (wantMic) {
-      const mobile = isLexVoiceMobileRuntime();
+      const mobile = isMobileRuntime();
       const requestedChannelMode = !mobile && mode === "mic" ? configuredChannelMode : "mono";
       const audioConstraints = buildMicrophoneAudioConstraints({
         deviceId: this.plugin.settings.selectedMicrophoneDevice || "",

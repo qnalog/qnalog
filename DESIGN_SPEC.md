@@ -14,8 +14,8 @@
 QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
 
 ```css
-.lexvoice-outline,
-.lexvoice-view {
+.qnalog-outline,
+.qnalog-view {
   --lex-bg-base: var(--background-primary);
   --lex-bg-card: var(--background-primary-alt, var(--background-primary));
   --lex-bg-muted: var(--background-secondary);
@@ -48,8 +48,8 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
   --lex-danger-text: var(--text-error);
 }
 
-.theme-dark .lexvoice-outline,
-.theme-dark .lexvoice-view {
+.theme-dark .qnalog-outline,
+.theme-dark .qnalog-view {
   --lex-bg-active: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
   --lex-bg-active-strong: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
 }
@@ -92,11 +92,11 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
 空状态必须使用“图标容器 + 主文案 + 副文案 + 引导按钮”，不要直接放一段说明文字。
 
 ```html
-<div class="lexvoice-empty-state">
-  <div class="lexvoice-empty-state-icon"><i class="ti ti-file-text"></i></div>
-  <div class="lexvoice-empty-state-title">还没有打开纪要</div>
-  <div class="lexvoice-empty-state-desc">从纪要列表选一篇打开，<br>就能开始沉淀人、事、知、热词</div>
-  <button class="lexvoice-empty-state-action"><i class="ti ti-list"></i><span>打开纪要列表</span></button>
+<div class="qnalog-empty-state">
+  <div class="qnalog-empty-state-icon"><i class="ti ti-file-text"></i></div>
+  <div class="qnalog-empty-state-title">还没有打开纪要</div>
+  <div class="qnalog-empty-state-desc">从纪要列表选一篇打开，<br>就能开始沉淀人、事、知、热词</div>
+  <button class="qnalog-empty-state-action"><i class="ti ti-list"></i><span>打开纪要列表</span></button>
 </div>
 ```
 

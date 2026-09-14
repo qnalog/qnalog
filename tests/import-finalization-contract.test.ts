@@ -46,7 +46,7 @@ describe("import finalization contract", () => {
     const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
     const retryRename = queueRetrySource.indexOf("const renamed = (task.mode", retryStart);
     const retryIndex = queueRetrySource.indexOf('reason: "merge-retry"', retryRename);
-    const derivedStart = versionStoreSource.indexOf("async createLexVoiceDerivedNote");
+    const derivedStart = versionStoreSource.indexOf("async createDerivedNote");
     const derivedIndex = versionStoreSource.indexOf('reason: "derived-note"', derivedStart);
 
     expect(finalizeIndex).toBeGreaterThan(finalizeRename);

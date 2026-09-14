@@ -53,7 +53,7 @@ export interface JsonCanvasTextNode {
   height: number;
   text: string;
   color?: string;
-  lexvoiceSemantic?: LexVoiceSemanticNodeMeta;
+  lexvoiceSemantic?: QnALogSemanticNodeMeta;
 }
 
 export interface JsonCanvasGroupNode {
@@ -65,7 +65,7 @@ export interface JsonCanvasGroupNode {
   height: number;
   label: string;
   color?: string;
-  lexvoiceSemantic?: LexVoiceSemanticNodeMeta;
+  lexvoiceSemantic?: QnALogSemanticNodeMeta;
 }
 
 export interface JsonCanvasFileNode {
@@ -94,11 +94,11 @@ export interface JsonCanvasEdge {
 export interface JsonCanvasDocument {
   nodes: JsonCanvasNode[];
   edges: JsonCanvasEdge[];
-  lexvoiceSemantic?: LexVoiceSemanticDocumentMeta;
+  lexvoiceSemantic?: QnALogSemanticDocumentMeta;
   [key: string]: unknown;
 }
 
-export interface LexVoiceSemanticNodeMeta {
+export interface QnALogSemanticNodeMeta {
   version: 1;
   layoutVersion?: number;
   sourcePath: string;
@@ -111,7 +111,7 @@ export interface LexVoiceSemanticNodeMeta {
   userEdited?: boolean;
 }
 
-export interface LexVoiceSemanticDocumentMeta {
+export interface QnALogSemanticDocumentMeta {
   version: 1;
   sourcePath: string;
   generatedAt: number;
@@ -566,7 +566,7 @@ export function normalizeJsonCanvasDocument(value: unknown): JsonCanvasDocument 
   };
   const meta = recordValue(row.lexvoiceSemantic);
   if (meta.version === 1 && recordValue(meta.graph).core) {
-    normalized.lexvoiceSemantic = meta as unknown as LexVoiceSemanticDocumentMeta;
+    normalized.lexvoiceSemantic = meta as unknown as QnALogSemanticDocumentMeta;
   }
   return normalized;
 }
@@ -596,7 +596,7 @@ function semanticNodeMeta(
   relation: SemanticRelation,
   kind: SemanticNodeKind,
   generatedText: string,
-): LexVoiceSemanticNodeMeta {
+): QnALogSemanticNodeMeta {
   return {
     version: 1,
     layoutVersion: SEMANTIC_LAYOUT_VERSION,
@@ -618,7 +618,7 @@ function makeTextNode(
   height: number,
   text: string,
   oldNodes: ReadonlyMap<string, JsonCanvasNode>,
-  meta: LexVoiceSemanticNodeMeta,
+  meta: QnALogSemanticNodeMeta,
   forceRelayout: boolean,
   color?: string,
 ): JsonCanvasTextNode {
@@ -656,7 +656,7 @@ function makeGroupNode(
   label: string,
   color: string,
   oldNodes: ReadonlyMap<string, JsonCanvasNode>,
-  meta: LexVoiceSemanticNodeMeta,
+  meta: QnALogSemanticNodeMeta,
   forceRelayout: boolean,
 ): JsonCanvasGroupNode {
   const previous = recordValue(oldNodes.get(id));

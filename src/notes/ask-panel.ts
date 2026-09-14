@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：侧边栏「问一问」
 
-import { cleanImportedTextForPrompt, extractLexVoiceRawTranscriptForImport, markdownQuoteBlock, stripLexVoiceImportAppendices } from "./note-markdown";
+import { cleanImportedTextForPrompt, extractRawTranscriptForImport, markdownQuoteBlock, stripImportAppendices } from "./note-markdown";
 
 import { truncateForLlmPrompt } from "../shared/util-text";
 
@@ -19,17 +19,17 @@ export const NOTE_ASK_SUGGESTIONS = [
   "还有哪些风险或待澄清的问题？",
 ];
 
-export function stripLexVoiceAskBlocks(text) {
+export function stripAskBlocks(text) {
   return String(text || "").replace(/\n##\s+问一问\b[\s\S]*?(?=\n(?:---\s*\n+)?##\s+(?:📁\s*)?原始材料\b|\n<!--\s*LEXVOICE_SEDIMENT_BEGIN|$)/g, "\n");
 }
 
-export function buildLexVoiceAskContext(markdown) {
+export function buildAskContext(markdown) {
   const withoutFrontmatter = String(markdown || "")
     .replace(/^\uFEFF/, "")
     .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
     .trim();
-  const rawTranscript = cleanImportedTextForPrompt(extractLexVoiceRawTranscriptForImport(withoutFrontmatter));
-  const noteBody = stripLexVoiceAskBlocks(stripLexVoiceImportAppendices(withoutFrontmatter))
+  const rawTranscript = cleanImportedTextForPrompt(extractRawTranscriptForImport(withoutFrontmatter));
+  const noteBody = stripAskBlocks(stripImportAppendices(withoutFrontmatter))
     .replace(/<!--[\s\S]*?-->/g, "\n")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -40,7 +40,7 @@ export function buildLexVoiceAskContext(markdown) {
   return truncateForLlmPrompt(sections.join("\n\n"), NOTE_ASK_CONTEXT_MAX_CHARS);
 }
 
-export function normalizeLexVoiceAskSections(text) {
+export function normalizeAskSections(text) {
   const source = String(text || "").replace(/\n##\s+问一问\b/g, "\n\n## 问一问");
   const parts = source.split(/\n##\s+问一问\b/);
   if (parts.length <= 2) return source.replace(/\s+$/g, "");
@@ -51,7 +51,7 @@ export function normalizeLexVoiceAskSections(text) {
     : `${before}\n\n## 问一问`.replace(/^\s+/, "").replace(/\s+$/g, "");
 }
 
-export function findLexVoiceAskBoundary(markdown) {
+export function findAskBoundary(markdown) {
   const text = String(markdown || "");
   const patterns = [
     /\n---\s*\n+##\s+(?:📁\s*)?原始材料\b/i,
@@ -68,10 +68,10 @@ export function findLexVoiceAskBoundary(markdown) {
   return indexes.length ? indexes[0] : text.length;
 }
 
-export function appendLexVoiceAskEntry(markdown, question, answer) {
+export function appendAskEntry(markdown, question, answer) {
   const text = String(markdown || "");
-  const boundary = findLexVoiceAskBoundary(text);
-  const head = normalizeLexVoiceAskSections(text.slice(0, boundary));
+  const boundary = findAskBoundary(text);
+  const head = normalizeAskSections(text.slice(0, boundary));
   const tail = text.slice(boundary).replace(/^\s*/g, "");
   const stamp = window.moment ? window.moment().format("YYYY-MM-DD HH:mm") : new Date().toISOString();
   const callout = [

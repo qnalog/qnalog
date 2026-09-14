@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { hashRealtimeOutlineText } from "../outline-text";
 
-import { parseElapsedMsToken, parseLexVoiceDurationLabel } from "../shared/util-text";
+import { parseElapsedMsToken, parseDurationLabel } from "../shared/util-text";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 
@@ -101,7 +101,7 @@ export function extractAudioSegmentOffsets(markdown) {
 // 新哲学是"插件不替用户猜设备"——acquireStream 直接透传用户在设置里选的设备（没选则系统默认/明确提示），
 // 不再用名字启发式自动挑选。名字启发式（isVirtualCableLabel）仅保留给 UI 软提示，不参与任何选择。
 
-export function getLexVoiceSegmentsHash(segments) {
+export function getSegmentsHash(segments) {
   const text = (segments || []).map((seg) => [
     Number(seg && seg.startOffsetMs) || 0,
     Number(seg && seg.endOffsetMs) || 0,
@@ -141,7 +141,7 @@ export function getAudioDurationMs(blob: Blob): Promise<number> {
 // 重试同样必败，还会对大文件反复解码卡 UI、对服务端反复发必拒请求。队列对这类失败直接吃满重试退出自动重试。
 // 旗标 nonRetryable 由抛错处设置（apimimoPermanentError / HTTP 4xx 分支）；正则兜底匹配已落盘任务的 lastError。
 
-export function getLexVoiceDurationMs(markdown) {
+export function getDurationMs(markdown) {
   const text = String(markdown || "");
   let maxMs = 0;
   let sawDuration = false;
@@ -149,13 +149,13 @@ export function getLexVoiceDurationMs(markdown) {
   let match;
   while ((match = segmentHeadingRe.exec(text))) {
     sawDuration = true;
-    maxMs = Math.max(maxMs, parseLexVoiceDurationLabel(match[2]));
+    maxMs = Math.max(maxMs, parseDurationLabel(match[2]));
   }
   if (sawDuration) return maxMs;
 
   const durationRe = /(?:时长|共)\s*[：:]?\s*(\d{1,3}:\d{2}(?::\d{2})?|\d+(?:\.\d+)?\s*(?:秒|分钟))/g;
   while ((match = durationRe.exec(text))) {
-    const ms = parseLexVoiceDurationLabel(match[1]);
+    const ms = parseDurationLabel(match[1]);
     if (ms > 0) {
       sawDuration = true;
       maxMs = Math.max(maxMs, ms);
@@ -164,7 +164,7 @@ export function getLexVoiceDurationMs(markdown) {
   return sawDuration ? maxMs : 0;
 }
 
-export function getLexVoiceSegmentsDurationMs(segments) {
+export function getSegmentsDurationMs(segments) {
   let maxMs = 0;
   for (const seg of segments || []) {
     const end = Number(seg && seg.endOffsetMs) || 0;
@@ -173,7 +173,7 @@ export function getLexVoiceSegmentsDurationMs(segments) {
   return maxMs;
 }
 
-export function collectLexVoiceAudioRefs(markdown) {
+export function collectAudioRefs(markdown) {
   const refs = [];
   const seen = new Set();
   const re = /!\[\[([^\]]+)\]\]/g;
@@ -192,7 +192,7 @@ export function collectLexVoiceAudioRefs(markdown) {
   return refs;
 }
 
-export function resolveLexVoiceAudioFile(app, settings, ref) {
+export function resolveAudioFileRef(app, settings, ref) {
   const normalizedRef = obsidian.normalizePath(String(ref || ""));
   const direct = app.vault.getAbstractFileByPath(normalizedRef);
   if (direct instanceof obsidian.TFile && AUDIO_EXT.has((direct.extension || "").toLowerCase())) return direct;

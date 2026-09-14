@@ -22,7 +22,7 @@ export function obfuscateApiKey(plain) {
   if (!s) return "";
   if (s.startsWith(LEXVOICE_KEY_OBFUSCATION_MARKER)) return s; // 已混淆，幂等
   try {
-    return LEXVOICE_KEY_OBFUSCATION_MARKER + utf8ToBase64(lexvoiceXorTransform(s));
+    return LEXVOICE_KEY_OBFUSCATION_MARKER + utf8ToBase64(qnalogXorTransform(s));
   } catch { return s; }
 }
 
@@ -30,7 +30,7 @@ export function deobfuscateApiKey(stored) {
   const s = String(stored == null ? "" : stored);
   if (!s.startsWith(LEXVOICE_KEY_OBFUSCATION_MARKER)) return s; // 明文（旧数据迁移）→ 原样返回
   try {
-    return lexvoiceXorTransform(base64ToUtf8(s.slice(LEXVOICE_KEY_OBFUSCATION_MARKER.length)));
+    return qnalogXorTransform(base64ToUtf8(s.slice(LEXVOICE_KEY_OBFUSCATION_MARKER.length)));
   } catch { return s; }
 }
 
@@ -73,7 +73,7 @@ export function sanitizeDiagnosticData(data, depth = 0) {
   return redactDiagnosticText(String(data));
 }
 
-export function lexvoiceXorTransform(text) {
+export function qnalogXorTransform(text) {
   const salt = LEXVOICE_KEY_OBFUSCATION_SALT;
   let out = "";
   for (let i = 0; i < text.length; i++) {

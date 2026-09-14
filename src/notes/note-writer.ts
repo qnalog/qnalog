@@ -2,12 +2,12 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记正文写入：整合版重写与追加、分段标记插入、重新整理、合并历史笔记
 
 import * as obsidian from "obsidian";
-import { lexvoiceConfirm } from "../ui/helpers";
+import { qnalogConfirm } from "../ui/helpers";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { splitOutSedimentBlock } from "../sediment";
 import { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { splitLeadingFrontmatter } from "../version-content";
@@ -15,8 +15,8 @@ import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from ".
 import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
-import { getAudioSegmentListItem, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
-import { buildLexVoiceRenamedMarkdownPath, extractAllRawBlocksFromText, extractLexVoiceTranscriptSegments, generateTitleTag, inferLexVoiceNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
+import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
+import { buildRenamedMarkdownPath, extractAllRawBlocksFromText, extractTranscriptSegments, generateTitleTag, inferNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
@@ -28,7 +28,7 @@ export interface NoteWriterHost {
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class NoteWriter {
@@ -314,7 +314,7 @@ export class NoteWriter {
     try {
       const tag = await generateTitleTag(this.host, polished, mode);
       if (!tag) return file;
-      const target = buildLexVoiceRenamedMarkdownPath(file.path, mode, tag, this.host.settings);
+      const target = buildRenamedMarkdownPath(file.path, mode, tag, this.host.settings);
       const newPath = findAvailableMarkdownPath(this.host.app, target, file.path);
       if (!newPath || obsidian.normalizePath(newPath) === obsidian.normalizePath(file.path)) return file;
       await this.host.app.fileManager.renameFile(file, newPath);
@@ -395,12 +395,12 @@ export class NoteWriter {
       throw new Error("只能合并 QnALog Markdown 纪要");
     }
     const content = await this.host.app.vault.read(file);
-    const rawSegments = extractLexVoiceTranscriptSegments(content);
+    const rawSegments = extractTranscriptSegments(content);
     if (!rawSegments.length) {
       throw new Error(`「${file.basename}」没有找到原始转写分段`);
     }
     const frontmatter = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-    const rawDurationMs = getLexVoiceSegmentsDurationMs(rawSegments) || getLexVoiceDurationMs(content);
+    const rawDurationMs = getSegmentsDurationMs(rawSegments) || getDurationMs(content);
     const segments = normalizeSegmentsForMergedNote(rawSegments, offsetMs, startIndex, file);
     if (segments.length) {
       segments[0] = Object.assign({}, segments[0], {
@@ -412,7 +412,7 @@ export class NoteWriter {
       content,
       frontmatter,
       mode: this.detectModeFromMarkdown(file),
-      startedAt: inferLexVoiceNoteStartedAtIso(file, frontmatter),
+      startedAt: inferNoteStartedAtIso(file, frontmatter),
       rawDurationMs,
       segments,
     };
@@ -424,7 +424,7 @@ export class NoteWriter {
       new obsidian.Notice("没有找到这篇之前的最近一条 QnALog 纪要。", 6000);
       return;
     }
-    const ok = await lexvoiceConfirm(this.host.app, "合并纪要", `将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. ${previous.basename}\n2. ${file.basename}\n\n继续合并？`, "合并");
+    const ok = await qnalogConfirm(this.host.app, "合并纪要", `将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. ${previous.basename}\n2. ${file.basename}\n\n继续合并？`, "合并");
     if (!ok) return;
     try {
       await this.mergeMarkdownFilesAsNew([previous, file]);
@@ -511,7 +511,7 @@ export class NoteWriter {
     }
     if (finalFile instanceof obsidian.TFile) {
       await this.appendMergeMetadataBlock(finalFile, session.mergedSources);
-      await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(finalFile, {
+      await this.host.noteIndex.refreshNoteIndexSafely(finalFile, {
         meetingDate: session.startedAt,
         reason: "merge-notes",
       });

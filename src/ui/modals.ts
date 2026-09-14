@@ -4,12 +4,12 @@
 import * as obsidian from "obsidian";
 import { loadPeopleDirectory, normalizePeopleRelation, normalizePeopleSuggestion } from '../people';
 import { diagnosticError } from '../shared/util-key-diag';
-import { classifyImportTextFileForModal, enumerateAudioDevices, lexvoiceConfirm, makeImportTextCheckboxId } from './helpers';
+import { classifyImportTextFileForModal, enumerateAudioDevices, qnalogConfirm, makeImportTextCheckboxId } from './helpers';
 import { formatElapsed, pad } from '../shared/util-common';
 import { AUDIO_EXT, IMPORT_TEXT_CATEGORY_CONFIG, IMPORT_TEXT_CATEGORY_ORDER, TEXT_IMPORT_EXT } from '../shared/catalog-import';
 import { callLlm } from '../llm/core';
 import { mimeFromExt } from '../shared/util-audio';
-import { getBuiltInVisiblePolishModeKeys, getCustomPromptModeTemplates, getEffectivePolishMode, getModeMeta, getVisibleModeEntries, isCustomPromptModeTemplate, makeCustomPromptModeId, sanitizePromptTemplate, setLexVoiceModePillIcon } from '../shared/mode-meta';
+import { getBuiltInVisiblePolishModeKeys, getCustomPromptModeTemplates, getEffectivePolishMode, getModeMeta, getVisibleModeEntries, isCustomPromptModeTemplate, makeCustomPromptModeId, sanitizePromptTemplate, setModePillIcon } from '../shared/mode-meta';
 import { getActivityStagePosition } from '../shared/activity-progress';
 import { getDesktopProcess } from '../shared/desktop-runtime';
 import { isSpeakerDiarizationProvider, normalizeRequestedSpeakerCount } from '../asr/diarization';
@@ -34,13 +34,13 @@ function resolveImportSpeakerSelection(plugin) {
 }
 
 function renderImportSpeakerControl(parent, owner) {
-  const box = parent.createDiv({ cls: "lexvoice-import-mode lexvoice-import-speaker" });
+  const box = parent.createDiv({ cls: "qnalog-import-mode qnalog-import-speaker" });
   const copy = box.createDiv();
-  copy.createDiv({ cls: "lexvoice-import-mode-title", text: "说话人" });
-  const hint = copy.createDiv({ cls: "lexvoice-import-mode-hint" });
-  const control = box.createDiv({ cls: "lexvoice-import-speaker-control" });
+  copy.createDiv({ cls: "qnalog-import-mode-title", text: "说话人" });
+  const hint = copy.createDiv({ cls: "qnalog-import-mode-hint" });
+  const control = box.createDiv({ cls: "qnalog-import-speaker-control" });
 
-  const toggleLabel = control.createEl("label", { cls: "lexvoice-import-speaker-toggle" });
+  const toggleLabel = control.createEl("label", { cls: "qnalog-import-speaker-toggle" });
   const toggle = toggleLabel.createEl("input", { type: "checkbox" });
   toggleLabel.createSpan({ text: "区分说话人" });
   toggle.checked = owner.selectedSpeakerDiarization;
@@ -48,9 +48,9 @@ function renderImportSpeakerControl(parent, owner) {
 
   let countInput = null;
   if (owner.speakerSelection.supportsExactCount) {
-    const numberControl = control.createDiv({ cls: "lexvoice-import-number-control" });
+    const numberControl = control.createDiv({ cls: "qnalog-import-number-control" });
     countInput = numberControl.createEl("input", {
-      cls: "lexvoice-import-number-input is-compact",
+      cls: "qnalog-import-number-input is-compact",
       attr: {
         type: "number",
         min: "2",
@@ -63,7 +63,7 @@ function renderImportSpeakerControl(parent, owner) {
     });
     countInput.value = owner.selectedSpeakerCount > 0 ? String(owner.selectedSpeakerCount) : "";
     countInput.disabled = !owner.selectedSpeakerDiarization;
-    numberControl.createSpan({ cls: "lexvoice-import-number-unit", text: "人" });
+    numberControl.createSpan({ cls: "qnalog-import-number-unit", text: "人" });
     countInput.oninput = () => {
       const normalized = normalizeRequestedSpeakerCount(countInput.value);
       owner.selectedSpeakerCount = normalized;
@@ -74,7 +74,7 @@ function renderImportSpeakerControl(parent, owner) {
       }
     };
   } else {
-    control.createSpan({ cls: "lexvoice-import-speaker-auto", text: "自动识别人数" });
+    control.createSpan({ cls: "qnalog-import-speaker-auto", text: "自动识别人数" });
   }
 
   if (!owner.speakerSelection.supportsDiarization) {
@@ -101,9 +101,9 @@ export function pickReportAccentColor(app, defaultHex = null) {
     let chosen = defaultHex || "#E85F28";
     let settled = false;
     const finish = (val) => { if (settled) return; settled = true; resolve(val); try { modal.close(); } catch { /* intentionally empty */ } };
-    const wrap = modal.contentEl.createDiv({ cls: "lexvoice-color-pick" });
-    wrap.createEl("p", { cls: "lexvoice-color-hint", text: "报告会使用所选颜色，版式保持不变。可重复生成，不会覆盖已有文件。" });
-    const sw = wrap.createDiv({ cls: "lexvoice-color-swatches" });
+    const wrap = modal.contentEl.createDiv({ cls: "qnalog-color-pick" });
+    wrap.createEl("p", { cls: "qnalog-color-hint", text: "报告会使用所选颜色，版式保持不变。可重复生成，不会覆盖已有文件。" });
+    const sw = wrap.createDiv({ cls: "qnalog-color-swatches" });
     const presets = [["暖橙（默认）", "#E85F28"], ["宝石蓝", "#2F6BD8"], ["青墨", "#138A8A"], ["松绿", "#3B9A4B"], ["藕紫", "#7A4AD8"], ["玫红", "#D8407E"], ["棕金", "#B5811A"], ["石墨蓝", "#54627A"]];
     const swatchEls = [];
     let customInput;
@@ -113,20 +113,20 @@ export function pickReportAccentColor(app, defaultHex = null) {
       for (const [el, h] of swatchEls) el.toggleClass("is-active", h.toLowerCase() === hex.toLowerCase());
     };
     for (const [name, hex] of presets) {
-      const el = sw.createDiv({ cls: "lexvoice-color-swatch" });
+      const el = sw.createDiv({ cls: "qnalog-color-swatch" });
       el.style.backgroundColor = hex;
       el.setAttr("aria-label", name);
       el.setAttr("title", name);
       el.onclick = () => select(hex);
       swatchEls.push([el, hex]);
     }
-    const crow = wrap.createDiv({ cls: "lexvoice-color-custom" });
+    const crow = wrap.createDiv({ cls: "qnalog-color-custom" });
     crow.createEl("label", { text: "自定义" });
     customInput = crow.createEl("input");
     customInput.type = "color";
     customInput.value = chosen;
     customInput.oninput = () => select(customInput.value);
-    const actions = wrap.createDiv({ cls: "lexvoice-color-actions" });
+    const actions = wrap.createDiv({ cls: "qnalog-color-actions" });
     actions.createEl("button", { text: "生成报告", cls: "mod-cta" }).onclick = () => finish(chosen);
     actions.createEl("button", { text: "取消" }).onclick = () => finish(null);
     modal.onClose = () => finish(null);
@@ -147,11 +147,11 @@ export class AudioTimeModal extends obsidian.Modal {
   async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("lexvoice-audio-modal");
+    contentEl.addClass("qnalog-audio-modal");
     contentEl.createEl("h3", { text: "QnALog 回听" });
-    contentEl.createDiv({ cls: "lexvoice-audio-modal-meta", text: `${this.file.path} · ${this.label}` });
+    contentEl.createDiv({ cls: "qnalog-audio-modal-meta", text: `${this.file.path} · ${this.label}` });
 
-    const playerWrap = contentEl.createDiv({ cls: "lexvoice-audio-player-wrap" });
+    const playerWrap = contentEl.createDiv({ cls: "qnalog-audio-player-wrap" });
     const audio = playerWrap.createEl("audio", { attr: { controls: "true" } });
     audio.preload = "metadata";
 
@@ -169,10 +169,10 @@ export class AudioTimeModal extends obsidian.Modal {
       });
     } catch (e) {
       console.error("[QnALog] audio time modal failed", e);
-      contentEl.createDiv({ cls: "lexvoice-audio-modal-error", text: `无法读取音频：${(e && e.message) || e}` });
+      contentEl.createDiv({ cls: "qnalog-audio-modal-error", text: `无法读取音频：${(e && e.message) || e}` });
     }
 
-    const actions = contentEl.createDiv({ cls: "lexvoice-audio-modal-actions" });
+    const actions = contentEl.createDiv({ cls: "qnalog-audio-modal-actions" });
     actions.createEl("button", { text: "打开音频文件" }).onclick = () => {
       void this.app.workspace.getLeaf(false).openFile(this.file);
     };
@@ -196,13 +196,13 @@ export class PeopleHotwordsConsentModal extends obsidian.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("lexvoice-consent-modal");
+    contentEl.addClass("qnalog-consent-modal");
     contentEl.createEl("h2", { text: "启用人名热词前请确认" });
     contentEl.createDiv({
       cls: "setting-item-description",
       text: "启用后，QnALog 会从人员资料读取姓名和常用称呼，并把这些人名热词随转写或 AI 整理请求发送到当前配置的转写服务和大模型服务，用于提升人名识别和称呼对齐准确率。",
     });
-    const list = contentEl.createEl("ul", { cls: "lexvoice-consent-list" });
+    const list = contentEl.createEl("ul", { cls: "qnalog-consent-list" });
     list.createEl("li", { text: "只发送姓名与常用称呼，不发送角色、组织、备注、来源或人员关系。" });
     list.createEl("li", { text: "如果 ASR 或 LLM 是云端服务，这些姓名与称呼会离开本地设备，受对应服务商的数据政策约束。" });
     list.createEl("li", { text: "录音内容本身若包含人名，使用云端 ASR 时仍会被云端服务处理；本开关控制的是额外发送的人员资料热词。" });
@@ -251,7 +251,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         : `QnALog 已扫描转写纪要库中的 ${this.options.scannedCount || 0} 篇笔记，只显示需要确认的人员建议。已有人员资料仅在本地用于匹配和去重，不随请求发送。${this.options.remainingCount ? `本轮后仍有 ${this.options.remainingCount} 篇待扫描。` : ""}`,
     });
     contentEl.createDiv({
-      cls: "setting-item-description lexvoice-people-suggestion-guide",
+      cls: "setting-item-description qnalog-people-suggestion-guide",
       text: "先判断这个名字归属于谁：已有人员就合并，新人再建档；本次归属用于区分参会人、被提到的人和待办责任人。下方资料只是补充信息，不需要靠改名来合并。",
     });
     let peopleEntries = [];
@@ -281,20 +281,20 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       ].filter(Boolean).join(" · ");
     };
 
-    const list = contentEl.createDiv({ cls: "lexvoice-people-suggestion-list" });
+    const list = contentEl.createDiv({ cls: "qnalog-people-suggestion-list" });
     this.rows = [];
     for (const item of this.suggestions) {
-      const box = list.createDiv({ cls: "lexvoice-people-suggestion-card" });
-      const top = box.createDiv({ cls: "lexvoice-people-suggestion-top" });
+      const box = list.createDiv({ cls: "qnalog-people-suggestion-card" });
+      const top = box.createDiv({ cls: "qnalog-people-suggestion-top" });
       const checkbox = top.createEl("input", { type: "checkbox" });
       checkbox.checked = item.selected !== false;
-      const badge = top.createSpan({ text: this.options.fromIgnored ? "已忽略" : (item.matchPath ? "合并到已有人员" : "新建人员"), cls: "lexvoice-people-suggestion-badge" });
+      const badge = top.createSpan({ text: this.options.fromIgnored ? "已忽略" : (item.matchPath ? "合并到已有人员" : "新建人员"), cls: "qnalog-people-suggestion-badge" });
       top.createSpan({ text: `置信度：${item.confidence || "中"}`, cls: "setting-item-description" });
       const matchMeta = top.createSpan({ text: item.matchPath ? ` · ${item.matchPath}` : "", cls: "setting-item-description" });
       if (!this.sourceFile && item.sourceBasename) top.createSpan({ text: ` · 来源：${item.sourceBasename}`, cls: "setting-item-description" });
       let rowRef = null;
       const ignoreBtn = top.createEl("button", { text: this.options.fromIgnored ? "恢复待确认" : "忽略" });
-      ignoreBtn.addClass("lexvoice-people-suggestion-ignore");
+      ignoreBtn.addClass("qnalog-people-suggestion-ignore");
       if (this.options.fromIgnored) {
         ignoreBtn.onclick = async () => {
           try {
@@ -329,9 +329,9 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         };
       }
 
-      const targetBox = box.createDiv({ cls: "lexvoice-people-suggestion-target" });
-      targetBox.createDiv({ cls: "lexvoice-people-suggestion-target-label", text: "归属到" });
-      const targetSelect = targetBox.createEl("select", { cls: "dropdown lexvoice-people-suggestion-target-select" });
+      const targetBox = box.createDiv({ cls: "qnalog-people-suggestion-target" });
+      targetBox.createDiv({ cls: "qnalog-people-suggestion-target-label", text: "归属到" });
+      const targetSelect = targetBox.createEl("select", { cls: "dropdown qnalog-people-suggestion-target-select" });
       targetSelect.createEl("option", { value: "", text: "新建人员档案" });
       const currentPath = obsidian.normalizePath(item.matchPath || "");
       if (currentPath && !peopleByPath.has(currentPath)) {
@@ -343,7 +343,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         targetSelect.createEl("option", { value: path, text: getPersonOptionLabel(person) });
       }
       targetSelect.value = currentPath || "";
-      const targetHint = targetBox.createDiv({ cls: "lexvoice-people-suggestion-target-hint" });
+      const targetHint = targetBox.createDiv({ cls: "qnalog-people-suggestion-target-hint" });
       const updateTargetUi = () => {
         const path = obsidian.normalizePath(targetSelect.value || "");
         item.matchPath = path;
@@ -388,7 +388,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       new obsidian.Setting(box).setName("组织")
         .addText(t => { orgInput = t; t.setValue(item.organization || ""); });
       const noteArea = box.createEl("textarea", {
-        cls: "lexvoice-people-suggestion-note",
+        cls: "qnalog-people-suggestion-note",
         text: item.note || "",
       });
       noteArea.placeholder = "备注";
@@ -491,22 +491,22 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
   async onOpen() {
     const { contentEl, modalEl } = this;
     contentEl.empty();
-    modalEl.addClass("lexvoice-speaker-confirm-modal");
+    modalEl.addClass("qnalog-speaker-confirm-modal");
     contentEl.createEl("h2", { text: "确认说话人" });
     contentEl.createDiv({
-      cls: "lexvoice-speaker-confirm-desc",
+      cls: "qnalog-speaker-confirm-desc",
       text: "转写已完成。填写姓名后，AI 会按姓名整理发言、结论和待办；留空则继续使用说话人编号。",
     });
     if (this.options.unstableAcrossSegments) {
       contentEl.createDiv({
-        cls: "lexvoice-speaker-confirm-warning",
+        cls: "qnalog-speaker-confirm-warning",
         text: "当前转写由多个独立分段生成，说话人编号可能在分段之间变化。请根据发言示例核对；不确定时可以暂不填写。",
       });
     }
 
     let people = [];
     try { people = await loadPeopleDirectory(this.plugin); } catch { /* optional suggestions */ }
-    const datalistId = `lexvoice-speaker-name-options-${Date.now()}`;
+    const datalistId = `qnalog-speaker-name-options-${Date.now()}`;
     const datalist = contentEl.createEl("datalist", { attr: { id: datalistId } });
     const knownNames = new Set();
     for (const person of people || []) {
@@ -516,19 +516,19 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
       datalist.createEl("option", { value: name });
     }
 
-    const list = contentEl.createDiv({ cls: "lexvoice-speaker-confirm-list" });
+    const list = contentEl.createDiv({ cls: "qnalog-speaker-confirm-list" });
     this.rows = [];
     for (const candidate of this.candidates) {
-      const row = list.createDiv({ cls: "lexvoice-speaker-confirm-row" });
-      const copy = row.createDiv({ cls: "lexvoice-speaker-confirm-copy" });
-      copy.createDiv({ cls: "lexvoice-speaker-confirm-label", text: candidate.label || candidate.id });
+      const row = list.createDiv({ cls: "qnalog-speaker-confirm-row" });
+      const copy = row.createDiv({ cls: "qnalog-speaker-confirm-copy" });
+      copy.createDiv({ cls: "qnalog-speaker-confirm-label", text: candidate.label || candidate.id });
       const samples = Array.isArray(candidate.samples) ? candidate.samples.filter(Boolean) : [];
       copy.createDiv({
-        cls: "lexvoice-speaker-confirm-sample",
+        cls: "qnalog-speaker-confirm-sample",
         text: samples.length ? samples.join(" / ") : "暂无可展示的发言示例",
       });
       const input = row.createEl("input", {
-        cls: "lexvoice-speaker-confirm-input",
+        cls: "qnalog-speaker-confirm-input",
         type: "text",
         attr: {
           list: datalistId,
@@ -540,7 +540,7 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
       this.rows.push({ candidate, input });
     }
 
-    const actions = contentEl.createDiv({ cls: "modal-button-container lexvoice-speaker-confirm-actions" });
+    const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-speaker-confirm-actions" });
     const skip = actions.createEl("button", { text: "暂不填写" });
     skip.onclick = () => this.close();
     const confirm = actions.createEl("button", { text: "确认并继续" });
@@ -575,11 +575,11 @@ export class QueueModal extends obsidian.Modal {
     const { contentEl } = this;
     // 静态 Modal 默认停在打开瞬间；处理中时定时重渲染让进度实时走动。先清旧定时器避免叠加。
     if (this._activityTimer) { window.clearInterval(this._activityTimer); this._activityTimer = null; }
-    const previousList = contentEl.querySelector(".lexvoice-progress-list");
+    const previousList = contentEl.querySelector(".qnalog-progress-list");
     if (previousList) this._scrollTop = previousList.scrollTop;
     contentEl.empty();
-    contentEl.addClass("lexvoice-progress");
-    try { if (this.modalEl) this.modalEl.addClass("lexvoice-progress-modal"); } catch { /* intentionally empty */ }
+    contentEl.addClass("qnalog-progress");
+    try { if (this.modalEl) this.modalEl.addClass("qnalog-progress-modal"); } catch { /* intentionally empty */ }
 
     const allTasks = (this.plugin.queue && Array.isArray(this.plugin.queue.tasks)) ? this.plugin.queue.tasks : [];
     const running = allTasks.filter((t) => t && (t.status === "running" || t.status === "live"));
@@ -668,11 +668,11 @@ export class QueueModal extends obsidian.Modal {
       : headActive
         ? (isTranscribing ? "正在转写" : "正在整理纪要")
       : taskProblems.length ? "处理未完成" : "处理进度";
-    const head = contentEl.createDiv({ cls: "lexvoice-progress-head" });
-    const titleRow = head.createDiv({ cls: "lexvoice-progress-title-row" });
-    titleRow.createSpan({ cls: "lexvoice-progress-title", text: headTitle });
+    const head = contentEl.createDiv({ cls: "qnalog-progress-head" });
+    const titleRow = head.createDiv({ cls: "qnalog-progress-title-row" });
+    titleRow.createSpan({ cls: "qnalog-progress-title", text: headTitle });
     titleRow.createSpan({
-      cls: `lexvoice-progress-state is-${headLiveness}${headActive ? " is-active" : ""}`,
+      cls: `qnalog-progress-state is-${headLiveness}${headActive ? " is-active" : ""}`,
       text: taskProblems.length
         ? `${taskProblems.length} 个任务需要处理`
         : headActive
@@ -682,7 +682,7 @@ export class QueueModal extends obsidian.Modal {
     });
 
     if (!running.length && !pending.length && !completed.length && !active && !taskActivities.length) {
-      contentEl.createDiv({ cls: "lexvoice-progress-empty", text: "暂无处理任务。录音转写、AI 整理、重试任务的进度会显示在这里。" });
+      contentEl.createDiv({ cls: "qnalog-progress-empty", text: "暂无处理任务。录音转写、AI 整理、重试任务的进度会显示在这里。" });
       return;
     }
 
@@ -733,7 +733,7 @@ export class QueueModal extends obsidian.Modal {
     const remainingText = percent > 0 && percent < 100
       ? `剩余约 ${fmtDur(elapsedMs * ((100 - percent) / percent))}`
       : "剩余时间计算中";
-    const timing = head.createDiv({ cls: "lexvoice-progress-timing", attr: { "aria-live": "polite" } });
+    const timing = head.createDiv({ cls: "qnalog-progress-timing", attr: { "aria-live": "polite" } });
     timing.setText(progressStartedAt ? `已用 ${fmtDur(elapsedMs)} · ${remainingText}` : "正在准备处理");
 
     const phaseText = [
@@ -803,36 +803,36 @@ export class QueueModal extends obsidian.Modal {
         { key: "complete", label: "完成", summary: String(writeStage.summary || "写入纪要") },
       ];
     }
-    const pipeline = head.createDiv({ cls: `lexvoice-progress-pipeline is-${headLiveness}` });
+    const pipeline = head.createDiv({ cls: `qnalog-progress-pipeline is-${headLiveness}` });
     for (let index = 0; index < pipelineSteps.length; index++) {
       const step = pipelineSteps[index];
       const stepLiveness = pipelineLiveness.get(step.key) || "";
       const state = stepLiveness === "failed"
         ? "failed"
         : index < phaseIndex ? "done" : index === phaseIndex ? (headLiveness === "failed" ? "failed" : "active") : "pending";
-      const stepEl = pipeline.createDiv({ cls: `lexvoice-progress-pipeline-step is-${state}` });
-      const marker = stepEl.createDiv({ cls: "lexvoice-progress-pipeline-marker", attr: { "aria-hidden": "true" } });
+      const stepEl = pipeline.createDiv({ cls: `qnalog-progress-pipeline-step is-${state}` });
+      const marker = stepEl.createDiv({ cls: "qnalog-progress-pipeline-marker", attr: { "aria-hidden": "true" } });
       if (state === "done") {
         try { obsidian.setIcon(marker, "check"); } catch { marker.setText("✓"); }
       } else if (state === "active") {
-        marker.createSpan({ cls: "lexvoice-progress-pipeline-pulse" });
+        marker.createSpan({ cls: "qnalog-progress-pipeline-pulse" });
       }
-      stepEl.createDiv({ cls: "lexvoice-progress-pipeline-label", text: step.label });
-      stepEl.createDiv({ cls: "lexvoice-progress-pipeline-summary", text: step.summary });
+      stepEl.createDiv({ cls: "qnalog-progress-pipeline-label", text: step.label });
+      stepEl.createDiv({ cls: "qnalog-progress-pipeline-summary", text: step.summary });
     }
 
     const canAnimateProgress = headActive
       && !["failed", "done"].includes(headLiveness);
-    const bar = head.createDiv({ cls: `lexvoice-progress-bar is-${headLiveness}` });
+    const bar = head.createDiv({ cls: `qnalog-progress-bar is-${headLiveness}` });
     bar.createDiv({
-      cls: `lexvoice-progress-bar-fill is-${headLiveness}${canAnimateProgress ? " is-active" : ""}`,
+      cls: `qnalog-progress-bar-fill is-${headLiveness}${canAnimateProgress ? " is-active" : ""}`,
     }).style.width = percent + "%";
     if (indeterminate && canAnimateProgress) {
-      bar.createDiv({ cls: "lexvoice-progress-bar-motion", attr: { "aria-hidden": "true" } });
+      bar.createDiv({ cls: "qnalog-progress-bar-motion", attr: { "aria-hidden": "true" } });
     }
-    const sum = head.createDiv({ cls: "lexvoice-progress-summary" });
+    const sum = head.createDiv({ cls: "qnalog-progress-summary" });
     sum.createSpan({
-      cls: "lexvoice-progress-summary-left",
+      cls: "qnalog-progress-summary-left",
       text: hasStageProgress
         ? `第 ${stagePosition.current} / ${stagePosition.total} 步 · ${detail.step || "处理中"}`
         : `已完成 ${doneCount} / ${total}`,
@@ -843,37 +843,37 @@ export class QueueModal extends obsidian.Modal {
     const activityStartedAt = detail && Number(detail.startedAt) > 0 ? Number(detail.startedAt) : (_tm && _tm.startedAt);
     if (activityStartedAt) metaParts.push(`已用时 ${fmtDur(Date.now() - activityStartedAt)}`);
     if (tmTokLabel) metaParts.push(`${tmTokLabel} token`);
-    if (metaParts.length) sum.createSpan({ cls: "lexvoice-progress-summary-right", text: metaParts.join(" · ") });
+    if (metaParts.length) sum.createSpan({ cls: "qnalog-progress-summary-right", text: metaParts.join(" · ") });
 
     // —— 任务列表：已完成（✓）→ 处理中（转圈）→ 待处理（脉冲点）——
-    const list = contentEl.createDiv({ cls: "lexvoice-progress-list" });
+    const list = contentEl.createDiv({ cls: "qnalog-progress-list" });
     const restoreScrollTop = this._scrollTop;
     list.addEventListener("scroll", () => {
       this._scrollTop = list.scrollTop;
       this._lastScrollAt = Date.now();
     }, { passive: true });
     const makeRow = (kind, extraCls = "") => {
-      const r = list.createDiv({ cls: `lexvoice-progress-row is-${kind}${extraCls ? " " + extraCls : ""}` });
-      return { row: r, ico: r.createDiv({ cls: "lexvoice-progress-ico" }), body: r.createDiv({ cls: "lexvoice-progress-body" }) };
+      const r = list.createDiv({ cls: `qnalog-progress-row is-${kind}${extraCls ? " " + extraCls : ""}` });
+      return { row: r, ico: r.createDiv({ cls: "qnalog-progress-ico" }), body: r.createDiv({ cls: "qnalog-progress-body" }) };
     };
     const titleLine = (bodyEl, name, right, faint) => {
-      const tl = bodyEl.createDiv({ cls: "lexvoice-progress-line" });
-      tl.createSpan({ cls: `lexvoice-progress-name${faint ? " is-faint" : ""}`, text: name });
-      if (right) tl.createSpan({ cls: `lexvoice-progress-right${faint ? " is-faint" : ""}`, text: right });
+      const tl = bodyEl.createDiv({ cls: "qnalog-progress-line" });
+      tl.createSpan({ cls: `qnalog-progress-name${faint ? " is-faint" : ""}`, text: name });
+      if (right) tl.createSpan({ cls: `qnalog-progress-right${faint ? " is-faint" : ""}`, text: right });
     };
-    const subLine = (bodyEl, text) => { if (text) bodyEl.createDiv({ cls: "lexvoice-progress-sub", text }); };
+    const subLine = (bodyEl, text) => { if (text) bodyEl.createDiv({ cls: "qnalog-progress-sub", text }); };
 
     if (visibleTaskActivities.length) {
-      list.createDiv({ cls: "lexvoice-progress-section-title", text: "任务状态" });
-      const activityList = list.createDiv({ cls: "lexvoice-progress-activity-list" });
+      list.createDiv({ cls: "qnalog-progress-section-title", text: "任务状态" });
+      const activityList = list.createDiv({ cls: "qnalog-progress-activity-list" });
       for (const activity of visibleTaskActivities) {
         const state = String(activity.status || "queued");
         const activityId = String(activity.id || "");
         const item = activityList.createEl("details", {
-          cls: `lexvoice-progress-activity is-${state}`,
+          cls: `qnalog-progress-activity is-${state}`,
         });
         item.open = this._expandedActivities.has(activityId);
-        const summaryEl = item.createEl("summary", { cls: "lexvoice-progress-activity-summary" });
+        const summaryEl = item.createEl("summary", { cls: "qnalog-progress-activity-summary" });
         summaryEl.onclick = (event) => {
           event.preventDefault();
           if (item.open) {
@@ -887,7 +887,7 @@ export class QueueModal extends obsidian.Modal {
           }
         };
 
-        const icon = summaryEl.createSpan({ cls: `lexvoice-progress-activity-icon is-${state}`, attr: { "aria-hidden": "true" } });
+        const icon = summaryEl.createSpan({ cls: `qnalog-progress-activity-icon is-${state}`, attr: { "aria-hidden": "true" } });
         const iconName = state === "done" ? "circle-check"
           : state === "failed" ? "triangle-alert"
             : state === "retrying" ? "refresh-cw"
@@ -896,22 +896,22 @@ export class QueueModal extends obsidian.Modal {
                   : state === "waiting" ? "hourglass" : "activity";
         try { obsidian.setIcon(icon, iconName); } catch { icon.setText(state === "failed" ? "!" : ""); }
 
-        const summaryCopy = summaryEl.createSpan({ cls: "lexvoice-progress-activity-copy" });
-        summaryCopy.createSpan({ cls: "lexvoice-progress-activity-title", text: activity.title || "后台任务" });
+        const summaryCopy = summaryEl.createSpan({ cls: "qnalog-progress-activity-copy" });
+        summaryCopy.createSpan({ cls: "qnalog-progress-activity-title", text: activity.title || "后台任务" });
         summaryCopy.createSpan({
-          cls: "lexvoice-progress-activity-stage",
+          cls: "qnalog-progress-activity-stage",
           text: [activity.stageLabel, activity.count].filter(Boolean).join(" · ") || livenessDetail(state),
         });
-        summaryEl.createSpan({ cls: `lexvoice-progress-activity-state is-${state}`, text: livenessLabel(state) });
+        summaryEl.createSpan({ cls: `qnalog-progress-activity-state is-${state}`, text: livenessLabel(state) });
 
-        const panel = item.createDiv({ cls: "lexvoice-progress-activity-panel" });
-        if (activity.detail) panel.createDiv({ cls: "lexvoice-progress-activity-detail", text: activity.detail });
+        const panel = item.createDiv({ cls: "qnalog-progress-activity-panel" });
+        if (activity.detail) panel.createDiv({ cls: "qnalog-progress-activity-detail", text: activity.detail });
 
         if (Number.isFinite(Number(activity.progress))) {
           const taskProgress = Math.max(0, Math.min(100, Number(activity.progress)));
-          const taskBar = panel.createDiv({ cls: `lexvoice-progress-activity-progress is-${state}` });
-          taskBar.createDiv({ cls: "lexvoice-progress-activity-progress-fill" }).style.width = `${taskProgress}%`;
-          panel.createDiv({ cls: "lexvoice-progress-activity-progress-label", text: `${Math.round(taskProgress)}%` });
+          const taskBar = panel.createDiv({ cls: `qnalog-progress-activity-progress is-${state}` });
+          taskBar.createDiv({ cls: "qnalog-progress-activity-progress-fill" }).style.width = `${taskProgress}%`;
+          panel.createDiv({ cls: "qnalog-progress-activity-progress-label", text: `${Math.round(taskProgress)}%` });
         }
 
         const facts = [];
@@ -932,52 +932,52 @@ export class QueueModal extends obsidian.Modal {
           facts.push(["对象", shortSubject]);
         }
         if (facts.length) {
-          const factGrid = panel.createDiv({ cls: "lexvoice-progress-activity-facts" });
+          const factGrid = panel.createDiv({ cls: "qnalog-progress-activity-facts" });
           for (const [label, value] of facts) {
-            const fact = factGrid.createDiv({ cls: "lexvoice-progress-activity-fact" });
-            fact.createSpan({ cls: "lexvoice-progress-activity-fact-label", text: label });
-            fact.createSpan({ cls: "lexvoice-progress-activity-fact-value", text: value });
+            const fact = factGrid.createDiv({ cls: "qnalog-progress-activity-fact" });
+            fact.createSpan({ cls: "qnalog-progress-activity-fact-label", text: label });
+            fact.createSpan({ cls: "qnalog-progress-activity-fact-value", text: value });
           }
         }
 
         if (activity.error) {
-          const errorBox = panel.createDiv({ cls: "lexvoice-progress-activity-error", attr: { role: "alert" } });
+          const errorBox = panel.createDiv({ cls: "qnalog-progress-activity-error", attr: { role: "alert" } });
           const rawError = String(activity.error).trim();
           const displayError = /file already exists|文件已存在|already exists/i.test(rawError)
             ? "目标版本文件已存在，未重复创建。"
             : rawError;
           const isFileExistsError = displayError !== rawError;
           if (rawError && rawError !== displayError) errorBox.setAttr("title", rawError);
-          const errorHead = errorBox.createDiv({ cls: "lexvoice-progress-activity-error-head" });
-          const errorIcon = errorHead.createSpan({ cls: "lexvoice-progress-activity-error-icon", attr: { "aria-hidden": "true" } });
+          const errorHead = errorBox.createDiv({ cls: "qnalog-progress-activity-error-head" });
+          const errorIcon = errorHead.createSpan({ cls: "qnalog-progress-activity-error-icon", attr: { "aria-hidden": "true" } });
           try { obsidian.setIcon(errorIcon, "triangle-alert"); } catch { errorIcon.setText("!"); }
           errorHead.createSpan({ text: "处理未完成" });
-          errorBox.createDiv({ cls: "lexvoice-progress-activity-error-message", text: displayError });
+          errorBox.createDiv({ cls: "qnalog-progress-activity-error-message", text: displayError });
           const hint = this.plugin.tasks.getTaskActivityErrorHint
             ? this.plugin.tasks.getTaskActivityErrorHint(activity)
             : "";
           if (hint && hint !== displayError && !isFileExistsError) {
-            errorBox.createDiv({ cls: "lexvoice-progress-activity-error-hint", text: hint });
+            errorBox.createDiv({ cls: "qnalog-progress-activity-error-hint", text: hint });
           }
         }
 
         if (Array.isArray(activity.events) && activity.events.length) {
-          const chain = panel.createDiv({ cls: "lexvoice-progress-activity-chain" });
-          chain.createDiv({ cls: "lexvoice-progress-section-label", text: "最近链路" });
+          const chain = panel.createDiv({ cls: "qnalog-progress-activity-chain" });
+          chain.createDiv({ cls: "qnalog-progress-section-label", text: "最近链路" });
           for (const event of activity.events.slice(-5).reverse()) {
-            const row = chain.createDiv({ cls: "lexvoice-progress-event" });
-            row.createSpan({ cls: "lexvoice-progress-event-time", text: fmtTime(Number(event.at) || Date.now()) });
-            const eventCopy = row.createSpan({ cls: "lexvoice-progress-event-copy" });
-            eventCopy.createSpan({ cls: "lexvoice-progress-event-label", text: String(event.label || "状态已更新") });
-            if (event.detail) eventCopy.createSpan({ cls: "lexvoice-progress-event-detail", text: String(event.detail) });
+            const row = chain.createDiv({ cls: "qnalog-progress-event" });
+            row.createSpan({ cls: "qnalog-progress-event-time", text: fmtTime(Number(event.at) || Date.now()) });
+            const eventCopy = row.createSpan({ cls: "qnalog-progress-event-copy" });
+            eventCopy.createSpan({ cls: "qnalog-progress-event-label", text: String(event.label || "状态已更新") });
+            if (event.detail) eventCopy.createSpan({ cls: "qnalog-progress-event-detail", text: String(event.detail) });
           }
         }
 
         if (Array.isArray(activity.actions) && activity.actions.length) {
-          const actions = panel.createDiv({ cls: "lexvoice-progress-activity-actions" });
+          const actions = panel.createDiv({ cls: "qnalog-progress-activity-actions" });
           for (const action of activity.actions) {
             const button = actions.createEl("button", {
-              cls: `lexvoice-progress-btn${action.primary ? " mod-cta" : ""}`,
+              cls: `qnalog-progress-btn${action.primary ? " mod-cta" : ""}`,
               text: action.label,
               attr: { type: "button" },
             });
@@ -996,26 +996,26 @@ export class QueueModal extends obsidian.Modal {
       }
     }
 
-    if (completed.length) list.createDiv({ cls: "lexvoice-progress-section-title lexvoice-progress-legacy-completed", text: "最近完成" });
+    if (completed.length) list.createDiv({ cls: "qnalog-progress-section-title qnalog-progress-legacy-completed", text: "最近完成" });
     for (const c of completed) {
-      const { ico, body } = makeRow("done", "lexvoice-progress-legacy-completed");
-      try { obsidian.setIcon(ico.createSpan({ cls: "lexvoice-progress-check" }), "check"); } catch { /* intentionally empty */ }
+      const { ico, body } = makeRow("done", "qnalog-progress-legacy-completed");
+      try { obsidian.setIcon(ico.createSpan({ cls: "qnalog-progress-check" }), "check"); } catch { /* intentionally empty */ }
       const right = [(c.durationMs > 0 ? fmtDur(c.durationMs) : ""), tokenLabel(c.tokens, c.tokensExact)].filter(Boolean).join(" · ");
       titleLine(body, c.title || "完成", right, false);
       subLine(body, `已完成${c.detail ? " · " + c.detail : ""}${c.at ? " · " + fmtTime(c.at) : ""}`);
     }
 
     if (active) {
-      list.createDiv({ cls: "lexvoice-progress-section-title lexvoice-progress-legacy-current", text: "当前任务" });
-      const { ico, body } = makeRow("running", "lexvoice-progress-legacy-current");
+      list.createDiv({ cls: "qnalog-progress-section-title qnalog-progress-legacy-current", text: "当前任务" });
+      const { ico, body } = makeRow("running", "qnalog-progress-legacy-current");
       if (activeLiveness === "failed") {
-        const stateIcon = ico.createSpan({ cls: `lexvoice-progress-task-state is-${activeLiveness}` });
+        const stateIcon = ico.createSpan({ cls: `qnalog-progress-task-state is-${activeLiveness}` });
         try { obsidian.setIcon(stateIcon, "triangle-alert"); } catch { stateIcon.setText("!"); }
       } else if (activeLiveness === "done") {
-        const stateIcon = ico.createSpan({ cls: "lexvoice-progress-task-state is-done" });
+        const stateIcon = ico.createSpan({ cls: "qnalog-progress-task-state is-done" });
         try { obsidian.setIcon(stateIcon, "check"); } catch { stateIcon.setText("✓"); }
       } else {
-        ico.createSpan({ cls: `lexvoice-progress-spinner is-${activeLiveness}` });
+        ico.createSpan({ cls: `qnalog-progress-spinner is-${activeLiveness}` });
       }
       const sess = this.plugin.session;
       const fileName = sess && sess.mdPath ? String(sess.mdPath).split(/[\\/]/).pop().replace(/\.md$/i, "") : "";
@@ -1032,7 +1032,7 @@ export class QueueModal extends obsidian.Modal {
       const pctTxt = currentProgress !== null ? `（${Math.round(currentProgress)}%）` : "";
       subLine(body, `${stepBase}${pctTxt}${detail && detail.count ? " · " + detail.count : ""}`);
       if (detail && detail.stepDetail) {
-        body.createDiv({ cls: "lexvoice-progress-detail", text: detail.stepDetail });
+        body.createDiv({ cls: "qnalog-progress-detail", text: detail.stepDetail });
       }
 
       if (detail) {
@@ -1050,11 +1050,11 @@ export class QueueModal extends obsidian.Modal {
           ["模式", modeChange],
         ].filter(([, value]) => String(value || "").trim());
         if (taskFacts.length) {
-          const factGrid = body.createDiv({ cls: "lexvoice-progress-current-facts" });
+          const factGrid = body.createDiv({ cls: "qnalog-progress-current-facts" });
           for (const [label, value] of taskFacts) {
-            const fact = factGrid.createDiv({ cls: "lexvoice-progress-current-fact" });
-            fact.createSpan({ cls: "lexvoice-progress-current-fact-label", text: String(label) });
-            const factValue = fact.createSpan({ cls: "lexvoice-progress-current-fact-value", text: String(value) });
+            const fact = factGrid.createDiv({ cls: "qnalog-progress-current-fact" });
+            fact.createSpan({ cls: "qnalog-progress-current-fact-label", text: String(label) });
+            const factValue = fact.createSpan({ cls: "qnalog-progress-current-fact-value", text: String(value) });
             factValue.setAttr("title", String(value));
           }
         }
@@ -1069,7 +1069,7 @@ export class QueueModal extends obsidian.Modal {
           this._collapsedStages.delete(activeStageId);
         }
         const stages = body.createDiv({
-          cls: "lexvoice-progress-stages",
+          cls: "qnalog-progress-stages",
           attr: { "aria-label": "处理步骤" },
         });
         for (let index = 0; index < detail.stages.length; index++) {
@@ -1077,14 +1077,14 @@ export class QueueModal extends obsidian.Modal {
           const stageId = String(stage.id || `stage-${index}`);
           const stageLiveness = String(stage.liveness || (stage.status === "done" ? "done" : stage.status === "pending" ? "pending" : "running"));
           const item = stages.createEl("details", {
-            cls: `lexvoice-progress-stage is-${stage.status || "pending"} is-${stageLiveness}`,
+            cls: `qnalog-progress-stage is-${stage.status || "pending"} is-${stageLiveness}`,
           });
           const shouldAutoOpen = stage.status === "active"
             || ["failed", "stalled"].includes(stageLiveness);
           const shouldOpen = this._expandedStages.has(stageId)
             || (shouldAutoOpen && !this._collapsedStages.has(stageId));
           item.open = shouldOpen;
-          const summaryEl = item.createEl("summary", { cls: "lexvoice-progress-stage-summary" });
+          const summaryEl = item.createEl("summary", { cls: "qnalog-progress-stage-summary" });
           summaryEl.onclick = (event) => {
             event.preventDefault();
             if (item.open) {
@@ -1097,7 +1097,7 @@ export class QueueModal extends obsidian.Modal {
               item.open = true;
             }
           };
-          const marker = summaryEl.createSpan({ cls: "lexvoice-progress-stage-marker", attr: { "aria-hidden": "true" } });
+          const marker = summaryEl.createSpan({ cls: "qnalog-progress-stage-marker", attr: { "aria-hidden": "true" } });
           const iconName = stageLiveness === "done" ? "check"
             : stageLiveness === "failed" ? "triangle-alert"
               : stageLiveness === "retrying" ? "refresh-cw"
@@ -1106,51 +1106,51 @@ export class QueueModal extends obsidian.Modal {
           if (iconName) {
             try { obsidian.setIcon(marker, iconName); } catch { marker.setText(stageLiveness === "done" ? "✓" : "!"); }
           } else if (stage.status === "active") {
-            marker.createSpan({ cls: "lexvoice-progress-stage-pulse" });
+            marker.createSpan({ cls: "qnalog-progress-stage-pulse" });
           } else {
             marker.setText(String(index + 1));
           }
-          const stageCopy = summaryEl.createSpan({ cls: "lexvoice-progress-stage-copy" });
-          stageCopy.createSpan({ cls: "lexvoice-progress-stage-label", text: stage.label || `步骤 ${index + 1}` });
-          if (stage.summary) stageCopy.createSpan({ cls: "lexvoice-progress-stage-summary-text", text: stage.summary });
+          const stageCopy = summaryEl.createSpan({ cls: "qnalog-progress-stage-copy" });
+          stageCopy.createSpan({ cls: "qnalog-progress-stage-label", text: stage.label || `步骤 ${index + 1}` });
+          if (stage.summary) stageCopy.createSpan({ cls: "qnalog-progress-stage-summary-text", text: stage.summary });
           summaryEl.createSpan({
-            cls: `lexvoice-progress-stage-state is-${stageLiveness}`,
+            cls: `qnalog-progress-stage-state is-${stageLiveness}`,
             text: livenessLabel(stageLiveness),
           });
 
-          const panel = item.createDiv({ cls: "lexvoice-progress-stage-panel" });
-          if (stage.detail) panel.createDiv({ cls: "lexvoice-progress-stage-description", text: stage.detail });
+          const panel = item.createDiv({ cls: "qnalog-progress-stage-panel" });
+          if (stage.detail) panel.createDiv({ cls: "qnalog-progress-stage-description", text: stage.detail });
           const facts = [];
           if (Number(stage.startedAt) > 0) facts.push(["开始", fmtTime(Number(stage.startedAt))]);
           if (Number(stage.updatedAt) > 0) facts.push(["最近事件", `${fmtDur(Date.now() - Number(stage.updatedAt))}前`]);
           if (Number(stage.startedAt) > 0 && stage.status === "active") facts.push(["本阶段", fmtDur(Date.now() - Number(stage.startedAt))]);
           if (facts.length) {
-            const factGrid = panel.createDiv({ cls: "lexvoice-progress-stage-facts" });
+            const factGrid = panel.createDiv({ cls: "qnalog-progress-stage-facts" });
             for (const [factLabel, factValue] of facts) {
-              const fact = factGrid.createDiv({ cls: "lexvoice-progress-stage-fact" });
-              fact.createSpan({ cls: "lexvoice-progress-stage-fact-label", text: factLabel });
-              fact.createSpan({ cls: "lexvoice-progress-stage-fact-value", text: factValue });
+              const fact = factGrid.createDiv({ cls: "qnalog-progress-stage-fact" });
+              fact.createSpan({ cls: "qnalog-progress-stage-fact-label", text: factLabel });
+              fact.createSpan({ cls: "qnalog-progress-stage-fact-value", text: factValue });
             }
           }
 
           if (Array.isArray(stage.requests) && stage.requests.length) {
-            const requestSection = panel.createDiv({ cls: "lexvoice-progress-requests" });
-            requestSection.createDiv({ cls: "lexvoice-progress-section-label", text: "分段请求" });
-            const requestList = requestSection.createDiv({ cls: "lexvoice-progress-request-list" });
+            const requestSection = panel.createDiv({ cls: "qnalog-progress-requests" });
+            requestSection.createDiv({ cls: "qnalog-progress-section-label", text: "分段请求" });
+            const requestList = requestSection.createDiv({ cls: "qnalog-progress-request-list" });
             for (const request of stage.requests) {
               const requestState = String(request.liveness || "pending");
-              const requestRow = requestList.createDiv({ cls: `lexvoice-progress-request is-${requestState}` });
-              const requestHead = requestRow.createDiv({ cls: "lexvoice-progress-request-head" });
+              const requestRow = requestList.createDiv({ cls: `qnalog-progress-request is-${requestState}` });
+              const requestHead = requestRow.createDiv({ cls: "qnalog-progress-request-head" });
               requestHead.createSpan({
-                cls: "lexvoice-progress-request-title",
+                cls: "qnalog-progress-request-title",
                 text: `第 ${Number(request.chunkIndex) + 1}/${Math.max(1, Number(request.chunkCount) || 1)} 段`,
               });
               const attemptText = Number(request.attempt) > 0
                 ? `第 ${Number(request.attempt)}/${Math.max(Number(request.attempt), Number(request.maxAttempts) || 1)} 次`
                 : "";
-              if (attemptText) requestHead.createSpan({ cls: "lexvoice-progress-request-attempt", text: attemptText });
+              if (attemptText) requestHead.createSpan({ cls: "qnalog-progress-request-attempt", text: attemptText });
               requestHead.createSpan({
-                cls: `lexvoice-progress-request-state is-${requestState}`,
+                cls: `qnalog-progress-request-state is-${requestState}`,
                 text: livenessLabel(requestState),
               });
               const requestMeta = [];
@@ -1165,8 +1165,8 @@ export class QueueModal extends obsidian.Modal {
                   ? `预计 ${fmtDur(deadlineDelta)} 内返回`
                   : `处理时间比预计多 ${fmtDur(Math.abs(deadlineDelta))}`);
               }
-              if (requestMeta.length) requestRow.createDiv({ cls: "lexvoice-progress-request-meta", text: requestMeta.join(" · ") });
-              if (request.error) requestRow.createDiv({ cls: "lexvoice-progress-request-error", text: String(request.error) });
+              if (requestMeta.length) requestRow.createDiv({ cls: "qnalog-progress-request-meta", text: requestMeta.join(" · ") });
+              if (request.error) requestRow.createDiv({ cls: "qnalog-progress-request-error", text: String(request.error) });
             }
           }
 
@@ -1185,14 +1185,14 @@ export class QueueModal extends obsidian.Modal {
                 || String(event.detail || "") !== String(next.detail || "");
             });
             if (visibleEvents.length) {
-              const eventSection = panel.createDiv({ cls: "lexvoice-progress-events" });
-              eventSection.createDiv({ cls: "lexvoice-progress-section-label", text: "最近事件" });
+              const eventSection = panel.createDiv({ cls: "qnalog-progress-events" });
+              eventSection.createDiv({ cls: "qnalog-progress-section-label", text: "最近事件" });
               for (const event of visibleEvents.slice(-10).reverse()) {
-                const eventRow = eventSection.createDiv({ cls: "lexvoice-progress-event" });
-                eventRow.createSpan({ cls: "lexvoice-progress-event-time", text: fmtTime(Number(event.at) || Date.now()) });
-                const eventCopy = eventRow.createSpan({ cls: "lexvoice-progress-event-copy" });
-                eventCopy.createSpan({ cls: "lexvoice-progress-event-label", text: String(event.label || "状态已更新") });
-                if (event.detail) eventCopy.createSpan({ cls: "lexvoice-progress-event-detail", text: String(event.detail) });
+                const eventRow = eventSection.createDiv({ cls: "qnalog-progress-event" });
+                eventRow.createSpan({ cls: "qnalog-progress-event-time", text: fmtTime(Number(event.at) || Date.now()) });
+                const eventCopy = eventRow.createSpan({ cls: "qnalog-progress-event-copy" });
+                eventCopy.createSpan({ cls: "qnalog-progress-event-label", text: String(event.label || "状态已更新") });
+                if (event.detail) eventCopy.createSpan({ cls: "qnalog-progress-event-detail", text: String(event.detail) });
               }
             }
           }
@@ -1204,8 +1204,8 @@ export class QueueModal extends obsidian.Modal {
         const stageStartedAt = Number(detail.stageStartedAt) || Number(detail.startedAt) || 0;
         const updatedAt = Number(detail.updatedAt) || stageStartedAt;
         const liveState = String(detail.liveness || "running");
-        const live = body.createDiv({ cls: `lexvoice-progress-live is-${liveState}` });
-        const liveIcon = live.createSpan({ cls: "lexvoice-progress-live-icon", attr: { "aria-hidden": "true" } });
+        const live = body.createDiv({ cls: `qnalog-progress-live is-${liveState}` });
+        const liveIcon = live.createSpan({ cls: "qnalog-progress-live-icon", attr: { "aria-hidden": "true" } });
         const liveIconName = liveState === "done" ? "circle-check"
           : liveState === "failed" ? "triangle-alert"
             : liveState === "retrying" ? "refresh-cw"
@@ -1214,44 +1214,44 @@ export class QueueModal extends obsidian.Modal {
         const liveParts = [];
         if (stageStartedAt) liveParts.push(`本步骤已进行 ${fmtDur(now - stageStartedAt)}`);
         if (updatedAt) liveParts.push(`最近事件在 ${fmtDur(now - updatedAt)}前`);
-        const liveCopy = live.createSpan({ cls: "lexvoice-progress-live-copy" });
-        liveCopy.createSpan({ cls: "lexvoice-progress-live-title", text: livenessLabel(liveState) });
+        const liveCopy = live.createSpan({ cls: "qnalog-progress-live-copy" });
+        liveCopy.createSpan({ cls: "qnalog-progress-live-title", text: livenessLabel(liveState) });
         liveCopy.createSpan({
-          cls: "lexvoice-progress-live-text",
+          cls: "qnalog-progress-live-text",
           text: [livenessDetail(liveState), liveParts.join(" · ")].filter(Boolean).join(" · "),
         });
         if (detail.backgroundHint) {
-          body.createDiv({ cls: "lexvoice-progress-background-hint", text: detail.backgroundHint });
+          body.createDiv({ cls: "qnalog-progress-background-hint", text: detail.backgroundHint });
         }
       }
     }
 
     if (running.length || pending.length) {
-      const queueHead = list.createDiv({ cls: "lexvoice-progress-queue-head" });
-      const queueTitle = queueHead.createDiv({ cls: "lexvoice-progress-queue-title" });
+      const queueHead = list.createDiv({ cls: "qnalog-progress-queue-head" });
+      const queueTitle = queueHead.createDiv({ cls: "qnalog-progress-queue-title" });
       queueTitle.createSpan({ text: "待处理" });
-      queueTitle.createSpan({ cls: "lexvoice-progress-queue-count", text: ` ${pending.length} 项 · 音频均已保留` });
+      queueTitle.createSpan({ cls: "qnalog-progress-queue-count", text: ` ${pending.length} 项 · 音频均已保留` });
       if (pending.length) {
-        const retryAllBtn = queueHead.createEl("button", { cls: "lexvoice-progress-queue-retry", text: "全部重试", attr: { type: "button" } });
+        const retryAllBtn = queueHead.createEl("button", { cls: "qnalog-progress-queue-retry", text: "全部重试", attr: { type: "button" } });
         retryAllBtn.onclick = async () => { retryAllBtn.disabled = true; await this.plugin.queueRetry.retryQueue(); this.onOpen(); };
       }
     }
     for (const t of running) {
-      const { ico, body } = makeRow("running", "lexvoice-progress-queue-row");
-      ico.createSpan({ cls: "lexvoice-progress-spinner" });
+      const { ico, body } = makeRow("running", "qnalog-progress-queue-row");
+      ico.createSpan({ cls: "qnalog-progress-spinner" });
       titleLine(body, taskTitle(t), "", false);
       subLine(body, t.status === "live" ? `切片已落盘 · ${t.mdPath || "等待本场转写"}` : (t.mdPath || ""));
     }
 
     for (const t of pending) {
-      const { row, ico, body } = makeRow("pending", "lexvoice-progress-queue-row");
-      ico.createSpan({ cls: "lexvoice-progress-dot" });
+      const { row, ico, body } = makeRow("pending", "qnalog-progress-queue-row");
+      ico.createSpan({ cls: "qnalog-progress-dot" });
       titleLine(body, taskTitle(t), "", false);
       subLine(body, `${t.lastError || "等待下一次处理"} · 已试 ${t.retries || 0} 次`);
-      const acts = row.createDiv({ cls: "lexvoice-progress-queue-actions" });
-      const retryBtn = acts.createEl("button", { cls: "lexvoice-progress-queue-retry", attr: { type: "button" }, text: "重试" });
+      const acts = row.createDiv({ cls: "qnalog-progress-queue-actions" });
+      const retryBtn = acts.createEl("button", { cls: "qnalog-progress-queue-retry", attr: { type: "button" }, text: "重试" });
       retryBtn.onclick = async () => { try { await this.plugin.queue.processOne(t); } catch { /* intentionally empty */ } this.onOpen(); };
-      const delBtn = acts.createEl("button", { cls: "lexvoice-progress-queue-cancel", attr: { type: "button" }, text: "取消" });
+      const delBtn = acts.createEl("button", { cls: "qnalog-progress-queue-cancel", attr: { type: "button" }, text: "取消" });
       delBtn.onclick = async () => {
         await this.plugin.queue.remove(t.id);
         new obsidian.Notice("已取消自动重试。缓存音频会暂时保留，之后仍可从纪要右键重新发起。", 6000);
@@ -1260,18 +1260,18 @@ export class QueueModal extends obsidian.Modal {
     }
 
     // —— 底部操作 ——
-    const foot = contentEl.createDiv({ cls: "lexvoice-progress-foot" });
-    if (tmTokLabel) foot.createSpan({ cls: "lexvoice-progress-foot-token", text: `${tmTokLabel} token` });
-    const footActions = foot.createDiv({ cls: "lexvoice-progress-foot-actions" });
-    const logBtn = footActions.createEl("button", { cls: "lexvoice-progress-foot-link", attr: { type: "button" }, text: "查看日志" });
+    const foot = contentEl.createDiv({ cls: "qnalog-progress-foot" });
+    if (tmTokLabel) foot.createSpan({ cls: "qnalog-progress-foot-token", text: `${tmTokLabel} token` });
+    const footActions = foot.createDiv({ cls: "qnalog-progress-foot-actions" });
+    const logBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link", attr: { type: "button" }, text: "查看日志" });
     logBtn.onclick = async () => { try { await this.plugin.diagnostics.copyDiagnosticReport(); } catch { /* intentionally empty */ } };
-    const backgroundBtn = footActions.createEl("button", { cls: "lexvoice-progress-foot-link is-primary", attr: { type: "button" }, text: "后台运行" });
+    const backgroundBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link is-primary", attr: { type: "button" }, text: "后台运行" });
     backgroundBtn.onclick = () => this.close();
     if (pending.length) {
-      const clearBtn = footActions.createEl("button", { cls: "lexvoice-progress-foot-link", attr: { type: "button" }, text: "取消全部" });
+      const clearBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link", attr: { type: "button" }, text: "取消全部" });
       clearBtn.onclick = async () => {
         const n = this.plugin.queue.tasks.filter((t) => t && t.status !== "running" && t.status !== "live").length;
-        const ok = await lexvoiceConfirm(this.app, "取消全部自动重试？",
+        const ok = await qnalogConfirm(this.app, "取消全部自动重试？",
           `取消后这 ${n} 个任务不再自动重试，对应纪要将停留在当前状态。缓存音频会暂时保留，处理中的任务不受影响。`,
           "取消重试");
         if (!ok) return;
@@ -1320,14 +1320,14 @@ export class VirtualCableSetupModal extends obsidian.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("lexvoice-vcable-modal");
+    contentEl.addClass("qnalog-vcable-modal");
 
     contentEl.createEl("h2", { text: "电脑音频捕获设置" });
-    const desc = contentEl.createEl("p", { cls: "lexvoice-vcable-desc" });
+    const desc = contentEl.createEl("p", { cls: "qnalog-vcable-desc" });
     desc.setText("QnALog 不能直接监听耳机或扬声器里正在播放的声音。录制 B 站客户端、浏览器视频、课程或会议对方声音时，需要先把这些声音输出到虚拟声卡，让 QnALog 将其识别为「电脑音频输入」；同时再把同一份声音监听到真实扬声器或耳机，确保本机仍可听到播放内容。一次配置，长期可用。");
 
     // 平台 tabs
-    const tabs = contentEl.createDiv({ cls: "lexvoice-vcable-tabs" });
+    const tabs = contentEl.createDiv({ cls: "qnalog-vcable-tabs" });
     const platforms = [
       ["mac", "macOS"],
       ["win", "Windows"],
@@ -1335,7 +1335,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     ];
     const tabBtns = {};
     for (const [k, label] of platforms) {
-      const b = tabs.createEl("button", { text: label, cls: "lexvoice-vcable-tab" });
+      const b = tabs.createEl("button", { text: label, cls: "qnalog-vcable-tab" });
       if (k === this.activePlatform) b.addClass("is-active");
       b.onclick = () => {
         this.activePlatform = k;
@@ -1346,11 +1346,11 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       tabBtns[k] = b;
     }
     this.tabBtns = tabBtns;
-    this.contentBox = contentEl.createDiv({ cls: "lexvoice-vcable-content" });
+    this.contentBox = contentEl.createDiv({ cls: "qnalog-vcable-content" });
     this.renderContent();
 
     // 底部操作
-    const actions = contentEl.createDiv({ cls: "modal-button-container lexvoice-vcable-actions" });
+    const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-vcable-actions" });
     const closeBtn = actions.createEl("button", { text: "关闭" });
     closeBtn.onclick = () => this.close();
     const recheckBtn = actions.createEl("button", { text: "重新检测", cls: "mod-cta" });
@@ -1372,11 +1372,11 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     else this.renderLinuxContent(this.contentBox);
   }
   step(parent, n, title, body) {
-    const s = parent.createDiv({ cls: "lexvoice-vcable-step" });
-    const head = s.createDiv({ cls: "lexvoice-vcable-step-head" });
-    head.createSpan({ text: `Step ${n}`, cls: "lexvoice-vcable-step-num" });
-    head.createSpan({ text: title, cls: "lexvoice-vcable-step-title" });
-    const b = s.createDiv({ cls: "lexvoice-vcable-step-body" });
+    const s = parent.createDiv({ cls: "qnalog-vcable-step" });
+    const head = s.createDiv({ cls: "qnalog-vcable-step-head" });
+    head.createSpan({ text: `Step ${n}`, cls: "qnalog-vcable-step-num" });
+    head.createSpan({ text: title, cls: "qnalog-vcable-step-title" });
+    const b = s.createDiv({ cls: "qnalog-vcable-step-body" });
     if (typeof body === "function") body(b);
     else b.appendChild(obsidian.sanitizeHTMLToDom(String(body == null ? "" : body)));
     return s;
@@ -1399,7 +1399,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "左下角「+」→ 创建多输出设备" });
       ol.createEl("li", { text: "勾选「内建扬声器」（或耳机）+「BlackHole 2ch」" });
       ol.createEl("li", { text: "Master Device 选择耳机或扬声器；Drift Correction 勾选 BlackHole" });
-      const tip = b.createEl("p", { cls: "lexvoice-vcable-tip" });
+      const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
       tip.setText("这样系统音频会同时进入真实耳机/扬声器和 BlackHole：前者用于播放，后者用于 QnALog 录制。");
     });
     this.step(parent, 3, "把系统或应用输出切到这个多输出设备", (b) => {
@@ -1407,7 +1407,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "系统设置 → 声音 → 输出" });
       ol.createEl("li", { text: "选择刚才创建的「多输出设备」" });
       ol.createEl("li", { text: "浏览器视频和大多数桌面视频客户端通常跟随系统输出；会议软件如单独设置了扬声器，也改成这个多输出设备" });
-      const warn = b.createEl("p", { cls: "lexvoice-vcable-warn" });
+      const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText("切换后会议软件可能需要重新选择扬声器。");
     });
     this.step(parent, 4, "在 QnALog 选择电脑音频模式", (b) => {
@@ -1427,13 +1427,13 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     this.step(parent, 2, "把要录制的声音输出切到 CABLE Input（播放设备）", (b) => {
       b.createEl("p", { text: "线上会议可以在飞书、腾讯会议或 Zoom 的音频设置里改扬声器；B 站客户端、浏览器视频、播放器等桌面应用，可以在 Windows 音量混合器里单独指定输出设备。目标输出统一改为：" });
       b.createEl("code", { text: "CABLE Input (VB-Audio Virtual Cable)" });
-      b.createEl("p", { cls: "lexvoice-vcable-tip" }).setText("注意：这里选的是 CABLE Input。虽然名字叫 Input，但它在 Windows 里是“播放/输出设备”；QnALog 后面录的是同一根虚拟线缆另一端的 CABLE Output。");
+      b.createEl("p", { cls: "qnalog-vcable-tip" }).setText("注意：这里选的是 CABLE Input。虽然名字叫 Input，但它在 Windows 里是“播放/输出设备”；QnALog 后面录的是同一根虚拟线缆另一端的 CABLE Output。");
       const ol = b.createEl("ol");
       ol.createEl("li", { text: "录会议：在会议软件的扬声器/输出设备中选择 CABLE Input" });
       ol.createEl("li", { text: "录 B 站客户端：先播放一段视频，让应用出现在音量混合器里；Windows 设置 → 系统 → 声音 → 音量混合器 → 找到哔哩哔哩/bilibili → 输出设备选择 CABLE Input" });
       ol.createEl("li", { text: "录浏览器：同样在音量混合器中找到 Chrome、Edge、Firefox 等浏览器 → 输出设备选择 CABLE Input" });
       ol.createEl("li", { text: "录全部系统声音：把系统默认输出设备直接改为 CABLE Input" });
-      const warn = b.createEl("p", { cls: "lexvoice-vcable-warn" });
+      const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText("这一步会让系统声音暂时不从真实耳机/扬声器播放，需要完成下一步侦听设置后恢复监听。");
     });
     this.step(parent, 3, "用 CABLE Output 侦听到真实扬声器或耳机（关键）", (b) => {
@@ -1445,7 +1445,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "勾选「侦听此设备」" });
       ol.createEl("li", { text: "「通过此设备播放」选择真实耳机或扬声器，不要选 CABLE Input" });
       ol.createEl("li", { text: "点「应用」" });
-      const tip = b.createEl("p", { cls: "lexvoice-vcable-tip" });
+      const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
       tip.setText("音频链路是：应用/浏览器 → CABLE Input（播放输出）→ CABLE Output（录制输入，QnALog 读取）→ 侦听到真实耳机/扬声器。若侦听延迟明显，可改用 VoiceMeeter 这类混音工具做多输出。");
     });
     this.step(parent, 4, "把默认输入改回真实麦克风", (b) => {
@@ -1453,7 +1453,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "Windows 设置 → 系统 → 声音 → 输入" });
       ol.createEl("li", { text: "选择真实麦克风，不要选 CABLE Output" });
       ol.createEl("li", { text: "如果其他语音输入软件也没声音，通常就是这里被改成了 CABLE Output" });
-      const warn = b.createEl("p", { cls: "lexvoice-vcable-warn" });
+      const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText("CABLE Output 是给 QnALog 这类录音软件读取电脑音频用的，不适合作为日常语音输入麦克风。");
     });
     this.step(parent, 5, "在 QnALog 选择电脑音频模式", (b) => {
@@ -1539,13 +1539,13 @@ export class PromptTemplateModal extends obsidian.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("lexvoice-tpl-modal");
+    contentEl.addClass("qnalog-tpl-modal");
     contentEl.createEl("h2", { text: this.editingId ? "编辑提示词" : "提示词库" });
 
-    const desc = contentEl.createDiv({ cls: "setting-item-description lexvoice-tpl-desc" });
+    const desc = contentEl.createDiv({ cls: "setting-item-description qnalog-tpl-desc" });
     desc.setText("这里集中管理整理规则。内置提示词用于快速开始；需要固定格式、职业化判断或长期工作流时，新建自定义提示词并设为默认。");
 
-    const body = contentEl.createDiv({ cls: "lexvoice-tpl-body" });
+    const body = contentEl.createDiv({ cls: "qnalog-tpl-body" });
     if (this.editingId) this.renderEditor(body, this.editingId);
     else this.renderList(body);
   }
@@ -1553,8 +1553,8 @@ export class PromptTemplateModal extends obsidian.Modal {
   renderList(body) {
     const defaultMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode, "meeting");
     const defaultMeta = getModeMeta(this.plugin.settings, defaultMode);
-    const toolbar = body.createDiv({ cls: "lexvoice-tpl-toolbar" });
-    toolbar.createDiv({ cls: "lexvoice-tpl-current", text: "当前默认：" + (defaultMeta.prefix || defaultMeta.label || defaultMode) });
+    const toolbar = body.createDiv({ cls: "qnalog-tpl-toolbar" });
+    toolbar.createDiv({ cls: "qnalog-tpl-current", text: "当前默认：" + (defaultMeta.prefix || defaultMeta.label || defaultMode) });
     const createBtn = toolbar.createEl("button", { text: "新建自定义提示词", cls: "mod-cta" });
     createBtn.onclick = async () => {
       const tpl = this.newCustomScene("新自定义提示词", "learning");
@@ -1563,35 +1563,35 @@ export class PromptTemplateModal extends obsidian.Modal {
       this.onOpen();
     };
 
-    const builtInSection = body.createDiv({ cls: "lexvoice-tpl-section" });
-    builtInSection.createDiv({ cls: "lexvoice-tpl-section-title", text: "内置提示词" });
-    builtInSection.createDiv({ cls: "lexvoice-tpl-section-copy", text: "QnALog 提供的默认整理规则，适合直接设为默认。需要固定格式或专业判断时，请新建自定义提示词。" });
-    const list = builtInSection.createDiv({ cls: "lexvoice-tpl-list" });
+    const builtInSection = body.createDiv({ cls: "qnalog-tpl-section" });
+    builtInSection.createDiv({ cls: "qnalog-tpl-section-title", text: "内置提示词" });
+    builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: "QnALog 提供的默认整理规则，适合直接设为默认。需要固定格式或专业判断时，请新建自定义提示词。" });
+    const list = builtInSection.createDiv({ cls: "qnalog-tpl-list" });
     for (const mode of this.builtInModes()) this.renderBuiltinRow(list, mode);
 
-    const customSection = body.createDiv({ cls: "lexvoice-tpl-section" });
-    customSection.createDiv({ cls: "lexvoice-tpl-section-title", text: "自定义提示词" });
-    customSection.createDiv({ cls: "lexvoice-tpl-section-copy", text: "每个自定义提示词都会出现在录音、导入音频和重新整理菜单里，也可以设为默认。" });
-    const customList = customSection.createDiv({ cls: "lexvoice-tpl-list" });
+    const customSection = body.createDiv({ cls: "qnalog-tpl-section" });
+    customSection.createDiv({ cls: "qnalog-tpl-section-title", text: "自定义提示词" });
+    customSection.createDiv({ cls: "qnalog-tpl-section-copy", text: "每个自定义提示词都会出现在录音、导入音频和重新整理菜单里，也可以设为默认。" });
+    const customList = customSection.createDiv({ cls: "qnalog-tpl-list" });
     const customs = getCustomPromptModeTemplates(this.plugin.settings);
-    if (!customs.length) customList.createDiv({ cls: "lexvoice-tpl-empty", text: "还没有自定义提示词。点击上方按钮新建一条。" });
+    if (!customs.length) customList.createDiv({ cls: "qnalog-tpl-empty", text: "还没有自定义提示词。点击上方按钮新建一条。" });
     for (const tpl of customs) this.renderCustomRow(customList, tpl);
   }
 
   renderBuiltinRow(list, mode) {
     const meta = getModeMeta(this.plugin.settings, mode);
-    const row = list.createDiv({ cls: "lexvoice-tpl-row" });
+    const row = list.createDiv({ cls: "qnalog-tpl-row" });
     if (this.plugin.settings.polishMode === mode) row.addClass("is-active");
-    const pill = row.createDiv({ cls: "lexvoice-tpl-mode-pill" });
-    setLexVoiceModePillIcon(pill, meta);
+    const pill = row.createDiv({ cls: "qnalog-tpl-mode-pill" });
+    setModePillIcon(pill, meta);
     pill.setAttr("aria-hidden", "true");
-    const text = row.createDiv({ cls: "lexvoice-tpl-row-meta" });
-    text.createDiv({ cls: "lexvoice-tpl-row-name", text: meta.prefix || meta.label || mode });
+    const text = row.createDiv({ cls: "qnalog-tpl-row-meta" });
+    text.createDiv({ cls: "qnalog-tpl-row-name", text: meta.prefix || meta.label || mode });
     const override = this.getBuiltinOverride(mode);
     const state = override ? "当前使用旧版自定义规则。" : "内置提示词";
-    text.createDiv({ cls: "lexvoice-tpl-row-sub", text: (meta.goal || "") + " · " + state });
+    text.createDiv({ cls: "qnalog-tpl-row-sub", text: (meta.goal || "") + " · " + state });
 
-    const actions = row.createDiv({ cls: "lexvoice-tpl-row-actions" });
+    const actions = row.createDiv({ cls: "qnalog-tpl-row-actions" });
     const defaultBtn = actions.createEl("button", { text: this.plugin.settings.polishMode === mode ? "已默认" : "设为默认" });
     defaultBtn.onclick = async () => {
       this.plugin.settings.polishMode = mode;
@@ -1603,17 +1603,17 @@ export class PromptTemplateModal extends obsidian.Modal {
   renderCustomRow(list, tpl) {
     const meta = getModeMeta(this.plugin.settings, tpl.id);
     const baseMeta = getModeMeta(this.plugin.settings, tpl.baseMode || "learning");
-    const row = list.createDiv({ cls: "lexvoice-tpl-row" });
+    const row = list.createDiv({ cls: "qnalog-tpl-row" });
     if (this.plugin.settings.polishMode === tpl.id) row.addClass("is-active");
-    const pill = row.createDiv({ cls: "lexvoice-tpl-mode-pill" });
-    setLexVoiceModePillIcon(pill, meta, baseMeta);
+    const pill = row.createDiv({ cls: "qnalog-tpl-mode-pill" });
+    setModePillIcon(pill, meta, baseMeta);
     pill.setAttr("aria-hidden", "true");
-    const text = row.createDiv({ cls: "lexvoice-tpl-row-meta" });
-    text.createDiv({ cls: "lexvoice-tpl-row-name", text: tpl.name || "自定义提示词" });
+    const text = row.createDiv({ cls: "qnalog-tpl-row-meta" });
+    text.createDiv({ cls: "qnalog-tpl-row-name", text: tpl.name || "自定义提示词" });
     const updated = tpl.updatedAt && window.moment ? window.moment(tpl.updatedAt).format("YYYY-MM-DD HH:mm") : "未记录";
-    text.createDiv({ cls: "lexvoice-tpl-row-sub", text: "自定义 · 更新于 " + updated });
+    text.createDiv({ cls: "qnalog-tpl-row-sub", text: "自定义 · 更新于 " + updated });
 
-    const actions = row.createDiv({ cls: "lexvoice-tpl-row-actions" });
+    const actions = row.createDiv({ cls: "qnalog-tpl-row-actions" });
     const defaultBtn = actions.createEl("button", { text: this.plugin.settings.polishMode === tpl.id ? "已默认" : "设为默认" });
     defaultBtn.onclick = async () => {
       this.plugin.settings.polishMode = tpl.id;
@@ -1625,7 +1625,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     const delBtn = actions.createEl("button", { text: "删除" });
     delBtn.addClass("mod-warning");
     delBtn.onclick = async () => {
-      const ok = await lexvoiceConfirm(this.app, "删除自定义提示词", "删除自定义提示词「" + (tpl.name || tpl.id) + "」？此操作不可恢复。", "删除");
+      const ok = await qnalogConfirm(this.app, "删除自定义提示词", "删除自定义提示词「" + (tpl.name || tpl.id) + "」？此操作不可恢复。", "删除");
       if (!ok) return;
       const tpls = Object.assign({}, this.plugin.settings.promptTemplates || {});
       delete tpls[tpl.id];
@@ -1675,12 +1675,12 @@ export class PromptTemplateModal extends obsidian.Modal {
       return;
     }
 
-    const back = body.createDiv({ cls: "lexvoice-tpl-back" });
+    const back = body.createDiv({ cls: "qnalog-tpl-back" });
     const backBtn = back.createEl("button", { text: "返回列表" });
     backBtn.onclick = () => { this.editingId = null; this.onOpen(); };
-    back.createSpan({ cls: "lexvoice-tpl-builtin-tag", text: "自定义" });
+    back.createSpan({ cls: "qnalog-tpl-builtin-tag", text: "自定义" });
 
-    const editor = body.createDiv({ cls: "lexvoice-tpl-editor" });
+    const editor = body.createDiv({ cls: "qnalog-tpl-editor" });
     new obsidian.Setting(editor).setName("提示词名称")
       .setDesc("这个名称会出现在录音、导入音频和重新整理菜单里。")
       .addText(t => {
@@ -1690,13 +1690,13 @@ export class PromptTemplateModal extends obsidian.Modal {
 
     const promptSetting = new obsidian.Setting(editor).setName("提示词内容");
     promptSetting.setDesc("这里写的是实际发送给大模型的整理规则。内容应定义使用场景、重点内容、必须输出的内容、写作风格、翻译要求和反幻觉边界，并保留 {{TRANSCRIPT}} 作为原始转写占位符。");
-    const ta = editor.createEl("textarea", { cls: "lexvoice-textarea lexvoice-textarea-mono lexvoice-tpl-textarea" });
+    const ta = editor.createEl("textarea", { cls: "qnalog-textarea qnalog-textarea-mono qnalog-tpl-textarea" });
     ta.value = tpl.prompt || "";
     ta.placeholder = "例如：这份提示词用于……；重点识别……；必须输出……；不要输出……；外语内容……；不确定信息……；最后保留 {{TRANSCRIPT}}。";
     ta.rows = 18;
     ta.addEventListener("input", () => { tpl.prompt = ta.value; });
 
-    const actions = editor.createDiv({ cls: "lexvoice-tpl-edit-actions" });
+    const actions = editor.createDiv({ cls: "qnalog-tpl-edit-actions" });
     const cancelBtn = actions.createEl("button", { text: "取消" });
     cancelBtn.onclick = () => { this.editingId = null; this.onOpen(); };
     const optimizeBtn = actions.createEl("button", { text: "AI 优化提示词" });
@@ -1763,21 +1763,21 @@ export class ImportTextModal extends obsidian.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("lexvoice-import-modal");
+    contentEl.addClass("qnalog-import-modal");
     this.selected.clear();
     this.fileCheckboxes = new Map();
     contentEl.createEl("h2", { text: "导入文本" });
-    contentEl.createEl("p", { cls: "lexvoice-import-desc" })
+    contentEl.createEl("p", { cls: "qnalog-import-desc" })
       .setText("选择已有 Markdown、速录稿或文本纪要。QnALog 不会调用语音转写服务，会直接走 API 页的「AI 整理服务」LLM 链路并按当前模板结构化整理。");
 
     this.renderModeControl(contentEl);
 
     this.files = [];
     this.loadingFiles = true;
-    const toolbar = contentEl.createDiv({ cls: "lexvoice-import-toolbar" });
+    const toolbar = contentEl.createDiv({ cls: "qnalog-import-toolbar" });
     this.searchInput = toolbar.createEl("input", {
       type: "text",
-      cls: "lexvoice-import-search",
+      cls: "qnalog-import-search",
       attr: { placeholder: "搜索文件名或路径" },
     });
     this.searchInput.addEventListener("input", () => this.renderFileList());
@@ -1797,18 +1797,18 @@ export class ImportTextModal extends obsidian.Modal {
       this.updateButton();
     };
 
-    this.categoryFilterEl = contentEl.createDiv({ cls: "lexvoice-import-category-filter" });
+    this.categoryFilterEl = contentEl.createDiv({ cls: "qnalog-import-category-filter" });
     this.renderCategoryFilters();
 
-    this.listEl = contentEl.createDiv({ cls: "lexvoice-import-list" });
+    this.listEl = contentEl.createDiv({ cls: "qnalog-import-list" });
     this.renderFileList();
     void this.loadTextFiles();
 
-    const actions = contentEl.createDiv({ cls: "lexvoice-import-actions" });
+    const actions = contentEl.createDiv({ cls: "qnalog-import-actions" });
     this.processBtn = actions.createEl("button", { text: "开始转写（0 个文件）", cls: "mod-cta" });
     this.processBtn.disabled = true;
     this.processBtn.onclick = () => this.process();
-    this.selectionText = actions.createSpan({ cls: "lexvoice-import-selection", text: "未选择文本" });
+    this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: "未选择文本" });
     const cancelBtn = actions.createEl("button", { text: "取消" });
     cancelBtn.onclick = () => this.close();
     this.updateButton();
@@ -1882,11 +1882,11 @@ export class ImportTextModal extends obsidian.Modal {
     ];
     for (const filter of filters) {
       const btn = this.categoryFilterEl.createEl("button", {
-        cls: "lexvoice-import-category-button",
+        cls: "qnalog-import-category-button",
         attr: { type: "button", title: filter.desc },
       });
-      btn.createSpan({ cls: "lexvoice-import-category-label", text: filter.label });
-      btn.createSpan({ cls: "lexvoice-import-category-count", text: String(counts[filter.id] || 0) });
+      btn.createSpan({ cls: "qnalog-import-category-label", text: filter.label });
+      btn.createSpan({ cls: "qnalog-import-category-count", text: String(counts[filter.id] || 0) });
       if (this.categoryFilter === filter.id) btn.addClass("is-active");
       btn.onclick = () => {
         this.categoryFilter = filter.id;
@@ -1899,11 +1899,11 @@ export class ImportTextModal extends obsidian.Modal {
 
   renderModeControl(parent) {
     this.selectedMode = getEffectivePolishMode(this.plugin.settings, this.selectedMode || this.plugin.settings.polishMode, "meeting");
-    const box = parent.createDiv({ cls: "lexvoice-import-mode" });
-    const label = box.createDiv({ cls: "lexvoice-import-mode-label" });
-    label.createDiv({ cls: "lexvoice-import-mode-title", text: "整理方式" });
-    this.modeHint = label.createDiv({ cls: "lexvoice-import-mode-hint" });
-    this.modeSelect = box.createEl("select", { cls: "dropdown lexvoice-import-mode-select" });
+    const box = parent.createDiv({ cls: "qnalog-import-mode" });
+    const label = box.createDiv({ cls: "qnalog-import-mode-label" });
+    label.createDiv({ cls: "qnalog-import-mode-title", text: "整理方式" });
+    this.modeHint = label.createDiv({ cls: "qnalog-import-mode-hint" });
+    this.modeSelect = box.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
       this.modeSelect.createEl("option", { value: key, text: name });
     }
@@ -1926,7 +1926,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.listEl.empty();
     this.fileCheckboxes = new Map();
     if (this.loadingFiles) {
-      this.listEl.createDiv({ cls: "lexvoice-import-empty", text: "正在扫描可导入文本…" });
+      this.listEl.createDiv({ cls: "qnalog-import-empty", text: "正在扫描可导入文本…" });
       return;
     }
     const q = String(this.searchInput && this.searchInput.value || "").trim().toLowerCase();
@@ -1937,7 +1937,7 @@ export class ImportTextModal extends obsidian.Modal {
       return String(realFile.path || "").toLowerCase().includes(q) || String(realFile.basename || "").toLowerCase().includes(q);
     });
     if (!matched.length) {
-      this.listEl.createDiv({ cls: "lexvoice-import-empty", text: q ? "没有匹配的文本文件" : "库中没有可导入的 Markdown / 文本文件" });
+      this.listEl.createDiv({ cls: "qnalog-import-empty", text: q ? "没有匹配的文本文件" : "库中没有可导入的 Markdown / 文本文件" });
       return;
     }
     let rendered = 0;
@@ -1946,21 +1946,21 @@ export class ImportTextModal extends obsidian.Modal {
       const group = matched.filter((item) => item.category === category);
       if (!group.length) continue;
       const config = IMPORT_TEXT_CATEGORY_CONFIG[category] || IMPORT_TEXT_CATEGORY_CONFIG.external;
-      const section = this.listEl.createDiv({ cls: `lexvoice-import-section lexvoice-import-section-${category}` });
-      const head = section.createDiv({ cls: "lexvoice-import-section-head" });
-      const titleWrap = head.createDiv({ cls: "lexvoice-import-section-copy" });
-      titleWrap.createDiv({ cls: "lexvoice-import-section-title", text: `${config.label}（${group.length}）` });
-      titleWrap.createDiv({ cls: "lexvoice-import-section-desc", text: config.desc });
+      const section = this.listEl.createDiv({ cls: `qnalog-import-section qnalog-import-section-${category}` });
+      const head = section.createDiv({ cls: "qnalog-import-section-head" });
+      const titleWrap = head.createDiv({ cls: "qnalog-import-section-copy" });
+      titleWrap.createDiv({ cls: "qnalog-import-section-title", text: `${config.label}（${group.length}）` });
+      titleWrap.createDiv({ cls: "qnalog-import-section-desc", text: config.desc });
       const shown = group.slice(0, Math.max(0, 240 - rendered));
       shown.forEach((item, index) => this.renderSingleFile(section, item, rendered + index));
       rendered += shown.length;
       if (group.length > shown.length) {
-        section.createDiv({ cls: "lexvoice-import-warn", text: `本组文件较多，已显示最近 ${shown.length} / ${group.length} 个；可继续搜索文件名或路径。` });
+        section.createDiv({ cls: "qnalog-import-warn", text: `本组文件较多，已显示最近 ${shown.length} / ${group.length} 个；可继续搜索文件名或路径。` });
       }
       if (rendered >= 240) break;
     }
     if (matched.length > rendered) {
-      this.listEl.createDiv({ cls: "lexvoice-import-warn", text: "文件较多，可输入文件名或路径继续筛选。" });
+      this.listEl.createDiv({ cls: "qnalog-import-warn", text: "文件较多，可输入文件名或路径继续筛选。" });
     }
     this.syncCheckboxes();
   }
@@ -1974,23 +1974,23 @@ export class ImportTextModal extends obsidian.Modal {
 
   renderSingleFile(parent, item, index = 0) {
     const file = item && item.file ? item.file : item;
-    const row = parent.createDiv({ cls: "lexvoice-import-row" });
+    const row = parent.createDiv({ cls: "qnalog-import-row" });
     if (item && item.category) row.addClass(`is-${item.category}`);
     const id = makeImportTextCheckboxId(file.path, index);
     const cb = row.createEl("input", { type: "checkbox", attr: { id } });
-    const label = row.createEl("label", { attr: { for: id }, cls: "lexvoice-import-label" });
-    const nameRow = label.createDiv({ cls: "lexvoice-import-name-row" });
-    nameRow.createSpan({ cls: "lexvoice-import-name", text: file.basename });
+    const label = row.createEl("label", { attr: { for: id }, cls: "qnalog-import-label" });
+    const nameRow = label.createDiv({ cls: "qnalog-import-name-row" });
+    nameRow.createSpan({ cls: "qnalog-import-name", text: file.basename });
     if (item && item.badge) {
       nameRow.createSpan({
-        cls: `lexvoice-import-badge lexvoice-import-badge-${item.category || "external"}`,
+        cls: `qnalog-import-badge qnalog-import-badge-${item.category || "external"}`,
         text: item.badge,
         attr: item.statusTitle ? { title: item.statusTitle } : {},
       });
     }
-    label.createDiv({ cls: "lexvoice-import-meta", text: this.formatFileMeta(file) });
+    label.createDiv({ cls: "qnalog-import-meta", text: this.formatFileMeta(file) });
     if (item && item.reason) {
-      label.createDiv({ cls: "lexvoice-import-reason", text: item.reason });
+      label.createDiv({ cls: "qnalog-import-reason", text: item.reason });
     }
     this.fileCheckboxes.set(file.path, cb);
     cb.onchange = () => {
@@ -2067,20 +2067,20 @@ export class AudioImportOptionsModal extends obsidian.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("lexvoice-import-options-modal");
+    contentEl.addClass("qnalog-import-options-modal");
     contentEl.createEl("h2", { text: "导入音频" });
     contentEl.createDiv({
-      cls: "lexvoice-import-desc",
+      cls: "qnalog-import-desc",
       text: this.paths.length > 1
         ? `已选择 ${this.paths.length} 个音频文件。确认本次整理方式。`
         : "确认本次整理方式。",
     });
 
-    const mode = contentEl.createDiv({ cls: "lexvoice-import-mode" });
+    const mode = contentEl.createDiv({ cls: "qnalog-import-mode" });
     const modeCopy = mode.createDiv();
-    modeCopy.createDiv({ cls: "lexvoice-import-mode-title", text: "整理方式" });
-    modeCopy.createDiv({ cls: "lexvoice-import-mode-hint", text: "转写完成后生成对应类型的纪要。" });
-    const modeSelect = mode.createEl("select", { cls: "dropdown lexvoice-import-mode-select" });
+    modeCopy.createDiv({ cls: "qnalog-import-mode-title", text: "整理方式" });
+    modeCopy.createDiv({ cls: "qnalog-import-mode-hint", text: "转写完成后生成对应类型的纪要。" });
+    const modeSelect = mode.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
       modeSelect.createEl("option", { value: key, text: name });
     }
@@ -2092,11 +2092,11 @@ export class AudioImportOptionsModal extends obsidian.Modal {
     renderImportSpeakerControl(contentEl, this);
 
     contentEl.createDiv({
-      cls: "lexvoice-import-execution-note",
+      cls: "qnalog-import-execution-note",
       text: "本次选择只影响当前导入任务；默认转写服务可在设置的“说话人”页修改。",
     });
 
-    const actions = contentEl.createDiv({ cls: "lexvoice-import-actions" });
+    const actions = contentEl.createDiv({ cls: "qnalog-import-actions" });
     const cancel = actions.createEl("button", { text: "取消", attr: { type: "button" } });
     cancel.onclick = () => this.close();
     const start = actions.createEl("button", { text: "开始转写", cls: "mod-cta", attr: { type: "button" } });
@@ -2137,18 +2137,18 @@ export class ImportAudioModal extends obsidian.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("lexvoice-import-modal");
+    contentEl.addClass("qnalog-import-modal");
     this.selected.clear();
     this.groupCheckboxes = new Map();
     this.fileCheckboxes = new Map();
     contentEl.createEl("h2", { text: "导入音频" });
-    const desc = contentEl.createEl("p", { cls: "lexvoice-import-desc" });
+    const desc = contentEl.createEl("p", { cls: "qnalog-import-desc" });
     desc.setText(`从 ${this.plugin.settings.audioFolder} 选择音频。支持 WebM、M4A/MP4、MP3、WAV、AAC、OGG、FLAC 等格式；同一次录音的分段会合并显示。`);
 
     this.renderModeControl(contentEl);
     renderImportSpeakerControl(contentEl, this);
     contentEl.createDiv({
-      cls: "lexvoice-import-execution-note",
+      cls: "qnalog-import-execution-note",
       text: "本次选择只影响当前导入任务。",
     });
 
@@ -2170,7 +2170,7 @@ export class ImportAudioModal extends obsidian.Modal {
     const grouped = this.buildBatches(files);
     this.batches = grouped.batches;
 
-    const toolbar = contentEl.createDiv({ cls: "lexvoice-import-toolbar" });
+    const toolbar = contentEl.createDiv({ cls: "qnalog-import-toolbar" });
     const latestBtn = toolbar.createEl("button", { text: "选择最近一组" });
     latestBtn.disabled = grouped.batches.length === 0;
     latestBtn.onclick = () => {
@@ -2186,32 +2186,32 @@ export class ImportAudioModal extends obsidian.Modal {
       this.updateButton();
     };
 
-    const list = contentEl.createDiv({ cls: "lexvoice-import-list" });
+    const list = contentEl.createDiv({ cls: "qnalog-import-list" });
     if (grouped.batches.length) {
-      list.createDiv({ cls: "lexvoice-import-section-title", text: "录音批次" });
+      list.createDiv({ cls: "qnalog-import-section-title", text: "录音批次" });
       grouped.batches.forEach((batch) => this.renderBatch(list, batch));
     }
     if (grouped.singles.length) {
-      list.createDiv({ cls: "lexvoice-import-section-title", text: grouped.batches.length ? "独立音频" : "音频文件" });
+      list.createDiv({ cls: "qnalog-import-section-title", text: grouped.batches.length ? "独立音频" : "音频文件" });
       grouped.singles.forEach((file) => this.renderSingleFile(list, file));
     }
 
-    const actions = contentEl.createDiv({ cls: "lexvoice-import-actions" });
+    const actions = contentEl.createDiv({ cls: "qnalog-import-actions" });
     this.processBtn = actions.createEl("button", { text: "开始处理（0 个文件）", cls: "mod-cta" });
     this.processBtn.disabled = true;
     this.processBtn.onclick = () => this.process();
-    this.selectionText = actions.createSpan({ cls: "lexvoice-import-selection", text: "未选择音频" });
+    this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: "未选择音频" });
     const cancelBtn = actions.createEl("button", { text: "取消" });
     cancelBtn.onclick = () => this.close();
     this.updateButton();
   }
   renderModeControl(parent) {
     this.selectedMode = getEffectivePolishMode(this.plugin.settings, this.selectedMode || this.plugin.settings.polishMode, "meeting");
-    const box = parent.createDiv({ cls: "lexvoice-import-mode" });
-    const label = box.createDiv({ cls: "lexvoice-import-mode-label" });
-    label.createDiv({ cls: "lexvoice-import-mode-title", text: "整理方式" });
-    this.modeHint = label.createDiv({ cls: "lexvoice-import-mode-hint" });
-    this.modeSelect = box.createEl("select", { cls: "dropdown lexvoice-import-mode-select" });
+    const box = parent.createDiv({ cls: "qnalog-import-mode" });
+    const label = box.createDiv({ cls: "qnalog-import-mode-label" });
+    label.createDiv({ cls: "qnalog-import-mode-title", text: "整理方式" });
+    this.modeHint = label.createDiv({ cls: "qnalog-import-mode-hint" });
+    this.modeSelect = box.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
       this.modeSelect.createEl("option", { value: key, text: name });
     }
@@ -2227,7 +2227,7 @@ export class ImportAudioModal extends obsidian.Modal {
     const meta = getModeMeta(this.plugin.settings, this.selectedMode);
     this.modeHint.setText((meta.goal || "用于生成结构化纪要。") + " 可在本次导入中临时切换，不会修改默认提示词。");
   }
-  parseLexVoiceSegment(file) {
+  parseSegmentRef(file) {
     const match = String(file.name || "").match(/^lex-(\d{8}-\d{6})-seg(\d+)\.([a-z0-9]+)$/i);
     if (!match) return null;
     return {
@@ -2240,7 +2240,7 @@ export class ImportAudioModal extends obsidian.Modal {
     const byStamp = new Map();
     const singles = [];
     for (const file of files) {
-      const info = this.parseLexVoiceSegment(file);
+      const info = this.parseSegmentRef(file);
       if (!info) {
         singles.push(file);
         continue;
@@ -2285,8 +2285,8 @@ export class ImportAudioModal extends obsidian.Modal {
     return `${this.formatSize(file.stat.size)} · ${mtime}`;
   }
   renderBatch(parent, batch) {
-    const details = parent.createEl("details", { cls: "lexvoice-import-batch" });
-    const summary = details.createEl("summary", { cls: "lexvoice-import-batch-summary" });
+    const details = parent.createEl("details", { cls: "qnalog-import-batch" });
+    const summary = details.createEl("summary", { cls: "qnalog-import-batch-summary" });
     const cb = summary.createEl("input", { type: "checkbox" });
     cb.addEventListener("click", (evt) => evt.stopPropagation());
     cb.onchange = () => {
@@ -2295,13 +2295,13 @@ export class ImportAudioModal extends obsidian.Modal {
     };
     this.groupCheckboxes.set(batch.id, cb);
 
-    const text = summary.createDiv({ cls: "lexvoice-import-batch-text" });
-    text.createDiv({ cls: "lexvoice-import-batch-name", text: `${this.formatStamp(batch.stamp)} · ${batch.files.length} 段` });
+    const text = summary.createDiv({ cls: "qnalog-import-batch-text" });
+    text.createDiv({ cls: "qnalog-import-batch-name", text: `${this.formatStamp(batch.stamp)} · ${batch.files.length} 段` });
     const range = `seg${pad(batch.firstSeg)}–seg${pad(batch.lastSeg)}`;
     const timeRange = `${window.moment(batch.earliestMtime).format("MM-DD HH:mm")}–${window.moment(batch.latestMtime).format("HH:mm")}`;
-    text.createDiv({ cls: "lexvoice-import-batch-meta", text: `${range} · ${this.formatSize(batch.totalSize)} · ${timeRange}` });
+    text.createDiv({ cls: "qnalog-import-batch-meta", text: `${range} · ${this.formatSize(batch.totalSize)} · ${timeRange}` });
 
-    const chip = summary.createSpan({ cls: "lexvoice-import-batch-chip", text: "整组" });
+    const chip = summary.createSpan({ cls: "qnalog-import-batch-chip", text: "整组" });
     chip.setAttr("aria-hidden", "true");
 
     if (batch.missing.length || batch.emptyCount || batch.largeCount) {
@@ -2309,25 +2309,25 @@ export class ImportAudioModal extends obsidian.Modal {
       if (batch.missing.length) warns.push("可能缺少 " + batch.missing.map((n) => "seg" + pad(n)).join("、"));
       if (batch.emptyCount) warns.push(`${batch.emptyCount} 个片段接近空文件`);
       if (batch.largeCount) warns.push(`${batch.largeCount} 个片段超过 25 MB`);
-      details.createDiv({ cls: "lexvoice-import-warn", text: warns.join("；") });
+      details.createDiv({ cls: "qnalog-import-warn", text: warns.join("；") });
     }
 
-    const fileList = details.createDiv({ cls: "lexvoice-import-batch-files" });
+    const fileList = details.createDiv({ cls: "qnalog-import-batch-files" });
     for (const item of batch.items) {
       this.renderSingleFile(fileList, item.file, { compact: true, seg: item.seg, batch });
     }
   }
   renderSingleFile(parent, file, options = {}) {
     const compact = !!options.compact;
-    const row = parent.createDiv({ cls: compact ? "lexvoice-import-row is-compact" : "lexvoice-import-row" });
+    const row = parent.createDiv({ cls: compact ? "qnalog-import-row is-compact" : "qnalog-import-row" });
     const cbId = `lv-import-${file.path.replace(/[^a-z0-9]/gi, "_")}`;
     const cb = row.createEl("input", { type: "checkbox", attr: { id: cbId } });
-    const lbl = row.createEl("label", { attr: { for: cbId }, cls: "lexvoice-import-label" });
+    const lbl = row.createEl("label", { attr: { for: cbId }, cls: "qnalog-import-label" });
     const name = options.seg ? `seg${pad(options.seg)} · ${file.name}` : file.name;
-    lbl.createDiv({ cls: "lexvoice-import-name", text: name });
-    lbl.createDiv({ cls: "lexvoice-import-meta", text: this.formatFileMeta(file) });
+    lbl.createDiv({ cls: "qnalog-import-name", text: name });
+    lbl.createDiv({ cls: "qnalog-import-meta", text: this.formatFileMeta(file) });
     if (file.stat.size > 25 * 1024 * 1024) {
-      lbl.createDiv({ cls: "lexvoice-import-warn", text: "文件超过 25 MB，多数转写 API 会拒绝。建议先降码率。" });
+      lbl.createDiv({ cls: "qnalog-import-warn", text: "文件超过 25 MB，多数转写 API 会拒绝。建议先降码率。" });
     }
     this.fileCheckboxes.set(file.path, cb);
     cb.onchange = () => {
@@ -2400,8 +2400,8 @@ export class BubbleWidget {
   mount(ribbonEl) {
     if (this.wrapEl) return;
     this.ribbonEl = ribbonEl || null;
-    const wrapEl = activeDocument.body.createDiv({ cls: "lexvoice-bubble-wrap" });
-    const el = wrapEl.createDiv({ cls: "lexvoice-bubble is-idle" });
+    const wrapEl = activeDocument.body.createDiv({ cls: "qnalog-bubble-wrap" });
+    const el = wrapEl.createDiv({ cls: "qnalog-bubble is-idle" });
     this.wrapEl = wrapEl;
     this.el = el;
     this._lastSig = "";
@@ -2490,7 +2490,7 @@ export class BubbleWidget {
       const hasPromptJob = !!(queue && queue.hasPendingGeneratePrompt && queue.hasPendingGeneratePrompt());
       const sig = `${info.state}|${hasPromptJob ? "P" : ""}`;
       if (sig === this._lastSig) {
-        const t = this.el && this.el.querySelector(".lexvoice-bubble-timer");
+        const t = this.el && this.el.querySelector(".qnalog-bubble-timer");
         if (t) t.setText(formatElapsed(info.elapsed));
       } else {
         this._lastSig = sig;
@@ -2550,11 +2550,11 @@ export class BubbleWidget {
     this.el.empty();
     this.el.removeClass("is-idle"); this.el.removeClass("is-recording"); this.el.removeClass("is-paused");
     // 悬浮窗大小（大/中/小）：每次渲染都重置三档尺寸类，再加回当前档，与状态无关。
-    ["large", "medium", "small"].forEach(sz => this.el.removeClass("lexvoice-bubble-size-" + sz));
-    this.el.addClass("lexvoice-bubble-size-" + (this.plugin.settings.bubbleSize || "large"));
+    ["large", "medium", "small"].forEach(sz => this.el.removeClass("qnalog-bubble-size-" + sz));
+    this.el.addClass("qnalog-bubble-size-" + (this.plugin.settings.bubbleSize || "large"));
     if (this.wrapEl) this.wrapEl.removeClass("is-recording-wrap");
     const makeDocButton = (title, handler) => {
-      const jumpBtn = this.el.createEl("button", { cls: "lexvoice-bubble-jump", attr: { title, "aria-label": title } });
+      const jumpBtn = this.el.createEl("button", { cls: "qnalog-bubble-jump", attr: { title, "aria-label": title } });
       // 用 Lucide 图标替代之前 CSS 画的文档形状。
       // 关键：setIcon 对无效图标名通常静默不加 svg（不抛异常），会得到空按钮 → 图标"看不见"。
       // 所以逐个尝试候选图标名，并显式验证 svg 真的被插入；都失败再走 CSS fallback 形状。
@@ -2567,14 +2567,14 @@ export class BubbleWidget {
       this.el.addClass("is-idle");
       makeDocButton("打开最近纪要", () => this.plugin.shell.openRecentNote());
       const micBtn = this.el.createEl("button", {
-        cls: "lexvoice-bubble-main",
+        cls: "qnalog-bubble-main",
         attr: { "aria-label": "开始会议录音", title: "开始会议录音" },
       });
       obsidian.setTooltip(micBtn, "开始会议录音", { placement: "top" });
       this._paintIcon(micBtn, ["mic", "lucide-mic"]);
       micBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.startRecording(); };
       if (this.plugin.queue && this.plugin.queue.hasPendingGeneratePrompt && this.plugin.queue.hasPendingGeneratePrompt()) {
-        const chip = this.el.createDiv({ cls: "lexvoice-bubble-chip" });
+        const chip = this.el.createDiv({ cls: "qnalog-bubble-chip" });
         chip.setText("优化提示词中");
         chip.setAttr("title", "后台正在生成自定义提示词。完成后会出现在提示词管理和录音模式列表里。");
       }
@@ -2583,12 +2583,12 @@ export class BubbleWidget {
       if (info.state === "recording" && this.wrapEl) this.wrapEl.addClass("is-recording-wrap");
       this.show();
       makeDocButton("跳到当前录音笔记的转写位置", () => this.plugin.shell.openSessionNote());
-      const ctrl = this.el.createDiv({ cls: "lexvoice-bubble-ctrl" });
-      const pauseBtn = ctrl.createEl("button", { cls: `lexvoice-bubble-btn ${info.state === "paused" ? "is-play-icon" : "is-pause-icon"}`, attr: { title: info.state === "paused" ? "继续" : "暂停", "aria-label": info.state === "paused" ? "继续" : "暂停" } });
+      const ctrl = this.el.createDiv({ cls: "qnalog-bubble-ctrl" });
+      const pauseBtn = ctrl.createEl("button", { cls: `qnalog-bubble-btn ${info.state === "paused" ? "is-play-icon" : "is-pause-icon"}`, attr: { title: info.state === "paused" ? "继续" : "暂停", "aria-label": info.state === "paused" ? "继续" : "暂停" } });
       pauseBtn.onclick = (e) => { e.stopPropagation(); if (info.state === "paused") this.plugin.recorder.resume(); else this.plugin.recorder.pause(); };
-      const stopBtn = ctrl.createEl("button", { cls: "lexvoice-bubble-btn stop is-stop-icon", attr: { title: "停止并合并润色", "aria-label": "停止并合并润色" } });
+      const stopBtn = ctrl.createEl("button", { cls: "qnalog-bubble-btn stop is-stop-icon", attr: { title: "停止并合并润色", "aria-label": "停止并合并润色" } });
       stopBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.stopRecording(); };
-      const timer = this.el.createDiv({ cls: "lexvoice-bubble-timer" });
+      const timer = this.el.createDiv({ cls: "qnalog-bubble-timer" });
       timer.setText(formatElapsed(info.elapsed));
     }
   }

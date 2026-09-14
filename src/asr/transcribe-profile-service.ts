@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：转写服务配置解析：内置服务条目、协议、模型与说话人分离能力判定
 
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 
 /** TranscribeProfileService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface TranscribeProfileHost {
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class TranscribeProfileService {

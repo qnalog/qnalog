@@ -27,7 +27,7 @@ describe("settings migration report", () => {
     expect(report!.keptGroups).toEqual(["speech", "composer", "storage"]);
     // 需要重新指定服务绑定，并提示备份可还原
     expect(report!.actions.join("\n")).toContain("重新选择一次");
-    expect(report!.actions.join("\n")).toContain("lexvoice-install-backups");
+    expect(report!.actions.join("\n")).toContain("qnalog-install-backups");
     expect(report!.actions.join("\n")).not.toContain(".obsidian");
     // 摘要要能直接给用户看
     expect(report!.summary).toContain("5 → 4");
@@ -48,7 +48,7 @@ describe("settings migration report", () => {
     expect(report!.direction).toBe("upgrade");
     expect(report!.droppedGroups).toEqual(["legacyGroup"]);
     expect(report!.actions.join("\n")).toContain("legacyGroup");
-    expect(report!.actions.join("\n")).not.toContain("lexvoice-install-backups");
+    expect(report!.actions.join("\n")).not.toContain("qnalog-install-backups");
   });
 
   it("结构一致且无丢弃时不产生报告（正常加载零噪音）", () => {

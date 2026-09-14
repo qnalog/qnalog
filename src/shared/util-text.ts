@@ -18,7 +18,7 @@ export function parseElapsedMsToken(raw) {
   return 0;
 }
 
-export function parseLexVoiceDurationLabel(raw) {
+export function parseDurationLabel(raw) {
   const text = String(raw || "").trim();
   if (!text) return 0;
   const seconds = text.match(/^(\d+(?:\.\d+)?)\s*秒$/);
@@ -70,7 +70,7 @@ export function getSessionMetaDurationMs(meta) {
   const direct = Number(meta.durationMs || meta.elapsedMs || meta.totalMs || 0);
   if (Number.isFinite(direct) && direct > 0) return direct;
   const raw = meta.duration || meta["时长"] || "";
-  return parseLexVoiceDurationLabel(raw);
+  return parseDurationLabel(raw);
 }
 
 export function getSegmentsDurationMs(segments) {

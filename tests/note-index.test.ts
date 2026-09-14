@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildLexVoiceNoteIndex,
-  extractLexVoiceIndexSource,
-  readLexVoiceNoteIndex,
-  resolveLexVoiceNoteIndex,
-  serializeLexVoiceNoteIndex,
-  upsertLexVoiceNoteIndex,
+  buildNoteIndex,
+  extractIndexSource,
+  readNoteIndex,
+  resolveNoteIndex,
+  serializeNoteIndex,
+  upsertNoteIndex,
 } from "../src/indexing/note-index";
 
 const minutes = [
@@ -39,7 +39,7 @@ const minutes = [
 
 describe("LexVoice note index", () => {
   it("derives a compact core and first-level topics from the final minutes", () => {
-    const index = buildLexVoiceNoteIndex(minutes, {
+    const index = buildNoteIndex(minutes, {
       noteTitle: "2026-08-25 0930 · 综合纪要-会议知识索引",
       generatedAt: "2026-08-25T10:00:00.000Z",
     });
@@ -52,7 +52,7 @@ describe("LexVoice note index", () => {
       "索引生成与更新边界",
       "待办与下一步",
     ]);
-    expect(extractLexVoiceIndexSource(minutes)).not.toContain("原始转写也不应进入索引");
+    expect(extractIndexSource(minutes)).not.toContain("原始转写也不应进入索引");
   });
 
   it("prefers the active display version over stale mother-note content", () => {
@@ -74,7 +74,7 @@ describe("LexVoice note index", () => {
       "## 原始材料",
       "原始材料。",
     ].join("\n");
-    const index = buildLexVoiceNoteIndex(markdown, { noteTitle: "跨会议索引" });
+    const index = buildNoteIndex(markdown, { noteTitle: "跨会议索引" });
     expect(index?.core.summary).toContain("新版本聚焦");
     expect(index?.core.summary).not.toContain("旧正文");
     expect(index?.topics.map((topic) => topic.title)).toEqual(["新版本议题"]);
@@ -96,7 +96,7 @@ describe("LexVoice note index", () => {
       "继续梳理候选场景并形成优先级。",
     ].join("\n");
 
-    const index = buildLexVoiceNoteIndex(markdown, {
+    const index = buildNoteIndex(markdown, {
       noteTitle: "2026-08-24 0118 · 导入 · 综合纪要-HR AI-业务场景梳理与产品方向.md",
       generatedAt: "2026-08-25T00:00:00.000Z",
     });
@@ -106,31 +106,31 @@ describe("LexVoice note index", () => {
   });
 
   it("round-trips an HTML-comment-safe marker and replaces it idempotently", () => {
-    const first = buildLexVoiceNoteIndex(minutes, {
+    const first = buildNoteIndex(minutes, {
       noteTitle: "A --> B",
       generatedAt: "2026-08-25T10:00:00.000Z",
     })!;
-    const marker = serializeLexVoiceNoteIndex(first);
+    const marker = serializeNoteIndex(first);
     expect(marker).not.toContain("A --> B");
-    expect(readLexVoiceNoteIndex(marker)?.core.title).toBe("A --> B");
+    expect(readNoteIndex(marker)?.core.title).toBe("A --> B");
 
-    const inserted = upsertLexVoiceNoteIndex(minutes, first);
-    expect(upsertLexVoiceNoteIndex(inserted, { ...first, generatedAt: "later" })).toBe(inserted);
+    const inserted = upsertNoteIndex(minutes, first);
+    expect(upsertNoteIndex(inserted, { ...first, generatedAt: "later" })).toBe(inserted);
 
-    const changed = buildLexVoiceNoteIndex(minutes.replace("项目索引契约", "项目索引协议"), {
+    const changed = buildNoteIndex(minutes.replace("项目索引契约", "项目索引协议"), {
       noteTitle: "A --> B",
       generatedAt: "2026-08-25T11:00:00.000Z",
     })!;
-    const replaced = upsertLexVoiceNoteIndex(inserted, changed);
+    const replaced = upsertNoteIndex(inserted, changed);
     expect((replaced.match(/lexvoice-note-index\s*$/gm) || []).length).toBe(1);
-    expect(readLexVoiceNoteIndex(replaced)?.sourceRevision).toBe(changed.sourceRevision);
+    expect(readNoteIndex(replaced)?.sourceRevision).toBe(changed.sourceRevision);
   });
 
   it("does not persist move-sensitive paths inside the canonical marker", () => {
-    const index = buildLexVoiceNoteIndex(minutes, { noteTitle: "会议知识索引" })!;
-    const marker = serializeLexVoiceNoteIndex(index);
+    const index = buildNoteIndex(minutes, { noteTitle: "会议知识索引" })!;
+    const marker = serializeNoteIndex(index);
     expect(marker).not.toContain("LexVoice/转写纪要");
-    const resolved = resolveLexVoiceNoteIndex(
+    const resolved = resolveNoteIndex(
       index,
       "LexVoice/转写纪要/产品/会议知识索引.md",
       "LexVoice/转写纪要/产品/会议知识索引 · 语义图.canvas",
@@ -141,7 +141,7 @@ describe("LexVoice note index", () => {
 
   it("signals topic truncation instead of silently pretending the index is complete", () => {
     const headings = Array.from({ length: 55 }, (_, index) => `## ${index + 1}. 议题 ${index + 1}\n内容 ${index + 1}`).join("\n\n");
-    const index = buildLexVoiceNoteIndex(`# 大型会议\n\n${headings}`, { noteTitle: "大型会议" })!;
+    const index = buildNoteIndex(`# 大型会议\n\n${headings}`, { noteTitle: "大型会议" })!;
     expect(index.topics).toHaveLength(48);
     expect(index.topicCount).toBe(55);
     expect(index.omittedTopicCount).toBe(7);

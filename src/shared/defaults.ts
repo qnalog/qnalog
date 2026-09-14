@@ -7,7 +7,7 @@ export const LEGACY_DEFAULT_LIBRARY_PATHS = {
   peopleDirectoryFolder: "LexVoice/人员",
   peopleBaseFile: "LexVoice/人员库.base",
   todoCardsFolder: "LexVoice/待办卡片",
-  lexVoiceBasesFolder: "LexVoice/视图",
+  basesFolder: "LexVoice/视图",
   diagnosticsLogFolder: "LexVoice/诊断日志",
   archiveFolder: "LexVoice/归档",
   duplicatePeopleArchiveFolder: "LexVoice/归档/重复人员",
@@ -18,7 +18,7 @@ export const DEFAULT_LIBRARY_PATHS = {
   peopleDirectoryFolder: "LexVoice/资料库/人员",
   peopleBaseFile: "LexVoice/资料库/视图/人员库.base",
   todoCardsFolder: "LexVoice/资料库/待办",
-  lexVoiceBasesFolder: "LexVoice/资料库/视图",
+  basesFolder: "LexVoice/资料库/视图",
   diagnosticsLogFolder: "LexVoice/系统/诊断日志",
   archiveFolder: "LexVoice/资料库/归档",
   duplicatePeopleArchiveFolder: "LexVoice/资料库/归档/重复人员",
@@ -200,7 +200,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   todoCardsFolder: DEFAULT_LIBRARY_PATHS.todoCardsFolder,
   sedimentAutoExtract: false,  // 默认关闭：转写完成不自动沉淀，手动点「沉淀」再扫描（省 token）；开启则转写完成后自动扫描并入库
 
-  lexVoiceBasesFolder: DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder,
+  basesFolder: DEFAULT_LIBRARY_PATHS.basesFolder,
   peopleContextMode: "privacy",
   peopleHotwordsConsentAt: "",
   peopleSuggestionIgnores: [],
@@ -251,5 +251,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   installedUpdateVersion: "",
 };
 
-export type { LexVoiceSettings, PluginSettings } from "./types";
+export type { PluginSettings } from "./types";
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

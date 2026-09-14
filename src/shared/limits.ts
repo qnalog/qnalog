@@ -20,7 +20,7 @@ export const LEXVOICE_ACTIVE_VERSION_START = "<!-- lexvoice-active-version-start
 
 export const LEXVOICE_ACTIVE_VERSION_END = "<!-- lexvoice-active-version-end -->";
 
-export const LEXVOICE_EMPTY_SHORT_LIMIT_MS = 10 * 1000;
+export const QNALOG_EMPTY_SHORT_LIMIT_MS = 10 * 1000;
 
 export const TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS = 120000;
 

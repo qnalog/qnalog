@@ -3,7 +3,7 @@
 
 import { hasMeetingWorkbenchContent, isImageMeetingMaterial, normalizeMeetingWorkbench } from "./meeting-workbench";
 
-import { collectLexVoiceAudioRefs, getAudioTimeLink, getSessionMasterAudioName } from "./audio-refs";
+import { collectAudioRefs, getAudioTimeLink, getSessionMasterAudioName } from "./audio-refs";
 
 import { detectRecentNoteMode } from "../recent/recent-notes";
 
@@ -87,12 +87,12 @@ export function buildPlaybackTimelineDetails(session) {
     const end = formatElapsed(s.endOffsetMs || 0);
     const label = `${start}–${end}`;
     const n = Number.isFinite(s.index) ? s.index + 1 : lines.length + 1;
-    const pillCls = s.error ? "lexvoice-playback-timeline-pill is-error" : "lexvoice-playback-timeline-pill";
-    const metaCls = s.error ? "lexvoice-playback-timeline-index is-error" : "lexvoice-playback-timeline-index";
+    const pillCls = s.error ? "qnalog-playback-timeline-pill is-error" : "qnalog-playback-timeline-pill";
+    const metaCls = s.error ? "qnalog-playback-timeline-index is-error" : "qnalog-playback-timeline-index";
     const state = s.error ? "重试" : `段 ${n}`;
     lines.push(
       `<span class="${pillCls}">` +
-      `<a class="internal-link lexvoice-time-link" data-href="${escapeHtmlText(audioName)}" href="${escapeHtmlText(audioName)}">${escapeHtmlText(label)}</a>` +
+      `<a class="internal-link qnalog-time-link" data-href="${escapeHtmlText(audioName)}" href="${escapeHtmlText(audioName)}">${escapeHtmlText(label)}</a>` +
       `<span class="${metaCls}">${escapeHtmlText(state)}</span>` +
       `</span>`
     );
@@ -102,7 +102,7 @@ export function buildPlaybackTimelineDetails(session) {
     "<details>",
     `<summary>回听时间轴（${lines.length} 个节点）</summary>`,
     "",
-    '<div class="lexvoice-playback-timeline">',
+    '<div class="qnalog-playback-timeline">',
     lines.join(""),
     "</div>",
     "",
@@ -110,7 +110,7 @@ export function buildPlaybackTimelineDetails(session) {
   ].join("\n");
 }
 
-export function extractLexVoiceDetailsBody(markdown, summaryPattern) {
+export function extractDetailsBody(markdown, summaryPattern) {
   const text = String(markdown || "");
   const re = /<details>\s*<summary>([\s\S]*?)<\/summary>\s*([\s\S]*?)<\/details>/gi;
   let match;
@@ -121,20 +121,20 @@ export function extractLexVoiceDetailsBody(markdown, summaryPattern) {
   return "";
 }
 
-export function extractLexVoiceNotePanelData(plugin, file, markdown) {
+export function extractNotePanelData(plugin, file, markdown) {
   const text = String(markdown || "");
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(text);
   const hasMarker = /<!--\s*lexvoice-session(?::|\s*--)/.test(text)
     || /<!--\s*lexvoice-segments-start/.test(text);
-  const outlineRaw = extractLexVoiceDetailsBody(text, /录音中实时大纲/);
+  const outlineRaw = extractDetailsBody(text, /录音中实时大纲/);
   const outline = outlineRaw
     .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
     .trim();
-  const timeline = extractLexVoiceDetailsBody(text, /回听时间轴/);
+  const timeline = extractDetailsBody(text, /回听时间轴/);
   if (!hasMarker && !outline && !timeline) return null;
   const body = text.replace(/^---\n[\s\S]*?\n---\n?/m, "");
   const h1 = body.match(/^#\s+(.+?)\s*$/m);
-  const audioRefs = collectLexVoiceAudioRefs(text);
+  const audioRefs = collectAudioRefs(text);
   const frontmatter = plugin && plugin.app && file
     ? (((plugin.app.metadataCache.getFileCache(file) || {}).frontmatter) || {})
     : {};

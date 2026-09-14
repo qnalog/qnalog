@@ -8,13 +8,13 @@ const MAX_CORE_TITLE_CHARS = 96;
 const MAX_CORE_SUMMARY_CHARS = 720;
 const MIN_USEFUL_SUMMARY_CHARS = 32;
 
-export interface LexVoiceNoteIndexTopic {
+export interface QnALogNoteIndexTopic {
   order: number;
   title: string;
   heading: string;
 }
 
-export interface LexVoiceNoteIndexCard {
+export interface QnALogNoteIndexCard {
   schemaVersion: 1;
   sourceRevision: string;
   generatedAt: string;
@@ -23,17 +23,17 @@ export interface LexVoiceNoteIndexCard {
     title: string;
     summary: string;
   };
-  topics: LexVoiceNoteIndexTopic[];
+  topics: QnALogNoteIndexTopic[];
   topicCount: number;
   omittedTopicCount: number;
 }
 
-export interface ResolvedLexVoiceNoteIndex extends LexVoiceNoteIndexCard {
+export interface ResolvedNoteIndex extends QnALogNoteIndexCard {
   filePath: string;
   semanticCanvasPath: string | null;
 }
 
-export interface BuildLexVoiceNoteIndexOptions {
+export interface BuildNoteIndexOptions {
   noteTitle?: string;
   meetingDate?: string;
   generatedAt?: string;
@@ -106,12 +106,12 @@ function extractLastLegacyPolishBlock(markdown: string): string {
   return divider ? tail.slice(0, divider.index) : tail;
 }
 
-export function removeLexVoiceNoteIndex(markdown: unknown): string {
+export function removeNoteIndex(markdown: unknown): string {
   return textValue(markdown).replace(NOTE_INDEX_PATTERN, "").replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
-export function extractLexVoiceIndexSource(markdown: unknown): string {
-  const original = removeLexVoiceNoteIndex(markdown);
+export function extractIndexSource(markdown: unknown): string {
+  const original = removeNoteIndex(markdown);
   const active = ACTIVE_VERSION_PATTERN.exec(original);
   let visible = active ? active[1] : original;
   visible = stripLeadingFrontmatter(visible);
@@ -152,7 +152,7 @@ function normalizeTopicTitle(value: unknown): string {
     .replace(/^\s*(?:📌|📋|🧭|✨|⭐|✅|❗)+\s*/u, ""), 120);
 }
 
-function extractTopics(markdown: string): { topics: LexVoiceNoteIndexTopic[]; topicCount: number } {
+function extractTopics(markdown: string): { topics: QnALogNoteIndexTopic[]; topicCount: number } {
   const rows: Array<{ level: number; heading: string; title: string }> = [];
   for (const line of markdown.split(/\r?\n/)) {
     const match = /^(#{2,3})\s+(.+?)\s*$/.exec(line);
@@ -164,7 +164,7 @@ function extractTopics(markdown: string): { topics: LexVoiceNoteIndexTopic[]; to
   }
   const preferredLevel = rows.some((row) => row.level === 2) ? 2 : 3;
   const seen = new Set<string>();
-  const all: LexVoiceNoteIndexTopic[] = [];
+  const all: QnALogNoteIndexTopic[] = [];
   for (const row of rows) {
     if (row.level !== preferredLevel) continue;
     const key = row.title.toLocaleLowerCase();
@@ -175,7 +175,7 @@ function extractTopics(markdown: string): { topics: LexVoiceNoteIndexTopic[]; to
   return { topics: all.slice(0, MAX_INDEX_TOPICS), topicCount: all.length };
 }
 
-function extractFallbackSummary(markdown: string, topics: readonly LexVoiceNoteIndexTopic[]): string {
+function extractFallbackSummary(markdown: string, topics: readonly QnALogNoteIndexTopic[]): string {
   const body = markdown
     .replace(/^#\s+.+$/m, "")
     .replace(/^>\s*\[![^\]]+\].*(?:\n>.*)*/gim, "")
@@ -229,12 +229,12 @@ function stableHash(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-export function buildLexVoiceNoteIndex(
+export function buildNoteIndex(
   markdown: unknown,
-  options: BuildLexVoiceNoteIndexOptions = {},
-): LexVoiceNoteIndexCard | null {
+  options: BuildNoteIndexOptions = {},
+): QnALogNoteIndexCard | null {
   const fullMarkdown = textValue(markdown);
-  const source = extractLexVoiceIndexSource(fullMarkdown);
+  const source = extractIndexSource(fullMarkdown);
   if (!source || /^_?\[(?:无输出|版本内容为空)\]_?$/i.test(source)) return null;
   const extracted = extractTopics(source);
   const abstractSummary = extractAbstractSummary(source);
@@ -262,13 +262,13 @@ export function buildLexVoiceNoteIndex(
   };
 }
 
-function isIndexTopic(value: unknown): value is LexVoiceNoteIndexTopic {
+function isIndexTopic(value: unknown): value is QnALogNoteIndexTopic {
   if (!value || typeof value !== "object") return false;
   const row = value as Record<string, unknown>;
   return Number.isFinite(Number(row.order)) && typeof row.title === "string" && typeof row.heading === "string";
 }
 
-export function readLexVoiceNoteIndex(markdown: unknown): LexVoiceNoteIndexCard | null {
+export function readNoteIndex(markdown: unknown): QnALogNoteIndexCard | null {
   const match = NOTE_INDEX_PATTERN.exec(textValue(markdown));
   if (!match) return null;
   try {
@@ -277,13 +277,13 @@ export function readLexVoiceNoteIndex(markdown: unknown): LexVoiceNoteIndexCard 
     if (parsed.schemaVersion !== 1 || typeof parsed.sourceRevision !== "string" || !core
       || typeof core.title !== "string" || typeof core.summary !== "string"
       || !Array.isArray(parsed.topics) || !parsed.topics.every(isIndexTopic)) return null;
-    return parsed as unknown as LexVoiceNoteIndexCard;
+    return parsed as unknown as QnALogNoteIndexCard;
   } catch {
     return null;
   }
 }
 
-export function serializeLexVoiceNoteIndex(index: LexVoiceNoteIndexCard): string {
+export function serializeNoteIndex(index: QnALogNoteIndexCard): string {
   const json = JSON.stringify(index)
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e")
@@ -291,20 +291,20 @@ export function serializeLexVoiceNoteIndex(index: LexVoiceNoteIndexCard): string
   return `${LEXVOICE_NOTE_INDEX_START}\n${json}\n${LEXVOICE_NOTE_INDEX_END}`;
 }
 
-export function upsertLexVoiceNoteIndex(markdown: unknown, index: LexVoiceNoteIndexCard): string {
+export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
   const text = textValue(markdown);
-  const existing = readLexVoiceNoteIndex(text);
+  const existing = readNoteIndex(text);
   if (existing && existing.sourceRevision === index.sourceRevision) return text;
-  const block = serializeLexVoiceNoteIndex(index);
+  const block = serializeNoteIndex(index);
   if (NOTE_INDEX_PATTERN.test(text)) return text.replace(NOTE_INDEX_PATTERN, block);
   return `${text.trimEnd()}\n\n${block}\n`;
 }
 
-export function resolveLexVoiceNoteIndex(
-  index: LexVoiceNoteIndexCard,
+export function resolveNoteIndex(
+  index: QnALogNoteIndexCard,
   filePath: unknown,
   semanticCanvasPath: unknown,
-): ResolvedLexVoiceNoteIndex {
+): ResolvedNoteIndex {
   return {
     ...index,
     filePath: textValue(filePath),

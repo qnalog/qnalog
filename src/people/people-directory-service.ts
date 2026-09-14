@@ -6,7 +6,7 @@ import { PeopleDirectorySuggestionModal } from "../ui/modals";
 import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown } from "../shared/util-note";
 import { PEOPLE_SUGGESTION_CACHE_LIMIT, splitPersonFieldValue, normalizePersonLookupText, loadPeopleDirectory, ensurePeopleNoteRelatedBaseSection, formatPeopleBaseYaml, formatPeopleNoteMarkdown, mergeUniqueStrings, normalizePeopleSuggestion, normalizePeopleSuggestionIgnores, isPeopleSuggestionIgnored, addPeopleSuggestionIgnore, removePeopleSuggestionIgnores, getPeopleSuggestionCacheKey, normalizePeopleSuggestionCache, makePeopleSuggestionCacheRecord, isPeopleSuggestionCacheRecordCurrent, peopleSuggestionRecordToSuggestion, peopleSuggestionIgnoreRecordToSuggestion, findMatchingPersonEntry, arePeopleSuggestionsRelated, mergePeopleSuggestions, mergeSourceNoteRelatedPeopleFrontmatter, mergePersonFrontmatter, generatePeopleDirectorySuggestions, personEntryFromFrontmatter } from "../people";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS } from "../shared/defaults";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { KnowledgeExtractionService } from "../indexing/knowledge-extraction-service";
 import { sanitizeFilename, escapeRegExp } from "../shared/util-common";
 import { makeFileWikiLink } from "../shared/util-markdown";
@@ -22,7 +22,7 @@ export interface PeopleDirectoryHost {
   /** 知识提取服务：扫描记录与文件指纹。 */
   knowledgeExtraction: KnowledgeExtractionService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class PeopleDirectoryService {
@@ -114,7 +114,7 @@ export class PeopleDirectoryService {
     const duplicateLabel = duplicateFile instanceof obsidian.TFile ? duplicateFile.basename : "";
     if (duplicateLabel) notes.push(`合并历史重复人员页：${duplicateLabel}`);
     if (notes.length) next["备注"] = notes.join("\n\n");
-    next.type = "lexvoice-person";
+    next.type = "qnalog-person";
     next["最近更新"] = new Date().toISOString().slice(0, 10);
     next.tags = mergeUniqueStrings(getFrontmatterTags(next), ["lexvoice/person"]);
     delete next.name;
@@ -126,7 +126,7 @@ export class PeopleDirectoryService {
 
   formatMergedPeopleArchiveMarkdown(duplicateFile, primaryFile, duplicateFm) {
     const fm = Object.assign({}, duplicateFm || {});
-    fm.type = "lexvoice-person-merged";
+    fm.type = "qnalog-person-merged";
     fm["已合并到"] = makeFileWikiLink(primaryFile);
     fm["合并日期"] = new Date().toISOString().slice(0, 10);
     fm.tags = mergeUniqueStrings(getFrontmatterTags(fm).filter(tag => tag !== "lexvoice/person"), ["lexvoice/person-merged"]);

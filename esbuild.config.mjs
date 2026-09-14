@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import path from "path";
 
 const production = process.argv[2] === "production";
-// 构建时把当前 manifest 版本号注入 main.js（LEXVOICE_BUILD_VERSION），供运行时自检「版本错位」：
+// 构建时把当前 manifest 版本号注入 main.js（QNALOG_BUILD_VERSION），供运行时自检「版本错位」：
 // 若它与磁盘 manifest.json 的版本不一致，说明上次更新只换了 manifest、没换 main.js。
 // 这里刻意不注入分支/提交：产物必须与 git 状态无关，才能满足"main.js 可由源码逐字节重建"。
 // 开发分支的标识由安装期元数据承担，见 scripts/install-to-vault.mjs 与 src/shared/build-info.ts。
@@ -28,7 +28,7 @@ const context = await esbuild.context({
   format: "cjs",
   target: "es2018",
   define: {
-    LEXVOICE_BUILD_VERSION: JSON.stringify(buildVersion),
+    QNALOG_BUILD_VERSION: JSON.stringify(buildVersion),
   },
   charset: "utf8",
   logLevel: "info",
@@ -52,5 +52,5 @@ if (production) {
   await context.dispose();
 } else {
   await context.watch();
-  console.log("Watching LexVoice source files...");
+  console.log("Watching QnALog source files...");
 }

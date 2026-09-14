@@ -7,7 +7,7 @@ import { transcribeAudio } from "../asr/transcribe";
 import { readFileFrontmatter } from "../shared/util-note";
 import { loadVocabularyGroups, applyVocabularyCorrections } from "../vocabulary";
 import { getLlmConfigIssue, isLlmNonRetryableError, formatLlmFailureIssue } from "../llm/core";
-import type { LexVoiceSettings, RecordingSession, PreparedLiveSegment, SessionMetaForMerge, Segment } from "../shared/types";
+import type { PluginSettings, RecordingSession, PreparedLiveSegment, SessionMetaForMerge, Segment } from "../shared/types";
 import { RecordingService } from "../audio/recording-service";
 import { getErrorMessage, pad, formatElapsed } from "../shared/util-common";
 import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } from "../shared/util-audio";
@@ -55,7 +55,7 @@ export interface SessionFinalizeHost {
   recording: RecordingService & { setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
   session: RecordingSession | null;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   shell: ViewShellService;
   tasks: TaskActivityService;
 }
@@ -912,7 +912,7 @@ export class SessionFinalizeService {
     }
 
     if (!mergeError && polished) {
-      await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(writeSession.mdPath, {
+      await this.host.noteIndex.refreshNoteIndexSafely(writeSession.mdPath, {
         meetingDate: session.startedAt,
         reason: "finalize",
       });

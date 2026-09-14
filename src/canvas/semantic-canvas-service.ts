@@ -23,7 +23,7 @@ import type { SemanticCanvasLayoutMode } from "../canvas/semantic-outline-canvas
 import { inferSemanticCanvasSourcePath, parseSemanticCanvasSourcePath } from "../canvas/source-note";
 import { parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
 import { diagnosticError } from "../shared/util-key-diag";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NoteIndexService } from "../notes/note-index-service";
 
@@ -35,7 +35,7 @@ export interface SemanticCanvasHost {
   /** 纪要索引刷新：生成成功后更新语义 Canvas 路径。 */
   noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 /** 语义 Canvas 生成模式：full 重建整张图，branch/drill 更新单条主线，layout 只重新排版。 */
@@ -367,7 +367,7 @@ export class SemanticCanvasService {
           return count(graph.branches);
         })(),
       });
-      await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "semantic-canvas" });
+      await this.host.noteIndex.refreshNoteIndexSafely(sourceFile, { reason: "semantic-canvas" });
       if (canvasFile instanceof obsidian.TFile) await this.host.app.workspace.getLeaf(true).openFile(canvasFile);
       progressNotice.hide();
       new obsidian.Notice(options.mode === "layout" ? "语义 Canvas 已重新排版。" : "语义 Canvas 已更新。", 4000);

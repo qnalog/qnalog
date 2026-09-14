@@ -5,7 +5,7 @@ import * as obsidian from "obsidian";
 import { isKnownPolishMode, makeCustomPromptModeId, getCustomPromptModeTemplates, getBuiltInVisiblePolishModeKeys, getModeMeta, getEffectivePolishMode, sanitizePromptTemplate } from "../shared/mode-meta";
 import { parseVocabularyGroups, flattenVocabularyGroups, normalizeVocabularyInput, mergeVocabularyGroups, loadVocabularyGroups, formatVocabularyMarkdown } from "../vocabulary";
 import { callLlm } from "../llm/core";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { KnowledgeExtractionService } from "../indexing/knowledge-extraction-service";
 import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 import { INDUSTRY_META_PROMPT } from "../prompts/industry-meta";
@@ -32,7 +32,7 @@ export interface VocabularyHost {
   /** 知识提取服务：扫描记录与文件指纹。 */
   knowledgeExtraction: KnowledgeExtractionService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class VocabularyService {

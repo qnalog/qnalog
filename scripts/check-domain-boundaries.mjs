@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-// 插件对象上合法但不属于 LexVoicePlugin 的成员：Obsidian/Bases 的扩展点。
+// 插件对象上合法但不属于 QnALogPlugin 的成员：Obsidian/Bases 的扩展点。
 const PLUGIN_EXTENSION_POINTS = ["registerBasesView"];
 
 // 这些文件里的 `plugin` 是 Obsidian 内部对象（例如日记插件的 internalPlugins 条目），不是本插件。
@@ -113,11 +113,11 @@ function collectSourceFiles(root) {
   return out;
 }
 
-/** LexVoicePlugin 的成员集合：方法、属性，以及在类体内动态赋值的字段。 */
+/** QnALogPlugin 的成员集合：方法、属性，以及在类体内动态赋值的字段。 */
 function pluginMembers(mainSource) {
   const sf = ts.createSourceFile("main.ts", mainSource, ts.ScriptTarget.ES2020, true);
-  const cls = sf.statements.find((s) => ts.isClassDeclaration(s) && s.name && s.name.getText() === "LexVoicePlugin");
-  if (!cls) throw new Error("src/main.ts 里找不到 LexVoicePlugin");
+  const cls = sf.statements.find((s) => ts.isClassDeclaration(s) && s.name && s.name.getText() === "QnALogPlugin");
+  if (!cls) throw new Error("src/main.ts 里找不到 QnALogPlugin");
   const members = new Set([
     "app", "manifest", "loadData", "saveData", "register", "registerEvent", "registerInterval",
     "addCommand", "addRibbonIcon", "addStatusBarItem", "addSettingTab", "registerView",

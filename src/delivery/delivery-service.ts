@@ -9,7 +9,7 @@ import { sanitizeReportFileStem, generateHtmlReportFromMarkdown, generateStyledR
 import { readFileFrontmatter } from "../shared/util-note";
 import { normalizePersonLookupText, loadPeopleDirectory } from "../people";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { escapeHtmlText } from "../shared/util-markdown";
 import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 import { EMAIL_DRAFT_ATTACHMENT_FOLDER, EMAIL_DRAFT_FOLDER, arrayBufferToBase64, buildEmailDraftContent, buildMeetingEmailBody, extractMeetingAttendeeNames, guessEmailAttachmentMime, normalizeEmailAddressList } from "../notes/note-markdown";
@@ -28,7 +28,7 @@ export interface DeliveryHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class DeliveryService {

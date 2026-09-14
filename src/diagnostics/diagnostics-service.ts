@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { createLiveAsrCircuitState, isLiveAsrCircuitOpen, summarizeLiveAsrJobs } from "../asr/live-segment-policy";
 import { redactDiagnosticText, sanitizeDiagnosticData, diagnosticError } from "../shared/util-key-diag";
 import type { LiveAsrBacklogSummary } from "../asr/live-segment-policy";
-import type { LexVoiceSettings, RecordingSession, RealtimeOutlineInputStats } from "../shared/types";
+import type { PluginSettings, RecordingSession, RealtimeOutlineInputStats } from "../shared/types";
 import type { PluginBuildInfo } from "../shared/build-info";
 import type { TaskQueue } from "../queue/task-queue";
 import type { RecorderService } from "../audio/recorder-service";
@@ -35,7 +35,7 @@ export interface DiagnosticsHost {
   /** 知识库访问（读插件目录、读写日记式 jsonl 文件）。 */
   app: obsidian.App;
   /** 设置对象本身，不拷贝；服务读 diagnosticsLogEnabled / diagnosticsLogFolder 等字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   /** manifest 版本号，写进每条日志。 */
   manifest?: { version?: string };
   /** 安装时写入的构建信息，报告里区分正式发布与开发版。 */

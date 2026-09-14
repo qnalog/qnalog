@@ -6,12 +6,12 @@ export const AUDIO_EXT = new Set(["webm", "mp3", "m4a", "aac", "acc", "wav", "og
 export const TEXT_IMPORT_EXT = new Set(["md", "txt"]);
 
 export const IMPORT_TEXT_CATEGORY_CONFIG = {
-  "lexvoice-normal": {
+  "qnalog-normal": {
     label: "已完成的 QnALog 纪要",
     shortLabel: "正常稿",
     desc: "已经完成 AI 整理，可用于多篇合并、换模板重整或转成其他模式。",
   },
-  "lexvoice-repair": {
+  "qnalog-repair": {
     label: "未完成的 QnALog 转写",
     shortLabel: "待修复",
     desc: "包含转写失败、整理失败、只有原始分段或零散内容，适合重新整理。",
@@ -23,7 +23,7 @@ export const IMPORT_TEXT_CATEGORY_CONFIG = {
   },
 };
 
-export const IMPORT_TEXT_CATEGORY_ORDER = ["lexvoice-normal", "lexvoice-repair", "external"];
+export const IMPORT_TEXT_CATEGORY_ORDER = ["qnalog-normal", "qnalog-repair", "external"];
 
 export const VIRTUAL_CABLE_PATTERNS = [
   // Windows
