@@ -316,8 +316,9 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 ## 7. 功能边界：已裁剪的场景
 
-> 状态：2026-09-14 的裁剪已合并进 `main`（PR #5，merge `4d77796`），但**尚未经维护者本地验证**。
-> 本地验证按 §4.3.1 执行；若发现问题，分支 `refactor/drop-hr-scenarios`（`a333db5`）仍在远端，
+> 状态：2026-09-14 的裁剪已合并进 `main`（PR #5，merge `4d77796`），并已由维护者在本机
+> Obsidian 中验证界面正常（2026-09-14，构建 `1.0.0-dev.chore-purge-dead-code.718f9d2`）。
+> 若后续发现问题，分支 `refactor/drop-hr-scenarios`（`a333db5`）仍在远端，
 > 可直接在其上修正后重新走流程，或整体 revert `4d77796`。
 
 
@@ -361,7 +362,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] P4 `src/ui/modals.ts`（2,627 行 / 11 个 Modal 类 + 悬浮气泡 `BubbleWidget`）按域拆包。可选。
 - [ ] 更新检查的 5 个转发（`getUpdateRawBase(s)`、`checkForUpdates(OnStartup)`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
       可并入一个更新域服务，属收尾性质。
-- [ ] 文档债务：`ARCHITECTURE.md` 的 `main.ts:NNNN` 行号引用已随 P1 失效（`main.ts` 现 513 行），需要按新的域服务重新标注。
+- [x] 文档债务：`ARCHITECTURE.md` 的 `main.ts:NNNN` 行号引用已随 P1 失效，已按域服务重新标注（2026-09-14）。
+      该文件按 §9 仍不进仓库，待整体重构完成后再并入。
 
 **第一条：稳定性与安全性**
 
