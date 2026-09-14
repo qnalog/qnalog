@@ -19,7 +19,7 @@ import { getDesktopModule } from "./shared/desktop-runtime";
 
 import {AudioTimeModal, SpeakerNameConfirmModal, QueueModal, RecruitContextModal, ImportTextModal, ImportAudioModal, AudioImportOptionsModal, BubbleWidget } from "./ui/modals";
 
-import { lexvoiceConfirm, trashLexVoiceFile, normalizeAudioInputMode, audioInputModeLabel } from "./ui/helpers";
+import {normalizeAudioInputMode, audioInputModeLabel } from "./ui/helpers";
 
 import {isKnownPolishMode, getModeMeta, getEffectivePolishMode, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -45,15 +45,15 @@ import {readFileFrontmatter, ensureTodayDailyNoteFile } from "./shared/util-note
 
 import {generateSedimentObjects, writeSedimentObjectCards } from "./sediment";
 
-import {parseVocabularyGroups, isStructuredVocabularyMarkdown, loadVocabularyGroups, formatVocabularyMarkdown, applyVocabularyCorrections } from "./vocabulary";
+import {loadVocabularyGroups, applyVocabularyCorrections } from "./vocabulary";
 
 import {getLlmConfigIssue, isLlmNonRetryableError, formatLlmConfigIssue, formatLlmFailureIssue, callLlm, stripModeSuggestionBlocks } from "./llm/core";
 
-import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS, LEGACY_DEFAULT_LIBRARY_PATHS } from "./shared/defaults";
+import {DEFAULT_SETTINGS } from "./shared/defaults";
 
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
-import { SETTINGS_SCHEMA_VERSION, LEGACY_VOCABULARY_FILE, normalizeLexVoiceSettings, serializeLexVoiceSettings, extractLexVoiceJobItems } from "./shared/settings-io";
+import {SETTINGS_SCHEMA_VERSION, normalizeLexVoiceSettings, serializeLexVoiceSettings, extractLexVoiceJobItems } from "./shared/settings-io";
 
 import { buildSettingsMigrationReport } from "./shared/settings-migration-report";
 
@@ -131,10 +131,10 @@ import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_C
 import {renderRecordingInterviewBriefBlock, renderRecordingPromotionReviewBlock } from "./notes/detail-blocks";
 
 // 以下 14 个声明已抽到 ./notes/audio-refs（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {extractAudioSegmentOffsets, getAudioDurationMs, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName, resolveLexVoiceAudioFile } from "./notes/audio-refs";
+import {extractAudioSegmentOffsets, getAudioDurationMs, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName } from "./notes/audio-refs";
 
 // 以下 40 个声明已抽到 ./notes/note-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {ROLE_MAPPING_FIELDS, analyzeLexVoiceEmptyShortNote, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, formatYamlDateTime, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, inferModeFromLegacyNote, inferTopicFromFilename, isTextImportSession, isTimeLabel, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
+import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, isTextImportSession, isTimeLabel, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
 
 // 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {detectRecentNoteMode, getRecentNotes } from "./recent/recent-notes";
@@ -169,6 +169,7 @@ import { VersionStore } from "./versions/version-store";
 import { PeopleDirectoryService } from "./people/people-directory-service";
 import { TranscribeProfileService } from "./asr/transcribe-profile-service";
 import { VocabularyService } from "./vocabulary/vocabulary-service";
+import { MigrationService } from "./migrations/migration-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -237,6 +238,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.migrations = new MigrationService(this);
     this.vocabulary = new VocabularyService(this);
     this.profiles = new TranscribeProfileService(this);
     this.tasks.start();
@@ -476,7 +478,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.recruit.mountHrBlock("lexvoice-hr-recent", (source, el, ctx) => this.recruit.renderHrRecent(source, el, ctx));
     this.recruit.mountHrBlock("lexvoice-hr-latest-notes", (source, el, ctx) => this.recruit.renderHrLatest(source, el, ctx));
     this.addCommand({ id: "rebuild-recruit-homepage", name: "新建 / 重建招聘主页", callback: () => this.recruit.rebuildRecruitHomepage() });
-    this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.cleanupEmptyShortRecordings() });
+    this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.migrations.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: "清理过期分段音频缓存", callback: async () => {
       const result = await this.cleanupExpiredSegmentCacheFiles();
       new obsidian.Notice(`分段缓存清理完成：删除 ${result.deleted} 个，跳过 ${result.skipped} 个${result.failed ? `，失败 ${result.failed} 个` : ""}`, 8000);
@@ -486,7 +488,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       id: "migrate-legacy-notes",
       name: "迁移历史笔记属性",
       callback: () => {
-        this.migrateLegacyNotes()
+        this.migrations.migrateLegacyNotes()
           .then(r => new obsidian.Notice(`迁移：补全 ${r.migrated} / 跳过 ${r.skipped} / 无法识别 ${r.noMode} / 失败 ${r.failed}`, 8000))
           .catch(e => new obsidian.Notice(`迁移失败：${e.message || e}`, 8000));
       },
@@ -712,12 +714,12 @@ class LexVoicePlugin extends obsidian.Plugin {
       shouldSave = true;
     }
     try {
-      if (await this.migrateDefaultVocabularyFileLocation(saved)) shouldSave = true;
+      if (await this.migrations.migrateDefaultVocabularyFileLocation(saved)) shouldSave = true;
     } catch (e) {
       console.warn("[QnALog] vocabulary location migrate failed", e);
     }
     try {
-      if (await this.migrateDefaultLibraryLayout(savedVersion)) shouldSave = true;
+      if (await this.migrations.migrateDefaultLibraryLayout(savedVersion)) shouldSave = true;
     } catch (e) {
       console.warn("[QnALog] default library layout migrate failed", e);
     }
@@ -779,93 +781,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
     await this.saveData(safe);
   }
-  async saveSettings() { await this.saveAll(); }  async migrateDefaultVocabularyFileLocation(savedData) {
-    const saved = isRecord(savedData) ? savedData : {};
-    const raw = isRecord(saved.settings) ? saved.settings : saved;
-    const vocabulary = raw.vocabulary || {};
-    const savedPath = pickDefined(vocabulary.notePath, raw.vocabularyFile, "");
-    const normSaved = obsidian.normalizePath(savedPath || "");
-    const usesLegacyDefault = !normSaved || normSaved.toLowerCase() === LEGACY_VOCABULARY_FILE.toLowerCase();
-    if (!usesLegacyDefault) return false;
-
-    const oldPath = obsidian.normalizePath(LEGACY_VOCABULARY_FILE);
-    const newPath = obsidian.normalizePath(DEFAULT_SETTINGS.vocabularyFile);
-    let changed = this.settings.vocabularyFile !== newPath;
-    this.settings.vocabularyFile = newPath;
-
-    const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
-    const newFile = this.app.vault.getAbstractFileByPath(newPath);
-    if (oldFile instanceof obsidian.TFile && !(newFile instanceof obsidian.TFile)) {
-      const folderPath = newPath.includes("/") ? newPath.slice(0, newPath.lastIndexOf("/")) : "";
-      if (folderPath) await ensureVaultFolder(this.app, folderPath);
-      await this.app.fileManager.renameFile(oldFile, newPath);
-      changed = true;
-    }
-    const targetFile = this.app.vault.getAbstractFileByPath(newPath);
-    if (targetFile instanceof obsidian.TFile) {
-      const content = await this.app.vault.cachedRead(targetFile);
-      if (!isStructuredVocabularyMarkdown(content)) {
-        await this.app.vault.modify(targetFile, formatVocabularyMarkdown(parseVocabularyGroups(content), this.settings.industryProfile));
-        changed = true;
-      }
-    }
-    return changed;
-  }
-
-  async migrateDefaultLibraryLayout(savedVersion) {
-    if (Number(savedVersion) >= 4) return false;
-    let changed = false;
-    const migrations = [
-      ["peopleDirectoryFolder", LEGACY_DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder, DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder],
-      ["learningCardsFolder", LEGACY_DEFAULT_LIBRARY_PATHS.learningCardsFolder, DEFAULT_LIBRARY_PATHS.learningCardsFolder],
-      ["todoCardsFolder", LEGACY_DEFAULT_LIBRARY_PATHS.todoCardsFolder, DEFAULT_LIBRARY_PATHS.todoCardsFolder],
-      ["lexVoiceBasesFolder", LEGACY_DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder, DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder],
-      ["peopleBaseFile", LEGACY_DEFAULT_LIBRARY_PATHS.peopleBaseFile, DEFAULT_LIBRARY_PATHS.peopleBaseFile],
-      ["vocabularyFile", LEGACY_DEFAULT_LIBRARY_PATHS.vocabularyFile, DEFAULT_LIBRARY_PATHS.vocabularyFile],
-      ["diagnosticsLogFolder", LEGACY_DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder, DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder],
-    ];
-    for (const [settingKey, legacyValue, nextValue] of migrations) {
-      const current = obsidian.normalizePath(String(this.settings[settingKey] || ""));
-      const legacyPath = obsidian.normalizePath(legacyValue);
-      const nextPath = obsidian.normalizePath(nextValue);
-      if (current.toLowerCase() !== legacyPath.toLowerCase()) continue;
-      const legacyEntry = this.app.vault.getAbstractFileByPath(legacyPath);
-      const nextEntry = this.app.vault.getAbstractFileByPath(nextPath);
-      if (legacyEntry && nextEntry) {
-        console.warn(`[QnALog] default library migration skipped because both paths exist: ${legacyPath} -> ${nextPath}`);
-        continue;
-      }
-      if (legacyEntry && !nextEntry) {
-        const parentPath = nextPath.includes("/") ? nextPath.slice(0, nextPath.lastIndexOf("/")) : "";
-        if (parentPath) await ensureVaultFolder(this.app, parentPath);
-        await this.app.fileManager.renameFile(legacyEntry, nextPath);
-      }
-      this.settings[settingKey] = nextPath;
-      changed = true;
-    }
-
-    const legacyArchiveFolder = obsidian.normalizePath(LEGACY_DEFAULT_LIBRARY_PATHS.archiveFolder);
-    const nextArchiveFolder = obsidian.normalizePath(DEFAULT_LIBRARY_PATHS.archiveFolder);
-    const legacyArchiveFolderEntry = this.app.vault.getAbstractFileByPath(legacyArchiveFolder);
-    const nextArchiveFolderEntry = this.app.vault.getAbstractFileByPath(nextArchiveFolder);
-    if (legacyArchiveFolderEntry && !nextArchiveFolderEntry) {
-      const parentPath = nextArchiveFolder.slice(0, nextArchiveFolder.lastIndexOf("/"));
-      await ensureVaultFolder(this.app, parentPath);
-      await this.app.fileManager.renameFile(legacyArchiveFolderEntry, nextArchiveFolder);
-      changed = true;
-    } else {
-      const legacyArchive = obsidian.normalizePath(LEGACY_DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder);
-      const nextArchive = obsidian.normalizePath(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder);
-      const legacyArchiveEntry = this.app.vault.getAbstractFileByPath(legacyArchive);
-      const nextArchiveEntry = this.app.vault.getAbstractFileByPath(nextArchive);
-      if (legacyArchiveEntry && !nextArchiveEntry) {
-        await ensureVaultFolder(this.app, nextArchiveFolder);
-        await this.app.fileManager.renameFile(legacyArchiveEntry, nextArchive);
-        changed = true;
-      }
-    }
-    return changed;
-  }  makeStreamingNoteUpdater(session) {
+  async saveSettings() { await this.saveAll(); }  makeStreamingNoteUpdater(session) {
     let scheduled = false;
     let lastWritten = "";
     const flush = async () => {
@@ -4189,189 +4105,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       i++;
       if (i > 99) return "";
     }
-  }  // 历史笔记迁移：扫描 mdFolder 下所有 .md，给没有 frontmatter 的老纪要补全 mode/日期/主题/tags
-  // 已有 mode 字段的跳过；无法识别模式的也跳过；其他都补全（写入最小 frontmatter）
-  async migrateLegacyNotes() {
-    const folderPath = obsidian.normalizePath(this.settings.mdFolder || "LexVoice/转写纪要");
-    const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof obsidian.TFolder)) {
-      throw new Error("笔记文件夹不存在：" + folderPath);
-    }
-    const files = [];
-    const walk = (f) => {
-      if (f instanceof obsidian.TFolder) for (const c of f.children) walk(c);
-      else if (f instanceof obsidian.TFile && f.extension === "md") files.push(f);
-    };
-    walk(folder);
-
-    let migrated = 0, skipped = 0, noMode = 0, failed = 0;
-    const failedFiles = [];
-
-    for (const file of files) {
-      try {
-        const content = await this.app.vault.read(file);
-        const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
-        if (fmMatch) {
-          try {
-            const fm = obsidian.parseYaml(fmMatch[1]);
-            if (fm && fm.mode) { skipped++; continue; }
-          } catch { /* intentionally empty */ }
-        }
-        const mode = inferModeFromLegacyNote(file.name, content);
-        if (!mode) { noMode++; continue; }
-
-        const dateMatch = file.name.match(/^(\d{4}-\d{2}-\d{2})/);
-        const date = dateMatch ? dateMatch[1] : "";
-        const durationMatch = content.match(/时长\s*[:：]\s*([\d:]+)/);
-        const duration = durationMatch ? durationMatch[1] : "";
-        const topic = inferTopicFromFilename(file.name);
-
-        const fmObj = { mode };
-        // 统一用 time（ISO datetime），不再写 日期；从文件名日期 + ctime 兜底推断，保证非空、跨模式一致。
-        const tval = formatYamlDateTime(inferLexVoiceNoteStartedAtIso(file, date ? { "日期": date } : {}));
-        if (tval) fmObj.time = tval;
-        if (duration) fmObj["时长"] = duration;
-        if (topic) fmObj["主题"] = topic; // 统一主键为 主题（含 huddle，不再写 议题）
-        fmObj["状态"] = "已整理";
-        fmObj["tags"] = ["lexvoice/" + mode, "lexvoice/legacy"];
-
-        let yamlBlock;
-        try { yamlBlock = obsidian.stringifyYaml(fmObj); }
-        catch {
-          yamlBlock = Object.entries(fmObj).map(([k, v]) =>
-            Array.isArray(v) ? k + ":\n" + v.map(x => "  - " + x).join("\n") : k + ": " + v
-          ).join("\n") + "\n";
-        }
-
-        let newContent;
-        if (fmMatch) newContent = "---\n" + yamlBlock + "---\n" + content.slice(fmMatch[0].length);
-        else newContent = "---\n" + yamlBlock + "---\n\n" + content;
-
-        await this.app.vault.modify(file, newContent);
-        migrated++;
-      } catch (e) {
-        console.error("[QnALog] migrate failed:", file.path, e);
-        failedFiles.push(file.path);
-        failed++;
-      }
-    }
-    return { migrated, skipped, noMode, failed, failedFiles, total: files.length };
-  }
-
-  async cleanupEmptyShortRecordings() {
-    const folderPath = obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof obsidian.TFolder)) {
-      new obsidian.Notice(`转写纪要文件夹不存在：${folderPath}`, 8000);
-      return;
-    }
-
-    const files = [];
-    const walk = (item) => {
-      if (item instanceof obsidian.TFolder) {
-        for (const child of item.children) walk(child);
-      } else if (item instanceof obsidian.TFile && item.extension === "md") {
-        files.push(item);
-      }
-    };
-    walk(folder);
-
-    const currentPath = this.session && this.session.mdPath ? obsidian.normalizePath(this.session.mdPath) : "";
-    const candidates = [];
-    for (const file of files) {
-      if (currentPath && obsidian.normalizePath(file.path) === currentPath) continue;
-      try {
-        const content = await this.app.vault.read(file);
-        const candidate = analyzeLexVoiceEmptyShortNote(file, content, this.settings);
-        if (!candidate) continue;
-        const audioFiles = [];
-        const seenAudio = new Set();
-        for (const ref of candidate.audioRefs) {
-          const audioFile = resolveLexVoiceAudioFile(this.app, this.settings, ref);
-          if (audioFile && !seenAudio.has(audioFile.path)) {
-            seenAudio.add(audioFile.path);
-            audioFiles.push(audioFile);
-          }
-        }
-        candidate.audioFiles = audioFiles;
-        candidates.push(candidate);
-      } catch (e) {
-        console.error("[QnALog] cleanup scan failed:", file.path, e);
-      }
-    }
-
-    if (!candidates.length) {
-      new obsidian.Notice("没有发现符合条件的空白短录音");
-      return;
-    }
-
-    const uniqueAudioFiles = [];
-    const audioPaths = new Set();
-    for (const candidate of candidates) {
-      for (const audioFile of candidate.audioFiles) {
-        if (!audioPaths.has(audioFile.path)) {
-          audioPaths.add(audioFile.path);
-          uniqueAudioFiles.push(audioFile);
-        }
-      }
-    }
-
-    const preview = candidates
-      .slice(0, 10)
-      .map((c) => `- ${c.file.path}（${formatElapsed(c.durationMs)}，录音 ${c.audioFiles.length} 个）`)
-      .join("\n");
-    const more = candidates.length > 10 ? `\n...另有 ${candidates.length - 10} 条` : "";
-    const ok = await lexvoiceConfirm(
-      this.app,
-      "清理空白短录音",
-      `发现 ${candidates.length} 条空白短录音。\n\n条件：时长不超过 10 秒，且没有有效转写文本。\n将移入系统废纸篓：${candidates.length} 篇纪要、${uniqueAudioFiles.length} 个录音文件。\n\n${preview}${more}\n\n继续清理吗？`,
-      "清理"
-    );
-    if (!ok) return;
-
-    let noteDeleted = 0;
-    let audioDeleted = 0;
-    let failed = 0;
-    const deletedNotePaths = new Set();
-    const deletedAudioPaths = new Set();
-
-    for (const candidate of candidates) {
-      try {
-        await trashLexVoiceFile(this.app, candidate.file);
-        noteDeleted++;
-        deletedNotePaths.add(obsidian.normalizePath(candidate.file.path));
-      } catch (e) {
-        failed++;
-        console.error("[QnALog] cleanup note delete failed:", candidate.file.path, e);
-      }
-    }
-
-    for (const audioFile of uniqueAudioFiles) {
-      const current = this.app.vault.getAbstractFileByPath(audioFile.path);
-      if (!(current instanceof obsidian.TFile)) continue;
-      try {
-        await trashLexVoiceFile(this.app, current);
-        audioDeleted++;
-        deletedAudioPaths.add(obsidian.normalizePath(audioFile.path));
-      } catch (e) {
-        failed++;
-        console.error("[QnALog] cleanup audio delete failed:", audioFile.path, e);
-      }
-    }
-
-    const beforeQueue = this.queue.tasks.length;
-    this.queue.tasks = this.queue.tasks.filter((task) => {
-      const mdPath = task.mdPath ? obsidian.normalizePath(task.mdPath) : "";
-      const audioPath = task.audioPath ? obsidian.normalizePath(task.audioPath) : "";
-      return !deletedNotePaths.has(mdPath) && !deletedAudioPaths.has(audioPath);
-    });
-    const queueRemoved = beforeQueue - this.queue.tasks.length;
-    if (queueRemoved > 0) await this.saveAll();
-
-    new obsidian.Notice(`清理完成：纪要 ${noteDeleted} 篇，录音 ${audioDeleted} 个，队列移除 ${queueRemoved} 条${failed ? `，失败 ${failed} 项` : ""}`, 10000);
-  }
-
-  // 创建 QnALog 视图（.base 文件）—— 9 个：5 按模式 + 4 场景
+  }  // 创建 QnALog 视图（.base 文件）—— 9 个：5 按模式 + 4 场景
   // overwrite=false：已存在的文件保留；overwrite=true：强制覆盖（用户重置/升级用）
   async createLexVoiceBases(opts) {
     const overwrite = !!(opts && opts.overwrite);
