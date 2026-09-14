@@ -19,6 +19,45 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 - 易用性：在**不改变既有行为语义**的前提下改进提示、默认值、文案与交互路径。措辞是"线性"——小幅、连续、可回退，不是大改。
 - 判据：某项改动能降低用户数据丢失/误配置/静默失败的概率，或让既有功能在原场景下确实更顺，就值得做。
 
+### 1.1.1 结构债务：当前阶段先偿还
+
+结构拆解归入第一条，理由是它与稳定性直接相关：单文件过大时，每次改动都要在一个上万行的文件里定位调用点，
+改动引入回归的概率随文件规模上升。先拆到可维护，再改具体功能，改动的落点才可控。
+
+拆解限定为纯搬迁：方法体逐行不变、搬迁后调用点等价、不改变任何行为语义。这满足 1.1 对改动的约束
+（不改变既有行为语义），因此可以在没有新功能需求时单独推进。
+
+当前规模（2026-09-14 实测，`src` 共 49,850 行）：
+
+| 单体 | 行数 | 形态 |
+|---|---|---|
+| `src/main.ts` 的 `class LexVoicePlugin` | 10,357（类体 10,147 行、272 个成员） | 采集、转写、纪要、落盘、沉淀、交付的状态与流程都在这个类里 |
+| `src/ui/outline-view.ts` 的 `class OutlineView` | 7,257（219 个方法） | 侧边栏视图的界面与业务在同一个类里 |
+
+上一轮（2026-09-13）已把 `src/main.ts` 从 24,679 行降到 10,357 行，抽出 19 个模块；
+`src/ui/modals.ts`（2,995 行）是 12 个互不依赖的 Modal 类的集合，不是单体，拆只改变观感。
+
+已抽出的模块目前不构成边界：`RecorderService`、`TaskQueue`、`OutlineView` 以 `declare plugin: LexVoicePlugin`
+持有整个插件对象（`src/audio/recorder-service.ts:19`、`src/queue/task-queue.ts:20`、`src/ui/outline-view.ts:100`），
+全仓 `plugin.<成员>` 调用 966 处、涉及 114 个不同成员。因此搬迁文件的同时必须收窄依赖面：
+每个模块只声明自己需要的能力（窄接口），由插件在装配时注入。否则只是把单体摊成分布式的单体。
+
+顺序（逐项独立提交，每项按 §4.4 的流程验证）：
+
+| 优先级 | 工作 | 完成判据 |
+|---|---|---|
+| P1 | 拆 `LexVoicePlugin`：先定窄接口（设置读写、库访问、通知、诊断、任务状态、模型调用），再按域搬成员与状态 | `main.ts` 只剩装配、生命周期与一层薄转发的宿主面 |
+| P2 | 拆 `OutlineView`（219 个方法 / 7,257 行）：界面与业务分层 | 视图类只处理渲染与交互，数据来源改为 P1 定下的接口 |
+| P3 | 内部标识符改名（`LexVoice*` → `QnALog*`，88 个标识符） | 数据层字面量与 `lexvoice-*` 类名、视图类型不动（见 §3） |
+| P4 | `src/ui/modals.ts` 按域拆包 | 可选，不影响维护 |
+
+P3 的边界（实测）：全仓 `LexVoice` / `lexvoice` 共 2,145 处，其中 1,429 处（66.6%）受 §3 保护不可改——
+`lexvoice-*` 类名与视图类型 1,315 处（视图类型写进用户的 `workspace.json`）、`LexVoice/…` 路径与 frontmatter 33 处、
+`LEXVOICE_*` 常量 57 处、`lexvoice/` 标签 24 处。其中两类改动会直接破坏用户数据：视图类型改名会让已保存的侧边栏布局失效；
+`LEXVOICE_SEDIMENT_BEGIN`、`LEXVOICE_ACTIVE_VERSION_START`、`LEXVOICE_NOTE_INDEX_*` 是写在用户笔记里的注释标记；
+密钥混淆盐改名会让已保存的 API Key 无法解密。因此改名只覆盖内部标识符，结果是 `QnALogPlugin` 与
+`lexvoice-statusbar` 并存。放在 P1 之后做的原因：改名的落点正是 P1 要搬动的代码，同期做会与搬迁的 diff 大面积冲突。
+
 ### 1.2 第二条：按需要灵活添加提升性功能
 
 **不要求与上游对齐，也不禁止与上游相同。**
@@ -200,20 +239,25 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 
 ## 6. 待办（按 §1 的优先级排列）
 
+**结构（§1.1.1，当前优先）**
+
+- [ ] P1 拆 `LexVoicePlugin`（`src/main.ts`，272 个成员 / 10,147 行）：先定窄接口，再按域搬成员与状态；每域一次提交。
+- [ ] P2 拆 `OutlineView`（`src/ui/outline-view.ts`，219 个方法 / 7,257 行），依赖 P1 定下的接口。
+- [ ] P3 内部标识符改名（88 个 `LexVoice*` → `QnALog*`），数据层字面量、`lexvoice-*` 类名与视图类型不动。
+- [ ] P4 `src/ui/modals.ts`（2,995 行 / 12 个 Modal 类）按域拆包。可选。
+- [ ] 文档债务：`ARCHITECTURE.md` 有 10 处 `main.ts:NNNN` 行号引用已越界（`main.ts` 现 10,357 行），随 P1 逐域修正。
+
 **第一条：稳定性与安全性**
 
 - [ ] 设置页不得静默改写用户配置：`src/ui/settings-tab.ts` 的 `renderSpeaker` 在服务不可用时直接改写 `importTranscribeProvider`，应改为保留用户选择并给出提示。
 - [ ] 自定义服务的密钥必填判定：未知 provider id 一律按 `requiresKey: false` 处理，导致密钥栏显示"可选"，但导入时运行时会因缺 key 报错；应改为按 endpoint 推断。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
-- [ ] 类型检查盲区：6 个文件带 `@ts-nocheck`（`src/main.ts` 24.7k 行、`src/ui/modals.ts` 2995 行、`src/ui/settings-tab.ts` 2659 行、`src/report/render.ts`、`src/recruit/bases-view.ts`、`src/asr/clients.ts`），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。
-- [x] ~~移除自更新~~：已完成。仅检查版本并提示，安装交给 Obsidian / BRAT（开发者政策硬要求）。
-- [x] ~~回滚路径脚本化~~：已完成。`npm run restore:vault`，安装改为整目录留档。
-- [x] ~~迁移结果自检~~：已完成。首次加载输出对照表。
+- [ ] 类型检查盲区：6 个文件带 `@ts-nocheck`（`src/main.ts` 10.4k 行、`src/ui/modals.ts` 2,995 行、`src/ui/settings-tab.ts` 2,667 行、`src/report/render.ts`、`src/recruit/bases-view.ts`、`src/asr/clients.ts`），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。需分期推进。P1 把 `main.ts` 的成员搬到独立模块时，搬迁出的文件默认同样带 `@ts-nocheck`，不改变现状。
 
 **第二条：提升性功能（按需，不排期）**
 
 - [ ] **设置界面精简（开箱即用方向）**：现状设置页偏复杂，把"必须先配的"和"少数人才调的"混在一起。方向是——默认路径只需填 API Key 即可工作（服务、模型、目录用内置默认值 + 一个推荐配置入口），其余自定义项收进"高级"分区。分期推进。注意：设置项读写受 `settings-io.ts` 白名单约束（新增键必须同时登记 normalize 与 serialize），搬动 UI 分组不影响存储结构。
-- [ ] **数据层命名的独立化（需要迁移，谨慎）**：笔记标签 `lexvoice/*`、默认目录 `LexVoice/…` 目前沿用上游命名。新用户看到与产品名不一致的目录/标签会困惑，但改动会影响既有知识库。若要做，必须：带迁移脚本、可回滚、并在发版说明中显著提示。**混淆盐（API Key）永远不要改。**
+- [ ] **数据层命名的独立化（需要迁移，谨慎）**：笔记标签 `lexvoice/*`、默认目录 `LexVoice/…` 目前沿用上游命名。新用户看到与产品名不一致的目录/标签会困惑，但改动会影响既有知识库。若要做，必须：带迁移脚本、可回滚、并在发版说明中显著提示。**混淆盐（API Key）永远不要改。** 与 §1.1.1 的 P3 分开：P3 只改内部标识符，本项才动用户数据。
 - [ ] 为自定义说话人分离服务（如 `siliconflow-diarize`）补预设条目（名称/提示/步骤文案）。纯展示性——能力已具备（`speaker-diarization` 协议），不做也能用。
 - [ ] 设置页把未知服务显示为"其他转写服务"。
 
@@ -221,3 +265,10 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 
 - 不为了对齐上游版本号或功能清单而改代码。上游的商业化能力不在本项目目标内。
 - 这条同样不绝对：如果某个能力对稳定使用确有价值，按第二条处理——自己实现即可，见 §2。
+
+---
+
+已完成（记录，不再列在待办里）：自更新已移除（仅检查版本并提示，安装交给 Obsidian / BRAT）；
+回滚路径已脚本化（`npm run restore:vault`，安装改为整目录留档）；迁移结果自检已实现（首次加载输出对照表）；
+`src/main.ts` 首轮分解已完成（24,679 行 → 10,357 行，抽出 19 个模块，2026-09-13）。
+
