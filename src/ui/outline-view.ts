@@ -10,9 +10,9 @@ import { buildSemanticBranchExpansionPrompt, buildSemanticCanvasDocument, buildS
 
 import { inferSemanticCanvasSourcePath, parseSemanticCanvasSourcePath } from "../canvas/source-note";
 
-import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal, VirtualCableSetupModal } from "./modals";
+import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal } from "./modals";
 
-import { enumerateAudioDevices, getRecentNoteProcessingState, lexvoiceConfirm, normalizeAudioInputMode, trashLexVoiceFile } from "./helpers";
+import { getRecentNoteProcessingState, lexvoiceConfirm, trashLexVoiceFile } from "./helpers";
 
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries, getVisiblePolishModeKeys } from "../shared/mode-meta";
 
@@ -6340,83 +6340,6 @@ export class OutlineView extends obsidian.ItemView {
       })
       .catch((e) => console.warn("[QnALog] read recent note state failed", e));
   }
-
-  async renderDeviceStatus(container, mode) {
-    container.empty();
-    container.createSpan({ text: "检测中…", cls: "lexvoice-device-status-loading" });
-    let info;
-    try {
-      info = await enumerateAudioDevices();
-    } catch (e) {
-      container.empty();
-      container.createSpan({ text: `⚠ 设备检测失败：${e.message || e}`, cls: "lexvoice-device-status-error" });
-      return;
-    }
-    container.empty();
-
-    mode = normalizeAudioInputMode(mode);
-    const needMic    = mode === "mic" || mode === "mix-virtual";
-    const needVirt   = mode === "virtualCable" || mode === "mix-virtual";
-
-    // 去名字化：状态如实反映"用户选了什么"，而非按名字猜哪只是真麦/虚拟。
-    const allInputs = (info.all || []).filter((d) => d && d.kind === "audioinput");
-    const lines = [];
-    if (needMic) {
-      const selId = this.plugin.settings.selectedMicrophoneDevice || "";
-      const realMic = selId
-        ? allInputs.find((d) => d.deviceId === selId)
-        : (allInputs.find((d) => d.deviceId === "default") || allInputs[0]);
-      if (selId && !realMic) {
-        lines.push({ ok: false, text: "麦克风：所选设备未检测到（请重选）", title: "所选麦克风未检测到" });
-      } else if (realMic) {
-        const label = realMic.label || (selId ? "已选麦克风" : "系统默认输入");
-        const tag = selId ? "" : "（系统默认）";
-        lines.push({ ok: true, text: `麦克风：${label}${tag}`, title: `麦克风：${label}` });
-      } else {
-        lines.push({ ok: false, text: "麦克风：未检测到" });
-      }
-    }
-    if (needVirt) {
-      const selId = this.plugin.settings.selectedVirtualDevice || "";
-      const v = selId ? allInputs.find((d) => d.deviceId === selId) : null;
-      if (v) {
-        const label = v.label || "未授权读取设备名";
-        lines.push({ ok: true, text: `电脑音频：${label}`, title: `电脑音频输入：${label}` });
-      } else if (selId) {
-        lines.push({ ok: false, text: "电脑音频：所选设备未检测到（请重选）", title: "所选电脑音频设备未检测到", action: "wizard" });
-      } else {
-        lines.push({ ok: false, text: "电脑音频：未选择（请在设置里选定）", title: "电脑音频输入：未选择", action: "wizard" });
-      }
-    }
-    if (info.permissionRequired) {
-      lines.push({ ok: false, text: "⚠ 麦克风权限未授予，无法读取设备名", action: "perm" });
-    }
-
-    for (const line of lines) {
-      const row = container.createDiv({ cls: `lexvoice-device-status-row ${line.ok ? "is-ok" : "is-warn"}` });
-      const text = row.createSpan({ text: line.text });
-      text.setAttr("title", line.title || line.text);
-      if (line.action === "wizard") {
-    const btn = row.createEl("button", { text: "设置电脑音频", cls: "lexvoice-device-status-btn" });
-        btn.onclick = () => new VirtualCableSetupModal(this.app, this.plugin).open();
-      } else if (line.action === "perm") {
-        const btn = row.createEl("button", { text: "授权", cls: "lexvoice-device-status-btn" });
-        btn.onclick = async () => {
-          try {
-            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-            s.getTracks().forEach(t => t.stop());
-            this.scheduleUpdate();
-          } catch (e) {
-            new obsidian.Notice("授权失败：" + (e.message || e));
-          }
-        };
-      }
-    }
-  }
-
-
-
-
 
   renderQueueInbox(root) {
     const queueN = this.plugin.queue ? this.plugin.queue.tasks.length : 0;
