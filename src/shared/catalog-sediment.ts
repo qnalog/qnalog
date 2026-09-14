@@ -49,13 +49,6 @@ export const SEDIMENT_GROUP_CONFIG = {
 
 export const SEDIMENT_GROUP_ORDER = ["person", "todo", "card", "hotword"];
 
-export const SEDIMENT_GROUP_STATUS_LABELS = {
-  person: "人员建议",
-  todo: "待办候选",
-  card: "学习卡片",
-  hotword: "转写热词",
-};
-
 export const VOCABULARY_SECTIONS = [
   { key: "people", title: "人名", desc: "仅放你明确愿意作为 ASR 提示发送的姓名或称呼；敏感人员关系请放到人员资料。", placeholder: "例如：某负责人、某专家、某候选人" },
   { key: "brands", title: "品牌/机构", desc: "公司、学校、团队、客户、供应商、社区、品牌名。", placeholder: "例如：OpenAI、阿里云百炼、硅基流动" },

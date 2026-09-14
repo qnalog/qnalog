@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
-import { delayMs, extFromMime, isAsrTransportError, isTransientAsrError } from '../shared/util-audio';
+import { delayMs, extFromMime, isAsrTransportError } from '../shared/util-audio';
 import { extractLlmContent } from '../shared/util-json';
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { assertSafeServiceEndpoint, canOmitServiceApiKey } from '../shared/util-llm-endpoint';
@@ -121,21 +121,6 @@ export function encodeMonoWav(audioBuffer) {
   return buffer;
 }
 
-export async function mapLimit(items, limit, worker) {
-  const list = Array.isArray(items) ? items : [];
-  const concurrency = Math.max(1, Math.min(list.length || 1, normalizeAsrConcurrency(limit)));
-  const results = new Array(list.length);
-  let nextIndex = 0;
-  const runners = Array.from({ length: concurrency }, async () => {
-    while (nextIndex < list.length) {
-      const current = nextIndex++;
-      results[current] = await worker(list[current], current);
-    }
-  });
-  await Promise.all(runners);
-  return results;
-}
-
 // 按错误内容挑重试退避时长（纯函数，供测试）：
 // 1) 错误信息带 Retry-After 提示 → 按服务端要求的秒数等（+0-2s 随机抖动，封顶 90s）；
 // 2) 限流类（429 / 限流 / rate limit / too many request）→ 30-45s 随机（MiMo 的 10K TPM 按分钟窗滚动，
@@ -152,61 +137,6 @@ export function pickAsrRetryDelayMs(errorMessage, attempt?) {
     return Math.min(30000, 5000 * (2 ** retryIndex)) + Math.floor(Math.random() * 1000);
   }
   return 1200 + Math.floor(Math.random() * 800);
-}
-
-export async function transcribeImportAudioChunk(plugin, blob, mime, concurrency, observer?: AsrLifecycleObserver) {
-  // concurrency 参数仅保留签名兼容：重试与并发档位解耦（并发=1 时同样享受瞬时错误就地重试）。
-  void concurrency;
-  const MAX_ATTEMPTS = 3; // 瞬时错误（限流/超时/5xx/网络）总计最多 3 次请求
-  let emptyRetried = false;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    let text;
-    emitAsrLifecycle(observer, { type: "attempt-start", attempt, maxAttempts: MAX_ATTEMPTS });
-    try {
-      text = await transcribeAudio(
-        plugin,
-        blob,
-        mime,
-        undefined,
-        (signal) => emitAsrLifecycle(observer, Object.assign({}, signal, { attempt, maxAttempts: MAX_ATTEMPTS })),
-      );
-    } catch (e) {
-      const error = String((e && e.message) || e || "转写请求失败");
-      emitAsrLifecycle(observer, { type: "attempt-error", attempt, maxAttempts: MAX_ATTEMPTS, error });
-      if (attempt >= MAX_ATTEMPTS || !isTransientAsrError(e)) throw e;
-      // 限流类错误按 Retry-After / 429 档拉长退避；普通瞬时错误维持短退避。
-      const retryDelayMs = pickAsrRetryDelayMs(error, attempt);
-      emitAsrLifecycle(observer, {
-        type: "retry-wait",
-        attempt,
-        maxAttempts: MAX_ATTEMPTS,
-        retryDelayMs,
-        retryAt: Date.now() + retryDelayMs,
-        error,
-      });
-      await delayMs(retryDelayMs);
-      continue;
-    }
-    if (String(text || "").trim()) {
-      emitAsrLifecycle(observer, { type: "attempt-complete", attempt, maxAttempts: MAX_ATTEMPTS });
-      return text;
-    }
-    emitAsrLifecycle(observer, { type: "attempt-empty", attempt, maxAttempts: MAX_ATTEMPTS });
-    // 服务 HTTP 200 但无文字：多为服务端偶发抽风，就地再试一次；仍为空则返回 ""，由调用方按软失败处理。
-    if (emptyRetried || attempt >= MAX_ATTEMPTS) return "";
-    emptyRetried = true;
-    const retryDelayMs = pickAsrRetryDelayMs("", attempt);
-    emitAsrLifecycle(observer, {
-      type: "retry-wait",
-      attempt,
-      maxAttempts: MAX_ATTEMPTS,
-      retryDelayMs,
-      retryAt: Date.now() + retryDelayMs,
-      error: "服务返回空结果",
-    });
-    await delayMs(retryDelayMs); // 空消息 → 走短退避档
-  }
-  return "";
 }
 
 export function resolveTranscribeProvider(plugin, forceId?: string) {

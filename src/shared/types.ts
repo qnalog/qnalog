@@ -293,7 +293,6 @@ export interface GeneratePromptQueueTaskPayload {
 }
 
 export type QueueTaskPayload = TranscribeQueueTaskPayload | MergeQueueTaskPayload | GeneratePromptQueueTaskPayload;
-export type QueueTaskDraft = QueueTaskPayload & Partial<QueueTaskLifecycle>;
 export type QueueTask = QueueTaskPayload & QueueTaskLifecycle;
 
 export interface RecordingSession {
