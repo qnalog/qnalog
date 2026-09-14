@@ -3945,7 +3945,7 @@ export class OutlineView extends obsidian.ItemView {
       timelineSec.createDiv({ cls: "lexvoice-outline-section-title", text: "回听时间轴" });
       const timelineBody = timelineSec.createDiv({ cls: "lexvoice-outline-ai-body lexvoice-outline-note-timeline" });
       const rendered = obsidian.MarkdownRenderer.render(this.app, data.timeline, timelineBody, file.path, this);
-      void Promise.resolve(rendered).then(() => this.plugin.enhanceAudioTimeLinks(timelineBody, {
+      void Promise.resolve(rendered).then(() => this.plugin.audioLinks.enhanceAudioTimeLinks(timelineBody, {
         sourcePath: file.path,
         onTimeLink: (payload) => this.seekInlineAudio(payload),
       }));
@@ -3955,7 +3955,7 @@ export class OutlineView extends obsidian.ItemView {
   renderCompletedNotePlayer(root, data, sourceFile) {
     const refs = data && Array.isArray(data.audioRefs) ? data.audioRefs : [];
     const audioFile = refs
-      .map((ref) => this.plugin.resolveAudioLinkFile(ref, sourceFile.path))
+      .map((ref) => this.plugin.audioLinks.resolveAudioLinkFile(ref, sourceFile.path))
       .find((f) => f instanceof obsidian.TFile);
     if (!(audioFile instanceof obsidian.TFile)) {
       this.inlineAudioEl = null;
@@ -5548,12 +5548,12 @@ export class OutlineView extends obsidian.ItemView {
         : "录音开始后，AI 会按 14 个画像维度实时标出覆盖进度。" });
     }
     // 点击回听：只调 enhanceAudioTimeLinks（认 a.internal-link[data-href=音频][text=HH:MM]），零额外代码。
-    try { this.plugin.enhanceAudioTimeLinks(body, { sourcePath: (session && session.mdPath) || "" }); } catch { /* intentionally empty */ }
+    try { this.plugin.audioLinks.enhanceAudioTimeLinks(body, { sourcePath: (session && session.mdPath) || "" }); } catch { /* intentionally empty */ }
   }
 
   enhanceRenderedOutline(body, opts) {
     if (!body) return;
-    this.plugin.enhanceAudioTimeLinks(body, opts || {});
+    this.plugin.audioLinks.enhanceAudioTimeLinks(body, opts || {});
     this.decorateOutlineSourceTags(body);
     this.promoteOutlineTimeLinks(body);
   }

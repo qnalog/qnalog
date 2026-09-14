@@ -15,7 +15,7 @@ import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban
 
 import { getDesktopModule } from "./shared/desktop-runtime";
 
-import {AudioTimeModal, SpeakerNameConfirmModal, QueueModal, RecruitContextModal, ImportTextModal, ImportAudioModal, AudioImportOptionsModal, BubbleWidget } from "./ui/modals";
+import {SpeakerNameConfirmModal, QueueModal, RecruitContextModal, ImportTextModal, ImportAudioModal, AudioImportOptionsModal, BubbleWidget } from "./ui/modals";
 
 import {normalizeAudioInputMode, audioInputModeLabel } from "./ui/helpers";
 
@@ -29,7 +29,7 @@ import { normalizeKnowledgeExtractionHistory } from "./shared/util-knowledge";
 
 import { listJDProjects } from "./recruit/jd-projects";
 
-import {parseElapsedMsToken, getSessionMetaDurationMs } from "./shared/util-text";
+import {getSessionMetaDurationMs } from "./shared/util-text";
 
 import {DEFAULT_RECRUIT_QUALITIES, isRecruitFeatureUnlocked, normalizeRecruitContext, hasRecruitContextContent, parseJdProject, renderRecruitCandidateBase, renderRecruitAggregateBase } from "./recruit";
 
@@ -125,10 +125,10 @@ import {normalizeMeetingWorkbench } from "./notes/meeting-workbench";
 import {renderRecordingInterviewBriefBlock, renderRecordingPromotionReviewBlock } from "./notes/detail-blocks";
 
 // 以下 14 个声明已抽到 ./notes/audio-refs（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {extractAudioSegmentOffsets, getAudioDurationMs, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName } from "./notes/audio-refs";
+import {getAudioDurationMs, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName } from "./notes/audio-refs";
 
 // 以下 40 个声明已抽到 ./notes/note-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, isTextImportSession, isTimeLabel, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
+import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
 
 // 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {detectRecentNoteMode, getRecentNotes } from "./recent/recent-notes";
@@ -166,6 +166,7 @@ import { VocabularyService } from "./vocabulary/vocabulary-service";
 import { MigrationService } from "./migrations/migration-service";
 import { RealtimeOutlineService } from "./notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
+import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -234,6 +235,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
     this.outline = new RealtimeOutlineService(this);
     this.migrations = new MigrationService(this);
@@ -274,7 +276,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     // 自定义 Bases 视图「招聘看板」（@since 1.10.0；内部自带守卫，老版本/未启用 Bases 时安全跳过）。
     registerRecruitBoardView(this);
     this.addRibbonIcon("list-tree", "QnALog 实时纪要面板", () => this.openOutlineView());
-    this.registerMarkdownPostProcessor((el, ctx) => this.enhanceAudioTimeLinks(el, ctx));
+    this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
     // 浮窗显隐与侧边栏（实时纪要面板）联动
@@ -570,128 +572,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     if (this.bubble) this.bubble.unmount();
     // 清理招聘项目重算 Debouncer，避免卸载后 pending timer 触发已 detach 的实例
     try { if (this.recruit) this.recruit.dispose(); } catch { /* intentionally empty */ }
-  }
-
-  enhanceAudioTimeLinks(el, ctx) {
-    const links = Array.from(el.querySelectorAll("a.internal-link"));
-    for (const link of links) {
-      const label = (link.textContent || "").trim();
-      const linkPath = link.getAttribute("data-href") || link.getAttribute("href") || "";
-      if (!isTimeLabel(label) || !getAudioExtFromLinkPath(linkPath)) continue;
-      link.classList.add("lexvoice-time-link");
-      link.setAttribute("aria-label", `QnALog 回听 ${label}`);
-      const anyLink = link;
-      if (anyLink.__lexvoiceTimeHandler) {
-        link.removeEventListener("click", anyLink.__lexvoiceTimeHandler, true);
-      }
-      const handler = (evt) => {
-        evt.preventDefault();
-        evt.stopPropagation();
-        if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
-        this.openAudioTimeLink(linkPath, label, ctx && ctx.sourcePath, ctx).catch((e) => {
-          console.error("[QnALog] open audio time link failed", e);
-          new obsidian.Notice(`QnALog 回听失败：${(e && e.message) || e}`);
-        });
-      };
-      anyLink.__lexvoiceTimeHandler = handler;
-      link.addEventListener("click", handler, true);
-    }
-  }
-
-  resolveAudioLinkFile(linkPath, sourcePath) {
-    const candidates = getAudioLinkCandidates(linkPath);
-    if (!candidates.length) return null;
-    const isAudioFile = (file) => file instanceof obsidian.TFile && AUDIO_EXT.has((file.extension || "").toLowerCase());
-    for (const target of candidates) {
-      const direct = this.app.metadataCache.getFirstLinkpathDest(target, sourcePath || "");
-      if (isAudioFile(direct)) return direct;
-      const exact = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(target));
-      if (isAudioFile(exact)) return exact;
-      const scoped = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(`${this.settings.audioFolder}/${target.split("/").pop() || target}`));
-      if (isAudioFile(scoped)) return scoped;
-    }
-    const names = candidates.map((target) => (target.split("/").pop() || target).trim()).filter(Boolean);
-    const lowerNames = names.map((name) => name.toLowerCase());
-    const stems = names
-      .map((name) => name.replace(/\.[^.]+$/i, "").toLowerCase())
-      .filter(Boolean);
-    return this.app.vault.getFiles().find((f) => {
-      if (!AUDIO_EXT.has((f.extension || "").toLowerCase())) return false;
-      const fname = (f.name || "").toLowerCase();
-      const fbase = (f.basename || "").toLowerCase();
-      if (lowerNames.includes(fname)) return true;
-      return stems.some((stem) => fbase === stem || fbase.startsWith(stem + "-"));
-    }) || null;
-  }
-
-  async resolveAudioTimeLinkContext(linkPath, label, sourcePath) {
-    const file = this.resolveAudioLinkFile(linkPath, sourcePath);
-    if (!(file instanceof obsidian.TFile)) {
-      return null;
-    }
-    const globalMs = parseElapsedMsToken(label);
-    let localMs = globalMs;
-    if (sourcePath) {
-      const sourceFile = this.app.vault.getAbstractFileByPath(sourcePath);
-      if (sourceFile instanceof obsidian.TFile) {
-        try {
-          const content = await this.app.vault.cachedRead(sourceFile);
-          const offsets = extractAudioSegmentOffsets(content);
-          const target = getAudioLinkTarget(linkPath);
-          const name = (target.split("/").pop() || target).trim();
-          const offset = offsets.get(file.path) ?? offsets.get(obsidian.normalizePath(target)) ?? offsets.get(name) ?? offsets.get(file.name);
-          if (Number.isFinite(offset)) localMs = Math.max(0, globalMs - offset);
-        } catch (e) {
-          console.warn("[QnALog] read source note for audio offset failed", e);
-        }
-      }
-    }
-    return { file, globalMs, localMs, label, linkPath, sourcePath };
-  }
-
-  async openAudioTimeLink(linkPath, label, sourcePath, opts) {
-    const payload = await this.resolveAudioTimeLinkContext(linkPath, label, sourcePath);
-    if (!payload) {
-      const globalMs = parseElapsedMsToken(label);
-      const fallbackPayload = { file: null, globalMs, localMs: globalMs, label, linkPath, sourcePath };
-      if (opts && typeof opts.onTimeLink === "function") {
-        try {
-          if (opts.onTimeLink(fallbackPayload) === true) return;
-        } catch (e) {
-          console.warn("[QnALog] inline time link fallback failed", e);
-        }
-      }
-      if (this.seekOutlineInlineAudio(fallbackPayload)) return;
-      new obsidian.Notice("QnALog：找不到对应音频文件，可能已被移动或删除。", 6000);
-      return;
-    }
-    if (opts && typeof opts.onTimeLink === "function") {
-      try {
-        if (opts.onTimeLink(payload) === true) return;
-      } catch (e) {
-        console.warn("[QnALog] inline time link handler failed", e);
-      }
-    }
-    if (this.seekOutlineInlineAudio(payload)) return;
-    new AudioTimeModal(this.app, payload.file, payload.localMs, label).open();
-  }
-
-  seekOutlineInlineAudio(payload) {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    for (const leaf of leaves) {
-      const view = leaf && leaf.view;
-      if (view && typeof view.seekInlineAudio === "function") {
-        try {
-          if (view.seekInlineAudio(payload) === true) return true;
-        } catch (e) {
-          console.warn("[QnALog] outline inline seek failed", e);
-        }
-      }
-    }
-    return false;
-  }
-
-  async loadAll() {
+  }  async loadAll() {
     const saved: unknown = (await this.loadData()) || {};
     // 还原密钥：data.json 里的密钥是混淆态，读入内存前先解混淆（旧明文数据会原样通过，下次保存自动转混淆）
     try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
