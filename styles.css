@@ -6061,7 +6061,9 @@ body .lexvoice-menu .menu-item.selected .menu-item-icon {
 
 .lexvoice-object-overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* 卡片当前固定 3 张（人员 / 待办 / 转写词表，见 src/ui/settings-tab.ts）。
+     写死列数时，列数多于卡片数就会在右侧空出整列；auto-fit 会收缩空轨道，列数随容器宽度与卡片数变化。 */
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: var(--size-2-3);
   margin: 0 0 var(--size-2-2);
 }
@@ -6070,6 +6072,10 @@ body .lexvoice-menu .menu-item.selected .menu-item-icon {
   position: relative;
   display: flex;
   flex-direction: column;
+  /* 核心 button 规则设了 align-items/justify-content: center。不覆盖时，卡片内容按剩余空间居中：
+     内容较少的卡片（说明文字少一行）头部会向下偏移，说明文字也会被水平居中而不再与标题左对齐。 */
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 0;
   min-width: 0;
   min-height: 132px;
@@ -6163,17 +6169,8 @@ body .lexvoice-menu .menu-item.selected .menu-item-icon {
   stroke-width: 1.5;
 }
 
-@container (max-width: 600px) {
-  .lexvoice-object-overview-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container (max-width: 320px) {
-  .lexvoice-object-overview-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* 列数由上面的 auto-fit 按容器宽度决定（约 520px 以下 2 列、340px 以下 1 列），
+   不再用 @container 写死列数——写死会让 3 张卡片在窄容器里折成两行并空出一格。 */
 
 /* 设置页通用 textarea —— 占满宽度，原生字体 */
 .lexvoice-textarea {

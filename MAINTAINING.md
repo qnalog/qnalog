@@ -361,6 +361,14 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 两个标签写在用户已有的卡片文件里；`LexVoice/学习卡片`、`LexVoice/资料库/学习卡片` 是既有目录。
 用户已生成的学习卡片文件**不删除、不改写**，只是不再有入口。
 
+同一提交顺带修掉设置页「资料库」卡片区的两处排版问题（`styles.css` 的
+`.lexvoice-object-overview-grid` / `.lexvoice-object-overview-card`）：
+
+| 问题 | 原因 | 处理 |
+|---|---|---|
+| 卡片头部不齐（截图里「待办」比另两张低 18px） | 核心 `button` 规则设 `align-items` / `justify-content: center`，卡片只覆盖了 `display` 与 `height`。卡内内容不足 132px 时被垂直居中：说明文字两行的卡片顶部偏移 17.6px，一行的偏移 26.9px。4 张卡时同理（「学习卡片」与「待办」都是 26.9px），删掉一张后才在视觉上暴露 | 卡片补 `align-items: flex-start` 与 `justify-content: flex-start`，让标题、计数、说明文字都靠左上；说明文字此前也被水平居中，不再与标题左对齐 |
+| 右侧空出一列 | 列数写死 `repeat(4, …)`，卡片数 4 → 3 后第 4 列留空 | 改为 `repeat(auto-fit, minmax(170px, 1fr))`，列数随容器宽度与卡片数变化；同时删除两条 `@container` 里写死列数的规则（`600px` → 2 列、`320px` → 1 列），它们在 3 张卡片时会把卡折成两行并空出一格 |
+
 **兼容规则（改这一节前先读）**：
 
 - **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
