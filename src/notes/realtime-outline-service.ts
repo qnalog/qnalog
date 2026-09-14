@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：实时大纲：调度与执行、增量生成、收尾补全
 
 import * as obsidian from "obsidian";
@@ -16,6 +15,30 @@ import { RealtimeOutlineCoordinator, runInOutlineSessionTail } from "../outline-
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS, REALTIME_OUTLINE_FINAL_MAX_BATCHES, REALTIME_OUTLINE_FINAL_MAX_TOKENS, REALTIME_OUTLINE_FINAL_TIMEOUT_MS, REALTIME_OUTLINE_LOOKBACK_SEGMENTS, REALTIME_OUTLINE_MANUAL_TIMEOUT_MS, REALTIME_OUTLINE_MAX_MEMORY_CHARS, REALTIME_OUTLINE_MAX_NO_CHANGE_REJECTIONS, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS, REALTIME_OUTLINE_MAX_SEGMENTS, REALTIME_OUTLINE_MAX_TRANSCRIPT_CHARS, REALTIME_OUTLINE_MIN_NEW_SEGMENTS, REALTIME_OUTLINE_MIN_SEMANTIC_DELTA_CHARS, REALTIME_OUTLINE_SILENT_MAX_TOKENS, REALTIME_OUTLINE_SILENT_TIMEOUT_MS, buildOutlinePrompt, buildRealtimeOutlineAnchorSources, buildRealtimeOutlineTranscript, buildRollingOutlineContext, clipRealtimeContextText, getRealtimeOutlineNewSegmentCount, getRealtimeOutlineQueuedDelayMs, getRealtimeOutlineTimeoutMs, hasRealtimeOutlineRunnableBacklog, isRealtimeOutlineBackoffActive, isRealtimeOutlineCurrent, isRealtimeOutlineSilentIntervalActive, markRealtimeOutlineFailure, markRealtimeOutlineSuccess, normalizeRealtimeOutlineState, parseRealtimeOutlineResponse, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline, updateRealtimeOutlineCoverage } from "../notes/realtime-outline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
+
+/** 实时大纲的调度与生成参数；四个入口共用同一套可选项。 */
+export interface RealtimeOutlineRequestOptions {
+  /** 请求的防抖延迟（毫秒）；缺省按设置的 realtimeOutlineDebounceMs。 */
+  delayMs?: number;
+  /** 调度原因，写入诊断与协调器状态。 */
+  reason?: string;
+  /** 静默轮：不阻塞用户侧操作，失败也不提示。 */
+  silent?: boolean;
+  /** 强制生成，跳过「内容未变/退避中」等前置判断。 */
+  force?: boolean;
+  /** 收尾轮：用更大的输出上限，且失败不自动重试。 */
+  final?: boolean;
+  /** 本地模型端点：静默间隔与优先级按本地口径调整。 */
+  local?: boolean;
+  /** 交回协调器的超时（毫秒）。 */
+  timeoutMs?: number;
+  /** 输出 token 上限。 */
+  maxTokens?: number;
+  /** 取消信号；已中止时直接抛 AbortError。 */
+  signal?: AbortSignal;
+  /** 上一次因输出结构不合格被拒后的格式修复重试。 */
+  formatRetry?: boolean;
+}
 
 /** RealtimeOutlineService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RealtimeOutlineHost {
@@ -37,7 +60,7 @@ export class RealtimeOutlineService {
     this.host = host;
   }
 
-  scheduleRealtimeOutline(opts = {}) {
+  scheduleRealtimeOutline(opts: RealtimeOutlineRequestOptions = {}) {
     const session = this.host.session;
     if (!session || !session.id) return;
     const requestedDelay = Number(opts && opts.delayMs);
@@ -65,7 +88,7 @@ export class RealtimeOutlineService {
     return true;
   }
 
-  async refreshRealtimeOutlineInBackground(opts = {}) {
+  async refreshRealtimeOutlineInBackground(opts: RealtimeOutlineRequestOptions = {}) {
     const session = this.host.session;
     if (!session || !session.id || !session.segments || !session.segments.length) return "";
     const local = isLocalLlmEndpoint(this.host.settings.llmEndpoint);
@@ -219,7 +242,7 @@ export class RealtimeOutlineService {
     }
   }
 
-  async generateRealtimeOutlineForSession(session, opts = {}) {
+  async generateRealtimeOutlineForSession(session, opts: RealtimeOutlineRequestOptions = {}) {
     if (!session) return "";
     // Strict per-session promise tail. Never bypass or reset this tail: allowing a second
     // read-modify-write after an arbitrary lock timeout can overwrite a newer outline.
@@ -233,7 +256,7 @@ export class RealtimeOutlineService {
       });
   }
 
-  async _genOutlineInner(session, opts = {}) {
+  async _genOutlineInner(session, opts: RealtimeOutlineRequestOptions = {}) {
     if (!session || !session.segments || !session.segments.length) return "";
     const processedSegmentCount = session.segments.length;
     const committedSegmentCount = Math.min(
@@ -566,7 +589,7 @@ export class RealtimeOutlineService {
       maxAttemptsPerBatch: REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS,
       maxBatches,
       shouldRetryAttempt: ({ error }) => /实时大纲输出格式不合格/.test(
-        String(error && error.message ? error.message : error || "")
+        getErrorMessage(error)
       ),
       runBatch: async ({ attemptIndex }) => {
         await this.generateRealtimeOutlineForSession(session, {
@@ -586,7 +609,7 @@ export class RealtimeOutlineService {
             segmentCount: totalSegmentCount,
             committedSegmentCount: beforeCommittedCount,
             willRetry: attemptIndex + 1 < REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS
-              && /实时大纲输出格式不合格/.test(String(error && error.message ? error.message : error || "")),
+              && /实时大纲输出格式不合格/.test(getErrorMessage(error)),
             mode: session.mode,
             error: diagnosticError(error),
           });

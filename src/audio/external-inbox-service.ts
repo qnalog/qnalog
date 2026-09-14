@@ -3,6 +3,7 @@
 
 import * as obsidian from "obsidian";
 import type { ImportAudioFilesOptions, ImportAudioFilesResult } from "../imports/import-service";
+import type { TaskActivityInput } from "../shared/task-activity";
 import { getDesktopModule } from "../shared/desktop-runtime";
 import { isLexVoiceMobileRuntime } from "../shared/util-platform";
 import type { LexVoiceSettings, RecordingSession } from "../shared/types";
@@ -258,7 +259,8 @@ export class ExternalInboxService {
   markExternalInboxWaiting(file, detail) {
     const id = this.externalInboxActivityId(file);
     const current = this.host.tasks.taskActivityStore && this.host.tasks.taskActivityStore.get(id);
-    const patch = {
+    // 标注类型：否则 status/progress 会被推断成 string/number，无法赋给 Partial<TaskActivity>。
+    const patch: TaskActivityInput = {
       id,
       kind: "external-audio-import",
       title: `自动导入 · ${file.name}`,
