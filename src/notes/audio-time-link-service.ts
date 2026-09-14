@@ -28,7 +28,7 @@ export class AudioTimeLinkService {
   }
 
 
-  enhanceAudioTimeLinks(el: HTMLElement, ctx: { sourcePath?: string } = {}) {
+  enhanceAudioTimeLinks(el: HTMLElement, ctx: { sourcePath?: string; onTimeLink?: (payload: unknown) => void } = {}) {
     // el 是 HTMLElement，querySelectorAll 的返回元素类型由类型参数指定；
     // 内容是 Obsidian 正文里的内部链接，取回后按带自定义标记的锚元素处理。
     const links = Array.from(el.querySelectorAll<AudioTimeLinkElement>("a.internal-link"));
