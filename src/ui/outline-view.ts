@@ -6257,7 +6257,7 @@ export class OutlineView extends obsidian.ItemView {
           .setIcon("refresh-cw")
           .onClick(() => {
             const pref = this.plugin.settings.repolishPreference || "";
-            void this.plugin.repolishMarkdownFile(file, mode, pref ? getRepolishPreferencePreset(pref) : null);
+            void this.plugin.repolish.repolishMarkdownFile(file, mode, pref ? getRepolishPreferencePreset(pref) : null);
           });
       });
     }
@@ -6275,7 +6275,7 @@ export class OutlineView extends obsidian.ItemView {
         new obsidian.Notice("找不到来源笔记，可能已被改名或移动。", 6000);
       }
     }));
-    menu.addItem((item) => item.setTitle("重新生成清稿").setIcon("refresh-cw").onClick(() => { void this.plugin.generateCleanScript(file); }));
+    menu.addItem((item) => item.setTitle("重新生成清稿").setIcon("refresh-cw").onClick(() => { void this.plugin.repolish.generateCleanScript(file); }));
     menu.addSeparator();
     menu.addItem((item) => item.setTitle("删除此版本").setIcon("trash").onClick(async () => {
       const ok = await lexvoiceConfirm(this.plugin.app, "删除派生版本", `删除「${file.basename}」？母本和逐字稿不受影响。`, "删除");
@@ -6318,7 +6318,7 @@ export class OutlineView extends obsidian.ItemView {
     menu.addItem((item) => {
       item.setTitle("生成清稿")
         .setIcon("file-text")
-        .onClick(() => { void this.plugin.generateCleanScript(file); });
+        .onClick(() => { void this.plugin.repolish.generateCleanScript(file); });
     });
     menu.addItem((item) => {
       item.setTitle(detectedMode ? "重新整理为" : "整理为")
@@ -6358,7 +6358,7 @@ export class OutlineView extends obsidian.ItemView {
             .onClick(() => {
               const pref = this.plugin.settings.repolishPreference || "";
               const preset = pref ? getRepolishPreferencePreset(pref) : null;
-              void this.plugin.repolishMarkdownFile(file, mode, preset);
+              void this.plugin.repolish.repolishMarkdownFile(file, mode, preset);
             });
         });
       }

@@ -2562,7 +2562,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName("立即扫描监听文件夹")
       .setDesc("处理所有未归档的音频文件。用于补漏或初次配置后批量处理。")
-      .addButton(b => b.setButtonText("扫描").onClick(() => this.plugin.scanInboxFolder()));
+      .addButton(b => b.setButtonText("扫描").onClick(() => this.plugin.inbox.scanInboxFolder()));
 
     new obsidian.Setting(c).setName("清理空白短录音")
       .setDesc("扫描转写纪要文件夹，将时长不超过 10 秒且没有有效转写文本的 QnALog 条目移入系统废纸篓，并同步处理其引用的录音文件。误删可从系统废纸篓恢复。")

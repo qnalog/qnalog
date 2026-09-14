@@ -6,7 +6,7 @@ import { LexVoiceSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
-import {QueueModal, RecruitContextModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
+import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
 
 import {getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -16,15 +16,11 @@ import { normalizeKnowledgeExtractionHistory } from "./shared/util-knowledge";
 
 import { listJDProjects } from "./recruit/jd-projects";
 
-import {getSessionMetaDurationMs } from "./shared/util-text";
-
 import {DEFAULT_RECRUIT_QUALITIES, isRecruitFeatureUnlocked, parseJdProject, renderRecruitCandidateBase, renderRecruitAggregateBase } from "./recruit";
 
 import {registerRecruitBoardView } from "./recruit/bases-view";
 
 import {makeRecordingIssue } from "./asr/transcribe";
-
-import {stripModeSuggestionBlocks } from "./llm/core";
 
 import {DEFAULT_SETTINGS } from "./shared/defaults";
 
@@ -37,8 +33,6 @@ import { buildSettingsMigrationReport } from "./shared/settings-migration-report
 import type {LexVoiceSettings } from "./shared/types";
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
-import { getLearnedLlmOutputCeiling } from "./llm/output-budget";
-
 import {AUDIO_EXT } from "./shared/catalog-import";
 
 import {isRecord, pickDefined } from "./shared/util-common";
@@ -47,32 +41,16 @@ import {obfuscateApiKey, deobfuscateApiKey } from "./shared/util-key-diag";
 
 import {RealtimeOutlineCoordinator } from "./outline-coordinator";
 
-import {splitLexVoiceVersionPayload } from "./version-content";
-
-import {getTaskErrorMessage } from "./shared/task-activity";
-
 import {ExternalInboxScanner, isAbsoluteExternalInboxPath } from "./audio/external-inbox";
 
 // 以下 8 个声明已抽到 ./shared/limits（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {EXTERNAL_INBOX_SCAN_INTERVAL_MS } from "./shared/limits";
 
 // 以下 9 个声明已抽到 ./notes/recording-issues（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {isKnowledgeSourceAlreadyScanned, isSyncConflictName, knowledgeExtractionRecordForFile, transformApiKeyFieldsDeep } from "./notes/recording-issues";
-
-// 以下 23 个声明已抽到 ./prompts/briefing-prompts（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
+import {isKnowledgeSourceAlreadyScanned, knowledgeExtractionRecordForFile, transformApiKeyFieldsDeep } from "./notes/recording-issues";
 
 // 以下 39 个声明已抽到 ./notes/realtime-outline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {VIEW_TYPE_OUTLINE } from "./notes/realtime-outline";
-
-// 以下 14 个声明已抽到 ./notes/audio-refs（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {getLexVoiceSegmentsDurationMs } from "./notes/audio-refs";
-
-// 以下 40 个声明已抽到 ./notes/note-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, parseRoleMapItem } from "./notes/note-markdown";
-
-// 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {detectRecentNoteMode } from "./recent/recent-notes";
 
 // 以下 1 个声明已抽到 ./audio/recorder-service（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { RecorderService } from "./audio/recorder-service";
@@ -83,12 +61,8 @@ import { TaskQueue } from "./queue/task-queue";
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
 
-// 以下 3 个声明已抽到 ./briefing/merge-pipeline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {cleanTranscript, mergeAndPolish } from "./briefing/merge-pipeline";
-
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import { TaskActivityService } from "./tasks/task-activity-service";
-import { ensureVaultFolder, findAvailableVaultPath } from "./shared/util-vault";
 import { DeliveryService } from "./delivery/delivery-service";
 import { RecruitService } from "./recruit/recruit-service";
 import { NoteWriter } from "./notes/note-writer";
@@ -110,6 +84,8 @@ import { RecordingService } from "./audio/recording-service";
 import { SessionFinalizeService } from "./notes/session-finalize-service";
 import { ImportService } from "./imports/import-service";
 import { ExternalInboxService } from "./audio/external-inbox-service";
+import { RepolishService } from "./notes/repolish-service";
+import { InboxWatcherService } from "./imports/inbox-watcher-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -178,6 +154,8 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.inbox = new InboxWatcherService(this);
+    this.repolish = new RepolishService(this);
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
@@ -290,12 +268,12 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.addSettingTab(this.settingTab);
 
     this.registerEvent(this.app.vault.on("create", (file) => {
-      this.handleInboxFile(file).catch(e => console.error("[QnALog] inbox handler error", e));
+      this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox handler error", e));
     }));
     // Nutstore Sync / Obsidian Sync may first create a placeholder and then fill it through modify events.
     // Listen to both so a zero-byte placeholder never becomes the only chance to auto-import the file.
     this.registerEvent(this.app.vault.on("modify", (file) => {
-      this.handleInboxFile(file).catch(e => console.error("[QnALog] inbox modify handler error", e));
+      this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox modify handler error", e));
     }));
 
     // 文件重命名时同步迁移队列里所有指向旧路径的任务，
@@ -303,7 +281,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (file instanceof obsidian.TFile) {
         this.queueRetry.migrateQueueTasksAfterRename(oldPath, file.path);
-        this.handleInboxFile(file).catch(e => console.error("[QnALog] inbox rename handler error", e));
+        this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox rename handler error", e));
       }
     }));
 
@@ -314,7 +292,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       if (path) this.queueRetry.removeQueueTasksForDeletedMarkdown(path);
     }));
 
-    this.addCommand({ id: "scan-inbox", name: "扫描监听文件夹", callback: () => this.scanInboxFolder() });
+    this.addCommand({ id: "scan-inbox", name: "扫描监听文件夹", callback: () => this.inbox.scanInboxFolder() });
     this.externalInbox.externalInboxScanner = new ExternalInboxScanner();
     this.registerInterval(window.setInterval(() => {
       if (!this.settings.inboxAutoImport || !isAbsoluteExternalInboxPath(this.settings.inboxFolder)) return;
@@ -451,7 +429,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         const mode = isMd ? this.noteWriter.detectModeFromMarkdown(file) : null;
         if (!isMd || !mode) return false;
         if (checking) return true;
-        void this.repolishMarkdownFile(file, mode);
+        void this.repolish.repolishMarkdownFile(file, mode);
         return true;
       },
     });
@@ -712,442 +690,6 @@ class LexVoicePlugin extends obsidian.Plugin {
       history.vocabulary = {};
     }
     this.settings.knowledgeExtractionHistory = history;
-  }  async repolishMarkdownFile(file, mode, repolishOptions = null) {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
-    if (["promotion-review", "recruit", "recruit-needs"].includes(mode) && !isRecruitFeatureUnlocked(this.settings)) {
-      new obsidian.Notice("该扩展模式尚未启用");
-      return;
-    }
-    const meta = getModeMeta(this.settings, mode);
-    let taskMeter = null;
-    // 重新整理必须按来源纪要单飞。否则用户连续切换模式/重复点击时，两个
-    // LLM 任务会同时写同一个版本缓存文件，Obsidian 会把后到的 create 请求
-    // 拒绝为 "File already exists."，并留下一个看起来仍在运行的重复任务。
-    let taskId = `repolish:${file.path}`;
-    let taskStarted = false;
-    let repolishLockAcquired = false;
-    try {
-      const content = await this.app.vault.read(file);
-      const sourceId = getLexVoiceSourceIdFromMarkdown(content, file);
-      taskId = `repolish:${sourceId || file.path}`;
-      let segments = extractLexVoiceTranscriptSegments(content);
-      if (!segments.length) {
-        new obsidian.Notice("未找到 QnALog 原始转写。请在包含「分段原始转写」或录音段落的纪要 Markdown 上使用。", 8000);
-        return;
-      }
-
-      // 从 frontmatter 解析角色映射（"代号 → 真名" 形式的条目）
-      const fmCache = (this.app.metadataCache.getFileCache(file) || {}).frontmatter || null;
-      const roleMapping = extractRoleMappingFromFrontmatter(fmCache);
-      if (roleMapping.length) {
-        segments = applyRoleMappingToSegments(segments, roleMapping);
-      }
-
-      // 从 frontmatter 取插件已注入的 time，作为 sessionMeta（避免 LLM 重新推断，保持时间不变）
-      let sessionMeta = null;
-      if (fmCache) {
-        const fullTimeStr = fmCache.time || "";
-        const durationStr = fmCache["时长"] || fmCache.duration || "";
-        if (fullTimeStr) {
-          const m = window.moment ? window.moment(fullTimeStr, [window.moment.ISO_8601, "YYYY-MM-DDTHH:mm:ss", "YYYY-MM-DD HH:mm:ss"], true) : null;
-          if (m && m.isValid && m.isValid()) {
-            sessionMeta = { startedAt: m.toDate().toISOString(), duration: String(durationStr || "").trim() };
-          }
-        } else {
-          // 兼容旧笔记：早期版本可能写入"日期"和"时间"两个字段；重新整理后会迁移为 time。
-          const dateStr = fmCache["日期"] || fmCache.date || "";
-          const timeStr = fmCache["时间"] || "";
-          if (dateStr) {
-            const composed = String(dateStr).trim() + (timeStr ? "T" + String(timeStr).trim() : "");
-            const m = window.moment ? window.moment(composed, ["YYYY-MM-DDTHH:mm", "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss"], true) : null;
-            if (m && m.isValid && m.isValid()) {
-              sessionMeta = { startedAt: m.toDate().toISOString(), duration: String(durationStr || "").trim() };
-            }
-          }
-        }
-      }
-
-      let recruitContext = null;
-      if (mode === "recruit") {
-        const result = await new Promise((resolve) => {
-          const modal = new RecruitContextModal(this.app, this, {
-            flow: "repolish",
-            onConfirm: (action, ctx) => resolve({ action, ctx }),
-          });
-          modal.open();
-        });
-        if (result.action === "cancel") return;
-        recruitContext = result.action === "skip" ? null : result.ctx;
-      }
-
-      if (!this._repolishInFlight) this._repolishInFlight = new Set();
-      if (this._repolishInFlight.has(taskId)) {
-        new obsidian.Notice("这篇纪要正在重新整理，请等待当前任务完成。", 5000);
-        return;
-      }
-      this._repolishInFlight.add(taskId);
-      repolishLockAcquired = true;
-
-      const preferenceLabel = repolishOptions && repolishOptions.label ? ` · ${repolishOptions.label}` : "";
-      const mapNotice = roleMapping.length
-        ? `QnALog：应用 ${roleMapping.length} 条角色映射后按${meta.prefix}模式重新整理${preferenceLabel}…`
-        : `QnALog：正在按${meta.prefix}模式重新整理${preferenceLabel}…`;
-      new obsidian.Notice(mapNotice);
-      // 把笔记原 frontmatter 传给 mergeAndPolish，post-process 阶段会作为 base 保留用户改动
-      // （包括用户已应用的角色映射变更，仅 system 字段被覆盖、tags 被 merge）
-      const originalFmForRegen = fmCache ? Object.assign({}, fmCache) : null;
-      // 在 originalFm 里应用角色映射的"压平"，避免 base 里仍然带 → 形式
-      if (originalFmForRegen && roleMapping.length) {
-        for (const f of ROLE_MAPPING_FIELDS) {
-          const v = originalFmForRegen[f];
-          if (Array.isArray(v)) {
-            originalFmForRegen[f] = v.map(item => {
-              const m = parseRoleMapItem(item);
-              return m ? m.to : item;
-            });
-          } else if (typeof v === "string") {
-            const m = parseRoleMapItem(v);
-            if (m) originalFmForRegen[f] = m.to;
-          }
-        }
-      }
-      this.tasks._busyLabel = `重新整理中（${meta.prefix}）…`;
-      const sourceMode = detectRecentNoteMode(this, file, fmCache);
-      const sourceModeLabel = sourceMode && sourceMode !== "off"
-        ? ((getModeMeta(this.settings, sourceMode) || {}).label || sourceMode)
-        : "未标注";
-      this.tasks._busyContext = {
-        kind: "重新整理",
-        sourceFile: file.basename,
-        sourceFolder: file.parent && file.parent.path ? file.parent.path : "知识库根目录",
-        durationMs: getLexVoiceSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta),
-        sourceModeLabel,
-        targetModeLabel: [meta.label || meta.prefix, repolishOptions && repolishOptions.label]
-          .filter(Boolean)
-          .join(" · "),
-      };
-      taskStarted = true;
-      this.tasks.startTaskActivity({
-        id: taskId,
-        kind: "repolish",
-        title: `重新整理 · ${meta.prefix}`,
-        subject: file.path,
-        status: "running",
-        stage: "llm",
-        stageLabel: "AI 重新整理",
-        detail: preferenceLabel ? `正在准备原始转写 · ${preferenceLabel.replace(/^\s*·\s*/, "")}` : "正在准备原始转写",
-        progress: 3,
-        actions: [],
-      });
-      this.tasks.updateBusyStatus();
-      taskMeter = this.tasks.beginTaskMeter();
-      sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter });
-      const polished = await mergeAndPolish(this, segments, mode, recruitContext, sessionMeta, originalFmForRegen, repolishOptions);
-      this.tasks.patchTaskActivity(taskId, {
-        stage: "writing",
-        stageLabel: "正在生成新版本",
-        detail: "AI 正文已经完成，正在写入 Markdown",
-        progress: 94,
-        deadlineAt: 0,
-      });
-
-      // 重新整理只生成派生纪要，不重命名、不修改母本。角色映射只作为本次
-      // LLM 输入使用，原始转写和用户已经保存的 YAML 必须保持可追溯。
-      const dailyTargetFile = file;
-      const latestSourceContent = await this.app.vault.read(dailyTargetFile);
-      const versionLabel = `${meta.prefix}${preferenceLabel}`;
-      const versionStyle = repolishOptions && repolishOptions.label ? repolishOptions.label : "";
-      const versionBody = stripModeSuggestionBlocks(polished || buildEmptyLlmOutputFallback()).trim();
-      const versionParts = splitLexVoiceVersionPayload(versionBody);
-      const fallbackVersion = {
-        body: versionParts.body.trim() || buildEmptyLlmOutputFallback(),
-        frontmatter: versionParts.frontmatter || "",
-        meta: {
-          sourceId: getLexVoiceSourceIdFromMarkdown(latestSourceContent, dailyTargetFile),
-          createdAt: window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString(),
-        },
-      };
-
-      // 可见副本是用户交付物，必须先落盘；版本缓存/manifest 只是索引，
-      // 即使索引写入异常，也不能阻断新纪要生成。
-      const derivedFile = await this.versions.createLexVoiceDerivedNote(
-        dailyTargetFile,
-        latestSourceContent,
-        fallbackVersion,
-        versionLabel,
-        mode,
-        versionStyle,
-      );
-      this.tasks.patchTaskActivity(taskId, {
-        stage: "postprocess",
-        stageLabel: "正在完成文件处理",
-        detail: derivedFile instanceof obsidian.TFile ? derivedFile.path : "新版本已经写入",
-        progress: 98,
-        deadlineAt: 0,
-      });
-      await clearCommittedBriefingCheckpoint(this, sessionMeta);
-      let versionCacheError = "";
-      try {
-        await this.versions.saveLexVoiceVersion(dailyTargetFile, latestSourceContent, segments, {
-          kind: "minutes",
-          label: versionLabel,
-          mode,
-          style: versionStyle,
-          idLabel: `${meta.prefix}${versionStyle ? "-" + versionStyle : ""}`,
-          body: versionBody,
-          activate: false,
-        });
-      } catch (cacheError) {
-        versionCacheError = getTaskErrorMessage(cacheError);
-        console.warn("[QnALog] derived note created but version cache update failed", cacheError);
-      }
-      try {
-        const dailyFile = derivedFile instanceof obsidian.TFile ? derivedFile : dailyTargetFile;
-        const dailyContent = await this.app.vault.read(dailyFile);
-        await this.noteIndex.appendDailyMeetingOverviewForMarkdown(dailyFile, dailyContent, polished, mode, segments, sessionMeta);
-      } catch (e) {
-        console.error("[QnALog] daily overview after repolish failed", e);
-      }
-      const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
-      new obsidian.Notice(`QnALog：已生成${meta.prefix}派生纪要${preferenceLabel}${roleMapping.length ? `（角色映射 ${roleMapping.length} 条已应用）` : ""}${versionCacheError ? "（版本索引稍后可重建）" : ""}`);
-      const completedTaskMeter = taskMeter ? this.tasks.endTaskMeter(taskMeter) : null;
-      taskMeter = null;
-      try { this.tasks.logCompletedWork(`重新整理完成 · ${meta.prefix}`, (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
-      this.tasks.completeTaskActivity(taskId, {
-        stage: "done",
-        stageLabel: "新版本已生成",
-        detail: versionCacheError ? `${outputPath} · 版本索引未同步：${versionCacheError}` : outputPath,
-        subject: outputPath,
-        progress: 100,
-        actions: [
-          { id: "open-task-note", label: "打开纪要", primary: true },
-          { id: "dismiss-task", label: "关闭记录" },
-        ],
-      });
-    } catch (e) {
-      console.error("[QnALog] repolish markdown failed", e);
-      if (taskStarted) {
-        this.tasks.failTaskActivity(taskId, e, {
-          stage: "failed",
-          stageLabel: "重新整理未完成",
-          detail: getTaskErrorMessage(e),
-          subject: file.path,
-          actions: [
-            { id: "open-task-note", label: "打开原始材料", primary: true },
-            { id: "dismiss-task", label: "关闭记录" },
-          ],
-        });
-      }
-      new obsidian.Notice(`重新整理失败：${(e && e.message) || e}`, 8000);
-    } finally {
-      if (repolishLockAcquired && this._repolishInFlight) this._repolishInFlight.delete(taskId);
-      if (taskMeter) this.tasks.endTaskMeter(taskMeter);
-      this.tasks._busyLabel = null;
-      this.tasks._busyContext = null;
-      this.tasks.updateBusyStatus();
-    }
-  }  // 生成清稿（派生版本·只读快照）：从母本逐字稿忠实清理成可读稿，写成独立文件、双链回指母本。
-  // 永远从母本 raw 读（在派生上触发会先跳回母本）；清稿不含 raw、不参与「重新整理」回写。
-  async generateCleanScript(file) {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
-    let taskMeter = null;
-    let taskId = `clean:${file.path}`;
-    let taskStarted = false;
-    try {
-      // 在派生文件上触发 → 先跳回母本（派生 contains_raw:false，本身没有 raw 可读）。
-      let sourceFile = file;
-      let content = await this.app.vault.read(file);
-      const fm = ((this.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-      if (fm["类型"] === "LexVoice派生版本" || fm.contains_raw === false) {
-        const srcPath = fm.source_path ? obsidian.normalizePath(String(fm.source_path)) : "";
-        const resolved = srcPath ? this.app.vault.getAbstractFileByPath(srcPath) : null;
-        if (resolved instanceof obsidian.TFile) {
-          sourceFile = resolved;
-          content = await this.app.vault.read(resolved);
-        } else {
-          new obsidian.Notice("这是派生版本，但来源笔记已被改名或移动。请在原始录音笔记中生成清稿。", 8000);
-          return;
-        }
-      }
-      const segments = extractLexVoiceTranscriptSegments(content);
-      if (!segments.length) {
-        new obsidian.Notice("未找到原始转写（逐字稿）。请在含「分段原始转写」的录音母本上生成清稿。", 8000);
-        return;
-      }
-      const baseTitle = sourceFile.basename;
-      taskId = `clean:${sourceFile.path}`;
-      this.tasks._busyLabel = "清稿生成中…";
-      const sourceFm = ((this.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
-      const sourceMode = detectRecentNoteMode(this, sourceFile, sourceFm);
-      this.tasks._busyContext = {
-        kind: "生成清稿",
-        sourceFile: sourceFile.basename,
-        sourceFolder: sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "知识库根目录",
-        durationMs: getLexVoiceSegmentsDurationMs(segments),
-        sourceModeLabel: sourceMode && sourceMode !== "off"
-          ? ((getModeMeta(this.settings, sourceMode) || {}).label || sourceMode)
-          : "未标注",
-        targetModeLabel: "清稿",
-      };
-      taskStarted = true;
-      this.tasks.startTaskActivity({
-        id: taskId,
-        kind: "clean-transcript",
-        title: "生成清稿",
-        subject: sourceFile.path,
-        status: "running",
-        stage: "llm",
-        stageLabel: "整理逐字稿",
-        detail: "去除口语赘词并保留原始事实，不覆盖母本",
-        progress: null,
-        actions: [],
-      });
-      this.tasks.updateBusyStatus();
-      new obsidian.Notice("QnALog：正在从母本逐字稿生成清稿…");
-      taskMeter = this.tasks.beginTaskMeter();
-      const { text: cleaned, truncated } = await cleanTranscript(this, segments, getLearnedLlmOutputCeiling(this.settings));
-      if (!cleaned) throw new Error("模型没有返回可用清稿");
-      const warn = truncated
-        ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"
-        : "";
-      const noteBody = `# [清稿] ${baseTitle}\n\n> [!note] 从母本逐字稿忠实清理的可读稿（非纪要、不摘要）。母本（事实源 / 逐字稿）：[[${baseTitle}]]\n\n${warn}${cleaned}`;
-      const version = await this.versions.saveLexVoiceVersion(sourceFile, content, segments, {
-        kind: "clean",
-        label: "清稿",
-        mode: "cleanscript",
-        style: "",
-        idLabel: "清稿",
-        body: noteBody,
-      });
-      await this.versions.applyLexVoiceVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
-      new obsidian.Notice("QnALog：清稿已生成并设为当前显示版本", 6000);
-      const completedTaskMeter = taskMeter ? this.tasks.endTaskMeter(taskMeter) : null;
-      taskMeter = null;
-      try { this.tasks.logCompletedWork("生成清稿", sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
-      this.tasks.completeTaskActivity(taskId, {
-        stage: "done",
-        stageLabel: "清稿已生成",
-        detail: sourceFile.path,
-        actions: [
-          { id: "open-task-note", label: "打开母本", primary: true },
-          { id: "dismiss-task", label: "关闭记录" },
-        ],
-      });
-      try { await this.app.workspace.getLeaf(false).openFile(sourceFile); } catch { /* intentionally empty */ }
-    } catch (e) {
-      console.error("[QnALog] generate clean script failed", e);
-      if (taskStarted) {
-        this.tasks.failTaskActivity(taskId, e, {
-          stage: "failed",
-          stageLabel: "清稿未生成",
-          detail: getTaskErrorMessage(e),
-          actions: [
-            { id: "open-task-note", label: "打开母本", primary: true },
-            { id: "dismiss-task", label: "关闭记录" },
-          ],
-        });
-      }
-      new obsidian.Notice(`清稿生成失败：${(e && e.message) || e}`, 8000);
-    } finally {
-      if (taskMeter) this.tasks.endTaskMeter(taskMeter);
-      this.tasks._busyLabel = null;
-      this.tasks._busyContext = null;
-      this.tasks.updateBusyStatus();
-    }
-  }  async handleInboxFile(file) {
-    if (!(file instanceof obsidian.TFile)) return;
-    if (!AUDIO_EXT.has((file.extension || "").toLowerCase())) return;
-    const inbox = this.settings.inboxFolder;
-    if (!inbox || isAbsoluteExternalInboxPath(inbox)) return;
-    const inboxNorm = obsidian.normalizePath(inbox);
-    if (!file.path.startsWith(inboxNorm + "/") && file.path !== inboxNorm) return;
-    const archiveSub = this.settings.inboxArchiveSubfolder || "";
-    if (archiveSub && file.path.startsWith(`${inboxNorm}/${archiveSub}/`)) return;
-    // 坚果云 / Dropbox / OneDrive 同步冲突文件检测：跳过自动处理，提醒用户解冲突
-    if (isSyncConflictName(file.name)) {
-      this._inboxConflictNotified = this._inboxConflictNotified || new Set();
-      if (!this._inboxConflictNotified.has(file.path)) {
-        this._inboxConflictNotified.add(file.path);
-        new obsidian.Notice(`同步冲突文件已跳过：${file.name}\n请手动解决冲突后再处理。`, 8000);
-        console.warn("[QnALog] skipped sync conflict file:", file.path);
-      }
-      return;
-    }
-    if (!this.settings.inboxAutoImport) return;
-
-    // 显式判断而非 || 3000：让"填 0 = 立即处理"真正生效（0 是合法值，|| 会把它吞成 3000）
-    const rawDelay = Number(this.settings.inboxStabilizeDelayMs);
-    const delay = Number.isFinite(rawDelay) && rawDelay >= 0 ? rawDelay : 3000;
-    this._inboxPending = this._inboxPending || new Map();
-    const previous = this._inboxPending.get(file.path);
-    if (previous && previous.timer) window.clearTimeout(previous.timer);
-    const observedSize = Math.max(0, Number(file.stat && file.stat.size) || 0);
-    const observedMtime = Math.max(0, Number(file.stat && file.stat.mtime) || 0);
-    const timer = window.setTimeout(() => {
-      this._inboxPending.delete(file.path);
-      const fresh = this.app.vault.getAbstractFileByPath(file.path);
-      if (!(fresh instanceof obsidian.TFile)) return;
-      const freshSize = Math.max(0, Number(fresh.stat && fresh.stat.size) || 0);
-      const freshMtime = Math.max(0, Number(fresh.stat && fresh.stat.mtime) || 0);
-      if (freshSize <= 0) return;
-      if (freshSize !== observedSize || freshMtime !== observedMtime) {
-        void this.handleInboxFile(fresh);
-        return;
-      }
-      this._inboxProcessing = this._inboxProcessing || new Set();
-      if (this._inboxProcessing.has(file.path)) return;
-      this._inboxProcessing.add(file.path);
-      this._inboxLock = (this._inboxLock || Promise.resolve()).then(async () => {
-        new obsidian.Notice(`发现新音频：${file.name}，正在生成纪要…`);
-        try {
-          await this.imports.importAudioFiles([file.path]);
-          if (archiveSub) {
-            await ensureVaultFolder(this.app, `${inboxNorm}/${archiveSub}`);
-            const archivePath = findAvailableVaultPath(this.app, obsidian.normalizePath(`${inboxNorm}/${archiveSub}/${file.name}`));
-            const stillExists = this.app.vault.getAbstractFileByPath(file.path);
-            if (archivePath && stillExists instanceof obsidian.TFile) {
-              try { await this.app.fileManager.renameFile(stillExists, archivePath); }
-              catch (e) { console.error("[QnALog] archive rename failed", e); }
-            }
-          }
-        } catch (e) {
-          console.error("[QnALog] inbox auto-import failed", e);
-          new obsidian.Notice(`自动导入未完成：${e.message || e}`);
-        } finally {
-          this._inboxProcessing.delete(file.path);
-        }
-      }).catch((e) => {
-        this._inboxProcessing.delete(file.path);
-        console.error("[QnALog] inbox queue error", e);
-      });
-    }, delay);
-    this._inboxPending.set(file.path, { timer, size: observedSize, mtime: observedMtime });
-  }
-
-  async scanInboxFolder() {
-    const inbox = this.settings.inboxFolder;
-    if (!inbox) { new obsidian.Notice("未配置监听文件夹"); return; }
-    if (isAbsoluteExternalInboxPath(inbox)) {
-      return this.externalInbox.scanExternalInboxFolder({ manual: true, source: "command" });
-    }
-    const inboxNorm = obsidian.normalizePath(inbox);
-    const folder = this.app.vault.getAbstractFileByPath(inboxNorm);
-    if (!(folder instanceof obsidian.TFolder)) {
-      new obsidian.Notice(`监听文件夹不存在：${inboxNorm}`);
-      return;
-    }
-    const archiveSub = this.settings.inboxArchiveSubfolder || "";
-    const allChildren = folder.children.filter((f) =>
-      f instanceof obsidian.TFile
-      && AUDIO_EXT.has((f.extension || "").toLowerCase())
-      && (!archiveSub || !f.path.startsWith(`${inboxNorm}/${archiveSub}/`))
-    );
-    const conflicts = allChildren.filter(f => isSyncConflictName(f.name));
-    const candidates = allChildren.filter(f => !isSyncConflictName(f.name));
-    if (conflicts.length) new obsidian.Notice(`跳过 ${conflicts.length} 个同步冲突文件，请手动解决`, 8000);
-    if (!candidates.length) { new obsidian.Notice("监听文件夹中没有未处理文件"); return; }
-    new obsidian.Notice(`发现 ${candidates.length} 个未处理文件，开始排队…`);
-    for (const f of candidates) await this.handleInboxFile(f);
   }}
 
 // 电脑音频捕获安装/配置向导 Modal —— 分平台引导

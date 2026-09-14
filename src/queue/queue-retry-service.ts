@@ -48,7 +48,6 @@ export interface QueueRetryHost {
   recruit: RecruitService;
   /** 视图外壳服务：队列状态变化后刷新侧边栏。 */
   shell: { refreshOutlineView(): void };
-  repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void>;
 
   saveAll(): Promise<void>;
   saveSettings(): Promise<void>;
@@ -60,6 +59,8 @@ export interface QueueRetryHost {
   recording: { getAsrServiceCircuitState(): unknown; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void>; finalizeSession(session: RecordingSession): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
   /** 词汇表与行业提示词服务。 */
   vocabulary: VocabularyService;
+  /** 重新整理服务：导入转写完成后按说话人姓名重排纪要。 */
+  repolish: { repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: LexVoiceSettings;
   tasks: TaskActivityService;
@@ -452,7 +453,7 @@ export class QueueRetryService {
     // fire-and-forget：不阻塞队列循环
     void (async () => {
       try {
-        await this.host.repolishMarkdownFile(mdFile, mode, null);
+        await this.host.repolish.repolishMarkdownFile(mdFile, mode, null);
       } catch (e) {
         try {
           await this.host.diagnostics.logDiagnostic("error", "queue.auto_repolish_failed", "补转写后自动重新整理失败", {
