@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：录音采集：双录音器切片、电平表、流与声道协商
 
 import type LexVoicePlugin from "../main";
@@ -14,6 +13,32 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { MAX_SPEAKER_CHANNELS, buildMicrophoneAudioConstraints, configureMicrophoneTrackChannels, normalizeAudioChannelMode, speakerLabelForChannel } from "./channel-speakers";
 
 import { resolveRuntimeAudioInputMode } from "../notes/recording-issues";
+import type { RecorderSegmentPayload } from "../shared/types";
+
+/** 录音过程中出现的问题（设备被回收、服务不可用等）。 */
+type RecordingIssue = {
+  kind: string;
+  at: number;
+  message?: string;
+  stoppedAtMs?: number | null;
+  reason?: string;
+};
+
+/** 单路电平表：持有 AudioContext、分析器与逐帧数据。 */
+type AudioLevelMeter = {
+  kind: string;
+  icon: string;
+  label: string;
+  context: AudioContext;
+  source: MediaStreamAudioSourceNode;
+  splitter: ChannelSplitterNode | null;
+  analyser: AnalyserNode;
+  timeData: Uint8Array<ArrayBuffer>;
+  freqData: Uint8Array<ArrayBuffer>;
+  level: number;
+  bars: number[];
+  _resumeAttempts: number;
+};
 
 export class RecorderService {
   declare plugin: LexVoicePlugin;
@@ -33,6 +58,67 @@ export class RecorderService {
   declare _voicedTicks: number;
   /** 静音的计时次数。 */
   declare _silentTicks: number;
+  // 其余实例字段同样只在构造函数或方法里赋值；TypeScript 不推断这类属性（§8），逐个显式声明。
+  /** 浏览器录音器（分段录制）。 */
+  declare recorder: MediaRecorder | null;
+  /** 主录音器：整场录音，用于回听与重切。 */
+  declare masterRecorder: MediaRecorder | null;
+  /** 麦克风输入流。 */
+  declare stream: MediaStream | null;
+  /** 当前段落的音频类型（如 audio/webm）。 */
+  declare mime: string;
+  /** 整场录音的音频类型。 */
+  declare masterMime: string;
+  /** 录音开始的绝对时间（毫秒）。 */
+  declare sessionStartedAt: number;
+  /** 当前段落的起始偏移。 */
+  declare segmentStartOffsetMs: number;
+  /** 累计暂停时长（毫秒）。 */
+  declare pausedFor: number;
+  /** 本次暂停的开始时间；恢复后清空。 */
+  declare pausedAt: number;
+  /** 已产出的段落序号。 */
+  declare segmentIndex: number;
+  /** 定时切片的间隔（毫秒）；0 表示不自动切。 */
+  declare segmentDurationMs: number;
+  /** 用户手动标记的切点（相对录音开始的毫秒）。 */
+  declare quickCutMarksMs: number[];
+  /** 是否正在切片（用于避免重入）。 */
+  declare cutting: boolean;
+  /** 段落回调；由 recording-service 传入。 */
+  declare onSegment: ((payload: RecorderSegmentPayload) => void | Promise<void>) | null;
+  /** 电平状态订阅者。 */
+  declare listeners: Set<(info: unknown) => void>;
+  /** 计时器句柄，用于产出电平与切片判断。 */
+  declare ticker: number | null;
+  /** 各输入通道的电平表实例。 */
+  declare levelMeters: AudioLevelMeter[];
+  /** 当前电平最大值（0–1）。 */
+  declare audioLevel: number;
+  /** 当前录音问题（设备/服务），无问题时为空。 */
+  declare issue: RecordingIssue | null;
+  /** 是否正在停止；停止过程中忽略流中断等回调。 */
+  declare stopping: boolean;
+  /** 流中断监听的清理函数。 */
+  declare streamInterruptionCleanup: (() => void) | null;
+  /** 音频输入方式：麦克风 / 混合 / 仅电脑音频。 */
+  declare captureMode: string;
+  /** 麦克风通道数。 */
+  declare inputChannelCount: number;
+  /** 设备支持的最大通道数。 */
+  declare inputChannelMaxCount: number;
+  /** 输入设备名称，用于状态栏显示。 */
+  declare inputChannelLabel: string;
+  /** 通道处理模式（auto / mono / multichannel）。 */
+  declare inputChannelMode: string;
+  /** 麦克风输入流引用（供电平表使用）。 */
+  declare micStreamRef: MediaStream | null;
+  /** 电脑音频输入流引用。 */
+  declare sysStreamRef: MediaStream | null;
+  /** 虚拟声卡输入流引用。 */
+  declare virtStreamRef: MediaStream | null;
+  /** 电平表使用的 AudioContext。 */
+  declare audioContext: AudioContext | null;
   constructor(plugin) {
     this.plugin = plugin;
     this.recorder = null;
@@ -175,7 +261,7 @@ export class RecorderService {
     };
   }
   createLevelMeter(kind, icon, label, stream, channelIndex = null, channelCount = 1) {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const Ctx = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx || !stream) {
       console.warn(`[QnALog][meter] ${kind} 创建失败：no AudioContext / no stream`, { hasCtx: !!Ctx, hasStream: !!stream });
       return null;
@@ -276,7 +362,7 @@ export class RecorderService {
       try { if (meter.source) meter.source.disconnect(); } catch { /* intentionally empty */ }
       try { if (meter.splitter) meter.splitter.disconnect(); } catch { /* intentionally empty */ }
       try { if (meter.analyser) meter.analyser.disconnect(); } catch { /* intentionally empty */ }
-      try { if (meter.context) meter.context.close(); } catch { /* intentionally empty */ }
+      try { if (meter.context) void meter.context.close(); } catch { /* intentionally empty */ }
     }
     this.levelMeters = [];
     this.audioLevel = 0;
@@ -385,7 +471,7 @@ export class RecorderService {
     if (!rec) {
       return fallbackBlob && this.segmentIndex === 0 ? { blob: fallbackBlob, mime: fallbackBlob.type || mime } : null;
     }
-    const blob = await this._awaitRecorderStop(rec, () => new Blob(chunks, { type: mime }), null);
+    const blob = await this._awaitRecorderStop(rec, () => new Blob(chunks, { type: mime }), null) as Blob | null;
     this.masterRecorder = null;
     this.masterChunks = [];
     this.masterMime = "";
@@ -470,14 +556,14 @@ export class RecorderService {
     const sources = [micStream, virtStream].filter(Boolean);
     if (sources.length > 1) {
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)();
         const dest = ctx.createMediaStreamDestination();
         for (const source of sources) ctx.createMediaStreamSource(source).connect(dest);
         this.audioContext = ctx;
         return dest.stream;
       } catch (e) {
         // 混流上下文构造失败：把已打开的 mic/virt 流全部停掉，避免 track 泄漏后再抛错。
-        try { if (this.audioContext) { this.audioContext.close(); this.audioContext = null; } } catch { /* intentionally empty */ }
+        try { if (this.audioContext) { void this.audioContext.close(); this.audioContext = null; } } catch { /* intentionally empty */ }
         for (const s of sources) { try { s.getTracks().forEach((t) => t.stop()); } catch { /* intentionally empty */ } }
         this.micStreamRef = null; this.virtStreamRef = null;
         throw e;
@@ -486,7 +572,7 @@ export class RecorderService {
     return sources[0] || null;
   }
   releaseStream() {
-    try { if (this.audioContext) { this.audioContext.close(); } } catch { /* intentionally empty */ }
+    try { if (this.audioContext) { void this.audioContext.close(); } } catch { /* intentionally empty */ }
     this.audioContext = null;
     if (this.micStreamRef) this.micStreamRef.getTracks().forEach((t) => t.stop());
     if (this.sysStreamRef) this.sysStreamRef.getTracks().forEach((t) => t.stop());
@@ -547,7 +633,10 @@ export class RecorderService {
       this.segmentStartOffsetMs = endOffset;
       this.nextCutAtElapsed = this.getNextCutAtElapsed(endOffset);
 
-      if (this.state !== "idle") this.startNewRecorder();
+      // 上面的 await 期间用户可能已停止录音（state 变回 idle），此时不应重启分段录音器。
+      // 该守卫原本直读 this.state，但 TypeScript 会按前面的 `state !== "recording"` 守卫把它
+      // 收窄成 "recording"，导致这里的比较被判为恒真；改从 getInfo() 读实时值，语义不变。
+      if (this.getInfo().state !== "idle") this.startNewRecorder();
     } catch (e) {
       cutError = e;
       // 分段重启失败时不能继续显示成“正在录音”。暂停分段录音，但保留独立 masterRecorder，
