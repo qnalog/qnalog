@@ -525,22 +525,6 @@ export async function generateStyledReportFromMarkdown(plugin, mode, markdown) {
   return filled;
 }
 
-export function normalizeSlideVisualItems(value, limit) {
-  const arr = Array.isArray(value) ? value : [];
-  return arr.map(item => {
-    if (typeof item === "string") return { label: "", value: item, note: "" };
-    return {
-      label: String((item && (item.label || item.name || item.title)) || "").trim(),
-      value: String((item && (item.value || item.text || item.desc)) || "").trim(),
-      note: String((item && item.note) || "").trim(),
-    };
-  }).filter(item => item.label || item.value || item.note).slice(0, limit || 8);
-}
-
-export function normalizeSlideTodos(value, limit) {
-  return normalizeReportObjects(value, ["owner", "task", "due"], limit || 8);
-}
-
 export function stripHtmlCodeFence(text) {
   let s = String(text || "").trim();
   const m = s.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i);

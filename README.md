@@ -70,7 +70,7 @@ Edit owner, due date and sub-tasks inline at the candidate stage — no dialogs.
 - Deleting a transcript offers to delete its audio file too.
 
 ### Export
-From one set of notes you can generate an HTML report, an HTML slide deck, an editable `.pptx`, or an `.eml` email draft — same content, different presentation.
+From one set of notes you can generate an HTML report, a PDF report, or an `.eml` email draft — same content, different presentation.
 
 <p align="center">
   <img width="720" alt="QnALog export" src="docs/images/export-email-draft.webp" />
@@ -88,7 +88,7 @@ The sidebar can organize recent notes by folder or by time. Folder groups can be
 5. Stop recording and follow transcription and AI organization in **Task progress**.
 6. Ask follow-up questions from **Ask this note**, or retry only the failed stage if processing was interrupted.
 7. Open **Sediment** and review people, todos, learning cards, and hotwords.
-8. If you need to share, generate an HTML report, slides, PPTX, or an email draft.
+8. If you need to share, generate an HTML report, a PDF report, or an email draft.
 
 <p align="center">
   <img width="720" alt="QnALog in the Obsidian sidebar" src="docs/images/sidebar.webp" />
@@ -207,5 +207,3 @@ npm run verify  # lint + build + test
 MIT — see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and the maintenance policy in [`MAINTAINING.md`](MAINTAINING.md).
 
 Copyright (c) 2026 Lynnx (original LexVoice work); modifications copyright (c) 2026 Q&A Log Team.
-
-The HTML slide-deck feature was inspired by [alchaincyf/huashu-design](https://github.com/alchaincyf/huashu-design); its HTML-first slide workflow and design principles influenced this work. Per the upstream license: Derived from alchaincyf/huashu-design.

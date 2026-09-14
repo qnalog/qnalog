@@ -83,7 +83,7 @@ QnALog 可以把会议中值得复用的内容保存为独立的 Obsidian 对象
 
 ### 导出
 
-同一篇纪要可以继续生成 HTML 报告、HTML 幻灯片、可编辑 `.pptx` 或 `.eml` 邮件草稿。内容保持一致，只根据使用场景调整呈现形式。
+同一篇纪要可以继续生成 HTML 报告、PDF 报告或 `.eml` 邮件草稿。内容保持一致，只根据使用场景调整呈现形式。
 
 <p align="center">
   <img width="720" alt="QnALog 导出" src="docs/images/export-email-draft.webp" />
@@ -102,7 +102,7 @@ QnALog 可以把会议中值得复用的内容保存为独立的 Obsidian 对象
 5. 停止录音，在“处理进度”中查看转写和 AI 整理状态。
 6. 如果处理被中断，可以只重试失败步骤；如果纪要遗漏信息，可以使用“问一问”。
 7. 打开“沉淀”，确认人员、待办、学习卡片和热词。
-8. 需要分享时，可继续生成 HTML 报告、幻灯片、PPTX 或邮件草稿。
+8. 需要分享时，可继续生成 HTML 报告、PDF 报告或邮件草稿。
 
 <p align="center">
   <img width="720" alt="QnALog 侧边栏" src="docs/images/sidebar.webp" />
@@ -224,5 +224,3 @@ npm run verify  # lint + build + test
 MIT，详见 [`LICENSE`](LICENSE)、[`NOTICE`](NOTICE)，以及 [`MAINTAINING.md`](MAINTAINING.md) 中的维护政策。
 
 原始 LexVoice 代码版权归 Lynnx（2026）；本项目的修改版权归 Q&A Log Team（2026）。
-
-HTML 幻灯片功能受到 [alchaincyf/huashu-design](https://github.com/alchaincyf/huashu-design) 的启发，其 HTML-first 工作流和设计原则影响了本功能的实现。根据上游许可证说明：Derived from alchaincyf/huashu-design.
