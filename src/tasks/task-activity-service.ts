@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：界面任务状态：任务计量、状态栏与进度、导入进度、任务动作分发
 
 import * as obsidian from "obsidian";
@@ -17,7 +16,90 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { QueueRetryService } from "../queue/queue-retry-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { TaskActivityStore } from "../shared/task-activity";
+import type { TaskActivity, TaskActivityAction, TaskActivityInput } from "../shared/task-activity";
+import type { AudioImportStageId } from "../shared/activity-progress";
 import { QueueModal } from "../ui/modals";
+
+/** 任务成功完成时的附加信息：失败态专用的两个字段在成功时会被删掉。 */
+type TaskActivityCompletion = Partial<TaskActivity> & {
+  failureLabel?: string;
+  failureActions?: TaskActivityAction[];
+};
+
+/**
+ * 导入忙态（`_importBusy`）的补丁。
+ * 与 TaskActivity 不是同一个对象：它描述音频导入的阶段、分段计数与请求轨迹，
+ * 供状态栏与导入弹窗读取；这里只列出调用方实际会补写的字段。
+ */
+export type AudioImportBusyPatch = {
+  workflow?: string;
+  sessionId?: string;
+  mdPath?: string;
+  mode?: string;
+  phase?: string;
+  phaseStartedAt?: number;
+  startedAt?: number;
+  updatedAt?: number;
+  stageState?: Record<string, unknown>;
+  events?: unknown[];
+  requests?: unknown[];
+  asrConcurrency?: number;
+  /** 单次事件记录：先取出写入事件列表，不并入忙态对象。 */
+  event?: { type?: string; label?: string; detail?: string; stageId?: AudioImportStageId; at?: number } | null;
+  // 进度计数与各阶段文案（导入流程与录音服务按阶段补写）
+  done?: number;
+  total?: number;
+  prepareDone?: number;
+  prepareTotal?: number;
+  segmentDone?: number;
+  segmentTotal?: number;
+  activeSegments?: number;
+  failedSegments?: number;
+  writtenSegments?: number;
+  persistedSegments?: number;
+  missingSegmentIndexes?: number[];
+  completed?: boolean;
+  error?: string;
+  label?: string;
+  detail?: string;
+  organizeLabel?: string;
+  organizeDetail?: string;
+  organizePercent?: number;
+  transcribeLabel?: string;
+  transcribeDetail?: string;
+  writeLabel?: string;
+  writeDetail?: string;
+  writePercent?: number;
+  file?: string;
+  size?: number;
+  model?: string;
+  provider?: string;
+  type?: string;
+  status?: string;
+  stage?: string;
+  kind?: string;
+  stageLabel?: string;
+  audioName?: string;
+  chunkCount?: number;
+  chunkIndex?: number;
+  key?: string;
+  attempt?: number;
+  deadlineAt?: number;
+  maxAttempts?: number;
+  expectedChars?: number;
+  expectedSegments?: number;
+  segmentCount?: number;
+};
+
+/** 本次启动后已完成的一笔处理；供「处理进度」面板展示，不持久化。 */
+export type CompletedWorkEntry = {
+  title: string;
+  detail: string;
+  at: number;
+  durationMs?: number;
+  tokens?: number;
+  tokensExact?: boolean;
+};
 
 /** TaskActivityService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface TaskActivityHost {
@@ -110,14 +192,14 @@ export class TaskActivityService {
     });
     return activity;
   }
-  async runTaskActivity(input, executor, completion = {}) {
+  async runTaskActivity(input: TaskActivityInput, executor, completion: TaskActivityCompletion = {}) {
     if (!input || !input.id || typeof executor !== "function") {
       throw new Error("任务定义不完整");
     }
     const taskId = String(input.id);
     this.startTaskActivity(input);
     const controls = {
-      patch: (patch = {}) => this.patchTaskActivity(taskId, patch),
+      patch: (patch: Partial<TaskActivity> = {}) => this.patchTaskActivity(taskId, patch),
       event: (label, detail = "", type = "update") => {
         if (!this.taskActivityStore) return null;
         return this.taskActivityStore.event(taskId, { type, label, detail });
@@ -146,13 +228,13 @@ export class TaskActivityService {
       throw error;
     }
   }
-  patchTaskActivity(id, patch = {}) {
+  patchTaskActivity(id, patch: Partial<TaskActivity> = {}) {
     if (!this.taskActivityStore || !id) return null;
     const current = this.taskActivityStore.get(id);
     if (!current) return this.startTaskActivity(Object.assign({ id }, patch));
     return this.taskActivityStore.heartbeat(id, patch);
   }
-  failTaskActivity(id, error, patch = {}) {
+  failTaskActivity(id, error, patch: Partial<TaskActivity> = {}) {
     if (!this.taskActivityStore || !id) return null;
     const message = getTaskErrorMessage(error);
     let current = this.taskActivityStore.get(id);
@@ -171,7 +253,7 @@ export class TaskActivityService {
     });
     return failed;
   }
-  completeTaskActivity(id, patch = {}) {
+  completeTaskActivity(id, patch: Partial<TaskActivity> = {}) {
     if (!this.taskActivityStore || !id) return null;
     const current = this.taskActivityStore.get(id);
     if (!current) return null;
@@ -372,7 +454,7 @@ export class TaskActivityService {
         { id: "dismiss-task", label: "关闭记录" },
       ]
       : [];
-    const patch = {
+    const patch: TaskActivityInput = {
       id,
       kind: "finalize",
       title: sourceLabel,
@@ -435,7 +517,7 @@ export class TaskActivityService {
     const progress = total > 0 ? Math.max(0, Math.min(100, (progressCount / total) * 100)) : null;
     const existing = this.taskActivityStore.get(id);
     const completed = !!activity.completed;
-    const patch = {
+    const patch: TaskActivityInput = {
       id,
       kind: "audio-import",
       title: activity.file ? `导入音频 · ${activity.file}` : "导入音频",
@@ -548,7 +630,8 @@ export class TaskActivityService {
   updateBusyStatus() {
     const el = this.progressStatusEl;
     if (!el) return;
-    const show = (icon, text, spin, muted) => {
+    // muted 缺省为 false：多数调用只给前三个参数，此时状态栏用普通样式而非空闲样式。
+    const show = (icon, text, spin, muted = false) => {
       el.empty();
       el.removeClass("lexvoice-statusbar-hidden");
       el.toggleClass("lexvoice-statusbar-idle", !!muted);
@@ -679,7 +762,7 @@ export class TaskActivityService {
     if (this.host.recorder && this.host.recorder.state === "recording") return "录音中";
     return null;
   }
-  updateImportActivity(patch = {}) {
+  updateImportActivity(patch: AudioImportBusyPatch = {}) {
     const current = this._importBusy;
     if (!current || current.workflow !== "audio-import") return null;
     const now = Date.now();
@@ -997,7 +1080,7 @@ export class TaskActivityService {
   // 记一笔"本次启动后已完成"的处理（供处理进度面板展示；不持久化，OB 重启清零）。
   logCompletedWork(title, detail, meter) {
     if (!Array.isArray(this.completedWorkLog)) this.completedWorkLog = [];
-    const entry = { title: String(title || "完成"), detail: String(detail || ""), at: Date.now() };
+    const entry: CompletedWorkEntry = { title: String(title || "完成"), detail: String(detail || ""), at: Date.now() };
     if (meter && Number(meter.durationMs) > 0) entry.durationMs = Math.round(Number(meter.durationMs));
     if (meter && Number(meter.tokens) > 0) { entry.tokens = Math.round(Number(meter.tokens)); entry.tokensExact = !!meter.exact; }
     this.completedWorkLog.unshift(entry);
