@@ -313,7 +313,9 @@ export class NoteWriter {
     const after = cur.slice(blockEnd).replace(/^\n+/, "");
     const next = before + (after ? "\n" + after : "");
     if (next !== cur) await this.host.app.vault.modify(file, next);
-  }  async renameMarkdownWithGeneratedTitle(fileOrPath, polished, mode) {
+  }
+
+  async renameMarkdownWithGeneratedTitle(fileOrPath, polished, mode) {
     if (!this.host.settings.autoRenameWithTitle || !polished || mode === "off") return null;
     const file = typeof fileOrPath === "string"
       ? this.host.app.vault.getAbstractFileByPath(fileOrPath)

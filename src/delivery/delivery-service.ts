@@ -315,7 +315,9 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
     const bytes = pdfBuffer instanceof Uint8Array ? pdfBuffer : new Uint8Array(pdfBuffer || []);
     const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     return await this.host.app.vault.createBinary(target, arrayBuffer);
-  }  openVaultFileInSystem(path) {
+  }
+
+  openVaultFileInSystem(path) {
     try {
       const adapter = this.host.app.vault.adapter;
       const fullPath = adapter && typeof adapter.getFullPath === "function" ? adapter.getFullPath(path) : "";

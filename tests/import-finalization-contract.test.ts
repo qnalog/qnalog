@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { pluginSourceText } from "./plugin-source";
 
 const root = path.resolve(__dirname, "..");
+// 队列任务的失败恢复已抽到独立模块；需要断言"同一文件内先后顺序"的用例读该文件本身。
+const queueRetrySource = fs.readFileSync(path.join(root, "src/queue/queue-retry-service.ts"), "utf8");
 
 describe("import finalization contract", () => {
   it("persists and verifies the raw transcript before starting AI organization", () => {
@@ -22,9 +24,9 @@ describe("import finalization contract", () => {
   it("rebuilds imported notes after both first-pass and queued AI organization", () => {
     const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
     const firstPassPolicy = source.indexOf("shouldRewriteConsolidatedNote(this.settings, writeSession)");
-    const retryStart = source.indexOf("async retryMergeTask(task)");
-    const retryPolicy = source.indexOf("shouldRewriteConsolidatedNote(this.settings, retrySession)", retryStart);
-    const retryRewrite = source.indexOf("await this.noteWriter.rewriteConsolidated(retrySession, polished)", retryPolicy);
+    const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
+    const retryPolicy = queueRetrySource.indexOf("shouldRewriteConsolidatedNote(this.host.settings, retrySession)", retryStart);
+    const retryRewrite = queueRetrySource.indexOf("await this.host.noteWriter.rewriteConsolidated(retrySession, polished)", retryPolicy);
 
     expect(firstPassPolicy).toBeGreaterThan(-1);
     expect(retryStart).toBeGreaterThan(-1);
@@ -36,9 +38,9 @@ describe("import finalization contract", () => {
     const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
     const finalizeRename = source.indexOf("const beforeRenamePath = session.mdPath;");
     const finalizeIndex = source.indexOf('reason: "finalize"', finalizeRename);
-    const retryStart = source.indexOf("async retryMergeTask(task)");
-    const retryRename = source.indexOf("const renamed = (task.mode", retryStart);
-    const retryIndex = source.indexOf('reason: "merge-retry"', retryRename);
+    const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
+    const retryRename = queueRetrySource.indexOf("const renamed = (task.mode", retryStart);
+    const retryIndex = queueRetrySource.indexOf('reason: "merge-retry"', retryRename);
     const derivedStart = source.indexOf("async createLexVoiceDerivedNote");
     const derivedIndex = source.indexOf('reason: "derived-note"', derivedStart);
 
@@ -50,7 +52,8 @@ describe("import finalization contract", () => {
   });
 
   it("keeps AI configuration failures as blocked, manually recoverable merge tasks", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
+    // 合并任务的重试实现已在独立模块里，按本文件的约定用全文断言"字符串存在"。
+    const source = pluginSourceText();
 
     expect(source).toContain('status: nonRetryableMergeError ? "blocked" : "pending"');
     expect(source).toContain("speakerFrontmatter,");
