@@ -2520,16 +2520,16 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
             await this.plugin.saveSettings();
-            this.plugin.refreshExternalInboxWatcher();
+            this.plugin.externalInbox.refreshExternalInboxWatcher();
           });
       })
       .addButton(b => b.setButtonText("选择").onClick(async () => {
-        const folder = await this.plugin.chooseExternalInboxFolder();
+        const folder = await this.plugin.externalInbox.chooseExternalInboxFolder();
         if (!folder) return;
         this.plugin.settings.inboxFolder = folder;
         inboxFolderInput?.setValue(folder);
         await this.plugin.saveSettings();
-        this.plugin.refreshExternalInboxWatcher();
+        this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
     new obsidian.Setting(c).setName("自动处理新文件")
@@ -2537,7 +2537,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .addToggle(t => t.setValue(this.plugin.settings.inboxAutoImport).onChange(async v => {
         this.plugin.settings.inboxAutoImport = v;
         await this.plugin.saveSettings();
-        this.plugin.refreshExternalInboxWatcher();
+        this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
     new obsidian.Setting(c).setName("归档子文件夹")
