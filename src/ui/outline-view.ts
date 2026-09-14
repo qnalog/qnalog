@@ -73,7 +73,7 @@ import { clampLexVoiceProgress } from "../notes/note-markdown";
 import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACKS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentModePrefixEntries, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath, normalizeRecentTopicToken, stripRecentDatePrefix } from "../recent/recent-notes";
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendLexVoiceAskEntry, buildLexVoiceAskContext } from "../notes/ask-panel";
-import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
+import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
 
 // 会中字段树的分组标题（Phase 2 实时大纲用）。
 export const JOBPORTRAIT_GROUP_LABEL = { hard: "硬性要求", soft: "软能力", risk: "风险信号", culture: "文化匹配" };
@@ -6447,7 +6447,7 @@ export class OutlineView extends obsidian.ItemView {
     if (!nextBase) { this.forceRecentRender(); return false; }
     const dir = file.parent && file.parent.path ? file.parent.path : "";
     const target = obsidian.normalizePath(dir && dir !== "/" ? `${dir}/${nextBase}.md` : `${nextBase}.md`);
-    const finalPath = this.plugin.getAvailableMarkdownPath(target, file.path);
+    const finalPath = findAvailableMarkdownPath(this.plugin.app, target, file.path);
     if (!finalPath || obsidian.normalizePath(finalPath) === obsidian.normalizePath(file.path)) {
       this.forceRecentRender(); // 无实际变化 → 复原显示
       return false;

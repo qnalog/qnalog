@@ -23,7 +23,7 @@ import type { LexVoiceSettings, RecordingSession } from "../shared/types";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { RecordingService } from "../audio/recording-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
-import { ensureVaultFolder } from "../shared/util-vault";
+import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { ViewShellService } from "../ui/view-shell-service";
@@ -34,7 +34,6 @@ export interface ImportHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   diagnostics: DiagnosticsService;
-  getAvailableMarkdownPath(targetPath: string, currentPath?: string): string | null;
   noteWriter: NoteWriter;
   profiles: TranscribeProfileService;
   queue: TaskQueue | null;
@@ -108,7 +107,7 @@ export class ImportService {
     const mode = getEffectivePolishMode(this.host.settings, requestedMode);
     const meta = getModeMeta(this.host.settings, mode);
     const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · 导入`;
-    const mdPath = this.host.getAvailableMarkdownPath(obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
+    const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
 
     let recruitContext = null;
@@ -643,7 +642,7 @@ export class ImportService {
 
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
     const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · 文本导入`;
-    const mdPath = this.host.getAvailableMarkdownPath(obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
+    const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
     if (!mdPath) throw new Error("无法生成文本导入笔记路径");
 
     const session = {

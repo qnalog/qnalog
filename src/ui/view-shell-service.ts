@@ -16,14 +16,13 @@ import { sanitizeFilename } from "../shared/util-common";
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import { getRecentNotes } from "../recent/recent-notes";
 import { TaskActivityService } from "../tasks/task-activity-service";
-import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
+import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
 
 /** ViewShellService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface ViewShellHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   bubble: BubbleWidget | null;
-  getAvailableMarkdownPath(targetPath: string, currentPath?: string): string | null;
   /** 录音功能区图标；气泡挂载在它旁边。 */
   ribbonEl: HTMLElement | null;
   session: RecordingSession | null;
@@ -174,7 +173,7 @@ export class ViewShellService {
       canvasSnapshots.push({ file: canvasFile, content });
     }
 
-    const noteTarget = this.host.getAvailableMarkdownPath(`${folderPath}/${file.name}`, oldNotePath);
+    const noteTarget = findAvailableMarkdownPath(this.host.app, `${folderPath}/${file.name}`, oldNotePath);
     if (!noteTarget) throw new Error("无法生成可用的目标文件名");
     await this.host.app.fileManager.renameFile(file, noteTarget);
     const movedNote = this.host.app.vault.getAbstractFileByPath(noteTarget);

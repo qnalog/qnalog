@@ -21,13 +21,12 @@ import { getAudioSegmentListItem, getAudioTimeLink, getLexVoiceDurationMs, getLe
 import { buildLexVoiceRenamedMarkdownPath, extractAllRawBlocksFromText, extractLexVoiceTranscriptSegments, generateTitleTag, inferLexVoiceNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
-import { ensureVaultFolder } from "../shared/util-vault";
+import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 
 /** NoteWriter 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface NoteWriterHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  getAvailableMarkdownPath(targetPath: string, currentPath?: string): string | null;
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
@@ -324,7 +323,7 @@ export class NoteWriter {
       const tag = await generateTitleTag(this, polished, mode);
       if (!tag) return file;
       const target = buildLexVoiceRenamedMarkdownPath(file.path, mode, tag, this.host.settings);
-      const newPath = this.host.getAvailableMarkdownPath(target, file.path);
+      const newPath = findAvailableMarkdownPath(this.host.app, target, file.path);
       if (!newPath || obsidian.normalizePath(newPath) === obsidian.normalizePath(file.path)) return file;
       await this.host.app.fileManager.renameFile(file, newPath);
       const renamed = this.host.app.vault.getAbstractFileByPath(newPath);
@@ -480,7 +479,7 @@ export class NoteWriter {
     const stamp = startedAt && startedAt.isValid && startedAt.isValid()
       ? startedAt.format(this.host.settings.noteFileNameFormatNew)
       : (moment ? moment().format(this.host.settings.noteFileNameFormatNew) : "合并纪要");
-    const targetPath = this.host.getAvailableMarkdownPath(obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · 合并.md`));
+    const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · 合并.md`));
     if (!targetPath) throw new Error("无法生成合并纪要路径");
 
     new obsidian.Notice(`QnALog：正在合并 ${sources.length} 篇纪要…`, 8000);

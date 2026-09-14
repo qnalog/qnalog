@@ -621,63 +621,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     return this.updateService.warnIfBuildManifestSkew();
   }
 
-  getAvailableMarkdownPath(targetPath, currentPath) {
-    const current = obsidian.normalizePath(currentPath || "");
-    let candidate = obsidian.normalizePath(targetPath || "");
-    if (!candidate || candidate === current) return candidate;
-    const dot = candidate.toLowerCase().endsWith(".md") ? candidate.length - 3 : candidate.length;
-    const base = candidate.slice(0, dot);
-    const ext = candidate.slice(dot) || ".md";
-    let i = 2;
-    while (true) {
-      const existing = this.app.vault.getAbstractFileByPath(candidate);
-      if (!existing || obsidian.normalizePath(existing.path) === current) return candidate;
-      candidate = obsidian.normalizePath(`${base}-${i}${ext}`);
-      i++;
-      if (i > 99) return "";
-    }
-  }}
-
-// 电脑音频捕获安装/配置向导 Modal —— 分平台引导
-
-// ====== 招聘项目化（F2）：JD 项目库扫描 / JD 文档解析 / PDF 文本尽力提取 / 三件套创建 ======
-
-// JD 文件判据：md 且 文件名（去扩展名）== 父文件夹名。不依赖额外字段，重命名免维护。
-
-// 扫 JD 库根下每个子文件夹 = 一个招聘项目；取同名 .md 作 JD 文件，读 frontmatter 状态/职位名/序列。
-
-// 解析单个 JD 文件：岗位描述 / 综合素质（frontmatter 对象数组）/ 统一面试提纲。
-// 综合素质格式异常但有数据 → qualitiesError=true（调用方提示"按未配置处理"），不抛错、不阻断。
-
-// 尽力从 PDF 提取文本（手动粘贴为主 + 尽力提取）：用 Obsidian 内置 pdf.js（window.pdfjsLib）。
-// 不可用 / 扫描件 / 失败一律返回 ""，调用方提示手动粘贴。不引入任何打包依赖。
-
-// 列出简历库里的 PDF 文件（递归，按修改时间倒序），供 Modal 简历下拉。
-
-// 招聘项目 JD 文件模板（PRD F2.1 + 「类型: 招聘项目」键供聚合 Base 筛选）。jdBody = 粘贴的 JD 正文。
-// 新建招聘项目时 JD 预置的默认综合素质（单一来源：JD 模板的 综合素质 段 + 候选人看板的 素质_* 列都用它）。
-
-// 候选人看板 Base 模板（F5）。qualities = 素质名数组（动态追加 素质_<名> 列）。语法均为库内已验证写法：
-// file.folder==this.file.folder + jd!=null 限定本项目候选人纪要；视图级 filters 叠加分页；displayName 把
-// 真实字段 轮次/time/时长 显示成 面试轮次/面试时间/面试时长（不重命名 frontmatter，零迁移）；or 枚举录用建议（库内已验证）。
-
-// 聚合看板 Base 模板（F6）：靠 JD frontmatter 的「类型: 招聘项目」过滤，天然只命中各项目的 JD 文件、排除候选人纪要。
-
-// 在 JD 库根确保有一个聚合看板（首次建项目时按需创建，不覆盖用户改动）。
-
-// 三件套创建：项目文件夹 + 同名 JD.md + 同名候选人看板.base；并确保 JD 库根有聚合看板。同名项目已存在则报错不覆盖。
-
-// ====== F7 招聘主页：MD 模板 + 候选人纪要聚合 + 录用建议配色（4 个 code block 渲染器实时计算、零落盘）======
-
-// 招聘主页 MD 模板：4 个自定义 code block + 嵌入聚合看板的「招聘中」视图。
-
-// 聚合全库候选人面试纪要（判据：mode===recruit 或带 lexvoice/recruit 标签；排除 JD 文件/主页）。按 time 倒序。
-
-// 录用建议 → 颜色（Obsidian 主题色变量，暗色可读）。startsWith 先长后短，吞掉「（条件性）」后缀。
-
-// 招聘面试模式上下文 Modal —— 按录音、导入、重新整理等流程注入 JD/简历/候选人信息
-
-// 提示词库 Modal
+}
 
 export default LexVoicePlugin;
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

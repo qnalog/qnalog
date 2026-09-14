@@ -35,3 +35,24 @@ export function findAvailableVaultPath(app: obsidian.App, targetPath: string): s
   }
   return candidate;
 }
+
+  /**
+ * 目标 Markdown 路径被占用时依次追加 -2、-3…；currentPath 指向的文件不算占用（自己改自己的名）。
+ * 尝试 99 次仍冲突则返回空串，调用方按失败处理。
+ */
+export function findAvailableMarkdownPath(app: obsidian.App, targetPath: string, currentPath?: string): string {
+    const current = obsidian.normalizePath(currentPath || "");
+    let candidate = obsidian.normalizePath(targetPath || "");
+    if (!candidate || candidate === current) return candidate;
+    const dot = candidate.toLowerCase().endsWith(".md") ? candidate.length - 3 : candidate.length;
+    const base = candidate.slice(0, dot);
+    const ext = candidate.slice(dot) || ".md";
+    let i = 2;
+    while (true) {
+      const existing = app.vault.getAbstractFileByPath(candidate);
+      if (!existing || obsidian.normalizePath(existing.path) === current) return candidate;
+      candidate = obsidian.normalizePath(`${base}-${i}${ext}`);
+      i++;
+      if (i > 99) return "";
+    }
+  }

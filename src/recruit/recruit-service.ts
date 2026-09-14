@@ -11,7 +11,7 @@ import { recommendationTone } from "../recruit/bases-view";
 import { normalizePersonLookupText } from "../people";
 import type { LexVoiceSettings } from "../shared/types";
 import { renderRecordingInterviewBriefBlock } from "../notes/detail-blocks";
-import { ensureVaultFolder } from "../shared/util-vault";
+import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 
 /** RecruitService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RecruitHost {
@@ -386,7 +386,7 @@ export class RecruitService {
       // 轮次取笔记 frontmatter 实际值（与落盘一致），回退 rc.round，再回退 初面——保证文件名与 frontmatter 轮次 同源
       const noteFm = (this.host.app.metadataCache.getFileCache(cur) || {}).frontmatter || {};
       const round = String(noteFm.轮次 || rc.round || "初面").replace(/[\\/:*?"<>|]/g, "").trim() || "初面";
-      const target = this.host.getAvailableMarkdownPath(obsidian.normalizePath(`${folder}/${cand}-${round}-${mmdd}.md`), cur.path);
+      const target = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${folder}/${cand}-${round}-${mmdd}.md`), cur.path);
       if (!target || obsidian.normalizePath(target) === obsidian.normalizePath(cur.path)) return cur;
       await this.host.app.fileManager.renameFile(cur, target);
       return this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(target)) || cur;

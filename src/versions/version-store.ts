@@ -10,13 +10,12 @@ import { buildLexVoiceVersionPayload, replaceLeadingFrontmatter, splitLeadingFro
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getLexVoiceSegmentsHash } from "../notes/audio-refs";
 import { buildLexVoiceSegmentStatusList, getLexVoiceSourceIdFromMarkdown, getLexVoiceVersionStoreFolder, normalizeLexVoiceVersionId, replaceLexVoiceActiveVersionBlock } from "../notes/note-markdown";
-import { ensureVaultFolder } from "../shared/util-vault";
+import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 
 /** VersionStore 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface VersionStoreHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  getAvailableMarkdownPath(targetPath: string, currentPath?: string): string | null;
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
@@ -160,7 +159,7 @@ export class VersionStore {
     const stableExisting = this.host.app.vault.getAbstractFileByPath(stableTarget);
     const target = stableExisting instanceof obsidian.TFile
       ? stableTarget
-      : this.host.getAvailableMarkdownPath(stableTarget);
+      : findAvailableMarkdownPath(this.host.app, stableTarget);
     if (!target) throw new Error("无法生成派生纪要文件路径");
 
     const sourceFm = ((this.host.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
