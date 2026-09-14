@@ -45,7 +45,7 @@ import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown, e
 
 import { PEOPLE_SUGGESTION_CACHE_LIMIT, splitPersonFieldValue, normalizePersonLookupText, loadPeopleDirectory, ensurePeopleNoteRelatedBaseSection, formatPeopleBaseYaml, formatPeopleNoteMarkdown, mergeUniqueStrings, normalizePeopleSuggestion, normalizePeopleSuggestionIgnores, isPeopleSuggestionIgnored, addPeopleSuggestionIgnore, removePeopleSuggestionIgnores, getPeopleSuggestionCacheKey, normalizePeopleSuggestionCache, makePeopleSuggestionCacheRecord, isPeopleSuggestionCacheRecordCurrent, peopleSuggestionRecordToSuggestion, peopleSuggestionIgnoreRecordToSuggestion, findMatchingPersonEntry, arePeopleSuggestionsRelated, mergePeopleSuggestions, mergeSourceNoteRelatedPeopleFrontmatter, mergePersonFrontmatter, generatePeopleDirectorySuggestions, personEntryFromFrontmatter } from "./people";
 
-import { splitOutSedimentBlock, generateSedimentObjects, writeSedimentObjectCards } from "./sediment";
+import {generateSedimentObjects, writeSedimentObjectCards } from "./sediment";
 
 import { parseVocabularyGroups, flattenVocabularyGroups, normalizeVocabularyInput, mergeVocabularyGroups, isStructuredVocabularyMarkdown, loadVocabularyGroups, formatVocabularyMarkdown, applyVocabularyCorrections } from "./vocabulary";
 
@@ -128,22 +128,22 @@ import { classifyRecordingIssue, createStreamingTranscriptionClient, isKnowledge
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 
 // 以下 39 个声明已抽到 ./notes/realtime-outline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS, REALTIME_OUTLINE_FINAL_MAX_BATCHES, REALTIME_OUTLINE_FINAL_MAX_TOKENS, REALTIME_OUTLINE_FINAL_TIMEOUT_MS, REALTIME_OUTLINE_LOOKBACK_SEGMENTS, REALTIME_OUTLINE_MANUAL_TIMEOUT_MS, REALTIME_OUTLINE_MAX_MEMORY_CHARS, REALTIME_OUTLINE_MAX_NO_CHANGE_REJECTIONS, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS, REALTIME_OUTLINE_MAX_SEGMENTS, REALTIME_OUTLINE_MAX_TRANSCRIPT_CHARS, REALTIME_OUTLINE_MIN_NEW_SEGMENTS, REALTIME_OUTLINE_MIN_SEMANTIC_DELTA_CHARS, REALTIME_OUTLINE_SILENT_MAX_TOKENS, REALTIME_OUTLINE_SILENT_TIMEOUT_MS, VIEW_TYPE_OUTLINE, buildCoverageScanPrompt, buildOutlinePrompt, buildRealtimeOutlineAnchorSources, buildRealtimeOutlineDetails, buildRealtimeOutlineTranscript, buildRollingOutlineContext, clipRealtimeContextText, getRealtimeOutlineNewSegmentCount, getRealtimeOutlineQueuedDelayMs, getRealtimeOutlineTimeoutMs, hasRealtimeOutlineRunnableBacklog, isRealtimeOutlineBackoffActive, isRealtimeOutlineCurrent, isRealtimeOutlineSilentIntervalActive, markRealtimeOutlineFailure, markRealtimeOutlineSuccess, normalizeRealtimeOutlineState, parseCoverageScanModel, parseRealtimeOutlineResponse, refreshProgramOwnedRecruitOutlineMemory, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline, updateRealtimeOutlineCoverage } from "./notes/realtime-outline";
+import {REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS, REALTIME_OUTLINE_FINAL_MAX_BATCHES, REALTIME_OUTLINE_FINAL_MAX_TOKENS, REALTIME_OUTLINE_FINAL_TIMEOUT_MS, REALTIME_OUTLINE_LOOKBACK_SEGMENTS, REALTIME_OUTLINE_MANUAL_TIMEOUT_MS, REALTIME_OUTLINE_MAX_MEMORY_CHARS, REALTIME_OUTLINE_MAX_NO_CHANGE_REJECTIONS, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS, REALTIME_OUTLINE_MAX_SEGMENTS, REALTIME_OUTLINE_MAX_TRANSCRIPT_CHARS, REALTIME_OUTLINE_MIN_NEW_SEGMENTS, REALTIME_OUTLINE_MIN_SEMANTIC_DELTA_CHARS, REALTIME_OUTLINE_SILENT_MAX_TOKENS, REALTIME_OUTLINE_SILENT_TIMEOUT_MS, VIEW_TYPE_OUTLINE, buildCoverageScanPrompt, buildOutlinePrompt, buildRealtimeOutlineAnchorSources, buildRealtimeOutlineTranscript, buildRollingOutlineContext, clipRealtimeContextText, getRealtimeOutlineNewSegmentCount, getRealtimeOutlineQueuedDelayMs, getRealtimeOutlineTimeoutMs, hasRealtimeOutlineRunnableBacklog, isRealtimeOutlineBackoffActive, isRealtimeOutlineCurrent, isRealtimeOutlineSilentIntervalActive, markRealtimeOutlineFailure, markRealtimeOutlineSuccess, normalizeRealtimeOutlineState, parseCoverageScanModel, parseRealtimeOutlineResponse, refreshProgramOwnedRecruitOutlineMemory, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline, updateRealtimeOutlineCoverage } from "./notes/realtime-outline";
 
 // 以下 10 个声明已抽到 ./notes/meeting-workbench（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_CHARS, MEETING_INTERACTION_TIMEOUT_MS, MEETING_METADATA_KINDS, clipMeetingInteractionSegmentLine, getMeetingInteractionMaxTokens, normalizeMeetingWorkbench } from "./notes/meeting-workbench";
 
 // 以下 13 个声明已抽到 ./notes/detail-blocks（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { buildExternalAudioSourceDetails, buildInterviewBriefDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildPromotionPreReviewDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails, renderRecordingInterviewBriefBlock, renderRecordingPromotionReviewBlock } from "./notes/detail-blocks";
+import {renderRecordingInterviewBriefBlock, renderRecordingPromotionReviewBlock } from "./notes/detail-blocks";
 
 // 以下 14 个声明已抽到 ./notes/audio-refs（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { extractAudioSegmentOffsets, getAudioDurationMs, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget, getAudioSegmentListItem, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getLexVoiceSegmentsHash, getSegmentAudioLinkOffsetMs, getSessionMasterAudioName, resolveLexVoiceAudioFile } from "./notes/audio-refs";
+import {extractAudioSegmentOffsets, getAudioDurationMs, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getLexVoiceSegmentsHash, getSessionMasterAudioName, resolveLexVoiceAudioFile } from "./notes/audio-refs";
 
 // 以下 40 个声明已抽到 ./notes/note-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {ROLE_MAPPING_FIELDS, analyzeLexVoiceEmptyShortNote, applyRoleMappingToSegments, buildLexVoiceRenamedMarkdownPath, buildLexVoiceSegmentStatusList, buildTitleSourceFromSegments, extractAllRawBlocksFromText, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, formatYamlDateTime, generateTitleTag, getLexVoiceSourceIdFromMarkdown, getLexVoiceVersionStoreFolder, inferLexVoiceNoteStartedAtIso, inferModeFromLegacyNote, inferTopicFromFilename, isTextImportSession, isTimeLabel, mergeLeadingFrontmatterIntoDocument, normalizeLexVoiceVersionId, normalizeSegmentsForMergedNote, parseRoleMapItem, replaceLexVoiceActiveVersionBlock, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
+import {ROLE_MAPPING_FIELDS, analyzeLexVoiceEmptyShortNote, applyRoleMappingToSegments, buildLexVoiceSegmentStatusList, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, formatYamlDateTime, getLexVoiceSourceIdFromMarkdown, getLexVoiceVersionStoreFolder, inferLexVoiceNoteStartedAtIso, inferModeFromLegacyNote, inferTopicFromFilename, isTextImportSession, isTimeLabel, mergeLeadingFrontmatterIntoDocument, normalizeLexVoiceVersionId, normalizeSegmentsForMergedNote, parseRoleMapItem, replaceLexVoiceActiveVersionBlock, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
 
 // 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { detectRecentModeFromFilename, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentNotes } from "./recent/recent-notes";
+import {detectRecentNoteMode, getQueueTasksForMarkdown, getRecentNotes } from "./recent/recent-notes";
 
 // 以下 5 个声明已抽到 ./notes/ask-panel（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 
@@ -160,12 +160,13 @@ import { TaskQueue } from "./queue/task-queue";
 import { OutlineView } from "./ui/outline-view";
 
 // 以下 3 个声明已抽到 ./briefing/merge-pipeline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import { cleanTranscript, mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
+import {cleanTranscript, mergeAndPolish } from "./briefing/merge-pipeline";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import { ensureVaultFolder, findAvailableVaultPath } from "./shared/util-vault";
 import { DeliveryService } from "./delivery/delivery-service";
 import { RecruitService } from "./recruit/recruit-service";
+import { NoteWriter } from "./notes/note-writer";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -199,6 +200,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.diagnostics = new DiagnosticsService(this);
     this.delivery = new DeliveryService(this);
     this.recruit = new RecruitService(this);
+    this.noteWriter = new NoteWriter(this);
     await this.loadAll();
     await this.loadBuildInfo();
     this.updateService = new UpdateService({
@@ -295,7 +297,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const s = this.recorder.state;
       if (s === "recording") this.recorder.pause(); else if (s === "paused") this.recorder.resume();
     }});
-    this.addCommand({ id: "polish-selection-or-note", name: "AI 润色：当前选区或整篇", editorCallback: (editor) => this.polishEditor(editor) });
+    this.addCommand({ id: "polish-selection-or-note", name: "AI 润色：当前选区或整篇", editorCallback: (editor) => this.noteWriter.polishEditor(editor) });
     this.addCommand({ id: "toggle-floating-ball", name: "显示/隐藏悬浮气泡（总开关）", callback: () => {
       this.settings.showFloatingBall = !this.settings.showFloatingBall;
       void this.saveSettings();
@@ -505,7 +507,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         const isMd = file instanceof obsidian.TFile && file.extension === "md";
-        const mode = isMd ? this.detectModeFromMarkdown(file) : null;
+        const mode = isMd ? this.noteWriter.detectModeFromMarkdown(file) : null;
         if (!isMd || !mode) return false;
         if (checking) return true;
         void this.repolishMarkdownFile(file, mode);
@@ -3468,7 +3470,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       throw new Error("这篇纪要里没有可续录合并的原始转写分段");
     }
     const frontmatter = ((this.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-    const mode = this.detectModeFromMarkdown(file) || getEffectivePolishMode(this.settings, this.settings.polishMode);
+    const mode = this.noteWriter.detectModeFromMarkdown(file) || getEffectivePolishMode(this.settings, this.settings.polishMode);
     const normalized = normalizeSegmentsForMergedNote(segments, 0, 0, file);
     const durationMs = getLexVoiceSegmentsDurationMs(normalized) || getLexVoiceDurationMs(content);
     return {
@@ -3618,7 +3620,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         `<!-- lexvoice-segments-end:${this.session.id} -->`,
         "",
       ].filter(v => v !== null).join("\n");
-      await this.appendToNote(mdPath, header);
+      await this.noteWriter.appendToNote(mdPath, header);
       if (!continuationInfo && mode === "recruit" && this.session && this.session.recruitContext && !recordingInterviewBrief && (this.session.recruitContext.jd || this.session.recruitContext.resume)) {
         this.recruit.scheduleRecruitInterviewBriefBackground(this.session);
       }
@@ -3755,7 +3757,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const failedSession = this.session;
       this.session = null;
       this._oneShotCaptureMode = null;
-      try { if (failedSession) await this.removeEmptySessionBlock(failedSession); } catch { /* intentionally empty */ }
+      try { if (failedSession) await this.noteWriter.removeEmptySessionBlock(failedSession); } catch { /* intentionally empty */ }
       try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
     }
   }
@@ -4777,7 +4779,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       }) : (text ? text : "_[此段无内容]_"),
       "",
     ].join("\n");
-    await this.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
+    await this.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
     if (!err || isStreamingProvider) await this.removeLiveSegmentQueueTask(seg);
 
     this.refreshOutlineView();
@@ -4970,7 +4972,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
 
     if (!session.segments || session.segments.length === 0) {
-      await this.removeEmptySessionBlock(session);
+      await this.noteWriter.removeEmptySessionBlock(session);
       new obsidian.Notice("⏭ 本次录音时长过短或无有效音频，已跳过");
       if (this.session === session) this.session = null;
       this.refreshOutlineView();
@@ -5008,7 +5010,7 @@ class LexVoicePlugin extends obsidian.Plugin {
           mdPath: session.mdPath,
         });
       } catch { /* intentionally empty */ }
-      await this.appendPolishBlock(writeSession, "", noTranscriptError, true);
+      await this.noteWriter.appendPolishBlock(writeSession, "", noTranscriptError, true);
       new obsidian.Notice("没有获得有效转写；录音和失败切片已保留，请检查转写服务后在待处理队列重试。", 10000);
       if (this.settings.autoOpenNoteAfterFinish) {
         const file = this.app.vault.getAbstractFileByPath(session.mdPath);
@@ -5186,9 +5188,9 @@ class LexVoicePlugin extends obsidian.Plugin {
     if (!mergeError) {
       try {
         if (shouldRewriteConsolidatedNote(this.settings, writeSession)) {
-          await this.rewriteConsolidated(writeSession, polished);
+          await this.noteWriter.rewriteConsolidated(writeSession, polished);
         } else {
-          await this.appendPolishBlock(writeSession, polished, null, false);
+          await this.noteWriter.appendPolishBlock(writeSession, polished, null, false);
         }
       } catch (writeError) {
         commitError = true;
@@ -5233,7 +5235,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         });
       }
     } else {
-      await this.appendPolishBlock(writeSession, polished, mergeError, nonRetryableMergeError);
+      await this.noteWriter.appendPolishBlock(writeSession, polished, mergeError, nonRetryableMergeError);
     }
     if (!mergeError && finalSessionMeta && finalSessionMeta._briefingCheckpointId) {
       await clearCommittedBriefingCheckpoint(this, finalSessionMeta);
@@ -5255,7 +5257,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       // F4.2：招聘评估且选了 JD 项目 → 移到项目文件夹 + 候选人-轮次-MMDD 命名（替代自动标题改名，保命名干净）
       const renamed = recruitRelocate
         ? await this.recruit.relocateRecruitNote(session, session.recruitContext)
-        : await this.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
+        : await this.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
       if (renamed instanceof obsidian.TFile) {
         session.mdPath = renamed.path;
         writeSession.mdPath = renamed.path;
@@ -5265,7 +5267,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       if ((session.source === "import" || session.source === "text-import") && !renamedByPolished && !recruitRelocate) {
         const rawTitleSource = buildTitleSourceFromSegments(segmentsForFinal);
         if (rawTitleSource) {
-          const fallbackRenamed = await this.renameMarkdownWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
+          const fallbackRenamed = await this.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
           if (fallbackRenamed instanceof obsidian.TFile) {
             session.mdPath = fallbackRenamed.path;
             writeSession.mdPath = fallbackRenamed.path;
@@ -5404,256 +5406,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       i++;
       if (i > 99) return "";
     }
-  }  async renameMarkdownWithGeneratedTitle(fileOrPath, polished, mode) {
-    if (!this.settings.autoRenameWithTitle || !polished || mode === "off") return null;
-    const file = typeof fileOrPath === "string"
-      ? this.app.vault.getAbstractFileByPath(fileOrPath)
-      : fileOrPath;
-    if (!(file instanceof obsidian.TFile)) return null;
-    try {
-      const tag = await generateTitleTag(this, polished, mode);
-      if (!tag) return file;
-      const target = buildLexVoiceRenamedMarkdownPath(file.path, mode, tag, this.settings);
-      const newPath = this.getAvailableMarkdownPath(target, file.path);
-      if (!newPath || obsidian.normalizePath(newPath) === obsidian.normalizePath(file.path)) return file;
-      await this.app.fileManager.renameFile(file, newPath);
-      const renamed = this.app.vault.getAbstractFileByPath(newPath);
-      return renamed instanceof obsidian.TFile ? renamed : file;
-    } catch (e) {
-      console.error("[QnALog] rename failed", e);
-      return file;
-    }
-  }
-
-  async removeEmptySessionBlock(session) {
-    const file = this.app.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return;
-    const cur = await this.app.vault.read(file);
-    const sessMarker = `<!-- lexvoice-session:${session.id} -->`;
-    const endMarker = `<!-- lexvoice-segments-end:${session.id} -->`;
-    const sessIdx = cur.indexOf(sessMarker);
-    const endIdx = cur.indexOf(endMarker);
-    if (sessIdx < 0 || endIdx < sessIdx) return;
-    const headerLineIdx = cur.lastIndexOf("\n## ", sessIdx);
-    const h1LineIdx = cur.lastIndexOf("\n# ", sessIdx);
-    const startIdx = Math.max(headerLineIdx, h1LineIdx);
-    const blockStart = startIdx >= 0 ? startIdx + 1 : 0;
-    const blockEnd = endIdx + endMarker.length;
-    const before = cur.slice(0, blockStart).replace(/\n+$/, "\n");
-    const after = cur.slice(blockEnd).replace(/^\n+/, "");
-    const next = before + (after ? "\n" + after : "");
-    if (next !== cur) await this.app.vault.modify(file, next);
-  }
-
-  async rewriteConsolidated(session, polished) {
-    const file = this.app.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return;
-    const meta = getModeMeta(this.settings, session.mode);
-    const moment = window.moment;
-    const startedAt = moment(session.startedAt);
-    const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
-    const textImport = isTextImportSession(session);
-    const externalAudioImport = !!session.externalAudioSource;
-    const retainAudio = !textImport && !externalAudioImport;
-    const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
-    const audioRow = masterAudioBlock || session.segments.map((s, i) => getAudioSegmentListItem(s, i)).filter(Boolean).join("\n");
-    const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
-    const interviewBriefBlock = buildInterviewBriefDetails(session);
-    const promotionPreReviewBlock = buildPromotionPreReviewDetails(session);
-    const playbackTimelineBlock = retainAudio ? buildPlaybackTimelineDetails(session) : "";
-    const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
-    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.settings.llmModel) : buildRecordingInfoDetails({
-      startedAt: session.startedAt,
-      totalMs,
-      modeLabel: meta.prefix,
-      segmentCount: session.segments.length,
-      model: this.settings.llmModel,
-    });
-    const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
-    const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
-
-    const rawBlocks = textImport ? "" : session.segments.map(s => {
-      const n = s.index + 1;
-      const head = `### 段落 ${n} (${formatElapsed(s.startOffsetMs)}–${formatElapsed(s.endOffsetMs)}) ${getAudioTimeLink(s.audioName, getSegmentAudioLinkOffsetMs(s))}${s.isFinal ? " · 结束" : ""}`;
-      const marker = s.queueTaskId ? `<!-- lexvoice-transcribe-task:${s.queueTaskId} -->\n` : "";
-      const body = s.error
-        ? getTranscribeSegmentPlaceholder(s.error, { retryable: !!s.queueTaskId })
-        : (s.text || "_[此段无内容]_");
-      return `${head}\n\n${marker}${body}\n`;
-    }).join("\n");
-
-    const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polishedParts = splitLeadingFrontmatter(polished || emptyBriefingFallback);
-    const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    // 把沉淀元数据注释从正文末尾拆出来，稍后挪到整篇笔记最末尾（不再夹在正文与原始材料之间）。
-    const sediment = splitOutSedimentBlock(polishedParts.body);
-    const polishedBody = sediment.body.trim() || emptyBriefingFallback;
-
-    const content = [
-      polishedFrontmatter || null,
-      polishedFrontmatter ? "" : null,
-      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}`,
-      "",
-      polishedBody,
-      "",
-      "---",
-      "",
-      "## 原始材料",
-      "",
-      recordingInfoBlock || null,
-      recordingInfoBlock ? "" : null,
-      externalAudioSourceBlock || null,
-      externalAudioSourceBlock ? "" : null,
-      promotionPreReviewBlock || null,
-      promotionPreReviewBlock ? "" : null,
-      interviewBriefBlock || null,
-      interviewBriefBlock ? "" : null,
-      meetingWorkbenchBlock || null,
-      meetingWorkbenchBlock ? "" : null,
-      realtimeOutlineBlock || null,
-      realtimeOutlineBlock ? "" : null,
-      textImport ? textImportSourceBlock || null : playbackTimelineBlock || null,
-      textImport ? (textImportSourceBlock ? "" : null) : (playbackTimelineBlock ? "" : null),
-      retainAudio ? (masterAudioBlock ? null : "<details>") : null,
-      retainAudio ? (masterAudioBlock ? null : `<summary>原始音频（${session.segments.length} 段，${formatElapsed(totalMs)}）</summary>`) : null,
-      retainAudio ? "" : null,
-      retainAudio ? audioRow : null,
-      retainAudio ? "" : null,
-      retainAudio ? (masterAudioBlock ? null : "</details>") : null,
-      retainAudio ? "" : null,
-      textImport ? null : "<details>",
-      textImport ? null : `<summary>分段原始转写（${session.segments.length} 段）</summary>`,
-      textImport ? null : "",
-      textImport ? null : rawBlocks,
-      textImport ? null : "</details>",
-      textImport ? null : "",
-      `<!-- lexvoice-session:${session.id} -->`,
-      "",
-      // 沉淀元数据放最末尾（HTML 注释，阅读视图隐藏；挪到此处后编辑模式也不再夹在正文中间）。
-      sediment.block || null,
-      sediment.block ? "" : null,
-    ].filter(v => v !== null).join("\n");
-
-    await this.app.vault.modify(file, content);
-  }
-
-  async appendPolishBlock(session, polished, mergeError, nonRetryableMergeError = false) {
-    const file = this.app.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return;
-    const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
-    const meta = getModeMeta(this.settings, session.mode);
-    const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polishedParts = splitLeadingFrontmatter(polished || emptyBriefingFallback);
-    const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    // 沉淀元数据从正文拆出，挪到本块最末尾，避免夹在正文与原始材料之间。
-    const sediment = splitOutSedimentBlock(polishedParts.body);
-    const polishedBody = sediment.body.trim() || emptyBriefingFallback;
-    const textImport = isTextImportSession(session);
-    const externalAudioImport = !!session.externalAudioSource;
-    const retainAudio = !textImport && !externalAudioImport;
-    const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
-    const playbackTimelineBlock = retainAudio ? buildPlaybackTimelineDetails(session) : "";
-    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.settings.llmModel) : buildRecordingInfoDetails({
-      startedAt: session.startedAt,
-      totalMs,
-      modeLabel: meta.prefix,
-      segmentCount: session.segments.length,
-      model: this.settings.llmModel,
-    });
-    const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
-    const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
-    const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
-    const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
-    const failureText = mergeError
-      ? (nonRetryableMergeError
-        ? `_[AI 整理失败：${formatLlmFailureIssue(mergeError.message || mergeError)}]_`
-        : `_[合并润色失败（已加入重试队列）：${mergeError.message || mergeError}]_`)
-      : "";
-    const block = [
-      "",
-      `## 整合版（${this.settings.llmModel} · ${meta.prefix}）`,
-      "",
-      mergeError ? failureText : polishedBody,
-      "",
-      recordingInfoBlock || null,
-      recordingInfoBlock ? "" : null,
-      externalAudioSourceBlock || null,
-      externalAudioSourceBlock ? "" : null,
-      textImport ? textImportSourceBlock || null : masterAudioBlock || null,
-      textImport ? (textImportSourceBlock ? "" : null) : (masterAudioBlock ? "" : null),
-      meetingWorkbenchBlock || null,
-      meetingWorkbenchBlock ? "" : null,
-      realtimeOutlineBlock || null,
-      realtimeOutlineBlock ? "" : null,
-      textImport ? null : playbackTimelineBlock || null,
-      textImport ? null : (playbackTimelineBlock ? "" : null),
-      "---",
-      "",
-      // 沉淀元数据放本整合块最末尾（HTML 注释，阅读视图隐藏）。
-      sediment.block || null,
-      sediment.block ? "" : null,
-    ].filter(v => v !== null).join("\n");
-    let cur = await this.app.vault.read(file);
-    if (polishedFrontmatter && !mergeError) {
-      const currentParts = splitLeadingFrontmatter(cur);
-      cur = polishedFrontmatter + "\n\n" + currentParts.body.replace(/^\n+/, "");
-    }
-    const sep = cur.endsWith("\n") ? "" : "\n";
-    let next = cur + sep + block;
-    // 标题占位 `（录音中…）` 用全角括号；旧 regex 的 `\)?` 是半角，匹配不到全角 `）`，
-    // 导致只替换"录音中…"留下原 `）` + 新拼的 `）` → 双括号 `（19:44））`。
-    // 用 [)）]? 同时吃掉半/全角收尾括号，替换后只补一个全角 `）`。
-    if (!textImport) next = next.replace(/录音中…[)）]?/g, `${formatElapsed(totalMs)}）`);
-    await this.app.vault.modify(file, next);
-  }
-
-  async appendToNote(path, content) {
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof obsidian.TFile) {
-      const cur = await this.app.vault.read(existing);
-      const sep = cur.endsWith("\n") ? "" : "\n";
-      await this.app.vault.modify(existing, cur + sep + content);
-    } else {
-      await this.app.vault.create(path, content);
-    }
-  }
-
-  // 把内容插到 segments-start marker 之前（即分段转写区上方），用于录音期把面试提纲放在段落之上。
-  async insertBeforeSegmentsStart(path, content, sessionId) {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
-    const cur = await this.app.vault.read(file);
-    const marker = sessionId ? `<!-- lexvoice-segments-start:${sessionId} -->` : "<!-- lexvoice-segments-start -->";
-    const idx = cur.indexOf(marker);
-    if (idx >= 0) {
-      const next = cur.slice(0, idx) + content + "\n" + cur.slice(idx);
-      await this.app.vault.modify(file, next);
-      return;
-    }
-    await this.appendToNote(path, content);
-  }
-
-  async insertBeforeSegmentsEnd(path, content, sessionId) {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
-    const cur = await this.app.vault.read(file);
-    const specific = sessionId ? `<!-- lexvoice-segments-end:${sessionId} -->` : null;
-    if (specific && cur.includes(specific)) {
-      const next = cur.replace(specific, `${content}\n${specific}`);
-      await this.app.vault.modify(file, next);
-      return;
-    }
-    const legacy = "<!-- lexvoice-segments-end -->";
-    const lastIdx = cur.lastIndexOf(legacy);
-    if (lastIdx >= 0) {
-      const next = cur.slice(0, lastIdx) + content + "\n" + cur.slice(lastIdx);
-      await this.app.vault.modify(file, next);
-      return;
-    }
-    await this.appendToNote(path, content);
-  }
-
-  // 历史笔记迁移：扫描 mdFolder 下所有 .md，给没有 frontmatter 的老纪要补全 mode/日期/主题/tags
+  }  // 历史笔记迁移：扫描 mdFolder 下所有 .md，给没有 frontmatter 的老纪要补全 mode/日期/主题/tags
   // 已有 mode 字段的跳过；无法识别模式的也跳过；其他都补全（写入最小 frontmatter）
   async migrateLegacyNotes() {
     const folderPath = obsidian.normalizePath(this.settings.mdFolder || "LexVoice/转写纪要");
@@ -6716,241 +6469,7 @@ ${source}`;
       }
     }
     return created;
-  }
-
-  async polishEditor(editor) {
-    const sel = editor.getSelection();
-    const raw = sel || editor.getValue();
-    if (!raw || !raw.trim()) { new obsidian.Notice("没有可润色的内容"); return; }
-    new obsidian.Notice("AI 润色中…");
-    try {
-      const mode = getEffectivePolishMode(this.settings, this.settings.polishMode === "off" ? "meeting" : this.settings.polishMode);
-      const ctx = mode === "recruit" ? this.settings.recruitContext : null;
-      const polished = await polishTranscript(this, raw, mode, ctx);
-      if (sel) editor.replaceSelection(polished); else editor.setValue(polished);
-      new obsidian.Notice("润色完成");
-    } catch (e) {
-      console.error(e);
-      new obsidian.Notice(`润色失败：${(e && e.message) || e}`);
-    }
-  }
-
-  // 从 .md 文件的 frontmatter 推断模式（mode 字段；找不到时尝试 类型 字段中文映射）
-  detectModeFromMarkdown(file) {
-    if (!(file instanceof obsidian.TFile)) return null;
-    const cache = (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-    if (!cache) {
-      const fallbackMode = detectRecentModeFromFilename(this.settings, file.basename);
-      return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
-    }
-    const m = cache.mode;
-    if (typeof m === "string" && isKnownPolishMode(this.settings, m)) return m;
-    const typeStr = String(cache["类型"] || cache.type || "").trim();
-    const typeToMode = {
-      "学习": "learning",
-      "学习记录": "learning",
-      "学习视频": "learning",
-      "视频学习": "learning",
-      "课程笔记": "learning",
-      "访谈": "interview",
-      "访谈调研": "interview",
-      "研讨": "seminar",
-      "研讨会": "seminar",
-      "学术研讨": "seminar",
-      "主题沙龙": "seminar",
-      "会议": "meeting",
-      "工作纪要": "meeting",
-      "小会": "huddle",
-      "讨论": "huddle",
-      "圆桌讨论": "huddle",
-      "独白": "monologue",
-      "手记": "monologue",
-      "个人笔记": "monologue",
-      "招聘面试": "recruit",
-      "招聘评估": "recruit",
-      "面试": "recruit",
-      "晋升评审": "promotion-review",
-      "晋升述职评审": "promotion-review",
-      "述职评审": "promotion-review",
-    };
-    if (typeToMode[typeStr]) {
-      const mode = typeToMode[typeStr];
-      return isKnownPolishMode(this.settings, mode) ? mode : null;
-    }
-    const fallbackMode = detectRecentModeFromFilename(this.settings, file.basename);
-    return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
-  }
-
-  findPreviousRecentNoteFile(file) {
-    if (!(file instanceof obsidian.TFile)) return null;
-    const currentPath = obsidian.normalizePath(file.path);
-    const recents = getRecentNotes(this, 240);
-    const current = recents.find((item) => item && item.file && obsidian.normalizePath(item.file.path) === currentPath);
-    if (!current) return null;
-    const older = recents
-      .filter((item) => item && item.file && obsidian.normalizePath(item.file.path) !== currentPath && item.timestamp < current.timestamp)
-      .sort((a, b) => b.timestamp - a.timestamp)[0];
-    return older && older.file instanceof obsidian.TFile ? older.file : null;
-  }
-
-  async readMergeSourceFromMarkdown(file, offsetMs, startIndex) {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-      throw new Error("只能合并 QnALog Markdown 纪要");
-    }
-    const content = await this.app.vault.read(file);
-    const rawSegments = extractLexVoiceTranscriptSegments(content);
-    if (!rawSegments.length) {
-      throw new Error(`「${file.basename}」没有找到原始转写分段`);
-    }
-    const frontmatter = ((this.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-    const rawDurationMs = getLexVoiceSegmentsDurationMs(rawSegments) || getLexVoiceDurationMs(content);
-    const segments = normalizeSegmentsForMergedNote(rawSegments, offsetMs, startIndex, file);
-    if (segments.length) {
-      segments[0] = Object.assign({}, segments[0], {
-        text: `【来源纪要：${file.basename}】\n${segments[0].text || ""}`.trim(),
-      });
-    }
-    return {
-      file,
-      content,
-      frontmatter,
-      mode: this.detectModeFromMarkdown(file),
-      startedAt: inferLexVoiceNoteStartedAtIso(file, frontmatter),
-      rawDurationMs,
-      segments,
-    };
-  }
-
-  async mergeMarkdownFileWithPrevious(file) {
-    if (!(file instanceof obsidian.TFile)) return;
-    const previous = this.findPreviousRecentNoteFile(file);
-    if (!(previous instanceof obsidian.TFile)) {
-      new obsidian.Notice("没有找到这篇之前的最近一条 QnALog 纪要。", 6000);
-      return;
-    }
-    const ok = await lexvoiceConfirm(this.app, "合并纪要", `将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. ${previous.basename}\n2. ${file.basename}\n\n继续合并？`, "合并");
-    if (!ok) return;
-    try {
-      await this.mergeMarkdownFilesAsNew([previous, file]);
-    } catch (e) {
-      console.error("[QnALog] merge notes failed", e);
-      new obsidian.Notice(`合并纪要失败：${(e && e.message) || e}`, 8000);
-    }
-  }
-
-  async mergeMarkdownFilesAsNew(files) {
-    const sources = [];
-    let offsetMs = 0;
-    let startIndex = 0;
-    for (const file of files || []) {
-      const source = await this.readMergeSourceFromMarkdown(file, offsetMs, startIndex);
-      sources.push(source);
-      offsetMs += Math.max(0, Number(source.rawDurationMs) || 0);
-      startIndex += source.segments.length;
-    }
-    if (sources.length < 2) {
-      new obsidian.Notice("至少需要两篇纪要才能合并。");
-      return;
-    }
-    const segments = sources.flatMap((source) => source.segments);
-    if (!segments.length) {
-      new obsidian.Notice("没有找到可合并的原始转写。", 8000);
-      return;
-    }
-    const mode = sources[sources.length - 1].mode || sources[0].mode || getEffectivePolishMode(this.settings, this.settings.polishMode);
-    if (["promotion-review", "recruit", "recruit-needs"].includes(mode) && !isRecruitFeatureUnlocked(this.settings)) {
-      new obsidian.Notice("该进阶评审模式尚未启用，无法合并纪要。", 8000);
-      return;
-    }
-    await ensureVaultFolder(this.app, this.settings.mdFolder);
-    const moment = window.moment;
-    const startedAtIso = sources[0].startedAt || new Date().toISOString();
-    const startedAt = moment ? moment(startedAtIso) : null;
-    const stamp = startedAt && startedAt.isValid && startedAt.isValid()
-      ? startedAt.format(this.settings.noteFileNameFormatNew)
-      : (moment ? moment().format(this.settings.noteFileNameFormatNew) : "合并纪要");
-    const targetPath = this.getAvailableMarkdownPath(obsidian.normalizePath(`${this.settings.mdFolder}/${stamp} · 合并.md`));
-    if (!targetPath) throw new Error("无法生成合并纪要路径");
-
-    new obsidian.Notice(`QnALog：正在合并 ${sources.length} 篇纪要…`, 8000);
-    await this.app.vault.create(targetPath, "");
-    const session = {
-      id: genId(),
-      sessionStamp: moment ? moment().format("YYYYMMDD-HHmmss") : String(Date.now()),
-      mdPath: targetPath,
-      mode,
-      startedAt: startedAtIso,
-      source: "merged-notes",
-      segments,
-      multiSourceAudio: true,
-      meetingWorkbench: { notes: "", draft: "", materials: [], entries: [] },
-      mergedSources: sources.map((source) => ({
-        path: source.file.path,
-        title: source.file.basename,
-        durationMs: source.rawDurationMs,
-      })),
-    };
-    const lastSeg = segments[segments.length - 1];
-    const sessionMeta = {
-      startedAt: session.startedAt,
-      duration: lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : "",
-      source: "merged-notes",
-      meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-    };
-    const polished = await mergeAndPolish(this, segments.map((s) => ({
-      index: s.index,
-      startOffsetMs: s.startOffsetMs,
-      endOffsetMs: s.endOffsetMs,
-      text: s.text,
-      audioName: s.audioName,
-      audioStartOffsetMs: s.audioStartOffsetMs,
-      audioEndOffsetMs: s.audioEndOffsetMs,
-      sourceName: s.sourceName,
-      sourcePath: s.sourcePath,
-      sourceUrl: s.sourceUrl,
-      rawText: s.rawText,
-    })), mode, null, sessionMeta);
-    await this.rewriteConsolidated(session, polished);
-    await clearCommittedBriefingCheckpoint(this, sessionMeta);
-    let finalFile = this.app.vault.getAbstractFileByPath(session.mdPath);
-    const renamed = await this.renameMarkdownWithGeneratedTitle(session.mdPath, polished, mode);
-    if (renamed instanceof obsidian.TFile) {
-      session.mdPath = renamed.path;
-      finalFile = renamed;
-    }
-    if (finalFile instanceof obsidian.TFile) {
-      await this.appendMergeMetadataBlock(finalFile, session.mergedSources);
-      await this.refreshLexVoiceNoteIndexSafely(finalFile, {
-        meetingDate: session.startedAt,
-        reason: "merge-notes",
-      });
-      try { await this.app.workspace.getLeaf(false).openFile(finalFile); } catch { /* intentionally empty */ }
-    }
-    try { await this.appendDailyMeetingOverview(session, polished); }
-    catch (e) { console.error("[QnALog] daily overview after merge notes failed", e); }
-    new obsidian.Notice(`已生成合并纪要：${finalFile instanceof obsidian.TFile ? finalFile.basename : "合并纪要"}`);
-  }
-
-  async appendMergeMetadataBlock(file, sources) {
-    if (!(file instanceof obsidian.TFile)) return;
-    const payload = {
-      mergedAt: new Date().toISOString(),
-      sources: (sources || []).map((source) => ({
-        path: source.path || "",
-        title: source.title || "",
-        durationMs: Number(source.durationMs) || 0,
-      })),
-    };
-    const block = `<!-- lexvoice-merge\n${JSON.stringify(payload, null, 2)}\nlexvoice-merge-end -->`;
-    const cur = await this.app.vault.read(file);
-    if (/<!--\s*lexvoice-merge[\s\S]*?lexvoice-merge-end\s*-->/.test(cur)) {
-      await this.app.vault.modify(file, cur.replace(/<!--\s*lexvoice-merge[\s\S]*?lexvoice-merge-end\s*-->/, block));
-    } else {
-      await this.app.vault.modify(file, cur.replace(/\s*$/, "\n\n" + block + "\n"));
-    }
-  }
-
-  async readLexVoiceVersionManifest(folder) {
+  }  async readLexVoiceVersionManifest(folder) {
     const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
     const f = this.app.vault.getAbstractFileByPath(manifestPath);
     if (!(f instanceof obsidian.TFile)) return { version: 1, activeVersionId: "", versions: [] };
@@ -7401,61 +6920,7 @@ ${source}`;
       this._busyContext = null;
       this.updateBusyStatus();
     }
-  }
-
-  async appendRepolishBlock(file, polished, mode, segments) {
-    const meta = getModeMeta(this.settings, mode);
-    const stamp = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-    const cur = await this.app.vault.read(file);
-
-    // 关键：从全文里把所有原始 / 元数据块（任意深度）抽出来，避免再次嵌套。
-    // 旧实现只识别 "## 📁 原始材料"，对 appendPolishBlock 产出的
-    // "## ✨ 整合版 + ‹details›录音信息/原始音频/录音中实时大纲/回听时间轴" 结构识别不到，
-    // 导致每次重新整理都把整个旧文件包进新的 ‹details›上一版纪要›，重复存放段落和元数据。
-    const { tail: rawTail, withoutRaw } = extractAllRawBlocksFromText(cur);
-    const beforeParts = splitLeadingFrontmatter(withoutRaw);
-    const beforeBody = beforeParts.body.replace(/^\n+/, "");
-    const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polishedParts = splitLeadingFrontmatter(stripModeSuggestionBlocks(polished || emptyBriefingFallback).trim());
-    const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    const polishedBody = polishedParts.body.trim() || emptyBriefingFallback;
-
-    const titleMatch = beforeBody.match(/^#\s+[^\n]+\n*/);
-    const titleBlock = titleMatch ? titleMatch[0].replace(/\n*$/, "\n") : "";
-    let previousBody = titleMatch ? beforeBody.slice(titleMatch[0].length) : beforeBody;
-    previousBody = previousBody
-      .replace(/\s*---\s*$/m, "")
-      .replace(/\s+$/, "")
-      .trim();
-
-    const currentBlock = [
-      polishedFrontmatter || beforeParts.frontmatter.trimEnd() || null,
-      (polishedFrontmatter || beforeParts.frontmatter) ? "" : null,
-      titleBlock ? titleBlock.trimEnd() : null,
-      titleBlock ? "" : null,
-      `## 当前纪要（${meta.prefix} · ${stamp}）`,
-      "",
-      `> [!info] 基于本文底部的原始转写重新生成 · 段数：${segments.length} · 模型：${this.settings.llmModel}`,
-      "",
-      polishedBody,
-      "",
-      "---",
-      "",
-      "<details>",
-      `<summary>上一版纪要（重新整理前 · ${stamp}）</summary>`,
-      "",
-      previousBody || "_（上一版为空）_",
-      "",
-      "</details>",
-      "",
-      rawTail ? rawTail.trimEnd() : "",
-      "",
-    ].filter(v => v !== null).join("\n");
-
-    await this.app.vault.modify(file, currentBlock.replace(/\n{4,}/g, "\n\n\n"));
-  }
-
-  // 生成清稿（派生版本·只读快照）：从母本逐字稿忠实清理成可读稿，写成独立文件、双链回指母本。
+  }  // 生成清稿（派生版本·只读快照）：从母本逐字稿忠实清理成可读稿，写成独立文件、双链回指母本。
   // 永远从母本 raw 读（在派生上触发会先跳回母本）；清稿不含 raw、不参与「重新整理」回写。
   async generateCleanScript(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
@@ -8220,7 +7685,7 @@ ${source}`;
       `<!-- lexvoice-segments-end:${session.id} -->`,
       "",
     ].filter((line) => line !== null).join("\n");
-    await this.appendToNote(mdPath, header);
+    await this.noteWriter.appendToNote(mdPath, header);
 
     new obsidian.Notice(`开始导入 ${paths.length} 个音频文件…`);
     const importStartedAt = Date.now();
@@ -8522,7 +7987,7 @@ ${source}`;
           : (result.text || "_[此音频无内容]_"),
         "",
       ].join("\n");
-      await this.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
+      await this.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
       this.updateImportActivity({
         done: i + 1,
         writtenSegments: session.segments.length,
@@ -8733,7 +8198,7 @@ ${source}`;
       `<!-- lexvoice-segments-end:${session.id} -->`,
       "",
     ].join("\n");
-    await this.appendToNote(mdPath, header);
+    await this.noteWriter.appendToNote(mdPath, header);
     this.session = session;
     this.setSessionWorkProgress(session, {
       stage: "text-import",
@@ -8754,7 +8219,7 @@ ${source}`;
         seg.rawText || "_[此文本来源为空]_",
         "",
       ].join("\n");
-      await this.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
+      await this.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
     }
 
     this.refreshOutlineView();
@@ -9140,7 +8605,7 @@ ${source}`;
         text,
         "",
       ].join("\n");
-      await this.insertBeforeSegmentsEnd(task.mdPath, recoveredBlock, task.sessionId);
+      await this.noteWriter.insertBeforeSegmentsEnd(task.mdPath, recoveredBlock, task.sessionId);
       replaced = true;
     }
     if (!audio.recovered && (!task.wholeFileImport || task.ephemeralAudio)) {
@@ -9172,7 +8637,7 @@ ${source}`;
       && obsidian.normalizePath(String(t.mdPath || "")) === mdNorm);
     if (remaining.length) return;
     new obsidian.Notice(`「${mdFile.basename}」全部失败段已补转写，正在重新整理正文…`, 8000);
-    const mode = this.detectModeFromMarkdown(mdFile) || getEffectivePolishMode(this.settings, this.settings.polishMode);
+    const mode = this.noteWriter.detectModeFromMarkdown(mdFile) || getEffectivePolishMode(this.settings, this.settings.polishMode);
     // fire-and-forget：不阻塞队列循环
     void (async () => {
       try {
@@ -9260,7 +8725,7 @@ ${source}`;
       multiSourceAudio: task.source === "merged-notes",
     };
     if (shouldRewriteConsolidatedNote(this.settings, retrySession)) {
-      await this.rewriteConsolidated(retrySession, polished);
+      await this.noteWriter.rewriteConsolidated(retrySession, polished);
     } else {
       const cur = await this.app.vault.read(file);
       const failMark = /_\[合并润色失败（已加入重试队列）：[^\]]*\]_/;
@@ -9284,7 +8749,7 @@ ${source}`;
     // 招聘评估重试：与 finalizeSession 一致，移到 JD 项目文件夹 + 候选人-轮次-MMDD 命名（否则项目统计漏算这一场）。
     const renamed = (task.mode === "recruit" && recruitContext && recruitContext.jdFile)
       ? await this.recruit.relocateRecruitNote({ mdPath: file.path, recruitContext }, recruitContext)
-      : await this.renameMarkdownWithGeneratedTitle(file, polished, task.mode);
+      : await this.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, task.mode);
     if (renamed instanceof obsidian.TFile) targetFile = renamed;
     await this.refreshLexVoiceNoteIndexSafely(targetFile, {
       meetingDate: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || "",

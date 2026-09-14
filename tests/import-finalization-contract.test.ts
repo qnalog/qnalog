@@ -24,7 +24,7 @@ describe("import finalization contract", () => {
     const firstPassPolicy = source.indexOf("shouldRewriteConsolidatedNote(this.settings, writeSession)");
     const retryStart = source.indexOf("async retryMergeTask(task)");
     const retryPolicy = source.indexOf("shouldRewriteConsolidatedNote(this.settings, retrySession)", retryStart);
-    const retryRewrite = source.indexOf("await this.rewriteConsolidated(retrySession, polished)", retryPolicy);
+    const retryRewrite = source.indexOf("await this.noteWriter.rewriteConsolidated(retrySession, polished)", retryPolicy);
 
     expect(firstPassPolicy).toBeGreaterThan(-1);
     expect(retryStart).toBeGreaterThan(-1);

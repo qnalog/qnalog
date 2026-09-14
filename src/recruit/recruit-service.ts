@@ -18,7 +18,8 @@ export interface RecruitHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   getAvailableMarkdownPath(targetPath: string, currentPath: string): string | null;
-  insertBeforeSegmentsStart(path: string, content: string, sessionId: string): Promise<void>;
+  /** 笔记正文写入服务：面试提纲块插到分段逐字稿标记之前。 */
+  noteWriter: { insertBeforeSegmentsStart(path: string, content: string, sessionId: string): Promise<void> };
   openRecruitContextInline(): Promise<void>;
   registerMarkdownCodeBlockProcessor(language: string, handler: (source: string, el: HTMLElement, ctx: obsidian.MarkdownPostProcessorContext) => void): void;
   saveSettings(): Promise<void>;
@@ -479,7 +480,7 @@ export class RecruitService {
             const cur = await this.host.app.vault.read(file);
             if (cur.includes(`<!-- lexvoice-interview-brief-start:${session.id} -->`)) return;
           }
-          await this.host.insertBeforeSegmentsStart(session.mdPath, block, session.id);
+          await this.host.noteWriter.insertBeforeSegmentsStart(session.mdPath, block, session.id);
         };
         session.writeQueue = (session.writeQueue || Promise.resolve()).then(write, write).catch((e) => {
           console.error("[QnALog] insert background interview brief failed", e);
