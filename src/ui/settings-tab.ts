@@ -92,6 +92,8 @@ function resolveOneCardProviderEndpoint(cfg, apiKey) {
 }
 
 export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
+  /** 当前选中的设置标签页；openSettings 可指定要切到的标签。 */
+  declare activeTab: string;
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;

@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import { extractJsonObject } from '../shared/util-json';
 import { escapeHtmlText } from '../shared/util-markdown';
-import { isRecord } from '../shared/util-common';
+import { isRecord, primitiveText } from '../shared/util-common';
 import { SEMINAR_REPORT_TEMPLATE, SEMINAR_REPORT_PROMPT } from '../report-templates';
 import { callLlm } from '../llm/core';
 
@@ -188,13 +188,13 @@ export function normalizeReportObjects(value, fields, limit) {
 export function normalizeHtmlReportModel(raw, fileName, source) {
   const data = isRecord(raw) ? raw : {};
   const fallbackTitle = sanitizeReportFileStem(fileName || "QnALog HTML 报告");
-  const title = String(data.title || fallbackTitle).trim() || fallbackTitle;
-  const subtitle = String(data.subtitle || "由 QnALog 根据会议纪要生成").trim();
-  const theme = String(data.theme || data.topic || "").trim();
-  const audience = String(data.audience || "").trim();
-  const editorialNote = String(data.editorialNote || data.reportAngle || "").trim();
-  const summary = String(data.summary || data.abstract || "").trim();
-  const thesis = String(data.thesis || data.mainConclusion || "").trim();
+  const title = primitiveText(data.title || fallbackTitle).trim() || fallbackTitle;
+  const subtitle = primitiveText(data.subtitle || "由 QnALog 根据会议纪要生成").trim();
+  const theme = primitiveText(data.theme || data.topic || "").trim();
+  const audience = primitiveText(data.audience || "").trim();
+  const editorialNote = primitiveText(data.editorialNote || data.reportAngle || "").trim();
+  const summary = primitiveText(data.summary || data.abstract || "").trim();
+  const thesis = primitiveText(data.thesis || data.mainConclusion || "").trim();
   const highlights = normalizeReportArray(data.highlights || data.keyPoints, 6);
   const visualCards = normalizeReportObjects(data.visualCards || data.cards || data.keyCards, ["label", "value", "note"], 6);
   const logicFlow = normalizeReportObjects(data.logicFlow || data.flow || data.path, ["step", "title", "desc"], 6);

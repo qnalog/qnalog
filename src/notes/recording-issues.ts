@@ -83,7 +83,7 @@ export function cleanRealtimeLlmText(text) {
 
 // 深度遍历对象，对所有名字以 apiKey 结尾的字符串字段应用 fn（落盘混淆 / 读取还原），路径无关。
 // 覆盖：apiKey / llmApiKey / transcribeApiKey / compatApiKey 以及 providers[].apiKey、profiles[].apiKey 等嵌套。
-export function transformApiKeyFieldsDeep(obj, fn, depth) {
+export function transformApiKeyFieldsDeep(obj, fn, depth = 0) {
   const d = depth || 0;
   if (!obj || typeof obj !== "object" || d > 10) return;
   if (Array.isArray(obj)) {

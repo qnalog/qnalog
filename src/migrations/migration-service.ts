@@ -215,7 +215,7 @@ export class MigrationService {
   async migrateDefaultVocabularyFileLocation(savedData) {
     const saved = isRecord(savedData) ? savedData : {};
     const raw = isRecord(saved.settings) ? saved.settings : saved;
-    const vocabulary = raw.vocabulary || {};
+    const vocabulary = isRecord(raw.vocabulary) ? raw.vocabulary : {};
     const savedPath = pickDefined(vocabulary.notePath, raw.vocabularyFile, "");
     const normSaved = obsidian.normalizePath(savedPath || "");
     const usesLegacyDefault = !normSaved || normSaved.toLowerCase() === LEGACY_VOCABULARY_FILE.toLowerCase();

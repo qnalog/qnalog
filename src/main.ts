@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 import * as obsidian from "obsidian";
 
 import { LexVoiceSettingTab } from "./ui/settings-tab";
@@ -114,6 +113,16 @@ class LexVoicePlugin extends obsidian.Plugin {
   declare outlineCoordinator: RealtimeOutlineCoordinator;
   /** 悬浮气泡；未挂载时为 null。 */
   declare bubble: BubbleWidget | null;
+  /** 版本检查与提示服务；onload 里装配。 */
+  declare updateService: UpdateService;
+  /** 设置页实例；openSettings 需要它切到指定标签页。 */
+  declare settingTab: LexVoiceSettingTab | null;
+  /** 功能区图标元素；气泡挂载在它旁边。 */
+  declare ribbonEl: HTMLElement | null;
+  /** 从 data.json 读回的待恢复队列（loadAll 时交给 TaskQueue）。 */
+  declare persistedQueue: unknown[];
+  /** saveAll 的串行尾：保证并发保存按调用顺序落盘。 */
+  declare _saveAllTail: Promise<unknown> | null;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
   buildInfo: PluginBuildInfo | null = null;
 
@@ -372,7 +381,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       menu.addSeparator();
       menu.addItem((item) => {
         item.setTitle(`QnALog：整合 ${audios.length} 段音频…`).setIcon("mic");
-        const sub = item.setSubmenu();
+        const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
         const modes = getVisibleModeEntries(this.settings, false);
         for (const [m, label] of modes) {
           const meta = getModeMeta(this.settings, m);
@@ -473,7 +482,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     // 设置页、队列状态和后台任务都可能同时触发保存。直接并发 saveData 时，
     // 较早创建的旧快照可能较晚落盘，覆盖刚加入的任务或新设置。
     // 串行执行并在真正轮到写入时再取快照，保证磁盘最终状态与内存最新状态一致。
-    const previous = this._saveAllTail || Promise.resolve();
+    const previous = this._saveAllTail != null ? this._saveAllTail : Promise.resolve();
     const current = previous.catch(() => undefined).then(() => this._saveAllSnapshot());
     this._saveAllTail = current;
     try {
@@ -506,7 +515,7 @@ class LexVoicePlugin extends obsidian.Plugin {
   }
   async saveSettings() { await this.saveAll(); }  openSettings(tabId = "home") {
     if (this.settingTab) this.settingTab.activeTab = tabId;
-    const setting = this.app.setting;
+    const setting = (this.app as obsidian.App & { setting?: { open(): void; openTabById?(id: string): void } }).setting;
     if (!setting) return;
     setting.open();
     if (typeof setting.openTabById === "function") {

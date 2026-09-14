@@ -101,7 +101,9 @@ describe("release runtime contracts", () => {
 
   it("keeps whole-file audio import and progress updates connected at runtime", () => {
     // 导入流程已抽到 src/imports/import-service.ts，按本文件约定用全文断言字符串存在。
-    expect(pluginSource).toContain("openAudioImportOptions(paths, modeOverride)");
+    // 与同文件其它断言同口径是字符串契约；用正则容忍参数上的默认值/类型标注，
+    // 避免补类型时反复失配。
+    expect(pluginSource).toMatch(/openAudioImportOptions\(paths,\s*modeOverride(\s*:\s*\w+)?(\s*=\s*[^)]+)?\)/);
     // 断言「方法存在且 patch 可省略」；用正则容忍参数上的类型标注，避免钉死具体类型名。
     expect(pluginSource).toMatch(/updateImportActivity\(patch(\s*:\s*\w+)?\s*=\s*\{\}\)/);
     expect(pluginSource).toContain("resolveImportTranscribeProvider(this.host)");
