@@ -165,6 +165,22 @@ export function checkDomainBoundaries(files) {
       const member = rest.slice(1).split(".")[0];
       const decl = declared.get(field);
       if (!decl || !decl.type) continue;
+      // 字段本身指向某个域服务（main.ts 里 this.<字段> = new <类>(this)）时以那个服务类为准：
+      // 接口里写的内联类型是手抄的，可能声明了服务上并不存在的成员，只信类本身。
+      const ownerClass = fieldClass.get(field);
+      if (ownerClass) {
+        const known = classMembers.get(ownerClass);
+        if (known && !known.has(member)) {
+          problems.push(`${file}${lineOf(content, m.index)}: this.host.${field}.${member} 不在 ${ownerClass} 上（字段指向该服务）`);
+        }
+        for (const item of (ts.isTypeLiteralNode(decl.type) ? decl.type.members : [])) {
+          const name = item.name ? item.name.getText(sf) : "";
+          if (name && known && !known.has(name)) {
+            problems.push(`${file}${lineOf(content, m.index)}: Host 接口声明的 ${field}.${name} 不在 ${ownerClass} 上`);
+          }
+        }
+        continue;
+      }
       if (ts.isTypeLiteralNode(decl.type)) {
         const inner = new Set(decl.type.members.map((x) => (x.name ? x.name.getText(sf) : "")).filter(Boolean));
         if (!inner.has(member)) problems.push(`${file}${lineOf(content, m.index)}: this.host.${field}.${member} 不在内联类型里`);

@@ -66,6 +66,39 @@ export class ThingService {
     expect(problems.some((p) => p.includes("plugin.recording.stopRecordingXX 不在 RecordingService 上"))).toBe(true);
   });
 
+  it("拦下跨服务调用里指向错误服务的成员（内联类型手抄错的场景）", () => {
+    // recording 字段指向 RecordingService，接口里却声明了只有 SessionFinalizeService 才有的成员
+    const problems = checkDomainBoundaries({
+      "src/main.ts": `
+class LexVoicePlugin extends obsidian.Plugin {
+  declare settings;
+  async onload() {
+    this.recording = new RecordingService(this);
+    this.sessionFinalize = new SessionFinalizeService(this);
+  }
+  async saveAll() {}
+}
+`,
+      "src/queue/q-service.ts": `export interface QHost {
+  recording: { confirmSpeakerNamesBeforeFinal(): Promise<boolean> };
+  sessionFinalize: SessionFinalizeService;
+}
+export class QService {
+  declare host: QHost;
+  run() { return this.host.recording.confirmSpeakerNamesBeforeFinal(); }
+}`,
+      "src/recording/recording-service.ts": `export class RecordingService {
+  declare host;
+  startRecording() { return 1; }
+}`,
+      "src/finalize/session-finalize-service.ts": `export class SessionFinalizeService {
+  declare host;
+  confirmSpeakerNamesBeforeFinal() { return Promise.resolve(true); }
+}`,
+    });
+    expect(problems.some((p) => p.includes("this.host.recording.confirmSpeakerNamesBeforeFinal 不在 RecordingService 上"))).toBe(true);
+  });
+
   it("接受域服务上真实存在的成员", () => {
     const problems = checkDomainBoundaries(files({
       "src/ui/panel.ts": `export function f(plugin) { plugin.recording.stopRecording(); }`,

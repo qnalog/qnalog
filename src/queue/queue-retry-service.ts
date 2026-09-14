@@ -27,6 +27,7 @@ import { TaskQueue } from "../queue/task-queue";
 import { mergeAndPolish } from "../briefing/merge-pipeline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NoteIndexService } from "../notes/note-index-service";
+import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { RecruitService } from "../recruit/recruit-service";
@@ -56,7 +57,9 @@ export interface QueueRetryHost {
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   /** 录音采集服务：切片缓存清理与熔断状态。 */
-  recording: { getAsrServiceCircuitState(): unknown; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void>; finalizeSession(session: RecordingSession): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
+  recording: { getAsrServiceCircuitState(): unknown; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
+  /** 会话收尾服务：转写补齐后的说话人确认与收尾。 */
+  sessionFinalize: SessionFinalizeService;
   /** 词汇表与行业提示词服务。 */
   vocabulary: VocabularyService;
   /** 重新整理服务：导入转写完成后按说话人姓名重排纪要。 */
@@ -425,7 +428,7 @@ export class QueueRetryService {
       await this.host.recording.maybeDeleteSegmentCacheFile(task.audioPath, task.id, !!task.ephemeralAudio);
     }
     if (replaced && task.wholeFileImport && task.speakerDiarization !== false) {
-      await this.host.recording.confirmSpeakerNamesBeforeFinal({
+      await this.host.sessionFinalize.confirmSpeakerNamesBeforeFinal({
         id: task.sessionId,
         mdPath: task.mdPath,
         source: "import",
