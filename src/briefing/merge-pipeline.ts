@@ -37,7 +37,7 @@ import { renderLongSessionRawFallbackGroup } from "../notes/detail-blocks";
 
 import { appendEntityEvidenceWarning, frontmatterBaseModeKey, maybePreSummarizeTextImportForMerge, parseBriefingPartResponse, postProcessBriefingOutput } from "../notes/note-markdown";
 
-export async function polishTranscript(plugin, transcript, mode, recruitContext, sessionMeta, originalFrontmatter, repolishOptions) {
+export async function polishTranscript(plugin, transcript, mode, sessionMeta, originalFrontmatter, repolishOptions) {
   if (!transcript || !transcript.trim()) return "";
   if (mode === "off") return transcript;
   const tpl = resolveTemplatePromptForMode(plugin, mode, false);

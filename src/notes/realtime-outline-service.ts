@@ -537,7 +537,7 @@ export class RealtimeOutlineService {
     return session.realtimeOutline || result;
   }
 
-  // 招聘需求挖掘 · 会中"画像字段树覆盖扫描"。每轮整场转写 → 14 维 covered/partial/missing。
+  // 收尾前把整场转写补齐成最终大纲（分批追赶，失败的分部由原始转写保底）。
   async ensureRealtimeOutlineForFinalNote(session) {
     if (!this.host.settings.enableRealtimeOutline) return;
     if (!session || !session.segments || !session.segments.length) return;

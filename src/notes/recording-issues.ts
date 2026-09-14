@@ -57,7 +57,7 @@ export function resolveRuntimeAudioInputMode(mode) {
 // 更新源固定指向官方仓库。曾是设置项，但 normalize 始终把它们重置为默认值（用户值从未生效），
 // 实为常量装成设置，故收编为模块常量；自定义更新源如有真实需求应连同 UI 一起正式设计。
 
-// 用户面内置业务意图（recruit 走彩蛋解锁）。内部 key 保留旧字符串以避免迁移破坏老笔记 / tag / base 文件；
+// 用户面内置业务意图。内部 key 保留旧字符串以避免迁移破坏老笔记 / tag / base 文件；
 // huddle 是 meeting 的子风格，不再单列在新建录音下拉，但老 huddle 笔记仍能被识别和打开。
 
 // 新建录音下拉里出现的公开意图 + 1 个彩蛋；huddle 不出现（仅旧笔记兜底使用）
@@ -70,7 +70,6 @@ export function legacyPromptFieldForMode(mode) {
     seminar: "polishPromptSeminar",
     monologue: "polishPromptMonologue",
     learning: "polishPromptLearning",
-    recruit: "polishPromptRecruit",
   };
   return map[mode] || "";
 }

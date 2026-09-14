@@ -5826,23 +5826,21 @@ export class OutlineView extends obsidian.ItemView {
     const list = sec.createDiv({ cls: `lexvoice-outline-recent lexvoice-outline-recent--${groupBy}` });
     const groups = new Map();
     for (const item of recents) {
-      const key = groupBy === "project" ? item.projectKey : item.folderKey;
-      const label = groupBy === "project" ? item.projectLabel : item.folderLabel;
-      const path = groupBy === "project" ? item.projectPath : item.folderPath;
-      const depth = groupBy === "project" ? 0 : item.folderDepth;
+      const key = item.folderKey;
+      const label = item.folderLabel;
+      const path = item.folderPath;
+      const depth = item.folderDepth;
       if (!groups.has(key)) groups.set(key, { key, label, path, depth, items: [] });
       groups.get(key).items.push(item);
     }
     const groupList = Array.from(groups.values()).sort((a, b) => {
-      if (groupBy === "project" && a.key === "__unassigned__") return 1;
-      if (groupBy === "project" && b.key === "__unassigned__") return -1;
       return String(a.label || "").localeCompare(String(b.label || ""), "zh-CN");
     });
     for (const group of groupList) {
       const groupEl = list.createDiv({ cls: "lexvoice-outline-recent-group lexvoice-outline-recent-group--named" });
       const axis = groupEl.createDiv({ cls: "lexvoice-outline-recent-axis lexvoice-outline-recent-axis--named" });
       const axisIcon = axis.createDiv({ cls: "lexvoice-outline-recent-axis-icon", attr: { title: group.path || group.label } });
-      try { obsidian.setIcon(axisIcon, groupBy === "project" ? "tag" : "folder"); } catch { /* intentionally empty */ }
+      try { obsidian.setIcon(axisIcon, "folder"); } catch { /* intentionally empty */ }
       const itemsEl = groupEl.createDiv({ cls: "lexvoice-outline-recent-items" });
       const groupTitle = itemsEl.createDiv({ cls: "lexvoice-outline-recent-group-title" });
       const collapseKey = groupBy === "folder" ? `folder:${group.key}` : "";

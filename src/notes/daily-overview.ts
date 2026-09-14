@@ -94,20 +94,4 @@ export function upsertDailyMeetingOverview(content, sessionId, entry, settings) 
   return before + entry + after;
 }
 
-// 录音开始时据 JD / 简历 / 特殊关注点生成「面试提纲」——供面试官面试中照着提问。
-// 重点围绕"候选人经历 × JD 要求的匹配度"设计针对性问题。无 JD 且无简历则返回空（不生成）。
-
-// ====== F3 统一面试提纲：通用段（写回 JD、跨候选人复用）+ 针对段（含上轮待澄清）======
-
-// 统一轮次排序：把 PRD（初试<复试<HR面<终面）与代码（初面/二面/终面/复试/交叉面）两套词归一到同一序数。
-
-// 在同一招聘项目文件夹里找该候选人「更早一轮」的最近一条纪要，取其「待澄清」列表（供针对段转追问）。
-
-// 把通用段写回 JD 文件的「## 统一面试提纲」章节。优先用 vault.process（原子读改写，避开 read→async→modify
-// 期间用户编辑器改动被覆盖的竞态）；老版本无 process 时回退 read+modify。找不到该章节则文件尾追加。
-
-// 生成通用面试提纲：素质考核题置首（逐项覆盖必备素质）+ JD 通用能力题；不引用任何具体候选人（保证可复用）。
-
-// F3 编排器：通用段（JD 已有非空则复用、空则生成并写回 JD）+ 针对段（注入通用段去重 + 上轮待澄清）。
-
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

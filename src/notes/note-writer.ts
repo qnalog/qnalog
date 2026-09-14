@@ -333,7 +333,7 @@ export class NoteWriter {
     new obsidian.Notice("AI 润色中…");
     try {
       const mode = getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
-      const polished = await polishTranscript(this.host, raw, mode, null);
+      const polished = await polishTranscript(this.host, raw, mode, null, null, null);
       if (sel) editor.replaceSelection(polished); else editor.setValue(polished);
       new obsidian.Notice("润色完成");
     } catch (e) {

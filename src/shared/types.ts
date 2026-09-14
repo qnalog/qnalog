@@ -347,8 +347,6 @@ export interface RecordingSession {
   realtimeOutlineNextAllowedAt?: number;
   realtimeOutlineNoChangeCommittedCount?: number;
   realtimeOutlineNoChangeRetryCount?: number;
-  jobPortraitCoverage?: unknown;
-  followupFeedback?: unknown;
   writeQueue?: Promise<void>;
   segmentPersistQueue?: Promise<void>;
   finalizePromise?: Promise<void> | null;

@@ -253,6 +253,15 @@ async function main() {
       expect(initial.time === defaults.time && initial.mode === defaults.mode,
         `纪要列表打开时带了非默认筛选：初始 ${JSON.stringify(initial)}，默认 ${JSON.stringify(defaults)}`);
 
+      // 纪要列表的文件范围必须只落在配置的纪要目录内。
+      // 反例（改设置结构时踩过）：getRecentNoteRoots 读了已删除的设置键，取到 undefined →
+      // 空前缀被当成"匹配一切"，列表静默变成整个知识库的 Markdown。
+      const mdFolder = plugin.settings.mdFolder || "LexVoice/转写纪要";
+      expect(view.isRecentNotePath(`${mdFolder}/2026-09-14 1133 · 个人笔记.md`),
+        "纪要目录内的笔记被判为不在范围里");
+      expect(!view.isRecentNotePath("AFFiNE Export/Notes/Unfiled/2025-09-05.md"),
+        "纪要目录之外的笔记被判为在范围里（根目录过滤失效，列表会覆盖全库）");
+
       const bar = makeEl();
       view.renderRecentFilterBar(bar, []);
       const rendered = collectRenderedText(bar);

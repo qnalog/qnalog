@@ -44,8 +44,3 @@ export function getRecentNotePathRelativeToRoot(pathValue: unknown, rootValue: u
   if (path === root) return "";
   return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : "";
 }
-
-export function getRecentNoteTopLevelFolder(pathValue: unknown, rootValue: unknown): string {
-  const relative = getRecentNotePathRelativeToRoot(pathValue, rootValue);
-  return relative ? relative.split("/")[0] : "";
-}

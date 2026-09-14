@@ -27,7 +27,7 @@ import { escapeRegExp, formatElapsed } from "../shared/util-common";
 
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
-import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, getRecentNoteTopLevelFolder, isPathUnderRecentNoteRoots, normalizeRecentNoteRoot, normalizeRecentNoteRoots } from "../recent-note-paths";
+import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent-note-paths";
 
 export function detectRecentModeFromFrontmatter(settings, frontmatter) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
@@ -61,7 +61,7 @@ export function getRecentModePrefixEntries(settings) {
 export function detectRecentModeFromFilename(settings, basename) {
   const stem = stripRecentDatePrefix(basename);
   if (!stem) return "off";
-  const inlineTag = stem.match(/(?:^|·\s*)(访谈|会议|研讨会|研讨|沙龙|小会|手记|学习记录|学习|个人笔记|招聘评估|晋升评审|晋升述职评审|述职评审|工作纪要|学术研讨|主题沙龙|访谈调研|圆桌讨论)(?=$|[-·\s])/);
+  const inlineTag = stem.match(/(?:^|·\s*)(访谈|会议|研讨会|研讨|沙龙|小会|手记|学习记录|学习|个人笔记|工作纪要|学术研讨|主题沙龙|访谈调研|圆桌讨论)(?=$|[-·\s])/);
   if (inlineTag) return normalizeModeFromLabel(settings, inlineTag[1]) || "off";
   for (const [prefix, mode] of getRecentModePrefixEntries(settings)) {
     const re = new RegExp("^" + escapeRegExp(prefix) + "(?:[-·\\s]|$)");
@@ -93,7 +93,7 @@ export const RECENT_GROUP_OPTIONS = [
   { id: "folder", label: "按文件夹" },
 ];
 
-export const RECENT_TOPIC_FALLBACKS = ["招聘", "学习", "会议", "访谈", "PPT", "AI"];
+export const RECENT_TOPIC_FALLBACKS = ["学习", "会议", "访谈", "PPT", "AI"];
 
 export function formatRecentDurationLabel(raw) {
   if (raw == null) return "";
@@ -144,7 +144,6 @@ export function collectRecentNoteTopics(frontmatter, title, mode) {
   collectRecentTopicValues(fm["tags"], topics);
 
   const source = `${title || ""} ${mode || ""}`;
-  if (mode === "recruit" || /招聘|面试|JD|HR|候选人|人才/.test(source)) topics.add("招聘");
   if (mode === "learning" || /学习|课程|讲座|视频|B站|YouTube/i.test(source)) topics.add("学习");
   if (["meeting", "huddle", "seminar"].includes(mode) || /会议|纪要|同步|复盘|研讨/.test(source)) topics.add("会议");
   if (mode === "interview" || /访谈|调研|用户研究/.test(source)) topics.add("访谈");
@@ -178,7 +177,6 @@ export function getRecentNoteQuickStatus(plugin, file, pendingPathSet) {
 export function getRecentNoteRoots(plugin) {
   return normalizeRecentNoteRoots([
     plugin && plugin.settings ? plugin.settings.mdFolder : "",
-    plugin && plugin.settings ? plugin.settings.recruitJdFolderPath : "",
   ]);
 }
 
@@ -209,18 +207,6 @@ export function getRecentFolderInfo(plugin, file) {
     label,
     path: folderPath,
     depth: relativeFolder ? relativeFolder.split("/").length : 0,
-  };
-}
-
-export function getRecentProjectInfo(plugin, file) {
-  const configuredRoot = normalizeRecentNoteRoot(plugin && plugin.settings ? plugin.settings.recruitJdFolderPath : "");
-  const project = configuredRoot ? getRecentNoteTopLevelFolder(file && file.path, configuredRoot) : "";
-  if (!project) return { key: "__unassigned__", label: "未归入项目", path: "", depth: 0 };
-  return {
-    key: `${configuredRoot}/${project}`,
-    label: project,
-    path: `${configuredRoot}/${project}`,
-    depth: 0,
   };
 }
 
@@ -275,7 +261,6 @@ export function getRecentNotes(plugin, limit) {
     const topics = collectRecentNoteTopics(frontmatter, title, mode);
     const quickStatus = getRecentNoteQuickStatus(plugin, f, pendingPathSet);
     const folder = getRecentFolderInfo(plugin, f);
-    const project = getRecentProjectInfo(plugin, f);
     items.push({
       file: f,
       timestamp: t.valueOf(),
@@ -293,9 +278,6 @@ export function getRecentNotes(plugin, limit) {
       folderLabel: folder.label,
       folderPath: folder.path,
       folderDepth: folder.depth,
-      projectKey: project.key,
-      projectLabel: project.label,
-      projectPath: project.path,
     });
   }
   // 把派生版本挂到各自母本下（按 source_path 归并；母本不在列表里的派生暂不显示，仍可经反链/文件树找到）。
