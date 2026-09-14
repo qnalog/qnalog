@@ -80,6 +80,34 @@ import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-serv
 import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
+  // 域服务字段在 onload 里赋值。TypeScript 不推断「仅赋值」的属性，
+  // 因此跨模块读取 plugin.<域> 的调用方（如 TaskQueue）需要这里的显式声明。
+  declare diagnostics: DiagnosticsService;
+  declare delivery: DeliveryService;
+  declare noteWriter: NoteWriter;
+  declare tasks: TaskActivityService;
+  declare queueRetry: QueueRetryService;
+  declare versions: VersionStore;
+  declare people: PeopleDirectoryService;
+  declare knowledgeExtraction: KnowledgeExtractionService;
+  declare inbox: InboxWatcherService;
+  declare repolish: RepolishService;
+  declare externalInbox: ExternalInboxService;
+  declare imports: ImportService;
+  declare sessionFinalize: SessionFinalizeService;
+  declare recording: RecordingService;
+  declare shell: ViewShellService;
+  declare library: LibraryViewService;
+  declare noteIndex: NoteIndexService;
+  declare audioLinks: AudioTimeLinkService;
+  declare meetingWorkbench: MeetingWorkbenchService;
+  declare outline: RealtimeOutlineService;
+  declare migrations: MigrationService;
+  declare vocabulary: VocabularyService;
+  declare profiles: TranscribeProfileService;
+  declare semanticCanvas: SemanticCanvasService;
+  declare recorder: RecorderService;
+  declare queue: TaskQueue;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
   buildInfo: PluginBuildInfo | null = null;
 

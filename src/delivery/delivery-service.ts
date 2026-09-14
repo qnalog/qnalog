@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：交付物生成：HTML 报告、整页 PDF、.eml 邮件草稿
 
 import * as obsidian from "obsidian";
@@ -16,6 +15,13 @@ import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 import { EMAIL_DRAFT_ATTACHMENT_FOLDER, EMAIL_DRAFT_FOLDER, arrayBufferToBase64, buildEmailDraftContent, buildMeetingEmailBody, extractMeetingAttendeeNames, guessEmailAttachmentMime, normalizeEmailAddressList } from "../notes/note-markdown";
 import { detectRecentNoteMode } from "../recent/recent-notes";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
+
+/** 桌面端通过 require 取到的 electron 模块里用到的成员；移动端取不到时为 undefined。 */
+type ElectronModule = {
+  BrowserWindow?: new (options: Record<string, unknown>) => { loadURL(url: string): Promise<void>; webContents: { executeJavaScript(code: string): Promise<unknown>; printToPDF(options?: Record<string, unknown>): Promise<unknown> } };
+  remote?: ElectronModule;
+  shell?: { openPath(path: string): Promise<string> };
+};
 
 /** DeliveryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface DeliveryHost {
@@ -103,12 +109,12 @@ export class DeliveryService {
   async printHtmlToPdfBuffer(html) {
     let BrowserWindow = null;
     try {
-      const electron = getDesktopModule("electron");
+      const electron = getDesktopModule<ElectronModule>("electron");
       BrowserWindow = electron && (electron.BrowserWindow || (electron.remote && electron.remote.BrowserWindow));
     } catch { /* intentionally empty */ }
     if (!BrowserWindow) {
       try {
-        const remote = getDesktopModule("@electron/remote");
+        const remote = getDesktopModule<ElectronModule>("@electron/remote");
         BrowserWindow = remote && remote.BrowserWindow;
       } catch { /* intentionally empty */ }
     }
@@ -136,8 +142,8 @@ export class DeliveryService {
   // 整页不截断 PDF：隐藏窗口量内容真实尺寸 → 注入 @page 为整页全高 + preferCSSPageSize → 单页长 PDF（非 A4 分页，不截断）。
   async printHtmlToSinglePagePdfBuffer(html) {
     let BrowserWindow = null;
-    try { const e = getDesktopModule("electron"); BrowserWindow = e && (e.BrowserWindow || (e.remote && e.remote.BrowserWindow)); } catch { /* intentionally empty */ }
-    if (!BrowserWindow) { try { BrowserWindow = getDesktopModule("@electron/remote")?.BrowserWindow; } catch { /* intentionally empty */ } }
+    try { const e = getDesktopModule<ElectronModule>("electron"); BrowserWindow = e && (e.BrowserWindow || (e.remote && e.remote.BrowserWindow)); } catch { /* intentionally empty */ }
+    if (!BrowserWindow) { try { BrowserWindow = getDesktopModule<ElectronModule>("@electron/remote")?.BrowserWindow; } catch { /* intentionally empty */ } }
     if (!BrowserWindow) throw new Error("当前 Obsidian 环境不支持自动生成 PDF");
     const win = new BrowserWindow({ show: false, width: 1024, height: 1400, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
     // 超时兜底：渲染进程崩溃/卡死时这些 await 可能永不 settle，不加超时会让用户卡在"正在渲染…"且无法取消。
@@ -172,7 +178,9 @@ export class DeliveryService {
     let contentHtml = "";
     const renderComponent = new obsidian.Component();
     try {
-      const el = activeWindow.createEl("article");
+      const el = (activeWindow as Window & {
+        createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K];
+      }).createEl("article");
       if (obsidian.MarkdownRenderer && typeof obsidian.MarkdownRenderer.render === "function") {
         await obsidian.MarkdownRenderer.render(this.host.app, markdown, el, file.path, renderComponent);
       }
@@ -320,11 +328,12 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
   openVaultFileInSystem(path) {
     try {
       const adapter = this.host.app.vault.adapter;
-      const fullPath = adapter && typeof adapter.getFullPath === "function" ? adapter.getFullPath(path) : "";
+      const desktopAdapter = adapter as { getFullPath?: (p: string) => string } | null;
+      const fullPath = desktopAdapter && typeof desktopAdapter.getFullPath === "function" ? desktopAdapter.getFullPath(path) : "";
       if (!fullPath) return false;
-      const electron = getDesktopModule("electron");
+      const electron = getDesktopModule<ElectronModule>("electron");
       if (electron && electron.shell && typeof electron.shell.openPath === "function") {
-        electron.shell.openPath(fullPath);
+        void electron.shell.openPath(fullPath);
         return true;
       }
     } catch (e) {

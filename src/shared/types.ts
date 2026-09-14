@@ -1,3 +1,4 @@
+import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 export type AudioInputMode = "mic" | "mix-virtual" | "virtualCable";
 export type AudioChannelMode = "auto" | "mono" | "multichannel";
 export type AudioChannelRuntimeMode = "mono" | "probing" | "multichannel";
@@ -44,6 +45,28 @@ export interface PromptTemplate {
   source?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 最近一次实时大纲请求的输入统计；由 realtime-outline-service 写入 session。 */
+export interface RealtimeOutlineInputStats {
+  fullTranscript: boolean;
+  systemChars: number;
+  userChars: number;
+  totalChars: number;
+  rollingContextChars: number;
+  transcriptChars: number;
+  previousOutlineChars: number;
+  memoryChars: number;
+  maxTranscriptChars: number;
+}
+
+/** 会话处理进度；阶段取值见 shared/activity-progress.ts 的 AudioImportStageId。 */
+export interface SessionWorkProgress {
+  stage?: string;
+  label?: string;
+  percent?: number;
+  detail?: string;
+  updatedAt?: string;
 }
 
 export interface IndustryProfile {
@@ -195,6 +218,21 @@ export interface PersistedPluginSettings {
   activeTemplateByMode: Record<string, string>;
 }
 
+/** 录音器切片回调的入参：切出一段音频时触发，收尾时再触发一次带 isFinal 的。 */
+export interface RecorderSegmentPayload {
+  blob: Blob;
+  index: number;
+  startOffsetMs: number;
+  endOffsetMs: number;
+  isFinal: boolean;
+  ext: string;
+  /** 收尾时为 true：本段没有独立音频，回听要用整场录音。 */
+  masterOnly?: boolean;
+  masterBlob?: Blob | null;
+  masterMime?: string;
+  masterExt?: string;
+}
+
 export interface Segment {
   index: number;
   startOffsetMs: number;
@@ -327,14 +365,18 @@ export interface RecordingSession {
   continuationRecordedAt?: string;
   meetingWorkbench?: unknown;
   pendingMeetingWorkbenchInteractions?: unknown[];
-  workProgress?: unknown;
+  /** 会话处理进度的用户可见文案；由 recording-service 的 setSessionWorkProgress 逐字段合并写入。 */
+  workProgress?: SessionWorkProgress;
   importActivitySnapshot?: unknown;
   processingStartedAt?: string;
   realtimeOutline?: string;
   realtimeOutlineState?: unknown;
   realtimeOutlineMemory?: string;
   realtimeOutlineCoverage?: unknown;
-  realtimeOutlineInput?: unknown;
+  /** 导入音频时实际使用的转写服务 id；重新整理时要沿用同一个服务。 */
+  importTranscribeProviderId?: string;
+  /** 最近一次实时大纲请求的输入统计，由 realtime-outline-service 写入。 */
+  realtimeOutlineInput?: RealtimeOutlineInputStats;
   realtimeOutlineWindow?: unknown;
   realtimeOutlineSegmentCount?: number;
   realtimeOutlineAttemptedSegmentCount?: number;
@@ -349,12 +391,20 @@ export interface RecordingSession {
   segmentPersistQueue?: Promise<void>;
   finalizePromise?: Promise<void> | null;
   liveAsrJobs?: Map<string, unknown>;
-  asrCircuitState?: unknown;
+  /** 实时转写熔断状态；由 recording-service 在每次成功/失败后写入。 */
+  asrCircuitState?: LiveAsrCircuitState;
   asrBacklogLevel?: string;
   asrDeferredMode?: boolean;
   hasDeferredAsrJobs?: boolean;
   activeSegmentJobs?: number;
   streamingClient?: unknown;
+  /** 流式转写的累计正文；由 recording-service 写入，会中工作台与收尾阶段读它。 */
+  streamingFullText?: string;
+  /** 流式翻译/原文缓存；录音过程中逐次覆盖。 */
+  streamingTranslatedText?: string;
+  streamingSourceText?: string;
+  /** 写回「实时转写中」代码块的节流函数；由 meeting-workbench-service 生成并挂到会话上。 */
+  scheduleStreamingNoteUpdate?: () => void;
   pcmEncoder?: unknown;
   finalizing?: boolean;
   finalizationError?: string;

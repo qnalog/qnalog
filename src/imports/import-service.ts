@@ -1,12 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：导入：音频与文本文件的转写整理流程、导入选项弹窗入口
 
 import * as obsidian from "obsidian";
 import { AudioImportOptionsModal } from "../ui/modals";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { getLlmConfigIssue, formatLlmConfigIssue } from "../llm/core";
-import type { LexVoiceSettings } from "../shared/types";
 import { TEXT_IMPORT_EXT } from "../shared/catalog-import";
 import { genId } from "../shared/util-common";
 import { mimeFromExt, getTranscribeSegmentPlaceholder } from "../shared/util-audio";
@@ -28,6 +26,25 @@ import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { ViewShellService } from "../ui/view-shell-service";
 import { SessionFinalizeService } from "../notes/session-finalize-service";
+
+/** 导入音频的返回：新建会话的路径、分段数，以及需要重试的转写段数；入参为空或中断时返回 undefined。 */
+export interface ImportAudioFilesResult {
+  mdPath: string;
+  sessionId: string;
+  segmentCount: number;
+  /** 首轮转写失败的段数；大于 0 表示纪要已建立但转写待重试。 */
+  pendingTranscriptionCount: number;
+}
+
+/** 导入音频时的可选参数；三项都缺省，缺省时取设置里的默认值。 */
+export interface ImportAudioFilesOptions {
+  /** 外部收件箱来源；自动导入时用于记录来源与去重指纹。 */
+  externalSource?: { name?: string; fingerprint?: string };
+  /** 是否启用说话人分离；缺省时读设置 importSpeakerDiarization。 */
+  speakerDiarization?: boolean;
+  /** 期望的说话人数；缺省时读设置 importSpeakerCount。 */
+  speakerCount?: number;
+}
 
 /** ImportService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface ImportHost {
@@ -70,7 +87,7 @@ export class ImportService {
     modal.open();
   }
 
-  async importAudioFiles(paths, modeOverride, options = {}) {
+  async importAudioFiles(paths, modeOverride, options: ImportAudioFilesOptions = {}): Promise<ImportAudioFilesResult | undefined> {
     if (!paths || !paths.length) return;
     paths.sort();
     const externalSource = options && options.externalSource
@@ -110,7 +127,7 @@ export class ImportService {
     const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
 
-    const session = {
+    const session: RecordingSession = {
       id: genId(),
       sessionStamp,
       startedAt: startedAt.toDate().toISOString(),
@@ -128,8 +145,6 @@ export class ImportService {
       finalized: false,
       externalAudioSource: externalSource,
       importTranscribeProviderId: importProvider.id,
-      importSpeakerDiarization: speakerDiarization,
-      importSpeakerCount: speakerCount,
     };
 
     const header = [
@@ -612,7 +627,7 @@ export class ImportService {
     const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
     if (!mdPath) throw new Error("无法生成文本导入笔记路径");
 
-    const session = {
+    const session: RecordingSession = {
       id: genId(),
       sessionStamp,
       startedAt: startedAt.toDate().toISOString(),

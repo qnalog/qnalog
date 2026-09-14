@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：队列任务的失败恢复：转写重试、合并重试、提示词任务、改名与删除后的任务迁移
 
 import * as obsidian from "obsidian";
+import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 import { LexVoiceSettingTab } from "../ui/settings-tab";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
@@ -55,7 +55,7 @@ export interface QueueRetryHost {
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   /** 录音采集服务：切片缓存清理与熔断状态。 */
-  recording: { getAsrServiceCircuitState(): unknown; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
+  recording: { getAsrServiceCircuitState(): LiveAsrCircuitState; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
   /** 会话收尾服务：转写补齐后的说话人确认与收尾。 */
   sessionFinalize: SessionFinalizeService;
   /** 词汇表与行业提示词服务。 */
@@ -110,10 +110,11 @@ export class QueueRetryService {
   }
   scheduleDeferredAsrRetry(session) {
     if (!session || !session.hasDeferredAsrJobs) return;
+    const serviceCircuit = this.host.recording.getAsrServiceCircuitState();
     const openUntilMs = Math.max(
       0,
       Number(session.asrCircuitState && session.asrCircuitState.openUntilMs) || 0,
-      Number(this.host.recording.getAsrServiceCircuitState().openUntilMs) || 0,
+      Number(serviceCircuit && serviceCircuit.openUntilMs) || 0,
     );
     const delayMs = Math.max(1500, openUntilMs > Date.now() ? openUntilMs - Date.now() + 1000 : 0);
     this.scheduleTaskQueueRetry(delayMs, "session-deferred-asr");
@@ -481,8 +482,10 @@ export class QueueRetryService {
         migrated++;
       }
       // 顺便把 task 里其他指向同一 md 的引用字段也迁移
-      if (task.sourceMdPath && obsidian.normalizePath(task.sourceMdPath) === oldNorm) {
-        task.sourceMdPath = newNorm;
+      // sourceMdPath 只出现在旧版持久化的队列数据里，当前 QueueTask 类型不含该字段；按遗留数据处理。
+      const legacySourceMdPath = (task as { sourceMdPath?: string }).sourceMdPath;
+      if (legacySourceMdPath && obsidian.normalizePath(legacySourceMdPath) === oldNorm) {
+        (task as { sourceMdPath?: string }).sourceMdPath = newNorm;
       }
     }
     if (migrated > 0) {
@@ -583,8 +586,8 @@ export class QueueRetryService {
   // 把"生成 Prompt"作为后台任务入队。立刻返回，UI 切走也不影响。
   async enqueueGeneratePromptTask(mode, options) {
     if (!isKnownPolishMode(this.host.settings, mode)) throw new Error("未知的 mode：" + mode);
-    const p = this.host.settings.industryProfile || {};
-    if (!p.industry || !p.scenarios) throw new Error("请先在 AI 整理填写「行业 / 角色」和「主要工作场景」");
+    const p = this.host.settings.industryProfile;
+    if (!p || !p.industry || !p.scenarios) throw new Error("请先在 AI 整理填写「行业 / 角色」和「主要工作场景」");
     if (!this.host.settings.llmApiKey) throw new Error("请先在 API 页配置大模型服务");
     const existing = this.host.queue.findActiveGeneratePromptTask(mode);
     if (existing) {

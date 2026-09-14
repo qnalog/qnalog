@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：视图外壳：侧边栏与看板的打开、气泡显隐联动、会议日程问答入口
 
 import * as obsidian from "obsidian";
@@ -55,7 +54,7 @@ export class ViewShellService {
     try { this.host.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
     const leaves = this.host.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
     for (const leaf of leaves) {
-      const v = leaf.view;
+      const v = leaf.view as obsidian.View & { scheduleUpdate?: () => void; render?: () => void };
       if (!v) continue;
       // 优先走节流通道；旧实例兜底直调 render
       if (typeof v.scheduleUpdate === "function") v.scheduleUpdate();
@@ -209,7 +208,7 @@ export class ViewShellService {
     const leaf = this.host.app.workspace.getLeaf(false);
     await leaf.openFile(file);
     try {
-      const view = leaf.view;
+      const view = leaf.view as obsidian.View & { editor?: obsidian.Editor };
       const editor = view && view.editor;
       if (editor) {
         const content = editor.getValue();

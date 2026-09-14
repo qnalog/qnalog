@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：录音采集：开始/停止、切片与整场音频落盘、分段缓存、实时 ASR 积压与熔断、片段入队
 
 import * as obsidian from "obsidian";
@@ -10,11 +9,13 @@ import { isLexVoiceMobileRuntime } from "../shared/util-platform";
 import { resolveTranscribeProvider } from "../asr/transcribe";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { RecorderSegmentPayload } from "../shared/types";
 import { PcmStreamEncoder } from "../asr/clients";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { getErrorMessage, genId, pad, escapeRegExp } from "../shared/util-common";
 import { extFromMime, isAsrTransportError, isTransientAsrError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS, classifyLiveAsrBacklog, createLiveAsrCircuitState, isLiveAsrCircuitOpen, recordLiveAsrFailure, recordLiveAsrSuccess, summarizeLiveAsrJobs } from "../asr/live-segment-policy";
+import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
 import { audioImportStageFromWorkProgress } from "../shared/activity-progress";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
@@ -34,6 +35,11 @@ import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { ViewShellService } from "../ui/view-shell-service";
+
+/** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
+export interface StartRecordingOptions {
+  appendToFile?: unknown;
+}
 
 /** RecordingService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RecordingHost {
@@ -64,7 +70,8 @@ export class RecordingService {
   declare _oneShotPolishMode;
   /** 转写服务的熔断状态：按服务键区分，连续瞬时失败后暂停批量转写。 */
   declare asrServiceCircuitKey;
-  declare asrServiceCircuitState;
+  /** 实时转写熔断状态；随转写服务配置变化重建。 */
+  declare asrServiceCircuitState: LiveAsrCircuitState | null;
   /** 当前录音问题（设备/服务/切片），无问题时为空。 */
   declare recordingIssue;
 
@@ -108,7 +115,7 @@ export class RecordingService {
     };
   }
 
-  async startRecording(options = {}) {
+  async startRecording(options: StartRecordingOptions = {}) {
     if (this.host.recorder.state !== "idle") {
       new obsidian.Notice("当前已有录音进行中，请先停止后再继续录音。", 5000);
       return;
@@ -432,7 +439,7 @@ export class RecordingService {
     try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
   }
 
-  handleSegment(session: RecordingSession, seg: unknown) {
+  handleSegment(session: RecordingSession, seg: RecorderSegmentPayload) {
     if (!session) return;
     const filteredShort = this.shouldFilterShortRecording(session, seg);
     const masterAudioSavePromise = filteredShort ? Promise.resolve() : this.startMasterAudioSave(session, seg);
@@ -585,7 +592,7 @@ export class RecordingService {
     return !!norm && (norm === folder || norm.startsWith(folder + "/"));
   }
 
-  isQueuedTranscribeAudioReferenced(path, excludeTaskId) {
+  isQueuedTranscribeAudioReferenced(path, excludeTaskId = undefined) {
     const norm = obsidian.normalizePath(String(path || ""));
     if (!norm || !this.host.queue || typeof this.host.queue.snapshot !== "function") return false;
     return this.host.queue.snapshot().some(t => t && t.type === "transcribe"
@@ -593,7 +600,7 @@ export class RecordingService {
       && obsidian.normalizePath(String(t.audioPath || "")) === norm);
   }
 
-  async maybeDeleteSegmentCacheFile(path, excludeTaskId, force = false) {
+  async maybeDeleteSegmentCacheFile(path, excludeTaskId = undefined, force = false) {
     if (!force && this.host.settings.keepSegmentAudioFiles === true) return;
     if (!this.isSegmentCachePath(path)) return;
     if (this.isQueuedTranscribeAudioReferenced(path, excludeTaskId)) return;
@@ -1027,15 +1034,17 @@ export class RecordingService {
     try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     try { if (this.host.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
-  clearRecordingIssue(kind) {
+  clearRecordingIssue(kind = undefined) {
     if (!this.recordingIssue) return;
     if (kind && this.recordingIssue.kind !== kind) return;
     this.recordingIssue = null;
     try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
-    try { if (this.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
+    try { if (this.host.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
   getRecordingIssue() {
-    const recorderIssue = this.recorder && this.recorder.getInfo ? (this.recorder.getInfo().issue || null) : null;
+    // this.recorder 是 P1 搬迁时从插件类带过来的残留写法，RecordingService 上没有该字段，
+    // 恒为 undefined，因此录音器上报的麦克风问题读不到。录音器挂载在 host 上。
+    const recorderIssue = this.host.recorder && this.host.recorder.getInfo ? (this.host.recorder.getInfo().issue || null) : null;
     if (recorderIssue && recorderIssue.kind === "microphone") return recorderIssue;
     return this.recordingIssue || recorderIssue || null;
   }

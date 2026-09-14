@@ -141,7 +141,7 @@ export function isDashScopeFileTransProvider(provider: unknown): boolean {
   return asString(value.protocol).toLowerCase() === DASHSCOPE_FILETRANS_PROTOCOL;
 }
 
-export function resolveImportTranscribeProvider(plugin: { settings?: JsonRecord }) {
+export function resolveImportTranscribeProvider(plugin: { settings?: unknown }) {
   const settings = asRecord(plugin && plugin.settings);
   const providerId = asString(settings.importTranscribeProvider)
     || asString(settings.activeTranscribeProvider)
@@ -150,7 +150,7 @@ export function resolveImportTranscribeProvider(plugin: { settings?: JsonRecord 
 }
 
 function resolveTypedTranscribeProvider(
-  plugin: { settings?: JsonRecord },
+  plugin: { settings?: unknown },
   providerId: string,
 ): ImportTranscribeProvider {
   return resolveTranscribeProvider(plugin, providerId);
@@ -267,7 +267,7 @@ async function getDashScopeUploadPolicy(
 }
 
 export async function testImportTranscribeProvider(
-  plugin: { settings?: JsonRecord },
+  plugin: { settings?: unknown },
   providerId?: string,
 ): Promise<{ providerId: string; model: string; detail: string }> {
   const provider = resolveTypedTranscribeProvider(
@@ -290,7 +290,7 @@ export async function testImportTranscribeProvider(
 }
 
 export async function fetchImportTranscribeModels(
-  plugin: { settings?: JsonRecord },
+  plugin: { settings?: unknown },
   providerId?: string,
 ): Promise<string[]> {
   const provider = resolveTypedTranscribeProvider(
@@ -447,7 +447,7 @@ async function transcribeWithDashScope(
 }
 
 export async function transcribeImportedAudio(
-  plugin: { settings?: JsonRecord },
+  plugin: { settings?: unknown },
   blob: Blob,
   mime: string,
   options: LongAudioTranscriptionOptions = {},

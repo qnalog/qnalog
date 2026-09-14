@@ -94,7 +94,7 @@ function renderImportSpeakerControl(parent, owner) {
     }
   };
 }
-export function pickReportAccentColor(app, defaultHex) {
+export function pickReportAccentColor(app, defaultHex = null) {
   return new Promise((resolve) => {
     const modal = new obsidian.Modal(app);
     modal.titleEl.setText("选择报告配色");
@@ -2381,6 +2381,11 @@ export class ImportAudioModal extends obsidian.Modal {
 }
 
 export class BubbleWidget {
+  /**
+   * 悬浮气泡的外层容器；挂载前为 null。
+   * 显式声明：TypeScript 不推断只在构造函数里赋值的属性，未声明时外部读 `bubble.wrapEl` 会报「属性不存在」。
+   */
+  declare wrapEl: HTMLElement | null;
   constructor(plugin) {
     this.plugin = plugin;
     this.wrapEl = null;

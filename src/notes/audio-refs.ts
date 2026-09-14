@@ -114,7 +114,8 @@ export function isSameVaultPath(a, b) {
   return !!a && !!b && obsidian.normalizePath(a) === obsidian.normalizePath(b);
 }
 
-export function getAudioDurationMs(blob) {
+/** 读取音频时长的毫秒数；无法解码或加载失败时返回 0。 */
+export function getAudioDurationMs(blob: Blob): Promise<number> {
   return new Promise((resolve) => {
     try {
       const url = URL.createObjectURL(blob);

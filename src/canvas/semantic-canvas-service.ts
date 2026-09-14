@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 ui/outline-view.ts 抽出（P2 界面与业务分层，纯搬迁、零行为改动）：语义 Canvas 的读取、生成与排版迁移。
 //
 // 视图层只保留渲染与交互（按钮、菜单、进度文案）；这里是它们背后的数据与文件操作。
@@ -20,6 +19,7 @@ import {
   replaceSemanticBranch,
   semanticCanvasNeedsRelayout,
 } from "../canvas/semantic-outline-canvas";
+import type { SemanticCanvasLayoutMode } from "../canvas/semantic-outline-canvas";
 import { inferSemanticCanvasSourcePath, parseSemanticCanvasSourcePath } from "../canvas/source-note";
 import { parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -339,7 +339,7 @@ export class SemanticCanvasService {
         existing: state.existing,
         policy,
         forceRelayout: options.mode === "layout",
-        layoutMode: options.layoutMode || state.existing?.lexvoiceSemantic?.layoutMode || "adaptive",
+        layoutMode: (options.layoutMode || state.existing?.lexvoiceSemantic?.layoutMode || "adaptive") as SemanticCanvasLayoutMode,
       });
       const content = `${JSON.stringify(document, null, 2)}\n`;
       let canvasFile = state.canvasFile;

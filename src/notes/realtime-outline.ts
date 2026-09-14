@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：实时大纲：状态机、提示词与增量判据
 
 import { cleanRealtimeLlmText } from "./recording-issues";
@@ -144,7 +143,7 @@ export function clipRealtimeContextText(text, maxChars) {
   return cleaned.slice(0, head).trimEnd() + marker + cleaned.slice(-tail).trimStart();
 }
 
-export function buildRollingOutlineContext(previousMemory, previousOutline, windowed, opts = {}) {
+export function buildRollingOutlineContext(previousMemory, previousOutline, windowed, opts: { programOwnedMemory?: boolean } = {}) {
   const memory = clipRealtimeContextText(previousMemory, REALTIME_OUTLINE_MAX_MEMORY_CHARS);
   const outline = clipRealtimeContextText(previousOutline, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS);
   const omittedBeforeCount = Math.max(0, Number(windowed && windowed.omittedBeforeCount) || 0);
@@ -215,7 +214,7 @@ export function buildRollingOutlineContext(previousMemory, previousOutline, wind
   return lines.join("\n");
 }
 
-export function buildRealtimeOutlineEnvelopeInstruction(opts = {}) {
+export function buildRealtimeOutlineEnvelopeInstruction(opts: { incremental?: boolean } = {}) {
   const incremental = !!(opts && opts.incremental);
   return [
     "【输出协议】",
@@ -307,7 +306,7 @@ export function parseRealtimeOutlineResponse(raw, fallbackOutline, fallbackMemor
   };
 }
 
-export function normalizeRealtimeOutlineState(value, fallbackMarkdown, fallbackMemory) {
+export function normalizeRealtimeOutlineState(value, fallbackMarkdown = undefined, fallbackMemory = undefined) {
   const raw = value && typeof value === "object" ? value : {};
   const nodes = [];
   for (const item of (Array.isArray(raw.nodes) ? raw.nodes : [])) {
@@ -360,7 +359,7 @@ export function buildProgramOwnedOutlineAnchorInstruction() {
 // 只对变化的转写部分重新计算 —— 纯降本提速，不改输出质量。
 // languageInstruction 由调用方传入并前置（不要再用 applyBriefingLanguageInstruction 追加到末尾，
 // 否则语种指令会落在变化内容之后、进入不可缓存的尾巴）。
-export function buildOutlinePrompt(modeLabel, modeKey, transcript, captureMode, languageInstruction, opts = {}) {
+export function buildOutlinePrompt(modeLabel, modeKey, transcript, captureMode, languageInstruction, opts: { incremental?: boolean } = {}) {
   const langBlock = languageInstruction ? `\n\n${String(languageInstruction).trim()}` : "";
   // 通用：归并到共同上层概念
   return `下面是一段${modeLabel}录音的实时整理上下文。请更新实时大纲和主题记忆。
@@ -529,7 +528,7 @@ export function isRealtimeOutlineBackoffActive(session) {
   return !!(session && Number(session.realtimeOutlineNextAllowedAt) > Date.now());
 }
 
-export function getRealtimeOutlineQueuedDelayMs(session, opts = {}) {
+export function getRealtimeOutlineQueuedDelayMs(session, opts: { local?: boolean } = {}) {
   const now = Date.now();
   const backoffUntil = Math.max(0, Number(session && session.realtimeOutlineNextAllowedAt) || 0);
   const updatedAt = getRealtimeOutlineUpdatedAtMs(session);
@@ -545,7 +544,7 @@ export function getRealtimeOutlineQueuedDelayMs(session, opts = {}) {
   return Math.max(floor, deadlineWait > 0 ? deadlineWait + REALTIME_OUTLINE_RETRY_GUARD_MS : 0);
 }
 
-export function shouldRunRealtimeOutline(session, opts = {}) {
+export function shouldRunRealtimeOutline(session, opts: { force?: boolean; final?: boolean; silent?: boolean; local?: boolean } = {}) {
   if (!session || !Array.isArray(session.segments) || !session.segments.length) return false;
   if (opts.force || opts.final) return true;
   if (isRealtimeOutlineCurrent(session)) return false;
