@@ -8,6 +8,8 @@ const root = path.resolve(__dirname, "..");
 const queueRetrySource = fs.readFileSync(path.join(root, "src/queue/queue-retry-service.ts"), "utf8");
 // 版本块与派生笔记的实现同样已抽出；顺序断言读该文件本身。
 const versionStoreSource = fs.readFileSync(path.join(root, "src/versions/version-store.ts"), "utf8");
+// 会话收尾（逐字稿校验、说话人姓名确认、正文落盘）已抽到该模块。
+const finalizeSource = fs.readFileSync(path.join(root, "src/notes/session-finalize-service.ts"), "utf8");
 
 describe("import finalization contract", () => {
   it("persists and verifies the raw transcript before starting AI organization", () => {
@@ -15,7 +17,7 @@ describe("import finalization contract", () => {
     const verifyIndex = source.indexOf("const transcriptCheckpoint = verifyTranscriptCheckpoint");
     const persistedIndex = source.indexOf('"asr.import_transcript_persisted"', verifyIndex);
     const organizeIndex = source.indexOf('phase: "organize"', persistedIndex);
-    const finalizeIndex = source.indexOf("await this.finalizeSession(session);", organizeIndex);
+    const finalizeIndex = source.indexOf("await this.sessionFinalize.finalizeSession(session);", organizeIndex);
 
     expect(verifyIndex).toBeGreaterThan(-1);
     expect(persistedIndex).toBeGreaterThan(verifyIndex);
@@ -24,8 +26,7 @@ describe("import finalization contract", () => {
   });
 
   it("rebuilds imported notes after both first-pass and queued AI organization", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
-    const firstPassPolicy = source.indexOf("shouldRewriteConsolidatedNote(this.settings, writeSession)");
+    const firstPassPolicy = finalizeSource.indexOf("shouldRewriteConsolidatedNote(this.host.settings, writeSession)");
     const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
     const retryPolicy = queueRetrySource.indexOf("shouldRewriteConsolidatedNote(this.host.settings, retrySession)", retryStart);
     const retryRewrite = queueRetrySource.indexOf("await this.host.noteWriter.rewriteConsolidated(retrySession, polished)", retryPolicy);
@@ -37,9 +38,8 @@ describe("import finalization contract", () => {
   });
 
   it("refreshes the portable note index only after the final file name is known", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
-    const finalizeRename = source.indexOf("const beforeRenamePath = session.mdPath;");
-    const finalizeIndex = source.indexOf('reason: "finalize"', finalizeRename);
+    const finalizeRename = finalizeSource.indexOf("const beforeRenamePath = session.mdPath;");
+    const finalizeIndex = finalizeSource.indexOf('reason: "finalize"', finalizeRename);
     const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
     const retryRename = queueRetrySource.indexOf("const renamed = (task.mode", retryStart);
     const retryIndex = queueRetrySource.indexOf('reason: "merge-retry"', retryRename);
@@ -64,11 +64,11 @@ describe("import finalization contract", () => {
   });
 
   it("writes confirmed speaker names into the note before AI organization", () => {
-    const source = fs.readFileSync(path.join(root, "src/main.ts"), "utf8");
+    const source = finalizeSource;
     const confirmStart = source.indexOf("async confirmSpeakerNamesBeforeFinal");
     const frontmatterIndex = source.indexOf("nextFrontmatter.lexvoice_speakers = mappings", confirmStart);
     const replaceIndex = source.indexOf("replaceSpeakerDisplayName(markdown, speakerId, personName)", frontmatterIndex);
-    const persistIndex = source.indexOf("await this.app.vault.modify(file, markdown)", replaceIndex);
+    const persistIndex = source.indexOf("await this.host.app.vault.modify(file, markdown)", replaceIndex);
     const llmCopyIndex = source.indexOf("const llmSegments = hasConfirmedName", persistIndex);
 
     expect(confirmStart).toBeGreaterThan(-1);

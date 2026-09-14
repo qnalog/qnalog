@@ -8,7 +8,7 @@ import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban
 
 import { getDesktopModule } from "./shared/desktop-runtime";
 
-import {SpeakerNameConfirmModal, QueueModal, RecruitContextModal, ImportTextModal, ImportAudioModal, AudioImportOptionsModal, BubbleWidget } from "./ui/modals";
+import {QueueModal, RecruitContextModal, ImportTextModal, ImportAudioModal, AudioImportOptionsModal, BubbleWidget } from "./ui/modals";
 
 import {isKnownPolishMode, getModeMeta, getEffectivePolishMode, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -26,13 +26,9 @@ import {DEFAULT_RECRUIT_QUALITIES, isRecruitFeatureUnlocked, parseJdProject, ren
 
 import {registerRecruitBoardView } from "./recruit/bases-view";
 
-import {makeRecordingIssue, transcribeAudio } from "./asr/transcribe";
+import {makeRecordingIssue } from "./asr/transcribe";
 
-import {readFileFrontmatter } from "./shared/util-note";
-
-import {loadVocabularyGroups, applyVocabularyCorrections } from "./vocabulary";
-
-import {getLlmConfigIssue, isLlmNonRetryableError, formatLlmConfigIssue, formatLlmFailureIssue, stripModeSuggestionBlocks } from "./llm/core";
+import {getLlmConfigIssue, formatLlmConfigIssue, stripModeSuggestionBlocks } from "./llm/core";
 
 import {DEFAULT_SETTINGS } from "./shared/defaults";
 
@@ -42,18 +38,16 @@ import {SETTINGS_SCHEMA_VERSION, normalizeLexVoiceSettings, serializeLexVoiceSet
 
 import { buildSettingsMigrationReport } from "./shared/settings-migration-report";
 
-import type { LexVoiceSettings, RecordingSession } from "./shared/types";
+import type {LexVoiceSettings } from "./shared/types";
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import { getLearnedLlmOutputCeiling } from "./llm/output-budget";
 
 import { AUDIO_EXT, TEXT_IMPORT_EXT } from "./shared/catalog-import";
 
-import {isRecord, getErrorMessage, pickDefined, genId, pad, formatElapsed, sanitizeFilename } from "./shared/util-common";
+import {isRecord, pickDefined, genId, sanitizeFilename } from "./shared/util-common";
 
-import {mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } from "./shared/util-audio";
-
-import {createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "./asr/live-segment-policy";
+import {mimeFromExt, getTranscribeSegmentPlaceholder } from "./shared/util-audio";
 
 import {obfuscateApiKey, deobfuscateApiKey, diagnosticError } from "./shared/util-key-diag";
 
@@ -65,19 +59,11 @@ import {audioImportStageFromWorkProgress, upsertActivityRequest } from "./shared
 
 import {getTaskErrorMessage } from "./shared/task-activity";
 
-import { DEFAULT_SPEAKER_CHANNELS, MAX_SPEAKER_CHANNELS, buildSpeakerMappings, extractSpeakerIdsFromMarkdown, initialAudioChannelRuntimeMode, normalizeAudioChannelMode, normalizeSpeakerMappings, replaceSpeakerDisplayName, resolveAudioChannelRuntimeMode } from "./audio/channel-speakers";
-
-import {transcribeAudioByChannels } from "./asr/channel-transcription";
-
-import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "./asr/speaker-mapping";
+import {extractSpeakerIdsFromMarkdown } from "./audio/channel-speakers";
 
 import { isSpeakerDiarizationProvider, normalizeRequestedSpeakerCount } from "./asr/diarization";
 
 import { isDashScopeFileTransProvider, resolveImportTranscribeProvider, transcribeImportedAudio } from "./asr/long-audio-transcription";
-
-import { BriefingPipelineIncompleteError } from "./briefing/pipeline";
-
-import { shouldRewriteConsolidatedNote } from "./briefing/note-layout-policy";
 
 import { ExternalInboxScanner, createExternalInboxLedger, isAbsoluteExternalInboxPath, normalizeExternalInboxLedger, pruneExternalInboxLedger, shouldImportExternalInboxFile } from "./audio/external-inbox";
 
@@ -87,7 +73,7 @@ import { verifyTranscriptCheckpoint } from "./imports/transcript-checkpoint";
 import {EXTERNAL_INBOX_RETRY_DELAYS_MS, EXTERNAL_INBOX_SCAN_INTERVAL_MS } from "./shared/limits";
 
 // 以下 9 个声明已抽到 ./notes/recording-issues（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {classifyRecordingIssue, isKnowledgeSourceAlreadyScanned, isSyncConflictName, knowledgeExtractionRecordForFile, transformApiKeyFieldsDeep } from "./notes/recording-issues";
+import {isKnowledgeSourceAlreadyScanned, isSyncConflictName, knowledgeExtractionRecordForFile, transformApiKeyFieldsDeep } from "./notes/recording-issues";
 
 // 以下 23 个声明已抽到 ./prompts/briefing-prompts（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
@@ -95,14 +81,11 @@ import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from ".
 // 以下 39 个声明已抽到 ./notes/realtime-outline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {VIEW_TYPE_OUTLINE } from "./notes/realtime-outline";
 
-// 以下 10 个声明已抽到 ./notes/meeting-workbench（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {normalizeMeetingWorkbench } from "./notes/meeting-workbench";
-
 // 以下 14 个声明已抽到 ./notes/audio-refs（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {getAudioDurationMs, getAudioTimeLink, getLexVoiceSegmentsDurationMs } from "./notes/audio-refs";
 
 // 以下 40 个声明已抽到 ./notes/note-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, isTextImportSession, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
+import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
 
 // 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {detectRecentNoteMode } from "./recent/recent-notes";
@@ -140,6 +123,7 @@ import { NoteIndexService } from "./notes/note-index-service";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
+import { SessionFinalizeService } from "./notes/session-finalize-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -208,6 +192,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.sessionFinalize = new SessionFinalizeService(this);
     this.recording = new RecordingService(this);
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
@@ -691,895 +676,6 @@ class LexVoicePlugin extends obsidian.Plugin {
     const recorderIssue = this.recorder && this.recorder.getInfo ? (this.recorder.getInfo().issue || null) : null;
     if (recorderIssue && recorderIssue.kind === "microphone") return recorderIssue;
     return this.recordingIssue || recorderIssue || null;
-  }  async processSegment(session: RecordingSession, seg: unknown) {
-    if (!session) return;
-    if (seg && seg.isFinal && seg.masterOnly) {
-      // 分段 recorder 已失效但独立 masterRecorder 仍拿到了完整录音。
-      // 这里只保存母带并推进最终整理，不能把整场母带再次当作最后一段转写，
-      // 否则前面已转写的内容会重复、并额外产生一次整场 ASR 费用。
-      if (seg.masterAudioSavePromise) await seg.masterAudioSavePromise;
-      else await this.recording.saveMasterAudio(session, seg);
-      this.recording.setSessionWorkProgress(session, {
-        stage: "transcribe-finalized",
-        label: "转写收尾",
-        percent: null,
-        detail: "分段录音已停止，完整录音已保留，正在整理已有转写",
-      });
-      try {
-        await this.diagnostics.logDiagnostic("warn", "recording.master_only_finalize", "最后分段不可用，已用完整录音完成保存并整理已有转写", {
-          mode: session.mode,
-          segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
-          endOffsetMs: Number(seg.endOffsetMs) || 0,
-        });
-      } catch { /* intentionally empty */ }
-      this.shell.refreshOutlineView();
-      return;
-    }
-    if (seg && (seg.filteredShort || this.recording.shouldFilterShortRecording(session, seg))) {
-      session.filteredShortRecording = true;
-      session.filteredDurationMs = Math.max(0, Number(seg.endOffsetMs) || 0);
-      await this.recording.closeStreamingForDiscard(session);
-      return;
-    }
-    const continuationOffsetMs = Math.max(0, Number(session.continuationOffsetMs) || 0);
-    const baseSegmentCount = Array.isArray(session.continuationBaseSegments) ? session.continuationBaseSegments.length : 0;
-    const segmentIndex = Number.isFinite(Number(seg.segmentIndex))
-      ? Number(seg.segmentIndex)
-      : baseSegmentCount + (Array.isArray(session.segments) ? session.segments.length : 0);
-    const segNumber = Number.isFinite(Number(seg.segNumber)) ? Number(seg.segNumber) : segmentIndex + 1;
-    const displayStartOffsetMs = Number.isFinite(Number(seg.displayStartOffsetMs))
-      ? Number(seg.displayStartOffsetMs)
-      : Math.max(0, Number(seg.startOffsetMs) || 0) + continuationOffsetMs;
-    const displayEndOffsetMs = Number.isFinite(Number(seg.displayEndOffsetMs))
-      ? Number(seg.displayEndOffsetMs)
-      : Math.max(displayStartOffsetMs, (Number(seg.endOffsetMs) || 0) + continuationOffsetMs);
-    const segmentAudioName = seg.segmentAudioName || `lex-${session.sessionStamp}-seg${pad(segNumber)}.${seg.ext}`;
-    const segmentAudioPath = seg.segmentAudioPath || obsidian.normalizePath(`${this.recording.getSegmentCacheFolder()}/${segmentAudioName}`);
-    const segmentDurationMs = Math.max(0, displayEndOffsetMs - displayStartOffsetMs);
-
-    let spoolResult = null;
-    if (seg.spoolPromise) {
-      spoolResult = await seg.spoolPromise;
-    } else if (seg.blob) {
-      try {
-        await this.recording.ensureSegmentCacheFolder();
-        await this.app.vault.adapter.writeBinary(segmentAudioPath, await seg.blob.arrayBuffer());
-        spoolResult = { persisted: true, fallbackBlob: null, error: null };
-      } catch (e) {
-        spoolResult = { persisted: false, fallbackBlob: seg.blob, error: e };
-        console.error(e);
-        new obsidian.Notice(`段${segNumber} 音频写入失败：${(e && e.message) || e}`);
-      }
-    }
-    if (spoolResult && spoolResult.queueTaskId) seg.queueTaskId = spoolResult.queueTaskId;
-    await this.recording.markLiveSegmentQueueTaskRunning(seg);
-    const liveJob = seg.jobId ? this.recording.getLiveAsrJobs(session).get(seg.jobId) : null;
-    if (liveJob) liveJob.state = "transcribing";
-    this.recording.updateLiveAsrBacklogPolicy(session, "transcribing");
-    if (seg.masterAudioSavePromise) await seg.masterAudioSavePromise;
-    else if (seg.isFinal) await this.recording.saveMasterAudio(session, seg);
-
-    let text = ""; let err = null;
-    let transcribeBlob = null;
-    let channelTranscription = null;
-    let batchAsrAttempted = false;
-    let batchAsrFailureRecorded = false;
-    const activeProfile = this.profiles.getActiveTranscribeProfile();
-    const isStreamingProvider = activeProfile && activeProfile.transcribeMode === "streaming";
-    this.recording.setSessionWorkProgress(session, {
-      stage: "transcribing",
-      label: `转写第 ${segNumber} 段`,
-      percent: null,
-      detail: "音频正在发送到转写服务",
-    });
-    if (session.streamingClient) {
-      // 流式转写：跳过 HTTP 切片转写，等流式客户端 finish 后取累计文本
-      try {
-        if (session.pcmEncoder) { try { session.pcmEncoder.stop(); } catch { /* intentionally empty */ } session.pcmEncoder = null; }
-        await session.streamingClient.finish();
-        text = session.streamingClient.getFullText() || session.streamingFullText || "";
-      } catch (e) {
-        err = e;
-        console.error("[QnALog] streaming finish failed", e);
-        text = session.streamingFullText || "";
-      }
-      // 提升转写质量：流式整段文本补一遍热词修正（分段批量路径在 transcribeAudio 内部已做，流式此前漏了）
-      try { text = applyVocabularyCorrections(text, await loadVocabularyGroups(this)); } catch { /* intentionally empty */ }
-      try { await this.meetingWorkbench.removeLiveTranscriptBlock(session.mdPath, session.id); } catch { /* intentionally empty */ }
-      session.streamingClient = null;
-    } else if (isStreamingProvider) {
-      // 流式服务但客户端连接失败：保留音频但不做 HTTP 切片转写（端点是 wss://，HTTP 必失败）
-      err = new Error("流式转写连接未建立，请检查 API Key 与网络后重新录音。");
-      console.error("[QnALog]", err.message);
-    } else {
-      const circuitOpen = isLiveAsrCircuitOpen(session.asrCircuitState || createLiveAsrCircuitState())
-        || this.recording.isAsrServiceCircuitOpen();
-      if (session.asrDeferredMode || circuitOpen) {
-        err = new Error(session.asrDeferredMode
-          ? "实时转写积压超过保护阈值，已转入后台队列"
-          : "转写服务处于短暂冷却期，已转入后台队列");
-        err.asrDeferred = true;
-        err.deferReason = session.asrDeferredMode ? "backlog-critical" : "circuit-open";
-      } else {
-        transcribeBlob = spoolResult && spoolResult.fallbackBlob ? spoolResult.fallbackBlob : null;
-        if (!transcribeBlob && spoolResult && spoolResult.persisted) {
-          const cachedAudio = await this.queueRetry.readVaultAudioBlob(segmentAudioPath, segmentAudioName);
-          transcribeBlob = cachedAudio && cachedAudio.blob;
-        }
-        if (!transcribeBlob && seg.blob) transcribeBlob = seg.blob;
-        if (!transcribeBlob) {
-          err = new Error("录音分段缓存无法读取，已保留后台重试任务");
-        } else {
-          batchAsrAttempted = true;
-          try {
-            const transcribeMime = transcribeBlob.type || seg.blobType || mimeFromExt(seg.ext);
-            const reportedChannelCount = session.captureMode === "mic"
-              ? Math.max(1, Number(session.audioChannelCount) || 1)
-              : 1;
-            const channelMode = normalizeAudioChannelMode(session.audioChannelMode || this.settings.audioChannelMode);
-            const runtimeChannelMode = session.audioChannelRuntimeMode
-              || initialAudioChannelRuntimeMode(channelMode, reportedChannelCount);
-            const inspectRecordedChannels = session.captureMode === "mic" && runtimeChannelMode !== "mono";
-            // Only probe an auto-mode device until independent channel content is
-            // confirmed. Once resolved, the session stays on one stable path.
-            const expectedChannels = inspectRecordedChannels ? MAX_SPEAKER_CHANNELS : 1;
-            if (inspectRecordedChannels) {
-              channelTranscription = await transcribeAudioByChannels(
-                this,
-                transcribeBlob,
-                transcribeMime,
-                expectedChannels,
-                { requireSeparatedChannels: channelMode === "auto" && runtimeChannelMode === "probing" },
-              );
-              text = channelTranscription.text;
-              session.audioChannelCount = channelTranscription.actualChannelCount;
-              session.audioChannelRuntimeMode = resolveAudioChannelRuntimeMode({
-                channelMode,
-                current: runtimeChannelMode,
-                separation: channelTranscription.separation,
-                usedMultichannel: channelTranscription.usedMultichannel,
-              });
-              session.channelSeparationMode = channelTranscription.usedMultichannel
-                ? "device-channels"
-                : session.audioChannelRuntimeMode === "probing"
-                  ? "pending"
-                  : channelTranscription.separation === "duplicated"
-                    ? "duplicated-input"
-                    : channelTranscription.actualChannelCount <= 1
-                      ? "single"
-                      : "encoder-downmix";
-              session.speakerChannels = channelTranscription.usedMultichannel
-                ? buildSpeakerMappings(channelTranscription.processedChannelCount, session.speakerChannels)
-                : {};
-              // 说话人确认要在转写完成时就让用户看见，否则改名入口只是静静挂在纪要页上没人发现。
-              if (channelTranscription.usedMultichannel && !session._channelSpeakersNotified) {
-                session._channelSpeakersNotified = true;
-                new obsidian.Notice(
-                  `已按声道区分 ${channelTranscription.processedChannelCount} 位说话人。可在纪要页顶部为他们填写姓名。`,
-                  9000,
-                );
-              }
-              if (channelTranscription.deduplicatedParts > 0) {
-                session.channelCrosstalkDeduplicated = Math.max(0, Number(session.channelCrosstalkDeduplicated) || 0)
-                  + channelTranscription.deduplicatedParts;
-                await this.diagnostics.logDiagnostic("info", "asr.channel_crosstalk_deduplicated", "已去除跨声道重复转写", {
-                  segmentIndex,
-                  removedParts: channelTranscription.deduplicatedParts,
-                  totalRemovedParts: session.channelCrosstalkDeduplicated,
-                });
-              }
-              if (channelMode === "multichannel"
-                && channelTranscription.separation === "duplicated"
-                && !session._channelDuplicatedNotified) {
-                session._channelDuplicatedNotified = true;
-                new obsidian.Notice("各声道内容相同，已按单声道转写。请在接收器上把输出改为「Stereo（立体声）」后重试。", 10000);
-                await this.diagnostics.logDiagnostic("warn", "asr.channel_content_duplicated", "录音多声道内容重复，已回退为单声道转写", {
-                  actualChannelCount: channelTranscription.actualChannelCount,
-                  inputLabel: session.audioChannelLabel || "",
-                });
-              }
-              // 降混告警的「应有声道数」取设备实际协商值；用户选了多声道时至少期望 2，
-              // 避免用处理上限（4）去比对双发设备而误报。
-              const expectedHardwareChannels = channelMode === "multichannel"
-                ? Math.max(reportedChannelCount, DEFAULT_SPEAKER_CHANNELS)
-                : reportedChannelCount;
-              if (channelMode === "multichannel"
-                && expectedHardwareChannels > 1
-                && channelTranscription.actualChannelCount < expectedHardwareChannels
-                && !session._channelDownmixNotified) {
-                session._channelDownmixNotified = true;
-                const actual = channelTranscription.actualChannelCount;
-                new obsidian.Notice(actual > 1
-                  ? `检测到 ${actual} 个可用声道，将按声道区分说话人。`
-                  : "输入设备为多声道，但录音文件只有单声道。本次将按单声道转写。", 9000);
-                await this.diagnostics.logDiagnostic("warn", "asr.channel_encoder_downmix", "录音编码保留的声道少于设备输入声道", {
-                  expectedChannelCount: expectedHardwareChannels,
-                  actualChannelCount: actual,
-                  inputLabel: session.audioChannelLabel || "",
-                });
-              }
-              if (channelTranscription.errors.length) {
-                await this.diagnostics.logDiagnostic("warn", "asr.channel_partial_failure", "部分声道转写失败，已保留其他声道的内容", {
-                  segmentIndex,
-                  channelCount: channelTranscription.actualChannelCount,
-                  errors: channelTranscription.errors,
-                });
-              }
-            } else {
-              text = await transcribeAudio(this, transcribeBlob, transcribeMime);
-            }
-          } catch (e) {
-            err = e;
-            batchAsrFailureRecorded = true;
-            this.recording.recordLiveAsrAttemptFailure(session, e, seg);
-            console.error(e);
-          }
-        }
-      }
-    }
-    if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000) {
-      // HTTP 200 + 空正文并不等于成功。对长段按可重试软失败处理并保留切片，
-      // 与导入音频路径保持一致，避免服务偶发空结果被静默写成“无内容”。
-      err = new Error("转写返回空结果（服务已响应但没有文字）");
-      if (batchAsrAttempted && !batchAsrFailureRecorded) {
-        batchAsrFailureRecorded = true;
-        this.recording.recordLiveAsrAttemptFailure(session, err, seg);
-      }
-      try {
-        await this.diagnostics.logDiagnostic("warn", "asr.segment_empty", "录音分段转写返回空结果，已按软失败保留并排队", {
-          segmentIndex,
-          startOffsetMs: displayStartOffsetMs,
-          endOffsetMs: displayEndOffsetMs,
-          durationMs: segmentDurationMs,
-          mode: session.mode,
-        });
-      } catch { /* intentionally empty */ }
-    }
-    if (!err && batchAsrAttempted) this.recording.recordLiveAsrAttemptSuccess(session);
-    if (err) {
-      if (err.asrDeferred) {
-        await this.diagnostics.logDiagnostic("warn", "asr.segment_deferred", "录音分段已跳过实时请求并转入后台队列", {
-          segmentIndex,
-          startOffsetMs: displayStartOffsetMs,
-          endOffsetMs: displayEndOffsetMs,
-          durationMs: segmentDurationMs,
-          reason: err.deferReason || "deferred",
-          pendingDurationMs: this.recording.getLiveAsrBacklogSummary(session).totalDurationMs,
-        });
-      } else {
-        const issueKind = classifyRecordingIssue(err);
-        this.setRecordingIssue(issueKind, {
-          source: "asr",
-          message: getErrorMessage(err),
-          startedAtMs: displayStartOffsetMs,
-        });
-        await this.diagnostics.logDiagnostic("error", "asr.segment_failed", "录音分段转写失败", {
-          provider: this.settings.activeTranscribeProvider,
-          model: this.profiles.getActiveTranscribeProfile() && this.profiles.getActiveTranscribeProfile().model,
-          mime: (transcribeBlob && transcribeBlob.type) || seg.blobType || "",
-          size: (transcribeBlob && transcribeBlob.size) || seg.blobSize || 0,
-          segmentIndex,
-          startOffsetMs: displayStartOffsetMs,
-          endOffsetMs: displayEndOffsetMs,
-          mode: session.mode,
-          error: diagnosticError(err),
-        });
-        new obsidian.Notice(isStreamingProvider
-          ? `段 ${segNumber} 流式转写失败，无法离线重试；录音仍在本地继续，可整篇结束后用「重新整理」或重录该段。`
-          : (!String(text || "").trim()
-            ? `段 ${segNumber} 没有返回文字，录音切片已保留并加入重试队列。`
-            : `段 ${segNumber} 转写失败，录音仍在本地继续，已加入重试队列。`), 7000);
-      }
-    } else if (!text || !String(text).trim()) {
-      // 转写成功返回，但内容为空 → 可能音频设备没选对 / 没有声音。
-      // 请求既然成功返回，网络/服务是通的，清掉遗留横幅。
-      this.clearRecordingIssue("network");
-      this.clearRecordingIssue("service");
-      // 防误报：只在"本场此前从未产生过任何非空转写"时提示。
-      // 否则会议中途的合理静默段（开头/中场没人说话）会骚扰正在正常录音的用户。
-      const hadAnyText = Array.isArray(session.segments) && session.segments.some((s) => s && s.text && String(s.text).trim());
-      await this.diagnostics.logDiagnostic("warn", "asr.empty_result", "本段无转写内容", {
-        segmentIndex, mode: session.mode, hadAnyText,
-      });
-      if (!hadAnyText && !session._emptyAsrNotified) {
-        session._emptyAsrNotified = true;
-        new obsidian.Notice("本段没有检测到语音。请到「设置 → 常规 → 音频输入」测试所选设备。", 9000);
-      }
-    } else {
-      this.clearRecordingIssue("network");
-      this.clearRecordingIssue("service");
-    }
-
-    const playbackAudioName = session.masterAudioName || segmentAudioName;
-    const playbackAudioPath = session.masterAudioPath || segmentAudioPath;
-    const segmentRecord = {
-      index: segmentIndex,
-      startOffsetMs: displayStartOffsetMs,
-      endOffsetMs: displayEndOffsetMs,
-      audioStartOffsetMs: Math.max(0, Number(seg.startOffsetMs) || 0),
-      audioEndOffsetMs: Math.max(0, Number(seg.endOffsetMs) || 0),
-      audioName: playbackAudioName,
-      audioPath: playbackAudioPath,
-      segmentAudioName,
-      segmentAudioPath,
-      text,
-      error: err ? (err.message || String(err)) : null,
-      isFinal: !!seg.isFinal,
-      // 音源标记（HR 模式 / 角色识别基础）：
-      //   mic           = 麦克风端
-      //   virtualCable  = 电脑音频端（线上面试场景下通常是对面候选人）
-      //   mix-virtual   = 当前是混合录音，分不清；后续提交里会改成双 stream 分别打标
-      // seg.source 优先（来自 RecordSession 未来的双流路径），fallback 到 session.captureMode
-      source: (seg && seg.source) || session.captureMode || "mic",
-    };
-    session.segments.push(segmentRecord);
-
-    if (err && !isStreamingProvider) {
-      // 流式 provider(endpoint 是 wss://)的失败段不入 transcribe 重试队列——重试走 HTTP 必然再失败、
-      // 把任务卡在 failed 永远清不掉。流式无法离线重切重传，留在笔记里标失败即可。
-      if (err.asrDeferred || isTransientAsrError(err)) session.hasDeferredAsrJobs = true;
-      const retryTask = await this.recording.keepLiveSegmentQueueTaskForRetry(session, Object.assign({}, seg, {
-        segmentAudioPath,
-        segmentAudioName,
-        segmentIndex,
-        displayStartOffsetMs,
-        displayEndOffsetMs,
-      }), err);
-      segmentRecord.queueTaskId = retryTask.id;
-    }
-
-    const segTitle = `### 段落 ${segNumber} (${formatElapsed(displayStartOffsetMs)}–${formatElapsed(displayEndOffsetMs)}) ${getAudioTimeLink(playbackAudioName, Math.max(0, Number(seg.startOffsetMs) || 0))}${seg.isFinal ? " · 结束" : ""}`;
-    const block = [
-      "",
-      segTitle,
-      "",
-      segmentRecord.queueTaskId ? `<!-- lexvoice-transcribe-task:${segmentRecord.queueTaskId} -->` : "",
-      err ? getTranscribeSegmentPlaceholder(err, {
-        streaming: isStreamingProvider,
-        deferred: !!err.asrDeferred,
-        retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)),
-      }) : (text ? text : "_[此段无内容]_"),
-      "",
-    ].join("\n");
-    await this.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
-    if (!err || isStreamingProvider) await this.recording.removeLiveSegmentQueueTask(seg);
-
-    this.shell.refreshOutlineView();
-    this.recording.setSessionWorkProgress(session, {
-      stage: seg.isFinal ? "transcribe-finalized" : "transcribed",
-      label: seg.isFinal ? "转写收尾" : (err && err.asrDeferred ? `已缓存 ${session.segments.length} 段` : `已转写 ${session.segments.length} 段`),
-      percent: null,
-      detail: seg.isFinal ? "正在进入 AI 整理" : (err && err.asrDeferred ? "音频已落盘，等待后台补转写" : "分段转写已写入纪要"),
-    });
-
-    if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`段 ${segNumber} 已转写`);
-
-    if ((this.settings.enableRealtimeOutline || (this.session && this.session.mode === "recruit-needs")) && text && !err) {
-      this.outline.scheduleRealtimeOutline();
-    }
-  }
-
-  getSegmentsForFinalSession(session) {
-    const base = Array.isArray(session && session.continuationBaseSegments) ? session.continuationBaseSegments : [];
-    const fresh = Array.isArray(session && session.segments) ? session.segments : [];
-    if (!base.length) return fresh;
-    return normalizeSegmentsForMergedNote([...base, ...fresh], 0, 0, null);
-  }
-
-  async finalizeSession(session: RecordingSession) {
-    if (!session || session.finalized) return;
-    if (session.finalizePromise !== null && session.finalizePromise !== undefined) return session.finalizePromise;
-    const finalizePromise = (async () => {
-      try {
-        await this._finalizeSessionImpl(session);
-        // 只有完整收尾流程返回后才锁定。此前在函数入口置 true，任何意外写盘异常
-        // 都会把半成品会话永久标成已完成，后续无法再收尾。
-        session.finalized = true;
-        session.finalizationError = "";
-      } catch (e) {
-        session.finalizing = false;
-        session.finalizationError = getErrorMessage(e);
-        if (session._finalizeTaskMeter) {
-          this.tasks.endTaskMeter(session._finalizeTaskMeter);
-          session._finalizeTaskMeter = null;
-        }
-        try {
-          this.recording.setSessionWorkProgress(session, {
-            stage: "finalize-failed",
-            label: "纪要收尾失败",
-            percent: null,
-            detail: "原始转写和录音已保留，可打开笔记后重新整理",
-          });
-        } catch { /* intentionally empty */ }
-        console.error("[QnALog] finalize session failed", e);
-        try {
-          await this.diagnostics.logDiagnostic("error", "session.finalize_failed", "纪要最终收尾异常，原始材料已保留", {
-            mode: session.mode,
-            mdPath: session.mdPath,
-            segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
-            error: diagnosticError(e),
-          });
-        } catch { /* intentionally empty */ }
-        new obsidian.Notice("纪要收尾失败；原始转写和录音已保留，可在笔记中使用「重新整理」。", 10000);
-        if (this.session === session) this.session = null;
-        this.shell.refreshOutlineView();
-      }
-    })();
-    session.finalizePromise = finalizePromise;
-    try {
-      return await finalizePromise;
-    } finally {
-      if (session.finalizePromise === finalizePromise) session.finalizePromise = null;
-    }
-  }
-
-  async confirmSpeakerNamesBeforeFinal(session, segments) {
-    const joined = (segments || []).map(segment => String(segment && segment.text || "")).join("\n");
-    const candidates = collectSpeakerCandidates(joined);
-    if (candidates.length < 2) return { segments, frontmatter: null };
-
-    const file = this.app.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return { segments, frontmatter: null };
-    const frontmatter = await readFileFrontmatter(this, file) || {};
-    const ids = candidates.map(candidate => candidate.id);
-    const initialMappings = normalizeSpeakerMappings(
-      Object.assign({}, session.speakerChannels || {}, frontmatter.lexvoice_speakers || {}),
-      ids,
-    );
-    const alreadyConfirmed = candidates.every(candidate => String(initialMappings[candidate.id] && initialMappings[candidate.id].personName || "").trim());
-    let mappings = initialMappings;
-
-    if (!alreadyConfirmed && !session._speakerNameConfirmationSkipped) {
-      this.recording.setSessionWorkProgress(session, {
-        stage: "speaker-confirm",
-        label: "确认说话人",
-        percent: 52,
-        detail: `识别到 ${candidates.length} 位说话人，等待确认姓名后继续整理`,
-      });
-      this.shell.refreshOutlineView();
-      const providerId = session.importTranscribeProviderId
-        || this.settings.activeTranscribeProvider
-        || "siliconflow";
-      const activeProvider = (this.settings.transcribeProviders || {})[providerId] || {};
-      const profile = this.profiles.getTranscribeProviderProfile(providerId, activeProvider);
-      const hardwareSeparated = Object.keys(session.speakerChannels || {}).length >= 2;
-      const stableAcrossSession = hardwareSeparated
-        || !!(profile && profile.speakerLabelScope === "session" && profile.requiresWholeSession)
-        || isSpeakerDiarizationProvider(activeProvider);
-      const names = await new Promise((resolve) => {
-        const modal = new SpeakerNameConfirmModal(
-          this.app,
-          this,
-          candidates,
-          initialMappings,
-          { unstableAcrossSegments: !stableAcrossSession },
-          resolve,
-        );
-        modal.open();
-      });
-      if (names) {
-        mappings = buildConfirmedSpeakerMappings(candidates, names, initialMappings);
-      } else {
-        session._speakerNameConfirmationSkipped = true;
-      }
-    }
-
-    const hasConfirmedName = Object.values(mappings).some(mapping => String(mapping && mapping.personName || "").trim());
-    if (hasConfirmedName) {
-      await this.app.fileManager.processFrontMatter(file, (nextFrontmatter) => {
-        nextFrontmatter.lexvoice_speakers = mappings;
-      });
-      session.speakerChannels = mappings;
-      let persistedReplacements = 0;
-      let namesPersisted = false;
-      try {
-        let markdown = await this.app.vault.read(file);
-        for (const [speakerId, mapping] of Object.entries(mappings)) {
-          const personName = String(mapping && mapping.personName || "").trim();
-          if (!personName) continue;
-          const updated = replaceSpeakerDisplayName(markdown, speakerId, personName);
-          markdown = updated.markdown;
-          persistedReplacements += updated.replacements;
-        }
-        if (persistedReplacements > 0) {
-          await this.app.vault.modify(file, markdown);
-          this.notePanelCacheKey = "";
-          this.notePanelCacheData = undefined;
-          this.notePanelLoading = false;
-        }
-        namesPersisted = true;
-      } catch (error) {
-        try {
-          await this.diagnostics.logDiagnostic("warn", "speaker.names_persist_failed", "说话人姓名已保存到属性，但正文更新失败", {
-            mdPath: file.path,
-            error: diagnosticError(error),
-          });
-        } catch { /* diagnostics must not change finalization behavior */ }
-        new obsidian.Notice("说话人姓名已保存，但原始转写中的显示名未能更新；可在大纲中再次保存。", 8000);
-      }
-      if (namesPersisted) {
-        try {
-          await this.diagnostics.logDiagnostic("info", "speaker.names_persisted", "说话人姓名已写入原始转写", {
-            mdPath: file.path,
-            confirmedCount: Object.values(mappings).filter(mapping => String(mapping && mapping.personName || "").trim()).length,
-            replacements: persistedReplacements,
-          });
-        } catch { /* diagnostics must not change finalization behavior */ }
-      }
-    }
-    const llmSegments = hasConfirmedName
-      ? segments.map(segment => Object.assign({}, segment, {
-          text: applySpeakerNamesForLlm(segment.text, mappings),
-          rawText: segment.rawText || segment.text,
-        }))
-      : segments;
-    return {
-      segments: llmSegments,
-      frontmatter: hasConfirmedName ? Object.assign({}, frontmatter, { lexvoice_speakers: mappings }) : null,
-    };
-  }
-
-  async _finalizeSessionImpl(session) {
-
-    // 静音统计快照：此刻录音刚结束、recorder 计数尚未被下一场 start() 重置，同步读取避免异步窗口被污染。
-    const _silVoiced = this.recorder ? (this.recorder._voicedTicks || 0) : 0;
-    const _silSilent = this.recorder ? (this.recorder._silentTicks || 0) : 0;
-
-    if (session.filteredShortRecording) {
-      await this.recording.discardFilteredShortSession(session);
-      new obsidian.Notice("已过滤小于三秒录音");
-      if (this.session === session) this.session = null;
-      this.shell.refreshOutlineView();
-      return;
-    }
-
-    if (!session.segments || session.segments.length === 0) {
-      await this.noteWriter.removeEmptySessionBlock(session);
-      new obsidian.Notice("⏭ 本次录音时长过短或无有效音频，已跳过");
-      if (this.session === session) this.session = null;
-      this.shell.refreshOutlineView();
-      return;
-    }
-
-    // 兜底：整场电平几乎为零（≥5s≈30 帧有效采样中，有声占比 < 2%）→ 明确提示用户去查设备。
-    // 插件不替用户猜设备，只在"采到的几乎全是静音"这种失败点明确提示。逐场只弹一次。
-    const _silTotal = _silVoiced + _silSilent;
-    // 仅对真实录音会话判静音：导入/文本导入不经 recorder，会读到上一场录音遗留的计数残值 → 误报。
-    if (!session.source && _silTotal >= 30 && (_silVoiced / _silTotal) < 0.02 && !session._silenceNotified) {
-      session._silenceNotified = true;
-      new obsidian.Notice("整场几乎没检测到声音，请检查所选麦克风 / 电脑音频设备（设置 → 进阶 → 音频设备检测）。", 9000);
-    }
-
-    const textImportSession = isTextImportSession(session);
-    const segmentsForFinal = this.getSegmentsForFinalSession(session);
-    const writeSession = segmentsForFinal === session.segments
-      ? session
-      : Object.assign({}, session, { segments: segmentsForFinal, multiSourceAudio: true });
-    const usableTranscriptSegments = segmentsForFinal.filter(s => s && String(s.text || "").trim());
-    if (!usableTranscriptSegments.length) {
-      const noTranscriptError = new Error("没有可用于整理的有效转写文本；录音和失败切片已保留");
-      this.recording.setSessionWorkProgress(session, {
-        stage: "transcript-empty",
-        label: "没有获得有效转写",
-        percent: null,
-        detail: "已保留录音，可检查转写服务后从待处理队列重试",
-      });
-      try {
-        await this.diagnostics.logDiagnostic("error", "session.no_transcript", "整场没有有效转写，已跳过 LLM 整理以避免无效计费", {
-          mode: session.mode,
-          segmentCount: segmentsForFinal.length,
-          failedSegments: segmentsForFinal.filter(s => s && s.error).length,
-          mdPath: session.mdPath,
-        });
-      } catch { /* intentionally empty */ }
-      await this.noteWriter.appendPolishBlock(writeSession, "", noTranscriptError, true);
-      new obsidian.Notice("没有获得有效转写；录音和失败切片已保留，请检查转写服务后在待处理队列重试。", 10000);
-      if (this.settings.autoOpenNoteAfterFinish) {
-        const file = this.app.vault.getAbstractFileByPath(session.mdPath);
-        if (file instanceof obsidian.TFile) {
-          try { await this.app.workspace.getLeaf(false).openFile(file); } catch { /* intentionally empty */ }
-        }
-      }
-      this.queueRetry.scheduleDeferredAsrRetry(session);
-      if (this.session === session) this.session = null;
-      this.shell.refreshOutlineView();
-      return;
-    }
-    session.finalizing = true;
-    let speakerPreparation = { segments: segmentsForFinal, frontmatter: null };
-    try {
-      speakerPreparation = await this.confirmSpeakerNamesBeforeFinal(session, segmentsForFinal);
-    } catch (error) {
-      console.warn("[QnALog] speaker confirmation failed; continuing with generic labels", error);
-      try {
-        await this.diagnostics.logDiagnostic("warn", "speaker.confirmation_failed", "说话人姓名确认未完成，已保留编号继续整理", {
-          mdPath: session.mdPath,
-          error: diagnosticError(error),
-        });
-      } catch { /* intentionally empty */ }
-    }
-    const segmentsForLlm = speakerPreparation.segments || segmentsForFinal;
-    const speakerFrontmatter = speakerPreparation.frontmatter || null;
-    this.recording.setSessionWorkProgress(session, {
-      stage: "finalize-start",
-      label: textImportSession ? "读取文本完成" : "准备 AI 整理",
-      percent: 12,
-      detail: textImportSession ? "已跳过 ASR，正在准备结构化整理" : "转写已结束，正在整理上下文",
-    });
-    this.shell.refreshOutlineView();
-    new obsidian.Notice(textImportSession ? "文本已读取，AI 结构化整理中…" : "所有段已处理，AI 合并润色中…");
-
-    let polished = ""; let mergeError = null; let nonRetryableMergeError = false; let commitError = false;
-    let taskMeter = null;
-    let finalSessionMeta = null;
-    try {
-      const llmConfigIssue = getLlmConfigIssue(this.settings);
-      if (llmConfigIssue) {
-        const configurationError = new Error(llmConfigIssue);
-        configurationError.nonRetryable = true;
-        throw configurationError;
-      }
-      this.recording.setSessionWorkProgress(session, {
-        stage: "workbench",
-        label: "整理上下文",
-        percent: 22,
-        detail: "正在合并会中记录、附件和上下文",
-      });
-      await this.meetingWorkbench.processPendingMeetingWorkbenchInteractions(session, { force: true });
-      if (!textImportSession) {
-        this.recording.setSessionWorkProgress(session, {
-          stage: "outline",
-          label: "生成大纲",
-          percent: 36,
-          detail: "正在补齐实时大纲，供最终纪要参考",
-        });
-        await this.outline.ensureRealtimeOutlineForFinalNote(session);
-      }
-      const lastSeg = segmentsForFinal[segmentsForFinal.length - 1];
-      const textImport = textImportSession;
-      const sessionMeta = {
-        startedAt: session.startedAt,
-        duration: textImport ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
-        source: session.source || "",
-        sourceMeta: session.sourceMeta || null,
-        promotionReviewContext: session.promotionReviewContext || null,
-        meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-      };
-      finalSessionMeta = sessionMeta;
-      this.recording.setSessionWorkProgress(session, {
-        stage: "llm-merge",
-        label: "AI 整理中",
-        percent: 62,
-        detail: textImport ? "正在把导入文本交给大模型结构化整理" : "正在把分段转写合并成最终纪要",
-      });
-      if (session.mode === "recruit" && session.recruitContext) {
-        session.recruitContext = await this.recruit.resolveRecruitProjectContext(session.recruitContext);
-        writeSession.recruitContext = session.recruitContext;
-      }
-      taskMeter = this.tasks.beginTaskMeter();
-      sessionMeta._taskMeter = taskMeter;
-      session._finalizeTaskMeter = taskMeter;
-      polished = await mergeAndPolish(this, segmentsForLlm.map(s => ({
-        index: s.index, startOffsetMs: s.startOffsetMs, endOffsetMs: s.endOffsetMs, text: s.text,
-        audioName: s.audioName,
-        audioStartOffsetMs: s.audioStartOffsetMs,
-        audioEndOffsetMs: s.audioEndOffsetMs,
-        sourceName: s.sourceName,
-        sourcePath: s.sourcePath,
-        sourceUrl: s.sourceUrl,
-        rawText: s.rawText,
-      })), session.mode, session.recruitContext, sessionMeta, speakerFrontmatter);
-      session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
-      this.recording.setSessionWorkProgress(session, {
-        stage: "write-note",
-        label: "写入纪要",
-        percent: 88,
-        detail: "AI 输出已返回，正在写入 Obsidian 笔记",
-      });
-    } catch (e) { mergeError = e; console.error(e); }
-    session.finalizing = false;
-
-    if (mergeError) {
-      if (taskMeter) {
-        this.tasks.endTaskMeter(taskMeter);
-        taskMeter = null;
-        session._finalizeTaskMeter = null;
-      }
-      nonRetryableMergeError = isLlmNonRetryableError(mergeError);
-      await this.diagnostics.logDiagnostic("error", "llm.merge_failed", "LLM 合并整理失败", {
-        mode: session.mode,
-        segmentCount: segmentsForFinal.length,
-        duration: isTextImportSession(session) ? "" : (segmentsForFinal.length ? formatElapsed(segmentsForFinal[segmentsForFinal.length - 1].endOffsetMs || 0) : ""),
-        llmEndpoint: this.settings.llmEndpoint,
-        llmModel: this.settings.llmModel,
-        nonRetryable: nonRetryableMergeError,
-        error: diagnosticError(mergeError),
-      });
-      const lastSeg = segmentsForFinal[segmentsForFinal.length - 1];
-      await this.queue.add({
-        type: "merge",
-        sessionId: session.id,
-        mdPath: session.mdPath,
-        mode: session.mode,
-        status: nonRetryableMergeError ? "blocked" : "pending",
-        segments: segmentsForLlm.map(s => ({
-          index: s.index, startOffsetMs: s.startOffsetMs, endOffsetMs: s.endOffsetMs, text: s.text,
-          audioName: s.audioName,
-          audioStartOffsetMs: s.audioStartOffsetMs,
-          audioEndOffsetMs: s.audioEndOffsetMs,
-          sourceName: s.sourceName,
-          sourcePath: s.sourcePath,
-          sourceUrl: s.sourceUrl,
-          rawText: s.rawText,
-        })),
-        source: session.source || "",
-        sourceMeta: session.sourceMeta || null,
-        externalAudioSource: session.externalAudioSource || null,
-        textImportSources: session.textImportSources || [],
-        recruitContext: session.recruitContext || null,
-        speakerFrontmatter,
-        sessionMeta: finalSessionMeta || {
-          startedAt: session.startedAt,
-          duration: isTextImportSession(session) ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
-          source: session.source || "",
-          sourceMeta: session.sourceMeta || null,
-          promotionReviewContext: session.promotionReviewContext || null,
-          meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-        },
-        lastError: mergeError.message || String(mergeError),
-      });
-      if (!nonRetryableMergeError) {
-        this.queueRetry.scheduleTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError
-          ? "briefing-partial"
-          : "briefing-finalization-failure");
-      }
-      session.finalizationError = getErrorMessage(mergeError);
-      const partialBriefing = mergeError instanceof BriefingPipelineIncompleteError;
-      this.recording.setSessionWorkProgress(session, {
-        stage: nonRetryableMergeError ? "merge-failed" : "merge-retrying",
-        label: nonRetryableMergeError ? "AI 整理失败" : partialBriefing ? "纪要部分完成" : "AI 整理等待重试",
-        percent: null,
-        detail: nonRetryableMergeError
-          ? "原始转写已保留；请修复大模型配置后重新整理"
-          : partialBriefing
-            ? `${mergeError.message}；已完成部分和原始转写均已保存`
-            : "原始转写已保留；后台队列会按退避规则再次尝试",
-      });
-    }
-
-    if (!mergeError) {
-      try {
-        if (shouldRewriteConsolidatedNote(this.settings, writeSession)) {
-          await this.noteWriter.rewriteConsolidated(writeSession, polished);
-        } else {
-          await this.noteWriter.appendPolishBlock(writeSession, polished, null, false);
-        }
-      } catch (writeError) {
-        commitError = true;
-        mergeError = writeError;
-        session.finalizationError = getErrorMessage(writeError);
-        await this.diagnostics.logDiagnostic("error", "briefing.commit_failed", "纪要正文已生成，但写入 Markdown 失败", {
-          mode: session.mode,
-          mdPath: session.mdPath,
-          checkpointId: finalSessionMeta && finalSessionMeta._briefingCheckpointId || "",
-          error: diagnosticError(writeError),
-        });
-        await this.queue.add({
-          type: "merge",
-          sessionId: session.id,
-          mdPath: session.mdPath,
-          mode: session.mode,
-          segments: segmentsForLlm.map(s => ({
-            index: s.index, startOffsetMs: s.startOffsetMs, endOffsetMs: s.endOffsetMs, text: s.text,
-            audioName: s.audioName,
-            audioStartOffsetMs: s.audioStartOffsetMs,
-            audioEndOffsetMs: s.audioEndOffsetMs,
-            sourceName: s.sourceName,
-            sourcePath: s.sourcePath,
-            sourceUrl: s.sourceUrl,
-            rawText: s.rawText,
-          })),
-          source: session.source || "",
-          sourceMeta: session.sourceMeta || null,
-          externalAudioSource: session.externalAudioSource || null,
-          textImportSources: session.textImportSources || [],
-          recruitContext: session.recruitContext || null,
-          speakerFrontmatter,
-          sessionMeta: finalSessionMeta,
-          lastError: `纪要写入失败：${getErrorMessage(writeError)}`,
-        });
-        this.queueRetry.scheduleTaskQueueRetry(1500, "briefing-write-failure");
-        this.recording.setSessionWorkProgress(session, {
-          stage: "write-retrying",
-          label: "纪要写入等待重试",
-          percent: null,
-          detail: "AI 整理结果已保存，不会重复调用模型；稍后只重试写入",
-        });
-      }
-    } else {
-      await this.noteWriter.appendPolishBlock(writeSession, polished, mergeError, nonRetryableMergeError);
-    }
-    if (!mergeError && finalSessionMeta && finalSessionMeta._briefingCheckpointId) {
-      await clearCommittedBriefingCheckpoint(this, finalSessionMeta);
-      session._briefingCheckpointId = "";
-    }
-
-    if (!mergeError) {
-      this.recording.setSessionWorkProgress(session, {
-        stage: "done",
-        label: "处理完成",
-        percent: 100,
-        detail: "纪要已写入，正在收尾",
-      });
-    }
-
-    if (!mergeError && polished) {
-      const beforeRenamePath = session.mdPath;
-      const recruitRelocate = session.mode === "recruit" && session.recruitContext && session.recruitContext.jdFile;
-      // F4.2：招聘评估且选了 JD 项目 → 移到项目文件夹 + 候选人-轮次-MMDD 命名（替代自动标题改名，保命名干净）
-      const renamed = recruitRelocate
-        ? await this.recruit.relocateRecruitNote(session, session.recruitContext)
-        : await this.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
-      if (renamed instanceof obsidian.TFile) {
-        session.mdPath = renamed.path;
-        writeSession.mdPath = renamed.path;
-      }
-      const renamedByPolished = renamed instanceof obsidian.TFile
-        && obsidian.normalizePath(renamed.path) !== obsidian.normalizePath(beforeRenamePath);
-      if ((session.source === "import" || session.source === "text-import") && !renamedByPolished && !recruitRelocate) {
-        const rawTitleSource = buildTitleSourceFromSegments(segmentsForFinal);
-        if (rawTitleSource) {
-          const fallbackRenamed = await this.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
-          if (fallbackRenamed instanceof obsidian.TFile) {
-            session.mdPath = fallbackRenamed.path;
-            writeSession.mdPath = fallbackRenamed.path;
-          }
-        }
-      }
-    }
-
-    if (!mergeError && polished) {
-      await this.noteIndex.refreshLexVoiceNoteIndexSafely(writeSession.mdPath, {
-        meetingDate: session.startedAt,
-        reason: "finalize",
-      });
-      try { await this.noteIndex.appendDailyMeetingOverview(writeSession, polished); }
-      catch (e) { console.error("[QnALog] daily overview failed", e); }
-    }
-
-    if (!mergeError) {
-      await this.recording.cleanupSuccessfulSegmentAudio(session);
-      const completedTaskMeter = taskMeter ? this.tasks.endTaskMeter(taskMeter) : null;
-      taskMeter = null;
-      session._finalizeTaskMeter = null;
-      try {
-        const doneLabel = isTextImportSession(session) ? "文本整理完成"
-          : session.source === "import" ? "导入音频整理完成" : "录音纪要整理完成";
-        this.tasks.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
-      } catch { /* intentionally empty */ }
-      // 沉淀开关默认关闭：开启后转写完成自动跑沉淀扫描并入库；关闭则照旧手动点「沉淀」。后台执行、失败静默。
-      if (this.settings.sedimentAutoExtract) void this.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
-    }
-
-    new obsidian.Notice(mergeError
-      ? (nonRetryableMergeError
-        ? `AI 整理失败：${formatLlmFailureIssue(mergeError.message || mergeError)}`
-        : commitError
-          ? "纪要正文已生成，写入失败，已加入重试队列"
-          : mergeError instanceof BriefingPipelineIncompleteError
-          ? `${mergeError.message}，已加入精确重试`
-          : "AI 整理未完成，已加入重试队列")
-      : "QnALog 处理完成");
-
-    if (this.settings.autoOpenNoteAfterFinish) {
-      const file = this.app.vault.getAbstractFileByPath(session.mdPath);
-      if (file instanceof obsidian.TFile) {
-        try { await this.app.workspace.getLeaf(false).openFile(file); } catch { /* intentionally empty */ }
-      }
-    }
-    this.queueRetry.scheduleDeferredAsrRetry(session);
-    if (this.session === session) this.session = null;
-    this.shell.refreshOutlineView();
   }  getAvailableMarkdownPath(targetPath, currentPath) {
     const current = obsidian.normalizePath(currentPath || "");
     let candidate = obsidian.normalizePath(targetPath || "");
@@ -3000,7 +2096,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       organizeLabel: "准备 AI 整理",
       organizeDetail: "原始转写已完整写入，正在按当前纪要模板生成正文。",
     });
-    await this.finalizeSession(session);
+    await this.sessionFinalize.finalizeSession(session);
     const finalizationError = String(session.finalizationError || "").trim()
       || (session.workProgress && session.workProgress.stage === "transcript-empty"
         ? "没有获得可用于整理的有效转写文本"
@@ -3166,7 +2262,7 @@ class LexVoicePlugin extends obsidian.Plugin {
 
     this.shell.refreshOutlineView();
     new obsidian.Notice(`开始整理 ${sources.length} 份文本：使用 AI 整理服务，不调用语音转写服务。`);
-    await this.finalizeSession(session);
+    await this.sessionFinalize.finalizeSession(session);
   }}
 
 // 电脑音频捕获安装/配置向导 Modal —— 分平台引导
