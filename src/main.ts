@@ -88,7 +88,7 @@ import { JOBPORTRAIT_SYSTEM_PROMPT } from "./prompts/recruit-hrbp";
 
 import { RealtimeOutlineCoordinator, runInOutlineSessionTail } from "./outline-coordinator";
 
-import { buildLexVoiceVersionPayload, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitLexVoiceVersionPayload } from "./version-content";
+import {splitLexVoiceVersionPayload } from "./version-content";
 
 import {audioImportStageFromWorkProgress, upsertActivityRequest } from "./shared/activity-progress";
 
@@ -137,10 +137,10 @@ import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_C
 import {renderRecordingInterviewBriefBlock, renderRecordingPromotionReviewBlock } from "./notes/detail-blocks";
 
 // 以下 14 个声明已抽到 ./notes/audio-refs（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {extractAudioSegmentOffsets, getAudioDurationMs, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getLexVoiceSegmentsHash, getSessionMasterAudioName, resolveLexVoiceAudioFile } from "./notes/audio-refs";
+import {extractAudioSegmentOffsets, getAudioDurationMs, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget, getAudioTimeLink, getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName, resolveLexVoiceAudioFile } from "./notes/audio-refs";
 
 // 以下 40 个声明已抽到 ./notes/note-markdown（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {ROLE_MAPPING_FIELDS, analyzeLexVoiceEmptyShortNote, applyRoleMappingToSegments, buildLexVoiceSegmentStatusList, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, formatYamlDateTime, getLexVoiceSourceIdFromMarkdown, getLexVoiceVersionStoreFolder, inferLexVoiceNoteStartedAtIso, inferModeFromLegacyNote, inferTopicFromFilename, isTextImportSession, isTimeLabel, normalizeLexVoiceVersionId, normalizeSegmentsForMergedNote, parseRoleMapItem, replaceLexVoiceActiveVersionBlock, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
+import {ROLE_MAPPING_FIELDS, analyzeLexVoiceEmptyShortNote, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceSessionId, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, formatYamlDateTime, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, inferModeFromLegacyNote, inferTopicFromFilename, isTextImportSession, isTimeLabel, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
 
 // 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {detectRecentNoteMode, getRecentNotes } from "./recent/recent-notes";
@@ -169,6 +169,8 @@ import { DeliveryService } from "./delivery/delivery-service";
 import { RecruitService } from "./recruit/recruit-service";
 import { NoteWriter } from "./notes/note-writer";
 import { QueueRetryService } from "./queue/queue-retry-service";
+import { VersionStore } from "./versions/version-store";
+import { VersionStore } from "./versions/version-store";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -235,6 +237,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.register(() => this.updateService.dispose());
     this.tasks = new TaskActivityService(this);
     this.queueRetry = new QueueRetryService(this);
+    this.versions = new VersionStore(this);
     this.tasks.start();
     this.recorder = new RecorderService(this);
     this.asrServiceCircuitKey = "";
@@ -5487,224 +5490,7 @@ ${source}`;
       }
     }
     return created;
-  }  async readLexVoiceVersionManifest(folder) {
-    const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
-    const f = this.app.vault.getAbstractFileByPath(manifestPath);
-    if (!(f instanceof obsidian.TFile)) return { version: 1, activeVersionId: "", versions: [] };
-    try {
-      const parsed = JSON.parse(await this.app.vault.read(f));
-      return Object.assign({ version: 1, activeVersionId: "", versions: [] }, parsed || {});
-    } catch (e) {
-      console.warn("[QnALog] version manifest parse failed", e);
-      return { version: 1, activeVersionId: "", versions: [] };
-    }
-  }
-
-  async writeLexVoiceVersionManifest(folder, manifest) {
-    await ensureVaultFolder(this.app, folder);
-    const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
-    const payload = JSON.stringify(Object.assign({ version: 1 }, manifest || {}), null, 2);
-    const f = this.app.vault.getAbstractFileByPath(manifestPath);
-    if (f instanceof obsidian.TFile) {
-      await this.app.vault.modify(f, payload);
-      return;
-    }
-    try {
-      await this.app.vault.create(manifestPath, payload);
-    } catch (error) {
-      // 旧版本重复任务可能同时首次创建 manifest。create 发生竞争时，
-      // 转为更新已经由另一个任务创建的文件，不把整理结果判为失败。
-      const raced = this.app.vault.getAbstractFileByPath(manifestPath);
-      if (!(raced instanceof obsidian.TFile)) throw error;
-      await this.app.vault.modify(raced, payload);
-    }
-  }
-
-  async writeLexVoiceVersionFile(folder, fileName, content) {
-    await ensureVaultFolder(this.app, folder);
-    const path = obsidian.normalizePath(`${folder}/${fileName}`);
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof obsidian.TFile) {
-      await this.app.vault.modify(existing, content);
-      return existing;
-    }
-    try {
-      return await this.app.vault.create(path, content);
-    } catch (error) {
-      // 版本缓存按 source + version id 幂等写入。并发 create 竞争时，
-      // 使用已经落盘的文件继续完成本轮，而不是显示 File already exists。
-      const raced = this.app.vault.getAbstractFileByPath(path);
-      if (!(raced instanceof obsidian.TFile)) throw error;
-      await this.app.vault.modify(raced, content);
-      return raced;
-    }
-  }
-
-  async saveLexVoiceVersion(sourceFile, sourceContent, segments, versionInput) {
-    const sourceId = getLexVoiceSourceIdFromMarkdown(sourceContent, sourceFile);
-    const sourceHash = getLexVoiceSegmentsHash(segments);
-    const folder = getLexVoiceVersionStoreFolder(this.settings, sourceId);
-    const createdAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-    const id = normalizeLexVoiceVersionId(versionInput.idLabel || versionInput.label || versionInput.kind || "version");
-    const fileStem = sanitizeFilename(`${id}`) || id;
-    const fileName = `${fileStem}.md`;
-    const versionParts = splitLexVoiceVersionPayload(versionInput.body);
-    const body = versionParts.body.trim() || buildEmptyLlmOutputFallback();
-    const frontmatter = versionParts.frontmatter;
-    const meta = {
-      id,
-      kind: versionInput.kind || "",
-      label: versionInput.label || versionInput.kind || "版本",
-      mode: versionInput.mode || "",
-      style: versionInput.style || "",
-      sourcePath: sourceFile.path,
-      sourceId,
-      sourceHash,
-      fileName,
-      createdAt,
-      containsRaw: false,
-      containsFrontmatter: Boolean(frontmatter),
-    };
-    const payload = buildLexVoiceVersionPayload(frontmatter, body);
-    const versionFileBody = [
-      "---",
-      "类型: LexVoice版本缓存",
-      "payload_format: 2",
-      `version_id: "${id}"`,
-      `variant_kind: "${meta.kind}"`,
-      `variant_label: "${meta.label}"`,
-      meta.mode ? `variant_mode: "${meta.mode}"` : "",
-      meta.style ? `variant_style: "${meta.style}"` : "",
-      `source_path: "${sourceFile.path}"`,
-      `source_id: "${sourceId}"`,
-      `source_segments_hash: "${sourceHash}"`,
-      "contains_raw: false",
-      `contains_frontmatter: ${frontmatter ? "true" : "false"}`,
-      `created: ${createdAt}`,
-      "---",
-      "",
-      payload,
-      "",
-    ].filter(v => v !== "").join("\n");
-    await this.writeLexVoiceVersionFile(folder, fileName, versionFileBody);
-    const manifest = await this.readLexVoiceVersionManifest(folder);
-    const versions = Array.isArray(manifest.versions) ? manifest.versions.filter(v => v && v.id !== id) : [];
-    versions.push(meta);
-    Object.assign(manifest, {
-      version: 1,
-      sourcePath: sourceFile.path,
-      sourceId,
-      sourceHash,
-      segments: buildLexVoiceSegmentStatusList(segments),
-      // 派生文件不改变母本当前显示版本；清稿/历史版本仍可显式激活。
-      activeVersionId: versionInput.activate === false ? (manifest.activeVersionId || "") : id,
-      updatedAt: createdAt,
-      versions,
-    });
-    await this.writeLexVoiceVersionManifest(folder, manifest);
-    return { folder, manifest, meta, body, frontmatter };
-  }
-
-  async createLexVoiceDerivedNote(sourceFile, sourceContent, version, label, mode, style = "") {
-    if (!(sourceFile instanceof obsidian.TFile)) throw new Error("找不到原始纪要");
-    const sourceDir = sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "";
-    const prefix = String(label || "综合纪要").trim() || "综合纪要";
-    const stem = `【${prefix}】${sourceFile.basename}`;
-    const stableTarget = obsidian.normalizePath(
-      sourceDir ? `${sourceDir}/${stem}.md` : `${stem}.md`,
-    );
-    // 同一来源和同一模式重做时更新这份派生文件；只有目标被用户占用为
-    // 其他内容时才生成 -2，避免每次点击都制造一份重复纪要。
-    const stableExisting = this.app.vault.getAbstractFileByPath(stableTarget);
-    const target = stableExisting instanceof obsidian.TFile
-      ? stableTarget
-      : this.getAvailableMarkdownPath(stableTarget);
-    if (!target) throw new Error("无法生成派生纪要文件路径");
-
-    const sourceFm = ((this.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
-    const versionFm = version && version.frontmatter
-      ? (() => { try { return obsidian.parseYaml(splitLeadingFrontmatter(version.frontmatter).frontmatter.replace(/^---\n|\n---\n?$/g, "")) || {}; } catch { return {}; } })()
-      : {};
-    const derivedFm = Object.assign({}, sourceFm, versionFm, {
-      "类型": "LexVoice派生版本",
-      variant_kind: "minutes",
-      variant_label: prefix,
-      variant_mode: mode || "",
-      variant_style: style || "",
-      source_path: sourceFile.path,
-      source_id: version && version.meta ? version.meta.sourceId : "",
-      contains_raw: false,
-      created: version && version.meta ? version.meta.createdAt : new Date().toISOString(),
-    });
-    const yaml = obsidian.stringifyYaml(derivedFm);
-    const body = String(version && version.body || buildEmptyLlmOutputFallback()).trim() || buildEmptyLlmOutputFallback();
-    const heading = /^#\s/m.test(body) ? "" : `# ${prefix} · ${sourceFile.basename}\n\n`;
-    const backlink = `> [!info] 基于原始转写重新生成 · 原始纪要：[[${sourceFile.basename}]]`;
-    const content = `---\n${yaml.trimEnd()}\n---\n\n${heading}${backlink}\n\n${body}\n`;
-    let existing = this.app.vault.getAbstractFileByPath(target);
-    if (existing instanceof obsidian.TFile) await this.app.vault.modify(existing, content);
-    else {
-      try {
-        existing = await this.app.vault.create(target, content);
-      } catch (error) {
-        const raced = this.app.vault.getAbstractFileByPath(target);
-        if (!(raced instanceof obsidian.TFile)) throw error;
-        await this.app.vault.modify(raced, content);
-        existing = raced;
-      }
-    }
-    if (existing instanceof obsidian.TFile) {
-      await this.refreshLexVoiceNoteIndexSafely(existing, {
-        meetingDate: derivedFm.time || derivedFm["日期"] || derivedFm.date || "",
-        reason: "derived-note",
-      });
-    }
-    return existing instanceof obsidian.TFile ? existing : null;
-  }
-
-  async applyLexVoiceVersionToSource(sourceFile, versionMeta, body, frontmatter = "") {
-    const cur = await this.app.vault.read(sourceFile);
-    const withFrontmatter = replaceLeadingFrontmatter(cur, frontmatter);
-    const next = replaceLexVoiceActiveVersionBlock(withFrontmatter, versionMeta, body);
-    if (next !== cur) await this.app.vault.modify(sourceFile, next);
-    await this.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "version-switch" });
-  }
-
-  async switchLexVoiceVersion(versionFile, fallbackSourcePath) {
-    if (!(versionFile instanceof obsidian.TFile)) return;
-    const content = await this.app.vault.read(versionFile);
-    const fm = ((this.app.metadataCache.getFileCache(versionFile) || {}).frontmatter) || {};
-    const sourcePath = obsidian.normalizePath(String(fm.source_path || fallbackSourcePath || ""));
-    const sourceFile = sourcePath ? this.app.vault.getAbstractFileByPath(sourcePath) : null;
-    if (!(sourceFile instanceof obsidian.TFile)) {
-      new obsidian.Notice("找不到母本，无法切换版本。", 6000);
-      return;
-    }
-    const parts = splitLeadingFrontmatter(content);
-    const versionParts = splitLexVoiceVersionPayload(parts.body);
-    const body = versionParts.body.trim() || "_[版本内容为空]_";
-    const meta = {
-      id: String(fm.version_id || versionFile.basename),
-      kind: String(fm.variant_kind || ""),
-      label: String(fm.variant_label || fm.variant_kind || "版本"),
-      mode: String(fm.variant_mode || ""),
-      style: String(fm.variant_style || ""),
-      sourceHash: String(fm.source_segments_hash || ""),
-      createdAt: String(fm.created || ""),
-    };
-    await this.applyLexVoiceVersionToSource(sourceFile, meta, body, versionParts.frontmatter);
-    const sourceContent = await this.app.vault.read(sourceFile);
-    const sourceId = getLexVoiceSourceIdFromMarkdown(sourceContent, sourceFile);
-    const folder = getLexVoiceVersionStoreFolder(this.settings, sourceId);
-    const manifest = await this.readLexVoiceVersionManifest(folder);
-    manifest.activeVersionId = meta.id;
-    manifest.updatedAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-    await this.writeLexVoiceVersionManifest(folder, manifest);
-    try { await this.app.workspace.getLeaf(false).openFile(sourceFile); } catch { /* intentionally empty */ }
-    new obsidian.Notice(`已切换到版本：${meta.label}`, 3000);
-  }
-
-  async repolishMarkdownFile(file, mode, repolishOptions = null) {
+  }  async repolishMarkdownFile(file, mode, repolishOptions = null) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
     if (["promotion-review", "recruit", "recruit-needs"].includes(mode) && !isRecruitFeatureUnlocked(this.settings)) {
       new obsidian.Notice("该扩展模式尚未启用");
@@ -5862,7 +5648,7 @@ ${source}`;
 
       // 可见副本是用户交付物，必须先落盘；版本缓存/manifest 只是索引，
       // 即使索引写入异常，也不能阻断新纪要生成。
-      const derivedFile = await this.createLexVoiceDerivedNote(
+      const derivedFile = await this.versions.createLexVoiceDerivedNote(
         dailyTargetFile,
         latestSourceContent,
         fallbackVersion,
@@ -5880,7 +5666,7 @@ ${source}`;
       await clearCommittedBriefingCheckpoint(this, sessionMeta);
       let versionCacheError = "";
       try {
-        await this.saveLexVoiceVersion(dailyTargetFile, latestSourceContent, segments, {
+        await this.versions.saveLexVoiceVersion(dailyTargetFile, latestSourceContent, segments, {
           kind: "minutes",
           label: versionLabel,
           mode,
@@ -6003,7 +5789,7 @@ ${source}`;
         ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"
         : "";
       const noteBody = `# [清稿] ${baseTitle}\n\n> [!note] 从母本逐字稿忠实清理的可读稿（非纪要、不摘要）。母本（事实源 / 逐字稿）：[[${baseTitle}]]\n\n${warn}${cleaned}`;
-      const version = await this.saveLexVoiceVersion(sourceFile, content, segments, {
+      const version = await this.versions.saveLexVoiceVersion(sourceFile, content, segments, {
         kind: "clean",
         label: "清稿",
         mode: "cleanscript",
@@ -6011,7 +5797,7 @@ ${source}`;
         idLabel: "清稿",
         body: noteBody,
       });
-      await this.applyLexVoiceVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
+      await this.versions.applyLexVoiceVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
       new obsidian.Notice("QnALog：清稿已生成并设为当前显示版本", 6000);
       const completedTaskMeter = taskMeter ? this.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;

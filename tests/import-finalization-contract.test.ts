@@ -6,6 +6,8 @@ import { pluginSourceText } from "./plugin-source";
 const root = path.resolve(__dirname, "..");
 // 队列任务的失败恢复已抽到独立模块；需要断言"同一文件内先后顺序"的用例读该文件本身。
 const queueRetrySource = fs.readFileSync(path.join(root, "src/queue/queue-retry-service.ts"), "utf8");
+// 版本块与派生笔记的实现同样已抽出；顺序断言读该文件本身。
+const versionStoreSource = fs.readFileSync(path.join(root, "src/versions/version-store.ts"), "utf8");
 
 describe("import finalization contract", () => {
   it("persists and verifies the raw transcript before starting AI organization", () => {
@@ -41,8 +43,8 @@ describe("import finalization contract", () => {
     const retryStart = queueRetrySource.indexOf("async retryMergeTask(task)");
     const retryRename = queueRetrySource.indexOf("const renamed = (task.mode", retryStart);
     const retryIndex = queueRetrySource.indexOf('reason: "merge-retry"', retryRename);
-    const derivedStart = source.indexOf("async createLexVoiceDerivedNote");
-    const derivedIndex = source.indexOf('reason: "derived-note"', derivedStart);
+    const derivedStart = versionStoreSource.indexOf("async createLexVoiceDerivedNote");
+    const derivedIndex = versionStoreSource.indexOf('reason: "derived-note"', derivedStart);
 
     expect(finalizeIndex).toBeGreaterThan(finalizeRename);
     expect(retryIndex).toBeGreaterThan(retryRename);
