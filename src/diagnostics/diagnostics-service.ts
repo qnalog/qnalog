@@ -32,8 +32,6 @@ export interface DiagnosticsHost {
   session: RecordingSession | null;
   /** 录音器，报告里读状态。 */
   recorder: RecorderService | null;
-  /** 逐级创建知识库内的文件夹；已存在的层级跳过。 */
-  ensureFolder(folderPath: string): Promise<void>;
   /** 界面上显示的版本串。 */
   getDisplayVersion(): string;
   /** 当前构建的来源描述。 */
