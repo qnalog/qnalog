@@ -27,7 +27,8 @@ describe("promotion review runtime contract", () => {
     expect(modeMeta).toContain('HR_GATED_POLISH_MODES = new Set(["promotion-review", "recruit", "recruit-needs"])');
     expect(settingsTab).toContain("if (this._advancedTapCount < 5) return;");
     expect(settingsTab).toContain('new obsidian.Notice("招聘与晋升评审已启用"');
-    expect(main).toContain('new obsidian.Notice("晋升评审功能未解锁")');
+    // 入口已随视图外壳搬到独立模块，按本文件既有约定用 src 全文断言。
+    expect(pluginSource).toContain('new obsidian.Notice("晋升评审功能未解锁")');
   });
 
   it("提供三输入、晋升初审和开始答辩录音", () => {

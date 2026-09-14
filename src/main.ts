@@ -5,8 +5,6 @@ import * as obsidian from "obsidian";
 // 这里 import 回来，保持原有调用点用裸名引用不变。
 import {getRealtimeOutlineAnchorTime } from "./outline-text";
 
-import { getSemanticCanvasPath } from "./canvas/semantic-outline-canvas";
-
 import { LexVoiceSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
@@ -57,8 +55,6 @@ import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, t
 import { getLearnedLlmOutputCeiling } from "./llm/output-budget";
 
 import { PcmStreamEncoder } from "./asr/clients";
-
-import { MODE_META } from "./shared/catalog-modes";
 
 import { AUDIO_EXT, TEXT_IMPORT_EXT } from "./shared/catalog-import";
 
@@ -121,7 +117,7 @@ import {getAudioDurationMs, getAudioTimeLink, getLexVoiceDurationMs, getLexVoice
 import {ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, buildTitleSourceFromSegments, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, inferLexVoiceNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote, parseRoleMapItem, splitImportedTextIntoNormalSegments, stripImportedTextSource } from "./notes/note-markdown";
 
 // 以下 13 个声明已抽到 ./recent/recent-notes（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {detectRecentNoteMode, getRecentNotes } from "./recent/recent-notes";
+import {detectRecentNoteMode } from "./recent/recent-notes";
 
 // 以下 1 个声明已抽到 ./audio/recorder-service（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { RecorderService } from "./audio/recorder-service";
@@ -154,6 +150,7 @@ import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { LibraryViewService } from "./views/library-view-service";
+import { ViewShellService } from "./ui/view-shell-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -222,6 +219,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
+    this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
     this.noteIndex = new NoteIndexService(this);
     this.audioLinks = new AudioTimeLinkService(this);
@@ -245,34 +243,34 @@ class LexVoicePlugin extends obsidian.Plugin {
       onFailure: (request, error) => this.outline.getRealtimeOutlineRetryDecision(request, error),
       onStateChange: (state) => {
         this.tasks.syncOutlineTaskActivity(state);
-        this.refreshOutlineView();
+        this.shell.refreshOutlineView();
       },
     });
 
     this.tasks.startStatusBar();
 
     this.ribbonEl = this.addRibbonIcon("mic", "QnALog：点击开始/停止，悬停展开控件", () => this.toggleRecording());
-    this.recorder.on(() => this.refreshOutlineView());
+    this.recorder.on(() => this.shell.refreshOutlineView());
 
     this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this));
     this.registerView(VIEW_TYPE_MINUTES_KANBAN, (leaf) => new MinutesKanbanView(leaf, {
       getRootPath: () => obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
-      listItems: () => this.getMinutesKanbanItems(),
+      listItems: () => this.shell.getMinutesKanbanItems(),
       getModeOptions: () => getVisibleModeEntries(this.settings, false).map(([value, label]) => ({ value, label })),
-      moveItem: (item, folderPath) => this.moveMinutesKanbanItem(item, folderPath),
-      createFolder: (name) => this.createMinutesKanbanFolder(name),
+      moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
+      createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
     // 自定义 Bases 视图「招聘看板」（@since 1.10.0；内部自带守卫，老版本/未启用 Bases 时安全跳过）。
     registerRecruitBoardView(this);
-    this.addRibbonIcon("list-tree", "QnALog 实时纪要面板", () => this.openOutlineView());
+    this.addRibbonIcon("list-tree", "QnALog 实时纪要面板", () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
     // 浮窗显隐与侧边栏（实时纪要面板）联动
-    this.registerEvent(this.app.workspace.on("layout-change", () => this.syncBubbleVisibility()));
-    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.syncBubbleVisibility()));
-    this.registerEvent(this.app.workspace.on("resize", () => this.syncBubbleVisibility()));
-    this.app.workspace.onLayoutReady(() => this.syncBubbleVisibility());
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.shell.syncBubbleVisibility()));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.shell.syncBubbleVisibility()));
+    this.registerEvent(this.app.workspace.on("resize", () => this.shell.syncBubbleVisibility()));
+    this.app.workspace.onLayoutReady(() => this.shell.syncBubbleVisibility());
 
     this.addCommand({ id: "toggle-recording", name: "开始/停止录音", callback: () => this.toggleRecording() });
     this.addCommand({ id: "pause-resume-recording", name: "暂停/继续录音", callback: () => {
@@ -283,7 +281,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.addCommand({ id: "toggle-floating-ball", name: "显示/隐藏悬浮气泡（总开关）", callback: () => {
       this.settings.showFloatingBall = !this.settings.showFloatingBall;
       void this.saveSettings();
-      this.syncBubbleVisibility();
+      this.shell.syncBubbleVisibility();
       new obsidian.Notice(this.settings.showFloatingBall ? "浮窗已启用（常驻显示，可拖动）" : "浮窗已关闭");
     }});
     this.addCommand({ id: "open-queue", name: "打开待处理队列", callback: () => new QueueModal(this.app, this).open() });
@@ -320,8 +318,8 @@ class LexVoicePlugin extends obsidian.Plugin {
       },
     });
     this.addCommand({ id: "check-updates", name: "检查更新", callback: () => this.checkForUpdates({ silent: false }) });
-    this.addCommand({ id: "open-outline", name: "打开实时纪要面板", callback: () => this.openOutlineView() });
-    this.addCommand({ id: "open-minutes-kanban", name: "打开纪要看板", callback: () => this.openMinutesKanban() });
+    this.addCommand({ id: "open-outline", name: "打开实时纪要面板", callback: () => this.shell.openOutlineView() });
+    this.addCommand({ id: "open-minutes-kanban", name: "打开纪要看板", callback: () => this.shell.openMinutesKanban() });
     this.addCommand({ id: "record-mic-only", name: "开始录音 · 仅麦克风", callback: () => { this._oneShotCaptureMode = "mic"; void this.startRecording(); } });
     this.addCommand({ id: "record-mic-virtual", name: "开始录音 · 麦克风 + 电脑音频", callback: () => { this._oneShotCaptureMode = "mix-virtual"; void this.startRecording(); } });
     this.addCommand({ id: "record-virtual-only", name: "开始录音 · 仅电脑音频", callback: () => { this._oneShotCaptureMode = "virtualCable"; void this.startRecording(); } });
@@ -689,7 +687,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       kind: kind || current.kind || "service",
       at: patch && patch.at ? patch.at : (current.at || Date.now()),
     }));
-    try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     try { if (this.bubble && this.bubble.scheduleUpdate) this.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
 
@@ -697,7 +695,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     if (!this.recordingIssue) return;
     if (kind && this.recordingIssue.kind !== kind) return;
     this.recordingIssue = null;
-    try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     try { if (this.bubble && this.bubble.scheduleUpdate) this.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
 
@@ -705,192 +703,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     const recorderIssue = this.recorder && this.recorder.getInfo ? (this.recorder.getInfo().issue || null) : null;
     if (recorderIssue && recorderIssue.kind === "microphone") return recorderIssue;
     return this.recordingIssue || recorderIssue || null;
-  }
-
-  refreshOutlineView() {
-    try { this.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    for (const leaf of leaves) {
-      const v = leaf.view;
-      if (!v) continue;
-      // 优先走节流通道；旧实例兜底直调 render
-      if (typeof v.scheduleUpdate === "function") v.scheduleUpdate();
-      else if (typeof v.render === "function") v.render();
-    }
-  }  async openOutlineView() {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    if (existing.length) {
-      void this.app.workspace.revealLeaf(existing[0]);
-      this.syncBubbleVisibility();
-      return;
-    }
-    const leaf = isLexVoiceMobileRuntime()
-      ? this.app.workspace.getLeaf(true)
-      : (this.app.workspace.getRightLeaf(false) || this.app.workspace.getLeaf(true));
-    await leaf.setViewState({ type: VIEW_TYPE_OUTLINE, active: true });
-    void this.app.workspace.revealLeaf(leaf);
-    this.syncBubbleVisibility();
-  }
-
-  getMinutesKanbanItems() {
-    const canvasFiles = this.app.vault.getFiles().filter((file) => file.extension === "canvas");
-    const root = obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    return getRecentNotes(this, Number.MAX_SAFE_INTEGER).filter((item) => {
-      const path = obsidian.normalizePath(item.file.path);
-      return path === root || path.startsWith(`${root}/`);
-    }).map((item) => {
-      const notePath = obsidian.normalizePath(item.file.path);
-      const expected = obsidian.normalizePath(getSemanticCanvasPath(notePath));
-      const prefix = `${item.file.basename} · 语义图`;
-      const associatedCanvases = canvasFiles.filter((file) => (
-        obsidian.normalizePath(file.path) === expected
-        || (file.parent && item.file.parent
-          && obsidian.normalizePath(file.parent.path) === obsidian.normalizePath(item.file.parent.path)
-          && file.basename.startsWith(prefix))
-      ));
-      const meta = getModeMeta(this.settings, item.mode) || MODE_META.off;
-      return {
-        file: item.file,
-        title: item.title || item.file.basename,
-        mode: item.mode,
-        modeLabel: meta.prefix || "纪要",
-        icon: meta.icon || "file-text",
-        folderPath: item.folderPath || obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
-        timeLabel: item.displayTime || "",
-        durationLabel: item.durationLabel || "",
-        canvasFiles: associatedCanvases,
-      };
-    });
-  }
-
-  async createMinutesKanbanFolder(rawName) {
-    const name = sanitizeFilename(String(rawName || "").replace(/[\\/]+/g, " ")).trim();
-    if (!name) throw new Error("请输入有效的文件夹名称");
-    const root = obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    const path = obsidian.normalizePath(`${root}/${name}`);
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing && !(existing instanceof obsidian.TFolder)) throw new Error("同名文件已存在");
-    if (!existing) await ensureVaultFolder(this.app, path);
-    return path;
-  }
-
-  async moveMinutesKanbanItem(item, rawFolderPath) {
-    const file = item && item.file;
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") throw new Error("纪要文件不存在");
-    const root = obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    const folderPath = obsidian.normalizePath(rawFolderPath || root);
-    if (!(folderPath === root || folderPath.startsWith(`${root}/`))) throw new Error("目标分组不在纪要目录内");
-    await ensureVaultFolder(this.app, folderPath);
-    const currentFolder = file.parent ? obsidian.normalizePath(file.parent.path) : "";
-    if (currentFolder === folderPath) return;
-
-    const oldNotePath = obsidian.normalizePath(file.path);
-    const oldBase = file.basename;
-    const canvasSnapshots = [];
-    for (const canvasFile of Array.isArray(item.canvasFiles) ? item.canvasFiles : []) {
-      if (!(canvasFile instanceof obsidian.TFile) || canvasFile.extension !== "canvas") continue;
-      let content = "";
-      try { content = await this.app.vault.cachedRead(canvasFile); } catch { /* keep moving the note */ }
-      canvasSnapshots.push({ file: canvasFile, content });
-    }
-
-    const noteTarget = this.getAvailableMarkdownPath(`${folderPath}/${file.name}`, oldNotePath);
-    if (!noteTarget) throw new Error("无法生成可用的目标文件名");
-    await this.app.fileManager.renameFile(file, noteTarget);
-    const movedNote = this.app.vault.getAbstractFileByPath(noteTarget);
-    const newBase = movedNote instanceof obsidian.TFile
-      ? movedNote.basename
-      : String(noteTarget.split("/").pop() || oldBase).replace(/\.md$/i, "");
-
-    for (const snapshot of canvasSnapshots) {
-      const suffix = snapshot.file.basename.startsWith(oldBase)
-        ? snapshot.file.basename.slice(oldBase.length)
-        : " · 语义图";
-      const canvasTarget = findAvailableVaultPath(this.app, `${folderPath}/${newBase}${suffix}.canvas`);
-      if (!canvasTarget) continue;
-      try {
-        await this.app.fileManager.renameFile(snapshot.file, canvasTarget);
-        const movedCanvas = this.app.vault.getAbstractFileByPath(canvasTarget);
-        if (!(movedCanvas instanceof obsidian.TFile) || !snapshot.content) continue;
-        const document = JSON.parse(snapshot.content);
-        if (document && typeof document === "object" && document.lexvoiceSemantic && typeof document.lexvoiceSemantic === "object") {
-          document.lexvoiceSemantic.sourcePath = noteTarget;
-          await this.app.vault.modify(movedCanvas, JSON.stringify(document, null, 2));
-        }
-      } catch (error) {
-        console.warn("[QnALog] move associated semantic canvas failed", error);
-      }
-    }
-  }
-
-  async openMinutesKanban() {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MINUTES_KANBAN);
-    if (existing.length) {
-      await this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getLeaf("tab");
-    await leaf.setViewState({ type: VIEW_TYPE_MINUTES_KANBAN, active: true });
-    await this.app.workspace.revealLeaf(leaf);
-  }
-
-  async openPromotionReviewContextInline() {
-    if (!isRecruitFeatureUnlocked(this.settings)) {
-      new obsidian.Notice("晋升评审功能未解锁");
-      return;
-    }
-    await this.openOutlineView();
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    const view = leaves.length ? leaves[0].view : null;
-    if (view && typeof view.render === "function") { view._promotionReviewEditing = true; view.render(); }
-  }
-
-  // 打开大纲面板并进招聘上下文「内联编辑」视图（替掉原来的 flow:"settings" 弹窗）。
-  async openRecruitContextInline() {
-    if (!isRecruitFeatureUnlocked(this.settings)) { new obsidian.Notice("招聘评估功能未解锁"); return; }
-    await this.openOutlineView();
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    const view = leaves.length ? leaves[0].view : null;
-    if (view && typeof view.render === "function") { view._recruitEditing = true; view.render(); }
-  }
-
-  // 判断实时纪要面板是否真正在 viewport 中可见
-  // 三种"不可见"情况都要识别：
-  //   1. leaf 不存在
-  //   2. leaf 存在但所在侧边栏被折叠 (rightSplit.collapsed)
-  //   3. leaf 存在且侧边栏展开，但用户切到了同侧边栏的其他 tab（leaf 未激活）
-  isOutlineVisible() {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);
-    if (!leaves.length) return false;
-    for (const leaf of leaves) {
-      const view = leaf.view;
-      if (!view) continue;
-      const el = view.containerEl;
-      if (!el) continue;
-      // 真正的可见性判断：元素被渲染且占有空间
-      // 任何情况下被隐藏（display:none / 0 高度 / 0 宽度）都返回 0
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) return true;
-    }
-    return false;
-  }
-
-  // 停靠式悬浮窗：只受总开关控制，不再依赖实时面板或侧边栏是否可见。
-  syncBubbleVisibility() {
-    if (!this.bubble) return;
-    const visible = !!this.settings.showFloatingBall;
-    if (visible && !this.bubble.wrapEl) {
-      this.bubble.mount(this.ribbonEl);
-    } else if (!visible && this.bubble.wrapEl) {
-      this.bubble.unmount();
-    } else if (visible && this.bubble.wrapEl) {
-      this.bubble.show();
-      this.bubble.keepInViewport();
-      this.bubble.updateDockTail();
-    }
-  }
-
-  async toggleRecording() {
+  }  async toggleRecording() {
     if (this.recorder.state === "idle") await this.startRecording();
     else await this.stopRecording();
   }
@@ -943,7 +756,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       const savedContext = normalizePromotionReviewContext(this.settings.promotionReviewContext || {});
       if (!savedContext.requirements || !savedContext.nominationMaterial || !savedContext.preReview) {
         new obsidian.Notice("请先填写任职要求和晋升提名材料，并生成晋升初审。", 6000);
-        await this.openPromotionReviewContextInline();
+        await this.shell.openPromotionReviewContextInline();
         return;
       }
       this._currentPromotionReviewContext = savedContext;
@@ -1157,7 +970,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         onStreamReady,
       });
       if (this.settings.autoOpenOutlineOnRecord) {
-        try { await this.openOutlineView(); } catch (e) { console.error("[QnALog] auto-open outline failed", e); }
+        try { await this.shell.openOutlineView(); } catch (e) { console.error("[QnALog] auto-open outline failed", e); }
       }
       const modeLabel = audioInputModeLabel(captureMode);
       const noticeText = isStreaming
@@ -1193,7 +1006,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       this.session = null;
       this._oneShotCaptureMode = null;
       try { if (failedSession) await this.noteWriter.removeEmptySessionBlock(failedSession); } catch { /* intentionally empty */ }
-      try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
     }
   }
 
@@ -1271,13 +1084,13 @@ class LexVoicePlugin extends obsidian.Plugin {
         writePercent: stage === "write" ? Number(session.workProgress.percent) || 0 : this.tasks._importBusy.writePercent,
       });
     }
-    try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
   }
 
   clearSessionWorkProgress(session) {
     if (!session) return;
     delete session.workProgress;
-    try { this.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
   }  getLiveAsrJobs(session) {
     if (!session) return new Map();
     if (!(session.liveAsrJobs instanceof Map)) session.liveAsrJobs = new Map();
@@ -1885,7 +1698,7 @@ class LexVoicePlugin extends obsidian.Plugin {
           endOffsetMs: Number(seg.endOffsetMs) || 0,
         });
       } catch { /* intentionally empty */ }
-      this.refreshOutlineView();
+      this.shell.refreshOutlineView();
       return;
     }
     if (seg && (seg.filteredShort || this.shouldFilterShortRecording(session, seg))) {
@@ -2217,7 +2030,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     await this.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
     if (!err || isStreamingProvider) await this.removeLiveSegmentQueueTask(seg);
 
-    this.refreshOutlineView();
+    this.shell.refreshOutlineView();
     this.setSessionWorkProgress(session, {
       stage: seg.isFinal ? "transcribe-finalized" : "transcribed",
       label: seg.isFinal ? "转写收尾" : (err && err.asrDeferred ? `已缓存 ${session.segments.length} 段` : `已转写 ${session.segments.length} 段`),
@@ -2275,7 +2088,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         } catch { /* intentionally empty */ }
         new obsidian.Notice("纪要收尾失败；原始转写和录音已保留，可在笔记中使用「重新整理」。", 10000);
         if (this.session === session) this.session = null;
-        this.refreshOutlineView();
+        this.shell.refreshOutlineView();
       }
     })();
     session.finalizePromise = finalizePromise;
@@ -2309,7 +2122,7 @@ class LexVoicePlugin extends obsidian.Plugin {
         percent: 52,
         detail: `识别到 ${candidates.length} 位说话人，等待确认姓名后继续整理`,
       });
-      this.refreshOutlineView();
+      this.shell.refreshOutlineView();
       const providerId = session.importTranscribeProviderId
         || this.settings.activeTranscribeProvider
         || "siliconflow";
@@ -2402,7 +2215,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       await this.discardFilteredShortSession(session);
       new obsidian.Notice("已过滤小于三秒录音");
       if (this.session === session) this.session = null;
-      this.refreshOutlineView();
+      this.shell.refreshOutlineView();
       return;
     }
 
@@ -2410,7 +2223,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       await this.noteWriter.removeEmptySessionBlock(session);
       new obsidian.Notice("⏭ 本次录音时长过短或无有效音频，已跳过");
       if (this.session === session) this.session = null;
-      this.refreshOutlineView();
+      this.shell.refreshOutlineView();
       return;
     }
 
@@ -2455,7 +2268,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       }
       this.queueRetry.scheduleDeferredAsrRetry(session);
       if (this.session === session) this.session = null;
-      this.refreshOutlineView();
+      this.shell.refreshOutlineView();
       return;
     }
     session.finalizing = true;
@@ -2479,7 +2292,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       percent: 12,
       detail: textImportSession ? "已跳过 ASR，正在准备结构化整理" : "转写已结束，正在整理上下文",
     });
-    this.refreshOutlineView();
+    this.shell.refreshOutlineView();
     new obsidian.Notice(textImportSession ? "文本已读取，AI 结构化整理中…" : "所有段已处理，AI 合并润色中…");
 
     let polished = ""; let mergeError = null; let nonRetryableMergeError = false; let commitError = false;
@@ -2752,7 +2565,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     }
     this.queueRetry.scheduleDeferredAsrRetry(session);
     if (this.session === session) this.session = null;
-    this.refreshOutlineView();
+    this.shell.refreshOutlineView();
   }  getAvailableMarkdownPath(targetPath, currentPath) {
     const current = obsidian.normalizePath(currentPath || "");
     let candidate = obsidian.normalizePath(targetPath || "");
@@ -4196,7 +4009,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       if (this.tasks._importBusy && String(this.tasks._importBusy.sessionId || "") === String(completedImportId)) {
         this.tasks._importBusy = null;
         this.tasks.updateBusyStatus();
-        this.refreshOutlineView();
+        this.shell.refreshOutlineView();
       }
     }, finalizationError ? 0 : 1800);
     return {
@@ -4321,8 +4134,8 @@ class LexVoicePlugin extends obsidian.Plugin {
       percent: 8,
       detail: `已读取 ${sources.length} 个文本来源，准备进入 AI 整理`,
     });
-    this.refreshOutlineView();
-    try { await this.openOutlineView(); } catch (e) { console.warn("[QnALog] open outline for text import failed", e); }
+    this.shell.refreshOutlineView();
+    try { await this.shell.openOutlineView(); } catch (e) { console.warn("[QnALog] open outline for text import failed", e); }
 
     session.segments = splitImportedTextIntoNormalSegments(sources);
 
@@ -4337,45 +4150,9 @@ class LexVoicePlugin extends obsidian.Plugin {
       await this.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
     }
 
-    this.refreshOutlineView();
+    this.shell.refreshOutlineView();
     new obsidian.Notice(`开始整理 ${sources.length} 份文本：使用 AI 整理服务，不调用语音转写服务。`);
     await this.finalizeSession(session);
-  }
-
-  async openSessionNote() {
-    const mdPath = this.session && this.session.mdPath;
-    if (!mdPath) { await this.openRecentNote(); return; }
-    const file = this.app.vault.getAbstractFileByPath(mdPath);
-    if (!(file instanceof obsidian.TFile)) { new obsidian.Notice("当前录音笔记尚未生成"); return; }
-    const leaf = this.app.workspace.getLeaf(false);
-    await leaf.openFile(file);
-    try {
-      const view = leaf.view;
-      const editor = view && view.editor;
-      if (editor) {
-        const content = editor.getValue();
-        const marker = this.session && this.session.id ? `<!-- lexvoice-segments-end:${this.session.id} -->` : "<!-- lexvoice-segments-end -->";
-        const idx = content.lastIndexOf(marker);
-        if (idx >= 0) {
-          const line = content.slice(0, idx).split("\n").length - 1;
-          editor.setCursor({ line: Math.max(0, line - 1), ch: 0 });
-          editor.scrollIntoView({ from: { line, ch: 0 }, to: { line, ch: 0 } }, true);
-        } else {
-          const lastLine = editor.lastLine();
-          editor.setCursor({ line: lastLine, ch: 0 });
-          editor.scrollIntoView({ from: { line: lastLine, ch: 0 }, to: { line: lastLine, ch: 0 } }, true);
-        }
-      }
-    } catch { /* intentionally empty */ }
-  }
-
-  async openRecentNote() {
-    const recent = getRecentNotes(this, 1);
-    if (!recent.length || !(recent[0].file instanceof obsidian.TFile)) {
-      new obsidian.Notice("最近没有录音笔记");
-      return;
-    }
-    await this.app.workspace.getLeaf(false).openFile(recent[0].file);
   }}
 
 // 电脑音频捕获安装/配置向导 Modal —— 分平台引导
