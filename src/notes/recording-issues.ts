@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：录音问题分类与运行模式归一
 
 import * as obsidian from "obsidian";
@@ -16,6 +15,7 @@ import { DashScopeStreamingClient, OpenAIRealtimeTranscriptionClient, OpenAIReal
 import { getErrorMessage } from "../shared/util-common";
 
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, speakerLabelForChannel } from "../audio/channel-speakers";
+import type { SpeakerId } from "../audio/channel-speakers";
 
 export function knowledgeExtractionRecordForFile(file) {
   return {
@@ -229,7 +229,7 @@ export function resolveKnownSpeakerLabels(transcript, frontmatter) {
   let ids = extractSpeakerIdsFromMarkdown(String(transcript || ""));
   const raw = frontmatter && typeof frontmatter === "object" ? frontmatter.lexvoice_speakers : null;
   if (!ids.length && raw && typeof raw === "object") {
-    ids = Object.keys(raw).filter(id => /^spk-\d+$/.test(id));
+    ids = Object.keys(raw).filter((id): id is SpeakerId => /^spk-\d+$/.test(id));
   }
   if (!ids.length) return [];
   const mappings = normalizeSpeakerMappings(raw || {}, ids);

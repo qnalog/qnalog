@@ -785,7 +785,7 @@ export async function callLlmWithMeta(plugin, system, user, options) {
   return { text, finishReason: extractLlmFinishReason(data), usage };
 }
 
-export async function callLlm(plugin, system, user, options) {
+export async function callLlm(plugin, system, user, options = null) {
   const { text } = await callLlmWithMeta(plugin, system, user, options);
   return text;
 }

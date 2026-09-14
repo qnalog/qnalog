@@ -77,6 +77,7 @@ import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
+import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
 class LexVoicePlugin extends obsidian.Plugin {
   declare settings: LexVoiceSettings;
   /** 安装时写入的构建信息；通过 Obsidian/BRAT 安装的正式发布没有这个文件。 */
@@ -131,6 +132,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.migrations = new MigrationService(this);
     this.vocabulary = new VocabularyService(this);
     this.profiles = new TranscribeProfileService(this);
+    this.semanticCanvas = new SemanticCanvasService(this);
     await this.loadAll();
     await this.loadBuildInfo();
     this.updateService = new UpdateService({

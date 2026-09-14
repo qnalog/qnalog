@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
-// @ts-nocheck — 报告渲染层：动态 model 对象密集；已用 tsc 确认无漏引用(TS2304=0)，余者皆动态对象属性与可选参数类型噪音，故与 main.ts 同档跳过。
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import { extractJsonObject } from '../shared/util-json';
 import { escapeHtmlText } from '../shared/util-markdown';
@@ -176,10 +175,11 @@ export function normalizeReportArray(value, limit) {
   return arr.map(v => String(v || "").trim()).filter(Boolean).slice(0, limit || 12);
 }
 
+/** 按 fields 列表把任意输入整理成字符串字段对象；空对象被过滤掉。用于 LLM 返回的非结构化数组。 */
 export function normalizeReportObjects(value, fields, limit) {
   const arr = Array.isArray(value) ? value : [];
   return arr.map(item => {
-    const obj = {};
+    const obj: Record<string, string> = {};
     for (const field of fields) obj[field] = String((item && item[field]) || "").trim();
     return obj;
   }).filter(obj => Object.values(obj).some(Boolean)).slice(0, limit || 12);

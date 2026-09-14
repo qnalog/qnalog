@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记索引与当日概要：索引刷新、当日日记概要与沉淀自动提取
 
 import * as obsidian from "obsidian";
@@ -22,6 +21,14 @@ export interface NoteIndexHost {
   settings: LexVoiceSettings;
 }
 
+/** 刷新纪要索引时可选的补充信息；调用方在少数场景才提供，两者都缺省为空串。 */
+export interface RefreshNoteIndexOptions {
+  /** 纪要的会议日期，写入索引块。 */
+  meetingDate?: string;
+  /** 触发原因，仅用于诊断日志。 */
+  reason?: string;
+}
+
 export class NoteIndexService {
   declare host: NoteIndexHost;
   constructor(host) {
@@ -29,7 +36,7 @@ export class NoteIndexService {
   }
 
 
-  async refreshLexVoiceNoteIndex(fileOrPath, options = {}) {
+  async refreshLexVoiceNoteIndex(fileOrPath, options: RefreshNoteIndexOptions = {}) {
     const file = typeof fileOrPath === "string"
       ? this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(fileOrPath))
       : fileOrPath;
@@ -51,7 +58,7 @@ export class NoteIndexService {
     );
   }
 
-  async refreshLexVoiceNoteIndexSafely(fileOrPath, options = {}) {
+  async refreshLexVoiceNoteIndexSafely(fileOrPath, options: RefreshNoteIndexOptions = {}) {
     try {
       return await this.refreshLexVoiceNoteIndex(fileOrPath, options);
     } catch (error) {

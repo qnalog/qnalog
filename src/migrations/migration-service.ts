@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// @ts-nocheck
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：历史数据迁移与清理：旧版笔记属性补全、默认目录迁移、空白短录音清理
 
 import * as obsidian from "obsidian";
@@ -68,7 +67,7 @@ export class MigrationService {
         const duration = durationMatch ? durationMatch[1] : "";
         const topic = inferTopicFromFilename(file.name);
 
-        const fmObj = { mode };
+        const fmObj: Record<string, string | string[]> = { mode };
         // 统一用 time（ISO datetime），不再写 日期；从文件名日期 + ctime 兜底推断，保证非空、跨模式一致。
         const tval = formatYamlDateTime(inferLexVoiceNoteStartedAtIso(file, date ? { "日期": date } : {}));
         if (tval) fmObj.time = tval;
@@ -204,7 +203,8 @@ export class MigrationService {
     const beforeQueue = this.host.queue.tasks.length;
     this.host.queue.tasks = this.host.queue.tasks.filter((task) => {
       const mdPath = task.mdPath ? obsidian.normalizePath(task.mdPath) : "";
-      const audioPath = task.audioPath ? obsidian.normalizePath(task.audioPath) : "";
+      // audioPath 只存在于 transcribe 任务；其余任务没有音频可删，按空串处理（与原先读 undefined 的结果一致）。
+      const audioPath = "audioPath" in task && task.audioPath ? obsidian.normalizePath(task.audioPath) : "";
       return !deletedNotePaths.has(mdPath) && !deletedAudioPaths.has(audioPath);
     });
     const queueRemoved = beforeQueue - this.host.queue.tasks.length;

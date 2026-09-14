@@ -15,7 +15,7 @@ const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "migrations", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
   "library", "shell", "recording", "sessionFinalize", "imports", "externalInbox", "repolish",
-  "inbox", "knowledgeExtraction", "recorder", "queue", "bubble",
+  "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas",
 ];
 
 const noop = () => undefined;

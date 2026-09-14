@@ -6,10 +6,6 @@ import type LexVoicePlugin from "../main";
 import * as obsidian from "obsidian";
 import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
 
-import { buildSemanticBranchExpansionPrompt, buildSemanticCanvasDocument, buildSemanticOutlinePrompt, extractSemanticSourceSections, getSemanticCanvasPath, getSemanticGenerationPolicy, normalizeJsonCanvasDocument, parseSemanticBranchExpansion, parseSemanticOutlineGraph, replaceSemanticBranch, semanticCanvasNeedsRelayout } from "../canvas/semantic-outline-canvas";
-
-import { inferSemanticCanvasSourcePath, parseSemanticCanvasSourcePath } from "../canvas/source-note";
-
 import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal } from "./modals";
 
 import { getRecentNoteProcessingState, lexvoiceConfirm, trashLexVoiceFile } from "./helpers";
@@ -19,8 +15,6 @@ import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries, getVisibleP
 import { isLexVoiceMobileRuntime } from "../shared/util-platform";
 
 import { getSegmentsDurationMs, parseElapsedMsToken } from "../shared/util-text";
-
-
 
 import { generatePeopleDirectorySuggestions, getPeopleSuggestionCacheKey, loadPeopleDirectory, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores, normalizePersonLookupText, peopleSuggestionIgnoreRecordToSuggestion, peopleSuggestionRecordToSuggestion, splitPersonFieldValue } from "../people";
 
@@ -46,7 +40,6 @@ import { escapeRegExp, formatElapsed, genId, primitiveText, sanitizeFilename } f
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-
 import { getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots } from "../recent-note-paths";
 
 import { getTaskErrorMessage } from "../shared/task-activity";
@@ -71,7 +64,6 @@ import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACK
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendLexVoiceAskEntry, buildLexVoiceAskContext } from "../notes/ask-panel";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
-
 
 // 会后整合 prompt（叙述式自然生长，v2）：整场转写 → 依据实际讨论生长出来的 Markdown 岗位画像。
 // 刻意不再用固定 14 格 JSON 表单填空——那会逼模型抠片段硬套、产出稀薄；14 维只作模型内部的"挖全了没"查漏清单。
@@ -118,10 +110,6 @@ export class OutlineView extends obsidian.ItemView {
     this.sedimentScanToken = 0;
     this.sedimentLastUndo = null;
     this.noteAskByPath = {};
-    this.semanticCanvasRunningPaths = new Set();
-    this.semanticCanvasProgressByPath = new Map();
-    this.activeCanvasSource = { canvasPath: "", sourcePath: "" };
-    this.activeCanvasSourceSeq = 0;
   }
   getViewType() { return VIEW_TYPE_OUTLINE; }
   getDisplayText() { return "QnALog 实时纪要"; }
@@ -130,13 +118,19 @@ export class OutlineView extends obsidian.ItemView {
     this.containerEl.children[1].empty();
     this._lastSig = "";
     this.render();
-    void this.syncActiveCanvasSourceNote();
+    void this.plugin.semanticCanvas.syncActiveCanvasSourceNote({
+      throttled: () => this.scheduleUpdate(),
+      forced: () => { this._lastSig = ""; this.scheduleUpdate(); },
+    });
     // 节流：recorder 每 500ms 滴答一次。只更新计时文本，结构不变时不重建 DOM。
     this.unsubscribeRecorder = this.plugin.recorder.on(() => this.scheduleUpdate());
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
       this.showRecentHome = true;
       this.idlePanelTab = "";
-      void this.syncActiveCanvasSourceNote();
+      void this.plugin.semanticCanvas.syncActiveCanvasSourceNote({
+      throttled: () => this.scheduleUpdate(),
+      forced: () => { this._lastSig = ""; this.scheduleUpdate(); },
+    });
     }));
     // 文件系统变化需要刷新最近纪要。create 在启动、同步和批量粘贴时可能密集触发，
     // 因此统一进入短延迟合并刷新；metadata changed 负责补上 frontmatter 尚未解析完成的情况。
@@ -262,7 +256,7 @@ export class OutlineView extends obsidian.ItemView {
       askState ? `${askState.running ? 1 : 0}:${askState.multiSelect ? 1 : 0}:${askState.question || ""}:${askState.error || ""}:${(askState.followups || []).join("|")}:${Array.isArray(askState.entries) ? askState.entries.map((e) => `${e.id}${e.expanded ? "1" : "0"}${e.written ? "1" : "0"}${e.selected ? "1" : "0"}`).join(",") : ""}` : "",
       activeNote ? activeNote.path : "",
       activeNote ? activeNote.stat.mtime : 0,
-      this.activeCanvasSource ? `${this.activeCanvasSource.canvasPath}:${this.activeCanvasSource.sourcePath}` : "",
+      this.plugin.semanticCanvas.getActiveCanvasSourceSignature(),
     ].join("|");
   }
   // 仅刷新计时和"x 段"等高频文本，避免重建按钮和重绘 Markdown
@@ -399,12 +393,8 @@ export class OutlineView extends obsidian.ItemView {
     const file = this.app.workspace.getActiveFile();
     if (!(file instanceof obsidian.TFile)) return null;
     if (file.extension === "canvas") {
-      const canvasPath = obsidian.normalizePath(file.path);
-      const sourcePath = this.activeCanvasSource && this.activeCanvasSource.canvasPath === canvasPath
-        ? obsidian.normalizePath(this.activeCanvasSource.sourcePath || "")
-        : "";
-      const sourceFile = sourcePath ? this.app.vault.getAbstractFileByPath(sourcePath) : null;
-      return sourceFile instanceof obsidian.TFile && sourceFile.extension === "md" ? sourceFile : null;
+      // Canvas → 来源纪要的解析由 SemanticCanvasService 负责（异步），这里只读它已解析出的结果。
+      return this.plugin.semanticCanvas.getCanvasSourceFileFor(file.path);
     }
     if (file.extension !== "md") return null;
     const mdFolder = obsidian.normalizePath(this.plugin.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
@@ -412,86 +402,6 @@ export class OutlineView extends obsidian.ItemView {
     if (path === mdFolder || path.startsWith(mdFolder + "/")) return file;
     const mode = this.plugin.noteWriter.detectModeFromMarkdown(file);
     return mode ? file : null;
-  }
-
-  async syncActiveCanvasSourceNote() {
-    const active = this.app.workspace.getActiveFile();
-    const sequence = ++this.activeCanvasSourceSeq;
-    if (!(active instanceof obsidian.TFile) || active.extension !== "canvas") {
-      this.activeCanvasSource = { canvasPath: "", sourcePath: "" };
-      this.scheduleUpdate();
-      return;
-    }
-    const canvasPath = obsidian.normalizePath(active.path);
-    this.activeCanvasSource = { canvasPath, sourcePath: "" };
-    this.scheduleUpdate();
-    let sourcePath = "";
-    try {
-      sourcePath = parseSemanticCanvasSourcePath(await this.app.vault.cachedRead(active), canvasPath);
-    } catch (error) {
-      console.warn("[QnALog] read semantic canvas source failed", error);
-    }
-    if (sequence !== this.activeCanvasSourceSeq) return;
-    const current = this.app.workspace.getActiveFile();
-    if (!(current instanceof obsidian.TFile) || obsidian.normalizePath(current.path) !== canvasPath) return;
-    let sourceFile = sourcePath ? this.app.vault.getAbstractFileByPath(obsidian.normalizePath(sourcePath)) : null;
-    if (!(sourceFile instanceof obsidian.TFile)) {
-      const inferredPath = inferSemanticCanvasSourcePath(canvasPath);
-      sourceFile = inferredPath ? this.app.vault.getAbstractFileByPath(obsidian.normalizePath(inferredPath)) : null;
-    }
-    this.activeCanvasSource = {
-      canvasPath,
-      sourcePath: sourceFile instanceof obsidian.TFile && sourceFile.extension === "md" ? sourceFile.path : "",
-    };
-    if (sourceFile instanceof obsidian.TFile && sourceFile.extension === "md") {
-      await this.migrateSemanticCanvasLayoutIfNeeded(active, sourceFile);
-    }
-    this._lastSig = "";
-    this.scheduleUpdate();
-  }
-
-  async migrateSemanticCanvasLayoutIfNeeded(canvasFile, sourceFile) {
-    if (!(canvasFile instanceof obsidian.TFile) || !(sourceFile instanceof obsidian.TFile)) return false;
-    if (this.semanticCanvasRunningPaths.has(sourceFile.path)) return false;
-    let existing;
-    try {
-      existing = normalizeJsonCanvasDocument(JSON.parse(await this.app.vault.cachedRead(canvasFile)));
-    } catch (error) {
-      console.warn("[QnALog] inspect semantic canvas layout failed", error);
-      return false;
-    }
-    if (!existing?.lexvoiceSemantic?.graph || !semanticCanvasNeedsRelayout(existing)) return false;
-
-    this.semanticCanvasRunningPaths.add(sourceFile.path);
-    try {
-      const sourceMarkdown = await this.app.vault.cachedRead(sourceFile);
-      const sourceSections = extractSemanticSourceSections(sourceMarkdown);
-      const document = buildSemanticCanvasDocument(existing.lexvoiceSemantic.graph, {
-        sourcePath: sourceFile.path,
-        sourceTitle: sourceFile.basename,
-        sourceSections,
-        existing,
-        policy: existing.lexvoiceSemantic.policy || getSemanticGenerationPolicy(sourceSections),
-        forceRelayout: true,
-        layoutMode: existing.lexvoiceSemantic.layoutMode || "adaptive",
-      });
-      await this.app.vault.modify(canvasFile, `${JSON.stringify(document, null, 2)}\n`);
-      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_layout_migrated", "旧版语义 Canvas 已更新排版", {
-        sourcePath: sourceFile.path,
-        canvasPath: canvasFile.path,
-      });
-      return true;
-    } catch (error) {
-      console.warn("[QnALog] migrate semantic canvas layout failed", error);
-      await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_layout_migration_failed", "旧版语义 Canvas 排版更新失败", {
-        sourcePath: sourceFile.path,
-        canvasPath: canvasFile.path,
-        error: diagnosticError(error),
-      });
-      return false;
-    } finally {
-      this.semanticCanvasRunningPaths.delete(sourceFile.path);
-    }
   }
 
   getCompletedNotePanelData(file) {
@@ -3544,8 +3454,8 @@ export class OutlineView extends obsidian.ItemView {
     if (!(file instanceof obsidian.TFile)) return null;
     const nodes = parseRealtimeOutlineStateFromMarkdown(outlineMarkdown);
     if (!nodes.length) return null;
-    const running = this.semanticCanvasRunningPaths.has(file.path);
-    const progress = this.semanticCanvasProgressByPath.get(file.path);
+    const running = this.plugin.semanticCanvas.runningPaths.has(file.path);
+    const progress = this.plugin.semanticCanvas.progressByPath.get(file.path);
     const idleLabel = "打开或更新语义 Canvas";
     const activeLabel = progress && progress.label ? progress.label : "正在生成语义 Canvas";
     const button = parent.createEl("button", {
@@ -3562,33 +3472,15 @@ export class OutlineView extends obsidian.ItemView {
     return button;
   }
 
-  async readSemanticCanvas(sourceFile) {
-    const canvasPath = obsidian.normalizePath(getSemanticCanvasPath(sourceFile.path));
-    const canvasFile = this.app.vault.getAbstractFileByPath(canvasPath);
-    if (!(canvasFile instanceof obsidian.TFile)) return { canvasPath, canvasFile: null, existing: null };
-    try {
-      const existing = normalizeJsonCanvasDocument(JSON.parse(await this.app.vault.read(canvasFile)));
-      return { canvasPath, canvasFile, existing };
-    } catch {
-      return { canvasPath, canvasFile, existing: null };
-    }
-  }
-
-  async openSemanticSourceSection(sourceFile, sourceSectionId) {
-    const markdown = await this.app.vault.cachedRead(sourceFile);
-    const section = extractSemanticSourceSections(markdown).find((item) => item.id === sourceSectionId);
-    if (!section) {
-      await this.app.workspace.getLeaf(false).openFile(sourceFile);
-      return;
-    }
-    await this.app.workspace.openLinkText(`${sourceFile.path}#${section.heading}`, sourceFile.path, false);
-  }
-
   async showSemanticCanvasMenu(event, sourceFile, outlineMarkdown) {
-    if (!(sourceFile instanceof obsidian.TFile) || this.semanticCanvasRunningPaths.has(sourceFile.path)) return;
-    const state = await this.readSemanticCanvas(sourceFile);
+    const canvas = this.plugin.semanticCanvas;
+    const generate = (options) => void canvas.generateSemanticCanvas(sourceFile, outlineMarkdown, options, {
+      immediate: () => this.render(),
+    });
+    if (!(sourceFile instanceof obsidian.TFile) || canvas.runningPaths.has(sourceFile.path)) return;
+    const state = await canvas.readSemanticCanvas(sourceFile);
     if (!(state.canvasFile instanceof obsidian.TFile)) {
-      await this.generateSemanticCanvas(sourceFile, outlineMarkdown, { mode: "full" });
+      generate({ mode: "full" });
       return;
     }
     if (!state.existing) {
@@ -3603,204 +3495,40 @@ export class OutlineView extends obsidian.ItemView {
     menu.addItem((item) => item
       .setTitle("更新整张语义图")
       .setIcon("refresh-cw")
-      .onClick(() => void this.generateSemanticCanvas(sourceFile, outlineMarkdown, { mode: "full" })));
+      .onClick(() => generate({ mode: "full" })));
     if (state.existing.lexvoiceSemantic?.graph) {
       menu.addItem((item) => item
         .setTitle("自适应排版")
         .setIcon("layout-dashboard")
-        .onClick(() => void this.generateSemanticCanvas(sourceFile, outlineMarkdown, { mode: "layout", layoutMode: "adaptive" })));
+        .onClick(() => generate({ mode: "layout", layoutMode: "adaptive" })));
       menu.addItem((item) => item
         .setTitle("左右展开")
         .setIcon("columns-3")
-        .onClick(() => void this.generateSemanticCanvas(sourceFile, outlineMarkdown, { mode: "layout", layoutMode: "bilateral" })));
+        .onClick(() => generate({ mode: "layout", layoutMode: "bilateral" })));
       menu.addItem((item) => item
         .setTitle("向右展开")
         .setIcon("arrow-right")
-        .onClick(() => void this.generateSemanticCanvas(sourceFile, outlineMarkdown, { mode: "layout", layoutMode: "right" })));
+        .onClick(() => generate({ mode: "layout", layoutMode: "right" })));
       for (const branch of state.existing.lexvoiceSemantic.graph.branches.slice(0, 7)) {
         menu.addSeparator();
         menu.addItem((item) => item.setTitle(branch.title).setIsLabel(true));
         menu.addItem((item) => item
           .setTitle("更新这条主线")
           .setIcon("refresh-cw")
-          .onClick(() => void this.generateSemanticCanvas(sourceFile, outlineMarkdown, { mode: "branch", branchKey: branch.key })));
+          .onClick(() => generate({ mode: "branch", branchKey: branch.key })));
         menu.addItem((item) => item
           .setTitle("继续下钻")
           .setIcon("git-branch-plus")
-          .onClick(() => void this.generateSemanticCanvas(sourceFile, outlineMarkdown, { mode: "drill", branchKey: branch.key })));
+          .onClick(() => generate({ mode: "drill", branchKey: branch.key })));
         if (branch.sourceSections && branch.sourceSections[0]) {
           menu.addItem((item) => item
             .setTitle("定位原文")
             .setIcon("text-search")
-            .onClick(() => void this.openSemanticSourceSection(sourceFile, branch.sourceSections[0])));
+            .onClick(() => void canvas.openSemanticSourceSection(sourceFile, branch.sourceSections[0])));
         }
       }
     }
     this.showLexVoiceMenuAtMouse(menu, event, "lexvoice-semantic-canvas-menu");
-  }
-
-  async generateSemanticCanvas(sourceFile, outlineMarkdown, options = { mode: "full" }) {
-    if (!(sourceFile instanceof obsidian.TFile) || this.semanticCanvasRunningPaths.has(sourceFile.path)) return;
-    const outlineNodes = parseRealtimeOutlineStateFromMarkdown(outlineMarkdown);
-    if (options.mode === "full" && outlineNodes.length < 2) {
-      new obsidian.Notice("当前大纲内容太少，暂时无法生成语义图。", 5000);
-      return;
-    }
-    const llmIssue = options.mode !== "layout" ? getLlmConfigIssue(this.plugin.settings) : null;
-    if (llmIssue) {
-      new obsidian.Notice(`生成语义图前需要先完成大模型配置：${formatLlmConfigIssue(llmIssue)}`, 9000);
-      return;
-    }
-
-    this.semanticCanvasRunningPaths.add(sourceFile.path);
-    this.semanticCanvasProgressByPath.set(sourceFile.path, { label: "正在读取纪要", phase: "prepare", current: 0, total: 1 });
-    this.render();
-    const progressNotice = new obsidian.Notice("正在读取纪要…", 300000);
-    const updateProgress = async (phase, label, current = 0, total = 1) => {
-      this.semanticCanvasProgressByPath.set(sourceFile.path, { phase, label, current, total });
-      progressNotice.setMessage(total > 1 ? `${label}（${current}/${total}）` : label);
-      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_phase", label, {
-        sourcePath: sourceFile.path,
-        phase,
-        current,
-        total,
-        mode: options.mode,
-        branchKey: options.branchKey || "",
-      });
-    };
-    try {
-      const sourceMarkdown = await this.app.vault.cachedRead(sourceFile);
-      const sourceSections = extractSemanticSourceSections(sourceMarkdown);
-      const policy = getSemanticGenerationPolicy(sourceSections);
-      const state = await this.readSemanticCanvas(sourceFile);
-      if (state.canvasFile && !state.existing) throw new Error("已有语义 Canvas 文件无法解析，请先检查文件内容");
-      let graph = state.existing?.lexvoiceSemantic?.graph || null;
-
-      if (options.mode === "full") {
-        await updateProgress("overview", "正在提取中心命题与内容主线");
-        const prompt = buildSemanticOutlinePrompt(sourceFile.basename, outlineNodes, sourceSections, policy);
-        const raw = await callLlm(this.plugin, prompt.system, prompt.user, {
-          timeoutMs: 150000,
-          payload: { max_tokens: Math.min(7600, 2800 + policy.maxNodes * 90) },
-          priority: "user",
-          thinkingMode: "fast",
-        });
-        graph = parseSemanticOutlineGraph(raw, outlineNodes, sourceSections, policy);
-        if (!graph) throw new Error("模型没有返回可用的语义关系结构");
-        if (policy.expandBranches) {
-          const overview = graph;
-          for (const [index, branch] of overview.branches.entries()) {
-            await updateProgress("expand", `正在展开主线：${branch.title}`, index + 1, overview.branches.length);
-            try {
-              const branchPrompt = buildSemanticBranchExpansionPrompt(
-                sourceFile.basename,
-                branch,
-                sourceSections,
-                outlineNodes,
-                policy,
-              );
-              const branchRaw = await callLlm(this.plugin, branchPrompt.system, branchPrompt.user, {
-                timeoutMs: 150000,
-                payload: { max_tokens: Math.min(6200, 2200 + policy.branchNodeBudget * 260) },
-                priority: "user",
-                thinkingMode: "fast",
-              });
-              const expanded = parseSemanticBranchExpansion(branchRaw, branch, outlineNodes, sourceSections, policy);
-              if (expanded) graph = replaceSemanticBranch(graph, branch.key, expanded);
-              else await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_invalid", "主线展开结果无法解析，已保留概览结构", {
-                sourcePath: sourceFile.path,
-                branchKey: branch.key,
-              });
-            } catch (branchError) {
-              await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_failed", "主线展开失败，已保留概览结构", {
-                sourcePath: sourceFile.path,
-                branchKey: branch.key,
-                error: diagnosticError(branchError),
-              });
-            }
-          }
-        }
-      } else if (options.mode === "branch" || options.mode === "drill") {
-        if (!graph) throw new Error("现有语义图缺少可更新的结构数据，请先更新整张语义图");
-        const branch = graph.branches.find((item) => item.key === options.branchKey);
-        if (!branch) throw new Error("找不到需要更新的内容主线");
-        await updateProgress(options.mode, options.mode === "drill" ? `正在继续下钻：${branch.title}` : `正在更新主线：${branch.title}`);
-        const branchPrompt = buildSemanticBranchExpansionPrompt(
-          sourceFile.basename,
-          branch,
-          sourceSections,
-          outlineNodes,
-          policy,
-          options.mode === "drill",
-        );
-        const branchRaw = await callLlm(this.plugin, branchPrompt.system, branchPrompt.user, {
-          timeoutMs: 150000,
-          payload: { max_tokens: Math.min(6800, 2400 + policy.branchNodeBudget * 290) },
-          priority: "user",
-          thinkingMode: "fast",
-        });
-        const replacement = parseSemanticBranchExpansion(branchRaw, branch, outlineNodes, sourceSections, policy);
-        if (!replacement) throw new Error("模型没有返回可用的主线结构");
-        graph = replaceSemanticBranch(graph, branch.key, replacement);
-      } else if (options.mode === "layout") {
-        if (!graph) throw new Error("现有语义图缺少结构数据，无法重新排版");
-        await updateProgress("layout", "正在重新排版");
-      }
-      if (!graph) throw new Error("没有可写入的语义结构");
-
-      await updateProgress("write", "正在写入语义 Canvas");
-      const document = buildSemanticCanvasDocument(graph, {
-        sourcePath: sourceFile.path,
-        sourceTitle: sourceFile.basename,
-        sourceSections,
-        existing: state.existing,
-        policy,
-        forceRelayout: options.mode === "layout",
-        layoutMode: options.layoutMode || state.existing?.lexvoiceSemantic?.layoutMode || "adaptive",
-      });
-      const content = `${JSON.stringify(document, null, 2)}\n`;
-      let canvasFile = state.canvasFile;
-      if (canvasFile instanceof obsidian.TFile) {
-        await this.app.vault.modify(canvasFile, content);
-      } else {
-        try {
-          canvasFile = await this.app.vault.create(state.canvasPath, content);
-        } catch (error) {
-          const raced = this.app.vault.getAbstractFileByPath(state.canvasPath);
-          if (!(raced instanceof obsidian.TFile)) throw error;
-          canvasFile = raced;
-          await this.app.vault.modify(canvasFile, content);
-        }
-      }
-      await this.plugin.diagnostics.logDiagnostic("info", "canvas.semantic_generated", "语义 Canvas 已生成", {
-        sourcePath: sourceFile.path,
-        canvasPath: state.canvasPath,
-        mode: options.mode,
-        outlineNodeCount: outlineNodes.length,
-        sourceSectionCount: sourceSections.length,
-        branchCount: graph.branches.length,
-        semanticNodeCount: (() => {
-          const count = (nodes) => nodes.reduce((total, node) => total + 1 + count(node.children || []), 0);
-          return count(graph.branches);
-        })(),
-      });
-      await this.plugin.noteIndex.refreshLexVoiceNoteIndexSafely(sourceFile, { reason: "semantic-canvas" });
-      if (canvasFile instanceof obsidian.TFile) await this.app.workspace.getLeaf(true).openFile(canvasFile);
-      progressNotice.hide();
-      new obsidian.Notice(options.mode === "layout" ? "语义 Canvas 已重新排版。" : "语义 Canvas 已更新。", 4000);
-    } catch (error) {
-      console.error("[QnALog] generate semantic canvas failed", error);
-      await this.plugin.diagnostics.logDiagnostic("warn", "canvas.semantic_failed", "语义 Canvas 生成失败", {
-        sourcePath: sourceFile.path,
-        error: diagnosticError(error),
-      });
-      progressNotice.hide();
-      new obsidian.Notice(`语义 Canvas 生成失败：${(error && error.message) || error}`, 9000);
-    } finally {
-      this.semanticCanvasRunningPaths.delete(sourceFile.path);
-      this.semanticCanvasProgressByPath.delete(sourceFile.path);
-      this.render();
-    }
   }
 
   renderCompletedNote(root, file) {
@@ -5210,9 +4938,6 @@ export class OutlineView extends obsidian.ItemView {
     return true;
   }
 
-
-
-
   // 行首语义标记：模型用 emoji 标出条目类型（如 ❓提问 / 💬回答）。
   // emoji 不显示——这里把行首 emoji 剥掉，改成对应 Lucide 图标 + 类型 class（颜色由 CSS 控）。
   // 返回去掉标记后的文本。emoji 仍保留在底层状态/文本里作为语义信号，只是不直接显示。
@@ -5235,7 +4960,6 @@ export class OutlineView extends obsidian.ItemView {
     }
     return s;
   }
-
 
   enhanceRenderedOutline(body, opts) {
     if (!body) return;
