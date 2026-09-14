@@ -261,7 +261,14 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 | `npm run check:undefined-symbols` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
 | `npm run check:domain-boundaries` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`plugin.<域>.<成员>`、`this.host.<域>.<成员>`（后者以服务类为准，接口里手抄的内联类型不作为依据） |
 | `npm run check:plugin-onload` | 域服务漏装或宿主装错：在模拟宿主里加载 `main.js` 跑 `onload`/`onunload`，确认每个服务已装配、方法可用，且 `service.host` 是插件实例本身 |
+| `npm run check:merge-pipeline` | 会话收尾到合并整理的目标链路跑不通：在模拟宿主里用桩模型真跑一遍，确认整合正文与原始转写都写进笔记 |
 | `npm run typecheck:core` + `tsc -noEmit` | 严格核心集与其余文件的类型错误 |
+
+`check:merge-pipeline` 的来源：域服务把自身 `this` 传给 `mergeAndPolish` 后，流水线读
+`plugin.settings.briefingStructureLevel` 抛 `TypeError`，真机上表现为 `llm.merge_failed`、纪要无法整理。
+这处缺陷通过了 tsc、ESLint、既有契约测试与静态门禁——参数传错对象不会影响引用名，只有真的执行一次才暴露。
+因此把这条链路（收尾 → 合并整理 → 写笔记）做成运行检查：桩模型返回固定正文，断言整合正文与原始转写都在笔记里、
+frontmatter 仍有 `time`、运行期没有异常日志。
 
 `check:plugin-onload` 的来源：域服务由插件在 `onload` 里手工装配，漏装一个不会有任何编译期报错。
 实际发生过一次：`loadAll` 里的设置迁移依赖 migration 与 diagnostics 两个服务，而它们当时在 `loadAll`
