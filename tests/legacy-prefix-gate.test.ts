@@ -44,6 +44,14 @@ describe("旧前缀静态门禁", () => {
     expect(checkLegacyPrefixes({ "main.js": 'var x = "lex-20260101-120000"' })).toEqual([]);
   });
 
+  it("发版说明必须能写出旧前缀（否则说不清修了什么）", () => {
+    // 真实场景：1.0.1 的说明里要写「新录音的前缀仍是 lex-…，1.0.0 录下的文件仍可读取」
+    const notes = { ".github/release-notes/1.0.1.md": "新录音的前缀仍是 `lex-`，1.0.0 录下的 `lv-sed-` 仍可读取。" };
+    expect(checkLegacyPrefixes(notes)).toEqual([]);
+    // 但同一句若出现在源码里就必须拦
+    expect(checkLegacyPrefixes({ "src/x.ts": 'const p = "lex-";' }).length).toBe(1);
+  });
+
   it("报告里带文件与行号，能直接定位", () => {
     const found = checkLegacyPrefixes({ "src/x.ts": "line1\nconst a = 'lv-abc';\n" });
     expect(found[0]).toContain("src/x.ts:2");

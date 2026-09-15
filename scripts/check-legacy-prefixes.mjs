@@ -78,6 +78,13 @@ const LEGACY_PREFIX = /(?<![A-Za-z0-9_])((?:lexvoice|lvtask|lex|lvk|lv)-[a-z0-9-
 /** README / NOTICE / MAINTAINING 说明「与 LexVoice 的关系」时会提到它，属正当引用。 */
 const DOC_ALLOWLIST = /(^|\/)(README[^/]*\.md|NOTICE|MAINTAINING\.md|LICENSE|THIRD_PARTY_NOTICES\.md|AGENTS\.md|ARCHITECTURE\.md|PRIVACY\.md|SECURITY\.md|DESIGN_SPEC\.md)$/;
 
+/**
+ * 发版说明常常**必须**写出旧前缀才能说清修了什么（"新录音的前缀仍是 lex-…，
+ * 1.0.0 录下的文件仍可读取"）。那是面向人的叙述，不是代码里的漏改。
+ * 发版说明不参与构建，也不影响运行时行为，因此整目录放行。
+ */
+const RELEASE_NOTES_ALLOWLIST = /^\.github\/release-notes\//;
+
 function collectFiles(root) {
   const out = [];
   for (const dir of SCANNED_DIRS) {
@@ -117,6 +124,7 @@ export function checkLegacyPrefixes(files, { allowlist = ALLOWED, docAllowlist =
     if (allowed.has(file)) continue;
     if (docAllowlist.test(file)) continue;
     if (file === SELF_PATH) continue;
+    if (RELEASE_NOTES_ALLOWLIST.test(file)) continue;
     if (UPSTREAM_ID_FILES.has(file)) continue;
     if (COMPAT_TEST_FILES.has(file)) continue;
     // 产物是源码的重新打包，源码干净则产物必然干净；由源码侧报告问题更可定位。
