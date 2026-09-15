@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { DEFAULT_SETTINGS, DEFAULT_DAILY_MEETING_OVERVIEW_HEADING, DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE } from '../shared/defaults';
 import { genId } from '../shared/util-common';
-import { canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint } from '../shared/util-llm-endpoint';
+import { assertEndpointAllowed, canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint } from '../shared/util-llm-endpoint';
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
@@ -16,6 +16,7 @@ import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabulary
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
 import { QNALOG_UPDATE_REPO_URL, audioInputModeLabel, countKnowledgeExtractionHistory, enumerateAudioDevices, isVirtualCableLabel, qnalogConfirm, qnalogPromptText, normalizeAudioInputMode, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, trashVaultFileRef } from './helpers';
 import { PeopleHotwordsConsentModal, PromptTemplateModal, QueueModal, VirtualCableSetupModal } from './modals';
+import { createStreamingTranscriptionClient } from '../notes/recording-issues';
 import {
   MAX_SPEAKER_CHANNELS,
   buildMicrophoneAudioConstraints,
@@ -100,6 +101,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 最近一次检测结果，按服务标识索引；只存在内存里，不落盘。
     // 界面据此区分「未测试」与「已通过 / 未通过」。
     this._probeResults = Object.create(null);
+    // 快速配置面板是否可见。null 表示「还没判定」——由首次渲染按配置完整度决定。
+    // 已配好的用户点「快速配置」并确认覆盖后才会重新显示。
+    this._quickSetupVisible = null;
   }
   getVisibleSettingsTabs() {
     return LV_SETTINGS_TABS.slice();
@@ -327,27 +331,26 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       cls: "qnalog-home-summary",
       text: "录音、转写并整理为 Markdown 纪要。配置转写服务即可开始；需要结构化纪要、问一问和沉淀时，再配置 AI 整理服务。",
     });
+    // 首页只保留两个动作：快速配置、打开侧边栏。
+    // 「配置服务」「AI 整理设置」两条跳转已移除——分别跳到 API 页与 AI 整理页，
+    // 用户面对四个按钮无法判断该点哪个；细节调整都在各自页面里，不需要首页再开入口。
     const primary = head.createDiv({ cls: "qnalog-home-actions" });
-    const apiBtn = primary.createEl("button", { text: "配置服务" });
-    apiBtn.addClass("mod-cta");
-    apiBtn.onclick = () => jump("api");
-    // 首页只保留一个「推荐配置」入口：往下滚到「快速设置」填一把百炼 Key 即可完成。
-    // 此前这里另有一个写入硅基流动默认值的按钮，与「快速设置」指向不同服务——
-    // 两个入口各说一套，用户无法判断该信哪个。已合并为一条路径（见 MAINTAINING §10）。
-    const quickBtn = primary.createEl("button", { text: "使用推荐配置" });
-    quickBtn.onclick = () => {
-      const target = page.querySelector(".qnalog-home-onecard");
-      if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "center" });
-      new obsidian.Notice("在下方「快速设置」填写阿里云百炼 API Key，即可一次配好录音转写、音频导入与 AI 整理。", 8000);
-    };
-    const aiBtn = primary.createEl("button", { text: hasLlm ? "AI 整理设置" : "配置 AI 整理" });
-    aiBtn.onclick = () => jump(hasLlm ? "ai" : "api");
-    const panelBtn = primary.createEl("button", { text: "打开 Q&A Log 侧边栏" });
+    const quickBtn = primary.createEl("button", { text: "快速配置" });
+    quickBtn.addClass("mod-cta");
+    quickBtn.onclick = () => { void this.startQuickSetup(); };
+    const panelBtn = primary.createEl("button", { text: "打开侧边栏" });
     panelBtn.onclick = () => this.plugin.shell.openOutlineView();
 
-    // 快速配置：百炼分别选择导入音频 ASR 与 AI 整理模型。
-    // 首次配置的主入口：一把阿里云百炼 API Key，三段服务（录音转写 / 音频导入 / AI 整理）
-    // 一起配好。地址与模型全部内置，用户不需要看到、也不需要选择它们。
+    // 快速配置面板：一把阿里云百炼 API Key 配好三段服务（录音转写 / 音频导入 / AI 整理）。
+    // 地址与模型全部内置，用户不需要看到、也不需要选择它们。
+    //
+    // 面板只在两种情况下出现：① 还没配好（缺转写或 AI 整理）；② 用户点了「快速配置」并确认覆盖。
+    // 已经配好的用户不该在首页看到一块要他重新填密钥的面板。
+    if (!this._quickSetupVisible) {
+      const allReady = transcribeState !== "missing" && llmState !== "missing";
+      this._quickSetupVisible = !allReady;
+    }
+    if (this._quickSetupVisible) {
     const oneCard = page.createDiv({ cls: "qnalog-home-block qnalog-home-onecard" });
     oneCard.createEl("h3", { text: "快速设置" });
     oneCard.createDiv({
@@ -416,6 +419,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       cls: "qnalog-home-prep-desc",
       text: "其他服务（硅基流动、OpenAI、本地模型等）可在「API」页单独配置；上面这条路径只是把首次配置压到一步。",
     });
+
+    }
 
     const prep = page.createDiv({ cls: "qnalog-home-block" });
     prep.createEl("h3", { text: "使用准备" });
@@ -947,6 +952,37 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
 
   // 用一段 1 秒静音音频走完整转写链路，验证当前转写服务连通性。返回识别文本（可能为空字符串），失败抛错。
+  /**
+   * 「快速配置」按钮：已配好时先确认是否覆盖，再显示面板。
+   * 这样默认状态下面板不占位置，用户明确表示要重配时才出现。
+   */
+  async startQuickSetup() {
+    // 初次配置（面板本来就该显示）直接滚动过去，不弹确认。
+    if (this._quickSetupVisible) {
+      this.scrollToQuickSetup();
+      return;
+    }
+    const ok = await qnalogConfirm(
+      this.app,
+      "重新配置服务？",
+      "当前已有可用的转写与 AI 整理配置。继续会显示快速配置面板，"
+      + "用一把新的百炼 API Key 覆盖这三段服务的地址与模型；"
+      + "目录、提示词、录音设备等设置不会改动。",
+      "继续配置",
+    );
+    if (!ok) return;
+    this._quickSetupVisible = true;
+    this.renderSettings();
+    this.scrollToQuickSetup();
+  }
+
+  scrollToQuickSetup() {
+    const target = this.containerEl && typeof this.containerEl.find === "function"
+      ? this.containerEl.find(".qnalog-home-onecard")
+      : null;
+    if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "center" });
+  }
+
   /** 四态 → 展示用的类名。缺配置与未通过都算「需要处理」，措辞由 SETUP_STATE_LABELS 区分。 */
   stateClass(state) {
     if (state === "success") return "is-ready";
@@ -982,8 +1018,17 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
 
   // host 省略时用插件自身（保存的配置）；检测候选配置时由调用方传入只读宿主。
+  //
+  // 按服务的**实际传输方式**分流：流式服务（百炼实时转写、OpenAI Realtime）走
+  // WebSocket 握手，其余走 HTTP 上传。此前一律走 HTTP 路径，于是 wss:// 地址
+  // 被按 http 规则校验、报「协议不受支持」——那是误报，且掩盖了真实连通性。
   async runAsrConnectivityTest(host) {
     const target = host || this.plugin;
+    const providerId = target.settings.activeTranscribeProvider || "siliconflow";
+    const profile = this.getTranscribeProviderProfile(providerId, (target.settings.transcribeProviders || {})[providerId] || {});
+    if (profile && profile.transcribeMode === "streaming") {
+      return await this.runStreamingConnectivityTest(target, providerId, profile);
+    }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     try {
       const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -1001,6 +1046,28 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     } finally {
       try { await ctx.close(); } catch { /* intentionally empty */ }
     }
+  }
+
+  /**
+   * 流式服务的连通性检测：真的建一次 WebSocket 连接并通过鉴权（服务端在握手阶段校验密钥），
+   * 成功后立即关闭。不发送音频，因此不产生识别计费。
+   */
+  async runStreamingConnectivityTest(target, providerId, profile) {
+    const provider = (target.settings.transcribeProviders || {})[providerId] || {};
+    assertEndpointAllowed(provider.endpoint, `${profile.title || providerId} 服务地址`);
+    if (!provider.apiKey && !canOmitServiceApiKey(provider.endpoint)) {
+      throw new Error(`${profile.title || providerId} 访问密钥未配置`);
+    }
+    if (!provider.model) throw new Error(`${profile.title || providerId} 模型名称未配置`);
+    const client = createStreamingTranscriptionClient(profile, provider, {
+      onPartial: () => { /* 只验证握手，不接收文本 */ },
+      onError: () => { /* 结束后可能收到关闭事件，忽略 */ },
+      onClosed: () => { /* 同上 */ },
+    });
+    await client.connect();
+    // 握手（含鉴权）已通过即可判定连通；立刻结束，避免占用配额。
+    try { await client.finish(); } catch { /* 关闭失败不影响连通结论 */ }
+    return `已连通（${provider.model}）`;
   }
 
   // 依次测「转写 + 大模型」连通性，返回一行汇总文案。供 API 方案检测 / 首页快速配置检测共用。

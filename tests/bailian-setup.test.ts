@@ -10,6 +10,7 @@ import {
   formatDetectionReport,
   planPresetApplication,
   runPresetDetection,
+  setupServiceIssue,
   type ProbePorts,
 } from "../src/setup";
 
@@ -146,5 +147,35 @@ describe("百炼一站式配置", () => {
       signature: configSignature(view),
     });
     expect(state).toBe("failure");
+  });
+});
+
+describe("快速配置面板的显示规则", () => {
+  it("已配好（转写与 AI 整理都不缺）时不应再显示面板", () => {
+    // 面板可见性由「两端是否缺配置」决定，而不是由是否有密钥决定：
+    // 用户已经能用了，就不该在首页看到一块要他重新填密钥的面板。
+    const ready = empty();
+    ready.transcribeProviders.dashscope = {
+      name: "百炼", endpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+      apiKey: "sk-a", model: "qwen-audio-3.0-asr-flash-streaming", language: "",
+    };
+    ready.activeTranscribeProvider = "dashscope";
+    ready.llmEndpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    ready.llmModel = "qwen3.8-flash";
+    ready.llmApiKey = "sk-a";
+
+    const transcribeIssue = setupServiceIssue(buildServiceView(ready.transcribeProviders.dashscope, true));
+    const llmIssue = setupServiceIssue(buildServiceView({
+      endpoint: ready.llmEndpoint, model: ready.llmModel, apiKey: ready.llmApiKey,
+    }, true));
+    expect(transcribeIssue).toBe("");
+    expect(llmIssue).toBe("");
+  });
+
+  it("缺任一端时面板应当显示", () => {
+    const fresh = empty();
+    const transcribeIssue = setupServiceIssue(buildServiceView(fresh.transcribeProviders[fresh.activeTranscribeProvider], true));
+    // 全新安装没有任何密钥 → 缺配置 → 面板显示
+    expect(transcribeIssue).not.toBe("");
   });
 });
