@@ -1432,14 +1432,30 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       const profile = this.getTranscribeProviderProfile(id, providers[id] || {});
       return isImportCapableTranscribeProvider(profile, providers[id] || {});
     });
-    const activeId = supportedIds.includes(this.plugin.settings.importTranscribeProvider)
-      ? this.plugin.settings.importTranscribeProvider
-      : (supportedIds[0] || "dashscope-filetrans");
-    if (this.plugin.settings.importTranscribeProvider !== activeId) {
-      this.plugin.settings.importTranscribeProvider = activeId;
-    }
+    // 用户选的服务当前不可用时（被删掉、被改成不支持整文件转写的协议），
+    // 以前这里会**静默改写** importTranscribeProvider 并落盘——用户没做任何操作，
+    // 配置却变了，且失败点离他看到的界面很远。改为：只在内存里借用第一个可用项
+    // 渲染界面，设置保持用户原值，并在页面上说明原因与后果。
+    const savedImportProvider = this.plugin.settings.importTranscribeProvider;
+    const savedIsUsable = supportedIds.includes(savedImportProvider);
+    const activeId = savedIsUsable ? savedImportProvider : (supportedIds[0] || "dashscope-filetrans");
     const provider = providers[activeId] || {};
     const profile = this.getTranscribeProviderProfile(activeId, provider);
+
+    if (!savedIsUsable) {
+      const savedLabel = savedImportProvider
+        ? (providers[savedImportProvider]?.name || savedImportProvider)
+        : "（未设置）";
+      // 复用既有的风险提示样式，不新增 CSS 类。
+      const box = c.createEl("details", { cls: "qnalog-risk-notice" });
+      box.createEl("summary", { cls: "qnalog-risk-title", text: "导入服务不可用" });
+      box.createDiv({
+        cls: "qnalog-risk-body",
+        text: `你选择的导入服务「${savedLabel}」当前不可用（已删除，或所用协议不支持整文件转写）。`
+          + "下面显示的是可用的替代项，但你的设置未被改动——导入音频时仍会使用你原来选的这个并失败。"
+          + "请在上方重新选择一个服务；若确实要用原来那个，请把它的协议改回支持整文件转写后重试。",
+      });
+    }
 
     new obsidian.Setting(c).setName("转写服务")
       .setDesc("仅用于导入音频，不影响实时录音。")
