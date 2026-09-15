@@ -184,11 +184,11 @@ npm run build
 npm run install:vault -- "/path/to/your/vault"
 ```
 
-`install:vault` copies `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` into `<vault>/.obsidian/plugins/qnalog/`, snapshots anything it overwrites (including `data.json`) into `<vault>/.obsidian/qnalog-install-backups/<timestamp>/`, and adopts settings from an existing `lexvoice` or `lexvoice-mit` plugin folder on first install.
+`install:vault` copies `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` into `<vault>/.obsidian/plugins/qnalog/`, and snapshots anything it overwrites (including `data.json`) into `<vault>/.obsidian/qnalog-install-backups/<timestamp>/`. It only touches the `qnalog` folder: settings are never inherited from other plugins.
 
 Then reload Obsidian (`Ctrl/Cmd + R`) and enable **Q&A Log**.
 
-If the settings structure changed, the plugin reports the migration on first load: a notice plus a full table in the diagnostics log — which groups were dropped, which were kept, and what you need to re-select.
+If the stored settings were written by a different version, the plugin discards them on first load and starts from its defaults, with a notice. Configure paths and API keys again in **Settings → Q&A Log**.
 
 ### Rolling back
 

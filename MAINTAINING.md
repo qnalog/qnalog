@@ -279,14 +279,14 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 - `scripts/check-version-alignment.mjs` 会校验 `manifest.json` / `package.json` / `package-lock.json`（含根版本）/ `versions.json` 四处一致，不一致直接构建失败。
 - **必须发布 GitHub Release**：BRAT 与 Obsidian 社区目录都以 Release 资产为安装源，且要求 tag、release 名与 manifest 版本一致。资产为 `main.js`、`manifest.json`、`styles.css`。
 - `main.js` 必须入库且与源码同一次提交：运行时会用注入的 `QNALOG_BUILD_VERSION` 与磁盘 `manifest.json` 比对，版本错位会在设置页提示。
-- 若改动触及设置结构（`SETTINGS_SCHEMA_VERSION`）：必须同步更新 `src/shared/settings-migration-report.ts` 里 `DROPPED_GROUP_ACTIONS` / `KEPT_GROUP_NOTES` 的说明，并用一份真实的旧版 `data.json` 跑一遍迁移报告。
+- 若改动触及设置结构（`SETTINGS_SCHEMA_VERSION`）：改动那个常量即可，**不要**为旧格式补逐键迁移。版本不一致时插件整份丢弃磁盘设置、按默认值重建（`src/shared/settings-schema.ts`），并弹通知。改动后要用一份真实的旧版 `data.json` 验一遍这条路径。
 - 发版说明必须写明对用户的影响：设置结构是否变化、是否需要重新指定服务绑定、是否有功能删减。
 
-### 4.3 安装、回滚与迁移报告
+### 4.3 安装与回滚
 
 - `npm run install:vault -- "<知识库>"`：安装/更新到知识库。覆盖前把目标插件目录**整份**留档到 `<知识库>/.obsidian/qnalog-install-backups/<时间戳>/`；2026-09-15 起不再从 `lexvoice` / `lexvoice-mit` 目录继承设置（本插件按独立产品维护）。检测到上游插件目录时只提示存在，不读取、不移动、不删除其内容。
 - `npm run restore:vault -- "<备份目录>" ["<知识库>"] [--set-enabled]`：从备份还原。动手前再把当前目录另存一份（`<时间戳>-before-restore/`），所以回滚本身可撤销。
-- 迁移报告：首次加载发现设置结构变化时输出"被丢弃的分组 / 保留的分组 / 需要处理的事项"（通知 + 诊断日志 + console）。**不要**把这段逻辑退回成静默丢弃。
+- 设置结构不一致时：`loadAll` 丢弃磁盘上的设置与持久化队列，按默认值重建，弹通知并在诊断日志里记一条（`settings.schema_reset`）。**不要**把这段逻辑退回成静默沿用旧值。
 
 ### 4.3.1 合并前置：维护者本地验证
 
@@ -423,7 +423,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 - **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
   用户已有的招聘/晋升笔记会留在原处，只是不再有对应入口；`data.json` 里残留的 `recruiting` /
-  `promotionReview` 分组不再被读取，首次加载会通过迁移报告告知（§4.2）。
+  `promotionReview` 分组不再被读取。这类残留分组随版本不一致的设置一起被丢弃，不再单独报告。
 - **统一使用 Q&A Log 命名空间**（标签、标记、frontmatter 键、视图类型）：命名空间已于 2026-09-15 重置，
   读写都只认新值（见 §1.1.2）。插件不扫描、不改写用户的既有笔记。
 - **读旧笔记必须安全降级。** 旧笔记的 frontmatter 里可能仍是 `mode: recruit`，未知 mode 一律按
