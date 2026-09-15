@@ -462,3 +462,82 @@ export function formatDetectionReport(report: DetectionReport): string {
     .map((stage) => `${stage.label} ${stage.ok ? "✓" : "✗"}${stage.ok ? `（${stage.detail}）` : `：${stage.detail}`}`)
     .join("　|　");
 }
+
+/**
+ * 「程序状态」展示用的汇总数据。
+ *
+ * 与「使用准备」的区别：那份是**待办清单**（还有什么没配、去哪配），
+ * 这份是**现状陈述**（现在跑的是什么、能不能直接用）。用户打开设置页最常见的
+ * 问题是「我现在能用了吗、在用哪个模型」，所以默认要能一眼看到答案。
+ */
+export interface SetupStatusLine {
+  /** 这一行讲的是哪一项。 */
+  label: string;
+  /** 具体内容；缺配置时为可行动的说明，而不是空白。 */
+  value: string;
+  /** 是否需要用户处理；true 时界面用提醒色。 */
+  needsAttention: boolean;
+}
+
+export interface SetupStatusReport {
+  /** 整体是否已经可以正常使用（转写与 AI 整理都不缺）。 */
+  ready: boolean;
+  /** 给用户看的一句话结论。 */
+  headline: string;
+  /** 整体状态的一句话补充；ready 时说明无需再做什么。 */
+  detail: string;
+  /** 逐项明细。 */
+  lines: SetupStatusLine[];
+}
+
+export interface SetupStatusInput {
+  /** 语音转写：provider 与其模型标识。 */
+  transcribe: { label: string; model: string; issue: string };
+  /** AI 整理：模型标识。 */
+  llm: { model: string; issue: string };
+  /** 说话人识别：用于导入音频的服务与其模型。 */
+  speaker: { label: string; model: string; issue: string };
+  /** 音频输入的一句话描述（例如「仅麦克风」）。 */
+  audio: string;
+}
+
+/**
+ * 汇总当前配置状态。
+ *
+ * 判据只用「是否缺配置」：填全了就算可用——测试结果属于 §10.3 的四态，
+ * 由各服务自己的徽章承担，不混进这份总览（否则每次改一个字符都会让总览翻脸）。
+ */
+export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
+  const lines: SetupStatusLine[] = [
+    {
+      label: "语音转写",
+      value: input.transcribe.issue || `${input.transcribe.label} · ${input.transcribe.model}`,
+      needsAttention: !!input.transcribe.issue,
+    },
+    {
+      label: "AI 整理",
+      value: input.llm.issue || input.llm.model,
+      needsAttention: !!input.llm.issue,
+    },
+    {
+      label: "说话人识别",
+      value: input.speaker.issue || `${input.speaker.label} · ${input.speaker.model}`,
+      needsAttention: !!input.speaker.issue,
+    },
+    {
+      label: "音频输入",
+      value: input.audio,
+      needsAttention: false,
+    },
+  ];
+
+  const ready = !input.transcribe.issue && !input.llm.issue;
+  return {
+    ready,
+    headline: ready ? "已配置妥当，可以开始使用" : "还差一步就能开始使用",
+    detail: ready
+      ? "下面列出的服务就是当前实际使用的服务，无需再调整。要换成别的服务时，用「调整配置」。"
+      : "补齐下面标出的项目即可；也可以在「快速配置」里填一把阿里云百炼 API Key 一次配好。",
+    lines,
+  };
+}

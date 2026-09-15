@@ -24,17 +24,19 @@ import {
   normalizeAudioChannelMode,
 } from '../audio/channel-speakers';
 import { analyzeRecordedAudioChannels } from '../asr/channel-transcription';
-import { isImportCapableTranscribeProvider } from '../asr/diarization';
+import { isImportCapableTranscribeProvider, isSpeakerDiarizationProvider } from '../asr/diarization';
 import { fetchImportTranscribeModels, testImportTranscribeProvider } from '../asr/long-audio-transcription';
 import {
   applyPresetPlan,
   buildProbeHost,
   buildServiceView,
+  buildSetupStatus,
   configSignature,
   deriveSetupState,
   formatDetectionReport,
   planPresetApplication,
   runPresetDetection,
+  setupServiceIssue,
   SETUP_STATE_LABELS,
 } from '../setup';
 import { ensureVaultFolder } from "../shared/util-vault";
@@ -316,7 +318,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       this._probeResults["llm:active"],
     );
     const hasLlm = llmState !== "missing";
-    const dailyOn = this.plugin.settings.writeDailyMeetingOverview !== false;
 
     const head = page.createDiv({ cls: "qnalog-home-head" });
     const titleLine = head.createDiv({ cls: "qnalog-home-title-line" });
@@ -422,63 +423,69 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     }
 
-    const prep = page.createDiv({ cls: "qnalog-home-block" });
-    prep.createEl("h3", { text: "使用准备" });
-    const prepGrid = prep.createDiv({ cls: "qnalog-home-prep-grid" });
-    const prepItems = [
-      {
-        name: "纪要转写服务",
-        need: "必填",
-        price: "云端付费 / 本地免费",
-        desc: "将录音转换为原始文字。可选择云端转写服务或本地 Whisper、SenseVoice 等服务；对数据本地化有要求时优先考虑本地部署。",
-        action: "配置纪要转写",
-        target: "api",
-        status: SETUP_STATE_LABELS[transcribeState],
-        statusClass: this.stateClass(transcribeState),
+    // 「程序状态」：陈述现状（现在能用吗、在用哪些模型），不是待办清单。
+    // 原先这里是「使用准备」四张卡（转写/AI 整理/电脑音频/日记），混了两类东西：
+    //   需要用户准备的（转写、AI 整理）与纯粹的偏好开关（日记写入），
+    //   而且不显示实际在用的模型——用户想知道「现在到底跑的是什么」要自己翻到 API 页。
+    // 电脑音频与日记都不属于「配置是否就绪」，已移出，各自的设置项仍在原来的页面。
+    const speakerProviderId = this.plugin.settings.importTranscribeProvider || "";
+    const speakerProvider = (this.plugin.settings.transcribeProviders || {})[speakerProviderId] || {};
+    const speakerProfile = speakerProviderId
+      ? this.getTranscribeProviderProfile(speakerProviderId, speakerProvider)
+      : null;
+    const transcribeProviderId = this.plugin.settings.activeTranscribeProvider || "siliconflow";
+    const transcribeProvider = (this.plugin.settings.transcribeProviders || {})[transcribeProviderId] || {};
+    const transcribeProfile = this.getTranscribeProviderProfile(transcribeProviderId, transcribeProvider);
+    // 各服务「缺什么」，与四态判定用的是同一份口径（§10.3）。
+    const transcribeServiceIssue = setupServiceIssue(buildServiceView(transcribeProvider, !!transcribeProfile.requiresKey && !canOmitServiceApiKey(transcribeProvider.endpoint)));
+    const llmServiceIssue = setupServiceIssue(buildServiceView({
+      endpoint: this.plugin.settings.llmEndpoint,
+      model: this.plugin.settings.llmModel,
+      apiKey: this.plugin.settings.llmApiKey,
+    }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint)));
+    // 说话人识别只有声明了该能力的服务才提；没声明就如实说「当前服务不做说话人识别」。
+    const speakerCapable = speakerProfile ? isSpeakerDiarizationProvider(speakerProvider, speakerProfile) : false;
+    const speakerIssue = !speakerProviderId
+      ? "未选择导入音频服务"
+      : !speakerCapable
+        ? "当前导入音频服务不做说话人识别"
+        : setupServiceIssue(buildServiceView(speakerProvider, !!speakerProfile.requiresKey && !canOmitServiceApiKey(speakerProvider.endpoint)));
+
+    const status = buildSetupStatus({
+      transcribe: {
+        label: transcribeProfile.title || transcribeProviderId,
+        model: transcribeProvider.model || "",
+        issue: transcribeServiceIssue,
       },
-      {
-        name: "AI 整理服务",
-        need: "推荐",
-        price: "按量付费",
-        desc: "将原始转写整理为会议纪要、待办或访谈记录。未配置时仅保留转写文本，不会进行结构化整理。",
-        action: "配置 AI 整理",
-        target: "api",
-        status: SETUP_STATE_LABELS[llmState],
-        statusClass: this.stateClass(llmState),
+      llm: {
+        model: this.plugin.settings.llmModel || "",
+        issue: llmServiceIssue,
       },
-      {
-        name: "电脑音频捕获",
-        need: "会议/视频适用",
-        price: "可免费",
-        desc: "录制电脑声音需要虚拟声卡。选择包含电脑音频的录音来源后，在「设置电脑音频」中完成配置。",
-        action: "查看设备指引",
-        target: "general",
-        status: "按需准备",
-        statusClass: "is-neutral",
+      speaker: {
+        label: speakerProfile ? (speakerProfile.title || speakerProviderId) : speakerProviderId,
+        model: speakerProvider.model || "",
+        issue: speakerCapable ? speakerIssue : "",
       },
-      {
-        name: "Obsidian 日记",
-        need: "可选",
-        price: "免费",
-        desc: "启用后，处理完成时会将「今日会议概要」与待办写入当日日记；若文件不存在，按日记插件配置的路径与模板自动创建。",
-        action: "设置日记概要",
-        target: "general",
-        status: dailyOn ? "已开启" : "未开启",
-        statusClass: dailyOn ? "is-ready" : "is-neutral",
-      },
-    ];
-    for (const item of prepItems) {
-      const card = prepGrid.createDiv({ cls: "qnalog-home-prep" });
-      card.createDiv({ cls: "qnalog-home-prep-name", text: item.name });
-      const meta = card.createDiv({ cls: "qnalog-home-prep-meta" });
-      meta.createDiv({ cls: "qnalog-home-chip" + (item.need === "必填" ? " is-required" : item.need === "推荐" ? " is-recommended" : ""), text: item.need });
-      meta.createDiv({ cls: "qnalog-home-chip is-cost", text: item.price });
-      card.createDiv({ cls: "qnalog-home-prep-desc", text: item.desc });
-      const actions = card.createDiv({ cls: "qnalog-home-prep-actions" });
-      actions.createDiv({ cls: "qnalog-home-status " + item.statusClass, text: item.status });
-      const btn = actions.createEl("button", { text: item.action });
-      btn.onclick = () => jump(item.target);
+      audio: audioInputModeLabel(this.plugin.settings.captureMode || "mic"),
+    });
+
+    const statusBlock = page.createDiv({ cls: "qnalog-home-block" });
+    statusBlock.createEl("h3", { text: "程序状态" });
+    const statusBox = statusBlock.createDiv({ cls: "qnalog-home-status-panel" + (status.ready ? " is-ready" : " is-incomplete") });
+    statusBox.createDiv({ cls: "qnalog-home-status-headline", text: status.headline });
+    statusBox.createDiv({ cls: "qnalog-home-status-detail", text: status.detail });
+    const statusList = statusBox.createDiv({ cls: "qnalog-home-status-list" });
+    for (const line of status.lines) {
+      const row = statusList.createDiv({ cls: "qnalog-home-status-row" });
+      row.createDiv({ cls: "qnalog-home-status-label", text: line.label });
+      row.createDiv({
+        cls: "qnalog-home-status-value" + (line.needsAttention ? " is-missing" : ""),
+        text: line.value,
+      });
     }
+    const statusActions = statusBox.createDiv({ cls: "qnalog-home-status-actions" });
+    const adjustBtn = statusActions.createEl("button", { text: "调整配置" });
+    adjustBtn.onclick = () => jump("api");
 
     const better = page.createDiv({ cls: "qnalog-home-block" });
     better.createEl("h3", { text: "进阶能力" });

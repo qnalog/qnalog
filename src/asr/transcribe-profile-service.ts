@@ -78,7 +78,7 @@ export class TranscribeProfileService {
         note: "为避免不同切片中的说话人编号重置，录音过程中不会分段上传；停止后才统一转写。原始逐字稿保留说话人编号，姓名映射用于 AI 整理。",
       },
       "dashscope-filetrans": {
-        title: "阿里云百炼 Fun-ASR",
+        title: "阿里云百炼录音文件识别",
         badge: "长音频 · 说话人分离",
         transcribeMode: "whole-file",
         speakerDiarization: true,

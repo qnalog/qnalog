@@ -7298,6 +7298,82 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-weight: var(--font-semibold);
 }
 
+/* 程序状态：陈述现状（能否直接用、在用哪些模型），区别于待办清单式卡片。 */
+.qnalog-home-status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: var(--size-4-3);
+  background: var(--background-secondary);
+}
+
+.qnalog-home-status-panel.is-ready {
+  border-color: rgba(var(--color-green-rgb), 0.35);
+}
+
+.qnalog-home-status-panel.is-incomplete {
+  border-color: rgba(var(--color-orange-rgb), 0.35);
+}
+
+.qnalog-home-status-headline {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.qnalog-home-status-panel.is-ready .qnalog-home-status-headline {
+  color: var(--text-success);
+}
+
+.qnalog-home-status-panel.is-incomplete .qnalog-home-status-headline {
+  color: var(--text-warning);
+}
+
+.qnalog-home-status-detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-normal);
+}
+
+.qnalog-home-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  margin-top: var(--size-2-2);
+  padding-top: var(--size-2-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.qnalog-home-status-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-home-status-label {
+  flex: 0 0 5.5em;
+  color: var(--text-muted);
+}
+
+.qnalog-home-status-value {
+  flex: 1;
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+}
+
+.qnalog-home-status-value.is-missing {
+  color: var(--text-warning);
+}
+
+.qnalog-home-status-actions {
+  display: flex;
+  gap: var(--size-2-2);
+  margin-top: var(--size-2-2);
+}
+
 .qnalog-home-prep-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
