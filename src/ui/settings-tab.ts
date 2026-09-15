@@ -14,7 +14,7 @@ import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-sche
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
 import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabularyMarkdown, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
-import { QNALOG_UPDATE_REPO_URL, audioInputModeLabel, countKnowledgeExtractionHistory, enumerateAudioDevices, isVirtualCableLabel, qnalogConfirm, qnalogPromptText, normalizeAudioInputMode, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, trashVaultFileRef } from './helpers';
+import { QNALOG_UPDATE_REPO_URL, audioInputModeLabel, classifyAudioInputDevices, describeAudioDeviceAvailability, pickComputerAudioDevices, countKnowledgeExtractionHistory, enumerateAudioDevices, isVirtualCableLabel, qnalogConfirm, qnalogPromptText, normalizeAudioInputMode, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, trashVaultFileRef } from './helpers';
 import { PeopleHotwordsConsentModal, PromptTemplateModal, QueueModal, VirtualCableSetupModal } from './modals';
 import { createStreamingTranscriptionClient } from '../notes/recording-issues';
 import {
@@ -113,6 +113,23 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
   display() {
     this.renderSettings();
+    void this.refreshAudioDeviceInfo();
+  }
+
+  /**
+   * 读出音频设备并重画一次。
+   *
+   * 不申请权限（见 enumerateAudioDevices 的说明）：打开设置页就弹麦克风授权框，
+   * 用户会以为插件在录音。因此先拿无授权的设备列表——很多系统此时已能给出设备名，
+   * 拿不到就如实说没授权，由用户点「检测设备」。
+   */
+  async refreshAudioDeviceInfo() {
+    try {
+      this._audioDeviceInfo = await enumerateAudioDevices();
+    } catch {
+      this._audioDeviceInfo = null;
+    }
+    if (this.activeTab === "home") this.renderSettings();
   }
 
   renderSettings() {
@@ -272,7 +289,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       new obsidian.Notice("移动端已使用麦克风录音。电脑音频和虚拟声卡采集请在桌面端配置。", 7000);
       return;
     }
-    const info = await enumerateAudioDevices();
+    const info = await enumerateAudioDevices({ requestPermission: true });
     const virtual = info.virtualCables && info.virtualCables[0];
     const hasMic = info.mics && info.mics.length > 0;
     if (virtual) {
@@ -499,7 +516,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         const button = evt && evt.currentTarget;
         if (button) { button.disabled = true; button.setText("检测中…"); }
         try {
-          this._audioDeviceInfo = await enumerateAudioDevices();
+          this._audioDeviceInfo = await enumerateAudioDevices({ requestPermission: true });
         } catch (error) {
           new obsidian.Notice(`设备检测失败：${(error && error.message) || error}`, 6000);
         }
@@ -559,31 +576,59 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const micId = String(this.plugin.settings.selectedMicrophoneDevice || "");
     const vcId = String(this.plugin.settings.selectedVirtualDevice || "");
     const needsVirtual = mode === "virtualCable" || mode === "mix-virtual";
-    // 一级内容只讲设备事实，配置模式降为次级说明：
-    // 「仅麦克风」是配置值，回答不了「麦克风现在能不能用」，不该占着主位。
-    if (!this._audioDeviceInfo) {
-      let status;
-      if (needsVirtual && !vcId) status = "尚未选择电脑音频设备";
-      else if (micId) status = "已选定麦克风，未检测是否可用";
-      else status = "未检测（点下方「检测设备」）";
-      return { value: status, detail: modeText };
-    }
+
     const info = this._audioDeviceInfo;
-    if (info.permissionRequired) return { value: "未授权读取设备名", detail: `${modeText} · 点「检测设备」授权` };
+    if (!info) {
+      // 还没读到设备列表（或读取失败）。这只说明「不知道」，不说明「没有设备」。
+      return { value: "正在读取设备…", detail: modeText };
+    }
     const inputs = (info.all || []).filter((d) => d && d.kind === "audioinput");
     const find = (id) => (id ? inputs.find((d) => d.deviceId === id) : null);
+    const nameOf = (dev) => (dev && dev.label) || "";
+
+    // 枚举得到设备就算可用，与名字读不读得到无关——未授权时 deviceId 仍在，
+    // 设备也确实存在。把「名字为空」当成「设备不可用」会误报。
+    if (!inputs.length) {
+      return { value: "未检测到音频输入设备", detail: modeText, issue: "未检测到音频输入设备" };
+    }
+
     const micDev = find(micId);
     const vcDev = find(vcId);
-    if (!inputs.length) return { value: "未检测到音频输入设备", detail: modeText, issue: "未检测到音频输入设备" };
     // 显式选定的设备不在了：这是真问题，不能悄悄退回默认设备。
-    if (micId && !micDev) return { value: "已选择的麦克风不可用", detail: modeText, issue: "已选择的麦克风不可用" };
-    if (vcId && !vcDev) return { value: "已选择的电脑音频设备不可用", detail: modeText, issue: "已选择的电脑音频设备不可用" };
-    if (needsVirtual && !vcId) return { value: "尚未选择电脑音频设备", detail: modeText, issue: "尚未选择电脑音频设备" };
-    const micLabel = micDev ? (micDev.label || "未授权读取设备名") : "系统默认麦克风";
-    const vcLabel = vcDev ? (vcDev.label || "电脑音频设备") : "";
-    if (mode === "virtualCable") return { value: `${vcLabel} · 可用`, detail: modeText };
-    if (mode === "mix-virtual") return { value: `${micLabel} + ${vcLabel} · 可用`, detail: modeText };
-    return { value: `${micLabel} · 可用`, detail: modeText };
+    if (micId && !micDev) {
+      return { value: "已选择的麦克风不可用", detail: modeText, issue: "已选择的麦克风不可用" };
+    }
+    if (vcId && !vcDev) {
+      return { value: "已选择的电脑音频设备不可用", detail: modeText, issue: "已选择的电脑音频设备不可用" };
+    }
+    if (needsVirtual && !vcId) {
+      return { value: "尚未选择电脑音频设备", detail: modeText, issue: "尚未选择电脑音频设备" };
+    }
+
+    // 未显式选麦克风时，浏览器给的「默认」设备名更能说明现在会录到哪一只；
+    // 没有这一项就退回列表里第一只有名字的。
+    const defaultDev = inputs.find((d) => d.deviceId === "default") || inputs.find((d) => !!d.label) || null;
+    const micName = nameOf(micDev) || nameOf(defaultDev);
+    const vcName = nameOf(vcDev);
+
+    if (mode === "virtualCable") {
+      if (!vcName) return { value: "已选择电脑音频设备，名称需授权后显示", detail: `${modeText} · 点「检测设备」显示设备名` };
+      return { value: `${vcName} · 可用`, detail: modeText };
+    }
+    if (mode === "mix-virtual") {
+      if (!micName || !vcName) return { value: "已选定设备，名称需授权后显示", detail: `${modeText} · 点「检测设备」显示设备名` };
+      return { value: `${micName} + ${vcName} · 可用`, detail: modeText };
+    }
+    // 仅麦克风模式。
+    // 判据是「有没有设备名」，不是「所选设备的名字在不在」——未显式选择时，
+    // 所选设备本来就是空，拿它去判断会误报成「需要授权」，而设备名其实读得到。
+    if (!micName) {
+      return {
+        value: `系统默认麦克风 · 可用（${inputs.length} 个音频输入设备）`,
+        detail: `${modeText} · 点「检测设备」显示设备名`,
+      };
+    }
+    return { value: `${micName} · 可用`, detail: modeText };
   }
 
   /**
@@ -625,9 +670,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   async populateAudioInputMicSelect(selectEl, hintEl) {
     while (selectEl.firstChild) selectEl.removeChild(selectEl.firstChild);
     const selected = this.plugin.settings.selectedMicrophoneDevice || "";
-    const addOption = (value, text) => selectEl.createEl("option", { value, text });
-    // 去掉「自动」选项：直接列出所有麦克风设备让用户手动选；未选时显示占位提示
-    addOption("", "— 请选择麦克风 —");
+    // 用 optgroup 分组。分组只表达「这是哪一类设备」，不替用户判断该选哪只：
+    // 真实麦克风与虚拟声卡都完整列出，虚拟的加一行说明，
+    // 而**不**把虚拟设备从麦克风下拉里删掉——用户可能就是想用虚拟声卡录人声，
+    // 也可能自己的实体麦克风名字里带 "SoundWire" 之类关键词，过滤会把真麦克风弄丢。
+    const addGroup = (label) => selectEl.createEl("optgroup", { attr: { label } });
+    const addOption = (parent, value, text) => parent.createEl("option", { value, text });
+    // 空值 = 跟随系统默认，不是「未选择」。未选时录音会用系统默认输入设备。
+    const defaultGroup = addGroup("默认");
+    addOption(defaultGroup, "", "系统默认输入设备");
 
     if (isMobileRuntime()) {
       selectEl.value = "";
@@ -638,40 +689,57 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     let info;
     try {
-      info = await enumerateAudioDevices();
+      // 下拉要显示设备名才能选，未授权时全是空名，所以这里申请权限是用户预期的。
+      info = await enumerateAudioDevices({ requestPermission: true });
     } catch {
       selectEl.disabled = true;
-      addOption("__error", "设备读取失败，请先授权");
-      selectEl.value = "__error";
+      selectEl.value = "";
       hintEl.setText("无法读取设备列表。请先授予麦克风权限，再点「设备检测」。");
       return;
     }
 
-    let hasSelected = false;
-    // 手动选择模式：列出**所有**音频输入设备，不再按名字过滤。
-    // 启发式判为虚拟/远程的（如 SoundWire / CABLE Output）只加个 "(可能是虚拟)" 提示，但不挡用户选 ——
-    // 因为有些用户的真实麦克风名字里就带 SoundWire 等关键词，过滤会把真麦克风弄丢。
-    const allInputs = (info.all || []).filter((d) => d && d.kind === "audioinput");
-    for (const dev of allInputs) {
-      const label = dev.label || "未授权读取设备名";
-      const suffix = isVirtualCableLabel(dev.label) ? "（可能是虚拟/远程）" : "";
-      addOption(dev.deviceId, label + suffix);
-      if (dev.deviceId === selected) hasSelected = true;
+    const groups = classifyAudioInputDevices(info.all, selected);
+    const availability = describeAudioDeviceAvailability(info.all);
+
+    if (availability.state === "none") {
+      selectEl.disabled = false;
+      selectEl.value = "";
+      hintEl.setText("未检测到任何音频输入设备。请检查麦克风是否已连接、系统是否授予权限。");
+      return;
     }
 
-    if (selected && !hasSelected) {
-      addOption(selected, "当前已选设备未检测到");
+    const realGroup = addGroup("麦克风");
+    const virtualGroup = addGroup("虚拟声卡 / 电脑音频");
+    let micCount = 0;
+    let virtualCount = 0;
+    for (const dev of groups.dongles) {
+      const label = dev.label || "未授权读取设备名";
+      const isVirtual = isVirtualCableLabel(dev.label);
+      addOption(isVirtual ? virtualGroup : realGroup, dev.deviceId, label);
+      if (isVirtual) virtualCount++; else micCount++;
+    }
+    // 系统默认那一项（deviceId === "default"）在「默认」组里已用空值代表，不再重复列出。
+    // 若上面按名字把设备分完，某一组可能是空的，把空组去掉，免得多一个空标题。
+    if (!micCount && realGroup.parentElement) realGroup.remove();
+    if (!virtualCount && virtualGroup.parentElement) virtualGroup.remove();
+
+    // 显式选定的设备不在任何一组里（例如名字读不到、或刚被拔掉）：
+    // 单独列出来并说明，让用户看到「已选的是哪个」，而不是悄悄跳回默认。
+    const selectedListed = groups.dongles.some((d) => d.deviceId === selected);
+    if (selected && !selectedListed) {
+      const staleGroup = addGroup("当前选择");
+      addOption(staleGroup, selected, groups.selectedInput
+        ? `${groups.selectedInput.label || "未授权读取设备名"}（已选择）`
+        : "当前已选设备未检测到（可能已断开）");
     }
 
     selectEl.disabled = false;
     selectEl.value = selected || "";
 
-    if (selected && !hasSelected) {
+    if (availability.state === "unnamed") {
+      hintEl.setText(`读到 ${availability.count} 个音频输入设备，但设备名需要麦克风授权才能显示；现在仍可按下拉里的顺序选择。`);
+    } else if (selected && !selectedListed) {
       hintEl.setText("所选麦克风未连接，请重新选择。");
-    } else if (info.permissionRequired) {
-      hintEl.setText("需要麦克风权限才能显示设备名称。");
-    } else if (allInputs.length === 0) {
-      hintEl.setText("未找到音频输入设备。请检查系统设置和麦克风权限。");
     } else if (selected) {
       hintEl.setText("使用此设备录音。");
     } else {
@@ -683,6 +751,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     while (selectEl.firstChild) selectEl.removeChild(selectEl.firstChild);
     const selected = this.plugin.settings.selectedVirtualDevice || "";
     const addOption = (value, text) => selectEl.createEl("option", { value, text });
+    // 电脑音频**不做自动选择**：判定哪只是虚拟声卡靠设备名关键词，判错就录到错误内容，
+    // 而用户从界面上看不出来。因此一律留空让用户手动选，下拉里标出推荐项供参考。
     addOption("", "— 请选择电脑音频输入 —");
 
     if (isMobileRuntime()) {
@@ -694,19 +764,33 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     let info;
     try {
-      info = await enumerateAudioDevices();
+      // 下拉要显示设备名才能选，未授权时全是空名，所以这里申请权限是用户预期的。
+      info = await enumerateAudioDevices({ requestPermission: true });
     } catch {
       selectEl.disabled = true;
-      addOption("__error", "设备读取失败，请先授权");
-      selectEl.value = "__error";
+      selectEl.value = "";
       hintEl.setText("无法读取设备列表。请先授予麦克风权限，再选择设备。");
       return;
     }
 
+    const groups = classifyAudioInputDevices(info.all, selected);
+    const availability = describeAudioDeviceAvailability(info.all);
+    if (availability.state === "none") {
+      selectEl.disabled = false;
+      selectEl.value = "";
+      hintEl.setText("未检测到任何音频输入设备。请先安装虚拟声卡。");
+      return;
+    }
+
     let hasSelected = false;
-    // 列出所有音频输入设备，不过滤；启发式判为虚拟声卡的标「推荐」（电脑音频通常就走虚拟声卡）
-    const allInputs = (info.all || []).filter((d) => d && d.kind === "audioinput");
-    for (const dev of allInputs) {
+    // 电脑音频要的是虚拟声卡输入，因此：
+    //   有虚拟声卡时只列虚拟声卡，普通麦克风不铺进来占位置；
+    //   一个虚拟声卡都认不出时列出全部输入设备，否则万一用户的虚拟声卡名字不在
+    //   关键词表里，列表就空了、他反而没得选。
+    const picked = pickComputerAudioDevices(info.all);
+    const ordered = picked.listed;
+    const virtualDevs = picked.virtualCables;
+    for (const dev of ordered) {
       const suffix = isVirtualCableLabel(dev.label) ? "（推荐 · 虚拟声卡）" : "";
       addOption(dev.deviceId, (dev.label || "未授权读取设备名") + suffix);
       if (dev.deviceId === selected) hasSelected = true;
@@ -718,8 +802,12 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (selected && !hasSelected) {
       hintEl.setText("当前已选电脑音频设备可能已断开。请重新选择。");
-    } else if (allInputs.length === 0) {
+    } else if (availability.state === "unnamed") {
+      hintEl.setText(`读到 ${availability.count} 个音频输入设备，但设备名需要麦克风授权才能显示；可先授权后重新打开本页。`);
+    } else if (groups.dongles.length === 0) {
       hintEl.setText("未找到电脑音频输入。请先设置虚拟声卡。");
+    } else if (!virtualDevs.length) {
+      hintEl.setText("未识别出虚拟声卡，已列出全部输入设备；若其中有采集电脑声音的那一只，选它即可。");
     } else if (selected) {
       hintEl.setText("电脑播放的声音会从这个输入录入。");
     } else {
@@ -2608,7 +2696,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     let info;
     try {
-      info = await enumerateAudioDevices();
+      // 诊断要显示设备名，属于用户主动发起的检测，这里申请权限是预期的。
+      info = await enumerateAudioDevices({ requestPermission: true });
     } catch (e) {
       result.empty();
       result.createDiv({ text: `检测失败：${e.message || e}`, cls: "qnalog-diag-error" });
