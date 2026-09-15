@@ -336,7 +336,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint)),
       this._probeResults["llm:active"],
     );
-    const hasLlm = llmState !== "missing";
 
     const head = page.createDiv({ cls: "qnalog-home-head" });
     const titleLine = head.createDiv({ cls: "qnalog-home-title-line" });
@@ -528,21 +527,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         if (button) { button.disabled = false; button.setText("检测设备"); }
         this.renderSettings();
       }));
-    }
-
-    const better = page.createDiv({ cls: "qnalog-home-block" });
-    better.createEl("h3", { text: "进阶能力" });
-    const betterRows = [
-      ["整理提示词", "管理内置和自定义提示词。自定义提示词会出现在录音、导入和重新整理的选择列表中。", hasLlm ? "管理提示词" : "配置 AI 整理", hasLlm ? "ai" : "api"],
-      ["多语种会议整理", "在 AI 整理中启用纪要翻译，可由大模型在整理阶段统一输出至目标语言，或保留关键原文形成双语纪要。", "去设置", "ai"],
-      ["资料库", "从纪要中沉淀转写词表、人员资料和待办。纪要用于追溯，资料用于复用和检索。", "打开资料库", "knowledge"],
-      ["自动更新", "检查并安装 Q&A Log 新版本；本地设置、保存路径与自定义提示词不会被覆盖。", "检查更新", "updates"],
-    ];
-    for (const [name, desc, btnText, target] of betterRows) {
-      new obsidian.Setting(better)
-        .setName(name)
-        .setDesc(desc)
-        .addButton((btn) => btn.setButtonText(btnText).onClick(() => jump(target)));
     }
 
     const footer = page.createDiv({ cls: "qnalog-home-footnote" });
