@@ -69,7 +69,7 @@ function renderChannelProbeRows(container, rows) {
 }
 
 export const LV_SETTINGS_TABS = [
-  { id: "home",     label: "QnALog" },
+  { id: "home",     label: "Q&A Log" },
   { id: "general",  label: "常规" },
   { id: "api",      label: "API" },
   { id: "speaker",  label: "说话人" },
@@ -214,7 +214,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     box.createEl("summary", { cls: "qnalog-risk-title", text: "数据与云端 API" });
     box.createDiv({
       cls: "qnalog-risk-body",
-      text: "QnALog 没有自有云端存储，也不会把录音上传到 QnALog 服务器；录音文件保存在用户选择的本地 Obsidian 库路径。转写和 AI 整理时，音频、转写文本和提示词会发送到当前配置的云端 API 或本地模型。敏感内容建议使用本地转写和本地大模型，避免通过云端 API 处理涉密、隐私、客户资料、医疗、法务、人事等信息。",
+      text: "Q&A Log 没有自有云端存储，也不会把录音上传到 Q&A Log 服务器；录音文件保存在用户选择的本地 Obsidian 库路径。转写和 AI 整理时，音频、转写文本和提示词会发送到当前配置的云端 API 或本地模型。敏感内容建议使用本地转写和本地大模型，避免通过云端 API 处理涉密、隐私、客户资料、医疗、法务、人事等信息。",
     });
   }
 
@@ -357,7 +357,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const head = page.createDiv({ cls: "qnalog-home-head" });
     const titleLine = head.createDiv({ cls: "qnalog-home-title-line" });
-    titleLine.createEl("h2", { text: "QnALog" });
+    titleLine.createEl("h2", { text: "Q&A Log" });
     const versionEl = titleLine.createDiv({ cls: "qnalog-home-version", text: this.plugin.getDisplayVersion() });
     const buildSource = this.plugin.getBuildSourceLabel();
     if (buildSource) {
@@ -384,7 +384,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     };
     const aiBtn = primary.createEl("button", { text: hasLlm ? "AI 整理设置" : "配置 AI 整理" });
     aiBtn.onclick = () => jump(hasLlm ? "ai" : "api");
-    const panelBtn = primary.createEl("button", { text: "打开 QnALog 侧边栏" });
+    const panelBtn = primary.createEl("button", { text: "打开 Q&A Log 侧边栏" });
     panelBtn.onclick = () => this.plugin.shell.openOutlineView();
 
     // 快速配置：百炼分别选择导入音频 ASR 与 AI 整理模型。
@@ -621,7 +621,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       ["整理提示词", "管理内置和自定义提示词。自定义提示词会出现在录音、导入和重新整理的选择列表中。", hasLlm ? "管理提示词" : "配置 AI 整理", hasLlm ? "ai" : "api"],
       ["多语种会议整理", "在 AI 整理中启用纪要翻译，可由大模型在整理阶段统一输出至目标语言，或保留关键原文形成双语纪要。", "去设置", "ai"],
       ["资料库", "从纪要中沉淀转写词表、人员资料和待办。纪要用于追溯，资料用于复用和检索。", "打开资料库", "knowledge"],
-      ["自动更新", "检查并安装 QnALog 新版本；本地设置、保存路径与自定义提示词不会被覆盖。", "检查更新", "updates"],
+      ["自动更新", "检查并安装 Q&A Log 新版本；本地设置、保存路径与自定义提示词不会被覆盖。", "检查更新", "updates"],
     ];
     for (const [name, desc, btnText, target] of betterRows) {
       new obsidian.Setting(better)
@@ -631,7 +631,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
 
     const footer = page.createDiv({ cls: "qnalog-home-footnote" });
-    footer.setText("费用说明：QnALog 插件本身免费。云端转写与大模型服务由对应平台按量计费；本地模型不产生平台费用，但需自行安装、启动与维护。");
+    footer.setText("费用说明：Q&A Log 插件本身免费。云端转写与大模型服务由对应平台按量计费；本地模型不产生平台费用，但需自行安装、启动与维护。");
   }
 
   createAudioInputButton(parent, text, onClick, cls = "") {
@@ -934,21 +934,21 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc("设置新录音、纪要和会中材料的保存位置，以及新纪要的文件名格式。")
       .setHeading();
 
-    new obsidian.Setting(c).setName("QnALog 录音文件夹")
+    new obsidian.Setting(c).setName("Q&A Log 录音文件夹")
       .setDesc("Obsidian 库内的相对路径。录音文件默认保存到 QnALog/录音，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
       .addText(t => t
         .setPlaceholder("QnALog/录音")
         .setValue(this.plugin.settings.audioFolder)
         .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("QnALog 转写纪要文件夹")
+    new obsidian.Setting(c).setName("Q&A Log 转写纪要文件夹")
       .setDesc("Obsidian 库内的相对路径。转写和整理后的纪要默认保存到 QnALog/转写纪要，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
       .addText(t => t
         .setPlaceholder("QnALog/转写纪要")
         .setValue(this.plugin.settings.mdFolder)
         .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("QnALog 会中材料文件夹")
+    new obsidian.Setting(c).setName("Q&A Log 会中材料文件夹")
       .setDesc("Obsidian 库内的相对路径。录音侧边栏添加的图片、PPT、PDF 等补充材料会复制到这里，并按本次录音建立子文件夹。")
       .addText(t => t
         .setPlaceholder("QnALog/会议资料")
@@ -975,7 +975,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addToggle(t => t.setValue(this.plugin.settings.writeDailyMeetingOverview !== false).onChange(async v => { this.plugin.settings.writeDailyMeetingOverview = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName("日记写入标题")
-      .setDesc("QnALog 会在当日日记中找到或创建这个二级标题，并把每次整理完成后的概要写到标题下方。")
+      .setDesc("Q&A Log 会在当日日记中找到或创建这个二级标题，并把每次整理完成后的概要写到标题下方。")
       .addText(t => t
         .setPlaceholder(DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
         .setValue(this.plugin.settings.dailyMeetingOverviewHeading || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
@@ -1269,7 +1269,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         ["tr", "土耳其语 Türkçe"],
       ];
       new obsidian.Setting(c).setName("目标语言（翻译输出）")
-        .setDesc("选择 QnALog 把语音翻译成哪种语言。说话人语言会自动检测。")
+        .setDesc("选择 Q&A Log 把语音翻译成哪种语言。说话人语言会自动检测。")
         .addDropdown(d => {
           for (const [code, label] of targetLanguages) d.addOption(code, label);
           d.setValue(provider.targetLanguage || "zh")
@@ -1331,7 +1331,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const llmEndpointHelp = activeLlmPreset && activeLlmPreset.endpointHelp
       ? activeLlmPreset.endpointHelp
-      : "填写大模型服务的接口地址（即「OpenAI 兼容 / Chat Completions」地址）。可填到 /v1 或根地址，QnALog 会自动补全；也可直接填完整的 /v1/chat/completions。";
+      : "填写大模型服务的接口地址（即「OpenAI 兼容 / Chat Completions」地址）。可填到 /v1 或根地址，Q&A Log 会自动补全；也可直接填完整的 /v1/chat/completions。";
     const llmKeyHelp = activeLlmPreset && activeLlmPreset.keyHelp
       ? activeLlmPreset.keyHelp
       : "填写服务商或中转站提供的 API Key。本地 localhost 大模型服务可留空。";
@@ -2013,7 +2013,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName("人员去重")
       .setDesc("按姓名合并重复资料，更新纪要引用，并归档带 -1 / -2 后缀的重复页。")
       .addButton(b => b.setButtonText("合并重复人员").onClick(async () => {
-        const ok = await qnalogConfirm(this.app, "合并重复人员档案？", "QnALog 会把同名人员页合并到主档案，改写所有指向重复页的 wiki 链接，并将重复页移到归档目录。建议先确保同步已完成。", "开始合并");
+        const ok = await qnalogConfirm(this.app, "合并重复人员档案？", "Q&A Log 会把同名人员页合并到主档案，改写所有指向重复页的 wiki 链接，并将重复页移到归档目录。建议先确保同步已完成。", "开始合并");
         if (!ok) return;
         try {
           const result = await this.plugin.people.mergeDuplicatePeopleDirectory();
@@ -2078,7 +2078,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         setting.setDesc(`当前 ${count} 张待办卡片。待办卡片适合跟踪跨会议、跨项目的行动项。`);
       });
 
-    createPathSetting(advancedBody, "视图文件夹", "保存 QnALog 生成的资料总览和 Base 视图。", this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
+    createPathSetting(advancedBody, "视图文件夹", "保存 Q&A Log 生成的资料总览和 Base 视图。", this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
       async v => { this.plugin.settings.basesFolder = v || DEFAULT_SETTINGS.basesFolder; });
 
     const vocabScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "vocabulary");
@@ -2218,7 +2218,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c).setName("版权与许可")
-      .setDesc("QnALog 由 Q&A Log Team 维护，以 MIT License 开源发布。其代码来源与许可说明见仓库里的 NOTICE 与 LICENSE。第三方 API、模型和虚拟声卡工具由用户自行配置和承担费用；本插件不运营云端存储，也不会上传录音到任何自有服务器。");
+      .setDesc("Q&A Log 由 Q&A Log Team 维护，以 MIT License 开源发布。其代码来源与许可说明见仓库里的 NOTICE 与 LICENSE。第三方 API、模型和虚拟声卡工具由用户自行配置和承担费用；本插件不运营云端存储，也不会上传录音到任何自有服务器。");
   }
 
   // 列出库内所有文件夹路径（供路径输入框的原生 datalist 自动补全）。
@@ -2453,7 +2453,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("扫描").onClick(() => this.plugin.inbox.scanInboxFolder()));
 
     new obsidian.Setting(c).setName("清理空白短录音")
-      .setDesc("扫描转写纪要文件夹，将时长不超过 10 秒且没有有效转写文本的 QnALog 条目移入系统废纸篓，并同步处理其引用的录音文件。误删可从系统废纸篓恢复。")
+      .setDesc("扫描转写纪要文件夹，将时长不超过 10 秒且没有有效转写文本的 Q&A Log 条目移入系统废纸篓，并同步处理其引用的录音文件。误删可从系统废纸篓恢复。")
       .addButton(b => b.setButtonText("扫描并清理").onClick(() => this.plugin.cleanup.cleanupEmptyShortRecordings()));
 
     // ---- 失败重试 ----

@@ -37,7 +37,7 @@ const context = await esbuild.context({
   treeShaking: true,
   banner: {
     js: [
-      "/* QnALog - records and transcribes conversations into structured Markdown.",
+      "/* Q&A Log - records and transcribes conversations into structured Markdown.",
       " * Derived from LexVoice (c) 2026 Lynnx, MIT licensed; modifications",
       " * (c) 2026 Q&A Log Team, MIT licensed. See LICENSE and NOTICE at",
       " * https://github.com/qnalog/qnalog - keep both with any copy.",
@@ -52,5 +52,5 @@ if (production) {
   await context.dispose();
 } else {
   await context.watch();
-  console.log("Watching QnALog source files...");
+  console.log("Watching Q&A Log source files...");
 }

@@ -393,7 +393,7 @@ export class NoteWriter {
   }
   async readMergeSourceFromMarkdown(file, offsetMs, startIndex) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-      throw new Error("只能合并 QnALog Markdown 纪要");
+      throw new Error("只能合并 Q&A Log Markdown 纪要");
     }
     const content = await this.host.app.vault.read(file);
     const rawSegments = extractTranscriptSegments(content);
@@ -422,7 +422,7 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile)) return;
     const previous = this.findPreviousRecentNoteFile(file);
     if (!(previous instanceof obsidian.TFile)) {
-      new obsidian.Notice("没有找到这篇之前的最近一条 QnALog 纪要。", 6000);
+      new obsidian.Notice("没有找到这篇之前的最近一条 Q&A Log 纪要。", 6000);
       return;
     }
     const ok = await qnalogConfirm(this.host.app, "合并纪要", `将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. ${previous.basename}\n2. ${file.basename}\n\n继续合并？`, "合并");
@@ -464,7 +464,7 @@ export class NoteWriter {
     const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · 合并.md`));
     if (!targetPath) throw new Error("无法生成合并纪要路径");
 
-    new obsidian.Notice(`QnALog：正在合并 ${sources.length} 篇纪要…`, 8000);
+    new obsidian.Notice(`Q&A Log：正在合并 ${sources.length} 篇纪要…`, 8000);
     await this.host.app.vault.create(targetPath, "");
     const session = {
       id: genId(),

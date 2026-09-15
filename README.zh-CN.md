@@ -1,4 +1,4 @@
-# QnALog
+# Q&A Log
 
 [English](README.md) | 简体中文
 
@@ -6,22 +6,22 @@
 
 面向 Obsidian 的开源对话智能：录音、转写，并把会议、访谈、讲座和语音笔记整理成可复用的 Markdown。
 
-QnALog 不连接自有云服务，也不内置任何 API Key：语音转写（ASR）和大语言模型（LLM）服务需要你自行配置。录音与生成的笔记都保存在你自己的知识库中。
+Q&A Log 不连接自有云服务，也不内置任何 API Key：语音转写（ASR）和大语言模型（LLM）服务需要你自行配置。录音与生成的笔记都保存在你自己的知识库中。
 
 支持 Obsidian 桌面端和移动端。移动端录音使用设备麦克风；电脑音频、虚拟声卡、多声道采集、桌面设备检测，以及需要自定义鉴权请求头的实时流式 ASR，需要使用桌面端。
 
 ## 来源
 
-QnALog 派生自 Lynnx 的 [LexVoice](https://github.com/Lynn-x/LexVoice)，基于其最后一个 MIT 授权版本（2.1.2）。上游自 2.2.0 起改用专有许可；本项目是 MIT 授权代码的独立延续，不是那条发布线的延续。详见 [`NOTICE`](NOTICE) 与 [`MAINTAINING.md`](MAINTAINING.md)。
+Q&A Log 派生自 Lynnx 的 [LexVoice](https://github.com/Lynn-x/LexVoice)，基于其最后一个 MIT 授权版本（2.1.2）。上游自 2.2.0 起改用专有许可；本项目是 MIT 授权代码的独立延续，不是那条发布线的延续。详见 [`NOTICE`](NOTICE) 与 [`MAINTAINING.md`](MAINTAINING.md)。
 
 ## 与 LexVoice 的关系
 
-QnALog 是一个独立项目，不是 LexVoice 的新版本。它从 LexVoice 最后一个 MIT 授权版本起步，此后已改造成名称、数据命名空间和设置都自成一体的插件。
+Q&A Log 是一个独立项目，不是 LexVoice 的新版本。它从 LexVoice 最后一个 MIT 授权版本起步，此后已改造成名称、数据命名空间和设置都自成一体的插件。
 
 **两者之间没有数据通道。**
 
-- **不迁移数据。** QnALog 不提供从 LexVoice 导入、导出或迁移的路径：不读取 LexVoice 的笔记、标记、标签、目录与设置，加载时也不扫描、不改写你已有的文件。
-- **不继承设置。** 新安装从 QnALog 自己的默认值开始。如果你之前用过 LexVoice，它的 API Key、服务配置、目录与提示词都不会带过来——请在 QnALog 里重新配置。
+- **不迁移数据。** Q&A Log 不提供从 LexVoice 导入、导出或迁移的路径：不读取 LexVoice 的笔记、标记、标签、目录与设置，加载时也不扫描、不改写你已有的文件。
+- **不继承设置。** 新安装从 Q&A Log 自己的默认值开始。如果你之前用过 LexVoice，它的 API Key、服务配置、目录与提示词都不会带过来——请在 Q&A Log 里重新配置。
 - **命名空间独立。** 写入知识库的标签、标记与目录只用 `qnalog` / `QnALog` 命名空间。
 - **插件 id 独立。** 本插件的 id 是 `qnalog`，与 LexVoice 的 `lexvoice` 不同，Obsidian 会把它们当作两个插件分别管理。
 
@@ -50,11 +50,11 @@ QnALog 是一个独立项目，不是 LexVoice 的新版本。它从 LexVoice �
 
 ### 问一问
 
-当最终纪要遗漏了某个细节，或者需要重新核对内容时，可以针对当前纪要提问。QnALog 会同时参考整理后的纪要和保留的原始转写。觉得有价值的回答可以写回 Markdown，并统一收纳在一个紧凑的“问一问”章节中。
+当最终纪要遗漏了某个细节，或者需要重新核对内容时，可以针对当前纪要提问。Q&A Log 会同时参考整理后的纪要和保留的原始转写。觉得有价值的回答可以写回 Markdown，并统一收纳在一个紧凑的“问一问”章节中。
 
 ### 长会议与失败恢复
 
-在普通会议和学习笔记模式中，长录音不会完全依赖一次超长的 LLM 输出。QnALog 会先建立全局议题图，再分部整理内容；每个已完成部分都会保存本地检查点，最后按时间顺序组装成完整纪要。
+在普通会议和学习笔记模式中，长录音不会完全依赖一次超长的 LLM 输出。Q&A Log 会先建立全局议题图，再分部整理内容；每个已完成部分都会保存本地检查点，最后按时间顺序组装成完整纪要。
 
 如果请求中断，或者模型达到输出长度上限，已经完成的部分会被复用，只重试尚未完成的部分。原始转写始终保留；未完整生成的结果会明确显示为“部分完成”，不会被保存成空纪要。
 
@@ -72,11 +72,11 @@ QnALog 是一个独立项目，不是 LexVoice 的新版本。它从 LexVoice �
 
 ### 对象库
 
-QnALog 可以把会议中值得复用的内容保存为独立的 Obsidian 对象，包括人员档案、待办和 ASR 热词，并可打开由已确认待办汇总成的待办墙。所有内容都保存在你自己的知识库中；下次会议再次提到同一个人时，可以关联已有档案，而不是重复创建。
+Q&A Log 可以把会议中值得复用的内容保存为独立的 Obsidian 对象，包括人员档案、待办和 ASR 热词，并可打开由已确认待办汇总成的待办墙。所有内容都保存在你自己的知识库中；下次会议再次提到同一个人时，可以关联已有档案，而不是重复创建。
 
 <p align="center">
-  <img width="220" alt="QnALog 信息对象" src="docs/images/object-library.webp" />
-  <img width="220" alt="QnALog 人员档案" src="docs/images/people-profile.webp" />
+  <img width="220" alt="Q&A Log 信息对象" src="docs/images/object-library.webp" />
+  <img width="220" alt="Q&A Log 人员档案" src="docs/images/people-profile.webp" />
 </p>
 
 ### 待办增强
@@ -96,7 +96,7 @@ QnALog 可以把会议中值得复用的内容保存为独立的 Obsidian 对象
 同一篇纪要可以继续生成 HTML 报告、PDF 报告或 `.eml` 邮件草稿。内容保持一致，只根据使用场景调整呈现形式。
 
 <p align="center">
-  <img width="720" alt="QnALog 导出" src="docs/images/export-email-draft.webp" />
+  <img width="720" alt="Q&A Log 导出" src="docs/images/export-email-draft.webp" />
 </p>
 
 ### 纪要列表
@@ -105,7 +105,7 @@ QnALog 可以把会议中值得复用的内容保存为独立的 Obsidian 对象
 
 ## 基本使用
 
-1. 打开 QnALog 侧边栏。
+1. 打开 Q&A Log 侧边栏。
 2. 选择纪要模板和音频输入。
 3. 开始录音，并确认音量电平会随声音变化。
 4. 查看实时大纲，需要时添加会中补充。
@@ -115,7 +115,7 @@ QnALog 可以把会议中值得复用的内容保存为独立的 Obsidian 对象
 8. 需要分享时，可继续生成 HTML 报告、PDF 报告或邮件草稿。
 
 <p align="center">
-  <img width="720" alt="QnALog 侧边栏" src="docs/images/sidebar.webp" />
+  <img width="720" alt="Q&A Log 侧边栏" src="docs/images/sidebar.webp" />
 </p>
 
 默认目录如下，均可在设置中修改：
@@ -133,7 +133,7 @@ QnALog 可以把会议中值得复用的内容保存为独立的 Obsidian 对象
 | 词汇表 | `QnALog/词汇表.md` |
 
 > 默认目录使用 `QnALog/` 前缀。它们只是普通路径，随时可以在设置中修改。
-> QnALog 是独立项目，不迁移其他项目的数据，也不扫描或改写你既有的笔记。
+> Q&A Log 是独立项目，不迁移其他项目的数据，也不扫描或改写你既有的笔记。
 
 ## 使用要求
 
@@ -161,7 +161,7 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 在 Windows 使用 VB-Cable 时，需要注意设备名称：
 
 - 会议软件、浏览器或系统输出 → **CABLE Input**
-- QnALog 读取 → **CABLE Output**，它属于录音设备
+- Q&A Log 读取 → **CABLE Output**，它属于录音设备
 - 如果还要录制自己的声音，真实麦克风必须选择物理麦克风，而不是 CABLE Output、BlackHole、VoiceMeeter 或 Stereo Mix
 
 如果音量电平没有变化，请先运行设备检测，再开始长时间录音。
@@ -170,13 +170,13 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 
 没有广告、行为分析或遥测。设置保存在 `.obsidian/plugins/qnalog/data.json`。
 
-**网络用途。** 除非你配置了需要联网的服务，QnALog 完全离线工作。需要联网时，请求只会发往你自行配置的地址：
+**网络用途。** 除非你配置了需要联网的服务，Q&A Log 完全离线工作。需要联网时，请求只会发往你自行配置的地址：
 
 - 语音转写请求把音频发送给你配置的转写服务。
 - AI 整理请求把转写文本和 Prompt 上下文发送给你配置的大模型服务。
 - 更新检查会向本项目的 GitHub 发布页请求 `manifest.json`，仅用于提示存在新版本；它不会下载或安装任何文件。
 
-录音保存在你指定的本地知识库目录中；没有 QnALog 云端，也没有 QnALog 服务器。
+录音保存在你指定的本地知识库目录中；没有 Q&A Log 云端，也没有 Q&A Log 服务器。
 
 **知识库之外的文件。** 可选的“外部收件箱”功能可以监视知识库之外的一个文件夹（绝对路径，例如同步盘里的录音目录）并从中导入音频。只有在你主动配置了该路径时才会发生这种访问，且仅限于读取你指定的文件。
 
@@ -190,7 +190,7 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 
 1. 从社区插件目录安装并启用 **BRAT**。
 2. 在 BRAT 中选择 **Add beta plugin**，填入 `qnalog/qnalog`。
-3. 安装后在「设置 → 第三方插件」中启用 **QnALog**。
+3. 安装后在「设置 → 第三方插件」中启用 **Q&A Log**。
 
 ### 方式二：从源码构建（桌面端）
 
@@ -204,7 +204,7 @@ npm run install:vault -- "/你的知识库路径"
 
 `install:vault` 会把 `main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE` 复制到 `<知识库>/.obsidian/plugins/qnalog/`，把即将被覆盖的内容（含 `data.json`）整份留档到 `<知识库>/.obsidian/qnalog-install-backups/<时间戳>/`；首次安装时还会从已有的 `lexvoice` 或 `lexvoice-mit` 插件目录沿用设置。
 
-随后在 Obsidian 中重新加载（`Ctrl/Cmd + R`），启用 **QnALog**。
+随后在 Obsidian 中重新加载（`Ctrl/Cmd + R`），启用 **Q&A Log**。
 
 若设置结构发生了变化，插件会在首次加载时给出迁移报告：一条通知，加上诊断日志里的一份完整对照表——哪些分组被丢弃、哪些被保留、需要重新选择什么。
 

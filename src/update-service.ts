@@ -136,7 +136,7 @@ export class UpdateService {
     const silent = !!options.silent;
     const rawBases = this.getUpdateRawBases();
     if (!rawBases.length) {
-      if (!silent) this.runtime.notice("QnALog 更新源未解析成功，请确认插件文件完整。", 8000);
+      if (!silent) this.runtime.notice("Q&A Log 更新源未解析成功，请确认插件文件完整。", 8000);
       return null;
     }
 
@@ -162,7 +162,7 @@ export class UpdateService {
         this.host.settings.availableUpdate = info;
         await this.host.saveSettings();
         this.runtime.notice(
-          `QnALog：发现新版本 ${remoteVersion}（当前 ${currentVersion}）。请在设置 > 更新 中查看发布页链接，从 GitHub Release 安装。`,
+          `Q&A Log：发现新版本 ${remoteVersion}（当前 ${currentVersion}）。请在设置 > 更新 中查看发布页链接，从 GitHub Release 安装。`,
           silent ? 12000 : 8000,
         );
         return info;
@@ -170,14 +170,14 @@ export class UpdateService {
 
       this.host.settings.availableUpdate = null;
       await this.host.saveSettings();
-      if (!silent) this.runtime.notice(`QnALog 已是最新版本（${currentVersion}）。`);
+      if (!silent) this.runtime.notice(`Q&A Log 已是最新版本（${currentVersion}）。`);
       return null;
     } catch (error) {
       const message = errorMessage(error);
       this.host.settings.lastUpdateCheckAt = new Date(this.runtime.now()).toISOString();
       this.host.settings.lastUpdateError = message;
       await this.host.saveSettings();
-      if (!silent) this.runtime.notice(`QnALog 更新检查失败：${message}`, 10000);
+      if (!silent) this.runtime.notice(`Q&A Log 更新检查失败：${message}`, 10000);
       else this.runtime.warn("[QnALog] update check failed", error);
       return null;
     }
@@ -192,7 +192,7 @@ export class UpdateService {
       if (built && declared && built !== declared) {
         this.runtime.warn(`[QnALog] build/manifest 版本错位：main.js=${built} manifest=${declared}`);
         this.runtime.notice(
-          `QnALog 版本错位：实际运行的 main.js 是 ${built}，但 manifest 标的是 ${declared}`
+          `Q&A Log 版本错位：实际运行的 main.js 是 ${built}，但 manifest 标的是 ${declared}`
           + "。请从 GitHub Release 重新安装该版本后重启 Obsidian。",
           0,
         );

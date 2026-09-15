@@ -202,7 +202,7 @@ async function main() {
   const PluginClass = sandbox.module.exports?.default || sandbox.module.exports;
   expect(typeof PluginClass === "function", "main.js 没有导出插件类");
 
-  const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
+  const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "Q&A Log", minAppVersion: "1.0.0" });
   try {
     await plugin.onload();
   } catch (error) {

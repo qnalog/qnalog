@@ -30,7 +30,7 @@ import type {
   TranscribeProviderSettings,
 } from "./types";
 
-// 设置结构版本。QnALog 是独立项目，不承接任何历史项目的设置：
+// 设置结构版本。Q&A Log 是独立项目，不承接任何历史项目的设置：
 // 版本号与当前值不一致时，data.json 里的设置一律丢弃，改用默认值（见 main.ts 的 loadAll）。
 // 因此这个数字只再作为「这份 data.json 是不是本版本写的」的标记存在。
 export const SETTINGS_SCHEMA_VERSION = 1;

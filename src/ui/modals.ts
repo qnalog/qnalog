@@ -148,7 +148,7 @@ export class AudioTimeModal extends obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-audio-modal");
-    contentEl.createEl("h3", { text: "QnALog 回听" });
+    contentEl.createEl("h3", { text: "Q&A Log 回听" });
     contentEl.createDiv({ cls: "qnalog-audio-modal-meta", text: `${this.file.path} · ${this.label}` });
 
     const playerWrap = contentEl.createDiv({ cls: "qnalog-audio-player-wrap" });
@@ -200,7 +200,7 @@ export class PeopleHotwordsConsentModal extends obsidian.Modal {
     contentEl.createEl("h2", { text: "启用人名热词前请确认" });
     contentEl.createDiv({
       cls: "setting-item-description",
-      text: "启用后，QnALog 会从人员资料读取姓名和常用称呼，并把这些人名热词随转写或 AI 整理请求发送到当前配置的转写服务和大模型服务，用于提升人名识别和称呼对齐准确率。",
+      text: "启用后，Q&A Log 会从人员资料读取姓名和常用称呼，并把这些人名热词随转写或 AI 整理请求发送到当前配置的转写服务和大模型服务，用于提升人名识别和称呼对齐准确率。",
     });
     const list = contentEl.createEl("ul", { cls: "qnalog-consent-list" });
     list.createEl("li", { text: "只发送姓名与常用称呼，不发送角色、组织、备注、来源或人员关系。" });
@@ -243,12 +243,12 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     contentEl.createDiv({
       cls: "setting-item-description",
       text: this.sourceFile
-        ? "QnALog 只会发送当前笔记内容到已配置的大模型，用于生成候选人员建议；已有人员资料仅在本地用于匹配和去重，不随请求发送。确认后会把这次会议的人物归属写回纪要，并维护对应人员页。"
+        ? "Q&A Log 只会发送当前笔记内容到已配置的大模型，用于生成候选人员建议；已有人员资料仅在本地用于匹配和去重，不随请求发送。确认后会把这次会议的人物归属写回纪要，并维护对应人员页。"
         : this.options.fromIgnored
           ? `这里是已忽略的 ${this.options.ignoredCount || this.suggestions.length} 条人员建议。误操作的建议可以先恢复到待确认，也可以直接修改后保存进人员资料；保存后会自动移出忽略列表。`
         : this.options.fromCache
           ? `这里是上次扫描后尚未处理的 ${this.options.cachedCount || this.suggestions.length} 条人员建议。保存、忽略或清空前，它们会保留在本地设置中，方便稍后继续处理。`
-        : `QnALog 已扫描转写纪要库中的 ${this.options.scannedCount || 0} 篇笔记，只显示需要确认的人员建议。已有人员资料仅在本地用于匹配和去重，不随请求发送。${this.options.remainingCount ? `本轮后仍有 ${this.options.remainingCount} 篇待扫描。` : ""}`,
+        : `Q&A Log 已扫描转写纪要库中的 ${this.options.scannedCount || 0} 篇笔记，只显示需要确认的人员建议。已有人员资料仅在本地用于匹配和去重，不随请求发送。${this.options.remainingCount ? `本轮后仍有 ${this.options.remainingCount} 篇待扫描。` : ""}`,
     });
     contentEl.createDiv({
       cls: "setting-item-description qnalog-people-suggestion-guide",
@@ -1324,7 +1324,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
 
     contentEl.createEl("h2", { text: "电脑音频捕获设置" });
     const desc = contentEl.createEl("p", { cls: "qnalog-vcable-desc" });
-    desc.setText("QnALog 不能直接监听耳机或扬声器里正在播放的声音。录制 B 站客户端、浏览器视频、课程或会议对方声音时，需要先把这些声音输出到虚拟声卡，让 QnALog 将其识别为「电脑音频输入」；同时再把同一份声音监听到真实扬声器或耳机，确保本机仍可听到播放内容。一次配置，长期可用。");
+    desc.setText("Q&A Log 不能直接监听耳机或扬声器里正在播放的声音。录制 B 站客户端、浏览器视频、课程或会议对方声音时，需要先把这些声音输出到虚拟声卡，让 Q&A Log 将其识别为「电脑音频输入」；同时再把同一份声音监听到真实扬声器或耳机，确保本机仍可听到播放内容。一次配置，长期可用。");
 
     // 平台 tabs
     const tabs = contentEl.createDiv({ cls: "qnalog-vcable-tabs" });
@@ -1400,7 +1400,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "勾选「内建扬声器」（或耳机）+「BlackHole 2ch」" });
       ol.createEl("li", { text: "Master Device 选择耳机或扬声器；Drift Correction 勾选 BlackHole" });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
-      tip.setText("这样系统音频会同时进入真实耳机/扬声器和 BlackHole：前者用于播放，后者用于 QnALog 录制。");
+      tip.setText("这样系统音频会同时进入真实耳机/扬声器和 BlackHole：前者用于播放，后者用于 Q&A Log 录制。");
     });
     this.step(parent, 3, "把系统或应用输出切到这个多输出设备", (b) => {
       const ol = b.createEl("ol");
@@ -1410,7 +1410,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText("切换后会议软件可能需要重新选择扬声器。");
     });
-    this.step(parent, 4, "在 QnALog 选择电脑音频模式", (b) => {
+    this.step(parent, 4, "在 Q&A Log 选择电脑音频模式", (b) => {
       b.createEl("p", { text: "只整理视频、课程或播客时选择「仅电脑音频」；线上会议或边听边讲解时选择「麦克风加电脑音频」。" });
     });
   }
@@ -1427,7 +1427,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     this.step(parent, 2, "把要录制的声音输出切到 CABLE Input（播放设备）", (b) => {
       b.createEl("p", { text: "线上会议可以在飞书、腾讯会议或 Zoom 的音频设置里改扬声器；B 站客户端、浏览器视频、播放器等桌面应用，可以在 Windows 音量混合器里单独指定输出设备。目标输出统一改为：" });
       b.createEl("code", { text: "CABLE Input (VB-Audio Virtual Cable)" });
-      b.createEl("p", { cls: "qnalog-vcable-tip" }).setText("注意：这里选的是 CABLE Input。虽然名字叫 Input，但它在 Windows 里是“播放/输出设备”；QnALog 后面录的是同一根虚拟线缆另一端的 CABLE Output。");
+      b.createEl("p", { cls: "qnalog-vcable-tip" }).setText("注意：这里选的是 CABLE Input。虽然名字叫 Input，但它在 Windows 里是“播放/输出设备”；Q&A Log 后面录的是同一根虚拟线缆另一端的 CABLE Output。");
       const ol = b.createEl("ol");
       ol.createEl("li", { text: "录会议：在会议软件的扬声器/输出设备中选择 CABLE Input" });
       ol.createEl("li", { text: "录 B 站客户端：先播放一段视频，让应用出现在音量混合器里；Windows 设置 → 系统 → 声音 → 音量混合器 → 找到哔哩哔哩/bilibili → 输出设备选择 CABLE Input" });
@@ -1446,7 +1446,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "「通过此设备播放」选择真实耳机或扬声器，不要选 CABLE Input" });
       ol.createEl("li", { text: "点「应用」" });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
-      tip.setText("音频链路是：应用/浏览器 → CABLE Input（播放输出）→ CABLE Output（录制输入，QnALog 读取）→ 侦听到真实耳机/扬声器。若侦听延迟明显，可改用 VoiceMeeter 这类混音工具做多输出。");
+      tip.setText("音频链路是：应用/浏览器 → CABLE Input（播放输出）→ CABLE Output（录制输入，Q&A Log 读取）→ 侦听到真实耳机/扬声器。若侦听延迟明显，可改用 VoiceMeeter 这类混音工具做多输出。");
     });
     this.step(parent, 4, "把默认输入改回真实麦克风", (b) => {
       const ol = b.createEl("ol");
@@ -1454,24 +1454,24 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "选择真实麦克风，不要选 CABLE Output" });
       ol.createEl("li", { text: "如果其他语音输入软件也没声音，通常就是这里被改成了 CABLE Output" });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
-      warn.setText("CABLE Output 是给 QnALog 这类录音软件读取电脑音频用的，不适合作为日常语音输入麦克风。");
+      warn.setText("CABLE Output 是给 Q&A Log 这类录音软件读取电脑音频用的，不适合作为日常语音输入麦克风。");
     });
-    this.step(parent, 5, "在 QnALog 选择电脑音频模式", (b) => {
+    this.step(parent, 5, "在 Q&A Log 选择电脑音频模式", (b) => {
       b.createEl("p", { text: "看 B 站、YouTube、课程或播客时选择「仅电脑音频」；线上会议或需要同时录入本人讲解时选择「麦克风加电脑音频」。" });
     });
   }
   renderLinuxContent(parent) {
     this.step(parent, 1, "PulseAudio：用 monitor source", (b) => {
-      b.createEl("p", { text: "PulseAudio 的每个真实输出设备都自带 monitor source。保持系统输出为耳机/扬声器，QnALog 选择对应的 Monitor of ... 输入，即可同时播放和录制系统音频。" });
+      b.createEl("p", { text: "PulseAudio 的每个真实输出设备都自带 monitor source。保持系统输出为耳机/扬声器，Q&A Log 选择对应的 Monitor of ... 输入，即可同时播放和录制系统音频。" });
       b.createEl("p", { text: "查看可用 monitor source：" });
       const code = b.createEl("pre");
       code.createEl("code", { text: "pactl list sources short | grep monitor" });
     });
     this.step(parent, 2, "若用 PipeWire（较新发行版）", (b) => {
-      b.createEl("p", { text: "PipeWire 兼容 PulseAudio API，命令相同。如默认 monitor 不工作，可安装 pavucontrol，并在「录制」标签里把 QnALog 的输入切到 Monitor of <扬声器名称>。" });
+      b.createEl("p", { text: "PipeWire 兼容 PulseAudio API，命令相同。如默认 monitor 不工作，可安装 pavucontrol，并在「录制」标签里把 Q&A Log 的输入切到 Monitor of <扬声器名称>。" });
     });
-    this.step(parent, 3, "在 QnALog 选择电脑音频模式", (b) => {
-      b.createEl("p", { text: "QnALog 的设备检测会把名为「Monitor of ...」的输入识别为电脑音频输入。只整理视频/课程时选择「仅电脑音频」；需要同时录自己的声音时选择「麦克风加电脑音频」。" });
+    this.step(parent, 3, "在 Q&A Log 选择电脑音频模式", (b) => {
+      b.createEl("p", { text: "Q&A Log 的设备检测会把名为「Monitor of ...」的输入识别为电脑音频输入。只整理视频/课程时选择「仅电脑音频」；需要同时录自己的声音时选择「麦克风加电脑音频」。" });
     });
   }
   onClose() {
@@ -1565,7 +1565,7 @@ export class PromptTemplateModal extends obsidian.Modal {
 
     const builtInSection = body.createDiv({ cls: "qnalog-tpl-section" });
     builtInSection.createDiv({ cls: "qnalog-tpl-section-title", text: "内置提示词" });
-    builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: "QnALog 提供的默认整理规则，适合直接设为默认。需要固定格式或专业判断时，请新建自定义提示词。" });
+    builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: "Q&A Log 提供的默认整理规则，适合直接设为默认。需要固定格式或专业判断时，请新建自定义提示词。" });
     const list = builtInSection.createDiv({ cls: "qnalog-tpl-list" });
     for (const mode of this.builtInModes()) this.renderBuiltinRow(list, mode);
 
@@ -1644,7 +1644,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     const seed = current || this.newCustomScene(tpl && tpl.name ? tpl.name : "自定义提示词", tpl && tpl.baseMode ? tpl.baseMode : "learning").prompt;
     const sys = "你是提示词优化专家，专门把用户草稿改写成稳定、清晰、可执行的录音转写整理 Prompt。";
     const user = [
-      "请优化下面这份 QnALog 转写整理提示词。",
+      "请优化下面这份 Q&A Log 转写整理提示词。",
       "",
       "要求：",
       "- 只输出优化后的完整 Prompt，不要解释、不要代码块。",
@@ -1768,7 +1768,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.fileCheckboxes = new Map();
     contentEl.createEl("h2", { text: "导入文本" });
     contentEl.createEl("p", { cls: "qnalog-import-desc" })
-      .setText("选择已有 Markdown、速录稿或文本纪要。QnALog 不会调用语音转写服务，会直接走 API 页的「AI 整理服务」LLM 链路并按当前模板结构化整理。");
+      .setText("选择已有 Markdown、速录稿或文本纪要。Q&A Log 不会调用语音转写服务，会直接走 API 页的「AI 整理服务」LLM 链路并按当前模板结构化整理。");
 
     this.renderModeControl(contentEl);
 
@@ -2011,7 +2011,7 @@ export class ImportTextModal extends obsidian.Modal {
       this.processBtn.disabled = count === 0;
     }
     if (this.selectionText) {
-      this.selectionText.setText(count ? "将按文件名升序合并为一份 QnALog 纪要" : "未选择文本");
+      this.selectionText.setText(count ? "将按文件名升序合并为一份 Q&A Log 纪要" : "未选择文本");
     }
   }
 

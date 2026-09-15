@@ -103,7 +103,7 @@ export function pickMimeType(preferOpus) {
 
 export function assertAudioCaptureSupported() {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-    throw new Error("当前 Obsidian 环境不支持麦克风录音。请升级 Obsidian，或在桌面端使用 QnALog。");
+    throw new Error("当前 Obsidian 环境不支持麦克风录音。请升级 Obsidian，或在桌面端使用 Q&A Log。");
   }
   if (typeof MediaRecorder === "undefined") {
     throw new Error("当前 Obsidian 环境不支持 MediaRecorder，暂时无法直接录音。可以先用系统录音后导入音频处理。");

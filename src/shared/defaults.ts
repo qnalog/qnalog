@@ -135,7 +135,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "whisper-large-v3",
       language: "zh",
       protocol: "speaker-diarization",
-      hint: "本地 WhisperX / whisper-diarization 服务：转写同时做说话人分离。需服务在响应里返回 segments[].speaker（或在 text 内联 [SPEAKER_00]），QnALog 会自动归一成 [说话人N]。注意：整段导入音频时说话人编号才全程一致；边录边切的分段模式跨段编号可能对不上。",
+      hint: "本地 WhisperX / whisper-diarization 服务：转写同时做说话人分离。需服务在响应里返回 segments[].speaker（或在 text 内联 [SPEAKER_00]），Q&A Log 会自动归一成 [说话人N]。注意：整段导入音频时说话人编号才全程一致；边录边切的分段模式跨段编号可能对不上。",
     },
   },
 

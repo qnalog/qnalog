@@ -224,9 +224,9 @@ export function formatVocabularyMarkdown(input, profile) {
   const moment = window.moment;
   const total = countVocabularyGroups(groups);
   const lines = [
-    "# QnALog ASR 热词表",
+    "# Q&A Log ASR 热词表",
     "",
-    "> 此文件由 QnALog 维护，是“纪要信息对象”里专门服务语音转写的一类对象。它只保存术语、名称和易错写法，用于在转写时提示 ASR；人员关系、角色和长期备注请维护在人员资料中。",
+    "> 此文件由 Q&A Log 维护，是“纪要信息对象”里专门服务语音转写的一类对象。它只保存术语、名称和易错写法，用于在转写时提示 ASR；人员关系、角色和长期备注请维护在人员资料中。",
     "",
     `- 行业 / 角色：${(profile && profile.industry) || "（未设置）"}`,
     `- 词汇数：${total}`,
@@ -238,7 +238,7 @@ export function formatVocabularyMarkdown(input, profile) {
     "- 可以手动新增、删除或把词条移动到更准确的分区。",
     "- 以 `#` `>` `<!--` `//` 开头的行会被忽略。",
     "- 列表标记 `- *` `1.` 会被自动剥离。",
-    "- QnALog 会读取所有分区，并在调用转写服务时作为 ASR 热词提示使用。",
+    "- Q&A Log 会读取所有分区，并在调用转写服务时作为 ASR 热词提示使用。",
     "",
     "---",
     "",

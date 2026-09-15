@@ -223,7 +223,7 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.tasks.startStatusBar();
 
-    this.ribbonEl = this.addRibbonIcon("mic", "QnALog：点击开始/停止，悬停展开控件", () => this.recording.toggleRecording());
+    this.ribbonEl = this.addRibbonIcon("mic", "Q&A Log：点击开始/停止，悬停展开控件", () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
     this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this));
@@ -234,7 +234,7 @@ class QnALogPlugin extends obsidian.Plugin {
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
-    this.addRibbonIcon("list-tree", "QnALog 实时纪要面板", () => this.shell.openOutlineView());
+    this.addRibbonIcon("list-tree", "Q&A Log 实时纪要面板", () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
@@ -356,7 +356,7 @@ class QnALogPlugin extends obsidian.Plugin {
       if (AUDIO_EXT.has(ext)) {
         menu.addSeparator();
         menu.addItem((item) => {
-          item.setTitle("QnALog：转写并整理")
+          item.setTitle("Q&A Log：转写并整理")
             .setIcon("mic")
             .onClick(() => this.imports.openAudioImportOptions([file.path]));
         });
@@ -369,7 +369,7 @@ class QnALogPlugin extends obsidian.Plugin {
       const paths = audios.map((f) => f.path);
       menu.addSeparator();
       menu.addItem((item) => {
-        item.setTitle(`QnALog：整合 ${audios.length} 段音频…`).setIcon("mic");
+        item.setTitle(`Q&A Log：整合 ${audios.length} 段音频…`).setIcon("mic");
         const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
         const modes = getVisibleModeEntries(this.settings, false);
         for (const [m, label] of modes) {
@@ -384,7 +384,7 @@ class QnALogPlugin extends obsidian.Plugin {
     }));
 
     if (this.queue.tasks.length > 0) {
-      new obsidian.Notice(`QnALog：发现 ${this.queue.tasks.length} 个待处理任务，后台重试中…`);
+      new obsidian.Notice(`Q&A Log：发现 ${this.queue.tasks.length} 个待处理任务，后台重试中…`);
       window.setTimeout(() => { void this.queueRetry.retryQueue(); }, 2500);
     }
     this.app.workspace.onLayoutReady(() => {
@@ -418,7 +418,7 @@ class QnALogPlugin extends obsidian.Plugin {
     const saved: unknown = (await this.loadData()) || {};
     // 还原密钥：data.json 里的密钥是混淆态，读入内存前先解混淆（旧明文数据会原样通过，下次保存自动转混淆）
     try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
-    // QnALog 不承接历史项目的数据：磁盘上的设置版本与本版本不一致时，整份丢弃，
+    // Q&A Log 不承接历史项目的数据：磁盘上的设置版本与本版本不一致时，整份丢弃，
     // 用默认值重建（设置页里重新配置一次）。仅版本一致才读回，避免把别的插件或
     // 旧格式的 data.json 当成自己的设置用。
     const schemaMatches = isCurrentSettingsSchema(saved);
@@ -440,10 +440,10 @@ class QnALogPlugin extends obsidian.Plugin {
     if (shouldSave) {
       try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema reset save failed", e); }
       try {
-        const summary = `QnALog 设置结构版本与当前不一致，已改用默认设置。`;
+        const summary = `Q&A Log 设置结构版本与当前不一致，已改用默认设置。`;
         void this.diagnostics.logDiagnostic("warn", "settings.schema_reset", summary, { discarded: true });
         if (!schemaMatches) {
-          new obsidian.Notice(`${summary}\n请在「设置 → QnALog」重新配置保存路径与访问密钥。`, 20000);
+          new obsidian.Notice(`${summary}\n请在「设置 → Q&A Log」重新配置保存路径与访问密钥。`, 20000);
         }
       } catch (e) {
         console.warn("[QnALog] schema reset notice failed", e);

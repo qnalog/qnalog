@@ -151,7 +151,7 @@ if (buildIdentity.channel === "dev") {
 // 自己的版本检查丢弃并重建，用户的旧设置留在原目录里，需要时手工取回。
 // 检测到上游插件目录时只提示存在，不读取、不移动、不删除它的内容。
 
-console.log(`[install] 已安装 QnALog ${manifest.version} → ${targetDir}`);
+console.log(`[install] 已安装 Q&A Log ${manifest.version} → ${targetDir}`);
 if (installedVersion && compareVersions(installedVersion, manifest.version) > 0) {
   console.log(`[install] 注意：覆盖的是更高版本 ${installedVersion}（降级安装）。
 [install] 首次加载时，版本不一致的 data.json 会被丢弃，设置回到默认值（插件会弹通知）。
@@ -164,4 +164,4 @@ if (existsSync(upstreamDir)) {
   console.log(`[install] 检测到上游插件目录仍存在：${upstreamDir}
 [install] Obsidian 社区目录里的 LexVoice 是上游闭源版本，会继续提示它自己的更新。若不再需要，请在 Obsidian 中停用它并删除该目录。`);
 }
-console.log(`[install] 下一步：重新加载 Obsidian（Ctrl/Cmd + R），在「设置 → 第三方插件」中启用 QnALog。`);
+console.log(`[install] 下一步：重新加载 Obsidian（Ctrl/Cmd + R），在「设置 → 第三方插件」中启用 Q&A Log。`);

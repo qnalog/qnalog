@@ -61,7 +61,7 @@ vm.runInNewContext(code, sandbox, { filename: "main.js", timeout: 5000 });
 
 const exported = sandbox.module.exports;
 if (!(typeof exported === "function" || typeof exported?.default === "function")) {
-  throw new Error("Mobile bundle did not expose the QnALog plugin entrypoint");
+  throw new Error("Mobile bundle did not expose the Q&A Log plugin entrypoint");
 }
 
 console.log("[mobile-load] OK: bundle starts without Node, Electron, Buffer, or process globals");

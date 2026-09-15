@@ -391,7 +391,7 @@ export function buildEmailDraftContent({ to = [], subject = "", body = "", attac
   const boundary = `----=_QnALog_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const lines = [
     `To: ${to.map(sanitizeMailHeader).join(", ")}`,
-    `Subject: ${encodeMailHeader(subject || "QnALog 会议纪要")}`,
+    `Subject: ${encodeMailHeader(subject || "Q&A Log 会议纪要")}`,
     `Date: ${new Date().toUTCString()}`,
     "MIME-Version: 1.0",
     "X-Unsent: 1",
@@ -581,7 +581,7 @@ export function buildMeetingEmailBody({ file, markdown, attendeeNames = [], atta
     "",
     "以下是本次纪要的简要同步，完整 Markdown、PDF 及已生成的报告已随邮件附上。",
     "",
-    `纪要：${file && file.basename ? file.basename : "QnALog 会议纪要"}.md`,
+    `纪要：${file && file.basename ? file.basename : "Q&A Log 会议纪要"}.md`,
     `自动匹配参会人：${attendeeNames.length ? attendeeNames.join("、") : "未识别到可匹配人员"}`,
     `附件数量：${attachmentsCount}`,
     "",
@@ -597,7 +597,7 @@ export function buildMeetingEmailBody({ file, markdown, attendeeNames = [], atta
   } else {
     body.push("本篇纪要未识别到可直接写入邮件正文的摘要、决策、待办或悬而未决事项，请以附件中的完整纪要为准。", "");
   }
-  body.push("此邮件草稿由 QnALog 在本地生成。发送前请确认收件人、正文和附件是否正确。");
+  body.push("此邮件草稿由 Q&A Log 在本地生成。发送前请确认收件人、正文和附件是否正确。");
   return body.join("\n");
 }
 
@@ -1317,7 +1317,7 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
     chunkSize,
   });
 
-  const sys = "你是 QnALog 的长文本预处理助手。你的任务是把长文本片段压缩为可用于最终整理的结构化证据摘要。";
+  const sys = "你是 Q&A Log 的长文本预处理助手。你的任务是把长文本片段压缩为可用于最终整理的结构化证据摘要。";
   const summaries = [];
   for (let i = 0; i < chunks.length; i++) {
     const user = [

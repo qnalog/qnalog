@@ -29,7 +29,7 @@ import { getBriefingPartTargetChars } from "../briefing/pipeline";
 import { buildSynthesisPartInstruction } from "../briefing/synthesis-policy";
 
 // 结构化程度三档 —— 控制主体内容的层级深度
-// QnALog 视图（.base 文件）—— 默认创建到资料库的视图目录，可在设置里修改。
+// Q&A Log 视图（.base 文件）—— 默认创建到资料库的视图目录，可在设置里修改。
 export function buildStructureLevelInstruction(level) {
   return STRUCTURE_LEVEL_INSTRUCTIONS[level] || STRUCTURE_LEVEL_INSTRUCTIONS.balanced;
 }

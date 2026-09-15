@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：Obsidian callout 归一化
 
-// 标准 Obsidian callout 类型全集 + QnALog 自定义类型。
+// 标准 Obsidian callout 类型全集 + Q&A Log 自定义类型。
 // 用全集而非小白名单：DeepSeek 等模型常丢 `>` 前缀，规整器要能认出任意标准 callout 补回前缀。
 // 风险：正文里出现字面 [!xxx] 才会误判，而中文纪要正文几乎不会写这种 Obsidian 专有语法，安全。
 export const QNALOG_CALLOUT_NORMALIZE_TYPES = new Set([
@@ -10,7 +10,7 @@ export const QNALOG_CALLOUT_NORMALIZE_TYPES = new Set([
   "important", "success", "check", "done", "question", "help", "faq",
   "warning", "caution", "attention", "failure", "fail", "missing",
   "danger", "error", "bug", "example", "quote", "cite",
-  // QnALog 自定义
+  // Q&A Log 自定义
   "ai-eval",
 ]);
 

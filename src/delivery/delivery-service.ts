@@ -58,7 +58,7 @@ export class DeliveryService {
       accentHex = await pickReportAccentColor(this.host.app);
       if (accentHex === null) return null;  // 用户取消
     }
-    new obsidian.Notice("QnALog：正在生成报告…");
+    new obsidian.Notice("Q&A Log：正在生成报告…");
     const markdown = await this.host.app.vault.read(file);
     let html = styled
       ? await generateStyledReportFromMarkdown(this.host, mode, markdown)
@@ -75,7 +75,7 @@ export class DeliveryService {
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-HTML报告.html`);
       if (!target) throw new Error("无法生成可用的 HTML 报告路径");
       const outFile = await this.host.app.vault.create(target, r.html);
-      new obsidian.Notice(`QnALog：已生成 HTML 报告：${target}`, 8000);
+      new obsidian.Notice(`Q&A Log：已生成 HTML 报告：${target}`, 8000);
       if (this.host.settings.autoOpenHtmlReportAfterGenerate !== false) {
         this.openVaultFileInSystem(outFile.path);
       }
@@ -88,7 +88,7 @@ export class DeliveryService {
     try {
       const r = await this.produceReportHtmlForFile(file);
       if (!r) return;
-      new obsidian.Notice("QnALog：正在渲染整页 PDF…");
+      new obsidian.Notice("Q&A Log：正在渲染整页 PDF…");
       const folder = obsidian.normalizePath(this.host.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder);
       await ensureVaultFolder(this.host.app, folder);
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-报告.pdf`);
@@ -97,7 +97,7 @@ export class DeliveryService {
       const bytes = pdfBuffer instanceof Uint8Array ? pdfBuffer : new Uint8Array(pdfBuffer || []);
       const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
       const outFile = await this.host.app.vault.createBinary(target, arrayBuffer);
-      new obsidian.Notice(`QnALog：已生成 PDF 报告：${target}`, 8000);
+      new obsidian.Notice(`Q&A Log：已生成 PDF 报告：${target}`, 8000);
       if (this.host.settings.autoOpenHtmlReportAfterGenerate !== false) {
         this.openVaultFileInSystem(outFile.path);
       }
@@ -191,7 +191,7 @@ export class DeliveryService {
       renderComponent.unload();
     }
     if (!contentHtml) contentHtml = `<pre>${escapeHtmlText(markdown)}</pre>`;
-    const title = escapeHtmlText(file && file.basename || "QnALog 会议纪要");
+    const title = escapeHtmlText(file && file.basename || "Q&A Log 会议纪要");
     return `<!doctype html>
 <html>
 <head>
@@ -215,7 +215,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
   async createEmailDraftForMarkdownFile(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
     try {
-      new obsidian.Notice("QnALog：正在生成邮件草稿…");
+      new obsidian.Notice("Q&A Log：正在生成邮件草稿…");
       const markdown = await this.host.app.vault.read(file);
       const { recipients, attendeeNames } = await this.resolveEmailRecipientsForMarkdownFile(file);
       const attachmentFiles = [file];
@@ -254,7 +254,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       const draft = await this.host.app.vault.create(target, eml);
       const opened = this.openVaultFileInSystem(draft.path);
       const recipientHint = recipients.length ? `，已填入 ${recipients.length} 个收件人` : "，未匹配到邮箱";
-      new obsidian.Notice(`QnALog：已生成邮件草稿${recipientHint}，附件 ${attachments.length} 个。${opened ? "" : "可在邮件草稿文件夹中打开。"}`, 10000);
+      new obsidian.Notice(`Q&A Log：已生成邮件草稿${recipientHint}，附件 ${attachments.length} 个。${opened ? "" : "可在邮件草稿文件夹中打开。"}`, 10000);
     } catch (e) {
       console.error("[QnALog] create email draft failed", e);
       new obsidian.Notice(`邮件草稿生成失败：${(e && e.message) || e}`, 9000);

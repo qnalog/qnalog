@@ -280,7 +280,7 @@ export function buildSemanticOutlinePrompt(
   const note = formatSourceSections(sourceSections, overviewSectionLimit);
 
   const system = [
-    "你是 QnALog 的会议知识结构分析器。你的任务不是复述时间线，也不是把现有纪要换一种排版。",
+    "你是 Q&A Log 的会议知识结构分析器。你的任务不是复述时间线，也不是把现有纪要换一种排版。",
     "请把完整纪要组织成一张可逐层定位内容的语义地图：中心节点概括整场会议，后续节点沿着会议实际内容不断拆分，直到具体问题、观点、案例、数字、方法步骤、分歧、决策或行动。",
     "树不需要对称，也不需要每条分支层数一致。只在确有独立内容时继续拆分，不要为了形式凑层级。",
     "节点必须使用会议本身的自然语言命名，不要机械套用固定分类标题。",
@@ -342,7 +342,7 @@ export function buildSemanticBranchExpansionPrompt(
   const evidenceIds = new Set(branch.evidence);
   const relevantOutline = outlineNodes.filter((node) => evidenceIds.has(node.id));
   const system = [
-    "你是 QnALog 的会议语义主线分析器。请只展开指定主线，不改写整场会议，也不要重复其他主线。",
+    "你是 Q&A Log 的会议语义主线分析器。请只展开指定主线，不改写整场会议，也不要重复其他主线。",
     "输出单个 JSON 对象，不要 Markdown、解释或代码围栏。",
     "使用会议原生语言，按内容自然下钻；树可以不对称。末级节点应当信息充分并可独立阅读。",
     "只输出语义关系和内容，不决定 Canvas 布局、颜色或分组。",

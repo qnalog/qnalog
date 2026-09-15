@@ -167,7 +167,7 @@ export function buildObjectTags(baseTag, extraTags) {
 export function buildSedimentPreExtractionInstruction() {
   return `附加产物：沉淀预提取
 
-完成上面的纪要整理和标签注释后，请在本次回复最末尾额外输出一段“沉淀预提取 JSON”。这段 JSON 只给 QnALog 插件解析，不属于正文。
+完成上面的纪要整理和标签注释后，请在本次回复最末尾额外输出一段“沉淀预提取 JSON”。这段 JSON 只给 Q&A Log 插件解析，不属于正文。
 
 严格格式：
 <!--${SEDIMENT_PREEXTRACT_BEGIN}
@@ -296,7 +296,7 @@ export function buildSedimentExtractionPrompt(fileName, markdown) {
   const source = String(markdown || "")
     .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/m, "")
     .slice(0, 24000);
-  return `请从下面这篇 QnALog 纪要中一次性提炼可沉淀信息。
+  return `请从下面这篇 Q&A Log 纪要中一次性提炼可沉淀信息。
 
 文件名：${fileName}
 
@@ -355,7 +355,7 @@ ${source}`;
 
 export async function generateSedimentObjects(plugin, file, markdown) {
   if (!plugin.settings.llmApiKey && !canOmitServiceApiKey(plugin.settings.llmEndpoint)) throw new Error("请先在 API 页配置大模型服务");
-  const sys = "你是 QnALog 的纪要沉淀助手。你只根据当前纪要提炼结构化信息对象，输出合法 JSON，不编造，不泄露或要求任何配置。";
+  const sys = "你是 Q&A Log 的纪要沉淀助手。你只根据当前纪要提炼结构化信息对象，输出合法 JSON，不编造，不泄露或要求任何配置。";
   // 沉淀输出是结构化 JSON，体量大、最易被输出上限截断（真实产物里这份 JSON 曾在中途被切断）。
   // 走续写拼接：截断后让模型从断点续写 JSON，再整体解析，避免沉淀对象不完整。
   const { text: raw } = await callLlmWithContinuation(plugin, sys, buildSedimentExtractionPrompt(file && file.basename ? file.basename : "当前笔记", markdown), { timeoutMs: 90000 }, { maxContinuations: 3 });
@@ -415,7 +415,7 @@ export function formatSedimentTodoCardMarkdown(sourceFile, todo) {
 
 export async function writeSedimentObjectCards(plugin, sourceFile, objects) {
   const result = { todos: 0, entries: [] };
-  const baseStem = sanitizeFilename(sourceFile && sourceFile.basename || "QnALog");
+  const baseStem = sanitizeFilename(sourceFile && sourceFile.basename || "Q&A Log");
   // 待办：优先写入当日日记的"## 待办"段（Tasks / Dataview 双兼容），不再每条建新 MD。
   // 兜底：若 Daily Notes 插件未启用，回退到旧的卡片文件方式。
   const todos = objects.todos || [];

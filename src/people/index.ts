@@ -199,7 +199,7 @@ export function buildLocalPeopleContext(people) {
   const lines = [
     "## 本地人员上下文（仅本地模型使用）",
     "",
-    "以下信息来自用户本地维护的 QnALog 人员资料，仅在当前大模型服务为本地或局域网地址时提供。它不是声纹识别结果，只能作为整理纪要时的辅助上下文。",
+    "以下信息来自用户本地维护的 Q&A Log 人员资料，仅在当前大模型服务为本地或局域网地址时提供。它不是声纹识别结果，只能作为整理纪要时的辅助上下文。",
     "",
   ];
   for (const person of list) {
@@ -230,7 +230,7 @@ export function formatPersonRelatedBriefingsBase(mdFolder) {
   const folder = escapeBaseString(obsidian.normalizePath(mdFolder || DEFAULT_SETTINGS.mdFolder));
   return `## 相关纪要
 
-> QnALog 会把已确认的人物归属写回纪要。这里聚合的是和此人相关的会议、被提及记录与待办责任。
+> Q&A Log 会把已确认的人物归属写回纪要。这里聚合的是和此人相关的会议、被提及记录与待办责任。
 
 \`\`\`base
 filters:
@@ -275,7 +275,7 @@ SORT file.mtime DESC
 
 此处适合手动补充需要长期回看的原文片段。自动聚合以「相关纪要」为准，避免把每次会议里的偶发提及都硬写进人员页。
 
-上方视图由 Obsidian Bases 根据纪要里的「相关人员 / participants / mentioned_people / todo_owners」链接自动聚合；QnALog 只在用户确认人员归属后维护这些本地链接。
+上方视图由 Obsidian Bases 根据纪要里的「相关人员 / participants / mentioned_people / todo_owners」链接自动聚合；Q&A Log 只在用户确认人员归属后维护这些本地链接。
 `;
 }
 
@@ -764,7 +764,7 @@ export function findMatchingPersonEntry(people, suggestion) {
 
 export function buildPeopleDirectorySuggestionPrompt(fileName, markdown) {
   const source = String(markdown || "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/m, "").slice(0, 16000);
-  return `请从下面这篇 QnALog 纪要中，提取“适合维护为人员资料”的候选人员信息。
+  return `请从下面这篇 Q&A Log 纪要中，提取“适合维护为人员资料”的候选人员信息。
 
 文件名：${fileName}
 

@@ -734,7 +734,7 @@ export class TaskActivityService {
       return;
     }
     // E) 空闲 → 低调常驻锚点
-    show("circle-check", "QnALog 就绪", false, true);
+    show("circle-check", "Q&A Log 就绪", false, true);
   }
   // 兼容旧调用名：早期代码里残留 this.renderStatusBar() 调用点，但 renderStatusBar 从未定义
   // → 运行时抛 TypeError（曾导致"重试失败转写/清空队列"中途崩、完成提示不弹）。统一别名到 updateBusyStatus。
