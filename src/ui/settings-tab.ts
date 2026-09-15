@@ -8,7 +8,7 @@ import { canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint 
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
-import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
+import { LLM_SERVICE_PRESETS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
 import { fetchLlmModelList, getLlmConfigIssue, testLlmConnection } from '../llm/core';
 import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
@@ -241,20 +241,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     return true;
   }
 
-  // 套一套推荐配置（硅基流动）：只写服务字段，密钥留空由用户下一步填。
-  // 与 applyOneCardProvider 共用同一份计划计算，不另写一套写入逻辑。
-  async applyBeginnerDefaults() {
-    const plan = planPresetApplication(this.plugin.settings, {
-      providerId: "siliconflow",
-      apiKey: "",
-      allowMissingKey: true,
-    });
-    if (!plan.ok) return false;
-    Object.assign(this.plugin.settings, applyPresetPlan(this.plugin.settings, plan));
-    await this.plugin.saveSettings();
-    return true;
-  }
-
   async restoreTranscribeProviderDefaults(providerId) {
     const defaults = DEFAULT_SETTINGS.transcribeProviders[providerId];
     if (!defaults) return false;
@@ -345,15 +331,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const apiBtn = primary.createEl("button", { text: "配置服务" });
     apiBtn.addClass("mod-cta");
     apiBtn.onclick = () => jump("api");
+    // 首页只保留一个「推荐配置」入口：往下滚到「快速设置」填一把百炼 Key 即可完成。
+    // 此前这里另有一个写入硅基流动默认值的按钮，与「快速设置」指向不同服务——
+    // 两个入口各说一套，用户无法判断该信哪个。已合并为一条路径（见 MAINTAINING §10）。
     const quickBtn = primary.createEl("button", { text: "使用推荐配置" });
-    quickBtn.onclick = async () => {
-      const ok = await qnalogConfirm(this.app, "使用推荐配置？",
-        "转写与 AI 整理将切换为硅基流动的推荐设置。已填写的 API Key 和其他服务配置会保留。",
-        "切换");
-      if (!ok) return;
-      await this.applyBeginnerDefaults();
-      new obsidian.Notice("已应用推荐配置。请填写 API Key 和模型名称，然后测试连接。", 7000);
-      jump("api");
+    quickBtn.onclick = () => {
+      const target = page.querySelector(".qnalog-home-onecard");
+      if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "center" });
+      new obsidian.Notice("在下方「快速设置」填写阿里云百炼 API Key，即可一次配好录音转写、音频导入与 AI 整理。", 8000);
     };
     const aiBtn = primary.createEl("button", { text: hasLlm ? "AI 整理设置" : "配置 AI 整理" });
     aiBtn.onclick = () => jump(hasLlm ? "ai" : "api");
@@ -361,161 +346,76 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     panelBtn.onclick = () => this.plugin.shell.openOutlineView();
 
     // 快速配置：百炼分别选择导入音频 ASR 与 AI 整理模型。
+    // 首次配置的主入口：一把阿里云百炼 API Key，三段服务（录音转写 / 音频导入 / AI 整理）
+    // 一起配好。地址与模型全部内置，用户不需要看到、也不需要选择它们。
     const oneCard = page.createDiv({ cls: "qnalog-home-block qnalog-home-onecard" });
     oneCard.createEl("h3", { text: "快速设置" });
-    oneCard.createDiv({ cls: "qnalog-home-prep-desc", text: "选择常用服务并填写 API Key。百炼可分别配置导入音频 ASR 和 AI 整理模型。" });
-    let oneCardProviderId = "mimo";
-    let oneCardKey = "";
-    let oneCardEndpoint = ONE_CARD_PROVIDERS.bailian.llmEndpoint;
-    let oneCardAsrModel = ONE_CARD_PROVIDERS.bailian.asrModel;
-    let oneCardAiModel = "";
-    let bailianAsrModelInput;
-    let bailianAiModelInput;
-    let bailianFields;
-    const updateOneCardFields = () => {
-      if (bailianFields) bailianFields.hidden = oneCardProviderId !== "bailian";
-    };
-    const oneCardRow = new obsidian.Setting(oneCard).setName("服务商与 API Key");
-    oneCardRow.addDropdown(d => {
-      for (const id of Object.keys(ONE_CARD_PROVIDERS)) d.addOption(id, ONE_CARD_PROVIDERS[id].label);
-      d.setValue(oneCardProviderId);
-      d.onChange(v => { oneCardProviderId = v; updateOneCardFields(); });
+    oneCard.createDiv({
+      cls: "qnalog-home-prep-desc",
+      text: "填写阿里云百炼的 API Key 即可完成全部配置：录音转写、音频导入和 AI 整理会一起配好，服务地址与模型已内置。",
     });
+    let oneCardKey = "";
+    const oneCardRow = new obsidian.Setting(oneCard).setName("百炼 API Key");
+    oneCardRow.setDesc("在百炼控制台创建访问密钥后粘贴到这里。密钥只保存在本库的插件设置中。");
     oneCardRow.addText(t => {
       t.inputEl.type = "password";
-      t.setPlaceholder("粘贴该平台的 API Key");
+      t.setPlaceholder("sk-…");
       t.onChange(v => { oneCardKey = v.trim(); });
     });
-    oneCardRow.addButton(b => b.setButtonText("应用").setCta().onClick(async () => {
-      if (!oneCardKey) { new obsidian.Notice("请先填写 API Key", 4000); return; }
-      const cfg = ONE_CARD_PROVIDERS[oneCardProviderId];
-      if (oneCardProviderId === "bailian" && (!oneCardAsrModel || !oneCardAiModel)) {
-        new obsidian.Notice("请先选择 ASR 模型和 AI 整理模型", 5000);
+    oneCardRow.addButton(b => b.setButtonText("保存并启用").setCta().onClick(async () => {
+      if (!oneCardKey) { new obsidian.Notice("请先填写百炼 API Key", 4000); return; }
+      b.setDisabled(true);
+      b.setButtonText("正在检测…");
+      // 先检测候选配置，通过后才写入：避免把一把无效密钥当成配置落盘。
+      const plan = planPresetApplication(this.plugin.settings, { providerId: "bailian", apiKey: oneCardKey });
+      if (!plan.ok) {
+        b.setDisabled(false);
+        b.setButtonText("保存并启用");
+        new obsidian.Notice(plan.reason, 5000);
         return;
       }
-      const done = await this.applyOneCardProvider(oneCardProviderId, oneCardKey, {
-        llmEndpoint: oneCardProviderId === "bailian" ? oneCardEndpoint : "",
-        asrModel: oneCardProviderId === "bailian" ? oneCardAsrModel : "",
-        llmModel: oneCardProviderId === "bailian" ? oneCardAiModel : "",
-      });
-      if (done) {
-        new obsidian.Notice(cfg.applyDesc + " 已保存，可在「API」页切换或测试连接。", 8000);
-        this.renderSettings();
-      }
-    }));
-    oneCardRow.addButton(b => b.setButtonText("检测").onClick(async () => {
-      b.setDisabled(true); b.setButtonText("检测中…");
+      const candidate = applyPresetPlan(this.plugin.settings, plan);
+      const host = buildProbeHost(this.plugin, candidate);
       try {
-        // 检测对象是用户正在填写的候选配置：先算计划 → 用计划构造只读宿主 → 再检测。
-        // 检测不写盘，因此「点检测」不会被当成「同意保存」。
-        const plan = planPresetApplication(this.plugin.settings, {
-          providerId: oneCardProviderId,
-          apiKey: oneCardKey,
-          llmEndpoint: oneCardProviderId === "bailian" ? oneCardEndpoint : "",
-          asrModel: oneCardProviderId === "bailian" ? oneCardAsrModel : "",
-          llmModel: oneCardProviderId === "bailian" ? oneCardAiModel : "",
-        });
-        if (!plan.ok) { new obsidian.Notice(plan.reason, 5000); return; }
-
-        const candidate = applyPresetPlan(this.plugin.settings, plan);
-        const host = buildProbeHost(this.plugin, candidate);
-        new obsidian.Notice("正在检测所选服务…", 4000);
         const report = await runPresetDetection(host, plan, this.probePorts());
-        new obsidian.Notice(formatDetectionReport(report), 9000);
+        new obsidian.Notice(formatDetectionReport(report), 10000);
+        if (!report.ok) {
+          // 检测未全部通过时不落盘：让用户先看到哪一段有问题。
+          b.setDisabled(false);
+          b.setButtonText("保存并启用");
+          return;
+        }
+        Object.assign(this.plugin.settings, candidate);
+        await this.plugin.saveSettings();
+        new obsidian.Notice("配置完成，可以直接开始录音了。", 8000);
+        this.renderSettings();
       } catch (error) {
         new obsidian.Notice(`检测失败：${(error && error.message) || error}`, 8000);
+        b.setDisabled(false);
+        b.setButtonText("保存并启用");
       }
-      finally { b.setDisabled(false); b.setButtonText("检测"); }
     }));
-
-    bailianFields = oneCard.createDiv({ cls: "qnalog-home-onecard-extra" });
-    new obsidian.Setting(bailianFields)
-      .setName("百炼服务地址")
-      .setDesc("可使用默认地址，也可粘贴业务空间的 OpenAI 兼容地址。")
-      .addText(text => {
-        text.setValue(oneCardEndpoint)
-          .setPlaceholder("https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1")
-          .onChange(value => { oneCardEndpoint = value.trim(); });
-      });
-    new obsidian.Setting(bailianFields)
-      .setName("ASR 模型")
-      .setDesc("用于导入音频转写和说话人分离。")
-      .addText(text => {
-        bailianAsrModelInput = text;
-        text.setValue(oneCardAsrModel)
-          .setPlaceholder("fun-asr")
-          .onChange(value => { oneCardAsrModel = value.trim(); });
-      })
-      .addButton(button => button.setButtonText("获取模型").onClick(async () => {
-        if (!oneCardKey) {
-          new obsidian.Notice("请先填写百炼 API Key", 5000);
-          return;
-        }
-        button.setDisabled(true);
-        button.setButtonText("获取中…");
-        try {
-          const probePlugin = Object.create(this.plugin);
-          const currentProviders = this.plugin.settings.transcribeProviders || {};
-          const asrDefaults = DEFAULT_SETTINGS.transcribeProviders["dashscope-filetrans"] || {};
-          probePlugin.settings = Object.assign({}, this.plugin.settings, {
-            importTranscribeProvider: "dashscope-filetrans",
-            transcribeProviders: Object.assign({}, currentProviders, {
-              "dashscope-filetrans": Object.assign({}, currentProviders["dashscope-filetrans"] || {}, asrDefaults, {
-                apiKey: oneCardKey,
-                model: oneCardAsrModel,
-              }),
-            }),
-          });
-          const models = await fetchImportTranscribeModels(probePlugin, "dashscope-filetrans");
-          if (!models.length) {
-            new obsidian.Notice("百炼未返回 ASR 模型列表，请手动填写模型名称。", 6000);
-            return;
-          }
-          openPickListModal(this.app, `选择 ASR 模型（共 ${models.length} 个）`, models, model => {
-            oneCardAsrModel = model;
-            if (bailianAsrModelInput) bailianAsrModelInput.setValue(model);
-          });
-        } catch (error) {
-          new obsidian.Notice(`获取 ASR 模型失败：${(error && error.message) || error}。可手动填写模型名称。`, 8000);
-        } finally {
-          button.setDisabled(false);
-          button.setButtonText("获取模型");
-        }
-      }));
-    new obsidian.Setting(bailianFields)
-      .setName("AI 整理模型")
-      .setDesc("用于根据转写原文生成最终纪要。")
-      .addText(text => {
-        bailianAiModelInput = text;
-        text.setValue(oneCardAiModel)
-          .setPlaceholder("获取模型或填写模型名称")
-          .onChange(value => { oneCardAiModel = value.trim(); });
-      })
-      .addButton(button => button.setButtonText("获取模型").onClick(async () => {
-        if (!oneCardKey || !oneCardEndpoint) {
-          new obsidian.Notice("请先填写百炼 API Key 和服务地址", 5000);
-          return;
-        }
-        button.setDisabled(true);
-        button.setButtonText("获取中…");
-        try {
-          const models = await fetchLlmModelList(oneCardEndpoint, oneCardKey);
-          if (!models.length) {
-            new obsidian.Notice("百炼未返回 AI 模型列表，请手动填写模型名称。", 6000);
-            return;
-          }
-          openPickListModal(this.app, `选择 AI 整理模型（共 ${models.length} 个）`, models, model => {
-            oneCardAiModel = model;
-            if (bailianAiModelInput) bailianAiModelInput.setValue(model);
-          });
-        } catch (error) {
-          new obsidian.Notice(`获取 AI 模型失败：${(error && error.message) || error}。可手动填写模型名称。`, 8000);
-        } finally {
-          button.setDisabled(false);
-          button.setButtonText("获取模型");
-        }
-      }));
-    updateOneCardFields();
+    oneCardRow.addButton(b => b.setButtonText("仅检测").onClick(async () => {
+      if (!oneCardKey) { new obsidian.Notice("请先填写百炼 API Key", 4000); return; }
+      b.setDisabled(true);
+      b.setButtonText("检测中…");
+      try {
+        const plan = planPresetApplication(this.plugin.settings, { providerId: "bailian", apiKey: oneCardKey });
+        if (!plan.ok) { new obsidian.Notice(plan.reason, 5000); return; }
+        const host = buildProbeHost(this.plugin, applyPresetPlan(this.plugin.settings, plan));
+        const report = await runPresetDetection(host, plan, this.probePorts());
+        new obsidian.Notice(formatDetectionReport(report), 10000);
+      } catch (error) {
+        new obsidian.Notice(`检测失败：${(error && error.message) || error}`, 8000);
+      } finally {
+        b.setDisabled(false);
+        b.setButtonText("仅检测");
+      }
+    }));
+    oneCard.createDiv({
+      cls: "qnalog-home-prep-desc",
+      text: "其他服务（硅基流动、OpenAI、本地模型等）可在「API」页单独配置；上面这条路径只是把首次配置压到一步。",
+    });
 
     const prep = page.createDiv({ cls: "qnalog-home-block" });
     prep.createEl("h3", { text: "使用准备" });

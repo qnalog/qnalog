@@ -2,6 +2,7 @@
 // @ts-nocheck — JS 风格协议类（构造器赋值、无 TS 字段声明）；已用 tsc 确认无漏引用(TS2304=0)，余者皆类字段类型噪音，故与 main.ts 同档跳过。
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import { assertSafeServiceEndpoint } from '../shared/util-llm-endpoint';
+import { buildRealtimeAsrParameters, normalizeRealtimeLanguage } from './realtime-params';
 import { isMobileRuntime } from '../shared/util-platform';
 
 let nodeWebSocketCtorPromise = null;
@@ -27,7 +28,7 @@ export class DashScopeStreamingClient {
     this.endpoint = opts.endpoint || "wss://dashscope.aliyuncs.com/api-ws/v1/inference";
     this.apiKey = opts.apiKey;
     this.model = opts.model || "paraformer-realtime-v2";
-    this.language = String(opts.language || "").trim().toLowerCase();
+    this.language = normalizeRealtimeLanguage(opts.language);
     this.sampleRate = opts.sampleRate || 16000;
     this.onPartial = opts.onPartial || (() => { /* intentionally empty */ });
     this.onError = opts.onError || ((e) => console.error("[DashScopeStream]", e));
@@ -61,12 +62,14 @@ export class DashScopeStreamingClient {
           payload: {
             task_group: "audio", task: "asr", function: "recognition",
             model: this.model,
-            parameters: {
-              format: "pcm", sample_rate: this.sampleRate,
-              disfluency_removal_enabled: false,
-              // 明确语种能提升准确率（官方文档）：用户设置了 zh/en/ja 就单一语种，否则中英混合兜底
-              language_hints: (this.language === "zh" || this.language === "en" || this.language === "ja") ? [this.language] : ["zh", "en"],
-            },
+            // 只发目标模型支持的参数：Paraformer 专属字段（disfluency_removal_enabled 等）
+            // 不能发给 Qwen-Audio-3.0-ASR-Flash-Streaming / Fun-ASR-Realtime，
+            // 依据见 src/asr/realtime-params.ts 的文件头。
+            parameters: buildRealtimeAsrParameters({
+              model: this.model,
+              sampleRate: this.sampleRate,
+              language: this.language,
+            }),
             input: {},
           },
         };

@@ -45,6 +45,10 @@ export interface PresetDefinition {
   asrTarget?: string;
   asrEndpoint?: string;
   asrModel?: string;
+  /** 一站式方案的导入音频转写（整文件）：与录音转写可以是不同的服务与模型。 */
+  importAsrProvider?: string;
+  importAsrEndpoint?: string;
+  importAsrModel?: string;
   llmPreset?: string;
   llmEndpoint?: string;
   tokenPlanEndpoint?: string;
@@ -80,12 +84,6 @@ export interface PresetRequest {
   /** 只有需要挑选模型的预设（百炼）用得上。 */
   asrModel?: string;
   llmModel?: string;
-  /**
-   * 允许不带密钥地算计划：只填地址与模型，密钥留给用户下一步填。
-   * 供「先套一套推荐配置、再填密钥」的入口使用——它与带密钥的预设共用同一条
-   * 字段白名单与同一份计算，避免出现第三套写入实现。
-   */
-  allowMissingKey?: boolean;
 }
 
 export interface PresetPlan {
@@ -98,6 +96,8 @@ export interface PresetPlan {
   changes: Partial<PluginSettings>;
   asrTarget: PresetAsrTarget;
   asrProviderId: string;
+  /** 一站式方案的导入音频转写服务；没有则为空串。 */
+  importAsrProviderId: string;
   llmPresetId: string;
 }
 
@@ -130,13 +130,13 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
     changes: {},
     asrTarget: "none",
     asrProviderId: "",
+    importAsrProviderId: "",
     llmPresetId: "",
   });
 
   if (!preset) return empty("请选择一个服务方案");
-  // 密钥缺失时是否算「不完整」取决于入口：带密钥的预设要求填全，
-  // 「先套推荐配置、再填密钥」的入口允许留空。
-  if (!apiKey && !request.allowMissingKey) return empty("请先填写 API Key");
+  // 密钥是唯一必填项：地址与模型都内置在预设里。
+  if (!apiKey) return empty("请先填写 API Key");
 
   const llmPresetId = String(preset.llmPreset || "");
   const asrProviderId = String(preset.asrProvider || "");
@@ -159,6 +159,7 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
 
   const changes: Partial<PluginSettings> = {};
   const current = (settings && settings.transcribeProviders) || {};
+  let nextProviders: Record<string, TranscribeProviderSettings> = current;
 
   if (asrProviderId) {
     const defaults = (DEFAULT_SETTINGS.transcribeProviders || {})[asrProviderId] || {};
@@ -172,24 +173,42 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
         model: customAsrModel || presetAsrModel || defaults.model || existing.model || "",
         language: existing.language || defaults.language || "auto",
         protocol: defaults.protocol || existing.protocol,
-        // 密钥留空时保留用户已填的那个：allowMissingKey 的入口只负责套地址与模型，
-        // 不能顺手把已有密钥清成空串。
-        apiKey: apiKey || existing.apiKey || "",
+        apiKey,
       }),
     });
+    nextProviders = changes.transcribeProviders || current;
     if (asrTarget === "import") changes.importTranscribeProvider = asrProviderId;
     else if (asrTarget === "recording") changes.activeTranscribeProvider = asrProviderId;
+  }
+
+  // 导入音频转写：一站式方案里是独立的一项（与服务可以是不同服务、不同模型）。
+  // 只写完成服务配置所需的字段，与录音转写同一套规则。
+  const importProviderId = String(preset.importAsrProvider || "").trim();
+  if (importProviderId) {
+    const importDefaults = (DEFAULT_SETTINGS.transcribeProviders || {})[importProviderId] || {};
+    const existingImport: TranscribeProviderSettings = nextProviders[importProviderId] || {};
+    changes.transcribeProviders = Object.assign({}, nextProviders, {
+      [importProviderId]: Object.assign({}, existingImport, {
+        name: existingImport.name || importDefaults.name,
+        endpoint: String(preset.importAsrEndpoint || "") || importDefaults.endpoint || existingImport.endpoint || "",
+        model: String(preset.importAsrModel || "").trim() || importDefaults.model || existingImport.model || "",
+        language: existingImport.language || importDefaults.language || "zh",
+        protocol: importDefaults.protocol || existingImport.protocol,
+        apiKey,
+      }),
+    });
+    changes.importTranscribeProvider = importProviderId;
+    nextProviders = changes.transcribeProviders;
   }
 
   changes.llmServicePreset = llmPresetId;
   changes.llmEndpoint = llmEndpoint;
   if (customLlmModel || presetLlmModel) changes.llmModel = customLlmModel || presetLlmModel;
-  if (apiKey) changes.llmApiKey = apiKey;
+  changes.llmApiKey = apiKey;
 
   // 同时存成一套完整 API 方案（带转写快照），出现在 API 页顶部可一键重选。
   // 同名方案就地覆盖，不重复堆叠。
   const schemeName = String(preset.label || providerId);
-  const nextProviders: Record<string, TranscribeProviderSettings> = changes.transcribeProviders || current;
   const profiles = readLlmProfiles(settings && settings.llmProfiles);
   const nextModel = String(changes.llmModel !== undefined ? changes.llmModel : (settings && settings.llmModel) || "");
   const existingProfile = profiles.find((profile) => profile.name === schemeName);
@@ -200,7 +219,7 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
   let activeProfileId: string;
   if (existingProfile) {
     existingProfile.endpoint = String(changes.llmEndpoint || "");
-    if (apiKey) existingProfile.apiKey = apiKey;
+    existingProfile.apiKey = apiKey;
     existingProfile.model = nextModel;
     if (asrSnapshot) existingProfile.asr = asrSnapshot;
     else delete existingProfile.asr;
@@ -220,7 +239,16 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
   changes.llmProfiles = profiles;
   changes.activeLlmProfile = activeProfileId;
 
-  return { ok: true, reason: "", providerId, changes, asrTarget, asrProviderId, llmPresetId };
+  return {
+    ok: true,
+    reason: "",
+    providerId,
+    changes,
+    asrTarget,
+    asrProviderId,
+    importAsrProviderId: importProviderId,
+    llmPresetId,
+  };
 }
 
 /** 把计划落到一份新设置对象上；传入的 settings 不被修改。 */
@@ -359,9 +387,20 @@ export async function runPresetDetection(
 ): Promise<DetectionReport> {
   const stages: DetectionStage[] = [];
 
-  if (plan.asrTarget === "import") {
+  // 录音转写
+  if (plan.asrTarget === "recording") {
     try {
-      const result = await ports.importTranscribe(host, plan.asrProviderId);
+      const text = await ports.transcribe(host);
+      stages.push({ stage: "transcribe", label: "录音转写", ok: true, detail: `返回：${(text || "<空>").slice(0, 20)}` });
+    } catch (error) {
+      stages.push({ stage: "transcribe", label: "录音转写", ok: false, detail: errorMessage(error) });
+    }
+  }
+
+  // 音频导入转写：一站式方案里它是独立的一项，与录音转写各自检测。
+  if (plan.importAsrProviderId) {
+    try {
+      const result = await ports.importTranscribe(host, plan.importAsrProviderId);
       stages.push({
         stage: "import-transcribe",
         label: "音频导入转写",
@@ -376,12 +415,20 @@ export async function runPresetDetection(
         detail: errorMessage(error),
       });
     }
-  } else if (plan.asrTarget === "recording") {
+  }
+
+  // 「仅导入」的旧预设（asrTarget 为 import 且没有独立导入项）仍走这里
+  if (plan.asrTarget === "import" && !plan.importAsrProviderId) {
     try {
-      const text = await ports.transcribe(host);
-      stages.push({ stage: "transcribe", label: "录音转写", ok: true, detail: `返回：${(text || "<空>").slice(0, 20)}` });
+      const result = await ports.importTranscribe(host, plan.asrProviderId);
+      stages.push({
+        stage: "import-transcribe",
+        label: "音频导入转写",
+        ok: true,
+        detail: `${result && result.model ? result.model : "服务"}${result && result.detail ? ` · ${result.detail}` : ""}`,
+      });
     } catch (error) {
-      stages.push({ stage: "transcribe", label: "录音转写", ok: false, detail: errorMessage(error) });
+      stages.push({ stage: "import-transcribe", label: "音频导入转写", ok: false, detail: errorMessage(error) });
     }
   }
 

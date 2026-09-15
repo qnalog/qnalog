@@ -911,3 +911,58 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 - §9.3 冲突 4 的说话人页内联副本、冲突 5 的页面命名与拆分：属页面重排（任务 2）。
 - 设置页的 `@ts-nocheck` 仍在（§8 的暂停清单）；本次新增逻辑都放在有类型检查的 `src/setup/` 里，
   设置页只保留 DOM 与事件绑定。
+
+---
+
+## 11. 首次配置：阿里云百炼一站式方案
+
+任务 2 的产物。首次配置只保留**一条**路径：填阿里云百炼的 API Key。
+服务地址与三个模型全部内置，用户不需要看到、也不需要选择它们。
+
+### 11.1 内置的三段服务与模型
+
+| 用途 | 服务（provider id） | 模型 | 接入方式 |
+|---|---|---|---|
+| 录音转写（实时） | `dashscope` | `qwen-audio-3.0-asr-flash-streaming` | WebSocket `wss://dashscope.aliyuncs.com/api-ws/v1/inference` |
+| 导入音频（整文件） | `dashscope-filetrans` | `qwen-audio-3.0-asr-flash-filetrans` | DashScope 异步 `/api/v1/services/audio/asr/transcription` |
+| AI 整理 | 服务预设 `dashscope` | `qwen3.8-flash` | OpenAI 兼容 `/compatible-mode/v1` |
+
+三段共用同一把密钥，写入范围仍受 §10.1 的 `PRESET_WRITTEN_FIELDS` 约束。
+
+**模型与接入方式的核实依据**（2026-09-15 查阿里云百炼公开文档）：
+
+- 三个模型均出现在百炼「选择模型 → 音频与语音 → 语音识别 / 文本生成」列表中。
+- `qwen-audio-3.0-asr-flash-filetrans` 与 Fun-ASR 同为**异步调用**，用 `file_urls`、
+  `X-DashScope-Async: enable`、轮询 `/api/v1/tasks/{id}`——与既有 `dashscope-filetrans` 实现一致，
+  因此沿用该协议，未新增协议分支。
+- `qwen-audio-3.0-asr-flash-streaming` 走实时识别的 WebSocket 协议
+  （`run-task` → `result-generated` → `finish-task`），与既有 `dashscope-ws` 实现一致。
+- 该模型支持 `language_hints`（最多 4 个值）、`format`、`sample_rate`。
+
+### 11.2 顺带修掉的协议缺陷（`src/asr/realtime-params.ts`）
+
+查证文档时发现既有实现会**无条件下发 `disfluency_removal_enabled`**。
+该字段在文档里明确标注「仅 Paraformer 支持」，
+Qwen-Audio-3.0-ASR-Flash-Streaming / Fun-ASR-Realtime 的参数表中没有它。
+旧实现还无条件下发 `language_hints: ["zh","en"]`，对未指定语种的用户是替服务端做了决定。
+
+现在只有 Paraformer 系列才下发 `disfluency_removal_enabled`；
+`language_hints` 仅在用户指定了语种时下发，否则交给服务端自动识别。
+参数构造移入有类型检查的 `src/asr/realtime-params.ts`，由 `tests/realtime-params.test.ts` 覆盖
+（反向验证过：恢复旧行为会让三条用例失败）。
+
+**未改动**：paraformer 系列仍按原样工作；用户的既有服务配置与模型选择没有任何变更。
+
+### 11.3 界面
+
+首页「快速设置」只剩一个输入框（百炼 API Key）与两个按钮（保存并启用 / 仅检测）。
+点「保存并启用」时先检测候选配置，**检测未全部通过就不落盘**——避免把一把无效密钥当成配置写进去。
+
+原先首页有两个各指向不同服务的推荐入口（「使用推荐配置」写硅基流动、「快速设置」默认小米 MiMo），
+已合并为一条：「使用推荐配置」现在只是滚动到「快速设置」并说明该填什么。
+
+### 11.4 已知限制
+
+- **移动端不支持流式录音转写**（既有限制，与模型无关）：移动端没有能设置鉴权头的 WebSocket。
+  移动端录音时插件会提示改用分段转写服务，音频仍会保留。
+- 百炼一站式方案需要用户在百炼控制台**开通对应模型**，否则检测会失败并如实报出是哪个环节。

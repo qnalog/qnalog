@@ -124,30 +124,9 @@ describe("预设的写入范围", () => {
     expect(noKey.reason).toContain("API Key");
     expect(Object.keys(noKey.changes)).toHaveLength(0);
 
-    const bailianIncomplete = planPresetApplication(s, { providerId: "bailian", apiKey: "sk-x" });
-    expect(bailianIncomplete.ok).toBe(false);
-    expect(bailianIncomplete.reason).toContain("模型");
-  });
-
-  it("不带密钥地套推荐配置时，不清空用户已填的密钥", () => {
-    const before = completedSettings();
-    before.transcribeProviders.apimimo = { ...before.transcribeProviders.apimimo, apiKey: "sk-kept-asr" };
-    before.llmApiKey = "sk-kept-llm";
-
-    const plan = planPresetApplication(before, { providerId: "mimo", apiKey: "", allowMissingKey: true });
-    expect(plan.ok).toBe(true);
-
-    const after = applyPresetPlan(before, plan);
-    expect(after.llmApiKey).toBe("sk-kept-llm");
-    expect(after.transcribeProviders.apimimo.apiKey).toBe("sk-kept-asr");
-  });
-
-  it("不带密钥地套推荐配置仍会更新地址与模型", () => {
-    const before = completedSettings();
-    before.llmEndpoint = "https://stale.example/v1";
-    const after = applyPresetPlan(before, planPresetApplication(before, { providerId: "mimo", apiKey: "", allowMissingKey: true }));
-    expect(after.llmEndpoint).toBe(ONE_CARD_PROVIDERS.mimo.llmEndpoint);
-    expect(after.llmModel).toBe(ONE_CARD_PROVIDERS.mimo.llmModel);
+    // 一站式方案内置了三个模型，只需密钥即可成立
+    const bailian = planPresetApplication(s, { providerId: "bailian", apiKey: "sk-x" });
+    expect(bailian.ok).toBe(true);
   });
 
   it("按密钥前缀选择普通地址或按量套餐地址", () => {
@@ -182,58 +161,65 @@ describe("检测对象是候选配置", () => {
     expect(seen[0].transcribeProviders.apimimo.apiKey).toBe("sk-candidate");
   });
 
-  it("百炼的 ASR 模型与 AI 整理模型是两项独立选择，分别落到各自字段", () => {
+  it("百炼一站式：只填密钥就把录音转写、音频导入、AI 整理三段一次配齐", () => {
     const saved = freshSettings();
-    const plan = planPresetApplication(saved, {
-      providerId: "bailian",
-      apiKey: "sk-bailian",
-      llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      asrModel: "fun-asr",
-      llmModel: "qwen-plus",
-    });
+    const plan = planPresetApplication(saved, { providerId: "bailian", apiKey: "sk-bailian" });
     expect(plan.ok).toBe(true);
+    expect(plan.reason).toBe("");
 
     const after = applyPresetPlan(saved, plan);
-    // ASR 模型进导入音频的转写服务，AI 整理模型进大模型字段，两者不互相覆盖
-    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("fun-asr");
-    expect(after.llmModel).toBe("qwen-plus");
+
+    // 录音转写：实时流式模型
+    expect(after.activeTranscribeProvider).toBe("dashscope");
+    expect(after.transcribeProviders.dashscope.model).toBe("qwen-audio-3.0-asr-flash-streaming");
+    expect(after.transcribeProviders.dashscope.endpoint).toBe("wss://dashscope.aliyuncs.com/api-ws/v1/inference");
+    expect(after.transcribeProviders.dashscope.apiKey).toBe("sk-bailian");
+
+    // 导入音频：整文件模型（与录音转写是两个独立服务）
     expect(after.importTranscribeProvider).toBe("dashscope-filetrans");
+    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    expect(after.transcribeProviders["dashscope-filetrans"].apiKey).toBe("sk-bailian");
+
+    // AI 整理
+    expect(after.llmServicePreset).toBe("dashscope");
+    expect(after.llmModel).toBe("qwen3.8-flash");
+    expect(after.llmEndpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    expect(after.llmApiKey).toBe("sk-bailian");
+
+    // 三段共用同一把密钥
+    expect(after.transcribeProviders.dashscope.apiKey).toBe(after.llmApiKey);
   });
 
-  it("只换 AI 整理模型不影响导入音频的 ASR 模型，反之亦然", () => {
-    const base = {
-      providerId: "bailian",
-      apiKey: "sk-bailian",
-      llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    };
-    const s1 = applyPresetPlan(freshSettings(), planPresetApplication(freshSettings(), { ...base, asrModel: "fun-asr", llmModel: "qwen-plus" }));
-    const s2 = applyPresetPlan(s1, planPresetApplication(s1, { ...base, asrModel: "fun-asr", llmModel: "qwen-max" }));
-
-    expect(s2.llmModel).toBe("qwen-max");
-    expect(s2.transcribeProviders["dashscope-filetrans"].model).toBe("fun-asr");
+  it("百炼一站式不需要用户提供任何地址或模型名", () => {
+    const saved = freshSettings();
+    const plan = planPresetApplication(saved, { providerId: "bailian", apiKey: "sk-bailian" });
+    const after = applyPresetPlan(saved, plan);
+    // 三个地址与三个模型全部来自内置默认值，非空且与预设一致
+    expect(after.llmEndpoint).toContain("dashscope.aliyuncs.com");
+    expect(after.llmModel).toBe("qwen3.8-flash");
+    expect(after.transcribeProviders.dashscope.endpoint).toContain("api-ws/v1/inference");
+    expect(after.transcribeProviders["dashscope-filetrans"].endpoint).toContain("/api/v1/services/audio/asr/transcription");
   });
 
   it("面向导入音频的预设检测导入链路，而不是录制链路", async () => {
     const saved = completedSettings();
-    const plan = planPresetApplication(saved, {
-      providerId: "bailian",
-      apiKey: "sk-bailian",
-      llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      asrModel: "fun-asr",
-      llmModel: "qwen-plus",
-    });
-    expect(plan.asrTarget).toBe("import");
+    const plan = planPresetApplication(saved, { providerId: "bailian", apiKey: "sk-bailian" });
+    expect(plan.ok).toBe(true);
 
     const host = buildProbeHost({ settings: saved }, applyPresetPlan(saved, plan));
+    let transcribeCalls = 0;
     let importCalls = 0;
     const report = await runPresetDetection(host as never, plan, {
-      transcribe: async () => { throw new Error("不应走录制链路"); },
-      importTranscribe: async (_h, providerId) => { importCalls += 1; expect(providerId).toBe("dashscope-filetrans"); return { model: "fun-asr" }; },
-      llm: async () => ({ model: "qwen-plus" }),
+      transcribe: async () => { transcribeCalls += 1; return "你好"; },
+      importTranscribe: async (_h, providerId) => { importCalls += 1; expect(providerId).toBe("dashscope-filetrans"); return { model: "qwen-audio-3.0-asr-flash-filetrans" }; },
+      llm: async () => ({ model: "qwen3.8-flash" }),
     });
 
+    // 一站式方案三段都要检测：录音转写、导入音频、AI 整理
+    expect(transcribeCalls).toBe(1);
     expect(importCalls).toBe(1);
-    expect(report.stages.map((s) => s.stage)).toEqual(["import-transcribe", "llm"]);
+    expect(report.stages.map((s) => s.stage)).toEqual(["transcribe", "import-transcribe", "llm"]);
+    expect(report.ok).toBe(true);
   });
 
   it("检测过程不得写盘：宿主上没有可用的保存入口", async () => {

@@ -9,14 +9,23 @@ import {
 } from "../src/llm/config";
 
 describe("LLM 服务预设", () => {
-  it("快速设置分别配置百炼导入 ASR 和 AI 整理模型", () => {
+  it("百炼一站式预设内置三段服务与全部模型", () => {
+    // 首次配置的主路径：只填密钥。因此地址与三个模型必须都写在预设里，
+    // 界面上不该再出现需要用户选择的模型项（见 MAINTAINING §10.6）。
     expect(ONE_CARD_PROVIDERS.bailian).toMatchObject({
       scope: "asr-llm",
-      asrProvider: "dashscope-filetrans",
-      asrTarget: "import",
-      asrModel: "fun-asr",
+      // 录音转写走实时流式
+      asrProvider: "dashscope",
+      asrTarget: "recording",
+      asrModel: "qwen-audio-3.0-asr-flash-streaming",
+      asrEndpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+      // 导入音频走整文件 + 说话人分离
+      importAsrProvider: "dashscope-filetrans",
+      importAsrModel: "qwen-audio-3.0-asr-flash-filetrans",
+      // AI 整理
       llmPreset: "dashscope",
       llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      llmModel: "qwen3.8-flash",
     });
   });
 

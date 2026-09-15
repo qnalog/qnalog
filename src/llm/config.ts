@@ -205,18 +205,31 @@ export const ONE_CARD_PROVIDERS = {
     llmModel: "", // 硅基流动大模型型号多，留给用户在「大模型服务」里选
     applyDesc: "已用同一把硅基流动 Key 配好语音转写（SenseVoiceSmall）和大模型服务；硅基流动大模型型号较多，请到「大模型服务」填一个模型标识后测试连通。",
   },
+  // 一站式方案：一把百炼 API Key 同时配好「录音转写 / 导入音频 / AI 整理」三段。
+  // 地址与模型全部内置，用户只需填密钥——这是首次配置唯一的正式推荐路径。
+  //
+  // 模型依据（2026-09-15 查证阿里云百炼模型列表与 API 参考，见 MAINTAINING §10.6）：
+  //   - 录音转写 qwen-audio-3.0-asr-flash-streaming：WebSocket 实时识别，
+  //     走 wss://…/api-ws/v1/inference（与既有 dashscope-ws 协议一致）。
+  //   - 导入音频 qwen-audio-3.0-asr-flash-filetrans：DashScope 异步调用，支持说话人分离，
+  //     走 /api/v1/services/audio/asr/transcription（与既有 dashscope-filetrans 协议一致）。
+  //   - AI 整理 qwen3.8-flash：OpenAI 兼容 Chat Completions。
   bailian: {
     label: "阿里云百炼",
     scope: "asr-llm",
-    asrProvider: "dashscope-filetrans",
-    asrTarget: "import",
-    asrEndpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
-    asrModel: "fun-asr",
+    // 录音转写（实时）
+    asrProvider: "dashscope",
+    asrTarget: "recording",
+    asrEndpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+    asrModel: "qwen-audio-3.0-asr-flash-streaming",
+    // 导入音频（整文件，带说话人分离）
+    importAsrProvider: "dashscope-filetrans",
+    importAsrEndpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
+    importAsrModel: "qwen-audio-3.0-asr-flash-filetrans",
     llmPreset: "dashscope",
     llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    llmModel: "",
-    endpointEditable: true,
-    applyDesc: "已配置阿里云百炼导入音频 ASR 和 AI 整理服务。",
+    llmModel: "qwen3.8-flash",
+    applyDesc: "已用一把百炼 Key 配好录音转写、音频导入与 AI 整理。",
   },
 };
 
