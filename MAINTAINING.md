@@ -675,27 +675,27 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 | 设置键 | 默认值 | 落盘位置 | 读回别名 | 作用 | 现入口 | 拟归属 |
 |---|---|---|---|---|---|---|
-| `audioFolder` | `${NS_ROOT}/录音` | `storage.recordingLibraryPath` | — | 录音文件落盘目录 | 常规 | 基本设置 |
-| `mdFolder` | `${NS_ROOT}/转写纪要` | `storage.briefingNotePath` | — | 纪要 Markdown 落盘目录 | 常规 | 基本设置 |
-| `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会中补充材料（图片/PPT/PDF）的复制目标 | 常规 | 高级 · 输出 |
+| `audioFolder` | `${NS_ROOT}/录音` | `storage.recordingLibraryPath` | — | 录音文件落盘目录 | 录音 | 基本设置 |
+| `mdFolder` | `${NS_ROOT}/转写纪要` | `storage.briefingNotePath` | — | 纪要 Markdown 落盘目录 | 录音 | 基本设置 |
+| `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会中补充材料（图片/PPT/PDF）的复制目标 | 录音 | 高级 · 输出 |
 | `htmlReportFolder` | `${NS_ROOT}/HTML报告` | `storage.htmlReportPath` | — | HTML 报告保存目录 | AI 整理 | 高级 · 输出 |
 | `reportBrandName` | `""` | `presentation.reportBrandName` | — | 「研讨」报告页脚公司名；留空则取纪要里的公司标签 | AI 整理 | 高级 · 输出 |
-| `noteFileNameFormatNew` | `"YYYY-MM-DD HHmm"` | `noteNaming.sessionPattern` | — | 纪要文件名日期格式 | 常规 | 高级 · 输出 |
+| `noteFileNameFormatNew` | `"YYYY-MM-DD HHmm"` | `noteNaming.sessionPattern` | — | 纪要文件名日期格式 | 录音 | 高级 · 输出 |
 | `transcribeEndpoint` | `"https://api.siliconflow.cn/v1/audio/transcriptions"` | `speech.compatEndpoint` | — | 兼容兜底：provider 未填地址时的回退（asr/transcribe.ts:147） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeApiKey` | `""` | `speech.compatApiKey` | — | 兼容兜底：provider 未填密钥时的回退（asr/transcribe.ts:148） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeModel` | `"FunAudioLLM/SenseVoiceSmall"` | `speech.compatModel` | — | 兼容兜底：provider 未填模型时的回退（asr/transcribe.ts:149） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeLanguage` | `"auto"` | `speech.compatLanguage` | — | 兼容兜底：provider 未填语言时的回退（asr/transcribe.ts:150） | 无 | 内部（保留存储，不进设置界面） |
 | `activeTranscribeProvider` | `"siliconflow"` | `speech.activeProviderId` | — | 实时录音使用的转写服务 id | API | 基本设置 |
-| `importTranscribeProvider` | `"dashscope-filetrans"` | `speech.importProviderId` | — | 导入音频（整文件）使用的转写服务 id | 说话人 | 高级 · 服务 |
-| `importSpeakerDiarization` | `true` | `speech.importSpeakerDiarization` | — | 导入音频是否区分说话人 | 说话人 | 高级 · 服务 |
-| `importSpeakerCount` | `0` | `speech.importSpeakerCount` | — | 导入音频预期的说话人数（0=自动） | 说话人 | 高级 · 服务 |
-| `transcribeProviders` | `{…}` | `speech.providers` | — | 各转写服务的地址/密钥/模型/语言注册表 | API / 说话人（经 provider 子对象） | 基本设置 |
-| `llmEndpoint` | `"https://api.siliconflow.cn/v1/chat/completions"` | `composer.endpoint` | — | AI 整理服务地址 | API + 说话人 | 高级 · 服务 |
-| `llmApiKey` | `""` | `composer.apiKey` | — | AI 整理服务访问密钥 | API + 说话人 | 基本设置 |
-| `llmModel` | `""` | `composer.model` | — | AI 整理模型标识 | API + 说话人 | 高级 · 服务 |
-| `llmServicePreset` | `"siliconflow"` | `composer.servicePreset` | — | 服务预设 id，用于填地址与请求头适配 | API + 说话人 | 高级 · 服务 |
+| `importTranscribeProvider` | `"dashscope-filetrans"` | `speech.importProviderId` | — | 导入音频（整文件）使用的转写服务 id | API | 高级 · 服务 |
+| `importSpeakerDiarization` | `true` | `speech.importSpeakerDiarization` | — | 导入音频是否区分说话人 | API | 高级 · 服务 |
+| `importSpeakerCount` | `0` | `speech.importSpeakerCount` | — | 导入音频预期的说话人数（0=自动） | API | 高级 · 服务 |
+| `transcribeProviders` | `{…}` | `speech.providers` | — | 各转写服务的地址/密钥/模型/语言注册表 | API（经 provider 子对象） | 基本设置 |
+| `llmEndpoint` | `"https://api.siliconflow.cn/v1/chat/completions"` | `composer.endpoint` | — | AI 整理服务地址 | API | 高级 · 服务 |
+| `llmApiKey` | `""` | `composer.apiKey` | — | AI 整理服务访问密钥 | API | 基本设置 |
+| `llmModel` | `""` | `composer.model` | — | AI 整理模型标识 | API | 高级 · 服务 |
+| `llmServicePreset` | `"siliconflow"` | `composer.servicePreset` | — | 服务预设 id，用于填地址与请求头适配 | API | 高级 · 服务 |
 | `llmProfiles` | `[]` | `composer.profiles` | — | 已保存的 API 方案（转写+AI 整理为一套） | API + 侧边栏 | 基本设置 |
-| `activeLlmProfile` | `""` | `composer.activeProfile` | — | 当前启用的 API 方案 id | API + 说话人 + 侧边栏 | 基本设置 |
+| `activeLlmProfile` | `""` | `composer.activeProfile` | — | 当前启用的 API 方案 id | API + 侧边栏 | 基本设置 |
 | `polishMode` | `"synthesis"` | `composer.defaultMode` | — | 默认纪要模板（整理方式） | AI 整理 + 侧边栏 + 模板库 | 基本设置 |
 | `polishPromptInterview` | `""` | `composer.modePromptOverrides.interview` | `promptOverrides.interview` | 该模式的提示词回退来源：模板为空时使用（`briefing-prompts.ts:364` 读 `legacyPromptFieldForMode`） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptMeeting` | `""` | `composer.modePromptOverrides.meeting` | `promptOverrides.meeting` | 同上（Meeting 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
@@ -703,8 +703,8 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `polishPromptSeminar` | `""` | `composer.modePromptOverrides.seminar` | `promptOverrides.seminar` | 同上（Seminar 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptMonologue` | `""` | `composer.modePromptOverrides.monologue` | `promptOverrides.monologue` | 同上（Monologue 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptLearning` | `""` | `composer.modePromptOverrides.learning` | `promptOverrides.learning` | 同上（Learning 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
-| `promptTemplates` | `{…}` | `promptTemplates` | — | 提示词模板库（内置 + 自定义） | 模板库 | 高级 · 服务 |
-| `activeTemplateByMode` | `{…}` | `activeTemplateByMode` | — | 每种模式当前启用的模板 id | 模板库 | 高级 · 服务 |
+| `promptTemplates` | `{…}` | `promptTemplates` | — | 提示词模板库（内置 + 自定义） | AI 整理 | 高级 · 服务 |
+| `activeTemplateByMode` | `{…}` | `activeTemplateByMode` | — | 每种模式当前启用的模板 id | AI 整理 | 高级 · 服务 |
 | `briefingStructureLevel` | `"balanced"` | `composer.structureLevel` | — | 纪要结构化程度（宽松/均衡/严谨） | AI 整理 | 高级 · 输出 |
 | `repolishPreferencePromptAddendum` | `""` | `composer.repolishPreferencePromptAddendum` | — | 「重新整理为」的追加规则 | AI 整理 | 高级 · 服务 |
 | `repolishPreference` | `""` | `composer.repolishPreference` | — | 当前选中的重新整理偏好 | 侧边栏 + 右键菜单 | 高级 · 输出 |
@@ -714,7 +714,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `briefingCustomLanguage` | `""` | `composer.languagePolicy.customLanguage` | `languagePolicy.customLanguage` | 自定义目标语言 | AI 整理 | 高级 · 输出 |
 | `briefingKeepOriginalTerms` | `true` | `composer.languagePolicy.keepOriginalTerms` | `languagePolicy.keepOriginalTerms` | 保留专有名词原文 | AI 整理 | 高级 · 输出 |
 | `briefingLanguageInstruction` | `""` | `composer.languagePolicy.extraInstruction` | `languagePolicy.extraInstruction` | 额外语言要求 | AI 整理 | 高级 · 输出 |
-| `industryProfile` | `{…}` | `composer.industryProfile` | — | 行业档案，由词汇表服务生成 | 资料库 / AI 整理（仅初始化） | 内部（保留存储，不进设置界面） |
+| `industryProfile` | `{…}` | `composer.industryProfile` | — | 行业档案，由词汇表服务生成 | 内部（程序写入） | 内部（保留存储，不进设置界面） |
 | `customVocabulary` | `""` | `vocabulary.inlineTerms` | — | 内联 ASR 热词 | 侧边栏（回退写入） | 高级 · 服务 |
 | `vocabularyFile` | `DEFAULT_LIBRARY_PATHS.vocabularyFile` | `vocabulary.notePath` | — | 热词表文件路径 | 资料库 | 高级 · 输出 |
 | `peopleDirectoryFolder` | `DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder` | `vocabulary.peopleFolder` | — | 人员资料文件夹 | 资料库 | 高级 · 输出 |
@@ -724,46 +724,79 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `basesFolder` | `DEFAULT_LIBRARY_PATHS.basesFolder` | `views.baseFolder` | — | Base 视图文件夹 | 资料库 | 高级 · 输出 |
 | `peopleContextMode` | `"privacy"` | `vocabulary.peopleContextMode` | — | 人员资料是否随请求发送（隐私优先/人名热词/本地增强） | 资料库 | 高级 · 诊断与隐私 |
 | `peopleHotwordsConsentAt` | `""` | `vocabulary.peopleHotwordsConsentAt` | — | 人名热词授权时间 | 资料库 | 内部（保留存储，不进设置界面） |
-| `peopleSuggestionIgnores` | `[]` | `vocabulary.peopleSuggestionIgnores` | — | 已忽略的人员建议 | 资料库（只读计数与清空） | 内部（保留存储，不进设置界面） |
-| `peopleSuggestionCache` | `{…}` | `vocabulary.peopleSuggestionCache` | — | 待确认人员建议缓存 | 资料库（只读计数） | 内部（保留存储，不进设置界面） |
-| `knowledgeExtractionHistory` | `{…}` | `vocabulary.extractionHistory` | — | 人员/词表扫描记录 | 资料库（只读计数与清空） | 内部（保留存储，不进设置界面） |
-| `inboxFolder` | `""` | `storage.inboxPath` | — | 外部收件箱监听目录 | 进阶 | 高级 · 自动化 |
-| `inboxAutoImport` | `true` | `storage.autoImportInbox` | — | 是否自动处理新音频 | 进阶 | 高级 · 自动化 |
-| `inboxArchiveSubfolder` | `"processed"` | `storage.archiveSubfolder` | — | 处理完成后移入的子文件夹 | 进阶 | 高级 · 自动化 |
-| `inboxStabilizeDelayMs` | `3000` | `storage.syncQuietMs` | — | 开始处理前的等待毫秒数 | 进阶 | 高级 · 自动化 |
-| `enableInterimOutput` | `true` | `capture.liveSegmentsEnabled` | — | 录音过程中是否切段实时转写 | 进阶 | 高级 · 录音 |
-| `segmentIntervalMinutes` | `5` | `capture.segmentMinutes` | — | 切段间隔（分钟） | 进阶 + 侧边栏 | 高级 · 录音 |
-| `asrConcurrency` | `1` | `speech.asrConcurrency` | — | 导入长音频的并发转写数 | 进阶 | 高级 · 录音 |
+| `peopleSuggestionIgnores` | `[]` | `vocabulary.peopleSuggestionIgnores` | — | 已忽略的人员建议 | 关于（只读计数） | 内部（保留存储，不进设置界面） |
+| `peopleSuggestionCache` | `{…}` | `vocabulary.peopleSuggestionCache` | — | 待确认人员建议缓存 | 关于（只读计数） | 内部（保留存储，不进设置界面） |
+| `knowledgeExtractionHistory` | `{…}` | `vocabulary.extractionHistory` | — | 人员/词表扫描记录 | 关于（只读计数） | 内部（保留存储，不进设置界面） |
+| `inboxFolder` | `""` | `storage.inboxPath` | — | 外部收件箱监听目录 | 录音 / 自动导入 | 高级 · 自动化 |
+| `inboxAutoImport` | `true` | `storage.autoImportInbox` | — | 是否自动处理新音频 | 录音 / 自动导入 | 高级 · 自动化 |
+| `inboxArchiveSubfolder` | `"processed"` | `storage.archiveSubfolder` | — | 处理完成后移入的子文件夹 | 录音 / 自动导入 | 高级 · 自动化 |
+| `inboxStabilizeDelayMs` | `3000` | `storage.syncQuietMs` | — | 开始处理前的等待毫秒数 | 录音 / 自动导入 | 高级 · 自动化 |
+| `enableInterimOutput` | `true` | `capture.liveSegmentsEnabled` | — | 录音过程中是否切段实时转写 | 录音 / 自动导入 | 高级 · 录音 |
+| `segmentIntervalMinutes` | `5` | `capture.segmentMinutes` | — | 切段间隔（分钟） | 录音 + 侧边栏 | 高级 · 录音 |
+| `asrConcurrency` | `1` | `speech.asrConcurrency` | — | 导入长音频的并发转写数 | 录音 / 自动导入 | 高级 · 录音 |
 | `segmentCacheFolder` | `${NS_ROOT}/.cache/segments` | `storage.segmentCachePath` | — | 分段音频临时缓存目录 | 无 | 高级 · 录音 |
-| `keepSegmentAudioFiles` | `false` | `capture.keepSegmentAudioFiles` | — | 是否保留临时分段音频（排障用） | 进阶 | 高级 · 诊断与隐私 |
-| `filterShortRecordings` | `true` | `capture.discardVeryShortRecordings` | — | 是否丢弃 3 秒内的误触录音 | 进阶 | 高级 · 录音 |
+| `keepSegmentAudioFiles` | `false` | `capture.keepSegmentAudioFiles` | — | 是否保留临时分段音频（排障用） | 录音 / 自动导入 | 高级 · 诊断与隐私 |
+| `filterShortRecordings` | `true` | `capture.discardVeryShortRecordings` | — | 是否丢弃 3 秒内的误触录音 | 录音 / 自动导入 | 高级 · 录音 |
 | `captureMode` | `"mic"` | `capture.sourceMode` | — | 录音来源（麦克风/混合/电脑音频） | 常规 + 侧边栏 | 基本设置 |
-| `audioChannelMode` | `"auto"` | `capture.channelMode` | — | 是否按声道区分说话人 | 常规 | 高级 · 录音 |
-| `selectedVirtualDevice` | `""` | `capture.virtualDeviceId` | — | 电脑音频输入设备 id | 常规 | 基本设置 |
-| `selectedMicrophoneDevice` | `""` | `capture.microphoneDeviceId` | — | 麦克风设备 id | 常规 | 基本设置 |
-| `enableRealtimeOutline` | `true` | `liveOutline.enabled` | — | 转写后是否自动更新实时大纲 | 进阶 | 高级 · 输出 |
+| `audioChannelMode` | `"auto"` | `capture.channelMode` | — | 是否按声道区分说话人 | 录音 | 高级 · 录音 |
+| `selectedVirtualDevice` | `""` | `capture.virtualDeviceId` | — | 电脑音频输入设备 id | 录音 | 基本设置 |
+| `selectedMicrophoneDevice` | `""` | `capture.microphoneDeviceId` | — | 麦克风设备 id | 录音 | 基本设置 |
+| `enableRealtimeOutline` | `true` | `liveOutline.enabled` | — | 转写后是否自动更新实时大纲 | 录音 / 自动导入 | 高级 · 输出 |
 | `realtimeOutlineDebounceMs` | `2500` | `liveOutline.debounceMs` | — | 实时大纲请求防抖毫秒数 | 无 | 高级 · 输出 |
-| `autoOpenOutlineOnRecord` | `true` | `liveOutline.openOnCapture` | — | 录音开始时是否自动打开侧边栏 | 进阶 | 高级 · 输出 |
-| `autoRenameWithTitle` | `true` | `noteNaming.renameWithTitle` | — | 是否用 AI 提炼主题追加到文件名 | 进阶 | 高级 · 输出 |
-| `consolidatedLayout` | `true` | `noteNaming.consolidatedLayout` | — | 纪要是否整合排版（顶部整合、底部原始分段） | 进阶 | 高级 · 输出 |
-| `maxRetries` | `3` | `retryPolicy.maxAttempts` | — | 转写/整理任务的自动重试上限 | 进阶 | 高级 · 自动化 |
-| `diagnosticsLogEnabled` | `true` | `diagnostics.enabled` | — | 是否写本地诊断日志 | 进阶 | 高级 · 诊断与隐私 |
-| `diagnosticsLogFolder` | `DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder` | `diagnostics.folder` | — | 诊断日志目录 | 进阶 | 高级 · 诊断与隐私 |
+| `autoOpenOutlineOnRecord` | `true` | `liveOutline.openOnCapture` | — | 录音开始时是否自动打开侧边栏 | 录音 / 自动导入 | 高级 · 输出 |
+| `autoRenameWithTitle` | `true` | `noteNaming.renameWithTitle` | — | 是否用 AI 提炼主题追加到文件名 | 录音 / 自动导入 | 高级 · 输出 |
+| `consolidatedLayout` | `true` | `noteNaming.consolidatedLayout` | — | 纪要是否整合排版（顶部整合、底部原始分段） | 录音 / 自动导入 | 高级 · 输出 |
+| `maxRetries` | `3` | `retryPolicy.maxAttempts` | — | 转写/整理任务的自动重试上限 | 录音 / 自动导入 | 高级 · 自动化 |
+| `diagnosticsLogEnabled` | `true` | `diagnostics.enabled` | — | 是否写本地诊断日志 | 录音 / 自动导入 | 高级 · 诊断与隐私 |
+| `diagnosticsLogFolder` | `DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder` | `diagnostics.folder` | — | 诊断日志目录 | 录音 / 自动导入 | 高级 · 诊断与隐私 |
 | `showFloatingBall` | `true` | `ui.floatingControlEnabled` | — | 是否常驻显示桌面悬浮按钮 | 常规 + 命令面板 | 高级 · 自动化 |
-| `bubbleSize` | `"large"` | `ui.bubbleSize` | — | 悬浮按钮大小 | 常规 | 高级 · 自动化 |
-| `floatingBallPos` | `{…}` | `ui.floatingControlPosition` | — | 悬浮按钮位置（拖动写入） | 气泡拖动 | 内部（保留存储，不进设置界面） |
-| `autoOpenNoteAfterFinish` | `true` | `noteNaming.openAfterFinish` | — | 处理完成后是否自动打开纪要 | 常规 | 高级 · 输出 |
+| `bubbleSize` | `"large"` | `ui.bubbleSize` | — | 悬浮按钮大小 | 录音 | 高级 · 自动化 |
+| `floatingBallPos` | `{…}` | `ui.floatingControlPosition` | — | 悬浮按钮位置（拖动写入） | 录音（拖动写入） | 内部（保留存储，不进设置界面） |
+| `autoOpenNoteAfterFinish` | `true` | `noteNaming.openAfterFinish` | — | 处理完成后是否自动打开纪要 | 录音 | 高级 · 输出 |
 | `autoOpenHtmlReportAfterGenerate` | `true` | `presentation.openHtmlReportAfterGenerate` | — | 生成 HTML 报告后是否用浏览器打开 | AI 整理 | 高级 · 输出 |
-| `writeDailyMeetingOverview` | `true` | `dailyNote.meetingOverviewEnabled` | — | 是否把会议概要写入当日日记 | 常规 | 高级 · 输出 |
-| `dailyMeetingOverviewHeading` | `DEFAULT_DAILY_MEETING_OVERVIEW_HEADING` | `dailyNote.meetingOverviewHeading` | — | 写入日记的标题 | 常规 | 高级 · 输出 |
-| `dailyMeetingOverviewTemplate` | `DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE` | `dailyNote.meetingOverviewTemplate` | — | 写入日记的模板 | 常规 | 高级 · 输出 |
-| `autoCheckUpdates` | `true` | `updates.autoCheck` | — | 启动时是否检查新版本 | 更新 | 高级 · 自动化 |
-| `lastUpdateCheckAt` | `null` | `updates.lastCheckedAt` | — | 上次检查更新时间 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
-| `availableUpdate` | `null` | `updates.available` | — | 已发现的可用更新 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
-| `lastUpdateError` | `""` | `updates.lastError` | — | 上次检查失败原因 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
-| `installedUpdateVersion` | `""` | `updates.installedVersion` | — | 当前已安装版本记录 | 启动对齐 | 内部（保留存储，不进设置界面） |
+| `writeDailyMeetingOverview` | `true` | `dailyNote.meetingOverviewEnabled` | — | 是否把会议概要写入当日日记 | 录音 | 高级 · 输出 |
+| `dailyMeetingOverviewHeading` | `DEFAULT_DAILY_MEETING_OVERVIEW_HEADING` | `dailyNote.meetingOverviewHeading` | — | 写入日记的标题 | 录音 | 高级 · 输出 |
+| `dailyMeetingOverviewTemplate` | `DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE` | `dailyNote.meetingOverviewTemplate` | — | 写入日记的模板 | 录音 | 高级 · 输出 |
+| `autoCheckUpdates` | `true` | `updates.autoCheck` | — | 启动时是否检查新版本 | 关于 | 高级 · 自动化 |
+| `lastUpdateCheckAt` | `null` | `updates.lastCheckedAt` | — | 上次检查更新时间 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
+| `availableUpdate` | `null` | `updates.available` | — | 已发现的可用更新 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
+| `lastUpdateError` | `""` | `updates.lastError` | — | 上次检查失败原因 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
+| `installedUpdateVersion` | `""` | `updates.installedVersion` | — | 当前已安装版本记录 | 内部（程序写入） | 内部（保留存储，不进设置界面） |
 
-### 9.2 拟定的设置结构
+### 9.2 设置结构（2026-09-15 执行）
+
+六个面向用户的选项卡，按「用户此刻想做什么」划分，不按代码模块划分。
+判据是**语音记录优先**：与「录到什么」直接相关的项排在前面，旁路功能另置一页。
+
+| 选项卡 | 分组 | 设置项 | 动作行 |
+|---|---|---:|---:|
+| 录音 | 音频输入 / 录音与转写 / 纪要与实时大纲 / 文件与命名 / 完成后动作 / 悬浮按钮 | 18 | 1 |
+| API | API 配置 / 语音识别 / AI 整理 / 说话人识别 | 16 | 3 |
+| AI 整理 | 纪要生成 / 语言与翻译 / HTML 报告 / 纪要模板 | 6 | 1 |
+| 资料库 | 资料库 / 补全与去重 / 浏览与维护 / 存储与隐私 | 6 | 5 |
+| 自动导入 | 自动导入音频 / 任务重试 | 5 | 3 |
+| 关于 | 插件更新 / 诊断与日志 | 3 | 5 |
+
+本轮的三处调整：
+
+1. **拆掉「进阶」选项卡**。它原本 16 项挤在 5 组里，里面混了三类东西：
+   录音参数（分段间隔、并发、短录音过滤）、旁路功能（自动导入收件箱）、排障（诊断日志）。
+   拆分后：录音参数进「录音」——它们直接决定录到了什么，是常项而非边角设置；
+   自动导入与任务重试合成「自动导入」（都属「不在场时自动发生的事」）；
+   诊断日志进「关于」。
+2. **「常规」改名「录音」**。原名的「常规」什么都没说；这一页的实际内容是
+   声音怎么进来、存到哪里、录完发生什么，改名后名实相符。
+   分组顺序也按这个顺序重排，把「音频输入」放在最前。
+3. **「更新」扩为「关于」**。更新、诊断日志、版权与许可三者都不是配置项
+   （全会话只有「启动时自动检查」一个开关），原先分散在两处，现集中一页。
+
+「说话人」选项卡并入「API」见 §11.8。首页「使用状态」见 §11.7。
+
+**不动的部分**：「AI 整理」与「资料库」两页本轮只保留现状。前者的四个分组
+（纪要生成 / 语言与翻译 / HTML 报告 / 纪要模板）围绕「生成什么内容」，
+后者围绕「沉淀与复用」，各自内聚，没有跨页重复。
+
+
 
 三层，判据是「改了它会不会立刻影响用户拿到什么」：
 

@@ -562,7 +562,7 @@ export class TaskActivityService {
         return;
       }
       if (actionId === "open-settings") {
-        this.host.openSettings("advanced");
+        this.host.openSettings("inbox");
         return;
       }
       if (actionId === "retry-outline") {

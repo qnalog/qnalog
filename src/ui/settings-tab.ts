@@ -84,12 +84,12 @@ function renderChannelProbeRows(container, rows) {
 
 export const LV_SETTINGS_TABS = [
   { id: "home",     label: "Q&A Log" },
-  { id: "general",  label: "常规" },
+  { id: "recording", label: "录音" },
   { id: "api",      label: "API" },
   { id: "ai",       label: "AI 整理" },
   { id: "knowledge", label: "资料库" },
-  { id: "advanced", label: "进阶" },
-  { id: "updates",  label: "更新" },
+  { id: "inbox",     label: "自动导入" },
+  { id: "about",    label: "关于" },
 ];
 
 export class QnALogSettingTab extends obsidian.PluginSettingTab {
@@ -149,12 +149,12 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     content.toggleClass("is-mobile", isMobileRuntime());
     switch (this.activeTab) {
       case "home":     this.renderHome(content); break;
-      case "general":  this.renderGeneral(content); break;
+      case "recording": this.renderRecording(content); break;
       case "api":      this.renderApi(content); break;
       case "ai":       this.renderAI(content); break;
       case "knowledge": this.renderKnowledge(content); break;
-      case "advanced": this.renderAdvanced(content); break;
-      case "updates":  this.renderUpdates(content); break;
+      case "inbox":     this.renderImport(content); break;
+      case "about":     this.renderAbout(content); break;
     }
     this.applySettingsSections(content);
   }
@@ -1008,112 +1008,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     this.diagResultEl = card.createDiv({ cls: "qnalog-diag-result qnalog-audio-input-diag" });
   }
 
-  renderGeneral(c) {
-    new obsidian.Setting(c)
-      .setName("音频输入")
-      .setDesc("选择录音来源和实际输入设备。混合录音时请明确指定本人说话使用的麦克风。")
-      .setHeading();
-    this.renderAudioInputSettings(c);
-
-    new obsidian.Setting(c)
-      .setName("文件与命名")
-      .setDesc("设置新录音、纪要和会中材料的保存位置，以及新纪要的文件名格式。")
-      .setHeading();
-
-    new obsidian.Setting(c).setName("Q&A Log 录音文件夹")
-      .setDesc("Obsidian 库内的相对路径。录音文件默认保存到 QnALog/录音，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
-      .addText(t => t
-        .setPlaceholder("QnALog/录音")
-        .setValue(this.plugin.settings.audioFolder)
-        .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
-
-    new obsidian.Setting(c).setName("Q&A Log 转写纪要文件夹")
-      .setDesc("Obsidian 库内的相对路径。转写和整理后的纪要默认保存到 QnALog/转写纪要，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
-      .addText(t => t
-        .setPlaceholder("QnALog/转写纪要")
-        .setValue(this.plugin.settings.mdFolder)
-        .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
-
-    new obsidian.Setting(c).setName("Q&A Log 会中材料文件夹")
-      .setDesc("Obsidian 库内的相对路径。录音侧边栏添加的图片、PPT、PDF 等补充材料会复制到这里，并按本次录音建立子文件夹。")
-      .addText(t => t
-        .setPlaceholder("QnALog/会议资料")
-        .setValue(this.plugin.settings.meetingMaterialsFolder || DEFAULT_SETTINGS.meetingMaterialsFolder)
-        .onChange(async v => {
-          this.plugin.settings.meetingMaterialsFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.meetingMaterialsFolder);
-          await this.plugin.saveSettings();
-        }));
-
-    new obsidian.Setting(c).setName("纪要文件名格式")
-      .setDesc("每次录音生成一篇独立纪要。用日期占位符命名：YYYY 年、MM 月、DD 日、HH 时、mm 分，例如 YYYY-MM-DD HHmm 会生成「2026-06-10 1830」。写法与 Obsidian 日记插件相同。")
-      .addText(t => t.setValue(this.plugin.settings.noteFileNameFormatNew).onChange(async v => { this.plugin.settings.noteFileNameFormatNew = v; await this.plugin.saveSettings(); }));
-
-    new obsidian.Setting(c)
-      .setName("完成后动作")
-      .setDesc("控制纪要完成后的打开行为，以及是否把会议概要和待办写入当日日记。")
-      .setHeading();
-
-    new obsidian.Setting(c).setName("完成后自动打开纪要")
-      .addToggle(t => t.setValue(this.plugin.settings.autoOpenNoteAfterFinish).onChange(async v => { this.plugin.settings.autoOpenNoteAfterFinish = v; await this.plugin.saveSettings(); }));
-
-    new obsidian.Setting(c).setName("写入今日会议概要到日记")
-      .setDesc("Obsidian 日记已启用时，处理完成后写入纪要链接和概要；识别到待办时使用 - [ ] 任务语法写入。当日日记不存在时，会按日记插件配置的路径与模板自动创建。")
-      .addToggle(t => t.setValue(this.plugin.settings.writeDailyMeetingOverview !== false).onChange(async v => { this.plugin.settings.writeDailyMeetingOverview = v; await this.plugin.saveSettings(); }));
-
-    new obsidian.Setting(c).setName("日记写入标题")
-      .setDesc("Q&A Log 会在当日日记中找到或创建这个二级标题，并把每次整理完成后的概要写到标题下方。")
-      .addText(t => t
-        .setPlaceholder(DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
-        .setValue(this.plugin.settings.dailyMeetingOverviewHeading || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
-        .onChange(async v => {
-          this.plugin.settings.dailyMeetingOverviewHeading = v.replace(/^#+\s*/, "").trim() || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING;
-          await this.plugin.saveSettings();
-        }));
-
-    const dailyTplSetting = new obsidian.Setting(c)
-      .setName("日记写入模板")
-      .setDesc("用于控制每条概要写入日记的格式。可用占位符：{{date}}、{{time}}、{{note_link}}、{{title}}、{{mode}}、{{duration}}、{{segments}}、{{model}}、{{summary}}、{{todos}}、{{todos_block}}、{{todo_count}}。");
-    dailyTplSetting.addButton(b => b.setButtonText("恢复默认").onClick(async () => {
-      const ok = await qnalogConfirm(this.app, "恢复默认日记模板？", "将丢弃当前自定义模板，且无法撤销。", "恢复默认");
-      if (!ok) return;
-      this.plugin.settings.dailyMeetingOverviewTemplate = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-      await this.plugin.saveSettings();
-      new obsidian.Notice("已恢复默认日记模板");
-      this.renderSettings();
-    }));
-    const dailyTplTa = c.createEl("textarea", { cls: "qnalog-textarea qnalog-textarea-mono" });
-    dailyTplTa.rows = 8;
-    dailyTplTa.value = this.plugin.settings.dailyMeetingOverviewTemplate || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-    dailyTplTa.placeholder = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-    dailyTplTa.addEventListener("change", async () => {
-      this.plugin.settings.dailyMeetingOverviewTemplate = dailyTplTa.value.trim() || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-      await this.plugin.saveSettings();
-    });
-
-    new obsidian.Setting(c)
-      .setName("悬浮按钮")
-      .setDesc("设置桌面悬浮按钮的显示和大小。")
-      .setHeading();
-
-    new obsidian.Setting(c).setName("显示悬浮按钮")
-      .setDesc("开启后常驻显示，可拖动到任意位置；关闭后隐藏。")
-      .addToggle(t => t.setValue(this.plugin.settings.showFloatingBall).onChange(async v => {
-        this.plugin.settings.showFloatingBall = v; await this.plugin.saveSettings();
-        this.plugin.shell.syncBubbleVisibility();
-      }));
-
-    new obsidian.Setting(c).setName("悬浮按钮大小")
-      .setDesc("调整按钮及其展开控件的大小。")
-      .addDropdown(d => d
-        .addOption("large", "大")
-        .addOption("medium", "中")
-        .addOption("small", "小")
-        .setValue(this.plugin.settings.bubbleSize || "large")
-        .onChange(async v => {
-          this.plugin.settings.bubbleSize = v; await this.plugin.saveSettings();
-          this.plugin.shell.syncBubbleVisibility();
-        }));
-  }
 
 
 
@@ -1476,7 +1370,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (profile.transcribeMode === "streaming") {
       const tip = c.createDiv({ cls: "qnalog-provider-streaming-tip" });
-      tip.setText("实时模式：录音全程与服务保持连线，边说边出文字，不再切段上传。「进阶 → 录音行为」中的「分段间隔」「即时分段」对此服务不生效。");
+      tip.setText("实时模式：录音全程与服务保持连线，边说边出文字，不再切段上传。「录音」页中的「分段间隔」「即时分段」对此服务不生效。");
     }
 
     new obsidian.Setting(c).setName("连通性测试")
@@ -2241,55 +2135,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
 
 
-  renderUpdates(c) {
-    new obsidian.Setting(c).setName("插件更新").setHeading();
-    // 与首页同源：Obsidian 只在启动时读 manifest，直接用 manifest.version 会显示上一次安装的版本。
-    const currentVersion = this.plugin.getDisplayVersion();
-    const buildSource = this.plugin.getBuildSourceLabel();
-    const update = this.plugin.settings.availableUpdate;
-    const rawBases = resolveUpdateRawBases(this.plugin.settings);
-    const installedUpdateVersion = this.plugin.settings.installedUpdateVersion || "";
-    const status = [
-      "当前版本：" + currentVersion,
-      buildSource ? "构建来源：" + buildSource : "",
-      installedUpdateVersion && compareVersions(installedUpdateVersion, currentVersion) > 0
-        ? "检测到 " + installedUpdateVersion + " 已就位，重启或重新启用后生效"
-        : "",
-      update && update.version ? "可用版本：" + update.version + "（请从发布页安装）" : "暂无可用更新",
-      this.plugin.settings.lastUpdateCheckAt ? "上次检查：" + this.plugin.settings.lastUpdateCheckAt : "尚未检查",
-      this.plugin.settings.lastUpdateError ? "上次错误：" + this.plugin.settings.lastUpdateError : "",
-      rawBases.length > 1 ? "备用下载源：" + (rawBases.length - 1) + " 个" : "",
-      "写入目录：" + pluginBasePath(this.plugin),
-    ].filter(Boolean).join("；");
-
-    new obsidian.Setting(c).setName("更新状态")
-      .setDesc(status);
-
-    new obsidian.Setting(c).setName("更新来源")
-      .setDesc("本插件从本项目仓库（GitHub: qnalog/qnalog）检查是否有新版本，只更新版本提示，不会下载或改写任何文件；安装由 Obsidian 或 BRAT 完成。更新源不接受上游版本。")
-      .addButton(b => b.setButtonText("打开 GitHub").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL)))
-      .addButton(b => b.setButtonText("查看版本").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases")));
-
-    new obsidian.Setting(c).setName("启动时自动检查")
-      .setDesc("开启后最多每 24 小时检查一次本仓库。")
-      .addToggle(t => t.setValue(this.plugin.settings.autoCheckUpdates !== false)
-        .onChange(async v => { this.plugin.settings.autoCheckUpdates = v; await this.plugin.saveSettings(); }));
-
-    // 本插件不下载也不安装任何文件（Obsidian 开发者政策：插件不得自我更新）。
-    // 这里只检查版本并引导到 GitHub Release，安装交给 Obsidian 或 BRAT。
-    new obsidian.Setting(c).setName("检查更新")
-      .setDesc("只检查是否有新版本，不会自动下载或安装。安装方式见发布页说明。")
-      .addButton(b => b.setButtonText("检查更新").onClick(async () => {
-        await this.plugin.checkForUpdates({ silent: false });
-        this.renderSettings();
-      }))
-      .addButton(b => b.setButtonText("打开发布页").onClick(() => {
-        openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases");
-      }));
-
-    new obsidian.Setting(c).setName("版权与许可")
-      .setDesc("Q&A Log 由 Q&A Log Team 维护，以 MIT License 开源发布。其代码来源与许可说明见仓库里的 NOTICE 与 LICENSE。第三方 API、模型和虚拟声卡工具由用户自行配置和承担费用；本插件不运营云端存储，也不会上传录音到任何自有服务器。");
-  }
 
   // 列出库内所有文件夹路径（供路径输入框的原生 datalist 自动补全）。
   getAllVaultFolderPaths() {
@@ -2351,8 +2196,25 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
 
 
-  renderAdvanced(c) {
-    // ---- 录音行为 ----
+  /**
+   * 「录音」选项卡。原先这部分与诊断、自动导入、队列挤在「进阶」里，
+   * 而它们与录音的关系远近不同：分段与并发直接决定录到了什么，
+   * 诊断与自动导入是旁路功能，分开后录音参数不再被埋在长列表里。
+   */
+  /**
+   * 「录音」选项卡。整体只讲一件事：声音怎么进来、存到哪里、录完发生什么。
+   *
+   * 这里合并了两处：原先「常规」页的设备与文件设置，以及「进阶」页里的
+   * 分段间隔、并发与短录音过滤。后者直接决定录到了什么，属于录音本身就是常项，
+   * 不该和诊断、自动导入挤在同一页的长列表里。
+   */
+  renderRecording(c) {
+    new obsidian.Setting(c)
+      .setName("音频输入")
+      .setDesc("选择录音来源和实际输入设备。混合录音时请明确指定本人说话使用的麦克风。")
+      .setHeading();
+    this.renderAudioInputSettings(c);
+
     new obsidian.Setting(c)
       .setName("录音与转写")
       .setDesc("控制录音切片、短录音过滤、长音频并发和临时切片保留策略。")
@@ -2421,48 +2283,112 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName("录音时自动打开侧边栏")
       .addToggle(t => t.setValue(this.plugin.settings.autoOpenOutlineOnRecord).onChange(async v => { this.plugin.settings.autoOpenOutlineOnRecord = v; await this.plugin.saveSettings(); }));
-
-    // ---- 设备与诊断 ----
     new obsidian.Setting(c)
-      .setName("诊断与日志")
-      .setDesc("记录本地诊断信息并生成排查报告。音频设备检测已统一放在「常规 > 音频输入」。")
+      .setName("文件与命名")
+      .setDesc("设置新录音、纪要和会中材料的保存位置，以及新纪要的文件名格式。")
       .setHeading();
 
-    new obsidian.Setting(c).setName("本地诊断日志")
-      .setDesc("用于排查转写、AI 整理、队列和实时大纲错误。日志只保存在本地 Obsidian 库，不会自动上传；不会写入音频、转写正文、提示词或 API Key。")
-      .addToggle(t => t.setValue(this.plugin.settings.diagnosticsLogEnabled !== false).onChange(async v => {
-        this.plugin.settings.diagnosticsLogEnabled = v;
-        await this.plugin.saveSettings();
-      }))
-      .addButton(b => b.setButtonText("复制诊断报告").onClick(() => this.plugin.diagnostics.copyDiagnosticReport()));
-
-    new obsidian.Setting(c).setName("诊断日志文件夹")
-      .setDesc("Obsidian 库内的相对路径。一般保持默认即可；诊断报告只有在主动复制后才会提供给开发者排查。修改后仅影响新日志文件。")
+    new obsidian.Setting(c).setName("Q&A Log 录音文件夹")
+      .setDesc("Obsidian 库内的相对路径。录音文件默认保存到 QnALog/录音，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
       .addText(t => t
-        .setPlaceholder(DEFAULT_SETTINGS.diagnosticsLogFolder)
-        .setValue(this.plugin.settings.diagnosticsLogFolder || DEFAULT_SETTINGS.diagnosticsLogFolder)
+        .setPlaceholder("QnALog/录音")
+        .setValue(this.plugin.settings.audioFolder)
+        .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
+
+    new obsidian.Setting(c).setName("Q&A Log 转写纪要文件夹")
+      .setDesc("Obsidian 库内的相对路径。转写和整理后的纪要默认保存到 QnALog/转写纪要，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
+      .addText(t => t
+        .setPlaceholder("QnALog/转写纪要")
+        .setValue(this.plugin.settings.mdFolder)
+        .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
+
+    new obsidian.Setting(c).setName("Q&A Log 会中材料文件夹")
+      .setDesc("Obsidian 库内的相对路径。录音侧边栏添加的图片、PPT、PDF 等补充材料会复制到这里，并按本次录音建立子文件夹。")
+      .addText(t => t
+        .setPlaceholder("QnALog/会议资料")
+        .setValue(this.plugin.settings.meetingMaterialsFolder || DEFAULT_SETTINGS.meetingMaterialsFolder)
         .onChange(async v => {
-          this.plugin.settings.diagnosticsLogFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.diagnosticsLogFolder);
+          this.plugin.settings.meetingMaterialsFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.meetingMaterialsFolder);
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName("清空诊断日志")
-      .setDesc("删除诊断日志文件夹中的全部 .jsonl 日志文件，释放空间。不影响纪要与录音。")
-      .addButton(b => b.setButtonText("清空").onClick(async () => {
-        const ok = await qnalogConfirm(this.app, "清空诊断日志？", "将删除诊断日志文件夹中的全部 .jsonl 日志文件；删除后无法再用于追溯历史问题（文件进入系统废纸篓，可恢复）。", "清空");
-        if (!ok) return;
-        const folder = this.app.vault.getAbstractFileByPath(this.plugin.diagnostics.getDiagnosticsFolder());
-        let n = 0;
-        if (folder instanceof obsidian.TFolder) {
-          const targets = folder.children.filter(f => f instanceof obsidian.TFile && f.extension === "jsonl");
-          for (const f of targets) {
-            try { await trashVaultFileRef(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
-          }
-        }
-        new obsidian.Notice(n ? `已清空诊断日志：${n} 个文件（可从系统废纸篓恢复）` : "诊断日志文件夹为空");
+    new obsidian.Setting(c).setName("纪要文件名格式")
+      .setDesc("每次录音生成一篇独立纪要。用日期占位符命名：YYYY 年、MM 月、DD 日、HH 时、mm 分，例如 YYYY-MM-DD HHmm 会生成「2026-06-10 1830」。写法与 Obsidian 日记插件相同。")
+      .addText(t => t.setValue(this.plugin.settings.noteFileNameFormatNew).onChange(async v => { this.plugin.settings.noteFileNameFormatNew = v; await this.plugin.saveSettings(); }));
+
+    new obsidian.Setting(c)
+      .setName("完成后动作")
+      .setDesc("控制纪要完成后的打开行为，以及是否把会议概要和待办写入当日日记。")
+      .setHeading();
+
+    new obsidian.Setting(c).setName("完成后自动打开纪要")
+      .addToggle(t => t.setValue(this.plugin.settings.autoOpenNoteAfterFinish).onChange(async v => { this.plugin.settings.autoOpenNoteAfterFinish = v; await this.plugin.saveSettings(); }));
+
+    new obsidian.Setting(c).setName("写入今日会议概要到日记")
+      .setDesc("Obsidian 日记已启用时，处理完成后写入纪要链接和概要；识别到待办时使用 - [ ] 任务语法写入。当日日记不存在时，会按日记插件配置的路径与模板自动创建。")
+      .addToggle(t => t.setValue(this.plugin.settings.writeDailyMeetingOverview !== false).onChange(async v => { this.plugin.settings.writeDailyMeetingOverview = v; await this.plugin.saveSettings(); }));
+
+    new obsidian.Setting(c).setName("日记写入标题")
+      .setDesc("Q&A Log 会在当日日记中找到或创建这个二级标题，并把每次整理完成后的概要写到标题下方。")
+      .addText(t => t
+        .setPlaceholder(DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
+        .setValue(this.plugin.settings.dailyMeetingOverviewHeading || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
+        .onChange(async v => {
+          this.plugin.settings.dailyMeetingOverviewHeading = v.replace(/^#+\s*/, "").trim() || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING;
+          await this.plugin.saveSettings();
+        }));
+
+    const dailyTplSetting = new obsidian.Setting(c)
+      .setName("日记写入模板")
+      .setDesc("用于控制每条概要写入日记的格式。可用占位符：{{date}}、{{time}}、{{note_link}}、{{title}}、{{mode}}、{{duration}}、{{segments}}、{{model}}、{{summary}}、{{todos}}、{{todos_block}}、{{todo_count}}。");
+    dailyTplSetting.addButton(b => b.setButtonText("恢复默认").onClick(async () => {
+      const ok = await qnalogConfirm(this.app, "恢复默认日记模板？", "将丢弃当前自定义模板，且无法撤销。", "恢复默认");
+      if (!ok) return;
+      this.plugin.settings.dailyMeetingOverviewTemplate = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
+      await this.plugin.saveSettings();
+      new obsidian.Notice("已恢复默认日记模板");
+      this.renderSettings();
+    }));
+    const dailyTplTa = c.createEl("textarea", { cls: "qnalog-textarea qnalog-textarea-mono" });
+    dailyTplTa.rows = 8;
+    dailyTplTa.value = this.plugin.settings.dailyMeetingOverviewTemplate || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
+    dailyTplTa.placeholder = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
+    dailyTplTa.addEventListener("change", async () => {
+      this.plugin.settings.dailyMeetingOverviewTemplate = dailyTplTa.value.trim() || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
+      await this.plugin.saveSettings();
+    });
+
+    new obsidian.Setting(c)
+      .setName("悬浮按钮")
+      .setDesc("设置桌面悬浮按钮的显示和大小。")
+      .setHeading();
+
+    new obsidian.Setting(c).setName("显示悬浮按钮")
+      .setDesc("开启后常驻显示，可拖动到任意位置；关闭后隐藏。")
+      .addToggle(t => t.setValue(this.plugin.settings.showFloatingBall).onChange(async v => {
+        this.plugin.settings.showFloatingBall = v; await this.plugin.saveSettings();
+        this.plugin.shell.syncBubbleVisibility();
       }));
 
-    // ---- 外部音频联动 ----
+    new obsidian.Setting(c).setName("悬浮按钮大小")
+      .setDesc("调整按钮及其展开控件的大小。")
+      .addDropdown(d => d
+        .addOption("large", "大")
+        .addOption("medium", "中")
+        .addOption("small", "小")
+        .setValue(this.plugin.settings.bubbleSize || "large")
+        .onChange(async v => {
+          this.plugin.settings.bubbleSize = v; await this.plugin.saveSettings();
+          this.plugin.shell.syncBubbleVisibility();
+        }));
+
+  }
+
+  /**
+   * 「自动导入」选项卡：监控收件箱文件夹并自动处理新音频，以及后台任务的重试上限与队列入口。
+   * 两者都属「不在场时自动发生的事」，放一起；从「进阶」拆出。
+   */
+  renderImport(c) {
     new obsidian.Setting(c)
       .setName("自动导入音频")
       .setDesc("监控一个收件箱文件夹，自动处理从云盘或其他设备同步进来的音频。")
@@ -2526,7 +2452,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc("扫描转写纪要文件夹，将时长不超过 10 秒且没有有效转写文本的 Q&A Log 条目移入系统废纸篓，并同步处理其引用的录音文件。误删可从系统废纸篓恢复。")
       .addButton(b => b.setButtonText("扫描并清理").onClick(() => this.plugin.cleanup.cleanupEmptyShortRecordings()));
 
-    // ---- 失败重试 ----
     new obsidian.Setting(c)
       .setName("任务重试")
       .setDesc("设置自动重试上限，并查看仍在等待或失败的后台任务。")
@@ -2550,78 +2475,100 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName("任务队列")
       .setDesc(`当前 ${this.plugin.queue.tasks.length} 个任务。`)
       .addButton(b => b.setButtonText("打开队列").onClick(() => new QueueModal(this.app, this.plugin).open()))
-      .addButton(b => b.setButtonText("重试全部").onClick(() => this.plugin.queueRetry.retryQueue()));
   }
 
-  async runAudioDiagnostic() {
-    const result = this.diagResultEl;
-    if (!result) return;
-    result.empty();
-    result.createDiv({ text: "检测中…", cls: "qnalog-diag-loading" });
+  /**
+   * 「关于」选项卡：版本与更新、诊断日志、版权与许可。
+   * 三者都不是配置项（只有「启动时自动检查」一个开关），
+   * 原先分散在「更新」与「进阶」两处。
+   */
+  renderAbout(c) {
+    new obsidian.Setting(c).setName("插件更新").setHeading();
+    // 与首页同源：Obsidian 只在启动时读 manifest，直接用 manifest.version 会显示上一次安装的版本。
+    const currentVersion = this.plugin.getDisplayVersion();
+    const buildSource = this.plugin.getBuildSourceLabel();
+    const update = this.plugin.settings.availableUpdate;
+    const rawBases = resolveUpdateRawBases(this.plugin.settings);
+    const installedUpdateVersion = this.plugin.settings.installedUpdateVersion || "";
+    const status = [
+      "当前版本：" + currentVersion,
+      buildSource ? "构建来源：" + buildSource : "",
+      installedUpdateVersion && compareVersions(installedUpdateVersion, currentVersion) > 0
+        ? "检测到 " + installedUpdateVersion + " 已就位，重启或重新启用后生效"
+        : "",
+      update && update.version ? "可用版本：" + update.version + "（请从发布页安装）" : "暂无可用更新",
+      this.plugin.settings.lastUpdateCheckAt ? "上次检查：" + this.plugin.settings.lastUpdateCheckAt : "尚未检查",
+      this.plugin.settings.lastUpdateError ? "上次错误：" + this.plugin.settings.lastUpdateError : "",
+      rawBases.length > 1 ? "备用下载源：" + (rawBases.length - 1) + " 个" : "",
+      "写入目录：" + pluginBasePath(this.plugin),
+    ].filter(Boolean).join("；");
 
-    let info;
-    try {
-      // 诊断要显示设备名，属于用户主动发起的检测，这里申请权限是预期的。
-      info = await enumerateAudioDevices({ requestPermission: true });
-    } catch (e) {
-      result.empty();
-      result.createDiv({ text: `检测失败：${e.message || e}`, cls: "qnalog-diag-error" });
-      return;
-    }
-    result.empty();
-    const card = result.createDiv({ cls: "qnalog-diag-card" });
+    new obsidian.Setting(c).setName("更新状态")
+      .setDesc(status);
 
-    // 去名字化：如实列出所有音频输入设备，不按名字猜哪只是真麦/虚拟。
-    const allInputs = (info.all || []).filter((d) => d && d.kind === "audioinput");
+    new obsidian.Setting(c).setName("更新来源")
+      .setDesc("本插件从本项目仓库（GitHub: qnalog/qnalog）检查是否有新版本，只更新版本提示，不会下载或改写任何文件；安装由 Obsidian 或 BRAT 完成。更新源不接受上游版本。")
+      .addButton(b => b.setButtonText("打开 GitHub").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL)))
+      .addButton(b => b.setButtonText("查看版本").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases")));
 
-    // 麦克风行：有任何输入设备即可录（没选则用系统默认）。
-    const micRow = card.createDiv({ cls: "qnalog-diag-row" });
-    const micOk = allInputs.length > 0;
-    micRow.createSpan({ cls: `qnalog-diag-dot ${micOk ? "is-ok" : "is-fail"}` });
-    const micText = micRow.createDiv({ cls: "qnalog-diag-text" });
-    micText.createDiv({ text: micOk ? `检测到 ${allInputs.length} 个音频输入设备` : "未检测到任何音频输入设备", cls: "qnalog-diag-label" });
-    if (micOk) {
-      micText.createDiv({ text: allInputs.map(d => `• ${d.label || "未授权读取"}`).slice(0, 5).join("\n"), cls: "qnalog-diag-sub" });
-    }
+    new obsidian.Setting(c).setName("启动时自动检查")
+      .setDesc("开启后最多每 24 小时检查一次本仓库。")
+      .addToggle(t => t.setValue(this.plugin.settings.autoCheckUpdates !== false)
+        .onChange(async v => { this.plugin.settings.autoCheckUpdates = v; await this.plugin.saveSettings(); }));
 
-    // 电脑音频行：必须由用户显式选定，不猜第一个虚拟声卡。
-    const vcRow = card.createDiv({ cls: "qnalog-diag-row" });
-    const vcSelId = this.plugin.settings.selectedVirtualDevice || "";
-    const vcDev = vcSelId ? allInputs.find(d => d.deviceId === vcSelId) : null;
-    const vcOk = !!vcDev;
-    vcRow.createSpan({ cls: `qnalog-diag-dot ${vcOk ? "is-ok" : "is-warn"}` });
-    const vcText = vcRow.createDiv({ cls: "qnalog-diag-text" });
-    if (vcOk) {
-      vcText.createDiv({ text: "电脑音频输入（已选定）", cls: "qnalog-diag-label" });
-      vcText.createDiv({ text: `• ${vcDev.label || "未授权读取"}`, cls: "qnalog-diag-sub" });
-    } else if (vcSelId) {
-      vcText.createDiv({ text: "所选电脑音频输入未检测到", cls: "qnalog-diag-label" });
-      vcText.createDiv({ text: "之前选定的设备可能已断开，请在下方重新选择。", cls: "qnalog-diag-sub" });
-    } else {
-      vcText.createDiv({ text: "未选择电脑音频输入", cls: "qnalog-diag-label" });
-      vcText.createDiv({ text: "录制电脑声音需要虚拟声卡。请在「设置电脑音频」中完成配置。", cls: "qnalog-diag-sub" });
-    }
+    // 本插件不下载也不安装任何文件（Obsidian 开发者政策：插件不得自我更新）。
+    // 这里只检查版本并引导到 GitHub Release，安装交给 Obsidian 或 BRAT。
+    new obsidian.Setting(c).setName("检查更新")
+      .setDesc("只检查是否有新版本，不会自动下载或安装。安装方式见发布页说明。")
+      .addButton(b => b.setButtonText("检查更新").onClick(async () => {
+        await this.plugin.checkForUpdates({ silent: false });
+        this.renderSettings();
+      }))
+      .addButton(b => b.setButtonText("打开发布页").onClick(() => {
+        openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases");
+      }));
 
-    if (info.permissionRequired) {
-      const permRow = card.createDiv({ cls: "qnalog-diag-row" });
-      permRow.createSpan({ cls: "qnalog-diag-dot is-warn" });
-      const permText = permRow.createDiv({ cls: "qnalog-diag-text" });
-      permText.createDiv({ text: "麦克风权限未授予", cls: "qnalog-diag-label" });
-      permText.createDiv({ text: "未授权时设备名为空，无法准确识别电脑音频输入。", cls: "qnalog-diag-sub" });
-    }
+    new obsidian.Setting(c)
+      .setName("诊断与日志")
+      .setDesc("记录本地诊断信息并生成排查报告。音频设备检测已统一放在「录音 > 音频输入」。")
+      .setHeading();
 
-    const summary = card.createDiv({ cls: "qnalog-diag-summary" });
-    const mode = normalizeAudioInputMode(this.plugin.settings.captureMode || "mic");
-    let modeStatus, modeOk;
-    if (mode === "mic") { modeOk = micOk; modeStatus = micOk ? "当前音频输入可用" : "当前音频输入不可用（无任何输入设备）"; }
-    else if (mode === "virtualCable") { modeOk = vcOk; modeStatus = vcOk ? "当前音频输入可用" : "当前音频输入不可用（未选择电脑音频输入）"; }
-    else if (mode === "mix-virtual") { modeOk = micOk && vcOk; modeStatus = modeOk ? "当前音频输入可用" : `当前音频输入不可用（${!micOk ? "无任何输入设备" : "未选择电脑音频输入"}）`; }
+    new obsidian.Setting(c).setName("本地诊断日志")
+      .setDesc("用于排查转写、AI 整理、队列和实时大纲错误。日志只保存在本地 Obsidian 库，不会自动上传；不会写入音频、转写正文、提示词或 API Key。")
+      .addToggle(t => t.setValue(this.plugin.settings.diagnosticsLogEnabled !== false).onChange(async v => {
+        this.plugin.settings.diagnosticsLogEnabled = v;
+        await this.plugin.saveSettings();
+      }))
+      .addButton(b => b.setButtonText("复制诊断报告").onClick(() => this.plugin.diagnostics.copyDiagnosticReport()));
 
-    summary.createDiv({ text: `当前音频输入：${audioInputModeLabel(mode)}`, cls: "qnalog-diag-summary-mode" });
-    summary.createDiv({ text: modeStatus, cls: `qnalog-diag-summary-status ${modeOk ? "is-ok" : "is-warn"}` });
+    new obsidian.Setting(c).setName("诊断日志文件夹")
+      .setDesc("Obsidian 库内的相对路径。一般保持默认即可；诊断报告只有在主动复制后才会提供给开发者排查。修改后仅影响新日志文件。")
+      .addText(t => t
+        .setPlaceholder(DEFAULT_SETTINGS.diagnosticsLogFolder)
+        .setValue(this.plugin.settings.diagnosticsLogFolder || DEFAULT_SETTINGS.diagnosticsLogFolder)
+        .onChange(async v => {
+          this.plugin.settings.diagnosticsLogFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.diagnosticsLogFolder);
+          await this.plugin.saveSettings();
+        }));
 
-    const editHint = card.createDiv({ cls: "qnalog-diag-edit-hint" });
-    editHint.setText("设备检测只做诊断；如需更换麦克风或电脑音频输入，请在上方「音频输入」区域调整。");
+    new obsidian.Setting(c).setName("清空诊断日志")
+      .setDesc("删除诊断日志文件夹中的全部 .jsonl 日志文件，释放空间。不影响纪要与录音。")
+      .addButton(b => b.setButtonText("清空").onClick(async () => {
+        const ok = await qnalogConfirm(this.app, "清空诊断日志？", "将删除诊断日志文件夹中的全部 .jsonl 日志文件；删除后无法再用于追溯历史问题（文件进入系统废纸篓，可恢复）。", "清空");
+        if (!ok) return;
+        const folder = this.app.vault.getAbstractFileByPath(this.plugin.diagnostics.getDiagnosticsFolder());
+        let n = 0;
+        if (folder instanceof obsidian.TFolder) {
+          const targets = folder.children.filter(f => f instanceof obsidian.TFile && f.extension === "jsonl");
+          for (const f of targets) {
+            try { await trashVaultFileRef(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
+          }
+        }
+        new obsidian.Notice(n ? `已清空诊断日志：${n} 个文件（可从系统废纸篓恢复）` : "诊断日志文件夹为空");
+      }));
+
+    new obsidian.Setting(c).setName("版权与许可")
+      .setDesc("Q&A Log 由 Q&A Log Team 维护，以 MIT License 开源发布。其代码来源与许可说明见仓库里的 NOTICE 与 LICENSE。第三方 API、模型和虚拟声卡工具由用户自行配置和承担费用；本插件不运营云端存储，也不会上传录音到任何自有服务器。");
   }
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
