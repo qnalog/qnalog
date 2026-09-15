@@ -4454,8 +4454,8 @@ export class OutlineView extends obsidian.ItemView {
       let curVal = opts.current;
       const find = () => opts.items.find(it => it.value === curVal) || (opts.blankWhenUnset ? null : opts.items[0]);
       const trigger = row.createDiv({ cls: "qnalog-outline-select-wrap qnalog-outline-menu-trigger" + (opts.disabled ? " is-disabled" : "") });
-      const lbl = trigger.createSpan({ cls: "lex-ms-label", text: (opts.disabled && opts.disabledLabel) ? opts.disabledLabel : ((find() || {}).label || "") });
-      try { obsidian.setIcon(trigger.createSpan({ cls: "lex-ms-chev" }), "chevron-down"); } catch { /* intentionally empty */ }
+      const lbl = trigger.createSpan({ cls: "qnalog-ms-label", text: (opts.disabled && opts.disabledLabel) ? opts.disabledLabel : ((find() || {}).label || "") });
+      try { obsidian.setIcon(trigger.createSpan({ cls: "qnalog-ms-chev" }), "chevron-down"); } catch { /* intentionally empty */ }
       if (!opts.disabled) {
         trigger.onclick = () => {
           const menu = new obsidian.Menu();
@@ -4479,7 +4479,7 @@ export class OutlineView extends obsidian.ItemView {
             (menu as unknown as { dom: HTMLElement }).dom.classList.add("qnalog-ms-menu");
             const items = (menu as unknown as { dom: HTMLElement }).dom.querySelectorAll(".menu-item");
             const idx = opts.items.findIndex(it => it.value === curVal);
-            if (idx >= 0 && items[idx]) items[idx].classList.add("lex-ms-active");
+            if (idx >= 0 && items[idx]) items[idx].classList.add("qnalog-ms-active");
           } catch { /* intentionally empty */ }
         };
       }

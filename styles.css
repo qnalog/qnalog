@@ -2367,7 +2367,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   margin-top: 4px;
 }
 
-/* 章节圆点（设计稿 #outline-1/2/3 的 .lex-dot）
+/* 章节圆点（设计稿 #outline-1/2/3 的 .qnalog-dot）
    直觉规则：只有"带时间戳的 L1"才是真正的时间锚点 → 大实心圈点；
    没时间戳的 L1（同一时间段内的延续话题）→ 小淡点，视觉次一级，不抢"时间点"语义。 */
 
@@ -2735,10 +2735,10 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   gap: 8px;
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid var(--lex-border-line, var(--background-modifier-border));
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 9px;
   background: transparent;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -2749,19 +2749,19 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   border-color: color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border));
   background-color: color-mix(in srgb, var(--background-primary) 92%, var(--text-accent) 8%);
 }
-.qnalog-outline-menu-trigger .lex-ms-label {
+.qnalog-outline-menu-trigger .qnalog-ms-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.qnalog-outline-menu-trigger .lex-ms-chev {
+.qnalog-outline-menu-trigger .qnalog-ms-chev {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   color: var(--text-muted);
   opacity: 0.7;
 }
-.qnalog-outline-menu-trigger .lex-ms-chev svg {
+.qnalog-outline-menu-trigger .qnalog-ms-chev svg {
   width: 16px;
   height: 16px;
 }
@@ -2794,8 +2794,8 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   justify-content: flex-end;
 }
 .qnalog-outline-more-body .qnalog-outline-menu-trigger:hover { background: transparent; border-color: transparent; }
-.qnalog-outline-more-body .lex-ms-label { flex: 0 1 auto; color: var(--text-muted); text-align: right; }
-.qnalog-outline-more-body .qnalog-outline-menu-trigger:hover .lex-ms-label { color: var(--text-normal); }
+.qnalog-outline-more-body .qnalog-ms-label { flex: 0 1 auto; color: var(--text-muted); text-align: right; }
+.qnalog-outline-more-body .qnalog-outline-menu-trigger:hover .qnalog-ms-label { color: var(--text-normal); }
 /* 偏好 + 思考 并排双列（压扁折叠区）：与其它折叠行同样的分隔线 + 上下内边距；每个单元 = 标签左 + 紧凑触发器（值右对齐弱化） */
 .qnalog-outline-more-body .qnalog-outline-control-pair {
   display: grid;
@@ -2859,7 +2859,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding-left: 14px;
   padding-right: 14px;
 }
-.menu.qnalog-ms-menu .menu-item.lex-ms-active .menu-item-title {
+.menu.qnalog-ms-menu .menu-item.qnalog-ms-active .menu-item-title {
   color: var(--text-accent);
   font-weight: 500;
 }
@@ -3079,10 +3079,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 56px;
   height: 56px;
   margin-bottom: 20px;
-  border: 0.5px solid var(--lex-border-line);
+  border: 0.5px solid var(--qnalog-border-line);
   border-radius: 50%;
   background: transparent;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3095,7 +3095,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-empty-state-title {
   margin-bottom: 6px;
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: 13px;
   font-weight: 500;
   line-height: 1.4;
@@ -3104,7 +3104,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-empty-state-desc {
   max-width: 220px;
   margin-bottom: 22px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 11px;
   line-height: 1.6;
 }
@@ -3116,10 +3116,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 6px;
   min-height: 32px;
   padding: 7px 16px;
-  border: 0.5px solid var(--lex-border-line);
+  border: 0.5px solid var(--qnalog-border-line);
   border-radius: 8px;
   background: transparent;
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: 12px;
   font-family: inherit;
   box-shadow: none;
@@ -3127,8 +3127,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-empty-state-action:hover {
-  background: var(--lex-bg-hover);
-  color: var(--lex-text-primary);
+  background: var(--qnalog-bg-hover);
+  color: var(--qnalog-text-primary);
 }
 
 .qnalog-empty-state-action-icon,
@@ -5067,7 +5067,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-sizing: border-box;
   height: 32px;
   padding: 0 11px;
-  border: 1px solid var(--lex-border-line, var(--background-modifier-border));
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 8px;
   background: var(--background-primary);
   color: var(--text-normal);
@@ -5315,7 +5315,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-recent-group.is-today .qnalog-outline-recent-axis::after {
-  background: var(--lex-primary-action, var(--interactive-accent));
+  background: var(--qnalog-primary-action, var(--interactive-accent));
   border: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
 }
@@ -5336,7 +5336,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-recent-group.is-today .qnalog-outline-recent-axis-primary {
-  color: color-mix(in srgb, var(--text-normal) 82%, var(--lex-primary-soft, var(--text-accent)) 18%);
+  color: color-mix(in srgb, var(--text-normal) 82%, var(--qnalog-primary-soft, var(--text-accent)) 18%);
 }
 
 .qnalog-outline-recent-axis-secondary {
@@ -5385,10 +5385,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   order: 1;
   flex: 0 0 auto;
   padding: 1px 8px;
-  border: 1px solid var(--lex-border-active-soft, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border)));
+  border: 1px solid var(--qnalog-border-active-soft, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border)));
   border-radius: 999px;
-  color: var(--lex-primary-soft, var(--text-accent));
-  background: var(--lex-bg-active, color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary)));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  background: var(--qnalog-bg-active, color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary)));
   font-size: var(--font-ui-smaller);
   font-weight: 560;
 }
@@ -5396,7 +5396,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-recent-group-count {
   order: 3;
   flex: 0 0 auto;
-  color: color-mix(in srgb, var(--text-muted) 78%, var(--lex-primary-soft, var(--text-accent)) 22%);
+  color: color-mix(in srgb, var(--text-muted) 78%, var(--qnalog-primary-soft, var(--text-accent)) 22%);
   font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
 }
@@ -5425,7 +5425,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-recent-row.is-active .qnalog-outline-recent-name {
-  color: var(--lex-primary-soft, var(--text-accent));
+  color: var(--qnalog-primary-soft, var(--text-accent));
 }
 
 .qnalog-outline-recent-row.is-active::before {
@@ -5447,9 +5447,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-recent-row.is-active .qnalog-outline-recent-chip {
-  color: var(--lex-primary-soft, var(--text-accent));
-  border-color: var(--lex-border-active-soft, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border)));
-  background: var(--lex-bg-active, color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary)));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  border-color: var(--qnalog-border-active-soft, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border)));
+  background: var(--qnalog-bg-active, color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary)));
 }
 
 .qnalog-outline-recent-chip svg {
@@ -5587,7 +5587,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-recent-action.is-retry {
-  color: var(--lex-danger-text, var(--text-error));
+  color: var(--qnalog-danger-text, var(--text-error));
   width: 24px;
   min-width: 24px;
   padding: 0;
@@ -6262,7 +6262,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-audio-channel-field {
   grid-column: 1 / -1;
-  container-name: lex-audio-channel;
+  container-name: qnalog-audio-channel;
   container-type: inline-size;
   padding: var(--size-4-3) 0 0;
   border: 0;
@@ -6373,7 +6373,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-accent);
 }
 
-@container lex-audio-channel (max-width: 520px) {
+@container qnalog-audio-channel (max-width: 520px) {
   .qnalog-audio-channel-title-row {
     align-items: flex-start;
   }
@@ -8346,39 +8346,39 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
    ============================================================ */
 
 .qnalog-outline {
-  --lex-bg-base: var(--background-primary);
-  --lex-bg-card: var(--background-primary-alt, var(--background-primary));
-  --lex-bg-muted: var(--background-secondary);
-  --lex-sidebar-surface: var(--background-secondary);
-  --lex-bg-hover: var(--background-modifier-hover);
-  --lex-bg-active: color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary));
-  --lex-bg-playing: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
-  --lex-bg-toast: color-mix(in srgb, var(--text-normal) 86%, var(--interactive-accent) 14%);
-  --lex-primary: var(--interactive-accent);
-  --lex-primary-hover: var(--interactive-accent-hover);
-  --lex-primary-action: var(--interactive-accent);
-  --lex-primary-soft: var(--text-accent);
-  --lex-primary-accent: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-primary));
-  --lex-on-primary: var(--text-on-accent);
-  --lex-border-line: color-mix(in srgb, var(--background-modifier-border) 78%, var(--interactive-accent) 22%);
-  --lex-border-active: var(--interactive-accent);
-  --lex-border-active-soft: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
-  --lex-text-primary: var(--text-normal);
-  --lex-text-secondary: var(--text-muted);
-  --lex-text-tertiary: var(--text-faint);
-  --lex-text-hint: var(--text-faint);
-  --lex-text-toast: var(--background-primary);
-  --lex-recording-color: var(--interactive-accent);
-  --lex-recording-glow: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
-  --lex-success-bg: var(--background-modifier-success);
-  --lex-success-text: var(--text-success);
-  --lex-warning-text: var(--text-warning, var(--text-accent));
-  --lex-warning-bg: color-mix(in srgb, var(--lex-warning-text) 13%, var(--background-primary));
-  --lex-warning-border: color-mix(in srgb, var(--lex-warning-text) 32%, var(--background-modifier-border));
-  --lex-danger-text: var(--text-error);
-  --lex-danger-bg: color-mix(in srgb, var(--lex-danger-text) 11%, var(--background-primary));
-  --lex-danger-border: color-mix(in srgb, var(--lex-danger-text) 28%, var(--background-modifier-border));
-  --lex-neutral-panel: color-mix(in srgb, var(--background-primary) 92%, var(--text-muted) 8%);
+  --qnalog-bg-base: var(--background-primary);
+  --qnalog-bg-card: var(--background-primary-alt, var(--background-primary));
+  --qnalog-bg-muted: var(--background-secondary);
+  --qnalog-sidebar-surface: var(--background-secondary);
+  --qnalog-bg-hover: var(--background-modifier-hover);
+  --qnalog-bg-active: color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary));
+  --qnalog-bg-playing: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+  --qnalog-bg-toast: color-mix(in srgb, var(--text-normal) 86%, var(--interactive-accent) 14%);
+  --qnalog-primary: var(--interactive-accent);
+  --qnalog-primary-hover: var(--interactive-accent-hover);
+  --qnalog-primary-action: var(--interactive-accent);
+  --qnalog-primary-soft: var(--text-accent);
+  --qnalog-primary-accent: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-primary));
+  --qnalog-on-primary: var(--text-on-accent);
+  --qnalog-border-line: color-mix(in srgb, var(--background-modifier-border) 78%, var(--interactive-accent) 22%);
+  --qnalog-border-active: var(--interactive-accent);
+  --qnalog-border-active-soft: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
+  --qnalog-text-primary: var(--text-normal);
+  --qnalog-text-secondary: var(--text-muted);
+  --qnalog-text-tertiary: var(--text-faint);
+  --qnalog-text-hint: var(--text-faint);
+  --qnalog-text-toast: var(--background-primary);
+  --qnalog-recording-color: var(--interactive-accent);
+  --qnalog-recording-glow: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  --qnalog-success-bg: var(--background-modifier-success);
+  --qnalog-success-text: var(--text-success);
+  --qnalog-warning-text: var(--text-warning, var(--text-accent));
+  --qnalog-warning-bg: color-mix(in srgb, var(--qnalog-warning-text) 13%, var(--background-primary));
+  --qnalog-warning-border: color-mix(in srgb, var(--qnalog-warning-text) 32%, var(--background-modifier-border));
+  --qnalog-danger-text: var(--text-error);
+  --qnalog-danger-bg: color-mix(in srgb, var(--qnalog-danger-text) 11%, var(--background-primary));
+  --qnalog-danger-border: color-mix(in srgb, var(--qnalog-danger-text) 28%, var(--background-modifier-border));
+  --qnalog-neutral-panel: color-mix(in srgb, var(--background-primary) 92%, var(--text-muted) 8%);
   position: relative;
   min-height: 100%;
   box-sizing: border-box;
@@ -8399,7 +8399,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-head.is-idle .qnalog-outline-title {
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: 20px;
   line-height: 1.15;
   font-weight: 760;
@@ -8423,7 +8423,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline-head.is-idle .qnalog-outline-control-label {
   grid-column: 1;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
   font-size: 13px;
   align-self: center;
 }
@@ -8433,7 +8433,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-head.is-idle .qnalog-outline-settings-btn {
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
 }
 
 /* 折叠容器「更多设置」也是 controls(50px+1fr 两列 grid) 的直接子项，必须跨满整行，
@@ -8453,16 +8453,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-head.is-idle .qnalog-outline-action-button {
   gap: 6px;
   height: 38px;
-  border-color: var(--lex-border-line);
+  border-color: var(--qnalog-border-line);
   border-radius: 8px;
   background: transparent;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
   font-size: 12px;
 }
 
 .qnalog-outline-head.is-idle .qnalog-outline-action-button.is-record,
 .qnalog-outline-head.is-idle .qnalog-outline-action-button.is-record.mod-cta {
-  background: var(--lex-primary-action);
+  background: var(--qnalog-primary-action);
   color: var(--text-on-accent);
   font-size: 13px;
   font-weight: 700;
@@ -8488,7 +8488,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-head.is-active-session .qnalog-outline-title {
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 20px;
   line-height: 1.15;
   font-weight: 760;
@@ -8497,7 +8497,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-head.is-active-session .qnalog-outline-note-btn,
 .qnalog-outline-head.is-active-session .qnalog-outline-kanban-btn,
 .qnalog-outline-head.is-active-session .qnalog-outline-settings-btn {
-  color: var(--lex-text-secondary, var(--text-muted));
+  color: var(--qnalog-text-secondary, var(--text-muted));
   width: 28px;
   height: 28px;
 }
@@ -8508,25 +8508,25 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-recording-player,
 .qnalog-inline-player {
-  border: 0.5px solid var(--lex-border-line);
+  border: 0.5px solid var(--qnalog-border-line);
   border-radius: 10px;
   padding: 10px 12px;
   transition: background 0.3s ease-out, border-color 0.3s ease-out;
 }
 
 .qnalog-recording-player.is-live {
-  background: var(--lex-bg-active);
-  border-color: var(--lex-border-active-soft);
+  background: var(--qnalog-bg-active);
+  border-color: var(--qnalog-border-active-soft);
 }
 
 .qnalog-recording-player.is-network {
-  background: var(--lex-warning-bg);
-  border-color: var(--lex-warning-border);
+  background: var(--qnalog-warning-bg);
+  border-color: var(--qnalog-warning-border);
 }
 
 .qnalog-recording-player.is-network .qnalog-recording-player-primary,
 .qnalog-recording-player.is-network .qnalog-recording-wave-bar {
-  background: var(--lex-warning-text);
+  background: var(--qnalog-warning-text);
 }
 
 .qnalog-recording-player.is-network .qnalog-recording-wave-bar {
@@ -8535,7 +8535,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-recording-player.is-network .qnalog-recording-elapsed {
-  color: var(--lex-warning-text);
+  color: var(--qnalog-warning-text);
 }
 
 .qnalog-recording-player.is-microphone {
@@ -8575,7 +8575,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 28px;
   border: 0;
   border-radius: 50%;
-  background: var(--lex-primary-action);
+  background: var(--qnalog-primary-action);
   color: var(--text-on-accent);
   display: inline-flex;
   align-items: center;
@@ -8594,7 +8594,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-left: 2px;
   border-top: 6px solid transparent;
   border-bottom: 6px solid transparent;
-  border-left: 8px solid var(--lex-on-primary, var(--text-on-accent));
+  border-left: 8px solid var(--qnalog-on-primary, var(--text-on-accent));
 }
 
 .qnalog-inline-player-play.is-playing::before {
@@ -8604,9 +8604,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 0;
   background: linear-gradient(
     to right,
-    var(--lex-on-primary, var(--text-on-accent)) 0 35%,
+    var(--qnalog-on-primary, var(--text-on-accent)) 0 35%,
     transparent 35% 65%,
-    var(--lex-on-primary, var(--text-on-accent)) 65% 100%
+    var(--qnalog-on-primary, var(--text-on-accent)) 65% 100%
   );
 }
 
@@ -8644,7 +8644,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-recording-wave-bar {
   width: 2px;
   border-radius: 1px;
-  background: var(--lex-primary-action);
+  background: var(--qnalog-primary-action);
   animation: qnalog-wave 1.2s ease-in-out infinite;
   transform-origin: center;
 }
@@ -8656,7 +8656,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-recording-elapsed {
   margin-left: 10px;
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -8677,7 +8677,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8688,8 +8688,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-inline-player-icon-btn:hover {
-  background: var(--lex-bg-hover);
-  color: var(--lex-text-secondary);
+  background: var(--qnalog-bg-hover);
+  color: var(--qnalog-text-secondary);
 }
 
 .qnalog-inline-player-icon-btn svg {
@@ -8703,7 +8703,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   position: relative;
   height: 3px;
   border-radius: 2px;
-  background: var(--lex-border-active-soft);
+  background: var(--qnalog-border-active-soft);
   cursor: pointer;
   touch-action: none;
 }
@@ -8713,7 +8713,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 100%;
   width: 0;
   border-radius: inherit;
-  background: var(--lex-primary-action);
+  background: var(--qnalog-primary-action);
 }
 
 .qnalog-inline-player-knob {
@@ -8723,7 +8723,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--lex-primary-action);
+  background: var(--qnalog-primary-action);
   transform: translate(-50%, -50%);
   cursor: grab;
 }
@@ -8739,13 +8739,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-recording-finish-times span,
 .qnalog-inline-player-time {
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
 .qnalog-inline-player-time.is-current {
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
   font-weight: 500;
 }
 
@@ -8759,7 +8759,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 8px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: var(--lex-bg-active);
+  background: var(--qnalog-bg-active);
   animation: qnalog-fade-in 0.2s ease-out;
 }
 
@@ -8769,7 +8769,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
   transform-origin: center center;
   animation: qnalog-spin 1.4s linear infinite;
 }
@@ -8778,7 +8778,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-finalizing-banner-text {
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
   font-size: 11px;
 }
 /* 后台整理状态条（录音停后回到 idle 头，这条落在「新建录音」按钮下方，告知后台还在整理且可直接开下一段）。 */
@@ -8796,23 +8796,23 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-recording-alert.is-warning {
-  background: var(--lex-warning-bg);
-  border: 0.5px solid var(--lex-warning-border);
+  background: var(--qnalog-warning-bg);
+  border: 0.5px solid var(--qnalog-warning-border);
 }
 
 .qnalog-recording-alert.is-neutral {
   background: transparent;
-  border: 0.5px solid var(--lex-border-line);
+  border: 0.5px solid var(--qnalog-border-line);
 }
 
 .qnalog-recording-alert-icon {
   flex: 0 0 auto;
   margin-top: 1px;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
 }
 
 .qnalog-recording-alert.is-warning .qnalog-recording-alert-icon {
-  color: var(--lex-warning-text);
+  color: var(--qnalog-warning-text);
 }
 
 .qnalog-recording-alert-body {
@@ -8821,7 +8821,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-recording-alert-title {
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;
@@ -8829,30 +8829,30 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-recording-alert-desc {
   margin-top: 2px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 11px;
   line-height: 1.5;
 }
 
 .qnalog-recording-alert.is-warning .qnalog-recording-alert-title,
 .qnalog-recording-alert.is-warning .qnalog-recording-alert-desc {
-  color: var(--lex-warning-text);
+  color: var(--qnalog-warning-text);
 }
 
 .qnalog-recording-alert-action {
   flex: 0 0 auto;
-  border: 0.5px solid var(--lex-border-line);
+  border: 0.5px solid var(--qnalog-border-line);
   border-radius: 6px;
   background: transparent;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
   font-size: 11px;
   padding: 3px 9px;
   box-shadow: none;
 }
 
 .qnalog-recording-alert.is-warning .qnalog-recording-alert-action {
-  border-color: var(--lex-warning-border);
-  color: var(--lex-warning-text);
+  border-color: var(--qnalog-warning-border);
+  color: var(--qnalog-warning-text);
 }
 
 .qnalog-outline-ai-head.is-utility {
@@ -8914,7 +8914,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-ai-head.is-utility button {
   border: 0;
   background: transparent;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 11px;
   box-shadow: none;
   padding: 2px 4px;
@@ -8952,7 +8952,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-time-link {
   border: 0;
   background: transparent;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   box-shadow: none;
 }
 
@@ -8969,11 +8969,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
-  border: 1.5px solid var(--lex-text-hint);
+  border: 1.5px solid var(--qnalog-text-hint);
   border-radius: 50%;
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
   opacity: 1;
-  box-shadow: 0 0 0 3px var(--lex-bg-base);
+  box-shadow: 0 0 0 3px var(--qnalog-bg-base);
 }
 
 .qnalog-outline-ai-body ul.qnalog-outline-time-rail {
@@ -8985,7 +8985,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-ai-body ul.qnalog-outline-time-rail > li::before {
   left: var(--qnalog-outline-rail-x);
   width: 0.5px;
-  background: var(--lex-border-line);
+  background: var(--qnalog-border-line);
 }
 
 /* 时间数字：右对齐到轨道左侧；不再做成"竖直列含小点"，只留时间文字 */
@@ -9002,7 +9002,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   text-align: right;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--lex-text-muted, var(--text-muted));
+  color: var(--qnalog-text-muted, var(--text-muted));
   white-space: nowrap;
 }
 
@@ -9077,7 +9077,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-chapter.is-generating > .qnalog-time-link.qnalog-outline-leading-time::before,
 .qnalog-outline-chapter.is-generating > p > .qnalog-time-link.qnalog-outline-leading-time::before {
   border: 0;
-  background: var(--lex-primary-action);
+  background: var(--qnalog-primary-action);
   animation: qnalog-pulse 2s ease-in-out infinite;
 }
 
@@ -9086,10 +9086,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   margin-left: 6px;
   padding: 1px 6px;
-  border: 0.5px solid var(--lex-border-active-soft);
+  border: 0.5px solid var(--qnalog-border-active-soft);
   border-radius: 6px;
-  background: var(--lex-bg-active);
-  color: var(--lex-primary-soft);
+  background: var(--qnalog-bg-active);
+  color: var(--qnalog-primary-soft);
   font-size: 9px;
   vertical-align: middle;
 }
@@ -9100,7 +9100,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-right: 0;
   padding-left: var(--qnalog-outline-rail-content-x);
   padding-right: 0;
-  background: var(--lex-bg-playing);
+  background: var(--qnalog-bg-playing);
 }
 
 .qnalog-outline-chapter.is-viewing::after,
@@ -9112,13 +9112,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   bottom: 12px;
   width: 2px;
   border-radius: 0 1px 1px 0;
-  background: var(--lex-primary-soft);
+  background: var(--qnalog-primary-soft);
 }
 
 .qnalog-outline-chapter.is-viewing > .qnalog-time-link.qnalog-outline-leading-time::before,
 .qnalog-outline-chapter.is-viewing > p > .qnalog-time-link.qnalog-outline-leading-time::before {
-  border-color: var(--lex-primary-soft);
-  box-shadow: 0 0 0 3px var(--lex-bg-playing);
+  border-color: var(--qnalog-primary-soft);
+  box-shadow: 0 0 0 3px var(--qnalog-bg-playing);
 }
 
 .qnalog-outline-chapter.is-playing > .qnalog-time-link.qnalog-outline-leading-time::before,
@@ -9126,8 +9126,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 10px;
   height: 10px;
   border: 0;
-  background: var(--lex-primary-action);
-  box-shadow: 0 0 0 3px var(--lex-bg-playing);
+  background: var(--qnalog-primary-action);
+  box-shadow: 0 0 0 3px var(--qnalog-bg-playing);
   animation: qnalog-pulse-strong 2s ease-in-out infinite;
 }
 
@@ -9135,13 +9135,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-chapter.is-playing > .qnalog-time-link.qnalog-outline-leading-time,
 .qnalog-outline-chapter.is-viewing > p > .qnalog-time-link.qnalog-outline-leading-time,
 .qnalog-outline-chapter.is-playing > p > .qnalog-time-link.qnalog-outline-leading-time {
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
   font-weight: 500;
 }
 
 .qnalog-outline-chapter.is-viewing > p,
 .qnalog-outline-chapter.is-playing > p {
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
   font-weight: 600;
 }
 
@@ -9154,7 +9154,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 12px;
   height: 12px;
   vertical-align: -1px;
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
 }
 
 .qnalog-outline-mini-wave {
@@ -9170,7 +9170,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 2px;
   height: 7px;
   border-radius: 1px;
-  background: var(--lex-primary-soft);
+  background: var(--qnalog-primary-soft);
   animation: qnalog-wave 1s ease-in-out infinite;
   transform-origin: center;
 }
@@ -9193,14 +9193,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding: 6px 12px;
   border: 0;
   border-radius: 16px;
-  background: var(--lex-bg-toast);
-  color: var(--lex-text-toast);
+  background: var(--qnalog-bg-toast);
+  color: var(--qnalog-text-toast);
   box-shadow: 0 2px 10px color-mix(in srgb, var(--background-modifier-box-shadow) 15%, transparent);
   animation: qnalog-fade-in-up 0.3s ease-out;
 }
 
 .qnalog-back-to-current-icon {
-  color: var(--lex-primary-accent);
+  color: var(--qnalog-primary-accent);
 }
 
 .qnalog-back-to-current-label {
@@ -9214,7 +9214,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   text-align: center;
 }
 
@@ -9225,21 +9225,21 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--lex-neutral-panel);
-  border: 0.5px solid var(--lex-border-line);
-  color: var(--lex-text-secondary);
+  background: var(--qnalog-neutral-panel);
+  border: 0.5px solid var(--qnalog-border-line);
+  color: var(--qnalog-text-secondary);
 }
 
 .qnalog-outline-safe-empty-title {
   margin-top: 4px;
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: 13px;
   font-weight: 600;
 }
 
 .qnalog-outline-safe-empty-desc {
   max-width: 210px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 11px;
   line-height: 1.55;
 }
@@ -9248,7 +9248,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: flex;
   gap: 14px;
   padding: 10px 0 4px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   animation: qnalog-slide-in 0.35s ease-out;
 }
 
@@ -9264,14 +9264,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  border: 1.4px dashed var(--lex-warning-border);
-  background: var(--lex-bg-base);
-  box-shadow: 0 0 0 3px var(--lex-bg-base);
+  border: 1.4px dashed var(--qnalog-warning-border);
+  background: var(--qnalog-bg-base);
+  box-shadow: 0 0 0 3px var(--qnalog-bg-base);
 }
 
 .qnalog-outline-network-gap-time {
   margin-top: 6px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 11px;
 }
 
@@ -9280,7 +9280,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-network-gap-title {
-  color: var(--lex-warning-text);
+  color: var(--qnalog-warning-text);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
@@ -9288,7 +9288,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline-network-gap-desc {
   margin-top: 2px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 11px;
   font-style: italic;
   line-height: 1.5;
@@ -9313,8 +9313,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-recording-blocker-card {
   width: min(360px, 100%);
   border-radius: 12px;
-  border: 0.5px solid var(--lex-danger-border);
-  background: var(--lex-bg-base);
+  border: 0.5px solid var(--qnalog-danger-border);
+  background: var(--qnalog-bg-base);
   box-shadow: 0 10px 36px rgba(0, 0, 0, 0.18);
   padding: 18px;
   animation: qnalog-modal-pop 0.3s ease-out;
@@ -9334,12 +9334,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  background: var(--lex-danger-bg);
-  color: var(--lex-danger-text);
+  background: var(--qnalog-danger-bg);
+  color: var(--qnalog-danger-text);
 }
 
 .qnalog-recording-blocker-title {
-  color: var(--lex-danger-text);
+  color: var(--qnalog-danger-text);
   font-size: 15px;
   font-weight: 700;
   line-height: 1.35;
@@ -9347,13 +9347,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-recording-blocker-subtitle {
   margin-top: 2px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: 11px;
 }
 
 .qnalog-recording-blocker-desc {
   margin-top: 14px;
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: 13px;
   line-height: 1.65;
 }
@@ -9361,10 +9361,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-recording-blocker-steps {
   margin-top: 12px;
   border-radius: 8px;
-  background: var(--lex-neutral-panel);
-  border: 0.5px solid var(--lex-border-line);
+  background: var(--qnalog-neutral-panel);
+  border: 0.5px solid var(--qnalog-border-line);
   padding: 10px 12px;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
   font-size: 11px;
   line-height: 1.7;
 }
@@ -9384,9 +9384,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-recording-blocker-secondary {
-  border: 0.5px solid var(--lex-border-line);
+  border: 0.5px solid var(--qnalog-border-line);
   background: transparent;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
 }
 
 .qnalog-recording-blocker-primary {
@@ -9394,7 +9394,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   gap: 6px;
   border: 0;
-  background: var(--lex-primary-action);
+  background: var(--qnalog-primary-action);
   color: var(--text-on-accent);
 }
 
@@ -9405,19 +9405,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 @keyframes qnalog-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 3px var(--lex-bg-base), 0 0 0 3px rgba(var(--color-accent-rgb), 0);
+    box-shadow: 0 0 0 3px var(--qnalog-bg-base), 0 0 0 3px rgba(var(--color-accent-rgb), 0);
   }
   50% {
-    box-shadow: 0 0 0 3px var(--lex-bg-base), 0 0 0 6px rgba(var(--color-accent-rgb), 0.25);
+    box-shadow: 0 0 0 3px var(--qnalog-bg-base), 0 0 0 6px rgba(var(--color-accent-rgb), 0.25);
   }
 }
 
 @keyframes qnalog-pulse-strong {
   0%, 100% {
-    box-shadow: 0 0 0 3px var(--lex-bg-playing), 0 0 0 3px rgba(var(--color-accent-rgb), 0);
+    box-shadow: 0 0 0 3px var(--qnalog-bg-playing), 0 0 0 3px rgba(var(--color-accent-rgb), 0);
   }
   50% {
-    box-shadow: 0 0 0 3px var(--lex-bg-playing), 0 0 0 7px rgba(var(--color-accent-rgb), 0.3);
+    box-shadow: 0 0 0 3px var(--qnalog-bg-playing), 0 0 0 7px rgba(var(--color-accent-rgb), 0.3);
   }
 }
 
@@ -9474,7 +9474,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 /* 大纲播放器三角 → 主题强调色（白色三角在浅底按钮上看不见的 bug 修复） */
 .qnalog-inline-player-play {
   background: transparent;
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   border: 0;
   box-shadow: none;
 }
@@ -9493,19 +9493,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: currentColor;
 }
 .qnalog-inline-player-play:hover {
-  background: color-mix(in srgb, var(--lex-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--qnalog-primary) 12%, transparent);
 }
 
 .qnalog-recording-player .qnalog-recording-player-primary {
   background: transparent;
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   border: 0;
   box-shadow: none;
   opacity: 1;
 }
 
 .qnalog-recording-player .qnalog-recording-player-primary:disabled {
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   opacity: 1;
 }
 
@@ -9515,13 +9515,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-recording-player .qnalog-recording-player-primary:hover {
-  background: color-mix(in srgb, var(--lex-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--qnalog-primary) 12%, transparent);
 }
 
 .qnalog-recording-player.is-live .qnalog-recording-player-primary,
 .qnalog-recording-player.is-live .qnalog-recording-player-secondary {
   background: transparent;
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   border: 0;
   box-shadow: none;
 }
@@ -9532,8 +9532,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 52px;
   padding: 7px 12px;
   border-radius: 14px;
-  background: var(--lex-bg-active);
-  border-color: var(--lex-border-active-soft);
+  background: var(--qnalog-bg-active);
+  border-color: var(--qnalog-border-active-soft);
 }
 
 .qnalog-recording-player.is-live:not(.is-network):not(.is-microphone) .qnalog-recording-player-main {
@@ -9547,8 +9547,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-width: 40px;
   min-height: 40px;
   border-radius: 50%;
-  background: var(--lex-primary);
-  color: var(--lex-on-primary, var(--text-on-accent));
+  background: var(--qnalog-primary);
+  color: var(--qnalog-on-primary, var(--text-on-accent));
   box-shadow: none;
 }
 
@@ -9579,12 +9579,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-recording-player.is-live:not(.is-network):not(.is-microphone) .qnalog-recording-wave-bar {
   width: 2px;
-  background: var(--lex-primary);
+  background: var(--qnalog-primary);
 }
 
 .qnalog-recording-player.is-live:not(.is-network):not(.is-microphone) .qnalog-recording-elapsed {
   margin-left: 0;
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   font-size: 16px;
   font-weight: 600;
   line-height: 1;
@@ -9598,12 +9598,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-left: auto;
   border-radius: 8px;
   background: transparent;
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   box-shadow: none;
 }
 
 .qnalog-recording-player.is-live:not(.is-network):not(.is-microphone) .qnalog-recording-player-secondary:hover {
-  background: color-mix(in srgb, var(--lex-primary) 10%, transparent);
+  background: color-mix(in srgb, var(--qnalog-primary) 10%, transparent);
 }
 
 .qnalog-recording-player.is-live:not(.is-network):not(.is-microphone) .qnalog-recording-player-secondary svg {
@@ -9659,7 +9659,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-head.is-active-session .qnalog-input-meters {
   margin-top: 10px;
   padding: 8px 10px;
-  border: 0.5px solid var(--lex-border-line);
+  border: 0.5px solid var(--qnalog-border-line);
   border-radius: 10px;
   background: color-mix(in srgb, var(--background-primary) 84%, var(--interactive-accent) 4%);
 }
@@ -9706,9 +9706,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-sediment,
 .qnalog-sediment-baton {
   container-type: inline-size;
-  container-name: lex-sediment;
+  container-name: qnalog-sediment;
 }
-@container lex-sediment (max-width: 520px) {
+@container qnalog-sediment (max-width: 520px) {
   .qnalog-sediment-pipeline-node:not(.is-current) .qnalog-sediment-pipeline-circle {
     display: none;
   }
@@ -9734,7 +9734,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding: 4px 12px 4px 6px;
 }
 
-@container lex-sediment (max-width: 520px) {
+@container qnalog-sediment (max-width: 520px) {
   .qnalog-sediment-pipeline-node.is-current {
     padding: 5px 9px 5px 6px;
     min-width: 0;
@@ -9750,7 +9750,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 /* ============================================================
    v3 整改 · 待办字段 inline popover（替代全屏 modal）
    设计基准：qnalog-design-baseline-v2.html #assignee-1
-   颜色全部从 --lex-* / Obsidian 标准 token 派生
+   颜色全部从 --qnalog-* / Obsidian 标准 token 派生
    ============================================================ */
 
 .qnalog-todo-popover {
@@ -10004,7 +10004,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 28px;
   border-radius: 50%;
   background: transparent;
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -10046,8 +10046,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .workspace-leaf-content .qnalog-outline .qnalog-recording-player.is-live:not(.is-network):not(.is-microphone) button.qnalog-recording-player-primary {
-  background: var(--lex-primary);
-  color: var(--lex-on-primary, var(--text-on-accent));
+  background: var(--qnalog-primary);
+  color: var(--qnalog-on-primary, var(--text-on-accent));
   border: 0;
   box-shadow: none;
 }
@@ -10062,7 +10062,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .workspace-leaf-content .qnalog-outline .qnalog-recording-player button.qnalog-recording-player-secondary,
 .workspace-leaf-content .qnalog-outline .qnalog-inline-player button.qnalog-inline-player-icon-btn {
   background: transparent;
-  color: var(--lex-primary);
+  color: var(--qnalog-primary);
   border: 0;
   box-shadow: none;
   opacity: 1;
@@ -10386,7 +10386,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-accent);
 }
 .qnalog-outline-recent-variant.is-active .qnalog-outline-recent-variant-name {
-  color: var(--lex-primary-soft, var(--text-accent));
+  color: var(--qnalog-primary-soft, var(--text-accent));
 }
 .qnalog-outline-recent-variant-chip {
   display: inline-flex;
@@ -10833,17 +10833,17 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-kanban-gap: 14px;
   --qnalog-kanban-column-width: 262px;
   --qnalog-kanban-column-min-width: 196px;
-  --lex-bg-base: var(--background-primary);
-  --lex-bg-card: var(--background-primary-alt, var(--background-primary));
-  --lex-bg-muted: var(--background-secondary);
-  --lex-bg-hover: var(--background-modifier-hover);
-  --lex-bg-active: color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary));
-  --lex-primary: var(--interactive-accent);
-  --lex-primary-soft: var(--text-accent);
-  --lex-border-line: color-mix(in srgb, var(--background-modifier-border) 82%, var(--interactive-accent) 18%);
-  --lex-text-primary: var(--text-normal);
-  --lex-text-secondary: var(--text-muted);
-  --lex-text-tertiary: var(--text-faint);
+  --qnalog-bg-base: var(--background-primary);
+  --qnalog-bg-card: var(--background-primary-alt, var(--background-primary));
+  --qnalog-bg-muted: var(--background-secondary);
+  --qnalog-bg-hover: var(--background-modifier-hover);
+  --qnalog-bg-active: color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary));
+  --qnalog-primary: var(--interactive-accent);
+  --qnalog-primary-soft: var(--text-accent);
+  --qnalog-border-line: color-mix(in srgb, var(--background-modifier-border) 82%, var(--interactive-accent) 18%);
+  --qnalog-text-primary: var(--text-normal);
+  --qnalog-text-secondary: var(--text-muted);
+  --qnalog-text-tertiary: var(--text-faint);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -10853,8 +10853,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   overflow-x: hidden;
   overflow-y: auto;
   padding: 26px 26px 20px;
-  background: var(--lex-bg-muted);
-  color: var(--lex-text-primary);
+  background: var(--qnalog-bg-muted);
+  color: var(--qnalog-text-primary);
 }
 
 .qnalog-kanban-header,
@@ -10887,7 +10887,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-kanban-heading span,
 .qnalog-kanban-column-count {
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: var(--font-ui-smaller, 12px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -10904,20 +10904,20 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 6px;
   height: 30px;
   padding: 0 11px;
-  border: 1px solid var(--lex-border-line);
+  border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
   font-size: var(--font-ui-small, 13px);
   font-weight: 550;
   white-space: nowrap;
 }
 
 .qnalog-kanban-new-group:hover {
-  border-color: var(--lex-primary);
-  background: var(--lex-bg-base);
-  color: var(--lex-primary-soft);
+  border-color: var(--qnalog-primary);
+  background: var(--qnalog-bg-base);
+  color: var(--qnalog-primary-soft);
 }
 
 .qnalog-kanban-new-group svg {
@@ -10943,15 +10943,15 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 30px;
   gap: 7px;
   padding: 0 10px;
-  border: 1px solid var(--lex-border-line);
+  border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .qnalog-kanban-search > span {
   display: inline-flex;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
 }
 
 .qnalog-kanban-search svg {
@@ -10966,7 +10966,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 0;
   box-shadow: none;
   background: transparent;
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: var(--font-ui-small, 13px);
   padding: 0;
 }
@@ -10978,7 +10978,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-kanban-search:focus-within {
-  border-color: var(--lex-primary);
+  border-color: var(--qnalog-primary);
 }
 
 .qnalog-kanban-grouping {
@@ -10987,9 +10987,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 0 0 auto;
   height: 30px;
   overflow: hidden;
-  border: 1px solid var(--lex-border-line);
+  border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
@@ -11003,30 +11003,30 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-kanban-grouping-label {
   padding: 0 9px 0 10px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: var(--font-ui-smaller, 12px);
 }
 
 .qnalog-kanban-grouping-option {
   padding: 0 11px;
   border: 0;
-  border-left: 1px solid var(--lex-border-line);
+  border-left: 1px solid var(--qnalog-border-line);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
   font-size: var(--font-ui-small, 13px);
   font-weight: 500;
 }
 
 .qnalog-kanban-grouping-option:hover {
-  background: var(--lex-bg-hover);
-  color: var(--lex-text-primary);
+  background: var(--qnalog-bg-hover);
+  color: var(--qnalog-text-primary);
 }
 
 .qnalog-kanban-grouping-option.is-active {
-  background: var(--lex-bg-active);
-  color: var(--lex-primary-soft);
+  background: var(--qnalog-bg-active);
+  color: var(--qnalog-primary-soft);
   font-weight: 700;
 }
 
@@ -11037,19 +11037,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 9px;
   height: 30px;
   padding: 0 5px 0 11px;
-  border: 1px solid var(--lex-border-line);
+  border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   white-space: nowrap;
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
   font-size: var(--font-ui-small, 13px);
   font-weight: 550;
 }
 
 .qnalog-kanban-toggle:hover {
   border-color: var(--background-modifier-border-hover);
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
 }
 
 .qnalog-kanban-toggle-track {
@@ -11067,13 +11067,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
   transition: transform 160ms ease;
 }
 
 .qnalog-kanban-toggle.is-active .qnalog-kanban-toggle-track {
-  background: var(--lex-primary);
+  background: var(--qnalog-primary);
 }
 
 .qnalog-kanban-toggle.is-active .qnalog-kanban-toggle-knob {
@@ -11084,7 +11084,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-width: 0;
   margin-left: auto;
   overflow: hidden;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: var(--font-ui-smaller, 12px);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -11115,9 +11115,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-width: var(--qnalog-kanban-column-min-width);
   max-width: none;
   min-height: 0;
-  border: 1px solid var(--lex-border-line);
+  border: 1px solid var(--qnalog-border-line);
   border-radius: 14px;
-  background: var(--lex-bg-base);
+  background: var(--qnalog-bg-base);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   scroll-snap-align: start;
   transition: border-color 120ms ease, background-color 120ms ease;
@@ -11125,7 +11125,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-kanban-column.is-drop-target {
   border-color: var(--interactive-accent);
-  background: var(--lex-bg-active);
+  background: var(--qnalog-bg-active);
 }
 
 .qnalog-kanban-column-head {
@@ -11157,12 +11157,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 20px;
   padding: 0;
   border-radius: 6px;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
 }
 
 .qnalog-kanban-column-menu:hover {
-  background: var(--lex-bg-hover);
-  color: var(--lex-primary-soft);
+  background: var(--qnalog-bg-hover);
+  color: var(--qnalog-primary-soft);
 }
 
 .qnalog-kanban-column-menu svg {
@@ -11189,13 +11189,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding: 10px;
   border: 0;
   border-radius: 8px;
-  background: var(--lex-bg-card);
+  background: var(--qnalog-bg-card);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   cursor: pointer;
 }
 
 .qnalog-kanban-card:hover {
-  background: var(--lex-bg-card);
+  background: var(--qnalog-bg-card);
   box-shadow: 0 2px 7px rgba(0, 0, 0, 0.11);
 }
 
@@ -11204,7 +11204,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-kanban-card.is-canvas {
-  color: var(--lex-text-secondary);
+  color: var(--qnalog-text-secondary);
 }
 
 .qnalog-kanban-card-icon {
@@ -11213,9 +11213,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1.5px solid color-mix(in srgb, var(--lex-primary) 28%, var(--background-modifier-border));
+  border: 1.5px solid color-mix(in srgb, var(--qnalog-primary) 28%, var(--background-modifier-border));
   border-radius: 50%;
-  color: var(--lex-primary-soft);
+  color: var(--qnalog-primary-soft);
 }
 
 .qnalog-kanban-card-icon svg {
@@ -11232,7 +11232,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  color: var(--lex-text-primary);
+  color: var(--qnalog-text-primary);
   font-size: var(--font-ui-small, 13px);
   font-weight: 600;
   line-height: 1.45;
@@ -11242,7 +11242,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: block;
   margin-top: 3px;
   overflow: hidden;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: var(--font-ui-smaller, 12px);
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -11260,14 +11260,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 8px;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: var(--font-ui-smaller, 12px);
   font-weight: 600;
 }
 
 .qnalog-kanban-more:hover {
-  background: var(--lex-bg-hover);
-  color: var(--lex-primary-soft);
+  background: var(--qnalog-bg-hover);
+  color: var(--qnalog-primary-soft);
 }
 
 .qnalog-kanban-more svg {
@@ -11279,9 +11279,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: grid;
   min-height: 38px;
   place-items: center;
-  color: var(--lex-text-tertiary);
+  color: var(--qnalog-text-tertiary);
   font-size: var(--font-ui-smaller, 12px);
-  border: 1px dashed var(--lex-border-line);
+  border: 1px dashed var(--qnalog-border-line);
   border-radius: 8px;
 }
 
@@ -11338,7 +11338,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 100%;
   padding: 0;
   gap: 0;
-  background: var(--lex-sidebar-surface);
+  background: var(--qnalog-sidebar-surface);
 }
 
 .qnalog-outline-sticky-chrome {
@@ -11349,7 +11349,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 0 0 auto;
   flex-direction: column;
   min-width: 0;
-  background: var(--lex-sidebar-surface);
+  background: var(--qnalog-sidebar-surface);
   isolation: isolate;
 }
 
@@ -11361,7 +11361,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   left: 0;
   z-index: 0;
   height: 100vh;
-  background: var(--lex-sidebar-surface);
+  background: var(--qnalog-sidebar-surface);
   pointer-events: none;
 }
 
@@ -11385,7 +11385,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline.is-idle-view .qnalog-outline-title {
   min-width: 0;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   font-size: calc(var(--font-ui-medium) * 1.65);
   font-weight: 800;
   line-height: 1.15;
@@ -11406,13 +11406,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: var(--radius-s, 4px);
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-tertiary, var(--text-muted));
+  color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-kanban-btn:hover,
 .qnalog-outline.is-idle-view .qnalog-outline-settings-btn:hover {
   background: var(--background-modifier-hover);
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-kanban-btn svg,
@@ -11457,20 +11457,20 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 30px;
   padding: 0 9px;
   gap: 6px;
-  border: var(--border-width, 1px) solid var(--lex-border-line, var(--background-modifier-border));
+  border: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 8px;
-  background: var(--lex-surface-primary, var(--background-primary));
-  box-shadow: var(--lex-shadow-field, 0 1px 1.5px rgba(0, 0, 0, 0.05));
+  background: var(--qnalog-surface-primary, var(--background-primary));
+  box-shadow: var(--qnalog-shadow-field, 0 1px 1.5px rgba(0, 0, 0, 0.05));
   cursor: pointer;
 }
 
 .qnalog-outline-primary-controls > .qnalog-outline-control-row:hover {
-  border-color: var(--background-modifier-border-hover, var(--lex-border-line));
+  border-color: var(--background-modifier-border-hover, var(--qnalog-border-line));
 }
 
 .qnalog-outline-primary-controls .qnalog-outline-control-label {
   flex: 0 0 auto;
-  color: var(--lex-text-hint, var(--text-faint));
+  color: var(--qnalog-text-hint, var(--text-faint));
   font-size: 11.5px;
   font-weight: var(--font-normal, 400);
   line-height: 1;
@@ -11490,10 +11490,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
 }
 
-.qnalog-outline-primary-controls .qnalog-outline-menu-trigger .lex-ms-label {
+.qnalog-outline-primary-controls .qnalog-outline-menu-trigger .qnalog-ms-label {
   min-width: 0;
   overflow: hidden;
   color: inherit;
@@ -11505,12 +11505,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline-primary-controls .qnalog-outline-menu-trigger .lex-ms-chev,
-.qnalog-outline-primary-controls .qnalog-outline-menu-trigger .lex-ms-chev svg {
+.qnalog-outline-primary-controls .qnalog-outline-menu-trigger .qnalog-ms-chev,
+.qnalog-outline-primary-controls .qnalog-outline-menu-trigger .qnalog-ms-chev svg {
   width: 10px;
   min-width: 10px;
   height: 10px;
-  color: var(--lex-text-hint, var(--text-faint));
+  color: var(--qnalog-text-hint, var(--text-faint));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-control-row.is-template-control,
@@ -11526,22 +11526,22 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 30px;
   padding: 0 9px;
   gap: 6px;
-  border: var(--border-width, 1px) solid var(--lex-border-line, var(--background-modifier-border));
+  border: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 8px;
-  background: var(--lex-surface-primary, var(--background-primary));
-  box-shadow: var(--lex-shadow-field, 0 1px 1.5px rgba(0, 0, 0, 0.05));
+  background: var(--qnalog-surface-primary, var(--background-primary));
+  box-shadow: var(--qnalog-shadow-field, 0 1px 1.5px rgba(0, 0, 0, 0.05));
   cursor: pointer;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-control-row.is-template-control:hover,
 .qnalog-outline.is-idle-view .qnalog-outline-control-row.is-audio-control:hover {
-  border-color: var(--background-modifier-border-hover, var(--lex-border-line));
+  border-color: var(--background-modifier-border-hover, var(--qnalog-border-line));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-control-label {
   flex: 0 0 auto;
-  color: var(--lex-text-hint, var(--text-faint));
+  color: var(--qnalog-text-hint, var(--text-faint));
   font-size: 11.5px;
   font-weight: var(--font-normal, 400);
   line-height: 1;
@@ -11562,7 +11562,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-menu-trigger:hover {
@@ -11571,7 +11571,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-shadow: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .lex-ms-label {
+.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .qnalog-ms-label {
   min-width: 0;
   overflow: hidden;
   color: inherit;
@@ -11583,15 +11583,15 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .lex-ms-chev,
-.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .lex-ms-chev svg {
+.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .qnalog-ms-chev,
+.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .qnalog-ms-chev svg {
   width: 10px;
   min-width: 10px;
   height: 10px;
-  color: var(--lex-text-hint, var(--text-faint));
+  color: var(--qnalog-text-hint, var(--text-faint));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .lex-ms-chev svg {
+.qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .qnalog-ms-chev svg {
   stroke-width: 2.6;
 }
 
@@ -11628,7 +11628,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 30px;
   padding: 0 9px;
   gap: 7px;
-  border: var(--border-width, 1px) solid var(--lex-border-line, var(--background-modifier-border));
+  border: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 8px;
   background: var(--background-primary);
 }
@@ -11645,7 +11645,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline.is-idle-view .qnalog-outline-segment-label,
 .qnalog-outline.is-idle-view .qnalog-outline-segment-unit {
-  color: var(--lex-text-tertiary, var(--text-muted));
+  color: var(--qnalog-text-tertiary, var(--text-muted));
   font-size: 11.5px;
   line-height: 1;
 }
@@ -11660,7 +11660,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 13px;
   font-weight: 550;
   line-height: 1;
@@ -11694,7 +11694,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 6px;
   border: 0;
   border-radius: 8px;
-  background: var(--lex-primary-action, var(--interactive-accent));
+  background: var(--qnalog-primary-action, var(--interactive-accent));
   box-shadow: none;
   color: var(--text-on-accent);
   font-size: 13px;
@@ -11706,7 +11706,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 0 0 96px;
   height: 30px;
   overflow: hidden;
-  border: var(--border-width, 1px) solid var(--lex-border-line, var(--background-modifier-border));
+  border: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 8px;
   background: var(--background-primary);
 }
@@ -11721,11 +11721,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 28px;
   padding: 0;
   border: 0;
-  border-left: var(--border-width, 1px) solid var(--lex-border-line, var(--background-modifier-border));
+  border-left: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-secondary, var(--text-muted));
+  color: var(--qnalog-text-secondary, var(--text-muted));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-action-cluster .qnalog-outline-action-button:first-child {
@@ -11735,7 +11735,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline.is-idle-view .qnalog-outline-action-cluster .qnalog-outline-action-button:hover,
 .qnalog-outline.is-idle-view .qnalog-outline-action-cluster .qnalog-outline-action-button.is-active {
   background: var(--background-modifier-hover);
-  color: var(--lex-text-active, var(--interactive-accent));
+  color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-action-icon,
@@ -11753,7 +11753,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 20px;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: var(--border-width, 1px) solid var(--lex-border-line, var(--background-modifier-border));
+  border-bottom: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
   scrollbar-width: none;
 }
 
@@ -11772,13 +11772,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-secondary, var(--text-muted));
+  color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 14px;
   font-weight: 600;
 }
 
 .qnalog-outline.is-idle-view > .qnalog-outline-sticky-chrome > .qnalog-outline-tabs button.is-active {
-  color: var(--lex-text-active, var(--interactive-accent));
+  color: var(--qnalog-text-active, var(--interactive-accent));
   font-weight: 700;
 }
 
@@ -11790,7 +11790,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   left: 0;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: var(--lex-text-active, var(--interactive-accent));
+  background: var(--qnalog-text-active, var(--interactive-accent));
 }
 
 .qnalog-outline.is-idle-view > .qnalog-outline-section {
@@ -11826,7 +11826,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline.is-idle-view .qnalog-outline-recent-search-icon {
   display: inline-flex;
   flex: 0 0 auto;
-  color: var(--lex-text-tertiary, var(--text-muted));
+  color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-search-icon svg {
@@ -11843,7 +11843,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 12.5px;
 }
 
@@ -11861,7 +11861,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 8px;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-secondary, var(--text-muted));
+  color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 12px;
   white-space: nowrap;
 }
@@ -11869,7 +11869,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline.is-idle-view .qnalog-outline-recent-group-chip {
   padding-inline: 11px;
   background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-  color: var(--lex-text-active, var(--text-accent));
+  color: var(--qnalog-text-active, var(--text-accent));
   font-weight: 700;
 }
 
@@ -11887,7 +11887,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding-inline: 3px;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-tertiary, var(--text-muted));
+  color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear:hover,
@@ -11895,7 +11895,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear:active {
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-active, var(--text-accent));
+  color: var(--qnalog-text-active, var(--text-accent));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent {
@@ -11912,7 +11912,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   bottom: 10px;
   left: 39px;
   width: var(--border-width, 1px);
-  background: var(--lex-border-line, var(--background-modifier-border));
+  background: var(--qnalog-border-line, var(--background-modifier-border));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-group {
@@ -11933,7 +11933,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: block;
   width: 30px;
   padding: 0;
-  color: var(--lex-text-tertiary, var(--text-muted));
+  color: var(--qnalog-text-tertiary, var(--text-muted));
   text-align: right;
 }
 
@@ -11948,14 +11948,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   left: 33.5px;
   width: 11px;
   height: 11px;
-  border: 2px solid var(--lex-border-strong, var(--background-modifier-border-hover));
+  border: 2px solid var(--qnalog-border-strong, var(--background-modifier-border-hover));
   border-radius: 50%;
   background: var(--background-primary);
   box-sizing: border-box;
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-axis-primary {
-  color: var(--lex-text-secondary, var(--text-muted));
+  color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 12px;
   font-weight: 650;
   line-height: 1;
@@ -11963,14 +11963,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-axis-secondary {
   margin-top: 3px;
-  color: var(--lex-text-tertiary, var(--text-faint));
+  color: var(--qnalog-text-tertiary, var(--text-faint));
   font-size: 9.5px;
   line-height: 1;
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-group.is-today .qnalog-outline-recent-axis::after {
-  border-color: var(--lex-text-active, var(--interactive-accent));
-  background: var(--lex-text-active, var(--interactive-accent));
+  border-color: var(--qnalog-text-active, var(--interactive-accent));
+  background: var(--qnalog-text-active, var(--interactive-accent));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 12%, transparent);
 }
 
@@ -11991,7 +11991,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 0;
   border-radius: 0;
   background: var(--background-primary);
-  color: var(--lex-text-active, var(--interactive-accent));
+  color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-axis-icon svg {
@@ -12031,7 +12031,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin: 0 0 5px 15px;
   padding: 0;
   gap: 6px;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   cursor: default;
 }
 
@@ -12040,7 +12040,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 1 1 auto;
   min-width: 8px;
   height: var(--border-width, 1px);
-  background: var(--lex-border-line, var(--background-modifier-border));
+  background: var(--qnalog-border-line, var(--background-modifier-border));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-group-title[role="button"] {
@@ -12071,14 +12071,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-group-today {
   flex: 0 0 auto;
-  color: var(--lex-text-active, var(--interactive-accent));
+  color: var(--qnalog-text-active, var(--interactive-accent));
   font-size: 10px;
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-group-count {
   flex: 0 0 auto;
   order: 3;
-  color: var(--lex-text-tertiary, var(--text-faint));
+  color: var(--qnalog-text-tertiary, var(--text-faint));
   font-size: 10.5px;
   white-space: nowrap;
 }
@@ -12122,7 +12122,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: var(--border-width, 1px) solid color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
   border-radius: 50%;
   background: var(--background-primary);
-  color: var(--lex-text-active, var(--interactive-accent));
+  color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-chip svg {
@@ -12141,7 +12141,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-name {
   overflow: hidden;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 14px;
   font-weight: 650;
   line-height: 1.25;
@@ -12150,13 +12150,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-row.is-active .qnalog-outline-recent-name {
-  color: var(--lex-text-active, var(--interactive-accent));
+  color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-meta {
   overflow: hidden;
   margin-top: 3px;
-  color: var(--lex-text-tertiary, var(--text-muted));
+  color: var(--qnalog-text-tertiary, var(--text-muted));
   font-size: 11.5px;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -12181,12 +12181,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 7px;
   background: transparent;
   box-shadow: none;
-  color: var(--lex-text-secondary, var(--text-muted));
+  color: var(--qnalog-text-secondary, var(--text-muted));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-action:hover {
   background: var(--background-modifier-hover);
-  color: var(--lex-text-active, var(--interactive-accent));
+  color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-action.is-rename {
@@ -12226,7 +12226,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 28px;
   padding: 3px 8px 3px 0;
   gap: 6px;
-  color: var(--lex-text-primary, var(--text-normal));
+  color: var(--qnalog-text-primary, var(--text-normal));
   cursor: pointer;
 }
 
@@ -12236,7 +12236,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 1 1 auto;
   min-width: 8px;
   height: var(--border-width, 1px);
-  background: var(--lex-border-line, var(--background-modifier-border));
+  background: var(--qnalog-border-line, var(--background-modifier-border));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-folder-toggle {
@@ -12247,7 +12247,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: inline-flex;
   order: 0;
   flex: 0 0 14px;
-  color: var(--lex-text-tertiary, var(--text-muted));
+  color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-icon svg {

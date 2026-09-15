@@ -35,7 +35,7 @@ import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { ViewShellService } from "../ui/view-shell-service";
-import { nsMarker } from "../shared/namespace";
+import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
@@ -520,7 +520,7 @@ export class RecordingService {
     try {
       const ext = seg.masterExt || extFromMime(seg.masterMime || seg.masterBlob.type || "") || seg.ext || "webm";
       await ensureVaultFolder(this.host.app, this.host.settings.audioFolder);
-      const target = findAvailableVaultPath(this.host.app, obsidian.normalizePath(`${this.host.settings.audioFolder}/lex-${session.sessionStamp}.${ext}`));
+      const target = findAvailableVaultPath(this.host.app, obsidian.normalizePath(`${this.host.settings.audioFolder}/${NS_AUDIO_PREFIX}-${session.sessionStamp}.${ext}`));
       if (!target) throw new Error("无法生成完整录音文件路径");
       const ab = await seg.masterBlob.arrayBuffer();
       await this.host.app.vault.createBinary(target, ab);
@@ -752,7 +752,7 @@ export class RecordingService {
     const displayEndOffsetMs = endOffsetMs + continuationOffsetMs;
     const blobType = String(seg && seg.blob && seg.blob.type || "");
     const ext = String(seg && seg.ext || extFromMime(blobType) || "webm");
-    const segmentAudioName = `lex-${session.sessionStamp}-seg${pad(segNumber)}.${ext}`;
+    const segmentAudioName = `${NS_AUDIO_PREFIX}-${session.sessionStamp}-seg${pad(segNumber)}.${ext}`;
     const segmentAudioPath = obsidian.normalizePath(`${this.getSegmentCacheFolder()}/${segmentAudioName}`);
     return {
       jobId: `${session.id}:${segmentIndex}`,

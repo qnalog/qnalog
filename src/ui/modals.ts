@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // @ts-nocheck — Modal/Widget class 密集（this.plugin.* 等无 TS 字段声明）；已用 tsc 确认无漏引用(TS2304=0)，余者皆类字段类型噪音，故与 main.ts 同档跳过。
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
+import { NS_AUDIO_ALT } from "../shared/namespace";
 import * as obsidian from "obsidian";
 import { loadPeopleDirectory, normalizePeopleRelation, normalizePeopleSuggestion } from '../people';
 import { diagnosticError } from '../shared/util-key-diag';
@@ -2228,7 +2229,7 @@ export class ImportAudioModal extends obsidian.Modal {
     this.modeHint.setText((meta.goal || "用于生成结构化纪要。") + " 可在本次导入中临时切换，不会修改默认提示词。");
   }
   parseSegmentRef(file) {
-    const match = String(file.name || "").match(/^lex-(\d{8}-\d{6})-seg(\d+)\.([a-z0-9]+)$/i);
+    const match = String(file.name || "").match(new RegExp(`^${NS_AUDIO_ALT}-(\\d{8}-\\d{6})-seg(\\d+)\\.([a-z0-9]+)$`, "i"));
     if (!match) return null;
     return {
       stamp: match[1],
@@ -2320,7 +2321,7 @@ export class ImportAudioModal extends obsidian.Modal {
   renderSingleFile(parent, file, options = {}) {
     const compact = !!options.compact;
     const row = parent.createDiv({ cls: compact ? "qnalog-import-row is-compact" : "qnalog-import-row" });
-    const cbId = `lv-import-${file.path.replace(/[^a-z0-9]/gi, "_")}`;
+    const cbId = `qnalog-import-${file.path.replace(/[^a-z0-9]/gi, "_")}`;
     const cb = row.createEl("input", { type: "checkbox", attr: { id: cbId } });
     const lbl = row.createEl("label", { attr: { for: cbId }, cls: "qnalog-import-label" });
     const name = options.seg ? `seg${pad(options.seg)} · ${file.name}` : file.name;

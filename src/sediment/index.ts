@@ -2,6 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
 import { VOCABULARY_SECTIONS } from '../shared/catalog-sediment';
+import { NS_SEDIMENT_ID_PREFIX } from '../shared/namespace';
 import { sanitizeFilename, escapeRegExp } from '../shared/util-common';
 import { makeFileWikiLink } from '../shared/util-markdown';
 import { getPeopleSuggestionCacheKey, normalizePeopleSuggestionsModel, loadPeopleDirectory, isPeopleSuggestionIgnored, findMatchingPersonEntry } from '../people';
@@ -11,7 +12,7 @@ import { canOmitServiceApiKey } from '../shared/util-llm-endpoint';
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
 import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
-import { NS_CARDS_BLOCK_RE, NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, NS_TAG, nsMarker } from "../shared/namespace";
+import { NS_CARDS_BLOCK_RE, NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, NS_TAG, legacySedimentIdVariants, nsMarker } from "../shared/namespace";
 
 // 取值是写在用户笔记里的注释标记，改名会让既有笔记的沉淀块不再被识别：
 // 常量名不带宽泛品牌前缀，取值保持上游的 LEXVOICE_ 字面量（随数据层命名空间重置一起改）。
@@ -30,7 +31,7 @@ export function makeSedimentStableHash(value) {
 }
 
 export function makeSedimentStableId(type, parts) {
-  return `lv-sed-${type}-${makeSedimentStableHash((parts || []).map(item => String(item || "").trim()).join("\u0001"))}`;
+  return `${NS_SEDIMENT_ID_PREFIX}-${type}-${makeSedimentStableHash((parts || []).map(item => String(item || "").trim()).join("\u0001"))}`;
 }
 
 export function getSedimentTodoId(item) {
@@ -503,7 +504,13 @@ export function buildSedimentTodoDailyEntry(todo, sourceFile, todoId) {
 export function upsertSedimentTodoInDailyNote(content, todoId, entry, settings) {
   const text = String(content || "");
   const marker = nsMarker("todo", todoId);
-  const markerIdx = text.indexOf(marker);
+  // 1.0.0 写的是 `lv-sed-…`；同一条待办在升级后必须命中旧标记，
+  // 否则会被当成新条目再写一行，日记里出现重复。
+  let markerIdx = text.indexOf(marker);
+  for (const legacyId of legacySedimentIdVariants(todoId)) {
+    if (markerIdx >= 0) break;
+    markerIdx = text.indexOf(nsMarker("todo", legacyId));
+  }
   if (markerIdx >= 0) {
     const lineStart = text.lastIndexOf("\n", markerIdx) + 1;
     let lineEnd = text.indexOf("\n", markerIdx);

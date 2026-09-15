@@ -202,7 +202,7 @@ export function getRealtimeOutlineAnchorTime(anchor: unknown): string {
 export function cleanRealtimeOutlineItemText(text: unknown, maxChars = 120): string {
   let value = stringValue(text)
     .replace(/\[\[[^\]]+\|\d{1,2}:\d{2}(?::\d{2})?\]\]/g, "")
-    // 剥掉行尾未闭合的残缺锚点（如 "[[lex-202"）——模型截断/流式半写时会漏出 [[ 却没有闭合 ]]，
+    // 剥掉行尾未闭合的残缺锚点（如 "[[2026-09"）——模型截断/流式半写时会漏出 [[ 却没有闭合 ]]，
     // 不清掉会当成正文渲染成一条乱码节点。只匹配"尾部不含 ]"的片段，绝不会碰到完整 [[x|MM:SS]]。
     .replace(/\[\[[^\]]*$/, "")
     .replace(/^[\s\-*+>]+/, "")
