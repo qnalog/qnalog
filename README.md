@@ -4,6 +4,11 @@ English | [简体中文](README.zh-CN.md)
 
 **Turns conversations into structured knowledge.**
 
+> [!WARNING]
+> **Status: unstable.** This project is under active restructuring. Settings structure,
+> saved data layout, and internal namespaces are still being reworked, so **breaking changes
+> can happen at any time**. Read the release notes before upgrading.
+
 Open-source conversation intelligence for Obsidian: record, transcribe, and organize meetings, interviews, talks, and voice notes into Markdown you can reuse.
 
 Q&A Log connects to no cloud service of its own and ships **no API keys**: you configure your own speech-to-text (ASR) service and, optionally, your own large language model (LLM). Recordings and generated notes stay in your vault.
