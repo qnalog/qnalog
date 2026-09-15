@@ -25,6 +25,17 @@ import {
 import { analyzeRecordedAudioChannels } from '../asr/channel-transcription';
 import { isImportCapableTranscribeProvider } from '../asr/diarization';
 import { fetchImportTranscribeModels, testImportTranscribeProvider } from '../asr/long-audio-transcription';
+import {
+  applyPresetPlan,
+  buildProbeHost,
+  buildServiceView,
+  configSignature,
+  deriveSetupState,
+  formatDetectionReport,
+  planPresetApplication,
+  runPresetDetection,
+  SETUP_STATE_LABELS,
+} from '../setup';
 import { ensureVaultFolder } from "../shared/util-vault";
 
 function pickChannelProbeMime() {
@@ -79,18 +90,6 @@ export const LV_SETTINGS_TABS = [
   { id: "updates",  label: "更新" },
 ];
 
-function resolveOneCardProviderEndpoint(cfg, apiKey) {
-  if (!cfg) return "";
-  const normal = String(cfg.llmEndpoint || "").trim();
-  const tokenPlan = String(cfg.tokenPlanEndpoint || "").trim();
-  if (!tokenPlan) return normal;
-  const key = String(apiKey || "").trim().toLowerCase();
-  if (!key) return normal;
-  if (key.startsWith("tp-") || key.includes("token-plan")) return tokenPlan;
-  if (key.startsWith("sk-")) return normal;
-  return normal;
-}
-
 export class QnALogSettingTab extends obsidian.PluginSettingTab {
   /** 当前选中的设置标签页；openSettings 可指定要切到的标签。 */
   declare activeTab: string;
@@ -98,6 +97,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     super(app, plugin);
     this.plugin = plugin;
     this.activeTab = "home";
+    // 最近一次检测结果，按服务标识索引；只存在内存里，不落盘。
+    // 界面据此区分「未测试」与「已通过 / 未通过」。
+    this._probeResults = Object.create(null);
   }
   getVisibleSettingsTabs() {
     return LV_SETTINGS_TABS.slice();
@@ -219,80 +221,38 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
 
   // 快速配置：组合服务会同时更新转写和 AI 整理；整文件 ASR 只用于导入音频。
+  // 字段范围由 src/setup 的 PRESET_WRITTEN_FIELDS 约束，这里只负责落盘。
   async applyOneCardProvider(id, key, options = {}) {
-    const cfg = ONE_CARD_PROVIDERS[id];
-    if (!cfg) return false;
-    const k = String(key || "").trim();
-    if (!k) return false;
-    const s = this.plugin.settings;
-    const providers = s.transcribeProviders || (s.transcribeProviders = {});
-    const customLlmEndpoint = String(options.llmEndpoint || options.endpoint || "").trim();
-    const llmEndpoint = customLlmEndpoint || resolveOneCardProviderEndpoint(cfg, k);
-    if (cfg.asrProvider) {
-      const dft = DEFAULT_SETTINGS.transcribeProviders[cfg.asrProvider] || {};
-      const cur = providers[cfg.asrProvider] || {};
-      const asrModel = String(options.asrModel || cfg.asrModel || dft.model || cur.model || "").trim();
-      providers[cfg.asrProvider] = Object.assign({}, cur, {
-        name: cur.name || dft.name,
-        endpoint: cfg.asrEndpoint || dft.endpoint || cur.endpoint || llmEndpoint || "",
-        model: asrModel,
-        language: cur.language || dft.language || "auto",
-        protocol: dft.protocol || cur.protocol,
-        apiKey: k,
-      });
-      if (cfg.asrTarget === "import") s.importTranscribeProvider = cfg.asrProvider;
-      else s.activeTranscribeProvider = cfg.asrProvider;
+    const plan = planPresetApplication(this.plugin.settings, {
+      providerId: id,
+      apiKey: String(key || "").trim(),
+      llmEndpoint: options.llmEndpoint || options.endpoint || "",
+      asrModel: options.asrModel || "",
+      llmModel: options.llmModel || options.model || "",
+    });
+    if (!plan.ok) {
+      if (plan.reason) new obsidian.Notice(plan.reason, 4000);
+      return false;
     }
-    // AI 整理（LLM）：套预设 + 填 Key + 模型
-    s.llmServicePreset = cfg.llmPreset;
-    s.llmEndpoint = llmEndpoint || cfg.llmEndpoint;
-    const customModel = String(options.llmModel || options.model || "").trim();
-    if (customModel || cfg.llmModel) s.llmModel = customModel || cfg.llmModel;
-    s.llmApiKey = k;
-    // 自动存成一套完整 API 方案（带转写快照），出现在 API 页顶部可一键重选；同名方案就地覆盖、不重复堆叠
-    const schemeName = cfg.label;
-    const profiles = normalizeLlmProfiles(s.llmProfiles);
-    const asrSnap = cfg.asrProvider && cfg.asrTarget !== "import" ? snapshotActiveAsr(s) : null;
-    const existing = profiles.find(p => p.name === schemeName);
-    if (existing) {
-      existing.endpoint = s.llmEndpoint || "";
-      existing.apiKey = k;
-      existing.model = s.llmModel || "";
-      if (asrSnap) existing.asr = asrSnap;
-      else delete existing.asr;
-      s.activeLlmProfile = existing.id;
-    } else {
-      const newId = `llm-${genId()}`;
-      const scheme = { id: newId, name: schemeName, endpoint: s.llmEndpoint || "", apiKey: k, model: s.llmModel || "" };
-      if (asrSnap) scheme.asr = asrSnap;
-      profiles.push(scheme);
-      s.activeLlmProfile = newId;
-    }
-    s.llmProfiles = profiles;
+    // 就地写入，不替换 settings 对象：域服务持有的是同一个引用，
+    // 换对象会让它们继续读旧值。
+    Object.assign(this.plugin.settings, applyPresetPlan(this.plugin.settings, plan));
     await this.plugin.saveSettings();
     return true;
   }
 
+  // 套一套推荐配置（硅基流动）：只写服务字段，密钥留空由用户下一步填。
+  // 与 applyOneCardProvider 共用同一份计划计算，不另写一套写入逻辑。
   async applyBeginnerDefaults() {
-    const speechDefaults = DEFAULT_SETTINGS.transcribeProviders.siliconflow;
-    const currentSpeech = (this.plugin.settings.transcribeProviders || {}).siliconflow || {};
-    this.plugin.settings.transcribeProviders.siliconflow = Object.assign({}, currentSpeech, {
-      name: currentSpeech.name || speechDefaults.name,
-      endpoint: speechDefaults.endpoint,
-      model: speechDefaults.model,
-      language: currentSpeech.language || speechDefaults.language || "auto",
+    const plan = planPresetApplication(this.plugin.settings, {
+      providerId: "siliconflow",
+      apiKey: "",
+      allowMissingKey: true,
     });
-    this.plugin.settings.activeTranscribeProvider = "siliconflow";
-
-    const llmPreset = getLlmServicePreset("siliconflow");
-    if (llmPreset) {
-      this.plugin.settings.llmServicePreset = llmPreset.id;
-      this.plugin.settings.llmEndpoint = llmPreset.endpoint;
-    }
-    if (!this.plugin.settings.llmApiKey && currentSpeech.apiKey) {
-      this.plugin.settings.llmApiKey = currentSpeech.apiKey;
-    }
+    if (!plan.ok) return false;
+    Object.assign(this.plugin.settings, applyPresetPlan(this.plugin.settings, plan));
     await this.plugin.saveSettings();
+    return true;
   }
 
   async restoreTranscribeProviderDefaults(providerId) {
@@ -344,15 +304,28 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   renderHome(c) {
     const page = c.createDiv({ cls: "qnalog-home" });
     const jump = (tab) => { this.activeTab = tab; this.renderSettings(); };
-    const hasSpeechProvider = (() => {
+    // 三处服务的状态都按「缺配置 / 未测试 / 已通过 / 未通过」四态呈现，
+    // 而不是只看字段在不在：字段填了但没测过，与测过并通过是两回事。
+    const transcribeState = (() => {
       const id = this.plugin.settings.activeTranscribeProvider || "siliconflow";
       const p = (this.plugin.settings.transcribeProviders || {})[id] || {};
       // 从 provider profile 取 requiresKey，避免硬编码与 profile 不一致
       const profile = this.getTranscribeProviderProfile(id, p);
       const needsKey = !!profile.requiresKey && !canOmitServiceApiKey(p.endpoint);
-      return !!(p.endpoint && p.model && (!needsKey || p.apiKey));
+      return deriveSetupState(
+        buildServiceView(p, needsKey),
+        this._probeResults[`transcribe:${id}`],
+      );
     })();
-    const hasLlm = !!(this.plugin.settings.llmEndpoint && this.plugin.settings.llmModel && (this.plugin.settings.llmApiKey || canOmitServiceApiKey(this.plugin.settings.llmEndpoint)));
+    const llmState = deriveSetupState(
+      buildServiceView({
+        endpoint: this.plugin.settings.llmEndpoint,
+        model: this.plugin.settings.llmModel,
+        apiKey: this.plugin.settings.llmApiKey,
+      }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint)),
+      this._probeResults["llm:active"],
+    );
+    const hasLlm = llmState !== "missing";
     const dailyOn = this.plugin.settings.writeDailyMeetingOverview !== false;
 
     const head = page.createDiv({ cls: "qnalog-home-head" });
@@ -433,37 +406,24 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     oneCardRow.addButton(b => b.setButtonText("检测").onClick(async () => {
       b.setDisabled(true); b.setButtonText("检测中…");
       try {
-        if (oneCardProviderId === "bailian") {
-          if (!oneCardKey || !oneCardEndpoint || !oneCardAsrModel || !oneCardAiModel) {
-            new obsidian.Notice("请先填写百炼 API Key、服务地址并选择两个模型", 5000);
-            return;
-          }
-          const probePlugin = Object.create(this.plugin);
-          const currentProviders = this.plugin.settings.transcribeProviders || {};
-          const asrDefaults = DEFAULT_SETTINGS.transcribeProviders["dashscope-filetrans"] || {};
-          probePlugin.settings = Object.assign({}, this.plugin.settings, {
-            importTranscribeProvider: "dashscope-filetrans",
-            transcribeProviders: Object.assign({}, currentProviders, {
-              "dashscope-filetrans": Object.assign({}, currentProviders["dashscope-filetrans"] || {}, asrDefaults, {
-                apiKey: oneCardKey,
-                model: oneCardAsrModel,
-              }),
-            }),
-            llmServicePreset: "dashscope",
-            llmEndpoint: oneCardEndpoint,
-            llmApiKey: oneCardKey,
-            llmModel: oneCardAiModel,
-          });
-          new obsidian.Notice("正在检测百炼 ASR 和 AI 整理服务…", 4000);
-          const asrResult = await testImportTranscribeProvider(probePlugin, "dashscope-filetrans");
-          const llmResult = await testLlmConnection(probePlugin);
-          new obsidian.Notice(`连接正常：ASR ${asrResult.model} · AI ${llmResult.model || oneCardAiModel}`, 7000);
-        } else {
-          new obsidian.Notice("正在检测转写 + 大模型连通性…", 4000);
-          new obsidian.Notice(await this.runComboConnectivityTest(), 9000);
-        }
+        // 检测对象是用户正在填写的候选配置：先算计划 → 用计划构造只读宿主 → 再检测。
+        // 检测不写盘，因此「点检测」不会被当成「同意保存」。
+        const plan = planPresetApplication(this.plugin.settings, {
+          providerId: oneCardProviderId,
+          apiKey: oneCardKey,
+          llmEndpoint: oneCardProviderId === "bailian" ? oneCardEndpoint : "",
+          asrModel: oneCardProviderId === "bailian" ? oneCardAsrModel : "",
+          llmModel: oneCardProviderId === "bailian" ? oneCardAiModel : "",
+        });
+        if (!plan.ok) { new obsidian.Notice(plan.reason, 5000); return; }
+
+        const candidate = applyPresetPlan(this.plugin.settings, plan);
+        const host = buildProbeHost(this.plugin, candidate);
+        new obsidian.Notice("正在检测所选服务…", 4000);
+        const report = await runPresetDetection(host, plan, this.probePorts());
+        new obsidian.Notice(formatDetectionReport(report), 9000);
       } catch (error) {
-        new obsidian.Notice(`连接失败：${(error && error.message) || error}`, 8000);
+        new obsidian.Notice(`检测失败：${(error && error.message) || error}`, 8000);
       }
       finally { b.setDisabled(false); b.setButtonText("检测"); }
     }));
@@ -568,8 +528,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         desc: "将录音转换为原始文字。可选择云端转写服务或本地 Whisper、SenseVoice 等服务；对数据本地化有要求时优先考虑本地部署。",
         action: "配置纪要转写",
         target: "api",
-        status: hasSpeechProvider ? "已配置" : "未配置",
-        statusClass: hasSpeechProvider ? "is-ready" : "is-required",
+        status: SETUP_STATE_LABELS[transcribeState],
+        statusClass: this.stateClass(transcribeState),
       },
       {
         name: "AI 整理服务",
@@ -578,8 +538,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         desc: "将原始转写整理为会议纪要、待办或访谈记录。未配置时仅保留转写文本，不会进行结构化整理。",
         action: "配置 AI 整理",
         target: "api",
-        status: hasLlm ? "已配置" : "未配置",
-        statusClass: hasLlm ? "is-ready" : "is-required",
+        status: SETUP_STATE_LABELS[llmState],
+        statusClass: this.stateClass(llmState),
       },
       {
         name: "电脑音频捕获",
@@ -1052,7 +1012,18 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     titleWrap.createDiv({ cls: "qnalog-provider-subtitle", text: profile.description });
     const badges = head.createDiv({ cls: "qnalog-provider-badges" });
     badges.createDiv({ cls: "qnalog-provider-badge", text: profile.badge });
-    badges.createDiv({ cls: ready ? "qnalog-provider-status is-ready" : "qnalog-provider-status is-missing", text: ready ? "已填写" : "待填写" });
+    // 徽章用四态：「已填写」会把「填了但没测过」说成完成。
+    const badgeState = deriveSetupState(
+      buildServiceView(p, needsKey),
+      this._probeResults[`transcribe:${activeId}`],
+    );
+    // 这里只复用已有的 is-ready / is-missing 两种配色：四态的差别由文字承担
+    // （「未测试」与「已通过」若只靠颜色区分，在色弱下就看不出来了）。
+    const badgeClass = badgeState === "success" ? "is-ready" : badgeState === "untested" ? "" : "is-missing";
+    badges.createDiv({
+      cls: ("qnalog-provider-status " + badgeClass).trim(),
+      text: SETUP_STATE_LABELS[badgeState],
+    });
 
     const body = panel.createDiv({ cls: "qnalog-provider-body" });
     const checklist = body.createEl("ol", { cls: "qnalog-provider-checklist" });
@@ -1076,7 +1047,43 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
 
   // 用一段 1 秒静音音频走完整转写链路，验证当前转写服务连通性。返回识别文本（可能为空字符串），失败抛错。
-  async runAsrConnectivityTest() {
+  /** 四态 → 展示用的类名。缺配置与未通过都算「需要处理」，措辞由 SETUP_STATE_LABELS 区分。 */
+  stateClass(state) {
+    if (state === "success") return "is-ready";
+    if (state === "missing" || state === "failure") return "is-required";
+    return "is-neutral";
+  }
+
+  /**
+   * 跑一次检测并记下结果，供首页四态显示使用。
+   * 结果只存内存：它是「这次会话里测过没有」，不是用户配置，不落盘。
+   * 返回 null 表示检测抛错（已记 failure 状态）。
+   */
+  async runAndRecordProbe(key, view, run) {
+    const signature = configSignature(view);
+    try {
+      const detail = await run();
+      this._probeResults[key] = { ok: true, detail: String(detail || ""), signature };
+      return { ok: true, detail: String(detail || "") };
+    } catch (error) {
+      const detail = (error && error.message) || String(error);
+      this._probeResults[key] = { ok: false, detail, signature };
+      return { ok: false, detail };
+    }
+  }
+
+  // 检测要调用的真实链路。只在这里列一次，避免各入口各写一份 ports。
+  probePorts() {
+    return {
+      transcribe: async (h) => this.runAsrConnectivityTest(h),
+      importTranscribe: async (h, providerId) => testImportTranscribeProvider(h, providerId),
+      llm: async (h) => testLlmConnection(h),
+    };
+  }
+
+  // host 省略时用插件自身（保存的配置）；检测候选配置时由调用方传入只读宿主。
+  async runAsrConnectivityTest(host) {
+    const target = host || this.plugin;
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     try {
       const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -1090,20 +1097,22 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
       await new Promise((resolve) => { rec.onstop = resolve; rec.start(); window.setTimeout(() => rec.stop(), 1000); });
       const blob = new Blob(chunks, { type: rec.mimeType });
-      return await transcribeAudio(this.plugin, blob, blob.type);
+      return await transcribeAudio(target, blob, blob.type);
     } finally {
       try { await ctx.close(); } catch { /* intentionally empty */ }
     }
   }
 
   // 依次测「转写 + 大模型」连通性，返回一行汇总文案。供 API 方案检测 / 首页快速配置检测共用。
-  async runComboConnectivityTest() {
-    let asrPart, llmPart;
-    try { const t = await this.runAsrConnectivityTest(); asrPart = `转写 ✓（${(t || "<空>").slice(0, 16)}）`; }
-    catch (e) { asrPart = `转写 ✗：${(e && e.message) || e}`; }
-    try { const r = await testLlmConnection(this.plugin); llmPart = `大模型 ✓（${r.model || "?"}）`; }
-    catch (e) { llmPart = `大模型 ✗：${(e && e.message) || e}`; }
-    return `${asrPart}\u3000|\u3000${llmPart}`;
+  // 依次测「转写 + 大模型」连通性，返回一行汇总文案。
+  // 只做一次组装、只调一次检测实现；host 省略时用插件自身（保存的配置）。
+  async runComboConnectivityTest(host) {
+    const target = host || this.plugin;
+    const report = await runPresetDetection(target, {
+      ok: true, reason: "", providerId: "", changes: {},
+      asrTarget: "recording", asrProviderId: "", llmPresetId: "",
+    }, this.probePorts());
+    return formatDetectionReport(report);
   }
 
   renderApiSchemeSelector(c) {
@@ -1286,14 +1295,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc("用一段 1 秒静音音频验证当前转写服务是否可用。")
       .addButton(b => b.setButtonText("测试").onClick(async () => {
         b.setDisabled(true); b.setButtonText("测试中…");
-        try {
+        const view = buildServiceView(provider, providerNeedsKey);
+        const result = await this.runAndRecordProbe(`transcribe:${activeId}`, view, async () => {
           const text = await this.runAsrConnectivityTest();
-          new obsidian.Notice(`连通成功（返回：${(text || "<空>").slice(0, 30)}）`);
-        } catch (e) {
-          new obsidian.Notice(`测试失败：${(e && e.message) || e}`);
-        } finally {
-          b.setDisabled(false); b.setButtonText("测试");
-        }
+          return `返回：${(text || "<空>").slice(0, 30)}`;
+        });
+        new obsidian.Notice(result.ok ? `连通成功（${result.detail}）` : `测试失败：${result.detail}`, 8000);
+        b.setDisabled(false); b.setButtonText("测试");
+        this.renderSettings();
       }));
 
     new obsidian.Setting(c)
@@ -1404,15 +1413,19 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText("测试连接").onClick(async () => {
         b.setDisabled(true);
         b.setButtonText("测试中…");
-        try {
-          const result = await testLlmConnection(this.plugin);
-          new obsidian.Notice(`大模型连通成功：${result.model || "未命名模型"}（返回：${result.preview || "<空>"}）`, 7000);
-        } catch (e) {
-          new obsidian.Notice(`大模型测试失败：${e.message || e}`, 8000);
-        } finally {
-          b.setButtonText("测试连接");
-          b.setDisabled(false);
-        }
+        const view = buildServiceView({
+          endpoint: this.plugin.settings.llmEndpoint,
+          model: this.plugin.settings.llmModel,
+          apiKey: this.plugin.settings.llmApiKey,
+        }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint));
+        const result = await this.runAndRecordProbe("llm:active", view, async () => {
+          const r = await testLlmConnection(this.plugin);
+          return `${r.model || "未命名模型"}（返回：${r.preview || "<空>"}）`;
+        });
+        new obsidian.Notice(result.ok ? `大模型连通成功：${result.detail}` : `大模型测试失败：${result.detail}`, 8000);
+        b.setButtonText("测试连接");
+        b.setDisabled(false);
+        this.renderSettings();
       }));
 
     // 「默认润色模式」原在此处有第二入口，与「AI 整理」页的「当前默认提示词」同写 polishMode
@@ -1534,15 +1547,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         .onClick(async () => {
           button.setDisabled(true);
           button.setButtonText("测试中…");
-          try {
-            const result = await testImportTranscribeProvider(this.plugin, activeId);
-            new obsidian.Notice(`连接正常：${result.model} · ${result.detail}`, 7000);
-          } catch (error) {
-            new obsidian.Notice(`连接失败：${(error && error.message) || error}`, 9000);
-          } finally {
-            button.setDisabled(false);
-            button.setButtonText("测试连接");
-          }
+          const view = buildServiceView(provider, providerNeedsKey);
+          const result = await this.runAndRecordProbe(`import:${activeId}`, view, async () => {
+            const r = await testImportTranscribeProvider(this.plugin, activeId);
+            return `${r.model} · ${r.detail}`;
+          });
+          new obsidian.Notice(result.ok ? `连接正常：${result.detail}` : `连接失败：${result.detail}`, 9000);
+          button.setDisabled(false);
+          button.setButtonText("测试连接");
+          this.renderSettings();
         }));
 
     if (!profile.hideLanguage) {
@@ -1724,15 +1737,19 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         .onClick(async () => {
           button.setDisabled(true);
           button.setButtonText("测试中…");
-          try {
-            const result = await testLlmConnection(this.plugin);
-            new obsidian.Notice(`AI 整理服务正常：${result.model || "未命名模型"}`, 6000);
-          } catch (error) {
-            new obsidian.Notice(`连接失败：${(error && error.message) || error}`, 8000);
-          } finally {
-            button.setDisabled(false);
-            button.setButtonText("测试连接");
-          }
+          const view = buildServiceView({
+            endpoint: this.plugin.settings.llmEndpoint,
+            model: this.plugin.settings.llmModel,
+            apiKey: this.plugin.settings.llmApiKey,
+          }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint));
+          const result = await this.runAndRecordProbe("llm:active", view, async () => {
+            const r = await testLlmConnection(this.plugin);
+            return r.model || "未命名模型";
+          });
+          new obsidian.Notice(result.ok ? `AI 整理服务正常：${result.detail}` : `连接失败：${result.detail}`, 8000);
+          button.setDisabled(false);
+          button.setButtonText("测试连接");
+          this.renderSettings();
         }))
       .addButton((button) => button
         .setButtonText("完整设置")
