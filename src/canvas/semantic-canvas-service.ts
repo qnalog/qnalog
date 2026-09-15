@@ -26,6 +26,8 @@ import { diagnosticError } from "../shared/util-key-diag";
 import type { PluginSettings } from "../shared/types";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NoteIndexService } from "../notes/note-index-service";
+import { readSemanticMeta } from "../shared/namespace";
+import type { QnALogSemanticDocumentMeta } from "./semantic-outline-canvas";
 
 /** SemanticCanvasService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SemanticCanvasHost {
@@ -158,20 +160,21 @@ export class SemanticCanvasService {
       console.warn("[QnALog] inspect semantic canvas layout failed", error);
       return false;
     }
-    if (!existing?.lexvoiceSemantic?.graph || !semanticCanvasNeedsRelayout(existing)) return false;
+    const existingMeta = readSemanticMeta<QnALogSemanticDocumentMeta>(existing);
+    if (!existingMeta?.graph || !semanticCanvasNeedsRelayout(existing)) return false;
 
     this.runningPaths.add(sourceFile.path);
     try {
       const sourceMarkdown = await this.host.app.vault.cachedRead(sourceFile);
       const sourceSections = extractSemanticSourceSections(sourceMarkdown);
-      const document = buildSemanticCanvasDocument(existing.lexvoiceSemantic.graph, {
+      const document = buildSemanticCanvasDocument(existingMeta.graph, {
         sourcePath: sourceFile.path,
         sourceTitle: sourceFile.basename,
         sourceSections,
         existing,
-        policy: existing.lexvoiceSemantic.policy || getSemanticGenerationPolicy(sourceSections),
+        policy: existingMeta.policy || getSemanticGenerationPolicy(sourceSections),
         forceRelayout: true,
-        layoutMode: existing.lexvoiceSemantic.layoutMode || "adaptive",
+        layoutMode: existingMeta.layoutMode || "adaptive",
       });
       await this.host.app.vault.modify(canvasFile, `${JSON.stringify(document, null, 2)}\n`);
       await this.host.diagnostics.logDiagnostic("info", "canvas.semantic_layout_migrated", "旧版语义 Canvas 已更新排版", {
@@ -257,7 +260,7 @@ export class SemanticCanvasService {
       const policy = getSemanticGenerationPolicy(sourceSections);
       const state = await this.readSemanticCanvas(sourceFile);
       if (state.canvasFile && !state.existing) throw new Error("已有语义 Canvas 文件无法解析，请先检查文件内容");
-      let graph = state.existing?.lexvoiceSemantic?.graph || null;
+      let graph = readSemanticMeta<QnALogSemanticDocumentMeta>(state.existing)?.graph || null;
 
       if (options.mode === "full") {
         await updateProgress("overview", "正在提取中心命题与内容主线");
@@ -339,7 +342,7 @@ export class SemanticCanvasService {
         existing: state.existing,
         policy,
         forceRelayout: options.mode === "layout",
-        layoutMode: (options.layoutMode || state.existing?.lexvoiceSemantic?.layoutMode || "adaptive") as SemanticCanvasLayoutMode,
+        layoutMode: (options.layoutMode || readSemanticMeta<QnALogSemanticDocumentMeta>(state.existing)?.layoutMode || "adaptive") as SemanticCanvasLayoutMode,
       });
       const content = `${JSON.stringify(document, null, 2)}\n`;
       let canvasFile = state.canvasFile;

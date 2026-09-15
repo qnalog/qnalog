@@ -101,10 +101,10 @@ describe("hardware channel speaker mapping", () => {
 
   it("extracts durable speaker ids and keeps existing person mappings", () => {
     const markdown = [
-      "<!-- lexvoice-speaker:spk-1 -->",
+      "<!-- qnalog-speaker:spk-1 -->",
       "**说话人 1：** 第一段",
       "",
-      "<!-- lexvoice-speaker:spk-3 -->",
+      "<!-- qnalog-speaker:spk-3 -->",
       "**说话人 3：** 第三段",
     ].join("\n");
     const ids = extractSpeakerIdsFromMarkdown(markdown);
@@ -123,18 +123,18 @@ describe("hardware channel speaker mapping", () => {
 
   it("can remap a display name without deleting the channel anchor", () => {
     const markdown = [
-      "<!-- lexvoice-speaker:spk-1 -->",
+      "<!-- qnalog-speaker:spk-1 -->",
       "**说话人 1：** 先说第一件事。",
       "",
-      "<!-- lexvoice-speaker:spk-2 -->",
+      "<!-- qnalog-speaker:spk-2 -->",
       "**说话人 2：** 我来补充。",
       "",
-      "<!-- lexvoice-speaker:spk-1 -->",
+      "<!-- qnalog-speaker:spk-1 -->",
       "**说话人 1：** 再补一句。",
     ].join("\n");
     const first = replaceSpeakerDisplayName(markdown, "spk-1", "胡女士");
     expect(first.replacements).toBe(2);
-    expect(first.markdown.match(/lexvoice-speaker:spk-1/g)).toHaveLength(2);
+    expect(first.markdown.match(/qnalog-speaker:spk-1/g)).toHaveLength(2);
     expect(first.markdown).toContain("**胡女士：** 先说第一件事。");
     expect(first.markdown).toContain("**说话人 2：** 我来补充。");
 
@@ -151,7 +151,7 @@ describe("hardware channel speaker mapping", () => {
     ].join("\n");
     const confirmed = replaceSpeakerDisplayName(source, "spk-1", "胡女士");
     expect(confirmed.replacements).toBe(1);
-    expect(confirmed.markdown).toContain("<!-- lexvoice-speaker:spk-1 -->");
+    expect(confirmed.markdown).toContain("<!-- qnalog-speaker:spk-1 -->");
     expect(confirmed.markdown).toContain("[00:00] **胡女士：** 我负责产品方案。");
 
     const corrected = replaceSpeakerDisplayName(confirmed.markdown, "spk-1", "张女士");
@@ -164,31 +164,31 @@ describe("hardware channel speaker mapping", () => {
     const source = "[说话人6] 我补充第六位发言人的观点。";
     const confirmed = replaceSpeakerDisplayName(source, "spk-6", "第六位发言人");
     expect(confirmed.replacements).toBe(1);
-    expect(confirmed.markdown).toContain("<!-- lexvoice-speaker:spk-6 -->");
+    expect(confirmed.markdown).toContain("<!-- qnalog-speaker:spk-6 -->");
     expect(confirmed.markdown).toContain("**第六位发言人：**");
   });
 
   it("replaces generic speaker references inside briefing prose with stable inline anchors", () => {
     const source = [
       "---",
-      "lexvoice_speakers:",
+      "qnalog_speakers:",
       "  spk-2:",
       "    label: 说话人2",
       "---",
       "",
       "## 背景",
       "说话人2回顾了项目经历，随后说话人1补充了部署风险。",
-      "lexvoice-people: 说话人1, 说话人2",
+      "qnalog-people: 说话人1, 说话人2",
     ].join("\n");
     const confirmed = replaceSpeakerDisplayName(source, "spk-2", "李经理");
     expect(confirmed.replacements).toBe(1);
-    expect(confirmed.markdown).toContain("<!-- lexvoice-speaker-ref:spk-2 -->李经理<!-- lexvoice-speaker-ref-end:spk-2 -->回顾了项目经历");
+    expect(confirmed.markdown).toContain("<!-- qnalog-speaker-ref:spk-2 -->李经理<!-- qnalog-speaker-ref-end:spk-2 -->回顾了项目经历");
     expect(confirmed.markdown).toContain("label: 说话人2");
-    expect(confirmed.markdown).toContain("lexvoice-people: 说话人1, 说话人2");
+    expect(confirmed.markdown).toContain("qnalog-people: 说话人1, 说话人2");
 
     const corrected = replaceSpeakerDisplayName(confirmed.markdown, "spk-2", "王总");
     expect(corrected.replacements).toBe(1);
-    expect(corrected.markdown).toContain("<!-- lexvoice-speaker-ref:spk-2 -->王总<!-- lexvoice-speaker-ref-end:spk-2 -->回顾了项目经历");
+    expect(corrected.markdown).toContain("<!-- qnalog-speaker-ref:spk-2 -->王总<!-- qnalog-speaker-ref-end:spk-2 -->回顾了项目经历");
     expect(corrected.markdown).not.toContain(">李经理<");
   });
 });
@@ -316,8 +316,8 @@ describe("multichannel transcription planning", () => {
       { speakerId: "spk-1", channel: 1, startMs: 1_500, endMs: 2_500, peakRms: 0.2, text: "第二句。" },
       { speakerId: "spk-2", channel: 2, startMs: 3_000, endMs: 4_000, peakRms: 0.2, text: "回应。" },
     ]);
-    expect(text.match(/lexvoice-speaker:spk-1/g)).toHaveLength(1);
+    expect(text.match(/qnalog-speaker:spk-1/g)).toHaveLength(1);
     expect(text).toContain("**说话人1：** 第一句。 第二句。");
-    expect(text).toContain("<!-- lexvoice-speaker:spk-2 -->");
+    expect(text).toContain("<!-- qnalog-speaker:spk-2 -->");
   });
 });

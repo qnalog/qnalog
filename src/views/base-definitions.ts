@@ -9,7 +9,7 @@ export const LV_BASE_DEFINITIONS = [
     relPath: "按模式/所有会议.base",
     yaml: `filters:
   and:
-    - file.hasTag("lexvoice/meeting")
+    - file.hasTag("qnalog/meeting")
 properties:
   file.name:
     displayName: 笔记
@@ -39,7 +39,7 @@ views:
     relPath: "按模式/内部小会.base",
     yaml: `filters:
   and:
-    - file.hasTag("lexvoice/huddle")
+    - file.hasTag("qnalog/huddle")
 properties:
   file.name:
     displayName: 笔记
@@ -69,7 +69,7 @@ views:
     relPath: "按模式/所有访谈.base",
     yaml: `filters:
   and:
-    - file.hasTag("lexvoice/interview")
+    - file.hasTag("qnalog/interview")
 properties:
   file.name:
     displayName: 笔记
@@ -99,7 +99,7 @@ views:
     relPath: "按模式/独白手记.base",
     yaml: `filters:
   and:
-    - file.hasTag("lexvoice/monologue")
+    - file.hasTag("qnalog/monologue")
 properties:
   file.name:
     displayName: 笔记
@@ -125,7 +125,7 @@ views:
     relPath: "场景/本周纪要.base",
     yaml: `filters:
   and:
-    - file.hasTag("lexvoice")
+    - file.hasTag("qnalog")
     - date(note.time) >= date("today") - "7 days"
 properties:
   file.name:
@@ -156,8 +156,8 @@ views:
     relPath: "场景/决策与待办.base",
     yaml: `filters:
   or:
-    - file.hasTag("lexvoice/meeting")
-    - file.hasTag("lexvoice/huddle")
+    - file.hasTag("qnalog/meeting")
+    - file.hasTag("qnalog/huddle")
 properties:
   file.name:
     displayName: 笔记
@@ -196,7 +196,7 @@ views:
     relPath: "场景/全部纪要总览.base",
     yaml: `filters:
   and:
-    - file.hasTag("lexvoice")
+    - file.hasTag("qnalog")
 properties:
   file.name:
     displayName: 笔记

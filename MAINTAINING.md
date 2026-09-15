@@ -88,10 +88,10 @@ P2（视图层）在以上约定之外另有三条：
 |---|---|---|
 | P1 | 拆 `QnALogPlugin`：定窄接口，按域搬成员与状态 | ✅ 已完成：`main.ts` 只剩装配、生命周期与宿主面（513 行） |
 | P2 | 拆 `OutlineView`（211 个方法 / 6,468 行）：界面与业务分层 | 已完成的部分：语义 Canvas 抽成独立域服务，该文件退出 `@ts-nocheck`。**维护者决定不再继续**（理由与重启条件见 §6） |
-| P3 | 命名空间重置：内部标识符与 CSS 类名、数据层字面量、视图类型统一为 QnALog | 进行中：内部标识符与类名已完成；数据层需带迁移，见 §1.1.2 |
+| P3 | 命名空间重置：内部标识符与 CSS 类名、数据层字面量、视图类型统一为 QnALog | ✅ 已完成（见 §1.1.2）：两次改动均已落地 |
 | P4 | `src/ui/modals.ts` 按域拆包 | 可选，不影响维护 |
 
-#### 1.1.2 命名空间重置（P3）
+#### 1.1.2 命名空间重置（P3，已完成）
 
 上一轮对 P3 的估算把 860 个 `lexvoice-*` CSS 类名与视图类型一并算作"受 §3 保护不可改"（1,315 处），
 因此结论是"只改内部标识符，结果是 `QnALogPlugin` 与 `lexvoice-statusbar` 并存"。实测否定了这个分类：
@@ -100,21 +100,28 @@ P2（视图层）在以上约定之外另有三条：
 
 | 改动 | 内容 | 依据 |
 |---|---|---|
-| 第一次（`refactor/namespace-internal-identity`） | 内部标识符 82 个、`lexvoice-*` 类名与 CSS 自定义属性 862 个、`QNALOG_VAULT` 环境变量、注释与文档 | 全部只存在于代码里，不写用户文件；无需迁移 |
-| 第二次（数据层命名空间重置） | `LexVoice/…` 默认目录、`lexvoice/*` 标签、笔记标记与 frontmatter 键（`lexvoice_speakers`、`类型: LexVoice派生版本`）、视图类型、混淆盐 | 已是既有知识库里的真实数据，需带迁移与回滚 |
+| 第一次（`refactor/namespace-internal-identity`，已合并） | 内部标识符 82 个、`lexvoice-*` 类名与 CSS 自定义属性 862 个、`QNALOG_VAULT` 环境变量、注释与文档 | 全部只存在于代码里，不写用户文件；无需迁移 |
+| 第二次（`refactor/data-namespace-reset`） | `LexVoice/…` 默认目录、`lexvoice/*` 标签、笔记标记与 frontmatter 键（`lexvoice_speakers`、`类型: LexVoice派生版本`）、视图类型、混淆盐、`lvwall-*` 类名 | 已是既有知识库里的真实数据，需带迁移 |
 
-第一次不动的东西（第二次才动）：写进笔记的注释标记（`lexvoice-session`、`lexvoice-segments-*`、`lexvoice-todo`、
-`lexvoice-note-index`、`lexvoice-active-version-*`、`lexvoice-daily-overview*`、`lexvoice-generated-wall`、
-`LEXVOICE_SEDIMENT_*`、`lexvoice-people`/`-tags`/`-part-*`）、`.canvas` 的 `lexvoiceSemantic` 键与
-`lexvoice-semantic-node-/edge-` 前缀、生成墙用的 `lvwall-*` 类名（`cssclasses: lvwall-page` 已写在 4 个墙文件里）、
-`lexvoice/*` 标签、`LexVoice/…` 路径、`lexvoice_speakers` 键、密钥混淆盐取值。
-改名时用**最大 token 边界**匹配：`lexvoice-outline` 是真实类名，同时又是视图类型 `lexvoice-outline-view` 的前缀，
-无边界替换会连带改坏被保护的字面量。
+第二次的做法（只认一个命名空间）：
 
-**第二次不做的事**：不自动改写知识库里 `LexVoice/` 这个目录名。旧目录里有用户自己的文件，
-自动改名为用户不知情的大范围文件操作；插件只按新默认值创建 `QnALog/…` 并把设置指向它，
-旧目录里的文件由用户自行迁移。`install-to-vault.mjs` 不再从 `lexvoice-mit` / `lexvoice` 继承设置，
-只处理"已有 QnALog → 留档 → 装新 QnALog"。许可来源（`LICENSE`、`NOTICE`、README 的 Origin、产物 banner）不参与改名。
+- **写入与读取都只用 QnALog 字面量。** 字面量集中在 `src/shared/namespace.ts`，
+  读侧用 `nsRe()` 生成模式，不要在业务代码里硬编码品牌前缀。
+- `SETTINGS_SCHEMA_VERSION` 重置为 `1`。QnALog 是独立项目，不承接历史项目的设置：
+  磁盘上的 `schemaVersion` 与当前值不一致时，`loadAll` 丢弃整份设置、按默认值重建
+  （`src/shared/settings-schema.ts`），并弹通知要求重新配置路径与密钥。
+  队列里持久化的任务同样丢弃——任务里的笔记路径指向旧目录，留着只会失败。
+- 不提供任何数据迁移命令：既有笔记里的旧命名空间标记不再被识别，也不改写。
+  用户按全新项目使用，自行决定旧目录里的文件如何处置。
+
+**第二次不做的事**：不自动改写知识库里 `LexVoice/` 这个目录名（那是用户自己的文件），
+也不在加载时扫描或改写任何笔记。插件只按默认值创建 `QnALog/…`。
+`install-to-vault.mjs` 不再从 `lexvoice` / `lexvoice-mit` 继承设置，只处理"已有 QnALog → 留档 → 装新 QnALog"。
+许可来源（`LICENSE`、`NOTICE`、README 的 Origin、产物 banner）不参与改名。
+
+**密钥混淆盐**（`qnk1:` + `QnALog/local-key-obfuscation/v1`）只认本插件自己的 marker：
+前缀不匹配的串不解密、原样返回，不会被当成密文处理。换过盐的旧值解不出来，
+用户在设置页重新填写即可。
 
 ### 1.2 第二条：按需要灵活添加提升性功能
 
@@ -213,7 +220,7 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 自更新 | **已移除** | 开发者政策 "Not allowed" 明列 *"Install or update themselves or their dependencies"*。本插件只检查版本并提示，安装交给 Obsidian 或 BRAT。**不得恢复写入自身文件的能力。** |
 | 社区目录 | 上游 `lexvoice` 条目仍在 | 不可控。它只能被用户主动安装，不会替换本插件；README 已说明两者并存时的处理。 |
 | 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 2026-09-14 已统一为 `QnALog`：这些字符串只存在于代码里，不写用户文件。**新代码不得再引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量。** |
-| 数据层 | 笔记标签 `lexvoice/*`、默认目录 `LexVoice/…`、frontmatter 的 `类型: LexVoice派生版本` 与 `lexvoice_speakers`、视图类型 `lexvoice-*-view`、API Key 混淆盐 `LexVoice/local-key-obfuscation/v1` | 仍是上游命名，**随数据层命名空间重置一并改**（见 §1.1.2 的第二次改动）：改这些要带迁移、可回滚、发版说明显著提示。混淆盐改名会让已保存的 API Key 无法解密，重置必须同时要求用户重填密钥。 |
+| 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、frontmatter 键 `qnalog_speakers`、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 已重置为 QnALog 命名空间。**写入用新值，读取同时接受旧值**（见 §1.1.2），旧字面量的判定集中在 `src/shared/namespace.ts`；**新代码不得再引入 `lexvoice-*` 字面量**。 |
 
 发版前的指针检查清单——已固化为脚本，CI 每次 push 都会跑：
 
@@ -277,7 +284,7 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 
 ### 4.3 安装、回滚与迁移报告
 
-- `npm run install:vault -- "<知识库>"`：安装/更新到知识库。覆盖前把目标插件目录**整份**留档到 `<知识库>/.obsidian/qnalog-install-backups/<时间戳>/`；首次安装按优先级沿用已有插件设置（`lexvoice` → `lexvoice-mit`），并在沿用上游目录时把该目录也留档（这一继承逻辑在数据层命名空间重置时删除）。
+- `npm run install:vault -- "<知识库>"`：安装/更新到知识库。覆盖前把目标插件目录**整份**留档到 `<知识库>/.obsidian/qnalog-install-backups/<时间戳>/`；2026-09-15 起不再从 `lexvoice` / `lexvoice-mit` 目录继承设置（本插件按独立产品维护）。检测到上游插件目录时只提示存在，不读取、不移动、不删除其内容。
 - `npm run restore:vault -- "<备份目录>" ["<知识库>"] [--set-enabled]`：从备份还原。动手前再把当前目录另存一份（`<时间戳>-before-restore/`），所以回滚本身可撤销。
 - 迁移报告：首次加载发现设置结构变化时输出"被丢弃的分组 / 保留的分组 / 需要处理的事项"（通知 + 诊断日志 + console）。**不要**把这段逻辑退回成静默丢弃。
 
@@ -404,9 +411,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
   用户已有的招聘/晋升笔记会留在原处，只是不再有对应入口；`data.json` 里残留的 `recruiting` /
   `promotionReview` 分组不再被读取，首次加载会通过迁移报告告知（§4.2）。
-- **数据层字面量按 §3 保护**：`lexvoice/*` 标签、`LexVoice/…` 目录、`类型: LexVoice派生版本`、
-  密钥混淆盐、笔记内的 `lexvoice-*` / `LEXVOICE_*` 注释标记、视图类型 `lexvoice-*-view` 一律不动
-  （内部标识符与 CSS 类名已于 2026-09-14 改为 `QnALog`/`qnalog-`，不在此列）。
+- **统一使用 QnALog 命名空间**（标签、标记、frontmatter 键、视图类型）：命名空间已于 2026-09-15 重置，
+  读写都只认新值（见 §1.1.2）。插件不扫描、不改写用户的既有笔记。
 - **读旧笔记必须安全降级。** 旧笔记的 frontmatter 里可能仍是 `mode: recruit`，未知 mode 一律按
   「识别不出模式」处理，不得抛错、不得让面板或流水线崩掉（`isKnownPolishMode`、`detectRecentNoteMode`
   等处的兜底即为此）。
@@ -431,7 +437,9 @@ frontmatter 仍有 `time`、运行期没有异常日志。
         或某类 bug 反复出现且定位困难），再按 §1.1.1 的抽取约定分簇推进，不要为了「文件变小」而拆。
 - [ ] P3 命名空间重置（见 §1.1.2）：
       - [x] 第一次：内部标识符（82 个）+ `lexvoice-*` 类名与自定义属性（862 个）+ `QNALOG_VAULT`（2026-09-14）。
-      - [ ] 第二次：数据层命名空间（默认目录、标签、笔记标记与 frontmatter 键、视图类型、混淆盐）+ 迁移与回滚 + 删除 `install-to-vault.mjs` 的旧插件设置继承。
+      - [x] 第二次（2026-09-15）：数据层命名空间（默认目录、标签、笔记标记与 frontmatter 键、视图类型、混淆盐）
+            + 读写只认新值 + 删除全部迁移逻辑（迁移命令、`MigrationService`、迁移报告）+
+            `SETTINGS_SCHEMA_VERSION` 重置为 1 + 删除 `install-to-vault.mjs` 的旧插件设置继承。
 - [ ] P4 `src/ui/modals.ts`（2,627 行 / 11 个 Modal 类 + 悬浮气泡 `BubbleWidget`）按域拆包。可选。
 - [ ] 更新检查的 5 个转发（`getUpdateRawBase(s)`、`checkForUpdates(OnStartup)`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
       可并入一个更新域服务，属收尾性质。
@@ -449,7 +457,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 **第二条：提升性功能（按需，不排期）**
 
 - [ ] **设置界面精简（开箱即用方向）**：现状设置页偏复杂，把"必须先配的"和"少数人才调的"混在一起。方向是——默认路径只需填 API Key 即可工作（服务、模型、目录用内置默认值 + 一个推荐配置入口），其余自定义项收进"高级"分区。分期推进。注意：设置项读写受 `settings-io.ts` 白名单约束（新增键必须同时登记 normalize 与 serialize），搬动 UI 分组不影响存储结构。
-- [ ] **数据层命名的独立化**：已并入 §1.1.2 的 P3 第二次改动（不另列）。要点不变：带迁移脚本、可回滚、发版说明显著提示；**不自动改写知识库里的 `LexVoice/` 目录名**，旧目录由用户自行迁移。混淆盐随本次一并更换为新值——这会让已保存的 API Key 无法解密，因此必须同时要求用户重填密钥。
+- [x] **数据层命名的独立化**：已完成（2026-09-15，见 §1.1.2）。QnALog 按全新项目处理，不支持从历史项目迁移数据，代码里不再保留迁移逻辑；混淆盐已换新，已存 API Key 需重填。
 - [ ] 为自定义说话人分离服务（如 `siliconflow-diarize`）补预设条目（名称/提示/步骤文案）。纯展示性——能力已具备（`speaker-diarization` 协议），不做也能用。
 - [ ] 设置页把未知服务显示为"其他转写服务"。
 

@@ -31,6 +31,7 @@ import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { NoteWriter } from "../notes/note-writer";
+import { nsMarker } from "../shared/namespace";
 
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
@@ -327,7 +328,7 @@ export class QueueRetryService {
   async retryTranscribeTask(task) {
     const mdFile = this.host.app.vault.getAbstractFileByPath(task.mdPath);
     const failMark = /_\[(?:等待后台转写，音频已保留|此段尚未完成转写，音频已保留)\]_|_\[等待后台转写：[^\]]*\]_|_\[转写失败（空结果，已进入重试队列）\]_|_\[转写失败(?:（已进入重试队列）)?：[^\]]*\]_/;
-    const taskMarker = task.id ? `<!-- lexvoice-transcribe-task:${task.id} -->` : "";
+    const taskMarker = task.id ? nsMarker("transcribe-task", task.id) : "";
     const taskPattern = taskMarker
       ? new RegExp(`${escapeRegExp(taskMarker)}\\s*(?:${failMark.source})`)
       : null;
@@ -335,7 +336,7 @@ export class QueueRetryService {
     const segmentStart = formatElapsed(Math.max(0, Number(task.startOffsetMs) || 0));
     const segmentEnd = formatElapsed(Math.max(Number(task.startOffsetMs) || 0, Number(task.endOffsetMs) || 0));
     const legacySegmentPattern = new RegExp(
-      `((?:^|\\n)###\\s+段落\\s+${segmentNumber}\\s+\\(${escapeRegExp(segmentStart)}[–-]${escapeRegExp(segmentEnd)}\\)[^\\n]*\\n(?:\\s*\\n)?(?:<!--\\s*lexvoice-transcribe-task:[^>]+-->\\s*)?)(?:${failMark.source})`,
+      `((?:^|\\n)###\\s+段落\\s+${segmentNumber}\\s+\\(${escapeRegExp(segmentStart)}[–-]${escapeRegExp(segmentEnd)}\\)[^\\n]*\\n(?:\\s*\\n)?(?:<!--\\s*qnalog-transcribe-task:[^>]+-->\\s*)?)(?:${failMark.source})`,
     );
     let currentMarkdown = "";
     if (mdFile instanceof obsidian.TFile && taskMarker) {

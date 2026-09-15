@@ -30,11 +30,10 @@ import type {
   TranscribeProviderSettings,
 } from "./types";
 
-// 5：移除招聘评估 / 招聘需求挖掘 / 晋升评审三个场景及其设置（recruiting / promotionReview 分组不再读回）。
-// 6：移除学习卡片（概念墙 / 学习卡片墙及其提取、写入与设置键 learningCardsFolder）。
-// 用户已有的笔记文件不在此列处理——迁移只重写 data.json，不触碰知识库内容。
-export const SETTINGS_SCHEMA_VERSION = 6;
-export const LEGACY_VOCABULARY_FILE = "lexvoice 词汇表.md";
+// 设置结构版本。QnALog 是独立项目，不承接任何历史项目的设置：
+// 版本号与当前值不一致时，data.json 里的设置一律丢弃，改用默认值（见 main.ts 的 loadAll）。
+// 因此这个数字只再作为「这份 data.json 是不是本版本写的」的标记存在。
+export const SETTINGS_SCHEMA_VERSION = 1;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -331,9 +330,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   const vocabulary = asRecord(raw.vocabulary);
   s.customVocabulary = firstString(defaults.customVocabulary, vocabulary.inlineTerms, raw.customVocabulary);
   s.vocabularyFile = firstString(defaults.vocabularyFile, vocabulary.notePath, raw.vocabularyFile);
-  if (obsidian.normalizePath(s.vocabularyFile).toLowerCase() === LEGACY_VOCABULARY_FILE.toLowerCase()) {
-    s.vocabularyFile = defaults.vocabularyFile;
-  }
   s.peopleDirectoryFolder = obsidian.normalizePath(firstNonBlankString(defaults.peopleDirectoryFolder, vocabulary.peopleFolder, raw.peopleDirectoryFolder));
   s.peopleBaseFile = obsidian.normalizePath(firstNonBlankString(defaults.peopleBaseFile, vocabulary.peopleBasePath, raw.peopleBaseFile));
   s.todoCardsFolder = obsidian.normalizePath(firstNonBlankString(defaults.todoCardsFolder, vocabulary.todoCardsFolder, raw.todoCardsFolder));
@@ -370,8 +366,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.bubbleSize = firstEnum(["large", "medium", "small"] as const, defaults.bubbleSize, ui.bubbleSize, raw.bubbleSize);
   s.floatingBallPos = normalizeFloatingBallPosition(firstRecord(ui.floatingControlPosition, raw.floatingBallPos), defaults.floatingBallPos);
 
-  // 招聘 / 晋升评审场景已从本版本移除：data.json 里残留的 recruiting / promotionReview 分组
-  // 不再读取，也不再写回（见 shared/settings-migration-report.ts 的说明）。用户已有的笔记文件不受影响。
   const updates = asRecord(raw.updates);
   // updateRepoUrl/Branch/PluginDir/RawBaseUrl 已收编为模块常量 QNALOG_UPDATE_*：
   // 此前 normalize 始终重置为默认值，用户落盘值从未生效过，作为设置项是假象。

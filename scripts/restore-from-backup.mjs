@@ -116,14 +116,18 @@ if (Number.isFinite(restoredSchema)) {
 // 启用列表：还原到别的插件 id 时，Obsidian 里启用的仍是原来那个。
 const enabledPath = path.join(configDir, ENABLED_FILE);
 const enabled = readJson(enabledPath);
+// 待还原目录之外的候选插件目录：上游的 lexvoice* 目录，或本插件自身的目录。
+// 括号是必需的：不加会因 && 优先级高于 || 而改变判定。
 const otherIds = existsSync(pluginsDir)
-  ? readdirSync(pluginsDir).filter(name => name !== restoredId && name.startsWith("lexvoice") || name === "qnalog" && existsSync(path.join(pluginsDir, name, "manifest.json")))
+  ? readdirSync(pluginsDir).filter(name =>
+      name !== restoredId
+      && ((name.startsWith("lexvoice") || name === "qnalog") && existsSync(path.join(pluginsDir, name, "manifest.json"))))
   : [];
 if (Array.isArray(enabled)) {
   const activeIdList = enabled.filter(id => typeof id === "string" && (id === restoredId || otherIds.includes(id)));
   if (!activeIdList.includes(restoredId)) {
     const lines = [
-      `[restore] 注意：Obsidian 的启用列表里当前是 ${activeIdList.length ? activeIdList.join("、") : "（未启用任何 LexVoice 插件）"}，不是 ${restoredId}。`,
+      `[restore] 注意：Obsidian 的启用列表里当前是 ${activeIdList.length ? activeIdList.join("、") : "（未启用相关插件）"}，不是 ${restoredId}。`,
       "[restore] 建议在 Obsidian 界面里切换（设置 → 第三方插件）：停用另一个，启用 " + restoredId + "。",
       "[restore] 也可以加 --set-enabled 让本脚本改写 community-plugins.json；Obsidian 正在运行时该改动可能被它覆盖，改完需要重新加载。",
     ];

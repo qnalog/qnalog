@@ -4,6 +4,7 @@ import * as obsidian from "obsidian";
 import { sanitizeFilename } from './util-common';
 import { isPrivateNetworkHost } from './util-llm-endpoint';
 import { ensureVaultFolder, findAvailableVaultPath } from "./util-vault";
+import { NS_TAG_PREFIX } from "./namespace";
 
 export function getFrontmatterTags(frontmatter) {
   if (!frontmatter || typeof frontmatter !== "object") return [];
@@ -38,10 +39,7 @@ export function upsertFrontmatterInMarkdown(markdown, frontmatter) {
   return "---\n" + yaml + "---\n\n" + text;
 }
 
-// 学习卡片已移除，但 `lexvoice/learning-card` 与 `lexvoice/concept` 这两个标签值
-// 写在用户已有的卡片文件里，属 §3 保护的数据层字面量：不得改动其取值，
-// 也不得把它们重新用于新的对象类型。TODO_CARD_TAG 仍在使用。
-export const TODO_CARD_TAG = "lexvoice/todo-card";
+export const TODO_CARD_TAG = `${NS_TAG_PREFIX}todo-card`;
 
 export async function upsertObjectNote(plugin, folder, name, content) {
   await ensureVaultFolder(plugin.app, folder);

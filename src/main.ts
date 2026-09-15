@@ -19,15 +19,14 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
 import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
-
-import { buildSettingsMigrationReport } from "./shared/settings-migration-report";
+import { isCurrentSettingsSchema } from "./shared/settings-schema";
 
 import type {PluginSettings, RecordingSession } from "./shared/types";
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import {AUDIO_EXT } from "./shared/catalog-import";
 
-import {isRecord, pickDefined } from "./shared/util-common";
+import {isRecord } from "./shared/util-common";
 
 import {obfuscateApiKey, deobfuscateApiKey } from "./shared/util-key-diag";
 
@@ -62,7 +61,7 @@ import { VersionStore } from "./versions/version-store";
 import { PeopleDirectoryService } from "./people/people-directory-service";
 import { TranscribeProfileService } from "./asr/transcribe-profile-service";
 import { VocabularyService } from "./vocabulary/vocabulary-service";
-import { MigrationService } from "./migrations/migration-service";
+import { CleanupService } from "./vault/cleanup-service";
 import { RealtimeOutlineService } from "./notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
@@ -101,7 +100,7 @@ class QnALogPlugin extends obsidian.Plugin {
   declare audioLinks: AudioTimeLinkService;
   declare meetingWorkbench: MeetingWorkbenchService;
   declare outline: RealtimeOutlineService;
-  declare migrations: MigrationService;
+  declare cleanup: CleanupService;
   declare vocabulary: VocabularyService;
   declare profiles: TranscribeProfileService;
   declare semanticCanvas: SemanticCanvasService;
@@ -172,7 +171,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
     this.outline = new RealtimeOutlineService(this);
-    this.migrations = new MigrationService(this);
+    this.cleanup = new CleanupService(this);
     this.vocabulary = new VocabularyService(this);
     this.profiles = new TranscribeProfileService(this);
     this.semanticCanvas = new SemanticCanvasService(this);
@@ -331,21 +330,11 @@ class QnALogPlugin extends obsidian.Plugin {
       void this.externalInbox.scanExternalInboxFolder({ manual: false, source: "poll" });
     }, EXTERNAL_INBOX_SCAN_INTERVAL_MS));
 
-    this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.migrations.cleanupEmptyShortRecordings() });
+    this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.cleanup.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: "清理过期分段音频缓存", callback: async () => {
       const result = await this.recording.cleanupExpiredSegmentCacheFiles();
       new obsidian.Notice(`分段缓存清理完成：删除 ${result.deleted} 个，跳过 ${result.skipped} 个${result.failed ? `，失败 ${result.failed} 个` : ""}`, 8000);
     } });
-
-    this.addCommand({
-      id: "migrate-legacy-notes",
-      name: "迁移历史笔记属性",
-      callback: () => {
-        this.migrations.migrateLegacyNotes()
-          .then(r => new obsidian.Notice(`迁移：补全 ${r.migrated} / 跳过 ${r.skipped} / 无法识别 ${r.noMode} / 失败 ${r.failed}`, 8000))
-          .catch(e => new obsidian.Notice(`迁移失败：${e.message || e}`, 8000));
-      },
-    });
 
     this.addCommand({
       id: "regenerate-briefing-from-frontmatter",
@@ -429,15 +418,18 @@ class QnALogPlugin extends obsidian.Plugin {
     const saved: unknown = (await this.loadData()) || {};
     // 还原密钥：data.json 里的密钥是混淆态，读入内存前先解混淆（旧明文数据会原样通过，下次保存自动转混淆）
     try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
-    this.settings = normalizePluginSettings(saved);
-    this.persistedQueue = extractJobItems(saved);
-    // schema 升级：data.json 不带 schemaVersion 或低于当前版本时，
-    // 立即写回新格式，避免长期保留旧平铺字段。
-    const savedRecord = isRecord(saved) ? saved : {};
-    const savedSettingsRecord = isRecord(savedRecord.settings) ? savedRecord.settings : {};
-    const savedVersionValue = pickDefined(savedSettingsRecord.schemaVersion, savedRecord.schemaVersion, 0);
-    const savedVersion = Number.isFinite(Number(savedVersionValue)) ? Number(savedVersionValue) : 0;
-    let shouldSave = savedVersion !== SETTINGS_SCHEMA_VERSION;
+    // QnALog 不承接历史项目的数据：磁盘上的设置版本与本版本不一致时，整份丢弃，
+    // 用默认值重建（设置页里重新配置一次）。仅版本一致才读回，避免把别的插件或
+    // 旧格式的 data.json 当成自己的设置用。
+    const schemaMatches = isCurrentSettingsSchema(saved);
+    if (!schemaMatches && Object.keys(isRecord(saved) ? saved : {}).length > 0) {
+      console.warn("[QnALog] 设置结构版本不一致，已丢弃磁盘上的设置并改用默认值");
+    }
+    this.settings = schemaMatches
+      ? normalizePluginSettings(saved)
+      : normalizePluginSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION });
+    this.persistedQueue = schemaMatches ? extractJobItems(saved) : [];
+    let shouldSave = !schemaMatches;
     // installedUpdateVersion 既记录内置更新器刚写入的待生效版本，也应在插件真正加载后
     // 与 manifest 对齐。否则通过 Obsidian 社区目录更新时，这个字段会永久停留在旧版本。
     const runningVersion = String(this.manifest && this.manifest.version || "").trim();
@@ -445,36 +437,16 @@ class QnALogPlugin extends obsidian.Plugin {
       this.settings.installedUpdateVersion = runningVersion;
       shouldSave = true;
     }
-    try {
-      if (await this.migrations.migrateDefaultVocabularyFileLocation(saved)) shouldSave = true;
-    } catch (e) {
-      console.warn("[QnALog] vocabulary location migrate failed", e);
-    }
-    try {
-      if (await this.migrations.migrateDefaultLibraryLayout(savedVersion)) shouldSave = true;
-    } catch (e) {
-      console.warn("[QnALog] default library layout migrate failed", e);
-    }
     if (shouldSave) {
-      try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema migrate failed", e); }
-      // 迁移结果自检：只在迁移真正发生时输出，正常加载零开销。
+      try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema reset save failed", e); }
       try {
-        const report = buildSettingsMigrationReport(savedSettingsRecord, serializePluginSettings(this.settings), {
-          savedVersion,
-          currentVersion: SETTINGS_SCHEMA_VERSION,
-        });
-        if (report) {
-          void this.diagnostics.logDiagnostic(
-            report.direction === "downgrade" ? "warn" : "info",
-            "settings.migration_report",
-            report.summary,
-            { details: report.details, droppedGroups: report.droppedGroups, actions: report.actions },
-          );
-          console.warn(`[QnALog] settings migration report\n${report.details}`);
-          new obsidian.Notice(`${report.summary}\n\n${report.actions.join("\n")}`, report.actions.length ? 20000 : 12000);
+        const summary = `QnALog 设置结构版本与当前不一致，已改用默认设置。`;
+        void this.diagnostics.logDiagnostic("warn", "settings.schema_reset", summary, { discarded: true });
+        if (!schemaMatches) {
+          new obsidian.Notice(`${summary}\n请在「设置 → QnALog」重新配置保存路径与访问密钥。`, 20000);
         }
       } catch (e) {
-        console.warn("[QnALog] migration report failed", e);
+        console.warn("[QnALog] schema reset notice failed", e);
       }
     }
   }

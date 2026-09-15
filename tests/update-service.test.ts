@@ -19,7 +19,7 @@ import {
 } from "../src/update-source";
 
 const NOW = Date.parse("2025-02-03T04:05:06.789Z");
-const BASE_PATH = ".obsidian/plugins/lexvoice";
+const BASE_PATH = ".obsidian/plugins/qnalog";
 
 type RequestHandler = (url: string) => Promise<{ status: number; text: string }>;
 
@@ -87,7 +87,7 @@ function createFixture(options: FixtureOptions = {}) {
   const request = options.request ?? (async (url: string) => {
     const fileName = fileNameFromUrl(url);
     if (fileName === "manifest.json") {
-      return { status: 200, text: JSON.stringify({ id: "lexvoice", version: "2.0.0" }) };
+      return { status: 200, text: JSON.stringify({ id: "qnalog", version: "2.0.0" }) };
     }
     return { status: 200, text: `remote:${fileName}` };
   });
@@ -116,7 +116,7 @@ function createFixture(options: FixtureOptions = {}) {
   };
   const service = new UpdateService({
     settings,
-    manifest: { id: "lexvoice", version: options.currentVersion ?? "1.0.0" },
+    manifest: { id: "qnalog", version: options.currentVersion ?? "1.0.0" },
     configDir: ".obsidian",
     adapter,
     saveSettings,
@@ -143,7 +143,7 @@ describe("update source and path resolution", () => {
     ]);
     expect(pluginBasePath({
       app: { vault: { configDir: ".obsidian" } },
-      manifest: { id: "lexvoice", dir: ".obsidian/plugins/lexvoice" },
+      manifest: { id: "qnalog", dir: ".obsidian/plugins/qnalog" },
     })).toBe(BASE_PATH);
   });
 });
@@ -151,7 +151,7 @@ describe("update source and path resolution", () => {
 describe("UpdateService startup scheduling", () => {
   it("applies 24-hour gating, fires after four seconds, and does not clear an already-fired timer", async () => {
     const fixture = createFixture({
-      request: async () => ({ status: 200, text: JSON.stringify({ id: "lexvoice", version: "1.0.0" }) }),
+      request: async () => ({ status: 200, text: JSON.stringify({ id: "qnalog", version: "1.0.0" }) }),
     });
     fixture.settings.lastUpdateCheckAt = new Date(NOW - UPDATE_CHECK_INTERVAL_MS + 1).toISOString();
     fixture.service.checkForUpdatesOnStartup();
@@ -187,7 +187,7 @@ describe("UpdateService checks", () => {
       request: async (url) => {
         requestedHosts.push(new URL(url).host);
         if (url.startsWith("https://raw.githubusercontent.com/")) throw new Error("primary down");
-        return { status: 200, text: JSON.stringify({ id: "lexvoice", version: "2.0.0" }) };
+        return { status: 200, text: JSON.stringify({ id: "qnalog", version: "2.0.0" }) };
       },
     });
 

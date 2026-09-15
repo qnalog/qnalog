@@ -1,3 +1,4 @@
+import { NS_TAG_PREFIX } from "../shared/namespace";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
@@ -47,5 +48,6 @@ export const VOCABULARY_SECTIONS = [
   { key: "other", title: "其他专有名词", desc: "暂时不好归类但希望 ASR 优先识别准确的词。", placeholder: "例如：会议室名、活动名、内部简称" },
 ];
 
-export const PEOPLE_DIRECTORY_TAG = "lexvoice/person";
+export const PEOPLE_DIRECTORY_TAG = `${NS_TAG_PREFIX}person`;
+export const PEOPLE_DIRECTORY_TAG_MERGED = `${NS_TAG_PREFIX}person-merged`;
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

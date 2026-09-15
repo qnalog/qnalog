@@ -10,6 +10,7 @@ import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";
 import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
+import { NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE } from "../shared/namespace";
 
 /** VersionStore 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface VersionStoreHost {
@@ -108,7 +109,7 @@ export class VersionStore {
     const payload = buildVersionPayload(frontmatter, body);
     const versionFileBody = [
       "---",
-      "类型: LexVoice版本缓存",
+      `类型: ${NS_TYPE_VERSION_CACHE}`,
       "payload_format: 2",
       `version_id: "${id}"`,
       `variant_kind: "${meta.kind}"`,
@@ -166,7 +167,7 @@ export class VersionStore {
       ? (() => { try { return obsidian.parseYaml(splitLeadingFrontmatter(version.frontmatter).frontmatter.replace(/^---\n|\n---\n?$/g, "")) || {}; } catch { return {}; } })()
       : {};
     const derivedFm = Object.assign({}, sourceFm, versionFm, {
-      "类型": "LexVoice派生版本",
+      "类型": NS_TYPE_DERIVED,
       variant_kind: "minutes",
       variant_label: prefix,
       variant_mode: mode || "",

@@ -6,6 +6,7 @@ import {
   speakerLabelForChannel,
   type SpeakerId,
 } from "../audio/channel-speakers";
+import { nsMarker } from "../shared/namespace";
 
 const OUTPUT_SAMPLE_RATE = 16000;
 
@@ -384,7 +385,7 @@ export function formatChannelTranscript(parts: SpeakerTranscriptPart[]): string 
     }
   }
   return merged.map((part) => [
-    `<!-- lexvoice-speaker:${part.speakerId} -->`,
+    nsMarker("speaker", part.speakerId),
     `**${speakerLabelForChannel(part.channel)}：** ${part.text.trim()}`,
   ].join("\n")).join("\n\n");
 }

@@ -17,6 +17,7 @@ import { cleanTranscript, mergeAndPolish } from "../briefing/merge-pipeline";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { VersionStore } from "../versions/version-store";
 import { NoteIndexService } from "../notes/note-index-service";
+import { isDerivedVersionType } from "../shared/namespace";
 
 /** RepolishService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RepolishHost {
@@ -268,7 +269,7 @@ export class RepolishService {
       let sourceFile = file;
       let content = await this.host.app.vault.read(file);
       const fm = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-      if (fm["类型"] === "LexVoice派生版本" || fm.contains_raw === false) {
+      if (isDerivedVersionType(fm["类型"]) || fm.contains_raw === false) {
         const srcPath = fm.source_path ? obsidian.normalizePath(String(fm.source_path)) : "";
         const resolved = srcPath ? this.host.app.vault.getAbstractFileByPath(srcPath) : null;
         if (resolved instanceof obsidian.TFile) {

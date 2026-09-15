@@ -97,17 +97,17 @@ Default folders (all configurable in settings):
 
 | Content | Path |
 |---|---|
-| Recordings | `LexVoice/录音` |
-| Transcribed notes | `LexVoice/转写纪要` |
-| Meeting materials | `LexVoice/会议资料` |
-| People | `LexVoice/人员` |
-| Todo cards | `LexVoice/待办卡片` |
-| Views | `LexVoice/视图` |
-| HTML reports | `LexVoice/HTML报告` |
-| Email drafts | `LexVoice/邮件草稿` |
-| Glossary | `LexVoice/词汇表.md` |
+| Recordings | `QnALog/录音` |
+| Transcribed notes | `QnALog/转写纪要` |
+| Meeting materials | `QnALog/会议资料` |
+| People | `QnALog/人员` |
+| Todo cards | `QnALog/待办卡片` |
+| Views | `QnALog/视图` |
+| HTML reports | `QnALog/HTML报告` |
+| Email drafts | `QnALog/邮件草稿` |
+| Glossary | `QnALog/词汇表.md` |
 
-> The default folder names still use the `LexVoice/` prefix, inherited from the upstream project's data layout. They are ordinary paths and can be changed in settings at any time. Renaming the data namespace to `QnALog/` is planned as a separate change with a migration path; the plugin will not rename existing folders on its own.
+> Default folders use the `QnALog/` prefix. They are ordinary paths and can be changed in settings at any time. QnALog is an independent project: it does not migrate data from other projects, and it does not scan or rewrite your existing notes.
 
 ## Requirements
 

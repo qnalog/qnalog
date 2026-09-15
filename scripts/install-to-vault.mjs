@@ -144,42 +144,21 @@ if (buildIdentity.channel === "dev") {
   }
 }
 
-// 首次安装时沿用已有插件的设置：data.json 跟着插件目录走，id 变了就默认读不到旧设置。
-// 按优先级取第一个有设置的目录：lexvoice-mit（本项目前身，设置已是当前 schema，直接可用）
-// → lexvoice（上游版，需要一次降级迁移）。
-const ADOPT_FROM_IDS = ["lexvoice-mit", UPSTREAM_PLUGIN_ID];
-const targetSettings = path.join(targetDir, "data.json");
-const adoptDir = existsSync(targetSettings)
-  ? null
-  : ADOPT_FROM_IDS.map(id => path.join(pluginsDir, id)).find(dir => existsSync(path.join(dir, "data.json"))) || null;
-const upstreamDirToArchive = adoptDir === upstreamDir ? upstreamDir : null;
-let migrated = false;
-if (adoptDir) {
-  cpSync(path.join(adoptDir, "data.json"), targetSettings);
-  migrated = true;
-  console.log(`[install] 已沿用已有插件的设置：${path.join(adoptDir, "data.json")} → ${targetSettings}`);
-}
-if (upstreamDirToArchive) {
-  // 顺手把上游插件目录整份留档：README 建议用户确认不需要后删掉它，
-  // 删掉之后就没有回到闭源版本的路了。有了这份快照，`npm run restore:vault` 就能还原。
-  const upstreamManifest = path.join(upstreamDir, "manifest.json");
-  const upstreamId = existsSync(upstreamManifest) ? String(readJson(upstreamManifest).id || UPSTREAM_PLUGIN_ID) : UPSTREAM_PLUGIN_ID;
-  const upstreamBackup = path.join(configDir, BACKUP_ROOT, `${timestamp()}-upstream-${upstreamId}`);
-  mkdirSync(upstreamBackup, { recursive: true });
-  cpSync(upstreamDir, upstreamBackup, { recursive: true });
-  console.log(`[install] 已留档上游插件目录 → ${upstreamBackup}
-[install] 需要回到该版本时：npm run restore:vault -- "${upstreamBackup}" "${vault}"`);
-}
+// 安装只处理 qnalog 自己的目录：覆盖前整份留档，沿用上一次 qnalog 的 data.json。
+//
+// 2026-09-15 起不再从 lexvoice / lexvoice-mit 目录继承设置：本插件按独立产品维护，
+// 不承担上游插件的兼容责任（AGENTS §2 的隔离要求）。升级路径由插件自身的
+// schema 迁移处理，用户的旧设置留在原目录里，需要时手工取回。
+// 检测到上游插件目录时只提示存在，不读取、不移动、不删除它的内容。
 
 console.log(`[install] 已安装 QnALog ${manifest.version} → ${targetDir}`);
 if (installedVersion && compareVersions(installedVersion, manifest.version) > 0) {
   console.log(`[install] 注意：覆盖的是更高版本 ${installedVersion}（降级安装）。
-[install] 本项目按 2.1.2 线的设置结构重写 data.json，上游 2.2.0 起新增的设置分组（如 services 连接与任务绑定）会在首次加载时被丢弃。
-[install] 转写与 LLM 服务配置（speech.providers、composer）会保留。
-[install] 首次加载时插件会给出迁移报告（通知 + 诊断日志），列出被丢弃的分组与需要重新选择的服务。
+[install] 设置按本版本的 schema 重写，更高版本新增的分组会在首次加载时被丢弃。
+[install] 首次加载时插件会给出迁移报告（通知 + 诊断日志），列出被丢弃的分组与需要重新处理的事项。
 [install] 如需回退到 ${installedVersion}：npm run restore:vault -- "${backupDir || "<备份目录>"}"`);
 } else if (installedVersion) {
-  console.log(`[install] 覆盖了原有版本 ${installedVersion}。data.json 由插件自身处理，请确认设置仍然正确。
+  console.log(`[install] 覆盖了原有版本 ${installedVersion}。data.json 由插件自身的 schema 迁移处理，请确认设置仍然正确。
 [install] 如需回退：npm run restore:vault -- "${backupDir || "<备份目录>"}"`);
 }
 if (existsSync(upstreamDir)) {

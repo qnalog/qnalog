@@ -8,13 +8,13 @@ import {
 
 describe("最近纪要索引范围", () => {
   it("同时覆盖普通纪要目录和招聘项目目录", () => {
-    const roots = normalizeRecentNoteRoots(["LexVoice/转写纪要", "JD"]);
+    const roots = normalizeRecentNoteRoots(["QnALog/转写纪要", "JD"]);
     expect(isPathUnderRecentNoteRoots(
-      "LexVoice/转写纪要/2026-07-29 会议.md",
+      "QnALog/转写纪要/2026-07-29 会议.md",
       roots
     )).toBe(true);
     expect(isPathUnderRecentNoteRoots(
-      "LexVoice/转写纪要/产品思路/2026-08-18 1621 · 综合纪要.md",
+      "QnALog/转写纪要/产品思路/2026-08-18 1621 · 综合纪要.md",
       roots
     )).toBe(true);
     expect(isPathUnderRecentNoteRoots(
@@ -26,10 +26,10 @@ describe("最近纪要索引范围", () => {
 
   it("父目录已覆盖子目录时去重，避免重复扫描", () => {
     expect(normalizeRecentNoteRoots([
-      "LexVoice",
-      "LexVoice/转写纪要",
-      "LexVoice\\转写纪要",
-    ])).toEqual(["LexVoice"]);
+      "QnALog",
+      "QnALog/转写纪要",
+      "QnALog\\转写纪要",
+    ])).toEqual(["QnALog"]);
   });
 
   it("配置为知识库根目录时允许扫描全库", () => {
@@ -39,8 +39,8 @@ describe("最近纪要索引范围", () => {
   });
 
   it("能够从纪要路径稳定得到文件夹层级", () => {
-    const path = "LexVoice/转写纪要/2026-09-14/会议.md";
-    expect(getRecentNoteParentPath(path)).toBe("LexVoice/转写纪要/2026-09-14");
-    expect(getRecentNotePathRelativeToRoot(path, "LexVoice/转写纪要")).toBe("2026-09-14/会议.md");
+    const path = "QnALog/转写纪要/2026-09-14/会议.md";
+    expect(getRecentNoteParentPath(path)).toBe("QnALog/转写纪要/2026-09-14");
+    expect(getRecentNotePathRelativeToRoot(path, "QnALog/转写纪要")).toBe("2026-09-14/会议.md");
   });
 });

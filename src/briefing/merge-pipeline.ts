@@ -35,6 +35,7 @@ import { buildMeetingWorkbenchPrompt } from "../notes/meeting-workbench";
 import { renderLongSessionRawFallbackGroup } from "../notes/detail-blocks";
 
 import { appendEntityEvidenceWarning, frontmatterBaseModeKey, maybePreSummarizeTextImportForMerge, parseBriefingPartResponse, postProcessBriefingOutput } from "../notes/note-markdown";
+import { NS_TAG, isNamespaceTag } from "../shared/namespace";
 
 export async function polishTranscript(plugin, transcript, mode, sessionMeta, originalFrontmatter, repolishOptions) {
   if (!transcript || !transcript.trim()) return "";
@@ -488,9 +489,9 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     checkpoint.consolidationFinishReason = "not-needed";
   }
   let people = mergeUniqueStrings([], checkpoint.parts.flatMap(part => part.people || []).concat(consolidatedPeople));
-  let tags = mergeUniqueStrings([], checkpoint.parts.flatMap(part => part.tags || []).concat(consolidatedTags)).filter(tag => tag && !/^lexvoice\//.test(tag)).slice(0, 9);
+  let tags = mergeUniqueStrings([], checkpoint.parts.flatMap(part => part.tags || []).concat(consolidatedTags)).filter(tag => tag && !isNamespaceTag(tag)).slice(0, 9);
   const writeAssembledBody = () => {
-    const machine = `\n\n<!-- lexvoice-people: ${people.join(", ")} -->\n<!-- lexvoice-tags: ${tags.join(", ")} -->`;
+    const machine = `\n\n<!-- ${NS_TAG}-people: ${people.join(", ")} -->\n<!-- ${NS_TAG}-tags: ${tags.join(", ")} -->`;
     checkpoint.assembledBody = appendEntityEvidenceWarning(finalVisibleBody + machine, fullJoined);
   };
   writeAssembledBody();

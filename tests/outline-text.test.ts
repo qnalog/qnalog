@@ -425,7 +425,7 @@ describe("parseRealtimeOutlineStateFromMarkdown + cleanRealtimeOutlineItemText",
 describe("findLowEvidenceEntities（人物指认幻觉机械探测）", () => {
   const transcript = "今天聊聊团队。张三上次说过授权的事。后来又提到张三。李四今天也在，李四说李四的事，李四又说，李四补充，李四最后总结。";
   it("产出高频引用、转写低频出现的实体被标记", () => {
-    const output = "一号位（张三）的风格如何。张三期待抓手。张三希望有人疏通。嵌入张三团队。<!-- lexvoice-people: 张三, 李四 -->";
+    const output = "一号位（张三）的风格如何。张三期待抓手。张三希望有人疏通。嵌入张三团队。<!-- qnalog-people: 张三, 李四 -->";
     const findings = findLowEvidenceEntities(["张三", "李四"], output, transcript);
     expect(findings.length).toBe(1);
     expect(findings[0].name).toBe("张三");
@@ -433,11 +433,11 @@ describe("findLowEvidenceEntities（人物指认幻觉机械探测）", () => {
     expect(findings[0].transcriptCount).toBe(2);
   });
   it("转写中证据充分的实体不报（李四 6 次）", () => {
-    const output = "李四的问题。李四没结果。李四敏感。李四销声匿迹。<!-- lexvoice-people: 李四 -->";
+    const output = "李四的问题。李四没结果。李四敏感。李四销声匿迹。<!-- qnalog-people: 李四 -->";
     expect(findLowEvidenceEntities(["李四"], output, transcript)).toEqual([]);
   });
   it("产出引用不足 3 次不报（偶尔提一句不算核心锚点）", () => {
-    const output = "提到过张三一次。<!-- lexvoice-people: 张三 -->";
+    const output = "提到过张三一次。<!-- qnalog-people: 张三 -->";
     expect(findLowEvidenceEntities(["张三"], output, transcript)).toEqual([]);
   });
   it("产出与转写次数持平（不倒挂）不报", () => {
@@ -445,7 +445,7 @@ describe("findLowEvidenceEntities（人物指认幻觉机械探测）", () => {
     expect(findLowEvidenceEntities(["张三"], out2, transcript, { minOutputMentions: 2 })).toEqual([]);
   });
   it("单字名与空名跳过（子串误命中率太高）", () => {
-    const output = "扣扣扣扣扣扣。<!-- lexvoice-people: 扣 -->";
+    const output = "扣扣扣扣扣扣。<!-- qnalog-people: 扣 -->";
     expect(findLowEvidenceEntities(["扣", "", "  "], output, "无")).toEqual([]);
   });
   it("重复名只算一次；空输入不崩", () => {

@@ -44,10 +44,10 @@ const NOTE_PATH = "2026-09-14 1133.md";
 const NOTE_BODY = [
   "---", "mode: monologue", "time: 2026-09-14 11:33", "状态: 待整理", "---", "",
   "# 2026-09-14 11:33 · 个人笔记", "",
-  "<!-- lexvoice-segments-start:s1 -->",
+  "<!-- qnalog-segments-start:s1 -->",
   "### 段落 1 (00:00–00:05)", "今天的会议讨论了上线范围。", "",
   "### 段落 2 (00:05–00:10)", "确定先做内部灰度。",
-  "<!-- lexvoice-segments-end:s1 -->", "",
+  "<!-- qnalog-segments-end:s1 -->", "",
 ].join("\n");
 
 const files = new Map();
@@ -204,7 +204,7 @@ async function main() {
     const beforeRaw = content.split("## 原始材料")[0];
     if (!/议题[\s\S]*结论/.test(beforeRaw)) failures.push("笔记正文里没有写入整合后的内容（原始材料之前）");
     if (!/分段原始转写/.test(content)) failures.push("笔记里没有保留原始转写");
-    if (!/<!--\s*lexvoice-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
+    if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
     if (!/^---\r?\n[\s\S]*?\r?\n---/.test(content)) failures.push("笔记没有 frontmatter");
     if (!/^time:\s*\S/m.test(content)) failures.push("frontmatter 里没有 time 字段（重新整理入口会因缺少 time 不可用）");
     for (const id of plugin.intervals) clearInterval(id);

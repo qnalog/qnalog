@@ -1,4 +1,5 @@
 import type { SpeakerId, SpeakerMapping } from "../audio/channel-speakers";
+import { nsMarkerAnyRe } from "../shared/namespace";
 
 export interface SpeakerCandidate {
   id: SpeakerId;
@@ -12,7 +13,7 @@ function speakerIdFromNumber(value: unknown): SpeakerId {
 
 function cleanSample(value: unknown): string {
   return (typeof value === "string" ? value : "")
-    .replace(/<!--\s*lexvoice-speaker:[^>]+-->/gi, "")
+    .replace(nsMarkerAnyRe("speaker", "gi"), "")
     .replace(/^\s*[-*]+\s*/, "")
     .replace(/\s+/g, " ")
     .trim()

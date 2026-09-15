@@ -11,12 +11,13 @@ import { canOmitServiceApiKey } from '../shared/util-llm-endpoint';
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
 import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
+import { NS_CARDS_BLOCK_RE, NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, NS_TAG, nsMarker } from "../shared/namespace";
 
 // 取值是写在用户笔记里的注释标记，改名会让既有笔记的沉淀块不再被识别：
 // 常量名不带宽泛品牌前缀，取值保持上游的 LEXVOICE_ 字面量（随数据层命名空间重置一起改）。
-export const SEDIMENT_PREEXTRACT_BEGIN = "LEXVOICE_SEDIMENT_BEGIN";
+export const SEDIMENT_PREEXTRACT_BEGIN = NS_SEDIMENT_BEGIN;
 
-export const SEDIMENT_PREEXTRACT_END = "LEXVOICE_SEDIMENT_END";
+export const SEDIMENT_PREEXTRACT_END = NS_SEDIMENT_END;
 
 export function makeSedimentStableHash(value) {
   const source = String(value || "");
@@ -155,7 +156,7 @@ export function normalizeSedimentExtractionModel(model) {
 }
 
 export function buildObjectTags(baseTag, extraTags) {
-  const tags = [baseTag, "lexvoice"];
+  const tags = [baseTag, NS_TAG];
   for (const tag of normalizeSedimentTextList(extraTags || [], 28)) {
     const clean = tag.replace(/^#/, "").replace(/\s+/g, "-");
     if (clean && !tags.includes(clean)) tags.push(clean);
@@ -227,7 +228,7 @@ export function getSedimentPreExtractionBlockPatterns(global) {
   return [
     new RegExp(`<!--\\s*${SEDIMENT_PREEXTRACT_BEGIN}\\s*([\\s\\S]*?)\\s*${SEDIMENT_PREEXTRACT_END}\\s*-->`, flags),
     new RegExp(`<!--\\s*${SEDIMENT_PREEXTRACT_BEGIN}\\s*-->\\s*(?:\`\`\`json\\s*)?([\\s\\S]*?)(?:\\s*\`\`\`)?\\s*<!--\\s*${SEDIMENT_PREEXTRACT_END}\\s*-->`, flags),
-    /<!--\s*LEXVOICE_CARDS_BEGIN\s*-->\s*(?:```json\s*)?([\s\S]*?)(?:\s*```)?\s*<!--\s*LEXVOICE_CARDS_END\s*-->/gi,
+    NS_CARDS_BLOCK_RE,
   ];
 }
 
@@ -427,7 +428,7 @@ export async function writeSedimentObjectCards(plugin, sourceFile, objects) {
         const todoId = getSedimentTodoId(todo);
         const entry = buildSedimentTodoDailyEntry(todo, sourceFile, todoId);
         const updated = upsertSedimentTodoInDailyNote(dailyContent, todoId, entry, plugin.settings);
-        const created = !dailyContent.includes(`<!-- lexvoice-todo:${todoId} -->`);
+        const created = !dailyContent.includes(nsMarker("todo", todoId));
         dailyContent = updated;
         result.entries.push({
           kind: "todo",
@@ -490,7 +491,7 @@ export function buildSedimentTodoDailyEntry(todo, sourceFile, todoId) {
   }
 
   // 隐藏的 id 注释，用于 upsert
-  parts.push(`<!-- lexvoice-todo:${todoId} -->`);
+  parts.push(nsMarker("todo", todoId));
 
   const lines = [parts.join(" ")];
   for (const sub of subtasks) {
@@ -501,7 +502,7 @@ export function buildSedimentTodoDailyEntry(todo, sourceFile, todoId) {
 
 export function upsertSedimentTodoInDailyNote(content, todoId, entry, settings) {
   const text = String(content || "");
-  const marker = `<!-- lexvoice-todo:${todoId} -->`;
+  const marker = nsMarker("todo", todoId);
   const markerIdx = text.indexOf(marker);
   if (markerIdx >= 0) {
     const lineStart = text.lastIndexOf("\n", markerIdx) + 1;

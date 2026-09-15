@@ -13,7 +13,7 @@ const generatedDocument = [
   "mode: seminar",
   "topic: Audio test",
   "tags:",
-  "  - lexvoice/seminar",
+  "  - qnalog/seminar",
   "---",
   "",
   "# Seminar minutes",
@@ -21,7 +21,7 @@ const generatedDocument = [
   "Generated body.",
 ].join("\n");
 
-describe("LexVoice version content", () => {
+describe("QnALog version content", () => {
   it("separates generated YAML from the display body", () => {
     const parts = splitVersionPayload(generatedDocument);
     expect(parts.frontmatter).toContain("mode: seminar");
@@ -31,7 +31,7 @@ describe("LexVoice version content", () => {
   it("stores generated YAML in a non-frontmatter cache marker", () => {
     const source = splitVersionPayload(generatedDocument);
     const payload = buildVersionPayload(source.frontmatter, source.body);
-    expect(payload).toContain("lexvoice-version-frontmatter-start");
+    expect(payload).toContain("qnalog-version-frontmatter-start");
     expect(payload).not.toMatch(/^---/);
 
     const restored = splitVersionPayload(payload);
@@ -76,11 +76,11 @@ describe("LexVoice version content", () => {
       "topic: Old",
       "---",
       "# Mother",
-      "<!-- lexvoice-active-version-start -->",
+      "<!-- qnalog-active-version-start -->",
       "> [!info] Current version",
       "",
       generatedDocument,
-      "<!-- lexvoice-active-version-end -->",
+      "<!-- qnalog-active-version-end -->",
       "",
       "---",
       "",
@@ -89,18 +89,18 @@ describe("LexVoice version content", () => {
     const generated = splitVersionPayload(generatedDocument);
     const withCurrentYaml = replaceLeadingFrontmatter(malformed, generated.frontmatter);
     const block = [
-      "<!-- lexvoice-active-version-start -->",
+      "<!-- qnalog-active-version-start -->",
       "> [!info] Current version",
       "",
       sanitizeActiveVersionBody(generatedDocument),
-      "<!-- lexvoice-active-version-end -->",
+      "<!-- qnalog-active-version-end -->",
     ].join("\n");
     const repaired = replaceExistingActiveVersionBlock(withCurrentYaml, block);
 
     expect(repaired).not.toBeNull();
     expect(repaired!.match(/^---$/gm)).toHaveLength(3);
-    expect(repaired!.slice(0, repaired!.indexOf("<!-- lexvoice-active-version-end -->"))).not.toContain("mode: synthesis");
-    expect(repaired!.slice(0, repaired!.indexOf("<!-- lexvoice-active-version-end -->"))).toContain("mode: seminar");
+    expect(repaired!.slice(0, repaired!.indexOf("<!-- qnalog-active-version-end -->"))).not.toContain("mode: synthesis");
+    expect(repaired!.slice(0, repaired!.indexOf("<!-- qnalog-active-version-end -->"))).toContain("mode: seminar");
     expect(repaired).toContain("<details>Raw transcript</details>");
   });
 });

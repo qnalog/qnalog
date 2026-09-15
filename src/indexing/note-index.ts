@@ -1,10 +1,11 @@
-// 取值写在用户笔记里（笔记索引块）。常量名用 QNALOG_，取值保持上游字面量：
-// 改取值会让既有笔记的索引块被重复插入，随数据层命名空间重置一并处理。
-export const QNALOG_NOTE_INDEX_START = "<!-- lexvoice-note-index";
-export const QNALOG_NOTE_INDEX_END = "lexvoice-note-index-end -->";
+import { NS_TAG, nsRe } from "../shared/namespace";
 
-const NOTE_INDEX_PATTERN = /<!--\s*lexvoice-note-index\s*\n([\s\S]*?)\nlexvoice-note-index-end\s*-->/i;
-const ACTIVE_VERSION_PATTERN = /<!--\s*lexvoice-active-version-start\s*-->([\s\S]*?)<!--\s*lexvoice-active-version-end\s*-->/i;
+// 写入用新命名空间；读取同时接受旧值，否则既有笔记里的索引块会被重复插入。
+export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index`;
+export const QNALOG_NOTE_INDEX_END = `${NS_TAG}-note-index-end -->`;
+
+const NOTE_INDEX_PATTERN = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*\\n([\\s\\S]*?)\\n${nsRe("note-index-end")}\\s*-->`, "i");
+const ACTIVE_VERSION_PATTERN = new RegExp(`<!--\\s*${nsRe("active-version-start")}\\s*-->([\\s\\S]*?)<!--\\s*${nsRe("active-version-end")}\\s*-->`, "i");
 const MAX_INDEX_TOPICS = 48;
 const MAX_CORE_TITLE_CHARS = 96;
 const MAX_CORE_SUMMARY_CHARS = 720;
@@ -88,7 +89,7 @@ function extractFrontmatterScalar(markdown: string, keys: readonly string[]): st
 
 function stripUtilityTail(markdown: string): string {
   const boundaries = [
-    /<!--\s*lexvoice-segments-start\b/i,
+    new RegExp(`<!--\\s*${nsRe("segments-start")}\\b`, "i"),
     /^##\s+(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲)\s*$/im,
   ];
   let end = markdown.length;

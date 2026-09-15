@@ -55,13 +55,13 @@ describe("people suggestion merging", () => {
   it("writes confirmed people links into relation-specific frontmatter fields", async () => {
     const { TFile } = await import("obsidian");
     const participant = new TFile() as any;
-    participant.path = "LexVoice/人员/腾哥.md";
+    participant.path = "QnALog/人员/腾哥.md";
     participant.basename = "腾哥";
     const mentioned = new TFile() as any;
-    mentioned.path = "LexVoice/人员/李总.md";
+    mentioned.path = "QnALog/人员/李总.md";
     mentioned.basename = "李总";
     const owner = new TFile() as any;
-    owner.path = "LexVoice/人员/产品同事.md";
+    owner.path = "QnALog/人员/产品同事.md";
     owner.basename = "产品同事";
 
     const fm = mergeSourceNoteRelatedPeopleFrontmatter({}, [
@@ -71,12 +71,12 @@ describe("people suggestion merging", () => {
     ]);
 
     expect(fm["相关人员"]).toEqual([
-      "[[LexVoice/人员/腾哥|腾哥]]",
-      "[[LexVoice/人员/李总|李总]]",
-      "[[LexVoice/人员/产品同事|产品同事]]",
+      "[[QnALog/人员/腾哥|腾哥]]",
+      "[[QnALog/人员/李总|李总]]",
+      "[[QnALog/人员/产品同事|产品同事]]",
     ]);
-    expect(fm.participants).toEqual(["[[LexVoice/人员/腾哥|腾哥]]"]);
-    expect(fm.mentioned_people).toEqual(["[[LexVoice/人员/李总|李总]]"]);
-    expect(fm.todo_owners).toEqual(["[[LexVoice/人员/产品同事|产品同事]]"]);
+    expect(fm.participants).toEqual(["[[QnALog/人员/腾哥|腾哥]]"]);
+    expect(fm.mentioned_people).toEqual(["[[QnALog/人员/李总|李总]]"]);
+    expect(fm.todo_owners).toEqual(["[[QnALog/人员/产品同事|产品同事]]"]);
   });
 });

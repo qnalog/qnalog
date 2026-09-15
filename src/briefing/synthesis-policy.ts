@@ -92,8 +92,8 @@ export function buildSynthesisConsolidationPrompt(input: {
 
 【输出协议】
 - 不要 YAML frontmatter、代码围栏、前言或解释。
-- 可见正文必须放在 \`<!-- lexvoice-part-body-start -->\` 与 \`<!-- lexvoice-part-body-end -->\` 之间。
-- 正文结束后追加三条完整 HTML 注释：\`lexvoice-people\`、\`lexvoice-tags\`、\`lexvoice-part-summary\`。摘要注释只写一句全场小结。
+- 可见正文必须放在 \`<!-- qnalog-part-body-start -->\` 与 \`<!-- qnalog-part-body-end -->\` 之间。
+- 正文结束后追加三条完整 HTML 注释：\`qnalog-people\`、\`qnalog-tags\`、\`qnalog-part-summary\`。摘要注释只写一句全场小结。
 
 【材料规模】
 - 会议时长：${duration}

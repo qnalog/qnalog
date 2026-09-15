@@ -15,7 +15,8 @@ import { formatElapsed, stripHtmlText } from "../shared/util-common";
 
 import { escapeHtmlText } from "../shared/util-markdown";
 
-import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings } from "../audio/channel-speakers";
+import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings } from "../audio/channel-speakers";
+import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
 
 export function buildMeetingWorkbenchDetails(session) {
   const workbench = normalizeMeetingWorkbench(session && session.meetingWorkbench);
@@ -124,8 +125,8 @@ export function extractDetailsBody(markdown, summaryPattern) {
 export function extractNotePanelData(plugin, file, markdown) {
   const text = String(markdown || "");
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(text);
-  const hasMarker = /<!--\s*lexvoice-session(?::|\s*--)/.test(text)
-    || /<!--\s*lexvoice-segments-start/.test(text);
+  const hasMarker = NS_SESSION_RE.test(text)
+    || NS_SEGMENTS_START_RE.test(text);
   const outlineRaw = extractDetailsBody(text, /录音中实时大纲/);
   const outline = outlineRaw
     .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
@@ -140,7 +141,7 @@ export function extractNotePanelData(plugin, file, markdown) {
     : {};
   const mode = plugin && file ? detectRecentNoteMode(plugin, file, frontmatter) : "";
   const speakerIds = extractSpeakerIdsFromMarkdown(text);
-  const speakerMappings = normalizeSpeakerMappings(frontmatter.lexvoice_speakers, speakerIds);
+  const speakerMappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), speakerIds);
   return {
     file,
     title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : "QnALog 纪要"),

@@ -8,6 +8,7 @@ import { getModeMeta } from "../shared/mode-meta";
 import { DEFAULT_DAILY_MEETING_OVERVIEW_HEADING, DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE } from "../shared/defaults";
 
 import { escapeRegExp, formatElapsed } from "../shared/util-common";
+import { nsMarker } from "../shared/namespace";
 
 export function renderDailyTemplate(template, vars) {
   return String(template || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE)
@@ -49,14 +50,14 @@ export function buildDailyMeetingOverviewEntry(session, polished, settings) {
   const body = renderDailyTemplate(settings.dailyMeetingOverviewTemplate || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE, vars)
     || renderDailyTemplate(DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE, vars);
   return [
-    `<!-- lexvoice-daily-overview:${session.id} -->`,
+    nsMarker("daily-overview", session.id),
     body,
-    `<!-- lexvoice-daily-overview-end:${session.id} -->`,
+    nsMarker("daily-overview-end", session.id),
   ].join("\n");
 }
 
 // 为日记里插一条 Markdown 复选 todo 行（兼容 Tasks 插件 + Dataview 查询）
-// 格式：- [ ] {task} 📅 {due} 👤 {owner} (来源: [[source]]) <!-- lexvoice-todo:{id} -->
+// 格式：- [ ] {task} 📅 {due} 👤 {owner} (来源: [[source]]) <!-- qnalog-todo:{id} -->
 // 备注：
 //   - 📅 是 Tasks 插件识别的截止日期约定（仅当 due 能解析为日期时使用）
 //   - 否则用 Dataview inline 字段 [截止:: {due}]
@@ -68,8 +69,8 @@ export function buildDailyMeetingOverviewEntry(session, polished, settings) {
 // 标题都不存在时在文末新建 ## 待办 段。
 
 export function upsertDailyMeetingOverview(content, sessionId, entry, settings) {
-  const start = `<!-- lexvoice-daily-overview:${sessionId} -->`;
-  const end = `<!-- lexvoice-daily-overview-end:${sessionId} -->`;
+  const start = nsMarker("daily-overview", sessionId);
+  const end = nsMarker("daily-overview-end", sessionId);
   const startIdx = content.indexOf(start);
   const endIdx = content.indexOf(end, startIdx);
   if (startIdx >= 0 && endIdx > startIdx) {

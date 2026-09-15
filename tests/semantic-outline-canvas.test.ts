@@ -251,7 +251,7 @@ describe("semantic outline graph protocol", () => {
       "---",
       "mode: synthesis",
       "---",
-      "<!-- lexvoice-active-version-start -->",
+      "<!-- qnalog-active-version-start -->",
       "## 问题意识",
       "不同团队正在重复建设。",
       "### 关键案例",
@@ -261,7 +261,7 @@ describe("semantic outline graph protocol", () => {
       "## 不应进入语义图",
       "逐字内容",
       "</details>",
-      "<!-- lexvoice-active-version-end -->",
+      "<!-- qnalog-active-version-end -->",
     ].join("\n");
     const sections = extractSemanticSourceSections(markdown);
     expect(sections.map((section) => section.heading)).toEqual(["问题意识", "关键案例"]);
@@ -274,7 +274,7 @@ describe("semantic canvas generation", () => {
     const graph = parseSemanticOutlineGraph(JSON.stringify(rawGraph), outline, sourceSections);
     expect(graph).not.toBeNull();
     const canvas = buildSemanticCanvasDocument(graph!, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
     });
@@ -283,7 +283,7 @@ describe("semantic canvas generation", () => {
     expect(canvas.edges.length).toBe(5);
     expect(canvas.edges.filter((edge) => edge.label).map((edge) => edge.label)).toEqual(["导致"]);
     const semanticNodes = new Map(canvas.nodes.map((node) => [
-      (node as { lexvoiceSemantic?: { semanticKey?: string } }).lexvoiceSemantic?.semanticKey,
+      (node as { qnalogSemantic?: { semanticKey?: string } }).qnalogSemantic?.semanticKey,
       String((node as { id?: string }).id || ""),
     ]));
     const causalEdge = canvas.edges.find((edge) => (
@@ -320,14 +320,14 @@ describe("semantic canvas generation", () => {
         && Number(card.y) + Number(card.height) <= group.y + group.height;
     });
     expect(groupedCards).toHaveLength(3);
-    expect(canvas.lexvoiceSemantic?.graph.branches).toHaveLength(2);
+    expect(canvas.qnalogSemantic?.graph.branches).toHaveLength(2);
     expect(serialized).toContain('"sourceSections":["sec-1"]');
   });
 
   it("lays out generated cards without rectangle overlap", () => {
     const graph = parseSemanticOutlineGraph(JSON.stringify(rawGraph), outline, sourceSections)!;
     const canvas = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
     });
@@ -348,11 +348,11 @@ describe("semantic canvas generation", () => {
   it("preserves user nodes and manual positions when updating", () => {
     const graph = parseSemanticOutlineGraph(JSON.stringify(rawGraph), outline, sourceSections)!;
     const first = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
     });
-    const managed = first.nodes.find((node) => String((node as { id?: string }).id).startsWith("lexvoice-semantic-node-")) as Record<string, unknown>;
+    const managed = first.nodes.find((node) => String((node as { id?: string }).id).startsWith("qnalog-semantic-node-")) as Record<string, unknown>;
     managed.x = 4321;
     managed.y = 1234;
     const userNode = { id: "user-note", type: "text", x: 50, y: 60, width: 200, height: 100, text: "我的补充" };
@@ -362,7 +362,7 @@ describe("semantic canvas generation", () => {
       edges: [...first.edges, userEdge],
     };
     const updated = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
       existing,
@@ -377,7 +377,7 @@ describe("semantic canvas generation", () => {
   it("centers the core topic and balances top-level branches across both sides", () => {
     const graph = parseSemanticOutlineGraph(JSON.stringify(rawGraph), outline, sourceSections)!;
     const canvas = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
     });
@@ -387,12 +387,12 @@ describe("semantic canvas generation", () => {
       y: number;
       width: number;
       height: number;
-      lexvoiceSemantic?: { semanticKey?: string; layoutVersion?: number };
+      qnalogSemantic?: { semanticKey?: string; layoutVersion?: number };
     }>;
-    const core = semanticNodes.find((node) => node.lexvoiceSemantic?.semanticKey === "core")!;
-    const branches = graph.branches.map((branch) => semanticNodes.find((node) => node.lexvoiceSemantic?.semanticKey === branch.key)!);
+    const core = semanticNodes.find((node) => node.qnalogSemantic?.semanticKey === "core")!;
+    const branches = graph.branches.map((branch) => semanticNodes.find((node) => node.qnalogSemantic?.semanticKey === branch.key)!);
     expect(core.x + core.width / 2).toBe(0);
-    expect(core.lexvoiceSemantic?.layoutVersion).toBe(10);
+    expect(core.qnalogSemantic?.layoutVersion).toBe(10);
     expect(branches.some((branch) => branch.x + branch.width < core.x)).toBe(true);
     expect(branches.some((branch) => branch.x > core.x + core.width)).toBe(true);
     for (const branch of branches) {
@@ -405,10 +405,10 @@ describe("semantic canvas generation", () => {
         expect(edge.toSide).toBe("left");
       }
     }
-    const groupedBranch = branches.find((branch) => branch.lexvoiceSemantic?.semanticKey === "capability-layer")!;
+    const groupedBranch = branches.find((branch) => branch.qnalogSemantic?.semanticKey === "capability-layer")!;
     const group = canvas.nodes.find((node) => (node as {
-      lexvoiceSemantic?: { semanticKey?: string };
-    }).lexvoiceSemantic?.semanticKey === "group:capability-layer") as { x: number; width: number };
+      qnalogSemantic?: { semanticKey?: string };
+    }).qnalogSemantic?.semanticKey === "group:capability-layer") as { x: number; width: number };
     expect(group.x + group.width).toBeLessThan(groupedBranch.x);
   });
 
@@ -421,35 +421,35 @@ describe("semantic canvas generation", () => {
       ],
     }), outline, sourceSections)!;
     const adaptive = buildSemanticCanvasDocument(compactGraph, {
-      sourcePath: "LexVoice/转写纪要/轻量会议.md",
+      sourcePath: "QnALog/转写纪要/轻量会议.md",
       sourceTitle: "轻量会议",
       sourceSections,
     });
     const core = adaptive.nodes.find((node) => (node as {
-      lexvoiceSemantic?: { semanticKey?: string };
-    }).lexvoiceSemantic?.semanticKey === "core") as { x: number; width: number };
+      qnalogSemantic?: { semanticKey?: string };
+    }).qnalogSemantic?.semanticKey === "core") as { x: number; width: number };
     const branches = adaptive.nodes.filter((node) => ["context", "action"].includes(String((node as {
-      lexvoiceSemantic?: { semanticKey?: string };
-    }).lexvoiceSemantic?.semanticKey))) as Array<{ x: number }>;
+      qnalogSemantic?: { semanticKey?: string };
+    }).qnalogSemantic?.semanticKey))) as Array<{ x: number }>;
     expect(branches.every((branch) => branch.x > core.x + core.width)).toBe(true);
-    expect(adaptive.lexvoiceSemantic?.layoutMode).toBe("adaptive");
+    expect(adaptive.qnalogSemantic?.layoutMode).toBe("adaptive");
 
     const bilateral = buildSemanticCanvasDocument(compactGraph, {
-      sourcePath: "LexVoice/转写纪要/轻量会议.md",
+      sourcePath: "QnALog/转写纪要/轻量会议.md",
       sourceTitle: "轻量会议",
       sourceSections,
       layoutMode: "bilateral",
       forceRelayout: true,
     });
     const bilateralCore = bilateral.nodes.find((node) => (node as {
-      lexvoiceSemantic?: { semanticKey?: string };
-    }).lexvoiceSemantic?.semanticKey === "core") as { x: number; width: number };
+      qnalogSemantic?: { semanticKey?: string };
+    }).qnalogSemantic?.semanticKey === "core") as { x: number; width: number };
     const bilateralBranches = bilateral.nodes.filter((node) => ["context", "action"].includes(String((node as {
-      lexvoiceSemantic?: { semanticKey?: string };
-    }).lexvoiceSemantic?.semanticKey))) as Array<{ x: number; width: number }>;
+      qnalogSemantic?: { semanticKey?: string };
+    }).qnalogSemantic?.semanticKey))) as Array<{ x: number; width: number }>;
     expect(bilateralBranches.some((branch) => branch.x + branch.width < bilateralCore.x)).toBe(true);
     expect(bilateralBranches.some((branch) => branch.x > bilateralCore.x + bilateralCore.width)).toBe(true);
-    expect(bilateral.lexvoiceSemantic?.layoutMode).toBe("bilateral");
+    expect(bilateral.qnalogSemantic?.layoutMode).toBe("bilateral");
   });
 
   it("packs three or more leaf siblings into a compact grid even for hierarchy relations", () => {
@@ -474,13 +474,13 @@ describe("semantic canvas generation", () => {
       }],
     }), outline, sourceSections)!;
     const canvas = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/能力讨论.md",
+      sourcePath: "QnALog/转写纪要/能力讨论.md",
       sourceTitle: "能力讨论",
       sourceSections,
     });
     const group = canvas.nodes.find((node) => (node as {
-      lexvoiceSemantic?: { semanticKey?: string };
-    }).lexvoiceSemantic?.semanticKey === "group:platform") as { width: number; height: number };
+      qnalogSemantic?: { semanticKey?: string };
+    }).qnalogSemantic?.semanticKey === "group:platform") as { width: number; height: number };
     expect(group).toBeTruthy();
     expect(group.width).toBeGreaterThan(group.height);
   });
@@ -514,7 +514,7 @@ describe("semantic canvas generation", () => {
       branches: [groupedBranch("group-a"), groupedBranch("group-b")],
     };
     const canvas = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/分组布局检查.md",
+      sourcePath: "QnALog/转写纪要/分组布局检查.md",
       sourceTitle: "分组布局检查",
       sourceSections,
       layoutMode: "right",
@@ -522,8 +522,8 @@ describe("semantic canvas generation", () => {
     });
     const groups = canvas.nodes
       .filter((node) => String((node as {
-        lexvoiceSemantic?: { semanticKey?: string };
-      }).lexvoiceSemantic?.semanticKey || "").startsWith("group:"))
+        qnalogSemantic?: { semanticKey?: string };
+      }).qnalogSemantic?.semanticKey || "").startsWith("group:"))
       .map((node) => node as { y: number; height: number })
       .sort((left, right) => left.y - right.y);
     expect(groups).toHaveLength(2);
@@ -548,7 +548,7 @@ describe("semantic canvas generation", () => {
       branches: [buildChain(1)],
     };
     const canvas = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/复杂关系图.md",
+      sourcePath: "QnALog/转写纪要/复杂关系图.md",
       sourceTitle: "复杂关系图",
       sourceSections,
       layoutMode: "right",
@@ -599,7 +599,7 @@ describe("semantic canvas generation", () => {
       })),
     };
     const canvas = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/长会议.md",
+      sourcePath: "QnALog/转写纪要/长会议.md",
       sourceTitle: "长会议",
       sourceSections,
     });
@@ -620,11 +620,11 @@ describe("semantic canvas generation", () => {
   it("preserves user-edited generated card text while updating generated content", () => {
     const graph = parseSemanticOutlineGraph(JSON.stringify(rawGraph), outline, sourceSections)!;
     const first = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
     });
-    const edited = first.nodes.find((node) => (node as { lexvoiceSemantic?: { semanticKey?: string } }).lexvoiceSemantic?.semanticKey === "governance") as { text: string };
+    const edited = first.nodes.find((node) => (node as { qnalogSemantic?: { semanticKey?: string } }).qnalogSemantic?.semanticKey === "governance") as { text: string };
     edited.text = `${edited.text}\n\n我的人工补充`;
     const changedGraph = {
       ...graph,
@@ -633,15 +633,15 @@ describe("semantic canvas generation", () => {
         : branch),
     };
     const updated = buildSemanticCanvasDocument(changedGraph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
       existing: first,
     });
-    const same = updated.nodes.find((node) => (node as { lexvoiceSemantic?: { semanticKey?: string } }).lexvoiceSemantic?.semanticKey === "governance") as { text: string; lexvoiceSemantic?: { userEdited?: boolean } };
+    const same = updated.nodes.find((node) => (node as { qnalogSemantic?: { semanticKey?: string } }).qnalogSemantic?.semanticKey === "governance") as { text: string; qnalogSemantic?: { userEdited?: boolean } };
     expect(same.text).toContain("我的人工补充");
     expect(same.text).not.toContain("模型生成的新摘要");
-    expect(same.lexvoiceSemantic?.userEdited).toBe(true);
+    expect(same.qnalogSemantic?.userEdited).toBe(true);
   });
 
   it("reuses stable keys when the model slightly renames a branch", () => {
@@ -659,20 +659,20 @@ describe("semantic canvas generation", () => {
   it("reflows canvases created by an earlier layout version", () => {
     const graph = parseSemanticOutlineGraph(JSON.stringify(rawGraph), outline, sourceSections)!;
     const first = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
     });
     const legacyNode = first.nodes[0] as { x: number; text?: string };
     legacyNode.x = 4321;
-    legacyNode.text = String(legacyNode.text || "").replace("lexvoice-semantic-layout:10", "lexvoice-semantic-layout:9");
+    legacyNode.text = String(legacyNode.text || "").replace("qnalog-semantic-layout:10", "qnalog-semantic-layout:9");
     for (const node of first.nodes) {
-      const semantic = (node as { lexvoiceSemantic?: { layoutVersion?: number } }).lexvoiceSemantic;
+      const semantic = (node as { qnalogSemantic?: { layoutVersion?: number } }).qnalogSemantic;
       if (semantic) semantic.layoutVersion = 9;
     }
     expect(semanticCanvasNeedsRelayout(first)).toBe(true);
     const updated = buildSemanticCanvasDocument(graph, {
-      sourcePath: "LexVoice/转写纪要/测试会议.md",
+      sourcePath: "QnALog/转写纪要/测试会议.md",
       sourceTitle: "测试会议",
       sourceSections,
       existing: first,
@@ -684,7 +684,7 @@ describe("semantic canvas generation", () => {
   it("normalizes existing canvas documents and uses a sibling canvas path", () => {
     expect(normalizeJsonCanvasDocument({ nodes: [], edges: [] })).toEqual({ nodes: [], edges: [] });
     expect(normalizeJsonCanvasDocument({ nodes: [] })).toBeNull();
-    expect(getSemanticCanvasPath("LexVoice/转写纪要/会议.md"))
-      .toBe("LexVoice/转写纪要/会议 · 语义图.canvas");
+    expect(getSemanticCanvasPath("QnALog/转写纪要/会议.md"))
+      .toBe("QnALog/转写纪要/会议 · 语义图.canvas");
   });
 });

@@ -15,6 +15,7 @@ import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import { getRecentNotes } from "../recent/recent-notes";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
+import { nsMarker, readSemanticMeta } from "../shared/namespace";
 
 /** ViewShellService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface ViewShellHost {
@@ -190,8 +191,9 @@ export class ViewShellService {
         const movedCanvas = this.host.app.vault.getAbstractFileByPath(canvasTarget);
         if (!(movedCanvas instanceof obsidian.TFile) || !snapshot.content) continue;
         const document = JSON.parse(snapshot.content);
-        if (document && typeof document === "object" && document.lexvoiceSemantic && typeof document.lexvoiceSemantic === "object") {
-          document.lexvoiceSemantic.sourcePath = noteTarget;
+        const semanticMeta = readSemanticMeta<Record<string, unknown>>(document);
+        if (document && typeof document === "object" && semanticMeta && typeof semanticMeta === "object") {
+          semanticMeta.sourcePath = noteTarget;
           await this.host.app.vault.modify(movedCanvas, JSON.stringify(document, null, 2));
         }
       } catch (error) {
@@ -212,7 +214,7 @@ export class ViewShellService {
       const editor = view && view.editor;
       if (editor) {
         const content = editor.getValue();
-        const marker = this.host.session && this.host.session.id ? `<!-- lexvoice-segments-end:${this.host.session.id} -->` : "<!-- lexvoice-segments-end -->";
+        const marker = nsMarker("segments-end", this.host.session && this.host.session.id ? this.host.session.id : undefined);
         const idx = content.lastIndexOf(marker);
         if (idx >= 0) {
           const line = content.slice(0, idx).split("\n").length - 1;

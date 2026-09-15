@@ -7779,22 +7779,22 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 /* LexVoice generated walls: Dataview-based card walls, separate from Obsidian Bases. */
-.markdown-preview-view.lvwall-page .markdown-preview-sizer,
-.markdown-reading-view.lvwall-page .markdown-preview-sizer,
-.lvwall-page .markdown-preview-sizer,
-.markdown-preview-view.lvwall-page .markdown-preview-section,
-.markdown-reading-view.lvwall-page .markdown-preview-section,
-.lvwall-page .markdown-preview-section,
-.lvwall-page .markdown-source-view.mod-cm6 .cm-sizer {
+.markdown-preview-view.qnalog-wall-page .markdown-preview-sizer,
+.markdown-reading-view.qnalog-wall-page .markdown-preview-sizer,
+.qnalog-wall-page .markdown-preview-sizer,
+.markdown-preview-view.qnalog-wall-page .markdown-preview-section,
+.markdown-reading-view.qnalog-wall-page .markdown-preview-section,
+.qnalog-wall-page .markdown-preview-section,
+.qnalog-wall-page .markdown-source-view.mod-cm6 .cm-sizer {
   width: 100%;
   max-width: none;
 }
 
-.markdown-preview-view.lvwall-page .block-language-dataviewjs,
-.markdown-reading-view.lvwall-page .block-language-dataviewjs,
-.lvwall-page .block-language-dataviewjs,
-.lvwall-page pre,
-.lvwall-page code {
+.markdown-preview-view.qnalog-wall-page .block-language-dataviewjs,
+.markdown-reading-view.qnalog-wall-page .block-language-dataviewjs,
+.qnalog-wall-page .block-language-dataviewjs,
+.qnalog-wall-page pre,
+.qnalog-wall-page code {
   width: 100%;
   max-width: none;
   margin: 0;
@@ -7804,40 +7804,40 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-shadow: none;
 }
 
-.markdown-preview-view.lvwall-page .block-language-dataviewjs > .edit-block-button,
-.markdown-reading-view.lvwall-page .block-language-dataviewjs > .edit-block-button,
-.lvwall-page .block-language-dataviewjs > .edit-block-button {
+.markdown-preview-view.qnalog-wall-page .block-language-dataviewjs > .edit-block-button,
+.markdown-reading-view.qnalog-wall-page .block-language-dataviewjs > .edit-block-button,
+.qnalog-wall-page .block-language-dataviewjs > .edit-block-button {
   display: none;
 }
 
-.lvwall {
-  --lvwall-gutter: 24px;
-  --lvwall-columns: 1;
+.qnalog-wall {
+  --qnalog-wall-gutter: 24px;
+  --qnalog-wall-columns: 1;
   display: grid;
-  grid-template-columns: repeat(var(--lvwall-columns), minmax(0, 1fr));
-  gap: var(--lvwall-gutter);
+  grid-template-columns: repeat(var(--qnalog-wall-columns), minmax(0, 1fr));
+  gap: var(--qnalog-wall-gutter);
   align-items: start;
   box-sizing: border-box;
   width: 100%;
   max-width: none;
   min-width: 0;
-  padding: var(--lvwall-gutter);
+  padding: var(--qnalog-wall-gutter);
   perspective: 1200px;
 }
 
-.lvwall.is-empty {
+.qnalog-wall.is-empty {
   display: block;
   color: var(--text-muted);
 }
 
-.lvwall-col {
+.qnalog-wall-col {
   display: flex;
   flex-direction: column;
-  gap: var(--lvwall-gutter);
+  gap: var(--qnalog-wall-gutter);
   min-width: 0;
 }
 
-.lvwall .lvwall-card {
+.qnalog-wall .qnalog-wall-card {
   display: block;
   width: 100%;
   max-width: 100%;
@@ -7869,22 +7869,22 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     18px 22px 34px -26px color-mix(in srgb, var(--background-primary) 74%, black 26%);
   transform: translateZ(0);
   transform-origin: center top;
-  animation: lvwall-card-in .46s cubic-bezier(.2, .72, .22, 1) both;
+  animation: qnalog-wall-card-in .46s cubic-bezier(.2, .72, .22, 1) both;
   transition:
     transform .2s cubic-bezier(.2, .72, .22, 1),
     box-shadow .2s ease,
     filter .2s ease;
 }
 
-.lvwall .lvwall-card:nth-child(1) { animation-delay: 20ms; }
-.lvwall .lvwall-card:nth-child(2) { animation-delay: 55ms; }
-.lvwall .lvwall-card:nth-child(3) { animation-delay: 90ms; }
-.lvwall .lvwall-card:nth-child(4) { animation-delay: 125ms; }
-.lvwall .lvwall-card:nth-child(5) { animation-delay: 160ms; }
-.lvwall .lvwall-card:nth-child(6) { animation-delay: 195ms; }
-.lvwall .lvwall-card:nth-child(n+7) { animation-delay: 220ms; }
+.qnalog-wall .qnalog-wall-card:nth-child(1) { animation-delay: 20ms; }
+.qnalog-wall .qnalog-wall-card:nth-child(2) { animation-delay: 55ms; }
+.qnalog-wall .qnalog-wall-card:nth-child(3) { animation-delay: 90ms; }
+.qnalog-wall .qnalog-wall-card:nth-child(4) { animation-delay: 125ms; }
+.qnalog-wall .qnalog-wall-card:nth-child(5) { animation-delay: 160ms; }
+.qnalog-wall .qnalog-wall-card:nth-child(6) { animation-delay: 195ms; }
+.qnalog-wall .qnalog-wall-card:nth-child(n+7) { animation-delay: 220ms; }
 
-.lvwall .lvwall-card::before {
+.qnalog-wall .qnalog-wall-card::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -7902,7 +7902,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   transition: opacity .26s ease, transform .38s cubic-bezier(.2, .72, .22, 1);
 }
 
-.lvwall .lvwall-card::after {
+.qnalog-wall .qnalog-wall-card::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -7913,12 +7913,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   opacity: .72;
 }
 
-.lvwall .lvwall-card > * {
+.qnalog-wall .qnalog-wall-card > * {
   position: relative;
   z-index: 1;
 }
 
-.lvwall .lvwall-card:hover {
+.qnalog-wall .qnalog-wall-card:hover {
   transform: translateY(-3px) rotate(-.12deg);
   filter: saturate(1.02);
   box-shadow:
@@ -7928,17 +7928,17 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     24px 30px 46px -30px color-mix(in srgb, var(--background-primary) 68%, black 32%);
 }
 
-.lvwall .lvwall-card:hover::before {
+.qnalog-wall .qnalog-wall-card:hover::before {
   opacity: .34;
   transform: translateX(34%) skewX(-9deg);
 }
 
-.lvwall .lvwall-card:active {
+.qnalog-wall .qnalog-wall-card:active {
   transform: translateY(-1px) scale(.997);
   transition-duration: 80ms;
 }
 
-.lvwall .lvwall-head {
+.qnalog-wall .qnalog-wall-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -7948,7 +7948,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-bottom: 24px;
 }
 
-.lvwall .lvwall-type {
+.qnalog-wall .qnalog-wall-type {
   display: inline-flex;
   align-items: center;
   flex: 0 1 auto;
@@ -7968,7 +7968,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   transition: transform .16s ease, color .16s ease, background-color .16s ease;
 }
 
-.lvwall .lvwall-brand {
+.qnalog-wall .qnalog-wall-brand {
   flex: 1 1 auto;
   min-width: 0;
   margin-left: auto;
@@ -7980,11 +7980,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
-  animation: lvwall-brand-breathe 4.8s ease-in-out infinite;
+  animation: qnalog-wall-brand-breathe 4.8s ease-in-out infinite;
   transition: opacity .18s ease, transform .18s ease;
 }
 
-.lvwall .lvwall-title {
+.qnalog-wall .qnalog-wall-title {
   margin: 0 0 22px;
   font-size: 20px;
   line-height: 1.25;
@@ -7993,7 +7993,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   transition: color .18s ease, transform .18s ease;
 }
 
-.lvwall .lvwall-k {
+.qnalog-wall .qnalog-wall-k {
   margin-top: 18px;
   margin-bottom: 6px;
   font-size: 12px;
@@ -8001,19 +8001,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-faint);
 }
 
-.lvwall .lvwall-sum {
+.qnalog-wall .qnalog-wall-sum {
   font-size: 14px;
   line-height: 1.72;
   color: var(--text-normal);
 }
 
-.lvwall .lvwall-src {
+.qnalog-wall .qnalog-wall-src {
   font-size: 14px;
   line-height: 1.45;
   color: var(--text-accent);
 }
 
-.lvwall .lvwall-tags {
+.qnalog-wall .qnalog-wall-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -8021,7 +8021,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: 16px;
 }
 
-.lvwall .lvwall-tag {
+.qnalog-wall .qnalog-wall-tag {
   display: inline-flex;
   max-width: 100%;
   padding: 2px 8px;
@@ -8037,19 +8037,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   transition: transform .16s ease, color .16s ease, background-color .16s ease;
 }
 
-.lvwall .lvwall-time {
+.qnalog-wall .qnalog-wall-time {
   margin-top: 18px;
   font-size: 12px;
   line-height: 1.3;
   color: var(--text-muted);
 }
 
-.lvwall-shell {
+.qnalog-wall-shell {
   width: 100%;
   max-width: none;
 }
 
-.lvwall-filterbar {
+.qnalog-wall-filterbar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -8057,7 +8057,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding: 18px 24px 0;
 }
 
-.lvwall-filter {
+.qnalog-wall-filter {
   border: none;
   border-radius: 999px;
   padding: 6px 12px;
@@ -8069,38 +8069,38 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
 }
 
-.lvwall-filter:hover {
+.qnalog-wall-filter:hover {
   color: var(--text-normal);
   box-shadow: inset 0 0 0 1px var(--background-modifier-border-hover);
 }
 
-.lvwall-filter.is-active {
+.qnalog-wall-filter.is-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);
   box-shadow: none;
 }
 
-.lvwall.lvwall-todos {
-  --lvwall-columns: 2;
+.qnalog-wall.qnalog-wall-todos {
+  --qnalog-wall-columns: 2;
 }
 
-.lvwall .lvwall-todo-card {
+.qnalog-wall .qnalog-wall-todo-card {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   column-gap: 12px;
   padding: 18px 18px 17px;
 }
 
-.lvwall .lvwall-todo-card.is-completed {
+.qnalog-wall .qnalog-wall-todo-card.is-completed {
   opacity: .66;
 }
 
-.lvwall .lvwall-todo-card.is-completed .lvwall-title {
+.qnalog-wall .qnalog-wall-todo-card.is-completed .qnalog-wall-title {
   text-decoration: line-through;
   color: var(--text-muted);
 }
 
-.lvwall-todo-check {
+.qnalog-wall-todo-check {
   display: inline-flex;
   align-items: flex-start;
   justify-content: center;
@@ -8108,13 +8108,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
 }
 
-.lvwall-todo-check input {
+.qnalog-wall-todo-check input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
 }
 
-.lvwall-todo-check span {
+.qnalog-wall-todo-check span {
   width: 18px;
   height: 18px;
   border-radius: 6px;
@@ -8122,12 +8122,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-shadow: inset 0 0 0 1.5px var(--text-faint);
 }
 
-.lvwall-todo-check input:checked + span {
+.qnalog-wall-todo-check input:checked + span {
   background: var(--interactive-accent);
   box-shadow: none;
 }
 
-.lvwall-todo-check input:checked + span::after {
+.qnalog-wall-todo-check input:checked + span::after {
   content: "";
   display: block;
   width: 8px;
@@ -8138,26 +8138,26 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   transform: rotate(-45deg);
 }
 
-.lvwall-todo-body {
+.qnalog-wall-todo-body {
   min-width: 0;
 }
 
-.lvwall .lvwall-todo-card .lvwall-head {
+.qnalog-wall .qnalog-wall-todo-card .qnalog-wall-head {
   margin-bottom: 12px;
 }
 
-.lvwall .lvwall-todo-card .lvwall-title {
+.qnalog-wall .qnalog-wall-todo-card .qnalog-wall-title {
   margin-bottom: 10px;
   font-size: 17px;
 }
 
-.lvwall .lvwall-todo-card .lvwall-sum {
+.qnalog-wall .qnalog-wall-todo-card .qnalog-wall-sum {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.45;
 }
 
-.lvwall-subtasks {
+.qnalog-wall-subtasks {
   margin: 12px 0 0;
   padding-left: 18px;
   color: var(--text-muted);
@@ -8165,22 +8165,22 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   line-height: 1.55;
 }
 
-.lvwall .lvwall-card:hover .lvwall-title {
+.qnalog-wall .qnalog-wall-card:hover .qnalog-wall-title {
   color: var(--text-accent);
   transform: translateY(-1px);
 }
 
-.lvwall .lvwall-card:hover .lvwall-type,
-.lvwall .lvwall-card:hover .lvwall-tag {
+.qnalog-wall .qnalog-wall-card:hover .qnalog-wall-type,
+.qnalog-wall .qnalog-wall-card:hover .qnalog-wall-tag {
   transform: translateY(-1px);
 }
 
-.lvwall .lvwall-card:hover .lvwall-brand {
+.qnalog-wall .qnalog-wall-card:hover .qnalog-wall-brand {
   opacity: .82;
   transform: translateX(-1px);
 }
 
-.theme-dark .lvwall .lvwall-card {
+.theme-dark .qnalog-wall .qnalog-wall-card {
   background:
     linear-gradient(135deg,
       color-mix(in srgb, var(--background-secondary) 92%, white 8%),
@@ -8199,7 +8199,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     18px 24px 38px -27px color-mix(in srgb, black 48%, var(--background-primary) 52%);
 }
 
-.theme-dark .lvwall .lvwall-card::before {
+.theme-dark .qnalog-wall .qnalog-wall-card::before {
   background: linear-gradient(115deg,
     transparent 0%,
     transparent 38%,
@@ -8208,7 +8208,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     transparent 100%);
 }
 
-.theme-dark .lvwall .lvwall-card:hover {
+.theme-dark .qnalog-wall .qnalog-wall-card:hover {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 30%, var(--background-modifier-border)),
     inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
@@ -8216,7 +8216,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     24px 32px 50px -32px color-mix(in srgb, black 54%, var(--background-primary) 46%);
 }
 
-@keyframes lvwall-card-in {
+@keyframes qnalog-wall-card-in {
   from {
     opacity: 0;
     transform: translateY(14px) scale(.988);
@@ -8229,51 +8229,51 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   }
 }
 
-@keyframes lvwall-brand-breathe {
+@keyframes qnalog-wall-brand-breathe {
   0%, 100% { opacity: .42; }
   50% { opacity: .72; }
 }
 
 @media (max-width: 640px) {
-  .lvwall {
-    --lvwall-gutter: 18px;
-    padding: var(--lvwall-gutter);
+  .qnalog-wall {
+    --qnalog-wall-gutter: 18px;
+    padding: var(--qnalog-wall-gutter);
   }
 
-  .lvwall-filterbar {
+  .qnalog-wall-filterbar {
     padding: 14px 18px 0;
   }
 
-  .lvwall.lvwall-todos {
-    --lvwall-columns: 1;
+  .qnalog-wall.qnalog-wall-todos {
+    --qnalog-wall-columns: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lvwall .lvwall-card,
-  .lvwall .lvwall-brand {
+  .qnalog-wall .qnalog-wall-card,
+  .qnalog-wall .qnalog-wall-brand {
     animation: none;
   }
 
-  .lvwall .lvwall-card,
-  .lvwall .lvwall-card::before,
-  .lvwall .lvwall-title,
-  .lvwall .lvwall-type,
-  .lvwall .lvwall-tag,
-  .lvwall .lvwall-brand {
+  .qnalog-wall .qnalog-wall-card,
+  .qnalog-wall .qnalog-wall-card::before,
+  .qnalog-wall .qnalog-wall-title,
+  .qnalog-wall .qnalog-wall-type,
+  .qnalog-wall .qnalog-wall-tag,
+  .qnalog-wall .qnalog-wall-brand {
     transition: none;
   }
 
-  .lvwall .lvwall-card:hover,
-  .lvwall .lvwall-card:active,
-  .lvwall .lvwall-card:hover .lvwall-title,
-  .lvwall .lvwall-card:hover .lvwall-type,
-  .lvwall .lvwall-card:hover .lvwall-tag,
-  .lvwall .lvwall-card:hover .lvwall-brand {
+  .qnalog-wall .qnalog-wall-card:hover,
+  .qnalog-wall .qnalog-wall-card:active,
+  .qnalog-wall .qnalog-wall-card:hover .qnalog-wall-title,
+  .qnalog-wall .qnalog-wall-card:hover .qnalog-wall-type,
+  .qnalog-wall .qnalog-wall-card:hover .qnalog-wall-tag,
+  .qnalog-wall .qnalog-wall-card:hover .qnalog-wall-brand {
     transform: none;
   }
 
-  .lvwall .lvwall-card::before {
+  .qnalog-wall .qnalog-wall-card::before {
     display: none;
   }
 }
