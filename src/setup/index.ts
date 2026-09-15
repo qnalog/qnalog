@@ -484,19 +484,19 @@ export interface SetupStatusReport {
   ready: boolean;
   /** 给用户看的一句话结论。 */
   headline: string;
-  /** 整体状态的一句话补充；ready 时说明无需再做什么。 */
+  /** 整体状态的一句话补充：说明这些是当前实际使用的模型及其修改入口。 */
   detail: string;
   /** 逐项明细。 */
   lines: SetupStatusLine[];
 }
 
 export interface SetupStatusInput {
-  /** 语音转写：provider 与其模型标识。 */
-  transcribe: { label: string; model: string; issue: string };
-  /** AI 整理：模型标识。 */
+  /** 语音转写：模型标识与缺配置说明。 */
+  transcribe: { model: string; issue: string };
+  /** AI 整理：模型标识与缺配置说明。 */
   llm: { model: string; issue: string };
-  /** 说话人识别：用于导入音频的服务与其模型。 */
-  speaker: { label: string; model: string; issue: string };
+  /** 说话人识别：模型标识与缺配置说明。 */
+  speaker: { model: string; issue: string };
   /** 音频输入的一句话描述（例如「仅麦克风」）。 */
   audio: string;
 }
@@ -511,7 +511,7 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
   const lines: SetupStatusLine[] = [
     {
       label: "语音转写",
-      value: input.transcribe.issue || `${input.transcribe.label} · ${input.transcribe.model}`,
+      value: input.transcribe.issue || input.transcribe.model,
       needsAttention: !!input.transcribe.issue,
     },
     {
@@ -521,7 +521,7 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
     },
     {
       label: "说话人识别",
-      value: input.speaker.issue || `${input.speaker.label} · ${input.speaker.model}`,
+      value: input.speaker.issue || input.speaker.model,
       needsAttention: !!input.speaker.issue,
     },
     {
@@ -535,9 +535,11 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
   return {
     ready,
     headline: ready ? "已配置妥当，可以开始使用" : "还差一步就能开始使用",
+    // 配好时用用户指定的那句；没配好时下面列的是「缺什么」而不是模型，
+    // 再说「以下为当前正在使用的模型」会与行内容自相矛盾。
     detail: ready
-      ? "下面列出的服务就是当前实际使用的服务，无需再调整。要换成别的服务时，用「调整配置」。"
-      : "补齐下面标出的项目即可；也可以在「快速配置」里填一把阿里云百炼 API Key 一次配好。",
+      ? "以下为当前正在使用的模型，可点击调整配置按钮进行修改。"
+      : "下面标出的项目还缺内容，补齐后即可开始使用；也可以用「快速配置」一次填好。",
     lines,
   };
 }

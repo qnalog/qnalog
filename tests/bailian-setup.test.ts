@@ -183,9 +183,9 @@ describe("快速配置面板的显示规则", () => {
 
 describe("程序状态总览", () => {
   const base = {
-    transcribe: { label: "阿里云百炼实时转写", model: "qwen-audio-3.0-asr-flash-streaming", issue: "" },
+    transcribe: { model: "qwen-audio-3.0-asr-flash-streaming", issue: "" },
     llm: { model: "qwen3.8-flash", issue: "" },
-    speaker: { label: "阿里云百炼录音文件识别", model: "qwen-audio-3.0-asr-flash-filetrans", issue: "" },
+    speaker: { model: "qwen-audio-3.0-asr-flash-filetrans", issue: "" },
     audio: "仅麦克风",
   };
 
@@ -194,9 +194,12 @@ describe("程序状态总览", () => {
     expect(report.ready).toBe(true);
     expect(report.headline).toContain("可以开始使用");
     const byLabel = Object.fromEntries(report.lines.map((l) => [l.label, l.value]));
-    expect(byLabel["语音转写"]).toContain("qwen-audio-3.0-asr-flash-streaming");
-    expect(byLabel["AI 整理"]).toContain("qwen3.8-flash");
-    expect(byLabel["说话人识别"]).toContain("qwen-audio-3.0-asr-flash-filetrans");
+    // 只显示英文模型名，不带中文供应商名
+    expect(byLabel["语音转写"]).toBe("qwen-audio-3.0-asr-flash-streaming");
+    expect(byLabel["语音转写"]).not.toMatch(/[\u4e00-\u9fa5]/);
+    expect(byLabel["AI 整理"]).toBe("qwen3.8-flash");
+    expect(byLabel["说话人识别"]).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    expect(byLabel["说话人识别"]).not.toMatch(/[\u4e00-\u9fa5]/);
     expect(byLabel["音频输入"]).toBe("仅麦克风");
     expect(report.lines.every((l) => !l.needsAttention)).toBe(true);
   });
@@ -216,9 +219,17 @@ describe("程序状态总览", () => {
   it("状态总览不把「测试结果」算进来（那由各服务徽章承担）", () => {
     // 只要填全就算可用：填全但从未测试时，总览仍应给出肯定结论，
     // 否则改一个字符就会让总览翻脸，与四态徽章的职责重复。
-    const report = buildSetupStatus(base);
-    expect(report.ready).toBe(true);
-    expect(report.detail).toContain("无需再调整");
+    expect(buildSetupStatus(base).ready).toBe(true);
+  });
+
+  it("配好时用指定的那句说明文字", () => {
+    expect(buildSetupStatus(base).detail).toBe("以下为当前正在使用的模型，可点击调整配置按钮进行修改。");
+  });
+
+  it("没配好时不宣称「以下为当前使用的模型」（下面列的是缺什么，会自相矛盾）", () => {
+    const report = buildSetupStatus({ ...base, llm: { model: "", issue: "模型名称未填写" } });
+    expect(report.ready).toBe(false);
+    expect(report.detail).not.toContain("以下为当前正在使用的模型");
   });
 
   it("四项明细的标签固定，便于用户形成固定阅读位置", () => {

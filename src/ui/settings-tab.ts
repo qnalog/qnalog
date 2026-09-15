@@ -330,7 +330,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
     head.createDiv({
       cls: "qnalog-home-summary",
-      text: "录音、转写并整理为 Markdown 纪要。配置转写服务即可开始；需要结构化纪要、问一问和沉淀时，再配置 AI 整理服务。",
+      text: "录音、转写并整理为 Markdown 纪要。默认服务、模型与参数都已选好，按需填入 API 密钥即可开始。",
     });
     // 首页只保留两个动作：快速配置、打开侧边栏。
     // 「配置服务」「AI 整理设置」两条跳转已移除——分别跳到 API 页与 AI 整理页，
@@ -453,7 +453,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const status = buildSetupStatus({
       transcribe: {
-        label: transcribeProfile.title || transcribeProviderId,
         model: transcribeProvider.model || "",
         issue: transcribeServiceIssue,
       },
@@ -462,30 +461,25 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         issue: llmServiceIssue,
       },
       speaker: {
-        label: speakerProfile ? (speakerProfile.title || speakerProviderId) : speakerProviderId,
         model: speakerProvider.model || "",
         issue: speakerCapable ? speakerIssue : "",
       },
       audio: audioInputModeLabel(this.plugin.settings.captureMode || "mic"),
     });
 
+    // 用 Obsidian 原生的 Setting 行呈现，与下方「进阶能力」区块同一套样式，
+    // 不新增自定义类——首页已有的样式族够用，另起一套会让后续两端一起改。
     const statusBlock = page.createDiv({ cls: "qnalog-home-block" });
     statusBlock.createEl("h3", { text: "程序状态" });
-    const statusBox = statusBlock.createDiv({ cls: "qnalog-home-status-panel" + (status.ready ? " is-ready" : " is-incomplete") });
-    statusBox.createDiv({ cls: "qnalog-home-status-headline", text: status.headline });
-    statusBox.createDiv({ cls: "qnalog-home-status-detail", text: status.detail });
-    const statusList = statusBox.createDiv({ cls: "qnalog-home-status-list" });
+    const statusRow = new obsidian.Setting(statusBlock)
+      .setName(status.headline)
+      .setDesc(status.detail);
+    statusRow.addButton((btn) => btn.setButtonText("调整配置").onClick(() => jump("api")));
     for (const line of status.lines) {
-      const row = statusList.createDiv({ cls: "qnalog-home-status-row" });
-      row.createDiv({ cls: "qnalog-home-status-label", text: line.label });
-      row.createDiv({
-        cls: "qnalog-home-status-value" + (line.needsAttention ? " is-missing" : ""),
-        text: line.value,
-      });
+      new obsidian.Setting(statusBlock)
+        .setName(line.label)
+        .setDesc(line.value);
     }
-    const statusActions = statusBox.createDiv({ cls: "qnalog-home-status-actions" });
-    const adjustBtn = statusActions.createEl("button", { text: "调整配置" });
-    adjustBtn.onclick = () => jump("api");
 
     const better = page.createDiv({ cls: "qnalog-home-block" });
     better.createEl("h3", { text: "进阶能力" });
