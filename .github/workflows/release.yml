@@ -25,8 +25,27 @@ jobs:
     steps:
       # 干净检出 tag 指向的那个提交：下面所有校验都针对这份代码，
       # 而不是某个本地工作区。这是 provenance 的起点。
+      #
+      # fetch-depth: 0 是必需的：下面要判断「这个 tag 是不是 main 的祖先」，
+      # 浅克隆下 merge-base 拿不到共同祖先，判断会失效。
       - name: Checkout tagged commit
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 发布前确认这个 tag 的提交已经在 main 上。
+      #
+      # 为什么需要：main 有 `Main Protect` 规则、直推会被拒绝，而**推 tag 不受同一规则约束**。
+      # 于是「提交 → 推 main（被拒）→ 推 tag（成功）」会让 Release 正常发出去、
+      # main 却停在旧版本——2026-09-15 发 1.0.1 时就是这样（见 MAINTAINING §4.2）。
+      # Release 内容本身无误（本工作流检出的是 tag 而非 main），但仓库状态不一致，
+      # 而且下一个版本会从一个落后的 main 继续往前走。
+      #
+      # 判断逻辑抽在脚本里而不是写成内联 bash：本地能跑，也能被测试覆盖。
+      - name: Require the tag to be on main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          node scripts/check-release-tag-on-main.mjs
 
       # 用 npm ci 而非 install：package-lock.json 是构建可复现的前提，
       # 「产物能由源码逐字节重建」这条要求依赖锁定安装。

@@ -294,15 +294,20 @@ git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 
 发布工作流（`Release`）在 tag 上依次做：
 
-1. 检出 tag 指向的提交（干净检出，provenance 的起点）；
-2. `npm ci` 锁定安装；
-3. **tag 与 `manifest.json` 的版本一致**，否则拒绝发布；
-4. `npm run verify:push`（lint / build / test / 主线隔离 / 产物一致性）；
-5. **重建后的 `main.js` / `manifest.json` / `styles.css` 与 tag 里提交的逐字节一致**，
+1. 检出 tag 指向的提交（干净检出、`fetch-depth: 0`，provenance 的起点）；
+2. **要求 tag 指向的提交已在 `main` 上**（`scripts/check-release-tag-on-main.mjs`）——
+   `main` 的 `Main Protect` 拒绝直推，而**推 tag 不受该规则约束**；两者叠加会让 Release
+   正常发出去、`main` 却停在旧版本。这条把它变成机械失败（下文「先确认 `main` 到位」）；
+3. `npm ci` 锁定安装；
+4. **tag 与 `manifest.json` 的版本一致**，否则拒绝发布；
+5. `npm run verify:push`（lint / build / test / 主线隔离 / 产物一致性）；
+6. **重建后的 `main.js` / `manifest.json` / `styles.css` 与 tag 里提交的逐字节一致**，
    否则拒绝发布——这条拦的正是「提交进来的产物不是这份源码构建的」；
-6. 要求 `.github/release-notes/<tag>.md` 存在（不允许用自动生成的提交列表顶替）；
-7. 上传 **5 个资产**：`main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE`；
-8. 回读一次，确认用户下载到的与 tag 里的逐字节一致。
+7. 要求 `.github/release-notes/<tag>.md` 存在（不允许用自动生成的提交列表顶替）；
+8. 上传 **5 个资产**：`main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE`；
+9. 回读一次，确认用户下载到的与 tag 里的逐字节一致。
+
+工作流失败时**不要**改用本地 `gh release create` 绕过（见下文）：那等于放弃 provenance。
 
 - 发版说明的模板见 `.github/release-notes/1.0.0.md`。**必须写明对用户的影响**：设置结构是否变化、是否需要重新指定服务与密钥、是否有功能删减。
 - **LICENSE 与 NOTICE 随 Release 一起发**：README 的手工安装方式就是让用户下载这些文件，版权与许可声明应当随分发副本一起走，而不是只靠 `main.js` 顶部 banner 里的 URL。
