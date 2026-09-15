@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isCurrentSettingsSchema } from "../src/shared/settings-schema";
+import { classifySettingsSchema } from "../src/shared/settings-schema";
 
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+/g, "/"),
@@ -358,35 +358,30 @@ describe("extractJobItems", () => {
   });
 });
 
-describe("设置结构版本检查（QnALog 不承接历史项目的设置）", () => {
-  it("版本一致才读回磁盘设置", () => {
-    expect(isCurrentSettingsSchema({ settings: { schemaVersion: SETTINGS_SCHEMA_VERSION } })).toBe(true);
-    expect(isCurrentSettingsSchema({ schemaVersion: SETTINGS_SCHEMA_VERSION })).toBe(true);
+describe("设置结构版本：1.0.0 用户的配置必须保留", () => {
+  it("版本一致 → current", () => {
+    expect(classifySettingsSchema({ settings: { schemaVersion: SETTINGS_SCHEMA_VERSION } })).toBe("current");
+    expect(classifySettingsSchema({ schemaVersion: SETTINGS_SCHEMA_VERSION })).toBe("current");
   });
 
-  it("版本不一致（含别的插件/旧格式/无版本号）一律判为不匹配", () => {
+  it("版本更高 → future（用户回退了插件，不得写盘）", () => {
+    expect(classifySettingsSchema({ settings: { schemaVersion: SETTINGS_SCHEMA_VERSION + 1 } })).toBe("future");
+  });
+
+  it("无法识别来源 → foreign（pre-1.0、别的项目、损坏）", () => {
     for (const saved of [
       undefined, null, {}, { settings: {} },
-      { settings: { schemaVersion: 6 } },
-      { schemaVersion: 0 },
+      { settings: { schemaVersion: 0 } },
       { settings: { schemaVersion: "x" } },
     ]) {
-      expect(isCurrentSettingsSchema(saved), JSON.stringify(saved)).toBe(false);
+      expect(classifySettingsSchema(saved), JSON.stringify(saved)).toBe("foreign");
     }
-  });
-
-  it("版本不一致时读出的设置是默认值，不含磁盘上的旧路径", () => {
-    const saved = { settings: { schemaVersion: 6, storage: { recordingLibraryPath: "LexVoice/录音" } } };
-    const settings = normalizePluginSettings(isCurrentSettingsSchema(saved) ? saved : { schemaVersion: SETTINGS_SCHEMA_VERSION });
-    expect(settings.audioFolder).toBe(DEFAULT_SETTINGS.audioFolder);
-    expect(settings.mdFolder).toBe(DEFAULT_SETTINGS.mdFolder);
   });
 
   it("自定义路径不因版本检查而丢失（版本一致时原样读回）", () => {
     const custom = {
       settings: { schemaVersion: SETTINGS_SCHEMA_VERSION, storage: { recordingLibraryPath: "我的录音", briefingNotePath: "我的纪要" } },
     };
-    expect(isCurrentSettingsSchema(custom)).toBe(true);
     const settings = normalizePluginSettings(custom);
     expect(settings.audioFolder).toBe("我的录音");
     expect(settings.mdFolder).toBe("我的纪要");
