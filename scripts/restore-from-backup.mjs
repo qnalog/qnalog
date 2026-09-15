@@ -108,7 +108,7 @@ const restoredSchemaValue = restoredSettings && typeof restoredSettings === "obj
   : undefined;
 const restoredSchema = Number(restoredSchemaValue);
 if (Number.isFinite(restoredSchema)) {
-  console.log(`[restore] 该备份的 data.json 设置结构版本：${restoredSchema}。下次加载插件时，若与当前代码期望的结构不同，插件会给出迁移报告（通知 + 诊断日志）。`);
+  console.log(`[restore] 该备份的 data.json 设置结构版本：${restoredSchema}。下次加载插件时，若与当前版本不一致，插件会丢弃这份设置、改用默认值并给出通知。`);
 } else {
   console.log("[restore] 该备份不含可解析的 data.json：当前设置文件保持原样，插件会沿用现有设置。");
 }
@@ -116,12 +116,13 @@ if (Number.isFinite(restoredSchema)) {
 // 启用列表：还原到别的插件 id 时，Obsidian 里启用的仍是原来那个。
 const enabledPath = path.join(configDir, ENABLED_FILE);
 const enabled = readJson(enabledPath);
-// 待还原目录之外的候选插件目录：上游的 lexvoice* 目录，或本插件自身的目录。
-// 括号是必需的：不加会因 && 优先级高于 || 而改变判定。
+// 只关心本插件自己的目录：QnALog 与其它插件互不影响（README「与 LexVoice 的关系」），
+// 因此不去动、也不提及其它插件的启用状态。
 const otherIds = existsSync(pluginsDir)
   ? readdirSync(pluginsDir).filter(name =>
       name !== restoredId
-      && ((name.startsWith("lexvoice") || name === "qnalog") && existsSync(path.join(pluginsDir, name, "manifest.json"))))
+      && name === "qnalog"
+      && existsSync(path.join(pluginsDir, name, "manifest.json")))
   : [];
 if (Array.isArray(enabled)) {
   const activeIdList = enabled.filter(id => typeof id === "string" && (id === restoredId || otherIds.includes(id)));

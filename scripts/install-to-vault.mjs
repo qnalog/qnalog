@@ -147,18 +147,17 @@ if (buildIdentity.channel === "dev") {
 // 安装只处理 qnalog 自己的目录：覆盖前整份留档，沿用上一次 qnalog 的 data.json。
 //
 // 2026-09-15 起不再从 lexvoice / lexvoice-mit 目录继承设置：本插件按独立产品维护，
-// 不承担上游插件的兼容责任（AGENTS §2 的隔离要求）。升级路径由插件自身的
-// schema 迁移处理，用户的旧设置留在原目录里，需要时手工取回。
+// 不承担上游插件的兼容责任（AGENTS §2 的隔离要求）。设置结构版本不一致时由插件
+// 自己的版本检查丢弃并重建，用户的旧设置留在原目录里，需要时手工取回。
 // 检测到上游插件目录时只提示存在，不读取、不移动、不删除它的内容。
 
 console.log(`[install] 已安装 QnALog ${manifest.version} → ${targetDir}`);
 if (installedVersion && compareVersions(installedVersion, manifest.version) > 0) {
   console.log(`[install] 注意：覆盖的是更高版本 ${installedVersion}（降级安装）。
-[install] 设置按本版本的 schema 重写，更高版本新增的分组会在首次加载时被丢弃。
-[install] 首次加载时插件会给出迁移报告（通知 + 诊断日志），列出被丢弃的分组与需要重新处理的事项。
+[install] 首次加载时，版本不一致的 data.json 会被丢弃，设置回到默认值（插件会弹通知）。
 [install] 如需回退到 ${installedVersion}：npm run restore:vault -- "${backupDir || "<备份目录>"}"`);
 } else if (installedVersion) {
-  console.log(`[install] 覆盖了原有版本 ${installedVersion}。data.json 由插件自身的 schema 迁移处理，请确认设置仍然正确。
+  console.log(`[install] 覆盖了原有版本 ${installedVersion}。data.json 由插件自身的结构版本检查处理，请确认设置仍然正确。
 [install] 如需回退：npm run restore:vault -- "${backupDir || "<备份目录>"}"`);
 }
 if (existsSync(upstreamDir)) {
