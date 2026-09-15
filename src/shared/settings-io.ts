@@ -30,9 +30,12 @@ import type {
   TranscribeProviderSettings,
 } from "./types";
 
-// 设置结构版本。Q&A Log 是独立项目，不承接任何历史项目的设置：
-// 版本号与当前值不一致时，data.json 里的设置一律丢弃，改用默认值（见 main.ts 的 loadAll）。
-// 因此这个数字只再作为「这份 data.json 是不是本版本写的」的标记存在。
+// 设置结构版本政策见 src/shared/settings-schema.ts 与 MAINTAINING.md §4.5：
+//   saved < current → 依次跑迁移链，**保留用户数据**；
+//   saved = current → 直接读回；
+//   saved > current → 不写盘（用户回退了插件版本）；
+//   无版本号/无法识别 → 丢弃重建，但先留档。
+// 这个常量因此只再作为「这份 data.json 是不是本版本写的」的标记存在。
 export const SETTINGS_SCHEMA_VERSION = 1;
 
 type UnknownRecord = Record<string, unknown>;

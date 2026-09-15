@@ -355,28 +355,38 @@ git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 
 **CI 不是必选，也不是本地检查的替代品。** 2026-09-15 实测：触发器是 `push: [main]` + `pull_request`，裸推分支不会跑任何检查；`main` 没有分支保护，CI 不拦合并；历史上 39 次运行全部成功，未发现过一次回归。它的两个不可替代之处是**跨平台第二意见**（ubuntu / Node 20，本地是 macOS / Node 22）与**校验已推送状态**（干净检出后构建，比的是仓库里真实提交的东西，而不是工作区）。
 
-本地与 CI 的能力对照（2026-09-15 起两者等价）：
+本地与 CI 的能力对照（2026-09-15 按工作流与脚本实测；**CI 比本地弱**，不是等价）：
 
 | 检查 | `npm run verify` | `npm run verify:push` | CI |
 |---|---|---|---|
-| lint / build / test 全链路 | ✅ | ✅ | ✅ |
+| build / test 全链路（含 6 个静态检查与类型检查） | ✅ | ✅ | ✅ |
+| lint（`eslint src`） | ✅ | ✅ | — |
 | 主线隔离 | ✅ | ✅ | ✅ |
+| 旧品牌前缀门禁 | ✅ | ✅ | — |
+| 设置映射表门禁 | ✅ | ✅ | — |
 | 提交的产物能否由同提交源码重建 | — | ✅ | ✅ |
 | 干净检出的产物一致（未提交内容不污染） | — | 部分（读 HEAD 对象） | ✅ |
 
+CI 的 `validate.yml` 只跑 `npm ci`、`npm run build`、`npm test`、`check-mainline-isolation` 与
+`git status --porcelain main.js`；**lint 与两个前缀/映射表门禁只在本地跑**。
+因此「本地 `verify` 全绿」比「CI 绿」覆盖更多，反向不成立——不要用 CI 绿灯替代本地 `verify`。
+
 `verify:push` 在推送前跑，比 `verify` 多一项 `check:bundle-consistency`：把 HEAD 里参与构建的文件导出到临时目录、在那里打包、与 HEAD 里的 `main.js` 逐字节比对。它补的是 §5.2 那条 `git status --porcelain main.js` 的结构性盲区——那条只发现「重新构建了但忘了 `git add`」，如果压根没重新构建，工作区的产物与 HEAD 一致，会给出假通过。该脚本要求源码已提交（否则直接报错退出，不静默忽略），所以不放进提交前跑的 `verify`。
 
-`npm run build` 内部依次跑四个静态检查，任一失败即中断：
+`npm run build` 内部依次跑下列检查，任一失败即中断；表中标注 `verify` 的三项只在 `npm run verify` 里跑
+（`verify` = `lint` + `build` + `test` + 主线隔离 + 旧前缀门禁 + 设置映射表门禁）：
 
-| 命令 | 拦什么 |
-|---|---|
-| `npm run check:versions` | `manifest.json` / `package.json` / `package-lock.json` / `versions.json` 版本不一致 |
-| `npm run check:undefined-symbols` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
-| `npm run check:domain-boundaries` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`plugin.<域>.<成员>`、`this.host.<域>.<成员>`（后者以服务类为准，接口里手抄的内联类型不作为依据） |
-| `npm run check:plugin-onload` | 域服务漏装或宿主装错；侧边栏「纪要」列表默认带隐藏筛选、或该筛选在筛选条上不可见 |
-| `npm run check:legacy-prefixes` | 白名单之外的旧品牌前缀（`lex-` / `lv-` / `lvk-` / `lexvoice-`）重新进入源码或样式表 |
-| `npm run check:merge-pipeline` | 会话收尾到合并整理的目标链路跑不通：在模拟宿主里用桩模型真跑一遍，确认整合正文与原始转写都写进笔记 |
-| `npm run typecheck:core` + `tsc -noEmit` | 严格核心集与其余文件的类型错误 |
+| 命令 | 在哪跑 | 拦什么 |
+|---|---|---|
+| `npm run check:versions` | `build` | `manifest.json` / `package.json` / `package-lock.json` / `versions.json` 版本不一致 |
+| `npm run check:undefined-symbols` | `build` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
+| `npm run check:domain-boundaries` | `build` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`plugin.<域>.<成员>`、`this.host.<域>.<成员>`（后者以服务类为准，接口里手抄的内联类型不作为依据） |
+| `npm run check:plugin-onload` | `build` | 域服务漏装或宿主装错；侧边栏「纪要」列表默认带隐藏筛选、或该筛选在筛选条上不可见 |
+| `npm run check:merge-pipeline` | `build` | 会话收尾到合并整理的目标链路跑不通：在模拟宿主里用桩模型真跑一遍，确认整合正文与原始转写都写进笔记 |
+| `npm run typecheck:core` + `tsc -noEmit` | `build` | 严格核心集与其余文件的类型错误 |
+| `npm run check:legacy-prefixes` | `verify` | 白名单之外的旧品牌前缀（`lex-` / `lv-` / `lvk-` / `lexvoice-`）重新进入源码或样式表 |
+| `npm run check:settings-map` | `verify` | §9.1 的设置映射表与代码脱节：设置键增删、或落盘路径改名后没同步 |
+| `npm run lint` | `verify` | eslint（`eslint-plugin-obsidianmd` recommended；console 只允许 warn/error/debug） |
 
 `check:legacy-prefixes` 的来源：品牌改名靠人工枚举字面量，实测漏了三轮——
 第一次只处理 `lexvoice-*` 而漏掉更短的 `lex-*`（录音文件名一直叫 `lex-<时间戳>.webm`，
@@ -554,19 +564,22 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] 更新检查的 5 个转发（`getUpdateRawBase(s)`、`checkForUpdates(OnStartup)`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
       可并入一个更新域服务，属收尾性质。
 - [x] 文档债务：`ARCHITECTURE.md` 的 `main.ts:NNNN` 行号引用已随 P1 失效，已按域服务重新标注（2026-09-14）。
-      该文件按 §9 仍不进仓库，待整体重构完成后再并入。
+      该文件是本地工作稿（未入库，也不在 `.gitignore` 中），待整体重构完成后再并入。
 
 **第一条：稳定性与安全性**
 
-- [ ] 设置页不得静默改写用户配置：`src/ui/settings-tab.ts` 的 `renderSpeaker` 在服务不可用时直接改写 `importTranscribeProvider`，应改为保留用户选择并给出提示。
-- [ ] 自定义服务的密钥必填判定：未知 provider id 一律按 `requiresKey: false` 处理，导致密钥栏显示"可选"，但导入时运行时会因缺 key 报错；应改为按 endpoint 推断。
+- [x] 设置页不得静默改写用户配置：已完成。`renderSpeaker` 改为只在内存里借用第一个可用服务渲染界面，设置保持用户原值，并在页面上说明原因（`settings-tab.ts:1436`）。
+- [x] 自定义服务的密钥必填判定：已完成。未知 provider 按 endpoint 推断（`asr/transcribe-profile-service.ts:253`）。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
 - [ ] 类型检查盲区：3 个文件带 `@ts-nocheck`（`asr/clients.ts`、`ui/settings-tab.ts`、`ui/modals.ts`），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。2026-09-14 已把其余 44 个清完（47 → 3），做法与逐文件成本见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算，能通过检查就不加。
   - 已完成：2026-09-14 分两批让 26 个文件退出 `@ts-nocheck`（47 → 21）：先 14 个零错误的，再 12 个低错误的（1–7 处）。做法、逐文件成本与修法见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算确认能否通过检查，能通过就不加。
 
 **第二条：提升性功能（按需，不排期）**
 
-- [ ] **设置界面精简（开箱即用方向）**：现状设置页偏复杂，把"必须先配的"和"少数人才调的"混在一起。方向是——默认路径只需填 API Key 即可工作（服务、模型、目录用内置默认值 + 一个推荐配置入口），其余自定义项收进"高级"分区。分期推进。注意：设置项读写受 `settings-io.ts` 白名单约束（新增键必须同时登记 normalize 与 serialize），搬动 UI 分组不影响存储结构。
+- [ ] **设置界面精简（开箱即用方向）**：现状设置页偏复杂，把"必须先配的"和"少数人才调的"混在一起。方向是——默认路径只需填 API Key 即可工作（服务、模型、目录用内置默认值 + 一个推荐配置入口），其余自定义项收进"高级"分区。分期推进。注意：设置项读写受 `settings-io.ts` 白名单约束（新增键必须同时登记 normalize 与 serialize），**搬动 UI 分组不影响存储结构**——简单界面与高级界面读写同一批字段，不引入第二套同步逻辑。
+  - [x] **任务 0：盘点**。已产出 §9 的逐键映射表（87 个键：默认值、落盘位置、读回别名、作用、现入口、拟归属）与 11 条规则冲突登记，并加 `check:settings-map` 门禁防表过期。
+  - [ ] 目标状态：新用户不必理解"模型 / 协议 / 转写流程"就能录出第一条语音笔记；已有用户升级后配置不变。判据与约束见 §9.5。
+  - [ ] 后续批次（每次一批，不夹带录音流水线重构）：① 先按 §9.3.1 把重复的实现合并为一处（写入 / 检测 / 方案应用）；② 再按 §9.2 重排页面，首次配置收敛为一条路径；③ 最后处理工作面板。推荐用哪家服务需另行核实（§9.4）。
 - [x] **数据层命名的独立化**：已完成（2026-09-15，见 §1.1.2）。Q&A Log 按全新项目处理，不支持从历史项目迁移数据，代码里不再保留迁移逻辑；混淆盐已换新，已存 API Key 需重填。
 - [ ] 为自定义说话人分离服务（如 `siliconflow-diarize`）补预设条目（名称/提示/步骤文案）。纯展示性——能力已具备（`speaker-diarization` 协议），不做也能用。
 - [ ] 设置页把未知服务显示为"其他转写服务"。
@@ -638,3 +651,196 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 **不要用严格档衡量这批文件。** `strictNullChecks` + `noImplicitAny`（`tsconfig.strict-core.json` 的口径）
 下，第一批那 14 个文件及其依赖闭包实测有 740 处错误，与「能否退出 `@ts-nocheck`」是两个独立目标。
 退出 `@ts-nocheck` 只要求文件在 `tsconfig.json` 现有选项下零错误，不要求 stricter 选项。
+
+---
+
+## 9. 设置映射表
+
+维护多个设置界面之前，先把**每一份设置的当前状态**盘清：入口、默认值、落盘键、作用与归属。本节是 2026-09-15 盘点的产物，覆盖 `PluginSettings` 的全部 **87** 个顶层键，`SETTINGS_SCHEMA_VERSION = 1`。
+
+**三列由脚本从源码解析生成，不是手工抄写**，因此不会与代码脱节：默认值取自 `src/shared/defaults.ts`；落盘位置与读回别名取自 `src/shared/settings-io.ts` 的 `serializePluginSettings` 与 `normalizePluginSettings`；现入口取自 `src/ui/settings-tab.ts` 及其余 UI 写点（侧边栏、命令面板、弹窗、拖动）。`scripts/check-settings-map.mjs` 会核对本表的键集合与落盘路径，键增删或改路径而未更新本节时构建失败。
+
+列含义：
+
+- **落盘位置**：`serializePluginSettings` 写出的分组路径。该函数是**重建式白名单**——没有在这里登记的键，会在下一次保存时被静默丢弃（`src/shared/settings-io.ts` 头部有警告，该类问题已出现三次）。
+
+- **读回别名**：`normalizePluginSettings` 额外接受的旧分组路径。每个键都还有一层平铺兜底 `raw.<键>`，不逐一列出；`—` 表示只认落盘位置与平铺两个来源。
+
+- **现入口**：当前能改到它的界面。`无` = 没有界面入口；`（只读）` = 界面只展示不修改。
+
+- **拟归属**：本轮建议的新位置，分层见 §9.2。
+
+### 9.1 逐键映射
+
+| 设置键 | 默认值 | 落盘位置 | 读回别名 | 作用 | 现入口 | 拟归属 |
+|---|---|---|---|---|---|---|
+| `audioFolder` | `${NS_ROOT}/录音` | `storage.recordingLibraryPath` | — | 录音文件落盘目录 | 常规 | 基本设置 |
+| `mdFolder` | `${NS_ROOT}/转写纪要` | `storage.briefingNotePath` | — | 纪要 Markdown 落盘目录 | 常规 | 基本设置 |
+| `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会中补充材料（图片/PPT/PDF）的复制目标 | 常规 | 高级 · 输出 |
+| `htmlReportFolder` | `${NS_ROOT}/HTML报告` | `storage.htmlReportPath` | — | HTML 报告保存目录 | AI 整理 | 高级 · 输出 |
+| `reportBrandName` | `""` | `presentation.reportBrandName` | — | 「研讨」报告页脚公司名；留空则取纪要里的公司标签 | AI 整理 | 高级 · 输出 |
+| `noteFileNameFormatNew` | `"YYYY-MM-DD HHmm"` | `noteNaming.sessionPattern` | — | 纪要文件名日期格式 | 常规 | 高级 · 输出 |
+| `transcribeEndpoint` | `"https://api.siliconflow.cn/v1/audio/transcriptions"` | `speech.compatEndpoint` | — | 兼容兜底：provider 未填地址时的回退（asr/transcribe.ts:147） | 无 | 内部（保留存储，不进设置界面） |
+| `transcribeApiKey` | `""` | `speech.compatApiKey` | — | 兼容兜底：provider 未填密钥时的回退（asr/transcribe.ts:148） | 无 | 内部（保留存储，不进设置界面） |
+| `transcribeModel` | `"FunAudioLLM/SenseVoiceSmall"` | `speech.compatModel` | — | 兼容兜底：provider 未填模型时的回退（asr/transcribe.ts:149） | 无 | 内部（保留存储，不进设置界面） |
+| `transcribeLanguage` | `"auto"` | `speech.compatLanguage` | — | 兼容兜底：provider 未填语言时的回退（asr/transcribe.ts:150） | 无 | 内部（保留存储，不进设置界面） |
+| `activeTranscribeProvider` | `"siliconflow"` | `speech.activeProviderId` | — | 实时录音使用的转写服务 id | API | 基本设置 |
+| `importTranscribeProvider` | `"dashscope-filetrans"` | `speech.importProviderId` | — | 导入音频（整文件）使用的转写服务 id | 说话人 | 高级 · 服务 |
+| `importSpeakerDiarization` | `true` | `speech.importSpeakerDiarization` | — | 导入音频是否区分说话人 | 说话人 | 高级 · 服务 |
+| `importSpeakerCount` | `0` | `speech.importSpeakerCount` | — | 导入音频预期的说话人数（0=自动） | 说话人 | 高级 · 服务 |
+| `transcribeProviders` | `{…}` | `speech.providers` | — | 各转写服务的地址/密钥/模型/语言注册表 | API / 说话人（经 provider 子对象） | 基本设置 |
+| `llmEndpoint` | `"https://api.siliconflow.cn/v1/chat/completions"` | `composer.endpoint` | — | AI 整理服务地址 | API + 说话人 | 高级 · 服务 |
+| `llmApiKey` | `""` | `composer.apiKey` | — | AI 整理服务访问密钥 | API + 说话人 | 基本设置 |
+| `llmModel` | `""` | `composer.model` | — | AI 整理模型标识 | API + 说话人 | 高级 · 服务 |
+| `llmServicePreset` | `"siliconflow"` | `composer.servicePreset` | — | 服务预设 id，用于填地址与请求头适配 | API + 说话人 | 高级 · 服务 |
+| `llmProfiles` | `[]` | `composer.profiles` | — | 已保存的 API 方案（转写+AI 整理为一套） | API + 侧边栏 | 基本设置 |
+| `activeLlmProfile` | `""` | `composer.activeProfile` | — | 当前启用的 API 方案 id | API + 说话人 + 侧边栏 | 基本设置 |
+| `polishMode` | `"synthesis"` | `composer.defaultMode` | — | 默认纪要模板（整理方式） | AI 整理 + 侧边栏 + 模板库 | 基本设置 |
+| `polishPromptInterview` | `""` | `composer.modePromptOverrides.interview` | `promptOverrides.interview` | 该模式的提示词回退来源：模板为空时使用（`briefing-prompts.ts:364` 读 `legacyPromptFieldForMode`） | 无 | 内部（保留存储，不进设置界面） |
+| `polishPromptMeeting` | `""` | `composer.modePromptOverrides.meeting` | `promptOverrides.meeting` | 同上（Meeting 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
+| `polishPromptHuddle` | `""` | `composer.modePromptOverrides.huddle` | `promptOverrides.huddle` | 同上（Huddle 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
+| `polishPromptSeminar` | `""` | `composer.modePromptOverrides.seminar` | `promptOverrides.seminar` | 同上（Seminar 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
+| `polishPromptMonologue` | `""` | `composer.modePromptOverrides.monologue` | `promptOverrides.monologue` | 同上（Monologue 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
+| `polishPromptLearning` | `""` | `composer.modePromptOverrides.learning` | `promptOverrides.learning` | 同上（Learning 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
+| `promptTemplates` | `{…}` | `promptTemplates` | — | 提示词模板库（内置 + 自定义） | 模板库 | 高级 · 服务 |
+| `activeTemplateByMode` | `{…}` | `activeTemplateByMode` | — | 每种模式当前启用的模板 id | 模板库 | 高级 · 服务 |
+| `briefingStructureLevel` | `"balanced"` | `composer.structureLevel` | — | 纪要结构化程度（宽松/均衡/严谨） | AI 整理 | 高级 · 输出 |
+| `repolishPreferencePromptAddendum` | `""` | `composer.repolishPreferencePromptAddendum` | — | 「重新整理为」的追加规则 | AI 整理 | 高级 · 服务 |
+| `repolishPreference` | `""` | `composer.repolishPreference` | — | 当前选中的重新整理偏好 | 侧边栏 + 右键菜单 | 高级 · 输出 |
+| `thinkingMode` | `"auto"` | `composer.thinkingMode` | — | 思考档（auto/reasoning/fast） | 侧边栏 | 高级 · 服务 |
+| `briefingTranslationMode` | `"off"` | `composer.languagePolicy.mode` | `languagePolicy.mode` | 纪要语言策略（跟随原文/统一/双语） | AI 整理 | 高级 · 输出 |
+| `briefingTargetLanguage` | `"zh-CN"` | `composer.languagePolicy.targetLanguage` | `languagePolicy.targetLanguage` | 目标语言 | AI 整理 | 高级 · 输出 |
+| `briefingCustomLanguage` | `""` | `composer.languagePolicy.customLanguage` | `languagePolicy.customLanguage` | 自定义目标语言 | AI 整理 | 高级 · 输出 |
+| `briefingKeepOriginalTerms` | `true` | `composer.languagePolicy.keepOriginalTerms` | `languagePolicy.keepOriginalTerms` | 保留专有名词原文 | AI 整理 | 高级 · 输出 |
+| `briefingLanguageInstruction` | `""` | `composer.languagePolicy.extraInstruction` | `languagePolicy.extraInstruction` | 额外语言要求 | AI 整理 | 高级 · 输出 |
+| `industryProfile` | `{…}` | `composer.industryProfile` | — | 行业档案，由词汇表服务生成 | 资料库 / AI 整理（仅初始化） | 内部（保留存储，不进设置界面） |
+| `customVocabulary` | `""` | `vocabulary.inlineTerms` | — | 内联 ASR 热词 | 侧边栏（回退写入） | 高级 · 服务 |
+| `vocabularyFile` | `DEFAULT_LIBRARY_PATHS.vocabularyFile` | `vocabulary.notePath` | — | 热词表文件路径 | 资料库 | 高级 · 输出 |
+| `peopleDirectoryFolder` | `DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder` | `vocabulary.peopleFolder` | — | 人员资料文件夹 | 资料库 | 高级 · 输出 |
+| `peopleBaseFile` | `DEFAULT_LIBRARY_PATHS.peopleBaseFile` | `vocabulary.peopleBasePath` | — | 人员库 .base 文件路径 | 无 | 高级 · 输出 |
+| `todoCardsFolder` | `DEFAULT_LIBRARY_PATHS.todoCardsFolder` | `vocabulary.todoCardsFolder` | — | 待办卡片文件夹 | 资料库 | 高级 · 输出 |
+| `sedimentAutoExtract` | `false` | `noteNaming.sedimentAutoExtract` | — | 转写/整理完成后是否自动沉淀 | 资料库 | 高级 · 自动化 |
+| `basesFolder` | `DEFAULT_LIBRARY_PATHS.basesFolder` | `views.baseFolder` | — | Base 视图文件夹 | 资料库 | 高级 · 输出 |
+| `peopleContextMode` | `"privacy"` | `vocabulary.peopleContextMode` | — | 人员资料是否随请求发送（隐私优先/人名热词/本地增强） | 资料库 | 高级 · 诊断与隐私 |
+| `peopleHotwordsConsentAt` | `""` | `vocabulary.peopleHotwordsConsentAt` | — | 人名热词授权时间 | 资料库 | 内部（保留存储，不进设置界面） |
+| `peopleSuggestionIgnores` | `[]` | `vocabulary.peopleSuggestionIgnores` | — | 已忽略的人员建议 | 资料库（只读计数与清空） | 内部（保留存储，不进设置界面） |
+| `peopleSuggestionCache` | `{…}` | `vocabulary.peopleSuggestionCache` | — | 待确认人员建议缓存 | 资料库（只读计数） | 内部（保留存储，不进设置界面） |
+| `knowledgeExtractionHistory` | `{…}` | `vocabulary.extractionHistory` | — | 人员/词表扫描记录 | 资料库（只读计数与清空） | 内部（保留存储，不进设置界面） |
+| `inboxFolder` | `""` | `storage.inboxPath` | — | 外部收件箱监听目录 | 进阶 | 高级 · 自动化 |
+| `inboxAutoImport` | `true` | `storage.autoImportInbox` | — | 是否自动处理新音频 | 进阶 | 高级 · 自动化 |
+| `inboxArchiveSubfolder` | `"processed"` | `storage.archiveSubfolder` | — | 处理完成后移入的子文件夹 | 进阶 | 高级 · 自动化 |
+| `inboxStabilizeDelayMs` | `3000` | `storage.syncQuietMs` | — | 开始处理前的等待毫秒数 | 进阶 | 高级 · 自动化 |
+| `enableInterimOutput` | `true` | `capture.liveSegmentsEnabled` | — | 录音过程中是否切段实时转写 | 进阶 | 高级 · 录音 |
+| `segmentIntervalMinutes` | `5` | `capture.segmentMinutes` | — | 切段间隔（分钟） | 进阶 + 侧边栏 | 高级 · 录音 |
+| `asrConcurrency` | `1` | `speech.asrConcurrency` | — | 导入长音频的并发转写数 | 进阶 | 高级 · 录音 |
+| `segmentCacheFolder` | `${NS_ROOT}/.cache/segments` | `storage.segmentCachePath` | — | 分段音频临时缓存目录 | 无 | 高级 · 录音 |
+| `keepSegmentAudioFiles` | `false` | `capture.keepSegmentAudioFiles` | — | 是否保留临时分段音频（排障用） | 进阶 | 高级 · 诊断与隐私 |
+| `filterShortRecordings` | `true` | `capture.discardVeryShortRecordings` | — | 是否丢弃 3 秒内的误触录音 | 进阶 | 高级 · 录音 |
+| `captureMode` | `"mic"` | `capture.sourceMode` | — | 录音来源（麦克风/混合/电脑音频） | 常规 + 侧边栏 | 基本设置 |
+| `audioChannelMode` | `"auto"` | `capture.channelMode` | — | 是否按声道区分说话人 | 常规 | 高级 · 录音 |
+| `selectedVirtualDevice` | `""` | `capture.virtualDeviceId` | — | 电脑音频输入设备 id | 常规 | 基本设置 |
+| `selectedMicrophoneDevice` | `""` | `capture.microphoneDeviceId` | — | 麦克风设备 id | 常规 | 基本设置 |
+| `enableRealtimeOutline` | `true` | `liveOutline.enabled` | — | 转写后是否自动更新实时大纲 | 进阶 | 高级 · 输出 |
+| `realtimeOutlineDebounceMs` | `2500` | `liveOutline.debounceMs` | — | 实时大纲请求防抖毫秒数 | 无 | 高级 · 输出 |
+| `autoOpenOutlineOnRecord` | `true` | `liveOutline.openOnCapture` | — | 录音开始时是否自动打开侧边栏 | 进阶 | 高级 · 输出 |
+| `autoRenameWithTitle` | `true` | `noteNaming.renameWithTitle` | — | 是否用 AI 提炼主题追加到文件名 | 进阶 | 高级 · 输出 |
+| `consolidatedLayout` | `true` | `noteNaming.consolidatedLayout` | — | 纪要是否整合排版（顶部整合、底部原始分段） | 进阶 | 高级 · 输出 |
+| `maxRetries` | `3` | `retryPolicy.maxAttempts` | — | 转写/整理任务的自动重试上限 | 进阶 | 高级 · 自动化 |
+| `diagnosticsLogEnabled` | `true` | `diagnostics.enabled` | — | 是否写本地诊断日志 | 进阶 | 高级 · 诊断与隐私 |
+| `diagnosticsLogFolder` | `DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder` | `diagnostics.folder` | — | 诊断日志目录 | 进阶 | 高级 · 诊断与隐私 |
+| `showFloatingBall` | `true` | `ui.floatingControlEnabled` | — | 是否常驻显示桌面悬浮按钮 | 常规 + 命令面板 | 高级 · 自动化 |
+| `bubbleSize` | `"large"` | `ui.bubbleSize` | — | 悬浮按钮大小 | 常规 | 高级 · 自动化 |
+| `floatingBallPos` | `{…}` | `ui.floatingControlPosition` | — | 悬浮按钮位置（拖动写入） | 气泡拖动 | 内部（保留存储，不进设置界面） |
+| `autoOpenNoteAfterFinish` | `true` | `noteNaming.openAfterFinish` | — | 处理完成后是否自动打开纪要 | 常规 | 高级 · 输出 |
+| `autoOpenHtmlReportAfterGenerate` | `true` | `presentation.openHtmlReportAfterGenerate` | — | 生成 HTML 报告后是否用浏览器打开 | AI 整理 | 高级 · 输出 |
+| `writeDailyMeetingOverview` | `true` | `dailyNote.meetingOverviewEnabled` | — | 是否把会议概要写入当日日记 | 常规 | 高级 · 输出 |
+| `dailyMeetingOverviewHeading` | `DEFAULT_DAILY_MEETING_OVERVIEW_HEADING` | `dailyNote.meetingOverviewHeading` | — | 写入日记的标题 | 常规 | 高级 · 输出 |
+| `dailyMeetingOverviewTemplate` | `DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE` | `dailyNote.meetingOverviewTemplate` | — | 写入日记的模板 | 常规 | 高级 · 输出 |
+| `autoCheckUpdates` | `true` | `updates.autoCheck` | — | 启动时是否检查新版本 | 更新 | 高级 · 自动化 |
+| `lastUpdateCheckAt` | `null` | `updates.lastCheckedAt` | — | 上次检查更新时间 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
+| `availableUpdate` | `null` | `updates.available` | — | 已发现的可用更新 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
+| `lastUpdateError` | `""` | `updates.lastError` | — | 上次检查失败原因 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
+| `installedUpdateVersion` | `""` | `updates.installedVersion` | — | 当前已安装版本记录 | 启动对齐 | 内部（保留存储，不进设置界面） |
+
+### 9.2 拟定的设置结构
+
+三层，判据是「改了它会不会立刻影响用户拿到什么」：
+
+| 层 | 放什么 | 键数 |
+|---|---|---:|
+| 基本设置 | 当前服务与状态、更换密钥、录音来源、笔记保存位置、默认整理方式 | 11 |
+| 高级设置 | 自定义地址与模型、分阶段服务、提示词、分段与并发、重试、命名、日记、自动导入、诊断 | 56 |
+| 帮助与关于 | 配置说明、排障、版本与许可 | 0（全是展示项，无设置键） |
+| 内部（保留存储） | 程序生成或由其它界面/流程写入，不出现在设置界面 | 20 |
+
+「高级」内部按 **服务（11）/ 录音（6）/ 输出（26）/ 自动化（9）/ 诊断与隐私（4）** 五组划分，避免变成长列表。
+
+11 + 56 + 20 = 87，与 §9.1 的键数一致。
+
+**录音来源、保存位置、默认整理方式留在基本设置**，不放进高级：这三项直接决定用户录到了什么、
+文件在哪里、生成什么内容，属于第一次使用就要确认的项。其余个性化设置（自定义地址与模型、提示词、
+分段与并发、重试、命名规则、日记集成、自动导入、诊断）进高级。
+
+有 20 个键标为「内部」：它们要么由程序写入（`floatingBallPos` 由拖动写、`availableUpdate` 由更新检查写、
+`knowledgeExtractionHistory` 由扫描写、`lastUpdateCheckAt` 等由更新服务写），要么是历史兼容字段
+（`transcribeEndpoint` 等 4 个兼容兜底、`polishPrompt*` 6 个模板迁移来源），要么只作展示
+（`peopleSuggestionCache` 等的计数）。**它们继续参与落盘与读回，只是不再占用设置界面**——
+删掉会丢用户数据，这一点在 §9.3 的约束 2 里写明。
+
+### 9.3 维护规则冲突（盘点发现，未在本轮改动）
+
+以下是本次盘点的产物，分两类：**实现冲突**（同一件事有两套实现，要改代码，属后续批次）
+与**材料冲突**（文档写的与代码行为不一致）。材料冲突里只做事实性更正的部分已在本轮顺手修掉，
+改不动的登记在 §9.3.2。这里没有删除任何功能——所有冲突都保留现状，只登记。
+
+#### 9.3.1 实现冲突（需改代码，后续批次处理）
+
+| # | 冲突 | 证据 | 拟处理 |
+|---|---|---|---|
+| 1 | **首页有两个推荐入口，指向不同服务。** 「使用推荐配置」写入硅基流动，页内「快速设置」默认选中小米 MiMo，两者都能一键落地 | `settings-tab.ts:375`（`applyBeginnerDefaults`，写 `siliconflow`）、`:394`（`oneCardProviderId = "mimo"`）、`:276` | 只保留一个经过验证的推荐方案；具体选哪家需另行核实（见 §9.4） |
+| 2 | **同一项配置的写入逻辑有两套。** 「API」页的 `writeProvider` 会同步进当前 API 方案，首页「快速设置」走自己的 `applyOneCardProvider`；两处都写 `transcribeProviders` | `settings-tab.ts:1223`（API 页 `writeProvider`，调 `syncWorkingAsrToActiveScheme`）、`:1476`（说话人页 `writeProvider`，不同步）、`:222`（`applyOneCardProvider`） | 合并为一处写入函数 |
+| 3 | **连通性检测有四份实现。** 转写测试、组合测试、导入服务测试、大模型测试各一套；首页「快速设置」还另建 `probePlugin` 影子对象来测未保存的输入 | `settings-tab.ts:1079`、`:1100`、`:1287`、`:1402`、`:441`、`:497` | 检测逻辑只实现一次，对「正在填写的值」求值 |
+| 4 | **API 方案的应用逻辑有两套，行为不同。** 「API」页调 `applyLlmProfileToWorkingConfig`（会一并切换方案里的转写快照），「说话人」页把同一段逻辑内联抄了一遍（不切换转写） | `settings-tab.ts:1130` vs `:1598-1613`；`llm/config.ts:264` | 统一调用同一函数 |
+| 5 | **「说话人」页同时放导入音频与 AI 整理服务配置。** 页内有「导入音频」和「AI 整理」两个一级标题，后者还提供「完整设置」跳到 API 页 | `settings-tab.ts:1424`、`:1590`、`:1738` | 页面按用户目的重命名与拆分 |
+| 6 | **首页状态判断分不清「已填写」与「测试通过」。** 只检查字段非空；服务页的徽章文案同样写「已填写」 | `settings-tab.ts:347`（`hasSpeechProvider`）、`:355`（`hasLlm`）、`:1055` | 分别展示录音转写 / 音频导入 / AI 整理的支持情况与检测结果 |
+
+#### 9.3.2 材料冲突（文档与代码不一致）
+
+| # | 冲突 | 证据 | 状态 |
+|---|---|---|---|
+| 7 | **README 与实现相反。** 两份 README 都写「版本不一致就丢弃设置、改用默认值」，而 1.0.0 起已改为向前迁移、保留用户数据（`foreign` 才丢弃，且先留档） | `README.md:183`、`README.zh-CN.md:201`（改前） vs `shared/settings-schema.ts` 与 `main.ts:442-455` | **已修正**（两份 README 同步改写） |
+| 8 | **`settings-io.ts` 头部的政策注释过期。** 仍写「版本号与当前值不一致时一律丢弃」，与 §4.5 的四态判定矛盾 | `src/shared/settings-io.ts` 的 `SETTINGS_SCHEMA_VERSION` 上方注释（改动前为第 33–34 行） | **已修正**（改为指向 §4.5 的四态） |
+| 9 | **`MAINTAINING.md` 的章节编号乱序。** 「功能边界」编成 7 却排在 6 之前；另有一条悬空引用「按 §9 仍不进仓库」，而 §9 当时不存在 | 章节顺序：功能边界排在待办之前，编号却是 7 与 6；悬空引用在改动前为 `MAINTAINING.md:557` | 悬空引用**已修正**；编号乱序未动（牵动多份交叉引用，单独批次处理） |
+| 10 | **`MAINTAINING.md` 待办里有两条已完成。** 「设置页静默改写 `importTranscribeProvider`」已在 `renderSpeaker` 改为只读借用 + 页面说明；「自定义服务的密钥必填判定」已按 endpoint 推断 | 待办清单「第一条」下两条（改动前为 `MAINTAINING.md:561`、`:562`）vs `settings-tab.ts:1436`、`transcribe-profile-service.ts:253` | **已勾掉** |
+| 11 | **`DESIGN_SPEC.md` 的颜色规范已失效。** 全文 32 处引用 `--lex-*`，而 `styles.css` 有 68 个 `--qnalog-*`、0 个 `--lex-*`，源码里没有 `--lex-` 读取方 | `DESIGN_SPEC.md` 第 2 节「颜色系统」（第 17–60 行）vs `styles.css` | **未改**：其中 `--lex-border-line-hover`、`--lex-bg-active-strong` 在 `styles.css` 里连 `--qnalog-*` 对应项都不存在，需先确认是被删除还是改了名，不能机械批量替换 |
+
+
+#### 9.3.3 同批发现的两处命名与死代码
+
+不构成规则冲突，但属于同一批该清的东西：
+
+- **两个旧前缀标识符。** `src/ui/settings-tab.ts:71` 的 `LV_SETTINGS_TABS` 与
+  `src/views/base-definitions.ts:6` 的 `LV_BASE_DEFINITIONS` 仍用旧前缀。`check:legacy-prefixes`
+  的正则要求前缀后跟连字符（`lex-` / `lv-` / `lvk-`），因此拦不住这种裸 `LV_` 常量名——
+  该门禁的覆盖范围到此为止，不要以为它绿了就没有旧前缀。
+- **三个方法没有调用方。** `addFolderPathSetting`（`settings-tab.ts:2253`）、
+  `getAllVaultFolderPaths`（`:2241`，仅被前者调用）、`restoreTranscribeProviderDefaults`（`:298`）。
+  三者都只在本文件内出现，删除不影响任何调用点。
+
+### 9.4 本轮不决定的事
+
+- **推荐哪家服务**：需要另行核实服务能力、模型可用性、地区与费用，不凭代码里的默认值（硅基流动）直接决定。
+- **`first` 层只有一个入口**：由 §9.3 冲突 1 合并而来，具体保留哪一个待推荐方案确定后再定。
+
+### 9.5 改造约束（本轮已确认）
+
+1. 一批只解决一个明确问题；设置页改造不夹带录音流水线重构。
+2. **配置只有一套实际存储**（`data.json` 的 `settings` 分组）。简单界面与高级界面读写同一批字段，
+   不引入第二套同步逻辑，也不新增影子副本。
+3. **预设只包含完成服务配置所需的值**（地址、模型、密钥）；不顺手覆盖目录、提示词、设备与自动化偏好。
+4. **同一项配置的修改与检测逻辑只实现一次**（对应 §9.3 冲突 2、3、4）。
+5. 不引入通用表单框架、预设市场或新依赖。
+6. 按本次改动需要拆出**有类型检查的小模块**；不以清除 `settings-tab.ts` 的 `@ts-nocheck` 为前置任务
+   （该文件当前在 §8 的暂停清单里）。
+7. **测试覆盖用户后果**：错误密钥、部分服务失败、取消配置、重启后读回、已有配置被保留。
+   设置结构变更仍按 §4.5 的三步走（版本号 +1、登记迁移、加用例），并遵守同一节的四态判定。
