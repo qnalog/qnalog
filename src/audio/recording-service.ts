@@ -726,7 +726,7 @@ export class RecordingService {
       });
       if (nextLevel === "warning" && !session._asrBacklogWarningNotified) {
         session._asrBacklogWarningNotified = true;
-        new obsidian.Notice("转写速度暂时慢于录音，音频分段已安全写入缓存，QnALog 会继续处理。", 8000);
+        new obsidian.Notice("转写速度暂时慢于录音，音频分段已安全写入缓存，Q&A Log 会继续处理。", 8000);
       }
       if (nextLevel === "critical" && !session._asrBacklogCriticalNotified) {
         session._asrBacklogCriticalNotified = true;

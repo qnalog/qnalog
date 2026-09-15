@@ -55,7 +55,7 @@ export class RepolishService {
       taskId = `repolish:${sourceId || file.path}`;
       let segments = extractTranscriptSegments(content);
       if (!segments.length) {
-        new obsidian.Notice("未找到 QnALog 原始转写。请在包含「分段原始转写」或录音段落的纪要 Markdown 上使用。", 8000);
+        new obsidian.Notice("未找到 Q&A Log 原始转写。请在包含「分段原始转写」或录音段落的纪要 Markdown 上使用。", 8000);
         return;
       }
 
@@ -100,8 +100,8 @@ export class RepolishService {
 
       const preferenceLabel = repolishOptions && repolishOptions.label ? ` · ${repolishOptions.label}` : "";
       const mapNotice = roleMapping.length
-        ? `QnALog：应用 ${roleMapping.length} 条角色映射后按${meta.prefix}模式重新整理${preferenceLabel}…`
-        : `QnALog：正在按${meta.prefix}模式重新整理${preferenceLabel}…`;
+        ? `Q&A Log：应用 ${roleMapping.length} 条角色映射后按${meta.prefix}模式重新整理${preferenceLabel}…`
+        : `Q&A Log：正在按${meta.prefix}模式重新整理${preferenceLabel}…`;
       new obsidian.Notice(mapNotice);
       // 把笔记原 frontmatter 传给 mergeAndPolish，post-process 阶段会作为 base 保留用户改动
       // （包括用户已应用的角色映射变更，仅 system 字段被覆盖、tags 被 merge）
@@ -219,7 +219,7 @@ export class RepolishService {
         console.error("[QnALog] daily overview after repolish failed", e);
       }
       const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
-      new obsidian.Notice(`QnALog：已生成${meta.prefix}派生纪要${preferenceLabel}${roleMapping.length ? `（角色映射 ${roleMapping.length} 条已应用）` : ""}${versionCacheError ? "（版本索引稍后可重建）" : ""}`);
+      new obsidian.Notice(`Q&A Log：已生成${meta.prefix}派生纪要${preferenceLabel}${roleMapping.length ? `（角色映射 ${roleMapping.length} 条已应用）` : ""}${versionCacheError ? "（版本索引稍后可重建）" : ""}`);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       try { this.host.tasks.logCompletedWork(`重新整理完成 · ${meta.prefix}`, (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
@@ -314,7 +314,7 @@ export class RepolishService {
         actions: [],
       });
       this.host.tasks.updateBusyStatus();
-      new obsidian.Notice("QnALog：正在从母本逐字稿生成清稿…");
+      new obsidian.Notice("Q&A Log：正在从母本逐字稿生成清稿…");
       taskMeter = this.host.tasks.beginTaskMeter();
       const { text: cleaned, truncated } = await cleanTranscript(this.host, segments, getLearnedLlmOutputCeiling(this.host.settings));
       if (!cleaned) throw new Error("模型没有返回可用清稿");
@@ -331,7 +331,7 @@ export class RepolishService {
         body: noteBody,
       });
       await this.host.versions.applyVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
-      new obsidian.Notice("QnALog：清稿已生成并设为当前显示版本", 6000);
+      new obsidian.Notice("Q&A Log：清稿已生成并设为当前显示版本", 6000);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       try { this.host.tasks.logCompletedWork("生成清稿", sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }

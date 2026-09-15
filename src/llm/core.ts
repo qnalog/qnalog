@@ -70,7 +70,7 @@ export function decorateLlmHttpDetail(status, detail, endpoint) {
   } else if (code === 413) {
     hint = "本次请求上下文可能超过 Poe 目标 bot 的限制，请缩短输入或换更长上下文的 bot。";
   } else if (code === 429 || code === 503 || code === 529) {
-    hint = "Poe 当前限流或服务繁忙；QnALog 会按服务端 Retry-After 退避后重试一次。";
+    hint = "Poe 当前限流或服务繁忙；Q&A Log 会按服务端 Retry-After 退避后重试一次。";
   }
   if (!hint) return base;
   return base ? `${base}。${hint}` : hint;
@@ -540,7 +540,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
 export async function testLlmConnection(plugin) {
   const data = await requestLlmChatCompletion(plugin, [
     { role: "system", content: "You are a connectivity test endpoint. Reply with OK only." },
-    { role: "user", content: "QnALog connection test. Reply OK." },
+    { role: "user", content: "Q&A Log connection test. Reply OK." },
   ], {});
   return {
     endpoint: normalizeLlmEndpoint(plugin.settings.llmEndpoint),

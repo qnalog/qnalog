@@ -91,7 +91,7 @@ export function truncateForLlmPrompt(text, maxChars) {
   const raw = String(text || "");
   const limit = Math.max(0, Number(maxChars) || 0);
   if (!limit || raw.length <= limit) return raw;
-  return raw.slice(0, limit) + "\n\n_[QnALog：此处为长文本预处理截断，仅用于分段摘要；完整原文仍保留在笔记折叠区。]_";
+  return raw.slice(0, limit) + "\n\n_[Q&A Log：此处为长文本预处理截断，仅用于分段摘要；完整原文仍保留在笔记折叠区。]_";
 }
 
 export function splitLongTextForLlm(text, maxChars) {

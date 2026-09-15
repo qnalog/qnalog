@@ -174,7 +174,7 @@ export class QueueRetryService {
       new obsidian.Notice("这篇纪要当前没有可重试的转写任务。", 5000);
       return;
     }
-    new obsidian.Notice(`QnALog：正在重试 ${tasks.length} 个转写片段…`);
+    new obsidian.Notice(`Q&A Log：正在重试 ${tasks.length} 个转写片段…`);
     let ok = 0;
     let failed = 0;
     let paused = false;

@@ -177,7 +177,7 @@ export class MeetingWorkbenchService {
       const context = this.buildMeetingWorkbenchInteractionContext(session, latest);
       const kind = latest.interaction.kind;
       const label = kind === "concept" ? "概念解释" : (kind === "question" ? "问题回答" : "重点处理");
-      const system = "你是 QnALog 的会中即时助理。只回答用户这条会中记录，不改写实时大纲，不生成完整纪要。回答要短、具体、可直接挂在这条记录下面。";
+      const system = "你是 Q&A Log 的会中即时助理。只回答用户这条会中记录，不改写实时大纲，不生成完整纪要。回答要短、具体、可直接挂在这条记录下面。";
       const user = [
         `会中记录时间：${formatElapsed(latest.atMs || 0)}`,
         `触发类型：${label}`,

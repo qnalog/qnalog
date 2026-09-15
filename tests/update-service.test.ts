@@ -199,7 +199,7 @@ describe("UpdateService checks", () => {
     expect(fixture.settings.lastUpdateError).toBe("");
     expect(fixture.saveSettings).toHaveBeenCalledTimes(1);
     expect(fixture.notices).toEqual([{
-      message: "QnALog：发现新版本 2.0.0（当前 1.0.0）。请在设置 > 更新 中查看发布页链接，从 GitHub Release 安装。",
+      message: "Q&A Log：发现新版本 2.0.0（当前 1.0.0）。请在设置 > 更新 中查看发布页链接，从 GitHub Release 安装。",
       duration: 12000,
     }]);
   });
@@ -224,7 +224,7 @@ describe("UpdateService skew warning", () => {
       "[QnALog] build/manifest 版本错位：main.js=1.9.0 manifest=2.0.0",
     );
     expect(fixture.notices).toEqual([{
-      message: "QnALog 版本错位：实际运行的 main.js 是 1.9.0，但 manifest 标的是 2.0.0。请从 GitHub Release 重新安装该版本后重启 Obsidian。",
+      message: "Q&A Log 版本错位：实际运行的 main.js 是 1.9.0，但 manifest 标的是 2.0.0。请从 GitHub Release 重新安装该版本后重启 Obsidian。",
       duration: 0,
     }]);
   });

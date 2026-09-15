@@ -225,7 +225,7 @@ export function getRecentNotes(plugin, limit) {
       continue;
     }
     const mode = detectRecentNoteMode(plugin, f, frontmatter);
-    // 是否 QnALog 纪要：能识别出 mode（非 off）或 frontmatter 自带 mode / qnalog 标记。
+    // 是否 Q&A Log 纪要：能识别出 mode（非 off）或 frontmatter 自带 mode / qnalog 标记。
     // 手动改名（丢掉日期前缀）的纪要也要保留，否则在纪要面板里找不到、没法重新整理。
     const isNoteRef = (mode && mode !== "off") || !!frontmatter.mode
       || new RegExp(NS_TAG, "i").test(String(frontmatter.tags || frontmatter.tag || ""));

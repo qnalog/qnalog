@@ -116,7 +116,7 @@ if (Number.isFinite(restoredSchema)) {
 // 启用列表：还原到别的插件 id 时，Obsidian 里启用的仍是原来那个。
 const enabledPath = path.join(configDir, ENABLED_FILE);
 const enabled = readJson(enabledPath);
-// 只关心本插件自己的目录：QnALog 与其它插件互不影响（README「与 LexVoice 的关系」），
+// 只关心本插件自己的目录：Q&A Log 与其它插件互不影响（README「与 LexVoice 的关系」），
 // 因此不去动、也不提及其它插件的启用状态。
 const otherIds = existsSync(pluginsDir)
   ? readdirSync(pluginsDir).filter(name =>

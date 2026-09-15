@@ -151,7 +151,7 @@ export function buildMeetingWorkbenchPrompt(value) {
   const workbench = normalizeMeetingWorkbench(value);
   if (!hasMeetingWorkbenchContent(workbench)) return "";
   const lines = [
-    "## 会中补充材料（用户在 QnALog 侧边栏手动提供）",
+    "## 会中补充材料（用户在 Q&A Log 侧边栏手动提供）",
     "",
     "这些内容不是音频转写原文，而是用户在会议过程中补充的背景、零散想法或演示资料。整理纪要时请作为辅助上下文使用：",
     "- 音频转写仍然是事实主线；补充材料用于识别议题、PPT 结构、上下文和用户特别关注点。",

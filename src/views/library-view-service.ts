@@ -30,7 +30,7 @@ export class LibraryViewService {
     this.host = host;
   }
 
-  // 创建 QnALog 视图（.base 文件）—— 7 个：4 按模式 + 3 场景
+  // 创建 Q&A Log 视图（.base 文件）—— 7 个：4 按模式 + 3 场景
   // overwrite=false：已存在的文件保留；overwrite=true：强制覆盖（用户重置/升级用）
   async createBases(opts) {
     const overwrite = !!(opts && opts.overwrite);

@@ -1,6 +1,6 @@
 // 思考档：default（默认，不动请求）/ reasoning（推理，显式开）/ fast（快速，关思维链省 token）。
 // 「能不能改」按 endpoint 主机 + 模型判定——只对已核实关思考参数的服务返回 capability，其它返回 null（UI 灰掉、不可选）。
-// 三大已核实的参数家族（OpenAI 兼容 body，顶层字段；QnALog 是裸 fetch 直接拼 body，不走 SDK 的 extra_body）：
+// 三大已核实的参数家族（OpenAI 兼容 body，顶层字段；Q&A Log 是裸 fetch 直接拼 body，不走 SDK 的 extra_body）：
 //   · enable_thinking: false/true        —— 小米 MiMo / 硅基流动 / 阿里百炼(Qwen3)
 //   · thinking: { type: "disabled"|"enabled" } —— DeepSeek / 火山方舟 Doubao / 智谱 GLM
 //   · reasoning_effort: "low"|"high"     —— OpenAI(gpt-5/o系) / Gemini-2.5 / xAI(grok-mini/4) / Groq(推理模型)

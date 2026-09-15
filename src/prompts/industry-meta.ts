@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出的 prompt 常量（审核友好：缩小 main.ts 单文件 AST）。纯数据、零运行时依赖、零行为改动。
-export const INDUSTRY_META_PROMPT = `你是提示词优化专家。请基于用户的角色、工作任务和参考提示词，生成一份可直接用于 QnALog 录音整理的自定义提示词。
+export const INDUSTRY_META_PROMPT = `你是提示词优化专家。请基于用户的角色、工作任务和参考提示词，生成一份可直接用于 Q&A Log 录音整理的自定义提示词。
 
 【用户背景】
 角色 / 行业：{{INDUSTRY}}

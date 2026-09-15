@@ -283,7 +283,7 @@ export function classifyImportTextFileForModal(file, content) {
       category: "external",
       badge: file && String(file.extension || "").toLowerCase() === "txt" ? "TXT" : "外部稿",
       reason: "普通文本",
-      statusTitle: "非 QnALog 转写，可作为速录稿直接整理",
+      statusTitle: "非 Q&A Log 转写，可作为速录稿直接整理",
     };
   }
 
@@ -294,7 +294,7 @@ export function classifyImportTextFileForModal(file, content) {
       category: "qnalog-normal",
       badge: "已整理",
       reason: "可合并 / 换模板",
-      statusTitle: "QnALog 已整理纪要，可用于多篇合并、换模板重整或转成其他模式",
+      statusTitle: "Q&A Log 已整理纪要，可用于多篇合并、换模板重整或转成其他模式",
     };
   }
 
@@ -304,7 +304,7 @@ export function classifyImportTextFileForModal(file, content) {
   return {
     category: "qnalog-repair",
     badge: label,
-    reason: processingState && processingState.title ? processingState.title : "检测到 QnALog 标记，但没有稳定的整理正文",
+    reason: processingState && processingState.title ? processingState.title : "检测到 Q&A Log 标记，但没有稳定的整理正文",
     statusTitle: processingState && processingState.title ? processingState.title : "适合重新整理或补救失败转写",
   };
 }

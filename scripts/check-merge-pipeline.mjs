@@ -177,7 +177,7 @@ async function main() {
   try {
     vm.runInNewContext(code, sandbox, { filename: "main.js", timeout: 10000 });
     const PluginClass = sandbox.module.exports?.default || sandbox.module.exports;
-    const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
+    const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "Q&A Log", minAppVersion: "1.0.0" });
     await plugin.onload();
     plugin.settings.llmEndpoint = "http://localhost:55990/v1";
     plugin.settings.llmModel = "stub-model";

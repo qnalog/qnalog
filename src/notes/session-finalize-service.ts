@@ -943,7 +943,7 @@ export class SessionFinalizeService {
           : mergeError instanceof BriefingPipelineIncompleteError
           ? `${mergeError.message}，已加入精确重试`
           : "AI 整理未完成，已加入重试队列")
-      : "QnALog 处理完成");
+      : "Q&A Log 处理完成");
 
     if (this.host.settings.autoOpenNoteAfterFinish) {
       const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);

@@ -144,7 +144,7 @@ export function extractNotePanelData(plugin, file, markdown) {
   const speakerMappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), speakerIds);
   return {
     file,
-    title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : "QnALog 纪要"),
+    title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : "Q&A Log 纪要"),
     mode,
     outline,
     timeline,
