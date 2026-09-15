@@ -7290,81 +7290,174 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-home-block {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
-}
-
-.qnalog-home-block h3 {
-  font-size: var(--font-ui-medium);
-  font-weight: var(--font-semibold);
-}
-
-.qnalog-home-prep-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--size-4-2);
-  padding-top: var(--size-2-2);
 }
 
-.qnalog-home-prep {
-  display: flex;
-  flex-direction: column;
-  min-height: 190px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  padding: var(--size-4-3);
-  background: var(--background-secondary);
-}
-
-.qnalog-home-prep-name {
-  color: var(--text-normal);
+/* 区块标题是「标签」，不是内容。原先它与下面的结论同为 font-ui-medium + semibold，
+   两行等重的黑字紧贴在一起，看起来像被压扁的双层标题。
+   压低一档并降对比度后，视线顺序变成：标签 → 结论 → 明细。 */
+.qnalog-home-block h3 {
+  margin-bottom: var(--size-4-2);
+  color: var(--text-muted);
+  /* 与仓库既有的区块标题同字号（.qnalog-settings-section-title 用 font-ui-small），
+     比结论小一档、比模型 ID 大不了一档，靠颜色区分出「这是标签」。 */
   font-size: var(--font-ui-small);
   font-weight: var(--font-semibold);
 }
 
-.qnalog-home-prep-meta {
+/* 使用状态：总体 readiness + 四项配置摘要。
+   正常状态保持安静——不给每行挂状态标记，只有异常行才有图标；
+   视觉顺序依次是：结论 → 配置项名称 → 服务名 → 模型 ID（muted）。 */
+.qnalog-status-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-2-2);
-  margin-top: var(--size-2-2);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--size-4-2);
 }
 
-.qnalog-home-chip
-.qnalog-home-status {
+.qnalog-status-head-main {
+  min-width: 0;
+}
+
+.qnalog-status-headline {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.qnalog-status-detail {
+  margin-top: var(--size-2-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal);
+}
+
+/* 只在没准备好时出现；正常时概览区不挂任何标记，避免与单项重复。 */
+.qnalog-status-badge {
   display: inline-flex;
   align-items: center;
+  gap: var(--size-2-1);
+  flex-shrink: 0;
+  margin-top: 2px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
-  padding: 3px 10px;
-  color: var(--text-muted);
+  padding: 2px 8px;
   font-size: var(--font-ui-smaller);
   line-height: 1.4;
-  white-space: nowrap;
+  color: var(--text-muted);
 }
 
-.qnalog-home-chip.is-required,
-.qnalog-home-status.is-required {
+.qnalog-status-badge.is-warn {
   color: var(--text-warning);
   border-color: rgba(var(--color-orange-rgb), 0.35);
 }
 
-.qnalog-home-chip.is-recommended {
-  color: var(--text-accent);
-  border-color: var(--background-modifier-border-hover);
+.qnalog-status-badge-icon {
+  font-weight: var(--font-semibold);
 }
 
-.qnalog-home-chip.is-cost {
+.qnalog-status-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+
+
+
+/* 一行摘要：名称 / 服务名 / 模型名，整行可点。项目之间只用极低对比度的分隔线，
+   不画表格、不加卡片背景。
+
+   横向内边距留 0：行内容、分隔线、hover 背景与页头页脚同在一条左边线上。 */
+.qnalog-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  padding: var(--size-2-3) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.qnalog-status-row:last-child {
+  border-bottom: none;
+}
+
+.qnalog-status-row.is-clickable {
+  cursor: pointer;
+}
+
+.qnalog-status-row.is-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-status-row.is-clickable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.qnalog-status-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.qnalog-status-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2-1);
+}
+
+.qnalog-status-row-label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
+}
+
+/* 正常行不显示图标（元素不渲染），只有异常行才出现。 */
+.qnalog-status-row-icon {
+  color: var(--text-warning);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.qnalog-status-row-value {
+  margin-top: 1px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-tight);
+}
+
+/* 技术详情：muted + 等宽，与服务名拉开层级，不与一级标题抢注意力。 */
+.qnalog-status-row-detail {
+  margin-top: 1px;
   color: var(--text-muted);
-  background: var(--background-primary);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
 }
 
-.qnalog-home-status.is-ready {
-  color: var(--text-success);
-  border-color: rgba(var(--color-green-rgb), 0.35);
+.qnalog-status-row.is-fail .qnalog-status-row-icon,
+.qnalog-status-row.is-fail .qnalog-status-row-value {
+  color: var(--text-error);
 }
 
-.qnalog-home-status.is-neutral {
-  color: var(--text-muted);
-  background: var(--background-primary);
+.qnalog-status-row.is-warn .qnalog-status-row-value {
+  color: var(--text-warning);
+}
+
+/* 箭头只是「这一行能点」的提示，整行才是点击目标，所以保持低存在感。 */
+.qnalog-status-row-go {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  opacity: 0.55;
+  font-size: var(--font-ui-medium);
+  line-height: 1;
+}
+
+.qnalog-status-row.is-clickable:hover .qnalog-status-row-go {
+  opacity: 1;
 }
 
 .qnalog-home-prep-desc {
@@ -7375,14 +7468,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   line-height: var(--line-height-normal);
 }
 
-.qnalog-home-prep-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--size-2-2);
-  margin-top: var(--size-4-2);
-}
-
 .qnalog-home-footnote {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
@@ -7391,19 +7476,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 @media (max-width: 760px) {
-  .qnalog-home-prep-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .qnalog-home-prep {
-    min-height: 0;
-  }
-
-  .qnalog-home-prep-actions {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .qnalog-input-meter {
     grid-template-columns: 22px minmax(0, 1fr) 36px 76px;
   }

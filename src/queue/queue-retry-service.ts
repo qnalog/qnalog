@@ -349,6 +349,14 @@ export class QueueRetryService {
     }
     const audio = await this.readTranscribeTaskAudioBlob(task);
     let text = "";
+    if (!task.wholeFileImport) {
+      // 分段任务只能交给 HTTP 上传型的转写服务。
+      // 若当前激活的是流式服务（端点 wss://），分段上传必然失败——
+      // 这类任务只可能来自「切到流式服务之前录下的音频」，或流式连接没建立起来的那次录音。
+      // 与其逐段重试、每次都撞「协议不受支持」，不如一次说清：改用整场录音重转。
+      const streamingIssue = describeSegmentRetryUnavailable(this.host);
+      if (streamingIssue) throw new Error(streamingIssue);
+    }
     if (task.wholeFileImport) {
       const result = await transcribeImportedAudio(this.host, audio.blob, audio.blob.type || "audio/wav", {
         providerId: task.providerId,
@@ -609,6 +617,29 @@ export class QueueRetryService {
       .catch((e) => console.error("[QnALog] queue processAll", e))
       .finally(() => { try { this.host.recorder.emit(); } catch { /* intentionally empty */ } });
     return task;
+  }
+}
+
+
+/**
+ * 分段重试是否不可用；不可用时返回原因，可用时返回空串。
+ *
+ * 流式服务（dashscope 实时、OpenAI Realtime）的端点是 wss://，只能在建连时逐帧推流，
+ * 不能用 HTTP 把一段音频 POST 上去。分段任务因此只对 HTTP 上传型服务有意义。
+ */
+export function describeSegmentRetryUnavailable(host) {
+  try {
+    const profile = host && host.profiles && host.profiles.getActiveTranscribeProfile
+      ? host.profiles.getActiveTranscribeProfile()
+      : null;
+    if (profile && profile.transcribeMode === "streaming") {
+      return `当前转写服务是流式服务（${profile.title || "实时转写"}），不能逐段重试——`
+        + "流式服务只支持录音时实时推送，无法把已录好的分段上传转写。"
+        + "请在「API」页改用分段或整文件转写服务，或在会话笔记里对整场录音重新转写。";
+    }
+    return "";
+  } catch {
+    return "";
   }
 }
 

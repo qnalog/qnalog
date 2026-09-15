@@ -221,17 +221,32 @@ export function openExternalUrl(url) {
   try { window.open(url, "_blank"); } catch (e) { console.warn("[QnALog] open url failed", e); }
 }
 
-export async function enumerateAudioDevices() {
+/**
+ * 读取音频设备。
+ *
+ * 默认**只列设备，不申请权限**：`enumerateDevices()` 不需要授权就能返回设备
+ * 与 `deviceId`，只有设备名（label）需要授权。因此「能不能用」这类判断不该
+ * 顺带弹一次授权框——只看状态却弹出麦克风授权请求，用户会以为插件在录音。
+ *
+ * 只有用户主动点下的动作（「检测」「自动配置」）才传 `requestPermission: true`：
+ * 那时弹出授权是用户预期的。
+ *
+ * `permissionRequired` 的判据是「输入设备的名称读不到」，这比「刚才探测失败」
+ * 更贴近它真正要表达的事实：设备列表可能拿到了、但名字是空的。
+ */
+export async function enumerateAudioDevices(options?: { requestPermission?: boolean }) {
+  const requestPermission = !!(options && options.requestPermission);
   if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
     return { all: [], mics: [], virtualCables: [], outputs: [], permissionRequired: true };
   }
-  // 设备 label 在未授权时为空。先试一次 getUserMedia 拿权限。
-  let permissionRequired = false;
-  try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-    probe.getTracks().forEach((t) => t.stop());
-  } catch {
-    permissionRequired = true;
+  if (requestPermission) {
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+      probe.getTracks().forEach((t) => t.stop());
+    } catch {
+      // 授权被拒或没有可用设备。下面照样列设备：拿得到多少就显示多少，
+      // 不因为一次探测失败就把设备列表整个丢掉。
+    }
   }
   const devices = await navigator.mediaDevices.enumerateDevices();
   const mics = [], virtualCables = [], outputs = [];
@@ -243,6 +258,8 @@ export async function enumerateAudioDevices() {
       outputs.push(d);
     }
   }
+  const inputs = devices.filter((d) => d.kind === "audioinput");
+  const permissionRequired = inputs.length > 0 && inputs.every((d) => !d.label);
   return { all: devices, mics, virtualCables, outputs, permissionRequired };
 }
 
@@ -324,3 +341,64 @@ export function countKnowledgeExtractionHistory(settings, kind) {
   return Object.keys((history && history[kind]) || {}).length;
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
+
+/** 设备对象的形状。enumerateDevices() 在 @ts-nocheck 区域里被读成动态类型，这里显式声明。 */
+export interface AudioDeviceLike {
+  kind?: string;
+  deviceId?: string;
+  label?: string;
+}
+
+/**
+ * 把音频输入设备分类，供「麦克风」与「电脑音频」两个下拉共用同一套判据。
+ *
+ * 只负责如实归类，**不做任何自动选择**：判错一只设备会让录音录到错误的声音，
+ * 而用户从界面上看不出来。选哪一只始终由用户决定。
+ *
+ * `dongles` 是除系统默认项以外的全部输入设备（含虚拟声卡，不隐藏）：
+ * 用户的虚拟声卡名字可能不在关键词表里，隐藏他反而没法选。
+ * `selectedInput` 是当前显式选定那一只（可能为空）。
+ */
+export function classifyAudioInputDevices(devices: AudioDeviceLike[] | null | undefined, selectedId = "") {
+  const inputs = (devices || []).filter((d) => !!d && d.kind === "audioinput");
+  const selected = String(selectedId || "");
+  return {
+    selectedInput: selected ? inputs.find((d) => d.deviceId === selected) || null : null,
+    // 系统默认那一项（deviceId 为 "default" 或空）由下拉里的空值选项代表，不重复列出。
+    dongles: inputs.filter((d) => !isSystemDefaultDeviceId(d.deviceId)),
+  };
+}
+
+/**
+ * 电脑音频下拉该列出哪些设备。
+ *
+ * 电脑音频要的是虚拟声卡输入，所以正常情况下只列虚拟声卡，不把普通麦克风铺进来。
+ * 但一个虚拟声卡都认不出时**退回列出全部输入设备**：关键词只是启发式，
+ * 用户的虚拟声卡名字不在表里时若照旧只列虚拟声卡，列表就空了，他反而没得选。
+ * 宁可多列几只让他自己认，也不要给他一个空列表。
+ */
+export function pickComputerAudioDevices(devices: AudioDeviceLike[] | null | undefined) {
+  const { dongles } = classifyAudioInputDevices(devices);
+  const virtualCables = dongles.filter((d) => isVirtualCableLabel(d.label));
+  return { listed: virtualCables.length ? virtualCables : dongles, virtualCables };
+}
+
+/** 浏览器约定：deviceId 为 "default" 或空串表示系统默认输入设备。 */
+function isSystemDefaultDeviceId(deviceId?: string) {
+  const id = String(deviceId || "");
+  return id === "default" || id === "";
+}
+
+/**
+ * 设备名读不到时，该给用户什么提示。
+ *
+ * `enumerateDevices()` 在未授权时仍会返回设备与 deviceId，只有 label 是空的；
+ * 因此「名字为空」不等于「没有设备」。两者处理完全不同：
+ * 前者让用户授权或仍可按下拉顺序选，后者才是真的没接设备。
+ */
+export function describeAudioDeviceAvailability(devices: AudioDeviceLike[] | null | undefined) {
+  const inputs = (devices || []).filter((d) => !!d && d.kind === "audioinput");
+  if (!inputs.length) return { state: "none", count: 0 };
+  const named = inputs.some((d) => !!d.label);
+  return { state: named ? "named" : "unnamed", count: inputs.length };
+}

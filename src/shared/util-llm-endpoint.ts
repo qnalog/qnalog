@@ -31,6 +31,29 @@ export function assertSafeServiceEndpoint(endpoint, transport: ServiceEndpointTr
   if (issue) throw new Error(issue);
 }
 
+/**
+ * 由地址本身推断传输协议。
+ *
+ * 转写服务的地址有两种形态：HTTP 接口（https://…）与流式接口（wss://…），
+ * 而校验规则按传输方式分叉（WSS 对应 HTTPS、WS 对应 HTTP）。
+ * 调用方若把 wss:// 地址按 "http" 校验，会被判成「协议不受支持」——
+ * 这是实际发生过的误报（详见 MAINTAINING §11.5）。
+ */
+export function inferEndpointTransport(endpoint: string): ServiceEndpointTransport {
+  const raw = String(endpoint || "").trim().toLowerCase();
+  return raw.startsWith("ws:") || raw.startsWith("wss:") ? "websocket" : "http";
+}
+
+/** 按地址自身的协议校验；wss:// 走 websocket 规则，其余走 http 规则。 */
+export function assertEndpointAllowed(endpoint, label = "服务地址") {
+  assertSafeServiceEndpoint(endpoint, inferEndpointTransport(endpoint), label);
+}
+
+/** 按地址自身的协议给出问题描述；没有问题时返回空串。 */
+export function describeEndpointIssue(endpoint, label = "服务地址") {
+  return getServiceEndpointSecurityIssue(endpoint, inferEndpointTransport(endpoint), label);
+}
+
 export function normalizeLlmEndpoint(endpoint) {
   const raw = String(endpoint || "").trim();
   if (!raw) return "";

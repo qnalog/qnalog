@@ -1356,7 +1356,8 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     closeBtn.onclick = () => this.close();
     const recheckBtn = actions.createEl("button", { text: "重新检测", cls: "mod-cta" });
     recheckBtn.onclick = async () => {
-      const info = await enumerateAudioDevices();
+      // 用户点了「重新检测」，要设备名才能报出检测到哪些设备，申请权限是预期的。
+      const info = await enumerateAudioDevices({ requestPermission: true });
       if (info.virtualCables.length > 0) {
         const labels = info.virtualCables.map(d => d.label).join("、");
         new obsidian.Notice(`检测到电脑音频输入：${labels}`);

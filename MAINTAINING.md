@@ -579,7 +579,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] **设置界面精简（开箱即用方向）**：现状设置页偏复杂，把"必须先配的"和"少数人才调的"混在一起。方向是——默认路径只需填 API Key 即可工作（服务、模型、目录用内置默认值 + 一个推荐配置入口），其余自定义项收进"高级"分区。分期推进。注意：设置项读写受 `settings-io.ts` 白名单约束（新增键必须同时登记 normalize 与 serialize），**搬动 UI 分组不影响存储结构**——简单界面与高级界面读写同一批字段，不引入第二套同步逻辑。
   - [x] **任务 0：盘点**。已产出 §9 的逐键映射表（87 个键：默认值、落盘位置、读回别名、作用、现入口、拟归属）与 11 条规则冲突登记，并加 `check:settings-map` 门禁防表过期。
   - [ ] 目标状态：新用户不必理解"模型 / 协议 / 转写流程"就能录出第一条语音笔记；已有用户升级后配置不变。判据与约束见 §9.5。
-  - [ ] 后续批次（每次一批，不夹带录音流水线重构）：① 先按 §9.3.1 把重复的实现合并为一处（写入 / 检测 / 方案应用）；② 再按 §9.2 重排页面，首次配置收敛为一条路径；③ 最后处理工作面板。推荐用哪家服务需另行核实（§9.4）。
+  - [x] **任务 1：统一配置与检测逻辑**。预设写入范围收敛为 9 个键（清单在 `PRESET_WRITTEN_FIELDS`）；四份检测合并为 `runPresetDetection` 一处；检测对象改为候选配置且不落盘；状态改为四态。见 §10。
+  - [ ] 后续批次（每次一批，不夹带录音流水线重构）：① 按 §9.2 重排页面，首次配置收敛为一条路径（含说话人页拆分、方案应用内联副本）；② 最后处理工作面板。推荐用哪家服务需另行核实（§9.4）。
 - [x] **数据层命名的独立化**：已完成（2026-09-15，见 §1.1.2）。Q&A Log 按全新项目处理，不支持从历史项目迁移数据，代码里不再保留迁移逻辑；混淆盐已换新，已存 API Key 需重填。
 - [ ] 为自定义说话人分离服务（如 `siliconflow-diarize`）补预设条目（名称/提示/步骤文案）。纯展示性——能力已具备（`speaker-diarization` 协议），不做也能用。
 - [ ] 设置页把未知服务显示为"其他转写服务"。
@@ -674,27 +675,27 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 | 设置键 | 默认值 | 落盘位置 | 读回别名 | 作用 | 现入口 | 拟归属 |
 |---|---|---|---|---|---|---|
-| `audioFolder` | `${NS_ROOT}/录音` | `storage.recordingLibraryPath` | — | 录音文件落盘目录 | 常规 | 基本设置 |
-| `mdFolder` | `${NS_ROOT}/转写纪要` | `storage.briefingNotePath` | — | 纪要 Markdown 落盘目录 | 常规 | 基本设置 |
-| `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会中补充材料（图片/PPT/PDF）的复制目标 | 常规 | 高级 · 输出 |
+| `audioFolder` | `${NS_ROOT}/录音` | `storage.recordingLibraryPath` | — | 录音文件落盘目录 | 录音 | 基本设置 |
+| `mdFolder` | `${NS_ROOT}/转写纪要` | `storage.briefingNotePath` | — | 纪要 Markdown 落盘目录 | 录音 | 基本设置 |
+| `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会中补充材料（图片/PPT/PDF）的复制目标 | 录音 | 高级 · 输出 |
 | `htmlReportFolder` | `${NS_ROOT}/HTML报告` | `storage.htmlReportPath` | — | HTML 报告保存目录 | AI 整理 | 高级 · 输出 |
 | `reportBrandName` | `""` | `presentation.reportBrandName` | — | 「研讨」报告页脚公司名；留空则取纪要里的公司标签 | AI 整理 | 高级 · 输出 |
-| `noteFileNameFormatNew` | `"YYYY-MM-DD HHmm"` | `noteNaming.sessionPattern` | — | 纪要文件名日期格式 | 常规 | 高级 · 输出 |
+| `noteFileNameFormatNew` | `"YYYY-MM-DD HHmm"` | `noteNaming.sessionPattern` | — | 纪要文件名日期格式 | 录音 | 高级 · 输出 |
 | `transcribeEndpoint` | `"https://api.siliconflow.cn/v1/audio/transcriptions"` | `speech.compatEndpoint` | — | 兼容兜底：provider 未填地址时的回退（asr/transcribe.ts:147） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeApiKey` | `""` | `speech.compatApiKey` | — | 兼容兜底：provider 未填密钥时的回退（asr/transcribe.ts:148） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeModel` | `"FunAudioLLM/SenseVoiceSmall"` | `speech.compatModel` | — | 兼容兜底：provider 未填模型时的回退（asr/transcribe.ts:149） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeLanguage` | `"auto"` | `speech.compatLanguage` | — | 兼容兜底：provider 未填语言时的回退（asr/transcribe.ts:150） | 无 | 内部（保留存储，不进设置界面） |
 | `activeTranscribeProvider` | `"siliconflow"` | `speech.activeProviderId` | — | 实时录音使用的转写服务 id | API | 基本设置 |
-| `importTranscribeProvider` | `"dashscope-filetrans"` | `speech.importProviderId` | — | 导入音频（整文件）使用的转写服务 id | 说话人 | 高级 · 服务 |
-| `importSpeakerDiarization` | `true` | `speech.importSpeakerDiarization` | — | 导入音频是否区分说话人 | 说话人 | 高级 · 服务 |
-| `importSpeakerCount` | `0` | `speech.importSpeakerCount` | — | 导入音频预期的说话人数（0=自动） | 说话人 | 高级 · 服务 |
-| `transcribeProviders` | `{…}` | `speech.providers` | — | 各转写服务的地址/密钥/模型/语言注册表 | API / 说话人（经 provider 子对象） | 基本设置 |
-| `llmEndpoint` | `"https://api.siliconflow.cn/v1/chat/completions"` | `composer.endpoint` | — | AI 整理服务地址 | API + 说话人 | 高级 · 服务 |
-| `llmApiKey` | `""` | `composer.apiKey` | — | AI 整理服务访问密钥 | API + 说话人 | 基本设置 |
-| `llmModel` | `""` | `composer.model` | — | AI 整理模型标识 | API + 说话人 | 高级 · 服务 |
-| `llmServicePreset` | `"siliconflow"` | `composer.servicePreset` | — | 服务预设 id，用于填地址与请求头适配 | API + 说话人 | 高级 · 服务 |
+| `importTranscribeProvider` | `"dashscope-filetrans"` | `speech.importProviderId` | — | 导入音频（整文件）使用的转写服务 id | API | 高级 · 服务 |
+| `importSpeakerDiarization` | `true` | `speech.importSpeakerDiarization` | — | 导入音频是否区分说话人 | API | 高级 · 服务 |
+| `importSpeakerCount` | `0` | `speech.importSpeakerCount` | — | 导入音频预期的说话人数（0=自动） | API | 高级 · 服务 |
+| `transcribeProviders` | `{…}` | `speech.providers` | — | 各转写服务的地址/密钥/模型/语言注册表 | API（经 provider 子对象） | 基本设置 |
+| `llmEndpoint` | `"https://api.siliconflow.cn/v1/chat/completions"` | `composer.endpoint` | — | AI 整理服务地址 | API | 高级 · 服务 |
+| `llmApiKey` | `""` | `composer.apiKey` | — | AI 整理服务访问密钥 | API | 基本设置 |
+| `llmModel` | `""` | `composer.model` | — | AI 整理模型标识 | API | 高级 · 服务 |
+| `llmServicePreset` | `"siliconflow"` | `composer.servicePreset` | — | 服务预设 id，用于填地址与请求头适配 | API | 高级 · 服务 |
 | `llmProfiles` | `[]` | `composer.profiles` | — | 已保存的 API 方案（转写+AI 整理为一套） | API + 侧边栏 | 基本设置 |
-| `activeLlmProfile` | `""` | `composer.activeProfile` | — | 当前启用的 API 方案 id | API + 说话人 + 侧边栏 | 基本设置 |
+| `activeLlmProfile` | `""` | `composer.activeProfile` | — | 当前启用的 API 方案 id | API + 侧边栏 | 基本设置 |
 | `polishMode` | `"synthesis"` | `composer.defaultMode` | — | 默认纪要模板（整理方式） | AI 整理 + 侧边栏 + 模板库 | 基本设置 |
 | `polishPromptInterview` | `""` | `composer.modePromptOverrides.interview` | `promptOverrides.interview` | 该模式的提示词回退来源：模板为空时使用（`briefing-prompts.ts:364` 读 `legacyPromptFieldForMode`） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptMeeting` | `""` | `composer.modePromptOverrides.meeting` | `promptOverrides.meeting` | 同上（Meeting 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
@@ -702,8 +703,8 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `polishPromptSeminar` | `""` | `composer.modePromptOverrides.seminar` | `promptOverrides.seminar` | 同上（Seminar 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptMonologue` | `""` | `composer.modePromptOverrides.monologue` | `promptOverrides.monologue` | 同上（Monologue 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptLearning` | `""` | `composer.modePromptOverrides.learning` | `promptOverrides.learning` | 同上（Learning 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
-| `promptTemplates` | `{…}` | `promptTemplates` | — | 提示词模板库（内置 + 自定义） | 模板库 | 高级 · 服务 |
-| `activeTemplateByMode` | `{…}` | `activeTemplateByMode` | — | 每种模式当前启用的模板 id | 模板库 | 高级 · 服务 |
+| `promptTemplates` | `{…}` | `promptTemplates` | — | 提示词模板库（内置 + 自定义） | AI 整理 | 高级 · 服务 |
+| `activeTemplateByMode` | `{…}` | `activeTemplateByMode` | — | 每种模式当前启用的模板 id | AI 整理 | 高级 · 服务 |
 | `briefingStructureLevel` | `"balanced"` | `composer.structureLevel` | — | 纪要结构化程度（宽松/均衡/严谨） | AI 整理 | 高级 · 输出 |
 | `repolishPreferencePromptAddendum` | `""` | `composer.repolishPreferencePromptAddendum` | — | 「重新整理为」的追加规则 | AI 整理 | 高级 · 服务 |
 | `repolishPreference` | `""` | `composer.repolishPreference` | — | 当前选中的重新整理偏好 | 侧边栏 + 右键菜单 | 高级 · 输出 |
@@ -713,7 +714,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `briefingCustomLanguage` | `""` | `composer.languagePolicy.customLanguage` | `languagePolicy.customLanguage` | 自定义目标语言 | AI 整理 | 高级 · 输出 |
 | `briefingKeepOriginalTerms` | `true` | `composer.languagePolicy.keepOriginalTerms` | `languagePolicy.keepOriginalTerms` | 保留专有名词原文 | AI 整理 | 高级 · 输出 |
 | `briefingLanguageInstruction` | `""` | `composer.languagePolicy.extraInstruction` | `languagePolicy.extraInstruction` | 额外语言要求 | AI 整理 | 高级 · 输出 |
-| `industryProfile` | `{…}` | `composer.industryProfile` | — | 行业档案，由词汇表服务生成 | 资料库 / AI 整理（仅初始化） | 内部（保留存储，不进设置界面） |
+| `industryProfile` | `{…}` | `composer.industryProfile` | — | 行业档案，由词汇表服务生成 | 内部（程序写入） | 内部（保留存储，不进设置界面） |
 | `customVocabulary` | `""` | `vocabulary.inlineTerms` | — | 内联 ASR 热词 | 侧边栏（回退写入） | 高级 · 服务 |
 | `vocabularyFile` | `DEFAULT_LIBRARY_PATHS.vocabularyFile` | `vocabulary.notePath` | — | 热词表文件路径 | 资料库 | 高级 · 输出 |
 | `peopleDirectoryFolder` | `DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder` | `vocabulary.peopleFolder` | — | 人员资料文件夹 | 资料库 | 高级 · 输出 |
@@ -723,46 +724,79 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `basesFolder` | `DEFAULT_LIBRARY_PATHS.basesFolder` | `views.baseFolder` | — | Base 视图文件夹 | 资料库 | 高级 · 输出 |
 | `peopleContextMode` | `"privacy"` | `vocabulary.peopleContextMode` | — | 人员资料是否随请求发送（隐私优先/人名热词/本地增强） | 资料库 | 高级 · 诊断与隐私 |
 | `peopleHotwordsConsentAt` | `""` | `vocabulary.peopleHotwordsConsentAt` | — | 人名热词授权时间 | 资料库 | 内部（保留存储，不进设置界面） |
-| `peopleSuggestionIgnores` | `[]` | `vocabulary.peopleSuggestionIgnores` | — | 已忽略的人员建议 | 资料库（只读计数与清空） | 内部（保留存储，不进设置界面） |
-| `peopleSuggestionCache` | `{…}` | `vocabulary.peopleSuggestionCache` | — | 待确认人员建议缓存 | 资料库（只读计数） | 内部（保留存储，不进设置界面） |
-| `knowledgeExtractionHistory` | `{…}` | `vocabulary.extractionHistory` | — | 人员/词表扫描记录 | 资料库（只读计数与清空） | 内部（保留存储，不进设置界面） |
-| `inboxFolder` | `""` | `storage.inboxPath` | — | 外部收件箱监听目录 | 进阶 | 高级 · 自动化 |
-| `inboxAutoImport` | `true` | `storage.autoImportInbox` | — | 是否自动处理新音频 | 进阶 | 高级 · 自动化 |
-| `inboxArchiveSubfolder` | `"processed"` | `storage.archiveSubfolder` | — | 处理完成后移入的子文件夹 | 进阶 | 高级 · 自动化 |
-| `inboxStabilizeDelayMs` | `3000` | `storage.syncQuietMs` | — | 开始处理前的等待毫秒数 | 进阶 | 高级 · 自动化 |
-| `enableInterimOutput` | `true` | `capture.liveSegmentsEnabled` | — | 录音过程中是否切段实时转写 | 进阶 | 高级 · 录音 |
-| `segmentIntervalMinutes` | `5` | `capture.segmentMinutes` | — | 切段间隔（分钟） | 进阶 + 侧边栏 | 高级 · 录音 |
-| `asrConcurrency` | `1` | `speech.asrConcurrency` | — | 导入长音频的并发转写数 | 进阶 | 高级 · 录音 |
+| `peopleSuggestionIgnores` | `[]` | `vocabulary.peopleSuggestionIgnores` | — | 已忽略的人员建议 | 关于（只读计数） | 内部（保留存储，不进设置界面） |
+| `peopleSuggestionCache` | `{…}` | `vocabulary.peopleSuggestionCache` | — | 待确认人员建议缓存 | 关于（只读计数） | 内部（保留存储，不进设置界面） |
+| `knowledgeExtractionHistory` | `{…}` | `vocabulary.extractionHistory` | — | 人员/词表扫描记录 | 关于（只读计数） | 内部（保留存储，不进设置界面） |
+| `inboxFolder` | `""` | `storage.inboxPath` | — | 外部收件箱监听目录 | 录音 / 自动导入 | 高级 · 自动化 |
+| `inboxAutoImport` | `true` | `storage.autoImportInbox` | — | 是否自动处理新音频 | 录音 / 自动导入 | 高级 · 自动化 |
+| `inboxArchiveSubfolder` | `"processed"` | `storage.archiveSubfolder` | — | 处理完成后移入的子文件夹 | 录音 / 自动导入 | 高级 · 自动化 |
+| `inboxStabilizeDelayMs` | `3000` | `storage.syncQuietMs` | — | 开始处理前的等待毫秒数 | 录音 / 自动导入 | 高级 · 自动化 |
+| `enableInterimOutput` | `true` | `capture.liveSegmentsEnabled` | — | 录音过程中是否切段实时转写 | 录音 / 自动导入 | 高级 · 录音 |
+| `segmentIntervalMinutes` | `5` | `capture.segmentMinutes` | — | 切段间隔（分钟） | 录音 + 侧边栏 | 高级 · 录音 |
+| `asrConcurrency` | `1` | `speech.asrConcurrency` | — | 导入长音频的并发转写数 | 录音 / 自动导入 | 高级 · 录音 |
 | `segmentCacheFolder` | `${NS_ROOT}/.cache/segments` | `storage.segmentCachePath` | — | 分段音频临时缓存目录 | 无 | 高级 · 录音 |
-| `keepSegmentAudioFiles` | `false` | `capture.keepSegmentAudioFiles` | — | 是否保留临时分段音频（排障用） | 进阶 | 高级 · 诊断与隐私 |
-| `filterShortRecordings` | `true` | `capture.discardVeryShortRecordings` | — | 是否丢弃 3 秒内的误触录音 | 进阶 | 高级 · 录音 |
+| `keepSegmentAudioFiles` | `false` | `capture.keepSegmentAudioFiles` | — | 是否保留临时分段音频（排障用） | 录音 / 自动导入 | 高级 · 诊断与隐私 |
+| `filterShortRecordings` | `true` | `capture.discardVeryShortRecordings` | — | 是否丢弃 3 秒内的误触录音 | 录音 / 自动导入 | 高级 · 录音 |
 | `captureMode` | `"mic"` | `capture.sourceMode` | — | 录音来源（麦克风/混合/电脑音频） | 常规 + 侧边栏 | 基本设置 |
-| `audioChannelMode` | `"auto"` | `capture.channelMode` | — | 是否按声道区分说话人 | 常规 | 高级 · 录音 |
-| `selectedVirtualDevice` | `""` | `capture.virtualDeviceId` | — | 电脑音频输入设备 id | 常规 | 基本设置 |
-| `selectedMicrophoneDevice` | `""` | `capture.microphoneDeviceId` | — | 麦克风设备 id | 常规 | 基本设置 |
-| `enableRealtimeOutline` | `true` | `liveOutline.enabled` | — | 转写后是否自动更新实时大纲 | 进阶 | 高级 · 输出 |
+| `audioChannelMode` | `"auto"` | `capture.channelMode` | — | 是否按声道区分说话人 | 录音 | 高级 · 录音 |
+| `selectedVirtualDevice` | `""` | `capture.virtualDeviceId` | — | 电脑音频输入设备 id | 录音 | 基本设置 |
+| `selectedMicrophoneDevice` | `""` | `capture.microphoneDeviceId` | — | 麦克风设备 id | 录音 | 基本设置 |
+| `enableRealtimeOutline` | `true` | `liveOutline.enabled` | — | 转写后是否自动更新实时大纲 | 录音 / 自动导入 | 高级 · 输出 |
 | `realtimeOutlineDebounceMs` | `2500` | `liveOutline.debounceMs` | — | 实时大纲请求防抖毫秒数 | 无 | 高级 · 输出 |
-| `autoOpenOutlineOnRecord` | `true` | `liveOutline.openOnCapture` | — | 录音开始时是否自动打开侧边栏 | 进阶 | 高级 · 输出 |
-| `autoRenameWithTitle` | `true` | `noteNaming.renameWithTitle` | — | 是否用 AI 提炼主题追加到文件名 | 进阶 | 高级 · 输出 |
-| `consolidatedLayout` | `true` | `noteNaming.consolidatedLayout` | — | 纪要是否整合排版（顶部整合、底部原始分段） | 进阶 | 高级 · 输出 |
-| `maxRetries` | `3` | `retryPolicy.maxAttempts` | — | 转写/整理任务的自动重试上限 | 进阶 | 高级 · 自动化 |
-| `diagnosticsLogEnabled` | `true` | `diagnostics.enabled` | — | 是否写本地诊断日志 | 进阶 | 高级 · 诊断与隐私 |
-| `diagnosticsLogFolder` | `DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder` | `diagnostics.folder` | — | 诊断日志目录 | 进阶 | 高级 · 诊断与隐私 |
+| `autoOpenOutlineOnRecord` | `true` | `liveOutline.openOnCapture` | — | 录音开始时是否自动打开侧边栏 | 录音 / 自动导入 | 高级 · 输出 |
+| `autoRenameWithTitle` | `true` | `noteNaming.renameWithTitle` | — | 是否用 AI 提炼主题追加到文件名 | 录音 / 自动导入 | 高级 · 输出 |
+| `consolidatedLayout` | `true` | `noteNaming.consolidatedLayout` | — | 纪要是否整合排版（顶部整合、底部原始分段） | 录音 / 自动导入 | 高级 · 输出 |
+| `maxRetries` | `3` | `retryPolicy.maxAttempts` | — | 转写/整理任务的自动重试上限 | 录音 / 自动导入 | 高级 · 自动化 |
+| `diagnosticsLogEnabled` | `true` | `diagnostics.enabled` | — | 是否写本地诊断日志 | 录音 / 自动导入 | 高级 · 诊断与隐私 |
+| `diagnosticsLogFolder` | `DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder` | `diagnostics.folder` | — | 诊断日志目录 | 录音 / 自动导入 | 高级 · 诊断与隐私 |
 | `showFloatingBall` | `true` | `ui.floatingControlEnabled` | — | 是否常驻显示桌面悬浮按钮 | 常规 + 命令面板 | 高级 · 自动化 |
-| `bubbleSize` | `"large"` | `ui.bubbleSize` | — | 悬浮按钮大小 | 常规 | 高级 · 自动化 |
-| `floatingBallPos` | `{…}` | `ui.floatingControlPosition` | — | 悬浮按钮位置（拖动写入） | 气泡拖动 | 内部（保留存储，不进设置界面） |
-| `autoOpenNoteAfterFinish` | `true` | `noteNaming.openAfterFinish` | — | 处理完成后是否自动打开纪要 | 常规 | 高级 · 输出 |
+| `bubbleSize` | `"large"` | `ui.bubbleSize` | — | 悬浮按钮大小 | 录音 | 高级 · 自动化 |
+| `floatingBallPos` | `{…}` | `ui.floatingControlPosition` | — | 悬浮按钮位置（拖动写入） | 录音（拖动写入） | 内部（保留存储，不进设置界面） |
+| `autoOpenNoteAfterFinish` | `true` | `noteNaming.openAfterFinish` | — | 处理完成后是否自动打开纪要 | 录音 | 高级 · 输出 |
 | `autoOpenHtmlReportAfterGenerate` | `true` | `presentation.openHtmlReportAfterGenerate` | — | 生成 HTML 报告后是否用浏览器打开 | AI 整理 | 高级 · 输出 |
-| `writeDailyMeetingOverview` | `true` | `dailyNote.meetingOverviewEnabled` | — | 是否把会议概要写入当日日记 | 常规 | 高级 · 输出 |
-| `dailyMeetingOverviewHeading` | `DEFAULT_DAILY_MEETING_OVERVIEW_HEADING` | `dailyNote.meetingOverviewHeading` | — | 写入日记的标题 | 常规 | 高级 · 输出 |
-| `dailyMeetingOverviewTemplate` | `DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE` | `dailyNote.meetingOverviewTemplate` | — | 写入日记的模板 | 常规 | 高级 · 输出 |
-| `autoCheckUpdates` | `true` | `updates.autoCheck` | — | 启动时是否检查新版本 | 更新 | 高级 · 自动化 |
-| `lastUpdateCheckAt` | `null` | `updates.lastCheckedAt` | — | 上次检查更新时间 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
-| `availableUpdate` | `null` | `updates.available` | — | 已发现的可用更新 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
-| `lastUpdateError` | `""` | `updates.lastError` | — | 上次检查失败原因 | 更新（只读展示） | 内部（保留存储，不进设置界面） |
-| `installedUpdateVersion` | `""` | `updates.installedVersion` | — | 当前已安装版本记录 | 启动对齐 | 内部（保留存储，不进设置界面） |
+| `writeDailyMeetingOverview` | `true` | `dailyNote.meetingOverviewEnabled` | — | 是否把会议概要写入当日日记 | 录音 | 高级 · 输出 |
+| `dailyMeetingOverviewHeading` | `DEFAULT_DAILY_MEETING_OVERVIEW_HEADING` | `dailyNote.meetingOverviewHeading` | — | 写入日记的标题 | 录音 | 高级 · 输出 |
+| `dailyMeetingOverviewTemplate` | `DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE` | `dailyNote.meetingOverviewTemplate` | — | 写入日记的模板 | 录音 | 高级 · 输出 |
+| `autoCheckUpdates` | `true` | `updates.autoCheck` | — | 启动时是否检查新版本 | 关于 | 高级 · 自动化 |
+| `lastUpdateCheckAt` | `null` | `updates.lastCheckedAt` | — | 上次检查更新时间 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
+| `availableUpdate` | `null` | `updates.available` | — | 已发现的可用更新 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
+| `lastUpdateError` | `""` | `updates.lastError` | — | 上次检查失败原因 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
+| `installedUpdateVersion` | `""` | `updates.installedVersion` | — | 当前已安装版本记录 | 内部（程序写入） | 内部（保留存储，不进设置界面） |
 
-### 9.2 拟定的设置结构
+### 9.2 设置结构（2026-09-15 执行）
+
+六个面向用户的选项卡，按「用户此刻想做什么」划分，不按代码模块划分。
+判据是**语音记录优先**：与「录到什么」直接相关的项排在前面，旁路功能另置一页。
+
+| 选项卡 | 分组 | 设置项 | 动作行 |
+|---|---|---:|---:|
+| 录音 | 音频输入 / 录音与转写 / 纪要与实时大纲 / 文件与命名 / 完成后动作 / 悬浮按钮 | 18 | 1 |
+| API | API 配置 / 语音识别 / AI 整理 / 说话人识别 | 16 | 3 |
+| AI 整理 | 纪要生成 / 语言与翻译 / HTML 报告 / 纪要模板 | 6 | 1 |
+| 资料库 | 资料库 / 补全与去重 / 浏览与维护 / 存储与隐私 | 6 | 5 |
+| 自动导入 | 自动导入音频 / 任务重试 | 5 | 3 |
+| 关于 | 插件更新 / 诊断与日志 | 3 | 5 |
+
+本轮的三处调整：
+
+1. **拆掉「进阶」选项卡**。它原本 16 项挤在 5 组里，里面混了三类东西：
+   录音参数（分段间隔、并发、短录音过滤）、旁路功能（自动导入收件箱）、排障（诊断日志）。
+   拆分后：录音参数进「录音」——它们直接决定录到了什么，是常项而非边角设置；
+   自动导入与任务重试合成「自动导入」（都属「不在场时自动发生的事」）；
+   诊断日志进「关于」。
+2. **「常规」改名「录音」**。原名的「常规」什么都没说；这一页的实际内容是
+   声音怎么进来、存到哪里、录完发生什么，改名后名实相符。
+   分组顺序也按这个顺序重排，把「音频输入」放在最前。
+3. **「更新」扩为「关于」**。更新、诊断日志、版权与许可三者都不是配置项
+   （全会话只有「启动时自动检查」一个开关），原先分散在两处，现集中一页。
+
+「说话人」选项卡并入「API」见 §11.8。首页「使用状态」见 §11.7。
+
+**不动的部分**：「AI 整理」与「资料库」两页本轮只保留现状。前者的四个分组
+（纪要生成 / 语言与翻译 / HTML 报告 / 纪要模板）围绕「生成什么内容」，
+后者围绕「沉淀与复用」，各自内聚，没有跨页重复。
+
+
 
 三层，判据是「改了它会不会立刻影响用户拿到什么」：
 
@@ -787,22 +821,22 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 （`peopleSuggestionCache` 等的计数）。**它们继续参与落盘与读回，只是不再占用设置界面**——
 删掉会丢用户数据，这一点在 §9.3 的约束 2 里写明。
 
-### 9.3 维护规则冲突（盘点发现，未在本轮改动）
+### 9.3 维护规则冲突
 
-以下是本次盘点的产物，分两类：**实现冲突**（同一件事有两套实现，要改代码，属后续批次）
-与**材料冲突**（文档写的与代码行为不一致）。材料冲突里只做事实性更正的部分已在本轮顺手修掉，
-改不动的登记在 §9.3.2。这里没有删除任何功能——所有冲突都保留现状，只登记。
+分两类：**实现冲突**（同一件事有两套实现）与**材料冲突**（文档写的与代码行为不一致）。
+材料冲突里只做事实性更正的部分已在任务 0 顺手修掉；实现冲突中与配置/检测相关的四条（2、3、4）
+与「检测并保存」一条，已在任务 1 处理，见 §9.6。
 
-#### 9.3.1 实现冲突（需改代码，后续批次处理）
+#### 9.3.1 实现冲突
 
-| # | 冲突 | 证据 | 拟处理 |
+| # | 冲突 | 证据 | 状态 |
 |---|---|---|---|
-| 1 | **首页有两个推荐入口，指向不同服务。** 「使用推荐配置」写入硅基流动，页内「快速设置」默认选中小米 MiMo，两者都能一键落地 | `settings-tab.ts:375`（`applyBeginnerDefaults`，写 `siliconflow`）、`:394`（`oneCardProviderId = "mimo"`）、`:276` | 只保留一个经过验证的推荐方案；具体选哪家需另行核实（见 §9.4） |
-| 2 | **同一项配置的写入逻辑有两套。** 「API」页的 `writeProvider` 会同步进当前 API 方案，首页「快速设置」走自己的 `applyOneCardProvider`；两处都写 `transcribeProviders` | `settings-tab.ts:1223`（API 页 `writeProvider`，调 `syncWorkingAsrToActiveScheme`）、`:1476`（说话人页 `writeProvider`，不同步）、`:222`（`applyOneCardProvider`） | 合并为一处写入函数 |
-| 3 | **连通性检测有四份实现。** 转写测试、组合测试、导入服务测试、大模型测试各一套；首页「快速设置」还另建 `probePlugin` 影子对象来测未保存的输入 | `settings-tab.ts:1079`、`:1100`、`:1287`、`:1402`、`:441`、`:497` | 检测逻辑只实现一次，对「正在填写的值」求值 |
-| 4 | **API 方案的应用逻辑有两套，行为不同。** 「API」页调 `applyLlmProfileToWorkingConfig`（会一并切换方案里的转写快照），「说话人」页把同一段逻辑内联抄了一遍（不切换转写） | `settings-tab.ts:1130` vs `:1598-1613`；`llm/config.ts:264` | 统一调用同一函数 |
-| 5 | **「说话人」页同时放导入音频与 AI 整理服务配置。** 页内有「导入音频」和「AI 整理」两个一级标题，后者还提供「完整设置」跳到 API 页 | `settings-tab.ts:1424`、`:1590`、`:1738` | 页面按用户目的重命名与拆分 |
-| 6 | **首页状态判断分不清「已填写」与「测试通过」。** 只检查字段非空；服务页的徽章文案同样写「已填写」 | `settings-tab.ts:347`（`hasSpeechProvider`）、`:355`（`hasLlm`）、`:1055` | 分别展示录音转写 / 音频导入 / AI 整理的支持情况与检测结果 |
+| 1 | **首页有两个推荐入口，指向不同服务。** 「使用推荐配置」写入硅基流动，页内「快速设置」默认选中小米 MiMo，两者都能一键落地 | `settings-tab.ts` 的 `applyBeginnerDefaults`（写 `siliconflow`）与 `oneCardProviderId = "mimo"` | **未动**：两者现已共用同一份计划计算（见 §9.6），但默认选中哪一家仍待核实后再定（§9.4） |
+| 2 | **同一项配置的写入逻辑有两套。** 「API」页的 `writeProvider` 会同步进当前 API 方案，首页「快速设置」走自己的 `applyOneCardProvider`；两处都写 `transcribeProviders` | 原：API 页 `writeProvider` 调 `syncWorkingAsrToActiveScheme`、说话人页的 `writeProvider` 不同步、`applyOneCardProvider` 另写一套 | **已合并**：三条路径都经 `src/setup` 的 `planPresetApplication` / `applyPresetPlan`；「说话人页不同步方案」的差异保留为显式行为（它只改导入服务） |
+| 3 | **连通性检测有四份实现。** 转写测试、组合测试、导入服务测试、大模型测试各一套；首页「快速设置」还另建 `probePlugin` 影子对象来测未保存的输入 | 原四处检测 + 两处 `probePlugin` 影子对象 | **已统一**：`runPresetDetection` 一处组装，端口由 `probePorts()` 提供一次；检测对象改为候选配置 |
+| 4 | **API 方案的应用逻辑有两套，行为不同。** 「API」页调 `applyLlmProfileToWorkingConfig`（会一并切换方案里的转写快照），「说话人」页把同一段逻辑内联抄了一遍（不切换转写） | 原：API 页调 `applyLlmProfileToWorkingConfig`，说话人页内联抄了一遍 | **未动**：`applyLlmProfileToWorkingConfig` 自己的逻辑已有一份（`llm/config.ts:264`），但说话人页那段内联副本仍在，属任务 2 的页面重排范围 |
+| 5 | **「说话人」页同时放导入音频与 AI 整理服务配置。** 页内有「导入音频」和「AI 整理」两个一级标题，后者还提供「完整设置」跳到 API 页 | `settings-tab.ts` 的 `renderSpeaker` 页内含「导入音频」与「AI 整理」两个一级标题 | **未动**：属任务 2（页面重排） |
+| 6 | **首页状态判断分不清「已填写」与「测试通过」。** 只检查字段非空；服务页的徽章文案同样写「已填写」 | 原只看字段非空，服务页徽章写「已填写」 | **已改**：改为四态（缺配置 / 未测试 / 已通过 / 未通过），见 §9.6 |
 
 #### 9.3.2 材料冲突（文档与代码不一致）
 
@@ -844,3 +878,391 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
    （该文件当前在 §8 的暂停清单里）。
 7. **测试覆盖用户后果**：错误密钥、部分服务失败、取消配置、重启后读回、已有配置被保留。
    设置结构变更仍按 §4.5 的三步走（版本号 +1、登记迁移、加用例），并遵守同一节的四态判定。
+
+---
+
+## 10. 首次配置：预设范围、检测与四态
+
+任务 1 的产物。对应的实现在 `src/setup/index.ts`（有类型检查），行为测试在 `tests/setup.test.ts`。
+
+### 10.1 预设改哪些字段
+
+预设**只写完成服务配置所需的键**，清单集中在 `PRESET_WRITTEN_FIELDS`：
+
+| 写入 | 键 |
+|---|---|
+| 是 | `transcribeProviders`、`activeTranscribeProvider`、`importTranscribeProvider`、`llmServicePreset`、`llmEndpoint`、`llmModel`、`llmApiKey`、`llmProfiles`、`activeLlmProfile` |
+| 否 | 其余 78 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、日记、自动导入 |
+
+`tests/setup.test.ts` 会拿一份「用户已经改过很多项」的设置逐键核对：清单之外的键必须逐项不变。
+反向验证过——一旦让预设顺手写 `audioFolder`，该用例立刻失败。
+
+两条容易被忽略的边界：
+
+- **不改用户已选的转写语言**：预设填地址、模型、密钥，`language` 只在用户没设过时才用默认值。
+  用户把语言调成 `en` 之后套预设，仍是 `en`。
+- **密钥为空时不覆盖**：「先套推荐配置、再填密钥」的入口（`allowMissingKey`）只写地址与模型，
+  不会把用户已填的密钥清成空串。
+
+### 10.2 检测对象是候选配置
+
+检测分三步：`planPresetApplication` 算出计划 → `applyPresetPlan` 得到候选设置 →
+`buildProbeHost` 用它构造检测宿主。因此**测的是用户正在填的值**，不是磁盘上已保存的配置。
+
+`buildProbeHost` 的 `saveSettings` / `saveAll` 指向拒绝函数（不是删掉）：
+检测若试图写盘会直接失败并报「检测过程不得写盘」，而不是静默保存。
+用户点「检测」不等于同意保存。
+
+### 10.3 四态
+
+| 状态 | 含义 | 判定 |
+|---|---|---|
+| 缺配置 | 端点、模型或（云端服务的）密钥没填 | `setupServiceIssue` 非空；本地服务可省密钥 |
+| 未测试 | 填全了，但没有同配置的测试结果 | 无结果、或配置指纹已变 |
+| 已通过 | 同配置最近一次检测成功 | 结果 `ok` 且指纹一致 |
+| 未通过 | 同配置最近一次检测失败 | 结果不 `ok` 且指纹一致 |
+
+**「指纹」指端点 + 模型 + 密钥摘要**（密钥只进散列不进原文）。改了任一项，旧结果自动失效、
+回到「未测试」——不需要在每个输入框上挂重置逻辑。结果只存在内存（`_probeResults`），不落盘：
+它表示「本次会话测过没有」，不是用户配置。
+
+界面上的体现：服务页徽章用这四态，不再显示含糊的「已配置 / 已填写」。
+徽章只用已有的 `is-ready` / `is-missing` 两种配色，四态差别由文字承担（颜色区分在色弱下不可靠）。
+首页「程序状态」不参与这四态——它只看是否缺配置（§11.7），两者职责不同不要合并。
+
+### 10.4 取消与失败不覆盖已有配置
+
+- **取消**：计划是纯函数（不改传入对象），应用前丢弃计划即可，磁盘逐项不变。
+- **检测失败**：只记录结果，不写入任何设置；用户已填的密钥不被清空。
+- **未点「应用」**：不会有任何写盘调用。
+
+以上四条都有用例，且逐条做过反向验证（故意破坏实现后对应用例失败）。
+
+### 10.5 仍未处理的
+
+- §9.3 冲突 1（首页两个推荐入口各指向一家服务）：两者已共用同一份计划计算，
+  但**默认选中哪家**仍未定——需先核实服务能力、模型可用性、地区与费用（§9.4）。
+- §9.3 冲突 4 的说话人页内联副本、冲突 5 的页面命名与拆分：属页面重排（任务 2）。
+- 设置页的 `@ts-nocheck` 仍在（§8 的暂停清单）；本次新增逻辑都放在有类型检查的 `src/setup/` 里，
+  设置页只保留 DOM 与事件绑定。
+
+---
+
+## 11. 首次配置：阿里云百炼一站式方案
+
+任务 2 的产物。首次配置只保留**一条**路径：填阿里云百炼的 API Key。
+服务地址与三个模型全部内置，用户不需要看到、也不需要选择它们。
+
+### 11.1 内置的三段服务与模型
+
+| 用途 | 服务（provider id） | 模型 | 接入方式 |
+|---|---|---|---|
+| 录音转写（实时） | `dashscope` | `qwen-audio-3.0-asr-flash-streaming` | WebSocket `wss://dashscope.aliyuncs.com/api-ws/v1/inference` |
+| 导入音频（整文件） | `dashscope-filetrans` | `qwen-audio-3.0-asr-flash-filetrans` | DashScope 异步 `/api/v1/services/audio/asr/transcription` |
+| AI 整理 | 服务预设 `dashscope` | `qwen3.8-flash` | OpenAI 兼容 `/compatible-mode/v1` |
+
+三段共用同一把密钥，写入范围仍受 §10.1 的 `PRESET_WRITTEN_FIELDS` 约束。
+
+**模型与接入方式的核实依据**（2026-09-15 查阿里云百炼公开文档）：
+
+- 三个模型均出现在百炼「选择模型 → 音频与语音 → 语音识别 / 文本生成」列表中。
+- `qwen-audio-3.0-asr-flash-filetrans` 与 Fun-ASR 同为**异步调用**，用 `file_urls`、
+  `X-DashScope-Async: enable`、轮询 `/api/v1/tasks/{id}`——与既有 `dashscope-filetrans` 实现一致，
+  因此沿用该协议，未新增协议分支。
+- `qwen-audio-3.0-asr-flash-streaming` 走实时识别的 WebSocket 协议
+  （`run-task` → `result-generated` → `finish-task`），与既有 `dashscope-ws` 实现一致。
+- 该模型支持 `language_hints`（最多 4 个值）、`format`、`sample_rate`。
+
+### 11.2 顺带修掉的协议缺陷（`src/asr/realtime-params.ts`）
+
+查证文档时发现既有实现会**无条件下发 `disfluency_removal_enabled`**。
+该字段在文档里明确标注「仅 Paraformer 支持」，
+Qwen-Audio-3.0-ASR-Flash-Streaming / Fun-ASR-Realtime 的参数表中没有它。
+旧实现还无条件下发 `language_hints: ["zh","en"]`，对未指定语种的用户是替服务端做了决定。
+
+现在只有 Paraformer 系列才下发 `disfluency_removal_enabled`；
+`language_hints` 仅在用户指定了语种时下发，否则交给服务端自动识别。
+参数构造移入有类型检查的 `src/asr/realtime-params.ts`，由 `tests/realtime-params.test.ts` 覆盖
+（反向验证过：恢复旧行为会让三条用例失败）。
+
+**未改动**：paraformer 系列仍按原样工作；用户的既有服务配置与模型选择没有任何变更。
+
+### 11.3 界面
+
+首页「快速设置」只剩一个输入框（百炼 API Key）与两个按钮（保存并启用 / 仅检测）。
+点「保存并启用」时先检测候选配置，**检测未全部通过就不落盘**——避免把一把无效密钥当成配置写进去。
+
+原先首页有两个各指向不同服务的推荐入口（「使用推荐配置」写硅基流动、「快速设置」默认小米 MiMo），
+已合并为一条：「使用推荐配置」现在只是滚动到「快速设置」并说明该填什么。
+
+### 11.4 已知限制
+
+- **移动端不支持流式录音转写**（既有限制，与模型无关）：移动端没有能设置鉴权头的 WebSocket。
+  移动端录音时插件会提示改用分段转写服务，音频仍会保留。
+- 百炼一站式方案需要用户在百炼控制台**开通对应模型**，否则检测会失败并如实报出是哪个环节。
+
+### 11.5 真机验证发现的两处修正（2026-09-15）
+
+首次用百炼一站式方案做真机验证时暴露的问题，均已修：
+
+**① 检测把 `wss://` 按 HTTP 校验，误报「协议不受支持」。**
+百炼录音转写是 WebSocket 服务（`wss://…/api-ws/v1/inference`），
+而 `transcribeAudio` 内的校验写死 `"http"`，于是地址被当成协议不受支持而失败——
+服务本身完全正常，用户看到的却是一段红色的失败提示。
+
+原因不只是校验传参：**检测本身走错了链路**。流式服务的真实使用方式是
+「录音时建 WebSocket 并握手鉴权」，而检测此前一律走 HTTP 上传一段静音音频，
+既与真实链路不符，也会被 HTTP 校验拦下。
+
+修法（两层，都在 `src/shared/util-llm-endpoint.ts` 与设置页）：
+
+- 新增 `inferEndpointTransport` / `describeEndpointIssue` / `assertEndpointAllowed`：
+  **按地址自身的协议校验**（`ws://`/`wss://` 走 websocket 规则，其余走 http 规则）。
+  安全规则没有放宽——公网明文 `ws://` / `http://` 仍被拒绝。
+- `runAsrConnectivityTest` 改为按服务实际传输方式分流：流式服务走真实 WebSocket 握手
+  （服务端在握手阶段校验密钥），其余仍走上传。流式检测不发送音频，因此不产生识别计费。
+
+**② 首页四个按钮、且已配好仍显示快速配置面板。**
+按维护者要求收敛为两个动作：**快速配置**、**打开侧边栏**。
+「配置服务」「AI 整理设置」两条跳转已移除——分别跳 API 页与 AI 整理页，
+四个按钮并列时用户无法判断该点哪个；细节调整在各页面里本来就有入口。
+
+快速配置面板默认在**已配好（转写与 AI 整理都不缺）时不再显示**；
+此时点「快速配置」会先弹确认（说明会覆盖哪三段、不会动哪些），确认后才显示面板。
+初次配置不弹确认，直接显示。
+
+回归防线：`tests/endpoint-transport.test.ts`（5 项）钉住按协议校验，
+其中一条直接断言「旧实现按 http 校验会误报协议不受支持」；
+`tests/bailian-setup.test.ts` 补两项钉住面板显示条件。
+
+### 11.6 真机验证第二轮：切换服务后的历史分段任务（2026-09-15）
+
+**现象**：快速设置里三段检测全部通过，但执行转写任务仍报同一句
+「转写服务地址协议不受支持」。
+
+**根因不在检测，在队列里的历史任务。**
+
+Fresh 库的时间线（文件系统的修改时间可查）：
+
+| 时间 | 事件 |
+|---|---|
+| 17:49:45 | 装入含本次修复的构建 |
+| 17:50:53 | 开始录音。**此时配置还没落地**，用的是默认的硅基流动（`https://`），因此录音按段切开 |
+| 17:51:17 | 停止录音，两段进入转写队列（`providerId: null`） |
+| 17:54:24 | 执行快速设置，配置换成百炼实时转写（`wss://`）；随后队列重试 |
+
+分段任务本身不记录「当初用的是哪个服务」（`providerId: null`），
+重试时 `transcribeAudio` 按**当前**激活服务解析 provider，于是拿着 `wss://` 地址走 HTTP 上传，
+被协议校验判为不受支持。检测通过、转写失败，是因为这两件事用的是不同时刻的配置。
+
+**修法**：分段重试前先判断当前服务能不能接受「已录好的分段」。
+流式服务只能在建连时逐帧推流，无法把分段 POST 上去，因此直接给出可行动的说明，
+而不是让它去撞协议校验、报一句与真实原因无关的错：
+
+> 当前转写服务是流式服务（阿里云百炼实时转写），不能逐段重试——流式服务只支持录音时
+> 实时推送，无法把已录好的分段上传转写。请在「API」页改用分段或整文件转写服务，
+> 或在会话笔记里对整场录音重新转写。
+
+判定逻辑在 `describeSegmentRetryUnavailable`（`src/queue/queue-retry-service.ts`），
+由 `tests/segment-retry-guard.test.ts` 覆盖。取不到服务档案时**不拦**——
+探测失败不该让重试彻底不可用。
+
+**已验证新录音不再复现**：用 Fresh 库的真实配置跑一遍录音前的分段判定，
+`transcribeMode = streaming` → `segmentDurationMs = 0` → 整场流式推送，不产生分段任务。
+
+**未做**（登记，不在本轮范围）：让历史分段任务真正恢复。可行方向是用已保留的整场录音
+（`masterAudioPath`，本次录音的母带完好）走整文件转写重新获得文本；这会改变分段语义，
+按「一批只解决一个明确问题」留到单独批次。
+
+**给使用者的处置**：这类历史任务重试不会成功，在队列面板逐条「取消」即可；
+重新录一段音频即可验证新链路。
+
+### 11.6.1 音频设备识别与选择
+
+「麦克风」与「电脑音频」两个下拉共用一个分类函数（`classifyAudioInputDevices`、
+`pickComputerAudioDevices`，`src/ui/helpers.ts`），判据一致：
+
+| 下拉 | 列出什么 | 为什么 |
+|---|---|---|
+| 麦克风 | **全部**输入设备，按名字分组（默认 / 麦克风 / 虚拟声卡 / 当前选择） | 用户可能就想用虚拟声卡录人声；实体麦克风名字里也可能带 SoundWire 之类关键词。过滤会把真麦克风弄丢，所以只分组、不删项。 |
+| 电脑音频 | 正常只列虚拟声卡；**一个都认不出时退回列出全部** | 电脑音频要的是虚拟声卡输入。但关键词表只是启发式，认不出时若照旧只列虚拟声卡会得到空列表，比多列几只更难用。 |
+
+**两者都不做自动选择。** 判定哪只是虚拟声卡靠设备名关键词，判错就会录到错误的声音，
+而用户从界面上看不出来。所以一律留空让用户手动选，下拉里标「推荐 · 虚拟声卡」供参考。
+原先「自动设置」按钮会写 `selectedVirtualDevice`（`autoConfigureAudioInput`），已移除该行为，
+按钮只保留「测试设备」与「设置电脑音频」。
+
+**「名字读不到」不等于「没有设备」。** `enumerateDevices()` 在未授权时仍会返回设备与
+`deviceId`，只有 `label` 是空的。因此：
+
+- 有设备、名字全空 → 提示「设备名需授权才能显示（读到 N 个设备）」，并说明仍可按下拉顺序选；
+- 一个输入设备都没有 → 才说「未检测到音频输入设备」。
+
+把前者当后者会让用户看到「未检测到设备」而实际只是没授权。
+
+**权限申请只在用户动作里发生。** `enumerateAudioDevices({ requestPermission: true })`
+会调一次 `getUserMedia` 拿设备名；不传则只调 `enumerateDevices()`，不弹授权框、
+不点亮系统麦克风指示灯。调用点分两类：
+
+| 场景 | 是否申请权限 | 理由 |
+|---|---|---|
+| 首页「使用状态」读设备 | 否 | 只看状态却弹出麦克风授权请求，用户会以为插件在录音 |
+| 麦克风 / 电脑音频下拉 | 是 | 要显示设备名才能选，用户打开设置页就是为了选设备 |
+| 「检测设备」「测试设备」「自动设置」「重新检测」 | 是 | 用户主动发起的检测 |
+
+### 11.7 首页「使用状态」
+
+首页这块只回答两个问题：**现在能不能开始用？如果能，当前会用什么服务？**
+
+```
+使用状态
+
+已准备好
+核心配置已完成，可以开始录音。
+
+语音转写                            ›
+阿里云百炼实时转写
+qwen-audio-3.0-asr-flash-streaming
+─────────────────────────────────
+AI 整理                             ›
+阿里云百炼 / DashScope
+qwen3.8-flash
+─────────────────────────────────
+说话人识别                          ›
+已启用
+qwen-audio-3.0-asr-flash-filetrans
+─────────────────────────────────
+音频输入                            ›
+MacBook Pro 麦克风 · 可用
+系统默认
+```
+
+**正常状态不显示任何状态标记。** 每行都挂一个相同的标记等于没有信息量，
+还会把注意力从真正有问题的那行拉走。因此 `SetupStatusLine.icon` 正常时为空字符串，
+只有异常行才渲染 `!`（缺配置）或 `×`（已确认不可用，比缺配置更严重——
+用户以为配好了，实际用不了）。总体结论也不放圆点：四个单项已经各自说明了状况，
+总结再挂一个同样的标记只是重复；没准备好时右上角出现一个徽章。
+
+**视觉层级依次是：结论 → 配置项名称 → 服务名 → 模型 ID。**
+紫色只用于真正的交互（hover、focus、当前选中），不用于静态文字——
+把标题和服务名都染成 accent 会让普通信息看起来像链接，也把层级压平。
+
+| 元素 | 颜色 | 字号 |
+|---|---|---|
+| 结论 | `--text-normal` + semibold | `--font-ui-medium` |
+| 配置项名称 | `--text-normal` + semibold | `--font-ui-small` |
+| 服务名 | `--text-normal` | `--font-ui-small` |
+| 模型 ID | `--text-muted` + `--font-monospace` | `--font-ui-smaller` |
+
+**整行都是点击目标**，右侧箭头只是「这一行能点」的提示，因此保持低存在感
+（`--text-faint`、`opacity: 0.55`，hover 时才提亮）。
+跳转目标：语音转写 → `api`、AI 整理 → `ai`、说话人识别 → `speaker`、音频输入 → `general`。
+
+**条目之间只用低对比度分隔线**（`--background-modifier-border`），不画表格、不加卡片背景。
+四项放在一个容器里（`.qnalog-status-list`），保持 Obsidian 设置页的克制感，
+不做成 SaaS dashboard 那种组件。
+
+**判定口径**：只有语音转写与 AI 整理缺配置才拦得住「开始使用」，
+因此 `blockerCount` 与 `headline` 只算这两项，徽章用同一个数；
+不拦住开始使用、但仍需处理的项目（如所选的麦克风已断开）放在 `warnings` 里单独计数。
+两者口径若混在一起，会出现「说还差 2 项、但结论又是已准备好」。
+测试结果完全不参与（那属于 §10.3 的四态）。
+
+**音频输入行显示用户读得懂的短名**：浏览器给的原始 label
+（`Default - MacBook Pro Microphone`、`MacBook Pro麦克风 (Built-in)`）既是调试态、
+又中英混杂，因此 `friendlyDeviceName` 去掉系统默认前缀；认不出的原样返回，
+宁可显示长一点，也不猜成一个不准确的短名。次级行写「系统默认」或「已指定设备」，
+不重复模式名——「音频输入」这一行已经表达了输入来源。
+
+数据来自 `buildSetupStatus`（`src/setup/index.ts`，有类型检查），
+由 `tests/bailian-setup.test.ts` 的 8 项覆盖，含反向验证。
+
+### 11.6.1 音频设备识别与选择
+
+「麦克风」与「电脑音频」两个下拉共用一个分类函数（`classifyAudioInputDevices`、
+`pickComputerAudioDevices`，`src/ui/helpers.ts`），判据一致：
+
+| 下拉 | 列出什么 | 为什么 |
+|---|---|---|
+| 麦克风 | **全部**输入设备，按名字分组（默认 / 麦克风 / 虚拟声卡 / 当前选择） | 用户可能就想用虚拟声卡录人声；实体麦克风名字里也可能带 SoundWire 之类关键词。过滤会把真麦克风弄丢，所以只分组、不删项。 |
+| 电脑音频 | 正常只列虚拟声卡；**一个都认不出时退回列出全部** | 电脑音频要的是虚拟声卡输入。但关键词表只是启发式，认不出时若照旧只列虚拟声卡会得到空列表，比多列几只更难用。 |
+
+**两者都不做自动选择。** 判定哪只是虚拟声卡靠设备名关键词，判错就会录到错误的声音，
+而用户从界面上看不出来。所以一律留空让用户手动选，下拉里标「推荐 · 虚拟声卡」供参考。
+原先「自动设置」按钮会写 `selectedVirtualDevice`（`autoConfigureAudioInput`），已移除该行为，
+按钮只保留「测试设备」与「设置电脑音频」。
+
+**「名字读不到」不等于「没有设备」。** `enumerateDevices()` 在未授权时仍会返回设备与
+`deviceId`，只有 `label` 是空的。因此：
+
+- 有设备、名字全空 → 提示「设备名需授权才能显示（读到 N 个设备）」，并说明仍可按下拉顺序选；
+- 一个输入设备都没有 → 才说「未检测到音频输入设备」。
+
+把前者当后者会让用户看到「未检测到设备」而实际只是没授权。
+
+**权限申请只在用户动作里发生。** `enumerateAudioDevices({ requestPermission: true })`
+会调一次 `getUserMedia` 拿设备名；不传则只调 `enumerateDevices()`，不弹授权框、
+不点亮系统麦克风指示灯。调用点分两类：
+
+| 场景 | 是否申请权限 | 理由 |
+|---|---|---|
+| 首页「使用状态」读设备 | 否 | 只看状态却弹出麦克风授权请求，用户会以为插件在录音 |
+| 麦克风 / 电脑音频下拉 | 是 | 要显示设备名才能选，用户打开设置页就是为了选设备 |
+| 「检测设备」「测试设备」「自动设置」「重新检测」 | 是 | 用户主动发起的检测 |
+
+### 11.7 首页「使用状态」
+
+首页这块只回答两个问题：**现在能不能开始用？如果能，当前会用什么服务？**
+因此分两层，不再是平级的若干张卡：
+
+```
+使用状态
+
+● 已准备好
+转写与 AI 整理都已可用，可以开始录音。
+
+  语音转写     阿里云百炼实时转写          ›
+               qwen-audio-3.0-asr-flash-streaming
+  AI 整理      阿里云百炼 / DashScope       ›
+               qwen3.8-flash
+  说话人识别    已启用                      ›
+               qwen-audio-3.0-asr-flash-filetrans
+  音频输入      未检测（点下方「检测设备」）  ›
+               仅麦克风
+```
+
+上面一行是结论（一级信息），下面四行是结论的依据（二级信息，逐行可点）。
+原来的「使用准备」四张卡把「需要用户准备的」与「纯粹的偏好开关」混在一起，
+且模型 ID 因卡片面积成了页面上最大的内容之一——二级技术信息被放到了与结论同等的权重。
+
+**每一行自己就是入口**，点哪一项去哪个标签页（`api` / `ai` / `speaker` / `general`），
+不再是底部一个语意模糊的「调整配置」按钮（它与顶部的「快速配置」语义重复，已删除）。
+
+**四级内容口径**：
+
+| 行 | 一级内容 | 次级说明 |
+|---|---|---|
+| 语音转写 | 服务名（如「阿里云百炼实时转写」）；缺配置时写缺什么 | 模型标识 |
+| AI 整理 | 服务名（用 `getActiveLlmServicePresetId` 解析，认不出就报接口主机名） | 模型标识 |
+| 说话人识别 | 未启用 / 当前服务不支持 / 缺什么 / 已启用 | 模型标识（仅在已启用且可用时） |
+| 音频输入 | **真实设备状态**（设备名 · 可用 / 已选择的麦克风不可用） | 配置模式（如「仅麦克风」） |
+
+音频输入改成读真实设备：「仅麦克风」是配置值，回答不了「麦克风现在能不能用」，
+所以它降为次级说明，一级位置留给设备事实。
+读取只调 `enumerateDevices`，**不调 `getUserMedia`**：设置页不主动弹授权框、
+不点亮系统麦克风指示灯。未授权时如实写「未授权读取设备名」并给一个「检测设备」按钮，
+检测由用户发起（`enumerateAudioDevices` 只在点击时调用）。
+
+**判定口径**：只有语音转写与 AI 整理缺配置才拦得住「开始使用」——没有它们产不出纪要。
+说话人识别与音频输入不影响能否开始，因此既不参与 ready，也不计入「还需要完成 N 项」；
+两者口径必须一致，否则会出现「说还差 3 项、但结论是已准备好」这种自相矛盾。
+测试结果完全不参与（那属于 §10.3 的四态，由各服务自己的徽章承担）。
+
+**样式**：整套沿用仓库已有的 `qnalog-diag-*`（圆点 `is-ok` / `is-warn` / `is-fail` +
+`diag-label` + `diag-sub` + `diag-card`），只补了 `.qnalog-diag-row.is-clickable`、
+`.qnalog-status-value`、`.qnalog-status-go` 三个类。不新起样式族：
+两套样式会让同一类信息在两处长得不一样。
+
+数据来自 `buildSetupStatus`（`src/setup/index.ts`，有类型检查），
+由 `tests/bailian-setup.test.ts` 的 5 项覆盖，含反向验证（让它永远宣称可用、
+或让它不显示服务名，对应用例都会失败）。

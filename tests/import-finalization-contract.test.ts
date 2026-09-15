@@ -94,16 +94,24 @@ describe("import finalization contract", () => {
     expect(source).toContain("不要机械罗列每个人说了什么");
   });
 
-  it("exposes AI service selection and connection checks on the speaker settings page", () => {
+  it("exposes every imported-audio and AI-organize setting on the merged API page", () => {
+    // 「说话人」选项卡已并入 API 页（该页原本另有一份 AI 整理服务配置，与 API 页重复）。
+    // 这里断言的是**合并后没有丢设置**，而不是某个方法里的字符串顺序：
+    // 原先的用例按方法名切片比对字面量，改结构就失败，且它锁住的正是要删掉的重复副本。
     const source = fs.readFileSync(path.join(root, "src/ui/settings-tab.ts"), "utf8");
-    const speakerPage = source.slice(source.indexOf("renderSpeaker(c)"), source.indexOf("renderAI(c)"));
+    const apiPage = source.slice(source.indexOf("renderApi(c) {"), source.indexOf("renderAI(c)"));
 
-    expect(speakerPage).toContain('.setName("AI 整理")');
-    expect(speakerPage).toContain('.setName("大模型服务")');
-    expect(speakerPage).toContain('.setName("服务地址")');
-    expect(speakerPage).toContain('"复用转写密钥"');
-    expect(speakerPage).toContain('.setName("AI 模型")');
-    expect(speakerPage).toContain("fetchLlmModelList");
-    expect(speakerPage).toContain("testLlmConnection");
+    // 原「说话人」页独有的两项必须随合并保留，否则说话人识别无法关闭或指定人数
+    expect(apiPage).toContain('.setName("区分说话人")');
+    expect(apiPage).toContain('.setName("说话人数")');
+    expect(apiPage).toContain("importSpeakerDiarization");
+    expect(apiPage).toContain("importSpeakerCount");
+
+    // 导入音频的转写服务配置随之并入
+    expect(apiPage).toContain("importTranscribeProvider");
+    expect(apiPage).toContain("fetchImportTranscribeModels");
+
+    // 选项卡本身不应再存在
+    expect(source).not.toContain('{ id: "speaker"');
   });
 });
