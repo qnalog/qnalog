@@ -125,12 +125,15 @@ Q&A Log 可以把会议中值得复用的内容保存为独立的 Obsidian 对�
 | 录音 | `QnALog/录音` |
 | 转写纪要 | `QnALog/转写纪要` |
 | 会议资料 | `QnALog/会议资料` |
-| 人员档案 | `QnALog/人员` |
-| 待办卡片 | `QnALog/待办卡片` |
-| 视图 | `QnALog/视图` |
+| 人员档案 | `QnALog/资料库/人员` |
+| 待办卡片 | `QnALog/资料库/待办` |
+| 视图 | `QnALog/资料库/视图` |
+| 词汇表 | `QnALog/资料库/词汇表.md` |
+| 诊断日志 | `QnALog/系统/诊断日志` |
+| 归档 | `QnALog/资料库/归档` |
 | HTML 报告 | `QnALog/HTML报告` |
 | 邮件草稿 | `QnALog/邮件草稿` |
-| 词汇表 | `QnALog/词汇表.md` |
+| 分段缓存 | `QnALog/.cache/segments` |
 
 > 默认目录使用 `QnALog/` 前缀。它们只是普通路径，随时可以在设置中修改。
 > Q&A Log 是独立项目，不迁移其他项目的数据，也不扫描或改写你既有的笔记。

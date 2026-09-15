@@ -1,6 +1,7 @@
 # 纯校验 CI：只验证，不发布。
 #
-# 本仓库不发 Release（见 MAINTAINING.md §3），因此这里没有任何发布步骤，
+# 发布是人工流程，由维护者在本地按 MAINTAINING.md §4.2 执行（`gh release create`
+# 上传 main.js / manifest.json / styles.css）。因此这里没有任何发布步骤，
 # 只有构建可复现性、测试与主线隔离检查。权限也仅需只读。
 name: Validate
 

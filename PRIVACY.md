@@ -23,7 +23,7 @@ QnALog does not operate its own cloud storage service and does not upload record
 
 - Speech-to-text requests send audio data to the transcription service configured by the user.
 - AI organization requests send transcript text and prompt context to the large-language-model service configured by the user.
-- Update checks request `manifest.json` and the plugin files from this repository's `main` branch (raw source and jsDelivr mirrors). The update source is a fixed constant and is not user-configurable.
+- Update checks request `manifest.json` only, from this repository's `main` branch (raw source and jsDelivr mirrors). The plugin compares the version and, if a newer one exists, points you at the GitHub release page. It never downloads or installs plugin files, and it does not update itself. The update source is a fixed constant and is not user-configurable.
 - Documentation links in settings open external web pages in the system browser.
 
 If you configure a third-party API provider, that provider's own terms and privacy policy apply to the content you send to it.
