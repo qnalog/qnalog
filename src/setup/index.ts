@@ -562,7 +562,7 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
   const lines: SetupStatusLine[] = [
     toLine({ label: "语音转写", target: "api", ...input.transcribe }),
     toLine({ label: "AI 整理", target: "ai", ...input.llm }),
-    toLine({ label: "说话人识别", target: "speaker", ...input.speaker }),
+    toLine({ label: "说话人识别", target: "api", ...input.speaker }),
     toLine({ label: "音频输入", target: "general", ...input.audio }),
   ];
   // 只有转写与 AI 整理缺配置才拦得住「开始使用」：没有它们产不出纪要。

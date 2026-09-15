@@ -285,7 +285,7 @@ describe("使用状态总览", () => {
     expect(Object.fromEntries(buildSetupStatus(base).lines.map((l) => [l.label, l.target]))).toEqual({
       "语音转写": "api",
       "AI 整理": "ai",
-      "说话人识别": "speaker",
+      "说话人识别": "api",
       "音频输入": "general",
     });
   });

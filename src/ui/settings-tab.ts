@@ -9,7 +9,7 @@ import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
 import { LLM_SERVICE_PRESETS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
-import { fetchLlmModelList, getLlmConfigIssue, testLlmConnection } from '../llm/core';
+import { fetchLlmModelList, testLlmConnection } from '../llm/core';
 import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
 import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabularyMarkdown, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
@@ -86,7 +86,6 @@ export const LV_SETTINGS_TABS = [
   { id: "home",     label: "Q&A Log" },
   { id: "general",  label: "常规" },
   { id: "api",      label: "API" },
-  { id: "speaker",  label: "说话人" },
   { id: "ai",       label: "AI 整理" },
   { id: "knowledge", label: "资料库" },
   { id: "advanced", label: "进阶" },
@@ -152,7 +151,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       case "home":     this.renderHome(content); break;
       case "general":  this.renderGeneral(content); break;
       case "api":      this.renderApi(content); break;
-      case "speaker":  this.renderSpeaker(content); break;
       case "ai":       this.renderAI(content); break;
       case "knowledge": this.renderKnowledge(content); break;
       case "advanced": this.renderAdvanced(content); break;
@@ -1393,8 +1391,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     this.renderApiSchemeSelector(c);
 
     new obsidian.Setting(c)
-      .setName("实时录音")
-      .setDesc("配置会议录音使用的转写服务。导入音频使用独立服务，在“说话人”中设置。")
+      .setName("语音识别")
+      .setDesc("配置会议录音使用的转写服务。导入音频使用独立服务，见下方「说话人识别」。")
       .setHeading();
 
     this.renderDataRiskNotice(c, "is-api");
@@ -1496,8 +1494,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c)
-      .setName("AI 整理服务")
-      .setDesc("用于纪要整理、问一问、沉淀、重整和翻译。")
+      .setName("AI 整理")
+      .setDesc("配置 AI 整理使用的模型，用于纪要整理、问一问、沉淀、重整和翻译。")
       .setHeading();
     // 「已保存配置」已升级为顶部「API 方案」（同时含转写 + AI 整理），不再在此处单列 LLM-only 版本。
 
@@ -1620,16 +1618,23 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     // 「默认润色模式」原在此处有第二入口，与「AI 整理」页的「当前默认提示词」同写 polishMode
     // 且两处互不联动刷新——已删除本处副本，统一在 AI 整理页设置。
+
+    // 「说话人」页已并入此处：转写（实时录音 / 导入音频）与 AI 整理的服务配置集中一页。
+    this.renderImportAudio(c);
   }
 
-  renderSpeaker(c) {
-    new obsidian.Setting(c)
-      .setName("导入音频")
-      .setDesc("整文件转写并识别说话人，不参与实时录音分段。")
+  /**
+   * 「说话人识别」设置。原先自成一个「说话人」选项卡，但该页另一半是 AI 整理服务，
+   * 与 API 页的「API 配置」重复（API 页更完整：含转写快照、检测、删除），
+   * 两处都能改同一批字段。合并到 API 页后，转写与 AI 整理的服务配置集中一处。
+   */
+  renderImportAudio(c) {
+        new obsidian.Setting(c)
+      .setName("说话人识别")
+      .setDesc("导入整段音频时使用独立服务转写并识别说话人，不参与实时录音分段。")
       .setHeading();
 
-    this.renderDataRiskNotice(c, "is-api");
-
+    // 风险提示由 API 页顶部统一渲染一次，这里不再重复。
     const providers = this.plugin.settings.transcribeProviders || {};
     const supportedIds = Object.keys(providers).filter((id) => {
       const profile = this.getTranscribeProviderProfile(id, providers[id] || {});
@@ -1788,166 +1793,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           });
         });
     }
-
-    new obsidian.Setting(c)
-      .setName("AI 整理")
-      .setDesc("原始转写写入笔记并确认说话人后，再按当前纪要模板生成正文。")
-      .setHeading();
-
-    const llmProfiles = normalizeLlmProfiles(this.plugin.settings.llmProfiles);
-    new obsidian.Setting(c)
-      .setName("整理配置")
-      .setDesc("选择已保存的大模型配置。这里只切换 AI 整理服务，不改变实时录音或导入音频的转写服务。")
-      .addDropdown((dropdown) => {
-        dropdown.addOption("", "当前临时配置");
-        for (const item of llmProfiles) dropdown.addOption(item.id, item.name || item.id);
-        dropdown.setValue(this.plugin.settings.activeLlmProfile || "");
-        dropdown.onChange(async (id) => {
-          if (!id) {
-            this.plugin.settings.activeLlmProfile = "";
-          } else {
-            const selected = findLlmProfile(this.plugin.settings, id);
-            if (selected) {
-              this.plugin.settings.llmEndpoint = selected.endpoint || "";
-              this.plugin.settings.llmApiKey = selected.apiKey || "";
-              this.plugin.settings.llmModel = selected.model || "";
-              this.plugin.settings.activeLlmProfile = selected.id;
-              this.plugin.settings.llmServicePreset = inferLlmServicePresetId(this.plugin.settings);
-            }
-          }
-          await this.plugin.saveSettings();
-          this.renderSettings();
-        });
-      });
-
-    const activeLlmPresetId = getActiveLlmServicePresetId(this.plugin.settings);
-    new obsidian.Setting(c)
-      .setName("大模型服务")
-      .setDesc("选择服务后会填入兼容接口地址；访问密钥不会被覆盖。")
-      .addDropdown((dropdown) => {
-        dropdown.addOption("", "自定义服务");
-        for (const preset of LLM_SERVICE_PRESETS) dropdown.addOption(preset.id, preset.label);
-        dropdown.setValue(activeLlmPresetId || "");
-        dropdown.onChange(async (id) => {
-          const preset = getLlmServicePreset(id);
-          this.plugin.settings.llmServicePreset = id || "";
-          if (preset?.endpoint) this.plugin.settings.llmEndpoint = preset.endpoint;
-          syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-          await this.plugin.saveSettings();
-          this.renderSettings();
-        });
-      });
-
-    const activeLlmPreset = getLlmServicePreset(activeLlmPresetId);
-    new obsidian.Setting(c)
-      .setName("服务地址")
-      .setDesc(activeLlmPreset?.endpointHelp || "填写大模型服务的 OpenAI 兼容接口地址。")
-      .addText((text) => text
-        .setValue(this.plugin.settings.llmEndpoint || "")
-        .setPlaceholder(activeLlmPreset?.endpoint || "https://api.example.com/v1")
-        .onChange(async (value) => {
-          this.plugin.settings.llmEndpoint = value.trim();
-          this.plugin.settings.llmServicePreset = inferLlmServicePresetId(this.plugin.settings);
-          syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-          await this.plugin.saveSettings();
-        }));
-
-    const llmKeySetting = new obsidian.Setting(c)
-      .setName(canOmitServiceApiKey(this.plugin.settings.llmEndpoint) ? "访问密钥（可选）" : "访问密钥")
-      .setDesc(activeLlmPreset?.keyHelp || "填写大模型服务的 API Key。")
-      .addText((text) => {
-        text.inputEl.type = "password";
-        text.setValue(this.plugin.settings.llmApiKey || "")
-          .setPlaceholder("API Key")
-          .onChange(async (value) => {
-            this.plugin.settings.llmApiKey = value.trim();
-            syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-            await this.plugin.saveSettings();
-          });
-      });
-    if (activeLlmPresetId === "dashscope" && activeId === "dashscope-filetrans" && provider.apiKey) {
-      llmKeySetting.addButton((button) => button
-        .setButtonText("复用转写密钥")
-        .onClick(async () => {
-          this.plugin.settings.llmApiKey = provider.apiKey;
-          syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-          await this.plugin.saveSettings();
-          new obsidian.Notice("已复用阿里云百炼转写密钥。", 4000);
-          this.renderSettings();
-        }));
-    }
-
-    new obsidian.Setting(c)
-      .setName("AI 模型")
-      .setDesc("用于生成最终纪要；不会改变语音转写模型。")
-      .addText((text) => text
-        .setValue(this.plugin.settings.llmModel || "")
-        .setPlaceholder("选择或填写模型标识")
-        .onChange(async (value) => {
-          this.plugin.settings.llmModel = value.trim();
-          syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-          await this.plugin.saveSettings();
-        }))
-      .addButton((button) => button
-        .setButtonText("获取模型")
-        .onClick(async () => {
-          if (!this.plugin.settings.llmEndpoint) {
-            new obsidian.Notice("请先选择大模型服务或填写服务地址。", 5000);
-            return;
-          }
-          button.setDisabled(true);
-          button.setButtonText("获取中…");
-          try {
-            const models = await fetchLlmModelList(this.plugin.settings.llmEndpoint, this.plugin.settings.llmApiKey);
-            if (!models.length) {
-              new obsidian.Notice("服务没有返回模型列表，请手动填写模型标识。", 6000);
-              return;
-            }
-            openPickListModal(this.app, `选择 AI 模型（共 ${models.length} 个）`, models, async (model) => {
-              this.plugin.settings.llmModel = model;
-              syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-              await this.plugin.saveSettings();
-              new obsidian.Notice(`已选择 AI 模型：${model}`, 4000);
-              this.renderSettings();
-            });
-          } catch (error) {
-            new obsidian.Notice(`获取模型失败：${(error && error.message) || error}`, 8000);
-          } finally {
-            button.setDisabled(false);
-            button.setButtonText("获取模型");
-          }
-        }));
-
-    const llmIssue = getLlmConfigIssue(this.plugin.settings);
-    new obsidian.Setting(c)
-      .setName("连接测试")
-      .setDesc(llmIssue || "发送极短文本检查 AI 整理服务，不上传录音或转写内容。")
-      .addButton((button) => button
-        .setButtonText("测试连接")
-        .onClick(async () => {
-          button.setDisabled(true);
-          button.setButtonText("测试中…");
-          const view = buildServiceView({
-            endpoint: this.plugin.settings.llmEndpoint,
-            model: this.plugin.settings.llmModel,
-            apiKey: this.plugin.settings.llmApiKey,
-          }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint));
-          const result = await this.runAndRecordProbe("llm:active", view, async () => {
-            const r = await testLlmConnection(this.plugin);
-            return r.model || "未命名模型";
-          });
-          new obsidian.Notice(result.ok ? `AI 整理服务正常：${result.detail}` : `连接失败：${result.detail}`, 8000);
-          button.setDisabled(false);
-          button.setButtonText("测试连接");
-          this.renderSettings();
-        }))
-      .addButton((button) => button
-        .setButtonText("完整设置")
-        .onClick(() => {
-          this.activeTab = "api";
-          this.renderSettings();
-        }));
   }
+
 
   renderAI(c) {
     if (!this.plugin.settings.industryProfile) this.plugin.settings.industryProfile = {};
