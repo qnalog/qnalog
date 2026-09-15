@@ -132,6 +132,65 @@ export const NS_VIEW_MINUTES_KANBAN = "qnalog-minutes-kanban-view";
 /** 语义 Canvas 的 JSON 键。 */
 export const NS_FM_SEMANTIC = "qnalogSemantic";
 
+/**
+ * 音频文件名前缀。
+ *
+ * `lex-` 不是 LexVoice 的数据，而是 **1.0.0 自身的输出**：改名时漏掉了生成录音
+ * 文件名的那几处，于是 1.0.0 用户的知识库里已经有 `lex-<时间戳>.webm` 与
+ * `lex-<时间戳>-segNN.webm`，笔记里也有 `[[lex-…webm]]` 链接。
+ *
+ * 因此这里是**写入用新前缀、读取同时接受两者**：只写不读会让已发布的 1.0.0 用户
+ * 找不到自己的分段缓存与主录音（多段导入分组、重试找回主音频都会失效）。
+ */
+export const NS_AUDIO_PREFIX = NS_TAG;
+export const NS_AUDIO_PREFIX_LEGACY = "lex";
+
+/** 生成匹配音频文件名前缀的正则片段：`(?:qnalog|lex)`。 */
+export const NS_AUDIO_ALT = `(?:${NS_AUDIO_PREFIX}|${NS_AUDIO_PREFIX_LEGACY})`;
+
+/** 从一段文本里剥掉音频文件名前缀，得到裸时间戳（两侧前缀都认）。 */
+export function stripAudioPrefix(name: unknown): string {
+  return String(typeof name === "string" ? name : "").replace(new RegExp(`^${NS_AUDIO_ALT}-`, "i"), "");
+}
+
+/** 沉淀对象的稳定 id 前缀；1.0.0 写的是 `lv-sed-`，读取要认。 */
+export const NS_SEDIMENT_ID_PREFIX = `${NS_TAG}-sed`;
+export const NS_SEDIMENT_ID_PREFIX_LEGACY = "lv-sed";
+
+/**
+ * 生成同一个沉淀 id 的旧写法。
+ *
+ * 1.0.0 把 `lv-sed-todo-<hash>` 写进了用户的日记（`<!-- qnalog-todo:… -->`）。
+ * 升级后新 id 是 `qnalog-sed-todo-<hash>`——哈希输入相同，只有前缀不同。
+ * 查找时必须两种都试，否则同一条待办会被当成新条目再写一遍（日记里出现重复行）。
+ */
+export function legacySedimentIdVariants(id: unknown): string[] {
+  const text = typeof id === "string" ? id : "";
+  if (!text.startsWith(`${NS_SEDIMENT_ID_PREFIX}-`)) return [];
+  return [NS_SEDIMENT_ID_PREFIX_LEGACY + text.slice(NS_SEDIMENT_ID_PREFIX.length)];
+}
+
+/**
+ * 会话进行中的实时转写块标记名（`<!-- <前缀>-live-start:会话id -->`）。
+ * 1.0.0 写的是 `lv-live-*`；收尾清理时要两种都找，否则中断的录音会留下孤儿块
+ * （用户笔记里一条卡住的"实时转写中…"引用块）。
+ */
+export const NS_LIVE_MARKER_START = "live-start";
+export const NS_LIVE_MARKER_END = "live-end";
+export const NS_LIVE_MARKER_PREFIX_LEGACY = "lv";
+
+/** 一个标记的两种写法（新前缀 + 1.0.0 的旧前缀）。 */
+export function nsMarkerLegacyVariants(name: string, value?: string): string[] {
+  const suffix = value == null ? "" : `:${value}`;
+  return [
+    `<!-- ${NS_LIVE_MARKER_PREFIX_LEGACY}-${name}${suffix} -->`,
+  ];
+}
+
+/** 内部不透明 id 前缀（`genId()`）；1.0.0 写的是 `lv-`。无人解析前缀，改生成器安全。 */
+export const NS_ID_PREFIX = NS_TAG;
+
+
 /** 从 Canvas 文档里读语义元数据。 */
 export function readSemanticMeta<T = unknown>(document: unknown): T | undefined {
   if (!document || typeof document !== "object") return undefined;

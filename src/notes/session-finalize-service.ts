@@ -37,7 +37,7 @@ import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { ViewShellService } from "../ui/view-shell-service";
-import { NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
+import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
 
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
@@ -118,7 +118,7 @@ export class SessionFinalizeService {
     const displayEndOffsetMs = Number.isFinite(Number(seg.displayEndOffsetMs))
       ? Number(seg.displayEndOffsetMs)
       : Math.max(displayStartOffsetMs, (Number(seg.endOffsetMs) || 0) + continuationOffsetMs);
-    const segmentAudioName = seg.segmentAudioName || `lex-${session.sessionStamp}-seg${pad(segNumber)}.${seg.ext}`;
+    const segmentAudioName = seg.segmentAudioName || `${NS_AUDIO_PREFIX}-${session.sessionStamp}-seg${pad(segNumber)}.${seg.ext}`;
     const segmentAudioPath = seg.segmentAudioPath || obsidian.normalizePath(`${this.host.recording.getSegmentCacheFolder()}/${segmentAudioName}`);
     const segmentDurationMs = Math.max(0, displayEndOffsetMs - displayStartOffsetMs);
 

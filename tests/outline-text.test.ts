@@ -401,17 +401,17 @@ describe("parseRealtimeOutlineStateFromMarkdown + cleanRealtimeOutlineItemText",
   });
   it("cleanRealtimeOutlineItemText 剥掉行尾未闭合的残缺锚点，不误伤完整锚点/文中方括号", () => {
     // 残缺锚点（模型截断/流式半写）：整条就是半个锚点 → 清空
-    expect(cleanRealtimeOutlineItemText("[[lex-202")).toBe("");
+    expect(cleanRealtimeOutlineItemText("[[qnalog-202")).toBe("");
     expect(cleanRealtimeOutlineItemText("- [[lex-2026...|53:02")).toBe("");
     // 正文尾部跟半个锚点 → 只剥残缺部分，保留正文
-    expect(cleanRealtimeOutlineItemText("方向选择 [[lex-202")).toBe("方向选择");
+    expect(cleanRealtimeOutlineItemText("方向选择 [[qnalog-202")).toBe("方向选择");
     // 完整锚点照常被剥、正文保留（不因新规则误伤）
     expect(cleanRealtimeOutlineItemText("文字 [[a|01:00]]")).toBe("文字");
     // 正文里合法的成对方括号（有闭合）不动
     expect(cleanRealtimeOutlineItemText("引用 [[概念]] 说明")).toBe("引用 [[概念]] 说明");
   });
   it("makeRealtimeOutlineNode 对「只剩残缺锚点」的标题返回 null（丢弃乱码节点）", () => {
-    expect(makeRealtimeOutlineNode("", "[[lex-202", [], 0)).toBeNull();
+    expect(makeRealtimeOutlineNode("", "[[qnalog-202", [], 0)).toBeNull();
   });
   it("makeRealtimeOutlineNode 空标题返回 null，子要点上限截断", () => {
     expect(makeRealtimeOutlineNode("[[a|01:00]]", "", [], 0)).toBeNull();

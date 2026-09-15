@@ -10,7 +10,7 @@ import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_C
 import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
-import { nsMarker } from "../shared/namespace";
+import { NS_LIVE_MARKER_END, NS_LIVE_MARKER_START, nsMarker, nsMarkerLegacyVariants } from "../shared/namespace";
 
 /** MeetingWorkbenchService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface MeetingWorkbenchHost {
@@ -246,8 +246,8 @@ export class MeetingWorkbenchService {
   async upsertLiveTranscriptBlock(mdPath, sessionId, text) {
     const file = this.host.app.vault.getAbstractFileByPath(mdPath);
     if (!(file instanceof obsidian.TFile)) return;
-    const startMarker = `<!-- lv-live-start:${sessionId} -->`;
-    const endMarker = `<!-- lv-live-end:${sessionId} -->`;
+    const startMarker = nsMarker(NS_LIVE_MARKER_START, sessionId);
+    const endMarker = nsMarker(NS_LIVE_MARKER_END, sessionId);
     const safe = (text || "").trim().split("\n").map(l => "> " + l).join("\n");
     const body = safe || "> _（等待说话…）_";
     const block = `${startMarker}\n> [!quote]+ 实时转写中…\n${body}\n${endMarker}`;
@@ -270,11 +270,22 @@ export class MeetingWorkbenchService {
   async removeLiveTranscriptBlock(mdPath, sessionId) {
     const file = this.host.app.vault.getAbstractFileByPath(mdPath);
     if (!(file instanceof obsidian.TFile)) return;
-    const startMarker = `<!-- lv-live-start:${sessionId} -->`;
-    const endMarker = `<!-- lv-live-end:${sessionId} -->`;
+    const startMarker = nsMarker(NS_LIVE_MARKER_START, sessionId);
+    const endMarker = nsMarker(NS_LIVE_MARKER_END, sessionId);
     const cur = await this.host.app.vault.read(file);
-    const startIdx = cur.indexOf(startMarker);
-    const endIdx = cur.indexOf(endMarker);
+    // 1.0.0 写的是 `lv-live-*`。两种都找，否则升级前中断的录音会在笔记里
+    // 留下一个再也不会被清理的"实时转写中…"引用块。
+    const findMarker = (primary, legacyName) => {
+      const at = cur.indexOf(primary);
+      if (at >= 0) return at;
+      for (const candidate of nsMarkerLegacyVariants(legacyName, sessionId)) {
+        const legacyAt = cur.indexOf(candidate);
+        if (legacyAt >= 0) return legacyAt;
+      }
+      return -1;
+    };
+    const startIdx = findMarker(startMarker, NS_LIVE_MARKER_START);
+    const endIdx = findMarker(endMarker, NS_LIVE_MARKER_END);
     if (startIdx < 0 || endIdx < 0) return;
     const next = cur.slice(0, startIdx).replace(/\n+$/, "") + cur.slice(endIdx + endMarker.length).replace(/^\n+/, "\n");
     await this.host.app.vault.modify(file, next);

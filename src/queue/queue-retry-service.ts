@@ -31,7 +31,7 @@ import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { NoteWriter } from "../notes/note-writer";
-import { nsMarker } from "../shared/namespace";
+import { NS_AUDIO_ALT, nsMarker } from "../shared/namespace";
 
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
@@ -267,7 +267,7 @@ export class QueueRetryService {
     push(task.masterAudioPath);
 
     const audioName = String(task.audioName || (task.audioPath || "").split("/").pop() || "");
-    const match = audioName.match(/^(lex-\d{8}-\d{6})-seg\d+\.(\w+)$/i);
+    const match = audioName.match(new RegExp(`^(${NS_AUDIO_ALT}-\\d{8}-\\d{6})-seg\\d+\\.(\\w+)$`, "i"));
     if (match) {
       const folder = obsidian.normalizePath(this.host.settings.audioFolder || DEFAULT_SETTINGS.audioFolder || "");
       const stem = match[1];

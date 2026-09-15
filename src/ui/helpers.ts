@@ -316,7 +316,7 @@ export function makeImportTextCheckboxId(path, index) {
     hash ^= source.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return `lv-import-text-${Math.max(0, Number(index) || 0)}-${(hash >>> 0).toString(36)}`;
+  return `qnalog-import-text-${Math.max(0, Number(index) || 0)}-${(hash >>> 0).toString(36)}`;
 }
 
 export function countKnowledgeExtractionHistory(settings, kind) {
