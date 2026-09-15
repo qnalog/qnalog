@@ -202,11 +202,11 @@ npm run build
 npm run install:vault -- "/你的知识库路径"
 ```
 
-`install:vault` 会把 `main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE` 复制到 `<知识库>/.obsidian/plugins/qnalog/`，把即将被覆盖的内容（含 `data.json`）整份留档到 `<知识库>/.obsidian/qnalog-install-backups/<时间戳>/`；首次安装时还会从已有的 `lexvoice` 或 `lexvoice-mit` 插件目录沿用设置。
+`install:vault` 会把 `main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE` 复制到 `<知识库>/.obsidian/plugins/qnalog/`，把即将被覆盖的内容（含 `data.json`）整份留档到 `<知识库>/.obsidian/qnalog-install-backups/<时间戳>/`。它只处理 `qnalog` 自己的目录，不会从其他插件继承设置。
 
 随后在 Obsidian 中重新加载（`Ctrl/Cmd + R`），启用 **Q&A Log**。
 
-若设置结构发生了变化，插件会在首次加载时给出迁移报告：一条通知，加上诊断日志里的一份完整对照表——哪些分组被丢弃、哪些被保留、需要重新选择什么。
+若磁盘上的设置版本与当前版本不一致，插件会在首次加载时丢弃这份设置、改用默认值，并给出一条通知。请在「设置 → Q&A Log」里重新配置路径与 API Key。
 
 ### 回滚
 
