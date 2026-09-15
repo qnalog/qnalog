@@ -222,7 +222,7 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 2026-09-14 已统一为 `QnALog`：这些字符串只存在于代码里，不写用户文件。**新代码不得再引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量。** |
 | 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、frontmatter 键 `qnalog_speakers`、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 已重置为 QnALog 命名空间。**写入用新值，读取同时接受旧值**（见 §1.1.2），旧字面量的判定集中在 `src/shared/namespace.ts`；**新代码不得再引入 `lexvoice-*` 字面量**。 |
 
-发版前的指针检查清单——已固化为脚本，CI 每次 push 都会跑：
+发版前的指针检查清单——已固化为脚本：CI 每次 push 都会跑，本地 `npm run verify` 也包含（2026-09-15 起并入，避免只在改动特定文件时手跑而漏掉）：
 
 ```bash
 node scripts/check-mainline-isolation.mjs
@@ -269,8 +269,7 @@ node scripts/check-mainline-isolation.mjs
 npm version X.Y.Z --no-git-tag-version   # 同步 package.json / package-lock.json
 # 编辑 manifest.json 的 version（如 minAppVersion 有变，一并更新）
 node version-bump.mjs                    # 写入 versions.json
-npm ci && npm run verify                 # lint + build + test
-node scripts/check-mainline-isolation.mjs
+npm ci && npm run verify:push            # lint + build + test + 主线隔离 + 产物一致性
 git add -A && git commit                 # 含重建后的 main.js
 git tag X.Y.Z && git push origin main --tags
 gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes-file <说明>
@@ -307,6 +306,19 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 ### 4.4 CI
 
 `.github/workflows/validate.yml` 是**纯校验**工作流：`npm ci` → `npm run build` → `npm test` → 主线隔离检查 → 产物与源码一致性检查。权限仅 `contents: read`，不含任何发布步骤；发布走 §4.2 的人工流程。
+
+**CI 不是必选，也不是本地检查的替代品。** 2026-09-15 实测：触发器是 `push: [main]` + `pull_request`，裸推分支不会跑任何检查；`main` 没有分支保护，CI 不拦合并；历史上 39 次运行全部成功，未发现过一次回归。它的两个不可替代之处是**跨平台第二意见**（ubuntu / Node 20，本地是 macOS / Node 22）与**校验已推送状态**（干净检出后构建，比的是仓库里真实提交的东西，而不是工作区）。
+
+本地与 CI 的能力对照（2026-09-15 起两者等价）：
+
+| 检查 | `npm run verify` | `npm run verify:push` | CI |
+|---|---|---|---|
+| lint / build / test 全链路 | ✅ | ✅ | ✅ |
+| 主线隔离 | ✅ | ✅ | ✅ |
+| 提交的产物能否由同提交源码重建 | — | ✅ | ✅ |
+| 干净检出的产物一致（未提交内容不污染） | — | 部分（读 HEAD 对象） | ✅ |
+
+`verify:push` 在推送前跑，比 `verify` 多一项 `check:bundle-consistency`：把 HEAD 里参与构建的文件导出到临时目录、在那里打包、与 HEAD 里的 `main.js` 逐字节比对。它补的是 §5.2 那条 `git status --porcelain main.js` 的结构性盲区——那条只发现「重新构建了但忘了 `git add`」，如果压根没重新构建，工作区的产物与 HEAD 一致，会给出假通过。该脚本要求源码已提交（否则直接报错退出，不静默忽略），所以不放进提交前跑的 `verify`。
 
 `npm run build` 内部依次跑四个静态检查，任一失败即中断：
 
