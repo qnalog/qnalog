@@ -7290,11 +7290,18 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-home-block {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
+  gap: var(--size-4-2);
 }
 
+/* 区块标题是「标签」，不是内容。原先它与下面的结论同为 font-ui-medium + semibold，
+   两行等重的黑字紧贴在一起，看起来像被压扁的双层标题。
+   压低一档并降对比度后，视线顺序变成：标签 → 结论 → 明细。 */
 .qnalog-home-block h3 {
-  font-size: var(--font-ui-medium);
+  margin-bottom: var(--size-4-2);
+  color: var(--text-muted);
+  /* 与仓库既有的区块标题同字号（.qnalog-settings-section-title 用 font-ui-small），
+     比结论小一档、比模型 ID 大不了一档，靠颜色区分出「这是标签」。 */
+  font-size: var(--font-ui-small);
   font-weight: var(--font-semibold);
 }
 
@@ -7316,10 +7323,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-normal);
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
 }
 
 .qnalog-status-detail {
-  margin-top: var(--size-2-1);
+  margin-top: var(--size-2-2);
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   line-height: var(--line-height-normal);
@@ -7352,7 +7360,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-status-list {
   display: flex;
   flex-direction: column;
-  margin-top: var(--size-2-2);
   border-top: 1px solid var(--background-modifier-border);
 }
 
