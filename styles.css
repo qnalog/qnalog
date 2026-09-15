@@ -3141,10 +3141,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
    token/按钮/勾选样式。全部走 Obsidian 变量，跟随主题 & Style Settings；主色一律 --interactive-accent。 */
 .qnalog-note-ask {
   /* 与 .qnalog-sediment 同源的 token（同样的 color-mix 公式，保证两面板视觉一致） */
-  --lvk-active: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary));
-  --lvk-line: color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
-  --lvk-item-line: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
-  --lvk-accent-hover: color-mix(in srgb, var(--interactive-accent) 86%, var(--text-normal));
+  --qnalog-active: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary));
+  --qnalog-line: color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+  --qnalog-item-line: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  --qnalog-accent-hover: color-mix(in srgb, var(--interactive-accent) 86%, var(--text-normal));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3350,7 +3350,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   justify-content: flex-end;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 0.5px solid var(--lvk-line);
+  border-top: 0.5px solid var(--qnalog-line);
 }
 
 .qnalog-note-ask-batch-btn {
@@ -3370,7 +3370,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-note-ask-batch-btn:not(:disabled):hover {
-  background: var(--lvk-accent-hover);
+  background: var(--qnalog-accent-hover);
   border-color: color-mix(in srgb, var(--interactive-accent) 48%, var(--background-modifier-border));
   color: var(--text-on-accent);
 }
@@ -3393,11 +3393,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex-direction: column;
   padding: 2px 14px;
   border-radius: 10px;
-  background: var(--lvk-active);
+  background: var(--qnalog-active);
 }
 
 .qnalog-note-ask-item {
-  border-top: 0.5px solid var(--lvk-item-line);
+  border-top: 0.5px solid var(--qnalog-item-line);
 }
 
 .qnalog-note-ask-item:first-child {
@@ -3542,7 +3542,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   max-width: 100%;
   text-align: left;
   padding: 7px 13px;
-  border: 1px solid var(--lvk-line);
+  border: 1px solid var(--qnalog-line);
   border-radius: 12px;
   background: var(--background-primary);
   color: var(--text-normal);
@@ -3673,18 +3673,18 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment {
-  --lv-sediment-bg: color-mix(in srgb, var(--background-secondary) 62%, var(--background-primary));
-  --lv-sediment-active: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary));
-  --lv-sediment-line: color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
-  --lv-sediment-text: var(--text-normal);
-  --lv-sediment-muted: var(--text-muted);
-  --lv-sediment-faint: var(--text-faint);
-  --lv-sediment-accent: var(--text-accent);
-  --lv-sediment-accent-strong: var(--interactive-accent);
-  --lv-sediment-accent-hover: color-mix(in srgb, var(--interactive-accent) 86%, var(--text-normal));
-  --lv-sediment-accent-soft: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
-  --lv-sediment-success: var(--text-success, var(--text-accent));
-  --lv-sediment-success-bg: color-mix(in srgb, var(--text-success, var(--interactive-accent)) 10%, var(--background-primary));
+  --qnalog-sediment-bg: color-mix(in srgb, var(--background-secondary) 62%, var(--background-primary));
+  --qnalog-sediment-active: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary));
+  --qnalog-sediment-line: color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+  --qnalog-sediment-text: var(--text-normal);
+  --qnalog-sediment-muted: var(--text-muted);
+  --qnalog-sediment-faint: var(--text-faint);
+  --qnalog-sediment-accent: var(--text-accent);
+  --qnalog-sediment-accent-strong: var(--interactive-accent);
+  --qnalog-sediment-accent-hover: color-mix(in srgb, var(--interactive-accent) 86%, var(--text-normal));
+  --qnalog-sediment-accent-soft: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  --qnalog-sediment-success: var(--text-success, var(--text-accent));
+  --qnalog-sediment-success-bg: color-mix(in srgb, var(--text-success, var(--interactive-accent)) 10%, var(--background-primary));
   gap: 12px;
   background: transparent;
   border: 0;
@@ -3696,14 +3696,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 70px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: var(--lv-sediment-active);
+  background: var(--qnalog-sediment-active);
   border: 0;
   box-shadow: none;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .qnalog-sediment-baton.is-done {
-  background: color-mix(in srgb, var(--lv-sediment-success) 7%, var(--background-primary));
+  background: color-mix(in srgb, var(--qnalog-sediment-success) 7%, var(--background-primary));
 }
 
 .qnalog-sediment-baton-top,
@@ -3732,7 +3732,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment-status {
   gap: 8px;
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   font-size: 11px;
   font-weight: var(--font-medium);
   transition: color 0.3s ease;
@@ -3749,23 +3749,23 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-baton.is-done .qnalog-sediment-status {
-  color: var(--lv-sediment-success);
+  color: var(--qnalog-sediment-success);
 }
 
 .qnalog-sediment-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--lv-sediment-accent-strong);
+  background: var(--qnalog-sediment-accent-strong);
   transition: background 0.3s ease;
 }
 
 .qnalog-sediment-baton.is-done .qnalog-sediment-dot {
-  background: var(--lv-sediment-success);
+  background: var(--qnalog-sediment-success);
 }
 
 .qnalog-sediment-progress-text {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   font-size: 11px;
   transition: color 0.3s ease;
   /* 不跟随标题换行被压扁；保持单行紧贴右侧 */
@@ -3777,7 +3777,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-baton.is-done .qnalog-sediment-progress-text {
-  color: var(--lv-sediment-success);
+  color: var(--qnalog-sediment-success);
 }
 
 .qnalog-sediment-pipeline {
@@ -3838,7 +3838,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 13px;
   margin: 0 6px;
   flex: 0 0 13px;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3851,16 +3851,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment .qnalog-sediment-pipeline-node.is-current {
   background: var(--background-primary);
-  border-color: var(--lv-sediment-accent-strong);
+  border-color: var(--qnalog-sediment-accent-strong);
 }
 
 .qnalog-sediment-pipeline-node.is-current .qnalog-sediment-pipeline-circle {
-  background: var(--lv-sediment-accent-strong);
+  background: var(--qnalog-sediment-accent-strong);
   color: var(--text-on-accent);
 }
 
 .qnalog-sediment-pipeline-node.is-current .qnalog-sediment-pipeline-label {
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   font-weight: var(--font-medium);
 }
 
@@ -3869,13 +3869,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-pipeline-node.is-pending .qnalog-sediment-pipeline-circle {
-  border: 1.2px solid var(--lv-sediment-faint);
+  border: 1.2px solid var(--qnalog-sediment-faint);
   background: transparent;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
 }
 
 .qnalog-sediment-pipeline-node.is-pending .qnalog-sediment-pipeline-label {
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
 }
 
 .qnalog-sediment-pipeline-node.is-pending:hover,
@@ -3889,12 +3889,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-pipeline-node.is-done .qnalog-sediment-pipeline-circle {
-  background: var(--lv-sediment-success-bg);
-  color: var(--lv-sediment-success);
+  background: var(--qnalog-sediment-success-bg);
+  color: var(--qnalog-sediment-success);
 }
 
 .qnalog-sediment-pipeline-node.is-done .qnalog-sediment-pipeline-label {
-  color: var(--lv-sediment-success);
+  color: var(--qnalog-sediment-success);
 }
 
 .qnalog-sediment-pipeline-node.is-empty {
@@ -3904,11 +3904,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-sediment-pipeline-node.is-empty .qnalog-sediment-pipeline-circle {
   border: 1.2px solid var(--background-modifier-border);
   background: transparent;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
 }
 
 .qnalog-sediment-pipeline-node.is-empty .qnalog-sediment-pipeline-label {
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
 }
 
 .qnalog-sediment-body {
@@ -3922,7 +3922,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex-direction: column;
   gap: var(--size-4-2);
   padding: var(--size-4-3);
-  border: 1px solid var(--lv-sediment-line);
+  border: 1px solid var(--qnalog-sediment-line);
   border-radius: var(--radius-s);
   background: var(--background-primary);
 }
@@ -3939,7 +3939,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-speaker-map-title {
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   font-size: var(--font-ui-small);
   font-weight: var(--font-semibold);
   line-height: var(--line-height-tight);
@@ -3968,7 +3968,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-speaker-map-label {
   overflow: hidden;
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   font-size: var(--font-ui-smaller);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4031,13 +4031,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: 11px;
   cursor: pointer;
 }
 
 .qnalog-sediment-rescan-button:hover {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   text-decoration: underline;
 }
 
@@ -4054,7 +4054,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 0;
   margin: 8px 0 12px;
   padding: 4px 14px;
-  background: var(--lv-sediment-active);
+  background: var(--qnalog-sediment-active);
   border-radius: 10px;
 }
 
@@ -4115,7 +4115,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
 }
@@ -4149,7 +4149,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment-item-title {
   min-width: 0;
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   font-weight: 650;
   font-size: var(--font-ui-small);
   overflow: hidden;
@@ -4164,9 +4164,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 3px;
   max-width: 120px;
   padding: 1px 6px;
-  border: 0.5px solid var(--lv-sediment-line);
+  border: 0.5px solid var(--qnalog-sediment-line);
   border-radius: 999px;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   background: transparent;
   font-size: 10px;
   line-height: 1.2;
@@ -4188,7 +4188,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment-item-summary {
   margin-top: 3px;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: 11px;
   line-height: 1.35;
   overflow: hidden;
@@ -4209,29 +4209,29 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   gap: 3px;
   min-height: 18px;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
 }
 
 .qnalog-sediment-field:hover {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
 }
 
 .qnalog-sediment-field.is-time,
 .qnalog-sediment-field.is-counter {
   padding: 2px 6px;
   border-radius: 999px;
-  color: var(--lv-sediment-accent);
-  background: var(--lv-sediment-active);
+  color: var(--qnalog-sediment-accent);
+  background: var(--qnalog-sediment-active);
 }
 
 .qnalog-sediment-field.is-empty {
   padding: 2px 6px;
-  border: 0.5px dashed var(--lv-sediment-faint);
+  border: 0.5px dashed var(--qnalog-sediment-faint);
   border-radius: 999px;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
 }
 
 /* ============================================================
@@ -4256,7 +4256,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--background-modifier-hover);
 }
 .qnalog-sediment-item-title.qnalog-todo-title.is-editing {
-  background: var(--lv-sediment-active);
+  background: var(--qnalog-sediment-active);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
   outline: none;
 }
@@ -4274,7 +4274,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--background-modifier-hover);
 }
 .qnalog-sediment-editable-title.is-editing {
-  background: var(--lv-sediment-active);
+  background: var(--qnalog-sediment-active);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border));
   outline: none;
   white-space: normal;
@@ -4286,16 +4286,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-sediment-field.is-editing {
   padding: 2px 8px;
   border-radius: 999px;
-  color: var(--lv-sediment-accent);
-  background: var(--lv-sediment-active);
+  color: var(--qnalog-sediment-accent);
+  background: var(--qnalog-sediment-active);
   border: 0.5px solid color-mix(in srgb, var(--interactive-accent) 48%, var(--background-modifier-border));
 }
 
 /* 责任人/截止 编辑时把字段位置换成 input */
 .qnalog-todo-inline-input {
   font-size: var(--font-ui-smaller);
-  color: var(--lv-sediment-accent);
-  background: var(--lv-sediment-active);
+  color: var(--qnalog-sediment-accent);
+  background: var(--qnalog-sediment-active);
   padding: 2px 8px;
   border-radius: 999px;
   border: none;
@@ -4313,7 +4313,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: 8px;
   padding: 6px;
   background: color-mix(in srgb, var(--background-secondary) 60%, var(--background-primary));
-  border: 0.5px solid var(--lv-sediment-line);
+  border: 0.5px solid var(--qnalog-sediment-line);
   border-radius: 8px;
 }
 
@@ -4329,7 +4329,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-todo-inline-empty {
   padding: 8px;
   font-size: var(--font-ui-smaller);
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   text-align: center;
 }
 
@@ -4341,27 +4341,27 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 4px;
   cursor: pointer;
   font-size: var(--font-ui-small);
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
 }
 .qnalog-todo-inline-item:hover,
 .qnalog-todo-inline-item.is-active {
   background: var(--background-modifier-hover);
 }
 .qnalog-todo-inline-item.is-active .qnalog-todo-inline-item-name {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   font-weight: 560;
 }
 .qnalog-todo-inline-item.is-current {
-  background: var(--lv-sediment-active);
+  background: var(--qnalog-sediment-active);
 }
 .qnalog-todo-inline-item.is-new .qnalog-todo-inline-item-name {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
 }
 .qnalog-todo-inline-item-icon {
   display: inline-flex;
   width: 14px;
   height: 14px;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   flex: 0 0 auto;
 }
 .qnalog-todo-inline-item-icon svg {
@@ -4378,7 +4378,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-todo-inline-item-meta {
   flex: 0 0 auto;
   font-size: 10px;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   max-width: 50%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4387,12 +4387,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-todo-inline-item-clear {
   flex: 0 0 auto;
   font-size: 10px;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   padding: 2px 6px;
   border-radius: 4px;
 }
 .qnalog-todo-inline-item-clear:hover {
-  color: var(--text-error, var(--lv-sediment-accent));
+  color: var(--text-error, var(--qnalog-sediment-accent));
   background: var(--background-modifier-hover);
 }
 
@@ -4418,7 +4418,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--background-primary);
   border-radius: 999px;
   cursor: pointer;
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   font-family: inherit;
   display: inline-flex;
   align-items: center;
@@ -4434,7 +4434,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 .qnalog-todo-inline-preset:hover {
   border-color: color-mix(in srgb, var(--interactive-accent) 32%, var(--background-modifier-border));
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   background: var(--background-primary);
   box-shadow: none;
 }
@@ -4446,14 +4446,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 .qnalog-todo-inline-preset.is-clear {
   margin-left: auto;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   background: transparent;
   border-color: transparent;
   font-size: 11px;
   padding: 4px 8px;
 }
 .qnalog-todo-inline-preset.is-clear:hover {
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   border-color: var(--background-modifier-border);
   background: var(--background-primary);
 }
@@ -4474,7 +4474,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 999px;
   padding: 4px 12px;
   font-size: var(--font-ui-smaller);
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   outline: none;
   box-shadow: none;
 }
@@ -4482,11 +4482,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 100%;
   font-size: var(--font-ui-small);
   padding: 4px 10px;
-  border: 0.5px solid var(--lv-sediment-line);
+  border: 0.5px solid var(--qnalog-sediment-line);
   border-radius: 6px;
   outline: none;
   font-family: inherit;
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   background: var(--background-primary);
 }
 
@@ -4513,7 +4513,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 11px;
   height: 11px;
   border-radius: 2px;
-  border: 1px solid var(--lv-sediment-faint);
+  border: 1px solid var(--qnalog-sediment-faint);
   flex: 0 0 auto;
   margin-left: 2px;
 }
@@ -4521,7 +4521,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 1 1 auto;
   min-width: 0;
   font-size: var(--font-ui-smaller);
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   line-height: 1.5;
   outline: none;
   padding: 1px 4px;
@@ -4531,7 +4531,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 .qnalog-todo-subtask-strip-text.is-editing,
 .qnalog-todo-subtask-strip-text:focus {
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   background: var(--background-primary);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
 }
@@ -4542,7 +4542,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 16px;
   align-items: center;
   justify-content: center;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   opacity: 0;
   cursor: pointer;
   transition: opacity 0.15s, color 0.15s;
@@ -4557,7 +4557,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 .qnalog-todo-subtask-strip-del:hover {
   opacity: 1;
-  color: var(--text-error, var(--lv-sediment-accent));
+  color: var(--text-error, var(--qnalog-sediment-accent));
 }
 
 /* 紧凑 add panel（"+ 添加子任务"展开），只有一个输入框 */
@@ -4588,14 +4588,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  border: 1px solid var(--lv-sediment-faint);
+  border: 1px solid var(--qnalog-sediment-faint);
   flex: 0 0 auto;
 }
 .qnalog-todo-inline-subtask-text {
   flex: 1 1 auto;
   min-width: 0;
   font-size: var(--font-ui-smaller);
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   outline: none;
   padding: 1px 2px;
   border-radius: 3px;
@@ -4614,7 +4614,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 16px;
   align-items: center;
   justify-content: center;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   opacity: 0;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -4628,7 +4628,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 .qnalog-todo-inline-subtask-del:hover {
   opacity: 1;
-  color: var(--text-error, var(--lv-sediment-accent));
+  color: var(--text-error, var(--qnalog-sediment-accent));
 }
 .qnalog-todo-inline-subtask-add {
   display: flex;
@@ -4636,13 +4636,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 8px;
   padding: 4px;
   margin-top: 4px;
-  border-top: 0.5px dashed var(--lv-sediment-line);
+  border-top: 0.5px dashed var(--qnalog-sediment-line);
 }
 .qnalog-todo-inline-subtask-add-icon {
   display: inline-flex;
   width: 12px;
   height: 12px;
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
 }
 .qnalog-todo-inline-subtask-add-icon svg {
   width: 12px;
@@ -4655,10 +4655,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   outline: none;
   font-family: inherit;
   font-size: var(--font-ui-smaller);
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
 }
 .qnalog-todo-inline-subtask-input:disabled {
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   font-style: italic;
 }
 .qnalog-todo-inline-subtask-footer {
@@ -4667,9 +4667,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   margin-top: 6px;
   padding-top: 4px;
-  border-top: 0.5px solid var(--lv-sediment-line);
+  border-top: 0.5px solid var(--qnalog-sediment-line);
   font-size: 10px;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
 }
 
 .qnalog-sediment-todo-edit {
@@ -4700,9 +4700,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-list-item.is-person-candidate .qnalog-sediment-item-icon {
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
   background: transparent;
-  box-shadow: inset 0 0 0 1px var(--lv-sediment-line);
+  box-shadow: inset 0 0 0 1px var(--qnalog-sediment-line);
 }
 
 .qnalog-sediment-actions {
@@ -4716,24 +4716,24 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: var(--font-ui-smaller);
   cursor: pointer;
 }
 
 .qnalog-sediment-action:hover,
 .qnalog-sediment-text-button:hover {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   text-decoration: underline;
 }
 
 .qnalog-sediment-action.is-primary {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   font-weight: var(--font-medium);
 }
 
 .qnalog-sediment-action.is-muted {
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
 }
 
 .qnalog-sediment-item-sub
@@ -4742,7 +4742,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-sediment-empty-line
 .qnalog-sediment-prompt-small {
   margin-top: 4px;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: var(--font-ui-smaller);
   line-height: 1.45;
 }
@@ -4752,7 +4752,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
   padding: 6px 0 2px;
   font-weight: var(--font-medium);
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   user-select: none;
 }
 .qnalog-sediment-more.is-clickable:hover {
@@ -4761,7 +4761,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment-footer {
   padding-top: 12px;
-  border-top: 0.5px solid var(--lv-sediment-line);
+  border-top: 0.5px solid var(--qnalog-sediment-line);
 }
 
 .qnalog-sediment-multiselect-header {
@@ -4770,7 +4770,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0 12px;
-  border-bottom: 0.5px solid var(--lv-sediment-line);
+  border-bottom: 0.5px solid var(--qnalog-sediment-line);
   margin-bottom: 4px;
 }
 
@@ -4789,7 +4789,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-multiselect-count {
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: 11px;
 }
 
@@ -4804,7 +4804,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 0 0 14px;
   margin-top: 2px;
   padding: 0;
-  border: 1.2px solid var(--lv-sediment-faint);
+  border: 1.2px solid var(--qnalog-sediment-faint);
   border-radius: 3px;
   background: transparent;
   box-shadow: none;
@@ -4818,8 +4818,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment-checkbox.is-checked,
 .qnalog-sediment-checkbox.is-indeterminate {
-  border-color: var(--lv-sediment-accent-strong);
-  background: var(--lv-sediment-accent-strong);
+  border-color: var(--qnalog-sediment-accent-strong);
+  background: var(--qnalog-sediment-accent-strong);
 }
 
 .qnalog-sediment-checkbox.is-checked::before {
@@ -4848,7 +4848,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 42px;
   display: flex;
   align-items: center;
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
 }
 
 .qnalog-sediment-prompt {
@@ -4867,9 +4867,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   background: transparent;
-  border: 0.5px solid var(--lv-sediment-line);
+  border: 0.5px solid var(--qnalog-sediment-line);
 }
 
 .qnalog-sediment-prompt-icon svg {
@@ -4880,7 +4880,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 /* 扫描态：图标改成静态 scan-line，描边和底色用主题色软态；
    "正在进行中"语义由下方进度条单独表达，不再让图标也转动造成视觉重复 */
 .qnalog-sediment-prompt.is-scanning .qnalog-sediment-prompt-icon {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
   border-color: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border));
 }
@@ -4892,7 +4892,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-sediment-prompt-subtitle {
   max-width: 100%;
   margin-bottom: 6px;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4900,7 +4900,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-prompt-title {
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   font-size: 14px;
   font-weight: var(--font-medium);
 }
@@ -4908,7 +4908,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-sediment-prompt-desc {
   max-width: 28em;
   margin-top: 7px;
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: var(--font-ui-smaller);
   line-height: 1.55;
 }
@@ -4927,14 +4927,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin: 18px 0;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--lv-sediment-accent-soft);
+  background: var(--qnalog-sediment-accent-soft);
 }
 
 .qnalog-sediment-scan-progress-fill {
   width: 42%;
   height: 100%;
   border-radius: inherit;
-  background: var(--lv-sediment-accent-strong);
+  background: var(--qnalog-sediment-accent-strong);
   animation: qnalog-scan-indeterminate 1.4s ease-in-out infinite;
 }
 
@@ -4957,20 +4957,20 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-scan-number {
-  color: var(--lv-sediment-text);
+  color: var(--qnalog-sediment-text);
   font-size: 13px;
   font-weight: var(--font-medium);
   line-height: 1;
 }
 
 .qnalog-sediment-scan-label {
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: 10px;
   line-height: 1;
 }
 
 .qnalog-sediment-prompt-small {
-  color: var(--lv-sediment-faint);
+  color: var(--qnalog-sediment-faint);
 }
 
 .qnalog-sediment-button {
@@ -4983,26 +4983,26 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment-button.is-primary {
   color: var(--text-on-accent);
-  background: var(--lv-sediment-accent-strong);
-  border: 1px solid var(--lv-sediment-accent-strong);
+  background: var(--qnalog-sediment-accent-strong);
+  border: 1px solid var(--qnalog-sediment-accent-strong);
 }
 
 .qnalog-sediment-button.is-secondary {
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   background: transparent;
-  border: 1px solid var(--lv-sediment-line);
+  border: 1px solid var(--qnalog-sediment-line);
   box-shadow: none;
 }
 
 .qnalog-sediment-button.is-secondary:hover {
-  color: var(--lv-sediment-accent);
+  color: var(--qnalog-sediment-accent);
   background: var(--background-modifier-hover);
 }
 
 .qnalog-sediment-button:hover {
   color: var(--text-on-accent);
   border-color: color-mix(in srgb, var(--interactive-accent) 48%, var(--background-modifier-border));
-  background: var(--lv-sediment-accent-hover);
+  background: var(--qnalog-sediment-accent-hover);
 }
 
 .qnalog-sediment-button:disabled,
@@ -5019,7 +5019,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-sediment-review-note {
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   font-size: 11px;
   margin: 2px 0 4px;
 }
@@ -5036,12 +5036,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 999px;
   text-align: center;
   font-size: 10px;
-  color: var(--lv-sediment-success);
-  background: var(--lv-sediment-success-bg);
+  color: var(--qnalog-sediment-success);
+  background: var(--qnalog-sediment-success-bg);
 }
 
 .qnalog-sediment-review-badge.is-ignored {
-  color: var(--lv-sediment-muted);
+  color: var(--qnalog-sediment-muted);
   background: var(--background-modifier-hover);
 }
 

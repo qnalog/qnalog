@@ -357,8 +357,17 @@ git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 | `npm run check:undefined-symbols` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
 | `npm run check:domain-boundaries` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`plugin.<域>.<成员>`、`this.host.<域>.<成员>`（后者以服务类为准，接口里手抄的内联类型不作为依据） |
 | `npm run check:plugin-onload` | 域服务漏装或宿主装错；侧边栏「纪要」列表默认带隐藏筛选、或该筛选在筛选条上不可见 |
+| `npm run check:legacy-prefixes` | 白名单之外的旧品牌前缀（`lex-` / `lv-` / `lvk-` / `lexvoice-`）重新进入源码或样式表 |
 | `npm run check:merge-pipeline` | 会话收尾到合并整理的目标链路跑不通：在模拟宿主里用桩模型真跑一遍，确认整合正文与原始转写都写进笔记 |
 | `npm run typecheck:core` + `tsc -noEmit` | 严格核心集与其余文件的类型错误 |
+
+`check:legacy-prefixes` 的来源：品牌改名靠人工枚举字面量，实测漏了三轮——
+第一次只处理 `lexvoice-*` 而漏掉更短的 `lex-*`（录音文件名一直叫 `lex-<时间戳>.webm`，
+1.0.0 用户已有这类文件）；第二次漏了 `--lv-sediment-*`（123 处）与 `--lvk-*`（9 处）；
+同一批还漏了 `genId()` 的 `lv-`、`lvtask-`、沉淀 id 与实时转写块标记。
+漏掉的那些一旦进入用户数据就变成永久兼容负担。这条检查把「有没有漏」变成机械可判定的问题。
+需要保留的旧写法（读取 1.0.0 遗留数据）集中在 `src/shared/namespace.ts`，
+并在脚本的 `ALLOWED` 里逐条登记理由——新增条目时要先自问：这是**读取兼容**，还是漏改？
 
 `check:merge-pipeline` 的来源：域服务把自身 `this` 传给 `mergeAndPolish` 后，流水线读
 `plugin.settings.briefingStructureLevel` 抛 `TypeError`，真机上表现为 `llm.merge_failed`、纪要无法整理。

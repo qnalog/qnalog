@@ -402,7 +402,7 @@ describe("parseRealtimeOutlineStateFromMarkdown + cleanRealtimeOutlineItemText",
   it("cleanRealtimeOutlineItemText 剥掉行尾未闭合的残缺锚点，不误伤完整锚点/文中方括号", () => {
     // 残缺锚点（模型截断/流式半写）：整条就是半个锚点 → 清空
     expect(cleanRealtimeOutlineItemText("[[qnalog-202")).toBe("");
-    expect(cleanRealtimeOutlineItemText("- [[lex-2026...|53:02")).toBe("");
+    expect(cleanRealtimeOutlineItemText("- [[qnalog-2026...|53:02")).toBe("");
     // 正文尾部跟半个锚点 → 只剥残缺部分，保留正文
     expect(cleanRealtimeOutlineItemText("方向选择 [[qnalog-202")).toBe("方向选择");
     // 完整锚点照常被剥、正文保留（不因新规则误伤）

@@ -7,7 +7,7 @@ describe("verifyTranscriptCheckpoint", () => {
       { text: "[00:00] [说话人1] 第一段原始转写" },
       { text: "[00:30] [说话人2] 第二段原始转写" },
     ];
-    const markdown = `<!-- lexvoice-segments-start:test -->\n${segments[0].text}\n${segments[1].text}\n<!-- lexvoice-segments-end:test -->`;
+    const markdown = `<!-- qnalog-segments-start:test -->\n${segments[0].text}\n${segments[1].text}\n<!-- qnalog-segments-end:test -->`;
 
     expect(verifyTranscriptCheckpoint(markdown, segments)).toEqual({
       ok: true,
