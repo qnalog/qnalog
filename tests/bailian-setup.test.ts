@@ -183,32 +183,55 @@ describe("快速配置面板的显示规则", () => {
 
 describe("使用状态总览", () => {
   const base = {
-    transcribe: { value: "阿里云百炼 · 实时转写", detail: "qwen-audio-3.0-asr-flash-streaming" },
-    llm: { value: "硅基流动", detail: "qwen3.8-flash" },
+    transcribe: { value: "阿里云百炼实时转写", detail: "qwen-audio-3.0-asr-flash-streaming" },
+    llm: { value: "阿里云百炼 / DashScope", detail: "qwen3.8-flash" },
     speaker: { value: "已启用", detail: "qwen-audio-3.0-asr-flash-filetrans" },
-    audio: { value: "系统默认麦克风 · 可用" },
+    audio: { value: "MacBook Pro 麦克风 · 可用", detail: "系统默认" },
   };
 
-  it("配好时给出肯定结论，每行以服务名为主、模型为辅", () => {
+  it("配好时给出肯定结论，且不复述下面已逐项列出的能力", () => {
     const report = buildSetupStatus(base);
     expect(report.ready).toBe(true);
     expect(report.headline).toBe("已准备好");
-    expect(report.detail).toContain("可以开始录音");
-    const rows = Object.fromEntries(report.lines.map((l) => [l.label, l]));
-    expect(rows["语音转写"].value).toBe("阿里云百炼 · 实时转写");
-    expect(rows["语音转写"].detail).toBe("qwen-audio-3.0-asr-flash-streaming");
-    expect(rows["AI 整理"].value).toBe("硅基流动");
-    expect(rows["说话人识别"].value).toBe("已启用");
-    expect(rows["音频输入"].value).toBe("系统默认麦克风 · 可用");
-    expect(report.lines.every((l) => l.tone === "ok")).toBe(true);
+    expect(report.detail).toBe("核心配置已完成，可以开始录音。");
+    // 总结里不该再点名具体服务，那会让总结变成清单的副本
+    expect(report.detail).not.toContain("转写");
+    expect(report.detail).not.toContain("AI 整理");
   });
 
-  it("缺转写或 AI 整理时不算准备好，并说清还差几项、差哪些", () => {
+  it("正常状态不给任何一行挂状态图标（一排相同标记等于没有信息量）", () => {
+    const report = buildSetupStatus(base);
+    expect(report.lines.map((l) => l.icon)).toEqual(["", "", "", ""]);
+  });
+
+  it("只有出问题的那一行才有图标：缺配置是 !，确认不可用是 ×", () => {
+    const report = buildSetupStatus({
+      ...base,
+      transcribe: { value: "访问密钥未填写", issue: "访问密钥未填写" },
+      audio: { value: "已选择的麦克风不可用", issue: "已选择的麦克风不可用", failure: "已选择的麦克风不可用" },
+    });
+    const byLabel = Object.fromEntries(report.lines.map((l) => [l.label, l]));
+    expect(byLabel["语音转写"].icon).toBe("!");
+    expect(byLabel["音频输入"].icon).toBe("×");
+    // 没问题的行仍然不带图标
+    expect(byLabel["AI 整理"].icon).toBe("");
+    expect(byLabel["说话人识别"].icon).toBe("");
+  });
+
+  it("每行以服务名为主、模型 ID 为辅", () => {
+    const rows = Object.fromEntries(buildSetupStatus(base).lines.map((l) => [l.label, l]));
+    expect(rows["语音转写"].value).toBe("阿里云百炼实时转写");
+    expect(rows["语音转写"].detail).toBe("qwen-audio-3.0-asr-flash-streaming");
+    expect(rows["AI 整理"].value).toBe("阿里云百炼 / DashScope");
+    expect(rows["说话人识别"].value).toBe("已启用");
+    expect(rows["音频输入"].value).toBe("MacBook Pro 麦克风 · 可用");
+  });
+
+  it("缺转写或 AI 整理时不算准备好，并说清差几项、差哪些", () => {
     const one = buildSetupStatus({ ...base, transcribe: { value: "访问密钥未填写", issue: "访问密钥未填写" } });
     expect(one.ready).toBe(false);
     expect(one.headline).toBe("还需要完成 1 项配置");
     expect(one.detail).toContain("语音转写");
-    expect(one.lines.find((l) => l.label === "语音转写")?.tone).toBe("warn");
     // 缺配置时不显示残缺的模型名
     expect(one.lines.find((l) => l.label === "语音转写")?.detail).toBe("");
 
@@ -218,8 +241,23 @@ describe("使用状态总览", () => {
       llm: { value: "模型名称未填写", issue: "模型名称未填写" },
     });
     expect(two.headline).toBe("还需要完成 2 项配置");
+    expect(two.blockerCount).toBe(2);
     expect(two.detail).toContain("语音转写");
     expect(two.detail).toContain("AI 整理");
+  });
+
+  it("拦住开始使用的计数与「能用但有问题」的项分开算", () => {
+    // 转写缺配置（拦住开始使用）+ 麦克风已断开（不拦，但要用户处理）。
+    // 结论与徽章都只说前者，两者口径必须一致。
+    const r = buildSetupStatus({
+      ...base,
+      transcribe: { value: "模型名称未填写", issue: "模型名称未填写" },
+      audio: { value: "已选择的麦克风不可用", failure: "已选择的麦克风不可用" },
+    });
+    expect(r.blockerCount).toBe(1);
+    expect(r.headline).toBe("还需要完成 1 项配置");
+    expect(r.warnings).toEqual(["音频输入"]);
+    expect(r.ready).toBe(false);
   });
 
   it("只有转写与 AI 整理决定能否开始使用；说话人与音频不影响", () => {
@@ -227,10 +265,12 @@ describe("使用状态总览", () => {
     const report = buildSetupStatus({
       ...base,
       speaker: { value: "当前服务不支持", issue: "当前导入音频服务不做说话人识别" },
-      audio: { value: "仅麦克风 · 待检测设备" },
+      audio: { value: "未检测（点下方「检测设备」）", detail: "仅麦克风" },
     });
     expect(report.ready).toBe(true);
     expect(report.headline).toBe("已准备好");
+    // 能用，但说话人识别这一项仍要用户处理（服务不支持）
+    expect(report.warnings).toEqual(["说话人识别"]);
     // 「还需要完成 N 项」的计数口径必须与 ready 一致：
     // 不能一边说还差几项、一边又给肯定结论。
     const warnButNotBlocking = buildSetupStatus({

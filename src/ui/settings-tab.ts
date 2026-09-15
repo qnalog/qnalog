@@ -313,6 +313,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
   renderHome(c) {
     const page = c.createDiv({ cls: "qnalog-home" });
+    let statusList;
     const jump = (tab) => { this.activeTab = tab; this.renderSettings(); };
     // 三处服务的状态都按「缺配置 / 未测试 / 已通过 / 未通过」四态呈现，
     // 而不是只看字段在不在：字段填了但没测过，与测过并通过是两回事。
@@ -496,14 +497,18 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const statusBlock = page.createDiv({ cls: "qnalog-home-block" });
     statusBlock.createEl("h3", { text: "使用状态" });
-    // 结论单独一行，其余四行是它的依据。只用仓库里已有的 qnalog-diag-* 一套
-    // （圆点 + 标签 + 次级说明），不新增样式族。
-    const statusHead = statusBlock.createDiv({ cls: "qnalog-diag-row" });
-    statusHead.createSpan({ cls: `qnalog-diag-dot ${status.ready ? "is-ok" : "is-warn"}` });
-    const statusHeadText = statusHead.createDiv({ cls: "qnalog-diag-text" });
-    statusHeadText.createDiv({ cls: "qnalog-diag-label", text: status.headline });
-    statusHeadText.createDiv({ cls: "qnalog-diag-sub", text: status.detail });
-    const statusList = statusBlock.createDiv({ cls: "qnalog-diag-card" });
+    // 结论区。正常时不放圆点/徽章：四个单项已经各自说明了状况，
+    // 总结再挂一个同样的绿点只是重复；有徽章时它也该靠右，不参与左对齐扫读。
+    const statusHead = statusBlock.createDiv({ cls: "qnalog-status-head" });
+    const statusHeadMain = statusHead.createDiv({ cls: "qnalog-status-head-main" });
+    statusHeadMain.createDiv({ cls: "qnalog-status-headline", text: status.headline });
+    statusHeadMain.createDiv({ cls: "qnalog-status-detail", text: status.detail });
+    if (!status.ready) {
+      const badge = statusHead.createDiv({ cls: "qnalog-status-badge is-warn" });
+      badge.createSpan({ cls: "qnalog-status-badge-icon", text: "!" });
+      badge.createSpan({ text: `还差 ${status.blockerCount} 项` });
+    }
+    statusList = statusBlock.createDiv({ cls: "qnalog-status-list" });
     for (const line of status.lines) {
       this.buildStatusRow(statusList, line, jump);
     }
@@ -570,10 +575,30 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    * 也不会点亮系统麦克风指示灯。未授权时设备名为空，如实说明并给出手动检测按钮，
    * 不替用户偷偷申请权限。
    */
+  /**
+   * 把浏览器给的设备名收敛成用户读得懂的短名。
+   *
+   * `enumerateDevices()` 的 label 是系统/浏览器原始字符串，形如
+   * "Default - MacBook Pro Microphone"、"MacBook Pro麦克风 (Built-in)"、"默认 - 麦克风 (Realtek)"：
+   * 直接搬到首页既是调试态，也中英混杂。这里只做去前缀与去括注，不改写设备本身的名字；
+   * 认不出模式的原样返回，宁可显示长一点，也不猜成一个不准确的短名。
+   */
+  friendlyDeviceName(rawLabel) {
+    let name = String(rawLabel || "").trim();
+    if (!name) return name;
+    // 去掉系统默认前缀（中英文、不同分隔符写法）
+    name = name.replace(/^(?:default|默认)\s*[-–—:]\s*/i, "");
+    // "Default - MacBook Pro Microphone" 只剩首尾空白时退回原名
+    if (!name) return String(rawLabel || "").trim();
+    return name;
+  }
+
   describeAudioInputStatus() {
     const mode = normalizeAudioInputMode(this.plugin.settings.captureMode || "mic");
-    const modeText = audioInputModeLabel(mode);
     const micId = String(this.plugin.settings.selectedMicrophoneDevice || "");
+    // 次级行不再重复模式名（「音频输入」这一行已经表达了输入来源），
+    // 只说这是系统默认还是用户指定的设备。
+    const modeText = micId ? "已指定设备" : "系统默认";
     const vcId = String(this.plugin.settings.selectedVirtualDevice || "");
     const needsVirtual = mode === "virtualCable" || mode === "mix-virtual";
 
@@ -589,17 +614,22 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 枚举得到设备就算可用，与名字读不读得到无关——未授权时 deviceId 仍在，
     // 设备也确实存在。把「名字为空」当成「设备不可用」会误报。
     if (!inputs.length) {
-      return { value: "未检测到音频输入设备", detail: modeText, issue: "未检测到音频输入设备" };
+      return {
+        value: "未检测到音频输入设备",
+        detail: modeText,
+        failure: "未检测到音频输入设备",
+      };
     }
 
     const micDev = find(micId);
     const vcDev = find(vcId);
     // 显式选定的设备不在了：这是真问题，不能悄悄退回默认设备。
+    // 已确认不可用属于错误级（×），比「还没选」更严重：用户以为配好了，实际录不了。
     if (micId && !micDev) {
-      return { value: "已选择的麦克风不可用", detail: modeText, issue: "已选择的麦克风不可用" };
+      return { value: "已选择的麦克风不可用", detail: modeText, failure: "已选择的麦克风不可用" };
     }
     if (vcId && !vcDev) {
-      return { value: "已选择的电脑音频设备不可用", detail: modeText, issue: "已选择的电脑音频设备不可用" };
+      return { value: "已选择的电脑音频设备不可用", detail: modeText, failure: "已选择的电脑音频设备不可用" };
     }
     if (needsVirtual && !vcId) {
       return { value: "尚未选择电脑音频设备", detail: modeText, issue: "尚未选择电脑音频设备" };
@@ -608,8 +638,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 未显式选麦克风时，浏览器给的「默认」设备名更能说明现在会录到哪一只；
     // 没有这一项就退回列表里第一只有名字的。
     const defaultDev = inputs.find((d) => d.deviceId === "default") || inputs.find((d) => !!d.label) || null;
-    const micName = nameOf(micDev) || nameOf(defaultDev);
-    const vcName = nameOf(vcDev);
+    const micName = this.friendlyDeviceName(nameOf(micDev) || nameOf(defaultDev));
+    const vcName = this.friendlyDeviceName(nameOf(vcDev));
 
     if (mode === "virtualCable") {
       if (!vcName) return { value: "已选择电脑音频设备，名称需授权后显示", detail: `${modeText} · 点「检测设备」显示设备名` };
@@ -632,19 +662,22 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
 
   /**
-   * 一行状态摘要：圆点 + 名称 + 一级内容 + 次级模型名，整行可点进对应设置页。
+   * 一行配置摘要：名称 / 一级内容 / 次级模型名，整行可点进对应设置页。
    *
+   * 正常时不显示状态图标——一排相同标记等于没有信息量，
+   * 只有真正需要处理的那行才挂 `!`（缺配置）或 `×`（已确认不可用）。
    * 用原生 div 而不是 obsidian.Setting：Setting 行是为「标题 + 描述 + 控件」设计的，
-   * 塞不进「圆点 + 双行 + 右侧箭头」这套结构，硬塞会两边都不像。
-   * 样式沿用仓库已有的 qnalog-diag-*，未新增样式族。
+   * 塞不进「三行文字 + 右侧箭头 + 整行可点」这套结构。
    */
   buildStatusRow(parent, line, jump) {
-    const row = parent.createDiv({ cls: "qnalog-diag-row" });
-    row.createSpan({ cls: `qnalog-diag-dot is-${line.tone}` });
-    const text = row.createDiv({ cls: "qnalog-diag-text" });
-    const labelEl = text.createDiv({ cls: "qnalog-diag-label", text: line.label });
-    const valueEl = text.createDiv({ cls: "qnalog-status-value", text: line.value });
-    if (line.detail) text.createDiv({ cls: "qnalog-diag-sub", text: line.detail });
+    const row = parent.createDiv({ cls: "qnalog-status-row" });
+    if (line.icon) row.addClass(line.icon === "×" ? "is-fail" : "is-warn");
+    const text = row.createDiv({ cls: "qnalog-status-row-text" });
+    const head = text.createDiv({ cls: "qnalog-status-row-head" });
+    if (line.icon) {
+      head.createSpan({ cls: "qnalog-status-row-icon", text: line.icon });
+    }
+    head.createDiv({ cls: "qnalog-status-row-label", text: line.label });
     if (line.target) {
       row.addClass("is-clickable");
       row.setAttr("role", "button");
@@ -654,10 +687,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       row.onkeydown = (ev) => {
         if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); jump(line.target); }
       };
-      labelEl.addClass("is-link");
-      valueEl.addClass("is-link");
-      row.createSpan({ cls: "qnalog-status-go", text: "›" });
+      // 箭头只是「这一行能点」的提示，整行都是点击目标，所以它保持低存在感。
+      row.createSpan({ cls: "qnalog-status-row-go", text: "›" });
     }
+    text.createDiv({ cls: "qnalog-status-row-value", text: line.value });
+    if (line.detail) text.createDiv({ cls: "qnalog-status-row-detail", text: line.detail });
     return row;
   }
 

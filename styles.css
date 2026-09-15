@@ -6867,42 +6867,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-diag-dot.is-warn { background: var(--color-orange); }
 .qnalog-diag-dot.is-fail { background: var(--color-red); }
 
-/* 首页「使用状态」用同一套 qnalog-diag-* 结构；补两个状态：可点击、以及一级内容文字。 */
-.qnalog-diag-row.is-clickable {
-  cursor: pointer;
-  border-radius: var(--radius-s);
-  padding: var(--size-2-2);
-  margin: 0 calc(-1 * var(--size-2-2));
-}
-
-.qnalog-diag-row.is-clickable:hover {
-  background: var(--background-modifier-hover);
-}
-
-.qnalog-diag-row.is-clickable:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
-}
-
-.qnalog-status-value {
-  font-size: var(--font-ui-small);
-  color: var(--text-normal);
-  margin-top: var(--size-2-1);
-}
-
-.qnalog-diag-label.is-link,
-.qnalog-status-value.is-link {
-  color: var(--text-accent);
-}
-
-.qnalog-status-go {
-  flex-shrink: 0;
-  color: var(--text-faint);
-  font-size: var(--font-ui-medium);
-  line-height: 1;
-  align-self: center;
-}
-
 .qnalog-diag-text {
   flex: 1;
   min-width: 0;
@@ -7332,6 +7296,156 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-home-block h3 {
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold);
+}
+
+/* 使用状态：总体 readiness + 四项配置摘要。
+   正常状态保持安静——不给每行挂状态标记，只有异常行才有图标；
+   视觉顺序依次是：结论 → 配置项名称 → 服务名 → 模型 ID（muted）。 */
+.qnalog-status-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
+.qnalog-status-head-main {
+  min-width: 0;
+}
+
+.qnalog-status-headline {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.qnalog-status-detail {
+  margin-top: var(--size-2-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal);
+}
+
+/* 只在没准备好时出现；正常时概览区不挂任何标记，避免与单项重复。 */
+.qnalog-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  flex-shrink: 0;
+  margin-top: 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.qnalog-status-badge.is-warn {
+  color: var(--text-warning);
+  border-color: rgba(var(--color-orange-rgb), 0.35);
+}
+
+.qnalog-status-badge-icon {
+  font-weight: var(--font-semibold);
+}
+
+.qnalog-status-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--size-2-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* 一行摘要：名称 / 服务名 / 模型名，整行可点。项目之间只用极低对比度的分隔线，
+   不画表格、不加卡片背景。 */
+.qnalog-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  padding: var(--size-2-3) var(--size-2-2);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.qnalog-status-row:last-child {
+  border-bottom: none;
+}
+
+.qnalog-status-row.is-clickable {
+  cursor: pointer;
+}
+
+.qnalog-status-row.is-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-status-row.is-clickable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.qnalog-status-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.qnalog-status-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2-1);
+}
+
+.qnalog-status-row-label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
+}
+
+/* 正常行不显示图标（元素不渲染），只有异常行才出现。 */
+.qnalog-status-row-icon {
+  color: var(--text-warning);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.qnalog-status-row-value {
+  margin-top: 1px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-tight);
+}
+
+/* 技术详情：muted + 等宽，与服务名拉开层级，不与一级标题抢注意力。 */
+.qnalog-status-row-detail {
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
+}
+
+.qnalog-status-row.is-fail .qnalog-status-row-icon,
+.qnalog-status-row.is-fail .qnalog-status-row-value {
+  color: var(--text-error);
+}
+
+.qnalog-status-row.is-warn .qnalog-status-row-value {
+  color: var(--text-warning);
+}
+
+/* 箭头只是「这一行能点」的提示，整行才是点击目标，所以保持低存在感。 */
+.qnalog-status-row-go {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  opacity: 0.55;
+  font-size: var(--font-ui-medium);
+  line-height: 1;
+}
+
+.qnalog-status-row.is-clickable:hover .qnalog-status-row-go {
+  opacity: 1;
 }
 
 .qnalog-home-prep-desc {

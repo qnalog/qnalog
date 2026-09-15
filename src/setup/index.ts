@@ -476,10 +476,20 @@ export interface SetupStatusLine {
   label: string;
   /** 一级内容：用户最先要知道的（服务名 / 是否启用）。 */
   value: string;
-  /** 二级内容：模型标识等技术信息；没有就不显示第二行。 */
+  /**
+   * 次级内容：模型标识等技术信息；没有就不显示这一行。
+   *
+   * 用 muted 色、不随之高亮：模型 ID 是技术详情，
+   * 与服务名同等权重会让技术细节抢占注意力。
+   */
   detail: string;
-  /** 这一行有没有问题；用来决定圆点颜色与文字颜色。 */
-  tone: "ok" | "warn" | "fail";
+  /**
+   * 需要用户处理时显示的图标："" 表示正常（不显示图标）。
+   *
+   * 只在异常时才出现视觉信号——正常时给每行都挂一个标记，
+   * 一排相同的标记等于没有信息量，还会把注意力从真正有问题的那行拉走。
+   */
+  icon: "" | "!" | "×";
   /** 点击这一行跳到哪个设置标签页；没有就不做可点击。 */
   target: string;
 }
@@ -489,10 +499,20 @@ export interface SetupStatusReport {
   ready: boolean;
   /** 一句话结论。 */
   headline: string;
-  /** 结论的补充说明。 */
+  /** 拦住「开始使用」的项数；徽章与 headline 都用它，避免两处各算一遍。 */
+  blockerCount: number;
+  /** 结论的补充说明；正常时只讲「可以开始了」，不重复下面已列出的具体能力。 */
   detail: string;
-  /** 结论是否成立的说法：ready 时用肯定句式，否则说还缺什么。 */
+  /** 逐项明细。 */
   lines: SetupStatusLine[];
+  /**
+   * 不拦住「开始使用」、但仍需用户处理的项目名（如所选的麦克风已断开）。
+   *
+   * 与 headline 的计数分开：headline 只说「还差几项配置」，
+   * 这里的是「能用，但这些地方有问题」。两者口径若混在一起，
+   * 会出现「说还差 2 项、但结论又是已准备好」。
+   */
+  warnings: string[];
 }
 
 export interface SetupStatusLineInput {
@@ -500,8 +520,10 @@ export interface SetupStatusLineInput {
   /** 一级内容；缺配置时是「缺什么」。 */
   value: string;
   detail?: string;
-  /** 出问题时给 warn，其余给 ok。 */
+  /** 需要用户处理时填：说明缺什么或哪里不可用。留空即正常。 */
   issue?: string;
+  /** 截断性的失败（如服务已确认连不上）；比 issue 更严重，用 × 而不是 !。 */
+  failure?: string;
   target?: string;
 }
 
@@ -512,8 +534,15 @@ export interface SetupStatusInput {
   llm: SetupStatusLineInput;
   /** 说话人识别：是否启用、服务名与模型标识。 */
   speaker: SetupStatusLineInput;
-  /** 音频输入：一句话描述（真实设备状态，不是配置模式）。 */
+  /** 音频输入：真实设备状态，不是配置模式。 */
   audio: SetupStatusLineInput;
+}
+
+/** 判定某一项该显示什么状态图标：正常为空，越严重级别越高。 */
+function statusIcon(row: SetupStatusLineInput): "" | "!" | "×" {
+  if (row.failure) return "×";
+  if (row.issue) return "!";
+  return "";
 }
 
 /**
@@ -527,7 +556,7 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
     label: row.label,
     value: row.value,
     detail: row.detail || "",
-    tone: row.issue ? "warn" : "ok",
+    icon: statusIcon(row),
     target: row.target || "",
   });
   const lines: SetupStatusLine[] = [
@@ -541,14 +570,17 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
   // 也不计入下面的「还需要完成 N 项」—— 计数口径与 ready 必须一致，
   // 否则会出现「说还差 3 项、但结论又能开始用」这种自相矛盾。
   const blocking = ["语音转写", "AI 整理"];
-  const blockers = lines.filter((l) => l.tone === "warn" && blocking.includes(l.label));
+  const blockers = lines.filter((l) => l.icon && blocking.includes(l.label));
   const ready = blockers.length === 0;
   return {
     ready,
+    blockerCount: blockers.length,
     headline: ready ? "已准备好" : `还需要完成 ${blockers.length} 项配置`,
+    // 正常时只说结论，不复述下面已经逐项列出的能力（那会让总结变成清单的副本）。
     detail: ready
-      ? "转写与 AI 整理都已可用，可以开始录音。"
+      ? "核心配置已完成，可以开始录音。"
       : `以下标出的项目还缺内容：${blockers.map((l) => l.label).join("、")}。`,
     lines,
+    warnings: lines.filter((l) => l.icon && !blocking.includes(l.label)).map((l) => l.label),
   };
 }
