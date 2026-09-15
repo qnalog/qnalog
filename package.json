@@ -12,6 +12,7 @@
     "check:domain-boundaries": "node scripts/check-domain-boundaries.mjs",
     "check:mainline-isolation": "node scripts/check-mainline-isolation.mjs",
     "check:legacy-prefixes": "node scripts/check-legacy-prefixes.mjs",
+    "check:release-tag": "node scripts/check-release-tag-on-main.mjs",
     "check:bundle-consistency": "node scripts/check-bundle-consistency.mjs",
     "check:plugin-onload": "node scripts/check-plugin-onload.mjs && node scripts/check-merge-pipeline.mjs",
     "check:merge-pipeline": "node scripts/check-merge-pipeline.mjs",
