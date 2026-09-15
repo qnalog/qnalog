@@ -106,6 +106,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 快速配置面板是否可见。null 表示「还没判定」——由首次渲染按配置完整度决定。
     // 已配好的用户点「快速配置」并确认覆盖后才会重新显示。
     this._quickSetupVisible = null;
+    this._audioDeviceInfo = null;
   }
   getVisibleSettingsTabs() {
     return LV_SETTINGS_TABS.slice();
@@ -423,11 +424,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     }
 
-    // 「程序状态」：陈述现状（现在能用吗、在用哪些模型），不是待办清单。
-    // 原先这里是「使用准备」四张卡（转写/AI 整理/电脑音频/日记），混了两类东西：
-    //   需要用户准备的（转写、AI 整理）与纯粹的偏好开关（日记写入），
-    //   而且不显示实际在用的模型——用户想知道「现在到底跑的是什么」要自己翻到 API 页。
-    // 电脑音频与日记都不属于「配置是否就绪」，已移出，各自的设置项仍在原来的页面。
+    // 「使用状态」：只回答两件事——现在能不能开始用；如果能，当前会用什么服务。
+    // 因此分两层：上面一句话结论（一级信息），下面四行当前配置摘要（结论的依据）。
+    // 原先这里是「使用准备」四张卡，把「需要用户准备的」与「纯粹的偏好开关」混在一起，
+    // 而且不显示实际在用的服务；模型 ID 反而因为卡片面积成了最大内容，
+    // 把二级技术信息放到了与结论同等的视觉权重上。
     const speakerProviderId = this.plugin.settings.importTranscribeProvider || "";
     const speakerProvider = (this.plugin.settings.transcribeProviders || {})[speakerProviderId] || {};
     const speakerProfile = speakerProviderId
@@ -443,7 +444,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       model: this.plugin.settings.llmModel,
       apiKey: this.plugin.settings.llmApiKey,
     }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint)));
-    // 说话人识别只有声明了该能力的服务才提；没声明就如实说「当前服务不做说话人识别」。
+    // 说话人识别是一个真实开关（settings.importSpeakerDiarization），先回答「开没开」，
+    // 再回答「用什么实现」。关掉时不该显示一个空模型名。
+    const speakerEnabled = this.plugin.settings.importSpeakerDiarization !== false;
     const speakerCapable = speakerProfile ? isSpeakerDiarizationProvider(speakerProvider, speakerProfile) : false;
     const speakerIssue = !speakerProviderId
       ? "未选择导入音频服务"
@@ -453,32 +456,56 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const status = buildSetupStatus({
       transcribe: {
-        model: transcribeProvider.model || "",
+        value: transcribeServiceIssue || (transcribeProfile.title || transcribeProviderId),
+        detail: transcribeServiceIssue ? "" : (transcribeProvider.model || ""),
         issue: transcribeServiceIssue,
       },
       llm: {
-        model: this.plugin.settings.llmModel || "",
+        value: llmServiceIssue || this.getLlmServiceLabel(),
+        detail: llmServiceIssue ? "" : (this.plugin.settings.llmModel || ""),
         issue: llmServiceIssue,
       },
-      speaker: {
-        model: speakerProvider.model || "",
-        issue: speakerCapable ? speakerIssue : "",
-      },
-      audio: audioInputModeLabel(this.plugin.settings.captureMode || "mic"),
+      speaker: (() => {
+        // 用户主动关闭不算问题（那是他的选择）。开启后才谈可用性：
+        // 服务做不到、或该服务还缺密钥，都如实写在一级内容里，
+        // 不能一边写「已启用」一边给个告警色——那两件事互相打脸。
+        if (!speakerEnabled) return { value: "未启用" };
+        if (!speakerCapable) return { value: "当前服务不支持", issue: "当前导入音频服务不做说话人识别" };
+        if (speakerIssue) return { value: speakerIssue, issue: speakerIssue };
+        return { value: "已启用", detail: speakerProvider.model || "" };
+      })(),
+      audio: this.describeAudioInputStatus(),
     });
 
-    // 用 Obsidian 原生的 Setting 行呈现，与下方「进阶能力」区块同一套样式，
-    // 不新增自定义类——首页已有的样式族够用，另起一套会让后续两端一起改。
     const statusBlock = page.createDiv({ cls: "qnalog-home-block" });
-    statusBlock.createEl("h3", { text: "程序状态" });
-    const statusRow = new obsidian.Setting(statusBlock)
-      .setName(status.headline)
-      .setDesc(status.detail);
-    statusRow.addButton((btn) => btn.setButtonText("调整配置").onClick(() => jump("api")));
+    statusBlock.createEl("h3", { text: "使用状态" });
+    // 结论单独一行，其余四行是它的依据。只用仓库里已有的 qnalog-diag-* 一套
+    // （圆点 + 标签 + 次级说明），不新增样式族。
+    const statusHead = statusBlock.createDiv({ cls: "qnalog-diag-row" });
+    statusHead.createSpan({ cls: `qnalog-diag-dot ${status.ready ? "is-ok" : "is-warn"}` });
+    const statusHeadText = statusHead.createDiv({ cls: "qnalog-diag-text" });
+    statusHeadText.createDiv({ cls: "qnalog-diag-label", text: status.headline });
+    statusHeadText.createDiv({ cls: "qnalog-diag-sub", text: status.detail });
+    const statusList = statusBlock.createDiv({ cls: "qnalog-diag-card" });
     for (const line of status.lines) {
-      new obsidian.Setting(statusBlock)
-        .setName(line.label)
-        .setDesc(line.value);
+      this.buildStatusRow(statusList, line, jump);
+    }
+    // 设备名要授权才读得到。首页不主动弹授权框、不点亮麦克风指示灯，
+    // 因此把这一步交给用户：需要看真实设备名时点这个按钮。
+    if (!this._audioDeviceInfo || this._audioDeviceInfo.permissionRequired) {
+      const detectRow = new obsidian.Setting(statusBlock);
+      detectRow.setDesc("「音频输入」需要麦克风授权才能读到设备名。点右侧按钮读取一次；不会开始录音。");
+      detectRow.addButton((btn) => btn.setButtonText("检测设备").onClick(async (evt) => {
+        const button = evt && evt.currentTarget;
+        if (button) { button.disabled = true; button.setText("检测中…"); }
+        try {
+          this._audioDeviceInfo = await enumerateAudioDevices();
+        } catch (error) {
+          new obsidian.Notice(`设备检测失败：${(error && error.message) || error}`, 6000);
+        }
+        if (button) { button.disabled = false; button.setText("检测设备"); }
+        this.renderSettings();
+      }));
     }
 
     const better = page.createDiv({ cls: "qnalog-home-block" });
@@ -498,6 +525,95 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const footer = page.createDiv({ cls: "qnalog-home-footnote" });
     footer.setText("费用说明：Q&A Log 插件本身免费。云端转写与大模型服务由对应平台按量计费；本地模型不产生平台费用，但需自行安装、启动与维护。");
+  }
+
+  /**
+   * 当前 AI 整理用的是哪家服务。
+   *
+   * 用 getActiveLlmServicePresetId 而不是直接读 llmServicePreset：用户可能在
+   * 设置页改过接口地址，此时预设 id 还是旧的，直接读会报出一个并非在用的服务名。
+   * 认不出预设就报出接口主机名，不凭空编造。
+   */
+  getLlmServiceLabel() {
+    const id = getActiveLlmServicePresetId(this.plugin.settings);
+    const preset = id ? getLlmServicePreset(id) : null;
+    if (preset && preset.label) return preset.label;
+    try {
+      return new URL(String(this.plugin.settings.llmEndpoint || "")).host;
+    } catch {
+      return "自定义服务";
+    }
+  }
+
+  /**
+   * 音频输入的真实状态。
+   *
+   * 「仅麦克风」是配置值，不是状态——它回答不了「麦克风现在能不能用」。
+   * 这里只调 enumerateDevices（不触发 getUserMedia），因此不会弹出授权框、
+   * 也不会点亮系统麦克风指示灯。未授权时设备名为空，如实说明并给出手动检测按钮，
+   * 不替用户偷偷申请权限。
+   */
+  describeAudioInputStatus() {
+    const mode = normalizeAudioInputMode(this.plugin.settings.captureMode || "mic");
+    const modeText = audioInputModeLabel(mode);
+    const micId = String(this.plugin.settings.selectedMicrophoneDevice || "");
+    const vcId = String(this.plugin.settings.selectedVirtualDevice || "");
+    const needsVirtual = mode === "virtualCable" || mode === "mix-virtual";
+    // 一级内容只讲设备事实，配置模式降为次级说明：
+    // 「仅麦克风」是配置值，回答不了「麦克风现在能不能用」，不该占着主位。
+    if (!this._audioDeviceInfo) {
+      let status;
+      if (needsVirtual && !vcId) status = "尚未选择电脑音频设备";
+      else if (micId) status = "已选定麦克风，未检测是否可用";
+      else status = "未检测（点下方「检测设备」）";
+      return { value: status, detail: modeText };
+    }
+    const info = this._audioDeviceInfo;
+    if (info.permissionRequired) return { value: "未授权读取设备名", detail: `${modeText} · 点「检测设备」授权` };
+    const inputs = (info.all || []).filter((d) => d && d.kind === "audioinput");
+    const find = (id) => (id ? inputs.find((d) => d.deviceId === id) : null);
+    const micDev = find(micId);
+    const vcDev = find(vcId);
+    if (!inputs.length) return { value: "未检测到音频输入设备", detail: modeText, issue: "未检测到音频输入设备" };
+    // 显式选定的设备不在了：这是真问题，不能悄悄退回默认设备。
+    if (micId && !micDev) return { value: "已选择的麦克风不可用", detail: modeText, issue: "已选择的麦克风不可用" };
+    if (vcId && !vcDev) return { value: "已选择的电脑音频设备不可用", detail: modeText, issue: "已选择的电脑音频设备不可用" };
+    if (needsVirtual && !vcId) return { value: "尚未选择电脑音频设备", detail: modeText, issue: "尚未选择电脑音频设备" };
+    const micLabel = micDev ? (micDev.label || "未授权读取设备名") : "系统默认麦克风";
+    const vcLabel = vcDev ? (vcDev.label || "电脑音频设备") : "";
+    if (mode === "virtualCable") return { value: `${vcLabel} · 可用`, detail: modeText };
+    if (mode === "mix-virtual") return { value: `${micLabel} + ${vcLabel} · 可用`, detail: modeText };
+    return { value: `${micLabel} · 可用`, detail: modeText };
+  }
+
+  /**
+   * 一行状态摘要：圆点 + 名称 + 一级内容 + 次级模型名，整行可点进对应设置页。
+   *
+   * 用原生 div 而不是 obsidian.Setting：Setting 行是为「标题 + 描述 + 控件」设计的，
+   * 塞不进「圆点 + 双行 + 右侧箭头」这套结构，硬塞会两边都不像。
+   * 样式沿用仓库已有的 qnalog-diag-*，未新增样式族。
+   */
+  buildStatusRow(parent, line, jump) {
+    const row = parent.createDiv({ cls: "qnalog-diag-row" });
+    row.createSpan({ cls: `qnalog-diag-dot is-${line.tone}` });
+    const text = row.createDiv({ cls: "qnalog-diag-text" });
+    const labelEl = text.createDiv({ cls: "qnalog-diag-label", text: line.label });
+    const valueEl = text.createDiv({ cls: "qnalog-status-value", text: line.value });
+    if (line.detail) text.createDiv({ cls: "qnalog-diag-sub", text: line.detail });
+    if (line.target) {
+      row.addClass("is-clickable");
+      row.setAttr("role", "button");
+      row.setAttr("tabindex", "0");
+      row.setAttr("aria-label", `${line.label}：${line.value}，打开对应设置`);
+      row.onclick = () => jump(line.target);
+      row.onkeydown = (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); jump(line.target); }
+      };
+      labelEl.addClass("is-link");
+      valueEl.addClass("is-link");
+      row.createSpan({ cls: "qnalog-status-go", text: "›" });
+    }
+    return row;
   }
 
   createAudioInputButton(parent, text, onClick, cls = "") {

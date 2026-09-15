@@ -464,41 +464,56 @@ export function formatDetectionReport(report: DetectionReport): string {
 }
 
 /**
- * 「程序状态」展示用的汇总数据。
+ * 「使用状态」展示用的数据。
  *
- * 与「使用准备」的区别：那份是**待办清单**（还有什么没配、去哪配），
- * 这份是**现状陈述**（现在跑的是什么、能不能直接用）。用户打开设置页最常见的
- * 问题是「我现在能用了吗、在用哪个模型」，所以默认要能一眼看到答案。
+ * 要回答的唯一问题：现在能不能开始用？如果能，当前会用什么服务；如果不能，哪里有问题。
+ * 因此分成两层：
+ *   - headline + detail：状态结论，一级信息。
+ *   - lines：结论的依据（当前配置摘要），二级信息，逐行可点进对应设置页。
  */
 export interface SetupStatusLine {
-  /** 这一行讲的是哪一项。 */
+  /** 这一行讲的是哪一项，例如「语音转写」。 */
   label: string;
-  /** 具体内容；缺配置时为可行动的说明，而不是空白。 */
+  /** 一级内容：用户最先要知道的（服务名 / 是否启用）。 */
   value: string;
-  /** 是否需要用户处理；true 时界面用提醒色。 */
-  needsAttention: boolean;
+  /** 二级内容：模型标识等技术信息；没有就不显示第二行。 */
+  detail: string;
+  /** 这一行有没有问题；用来决定圆点颜色与文字颜色。 */
+  tone: "ok" | "warn" | "fail";
+  /** 点击这一行跳到哪个设置标签页；没有就不做可点击。 */
+  target: string;
 }
 
 export interface SetupStatusReport {
-  /** 整体是否已经可以正常使用（转写与 AI 整理都不缺）。 */
+  /** 整体能否开始使用。 */
   ready: boolean;
-  /** 给用户看的一句话结论。 */
+  /** 一句话结论。 */
   headline: string;
-  /** 整体状态的一句话补充：说明这些是当前实际使用的模型及其修改入口。 */
+  /** 结论的补充说明。 */
   detail: string;
-  /** 逐项明细。 */
+  /** 结论是否成立的说法：ready 时用肯定句式，否则说还缺什么。 */
   lines: SetupStatusLine[];
 }
 
+export interface SetupStatusLineInput {
+  label: string;
+  /** 一级内容；缺配置时是「缺什么」。 */
+  value: string;
+  detail?: string;
+  /** 出问题时给 warn，其余给 ok。 */
+  issue?: string;
+  target?: string;
+}
+
 export interface SetupStatusInput {
-  /** 语音转写：模型标识与缺配置说明。 */
-  transcribe: { model: string; issue: string };
-  /** AI 整理：模型标识与缺配置说明。 */
-  llm: { model: string; issue: string };
-  /** 说话人识别：模型标识与缺配置说明。 */
-  speaker: { model: string; issue: string };
-  /** 音频输入的一句话描述（例如「仅麦克风」）。 */
-  audio: string;
+  /** 语音转写：服务名与模型标识。 */
+  transcribe: SetupStatusLineInput;
+  /** AI 整理：服务名与模型标识。 */
+  llm: SetupStatusLineInput;
+  /** 说话人识别：是否启用、服务名与模型标识。 */
+  speaker: SetupStatusLineInput;
+  /** 音频输入：一句话描述（真实设备状态，不是配置模式）。 */
+  audio: SetupStatusLineInput;
 }
 
 /**
@@ -508,38 +523,32 @@ export interface SetupStatusInput {
  * 由各服务自己的徽章承担，不混进这份总览（否则每次改一个字符都会让总览翻脸）。
  */
 export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
+  const toLine = (row: SetupStatusLineInput): SetupStatusLine => ({
+    label: row.label,
+    value: row.value,
+    detail: row.detail || "",
+    tone: row.issue ? "warn" : "ok",
+    target: row.target || "",
+  });
   const lines: SetupStatusLine[] = [
-    {
-      label: "语音转写",
-      value: input.transcribe.issue || input.transcribe.model,
-      needsAttention: !!input.transcribe.issue,
-    },
-    {
-      label: "AI 整理",
-      value: input.llm.issue || input.llm.model,
-      needsAttention: !!input.llm.issue,
-    },
-    {
-      label: "说话人识别",
-      value: input.speaker.issue || input.speaker.model,
-      needsAttention: !!input.speaker.issue,
-    },
-    {
-      label: "音频输入",
-      value: input.audio,
-      needsAttention: false,
-    },
+    toLine({ label: "语音转写", target: "api", ...input.transcribe }),
+    toLine({ label: "AI 整理", target: "ai", ...input.llm }),
+    toLine({ label: "说话人识别", target: "speaker", ...input.speaker }),
+    toLine({ label: "音频输入", target: "general", ...input.audio }),
   ];
-
-  const ready = !input.transcribe.issue && !input.llm.issue;
+  // 只有转写与 AI 整理缺配置才拦得住「开始使用」：没有它们产不出纪要。
+  // 说话人识别与音频输入不影响能否开始，因此既不参与 ready 判定，
+  // 也不计入下面的「还需要完成 N 项」—— 计数口径与 ready 必须一致，
+  // 否则会出现「说还差 3 项、但结论又能开始用」这种自相矛盾。
+  const blocking = ["语音转写", "AI 整理"];
+  const blockers = lines.filter((l) => l.tone === "warn" && blocking.includes(l.label));
+  const ready = blockers.length === 0;
   return {
     ready,
-    headline: ready ? "已配置妥当，可以开始使用" : "还差一步就能开始使用",
-    // 配好时用用户指定的那句；没配好时下面列的是「缺什么」而不是模型，
-    // 再说「以下为当前正在使用的模型」会与行内容自相矛盾。
+    headline: ready ? "已准备好" : `还需要完成 ${blockers.length} 项配置`,
     detail: ready
-      ? "以下为当前正在使用的模型，可点击调整配置按钮进行修改。"
-      : "下面标出的项目还缺内容，补齐后即可开始使用；也可以用「快速配置」一次填好。",
+      ? "转写与 AI 整理都已可用，可以开始录音。"
+      : `以下标出的项目还缺内容：${blockers.map((l) => l.label).join("、")}。`,
     lines,
   };
 }

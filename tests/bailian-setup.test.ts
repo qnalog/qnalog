@@ -181,55 +181,73 @@ describe("快速配置面板的显示规则", () => {
   });
 });
 
-describe("程序状态总览", () => {
+describe("使用状态总览", () => {
   const base = {
-    transcribe: { model: "qwen-audio-3.0-asr-flash-streaming", issue: "" },
-    llm: { model: "qwen3.8-flash", issue: "" },
-    speaker: { model: "qwen-audio-3.0-asr-flash-filetrans", issue: "" },
-    audio: "仅麦克风",
+    transcribe: { value: "阿里云百炼 · 实时转写", detail: "qwen-audio-3.0-asr-flash-streaming" },
+    llm: { value: "硅基流动", detail: "qwen3.8-flash" },
+    speaker: { value: "已启用", detail: "qwen-audio-3.0-asr-flash-filetrans" },
+    audio: { value: "系统默认麦克风 · 可用" },
   };
 
-  it("配好时给出肯定结论，并列出实际在用的模型", () => {
+  it("配好时给出肯定结论，每行以服务名为主、模型为辅", () => {
     const report = buildSetupStatus(base);
     expect(report.ready).toBe(true);
-    expect(report.headline).toContain("可以开始使用");
-    const byLabel = Object.fromEntries(report.lines.map((l) => [l.label, l.value]));
-    // 只显示英文模型名，不带中文供应商名
-    expect(byLabel["语音转写"]).toBe("qwen-audio-3.0-asr-flash-streaming");
-    expect(byLabel["语音转写"]).not.toMatch(/[\u4e00-\u9fa5]/);
-    expect(byLabel["AI 整理"]).toBe("qwen3.8-flash");
-    expect(byLabel["说话人识别"]).toBe("qwen-audio-3.0-asr-flash-filetrans");
-    expect(byLabel["说话人识别"]).not.toMatch(/[\u4e00-\u9fa5]/);
-    expect(byLabel["音频输入"]).toBe("仅麦克风");
-    expect(report.lines.every((l) => !l.needsAttention)).toBe(true);
+    expect(report.headline).toBe("已准备好");
+    expect(report.detail).toContain("可以开始录音");
+    const rows = Object.fromEntries(report.lines.map((l) => [l.label, l]));
+    expect(rows["语音转写"].value).toBe("阿里云百炼 · 实时转写");
+    expect(rows["语音转写"].detail).toBe("qwen-audio-3.0-asr-flash-streaming");
+    expect(rows["AI 整理"].value).toBe("硅基流动");
+    expect(rows["说话人识别"].value).toBe("已启用");
+    expect(rows["音频输入"].value).toBe("系统默认麦克风 · 可用");
+    expect(report.lines.every((l) => l.tone === "ok")).toBe(true);
   });
 
-  it("缺转写或 AI 整理时不算配好，并标出是哪一项", () => {
-    const noTranscribe = buildSetupStatus({ ...base, transcribe: { ...base.transcribe, issue: "服务地址未填写" } });
-    expect(noTranscribe.ready).toBe(false);
-    expect(noTranscribe.lines.find((l) => l.label === "语音转写")?.needsAttention).toBe(true);
-    // 缺配置时显示的是「缺什么」，不是空白
-    expect(noTranscribe.lines.find((l) => l.label === "语音转写")?.value).toBe("服务地址未填写");
+  it("缺转写或 AI 整理时不算准备好，并说清还差几项、差哪些", () => {
+    const one = buildSetupStatus({ ...base, transcribe: { value: "访问密钥未填写", issue: "访问密钥未填写" } });
+    expect(one.ready).toBe(false);
+    expect(one.headline).toBe("还需要完成 1 项配置");
+    expect(one.detail).toContain("语音转写");
+    expect(one.lines.find((l) => l.label === "语音转写")?.tone).toBe("warn");
+    // 缺配置时不显示残缺的模型名
+    expect(one.lines.find((l) => l.label === "语音转写")?.detail).toBe("");
 
-    const noLlm = buildSetupStatus({ ...base, llm: { model: "", issue: "大模型名称未配置" } });
-    expect(noLlm.ready).toBe(false);
-    expect(noLlm.lines.find((l) => l.label === "AI 整理")?.needsAttention).toBe(true);
+    const two = buildSetupStatus({
+      ...base,
+      transcribe: { value: "访问密钥未填写", issue: "访问密钥未填写" },
+      llm: { value: "模型名称未填写", issue: "模型名称未填写" },
+    });
+    expect(two.headline).toBe("还需要完成 2 项配置");
+    expect(two.detail).toContain("语音转写");
+    expect(two.detail).toContain("AI 整理");
   });
 
-  it("状态总览不把「测试结果」算进来（那由各服务徽章承担）", () => {
-    // 只要填全就算可用：填全但从未测试时，总览仍应给出肯定结论，
-    // 否则改一个字符就会让总览翻脸，与四态徽章的职责重复。
-    expect(buildSetupStatus(base).ready).toBe(true);
+  it("只有转写与 AI 整理决定能否开始使用；说话人与音频不影响", () => {
+    // 说话人识别支持不了、音频还没检测，都不是「不能开始录音」的理由。
+    const report = buildSetupStatus({
+      ...base,
+      speaker: { value: "当前服务不支持", issue: "当前导入音频服务不做说话人识别" },
+      audio: { value: "仅麦克风 · 待检测设备" },
+    });
+    expect(report.ready).toBe(true);
+    expect(report.headline).toBe("已准备好");
+    // 「还需要完成 N 项」的计数口径必须与 ready 一致：
+    // 不能一边说还差几项、一边又给肯定结论。
+    const warnButNotBlocking = buildSetupStatus({
+      ...base,
+      speaker: { value: "当前服务不支持", issue: "当前导入音频服务不做说话人识别" },
+    });
+    expect(warnButNotBlocking.headline).toBe("已准备好");
+    expect(warnButNotBlocking.detail).not.toContain("还缺内容");
   });
 
-  it("配好时用指定的那句说明文字", () => {
-    expect(buildSetupStatus(base).detail).toBe("以下为当前正在使用的模型，可点击调整配置按钮进行修改。");
-  });
-
-  it("没配好时不宣称「以下为当前使用的模型」（下面列的是缺什么，会自相矛盾）", () => {
-    const report = buildSetupStatus({ ...base, llm: { model: "", issue: "模型名称未填写" } });
-    expect(report.ready).toBe(false);
-    expect(report.detail).not.toContain("以下为当前正在使用的模型");
+  it("每行指向对应设置页，点哪一项去哪里是确定的", () => {
+    expect(Object.fromEntries(buildSetupStatus(base).lines.map((l) => [l.label, l.target]))).toEqual({
+      "语音转写": "api",
+      "AI 整理": "ai",
+      "说话人识别": "speaker",
+      "音频输入": "general",
+    });
   });
 
   it("四项明细的标签固定，便于用户形成固定阅读位置", () => {

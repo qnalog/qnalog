@@ -6867,6 +6867,42 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-diag-dot.is-warn { background: var(--color-orange); }
 .qnalog-diag-dot.is-fail { background: var(--color-red); }
 
+/* 首页「使用状态」用同一套 qnalog-diag-* 结构；补两个状态：可点击、以及一级内容文字。 */
+.qnalog-diag-row.is-clickable {
+  cursor: pointer;
+  border-radius: var(--radius-s);
+  padding: var(--size-2-2);
+  margin: 0 calc(-1 * var(--size-2-2));
+}
+
+.qnalog-diag-row.is-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-diag-row.is-clickable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.qnalog-status-value {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  margin-top: var(--size-2-1);
+}
+
+.qnalog-diag-label.is-link,
+.qnalog-status-value.is-link {
+  color: var(--text-accent);
+}
+
+.qnalog-status-go {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: var(--font-ui-medium);
+  line-height: 1;
+  align-self: center;
+}
+
 .qnalog-diag-text {
   flex: 1;
   min-width: 0;
