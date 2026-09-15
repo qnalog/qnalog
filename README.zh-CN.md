@@ -14,6 +14,17 @@ QnALog 不连接自有云服务，也不内置任何 API Key：语音转写（AS
 
 QnALog 派生自 Lynnx 的 [LexVoice](https://github.com/Lynn-x/LexVoice)，基于其最后一个 MIT 授权版本（2.1.2）。上游自 2.2.0 起改用专有许可；本项目是 MIT 授权代码的独立延续，不是那条发布线的延续。详见 [`NOTICE`](NOTICE) 与 [`MAINTAINING.md`](MAINTAINING.md)。
 
+## 与 LexVoice 的关系
+
+QnALog 是一个独立项目，不是 LexVoice 的新版本。它从 LexVoice 最后一个 MIT 授权版本起步，此后已改造成名称、数据命名空间和设置都自成一体的插件。
+
+**两者之间没有数据通道。**
+
+- **不迁移数据。** QnALog 不提供从 LexVoice 导入、导出或迁移的路径：不读取 LexVoice 的笔记、标记、标签、目录与设置，加载时也不扫描、不改写你已有的文件。
+- **不继承设置。** 新安装从 QnALog 自己的默认值开始。如果你之前用过 LexVoice，它的 API Key、服务配置、目录与提示词都不会带过来——请在 QnALog 里重新配置。
+- **命名空间独立。** 写入知识库的标签、标记与目录只用 `qnalog` / `QnALog` 命名空间。
+- **插件 id 独立。** 本插件的 id 是 `qnalog`，与 LexVoice 的 `lexvoice` 不同，Obsidian 会把它们当作两个插件分别管理。
+
 ## 功能
 
 ### 实时大纲
@@ -173,7 +184,7 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 
 ## 安装
 
-本插件不在 Obsidian 社区插件目录中。目录里的 **LexVoice** 条目属于上游项目——见「来源」。
+本插件不在 Obsidian 社区插件目录中。目录里的 **LexVoice** 是另一个插件——见「与 LexVoice 的关系」。
 
 ### 方式一：BRAT（桌面端与移动端都可用）
 

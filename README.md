@@ -14,6 +14,17 @@ Supports desktop and mobile Obsidian. Mobile recording uses the device microphon
 
 QnALog is derived from [LexVoice](https://github.com/Lynn-x/LexVoice) by Lynnx, based on its last MIT-licensed release (2.1.2). Upstream relicensed to a proprietary license from 2.2.0 onward; this project is an independent continuation of the MIT-licensed code, not of that release line. See [`NOTICE`](NOTICE) and [`MAINTAINING.md`](MAINTAINING.md).
 
+## Relationship to LexVoice
+
+QnALog is a separate project, not a newer version of LexVoice. It started from LexVoice's last MIT-licensed release and has since been reworked into a plugin with its own name, data namespace, and settings.
+
+**There is no data path between the two.**
+
+- **No migration.** QnALog has no import, export, or migration path for LexVoice data. It does not read LexVoice notes, markers, tags, folders, or settings, and it does not scan or rewrite your existing files on load.
+- **No settings inheritance.** A new install starts from QnALog's own defaults. If you have used LexVoice, its API keys, service configuration, folders, and prompts are not carried over — configure QnALog from scratch.
+- **Its own namespace.** Tags, markers, and folders written to your vault use the `qnalog` / `QnALog` namespace only.
+- **Its own plugin id.** The id is `qnalog`, different from LexVoice's `lexvoice`, so Obsidian manages them as two separate plugins.
+
 ## Features
 
 ### Live outline
@@ -155,7 +166,7 @@ For sensitive content (client data, medical, legal, HR, recruiting, internal str
 
 ## Installation
 
-This plugin is not in the Obsidian community plugin directory. The directory's **LexVoice** entry belongs to the upstream project — see [Origin](#origin).
+This plugin is not in the Obsidian community plugin directory. The directory's **LexVoice** entry is a different plugin — see [Relationship to LexVoice](#relationship-to-lexvoice).
 
 ### Option 1 — BRAT (works on desktop and mobile)
 
