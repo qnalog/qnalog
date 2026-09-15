@@ -276,9 +276,21 @@ node version-bump.mjs                    # 写入 versions.json
 # 写发版说明：.github/release-notes/X.Y.Z.md（工作流要求该文件存在）
 npm ci && npm run verify:push            # lint + build + test + 主线隔离 + 产物一致性
 git add -A && git commit                 # 含重建后的 main.js
-git push origin main
+git push origin main                     # ⚠ 会被分支保护拒绝，改用 PR（见下）
 git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 ```
+
+> **先确认 `main` 到位，再推 tag。** `main` 有 `Main Protect` 规则，**直推会被拒绝**：
+> `! [remote rejected] main -> main (push declined due to repository rule violations)`。
+> 而 tag 推送**不受该规则约束**，于是「提交 → 推 main → 推 tag」这套顺序会走成
+> 「main 没动，tag 却推出去了」——2026-09-15 发 1.0.1 时就是这样：Release 正常发布，
+> 但 `main` 的 `manifest.json` 仍停在上一个版本。
+>
+> 正确做法：版本提交走 PR 合并进 `main`，**合并成功后再**打 tag、推 tag。
+> 若已经从 tag 发了版，事后用 PR 把版本提交补回 `main`（提交内容与 tag 逐字节相同，
+> 可用 `git diff X.Y.Z HEAD --stat` 为空来核对）。
+>
+> Release 本身不受影响：发布工作流检出的是 **tag 指向的提交**，不是 `main` 的指针。
 
 发布工作流（`Release`）在 tag 上依次做：
 
