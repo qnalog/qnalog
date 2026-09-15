@@ -1,6 +1,6 @@
 {
   "name": "qnalog",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Obsidian plugin: record and transcribe conversations, then turn them into structured Markdown notes.",
   "main": "main.js",
   "scripts": {
