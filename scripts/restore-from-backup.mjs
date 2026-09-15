@@ -45,13 +45,13 @@ function countFiles(dir) {
 
 const args = process.argv.slice(2).filter(arg => arg !== "--");
 const backupArg = args[0] ?? "";
-const vaultArg = args[1] ?? process.env.LEXVOICE_VAULT ?? "";
+const vaultArg = args[1] ?? process.env.QNALOG_VAULT ?? "";
 
 if (!backupArg.trim()) {
   fail(`缺少备份目录。
 
 用法：npm run restore:vault -- "<备份目录>" ["<知识库路径>"] [--set-enabled]
-也可以设置环境变量：LEXVOICE_VAULT="<知识库路径>" npm run restore:vault -- "<备份目录>"
+也可以设置环境变量：QNALOG_VAULT="<知识库路径>" npm run restore:vault -- "<备份目录>"
 
 备份目录由 npm run install:vault 创建：<知识库>/.obsidian/${BACKUP_ROOT}/<时间戳>/`);
 }
@@ -120,10 +120,10 @@ const otherIds = existsSync(pluginsDir)
   ? readdirSync(pluginsDir).filter(name => name !== restoredId && name.startsWith("lexvoice") || name === "qnalog" && existsSync(path.join(pluginsDir, name, "manifest.json")))
   : [];
 if (Array.isArray(enabled)) {
-  const activeLexVoiceIds = enabled.filter(id => typeof id === "string" && (id === restoredId || otherIds.includes(id)));
-  if (!activeLexVoiceIds.includes(restoredId)) {
+  const activeIdList = enabled.filter(id => typeof id === "string" && (id === restoredId || otherIds.includes(id)));
+  if (!activeIdList.includes(restoredId)) {
     const lines = [
-      `[restore] 注意：Obsidian 的启用列表里当前是 ${activeLexVoiceIds.length ? activeLexVoiceIds.join("、") : "（未启用任何 LexVoice 插件）"}，不是 ${restoredId}。`,
+      `[restore] 注意：Obsidian 的启用列表里当前是 ${activeIdList.length ? activeIdList.join("、") : "（未启用任何 LexVoice 插件）"}，不是 ${restoredId}。`,
       "[restore] 建议在 Obsidian 界面里切换（设置 → 第三方插件）：停用另一个，启用 " + restoredId + "。",
       "[restore] 也可以加 --set-enabled 让本脚本改写 community-plugins.json；Obsidian 正在运行时该改动可能被它覆盖，改完需要重新加载。",
     ];

@@ -1,7 +1,7 @@
 // 设置持久化边界：从不可信磁盘数据重建完整设置，并按当前 schema 分组写回。
 // normalize（读盘 → 内存平铺字段）与 serialize（内存 → 分组落盘）成对出现。
 //
-// ⚠️ 白名单脚枪警告：serializeLexVoiceSettings 是**重建式白名单**——它返回一个全新的嵌套对象，
+// ⚠️ 白名单脚枪警告：serializePluginSettings 是**重建式白名单**——它返回一个全新的嵌套对象，
 // 任何没有在 serialize 里显式登记的设置键，都会在下一次保存时被静默丢弃。
 // 新增设置键必须同时登记 normalize（读回）+ serialize（写出）两处，否则「保存即丢失」。
 // 该 bug 类已咬过三次（第三例：sedimentAutoExtract）——现在由 tests/settings-io.test.ts 的
@@ -213,7 +213,7 @@ function normalizeActiveTemplateBag(value: unknown): Record<string, string> {
   return result;
 }
 
-export function normalizeLexVoiceSettings(savedData: unknown): PluginSettings {
+export function normalizePluginSettings(savedData: unknown): PluginSettings {
   const saved = asRecord(savedData);
   const raw = isRecord(saved.settings) ? saved.settings : saved;
   const defaults = DEFAULT_SETTINGS;
@@ -344,7 +344,7 @@ export function normalizeLexVoiceSettings(savedData: unknown): PluginSettings {
   s.knowledgeExtractionHistory = normalizeKnowledgeExtractionHistory(firstDefined(vocabulary.extractionHistory, raw.knowledgeExtractionHistory, defaults.knowledgeExtractionHistory));
 
   const views = asRecord(raw.views);
-  s.lexVoiceBasesFolder = obsidian.normalizePath(firstNonBlankString(defaults.lexVoiceBasesFolder, views.baseFolder, raw.lexVoiceBasesFolder));
+  s.basesFolder = obsidian.normalizePath(firstNonBlankString(defaults.basesFolder, views.baseFolder, raw.basesFolder));
 
   const liveOutline = asRecord(raw.liveOutline);
   s.enableRealtimeOutline = firstBoolean(defaults.enableRealtimeOutline, liveOutline.enabled, raw.enableRealtimeOutline);
@@ -373,7 +373,7 @@ export function normalizeLexVoiceSettings(savedData: unknown): PluginSettings {
   // 招聘 / 晋升评审场景已从本版本移除：data.json 里残留的 recruiting / promotionReview 分组
   // 不再读取，也不再写回（见 shared/settings-migration-report.ts 的说明）。用户已有的笔记文件不受影响。
   const updates = asRecord(raw.updates);
-  // updateRepoUrl/Branch/PluginDir/RawBaseUrl 已收编为模块常量 LEXVOICE_UPDATE_*：
+  // updateRepoUrl/Branch/PluginDir/RawBaseUrl 已收编为模块常量 QNALOG_UPDATE_*：
   // 此前 normalize 始终重置为默认值，用户落盘值从未生效过，作为设置项是假象。
   s.autoCheckUpdates = firstBoolean(defaults.autoCheckUpdates, updates.autoCheck, raw.autoCheckUpdates);
   s.lastUpdateCheckAt = firstNullableString(defaults.lastUpdateCheckAt, updates.lastCheckedAt, raw.lastUpdateCheckAt);
@@ -438,7 +438,7 @@ export function normalizeLexVoiceSettings(savedData: unknown): PluginSettings {
   return s;
 }
 
-export function serializeLexVoiceSettings(s: PluginSettings): PersistedPluginSettings {
+export function serializePluginSettings(s: PluginSettings): PersistedPluginSettings {
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     storage: {
@@ -528,7 +528,7 @@ export function serializeLexVoiceSettings(s: PluginSettings): PersistedPluginSet
       extractionHistory: normalizeKnowledgeExtractionHistory(s.knowledgeExtractionHistory),
     },
     views: {
-      baseFolder: s.lexVoiceBasesFolder || DEFAULT_SETTINGS.lexVoiceBasesFolder,
+      baseFolder: s.basesFolder || DEFAULT_SETTINGS.basesFolder,
     },
     liveOutline: {
       enabled: s.enableRealtimeOutline,
@@ -564,7 +564,7 @@ export function serializeLexVoiceSettings(s: PluginSettings): PersistedPluginSet
   };
 }
 
-export function extractLexVoiceJobItems(savedData: unknown): unknown[] {
+export function extractJobItems(savedData: unknown): unknown[] {
   const saved = asRecord(savedData);
   const backgroundJobs = asRecord(saved.backgroundJobs);
   if (Array.isArray(backgroundJobs.items)) return backgroundJobs.items;

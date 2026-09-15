@@ -4,7 +4,7 @@
 // 标准 Obsidian callout 类型全集 + QnALog 自定义类型。
 // 用全集而非小白名单：DeepSeek 等模型常丢 `>` 前缀，规整器要能认出任意标准 callout 补回前缀。
 // 风险：正文里出现字面 [!xxx] 才会误判，而中文纪要正文几乎不会写这种 Obsidian 专有语法，安全。
-export const LEXVOICE_CALLOUT_NORMALIZE_TYPES = new Set([
+export const QNALOG_CALLOUT_NORMALIZE_TYPES = new Set([
   // 官方标准类型
   "note", "abstract", "summary", "tldr", "info", "todo", "tip", "hint",
   "important", "success", "check", "done", "question", "help", "faq",
@@ -17,7 +17,7 @@ export const LEXVOICE_CALLOUT_NORMALIZE_TYPES = new Set([
 // 顶部摘要 / 一句话定调这类 callout 的"短标题"识别：
 // 模型有时把 `> [!abstract] 摘要\n> 长正文...` 折叠成一行 `[!abstract] 摘要 长正文...`，
 // 渲染出来标题超长。这里把"短标题 + 空格 + 长正文"拆开，正文挪到续行。
-export function splitLexVoiceCalloutInlineBody(title) {
+export function splitCalloutInlineBody(title) {
   const t = String(title || "").trim();
   if (!t) return { label: "", body: "" };
   // 找第一个空白分隔；只有当分隔后的"正文"足够长（≥12 字）才认为是被折叠的正文，
@@ -29,14 +29,14 @@ export function splitLexVoiceCalloutInlineBody(title) {
   return { label: t, body: "" };
 }
 
-export function getLexVoiceCalloutHeader(line) {
+export function getCalloutHeader(line) {
   const m = String(line || "").match(/^\s*(?:>\s*)?(?:[-*+•]\s+)?\[!([a-z][a-z0-9_-]*)([+-]?)\]\s*(.*)$/i);
   if (!m) return null;
   const type = String(m[1] || "").toLowerCase();
-  if (!LEXVOICE_CALLOUT_NORMALIZE_TYPES.has(type)) return null;
+  if (!QNALOG_CALLOUT_NORMALIZE_TYPES.has(type)) return null;
   const fold = m[2] || "";
   const rawTitle = String(m[3] || "").trim();
-  const { label, body } = splitLexVoiceCalloutInlineBody(rawTitle);
+  const { label, body } = splitCalloutInlineBody(rawTitle);
   return {
     type,
     text: `[!${type}${fold}]${label ? " " + label : ""}`,
@@ -44,11 +44,11 @@ export function getLexVoiceCalloutHeader(line) {
   };
 }
 
-export function isLexVoiceCalloutBoundary(line) {
+export function isCalloutBoundary(line) {
   const text = String(line || "");
   const trimmed = text.trim();
   if (!trimmed) return false;
-  if (getLexVoiceCalloutHeader(text)) return true;
+  if (getCalloutHeader(text)) return true;
   return /^#{1,6}\s+/.test(trimmed)
     || /^-{3,}$/.test(trimmed)
     || /^<details\b/i.test(trimmed)
@@ -58,7 +58,7 @@ export function isLexVoiceCalloutBoundary(line) {
     || /^####\s+/.test(trimmed);
 }
 
-export function ensureLexVoiceCalloutGapBeforeHeader(out) {
+export function ensureCalloutGapBeforeHeader(out) {
   if (!Array.isArray(out) || !out.length) return;
   // 删除上一块尾部的空行与「>」空引用行——它们是 blockquote 续行，会让 Obsidian 把相邻 callout 合并成一个块
   while (out.length) {
@@ -70,7 +70,7 @@ export function ensureLexVoiceCalloutGapBeforeHeader(out) {
   if (out.length) out.push("");
 }
 
-export function normalizeLexVoiceCallouts(markdown) {
+export function normalizeCallouts(markdown) {
   if (!markdown) return "";
   const lines = String(markdown).replace(/\r\n/g, "\n").split("\n");
   const out = [];
@@ -89,9 +89,9 @@ export function normalizeLexVoiceCallouts(markdown) {
       continue;
     }
 
-    const header = getLexVoiceCalloutHeader(line);
+    const header = getCalloutHeader(line);
     if (header) {
-      ensureLexVoiceCalloutGapBeforeHeader(out);
+      ensureCalloutGapBeforeHeader(out);
       out.push(`> ${header.text}`);
       // 模型把标题和长正文折叠到同一行时，把正文拆到续行，避免标题超长
       if (header.inlineBody) out.push(`> ${header.inlineBody}`);
@@ -100,7 +100,7 @@ export function normalizeLexVoiceCallouts(markdown) {
     }
 
     if (inFixedCallout) {
-      if (isLexVoiceCalloutBoundary(line)) {
+      if (isCalloutBoundary(line)) {
         inFixedCallout = false;
         out.push(line);
         continue;

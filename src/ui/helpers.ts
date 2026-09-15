@@ -3,10 +3,10 @@
 import * as obsidian from "obsidian";
 import { getDesktopModule } from "../shared/desktop-runtime";
 export {
-  LEXVOICE_UPDATE_REPO_URL,
-  LEXVOICE_UPDATE_BRANCH,
-  LEXVOICE_UPDATE_PLUGIN_DIR,
-  LEXVOICE_UPDATE_RAW_BASE_URL,
+  QNALOG_UPDATE_REPO_URL,
+  QNALOG_UPDATE_BRANCH,
+  QNALOG_UPDATE_PLUGIN_DIR,
+  QNALOG_UPDATE_RAW_BASE_URL,
   parseGithubRepoUrl,
   trimSlashes,
   resolveUpdateRawBase,
@@ -18,7 +18,7 @@ import { normalizeKnowledgeExtractionHistory } from '../shared/util-knowledge';
 
 export const SUPPORTED_AUDIO_INPUT_MODES = new Set(["mic", "mix-virtual", "virtualCable"]);
 
-export function stripLexVoiceFrontmatterSimple(text) {
+export function stripFrontmatterSimple(text) {
   return String(text || "").replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
@@ -60,7 +60,7 @@ export function noteHasSuccessfulLlmBriefing(content) {
 
   const rawMatch = /\n##\s+(?:📁\s*)?原始材料/.exec(text);
   if (rawMatch) {
-    const beforeRaw = stripLexVoiceFrontmatterSimple(text.slice(0, rawMatch.index));
+    const beforeRaw = stripFrontmatterSimple(text.slice(0, rawMatch.index));
     const meaningful = normalizeRecentNoteMeaningfulText(beforeRaw);
     if (meaningful.length > 60 && !/合并润色失败|AI 整理失败|_\[无输出\]_/.test(beforeRaw)) return true;
   }
@@ -84,7 +84,7 @@ export function noteHasUsableRawTranscriptDespiteFailures(content) {
     .replace(/_\[合并润色失败（已加入重试队列）：[^\]]*\]_/g, "")
     .replace(/_\[AI 整理失败：[^\]]*\]_/g, "")
     .replace(/_\[(?:此段暂无有效转写|此段无内容|无输出)\]_/g, "");
-  const meaningful = normalizeRecentNoteMeaningfulText(stripLexVoiceFrontmatterSimple(cleaned));
+  const meaningful = normalizeRecentNoteMeaningfulText(stripFrontmatterSimple(cleaned));
   return meaningful.length > 160 && (/<!--\s*lexvoice-segments-start/.test(content) || /^###\s+段落\s+\d+/m.test(content));
 }
 
@@ -121,7 +121,7 @@ export function getRecentNoteProcessingState(content) {
   return null;
 }
 
-export function getLexVoiceImportMarkerState(content) {
+export function getImportMarkerState(content) {
   const text = String(content || "");
   return {
     hasSession: /<!--\s*lexvoice-session(?::|\s*--)/.test(text),
@@ -131,7 +131,7 @@ export function getLexVoiceImportMarkerState(content) {
   };
 }
 
-export function lexvoiceConfirm(app, title, body, ctaText = "确认") {
+export function qnalogConfirm(app, title, body, ctaText = "确认") {
   return new Promise((resolve) => {
     const modal = new obsidian.Modal(app);
     let decided = false;
@@ -152,7 +152,7 @@ export function lexvoiceConfirm(app, title, body, ctaText = "确认") {
   });
 }
 
-export function lexvoicePromptText(app, title, placeholder, initialValue) {
+export function qnalogPromptText(app, title, placeholder, initialValue) {
   return new Promise((resolve) => {
     const modal = new obsidian.Modal(app);
     let settled = false;
@@ -168,7 +168,7 @@ export function lexvoicePromptText(app, title, placeholder, initialValue) {
         if (e.key === "Enter") { e.preventDefault(); done(input.value); }
         else if (e.key === "Escape") { e.preventDefault(); done(null); }
       });
-      const actions = contentEl.createDiv({ cls: "lexvoice-modal-actions" });
+      const actions = contentEl.createDiv({ cls: "qnalog-modal-actions" });
       const cancel = actions.createEl("button", { text: "取消" });
       cancel.onclick = () => done(null);
       const ok = actions.createEl("button", { text: "确定", cls: "mod-cta" });
@@ -180,21 +180,21 @@ export function lexvoicePromptText(app, title, placeholder, initialValue) {
   });
 }
 
-export function openLexVoicePickListModal(app, title, items, onPick) {
+export function openPickListModal(app, title, items, onPick) {
   const modal = new obsidian.Modal(app);
   modal.onOpen = () => {
     const { contentEl } = modal;
     contentEl.empty();
     contentEl.createEl("h3", { text: title });
-    const search = contentEl.createEl("input", { cls: "lexvoice-pick-search", attr: { type: "text", placeholder: "搜索…" } });
-    const listEl = contentEl.createDiv({ cls: "lexvoice-pick-list" });
+    const search = contentEl.createEl("input", { cls: "qnalog-pick-search", attr: { type: "text", placeholder: "搜索…" } });
+    const listEl = contentEl.createDiv({ cls: "qnalog-pick-list" });
     const render = (filter) => {
       listEl.empty();
       const f = String(filter || "").toLowerCase();
       const shown = items.filter(x => !f || x.toLowerCase().includes(f)).slice(0, 300);
-      if (!shown.length) { listEl.createDiv({ cls: "lexvoice-pick-empty", text: "无匹配项" }); return; }
+      if (!shown.length) { listEl.createDiv({ cls: "qnalog-pick-empty", text: "无匹配项" }); return; }
       for (const id of shown) {
-        const row = listEl.createEl("button", { cls: "lexvoice-pick-item", text: id, attr: { type: "button" } });
+        const row = listEl.createEl("button", { cls: "qnalog-pick-item", text: id, attr: { type: "button" } });
         row.onclick = () => { modal.close(); onPick(id); };
       }
     };
@@ -205,7 +205,7 @@ export function openLexVoicePickListModal(app, title, items, onPick) {
   modal.open();
 }
 
-export function openLexVoiceExternalUrl(url) {
+export function openExternalUrl(url) {
   // 桌面端优先走 Electron shell.openExternal —— 强制用系统默认浏览器，
   // 避免在 Obsidian 内嵌 webview 打开外部链接。
   try {
@@ -250,7 +250,7 @@ export function isVirtualCableLabel(label) {
   return VIRTUAL_CABLE_PATTERNS.some((p) => p.test(label));
 }
 
-export async function trashLexVoiceFile(app, file) {
+export async function trashVaultFileRef(app, file) {
   if (app.vault && typeof app.vault.trash === "function") {
     await app.vault.trash(file, true);
   } else {
@@ -275,9 +275,9 @@ export function audioInputModeLabel(mode) {
 
 export function classifyImportTextFileForModal(file, content) {
   const text = String(content || "");
-  const marker = getLexVoiceImportMarkerState(text);
-  const hasLexVoiceSignal = marker.hasSession || marker.hasSegments || marker.hasGeneratedBlock || marker.hasImportBlock;
-  if (!hasLexVoiceSignal) {
+  const marker = getImportMarkerState(text);
+  const hasSignal = marker.hasSession || marker.hasSegments || marker.hasGeneratedBlock || marker.hasImportBlock;
+  if (!hasSignal) {
     return {
       category: "external",
       badge: file && String(file.extension || "").toLowerCase() === "txt" ? "TXT" : "外部稿",
@@ -290,7 +290,7 @@ export function classifyImportTextFileForModal(file, content) {
   const successful = noteHasSuccessfulLlmBriefing(text);
   if (successful && !processingState) {
     return {
-      category: "lexvoice-normal",
+      category: "qnalog-normal",
       badge: "已整理",
       reason: "可合并 / 换模板",
       statusTitle: "QnALog 已整理纪要，可用于多篇合并、换模板重整或转成其他模式",
@@ -301,7 +301,7 @@ export function classifyImportTextFileForModal(file, content) {
     ? processingState.label
     : (marker.hasSegments ? "待整理" : "碎片稿");
   return {
-    category: "lexvoice-repair",
+    category: "qnalog-repair",
     badge: label,
     reason: processingState && processingState.title ? processingState.title : "检测到 QnALog 标记，但没有稳定的整理正文",
     statusTitle: processingState && processingState.title ? processingState.title : "适合重新整理或补救失败转写",

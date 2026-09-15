@@ -10,8 +10,10 @@ import { extractJsonObject } from '../shared/util-json';
 import { canOmitServiceApiKey } from '../shared/util-llm-endpoint';
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
-import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertLexVoiceObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
+import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
 
+// 取值是写在用户笔记里的注释标记，改名会让既有笔记的沉淀块不再被识别：
+// 常量名不带宽泛品牌前缀，取值保持上游的 LEXVOICE_ 字面量（随数据层命名空间重置一起改）。
 export const SEDIMENT_PREEXTRACT_BEGIN = "LEXVOICE_SEDIMENT_BEGIN";
 
 export const SEDIMENT_PREEXTRACT_END = "LEXVOICE_SEDIMENT_END";
@@ -152,7 +154,7 @@ export function normalizeSedimentExtractionModel(model) {
   return out;
 }
 
-export function buildLexVoiceObjectTags(baseTag, extraTags) {
+export function buildObjectTags(baseTag, extraTags) {
   const tags = [baseTag, "lexvoice"];
   for (const tag of normalizeSedimentTextList(extraTags || [], 28)) {
     const clean = tag.replace(/^#/, "").replace(/\s+/g, "-");
@@ -385,7 +387,7 @@ export function formatSedimentTodoCardMarkdown(sourceFile, todo) {
   ].filter(Boolean).join(" ");
   const taskLines = [`- [ ] ${taskMeta}`].concat(subtasks.map(item => `  - [ ] ${item}`));
   const fm = {
-    type: "lexvoice-todo-card",
+    type: "qnalog-todo-card",
     "事项": task,
     "责任人": owner,
     "截止": due,
@@ -394,7 +396,7 @@ export function formatSedimentTodoCardMarkdown(sourceFile, todo) {
     "来源笔记": sourceLink,
     "来源时间": sourceTime || "",
     "子任务数": subtasks.length,
-    tags: buildLexVoiceObjectTags(TODO_CARD_TAG, []),
+    tags: buildObjectTags(TODO_CARD_TAG, []),
   };
   const body = [
     `# ${task}`,
@@ -444,7 +446,7 @@ export async function writeSedimentObjectCards(plugin, sourceFile, objects) {
       const todoFolder = obsidian.normalizePath(plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder);
       for (const todo of todos) {
         const name = `${baseStem}-${sanitizeFilename(todo.task) || "待办"}`;
-        const entry = await upsertLexVoiceObjectNote(plugin, todoFolder, name, formatSedimentTodoCardMarkdown(sourceFile, todo));
+        const entry = await upsertObjectNote(plugin, todoFolder, name, formatSedimentTodoCardMarkdown(sourceFile, todo));
         result.entries.push(Object.assign({ kind: "todo", target: "card" }, entry));
         result.todos++;
       }

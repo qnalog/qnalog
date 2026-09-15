@@ -44,14 +44,14 @@ ${s}
 export function injectHtmlReportExportScript(html) {
   const script = `<script>
 (function () {
-  const button = document.getElementById("lexvoice-save-report-image");
-  const status = document.getElementById("lexvoice-export-status");
+  const button = document.getElementById("qnalog-save-report-image");
+  const status = document.getElementById("qnalog-export-status");
   const setStatus = (text) => { if (status) status.textContent = text || ""; };
-  const safeName = (document.title || "LexVoice-HTML报告")
+  const safeName = (document.title || "QnALog-HTML报告")
     .replace(/[\\\\/:*?"<>|]+/g, "-")
     .replace(/\\s+/g, " ")
     .trim()
-    .slice(0, 80) || "LexVoice-HTML报告";
+    .slice(0, 80) || "QnALog-HTML报告";
   const downloadBlob = (blob, name) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -162,12 +162,12 @@ export function extractMarkdownForHtmlReport(markdown) {
 }
 
 export function sanitizeReportFileStem(name) {
-  const stem = String(name || "LexVoice-HTML报告")
+  const stem = String(name || "QnALog-HTML报告")
     .replace(/\.md$/i, "")
     .replace(/[\\/:*?"<>|#^[\]]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return stem || "LexVoice-HTML报告";
+  return stem || "QnALog-HTML报告";
 }
 
 export function normalizeReportArray(value, limit) {
@@ -354,8 +354,8 @@ export function renderHtmlReport(model) {
 </head>
 <body>
   <div class="lv-report-tools">
-    <button id="lexvoice-save-report-image" type="button">保存为图片</button>
-    <span id="lexvoice-export-status"></span>
+    <button id="qnalog-save-report-image" type="button">保存为图片</button>
+    <span id="qnalog-export-status"></span>
   </div>
   <main class="lv-page">
     <div class="lv-panorama">

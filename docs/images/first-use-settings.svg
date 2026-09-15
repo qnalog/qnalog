@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1240" height="960" viewBox="0 0 1240 960" role="img" aria-labelledby="title desc">
-  <title id="title">LexVoice 首次使用配置概览</title>
-  <desc id="desc">展示 LexVoice 设置首页中首次使用需要配置的语音转写服务、大模型 API、虚拟声卡、Obsidian 日记和推荐配置路径。</desc>
+  <title id="title">QnALog 首次使用配置概览</title>
+  <desc id="desc">展示 QnALog 设置首页中首次使用需要配置的语音转写服务、大模型 API、虚拟声卡、Obsidian 日记和推荐配置路径。</desc>
   <defs>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#8d7b73" flood-opacity="0.16"/>
@@ -32,7 +32,7 @@
   <rect class="bg" x="0" y="0" width="1240" height="960"/>
 
   <g transform="translate(58,58)">
-    <text class="text tab" x="24" y="0">LexVoice</text>
+    <text class="text tab" x="24" y="0">QnALog</text>
     <line x1="0" y1="18" x2="1120" y2="18" class="panel-line"/>
     <line x1="0" y1="18" x2="130" y2="18" stroke="#df8f93" stroke-width="3"/>
     <text class="text tab muted" x="154" y="0">常规</text>
@@ -41,7 +41,7 @@
     <text class="text tab muted" x="454" y="0">进阶</text>
     <text class="text tab muted" x="546" y="0">更新</text>
 
-    <text class="text title" x="24" y="78">LexVoice</text>
+    <text class="text title" x="24" y="78">QnALog</text>
     <text class="text body muted" x="198" y="78">0.1.0</text>
     <text class="text body muted" x="0" y="116">在 Obsidian 桌面端完成录音、转写与 AI 整理。首次使用不需要填满所有页面，先完成下面三步即可开始。</text>
 

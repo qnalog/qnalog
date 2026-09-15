@@ -5,13 +5,13 @@ import * as obsidian from "obsidian";
 import { getModeMeta } from "../shared/mode-meta";
 import { getSessionMetaDurationMs } from "../shared/util-text";
 import { stripModeSuggestionBlocks } from "../llm/core";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { getLearnedLlmOutputCeiling } from "../llm/output-budget";
-import { splitLexVoiceVersionPayload } from "../version-content";
+import { splitVersionPayload } from "../version-content";
 import { getTaskErrorMessage } from "../shared/task-activity";
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
-import { getLexVoiceSegmentsDurationMs } from "../notes/audio-refs";
-import { ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, extractLexVoiceTranscriptSegments, extractRoleMappingFromFrontmatter, getLexVoiceSourceIdFromMarkdown, parseRoleMapItem } from "../notes/note-markdown";
+import { getSegmentsDurationMs } from "../notes/audio-refs";
+import { ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, extractTranscriptSegments, extractRoleMappingFromFrontmatter, getSourceIdFromMarkdown, parseRoleMapItem } from "../notes/note-markdown";
 import { detectRecentNoteMode } from "../recent/recent-notes";
 import { cleanTranscript, mergeAndPolish } from "../briefing/merge-pipeline";
 import { TaskActivityService } from "../tasks/task-activity-service";
@@ -24,7 +24,7 @@ export interface RepolishHost {
   app: obsidian.App;
   noteIndex: NoteIndexService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   tasks: TaskActivityService;
   versions: VersionStore;
 }
@@ -50,9 +50,9 @@ export class RepolishService {
     let repolishLockAcquired = false;
     try {
       const content = await this.host.app.vault.read(file);
-      const sourceId = getLexVoiceSourceIdFromMarkdown(content, file);
+      const sourceId = getSourceIdFromMarkdown(content, file);
       taskId = `repolish:${sourceId || file.path}`;
-      let segments = extractLexVoiceTranscriptSegments(content);
+      let segments = extractTranscriptSegments(content);
       if (!segments.length) {
         new obsidian.Notice("未找到 QnALog 原始转写。请在包含「分段原始转写」或录音段落的纪要 Markdown 上使用。", 8000);
         return;
@@ -129,7 +129,7 @@ export class RepolishService {
         kind: "重新整理",
         sourceFile: file.basename,
         sourceFolder: file.parent && file.parent.path ? file.parent.path : "知识库根目录",
-        durationMs: getLexVoiceSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta),
+        durationMs: getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta),
         sourceModeLabel,
         targetModeLabel: [meta.label || meta.prefix, repolishOptions && repolishOptions.label]
           .filter(Boolean)
@@ -167,19 +167,19 @@ export class RepolishService {
       const versionLabel = `${meta.prefix}${preferenceLabel}`;
       const versionStyle = repolishOptions && repolishOptions.label ? repolishOptions.label : "";
       const versionBody = stripModeSuggestionBlocks(polished || buildEmptyLlmOutputFallback()).trim();
-      const versionParts = splitLexVoiceVersionPayload(versionBody);
+      const versionParts = splitVersionPayload(versionBody);
       const fallbackVersion = {
         body: versionParts.body.trim() || buildEmptyLlmOutputFallback(),
         frontmatter: versionParts.frontmatter || "",
         meta: {
-          sourceId: getLexVoiceSourceIdFromMarkdown(latestSourceContent, dailyTargetFile),
+          sourceId: getSourceIdFromMarkdown(latestSourceContent, dailyTargetFile),
           createdAt: window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString(),
         },
       };
 
       // 可见副本是用户交付物，必须先落盘；版本缓存/manifest 只是索引，
       // 即使索引写入异常，也不能阻断新纪要生成。
-      const derivedFile = await this.host.versions.createLexVoiceDerivedNote(
+      const derivedFile = await this.host.versions.createDerivedNote(
         dailyTargetFile,
         latestSourceContent,
         fallbackVersion,
@@ -197,7 +197,7 @@ export class RepolishService {
       await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
       let versionCacheError = "";
       try {
-        await this.host.versions.saveLexVoiceVersion(dailyTargetFile, latestSourceContent, segments, {
+        await this.host.versions.saveVersion(dailyTargetFile, latestSourceContent, segments, {
           kind: "minutes",
           label: versionLabel,
           mode,
@@ -279,7 +279,7 @@ export class RepolishService {
           return;
         }
       }
-      const segments = extractLexVoiceTranscriptSegments(content);
+      const segments = extractTranscriptSegments(content);
       if (!segments.length) {
         new obsidian.Notice("未找到原始转写（逐字稿）。请在含「分段原始转写」的录音母本上生成清稿。", 8000);
         return;
@@ -293,7 +293,7 @@ export class RepolishService {
         kind: "生成清稿",
         sourceFile: sourceFile.basename,
         sourceFolder: sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "知识库根目录",
-        durationMs: getLexVoiceSegmentsDurationMs(segments),
+        durationMs: getSegmentsDurationMs(segments),
         sourceModeLabel: sourceMode && sourceMode !== "off"
           ? ((getModeMeta(this.host.settings, sourceMode) || {}).label || sourceMode)
           : "未标注",
@@ -321,7 +321,7 @@ export class RepolishService {
         ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"
         : "";
       const noteBody = `# [清稿] ${baseTitle}\n\n> [!note] 从母本逐字稿忠实清理的可读稿（非纪要、不摘要）。母本（事实源 / 逐字稿）：[[${baseTitle}]]\n\n${warn}${cleaned}`;
-      const version = await this.host.versions.saveLexVoiceVersion(sourceFile, content, segments, {
+      const version = await this.host.versions.saveVersion(sourceFile, content, segments, {
         kind: "clean",
         label: "清稿",
         mode: "cleanscript",
@@ -329,7 +329,7 @@ export class RepolishService {
         idLabel: "清稿",
         body: noteBody,
       });
-      await this.host.versions.applyLexVoiceVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
+      await this.host.versions.applyVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
       new obsidian.Notice("QnALog：清稿已生成并设为当前显示版本", 6000);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;

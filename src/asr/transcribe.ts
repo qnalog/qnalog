@@ -6,7 +6,7 @@ import { isLocalServiceEndpoint } from '../shared/util-note';
 import { assertSafeServiceEndpoint, canOmitServiceApiKey } from '../shared/util-llm-endpoint';
 import { buildVocabularyPrompt, applyVocabularyCorrections, loadVocabularyGroups } from '../vocabulary';
 import { buildPeopleHotwordsForAsr } from '../people';
-import { lexvoiceArrayBufferToBase64 } from './clients';
+import { qnalogArrayBufferToBase64 } from './clients';
 import { extractTranscriptText } from './speaker-labels';
 import { cleanApimimoAsrRepeatedLoops } from './apimimo-clean';
 import { getSpeakerDiarizationRequestOptions } from './diarization';
@@ -403,7 +403,7 @@ export async function requestApimimoAsrChunk(
   // 安全校验后立即执行 TPM 配速（在读 arrayBuffer/编码 base64 之前），确保跨块、跨会话的请求间隔满足 10K TPM。
   await waitApimimoTpmSlot(prepared.blob, prepared.mime);
   const ab = await prepared.blob.arrayBuffer();
-  const audioDataUrl = `data:${prepared.mime};base64,${lexvoiceArrayBufferToBase64(ab)}`;
+  const audioDataUrl = `data:${prepared.mime};base64,${qnalogArrayBufferToBase64(ab)}`;
   // 三段式超时（替代原先单一固定计时器）：
   // - 首字节超时：沿用体积自适应值（服务端要先吃完整段音频才能吐第一个 token，大块上传+摄取耗时长）；
   // - 空闲超时 60s：进入流式后每收到一个网络分片就重置——只要 token 还在流动就永不误杀；

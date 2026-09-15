@@ -3,7 +3,7 @@
 // 背景：仓库里的 manifest.json 是发版身份（CI 校验 manifest / package.json / package-lock.json /
 // versions.json 四处一致，社区目录也只接受它），因此不能用它承载"这是开发分支"的信息。
 // 开发标识改由构建时注入，作用有两处：
-//   1) main.js 内（LEXVOICE_BUILD_* 常量）→ 设置页与诊断报告显示当前跑的是哪个分支的构建；
+//   1) main.js 内（QNALOG_BUILD_* 常量）→ 设置页与诊断报告显示当前跑的是哪个分支的构建；
 //   2) 本地安装时写进知识库里的 manifest.json → Obsidian 自己的插件列表也能看出是开发版。
 // 仓库内的 manifest.json 始终不变。
 import { execFileSync } from "node:child_process";

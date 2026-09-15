@@ -153,7 +153,7 @@ export interface PluginSettings {
   peopleBaseFile: string;
   todoCardsFolder: string;
   sedimentAutoExtract: boolean;
-  lexVoiceBasesFolder: string;
+  basesFolder: string;
   peopleContextMode: PeopleContextMode;
   peopleHotwordsConsentAt: string;
   peopleSuggestionIgnores: unknown[];
@@ -195,8 +195,6 @@ export interface PluginSettings {
   lastUpdateError: string;
   installedUpdateVersion: string;
 }
-
-export type LexVoiceSettings = PluginSettings;
 
 export interface PersistedPluginSettings {
   schemaVersion: number;

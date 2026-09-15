@@ -268,10 +268,10 @@ async function main() {
       const rendered = collectRenderedText(bar);
       const timeLabel = view.getRecentFilterLabel("time", initial.time, []);
       const cls = (item) => item.cls.split(/\s+/);
-      const hasChip = (label) => rendered.some((item) => cls(item).includes("lexvoice-outline-recent-filter-chip") && item.text === label);
+      const hasChip = (label) => rendered.some((item) => cls(item).includes("qnalog-outline-recent-filter-chip") && item.text === label);
       expect(hasChip(timeLabel), `筛选条上没有时间范围按钮（列表按它过滤，必须可见）：缺「${timeLabel}」`);
       expect(hasChip("全部模板"), "筛选条上没有模板筛选按钮");
-      expect(rendered.some((item) => cls(item).includes("lexvoice-outline-recent-group-chip")), "筛选条上没有分组按钮");
+      expect(rendered.some((item) => cls(item).includes("qnalog-outline-recent-group-chip")), "筛选条上没有分组按钮");
     } catch (error) {
       failures.push(`纪要面板渲染检查抛错：${(error && error.message) || error}`);
     }

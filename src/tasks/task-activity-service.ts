@@ -3,7 +3,7 @@
 
 import * as obsidian from "obsidian";
 import { getModeMeta } from "../shared/mode-meta";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { formatElapsed } from "../shared/util-common";
 import { isAsrTransportError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
@@ -127,7 +127,7 @@ export interface TaskActivityHost {
   /** 录音采集服务：熔断状态与冷却时长。 */
   recording: { isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class TaskActivityService {
@@ -166,7 +166,7 @@ export class TaskActivityService {
     this.completedWorkLog = []; // 本次启动 OB 后已完成的处理（不持久化，重启清零），供"处理进度"面板展示
     this._taskMeter = null; // 单任务 token 计量窗口（beginTaskMeter→endTaskMeter）
     this.progressStatusEl = this.host.addStatusBarItem();
-    this.progressStatusEl.addClass("lexvoice-statusbar");
+    this.progressStatusEl.addClass("qnalog-statusbar");
     this.progressStatusEl.addEventListener("click", () => new QueueModal(this.host.app, this.host).open());
     this.updateBusyStatus();
   }
@@ -633,11 +633,11 @@ export class TaskActivityService {
     // muted 缺省为 false：多数调用只给前三个参数，此时状态栏用普通样式而非空闲样式。
     const show = (icon, text, spin, muted = false) => {
       el.empty();
-      el.removeClass("lexvoice-statusbar-hidden");
-      el.toggleClass("lexvoice-statusbar-idle", !!muted);
-      const ico = el.createSpan({ cls: "lexvoice-statusbar-icon" + (spin ? " lexvoice-statusbar-spin" : "") });
+      el.removeClass("qnalog-statusbar-hidden");
+      el.toggleClass("qnalog-statusbar-idle", !!muted);
+      const ico = el.createSpan({ cls: "qnalog-statusbar-icon" + (spin ? " qnalog-statusbar-spin" : "") });
       try { obsidian.setIcon(ico, icon); } catch { /* intentionally empty */ }
-      el.createSpan({ cls: "lexvoice-statusbar-text", text });
+      el.createSpan({ cls: "qnalog-statusbar-text", text });
       el.setAttr("aria-label", text + "（点击查看转写队列）");
     };
 

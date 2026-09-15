@@ -17,7 +17,7 @@ import { verifyTranscriptCheckpoint } from "../imports/transcript-checkpoint";
 import { getAudioDurationMs, getAudioTimeLink } from "../notes/audio-refs";
 import { splitImportedTextIntoNormalSegments, stripImportedTextSource } from "../notes/note-markdown";
 import { TaskQueue } from "../queue/task-queue";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { RecordingService } from "../audio/recording-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
@@ -59,7 +59,7 @@ export interface ImportHost {
   session: RecordingSession | null;
   sessionFinalize: SessionFinalizeService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   shell: ViewShellService;
   tasks: TaskActivityService;
 }

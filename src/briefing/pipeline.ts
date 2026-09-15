@@ -645,7 +645,7 @@ export function extractBriefingPartEnvelope(value: unknown): BriefingPartEnvelop
 
   let body = bodyMatch ? bodyMatch[1] : raw;
   body = stripLeakedBriefingMarkers(body)
-    .replace(/<!--\s*lexvoice-part-(?:body-start|body-end)\s*-->/gi, "")
+    .replace(/<!--\s*qnalog-part-(?:body-start|body-end)\s*-->/gi, "")
     .replace(/<!--\s*lexvoice-part-summary\s*:[\s\S]*?-->/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -663,7 +663,7 @@ export function normalizeBriefingPartBody(
   options: { fragmentMode?: boolean } = {},
 ): string {
   let normalized = stripLeakedBriefingMarkers(cleanText(value))
-    .replace(/<!--\s*lexvoice-part-(?:body-start|body-end)\s*-->/gi, "")
+    .replace(/<!--\s*qnalog-part-(?:body-start|body-end)\s*-->/gi, "")
     .replace(/<!--\s*lexvoice-part-summary\s*:[\s\S]*?-->/gi, "")
     .replace(
       /^\s*#{1,6}\s*(?:第\s*\d+\s*(?:\/\s*\d+\s*)?(?:部分|分部|时段)|(?:内部)?(?:时间窗口|转写窗口|分段)\s*\d+)(?:\s*[·:：—-]\s*[^\n]*)?\s*\n+/gim,

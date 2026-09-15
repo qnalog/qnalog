@@ -39,21 +39,21 @@ vi.mock("../src/shared/settings-runtime-deps", () => ({
 
 import {
   SETTINGS_SCHEMA_VERSION,
-  extractLexVoiceJobItems,
-  normalizeLexVoiceSettings,
-  serializeLexVoiceSettings,
+  extractJobItems,
+  normalizePluginSettings,
+  serializePluginSettings,
 } from "../src/shared/settings-io";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS } from "../src/shared/defaults";
 import type { PluginSettings } from "../src/shared/types";
 
 // 模拟真实的「保存 → 落盘 → 重启读回」链路：
 // saveAll 写 { settings: serialize(...) } 且经过 JSON 深拷贝落盘（saveData），
-// loadAll 再 normalizeLexVoiceSettings(saved)。JSON round-trip 能同时暴露 undefined 被丢弃等问题。
+// loadAll 再 normalizePluginSettings(saved)。JSON round-trip 能同时暴露 undefined 被丢弃等问题。
 // （saveAll 里的 API Key 混淆层 transformApiKeyFieldsDeep 包在 serialize 之外、读回时先解混淆，
 // 对 normalize/serialize 本身是透明的，故这里按明文测试。）
 function roundTrip(settings: PluginSettings): PluginSettings {
-  const persisted = JSON.parse(JSON.stringify({ settings: serializeLexVoiceSettings(settings) })) as unknown;
-  return normalizeLexVoiceSettings(persisted);
+  const persisted = JSON.parse(JSON.stringify({ settings: serializePluginSettings(settings) })) as unknown;
+  return normalizePluginSettings(persisted);
 }
 
 describe("settings-io round-trip（白名单防丢键兜底）", () => {
@@ -62,7 +62,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(DEFAULT_SETTINGS.peopleDirectoryFolder).toBe("LexVoice/资料库/人员");
     expect(DEFAULT_SETTINGS.peopleBaseFile).toBe("LexVoice/资料库/视图/人员库.base");
     expect(DEFAULT_SETTINGS.todoCardsFolder).toBe("LexVoice/资料库/待办");
-    expect(DEFAULT_SETTINGS.lexVoiceBasesFolder).toBe("LexVoice/资料库/视图");
+    expect(DEFAULT_SETTINGS.basesFolder).toBe("LexVoice/资料库/视图");
     expect(DEFAULT_SETTINGS.diagnosticsLogFolder).toBe("LexVoice/系统/诊断日志");
     expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("LexVoice/资料库/归档");
     expect(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder).toBe("LexVoice/资料库/归档/重复人员");
@@ -70,12 +70,12 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   });
 
   it("serialize 输出携带 schemaVersion", () => {
-    const a = normalizeLexVoiceSettings({});
-    expect(serializeLexVoiceSettings(a).schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
+    const a = normalizePluginSettings({});
+    expect(serializePluginSettings(a).schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
   });
 
   it("默认设置：DEFAULT_SETTINGS 的每个顶层键都必须在 normalize→serialize→normalize 后原样存活", () => {
-    const a = normalizeLexVoiceSettings({});
+    const a = normalizePluginSettings({});
     const b = roundTrip(a);
     // serialize 是重建式白名单：任何没登记的键会在这里现形（b[key] 回退成默认值或丢失）。
     // 若本测试对某个键失败：
@@ -87,7 +87,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   });
 
   it("非默认值改动：跨分组抽样修改后 round-trip 必须逐项存活", () => {
-    const a = normalizeLexVoiceSettings({});
+    const a = normalizePluginSettings({});
 
     // —— 白名单脚枪第三例（回归钉子）：sedimentAutoExtract 曾因未登记 serialize 而保存即丢 ——
     a.sedimentAutoExtract = true;
@@ -102,7 +102,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     a.peopleDirectoryFolder = "自定义/人员";
     a.peopleBaseFile = "自定义/视图/人员库.base";
     a.todoCardsFolder = "自定义/待办";
-    a.lexVoiceBasesFolder = "自定义/视图";
+    a.basesFolder = "自定义/视图";
     a.diagnosticsLogFolder = "自定义/诊断日志";
 
     // 布尔开关类（含「默认 true 改 false」这种最容易被 || 兜底吃掉的方向）
@@ -162,7 +162,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.peopleDirectoryFolder).toBe("自定义/人员");
     expect(b.peopleBaseFile).toBe("自定义/视图/人员库.base");
     expect(b.todoCardsFolder).toBe("自定义/待办");
-    expect(b.lexVoiceBasesFolder).toBe("自定义/视图");
+    expect(b.basesFolder).toBe("自定义/视图");
     expect(b.diagnosticsLogFolder).toBe("自定义/诊断日志");
 
     expect(b.inboxAutoImport).toBe(false);
@@ -205,7 +205,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   });
 
   it("坏 JSON 字段不能污染核心设置，且同组的合法字段仍可读取", () => {
-    const settings = normalizeLexVoiceSettings({
+    const settings = normalizePluginSettings({
       settings: {
         storage: {
           recordingLibraryPath: 42,
@@ -265,7 +265,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   });
 
   it("旧版扁平字段继续迁移，包含 provider 与旧 prompt 覆盖", () => {
-    const settings = normalizeLexVoiceSettings({
+    const settings = normalizePluginSettings({
       audioFolder: "旧版/录音",
       inboxAutoImport: false,
       captureMode: "system",
@@ -299,7 +299,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   it("丢弃指向上游仓库的历史更新记录", () => {
     // 从上游版本（2.3.2）迁移过来时，data.json 里会残留这条记录：
     // 设置页会把它显示成"可用版本 2.3.2"，「安装更新」也可能据此去取产物。
-    const normalized = normalizeLexVoiceSettings({
+    const normalized = normalizePluginSettings({
       schemaVersion: 5,
       updates: {
         autoCheck: true,
@@ -316,7 +316,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   });
 
   it("保留来自本仓库的更新记录", () => {
-    const normalized = normalizeLexVoiceSettings({
+    const normalized = normalizePluginSettings({
       schemaVersion: 4,
       updates: {
         autoCheck: true,
@@ -333,7 +333,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   });
 
   it("二次 round-trip 稳定（不会每次保存都漂移一点）", () => {
-    const a = normalizeLexVoiceSettings({});
+    const a = normalizePluginSettings({});
     a.sedimentAutoExtract = true;
     const b = roundTrip(a);
     const c = roundTrip(b);
@@ -343,16 +343,16 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
   });
 });
 
-describe("extractLexVoiceJobItems", () => {
+describe("extractJobItems", () => {
   it("按 backgroundJobs.items → jobs.items → queue 的优先级取任务列表", () => {
-    expect(extractLexVoiceJobItems({ backgroundJobs: { items: [{ id: 1 }] } })).toEqual([{ id: 1 }]);
-    expect(extractLexVoiceJobItems({ jobs: { items: [{ id: 2 }] } })).toEqual([{ id: 2 }]);
-    expect(extractLexVoiceJobItems({ queue: [{ id: 3 }] })).toEqual([{ id: 3 }]);
+    expect(extractJobItems({ backgroundJobs: { items: [{ id: 1 }] } })).toEqual([{ id: 1 }]);
+    expect(extractJobItems({ jobs: { items: [{ id: 2 }] } })).toEqual([{ id: 2 }]);
+    expect(extractJobItems({ queue: [{ id: 3 }] })).toEqual([{ id: 3 }]);
   });
 
   it("无数据/坏数据回退空数组", () => {
-    expect(extractLexVoiceJobItems(undefined)).toEqual([]);
-    expect(extractLexVoiceJobItems(null)).toEqual([]);
-    expect(extractLexVoiceJobItems({ backgroundJobs: { items: "not-array" } })).toEqual([]);
+    expect(extractJobItems(undefined)).toEqual([]);
+    expect(extractJobItems(null)).toEqual([]);
+    expect(extractJobItems({ backgroundJobs: { items: "not-array" } })).toEqual([]);
   });
 });

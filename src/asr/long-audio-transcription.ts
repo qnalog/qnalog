@@ -131,7 +131,7 @@ function safeUploadFileName(value: unknown, mime: string): string {
         : mime.includes("ogg") ? "ogg"
           : mime.includes("flac") ? "flac"
             : "webm";
-  const raw = asString(value) || `lexvoice-import.${fallbackExt}`;
+  const raw = asString(value) || `qnalog-import.${fallbackExt}`;
   const normalized = raw.replace(/[\\/:*?"<>|\r\n]+/g, "_").slice(-160);
   return /\.[a-z0-9]{2,8}$/i.test(normalized) ? normalized : `${normalized}.${fallbackExt}`;
 }

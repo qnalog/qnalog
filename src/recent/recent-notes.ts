@@ -10,7 +10,7 @@ import { getActiveSessionProcessingState } from "../notes/session-progress";
 import * as obsidian from "obsidian";
 import { getModeMeta, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
 
-import { parseLexVoiceDurationLabel } from "../shared/util-text";
+import { parseDurationLabel } from "../shared/util-text";
 
 import { getFrontmatterTags } from "../shared/util-note";
 
@@ -78,7 +78,7 @@ export function detectRecentNoteMode(plugin, file, frontmatter) {
   return fromFrontmatter || fromFilename || "off";
 }
 
-export const LEXVOICE_EN_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export const QNALOG_EN_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export const RECENT_TIME_FILTER_OPTIONS = [
   { id: "week", label: "本周" },
@@ -101,7 +101,7 @@ export function formatRecentDurationLabel(raw) {
   }
   const text = String(raw || "").trim();
   if (!text) return "";
-  const ms = parseLexVoiceDurationLabel(text);
+  const ms = parseDurationLabel(text);
   return ms > 0 ? formatElapsed(ms) : text;
 }
 
@@ -226,10 +226,10 @@ export function getRecentNotes(plugin, limit) {
     const mode = detectRecentNoteMode(plugin, f, frontmatter);
     // 是否 QnALog 纪要：能识别出 mode（非 off）或 frontmatter 自带 mode / lexvoice 标记。
     // 手动改名（丢掉日期前缀）的纪要也要保留，否则在纪要面板里找不到、没法重新整理。
-    const isLexVoiceNote = (mode && mode !== "off") || !!frontmatter.mode
+    const isNoteRef = (mode && mode !== "off") || !!frontmatter.mode
       || /lexvoice/i.test(String(frontmatter.tags || frontmatter.tag || ""));
     const m = f.basename.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{4}))?/);
-    if (!m && !isLexVoiceNote) continue;
+    if (!m && !isNoteRef) continue;
     let t = null;
     if (m) {
       const stamp = m[2] ? `${m[1]} ${m[2]}` : m[1];
@@ -254,7 +254,7 @@ export function getRecentNotes(plugin, limit) {
       if (re.test(title)) { title = title.replace(re, "").trim(); break; }
     }
     if (!title) title = f.basename;
-    const weekday = LEXVOICE_EN_WEEKDAYS[t.day()] || t.format("dddd");
+    const weekday = QNALOG_EN_WEEKDAYS[t.day()] || t.format("dddd");
     const sameYear = t.year() === currentYear;
     const durationLabel = formatRecentDurationLabel(frontmatter["时长"] || frontmatter.duration || frontmatter["duration"]);
     const topics = collectRecentNoteTopics(frontmatter, title, mode);

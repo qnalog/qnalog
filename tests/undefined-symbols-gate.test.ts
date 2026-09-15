@@ -36,7 +36,7 @@ describe("undefined runtime symbol gate", () => {
     expect(target, "仓库里应当仍有带 @ts-nocheck 的文件；若已全部退出，此用例应改为直接验证 tsc").toBeTruthy();
     const source = fs.readFileSync(target, "utf8");
     const sourceOverrides = new Map([
-      [target, `${source}\nlexvoiceDeliberatelyMissingRuntimeSymbol();\n`],
+      [target, `${source}\nqnalogDeliberatelyMissingRuntimeSymbol();\n`],
     ]);
     const result = findUndefinedSymbols({ root: projectRoot, sourceOverrides });
 
@@ -44,7 +44,7 @@ describe("undefined runtime symbol gate", () => {
       expect.arrayContaining([
         expect.objectContaining({
           file: path.relative(projectRoot, target),
-          message: expect.stringContaining("lexvoiceDeliberatelyMissingRuntimeSymbol"),
+          message: expect.stringContaining("qnalogDeliberatelyMissingRuntimeSymbol"),
         }),
       ]),
     );

@@ -2,10 +2,10 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：资料库视图：Base 与卡片墙的生成与打开、生成文件的落盘与打开
 
 import * as obsidian from "obsidian";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { PeopleDirectoryService } from "../people/people-directory-service";
 import { LV_BASE_DEFINITIONS } from "../views/base-definitions";
-import { TODO_WALL_FILE, formatTodoWallMarkdown, getLexVoiceBasesFolder, getLexVoiceWallPath, insertGeneratedWallMarker } from "../views/wall-markdown";
+import { TODO_WALL_FILE, formatTodoWallMarkdown, getBasesFolder, getWallPath, insertGeneratedWallMarker } from "../views/wall-markdown";
 import { ensureVaultFolder } from "../shared/util-vault";
 
 /** LibraryViewService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -15,7 +15,7 @@ export interface LibraryViewHost {
   /** 人员库服务：解析人员 Base 的落点。 */
   people: PeopleDirectoryService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 /** 生成文件落盘时的选项。overwrite=true 时无条件覆盖；否则仅覆盖带生成标记或内容为空的文件。 */
@@ -31,9 +31,9 @@ export class LibraryViewService {
 
   // 创建 QnALog 视图（.base 文件）—— 7 个：4 按模式 + 3 场景
   // overwrite=false：已存在的文件保留；overwrite=true：强制覆盖（用户重置/升级用）
-  async createLexVoiceBases(opts) {
+  async createBases(opts) {
     const overwrite = !!(opts && opts.overwrite);
-    const basesFolder = getLexVoiceBasesFolder(this.host.settings);
+    const basesFolder = getBasesFolder(this.host.settings);
     await ensureVaultFolder(this.host.app, basesFolder);
     await ensureVaultFolder(this.host.app, basesFolder + "/按模式");
     await ensureVaultFolder(this.host.app, basesFolder + "/场景");
@@ -79,7 +79,7 @@ export class LibraryViewService {
   }
 
   async openTodoWall() {
-    return await this.openGeneratedMarkdown(getLexVoiceWallPath(this.host.settings, TODO_WALL_FILE), formatTodoWallMarkdown(this.host.settings), { overwrite: true });
+    return await this.openGeneratedMarkdown(getWallPath(this.host.settings, TODO_WALL_FILE), formatTodoWallMarkdown(this.host.settings), { overwrite: true });
   }
 
   async openPeopleBase() {
@@ -88,9 +88,9 @@ export class LibraryViewService {
     return file;
   }
 
-  async openLexVoiceDetailBase() {
-    await this.createLexVoiceBases({ overwrite: false });
-    const path = obsidian.normalizePath(getLexVoiceBasesFolder(this.host.settings) + "/场景/全部纪要总览.base");
+  async openDetailBase() {
+    await this.createBases({ overwrite: false });
+    const path = obsidian.normalizePath(getBasesFolder(this.host.settings) + "/场景/全部纪要总览.base");
     const file = this.host.app.vault.getAbstractFileByPath(path);
     if (file instanceof obsidian.TFile) await this.host.app.workspace.getLeaf(false).openFile(file);
     else new obsidian.Notice("未找到明细 Base，请先创建视图文件。", 8000);

@@ -5,16 +5,16 @@ import * as obsidian from "obsidian";
 import { TODO_CARD_TAG } from "../shared/util-note";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS } from "../shared/defaults";
 
-export function getLexVoiceBasesFolder(settings) {
-  return obsidian.normalizePath((settings && settings.lexVoiceBasesFolder) || DEFAULT_SETTINGS.lexVoiceBasesFolder || DEFAULT_LIBRARY_PATHS.lexVoiceBasesFolder);
+export function getBasesFolder(settings) {
+  return obsidian.normalizePath((settings && settings.basesFolder) || DEFAULT_SETTINGS.basesFolder || DEFAULT_LIBRARY_PATHS.basesFolder);
 }
 
 
 export const TODO_WALL_FILE = "待办墙.md";
 
 
-export function getLexVoiceWallPath(settings, fileName) {
-  const folder = getLexVoiceBasesFolder(settings);
+export function getWallPath(settings, fileName) {
+  const folder = getBasesFolder(settings);
   return obsidian.normalizePath(folder + "/" + fileName);
 }
 
@@ -31,7 +31,7 @@ export function insertGeneratedWallMarker(markdown) {
 }
 
 
-export function formatLexVoiceWallMarkdown(title, folder, tag, emptyText) {
+export function formatWallMarkdown(title, folder, tag, emptyText) {
   const folderQuery = JSON.stringify('"' + obsidian.normalizePath(folder || "") + '"');
   const tagQuery = JSON.stringify("#" + String(tag || "").replace(/^#/, ""));
   return [
@@ -54,7 +54,7 @@ export function formatLexVoiceWallMarkdown(title, folder, tag, emptyText) {
     "  const rawTags = p.file.tags || [];",
     "  const tags = rawTags.map(t => '<span class=\\\"lvwall-tag\\\">' + esc(String(t).replace(/^#/, \"\")) + '</span>').join(\"\");",
     "  const ct = p.file.ctime ? p.file.ctime.toFormat(\"yyyy-MM-dd HH:mm\") : \"\";",
-    "  const html = '<div class=\\\"lvwall-card\\\" data-path=\\\"' + esc(p.file.path) + '\\\">' + '<div class=\\\"lvwall-head\\\"><span class=\\\"lvwall-type\\\">' + type + '</span><span class=\\\"lvwall-brand\\\">LEXVOICE CARD</span></div>' + '<div class=\\\"lvwall-title\\\">' + title + '</div>' + (sum ? '<div class=\\\"lvwall-k\\\">摘要</div><div class=\\\"lvwall-sum\\\">' + sum + '</div>' : '') + (src ? '<div class=\\\"lvwall-k\\\">来源</div><div class=\\\"lvwall-src\\\">' + src + '</div>' : '') + (tags ? '<div class=\\\"lvwall-tags\\\">' + tags + '</div>' : '') + (ct ? '<div class=\\\"lvwall-time\\\">' + ct + '</div>' : '') + '</div>';",
+    "  const html = '<div class=\\\"lvwall-card\\\" data-path=\\\"' + esc(p.file.path) + '\\\">' + '<div class=\\\"lvwall-head\\\"><span class=\\\"lvwall-type\\\">' + type + '</span><span class=\\\"lvwall-brand\\\">QNALOG CARD</span></div>' + '<div class=\\\"lvwall-title\\\">' + title + '</div>' + (sum ? '<div class=\\\"lvwall-k\\\">摘要</div><div class=\\\"lvwall-sum\\\">' + sum + '</div>' : '') + (src ? '<div class=\\\"lvwall-k\\\">来源</div><div class=\\\"lvwall-src\\\">' + src + '</div>' : '') + (tags ? '<div class=\\\"lvwall-tags\\\">' + tags + '</div>' : '') + (ct ? '<div class=\\\"lvwall-time\\\">' + ct + '</div>' : '') + '</div>';",
     "  cards.push({ html, title, sum, src, tagCount: rawTags.length });",
     "}",
     "let lastCols = 0; let raf = 0;",
@@ -97,14 +97,14 @@ export function formatLexVoiceWallMarkdown(title, folder, tag, emptyText) {
 
 
 /** 对象墙（待办墙）生成选项；四项都有默认值，缺省即可。 */
-export interface LexVoiceObjectWallOptions {
+export interface QnALogObjectWallOptions {
   title?: string;
   initialFilter?: string;
   showFilters?: boolean;
   emptyText?: string;
 }
 
-export function formatLexVoiceObjectWallMarkdown(settings, options: LexVoiceObjectWallOptions = {}) {
+export function formatObjectWallMarkdown(settings, options: QnALogObjectWallOptions = {}) {
   const title = options.title || "待办墙";
   const initialFilter = options.initialFilter || "all";
   const showFilters = options.showFilters !== false;
@@ -232,7 +232,7 @@ export function formatLexVoiceObjectWallMarkdown(settings, options: LexVoiceObje
 }
 
 export function formatTodoWallMarkdown(settings) {
-  return formatLexVoiceObjectWallMarkdown(settings, {
+  return formatObjectWallMarkdown(settings, {
     title: "待办墙",
     initialFilter: "todo",
     showFilters: false,

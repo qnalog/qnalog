@@ -47,12 +47,12 @@ function timestamp() {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 }
 
-const vaultArg = process.argv.slice(2).find(arg => arg !== "--") ?? process.env.LEXVOICE_VAULT ?? "";
+const vaultArg = process.argv.slice(2).find(arg => arg !== "--") ?? process.env.QNALOG_VAULT ?? "";
 if (!vaultArg.trim()) {
   fail(`缺少知识库路径。
 
 用法：npm run install:vault -- "<知识库路径>"
-也可以设置环境变量：LEXVOICE_VAULT="<知识库路径>" npm run install:vault
+也可以设置环境变量：QNALOG_VAULT="<知识库路径>" npm run install:vault
 
 路径应当是包含 .obsidian 目录的知识库根目录。`);
 }

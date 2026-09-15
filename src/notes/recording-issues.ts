@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { normalizeAudioInputMode } from "../ui/helpers";
 
-import { isLexVoiceMobileRuntime } from "../shared/util-platform";
+import { isMobileRuntime } from "../shared/util-platform";
 
 import { normalizeKnowledgeExtractionHistory } from "../shared/util-knowledge";
 
@@ -51,7 +51,7 @@ export function isKnowledgeSourceAlreadyScanned(settings, kind, file) {
 
 export function resolveRuntimeAudioInputMode(mode) {
   const normalized = normalizeAudioInputMode(mode || "mic");
-  return isLexVoiceMobileRuntime() ? "mic" : normalized;
+  return isMobileRuntime() ? "mic" : normalized;
 }
 
 // 更新源固定指向官方仓库。曾是设置项，但 normalize 始终把它们重置为默认值（用户值从未生效），

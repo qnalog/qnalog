@@ -84,7 +84,7 @@ export function personEntryFromFrontmatter(frontmatter, file) {
   if (!frontmatter || typeof frontmatter !== "object") return null;
   const tags = getFrontmatterTags(frontmatter);
   const type = String(frontmatter.type || frontmatter["类型"] || "").trim();
-  const inPersonSet = tags.includes(PEOPLE_DIRECTORY_TAG) || type === "lexvoice-person";
+  const inPersonSet = tags.includes(PEOPLE_DIRECTORY_TAG) || type === "qnalog-person";
   const explicitName = firstPersonField(frontmatter, ["姓名", "name", "人员", "person"]);
   const name = explicitName || (inPersonSet && file && file.basename ? file.basename : "");
   if (!name || (!inPersonSet && !explicitName)) return null;
@@ -341,7 +341,7 @@ views:
 export function formatPeopleNoteMarkdown(name, mdFolder = DEFAULT_SETTINGS.mdFolder) {
   const safeName = String(name || "").trim() || "未命名人员";
   return `---
-type: lexvoice-person
+type: qnalog-person
 姓名: "${escapeYamlScalar(safeName)}"
 角色: ""
 常用称呼: []
@@ -834,7 +834,7 @@ export function mergeSourceNoteRelatedPeopleFrontmatter(frontmatter, personFiles
 
 export function mergePersonFrontmatter(frontmatter, suggestion, sourceFile) {
   const fm = Object.assign({}, frontmatter || {});
-  fm.type = "lexvoice-person";
+  fm.type = "qnalog-person";
   if (!String(fm["姓名"] || "").trim()) fm["姓名"] = String(fm.name || "").trim() || suggestion.name;
   if (!String(fm["角色"] || "").trim()) fm["角色"] = String(fm.role || "").trim() || suggestion.role || "";
   if (!String(fm["组织"] || "").trim()) fm["组织"] = String(fm.organization || "").trim() || suggestion.organization || "";

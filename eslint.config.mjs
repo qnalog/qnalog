@@ -29,7 +29,7 @@ export default defineConfig([
       },
     },
     rules: {
-      // LexVoice has Chinese copy and product/API names whose casing is intentional.
+      // QnALog has Chinese copy and product/API names whose casing is intentional.
       "obsidianmd/ui/sentence-case": "off",
     },
   },

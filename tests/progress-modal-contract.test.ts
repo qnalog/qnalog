@@ -20,13 +20,13 @@ describe("progress modal interaction contract", () => {
     expect(modalSource).toContain('running: "",');
     // 任务上下文的组装已随重新整理搬到域服务，按本文件既有约定用 src 全文断言。
     expect(pluginSource).toContain("sourceFolder: file.parent && file.parent.path ? file.parent.path : \"知识库根目录\"");
-    expect(pluginSource).toContain("durationMs: getLexVoiceSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta)");
+    expect(pluginSource).toContain("durationMs: getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta)");
     expect(pluginSource).toContain("sourceModeLabel,");
     expect(pluginSource).toContain("targetModeLabel: [meta.label || meta.prefix, repolishOptions && repolishOptions.label]");
   });
 
   it("uses the available width for task facts and collapses responsively", () => {
-    expect(styles).toContain(".lexvoice-progress-current-facts");
+    expect(styles).toContain(".qnalog-progress-current-facts");
     expect(styles).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(styles).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
   });
@@ -43,8 +43,8 @@ describe("progress modal interaction contract", () => {
   });
 
   it("keeps the current-step icon and copy in one padded row", () => {
-    expect(styles).toMatch(/\.lexvoice-progress-row\.lexvoice-progress-legacy-current\s*\{[^}]*grid-template-columns:\s*24px\s+minmax\(0,\s*1fr\)/s);
-    expect(styles).toMatch(/\.lexvoice-progress-row\.lexvoice-progress-legacy-current\s*\{[^}]*padding:\s*var\(--size-4-3\)\s+var\(--size-4-6\)/s);
+    expect(styles).toMatch(/\.qnalog-progress-row\.qnalog-progress-legacy-current\s*\{[^}]*grid-template-columns:\s*24px\s+minmax\(0,\s*1fr\)/s);
+    expect(styles).toMatch(/\.qnalog-progress-row\.qnalog-progress-legacy-current\s*\{[^}]*padding:\s*var\(--size-4-3\)\s+var\(--size-4-6\)/s);
   });
 
   it("hides low-value transport events while keeping them available to diagnostics", () => {
@@ -61,6 +61,6 @@ describe("progress modal interaction contract", () => {
     expect(modalSource).toContain('stalled: "仍在处理"');
     expect(modalSource).toContain('const taskProblems = taskActivities.filter((task) => String(task.status || "") === "failed");');
     expect(modalSource).toContain(': ["slow", "stalled"].includes(stageLiveness) ? "clock-3"');
-    expect(styles).toMatch(/\.lexvoice-progress-state\.is-slow,\s*\.lexvoice-progress-state\.is-stalled,\s*\.lexvoice-progress-state\.is-retrying/);
+    expect(styles).toMatch(/\.qnalog-progress-state\.is-slow,\s*\.qnalog-progress-state\.is-stalled,\s*\.qnalog-progress-state\.is-retrying/);
   });
 });

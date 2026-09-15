@@ -2,12 +2,12 @@
 // @ts-nocheck — JS 风格协议类（构造器赋值、无 TS 字段声明）；已用 tsc 确认无漏引用(TS2304=0)，余者皆类字段类型噪音，故与 main.ts 同档跳过。
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import { assertSafeServiceEndpoint } from '../shared/util-llm-endpoint';
-import { isLexVoiceMobileRuntime } from '../shared/util-platform';
+import { isMobileRuntime } from '../shared/util-platform';
 
 let nodeWebSocketCtorPromise = null;
 
 async function getNodeWebSocketCtor() {
-  if (isLexVoiceMobileRuntime()) return null;
+  if (isMobileRuntime()) return null;
   if (!nodeWebSocketCtorPromise) {
     nodeWebSocketCtorPromise = import('ws')
       .then((wsModule) => wsModule && (wsModule.WebSocket || wsModule.default || wsModule))
@@ -285,7 +285,7 @@ export class OpenAIRealtimeTranscriptionClient {
     const state = (this.ws.readyState != null) ? this.ws.readyState : 1;
     if (state !== 1) return;
     try {
-      const b64 = lexvoiceArrayBufferToBase64(arrayBuffer);
+      const b64 = qnalogArrayBufferToBase64(arrayBuffer);
       this.ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
     } catch (e) { console.warn("[OpenAIRealtime] send failed", e); }
   }
@@ -436,7 +436,7 @@ export class OpenAIRealtimeTranslationClient {
     const state = (this.ws.readyState != null) ? this.ws.readyState : 1;
     if (state !== 1) return;
     try {
-      const b64 = lexvoiceArrayBufferToBase64(arrayBuffer);
+      const b64 = qnalogArrayBufferToBase64(arrayBuffer);
       this.ws.send(JSON.stringify({ type: "session.input_audio_buffer.append", audio: b64 }));
     } catch (e) { console.warn("[OpenAITranslate] send failed", e); }
   }
@@ -511,7 +511,7 @@ export class PcmStreamEncoder {
   }
 }
 
-export function lexvoiceArrayBufferToBase64(ab) {
+export function qnalogArrayBufferToBase64(ab) {
   const bytes = new Uint8Array(ab);
   let bin = "";
   const chunk = 0x8000;

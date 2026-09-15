@@ -51,13 +51,13 @@ class FolderNameModal extends Modal {
 
   onOpen(): void {
     this.contentEl.empty();
-    this.contentEl.addClass("lexvoice-kanban-folder-modal");
+    this.contentEl.addClass("qnalog-kanban-folder-modal");
     this.contentEl.createEl("h3", { text: "新建分组" });
     const input = this.contentEl.createEl("input", {
-      cls: "lexvoice-kanban-folder-input",
+      cls: "qnalog-kanban-folder-input",
       attr: { type: "text", placeholder: "文件夹名称" },
     });
-    const actions = this.contentEl.createDiv({ cls: "lexvoice-kanban-folder-actions" });
+    const actions = this.contentEl.createDiv({ cls: "qnalog-kanban-folder-actions" });
     const cancel = actions.createEl("button", { text: "取消" });
     cancel.onclick = () => this.close();
     const submit = actions.createEl("button", { cls: "mod-cta", text: "创建" });
@@ -168,13 +168,13 @@ export class MinutesKanbanView extends ItemView {
   }
 
   private renderToolbar(root: HTMLElement, total: number, groupCount: number): void {
-    const header = root.createDiv({ cls: "lexvoice-kanban-header" });
-    const title = header.createDiv({ cls: "lexvoice-kanban-heading" });
+    const header = root.createDiv({ cls: "qnalog-kanban-header" });
+    const title = header.createDiv({ cls: "qnalog-kanban-heading" });
     title.createEl("h2", { text: "纪要看板" });
     title.createSpan({ text: `${total} 篇 · ${groupCount} 个分组` });
-    const actions = header.createDiv({ cls: "lexvoice-kanban-header-actions" });
+    const actions = header.createDiv({ cls: "qnalog-kanban-header-actions" });
     const addFolder = actions.createEl("button", {
-      cls: "lexvoice-kanban-new-group",
+      cls: "qnalog-kanban-new-group",
       attr: { type: "button", title: "新建分组", "aria-label": "新建分组" },
     });
     setIcon(addFolder.createSpan(), "folder-plus");
@@ -185,8 +185,8 @@ export class MinutesKanbanView extends ItemView {
         .catch((error) => new Notice(`创建失败：${error instanceof Error ? error.message : String(error)}`));
     }).open();
 
-    const filters = root.createDiv({ cls: "lexvoice-kanban-filters" });
-    const searchWrap = filters.createDiv({ cls: "lexvoice-kanban-search" });
+    const filters = root.createDiv({ cls: "qnalog-kanban-filters" });
+    const searchWrap = filters.createDiv({ cls: "qnalog-kanban-search" });
     setIcon(searchWrap.createSpan(), "search");
     const search = searchWrap.createEl("input", { attr: { type: "search", placeholder: "搜索纪要" } });
     search.value = this.query;
@@ -194,14 +194,14 @@ export class MinutesKanbanView extends ItemView {
       this.query = search.value;
       this.renderBoard(root);
     });
-    const grouping = filters.createDiv({ cls: "lexvoice-kanban-grouping", attr: { "aria-label": "分组方式" } });
-    grouping.createSpan({ cls: "lexvoice-kanban-grouping-label", text: "分组" });
+    const grouping = filters.createDiv({ cls: "qnalog-kanban-grouping", attr: { "aria-label": "分组方式" } });
+    grouping.createSpan({ cls: "qnalog-kanban-grouping-label", text: "分组" });
     for (const option of [
       { value: "folder" as const, label: "文件夹" },
       { value: "type" as const, label: "类型" },
     ]) {
       const button = grouping.createEl("button", {
-        cls: `lexvoice-kanban-grouping-option${this.groupMode === option.value ? " is-active" : ""}`,
+        cls: `qnalog-kanban-grouping-option${this.groupMode === option.value ? " is-active" : ""}`,
         text: option.label,
         attr: { type: "button", "aria-pressed": String(this.groupMode === option.value) },
       });
@@ -212,46 +212,46 @@ export class MinutesKanbanView extends ItemView {
       };
     }
     const canvasToggle = filters.createEl("button", {
-      cls: `lexvoice-kanban-toggle${this.showCanvas ? " is-active" : ""}`,
+      cls: `qnalog-kanban-toggle${this.showCanvas ? " is-active" : ""}`,
       attr: { type: "button", role: "switch", "aria-checked": String(this.showCanvas) },
     });
     canvasToggle.createSpan({ text: "语义图" });
-    const toggleTrack = canvasToggle.createSpan({ cls: "lexvoice-kanban-toggle-track" });
-    toggleTrack.createSpan({ cls: "lexvoice-kanban-toggle-knob" });
+    const toggleTrack = canvasToggle.createSpan({ cls: "qnalog-kanban-toggle-track" });
+    toggleTrack.createSpan({ cls: "qnalog-kanban-toggle-knob" });
     canvasToggle.onclick = () => { this.showCanvas = !this.showCanvas; this.render(); };
     filters.createSpan({
-      cls: "lexvoice-kanban-hint",
+      cls: "qnalog-kanban-hint",
       text: this.groupMode === "folder" ? "拖动卡片可换分组" : "按模板类型归类",
     });
   }
 
   private renderCard(parent: HTMLElement, item: MinutesKanbanItem): void {
-    const card = parent.createDiv({ cls: "lexvoice-kanban-card", attr: { draggable: "true", title: item.file.path } });
-    const icon = card.createSpan({ cls: "lexvoice-kanban-card-icon" });
+    const card = parent.createDiv({ cls: "qnalog-kanban-card", attr: { draggable: "true", title: item.file.path } });
+    const icon = card.createSpan({ cls: "qnalog-kanban-card-icon" });
     setIcon(icon, item.icon || "file-text");
-    const content = card.createSpan({ cls: "lexvoice-kanban-card-content" });
-    content.createSpan({ cls: "lexvoice-kanban-card-title", text: item.title || item.file.basename });
+    const content = card.createSpan({ cls: "qnalog-kanban-card-content" });
+    content.createSpan({ cls: "qnalog-kanban-card-title", text: item.title || item.file.basename });
     content.createSpan({
-      cls: "lexvoice-kanban-card-meta",
+      cls: "qnalog-kanban-card-meta",
       text: this.groupMode === "type"
         ? [item.timeLabel, this.getFolderLabel(item), item.durationLabel].filter(Boolean).join(" · ")
         : [item.timeLabel, item.modeLabel, item.durationLabel].filter(Boolean).join(" · "),
     });
     card.addEventListener("click", () => { void this.app.workspace.getLeaf(false).openFile(item.file); });
     card.addEventListener("dragstart", (event) => {
-      event.dataTransfer?.setData("text/x-lexvoice-note", item.file.path);
+      event.dataTransfer?.setData("text/x-qnalog-note", item.file.path);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
       card.addClass("is-dragging");
     });
     card.addEventListener("dragend", () => card.removeClass("is-dragging"));
     if (!this.showCanvas) return;
     for (const canvasFile of item.canvasFiles) {
-      const canvasCard = parent.createDiv({ cls: "lexvoice-kanban-card is-canvas", attr: { title: canvasFile.path } });
-      const canvasIcon = canvasCard.createSpan({ cls: "lexvoice-kanban-card-icon" });
+      const canvasCard = parent.createDiv({ cls: "qnalog-kanban-card is-canvas", attr: { title: canvasFile.path } });
+      const canvasIcon = canvasCard.createSpan({ cls: "qnalog-kanban-card-icon" });
       setIcon(canvasIcon, "layout-dashboard");
-      const canvasContent = canvasCard.createSpan({ cls: "lexvoice-kanban-card-content" });
-      canvasContent.createSpan({ cls: "lexvoice-kanban-card-title", text: item.title || canvasFile.basename });
-      canvasContent.createSpan({ cls: "lexvoice-kanban-card-meta", text: "语义图" });
+      const canvasContent = canvasCard.createSpan({ cls: "qnalog-kanban-card-content" });
+      canvasContent.createSpan({ cls: "qnalog-kanban-card-title", text: item.title || canvasFile.basename });
+      canvasContent.createSpan({ cls: "qnalog-kanban-card-meta", text: "语义图" });
       canvasCard.addEventListener("click", () => { void this.app.workspace.getLeaf(false).openFile(canvasFile); });
     }
   }
@@ -264,21 +264,21 @@ export class MinutesKanbanView extends ItemView {
   }
 
   private renderBoard(container: HTMLElement): void {
-    const existing = container.querySelector(".lexvoice-kanban-board");
+    const existing = container.querySelector(".qnalog-kanban-board");
     if (existing) existing.remove();
     const items = this.adapter.listItems();
     const itemByPath = new Map(items.map((item) => [normalizePath(item.file.path), item]));
-    const board = container.createDiv({ cls: "lexvoice-kanban-board" });
+    const board = container.createDiv({ cls: "qnalog-kanban-board" });
     for (const column of this.getColumns(items)) {
       const visible = column.items.filter((item) => this.matches(item));
       if (this.groupMode === "type" && !visible.length) continue;
-      const columnEl = board.createDiv({ cls: "lexvoice-kanban-column", attr: { "data-folder": column.path } });
-      const head = columnEl.createDiv({ cls: "lexvoice-kanban-column-head" });
-      const label = head.createDiv({ cls: "lexvoice-kanban-column-label" });
+      const columnEl = board.createDiv({ cls: "qnalog-kanban-column", attr: { "data-folder": column.path } });
+      const head = columnEl.createDiv({ cls: "qnalog-kanban-column-head" });
+      const label = head.createDiv({ cls: "qnalog-kanban-column-label" });
       label.createSpan({ text: column.label });
-      head.createSpan({ cls: "lexvoice-kanban-column-count", text: String(visible.length) });
+      head.createSpan({ cls: "qnalog-kanban-column-count", text: String(visible.length) });
       const menu = head.createEl("button", {
-        cls: "clickable-icon lexvoice-kanban-column-menu",
+        cls: "clickable-icon qnalog-kanban-column-menu",
         attr: { type: "button", title: "分组菜单", "aria-label": `${column.label}分组菜单` },
       });
       setIcon(menu, "more-horizontal");
@@ -305,13 +305,13 @@ export class MinutesKanbanView extends ItemView {
         }
         contextMenu.showAtMouseEvent(event);
       };
-      const cards = columnEl.createDiv({ cls: "lexvoice-kanban-cards" });
+      const cards = columnEl.createDiv({ cls: "qnalog-kanban-cards" });
       const isExpanded = this.expandedGroups.has(column.key);
       const shown = isExpanded ? visible : visible.slice(0, 6);
       for (const item of shown) this.renderCard(cards, item);
       if (visible.length > shown.length) {
         const more = cards.createEl("button", {
-          cls: "lexvoice-kanban-more",
+          cls: "qnalog-kanban-more",
           attr: { type: "button" },
         });
         more.createSpan({ text: `还有 ${visible.length - shown.length} 篇` });
@@ -322,7 +322,7 @@ export class MinutesKanbanView extends ItemView {
         };
       } else if (isExpanded && visible.length > 6) {
         const less = cards.createEl("button", {
-          cls: "lexvoice-kanban-more",
+          cls: "qnalog-kanban-more",
           attr: { type: "button" },
         });
         less.createSpan({ text: "收起" });
@@ -332,10 +332,10 @@ export class MinutesKanbanView extends ItemView {
           this.renderBoard(container);
         };
       }
-      if (!visible.length) cards.createDiv({ cls: "lexvoice-kanban-empty", text: "拖入纪要" });
+      if (!visible.length) cards.createDiv({ cls: "qnalog-kanban-empty", text: "拖入纪要" });
       columnEl.addEventListener("dragover", (event) => {
         if (this.groupMode !== "folder") return;
-        if (!event.dataTransfer?.types.includes("text/x-lexvoice-note")) return;
+        if (!event.dataTransfer?.types.includes("text/x-qnalog-note")) return;
         event.preventDefault();
         if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
         columnEl.addClass("is-drop-target");
@@ -347,7 +347,7 @@ export class MinutesKanbanView extends ItemView {
         if (this.groupMode !== "folder") return;
         event.preventDefault();
         columnEl.removeClass("is-drop-target");
-        const path = normalizePath(event.dataTransfer?.getData("text/x-lexvoice-note") || "");
+        const path = normalizePath(event.dataTransfer?.getData("text/x-qnalog-note") || "");
         const item = itemByPath.get(path);
         if (!item) return;
         void this.adapter.moveItem(item, column.path)
@@ -361,7 +361,7 @@ export class MinutesKanbanView extends ItemView {
     const root = this.containerEl.children[1] as HTMLElement;
     if (!root) return;
     root.empty();
-    root.addClass("lexvoice-kanban-view");
+    root.addClass("qnalog-kanban-view");
     const items = this.adapter.listItems();
     this.renderToolbar(root, items.length, this.getColumns(items).length);
     this.renderBoard(root);

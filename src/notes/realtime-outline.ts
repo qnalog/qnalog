@@ -193,7 +193,7 @@ export function buildRollingOutlineContext(previousMemory, previousOutline, wind
         : `这些是上次大纲之后新转写出来的段落。请只为这些新段落生成新的一级或子条目，老一级条目原样保留。`,
       "",
       "**输出要求（增量模式）**：",
-      "- <lexvoice-outline> **只返回本轮增量**，不要复制【当前可见大纲参考】中的任何未变化条目。",
+      "- <qnalog-outline> **只返回本轮增量**，不要复制【当前可见大纲参考】中的任何未变化条目。",
       "- 新话题按讨论顺序输出新的一级条目。当前批次通常 1-6 个一级条目；历史已有多少节点都不影响本轮提炼。",
       "- 如果新增转写明显延续某个历史话题，请复用该历史一级标题，并且只输出本轮新增的子要点；程序会把它们并回原节点。",
       "- 同一大话题出现新的分支、结论、案例或讨论阶段时，使用更具体的新一级标题，不要把很长一段讨论无限塞进旧节点。",
@@ -220,13 +220,13 @@ export function buildRealtimeOutlineEnvelopeInstruction(opts: { incremental?: bo
     "【输出协议】",
     "请严格输出两个 XML 风格块，不要前言、不要解释、不要代码围栏：",
     "",
-    "<lexvoice-memory>",
+    "<qnalog-memory>",
     "写给后续轮次使用的主题记忆 / 滚动摘要。",
-    "</lexvoice-memory>",
+    "</qnalog-memory>",
     "",
-    "<lexvoice-outline>",
+    "<qnalog-outline>",
     "写给用户看的实时大纲 Markdown 列表。",
-    "</lexvoice-outline>",
+    "</qnalog-outline>",
     "",
     "【主题记忆写法】",
     "- 这是隐藏的长期上下文，不是最终纪要，不要写成漂亮文章。",
@@ -236,7 +236,7 @@ export function buildRealtimeOutlineEnvelopeInstruction(opts: { incremental?: bo
     "- 不要写“未提及”“待确认”这类空字段。",
     "",
     "【可见大纲写法】",
-    "- <lexvoice-outline> 内只能放用户可读的大纲列表。",
+    "- <qnalog-outline> 内只能放用户可读的大纲列表。",
     ...(incremental ? [
       "- 本轮是增量更新：只输出新增转写对应的新节点或补充节点，不要复制历史大纲。",
       "- 当前批次通常控制在 1-6 个一级节点；这是单批次约束，不是整场会议的总节点上限。",
@@ -276,8 +276,8 @@ export function extractRealtimeTaggedBlock(text, tagName) {
 
 export function stripRealtimeTaggedBlocks(text) {
   return String(text || "")
-    .replace(/<lexvoice-memory\b[^>]*>[\s\S]*?<\/lexvoice-memory>/gi, "")
-    .replace(/<lexvoice-outline\b[^>]*>[\s\S]*?<\/lexvoice-outline>/gi, "")
+    .replace(/<qnalog-memory\b[^>]*>[\s\S]*?<\/qnalog-memory>/gi, "")
+    .replace(/<qnalog-outline\b[^>]*>[\s\S]*?<\/qnalog-outline>/gi, "")
     .trim();
 }
 
@@ -290,8 +290,8 @@ export function stripRealtimeTaggedBlocks(text) {
 // 规则（仅对顶层连排行）：带时间锚点的段 = 一级条目；其后的无锚点段 = 挂到该一级条目下的子要点（缩进两格）。
 export function parseRealtimeOutlineResponse(raw, fallbackOutline, fallbackMemory) {
   const cleaned = cleanRealtimeLlmText(raw);
-  let memory = extractRealtimeTaggedBlock(cleaned, "lexvoice-memory");
-  let outline = extractRealtimeTaggedBlock(cleaned, "lexvoice-outline");
+  let memory = extractRealtimeTaggedBlock(cleaned, "qnalog-memory");
+  let outline = extractRealtimeTaggedBlock(cleaned, "qnalog-outline");
   if (!outline) outline = stripRealtimeTaggedBlocks(cleaned);
   outline = cleanRealtimeLlmText(outline);
   outline = normalizeRealtimeOutlineList(outline);  // 兜底拆行
@@ -388,7 +388,7 @@ ${buildRealtimeOutlineEnvelopeInstruction(opts)}
 - 讨论本身可能没那么深刻，那就让大纲也朴素一点
 
 【输出】
-- <lexvoice-outline> 内使用纯 Markdown 列表，缩进表达层级
+- <qnalog-outline> 内使用纯 Markdown 列表，缩进表达层级
 - 每条简短，不解释、不前言、不结语；一级条目不要写时间戳或回听链接
 - 转写不完整时只整理已出现的内容${langBlock}
 

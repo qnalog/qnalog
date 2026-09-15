@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：库内收件箱：监听文件夹里的文件接入导入流程
 
 import * as obsidian from "obsidian";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { isAbsoluteExternalInboxPath } from "../audio/external-inbox";
 import { isSyncConflictName } from "../notes/recording-issues";
@@ -17,7 +17,7 @@ export interface InboxWatcherHost {
   /** 导入服务：把收件箱里的文件送进导入流程。 */
   imports: { importAudioFiles(paths: string[], modeOverride?: string, options?: unknown): Promise<void>; importTextFiles(paths: string[], modeOverride?: string): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class InboxWatcherService {

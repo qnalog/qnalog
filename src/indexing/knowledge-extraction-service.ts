@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { normalizeKnowledgeExtractionHistory } from "../shared/util-knowledge";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { isKnowledgeSourceAlreadyScanned, knowledgeExtractionRecordForFile } from "../notes/recording-issues";
 
 /** KnowledgeExtractionService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -12,7 +12,7 @@ export interface KnowledgeExtractionHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 export class KnowledgeExtractionService {

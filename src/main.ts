@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
 
-import { LexVoiceSettingTab } from "./ui/settings-tab";
+import { QnALogSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
@@ -18,11 +18,11 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
-import {SETTINGS_SCHEMA_VERSION, normalizeLexVoiceSettings, serializeLexVoiceSettings, extractLexVoiceJobItems } from "./shared/settings-io";
+import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
 
 import { buildSettingsMigrationReport } from "./shared/settings-migration-report";
 
-import type {LexVoiceSettings, RecordingSession } from "./shared/types";
+import type {PluginSettings, RecordingSession } from "./shared/types";
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import {AUDIO_EXT } from "./shared/catalog-import";
@@ -77,8 +77,8 @@ import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
 import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
-class LexVoicePlugin extends obsidian.Plugin {
-  declare settings: LexVoiceSettings;
+class QnALogPlugin extends obsidian.Plugin {
+  declare settings: PluginSettings;
   // 域服务字段在 onload 里赋值。TypeScript 不推断「仅赋值」的属性，
   // 因此跨模块读取 plugin.<域> 的调用方（如 TaskQueue）需要这里的显式声明。
   declare diagnostics: DiagnosticsService;
@@ -116,7 +116,7 @@ class LexVoicePlugin extends obsidian.Plugin {
   /** 版本检查与提示服务；onload 里装配。 */
   declare updateService: UpdateService;
   /** 设置页实例；openSettings 需要它切到指定标签页。 */
-  declare settingTab: LexVoiceSettingTab | null;
+  declare settingTab: QnALogSettingTab | null;
   /** 功能区图标元素；气泡挂载在它旁边。 */
   declare ribbonEl: HTMLElement | null;
   /** 从 data.json 读回的待恢复队列（loadAll 时交给 TaskQueue）。 */
@@ -296,7 +296,7 @@ class LexVoicePlugin extends obsidian.Plugin {
     this.addCommand({ id: "record-virtual-only", name: "开始录音 · 仅电脑音频", callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });
     this.addCommand({ id: "import-text", name: "导入已有文本 / MD 结构化整理", callback: () => new ImportTextModal(this.app, this).open() });
 
-    this.settingTab = new LexVoiceSettingTab(this.app, this);
+    this.settingTab = new QnALogSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
 
     this.registerEvent(this.app.vault.on("create", (file) => {
@@ -429,8 +429,8 @@ class LexVoicePlugin extends obsidian.Plugin {
     const saved: unknown = (await this.loadData()) || {};
     // 还原密钥：data.json 里的密钥是混淆态，读入内存前先解混淆（旧明文数据会原样通过，下次保存自动转混淆）
     try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
-    this.settings = normalizeLexVoiceSettings(saved);
-    this.persistedQueue = extractLexVoiceJobItems(saved);
+    this.settings = normalizePluginSettings(saved);
+    this.persistedQueue = extractJobItems(saved);
     // schema 升级：data.json 不带 schemaVersion 或低于当前版本时，
     // 立即写回新格式，避免长期保留旧平铺字段。
     const savedRecord = isRecord(saved) ? saved : {};
@@ -459,7 +459,7 @@ class LexVoicePlugin extends obsidian.Plugin {
       try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema migrate failed", e); }
       // 迁移结果自检：只在迁移真正发生时输出，正常加载零开销。
       try {
-        const report = buildSettingsMigrationReport(savedSettingsRecord, serializeLexVoiceSettings(this.settings), {
+        const report = buildSettingsMigrationReport(savedSettingsRecord, serializePluginSettings(this.settings), {
           savedVersion,
           currentVersion: SETTINGS_SCHEMA_VERSION,
         });
@@ -494,7 +494,7 @@ class LexVoicePlugin extends obsidian.Plugin {
 
   async _saveAllSnapshot() {
     const payload = {
-      settings: serializeLexVoiceSettings(this.settings),
+      settings: serializePluginSettings(this.settings),
       backgroundJobs: {
         schemaVersion: 1,
         updatedAt: new Date().toISOString(),
@@ -551,5 +551,5 @@ class LexVoicePlugin extends obsidian.Plugin {
 
 }
 
-export default LexVoicePlugin;
+export default QnALogPlugin;
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

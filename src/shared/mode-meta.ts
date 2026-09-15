@@ -87,7 +87,7 @@ export function getVisibleModeEntries(settings, includeOff) {
   return includeOff ? [["off", "关闭，仅转写"], ...entries] : entries;
 }
 
-export function setLexVoiceModePillIcon(el, meta, fallbackMeta) {
+export function setModePillIcon(el, meta, fallbackMeta) {
   const source = meta || fallbackMeta || {};
   const fallback = fallbackMeta || {};
   const icon = source.icon || fallback.icon || "file-text";

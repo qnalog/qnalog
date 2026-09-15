@@ -107,7 +107,7 @@ Default folders (all configurable in settings):
 | Email drafts | `LexVoice/邮件草稿` |
 | Glossary | `LexVoice/词汇表.md` |
 
-> The default folder names keep the `LexVoice/` prefix for backward compatibility with existing vaults carrying these settings from earlier versions. They are ordinary paths and can be changed in settings at any time.
+> The default folder names still use the `LexVoice/` prefix, inherited from the upstream project's data layout. They are ordinary paths and can be changed in settings at any time. Renaming the data namespace to `QnALog/` is planned as a separate change with a migration path; the plugin will not rename existing folders on its own.
 
 ## Requirements
 

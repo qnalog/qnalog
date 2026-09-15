@@ -5,10 +5,10 @@ import * as obsidian from "obsidian";
 import { getRealtimeOutlineAnchorTime } from "../outline-text";
 import { normalizeAudioInputMode, audioInputModeLabel } from "../ui/helpers";
 import { getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
-import { isLexVoiceMobileRuntime } from "../shared/util-platform";
+import { isMobileRuntime } from "../shared/util-platform";
 import { resolveTranscribeProvider } from "../asr/transcribe";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import type { RecorderSegmentPayload } from "../shared/types";
 import { PcmStreamEncoder } from "../asr/clients";
 import { AUDIO_EXT } from "../shared/catalog-import";
@@ -23,8 +23,8 @@ import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS, SHORT_RECORDING_FILTER_MS } from "../shared/limits";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
-import { getLexVoiceDurationMs, getLexVoiceSegmentsDurationMs, getSessionMasterAudioName } from "../notes/audio-refs";
-import { extractLexVoiceTranscriptSegments, inferLexVoiceNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
+import { getDurationMs, getSegmentsDurationMs, getSessionMasterAudioName } from "../notes/audio-refs";
+import { extractTranscriptSegments, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
@@ -58,7 +58,7 @@ export interface RecordingHost {
   /** 会话收尾服务：切片转写与停止后的收尾。 */
   sessionFinalize: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   shell: ViewShellService;
   tasks: TaskActivityService;
 }
@@ -96,21 +96,21 @@ export class RecordingService {
       throw new Error("目标不是 Markdown 纪要");
     }
     const content = await this.host.app.vault.read(file);
-    const segments = extractLexVoiceTranscriptSegments(content);
+    const segments = extractTranscriptSegments(content);
     if (!segments.length) {
       throw new Error("这篇纪要里没有可续录合并的原始转写分段");
     }
     const frontmatter = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
     const mode = this.host.noteWriter.detectModeFromMarkdown(file) || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
     const normalized = normalizeSegmentsForMergedNote(segments, 0, 0, file);
-    const durationMs = getLexVoiceSegmentsDurationMs(normalized) || getLexVoiceDurationMs(content);
+    const durationMs = getSegmentsDurationMs(normalized) || getDurationMs(content);
     return {
       file,
       content,
       mode,
       segments: normalized,
       durationMs,
-      startedAt: inferLexVoiceNoteStartedAtIso(file, frontmatter),
+      startedAt: inferNoteStartedAtIso(file, frontmatter),
       frontmatter,
     };
   }
@@ -150,7 +150,7 @@ export class RecordingService {
       const oneShotMode = this._oneShotCaptureMode;
       const requestedCaptureMode = oneShotMode || this.host.settings.captureMode || "mic";
       const captureMode = resolveRuntimeAudioInputMode(requestedCaptureMode);
-      const forcedMobileMic = isLexVoiceMobileRuntime() && normalizeAudioInputMode(requestedCaptureMode) !== "mic";
+      const forcedMobileMic = isMobileRuntime() && normalizeAudioInputMode(requestedCaptureMode) !== "mic";
       this.host.session = {
         id: genId(),
         sessionStamp,
@@ -236,7 +236,7 @@ export class RecordingService {
       }
 
       let onStreamReady = null;
-      if (isStreaming && isLexVoiceMobileRuntime()) {
+      if (isStreaming && isMobileRuntime()) {
         // 移动端无 Node WebSocket（设不了鉴权头），流式必败：不建流式客户端，提前明示。
         // 录音照常进行，停止时走既有的「流式连接未建立」兜底（音频保留）。
         new obsidian.Notice("移动端暂不支持流式转写；本次录音会保留音频，请在桌面端使用流式，或切换到分段转写服务。", 9000);
@@ -333,7 +333,7 @@ export class RecordingService {
       if (forcedMobileMic) {
         new obsidian.Notice("移动端暂只支持麦克风录音；电脑音频/虚拟声卡请在桌面端使用。", 8000);
       }
-      if (isLexVoiceMobileRuntime()) {
+      if (isMobileRuntime()) {
         new obsidian.Notice("手机端录音时请保持 Obsidian 在前台，锁屏或切后台可能中断录音。", 8000);
       }
     } catch (e) {

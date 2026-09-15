@@ -5,8 +5,8 @@ import * as obsidian from "obsidian";
 import type { ImportAudioFilesOptions, ImportAudioFilesResult } from "../imports/import-service";
 import type { TaskActivityInput } from "../shared/task-activity";
 import { getDesktopModule } from "../shared/desktop-runtime";
-import { isLexVoiceMobileRuntime } from "../shared/util-platform";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import { isMobileRuntime } from "../shared/util-platform";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { sanitizeFilename } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -61,7 +61,7 @@ export interface ExternalInboxHost {
   recording: { ensureSegmentCacheFolder(): Promise<void>; getSegmentCacheFolder(): string; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
   session: RecordingSession | null;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   tasks: TaskActivityService;
 }
 
@@ -136,7 +136,7 @@ export class ExternalInboxService {
   }
 
   async chooseExternalInboxFolder() {
-    if (isLexVoiceMobileRuntime()) {
+    if (isMobileRuntime()) {
       new obsidian.Notice("电脑文件夹自动导入仅支持桌面端");
       return "";
     }
@@ -209,7 +209,7 @@ export class ExternalInboxService {
 
   refreshExternalInboxWatcher() {
     const folder = String(this.host.settings.inboxFolder || "").trim();
-    const enabled = !!this.host.settings.inboxAutoImport && isAbsoluteExternalInboxPath(folder) && !isLexVoiceMobileRuntime();
+    const enabled = !!this.host.settings.inboxAutoImport && isAbsoluteExternalInboxPath(folder) && !isMobileRuntime();
     if (!enabled) {
       this.closeExternalInboxWatcher();
       return;
@@ -282,7 +282,7 @@ export class ExternalInboxService {
       if (manual) new obsidian.Notice("当前来源不是电脑文件夹");
       return { queued: 0, waiting: 0, skipped: 0 };
     }
-    if (isLexVoiceMobileRuntime()) {
+    if (isMobileRuntime()) {
       if (manual) new obsidian.Notice("电脑文件夹自动导入仅支持桌面端");
       return { queued: 0, waiting: 0, skipped: 0 };
     }

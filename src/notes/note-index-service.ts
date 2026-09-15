@@ -3,12 +3,12 @@
 
 import * as obsidian from "obsidian";
 import { getSemanticCanvasPath } from "../canvas/semantic-outline-canvas";
-import { buildLexVoiceNoteIndex, resolveLexVoiceNoteIndex, upsertLexVoiceNoteIndex } from "../indexing/note-index";
+import { buildNoteIndex, resolveNoteIndex, upsertNoteIndex } from "../indexing/note-index";
 import { ensureTodayDailyNoteFile } from "../shared/util-note";
 import { generateSedimentObjects, writeSedimentObjectCards } from "../sediment";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { diagnosticError } from "../shared/util-key-diag";
-import { extractLexVoiceSessionId } from "../notes/note-markdown";
+import { extractSessionId } from "../notes/note-markdown";
 import { buildDailyMeetingOverviewEntry, upsertDailyMeetingOverview } from "../notes/daily-overview";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 
@@ -18,7 +18,7 @@ export interface NoteIndexHost {
   app: obsidian.App;
   diagnostics: DiagnosticsService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 /** 刷新纪要索引时可选的补充信息；调用方在少数场景才提供，两者都缺省为空串。 */
@@ -36,31 +36,31 @@ export class NoteIndexService {
   }
 
 
-  async refreshLexVoiceNoteIndex(fileOrPath, options: RefreshNoteIndexOptions = {}) {
+  async refreshNoteIndex(fileOrPath, options: RefreshNoteIndexOptions = {}) {
     const file = typeof fileOrPath === "string"
       ? this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(fileOrPath))
       : fileOrPath;
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return null;
     const current = await this.host.app.vault.read(file);
-    const index = buildLexVoiceNoteIndex(current, {
+    const index = buildNoteIndex(current, {
       noteTitle: file.basename,
       meetingDate: options.meetingDate || "",
     });
     if (!index) return null;
-    const next = upsertLexVoiceNoteIndex(current, index);
+    const next = upsertNoteIndex(current, index);
     if (next !== current) await this.host.app.vault.modify(file, next);
     const expectedCanvasPath = obsidian.normalizePath(getSemanticCanvasPath(file.path));
     const canvasFile = this.host.app.vault.getAbstractFileByPath(expectedCanvasPath);
-    return resolveLexVoiceNoteIndex(
+    return resolveNoteIndex(
       index,
       file.path,
       canvasFile instanceof obsidian.TFile ? canvasFile.path : null,
     );
   }
 
-  async refreshLexVoiceNoteIndexSafely(fileOrPath, options: RefreshNoteIndexOptions = {}) {
+  async refreshNoteIndexSafely(fileOrPath, options: RefreshNoteIndexOptions = {}) {
     try {
-      return await this.refreshLexVoiceNoteIndex(fileOrPath, options);
+      return await this.refreshNoteIndex(fileOrPath, options);
     } catch (error) {
       const filePath = typeof fileOrPath === "string" ? fileOrPath : (fileOrPath && fileOrPath.path) || "";
       console.warn("[QnALog] note index refresh failed", error);
@@ -98,7 +98,7 @@ export class NoteIndexService {
       ? sessionMeta.startedAt
       : new Date(file.stat && file.stat.ctime ? file.stat.ctime : Date.now()).toISOString();
     const session = {
-      id: extractLexVoiceSessionId(markdown, obsidian.normalizePath(file.path).replace(/[^A-Za-z0-9_-]+/g, "-")),
+      id: extractSessionId(markdown, obsidian.normalizePath(file.path).replace(/[^A-Za-z0-9_-]+/g, "-")),
       mdPath: file.path,
       mode,
       startedAt,

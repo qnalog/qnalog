@@ -1,6 +1,6 @@
 // 设置迁移结果自检：把「这次加载对 data.json 做了什么」如实报出来。
 //
-// 为什么需要：设置是按**重建式白名单**写回的（serializeLexVoiceSettings 返回全新对象），
+// 为什么需要：设置是按**重建式白名单**写回的（serializePluginSettings 返回全新对象），
 // 任何没有登记的键会在下一次保存时静默消失。从更新过的版本回退时（例如上游 2.2.0+
 // 的 schemaVersion 5 → 本版本 4），用户只会看到"某些设置不见了"，却不知道少了什么、
 // 要重新填什么。这里在迁移发生的那一刻给出对照表：丢掉了哪些分组、保留了哪些、
@@ -88,7 +88,7 @@ export function buildSettingsMigrationReport(
   }
   if (direction === "downgrade") {
     actions.push("本版本比磁盘上的设置结构旧：写回后无法再还原被丢弃的分组。"
-      + "如需要，可从安装前的备份取回 data.json（安装脚本会打印留档位置，位于配置目录下的 `lexvoice-install-backups/<时间戳>/`）。");
+      + "如需要，可从安装前的备份取回 data.json（安装脚本会打印留档位置，位于配置目录下的 `qnalog-install-backups/<时间戳>/`）。");
   }
   const keptNotes = keptGroups
     .filter(group => KEPT_GROUP_NOTES[group])

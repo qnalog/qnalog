@@ -3,14 +3,14 @@
 
 import { isSameVaultPath } from "./audio-refs";
 
-import { clampLexVoiceProgress } from "./note-markdown";
+import { clampProgress } from "./note-markdown";
 
 import * as obsidian from "obsidian";
 
 export function getSessionWorkProgressState(session, recorderState) {
   if (!session) return null;
   const progress = session.workProgress || session.aiProgress || {};
-  const pct = clampLexVoiceProgress(progress.percent);
+  const pct = clampProgress(progress.percent);
   const label = String(progress.label || "").trim();
   const detail = String(progress.detail || "").trim();
   if (session.finalizing) {

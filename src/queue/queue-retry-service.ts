@@ -3,12 +3,12 @@
 
 import * as obsidian from "obsidian";
 import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
-import { LexVoiceSettingTab } from "../ui/settings-tab";
+import { QnALogSettingTab } from "../ui/settings-tab";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue, isLlmServiceBlockedError, formatLlmConfigIssue } from "../llm/core";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { LexVoiceSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { genId, formatElapsed, escapeRegExp } from "../shared/util-common";
 import { mimeFromExt, isAsrTransportError } from "../shared/util-audio";
@@ -20,7 +20,7 @@ import { transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { getAudioTimeLink } from "../notes/audio-refs";
-import { extractLexVoiceSessionId, mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
+import { extractSessionId, mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -51,7 +51,7 @@ export interface QueueRetryHost {
   saveAll(): Promise<void>;
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
-  settingTab: LexVoiceSettingTab | null;
+  settingTab: QnALogSettingTab | null;
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   /** 录音采集服务：切片缓存清理与熔断状态。 */
@@ -63,7 +63,7 @@ export interface QueueRetryHost {
   /** 重新整理服务：导入转写完成后按说话人姓名重排纪要。 */
   repolish: { repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
   tasks: TaskActivityService;
 }
 
@@ -555,14 +555,14 @@ export class QueueRetryService {
     let targetFile = file;
     const renamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, task.mode);
     if (renamed instanceof obsidian.TFile) targetFile = renamed;
-    await this.host.noteIndex.refreshLexVoiceNoteIndexSafely(targetFile, {
+    await this.host.noteIndex.refreshNoteIndexSafely(targetFile, {
       meetingDate: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || "",
       reason: "merge-retry",
     });
     try {
       const latestContent = await this.host.app.vault.read(targetFile);
       const session = {
-        id: task.sessionId || extractLexVoiceSessionId(latestContent, obsidian.normalizePath(targetFile.path).replace(/[^A-Za-z0-9_-]+/g, "-")),
+        id: task.sessionId || extractSessionId(latestContent, obsidian.normalizePath(targetFile.path).replace(/[^A-Za-z0-9_-]+/g, "-")),
         mdPath: targetFile.path,
         mode: task.mode,
         startedAt: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || new Date().toISOString(),

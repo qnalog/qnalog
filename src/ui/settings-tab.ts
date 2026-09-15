@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, DEFAULT_DAILY_MEETING_OVERVIEW_HEADING, DEFAULT_DAILY
 import { genId } from '../shared/util-common';
 import { canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint } from '../shared/util-llm-endpoint';
 import { isLocalServiceEndpoint } from '../shared/util-note';
-import { compareVersions, isLexVoiceMobileRuntime } from '../shared/util-platform';
+import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
 import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
 import { fetchLlmModelList, getLlmConfigIssue, testLlmConnection } from '../llm/core';
@@ -14,7 +14,7 @@ import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-sche
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
 import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabularyMarkdown, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
-import { LEXVOICE_UPDATE_REPO_URL, audioInputModeLabel, countKnowledgeExtractionHistory, enumerateAudioDevices, isVirtualCableLabel, lexvoiceConfirm, lexvoicePromptText, normalizeAudioInputMode, openLexVoiceExternalUrl, openLexVoicePickListModal, pluginBasePath, resolveUpdateRawBases, trashLexVoiceFile } from './helpers';
+import { QNALOG_UPDATE_REPO_URL, audioInputModeLabel, countKnowledgeExtractionHistory, enumerateAudioDevices, isVirtualCableLabel, qnalogConfirm, qnalogPromptText, normalizeAudioInputMode, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, trashVaultFileRef } from './helpers';
 import { PeopleHotwordsConsentModal, PromptTemplateModal, QueueModal, VirtualCableSetupModal } from './modals';
 import {
   MAX_SPEAKER_CHANNELS,
@@ -62,9 +62,9 @@ async function recordChannelProbe(stream, durationMs = 5000) {
 function renderChannelProbeRows(container, rows) {
   container.empty();
   for (const row of rows) {
-    const line = container.createDiv({ cls: `lexvoice-audio-channel-result-row ${row.state ? `is-${row.state}` : ""}` });
-    line.createSpan({ cls: "lexvoice-audio-channel-result-label", text: row.label });
-    line.createSpan({ cls: "lexvoice-audio-channel-result-value", text: row.value });
+    const line = container.createDiv({ cls: `qnalog-audio-channel-result-row ${row.state ? `is-${row.state}` : ""}` });
+    line.createSpan({ cls: "qnalog-audio-channel-result-label", text: row.label });
+    line.createSpan({ cls: "qnalog-audio-channel-result-value", text: row.value });
   }
 }
 
@@ -91,7 +91,7 @@ function resolveOneCardProviderEndpoint(cfg, apiKey) {
   return normal;
 }
 
-export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
+export class QnALogSettingTab extends obsidian.PluginSettingTab {
   /** 当前选中的设置标签页；openSettings 可指定要切到的标签。 */
   declare activeTab: string;
   constructor(app, plugin) {
@@ -111,17 +111,17 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     containerEl.empty();
 
     const tabs = this.getVisibleSettingsTabs();
-    const tabShell = containerEl.createDiv({ cls: "lexvoice-settings-tabs-shell" });
-    const tabBar = tabShell.createDiv({ cls: "lexvoice-settings-tabs" });
+    const tabShell = containerEl.createDiv({ cls: "qnalog-settings-tabs-shell" });
+    const tabBar = tabShell.createDiv({ cls: "qnalog-settings-tabs" });
     for (const tab of tabs) {
       const btn = tabBar.createEl("button", { text: tab.label });
       if (this.activeTab === tab.id) btn.addClass("is-active");
       btn.onclick = () => this.handleSettingsTabClick(tab.id);
     }
 
-    const content = containerEl.createDiv({ cls: "lexvoice-settings-content" });
+    const content = containerEl.createDiv({ cls: "qnalog-settings-content" });
     // 移动端运行时强制单列堆叠（手机设置面板有时宽于 760px CSS px，纯靠 @media 会漏）。
-    content.toggleClass("is-mobile", isLexVoiceMobileRuntime());
+    content.toggleClass("is-mobile", isMobileRuntime());
     switch (this.activeTab) {
       case "home":     this.renderHome(content); break;
       case "general":  this.renderGeneral(content); break;
@@ -151,7 +151,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       if (!title) continue;
 
       const sectionKey = `${this.activeTab}:${sectionIndex}:${title}`;
-      const details = content.createEl("details", { cls: "lexvoice-settings-section" });
+      const details = content.createEl("details", { cls: "qnalog-settings-section" });
       if (Object.prototype.hasOwnProperty.call(this._settingsSectionOpen, sectionKey)) {
         details.open = !!this._settingsSectionOpen[sectionKey];
       } else {
@@ -162,20 +162,20 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         this._settingsSectionOpen[sectionKey] = !!details.open;
       });
 
-      const summary = details.createEl("summary", { cls: "lexvoice-settings-section-summary" });
-      summary.createSpan({ cls: "lexvoice-settings-section-title", text: title });
+      const summary = details.createEl("summary", { cls: "qnalog-settings-section-summary" });
+      summary.createSpan({ cls: "qnalog-settings-section-title", text: title });
 
       const descText = descEl ? String(descEl.textContent || "").trim() : "";
       const next = heading.nextElementSibling;
       const isHint = next && next.classList && (
-        next.classList.contains("lexvoice-settings-hint") ||
-        next.classList.contains("lexvoice-section-hint")
+        next.classList.contains("qnalog-settings-hint") ||
+        next.classList.contains("qnalog-section-hint")
       );
       const hintText = isHint ? String(next.textContent || "").trim() : "";
       const summaryDesc = descText || hintText;
-      if (summaryDesc) summary.createDiv({ cls: "lexvoice-settings-section-desc", text: summaryDesc });
+      if (summaryDesc) summary.createDiv({ cls: "qnalog-settings-section-desc", text: summaryDesc });
 
-      const body = details.createDiv({ cls: "lexvoice-settings-section-body" });
+      const body = details.createDiv({ cls: "qnalog-settings-section-body" });
       content.insertBefore(details, heading);
       heading.remove();
       if (isHint) next.remove();
@@ -196,9 +196,9 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
   }
 
   createSettingsSubhead(parent, title, desc) {
-    const el = parent.createDiv({ cls: "lexvoice-settings-subhead" });
-    el.createDiv({ cls: "lexvoice-settings-subhead-title", text: title });
-    if (desc) el.createDiv({ cls: "lexvoice-settings-subhead-desc", text: desc });
+    const el = parent.createDiv({ cls: "qnalog-settings-subhead" });
+    el.createDiv({ cls: "qnalog-settings-subhead-title", text: title });
+    if (desc) el.createDiv({ cls: "qnalog-settings-subhead-desc", text: desc });
     return el;
   }
 
@@ -209,11 +209,11 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
 
   renderDataRiskNotice(parent, variant = "") {
-    const cls = ["lexvoice-risk-notice", variant].filter(Boolean).join(" ");
+    const cls = ["qnalog-risk-notice", variant].filter(Boolean).join(" ");
     const box = parent.createEl("details", { cls });
-    box.createEl("summary", { cls: "lexvoice-risk-title", text: "数据与云端 API" });
+    box.createEl("summary", { cls: "qnalog-risk-title", text: "数据与云端 API" });
     box.createDiv({
-      cls: "lexvoice-risk-body",
+      cls: "qnalog-risk-body",
       text: "QnALog 没有自有云端存储，也不会把录音上传到 QnALog 服务器；录音文件保存在用户选择的本地 Obsidian 库路径。转写和 AI 整理时，音频、转写文本和提示词会发送到当前配置的云端 API 或本地模型。敏感内容建议使用本地转写和本地大模型，避免通过云端 API 处理涉密、隐私、客户资料、医疗、法务、人事等信息。",
     });
   }
@@ -312,7 +312,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
   }
 
   async autoConfigureAudioInput() {
-    if (isLexVoiceMobileRuntime()) {
+    if (isMobileRuntime()) {
       this.plugin.settings.selectedVirtualDevice = "";
       this.plugin.settings.captureMode = "mic";
       await this.plugin.saveSettings();
@@ -342,7 +342,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
   // 麦克风选择完全交给用户（设置里的下拉），没选则用系统默认。
 
   renderHome(c) {
-    const page = c.createDiv({ cls: "lexvoice-home" });
+    const page = c.createDiv({ cls: "qnalog-home" });
     const jump = (tab) => { this.activeTab = tab; this.renderSettings(); };
     const hasSpeechProvider = (() => {
       const id = this.plugin.settings.activeTranscribeProvider || "siliconflow";
@@ -355,26 +355,26 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const hasLlm = !!(this.plugin.settings.llmEndpoint && this.plugin.settings.llmModel && (this.plugin.settings.llmApiKey || canOmitServiceApiKey(this.plugin.settings.llmEndpoint)));
     const dailyOn = this.plugin.settings.writeDailyMeetingOverview !== false;
 
-    const head = page.createDiv({ cls: "lexvoice-home-head" });
-    const titleLine = head.createDiv({ cls: "lexvoice-home-title-line" });
+    const head = page.createDiv({ cls: "qnalog-home-head" });
+    const titleLine = head.createDiv({ cls: "qnalog-home-title-line" });
     titleLine.createEl("h2", { text: "QnALog" });
-    const versionEl = titleLine.createDiv({ cls: "lexvoice-home-version", text: this.plugin.getDisplayVersion() });
+    const versionEl = titleLine.createDiv({ cls: "qnalog-home-version", text: this.plugin.getDisplayVersion() });
     const buildSource = this.plugin.getBuildSourceLabel();
     if (buildSource) {
       versionEl.addClass("is-dev");
       versionEl.setAttr("title", buildSource);
     }
     head.createDiv({
-      cls: "lexvoice-home-summary",
+      cls: "qnalog-home-summary",
       text: "录音、转写并整理为 Markdown 纪要。配置转写服务即可开始；需要结构化纪要、问一问和沉淀时，再配置 AI 整理服务。",
     });
-    const primary = head.createDiv({ cls: "lexvoice-home-actions" });
+    const primary = head.createDiv({ cls: "qnalog-home-actions" });
     const apiBtn = primary.createEl("button", { text: "配置服务" });
     apiBtn.addClass("mod-cta");
     apiBtn.onclick = () => jump("api");
     const quickBtn = primary.createEl("button", { text: "使用推荐配置" });
     quickBtn.onclick = async () => {
-      const ok = await lexvoiceConfirm(this.app, "使用推荐配置？",
+      const ok = await qnalogConfirm(this.app, "使用推荐配置？",
         "转写与 AI 整理将切换为硅基流动的推荐设置。已填写的 API Key 和其他服务配置会保留。",
         "切换");
       if (!ok) return;
@@ -388,9 +388,9 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     panelBtn.onclick = () => this.plugin.shell.openOutlineView();
 
     // 快速配置：百炼分别选择导入音频 ASR 与 AI 整理模型。
-    const oneCard = page.createDiv({ cls: "lexvoice-home-block lexvoice-home-onecard" });
+    const oneCard = page.createDiv({ cls: "qnalog-home-block qnalog-home-onecard" });
     oneCard.createEl("h3", { text: "快速设置" });
-    oneCard.createDiv({ cls: "lexvoice-home-prep-desc", text: "选择常用服务并填写 API Key。百炼可分别配置导入音频 ASR 和 AI 整理模型。" });
+    oneCard.createDiv({ cls: "qnalog-home-prep-desc", text: "选择常用服务并填写 API Key。百炼可分别配置导入音频 ASR 和 AI 整理模型。" });
     let oneCardProviderId = "mimo";
     let oneCardKey = "";
     let oneCardEndpoint = ONE_CARD_PROVIDERS.bailian.llmEndpoint;
@@ -468,7 +468,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       finally { b.setDisabled(false); b.setButtonText("检测"); }
     }));
 
-    bailianFields = oneCard.createDiv({ cls: "lexvoice-home-onecard-extra" });
+    bailianFields = oneCard.createDiv({ cls: "qnalog-home-onecard-extra" });
     new obsidian.Setting(bailianFields)
       .setName("百炼服务地址")
       .setDesc("可使用默认地址，也可粘贴业务空间的 OpenAI 兼容地址。")
@@ -511,7 +511,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
             new obsidian.Notice("百炼未返回 ASR 模型列表，请手动填写模型名称。", 6000);
             return;
           }
-          openLexVoicePickListModal(this.app, `选择 ASR 模型（共 ${models.length} 个）`, models, model => {
+          openPickListModal(this.app, `选择 ASR 模型（共 ${models.length} 个）`, models, model => {
             oneCardAsrModel = model;
             if (bailianAsrModelInput) bailianAsrModelInput.setValue(model);
           });
@@ -544,7 +544,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
             new obsidian.Notice("百炼未返回 AI 模型列表，请手动填写模型名称。", 6000);
             return;
           }
-          openLexVoicePickListModal(this.app, `选择 AI 整理模型（共 ${models.length} 个）`, models, model => {
+          openPickListModal(this.app, `选择 AI 整理模型（共 ${models.length} 个）`, models, model => {
             oneCardAiModel = model;
             if (bailianAiModelInput) bailianAiModelInput.setValue(model);
           });
@@ -557,9 +557,9 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       }));
     updateOneCardFields();
 
-    const prep = page.createDiv({ cls: "lexvoice-home-block" });
+    const prep = page.createDiv({ cls: "qnalog-home-block" });
     prep.createEl("h3", { text: "使用准备" });
-    const prepGrid = prep.createDiv({ cls: "lexvoice-home-prep-grid" });
+    const prepGrid = prep.createDiv({ cls: "qnalog-home-prep-grid" });
     const prepItems = [
       {
         name: "纪要转写服务",
@@ -603,19 +603,19 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       },
     ];
     for (const item of prepItems) {
-      const card = prepGrid.createDiv({ cls: "lexvoice-home-prep" });
-      card.createDiv({ cls: "lexvoice-home-prep-name", text: item.name });
-      const meta = card.createDiv({ cls: "lexvoice-home-prep-meta" });
-      meta.createDiv({ cls: "lexvoice-home-chip" + (item.need === "必填" ? " is-required" : item.need === "推荐" ? " is-recommended" : ""), text: item.need });
-      meta.createDiv({ cls: "lexvoice-home-chip is-cost", text: item.price });
-      card.createDiv({ cls: "lexvoice-home-prep-desc", text: item.desc });
-      const actions = card.createDiv({ cls: "lexvoice-home-prep-actions" });
-      actions.createDiv({ cls: "lexvoice-home-status " + item.statusClass, text: item.status });
+      const card = prepGrid.createDiv({ cls: "qnalog-home-prep" });
+      card.createDiv({ cls: "qnalog-home-prep-name", text: item.name });
+      const meta = card.createDiv({ cls: "qnalog-home-prep-meta" });
+      meta.createDiv({ cls: "qnalog-home-chip" + (item.need === "必填" ? " is-required" : item.need === "推荐" ? " is-recommended" : ""), text: item.need });
+      meta.createDiv({ cls: "qnalog-home-chip is-cost", text: item.price });
+      card.createDiv({ cls: "qnalog-home-prep-desc", text: item.desc });
+      const actions = card.createDiv({ cls: "qnalog-home-prep-actions" });
+      actions.createDiv({ cls: "qnalog-home-status " + item.statusClass, text: item.status });
       const btn = actions.createEl("button", { text: item.action });
       btn.onclick = () => jump(item.target);
     }
 
-    const better = page.createDiv({ cls: "lexvoice-home-block" });
+    const better = page.createDiv({ cls: "qnalog-home-block" });
     better.createEl("h3", { text: "进阶能力" });
     const betterRows = [
       ["整理提示词", "管理内置和自定义提示词。自定义提示词会出现在录音、导入和重新整理的选择列表中。", hasLlm ? "管理提示词" : "配置 AI 整理", hasLlm ? "ai" : "api"],
@@ -630,12 +630,12 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         .addButton((btn) => btn.setButtonText(btnText).onClick(() => jump(target)));
     }
 
-    const footer = page.createDiv({ cls: "lexvoice-home-footnote" });
+    const footer = page.createDiv({ cls: "qnalog-home-footnote" });
     footer.setText("费用说明：QnALog 插件本身免费。云端转写与大模型服务由对应平台按量计费；本地模型不产生平台费用，但需自行安装、启动与维护。");
   }
 
   createAudioInputButton(parent, text, onClick, cls = "") {
-    const btn = parent.createEl("button", { text, cls: ["lexvoice-audio-input-btn", cls].filter(Boolean).join(" ") });
+    const btn = parent.createEl("button", { text, cls: ["qnalog-audio-input-btn", cls].filter(Boolean).join(" ") });
     btn.onclick = onClick;
     return btn;
   }
@@ -647,7 +647,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     // 去掉「自动」选项：直接列出所有麦克风设备让用户手动选；未选时显示占位提示
     addOption("", "— 请选择麦克风 —");
 
-    if (isLexVoiceMobileRuntime()) {
+    if (isMobileRuntime()) {
       selectEl.value = "";
       selectEl.disabled = true;
       hintEl.setText("移动端使用系统麦克风；电脑音频和虚拟声卡采集请在桌面端配置。");
@@ -703,7 +703,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const addOption = (value, text) => selectEl.createEl("option", { value, text });
     addOption("", "— 请选择电脑音频输入 —");
 
-    if (isLexVoiceMobileRuntime()) {
+    if (isMobileRuntime()) {
       selectEl.value = "";
       selectEl.disabled = true;
       hintEl.setText("移动端不支持电脑音频采集，请在桌面端配置虚拟声卡。");
@@ -747,10 +747,10 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
   renderAudioInputSettings(c) {
     const mode = normalizeAudioInputMode(this.plugin.settings.captureMode || "mic");
-    const card = c.createDiv({ cls: "lexvoice-audio-input-card" });
+    const card = c.createDiv({ cls: "qnalog-audio-input-card" });
 
-    const head = card.createDiv({ cls: "lexvoice-audio-input-head" });
-    const actions = head.createDiv({ cls: "lexvoice-audio-input-actions" });
+    const head = card.createDiv({ cls: "qnalog-audio-input-head" });
+    const actions = head.createDiv({ cls: "qnalog-audio-input-actions" });
     this.createAudioInputButton(actions, "自动设置", async () => {
       await this.autoConfigureAudioInput();
       this.renderSettings();
@@ -760,11 +760,11 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     });
     this.createAudioInputButton(actions, "设置电脑音频", () => new VirtualCableSetupModal(this.app, this.plugin).open());
 
-    const grid = card.createDiv({ cls: "lexvoice-audio-input-grid" });
+    const grid = card.createDiv({ cls: "qnalog-audio-input-grid" });
 
-    const modeField = grid.createDiv({ cls: "lexvoice-audio-input-field" });
-    modeField.createDiv({ cls: "lexvoice-audio-input-label", text: "录音来源" });
-    const modeSelect = modeField.createEl("select", { cls: "dropdown lexvoice-audio-input-select" });
+    const modeField = grid.createDiv({ cls: "qnalog-audio-input-field" });
+    modeField.createDiv({ cls: "qnalog-audio-input-label", text: "录音来源" });
+    const modeSelect = modeField.createEl("select", { cls: "dropdown qnalog-audio-input-select" });
     modeSelect.createEl("option", { value: "mic", text: "仅麦克风" });
     modeSelect.createEl("option", { value: "mix-virtual", text: "麦克风 + 电脑音频" });
     modeSelect.createEl("option", { value: "virtualCable", text: "仅电脑音频" });
@@ -774,7 +774,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       await this.plugin.saveSettings();
       this.renderSettings();
     });
-    const modeHint = modeField.createDiv({ cls: "lexvoice-audio-input-hint" });
+    const modeHint = modeField.createDiv({ cls: "qnalog-audio-input-hint" });
     modeHint.setText(mode === "mic"
       ? "录制所选麦克风。"
       : mode === "virtualCable"
@@ -783,10 +783,10 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     // 麦克风选择器：仅麦克风 / 混合模式下显示（仅电脑音频模式不需要麦克风）
     if (mode === "mic" || mode === "mix-virtual") {
-      const micField = grid.createDiv({ cls: "lexvoice-audio-input-field" });
-      micField.createDiv({ cls: "lexvoice-audio-input-label", text: "麦克风" });
-      const micSelect = micField.createEl("select", { cls: "dropdown lexvoice-audio-input-select" });
-      const micHint = micField.createDiv({ cls: "lexvoice-audio-input-hint" });
+      const micField = grid.createDiv({ cls: "qnalog-audio-input-field" });
+      micField.createDiv({ cls: "qnalog-audio-input-label", text: "麦克风" });
+      const micSelect = micField.createEl("select", { cls: "dropdown qnalog-audio-input-select" });
+      const micHint = micField.createDiv({ cls: "qnalog-audio-input-hint" });
       micSelect.addEventListener("change", async () => {
         if (micSelect.value === "__error") return;
         this.plugin.settings.selectedMicrophoneDevice = micSelect.value;
@@ -797,13 +797,13 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       void this.populateAudioInputMicSelect(micSelect, micHint);
     }
 
-    if (mode === "mic" && !isLexVoiceMobileRuntime()) {
-      const channelField = grid.createDiv({ cls: "lexvoice-audio-input-field lexvoice-audio-channel-field" });
-      const titleRow = channelField.createDiv({ cls: "lexvoice-audio-channel-title-row" });
-      titleRow.createDiv({ cls: "lexvoice-audio-input-label", text: "说话人区分" });
-      const titleActions = titleRow.createDiv({ cls: "lexvoice-audio-channel-title-actions" });
+    if (mode === "mic" && !isMobileRuntime()) {
+      const channelField = grid.createDiv({ cls: "qnalog-audio-input-field qnalog-audio-channel-field" });
+      const titleRow = channelField.createDiv({ cls: "qnalog-audio-channel-title-row" });
+      titleRow.createDiv({ cls: "qnalog-audio-input-label", text: "说话人区分" });
+      const titleActions = titleRow.createDiv({ cls: "qnalog-audio-channel-title-actions" });
       const channelModeSelect = titleActions.createEl("select", {
-        cls: "dropdown lexvoice-audio-channel-mode",
+        cls: "dropdown qnalog-audio-channel-mode",
         attr: { "aria-label": "说话人区分方式" },
       });
       channelModeSelect.createEl("option", { value: "auto", text: "自动（推荐）" });
@@ -816,18 +816,18 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         this.renderSettings();
       });
       const detectButton = titleActions.createEl("button", {
-        cls: "lexvoice-audio-channel-detect",
+        cls: "qnalog-audio-channel-detect",
         text: "测试",
         attr: { type: "button" },
       });
-      const channelHint = channelField.createDiv({ cls: "lexvoice-audio-input-hint lexvoice-audio-channel-hint" });
+      const channelHint = channelField.createDiv({ cls: "qnalog-audio-input-hint qnalog-audio-channel-hint" });
       const selectedChannelMode = normalizeAudioChannelMode(this.plugin.settings.audioChannelMode);
       channelHint.setText(selectedChannelMode === "mono"
         ? "所有录音按一位说话人处理。"
         : selectedChannelMode === "multichannel"
           ? "尝试按独立声道区分说话人；单声道录音会自动回退。"
           : "仅在录音确认包含多个独立声道时区分说话人。");
-      const channelResult = channelField.createDiv({ cls: "lexvoice-audio-channel-result" });
+      const channelResult = channelField.createDiv({ cls: "qnalog-audio-channel-result" });
       detectButton.onclick = async () => {
         detectButton.disabled = true;
         detectButton.setText("正在测试…");
@@ -905,10 +905,10 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     // 电脑音频选择器：仅电脑音频 / 混合模式下显示（原来藏在「设备检测」里，现在直接放到主卡片）
     if (mode === "virtualCable" || mode === "mix-virtual") {
-      const vcField = grid.createDiv({ cls: "lexvoice-audio-input-field" });
-      vcField.createDiv({ cls: "lexvoice-audio-input-label", text: "电脑音频输入" });
-      const vcSelect = vcField.createEl("select", { cls: "dropdown lexvoice-audio-input-select" });
-      const vcHint = vcField.createDiv({ cls: "lexvoice-audio-input-hint" });
+      const vcField = grid.createDiv({ cls: "qnalog-audio-input-field" });
+      vcField.createDiv({ cls: "qnalog-audio-input-label", text: "电脑音频输入" });
+      const vcSelect = vcField.createEl("select", { cls: "dropdown qnalog-audio-input-select" });
+      const vcHint = vcField.createDiv({ cls: "qnalog-audio-input-hint" });
       vcSelect.addEventListener("change", async () => {
         if (vcSelect.value === "__error") return;
         this.plugin.settings.selectedVirtualDevice = vcSelect.value;
@@ -919,7 +919,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       void this.populateAudioInputVirtualSelect(vcSelect, vcHint);
     }
 
-    this.diagResultEl = card.createDiv({ cls: "lexvoice-diag-result lexvoice-audio-input-diag" });
+    this.diagResultEl = card.createDiv({ cls: "qnalog-diag-result qnalog-audio-input-diag" });
   }
 
   renderGeneral(c) {
@@ -988,14 +988,14 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setName("日记写入模板")
       .setDesc("用于控制每条概要写入日记的格式。可用占位符：{{date}}、{{time}}、{{note_link}}、{{title}}、{{mode}}、{{duration}}、{{segments}}、{{model}}、{{summary}}、{{todos}}、{{todos_block}}、{{todo_count}}。");
     dailyTplSetting.addButton(b => b.setButtonText("恢复默认").onClick(async () => {
-      const ok = await lexvoiceConfirm(this.app, "恢复默认日记模板？", "将丢弃当前自定义模板，且无法撤销。", "恢复默认");
+      const ok = await qnalogConfirm(this.app, "恢复默认日记模板？", "将丢弃当前自定义模板，且无法撤销。", "恢复默认");
       if (!ok) return;
       this.plugin.settings.dailyMeetingOverviewTemplate = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
       await this.plugin.saveSettings();
       new obsidian.Notice("已恢复默认日记模板");
       this.renderSettings();
     }));
-    const dailyTplTa = c.createEl("textarea", { cls: "lexvoice-textarea lexvoice-textarea-mono" });
+    const dailyTplTa = c.createEl("textarea", { cls: "qnalog-textarea qnalog-textarea-mono" });
     dailyTplTa.rows = 8;
     dailyTplTa.value = this.plugin.settings.dailyMeetingOverviewTemplate || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
     dailyTplTa.placeholder = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
@@ -1044,33 +1044,33 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     if (!p.model) missing.push("模型名称");
     if (needsKey && !p.apiKey) missing.push("访问密钥");
 
-    const panel = c.createEl("details", { cls: "lexvoice-provider-panel" });
+    const panel = c.createEl("details", { cls: "qnalog-provider-panel" });
     panel.open = !ready;
-    const head = panel.createEl("summary", { cls: "lexvoice-provider-head" });
-    const titleWrap = head.createDiv({ cls: "lexvoice-provider-title-wrap" });
-    titleWrap.createDiv({ cls: "lexvoice-provider-title", text: profile.title });
-    titleWrap.createDiv({ cls: "lexvoice-provider-subtitle", text: profile.description });
-    const badges = head.createDiv({ cls: "lexvoice-provider-badges" });
-    badges.createDiv({ cls: "lexvoice-provider-badge", text: profile.badge });
-    badges.createDiv({ cls: ready ? "lexvoice-provider-status is-ready" : "lexvoice-provider-status is-missing", text: ready ? "已填写" : "待填写" });
+    const head = panel.createEl("summary", { cls: "qnalog-provider-head" });
+    const titleWrap = head.createDiv({ cls: "qnalog-provider-title-wrap" });
+    titleWrap.createDiv({ cls: "qnalog-provider-title", text: profile.title });
+    titleWrap.createDiv({ cls: "qnalog-provider-subtitle", text: profile.description });
+    const badges = head.createDiv({ cls: "qnalog-provider-badges" });
+    badges.createDiv({ cls: "qnalog-provider-badge", text: profile.badge });
+    badges.createDiv({ cls: ready ? "qnalog-provider-status is-ready" : "qnalog-provider-status is-missing", text: ready ? "已填写" : "待填写" });
 
-    const body = panel.createDiv({ cls: "lexvoice-provider-body" });
-    const checklist = body.createEl("ol", { cls: "lexvoice-provider-checklist" });
+    const body = panel.createDiv({ cls: "qnalog-provider-body" });
+    const checklist = body.createEl("ol", { cls: "qnalog-provider-checklist" });
     for (const step of profile.steps || []) checklist.createEl("li", { text: step });
     if (missing.length) {
-      body.createDiv({ cls: "lexvoice-provider-missing", text: "还需要填写：" + missing.join("、") });
+      body.createDiv({ cls: "qnalog-provider-missing", text: "还需要填写：" + missing.join("、") });
     }
     if (profile.priceHint) {
-      body.createDiv({ cls: "lexvoice-provider-price", text: profile.priceHint });
+      body.createDiv({ cls: "qnalog-provider-price", text: profile.priceHint });
     }
     if (profile.note) {
-      body.createDiv({ cls: "lexvoice-provider-note", text: profile.note });
+      body.createDiv({ cls: "qnalog-provider-note", text: profile.note });
     }
     if (profile.links && profile.links.length) {
-      const row = body.createDiv({ cls: "lexvoice-provider-links" });
+      const row = body.createDiv({ cls: "qnalog-provider-links" });
       for (const [label, url] of profile.links) {
         const btn = row.createEl("button", { text: label });
-        btn.onclick = () => openLexVoiceExternalUrl(url);
+        btn.onclick = () => openExternalUrl(url);
       }
     }
   }
@@ -1116,10 +1116,10 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     // 自定义布局（不用 obsidian.Setting 的左名右控件，避免下拉+3按钮+长说明挤成一团）：
     // 说明整行 → 下拉(占主) + 按钮同一行 → 激活态提示整行淡字。
-    const block = c.createDiv({ cls: "lexvoice-scheme-block" });
+    const block = c.createDiv({ cls: "qnalog-scheme-block" });
 
-    const controls = block.createDiv({ cls: "lexvoice-scheme-controls" });
-    const sel = controls.createEl("select", { cls: "dropdown lexvoice-scheme-select" });
+    const controls = block.createDiv({ cls: "qnalog-scheme-controls" });
+    const sel = controls.createEl("select", { cls: "dropdown qnalog-scheme-select" });
     const addOpt = (value, label) => { const o = sel.createEl("option", { text: label }); o.value = value; };
     addOpt("", "临时配置（未保存）");
     for (const p of schemes) addOpt(p.id, p.name);
@@ -1134,7 +1134,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       this.renderSettings();
     });
 
-    const btns = controls.createDiv({ cls: "lexvoice-scheme-btns" });
+    const btns = controls.createDiv({ cls: "qnalog-scheme-btns" });
     const testBtn = btns.createEl("button", { text: "检测" });
     testBtn.onclick = async () => {
       testBtn.disabled = true; testBtn.setText("检测中…");
@@ -1145,7 +1145,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     const saveBtn = btns.createEl("button", { cls: "mod-cta", text: "保存配置" });
     saveBtn.onclick = async () => {
-      const name = await lexvoicePromptText(this.app, "配置名称", "如 MiMo / DeepSeek + 硅基流动 / 本地模型");
+      const name = await qnalogPromptText(this.app, "配置名称", "如 MiMo / DeepSeek + 硅基流动 / 本地模型");
       if (name === null) return;
       const trimmed = typeof name === "string" ? name.trim() : "";
       if (!trimmed) { new obsidian.Notice("名字不能为空"); return; }
@@ -1165,7 +1165,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       this.renderSettings();
     };
     if (activeId) {
-      const delBtn = btns.createEl("button", { cls: "lexvoice-icon-button", attr: { type: "button", "aria-label": "删除当前配置", title: "删除当前配置" } });
+      const delBtn = btns.createEl("button", { cls: "qnalog-icon-button", attr: { type: "button", "aria-label": "删除当前配置", title: "删除当前配置" } });
       obsidian.setIcon(delBtn, "trash-2");
       delBtn.onclick = async () => {
         const p = findLlmProfile(this.plugin.settings, activeId);
@@ -1180,12 +1180,12 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     if (activeId) {
       const p = findLlmProfile(this.plugin.settings, activeId);
       const kind = p && p.asr ? "转写与 AI 整理" : "仅 AI 整理（旧配置）";
-      const status = block.createDiv({ cls: "lexvoice-scheme-status" });
-      status.createSpan({ cls: "lexvoice-scheme-status-name", text: `当前：${p ? p.name : activeId}` });
-      status.createSpan({ cls: "lexvoice-scheme-status-sep", text: " · " });
+      const status = block.createDiv({ cls: "qnalog-scheme-status" });
+      status.createSpan({ cls: "qnalog-scheme-status-name", text: `当前：${p ? p.name : activeId}` });
+      status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
       status.createSpan({ text: kind });
-      status.createSpan({ cls: "lexvoice-scheme-status-sep", text: " · " });
-      status.createSpan({ cls: "lexvoice-scheme-status-hint", text: "修改下方设置会自动更新当前配置" });
+      status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
+      status.createSpan({ cls: "qnalog-scheme-status-hint", text: "修改下方设置会自动更新当前配置" });
     }
   }
 
@@ -1278,7 +1278,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     }
 
     if (profile.transcribeMode === "streaming") {
-      const tip = c.createDiv({ cls: "lexvoice-provider-streaming-tip" });
+      const tip = c.createDiv({ cls: "qnalog-provider-streaming-tip" });
       tip.setText("实时模式：录音全程与服务保持连线，边说边出文字，不再切段上传。「进阶 → 录音行为」中的「分段间隔」「即时分段」对此服务不生效。");
     }
 
@@ -1385,7 +1385,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         try {
           const models = await fetchLlmModelList(this.plugin.settings.llmEndpoint, this.plugin.settings.llmApiKey);
           if (!models.length) { new obsidian.Notice("该服务未返回模型列表，请手动填写模型标识。", 6000); return; }
-          openLexVoicePickListModal(this.app, `选择模型（共 ${models.length} 个）`, models, async (id) => {
+          openPickListModal(this.app, `选择模型（共 ${models.length} 个）`, models, async (id) => {
             this.plugin.settings.llmModel = id;
             syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
             await this.plugin.saveSettings();
@@ -1497,7 +1497,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
               new obsidian.Notice("服务没有返回可用模型，请手动填写模型名称。", 6000);
               return;
             }
-            openLexVoicePickListModal(this.app, `选择导入音频模型（共 ${models.length} 个）`, models, async (model) => {
+            openPickListModal(this.app, `选择导入音频模型（共 ${models.length} 个）`, models, async (model) => {
               await writeProvider("model", model);
               new obsidian.Notice(`已选择模型：${model}`, 4000);
               this.renderSettings();
@@ -1684,7 +1684,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
               new obsidian.Notice("服务没有返回模型列表，请手动填写模型标识。", 6000);
               return;
             }
-            openLexVoicePickListModal(this.app, `选择 AI 模型（共 ${models.length} 个）`, models, async (model) => {
+            openPickListModal(this.app, `选择 AI 模型（共 ${models.length} 个）`, models, async (model) => {
               this.plugin.settings.llmModel = model;
               syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
               await this.plugin.saveSettings();
@@ -1733,7 +1733,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setName("纪要生成")
       .setDesc("设置纪要的结构、详略和重新整理偏好。参会信息与待办归属在每次录音前单独补充。")
       .setHeading();
-    const structHint = c.createDiv({ cls: "setting-item-description lexvoice-section-hint" });
+    const structHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
     structHint.setText("默认只调整整理结果，不改动原始转写。重新整理偏好仅作用于右键菜单中的派生版本。");
 
     new obsidian.Setting(c).setName("结构化程度")
@@ -1750,7 +1750,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName("重新整理偏好提示词")
       .setDesc("只影响右键菜单「重新整理为」里的偏好项。偏好会调整详略、结构、语气和是否允许 AI 适度补充观点。这里填写的是追加规则，不会覆盖内置提示词。");
-    const repolishPromptTa = c.createEl("textarea", { cls: "lexvoice-textarea" });
+    const repolishPromptTa = c.createEl("textarea", { cls: "qnalog-textarea" });
     repolishPromptTa.value = this.plugin.settings.repolishPreferencePromptAddendum || "";
     repolishPromptTa.placeholder = "例如：适度拓展时，如果原文出现概念、疑问或明显分歧，请用 AI 补充 callout 给出简短视角；关键概念用 ==高亮==，核心判断可用 <u>下划线</u>。不要编造事实、数据或责任人。";
     repolishPromptTa.rows = 4;
@@ -1758,7 +1758,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       this.plugin.settings.repolishPreferencePromptAddendum = repolishPromptTa.value.trim();
       await this.plugin.saveSettings();
     });
-    const repolishPresetHint = c.createEl("details", { cls: "lexvoice-setting-details" });
+    const repolishPresetHint = c.createEl("details", { cls: "qnalog-setting-details" });
     repolishPresetHint.createEl("summary", { text: "查看内置偏好对应的提示词方向" });
     const presetText = [
       "风格偏好：",
@@ -1778,7 +1778,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setName("语言与翻译")
       .setDesc("设置 AI 整理后的纪要语言。原始转写始终保留原文。")
       .setHeading();
-    const langHint = c.createDiv({ cls: "setting-item-description lexvoice-section-hint" });
+    const langHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
     langHint.setText("适用于多语种会议，可统一输出语言或保留关键原文括注。");
 
     new obsidian.Setting(c).setName("语言策略")
@@ -1814,7 +1814,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
           .onChange(async v => { this.plugin.settings.briefingKeepOriginalTerms = v; await this.plugin.saveSettings(); }));
 
       new obsidian.Setting(c).setName("额外语言要求");
-      const langTa = c.createEl("textarea", { cls: "lexvoice-textarea" });
+      const langTa = c.createEl("textarea", { cls: "qnalog-textarea" });
       langTa.value = this.plugin.settings.briefingLanguageInstruction || "";
       langTa.placeholder = "例如：日文发言保留原文括注；英文术语保留原文；输出为繁体中文。";
       langTa.rows = 3;
@@ -1828,7 +1828,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setName("HTML 报告")
       .setDesc("把纪要内容生成适合阅读、分享和打印的独立 HTML 报告。")
       .setHeading();
-    const reportHint = c.createDiv({ cls: "setting-item-description lexvoice-section-hint" });
+    const reportHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
     reportHint.setText("报告使用同一份纪要内容，不会改变 Obsidian 中的原始纪要。");
 
     new obsidian.Setting(c).setName("HTML 报告保存文件夹")
@@ -1864,7 +1864,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setName("纪要模板")
       .setDesc("选择默认整理模板，并管理长期复用的格式、行业规则和输出偏好。")
       .setHeading();
-    const sceneHint = c.createDiv({ cls: "setting-item-description lexvoice-section-hint" });
+    const sceneHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
     sceneHint.setText("内置模板可直接使用；自定义模板会出现在录音、导入和重新整理的选择列表中。");
 
     const currentMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode, "meeting");
@@ -1961,19 +1961,19 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       .setDesc("从纪要中沉淀人员、待办和转写词表，用于复用和检索；纪要保留原始证据和录音链接。")
       .setHeading();
 
-    const overview = c.createDiv({ cls: "lexvoice-object-overview-grid" });
+    const overview = c.createDiv({ cls: "qnalog-object-overview-grid" });
     const makeObjectCard = (title, count, unit, desc, icon, actionLabel, onClick) => {
       const btn = overview.createEl("button", {
-        cls: "lexvoice-object-overview-card",
+        cls: "qnalog-object-overview-card",
         attr: { type: "button", "aria-label": actionLabel, title: actionLabel },
       });
-      const head = btn.createDiv({ cls: "lexvoice-object-overview-head" });
-      head.createDiv({ cls: "lexvoice-object-overview-title", text: title });
-      const countEl = head.createDiv({ cls: "lexvoice-object-overview-count" });
-      countEl.createSpan({ cls: "lexvoice-object-overview-count-value", text: String(count) });
-      countEl.createSpan({ cls: "lexvoice-object-overview-count-unit", text: unit });
-      btn.createDiv({ cls: "lexvoice-object-overview-desc", text: desc });
-      const iconEl = btn.createDiv({ cls: "lexvoice-object-overview-icon", attr: { "aria-hidden": "true" } });
+      const head = btn.createDiv({ cls: "qnalog-object-overview-head" });
+      head.createDiv({ cls: "qnalog-object-overview-title", text: title });
+      const countEl = head.createDiv({ cls: "qnalog-object-overview-count" });
+      countEl.createSpan({ cls: "qnalog-object-overview-count-value", text: String(count) });
+      countEl.createSpan({ cls: "qnalog-object-overview-count-unit", text: unit });
+      btn.createDiv({ cls: "qnalog-object-overview-desc", text: desc });
+      const iconEl = btn.createDiv({ cls: "qnalog-object-overview-icon", attr: { "aria-hidden": "true" } });
       obsidian.setIcon(iconEl, icon);
       btn.onclick = onClick;
       return btn;
@@ -1983,7 +1983,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const vocabCard = makeObjectCard("转写词表", "…", "个", "汇总术语及易错写法，提升转写准确率。", "notebook-tabs", "打开转写词表", () => { void openVocabularyFile(); });
 
     void (async () => {
-      const countEl = vocabCard.querySelector(".lexvoice-object-overview-count-value");
+      const countEl = vocabCard.querySelector(".qnalog-object-overview-count-value");
       try {
         const path = obsidian.normalizePath(this.plugin.settings.vocabularyFile || DEFAULT_SETTINGS.vocabularyFile);
         const file = this.plugin.app.vault.getAbstractFileByPath(path);
@@ -2013,7 +2013,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName("人员去重")
       .setDesc("按姓名合并重复资料，更新纪要引用，并归档带 -1 / -2 后缀的重复页。")
       .addButton(b => b.setButtonText("合并重复人员").onClick(async () => {
-        const ok = await lexvoiceConfirm(this.app, "合并重复人员档案？", "QnALog 会把同名人员页合并到主档案，改写所有指向重复页的 wiki 链接，并将重复页移到归档目录。建议先确保同步已完成。", "开始合并");
+        const ok = await qnalogConfirm(this.app, "合并重复人员档案？", "QnALog 会把同名人员页合并到主档案，改写所有指向重复页的 wiki 链接，并将重复页移到归档目录。建议先确保同步已完成。", "开始合并");
         if (!ok) return;
         try {
           const result = await this.plugin.people.mergeDuplicatePeopleDirectory();
@@ -2038,10 +2038,10 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName("明细表格")
       .setDesc("用于核对和批量筛选，不作为主展示入口。")
       .addButton(b => b.setButtonText("人员资料").onClick(() => { void this.plugin.library.openPeopleBase(); }))
-      .addButton(b => b.setButtonText("全部纪要").onClick(() => this.plugin.library.openLexVoiceDetailBase()))
+      .addButton(b => b.setButtonText("全部纪要").onClick(() => this.plugin.library.openDetailBase()))
       .addButton(b => b.setButtonText("补齐视图").onClick(async () => {
         try {
-          const r = await this.plugin.library.createLexVoiceBases({ overwrite: false });
+          const r = await this.plugin.library.createBases({ overwrite: false });
           new obsidian.Notice(`表格视图创建完成：新建 ${r.created} 个，跳过 ${r.skipped} 个`);
         } catch (e) {
           console.error(e);
@@ -2078,8 +2078,8 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         setting.setDesc(`当前 ${count} 张待办卡片。待办卡片适合跟踪跨会议、跨项目的行动项。`);
       });
 
-    createPathSetting(advancedBody, "视图文件夹", "保存 QnALog 生成的资料总览和 Base 视图。", this.plugin.settings.lexVoiceBasesFolder || DEFAULT_SETTINGS.lexVoiceBasesFolder, DEFAULT_SETTINGS.lexVoiceBasesFolder,
-      async v => { this.plugin.settings.lexVoiceBasesFolder = v || DEFAULT_SETTINGS.lexVoiceBasesFolder; });
+    createPathSetting(advancedBody, "视图文件夹", "保存 QnALog 生成的资料总览和 Base 视图。", this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
+      async v => { this.plugin.settings.basesFolder = v || DEFAULT_SETTINGS.basesFolder; });
 
     const vocabScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "vocabulary");
     const peopleScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "people");
@@ -2087,7 +2087,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(advancedBody).setName("纪要扫描记录")
       .setDesc(`转写词表已扫描 ${vocabScanCount} 篇；人员建议已扫描 ${peopleScanCount} 篇。清空记录后，修改过或已存在的纪要可重新进入扫描。`)
       .addButton(b => b.setButtonText("清空词表记录").setDisabled(!vocabScanCount).onClick(async () => {
-        const ok = await lexvoiceConfirm(this.app, "清空词表扫描记录？", `${vocabScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
+        const ok = await qnalogConfirm(this.app, "清空词表扫描记录？", `${vocabScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
         if (!ok) return;
         this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("vocabulary");
         await this.plugin.saveSettings();
@@ -2095,7 +2095,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         this.renderSettings();
       }))
       .addButton(b => b.setButtonText("清空人员记录").setDisabled(!peopleScanCount).onClick(async () => {
-        const ok = await lexvoiceConfirm(this.app, "清空人员建议扫描记录？", `${peopleScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
+        const ok = await qnalogConfirm(this.app, "清空人员建议扫描记录？", `${peopleScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
         if (!ok) return;
         this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("people");
         await this.plugin.saveSettings();
@@ -2197,8 +2197,8 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName("更新来源")
       .setDesc("本插件从本项目仓库（GitHub: qnalog/qnalog）检查是否有新版本，只更新版本提示，不会下载或改写任何文件；安装由 Obsidian 或 BRAT 完成。更新源不接受上游版本。")
-      .addButton(b => b.setButtonText("打开 GitHub").onClick(() => openLexVoiceExternalUrl(LEXVOICE_UPDATE_REPO_URL)))
-      .addButton(b => b.setButtonText("查看版本").onClick(() => openLexVoiceExternalUrl(LEXVOICE_UPDATE_REPO_URL + "/releases")));
+      .addButton(b => b.setButtonText("打开 GitHub").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL)))
+      .addButton(b => b.setButtonText("查看版本").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases")));
 
     new obsidian.Setting(c).setName("启动时自动检查")
       .setDesc("开启后最多每 24 小时检查一次本仓库。")
@@ -2214,7 +2214,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
         this.renderSettings();
       }))
       .addButton(b => b.setButtonText("打开发布页").onClick(() => {
-        openLexVoiceExternalUrl(LEXVOICE_UPDATE_REPO_URL + "/releases");
+        openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases");
       }));
 
     new obsidian.Setting(c).setName("版权与许可")
@@ -2237,7 +2237,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
   addFolderPathSetting(c, opts) {
     const setting = new obsidian.Setting(c).setName(opts.name);
     if (opts.desc) setting.setDesc(opts.desc);
-    const listId = "lexvoice-folder-list-" + (this._folderSettingSeq = (this._folderSettingSeq || 0) + 1);
+    const listId = "qnalog-folder-list-" + (this._folderSettingSeq = (this._folderSettingSeq || 0) + 1);
     let warnEl = null;
     const renderWarn = (path) => {
       if (warnEl) { warnEl.remove(); warnEl = null; }
@@ -2245,7 +2245,7 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
       if (!p || p === "." || p === "/") return;
       const existing = this.app.vault.getAbstractFileByPath(p);
       if (existing instanceof obsidian.TFolder) return;
-      warnEl = c.createDiv({ cls: "lexvoice-folder-warn" });
+      warnEl = c.createDiv({ cls: "qnalog-folder-warn" });
       if (existing) {
         warnEl.createSpan({ text: `「${p}」已存在但不是文件夹，请换一个路径。` });
       } else {
@@ -2379,14 +2379,14 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName("清空诊断日志")
       .setDesc("删除诊断日志文件夹中的全部 .jsonl 日志文件，释放空间。不影响纪要与录音。")
       .addButton(b => b.setButtonText("清空").onClick(async () => {
-        const ok = await lexvoiceConfirm(this.app, "清空诊断日志？", "将删除诊断日志文件夹中的全部 .jsonl 日志文件；删除后无法再用于追溯历史问题（文件进入系统废纸篓，可恢复）。", "清空");
+        const ok = await qnalogConfirm(this.app, "清空诊断日志？", "将删除诊断日志文件夹中的全部 .jsonl 日志文件；删除后无法再用于追溯历史问题（文件进入系统废纸篓，可恢复）。", "清空");
         if (!ok) return;
         const folder = this.app.vault.getAbstractFileByPath(this.plugin.diagnostics.getDiagnosticsFolder());
         let n = 0;
         if (folder instanceof obsidian.TFolder) {
           const targets = folder.children.filter(f => f instanceof obsidian.TFile && f.extension === "jsonl");
           for (const f of targets) {
-            try { await trashLexVoiceFile(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
+            try { await trashVaultFileRef(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
           }
         }
         new obsidian.Notice(n ? `已清空诊断日志：${n} 个文件（可从系统废纸篓恢复）` : "诊断日志文件夹为空");
@@ -2487,69 +2487,69 @@ export class LexVoiceSettingTab extends obsidian.PluginSettingTab {
     const result = this.diagResultEl;
     if (!result) return;
     result.empty();
-    result.createDiv({ text: "检测中…", cls: "lexvoice-diag-loading" });
+    result.createDiv({ text: "检测中…", cls: "qnalog-diag-loading" });
 
     let info;
     try {
       info = await enumerateAudioDevices();
     } catch (e) {
       result.empty();
-      result.createDiv({ text: `检测失败：${e.message || e}`, cls: "lexvoice-diag-error" });
+      result.createDiv({ text: `检测失败：${e.message || e}`, cls: "qnalog-diag-error" });
       return;
     }
     result.empty();
-    const card = result.createDiv({ cls: "lexvoice-diag-card" });
+    const card = result.createDiv({ cls: "qnalog-diag-card" });
 
     // 去名字化：如实列出所有音频输入设备，不按名字猜哪只是真麦/虚拟。
     const allInputs = (info.all || []).filter((d) => d && d.kind === "audioinput");
 
     // 麦克风行：有任何输入设备即可录（没选则用系统默认）。
-    const micRow = card.createDiv({ cls: "lexvoice-diag-row" });
+    const micRow = card.createDiv({ cls: "qnalog-diag-row" });
     const micOk = allInputs.length > 0;
-    micRow.createSpan({ cls: `lexvoice-diag-dot ${micOk ? "is-ok" : "is-fail"}` });
-    const micText = micRow.createDiv({ cls: "lexvoice-diag-text" });
-    micText.createDiv({ text: micOk ? `检测到 ${allInputs.length} 个音频输入设备` : "未检测到任何音频输入设备", cls: "lexvoice-diag-label" });
+    micRow.createSpan({ cls: `qnalog-diag-dot ${micOk ? "is-ok" : "is-fail"}` });
+    const micText = micRow.createDiv({ cls: "qnalog-diag-text" });
+    micText.createDiv({ text: micOk ? `检测到 ${allInputs.length} 个音频输入设备` : "未检测到任何音频输入设备", cls: "qnalog-diag-label" });
     if (micOk) {
-      micText.createDiv({ text: allInputs.map(d => `• ${d.label || "未授权读取"}`).slice(0, 5).join("\n"), cls: "lexvoice-diag-sub" });
+      micText.createDiv({ text: allInputs.map(d => `• ${d.label || "未授权读取"}`).slice(0, 5).join("\n"), cls: "qnalog-diag-sub" });
     }
 
     // 电脑音频行：必须由用户显式选定，不猜第一个虚拟声卡。
-    const vcRow = card.createDiv({ cls: "lexvoice-diag-row" });
+    const vcRow = card.createDiv({ cls: "qnalog-diag-row" });
     const vcSelId = this.plugin.settings.selectedVirtualDevice || "";
     const vcDev = vcSelId ? allInputs.find(d => d.deviceId === vcSelId) : null;
     const vcOk = !!vcDev;
-    vcRow.createSpan({ cls: `lexvoice-diag-dot ${vcOk ? "is-ok" : "is-warn"}` });
-    const vcText = vcRow.createDiv({ cls: "lexvoice-diag-text" });
+    vcRow.createSpan({ cls: `qnalog-diag-dot ${vcOk ? "is-ok" : "is-warn"}` });
+    const vcText = vcRow.createDiv({ cls: "qnalog-diag-text" });
     if (vcOk) {
-      vcText.createDiv({ text: "电脑音频输入（已选定）", cls: "lexvoice-diag-label" });
-      vcText.createDiv({ text: `• ${vcDev.label || "未授权读取"}`, cls: "lexvoice-diag-sub" });
+      vcText.createDiv({ text: "电脑音频输入（已选定）", cls: "qnalog-diag-label" });
+      vcText.createDiv({ text: `• ${vcDev.label || "未授权读取"}`, cls: "qnalog-diag-sub" });
     } else if (vcSelId) {
-      vcText.createDiv({ text: "所选电脑音频输入未检测到", cls: "lexvoice-diag-label" });
-      vcText.createDiv({ text: "之前选定的设备可能已断开，请在下方重新选择。", cls: "lexvoice-diag-sub" });
+      vcText.createDiv({ text: "所选电脑音频输入未检测到", cls: "qnalog-diag-label" });
+      vcText.createDiv({ text: "之前选定的设备可能已断开，请在下方重新选择。", cls: "qnalog-diag-sub" });
     } else {
-      vcText.createDiv({ text: "未选择电脑音频输入", cls: "lexvoice-diag-label" });
-      vcText.createDiv({ text: "录制电脑声音需要虚拟声卡。请在「设置电脑音频」中完成配置。", cls: "lexvoice-diag-sub" });
+      vcText.createDiv({ text: "未选择电脑音频输入", cls: "qnalog-diag-label" });
+      vcText.createDiv({ text: "录制电脑声音需要虚拟声卡。请在「设置电脑音频」中完成配置。", cls: "qnalog-diag-sub" });
     }
 
     if (info.permissionRequired) {
-      const permRow = card.createDiv({ cls: "lexvoice-diag-row" });
-      permRow.createSpan({ cls: "lexvoice-diag-dot is-warn" });
-      const permText = permRow.createDiv({ cls: "lexvoice-diag-text" });
-      permText.createDiv({ text: "麦克风权限未授予", cls: "lexvoice-diag-label" });
-      permText.createDiv({ text: "未授权时设备名为空，无法准确识别电脑音频输入。", cls: "lexvoice-diag-sub" });
+      const permRow = card.createDiv({ cls: "qnalog-diag-row" });
+      permRow.createSpan({ cls: "qnalog-diag-dot is-warn" });
+      const permText = permRow.createDiv({ cls: "qnalog-diag-text" });
+      permText.createDiv({ text: "麦克风权限未授予", cls: "qnalog-diag-label" });
+      permText.createDiv({ text: "未授权时设备名为空，无法准确识别电脑音频输入。", cls: "qnalog-diag-sub" });
     }
 
-    const summary = card.createDiv({ cls: "lexvoice-diag-summary" });
+    const summary = card.createDiv({ cls: "qnalog-diag-summary" });
     const mode = normalizeAudioInputMode(this.plugin.settings.captureMode || "mic");
     let modeStatus, modeOk;
     if (mode === "mic") { modeOk = micOk; modeStatus = micOk ? "当前音频输入可用" : "当前音频输入不可用（无任何输入设备）"; }
     else if (mode === "virtualCable") { modeOk = vcOk; modeStatus = vcOk ? "当前音频输入可用" : "当前音频输入不可用（未选择电脑音频输入）"; }
     else if (mode === "mix-virtual") { modeOk = micOk && vcOk; modeStatus = modeOk ? "当前音频输入可用" : `当前音频输入不可用（${!micOk ? "无任何输入设备" : "未选择电脑音频输入"}）`; }
 
-    summary.createDiv({ text: `当前音频输入：${audioInputModeLabel(mode)}`, cls: "lexvoice-diag-summary-mode" });
-    summary.createDiv({ text: modeStatus, cls: `lexvoice-diag-summary-status ${modeOk ? "is-ok" : "is-warn"}` });
+    summary.createDiv({ text: `当前音频输入：${audioInputModeLabel(mode)}`, cls: "qnalog-diag-summary-mode" });
+    summary.createDiv({ text: modeStatus, cls: `qnalog-diag-summary-status ${modeOk ? "is-ok" : "is-warn"}` });
 
-    const editHint = card.createDiv({ cls: "lexvoice-diag-edit-hint" });
+    const editHint = card.createDiv({ cls: "qnalog-diag-edit-hint" });
     editHint.setText("设备检测只做诊断；如需更换麦克风或电脑音频输入，请在上方「音频输入」区域调整。");
   }
 }

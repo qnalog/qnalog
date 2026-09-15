@@ -3,7 +3,7 @@ import { checkDomainBoundaries } from "../scripts/check-domain-boundaries.mjs";
 
 // 检查器自身要有回归保护：它拦的是「@ts-nocheck 下不报错、运行时才失效」的引用不一致。
 const MAIN = `
-class LexVoicePlugin extends obsidian.Plugin {
+class QnALogPlugin extends obsidian.Plugin {
   declare settings;
   async onload() {
     this.recording = new RecordingService(this);
@@ -70,7 +70,7 @@ export class ThingService {
     // recording 字段指向 RecordingService，接口里却声明了只有 SessionFinalizeService 才有的成员
     const problems = checkDomainBoundaries({
       "src/main.ts": `
-class LexVoicePlugin extends obsidian.Plugin {
+class QnALogPlugin extends obsidian.Plugin {
   declare settings;
   async onload() {
     this.recording = new RecordingService(this);
@@ -104,7 +104,7 @@ export class QService {
     // 会抛 TypeError；这正是真机日志里 llm.merge_failed 的那一条。
     const problems = checkDomainBoundaries({
       "src/main.ts": `
-class LexVoicePlugin extends obsidian.Plugin {
+class QnALogPlugin extends obsidian.Plugin {
   declare settings;
   async onload() { this.repolish = new RepolishService(this); }
   async saveAll() {}
@@ -125,7 +125,7 @@ export class RepolishService {
   it("接受经 this.host 传入的插件对象", () => {
     const problems = checkDomainBoundaries({
       "src/main.ts": `
-class LexVoicePlugin extends obsidian.Plugin {
+class QnALogPlugin extends obsidian.Plugin {
   declare settings;
   async onload() { this.repolish = new RepolishService(this); }
   async saveAll() {}

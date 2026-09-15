@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { AudioTimeModal } from "../ui/modals";
 import { parseElapsedMsToken } from "../shared/util-text";
-import type { LexVoiceSettings } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import { extractAudioSegmentOffsets, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget } from "../notes/audio-refs";
@@ -15,11 +15,11 @@ export interface AudioTimeLinkHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: LexVoiceSettings;
+  settings: PluginSettings;
 }
 
 /** 回听链接元素：除标准锚属性外，还挂一个自定义点击处理器用于去重绑定。 */
-type AudioTimeLinkElement = HTMLAnchorElement & { __lexvoiceTimeHandler?: (evt: Event) => void };
+type AudioTimeLinkElement = HTMLAnchorElement & { __qnalogTimeHandler?: (evt: Event) => void };
 
 export class AudioTimeLinkService {
   declare host: AudioTimeLinkHost;
@@ -36,12 +36,12 @@ export class AudioTimeLinkService {
       const label = (link.textContent || "").trim();
       const linkPath = link.getAttribute("data-href") || link.getAttribute("href") || "";
       if (!isTimeLabel(label) || !getAudioExtFromLinkPath(linkPath)) continue;
-      link.classList.add("lexvoice-time-link");
+      link.classList.add("qnalog-time-link");
       link.setAttribute("aria-label", `QnALog 回听 ${label}`);
       // 锚元素上挂自定义处理器，用于重复调用时先解绑上一次（避免叠加多个 click）。
       const anyLink = link;
-      if (anyLink.__lexvoiceTimeHandler) {
-        link.removeEventListener("click", anyLink.__lexvoiceTimeHandler, true);
+      if (anyLink.__qnalogTimeHandler) {
+        link.removeEventListener("click", anyLink.__qnalogTimeHandler, true);
       }
       const handler = (evt) => {
         evt.preventDefault();
@@ -52,7 +52,7 @@ export class AudioTimeLinkService {
           new obsidian.Notice(`QnALog 回听失败：${(e && e.message) || e}`);
         });
       };
-      anyLink.__lexvoiceTimeHandler = handler;
+      anyLink.__qnalogTimeHandler = handler;
       link.addEventListener("click", handler, true);
     }
   }
