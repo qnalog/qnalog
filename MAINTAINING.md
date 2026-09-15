@@ -267,19 +267,38 @@ node scripts/check-mainline-isolation.mjs
 
 ### 4.2 发版步骤
 
+推 tag 之后由 `.github/workflows/release.yml` 自动完成构建校验与上传，维护者只做前四步：
+
 ```bash
 npm version X.Y.Z --no-git-tag-version   # 同步 package.json / package-lock.json
 # 编辑 manifest.json 的 version（如 minAppVersion 有变，一并更新）
 node version-bump.mjs                    # 写入 versions.json
+# 写发版说明：.github/release-notes/X.Y.Z.md（工作流要求该文件存在）
 npm ci && npm run verify:push            # lint + build + test + 主线隔离 + 产物一致性
 git add -A && git commit                 # 含重建后的 main.js
-git tag X.Y.Z && git push origin main --tags
-gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes-file <说明>
+git push origin main
+git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 ```
 
+发布工作流（`Release`）在 tag 上依次做：
+
+1. 检出 tag 指向的提交（干净检出，provenance 的起点）；
+2. `npm ci` 锁定安装；
+3. **tag 与 `manifest.json` 的版本一致**，否则拒绝发布；
+4. `npm run verify:push`（lint / build / test / 主线隔离 / 产物一致性）；
+5. **重建后的 `main.js` / `manifest.json` / `styles.css` 与 tag 里提交的逐字节一致**，
+   否则拒绝发布——这条拦的正是「提交进来的产物不是这份源码构建的」；
+6. 要求 `.github/release-notes/<tag>.md` 存在（不允许用自动生成的提交列表顶替）；
+7. 上传 **5 个资产**：`main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE`；
+8. 回读一次，确认用户下载到的与 tag 里的逐字节一致。
+
+- 发版说明的模板见 `.github/release-notes/1.0.0.md`。**必须写明对用户的影响**：设置结构是否变化、是否需要重新指定服务与密钥、是否有功能删减。
+- **LICENSE 与 NOTICE 随 Release 一起发**：README 的手工安装方式就是让用户下载这些文件，版权与许可声明应当随分发副本一起走，而不是只靠 `main.js` 顶部 banner 里的 URL。
 - `scripts/check-version-alignment.mjs` 会校验 `manifest.json` / `package.json` / `package-lock.json`（含根版本）/ `versions.json` 四处一致，不一致直接构建失败。
-- **必须发布 GitHub Release**：BRAT 与 Obsidian 社区目录都以 Release 资产为安装源，且要求 tag、release 名与 manifest 版本一致。资产为 `main.js`、`manifest.json`、`styles.css`。
+- **必须发布 GitHub Release**：BRAT 与 Obsidian 社区目录都以 Release 资产为安装源，且要求 tag、release 名与 manifest 版本一致。
 - `main.js` 必须入库且与源码同一次提交：运行时会用注入的 `QNALOG_BUILD_VERSION` 与磁盘 `manifest.json` 比对，版本错位会在设置页提示。
+- 工作流失败时**不要**改用本地 `gh release create` 绕过：那等于放弃 provenance，release 里的文件就不再保证来自 tag。先在 tag 上修源码、重打 tag。
+- 若已发布后需要修发版说明文字（不改产物），可直接 `gh release edit X.Y.Z --notes-file …`，无需重新发版。
 - 若改动触及设置结构（`SETTINGS_SCHEMA_VERSION`）：改动那个常量即可，**不要**为旧格式补逐键迁移。版本不一致时插件整份丢弃磁盘设置、按默认值重建（`src/shared/settings-schema.ts`），并弹通知。改动后要用一份真实的旧版 `data.json` 验一遍这条路径。
 - 发版说明必须写明对用户的影响：设置结构是否变化、是否需要重新指定服务绑定、是否有功能删减。
 
@@ -307,7 +326,15 @@ gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes
 
 ### 4.4 CI
 
-`.github/workflows/validate.yml` 是**纯校验**工作流：`npm ci` → `npm run build` → `npm test` → 主线隔离检查 → 产物与源码一致性检查。权限仅 `contents: read`，不含任何发布步骤；发布走 §4.2 的人工流程。
+本仓库有两个工作流，权限按用途分开：
+
+| 工作流 | 触发 | 权限 | 做什么 |
+|---|---|---|---|
+| `validate.yml` | 每次 push 与 PR | `contents: read` | 纯校验：`npm ci` → `npm run build` → `npm test` → 主线隔离 → 产物一致性 |
+| `release.yml` | 推 `[0-9]*` 形式的 tag | `contents: write` | 从 tag 干净检出、重建产物、逐字节比对后上传 Release 资产（§4.2） |
+
+`release.yml` 是**唯一**带写权限的工作流，且只由维护者推 tag 触发——它不接受 `workflow_dispatch`，
+也不在 push 分支时运行，避免任何人借它创建 Release。
 
 **CI 不是必选，也不是本地检查的替代品。** 2026-09-15 实测：触发器是 `push: [main]` + `pull_request`，裸推分支不会跑任何检查；`main` 没有分支保护，CI 不拦合并；历史上 39 次运行全部成功，未发现过一次回归。它的两个不可替代之处是**跨平台第二意见**（ubuntu / Node 20，本地是 macOS / Node 22）与**校验已推送状态**（干净检出后构建，比的是仓库里真实提交的东西，而不是工作区）。
 
@@ -463,6 +490,19 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - **要重新加回某个场景**：按第二条处理——自己实现，并把它当作一等公民补上提示词、设置登记、测试与本文档。
 
 ## 6. 待办（按 §1 的优先级排列）
+
+> **阶段分界（2026-09-15，1.0.0 发布）**：「偿还遗留技术债」阶段基本结束，重心转为
+> **保护正式用户的升级体验**。判据是——问题会不会影响已安装用户的数据或升级路径？
+> 会 → 优先；不会 → 按下面的顺序排。§4.5 的设置版本政策是这条转向的第一个产物。
+
+**当前优先级（正式用户时代）**
+
+1. **已完成的 P0**：设置改为向前迁移，不再整份丢弃（§4.5）；
+   设置页不再在渲染时静默改写用户的导入服务选择。
+2. **对外材料与代码一致**：默认目录表、PRIVACY 的更新检查描述、workflow 注释（已完成）。
+3. **发布链路自动化**：`release.yml` 提供 tag → 干净检出 → 重建 → 比对 → 上传的 provenance（§4.2）。
+4. **首次配置体验**：见下方「第二条：提升性功能」的设置界面精简。
+5. **收尾性工程债**：3 个 `@ts-nocheck`、`modals.ts` 拆包、更新检查转发——均低风险、可延后。
 
 **结构（§1.1.1）**
 

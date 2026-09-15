@@ -1,0 +1,107 @@
+# 发布工作流：由 tag 触发，从该 tag 的源码重建产物并作为 Release 资产上传。
+#
+# 目的不是省一次 `gh release create`，而是建立 provenance：
+# Release 里的文件一定来自这个 tag 的源码，而不是某次手工构建的工作区产物。
+#
+# 与 validate.yml 的分工：validate 是纯校验（contents: read），任何 push 与 PR 都会跑；
+# 本工作流只在打 tag 时跑，需要 contents: write 才能创建 Release。
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # 干净检出 tag 指向的那个提交：下面所有校验都针对这份代码，
+      # 而不是某个本地工作区。这是 provenance 的起点。
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      # 用 npm ci 而非 install：package-lock.json 是构建可复现的前提，
+      # 「产物能由源码逐字节重建」这条要求依赖锁定安装。
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies (locked)
+        run: npm ci --no-audit --no-fund
+
+      # tag、release 名与 manifest 版本必须一致：BRAT 与 Obsidian 社区目录
+      # 都按 manifest 版本判断更新，三者不一致会让用户装到与 tag 对不上的版本。
+      - name: Verify tag matches manifest version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          MANIFEST="$(node -p "require('./manifest.json').version")"
+          if [ "$TAG" != "$MANIFEST" ]; then
+            echo "::error::tag（$TAG）与 manifest.json 的版本（$MANIFEST）不一致。"
+            exit 1
+          fi
+          echo "tag 与 manifest 一致：$TAG"
+
+      # verify:push = lint + build + test + 主线隔离 + 产物一致性。
+      # build 会把 main.js 从这份源码重新打包出来。
+      - name: Verify (lint, build, tests, isolation, bundle consistency)
+        run: npm run verify:push
+
+      # 重建之后 tag 里的产物必须没有变化。有变化说明提交进来的 main.js
+      # 不是这份源码构建的——正是本工作流要拦的情况。
+      - name: Confirm committed artifacts match source
+        run: |
+          if [ -n "$(git status --porcelain main.js manifest.json styles.css)" ]; then
+            echo "::error::重建后的产物与 tag 里提交的不一致，拒绝发布。"
+            git --no-pager diff --stat main.js manifest.json styles.css
+            exit 1
+          fi
+          echo "产物与源码一致"
+
+      # 发版说明必须写明对用户的影响（MAINTAINING.md §4.2）。
+      # 要求文件存在，而不是用自动生成的提交列表顶替。
+      - name: Require release notes
+        run: |
+          NOTES=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error::$NOTES 不存在。"
+            echo "::error::发版说明要写明对用户的影响：设置结构是否变化、是否需要重新指定服务与密钥、是否有功能删减。"
+            exit 1
+          fi
+          echo "发版说明：$NOTES"
+
+      # 五个资产一起发：LICENSE 与 NOTICE 随分发副本走，
+      # 比只依赖 main.js 顶部 banner 里的 URL 更稳妥（MIT 要求副本随附声明）。
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Q&A Log ${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --notes-file ".github/release-notes/${GITHUB_REF_NAME}.md" \
+            main.js manifest.json styles.css LICENSE NOTICE
+
+      # 上传后回读一次：确认用户下载到的就是 tag 里的内容。
+      - name: Verify uploaded assets match the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/release-check
+          gh release download "${GITHUB_REF_NAME}" --dir /tmp/release-check --clobber
+          for f in main.js manifest.json styles.css LICENSE NOTICE; do
+            if ! cmp -s "$f" "/tmp/release-check/$f"; then
+              echo "::error::$f 上传后与 tag 中的内容不一致。"
+              exit 1
+            fi
+          done
+          echo "已核对 5 个资产与 tag 逐字节一致"

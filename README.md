@@ -177,6 +177,8 @@ This plugin is not in the Obsidian community plugin directory. The directory's *
 2. In BRAT, choose **Add beta plugin** and enter `qnalog/qnalog`.
 3. Install, then enable **Q&A Log** under **Settings → Community plugins**.
 
+You can also download the release assets (`main.js`, `manifest.json`, `styles.css`, plus `LICENSE` and `NOTICE`) straight from the [releases page](https://github.com/qnalog/qnalog/releases) into `<vault>/.obsidian/plugins/qnalog/`. Each release is built from its own tag by CI, which rebuilds the bundle and byte-compares it before uploading.
+
 ### Option 2 — build from source (desktop)
 
 ```bash

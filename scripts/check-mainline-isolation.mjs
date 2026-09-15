@@ -21,7 +21,10 @@ export const SCANNED_FILES = [
   "package.json",
 ];
 
-const SCANNED_DIRS = ["src", "scripts"];
+// `.github` 也要扫：工作流注释、Release 说明与 issue 模板都会出现在用户眼前。
+// 这里曾漏过——`.github/release-notes/` 里长期放着上游 LexVoice 的 10 份发版说明，
+// 直到为发布自动化写工作流时才被发现（该目录本就不该有别人的发版说明）。
+const SCANNED_DIRS = ["src", "scripts", ".github"];
 
 // 本脚本自身必须包含上游标识才能识别它们，因此排除在外（它的内容由代码评审负责，
 // 不承载任何运行时行为）。
@@ -40,7 +43,7 @@ function collectFiles(root, dirs) {
     for (const entry of entries) {
       const rel = path.join(dir, String(entry));
       const abs2 = path.join(root, rel);
-      if (!/\.(ts|mjs|js|json)$/.test(rel)) continue;
+      if (!/\.(ts|mjs|js|json|md|ya?ml)$/.test(rel)) continue;
       try {
         if (statSync(abs2).isFile()) out.push(rel);
       } catch {
@@ -58,7 +61,8 @@ export function checkMainlineIsolation(files) {
   for (const [file, content] of Object.entries(files)) {
     if (file === SELF_PATH) continue;
     const isBundle = file === "main.js";
-    if (!isBundle && !file.startsWith("src/") && !file.startsWith("scripts/") && !SCANNED_FILES.includes(file)) {
+    const scannedDir = ["src/", "scripts/", ".github/"].some((prefix) => file.startsWith(prefix));
+    if (!isBundle && !scannedDir && !SCANNED_FILES.includes(file)) {
       continue;
     }
     const lines = String(content).split("\n");
