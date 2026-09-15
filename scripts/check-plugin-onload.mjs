@@ -85,8 +85,8 @@ class PluginBase extends ObsidianBase {
     this.intervals = [];
     this.registered = [];
   }
-  async loadData() { return null; }
-  async saveData() { return undefined; }
+  async loadData() { return this.storedData ?? null; }
+  async saveData(payload) { this.savedCount = (this.savedCount || 0) + 1; this.lastSaved = payload; return undefined; }
   register(cleanup) { this.registered.push(cleanup); }
   registerEvent() {}
   registerInterval(id) { this.intervals.push(id); return id; }
@@ -275,6 +275,58 @@ async function main() {
     } catch (error) {
       failures.push(`纪要面板渲染检查抛错：${(error && error.message) || error}`);
     }
+  }
+
+  // 设置结构版本政策：正式用户的配置不能因结构变更被清空。
+  // 用独立实例驱动真实的 loadAll——复用主实例会把它的域服务状态搅乱，
+  // 导致后面的装配断言误报（实测过）。
+  try {
+    const probe = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "Q&A Log", minAppVersion: "1.0.0" });
+    await probe.onload();
+    // 直接 import .ts 会因 obsidian 包不可解析而失败；从已构建的 bundle 里取常量。
+    const { readFileSync } = await import("node:fs");
+    const bundleText = readFileSync(new URL("../main.js", import.meta.url), "utf8");
+    const versionMatch = bundleText.match(/SETTINGS_SCHEMA_VERSION\s*=\s*(\d+)/)
+      || bundleText.match(/schemaVersion:\s*(\d+)/);
+    const CURRENT = versionMatch ? Number(versionMatch[1]) : NaN;
+    expect(Number.isFinite(CURRENT), "无法从产物里读出 SETTINGS_SCHEMA_VERSION");
+    const userData = {
+      settings: {
+        schemaVersion: CURRENT,
+        storage: { recordingLibraryPath: "QnALog/录音", briefingNotePath: "QnALog/转写纪要" },
+        speech: { providers: { siliconflow: { apiKey: "qnk1:用户的密钥" } } },
+        composer: { apiKey: "qnk1:用户的LLM密钥", model: "用户选的模型" },
+      },
+      backgroundJobs: { items: [{ id: "t1", mdPath: "QnALog/转写纪要/a.md" }] },
+    };
+    probe.storedData = userData;
+    probe.savedCount = 0;
+    await probe.loadAll();
+    expect(probe.settings.transcribeProviders?.siliconflow?.apiKey === "qnk1:用户的密钥",
+      "版本一致时用户的转写服务密钥丢失");
+    expect(probe.settings.llmApiKey === "qnk1:用户的LLM密钥", "版本一致时用户的 LLM 密钥丢失");
+    expect(probe.settings.llmModel === "用户选的模型", "版本一致时用户选的模型丢失");
+    // 注意：loadAll 只负责把队列读进 persistedQueue，queue.load() 在 onload 里另调一次。
+    expect(probe.persistedQueue.length === 1, `版本一致时持久化队列被清空（${probe.persistedQueue.length}）`);
+
+    // 版本更高（用户回退了插件）：必须一个字节都不写回
+    probe.storedData = { settings: { schemaVersion: CURRENT + 1, composer: { apiKey: "qnk1:新版的密钥" } } };
+    probe.savedCount = 0;
+    await probe.loadAll();
+    await probe.saveAll();
+    expect(probe.savedCount === 0,
+      `磁盘设置来自更高版本时仍写盘了 ${probe.savedCount} 次，会覆盖新版字段`);
+    expect(probe.settingsSchemaState === "future", "更高版本未被标记为 future");
+
+    // 无法识别来源：回到默认值，且必须写一次盘完成重建
+    probe.storedData = { settings: { schemaVersion: 0, whatever: true } };
+    probe.savedCount = 0;
+    await probe.loadAll();
+    expect(probe.settingsSchemaState === "foreign", "未识别来源的数据未被标记为 foreign");
+    expect(probe.settings.audioFolder === "QnALog/录音", "foreign 时未回到默认设置");
+    await probe.onunload();
+  } catch (error) {
+    failures.push(`设置结构版本政策检查失败：${(error && error.message) || error}`);
   }
 
   try {

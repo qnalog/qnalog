@@ -19,16 +19,16 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
 import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
-import { isCurrentSettingsSchema } from "./shared/settings-schema";
+import { classifySettingsSchema, hasStoredSettings, migrateSettingsForward, readSavedSchemaVersion, type SettingsSchemaState } from "./shared/settings-schema";
 
 import type {PluginSettings, RecordingSession } from "./shared/types";
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import {AUDIO_EXT } from "./shared/catalog-import";
 
-import {isRecord } from "./shared/util-common";
 
 import {obfuscateApiKey, deobfuscateApiKey } from "./shared/util-key-diag";
+import { getDesktopModule } from "./shared/desktop-runtime";
 
 import {RealtimeOutlineCoordinator } from "./outline-coordinator";
 
@@ -101,6 +101,8 @@ class QnALogPlugin extends obsidian.Plugin {
   declare meetingWorkbench: MeetingWorkbenchService;
   declare outline: RealtimeOutlineService;
   declare cleanup: CleanupService;
+  /** 本次加载时磁盘设置的版本判定；future 时禁止写盘。 */
+  settingsSchemaState: SettingsSchemaState = "current";
   declare vocabulary: VocabularyService;
   declare profiles: TranscribeProfileService;
   declare semanticCanvas: SemanticCanvasService;
@@ -418,39 +420,110 @@ class QnALogPlugin extends obsidian.Plugin {
     const saved: unknown = (await this.loadData()) || {};
     // 还原密钥：data.json 里的密钥是混淆态，读入内存前先解混淆（旧明文数据会原样通过，下次保存自动转混淆）
     try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
-    // Q&A Log 不承接历史项目的数据：磁盘上的设置版本与本版本不一致时，整份丢弃，
-    // 用默认值重建（设置页里重新配置一次）。仅版本一致才读回，避免把别的插件或
-    // 旧格式的 data.json 当成自己的设置用。
-    const schemaMatches = isCurrentSettingsSchema(saved);
-    if (!schemaMatches && Object.keys(isRecord(saved) ? saved : {}).length > 0) {
-      console.warn("[QnALog] 设置结构版本不一致，已丢弃磁盘上的设置并改用默认值");
+    // 设置结构版本政策（见 shared/settings-schema.ts）：
+    //   current → 直接读回；migrate → 向前迁移，保留用户配置；
+    //   future  → 用户回退了插件版本，**不写盘**，避免把新版字段洗掉；
+    //   foreign → 别的项目/损坏的数据，丢弃前先留档。
+    const schemaState: SettingsSchemaState = classifySettingsSchema(saved);
+    this.settingsSchemaState = schemaState;
+    const migration = migrateSettingsForward(saved);
+    let schemaNotice = "";
+    let shouldPersistSchema = false;
+
+    if (schemaState === "current") {
+      this.settings = normalizePluginSettings(saved);
+      this.persistedQueue = extractJobItems(saved);
+    } else if (schemaState === "migrate" && migration.settings) {
+      // 保留用户数据，只改写结构。队列一并保留：任务里的路径仍是用户自己的笔记。
+      this.settings = normalizePluginSettings({ settings: migration.settings });
+      this.persistedQueue = extractJobItems(saved);
+      shouldPersistSchema = true;
+      schemaNotice = `Q&A Log 设置已从版本 ${readSavedSchemaVersion(saved)} 升级到 ${SETTINGS_SCHEMA_VERSION}，你的服务配置与密钥都已保留。`;
+    } else if (schemaState === "future") {
+      // 高于当前版本：只读回认识的键，但绝不写盘（shouldPersistSchema 保持 false）。
+      this.settings = normalizePluginSettings(saved);
+      this.persistedQueue = extractJobItems(saved);
+      schemaNotice = `磁盘上的设置来自更新的 Q&A Log（版本 ${readSavedSchemaVersion(saved)}，当前 ${SETTINGS_SCHEMA_VERSION}）。`
+        + "为避免覆盖较新版本写入的字段，本版本不会保存设置改动。请升级插件后再修改设置。";
+      console.warn(`[QnALog] 设置结构版本高于当前版本（${readSavedSchemaVersion(saved)} > ${SETTINGS_SCHEMA_VERSION}），本次不写盘`);
+    } else {
+      // foreign：别的项目、pre-1.0 遗留或损坏。先留档再丢弃。
+      const stored = hasStoredSettings(saved);
+      this.settings = normalizePluginSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION });
+      this.persistedQueue = [];
+      shouldPersistSchema = true;
+      if (stored) {
+        const backup = await this.backupForeignSettings(saved);
+        schemaNotice = backup
+          ? `Q&A Log 未识别磁盘上的设置（不是本插件 ${SETTINGS_SCHEMA_VERSION} 版写的），已改用默认设置。原文件已留档到：${backup}`
+          : "Q&A Log 未识别磁盘上的设置（不是本插件当前版本写的），已改用默认设置。请在「设置 → Q&A Log」重新配置保存路径与访问密钥。";
+        console.warn("[QnALog] 设置无法识别来源，已丢弃并改用默认值");
+      }
     }
-    this.settings = schemaMatches
-      ? normalizePluginSettings(saved)
-      : normalizePluginSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION });
-    this.persistedQueue = schemaMatches ? extractJobItems(saved) : [];
-    let shouldSave = !schemaMatches;
+
     // installedUpdateVersion 既记录内置更新器刚写入的待生效版本，也应在插件真正加载后
     // 与 manifest 对齐。否则通过 Obsidian 社区目录更新时，这个字段会永久停留在旧版本。
+    // future 状态下不写盘，此处也不能触发保存。
     const runningVersion = String(this.manifest && this.manifest.version || "").trim();
-    if (runningVersion && this.settings.installedUpdateVersion !== runningVersion) {
+    if (runningVersion && this.settings.installedUpdateVersion !== runningVersion && schemaState !== "future") {
       this.settings.installedUpdateVersion = runningVersion;
-      shouldSave = true;
+      shouldPersistSchema = true;
     }
-    if (shouldSave) {
-      try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema reset save failed", e); }
+    if (shouldPersistSchema) {
+      try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema save failed", e); }
+    }
+    if (schemaNotice) {
       try {
-        const summary = `Q&A Log 设置结构版本与当前不一致，已改用默认设置。`;
-        void this.diagnostics.logDiagnostic("warn", "settings.schema_reset", summary, { discarded: true });
-        if (!schemaMatches) {
-          new obsidian.Notice(`${summary}\n请在「设置 → Q&A Log」重新配置保存路径与访问密钥。`, 20000);
-        }
+        void this.diagnostics.logDiagnostic(
+          schemaState === "migrate" ? "info" : "warn",
+          `settings.schema_${schemaState}`,
+          schemaNotice,
+          { savedVersion: readSavedSchemaVersion(saved), currentVersion: SETTINGS_SCHEMA_VERSION, migrated: migration.path },
+        );
+        new obsidian.Notice(schemaNotice, 20000);
       } catch (e) {
-        console.warn("[QnALog] schema reset notice failed", e);
+        console.warn("[QnALog] schema notice failed", e);
       }
     }
   }
+
+  /**
+   * 丢弃无法识别的设置前，先把 data.json 复制一份到插件目录下。
+   *
+   * 正式用户也可能因为同步冲突或手工编辑拿到一份坏文件；直接覆盖等于永久丢失。
+   * 只做文件复制，不改动原文件内容。移动端没有 fs 模块时返回空串，调用方退回通用提示。
+   */
+  async backupForeignSettings(saved: unknown): Promise<string> {
+    const fsModule = getDesktopModule<{
+      promises?: { mkdir?: (p: string, o?: unknown) => Promise<unknown>; writeFile?: (p: string, d: string) => Promise<unknown>; copyFile?: (a: string, b: string) => Promise<unknown> };
+    }>("fs");
+    const pathModule = getDesktopModule<{ join?: (...parts: string[]) => string }>("path");
+    const promises = fsModule && fsModule.promises;
+    if (!promises || typeof promises.writeFile !== "function" || !pathModule || typeof pathModule.join !== "function") {
+      return "";
+    }
+    try {
+      const pluginDir = String(this.manifest && this.manifest.dir
+        ? this.manifest.dir
+        : `${this.app.vault.configDir}/plugins/${this.manifest.id}`);
+      const dir = pathModule.join(pluginDir, "settings-backups");
+      if (typeof promises.mkdir === "function") await promises.mkdir(dir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const target = pathModule.join(dir, `data-unrecognized-${stamp}.json`);
+      await promises.writeFile(target, JSON.stringify(saved ?? {}, null, 2));
+      return target;
+    } catch (e) {
+      console.warn("[QnALog] settings backup failed", e);
+      return "";
+    }
+  }
   async saveAll() {
+    // 磁盘设置的版本高于本版本时，用户是回退了插件：此时写盘会把新版字段洗掉。
+    // 这里拦下所有写入路径（设置页、队列、诊断），而不只是 loadAll 那一刻。
+    if (this.settingsSchemaState === "future") {
+      console.warn("[QnALog] 磁盘设置来自更新的版本，已跳过本次保存以免覆盖较新字段");
+      return;
+    }
     // 设置页、队列状态和后台任务都可能同时触发保存。直接并发 saveData 时，
     // 较早创建的旧快照可能较晚落盘，覆盖刚加入的任务或新设置。
     // 串行执行并在真正轮到写入时再取快照，保证磁盘最终状态与内存最新状态一致。
