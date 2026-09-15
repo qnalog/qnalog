@@ -7363,17 +7363,33 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-top: 1px solid var(--background-modifier-border);
 }
 
+/* 与下方「进阶能力」的字对齐。
+   那个区块每一项是 Obsidian 原生 .setting-item——带圆角容器与 16px 内边距，
+   所以文字从容器左边再进 16px。这里没有容器，若不加同样内边距，
+   两个区块的容器对齐而文字错开 16px。
+   区块标题也要一起缩进，否则标题与它自己的内容又不齐。 */
+.qnalog-home-block h3,
+.qnalog-status-head {
+  padding-left: var(--size-4-4);
+  padding-right: var(--size-4-4);
+}
+
+
 /* 一行摘要：名称 / 服务名 / 模型名，整行可点。项目之间只用极低对比度的分隔线，
-   不画表格、不加卡片背景。 */
+   不画表格、不加卡片背景。
+
+   横向内边距取 size-4-4，是为了让行内文字与下方「进阶能力」对齐：
+   那个区块每一项是 Obsidian 原生 .setting-item，带圆角容器与 16px 内边距，
+   文字从容器左边再进 16px。这里没有容器，用同样的内边距补齐，
+   两个区块的容器与文字才落在同两条竖线上。
+
+   内边距放在行上而不是列表上：分隔线与 hover 背景由行自身绘制，
+   放在行上它们能横跨整列；放在列表上则只是把整块内容连同分隔线一起缩窄。 */
 .qnalog-status-row {
   display: flex;
   align-items: center;
   gap: var(--size-2-2);
-  /* 横向不加内边距：加了会让行内容比区块标题右移，用负外边距抵消又会把
-     分隔线推出同一列，两种做法都会留下 4px 的不一致。
-     横向留 0 后文字、分隔线、hover 背景三者同一条左边线，
-     与 Obsidian 原生 .setting-item 一样只在纵向留白。 */
-  padding: var(--size-2-3) 0;
+  padding: var(--size-2-3) var(--size-4-4);
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
