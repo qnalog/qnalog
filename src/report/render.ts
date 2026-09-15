@@ -515,7 +515,7 @@ export async function generateStyledReportFromMarkdown(plugin, mode, markdown) {
   const brandName = String(plugin.settings.reportBrandName || "").trim();
   data.brand = { name: brandName || ((data.brand && data.brand.name) || ""), logo: "" };
   // 函数式替换：避免 JSON 里出现的 $（如 $1、$&）被 String.prototype.replace 当成替换模式特殊符号。
-  // 注入进固定模板的 <script id="lexvoice-data"> 块前，转义字符串字段里可能出现的字面 </script> 与 <!--，
+  // 注入进固定模板的 <script id="qnalog-data"> 块前，转义字符串字段里可能出现的字面 </script> 与 <!--，
   // 否则 HTML 解析期会提前闭合数据块 → DATA 截断 → 报告白屏（甚至注入面）。JS 侧 <\/ 仍解析回 /，DATA 值不变。
   const payload = ("const DATA = " + JSON.stringify(data, null, 2) + ";")
     .replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");

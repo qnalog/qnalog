@@ -13,7 +13,7 @@ import { getErrorMessage, pad, formatElapsed } from "../shared/util-common";
 import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } from "../shared/util-audio";
 import { createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
-import { DEFAULT_SPEAKER_CHANNELS, MAX_SPEAKER_CHANNELS, buildSpeakerMappings, initialAudioChannelRuntimeMode, normalizeAudioChannelMode, normalizeSpeakerMappings, replaceSpeakerDisplayName, resolveAudioChannelRuntimeMode } from "../audio/channel-speakers";
+import { DEFAULT_SPEAKER_CHANNELS, MAX_SPEAKER_CHANNELS, buildSpeakerMappings, initialAudioChannelRuntimeMode, normalizeAudioChannelMode, normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName, resolveAudioChannelRuntimeMode } from "../audio/channel-speakers";
 import type { SpeakerId } from "../audio/channel-speakers";
 import { transcribeAudioByChannels } from "../asr/channel-transcription";
 import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
@@ -37,6 +37,7 @@ import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { ViewShellService } from "../ui/view-shell-service";
+import { NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
 
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
@@ -417,7 +418,7 @@ export class SessionFinalizeService {
       "",
       segTitle,
       "",
-      segmentRecord.queueTaskId ? `<!-- lexvoice-transcribe-task:${segmentRecord.queueTaskId} -->` : "",
+      segmentRecord.queueTaskId ? nsMarker("transcribe-task", segmentRecord.queueTaskId) : "",
       err ? getTranscribeSegmentPlaceholder(err, {
         streaming: isStreamingProvider,
         deferred: !!err.asrDeferred,
@@ -507,7 +508,7 @@ export class SessionFinalizeService {
     const frontmatter = await readFileFrontmatter(this.host, file) || {};
     const ids = candidates.map(candidate => candidate.id);
     const initialMappings = normalizeSpeakerMappings(
-      Object.assign({}, session.speakerChannels || {}, frontmatter.lexvoice_speakers || {}),
+      Object.assign({}, session.speakerChannels || {}, readSpeakerMappings(frontmatter) || {}),
       ids,
     );
     const alreadyConfirmed = candidates.every(candidate => String(initialMappings[candidate.id] && initialMappings[candidate.id].personName || "").trim());
@@ -552,7 +553,7 @@ export class SessionFinalizeService {
     const hasConfirmedName = Object.values(mappings).some(mapping => String(mapping && mapping.personName || "").trim());
     if (hasConfirmedName) {
       await this.host.app.fileManager.processFrontMatter(file, (nextFrontmatter) => {
-        nextFrontmatter.lexvoice_speakers = mappings;
+        nextFrontmatter[NS_FM_SPEAKERS] = mappings;
       });
       session.speakerChannels = mappings;
       let persistedReplacements = 0;
@@ -600,7 +601,7 @@ export class SessionFinalizeService {
       : segments;
     return {
       segments: llmSegments,
-      frontmatter: hasConfirmedName ? Object.assign({}, frontmatter, { lexvoice_speakers: mappings }) : null,
+      frontmatter: hasConfirmedName ? Object.assign({}, frontmatter, { [NS_FM_SPEAKERS]: mappings }) : null,
     };
   }
 

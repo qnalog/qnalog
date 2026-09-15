@@ -1,3 +1,13 @@
+import {
+  NS_PART_BODY_RE,
+  NS_PART_ENTITY_LINE_RE,
+  NS_PART_SUMMARY_BLOCK_RE,
+  NS_PART_SUMMARY_LINE_RE,
+  NS_PART_SUMMARY_ONLY_RE,
+  NS_PART_SUMMARY_RE,
+  NS_PART_SUMMARY_STRIP_RE,
+} from "../shared/namespace";
+
 export const BRIEFING_PIPELINE_VERSION = 6;
 
 export type BriefingSegment = {
@@ -608,8 +618,8 @@ function extractCalloutBlock(value: string, kindPattern: string): { block: strin
 
 function stripLeakedBriefingMarkers(value: string): string {
   return value
-    .replace(/^\s*>?\s*lexvoice-part-summary(?:\s*:.*)?\s*$(?:\r?\n\s*>[^\n]*)*/gim, "")
-    .replace(/^\s*>?\s*lexvoice-(?:people|tags)(?:\s*:.*)?\s*$/gim, "");
+    .replace(NS_PART_SUMMARY_LINE_RE, "")
+    .replace(NS_PART_ENTITY_LINE_RE, "");
 }
 
 /** Extract the internal part protocol while tolerating weak-model variants. */
@@ -617,14 +627,14 @@ export function extractBriefingPartEnvelope(value: unknown): BriefingPartEnvelop
   const raw = cleanText(value);
   if (!raw) return { body: "", summary: "" };
 
-  const bodyMatch = raw.match(/<!--\s*lexvoice-part-body-start\s*-->([\s\S]*?)<!--\s*lexvoice-part-body-end\s*-->/i);
-  const summaryMatch = raw.match(/<!--\s*lexvoice-part-summary\s*:\s*([\s\S]*?)\s*-->/i);
+  const bodyMatch = raw.match(NS_PART_BODY_RE);
+  const summaryMatch = raw.match(NS_PART_SUMMARY_RE);
   let summary = cleanText(summaryMatch?.[1]);
   if (!summary) {
     const lines = raw.split(/\r?\n/);
-    const markerIndex = lines.findIndex((line) => /^\s*>?\s*lexvoice-part-summary(?:\s*:.*)?\s*$/i.test(line));
+    const markerIndex = lines.findIndex((line) => NS_PART_SUMMARY_ONLY_RE.test(line));
     if (markerIndex >= 0) {
-      const inline = lines[markerIndex].replace(/^\s*>?\s*lexvoice-part-summary\s*:?\s*/i, "").trim();
+      const inline = lines[markerIndex].replace(NS_PART_SUMMARY_STRIP_RE, "").trim();
       if (inline) {
         summary = inline;
       } else {
@@ -646,7 +656,7 @@ export function extractBriefingPartEnvelope(value: unknown): BriefingPartEnvelop
   let body = bodyMatch ? bodyMatch[1] : raw;
   body = stripLeakedBriefingMarkers(body)
     .replace(/<!--\s*qnalog-part-(?:body-start|body-end)\s*-->/gi, "")
-    .replace(/<!--\s*lexvoice-part-summary\s*:[\s\S]*?-->/gi, "")
+    .replace(NS_PART_SUMMARY_BLOCK_RE, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return { body, summary };
@@ -664,7 +674,7 @@ export function normalizeBriefingPartBody(
 ): string {
   let normalized = stripLeakedBriefingMarkers(cleanText(value))
     .replace(/<!--\s*qnalog-part-(?:body-start|body-end)\s*-->/gi, "")
-    .replace(/<!--\s*lexvoice-part-summary\s*:[\s\S]*?-->/gi, "")
+    .replace(NS_PART_SUMMARY_BLOCK_RE, "")
     .replace(
       /^\s*#{1,6}\s*(?:第\s*\d+\s*(?:\/\s*\d+\s*)?(?:部分|分部|时段)|(?:内部)?(?:时间窗口|转写窗口|分段)\s*\d+)(?:\s*[·:：—-]\s*[^\n]*)?\s*\n+/gim,
       "",

@@ -20,6 +20,7 @@ import { buildRenamedMarkdownPath, extractAllRawBlocksFromText, extractTranscrip
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
+import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker } from "../shared/namespace";
 
 /** NoteWriter 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface NoteWriterHost {
@@ -116,7 +117,7 @@ export class NoteWriter {
     const rawBlocks = textImport ? "" : session.segments.map(s => {
       const n = s.index + 1;
       const head = `### 段落 ${n} (${formatElapsed(s.startOffsetMs)}–${formatElapsed(s.endOffsetMs)}) ${getAudioTimeLink(s.audioName, getSegmentAudioLinkOffsetMs(s))}${s.isFinal ? " · 结束" : ""}`;
-      const marker = s.queueTaskId ? `<!-- lexvoice-transcribe-task:${s.queueTaskId} -->\n` : "";
+      const marker = s.queueTaskId ? `${nsMarker("transcribe-task", s.queueTaskId)}\n` : "";
       const body = s.error
         ? getTranscribeSegmentPlaceholder(s.error, { retryable: !!s.queueTaskId })
         : (s.text || "_[此段无内容]_");
@@ -164,7 +165,7 @@ export class NoteWriter {
       textImport ? null : rawBlocks,
       textImport ? null : "</details>",
       textImport ? null : "",
-      `<!-- lexvoice-session:${session.id} -->`,
+      nsMarker("session", session.id),
       "",
       // 沉淀元数据放最末尾（HTML 注释，阅读视图隐藏；挪到此处后编辑模式也不再夹在正文中间）。
       sediment.block || null,
@@ -257,7 +258,7 @@ export class NoteWriter {
     const file = this.host.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
     const cur = await this.host.app.vault.read(file);
-    const marker = sessionId ? `<!-- lexvoice-segments-start:${sessionId} -->` : "<!-- lexvoice-segments-start -->";
+    const marker = nsMarker("segments-start", sessionId || undefined);
     const idx = cur.indexOf(marker);
     if (idx >= 0) {
       const next = cur.slice(0, idx) + content + "\n" + cur.slice(idx);
@@ -270,13 +271,13 @@ export class NoteWriter {
     const file = this.host.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
     const cur = await this.host.app.vault.read(file);
-    const specific = sessionId ? `<!-- lexvoice-segments-end:${sessionId} -->` : null;
+    const specific = sessionId ? nsMarker("segments-end", sessionId) : null;
     if (specific && cur.includes(specific)) {
       const next = cur.replace(specific, `${content}\n${specific}`);
       await this.host.app.vault.modify(file, next);
       return;
     }
-    const legacy = "<!-- lexvoice-segments-end -->";
+    const legacy = nsMarker("segments-end");
     const lastIdx = cur.lastIndexOf(legacy);
     if (lastIdx >= 0) {
       const next = cur.slice(0, lastIdx) + content + "\n" + cur.slice(lastIdx);
@@ -289,8 +290,8 @@ export class NoteWriter {
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
     const cur = await this.host.app.vault.read(file);
-    const sessMarker = `<!-- lexvoice-session:${session.id} -->`;
-    const endMarker = `<!-- lexvoice-segments-end:${session.id} -->`;
+    const sessMarker = nsMarker("session", session.id);
+    const endMarker = nsMarker("segments-end", session.id);
     const sessIdx = cur.indexOf(sessMarker);
     const endIdx = cur.indexOf(endMarker);
     if (sessIdx < 0 || endIdx < sessIdx) return;
@@ -531,10 +532,10 @@ export class NoteWriter {
         durationMs: Number(source.durationMs) || 0,
       })),
     };
-    const block = `<!-- lexvoice-merge\n${JSON.stringify(payload, null, 2)}\nlexvoice-merge-end -->`;
+    const block = `${nsMarker("merge")}\n${JSON.stringify(payload, null, 2)}\n${NS_TAG}-merge-end -->`;
     const cur = await this.host.app.vault.read(file);
-    if (/<!--\s*lexvoice-merge[\s\S]*?lexvoice-merge-end\s*-->/.test(cur)) {
-      await this.host.app.vault.modify(file, cur.replace(/<!--\s*lexvoice-merge[\s\S]*?lexvoice-merge-end\s*-->/, block));
+    if (NS_MERGE_BLOCK_RE.test(cur)) {
+      await this.host.app.vault.modify(file, cur.replace(NS_MERGE_BLOCK_RE, block));
     } else {
       await this.host.app.vault.modify(file, cur.replace(/\s*$/, "\n\n" + block + "\n"));
     }

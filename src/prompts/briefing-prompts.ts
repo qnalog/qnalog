@@ -58,13 +58,13 @@ ${fmSchema}
 **末尾必须输出两条机器注释**（不会渲染显示，供插件回写 frontmatter）：先输出人员、再输出标签；如果后面还有其它机器块，放在这两条之后：
 
 \`\`\`html
-<!-- lexvoice-people: 张三, 李四 -->
-<!-- lexvoice-tags: 主题/上线范围, 主题/AI转型, 项目/示例项目, 公司/示例科技, 行业/互联网 -->
+<!-- qnalog-people: 张三, 李四 -->
+<!-- qnalog-tags: 主题/上线范围, 主题/AI转型, 项目/示例项目, 公司/示例科技, 行业/互联网 -->
 \`\`\`
 
-**lexvoice-people**：本纪要中**确实出现或被点名**的关键人名（真实姓名或明确角色称呼），逗号分隔，0–6 个；只写转写里真实出现的，不带任何前缀，会写进独立的 \`人物\` 属性。⚠️**上面示例里的"张三/李四"只是占位格式，绝对不要照抄进结果；转写里没有明确人名时，这条注释整行留空（\`<!-- lexvoice-people: -->\`）或不输出——宁可没有，也不要编造或套用任何示例名。**
+**qnalog-people**：本纪要中**确实出现或被点名**的关键人名（真实姓名或明确角色称呼），逗号分隔，0–6 个；只写转写里真实出现的，不带任何前缀，会写进独立的 \`人物\` 属性。⚠️**上面示例里的"张三/李四"只是占位格式，绝对不要照抄进结果；转写里没有明确人名时，这条注释整行留空（\`<!-- qnalog-people: -->\`）或不输出——宁可没有，也不要编造或套用任何示例名。**
 
-**lexvoice-tags**：多维度中文 nested 标签，每个用「中文前缀 + 斜杠 + 具体词」，让 Obsidian 标签面板按维度自动分组。维度只剩 4 个（**人物已单列到 lexvoice-people，这里绝不要再写 \`人物/x\`**）：
+**qnalog-tags**：多维度中文 nested 标签，每个用「中文前缀 + 斜杠 + 具体词」，让 Obsidian 标签面板按维度自动分组。维度只剩 4 个（**人物已单列到 qnalog-people，这里绝不要再写 \`人物/x\`**）：
 
 - **主题** ✅ 必填（3–5 个）：核心议题或讨论领域。例 \`主题/上线范围\`、\`主题/AI转型\`、\`主题/组织设计\`、\`主题/复盘机制\`
 - **项目**（按需，0–3 个）：转写中明确出现的专有项目名。例 \`项目/示例项目\`、\`项目/Q2交付\`
@@ -73,12 +73,12 @@ ${fmSchema}
 
 **硬性要求**：
 
-- lexvoice-tags 总数 4–9 个，主题维度至少 3 个
+- qnalog-tags 总数 4–9 个，主题维度至少 3 个
 - 每个 tag 的"具体词"部分 ≤6 个汉字，避免空格和标点（"AI转型" 而非 "AI 转型"）
 - 不要重复 mode 字段语义（**禁止** 输出 \`\`主题/会议\`、\`主题/访谈\` 这类与 mode 重复的词）
 - 转写中**没明确出现**的项目/公司/人物**一律不写**，不要编造
 - 优先具体词（"转写延迟指标" 而非 "指标"；"迁移计划" 而非 "项目"）
-- 系统标签 \`lexvoice/<mode>\` 由代码自动注入，**不要在标签建议里重复**
+- 系统标签 \`qnalog/<mode>\` 由代码自动注入，**不要在标签建议里重复**
 `
     : "";
   return `你是录音整理助手。输入是一段${inputDesc}。按下方规则生成纪要。
@@ -455,7 +455,7 @@ ${groundingContract}
 - 不要重新介绍会议背景，不要输出独立会议的总标题、全局摘要或全局结论；跨窗口延续的议题直接续写，不强行在本窗口收束。
 - 不要输出修订说明、前言、YAML 或代码围栏。
 - 待办只在原文确有动作时使用 Markdown todo；责任人和截止时间不明确就省略。
-- 必须用 \`<!-- lexvoice-part-body-start -->\` 和 \`<!-- lexvoice-part-body-end -->\` 包住可见正文；正文之外只保留三条完整 HTML 注释：\`lexvoice-people\`、\`lexvoice-tags\`、\`lexvoice-part-summary\`。不得输出裸文本标记。
+- 必须用 \`<!-- qnalog-part-body-start -->\` 和 \`<!-- qnalog-part-body-end -->\` 包住可见正文；正文之外只保留三条完整 HTML 注释：\`qnalog-people\`、\`qnalog-tags\`、\`qnalog-part-summary\`。不得输出裸文本标记。
 
 【时间范围】
 ${timeRange}
@@ -498,8 +498,8 @@ ${topLevelRule}
 - 标题必须使用真实议题名称，不得使用“第 N 部分”“时间窗口 N”“分段 N”或时间范围作为标题。本文的连续性规则高于下方模式模板中的文档级标题、全局摘要和结论要求。
 - 待办用 \`- [ ] 事项：<动作>\`，能确定时再补 \`责任人：<人>\` 和 \`截止：<时间>\`；无法判断就直接省略该字段，不要写"未提及"。
 - 转写里没出现的人名/公司/数字一律不写，不编造。
-- 直接输出本部分正文 Markdown，无前言、无解释、无代码围栏。正文必须以 \`<!-- lexvoice-part-body-start -->\` 开始，以 \`<!-- lexvoice-part-body-end -->\` 结束。
-- 正文结束标记之后追加三条完整 HTML 注释（不渲染显示）：\`<!-- lexvoice-people: 本部分确实出现的人名，逗号分隔，没有就留空 -->\`、\`<!-- lexvoice-tags: 主题/xx 等多维标签，没有就留空 -->\`、\`<!-- lexvoice-part-summary: 本部分一句话小结 -->\`。禁止把 \`lexvoice-people\`、\`lexvoice-tags\`、\`lexvoice-part-summary\` 作为普通文本或引用块输出。
+- 直接输出本部分正文 Markdown，无前言、无解释、无代码围栏。正文必须以 \`<!-- qnalog-part-body-start -->\` 开始，以 \`<!-- qnalog-part-body-end -->\` 结束。
+- 正文结束标记之后追加三条完整 HTML 注释（不渲染显示）：\`<!-- qnalog-people: 本部分确实出现的人名，逗号分隔，没有就留空 -->\`、\`<!-- qnalog-tags: 主题/xx 等多维标签，没有就留空 -->\`、\`<!-- qnalog-part-summary: 本部分一句话小结 -->\`。禁止把 \`qnalog-people\`、\`qnalog-tags\`、\`qnalog-part-summary\` 作为普通文本或引用块输出。
 
 【全程议题图·只用于理解跨时段关系】
 ${topicMap || "（未生成；请严格按当前时段原始转写整理）"}
@@ -516,7 +516,7 @@ export function getBriefingCheckpointStore(plugin) {
     plugin._briefingCheckpointStore = new BriefingCheckpointStore(
       plugin.app.vault.adapter,
       plugin.app.vault.configDir,
-      String(plugin.manifest && plugin.manifest.id || "lexvoice"),
+      String(plugin.manifest && plugin.manifest.id || "qnalog"),
     );
   }
   return plugin._briefingCheckpointStore;

@@ -26,6 +26,7 @@ import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { ViewShellService } from "../ui/view-shell-service";
 import { SessionFinalizeService } from "../notes/session-finalize-service";
+import { nsMarker } from "../shared/namespace";
 
 /** 导入音频的返回：新建会话的路径、分段数，以及需要重试的转写段数；入参为空或中断时返回 undefined。 */
 export interface ImportAudioFilesResult {
@@ -155,9 +156,9 @@ export class ImportService {
       `> 模型：${importProvider.model || importProvider.id} → ${this.host.settings.llmModel}`,
       externalSource && externalSource.name ? `> 来源：自动导入 · ${externalSource.name}` : null,
       "",
-      `<!-- lexvoice-session:${session.id} -->`,
-      `<!-- lexvoice-segments-start:${session.id} -->`,
-      `<!-- lexvoice-segments-end:${session.id} -->`,
+      nsMarker("session", session.id),
+      nsMarker("segments-start", session.id),
+      nsMarker("segments-end", session.id),
       "",
     ].filter((line) => line !== null).join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);
@@ -456,7 +457,7 @@ export class ImportService {
         "",
         `### 音频 ${segIndex + 1}${audioAnchor ? ` ${audioAnchor}` : ""}${isFinal ? " · 结束" : ""}`,
         "",
-        retryTask ? `<!-- lexvoice-transcribe-task:${retryTask.id} -->` : "",
+        retryTask ? nsMarker("transcribe-task", retryTask.id) : "",
         error
           ? getTranscribeSegmentPlaceholder(error, { retryable: true })
           : (result.text || "_[此音频无内容]_"),
@@ -652,9 +653,9 @@ export class ImportService {
       `> [!info] 文本导入信息`,
       `> 来源文件：${sources.length} · 模式：${meta.prefix} · 模型：${this.host.settings.llmModel}`,
       "",
-      `<!-- lexvoice-session:${session.id} -->`,
-      `<!-- lexvoice-segments-start:${session.id} -->`,
-      `<!-- lexvoice-segments-end:${session.id} -->`,
+      nsMarker("session", session.id),
+      nsMarker("segments-start", session.id),
+      nsMarker("segments-end", session.id),
       "",
     ].join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);

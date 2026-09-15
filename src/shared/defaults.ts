@@ -1,27 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import type { PluginSettings } from "./types";
-
-export const LEGACY_DEFAULT_LIBRARY_PATHS = {
-  vocabularyFile: "LexVoice/词汇表.md",
-  peopleDirectoryFolder: "LexVoice/人员",
-  peopleBaseFile: "LexVoice/人员库.base",
-  todoCardsFolder: "LexVoice/待办卡片",
-  basesFolder: "LexVoice/视图",
-  diagnosticsLogFolder: "LexVoice/诊断日志",
-  archiveFolder: "LexVoice/归档",
-  duplicatePeopleArchiveFolder: "LexVoice/归档/重复人员",
-} as const;
+import { NS_ROOT } from "./namespace";
 
 export const DEFAULT_LIBRARY_PATHS = {
-  vocabularyFile: "LexVoice/资料库/词汇表.md",
-  peopleDirectoryFolder: "LexVoice/资料库/人员",
-  peopleBaseFile: "LexVoice/资料库/视图/人员库.base",
-  todoCardsFolder: "LexVoice/资料库/待办",
-  basesFolder: "LexVoice/资料库/视图",
-  diagnosticsLogFolder: "LexVoice/系统/诊断日志",
-  archiveFolder: "LexVoice/资料库/归档",
-  duplicatePeopleArchiveFolder: "LexVoice/资料库/归档/重复人员",
+  vocabularyFile: `${NS_ROOT}/资料库/词汇表.md`,
+  peopleDirectoryFolder: `${NS_ROOT}/资料库/人员`,
+  peopleBaseFile: `${NS_ROOT}/资料库/视图/人员库.base`,
+  todoCardsFolder: `${NS_ROOT}/资料库/待办`,
+  basesFolder: `${NS_ROOT}/资料库/视图`,
+  diagnosticsLogFolder: `${NS_ROOT}/系统/诊断日志`,
+  archiveFolder: `${NS_ROOT}/资料库/归档`,
+  duplicatePeopleArchiveFolder: `${NS_ROOT}/资料库/归档/重复人员`,
 } as const;
 
 export const DEFAULT_DAILY_MEETING_OVERVIEW_HEADING = "今日会议概要";
@@ -36,10 +26,10 @@ export const DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE = [
 ].join("\n");
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-  audioFolder: "LexVoice/录音",
-  mdFolder: "LexVoice/转写纪要",
-  meetingMaterialsFolder: "LexVoice/会议资料",
-  htmlReportFolder: "LexVoice/HTML报告",
+  audioFolder: `${NS_ROOT}/录音`,
+  mdFolder: `${NS_ROOT}/转写纪要`,
+  meetingMaterialsFolder: `${NS_ROOT}/会议资料`,
+  htmlReportFolder: `${NS_ROOT}/HTML报告`,
   reportBrandName: "",  // seminar 报告页脚公司名；留空则用纪要里的「公司/」标签。报告不含 logo。
   noteFileNameFormatNew: "YYYY-MM-DD HHmm",
 
@@ -215,7 +205,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   enableInterimOutput: true,
   segmentIntervalMinutes: 5,
   asrConcurrency: 1,
-  segmentCacheFolder: "LexVoice/.cache/segments",
+  segmentCacheFolder: `${NS_ROOT}/.cache/segments`,
   keepSegmentAudioFiles: false,
   filterShortRecordings: true,
 

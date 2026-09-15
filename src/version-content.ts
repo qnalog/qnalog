@@ -1,6 +1,8 @@
-const VERSION_FRONTMATTER_START = "<!-- lexvoice-version-frontmatter-start";
-const VERSION_FRONTMATTER_END = "qnalog-version-frontmatter-end -->";
-const ACTIVE_VERSION_PATTERN = /<!--\s*lexvoice-active-version-start\s*-->[\s\S]*?<!--\s*lexvoice-active-version-end\s*-->/;
+import { NS_TAG, NS_ACTIVE_VERSION_BODY_RE } from "./shared/namespace";
+
+const VERSION_FRONTMATTER_START = `<!-- ${NS_TAG}-version-frontmatter-start`;
+const VERSION_FRONTMATTER_END = `${NS_TAG}-version-frontmatter-end -->`;
+const ACTIVE_VERSION_PATTERN = NS_ACTIVE_VERSION_BODY_RE;
 const EMPTY_VERSION_BODY_FALLBACK = "> [!warning] AI 整理未完成\n> 当前版本没有可显示的整理正文；原始转写仍保留在母本中。";
 
 export function splitLeadingFrontmatter(markdown: string): { frontmatter: string; body: string } {

@@ -14,7 +14,7 @@ import { DashScopeStreamingClient, OpenAIRealtimeTranscriptionClient, OpenAIReal
 
 import { getErrorMessage } from "../shared/util-common";
 
-import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, speakerLabelForChannel } from "../audio/channel-speakers";
+import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings, speakerLabelForChannel } from "../audio/channel-speakers";
 import type { SpeakerId } from "../audio/channel-speakers";
 
 export function knowledgeExtractionRecordForFile(file) {
@@ -227,7 +227,7 @@ export function mergeBriefingSedimentObjects(parts) {
 // 让提示词既保留可核验的 ASR 标签，又明确告诉模型应该使用哪个真实姓名。
 export function resolveKnownSpeakerLabels(transcript, frontmatter) {
   let ids = extractSpeakerIdsFromMarkdown(String(transcript || ""));
-  const raw = frontmatter && typeof frontmatter === "object" ? frontmatter.lexvoice_speakers : null;
+  const raw = frontmatter && typeof frontmatter === "object" ? readSpeakerMappings(frontmatter) : null;
   if (!ids.length && raw && typeof raw === "object") {
     ids = Object.keys(raw).filter((id): id is SpeakerId => /^spk-\d+$/.test(id));
   }

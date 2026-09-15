@@ -10,6 +10,7 @@ import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_C
 import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
+import { nsMarker } from "../shared/namespace";
 
 /** MeetingWorkbenchService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface MeetingWorkbenchHost {
@@ -258,7 +259,7 @@ export class MeetingWorkbenchService {
       if (next !== cur) await this.host.app.vault.modify(file, next);
       return;
     }
-    const segEnd = `<!-- lexvoice-segments-end:${sessionId} -->`;
+    const segEnd = nsMarker("segments-end", sessionId);
     const segIdx = cur.indexOf(segEnd);
     if (segIdx >= 0) {
       const next = cur.slice(0, segIdx) + block + "\n" + cur.slice(segIdx);

@@ -935,23 +935,23 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setHeading();
 
     new obsidian.Setting(c).setName("QnALog 录音文件夹")
-      .setDesc("Obsidian 库内的相对路径。录音文件默认保存到 LexVoice/录音，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
+      .setDesc("Obsidian 库内的相对路径。录音文件默认保存到 QnALog/录音，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
       .addText(t => t
-        .setPlaceholder("LexVoice/录音")
+        .setPlaceholder("QnALog/录音")
         .setValue(this.plugin.settings.audioFolder)
         .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName("QnALog 转写纪要文件夹")
-      .setDesc("Obsidian 库内的相对路径。转写和整理后的纪要默认保存到 LexVoice/转写纪要，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
+      .setDesc("Obsidian 库内的相对路径。转写和整理后的纪要默认保存到 QnALog/转写纪要，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
       .addText(t => t
-        .setPlaceholder("LexVoice/转写纪要")
+        .setPlaceholder("QnALog/转写纪要")
         .setValue(this.plugin.settings.mdFolder)
         .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName("QnALog 会中材料文件夹")
       .setDesc("Obsidian 库内的相对路径。录音侧边栏添加的图片、PPT、PDF 等补充材料会复制到这里，并按本次录音建立子文件夹。")
       .addText(t => t
-        .setPlaceholder("LexVoice/会议资料")
+        .setPlaceholder("QnALog/会议资料")
         .setValue(this.plugin.settings.meetingMaterialsFolder || DEFAULT_SETTINGS.meetingMaterialsFolder)
         .onChange(async v => {
           this.plugin.settings.meetingMaterialsFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.meetingMaterialsFolder);
@@ -1834,7 +1834,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName("HTML 报告保存文件夹")
       .setDesc("相对当前 Obsidian 库的路径。生成的 HTML 报告会保存为库内文件，便于后续归档、同步或手动移动。修改后仅影响新文件，已有文件不会自动迁移。")
       .addText(t => t
-        .setPlaceholder("LexVoice/HTML报告")
+        .setPlaceholder("QnALog/HTML报告")
         .setValue(this.plugin.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder)
         .onChange(async v => {
           this.plugin.settings.htmlReportFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.htmlReportFolder);
@@ -2218,7 +2218,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c).setName("版权与许可")
-      .setDesc("QnALog © 2026 Lynnx，以 MIT License 开源发布；本项目是它最后一个 MIT 版本（2.1.2）的保留分支，由 Q&A Log Team 维护，修改部分同样以 MIT 发布。第三方 API、模型和虚拟声卡工具由用户自行配置和承担费用；本插件不运营云端存储，也不会上传录音到任何自有服务器。");
+      .setDesc("QnALog 由 Q&A Log Team 维护，以 MIT License 开源发布。其代码来源与许可说明见仓库里的 NOTICE 与 LICENSE。第三方 API、模型和虚拟声卡工具由用户自行配置和承担费用；本插件不运营云端存储，也不会上传录音到任何自有服务器。");
   }
 
   // 列出库内所有文件夹路径（供路径输入框的原生 datalist 自动补全）。
@@ -2404,7 +2404,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addText(t => {
         inboxFolderInput = t;
         t.setValue(this.plugin.settings.inboxFolder || "")
-          .setPlaceholder("LexVoice/录音/inbox 或电脑文件夹")
+          .setPlaceholder("QnALog/录音/inbox 或电脑文件夹")
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
             await this.plugin.saveSettings();
@@ -2454,7 +2454,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName("清理空白短录音")
       .setDesc("扫描转写纪要文件夹，将时长不超过 10 秒且没有有效转写文本的 QnALog 条目移入系统废纸篓，并同步处理其引用的录音文件。误删可从系统废纸篓恢复。")
-      .addButton(b => b.setButtonText("扫描并清理").onClick(() => this.plugin.migrations.cleanupEmptyShortRecordings()));
+      .addButton(b => b.setButtonText("扫描并清理").onClick(() => this.plugin.cleanup.cleanupEmptyShortRecordings()));
 
     // ---- 失败重试 ----
     new obsidian.Setting(c)

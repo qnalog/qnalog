@@ -254,9 +254,9 @@ describe("纪要整理流水线", () => {
     const parsed = extractBriefingPartEnvelope(`> [!abstract] 一分钟速览
 > 本段讨论团队协作。
 >
-> lexvoice-people
-> lexvoice-tags
-> lexvoice-part-summary
+> qnalog-people
+> qnalog-tags
+> qnalog-part-summary
 >
 > 团队确认先建立共同目标。
 
@@ -264,7 +264,7 @@ describe("纪要整理流水线", () => {
 正文`);
 
     expect(parsed.summary).toBe("团队确认先建立共同目标。");
-    expect(parsed.body).not.toContain("lexvoice-");
+    expect(parsed.body).not.toContain("qnalog-");
   });
 
   it("多部分组装移除各自摘要与重启编号，只保留连续议题正文", () => {
@@ -273,23 +273,23 @@ describe("纪要整理流水线", () => {
     const identity = createBriefingJobId({ segments, mode: "meeting", model: "model-a", optionsKey: "balanced" });
     const checkpoint = createBriefingCheckpoint({ ...identity, mode: "meeting", model: "model-a", parts });
     checkpoint.parts[0].status = "complete";
-    checkpoint.parts[0].text = "> [!abstract] 一分钟速览\n> 第一段摘要\n\n## 一、产品目标\n前半段讨论\n\n> [!success] 行动\n> - [ ] 保留这项行动\n\nlexvoice-part-summary";
+    checkpoint.parts[0].text = "> [!abstract] 一分钟速览\n> 第一段摘要\n\n## 一、产品目标\n前半段讨论\n\n> [!success] 行动\n> - [ ] 保留这项行动\n\nqnalog-part-summary";
     checkpoint.parts[1].status = "complete";
-    checkpoint.parts[1].text = "> [!abstract] 摘要\n> 第二段摘要\n\n## 一、落地路径\n后半段讨论\n\nlexvoice-tags";
+    checkpoint.parts[1].text = "> [!abstract] 摘要\n> 第二段摘要\n\n## 一、落地路径\n后半段讨论\n\nqnalog-tags";
 
     const assembled = assembleBriefingParts(checkpoint.parts);
     expect(assembled).toBe("## 产品目标\n前半段讨论\n\n> [!success] 行动\n> - [ ] 保留这项行动\n\n## 落地路径\n后半段讨论");
-    expect(assembled).not.toMatch(/\[!abstract\]|lexvoice-|## 一、/);
+    expect(assembled).not.toMatch(/\[!abstract\]|qnalog-|## 一、/);
   });
 
   it("协议正文与机器信息严格分离", () => {
-    const parsed = extractBriefingPartEnvelope(`<!-- lexvoice-part-body-start -->
+    const parsed = extractBriefingPartEnvelope(`<!-- qnalog-part-body-start -->
 ## 议题
 完整正文
-<!-- lexvoice-part-body-end -->
-<!-- lexvoice-people: 张三 -->
-<!-- lexvoice-tags: 项目/推进 -->
-<!-- lexvoice-part-summary: 已明确推进路径 -->`);
+<!-- qnalog-part-body-end -->
+<!-- qnalog-people: 张三 -->
+<!-- qnalog-tags: 项目/推进 -->
+<!-- qnalog-part-summary: 已明确推进路径 -->`);
 
     expect(parsed.body).toBe("## 议题\n完整正文");
     expect(parsed.summary).toBe("已明确推进路径");
@@ -312,7 +312,7 @@ describe("纪要整理流水线", () => {
 
   it("检查点写入插件私有目录，并可在重启后恢复", async () => {
     const files = new Map<string, string>();
-    const folders = new Set<string>([".obsidian/plugins/lexvoice"]);
+    const folders = new Set<string>([".obsidian/plugins/qnalog"]);
     const adapter = {
       exists: async (path: string) => files.has(path) || folders.has(path),
       mkdir: async (path: string) => { folders.add(path); },
@@ -336,7 +336,7 @@ describe("纪要整理流水线", () => {
     const checkpoint = createBriefingCheckpoint({ ...identity, mode: "meeting", model: "model-a", parts });
     checkpoint.parts[0].status = "complete";
     checkpoint.parts[0].text = "已付费生成的正文";
-    const store = new BriefingCheckpointStore(adapter as never, ".obsidian", "lexvoice");
+    const store = new BriefingCheckpointStore(adapter as never, ".obsidian", "qnalog");
 
     await store.save(checkpoint);
     const restored = await store.load(checkpoint.id);

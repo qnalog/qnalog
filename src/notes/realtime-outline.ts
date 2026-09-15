@@ -12,6 +12,7 @@ import { normalizeAudioInputMode } from "../ui/helpers";
 
 
 import { formatElapsed } from "../shared/util-common";
+import { NS_VIEW_OUTLINE } from "../shared/namespace";
 
 
 // 实时大纲：归并到共同上层概念，层级由内容涌现，不强加结构
@@ -567,6 +568,6 @@ export function shouldRunRealtimeOutline(session, opts: { force?: boolean; final
   return true;
 }
 
-export const VIEW_TYPE_OUTLINE = "lexvoice-outline-view";
+export const VIEW_TYPE_OUTLINE = NS_VIEW_OUTLINE;
 
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

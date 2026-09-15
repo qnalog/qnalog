@@ -4,6 +4,7 @@
 import { cleanImportedTextForPrompt, extractRawTranscriptForImport, markdownQuoteBlock, stripImportAppendices } from "./note-markdown";
 
 import { truncateForLlmPrompt } from "../shared/util-text";
+import { NS_SEDIMENT_LINE_BEGIN_RE } from "../shared/namespace";
 
 export const NOTE_ASK_CONTEXT_MAX_CHARS = 18000;
 
@@ -20,7 +21,7 @@ export const NOTE_ASK_SUGGESTIONS = [
 ];
 
 export function stripAskBlocks(text) {
-  return String(text || "").replace(/\n##\s+问一问\b[\s\S]*?(?=\n(?:---\s*\n+)?##\s+(?:📁\s*)?原始材料\b|\n<!--\s*LEXVOICE_SEDIMENT_BEGIN|$)/g, "\n");
+  return String(text || "").replace(/\n##\s+问一问\b[\s\S]*?(?=\n(?:---\s*\n+)?##\s+(?:📁\s*)?原始材料\b|\n<!--\s*(?:QNALOG|LEXVOICE)_SEDIMENT_BEGIN|$)/g, "\n");
 }
 
 export function buildAskContext(markdown) {
@@ -56,7 +57,7 @@ export function findAskBoundary(markdown) {
   const patterns = [
     /\n---\s*\n+##\s+(?:📁\s*)?原始材料\b/i,
     /\n##\s+(?:📁\s*)?原始材料\b/i,
-    /\n<!--\s*LEXVOICE_SEDIMENT_BEGIN/i,
+    NS_SEDIMENT_LINE_BEGIN_RE,
   ];
   const indexes = patterns
     .map((re) => {

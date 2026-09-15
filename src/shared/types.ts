@@ -321,7 +321,7 @@ export interface Segment {
   speakerIds?: string[];
   error?: string | null;
   isFinal?: boolean;
-  /** 本段对应的转写队列任务 id；写入笔记作为 `lexvoice-transcribe-task` 注释。 */
+  /** 本段对应的转写队列任务 id；写入笔记作为 `qnalog-transcribe-task` 注释。 */
   queueTaskId?: string;
 }
 

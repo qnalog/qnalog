@@ -27,6 +27,7 @@ import { escapeRegExp, formatElapsed } from "../shared/util-common";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent-note-paths";
+import { NS_TAG, isDerivedVersionType } from "../shared/namespace";
 
 export function detectRecentModeFromFrontmatter(settings, frontmatter) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
@@ -113,7 +114,7 @@ export function normalizeRecentTopicToken(raw) {
     .replace(/^主题[:：]/, "")
     .replace(/^topic[:：]/i, "")
     .trim();
-  if (!text || /^lexvoice(?:\/|$)/i.test(text)) return "";
+  if (!text || new RegExp(`^${NS_TAG}(?:/|$)`, "i").test(text)) return "";
   if (/^(recording|transcript|meeting|learning-card)$/i.test(text)) return "";
   if (text.length > 18) text = text.slice(0, 18);
   return text;
@@ -219,15 +220,15 @@ export function getRecentNotes(plugin, limit) {
     if (!(f instanceof obsidian.TFile) || f.extension !== "md") continue;
     const frontmatter = ((plugin.app.metadataCache.getFileCache(f) || {}).frontmatter) || {};
     // 派生版本（清稿/另存版本等）不当独立会议罗列——收集起来，稍后按 source_path 挂到母本下。
-    if (frontmatter["类型"] === "LexVoice派生版本" || frontmatter.contains_raw === false) {
+    if (isDerivedVersionType(frontmatter["类型"]) || frontmatter.contains_raw === false) {
       variantFiles.push({ file: f, fm: frontmatter });
       continue;
     }
     const mode = detectRecentNoteMode(plugin, f, frontmatter);
-    // 是否 QnALog 纪要：能识别出 mode（非 off）或 frontmatter 自带 mode / lexvoice 标记。
+    // 是否 QnALog 纪要：能识别出 mode（非 off）或 frontmatter 自带 mode / qnalog 标记。
     // 手动改名（丢掉日期前缀）的纪要也要保留，否则在纪要面板里找不到、没法重新整理。
     const isNoteRef = (mode && mode !== "off") || !!frontmatter.mode
-      || /lexvoice/i.test(String(frontmatter.tags || frontmatter.tag || ""));
+      || new RegExp(NS_TAG, "i").test(String(frontmatter.tags || frontmatter.tag || ""));
     const m = f.basename.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{4}))?/);
     if (!m && !isNoteRef) continue;
     let t = null;

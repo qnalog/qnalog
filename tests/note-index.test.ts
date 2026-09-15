@@ -32,12 +32,12 @@ const minutes = [
   "",
   "## 原始材料",
   "不应进入索引。",
-  "<!-- lexvoice-segments-start -->",
+  "<!-- qnalog-segments-start -->",
   "### 段落 1",
   "原始转写也不应进入索引。",
 ].join("\n");
 
-describe("LexVoice note index", () => {
+describe("QnALog note index", () => {
   it("derives a compact core and first-level topics from the final minutes", () => {
     const index = buildNoteIndex(minutes, {
       noteTitle: "2026-08-25 0930 · 综合纪要-会议知识索引",
@@ -61,7 +61,7 @@ describe("LexVoice note index", () => {
       "",
       "旧正文不应进入索引。",
       "",
-      "<!-- lexvoice-active-version-start -->",
+      "<!-- qnalog-active-version-start -->",
       "> [!info] 当前显示版本：综合纪要",
       "",
       "> [!abstract] 会议梗概",
@@ -69,7 +69,7 @@ describe("LexVoice note index", () => {
       "",
       "## 1. 新版本议题",
       "正文。",
-      "<!-- lexvoice-active-version-end -->",
+      "<!-- qnalog-active-version-end -->",
       "",
       "## 原始材料",
       "原始材料。",
@@ -122,18 +122,18 @@ describe("LexVoice note index", () => {
       generatedAt: "2026-08-25T11:00:00.000Z",
     })!;
     const replaced = upsertNoteIndex(inserted, changed);
-    expect((replaced.match(/lexvoice-note-index\s*$/gm) || []).length).toBe(1);
+    expect((replaced.match(/qnalog-note-index\s*$/gm) || []).length).toBe(1);
     expect(readNoteIndex(replaced)?.sourceRevision).toBe(changed.sourceRevision);
   });
 
   it("does not persist move-sensitive paths inside the canonical marker", () => {
     const index = buildNoteIndex(minutes, { noteTitle: "会议知识索引" })!;
     const marker = serializeNoteIndex(index);
-    expect(marker).not.toContain("LexVoice/转写纪要");
+    expect(marker).not.toContain("QnALog/转写纪要");
     const resolved = resolveNoteIndex(
       index,
-      "LexVoice/转写纪要/产品/会议知识索引.md",
-      "LexVoice/转写纪要/产品/会议知识索引 · 语义图.canvas",
+      "QnALog/转写纪要/产品/会议知识索引.md",
+      "QnALog/转写纪要/产品/会议知识索引 · 语义图.canvas",
     );
     expect(resolved.filePath).toContain("产品/会议知识索引.md");
     expect(resolved.semanticCanvasPath).toContain("语义图.canvas");

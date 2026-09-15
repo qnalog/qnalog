@@ -7,6 +7,7 @@ import { PeopleDirectoryService } from "../people/people-directory-service";
 import { LV_BASE_DEFINITIONS } from "../views/base-definitions";
 import { TODO_WALL_FILE, formatTodoWallMarkdown, getBasesFolder, getWallPath, insertGeneratedWallMarker } from "../views/wall-markdown";
 import { ensureVaultFolder } from "../shared/util-vault";
+import { NS_WALL_MARKER_RE } from "../shared/namespace";
 
 /** LibraryViewService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface LibraryViewHost {
@@ -63,7 +64,7 @@ export class LibraryViewService {
     let file = this.host.app.vault.getAbstractFileByPath(norm);
     if (file instanceof obsidian.TFile) {
       const current = await this.host.app.vault.cachedRead(file);
-      const shouldUpdate = opts.overwrite || current.includes("<!-- lexvoice-generated-wall -->") || current.trim() === "";
+      const shouldUpdate = opts.overwrite || NS_WALL_MARKER_RE.test(current) || current.trim() === "";
       if (shouldUpdate && current !== content) await this.host.app.vault.modify(file, content);
       return file;
     }

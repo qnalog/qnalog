@@ -6,6 +6,7 @@ import { PeopleDirectorySuggestionModal } from "../ui/modals";
 import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown } from "../shared/util-note";
 import { PEOPLE_SUGGESTION_CACHE_LIMIT, splitPersonFieldValue, normalizePersonLookupText, loadPeopleDirectory, ensurePeopleNoteRelatedBaseSection, formatPeopleBaseYaml, formatPeopleNoteMarkdown, mergeUniqueStrings, normalizePeopleSuggestion, normalizePeopleSuggestionIgnores, isPeopleSuggestionIgnored, addPeopleSuggestionIgnore, removePeopleSuggestionIgnores, getPeopleSuggestionCacheKey, normalizePeopleSuggestionCache, makePeopleSuggestionCacheRecord, isPeopleSuggestionCacheRecordCurrent, peopleSuggestionRecordToSuggestion, peopleSuggestionIgnoreRecordToSuggestion, findMatchingPersonEntry, arePeopleSuggestionsRelated, mergePeopleSuggestions, mergeSourceNoteRelatedPeopleFrontmatter, mergePersonFrontmatter, generatePeopleDirectorySuggestions, personEntryFromFrontmatter } from "../people";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS } from "../shared/defaults";
+import { PEOPLE_DIRECTORY_TAG, PEOPLE_DIRECTORY_TAG_MERGED } from "../shared/catalog-sediment";
 import type { PluginSettings } from "../shared/types";
 import { KnowledgeExtractionService } from "../indexing/knowledge-extraction-service";
 import { sanitizeFilename, escapeRegExp } from "../shared/util-common";
@@ -116,7 +117,7 @@ export class PeopleDirectoryService {
     if (notes.length) next["备注"] = notes.join("\n\n");
     next.type = "qnalog-person";
     next["最近更新"] = new Date().toISOString().slice(0, 10);
-    next.tags = mergeUniqueStrings(getFrontmatterTags(next), ["lexvoice/person"]);
+    next.tags = mergeUniqueStrings(getFrontmatterTags(next), [PEOPLE_DIRECTORY_TAG]);
     delete next.name;
     delete next.aliases;
     delete next.sources;
@@ -129,7 +130,10 @@ export class PeopleDirectoryService {
     fm.type = "qnalog-person-merged";
     fm["已合并到"] = makeFileWikiLink(primaryFile);
     fm["合并日期"] = new Date().toISOString().slice(0, 10);
-    fm.tags = mergeUniqueStrings(getFrontmatterTags(fm).filter(tag => tag !== "lexvoice/person"), ["lexvoice/person-merged"]);
+    fm.tags = mergeUniqueStrings(
+      getFrontmatterTags(fm).filter(tag => tag !== PEOPLE_DIRECTORY_TAG),
+      [PEOPLE_DIRECTORY_TAG_MERGED],
+    );
     delete fm.name;
     delete fm.aliases;
     const title = duplicateFile instanceof obsidian.TFile ? duplicateFile.basename : "已合并人员";

@@ -15,6 +15,7 @@ export {
 } from "../update-source";
 import { VIRTUAL_CABLE_PATTERNS } from '../shared/catalog-import';
 import { normalizeKnowledgeExtractionHistory } from '../shared/util-knowledge';
+import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
 
 export const SUPPORTED_AUDIO_INPUT_MODES = new Set(["mic", "mix-virtual", "virtualCable"]);
 
@@ -85,7 +86,7 @@ export function noteHasUsableRawTranscriptDespiteFailures(content) {
     .replace(/_\[AI 整理失败：[^\]]*\]_/g, "")
     .replace(/_\[(?:此段暂无有效转写|此段无内容|无输出)\]_/g, "");
   const meaningful = normalizeRecentNoteMeaningfulText(stripFrontmatterSimple(cleaned));
-  return meaningful.length > 160 && (/<!--\s*lexvoice-segments-start/.test(content) || /^###\s+段落\s+\d+/m.test(content));
+  return meaningful.length > 160 && (NS_SEGMENTS_START_RE.test(content) || /^###\s+段落\s+\d+/m.test(content));
 }
 
 export function getRecentNoteProcessingState(content) {
@@ -111,7 +112,7 @@ export function getRecentNoteProcessingState(content) {
       title: "这篇纪要仍含有转写或整理失败标记",
     };
   }
-  if (/<!--\s*lexvoice-segments-start/.test(visibleText) || /^###\s+段落\s+\d+/m.test(visibleText)) {
+  if (NS_SEGMENTS_START_RE.test(visibleText) || /^###\s+段落\s+\d+/m.test(visibleText)) {
     return {
       kind: "raw",
       label: "待整理",
@@ -124,8 +125,8 @@ export function getRecentNoteProcessingState(content) {
 export function getImportMarkerState(content) {
   const text = String(content || "");
   return {
-    hasSession: /<!--\s*lexvoice-session(?::|\s*--)/.test(text),
-    hasSegments: /<!--\s*lexvoice-segments-start/.test(text) || /^###\s+段落\s+\d+/m.test(text),
+    hasSession: NS_SESSION_RE.test(text),
+    hasSegments: NS_SEGMENTS_START_RE.test(text) || /^###\s+段落\s+\d+/m.test(text),
     hasGeneratedBlock: /##\s+(?:✨\s*)?(?:当前纪要|整合版)/.test(text) || /##\s+(?:📁\s*)?原始材料/.test(text),
     hasImportBlock: /<details>\s*<summary>\s*导入文本信息/i.test(text),
   };

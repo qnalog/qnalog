@@ -13,7 +13,7 @@ const code = readFileSync(new URL("../main.js", import.meta.url), "utf8");
 // onload 里应当装配好的域服务字段。新增域服务时在这里补一行。
 const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
-  "profiles", "vocabulary", "migrations", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
+  "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
   "library", "shell", "recording", "sessionFinalize", "imports", "externalInbox", "repolish",
   "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas",
 ];
@@ -237,14 +237,14 @@ async function main() {
   expect(plugin.settingTabs.length >= 1, "没有注册设置页");
   expect(plugin.intervals.length >= 1, "没有注册状态栏维护定时器");
 
-  // 设置迁移必须真的跑过：迁移服务在 loadAll 之前装配，否则会被静默跳过
-  expect(typeof plugin.migrations.migrateDefaultLibraryLayout === "function", "迁移服务未就绪，loadAll 的迁移会被跳过");
+  // 清理服务必须装配：命令与设置页都直接调它。
+  expect(typeof plugin.cleanup.cleanupEmptyShortRecordings === "function", "清理服务未就绪");
 
   // 侧边栏「纪要」列表：默认不能带隐藏筛选。
   // 列表按 recentFilters 过滤，但筛选条只渲染分组与模板两个按钮——
   // 一旦初始值不是声明的默认值（曾为 time: "week"），用户就只会看到被截短的一周列表，
   // 却看不到、也改不了那个筛选（真机现象：10 篇只显示 2 篇）。
-  const outlineEntry = plugin.views.find((v) => v.type === "lexvoice-outline-view");
+  const outlineEntry = plugin.views.find((v) => v.type === "qnalog-outline-view");
   expect(outlineEntry, "没有注册实时纪要面板视图");
   if (outlineEntry) {
     try {
@@ -257,7 +257,7 @@ async function main() {
       // 纪要列表的文件范围必须只落在配置的纪要目录内。
       // 反例（改设置结构时踩过）：getRecentNoteRoots 读了已删除的设置键，取到 undefined →
       // 空前缀被当成"匹配一切"，列表静默变成整个知识库的 Markdown。
-      const mdFolder = plugin.settings.mdFolder || "LexVoice/转写纪要";
+      const mdFolder = plugin.settings.mdFolder || "QnALog/转写纪要";
       expect(view.isRecentNotePath(`${mdFolder}/2026-09-14 1133 · 个人笔记.md`),
         "纪要目录内的笔记被判为不在范围里");
       expect(!view.isRecentNotePath("AFFiNE Export/Notes/Unfiled/2025-09-05.md"),

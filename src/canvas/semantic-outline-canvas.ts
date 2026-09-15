@@ -1,4 +1,5 @@
 import type { RealtimeOutlineNode } from "../outline-text";
+import { NS_ACTIVE_VERSION_BODY_RE, NS_SEGMENTS_START_ONLY_RE, NS_TAG, readSemanticMeta, writeSemanticMeta } from "../shared/namespace";
 
 export interface SemanticCore {
   title: string;
@@ -53,7 +54,7 @@ export interface JsonCanvasTextNode {
   height: number;
   text: string;
   color?: string;
-  lexvoiceSemantic?: QnALogSemanticNodeMeta;
+  qnalogSemantic?: QnALogSemanticNodeMeta;
 }
 
 export interface JsonCanvasGroupNode {
@@ -65,7 +66,7 @@ export interface JsonCanvasGroupNode {
   height: number;
   label: string;
   color?: string;
-  lexvoiceSemantic?: QnALogSemanticNodeMeta;
+  qnalogSemantic?: QnALogSemanticNodeMeta;
 }
 
 export interface JsonCanvasFileNode {
@@ -94,7 +95,7 @@ export interface JsonCanvasEdge {
 export interface JsonCanvasDocument {
   nodes: JsonCanvasNode[];
   edges: JsonCanvasEdge[];
-  lexvoiceSemantic?: QnALogSemanticDocumentMeta;
+  qnalogSemantic?: QnALogSemanticDocumentMeta;
   [key: string]: unknown;
 }
 
@@ -130,10 +131,10 @@ export interface BuildSemanticCanvasOptions {
   layoutMode?: SemanticCanvasLayoutMode;
 }
 
-const MANAGED_NODE_PREFIX = "lexvoice-semantic-node-";
-const MANAGED_EDGE_PREFIX = "lexvoice-semantic-edge-";
+const MANAGED_NODE_PREFIX = "qnalog-semantic-node-";
+const MANAGED_EDGE_PREFIX = "qnalog-semantic-edge-";
 const SEMANTIC_LAYOUT_VERSION = 10;
-const SEMANTIC_LAYOUT_MARKER = `<!-- lexvoice-semantic-layout:${SEMANTIC_LAYOUT_VERSION} -->`;
+const SEMANTIC_LAYOUT_MARKER = `<!-- ${NS_TAG}-semantic-layout:${SEMANTIC_LAYOUT_VERSION} -->`;
 const DEFAULT_MAX_SEMANTIC_DEPTH = 5;
 const DEFAULT_MAX_SEMANTIC_NODES = 34;
 const CANVAS_PRESET_COLORS = ["1", "2", "3", "4", "5", "6"] as const;
@@ -484,12 +485,12 @@ function cleanSemanticSectionContent(lines: readonly string[]): string {
 
 export function extractSemanticSourceSections(markdown: unknown): SemanticSourceSection[] {
   let text = typeof markdown === "string" ? markdown : "";
-  const active = /<!--\s*lexvoice-active-version-start\s*-->([\s\S]*?)<!--\s*lexvoice-active-version-end\s*-->/i.exec(text);
+  const active = NS_ACTIVE_VERSION_BODY_RE.exec(text);
   if (active) text = active[1];
   text = text
     .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
     .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
-    .split(/<!--\s*lexvoice-segments-start\s*-->/i)[0]
+    .split(NS_SEGMENTS_START_ONLY_RE)[0]
     .replace(/<!--[^>]*-->/g, "");
   const excludedHeading = /^(?:原始材料|原始转写|逐字稿|录音原文|回听时间轴|录音中实时大纲|会中补充材料)$/;
   const sections: SemanticSourceSection[] = [];
@@ -530,7 +531,7 @@ function managedEdgeId(sourcePath: string, from: string, to: string, label: stri
 }
 
 function nodeText(marker: string, heading: string, title: string, summary: string, evidence = ""): string {
-  return `${SEMANTIC_LAYOUT_MARKER}\n<!-- lexvoice-semantic:${marker} -->\n${heading} ${title}${summary ? `\n\n${summary}` : ""}${evidence}`;
+  return `${SEMANTIC_LAYOUT_MARKER}\n<!-- ${NS_TAG}-semantic:${marker} -->\n${heading} ${title}${summary ? `\n\n${summary}` : ""}${evidence}`;
 }
 
 function estimateNodeHeight(text: string, width: number, minimum: number, maximum: number): number {
@@ -564,22 +565,22 @@ export function normalizeJsonCanvasDocument(value: unknown): JsonCanvasDocument 
     nodes: row.nodes.filter(isCanvasNode),
     edges: row.edges.filter(isCanvasEdge),
   };
-  const meta = recordValue(row.lexvoiceSemantic);
+  const meta = recordValue(readSemanticMeta(row));
   if (meta.version === 1 && recordValue(meta.graph).core) {
-    normalized.lexvoiceSemantic = meta as unknown as QnALogSemanticDocumentMeta;
+    writeSemanticMeta(normalized, meta);
   }
   return normalized;
 }
 
 export function semanticCanvasNeedsRelayout(document: JsonCanvasDocument): boolean {
-  if (!document.lexvoiceSemantic?.graph) return false;
+  if (!readSemanticMeta<QnALogSemanticDocumentMeta>(document)?.graph) return false;
   const managedNodes = document.nodes.filter((node) => {
     const id = textValue(recordValue(node).id, 200);
     return id.startsWith(MANAGED_NODE_PREFIX);
   });
   if (managedNodes.length === 0) return true;
   return managedNodes.some((node) => {
-    const meta = recordValue(recordValue(node).lexvoiceSemantic);
+    const meta = recordValue(readSemanticMeta(recordValue(node)));
     return Number(meta.layoutVersion) !== SEMANTIC_LAYOUT_VERSION;
   });
 }
@@ -624,7 +625,7 @@ function makeTextNode(
 ): JsonCanvasTextNode {
   const previous = recordValue(oldNodes.get(id));
   const previousText = typeof previous.text === "string" ? previous.text : "";
-  const previousMeta = recordValue(previous.lexvoiceSemantic);
+  const previousMeta = recordValue(readSemanticMeta(previous));
   const generatedHash = textValue(previousMeta.generatedTextHash, 80);
   const userEdited = Boolean(previousText && generatedHash && stableHash(previousText) !== generatedHash);
   const preserveLayout = !forceRelayout && hasCurrentLayoutMarker(previousText);
@@ -637,7 +638,7 @@ function makeTextNode(
     width: preserveLayout && Number.isFinite(Number(previous.width)) ? Number(previous.width) : width,
     height: preserveLayout && Number.isFinite(Number(previous.height)) ? Number(previous.height) : height,
     text: finalText,
-    lexvoiceSemantic: {
+    qnalogSemantic: {
       ...meta,
       generatedTextHash: userEdited ? generatedHash : stableHash(finalText),
       ...(userEdited ? { userEdited: true } : {}),
@@ -660,7 +661,7 @@ function makeGroupNode(
   forceRelayout: boolean,
 ): JsonCanvasGroupNode {
   const previous = recordValue(oldNodes.get(id));
-  const previousMeta = recordValue(previous.lexvoiceSemantic);
+  const previousMeta = recordValue(readSemanticMeta(previous));
   const preserveLayout = !forceRelayout
     && previous.type === "group"
     && Number(previousMeta.layoutVersion) === SEMANTIC_LAYOUT_VERSION;
@@ -673,7 +674,7 @@ function makeGroupNode(
     height: preserveLayout && Number.isFinite(Number(previous.height)) ? Number(previous.height) : height,
     label,
     color,
-    lexvoiceSemantic: meta,
+    qnalogSemantic: meta,
   };
 }
 
@@ -748,9 +749,9 @@ export function buildSemanticCanvasDocument(
   options: BuildSemanticCanvasOptions,
 ): JsonCanvasDocument {
   const existing = options.existing || { nodes: [], edges: [] };
-  const previousGraph = existing.lexvoiceSemantic?.graph;
+  const previousGraph = readSemanticMeta<QnALogSemanticDocumentMeta>(existing)?.graph;
   const effectiveGraph = stabilizeSemanticGraphKeys(graph, previousGraph);
-  const layoutMode = options.layoutMode || existing.lexvoiceSemantic?.layoutMode || "adaptive";
+  const layoutMode = options.layoutMode || readSemanticMeta<QnALogSemanticDocumentMeta>(existing)?.layoutMode || "adaptive";
   const oldNodes = new Map(existing.nodes.filter(isCanvasNode).map((node) => [textValue(recordValue(node).id, 200), node]));
   const managedNodes: JsonCanvasNode[] = [];
   const keyToNodeId = new Map<string, string>();
@@ -1074,7 +1075,7 @@ export function buildSemanticCanvasDocument(
   return {
     nodes: finalNodes,
     edges: [...unmanagedEdges, ...managedEdges],
-    lexvoiceSemantic: {
+    qnalogSemantic: {
       version: 1,
       sourcePath: options.sourcePath,
       generatedAt: Date.now(),

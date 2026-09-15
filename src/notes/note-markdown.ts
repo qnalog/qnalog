@@ -26,6 +26,7 @@ import { extractSedimentPreExtractionBlock, stripSedimentPreExtractionBlocks } f
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
+import { NS_TAG, NS_ROOT, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
 
 import { MODE_META, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
@@ -35,7 +36,7 @@ import { diagnosticError } from "../shared/util-key-diag";
 
 import { replaceExistingActiveVersionBlock, sanitizeActiveVersionBody, splitLeadingFrontmatter } from "../version-content";
 
-import { speakerLabelForChannel } from "../audio/channel-speakers";
+import { readSpeakerMappings, speakerLabelForChannel } from "../audio/channel-speakers";
 
 import { extractBriefingPartEnvelope } from "../briefing/pipeline";
 
@@ -71,7 +72,7 @@ export function buildRenamedMarkdownPath(currentPath, mode, titleTag, settings) 
 
 export function getSourceIdFromMarkdown(markdown, file) {
   const text = String(markdown || "");
-  const sidMatch = text.match(/<!--\s*lexvoice-session:\s*([^\s>]+)\s*-->/);
+  const sidMatch = text.match(NS_SESSION_VALUE_RE);
   if (sidMatch && sidMatch[1]) return sanitizeFilename(sidMatch[1]) || sidMatch[1];
   const basis = `${file && file.path || "note"}:${file && file.stat && file.stat.ctime || ""}`;
   return `note-${hashRealtimeOutlineText(basis)}`;
@@ -165,7 +166,7 @@ export function normalizeModeFromLabel(settings, label) {
   if (!text) return "";
   if (isKnownPolishMode(settings, text)) return text;
   if (MODE_PREFIX_TO_KEY[text]) return MODE_PREFIX_TO_KEY[text];
-  const normalized = text.replace(/^lexvoice\//i, "").trim();
+  const normalized = text.replace(new RegExp(`^${NS_TAG}/`, "i"), "").trim();
   if (isKnownPolishMode(settings, normalized)) return normalized;
   if (MODE_PREFIX_TO_KEY[normalized]) return MODE_PREFIX_TO_KEY[normalized];
   for (const [mode, name] of getVisibleModeEntries(settings, false)) {
@@ -207,7 +208,7 @@ export function extractIntegratedBriefing(text) {
   const stopPatterns = [
     /\n<details>\s*<summary>\s*导入文本信息/i,
     /\n<details>\s*<summary>\s*导入文本原文/i,
-    /\n<!--\s*LEXVOICE_SEDIMENT_BEGIN/i,
+    NS_SEDIMENT_LINE_BEGIN_RE,
   ];
   const stop = stopPatterns
     .map((re) => {
@@ -239,8 +240,8 @@ export function stripImportedTextSource(text) {
   if (!withoutFrontmatter) return "";
 
   const withoutAppendices = stripImportAppendices(withoutFrontmatter);
-  const hasMarkerNames = /<!--\s*lexvoice-session(?::|\s*--)/.test(withoutFrontmatter)
-    || /<!--\s*lexvoice-segments-start/.test(withoutFrontmatter)
+  const hasMarkerNames = NS_SESSION_RE.test(withoutFrontmatter)
+    || NS_SEGMENTS_START_RE.test(withoutFrontmatter)
     || /##\s+(?:✨\s*)?整合版/.test(withoutFrontmatter);
   if (hasMarkerNames) {
     const integrated = extractIntegratedBriefing(withoutAppendices);
@@ -297,7 +298,7 @@ export function isTextImportSession(session) {
   return !!(session && session.source === "text-import");
 }
 
-export const EMAIL_DRAFT_FOLDER = "LexVoice/邮件草稿";
+export const EMAIL_DRAFT_FOLDER = `${NS_ROOT}/邮件草稿`;
 
 export const EMAIL_DRAFT_ATTACHMENT_FOLDER = `${EMAIL_DRAFT_FOLDER}/附件`;
 
@@ -637,9 +638,9 @@ export function splitTranscriptSections(markdown) {
     }
   }
 
-  const startRe = /<!--\s*lexvoice-segments-start(?::[^>]*)?\s*-->/g;
+  const startRe = nsMarkerGlobalRe("segments-start");
   while (startRe.exec(text)) {
-    const endRe = /<!--\s*lexvoice-segments-end(?::[^>]*)?\s*-->/g;
+    const endRe = nsMarkerGlobalRe("segments-end");
     endRe.lastIndex = startRe.lastIndex;
     const endMatch = endRe.exec(text);
     if (endMatch) sections.push(text.slice(startRe.lastIndex, endMatch.index));
@@ -781,7 +782,7 @@ export function getMeaningfulRemainder(markdown) {
 
 export function analyzeEmptyShortNote(file, markdown, settings) {
   const text = String(markdown || "");
-  const hasMarkerNames = /<!--\s*lexvoice-session(?::|\s*--)/.test(text) || /<!--\s*lexvoice-segments-start/.test(text);
+  const hasMarkerNames = NS_SESSION_RE.test(text) || NS_SEGMENTS_START_RE.test(text);
   if (!hasMarkerNames) return null;
   if (!isStandaloneGeneratedNote(text)) return null;
 
@@ -837,7 +838,7 @@ export function extractRoleMappingFromFrontmatter(frontmatter) {
   }
   // 多声道说话人改名：把「说话人N」→ 已确认的真实姓名一并纳入，
   // 否则「重新整理（使用说话人姓名）」拿不到改名结果，正文里仍是说话人N。
-  const speakers = frontmatter.lexvoice_speakers;
+  const speakers = readSpeakerMappings(frontmatter);
   if (speakers && typeof speakers === "object") {
     for (const [speakerId, item] of Object.entries(speakers)) {
       const channel = Number(String(speakerId).replace(/^spk-/, "")) || 0;
@@ -874,7 +875,7 @@ export function applyRoleMappingToSegments(segments, mapping) {
 }
 
 export function extractSessionId(content, fallback) {
-  const match = String(content || "").match(/<!--\s*lexvoice-session:([^>\s]+)\s*-->/);
+  const match = String(content || "").match(NS_SESSION_VALUE_RE);
   return match ? match[1].trim() : fallback;
 }
 
@@ -1117,16 +1118,16 @@ export function extractAllRawBlocksFromText(text) {
     if (!changed) break;
   }
 
-  // 2. \u6BB5\u843D\u539F\u6587\uFF1A<!-- lexvoice-segments-start --> ... <!-- lexvoice-segments-end -->
-  s = s.replace(/<!--\s*lexvoice-segments-start(?::[^>]*)?\s*-->[\s\S]*?<!--\s*lexvoice-segments-end(?::[^>]*)?\s*-->/gi,
+  // 2. \u6BB5\u843D\u539F\u6587\uFF1A<!-- qnalog-segments-start --> ... <!-- qnalog-segments-end -->
+  s = s.replace(NS_SEGMENTS_BLOCK_RE,
     (m) => stash(m));
 
   // 3. session \u6807\u8BB0\uFF08\u5982\u679C\u8FD8\u6B8B\u7559\uFF09
-  s = s.replace(/^[ \t]*<!--\s*lexvoice-session(?::[^>]*|\s*--)[^>]*-->[ \t]*\r?\n?/gm,
+  s = s.replace(NS_SESSION_LINE_RE,
     (m) => stash(m.trim()));
 
   // 4. \u6C89\u6DC0\u5757\uFF1A<!--LEXVOICE_SEDIMENT_BEGIN ... LEXVOICE_SEDIMENT_END-->
-  s = s.replace(/<!--\s*LEXVOICE_SEDIMENT_BEGIN[\s\S]*?LEXVOICE_SEDIMENT_END\s*-->/gi,
+  s = s.replace(NS_SEDIMENT_BLOCK_RE,
     (m) => stash(m));
 
   // 5. \u65E7\u7248\u672C\u91CC"\u5931\u8D25\u7684\u6574\u5408\u7248"\u6B8B\u9AB8\uFF08\u5DF2\u88AB\u65B0\u7248\u672C\u66FF\u4EE3\uFF0C\u4E0D\u5FC5\u4FDD\u7559\uFF09
@@ -1149,10 +1150,10 @@ export function mergeLeadingFrontmatterIntoDocument(documentText, generatedMarkd
   };
 }
 
-// 解析 LLM 输出末尾的标签建议注释 <!-- lexvoice-tags: 主题/实时转写, 项目/示例 -->
+// 解析 LLM 输出末尾的标签建议注释 <!-- qnalog-tags: 主题/实时转写, 项目/示例 -->
 export function parseSuggestedTagsFromOutput(text) {
   if (!text) return { tags: [], cleaned: text || "" };
-  const re = /<!--\s*lexvoice-tags(?:-suggest)?\s*:\s*([\s\S]*?)\s*-->/i;
+  const re = NS_TAGS_RE;
   const m = text.match(re);
   if (!m) return { tags: [], cleaned: text };
   const peopleFromTags = [];
@@ -1167,7 +1168,7 @@ export function parseSuggestedTagsFromOutput(text) {
     // 防御过长：nested tag 也很少超过 24 字
     .filter(s => s.length > 0 && s.length <= 24)
     // 防御和系统 tag 重复
-    .filter(s => !/^lexvoice\//i.test(s))
+    .filter(s => !new RegExp(`^${NS_TAG}/`, "i").test(s))
     // 人物/x 不再进 tags：剥前缀转入 people（吃掉旧 LLM 输出 / 旧笔记里残留的人物维度，是旧笔记平滑迁移的关键）
     .filter(s => {
       if (/^人物\//.test(s)) { peopleFromTags.push(s.replace(/^人物\//, "").trim()); return false; }
@@ -1183,13 +1184,13 @@ export function parseSuggestedTagsFromOutput(text) {
   return { tags: unique, people: peopleFromTags.filter(Boolean), cleaned };
 }
 
-// 解析 LLM 输出末尾的人员机器块 <!-- lexvoice-people: 张三, 李四 -->（纯人名，不带前缀）。
+// 解析 LLM 输出末尾的人员机器块 <!-- qnalog-people: 张三, 李四 -->（纯人名，不带前缀）。
 // 与 tags 物理分离：人物单列成独立 frontmatter 属性，不再挤进 tags。
 
 // 把 LLM 输出（含 frontmatter + 正文 + 末尾 tags 注释）规整成最终笔记内容：
 //   - 强制覆盖系统字段：mode / time / 时长 / 状态
-//   - merge tags：[lexvoice/<mode>] + LLM 标签建议 + (可选) 已有 tags
-//   - 删除末尾的 lexvoice-tags 注释
+//   - merge tags：[qnalog/<mode>] + LLM 标签建议 + (可选) 已有 tags
+//   - 删除末尾的 qnalog-tags 注释
 //   - originalFrontmatter 非空时（重新整理场景），保留它的内容字段（用户改过的代号映射等），
 //     不让 LLM 的 frontmatter 覆盖；只 merge 新的 tag 建议
 export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, originalFrontmatter, baseKey, topNotice = "") {
@@ -1235,8 +1236,8 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   }
   base["状态"] = "已整理";
 
-  // merge tags：[lexvoice/<mode>] + 已有 + 建议；其中 人物/x 前缀一律剥出转入人物属性，不进 tags。
-  const sysTag = "lexvoice/" + mode;
+  // merge tags：[qnalog/<mode>] + 已有 + 建议；其中 人物/x 前缀一律剥出转入人物属性，不进 tags。
+  const sysTag = NS_TAG_PREFIX + mode;
   const rawTags = (originalFrontmatter && originalFrontmatter.tags) || (rawBase && rawBase.tags);
   const existingTagsAll = Array.isArray(rawTags)
     ? rawTags.map(t => String(t).trim()).filter(Boolean)
@@ -1254,7 +1255,7 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   for (const t of suggested) push(t);
   base.tags = tags;
 
-  // 人物：独立人员属性。三源合并（机器块 lexvoice-people + tags 里 人物/ + base 旧人物），归一去重。
+  // 人物：独立人员属性。三源合并（机器块 qnalog-people + tags 里 人物/ + base 旧人物），归一去重。
   // 这也是"重整一次旧笔记，人物从 tags 自动迁出到 人物 属性"的落点。
   let people = splitPersonFieldValue(base["人物"] || rawBase["人物"] || rawBase.people || []);
   people = mergeUniqueStrings(people, suggestedPeople);
@@ -1293,75 +1294,6 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   // topNotice（如截断告警）插在 frontmatter 之后、正文之前——保证 frontmatter 不被破坏、告警最显眼。
   const noticeBlock = topNotice ? String(topNotice).trim() + "\n\n" : "";
   return "---\n" + yamlBlock + "---\n\n" + noticeBlock + body.trimStart();
-}
-
-// 从老笔记的文件名 + 内容推断 mode
-export function inferModeFromLegacyNote(filename, content) {
-  // 1. 从 [!info] 录音信息 callout 里的"模式：xxx"提取（最可靠）
-  const calloutLine = content.match(/>\s*\[!info\][^\n]*\n>\s*([^\n]+)/);
-  if (calloutLine) {
-    const mm = calloutLine[1].match(/模式\s*[:：]\s*([一-龥A-Za-z]+)/);
-    if (mm) {
-      const m = mm[1];
-      if (m === "学习" || m === "学习记录") return "learning";
-      if (m === "访谈" || m === "访谈调研") return "interview";
-      if (m === "会议" || m === "工作纪要") return "meeting";
-      if (m === "研讨" || m === "研讨会" || m === "学术研讨" || m === "主题沙龙") return "seminar";
-      if (m === "小会" || m === "讨论" || m === "圆桌讨论") return "huddle";
-      if (m === "独白" || m === "手记" || m === "个人笔记") return "monologue";
-    }
-  }
-
-  // 2. 文件名前缀（"访谈-xxx"、"面试-xxx"等）
-  if (/(?:^|·\s*)学习|视频|课程|讲座/i.test(filename)) return "learning";
-  if (/(?:^|·\s*)研讨|沙龙|论坛/i.test(filename)) return "seminar";
-  if (/(?:^|·\s*)访谈/i.test(filename)) return "interview";
-  if (/(?:^|·\s*)小会|圆桌/i.test(filename)) return "huddle";
-  if (/(?:^|·\s*)独白|(?:^|·\s*)手记|个人笔记/i.test(filename)) return "monologue";
-  if (/(?:^|·\s*)会议|纪要/i.test(filename)) return "meeting";
-
-  // 3. H1 标题里的 emoji
-  const h1Match = content.match(/^#\s+([^\n]*)/m);
-  if (h1Match) {
-    const h1 = h1Match[1];
-    if (/📚|学习|视频|课程|讲座/.test(h1)) return "learning";
-    if (/研讨|沙龙|论坛/.test(h1)) return "seminar";
-    if (/🎤|访谈/.test(h1)) return "interview";
-    if (/🤝|小会/.test(h1)) return "huddle";
-    if (/💭|独白|手记/.test(h1)) return "monologue";
-    if (/📋|会议/.test(h1)) return "meeting";
-  }
-
-  // 4. H2 标题
-  const h2Match = content.match(/^##\s+([^\n]*)/m);
-  if (h2Match) {
-    const h2 = h2Match[1];
-    if (/学习|视频|课程|讲座/.test(h2)) return "learning";
-    if (/研讨|沙龙|论坛/.test(h2)) return "seminar";
-    if (/访谈/.test(h2)) return "interview";
-    if (/小会/.test(h2)) return "huddle";
-    if (/会议/.test(h2)) return "meeting";
-    if (/独白|手记/.test(h2)) return "monologue";
-  }
-
-  // 5. 内容包含特征性段落
-  if (/学习要点|可收纳卡片|概念与术语|学习材料/.test(content)) return "learning";
-  if (/观点谱系|研讨摘要|问题意识|争议与分歧/.test(content)) return "seminar";
-  if (/受访者|访问者/.test(content)) return "interview";
-  if (/参谋.*戳破|认知提醒/.test(content)) return "huddle";
-  if (/参会人/.test(content)) return "meeting";
-
-  return null;
-}
-
-// 从文件名推断主题：去掉日期/时间前缀和模式标签前缀
-export function inferTopicFromFilename(filename) {
-  let stem = String(filename || "").replace(/\.md$/i, "");
-  // 去掉 "YYYY-MM-DD HHmm · " 或 "YYYY-MM-DD · " 或 "YYYY-MM-DD HHmm "
-  stem = stem.replace(/^\d{4}-\d{2}-\d{2}(?:\s+\d{4})?\s*·?\s*/, "");
-  // 去掉模式标签前缀（"访谈-"、"面试-"、"会议-"等）
-  stem = stem.replace(/^(访谈|会议|研讨|研讨会|沙龙|论坛|小会|独白|手记|纪要)\s*[-—－]?\s*/, "");
-  return stem.trim();
 }
 
 export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode, sessionMeta) {
@@ -1439,7 +1371,7 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
 }
 
 // 人物指认幻觉的机械兜底（软提示，不删改）：模型可能把转写里零星出现的称呼提升为贯穿全文的
-// 核心人物（实测案例：把全场只提到三五次的"某称呼"指认为一号位）。这里按 lexvoice-people 名单
+// 核心人物（实测案例：把全场只提到三五次的"某称呼"指认为一号位）。这里按 qnalog-people 名单
 // 比对"产出引用次数 vs 原始转写出现次数"，明显倒挂的在文末附核对 callout。
     // 字面计数会因转写错字低估真实人名（"李扣"被转写成"你扣"），所以只提示、绝不自动改写。
 export function appendEntityEvidenceWarning(outputMd, transcript) {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { isCurrentSettingsSchema } from "../src/shared/settings-schema";
 
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+/g, "/"),
@@ -58,15 +59,15 @@ function roundTrip(settings: PluginSettings): PluginSettings {
 
 describe("settings-io round-trip（白名单防丢键兜底）", () => {
   it("默认资料目录集中在资料库，诊断日志集中在系统目录", () => {
-    expect(DEFAULT_SETTINGS.vocabularyFile).toBe("LexVoice/资料库/词汇表.md");
-    expect(DEFAULT_SETTINGS.peopleDirectoryFolder).toBe("LexVoice/资料库/人员");
-    expect(DEFAULT_SETTINGS.peopleBaseFile).toBe("LexVoice/资料库/视图/人员库.base");
-    expect(DEFAULT_SETTINGS.todoCardsFolder).toBe("LexVoice/资料库/待办");
-    expect(DEFAULT_SETTINGS.basesFolder).toBe("LexVoice/资料库/视图");
-    expect(DEFAULT_SETTINGS.diagnosticsLogFolder).toBe("LexVoice/系统/诊断日志");
-    expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("LexVoice/资料库/归档");
-    expect(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder).toBe("LexVoice/资料库/归档/重复人员");
-    expect(SETTINGS_SCHEMA_VERSION).toBe(6);
+    expect(DEFAULT_SETTINGS.vocabularyFile).toBe("QnALog/资料库/词汇表.md");
+    expect(DEFAULT_SETTINGS.peopleDirectoryFolder).toBe("QnALog/资料库/人员");
+    expect(DEFAULT_SETTINGS.peopleBaseFile).toBe("QnALog/资料库/视图/人员库.base");
+    expect(DEFAULT_SETTINGS.todoCardsFolder).toBe("QnALog/资料库/待办");
+    expect(DEFAULT_SETTINGS.basesFolder).toBe("QnALog/资料库/视图");
+    expect(DEFAULT_SETTINGS.diagnosticsLogFolder).toBe("QnALog/系统/诊断日志");
+    expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("QnALog/资料库/归档");
+    expect(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder).toBe("QnALog/资料库/归档/重复人员");
+    expect(SETTINGS_SCHEMA_VERSION).toBe(1);
   });
 
   it("serialize 输出携带 schemaVersion", () => {
@@ -354,5 +355,40 @@ describe("extractJobItems", () => {
     expect(extractJobItems(undefined)).toEqual([]);
     expect(extractJobItems(null)).toEqual([]);
     expect(extractJobItems({ backgroundJobs: { items: "not-array" } })).toEqual([]);
+  });
+});
+
+describe("设置结构版本检查（QnALog 不承接历史项目的设置）", () => {
+  it("版本一致才读回磁盘设置", () => {
+    expect(isCurrentSettingsSchema({ settings: { schemaVersion: SETTINGS_SCHEMA_VERSION } })).toBe(true);
+    expect(isCurrentSettingsSchema({ schemaVersion: SETTINGS_SCHEMA_VERSION })).toBe(true);
+  });
+
+  it("版本不一致（含别的插件/旧格式/无版本号）一律判为不匹配", () => {
+    for (const saved of [
+      undefined, null, {}, { settings: {} },
+      { settings: { schemaVersion: 6 } },
+      { schemaVersion: 0 },
+      { settings: { schemaVersion: "x" } },
+    ]) {
+      expect(isCurrentSettingsSchema(saved), JSON.stringify(saved)).toBe(false);
+    }
+  });
+
+  it("版本不一致时读出的设置是默认值，不含磁盘上的旧路径", () => {
+    const saved = { settings: { schemaVersion: 6, storage: { recordingLibraryPath: "LexVoice/录音" } } };
+    const settings = normalizePluginSettings(isCurrentSettingsSchema(saved) ? saved : { schemaVersion: SETTINGS_SCHEMA_VERSION });
+    expect(settings.audioFolder).toBe(DEFAULT_SETTINGS.audioFolder);
+    expect(settings.mdFolder).toBe(DEFAULT_SETTINGS.mdFolder);
+  });
+
+  it("自定义路径不因版本检查而丢失（版本一致时原样读回）", () => {
+    const custom = {
+      settings: { schemaVersion: SETTINGS_SCHEMA_VERSION, storage: { recordingLibraryPath: "我的录音", briefingNotePath: "我的纪要" } },
+    };
+    expect(isCurrentSettingsSchema(custom)).toBe(true);
+    const settings = normalizePluginSettings(custom);
+    expect(settings.audioFolder).toBe("我的录音");
+    expect(settings.mdFolder).toBe("我的纪要");
   });
 });

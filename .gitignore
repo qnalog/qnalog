@@ -9,6 +9,9 @@ data.json
 
 
 # User recordings and generated notes
+# 两个数据根目录都忽略：新命名空间 QnALog/ 与旧的 LexVoice/
+# （旧目录在未迁移的库里仍然存在，里面是用户自己的录音与笔记）。
+QnALog/
 LexVoice/
 录音/
 转写纪要/

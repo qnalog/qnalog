@@ -43,7 +43,7 @@ import { getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots } from "../
 
 import { getTaskErrorMessage } from "../shared/task-activity";
 
-import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, replaceSpeakerDisplayName, speakerLabelForChannel } from "../audio/channel-speakers";
+import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName, speakerLabelForChannel } from "../audio/channel-speakers";
 
 import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 
@@ -63,6 +63,8 @@ import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACK
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendAskEntry, buildAskContext } from "../notes/ask-panel";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
+import { NS_FM_SPEAKERS, readSemanticMeta } from "../shared/namespace";
+import type { QnALogSemanticDocumentMeta } from "../canvas/semantic-outline-canvas";
 
 // 会后整合 prompt（叙述式自然生长，v2）：整场转写 → 依据实际讨论生长出来的 Markdown 岗位画像。
 // 刻意不再用固定 14 格 JSON 表单填空——那会逼模型抠片段硬套、产出稀薄；14 维只作模型内部的"挖全了没"查漏清单。
@@ -1677,7 +1679,7 @@ export class OutlineView extends obsidian.ItemView {
 
     await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
       const ids = extractSpeakerIdsFromMarkdown(original);
-      const mappings = normalizeSpeakerMappings(frontmatter.lexvoice_speakers, ids);
+      const mappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), ids);
       const current = mappings[speakerId] || {
         id: speakerId,
         channel: Math.max(1, Number(String(speakerId).replace(/^spk-/, "")) || 1),
@@ -1688,7 +1690,7 @@ export class OutlineView extends obsidian.ItemView {
         personName,
         personPath: matched && matched.path ? String(matched.path) : undefined,
       };
-      frontmatter.lexvoice_speakers = mappings;
+      frontmatter[NS_FM_SPEAKERS] = mappings;
     });
 
     const latest = await this.app.vault.cachedRead(file);
@@ -3781,7 +3783,8 @@ export class OutlineView extends obsidian.ItemView {
       .setTitle("更新整张语义图")
       .setIcon("refresh-cw")
       .onClick(() => generate({ mode: "full" })));
-    if (state.existing.lexvoiceSemantic?.graph) {
+    const existingMeta = readSemanticMeta<QnALogSemanticDocumentMeta>(state.existing);
+    if (existingMeta?.graph) {
       menu.addItem((item) => item
         .setTitle("自适应排版")
         .setIcon("layout-dashboard")
@@ -3794,7 +3797,7 @@ export class OutlineView extends obsidian.ItemView {
         .setTitle("向右展开")
         .setIcon("arrow-right")
         .onClick(() => generate({ mode: "layout", layoutMode: "right" })));
-      for (const branch of state.existing.lexvoiceSemantic.graph.branches.slice(0, 7)) {
+      for (const branch of existingMeta.graph.branches.slice(0, 7)) {
         menu.addSeparator();
         menu.addItem((item) => item.setTitle(branch.title).setIsLabel(true));
         menu.addItem((item) => item

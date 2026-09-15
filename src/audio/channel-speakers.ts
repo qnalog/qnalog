@@ -1,3 +1,4 @@
+import { NS_TAG, NS_FM_SPEAKERS, nsMarker, nsRe } from "../shared/namespace";
 export const MAX_SPEAKER_CHANNELS = 4;
 export const DEFAULT_SPEAKER_CHANNELS = 2;
 
@@ -227,13 +228,23 @@ export function buildSpeakerMappings(
 export function extractSpeakerIdsFromMarkdown(markdown: string): SpeakerId[] {
   const text = String(markdown || "");
   const found = new Set<SpeakerId>();
-  for (const match of text.matchAll(/<!--\s*lexvoice-speaker(?:-ref)?:(spk-(\d+))\s*-->/gi)) {
+  for (const match of text.matchAll(new RegExp(`<!--\\s*${nsRe("speaker")}(?:-ref)?:(spk-(\\d+))\\s*-->`, "gi"))) {
     found.add(speakerIdForChannel(Number(match[2])));
   }
   for (const match of text.matchAll(/(?:\[|\*\*)说话人\s*(\d+)(?:\]|\s*[：:]\*\*)/g)) {
     found.add(speakerIdForChannel(Number(match[1])));
   }
   return Array.from(found).sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)));
+}
+
+/**
+ * 读取说话人映射（frontmatter 键 `qnalog_speakers`）。
+ * 两处都存在时以新键为准（迁移尚未执行的库里旧键仍有效）。
+ */
+export function readSpeakerMappings(frontmatter: unknown): unknown {
+  if (!frontmatter || typeof frontmatter !== "object") return null;
+  const fm = frontmatter as Record<string, unknown>;
+  return fm[NS_FM_SPEAKERS] ?? null;
 }
 
 export function normalizeSpeakerMappings(
@@ -271,7 +282,7 @@ export function replaceSpeakerDisplayName(
   const safeName = String(personName || "").replace(/[\r\n]+/g, " ").trim();
   if (!safeName) return { markdown: String(markdown || ""), replacements: 0 };
   const anchored = new RegExp(
-    `(<!--\\s*lexvoice-speaker:${speakerId}\\s*-->\\s*\\n?\\s*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\*\\*[^*\\n]{1,80}[：:]\\*\\*`,
+    `(<!--\\s*${nsRe("speaker")}:${speakerId}\\s*-->\\s*\\n?\\s*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\*\\*[^*\\n]{1,80}[：:]\\*\\*`,
     "gi",
   );
   let replacements = 0;
@@ -285,16 +296,16 @@ export function replaceSpeakerDisplayName(
   const bold = new RegExp(`(^|\\n)([ \\t]*)\\*\\*说话人\\s*${channel}[：:]\\*\\*`, "g");
   next = next.replace(bold, (_match, lineStart: string, indent: string) => {
     replacements += 1;
-    return `${lineStart}${indent}<!-- lexvoice-speaker:${speakerId} -->\n${indent}**${safeName}：**`;
+    return `${lineStart}${indent}${nsMarker("speaker", speakerId)}\n${indent}**${safeName}：**`;
   });
   const bracket = new RegExp(`(^|\\n)([ \\t]*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\[说话人\\s*${channel}\\]\\s*`, "g");
   next = next.replace(bracket, (_match, lineStart: string, indent: string, timePrefix = "") => {
     replacements += 1;
-    return `${lineStart}${indent}<!-- lexvoice-speaker:${speakerId} -->\n${indent}${timePrefix}**${safeName}：** `;
+    return `${lineStart}${indent}${nsMarker("speaker", speakerId)}\n${indent}${timePrefix}**${safeName}：** `;
   });
-  const inlineMarker = `<!-- lexvoice-speaker-ref:${speakerId} -->${safeName}<!-- lexvoice-speaker-ref-end:${speakerId} -->`;
+  const inlineMarker = `${nsMarker("speaker-ref", speakerId)}${safeName}${nsMarker("speaker-ref-end", speakerId)}`;
   const anchoredInline = new RegExp(
-    `<!--\\s*lexvoice-speaker-ref:${speakerId}\\s*-->[^\\n]*?<!--\\s*lexvoice-speaker-ref-end:${speakerId}\\s*-->`,
+    `<!--\\s*${nsRe("speaker-ref")}:${speakerId}\\s*-->[^\\n]*?<!--\\s*${nsRe("speaker-ref-end")}:${speakerId}\\s*-->`,
     "gi",
   );
   next = next.replace(anchoredInline, () => {
@@ -320,7 +331,7 @@ export function replaceSpeakerDisplayName(
       inFence = !inFence;
       continue;
     }
-    if (inFence || /^\s*(?:<!--\s*)?lexvoice-(?:people|tags|part-summary)\s*:/i.test(line)) continue;
+    if (inFence || new RegExp(`^\\s*(?:<!--\\s*)?${NS_TAG}-(?:people|tags|part-summary)\\s*:`, "i").test(line)) continue;
     lines[index] = line.replace(genericInline, () => {
       replacements += 1;
       return inlineMarker;

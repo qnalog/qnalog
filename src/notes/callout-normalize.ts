@@ -53,7 +53,7 @@ export function isCalloutBoundary(line) {
     || /^-{3,}$/.test(trimmed)
     || /^<details\b/i.test(trimmed)
     || /^<\/details>/i.test(trimmed)
-    || /^<!--\s*lexvoice-/i.test(trimmed)
+    || /^<!--\s*qnalog-/i.test(trimmed)
     || /^\*\*[^*\n]{1,40}\*\*[:：]?/.test(trimmed)
     || /^####\s+/.test(trimmed);
 }

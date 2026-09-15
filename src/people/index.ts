@@ -9,6 +9,7 @@ import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { extractJsonObject } from '../shared/util-json';
 import { getFrontmatterTags, readFileFrontmatter, isLocalServiceEndpoint } from '../shared/util-note';
 import { callLlm } from '../llm/core';
+import { NS_PEOPLE_RE } from "../shared/namespace";
 
 export const PEOPLE_SUGGESTION_CACHE_LIMIT = 500;
 
@@ -919,7 +920,7 @@ export function normalizePersonNameForEmail(value) {
 
 export function parsePeopleFromOutput(text) {
   if (!text) return { people: [], cleaned: text || "" };
-  const re = /<!--\s*lexvoice-people\s*:\s*([\s\S]*?)\s*-->/i;
+  const re = NS_PEOPLE_RE;
   const m = text.match(re);
   if (!m) return { people: [], cleaned: text };
   const raw = m[1]

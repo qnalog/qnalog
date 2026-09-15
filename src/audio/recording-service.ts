@@ -35,6 +35,7 @@ import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { ViewShellService } from "../ui/view-shell-service";
+import { nsMarker } from "../shared/namespace";
 
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
@@ -212,9 +213,9 @@ export class RecordingService {
         continuationInfo ? "" : null,
         titleLine,
         "",
-        `<!-- lexvoice-session:${this.host.session.id} -->`,
-        `<!-- lexvoice-segments-start:${this.host.session.id} -->`,
-        `<!-- lexvoice-segments-end:${this.host.session.id} -->`,
+        nsMarker("session", this.host.session.id),
+        nsMarker("segments-start", this.host.session.id),
+        nsMarker("segments-end", this.host.session.id),
         "",
       ].filter(v => v !== null).join("\n");
       await this.host.noteWriter.appendToNote(mdPath, header);
@@ -394,8 +395,8 @@ export class RecordingService {
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
     const cur = await this.host.app.vault.read(file);
-    const sessMarker = `<!-- lexvoice-session:${session.id} -->`;
-    const endMarker = `<!-- lexvoice-segments-end:${session.id} -->`;
+    const sessMarker = nsMarker("session", session.id);
+    const endMarker = nsMarker("segments-end", session.id);
     const sessIdx = cur.indexOf(sessMarker);
     const endIdx = cur.indexOf(endMarker);
     if (sessIdx < 0 || endIdx < sessIdx) return;

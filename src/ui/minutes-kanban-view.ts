@@ -9,8 +9,9 @@ import {
   normalizePath,
   setIcon,
 } from "obsidian";
+import { NS_VIEW_MINUTES_KANBAN } from "../shared/namespace";
 
-export const VIEW_TYPE_MINUTES_KANBAN = "lexvoice-minutes-kanban-view";
+export const VIEW_TYPE_MINUTES_KANBAN = NS_VIEW_MINUTES_KANBAN;
 
 export type MinutesKanbanItem = {
   file: TFile;

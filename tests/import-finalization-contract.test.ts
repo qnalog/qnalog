@@ -69,7 +69,7 @@ describe("import finalization contract", () => {
   it("writes confirmed speaker names into the note before AI organization", () => {
     const source = finalizeSource;
     const confirmStart = source.indexOf("async confirmSpeakerNamesBeforeFinal");
-    const frontmatterIndex = source.indexOf("nextFrontmatter.lexvoice_speakers = mappings", confirmStart);
+    const frontmatterIndex = source.indexOf("nextFrontmatter[NS_FM_SPEAKERS] = mappings", confirmStart);
     const replaceIndex = source.indexOf("replaceSpeakerDisplayName(markdown, speakerId, personName)", frontmatterIndex);
     const persistIndex = source.indexOf("await this.host.app.vault.modify(file, markdown)", replaceIndex);
     const llmCopyIndex = source.indexOf("const llmSegments = hasConfirmedName", persistIndex);

@@ -29,13 +29,13 @@ describe("release runtime contracts", () => {
   it("keeps failed transcription tasks anchored to their exact note segments", () => {
     // 段落标记的生成与回填现在分处 main.ts 与笔记写入模块，按本文件约定改用全文断言。
     expect(pluginSource).toContain(
-      "segmentRecord.queueTaskId ? `<!-- lexvoice-transcribe-task:${segmentRecord.queueTaskId} -->`",
+      "segmentRecord.queueTaskId ? nsMarker(\"transcribe-task\", segmentRecord.queueTaskId) : \"\"",
     );
     expect(pluginSource).toContain(
-      "const marker = s.queueTaskId ? `<!-- lexvoice-transcribe-task:${s.queueTaskId} -->\\n` : \"\";",
+      "const marker = s.queueTaskId ? `${nsMarker(\"transcribe-task\", s.queueTaskId)}\\n` : \"\";",
     );
     expect(pluginSource).toContain(
-      "retryTask ? `<!-- lexvoice-transcribe-task:${retryTask.id} -->` : \"\"",
+      "retryTask ? nsMarker(\"transcribe-task\", retryTask.id) : \"\"",
     );
     expect(pluginSource).toContain("const legacySegmentPattern = new RegExp(");
     expect(pluginSource).toContain("cur.replace(legacySegmentPattern, `$1${taskMarker}\\n${text}`)");

@@ -20,26 +20,38 @@ function base64ToUtf8(value) {
 export function obfuscateApiKey(plain) {
   const s = String(plain == null ? "" : plain);
   if (!s) return "";
-  if (s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER)) return s; // 已混淆，幂等
+  if (isObfuscatedApiKey(s)) return s; // 已混淆，幂等
   try {
     return QNALOG_KEY_OBFUSCATION_MARKER + utf8ToBase64(qnalogXorTransform(s));
   } catch { return s; }
 }
 
+/**
+ * 解混淆。两种输入：
+ * - 带 marker 前缀：用 salt 解出明文。
+ * - 无 marker：视为明文（用户手填），原样返回。
+ *
+ * 前缀不匹配时不返回原文：无法识别的串按「解不出来」处理，让用户重填，
+ * 避免把一段无关文本当成 API Key 发出去。
+ */
 export function deobfuscateApiKey(stored) {
   const s = String(stored == null ? "" : stored);
-  if (!s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER)) return s; // 明文（旧数据迁移）→ 原样返回
+  if (!s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER)) return s;
   try {
     return qnalogXorTransform(base64ToUtf8(s.slice(QNALOG_KEY_OBFUSCATION_MARKER.length)));
   } catch { return s; }
 }
 
-// 取值是数据：marker 前缀写在用户 data.json 的 apiKey 字段里，salt 参与已存密钥的编解码。
-// 改任一个都会让已保存的 API Key 无法解密。常量名用 QNALOG_，取值随数据层命名空间重置再改，
-// 且届时要连带让用户重填密钥。
-export const QNALOG_KEY_OBFUSCATION_MARKER = "lvk1:";
+// marker 前缀写在用户 data.json 的 apiKey 字段里，salt 参与编解码，两者都属于数据层。
+export const QNALOG_KEY_OBFUSCATION_MARKER = "qnk1:";
 
-export const QNALOG_KEY_OBFUSCATION_SALT = "LexVoice/local-key-obfuscation/v1";
+export const QNALOG_KEY_OBFUSCATION_SALT = "QnALog/local-key-obfuscation/v1";
+
+/** 是否为本插件写过的混淆串。 */
+export function isObfuscatedApiKey(stored) {
+  const s = String(stored == null ? "" : stored);
+  return s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER);
+}
 
 export function redactDiagnosticText(value) {
   return String(value == null ? "" : value)

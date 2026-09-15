@@ -1,5 +1,6 @@
+import { readSemanticMeta } from "../shared/namespace";
 export type SemanticCanvasSourceDocument = {
-  lexvoiceSemantic?: {
+  qnalogSemantic?: {
     sourcePath?: unknown;
   };
 };
@@ -26,7 +27,7 @@ export function resolveSemanticCanvasSourcePath(
 ): string {
   if (documentValue && typeof documentValue === "object") {
     const sourcePath = normalizeVaultPath(
-      (documentValue as SemanticCanvasSourceDocument).lexvoiceSemantic?.sourcePath,
+      readSemanticMeta<{ sourcePath?: string }>(documentValue)?.sourcePath,
     );
     if (sourcePath) return sourcePath;
   }
