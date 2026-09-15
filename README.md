@@ -180,7 +180,7 @@ npm run install:vault -- "/path/to/your/vault"
 
 Then reload Obsidian (`Ctrl/Cmd + R`) and enable **Q&A Log**.
 
-If the stored settings were written by a different version, the plugin discards them on first load and starts from its defaults, with a notice. Configure paths and API keys again in **Settings → Q&A Log**.
+Q&A Log keeps your settings when the stored schema is older: it migrates them forward and your API keys, service configuration, prompts, paths, and device choices are preserved. Settings are only discarded when they cannot be recognized at all (written by a different project, or corrupted) — in that case the original file is backed up under `<plugin folder>/settings-backups/` before defaults are used.
 
 ### Rolling back
 

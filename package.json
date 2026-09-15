@@ -12,6 +12,7 @@
     "check:domain-boundaries": "node scripts/check-domain-boundaries.mjs",
     "check:mainline-isolation": "node scripts/check-mainline-isolation.mjs",
     "check:legacy-prefixes": "node scripts/check-legacy-prefixes.mjs",
+    "check:settings-map": "node scripts/check-settings-map.mjs",
     "check:release-tag": "node scripts/check-release-tag-on-main.mjs",
     "check:bundle-consistency": "node scripts/check-bundle-consistency.mjs",
     "check:plugin-onload": "node scripts/check-plugin-onload.mjs && node scripts/check-merge-pipeline.mjs",
@@ -20,7 +21,7 @@
     "install:vault": "node scripts/install-to-vault.mjs",
     "restore:vault": "node scripts/restore-from-backup.mjs",
     "test": "vitest run",
-    "verify": "npm run lint && npm run build && npm test && npm run check:mainline-isolation && npm run check:legacy-prefixes",
+    "verify": "npm run lint && npm run build && npm test && npm run check:mainline-isolation && npm run check:legacy-prefixes && npm run check:settings-map",
     "verify:push": "npm run verify && npm run check:bundle-consistency",
     "test:watch": "vitest",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
