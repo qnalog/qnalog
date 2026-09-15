@@ -32,7 +32,7 @@ export class DashScopeStreamingClient {
     this.onPartial = opts.onPartial || (() => { /* intentionally empty */ });
     this.onError = opts.onError || ((e) => console.error("[DashScopeStream]", e));
     this.onClosed = opts.onClosed || (() => { /* intentionally empty */ });
-    this.taskId = "lvtask-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    this.taskId = "qnalogtask-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
     this.ws = null;
     this.started = false;
     this.finishing = false;
