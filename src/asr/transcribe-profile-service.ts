@@ -2,6 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：转写服务配置解析：内置服务条目、协议、模型与说话人分离能力判定
 
 import type { PluginSettings } from "../shared/types";
+import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 
 /** TranscribeProfileService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface TranscribeProfileHost {
@@ -244,6 +245,13 @@ export class TranscribeProfileService {
     };
     const base = profiles[id] || profiles.custom;
     const title = id === "custom" && provider && provider.name ? provider.name : base.title;
+    // 没有预设的 provider（用户自建、其它服务）原先一律沿用 custom 的 requiresKey: false，
+    // 于是密钥栏显示「可选」；但导入时运行时会因缺 key 报错——用户按界面提示留空，
+    // 等到真正使用才发现。改为按 endpoint 推断：本地/内网地址（明文 HTTP 允许的
+    // 主机范围）不需要密钥，其余远处服务一律要求填写。
+    if (!profiles[id]) {
+      return Object.assign({}, base, { title, requiresKey: !canOmitServiceApiKey(provider && provider.endpoint) });
+    }
     return Object.assign({}, base, { title });
   }
 

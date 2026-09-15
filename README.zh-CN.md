@@ -195,6 +195,8 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 2. 在 BRAT 中选择 **Add beta plugin**，填入 `qnalog/qnalog`。
 3. 安装后在「设置 → 第三方插件」中启用 **Q&A Log**。
 
+也可以直接从[发布页](https://github.com/qnalog/qnalog/releases)下载资产（`main.js`、`manifest.json`、`styles.css`，以及 `LICENSE` 与 `NOTICE`）放入 `<知识库>/.obsidian/plugins/qnalog/`。每个 Release 都由 CI 从对应的 tag 重建产物并逐字节比对后上传。
+
 ### 方式二：从源码构建（桌面端）
 
 ```bash
