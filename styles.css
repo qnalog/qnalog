@@ -7369,7 +7369,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: flex;
   align-items: center;
   gap: var(--size-2-2);
-  padding: var(--size-2-3) var(--size-2-2);
+  /* 横向不加内边距：加了会让行内容比区块标题右移，用负外边距抵消又会把
+     分隔线推出同一列，两种做法都会留下 4px 的不一致。
+     横向留 0 后文字、分隔线、hover 背景三者同一条左边线，
+     与 Obsidian 原生 .setting-item 一样只在纵向留白。 */
+  padding: var(--size-2-3) 0;
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
