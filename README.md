@@ -64,11 +64,6 @@ After each note, AI splits the content into three candidate groups you review in
 ### Object library
 Q&A Log turns reusable meeting content into standalone Obsidian objects — people profiles, ASR hotwords, and a wall of todos assembled from the notes you confirmed. Everything lives in your own vault; the next time the same person comes up, it links to the existing profile.
 
-<p align="center">
-  <img width="220" alt="Q&A Log object" src="docs/images/object-library.webp" />
-  <img width="220" alt="Generated people profile" src="docs/images/people-profile.webp" />
-</p>
-
 ### Todo enhancements
 Edit owner, due date and sub-tasks inline at the candidate stage — no dialogs. Stored todos use standard Markdown task syntax (recognized by plugins like Tasks). Source information is preserved on delete / redo for traceability.
 
@@ -81,10 +76,6 @@ Edit owner, due date and sub-tasks inline at the candidate stage — no dialogs.
 
 ### Export
 From one set of notes you can generate an HTML report, a PDF report, or an `.eml` email draft — same content, different presentation.
-
-<p align="center">
-  <img width="720" alt="Q&A Log export" src="docs/images/export-email-draft.webp" />
-</p>
 
 ### Note list
 The sidebar can organize recent notes by folder or by time. Folder groups can be collapsed, the open note is highlighted, and search and template filters remain available in either view.
@@ -99,10 +90,6 @@ The sidebar can organize recent notes by folder or by time. Folder groups can be
 6. Ask follow-up questions from **Ask this note**, or retry only the failed stage if processing was interrupted.
 7. Open **Sediment** and review people, todos, and hotwords.
 8. If you need to share, generate an HTML report, a PDF report, or an email draft.
-
-<p align="center">
-  <img width="720" alt="Q&A Log in the Obsidian sidebar" src="docs/images/sidebar.webp" />
-</p>
 
 Default folders (all configurable in settings):
 

@@ -74,11 +74,6 @@ Q&A Log 是一个独立项目，不是 LexVoice 的新版本。它从 LexVoice �
 
 Q&A Log 可以把会议中值得复用的内容保存为独立的 Obsidian 对象，包括人员档案、待办和 ASR 热词，并可打开由已确认待办汇总成的待办墙。所有内容都保存在你自己的知识库中；下次会议再次提到同一个人时，可以关联已有档案，而不是重复创建。
 
-<p align="center">
-  <img width="220" alt="Q&A Log 信息对象" src="docs/images/object-library.webp" />
-  <img width="220" alt="Q&A Log 人员档案" src="docs/images/people-profile.webp" />
-</p>
-
 ### 待办增强
 
 在候选阶段即可行内编辑责任人、截止时间和子任务，不需要打开额外弹窗。入库后的待办使用标准 Markdown 任务语法，可被 Tasks 等插件识别。删除或重新整理时会保留来源信息，便于追溯。
@@ -95,10 +90,6 @@ Q&A Log 可以把会议中值得复用的内容保存为独立的 Obsidian 对�
 
 同一篇纪要可以继续生成 HTML 报告、PDF 报告或 `.eml` 邮件草稿。内容保持一致，只根据使用场景调整呈现形式。
 
-<p align="center">
-  <img width="720" alt="Q&A Log 导出" src="docs/images/export-email-draft.webp" />
-</p>
-
 ### 纪要列表
 
 侧边栏可以按文件夹或按时间组织最近纪要。文件夹分组支持折叠，当前打开的纪要会高亮；两种视图都可以继续使用搜索和模板筛选。
@@ -113,10 +104,6 @@ Q&A Log 可以把会议中值得复用的内容保存为独立的 Obsidian 对�
 6. 如果处理被中断，可以只重试失败步骤；如果纪要遗漏信息，可以使用“问一问”。
 7. 打开“沉淀”，确认人员、待办和热词。
 8. 需要分享时，可继续生成 HTML 报告、PDF 报告或邮件草稿。
-
-<p align="center">
-  <img width="720" alt="Q&A Log 侧边栏" src="docs/images/sidebar.webp" />
-</p>
 
 默认目录如下，均可在设置中修改：
 
