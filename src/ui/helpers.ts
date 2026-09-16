@@ -312,7 +312,7 @@ export function classifyImportTextFileForModal(file, content) {
       category: "qnalog-normal",
       badge: t("Organized"),
       reason: t("Can merge / switch template"),
-      statusTitle: "Q&A Log 已整理纪要，可用于多篇合并、换模板重整或转成其他模式",
+      statusTitle: t("Q&A Log has organized minutes that can be used for merging several notes, re-organizing with another template, or converting to another mode"),
     };
   }
 

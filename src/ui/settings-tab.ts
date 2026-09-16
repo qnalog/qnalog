@@ -241,7 +241,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     box.createEl("summary", { cls: "qnalog-risk-title", text: t("AI has not read this note yet") });
     box.createDiv({
       cls: "qnalog-risk-body",
-      text: "Q&A Log 没有自有云端存储，也不会把录音上传到 Q&A Log 服务器；录音文件保存在用户选择的本地 Obsidian 库路径。转写和 AI 整理时，音频、转写文本和提示词会发送到当前配置的云端 API 或本地模型。敏感内容建议使用本地转写和本地大模型，避免通过云端 API 处理涉密、隐私、客户资料、医疗、法务、人事等信息。",
+      text: t("Q&A Log has no cloud storage of its own and does not upload recordings to a Q&A Log server; recordings are saved in the local Obsidian vault path you choose. During transcription and AI organizing, the audio, transcript text, and prompts are sent to the currently configured cloud API or local model. For sensitive content, use local transcription and a local LLM, and avoid processing confidential, private, customer, medical, legal, or HR information through a cloud API."),
     });
   }
 
@@ -784,7 +784,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const addOption = (value, text) => selectEl.createEl("option", { value, text });
     // 电脑音频**不做自动选择**：判定哪只是虚拟声卡靠设备名关键词，判错就录到错误内容，
     // 而用户从界面上看不出来。因此一律留空让用户手动选，下拉里标出推荐项供参考。
-    addOption("", "— 请选择电脑音频输入 —");
+    addOption("", t("— Select computer audio input —"));
 
     if (isMobileRuntime()) {
       selectEl.value = "";
@@ -1226,7 +1226,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const controls = block.createDiv({ cls: "qnalog-scheme-controls" });
     const sel = controls.createEl("select", { cls: "dropdown qnalog-scheme-select" });
     const addOpt = (value, label) => { const o = sel.createEl("option", { text: label }); o.value = value; };
-    addOpt("", "临时配置（未保存）");
+    addOpt("", t("Temporary configuration (not saved)"));
     for (const p of schemes) addOpt(p.id, p.name);
     sel.value = activeId;
     sel.addEventListener("change", async () => {
@@ -1568,7 +1568,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       box.createDiv({
         cls: "qnalog-risk-body",
         text: `你选择的导入服务「${savedLabel}」当前不可用（已删除，或所用协议不支持整文件转写）。`
-          + "下面显示的是可用的替代项，但你的设置未被改动——导入音频时仍会使用你原来选的这个并失败。"
+          + t("The alternatives shown below are available, but your setting was not changed — importing audio will still use the one you originally selected and fail.")
           + t("Please select a service again above. If you really want to keep using the original one, change its protocol back to one that supports whole-file transcription, then try again."),
       });
     }
@@ -1719,7 +1719,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addDropdown(d => d
         .addOption("loose", t("Relaxed (mainly prose)"))
         .addOption("balanced", t("Balanced (recommended)"))
-        .addOption("strict", "严谨（多层嵌套）")
+        .addOption("strict", t("Rigorous (multi-level nesting)"))
         .setValue(this.plugin.settings.briefingStructureLevel || "balanced")
         .onChange(async v => {
           this.plugin.settings.briefingStructureLevel = v;
@@ -1771,7 +1771,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if ((this.plugin.settings.briefingTranslationMode || "off") !== "off") {
       new obsidian.Setting(c).setName(t("Target Language"))
         .addDropdown(d => d
-          .addOption("zh-CN", "中文")
+          .addOption("zh-CN", t("Chinese"))
           .addOption("en", "English")
           .addOption("ja", t("日本語"))
           .addOption("ko", "한국어")
@@ -1848,7 +1848,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const currentMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode, "meeting");
     const currentMeta = getModeMeta(this.plugin.settings, currentMode);
     new obsidian.Setting(c).setName(t("Default note template"))
-      .setDesc((currentMeta.label || currentMeta.prefix) + "。录音、导入音频和重新整理默认使用此模板；具体操作时仍可临时切换。")
+      .setDesc((currentMeta.label || currentMeta.prefix) + t(". Recordings, imported audio, and re-organizing use this template by default; you can still switch temporarily for a specific action."))
       .addDropdown(d => {
         for (const [key, label] of getVisibleModeEntries(this.plugin.settings, false)) d.addOption(key, label);
         d.setValue(currentMode);
@@ -1956,7 +1956,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       btn.onclick = onClick;
       return btn;
     };
-    makeObjectCard("人员", peopleCount, t("people"), t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
+    makeObjectCard(t("Person"), peopleCount, t("people"), t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
     makeObjectCard(t("To-do"), todoCount, t("items"), t("Action items confirmed from the meeting notes; check them off to track."), "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
     const vocabCard = makeObjectCard(t("Transcription term list"), "…", "个", t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
 
@@ -1991,7 +1991,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Person deduplication"))
       .setDesc(t("Merge duplicate records by name, update note references, and archive duplicate pages with -1 / -2 suffixes."))
       .addButton(b => b.setButtonText(t("Merge duplicate people")).onClick(async () => {
-        const ok = await qnalogConfirm(this.app, t("Merge duplicate person profiles?"), "Q&A Log 会把同名人员页合并到主档案，改写所有指向重复页的 wiki 链接，并将重复页移到归档目录。建议先确保同步已完成。", t("Start merging"));
+        const ok = await qnalogConfirm(this.app, t("Merge duplicate person profiles?"), t("Q&A Log merges person pages with the same name into the main profile, rewrites all wiki links pointing to the duplicate pages, and moves the duplicates to the archive folder. Make sure syncing has finished first."), t("Start merging"));
         if (!ok) return;
         try {
           const result = await this.plugin.people.mergeDuplicatePeopleDirectory();
@@ -2038,7 +2038,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async v => { this.plugin.settings.vocabularyFile = v || DEFAULT_SETTINGS.vocabularyFile; },
       refreshVocabStatus);
 
-    createPathSetting(advancedBody, "人员资料文件夹", "一人一篇 Markdown，用于长期维护姓名、常用称呼、角色、组织和相关纪要。", this.plugin.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder, DEFAULT_SETTINGS.peopleDirectoryFolder,
+    createPathSetting(advancedBody, t("Person profile folder"), t("One Markdown page per person, for long-term maintenance of names, common forms of address, roles, organizations, and related minutes."), this.plugin.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder, DEFAULT_SETTINGS.peopleDirectoryFolder,
       async v => { this.plugin.settings.peopleDirectoryFolder = v || DEFAULT_SETTINGS.peopleDirectoryFolder; },
       async setting => {
         try {
@@ -2090,15 +2090,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       ? t("The current LLM service is detected as local or on a LAN")
       : (isSharedAddressSpaceEndpoint(this.plugin.settings.llmEndpoint)
         ? t("The current LLM service is detected as a private network such as Tailscale") : t("The current LLM service is detected as cloud"));
-    const modeLabel = { privacy: t("Privacy first"), hotwords: "人名热词", localFull: t("Local enhancement") }[normalizePeopleContextMode(this.plugin.settings.peopleContextMode)] || t("Privacy first");
+    const modeLabel = { privacy: t("Privacy first"), hotwords: t("Person name hotwords"), localFull: t("Local enhancement") }[normalizePeopleContextMode(this.plugin.settings.peopleContextMode)] || t("Privacy first");
     const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? `已于 ${this.plugin.settings.peopleHotwordsConsentAt} 授权人名热词。` : t("Name hotwords not yet authorized.");
 
-    this.createSettingsSubhead(advancedBody, "人员资料隐私", t("Determines whether person names and context are sent to the current service along with transcription or organizing requests."));
+    this.createSettingsSubhead(advancedBody, t("Person profile privacy"), t("Determines whether person names and context are sent to the current service along with transcription or organizing requests."));
     new obsidian.Setting(advancedBody).setName(t("Person profile usage policy"))
       .setDesc(`${modeLabel}。${asrScope}；${llmScope}。${consentText}`)
       .addDropdown(d => d
         .addOption("privacy", t("Privacy first: do not send people data"))
-        .addOption("hotwords", "人名热词：仅姓名/称呼，需授权")
+        .addOption("hotwords", t("Person name hotwords: names/forms of address only, requires authorization"))
         .addOption("localFull", t("Local enhancement: only local services use the full people context"))
         .setValue(normalizePeopleContextMode(this.plugin.settings.peopleContextMode))
         .onChange(async v => {
@@ -2386,7 +2386,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Adjust the size of the button and its expanded controls."))
       .addDropdown(d => d
         .addOption("large", t("Large"))
-        .addOption("medium", "中")
+        .addOption("medium", t("Medium"))
         .addOption("small", t("Small"))
         .setValue(this.plugin.settings.bubbleSize || "large")
         .onChange(async v => {
@@ -2412,7 +2412,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addText(txt => {
         inboxFolderInput = t;
         txt.setValue(this.plugin.settings.inboxFolder || "")
-          .setPlaceholder("QnALog/录音/inbox or a computer folder")
+          .setPlaceholder("QnALog/录音/inbox 或电脑文件夹")
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
             await this.plugin.saveSettings();
@@ -2528,8 +2528,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         ? t("Detected ") + installedUpdateVersion + t(" is in place; takes effect after a restart or re-enabling")
         : "",
       update && update.version ? t("Available versions:") + update.version + "（请从发布页安装）" : t("No updates available"),
-      this.plugin.settings.lastUpdateCheckAt ? "上次检查：" + this.plugin.settings.lastUpdateCheckAt : t("Not yet checked"),
-      this.plugin.settings.lastUpdateError ? "上次错误：" + this.plugin.settings.lastUpdateError : "",
+      this.plugin.settings.lastUpdateCheckAt ? t("Last checked:") + this.plugin.settings.lastUpdateCheckAt : t("Not yet checked"),
+      this.plugin.settings.lastUpdateError ? t("Last error:") + this.plugin.settings.lastUpdateError : "",
       rawBases.length > 1 ? t("Alternate download source:") + (rawBases.length - 1) + " 个" : "",
       t("Write directory:") + pluginBasePath(this.plugin),
     ].filter(Boolean).join("；");

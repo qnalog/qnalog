@@ -413,7 +413,7 @@ export class OutlineView extends obsidian.ItemView {
     this.noteAskByPath = {};
   }
   getViewType() { return VIEW_TYPE_OUTLINE; }
-  getDisplayText() { return "Q&A Log 实时纪要"; }
+  getDisplayText() { return i18nT("Q&A Log live minutes"); }
   getIcon() { return "list-tree"; }
   async onOpen() {
     this.containerEl.children[1].empty();
@@ -998,10 +998,10 @@ export class OutlineView extends obsidian.ItemView {
       const user = [
         `当前纪要：${file.basename}`,
         "",
-        "【用户问题】",
+        i18nT("[User question]"),
         question,
         "",
-        "【当前材料：原始转写优先，纪要正文辅助】",
+        i18nT("[Current material: raw transcript first, minutes body as support]"),
         context,
         "",
         i18nT("Answer requirements:"),
@@ -1107,7 +1107,7 @@ export class OutlineView extends obsidian.ItemView {
       if (!context || context.length < 40) return;
       const system = i18nT("You are a senior meeting analysis assistant. Raise follow-up questions based only on the given minutes and raw transcript, and do not invent information that is not in the material.");
       const user = [
-        "下面是一篇纪要，以及用户刚问的问题和你给出的回答。请基于纪要内容，提出 3 个有深度、值得继续追问的问题——优先指向：根因/机制、隐含分歧或矛盾、风险与代价、下一步该定的决策、反例或边界条件。",
+        i18nT("Below are a set of minutes, plus the question the user just asked and the answer you gave. Based on the minutes, propose 3 in-depth questions worth following up on — prioritizing: root cause/mechanism, implicit disagreement or contradiction, risks and costs, the decision to make next, counterexamples or boundary conditions."),
         i18nT("Requirements:"),
         i18nT("- Each question on its own line, 3 lines in total"),
         i18nT("- Each line ≤ 22 characters, specific, answerable from these notes, not vague (no things like “could you say more”)"),
@@ -1116,7 +1116,7 @@ export class OutlineView extends obsidian.ItemView {
         `【用户刚问】${entry.question}`,
         `【你的回答】${entry.answer}`,
         "",
-        "【纪要材料：原始转写优先，纪要正文辅助】",
+        i18nT("[Minutes material: raw transcript first, minutes body as support]"),
         context,
       ].join("\n");
       const raw = await callLlm(this.plugin, system, user, {
@@ -2069,7 +2069,7 @@ export class OutlineView extends obsidian.ItemView {
         it.onclick = () => finish(query.trim(), null);
         items.push(it);
       }
-      if (!items.length) list.createDiv({ cls: "qnalog-todo-inline-empty", text: "人员库为空，直接输入新名字 + 回车" });
+      if (!items.length) list.createDiv({ cls: "qnalog-todo-inline-empty", text: i18nT("The person library is empty; type a new name and press Enter") });
       selectedIdx = 0;
       highlight();
     };
@@ -2133,7 +2133,7 @@ export class OutlineView extends obsidian.ItemView {
       { key: "1", label: i18nT("Today"), value: moment().format("YYYY-MM-DD") },
       { key: "2", label: i18nT("Tomorrow"), value: moment().add(1, "day").format("YYYY-MM-DD") },
       { key: "3", label: i18nT("This weekend"), value: moment().endOf("week").format("YYYY-MM-DD") },
-      { key: "4", label: "下周", value: moment().add(1, "week").format("YYYY-MM-DD") },
+      { key: "4", label: i18nT("Next week"), value: moment().add(1, "week").format("YYYY-MM-DD") },
     ] : [];
     let matched = false;
     for (const p of presets) {
@@ -2317,7 +2317,7 @@ export class OutlineView extends obsidian.ItemView {
     });
     const footer = panel.createDiv({ cls: "qnalog-todo-inline-subtask-footer" });
     const countEl = footer.createSpan({ cls: "qnalog-todo-inline-subtask-count" });
-    footer.createSpan({ cls: "qnalog-todo-inline-subtask-hint", text: "↵ 添加 · Esc 收起" });
+    footer.createSpan({ cls: "qnalog-todo-inline-subtask-hint", text: i18nT("↵ Add · Esc to collapse") });
     const updateCount = () => {
       countEl.setText(`${existing.length}/${MAX} 项`);
       if (existing.length >= MAX) {
@@ -2613,7 +2613,7 @@ export class OutlineView extends obsidian.ItemView {
         return input;
       };
 
-      const taskInput = makeField("事项", todo.task || todo.title || "");
+      const taskInput = makeField(i18nT("Item"), todo.task || todo.title || "");
       const ownerInput = makeField(i18nT("Owner"), todo.owner && todo.owner !== "未指定" ? todo.owner : "");
       const dueInput = makeField(i18nT("Time"), todo.due && todo.due !== "未指定" ? todo.due : "");
       const subtasksInput = makeField(i18nT("Subtask"), normalizeSedimentTodoSubtasks(todo.subtasks || todo.children || todo.steps || todo.items).join("\n"), true);
@@ -2724,7 +2724,7 @@ export class OutlineView extends obsidian.ItemView {
         return txt.includes(q);
       });
       if (!filtered.length && !q) {
-        list.createDiv({ cls: "qnalog-todo-popover-empty", text: "人员库为空，直接输入新名字 + 回车" });
+        list.createDiv({ cls: "qnalog-todo-popover-empty", text: i18nT("The person library is empty; type a new name and press Enter") });
         return;
       }
       // 当前选中
@@ -2740,7 +2740,7 @@ export class OutlineView extends obsidian.ItemView {
         };
       }
       if (filtered.length) {
-        list.createDiv({ cls: "qnalog-todo-popover-section", text: q ? "匹配" : "人员库" });
+        list.createDiv({ cls: "qnalog-todo-popover-section", text: q ? "匹配" : i18nT("Person library") });
         for (const p of filtered.slice(0, 12)) {
           const row = list.createDiv({ cls: "qnalog-todo-popover-item" });
           row.createSpan({ cls: "qnalog-todo-popover-item-name", text: p.name || i18nT("Untitled") });
@@ -2788,8 +2788,8 @@ export class OutlineView extends obsidian.ItemView {
       { label: i18nT("Today"), value: moment().format("YYYY-MM-DD") },
       { label: i18nT("Tomorrow"), value: moment().add(1, "day").format("YYYY-MM-DD") },
       { label: i18nT("This weekend"), value: moment().endOf("week").format("YYYY-MM-DD") },
-      { label: "下周", value: moment().add(1, "week").format("YYYY-MM-DD") },
-      { label: "下月", value: moment().add(1, "month").format("YYYY-MM-DD") },
+      { label: i18nT("Next week"), value: moment().add(1, "week").format("YYYY-MM-DD") },
+      { label: i18nT("Next month"), value: moment().add(1, "month").format("YYYY-MM-DD") },
     ] : [];
     for (const p of presets) {
       const btn = presetWrap.createEl("button", {
@@ -3205,7 +3205,7 @@ export class OutlineView extends obsidian.ItemView {
         await this.plugin.saveSettings();
         this.plugin.tasks.completeTaskActivity(taskId, {
           stage: "done",
-          stageLabel: "人员建议已生成",
+          stageLabel: i18nT("Person suggestions generated"),
           detail: addedCount ? `${addedCount} 条待确认` : i18nT("No new person suggestions detected"),
           progress: 100,
           actions: [
@@ -3215,7 +3215,7 @@ export class OutlineView extends obsidian.ItemView {
         });
         return addedCount;
       }, {
-        failureLabel: "人员建议提取未完成",
+        failureLabel: i18nT("Person suggestion extraction not finished"),
         failureActions: [
           { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
@@ -4621,7 +4621,7 @@ export class OutlineView extends obsidian.ItemView {
         { value: "reasoning", label: i18nT("- When the minutes offer no basis, state clearly \"the minutes do not provide enough basis\".") },
       ],
       disabled: !thinkCtrl,
-      disabledLabel: "不支持",
+      disabledLabel: i18nT("Not supported"),
       onPick: async (v) => { this.plugin.settings.thinkingMode = v; await this.plugin.saveSettings(); },
     });
 
@@ -5613,7 +5613,7 @@ export class OutlineView extends obsidian.ItemView {
     if (filters.time === "today") {
       const widen = hint.createEl("button", { text: i18nT("AI is identifying transcript terms"), attr: { type: "button" } });
       widen.onclick = () => this.setRecentFilter("time", "week");
-      if (this.hasActiveRecentFilters()) hint.createSpan({ text: " 或 " });
+      if (this.hasActiveRecentFilters()) hint.createSpan({ text: i18nT("or") });
     }
     if (this.hasActiveRecentFilters()) {
       const clear = hint.createEl("button", { text: i18nT("Clear all filters"), attr: { type: "button" } });

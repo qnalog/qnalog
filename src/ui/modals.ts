@@ -150,7 +150,7 @@ export class AudioTimeModal extends obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-audio-modal");
-    contentEl.createEl("h3", { text: "Q&A Log 回听" });
+    contentEl.createEl("h3", { text: i18nT("Q&A Log listen back") });
     contentEl.createDiv({ cls: "qnalog-audio-modal-meta", text: `${this.file.path} · ${this.label}` });
 
     const playerWrap = contentEl.createDiv({ cls: "qnalog-audio-player-wrap" });
@@ -245,7 +245,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     contentEl.createDiv({
       cls: "setting-item-description",
       text: this.sourceFile
-        ? "Q&A Log 只会发送当前笔记内容到已配置的大模型，用于生成候选人员建议；已有人员资料仅在本地用于匹配和去重，不随请求发送。确认后会把这次会议的人物归属写回纪要，并维护对应人员页。"
+        ? i18nT("Q&A Log only sends the content of the current note to the configured LLM to generate candidate person suggestions; existing person profiles are used only locally for matching and deduplication and are not sent with the request. Once confirmed, the speaker attributions for this meeting are written back to the minutes and the corresponding person pages are maintained.")
         : this.options.fromIgnored
           ? `这里是已忽略的 ${this.options.ignoredCount || this.suggestions.length} 条人员建议。误操作的建议可以先恢复到待确认，也可以直接修改后保存进人员资料；保存后会自动移出忽略列表。`
         : this.options.fromCache
@@ -291,7 +291,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       const checkbox = top.createEl("input", { type: "checkbox" });
       checkbox.checked = item.selected !== false;
       const badge = top.createSpan({ text: this.options.fromIgnored ? "已忽略" : (item.matchPath ? "合并到已有人员" : i18nT("New person")), cls: "qnalog-people-suggestion-badge" });
-      top.createSpan({ text: `置信度：${item.confidence || "中"}`, cls: "setting-item-description" });
+      top.createSpan({ text: `置信度：${item.confidence || i18nT("Medium")}`, cls: "setting-item-description" });
       const matchMeta = top.createSpan({ text: item.matchPath ? ` · ${item.matchPath}` : "", cls: "setting-item-description" });
       if (!this.sourceFile && item.sourceBasename) top.createSpan({ text: ` · 来源：${item.sourceBasename}`, cls: "setting-item-description" });
       let rowRef = null;
@@ -393,7 +393,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         cls: "qnalog-people-suggestion-note",
         text: item.note || "",
       });
-      noteArea.placeholder = "备注";
+      noteArea.placeholder = i18nT("Note");
       if (item.evidence && item.evidence.length) {
         box.createDiv({
           cls: "setting-item-description",
@@ -430,7 +430,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
             organization: row.orgInput.getValue(),
             note: row.noteArea.value,
             relation: row.relationSelect ? row.relationSelect.getValue() : row.item.relation,
-            confidence: row.item.confidence || "中",
+            confidence: row.item.confidence || i18nT("Medium"),
             evidence: row.item.evidence || [],
           });
           if (normalized) normalized.matchPath = row.item.matchPath || "";
@@ -1387,7 +1387,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       b.createEl("p", { text: i18nT("- Lets users save and then use it directly for recording, importing, and reorganizing.") });
       const ul = b.createEl("ul");
       const li1 = ul.createEl("li");
-      li1.createSpan({ text: "下载页：" });
+      li1.createSpan({ text: i18nT("Download page:") });
       const a1 = li1.createEl("a", { text: "existential.audio/blackhole/", href: "https://existential.audio/blackhole/" });
       a1.target = "_blank";
       const li2 = ul.createEl("li");
@@ -1417,11 +1417,11 @@ export class VirtualCableSetupModal extends obsidian.Modal {
   }
   renderWinContent(parent) {
     this.step(parent, 1, i18nT("Install VB-Cable (free)"), (b) => {
-      b.createEl("p", { text: "下载：" });
+      b.createEl("p", { text: i18nT("Download:") });
       const a = b.createEl("a", { text: "https://vb-audio.com/Cable/", href: "https://vb-audio.com/Cable/" });
       a.target = "_blank";
       const ol = b.createEl("ol");
-      ol.createEl("li", { text: "下载 VB-Cable Driver Pack 后解压" });
+      ol.createEl("li", { text: i18nT("Download the VB-Cable Driver Pack and unzip it") });
       ol.createEl("li", { text: i18nT("Right-click VBCABLE_Setup_x64.exe → Run as administrator") });
       ol.createEl("li", { text: i18nT("Click Install Driver → restart your computer") });
     });
@@ -1444,14 +1444,14 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: i18nT("- Use a short list when needed, keeping the items, numbers, examples, and risks from the minutes.") });
       ol.createEl("li", { text: i18nT("Double-click → switch to the \"Listen\" tab") });
       ol.createEl("li", { text: i18nT("Check \"Listen to this device\"") });
-      ol.createEl("li", { text: "「通过此设备播放」选择真实耳机或扬声器，不要选 CABLE Input" });
+      ol.createEl("li", { text: i18nT("Under \"Playback through this device\", choose your real headphones or speakers, not CABLE Input") });
       ol.createEl("li", { text: i18nT("Click \"Apply\"") });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
       tip.setText(i18nT("The audio path is: app/browser \\\\u2192 CABLE Input (playback) \\\\u2192 CABLE Output (recording input, read by Q&A Log) \\\\u2192 monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
     });
     this.step(parent, 4, i18nT("- Faithful to the source: Do not extrapolate; organize only information explicitly present in the recording."), (b) => {
       const ol = b.createEl("ol");
-      ol.createEl("li", { text: "Windows 设置 → 系统 → 声音 → 输入" });
+      ol.createEl("li", { text: i18nT("Windows Settings → System → Sound → Input") });
       ol.createEl("li", { text: i18nT("Select the real microphone, not CABLE Output") });
       ol.createEl("li", { text: i18nT("If other voice input software also has no sound, this is usually because it was changed to CABLE Output here") });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
@@ -1472,7 +1472,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       b.createEl("p", { text: i18nT("PipeWire is compatible with the PulseAudio API, and the commands are the same. If the default monitor does not work, you can install pavucontrol and, on the “Recording” tab, switch the Q&A Log input to Monitor of <speaker name>.") });
     });
     this.step(parent, 3, i18nT("Select computer audio mode in Q&A Log"), (b) => {
-      b.createEl("p", { text: "Q&A Log 的设备检测会把名为「Monitor of ...」的输入识别为电脑音频输入。只整理视频/课程时选择「仅电脑音频」；需要同时录自己的声音时选择「麦克风加电脑音频」。" });
+      b.createEl("p", { text: i18nT("Q&A Log's device detection recognizes inputs named \"Monitor of ...\" as computer audio input. Choose \"Computer audio only\" when you only organize videos/courses; choose \"Microphone + computer audio\" when you also need to record your own voice.") });
     });
   }
   onClose() {
@@ -1566,7 +1566,7 @@ export class PromptTemplateModal extends obsidian.Modal {
 
     const builtInSection = body.createDiv({ cls: "qnalog-tpl-section" });
     builtInSection.createDiv({ cls: "qnalog-tpl-section-title", text: i18nT("Built-in prompts") });
-    builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: "Q&A Log 提供的默认整理规则，适合直接设为默认。需要固定格式或专业判断时，请新建自定义提示词。" });
+    builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: i18nT("A default organizing rule provided by Q&A Log, suitable for setting as the default. When you need a fixed format or domain judgment, create a custom prompt instead.") });
     const list = builtInSection.createDiv({ cls: "qnalog-tpl-list" });
     for (const mode of this.builtInModes()) this.renderBuiltinRow(list, mode);
 
@@ -1626,7 +1626,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     const delBtn = actions.createEl("button", { text: i18nT("Delete") });
     delBtn.addClass("mod-warning");
     delBtn.onclick = async () => {
-      const ok = await qnalogConfirm(this.app, i18nT("Delete custom prompt"), i18nT("Delete custom prompt \"") + (tpl.name || tpl.id) + "」？此操作不可恢复。", i18nT("Delete"));
+      const ok = await qnalogConfirm(this.app, i18nT("Delete custom prompt"), i18nT("Delete custom prompt \"") + (tpl.name || tpl.id) + i18nT("\"? This action cannot be undone."), i18nT("Delete"));
       if (!ok) return;
       const tpls = Object.assign({}, this.plugin.settings.promptTemplates || {});
       delete tpls[tpl.id];
@@ -1902,7 +1902,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.selectedMode = getEffectivePolishMode(this.plugin.settings, this.selectedMode || this.plugin.settings.polishMode, "meeting");
     const box = parent.createDiv({ cls: "qnalog-import-mode" });
     const label = box.createDiv({ cls: "qnalog-import-mode-label" });
-    label.createDiv({ cls: "qnalog-import-mode-title", text: "整理方式" });
+    label.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Organizing mode") });
     this.modeHint = label.createDiv({ cls: "qnalog-import-mode-hint" });
     this.modeSelect = box.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
@@ -2079,7 +2079,7 @@ export class AudioImportOptionsModal extends obsidian.Modal {
 
     const mode = contentEl.createDiv({ cls: "qnalog-import-mode" });
     const modeCopy = mode.createDiv();
-    modeCopy.createDiv({ cls: "qnalog-import-mode-title", text: "整理方式" });
+    modeCopy.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Organizing mode") });
     modeCopy.createDiv({ cls: "qnalog-import-mode-hint", text: i18nT("After transcription is complete, generate minutes of the corresponding type.") });
     const modeSelect = mode.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
@@ -2210,7 +2210,7 @@ export class ImportAudioModal extends obsidian.Modal {
     this.selectedMode = getEffectivePolishMode(this.plugin.settings, this.selectedMode || this.plugin.settings.polishMode, "meeting");
     const box = parent.createDiv({ cls: "qnalog-import-mode" });
     const label = box.createDiv({ cls: "qnalog-import-mode-label" });
-    label.createDiv({ cls: "qnalog-import-mode-title", text: "整理方式" });
+    label.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Organizing mode") });
     this.modeHint = label.createDiv({ cls: "qnalog-import-mode-hint" });
     this.modeSelect = box.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
@@ -2302,7 +2302,7 @@ export class ImportAudioModal extends obsidian.Modal {
     const timeRange = `${window.moment(batch.earliestMtime).format("MM-DD HH:mm")}–${window.moment(batch.latestMtime).format("HH:mm")}`;
     text.createDiv({ cls: "qnalog-import-batch-meta", text: `${range} · ${this.formatSize(batch.totalSize)} · ${timeRange}` });
 
-    const chip = summary.createSpan({ cls: "qnalog-import-batch-chip", text: "整组" });
+    const chip = summary.createSpan({ cls: "qnalog-import-batch-chip", text: i18nT("Whole batch") });
     chip.setAttr("aria-hidden", "true");
 
     if (batch.missing.length || batch.emptyCount || batch.largeCount) {
