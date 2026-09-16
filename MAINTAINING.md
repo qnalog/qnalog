@@ -1292,27 +1292,11 @@ MacBook Pro 麦克风 · 可用
 - 三个模型 ID 均由接口确认存在。转写模型不在 `/api/v1/models` 里，
   要加 `?output_modalities=transcription` 才列出（该查询返回 21 个 STT 模型）。
 - **AI 整理选 DeepSeek V4.1 Flash 而不是 Qwen3.8 Flash**：两者都默认开思考
-  （官方元数据 `reasoning.default_enabled` 均为 true），但 Qwen3.8 Flash 只支持
-  开与关，DeepSeek V4.1 Flash 还带 `supported_efforts: [max, high, low]`——
-  有可调档位才有实际的提速手段。维护者实测 Qwen3.8 Flash 在 OpenRouter 上
-  整理速度较慢，据此更换。
-
-### 12.2 思考档在 OpenRouter 上的处理
-
-`src/llm/thinking.ts` 新增 `reasoning_openrouter` 家族。此前 OpenRouter 不在
-`getThinkingControl` 的判定里，思考档下拉是灰的——用户看得到模型在思考，却关不掉。
-
-开与关用不同机制，各取文档里最明确的那一个：
-
-- **关**：`reasoning.effort = "none"`。文档写明只有 `mandatory: true` 的模型拒绝它，
-  而名单里的模型都核实过 `mandatory: false`。
-- **开**：`reasoning.enabled = true`。各模型支持的 effort 档不同
-  （v4.1-flash 是 max/high/low，v4-pro 只有 xhigh/high），指定档位会因模型而异。
-
-**不给所有模型开这个控件**：443 个模型里 102 个 `reasoning.mandatory` 为 true
-（含 `deepseek-r1`、`gpt-5`、`gemini-3.8-flash`），对它们发 `effort:"none"` 会 400。
-名单 `OPENROUTER_EFFORT_MODELS` 取自官方模型元数据，未列入只意味着「不可调」
-（下拉灰掉），不会发错参数。
+  （官方元数据 `reasoning.default_enabled` 均为 true），区别在默认思考的强度——
+  Qwen3.8 Flash 会投入更大比例的推理开销，DeepSeek V4.1 Flash 不会。
+  维护者实测 Qwen3.8 Flash 在 OpenRouter 上整理速度较慢，据此更换。
+  这与「能否调节思考档」无关：`src/llm/thinking.ts` 没有 OpenRouter 分支，
+  该下拉在 OpenRouter 上本来就不可用，换模型也没有改变这一点。
 - STT 端点 `/api/v1/audio/transcriptions` 同时接受 OpenAI 风格 multipart 与 JSON 正文。
   录音转写走 multipart，复用既有路径，没有新增协议分支。
 - **说话人分离必须走 JSON**：分离开关经 `provider.options.<上游 slug>` 传递，是嵌套对象，
@@ -1324,7 +1308,7 @@ MacBook Pro 麦克风 · 可用
 - 分离还需要 `response_format=verbose_json`，否则响应里没有 `segments[].speaker`。
   返回结构经既有 `extractTranscriptText` 归一成 `[说话人N]` 前缀，无需新解析。
 
-### 12.3 与百炼的差异
+### 12.2 与百炼的差异
 
 - 百炼的导入音频走 DashScope 自有的异步任务协议（提交 + 轮询）；
   OpenRouter 是同一次请求内同步返回，因此 `transcribeWithOpenRouterDiarize` 直接返回结果，
@@ -1333,7 +1317,7 @@ MacBook Pro 麦克风 · 可用
   百炼的整文件识别支持到 12 小时。
 - 计费按音频时长与所选模型，以 OpenRouter 控制台用量页为准。
 
-### 12.4 界面
+### 12.3 界面
 
 转写服务下拉里新增 `OpenRouter · 说话人分离`（`openrouter-diarize`）。
 它被判为「可做说话人分离」由协议决定（`src/asr/diarization.ts` 的
