@@ -2642,9 +2642,8 @@ export class BubbleWidget {
  * 全局替换会污染后续转写。
  */
 export class TextCorrectionModal extends obsidian.Modal {
-  constructor(app, plugin, file, selection) {
+  constructor(app, file, selection) {
     super(app);
-    this.plugin = plugin;
     this.file = file;
     this.from = String(selection || "").trim();
     this.to = "";
@@ -2672,9 +2671,8 @@ export class TextCorrectionModal extends obsidian.Modal {
       input.addEventListener("input", () => onChange(input.value));
       return input;
     };
-    this.fromInput = makeField(i18nT("Wrong text"), this.from, (v) => { this.from = v; void this.refreshPreview(); });
-    this.toInput = makeField(i18nT("Correct text"), this.to, (v) => { this.to = v; void this.refreshPreview(); });
-    this.toInput.focus();
+    makeField(i18nT("Wrong text"), this.from, (v) => { this.from = v; void this.refreshPreview(); });
+    makeField(i18nT("Correct text"), this.to, (v) => { this.to = v; void this.refreshPreview(); }).focus();
 
     this.previewEl = contentEl.createDiv({ cls: "qnalog-correction-preview" });
 

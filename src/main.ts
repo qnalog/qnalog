@@ -381,7 +381,7 @@ class QnALogPlugin extends obsidian.Plugin {
       menu.addItem((item) => {
         item.setTitle("Q&A Log：更正误识别词…")
           .setIcon("replace")
-          .onClick(() => new TextCorrectionModal(this.app, this, file, selection).open());
+          .onClick(() => new TextCorrectionModal(this.app, file, selection).open());
       });
     }));
 
