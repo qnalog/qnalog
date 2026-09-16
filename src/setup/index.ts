@@ -563,7 +563,9 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
     toLine({ label: "语音转写", target: "api", ...input.transcribe }),
     toLine({ label: "AI 整理", target: "ai", ...input.llm }),
     toLine({ label: "说话人识别", target: "api", ...input.speaker }),
-    toLine({ label: "音频输入", target: "general", ...input.audio }),
+    // 目标必须是 settings-tab.ts 里真实存在的选项卡 id。
+    // 曾写作 "general"，而该页已改名 "recording"，导致这一行点了没反应。
+    toLine({ label: "音频输入", target: "recording", ...input.audio }),
   ];
   // 只有转写与 AI 整理缺配置才拦得住「开始使用」：没有它们产不出纪要。
   // 说话人识别与音频输入不影响能否开始，因此既不参与 ready 判定，

@@ -231,6 +231,22 @@ export const ONE_CARD_PROVIDERS = {
     llmModel: "qwen3.8-flash",
     applyDesc: "已用一把百炼 Key 配好录音转写、音频导入与 AI 整理。",
   },
+  // 面向中国大陆以外用户：一把 OpenRouter Key 配好录音转写与 AI 整理。
+  // 与百炼的区别是「能不能连上」而不是界面语言——两者都在下拉里，由用户按网络环境自选。
+  // OpenRouter 的说话人分离需通过 provider.options 按具体上游传递，各模型支持情况不一，
+  // 因此这里不设 importAsrProvider，导入音频沿用用户原有的服务。
+  openrouter: {
+    label: "OpenRouter",
+    scope: "asr-llm",
+    asrProvider: "openrouter",
+    asrTarget: "recording",
+    asrEndpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
+    asrModel: "openai/whisper-large-v3",
+    llmPreset: "openrouter",
+    llmEndpoint: "https://openrouter.ai/api/v1",
+    llmModel: "openai/gpt-4o-mini",
+    applyDesc: "已用一把 OpenRouter Key 配好录音转写与 AI 整理。",
+  },
 };
 
 export function getLlmServicePreset(id) {

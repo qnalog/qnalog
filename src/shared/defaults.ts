@@ -26,6 +26,8 @@ export const DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE = [
 ].join("\n");
 
 export const DEFAULT_SETTINGS: PluginSettings = {
+  // 空串 = 跟随 Obsidian 界面语言（多数用户不会主动改插件语言）
+  uiLanguage: "",
   audioFolder: `${NS_ROOT}/录音`,
   mdFolder: `${NS_ROOT}/转写纪要`,
   meetingMaterialsFolder: `${NS_ROOT}/会议资料`,
@@ -94,6 +96,16 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       language: "",
       targetLanguage: "zh",
       hint: "流式翻译，70+ 输入 → 13 输出。$0.034/min ≈ ¥14.4/小时。",
+    },
+    openrouter: {
+      name: "OpenRouter · 语音转写",
+      // 官方 STT 接口。OpenRouter 文档明确该端点同时接受 OpenAI 风格的 multipart/form-data，
+      // 因此复用现有 OpenAI 兼容上传路径（file + model），无需新的协议分支。
+      endpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
+      apiKey: "",
+      model: "openai/whisper-large-v3",
+      language: "",
+      hint: "全球可访问，无需中国大陆以外的账号即可注册；按用量计费，可使用多种转写模型。",
     },
     dashscope: {
       name: "阿里云百炼 Paraformer Realtime",

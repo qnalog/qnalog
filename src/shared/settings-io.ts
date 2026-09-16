@@ -365,6 +365,7 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.diagnosticsLogFolder = obsidian.normalizePath(firstNonBlankString(defaults.diagnosticsLogFolder, diagnostics.folder, raw.diagnosticsLogFolder));
 
   const ui = asRecord(raw.ui);
+  s.uiLanguage = firstString(defaults.uiLanguage, ui.language, raw.uiLanguage);
   s.showFloatingBall = firstBoolean(defaults.showFloatingBall, ui.floatingControlEnabled, raw.showFloatingBall);
   s.bubbleSize = firstEnum(["large", "medium", "small"] as const, defaults.bubbleSize, ui.bubbleSize, raw.bubbleSize);
   s.floatingBallPos = normalizeFloatingBallPosition(firstRecord(ui.floatingControlPosition, raw.floatingBallPos), defaults.floatingBallPos);
@@ -545,6 +546,7 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       folder: s.diagnosticsLogFolder || DEFAULT_SETTINGS.diagnosticsLogFolder,
     },
     ui: {
+      language: s.uiLanguage || "",
       floatingControlEnabled: s.showFloatingBall,
       bubbleSize: s.bubbleSize || "large",
       floatingControlPosition: s.floatingBallPos || {},

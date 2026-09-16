@@ -119,6 +119,7 @@ const obsidian = {
   Setting: class {}, PluginSettingTab: class {}, BasesView: class {},
   SuggestModal: class {}, FuzzySuggestModal: class {}, AbstractInputSuggest: class {},
   Platform: { isMacOS: true, isWin: false, isLinux: false, isIosApp: false, isAndroidApp: false, isDesktop: true, isMobile: false },
+  getLanguage: () => "zh",
   MarkdownRenderer: { render: async () => undefined },
   Notice: class {},
   debounce: (fn) => { const wrapped = (...a) => fn(...a); wrapped.cancel = noop; return wrapped; },

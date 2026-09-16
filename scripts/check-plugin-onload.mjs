@@ -137,6 +137,8 @@ const obsidian = {
   AbstractInputSuggest: ObsidianBase, MarkdownView: ObsidianBase,
   Plugin: PluginBase, TFile, TFolder,
   Platform: { isMacOS: true, isWin: false, isLinux: false, isIosApp: false, isAndroidApp: false, isDesktop: true, isMobile: false },
+  // Obsidian 1.8.7+ 的公开 API：读取界面语言。插件据此决定界面文案语言。
+  getLanguage: () => "zh",
   MarkdownRenderer: { render: async () => undefined },
   Notice: function Notice(message) { notices.push(message); },
   debounce: (fn) => { const wrapped = (...args) => fn(...args); wrapped.cancel = noop; return wrapped; },

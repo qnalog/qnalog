@@ -594,7 +594,7 @@ export function createBriefingLlmActivityOptions(plugin, computedMeta, patch) {
       detail: "前面的模型任务完成后会自动开始",
     })),
     onStart: () => plugin.tasks.patchTaskActivity(taskId, basePatch),
-    onActivity: () => heartbeat("模型正在返回内容"),
+    onActivity: () => heartbeat("The model is returning content"),
   };
 }
 
