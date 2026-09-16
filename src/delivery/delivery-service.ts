@@ -76,13 +76,13 @@ export class DeliveryService {
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-HTML报告.html`);
       if (!target) throw new Error("无法生成可用的 HTML 报告路径");
       const outFile = await this.host.app.vault.create(target, r.html);
-      new obsidian.Notice(`Q&A Log：已生成 HTML 报告：${target}`, 8000);
+      new obsidian.Notice(`${t("Q&A Log: generated HTML report: ")}${target}`, 8000);
       if (this.host.settings.autoOpenHtmlReportAfterGenerate !== false) {
         this.openVaultFileInSystem(outFile.path);
       }
     } catch (e) {
       console.error("[QnALog] generate html report failed", e);
-      new obsidian.Notice(`HTML 报告生成失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("HTML report generation failed: ")}${(e && e.message) || e}`, 8000);
     }
   }
   async generatePdfReportForMarkdownFile(file) {
@@ -98,13 +98,13 @@ export class DeliveryService {
       const bytes = pdfBuffer instanceof Uint8Array ? pdfBuffer : new Uint8Array(pdfBuffer || []);
       const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
       const outFile = await this.host.app.vault.createBinary(target, arrayBuffer);
-      new obsidian.Notice(`Q&A Log：已生成 PDF 报告：${target}`, 8000);
+      new obsidian.Notice(`${t("Q&A Log: generated PDF report: ")}${target}`, 8000);
       if (this.host.settings.autoOpenHtmlReportAfterGenerate !== false) {
         this.openVaultFileInSystem(outFile.path);
       }
     } catch (e) {
       console.error("[QnALog] generate pdf report failed", e);
-      new obsidian.Notice(`PDF 报告生成失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("PDF report generation failed: ")}${(e && e.message) || e}`, 8000);
     }
   }
   async printHtmlToPdfBuffer(html) {
@@ -225,7 +225,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
         pdfFile = await this.ensureMarkdownPdfForEmail(file, markdown);
       } catch (e) {
         console.warn("[QnALog] create email pdf failed", e);
-        new obsidian.Notice(`PDF 自动生成失败：${(e && e.message) || e}；邮件草稿仍会包含 MD 和已有导出文件。`, 9000);
+        new obsidian.Notice(`${t("PDF auto-generation failed: ")}${(e && e.message) || e}${t("; the email draft will still include the MD and existing exports.")}`, 9000);
       }
       if (pdfFile instanceof obsidian.TFile) attachmentFiles.push(pdfFile);
       for (const generated of this.getGeneratedEmailAttachmentFiles(file)) {
@@ -255,10 +255,10 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       const draft = await this.host.app.vault.create(target, eml);
       const opened = this.openVaultFileInSystem(draft.path);
       const recipientHint = recipients.length ? `，已填入 ${recipients.length} 个收件人` : "，未匹配到邮箱";
-      new obsidian.Notice(`Q&A Log：已生成邮件草稿${recipientHint}，附件 ${attachments.length} 个。${opened ? "" : "可在邮件草稿文件夹中打开。"}`, 10000);
+      new obsidian.Notice(`${t("Q&A Log: generated email draft ")}${recipientHint}${t(", attachments ")}${attachments.length}${t(".")}${opened ? "" : t("You can open it in the email drafts folder.")}`, 10000);
     } catch (e) {
       console.error("[QnALog] create email draft failed", e);
-      new obsidian.Notice(`邮件草稿生成失败：${(e && e.message) || e}`, 9000);
+      new obsidian.Notice(`${t("Email draft generation failed: ")}${(e && e.message) || e}`, 9000);
     }
   }
   async makeEmailAttachment(file) {

@@ -339,7 +339,7 @@ export class NoteWriter {
       new obsidian.Notice(t("Polishing complete"));
     } catch (e) {
       console.error(e);
-      new obsidian.Notice(`润色失败：${(e && e.message) || e}`);
+      new obsidian.Notice(`${t("Polish failed: ")}${(e && e.message) || e}`);
     }
   }
   // 从 .md 文件的 frontmatter 推断模式（mode 字段；找不到时尝试 类型 字段中文映射）
@@ -432,7 +432,7 @@ export class NoteWriter {
       await this.mergeMarkdownFilesAsNew([previous, file]);
     } catch (e) {
       console.error("[QnALog] merge notes failed", e);
-      new obsidian.Notice(`合并纪要失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("Merging minutes failed: ")}${(e && e.message) || e}`, 8000);
     }
   }
   async mergeMarkdownFilesAsNew(files) {
@@ -465,7 +465,7 @@ export class NoteWriter {
     const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · 合并.md`));
     if (!targetPath) throw new Error("无法生成合并纪要路径");
 
-    new obsidian.Notice(`Q&A Log：正在合并 ${sources.length} 篇纪要…`, 8000);
+    new obsidian.Notice(`${t("Q&A Log: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
     await this.host.app.vault.create(targetPath, "");
     const session = {
       id: genId(),
@@ -521,7 +521,7 @@ export class NoteWriter {
     }
     try { await this.host.noteIndex.appendDailyMeetingOverview(session, polished); }
     catch (e) { console.error("[QnALog] daily overview after merge notes failed", e); }
-    new obsidian.Notice(`已生成合并纪要：${finalFile instanceof obsidian.TFile ? finalFile.basename : "合并纪要"}`);
+    new obsidian.Notice(`${t("Generated merged minutes: ")}${finalFile instanceof obsidian.TFile ? finalFile.basename : getModeMeta({}, "synthesis").prefix}`);
   }
   async appendMergeMetadataBlock(file, sources) {
     if (!(file instanceof obsidian.TFile)) return;

@@ -264,7 +264,7 @@ export class ExternalInboxService {
     const patch: TaskActivityInput = {
       id,
       kind: "external-audio-import",
-      title: `自动导入 · ${file.name}`,
+      title: `${t("Auto import · ")}${file.name}`,
       subject: file.name,
       status: "waiting",
       stage: "waiting-source",
@@ -336,7 +336,7 @@ export class ExternalInboxService {
       if (this.isForegroundAudioWorkActive()) {
         for (const file of candidates.slice(0, 20)) this.markExternalInboxWaiting(file, "当前正在录音，录音结束后自动处理");
         await this.saveExternalInboxLedger();
-        if (manual && candidates.length) new obsidian.Notice(`发现 ${candidates.length} 个音频；当前正在录音，稍后自动处理`);
+        if (manual && candidates.length) new obsidian.Notice(`${t("Found ")}${candidates.length}${t(" audio files; recording is in progress, they will be processed automatically later")}`);
         return { queued: 0, waiting: result.waiting.length + candidates.length, skipped: result.ready.length - candidates.length };
       }
       for (const file of candidates) {
@@ -370,8 +370,8 @@ export class ExternalInboxService {
       }
       await this.saveExternalInboxLedger();
       if (manual) {
-        if (candidates.length) new obsidian.Notice(`发现 ${candidates.length} 个新音频，已加入处理队列`);
-        else if (result.waiting.length) new obsidian.Notice(`${result.waiting.length} 个音频仍在同步，稍后自动处理`);
+        if (candidates.length) new obsidian.Notice(`${t("Found ")}${candidates.length}${t(" new audio files added to the queue")}`);
+        else if (result.waiting.length) new obsidian.Notice(`${result.waiting.length}${t(" audio files are still syncing; they will be processed automatically later")}`);
         else new obsidian.Notice(t("No new audio files"));
       }
       if (result.truncated) new obsidian.Notice(t("The auto-import folder has more than 2000 audio files; only the first 2000 were scanned this time"), 8000);
@@ -385,7 +385,7 @@ export class ExternalInboxService {
         source: options.source || "manual",
         error: diagnosticError(e),
       });
-      if (manual) new obsidian.Notice(`扫描失败：${getTaskErrorMessage(e)}`, 8000);
+      if (manual) new obsidian.Notice(`${t("Scan failed: ")}${getTaskErrorMessage(e)}`, 8000);
       return { queued: 0, waiting: 0, skipped: 0 };
     } finally {
       if (this._externalInboxScanPromise === run) this._externalInboxScanPromise = null;
