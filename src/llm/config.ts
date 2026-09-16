@@ -208,7 +208,7 @@ export const ONE_CARD_PROVIDERS = {
   // 一站式方案：一把百炼 API Key 同时配好「录音转写 / 导入音频 / AI 整理」三段。
   // 地址与模型全部内置，用户只需填密钥——这是首次配置唯一的正式推荐路径。
   //
-  // 模型依据（2026-09-15 查证阿里云百炼模型列表与 API 参考，见 MAINTAINING §10.6）：
+  // 模型依据（2026-09-15 查证阿里云百炼模型列表与 API 参考，见 MAINTAINING §11.1）：
   //   - 录音转写 qwen-audio-3.0-asr-flash-streaming：WebSocket 实时识别，
   //     走 wss://…/api-ws/v1/inference（与既有 dashscope-ws 协议一致）。
   //   - 导入音频 qwen-audio-3.0-asr-flash-filetrans：DashScope 异步调用，支持说话人分离，
@@ -231,21 +231,32 @@ export const ONE_CARD_PROVIDERS = {
     llmModel: "qwen3.8-flash",
     applyDesc: "已用一把百炼 Key 配好录音转写、音频导入与 AI 整理。",
   },
-  // 面向中国大陆以外用户：一把 OpenRouter Key 配好录音转写与 AI 整理。
+  // 面向中国大陆以外用户：一把 OpenRouter Key 配好「录音转写 / 导入音频 / AI 整理」三段。
   // 与百炼的区别是「能不能连上」而不是界面语言——两者都在下拉里，由用户按网络环境自选。
-  // OpenRouter 的说话人分离需通过 provider.options 按具体上游传递，各模型支持情况不一，
-  // 因此这里不设 importAsrProvider，导入音频沿用用户原有的服务。
+  //
+  // 模型依据（2026-09-16 查证 OpenRouter 模型接口）：
+  //   - 录音转写 qwen/qwen3-asr-1.7b：走 /api/v1/audio/transcriptions（分段上传，
+  //     与既有 OpenAI 兼容路径同形状）。
+  //   - 导入音频 microsoft/mai-transcribe-2：整文件转写并做说话人分离。该模型的唯一上游是
+  //     Azure，分离开关必须经 provider.options.azure.diarization.enabled 传递，
+  //     因此单独走 openrouter-diarize 协议（见 asr/openrouter-diarize.ts）。
+  //   - AI 整理 deepseek/deepseek-v4.1-flash：OpenAI 兼容 Chat Completions。
+  //     选它而不是 qwen/qwen3.8-flash：两者都默认开思考，但 DeepSeek 支持 reasoning.effort
+  //     （max/high/low），Qwen 只支持开与关。可降 effort 才有实际的提速手段。
   openrouter: {
     label: "OpenRouter",
     scope: "asr-llm",
     asrProvider: "openrouter",
     asrTarget: "recording",
     asrEndpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
-    asrModel: "openai/whisper-large-v3",
+    asrModel: "qwen/qwen3-asr-1.7b",
+    importAsrProvider: "openrouter-diarize",
+    importAsrEndpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
+    importAsrModel: "microsoft/mai-transcribe-2",
     llmPreset: "openrouter",
     llmEndpoint: "https://openrouter.ai/api/v1",
-    llmModel: "openai/gpt-4o-mini",
-    applyDesc: "已用一把 OpenRouter Key 配好录音转写与 AI 整理。",
+    llmModel: "deepseek/deepseek-v4.1-flash",
+    applyDesc: "已用一把 OpenRouter Key 配好录音转写、音频导入与 AI 整理。",
   },
 };
 

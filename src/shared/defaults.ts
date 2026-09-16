@@ -108,6 +108,18 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       language: "",
       hint: t("Globally accessible; no account outside mainland China is needed to sign up; usage-based billing; multiple transcription models available."),
     },
+    // 导入音频专用：OpenRouter 整文件转写 + 说话人分离。
+    // 与 openrouter 分开成两个条目，因为二者请求形状不同（分段 multipart vs 整文件
+    // JSON + provider.options），模型与计费也不同；用户在「说话人识别」里单独选。
+    "openrouter-diarize": {
+      name: "OpenRouter · 说话人分离",
+      endpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
+      apiKey: "",
+      model: "microsoft/mai-transcribe-2",
+      language: "",
+      protocol: "openrouter-diarize",
+      hint: t("Whole-file transcription with speaker diarization. Which upstream a model routes to varies per model; the diarization switch is passed to that upstream. Speaker numbers can be mapped to real names after transcription."),
+    },
     dashscope: {
       name: "阿里云百炼 Paraformer Realtime",
       endpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",

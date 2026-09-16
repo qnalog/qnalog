@@ -5,6 +5,7 @@ import { resolveTranscribeProvider, transcribeAudio } from "./transcribe";
 import { buildDashScopeTranscriptionParameters } from "./diarization";
 
 import { t } from "../shared/i18n";
+import { isOpenRouterDiarizeProvider, testOpenRouterDiarizeProvider, transcribeWithOpenRouterDiarize } from "./openrouter-diarize";
 export const DASHSCOPE_FILETRANS_PROTOCOL = "dashscope-filetrans";
 
 export interface LongAudioTranscriptionOptions {
@@ -278,6 +279,9 @@ export async function testImportTranscribeProvider(
   if (!provider.endpoint) throw new Error("导入音频转写服务地址未配置");
   if (!provider.apiKey) throw new Error("导入音频转写服务密钥未配置");
   if (!provider.model) throw new Error("导入音频转写模型未配置");
+  if (isOpenRouterDiarizeProvider(provider)) {
+    return testOpenRouterDiarizeProvider(provider);
+  }
   if (!isDashScopeFileTransProvider(provider)) {
     throw new Error("该服务暂不支持无音频连接测试，请导入一段短音频验证");
   }
@@ -459,6 +463,12 @@ export async function transcribeImportedAudio(
   );
   if (isDashScopeFileTransProvider(provider)) {
     return transcribeWithDashScope(provider, blob, options);
+  }
+  if (isOpenRouterDiarizeProvider(provider)) {
+    options.onProgress?.({ phase: "submit", label: t("Submitting the full audio") });
+    return transcribeWithOpenRouterDiarize(provider, blob, mime, {
+      timeoutMs: Number(options.timeoutMs) || undefined,
+    });
   }
   options.onProgress?.({ phase: "submit", label: t("Submitting the full audio") });
   const text = await transcribeAudio(plugin, blob, mime, provider.id);

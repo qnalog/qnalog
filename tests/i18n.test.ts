@@ -213,6 +213,31 @@ describe("覆盖完整性", () => {
     [...zhSrc.matchAll(/^  "((?:[^"\\]|\\.)*)":/gm)].map((m) => JSON.parse(`"${m[1]}"`)),
   );
 
+  it("数据模块里的用户可见文案也有中文（profile 卡片经渲染处 t()）", () => {
+    // transcribe-profile-service 的 title/badge/description/note/priceHint/steps/links
+    // 在 settings-tab 的渲染处包 t()，但它们是数据字段，不在 t("...") 调用点里，
+    // 上面那条「界面用到的每个键」看不到它们——漏译会只在中文界面暴露。
+    const profileSrc = fs.readFileSync(
+      path.join(root, "src/asr/transcribe-profile-service.ts"),
+      "utf8",
+    );
+    const field = /\b(?:title|badge|description|note|priceHint|endpointHelp|keyHelp|modelHelp|languageHelp)\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    const values: string[] = [];
+    for (const m of profileSrc.matchAll(field)) values.push(JSON.parse(`"${m[1]}"`));
+    for (const m of profileSrc.matchAll(/steps\s*:\s*\[([^\]]*)\]/g)) {
+      for (const x of m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)) values.push(JSON.parse(`"${x[1]}"`));
+    }
+    // 产品名与工具名（APIMiMo、WhisperX 等）是专名，值等于键时不算漏译。
+    // 专名（产品/工具/模型名）不译；用显式清单而不是「纯 ASCII」这类宽泛规则——
+    // 后者会把 "OpenRouter · Speaker Diarization" 这类真正的界面文案也当成专名放过去。
+    const properNouns = new Set(["APIMiMo V2.5 ASR", "WhisperX"]);
+    const missing = [...new Set(values)]
+      .filter((v) => v.trim() && /[A-Za-z]/.test(v))
+      .filter((v) => !tableKeys.has(v))
+      .filter((v) => !properNouns.has(v));
+    expect(missing, `profile 文案缺中文：${missing.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
   it("界面用到的每个键都有中文（缺了会在中文界面显示英文）", () => {
     // 漏译在英文界面看不出来，只有中文界面暴露；而中文界面平时没人逐条看。
     // 语言下拉的 native name（日本語）是它自己的写法，按设计不译。
