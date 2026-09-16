@@ -10,6 +10,10 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
+  "+ New \"{0}\"": "新建「{0}」",
+  "Delete \"{0}\"? The parent note and the raw transcript are not affected.": "删除「{0}」？母本和逐字稿不受影响。",
+  "Will delete the note \"{0}\".": "将删除纪要「{0}」。",
+  "Will delete the note \"{0}\". {1} related queue tasks will be removed as well.": "将删除纪要「{0}」。关联的 {1} 个队列任务会一并移除。",
   "Wait time adjusted to the valid range 0–60000 milliseconds: ": "等待时间已按有效范围 0–60000 毫秒调整为 ",
   "Organization: ": "组织：",
   "Confidence: ": "置信度：",

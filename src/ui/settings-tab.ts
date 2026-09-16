@@ -297,7 +297,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       this.plugin.settings.selectedVirtualDevice = virtual.deviceId;
       this.plugin.settings.captureMode = hasMic ? "mix-virtual" : "virtualCable";
       await this.plugin.saveSettings();
-      new obsidian.Notice(`已选择：${audioInputModeLabel(this.plugin.settings.captureMode)}（电脑音频：${virtual.label || "虚拟声卡"}）。请在上方「麦克风」下拉中确认本人说话用的设备。`, 8000);
+      new obsidian.Notice(`${t("Selected:")}${audioInputModeLabel(this.plugin.settings.captureMode)}${t("(computer audio:")}${virtual.label || "虚拟声卡"}${t("). Confirm the device you speak into in the \"Microphone\" dropdown above.")}`, 8000);
       return;
     }
     this.plugin.settings.selectedVirtualDevice = "";
@@ -518,7 +518,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (!status.ready) {
       const badge = statusHead.createDiv({ cls: "qnalog-status-badge is-warn" });
       badge.createSpan({ cls: "qnalog-status-badge-icon", text: "!" });
-      badge.createSpan({ text: `还差 ${status.blockerCount} 项` });
+      badge.createSpan({ text: `${t("Still missing")}${status.blockerCount} 项` });
     }
     statusList = statusBlock.createDiv({ cls: "qnalog-status-list" });
     for (const line of status.lines) {
@@ -535,7 +535,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         try {
           this._audioDeviceInfo = await enumerateAudioDevices({ requestPermission: true });
         } catch (error) {
-          new obsidian.Notice(`设备检测失败：${(error && error.message) || error}`, 6000);
+          new obsidian.Notice(`${t("Device detection failed:")}${(error && error.message) || error}`, 6000);
         }
         if (button) { button.disabled = false; button.setText(t("Detect devices")); }
         this.renderSettings();
@@ -639,23 +639,23 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const vcName = this.friendlyDeviceName(nameOf(vcDev));
 
     if (mode === "virtualCable") {
-      if (!vcName) return { value: t("Computer audio device selected; name shown after permission is granted"), detail: `${modeText} · 点「检测设备」显示设备名` };
-      return { value: `${vcName} · 可用`, detail: modeText };
+      if (!vcName) return { value: t("Computer audio device selected; name shown after permission is granted"), detail: `${modeText}${t(" · Click \"Detect devices\" to show the device name")}` };
+      return { value: `${vcName}${t(" · available")}`, detail: modeText };
     }
     if (mode === "mix-virtual") {
-      if (!micName || !vcName) return { value: t("Device selected; name shown after permission is granted"), detail: `${modeText} · 点「检测设备」显示设备名` };
-      return { value: `${micName} + ${vcName} · 可用`, detail: modeText };
+      if (!micName || !vcName) return { value: t("Device selected; name shown after permission is granted"), detail: `${modeText}${t(" · Click \"Detect devices\" to show the device name")}` };
+      return { value: `${micName} + ${vcName}${t(" · available")}`, detail: modeText };
     }
     // 仅麦克风模式。
     // 判据是「有没有设备名」，不是「所选设备的名字在不在」——未显式选择时，
     // 所选设备本来就是空，拿它去判断会误报成「需要授权」，而设备名其实读得到。
     if (!micName) {
       return {
-        value: `系统默认麦克风 · 可用（${inputs.length} 个音频输入设备）`,
-        detail: `${modeText} · 点「检测设备」显示设备名`,
+        value: `${t("System default microphone · available (")}${inputs.length}${t(" audio input devices)")}`,
+        detail: `${modeText}${t(" · Click \"Detect devices\" to show the device name")}`,
       };
     }
-    return { value: `${micName} · 可用`, detail: modeText };
+    return { value: `${micName}${t(" · available")}`, detail: modeText };
   }
 
   /**
@@ -679,7 +679,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       row.addClass("is-clickable");
       row.setAttr("role", "button");
       row.setAttr("tabindex", "0");
-      row.setAttr("aria-label", `${line.label}：${line.value}，打开对应设置`);
+      row.setAttr("aria-label", `${line.label}：${line.value}${t(", open the corresponding settings")}`);
       row.onclick = () => jump(line.target);
       row.onkeydown = (ev) => {
         if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); jump(line.target); }
@@ -760,7 +760,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (selected && !selectedListed) {
       const staleGroup = addGroup(t("Current selection"));
       addOption(staleGroup, selected, groups.selectedInput
-        ? `${groups.selectedInput.label || t("Not authorized to read device names")}（已选择）`
+        ? `${groups.selectedInput.label || t("Not authorized to read device names")}${t("(selected)")}`
         : t("The currently selected device was not detected (it may be disconnected)"));
     }
 
@@ -768,7 +768,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     selectEl.value = selected || "";
 
     if (availability.state === "unnamed") {
-      hintEl.setText(`读到 ${availability.count} 个音频输入设备，但设备名需要麦克风授权才能显示；现在仍可按下拉里的顺序选择。`);
+      hintEl.setText(`${t("Detected")}${availability.count}${t(" audio input devices, but the device names require microphone permission to be displayed; you can still choose in the order shown in the dropdown.")}`);
     } else if (selected && !selectedListed) {
       hintEl.setText(t("The selected microphone is disconnected. Choose another."));
     } else if (selected) {
@@ -834,7 +834,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (selected && !hasSelected) {
       hintEl.setText(t("The selected computer-audio device may be disconnected. Choose another."));
     } else if (availability.state === "unnamed") {
-      hintEl.setText(`读到 ${availability.count} 个音频输入设备，但设备名需要麦克风授权才能显示；可先授权后重新打开本页。`);
+      hintEl.setText(`${t("Detected")}${availability.count}${t(" audio input devices, but the device names require microphone permission to be displayed; grant permission first, then reopen this page.")}`);
     } else if (groups.dongles.length === 0) {
       hintEl.setText(t("No computer-audio input found. Set up a virtual audio device first."));
     } else if (!virtualDevs.length) {
@@ -967,8 +967,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             contentState = "muted";
           }
           renderChannelProbeRows(channelResult, [
-            { label: t("Input device"), value: `${info.channelCount} 个声道`, state: info.channelCount > 1 ? "success" : "muted" },
-            { label: t("Test recording"), value: `${analysis.channelCount} 个声道`, state: analysis.channelCount > 1 ? "success" : "muted" },
+            { label: t("Input device"), value: `${info.channelCount}${t(" channels")}`, state: info.channelCount > 1 ? "success" : "muted" },
+            { label: t("Test recording"), value: `${analysis.channelCount}${t(" channels")}`, state: analysis.channelCount > 1 ? "success" : "muted" },
             { label: t("Audio detected"), value: activeChannels.length ? activeChannels.join("、") : t("None"), state: activeChannels.length ? "success" : "warning" },
             { label: t("Speaker separation"), value: contentStatus, state: contentState },
           ]);
@@ -989,7 +989,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          channelHint.setText(`测试失败：${message}`);
+          channelHint.setText(`${t("Test failed:")}${message}`);
           renderChannelProbeRows(channelResult, [
             { label: t("Detection result"), value: message, state: "error" },
           ]);
@@ -1183,11 +1183,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    */
   async runStreamingConnectivityTest(target, providerId, profile) {
     const provider = (target.settings.transcribeProviders || {})[providerId] || {};
-    assertEndpointAllowed(provider.endpoint, `${profile.title || providerId} 服务地址`);
+    assertEndpointAllowed(provider.endpoint, `${profile.title || providerId}${t(" Service URL")}`);
     if (!provider.apiKey && !canOmitServiceApiKey(provider.endpoint)) {
-      throw new Error(`${profile.title || providerId} 访问密钥未配置`);
+      throw new Error(`${profile.title || providerId}${t(" access key is not configured")}`);
     }
-    if (!provider.model) throw new Error(`${profile.title || providerId} 模型名称未配置`);
+    if (!provider.model) throw new Error(`${profile.title || providerId}${t(" Model name is not configured")}`);
     const client = createStreamingTranscriptionClient(profile, provider, {
       onPartial: () => { /* 只验证握手，不接收文本 */ },
       onError: () => { /* 结束后可能收到关闭事件，忽略 */ },
@@ -1196,7 +1196,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     await client.connect();
     // 握手（含鉴权）已通过即可判定连通；立刻结束，避免占用配额。
     try { await client.finish(); } catch { /* 关闭失败不影响连通结论 */ }
-    return `已连通（${provider.model}）`;
+    return `${t("Connected (")}${provider.model}）`;
   }
 
   // 依次测「转写 + 大模型」连通性，返回一行汇总文案。供 API 方案检测 / 首页快速配置检测共用。
@@ -1235,7 +1235,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       applyLlmProfileToWorkingConfig(this.plugin.settings, id);
       await this.plugin.saveSettings();
       const p = findLlmProfile(this.plugin.settings, id);
-      new obsidian.Notice(`已切换到配置「${p ? p.name : id}」${p && p.asr ? t(" (transcription and AI briefing)") : t(" (AI briefing only)")}`, 5000);
+      new obsidian.Notice(`${t("Switched to configuration \"")}${p ? p.name : id}」${p && p.asr ? t(" (transcription and AI briefing)") : t(" (AI briefing only)")}`, 5000);
       this.renderSettings();
     });
 
@@ -1266,7 +1266,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       this.plugin.settings.llmProfiles = normalizeLlmProfiles(this.plugin.settings.llmProfiles).concat([scheme]);
       this.plugin.settings.activeLlmProfile = id;
       await this.plugin.saveSettings();
-      new obsidian.Notice(`已保存配置「${trimmed}」（含转写与 AI 整理）`, 5000);
+      new obsidian.Notice(`${t("Saved configuration \"")}${trimmed}${t("\" (including transcription and AI organizing)")}`, 5000);
       this.renderSettings();
     };
     if (activeId) {
@@ -1277,7 +1277,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         this.plugin.settings.llmProfiles = normalizeLlmProfiles(this.plugin.settings.llmProfiles).filter(x => x.id !== activeId);
         this.plugin.settings.activeLlmProfile = "";
         await this.plugin.saveSettings();
-        new obsidian.Notice(`已删除配置「${p ? p.name : activeId}」。当前服务设置仍会保留。`, 6000);
+        new obsidian.Notice(`${t("Deleted configuration \"")}${p ? p.name : activeId}${t("\". The current service settings are kept.")}`, 6000);
         this.renderSettings();
       };
     }
@@ -1286,7 +1286,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       const p = findLlmProfile(this.plugin.settings, activeId);
       const kind = p && p.asr ? t("Transcription and AI briefing") : t("AI briefing only (legacy)");
       const status = block.createDiv({ cls: "qnalog-scheme-status" });
-      status.createSpan({ cls: "qnalog-scheme-status-name", text: `当前：${p ? p.name : activeId}` });
+      status.createSpan({ cls: "qnalog-scheme-status-name", text: `${t("Current:")}${p ? p.name : activeId}` });
       status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
       status.createSpan({ text: kind });
       status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
@@ -1394,9 +1394,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         const view = buildServiceView(provider, providerNeedsKey);
         const result = await this.runAndRecordProbe(`transcribe:${activeId}`, view, async () => {
           const text = await this.runAsrConnectivityTest();
-          return `返回：${(text || "<空>").slice(0, 30)}`;
+          return `${t("Returned:")}${(text || "<空>").slice(0, 30)}`;
         });
-        new obsidian.Notice(result.ok ? `连通成功（${result.detail}）` : `测试失败：${result.detail}`, 8000);
+        new obsidian.Notice(result.ok ? `${t("Connected successfully (")}${result.detail}）` : `${t("Test failed:")}${result.detail}`, 8000);
         b.setDisabled(false); b.setButtonText(t("Test"));
         this.renderSettings();
       }));
@@ -1429,7 +1429,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             if (sfKey) this.plugin.settings.llmApiKey = sfKey;
           }
           await this.plugin.saveSettings();
-          new obsidian.Notice(`已应用服务预设：${preset.label}。请确认访问密钥和模型标识后测试连接。`, 6000);
+          new obsidian.Notice(`${t("Applied service preset:")}${preset.label}${t(". Confirm the access key and model ID, then test the connection.")}`, 6000);
           this.renderSettings();
         });
       });
@@ -1490,15 +1490,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         try {
           const models = await fetchLlmModelList(this.plugin.settings.llmEndpoint, this.plugin.settings.llmApiKey);
           if (!models.length) { new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000); return; }
-          openPickListModal(this.app, `选择模型（共 ${models.length} 个）`, models, async (id) => {
+          openPickListModal(this.app, `${t("Select a model (")}${models.length}${t(")")}`, models, async (id) => {
             this.plugin.settings.llmModel = id;
             syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
             await this.plugin.saveSettings();
-            new obsidian.Notice(`已选择模型：${id}`, 4000);
+            new obsidian.Notice(`${t("Selected model:")}${id}`, 4000);
             this.renderSettings();
           });
         } catch (e) {
-          new obsidian.Notice(`获取模型列表失败：${(e && e.message) || e}。可手动填写模型标识。`, 8000);
+          new obsidian.Notice(`${t("Failed to get the model list:")}${(e && e.message) || e}${t(". You can enter the model ID manually.")}`, 8000);
         } finally {
           b.setDisabled(false); b.setButtonText(t("Get available models"));
         }
@@ -1516,7 +1516,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint));
         const result = await this.runAndRecordProbe("llm:active", view, async () => {
           const r = await testLlmConnection(this.plugin);
-          return `${r.model || "未命名模型"}（返回：${r.preview || "<空>"}）`;
+          return `${r.model || "未命名模型"}${t("(returned:")}${r.preview || "<空>"}）`;
         });
         new obsidian.Notice(result.ok ? `大模型连通成功：${result.detail}` : `大模型测试失败：${result.detail}`, 8000);
         b.setButtonText(t("Test connection"));
@@ -1567,7 +1567,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       box.createEl("summary", { cls: "qnalog-risk-title", text: t("Import service unavailable") });
       box.createDiv({
         cls: "qnalog-risk-body",
-        text: `你选择的导入服务「${savedLabel}」当前不可用（已删除，或所用协议不支持整文件转写）。`
+        text: `你选择的导入服务「${savedLabel}${t("\" is currently unavailable (it was deleted, or its protocol does not support whole-file transcription).")}`
           + t("The alternatives shown below are available, but your setting was not changed — importing audio will still use the one you originally selected and fail.")
           + t("Please select a service again above. If you really want to keep using the original one, change its protocol back to one that supports whole-file transcription, then try again."),
       });
@@ -1629,13 +1629,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
               new obsidian.Notice(t("The service returned no usable models. Enter the model name manually."), 6000);
               return;
             }
-            openPickListModal(this.app, `选择导入音频模型（共 ${models.length} 个）`, models, async (model) => {
+            openPickListModal(this.app, `${t("Select the audio import model (")}${models.length}${t(")")}`, models, async (model) => {
               await writeProvider("model", model);
-              new obsidian.Notice(`已选择模型：${model}`, 4000);
+              new obsidian.Notice(`${t("Selected model:")}${model}`, 4000);
               this.renderSettings();
             });
           } catch (error) {
-            new obsidian.Notice(`获取模型失败：${(error && error.message) || error}`, 8000);
+            new obsidian.Notice(`${t("Failed to get models:")}${(error && error.message) || error}`, 8000);
           } finally {
             button.setDisabled(false);
             button.setButtonText(t("Get models"));
@@ -1655,7 +1655,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             const r = await testImportTranscribeProvider(this.plugin, activeId);
             return `${r.model} · ${r.detail}`;
           });
-          new obsidian.Notice(result.ok ? `连接正常：${result.detail}` : `连接失败：${result.detail}`, 9000);
+          new obsidian.Notice(result.ok ? `${t("Connection OK: ")}${result.detail}` : `${t("Connection failed:")}${result.detail}`, 9000);
           button.setDisabled(false);
           button.setButtonText(t("Test connection"));
           this.renderSettings();
@@ -1900,9 +1900,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       try {
         const content = await this.plugin.app.vault.cachedRead(file);
         const groups = parseVocabularyGroups(content);
-        setting.setDesc(`当前 ${countVocabularyGroups(groups)} 个 ASR 热词（${summarizeVocabularyGroups(groups)}）。`);
+        setting.setDesc(`${t("Currently")}${countVocabularyGroups(groups)}${t(" ASR hotwords (")}${summarizeVocabularyGroups(groups)}）。`);
       } catch (e) {
-        setting.setDesc(`读取失败：${e.message || e}`);
+        setting.setDesc(`${t("Failed to read:")}${e.message || e}`);
       }
     };
 
@@ -1916,7 +1916,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const folderPath = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
           if (folderPath) await ensureVaultFolder(this.plugin.app, folderPath);
           file = await this.plugin.app.vault.create(norm, formatVocabularyMarkdown([], this.plugin.settings.industryProfile));
-          new obsidian.Notice(`已创建：${norm}`);
+          new obsidian.Notice(`${t("Created:")}${norm}`);
         }
         if (file instanceof obsidian.TFile) {
           const content = await this.plugin.app.vault.cachedRead(file);
@@ -1982,7 +1982,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Extract people and transcription glossaries from past notes, and handle duplicate person profiles."))
       .setHeading();
     new obsidian.Setting(c).setName(t("Complete from past notes"))
-      .setDesc(`人员待确认 ${pendingPeopleSuggestions.length} 条，已忽略 ${ignoredPeopleSuggestions.length} 条。扫描会调用当前 AI 整理服务；涉密内容建议使用本地模型。`)
+      .setDesc(`人员待确认 ${pendingPeopleSuggestions.length}${t(" items, ignored ")}${ignoredPeopleSuggestions.length}${t(" items. The scan calls the current AI organizing service; for confidential content, use a local model.")}`)
       .addButton(b => b.setButtonText(t("Extract people suggestions")).setCta().onClick(async () => this.plugin.people.suggestPeopleDirectoryFromLibrary()))
       .addButton(b => b.setButtonText(t("Extract transcript terms")).onClick(async () => this._extractVocabFromLibrary(async () => { if (vocabPathSetting) await refreshVocabStatus(vocabPathSetting); })))
       .addButton(b => b.setButtonText(t("Pending")).setDisabled(!pendingPeopleSuggestions.length).onClick(async () => { await this.plugin.people.openCachedPeopleDirectorySuggestions(); this.renderSettings(); }))
@@ -1996,7 +1996,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         try {
           const result = await this.plugin.people.mergeDuplicatePeopleDirectory();
           new obsidian.Notice(result.merged
-            ? `已合并 ${result.merged} 个重复人员页，更新 ${result.updatedLinks} 篇引用`
+            ? `${t("Merged")}${result.merged}${t(" duplicate person pages, updated ")}${result.updatedLinks}${t(" note references")}`
             : t("No duplicate person pages found that need merging"));
           this.renderSettings();
         } catch (e) {
@@ -2020,7 +2020,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText(t("Backfill views")).onClick(async () => {
         try {
           const r = await this.plugin.library.createBases({ overwrite: false });
-          new obsidian.Notice(`表格视图创建完成：新建 ${r.created} 个，跳过 ${r.skipped} 个`);
+          new obsidian.Notice(`${t("Table views created:")}${r.created}${t(" items, skipped ")}${r.skipped}${t(" items")}`);
         } catch (e) {
           console.error(e);
           new obsidian.Notice(`创建失败：${e.message || e}`);
@@ -2043,9 +2043,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async setting => {
         try {
           const people = await loadPeopleDirectory(this.plugin);
-          setting.setDesc(`当前 ${people.length} 位人员。人员资料默认只在本地读取。`);
+          setting.setDesc(`${t("Currently")}${people.length}${t(" people. Person profiles are read locally only by default.")}`);
         } catch (e) {
-          setting.setDesc(`读取失败：${e.message || e}`);
+          setting.setDesc(`${t("Failed to read:")}${e.message || e}`);
         }
       });
 
@@ -2053,7 +2053,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async v => { this.plugin.settings.todoCardsFolder = v || DEFAULT_SETTINGS.todoCardsFolder; },
       async setting => {
         const count = countMarkdownInFolder(this.plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder);
-        setting.setDesc(`当前 ${count} 张待办卡片。待办卡片适合跟踪跨会议、跨项目的行动项。`);
+        setting.setDesc(`${t("Currently")}${count}${t(" to-do cards. To-do cards are good for tracking action items across meetings and projects.")}`);
       });
 
     createPathSetting(advancedBody, t("Views folder"), t("Save the resource overview and Base views generated by Q&A Log."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
@@ -2063,9 +2063,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const peopleScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "people");
     this.createSettingsSubhead(advancedBody, t("- Output only the 3 questions themselves, with no numbering, index, explanation, or any extra text"), t("After clearing, past meetings can re-enter the scope of person and glossary scanning."));
     new obsidian.Setting(advancedBody).setName(t("Note scan records"))
-      .setDesc(`转写词表已扫描 ${vocabScanCount} 篇；人员建议已扫描 ${peopleScanCount} 篇。清空记录后，修改过或已存在的纪要可重新进入扫描。`)
+      .setDesc(`${t("Transcription glossary scanned")}${vocabScanCount}${t(" notes; person suggestions scanned ")}${peopleScanCount}${t(" notes. After clearing the records, notes that have been modified or already exist can re-enter the scanning scope.")}`)
       .addButton(b => b.setButtonText(t("Clear term records")).setDisabled(!vocabScanCount).onClick(async () => {
-        const ok = await qnalogConfirm(this.app, t("Clear glossary scan history?"), `${vocabScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, t("Clear"));
+        const ok = await qnalogConfirm(this.app, t("Clear glossary scan history?"), `${vocabScanCount}${t(" minutes will re-enter the scanning scope; rescanning calls the LLM service again, and cloud usage is billed by volume.")}`, t("Clear"));
         if (!ok) return;
         this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("vocabulary");
         await this.plugin.saveSettings();
@@ -2073,7 +2073,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         this.renderSettings();
       }))
       .addButton(b => b.setButtonText(t("Clear people records")).setDisabled(!peopleScanCount).onClick(async () => {
-        const ok = await qnalogConfirm(this.app, t("Clear person suggestion scan history?"), `${peopleScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, t("Clear"));
+        const ok = await qnalogConfirm(this.app, t("Clear person suggestion scan history?"), `${peopleScanCount}${t(" minutes will re-enter the scanning scope; rescanning calls the LLM service again, and cloud usage is billed by volume.")}`, t("Clear"));
         if (!ok) return;
         this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("people");
         await this.plugin.saveSettings();
@@ -2091,7 +2091,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       : (isSharedAddressSpaceEndpoint(this.plugin.settings.llmEndpoint)
         ? t("The current LLM service is detected as a private network such as Tailscale") : t("The current LLM service is detected as cloud"));
     const modeLabel = { privacy: t("Privacy first"), hotwords: t("Person name hotwords"), localFull: t("Local enhancement") }[normalizePeopleContextMode(this.plugin.settings.peopleContextMode)] || t("Privacy first");
-    const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? `已于 ${this.plugin.settings.peopleHotwordsConsentAt} 授权人名热词。` : t("Name hotwords not yet authorized.");
+    const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? `已于 ${this.plugin.settings.peopleHotwordsConsentAt}${t(" authorized name hotwords.")}` : t("Name hotwords not yet authorized.");
 
     this.createSettingsSubhead(advancedBody, t("Person profile privacy"), t("Determines whether person names and context are sent to the current service along with transcription or organizing requests."));
     new obsidian.Setting(advancedBody).setName(t("Person profile usage policy"))
@@ -2134,13 +2134,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       const result = await this.plugin.vocabulary.extractVocabularyFromLibrary();
       await refreshStatus();
       if (result.processed) {
-        const rest = result.remaining ? `，还有 ${result.remaining} 篇待下次扫描` : "";
-        const failed = result.failed ? `，失败 ${result.failed}` : "";
-        new obsidian.Notice(`ASR 热词扫描完成：处理 ${result.processed} 篇，提取 ${result.added} 个候选词${failed}${rest}`);
+        const rest = result.remaining ? `${t(", and ")}${result.remaining}${t(" notes left for the next scan")}` : "";
+        const failed = result.failed ? `${t(", failed ")}${result.failed}` : "";
+        new obsidian.Notice(`${t("ASR hotword scan complete: processed ")}${result.processed}${t(" notes, extracted ")}${result.added}${t(" candidate words")}${failed}${rest}`);
       }
     } catch (e) {
       console.error(e);
-      new obsidian.Notice(`热词提取失败：${e.message || e}`);
+      new obsidian.Notice(`${t("Hotword extraction failed:")}${e.message || e}`);
     }
   }
 
@@ -2174,14 +2174,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       if (existing instanceof obsidian.TFolder) return;
       warnEl = c.createDiv({ cls: "qnalog-folder-warn" });
       if (existing) {
-        warnEl.createSpan({ text: `「${p}」已存在但不是文件夹，请换一个路径。` });
+        warnEl.createSpan({ text: `「${p}${t("\" already exists but is not a folder; choose another path.")}` });
       } else {
-        warnEl.createSpan({ text: `文件夹「${p}」尚不存在。` });
+        warnEl.createSpan({ text: `${t("Folder \"")}${p}${t("\" does not exist yet.")}` });
         const btn = warnEl.createEl("button", { text: t("Create this folder"), cls: "mod-cta" });
         btn.onclick = async () => {
           try {
             await this.app.vault.createFolder(p);
-            new obsidian.Notice(`已创建文件夹：${p}`);
+            new obsidian.Notice(`${t("Created folder:")}${p}`);
             renderWarn(p);
           } catch (e) {
             new obsidian.Notice(`创建失败：${(e && e.message) || e}`);
@@ -2238,7 +2238,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const streamingNote = advAsrProfile && advAsrProfile.transcribeMode === "streaming" ? t("The current transcription service is streaming, so this option has no effect.") : "";
 
     new obsidian.Setting(c).setName(t("Real-time segmented transcription"))
-      .setDesc(`录音过程中按设定间隔切段并实时转写。关闭则停止录音后一次性处理。${streamingNote}`)
+      .setDesc(`${t("During recording, audio is split into segments at the set interval and transcribed in real time. When off, the recording is processed all at once after it stops.")}${streamingNote}`)
       .addToggle(txt => txt.setValue(this.plugin.settings.enableInterimOutput).onChange(async v => { this.plugin.settings.enableInterimOutput = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Filter recordings under 3 seconds"))
@@ -2246,13 +2246,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addToggle(txt => txt.setValue(this.plugin.settings.filterShortRecordings !== false).onChange(async v => { this.plugin.settings.filterShortRecordings = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Segment interval"))
-      .setDesc(`每隔多少分钟切一段，单位分钟。有效范围 0.5–30。${streamingNote}`)
+      .setDesc(`${t("How often to start a new segment, in minutes. Valid range 0.5–30.")}${streamingNote}`)
       .addText(txt => {
         txt.setValue(String(this.plugin.settings.segmentIntervalMinutes)).onChange(async v => {
           const n = parseFloat(v);
           if (!isFinite(n)) return; // 打字途中/非法输入不保存，失焦时回显实际值
           const clamped = Math.min(30, Math.max(0.5, n));
-          if (clamped !== n) new obsidian.Notice(`分段间隔已按有效范围 0.5–30 调整为 ${clamped} 分钟`);
+          if (clamped !== n) new obsidian.Notice(`分段间隔已按有效范围 0.5–30 调整为 ${clamped}${t(" minutes")}`);
           this.plugin.settings.segmentIntervalMinutes = clamped;
           await this.plugin.saveSettings();
         });
@@ -2448,7 +2448,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const n = parseInt(v, 10);
           if (!isFinite(n)) return;
           const clamped = Math.min(60000, Math.max(0, n));
-          if (clamped !== n) new obsidian.Notice(`等待时间已按有效范围 0–60000 毫秒调整为 ${clamped}`);
+          if (clamped !== n) new obsidian.Notice(`${t("Wait time adjusted to the valid range 0–60000 milliseconds:")}${clamped}`);
           this.plugin.settings.inboxStabilizeDelayMs = clamped;
           await this.plugin.saveSettings();
         });
@@ -2476,7 +2476,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           if (!isFinite(n)) return;
           // 此前接受 0 但所有使用点都按 || 3 兜底，"填 0 实际跑 3"是谎言，收紧为 1–10
           const clamped = Math.min(10, Math.max(1, n));
-          if (clamped !== n) new obsidian.Notice(`最大重试次数已按有效范围 1–10 调整为 ${clamped}`);
+          if (clamped !== n) new obsidian.Notice(`${t("Maximum retry count adjusted (valid range 1–10) to")}${clamped}`);
           this.plugin.settings.maxRetries = clamped;
           await this.plugin.saveSettings();
         });
@@ -2484,7 +2484,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       });
 
     new obsidian.Setting(c).setName(t("Task queue"))
-      .setDesc(`当前 ${this.plugin.queue.tasks.length} 个任务。`)
+      .setDesc(`${t("Currently")}${this.plugin.queue.tasks.length}${t(" tasks.")}`)
       .addButton(b => b.setButtonText(t("Open queue")).onClick(() => new QueueModal(this.app, this.plugin).open()))
   }
 
@@ -2595,7 +2595,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             try { await trashVaultFileRef(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
           }
         }
-        new obsidian.Notice(n ? `已清空诊断日志：${n} 个文件（可从系统废纸篓恢复）` : t("The diagnostic log folder is empty"));
+        new obsidian.Notice(n ? `已清空诊断日志：${n}${t(" files (can be restored from the system trash)")}` : t("The diagnostic log folder is empty"));
       }));
 
     new obsidian.Setting(c).setName(t("Copyright & License"))

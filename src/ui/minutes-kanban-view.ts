@@ -281,7 +281,7 @@ export class MinutesKanbanView extends ItemView {
       head.createSpan({ cls: "qnalog-kanban-column-count", text: String(visible.length) });
       const menu = head.createEl("button", {
         cls: "clickable-icon qnalog-kanban-column-menu",
-        attr: { type: "button", title: t("Grouping menu"), "aria-label": `${column.label}分组菜单` },
+        attr: { type: "button", title: t("Grouping menu"), "aria-label": `${column.label}${t("Grouping menu")}` },
       });
       setIcon(menu, "more-horizontal");
       menu.onclick = (event) => {
@@ -316,7 +316,7 @@ export class MinutesKanbanView extends ItemView {
           cls: "qnalog-kanban-more",
           attr: { type: "button" },
         });
-        more.createSpan({ text: `还有 ${visible.length - shown.length} 篇` });
+        more.createSpan({ text: `${t("Another")}${visible.length - shown.length}${t(" notes")}` });
         setIcon(more.createSpan(), "chevron-down");
         more.onclick = () => {
           this.expandedGroups.add(column.key);
