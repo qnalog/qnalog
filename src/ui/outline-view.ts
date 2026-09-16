@@ -3744,7 +3744,7 @@ export class OutlineView extends obsidian.ItemView {
     if (!nodes.length) return null;
     const running = this.plugin.semanticCanvas.runningPaths.has(file.path);
     const progress = this.plugin.semanticCanvas.progressByPath.get(file.path);
-    const idleLabel = i18nT(" or ");
+    const idleLabel = i18nT("Open or update the semantic Canvas");
     const activeLabel = progress && progress.label ? progress.label : i18nT("Generating semantic Canvas");
     const button = parent.createEl("button", {
       cls: `qnalog-outline-canvas-btn${running ? " is-canvas-loading" : ""}`,
@@ -4217,7 +4217,7 @@ export class OutlineView extends obsidian.ItemView {
     if (noteFile) {
       const noteBtn = actions.createEl("button", {
         cls: "clickable-icon qnalog-outline-note-btn",
-        attr: { "aria-label": i18nT(" items"), title: i18nT(" items") },
+        attr: { "aria-label": i18nT("Open current note"), title: i18nT("Open current note") },
       });
       try { obsidian.setIcon(noteBtn, "file-text"); } catch { noteBtn.setText(i18nT("Notes")); }
       noteBtn.onclick = () => this.app.workspace.getLeaf(false).openFile(noteFile);
@@ -4359,7 +4359,7 @@ export class OutlineView extends obsidian.ItemView {
     titleWrap.createDiv({ cls: "qnalog-recording-blocker-title", text: i18nT("Microphone access denied") });
     const stoppedAt = Number(issue && issue.stoppedAtMs);
     const fallbackMs = Math.max(0, Number(recInfo && recInfo.elapsed) || 0);
-    titleWrap.createDiv({ cls: "qnalog-recording-blocker-subtitle", text: `录音已在 ${formatElapsed(Number.isFinite(stoppedAt) ? stoppedAt : fallbackMs)} 停止` });
+    titleWrap.createDiv({ cls: "qnalog-recording-blocker-subtitle", text: i18nT("Recording stopped at {0}").replace("{0}", formatElapsed(Number.isFinite(stoppedAt) ? stoppedAt : fallbackMs)) });
     card.createDiv({
       cls: "qnalog-recording-blocker-desc",
       text: i18nT("The content recorded in this session has been saved locally. The system revoked microphone permission during recording, so no new audio can be recorded."),

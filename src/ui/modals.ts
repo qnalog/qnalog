@@ -643,7 +643,9 @@ export class QueueModal extends obsidian.Modal {
       done: i18nT("This stage is complete"),
     }[state] || "");
 
-    const fmtDur = (ms) => { const s = Math.max(0, Math.round(Number(ms) / 1000)); if (s < 60) return `${s}秒`; const m = Math.floor(s / 60), r = s % 60; if (m < 60) return r ? `${m}分${r}秒` : `${m}分`; const h = Math.floor(m / 60), rm = m % 60; return rm ? `${h}时${rm}分` : `${h}时`; };
+    // 时长用短单位（s/m/h）。与「分段间隔」的单位不同：后者是 min（分钟），
+    // 若共用同一个词条，90 秒会渲染成 "1min30min"。单位符号不进词条表。
+    const fmtDur = (ms) => { const s = Math.max(0, Math.round(Number(ms) / 1000)); if (s < 60) return `${s}s`; const m = Math.floor(s / 60), r = s % 60; if (m < 60) return r ? `${m}m${r}s` : `${m}m`; const h = Math.floor(m / 60), rm = m % 60; return rm ? `${h}h${rm}m` : `${h}h`; };
     const fmtTime = (ms) => { try { return window.moment ? window.moment(ms).format("HH:mm:ss") : new Date(ms).toLocaleTimeString(); } catch { return ""; } };
     const tokenLabel = (n, exact) => { const v = Number(n) || 0; if (v <= 0) return ""; const num = v >= 10000 ? (v / 10000).toFixed(1).replace(/\.0$/, "") + "万" : String(v); return `${exact ? "" : "≈"}${num}`; };
     const taskTitle = (t) => t.type === "transcribe" ? `${t.status === "live" ? "实时转写" : "转写重试"} · 段${(t.segmentIndex || 0) + 1}`
@@ -1162,7 +1164,7 @@ export class QueueModal extends obsidian.Modal {
               if (Number(request.deadlineAt) > 0 && !["done", "failed", "retrying"].includes(requestState)) {
                 const deadlineDelta = Number(request.deadlineAt) - Date.now();
                 requestMeta.push(deadlineDelta >= 0
-                  ? `预计 ${fmtDur(deadlineDelta)} 内返回`
+                  ? i18nT("Expected back within {0}").replace("{0}", fmtDur(deadlineDelta))
                   : `处理时间比预计多 ${fmtDur(Math.abs(deadlineDelta))}`);
               }
               if (requestMeta.length) requestRow.createDiv({ cls: "qnalog-progress-request-meta", text: requestMeta.join(" · ") });
