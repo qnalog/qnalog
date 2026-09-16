@@ -1042,10 +1042,10 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     panel.open = !ready;
     const head = panel.createEl("summary", { cls: "qnalog-provider-head" });
     const titleWrap = head.createDiv({ cls: "qnalog-provider-title-wrap" });
-    titleWrap.createDiv({ cls: "qnalog-provider-title", text: profile.title });
-    titleWrap.createDiv({ cls: "qnalog-provider-subtitle", text: profile.description });
+    titleWrap.createDiv({ cls: "qnalog-provider-title", text: t(profile.title) });
+    titleWrap.createDiv({ cls: "qnalog-provider-subtitle", text: t(profile.description) });
     const badges = head.createDiv({ cls: "qnalog-provider-badges" });
-    badges.createDiv({ cls: "qnalog-provider-badge", text: profile.badge });
+    badges.createDiv({ cls: "qnalog-provider-badge", text: t(profile.badge) });
     // 徽章用四态：「已填写」会把「填了但没测过」说成完成。
     const badgeState = deriveSetupState(
       buildServiceView(p, needsKey),
@@ -1061,20 +1061,20 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const body = panel.createDiv({ cls: "qnalog-provider-body" });
     const checklist = body.createEl("ol", { cls: "qnalog-provider-checklist" });
-    for (const step of profile.steps || []) checklist.createEl("li", { text: step });
+    for (const step of profile.steps || []) checklist.createEl("li", { text: t(step) });
     if (missing.length) {
       body.createDiv({ cls: "qnalog-provider-missing", text: t("Still to be filled in:") + missing.join("、") });
     }
     if (profile.priceHint) {
-      body.createDiv({ cls: "qnalog-provider-price", text: profile.priceHint });
+      body.createDiv({ cls: "qnalog-provider-price", text: t(profile.priceHint) });
     }
     if (profile.note) {
-      body.createDiv({ cls: "qnalog-provider-note", text: profile.note });
+      body.createDiv({ cls: "qnalog-provider-note", text: t(profile.note) });
     }
     if (profile.links && profile.links.length) {
       const row = body.createDiv({ cls: "qnalog-provider-links" });
       for (const [label, url] of profile.links) {
-        const btn = row.createEl("button", { text: label });
+        const btn = row.createEl("button", { text: t(label) });
         btn.onclick = () => openExternalUrl(url);
       }
     }

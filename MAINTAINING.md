@@ -1267,3 +1267,57 @@ MacBook Pro 麦克风 · 可用
 数据来自 `buildSetupStatus`（`src/setup/index.ts`，有类型检查），
 由 `tests/bailian-setup.test.ts` 的 5 项覆盖，含反向验证（让它永远宣称可用、
 或让它不显示服务名，对应用例都会失败）。
+
+
+---
+
+## 12. 首次配置：OpenRouter 一站式方案
+
+面向中国大陆以外用户：一把 OpenRouter Key 配好「录音转写 / 导入音频 / AI 整理」三段。
+与百炼并存于快捷配置的下拉里，由用户按网络环境自选——
+两者的区别是「能不能连上」，不是界面语言。
+
+### 12.1 内置的三段服务与模型
+
+| 用途 | 服务（provider id） | 模型 | 接入方式 |
+|---|---|---|---|
+| 录音转写（分段） | `openrouter` | `qwen/qwen3-asr-1.7b` | OpenAI 兼容 `/api/v1/audio/transcriptions`（multipart） |
+| 导入音频（整文件，带说话人分离） | `openrouter-diarize` | `microsoft/mai-transcribe-2` | 同一端点，JSON 正文 + `provider.options` |
+| AI 整理 | 服务预设 `openrouter` | `qwen/qwen3.8-flash` | OpenAI 兼容 `/api/v1` |
+
+三段共用同一把密钥，写入范围仍受 §10.1 的 `PRESET_WRITTEN_FIELDS` 约束。
+
+**模型与接入方式的核实依据**（2026-09-16 查 OpenRouter 公开接口与文档）：
+
+- 三个模型 ID 均由接口确认存在。转写模型不在 `/api/v1/models` 里，
+  要加 `?output_modalities=transcription` 才列出（该查询返回 21 个 STT 模型）。
+- STT 端点 `/api/v1/audio/transcriptions` 同时接受 OpenAI 风格 multipart 与 JSON 正文。
+  录音转写走 multipart，复用既有路径，没有新增协议分支。
+- **说话人分离必须走 JSON**：分离开关经 `provider.options.<上游 slug>` 传递，是嵌套对象，
+  multipart 表达不了。因此 `microsoft/mai-transcribe-2` 单独用 `openrouter-diarize` 协议
+  （`src/asr/openrouter-diarize.ts`）。
+- 上游 slug 由模型决定，取自 `/api/v1/models/{id}/endpoints` 的 `endpoints[].tag`。
+  `mai-transcribe-2` 只有 `azure` 一个上游，文档示例也正是用 azure 演示该模型的分离。
+  代码运行时查这个 slug，而不是写死 `azure`——换模型时不必改代码。
+- 分离还需要 `response_format=verbose_json`，否则响应里没有 `segments[].speaker`。
+  返回结构经既有 `extractTranscriptText` 归一成 `[说话人N]` 前缀，无需新解析。
+
+### 12.2 与百炼的差异
+
+- 百炼的导入音频走 DashScope 自有的异步任务协议（提交 + 轮询）；
+  OpenRouter 是同一次请求内同步返回，因此 `transcribeWithOpenRouterDiarize` 直接返回结果，
+  不产生 `taskId`。
+- OpenRouter 的上游对单次请求有约 60 秒处理时限（文档明示），很长的录音建议先切分；
+  百炼的整文件识别支持到 12 小时。
+- 计费按音频时长与所选模型，以 OpenRouter 控制台用量页为准。
+
+### 12.3 界面
+
+转写服务下拉里新增 `OpenRouter · 说话人分离`（`openrouter-diarize`）。
+它被判为「可做说话人分离」由协议决定（`src/asr/diarization.ts` 的
+`isSpeakerDiarizationProvider`），不是 id 白名单——
+用户自建的同协议服务因此也能用于导入音频。
+
+provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接标签）在
+`settings-tab.ts` 的渲染处包 `t()`；它们是数据字段，不在 `t("...")` 调用点里，
+因此 `tests/i18n.test.ts` 另有一条用例专门扫这个模块。

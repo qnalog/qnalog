@@ -39,6 +39,7 @@ export function isSpeakerDiarizationProvider(provider: unknown): boolean {
   const model = stringValue(value.model).trim().toLowerCase();
   return protocol === "dashscope-filetrans"
     || protocol === "openai-diarized-transcription"
+    || protocol === "openrouter-diarize"
     || protocol === "speaker-diarization"
     || /(?:^|[-_/])diari[sz](?:e|ation)(?:$|[-_/])/.test(model)
     || /whisperx/i.test(model);
