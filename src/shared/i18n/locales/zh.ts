@@ -10,8 +10,9 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
-  " 项": " items",
-  " 条": " items",
+  " file items, skipped ": " 个，跳过 ",
+  " items": " 项",
+  " line items": " 条",
   "[Topic memory]\\n": "【主题记忆】\\n",
   "[Current live outline]\\n": "【当前实时大纲】\\n",
   "[Transcript before this entry]\\n": "【该记录前的转写片段】\\n",
@@ -138,7 +139,7 @@ export const ZH: MessageTable = {
   ", and ": "，还有 ",
   " · AI answer": " · AI 回答",
   " · Written": " · 已写入",
-  " 个": " items",
+  " file items": " 个",
   " files (can be restored from the system trash)": " 个文件（可从系统废纸篓恢复）",
   " authorized name hotwords.": " 授权人名热词。",
   " items will be marked as ignored": " 条会被标为忽略",

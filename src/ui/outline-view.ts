@@ -3591,7 +3591,7 @@ export class OutlineView extends obsidian.ItemView {
         const hotwordRenameNote = (hotwordRenames && hotwordRenames.length)
           ? `，并把正文里的 ${hotwordRenames.map(r => `${r.from}→${r.to}`).join("、")} 一并更正`
           : "";
-        successText = `${i18nT("Added to hotword library:")}${hotwordCount}${i18nT(" items")}${hotwordRenameNote}`;
+        successText = `${i18nT("Added to hotword library:")}${hotwordCount}${i18nT(" file items")}${hotwordRenameNote}`;
       } else {
         await this.keepPeopleSuggestions(file, state.currentPeople);
         return;

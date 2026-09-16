@@ -1958,7 +1958,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     };
     makeObjectCard(t("Person"), peopleCount, t("people"), t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
     makeObjectCard(t("To-do"), todoCount, t("items"), t("Action items confirmed from the meeting notes; check them off to track."), "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
-    const vocabCard = makeObjectCard(t("Transcription term list"), "…", t(" items"), t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
+    const vocabCard = makeObjectCard(t("Transcription term list"), "…", t(" file items"), t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
 
     void (async () => {
       const countEl = vocabCard.querySelector(".qnalog-object-overview-count-value");
@@ -2020,7 +2020,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText(t("Backfill views")).onClick(async () => {
         try {
           const r = await this.plugin.library.createBases({ overwrite: false });
-          new obsidian.Notice(`${t("Table views created:")}${r.created}${t(" items, skipped ")}${r.skipped}${t(" items")}`);
+          new obsidian.Notice(`${t("Table views created:")}${r.created}${t(" file items, skipped ")}${r.skipped}${t(" file items")}`);
         } catch (e) {
           console.error(e);
           new obsidian.Notice(`${t("Create failed: ")}${e.message || e}`);
