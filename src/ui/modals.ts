@@ -76,7 +76,7 @@ function renderImportSpeakerControl(parent, owner) {
       }
     };
   } else {
-    control.createSpan({ cls: "qnalog-import-speaker-auto", text: "自动识别人数" });
+    control.createSpan({ cls: "qnalog-import-speaker-auto", text: i18nT("Auto-detect speaker count") });
   }
 
   if (!owner.speakerSelection.supportsDiarization) {
@@ -106,7 +106,7 @@ export function pickReportAccentColor(app, defaultHex = null) {
     const wrap = modal.contentEl.createDiv({ cls: "qnalog-color-pick" });
     wrap.createEl("p", { cls: "qnalog-color-hint", text: i18nT("- Specify the use case, key content, required output, writing style, translation requirements, and anti-hallucination boundaries.") });
     const sw = wrap.createDiv({ cls: "qnalog-color-swatches" });
-    const presets = [[i18nT("Warm orange (default)"), "#E85F28"], [i18nT("Sapphire"), "#2F6BD8"], ["青墨", "#138A8A"], [i18nT("Pine green"), "#3B9A4B"], ["藕紫", "#7A4AD8"], [i18nT("Rose red"), "#D8407E"], [i18nT("Brown gold"), "#B5811A"], [i18nT("Graphite blue"), "#54627A"]];
+    const presets = [[i18nT("Warm orange (default)"), "#E85F28"], [i18nT("Sapphire"), "#2F6BD8"], [i18nT("Ink teal"), "#138A8A"], [i18nT("Pine green"), "#3B9A4B"], [i18nT("Lotus purple"), "#7A4AD8"], [i18nT("Rose red"), "#D8407E"], [i18nT("Brown gold"), "#B5811A"], [i18nT("Graphite blue"), "#54627A"]];
     const swatchEls = [];
     let customInput;
     const select = (hex) => {
@@ -123,7 +123,7 @@ export function pickReportAccentColor(app, defaultHex = null) {
       swatchEls.push([el, hex]);
     }
     const crow = wrap.createDiv({ cls: "qnalog-color-custom" });
-    crow.createEl("label", { text: "自定义" });
+    crow.createEl("label", { text: i18nT("Custom") });
     customInput = crow.createEl("input");
     customInput.type = "color";
     customInput.value = chosen;
@@ -370,7 +370,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         .setDesc(i18nT("Used to write back to meeting notes: attendees, mentioned people, and action-item owners go into different fields, and person pages then aggregate the related meetings in reverse."))
         .addDropdown(d => {
           relationSelect = d;
-          d.addOption("mentioned", "被提到的人");
+          d.addOption("mentioned", i18nT("Mentioned people"));
           d.addOption("participant", i18nT("Participants"));
           d.addOption("todo_owner", i18nT("To-do assignee"));
           d.setValue(normalizePeopleRelation(item.relation) || "mentioned");
@@ -619,13 +619,13 @@ export class QueueModal extends obsidian.Modal {
               ? "retrying" : "done";
     const headActive = active || taskActive.length > 0 || running.length > 0;
     const livenessLabel = (state) => ({
-      queued: "等待处理",
+      queued: i18nT("Queued"),
       pending: i18nT("Not started"),
       running: i18nT("In progress"),
-      waiting: "等待服务响应",
+      waiting: i18nT("Waiting for service response"),
       slow: i18nT("Processing"),
-      stalled: "仍在处理",
-      retrying: "等待重试",
+      stalled: i18nT("Still processing"),
+      retrying: i18nT("Waiting to retry"),
       failed: "已失败",
       cancelled: i18nT("Cancelled"),
       done: i18nT("Completed"),
@@ -678,7 +678,7 @@ export class QueueModal extends obsidian.Modal {
         ? `${taskProblems.length} 个任务需要处理`
         : headActive
           ? livenessLabel(headLiveness)
-          : "空闲",
+          : i18nT("Idle"),
       attr: { "aria-live": "polite" },
     });
 
@@ -760,7 +760,7 @@ export class QueueModal extends obsidian.Modal {
       {
         key: "organize",
         label: i18nT("AI Organizing"),
-        summary: phase === "organize" && taskActive.length ? `${taskActive.length} 项进行中` : phase === "organize" ? (detail && detail.count ? String(detail.count) : i18nT("Organizing")) : phaseIndex > 1 ? "已完成" : "等待转写完成",
+        summary: phase === "organize" && taskActive.length ? `${taskActive.length} 项进行中` : phase === "organize" ? (detail && detail.count ? String(detail.count) : i18nT("Organizing")) : phaseIndex > 1 ? "已完成" : i18nT("Waiting for transcription to complete"),
       },
       {
         key: "complete",
@@ -798,9 +798,9 @@ export class QueueModal extends obsidian.Modal {
         {
           key: "transcribe",
           label: i18nT("Transcription"),
-          summary: String((activeId === "persist" ? persistStage.summary : transcribeStage.summary) || detail.count || "等待处理"),
+          summary: String((activeId === "persist" ? persistStage.summary : transcribeStage.summary) || detail.count || i18nT("Queued")),
         },
-        { key: "organize", label: i18nT("AI Organizing"), summary: String(organizeStage.summary || "等待转写完成") },
+        { key: "organize", label: i18nT("AI Organizing"), summary: String(organizeStage.summary || i18nT("Waiting for transcription to complete")) },
         { key: "complete", label: i18nT("Done"), summary: String(writeStage.summary || i18nT("Write to note")) },
       ];
     }
@@ -1047,7 +1047,7 @@ export class QueueModal extends obsidian.Modal {
           : "";
         const taskFacts = [
           [i18nT("Source folder"), detail.sourceFolder],
-          ["音频时长", Number(detail.durationMs) > 0 ? fmtDur(Number(detail.durationMs)) : ""],
+          [i18nT("Audio duration"), Number(detail.durationMs) > 0 ? fmtDur(Number(detail.durationMs)) : ""],
           [i18nT("Mode"), modeChange],
         ].filter(([, value]) => String(value || "").trim());
         if (taskFacts.length) {
@@ -1249,7 +1249,7 @@ export class QueueModal extends obsidian.Modal {
       titleLine(body, taskTitle(t), "", false);
       subLine(body, `${t.lastError || "等待下一次处理"} · 已试 ${t.retries || 0} 次`);
       const acts = row.createDiv({ cls: "qnalog-progress-queue-actions" });
-      const retryBtn = acts.createEl("button", { cls: "qnalog-progress-queue-retry", attr: { type: "button" }, text: "重试" });
+      const retryBtn = acts.createEl("button", { cls: "qnalog-progress-queue-retry", attr: { type: "button" }, text: i18nT("Retry") });
       retryBtn.onclick = async () => { try { await this.plugin.queue.processOne(t); } catch { /* intentionally empty */ } this.onOpen(); };
       const delBtn = acts.createEl("button", { cls: "qnalog-progress-queue-cancel", attr: { type: "button" }, text: i18nT("Cancel") });
       delBtn.onclick = async () => {
@@ -1353,7 +1353,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-vcable-actions" });
     const closeBtn = actions.createEl("button", { text: i18nT("Close") });
     closeBtn.onclick = () => this.close();
-    const recheckBtn = actions.createEl("button", { text: "重新检测", cls: "mod-cta" });
+    const recheckBtn = actions.createEl("button", { text: i18nT("Detect again"), cls: "mod-cta" });
     recheckBtn.onclick = async () => {
       // 用户点了「重新检测」，要设备名才能报出检测到哪些设备，申请权限是预期的。
       const info = await enumerateAudioDevices({ requestPermission: true });
@@ -1405,7 +1405,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     });
     this.step(parent, 3, i18nT("- The {{TRANSCRIPT}} placeholder must be preserved."), (b) => {
       const ol = b.createEl("ol");
-      ol.createEl("li", { text: "系统设置 → 声音 → 输出" });
+      ol.createEl("li", { text: i18nT("System Settings → Sound → Output") });
       ol.createEl("li", { text: i18nT("Select the \"Multi-Output Device\" you just created") });
       ol.createEl("li", { text: i18nT("Browser videos and most desktop video clients usually follow the system output; if meeting software has a separate speaker setting, also change it to this multi-output device") });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
@@ -1426,7 +1426,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: i18nT("Click Install Driver → restart your computer") });
     });
     this.step(parent, 2, i18nT("- Must output: State which parts the final note must contain, and which overly templated content should not appear."), (b) => {
-      b.createEl("p", { text: "线上会议可以在飞书、腾讯会议或 Zoom 的音频设置里改扬声器；B 站客户端、浏览器视频、播放器等桌面应用，可以在 Windows 音量混合器里单独指定输出设备。目标输出统一改为：" });
+      b.createEl("p", { text: i18nT("For online meetings, change the speaker in the audio settings of Feishu, Tencent Meeting, or Zoom; for desktop apps such as the Bilibili client, browser video, and media players, you can set the output device individually in the Windows volume mixer. Change the target output uniformly to:") });
       b.createEl("code", { text: "CABLE Input (VB-Audio Virtual Cable)" });
       b.createEl("p", { cls: "qnalog-vcable-tip" }).setText(i18nT("Note: CABLE Input is selected here. Although its name says Input, in Windows it is a playback/output device; Q&A Log records later from CABLE Output at the other end of the same virtual cable."));
       const ol = b.createEl("ol");
@@ -1438,7 +1438,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       warn.setText(i18nT("This step temporarily stops system audio playing through your real headphones/speakers; listening is restored by the next step."));
     });
     this.step(parent, 3, i18nT("Use CABLE Output to monitor through your real speakers or headphones (important)"), (b) => {
-      b.createEl("p", { text: "要恢复本机监听，需要把 CABLE Output 侦听到真实耳机或扬声器：" });
+      b.createEl("p", { text: i18nT("To restore local monitoring, monitor CABLE Output through your real headphones or speakers:") });
       const ol = b.createEl("ol");
       ol.createEl("li", { text: i18nT("- Do not force in a large number of callouts; structure is fine, but the body should stay close to what was actually discussed.") });
       ol.createEl("li", { text: i18nT("- Use a short list when needed, keeping the items, numbers, examples, and risks from the minutes.") });
@@ -1468,7 +1468,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       const code = b.createEl("pre");
       code.createEl("code", { text: "pactl list sources short | grep monitor" });
     });
-    this.step(parent, 2, "若用 PipeWire（较新发行版）", (b) => {
+    this.step(parent, 2, i18nT("If using PipeWire (newer distributions)"), (b) => {
       b.createEl("p", { text: i18nT("PipeWire is compatible with the PulseAudio API, and the commands are the same. If the default monitor does not work, you can install pavucontrol and, on the “Recording” tab, switch the Q&A Log input to Monitor of <speaker name>.") });
     });
     this.step(parent, 3, i18nT("Select computer audio mode in Q&A Log"), (b) => {
@@ -1571,7 +1571,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     for (const mode of this.builtInModes()) this.renderBuiltinRow(list, mode);
 
     const customSection = body.createDiv({ cls: "qnalog-tpl-section" });
-    customSection.createDiv({ cls: "qnalog-tpl-section-title", text: "自定义提示词" });
+    customSection.createDiv({ cls: "qnalog-tpl-section-title", text: i18nT("Custom prompt") });
     customSection.createDiv({ cls: "qnalog-tpl-section-copy", text: i18nT("Every custom prompt appears in the recording, audio import, and re-organize menus, and can also be set as default.") });
     const customList = customSection.createDiv({ cls: "qnalog-tpl-list" });
     const customs = getCustomPromptModeTemplates(this.plugin.settings);
@@ -1593,7 +1593,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     text.createDiv({ cls: "qnalog-tpl-row-sub", text: (meta.goal || "") + " · " + state });
 
     const actions = row.createDiv({ cls: "qnalog-tpl-row-actions" });
-    const defaultBtn = actions.createEl("button", { text: this.plugin.settings.polishMode === mode ? "已默认" : "设为默认" });
+    const defaultBtn = actions.createEl("button", { text: this.plugin.settings.polishMode === mode ? "已默认" : i18nT("Set as default") });
     defaultBtn.onclick = async () => {
       this.plugin.settings.polishMode = mode;
       await this.plugin.saveSettings();
@@ -1610,18 +1610,18 @@ export class PromptTemplateModal extends obsidian.Modal {
     setModePillIcon(pill, meta, baseMeta);
     pill.setAttr("aria-hidden", "true");
     const text = row.createDiv({ cls: "qnalog-tpl-row-meta" });
-    text.createDiv({ cls: "qnalog-tpl-row-name", text: tpl.name || "自定义提示词" });
+    text.createDiv({ cls: "qnalog-tpl-row-name", text: tpl.name || i18nT("Custom prompt") });
     const updated = tpl.updatedAt && window.moment ? window.moment(tpl.updatedAt).format("YYYY-MM-DD HH:mm") : i18nT("Not recorded");
-    text.createDiv({ cls: "qnalog-tpl-row-sub", text: "自定义 · 更新于 " + updated });
+    text.createDiv({ cls: "qnalog-tpl-row-sub", text: i18nT("Custom · Updated on ") + updated });
 
     const actions = row.createDiv({ cls: "qnalog-tpl-row-actions" });
-    const defaultBtn = actions.createEl("button", { text: this.plugin.settings.polishMode === tpl.id ? "已默认" : "设为默认" });
+    const defaultBtn = actions.createEl("button", { text: this.plugin.settings.polishMode === tpl.id ? "已默认" : i18nT("Set as default") });
     defaultBtn.onclick = async () => {
       this.plugin.settings.polishMode = tpl.id;
       await this.plugin.saveSettings();
       this.onOpen();
     };
-    const editBtn = actions.createEl("button", { text: "编辑" });
+    const editBtn = actions.createEl("button", { text: i18nT("Edit") });
     editBtn.onclick = () => { this.editingId = tpl.id; this.onOpen(); };
     const delBtn = actions.createEl("button", { text: i18nT("Delete") });
     delBtn.addClass("mod-warning");
@@ -1642,19 +1642,19 @@ export class PromptTemplateModal extends obsidian.Modal {
 
   async optimizePromptDraft(tpl, draft) {
     const current = String(draft || "").trim();
-    const seed = current || this.newCustomScene(tpl && tpl.name ? tpl.name : "自定义提示词", tpl && tpl.baseMode ? tpl.baseMode : "learning").prompt;
+    const seed = current || this.newCustomScene(tpl && tpl.name ? tpl.name : i18nT("Custom prompt"), tpl && tpl.baseMode ? tpl.baseMode : "learning").prompt;
     const sys = i18nT("You are a prompt optimization expert, specializing in rewriting user drafts into a stable, clear, and executable prompt for organizing recording transcripts.");
     const user = [
       i18nT("Please optimize the following Q&A Log transcription cleanup prompt."),
       "",
-      "要求：",
+      i18nT("Requirements:"),
       i18nT("- Output only the complete optimized Prompt, with no explanation and no code blocks."),
       i18nT("- The {{TRANSCRIPT}} placeholder must be kept."),
       i18nT("- Specify the use case, key content, required output, writing style, translation requirements and anti-hallucination boundaries."),
       i18nT("- Do not force in a large number of callouts; structure is fine, but the body text should stay close to what was actually discussed."),
       i18nT("- Make it directly usable for recording, importing and re-organizing right after the user saves it."),
       "",
-      i18nT("1. Open system settings and allow Obsidian to access the microphone.") + ((tpl && tpl.name) || "自定义提示词"),
+      i18nT("1. Open system settings and allow Obsidian to access the microphone.") + ((tpl && tpl.name) || i18nT("Custom prompt")),
       "",
       i18nT("Current draft:"),
       seed,
@@ -1679,14 +1679,14 @@ export class PromptTemplateModal extends obsidian.Modal {
     const back = body.createDiv({ cls: "qnalog-tpl-back" });
     const backBtn = back.createEl("button", { text: i18nT("Back to list") });
     backBtn.onclick = () => { this.editingId = null; this.onOpen(); };
-    back.createSpan({ cls: "qnalog-tpl-builtin-tag", text: "自定义" });
+    back.createSpan({ cls: "qnalog-tpl-builtin-tag", text: i18nT("Custom") });
 
     const editor = body.createDiv({ cls: "qnalog-tpl-editor" });
     new obsidian.Setting(editor).setName(i18nT("Prompt Name"))
       .setDesc(i18nT("This name appears in the Recording, Import Audio, and Re-polish menus."))
       .addText(t => {
         t.setValue(tpl.name || "");
-        t.onChange(v => { tpl.name = v || "自定义提示词"; });
+        t.onChange(v => { tpl.name = v || i18nT("Custom prompt"); });
       });
 
     const promptSetting = new obsidian.Setting(editor).setName(i18nT("Prompt Content"));
@@ -1719,7 +1719,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     };
     const saveBtn = actions.createEl("button", { text: i18nT("Save and set as default"), cls: "mod-cta" });
     saveBtn.onclick = async () => {
-      tpl.name = (tpl.name || "自定义提示词").trim();
+      tpl.name = (tpl.name || i18nT("Custom prompt")).trim();
       tpl.description = "";
       tpl.baseMode = tpl.baseMode || "learning";
       tpl.mode = tpl.id;
@@ -1730,7 +1730,7 @@ export class PromptTemplateModal extends obsidian.Modal {
       if (!tpl.prompt.includes("{{TRANSCRIPT}}")) { new obsidian.Notice(i18nT("2. Return to Q&A Log and start a new recording.")); return; }
       tpl.updatedAt = new Date().toISOString();
       await this.saveScene(tpl, true);
-      new obsidian.Notice("自定义提示词已保存");
+      new obsidian.Notice(i18nT("Custom prompt saved"));
       this.editingId = null;
       this.onOpen();
     };
@@ -2164,7 +2164,7 @@ export class ImportAudioModal extends obsidian.Modal {
       .sort((a, b) => b.stat.mtime - a.stat.mtime);
 
     if (!files.length) {
-      contentEl.createEl("p", { text: "音频文件夹无可识别的音频文件" });
+      contentEl.createEl("p", { text: i18nT("No recognizable audio files in the audio folder") });
       return;
     }
 
@@ -2193,7 +2193,7 @@ export class ImportAudioModal extends obsidian.Modal {
       grouped.batches.forEach((batch) => this.renderBatch(list, batch));
     }
     if (grouped.singles.length) {
-      list.createDiv({ cls: "qnalog-import-section-title", text: grouped.batches.length ? "独立音频" : "音频文件" });
+      list.createDiv({ cls: "qnalog-import-section-title", text: grouped.batches.length ? "独立音频" : i18nT("Audio files") });
       grouped.singles.forEach((file) => this.renderSingleFile(list, file));
     }
 

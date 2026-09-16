@@ -756,7 +756,7 @@ export class OutlineView extends obsidian.ItemView {
       this.render();
     };
     const askBtn = tabs.createEl("button", {
-      text: "问一问",
+      text: i18nT("Q&A"),
       cls: activeTab === "ask" ? "is-active" : "",
       attr: { type: "button" },
     });
@@ -844,7 +844,7 @@ export class OutlineView extends obsidian.ItemView {
     const head = sec.createDiv({ cls: "qnalog-note-ask-head" });
     const title = head.createDiv({ cls: "qnalog-note-ask-title" });
     try { obsidian.setIcon(title.createSpan({ cls: "qnalog-note-ask-title-icon" }), "sparkles"); } catch { /* intentionally empty */ }
-    title.createSpan({ text: "问一问" });
+    title.createSpan({ text: i18nT("Q&A") });
     head.createDiv({ cls: "qnalog-note-ask-note", text: this.formatAskNoteTitle(file) });
 
     const body = sec.createDiv({ cls: "qnalog-note-ask-body" });
@@ -855,7 +855,7 @@ export class OutlineView extends obsidian.ItemView {
     const textarea = inputWrap.createEl("textarea", {
       cls: "qnalog-note-ask-input",
       attr: {
-        placeholder: state.entries.length ? "继续问这段会议…" : "针对这篇纪要提问…",
+        placeholder: state.entries.length ? "继续问这段会议…" : i18nT("Ask about this note…"),
         rows: "1",
       },
     });
@@ -979,7 +979,7 @@ export class OutlineView extends obsidian.ItemView {
     this.plugin.tasks.startTaskActivity({
       id: taskId,
       kind: "note-ask",
-      title: "纪要问一问",
+      title: i18nT("Minutes Q&A"),
       subject: file.path,
       status: "running",
       stage: "llm",
@@ -1017,7 +1017,7 @@ export class OutlineView extends obsidian.ItemView {
         priority: "user",
         noRetry: true,
       });
-      const answer = String(raw || "").trim() || "纪要中没有足够依据。";
+      const answer = String(raw || "").trim() || i18nT("The minutes do not provide enough basis.");
       for (const en of state.entries) en.expanded = false; // 新回答展开，历史折叠（对齐设计：最新在前且展开）
       const newEntry = {
         id: `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1028,7 +1028,7 @@ export class OutlineView extends obsidian.ItemView {
         expanded: true,
       };
       state.entries.unshift(newEntry);
-      state.question = ""; // 清空输入，方便"继续问这段会议"
+      state.question = ""; // 清空输入，方便t("Continue asking about this meeting")
       this.plugin.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: i18nT("Answer generated"),
@@ -1045,7 +1045,7 @@ export class OutlineView extends obsidian.ItemView {
       state.error = (e && e.message) || String(e);
       this.plugin.tasks.failTaskActivity(taskId, e, {
         stage: "failed",
-        stageLabel: "问一问未完成",
+        stageLabel: i18nT("Minutes Q&A incomplete"),
         detail: state.error,
         subject: file.path,
         actions: [
@@ -1055,7 +1055,7 @@ export class OutlineView extends obsidian.ItemView {
       });
       new obsidian.Notice(`问一问失败：${state.error}`, 8000);
       try {
-        await this.plugin.diagnostics.logDiagnostic("warn", "note_ask.failed", "纪要问一问失败", {
+        await this.plugin.diagnostics.logDiagnostic("warn", "note_ask.failed", i18nT("Minutes Q&A failed"), {
           file: file.path,
           question: question.slice(0, 160),
           error: diagnosticError(e),
@@ -1108,7 +1108,7 @@ export class OutlineView extends obsidian.ItemView {
       const system = i18nT("You are a senior meeting analysis assistant. Raise follow-up questions based only on the given minutes and raw transcript, and do not invent information that is not in the material.");
       const user = [
         "下面是一篇纪要，以及用户刚问的问题和你给出的回答。请基于纪要内容，提出 3 个有深度、值得继续追问的问题——优先指向：根因/机制、隐含分歧或矛盾、风险与代价、下一步该定的决策、反例或边界条件。",
-        "要求：",
+        i18nT("Requirements:"),
         i18nT("- Each question on its own line, 3 lines in total"),
         i18nT("- Each line ≤ 22 characters, specific, answerable from these notes, not vague (no things like “could you say more”)"),
         i18nT("- Output only the 3 lines of questions themselves, with no numbering/ordinals/explanation/any extra text"),
@@ -1420,8 +1420,8 @@ export class OutlineView extends obsidian.ItemView {
       raw: item,
       iconName,
       title: item.name || i18nT("Unnamed person"),
-      sub: item.role || "角色待补充",
-      meta: item.org || item.organization || "组织待补充",
+      sub: item.role || i18nT("Role to be filled in"),
+      meta: item.org || item.organization || i18nT("Organization to be filled in"),
     }));
   }
 
@@ -1599,7 +1599,7 @@ export class OutlineView extends obsidian.ItemView {
     const card = parent.createDiv({ cls: "qnalog-speaker-map" });
     const header = card.createDiv({ cls: "qnalog-speaker-map-header" });
     const heading = header.createDiv({ cls: "qnalog-speaker-map-heading" });
-    heading.createDiv({ cls: "qnalog-speaker-map-title", text: "编辑说话人" });
+    heading.createDiv({ cls: "qnalog-speaker-map-title", text: i18nT("Edit speakers") });
     const list = card.createDiv({ cls: "qnalog-speaker-map-list" });
     const datalistId = `qnalog-speaker-names-${String(file.path || "note").replace(/[^a-z0-9_-]/gi, "-")}`;
     const datalist = list.createEl("datalist", { attr: { id: datalistId } });
@@ -1709,7 +1709,7 @@ export class OutlineView extends obsidian.ItemView {
     const row = parent.createDiv({ cls: "qnalog-sediment-rescan-row" });
     const btn = row.createEl("button", { cls: "qnalog-sediment-rescan-button", attr: { type: "button" } });
     try { obsidian.setIcon(btn.createSpan({ cls: "qnalog-sediment-rescan-icon" }), "refresh-cw"); } catch { /* intentionally empty */ }
-    btn.createSpan({ text: "重扫" });
+    btn.createSpan({ text: i18nT("Rescan") });
     btn.onclick = () => this.confirmSedimentRescan(file);
   }
 
@@ -1851,7 +1851,7 @@ export class OutlineView extends obsidian.ItemView {
     };
     const rescan = actions.createEl("button", { cls: "qnalog-sediment-text-button qnalog-sediment-rescan-inline", attr: { type: "button" } });
     try { obsidian.setIcon(rescan.createSpan({ cls: "qnalog-sediment-rescan-icon" }), "refresh-cw"); } catch { /* intentionally empty */ }
-    rescan.createSpan({ text: "重扫" });
+    rescan.createSpan({ text: i18nT("Rescan") });
     rescan.onclick = () => this.confirmSedimentRescan(file);
   }
 
@@ -1940,7 +1940,7 @@ export class OutlineView extends obsidian.ItemView {
   renderSedimentTypePill(parent, label, iconName) {
     const pill = parent.createSpan({ cls: "qnalog-sediment-type-pill" });
     try { obsidian.setIcon(pill.createSpan({ cls: "qnalog-sediment-type-icon" }), iconName || "tag"); } catch { /* intentionally empty */ }
-    pill.createSpan({ text: label || "类型" });
+    pill.createSpan({ text: label || i18nT("Type") });
     return pill;
   }
 
@@ -2130,7 +2130,7 @@ export class OutlineView extends obsidian.ItemView {
     const bar = panel.createDiv({ cls: "qnalog-todo-inline-quickbar" });
     const moment = window.moment;
     const presets = moment ? [
-      { key: "1", label: "今天", value: moment().format("YYYY-MM-DD") },
+      { key: "1", label: i18nT("Today"), value: moment().format("YYYY-MM-DD") },
       { key: "2", label: i18nT("Tomorrow"), value: moment().add(1, "day").format("YYYY-MM-DD") },
       { key: "3", label: i18nT("This weekend"), value: moment().endOf("week").format("YYYY-MM-DD") },
       { key: "4", label: "下周", value: moment().add(1, "week").format("YYYY-MM-DD") },
@@ -2144,7 +2144,7 @@ export class OutlineView extends obsidian.ItemView {
     }
     const customBtn = bar.createEl("button", { cls: "qnalog-todo-inline-preset is-custom", attr: { type: "button", "data-key": "5" } });
     try { obsidian.setIcon(customBtn.createSpan({ cls: "qnalog-todo-inline-preset-icon" }), "calendar"); } catch { /* intentionally empty */ }
-    customBtn.createSpan({ text: "自定" });
+    customBtn.createSpan({ text: i18nT("Custom date") });
     customBtn.onclick = () => showCustom();
     if (raw.due) {
       const clr = bar.createEl("button", { cls: "qnalog-todo-inline-preset is-clear", text: "清除", attr: { type: "button" } });
@@ -2600,7 +2600,7 @@ export class OutlineView extends obsidian.ItemView {
       const { contentEl } = modal;
       contentEl.empty();
       contentEl.addClass("qnalog-sediment-rescan-modal");
-      contentEl.createEl("h3", { text: "编辑待办" });
+      contentEl.createEl("h3", { text: i18nT("Edit to-do") });
       const form = contentEl.createDiv({ cls: "qnalog-sediment-todo-edit" });
 
       const makeField = (label, value, multi = false) => {
@@ -2785,7 +2785,7 @@ export class OutlineView extends obsidian.ItemView {
     const presetWrap = pop.createDiv({ cls: "qnalog-todo-popover-presets" });
     const moment = window.moment;
     const presets = moment ? [
-      { label: "今天", value: moment().format("YYYY-MM-DD") },
+      { label: i18nT("Today"), value: moment().format("YYYY-MM-DD") },
       { label: i18nT("Tomorrow"), value: moment().add(1, "day").format("YYYY-MM-DD") },
       { label: i18nT("This weekend"), value: moment().endOf("week").format("YYYY-MM-DD") },
       { label: "下周", value: moment().add(1, "week").format("YYYY-MM-DD") },
@@ -2803,7 +2803,7 @@ export class OutlineView extends obsidian.ItemView {
       };
     }
     pop.createDiv({ cls: "qnalog-todo-popover-divider" });
-    pop.createDiv({ cls: "qnalog-todo-popover-section", text: "自定义" });
+    pop.createDiv({ cls: "qnalog-todo-popover-section", text: i18nT("Custom") });
     const dateInput = pop.createEl("input", {
       cls: "qnalog-todo-popover-date",
       attr: { type: "date" },
@@ -2915,7 +2915,7 @@ export class OutlineView extends obsidian.ItemView {
     // 没有 restore 时（旧版本 / 无快照）不再画这个按钮，避免和顶部全局"重扫"重复并误导用户。
     if (canRollback) {
       const footer = parent.createDiv({ cls: "qnalog-sediment-footer" });
-      const reset = footer.createEl("button", { text: "重新处理本组", cls: "qnalog-sediment-text-button", attr: { type: "button" } });
+      const reset = footer.createEl("button", { text: i18nT("Reprocess this group"), cls: "qnalog-sediment-text-button", attr: { type: "button" } });
       reset.onclick = async () => {
         reset.disabled = true;
         try {
@@ -3062,7 +3062,7 @@ export class OutlineView extends obsidian.ItemView {
       const head = contentEl.createDiv({ cls: "qnalog-sediment-confirm-head" });
       const icon = head.createDiv({ cls: "qnalog-sediment-confirm-icon" });
       try { obsidian.setIcon(icon, "refresh-cw"); } catch { /* intentionally empty */ }
-      head.createEl("h3", { text: "重新扫描本篇？" });
+      head.createEl("h3", { text: i18nT("Rescan this note?") });
       const pendingCount = this.getSedimentPendingCandidateCount(file);
       const list = contentEl.createEl("ul", { cls: "qnalog-sediment-confirm-list" });
       [
@@ -3518,7 +3518,7 @@ export class OutlineView extends obsidian.ItemView {
       note.setText(`未选的 ${count} 条会被标为忽略，无法恢复。继续后，已选内容会加入对应库。`);
       const actions = contentEl.createDiv({ cls: "qnalog-sediment-confirm-actions" });
       const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
-      const confirm = actions.createEl("button", { text: "继续", cls: "mod-cta", attr: { type: "button" } });
+      const confirm = actions.createEl("button", { text: i18nT("Continue"), cls: "mod-cta", attr: { type: "button" } });
       cancel.onclick = () => modal.close();
       confirm.onclick = async () => {
         confirm.disabled = true;
@@ -3899,7 +3899,7 @@ export class OutlineView extends obsidian.ItemView {
 
     const volumeBtn = ui.createEl("button", {
       cls: "qnalog-inline-player-icon-btn",
-      attr: { type: "button", "aria-label": "静音/取消静音", title: "静音/取消静音" },
+      attr: { type: "button", "aria-label": i18nT("Mute/Unmute"), title: i18nT("Mute/Unmute") },
     });
     try { obsidian.setIcon(volumeBtn, "volume"); } catch { volumeBtn.setText(i18nT("Volume")); }
     const moreBtn = ui.createEl("button", {
@@ -4356,7 +4356,7 @@ export class OutlineView extends obsidian.ItemView {
     const iconWrap = top.createDiv({ cls: "qnalog-recording-blocker-icon" });
     try { obsidian.setIcon(iconWrap, "mic-off"); } catch { /* intentionally empty */ }
     const titleWrap = top.createDiv({ cls: "qnalog-recording-blocker-title-wrap" });
-    titleWrap.createDiv({ cls: "qnalog-recording-blocker-title", text: "麦克风访问被拒绝" });
+    titleWrap.createDiv({ cls: "qnalog-recording-blocker-title", text: i18nT("Microphone access denied") });
     const stoppedAt = Number(issue && issue.stoppedAtMs);
     const fallbackMs = Math.max(0, Number(recInfo && recInfo.elapsed) || 0);
     titleWrap.createDiv({ cls: "qnalog-recording-blocker-subtitle", text: `录音已在 ${formatElapsed(Number.isFinite(stoppedAt) ? stoppedAt : fallbackMs)} 停止` });
@@ -4369,7 +4369,7 @@ export class OutlineView extends obsidian.ItemView {
     steps.createDiv({ text: i18nT("1. Open System Settings and allow Obsidian to access the microphone.") });
     steps.createDiv({ text: "2. 回到 Q&A Log 后重新开始一段录音。" });
     const actions = card.createDiv({ cls: "qnalog-recording-blocker-actions" });
-    const saveOnly = actions.createEl("button", { cls: "qnalog-recording-blocker-secondary", text: "仅保存录音", attr: { type: "button" } });
+    const saveOnly = actions.createEl("button", { cls: "qnalog-recording-blocker-secondary", text: i18nT("Save audio only"), attr: { type: "button" } });
     saveOnly.onclick = () => this.plugin.recording.stopRecording();
     const settings = actions.createEl("button", { cls: "qnalog-recording-blocker-primary", attr: { type: "button" } });
     try { obsidian.setIcon(settings.createSpan({ cls: "qnalog-recording-blocker-action-icon" }), "settings"); } catch { /* intentionally empty */ }
@@ -4430,7 +4430,7 @@ export class OutlineView extends obsidian.ItemView {
       row.classList.toggle("is-active", level >= 0.012);
       if (state) {
         if (recInfo && recInfo.state === "paused") state.setText(i18nT("Pause"));
-        else state.setText(level >= 0.012 ? "有输入" : "静音");
+        else state.setText(level >= 0.012 ? "有输入" : i18nT("Silent"));
       }
       const values = Array.isArray(source.bars) ? source.bars : [];
       bars.forEach((bar, i) => {
@@ -4502,13 +4502,13 @@ export class OutlineView extends obsidian.ItemView {
 
     // 音频输入（常驻，和模板并列——最常跟着录音场景切换：会议 / 视频 / 纯麦）
     const capRow = primaryControls.createDiv({ cls: "qnalog-outline-control-row is-audio-control" });
-    capRow.createSpan({ cls: "qnalog-outline-control-label", text: "音频" });
+    capRow.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Audio") });
     const capOpts = isMobile
-      ? [["mic", "仅麦克风（手机端）"]]
+      ? [["mic", i18nT("Microphone only (mobile)")]]
       : [
-          ["mic", "仅麦克风"],
-          ["mix-virtual", "麦克风 + 电脑音频（会议/讲解）"],
-          ["virtualCable", "仅电脑音频（视频/课程）"],
+          ["mic", i18nT("Microphone only")],
+          ["mix-virtual", i18nT("Microphone + computer audio (meeting/commentary)")],
+          ["virtualCable", i18nT("Computer audio only (video/course)")],
         ];
     const currentInputMode = resolveRuntimeAudioInputMode(this.plugin.settings.captureMode || "mic");
     const capSelect = mkSelect(capRow, {
@@ -4617,7 +4617,7 @@ export class OutlineView extends obsidian.ItemView {
       current: this.plugin.settings.thinkingMode || "auto",
       items: [
         { value: "fast", label: i18nT("Quick mode") },
-        { value: "auto", label: "默认模式" },
+        { value: "auto", label: i18nT("Default mode") },
         { value: "reasoning", label: i18nT("- When the minutes offer no basis, state clearly \"the minutes do not provide enough basis\".") },
       ],
       disabled: !thinkCtrl,
@@ -4667,7 +4667,7 @@ export class OutlineView extends obsidian.ItemView {
       cls: "qnalog-meeting-composer-input",
       attr: { rows: "1", "aria-label": i18nT("In-meeting additions") },
     });
-    textarea.placeholder = "记下来 · #概念 ?问题 !重点 @指派 /待办";
+    textarea.placeholder = i18nT("Jot down · #Concept ?Question !Key point @Assignee /To-do");
     textarea.value = workbench.draft || "";
     textarea.addEventListener("input", () => {
       session.meetingWorkbench.draft = textarea.value;
@@ -4701,7 +4701,7 @@ export class OutlineView extends obsidian.ItemView {
       });
     }
     this.createMeetingMaterialInput(actions, session, {
-      label: isMobile ? "文件" : "附件",
+      label: isMobile ? "文件" : i18nT("Attachment"),
       icon: "paperclip",
       accept: ".ppt,.pptx,.pdf,.key,.pages,.md,.txt,image/*",
       kind: "file",
@@ -4772,7 +4772,7 @@ export class OutlineView extends obsidian.ItemView {
       const materials = body.createDiv({ cls: "qnalog-outline-annotation-materials" });
       for (const item of entry.materials) this.renderMeetingMaterialChip(materials, item);
     }
-    const removeBtn = row.createEl("button", { cls: "clickable-icon qnalog-outline-annotation-remove", attr: { "aria-label": "移除这条补充", title: "移除" } });
+    const removeBtn = row.createEl("button", { cls: "clickable-icon qnalog-outline-annotation-remove", attr: { "aria-label": i18nT("Remove this addition"), title: i18nT("Remove") } });
     try { obsidian.setIcon(removeBtn, "x"); } catch { removeBtn.setText("×"); }
     removeBtn.onclick = () => {
       const current = normalizeMeetingWorkbench(session.meetingWorkbench);
@@ -4913,7 +4913,7 @@ export class OutlineView extends obsidian.ItemView {
       const latest = normalizeMeetingWorkbench(session.meetingWorkbench).entries.find(item => item.id === entryId) || entry;
       const context = this.buildMeetingWorkbenchInteractionContext(session, latest);
       const kind = latest.interaction.kind;
-      const label = kind === "concept" ? "概念解释" : (kind === "question" ? "问题回答" : "重点处理");
+      const label = kind === "concept" ? "概念解释" : (kind === "question" ? "问题回答" : i18nT("Key point handling"));
       const system = i18nT("You are Q&A Log's in-meeting instant assistant. Answer only this in-meeting entry from the user; do not rewrite the live outline and do not generate complete minutes. Keep the answer short, specific, and directly attachable below this entry.");
       const user = [
         `会中记录时间：${formatElapsed(latest.atMs || 0)}`,
@@ -5038,13 +5038,13 @@ export class OutlineView extends obsidian.ItemView {
       const row = list.createDiv({ cls: "qnalog-outline-seg" });
       const dotCls = s.error ? "is-failed" : (s.text ? "is-done" : "is-pending");
       const dot = row.createDiv({ cls: `qnalog-outline-seg-dot ${dotCls}` });
-      dot.setAttribute("aria-label", s.error ? "失败" : (s.text ? "已转写" : "等待中"));
+      dot.setAttribute("aria-label", s.error ? "失败" : (s.text ? "已转写" : i18nT("Waiting")));
       const body = row.createDiv({ cls: "qnalog-outline-seg-body" });
       body.createDiv({ cls: "qnalog-outline-seg-time",
         text: `${formatElapsed(s.startOffsetMs)} – ${formatElapsed(s.endOffsetMs)}` });
       const preview = s.error
         ? `失败：${s.error}`
-        : (s.text ? s.text.slice(0, 80) + (s.text.length > 80 ? "…" : "") : "等待转写");
+        : (s.text ? s.text.slice(0, 80) + (s.text.length > 80 ? "…" : "") : i18nT("Waiting for transcription"));
       body.createDiv({ cls: "qnalog-outline-seg-text", text: preview });
     });
   }
@@ -5142,7 +5142,7 @@ export class OutlineView extends obsidian.ItemView {
     const wrap = parent.createDiv({ cls: "qnalog-outline-annotations" });
     if (workbench.notes || workbench.materials.length) {
       const legacy = wrap.createDiv({ cls: "qnalog-outline-annotation is-manual is-pending" });
-      legacy.createDiv({ cls: "qnalog-outline-annotation-time is-manual", text: "补充" });
+      legacy.createDiv({ cls: "qnalog-outline-annotation-time is-manual", text: i18nT("Addition") });
       const body = legacy.createDiv({ cls: "qnalog-outline-annotation-body" });
       if (workbench.notes) body.createDiv({ cls: "qnalog-outline-annotation-text", text: workbench.notes });
       if (workbench.materials.length) {
@@ -5316,7 +5316,7 @@ export class OutlineView extends obsidian.ItemView {
   decorateOutlineSourceTags(body) {
     if (!body) return;
     const sourceDefs = {
-      "麦克风": { cls: "is-mic", icon: "mic", title: "麦克风输入" },
+      "麦克风": { cls: "is-mic", icon: "mic", title: i18nT("Microphone input") },
       "电脑音频": { cls: "is-computer", icon: "monitor-speaker", title: i18nT("Computer audio input") },
     };
     const findFirstTextNode = (node) => {
@@ -5459,7 +5459,7 @@ export class OutlineView extends obsidian.ItemView {
     const v = value || "all";
     if (kind === "time") return (RECENT_TIME_FILTER_OPTIONS.find(item => item.id === v) || RECENT_TIME_FILTER_OPTIONS[0]).label;
     if (kind === "mode") return (this.getRecentModeFilterOptions().find(item => item.id === v) || { label: i18nT("All templates") }).label;
-    return "筛选";
+    return i18nT("Filter");
   }
 
   matchesRecentTimeFilter(item, timeFilter) {
@@ -5586,14 +5586,14 @@ export class OutlineView extends obsidian.ItemView {
     const timeChip = wrap.createEl("button", {
       cls: `qnalog-outline-recent-filter-chip ${this.isRecentFilterActive("time", timeValue) ? "is-active" : ""}`,
       text: this.getRecentFilterLabel("time", timeValue, allRecents),
-      attr: { type: "button", title: "筛选纪要时间范围" },
+      attr: { type: "button", title: i18nT("Filter minutes by time range") },
     });
     timeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "time", RECENT_TIME_FILTER_OPTIONS, timeValue);
     const modeValue = filters.mode || "all";
     const modeChip = wrap.createEl("button", {
       cls: `qnalog-outline-recent-filter-chip ${this.isRecentFilterActive("mode", modeValue) ? "is-active" : ""}`,
       text: this.getRecentFilterLabel("mode", modeValue, allRecents),
-      attr: { type: "button", title: "筛选纪要模板" },
+      attr: { type: "button", title: i18nT("Filter minutes by template") },
     });
     modeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "mode", this.getRecentModeFilterOptions(), modeValue);
     const clear = wrap.createEl("button", {

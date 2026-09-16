@@ -287,7 +287,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       this.plugin.settings.selectedVirtualDevice = "";
       this.plugin.settings.captureMode = "mic";
       await this.plugin.saveSettings();
-      new obsidian.Notice("移动端已使用麦克风录音。电脑音频和虚拟声卡采集请在桌面端配置。", 7000);
+      new obsidian.Notice(t("Mobile is already recording from the microphone. Configure computer audio and virtual audio device capture on desktop."), 7000);
       return;
     }
     const info = await enumerateAudioDevices({ requestPermission: true });
@@ -560,7 +560,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     try {
       return new URL(String(this.plugin.settings.llmEndpoint || "")).host;
     } catch {
-      return "自定义服务";
+      return t("Custom service");
     }
   }
 
@@ -708,8 +708,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const addGroup = (label) => selectEl.createEl("optgroup", { attr: { label } });
     const addOption = (parent, value, text) => parent.createEl("option", { value, text });
     // 空值 = 跟随系统默认，不是「未选择」。未选时录音会用系统默认输入设备。
-    const defaultGroup = addGroup("默认");
-    addOption(defaultGroup, "", "系统默认输入设备");
+    const defaultGroup = addGroup(t("Defaults"));
+    addOption(defaultGroup, "", t("System default input device"));
 
     if (isMobileRuntime()) {
       selectEl.value = "";
@@ -739,8 +739,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       return;
     }
 
-    const realGroup = addGroup("麦克风");
-    const virtualGroup = addGroup("虚拟声卡 / 电脑音频");
+    const realGroup = addGroup(t("Microphone"));
+    const virtualGroup = addGroup(t("Virtual audio device / Computer audio"));
     let micCount = 0;
     let virtualCount = 0;
     for (const dev of groups.dongles) {
@@ -852,23 +852,23 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const head = card.createDiv({ cls: "qnalog-audio-input-head" });
     const actions = head.createDiv({ cls: "qnalog-audio-input-actions" });
-    this.createAudioInputButton(actions, "自动设置", async () => {
+    this.createAudioInputButton(actions, t("Auto setup"), async () => {
       await this.autoConfigureAudioInput();
       this.renderSettings();
     });
     this.createAudioInputButton(actions, t("Test device"), async () => {
       await this.runAudioDiagnostic();
     });
-    this.createAudioInputButton(actions, "设置电脑音频", () => new VirtualCableSetupModal(this.app, this.plugin).open());
+    this.createAudioInputButton(actions, t("Set up computer audio"), () => new VirtualCableSetupModal(this.app, this.plugin).open());
 
     const grid = card.createDiv({ cls: "qnalog-audio-input-grid" });
 
     const modeField = grid.createDiv({ cls: "qnalog-audio-input-field" });
     modeField.createDiv({ cls: "qnalog-audio-input-label", text: t("Recording source") });
     const modeSelect = modeField.createEl("select", { cls: "dropdown qnalog-audio-input-select" });
-    modeSelect.createEl("option", { value: "mic", text: "仅麦克风" });
-    modeSelect.createEl("option", { value: "mix-virtual", text: "麦克风 + 电脑音频" });
-    modeSelect.createEl("option", { value: "virtualCable", text: "仅电脑音频" });
+    modeSelect.createEl("option", { value: "mic", text: t("Microphone only") });
+    modeSelect.createEl("option", { value: "mix-virtual", text: t("Microphone + computer audio") });
+    modeSelect.createEl("option", { value: "virtualCable", text: t("Computer audio only") });
     modeSelect.value = mode;
     modeSelect.addEventListener("change", async () => {
       this.plugin.settings.captureMode = normalizeAudioInputMode(modeSelect.value);
@@ -884,7 +884,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 麦克风选择器：仅麦克风 / 混合模式下显示（仅电脑音频模式不需要麦克风）
     if (mode === "mic" || mode === "mix-virtual") {
       const micField = grid.createDiv({ cls: "qnalog-audio-input-field" });
-      micField.createDiv({ cls: "qnalog-audio-input-label", text: "麦克风" });
+      micField.createDiv({ cls: "qnalog-audio-input-label", text: t("Microphone") });
       const micSelect = micField.createEl("select", { cls: "dropdown qnalog-audio-input-select" });
       const micHint = micField.createDiv({ cls: "qnalog-audio-input-hint" });
       micSelect.addEventListener("change", async () => {
@@ -906,7 +906,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         cls: "dropdown qnalog-audio-channel-mode",
         attr: { "aria-label": t("Speaker separation method") },
       });
-      channelModeSelect.createEl("option", { value: "auto", text: "自动（推荐）" });
+      channelModeSelect.createEl("option", { value: "auto", text: t("Auto (recommended)") });
       channelModeSelect.createEl("option", { value: "mono", text: t("Close") });
       channelModeSelect.createEl("option", { value: "multichannel", text: t("- More detailed: Expand the context, discussion process, examples, objections, risks, and the basis for to-dos.") });
       channelModeSelect.value = normalizeAudioChannelMode(this.plugin.settings.audioChannelMode);
@@ -926,7 +926,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         ? t("All recordings are treated as a single speaker.")
         : selectedChannelMode === "multichannel"
           ? t("Attempts to distinguish speakers by separate channels; mono recordings fall back automatically.")
-          : "仅在录音确认包含多个独立声道时区分说话人。");
+          : t("Only distinguish speakers when the recording is confirmed to contain multiple independent channels."));
       const channelResult = channelField.createDiv({ cls: "qnalog-audio-channel-result" });
       detectButton.onclick = async () => {
         detectButton.disabled = true;
@@ -1093,11 +1093,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
     const ok = await qnalogConfirm(
       this.app,
-      "重新配置服务？",
+      t("Reconfigure services?"),
       t("You already have working transcription and AI organizing settings. Continuing opens the quick config panel,")
       + t("Replace the endpoints and models of these three services with a new Bailian API Key;")
       + t("Settings such as folders, prompts and recording devices will not be changed."),
-      "继续配置",
+      t("Continue setup"),
     );
     if (!ok) return;
     this._quickSetupVisible = true;
@@ -1250,7 +1250,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const saveBtn = btns.createEl("button", { cls: "mod-cta", text: t("Save configuration") });
     saveBtn.onclick = async () => {
-      const name = await qnalogPromptText(this.app, "配置名称", t("e.g. MiMo / DeepSeek + SiliconFlow / a local model"));
+      const name = await qnalogPromptText(this.app, t("Configuration name"), t("e.g. MiMo / DeepSeek + SiliconFlow / a local model"));
       if (name === null) return;
       const trimmed = typeof name === "string" ? name.trim() : "";
       if (!trimmed) { new obsidian.Notice(t("Name cannot be empty")); return; }
@@ -1359,17 +1359,17 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (profile.showTargetLanguage) {
       const targetLanguages = [
-        ["en", "英语 English"],
+        ["en", t("English")],
         ["zh", "中文 Chinese"],
         ["ja", t("Japanese 日本語")],
-        ["ko", "韩语 한국어"],
+        ["ko", t("Korean 한국어")],
         ["fr", t("French Français")],
-        ["es", "西班牙语 Español"],
+        ["es", t("Spanish Español")],
         ["de", t("German Deutsch")],
         ["it", t("Italian Italiano")],
-        ["pt", "葡萄牙语 Português"],
+        ["pt", t("Portuguese Português")],
         ["ru", t("Russian Русский")],
-        ["ar", "阿拉伯语 العربية"],
+        ["ar", t("Arabic العربية")],
         ["hi", t("Hindi हिन्दी")],
         ["tr", t("Turkish (Türkçe)")],
       ];
@@ -1412,7 +1412,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Service Preset"))
       .setDesc(t("Quickly fills in the service URL and the required request header adaptation; it does not overwrite the access key. Enter the model ID as given in the console of the corresponding provider or relay service."))
       .addDropdown(d => {
-        d.addOption("", "自定义服务…");
+        d.addOption("", t("Custom service…"));
         for (const preset of LLM_SERVICE_PRESETS) d.addOption(preset.id, preset.label);
         d.setValue(activeLlmPresetId || "");
         d.onChange(async id => {
@@ -1561,7 +1561,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (!savedIsUsable) {
       const savedLabel = savedImportProvider
         ? (providers[savedImportProvider]?.name || savedImportProvider)
-        : "（未设置）";
+        : t("(Not set)");
       // 复用既有的风险提示样式，不新增 CSS 类。
       const box = c.createEl("details", { cls: "qnalog-risk-notice" });
       box.createEl("summary", { cls: "qnalog-risk-title", text: t("Import service unavailable") });
@@ -1739,7 +1739,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const repolishPresetHint = c.createEl("details", { cls: "qnalog-setting-details" });
     repolishPresetHint.createEl("summary", { text: t("View the prompt direction for built-in preferences") });
     const presetText = [
-      "风格偏好：",
+      t("Style preference:"),
       t("- More detailed: expand the context, discussion process, examples, objections, risks and the basis for to-dos."),
       t("- More concise: compress repeated speech and low-information details, keeping conclusions, evidence, to-dos and risks."),
       t("- More structured: strengthen the heading hierarchy and organize by “conclusion → evidence → impact/to-dos”."),
@@ -1763,7 +1763,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("By default it follows the original text. When enabled, the LLM unifies the language while organizing the minutes."))
       .addDropdown(d => d
         .addOption("off", t("Follow the original text (no translation)"))
-        .addOption("translate", "统一为目标语言")
+        .addOption("translate", t("Unify to the target language"))
         .addOption("bilingual", t("Target language first, with key source text in parentheses"))
         .setValue(this.plugin.settings.briefingTranslationMode || "off")
         .onChange(async v => { this.plugin.settings.briefingTranslationMode = v; await this.plugin.saveSettings(); this.renderSettings(); }));
@@ -1775,7 +1775,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           .addOption("en", "English")
           .addOption("ja", t("日本語"))
           .addOption("ko", "한국어")
-          .addOption("custom", "自定义")
+          .addOption("custom", t("Custom"))
           .setValue(this.plugin.settings.briefingTargetLanguage || "zh-CN")
           .onChange(async v => { this.plugin.settings.briefingTargetLanguage = v; await this.plugin.saveSettings(); this.renderSettings(); }));
 
@@ -2056,7 +2056,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         setting.setDesc(`当前 ${count} 张待办卡片。待办卡片适合跟踪跨会议、跨项目的行动项。`);
       });
 
-    createPathSetting(advancedBody, "视图文件夹", t("Save the resource overview and Base views generated by Q&A Log."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
+    createPathSetting(advancedBody, t("Views folder"), t("Save the resource overview and Base views generated by Q&A Log."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
       async v => { this.plugin.settings.basesFolder = v || DEFAULT_SETTINGS.basesFolder; });
 
     const vocabScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "vocabulary");
@@ -2090,14 +2090,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       ? t("The current LLM service is detected as local or on a LAN")
       : (isSharedAddressSpaceEndpoint(this.plugin.settings.llmEndpoint)
         ? t("The current LLM service is detected as a private network such as Tailscale") : t("The current LLM service is detected as cloud"));
-    const modeLabel = { privacy: "隐私优先", hotwords: "人名热词", localFull: t("Local enhancement") }[normalizePeopleContextMode(this.plugin.settings.peopleContextMode)] || "隐私优先";
+    const modeLabel = { privacy: t("Privacy first"), hotwords: "人名热词", localFull: t("Local enhancement") }[normalizePeopleContextMode(this.plugin.settings.peopleContextMode)] || t("Privacy first");
     const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? `已于 ${this.plugin.settings.peopleHotwordsConsentAt} 授权人名热词。` : t("Name hotwords not yet authorized.");
 
     this.createSettingsSubhead(advancedBody, "人员资料隐私", t("Determines whether person names and context are sent to the current service along with transcription or organizing requests."));
     new obsidian.Setting(advancedBody).setName(t("Person profile usage policy"))
       .setDesc(`${modeLabel}。${asrScope}；${llmScope}。${consentText}`)
       .addDropdown(d => d
-        .addOption("privacy", "隐私优先：不发送人员资料")
+        .addOption("privacy", t("Privacy first: do not send people data"))
         .addOption("hotwords", "人名热词：仅姓名/称呼，需授权")
         .addOption("localFull", t("Local enhancement: only local services use the full people context"))
         .setValue(normalizePeopleContextMode(this.plugin.settings.peopleContextMode))
@@ -2595,7 +2595,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             try { await trashVaultFileRef(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
           }
         }
-        new obsidian.Notice(n ? `已清空诊断日志：${n} 个文件（可从系统废纸篓恢复）` : "诊断日志文件夹为空");
+        new obsidian.Notice(n ? `已清空诊断日志：${n} 个文件（可从系统废纸篓恢复）` : t("The diagnostic log folder is empty"));
       }));
 
     new obsidian.Setting(c).setName(t("Copyright & License"))

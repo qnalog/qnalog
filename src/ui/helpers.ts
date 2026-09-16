@@ -285,9 +285,9 @@ export function normalizeAudioInputMode(mode) {
 
 export function audioInputModeLabel(mode) {
   const labels = {
-    mic: "仅麦克风",
-    "mix-virtual": "麦克风 + 电脑音频",
-    virtualCable: "仅电脑音频",
+    mic: t("Microphone only"),
+    "mix-virtual": t("Microphone + computer audio"),
+    virtualCable: t("Computer audio only"),
   };
   return labels[normalizeAudioInputMode(mode)] || labels.mic;
 }
@@ -301,7 +301,7 @@ export function classifyImportTextFileForModal(file, content) {
       category: "external",
       badge: file && String(file.extension || "").toLowerCase() === "txt" ? "TXT" : t("External transcript"),
       reason: t("Plain text"),
-      statusTitle: "非 Q&A Log 转写，可作为速录稿直接整理",
+      statusTitle: t("Not a Q&A Log transcript; can be organized directly as a dictation draft"),
     };
   }
 
@@ -318,7 +318,7 @@ export function classifyImportTextFileForModal(file, content) {
 
   const label = processingState && processingState.label
     ? processingState.label
-    : (marker.hasSegments ? "待整理" : "碎片稿");
+    : (marker.hasSegments ? "待整理" : t("Fragment draft"));
   return {
     category: "qnalog-repair",
     badge: label,
