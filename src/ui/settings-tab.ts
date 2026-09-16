@@ -518,7 +518,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (!status.ready) {
       const badge = statusHead.createDiv({ cls: "qnalog-status-badge is-warn" });
       badge.createSpan({ cls: "qnalog-status-badge-icon", text: "!" });
-      badge.createSpan({ text: `${t("Still missing")}${status.blockerCount} 项` });
+      badge.createSpan({ text: `${t("Still missing")}${status.blockerCount}${t(" items")}` });
     }
     statusList = statusBlock.createDiv({ cls: "qnalog-status-list" });
     for (const line of status.lines) {
@@ -953,7 +953,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const activeChannels = analysis.channels
             .slice(0, MAX_SPEAKER_CHANNELS)
             .filter((item) => item.active)
-            .map((item) => `声道 ${item.channel}`);
+            .map((item) => `${t("Channel ")}${item.channel}`);
           let contentStatus = t("Unconfirmed");
           let contentState = "warning";
           if (analysis.separation === "separated") {
@@ -1518,7 +1518,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const r = await testLlmConnection(this.plugin);
           return `${r.model || "未命名模型"}${t("(returned:")}${r.preview || "<空>"}）`;
         });
-        new obsidian.Notice(result.ok ? `大模型连通成功：${result.detail}` : `大模型测试失败：${result.detail}`, 8000);
+        new obsidian.Notice(result.ok ? `大模型连通成功：${result.detail}` : `${t("LLM test failed: ")}${result.detail}`, 8000);
         b.setButtonText(t("Test connection"));
         b.setDisabled(false);
         this.renderSettings();
@@ -1567,7 +1567,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       box.createEl("summary", { cls: "qnalog-risk-title", text: t("Import service unavailable") });
       box.createDiv({
         cls: "qnalog-risk-body",
-        text: `你选择的导入服务「${savedLabel}${t("\" is currently unavailable (it was deleted, or its protocol does not support whole-file transcription).")}`
+        text: `${t("The import service you selected \"")}${savedLabel}${t("\" is currently unavailable (it was deleted, or its protocol does not support whole-file transcription).")}`
           + t("The alternatives shown below are available, but your setting was not changed — importing audio will still use the one you originally selected and fail.")
           + t("Please select a service again above. If you really want to keep using the original one, change its protocol back to one that supports whole-file transcription, then try again."),
       });
@@ -1958,7 +1958,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     };
     makeObjectCard(t("Person"), peopleCount, t("people"), t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
     makeObjectCard(t("To-do"), todoCount, t("items"), t("Action items confirmed from the meeting notes; check them off to track."), "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
-    const vocabCard = makeObjectCard(t("Transcription term list"), "…", "个", t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
+    const vocabCard = makeObjectCard(t("Transcription term list"), "…", t(" items"), t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
 
     void (async () => {
       const countEl = vocabCard.querySelector(".qnalog-object-overview-count-value");
@@ -1982,7 +1982,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Extract people and transcription glossaries from past notes, and handle duplicate person profiles."))
       .setHeading();
     new obsidian.Setting(c).setName(t("Complete from past notes"))
-      .setDesc(`人员待确认 ${pendingPeopleSuggestions.length}${t(" items, ignored ")}${ignoredPeopleSuggestions.length}${t(" items. The scan calls the current AI organizing service; for confidential content, use a local model.")}`)
+      .setDesc(`${t("People pending confirmation ")}${pendingPeopleSuggestions.length}${t(" items, ignored ")}${ignoredPeopleSuggestions.length}${t(" items. The scan calls the current AI organizing service; for confidential content, use a local model.")}`)
       .addButton(b => b.setButtonText(t("Extract people suggestions")).setCta().onClick(async () => this.plugin.people.suggestPeopleDirectoryFromLibrary()))
       .addButton(b => b.setButtonText(t("Extract transcript terms")).onClick(async () => this._extractVocabFromLibrary(async () => { if (vocabPathSetting) await refreshVocabStatus(vocabPathSetting); })))
       .addButton(b => b.setButtonText(t("Pending")).setDisabled(!pendingPeopleSuggestions.length).onClick(async () => { await this.plugin.people.openCachedPeopleDirectorySuggestions(); this.renderSettings(); }))
@@ -2001,7 +2001,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           this.renderSettings();
         } catch (e) {
           console.error("[QnALog] merge duplicate people failed", e);
-          new obsidian.Notice(`合并重复人员失败：${(e && e.message) || e}`, 8000);
+          new obsidian.Notice(`${t("Failed to merge duplicate people: ")}${(e && e.message) || e}`, 8000);
         }
       }));
 
@@ -2023,7 +2023,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           new obsidian.Notice(`${t("Table views created:")}${r.created}${t(" items, skipped ")}${r.skipped}${t(" items")}`);
         } catch (e) {
           console.error(e);
-          new obsidian.Notice(`创建失败：${e.message || e}`);
+          new obsidian.Notice(`${t("Create failed: ")}${e.message || e}`);
         }
       }));
 
@@ -2184,7 +2184,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             new obsidian.Notice(`${t("Created folder:")}${p}`);
             renderWarn(p);
           } catch (e) {
-            new obsidian.Notice(`创建失败：${(e && e.message) || e}`);
+            new obsidian.Notice(`${t("Create failed: ")}${(e && e.message) || e}`);
           }
         };
       }
@@ -2252,7 +2252,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const n = parseFloat(v);
           if (!isFinite(n)) return; // 打字途中/非法输入不保存，失焦时回显实际值
           const clamped = Math.min(30, Math.max(0.5, n));
-          if (clamped !== n) new obsidian.Notice(`分段间隔已按有效范围 0.5–30 调整为 ${clamped}${t(" minutes")}`);
+          if (clamped !== n) new obsidian.Notice(`${t("Segment interval adjusted (valid range 0.5–30) to")} ${clamped}${t(" minutes")}`);
           this.plugin.settings.segmentIntervalMinutes = clamped;
           await this.plugin.saveSettings();
         });

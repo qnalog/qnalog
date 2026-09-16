@@ -471,7 +471,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         this.close();
       } catch (e) {
         console.error("[QnALog] apply people suggestions failed", e);
-        new obsidian.Notice(`保存失败：${(e && e.message) || e}`, 8000);
+        new obsidian.Notice(`${i18nT("Save failed: ")}${(e && e.message) || e}`, 8000);
       }
     };
   }
@@ -535,7 +535,7 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
         attr: {
           list: datalistId,
           placeholder: i18nT("Enter name"),
-          "aria-label": `${candidate.label || candidate.id}的姓名`,
+          "aria-label": `${candidate.label || candidate.id}${i18nT("'s name")}`,
         },
       });
       input.value = String(this.initialMappings[candidate.id] && this.initialMappings[candidate.id].personName || "");
@@ -649,7 +649,7 @@ export class QueueModal extends obsidian.Modal {
     const fmtTime = (ms) => { try { return window.moment ? window.moment(ms).format("HH:mm:ss") : new Date(ms).toLocaleTimeString(); } catch { return ""; } };
     const tokenLabel = (n, exact) => { const v = Number(n) || 0; if (v <= 0) return ""; const num = v >= 10000 ? (v / 10000).toFixed(1).replace(/\.0$/, "") + "万" : String(v); return `${exact ? "" : "≈"}${num}`; };
     const taskTitle = (t) => t.type === "transcribe" ? `${t.status === "live" ? "实时转写" : "转写重试"}${i18nT(" · segment ")}${(t.segmentIndex || 0) + 1}`
-      : t.type === "merge" ? `合并重试 · ${(t.segments || []).length}${i18nT(" segments")}`
+      : t.type === "merge" ? `${i18nT("Merge retry · ")}${(t.segments || []).length}${i18nT(" segments")}`
       : t.type === "generate-prompt" ? "提示词生成" : (t.type || i18nT("Task"));
 
     // —— 头部：标题 + 状态 ——
@@ -734,7 +734,7 @@ export class QueueModal extends obsidian.Modal {
         : _tm && Number(_tm.startedAt) > 0 ? Number(_tm.startedAt) : 0;
     const elapsedMs = progressStartedAt ? Math.max(0, Date.now() - progressStartedAt) : 0;
     const remainingText = percent > 0 && percent < 100
-      ? `剩余约 ${fmtDur(elapsedMs * ((100 - percent) / percent))}`
+      ? `${i18nT("Est. remaining ")}${fmtDur(elapsedMs * ((100 - percent) / percent))}`
       : i18nT("Calculating remaining time");
     const timing = head.createDiv({ cls: "qnalog-progress-timing", attr: { "aria-live": "polite" } });
     timing.setText(progressStartedAt ? `已用 ${fmtDur(elapsedMs)} · ${remainingText}` : i18nT("Preparing to process"));
@@ -838,7 +838,7 @@ export class QueueModal extends obsidian.Modal {
       cls: "qnalog-progress-summary-left",
       text: hasStageProgress
         ? `${i18nT("#")}${stagePosition.current} / ${stagePosition.total}${i18nT(" · ")}${detail.step || i18nT("Processing")}`
-        : `已完成 ${doneCount} / ${total}`,
+        : `${i18nT("Completed ")}${doneCount} / ${total}`,
     });
     const metaParts = [];
     if (detail && detail.count) metaParts.push(detail.count);
@@ -919,11 +919,11 @@ export class QueueModal extends obsidian.Modal {
 
         const facts = [];
         if (Number(activity.startedAt) > 0) facts.push([i18nT("Start"), fmtTime(Number(activity.startedAt))]);
-        if (Number(activity.updatedAt) > 0) facts.push([i18nT("Recent activity"), `${fmtDur(Date.now() - Number(activity.updatedAt))}前`]);
+        if (Number(activity.updatedAt) > 0) facts.push([i18nT("Recent activity"), `${fmtDur(Date.now() - Number(activity.updatedAt))}${i18nT(" ago")}`]);
         if (Number(activity.startedAt) > 0 && !["done", "cancelled"].includes(state)) {
           facts.push([i18nT("Running for"), fmtDur(Date.now() - Number(activity.startedAt))]);
         }
-        if (Number(activity.retryAt) > Date.now()) facts.push([i18nT("Next retry"), `${fmtDur(Number(activity.retryAt) - Date.now())}后`]);
+        if (Number(activity.retryAt) > Date.now()) facts.push([i18nT("Next retry"), `${fmtDur(Number(activity.retryAt) - Date.now())}${i18nT(" from now")}`]);
         if (Number(activity.attempt) > 0) {
           facts.push([i18nT("Attempts"), activity.maxAttempts > 0
             ? `${activity.attempt}/${activity.maxAttempts}`
@@ -1124,7 +1124,7 @@ export class QueueModal extends obsidian.Modal {
           if (stage.detail) panel.createDiv({ cls: "qnalog-progress-stage-description", text: stage.detail });
           const facts = [];
           if (Number(stage.startedAt) > 0) facts.push([i18nT("Start"), fmtTime(Number(stage.startedAt))]);
-          if (Number(stage.updatedAt) > 0) facts.push([i18nT("Recent events"), `${fmtDur(Date.now() - Number(stage.updatedAt))}前`]);
+          if (Number(stage.updatedAt) > 0) facts.push([i18nT("Recent events"), `${fmtDur(Date.now() - Number(stage.updatedAt))}${i18nT(" ago")}`]);
           if (Number(stage.startedAt) > 0 && stage.status === "active") facts.push([i18nT("This stage"), fmtDur(Date.now() - Number(stage.startedAt))]);
           if (facts.length) {
             const factGrid = panel.createDiv({ cls: "qnalog-progress-stage-facts" });
@@ -1157,15 +1157,15 @@ export class QueueModal extends obsidian.Modal {
               });
               const requestMeta = [];
               if (Number(request.startedAt) > 0 && !["pending", "done"].includes(requestState)) {
-                requestMeta.push(`已等待 ${fmtDur(Date.now() - Number(request.startedAt))}`);
+                requestMeta.push(`${i18nT("Waiting ")}${fmtDur(Date.now() - Number(request.startedAt))}`);
               }
               if (Number(request.receivedChars) > 0) requestMeta.push(`${i18nT("Received about")}${Number(request.receivedChars)}${i18nT(" characters")}`);
-              if (Number(request.retryAt) > Date.now()) requestMeta.push(`${fmtDur(Number(request.retryAt) - Date.now())}后重试`);
+              if (Number(request.retryAt) > Date.now()) requestMeta.push(`${fmtDur(Number(request.retryAt) - Date.now())}${i18nT(" to retry")}`);
               if (Number(request.deadlineAt) > 0 && !["done", "failed", "retrying"].includes(requestState)) {
                 const deadlineDelta = Number(request.deadlineAt) - Date.now();
                 requestMeta.push(deadlineDelta >= 0
                   ? i18nT("Expected back within {0}").replace("{0}", fmtDur(deadlineDelta))
-                  : `处理时间比预计多 ${fmtDur(Math.abs(deadlineDelta))}`);
+                  : `${i18nT("Taking longer than expected by ")}${fmtDur(Math.abs(deadlineDelta))}`);
               }
               if (requestMeta.length) requestRow.createDiv({ cls: "qnalog-progress-request-meta", text: requestMeta.join(" · ") });
               if (request.error) requestRow.createDiv({ cls: "qnalog-progress-request-error", text: String(request.error) });
@@ -1215,7 +1215,7 @@ export class QueueModal extends obsidian.Modal {
         try { obsidian.setIcon(liveIcon, liveIconName); } catch { /* intentionally empty */ }
         const liveParts = [];
         if (stageStartedAt) liveParts.push(`${i18nT("This step has been running")}${fmtDur(now - stageStartedAt)}`);
-        if (updatedAt) liveParts.push(`${i18nT("Latest event")}${fmtDur(now - updatedAt)}前`);
+        if (updatedAt) liveParts.push(`${i18nT("Latest event")}${fmtDur(now - updatedAt)}${i18nT(" ago")}`);
         const liveCopy = live.createSpan({ cls: "qnalog-progress-live-copy" });
         liveCopy.createSpan({ cls: "qnalog-progress-live-title", text: livenessLabel(liveState) });
         liveCopy.createSpan({
@@ -1274,7 +1274,7 @@ export class QueueModal extends obsidian.Modal {
       clearBtn.onclick = async () => {
         const n = this.plugin.queue.tasks.filter((t) => t && t.status !== "running" && t.status !== "live").length;
         const ok = await qnalogConfirm(this.app, i18nT("Cancel all automatic retries?"),
-          `取消后这 ${n}${i18nT(" tasks will no longer retry automatically, and the corresponding minutes will stay in their current state. Cached audio is kept for now; tasks already processing are unaffected.")}`,
+          `${i18nT("After cancelling, these ")}${n}${i18nT(" tasks will no longer retry automatically, and the corresponding minutes will stay in their current state. Cached audio is kept for now; tasks already processing are unaffected.")}`,
           i18nT("Cancel retry"));
         if (!ok) return;
         const cancellable = this.plugin.queue.tasks.filter((t) => t && t.status !== "running" && t.status !== "live");
@@ -2146,7 +2146,7 @@ export class ImportAudioModal extends obsidian.Modal {
     this.fileCheckboxes = new Map();
     contentEl.createEl("h2", { text: i18nT("Import audio") });
     const desc = contentEl.createEl("p", { cls: "qnalog-import-desc" });
-    desc.setText(`从 ${this.plugin.settings.audioFolder}${i18nT(" to choose audio. Supports WebM, M4A/MP4, MP3, WAV, AAC, OGG, FLAC, and other formats; segments from the same recording are merged in the display.")}`);
+    desc.setText(`${i18nT("From ")}${this.plugin.settings.audioFolder}${i18nT(" to choose audio. Supports WebM, M4A/MP4, MP3, WAV, AAC, OGG, FLAC, and other formats; segments from the same recording are merged in the display.")}`);
 
     this.renderModeControl(contentEl);
     renderImportSpeakerControl(contentEl, this);

@@ -184,7 +184,7 @@ export class MinutesKanbanView extends ItemView {
     addFolder.onclick = () => new FolderNameModal(this, (name) => {
       void this.adapter.createFolder(name)
         .then(() => this.render())
-        .catch((error) => new Notice(`创建失败：${error instanceof Error ? error.message : String(error)}`));
+        .catch((error) => new Notice(`${t("Create failed: ")}${error instanceof Error ? error.message : String(error)}`));
     }).open();
 
     const filters = root.createDiv({ cls: "qnalog-kanban-filters" });

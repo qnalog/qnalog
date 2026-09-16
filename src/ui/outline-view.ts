@@ -1159,7 +1159,7 @@ export class OutlineView extends obsidian.ItemView {
       this.render();
     } catch (e) {
       console.error("[QnALog] write note ask answer failed", e);
-      new obsidian.Notice(`写入纪要失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${i18nT("Failed to write to note: ")}${(e && e.message) || e}`, 8000);
     }
   }
 
@@ -2937,7 +2937,7 @@ export class OutlineView extends obsidian.ItemView {
       if (secondary.disabled || typeof actions.onSecondary !== "function") return;
       actions.onSecondary();
     };
-    const primaryText = typeof cfg.primaryButtonText === "function" ? cfg.primaryButtonText(count) : `加入${cfg.dest}（${count}）`;
+    const primaryText = typeof cfg.primaryButtonText === "function" ? cfg.primaryButtonText(count) : `${i18nT("Add to ")}${cfg.dest}（${count}）`;
     const primary = footer.createEl("button", { text: primaryText, cls: "qnalog-sediment-button is-primary", attr: { type: "button" } });
     primary.disabled = !count;
     if (!count) primary.setAttr("title", i18nT("Please select at least one item"));
@@ -3605,7 +3605,7 @@ export class OutlineView extends obsidian.ItemView {
       if (completed) this.scheduleSedimentAutoAdvance(file, groupKey);
     } catch (e) {
       console.error("[QnALog] commit sediment group failed", groupKey, e);
-      new obsidian.Notice(`加入失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${i18nT("Failed to add: ")}${(e && e.message) || e}`, 8000);
     }
   }
 
@@ -3703,7 +3703,7 @@ export class OutlineView extends obsidian.ItemView {
       if (completed) this.scheduleSedimentAutoAdvance(file, "person");
     } catch (e) {
       console.error("[QnALog] keep people suggestions failed", e);
-      new obsidian.Notice(`保存人员建议失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${i18nT("Failed to save person suggestions: ")}${(e && e.message) || e}`, 8000);
     }
   }
 
@@ -3719,7 +3719,7 @@ export class OutlineView extends obsidian.ItemView {
       const completed = file instanceof obsidian.TFile ? this.markSedimentGroupDoneIfEmpty(file, "person", items.length) : false;
       if (file instanceof obsidian.TFile) await this.persistSedimentCandidateBucket(file);
       this.render();
-      this.showSedimentToast(`已忽略 ${count}${i18nT(" people")}`, { icon: "circle-minus", variant: "muted" });
+      this.showSedimentToast(`${i18nT("Ignored ")}${count}${i18nT(" people")}`, { icon: "circle-minus", variant: "muted" });
       if (completed) this.scheduleSedimentAutoAdvance(file, "person");
     } catch (e) {
       console.error("[QnALog] ignore people suggestions failed", e);
@@ -4853,7 +4853,7 @@ export class OutlineView extends obsidian.ItemView {
       session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, {
         entries: current.entries.concat(entry),
       }));
-      new obsidian.Notice(`已添加 ${added.length}${i18nT(" meeting materials")}`);
+      new obsidian.Notice(`${i18nT("Added ")}${added.length}${i18nT(" meeting materials")}`);
     }
     this.render();
   }
@@ -4916,7 +4916,7 @@ export class OutlineView extends obsidian.ItemView {
       const label = kind === "concept" ? "概念解释" : (kind === "question" ? "问题回答" : i18nT("Key point handling"));
       const system = i18nT("You are Q&A Log's in-meeting instant assistant. Answer only this in-meeting entry from the user; do not rewrite the live outline and do not generate complete minutes. Keep the answer short, specific, and directly attachable below this entry.");
       const user = [
-        `会中记录时间：${formatElapsed(latest.atMs || 0)}`,
+        `${i18nT("In-meeting entry time: ")}${formatElapsed(latest.atMs || 0)}`,
         `${i18nT("Trigger type:")}${label}`,
         `${i18nT("Original user text:")}${latest.text || latest.interaction.query}`,
         "",
@@ -6191,7 +6191,7 @@ export class OutlineView extends obsidian.ItemView {
       const id = `qnalog-delete-audio-${Date.now()}`;
       const cb = option.createEl("input", { type: "checkbox", attr: { id } });
       const label = option.createEl("label", { attr: { for: id } });
-      label.createSpan({ text: `同时删除对应录音文件（${audioFiles.length}${i18nT(")")}` });
+      label.createSpan({ text: `${i18nT("Also delete the corresponding recording files (")}${audioFiles.length}${i18nT(")")}` });
       const names = audioFiles.map((audio) => audio.path || audio.name).slice(0, 3).join("、");
       option.createDiv({
         cls: "qnalog-delete-note-option-hint",
@@ -6213,7 +6213,7 @@ export class OutlineView extends obsidian.ItemView {
       } catch (e) {
         confirm.disabled = false;
         console.error("[QnALog] delete recent note failed", e);
-        new obsidian.Notice(`删除失败：${(e && e.message) || e}`, 8000);
+        new obsidian.Notice(`${i18nT("Delete failed: ")}${(e && e.message) || e}`, 8000);
       }
     };
     modal.open();
