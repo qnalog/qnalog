@@ -349,7 +349,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
     head.createDiv({
       cls: "qnalog-home-summary",
-      text: t("Record, transcribe, and organize into Markdown notes. Default services, models, and parameters are preset \\\\u2014 add an API key when you are ready."),
+      text: t("Record, transcribe, and organize into Markdown notes. Default services, models, and parameters are preset — add an API key when you are ready."),
     });
     // 首页只保留两个动作：快速配置、打开侧边栏。
     // 「配置服务」「AI 整理设置」两条跳转已移除——分别跳到 API 页与 AI 整理页，
@@ -725,7 +725,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     } catch {
       selectEl.disabled = true;
       selectEl.value = "";
-      hintEl.setText(t("Could not read the device list. Grant microphone permission, then use \\\\u201cDetect devices\\\\u201d."));
+      hintEl.setText(t("Could not read the device list. Grant microphone permission, then use “Detect devices”."));
       return;
     }
 
@@ -977,7 +977,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             channelField.addClass("is-multichannel");
             channelField.removeClass("is-channel-warning");
           } else if (analysis.separation === "duplicated") {
-            channelHint.setText(t("All channels carry identical content. Set the receiver output to \\\\u201cStereo\\\\u201d and try again."));
+            channelHint.setText(t("All channels carry identical content. Set the receiver output to “Stereo” and try again."));
             channelField.removeClass("is-multichannel");
             channelField.addClass("is-channel-warning");
           } else {
@@ -1384,7 +1384,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (profile.transcribeMode === "streaming") {
       const tip = c.createDiv({ cls: "qnalog-provider-streaming-tip" });
-      tip.setText(t("Live mode: the connection stays open for the whole recording and text appears as you speak; audio is no longer uploaded in segments. \\\\u201cSegment interval\\\\u201d and \\\\u201cInterim segment transcription\\\\u201d on the Recording tab have no effect for this service."));
+      tip.setText(t("Live mode: the connection stays open for the whole recording and text appears as you speak; audio is no longer uploaded in segments. “Segment interval” and “Interim segment transcription” on the Recording tab have no effect for this service."));
     }
 
     new obsidian.Setting(c).setName(t("Connectivity Test"))

@@ -187,3 +187,38 @@ describe("词条表的形状", () => {
     expect(identity, `自我映射：${identity.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 });
+
+describe("覆盖完整性", () => {
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) return walk(full);
+      return full.endsWith(".ts") ? [full] : [];
+    });
+
+  /** 代码里 t("...") / i18nT("...") 的字面量键，按 JS 语义求值。 */
+  const callKeys = (): Set<string> => {
+    const keys = new Set<string>();
+    for (const f of walk(path.join(root, "src"))) {
+      const src = fs.readFileSync(f, "utf8");
+      for (const m of src.matchAll(/\b(?:t|i18nT)\(\s*("(?:[^"\\]|\\.)*")\s*\)/g)) {
+        keys.add(JSON.parse(m[1]));
+      }
+    }
+    return keys;
+  };
+
+  const zhSrc = fs.readFileSync(path.join(root, "src/shared/i18n/locales/zh.ts"), "utf8");
+  const tableKeys = new Set(
+    [...zhSrc.matchAll(/^  "((?:[^"\\]|\\.)*)":/gm)].map((m) => JSON.parse(`"${m[1]}"`)),
+  );
+
+  it("界面用到的每个键都有中文（缺了会在中文界面显示英文）", () => {
+    // 漏译在英文界面看不出来，只有中文界面暴露；而中文界面平时没人逐条看。
+    // 语言下拉的 native name（日本語）是它自己的写法，按设计不译。
+    const missing = [...callKeys()]
+      .filter((k) => !tableKeys.has(k) && k !== "日本語")
+      .filter((k) => /[A-Za-z\u4e00-\u9fa5]/.test(k)); // 纯符号/空白不算文案
+    expect(missing, `缺中文：${missing.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+});

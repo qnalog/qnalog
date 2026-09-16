@@ -837,7 +837,7 @@ export class QueueModal extends obsidian.Modal {
     sum.createSpan({
       cls: "qnalog-progress-summary-left",
       text: hasStageProgress
-        ? `${i18nT("# ")}${stagePosition.current} / ${stagePosition.total}${i18nT(" · ")}${detail.step || i18nT("Processing")}`
+        ? `${"# "}${stagePosition.current} / ${stagePosition.total}${i18nT(" · ")}${detail.step || i18nT("Processing")}`
         : `${i18nT("Completed ")}${doneCount} / ${total}`,
     });
     const metaParts = [];
@@ -1145,10 +1145,10 @@ export class QueueModal extends obsidian.Modal {
               const requestHead = requestRow.createDiv({ cls: "qnalog-progress-request-head" });
               requestHead.createSpan({
                 cls: "qnalog-progress-request-title",
-                text: `${i18nT("# ")}${Number(request.chunkIndex) + 1}/${Math.max(1, Number(request.chunkCount) || 1)}${i18nT(" segments")}`,
+                text: `${"# "}${Number(request.chunkIndex) + 1}/${Math.max(1, Number(request.chunkCount) || 1)}${i18nT(" segments")}`,
               });
               const attemptText = Number(request.attempt) > 0
-                ? `${i18nT("# ")}${Number(request.attempt)}/${Math.max(Number(request.attempt), Number(request.maxAttempts) || 1)}${i18nT(" times")}`
+                ? `${"# "}${Number(request.attempt)}/${Math.max(Number(request.attempt), Number(request.maxAttempts) || 1)}${i18nT(" times")}`
                 : "";
               if (attemptText) requestHead.createSpan({ cls: "qnalog-progress-request-attempt", text: attemptText });
               requestHead.createSpan({
@@ -1449,7 +1449,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: i18nT("Under \"Playback through this device\", choose your real headphones or speakers, not CABLE Input") });
       ol.createEl("li", { text: i18nT("Click \"Apply\"") });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
-      tip.setText(i18nT("The audio path is: app/browser \\\\u2192 CABLE Input (playback) \\\\u2192 CABLE Output (recording input, read by Q&A Log) \\\\u2192 monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
+      tip.setText(i18nT("The audio path is: app/browser → CABLE Input (playback) → CABLE Output (recording input, read by Q&A Log) → monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
     });
     this.step(parent, 4, i18nT("- Faithful to the source: Do not extrapolate; organize only information explicitly present in the recording."), (b) => {
       const ol = b.createEl("ol");
@@ -1771,7 +1771,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.fileCheckboxes = new Map();
     contentEl.createEl("h2", { text: i18nT("Import text") });
     contentEl.createEl("p", { cls: "qnalog-import-desc" })
-      .setText(i18nT("Choose existing Markdown, a dictation draft, or a text note. Q&A Log will not call speech transcription; it goes straight through the \\\\u201cAI briefing\\\\u201d LLM pipeline on the API tab and structures the text using the current template."));
+      .setText(i18nT("Choose existing Markdown, a dictation draft, or a text note. Q&A Log will not call speech transcription; it goes straight through the “AI briefing” LLM pipeline on the API tab and structures the text using the current template."));
 
     this.renderModeControl(contentEl);
 
