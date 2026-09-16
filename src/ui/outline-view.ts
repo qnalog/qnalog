@@ -1275,10 +1275,10 @@ export class OutlineView extends obsidian.ItemView {
       const done = total ? Math.max(0, Math.min(total, (hasDoneFlag || emptyDone) ? total : total - pending)) : 0;
       return {
         key,
-        lead: cfg.lead,
-        label: cfg.label,
-        unit: cfg.unit,
-        dest: cfg.dest,
+        lead: i18nT(cfg.lead),
+        label: i18nT(cfg.label),
+        unit: i18nT(cfg.unit),
+        dest: i18nT(cfg.dest),
         model: cfg.model,
         pending,
         total,
@@ -1746,7 +1746,7 @@ export class OutlineView extends obsidian.ItemView {
       const count = Math.max(0, Number(counts[key]) || 0);
       const stat = stats.createDiv({ cls: "qnalog-sediment-scan-stat" });
       stat.createDiv({ cls: "qnalog-sediment-scan-number", text: String(count) });
-      stat.createDiv({ cls: "qnalog-sediment-scan-label", text: `${i18nT("Recognized")}${cfg.label}` });
+      stat.createDiv({ cls: "qnalog-sediment-scan-label", text: `${i18nT("Recognized")}${i18nT(cfg.label)}` });
     }
     const actions = box.createDiv({ cls: "qnalog-sediment-prompt-actions" });
     actions.createEl("button", { text: i18nT("Cancel scan"), cls: "qnalog-sediment-button is-secondary", attr: { type: "button" } }).onclick = () => this.cancelSedimentExtraction(file);
@@ -2937,7 +2937,9 @@ export class OutlineView extends obsidian.ItemView {
       if (secondary.disabled || typeof actions.onSecondary !== "function") return;
       actions.onSecondary();
     };
-    const primaryText = typeof cfg.primaryButtonText === "function" ? cfg.primaryButtonText(count) : `${i18nT("Add to ")}${cfg.dest}（${count}）`;
+    const primaryText = cfg.primaryButtonText
+      ? i18nT(cfg.primaryButtonText).replace("{0}", String(count))
+      : `${i18nT("Add to ")}${i18nT(cfg.dest)} (${count})`;
     const primary = footer.createEl("button", { text: primaryText, cls: "qnalog-sediment-button is-primary", attr: { type: "button" } });
     primary.disabled = !count;
     if (!count) primary.setAttr("title", i18nT("Please select at least one item"));

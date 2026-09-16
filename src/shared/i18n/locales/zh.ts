@@ -10,6 +10,23 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
+  "Add to Hotwords ({0})": "加入热词库（{0}）",
+  "Add to To-dos ({0})": "加入待办（{0}）",
+  "Add to People ({0})": "加入人员库（{0}）",
+  "To-dos": "待办",
+  "items": "条",
+  "words": "个",
+  "person": "人",
+  "item": "事",
+  "word": "词",
+  "Completed Q&A Log minutes": "已完成的 Q&A Log 纪要",
+  "Unfinished Q&A Log transcripts": "未完成的 Q&A Log 转写",
+  "Complete": "正常稿",
+  "Needs repair": "待修复",
+  "External": "外部稿",
+  "Already organized by AI; can be merged, re-organized with another template, or converted to another mode.": "已经完成 AI 整理，可用于多篇合并、换模板重整或转成其他模式。",
+  "Contains failed transcriptions, failed organizing, or only raw segments; suitable for re-organizing.": "包含转写失败、整理失败、只有原始分段或零散内容，适合重新整理。",
+  "Hand-typed notes, third-party minutes, or plain Markdown; skips speech transcription and goes straight to the LLM.": "用户手写速录、第三方纪要或普通 Markdown，不调用语音转写，直接交给 LLM 整理。",
   "\n\nOriginal transcript:\n{{TRANSCRIPT}}": "\n\n原始转写：\n{{TRANSCRIPT}}",
   "AI is adding more…": "AI 正在补充…",
   "Follow Obsidian": "跟随 Obsidian",

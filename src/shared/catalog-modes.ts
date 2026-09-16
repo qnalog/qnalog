@@ -2,13 +2,13 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
 export const MODE_META = {
-  synthesis: { prefix: "综合纪要", emoji: "", icon: "layers", label: "综合纪要", goal: "适合大多数会议。先提炼贯穿全场的主线，再按速览、正文和查阅资料三层整理。" },
-  meeting:   { prefix: "工作纪要", emoji: "📝", icon: "briefcase", label: "工作纪要", goal: "适合各种规模的工作会议：决议、待办、风险、同步同事进展。" },
-  interview: { prefix: "访谈", emoji: "🎙", icon: "message-square", label: "访谈", goal: "适合外部访谈、用户调研、专家访谈，把问答转成洞察。" },
-  monologue: { prefix: "个人笔记", emoji: "💭", icon: "notebook", label: "个人笔记", goal: "适合个人口述、灵感、复盘，把碎片表达整理成可用笔记。" },
-  learning:  { prefix: "学习笔记", emoji: "📚", icon: "book-open", label: "学习笔记", goal: "适合 B 站、YouTube、课程、讲座、播客等高信息密度内容。" },
-  seminar:   { prefix: "研讨会", emoji: "🧠", icon: "landmark", label: "研讨会", goal: "适合学术研讨、主题沙龙、圆桌论坛，把观点、争议、证据和后续问题整理清楚。" },
-  huddle:    { prefix: "圆桌讨论", emoji: "🤝", icon: "users", label: "圆桌讨论", goal: "保留以兼容旧笔记，新建录音请改用「工作纪要」。", legacy: true },
+  synthesis: { prefix: "综合纪要", emoji: "", icon: "layers", label: "综合纪要", goal: "Best for most meetings. First distill the through-line of the whole session, then organize it in three layers: overview, body, and reference material." },
+  meeting:   { prefix: "工作纪要", emoji: "📝", icon: "briefcase", label: "工作纪要", goal: "Best for work meetings of any size: decisions, todos, risks, and aligning on colleagues' progress." },
+  interview: { prefix: "访谈", emoji: "🎙", icon: "message-square", label: "访谈", goal: "Best for external interviews, user research, and expert interviews, turning Q&A into insight." },
+  monologue: { prefix: "个人笔记", emoji: "💭", icon: "notebook", label: "个人笔记", goal: "Best for personal dictation, ideas, and retrospectives, turning scattered expression into usable notes." },
+  learning:  { prefix: "学习笔记", emoji: "📚", icon: "book-open", label: "学习笔记", goal: "Best for high information density content such as Bilibili, YouTube, courses, lectures, and podcasts." },
+  seminar:   { prefix: "研讨会", emoji: "🧠", icon: "landmark", label: "研讨会", goal: "Best for academic seminars, themed salons, and roundtable forums, laying out viewpoints, disputes, evidence, and follow-up questions clearly." },
+  huddle:    { prefix: "圆桌讨论", emoji: "🤝", icon: "users", label: "圆桌讨论", goal: "Kept for compatibility with older notes; for new recordings, please switch to \"Work Summary\".", legacy: true },
   off:       { prefix: "录音", emoji: "🎙", icon: "mic", label: "关闭（仅转写）" },
 };
 

@@ -1879,8 +1879,8 @@ export class ImportTextModal extends obsidian.Modal {
       { id: "all", label: i18nT("All"), desc: i18nT("Show all importable text") },
       ...IMPORT_TEXT_CATEGORY_ORDER.map((id) => ({
         id,
-        label: IMPORT_TEXT_CATEGORY_CONFIG[id].shortLabel,
-        desc: IMPORT_TEXT_CATEGORY_CONFIG[id].label,
+        label: i18nT(IMPORT_TEXT_CATEGORY_CONFIG[id].shortLabel),
+        desc: i18nT(IMPORT_TEXT_CATEGORY_CONFIG[id].label),
       })),
     ];
     for (const filter of filters) {
@@ -1952,8 +1952,8 @@ export class ImportTextModal extends obsidian.Modal {
       const section = this.listEl.createDiv({ cls: `qnalog-import-section qnalog-import-section-${category}` });
       const head = section.createDiv({ cls: "qnalog-import-section-head" });
       const titleWrap = head.createDiv({ cls: "qnalog-import-section-copy" });
-      titleWrap.createDiv({ cls: "qnalog-import-section-title", text: `${config.label}（${group.length}）` });
-      titleWrap.createDiv({ cls: "qnalog-import-section-desc", text: config.desc });
+      titleWrap.createDiv({ cls: "qnalog-import-section-title", text: `${i18nT(config.label)}（${group.length}）` });
+      titleWrap.createDiv({ cls: "qnalog-import-section-desc", text: i18nT(config.desc) });
       const shown = group.slice(0, Math.max(0, 240 - rendered));
       shown.forEach((item, index) => this.renderSingleFile(section, item, rendered + index));
       rendered += shown.length;

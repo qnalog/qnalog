@@ -7,19 +7,19 @@ export const TEXT_IMPORT_EXT = new Set(["md", "txt"]);
 
 export const IMPORT_TEXT_CATEGORY_CONFIG = {
   "qnalog-normal": {
-    label: "已完成的 Q&A Log 纪要",
-    shortLabel: "正常稿",
-    desc: "已经完成 AI 整理，可用于多篇合并、换模板重整或转成其他模式。",
+    label: "Completed Q&A Log minutes",
+    shortLabel: "Complete",
+    desc: "Already organized by AI; can be merged, re-organized with another template, or converted to another mode.",
   },
   "qnalog-repair": {
-    label: "未完成的 Q&A Log 转写",
-    shortLabel: "待修复",
-    desc: "包含转写失败、整理失败、只有原始分段或零散内容，适合重新整理。",
+    label: "Unfinished Q&A Log transcripts",
+    shortLabel: "Needs repair",
+    desc: "Contains failed transcriptions, failed organizing, or only raw segments; suitable for re-organizing.",
   },
   external: {
-    label: "其他 Markdown / TXT 文件",
-    shortLabel: "外部稿",
-    desc: "用户手写速录、第三方纪要或普通 Markdown，不调用语音转写，直接交给 LLM 整理。",
+    label: "Other Markdown / TXT files",
+    shortLabel: "External",
+    desc: "Hand-typed notes, third-party minutes, or plain Markdown; skips speech transcription and goes straight to the LLM.",
   },
 };
 
