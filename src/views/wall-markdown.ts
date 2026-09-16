@@ -6,6 +6,7 @@ import { TODO_CARD_TAG } from "../shared/util-note";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS } from "../shared/defaults";
 import { NS_TAG } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 export function getBasesFolder(settings) {
   return obsidian.normalizePath((settings && settings.basesFolder) || DEFAULT_SETTINGS.basesFolder || DEFAULT_LIBRARY_PATHS.basesFolder);
 }
@@ -234,7 +235,7 @@ export function formatObjectWallMarkdown(settings, options: QnALogObjectWallOpti
 
 export function formatTodoWallMarkdown(settings) {
   return formatObjectWallMarkdown(settings, {
-    title: "待办墙",
+    title: t("To-do wall"),
     initialFilter: "todo",
     showFilters: false,
     emptyText: "没有找到待办卡片。会议纪要中的明确行动项可在确认后沉淀为待办。"

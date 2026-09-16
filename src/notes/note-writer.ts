@@ -3,7 +3,7 @@
 
 import * as obsidian from "obsidian";
 import { qnalogConfirm } from "../ui/helpers";
-import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
+import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { splitOutSedimentBlock } from "../sediment";
 import { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
@@ -22,6 +22,7 @@ import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** NoteWriter 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface NoteWriterHost {
   /** 知识库与工作区访问。 */
@@ -68,7 +69,7 @@ export class NoteWriter {
       (polishedFrontmatter || beforeParts.frontmatter) ? "" : null,
       titleBlock ? titleBlock.trimEnd() : null,
       titleBlock ? "" : null,
-      `## 当前纪要（${meta.prefix} · ${stamp}）`,
+      `## ${t("Current minutes")}（${getModePrefix(meta)} · ${stamp}）`,
       "",
       `> [!info] 基于本文底部的原始转写重新生成 · 段数：${segments.length} · 模型：${this.host.settings.llmModel}`,
       "",
@@ -107,7 +108,7 @@ export class NoteWriter {
     const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.host.settings.llmModel) : buildRecordingInfoDetails({
       startedAt: session.startedAt,
       totalMs,
-      modeLabel: meta.prefix,
+      modeLabel: getModePrefix(meta),
       segmentCount: session.segments.length,
       model: this.host.settings.llmModel,
     });
@@ -134,7 +135,7 @@ export class NoteWriter {
     const content = [
       polishedFrontmatter || null,
       polishedFrontmatter ? "" : null,
-      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}`,
+      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
       "",
       polishedBody,
       "",
@@ -193,7 +194,7 @@ export class NoteWriter {
     const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.host.settings.llmModel) : buildRecordingInfoDetails({
       startedAt: session.startedAt,
       totalMs,
-      modeLabel: meta.prefix,
+      modeLabel: getModePrefix(meta),
       segmentCount: session.segments.length,
       model: this.host.settings.llmModel,
     });
@@ -208,7 +209,7 @@ export class NoteWriter {
       : "";
     const block = [
       "",
-      `## 整合版（${this.host.settings.llmModel} · ${meta.prefix}）`,
+      `## ${t("Merged version")}（${this.host.settings.llmModel} · ${getModePrefix(meta)}）`,
       "",
       mergeError ? failureText : polishedBody,
       "",
@@ -329,16 +330,16 @@ export class NoteWriter {
   async polishEditor(editor) {
     const sel = editor.getSelection();
     const raw = sel || editor.getValue();
-    if (!raw || !raw.trim()) { new obsidian.Notice("没有可润色的内容"); return; }
-    new obsidian.Notice("AI 润色中…");
+    if (!raw || !raw.trim()) { new obsidian.Notice(t("Nothing to polish")); return; }
+    new obsidian.Notice(t("AI polishing..."));
     try {
       const mode = getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
       const polished = await polishTranscript(this.host, raw, mode, null, null, null);
       if (sel) editor.replaceSelection(polished); else editor.setValue(polished);
-      new obsidian.Notice("润色完成");
+      new obsidian.Notice(t("Polishing complete"));
     } catch (e) {
       console.error(e);
-      new obsidian.Notice(`润色失败：${(e && e.message) || e}`);
+      new obsidian.Notice(`${t("Polish failed: ")}${(e && e.message) || e}`);
     }
   }
   // 从 .md 文件的 frontmatter 推断模式（mode 字段；找不到时尝试 类型 字段中文映射）
@@ -422,7 +423,7 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile)) return;
     const previous = this.findPreviousRecentNoteFile(file);
     if (!(previous instanceof obsidian.TFile)) {
-      new obsidian.Notice("没有找到这篇之前的最近一条 Q&A Log 纪要。", 6000);
+      new obsidian.Notice(t("No most recent Q&A Log summary before this one was found."), 6000);
       return;
     }
     const ok = await qnalogConfirm(this.host.app, "合并纪要", `将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. ${previous.basename}\n2. ${file.basename}\n\n继续合并？`, "合并");
@@ -431,7 +432,7 @@ export class NoteWriter {
       await this.mergeMarkdownFilesAsNew([previous, file]);
     } catch (e) {
       console.error("[QnALog] merge notes failed", e);
-      new obsidian.Notice(`合并纪要失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("Merging minutes failed: ")}${(e && e.message) || e}`, 8000);
     }
   }
   async mergeMarkdownFilesAsNew(files) {
@@ -445,12 +446,12 @@ export class NoteWriter {
       startIndex += source.segments.length;
     }
     if (sources.length < 2) {
-      new obsidian.Notice("至少需要两篇纪要才能合并。");
+      new obsidian.Notice(t("At least two summaries are required to merge."));
       return;
     }
     const segments = sources.flatMap((source) => source.segments);
     if (!segments.length) {
-      new obsidian.Notice("没有找到可合并的原始转写。", 8000);
+      new obsidian.Notice(t("No original transcriptions found to merge."), 8000);
       return;
     }
     const mode = sources[sources.length - 1].mode || sources[0].mode || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
@@ -461,10 +462,10 @@ export class NoteWriter {
     const stamp = startedAt && startedAt.isValid && startedAt.isValid()
       ? startedAt.format(this.host.settings.noteFileNameFormatNew)
       : (moment ? moment().format(this.host.settings.noteFileNameFormatNew) : "合并纪要");
-    const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · 合并.md`));
+    const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · ${t("Merge")}.md`));
     if (!targetPath) throw new Error("无法生成合并纪要路径");
 
-    new obsidian.Notice(`Q&A Log：正在合并 ${sources.length} 篇纪要…`, 8000);
+    new obsidian.Notice(`${t("Q&A Log: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
     await this.host.app.vault.create(targetPath, "");
     const session = {
       id: genId(),
@@ -520,7 +521,7 @@ export class NoteWriter {
     }
     try { await this.host.noteIndex.appendDailyMeetingOverview(session, polished); }
     catch (e) { console.error("[QnALog] daily overview after merge notes failed", e); }
-    new obsidian.Notice(`已生成合并纪要：${finalFile instanceof obsidian.TFile ? finalFile.basename : "合并纪要"}`);
+    new obsidian.Notice(`${t("Generated merged minutes: ")}${finalFile instanceof obsidian.TFile ? finalFile.basename : getModeMeta({}, "synthesis").prefix}`);
   }
   async appendMergeMetadataBlock(file, sources) {
     if (!(file instanceof obsidian.TFile)) return;

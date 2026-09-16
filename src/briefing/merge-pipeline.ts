@@ -37,6 +37,7 @@ import { renderLongSessionRawFallbackGroup } from "../notes/detail-blocks";
 import { appendEntityEvidenceWarning, frontmatterBaseModeKey, maybePreSummarizeTextImportForMerge, parseBriefingPartResponse, postProcessBriefingOutput } from "../notes/note-markdown";
 import { NS_TAG, isNamespaceTag } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 export async function polishTranscript(plugin, transcript, mode, sessionMeta, originalFrontmatter, repolishOptions) {
   if (!transcript || !transcript.trim()) return "";
   if (mode === "off") return transcript;
@@ -437,7 +438,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             { stream: true, thinkingMode: "fast", payload: { max_tokens: consolidationMaxTokens } },
             createBriefingLlmActivityOptions(plugin, computedMeta, {
               stage: "consolidate",
-              stageLabel: "归并全场议题",
+              stageLabel: t("Merge all session topics"),
               detail: "正在把各时段材料整理成一篇综合纪要",
               progress: 88,
             }),
@@ -610,7 +611,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
       },
       createBriefingLlmActivityOptions(plugin, computedMeta, {
         stage: "llm",
-        stageLabel: "AI 正在整理正文",
+        stageLabel: t("AI is organizing the body text"),
         detail: "模型正在根据原始转写生成纪要",
         progress: 18,
       }),

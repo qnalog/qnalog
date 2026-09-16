@@ -13,11 +13,12 @@ export const NOTE_ASK_TIMEOUT_MS = 75 * 1000;
 export const NOTE_ASK_MAX_TOKENS = 1400;
 
 // 「试试这样问」快捷提问（无历史时显示在输入框下方，点击直接发起）。通用会议向，适配大多数纪要。
+// 英文源；中文由词条表提供（渲染处包 t()）。
 export const NOTE_ASK_SUGGESTIONS = [
-  "本次会议的核心结论？",
-  "有哪些待办，分别谁负责？",
-  "各方分歧点在哪里？",
-  "还有哪些风险或待澄清的问题？",
+  "What are the key conclusions of this meeting?",
+  "What are the to-dos, and who owns each?",
+  "Where do the parties disagree?",
+  "What risks or open questions remain?",
 ];
 
 export function stripAskBlocks(text) {

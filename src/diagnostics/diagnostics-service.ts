@@ -15,6 +15,7 @@ import type { TaskQueue } from "../queue/task-queue";
 import type { RecorderService } from "../audio/recorder-service";
 import { ensureVaultFolder } from "../shared/util-vault";
 
+import { t } from "../shared/i18n";
 /** 实时大纲输入统计的空值；字段与 RealtimeOutlineInputStats 一致。 */
 function createEmptyRealtimeOutlineInputStats(): RealtimeOutlineInputStats {
   return {
@@ -211,10 +212,10 @@ export class DiagnosticsService {
     const report = await this.buildDiagnosticReport();
     try {
       await navigator.clipboard.writeText(report);
-      new obsidian.Notice("Q&A Log 诊断报告已复制，可发给开发者排查。", 6000);
+      new obsidian.Notice(t("Q&A Log diagnostic report copied; you can send it to the developer for troubleshooting."), 6000);
     } catch (e) {
       await this.logDiagnostic("error", "diagnostics.copy_failed", "复制诊断报告失败", { error: diagnosticError(e) });
-      new obsidian.Notice(`诊断报告复制失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("Failed to copy the diagnostic report: ")}${(e && e.message) || e}`, 8000);
     }
   }
 }

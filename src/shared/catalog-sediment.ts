@@ -4,48 +4,45 @@ import { NS_TAG_PREFIX } from "../shared/namespace";
 
 export const SEDIMENT_GROUP_CONFIG = {
   person: {
-    label: "人员",
-    unit: "位",
-    dest: "人员库",
+    label: "People",
+    unit: "people",
+    dest: "People",
     model: "judge",
     decisionModel: "judge",
-    lead: "人",
-    primaryButtonText: (n) => `加入人员库（${n}）`,
-    secondaryButtonText: "全部忽略",
+    lead: "person",
+    primaryButtonText: "Add to People ({0})",
   },
   todo: {
-    label: "待办",
-    unit: "条",
-    dest: "待办",
+    label: "To-dos",
+    unit: "items",
+    dest: "To-dos",
     model: "checkbox",
     decisionModel: "checkbox",
     defaultAllSelected: true,
-    lead: "事",
-    primaryButtonText: (n) => `加入待办（${n}）`,
-    secondaryButtonText: "忽略未选",
+    lead: "item",
+    primaryButtonText: "Add to To-dos ({0})",
   },
   hotword: {
-    label: "热词",
-    unit: "个",
-    dest: "热词库",
+    label: "Hotwords",
+    unit: "words",
+    dest: "Hotwords",
     model: "checkbox",
     decisionModel: "checkbox",
     defaultAllSelected: true,
-    lead: "词",
-    primaryButtonText: (n) => `加入热词库（${n}）`,
-    secondaryButtonText: "忽略未选",
+    lead: "word",
+    primaryButtonText: "Add to Hotwords ({0})",
   },
 };
 
 export const SEDIMENT_GROUP_ORDER = ["person", "todo", "hotword"];
 
 export const VOCABULARY_SECTIONS = [
-  { key: "people", title: "人名", desc: "仅放你明确愿意作为 ASR 提示发送的姓名或称呼；敏感人员关系请放到人员资料。", placeholder: "例如：某负责人、某专家、某候选人" },
-  { key: "brands", title: "品牌/机构", desc: "公司、学校、团队、客户、供应商、社区、品牌名。", placeholder: "例如：OpenAI、阿里云百炼、硅基流动" },
-  { key: "projects", title: "项目/产品", desc: "项目代号、产品名、模型名、系统名、插件名。", placeholder: "例如：Q&A Log、SenseVoiceSmall、Paraformer" },
-  { key: "terms", title: "行业术语", desc: "专业概念、流程、缩写、技术词、业务词。", placeholder: "例如：ASR、履约保证金、灰度发布" },
-  { key: "corrections", title: "易错写法", desc: "明确写出 ASR 常见误写与标准写法。转写返回后，Q&A Log 只会按这些显式规则做轻量替换。", placeholder: "例如：森斯 Voice Small => SenseVoiceSmall" },
-  { key: "other", title: "其他专有名词", desc: "暂时不好归类但希望 ASR 优先识别准确的词。", placeholder: "例如：会议室名、活动名、内部简称" },
+  { key: "people", title: "人名", label: "Names", desc: "仅放你明确愿意作为 ASR 提示发送的姓名或称呼；敏感人员关系请放到人员资料。", placeholder: "例如：某负责人、某专家、某候选人" },
+  { key: "brands", title: "品牌/机构", label: "Brands / Organizations", desc: "公司、学校、团队、客户、供应商、社区、品牌名。", placeholder: "例如：OpenAI、阿里云百炼、硅基流动" },
+  { key: "projects", title: "项目/产品", label: "Projects / Products", desc: "项目代号、产品名、模型名、系统名、插件名。", placeholder: "例如：Q&A Log、SenseVoiceSmall、Paraformer" },
+  { key: "terms", title: "行业术语", label: "Industry terms", desc: "专业概念、流程、缩写、技术词、业务词。", placeholder: "例如：ASR、履约保证金、灰度发布" },
+  { key: "corrections", title: "易错写法", label: "Common misspellings", desc: "明确写出 ASR 常见误写与标准写法。转写返回后，Q&A Log 只会按这些显式规则做轻量替换。", placeholder: "例如：森斯 Voice Small => SenseVoiceSmall" },
+  { key: "other", title: "其他专有名词", label: "Other proper nouns", desc: "暂时不好归类但希望 ASR 优先识别准确的词。", placeholder: "例如：会议室名、活动名、内部简称" },
 ];
 
 export const PEOPLE_DIRECTORY_TAG = `${NS_TAG_PREFIX}person`;

@@ -11,6 +11,7 @@ import { resolveAudioFileRef } from "../notes/audio-refs";
 import { analyzeEmptyShortNote } from "../notes/note-markdown";
 import { TaskQueue } from "../queue/task-queue";
 
+import { t } from "../shared/i18n";
 /** CleanupService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface CleanupHost {
   /** 知识库与工作区访问。 */
@@ -32,7 +33,7 @@ export class CleanupService {
     const folderPath = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const folder = this.host.app.vault.getAbstractFileByPath(folderPath);
     if (!(folder instanceof obsidian.TFolder)) {
-      new obsidian.Notice(`转写纪要文件夹不存在：${folderPath}`, 8000);
+      new obsidian.Notice(`${t("Transcript minutes folder not found: ")}${folderPath}`, 8000);
       return;
     }
 
@@ -71,7 +72,7 @@ export class CleanupService {
     }
 
     if (!candidates.length) {
-      new obsidian.Notice("没有发现符合条件的空白短录音");
+      new obsidian.Notice(t("No blank short recordings matching the criteria were found"));
       return;
     }
 
@@ -139,7 +140,10 @@ export class CleanupService {
     const queueRemoved = beforeQueue - this.host.queue.tasks.length;
     if (queueRemoved > 0) await this.host.saveAll();
 
-    new obsidian.Notice(`清理完成：纪要 ${noteDeleted} 篇，录音 ${audioDeleted} 个，队列移除 ${queueRemoved} 条${failed ? `，失败 ${failed} 项` : ""}`, 10000);
+    new obsidian.Notice(
+      `${t("Cleanup complete: minutes ")}${noteDeleted}${t(" notes, recording ")}${audioDeleted}${t(", removed from the queue ")}${queueRemoved}${failed ? t(", failed {0}").replace("{0}", String(failed)) : ""}`,
+      10000,
+    );
   }
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

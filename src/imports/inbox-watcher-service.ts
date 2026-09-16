@@ -8,6 +8,7 @@ import { isAbsoluteExternalInboxPath } from "../audio/external-inbox";
 import { isSyncConflictName } from "../notes/recording-issues";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 
+import { t } from "../shared/i18n";
 /** InboxWatcherService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface InboxWatcherHost {
   /** 知识库与工作区访问。 */
@@ -49,7 +50,7 @@ export class InboxWatcherService {
       this._inboxConflictNotified = this._inboxConflictNotified || new Set();
       if (!this._inboxConflictNotified.has(file.path)) {
         this._inboxConflictNotified.add(file.path);
-        new obsidian.Notice(`同步冲突文件已跳过：${file.name}\n请手动解决冲突后再处理。`, 8000);
+        new obsidian.Notice(`${t("Sync conflict files skipped: ")}${file.name}${t("\\nResolve the conflicts manually before processing.")}`, 8000);
         console.warn("[QnALog] skipped sync conflict file:", file.path);
       }
       return;
@@ -79,7 +80,7 @@ export class InboxWatcherService {
       if (this._inboxProcessing.has(file.path)) return;
       this._inboxProcessing.add(file.path);
       this._inboxLock = (this._inboxLock || Promise.resolve()).then(async () => {
-        new obsidian.Notice(`发现新音频：${file.name}，正在生成纪要…`);
+        new obsidian.Notice(`${t("New audio found: ")}${file.name}${t(", generating minutes...")}`);
         try {
           await this.host.imports.importAudioFiles([file.path]);
           if (archiveSub) {
@@ -93,7 +94,7 @@ export class InboxWatcherService {
           }
         } catch (e) {
           console.error("[QnALog] inbox auto-import failed", e);
-          new obsidian.Notice(`自动导入未完成：${e.message || e}`);
+          new obsidian.Notice(`${t("Auto import incomplete: ")}${e.message || e}`);
         } finally {
           this._inboxProcessing.delete(file.path);
         }
@@ -107,14 +108,14 @@ export class InboxWatcherService {
 
   async scanInboxFolder() {
     const inbox = this.host.settings.inboxFolder;
-    if (!inbox) { new obsidian.Notice("未配置监听文件夹"); return; }
+    if (!inbox) { new obsidian.Notice(t("Watch folder not configured")); return; }
     if (isAbsoluteExternalInboxPath(inbox)) {
       return this.host.externalInbox.scanExternalInboxFolder({ manual: true, source: "command" });
     }
     const inboxNorm = obsidian.normalizePath(inbox);
     const folder = this.host.app.vault.getAbstractFileByPath(inboxNorm);
     if (!(folder instanceof obsidian.TFolder)) {
-      new obsidian.Notice(`监听文件夹不存在：${inboxNorm}`);
+      new obsidian.Notice(`${t("Watched folder not found: ")}${inboxNorm}`);
       return;
     }
     const archiveSub = this.host.settings.inboxArchiveSubfolder || "";
@@ -125,9 +126,9 @@ export class InboxWatcherService {
     );
     const conflicts = allChildren.filter(f => isSyncConflictName(f.name));
     const candidates = allChildren.filter(f => !isSyncConflictName(f.name));
-    if (conflicts.length) new obsidian.Notice(`跳过 ${conflicts.length} 个同步冲突文件，请手动解决`, 8000);
-    if (!candidates.length) { new obsidian.Notice("监听文件夹中没有未处理文件"); return; }
-    new obsidian.Notice(`发现 ${candidates.length} 个未处理文件，开始排队…`);
+    if (conflicts.length) new obsidian.Notice(`${t("Skipped ")}${conflicts.length}${t(" sync conflict files; resolve them manually")}`, 8000);
+    if (!candidates.length) { new obsidian.Notice(t("No unprocessed files in the watch folder")); return; }
+    new obsidian.Notice(`${t("Found ")}${candidates.length}${t(" unprocessed files; queuing started...")}`);
     for (const f of candidates) await this.handleInboxFile(f);
   }
 }

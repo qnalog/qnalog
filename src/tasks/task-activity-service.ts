@@ -20,6 +20,7 @@ import type { TaskActivity, TaskActivityAction, TaskActivityInput } from "../sha
 import type { AudioImportStageId } from "../shared/activity-progress";
 import { QueueModal } from "../ui/modals";
 
+import { t } from "../shared/i18n";
 /** 任务成功完成时的附加信息：失败态专用的两个字段在成功时会被删掉。 */
 type TaskActivityCompletion = Partial<TaskActivity> & {
   failureLabel?: string;
@@ -241,7 +242,7 @@ export class TaskActivityService {
     if (!current) {
       current = this.startTaskActivity(Object.assign({
         id,
-        title: "后台任务",
+        title: t("Background task"),
         status: "running",
       }, patch));
     }
@@ -272,7 +273,7 @@ export class TaskActivityService {
     const cancelled = this.taskActivityStore.cancel(id, detail);
     this.taskActivityStore.event(id, {
       type: "cancel",
-      label: "任务已取消",
+      label: t("Task cancelled"),
       detail,
     });
     return cancelled;
@@ -303,11 +304,11 @@ export class TaskActivityService {
     const maxAttempts = Math.max(1, Number(this.host.settings && this.host.settings.maxRetries) || 3);
     const actions = status === "failed"
       ? [
-        { id: "retry-queue-task", label: "重试", primary: true },
-        { id: "cancel-queue-task", label: "取消重试" },
+        { id: "retry-queue-task", label: t("Retry"), primary: true },
+        { id: "cancel-queue-task", label: t("Cancel retry") },
       ]
       : status === "queued"
-        ? [{ id: "cancel-queue-task", label: "取消重试" }]
+        ? [{ id: "cancel-queue-task", label: t("Cancel retry") }]
         : [];
     const input = {
       id,
@@ -359,20 +360,20 @@ export class TaskActivityService {
       final: "生成最终大纲",
     };
     const actions = state.phase === "running"
-      ? [{ id: "cancel-outline", label: "停止本轮" }]
+      ? [{ id: "cancel-outline", label: t("Stop this round") }]
       : state.phase === "idle" && state.lastError
         ? [
-          { id: "retry-outline", label: "重新生成", primary: true },
-          { id: "dismiss-task", label: "关闭记录" },
+          { id: "retry-outline", label: t("Regenerate"), primary: true },
+          { id: "dismiss-task", label: t("Close Recording") },
         ]
         : state.phase !== "idle"
-          ? [{ id: "cancel-outline", label: "取消等待" }]
-          : [{ id: "dismiss-task", label: "关闭记录" }];
+          ? [{ id: "cancel-outline", label: t("Cancel waiting") }]
+          : [{ id: "dismiss-task", label: t("Close Recording") }];
     if (!existing) {
       this.taskActivityStore.start({
         id,
         kind: "outline",
-        title: "实时大纲",
+        title: t("Live outline"),
         subject,
         status: state.phase === "running" ? "running" : "waiting",
         stage: state.phase,
@@ -413,7 +414,7 @@ export class TaskActivityService {
       return this.taskActivityStore.heartbeat(id, {
         status: "retrying",
         stage: "retrying",
-        stageLabel: "本轮失败，等待重试",
+        stageLabel: t("This round failed; waiting to retry"),
         detail: state.lastError,
         error: state.lastError,
         retryAt: state.nextRunAt || 0,
@@ -423,7 +424,7 @@ export class TaskActivityService {
     if (state.lastError) {
       return this.failTaskActivity(id, state.lastError, {
         stage: "failed",
-        stageLabel: "实时大纲未生成",
+        stageLabel: t("Live outline not generated"),
         detail: state.lastError,
         subject,
         actions,
@@ -431,7 +432,7 @@ export class TaskActivityService {
     }
     return this.completeTaskActivity(id, {
       stage: "done",
-      stageLabel: "大纲已更新",
+      stageLabel: t("Outline updated"),
       detail: "已根据当前转写完成本轮更新",
       subject,
       progress: 100,
@@ -450,8 +451,8 @@ export class TaskActivityService {
     const retryStages = new Set(["merge-retrying"]);
     const actions = failureStages.has(wp.stage)
       ? [
-        { id: "open-task-note", label: "打开原始材料", primary: true },
-        { id: "dismiss-task", label: "关闭记录" },
+        { id: "open-task-note", label: t("Open original material"), primary: true },
+        { id: "dismiss-task", label: t("Close Recording") },
       ]
       : [];
     const patch: TaskActivityInput = {
@@ -468,7 +469,7 @@ export class TaskActivityService {
       updatedAt: wp.updatedAt ? Date.parse(wp.updatedAt) : Date.now(),
       error: failureStages.has(wp.stage) ? String(session.finalizationError || wp.detail || wp.label || "纪要整理失败") : "",
       actions: retryStages.has(wp.stage)
-        ? [{ id: "open-task-note", label: "打开原始材料", primary: true }]
+        ? [{ id: "open-task-note", label: t("Open original material"), primary: true }]
         : actions,
     };
     const existing = this.taskActivityStore.get(id);
@@ -485,8 +486,8 @@ export class TaskActivityService {
       return this.completeTaskActivity(id, Object.assign({}, patch, {
         stageLabel: wp.label || "纪要处理完成",
         actions: session.mdPath
-          ? [{ id: "open-task-note", label: "打开纪要", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
-          : [{ id: "dismiss-task", label: "关闭记录" }],
+          ? [{ id: "open-task-note", label: t("Open minutes"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
+          : [{ id: "dismiss-task", label: t("Close Recording") }],
       }));
     }
     return this.taskActivityStore.heartbeat(id, Object.assign({}, patch, {
@@ -534,9 +535,9 @@ export class TaskActivityService {
       updatedAt: Number(activity.updatedAt) || Date.now(),
       error: failure,
       actions: failure
-        ? [{ id: "open-task-note", label: "打开原始材料", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
+        ? [{ id: "open-task-note", label: t("Open original material"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
         : completed
-          ? [{ id: "open-task-note", label: "打开纪要", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
+          ? [{ id: "open-task-note", label: t("Open minutes"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
           : [],
     };
     let next = existing
@@ -598,7 +599,7 @@ export class TaskActivityService {
       if (actionId === "cancel-queue-task") {
         const queueId = taskId.replace(/^queue:/, "");
         await this.host.queue.remove(queueId);
-        new obsidian.Notice("已取消自动重试；原始材料不会删除。", 5000);
+        new obsidian.Notice(t("Auto-retry cancelled; the original material will not be deleted."), 5000);
         return;
       }
       if (actionId === "open-task-note") {
@@ -611,7 +612,7 @@ export class TaskActivityService {
     } catch (error) {
       const message = getTaskErrorMessage(error, "操作未完成");
       this.failTaskActivity(taskId, error, {
-        stageLabel: "操作未完成",
+        stageLabel: t("Operation not completed"),
         detail: message,
         actions: activity.actions,
       });
@@ -622,7 +623,7 @@ export class TaskActivityService {
           error: diagnosticError(error),
         });
       } catch { /* diagnostics must not hide the original failure */ }
-      new obsidian.Notice(`操作未完成：${message}`, 8000);
+      new obsidian.Notice(`${t("Operation incomplete: ")}${message}`, 8000);
     }
   }
   // 转写进度状态栏：从队列 + 当前会话的实时状态渲染一行常驻指示器。

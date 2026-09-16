@@ -675,6 +675,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 | 设置键 | 默认值 | 落盘位置 | 读回别名 | 作用 | 现入口 | 拟归属 |
 |---|---|---|---|---|---|---|
+| `uiLanguage` | `""` | `ui.language` | — | 界面语言；空串表示跟随 Obsidian | 关于 | 基本设置 |
 | `audioFolder` | `${NS_ROOT}/录音` | `storage.recordingLibraryPath` | — | 录音文件落盘目录 | 录音 | 基本设置 |
 | `mdFolder` | `${NS_ROOT}/转写纪要` | `storage.briefingNotePath` | — | 纪要 Markdown 落盘目录 | 录音 | 基本设置 |
 | `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会中补充材料（图片/PPT/PDF）的复制目标 | 录音 | 高级 · 输出 |

@@ -4,6 +4,7 @@ import { formatElapsed } from "../shared/util-common";
 import { resolveTranscribeProvider, transcribeAudio } from "./transcribe";
 import { buildDashScopeTranscriptionParameters } from "./diarization";
 
+import { t } from "../shared/i18n";
 export const DASHSCOPE_FILETRANS_PROTOCOL = "dashscope-filetrans";
 
 export interface LongAudioTranscriptionOptions {
@@ -366,7 +367,7 @@ async function transcribeWithDashScope(
   if (!provider.apiKey) throw new Error("导入音频转写服务密钥未配置");
   if (!provider.model) throw new Error("导入音频转写模型未配置");
   const notify = (progress: LongAudioProgress) => options.onProgress?.(progress);
-  notify({ phase: "upload", label: "正在上传音频" });
+  notify({ phase: "upload", label: t("Uploading audio") });
   const fileUrl = await getDashScopeUploadUrl(
     provider.endpoint,
     provider.apiKey,
@@ -374,7 +375,7 @@ async function transcribeWithDashScope(
     blob,
     options.fileName || "",
   );
-  notify({ phase: "submit", label: "正在提交转写任务" });
+  notify({ phase: "submit", label: t("Submitting transcription task") });
   const parameters = buildDashScopeTranscriptionParameters(options, provider.language);
   const submitResponse = await requestUrl({
     url: provider.endpoint,
@@ -406,7 +407,7 @@ async function transcribeWithDashScope(
   while (Date.now() < deadline) {
     notify({
       phase: "waiting",
-      label: "正在发送给云端识别整段音频",
+      label: t("Sending the full audio to the cloud for recognition"),
       detail: `音频时长 ${durationLabel} · 预计约 ${estimateLabel}完成`,
       taskId,
     });
@@ -432,7 +433,7 @@ async function transcribeWithDashScope(
     await delayMs(pollIntervalMs);
   }
   if (!transcriptionUrl) throw new Error("阿里云长音频转写等待超时，任务仍可在服务端继续执行");
-  notify({ phase: "download", label: "正在读取转写结果", taskId });
+  notify({ phase: "download", label: t("Reading transcription result"), taskId });
   const resultResponse = await requestUrl({ url: transcriptionUrl, method: "GET", throw: false });
   const resultPayload = requireSuccessfulJsonResponse(resultResponse, "下载阿里云转写结果失败");
   const composed = composeDashScopeTranscript(resultPayload);
@@ -459,7 +460,7 @@ export async function transcribeImportedAudio(
   if (isDashScopeFileTransProvider(provider)) {
     return transcribeWithDashScope(provider, blob, options);
   }
-  options.onProgress?.({ phase: "submit", label: "正在提交整段音频" });
+  options.onProgress?.({ phase: "submit", label: t("Submitting the full audio") });
   const text = await transcribeAudio(plugin, blob, mime, provider.id);
   if (!String(text || "").trim()) throw new Error("整段音频转写返回空结果");
   return { text: String(text).trim(), providerId: provider.id, sentenceCount: 0 };

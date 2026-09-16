@@ -107,6 +107,8 @@ export interface AvailableUpdate {
 }
 
 export interface PluginSettings {
+  /** 界面语言；空串表示跟随 Obsidian 的界面语言。 */
+  uiLanguage: string;
   audioFolder: string;
   mdFolder: string;
   meetingMaterialsFolder: string;

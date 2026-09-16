@@ -15,6 +15,7 @@ import { diagnosticError } from "../shared/util-key-diag";
 
 import type { QueueTask } from "../shared/types";
 
+import { t } from "../shared/i18n";
 export class TaskQueue {
   declare plugin: QnALogPlugin;
   declare tasks: QueueTask[];
@@ -234,8 +235,8 @@ export class TaskQueue {
               : task.type === "generate-prompt" ? "提示词生成完成" : "任务完成",
           detail: String(task.mdPath || ""),
           actions: task.mdPath
-            ? [{ id: "open-task-note", label: "打开笔记", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
-            : [{ id: "dismiss-task", label: "关闭记录" }],
+            ? [{ id: "open-task-note", label: t("Open note"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
+            : [{ id: "dismiss-task", label: t("Close Recording") }],
         });
       } catch { /* task mirror must not block completion */ }
       await this.remove(task.id, { preserveActivity: true });

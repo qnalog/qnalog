@@ -15,6 +15,7 @@ import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 import { KNOWLEDGE_EXTRACTION_BATCH_LIMIT } from "../shared/limits";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 
+import { t } from "../shared/i18n";
 /** PeopleDirectoryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface PeopleDirectoryHost {
   /** 知识库与工作区访问。 */
@@ -301,7 +302,7 @@ export class PeopleDirectoryService {
   async openCachedPeopleDirectorySuggestions() {
     const suggestions = await this.getCachedPeopleDirectorySuggestions();
     if (!suggestions.length) {
-      new obsidian.Notice("当前没有待确认的人员建议");
+      new obsidian.Notice(t("There are currently no people suggestions pending confirmation"));
       return false;
     }
     new PeopleDirectorySuggestionModal(this.host.app, this.host, null, suggestions, {
@@ -314,7 +315,7 @@ export class PeopleDirectoryService {
   async openIgnoredPeopleDirectorySuggestions() {
     const records = normalizePeopleSuggestionIgnores(this.host.settings.peopleSuggestionIgnores);
     if (!records.length) {
-      new obsidian.Notice("当前没有已忽略的人员建议");
+      new obsidian.Notice(t("There are currently no ignored people suggestions"));
       return false;
     }
     const people = await loadPeopleDirectory(this.host);
@@ -327,7 +328,7 @@ export class PeopleDirectoryService {
         return item;
       });
     if (!suggestions.length) {
-      new obsidian.Notice("已忽略列表里没有可编辑的人员建议");
+      new obsidian.Notice(t("There are no editable people suggestions in the ignored list"));
       return false;
     }
     new PeopleDirectorySuggestionModal(this.host.app, this.host, null, suggestions, {
@@ -347,16 +348,16 @@ export class PeopleDirectoryService {
       return;
     }
     if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) {
-      new obsidian.Notice("请先配置大模型服务");
+      new obsidian.Notice(t("Please configure the LLM service first"));
       return;
     }
     const all = this.host.knowledgeExtraction.getKnowledgeExtractionSourceFiles("people");
     const batch = all.slice(0, KNOWLEDGE_EXTRACTION_BATCH_LIMIT);
     if (!batch.length) {
-      new obsidian.Notice("没有需要扫描的新纪要。修改过的纪要会自动重新进入扫描。");
+      new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return;
     }
-    new obsidian.Notice(`Q&A Log：正在扫描 ${batch.length} 篇纪要提取人员信息…`);
+    new obsidian.Notice(`${t("Q&A Log: scanning ")}${batch.length}${t(" minutes notes to extract people from...")}`);
     try {
       let cachedCount = 0;
       let processed = 0;
@@ -377,10 +378,10 @@ export class PeopleDirectoryService {
       const suggestions = await this.getCachedPeopleDirectorySuggestions();
       if (!suggestions.length) {
         const suffix = failed ? `，失败 ${failed}` : "";
-        new obsidian.Notice(`没有新的人员建议（已忽略的建议不会重复显示）${suffix}`);
+        new obsidian.Notice(`${t("No new people suggestions (ignored suggestions are not shown again)")}${suffix}`);
         return;
       }
-      if (failed) new obsidian.Notice(`人员扫描完成，${failed} 篇读取或提取失败，可稍后重试。`, 8000);
+      if (failed) new obsidian.Notice(`${t("People scan complete, ")}${failed}${t(" notes could not be read or extracted; try again later.")}`, 8000);
       const modal = new PeopleDirectorySuggestionModal(this.host.app, this.host, null, suggestions, {
         scannedCount: processed,
         cachedCount,
@@ -389,7 +390,7 @@ export class PeopleDirectoryService {
       modal.open();
     } catch (e) {
       console.error("[QnALog] suggest people directory failed", e);
-      new obsidian.Notice(`人员信息提取失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("People extraction failed: ")}${(e && e.message) || e}`, 8000);
     }
   }
 

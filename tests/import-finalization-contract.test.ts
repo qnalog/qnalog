@@ -102,8 +102,9 @@ describe("import finalization contract", () => {
     const apiPage = source.slice(source.indexOf("renderApi(c) {"), source.indexOf("renderAI(c)"));
 
     // 原「说话人」页独有的两项必须随合并保留，否则说话人识别无法关闭或指定人数
-    expect(apiPage).toContain('.setName("区分说话人")');
-    expect(apiPage).toContain('.setName("说话人数")');
+    // 文案已改为英文源（i18n 后由词条表提供中文），断言键而非中文值
+    expect(apiPage).toContain('.setName(t("Distinguish Speakers"))');
+    expect(apiPage).toContain('.setName(t("Number of Speakers"))');
     expect(apiPage).toContain("importSpeakerDiarization");
     expect(apiPage).toContain("importSpeakerCount");
 

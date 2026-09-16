@@ -1,3 +1,4 @@
+import { t } from "../shared/i18n";
 export type AudioImportStageId =
   | "prepare"
   | "transcribe"
@@ -87,11 +88,11 @@ const AUDIO_IMPORT_STAGE_DEFINITIONS: ReadonlyArray<{
   id: AudioImportStageId;
   label: string;
 }> = [
-  { id: "prepare", label: "准备音频" },
-  { id: "transcribe", label: "语音转写" },
-  { id: "persist", label: "写入原文" },
-  { id: "organize", label: "AI 整理" },
-  { id: "write", label: "写入纪要" },
+  { id: "prepare", label: t("Preparing audio") },
+  { id: "transcribe", label: t("Speech transcription") },
+  { id: "persist", label: t("Write source text") },
+  { id: "organize", label: t("AI Organize") },
+  { id: "write", label: t("Write to Minutes") },
 ];
 
 export function normalizeAudioImportStage(value: unknown): AudioImportStageId {

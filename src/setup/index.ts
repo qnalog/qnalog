@@ -16,6 +16,7 @@ import { ONE_CARD_PROVIDERS, normalizeLlmProfiles } from "../llm/config";
 import { snapshotActiveAsr } from "../llm/asr-scheme";
 import type { LlmProfile, PluginSettings, TranscribeProviderSettings } from "../shared/types";
 
+import { t } from "../shared/i18n";
 /**
  * 预设允许写入的设置键。
  * 这张表之外的一律不碰——`tests/setup.test.ts` 会拿一份完整设置逐项核对。
@@ -391,9 +392,9 @@ export async function runPresetDetection(
   if (plan.asrTarget === "recording") {
     try {
       const text = await ports.transcribe(host);
-      stages.push({ stage: "transcribe", label: "录音转写", ok: true, detail: `返回：${(text || "<空>").slice(0, 20)}` });
+      stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: true, detail: `返回：${(text || "<空>").slice(0, 20)}` });
     } catch (error) {
-      stages.push({ stage: "transcribe", label: "录音转写", ok: false, detail: errorMessage(error) });
+      stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: false, detail: errorMessage(error) });
     }
   }
 
@@ -403,14 +404,14 @@ export async function runPresetDetection(
       const result = await ports.importTranscribe(host, plan.importAsrProviderId);
       stages.push({
         stage: "import-transcribe",
-        label: "音频导入转写",
+        label: t("Audio import transcription"),
         ok: true,
         detail: `${result && result.model ? result.model : "服务"}${result && result.detail ? ` · ${result.detail}` : ""}`,
       });
     } catch (error) {
       stages.push({
         stage: "import-transcribe",
-        label: "音频导入转写",
+        label: t("Audio import transcription"),
         ok: false,
         detail: errorMessage(error),
       });
@@ -423,12 +424,12 @@ export async function runPresetDetection(
       const result = await ports.importTranscribe(host, plan.asrProviderId);
       stages.push({
         stage: "import-transcribe",
-        label: "音频导入转写",
+        label: t("Audio import transcription"),
         ok: true,
         detail: `${result && result.model ? result.model : "服务"}${result && result.detail ? ` · ${result.detail}` : ""}`,
       });
     } catch (error) {
-      stages.push({ stage: "import-transcribe", label: "音频导入转写", ok: false, detail: errorMessage(error) });
+      stages.push({ stage: "import-transcribe", label: t("Audio import transcription"), ok: false, detail: errorMessage(error) });
     }
   }
 
@@ -436,12 +437,12 @@ export async function runPresetDetection(
     const result = await ports.llm(host);
     stages.push({
       stage: "llm",
-      label: "AI 整理",
+      label: t("AI Organize"),
       ok: true,
       detail: result && result.model ? result.model : "已连接",
     });
   } catch (error) {
-    stages.push({ stage: "llm", label: "AI 整理", ok: false, detail: errorMessage(error) });
+    stages.push({ stage: "llm", label: t("AI Organize"), ok: false, detail: errorMessage(error) });
   }
 
   return { ok: stages.every((stage) => stage.ok), stages };
@@ -472,6 +473,11 @@ export function formatDetectionReport(report: DetectionReport): string {
  *   - lines：结论的依据（当前配置摘要），二级信息，逐行可点进对应设置页。
  */
 export interface SetupStatusLine {
+  /**
+   * 这一行对应哪项能力。用于「是否拦住开始使用」的判定：
+   * 标签经 t() 后随界面语言变化，不能用标签文本比对。
+   */
+  stage: "transcribe" | "llm" | "speaker" | "audio";
   /** 这一行讲的是哪一项，例如「语音转写」。 */
   label: string;
   /** 一级内容：用户最先要知道的（服务名 / 是否启用）。 */
@@ -516,6 +522,7 @@ export interface SetupStatusReport {
 }
 
 export interface SetupStatusLineInput {
+  stage?: "transcribe" | "llm" | "speaker" | "audio";
   label: string;
   /** 一级内容；缺配置时是「缺什么」。 */
   value: string;
@@ -553,6 +560,7 @@ function statusIcon(row: SetupStatusLineInput): "" | "!" | "×" {
  */
 export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
   const toLine = (row: SetupStatusLineInput): SetupStatusLine => ({
+    stage: row.stage,
     label: row.label,
     value: row.value,
     detail: row.detail || "",
@@ -560,27 +568,30 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
     target: row.target || "",
   });
   const lines: SetupStatusLine[] = [
-    toLine({ label: "语音转写", target: "api", ...input.transcribe }),
-    toLine({ label: "AI 整理", target: "ai", ...input.llm }),
-    toLine({ label: "说话人识别", target: "api", ...input.speaker }),
-    toLine({ label: "音频输入", target: "general", ...input.audio }),
+    toLine({ stage: "transcribe", label: t("Speech transcription"), target: "api", ...input.transcribe }),
+    toLine({ stage: "llm", label: t("AI Organize"), target: "ai", ...input.llm }),
+    toLine({ stage: "speaker", label: t("Speaker recognition"), target: "api", ...input.speaker }),
+    // 目标必须是 settings-tab.ts 里真实存在的选项卡 id。
+    // 曾写作 "general"，而该页已改名 "recording"，导致这一行点了没反应。
+    toLine({ stage: "audio", label: t("Audio input"), target: "recording", ...input.audio }),
   ];
   // 只有转写与 AI 整理缺配置才拦得住「开始使用」：没有它们产不出纪要。
   // 说话人识别与音频输入不影响能否开始，因此既不参与 ready 判定，
   // 也不计入下面的「还需要完成 N 项」—— 计数口径与 ready 必须一致，
   // 否则会出现「说还差 3 项、但结论又能开始用」这种自相矛盾。
-  const blocking = ["语音转写", "AI 整理"];
-  const blockers = lines.filter((l) => l.icon && blocking.includes(l.label));
+  // 按稳定标识判定，不能用标签文本：标签经 t() 后随语言变化，比对会失配。
+  const BLOCKING_STAGES = ["transcribe", "llm"];
+  const blockers = lines.filter((l) => l.icon && BLOCKING_STAGES.includes(l.stage));
   const ready = blockers.length === 0;
   return {
     ready,
     blockerCount: blockers.length,
-    headline: ready ? "已准备好" : `还需要完成 ${blockers.length} 项配置`,
+    headline: ready ? t("Ready to go") : t("Still need to configure {0} items").replace("{0}", String(blockers.length)),
     // 正常时只说结论，不复述下面已经逐项列出的能力（那会让总结变成清单的副本）。
     detail: ready
-      ? "核心配置已完成，可以开始录音。"
-      : `以下标出的项目还缺内容：${blockers.map((l) => l.label).join("、")}。`,
+      ? t("Core setup is complete; you can start recording.")
+      : t("These items still need attention: {0}.").replace("{0}", blockers.map((l) => l.label).join(", ")),
     lines,
-    warnings: lines.filter((l) => l.icon && !blocking.includes(l.label)).map((l) => l.label),
+    warnings: lines.filter((l) => l.icon && !BLOCKING_STAGES.includes(l.stage)).map((l) => l.label),
   };
 }

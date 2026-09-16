@@ -3,6 +3,7 @@
 import type { PluginSettings } from "./types";
 import { NS_ROOT } from "./namespace";
 
+import { t } from "../shared/i18n";
 export const DEFAULT_LIBRARY_PATHS = {
   vocabularyFile: `${NS_ROOT}/资料库/词汇表.md`,
   peopleDirectoryFolder: `${NS_ROOT}/资料库/人员`,
@@ -26,6 +27,8 @@ export const DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE = [
 ].join("\n");
 
 export const DEFAULT_SETTINGS: PluginSettings = {
+  // 空串 = 跟随 Obsidian 界面语言（多数用户不会主动改插件语言）
+  uiLanguage: "",
   audioFolder: `${NS_ROOT}/录音`,
   mdFolder: `${NS_ROOT}/转写纪要`,
   meetingMaterialsFolder: `${NS_ROOT}/会议资料`,
@@ -50,7 +53,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "FunAudioLLM/SenseVoiceSmall",
       language: "auto",
-      hint: "国内访问稳定，便宜。准确度中等。",
+      hint: t("Stable access in China, cheap. Moderate accuracy."),
     },
     openai: {
       name: "OpenAI 官方",
@@ -58,7 +61,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "gpt-4o-transcribe",
       language: "",
-      hint: "切片转写。准确度天花板。中文人名/专业术语识别强。需海外网络。",
+      hint: t("Chunked transcription. The accuracy ceiling. Strong at recognizing Chinese names/technical terms. Requires overseas network."),
     },
     "openai-diarize": {
       name: "OpenAI · 说话人分离",
@@ -67,7 +70,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "gpt-4o-transcribe-diarize",
       language: "",
       protocol: "openai-diarized-transcription",
-      hint: "整场录音完成后统一识别，并标注说话人。转写结束时可把说话人编号对应到真实姓名。",
+      hint: t("Recognized all at once after the entire recording finishes, with speaker labels. When transcription ends, speaker numbers can be mapped to real names."),
     },
     apimimo: {
       name: "APIMiMo V2.5 ASR",
@@ -76,7 +79,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "mimo-v2.5-asr",
       language: "auto",
       protocol: "apimimo-chat-input-audio",
-      hint: "小米 MiMo 音频识别。Chat Completions input_audio；服务端仅收 wav/mp3（其它格式自动转码切块），单块 base64 ≤10MB；可指定语种 zh/en/auto 提准。",
+      hint: t("Xiaomi MiMo audio recognition. Chat Completions input_audio; the server accepts only wav/mp3 (other formats are transcoded and chunked automatically), each chunk's base64 ≤10MB; you can specify the language zh/en/auto for better accuracy."),
     },
     "openai-realtime": {
       name: "OpenAI Realtime · 语音转写",
@@ -84,7 +87,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "gpt-realtime-whisper",
       language: "",
-      hint: "流式 ASR，边说边出字幕。$0.017/min ≈ ¥7.2/小时。",
+      hint: t("Streaming ASR, subtitles as you speak. $0.017/min ≈ ¥7.2/hour."),
     },
     "openai-realtime-translate": {
       name: "OpenAI Realtime · 语音翻译",
@@ -93,7 +96,17 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "gpt-realtime-translate",
       language: "",
       targetLanguage: "zh",
-      hint: "流式翻译，70+ 输入 → 13 输出。$0.034/min ≈ ¥14.4/小时。",
+      hint: t("Streaming translation, 70+ inputs → 13 outputs. $0.034/min ≈ ¥14.4/hour."),
+    },
+    openrouter: {
+      name: "OpenRouter · 语音转写",
+      // 官方 STT 接口。OpenRouter 文档明确该端点同时接受 OpenAI 风格的 multipart/form-data，
+      // 因此复用现有 OpenAI 兼容上传路径（file + model），无需新的协议分支。
+      endpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
+      apiKey: "",
+      model: "openai/whisper-large-v3",
+      language: "",
+      hint: t("Globally accessible; no account outside mainland China is needed to sign up; usage-based billing; multiple transcription models available."),
     },
     dashscope: {
       name: "阿里云百炼 Paraformer Realtime",
@@ -101,7 +114,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "paraformer-realtime-v2",
       language: "",
-      hint: "国内最便宜的流式 ASR，约 ¥3.6/小时。",
+      hint: t("The cheapest streaming ASR in China, about ¥3.6/hour."),
     },
     "dashscope-filetrans": {
       name: "阿里云百炼 Fun-ASR",
@@ -110,7 +123,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "fun-asr",
       language: "zh",
       protocol: "dashscope-filetrans",
-      hint: "导入音频专用。整文件异步转写，支持说话人分离；普通转写最长 12 小时，开启说话人分离时建议不超过 2 小时。",
+      hint: t("For imported audio only. Whole-file asynchronous transcription with speaker diarization; standard transcription up to 12 hours, and no more than 2 hours recommended when speaker diarization is enabled."),
     },
     custom: {
       name: "其他转写服务",
@@ -118,7 +131,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "",
       language: "",
-      hint: "适合企业内部网关、自建转写服务或第三方转写服务。",
+      hint: t("Suitable for enterprise internal gateways, self-hosted transcription services, or third-party transcription services."),
     },
     local: {
       name: "本地转写服务",
@@ -126,7 +139,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "whisper-large-v3",
       language: "zh",
-      hint: "适合 Xinference、faster-whisper-server、whisper.cpp 等本地服务；需要能接收音频文件上传并返回 text。",
+      hint: t("Suitable for local services such as Xinference, faster-whisper-server, and whisper.cpp; it must accept audio file uploads and return text."),
     },
     whisperx: {
       name: "WhisperX · 带说话人分离（本地）",
@@ -135,7 +148,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "whisper-large-v3",
       language: "zh",
       protocol: "speaker-diarization",
-      hint: "本地 WhisperX / whisper-diarization 服务：转写同时做说话人分离。需服务在响应里返回 segments[].speaker（或在 text 内联 [SPEAKER_00]），Q&A Log 会自动归一成 [说话人N]。注意：整段导入音频时说话人编号才全程一致；边录边切的分段模式跨段编号可能对不上。",
+      hint: t("Local WhisperX / whisper-diarization service: speaker diarization is done alongside transcription. The service must return segments[].speaker in its response (or inline [SPEAKER_00] in text), and Q&A Log normalizes it to [Speaker N] automatically. Note: speaker numbering is only consistent throughout for whole-file imported audio; in segmented mode that records and splits as it goes, numbering may not match across segments."),
     },
   },
 

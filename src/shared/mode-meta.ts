@@ -3,6 +3,7 @@
 import * as obsidian from "obsidian";
 import { MODE_META } from './catalog-modes';
 
+import { getActiveUiLanguage, t } from "../shared/i18n";
 export const STANDARD_POLISH_MODES = ["synthesis", "meeting", "seminar", "interview", "monologue", "learning"];
 
 // 曾用于"必须先解锁才可见"的模式（招聘评估 / 招聘需求挖掘 / 晋升评审），随 HR 场景一并移除；
@@ -68,7 +69,7 @@ export function getModeMeta(settings, mode) {
   const custom = getCustomPromptModeTemplate(settings, mode);
   if (custom) {
     const name = custom.name || "自定义提示词";
-    return { prefix: name, emoji: "🧩", icon: "puzzle", label: "自定义提示词：" + name, goal: custom.description || "用户自定义提示词。", baseMode: custom.baseMode || "learning", custom: true };
+    return { prefix: name, emoji: "🧩", icon: "puzzle", label: t("Custom prompt:") + name, goal: custom.description || "用户自定义提示词。", baseMode: custom.baseMode || "learning", custom: true };
   }
   return MODE_META.meeting;
 }
@@ -82,9 +83,24 @@ export function getEffectivePolishMode(settings, requested, fallback = null) {
   return fb;
 }
 
+/**
+ * 写入笔记标题用的模板前缀，跟随界面语言。
+ *
+ * MODE_META 的 prefix 是中文，用于解析既有笔记；界面语言为英文时，
+ * 新笔记的标题与文件名应使用英文前缀，否则英文用户看到的是中文标题。
+ * 两种前缀在读取时都能解析回同一个 mode（见 normalizeModeFromLabel）。
+ */
+export function getModePrefix(meta) {
+  if (!meta) return "";
+  return meta.label && getActiveUiLanguage().id === "en"
+    ? meta.label
+    : (meta.prefix || meta.label || "");
+}
+
 export function getVisibleModeEntries(settings, includeOff) {
   const entries = getVisiblePolishModeKeys(settings).map((key) => [key, getModeMeta(settings, key).prefix]);
-  return includeOff ? [["off", "关闭，仅转写"], ...entries] : entries;
+  // prefix 会被写进笔记文件名，保持中文；这里只返回显示名，由调用方 t()。
+  return includeOff ? [["off", t("Off (transcription only)")], ...entries] : entries;
 }
 
 export function setModePillIcon(el, meta, fallbackMeta) {

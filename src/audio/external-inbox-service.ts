@@ -17,6 +17,7 @@ import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 
+import { t } from "../shared/i18n";
 /** 扫描电脑文件夹时的选项。 */
 export interface ExternalInboxScanOptions {
   /** 用户从命令面板手动触发；手动触发时对不满足条件的来源给出提示。 */
@@ -137,7 +138,7 @@ export class ExternalInboxService {
 
   async chooseExternalInboxFolder() {
     if (isMobileRuntime()) {
-      new obsidian.Notice("电脑文件夹自动导入仅支持桌面端");
+      new obsidian.Notice(t("Automatic computer folder import is only supported on desktop"));
       return "";
     }
     let dialog = null;
@@ -149,11 +150,11 @@ export class ExternalInboxService {
       if (remote && remote.dialog) dialog = remote.dialog;
     }
     if (!dialog || typeof dialog.showOpenDialog !== "function") {
-      new obsidian.Notice("当前桌面环境无法打开文件夹选择器，请直接粘贴同步文件夹路径");
+      new obsidian.Notice(t("The current desktop environment cannot open a folder picker; paste the synced folder path directly"));
       return "";
     }
     const result = await dialog.showOpenDialog({
-      title: "选择自动导入文件夹",
+      title: t("Choose auto-import folder"),
       properties: ["openDirectory", "createDirectory"],
     });
     if (!result || result.canceled || !Array.isArray(result.filePaths) || !result.filePaths[0]) return "";
@@ -263,11 +264,11 @@ export class ExternalInboxService {
     const patch: TaskActivityInput = {
       id,
       kind: "external-audio-import",
-      title: `自动导入 · ${file.name}`,
+      title: `${t("Auto import · ")}${file.name}`,
       subject: file.name,
       status: "waiting",
       stage: "waiting-source",
-      stageLabel: "等待导入",
+      stageLabel: t("Waiting to import"),
       detail,
       progress: 5,
     };
@@ -279,11 +280,11 @@ export class ExternalInboxService {
     const manual = !!options.manual;
     const folder = String(this.host.settings.inboxFolder || "").trim();
     if (!isAbsoluteExternalInboxPath(folder)) {
-      if (manual) new obsidian.Notice("当前来源不是电脑文件夹");
+      if (manual) new obsidian.Notice(t("The current source is not a computer folder"));
       return { queued: 0, waiting: 0, skipped: 0 };
     }
     if (isMobileRuntime()) {
-      if (manual) new obsidian.Notice("电脑文件夹自动导入仅支持桌面端");
+      if (manual) new obsidian.Notice(t("Automatic computer folder import is only supported on desktop"));
       return { queued: 0, waiting: 0, skipped: 0 };
     }
     if (this._externalInboxScanPromise) return this._externalInboxScanPromise;
@@ -335,7 +336,7 @@ export class ExternalInboxService {
       if (this.isForegroundAudioWorkActive()) {
         for (const file of candidates.slice(0, 20)) this.markExternalInboxWaiting(file, "当前正在录音，录音结束后自动处理");
         await this.saveExternalInboxLedger();
-        if (manual && candidates.length) new obsidian.Notice(`发现 ${candidates.length} 个音频；当前正在录音，稍后自动处理`);
+        if (manual && candidates.length) new obsidian.Notice(`${t("Found ")}${candidates.length}${t(" audio files; recording is in progress, they will be processed automatically later")}`);
         return { queued: 0, waiting: result.waiting.length + candidates.length, skipped: result.ready.length - candidates.length };
       }
       for (const file of candidates) {
@@ -369,11 +370,11 @@ export class ExternalInboxService {
       }
       await this.saveExternalInboxLedger();
       if (manual) {
-        if (candidates.length) new obsidian.Notice(`发现 ${candidates.length} 个新音频，已加入处理队列`);
-        else if (result.waiting.length) new obsidian.Notice(`${result.waiting.length} 个音频仍在同步，稍后自动处理`);
-        else new obsidian.Notice("没有新的音频文件");
+        if (candidates.length) new obsidian.Notice(`${t("Found ")}${candidates.length}${t(" new audio files added to the queue")}`);
+        else if (result.waiting.length) new obsidian.Notice(`${result.waiting.length}${t(" audio files are still syncing; they will be processed automatically later")}`);
+        else new obsidian.Notice(t("No new audio files"));
       }
-      if (result.truncated) new obsidian.Notice("自动导入文件夹超过 2000 个音频，本次只扫描前 2000 个", 8000);
+      if (result.truncated) new obsidian.Notice(t("The auto-import folder has more than 2000 audio files; only the first 2000 were scanned this time"), 8000);
       return { queued: candidates.length, waiting: result.waiting.length, skipped: result.ready.length - candidates.length };
     })();
     this._externalInboxScanPromise = run;
@@ -384,7 +385,7 @@ export class ExternalInboxService {
         source: options.source || "manual",
         error: diagnosticError(e),
       });
-      if (manual) new obsidian.Notice(`扫描失败：${getTaskErrorMessage(e)}`, 8000);
+      if (manual) new obsidian.Notice(`${t("Scan failed: ")}${getTaskErrorMessage(e)}`, 8000);
       return { queued: 0, waiting: 0, skipped: 0 };
     } finally {
       if (this._externalInboxScanPromise === run) this._externalInboxScanPromise = null;
@@ -456,7 +457,7 @@ export class ExternalInboxService {
       this.host.tasks.patchTaskActivity(activityId, {
         status: "running",
         stage: "copying-source",
-        stageLabel: "读取音频",
+        stageLabel: t("Reading audio"),
         detail: "正在读取同步文件",
         progress: 10,
         attempt,
@@ -466,7 +467,7 @@ export class ExternalInboxService {
       this.host.tasks.patchTaskActivity(activityId, {
         status: "running",
         stage: "transcribing",
-        stageLabel: "转写与整理",
+        stageLabel: t("Transcription and organization"),
         detail: "音频已就绪，正在生成纪要",
         progress: 20,
       });
@@ -529,9 +530,9 @@ export class ExternalInboxService {
       } else {
         this.host.tasks.failTaskActivity(activityId, e, {
           stage: "failed",
-          stageLabel: "自动导入未完成",
+          stageLabel: t("Auto-import not completed"),
           detail: entry.error,
-          actions: [{ id: "open-settings", label: "检查设置" }],
+          actions: [{ id: "open-settings", label: t("Check settings") }],
         });
       }
       await this.host.diagnostics.logDiagnostic("error", "inbox.external_import_failed", "外部音频自动导入失败", {

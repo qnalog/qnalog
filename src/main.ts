@@ -19,6 +19,7 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
 import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
+import { resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
 import { classifySettingsSchema, hasStoredSettings, migrateSettingsForward, readSavedSchemaVersion, type SettingsSchemaState } from "./shared/settings-schema";
 
 import type {PluginSettings, RecordingSession } from "./shared/types";
@@ -76,6 +77,17 @@ import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
 import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
+/**
+ * 按设置与 Obsidian 的界面语言，决定插件当前使用的语言并记录到 i18n 模块。
+ *
+ * 语言状态放在 i18n 模块而不是插件实例上：读取方遍布近百个模块，
+ * 逐个穿参会污染所有中间层。写入点只有两处——插件加载、用户在「关于」里改语言。
+ */
+export function applyUiLanguage(settings: { uiLanguage?: string } | null | undefined): void {
+  const configured = settings && typeof settings === "object" ? settings.uiLanguage : "";
+  setActiveUiLanguage(resolveUiLanguage(configured, obsidian.getLanguage()));
+}
+
 class QnALogPlugin extends obsidian.Plugin {
   declare settings: PluginSettings;
   // 域服务字段在 onload 里赋值。TypeScript 不推断「仅赋值」的属性，
@@ -335,7 +347,10 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.cleanup.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: "清理过期分段音频缓存", callback: async () => {
       const result = await this.recording.cleanupExpiredSegmentCacheFiles();
-      new obsidian.Notice(`分段缓存清理完成：删除 ${result.deleted} 个，跳过 ${result.skipped} 个${result.failed ? `，失败 ${result.failed} 个` : ""}`, 8000);
+      new obsidian.Notice(
+        `${t("Segment cache cleanup complete: deleted ")}${result.deleted}${t(", skipped ")}${result.skipped}${result.failed ? t(", failed {0}").replace("{0}", String(result.failed)) : ""}`,
+        8000,
+      );
     } });
 
     this.addCommand({
@@ -386,7 +401,7 @@ class QnALogPlugin extends obsidian.Plugin {
     }));
 
     if (this.queue.tasks.length > 0) {
-      new obsidian.Notice(`Q&A Log：发现 ${this.queue.tasks.length} 个待处理任务，后台重试中…`);
+      new obsidian.Notice(`${t("Q&A Log: found ")}${this.queue.tasks.length}${t(" pending tasks; retrying in the background...")}`);
       window.setTimeout(() => { void this.queueRetry.retryQueue(); }, 2500);
     }
     this.app.workspace.onLayoutReady(() => {
@@ -414,6 +429,15 @@ class QnALogPlugin extends obsidian.Plugin {
       try { if (this.recorder && this.recorder.state !== "idle") await this.recorder.stop(); } catch { /* intentionally empty */ }
     })();
     if (this.bubble) this.bubble.unmount();
+  }
+
+  /**
+   * 按当前设置与 Obsidian 的界面语言，对齐插件生效语言。
+   *
+   * 只改本模块记录的语言，不写盘：调用方（设置项 onChange）负责保存。
+   */
+  applyUiLanguageNow() {
+    applyUiLanguage(this.settings);
   }
 
   async loadAll() {
@@ -472,6 +496,10 @@ class QnALogPlugin extends obsidian.Plugin {
     if (shouldPersistSchema) {
       try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema save failed", e); }
     }
+    // 界面语言在设置读回后立刻生效：之后所有渲染（设置页、侧边栏、对话框）
+    // 都按当前语言取词条。空串表示跟随 Obsidian 自己的界面语言。
+    applyUiLanguage(this.settings);
+
     if (schemaNotice) {
       try {
         void this.diagnostics.logDiagnostic(

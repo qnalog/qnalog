@@ -29,6 +29,7 @@ import { NoteIndexService } from "../notes/note-index-service";
 import { readSemanticMeta } from "../shared/namespace";
 import type { QnALogSemanticDocumentMeta } from "./semantic-outline-canvas";
 
+import { t } from "../shared/i18n";
 /** SemanticCanvasService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SemanticCanvasHost {
   /** 知识库与工作区访问。 */
@@ -229,19 +230,19 @@ export class SemanticCanvasService {
     if (!(sourceFile instanceof obsidian.TFile) || this.runningPaths.has(sourceFile.path)) return;
     const outlineNodes = parseRealtimeOutlineStateFromMarkdown(outlineMarkdown);
     if (options.mode === "full" && outlineNodes.length < 2) {
-      new obsidian.Notice("当前大纲内容太少，暂时无法生成语义图。", 5000);
+      new obsidian.Notice(t("The current outline is too short to generate a semantic graph yet."), 5000);
       return;
     }
     const llmIssue = options.mode !== "layout" ? getLlmConfigIssue(this.host.settings) : null;
     if (llmIssue) {
-      new obsidian.Notice(`生成语义图前需要先完成大模型配置：${formatLlmConfigIssue(llmIssue)}`, 9000);
+      new obsidian.Notice(`${t("Generating a semantic graph requires LLM configuration first: ")}${formatLlmConfigIssue(llmIssue)}`, 9000);
       return;
     }
 
     this.runningPaths.add(sourceFile.path);
-    this.progressByPath.set(sourceFile.path, { label: "正在读取纪要", phase: "prepare", current: 0, total: 1 });
+    this.progressByPath.set(sourceFile.path, { label: t("Reading note"), phase: "prepare", current: 0, total: 1 });
     if (repaint.immediate) repaint.immediate();
-    const progressNotice = new obsidian.Notice("正在读取纪要…", 300000);
+    const progressNotice = new obsidian.Notice(t("Reading note..."), 300000);
     const updateProgress = async (phase, label, current = 0, total = 1) => {
       this.progressByPath.set(sourceFile.path, { phase, label, current, total });
       progressNotice.setMessage(total > 1 ? `${label}（${current}/${total}）` : label);
@@ -381,7 +382,7 @@ export class SemanticCanvasService {
         error: diagnosticError(error),
       });
       progressNotice.hide();
-      new obsidian.Notice(`语义 Canvas 生成失败：${(error && error.message) || error}`, 9000);
+      new obsidian.Notice(`${t("Semantic Canvas generation failed: ")}${(error && error.message) || error}`, 9000);
     } finally {
       this.runningPaths.delete(sourceFile.path);
       this.progressByPath.delete(sourceFile.path);

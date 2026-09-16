@@ -39,6 +39,7 @@ import { NoteIndexService } from "../notes/note-index-service";
 import { ViewShellService } from "../ui/view-shell-service";
 import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
@@ -86,7 +87,7 @@ export class SessionFinalizeService {
       else await this.host.recording.saveMasterAudio(session, seg);
       this.host.recording.setSessionWorkProgress(session, {
         stage: "transcribe-finalized",
-        label: "转写收尾",
+        label: t("Finalizing transcription"),
         percent: null,
         detail: "分段录音已停止，完整录音已保留，正在整理已有转写",
       });
@@ -133,7 +134,7 @@ export class SessionFinalizeService {
       } catch (e) {
         spoolResult = { persisted: false, fallbackBlob: seg.blob, error: e };
         console.error(e);
-        new obsidian.Notice(`段${segNumber} 音频写入失败：${(e && e.message) || e}`);
+        new obsidian.Notice(`${t(" segments")}${segNumber}${t(" audio write failed: ")}${(e && e.message) || e}`);
       }
     }
     if (spoolResult && spoolResult.queueTaskId) seg.queueTaskId = spoolResult.queueTaskId;
@@ -153,7 +154,7 @@ export class SessionFinalizeService {
     const isStreamingProvider = activeProfile && activeProfile.transcribeMode === "streaming";
     this.host.recording.setSessionWorkProgress(session, {
       stage: "transcribing",
-      label: `转写第 ${segNumber} 段`,
+      label: `${t("Transcript segment ")}${segNumber}${t(" segments")}`,
       percent: null,
       detail: "音频正在发送到转写服务",
     });
@@ -257,7 +258,7 @@ export class SessionFinalizeService {
                 && channelTranscription.separation === "duplicated"
                 && !session._channelDuplicatedNotified) {
                 session._channelDuplicatedNotified = true;
-                new obsidian.Notice("各声道内容相同，已按单声道转写。请在接收器上把输出改为「Stereo（立体声）」后重试。", 10000);
+                new obsidian.Notice(t("All channels have identical content; transcribed as mono. Please change the receiver output to \"Stereo\" and try again."), 10000);
                 await this.host.diagnostics.logDiagnostic("warn", "asr.channel_content_duplicated", "录音多声道内容重复，已回退为单声道转写", {
                   actualChannelCount: channelTranscription.actualChannelCount,
                   inputLabel: session.audioChannelLabel || "",
@@ -368,7 +369,7 @@ export class SessionFinalizeService {
       });
       if (!hadAnyText && !session._emptyAsrNotified) {
         session._emptyAsrNotified = true;
-        new obsidian.Notice("本段没有检测到语音。请到「设置 → 常规 → 音频输入」测试所选设备。", 9000);
+        new obsidian.Notice(t("No speech detected in this segment. Go to \"Settings → General → Audio input\" to test the selected device."), 9000);
       }
     } else {
       this.host.recording.clearRecordingIssue("network");
@@ -423,7 +424,7 @@ export class SessionFinalizeService {
         streaming: isStreamingProvider,
         deferred: !!err.asrDeferred,
         retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)),
-      }) : (text ? text : "_[此段无内容]_"),
+      }) : (text ? text : t("_[No content in this segment]_")),
       "",
     ].join("\n");
     await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
@@ -437,7 +438,7 @@ export class SessionFinalizeService {
       detail: seg.isFinal ? "正在进入 AI 整理" : (err && err.asrDeferred ? "音频已落盘，等待后台补转写" : "分段转写已写入纪要"),
     });
 
-    if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`段 ${segNumber} 已转写`);
+    if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`${t(" segments ")}${segNumber}${t(" transcribed")}`);
 
     if (this.host.settings.enableRealtimeOutline && text && !err) {
       this.host.outline.scheduleRealtimeOutline();
@@ -471,7 +472,7 @@ export class SessionFinalizeService {
         try {
           this.host.recording.setSessionWorkProgress(session, {
             stage: "finalize-failed",
-            label: "纪要收尾失败",
+            label: t("Failed to finalize minutes"),
             percent: null,
             detail: "原始转写和录音已保留，可打开笔记后重新整理",
           });
@@ -485,7 +486,7 @@ export class SessionFinalizeService {
             error: diagnosticError(e),
           });
         } catch { /* intentionally empty */ }
-        new obsidian.Notice("纪要收尾失败；原始转写和录音已保留，可在笔记中使用「重新整理」。", 10000);
+        new obsidian.Notice(t("Failed to finalize minutes; the original transcript and recording have been kept. You can use \"Reorganize\" in the note."), 10000);
         if (this.host.session === session) this.host.session = null;
         this.host.shell.refreshOutlineView();
       }
@@ -517,7 +518,7 @@ export class SessionFinalizeService {
     if (!alreadyConfirmed && !session._speakerNameConfirmationSkipped) {
       this.host.recording.setSessionWorkProgress(session, {
         stage: "speaker-confirm",
-        label: "确认说话人",
+        label: t("Confirm speakers"),
         percent: 52,
         detail: `识别到 ${candidates.length} 位说话人，等待确认姓名后继续整理`,
       });
@@ -581,7 +582,7 @@ export class SessionFinalizeService {
             error: diagnosticError(error),
           });
         } catch { /* diagnostics must not change finalization behavior */ }
-        new obsidian.Notice("说话人姓名已保存，但原始转写中的显示名未能更新；可在大纲中再次保存。", 8000);
+        new obsidian.Notice(t("Speaker names were saved, but the display names in the original transcript could not be updated; you can save again from the outline."), 8000);
       }
       if (namesPersisted) {
         try {
@@ -613,7 +614,7 @@ export class SessionFinalizeService {
 
     if (session.filteredShortRecording) {
       await this.host.recording.discardFilteredShortSession(session);
-      new obsidian.Notice("已过滤小于三秒录音");
+      new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
       if (this.host.session === session) this.host.session = null;
       this.host.shell.refreshOutlineView();
       return;
@@ -621,7 +622,7 @@ export class SessionFinalizeService {
 
     if (!session.segments || session.segments.length === 0) {
       await this.host.noteWriter.removeEmptySessionBlock(session);
-      new obsidian.Notice("⏭ 本次录音时长过短或无有效音频，已跳过");
+      new obsidian.Notice(t("⏭ This recording was too short or had no valid audio; skipped"));
       if (this.host.session === session) this.host.session = null;
       this.host.shell.refreshOutlineView();
       return;
@@ -633,7 +634,7 @@ export class SessionFinalizeService {
     // 仅对真实录音会话判静音：导入/文本导入不经 recorder，会读到上一场录音遗留的计数残值 → 误报。
     if (!session.source && _silTotal >= 30 && (_silVoiced / _silTotal) < 0.02 && !session._silenceNotified) {
       session._silenceNotified = true;
-      new obsidian.Notice("整场几乎没检测到声音，请检查所选麦克风 / 电脑音频设备（设置 → 进阶 → 音频设备检测）。", 9000);
+      new obsidian.Notice(t("Almost no sound was detected in the whole session; please check the selected microphone / computer audio device (Settings → Advanced → Audio device check)."), 9000);
     }
 
     const textImportSession = isTextImportSession(session);
@@ -646,7 +647,7 @@ export class SessionFinalizeService {
       const noTranscriptError = new Error("没有可用于整理的有效转写文本；录音和失败切片已保留");
       this.host.recording.setSessionWorkProgress(session, {
         stage: "transcript-empty",
-        label: "没有获得有效转写",
+        label: t("No valid transcript obtained"),
         percent: null,
         detail: "已保留录音，可检查转写服务后从待处理队列重试",
       });
@@ -659,7 +660,7 @@ export class SessionFinalizeService {
         });
       } catch { /* intentionally empty */ }
       await this.host.noteWriter.appendPolishBlock(writeSession, "", noTranscriptError, true);
-      new obsidian.Notice("没有获得有效转写；录音和失败切片已保留，请检查转写服务后在待处理队列重试。", 10000);
+      new obsidian.Notice(t("No valid transcript obtained; the recording and failed slices have been kept. Please check the transcription service and retry from the pending queue."), 10000);
       if (this.host.settings.autoOpenNoteAfterFinish) {
         const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
         if (file instanceof obsidian.TFile) {
@@ -707,7 +708,7 @@ export class SessionFinalizeService {
       }
       this.host.recording.setSessionWorkProgress(session, {
         stage: "workbench",
-        label: "整理上下文",
+        label: t("Organize context"),
         percent: 22,
         detail: "正在合并会中记录、附件和上下文",
       });
@@ -715,7 +716,7 @@ export class SessionFinalizeService {
       if (!textImportSession) {
         this.host.recording.setSessionWorkProgress(session, {
           stage: "outline",
-          label: "生成大纲",
+          label: t("Generate outline"),
           percent: 36,
           detail: "正在补齐实时大纲，供最终纪要参考",
         });
@@ -733,7 +734,7 @@ export class SessionFinalizeService {
       finalSessionMeta = sessionMeta;
       this.host.recording.setSessionWorkProgress(session, {
         stage: "llm-merge",
-        label: "AI 整理中",
+        label: t("AI organizing"),
         percent: 62,
         detail: textImport ? "正在把导入文本交给大模型结构化整理" : "正在把分段转写合并成最终纪要",
       });
@@ -753,7 +754,7 @@ export class SessionFinalizeService {
       session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
       this.host.recording.setSessionWorkProgress(session, {
         stage: "write-note",
-        label: "写入纪要",
+        label: t("Write to Minutes"),
         percent: 88,
         detail: "AI 输出已返回，正在写入 Obsidian 笔记",
       });
@@ -869,7 +870,7 @@ export class SessionFinalizeService {
         this.host.queueRetry.scheduleTaskQueueRetry(1500, "briefing-write-failure");
         this.host.recording.setSessionWorkProgress(session, {
           stage: "write-retrying",
-          label: "纪要写入等待重试",
+          label: t("Minutes write waiting to retry"),
           percent: null,
           detail: "AI 整理结果已保存，不会重复调用模型；稍后只重试写入",
         });
@@ -885,7 +886,7 @@ export class SessionFinalizeService {
     if (!mergeError) {
       this.host.recording.setSessionWorkProgress(session, {
         stage: "done",
-        label: "处理完成",
+        label: t("Processing complete"),
         percent: 100,
         detail: "纪要已写入，正在收尾",
       });

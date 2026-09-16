@@ -12,6 +12,7 @@ import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder,
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 import { NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** VersionStore 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface VersionStoreHost {
   /** 知识库与工作区访问。 */
@@ -218,7 +219,7 @@ export class VersionStore {
     const sourcePath = obsidian.normalizePath(String(fm.source_path || fallbackSourcePath || ""));
     const sourceFile = sourcePath ? this.host.app.vault.getAbstractFileByPath(sourcePath) : null;
     if (!(sourceFile instanceof obsidian.TFile)) {
-      new obsidian.Notice("找不到母本，无法切换版本。", 6000);
+      new obsidian.Notice(t("Master copy not found; cannot switch versions."), 6000);
       return;
     }
     const parts = splitLeadingFrontmatter(content);
@@ -242,7 +243,7 @@ export class VersionStore {
     manifest.updatedAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
     await this.writeVersionManifest(folder, manifest);
     try { await this.host.app.workspace.getLeaf(false).openFile(sourceFile); } catch { /* intentionally empty */ }
-    new obsidian.Notice(`已切换到版本：${meta.label}`, 3000);
+    new obsidian.Notice(`${t("Switched to version: ")}${meta.label}`, 3000);
   }
 }
 

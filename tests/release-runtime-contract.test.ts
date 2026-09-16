@@ -52,8 +52,9 @@ describe("release runtime contracts", () => {
   it("connects repolish work to visible pipeline progress", () => {
     expect(pluginSource).toContain("createBriefingLlmActivityOptions(plugin, computedMeta, patch)");
     expect(pluginSource).toContain("_taskActivityId: taskId");
-    expect(pluginSource).toContain('stageLabel: "正在生成新版本"');
-    expect(pluginSource).toContain('stageLabel: "正在完成文件处理"');
+    // 文案已改为英文源（i18n 后由词条表提供中文），断言键而非中文字面量
+    expect(pluginSource).toContain('stageLabel: t("Generating new version")');
+    expect(pluginSource).toContain('stageLabel: t("Finishing file processing")');
   });
 
   it("separates synthesis coverage from source-scaled detail repair", () => {

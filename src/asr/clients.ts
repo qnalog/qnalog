@@ -331,7 +331,7 @@ export class OpenAIRealtimeTranslationClient {
   async connect() {
     assertSafeServiceEndpoint(this.endpointBase, "websocket", "实时翻译服务地址");
     if (!this.apiKey) throw new Error("OpenAI API Key 未配置");
-    const WSCtor = await requireHeaderCapableWebSocket("OpenAI Realtime 翻译");
+    const WSCtor = await requireHeaderCapableWebSocket("OpenAI Realtime translation");
     const sep = this.endpointBase.indexOf("?") >= 0 ? "&" : "?";
     const url = this.endpointBase + sep + "model=" + encodeURIComponent(this.model);
     return new Promise((resolve, reject) => {

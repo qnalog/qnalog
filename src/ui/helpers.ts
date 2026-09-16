@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
+import { t } from '../shared/i18n';
 import { getDesktopModule } from "../shared/desktop-runtime";
 export {
   QNALOG_UPDATE_REPO_URL,
@@ -100,23 +101,23 @@ export function getRecentNoteProcessingState(content) {
     if (noteHasUsableRawTranscriptDespiteFailures(visibleText)) {
       return {
         kind: "raw",
-        label: hasMergeFailure ? "整理失败" : "待整理",
+        label: hasMergeFailure ? "整理失败" : t("To organize"),
         title: hasMergeFailure
-          ? "AI 整理失败；原始转写仍可重新整理生成最终纪要"
-          : "原始转写里有失败片段，但已没有可重试任务；可以右键重新整理生成最终纪要",
+          ? t("AI organization failed; the original transcript can still be re-organized to generate the final notes")
+          : t("Some segments in the original transcription failed, but no retryable tasks remain; right-click to reorganize and generate the final summary"),
       };
     }
     return {
       kind: "failed",
-      label: "转写失败",
-      title: "这篇纪要仍含有转写或整理失败标记",
+      label: t("Transcription failed"),
+      title: t("This minutes note still contains transcription or cleanup failure markers"),
     };
   }
   if (NS_SEGMENTS_START_RE.test(visibleText) || /^###\s+段落\s+\d+/m.test(visibleText)) {
     return {
       kind: "raw",
-      label: "待整理",
-      title: "这篇纪要目前主要是原始分段转写，还没有 LLM 整理版",
+      label: t("To organize"),
+      title: t("This minutes note is currently mostly raw segment transcriptions and has no LLM-cleaned version yet"),
     };
   }
   return null;
@@ -132,7 +133,7 @@ export function getImportMarkerState(content) {
   };
 }
 
-export function qnalogConfirm(app, title, body, ctaText = "确认") {
+export function qnalogConfirm(app, title, body, ctaText = t("Confirm")) {
   return new Promise((resolve) => {
     const modal = new obsidian.Modal(app);
     let decided = false;
@@ -143,7 +144,7 @@ export function qnalogConfirm(app, title, body, ctaText = "确认") {
       contentEl.createEl("h3", { text: title });
       contentEl.createEl("p", { text: body });
       const actions = contentEl.createDiv({ cls: "modal-button-container" });
-      const cancel = actions.createEl("button", { text: "取消", attr: { type: "button" } });
+      const cancel = actions.createEl("button", { text: t("Cancel"), attr: { type: "button" } });
       const ok = actions.createEl("button", { text: ctaText, cls: "mod-warning", attr: { type: "button" } });
       cancel.onclick = () => decide(false);
       ok.onclick = () => decide(true);
@@ -161,7 +162,7 @@ export function qnalogPromptText(app, title, placeholder, initialValue) {
     modal.onOpen = () => {
       const { contentEl } = modal;
       contentEl.empty();
-      contentEl.createEl("h3", { text: title || "输入" });
+      contentEl.createEl("h3", { text: title || t("Input") });
       const input = contentEl.createEl("input", { attr: { type: "text", placeholder: placeholder || "" } });
       input.setCssStyles({ width: "100%", marginBottom: "12px" });
       if (initialValue) input.value = String(initialValue);
@@ -170,9 +171,9 @@ export function qnalogPromptText(app, title, placeholder, initialValue) {
         else if (e.key === "Escape") { e.preventDefault(); done(null); }
       });
       const actions = contentEl.createDiv({ cls: "qnalog-modal-actions" });
-      const cancel = actions.createEl("button", { text: "取消" });
+      const cancel = actions.createEl("button", { text: t("Cancel") });
       cancel.onclick = () => done(null);
-      const ok = actions.createEl("button", { text: "确定", cls: "mod-cta" });
+      const ok = actions.createEl("button", { text: t("OK"), cls: "mod-cta" });
       ok.onclick = () => done(input.value);
       window.setTimeout(() => input.focus(), 30);
     };
@@ -187,13 +188,13 @@ export function openPickListModal(app, title, items, onPick) {
     const { contentEl } = modal;
     contentEl.empty();
     contentEl.createEl("h3", { text: title });
-    const search = contentEl.createEl("input", { cls: "qnalog-pick-search", attr: { type: "text", placeholder: "搜索…" } });
+    const search = contentEl.createEl("input", { cls: "qnalog-pick-search", attr: { type: "text", placeholder: t("AI answer") } });
     const listEl = contentEl.createDiv({ cls: "qnalog-pick-list" });
     const render = (filter) => {
       listEl.empty();
       const f = String(filter || "").toLowerCase();
       const shown = items.filter(x => !f || x.toLowerCase().includes(f)).slice(0, 300);
-      if (!shown.length) { listEl.createDiv({ cls: "qnalog-pick-empty", text: "无匹配项" }); return; }
+      if (!shown.length) { listEl.createDiv({ cls: "qnalog-pick-empty", text: t("No matches") }); return; }
       for (const id of shown) {
         const row = listEl.createEl("button", { cls: "qnalog-pick-item", text: id, attr: { type: "button" } });
         row.onclick = () => { modal.close(); onPick(id); };
@@ -284,9 +285,9 @@ export function normalizeAudioInputMode(mode) {
 
 export function audioInputModeLabel(mode) {
   const labels = {
-    mic: "仅麦克风",
-    "mix-virtual": "麦克风 + 电脑音频",
-    virtualCable: "仅电脑音频",
+    mic: t("Microphone only"),
+    "mix-virtual": t("Microphone + computer audio"),
+    virtualCable: t("Computer audio only"),
   };
   return labels[normalizeAudioInputMode(mode)] || labels.mic;
 }
@@ -298,9 +299,9 @@ export function classifyImportTextFileForModal(file, content) {
   if (!hasSignal) {
     return {
       category: "external",
-      badge: file && String(file.extension || "").toLowerCase() === "txt" ? "TXT" : "外部稿",
-      reason: "普通文本",
-      statusTitle: "非 Q&A Log 转写，可作为速录稿直接整理",
+      badge: file && String(file.extension || "").toLowerCase() === "txt" ? "TXT" : t("External transcript"),
+      reason: t("Plain text"),
+      statusTitle: t("Not a Q&A Log transcript; can be organized directly as a dictation draft"),
     };
   }
 
@@ -309,20 +310,20 @@ export function classifyImportTextFileForModal(file, content) {
   if (successful && !processingState) {
     return {
       category: "qnalog-normal",
-      badge: "已整理",
-      reason: "可合并 / 换模板",
-      statusTitle: "Q&A Log 已整理纪要，可用于多篇合并、换模板重整或转成其他模式",
+      badge: t("Organized"),
+      reason: t("Can merge / switch template"),
+      statusTitle: t("Q&A Log has organized minutes that can be used for merging several notes, re-organizing with another template, or converting to another mode"),
     };
   }
 
   const label = processingState && processingState.label
     ? processingState.label
-    : (marker.hasSegments ? "待整理" : "碎片稿");
+    : (marker.hasSegments ? "待整理" : t("Fragment draft"));
   return {
     category: "qnalog-repair",
     badge: label,
-    reason: processingState && processingState.title ? processingState.title : "检测到 Q&A Log 标记，但没有稳定的整理正文",
-    statusTitle: processingState && processingState.title ? processingState.title : "适合重新整理或补救失败转写",
+    reason: processingState && processingState.title ? processingState.title : t("Detected Q&A Log markers, but no stable organized body text"),
+    statusTitle: processingState && processingState.title ? processingState.title : t("Suitable for re-cleaning or recovering failed transcriptions"),
   };
 }
 
