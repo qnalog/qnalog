@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
+import { t } from "../src/shared/i18n";
 import type { PluginSettings } from "../src/shared/types";
 import {
   applyPresetPlan,
@@ -101,7 +102,7 @@ describe("百炼一站式配置", () => {
 
     expect(report.stages.map((s) => s.stage)).toEqual(["transcribe", "import-transcribe", "llm"]);
     expect(report.ok).toBe(true);
-    expect(formatDetectionReport(report)).toContain("录音转写 ✓");
+    expect(formatDetectionReport(report)).toContain("Recording transcription ✓");
   });
 
   it("任一段失败都如实报出是哪一段，且整体判为未通过", async () => {
@@ -120,7 +121,7 @@ describe("百炼一站式配置", () => {
     expect(importStage?.ok).toBe(false);
     expect(importStage?.detail).toContain("模型未开通");
     // 未通过时不应给出「配置完成」这类结论
-    expect(formatDetectionReport(report)).toContain("音频导入转写 ✗");
+    expect(formatDetectionReport(report)).toContain("Audio import transcription ✗");
   });
 
   it("密钥无效时整段未通过，界面据此不落盘（四态为未通过）", async () => {
@@ -183,20 +184,20 @@ describe("快速配置面板的显示规则", () => {
 
 describe("使用状态总览", () => {
   const base = {
-    transcribe: { value: "阿里云百炼实时转写", detail: "qwen-audio-3.0-asr-flash-streaming" },
-    llm: { value: "阿里云百炼 / DashScope", detail: "qwen3.8-flash" },
-    speaker: { value: "已启用", detail: "qwen-audio-3.0-asr-flash-filetrans" },
+    transcribe: { value: "Alibaba Cloud Bailian real-time transcription", detail: "qwen-audio-3.0-asr-flash-streaming" },
+    llm: { value: "Alibaba Cloud Bailian / DashScope", detail: "qwen3.8-flash" },
+    speaker: { value: "Enabled", detail: "qwen-audio-3.0-asr-flash-filetrans" },
     audio: { value: "MacBook Pro 麦克风 · 可用", detail: "系统默认" },
   };
 
   it("配好时给出肯定结论，且不复述下面已逐项列出的能力", () => {
     const report = buildSetupStatus(base);
     expect(report.ready).toBe(true);
-    expect(report.headline).toBe("已准备好");
-    expect(report.detail).toBe("核心配置已完成，可以开始录音。");
+    expect(report.headline).toBe("Ready to go");
+    expect(report.detail).toBe("Core setup is complete; you can start recording.");
     // 总结里不该再点名具体服务，那会让总结变成清单的副本
     expect(report.detail).not.toContain("转写");
-    expect(report.detail).not.toContain("AI 整理");
+    expect(report.detail).not.toContain(t("AI Organize"));
   });
 
   it("正常状态不给任何一行挂状态图标（一排相同标记等于没有信息量）", () => {
@@ -211,39 +212,39 @@ describe("使用状态总览", () => {
       audio: { value: "已选择的麦克风不可用", issue: "已选择的麦克风不可用", failure: "已选择的麦克风不可用" },
     });
     const byLabel = Object.fromEntries(report.lines.map((l) => [l.label, l]));
-    expect(byLabel["语音转写"].icon).toBe("!");
-    expect(byLabel["音频输入"].icon).toBe("×");
+    expect(byLabel[t("Speech transcription")].icon).toBe("!");
+    expect(byLabel[t("Audio input")].icon).toBe("×");
     // 没问题的行仍然不带图标
-    expect(byLabel["AI 整理"].icon).toBe("");
-    expect(byLabel["说话人识别"].icon).toBe("");
+    expect(byLabel[t("AI Organize")].icon).toBe("");
+    expect(byLabel[t("Speaker recognition")].icon).toBe("");
   });
 
   it("每行以服务名为主、模型 ID 为辅", () => {
     const rows = Object.fromEntries(buildSetupStatus(base).lines.map((l) => [l.label, l]));
-    expect(rows["语音转写"].value).toBe("阿里云百炼实时转写");
-    expect(rows["语音转写"].detail).toBe("qwen-audio-3.0-asr-flash-streaming");
-    expect(rows["AI 整理"].value).toBe("阿里云百炼 / DashScope");
-    expect(rows["说话人识别"].value).toBe("已启用");
-    expect(rows["音频输入"].value).toBe("MacBook Pro 麦克风 · 可用");
+    expect(rows[t("Speech transcription")].value).toBe("Alibaba Cloud Bailian real-time transcription");
+    expect(rows[t("Speech transcription")].detail).toBe("qwen-audio-3.0-asr-flash-streaming");
+    expect(rows[t("AI Organize")].value).toBe("Alibaba Cloud Bailian / DashScope");
+    expect(rows[t("Speaker recognition")].value).toBe("Enabled");
+    expect(rows[t("Audio input")].value).toBe("MacBook Pro 麦克风 · 可用");
   });
 
   it("缺转写或 AI 整理时不算准备好，并说清差几项、差哪些", () => {
     const one = buildSetupStatus({ ...base, transcribe: { value: "访问密钥未填写", issue: "访问密钥未填写" } });
     expect(one.ready).toBe(false);
-    expect(one.headline).toBe("还需要完成 1 项配置");
-    expect(one.detail).toContain("语音转写");
+    expect(one.headline).toBe(t("Still need to configure {0} items").replace("{0}", "1"));
+    expect(one.detail).toContain(t("Speech transcription"));
     // 缺配置时不显示残缺的模型名
-    expect(one.lines.find((l) => l.label === "语音转写")?.detail).toBe("");
+    expect(one.lines.find((l) => l.label === t("Speech transcription"))?.detail).toBe("");
 
     const two = buildSetupStatus({
       ...base,
       transcribe: { value: "访问密钥未填写", issue: "访问密钥未填写" },
       llm: { value: "模型名称未填写", issue: "模型名称未填写" },
     });
-    expect(two.headline).toBe("还需要完成 2 项配置");
+    expect(two.headline).toBe(t("Still need to configure {0} items").replace("{0}", "2"));
     expect(two.blockerCount).toBe(2);
-    expect(two.detail).toContain("语音转写");
-    expect(two.detail).toContain("AI 整理");
+    expect(two.detail).toContain(t("Speech transcription"));
+    expect(two.detail).toContain(t("AI Organize"));
   });
 
   it("拦住开始使用的计数与「能用但有问题」的项分开算", () => {
@@ -255,8 +256,8 @@ describe("使用状态总览", () => {
       audio: { value: "已选择的麦克风不可用", failure: "已选择的麦克风不可用" },
     });
     expect(r.blockerCount).toBe(1);
-    expect(r.headline).toBe("还需要完成 1 项配置");
-    expect(r.warnings).toEqual(["音频输入"]);
+    expect(r.headline).toBe(t("Still need to configure {0} items").replace("{0}", "1"));
+    expect(r.warnings).toEqual([t("Audio input")]);
     expect(r.ready).toBe(false);
   });
 
@@ -268,31 +269,31 @@ describe("使用状态总览", () => {
       audio: { value: "未检测（点下方「检测设备」）", detail: "仅麦克风" },
     });
     expect(report.ready).toBe(true);
-    expect(report.headline).toBe("已准备好");
+    expect(report.headline).toBe("Ready to go");
     // 能用，但说话人识别这一项仍要用户处理（服务不支持）
-    expect(report.warnings).toEqual(["说话人识别"]);
+    expect(report.warnings).toEqual([t("Speaker recognition")]);
     // 「还需要完成 N 项」的计数口径必须与 ready 一致：
     // 不能一边说还差几项、一边又给肯定结论。
     const warnButNotBlocking = buildSetupStatus({
       ...base,
       speaker: { value: "当前服务不支持", issue: "当前导入音频服务不做说话人识别" },
     });
-    expect(warnButNotBlocking.headline).toBe("已准备好");
+    expect(warnButNotBlocking.headline).toBe("Ready to go");
     expect(warnButNotBlocking.detail).not.toContain("还缺内容");
   });
 
   it("每行指向对应设置页，点哪一项去哪里是确定的", () => {
     expect(Object.fromEntries(buildSetupStatus(base).lines.map((l) => [l.label, l.target]))).toEqual({
-      "语音转写": "api",
-      "AI 整理": "ai",
-      "说话人识别": "api",
-      "音频输入": "recording",
+      [t("Speech transcription")]: "api",
+      [t("AI Organize")]: "ai",
+      [t("Speaker recognition")]: "api",
+      [t("Audio input")]: "recording",
     });
   });
 
   it("四项明细的标签固定，便于用户形成固定阅读位置", () => {
     expect(buildSetupStatus(base).lines.map((l) => l.label)).toEqual([
-      "语音转写", "AI 整理", "说话人识别", "音频输入",
+      t("Speech transcription"), t("AI Organize"), t("Speaker recognition"), t("Audio input"),
     ]);
   });
 });

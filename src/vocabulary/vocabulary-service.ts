@@ -13,6 +13,7 @@ import { KNOWLEDGE_EXTRACTION_BATCH_LIMIT } from "../shared/limits";
 import { ensureVaultFolder } from "../shared/util-vault";
 import type { IndustryProfile } from "../shared/types";
 
+import { t } from "../shared/i18n";
 /** 行业画像的空值；字段与目标类型一致，避免读方拿到缺字段的对象。 */
 function createEmptyIndustryProfile(): IndustryProfile {
   return { industry: "", scenarios: "", focus: "", outputPreference: "", generatedAt: null };
@@ -273,7 +274,7 @@ ${source}`;
       // 不再静默吞进隐藏的 customVocabulary：提示用户补路径，否则热词在设置里"看不见摸不着"
       this.host.settings.customVocabulary = flattenVocabularyGroups(groups).join("\n");
       await this.host.saveSettings();
-      try { new obsidian.Notice("未配置热词表路径，本次热词已暂存在插件设置中；请在「设置 → 信息对象 → ASR 热词表」填写路径后重新整理。", 9000); } catch { /* intentionally empty */ }
+      try { new obsidian.Notice(t("Hotword list path is not configured; this session's hotwords were stored in the plugin settings. Enter the path in \"Settings → Info Objects → ASR Hotword List\", then organize again."), 9000); } catch { /* intentionally empty */ }
       return null;
     }
     const norm = obsidian.normalizePath(path);
@@ -290,13 +291,13 @@ ${source}`;
   }
   async extractVocabularyFromLibrary() {
     if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) {
-      new obsidian.Notice("请先配置大模型服务");
+      new obsidian.Notice(t("Please configure the LLM service first"));
       return { processed: 0, added: 0, failed: 0, remaining: 0 };
     }
     const all = this.host.knowledgeExtraction.getKnowledgeExtractionSourceFiles("vocabulary");
     const batch = all.slice(0, KNOWLEDGE_EXTRACTION_BATCH_LIMIT);
     if (!batch.length) {
-      new obsidian.Notice("没有需要扫描的新纪要。修改过的纪要会自动重新进入扫描。");
+      new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return { processed: 0, added: 0, failed: 0, remaining: 0 };
     }
     new obsidian.Notice(`Q&A Log：正在扫描 ${batch.length} 篇纪要提取词汇…`);

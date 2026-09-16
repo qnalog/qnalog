@@ -7,6 +7,7 @@ import { clampProgress } from "./note-markdown";
 
 import * as obsidian from "obsidian";
 
+import { t } from "../shared/i18n";
 export function getSessionWorkProgressState(session, recorderState) {
   if (!session) return null;
   const progress = session.workProgress || session.aiProgress || {};
@@ -25,8 +26,8 @@ export function getSessionWorkProgressState(session, recorderState) {
   if (recorderState === "recording") {
     return {
       kind: "processing",
-      label: "录音中",
-      title: "正在录音；分段转写会陆续写入纪要",
+      label: t("Recording"),
+      title: t("Recording; segmented transcriptions will be written to the note as they complete"),
       detail: "正在录音；分段转写会陆续写入纪要",
       percent: pct,
     };
@@ -34,8 +35,8 @@ export function getSessionWorkProgressState(session, recorderState) {
   if (recorderState === "paused") {
     return {
       kind: "processing",
-      label: "已暂停",
-      title: "录音已暂停，继续后会接着处理",
+      label: t("Paused"),
+      title: t("Recording paused; processing will resume when you continue"),
       detail: "录音已暂停，继续后会接着处理",
       percent: pct,
     };

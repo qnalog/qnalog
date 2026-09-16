@@ -11,6 +11,7 @@ import { resolveAudioFileRef } from "../notes/audio-refs";
 import { analyzeEmptyShortNote } from "../notes/note-markdown";
 import { TaskQueue } from "../queue/task-queue";
 
+import { t } from "../shared/i18n";
 /** CleanupService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface CleanupHost {
   /** 知识库与工作区访问。 */
@@ -71,7 +72,7 @@ export class CleanupService {
     }
 
     if (!candidates.length) {
-      new obsidian.Notice("没有发现符合条件的空白短录音");
+      new obsidian.Notice(t("No blank short recordings matching the criteria were found"));
       return;
     }
 

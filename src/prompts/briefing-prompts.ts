@@ -28,6 +28,7 @@ import { getBriefingPartTargetChars } from "../briefing/pipeline";
 
 import { buildSynthesisPartInstruction } from "../briefing/synthesis-policy";
 
+import { t } from "../shared/i18n";
 // 结构化程度三档 —— 控制主体内容的层级深度
 // Q&A Log 视图（.base 文件）—— 默认创建到资料库的视图目录，可在设置里修改。
 export function buildStructureLevelInstruction(level) {
@@ -236,35 +237,35 @@ export function applyStructureLevelInstruction(prompt, settings, overrideLevel) 
 
 export const REPOLISH_PREFERENCE_PRESETS = {
   detailed: {
-    label: "更详细",
+    label: t("More detailed"),
     detailLevel: "detailed",
     structureLevel: "balanced",
     fidelity: "faithful",
     description: "主体内容更充分，保留更多事实、论证、例子和上下文。",
   },
   concise: {
-    label: "更精炼",
+    label: t("More concise"),
     detailLevel: "concise",
     structureLevel: "balanced",
     fidelity: "faithful",
     description: "压缩重复表达，保留结论、依据、待办和关键分歧。",
   },
   structured: {
-    label: "更结构化",
+    label: t("More structured"),
     detailLevel: "balanced",
     structureLevel: "strict",
     fidelity: "faithful",
     description: "强化标题、层级、论点—支撑—证据关系，适合复杂讨论。",
   },
   natural: {
-    label: "更自然",
+    label: t("More natural"),
     detailLevel: "balanced",
     structureLevel: "loose",
     fidelity: "faithful",
     description: "减少框架感，用更连贯的散文段落呈现。",
   },
   markdown: {
-    label: "MD 强化",
+    label: t("MD Enhance"),
     detailLevel: "balanced",
     structureLevel: "balanced",
     fidelity: "expanded",
@@ -272,7 +273,7 @@ export const REPOLISH_PREFERENCE_PRESETS = {
     description: "更多使用 Markdown 高亮、下划线和少量 callout，让重点更容易扫读。",
   },
   detailedExpanded: {
-    label: "详细拓展",
+    label: t("Detailed expansion"),
     detailLevel: "detailed",
     structureLevel: "balanced",
     fidelity: "expanded",
@@ -280,7 +281,7 @@ export const REPOLISH_PREFERENCE_PRESETS = {
     description: "在更完整保留上下文的同时，补充概念、疑问和分歧视角。",
   },
   structuredExpanded: {
-    label: "结构拓展",
+    label: t("Structural expansion"),
     detailLevel: "balanced",
     structureLevel: "strict",
     fidelity: "expanded",
@@ -288,14 +289,14 @@ export const REPOLISH_PREFERENCE_PRESETS = {
     description: "在更清晰的结构里加入必要的 AI 补充和 Markdown 标记。",
   },
   faithful: {
-    label: "忠于原文",
+    label: t("Faithful to source"),
     detailLevel: "balanced",
     structureLevel: "balanced",
     fidelity: "faithful",
     description: "不主动外推，只整理录音中明确出现的内容。",
   },
   expanded: {
-    label: "适度拓展",
+    label: t("Moderate expansion"),
     detailLevel: "balanced",
     structureLevel: "balanced",
     fidelity: "expanded",
@@ -590,7 +591,7 @@ export function createBriefingLlmActivityOptions(plugin, computedMeta, patch) {
     taskMeter,
     onQueued: () => plugin.tasks.patchTaskActivity(taskId, Object.assign({}, basePatch, {
       stage: "llm-queued",
-      stageLabel: "等待 AI 服务",
+      stageLabel: t("Waiting for AI service"),
       detail: "前面的模型任务完成后会自动开始",
     })),
     onStart: () => plugin.tasks.patchTaskActivity(taskId, basePatch),

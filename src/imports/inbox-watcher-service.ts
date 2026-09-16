@@ -8,6 +8,7 @@ import { isAbsoluteExternalInboxPath } from "../audio/external-inbox";
 import { isSyncConflictName } from "../notes/recording-issues";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 
+import { t } from "../shared/i18n";
 /** InboxWatcherService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface InboxWatcherHost {
   /** 知识库与工作区访问。 */
@@ -107,7 +108,7 @@ export class InboxWatcherService {
 
   async scanInboxFolder() {
     const inbox = this.host.settings.inboxFolder;
-    if (!inbox) { new obsidian.Notice("未配置监听文件夹"); return; }
+    if (!inbox) { new obsidian.Notice(t("Watch folder not configured")); return; }
     if (isAbsoluteExternalInboxPath(inbox)) {
       return this.host.externalInbox.scanExternalInboxFolder({ manual: true, source: "command" });
     }
@@ -126,7 +127,7 @@ export class InboxWatcherService {
     const conflicts = allChildren.filter(f => isSyncConflictName(f.name));
     const candidates = allChildren.filter(f => !isSyncConflictName(f.name));
     if (conflicts.length) new obsidian.Notice(`跳过 ${conflicts.length} 个同步冲突文件，请手动解决`, 8000);
-    if (!candidates.length) { new obsidian.Notice("监听文件夹中没有未处理文件"); return; }
+    if (!candidates.length) { new obsidian.Notice(t("No unprocessed files in the watch folder")); return; }
     new obsidian.Notice(`发现 ${candidates.length} 个未处理文件，开始排队…`);
     for (const f of candidates) await this.handleInboxFile(f);
   }

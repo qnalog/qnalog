@@ -1,6 +1,7 @@
 import type { RealtimeOutlineNode } from "../outline-text";
 import { NS_ACTIVE_VERSION_BODY_RE, NS_SEGMENTS_START_ONLY_RE, NS_TAG, readSemanticMeta, writeSemanticMeta } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 export interface SemanticCore {
   title: string;
   summary: string;
@@ -445,7 +446,7 @@ export function parseSemanticBranchExpansion(
     maxNodes: Math.max(2, policy.branchNodeBudget + 1),
   };
   const graph = parseSemanticOutlineGraph(JSON.stringify({
-    core: { title: "临时主线", summary: "" },
+    core: { title: t("Temporary thread"), summary: "" },
     branches: [branchValue],
   }), outlineNodes, sourceSections, branchPolicy);
   const expanded = graph?.branches[0];

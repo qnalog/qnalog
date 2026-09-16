@@ -9,6 +9,7 @@ import { TODO_WALL_FILE, formatTodoWallMarkdown, getBasesFolder, getWallPath, in
 import { ensureVaultFolder } from "../shared/util-vault";
 import { NS_WALL_MARKER_RE } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** LibraryViewService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface LibraryViewHost {
   /** 知识库与工作区访问。 */
@@ -94,7 +95,7 @@ export class LibraryViewService {
     const path = obsidian.normalizePath(getBasesFolder(this.host.settings) + "/场景/全部纪要总览.base");
     const file = this.host.app.vault.getAbstractFileByPath(path);
     if (file instanceof obsidian.TFile) await this.host.app.workspace.getLeaf(false).openFile(file);
-    else new obsidian.Notice("未找到明细 Base，请先创建视图文件。", 8000);
+    else new obsidian.Notice(t("Detail Base not found. Please create the view file first."), 8000);
     return file;
   }
 }

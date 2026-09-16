@@ -33,6 +33,7 @@ import { TaskActivityService } from "../tasks/task-activity-service";
 import { NoteWriter } from "../notes/note-writer";
 import { NS_AUDIO_ALT, nsMarker } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
@@ -121,7 +122,7 @@ export class QueueRetryService {
     this.scheduleTaskQueueRetry(delayMs, "session-deferred-asr");
   }
   async retryQueue() {
-    if (!this.host.queue.tasks.length) { new obsidian.Notice("队列为空"); return; }
+    if (!this.host.queue.tasks.length) { new obsidian.Notice(t("Queue is empty")); return; }
     const blockedMergeTasks = this.host.queue.tasks.filter((task) => task && task.type === "merge" && task.status === "blocked");
     if (blockedMergeTasks.length) {
       const llmIssue = getLlmConfigIssue(this.host.settings);
@@ -171,7 +172,7 @@ export class QueueRetryService {
     const tasks = getQueueTasksForMarkdown(this.host, file, { types: ["transcribe"] })
       .filter((task) => ["failed", "missing", "pending"].includes(task.status || "pending") && !!task.lastError);
     if (!tasks.length) {
-      new obsidian.Notice("这篇纪要当前没有可重试的转写任务。", 5000);
+      new obsidian.Notice(t("This note currently has no transcription tasks to retry."), 5000);
       return;
     }
     new obsidian.Notice(`Q&A Log：正在重试 ${tasks.length} 个转写片段…`);
@@ -587,7 +588,7 @@ export class QueueRetryService {
     if (!mode) throw new Error("缺少 mode");
     const tpl = await this.host.vocabulary.generateAndApplyIndustryPrompt(mode, { activate: task.activate !== false });
     const activated = task.activate !== false;
-    new obsidian.Notice("已创建自定义提示词「" + tpl.name + "」" + (activated ? "，并设为当前默认。" : "。"), 7000);
+    new obsidian.Notice(t("Created custom prompt \"") + tpl.name + "」" + (activated ? "，并设为当前默认。" : "。"), 7000);
     if (this.host.settingTab) {
       try { this.host.settingTab.display(); } catch { /* intentionally empty */ }
     }
@@ -601,7 +602,7 @@ export class QueueRetryService {
     const existing = this.host.queue.findActiveGeneratePromptTask(mode);
     if (existing) {
       const meta = getModeMeta(this.host.settings, mode);
-      new obsidian.Notice("已存在生成任务：参考「" + (meta.prefix || mode) + "」的自定义提示词正在队列中", 5000);
+      new obsidian.Notice(t("A generation task already exists: reference \"") + (meta.prefix || mode) + "」的自定义提示词正在队列中", 5000);
       return existing;
     }
     const task = await this.host.queue.add({
@@ -610,7 +611,7 @@ export class QueueRetryService {
       activate: !options || options.activate !== false,
     });
     const meta = getModeMeta(this.host.settings, mode);
-    new obsidian.Notice("已加入后台队列：参考「" + (meta.prefix || mode) + "」生成自定义提示词（切换页面不会中断）", 5000);
+    new obsidian.Notice(t("Added to the background queue: reference \"") + (meta.prefix || mode) + "」生成自定义提示词（切换页面不会中断）", 5000);
     try { this.host.recorder.emit(); } catch { /* intentionally empty */ }
     // 立刻拉起队列处理（不 await，让调用方立刻返回）
     this.host.queue.processAll()

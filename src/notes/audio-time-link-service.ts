@@ -10,6 +10,7 @@ import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import { extractAudioSegmentOffsets, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget } from "../notes/audio-refs";
 import { isTimeLabel } from "../notes/note-markdown";
 
+import { t } from "../shared/i18n";
 /** AudioTimeLinkService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface AudioTimeLinkHost {
   /** 知识库与工作区访问。 */
@@ -121,7 +122,7 @@ export class AudioTimeLinkService {
         }
       }
       if (this.seekOutlineInlineAudio(fallbackPayload)) return;
-      new obsidian.Notice("Q&A Log：找不到对应音频文件，可能已被移动或删除。", 6000);
+      new obsidian.Notice(t("Q&A Log: the corresponding audio file was not found; it may have been moved or deleted."), 6000);
       return;
     }
     if (opts && typeof opts.onTimeLink === "function") {

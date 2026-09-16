@@ -28,6 +28,7 @@ import { ViewShellService } from "../ui/view-shell-service";
 import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { nsMarker } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** 导入音频的返回：新建会话的路径、分段数，以及需要重试的转写段数；入参为空或中断时返回 undefined。 */
 export interface ImportAudioFilesResult {
   mdPath: string;
@@ -192,7 +193,7 @@ export class ImportService {
       event: {
         stageId: "prepare",
         type: "created",
-        label: "导入任务已建立",
+        label: t("Import task created"),
         detail: `整文件转写 · ${importProfile.title || importProvider.id}${speakerModeLabel}`,
       },
     });
@@ -248,7 +249,7 @@ export class ImportService {
         blob = new Blob([ab], { type: mime });
         durationMs = await getAudioDurationMs(blob);
         if (speakerDiarization && durationMs > 2 * 60 * 60 * 1000 && isDashScopeFileTransProvider(importProvider)) {
-          new obsidian.Notice("该音频超过 2 小时。仍会整文件提交，但阿里云建议说话人分离单文件不超过 2 小时。", 9000);
+          new obsidian.Notice(t("This audio exceeds 2 hours. It will still be submitted as a whole file, but Alibaba Cloud recommends keeping speaker separation files under 2 hours."), 9000);
         }
         if (paths.length === 1 && keepSourceAudio) {
           session.masterAudioName = displayName;
@@ -489,7 +490,7 @@ export class ImportService {
       this.host.tasks.updateImportActivity({
         phase: "transcribe",
         error: message,
-        label: "语音转写未完成",
+        label: t("Speech transcription not completed"),
       });
       new obsidian.Notice(message, 9000);
       return {
@@ -512,7 +513,7 @@ export class ImportService {
       this.host.tasks.updateImportActivity({
         phase: "persist",
         error: checkpointError.message,
-        label: "原始转写写入未完成",
+        label: t("Original transcript write did not complete"),
       });
       await this.host.diagnostics.logDiagnostic("error", "asr.import_transcript_checkpoint_failed", "导入音频原始转写检查点未通过", {
         mdPath: session.mdPath,
@@ -598,7 +599,7 @@ export class ImportService {
       }
     }
     if (!sources.length) {
-      new obsidian.Notice("没有可处理的文本内容");
+      new obsidian.Notice(t("No text content to process"));
       return;
     }
 
@@ -662,7 +663,7 @@ export class ImportService {
     this.host.session = session;
     this.host.recording.setSessionWorkProgress(session, {
       stage: "text-import",
-      label: "读取文本",
+      label: t("Read text"),
       percent: 8,
       detail: `已读取 ${sources.length} 个文本来源，准备进入 AI 整理`,
     });

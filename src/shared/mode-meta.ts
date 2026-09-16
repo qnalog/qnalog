@@ -3,6 +3,7 @@
 import * as obsidian from "obsidian";
 import { MODE_META } from './catalog-modes';
 
+import { t } from "../shared/i18n";
 export const STANDARD_POLISH_MODES = ["synthesis", "meeting", "seminar", "interview", "monologue", "learning"];
 
 // 曾用于"必须先解锁才可见"的模式（招聘评估 / 招聘需求挖掘 / 晋升评审），随 HR 场景一并移除；
@@ -68,7 +69,7 @@ export function getModeMeta(settings, mode) {
   const custom = getCustomPromptModeTemplate(settings, mode);
   if (custom) {
     const name = custom.name || "自定义提示词";
-    return { prefix: name, emoji: "🧩", icon: "puzzle", label: "自定义提示词：" + name, goal: custom.description || "用户自定义提示词。", baseMode: custom.baseMode || "learning", custom: true };
+    return { prefix: name, emoji: "🧩", icon: "puzzle", label: t("Custom prompt:") + name, goal: custom.description || "用户自定义提示词。", baseMode: custom.baseMode || "learning", custom: true };
   }
   return MODE_META.meeting;
 }

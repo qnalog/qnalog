@@ -16,6 +16,7 @@ import { classifyRecordingIssue } from "../notes/recording-issues";
 import { REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS, REALTIME_OUTLINE_FINAL_MAX_BATCHES, REALTIME_OUTLINE_FINAL_MAX_TOKENS, REALTIME_OUTLINE_FINAL_TIMEOUT_MS, REALTIME_OUTLINE_LOOKBACK_SEGMENTS, REALTIME_OUTLINE_MANUAL_TIMEOUT_MS, REALTIME_OUTLINE_MAX_MEMORY_CHARS, REALTIME_OUTLINE_MAX_NO_CHANGE_REJECTIONS, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS, REALTIME_OUTLINE_MAX_SEGMENTS, REALTIME_OUTLINE_MAX_TRANSCRIPT_CHARS, REALTIME_OUTLINE_MIN_NEW_SEGMENTS, REALTIME_OUTLINE_MIN_SEMANTIC_DELTA_CHARS, REALTIME_OUTLINE_SILENT_MAX_TOKENS, REALTIME_OUTLINE_SILENT_TIMEOUT_MS, buildOutlinePrompt, buildRealtimeOutlineAnchorSources, buildRealtimeOutlineTranscript, buildRollingOutlineContext, clipRealtimeContextText, getRealtimeOutlineNewSegmentCount, getRealtimeOutlineQueuedDelayMs, getRealtimeOutlineTimeoutMs, hasRealtimeOutlineRunnableBacklog, isRealtimeOutlineBackoffActive, isRealtimeOutlineCurrent, isRealtimeOutlineSilentIntervalActive, markRealtimeOutlineFailure, markRealtimeOutlineSuccess, normalizeRealtimeOutlineState, parseRealtimeOutlineResponse, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline, updateRealtimeOutlineCoverage } from "../notes/realtime-outline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 
+import { t } from "../shared/i18n";
 /** 实时大纲的调度与生成参数；四个入口共用同一套可选项。 */
 export interface RealtimeOutlineRequestOptions {
   /** 请求的防抖延迟（毫秒）；缺省按设置的 realtimeOutlineDebounceMs。 */
@@ -237,7 +238,7 @@ export class RealtimeOutlineService {
         });
         new obsidian.Notice(`大纲生成失败：${(e && e.message) || e}`);
       } else if (Number(session.realtimeOutlineFailureCount || 0) === 1) {
-        new obsidian.Notice("实时大纲暂时未更新，转写仍在继续，稍后会自动重试。", 7000);
+        new obsidian.Notice(t("The live outline has not been updated yet; transcription is still running and it will retry automatically later."), 7000);
       }
       throw e;
     }
@@ -657,7 +658,7 @@ export class RealtimeOutlineService {
     });
     this.host.recording.setSessionWorkProgress(session, {
       stage: "outline",
-      label: "大纲未完全补齐",
+      label: t("Outline not fully completed"),
       percent: 58,
       detail: `已覆盖 ${drainResult.committedSegmentCount}/${totalSegmentCount} 段；最终纪要仍会使用全部转写`,
     });

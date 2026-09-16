@@ -37,6 +37,7 @@ import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { ViewShellService } from "../ui/view-shell-service";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
   appendToFile?: unknown;
@@ -118,7 +119,7 @@ export class RecordingService {
 
   async startRecording(options: StartRecordingOptions = {}) {
     if (this.host.recorder.state !== "idle") {
-      new obsidian.Notice("当前已有录音进行中，请先停止后再继续录音。", 5000);
+      new obsidian.Notice(t("A recording is already in progress. Please stop it before continuing to record."), 5000);
       return;
     }
     const appendTargetFile = options && options.appendToFile instanceof obsidian.TFile ? options.appendToFile : null;
@@ -197,7 +198,7 @@ export class RecordingService {
       };
       this.setSessionWorkProgress(this.host.session, {
         stage: "recording",
-        label: "录音中",
+        label: t("Recording"),
         percent: null,
         detail: "正在采集音频，分段后会自动转写",
       });
@@ -240,7 +241,7 @@ export class RecordingService {
       if (isStreaming && isMobileRuntime()) {
         // 移动端无 Node WebSocket（设不了鉴权头），流式必败：不建流式客户端，提前明示。
         // 录音照常进行，停止时走既有的「流式连接未建立」兜底（音频保留）。
-        new obsidian.Notice("移动端暂不支持流式转写；本次录音会保留音频，请在桌面端使用流式，或切换到分段转写服务。", 9000);
+        new obsidian.Notice(t("Streaming transcription is not supported on mobile yet; this recording will keep its audio, so use streaming on desktop or switch to a segmented transcription service."), 9000);
       } else if (isStreaming) {
         onStreamReady = async (mediaStream) => {
           const sampleRate = activeProfile.streamProtocol && activeProfile.streamProtocol.startsWith("openai-realtime") ? 24000 : 16000;
@@ -304,7 +305,7 @@ export class RecordingService {
         sessionRef.speakerChannels = {};
         if (isStreaming && count > 1) {
           sessionRef.channelSeparationMode = "single";
-          new obsidian.Notice("实时转写暂不区分说话人；如需区分，请在导入音频时启用说话人识别。", 9000);
+          new obsidian.Notice(t("Live transcription does not separate speakers yet; to separate them, enable speaker identification when importing audio."), 9000);
         }
         if (providerStreamReady) await providerStreamReady(mediaStream);
       };
@@ -332,10 +333,10 @@ export class RecordingService {
         new obsidian.Notice(`已开始续录到「${continuationInfo.file.basename}」；停止后会与原纪要重新合并。`, 8000);
       }
       if (forcedMobileMic) {
-        new obsidian.Notice("移动端暂只支持麦克风录音；电脑音频/虚拟声卡请在桌面端使用。", 8000);
+        new obsidian.Notice(t("Mobile only supports microphone recording for now; use computer audio / virtual audio devices on desktop."), 8000);
       }
       if (isMobileRuntime()) {
-        new obsidian.Notice("手机端录音时请保持 Obsidian 在前台，锁屏或切后台可能中断录音。", 8000);
+        new obsidian.Notice(t("On mobile, keep Obsidian in the foreground while recording; locking the screen or switching to the background may interrupt the recording."), 8000);
       }
     } catch (e) {
       console.error(e);
@@ -359,7 +360,7 @@ export class RecordingService {
 
   async stopRecording() {
     if (this.host.recorder.state === "idle") return;
-    new obsidian.Notice("⏹ 已请求停止，处理最后一段…");
+    new obsidian.Notice(t("⏹ Stop requested, processing the final segment..."));
     await this.host.recorder.stop();
     this.clearRecordingIssue();
   }
@@ -726,11 +727,11 @@ export class RecordingService {
       });
       if (nextLevel === "warning" && !session._asrBacklogWarningNotified) {
         session._asrBacklogWarningNotified = true;
-        new obsidian.Notice("转写速度暂时慢于录音，音频分段已安全写入缓存，Q&A Log 会继续处理。", 8000);
+        new obsidian.Notice(t("Transcription is temporarily slower than recording; audio segments have been safely written to cache and Q&A Log will keep processing."), 8000);
       }
       if (nextLevel === "critical" && !session._asrBacklogCriticalNotified) {
         session._asrBacklogCriticalNotified = true;
-        new obsidian.Notice("转写积压较多，后续分段已转入后台队列；录音不会中断。", 10000);
+        new obsidian.Notice(t("There is a large transcription backlog; later segments have been moved to a background queue. Recording will not be interrupted."), 10000);
       }
     }
     return summary;
@@ -887,7 +888,7 @@ export class RecordingService {
         });
         if (!session._segmentCacheWriteFailureNotified) {
           session._segmentCacheWriteFailureNotified = true;
-          new obsidian.Notice("录音分段缓存写入失败，本段将临时保留在内存中继续处理。请检查知识库磁盘空间。", 10000);
+          new obsidian.Notice(t("Failed to write the recording segment cache; this segment will be kept in memory temporarily and processing will continue. Please check the vault disk space."), 10000);
         }
         return { persisted: false, fallbackBlob: blob, error: e };
       }
@@ -903,7 +904,7 @@ export class RecordingService {
         });
         if (!session._segmentTaskPersistFailureNotified) {
           session._segmentTaskPersistFailureNotified = true;
-          new obsidian.Notice("录音分段已保存，但恢复任务登记失败；本场仍会继续转写，请不要强制关闭 Obsidian。", 10000);
+          new obsidian.Notice(t("The recording segment was saved, but registering the recovery task failed; transcription will continue for this session, so please do not force-quit Obsidian."), 10000);
         }
       }
       const job = jobs.get(descriptor.jobId);
@@ -1020,7 +1021,7 @@ export class RecordingService {
       });
       if (!session._asrCircuitOpenNotified) {
         session._asrCircuitOpenNotified = true;
-        new obsidian.Notice("转写服务连续失败，后续分段会先安全排队，稍后自动重试；录音不受影响。", 10000);
+        new obsidian.Notice(t("The transcription service failed repeatedly; later segments will be safely queued first and retried automatically later. Recording is not affected."), 10000);
       }
     }
   }

@@ -17,6 +17,7 @@ import { TaskActivityService } from "../tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
 import { nsMarker, readSemanticMeta } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** ViewShellService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface ViewShellHost {
   /** 知识库与工作区访问。 */
@@ -206,7 +207,7 @@ export class ViewShellService {
     const mdPath = this.host.session && this.host.session.mdPath;
     if (!mdPath) { await this.openRecentNote(); return; }
     const file = this.host.app.vault.getAbstractFileByPath(mdPath);
-    if (!(file instanceof obsidian.TFile)) { new obsidian.Notice("当前录音笔记尚未生成"); return; }
+    if (!(file instanceof obsidian.TFile)) { new obsidian.Notice(t("The current recording note has not been generated yet")); return; }
     const leaf = this.host.app.workspace.getLeaf(false);
     await leaf.openFile(file);
     try {
@@ -232,7 +233,7 @@ export class ViewShellService {
   async openRecentNote() {
     const recent = getRecentNotes(this.host, 1);
     if (!recent.length || !(recent[0].file instanceof obsidian.TFile)) {
-      new obsidian.Notice("最近没有录音笔记");
+      new obsidian.Notice(t("No recording notes recently"));
       return;
     }
     await this.host.app.workspace.getLeaf(false).openFile(recent[0].file);

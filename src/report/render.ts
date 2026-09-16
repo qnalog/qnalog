@@ -6,6 +6,7 @@ import { isRecord, primitiveText } from '../shared/util-common';
 import { SEMINAR_REPORT_TEMPLATE, SEMINAR_REPORT_PROMPT } from '../report-templates';
 import { callLlm } from '../llm/core';
 
+import { t } from "../shared/i18n";
 export function sanitizeGeneratedHtmlReport(html) {
   let s = stripHtmlCodeFence(html);
   const docMatch = s.match(/<!doctype[\s\S]*$/i) || s.match(/<html[\s\S]*<\/html>/i);
@@ -211,7 +212,7 @@ export function normalizeHtmlReportModel(raw, fileName, source) {
   }));
   if (!sections.length) {
     sections.push({
-      title: "纪要正文",
+      title: t("Minutes body"),
       body: source.slice(0, 1600),
       bullets: [],
     });

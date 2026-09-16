@@ -20,6 +20,7 @@ import type { TaskActivity, TaskActivityAction, TaskActivityInput } from "../sha
 import type { AudioImportStageId } from "../shared/activity-progress";
 import { QueueModal } from "../ui/modals";
 
+import { t } from "../shared/i18n";
 /** 任务成功完成时的附加信息：失败态专用的两个字段在成功时会被删掉。 */
 type TaskActivityCompletion = Partial<TaskActivity> & {
   failureLabel?: string;
@@ -363,11 +364,11 @@ export class TaskActivityService {
       : state.phase === "idle" && state.lastError
         ? [
           { id: "retry-outline", label: "重新生成", primary: true },
-          { id: "dismiss-task", label: "关闭记录" },
+          { id: "dismiss-task", label: t("Close Recording") },
         ]
         : state.phase !== "idle"
           ? [{ id: "cancel-outline", label: "取消等待" }]
-          : [{ id: "dismiss-task", label: "关闭记录" }];
+          : [{ id: "dismiss-task", label: t("Close Recording") }];
     if (!existing) {
       this.taskActivityStore.start({
         id,
@@ -450,8 +451,8 @@ export class TaskActivityService {
     const retryStages = new Set(["merge-retrying"]);
     const actions = failureStages.has(wp.stage)
       ? [
-        { id: "open-task-note", label: "打开原始材料", primary: true },
-        { id: "dismiss-task", label: "关闭记录" },
+        { id: "open-task-note", label: t("Open original material"), primary: true },
+        { id: "dismiss-task", label: t("Close Recording") },
       ]
       : [];
     const patch: TaskActivityInput = {
@@ -468,7 +469,7 @@ export class TaskActivityService {
       updatedAt: wp.updatedAt ? Date.parse(wp.updatedAt) : Date.now(),
       error: failureStages.has(wp.stage) ? String(session.finalizationError || wp.detail || wp.label || "纪要整理失败") : "",
       actions: retryStages.has(wp.stage)
-        ? [{ id: "open-task-note", label: "打开原始材料", primary: true }]
+        ? [{ id: "open-task-note", label: t("Open original material"), primary: true }]
         : actions,
     };
     const existing = this.taskActivityStore.get(id);
@@ -485,8 +486,8 @@ export class TaskActivityService {
       return this.completeTaskActivity(id, Object.assign({}, patch, {
         stageLabel: wp.label || "纪要处理完成",
         actions: session.mdPath
-          ? [{ id: "open-task-note", label: "打开纪要", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
-          : [{ id: "dismiss-task", label: "关闭记录" }],
+          ? [{ id: "open-task-note", label: t("Open minutes"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
+          : [{ id: "dismiss-task", label: t("Close Recording") }],
       }));
     }
     return this.taskActivityStore.heartbeat(id, Object.assign({}, patch, {
@@ -534,9 +535,9 @@ export class TaskActivityService {
       updatedAt: Number(activity.updatedAt) || Date.now(),
       error: failure,
       actions: failure
-        ? [{ id: "open-task-note", label: "打开原始材料", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
+        ? [{ id: "open-task-note", label: t("Open original material"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
         : completed
-          ? [{ id: "open-task-note", label: "打开纪要", primary: true }, { id: "dismiss-task", label: "关闭记录" }]
+          ? [{ id: "open-task-note", label: t("Open minutes"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
           : [],
     };
     let next = existing

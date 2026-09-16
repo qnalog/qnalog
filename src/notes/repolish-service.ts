@@ -19,6 +19,7 @@ import { VersionStore } from "../versions/version-store";
 import { NoteIndexService } from "../notes/note-index-service";
 import { isDerivedVersionType } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** RepolishService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RepolishHost {
   /** 知识库与工作区访问。 */
@@ -55,7 +56,7 @@ export class RepolishService {
       taskId = `repolish:${sourceId || file.path}`;
       let segments = extractTranscriptSegments(content);
       if (!segments.length) {
-        new obsidian.Notice("未找到 Q&A Log 原始转写。请在包含「分段原始转写」或录音段落的纪要 Markdown 上使用。", 8000);
+        new obsidian.Notice(t("No Q&A Log original transcript found. Use this on a minutes Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
         return;
       }
 
@@ -92,7 +93,7 @@ export class RepolishService {
 
       if (!this._repolishInFlight) this._repolishInFlight = new Set();
       if (this._repolishInFlight.has(taskId)) {
-        new obsidian.Notice("这篇纪要正在重新整理，请等待当前任务完成。", 5000);
+        new obsidian.Notice(t("This minutes note is being reorganized; please wait for the current task to finish."), 5000);
         return;
       }
       this._repolishInFlight.add(taskId);
@@ -144,7 +145,7 @@ export class RepolishService {
         subject: file.path,
         status: "running",
         stage: "llm",
-        stageLabel: "AI 重新整理",
+        stageLabel: t("AI reorganizing"),
         detail: preferenceLabel ? `正在准备原始转写 · ${preferenceLabel.replace(/^\s*·\s*/, "")}` : "正在准备原始转写",
         progress: 3,
         actions: [],
@@ -155,7 +156,7 @@ export class RepolishService {
       const polished = await mergeAndPolish(this.host, segments, mode, sessionMeta, originalFmForRegen, repolishOptions);
       this.host.tasks.patchTaskActivity(taskId, {
         stage: "writing",
-        stageLabel: "正在生成新版本",
+        stageLabel: t("Generating new version"),
         detail: "AI 正文已经完成，正在写入 Markdown",
         progress: 94,
         deadlineAt: 0,
@@ -190,7 +191,7 @@ export class RepolishService {
       );
       this.host.tasks.patchTaskActivity(taskId, {
         stage: "postprocess",
-        stageLabel: "正在完成文件处理",
+        stageLabel: t("Finishing file processing"),
         detail: derivedFile instanceof obsidian.TFile ? derivedFile.path : "新版本已经写入",
         progress: 98,
         deadlineAt: 0,
@@ -225,13 +226,13 @@ export class RepolishService {
       try { this.host.tasks.logCompletedWork(`重新整理完成 · ${meta.prefix}`, (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
       this.host.tasks.completeTaskActivity(taskId, {
         stage: "done",
-        stageLabel: "新版本已生成",
+        stageLabel: t("New version generated"),
         detail: versionCacheError ? `${outputPath} · 版本索引未同步：${versionCacheError}` : outputPath,
         subject: outputPath,
         progress: 100,
         actions: [
-          { id: "open-task-note", label: "打开纪要", primary: true },
-          { id: "dismiss-task", label: "关闭记录" },
+          { id: "open-task-note", label: t("Open minutes"), primary: true },
+          { id: "dismiss-task", label: t("Close Recording") },
         ],
       });
     } catch (e) {
@@ -239,12 +240,12 @@ export class RepolishService {
       if (taskStarted) {
         this.host.tasks.failTaskActivity(taskId, e, {
           stage: "failed",
-          stageLabel: "重新整理未完成",
+          stageLabel: t("Reorganize not completed"),
           detail: getTaskErrorMessage(e),
           subject: file.path,
           actions: [
-            { id: "open-task-note", label: "打开原始材料", primary: true },
-            { id: "dismiss-task", label: "关闭记录" },
+            { id: "open-task-note", label: t("Open original material"), primary: true },
+            { id: "dismiss-task", label: t("Close Recording") },
           ],
         });
       }
@@ -276,13 +277,13 @@ export class RepolishService {
           sourceFile = resolved;
           content = await this.host.app.vault.read(resolved);
         } else {
-          new obsidian.Notice("这是派生版本，但来源笔记已被改名或移动。请在原始录音笔记中生成清稿。", 8000);
+          new obsidian.Notice(t("This is a derived version, but the source note has been renamed or moved. Generate the clean transcript in the original recording note."), 8000);
           return;
         }
       }
       const segments = extractTranscriptSegments(content);
       if (!segments.length) {
-        new obsidian.Notice("未找到原始转写（逐字稿）。请在含「分段原始转写」的录音母本上生成清稿。", 8000);
+        new obsidian.Notice(t("No original transcript (verbatim transcript) found. Generate the clean transcript on a recording source note that contains \"Segmented raw transcript\"."), 8000);
         return;
       }
       const baseTitle = sourceFile.basename;
@@ -304,17 +305,17 @@ export class RepolishService {
       this.host.tasks.startTaskActivity({
         id: taskId,
         kind: "clean-transcript",
-        title: "生成清稿",
+        title: t("Generate clean transcript"),
         subject: sourceFile.path,
         status: "running",
         stage: "llm",
-        stageLabel: "整理逐字稿",
+        stageLabel: t("Organize verbatim transcript"),
         detail: "去除口语赘词并保留原始事实，不覆盖母本",
         progress: null,
         actions: [],
       });
       this.host.tasks.updateBusyStatus();
-      new obsidian.Notice("Q&A Log：正在从母本逐字稿生成清稿…");
+      new obsidian.Notice(t("Q&A Log: Generating the clean transcript from the source transcript..."));
       taskMeter = this.host.tasks.beginTaskMeter();
       const { text: cleaned, truncated } = await cleanTranscript(this.host, segments, getLearnedLlmOutputCeiling(this.host.settings));
       if (!cleaned) throw new Error("模型没有返回可用清稿");
@@ -324,24 +325,24 @@ export class RepolishService {
       const noteBody = `# [清稿] ${baseTitle}\n\n> [!note] 从母本逐字稿忠实清理的可读稿（非纪要、不摘要）。母本（事实源 / 逐字稿）：[[${baseTitle}]]\n\n${warn}${cleaned}`;
       const version = await this.host.versions.saveVersion(sourceFile, content, segments, {
         kind: "clean",
-        label: "清稿",
+        label: t("Clean transcript"),
         mode: "cleanscript",
         style: "",
         idLabel: "清稿",
         body: noteBody,
       });
       await this.host.versions.applyVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
-      new obsidian.Notice("Q&A Log：清稿已生成并设为当前显示版本", 6000);
+      new obsidian.Notice(t("Q&A Log: Clean transcript generated and set as the current displayed version"), 6000);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       try { this.host.tasks.logCompletedWork("生成清稿", sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
       this.host.tasks.completeTaskActivity(taskId, {
         stage: "done",
-        stageLabel: "清稿已生成",
+        stageLabel: t("Clean transcript generated"),
         detail: sourceFile.path,
         actions: [
-          { id: "open-task-note", label: "打开母本", primary: true },
-          { id: "dismiss-task", label: "关闭记录" },
+          { id: "open-task-note", label: t("Open source note"), primary: true },
+          { id: "dismiss-task", label: t("Close Recording") },
         ],
       });
       try { await this.host.app.workspace.getLeaf(false).openFile(sourceFile); } catch { /* intentionally empty */ }
@@ -350,11 +351,11 @@ export class RepolishService {
       if (taskStarted) {
         this.host.tasks.failTaskActivity(taskId, e, {
           stage: "failed",
-          stageLabel: "清稿未生成",
+          stageLabel: t("Clean transcript not generated"),
           detail: getTaskErrorMessage(e),
           actions: [
-            { id: "open-task-note", label: "打开母本", primary: true },
-            { id: "dismiss-task", label: "关闭记录" },
+            { id: "open-task-note", label: t("Open source note"), primary: true },
+            { id: "dismiss-task", label: t("Close Recording") },
           ],
         });
       }
