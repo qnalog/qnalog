@@ -10,6 +10,18 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
+  "Correct misrecognized text": "更正误识别词",
+  "Applies to this note only. It does not change the transcription glossary, so later recordings are unaffected.": "仅作用于当前笔记，不改动转写词表，因此不影响后续录音。",
+  "Wrong text": "错误文字",
+  "Correct text": "正确文字",
+  "Replace": "替换",
+  "Enter the text to replace.": "请填写要替换的文字。",
+  "No matches in this note.": "本篇没有匹配到。",
+  "Will replace ": "将替换 ",
+  " occurrence(s)": " 处",
+  "Line ": "第 ",
+  "and more": "更多",
+  "Corrected ": "已更正 ",
   "The access key was rejected by OpenRouter (HTTP {0}).": "OpenRouter 拒绝了这把访问密钥（HTTP {0}）。",
   "OpenRouter returned HTTP {0}": "OpenRouter 返回 HTTP {0}",
   "Access key valid ({0})": "访问密钥有效（{0}）",

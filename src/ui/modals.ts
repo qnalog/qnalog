@@ -16,6 +16,7 @@ import { getActivityStagePosition } from '../shared/activity-progress';
 import { getDesktopProcess } from '../shared/desktop-runtime';
 import { isSpeakerDiarizationProvider, normalizeRequestedSpeakerCount } from '../asr/diarization';
 import { isDashScopeFileTransProvider, resolveImportTranscribeProvider } from '../asr/long-audio-transcription';
+import { applyNoteTextCorrection } from '../notes/text-correction';
 
 function resolveImportSpeakerSelection(plugin) {
   const provider = resolveImportTranscribeProvider(plugin);
@@ -2632,4 +2633,96 @@ export class BubbleWidget {
     wrapEl.addEventListener("pointercancel", endDrag);
   }
 }
+
+/**
+ * 就地更正误识别词。
+ *
+ * 只作用于当前笔记，不写入任何全局配置——用户明确不要维护词表：
+ * 同一串词在不同语境下可能是对的（这次说 Hyperframes，下次可能真的说 Hugging Face），
+ * 全局替换会污染后续转写。
+ */
+export class TextCorrectionModal extends obsidian.Modal {
+  constructor(app, plugin, file, selection) {
+    super(app);
+    this.plugin = plugin;
+    this.file = file;
+    this.from = String(selection || "").trim();
+    this.to = "";
+    this.result = null;
+    this.previewEl = null;
+    this.confirmBtn = null;
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("qnalog-text-correction-modal");
+    contentEl.createEl("h3", { text: i18nT("Correct misrecognized text") });
+    contentEl.createDiv({
+      cls: "setting-item-description",
+      text: i18nT("Applies to this note only. It does not change the transcription glossary, so later recordings are unaffected."),
+    });
+
+    const rows = contentEl.createDiv({ cls: "qnalog-correction-rows" });
+    const makeField = (label, value, onChange) => {
+      const wrap = rows.createDiv({ cls: "qnalog-correction-field" });
+      wrap.createDiv({ cls: "qnalog-correction-label", text: label });
+      const input = wrap.createEl("input", { cls: "qnalog-correction-input" });
+      input.value = value;
+      input.addEventListener("input", () => onChange(input.value));
+      return input;
+    };
+    this.fromInput = makeField(i18nT("Wrong text"), this.from, (v) => { this.from = v; void this.refreshPreview(); });
+    this.toInput = makeField(i18nT("Correct text"), this.to, (v) => { this.to = v; void this.refreshPreview(); });
+    this.toInput.focus();
+
+    this.previewEl = contentEl.createDiv({ cls: "qnalog-correction-preview" });
+
+    const actions = contentEl.createDiv({ cls: "modal-button-container" });
+    const cancel = actions.createEl("button", { text: i18nT("Cancel") });
+    cancel.onclick = () => this.close();
+    this.confirmBtn = actions.createEl("button", { text: i18nT("Replace") });
+    this.confirmBtn.addClass("mod-cta");
+    this.confirmBtn.disabled = true;
+    this.confirmBtn.onclick = () => { void this.commit(); };
+
+    await this.refreshPreview();
+  }
+
+  /** 读当前文件内容算一次替换预览。只读，不写盘。 */
+  async refreshPreview() {
+    if (!this.previewEl) return;
+    const content = await this.app.vault.read(this.file);
+    this.result = applyNoteTextCorrection(content, this.from, this.to);
+    this.previewEl.empty();
+    if (!this.from.trim()) {
+      this.previewEl.setText(i18nT("Enter the text to replace."));
+    } else if (!this.result.replacements) {
+      this.previewEl.setText(i18nT("No matches in this note."));
+    } else {
+      this.previewEl.createDiv({
+        cls: "qnalog-correction-count",
+        text: `${i18nT("Will replace ")}${this.result.replacements}${i18nT(" occurrence(s)")}`,
+      });
+      const list = this.previewEl.createEl("ul", { cls: "qnalog-correction-lines" });
+      for (const line of this.result.lines.slice(0, 8)) list.createEl("li", { text: `${i18nT("Line ")}${line}` });
+      if (this.result.lines.length > 8) {
+        list.createEl("li", { text: `…${i18nT("and more")}` });
+      }
+    }
+    if (this.confirmBtn) this.confirmBtn.disabled = !(this.from.trim() && this.result.replacements > 0);
+  }
+
+  async commit() {
+    if (!this.result || !this.result.replacements) return;
+    await this.app.vault.modify(this.file, this.result.text);
+    new obsidian.Notice(`${i18nT("Corrected ")}${this.result.replacements}${i18nT(" occurrence(s)")}`, 4000);
+    this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

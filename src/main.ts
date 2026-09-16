@@ -5,7 +5,7 @@ import { QnALogSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
-import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
+import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrectionModal } from "./ui/modals";
 
 import {getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -366,6 +366,24 @@ class QnALogPlugin extends obsidian.Plugin {
         return true;
       },
     });
+
+    // 选中文字 → 右键 → 更正误识别词。只改当前笔记，不写词表。
+    // 入口放在编辑器菜单而不是文件菜单：用户看到错词时正在正文里，
+    // 让「选中即更正」一步可达，不必开弹窗再手打一遍错词。
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor, info) => {
+      const file = info && info.file;
+      if (!(file instanceof obsidian.TFile)) return;
+      const selection = String(editor.getSelection() || "").trim();
+      if (!selection) return;
+      // 只处理单行内的短片段：多行或过长通常是整段，不是「误识别词」
+      if (selection.includes("\n") || selection.length > 80) return;
+      menu.addSeparator();
+      menu.addItem((item) => {
+        item.setTitle("Q&A Log：更正误识别词…")
+          .setIcon("replace")
+          .onClick(() => new TextCorrectionModal(this.app, this, file, selection).open());
+      });
+    }));
 
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof obsidian.TFile)) return;
