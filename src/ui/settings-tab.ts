@@ -1335,11 +1335,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
     new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
       .setDesc(profile.keyHelp)
-      .addText(t => { t.inputEl.type = "password"; t.setValue(provider.apiKey || "").onChange(v => writeProvider("apiKey", v)); });
+      .addText(txt => { txt.inputEl.type = "password"; txt.setValue(provider.apiKey || "").onChange(v => writeProvider("apiKey", v)); });
 
     new obsidian.Setting(c).setName(t("Service URL"))
       .setDesc(profile.endpointHelp)
-      .addText(t => t.setValue(provider.endpoint || "")
+      .addText(txt => txt.setValue(provider.endpoint || "")
         .setPlaceholder(profile.endpointPlaceholder || "")
         .onChange(v => writeProvider("endpoint", v.trim())));
 
@@ -1446,7 +1446,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Service URL"))
       .setDesc(llmEndpointHelp)
-      .addText(t => t.setValue(this.plugin.settings.llmEndpoint).onChange(async v => {
+      .addText(txt => txt.setValue(this.plugin.settings.llmEndpoint).onChange(async v => {
         this.plugin.settings.llmEndpoint = v;
         this.plugin.settings.llmServicePreset = inferLlmServicePresetId(this.plugin.settings);
         syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
@@ -1455,7 +1455,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const llmKeyRow = new obsidian.Setting(c).setName(t("Access Key"))
       .setDesc(llmKeyHelp)
-      .addText(t => { t.inputEl.type = "password"; t.setValue(this.plugin.settings.llmApiKey).onChange(async v => { this.plugin.settings.llmApiKey = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); }); });
+      .addText(txt => { txt.inputEl.type = "password"; txt.setValue(this.plugin.settings.llmApiKey).onChange(async v => { this.plugin.settings.llmApiKey = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); }); });
     const sfSpeechKey = ((this.plugin.settings.transcribeProviders || {}).siliconflow || {}).apiKey || "";
     const mimoSpeechKey = ((this.plugin.settings.transcribeProviders || {}).apimimo || {}).apiKey || "";
     const llmEndpointNow = this.plugin.settings.llmEndpoint || "";
@@ -1478,10 +1478,10 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Model ID"))
       .setDesc(llmModelHelp)
-      .addText(t => {
-        t.setPlaceholder(activeLlmPreset && activeLlmPreset.modelPlaceholder ? activeLlmPreset.modelPlaceholder : t("For example: the model ID shown in the provider's console"));
-        t.setValue(this.plugin.settings.llmModel);
-        t.onChange(async v => { this.plugin.settings.llmModel = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); });
+      .addText(txt => {
+        txt.setPlaceholder(activeLlmPreset && activeLlmPreset.modelPlaceholder ? activeLlmPreset.modelPlaceholder : t("For example: the model ID shown in the provider's console"));
+        txt.setValue(this.plugin.settings.llmModel);
+        txt.onChange(async v => { this.plugin.settings.llmModel = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); });
       })
       // 一键拉取服务端可用模型列表点选，免去手敲（尤其 Poe 的 bot 名区分大小写、易填错）。
       .addButton(b => b.setButtonText(t("Get available models")).onClick(async () => {
@@ -1812,7 +1812,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("HTML report save folder"))
       .setDesc(t("Path relative to the current Obsidian vault. Generated HTML reports are saved as files inside the vault for easier archiving, syncing, or manual moving. Changes apply only to new files; existing files are not migrated automatically."))
       .addText(t => t
-        .setPlaceholder(t("QnALog/HTML reports"))
+        .setPlaceholder("QnALog/HTML报告")
         .setValue(this.plugin.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder)
         .onChange(async v => {
           this.plugin.settings.htmlReportFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.htmlReportFolder);
@@ -1821,7 +1821,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Automatically open after generating the HTML report"))
       .setDesc(t("Open the generated report file in your system's default browser."))
-      .addToggle(t => t
+      .addToggle(v => v
         .setValue(this.plugin.settings.autoOpenHtmlReportAfterGenerate !== false)
         .onChange(async v => {
           this.plugin.settings.autoOpenHtmlReportAfterGenerate = v;
@@ -1830,7 +1830,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Company name in report footer (optional)"))
       .setDesc(t("When filled in, used as the company name in the footer of the \"Discussion\" report; if left empty, the \"Company/\" tag from the note is used. The report does not include a company logo."))
-      .addText(t => t
+      .addText(txt => txt
         .setPlaceholder(t("(Leave empty = use the note's Company/ tag)"))
         .setValue(this.plugin.settings.reportBrandName || "")
         .onChange(async v => {
@@ -1975,7 +1975,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Automatically extract after transcription completes"))
       .setDesc(t("Off by default to save tokens. When enabled, finishing transcription/organizing automatically scans the current note and writes to-dos; people and glossaries still go through the confirmation/maintenance flow."))
-      .addToggle(t => t.setValue(!!this.plugin.settings.sedimentAutoExtract).onChange(async v => { this.plugin.settings.sedimentAutoExtract = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(!!this.plugin.settings.sedimentAutoExtract).onChange(async v => { this.plugin.settings.sedimentAutoExtract = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c)
       .setName(t("Completion and deduplication"))
@@ -2239,16 +2239,16 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Real-time segmented transcription"))
       .setDesc(`录音过程中按设定间隔切段并实时转写。关闭则停止录音后一次性处理。${streamingNote}`)
-      .addToggle(t => t.setValue(this.plugin.settings.enableInterimOutput).onChange(async v => { this.plugin.settings.enableInterimOutput = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.enableInterimOutput).onChange(async v => { this.plugin.settings.enableInterimOutput = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Filter recordings under 3 seconds"))
       .setDesc(t("When enabled, accidental recordings shorter than 3 seconds are discarded outright: no recording file is saved, no note is created, and no transcription or AI organizing runs."))
-      .addToggle(t => t.setValue(this.plugin.settings.filterShortRecordings !== false).onChange(async v => { this.plugin.settings.filterShortRecordings = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.filterShortRecordings !== false).onChange(async v => { this.plugin.settings.filterShortRecordings = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Segment interval"))
       .setDesc(`每隔多少分钟切一段，单位分钟。有效范围 0.5–30。${streamingNote}`)
-      .addText(t => {
-        t.setValue(String(this.plugin.settings.segmentIntervalMinutes)).onChange(async v => {
+      .addText(txt => {
+        txt.setValue(String(this.plugin.settings.segmentIntervalMinutes)).onChange(async v => {
           const n = parseFloat(v);
           if (!isFinite(n)) return; // 打字途中/非法输入不保存，失焦时回显实际值
           const clamped = Math.min(30, Math.max(0.5, n));
@@ -2257,7 +2257,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         });
         // 失焦回显真正保存的值，避免"输入框显示 100、实际存 30"的所见非所存
-        t.inputEl.addEventListener("blur", () => { t.setValue(String(this.plugin.settings.segmentIntervalMinutes)); });
+        txt.inputEl.addEventListener("blur", () => { txt.setValue(String(this.plugin.settings.segmentIntervalMinutes)); });
       });
 
     new obsidian.Setting(c).setName(t("Concurrent transcriptions"))
@@ -2274,7 +2274,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Keep temporary segment audio"))
       .setDesc(t("Used for troubleshooting transcription issues; uses more storage. When off, the full recording is kept and temporary segments are cleaned up automatically after a successful transcription."))
-      .addToggle(t => t.setValue(this.plugin.settings.keepSegmentAudioFiles === true).onChange(async v => { this.plugin.settings.keepSegmentAudioFiles = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.keepSegmentAudioFiles === true).onChange(async v => { this.plugin.settings.keepSegmentAudioFiles = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c)
       .setName(t("Notes and live outline"))
@@ -2283,18 +2283,18 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Note consolidation layout"))
       .setDesc(t("Note reordering after recording finishes: AI-consolidated content at the top, collapsible raw segments at the bottom. When off, the note keeps raw segments in chronological order with no top consolidation."))
-      .addToggle(t => t.setValue(this.plugin.settings.consolidatedLayout).onChange(async v => { this.plugin.settings.consolidatedLayout = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.consolidatedLayout).onChange(async v => { this.plugin.settings.consolidatedLayout = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Automatically add topic to file name"))
       .setDesc(t("After recording, audio import, re-organizing, or a queue retry completes, the AI distills a topic of no more than 15 characters and appends it to the note file name."))
-      .addToggle(t => t.setValue(this.plugin.settings.autoRenameWithTitle).onChange(async v => { this.plugin.settings.autoRenameWithTitle = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.autoRenameWithTitle).onChange(async v => { this.plugin.settings.autoRenameWithTitle = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Live outline"))
       .setDesc(t("Automatically update the outline after each segment is transcribed. When off, you can refresh manually from the sidebar; more segments mean more AI calls."))
-      .addToggle(t => t.setValue(this.plugin.settings.enableRealtimeOutline).onChange(async v => { this.plugin.settings.enableRealtimeOutline = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.enableRealtimeOutline).onChange(async v => { this.plugin.settings.enableRealtimeOutline = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Automatically open the sidebar while recording"))
-      .addToggle(t => t.setValue(this.plugin.settings.autoOpenOutlineOnRecord).onChange(async v => { this.plugin.settings.autoOpenOutlineOnRecord = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.autoOpenOutlineOnRecord).onChange(async v => { this.plugin.settings.autoOpenOutlineOnRecord = v; await this.plugin.saveSettings(); }));
     new obsidian.Setting(c)
       .setName(t("Files and Naming"))
       .setDesc(t("Set where new recordings, notes, and meeting materials are saved, and the file name format for new notes."))
@@ -2303,21 +2303,21 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Q&A Log recordings folder"))
       .setDesc(t("Relative path within the Obsidian vault. Recording files are saved to QnALog/录音 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
       .addText(t => t
-        .setPlaceholder(t("QnALog/录音"))
+        .setPlaceholder("QnALog/录音")
         .setValue(this.plugin.settings.audioFolder)
         .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Q&A Log transcripts folder"))
       .setDesc(t("Relative path within the Obsidian vault. Transcripts and organized notes are saved to QnALog/转写纪要 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
-      .addText(t => t
-        .setPlaceholder(t("QnALog/转写纪要"))
+      .addText(txt => txt
+        .setPlaceholder("QnALog/转写纪要")
         .setValue(this.plugin.settings.mdFolder)
         .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Q&A Log meeting materials folder"))
       .setDesc(t("Relative path within the Obsidian vault. Supplementary materials such as images, PPT, and PDF added from the recording sidebar are copied here, in a subfolder created for each recording."))
-      .addText(t => t
-        .setPlaceholder(t("QnALog/会议资料"))
+      .addText(txt => txt
+        .setPlaceholder("QnALog/会议资料")
         .setValue(this.plugin.settings.meetingMaterialsFolder || DEFAULT_SETTINGS.meetingMaterialsFolder)
         .onChange(async v => {
           this.plugin.settings.meetingMaterialsFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.meetingMaterialsFolder);
@@ -2326,7 +2326,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Note file name format"))
       .setDesc(t("Each recording generates its own note. Name them with date placeholders: YYYY year, MM month, DD day, HH hour, mm minute; for example, YYYY-MM-DD HHmm produces \"2026-06-10 1830\". The syntax is the same as Obsidian's Daily Notes plugin."))
-      .addText(t => t.setValue(this.plugin.settings.noteFileNameFormatNew).onChange(async v => { this.plugin.settings.noteFileNameFormatNew = v; await this.plugin.saveSettings(); }));
+      .addText(txt => txt.setValue(this.plugin.settings.noteFileNameFormatNew).onChange(async v => { this.plugin.settings.noteFileNameFormatNew = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c)
       .setName(t("Actions after completion"))
@@ -2334,11 +2334,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setHeading();
 
     new obsidian.Setting(c).setName(t("Automatically open the note when complete"))
-      .addToggle(t => t.setValue(this.plugin.settings.autoOpenNoteAfterFinish).onChange(async v => { this.plugin.settings.autoOpenNoteAfterFinish = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.autoOpenNoteAfterFinish).onChange(async v => { this.plugin.settings.autoOpenNoteAfterFinish = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Write today's meeting summary to the daily note"))
       .setDesc(t("When Obsidian daily notes are enabled, write the note link and summary after processing completes; detected to-dos are written using the - [ ] task syntax. If today's daily note does not exist, it is created automatically using the path and template configured in the Daily Notes plugin."))
-      .addToggle(t => t.setValue(this.plugin.settings.writeDailyMeetingOverview !== false).onChange(async v => { this.plugin.settings.writeDailyMeetingOverview = v; await this.plugin.saveSettings(); }));
+      .addToggle(txt => txt.setValue(this.plugin.settings.writeDailyMeetingOverview !== false).onChange(async v => { this.plugin.settings.writeDailyMeetingOverview = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Daily note heading"))
       .setDesc(t("Q&A Log finds or creates this level-2 heading in today's daily note and writes the summary from each completed processing run below the heading."))
@@ -2409,9 +2409,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     let inboxFolderInput: obsidian.TextComponent | null = null;
     new obsidian.Setting(c).setName(t("Watched folder"))
       .setDesc(t("Enter a relative path within the vault, or choose a folder synced to your computer such as Nutstore. Once new audio finishes syncing, a combined summary is generated automatically and the source file stays where it is."))
-      .addText(t => {
+      .addText(txt => {
         inboxFolderInput = t;
-        t.setValue(this.plugin.settings.inboxFolder || "")
+        txt.setValue(this.plugin.settings.inboxFolder || "")
           .setPlaceholder("QnALog/录音/inbox or a computer folder")
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
@@ -2425,7 +2425,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         this.plugin.settings.inboxFolder = folder;
         inboxFolderInput?.setValue(folder);
         await this.plugin.saveSettings();
-        this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
     new obsidian.Setting(c).setName(t("Automatically process new files"))
@@ -2444,8 +2443,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Wait before processing (milliseconds)"))
       .setDesc(t("Wait a while after a new file appears before processing, so that iCloud, Nutstore, and similar services have finished syncing before transcription starts. 3000–10000 recommended (that is, 3–10 seconds)."))
-      .addText(t => {
-        t.setValue(String(this.plugin.settings.inboxStabilizeDelayMs ?? 3000)).onChange(async v => {
+      .addText(txt => {
+        txt.setValue(String(this.plugin.settings.inboxStabilizeDelayMs ?? 3000)).onChange(async v => {
           const n = parseInt(v, 10);
           if (!isFinite(n)) return;
           const clamped = Math.min(60000, Math.max(0, n));
@@ -2453,7 +2452,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           this.plugin.settings.inboxStabilizeDelayMs = clamped;
           await this.plugin.saveSettings();
         });
-        t.inputEl.addEventListener("blur", () => { t.setValue(String(this.plugin.settings.inboxStabilizeDelayMs ?? 3000)); });
+        txt.inputEl.addEventListener("blur", () => { txt.setValue(String(this.plugin.settings.inboxStabilizeDelayMs ?? 3000)); });
       });
 
     new obsidian.Setting(c).setName(t("Scan watched folder now"))
@@ -2567,7 +2566,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c).setName(t("Local Diagnostic Logs"))
       .setDesc(t("Used to troubleshoot errors in transcription, AI polishing, queues, and live outlines. Logs are stored only in the local Obsidian vault and are never uploaded automatically; audio, transcript text, prompts, and API keys are never written to them."))
-      .addToggle(t => t.setValue(this.plugin.settings.diagnosticsLogEnabled !== false).onChange(async v => {
+      .addToggle(txt => txt.setValue(this.plugin.settings.diagnosticsLogEnabled !== false).onChange(async v => {
         this.plugin.settings.diagnosticsLogEnabled = v;
         await this.plugin.saveSettings();
       }))

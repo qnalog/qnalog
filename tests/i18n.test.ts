@@ -123,3 +123,21 @@ describe("词条表完整性", () => {
     expect(empties, `空译文：${empties.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 });
+
+describe("界面文案与路径的边界", () => {
+  it("默认目录路径不得包在 t() 里（路径是值，不是文案）", () => {
+    // 曾经把 QnALog/录音 这类占位符包上 t()：翻译后占位符与实际默认目录不一致，
+    // 更糟的是在 addText(a => ...) 这类回调里会变成调用参数对象，运行时报错。
+    const files = [
+      "src/ui/settings-tab.ts", "src/ui/modals.ts", "src/ui/outline-view.ts", "src/ui/helpers.ts",
+    ];
+    const offenders: string[] = [];
+    for (const f of files) {
+      const src = fs.readFileSync(path.join(root, f), "utf8");
+      for (const m of src.matchAll(/(?:t|i18nT)\("(QnALog\/[^"]*)"\)/g)) {
+        offenders.push(`${f}: ${m[1]}`);
+      }
+    }
+    expect(offenders, `路径被包进 t()：${offenders.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+});
