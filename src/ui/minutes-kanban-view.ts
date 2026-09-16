@@ -223,7 +223,7 @@ export class MinutesKanbanView extends ItemView {
     canvasToggle.onclick = () => { this.showCanvas = !this.showCanvas; this.render(); };
     filters.createSpan({
       cls: "qnalog-kanban-hint",
-      text: this.groupMode === "folder" ? "拖动卡片可换分组" : t("- One line per question, 3 lines in total"),
+      text: t(this.groupMode === "folder" ? "Drag cards to change groups" : "Grouped by template type"),
     });
   }
 
@@ -334,7 +334,7 @@ export class MinutesKanbanView extends ItemView {
           this.renderBoard(container);
         };
       }
-      if (!visible.length) cards.createDiv({ cls: "qnalog-kanban-empty", text: t("- More structured: Strengthen heading levels and organize by \"conclusion → basis → impact/to-dos\".") });
+      if (!visible.length) cards.createDiv({ cls: "qnalog-kanban-empty", text: t("Drag in minutes") });
       columnEl.addEventListener("dragover", (event) => {
         if (this.groupMode !== "folder") return;
         if (!event.dataTransfer?.types.includes("text/x-qnalog-note")) return;

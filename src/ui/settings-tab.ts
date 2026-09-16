@@ -908,7 +908,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       });
       channelModeSelect.createEl("option", { value: "auto", text: t("Auto (recommended)") });
       channelModeSelect.createEl("option", { value: "mono", text: t("Close") });
-      channelModeSelect.createEl("option", { value: "multichannel", text: t("- More detailed: Expand the context, discussion process, examples, objections, risks, and the basis for to-dos.") });
+      channelModeSelect.createEl("option", { value: "multichannel", text: t("Split by channel") });
       channelModeSelect.value = normalizeAudioChannelMode(this.plugin.settings.audioChannelMode);
       channelModeSelect.addEventListener("change", async () => {
         this.plugin.settings.audioChannelMode = normalizeAudioChannelMode(channelModeSelect.value);
@@ -1599,7 +1599,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
     new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
-      .setDesc(t(profile.keyHelp) || t("- Each line ≤ 22 characters, specific, answerable from these minutes, and not vague (avoid things like \"can you say more\")"))
+      .setDesc(t(profile.keyHelp) || t("Enter the access key for this service."))
       .addText((text) => {
         text.inputEl.type = "password";
         text.setValue(provider.apiKey || "").onChange((value) => writeProvider("apiKey", value));
@@ -1958,7 +1958,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     };
     makeObjectCard(t("Person"), peopleCount, t("people"), t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
     makeObjectCard(t("To-do"), todoCount, t(" items"), t("Action items confirmed from the meeting notes; check them off to track."), "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
-    const vocabCard = makeObjectCard(t("Transcription term list"), "…", t(" file items"), t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
+    const vocabCard = makeObjectCard(t("Transcription term list"), "…", t(" file items"), t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("Open transcription glossary"), () => { void openVocabularyFile(); });
 
     void (async () => {
       const countEl = vocabCard.querySelector(".qnalog-object-overview-count-value");
@@ -2061,7 +2061,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const vocabScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "vocabulary");
     const peopleScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "people");
-    this.createSettingsSubhead(advancedBody, t("- Output only the 3 questions themselves, with no numbering, index, explanation, or any extra text"), t("After clearing, past meetings can re-enter the scope of person and glossary scanning."));
+    this.createSettingsSubhead(advancedBody, t("Scan records"), t("After clearing, past meetings can re-enter the scope of person and glossary scanning."));
     new obsidian.Setting(advancedBody).setName(t("Note scan records"))
       .setDesc(`${t("Transcription glossary scanned ")}${vocabScanCount}${t(" notes; person suggestions scanned ")}${peopleScanCount}${t(" notes. After clearing the records, notes that have been modified or already exist can re-enter the scanning scope.")}`)
       .addButton(b => b.setButtonText(t("Clear term records")).setDisabled(!vocabScanCount).onClick(async () => {

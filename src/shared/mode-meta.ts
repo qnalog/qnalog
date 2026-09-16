@@ -3,7 +3,7 @@
 import * as obsidian from "obsidian";
 import { MODE_META } from './catalog-modes';
 
-import { t } from "../shared/i18n";
+import { getActiveUiLanguage, t } from "../shared/i18n";
 export const STANDARD_POLISH_MODES = ["synthesis", "meeting", "seminar", "interview", "monologue", "learning"];
 
 // 曾用于"必须先解锁才可见"的模式（招聘评估 / 招聘需求挖掘 / 晋升评审），随 HR 场景一并移除；
@@ -81,6 +81,20 @@ export function getEffectivePolishMode(settings, requested, fallback = null) {
   if (mode === "off") return mode;
   if (isKnownPolishMode(settings, mode)) return mode;
   return fb;
+}
+
+/**
+ * 写入笔记标题用的模板前缀，跟随界面语言。
+ *
+ * MODE_META 的 prefix 是中文，用于解析既有笔记；界面语言为英文时，
+ * 新笔记的标题与文件名应使用英文前缀，否则英文用户看到的是中文标题。
+ * 两种前缀在读取时都能解析回同一个 mode（见 normalizeModeFromLabel）。
+ */
+export function getModePrefix(meta) {
+  if (!meta) return "";
+  return meta.label && getActiveUiLanguage().id === "en"
+    ? meta.label
+    : (meta.prefix || meta.label || "");
 }
 
 export function getVisibleModeEntries(settings, includeOff) {

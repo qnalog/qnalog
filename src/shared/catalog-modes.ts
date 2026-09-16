@@ -62,3 +62,16 @@ export const MODE_PREFIX_TO_KEY = {
   "圆桌讨论": "huddle",
 };
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
+
+// 英文前缀 → mode。与 MODE_PREFIX_TO_KEY 同义：界面语言为英文时写出的笔记标题
+// 用英文前缀，读回时也要能认出，否则英文用户的笔记会被判成未知模式。
+export const MODE_PREFIX_EN_TO_KEY = {
+  "Synthesis minutes": "synthesis",
+  "Work notes": "meeting",
+  "Interview": "interview",
+  "Personal notes": "monologue",
+  "Study notes": "learning",
+  "Seminar": "seminar",
+  "Roundtable": "huddle",
+  "Recording": "off",
+};

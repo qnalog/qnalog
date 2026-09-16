@@ -799,7 +799,7 @@ export class OutlineView extends obsidian.ItemView {
       attr: { type: "button" },
     });
     try { obsidian.setIcon(btn.createSpan({ cls: "qnalog-empty-state-action-icon" }), "list"); } catch { /* intentionally empty */ }
-    btn.createSpan({ text: i18nT("- #Concept: Give a definition, how to use it, broader and narrower concepts, and its meaning in the current context; at most 5 short sentences.") });
+    btn.createSpan({ text: i18nT("Open minutes list") });
     btn.onclick = () => {
       this.showRecentHome = true;
       this.idlePanelTab = "recent";
@@ -855,14 +855,14 @@ export class OutlineView extends obsidian.ItemView {
     const textarea = inputWrap.createEl("textarea", {
       cls: "qnalog-note-ask-input",
       attr: {
-        placeholder: state.entries.length ? "继续问这段会议…" : i18nT("Ask about this note…"),
+        placeholder: i18nT(state.entries.length ? "Keep asking about this meeting…" : "Ask about this note…"),
         rows: "1",
       },
     });
     textarea.value = state.question || "";
     const askBtn = inputWrap.createEl("button", {
       cls: `qnalog-note-ask-submit${state.running ? " is-running" : ""}`,
-      attr: { type: "button", "aria-label": i18nT("3 (faster)"), title: i18nT("AI optimization failed:") },
+      attr: { type: "button", "aria-label": i18nT("Ask"), title: i18nT("Ask (Enter to send · Shift+Enter for a new line)") },
     });
     try { obsidian.setIcon(askBtn, state.running ? "loader-2" : "send"); } catch { askBtn.setText(i18nT("Ask")); }
     const updateAskButton = () => { askBtn.disabled = !!state.running || !String(textarea.value || "").trim(); };
@@ -952,11 +952,11 @@ export class OutlineView extends obsidian.ItemView {
       const followups = Array.isArray(state.followups) ? state.followups.filter(Boolean) : [];
       const suggestions = followups.length ? followups : NOTE_ASK_SUGGESTIONS;
       const sug = body.createDiv({ cls: "qnalog-note-ask-suggest" });
-      sug.createDiv({ cls: "qnalog-note-ask-suggest-label", text: followups.length ? "接着可以问" : i18nT("Try asking like this") });
+      sug.createDiv({ cls: "qnalog-note-ask-suggest-label", text: i18nT(followups.length ? "You can ask next" : "Try asking like this") });
       const chips = sug.createDiv({ cls: "qnalog-note-ask-suggest-chips" });
       for (const q of suggestions) {
         const chip = chips.createEl("button", { cls: "qnalog-note-ask-suggest-chip", attr: { type: "button" } });
-        chip.setText(q);
+        chip.setText(i18nT(q));
         chip.disabled = !!state.running;
         chip.onclick = () => { state.question = q; void this.askCurrentNote(file); };
       }
@@ -1034,7 +1034,7 @@ export class OutlineView extends obsidian.ItemView {
         stageLabel: i18nT("Answer generated"),
         detail: question,
         actions: [
-          { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -1049,7 +1049,7 @@ export class OutlineView extends obsidian.ItemView {
         detail: state.error,
         subject: file.path,
         actions: [
-          { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -1723,8 +1723,8 @@ export class OutlineView extends obsidian.ItemView {
       icon: "sparkles",
       subtitle: this.formatSedimentNoteLabel(file),
       title: i18nT("AI has not read these notes yet"),
-      desc: i18nT("- Do not output pleasantries, and do not generate a complete set of minutes."),
-      primaryText: i18nT("- Writing requirements: Specify the tone, the level of detail, whether to translate, whether to keep the original text, and how to handle uncertain information."),
+      desc: i18nT("Scan once to organize people, tasks, knowledge, and hotwords together"),
+      primaryText: i18nT("Scan this note"),
       onPrimary: () => this.requestSedimentExtraction(file, !!(state.peopleScanned || state.vocabScanned || (state.currentPeople && state.currentPeople.length) || (state.ignoredPeople && state.ignoredPeople.length) || state.otherPeopleCount)),
     });
   }
@@ -1757,7 +1757,7 @@ export class OutlineView extends obsidian.ItemView {
   renderSedimentMoreToggle(list, key, hiddenCount, expanded) {
     const more = list.createDiv({
       cls: "qnalog-sediment-more is-clickable",
-      text: expanded ? "收起" : `${i18nT("Another ")}${hiddenCount}${i18nT(" items · click to expand")}`,
+      text: i18nT(expanded ? "Collapse" : "") || `${i18nT("Another ")}${hiddenCount}${i18nT(" items · click to expand")}`,
       attr: { role: "button", tabindex: "0", title: expanded ? i18nT("AI is identifying people and their relationships") : i18nT("Show all candidates") },
     });
     const toggle = (evt) => {
@@ -3153,7 +3153,7 @@ export class OutlineView extends obsidian.ItemView {
           detail: `${extracted.length}${i18nT(" candidate words")}`,
           progress: 100,
           actions: [
-            { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+            { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
             { id: "dismiss-task", label: i18nT("Dismiss") },
           ],
         });
@@ -3161,7 +3161,7 @@ export class OutlineView extends obsidian.ItemView {
       }, {
         failureLabel: i18nT("Transcription term extraction not complete"),
         failureActions: [
-          { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -3211,7 +3211,7 @@ export class OutlineView extends obsidian.ItemView {
           detail: addedCount ? `${addedCount}${i18nT(" pending")}` : i18nT("No new person suggestions detected"),
           progress: 100,
           actions: [
-            { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+            { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
             { id: "dismiss-task", label: i18nT("Dismiss") },
           ],
         });
@@ -3219,7 +3219,7 @@ export class OutlineView extends obsidian.ItemView {
       }, {
         failureLabel: i18nT("Person suggestion extraction not finished"),
         failureActions: [
-          { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -3259,7 +3259,7 @@ export class OutlineView extends obsidian.ItemView {
       this.plugin.tasks.startTaskActivity({
         id: taskId,
         kind: "sediment",
-        title: i18nT("- Anti-hallucination: Do not fabricate information that does not appear in the transcript; mark anything uncertain as uncertain."),
+        title: i18nT("Scan minutes objects"),
         subject: file.path,
         status: "running",
         stage: "reading",
@@ -3323,7 +3323,7 @@ export class OutlineView extends obsidian.ItemView {
         detail: `${i18nT("people ")}${(objects.people || []).length}${i18nT(" · to-dos ")}${(objects.todos || []).length}${i18nT(" · hotwords ")}${countVocabularyGroups(objects.hotwords)}`,
         progress: 100,
         actions: [
-          { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -3337,7 +3337,7 @@ export class OutlineView extends obsidian.ItemView {
         detail: getTaskErrorMessage(e),
         subject: file.path,
         actions: [
-          { id: "open-task-note", label: i18nT("- !Key point: Explain why this key point should be kept and how the final minutes should handle it; at most 4 short sentences."), primary: true },
+          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -4226,7 +4226,7 @@ export class OutlineView extends obsidian.ItemView {
     }
     const kanbanBtn = actions.createEl("button", {
       cls: "clickable-icon qnalog-outline-kanban-btn",
-      attr: { "aria-label": i18nT("- ?Question: Answer the question directly, drawing on the current outline/transcript context; at most 5 short sentences."), title: i18nT("- ?Question: Answer the question directly, drawing on the current outline/transcript context; at most 5 short sentences.") },
+      attr: { "aria-label": i18nT("Open minutes board"), title: i18nT("Open minutes board") },
     });
     try { obsidian.setIcon(kanbanBtn, "layout-dashboard"); } catch { kanbanBtn.setText(i18nT("Board")); }
     kanbanBtn.onclick = () => { void this.plugin.shell.openMinutesKanban(); };
@@ -4620,7 +4620,7 @@ export class OutlineView extends obsidian.ItemView {
       items: [
         { value: "fast", label: i18nT("Quick mode") },
         { value: "auto", label: i18nT("Default mode") },
-        { value: "reasoning", label: i18nT("- When the minutes offer no basis, state clearly \"the minutes do not provide enough basis\".") },
+        { value: "reasoning", label: i18nT("Reasoning mode") },
       ],
       disabled: !thinkCtrl,
       disabledLabel: i18nT("Not supported"),
@@ -4683,7 +4683,7 @@ export class OutlineView extends obsidian.ItemView {
 
     const actions = composer.createDiv({ cls: "qnalog-meeting-composer-actions" });
     this.createMeetingMaterialInput(actions, session, {
-      label: i18nT("- More concise: Compress repeated speech and low-information details, keeping conclusions, evidence, to-dos, and risks."),
+      label: i18nT("Take photo"),
       icon: "camera",
       accept: "image/*",
       kind: "image",
@@ -4796,7 +4796,7 @@ export class OutlineView extends obsidian.ItemView {
     chip.onclick = () => {
       const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
       if (file instanceof obsidian.TFile) void this.plugin.app.workspace.getLeaf(false).openFile(file);
-      else new obsidian.Notice(i18nT("- To-do syntax: If there are to-dos, write them all as `- [ ] Item: <specific action>`; when determinable, add `Owner: <person>` and `Due: <time>` (omit the field if it cannot be determined — do not write \"not mentioned\"); do not write them as a table or a plain list."));
+      else new obsidian.Notice(i18nT("This material file was not found"));
     };
   }
 
@@ -5982,7 +5982,7 @@ export class OutlineView extends obsidian.ItemView {
       if (src instanceof obsidian.TFile) {
         try { await this.plugin.app.workspace.getLeaf(false).openFile(src); } catch (e) { console.error(e); }
       } else {
-        new obsidian.Notice(i18nT("- Output only the complete optimized prompt, with no explanation and no code blocks."), 6000);
+        new obsidian.Notice(i18nT("Source note not found; it may have been renamed or moved."), 6000);
       }
     }));
     menu.addItem((item) => item.setTitle(i18nT("Regenerate Clean Copy")).setIcon("refresh-cw").onClick(() => { void this.plugin.repolish.generateCleanScript(file); }));

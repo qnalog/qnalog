@@ -28,7 +28,7 @@ import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { NS_TAG, NS_ROOT, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
 
-import { MODE_META, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
+import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
 import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "../shared/util-common";
 
@@ -170,6 +170,9 @@ export function normalizeModeFromLabel(settings, label) {
   const normalized = text.replace(new RegExp(`^${NS_TAG}/`, "i"), "").trim();
   if (isKnownPolishMode(settings, normalized)) return normalized;
   if (MODE_PREFIX_TO_KEY[normalized]) return MODE_PREFIX_TO_KEY[normalized];
+  // 界面语言为英文时写出的笔记标题用英文前缀，同样要能认回。
+  if (MODE_PREFIX_EN_TO_KEY[text]) return MODE_PREFIX_EN_TO_KEY[text];
+  if (MODE_PREFIX_EN_TO_KEY[normalized]) return MODE_PREFIX_EN_TO_KEY[normalized];
   for (const [mode, name] of getVisibleModeEntries(settings, false)) {
     if (text === name || normalized === name) return mode;
   }

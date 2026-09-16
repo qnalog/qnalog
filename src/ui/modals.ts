@@ -104,7 +104,7 @@ export function pickReportAccentColor(app, defaultHex = null) {
     let settled = false;
     const finish = (val) => { if (settled) return; settled = true; resolve(val); try { modal.close(); } catch { /* intentionally empty */ } };
     const wrap = modal.contentEl.createDiv({ cls: "qnalog-color-pick" });
-    wrap.createEl("p", { cls: "qnalog-color-hint", text: i18nT("- Specify the use case, key content, required output, writing style, translation requirements, and anti-hallucination boundaries.") });
+    wrap.createEl("p", { cls: "qnalog-color-hint", text: i18nT("The report uses the chosen colors and keeps the layout unchanged. You can regenerate it repeatedly; existing files are not overwritten.") });
     const sw = wrap.createDiv({ cls: "qnalog-color-swatches" });
     const presets = [[i18nT("Warm orange (default)"), "#E85F28"], [i18nT("Sapphire"), "#2F6BD8"], [i18nT("Ink teal"), "#138A8A"], [i18nT("Pine green"), "#3B9A4B"], [i18nT("Lotus purple"), "#7A4AD8"], [i18nT("Rose red"), "#D8407E"], [i18nT("Brown gold"), "#B5811A"], [i18nT("Graphite blue"), "#54627A"]];
     const swatchEls = [];
@@ -175,7 +175,7 @@ export class AudioTimeModal extends obsidian.Modal {
     }
 
     const actions = contentEl.createDiv({ cls: "qnalog-audio-modal-actions" });
-    actions.createEl("button", { text: i18nT("- Do not claim that voiceprint recognition was performed, and do not fabricate anyone's responsibility.") }).onclick = () => {
+    actions.createEl("button", { text: i18nT("Open audio file") }).onclick = () => {
       void this.app.workspace.getLeaf(false).openFile(this.file);
     };
   }
@@ -1386,7 +1386,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
   }
   renderMacContent(parent) {
     this.step(parent, 1, i18nT("Install BlackHole (open source, free)"), (b) => {
-      b.createEl("p", { text: i18nT("- Lets users save and then use it directly for recording, importing, and reorganizing.") });
+      b.createEl("p", { text: i18nT("BlackHole 2ch is recommended (the stereo version is enough for meetings).") });
       const ul = b.createEl("ul");
       const li1 = ul.createEl("li");
       li1.createSpan({ text: i18nT("Download page:") });
@@ -1405,7 +1405,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
       tip.setText(i18nT("This makes system audio go to both your real speakers/headphones and BlackHole: the former for playback, the latter for Q&A Log to record."));
     });
-    this.step(parent, 3, i18nT("- The {{TRANSCRIPT}} placeholder must be preserved."), (b) => {
+    this.step(parent, 3, i18nT("Switch system or app output to this multi-output device"), (b) => {
       const ol = b.createEl("ol");
       ol.createEl("li", { text: i18nT("System Settings → Sound → Output") });
       ol.createEl("li", { text: i18nT("Select the \"Multi-Output Device\" you just created") });
@@ -1427,7 +1427,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: i18nT("Right-click VBCABLE_Setup_x64.exe → Run as administrator") });
       ol.createEl("li", { text: i18nT("Click Install Driver → restart your computer") });
     });
-    this.step(parent, 2, i18nT("- Must output: State which parts the final note must contain, and which overly templated content should not appear."), (b) => {
+    this.step(parent, 2, i18nT("Switch the audio you want to record to CABLE Input (playback device)"), (b) => {
       b.createEl("p", { text: i18nT("For online meetings, change the speaker in the audio settings of Feishu, Tencent Meeting, or Zoom; for desktop apps such as the Bilibili client, browser video, and media players, you can set the output device individually in the Windows volume mixer. Change the target output uniformly to:") });
       b.createEl("code", { text: "CABLE Input (VB-Audio Virtual Cable)" });
       b.createEl("p", { cls: "qnalog-vcable-tip" }).setText(i18nT("Note: CABLE Input is selected here. Although its name says Input, in Windows it is a playback/output device; Q&A Log records later from CABLE Output at the other end of the same virtual cable."));
@@ -1442,8 +1442,8 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     this.step(parent, 3, i18nT("Use CABLE Output to monitor through your real speakers or headphones (important)"), (b) => {
       b.createEl("p", { text: i18nT("To restore local monitoring, monitor CABLE Output through your real headphones or speakers:") });
       const ol = b.createEl("ol");
-      ol.createEl("li", { text: i18nT("- Do not force in a large number of callouts; structure is fine, but the body should stay close to what was actually discussed.") });
-      ol.createEl("li", { text: i18nT("- Use a short list when needed, keeping the items, numbers, examples, and risks from the minutes.") });
+      ol.createEl("li", { text: i18nT("Open: Control Panel → Sound → Recording (or right-click the taskbar speaker icon → Sound settings → More sound settings)") });
+      ol.createEl("li", { text: i18nT("Find CABLE Output") });
       ol.createEl("li", { text: i18nT("Double-click → switch to the \"Listen\" tab") });
       ol.createEl("li", { text: i18nT("Check \"Listen to this device\"") });
       ol.createEl("li", { text: i18nT("Under \"Playback through this device\", choose your real headphones or speakers, not CABLE Input") });
@@ -1451,7 +1451,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
       tip.setText(i18nT("The audio path is: app/browser → CABLE Input (playback) → CABLE Output (recording input, read by Q&A Log) → monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
     });
-    this.step(parent, 4, i18nT("- Faithful to the source: Do not extrapolate; organize only information explicitly present in the recording."), (b) => {
+    this.step(parent, 4, i18nT("Switch the default input back to the real microphone"), (b) => {
       const ol = b.createEl("ol");
       ol.createEl("li", { text: i18nT("Windows Settings → System → Sound → Input") });
       ol.createEl("li", { text: i18nT("Select the real microphone, not CABLE Output") });

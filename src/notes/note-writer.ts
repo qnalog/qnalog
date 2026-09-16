@@ -3,7 +3,7 @@
 
 import * as obsidian from "obsidian";
 import { qnalogConfirm } from "../ui/helpers";
-import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
+import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { splitOutSedimentBlock } from "../sediment";
 import { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
@@ -69,7 +69,7 @@ export class NoteWriter {
       (polishedFrontmatter || beforeParts.frontmatter) ? "" : null,
       titleBlock ? titleBlock.trimEnd() : null,
       titleBlock ? "" : null,
-      `## 当前纪要（${meta.prefix} · ${stamp}）`,
+      `## ${t("Current minutes")}（${getModePrefix(meta)} · ${stamp}）`,
       "",
       `> [!info] 基于本文底部的原始转写重新生成 · 段数：${segments.length} · 模型：${this.host.settings.llmModel}`,
       "",
@@ -108,7 +108,7 @@ export class NoteWriter {
     const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.host.settings.llmModel) : buildRecordingInfoDetails({
       startedAt: session.startedAt,
       totalMs,
-      modeLabel: meta.prefix,
+      modeLabel: getModePrefix(meta),
       segmentCount: session.segments.length,
       model: this.host.settings.llmModel,
     });
@@ -135,7 +135,7 @@ export class NoteWriter {
     const content = [
       polishedFrontmatter || null,
       polishedFrontmatter ? "" : null,
-      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}`,
+      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
       "",
       polishedBody,
       "",
@@ -194,7 +194,7 @@ export class NoteWriter {
     const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.host.settings.llmModel) : buildRecordingInfoDetails({
       startedAt: session.startedAt,
       totalMs,
-      modeLabel: meta.prefix,
+      modeLabel: getModePrefix(meta),
       segmentCount: session.segments.length,
       model: this.host.settings.llmModel,
     });
@@ -209,7 +209,7 @@ export class NoteWriter {
       : "";
     const block = [
       "",
-      `## 整合版（${this.host.settings.llmModel} · ${meta.prefix}）`,
+      `## ${t("Merged version")}（${this.host.settings.llmModel} · ${getModePrefix(meta)}）`,
       "",
       mergeError ? failureText : polishedBody,
       "",
