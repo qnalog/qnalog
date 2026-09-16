@@ -254,7 +254,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     });
     contentEl.createDiv({
       cls: "setting-item-description qnalog-people-suggestion-guide",
-      text: "先判断这个名字归属于谁：已有人员就合并，新人再建档；本次归属用于区分参会人、被提到的人和待办责任人。下方资料只是补充信息，不需要靠改名来合并。",
+      text: i18nT("First decide who this name belongs to: merge into an existing person, or create a record for someone new; this attribution distinguishes attendees, mentioned people, and to-do assignees. The details below are supplementary only — no renaming is needed to merge."),
     });
     let peopleEntries = [];
     try {
@@ -397,7 +397,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       if (item.evidence && item.evidence.length) {
         box.createDiv({
           cls: "setting-item-description",
-          text: "依据：" + item.evidence.slice(0, 3).join("；"),
+          text: i18nT("Basis:") + item.evidence.slice(0, 3).join("；"),
         });
       }
       rowRef = { item, checkbox, nameInput, aliasInput, roleInput, orgInput, relationSelect, noteArea };
@@ -631,7 +631,7 @@ export class QueueModal extends obsidian.Modal {
       done: i18nT("Completed"),
     }[state] || i18nT("Processing"));
     const livenessDetail = (state) => ({
-      queued: "任务已经登记，等待可用处理槽位",
+      queued: i18nT("Task registered, waiting for a free processing slot"),
       pending: i18nT("Start automatically after prerequisites complete"),
       running: "",
       waiting: i18nT("The request has been sent, but the service has not returned a result yet"),
@@ -639,7 +639,7 @@ export class QueueModal extends obsidian.Modal {
       stalled: i18nT("This stage is taking longer than expected; the task is still running, so you can close the window and wait for the result in the background"),
       retrying: i18nT("This request failed; waiting for the next request per the backoff rule"),
       failed: i18nT("This stage produced no usable result"),
-      cancelled: "任务已由用户取消",
+      cancelled: i18nT("The task was cancelled by the user"),
       done: i18nT("This stage is complete"),
     }[state] || "");
 
@@ -648,7 +648,7 @@ export class QueueModal extends obsidian.Modal {
     const tokenLabel = (n, exact) => { const v = Number(n) || 0; if (v <= 0) return ""; const num = v >= 10000 ? (v / 10000).toFixed(1).replace(/\.0$/, "") + "万" : String(v); return `${exact ? "" : "≈"}${num}`; };
     const taskTitle = (t) => t.type === "transcribe" ? `${t.status === "live" ? "实时转写" : "转写重试"} · 段${(t.segmentIndex || 0) + 1}`
       : t.type === "merge" ? `合并重试 · ${(t.segments || []).length} 段`
-      : t.type === "generate-prompt" ? "提示词生成" : (t.type || "任务");
+      : t.type === "generate-prompt" ? "提示词生成" : (t.type || i18nT("Task"));
 
     // —— 头部：标题 + 状态 ——
     const activityText = [
@@ -765,7 +765,7 @@ export class QueueModal extends obsidian.Modal {
       {
         key: "complete",
         label: i18nT("Done"),
-        summary: phase === "complete" ? "已写入纪要" : "写入纪要",
+        summary: phase === "complete" ? "已写入纪要" : i18nT("Write to note"),
       },
     ];
     const detailedStages = detail && Array.isArray(detail.stages) ? detail.stages : [];
@@ -794,14 +794,14 @@ export class QueueModal extends obsidian.Modal {
       pipelineLiveness.set("organize", String(organizeStage.liveness || ""));
       pipelineLiveness.set("complete", String(writeStage.liveness || ""));
       pipelineSteps = [
-        { key: "prepare", label: "准备", summary: String(stageById("prepare").summary || i18nT("Read audio")) },
+        { key: "prepare", label: i18nT("Prepare"), summary: String(stageById("prepare").summary || i18nT("Read audio")) },
         {
           key: "transcribe",
           label: i18nT("Transcription"),
           summary: String((activeId === "persist" ? persistStage.summary : transcribeStage.summary) || detail.count || "等待处理"),
         },
         { key: "organize", label: i18nT("AI Organizing"), summary: String(organizeStage.summary || "等待转写完成") },
-        { key: "complete", label: i18nT("Done"), summary: String(writeStage.summary || "写入纪要") },
+        { key: "complete", label: i18nT("Done"), summary: String(writeStage.summary || i18nT("Write to note")) },
       ];
     }
     const pipeline = head.createDiv({ cls: `qnalog-progress-pipeline is-${headLiveness}` });
@@ -865,7 +865,7 @@ export class QueueModal extends obsidian.Modal {
     const subLine = (bodyEl, text) => { if (text) bodyEl.createDiv({ cls: "qnalog-progress-sub", text }); };
 
     if (visibleTaskActivities.length) {
-      list.createDiv({ cls: "qnalog-progress-section-title", text: "任务状态" });
+      list.createDiv({ cls: "qnalog-progress-section-title", text: i18nT("Task status") });
       const activityList = list.createDiv({ cls: "qnalog-progress-activity-list" });
       for (const activity of visibleTaskActivities) {
         const state = String(activity.status || "queued");
@@ -921,7 +921,7 @@ export class QueueModal extends obsidian.Modal {
         if (Number(activity.startedAt) > 0 && !["done", "cancelled"].includes(state)) {
           facts.push([i18nT("Running for"), fmtDur(Date.now() - Number(activity.startedAt))]);
         }
-        if (Number(activity.retryAt) > Date.now()) facts.push(["再次尝试", `${fmtDur(Number(activity.retryAt) - Date.now())}后`]);
+        if (Number(activity.retryAt) > Date.now()) facts.push([i18nT("Next retry"), `${fmtDur(Number(activity.retryAt) - Date.now())}后`]);
         if (Number(activity.attempt) > 0) {
           facts.push([i18nT("Attempts"), activity.maxAttempts > 0
             ? `${activity.attempt}/${activity.maxAttempts}`
@@ -1135,7 +1135,7 @@ export class QueueModal extends obsidian.Modal {
 
           if (Array.isArray(stage.requests) && stage.requests.length) {
             const requestSection = panel.createDiv({ cls: "qnalog-progress-requests" });
-            requestSection.createDiv({ cls: "qnalog-progress-section-label", text: "分段请求" });
+            requestSection.createDiv({ cls: "qnalog-progress-section-label", text: i18nT("Segment requests") });
             const requestList = requestSection.createDiv({ cls: "qnalog-progress-request-list" });
             for (const request of stage.requests) {
               const requestState = String(request.liveness || "pending");
@@ -1232,7 +1232,7 @@ export class QueueModal extends obsidian.Modal {
       queueTitle.createSpan({ text: "待处理" });
       queueTitle.createSpan({ cls: "qnalog-progress-queue-count", text: ` ${pending.length} 项 · 音频均已保留` });
       if (pending.length) {
-        const retryAllBtn = queueHead.createEl("button", { cls: "qnalog-progress-queue-retry", text: "全部重试", attr: { type: "button" } });
+        const retryAllBtn = queueHead.createEl("button", { cls: "qnalog-progress-queue-retry", text: i18nT("Retry all"), attr: { type: "button" } });
         retryAllBtn.onclick = async () => { retryAllBtn.disabled = true; await this.plugin.queueRetry.retryQueue(); this.onOpen(); };
       }
     }
@@ -1394,7 +1394,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       li2.createSpan({ text: i18nT("Or use Homebrew:") });
       li2.createEl("code", { text: "brew install blackhole-2ch" });
     });
-    this.step(parent, 2, "创建多输出设备（Multi-Output Device）", (b) => {
+    this.step(parent, 2, i18nT("Create Multi-Output Device"), (b) => {
       const ol = b.createEl("ol");
       ol.createEl("li", { text: i18nT("Launchpad → Audio MIDI Setup") });
       ol.createEl("li", { text: i18nT("Bottom-left \"+\" → Create Multi-Output Device") });
@@ -1500,7 +1500,7 @@ export class PromptTemplateModal extends obsidian.Modal {
       description: "",
       baseMode: baseMode || "learning",
       prompt: prompt || [
-        "你是专业的录音整理助手。请根据下面规则，把原始转写整理成可直接保存到 Obsidian 的 Markdown 笔记。",
+        i18nT("You are a professional recording organizer. Following the rules below, turn the raw transcript into a Markdown note ready to save to Obsidian."),
         "",
         i18nT("Please complete this prompt first:"),
         i18nT("- Use case: explain what kind of task this recording usually comes from and who will keep using these notes."),
@@ -1565,7 +1565,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     };
 
     const builtInSection = body.createDiv({ cls: "qnalog-tpl-section" });
-    builtInSection.createDiv({ cls: "qnalog-tpl-section-title", text: "内置提示词" });
+    builtInSection.createDiv({ cls: "qnalog-tpl-section-title", text: i18nT("Built-in prompts") });
     builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: "Q&A Log 提供的默认整理规则，适合直接设为默认。需要固定格式或专业判断时，请新建自定义提示词。" });
     const list = builtInSection.createDiv({ cls: "qnalog-tpl-list" });
     for (const mode of this.builtInModes()) this.renderBuiltinRow(list, mode);
@@ -1589,7 +1589,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     const text = row.createDiv({ cls: "qnalog-tpl-row-meta" });
     text.createDiv({ cls: "qnalog-tpl-row-name", text: meta.prefix || meta.label || mode });
     const override = this.getBuiltinOverride(mode);
-    const state = override ? "当前使用旧版自定义规则。" : "内置提示词";
+    const state = override ? "当前使用旧版自定义规则。" : i18nT("Built-in prompts");
     text.createDiv({ cls: "qnalog-tpl-row-sub", text: (meta.goal || "") + " · " + state });
 
     const actions = row.createDiv({ cls: "qnalog-tpl-row-actions" });
@@ -1643,7 +1643,7 @@ export class PromptTemplateModal extends obsidian.Modal {
   async optimizePromptDraft(tpl, draft) {
     const current = String(draft || "").trim();
     const seed = current || this.newCustomScene(tpl && tpl.name ? tpl.name : "自定义提示词", tpl && tpl.baseMode ? tpl.baseMode : "learning").prompt;
-    const sys = "你是提示词优化专家，专门把用户草稿改写成稳定、清晰、可执行的录音转写整理 Prompt。";
+    const sys = i18nT("You are a prompt optimization expert, specializing in rewriting user drafts into a stable, clear, and executable prompt for organizing recording transcripts.");
     const user = [
       i18nT("Please optimize the following Q&A Log transcription cleanup prompt."),
       "",
@@ -1693,7 +1693,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     promptSetting.setDesc(i18nT("This is the polishing rule actually sent to the LLM. The content should define the use case, the key content, the required output, the writing style, translation requirements, and anti-hallucination boundaries, and must keep {{TRANSCRIPT}} as the placeholder for the raw transcript."));
     const ta = editor.createEl("textarea", { cls: "qnalog-textarea qnalog-textarea-mono qnalog-tpl-textarea" });
     ta.value = tpl.prompt || "";
-    ta.placeholder = "例如：这份提示词用于……；重点识别……；必须输出……；不要输出……；外语内容……；不确定信息……；最后保留 {{TRANSCRIPT}}。";
+    ta.placeholder = i18nT("For example: this prompt is for…; focus on identifying…; must output…; do not output…; foreign-language content…; uncertain information…; and finally keep {{TRANSCRIPT}}.");
     ta.rows = 18;
     ta.addEventListener("input", () => { tpl.prompt = ta.value; });
 
@@ -1717,7 +1717,7 @@ export class PromptTemplateModal extends obsidian.Modal {
         optimizeBtn.setText(i18nT("AI refine prompt"));
       }
     };
-    const saveBtn = actions.createEl("button", { text: "保存并设为默认", cls: "mod-cta" });
+    const saveBtn = actions.createEl("button", { text: i18nT("Save and set as default"), cls: "mod-cta" });
     saveBtn.onclick = async () => {
       tpl.name = (tpl.name || "自定义提示词").trim();
       tpl.description = "";
@@ -1874,7 +1874,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.categoryButtons = new Map();
     const counts = this.getCategoryCounts();
     const filters = [
-      { id: "all", label: "全部", desc: i18nT("Show all importable text") },
+      { id: "all", label: i18nT("All"), desc: i18nT("Show all importable text") },
       ...IMPORT_TEXT_CATEGORY_ORDER.map((id) => ({
         id,
         label: IMPORT_TEXT_CATEGORY_CONFIG[id].shortLabel,
@@ -2587,7 +2587,7 @@ export class BubbleWidget {
       const ctrl = this.el.createDiv({ cls: "qnalog-bubble-ctrl" });
       const pauseBtn = ctrl.createEl("button", { cls: `qnalog-bubble-btn ${info.state === "paused" ? "is-play-icon" : "is-pause-icon"}`, attr: { title: info.state === "paused" ? "继续" : i18nT("Pause"), "aria-label": info.state === "paused" ? "继续" : i18nT("Pause") } });
       pauseBtn.onclick = (e) => { e.stopPropagation(); if (info.state === "paused") this.plugin.recorder.resume(); else this.plugin.recorder.pause(); };
-      const stopBtn = ctrl.createEl("button", { cls: "qnalog-bubble-btn stop is-stop-icon", attr: { title: "停止并合并润色", "aria-label": "停止并合并润色" } });
+      const stopBtn = ctrl.createEl("button", { cls: "qnalog-bubble-btn stop is-stop-icon", attr: { title: i18nT("Stop and merge polish"), "aria-label": i18nT("Stop and merge polish") } });
       stopBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.stopRecording(); };
       const timer = this.el.createDiv({ cls: "qnalog-bubble-timer" });
       timer.setText(formatElapsed(info.elapsed));

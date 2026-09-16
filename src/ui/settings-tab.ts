@@ -960,7 +960,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             contentStatus = t("Separated");
             contentState = "success";
           } else if (analysis.separation === "duplicated") {
-            contentStatus = "内容相同";
+            contentStatus = t("Identical content");
             contentState = "warning";
           } else if (analysis.separation === "single") {
             contentStatus = t("Mono");
@@ -1248,7 +1248,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       finally { testBtn.disabled = false; testBtn.setText(t("Check")); }
     };
 
-    const saveBtn = btns.createEl("button", { cls: "mod-cta", text: "保存配置" });
+    const saveBtn = btns.createEl("button", { cls: "mod-cta", text: t("Save configuration") });
     saveBtn.onclick = async () => {
       const name = await qnalogPromptText(this.app, "配置名称", t("e.g. MiMo / DeepSeek + SiliconFlow / a local model"));
       if (name === null) return;
@@ -1290,7 +1290,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
       status.createSpan({ text: kind });
       status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
-      status.createSpan({ cls: "qnalog-scheme-status-hint", text: "修改下方设置会自动更新当前配置" });
+      status.createSpan({ cls: "qnalog-scheme-status-hint", text: t("Changing the settings below updates the current configuration automatically") });
     }
   }
 
@@ -1368,7 +1368,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         ["de", t("German Deutsch")],
         ["it", t("Italian Italiano")],
         ["pt", "葡萄牙语 Português"],
-        ["ru", "俄语 Русский"],
+        ["ru", t("Russian Русский")],
         ["ar", "阿拉伯语 العربية"],
         ["hi", t("Hindi हिन्दी")],
         ["tr", t("Turkish (Türkçe)")],
@@ -1479,7 +1479,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Model ID"))
       .setDesc(llmModelHelp)
       .addText(t => {
-        t.setPlaceholder(activeLlmPreset && activeLlmPreset.modelPlaceholder ? activeLlmPreset.modelPlaceholder : "例如：服务商控制台显示的模型标识");
+        t.setPlaceholder(activeLlmPreset && activeLlmPreset.modelPlaceholder ? activeLlmPreset.modelPlaceholder : t("For example: the model ID shown in the provider's console"));
         t.setValue(this.plugin.settings.llmModel);
         t.onChange(async v => { this.plugin.settings.llmModel = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); });
       })
@@ -1730,7 +1730,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Affects only the preference items under \"Reorganize as\" in the right-click menu. Preferences adjust the level of detail, structure, tone, and whether AI may add a moderate amount of its own points. What you enter here is an additional rule and does not overwrite the built-in prompt."));
     const repolishPromptTa = c.createEl("textarea", { cls: "qnalog-textarea" });
     repolishPromptTa.value = this.plugin.settings.repolishPreferencePromptAddendum || "";
-    repolishPromptTa.placeholder = "例如：适度拓展时，如果原文出现概念、疑问或明显分歧，请用 AI 补充 callout 给出简短视角；关键概念用 ==高亮==，核心判断可用 <u>下划线</u>。不要编造事实、数据或责任人。";
+    repolishPromptTa.placeholder = t("For example: with moderate expansion, when the source raises a concept, question, or clear disagreement, add a short AI-supplement callout for perspective; use ==highlight== for key concepts and <u>underline</u> for core judgments. Do not fabricate facts, data, or owners.");
     repolishPromptTa.rows = 4;
     repolishPromptTa.addEventListener("change", async () => {
       this.plugin.settings.repolishPreferencePromptAddendum = repolishPromptTa.value.trim();
@@ -1794,7 +1794,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       new obsidian.Setting(c).setName(t("Additional Language Requirements"));
       const langTa = c.createEl("textarea", { cls: "qnalog-textarea" });
       langTa.value = this.plugin.settings.briefingLanguageInstruction || "";
-      langTa.placeholder = "例如：日文发言保留原文括注；英文术语保留原文；输出为繁体中文。";
+      langTa.placeholder = t("For example: keep Japanese speech in the original with a parenthetical gloss; keep English terms as-is; output in Traditional Chinese.");
       langTa.rows = 3;
       langTa.addEventListener("change", async () => {
         this.plugin.settings.briefingLanguageInstruction = langTa.value.trim();
@@ -1956,8 +1956,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       btn.onclick = onClick;
       return btn;
     };
-    makeObjectCard("人员", peopleCount, "位", t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
-    makeObjectCard(t("To-do"), todoCount, t("items"), "从纪要确认的行动项，可勾选追踪。", "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
+    makeObjectCard("人员", peopleCount, t("people"), t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
+    makeObjectCard(t("To-do"), todoCount, t("items"), t("Action items confirmed from the meeting notes; check them off to track."), "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
     const vocabCard = makeObjectCard(t("Transcription term list"), "…", "个", t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
 
     void (async () => {
@@ -2032,7 +2032,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Set where resources are stored, the scan records, and the scope of person profile usage. In general, the defaults are fine."))
       .setHeading();
     const advancedBody = c;
-    this.createSettingsSubhead(advancedBody, "保存位置", t("These paths are relative paths inside the current Obsidian vault and only affect content created later."));
+    this.createSettingsSubhead(advancedBody, t("Save location"), t("These paths are relative paths inside the current Obsidian vault and only affect content created later."));
 
     vocabPathSetting = createPathSetting(advancedBody, t("Transcription term list file"), t("Used to store proper nouns, terminology, and commonly misspelled forms."), this.plugin.settings.vocabularyFile || DEFAULT_SETTINGS.vocabularyFile, DEFAULT_SETTINGS.vocabularyFile,
       async v => { this.plugin.settings.vocabularyFile = v || DEFAULT_SETTINGS.vocabularyFile; },
@@ -2056,7 +2056,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         setting.setDesc(`当前 ${count} 张待办卡片。待办卡片适合跟踪跨会议、跨项目的行动项。`);
       });
 
-    createPathSetting(advancedBody, "视图文件夹", "保存 Q&A Log 生成的资料总览和 Base 视图。", this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
+    createPathSetting(advancedBody, "视图文件夹", t("Save the resource overview and Base views generated by Q&A Log."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
       async v => { this.plugin.settings.basesFolder = v || DEFAULT_SETTINGS.basesFolder; });
 
     const vocabScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "vocabulary");
@@ -2093,7 +2093,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const modeLabel = { privacy: "隐私优先", hotwords: "人名热词", localFull: t("Local enhancement") }[normalizePeopleContextMode(this.plugin.settings.peopleContextMode)] || "隐私优先";
     const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? `已于 ${this.plugin.settings.peopleHotwordsConsentAt} 授权人名热词。` : t("Name hotwords not yet authorized.");
 
-    this.createSettingsSubhead(advancedBody, "人员资料隐私", "决定人员姓名和上下文是否会随转写或整理请求发送到当前服务。");
+    this.createSettingsSubhead(advancedBody, "人员资料隐私", t("Determines whether person names and context are sent to the current service along with transcription or organizing requests."));
     new obsidian.Setting(advancedBody).setName(t("Person profile usage policy"))
       .setDesc(`${modeLabel}。${asrScope}；${llmScope}。${consentText}`)
       .addDropdown(d => d
@@ -2532,7 +2532,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       this.plugin.settings.lastUpdateCheckAt ? "上次检查：" + this.plugin.settings.lastUpdateCheckAt : t("Not yet checked"),
       this.plugin.settings.lastUpdateError ? "上次错误：" + this.plugin.settings.lastUpdateError : "",
       rawBases.length > 1 ? t("Alternate download source:") + (rawBases.length - 1) + " 个" : "",
-      "写入目录：" + pluginBasePath(this.plugin),
+      t("Write directory:") + pluginBasePath(this.plugin),
     ].filter(Boolean).join("；");
 
     new obsidian.Setting(c).setName(t("Update Status"))
