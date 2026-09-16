@@ -37,7 +37,7 @@ describe("OpenRouter 一站式预设", () => {
     expect(tp.openrouter.model).toBe("qwen/qwen3-asr-1.7b");
     expect(tp["openrouter-diarize"].model).toBe("microsoft/mai-transcribe-2");
     expect(tp["openrouter-diarize"].protocol).toBe("openrouter-diarize");
-    expect(plan.changes.llmModel).toBe("qwen/qwen3.8-flash");
+    expect(plan.changes.llmModel).toBe("deepseek/deepseek-v4.1-flash");
     expect(plan.changes.llmEndpoint).toBe("https://openrouter.ai/api/v1");
     // 两个 provider 共用同一把密钥
     expect(tp.openrouter.apiKey).toBe("sk-or-test");
@@ -76,7 +76,7 @@ describe("OpenRouter 三段配置经存盘往返仍在", () => {
     expect(roundTrip.transcribeProviders["openrouter-diarize"].model).toBe("microsoft/mai-transcribe-2");
     expect(roundTrip.transcribeProviders["openrouter-diarize"].protocol).toBe("openrouter-diarize");
     expect(roundTrip.transcribeProviders["openrouter-diarize"].apiKey).toBe("sk-or-test");
-    expect(roundTrip.llmModel).toBe("qwen/qwen3.8-flash");
+    expect(roundTrip.llmModel).toBe("deepseek/deepseek-v4.1-flash");
     expect(roundTrip.llmEndpoint).toBe("https://openrouter.ai/api/v1");
     expect(roundTrip.llmApiKey).toBe("sk-or-test");
   });

@@ -240,7 +240,9 @@ export const ONE_CARD_PROVIDERS = {
   //   - 导入音频 microsoft/mai-transcribe-2：整文件转写并做说话人分离。该模型的唯一上游是
   //     Azure，分离开关必须经 provider.options.azure.diarization.enabled 传递，
   //     因此单独走 openrouter-diarize 协议（见 asr/openrouter-diarize.ts）。
-  //   - AI 整理 qwen/qwen3.8-flash：OpenAI 兼容 Chat Completions。
+  //   - AI 整理 deepseek/deepseek-v4.1-flash：OpenAI 兼容 Chat Completions。
+  //     选它而不是 qwen/qwen3.8-flash：两者都默认开思考，但 DeepSeek 支持 reasoning.effort
+  //     （max/high/low），Qwen 只支持开与关。可降 effort 才有实际的提速手段。
   openrouter: {
     label: "OpenRouter",
     scope: "asr-llm",
@@ -253,7 +255,7 @@ export const ONE_CARD_PROVIDERS = {
     importAsrModel: "microsoft/mai-transcribe-2",
     llmPreset: "openrouter",
     llmEndpoint: "https://openrouter.ai/api/v1",
-    llmModel: "qwen/qwen3.8-flash",
+    llmModel: "deepseek/deepseek-v4.1-flash",
     applyDesc: "已用一把 OpenRouter Key 配好录音转写、音频导入与 AI 整理。",
   },
 };
