@@ -59,6 +59,30 @@ export function stripAutoTitleSuffix(stem, settings) {
   return String(stem || "").replace(re, "").trim();
 }
 
+/**
+ * 去掉标题开头的模板名前缀（含历史别名与另一种语言的前缀），保留其后的主题标签。
+ *
+ * 与 stripAutoTitleSuffix 的区别：后者连主题一起剥掉，用于重命名前取回纯日期 stem；
+ * 这里只剥前缀，用于「日期 · 主题」这类标题显示。
+ */
+export function stripModePrefixFromTitle(title, settings) {
+  let out = String(title || "").trim();
+  const prefixes = Object.entries(MODE_PREFIX_TO_KEY).map(([prefix]) => prefix)
+    .concat(Object.keys(MODE_PREFIX_EN_TO_KEY))
+    .concat(getCustomPromptModeTemplates(settings || {}).map(t => t.name))
+    .map(p => String(p || "").trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  // 前缀可能出现在行首，也可能跟在一个分隔符之后（`2026-09-16 0852 · 个人笔记-主题`）。
+  for (const p of prefixes) {
+    const atStart = new RegExp("^" + escapeRegExp(p) + "[-·\\s]+");
+    const afterSep = new RegExp("(\\s*[·•]\\s*)" + escapeRegExp(p) + "[-·\\s]*");
+    if (atStart.test(out)) { out = out.replace(atStart, "").trim(); break; }
+    if (afterSep.test(out)) { out = out.replace(afterSep, "$1"); break; }
+  }
+  return out;
+}
+
 export function buildRenamedMarkdownPath(currentPath, mode, titleTag, settings) {
   const norm = obsidian.normalizePath(String(currentPath || ""));
   const slash = norm.lastIndexOf("/");

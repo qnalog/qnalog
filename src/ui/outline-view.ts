@@ -11,6 +11,7 @@ import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, Queu
 import { getRecentNoteProcessingState, qnalogConfirm, trashVaultFileRef } from "./helpers";
 
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries, getVisiblePolishModeKeys } from "../shared/mode-meta";
+import { stripModePrefixFromTitle } from "../notes/note-markdown";
 
 import { isMobileRuntime } from "../shared/util-platform";
 
@@ -1715,7 +1716,11 @@ export class OutlineView extends obsidian.ItemView {
 
   formatSedimentNoteLabel(file) {
     const name = file && file.basename ? String(file.basename) : "";
-    return name.replace(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2})(\d{2})(.*)$/u, "$2-$3 $4:$5$6");
+    // 与 Q&A 一致：标题只留「日期时间 + 主题」，模板名前缀不重复出现。
+    // 前缀可能是另一种界面语言下写进文件名的，因此中英两种都要剥。
+    const settings = this.plugin && this.plugin.settings ? this.plugin.settings : DEFAULT_SETTINGS;
+    const stripped = stripModePrefixFromTitle(name, settings);
+    return stripped.replace(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2})(\d{2})(.*)$/u, "$2-$3 $4:$5$6");
   }
 
   renderSedimentStart(parent, file, state) {

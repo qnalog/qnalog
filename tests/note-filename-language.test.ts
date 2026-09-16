@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", () => ({ normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"), TFile: class {}, TFolder: class {} }));
 import { setActiveUiLanguage, resolveUiLanguage } from "../src/shared/i18n";
-import { buildRenamedMarkdownPath, stripAutoTitleSuffix } from "../src/notes/note-markdown";
+import { buildRenamedMarkdownPath, stripAutoTitleSuffix, stripModePrefixFromTitle } from "../src/notes/note-markdown";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 
 const S = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+
+// 界面语言是模块级全局状态，会跨测试文件保留；本文件不依赖语言时显式钉成中文。
+beforeEach(() => setActiveUiLanguage(resolveUiLanguage("zh", "zh")));
 
 describe("笔记文件名随语言", () => {
   it("英文界面生成英文前缀的文件名，中文界面生成中文前缀，且都能剥回原 stem", () => {
@@ -41,5 +44,15 @@ describe("实际笔记名的处理", () => {
     expect(out).toContain("Personal notes-");
     expect(out).not.toContain("个人笔记");
     expect(out.match(/2026-09-16 0852/g)).toHaveLength(1);
+  });
+});
+
+describe("标题剥前缀", () => {
+  it("只剥模板名前缀，保留主题", () => {
+    // 两种前缀都要能剥：笔记可能是在另一种界面语言下命名的。
+    expect(stripModePrefixFromTitle("2026-09-16 0852 · 个人笔记-AI视频制作-分镜坐标系规范", S))
+      .toBe("2026-09-16 0852 · AI视频制作-分镜坐标系规范");
+    expect(stripModePrefixFromTitle("2026-09-16 0852 · Personal notes-AI video", S))
+      .toBe("2026-09-16 0852 · AI video");
   });
 });
