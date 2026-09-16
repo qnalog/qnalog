@@ -8,7 +8,8 @@ import { assertEndpointAllowed, canOmitServiceApiKey, isLocalLlmEndpoint, isShar
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
-import { LLM_SERVICE_PRESETS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
+import { UI_LANGUAGES, getActiveUiLanguage, t } from '../shared/i18n';
+import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
 import { fetchLlmModelList, testLlmConnection } from '../llm/core';
 import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
@@ -84,12 +85,12 @@ function renderChannelProbeRows(container, rows) {
 
 export const LV_SETTINGS_TABS = [
   { id: "home",     label: "Q&A Log" },
-  { id: "recording", label: "录音" },
+  { id: "recording", label: "Recording" },
   { id: "api",      label: "API" },
-  { id: "ai",       label: "AI 整理" },
-  { id: "knowledge", label: "资料库" },
-  { id: "inbox",     label: "自动导入" },
-  { id: "about",    label: "关于" },
+  { id: "ai",       label: "AI Briefing" },
+  { id: "knowledge", label: "Knowledge" },
+  { id: "inbox",     label: "Auto Import" },
+  { id: "about",    label: "About" },
 ];
 
 export class QnALogSettingTab extends obsidian.PluginSettingTab {
@@ -108,7 +109,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     this._audioDeviceInfo = null;
   }
   getVisibleSettingsTabs() {
-    return LV_SETTINGS_TABS.slice();
+    // 标签在调用时翻译，不在模块加载时：语言可以在「关于」里随时改，
+    // 若在常量定义处翻译，改完语言标签不会跟着变。
+    return LV_SETTINGS_TABS.map((tab) => ({ id: tab.id, label: t(tab.label) }));
   }
   display() {
     this.renderSettings();
@@ -346,16 +349,16 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
     head.createDiv({
       cls: "qnalog-home-summary",
-      text: "录音、转写并整理为 Markdown 纪要。默认服务、模型与参数都已选好，按需填入 API 密钥即可开始。",
+      text: t("Record, transcribe, and organize into Markdown notes. Default services, models, and parameters are preset \\\\u2014 add an API key when you are ready."),
     });
     // 首页只保留两个动作：快速配置、打开侧边栏。
     // 「配置服务」「AI 整理设置」两条跳转已移除——分别跳到 API 页与 AI 整理页，
     // 用户面对四个按钮无法判断该点哪个；细节调整都在各自页面里，不需要首页再开入口。
     const primary = head.createDiv({ cls: "qnalog-home-actions" });
-    const quickBtn = primary.createEl("button", { text: "快速配置" });
+    const quickBtn = primary.createEl("button", { text: t("Quick config") });
     quickBtn.addClass("mod-cta");
     quickBtn.onclick = () => { void this.startQuickSetup(); };
-    const panelBtn = primary.createEl("button", { text: "打开侧边栏" });
+    const panelBtn = primary.createEl("button", { text: t("Open sidebar") });
     panelBtn.onclick = () => this.plugin.shell.openOutlineView();
 
     // 快速配置面板：一把阿里云百炼 API Key 配好三段服务（录音转写 / 音频导入 / AI 整理）。
@@ -369,28 +372,41 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
     if (this._quickSetupVisible) {
     const oneCard = page.createDiv({ cls: "qnalog-home-block qnalog-home-onecard" });
-    oneCard.createEl("h3", { text: "快速设置" });
+    oneCard.createEl("h3", { text: t("Quick setup") });
     oneCard.createDiv({
       cls: "qnalog-home-prep-desc",
-      text: "填写阿里云百炼的 API Key 即可完成全部配置：录音转写、音频导入和 AI 整理会一起配好，服务地址与模型已内置。",
+      text: t("Pick a provider and enter its API key. Recording transcription and AI briefing are configured together; endpoints and models are preset."),
     });
+
+    // 选服务商，而不是固定某一家。决定因素是「你所在网络能不能连上」，
+    // 与界面语言无关——英文用户在中国大陆、中文用户在海外都很常见。
+    // 默认项按界面语言给一个常见答案，但用户随时可以在下拉里改。
+    let oneCardProvider = getActiveUiLanguage().id === "en" ? "openrouter" : "bailian";
     let oneCardKey = "";
-    const oneCardRow = new obsidian.Setting(oneCard).setName("百炼 API Key");
-    oneCardRow.setDesc("在百炼控制台创建访问密钥后粘贴到这里。密钥只保存在本库的插件设置中。");
-    oneCardRow.addText(t => {
-      t.inputEl.type = "password";
-      t.setPlaceholder("sk-…");
-      t.onChange(v => { oneCardKey = v.trim(); });
+    const providerRow = new obsidian.Setting(oneCard).setName(t("Provider"));
+    providerRow.setDesc(t("Enter the API key for this provider. Keys are stored only in this vault's plugin settings."));
+    providerRow.addDropdown(d => {
+      for (const [id, preset] of Object.entries(ONE_CARD_PROVIDERS)) {
+        d.addOption(id, preset.label);
+      }
+      d.setValue(oneCardProvider).onChange(v => { oneCardProvider = v; });
     });
-    oneCardRow.addButton(b => b.setButtonText("保存并启用").setCta().onClick(async () => {
-      if (!oneCardKey) { new obsidian.Notice("请先填写百炼 API Key", 4000); return; }
+
+    const oneCardRow = new obsidian.Setting(oneCard).setName(t("API key"));
+    oneCardRow.addText(tc => {
+      tc.inputEl.type = "password";
+      tc.setPlaceholder("sk-…");
+      tc.onChange(v => { oneCardKey = v.trim(); });
+    });
+    oneCardRow.addButton(b => b.setButtonText(t("Save and enable")).setCta().onClick(async () => {
+      if (!oneCardKey) { new obsidian.Notice(t("Enter an API key first"), 4000); return; }
       b.setDisabled(true);
-      b.setButtonText("正在检测…");
+      b.setButtonText(t("Checking…"));
       // 先检测候选配置，通过后才写入：避免把一把无效密钥当成配置落盘。
-      const plan = planPresetApplication(this.plugin.settings, { providerId: "bailian", apiKey: oneCardKey });
+      const plan = planPresetApplication(this.plugin.settings, { providerId: oneCardProvider, apiKey: oneCardKey });
       if (!plan.ok) {
         b.setDisabled(false);
-        b.setButtonText("保存并启用");
+        b.setButtonText(t("Save and enable"));
         new obsidian.Notice(plan.reason, 5000);
         return;
       }
@@ -402,41 +418,40 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         if (!report.ok) {
           // 检测未全部通过时不落盘：让用户先看到哪一段有问题。
           b.setDisabled(false);
-          b.setButtonText("保存并启用");
+          b.setButtonText(t("Save and enable"));
           return;
         }
         Object.assign(this.plugin.settings, candidate);
         await this.plugin.saveSettings();
-        new obsidian.Notice("配置完成，可以直接开始录音了。", 8000);
+        new obsidian.Notice(t("Setup complete. You can start recording."), 8000);
         this.renderSettings();
       } catch (error) {
-        new obsidian.Notice(`检测失败：${(error && error.message) || error}`, 8000);
+        new obsidian.Notice(`${t("Check failed")}：${(error && error.message) || error}`, 8000);
         b.setDisabled(false);
-        b.setButtonText("保存并启用");
+        b.setButtonText(t("Save and enable"));
       }
     }));
-    oneCardRow.addButton(b => b.setButtonText("仅检测").onClick(async () => {
-      if (!oneCardKey) { new obsidian.Notice("请先填写百炼 API Key", 4000); return; }
+    oneCardRow.addButton(b => b.setButtonText(t("Check only")).onClick(async () => {
+      if (!oneCardKey) { new obsidian.Notice(t("Enter an API key first"), 4000); return; }
       b.setDisabled(true);
-      b.setButtonText("检测中…");
+      b.setButtonText(t("Checking…"));
       try {
-        const plan = planPresetApplication(this.plugin.settings, { providerId: "bailian", apiKey: oneCardKey });
+        const plan = planPresetApplication(this.plugin.settings, { providerId: oneCardProvider, apiKey: oneCardKey });
         if (!plan.ok) { new obsidian.Notice(plan.reason, 5000); return; }
         const host = buildProbeHost(this.plugin, applyPresetPlan(this.plugin.settings, plan));
         const report = await runPresetDetection(host, plan, this.probePorts());
         new obsidian.Notice(formatDetectionReport(report), 10000);
       } catch (error) {
-        new obsidian.Notice(`检测失败：${(error && error.message) || error}`, 8000);
+        new obsidian.Notice(`${t("Check failed")}：${(error && error.message) || error}`, 8000);
       } finally {
         b.setDisabled(false);
-        b.setButtonText("仅检测");
+        b.setButtonText(t("Check only"));
       }
     }));
     oneCard.createDiv({
       cls: "qnalog-home-prep-desc",
-      text: "其他服务（硅基流动、OpenAI、本地模型等）可在「API」页单独配置；上面这条路径只是把首次配置压到一步。",
+      text: t("Other services (OpenAI, SiliconFlow, local models) can be configured individually on the API tab. This path only compresses first-time setup into one step."),
     });
-
     }
 
     // 「使用状态」：只回答两件事——现在能不能开始用；如果能，当前会用什么服务。
@@ -493,7 +508,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     });
 
     const statusBlock = page.createDiv({ cls: "qnalog-home-block" });
-    statusBlock.createEl("h3", { text: "使用状态" });
+    statusBlock.createEl("h3", { text: t("Status") });
     // 结论区。正常时不放圆点/徽章：四个单项已经各自说明了状况，
     // 总结再挂一个同样的绿点只是重复；有徽章时它也该靠右，不参与左对齐扫读。
     const statusHead = statusBlock.createDiv({ cls: "qnalog-status-head" });
@@ -513,22 +528,22 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 因此把这一步交给用户：需要看真实设备名时点这个按钮。
     if (!this._audioDeviceInfo || this._audioDeviceInfo.permissionRequired) {
       const detectRow = new obsidian.Setting(statusBlock);
-      detectRow.setDesc("「音频输入」需要麦克风授权才能读到设备名。点右侧按钮读取一次；不会开始录音。");
+      detectRow.setDesc(t("「Audio input」 needs microphone permission to read device names. Click the button to read them once; recording will not start."));
       detectRow.addButton((btn) => btn.setButtonText("检测设备").onClick(async (evt) => {
         const button = evt && evt.currentTarget;
-        if (button) { button.disabled = true; button.setText("检测中…"); }
+        if (button) { button.disabled = true; button.setText(t("Checking…")); }
         try {
           this._audioDeviceInfo = await enumerateAudioDevices({ requestPermission: true });
         } catch (error) {
           new obsidian.Notice(`设备检测失败：${(error && error.message) || error}`, 6000);
         }
-        if (button) { button.disabled = false; button.setText("检测设备"); }
+        if (button) { button.disabled = false; button.setText(t("Detect devices")); }
         this.renderSettings();
       }));
     }
 
     const footer = page.createDiv({ cls: "qnalog-home-footnote" });
-    footer.setText("费用说明：Q&A Log 插件本身免费。云端转写与大模型服务由对应平台按量计费；本地模型不产生平台费用，但需自行安装、启动与维护。");
+    footer.setText(t("Costs: the Q&A Log plugin itself is free. Cloud transcription and LLM services bill per usage on their own platforms; local models incur no platform fees but you install, run, and maintain them yourself."));
   }
 
   /**
@@ -580,7 +595,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const micId = String(this.plugin.settings.selectedMicrophoneDevice || "");
     // 次级行不再重复模式名（「音频输入」这一行已经表达了输入来源），
     // 只说这是系统默认还是用户指定的设备。
-    const modeText = micId ? "已指定设备" : "系统默认";
+    const modeText = micId ? t("Device specified") : t("System default");
     const vcId = String(this.plugin.settings.selectedVirtualDevice || "");
     const needsVirtual = mode === "virtualCable" || mode === "mix-virtual";
 
@@ -699,7 +714,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (isMobileRuntime()) {
       selectEl.value = "";
       selectEl.disabled = true;
-      hintEl.setText("移动端使用系统麦克风；电脑音频和虚拟声卡采集请在桌面端配置。");
+      hintEl.setText(t("Mobile uses the system microphone; configure computer audio and virtual audio devices on desktop."));
       return;
     }
 
@@ -710,7 +725,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     } catch {
       selectEl.disabled = true;
       selectEl.value = "";
-      hintEl.setText("无法读取设备列表。请先授予麦克风权限，再点「设备检测」。");
+      hintEl.setText(t("Could not read the device list. Grant microphone permission, then use \\\\u201cDetect devices\\\\u201d."));
       return;
     }
 
@@ -720,7 +735,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (availability.state === "none") {
       selectEl.disabled = false;
       selectEl.value = "";
-      hintEl.setText("未检测到任何音频输入设备。请检查麦克风是否已连接、系统是否授予权限。");
+      hintEl.setText(t("No audio input device found. Check that your microphone is connected and that the system grants permission."));
       return;
     }
 
@@ -755,11 +770,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (availability.state === "unnamed") {
       hintEl.setText(`读到 ${availability.count} 个音频输入设备，但设备名需要麦克风授权才能显示；现在仍可按下拉里的顺序选择。`);
     } else if (selected && !selectedListed) {
-      hintEl.setText("所选麦克风未连接，请重新选择。");
+      hintEl.setText(t("The selected microphone is disconnected. Choose another."));
     } else if (selected) {
-      hintEl.setText("使用此设备录音。");
+      hintEl.setText(t("Use this device for recording."));
     } else {
-      hintEl.setText("使用系统默认输入设备。录制人声时，建议明确选择麦克风。");
+      hintEl.setText(t("Uses the system default input. When recording speech, choosing a microphone explicitly is recommended."));
     }
   }
 
@@ -774,7 +789,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (isMobileRuntime()) {
       selectEl.value = "";
       selectEl.disabled = true;
-      hintEl.setText("移动端不支持电脑音频采集，请在桌面端配置虚拟声卡。");
+      hintEl.setText(t("Mobile does not support computer-audio capture; configure a virtual audio device on desktop."));
       return;
     }
 
@@ -785,7 +800,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     } catch {
       selectEl.disabled = true;
       selectEl.value = "";
-      hintEl.setText("无法读取设备列表。请先授予麦克风权限，再选择设备。");
+      hintEl.setText(t("Could not read the device list. Grant microphone permission, then choose a device."));
       return;
     }
 
@@ -794,7 +809,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (availability.state === "none") {
       selectEl.disabled = false;
       selectEl.value = "";
-      hintEl.setText("未检测到任何音频输入设备。请先安装虚拟声卡。");
+      hintEl.setText(t("No audio input device found. Install a virtual audio device first."));
       return;
     }
 
@@ -817,17 +832,17 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     selectEl.value = selected || "";
 
     if (selected && !hasSelected) {
-      hintEl.setText("当前已选电脑音频设备可能已断开。请重新选择。");
+      hintEl.setText(t("The selected computer-audio device may be disconnected. Choose another."));
     } else if (availability.state === "unnamed") {
       hintEl.setText(`读到 ${availability.count} 个音频输入设备，但设备名需要麦克风授权才能显示；可先授权后重新打开本页。`);
     } else if (groups.dongles.length === 0) {
-      hintEl.setText("未找到电脑音频输入。请先设置虚拟声卡。");
+      hintEl.setText(t("No computer-audio input found. Set up a virtual audio device first."));
     } else if (!virtualDevs.length) {
-      hintEl.setText("未识别出虚拟声卡，已列出全部输入设备；若其中有采集电脑声音的那一只，选它即可。");
+      hintEl.setText(t("No virtual audio device recognized, so all input devices are listed. Pick the one that carries computer audio."));
     } else if (selected) {
-      hintEl.setText("电脑播放的声音会从这个输入录入。");
+      hintEl.setText(t("Sound played on the computer will be recorded from this input."));
     } else {
-      hintEl.setText("请手动选择采集电脑声音的虚拟声卡输入（通常是 CABLE Output / BlackHole 等）。");
+      hintEl.setText(t("Pick the virtual audio device that captures computer audio (usually CABLE Output, BlackHole, and similar)."));
     }
   }
 
@@ -878,7 +893,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         this.plugin.settings.selectedMicrophoneDevice = micSelect.value;
         await this.plugin.saveSettings();
         await this.populateAudioInputMicSelect(micSelect, micHint);
-        new obsidian.Notice(micSelect.value ? "麦克风选择已保存" : "请选择一个麦克风");
+        new obsidian.Notice(micSelect.value ? t("Microphone selection saved") : t("Choose a microphone"));
       });
       void this.populateAudioInputMicSelect(micSelect, micHint);
     }
@@ -893,7 +908,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         attr: { "aria-label": "说话人区分方式" },
       });
       channelModeSelect.createEl("option", { value: "auto", text: "自动（推荐）" });
-      channelModeSelect.createEl("option", { value: "mono", text: "关闭" });
+      channelModeSelect.createEl("option", { value: "mono", text: t("Close") });
       channelModeSelect.createEl("option", { value: "multichannel", text: "按声道区分" });
       channelModeSelect.value = normalizeAudioChannelMode(this.plugin.settings.audioChannelMode);
       channelModeSelect.addEventListener("change", async () => {
@@ -903,7 +918,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       });
       const detectButton = titleActions.createEl("button", {
         cls: "qnalog-audio-channel-detect",
-        text: "测试",
+        text: t("Test"),
         attr: { type: "button" },
       });
       const channelHint = channelField.createDiv({ cls: "qnalog-audio-input-hint qnalog-audio-channel-hint" });
@@ -959,11 +974,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             { label: "说话人区分", value: contentStatus, state: contentState },
           ]);
           if (analysis.separation === "separated") {
-            channelHint.setText("测试通过。各声道将分别标记为说话人1、说话人2……");
+            channelHint.setText(t("Test passed. Each channel will be labelled Speaker 1, Speaker 2, and so on."));
             channelField.addClass("is-multichannel");
             channelField.removeClass("is-channel-warning");
           } else if (analysis.separation === "duplicated") {
-            channelHint.setText("各声道内容相同。请在接收器上把输出改为「Stereo（立体声）」后重试。");
+            channelHint.setText(t("All channels carry identical content. Set the receiver output to \\\\u201cStereo\\\\u201d and try again."));
             channelField.removeClass("is-multichannel");
             channelField.addClass("is-channel-warning");
           } else {
@@ -984,7 +999,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         } finally {
           if (stream) stream.getTracks().forEach((track) => track.stop());
           detectButton.disabled = false;
-          detectButton.setText("测试");
+          detectButton.setText(t("Test"));
         }
       };
     }
@@ -1000,7 +1015,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         this.plugin.settings.selectedVirtualDevice = vcSelect.value;
         await this.plugin.saveSettings();
         await this.populateAudioInputVirtualSelect(vcSelect, vcHint);
-        new obsidian.Notice(vcSelect.value ? "电脑音频输入选择已保存" : "请选择一个电脑音频输入");
+        new obsidian.Notice(vcSelect.value ? t("Computer audio input saved") : t("Choose a computer audio input"));
       });
       void this.populateAudioInputVirtualSelect(vcSelect, vcHint);
     }
@@ -1199,8 +1214,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
   renderApiSchemeSelector(c) {
     new obsidian.Setting(c)
-      .setName("API 配置")
-      .setDesc("保存并切换转写与 AI 整理服务。")
+      .setName(t("API Configuration"))
+      .setDesc(t("Save and switch the transcription and AI organizing services."))
       .setHeading();
     const schemes = Array.isArray(this.plugin.settings.llmProfiles) ? this.plugin.settings.llmProfiles : [];
     const activeId = this.plugin.settings.activeLlmProfile || "";
@@ -1221,17 +1236,17 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       applyLlmProfileToWorkingConfig(this.plugin.settings, id);
       await this.plugin.saveSettings();
       const p = findLlmProfile(this.plugin.settings, id);
-      new obsidian.Notice(`已切换到配置「${p ? p.name : id}」${p && p.asr ? "（转写与 AI 整理）" : "（仅 AI 整理）"}`, 5000);
+      new obsidian.Notice(`已切换到配置「${p ? p.name : id}」${p && p.asr ? t(" (transcription and AI briefing)") : t(" (AI briefing only)")}`, 5000);
       this.renderSettings();
     });
 
     const btns = controls.createDiv({ cls: "qnalog-scheme-btns" });
-    const testBtn = btns.createEl("button", { text: "检测" });
+    const testBtn = btns.createEl("button", { text: t("Check") });
     testBtn.onclick = async () => {
-      testBtn.disabled = true; testBtn.setText("检测中…");
+      testBtn.disabled = true; testBtn.setText(t("Checking…"));
       new obsidian.Notice("正在检测转写 + 大模型连通性…", 4000);
       try { new obsidian.Notice(await this.runComboConnectivityTest(), 9000); }
-      finally { testBtn.disabled = false; testBtn.setText("检测"); }
+      finally { testBtn.disabled = false; testBtn.setText(t("Check")); }
     };
 
     const saveBtn = btns.createEl("button", { cls: "mod-cta", text: "保存配置" });
@@ -1270,7 +1285,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (activeId) {
       const p = findLlmProfile(this.plugin.settings, activeId);
-      const kind = p && p.asr ? "转写与 AI 整理" : "仅 AI 整理（旧配置）";
+      const kind = p && p.asr ? t("Transcription and AI briefing") : t("AI briefing only (legacy)");
       const status = block.createDiv({ cls: "qnalog-scheme-status" });
       status.createSpan({ cls: "qnalog-scheme-status-name", text: `当前：${p ? p.name : activeId}` });
       status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
@@ -1285,14 +1300,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     this.renderApiSchemeSelector(c);
 
     new obsidian.Setting(c)
-      .setName("语音识别")
-      .setDesc("配置会议录音使用的转写服务。导入音频使用独立服务，见下方「说话人识别」。")
+      .setName(t("Speech Recognition"))
+      .setDesc(t("Configure the transcription service used for meeting recordings. Importing audio uses a separate service, see \"Speaker Recognition\" below."))
       .setHeading();
 
     this.renderDataRiskNotice(c, "is-api");
 
-    new obsidian.Setting(c).setName("转写服务")
-      .setDesc("选择当前用于语音转写的服务。下方只显示所选服务的配置项。")
+    new obsidian.Setting(c).setName(t("Transcription Service"))
+      .setDesc(t("Choose the service currently used for speech transcription. Only the settings for the selected service are shown below."))
       .addDropdown(d => {
         for (const id of Object.keys(this.plugin.settings.transcribeProviders)) {
           const p = this.plugin.settings.transcribeProviders[id];
@@ -1319,24 +1334,24 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     };
 
     const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
-    new obsidian.Setting(c).setName(providerNeedsKey ? "访问密钥" : "访问密钥（可选）")
+    new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
       .setDesc(profile.keyHelp)
       .addText(t => { t.inputEl.type = "password"; t.setValue(provider.apiKey || "").onChange(v => writeProvider("apiKey", v)); });
 
-    new obsidian.Setting(c).setName("服务地址")
+    new obsidian.Setting(c).setName(t("Service URL"))
       .setDesc(profile.endpointHelp)
       .addText(t => t.setValue(provider.endpoint || "")
         .setPlaceholder(profile.endpointPlaceholder || "")
         .onChange(v => writeProvider("endpoint", v.trim())));
 
-    new obsidian.Setting(c).setName("模型名称")
+    new obsidian.Setting(c).setName(t("Model Name"))
       .setDesc(profile.modelHelp)
       .addText(t => t.setValue(provider.model || "")
         .setPlaceholder(profile.modelPlaceholder || "")
         .onChange(v => writeProvider("model", v.trim())));
 
     if (!profile.hideLanguage) {
-      new obsidian.Setting(c).setName("识别语言")
+      new obsidian.Setting(c).setName(t("Recognition Language"))
         .setDesc(profile.languageHelp || "留空或 auto 表示自动检测；中文通常填 zh，英文填 en。")
         .addText(t => t.setValue(provider.language || "")
           .setPlaceholder(profile.languagePlaceholder || "")
@@ -1359,8 +1374,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         ["hi", "印地语 हिन्दी"],
         ["tr", "土耳其语 Türkçe"],
       ];
-      new obsidian.Setting(c).setName("目标语言（翻译输出）")
-        .setDesc("选择 Q&A Log 把语音翻译成哪种语言。说话人语言会自动检测。")
+      new obsidian.Setting(c).setName(t("Target Language (translation output)"))
+        .setDesc(t("Choose which language Q&A Log translates speech into. The speaker's language is detected automatically."))
         .addDropdown(d => {
           for (const [code, label] of targetLanguages) d.addOption(code, label);
           d.setValue(provider.targetLanguage || "zh")
@@ -1370,11 +1385,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (profile.transcribeMode === "streaming") {
       const tip = c.createDiv({ cls: "qnalog-provider-streaming-tip" });
-      tip.setText("实时模式：录音全程与服务保持连线，边说边出文字，不再切段上传。「录音」页中的「分段间隔」「即时分段」对此服务不生效。");
+      tip.setText(t("Live mode: the connection stays open for the whole recording and text appears as you speak; audio is no longer uploaded in segments. \\\\u201cSegment interval\\\\u201d and \\\\u201cInterim segment transcription\\\\u201d on the Recording tab have no effect for this service."));
     }
 
-    new obsidian.Setting(c).setName("连通性测试")
-      .setDesc("用一段 1 秒静音音频验证当前转写服务是否可用。")
+    new obsidian.Setting(c).setName(t("Connectivity Test"))
+      .setDesc(t("Verify that the current transcription service works using a 1-second silent audio clip."))
       .addButton(b => b.setButtonText("测试").onClick(async () => {
         b.setDisabled(true); b.setButtonText("测试中…");
         const view = buildServiceView(provider, providerNeedsKey);
@@ -1388,15 +1403,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c)
-      .setName("AI 整理")
-      .setDesc("配置 AI 整理使用的模型，用于纪要整理、问一问、沉淀、重整和翻译。")
+      .setName(t("AI Organizing"))
+      .setDesc(t("Configure the model used for AI organizing: minutes generation, Ask, distillation, reorganization, and translation."))
       .setHeading();
     // 「已保存配置」已升级为顶部「API 方案」（同时含转写 + AI 整理），不再在此处单列 LLM-only 版本。
 
     const activeLlmPresetId = getActiveLlmServicePresetId(this.plugin.settings);
     const activeLlmPreset = getLlmServicePreset(activeLlmPresetId);
-    new obsidian.Setting(c).setName("服务预设")
-      .setDesc("用于快速填入服务地址和必要的请求头适配，不会覆盖访问密钥。模型标识请按对应服务商或中转站控制台填写。")
+    new obsidian.Setting(c).setName(t("Service Preset"))
+      .setDesc(t("Quickly fills in the service URL and the required request header adaptation; it does not overwrite the access key. Enter the model ID as given in the console of the corresponding provider or relay service."))
       .addDropdown(d => {
         d.addOption("", "自定义服务…");
         for (const preset of LLM_SERVICE_PRESETS) d.addOption(preset.id, preset.label);
@@ -1430,7 +1445,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       ? activeLlmPreset.modelHelp
       : "填写服务要求的 model 名称；Poe、OpenRouter 等中转站以其控制台或模型列表显示的名称为准。";
 
-    new obsidian.Setting(c).setName("服务地址")
+    new obsidian.Setting(c).setName(t("Service URL"))
       .setDesc(llmEndpointHelp)
       .addText(t => t.setValue(this.plugin.settings.llmEndpoint).onChange(async v => {
         this.plugin.settings.llmEndpoint = v;
@@ -1439,7 +1454,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       }));
 
-    const llmKeyRow = new obsidian.Setting(c).setName("访问密钥")
+    const llmKeyRow = new obsidian.Setting(c).setName(t("Access Key"))
       .setDesc(llmKeyHelp)
       .addText(t => { t.inputEl.type = "password"; t.setValue(this.plugin.settings.llmApiKey).onChange(async v => { this.plugin.settings.llmApiKey = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); }); });
     const sfSpeechKey = ((this.plugin.settings.transcribeProviders || {}).siliconflow || {}).apiKey || "";
@@ -1462,7 +1477,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
     }
 
-    new obsidian.Setting(c).setName("模型标识")
+    new obsidian.Setting(c).setName(t("Model ID"))
       .setDesc(llmModelHelp)
       .addText(t => {
         t.setPlaceholder(activeLlmPreset && activeLlmPreset.modelPlaceholder ? activeLlmPreset.modelPlaceholder : "例如：服务商控制台显示的模型标识");
@@ -1490,8 +1505,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }
       }));
 
-    new obsidian.Setting(c).setName("大模型连通性测试")
-      .setDesc("发送一条极短文本请求，验证服务地址、访问密钥和模型名称是否匹配；不会上传录音、转写文本或提示词。")
+    new obsidian.Setting(c).setName(t("LLM Connectivity Test"))
+      .setDesc(t("Sends a very short text request to verify that the service URL, access key, and model name match; it does not upload recordings, transcripts, or prompts."))
       .addButton(b => b.setButtonText("测试连接").onClick(async () => {
         b.setDisabled(true);
         b.setButtonText("测试中…");
@@ -1524,8 +1539,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    */
   renderImportAudio(c) {
         new obsidian.Setting(c)
-      .setName("说话人识别")
-      .setDesc("导入整段音频时使用独立服务转写并识别说话人，不参与实时录音分段。")
+      .setName(t("Speaker labels"))
+      .setDesc(t("Importing a whole audio file uses a separate service for transcription and speaker identification, and does not take part in live recording segmentation."))
       .setHeading();
 
     // 风险提示由 API 页顶部统一渲染一次，这里不再重复。
@@ -1559,8 +1574,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       });
     }
 
-    new obsidian.Setting(c).setName("转写服务")
-      .setDesc("仅用于导入音频，不影响实时录音。")
+    new obsidian.Setting(c).setName(t("Transcription Service"))
+      .setDesc(t("Used only for imported audio; it does not affect live recording."))
       .addDropdown((dropdown) => {
         for (const id of supportedIds) {
           const item = providers[id] || {};
@@ -1584,21 +1599,21 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     };
 
     const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
-    new obsidian.Setting(c).setName(providerNeedsKey ? "访问密钥" : "访问密钥（可选）")
+    new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
       .setDesc(profile.keyHelp || "按转写服务要求填写。")
       .addText((text) => {
         text.inputEl.type = "password";
         text.setValue(provider.apiKey || "").onChange((value) => writeProvider("apiKey", value));
       });
 
-    new obsidian.Setting(c).setName("服务地址")
+    new obsidian.Setting(c).setName(t("Service URL"))
       .setDesc(profile.endpointHelp || "导入音频转写接口地址。")
       .addText((text) => text
         .setValue(provider.endpoint || "")
         .setPlaceholder(profile.endpointPlaceholder || "")
         .onChange((value) => writeProvider("endpoint", value.trim())));
 
-    new obsidian.Setting(c).setName("模型名称")
+    new obsidian.Setting(c).setName(t("Model Name"))
       .setDesc(profile.modelHelp || "填写服务支持的长音频转写模型。")
       .addText((text) => text
         .setValue(provider.model || "")
@@ -1629,8 +1644,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }));
 
     new obsidian.Setting(c)
-      .setName("连接测试")
-      .setDesc("验证服务地址、访问密钥和模型是否可用，不上传录音内容。")
+      .setName(t("Connection Test"))
+      .setDesc(t("Verifies that the service URL, access key, and model are available; it does not upload recording content."))
       .addButton((button) => button
         .setButtonText("测试连接")
         .onClick(async () => {
@@ -1648,7 +1663,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }));
 
     if (!profile.hideLanguage) {
-      new obsidian.Setting(c).setName("识别语言")
+      new obsidian.Setting(c).setName(t("Recognition Language"))
         .setDesc(profile.languageHelp || "留空或 auto 表示自动检测。")
         .addText((text) => text
           .setValue(provider.language || "")
@@ -1657,8 +1672,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
 
     new obsidian.Setting(c)
-      .setName("区分说话人")
-      .setDesc("转写完成后确认“说话人 1、2、3”对应的姓名，再进入 AI 整理。")
+      .setName(t("Distinguish Speakers"))
+      .setDesc(t("After transcription completes, confirm the names for \"Speaker 1, 2, 3\" before moving on to AI organizing."))
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.importSpeakerDiarization !== false)
         .onChange(async (value) => {
@@ -1669,14 +1684,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (this.plugin.settings.importSpeakerDiarization !== false) {
       new obsidian.Setting(c)
-        .setName("说话人数")
-        .setDesc("留空表示自动识别；已知人数时填写可提高区分稳定性。")
+        .setName(t("Number of Speakers"))
+        .setDesc(t("Leave empty to detect automatically; if you know the number of speakers, filling it in improves speaker separation consistency."))
         .addText((text) => {
           text.inputEl.type = "number";
           text.inputEl.min = "2";
           text.inputEl.max = "100";
           text.inputEl.step = "1";
-          text.setPlaceholder("自动");
+          text.setPlaceholder(t("Auto"));
           text.setValue(this.plugin.settings.importSpeakerCount > 0
             ? String(this.plugin.settings.importSpeakerCount)
             : "");
@@ -1694,14 +1709,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (!this.plugin.settings.industryProfile) this.plugin.settings.industryProfile = {};
 
     new obsidian.Setting(c)
-      .setName("纪要生成")
-      .setDesc("设置纪要的结构、详略和重新整理偏好。参会信息与待办归属在每次录音前单独补充。")
+      .setName(t("Minutes Generation"))
+      .setDesc(t("Set the structure, level of detail, and reorganization preferences for minutes. Meeting information and to-do attribution are added separately before each recording."))
       .setHeading();
     const structHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
-    structHint.setText("默认只调整整理结果，不改动原始转写。重新整理偏好仅作用于右键菜单中的派生版本。");
+    structHint.setText(t("Only the refined result is adjusted by default; the raw transcript is left untouched. Repolish preference applies only to derived versions created from the context menu."));
 
-    new obsidian.Setting(c).setName("结构化程度")
-      .setDesc("宽松：散文为主。均衡：散文加 1–2 级列表（推荐）。严谨：最多 3 级列表，强调论点与证据。")
+    new obsidian.Setting(c).setName(t("Structure Level"))
+      .setDesc(t("Relaxed: mostly prose. Balanced: prose plus lists 1–2 levels deep (recommended). Strict: lists up to 3 levels deep, emphasizing arguments and evidence."))
       .addDropdown(d => d
         .addOption("loose", "宽松（散文为主）")
         .addOption("balanced", "均衡（推荐）")
@@ -1712,8 +1727,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName("重新整理偏好提示词")
-      .setDesc("只影响右键菜单「重新整理为」里的偏好项。偏好会调整详略、结构、语气和是否允许 AI 适度补充观点。这里填写的是追加规则，不会覆盖内置提示词。");
+    new obsidian.Setting(c).setName(t("Reorganization Preference Prompt"))
+      .setDesc(t("Affects only the preference items under \"Reorganize as\" in the right-click menu. Preferences adjust the level of detail, structure, tone, and whether AI may add a moderate amount of its own points. What you enter here is an additional rule and does not overwrite the built-in prompt."));
     const repolishPromptTa = c.createEl("textarea", { cls: "qnalog-textarea" });
     repolishPromptTa.value = this.plugin.settings.repolishPreferencePromptAddendum || "";
     repolishPromptTa.placeholder = "例如：适度拓展时，如果原文出现概念、疑问或明显分歧，请用 AI 补充 callout 给出简短视角；关键概念用 ==高亮==，核心判断可用 <u>下划线</u>。不要编造事实、数据或责任人。";
@@ -1739,14 +1754,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     repolishPresetHint.createEl("pre", { text: presetText });
 
     new obsidian.Setting(c)
-      .setName("语言与翻译")
-      .setDesc("设置 AI 整理后的纪要语言。原始转写始终保留原文。")
+      .setName(t("Language & Translation"))
+      .setDesc(t("Set the language of the minutes after AI organizing. The raw transcript always keeps its original text."))
       .setHeading();
     const langHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
-    langHint.setText("适用于多语种会议，可统一输出语言或保留关键原文括注。");
+    langHint.setText(t("Suitable for multilingual meetings: output one language throughout, or keep key original text in parentheses."));
 
-    new obsidian.Setting(c).setName("语言策略")
-      .setDesc("默认跟随原文。开启后由大模型在整理纪要时统一语言。")
+    new obsidian.Setting(c).setName(t("Language Strategy"))
+      .setDesc(t("By default it follows the original text. When enabled, the LLM unifies the language while organizing the minutes."))
       .addDropdown(d => d
         .addOption("off", "跟随原文（不翻译）")
         .addOption("translate", "统一为目标语言")
@@ -1755,7 +1770,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         .onChange(async v => { this.plugin.settings.briefingTranslationMode = v; await this.plugin.saveSettings(); this.renderSettings(); }));
 
     if ((this.plugin.settings.briefingTranslationMode || "off") !== "off") {
-      new obsidian.Setting(c).setName("目标语言")
+      new obsidian.Setting(c).setName(t("Target Language"))
         .addDropdown(d => d
           .addOption("zh-CN", "中文")
           .addOption("en", "English")
@@ -1766,18 +1781,18 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           .onChange(async v => { this.plugin.settings.briefingTargetLanguage = v; await this.plugin.saveSettings(); this.renderSettings(); }));
 
       if ((this.plugin.settings.briefingTargetLanguage || "zh-CN") === "custom") {
-        new obsidian.Setting(c).setName("自定义目标语言")
-          .setDesc("例如：繁体中文、Deutsch、Français。")
+        new obsidian.Setting(c).setName(t("Custom Target Language"))
+          .setDesc(t("For example: Traditional Chinese, Deutsch, Français."))
           .addText(t => t.setValue(this.plugin.settings.briefingCustomLanguage || "")
             .onChange(async v => { this.plugin.settings.briefingCustomLanguage = v.trim(); await this.plugin.saveSettings(); }));
       }
 
-      new obsidian.Setting(c).setName("保留专有名词原文")
-        .setDesc("人名、公司名、模型名、代码标识、英文缩写等优先保留原写法，避免翻译后失真。")
+      new obsidian.Setting(c).setName(t("Preserve Proper Nouns in Original Form"))
+        .setDesc(t("Names of people and companies, model names, code identifiers, English abbreviations, and the like keep their original spelling to avoid distortion after translation."))
         .addToggle(t => t.setValue(this.plugin.settings.briefingKeepOriginalTerms !== false)
           .onChange(async v => { this.plugin.settings.briefingKeepOriginalTerms = v; await this.plugin.saveSettings(); }));
 
-      new obsidian.Setting(c).setName("额外语言要求");
+      new obsidian.Setting(c).setName(t("Additional Language Requirements"));
       const langTa = c.createEl("textarea", { cls: "qnalog-textarea" });
       langTa.value = this.plugin.settings.briefingLanguageInstruction || "";
       langTa.placeholder = "例如：日文发言保留原文括注；英文术语保留原文；输出为繁体中文。";
@@ -1789,14 +1804,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
 
     new obsidian.Setting(c)
-      .setName("HTML 报告")
-      .setDesc("把纪要内容生成适合阅读、分享和打印的独立 HTML 报告。")
+      .setName(t("HTML Report"))
+      .setDesc(t("Generate a standalone HTML report from the minutes that is suitable for reading, sharing, and printing."))
       .setHeading();
     const reportHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
-    reportHint.setText("报告使用同一份纪要内容，不会改变 Obsidian 中的原始纪要。");
+    reportHint.setText(t("The report uses the same note content and does not modify the original note in Obsidian."));
 
-    new obsidian.Setting(c).setName("HTML 报告保存文件夹")
-      .setDesc("相对当前 Obsidian 库的路径。生成的 HTML 报告会保存为库内文件，便于后续归档、同步或手动移动。修改后仅影响新文件，已有文件不会自动迁移。")
+    new obsidian.Setting(c).setName(t("HTML report save folder"))
+      .setDesc(t("Path relative to the current Obsidian vault. Generated HTML reports are saved as files inside the vault for easier archiving, syncing, or manual moving. Changes apply only to new files; existing files are not migrated automatically."))
       .addText(t => t
         .setPlaceholder("QnALog/HTML报告")
         .setValue(this.plugin.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder)
@@ -1805,8 +1820,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName("生成 HTML 报告后自动打开")
-      .setDesc("使用系统默认浏览器打开生成的报告文件。")
+    new obsidian.Setting(c).setName(t("Automatically open after generating the HTML report"))
+      .setDesc(t("Open the generated report file in your system's default browser."))
       .addToggle(t => t
         .setValue(this.plugin.settings.autoOpenHtmlReportAfterGenerate !== false)
         .onChange(async v => {
@@ -1814,10 +1829,10 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName("报告页脚公司名（可选）")
-      .setDesc("填写后作为「研讨」报告页脚的公司名；留空则用纪要里的「公司/」标签。报告不含公司 logo。")
+    new obsidian.Setting(c).setName(t("Company name in report footer (optional)"))
+      .setDesc(t("When filled in, used as the company name in the footer of the \"Discussion\" report; if left empty, the \"Company/\" tag from the note is used. The report does not include a company logo."))
       .addText(t => t
-        .setPlaceholder("（留空＝用纪要的 公司/ 标签）")
+        .setPlaceholder(t("(Leave empty = use the note's Company/ tag)"))
         .setValue(this.plugin.settings.reportBrandName || "")
         .onChange(async v => {
           this.plugin.settings.reportBrandName = v.trim();
@@ -1825,15 +1840,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }));
 
     new obsidian.Setting(c)
-      .setName("纪要模板")
-      .setDesc("选择默认整理模板，并管理长期复用的格式、行业规则和输出偏好。")
+      .setName(t("Note template"))
+      .setDesc(t("Choose the default organizing template, and manage long-term reusable formats, industry rules, and output preferences."))
       .setHeading();
     const sceneHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
-    sceneHint.setText("内置模板可直接使用；自定义模板会出现在录音、导入和重新整理的选择列表中。");
+    sceneHint.setText(t("Built-in templates can be used as-is; custom templates appear in the selection lists for recording, import, and re-organize."));
 
     const currentMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode, "meeting");
     const currentMeta = getModeMeta(this.plugin.settings, currentMode);
-    new obsidian.Setting(c).setName("默认纪要模板")
+    new obsidian.Setting(c).setName(t("Default note template"))
       .setDesc((currentMeta.label || currentMeta.prefix) + "。录音、导入音频和重新整理默认使用此模板；具体操作时仍可临时切换。")
       .addDropdown(d => {
         for (const [key, label] of getVisibleModeEntries(this.plugin.settings, false)) d.addOption(key, label);
@@ -1876,11 +1891,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const refreshVocabStatus = async (setting) => {
       const path = this.plugin.settings.vocabularyFile;
-      if (!path) { setting.setDesc("当前未指定路径。"); return; }
+      if (!path) { setting.setDesc(t("No path specified yet.")); return; }
       const norm = obsidian.normalizePath(path);
       const file = this.plugin.app.vault.getAbstractFileByPath(norm);
       if (!(file instanceof obsidian.TFile)) {
-        setting.setDesc("文件不存在，打开或扫描时会自动创建。");
+        setting.setDesc(t("The file does not exist; it is created automatically when opened or scanned."));
         return;
       }
       try {
@@ -1921,8 +1936,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const todoCount = countMarkdownInFolder(this.plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder);
 
     new obsidian.Setting(c)
-      .setName("资料库")
-      .setDesc("从纪要中沉淀人员、待办和转写词表，用于复用和检索；纪要保留原始证据和录音链接。")
+      .setName(t("Resource library"))
+      .setDesc(t("Extract people, to-dos, and transcription glossaries from notes for reuse and retrieval; notes keep the original evidence and recording links."))
       .setHeading();
 
     const overview = c.createDiv({ cls: "qnalog-object-overview-grid" });
@@ -1959,23 +1974,23 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }
     })();
 
-    new obsidian.Setting(c).setName("转写完成后自动沉淀")
-      .setDesc("默认关闭以节省 token。开启后，转写/整理完成会自动扫描当前纪要并写入待办；人员和词表仍保留确认/维护流程。")
+    new obsidian.Setting(c).setName(t("Automatically extract after transcription completes"))
+      .setDesc(t("Off by default to save tokens. When enabled, finishing transcription/organizing automatically scans the current note and writes to-dos; people and glossaries still go through the confirmation/maintenance flow."))
       .addToggle(t => t.setValue(!!this.plugin.settings.sedimentAutoExtract).onChange(async v => { this.plugin.settings.sedimentAutoExtract = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c)
-      .setName("补全与去重")
-      .setDesc("从历史纪要提取人员和转写词表，并处理重复人员档案。")
+      .setName(t("Completion and deduplication"))
+      .setDesc(t("Extract people and transcription glossaries from past notes, and handle duplicate person profiles."))
       .setHeading();
-    new obsidian.Setting(c).setName("从历史纪要补全")
+    new obsidian.Setting(c).setName(t("Complete from past notes"))
       .setDesc(`人员待确认 ${pendingPeopleSuggestions.length} 条，已忽略 ${ignoredPeopleSuggestions.length} 条。扫描会调用当前 AI 整理服务；涉密内容建议使用本地模型。`)
       .addButton(b => b.setButtonText("提取人员建议").setCta().onClick(async () => this.plugin.people.suggestPeopleDirectoryFromLibrary()))
       .addButton(b => b.setButtonText("提取转写词表").onClick(async () => this._extractVocabFromLibrary(async () => { if (vocabPathSetting) await refreshVocabStatus(vocabPathSetting); })))
       .addButton(b => b.setButtonText("待确认").setDisabled(!pendingPeopleSuggestions.length).onClick(async () => { await this.plugin.people.openCachedPeopleDirectorySuggestions(); this.renderSettings(); }))
       .addButton(b => b.setButtonText("已忽略").setDisabled(!ignoredPeopleSuggestions.length).onClick(async () => { await this.plugin.people.openIgnoredPeopleDirectorySuggestions(); this.renderSettings(); }));
 
-    new obsidian.Setting(c).setName("人员去重")
-      .setDesc("按姓名合并重复资料，更新纪要引用，并归档带 -1 / -2 后缀的重复页。")
+    new obsidian.Setting(c).setName(t("Person deduplication"))
+      .setDesc(t("Merge duplicate records by name, update note references, and archive duplicate pages with -1 / -2 suffixes."))
       .addButton(b => b.setButtonText("合并重复人员").onClick(async () => {
         const ok = await qnalogConfirm(this.app, "合并重复人员档案？", "Q&A Log 会把同名人员页合并到主档案，改写所有指向重复页的 wiki 链接，并将重复页移到归档目录。建议先确保同步已完成。", "开始合并");
         if (!ok) return;
@@ -1992,15 +2007,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c)
-      .setName("浏览与维护")
-      .setDesc("打开待办墙和明细表格，或补齐缺失的 Base 视图。")
+      .setName(t("Browsing and maintenance"))
+      .setDesc(t("Open the to-do wall and detail table, or fill in the missing Base views."))
       .setHeading();
-    new obsidian.Setting(c).setName("待办墙")
-      .setDesc("日常浏览入口，按来源与状态查看从纪要确认的行动项。")
+    new obsidian.Setting(c).setName(t("To-do wall"))
+      .setDesc(t("Everyday browsing entry point; view action items confirmed from notes by source and status."))
       .addButton(b => b.setButtonText("打开待办墙").setCta().onClick(() => { void this.plugin.library.openTodoWall(); }));
 
-    new obsidian.Setting(c).setName("明细表格")
-      .setDesc("用于核对和批量筛选，不作为主展示入口。")
+    new obsidian.Setting(c).setName(t("Detail table"))
+      .setDesc(t("For checking and batch filtering; not the primary display entry point."))
       .addButton(b => b.setButtonText("人员资料").onClick(() => { void this.plugin.library.openPeopleBase(); }))
       .addButton(b => b.setButtonText("全部纪要").onClick(() => this.plugin.library.openDetailBase()))
       .addButton(b => b.setButtonText("补齐视图").onClick(async () => {
@@ -2014,8 +2029,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c)
-      .setName("存储与隐私")
-      .setDesc("设置资料保存位置、扫描记录和人员资料使用范围。一般保持默认即可。")
+      .setName(t("Storage and privacy"))
+      .setDesc(t("Set where resources are stored, the scan records, and the scope of person profile usage. In general, the defaults are fine."))
       .setHeading();
     const advancedBody = c;
     this.createSettingsSubhead(advancedBody, "保存位置", "这些路径都是当前 Obsidian 库内的相对路径，只影响后续新建内容。");
@@ -2048,7 +2063,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const vocabScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "vocabulary");
     const peopleScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "people");
     this.createSettingsSubhead(advancedBody, "扫描记录", "清空后，历史纪要可以重新进入人员和词表扫描范围。");
-    new obsidian.Setting(advancedBody).setName("纪要扫描记录")
+    new obsidian.Setting(advancedBody).setName(t("Note scan records"))
       .setDesc(`转写词表已扫描 ${vocabScanCount} 篇；人员建议已扫描 ${peopleScanCount} 篇。清空记录后，修改过或已存在的纪要可重新进入扫描。`)
       .addButton(b => b.setButtonText("清空词表记录").setDisabled(!vocabScanCount).onClick(async () => {
         const ok = await qnalogConfirm(this.app, "清空词表扫描记录？", `${vocabScanCount} 篇纪要将重新进入扫描范围；重新扫描会再次调用大模型服务，云端按量产生费用。`, "清空");
@@ -2082,7 +2097,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? `已于 ${this.plugin.settings.peopleHotwordsConsentAt} 授权人名热词。` : "尚未授权人名热词。";
 
     this.createSettingsSubhead(advancedBody, "人员资料隐私", "决定人员姓名和上下文是否会随转写或整理请求发送到当前服务。");
-    new obsidian.Setting(advancedBody).setName("人员资料使用策略")
+    new obsidian.Setting(advancedBody).setName(t("Person profile usage policy"))
       .setDesc(`${modeLabel}。${asrScope}；${llmScope}。${consentText}`)
       .addDropdown(d => d
         .addOption("privacy", "隐私优先：不发送人员资料")
@@ -2210,14 +2225,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    */
   renderRecording(c) {
     new obsidian.Setting(c)
-      .setName("音频输入")
-      .setDesc("选择录音来源和实际输入设备。混合录音时请明确指定本人说话使用的麦克风。")
+      .setName(t("Audio input"))
+      .setDesc(t("Choose the recording source and the actual input device. For mixed recording, be sure to specify the microphone used by the person speaking."))
       .setHeading();
     this.renderAudioInputSettings(c);
 
     new obsidian.Setting(c)
-      .setName("录音与转写")
-      .setDesc("控制录音切片、短录音过滤、长音频并发和临时切片保留策略。")
+      .setName(t("Recording and transcription"))
+      .setDesc(t("Control recording slicing, short-recording filtering, long-audio concurrency, and temporary slice retention policy."))
       .setHeading();
 
     // 当前转写服务若是流式（Realtime 等），分段相关设置不参与工作——在描述里就地说明，免得用户调了没反应
@@ -2225,15 +2240,15 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const advAsrProfile = this.getTranscribeProviderProfile(advAsrId, (this.plugin.settings.transcribeProviders || {})[advAsrId] || {});
     const streamingNote = advAsrProfile && advAsrProfile.transcribeMode === "streaming" ? "当前转写服务为流式，此项不生效。" : "";
 
-    new obsidian.Setting(c).setName("即时分段转写")
+    new obsidian.Setting(c).setName(t("Real-time segmented transcription"))
       .setDesc(`录音过程中按设定间隔切段并实时转写。关闭则停止录音后一次性处理。${streamingNote}`)
       .addToggle(t => t.setValue(this.plugin.settings.enableInterimOutput).onChange(async v => { this.plugin.settings.enableInterimOutput = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("过滤 3 秒内录音")
-      .setDesc("开启后，少于 3 秒的误触录音会直接丢弃：不保存录音文件、不创建纪要、不进入转写或 AI 整理。")
+    new obsidian.Setting(c).setName(t("Filter recordings under 3 seconds"))
+      .setDesc(t("When enabled, accidental recordings shorter than 3 seconds are discarded outright: no recording file is saved, no note is created, and no transcription or AI organizing runs."))
       .addToggle(t => t.setValue(this.plugin.settings.filterShortRecordings !== false).onChange(async v => { this.plugin.settings.filterShortRecordings = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("分段间隔")
+    new obsidian.Setting(c).setName(t("Segment interval"))
       .setDesc(`每隔多少分钟切一段，单位分钟。有效范围 0.5–30。${streamingNote}`)
       .addText(t => {
         t.setValue(String(this.plugin.settings.segmentIntervalMinutes)).onChange(async v => {
@@ -2248,8 +2263,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         t.inputEl.addEventListener("blur", () => { t.setValue(String(this.plugin.settings.segmentIntervalMinutes)); });
       });
 
-    new obsidian.Setting(c).setName("同时转写数")
-      .setDesc("导入长音频时同时处理的分段数。出现请求频繁或服务错误时，请改回 1。")
+    new obsidian.Setting(c).setName(t("Concurrent transcriptions"))
+      .setDesc(t("Number of segments processed simultaneously when importing long audio. If requests are throttled or service errors occur, set it back to 1."))
       .addDropdown(d => d
         .addOption("1", "1（最稳）")
         .addOption("2", "2（平衡）")
@@ -2260,50 +2275,50 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName("保留临时分段音频")
-      .setDesc("用于排查转写问题，会占用更多存储。关闭时保留完整录音，并自动清理转写成功的临时分段。")
+    new obsidian.Setting(c).setName(t("Keep temporary segment audio"))
+      .setDesc(t("Used for troubleshooting transcription issues; uses more storage. When off, the full recording is kept and temporary segments are cleaned up automatically after a successful transcription."))
       .addToggle(t => t.setValue(this.plugin.settings.keepSegmentAudioFiles === true).onChange(async v => { this.plugin.settings.keepSegmentAudioFiles = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c)
-      .setName("纪要与实时大纲")
-      .setDesc("控制整理后的纪要布局、自动命名和录音期间的实时大纲行为。")
+      .setName(t("Notes and live outline"))
+      .setDesc(t("Control the organized note layout, automatic naming, and live outline behavior during recording."))
       .setHeading();
 
-    new obsidian.Setting(c).setName("纪要整合排版")
-      .setDesc("录音完成后笔记重排：顶部 AI 整合内容，底部可折叠原始分段。关闭后纪要按时间顺序保留原始分段，不做顶部整合。")
+    new obsidian.Setting(c).setName(t("Note consolidation layout"))
+      .setDesc(t("Note reordering after recording finishes: AI-consolidated content at the top, collapsible raw segments at the bottom. When off, the note keeps raw segments in chronological order with no top consolidation."))
       .addToggle(t => t.setValue(this.plugin.settings.consolidatedLayout).onChange(async v => { this.plugin.settings.consolidatedLayout = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("自动添加主题到文件名")
-      .setDesc("录音、导入音频、重新整理或队列重试完成后，由 AI 提炼一个不超过 15 字的主题追加到笔记文件名。")
+    new obsidian.Setting(c).setName(t("Automatically add topic to file name"))
+      .setDesc(t("After recording, audio import, re-organizing, or a queue retry completes, the AI distills a topic of no more than 15 characters and appends it to the note file name."))
       .addToggle(t => t.setValue(this.plugin.settings.autoRenameWithTitle).onChange(async v => { this.plugin.settings.autoRenameWithTitle = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("实时大纲")
-      .setDesc("每段转写完成后自动更新大纲。关闭后可在侧边栏手动刷新；分段越多，AI 调用次数越多。")
+    new obsidian.Setting(c).setName(t("Live outline"))
+      .setDesc(t("Automatically update the outline after each segment is transcribed. When off, you can refresh manually from the sidebar; more segments mean more AI calls."))
       .addToggle(t => t.setValue(this.plugin.settings.enableRealtimeOutline).onChange(async v => { this.plugin.settings.enableRealtimeOutline = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("录音时自动打开侧边栏")
+    new obsidian.Setting(c).setName(t("Automatically open the sidebar while recording"))
       .addToggle(t => t.setValue(this.plugin.settings.autoOpenOutlineOnRecord).onChange(async v => { this.plugin.settings.autoOpenOutlineOnRecord = v; await this.plugin.saveSettings(); }));
     new obsidian.Setting(c)
-      .setName("文件与命名")
-      .setDesc("设置新录音、纪要和会中材料的保存位置，以及新纪要的文件名格式。")
+      .setName(t("Files and Naming"))
+      .setDesc(t("Set where new recordings, notes, and meeting materials are saved, and the file name format for new notes."))
       .setHeading();
 
-    new obsidian.Setting(c).setName("Q&A Log 录音文件夹")
-      .setDesc("Obsidian 库内的相对路径。录音文件默认保存到 QnALog/录音，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
+    new obsidian.Setting(c).setName(t("Q&A Log recordings folder"))
+      .setDesc(t("Relative path within the Obsidian vault. Recording files are saved to QnALog/录音 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
       .addText(t => t
         .setPlaceholder("QnALog/录音")
         .setValue(this.plugin.settings.audioFolder)
         .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("Q&A Log 转写纪要文件夹")
-      .setDesc("Obsidian 库内的相对路径。转写和整理后的纪要默认保存到 QnALog/转写纪要，可按需要改成其他位置。修改后仅影响新文件，已有文件不会自动迁移。")
+    new obsidian.Setting(c).setName(t("Q&A Log transcripts folder"))
+      .setDesc(t("Relative path within the Obsidian vault. Transcripts and organized notes are saved to QnALog/转写纪要 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
       .addText(t => t
         .setPlaceholder("QnALog/转写纪要")
         .setValue(this.plugin.settings.mdFolder)
         .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("Q&A Log 会中材料文件夹")
-      .setDesc("Obsidian 库内的相对路径。录音侧边栏添加的图片、PPT、PDF 等补充材料会复制到这里，并按本次录音建立子文件夹。")
+    new obsidian.Setting(c).setName(t("Q&A Log meeting materials folder"))
+      .setDesc(t("Relative path within the Obsidian vault. Supplementary materials such as images, PPT, and PDF added from the recording sidebar are copied here, in a subfolder created for each recording."))
       .addText(t => t
         .setPlaceholder("QnALog/会议资料")
         .setValue(this.plugin.settings.meetingMaterialsFolder || DEFAULT_SETTINGS.meetingMaterialsFolder)
@@ -2312,24 +2327,24 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName("纪要文件名格式")
-      .setDesc("每次录音生成一篇独立纪要。用日期占位符命名：YYYY 年、MM 月、DD 日、HH 时、mm 分，例如 YYYY-MM-DD HHmm 会生成「2026-06-10 1830」。写法与 Obsidian 日记插件相同。")
+    new obsidian.Setting(c).setName(t("Note file name format"))
+      .setDesc(t("Each recording generates its own note. Name them with date placeholders: YYYY year, MM month, DD day, HH hour, mm minute; for example, YYYY-MM-DD HHmm produces \"2026-06-10 1830\". The syntax is the same as Obsidian's Daily Notes plugin."))
       .addText(t => t.setValue(this.plugin.settings.noteFileNameFormatNew).onChange(async v => { this.plugin.settings.noteFileNameFormatNew = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c)
-      .setName("完成后动作")
-      .setDesc("控制纪要完成后的打开行为，以及是否把会议概要和待办写入当日日记。")
+      .setName(t("Actions after completion"))
+      .setDesc(t("Control whether the note opens after it completes, and whether the meeting summary and to-dos are written to today's daily note."))
       .setHeading();
 
-    new obsidian.Setting(c).setName("完成后自动打开纪要")
+    new obsidian.Setting(c).setName(t("Automatically open the note when complete"))
       .addToggle(t => t.setValue(this.plugin.settings.autoOpenNoteAfterFinish).onChange(async v => { this.plugin.settings.autoOpenNoteAfterFinish = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("写入今日会议概要到日记")
-      .setDesc("Obsidian 日记已启用时，处理完成后写入纪要链接和概要；识别到待办时使用 - [ ] 任务语法写入。当日日记不存在时，会按日记插件配置的路径与模板自动创建。")
+    new obsidian.Setting(c).setName(t("Write today's meeting summary to the daily note"))
+      .setDesc(t("When Obsidian daily notes are enabled, write the note link and summary after processing completes; detected to-dos are written using the - [ ] task syntax. If today's daily note does not exist, it is created automatically using the path and template configured in the Daily Notes plugin."))
       .addToggle(t => t.setValue(this.plugin.settings.writeDailyMeetingOverview !== false).onChange(async v => { this.plugin.settings.writeDailyMeetingOverview = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("日记写入标题")
-      .setDesc("Q&A Log 会在当日日记中找到或创建这个二级标题，并把每次整理完成后的概要写到标题下方。")
+    new obsidian.Setting(c).setName(t("Daily note heading"))
+      .setDesc(t("Q&A Log finds or creates this level-2 heading in today's daily note and writes the summary from each completed processing run below the heading."))
       .addText(t => t
         .setPlaceholder(DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
         .setValue(this.plugin.settings.dailyMeetingOverviewHeading || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
@@ -2339,8 +2354,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }));
 
     const dailyTplSetting = new obsidian.Setting(c)
-      .setName("日记写入模板")
-      .setDesc("用于控制每条概要写入日记的格式。可用占位符：{{date}}、{{time}}、{{note_link}}、{{title}}、{{mode}}、{{duration}}、{{segments}}、{{model}}、{{summary}}、{{todos}}、{{todos_block}}、{{todo_count}}。");
+      .setName(t("Daily note template"))
+      .setDesc(t("Controls the format used when writing each summary to the daily note. Available placeholders: {{date}}, {{time}}, {{note_link}}, {{title}}, {{mode}}, {{duration}}, {{segments}}, {{model}}, {{summary}}, {{todos}}, {{todos_block}}, {{todo_count}}."));
     dailyTplSetting.addButton(b => b.setButtonText("恢复默认").onClick(async () => {
       const ok = await qnalogConfirm(this.app, "恢复默认日记模板？", "将丢弃当前自定义模板，且无法撤销。", "恢复默认");
       if (!ok) return;
@@ -2359,19 +2374,19 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     });
 
     new obsidian.Setting(c)
-      .setName("悬浮按钮")
-      .setDesc("设置桌面悬浮按钮的显示和大小。")
+      .setName(t("Floating button"))
+      .setDesc(t("Configure the visibility and size of the desktop floating button."))
       .setHeading();
 
-    new obsidian.Setting(c).setName("显示悬浮按钮")
-      .setDesc("开启后常驻显示，可拖动到任意位置；关闭后隐藏。")
+    new obsidian.Setting(c).setName(t("Show floating button"))
+      .setDesc(t("When on, it stays visible and can be dragged anywhere; when off, it is hidden."))
       .addToggle(t => t.setValue(this.plugin.settings.showFloatingBall).onChange(async v => {
         this.plugin.settings.showFloatingBall = v; await this.plugin.saveSettings();
         this.plugin.shell.syncBubbleVisibility();
       }));
 
-    new obsidian.Setting(c).setName("悬浮按钮大小")
-      .setDesc("调整按钮及其展开控件的大小。")
+    new obsidian.Setting(c).setName(t("Floating button size"))
+      .setDesc(t("Adjust the size of the button and its expanded controls."))
       .addDropdown(d => d
         .addOption("large", "大")
         .addOption("medium", "中")
@@ -2390,17 +2405,17 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    */
   renderImport(c) {
     new obsidian.Setting(c)
-      .setName("自动导入音频")
-      .setDesc("监控一个收件箱文件夹，自动处理从云盘或其他设备同步进来的音频。")
+      .setName(t("Auto-import audio"))
+      .setDesc(t("Watch an inbox folder and automatically process audio synced in from cloud storage or other devices."))
       .setHeading();
 
     let inboxFolderInput: obsidian.TextComponent | null = null;
-    new obsidian.Setting(c).setName("监听文件夹")
-      .setDesc("可填写库内相对路径，或选择坚果云等同步到电脑的文件夹。新音频同步完成后会自动生成综合纪要，源文件保持原位。")
+    new obsidian.Setting(c).setName(t("Watched folder"))
+      .setDesc(t("Enter a relative path within the vault, or choose a folder synced to your computer such as Nutstore. Once new audio finishes syncing, a combined summary is generated automatically and the source file stays where it is."))
       .addText(t => {
         inboxFolderInput = t;
         t.setValue(this.plugin.settings.inboxFolder || "")
-          .setPlaceholder("QnALog/录音/inbox 或电脑文件夹")
+          .setPlaceholder("QnALog/录音/inbox or a computer folder")
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
             await this.plugin.saveSettings();
@@ -2416,22 +2431,22 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
-    new obsidian.Setting(c).setName("自动处理新文件")
-      .setDesc("关闭后可从命令面板手动扫描监听文件夹。")
+    new obsidian.Setting(c).setName(t("Automatically process new files"))
+      .setDesc(t("When off, you can scan the watched folder manually from the command palette."))
       .addToggle(t => t.setValue(this.plugin.settings.inboxAutoImport).onChange(async v => {
         this.plugin.settings.inboxAutoImport = v;
         await this.plugin.saveSettings();
         this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
-    new obsidian.Setting(c).setName("归档子文件夹")
-      .setDesc("仅用于库内监听文件夹。处理完成后移到此子文件夹；电脑同步文件夹中的源音频不会移动或删除。")
+    new obsidian.Setting(c).setName(t("Archive subfolder"))
+      .setDesc(t("Used only for vault-watched folders. After processing, files are moved to this subfolder; source audio in a computer-synced folder is never moved or deleted."))
       .addText(t => t.setValue(this.plugin.settings.inboxArchiveSubfolder || "")
         .setPlaceholder("processed")
         .onChange(async v => { this.plugin.settings.inboxArchiveSubfolder = v; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName("开始处理前等待（毫秒）")
-      .setDesc("新文件出现后先等待一段时间再处理，避免 iCloud、坚果云等尚未传完就开始转写。建议 3000–10000（即 3–10 秒）。")
+    new obsidian.Setting(c).setName(t("Wait before processing (milliseconds)"))
+      .setDesc(t("Wait a while after a new file appears before processing, so that iCloud, Nutstore, and similar services have finished syncing before transcription starts. 3000–10000 recommended (that is, 3–10 seconds)."))
       .addText(t => {
         t.setValue(String(this.plugin.settings.inboxStabilizeDelayMs ?? 3000)).onChange(async v => {
           const n = parseInt(v, 10);
@@ -2444,21 +2459,21 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         t.inputEl.addEventListener("blur", () => { t.setValue(String(this.plugin.settings.inboxStabilizeDelayMs ?? 3000)); });
       });
 
-    new obsidian.Setting(c).setName("立即扫描监听文件夹")
-      .setDesc("处理所有未归档的音频文件。用于补漏或初次配置后批量处理。")
+    new obsidian.Setting(c).setName(t("Scan watched folder now"))
+      .setDesc(t("Process all unarchived audio files. Use this to catch anything missed or to batch process after initial setup."))
       .addButton(b => b.setButtonText("扫描").onClick(() => this.plugin.inbox.scanInboxFolder()));
 
-    new obsidian.Setting(c).setName("清理空白短录音")
-      .setDesc("扫描转写纪要文件夹，将时长不超过 10 秒且没有有效转写文本的 Q&A Log 条目移入系统废纸篓，并同步处理其引用的录音文件。误删可从系统废纸篓恢复。")
+    new obsidian.Setting(c).setName(t("Clean up blank short recordings"))
+      .setDesc(t("Scan the transcripts folder and move Q&A Log entries that are 10 seconds or shorter and have no valid transcript text to the system trash, handling the recording files they reference at the same time. Accidental deletions can be restored from the system trash."))
       .addButton(b => b.setButtonText("扫描并清理").onClick(() => this.plugin.cleanup.cleanupEmptyShortRecordings()));
 
     new obsidian.Setting(c)
-      .setName("任务重试")
-      .setDesc("设置自动重试上限，并查看仍在等待或失败的后台任务。")
+      .setName(t("Task retries"))
+      .setDesc(t("Set the automatic retry limit and view background tasks that are still waiting or have failed."))
       .setHeading();
 
-    new obsidian.Setting(c).setName("最大重试次数")
-      .setDesc("转写与 AI 整理任务失败后的自动重试上限，超过后需在队列或纪要中手动重试。有效范围 1–10。")
+    new obsidian.Setting(c).setName(t("Maximum retry count"))
+      .setDesc(t("Automatic retry limit after a transcription or AI organization task fails; once exceeded, you must retry manually from the queue or the note. Valid range 1–10."))
       .addText(t => {
         t.setValue(String(this.plugin.settings.maxRetries || 3)).onChange(async v => {
           const n = parseInt(v, 10);
@@ -2472,7 +2487,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         t.inputEl.addEventListener("blur", () => { t.setValue(String(this.plugin.settings.maxRetries || 3)); });
       });
 
-    new obsidian.Setting(c).setName("任务队列")
+    new obsidian.Setting(c).setName(t("Task queue"))
       .setDesc(`当前 ${this.plugin.queue.tasks.length} 个任务。`)
       .addButton(b => b.setButtonText("打开队列").onClick(() => new QueueModal(this.app, this.plugin).open()))
   }
@@ -2483,7 +2498,27 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    * 原先分散在「更新」与「进阶」两处。
    */
   renderAbout(c) {
-    new obsidian.Setting(c).setName("插件更新").setHeading();
+    // 界面语言放在最前面：它是这一页唯一会影响「其余所有界面长什么样」的设置项，
+    // 用户来找它时通常正因为界面语言不对。
+    new obsidian.Setting(c).setName(t("Interface language")).setHeading();
+    new obsidian.Setting(c)
+      .setName(t("Interface language"))
+      .setDesc(t("Language used by this plugin's interface. Choose “Follow Obsidian” to track Obsidian's own language."))
+      .addDropdown(d => {
+        d.addOption("", t("Follow Obsidian"));
+        for (const item of UI_LANGUAGES) d.addOption(item.id, item.nativeName);
+        d.setValue(this.plugin.settings.uiLanguage || "");
+        d.onChange(async (v) => {
+          this.plugin.settings.uiLanguage = v;
+          await this.plugin.saveSettings();
+          // 立刻对齐生效语言并重画：用户改完马上要看到效果，
+          // 而不是等下一次打开设置页。
+          this.plugin.applyUiLanguageNow();
+          this.renderSettings();
+        });
+      });
+
+    new obsidian.Setting(c).setName(t("Plugin Update")).setHeading();
     // 与首页同源：Obsidian 只在启动时读 manifest，直接用 manifest.version 会显示上一次安装的版本。
     const currentVersion = this.plugin.getDisplayVersion();
     const buildSource = this.plugin.getBuildSourceLabel();
@@ -2503,23 +2538,23 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       "写入目录：" + pluginBasePath(this.plugin),
     ].filter(Boolean).join("；");
 
-    new obsidian.Setting(c).setName("更新状态")
+    new obsidian.Setting(c).setName(t("Update Status"))
       .setDesc(status);
 
-    new obsidian.Setting(c).setName("更新来源")
-      .setDesc("本插件从本项目仓库（GitHub: qnalog/qnalog）检查是否有新版本，只更新版本提示，不会下载或改写任何文件；安装由 Obsidian 或 BRAT 完成。更新源不接受上游版本。")
+    new obsidian.Setting(c).setName(t("Update Source"))
+      .setDesc(t("This plugin checks this project's repository (GitHub: qnalog/qnalog) for new versions. It only updates the version notice; it never downloads or rewrites any files. Installation is handled by Obsidian or BRAT. The update source does not accept upstream versions."))
       .addButton(b => b.setButtonText("打开 GitHub").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL)))
       .addButton(b => b.setButtonText("查看版本").onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases")));
 
-    new obsidian.Setting(c).setName("启动时自动检查")
-      .setDesc("开启后最多每 24 小时检查一次本仓库。")
+    new obsidian.Setting(c).setName(t("Check Automatically on Startup"))
+      .setDesc(t("When enabled, this repository is checked at most once every 24 hours."))
       .addToggle(t => t.setValue(this.plugin.settings.autoCheckUpdates !== false)
         .onChange(async v => { this.plugin.settings.autoCheckUpdates = v; await this.plugin.saveSettings(); }));
 
     // 本插件不下载也不安装任何文件（Obsidian 开发者政策：插件不得自我更新）。
     // 这里只检查版本并引导到 GitHub Release，安装交给 Obsidian 或 BRAT。
-    new obsidian.Setting(c).setName("检查更新")
-      .setDesc("只检查是否有新版本，不会自动下载或安装。安装方式见发布页说明。")
+    new obsidian.Setting(c).setName(t("Check for updates"))
+      .setDesc(t("Only checks whether a new version exists; never downloads or installs automatically. See the release page for installation instructions."))
       .addButton(b => b.setButtonText("检查更新").onClick(async () => {
         await this.plugin.checkForUpdates({ silent: false });
         this.renderSettings();
@@ -2529,20 +2564,20 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c)
-      .setName("诊断与日志")
-      .setDesc("记录本地诊断信息并生成排查报告。音频设备检测已统一放在「录音 > 音频输入」。")
+      .setName(t("Diagnostics & Logs"))
+      .setDesc(t("Records local diagnostic information and generates troubleshooting reports. Audio device detection now lives under \"Recording > Audio Input\"."))
       .setHeading();
 
-    new obsidian.Setting(c).setName("本地诊断日志")
-      .setDesc("用于排查转写、AI 整理、队列和实时大纲错误。日志只保存在本地 Obsidian 库，不会自动上传；不会写入音频、转写正文、提示词或 API Key。")
+    new obsidian.Setting(c).setName(t("Local Diagnostic Logs"))
+      .setDesc(t("Used to troubleshoot errors in transcription, AI polishing, queues, and live outlines. Logs are stored only in the local Obsidian vault and are never uploaded automatically; audio, transcript text, prompts, and API keys are never written to them."))
       .addToggle(t => t.setValue(this.plugin.settings.diagnosticsLogEnabled !== false).onChange(async v => {
         this.plugin.settings.diagnosticsLogEnabled = v;
         await this.plugin.saveSettings();
       }))
       .addButton(b => b.setButtonText("复制诊断报告").onClick(() => this.plugin.diagnostics.copyDiagnosticReport()));
 
-    new obsidian.Setting(c).setName("诊断日志文件夹")
-      .setDesc("Obsidian 库内的相对路径。一般保持默认即可；诊断报告只有在主动复制后才会提供给开发者排查。修改后仅影响新日志文件。")
+    new obsidian.Setting(c).setName(t("Diagnostic Log Folder"))
+      .setDesc(t("A relative path inside the Obsidian vault. Usually you can keep the default; diagnostic reports are shared with developers for troubleshooting only after you copy them yourself. Changes affect only new log files."))
       .addText(t => t
         .setPlaceholder(DEFAULT_SETTINGS.diagnosticsLogFolder)
         .setValue(this.plugin.settings.diagnosticsLogFolder || DEFAULT_SETTINGS.diagnosticsLogFolder)
@@ -2551,8 +2586,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName("清空诊断日志")
-      .setDesc("删除诊断日志文件夹中的全部 .jsonl 日志文件，释放空间。不影响纪要与录音。")
+    new obsidian.Setting(c).setName(t("Clear Diagnostic Logs"))
+      .setDesc(t("Deletes all .jsonl log files in the diagnostic log folder to free up space. Does not affect notes or recordings."))
       .addButton(b => b.setButtonText("清空").onClick(async () => {
         const ok = await qnalogConfirm(this.app, "清空诊断日志？", "将删除诊断日志文件夹中的全部 .jsonl 日志文件；删除后无法再用于追溯历史问题（文件进入系统废纸篓，可恢复）。", "清空");
         if (!ok) return;
@@ -2567,8 +2602,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         new obsidian.Notice(n ? `已清空诊断日志：${n} 个文件（可从系统废纸篓恢复）` : "诊断日志文件夹为空");
       }));
 
-    new obsidian.Setting(c).setName("版权与许可")
-      .setDesc("Q&A Log 由 Q&A Log Team 维护，以 MIT License 开源发布。其代码来源与许可说明见仓库里的 NOTICE 与 LICENSE。第三方 API、模型和虚拟声卡工具由用户自行配置和承担费用；本插件不运营云端存储，也不会上传录音到任何自有服务器。");
+    new obsidian.Setting(c).setName(t("Copyright & License"))
+      .setDesc(t("Q&A Log is maintained by Q&A Log Team and released as open source under the MIT License. See NOTICE and LICENSE in the repository for its code provenance and license details. Third-party APIs, models, and virtual audio device tools are configured and paid for by users themselves; this plugin operates no cloud storage and never uploads recordings to any server of its own."));
   }
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

@@ -1,72 +1,97 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", () => ({ normalizePath: (p: string) => String(p || ""), TFile: class {}, TFolder: class {} }));
 import {
   DEFAULT_UI_LANGUAGE,
   UI_LANGUAGES,
   createTranslator,
-  normalizeUiLanguage,
+  getActiveUiLanguage,
+  isSupportedUiLanguage,
+  matchUiLanguage,
   resolveUiLanguage,
-  translate,
+  setActiveUiLanguage,
+  t,
+  translateInto,
 } from "../src/shared/i18n";
+
+const root = path.resolve(__dirname, "..");
 
 // 界面语言的解析规则。这里断言的是「用户会看到哪种语言」，
 // 不是某个函数怎么实现——语言认错最多显示不对，但不该让插件起不来。
 
 describe("界面语言解析", () => {
   it("认得出带地区的语言标识（Obsidian 会返回 zh-TW、en-GB 这类值）", () => {
-    expect(normalizeUiLanguage("zh")).toBe("zh");
-    expect(normalizeUiLanguage("zh-TW")).toBe("zh");
-    expect(normalizeUiLanguage("zh_CN")).toBe("zh");
-    expect(normalizeUiLanguage("en")).toBe("en");
-    expect(normalizeUiLanguage("en-GB")).toBe("en");
+    expect(matchUiLanguage("zh")?.id).toBe("zh");
+    expect(matchUiLanguage("en")?.id).toBe("en");
+    expect(matchUiLanguage("EN")?.id).toBe("en");
   });
 
-  it("认不出的语言回退到默认值，不抛错", () => {
-    // 界面语言认错最多是语言不对，不该让插件加载失败
-    expect(normalizeUiLanguage("fr")).toBe(DEFAULT_UI_LANGUAGE);
-    expect(normalizeUiLanguage("")).toBe(DEFAULT_UI_LANGUAGE);
-    expect(normalizeUiLanguage(null)).toBe(DEFAULT_UI_LANGUAGE);
-    expect(normalizeUiLanguage(undefined)).toBe(DEFAULT_UI_LANGUAGE);
+  it("未登记的地区变体按主语言码降级，而不是直接落到英文", () => {
+    // zh-TW（繁體）尚未登记时回退到 zh，比回退到英文更贴近用户预期
+    expect(matchUiLanguage("zh-TW")?.id).toBe("zh");
+    expect(matchUiLanguage("zh_HK")?.id).toBe("zh");
+    expect(matchUiLanguage("en-GB")?.id).toBe("en");
+  });
+
+  it("完全认不出的语言返回 null，不硬塞一个默认值", () => {
+    // 调用方需要区分「用户明确选了不支持的语言」与「没有语言线索」
+    expect(matchUiLanguage("fr")).toBeNull();
+    expect(matchUiLanguage("")).toBeNull();
+    expect(matchUiLanguage(null)).toBeNull();
+    expect(matchUiLanguage(undefined)).toBeNull();
+    expect(isSupportedUiLanguage("fr")).toBe(false);
+    expect(isSupportedUiLanguage("zh")).toBe(true);
   });
 
   it("用户显式设置优先于 Obsidian 的语言", () => {
-    // 英文 Obsidian + 显式选中文 → 用中文
-    expect(resolveUiLanguage("zh", "en")).toBe("zh");
-    // 中文 Obsidian + 显式选英文 → 用英文
-    expect(resolveUiLanguage("en", "zh")).toBe("en");
+    expect(resolveUiLanguage("zh", "en").id).toBe("zh");
+    expect(resolveUiLanguage("en", "zh").id).toBe("en");
   });
 
   it("未设置时跟随 Obsidian，两者都认不出才用默认值", () => {
-    expect(resolveUiLanguage("", "en")).toBe("en");
-    expect(resolveUiLanguage("", "en-US")).toBe("en");
-    expect(resolveUiLanguage("", "")).toBe(DEFAULT_UI_LANGUAGE);
-    expect(resolveUiLanguage(null, null)).toBe(DEFAULT_UI_LANGUAGE);
+    expect(resolveUiLanguage("", "en").id).toBe("en");
+    expect(resolveUiLanguage("", "zh-TW").id).toBe("zh");
+    expect(resolveUiLanguage("", "fr").id).toBe(DEFAULT_UI_LANGUAGE);
+    expect(resolveUiLanguage(null, null).id).toBe(DEFAULT_UI_LANGUAGE);
   });
 });
 
 describe("取词条", () => {
-  it("中文直接返回原文（中文原文就是键）", () => {
-    expect(translate("zh", "录音")).toBe("录音");
-    expect(translate("zh", "任意未登记的字符串")).toBe("任意未登记的字符串");
+  const zh = UI_LANGUAGES.find((l) => l.id === "zh");
+  const en = UI_LANGUAGES.find((l) => l.id === "en");
+
+  it("英文是源语言：查不到时原样返回，不显示裸露的键名", () => {
+    expect(translateInto(en, "Ready")).toBe("Ready");
+    expect(translateInto(en, "Not translated yet")).toBe("Not translated yet");
   });
 
-  it("英文返回译文", () => {
-    expect(translate("en", "录音")).toBe("Recording");
-    expect(translate("en", "关于")).toBe("About");
+  it("中文返回译文", () => {
+    expect(translateInto(zh, "Ready")).toBe("已准备好");
+    expect(translateInto(zh, "Quick setup")).toBe("快速设置");
   });
 
-  it("缺译文时回退到中文原文，不显示裸露的键名", () => {
-    // 未翻译的界面显示中文，好过显示 home.status.ready 这类符号键
-    const untranslated = "这条还没有译文";
-    expect(translate("en", untranslated)).toBe(untranslated);
-    expect(translate("en", untranslated)).not.toContain(".");
+  it("缺译时回退英文原文，而不是回退中文", () => {
+    // 英文用户看到英文是「尚未翻译」；回退中文则是读不懂
+    const missing = "A string that has no Chinese translation";
+    expect(translateInto(zh, missing)).toBe(missing);
+    expect(translateInto(zh, missing)).not.toContain("[");
   });
 
   it("createTranslator 绑定语言后可反复调用", () => {
-    const en = createTranslator("en");
-    const zh = createTranslator("zh");
-    expect(en("录音")).toBe("Recording");
-    expect(zh("录音")).toBe("录音");
+    const a = createTranslator(zh);
+    const b = createTranslator(en);
+    expect(a("Ready")).toBe("已准备好");
+    expect(b("Ready")).toBe("Ready");
+  });
+
+  it("生效语言可切换，t() 随之改变", () => {
+    const original = getActiveUiLanguage();
+    setActiveUiLanguage(zh as never);
+    expect(t("Ready")).toBe("已准备好");
+    setActiveUiLanguage(en as never);
+    expect(t("Ready")).toBe("Ready");
+    setActiveUiLanguage(original);
   });
 
   it("语言下拉列出全部支持的语言，且中文与英文都在", () => {
@@ -74,5 +99,27 @@ describe("取词条", () => {
     expect(ids).toContain("zh");
     expect(ids).toContain("en");
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("每种语言都给出本地名，用户不必先读懂英文才能找到自己的语言", () => {
+    for (const lang of UI_LANGUAGES) {
+      expect(lang.nativeName, `${lang.id} 缺 nativeName`).toBeTruthy();
+      expect(lang.name, `${lang.id} 缺英文名`).toBeTruthy();
+    }
+  });
+});
+
+describe("词条表完整性", () => {
+  it("中文表没有重复键（重复键会让后一条静默覆盖前一条）", () => {
+    const raw = fs.readFileSync(path.join(root, "src/shared/i18n/locales/zh.ts"), "utf8");
+    const keys = [...raw.matchAll(/^  "((?:[^"\\]|\\.)*)":/gm)].map((m) => m[1]);
+    const dup = keys.filter((k, i) => keys.indexOf(k) !== i);
+    expect(dup, `重复键：${dup.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
+  it("中文表没有空译文（空串等于没翻译，却会顶掉英文回退）", () => {
+    const raw = fs.readFileSync(path.join(root, "src/shared/i18n/locales/zh.ts"), "utf8");
+    const empties = [...raw.matchAll(/^  "((?:[^"\\]|\\.)*)":\s*"",/gm)].map((m) => m[1]);
+    expect(empties, `空译文：${empties.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 });

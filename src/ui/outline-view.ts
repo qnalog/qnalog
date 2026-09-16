@@ -2,6 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：侧边栏实时纪要视图（大纲 / 沉淀 / 问一问 / 纪要列表）
 
 import type QnALogPlugin from "../main";
+import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
 import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
 
@@ -765,7 +766,7 @@ export class OutlineView extends obsidian.ItemView {
       this.render();
     };
     const recentBtn = tabs.createEl("button", {
-      text: "纪要",
+      text: i18nT("Notes"),
       cls: activeTab === "recent" ? "is-active" : "",
       attr: { type: "button" },
     });
@@ -863,7 +864,7 @@ export class OutlineView extends obsidian.ItemView {
       cls: `qnalog-note-ask-submit${state.running ? " is-running" : ""}`,
       attr: { type: "button", "aria-label": "提问", title: "提问（回车发送 · Shift+回车换行）" },
     });
-    try { obsidian.setIcon(askBtn, state.running ? "loader-2" : "send"); } catch { askBtn.setText("问"); }
+    try { obsidian.setIcon(askBtn, state.running ? "loader-2" : "send"); } catch { askBtn.setText(i18nT("Ask")); }
     const updateAskButton = () => { askBtn.disabled = !!state.running || !String(textarea.value || "").trim(); };
     const submit = () => { state.question = textarea.value; void this.askCurrentNote(file); };
     textarea.oninput = () => { state.question = textarea.value; updateAskButton(); };
@@ -1632,7 +1633,7 @@ export class OutlineView extends obsidian.ItemView {
       input.value = String(mapping.personName || "");
       const apply = row.createEl("button", {
         cls: "qnalog-speaker-map-apply",
-        text: "保存",
+        text: i18nT("Save"),
         attr: { type: "button" },
       });
       const commit = async () => {
@@ -1643,12 +1644,12 @@ export class OutlineView extends obsidian.ItemView {
           return;
         }
         apply.disabled = true;
-        apply.setText("保存中…");
+        apply.setText(i18nT("Saving…"));
         try {
           await this.applySpeakerDisplayMapping(file, speakerId, personName);
         } finally {
           apply.disabled = false;
-          apply.setText("保存");
+          apply.setText(i18nT("Save"));
         }
       };
       apply.onclick = () => { void commit(); };
@@ -2124,7 +2125,7 @@ export class OutlineView extends obsidian.ItemView {
     fieldEl.classList.add("is-editing");
     // 设计稿：字段在编辑态文字变成"选时间"
     const textSpan = fieldEl.querySelector(":scope > span:not(.qnalog-sediment-field-icon)");
-    if (textSpan) textSpan.setText("选时间");
+    if (textSpan) textSpan.setText(i18nT("Pick a time"));
     const panel = content.createDiv({ cls: "qnalog-todo-inline-panel is-due" });
     const bar = panel.createDiv({ cls: "qnalog-todo-inline-quickbar" });
     const moment = window.moment;
@@ -2618,8 +2619,8 @@ export class OutlineView extends obsidian.ItemView {
       const subtasksInput = makeField("子任务", normalizeSedimentTodoSubtasks(todo.subtasks || todo.children || todo.steps || todo.items).join("\n"), true);
 
       const actions = contentEl.createDiv({ cls: "qnalog-sediment-confirm-actions" });
-      const cancel = actions.createEl("button", { text: "取消", attr: { type: "button" } });
-      const save = actions.createEl("button", { text: "保存", cls: "mod-cta", attr: { type: "button" } });
+      const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
+      const save = actions.createEl("button", { text: i18nT("Save"), cls: "mod-cta", attr: { type: "button" } });
       cancel.onclick = () => modal.close();
       save.onclick = async () => {
         const task = sanitizeSedimentText(taskInput.value, 160);
@@ -2872,7 +2873,7 @@ export class OutlineView extends obsidian.ItemView {
     const actions = pop.createDiv({ cls: "qnalog-todo-popover-actions" });
     const save = actions.createEl("button", {
       cls: "qnalog-todo-popover-save mod-cta",
-      text: "保存",
+      text: i18nT("Save"),
       attr: { type: "button" },
     });
     save.onclick = async () => {
@@ -2951,7 +2952,7 @@ export class OutlineView extends obsidian.ItemView {
     const evidence = item.evidence || item.reason || item.note || "";
     if (evidence) row.setAttr("title", `依据：${evidence}`);
     const icon = row.createDiv({ cls: "qnalog-sediment-item-icon" });
-    try { obsidian.setIcon(icon, "user-round"); } catch { icon.setText("人"); }
+    try { obsidian.setIcon(icon, "user-round"); } catch { icon.setText(i18nT("People")); }
     const content = row.createDiv({ cls: "qnalog-sediment-item-content" });
     const top = content.createDiv({ cls: "qnalog-sediment-item-top" });
     // 人名可点击就地改名（ASR 转错的名字直接改）
@@ -3074,9 +3075,9 @@ export class OutlineView extends obsidian.ItemView {
         li.createSpan({ text });
       });
       const note = contentEl.createDiv({ cls: "qnalog-sediment-confirm-note" });
-      note.setText("重新扫描会重新生成四组候选，已经加入库里的内容不会自动删除。");
+      note.setText(i18nT("Rescanning regenerates four sets of candidates; items already added to the library are not deleted."));
       const actions = contentEl.createDiv({ cls: "qnalog-sediment-confirm-actions" });
-      const cancel = actions.createEl("button", { text: "取消", attr: { type: "button" } });
+      const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
       const confirm = actions.createEl("button", { text: "重新扫描", cls: "mod-cta", attr: { type: "button" } });
       cancel.onclick = () => modal.close();
       confirm.onclick = async () => {
@@ -3516,7 +3517,7 @@ export class OutlineView extends obsidian.ItemView {
       const note = contentEl.createDiv({ cls: "qnalog-sediment-confirm-note" });
       note.setText(`未选的 ${count} 条会被标为忽略，无法恢复。继续后，已选内容会加入对应库。`);
       const actions = contentEl.createDiv({ cls: "qnalog-sediment-confirm-actions" });
-      const cancel = actions.createEl("button", { text: "取消", attr: { type: "button" } });
+      const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
       const confirm = actions.createEl("button", { text: "继续", cls: "mod-cta", attr: { type: "button" } });
       cancel.onclick = () => modal.close();
       confirm.onclick = async () => {
@@ -3776,41 +3777,41 @@ export class OutlineView extends obsidian.ItemView {
     }
     const menu = new obsidian.Menu();
     menu.addItem((item) => item
-      .setTitle("打开语义图")
+      .setTitle(i18nT("Open Semantic Map"))
       .setIcon("network")
       .onClick(() => void this.app.workspace.getLeaf(true).openFile(state.canvasFile)));
     menu.addItem((item) => item
-      .setTitle("更新整张语义图")
+      .setTitle(i18nT("Refresh Entire Semantic Map"))
       .setIcon("refresh-cw")
       .onClick(() => generate({ mode: "full" })));
     const existingMeta = readSemanticMeta<QnALogSemanticDocumentMeta>(state.existing);
     if (existingMeta?.graph) {
       menu.addItem((item) => item
-        .setTitle("自适应排版")
+        .setTitle(i18nT("Adaptive Layout"))
         .setIcon("layout-dashboard")
         .onClick(() => generate({ mode: "layout", layoutMode: "adaptive" })));
       menu.addItem((item) => item
-        .setTitle("左右展开")
+        .setTitle(i18nT("Expand Left and Right"))
         .setIcon("columns-3")
         .onClick(() => generate({ mode: "layout", layoutMode: "bilateral" })));
       menu.addItem((item) => item
-        .setTitle("向右展开")
+        .setTitle(i18nT("Expand to the Right"))
         .setIcon("arrow-right")
         .onClick(() => generate({ mode: "layout", layoutMode: "right" })));
       for (const branch of existingMeta.graph.branches.slice(0, 7)) {
         menu.addSeparator();
         menu.addItem((item) => item.setTitle(branch.title).setIsLabel(true));
         menu.addItem((item) => item
-          .setTitle("更新这条主线")
+          .setTitle(i18nT("Refresh This Mainline"))
           .setIcon("refresh-cw")
           .onClick(() => generate({ mode: "branch", branchKey: branch.key })));
         menu.addItem((item) => item
-          .setTitle("继续下钻")
+          .setTitle(i18nT("Drill Down Further"))
           .setIcon("git-branch-plus")
           .onClick(() => generate({ mode: "drill", branchKey: branch.key })));
         if (branch.sourceSections && branch.sourceSections[0]) {
           menu.addItem((item) => item
-            .setTitle("定位原文")
+            .setTitle(i18nT("Locate in Source"))
             .setIcon("text-search")
             .onClick(() => void canvas.openSemanticSourceSection(sourceFile, branch.sourceSections[0])));
         }
@@ -3900,12 +3901,12 @@ export class OutlineView extends obsidian.ItemView {
       cls: "qnalog-inline-player-icon-btn",
       attr: { type: "button", "aria-label": "静音/取消静音", title: "静音/取消静音" },
     });
-    try { obsidian.setIcon(volumeBtn, "volume"); } catch { volumeBtn.setText("音量"); }
+    try { obsidian.setIcon(volumeBtn, "volume"); } catch { volumeBtn.setText(i18nT("Volume")); }
     const moreBtn = ui.createEl("button", {
       cls: "qnalog-inline-player-icon-btn",
       attr: { type: "button", "aria-label": "打开录音文件", title: "打开录音文件" },
     });
-    try { obsidian.setIcon(moreBtn, "more-horizontal"); } catch { moreBtn.setText("更多"); }
+    try { obsidian.setIcon(moreBtn, "more-horizontal"); } catch { moreBtn.setText(i18nT("More")); }
 
     const player = sec.createEl("audio", {
       cls: "qnalog-outline-player-native",
@@ -4218,20 +4219,20 @@ export class OutlineView extends obsidian.ItemView {
         cls: "clickable-icon qnalog-outline-note-btn",
         attr: { "aria-label": "打开当前纪要", title: "打开当前纪要" },
       });
-      try { obsidian.setIcon(noteBtn, "file-text"); } catch { noteBtn.setText("纪要"); }
+      try { obsidian.setIcon(noteBtn, "file-text"); } catch { noteBtn.setText(i18nT("Notes")); }
       noteBtn.onclick = () => this.app.workspace.getLeaf(false).openFile(noteFile);
     }
     const kanbanBtn = actions.createEl("button", {
       cls: "clickable-icon qnalog-outline-kanban-btn",
       attr: { "aria-label": "打开纪要看板", title: "打开纪要看板" },
     });
-    try { obsidian.setIcon(kanbanBtn, "layout-dashboard"); } catch { kanbanBtn.setText("看板"); }
+    try { obsidian.setIcon(kanbanBtn, "layout-dashboard"); } catch { kanbanBtn.setText(i18nT("Board")); }
     kanbanBtn.onclick = () => { void this.plugin.shell.openMinutesKanban(); };
     const btn = actions.createEl("button", {
       cls: "clickable-icon qnalog-outline-settings-btn",
       attr: { "aria-label": "打开 Q&A Log 设置", title: "打开 Q&A Log 设置" },
     });
-    try { obsidian.setIcon(btn, "settings"); } catch { btn.setText("设置"); }
+    try { obsidian.setIcon(btn, "settings"); } catch { btn.setText(i18nT("Settings")); }
     btn.onclick = () => this.plugin.openSettings("home");
   }
 
@@ -4428,7 +4429,7 @@ export class OutlineView extends obsidian.ItemView {
       row.classList.toggle("is-silent", level < 0.012);
       row.classList.toggle("is-active", level >= 0.012);
       if (state) {
-        if (recInfo && recInfo.state === "paused") state.setText("暂停");
+        if (recInfo && recInfo.state === "paused") state.setText(i18nT("Pause"));
         else state.setText(level >= 0.012 ? "有输入" : "静音");
       }
       const values = Array.isArray(source.bars) ? source.bars : [];
@@ -4709,7 +4710,7 @@ export class OutlineView extends obsidian.ItemView {
       iconOnly: true,
     });
     const sendBtn = actions.createEl("button", { cls: "clickable-icon qnalog-meeting-send", attr: { "aria-label": "发送到会中时间线", title: "发送" } });
-    try { obsidian.setIcon(sendBtn, "send-horizontal"); } catch { sendBtn.setText("发"); }
+    try { obsidian.setIcon(sendBtn, "send-horizontal"); } catch { sendBtn.setText(i18nT("Send")); }
     sendBtn.onclick = () => this.addMeetingWorkbenchTextEntry(session, textarea.value);
   }
 
@@ -5105,9 +5106,9 @@ export class OutlineView extends obsidian.ItemView {
     } else {
       const emptyEl = body.createDiv({ cls: "qnalog-outline-empty" });
       if (!(session.segments.length > 0)) {
-        emptyEl.setText("录音开始且产出第一段后可生成大纲。");
+        emptyEl.setText(i18nT("Generate an outline once recording has started and the first segment is produced."));
       } else {
-        emptyEl.setText("点「刷新」，把零散的发言整理成一份提纲。");
+        emptyEl.setText(i18nT("Click Refresh to turn scattered remarks into an outline."));
       }
       this.renderOutlineAnnotations(body, session);
       if (recordingIssue && recordingIssue.kind === "network") this.renderNetworkOutlineGap(body, recordingIssue, recInfo);
@@ -5973,7 +5974,7 @@ export class OutlineView extends obsidian.ItemView {
 
   showVariantContextMenu(evt, file, sourcePath) {
     const menu = new obsidian.Menu();
-    menu.addItem((item) => item.setTitle("打开母本").setIcon("corner-left-up").onClick(async () => {
+    menu.addItem((item) => item.setTitle(i18nT("Open Parent Note")).setIcon("corner-left-up").onClick(async () => {
       const sp = sourcePath ? obsidian.normalizePath(String(sourcePath)) : "";
       const src = sp ? this.plugin.app.vault.getAbstractFileByPath(sp) : null;
       if (src instanceof obsidian.TFile) {
@@ -5982,9 +5983,9 @@ export class OutlineView extends obsidian.ItemView {
         new obsidian.Notice("找不到来源笔记，可能已被改名或移动。", 6000);
       }
     }));
-    menu.addItem((item) => item.setTitle("重新生成清稿").setIcon("refresh-cw").onClick(() => { void this.plugin.repolish.generateCleanScript(file); }));
+    menu.addItem((item) => item.setTitle(i18nT("Regenerate Clean Copy")).setIcon("refresh-cw").onClick(() => { void this.plugin.repolish.generateCleanScript(file); }));
     menu.addSeparator();
-    menu.addItem((item) => item.setTitle("删除此版本").setIcon("trash").onClick(async () => {
+    menu.addItem((item) => item.setTitle(i18nT("Delete This Version")).setIcon("trash").onClick(async () => {
       const ok = await qnalogConfirm(this.plugin.app, "删除派生版本", `删除「${file.basename}」？母本和逐字稿不受影响。`, "删除");
       if (!ok) return;
       try { await trashVaultFileRef(this.plugin.app, file); this.plugin.shell.refreshOutlineView(); }
@@ -5997,7 +5998,7 @@ export class OutlineView extends obsidian.ItemView {
     const menu = new obsidian.Menu();
     if (typeof beginRename === "function") {
       menu.addItem((item) => {
-        item.setTitle("重命名").setIcon("pencil").onClick(() => beginRename());
+        item.setTitle(i18nT("Rename")).setIcon("pencil").onClick(() => beginRename());
       });
       menu.addSeparator();
     }
@@ -6012,18 +6013,18 @@ export class OutlineView extends obsidian.ItemView {
       menu.addSeparator();
     }
     menu.addItem((item) => {
-      item.setTitle("继续录音到这篇")
+      item.setTitle(i18nT("Continue Recording into This Note"))
         .setIcon("mic")
         .onClick(() => { void this.plugin.recording.startRecording({ appendToFile: file }); });
     });
     menu.addItem((item) => {
-      item.setTitle("与上一段录音合并")
+      item.setTitle(i18nT("Merge with Previous Recording"))
         .setIcon("git-merge")
         .onClick(() => { void this.plugin.noteWriter.mergeMarkdownFileWithPrevious(file); });
     });
     menu.addSeparator();
     menu.addItem((item) => {
-      item.setTitle("生成清稿")
+      item.setTitle(i18nT("Generate Clean Copy"))
         .setIcon("file-text")
         .onClick(() => { void this.plugin.repolish.generateCleanScript(file); });
     });
@@ -6072,22 +6073,22 @@ export class OutlineView extends obsidian.ItemView {
     });
     menu.addSeparator();
     menu.addItem((item) => {
-      item.setTitle("生成")
+      item.setTitle(i18nT("Generate"))
         .setIcon("file-output");
       const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
       sub.addItem((subItem) => subItem
-        .setTitle("邮件草稿")
+        .setTitle(i18nT("Email Draft"))
         .onClick(() => this.plugin.delivery.createEmailDraftForMarkdownFile(file)));
       sub.addItem((subItem) => subItem
-        .setTitle("HTML 报告")
+        .setTitle(i18nT("HTML Report"))
         .onClick(() => this.plugin.delivery.generateHtmlReportForMarkdownFile(file)));
       sub.addItem((subItem) => subItem
-      .setTitle("PDF 报告")
+      .setTitle(i18nT("PDF Report"))
         .onClick(() => this.plugin.delivery.generatePdfReportForMarkdownFile(file)));
     });
     menu.addSeparator();
     menu.addItem((item) => {
-      item.setTitle("删除转写记录")
+      item.setTitle(i18nT("Delete Transcript Record"))
         .setIcon("trash-2")
         .onClick(() => this.confirmDeleteRecentNote(file));
     });
@@ -6199,7 +6200,7 @@ export class OutlineView extends obsidian.ItemView {
       contentEl.createDiv({ cls: "qnalog-delete-note-option-hint", text: "未找到可关联的录音文件。" });
     }
     const actions = contentEl.createDiv({ cls: "qnalog-modal-actions" });
-    const cancel = actions.createEl("button", { text: "取消", attr: { type: "button" } });
+    const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
     const confirm = actions.createEl("button", { text: "确认删除", cls: "mod-warning", attr: { type: "button" } });
     cancel.onclick = () => modal.close();
     confirm.onclick = async () => {
@@ -6309,7 +6310,7 @@ export class OutlineView extends obsidian.ItemView {
     if (queueN === 0) return;
     const sec = root.createDiv({ cls: "qnalog-outline-queue-inbox" });
     sec.createDiv({ cls: "qnalog-outline-queue-text", text: `${queueN} 个失败任务` });
-    const btn = sec.createEl("button", { text: "打开队列" });
+    const btn = sec.createEl("button", { text: i18nT("Open queue") });
     btn.onclick = () => new QueueModal(this.app, this.plugin).open();
   }
 

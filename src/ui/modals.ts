@@ -2,6 +2,7 @@
 // @ts-nocheck — Modal/Widget class 密集（this.plugin.* 等无 TS 字段声明）；已用 tsc 确认无漏引用(TS2304=0)，余者皆类字段类型噪音，故与 main.ts 同档跳过。
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import { NS_AUDIO_ALT } from "../shared/namespace";
+import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
 import { loadPeopleDirectory, normalizePeopleRelation, normalizePeopleSuggestion } from '../people';
 import { diagnosticError } from '../shared/util-key-diag';
@@ -43,7 +44,7 @@ function renderImportSpeakerControl(parent, owner) {
 
   const toggleLabel = control.createEl("label", { cls: "qnalog-import-speaker-toggle" });
   const toggle = toggleLabel.createEl("input", { type: "checkbox" });
-  toggleLabel.createSpan({ text: "区分说话人" });
+  toggleLabel.createSpan({ text: i18nT("Distinguish Speakers") });
   toggle.checked = owner.selectedSpeakerDiarization;
   toggle.disabled = !owner.speakerSelection.supportsDiarization;
 
@@ -64,7 +65,7 @@ function renderImportSpeakerControl(parent, owner) {
     });
     countInput.value = owner.selectedSpeakerCount > 0 ? String(owner.selectedSpeakerCount) : "";
     countInput.disabled = !owner.selectedSpeakerDiarization;
-    numberControl.createSpan({ cls: "qnalog-import-number-unit", text: "人" });
+    numberControl.createSpan({ cls: "qnalog-import-number-unit", text: i18nT("People") });
     countInput.oninput = () => {
       const normalized = normalizeRequestedSpeakerCount(countInput.value);
       owner.selectedSpeakerCount = normalized;
@@ -79,11 +80,11 @@ function renderImportSpeakerControl(parent, owner) {
   }
 
   if (!owner.speakerSelection.supportsDiarization) {
-    hint.setText("当前导入转写模型不支持说话人区分。");
+    hint.setText(i18nT("The current import transcription model does not support speaker separation."));
   } else if (owner.speakerSelection.supportsExactCount) {
-    hint.setText("填写实际发言人数可减少相近声音被合并；留空则自动识别。");
+    hint.setText(i18nT("Enter the number of speakers to reduce merging of similar voices; leave empty to detect automatically."));
   } else {
-    hint.setText("当前模型支持区分说话人，但人数由模型自动识别。");
+    hint.setText(i18nT("The current model supports speaker separation, but the number of speakers is detected automatically."));
   }
 
   toggle.onchange = () => {
@@ -98,7 +99,7 @@ function renderImportSpeakerControl(parent, owner) {
 export function pickReportAccentColor(app, defaultHex = null) {
   return new Promise((resolve) => {
     const modal = new obsidian.Modal(app);
-    modal.titleEl.setText("选择报告配色");
+    modal.titleEl.setText(i18nT("Choose report colour scheme"));
     let chosen = defaultHex || "#E85F28";
     let settled = false;
     const finish = (val) => { if (settled) return; settled = true; resolve(val); try { modal.close(); } catch { /* intentionally empty */ } };
@@ -129,7 +130,7 @@ export function pickReportAccentColor(app, defaultHex = null) {
     customInput.oninput = () => select(customInput.value);
     const actions = wrap.createDiv({ cls: "qnalog-color-actions" });
     actions.createEl("button", { text: "生成报告", cls: "mod-cta" }).onclick = () => finish(chosen);
-    actions.createEl("button", { text: "取消" }).onclick = () => finish(null);
+    actions.createEl("button", { text: i18nT("Cancel") }).onclick = () => finish(null);
     modal.onClose = () => finish(null);
     select(chosen);
     modal.open();
@@ -210,7 +211,7 @@ export class PeopleHotwordsConsentModal extends obsidian.Modal {
     list.createEl("li", { text: "此授权会保存在本地设置中，直到用户撤销授权或切回隐私优先。" });
     list.createEl("li", { text: "涉密、隐私、客户资料、医疗、法务、人事等内容，建议使用「隐私优先」或「本地增强」。" });
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
-    const cancelBtn = actions.createEl("button", { text: "取消" });
+    const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
     const okBtn = actions.createEl("button", { text: "我已知情，启用人名热词" });
     okBtn.addClass("mod-cta");
@@ -356,17 +357,17 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         if (path && person) {
           targetHint.setText(getPersonHint(person) || "将把本条建议作为本次会议提及，挂到选中的人员档案。");
         } else if (path) {
-          targetHint.setText("将把本条建议作为本次会议提及，挂到当前匹配的人员档案。");
+          targetHint.setText(i18nT("This suggestion will be recorded as mentioned in this meeting and attached to the currently matched people record."));
         } else {
-          targetHint.setText("将使用候选姓名新建一份人员档案。");
+          targetHint.setText(i18nT("A new people record will be created with the candidate name."));
         }
       };
       targetSelect.addEventListener("change", updateTargetUi);
       updateTargetUi();
 
       let relationSelect;
-      new obsidian.Setting(box).setName("本次归属")
-        .setDesc("用于写回纪要：参会人、被提到的人、待办责任人会进入不同字段，人员页再反向聚合相关会议。")
+      new obsidian.Setting(box).setName(i18nT("Attendance for This Session"))
+        .setDesc(i18nT("Used to write back to meeting notes: attendees, mentioned people, and action-item owners go into different fields, and person pages then aggregate the related meetings in reverse."))
         .addDropdown(d => {
           relationSelect = d;
           d.addOption("mentioned", "被提到的人");
@@ -379,14 +380,14 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       let aliasInput;
       let roleInput;
       let orgInput;
-      new obsidian.Setting(box).setName("姓名")
+      new obsidian.Setting(box).setName(i18nT("Name"))
         .addText(t => { nameInput = t; t.setValue(item.name || ""); });
-      new obsidian.Setting(box).setName("常用称呼")
-        .setDesc("多个称呼用逗号或顿号分隔。")
+      new obsidian.Setting(box).setName(i18nT("Common Aliases"))
+        .setDesc(i18nT("Separate multiple aliases with commas or enumeration commas (、)."))
         .addText(t => { aliasInput = t; t.setValue((item.aliases || []).join("、")); });
-      new obsidian.Setting(box).setName("角色")
+      new obsidian.Setting(box).setName(i18nT("Role"))
         .addText(t => { roleInput = t; t.setValue(item.role || ""); });
-      new obsidian.Setting(box).setName("组织")
+      new obsidian.Setting(box).setName(i18nT("Organization"))
         .addText(t => { orgInput = t; t.setValue(item.organization || ""); });
       const noteArea = box.createEl("textarea", {
         cls: "qnalog-people-suggestion-note",
@@ -404,7 +405,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     }
 
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
-    const cancelBtn = actions.createEl("button", { text: "取消" });
+    const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
     const openBtn = actions.createEl("button", { text: "打开人员资料" });
     openBtn.onclick = async () => {
@@ -1252,7 +1253,7 @@ export class QueueModal extends obsidian.Modal {
       const acts = row.createDiv({ cls: "qnalog-progress-queue-actions" });
       const retryBtn = acts.createEl("button", { cls: "qnalog-progress-queue-retry", attr: { type: "button" }, text: "重试" });
       retryBtn.onclick = async () => { try { await this.plugin.queue.processOne(t); } catch { /* intentionally empty */ } this.onOpen(); };
-      const delBtn = acts.createEl("button", { cls: "qnalog-progress-queue-cancel", attr: { type: "button" }, text: "取消" });
+      const delBtn = acts.createEl("button", { cls: "qnalog-progress-queue-cancel", attr: { type: "button" }, text: i18nT("Cancel") });
       delBtn.onclick = async () => {
         await this.plugin.queue.remove(t.id);
         new obsidian.Notice("已取消自动重试。缓存音频会暂时保留，之后仍可从纪要右键重新发起。", 6000);
@@ -1325,7 +1326,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
 
     contentEl.createEl("h2", { text: "电脑音频捕获设置" });
     const desc = contentEl.createEl("p", { cls: "qnalog-vcable-desc" });
-    desc.setText("Q&A Log 不能直接监听耳机或扬声器里正在播放的声音。录制 B 站客户端、浏览器视频、课程或会议对方声音时，需要先把这些声音输出到虚拟声卡，让 Q&A Log 将其识别为「电脑音频输入」；同时再把同一份声音监听到真实扬声器或耳机，确保本机仍可听到播放内容。一次配置，长期可用。");
+    desc.setText(i18nT("Q&A Log cannot listen directly to sound playing through your headphones or speakers. To record from a browser, a course, or the other side of a meeting, route that sound to a virtual audio device so Q&A Log recognizes it as computer-audio input, and monitor the same sound to your real speakers or headphones so you can still hear it. Configure once and it keeps working."));
 
     // 平台 tabs
     const tabs = contentEl.createDiv({ cls: "qnalog-vcable-tabs" });
@@ -1352,7 +1353,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
 
     // 底部操作
     const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-vcable-actions" });
-    const closeBtn = actions.createEl("button", { text: "关闭" });
+    const closeBtn = actions.createEl("button", { text: i18nT("Close") });
     closeBtn.onclick = () => this.close();
     const recheckBtn = actions.createEl("button", { text: "重新检测", cls: "mod-cta" });
     recheckBtn.onclick = async () => {
@@ -1402,7 +1403,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "勾选「内建扬声器」（或耳机）+「BlackHole 2ch」" });
       ol.createEl("li", { text: "Master Device 选择耳机或扬声器；Drift Correction 勾选 BlackHole" });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
-      tip.setText("这样系统音频会同时进入真实耳机/扬声器和 BlackHole：前者用于播放，后者用于 Q&A Log 录制。");
+      tip.setText(i18nT("This makes system audio go to both your real speakers/headphones and BlackHole: the former for playback, the latter for Q&A Log to record."));
     });
     this.step(parent, 3, "把系统或应用输出切到这个多输出设备", (b) => {
       const ol = b.createEl("ol");
@@ -1410,7 +1411,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "选择刚才创建的「多输出设备」" });
       ol.createEl("li", { text: "浏览器视频和大多数桌面视频客户端通常跟随系统输出；会议软件如单独设置了扬声器，也改成这个多输出设备" });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
-      warn.setText("切换后会议软件可能需要重新选择扬声器。");
+      warn.setText(i18nT("Meeting apps may need you to reselect the speaker after switching."));
     });
     this.step(parent, 4, "在 Q&A Log 选择电脑音频模式", (b) => {
       b.createEl("p", { text: "只整理视频、课程或播客时选择「仅电脑音频」；线上会议或边听边讲解时选择「麦克风加电脑音频」。" });
@@ -1436,7 +1437,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "录浏览器：同样在音量混合器中找到 Chrome、Edge、Firefox 等浏览器 → 输出设备选择 CABLE Input" });
       ol.createEl("li", { text: "录全部系统声音：把系统默认输出设备直接改为 CABLE Input" });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
-      warn.setText("这一步会让系统声音暂时不从真实耳机/扬声器播放，需要完成下一步侦听设置后恢复监听。");
+      warn.setText(i18nT("This step temporarily stops system audio playing through your real headphones/speakers; listening is restored by the next step."));
     });
     this.step(parent, 3, "用 CABLE Output 侦听到真实扬声器或耳机（关键）", (b) => {
       b.createEl("p", { text: "要恢复本机监听，需要把 CABLE Output 侦听到真实耳机或扬声器：" });
@@ -1448,7 +1449,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "「通过此设备播放」选择真实耳机或扬声器，不要选 CABLE Input" });
       ol.createEl("li", { text: "点「应用」" });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
-      tip.setText("音频链路是：应用/浏览器 → CABLE Input（播放输出）→ CABLE Output（录制输入，Q&A Log 读取）→ 侦听到真实耳机/扬声器。若侦听延迟明显，可改用 VoiceMeeter 这类混音工具做多输出。");
+      tip.setText(i18nT("The audio path is: app/browser \\\\u2192 CABLE Input (playback) \\\\u2192 CABLE Output (recording input, read by Q&A Log) \\\\u2192 monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
     });
     this.step(parent, 4, "把默认输入改回真实麦克风", (b) => {
       const ol = b.createEl("ol");
@@ -1456,7 +1457,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: "选择真实麦克风，不要选 CABLE Output" });
       ol.createEl("li", { text: "如果其他语音输入软件也没声音，通常就是这里被改成了 CABLE Output" });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
-      warn.setText("CABLE Output 是给 Q&A Log 这类录音软件读取电脑音频用的，不适合作为日常语音输入麦克风。");
+      warn.setText(i18nT("CABLE Output is what recording apps like Q&A Log read to capture computer audio; it is not suitable as your everyday microphone."));
     });
     this.step(parent, 5, "在 Q&A Log 选择电脑音频模式", (b) => {
       b.createEl("p", { text: "看 B 站、YouTube、课程或播客时选择「仅电脑音频」；线上会议或需要同时录入本人讲解时选择「麦克风加电脑音频」。" });
@@ -1545,7 +1546,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     contentEl.createEl("h2", { text: this.editingId ? "编辑提示词" : "提示词库" });
 
     const desc = contentEl.createDiv({ cls: "setting-item-description qnalog-tpl-desc" });
-    desc.setText("这里集中管理整理规则。内置提示词用于快速开始；需要固定格式、职业化判断或长期工作流时，新建自定义提示词并设为默认。");
+    desc.setText(i18nT("This is where refinement rules are managed. Built-in prompts get you started quickly; create a custom prompt and set it as default when you need a fixed format, professional judgement, or a long-running workflow."));
 
     const body = contentEl.createDiv({ cls: "qnalog-tpl-body" });
     if (this.editingId) this.renderEditor(body, this.editingId);
@@ -1624,7 +1625,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     };
     const editBtn = actions.createEl("button", { text: "编辑" });
     editBtn.onclick = () => { this.editingId = tpl.id; this.onOpen(); };
-    const delBtn = actions.createEl("button", { text: "删除" });
+    const delBtn = actions.createEl("button", { text: i18nT("Delete") });
     delBtn.addClass("mod-warning");
     delBtn.onclick = async () => {
       const ok = await qnalogConfirm(this.app, "删除自定义提示词", "删除自定义提示词「" + (tpl.name || tpl.id) + "」？此操作不可恢复。", "删除");
@@ -1683,15 +1684,15 @@ export class PromptTemplateModal extends obsidian.Modal {
     back.createSpan({ cls: "qnalog-tpl-builtin-tag", text: "自定义" });
 
     const editor = body.createDiv({ cls: "qnalog-tpl-editor" });
-    new obsidian.Setting(editor).setName("提示词名称")
-      .setDesc("这个名称会出现在录音、导入音频和重新整理菜单里。")
+    new obsidian.Setting(editor).setName(i18nT("Prompt Name"))
+      .setDesc(i18nT("This name appears in the Recording, Import Audio, and Re-polish menus."))
       .addText(t => {
         t.setValue(tpl.name || "");
         t.onChange(v => { tpl.name = v || "自定义提示词"; });
       });
 
-    const promptSetting = new obsidian.Setting(editor).setName("提示词内容");
-    promptSetting.setDesc("这里写的是实际发送给大模型的整理规则。内容应定义使用场景、重点内容、必须输出的内容、写作风格、翻译要求和反幻觉边界，并保留 {{TRANSCRIPT}} 作为原始转写占位符。");
+    const promptSetting = new obsidian.Setting(editor).setName(i18nT("Prompt Content"));
+    promptSetting.setDesc(i18nT("This is the polishing rule actually sent to the LLM. The content should define the use case, the key content, the required output, the writing style, translation requirements, and anti-hallucination boundaries, and must keep {{TRANSCRIPT}} as the placeholder for the raw transcript."));
     const ta = editor.createEl("textarea", { cls: "qnalog-textarea qnalog-textarea-mono qnalog-tpl-textarea" });
     ta.value = tpl.prompt || "";
     ta.placeholder = "例如：这份提示词用于……；重点识别……；必须输出……；不要输出……；外语内容……；不确定信息……；最后保留 {{TRANSCRIPT}}。";
@@ -1699,13 +1700,13 @@ export class PromptTemplateModal extends obsidian.Modal {
     ta.addEventListener("input", () => { tpl.prompt = ta.value; });
 
     const actions = editor.createDiv({ cls: "qnalog-tpl-edit-actions" });
-    const cancelBtn = actions.createEl("button", { text: "取消" });
+    const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => { this.editingId = null; this.onOpen(); };
-    const optimizeBtn = actions.createEl("button", { text: "AI 优化提示词" });
+    const optimizeBtn = actions.createEl("button", { text: i18nT("AI refine prompt") });
     optimizeBtn.onclick = async () => {
       try {
         optimizeBtn.disabled = true;
-        optimizeBtn.setText("优化中…");
+        optimizeBtn.setText(i18nT("Refining…"));
         const optimized = await this.optimizePromptDraft(tpl, ta.value);
         ta.value = optimized;
         tpl.prompt = optimized;
@@ -1715,7 +1716,7 @@ export class PromptTemplateModal extends obsidian.Modal {
         new obsidian.Notice("AI 优化失败：" + ((e && e.message) || e));
       } finally {
         optimizeBtn.disabled = false;
-        optimizeBtn.setText("AI 优化提示词");
+        optimizeBtn.setText(i18nT("AI refine prompt"));
       }
     };
     const saveBtn = actions.createEl("button", { text: "保存并设为默认", cls: "mod-cta" });
@@ -1770,7 +1771,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.fileCheckboxes = new Map();
     contentEl.createEl("h2", { text: "导入文本" });
     contentEl.createEl("p", { cls: "qnalog-import-desc" })
-      .setText("选择已有 Markdown、速录稿或文本纪要。Q&A Log 不会调用语音转写服务，会直接走 API 页的「AI 整理服务」LLM 链路并按当前模板结构化整理。");
+      .setText(i18nT("Choose existing Markdown, a dictation draft, or a text note. Q&A Log will not call speech transcription; it goes straight through the \\\\u201cAI briefing\\\\u201d LLM pipeline on the API tab and structures the text using the current template."));
 
     this.renderModeControl(contentEl);
 
@@ -1811,7 +1812,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.processBtn.disabled = true;
     this.processBtn.onclick = () => this.process();
     this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: "未选择文本" });
-    const cancelBtn = actions.createEl("button", { text: "取消" });
+    const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
     this.updateButton();
   }
@@ -2023,7 +2024,7 @@ export class ImportTextModal extends obsidian.Modal {
     const mode = getEffectivePolishMode(this.plugin.settings, this.selectedMode || this.plugin.settings.polishMode, "meeting");
     if (this.processBtn) {
       this.processBtn.disabled = true;
-      this.processBtn.setText("处理中…");
+      this.processBtn.setText(i18nT("Processing…"));
     }
     try {
       this.close();
@@ -2099,7 +2100,7 @@ export class AudioImportOptionsModal extends obsidian.Modal {
     });
 
     const actions = contentEl.createDiv({ cls: "qnalog-import-actions" });
-    const cancel = actions.createEl("button", { text: "取消", attr: { type: "button" } });
+    const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
     cancel.onclick = () => this.close();
     const start = actions.createEl("button", { text: "开始转写", cls: "mod-cta", attr: { type: "button" } });
     start.onclick = async () => {
@@ -2203,7 +2204,7 @@ export class ImportAudioModal extends obsidian.Modal {
     this.processBtn.disabled = true;
     this.processBtn.onclick = () => this.process();
     this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: "未选择音频" });
-    const cancelBtn = actions.createEl("button", { text: "取消" });
+    const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
     this.updateButton();
   }
@@ -2577,7 +2578,7 @@ export class BubbleWidget {
       micBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.startRecording(); };
       if (this.plugin.queue && this.plugin.queue.hasPendingGeneratePrompt && this.plugin.queue.hasPendingGeneratePrompt()) {
         const chip = this.el.createDiv({ cls: "qnalog-bubble-chip" });
-        chip.setText("优化提示词中");
+        chip.setText(i18nT("Refining prompt"));
         chip.setAttr("title", "后台正在生成自定义提示词。完成后会出现在提示词管理和录音模式列表里。");
       }
     } else {
