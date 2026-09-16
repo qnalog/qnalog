@@ -6,7 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 vi.mock("obsidian", () => ({ requestUrl: async () => ({ json: {} }), normalizePath: (p: string) => String(p||""), TFile: class {}, TFolder: class {} }));
 import { isSpeakerDiarizationProvider, isImportCapableTranscribeProvider } from "../src/asr/diarization";
-import { isOpenRouterDiarizeProvider } from "../src/asr/openrouter-diarize";
+import { isOpenRouterDiarizeProvider, testOpenRouterDiarizeProvider } from "../src/asr/openrouter-diarize";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 
 describe("OpenRouter 说话人分离识别", () => {
@@ -45,7 +45,6 @@ describe("OpenRouter 一站式预设", () => {
   });
 });
 
-import { testOpenRouterDiarizeProvider } from "../src/asr/openrouter-diarize";
 
 describe("OpenRouter 无音频检测", () => {
   it("密钥有效时返回有效；被拒时报错", async () => {
@@ -59,5 +58,26 @@ describe("OpenRouter 无音频检测", () => {
 
     (globalThis as any).window = { fetch: async () => ({ ok: false, status: 200, json: async () => ({}) }) };
     await expect(testOpenRouterDiarizeProvider({ id: "x", apiKey: "", model: "m" })).rejects.toThrow();
+  });
+});
+
+import { normalizePluginSettings, serializePluginSettings } from "../src/shared/settings-io";
+
+describe("OpenRouter 三段配置经存盘往返仍在", () => {
+  it("应用预设 → 序列化 → 读回，三段服务与模型不丢", () => {
+    const base = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    const plan = planPresetApplication(base, { providerId: "openrouter", apiKey: "sk-or-test" });
+    const applied = Object.assign({}, base, plan.changes);
+    const roundTrip = normalizePluginSettings(serializePluginSettings(applied)) as any;
+    expect(roundTrip.activeTranscribeProvider).toBe("openrouter");
+    expect(roundTrip.importTranscribeProvider).toBe("openrouter-diarize");
+    expect(roundTrip.transcribeProviders.openrouter.model).toBe("qwen/qwen3-asr-1.7b");
+    expect(roundTrip.transcribeProviders.openrouter.apiKey).toBe("sk-or-test");
+    expect(roundTrip.transcribeProviders["openrouter-diarize"].model).toBe("microsoft/mai-transcribe-2");
+    expect(roundTrip.transcribeProviders["openrouter-diarize"].protocol).toBe("openrouter-diarize");
+    expect(roundTrip.transcribeProviders["openrouter-diarize"].apiKey).toBe("sk-or-test");
+    expect(roundTrip.llmModel).toBe("qwen/qwen3.8-flash");
+    expect(roundTrip.llmEndpoint).toBe("https://openrouter.ai/api/v1");
+    expect(roundTrip.llmApiKey).toBe("sk-or-test");
   });
 });
