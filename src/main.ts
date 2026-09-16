@@ -237,7 +237,7 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.tasks.startStatusBar();
 
-    this.ribbonEl = this.addRibbonIcon("mic", "Q&A Log：点击开始/停止，悬停展开控件", () => this.recording.toggleRecording());
+    this.ribbonEl = this.addRibbonIcon("mic", t("Q&A Log: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
     this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this));
@@ -248,7 +248,7 @@ class QnALogPlugin extends obsidian.Plugin {
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
-    this.addRibbonIcon("list-tree", "Q&A Log 实时纪要面板", () => this.shell.openOutlineView());
+    this.addRibbonIcon("list-tree", t("Q&A Log live minutes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
@@ -259,27 +259,27 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("resize", () => this.shell.syncBubbleVisibility()));
     this.app.workspace.onLayoutReady(() => this.shell.syncBubbleVisibility());
 
-    this.addCommand({ id: "toggle-recording", name: "开始/停止录音", callback: () => this.recording.toggleRecording() });
-    this.addCommand({ id: "pause-resume-recording", name: "暂停/继续录音", callback: () => {
+    this.addCommand({ id: "toggle-recording", name: t("Start/Stop Recording"), callback: () => this.recording.toggleRecording() });
+    this.addCommand({ id: "pause-resume-recording", name: t("Pause/Resume Recording"), callback: () => {
       const s = this.recorder.state;
       if (s === "recording") this.recorder.pause(); else if (s === "paused") this.recorder.resume();
     }});
-    this.addCommand({ id: "polish-selection-or-note", name: "AI 润色：当前选区或整篇", editorCallback: (editor) => this.noteWriter.polishEditor(editor) });
-    this.addCommand({ id: "toggle-floating-ball", name: "显示/隐藏悬浮气泡（总开关）", callback: () => {
+    this.addCommand({ id: "polish-selection-or-note", name: t("AI: Polish Current Selection or Entire Note"), editorCallback: (editor) => this.noteWriter.polishEditor(editor) });
+    this.addCommand({ id: "toggle-floating-ball", name: t("Show/Hide Floating Bubble (Master Switch)"), callback: () => {
       this.settings.showFloatingBall = !this.settings.showFloatingBall;
       void this.saveSettings();
       this.shell.syncBubbleVisibility();
       new obsidian.Notice(this.settings.showFloatingBall ? "浮窗已启用（常驻显示，可拖动）" : "浮窗已关闭");
     }});
-    this.addCommand({ id: "open-queue", name: "打开待处理队列", callback: () => new QueueModal(this.app, this).open() });
-    this.addCommand({ id: "retry-queue-all", name: "重试所有失败任务", callback: () => this.queueRetry.retryQueue() });
-    this.addCommand({ id: "copy-diagnostic-report", name: "复制诊断报告", callback: () => this.diagnostics.copyDiagnosticReport() });
-    this.addCommand({ id: "suggest-people-directory-updates", name: "AI 扫描纪要库提取人员建议", callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
-    this.addCommand({ id: "open-todo-wall", name: "打开待办墙", callback: () => { void this.library.openTodoWall(); } });
-    this.addCommand({ id: "import-audio", name: "导入已有音频文件转写+润色", callback: () => new ImportAudioModal(this.app, this).open() });
+    this.addCommand({ id: "open-queue", name: t("Open Pending Queue"), callback: () => new QueueModal(this.app, this).open() });
+    this.addCommand({ id: "retry-queue-all", name: t("Retry All Failed Tasks"), callback: () => this.queueRetry.retryQueue() });
+    this.addCommand({ id: "copy-diagnostic-report", name: t("Copy Diagnostic Report"), callback: () => this.diagnostics.copyDiagnosticReport() });
+    this.addCommand({ id: "suggest-people-directory-updates", name: t("AI: Scan Minutes Library for People Suggestions"), callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
+    this.addCommand({ id: "open-todo-wall", name: t("Open To-do Wall"), callback: () => { void this.library.openTodoWall(); } });
+    this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({
       id: "generate-html-report",
-      name: "AI 生成当前纪要 HTML 报告",
+      name: t("AI: Generate HTML Report for This Note"),
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         const isMd = file instanceof obsidian.TFile && file.extension === "md";
@@ -291,7 +291,7 @@ class QnALogPlugin extends obsidian.Plugin {
     });
     this.addCommand({
       id: "generate-pdf-report",
-      name: "AI 生成当前纪要 PDF 报告（整页不截断）",
+      name: t("AI: Generate PDF Report for This Note (Full Page, No Truncation)"),
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         const isMd = file instanceof obsidian.TFile && file.extension === "md";
@@ -301,13 +301,13 @@ class QnALogPlugin extends obsidian.Plugin {
         return true;
       },
     });
-    this.addCommand({ id: "check-updates", name: "检查更新", callback: () => this.checkForUpdates({ silent: false }) });
-    this.addCommand({ id: "open-outline", name: "打开实时纪要面板", callback: () => this.shell.openOutlineView() });
-    this.addCommand({ id: "open-minutes-kanban", name: "打开纪要看板", callback: () => this.shell.openMinutesKanban() });
-    this.addCommand({ id: "record-mic-only", name: "开始录音 · 仅麦克风", callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
-    this.addCommand({ id: "record-mic-virtual", name: "开始录音 · 麦克风 + 电脑音频", callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
-    this.addCommand({ id: "record-virtual-only", name: "开始录音 · 仅电脑音频", callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });
-    this.addCommand({ id: "import-text", name: "导入已有文本 / MD 结构化整理", callback: () => new ImportTextModal(this.app, this).open() });
+    this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
+    this.addCommand({ id: "open-outline", name: t("Open Live Minutes Panel"), callback: () => this.shell.openOutlineView() });
+    this.addCommand({ id: "open-minutes-kanban", name: t("Open Minutes Board"), callback: () => this.shell.openMinutesKanban() });
+    this.addCommand({ id: "record-mic-only", name: t("Start Recording · Microphone only"), callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
+    this.addCommand({ id: "record-mic-virtual", name: t("Start Recording · Microphone + Computer Audio"), callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
+    this.addCommand({ id: "record-virtual-only", name: t("Start Recording · Computer Audio only"), callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });
+    this.addCommand({ id: "import-text", name: t("Import Existing Text / MD: Structure and Organize"), callback: () => new ImportTextModal(this.app, this).open() });
 
     this.settingTab = new QnALogSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
@@ -337,15 +337,15 @@ class QnALogPlugin extends obsidian.Plugin {
       if (path) this.queueRetry.removeQueueTasksForDeletedMarkdown(path);
     }));
 
-    this.addCommand({ id: "scan-inbox", name: "扫描监听文件夹", callback: () => this.inbox.scanInboxFolder() });
+    this.addCommand({ id: "scan-inbox", name: t("Scan Watched Folder"), callback: () => this.inbox.scanInboxFolder() });
     this.externalInbox.externalInboxScanner = new ExternalInboxScanner();
     this.registerInterval(window.setInterval(() => {
       if (!this.settings.inboxAutoImport || !isAbsoluteExternalInboxPath(this.settings.inboxFolder)) return;
       void this.externalInbox.scanExternalInboxFolder({ manual: false, source: "poll" });
     }, EXTERNAL_INBOX_SCAN_INTERVAL_MS));
 
-    this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.cleanup.cleanupEmptyShortRecordings() });
-    this.addCommand({ id: "cleanup-expired-segment-cache", name: "清理过期分段音频缓存", callback: async () => {
+    this.addCommand({ id: "cleanup-empty-short-recordings", name: t("Clean Up Blank Short Recordings"), callback: () => this.cleanup.cleanupEmptyShortRecordings() });
+    this.addCommand({ id: "cleanup-expired-segment-cache", name: t("Clean Up Expired Segmented Audio Cache"), callback: async () => {
       const result = await this.recording.cleanupExpiredSegmentCacheFiles();
       new obsidian.Notice(
         `${t("Segment cache cleanup complete: deleted ")}${result.deleted}${t(", skipped ")}${result.skipped}${result.failed ? t(", failed {0}").replace("{0}", String(result.failed)) : ""}`,
@@ -355,7 +355,7 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.addCommand({
       id: "regenerate-briefing-from-frontmatter",
-      name: "重新整理当前纪要（使用说话人姓名）",
+      name: t("Reorganize This Note (Using Speaker Names)"),
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         const isMd = file instanceof obsidian.TFile && file.extension === "md";
@@ -379,7 +379,7 @@ class QnALogPlugin extends obsidian.Plugin {
       if (selection.includes("\n") || selection.length > 80) return;
       menu.addSeparator();
       menu.addItem((item) => {
-        item.setTitle("Q&A Log：更正误识别词…")
+        item.setTitle(t("Q&A Log: Correct misrecognized text…"))
           .setIcon("replace")
           .onClick(() => new TextCorrectionModal(this.app, file, selection).open());
       });
@@ -391,7 +391,7 @@ class QnALogPlugin extends obsidian.Plugin {
       if (AUDIO_EXT.has(ext)) {
         menu.addSeparator();
         menu.addItem((item) => {
-          item.setTitle("Q&A Log：转写并整理")
+          item.setTitle(t("Q&A Log: Transcribe and organize"))
             .setIcon("mic")
             .onClick(() => this.imports.openAudioImportOptions([file.path]));
         });
@@ -404,13 +404,13 @@ class QnALogPlugin extends obsidian.Plugin {
       const paths = audios.map((f) => f.path);
       menu.addSeparator();
       menu.addItem((item) => {
-        item.setTitle(`Q&A Log：整合 ${audios.length} 段音频…`).setIcon("mic");
+        item.setTitle(`${t("Q&A Log: Merge ")}${audios.length}${t(" audio files…")}`).setIcon("mic");
         const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
         const modes = getVisibleModeEntries(this.settings, false);
         for (const [m, label] of modes) {
           const meta = getModeMeta(this.settings, m);
           sub.addItem((sub_i) => {
-            sub_i.setTitle(`整合为${label}（${meta.prefix}模式）`)
+            sub_i.setTitle(`${t("Organize as ")}${label}${t(" (")}${meta.prefix}${t(" mode)")}`)
               .setIcon("mic")
               .onClick(() => this.imports.openAudioImportOptions(paths, m));
           });
