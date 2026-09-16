@@ -1589,7 +1589,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     setModePillIcon(pill, meta);
     pill.setAttr("aria-hidden", "true");
     const text = row.createDiv({ cls: "qnalog-tpl-row-meta" });
-    text.createDiv({ cls: "qnalog-tpl-row-name", text: meta.prefix || meta.label || mode });
+    text.createDiv({ cls: "qnalog-tpl-row-name", text: i18nT(meta.label || meta.prefix || mode) });
     const override = this.getBuiltinOverride(mode);
     const state = override ? "当前使用旧版自定义规则。" : i18nT("Built-in prompts");
     text.createDiv({ cls: "qnalog-tpl-row-sub", text: i18nT(meta.goal || "") + " · " + state });

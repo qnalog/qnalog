@@ -20,7 +20,7 @@ import { isLlmConfigError, isLlmServiceBlockedError } from "../llm/core";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 
-import { MODE_META, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
+import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
 import { escapeRegExp, formatElapsed } from "../shared/util-common";
 
@@ -52,7 +52,10 @@ export function stripRecentDatePrefix(basename) {
 }
 
 export function getRecentModePrefixEntries(settings) {
+  // 中英两种前缀都要认：同一篇笔记可能是在另一种界面语言下命名的，
+  // 只认当前语言会让另一种前缀留在标题里，或让模式判定落空。
   const entries = Object.entries(MODE_PREFIX_TO_KEY).map(([prefix, mode]) => [prefix, mode]);
+  for (const [prefix, mode] of Object.entries(MODE_PREFIX_EN_TO_KEY)) entries.push([prefix, mode]);
   for (const [mode, label] of getVisibleModeEntries(settings, false)) entries.push([label, mode]);
   return entries
     .filter(([prefix, mode]) => prefix && mode && isKnownPolishMode(settings, mode))

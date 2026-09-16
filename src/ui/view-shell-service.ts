@@ -5,7 +5,7 @@ import * as obsidian from "obsidian";
 import { getSemanticCanvasPath } from "../canvas/semantic-outline-canvas";
 import { VIEW_TYPE_MINUTES_KANBAN } from "../ui/minutes-kanban-view";
 import { BubbleWidget } from "../ui/modals";
-import { getModeMeta } from "../shared/mode-meta";
+import { getModeMeta, getModePrefix} from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { PluginSettings, RecordingSession } from "../shared/types";
@@ -132,7 +132,7 @@ export class ViewShellService {
         file: item.file,
         title: item.title || item.file.basename,
         mode: item.mode,
-        modeLabel: meta.prefix || "纪要",
+        modeLabel: getModePrefix(meta) || t("Minutes"),
         icon: meta.icon || "file-text",
         folderPath: item.folderPath || obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
         timeLabel: item.displayTime || "",

@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { getRealtimeOutlineAnchorTime } from "../outline-text";
 import { normalizeAudioInputMode, audioInputModeLabel } from "../ui/helpers";
-import { getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
+import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
 import { resolveTranscribeProvider } from "../asr/transcribe";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
@@ -208,8 +208,8 @@ export class RecordingService {
       const activeProfile = this.host.profiles.getActiveTranscribeProfile();
       const isStreaming = activeProfile && activeProfile.transcribeMode === "streaming";
       const titleLine = continuationInfo
-        ? `## 续录 ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}（录音中…）`
-        : `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}（录音中…）`;
+        ? `## ${t("Append to {0}").replace("{0}", getModePrefix(meta))}（${startedAt.format("YYYY-MM-DD HH:mm")}）`
+        : `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${t("(recording…)")}`;
       const header = [
         continuationInfo ? "" : null,
         titleLine,

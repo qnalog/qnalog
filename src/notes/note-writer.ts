@@ -462,7 +462,7 @@ export class NoteWriter {
     const stamp = startedAt && startedAt.isValid && startedAt.isValid()
       ? startedAt.format(this.host.settings.noteFileNameFormatNew)
       : (moment ? moment().format(this.host.settings.noteFileNameFormatNew) : "合并纪要");
-    const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · 合并.md`));
+    const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · ${t("Merge")}.md`));
     if (!targetPath) throw new Error("无法生成合并纪要路径");
 
     new obsidian.Notice(`${t("Q&A Log: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);

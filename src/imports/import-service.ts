@@ -3,7 +3,7 @@
 
 import * as obsidian from "obsidian";
 import { AudioImportOptionsModal } from "../ui/modals";
-import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
+import { isKnownPolishMode, getModeMeta, getEffectivePolishMode, getModePrefix} from "../shared/mode-meta";
 import { getLlmConfigIssue, formatLlmConfigIssue } from "../llm/core";
 import { TEXT_IMPORT_EXT } from "../shared/catalog-import";
 import { genId } from "../shared/util-common";
@@ -125,7 +125,7 @@ export class ImportService {
       : (this.host.settings.polishMode || "meeting");
     const mode = getEffectivePolishMode(this.host.settings, requestedMode);
     const meta = getModeMeta(this.host.settings, mode);
-    const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · 导入`;
+    const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · ${t("Import")}`;
     const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
 
@@ -150,7 +150,7 @@ export class ImportService {
     };
 
     const header = [
-      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}（导入处理中…）`,
+      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${t("(importing…)")}`,
       "",
       "> [!info] 导入信息",
       `> 文件数：${paths.length} · 模式：${meta.prefix} · 转写：整文件${speakerModeLabel}`,
@@ -625,7 +625,7 @@ export class ImportService {
     }
 
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
-    const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · 文本导入`;
+    const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · ${t("Text import")}`;
     const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
     if (!mdPath) throw new Error("无法生成文本导入笔记路径");
 

@@ -14,7 +14,7 @@ import { findLowEvidenceEntities, hashRealtimeOutlineText } from "../outline-tex
 
 import { stripFrontmatterSimple } from "../ui/helpers";
 
-import { getCustomPromptModeTemplate, getCustomPromptModeTemplates, getModeMeta, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
+import { getCustomPromptModeTemplate, getCustomPromptModeTemplates, getModeMeta, getModePrefix, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
 
 import { TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS, parseElapsedMsToken, splitLongTextForLlm } from "../shared/util-text";
 
@@ -40,15 +40,17 @@ import { readSpeakerMappings, speakerLabelForChannel } from "../audio/channel-sp
 
 import { extractBriefingPartEnvelope } from "../briefing/pipeline";
 
-import { t } from "../shared/i18n";
+import { getActiveUiLanguage, t } from "../shared/i18n";
 export function isTimeLabel(text) {
   const time = "(?:\\d{1,2}:)?\\d{1,2}:\\d{2}";
   return new RegExp("^" + time + "(?:\\s*[–-]\\s*" + time + ")?$").test(String(text || "").trim());
 }
 
 export function stripAutoTitleSuffix(stem, settings) {
+  // 中英两种前缀都要剥：同一篇笔记可能在不同语言下被重命名过，
+  // 只认一种会让另一种残留，后缀越叠越长。
   const prefixes = Object.values(MODE_META)
-    .map(m => sanitizeFilename(m && m.prefix))
+    .flatMap(m => [sanitizeFilename(m && m.prefix), sanitizeFilename(m && m.label)])
     .concat(getCustomPromptModeTemplates(settings || {}).map(t => sanitizeFilename(t.name)))
     .filter(Boolean);
   const unique = Array.from(new Set(prefixes)).sort((a, b) => b.length - a.length);
@@ -64,7 +66,8 @@ export function buildRenamedMarkdownPath(currentPath, mode, titleTag, settings) 
   const name = slash >= 0 ? norm.slice(slash + 1) : norm;
   const stem = stripAutoTitleSuffix(name.replace(/\.md$/i, ""), settings);
   const meta = getModeMeta(settings, mode);
-  const modePrefix = sanitizeFilename(meta.prefix || "自定义") || "自定义";
+  // 文件名与界面标题一致，随界面语言；两种前缀在读取时都能解析回同一 mode。
+  const modePrefix = sanitizeFilename(getModePrefix(meta) || "自定义") || "自定义";
   const tag = sanitizeFilename(titleTag) || "";
   if (!stem || !tag) return "";
   const nextName = `${stem} · ${modePrefix}-${tag}.md`;
@@ -1410,11 +1413,27 @@ export function parseBriefingPartResponse(raw) {
 }
 
 export async function generateTitleTag(plugin, polished, mode) {
-  const prefix = getModeMeta(plugin.settings, mode).prefix;
+  const prefix = getModePrefix(getModeMeta(plugin.settings, mode));
   const snippet = (polished || "").slice(0, 2500);
   if (!snippet.trim()) return "";
-  const sys = "你是文件命名助手，擅长从中文内容中提取简洁的主题标签。";
-  const user = `下面是一段 ${prefix} 记录。请提取一个 ≤15 个字的主题标签。
+  // 标签会同时成为文件名与界面标题，因此跟随界面语言——
+  // 英文用户拿到中文标签时，标题与文件名都是他读不懂的文字。
+  const inEnglish = getActiveUiLanguage().id === "en";
+  const sys = inEnglish
+    ? "You name files and extract short topic tags from meeting notes."
+    : "你是文件命名助手，擅长从中文内容中提取简洁的主题标签。";
+  const user = inEnglish
+    ? `Below is a ${prefix} record. Extract one topic tag of at most 15 characters.
+
+[Requirements]
+- Output only the tag itself, with no quotes, punctuation, prefix, explanation, or emoji.
+- Prefer the "specific object - core topic" form, e.g. "contract review - supplier exclusivity" or "weekly sync - Q2 planning".
+- Avoid broad words such as "discussion", "notes", "chat".
+- Use English.
+
+[Content]
+  ${snippet}`
+    : `下面是一段 ${prefix} 记录。请提取一个 ≤15 个字的主题标签。
 
 【要求】
 - 只输出标签本身，不加引号、标点、前缀、解释、emoji。

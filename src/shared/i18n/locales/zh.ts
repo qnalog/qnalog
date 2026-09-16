@@ -10,6 +10,12 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
+  "Minutes": "纪要",
+  "(importing…)": "（导入处理中…）",
+  "Text import": "文本导入",
+  "Import": "导入",
+  "Append to {0}": "续录 {0}",
+  "(recording…)": "（录音中…）",
   "Current minutes": "当前纪要",
   "Merged version": "整合版",
   "What are the key conclusions of this meeting?": "本次会议的核心结论？",
