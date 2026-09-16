@@ -16,6 +16,7 @@ import { EMAIL_DRAFT_ATTACHMENT_FOLDER, EMAIL_DRAFT_FOLDER, arrayBufferToBase64,
 import { detectRecentNoteMode } from "../recent/recent-notes";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 
+import { t } from "../shared/i18n";
 /** 桌面端通过 require 取到的 electron 模块里用到的成员；移动端取不到时为 undefined。 */
 type ElectronModule = {
   BrowserWindow?: new (options: Record<string, unknown>) => { loadURL(url: string): Promise<void>; webContents: { executeJavaScript(code: string): Promise<unknown>; printToPDF(options?: Record<string, unknown>): Promise<unknown> } };
@@ -42,11 +43,11 @@ export class DeliveryService {
   async produceReportHtmlForFile(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return null;
     if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) {
-      new obsidian.Notice("请先在 API 页配置大模型服务；本地、局域网或 Tailscale 等私有网络服务可留空密钥。", 8000);
+      new obsidian.Notice(t("Please configure an LLM service on the API page first; the key may be left empty for local, LAN, or private-network services such as Tailscale."), 8000);
       return null;
     }
     if (!this.host.settings.llmEndpoint || !this.host.settings.llmModel) {
-      new obsidian.Notice("请先配置大模型服务地址和模型标识。", 8000);
+      new obsidian.Notice(t("Please configure the LLM service URL and model ID first."), 8000);
       return null;
     }
     // 研讨纪要：纯白弥散数据驱动模板（大模型只产 DATA JSON 注入固定模板），生成前先选配色；其余模式沿用通用 HTML 报告。
@@ -58,7 +59,7 @@ export class DeliveryService {
       accentHex = await pickReportAccentColor(this.host.app);
       if (accentHex === null) return null;  // 用户取消
     }
-    new obsidian.Notice("Q&A Log：正在生成报告…");
+    new obsidian.Notice(t("Q&A Log: generating report..."));
     const markdown = await this.host.app.vault.read(file);
     let html = styled
       ? await generateStyledReportFromMarkdown(this.host, mode, markdown)
@@ -88,7 +89,7 @@ export class DeliveryService {
     try {
       const r = await this.produceReportHtmlForFile(file);
       if (!r) return;
-      new obsidian.Notice("Q&A Log：正在渲染整页 PDF…");
+      new obsidian.Notice(t("Q&A Log: rendering full-page PDF..."));
       const folder = obsidian.normalizePath(this.host.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder);
       await ensureVaultFolder(this.host.app, folder);
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-报告.pdf`);
@@ -163,7 +164,7 @@ export class DeliveryService {
       // 单页高度上限保护：PDF 单页约 200in≈19200px(96dpi)，超了会被裁，封顶 18000px 留余量。超长则提示用户，避免静默丢内容。
       const hpx = Math.min(18000, rawH);
       if (rawH > 18000) {
-        try { new obsidian.Notice("报告较长，整页 PDF 已按单页高度上限裁切；要完整内容请改用 HTML 报告。", 9000); } catch { /* intentionally empty */ }
+        try { new obsidian.Notice(t("The report is long, so the full-page PDF was cropped to the single-page height limit; for the complete content, use the HTML report instead."), 9000); } catch { /* intentionally empty */ }
       }
       await withTimeout(win.webContents.executeJavaScript(
         "(()=>{const s=document.createElement('style');s.textContent='@page{size:" + wpx + "px " + hpx + "px;margin:0}';document.head.appendChild(s);return true;})()"
@@ -215,7 +216,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
   async createEmailDraftForMarkdownFile(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
     try {
-      new obsidian.Notice("Q&A Log：正在生成邮件草稿…");
+      new obsidian.Notice(t("Q&A Log: generating email draft..."));
       const markdown = await this.host.app.vault.read(file);
       const { recipients, attendeeNames } = await this.resolveEmailRecipientsForMarkdownFile(file);
       const attachmentFiles = [file];

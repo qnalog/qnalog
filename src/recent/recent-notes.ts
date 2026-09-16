@@ -29,6 +29,7 @@ import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent-note-paths";
 import { NS_TAG, isDerivedVersionType } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 export function detectRecentModeFromFrontmatter(settings, frontmatter) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
   const explicitMode = normalizeModeFromLabel(settings, fm.mode || fm["mode"] || "");
@@ -82,15 +83,15 @@ export function detectRecentNoteMode(plugin, file, frontmatter) {
 export const QNALOG_EN_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export const RECENT_TIME_FILTER_OPTIONS = [
-  { id: "week", label: "本周" },
-  { id: "today", label: "今日" },
-  { id: "month", label: "本月" },
-  { id: "all", label: "全部日期" },
+  { id: "week", label: t("This week") },
+  { id: "today", label: t("Today") },
+  { id: "month", label: t("This month") },
+  { id: "all", label: t("All dates") },
 ];
 
 export const RECENT_GROUP_OPTIONS = [
-  { id: "time", label: "按时间" },
-  { id: "folder", label: "按文件夹" },
+  { id: "time", label: t("By time") },
+  { id: "folder", label: t("By folder") },
 ];
 
 export const RECENT_TOPIC_FALLBACKS = ["学习", "会议", "访谈", "PPT", "AI"];
@@ -350,44 +351,44 @@ export function getRecentQueueProcessingState(plugin, file) {
   if (transcribeTasks.some((task) => failedStatuses.has(statusOf(task)))) {
     return {
       kind: "failed",
-      label: "转写失败",
-      title: "有音频片段转写失败；可点击重试转写片段",
+      label: t("Transcription failed"),
+      title: t("Some audio segments failed to transcribe; click to retry the segments"),
     };
   }
   if (mergeTasks.some((task) => activeStatuses.has(statusOf(task)))) {
     return {
       kind: "processing",
-      label: "整理中",
-      title: "转写已完成，正在调用大模型整理纪要",
+      label: t("Organizing"),
+      title: t("Transcription complete; calling the LLM to organize the summary"),
       percent: 65,
     };
   }
   if (transcribeTasks.some((task) => activeStatuses.has(statusOf(task)))) {
     return {
       kind: "processing",
-      label: "转写中",
-      title: "音频片段正在发送到转写服务",
+      label: t("Transcribing"),
+      title: t("Audio segments are being sent to the transcription service"),
     };
   }
   if (transcribeTasks.some((task) => statusOf(task) === "pending")) {
     return {
       kind: "processing",
-      label: "待转写",
-      title: "转写任务正在队列中等待处理",
+      label: t("Pending transcription"),
+      title: t("The transcription task is queued and waiting to be processed"),
     };
   }
   if (mergeTasks.some((task) => statusOf(task) === "pending")) {
     return {
       kind: "processing",
-      label: "待整理",
-      title: "转写已进入后续整理队列",
+      label: t("Pending organization"),
+      title: t("Transcription has entered the follow-up organization queue"),
     };
   }
   if (mergeTasks.some((task) => failedStatuses.has(statusOf(task)))) {
     return {
       kind: "raw",
-      label: "整理失败",
-      title: "AI 整理失败；原始转写仍可重新整理",
+      label: t("Organization failed"),
+      title: t("AI organization failed; the original transcript can still be re-organized"),
     };
   }
   return null;

@@ -22,6 +22,7 @@ import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 /** NoteWriter 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface NoteWriterHost {
   /** 知识库与工作区访问。 */
@@ -329,13 +330,13 @@ export class NoteWriter {
   async polishEditor(editor) {
     const sel = editor.getSelection();
     const raw = sel || editor.getValue();
-    if (!raw || !raw.trim()) { new obsidian.Notice("没有可润色的内容"); return; }
-    new obsidian.Notice("AI 润色中…");
+    if (!raw || !raw.trim()) { new obsidian.Notice(t("Nothing to polish")); return; }
+    new obsidian.Notice(t("AI polishing..."));
     try {
       const mode = getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
       const polished = await polishTranscript(this.host, raw, mode, null, null, null);
       if (sel) editor.replaceSelection(polished); else editor.setValue(polished);
-      new obsidian.Notice("润色完成");
+      new obsidian.Notice(t("Polishing complete"));
     } catch (e) {
       console.error(e);
       new obsidian.Notice(`润色失败：${(e && e.message) || e}`);
@@ -422,7 +423,7 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile)) return;
     const previous = this.findPreviousRecentNoteFile(file);
     if (!(previous instanceof obsidian.TFile)) {
-      new obsidian.Notice("没有找到这篇之前的最近一条 Q&A Log 纪要。", 6000);
+      new obsidian.Notice(t("No most recent Q&A Log summary before this one was found."), 6000);
       return;
     }
     const ok = await qnalogConfirm(this.host.app, "合并纪要", `将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. ${previous.basename}\n2. ${file.basename}\n\n继续合并？`, "合并");
@@ -445,12 +446,12 @@ export class NoteWriter {
       startIndex += source.segments.length;
     }
     if (sources.length < 2) {
-      new obsidian.Notice("至少需要两篇纪要才能合并。");
+      new obsidian.Notice(t("At least two summaries are required to merge."));
       return;
     }
     const segments = sources.flatMap((source) => source.segments);
     if (!segments.length) {
-      new obsidian.Notice("没有找到可合并的原始转写。", 8000);
+      new obsidian.Notice(t("No original transcriptions found to merge."), 8000);
       return;
     }
     const mode = sources[sources.length - 1].mode || sources[0].mode || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);

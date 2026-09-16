@@ -257,7 +257,7 @@ export class ImportService {
         }
       } catch (error) {
         console.error(error);
-        new obsidian.Notice(`读取失败：${displayName}`);
+        new obsidian.Notice(`${t("Failed to read:")}${displayName}`);
         continue;
       }
 
@@ -595,7 +595,7 @@ export class ImportService {
         sources.push({ file, path: file.path, name: file.name, text });
       } catch (e) {
         console.error("[QnALog] import text read failed", e);
-        new obsidian.Notice(`读取失败：${file.name}`);
+        new obsidian.Notice(`${t("Failed to read:")}${file.name}`);
       }
     }
     if (!sources.length) {
