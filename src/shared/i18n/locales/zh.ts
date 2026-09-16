@@ -10,6 +10,14 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
+  "Synthesis minutes": "综合纪要",
+  "Work notes": "工作纪要",
+  "Interview": "访谈",
+  "Personal notes": "个人笔记",
+  "Study notes": "学习笔记",
+  "Seminar": "研讨会",
+  "Roundtable": "圆桌讨论",
+  "Off (transcription only)": "关闭（仅转写）",
   "You can open it in the email drafts folder.": "可在邮件草稿文件夹中打开。",
   "Scan failed: ": "扫描失败：",
   " audio files are still syncing; they will be processed automatically later": " 个音频仍在同步，稍后自动处理",

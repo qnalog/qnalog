@@ -1848,9 +1848,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const currentMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode, "meeting");
     const currentMeta = getModeMeta(this.plugin.settings, currentMode);
     new obsidian.Setting(c).setName(t("Default note template"))
-      .setDesc((currentMeta.label || currentMeta.prefix) + t(". Recordings, imported audio, and re-organizing use this template by default; you can still switch temporarily for a specific action."))
+      .setDesc(t(currentMeta.label || currentMeta.prefix) + t(". Recordings, imported audio, and re-organizing use this template by default; you can still switch temporarily for a specific action."))
       .addDropdown(d => {
-        for (const [key, label] of getVisibleModeEntries(this.plugin.settings, false)) d.addOption(key, label);
+        for (const [key, label] of getVisibleModeEntries(this.plugin.settings, false)) d.addOption(key, t(label));
         d.setValue(currentMode);
         d.onChange(async v => { this.plugin.settings.polishMode = v; await this.plugin.saveSettings(); this.renderSettings(); });
       })

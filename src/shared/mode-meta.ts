@@ -85,7 +85,8 @@ export function getEffectivePolishMode(settings, requested, fallback = null) {
 
 export function getVisibleModeEntries(settings, includeOff) {
   const entries = getVisiblePolishModeKeys(settings).map((key) => [key, getModeMeta(settings, key).prefix]);
-  return includeOff ? [["off", "关闭，仅转写"], ...entries] : entries;
+  // prefix 会被写进笔记文件名，保持中文；这里只返回显示名，由调用方 t()。
+  return includeOff ? [["off", t("Off (transcription only)")], ...entries] : entries;
 }
 
 export function setModePillIcon(el, meta, fallbackMeta) {

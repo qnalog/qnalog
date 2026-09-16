@@ -2,14 +2,14 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
 export const MODE_META = {
-  synthesis: { prefix: "综合纪要", emoji: "", icon: "layers", label: "综合纪要", goal: "Best for most meetings. First distill the through-line of the whole session, then organize it in three layers: overview, body, and reference material." },
-  meeting:   { prefix: "工作纪要", emoji: "📝", icon: "briefcase", label: "工作纪要", goal: "Best for work meetings of any size: decisions, todos, risks, and aligning on colleagues' progress." },
-  interview: { prefix: "访谈", emoji: "🎙", icon: "message-square", label: "访谈", goal: "Best for external interviews, user research, and expert interviews, turning Q&A into insight." },
-  monologue: { prefix: "个人笔记", emoji: "💭", icon: "notebook", label: "个人笔记", goal: "Best for personal dictation, ideas, and retrospectives, turning scattered expression into usable notes." },
-  learning:  { prefix: "学习笔记", emoji: "📚", icon: "book-open", label: "学习笔记", goal: "Best for high information density content such as Bilibili, YouTube, courses, lectures, and podcasts." },
-  seminar:   { prefix: "研讨会", emoji: "🧠", icon: "landmark", label: "研讨会", goal: "Best for academic seminars, themed salons, and roundtable forums, laying out viewpoints, disputes, evidence, and follow-up questions clearly." },
-  huddle:    { prefix: "圆桌讨论", emoji: "🤝", icon: "users", label: "圆桌讨论", goal: "Kept for compatibility with older notes; for new recordings, please switch to \"Work Summary\".", legacy: true },
-  off:       { prefix: "录音", emoji: "🎙", icon: "mic", label: "关闭（仅转写）" },
+  synthesis: { prefix: "综合纪要", emoji: "", icon: "layers", label: "Synthesis minutes", goal: "Best for most meetings. First distill the through-line of the whole session, then organize it in three layers: overview, body, and reference material." },
+  meeting:   { prefix: "工作纪要", emoji: "📝", icon: "briefcase", label: "Work notes", goal: "Best for work meetings of any size: decisions, todos, risks, and aligning on colleagues' progress." },
+  interview: { prefix: "访谈", emoji: "🎙", icon: "message-square", label: "Interview", goal: "Best for external interviews, user research, and expert interviews, turning Q&A into insight." },
+  monologue: { prefix: "个人笔记", emoji: "💭", icon: "notebook", label: "Personal notes", goal: "Best for personal dictation, ideas, and retrospectives, turning scattered expression into usable notes." },
+  learning:  { prefix: "学习笔记", emoji: "📚", icon: "book-open", label: "Study notes", goal: "Best for high information density content such as Bilibili, YouTube, courses, lectures, and podcasts." },
+  seminar:   { prefix: "研讨会", emoji: "🧠", icon: "landmark", label: "Seminar", goal: "Best for academic seminars, themed salons, and roundtable forums, laying out viewpoints, disputes, evidence, and follow-up questions clearly." },
+  huddle:    { prefix: "圆桌讨论", emoji: "🤝", icon: "users", label: "Roundtable", goal: "Kept for compatibility with older notes; for new recordings, please switch to \"Work Summary\".", legacy: true },
+  off:       { prefix: "录音", emoji: "🎙", icon: "mic", label: "Off (transcription only)" },
 };
 
 export const FRONTMATTER_SCHEMA = {
