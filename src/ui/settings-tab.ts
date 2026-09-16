@@ -518,7 +518,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (!status.ready) {
       const badge = statusHead.createDiv({ cls: "qnalog-status-badge is-warn" });
       badge.createSpan({ cls: "qnalog-status-badge-icon", text: "!" });
-      badge.createSpan({ text: `${t("Still missing")}${status.blockerCount}${t(" items")}` });
+      badge.createSpan({ text: `${t("Still missing ")}${status.blockerCount}${t(" items")}` });
     }
     statusList = statusBlock.createDiv({ cls: "qnalog-status-list" });
     for (const line of status.lines) {
@@ -768,7 +768,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     selectEl.value = selected || "";
 
     if (availability.state === "unnamed") {
-      hintEl.setText(`${t("Detected")}${availability.count}${t(" audio input devices, but the device names require microphone permission to be displayed; you can still choose in the order shown in the dropdown.")}`);
+      hintEl.setText(`${t("Detected ")}${availability.count}${t(" audio input devices, but the device names require microphone permission to be displayed; you can still choose in the order shown in the dropdown.")}`);
     } else if (selected && !selectedListed) {
       hintEl.setText(t("The selected microphone is disconnected. Choose another."));
     } else if (selected) {
@@ -834,7 +834,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (selected && !hasSelected) {
       hintEl.setText(t("The selected computer-audio device may be disconnected. Choose another."));
     } else if (availability.state === "unnamed") {
-      hintEl.setText(`${t("Detected")}${availability.count}${t(" audio input devices, but the device names require microphone permission to be displayed; grant permission first, then reopen this page.")}`);
+      hintEl.setText(`${t("Detected ")}${availability.count}${t(" audio input devices, but the device names require microphone permission to be displayed; grant permission first, then reopen this page.")}`);
     } else if (groups.dongles.length === 0) {
       hintEl.setText(t("No computer-audio input found. Set up a virtual audio device first."));
     } else if (!virtualDevs.length) {
@@ -1334,24 +1334,24 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
     new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
-      .setDesc(profile.keyHelp)
+      .setDesc(t(profile.keyHelp))
       .addText(txt => { txt.inputEl.type = "password"; txt.setValue(provider.apiKey || "").onChange(v => writeProvider("apiKey", v)); });
 
     new obsidian.Setting(c).setName(t("Service URL"))
-      .setDesc(profile.endpointHelp)
+      .setDesc(t(profile.endpointHelp))
       .addText(txt => txt.setValue(provider.endpoint || "")
         .setPlaceholder(profile.endpointPlaceholder || "")
         .onChange(v => writeProvider("endpoint", v.trim())));
 
     new obsidian.Setting(c).setName(t("Model Name"))
-      .setDesc(profile.modelHelp)
+      .setDesc(t(profile.modelHelp))
       .addText(t => t.setValue(provider.model || "")
         .setPlaceholder(profile.modelPlaceholder || "")
         .onChange(v => writeProvider("model", v.trim())));
 
     if (!profile.hideLanguage) {
       new obsidian.Setting(c).setName(t("Recognition Language"))
-        .setDesc(profile.languageHelp || t("Leave blank or auto to detect automatically; usually fill in zh for Chinese and en for English."))
+        .setDesc(t(profile.languageHelp) || t("Leave blank or auto to detect automatically; usually fill in zh for Chinese and en for English."))
         .addText(t => t.setValue(provider.language || "")
           .setPlaceholder(profile.languagePlaceholder || "")
           .onChange(v => writeProvider("language", v.trim())));
@@ -1435,13 +1435,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       });
 
     const llmEndpointHelp = activeLlmPreset && activeLlmPreset.endpointHelp
-      ? activeLlmPreset.endpointHelp
+      ? t(activeLlmPreset.endpointHelp)
       : t("Enter the LLM service endpoint (the \"OpenAI-compatible / Chat Completions\" URL). You can enter it up to /v1 or the root address and Q&A Log will complete it automatically; you can also enter the full /v1/chat/completions.");
     const llmKeyHelp = activeLlmPreset && activeLlmPreset.keyHelp
-      ? activeLlmPreset.keyHelp
+      ? t(activeLlmPreset.keyHelp)
       : t("Enter the API Key provided by the provider or relay service. Can be left empty for local localhost LLM services.");
     const llmModelHelp = activeLlmPreset && activeLlmPreset.modelHelp
-      ? activeLlmPreset.modelHelp
+      ? t(activeLlmPreset.modelHelp)
       : t("Enter the model name required by the service; for relay services such as Poe and OpenRouter, use the name shown in their console or model list.");
 
     new obsidian.Setting(c).setName(t("Service URL"))
@@ -1490,7 +1490,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         try {
           const models = await fetchLlmModelList(this.plugin.settings.llmEndpoint, this.plugin.settings.llmApiKey);
           if (!models.length) { new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000); return; }
-          openPickListModal(this.app, `${t("Select a model (")}${models.length}${t(")")}`, models, async (id) => {
+          openPickListModal(this.app, `${t("Select a model ( ")}${models.length}${t(")")}`, models, async (id) => {
             this.plugin.settings.llmModel = id;
             syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
             await this.plugin.saveSettings();
@@ -1599,21 +1599,21 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
     new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
-      .setDesc(profile.keyHelp || t("- Each line ≤ 22 characters, specific, answerable from these minutes, and not vague (avoid things like \"can you say more\")"))
+      .setDesc(t(profile.keyHelp) || t("- Each line ≤ 22 characters, specific, answerable from these minutes, and not vague (avoid things like \"can you say more\")"))
       .addText((text) => {
         text.inputEl.type = "password";
         text.setValue(provider.apiKey || "").onChange((value) => writeProvider("apiKey", value));
       });
 
     new obsidian.Setting(c).setName(t("Service URL"))
-      .setDesc(profile.endpointHelp || t("Transcription endpoint for imported audio."))
+      .setDesc(t(profile.endpointHelp) || t("Transcription endpoint for imported audio."))
       .addText((text) => text
         .setValue(provider.endpoint || "")
         .setPlaceholder(profile.endpointPlaceholder || "")
         .onChange((value) => writeProvider("endpoint", value.trim())));
 
     new obsidian.Setting(c).setName(t("Model Name"))
-      .setDesc(profile.modelHelp || t("Enter a long-audio transcription model supported by the service."))
+      .setDesc(t(profile.modelHelp) || t("Enter a long-audio transcription model supported by the service."))
       .addText((text) => text
         .setValue(provider.model || "")
         .setPlaceholder(profile.modelPlaceholder || "")
@@ -1629,7 +1629,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
               new obsidian.Notice(t("The service returned no usable models. Enter the model name manually."), 6000);
               return;
             }
-            openPickListModal(this.app, `${t("Select the audio import model (")}${models.length}${t(")")}`, models, async (model) => {
+            openPickListModal(this.app, `${t("Select the audio import model ( ")}${models.length}${t(")")}`, models, async (model) => {
               await writeProvider("model", model);
               new obsidian.Notice(`${t("Selected model:")}${model}`, 4000);
               this.renderSettings();
@@ -1663,7 +1663,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (!profile.hideLanguage) {
       new obsidian.Setting(c).setName(t("Recognition Language"))
-        .setDesc(profile.languageHelp || t("Leave blank or auto to detect automatically."))
+        .setDesc(t(profile.languageHelp) || t("Leave blank or auto to detect automatically."))
         .addText((text) => text
           .setValue(provider.language || "")
           .setPlaceholder(profile.languagePlaceholder || "")
@@ -1900,7 +1900,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       try {
         const content = await this.plugin.app.vault.cachedRead(file);
         const groups = parseVocabularyGroups(content);
-        setting.setDesc(`${t("Currently")}${countVocabularyGroups(groups)}${t(" ASR hotwords (")}${summarizeVocabularyGroups(groups)}）。`);
+        setting.setDesc(`${t("Currently ")}${countVocabularyGroups(groups)}${t(" ASR hotwords (")}${summarizeVocabularyGroups(groups)}）。`);
       } catch (e) {
         setting.setDesc(`${t("Failed to read:")}${e.message || e}`);
       }
@@ -1957,7 +1957,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       return btn;
     };
     makeObjectCard(t("Person"), peopleCount, t("people"), t("Summarize the people who appear in meetings, one page per person, linked to notes."), "contact", t("Open person library"), () => { void this.plugin.library.openPeopleBase(); });
-    makeObjectCard(t("To-do"), todoCount, t("items"), t("Action items confirmed from the meeting notes; check them off to track."), "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
+    makeObjectCard(t("To-do"), todoCount, t(" items"), t("Action items confirmed from the meeting notes; check them off to track."), "list-checks", t("Open to-do wall"), () => { void this.plugin.library.openTodoWall(); });
     const vocabCard = makeObjectCard(t("Transcription term list"), "…", t(" file items"), t("Collect terms and error-prone spellings to improve transcription accuracy."), "notebook-tabs", t("- MD enhancements: Use ==highlight==, <u>underline</u>, and a few AI-supplement callouts in moderation."), () => { void openVocabularyFile(); });
 
     void (async () => {
@@ -1996,7 +1996,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         try {
           const result = await this.plugin.people.mergeDuplicatePeopleDirectory();
           new obsidian.Notice(result.merged
-            ? `${t("Merged")}${result.merged}${t(" duplicate person pages, updated ")}${result.updatedLinks}${t(" note references")}`
+            ? `${t("Merged ")}${result.merged}${t(" duplicate person pages, updated ")}${result.updatedLinks}${t(" note references")}`
             : t("No duplicate person pages found that need merging"));
           this.renderSettings();
         } catch (e) {
@@ -2020,7 +2020,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText(t("Backfill views")).onClick(async () => {
         try {
           const r = await this.plugin.library.createBases({ overwrite: false });
-          new obsidian.Notice(`${t("Table views created:")}${r.created}${t(" file items, skipped ")}${r.skipped}${t(" file items")}`);
+          new obsidian.Notice(`${t("Table views created: ")}${r.created}${t(" file items, skipped ")}${r.skipped}${t(" file items")}`);
         } catch (e) {
           console.error(e);
           new obsidian.Notice(`${t("Create failed: ")}${e.message || e}`);
@@ -2043,7 +2043,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async setting => {
         try {
           const people = await loadPeopleDirectory(this.plugin);
-          setting.setDesc(`${t("Currently")}${people.length}${t(" people. Person profiles are read locally only by default.")}`);
+          setting.setDesc(`${t("Currently ")}${people.length}${t(" people. Person profiles are read locally only by default.")}`);
         } catch (e) {
           setting.setDesc(`${t("Failed to read:")}${e.message || e}`);
         }
@@ -2053,7 +2053,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async v => { this.plugin.settings.todoCardsFolder = v || DEFAULT_SETTINGS.todoCardsFolder; },
       async setting => {
         const count = countMarkdownInFolder(this.plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder);
-        setting.setDesc(`${t("Currently")}${count}${t(" to-do cards. To-do cards are good for tracking action items across meetings and projects.")}`);
+        setting.setDesc(`${t("Currently ")}${count}${t(" to-do cards. To-do cards are good for tracking action items across meetings and projects.")}`);
       });
 
     createPathSetting(advancedBody, t("Views folder"), t("Save the resource overview and Base views generated by Q&A Log."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
@@ -2063,7 +2063,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const peopleScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "people");
     this.createSettingsSubhead(advancedBody, t("- Output only the 3 questions themselves, with no numbering, index, explanation, or any extra text"), t("After clearing, past meetings can re-enter the scope of person and glossary scanning."));
     new obsidian.Setting(advancedBody).setName(t("Note scan records"))
-      .setDesc(`${t("Transcription glossary scanned")}${vocabScanCount}${t(" notes; person suggestions scanned ")}${peopleScanCount}${t(" notes. After clearing the records, notes that have been modified or already exist can re-enter the scanning scope.")}`)
+      .setDesc(`${t("Transcription glossary scanned ")}${vocabScanCount}${t(" notes; person suggestions scanned ")}${peopleScanCount}${t(" notes. After clearing the records, notes that have been modified or already exist can re-enter the scanning scope.")}`)
       .addButton(b => b.setButtonText(t("Clear term records")).setDisabled(!vocabScanCount).onClick(async () => {
         const ok = await qnalogConfirm(this.app, t("Clear glossary scan history?"), `${vocabScanCount}${t(" minutes will re-enter the scanning scope; rescanning calls the LLM service again, and cloud usage is billed by volume.")}`, t("Clear"));
         if (!ok) return;
@@ -2448,7 +2448,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const n = parseInt(v, 10);
           if (!isFinite(n)) return;
           const clamped = Math.min(60000, Math.max(0, n));
-          if (clamped !== n) new obsidian.Notice(`${t("Wait time adjusted to the valid range 0–60000 milliseconds:")}${clamped}`);
+          if (clamped !== n) new obsidian.Notice(`${t("Wait time adjusted to the valid range 0–60000 milliseconds: ")}${clamped}`);
           this.plugin.settings.inboxStabilizeDelayMs = clamped;
           await this.plugin.saveSettings();
         });
@@ -2476,7 +2476,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           if (!isFinite(n)) return;
           // 此前接受 0 但所有使用点都按 || 3 兜底，"填 0 实际跑 3"是谎言，收紧为 1–10
           const clamped = Math.min(10, Math.max(1, n));
-          if (clamped !== n) new obsidian.Notice(`${t("Maximum retry count adjusted (valid range 1–10) to")}${clamped}`);
+          if (clamped !== n) new obsidian.Notice(`${t("Maximum retry count adjusted (valid range 1–10) to ")}${clamped}`);
           this.plugin.settings.maxRetries = clamped;
           await this.plugin.saveSettings();
         });
@@ -2484,7 +2484,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       });
 
     new obsidian.Setting(c).setName(t("Task queue"))
-      .setDesc(`${t("Currently")}${this.plugin.queue.tasks.length}${t(" tasks.")}`)
+      .setDesc(`${t("Currently ")}${this.plugin.queue.tasks.length}${t(" tasks.")}`)
       .addButton(b => b.setButtonText(t("Open queue")).onClick(() => new QueueModal(this.app, this.plugin).open()))
   }
 
@@ -2527,10 +2527,10 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       installedUpdateVersion && compareVersions(installedUpdateVersion, currentVersion) > 0
         ? t("Detected ") + installedUpdateVersion + t(" is in place; takes effect after a restart or re-enabling")
         : "",
-      update && update.version ? t("Available versions:") + update.version + "（请从发布页安装）" : t("No updates available"),
+      update && update.version ? t("Available versions:") + update.version + t("(install from the release page)") : t("No updates available"),
       this.plugin.settings.lastUpdateCheckAt ? t("Last checked:") + this.plugin.settings.lastUpdateCheckAt : t("Not yet checked"),
       this.plugin.settings.lastUpdateError ? t("Last error:") + this.plugin.settings.lastUpdateError : "",
-      rawBases.length > 1 ? t("Alternate download source:") + (rawBases.length - 1) + " 个" : "",
+      rawBases.length > 1 ? t("Alternate download source:") + (rawBases.length - 1) + t(" available") : "",
       t("Write directory:") + pluginBasePath(this.plugin),
     ].filter(Boolean).join("；");
 

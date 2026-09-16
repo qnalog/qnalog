@@ -1087,7 +1087,7 @@ export class OutlineView extends obsidian.ItemView {
       this.notePanelCacheKey = "";
       state.multiSelect = false;
       for (const e of state.entries) e.selected = false;
-      new obsidian.Notice(`${i18nT("Wrote")}${selected.length}${i18nT(" answers to the current note.")}`, 4000);
+      new obsidian.Notice(`${i18nT("Wrote ")}${selected.length}${i18nT(" answers to the current note.")}`, 4000);
       this.render();
     } catch (e) {
       console.error("[QnALog] write selected note ask answers failed", e);
@@ -1757,7 +1757,7 @@ export class OutlineView extends obsidian.ItemView {
   renderSedimentMoreToggle(list, key, hiddenCount, expanded) {
     const more = list.createDiv({
       cls: "qnalog-sediment-more is-clickable",
-      text: expanded ? "收起" : `${i18nT("Another")}${hiddenCount}${i18nT(" items · click to expand")}`,
+      text: expanded ? "收起" : `${i18nT("Another ")}${hiddenCount}${i18nT(" items · click to expand")}`,
       attr: { role: "button", tabindex: "0", title: expanded ? i18nT("AI is identifying people and their relationships") : i18nT("Show all candidates") },
     });
     const toggle = (evt) => {
@@ -1813,7 +1813,7 @@ export class OutlineView extends obsidian.ItemView {
     this.renderSedimentFooter(parent, group, selectedCount, {
       secondaryText: i18nT("Ignore unselected"),
       secondaryDisabled: !unselectedCount,
-      secondaryTitle: unselectedCount ? `${i18nT("Unselected")}${unselectedCount}${i18nT(" items will be marked as ignored")}` : i18nT("No unselected entries"),
+      secondaryTitle: unselectedCount ? `${i18nT("Unselected ")}${unselectedCount}${i18nT(" items will be marked as ignored")}` : i18nT("No unselected entries"),
       onSecondary: () => this.confirmIgnoreSedimentUnselected(file, groupKey, unselectedCount),
       onPrimary: () => this.commitSedimentGroup(file, groupKey),
     });
@@ -2909,7 +2909,7 @@ export class OutlineView extends obsidian.ItemView {
         if (item.sub) content.createDiv({ cls: "qnalog-sediment-item-sub", text: item.sub });
         if (item.meta) content.createDiv({ cls: "qnalog-sediment-item-meta", text: item.meta });
       }
-      if (items.length > 10) list.createDiv({ cls: "qnalog-sediment-more", text: `${i18nT("Another")}${items.length - 10}${i18nT(" processing records")}` });
+      if (items.length > 10) list.createDiv({ cls: "qnalog-sediment-more", text: `${i18nT("Another ")}${items.length - 10}${i18nT(" processing records")}` });
     }
     // "重新处理本组"按钮只有当 review 真有 restore 快照可以单组回滚时才出现 —— 这种情况下点击只影响本组。
     // 没有 restore 时（旧版本 / 无快照）不再画这个按钮，避免和顶部全局"重扫"重复并误导用户。
@@ -3068,7 +3068,7 @@ export class OutlineView extends obsidian.ItemView {
       [
         ["check", i18nT("Items already added to the library are unaffected")],
         ["check", i18nT("Ignored items will not appear again")],
-        ["alert-triangle", `${i18nT("Currently")}${pendingCount}${i18nT(" unconfirmed candidates will be overwritten")}`],
+        ["alert-triangle", `${i18nT("Currently ")}${pendingCount}${i18nT(" unconfirmed candidates will be overwritten")}`],
       ].forEach(([iconName, text]) => {
         const li = list.createEl("li");
         try { obsidian.setIcon(li.createSpan({ cls: "qnalog-sediment-confirm-list-icon" }), iconName); } catch { /* intentionally empty */ }
@@ -3312,7 +3312,7 @@ export class OutlineView extends obsidian.ItemView {
       this.sedimentGroup = firstPending ? firstPending.key : "person";
       this.sedimentSwitcherOpen = false;
       this.render();
-      this.showSedimentToast(`${i18nT("Scan complete: people")}${(objects.people || []).length}${i18nT(", to-dos")}${(objects.todos || []).length}${i18nT(", hot words")}${countVocabularyGroups(objects.hotwords)}`, {
+      this.showSedimentToast(`${i18nT("Scan complete: people ")}${(objects.people || []).length}${i18nT(", to-dos ")}${(objects.todos || []).length}${i18nT(", hot words ")}${countVocabularyGroups(objects.hotwords)}`, {
         icon: "check",
       });
       this.plugin.tasks.completeTaskActivity(taskId, {
@@ -3515,7 +3515,7 @@ export class OutlineView extends obsidian.ItemView {
       try { obsidian.setIcon(icon, "circle-minus"); } catch { /* intentionally empty */ }
       head.createEl("h3", { text: i18nT("Ignore unselected content?") });
       const note = contentEl.createDiv({ cls: "qnalog-sediment-confirm-note" });
-      note.setText(`${i18nT("Unselected")}${count}${i18nT(" items will be marked as ignored and cannot be restored. After you continue, the selected content will be added to the corresponding library.")}`);
+      note.setText(`${i18nT("Unselected ")}${count}${i18nT(" items will be marked as ignored and cannot be restored. After you continue, the selected content will be added to the corresponding library.")}`);
       const actions = contentEl.createDiv({ cls: "qnalog-sediment-confirm-actions" });
       const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
       const confirm = actions.createEl("button", { text: i18nT("Continue"), cls: "mod-cta", attr: { type: "button" } });
@@ -3699,7 +3699,7 @@ export class OutlineView extends obsidian.ItemView {
       const renameNote = (renames && renames.length)
         ? `${i18nT(", and correct those in the body/properties: ")}${renames.map(r => `${r.from}→${r.to}`).join(", ")}${i18nT(" corrected as well")}`
         : "";
-      this.showSedimentCommitToast(`${i18nT("Added to person library: created")}${result.created || 0}${i18nT(", updated")}${result.updated || 0}${renameNote}`, undo);
+      this.showSedimentCommitToast(`${i18nT("Added to person library: created ")}${result.created || 0}${i18nT(", updated ")}${result.updated || 0}${renameNote}`, undo);
       if (completed) this.scheduleSedimentAutoAdvance(file, "person");
     } catch (e) {
       console.error("[QnALog] keep people suggestions failed", e);
@@ -5032,7 +5032,7 @@ export class OutlineView extends obsidian.ItemView {
 
   renderSegments(root, session) {
     const segWrap = root.createDiv({ cls: "qnalog-outline-section" });
-    segWrap.createDiv({ cls: "qnalog-outline-section-title", text: `${i18nT("Segments ·")}${session.segments.length}` });
+    segWrap.createDiv({ cls: "qnalog-outline-section-title", text: `${i18nT("Segments · ")}${session.segments.length}` });
     const list = segWrap.createDiv({ cls: "qnalog-outline-segments" });
     session.segments.forEach((s) => {
       const row = list.createDiv({ cls: "qnalog-outline-seg" });
@@ -5069,7 +5069,7 @@ export class OutlineView extends obsidian.ItemView {
       Number(outlineCoverage && outlineCoverage.degradedBatchCount) || 0
     );
     const coverageLabel = coverageIncomplete
-      ? `${i18nT("Covering")}${coverageCommitted}/${coverageTotal}${i18nT(" segments")}`
+      ? `${i18nT("Covering ")}${coverageCommitted}/${coverageTotal}${i18nT(" segments")}`
       : (coverageTotal > 0 ? `已覆盖 ${coverageCommitted}/${coverageTotal}${i18nT(" segments")}` : i18nT("Organized from transcript"));
     aiHead.createDiv({
       cls: `qnalog-outline-source-badge${coverageIncomplete || degradedBatchCount ? " is-partial" : ""}`,
@@ -5132,7 +5132,7 @@ export class OutlineView extends obsidian.ItemView {
     body.createDiv({ cls: "qnalog-outline-network-gap-title", text: i18nT("Outline generation paused") });
     const started = Number(issue && issue.startedAtMs);
     const elapsed = Number.isFinite(started) ? started : Math.max(0, Number(recInfo && recInfo.elapsed) || 0);
-    body.createDiv({ cls: "qnalog-outline-network-gap-desc", text: `${i18nT("Recording from")}${formatElapsed(elapsed)}${i18nT(" and counting.")}` });
+    body.createDiv({ cls: "qnalog-outline-network-gap-desc", text: `${i18nT("Recording from ")}${formatElapsed(elapsed)}${i18nT(" and counting.")}` });
   }
 
   renderOutlineAnnotations(parent, session) {
@@ -5613,7 +5613,7 @@ export class OutlineView extends obsidian.ItemView {
     if (filters.time === "today") {
       const widen = hint.createEl("button", { text: i18nT("AI is identifying transcript terms"), attr: { type: "button" } });
       widen.onclick = () => this.setRecentFilter("time", "week");
-      if (this.hasActiveRecentFilters()) hint.createSpan({ text: i18nT("or") });
+      if (this.hasActiveRecentFilters()) hint.createSpan({ text: i18nT("or ") });
     }
     if (this.hasActiveRecentFilters()) {
       const clear = hint.createEl("button", { text: i18nT("Clear all filters"), attr: { type: "button" } });
@@ -5657,7 +5657,7 @@ export class OutlineView extends obsidian.ItemView {
       this.createRecentActionButton(actions, {
         icon: "rotate-ccw",
         label: `${i18nT("Retry transcription")}${failedTasks.length > 1 ? ` ${failedTasks.length}` : ""}`,
-        title: `${i18nT("Retry this minutes note's")}${failedTasks.length}${i18nT(" segments with transcription failures")}`,
+        title: `${i18nT("Retry this minutes note's ")}${failedTasks.length}${i18nT(" segments with transcription failures")}`,
         cls: "is-retry",
         onClick: () => this.retryRecentTranscription(r.file),
       });

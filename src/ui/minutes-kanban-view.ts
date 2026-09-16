@@ -316,7 +316,7 @@ export class MinutesKanbanView extends ItemView {
           cls: "qnalog-kanban-more",
           attr: { type: "button" },
         });
-        more.createSpan({ text: `${t("Another")}${visible.length - shown.length}${t(" notes")}` });
+        more.createSpan({ text: `${t("Another ")}${visible.length - shown.length}${t(" notes")}` });
         setIcon(more.createSpan(), "chevron-down");
         more.onclick = () => {
           this.expandedGroups.add(column.key);

@@ -141,3 +141,49 @@ describe("界面文案与路径的边界", () => {
     expect(offenders, `路径被包进 t()：${offenders.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 });
+
+describe("词条表的形状", () => {
+  const zhRaw = fs.readFileSync(path.join(root, "src/shared/i18n/locales/zh.ts"), "utf8");
+  const pairs = [...zhRaw.matchAll(/^  "((?:[^"\\]|\\.)*)":\s*"((?:[^"\\]|\\.)*)",/gm)]
+    .map((m) => [m[1], m[2]] as const);
+
+  it("键必须是英文（英文是源语言，t() 用代码里的英文字面量查表）", () => {
+    // 反向条目（中文做键）在中文界面下查不到，会静默回退成英文。
+    // 键里出现中文不必然是错：语言下拉写 native name（日本語）、
+    // 文案里引用应用本名（哔哩哔哩）都是合法的，按 ASCII 字母占比区分。
+    const cjk = /[\u4e00-\u9fa5]/g;
+    const backwards = pairs
+      .filter(([k]) => {
+        const han = (k.match(cjk) || []).length;
+        if (!han) return false;
+        const latin = (k.match(/[A-Za-z]/g) || []).length;
+        return latin <= han; // 汉字不少于拉丁字母 → 键主体是中文
+      })
+      .map(([k, v]) => `${k} → ${v}`);
+    expect(backwards, `键主体是中文（方向反了）：${backwards.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
+  it("值必须是中文或标点（英文表为空，值若是英文说明这条写反了）", () => {
+    // 全角标点映射（")" → "）"）没有汉字但合法；含拉丁字母才算漏译。
+    const withoutCjk = pairs
+      .filter(([, v]) => !/[\u4e00-\u9fa5]/.test(v) && /[A-Za-z]/.test(v))
+      .map(([k]) => k);
+    expect(withoutCjk, `值含拉丁字母但没有中文：${withoutCjk.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
+  it("中文值不得以空格结尾而英文键不以空格结尾（英文侧会与下一个片段粘连）", () => {
+    // 键即英文界面回退显示的内容。曾出现值带尾空格、键不带："Step" vs "步骤 "
+    // → en 渲染 "Step5"，zh 渲染 "步骤 5"。
+    // 反向（键带空格、值不带："Source: " vs "来源："）是安全的：
+    // 中文标点自带间隙，英文靠这个空格连接，两侧都正确。
+    const glued = pairs
+      .filter(([k, v]) => v.endsWith(" ") && !k.endsWith(" "))
+      .map(([k, v]) => `${JSON.stringify(k)} vs ${JSON.stringify(v)}`);
+    expect(glued, `英文侧会粘连：${glued.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
+  it("不应存在「值等于键」的自我映射（那等于没翻译）", () => {
+    const identity = pairs.filter(([k, v]) => k === v).map(([k]) => k);
+    expect(identity, `自我映射：${identity.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+});

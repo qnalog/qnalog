@@ -247,9 +247,9 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       text: this.sourceFile
         ? i18nT("Q&A Log only sends the content of the current note to the configured LLM to generate candidate person suggestions; existing person profiles are used only locally for matching and deduplication and are not sent with the request. Once confirmed, the speaker attributions for this meeting are written back to the minutes and the corresponding person pages are maintained.")
         : this.options.fromIgnored
-          ? `${i18nT("These are the ones already ignored:")}${this.options.ignoredCount || this.suggestions.length}${i18nT(" people suggestions. Suggestions ignored by mistake can be restored to pending first, or edited and saved into the person profiles directly; once saved they are removed from the ignored list automatically.")}`
+          ? `${i18nT("These are the ones already ignored: ")}${this.options.ignoredCount || this.suggestions.length}${i18nT(" people suggestions. Suggestions ignored by mistake can be restored to pending first, or edited and saved into the person profiles directly; once saved they are removed from the ignored list automatically.")}`
         : this.options.fromCache
-          ? `${i18nT("These are the ones not yet processed since the last scan:")}${this.options.cachedCount || this.suggestions.length}${i18nT(" people suggestions. They stay in the local settings until you save, ignore, or clear them, so you can continue later.")}`
+          ? `${i18nT("These are the ones not yet processed since the last scan: ")}${this.options.cachedCount || this.suggestions.length}${i18nT(" people suggestions. They stay in the local settings until you save, ignore, or clear them, so you can continue later.")}`
         : `${i18nT("Q&A Log scanned ")}${this.options.scannedCount || 0}${i18nT(" notes scanned")}，只显示需要确认的人员建议。已有人员资料仅在本地用于匹配和去重，不随请求发送。${this.options.remainingCount ? `本轮后仍有 ${this.options.remainingCount} 篇待扫描。` : ""}`,
     });
     contentEl.createDiv({
@@ -467,7 +467,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         if (this.options.fromIgnored) this.plugin.people.removePeopleDirectorySuggestionIgnores(selected);
         else this.plugin.people.removeCachedPeopleSuggestions(selected);
         await this.plugin.saveSettings();
-        new obsidian.Notice(`${i18nT("Person attribution confirmed: created ")}${created}${i18nT(", merged")}${updated}`);
+        new obsidian.Notice(`${i18nT("Person attribution confirmed: created ")}${created}${i18nT(", merged ")}${updated}`);
         this.close();
       } catch (e) {
         console.error("[QnALog] apply people suggestions failed", e);
@@ -837,14 +837,14 @@ export class QueueModal extends obsidian.Modal {
     sum.createSpan({
       cls: "qnalog-progress-summary-left",
       text: hasStageProgress
-        ? `${i18nT("#")}${stagePosition.current} / ${stagePosition.total}${i18nT(" · ")}${detail.step || i18nT("Processing")}`
+        ? `${i18nT("# ")}${stagePosition.current} / ${stagePosition.total}${i18nT(" · ")}${detail.step || i18nT("Processing")}`
         : `${i18nT("Completed ")}${doneCount} / ${total}`,
     });
     const metaParts = [];
     if (detail && detail.count) metaParts.push(detail.count);
     else if (detail && detail.kind) metaParts.push(detail.kind);
     const activityStartedAt = detail && Number(detail.startedAt) > 0 ? Number(detail.startedAt) : (_tm && _tm.startedAt);
-    if (activityStartedAt) metaParts.push(`${i18nT("Elapsed")}${fmtDur(Date.now() - activityStartedAt)}`);
+    if (activityStartedAt) metaParts.push(`${i18nT("Elapsed ")}${fmtDur(Date.now() - activityStartedAt)}`);
     if (tmTokLabel) metaParts.push(`${tmTokLabel} token`);
     if (metaParts.length) sum.createSpan({ cls: "qnalog-progress-summary-right", text: metaParts.join(" · ") });
 
@@ -1113,7 +1113,7 @@ export class QueueModal extends obsidian.Modal {
             marker.setText(String(index + 1));
           }
           const stageCopy = summaryEl.createSpan({ cls: "qnalog-progress-stage-copy" });
-          stageCopy.createSpan({ cls: "qnalog-progress-stage-label", text: stage.label || `${i18nT("Step")}${index + 1}` });
+          stageCopy.createSpan({ cls: "qnalog-progress-stage-label", text: stage.label || `${i18nT("Step ")}${index + 1}` });
           if (stage.summary) stageCopy.createSpan({ cls: "qnalog-progress-stage-summary-text", text: stage.summary });
           summaryEl.createSpan({
             cls: `qnalog-progress-stage-state is-${stageLiveness}`,
@@ -1145,10 +1145,10 @@ export class QueueModal extends obsidian.Modal {
               const requestHead = requestRow.createDiv({ cls: "qnalog-progress-request-head" });
               requestHead.createSpan({
                 cls: "qnalog-progress-request-title",
-                text: `${i18nT("#")}${Number(request.chunkIndex) + 1}/${Math.max(1, Number(request.chunkCount) || 1)}${i18nT(" segments")}`,
+                text: `${i18nT("# ")}${Number(request.chunkIndex) + 1}/${Math.max(1, Number(request.chunkCount) || 1)}${i18nT(" segments")}`,
               });
               const attemptText = Number(request.attempt) > 0
-                ? `${i18nT("#")}${Number(request.attempt)}/${Math.max(Number(request.attempt), Number(request.maxAttempts) || 1)}${i18nT(" times")}`
+                ? `${i18nT("# ")}${Number(request.attempt)}/${Math.max(Number(request.attempt), Number(request.maxAttempts) || 1)}${i18nT(" times")}`
                 : "";
               if (attemptText) requestHead.createSpan({ cls: "qnalog-progress-request-attempt", text: attemptText });
               requestHead.createSpan({
@@ -1159,7 +1159,7 @@ export class QueueModal extends obsidian.Modal {
               if (Number(request.startedAt) > 0 && !["pending", "done"].includes(requestState)) {
                 requestMeta.push(`${i18nT("Waiting ")}${fmtDur(Date.now() - Number(request.startedAt))}`);
               }
-              if (Number(request.receivedChars) > 0) requestMeta.push(`${i18nT("Received about")}${Number(request.receivedChars)}${i18nT(" characters")}`);
+              if (Number(request.receivedChars) > 0) requestMeta.push(`${i18nT("Received about ")}${Number(request.receivedChars)}${i18nT(" characters")}`);
               if (Number(request.retryAt) > Date.now()) requestMeta.push(`${fmtDur(Number(request.retryAt) - Date.now())}${i18nT(" to retry")}`);
               if (Number(request.deadlineAt) > 0 && !["done", "failed", "retrying"].includes(requestState)) {
                 const deadlineDelta = Number(request.deadlineAt) - Date.now();
@@ -1214,8 +1214,8 @@ export class QueueModal extends obsidian.Modal {
               : ["slow", "stalled"].includes(liveState) ? "clock-3" : "activity";
         try { obsidian.setIcon(liveIcon, liveIconName); } catch { /* intentionally empty */ }
         const liveParts = [];
-        if (stageStartedAt) liveParts.push(`${i18nT("This step has been running")}${fmtDur(now - stageStartedAt)}`);
-        if (updatedAt) liveParts.push(`${i18nT("Latest event")}${fmtDur(now - updatedAt)}${i18nT(" ago")}`);
+        if (stageStartedAt) liveParts.push(`${i18nT("This step has been running ")}${fmtDur(now - stageStartedAt)}`);
+        if (updatedAt) liveParts.push(`${i18nT("Latest event ")}${fmtDur(now - updatedAt)}${i18nT(" ago")}`);
         const liveCopy = live.createSpan({ cls: "qnalog-progress-live-copy" });
         liveCopy.createSpan({ cls: "qnalog-progress-live-title", text: livenessLabel(liveState) });
         liveCopy.createSpan({
@@ -1508,7 +1508,7 @@ export class PromptTemplateModal extends obsidian.Modal {
         i18nT("- Use case: explain what kind of task this recording usually comes from and who will keep using these notes."),
         i18nT("- Key content: explain which information must be identified, such as facts, conclusions, to-dos, risks, disputes, key verbatim quotes, terminology and foreign-language content; to-dos / action items must be output as `- [ ]` todo tasks."),
         i18nT("- Must output: explain which parts the final note must contain and which overly templated content should not appear."),
-        i18nT("- To-do syntax: if there are to-dos, always write them as `- [ ] 事项：<具体动作>`; when it can be determined, add `责任人：<人>` and `截止：<时间>` (omit the field if it cannot be determined, and do not write “not mentioned”); do not write them as a table or an ordinary list."),
+        i18nT("- To-do syntax: if there are to-dos, always write them as `- [ ] Item: <specific action>`; when it can be determined, add `Owner: <person>` and `Due: <time>` (omit the field if it cannot be determined, and do not write \"not mentioned\"); do not write them as a table or an ordinary list."),
         i18nT("- Writing requirements: specify the tone, level of detail, whether to translate, whether to keep the original text, and how to handle uncertain information."),
         i18nT("- Anti-hallucination: do not invent information that does not appear in the transcript, and mark anything uncertain as uncertain."),
         "",
@@ -1592,7 +1592,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     text.createDiv({ cls: "qnalog-tpl-row-name", text: meta.prefix || meta.label || mode });
     const override = this.getBuiltinOverride(mode);
     const state = override ? "当前使用旧版自定义规则。" : i18nT("Built-in prompts");
-    text.createDiv({ cls: "qnalog-tpl-row-sub", text: (meta.goal || "") + " · " + state });
+    text.createDiv({ cls: "qnalog-tpl-row-sub", text: i18nT(meta.goal || "") + " · " + state });
 
     const actions = row.createDiv({ cls: "qnalog-tpl-row-actions" });
     const defaultBtn = actions.createEl("button", { text: this.plugin.settings.polishMode === mode ? "已默认" : i18nT("Set as default") });
@@ -1921,7 +1921,7 @@ export class ImportTextModal extends obsidian.Modal {
   updateModeHint() {
     if (!this.modeHint) return;
     const meta = getModeMeta(this.plugin.settings, this.selectedMode);
-    this.modeHint.setText((meta.goal || i18nT("Used to generate structured meeting notes.")) + i18nT(" This run processes text only and does not call the speech transcription service."));
+    this.modeHint.setText(i18nT(meta.goal || "Used to generate structured meeting notes.") + i18nT(" This run processes text only and does not call the speech transcription service."));
   }
 
   renderFileList() {
@@ -1958,7 +1958,7 @@ export class ImportTextModal extends obsidian.Modal {
       shown.forEach((item, index) => this.renderSingleFile(section, item, rendered + index));
       rendered += shown.length;
       if (group.length > shown.length) {
-        section.createDiv({ cls: "qnalog-import-warn", text: `${i18nT("This group has many files, showing the most recent")}${shown.length} / ${group.length}${i18nT(" items; you can keep searching by file name or path.")}` });
+        section.createDiv({ cls: "qnalog-import-warn", text: `${i18nT("This group has many files, showing the most recent ")}${shown.length} / ${group.length}${i18nT(" items; you can keep searching by file name or path.")}` });
       }
       if (rendered >= 240) break;
     }
@@ -2228,7 +2228,7 @@ export class ImportAudioModal extends obsidian.Modal {
   updateModeHint() {
     if (!this.modeHint) return;
     const meta = getModeMeta(this.plugin.settings, this.selectedMode);
-    this.modeHint.setText((meta.goal || i18nT("Used to generate structured meeting notes.")) + i18nT(" Can be switched temporarily for this import; the default prompt will not be modified."));
+    this.modeHint.setText(i18nT(meta.goal || "Used to generate structured meeting notes.") + i18nT(" Can be switched temporarily for this import; the default prompt will not be modified."));
   }
   parseSegmentRef(file) {
     const match = String(file.name || "").match(new RegExp(`^${NS_AUDIO_ALT}-(\\d{8}-\\d{6})-seg(\\d+)\\.([a-z0-9]+)$`, "i"));
