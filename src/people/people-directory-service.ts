@@ -357,7 +357,7 @@ export class PeopleDirectoryService {
       new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return;
     }
-    new obsidian.Notice(`Q&A Log：正在扫描 ${batch.length} 篇纪要提取人员信息…`);
+    new obsidian.Notice(`${t("Q&A Log: scanning ")}${batch.length}${t(" minutes notes to extract people from...")}`);
     try {
       let cachedCount = 0;
       let processed = 0;
@@ -378,10 +378,10 @@ export class PeopleDirectoryService {
       const suggestions = await this.getCachedPeopleDirectorySuggestions();
       if (!suggestions.length) {
         const suffix = failed ? `，失败 ${failed}` : "";
-        new obsidian.Notice(`没有新的人员建议（已忽略的建议不会重复显示）${suffix}`);
+        new obsidian.Notice(`${t("No new people suggestions (ignored suggestions are not shown again)")}${suffix}`);
         return;
       }
-      if (failed) new obsidian.Notice(`人员扫描完成，${failed} 篇读取或提取失败，可稍后重试。`, 8000);
+      if (failed) new obsidian.Notice(`${t("People scan complete, ")}${failed}${t(" notes could not be read or extracted; try again later.")}`, 8000);
       const modal = new PeopleDirectorySuggestionModal(this.host.app, this.host, null, suggestions, {
         scannedCount: processed,
         cachedCount,
@@ -390,7 +390,7 @@ export class PeopleDirectoryService {
       modal.open();
     } catch (e) {
       console.error("[QnALog] suggest people directory failed", e);
-      new obsidian.Notice(`人员信息提取失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("People extraction failed: ")}${(e && e.message) || e}`, 8000);
     }
   }
 

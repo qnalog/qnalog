@@ -243,7 +243,7 @@ export class VersionStore {
     manifest.updatedAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
     await this.writeVersionManifest(folder, manifest);
     try { await this.host.app.workspace.getLeaf(false).openFile(sourceFile); } catch { /* intentionally empty */ }
-    new obsidian.Notice(`已切换到版本：${meta.label}`, 3000);
+    new obsidian.Notice(`${t("Switched to version: ")}${meta.label}`, 3000);
   }
 }
 

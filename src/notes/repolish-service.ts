@@ -141,7 +141,7 @@ export class RepolishService {
       this.host.tasks.startTaskActivity({
         id: taskId,
         kind: "repolish",
-        title: `重新整理 · ${meta.prefix}`,
+        title: `${t("Re-organize · ")}${meta.prefix}`,
         subject: file.path,
         status: "running",
         stage: "llm",
@@ -220,7 +220,7 @@ export class RepolishService {
         console.error("[QnALog] daily overview after repolish failed", e);
       }
       const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
-      new obsidian.Notice(`Q&A Log：已生成${meta.prefix}派生纪要${preferenceLabel}${roleMapping.length ? `（角色映射 ${roleMapping.length} 条已应用）` : ""}${versionCacheError ? "（版本索引稍后可重建）" : ""}`);
+      new obsidian.Notice(`${t("Q&A Log: generated ")}${meta.prefix}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? `（角色映射 ${roleMapping.length} 条已应用）` : ""}${versionCacheError ? "（版本索引稍后可重建）" : ""}`);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       try { this.host.tasks.logCompletedWork(`重新整理完成 · ${meta.prefix}`, (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
@@ -249,7 +249,7 @@ export class RepolishService {
           ],
         });
       }
-      new obsidian.Notice(`重新整理失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("Re-organize failed: ")}${(e && e.message) || e}`, 8000);
     } finally {
       if (repolishLockAcquired && this._repolishInFlight) this._repolishInFlight.delete(taskId);
       if (taskMeter) this.host.tasks.endTaskMeter(taskMeter);
@@ -359,7 +359,7 @@ export class RepolishService {
           ],
         });
       }
-      new obsidian.Notice(`清稿生成失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("Clean copy generation failed: ")}${(e && e.message) || e}`, 8000);
     } finally {
       if (taskMeter) this.host.tasks.endTaskMeter(taskMeter);
       this.host.tasks._busyLabel = null;

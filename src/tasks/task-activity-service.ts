@@ -623,7 +623,7 @@ export class TaskActivityService {
           error: diagnosticError(error),
         });
       } catch { /* diagnostics must not hide the original failure */ }
-      new obsidian.Notice(`操作未完成：${message}`, 8000);
+      new obsidian.Notice(`${t("Operation incomplete: ")}${message}`, 8000);
     }
   }
   // 转写进度状态栏：从队列 + 当前会话的实时状态渲染一行常驻指示器。

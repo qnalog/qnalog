@@ -164,7 +164,7 @@ export class ImportService {
     ].filter((line) => line !== null).join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);
 
-    new obsidian.Notice(`开始导入 ${paths.length} 个音频文件…`);
+    new obsidian.Notice(`${t("Starting import of ")}${paths.length}${t(" audio files...")}`);
     const importStartedAt = Date.now();
     this.host.tasks._importBusy = {
       workflow: "audio-import",
@@ -209,7 +209,7 @@ export class ImportService {
       const sourceExists = indexedFile instanceof obsidian.TFile
         || (externalCache && await adapter.exists(obsidian.normalizePath(audioPath)));
       if (!sourceExists) {
-        new obsidian.Notice(`跳过：${externalSource && externalSource.name ? externalSource.name : audioPath} 不存在`);
+        new obsidian.Notice(`${t("Skipped: ")}${externalSource && externalSource.name ? externalSource.name : audioPath}${t(" not found")}`);
         continue;
       }
 
@@ -228,7 +228,7 @@ export class ImportService {
         phase: "prepare",
         done: i,
         total: paths.length,
-        label: `准备音频 ${i + 1}/${paths.length}`,
+        label: `${t("Preparing audio ")}${i + 1}/${paths.length}`,
         mode,
         file: displayName,
       });
@@ -241,7 +241,7 @@ export class ImportService {
           ? await this.host.app.vault.readBinary(indexedFile)
           : await adapter.readBinary(obsidian.normalizePath(audioPath));
         if (!ab || ab.byteLength === 0) {
-          new obsidian.Notice(`跳过：${displayName} 是空文件（0 字节）。请确认文件已完整下载后再试。`, 9000);
+          new obsidian.Notice(`${t("Skipped: ")}${displayName}${t(" is an empty file (0 bytes). Make sure the download finished, then try again.")}`, 9000);
           await this.host.diagnostics.logDiagnostic("warn", "import.empty_file", "导入音频为空文件", { audioName: displayName, size: 0 });
           continue;
         }
@@ -286,7 +286,7 @@ export class ImportService {
         event: {
           stageId: "transcribe",
           type: "started",
-          label: `开始转写 ${displayName}`,
+          label: `${t("Starting transcription of ")}${displayName}`,
           detail: "整文件提交，不切分为多个 ASR 任务",
         },
       });
@@ -334,7 +334,7 @@ export class ImportService {
           : [];
         if (speakerCount >= 2 && String(result.text || "").trim() && detectedSpeakerIds.length < speakerCount) {
           const mismatchMessage = `已指定 ${speakerCount} 位说话人，模型实际区分出 ${detectedSpeakerIds.length} 位`;
-          new obsidian.Notice(`${mismatchMessage}。原始转写已保留，可在说话人编辑中核对。`, 9000);
+          new obsidian.Notice(`${mismatchMessage}${t(". The original transcript is preserved; check it in the speaker editor.")}`, 9000);
           await this.host.diagnostics.logDiagnostic("warn", "asr.import_speaker_count_mismatch", mismatchMessage, {
             provider: importProvider.id,
             model: importProvider.model || "",
@@ -582,14 +582,14 @@ export class ImportService {
     for (const textPath of uniquePaths) {
       const file = this.host.app.vault.getAbstractFileByPath(textPath);
       if (!(file instanceof obsidian.TFile) || !TEXT_IMPORT_EXT.has(String(file.extension || "").toLowerCase())) {
-        new obsidian.Notice(`跳过：${textPath} 不是可导入文本`);
+        new obsidian.Notice(`${t("Skipped: ")}${textPath}${t(" is not importable text")}`);
         continue;
       }
       try {
         const raw = await this.host.app.vault.read(file);
         const text = stripImportedTextSource(raw);
         if (!text) {
-          new obsidian.Notice(`跳过空文本：${file.name}`);
+          new obsidian.Notice(`${t("Skipped empty text: ")}${file.name}`);
           continue;
         }
         sources.push({ file, path: file.path, name: file.name, text });
@@ -620,7 +620,7 @@ export class ImportService {
         llmModel: this.host.settings.llmModel ? "<set>" : "",
         issue: llmIssue,
       });
-      new obsidian.Notice(`导入文本需要先完成大模型配置：${formatLlmConfigIssue(llmIssue)}`, 9000);
+      new obsidian.Notice(`${t("Importing text requires LLM configuration first: ")}${formatLlmConfigIssue(llmIssue)}`, 9000);
       return;
     }
 
@@ -684,7 +684,7 @@ export class ImportService {
     }
 
     this.host.shell.refreshOutlineView();
-    new obsidian.Notice(`开始整理 ${sources.length} 份文本：使用 AI 整理服务，不调用语音转写服务。`);
+    new obsidian.Notice(`${t("Starting organizing of ")}${sources.length}${t(" text items: uses the AI organizing service, not speech transcription.")}`);
     await this.host.sessionFinalize.finalizeSession(session);
   }
 }

@@ -300,7 +300,7 @@ ${source}`;
       new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return { processed: 0, added: 0, failed: 0, remaining: 0 };
     }
-    new obsidian.Notice(`Q&A Log：正在扫描 ${batch.length} 篇纪要提取词汇…`);
+    new obsidian.Notice(`${t("Q&A Log: scanning ")}${batch.length}${t(" minutes notes to extract vocabulary from...")}`);
     let processed = 0;
     let added = 0;
     let failed = 0;

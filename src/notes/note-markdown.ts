@@ -40,6 +40,7 @@ import { readSpeakerMappings, speakerLabelForChannel } from "../audio/channel-sp
 
 import { extractBriefingPartEnvelope } from "../briefing/pipeline";
 
+import { t } from "../shared/i18n";
 export function isTimeLabel(text) {
   const time = "(?:\\d{1,2}:)?\\d{1,2}:\\d{2}";
   return new RegExp("^" + time + "(?:\\s*[–-]\\s*" + time + ")?$").test(String(text || "").trim());
@@ -1366,7 +1367,7 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
     sourceName: `长文本预摘要 ${i + 1}`,
     sourcePath: "",
     rawText: "",
-    text: `【长文本预摘要 ${i + 1}/${summaries.length}】\n${summary}`,
+    text: `${t("[Long-text pre-summary ")}${i + 1}/${summaries.length}】\n${summary}`,
   }));
 }
 

@@ -19,7 +19,7 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
 import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
-import { resolveUiLanguage, setActiveUiLanguage } from "./shared/i18n";
+import { resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
 import { classifySettingsSchema, hasStoredSettings, migrateSettingsForward, readSavedSchemaVersion, type SettingsSchemaState } from "./shared/settings-schema";
 
 import type {PluginSettings, RecordingSession } from "./shared/types";
@@ -347,7 +347,10 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "cleanup-empty-short-recordings", name: "清理空白短录音", callback: () => this.cleanup.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: "清理过期分段音频缓存", callback: async () => {
       const result = await this.recording.cleanupExpiredSegmentCacheFiles();
-      new obsidian.Notice(`分段缓存清理完成：删除 ${result.deleted} 个，跳过 ${result.skipped} 个${result.failed ? `，失败 ${result.failed} 个` : ""}`, 8000);
+      new obsidian.Notice(
+        `${t("Segment cache cleanup complete: deleted ")}${result.deleted}${t(", skipped ")}${result.skipped}${result.failed ? t(", failed {0}").replace("{0}", String(result.failed)) : ""}`,
+        8000,
+      );
     } });
 
     this.addCommand({
@@ -398,7 +401,7 @@ class QnALogPlugin extends obsidian.Plugin {
     }));
 
     if (this.queue.tasks.length > 0) {
-      new obsidian.Notice(`Q&A Log：发现 ${this.queue.tasks.length} 个待处理任务，后台重试中…`);
+      new obsidian.Notice(`${t("Q&A Log: found ")}${this.queue.tasks.length}${t(" pending tasks; retrying in the background...")}`);
       window.setTimeout(() => { void this.queueRetry.retryQueue(); }, 2500);
     }
     this.app.workspace.onLayoutReady(() => {

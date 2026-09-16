@@ -50,7 +50,7 @@ export class AudioTimeLinkService {
         if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
         this.openAudioTimeLink(linkPath, label, ctx && ctx.sourcePath, ctx).catch((e) => {
           console.error("[QnALog] open audio time link failed", e);
-          new obsidian.Notice(`Q&A Log 回听失败：${(e && e.message) || e}`);
+          new obsidian.Notice(`${t("Q&A Log review failed: ")}${(e && e.message) || e}`);
         });
       };
       anyLink.__qnalogTimeHandler = handler;

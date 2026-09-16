@@ -129,7 +129,7 @@ export class RecordingService {
         continuationInfo = await this.getContinuationTargetInfo(appendTargetFile);
       } catch (e) {
         console.error("[QnALog] prepare continuation target failed", e);
-        new obsidian.Notice(`无法继续录到这篇纪要：${(e && e.message) || e}`, 8000);
+        new obsidian.Notice(`${t("Cannot continue recording into this minutes note: ")}${(e && e.message) || e}`, 8000);
         return;
       }
     }
@@ -258,7 +258,7 @@ export class RecordingService {
                 source: "streaming-asr",
                 message: getErrorMessage(e),
               });
-              new obsidian.Notice(`流式转写错误：${(e && e.message) || e}`);
+              new obsidian.Notice(`${t("Streaming transcription error: ")}${(e && e.message) || e}`);
             },
             onClosed: (info) => {
               if (info && info.translatedText) sessionRef.streamingTranslatedText = info.translatedText;
@@ -275,7 +275,7 @@ export class RecordingService {
               source: "streaming-asr",
               message: getErrorMessage(e),
             });
-            new obsidian.Notice(`流式转写连接失败：${(e && e.message) || e}`);
+            new obsidian.Notice(`${t("Streaming transcription connection failed: ")}${(e && e.message) || e}`);
             sessionRef.streamingClient = null;
             return;
           }
@@ -330,7 +330,7 @@ export class RecordingService {
           : `录音中（${modeLabel}），停止时统一处理`);
       new obsidian.Notice(noticeText);
       if (continuationInfo) {
-        new obsidian.Notice(`已开始续录到「${continuationInfo.file.basename}」；停止后会与原纪要重新合并。`, 8000);
+        new obsidian.Notice(`${t("Started appending to \"")}${continuationInfo.file.basename}${t("\"; it will be merged back into the original minutes when stopped.")}`, 8000);
       }
       if (forcedMobileMic) {
         new obsidian.Notice(t("Mobile only supports microphone recording for now; use computer audio / virtual audio devices on desktop."), 8000);
@@ -345,7 +345,7 @@ export class RecordingService {
         requestedMode: this._oneShotCaptureMode || "",
         error: diagnosticError(e),
       });
-      new obsidian.Notice(`无法开始录音：${(e && e.message) || e}`);
+      new obsidian.Notice(`${t("Cannot start recording: ")}${(e && e.message) || e}`);
       // 清理半初始化状态：acquireStream 抛错(OverconstrainedError 等)后 this.host.session 已赋值、"（录音中…）"
       // 占位笔记已写，若不清理会残留僵尸会话、笔记永远卡在"录音中…"。
       try { if (this.host.recorder && this.host.recorder.state !== "idle") await this.host.recorder.stop(); } catch { /* intentionally empty */ }
@@ -568,7 +568,7 @@ export class RecordingService {
       }
     } catch (e) {
       console.error("[QnALog] master audio write failed", e);
-      new obsidian.Notice(`完整录音写入失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("Failed to write the full recording: ")}${(e && e.message) || e}`, 8000);
     }
   }
 

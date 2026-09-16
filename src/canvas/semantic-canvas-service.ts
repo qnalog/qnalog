@@ -235,7 +235,7 @@ export class SemanticCanvasService {
     }
     const llmIssue = options.mode !== "layout" ? getLlmConfigIssue(this.host.settings) : null;
     if (llmIssue) {
-      new obsidian.Notice(`生成语义图前需要先完成大模型配置：${formatLlmConfigIssue(llmIssue)}`, 9000);
+      new obsidian.Notice(`${t("Generating a semantic graph requires LLM configuration first: ")}${formatLlmConfigIssue(llmIssue)}`, 9000);
       return;
     }
 
@@ -382,7 +382,7 @@ export class SemanticCanvasService {
         error: diagnosticError(error),
       });
       progressNotice.hide();
-      new obsidian.Notice(`语义 Canvas 生成失败：${(error && error.message) || error}`, 9000);
+      new obsidian.Notice(`${t("Semantic Canvas generation failed: ")}${(error && error.message) || error}`, 9000);
     } finally {
       this.runningPaths.delete(sourceFile.path);
       this.progressByPath.delete(sourceFile.path);

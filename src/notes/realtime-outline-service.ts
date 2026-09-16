@@ -236,7 +236,7 @@ export class RealtimeOutlineService {
           message: getErrorMessage(e),
           startedAtMs: getSegmentsDurationMs(session.segments),
         });
-        new obsidian.Notice(`大纲生成失败：${(e && e.message) || e}`);
+        new obsidian.Notice(`${t("Outline generation failed: ")}${(e && e.message) || e}`);
       } else if (Number(session.realtimeOutlineFailureCount || 0) === 1) {
         new obsidian.Notice(t("The live outline has not been updated yet; transcription is still running and it will retry automatically later."), 7000);
       }
@@ -624,7 +624,7 @@ export class RealtimeOutlineService {
         updateRealtimeOutlineCoverage(session, "processing");
         this.host.recording.setSessionWorkProgress(session, {
           stage: "outline",
-          label: `补齐大纲 ${committedSegmentCount}/${totalSegmentCount} 段`,
+          label: `${t("Completing outline ")}${committedSegmentCount}/${totalSegmentCount}${t(" segments")}`,
           percent: Math.min(58, 32 + Math.round(coveragePercent * 0.26)),
           detail: `已覆盖 ${coveragePercent}% 的转写内容`,
         });

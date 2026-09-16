@@ -127,7 +127,7 @@ export class QueueRetryService {
     if (blockedMergeTasks.length) {
       const llmIssue = getLlmConfigIssue(this.host.settings);
       if (llmIssue) {
-        new obsidian.Notice(`有 ${blockedMergeTasks.length} 个整理任务待配置：${formatLlmConfigIssue(llmIssue)}`, 9000);
+        new obsidian.Notice(`${t("There are ")}${blockedMergeTasks.length}${t(" organizing tasks need configuration: ")}${formatLlmConfigIssue(llmIssue)}`, 9000);
       } else {
         const serviceBlocked = blockedMergeTasks.find((task) => isLlmServiceBlockedError(task.lastError || ""));
         for (const task of blockedMergeTasks) {
@@ -163,9 +163,9 @@ export class QueueRetryService {
       }
       await this.host.saveAll();
     }
-    new obsidian.Notice(`重试 ${runnable.length} 个任务…`);
+    new obsidian.Notice(`${t("Retry ")}${runnable.length}${t(" tasks...")}`);
     await this.host.queue.processAll();
-    new obsidian.Notice(`剩余 ${this.host.queue.tasks.length} 个任务`);
+    new obsidian.Notice(`${t("Remaining ")}${this.host.queue.tasks.length}${t(" tasks")}`);
   }
   async retryTranscribeTasksForMarkdown(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
@@ -175,7 +175,7 @@ export class QueueRetryService {
       new obsidian.Notice(t("This note currently has no transcription tasks to retry."), 5000);
       return;
     }
-    new obsidian.Notice(`Q&A Log：正在重试 ${tasks.length} 个转写片段…`);
+    new obsidian.Notice(`${t("Q&A Log: retrying ")}${tasks.length}${t(" transcript segments...")}`);
     let ok = 0;
     let failed = 0;
     let paused = false;
@@ -460,7 +460,7 @@ export class QueueRetryService {
     const remaining = tasks.filter(t => t && t.type === "transcribe" && t.id !== task.id
       && obsidian.normalizePath(String(t.mdPath || "")) === mdNorm);
     if (remaining.length) return;
-    new obsidian.Notice(`「${mdFile.basename}」全部失败段已补转写，正在重新整理正文…`, 8000);
+    new obsidian.Notice(`「${mdFile.basename}${t("\" All failed segments are transcribed; re-organizing the body...")}`, 8000);
     const mode = this.host.noteWriter.detectModeFromMarkdown(mdFile) || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
     // fire-and-forget：不阻塞队列循环
     void (async () => {

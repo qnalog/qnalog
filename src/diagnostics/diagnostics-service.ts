@@ -215,7 +215,7 @@ export class DiagnosticsService {
       new obsidian.Notice(t("Q&A Log diagnostic report copied; you can send it to the developer for troubleshooting."), 6000);
     } catch (e) {
       await this.logDiagnostic("error", "diagnostics.copy_failed", "复制诊断报告失败", { error: diagnosticError(e) });
-      new obsidian.Notice(`诊断报告复制失败：${(e && e.message) || e}`, 8000);
+      new obsidian.Notice(`${t("Failed to copy the diagnostic report: ")}${(e && e.message) || e}`, 8000);
     }
   }
 }

@@ -134,7 +134,7 @@ export class SessionFinalizeService {
       } catch (e) {
         spoolResult = { persisted: false, fallbackBlob: seg.blob, error: e };
         console.error(e);
-        new obsidian.Notice(`段${segNumber} 音频写入失败：${(e && e.message) || e}`);
+        new obsidian.Notice(`${t(" segments")}${segNumber}${t(" audio write failed: ")}${(e && e.message) || e}`);
       }
     }
     if (spoolResult && spoolResult.queueTaskId) seg.queueTaskId = spoolResult.queueTaskId;
@@ -154,7 +154,7 @@ export class SessionFinalizeService {
     const isStreamingProvider = activeProfile && activeProfile.transcribeMode === "streaming";
     this.host.recording.setSessionWorkProgress(session, {
       stage: "transcribing",
-      label: `转写第 ${segNumber} 段`,
+      label: `${t("Transcript segment ")}${segNumber}${t(" segments")}`,
       percent: null,
       detail: "音频正在发送到转写服务",
     });
@@ -438,7 +438,7 @@ export class SessionFinalizeService {
       detail: seg.isFinal ? "正在进入 AI 整理" : (err && err.asrDeferred ? "音频已落盘，等待后台补转写" : "分段转写已写入纪要"),
     });
 
-    if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`段 ${segNumber} 已转写`);
+    if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`${t(" segments ")}${segNumber}${t(" transcribed")}`);
 
     if (this.host.settings.enableRealtimeOutline && text && !err) {
       this.host.outline.scheduleRealtimeOutline();

@@ -1,6 +1,7 @@
 import type { SpeakerId, SpeakerMapping } from "../audio/channel-speakers";
 import { nsMarkerAnyRe } from "../shared/namespace";
 
+import { t } from "../shared/i18n";
 export interface SpeakerCandidate {
   id: SpeakerId;
   label: string;
@@ -28,7 +29,7 @@ export function collectSpeakerCandidates(markdown: unknown, maxSamples = 2): Spe
   while ((match = pattern.exec(text)) !== null) {
     const number = Number(match[1] || match[2]) || 1;
     const id = speakerIdFromNumber(number);
-    const candidate = byId.get(id) || { id, label: `说话人${number}`, samples: [] };
+    const candidate = byId.get(id) || { id, label: `${t("Speaker ")}${number}`, samples: [] };
     const sample = cleanSample(match[3]);
     if (sample && candidate.samples.length < maxSamples && !candidate.samples.includes(sample)) {
       candidate.samples.push(sample);

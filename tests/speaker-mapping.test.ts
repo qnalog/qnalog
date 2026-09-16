@@ -4,6 +4,7 @@ import {
   buildConfirmedSpeakerMappings,
   collectSpeakerCandidates,
 } from "../src/asr/speaker-mapping";
+import { t } from "../src/shared/i18n";
 import {
   getSpeakerDiarizationRequestOptions,
   buildDashScopeTranscriptionParameters,
@@ -19,8 +20,8 @@ describe("speaker confirmation preparation", () => {
       "[说话人1] 下周一给第一版。",
     ].join("\n"));
     expect(candidates).toEqual([
-      { id: "spk-1", label: "说话人1", samples: ["我负责产品方案和时间表。", "下周一给第一版。"] },
-      { id: "spk-2", label: "说话人2", samples: ["我来确认预算。"] },
+      { id: "spk-1", label: t("Speaker ") + "1", samples: ["我负责产品方案和时间表。", "下周一给第一版。"] },
+      { id: "spk-2", label: t("Speaker ") + "2", samples: ["我来确认预算。"] },
     ]);
   });
 
