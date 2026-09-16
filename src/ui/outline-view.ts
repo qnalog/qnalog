@@ -1381,7 +1381,7 @@ export class OutlineView extends obsidian.ItemView {
     const source = groups || {};
     for (const def of VOCABULARY_SECTIONS) {
       for (const term of (Array.isArray(source[def.key]) ? source[def.key] : [])) {
-        items.push({ id: getSedimentHotwordId(def.key, term), title: term, sub: def.title, sectionKey: def.key, term });
+        items.push({ id: getSedimentHotwordId(def.key, term), title: term, sub: i18nT(def.label || def.title), sectionKey: def.key, term });
       }
     }
     return items;
@@ -5344,8 +5344,8 @@ export class OutlineView extends obsidian.ItemView {
       if (match[2] === "麦克风") continue;
       const chip = (activeWindow as Window & { createSpan(): HTMLElement }).createSpan();
       chip.className = `qnalog-outline-source-chip ${def.cls}`;
-      chip.setAttribute("title", def.title);
-      chip.setAttribute("aria-label", def.title);
+      chip.setAttribute("title", i18nT(def.label || def.title));
+      chip.setAttribute("aria-label", i18nT(def.label || def.title));
       try { obsidian.setIcon(chip, def.icon); }
       catch { chip.textContent = match[2] === "麦克风" ? "M" : "C"; }
       // 把图标挂到 li 的"标题段落"末尾（句尾右对齐由 CSS 控制）

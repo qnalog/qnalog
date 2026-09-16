@@ -10,6 +10,9 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
+  "Brands / Organizations": "品牌/机构",
+  "Projects / Products": "项目/产品",
+  "Industry terms": "行业术语",
   "Synthesis minutes": "综合纪要",
   "Work notes": "工作纪要",
   "Interview": "访谈",
