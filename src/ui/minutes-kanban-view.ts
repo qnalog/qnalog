@@ -10,6 +10,7 @@ import {
   setIcon,
 } from "obsidian";
 import { NS_VIEW_MINUTES_KANBAN } from "../shared/namespace";
+import { t } from '../shared/i18n';
 
 export const VIEW_TYPE_MINUTES_KANBAN = NS_VIEW_MINUTES_KANBAN;
 
@@ -53,15 +54,15 @@ class FolderNameModal extends Modal {
   onOpen(): void {
     this.contentEl.empty();
     this.contentEl.addClass("qnalog-kanban-folder-modal");
-    this.contentEl.createEl("h3", { text: "新建分组" });
+    this.contentEl.createEl("h3", { text: t("New group") });
     const input = this.contentEl.createEl("input", {
       cls: "qnalog-kanban-folder-input",
-      attr: { type: "text", placeholder: "文件夹名称" },
+      attr: { type: "text", placeholder: t("Folder name") },
     });
     const actions = this.contentEl.createDiv({ cls: "qnalog-kanban-folder-actions" });
-    const cancel = actions.createEl("button", { text: "取消" });
+    const cancel = actions.createEl("button", { text: t("Cancel") });
     cancel.onclick = () => this.close();
-    const submit = actions.createEl("button", { cls: "mod-cta", text: "创建" });
+    const submit = actions.createEl("button", { cls: "mod-cta", text: t("Create") });
     const commit = () => {
       const name = input.value.trim();
       if (!name) return;
@@ -90,7 +91,7 @@ export class MinutesKanbanView extends ItemView {
   }
 
   getViewType(): string { return VIEW_TYPE_MINUTES_KANBAN; }
-  getDisplayText(): string { return "纪要看板"; }
+  getDisplayText(): string { return t("Minutes board"); }
   getIcon(): string { return "columns-3"; }
 
   async onOpen(): Promise<void> {
@@ -121,7 +122,7 @@ export class MinutesKanbanView extends ItemView {
       const path = normalizePath(pathValue || "");
       if (byPath.has(path)) return;
       const relative = root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
-      byPath.set(path, { key: `folder:${path}`, path, label: path === root ? "未分类" : (relative || "未分类"), items: [] });
+      byPath.set(path, { key: `folder:${path}`, path, label: path === root ? "未分类" : (relative || t("Uncategorized")), items: [] });
     };
     add(root);
     for (const file of this.app.vault.getAllLoadedFiles()) {
@@ -149,7 +150,7 @@ export class MinutesKanbanView extends ItemView {
         byMode.set(mode, {
           key: `type:${mode}`,
           path: "",
-          label: item.modeLabel || labels.get(mode) || "其他纪要",
+          label: item.modeLabel || labels.get(mode) || t("Other notes"),
           items: [],
         });
       }
@@ -171,15 +172,15 @@ export class MinutesKanbanView extends ItemView {
   private renderToolbar(root: HTMLElement, total: number, groupCount: number): void {
     const header = root.createDiv({ cls: "qnalog-kanban-header" });
     const title = header.createDiv({ cls: "qnalog-kanban-heading" });
-    title.createEl("h2", { text: "纪要看板" });
+    title.createEl("h2", { text: t("Minutes board") });
     title.createSpan({ text: `${total} 篇 · ${groupCount} 个分组` });
     const actions = header.createDiv({ cls: "qnalog-kanban-header-actions" });
     const addFolder = actions.createEl("button", {
       cls: "qnalog-kanban-new-group",
-      attr: { type: "button", title: "新建分组", "aria-label": "新建分组" },
+      attr: { type: "button", title: t("New group"), "aria-label": t("New group") },
     });
     setIcon(addFolder.createSpan(), "folder-plus");
-    addFolder.createSpan({ text: "新建分组" });
+    addFolder.createSpan({ text: t("New group") });
     addFolder.onclick = () => new FolderNameModal(this, (name) => {
       void this.adapter.createFolder(name)
         .then(() => this.render())
@@ -189,17 +190,17 @@ export class MinutesKanbanView extends ItemView {
     const filters = root.createDiv({ cls: "qnalog-kanban-filters" });
     const searchWrap = filters.createDiv({ cls: "qnalog-kanban-search" });
     setIcon(searchWrap.createSpan(), "search");
-    const search = searchWrap.createEl("input", { attr: { type: "search", placeholder: "搜索纪要" } });
+    const search = searchWrap.createEl("input", { attr: { type: "search", placeholder: t("AI organization failed; the original transcript can still be reorganized to generate the final minutes") } });
     search.value = this.query;
     search.addEventListener("input", () => {
       this.query = search.value;
       this.renderBoard(root);
     });
-    const grouping = filters.createDiv({ cls: "qnalog-kanban-grouping", attr: { "aria-label": "分组方式" } });
-    grouping.createSpan({ cls: "qnalog-kanban-grouping-label", text: "分组" });
+    const grouping = filters.createDiv({ cls: "qnalog-kanban-grouping", attr: { "aria-label": t("Grouping method") } });
+    grouping.createSpan({ cls: "qnalog-kanban-grouping-label", text: t("Group by") });
     for (const option of [
-      { value: "folder" as const, label: "文件夹" },
-      { value: "type" as const, label: "类型" },
+      { value: "folder" as const, label: t("Folder") },
+      { value: "type" as const, label: t("Type") },
     ]) {
       const button = grouping.createEl("button", {
         cls: `qnalog-kanban-grouping-option${this.groupMode === option.value ? " is-active" : ""}`,
@@ -216,13 +217,13 @@ export class MinutesKanbanView extends ItemView {
       cls: `qnalog-kanban-toggle${this.showCanvas ? " is-active" : ""}`,
       attr: { type: "button", role: "switch", "aria-checked": String(this.showCanvas) },
     });
-    canvasToggle.createSpan({ text: "语义图" });
+    canvasToggle.createSpan({ text: t("Semantic map") });
     const toggleTrack = canvasToggle.createSpan({ cls: "qnalog-kanban-toggle-track" });
     toggleTrack.createSpan({ cls: "qnalog-kanban-toggle-knob" });
     canvasToggle.onclick = () => { this.showCanvas = !this.showCanvas; this.render(); };
     filters.createSpan({
       cls: "qnalog-kanban-hint",
-      text: this.groupMode === "folder" ? "拖动卡片可换分组" : "按模板类型归类",
+      text: this.groupMode === "folder" ? "拖动卡片可换分组" : t("- One line per question, 3 lines in total"),
     });
   }
 
@@ -252,7 +253,7 @@ export class MinutesKanbanView extends ItemView {
       setIcon(canvasIcon, "layout-dashboard");
       const canvasContent = canvasCard.createSpan({ cls: "qnalog-kanban-card-content" });
       canvasContent.createSpan({ cls: "qnalog-kanban-card-title", text: item.title || canvasFile.basename });
-      canvasContent.createSpan({ cls: "qnalog-kanban-card-meta", text: "语义图" });
+      canvasContent.createSpan({ cls: "qnalog-kanban-card-meta", text: t("Semantic map") });
       canvasCard.addEventListener("click", () => { void this.app.workspace.getLeaf(false).openFile(canvasFile); });
     }
   }
@@ -260,7 +261,7 @@ export class MinutesKanbanView extends ItemView {
   private getFolderLabel(item: MinutesKanbanItem): string {
     const root = normalizePath(this.adapter.getRootPath() || "");
     const path = normalizePath(item.folderPath || root);
-    if (!path || path === root) return "未分类";
+    if (!path || path === root) return t("Uncategorized");
     return root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
   }
 
@@ -280,7 +281,7 @@ export class MinutesKanbanView extends ItemView {
       head.createSpan({ cls: "qnalog-kanban-column-count", text: String(visible.length) });
       const menu = head.createEl("button", {
         cls: "clickable-icon qnalog-kanban-column-menu",
-        attr: { type: "button", title: "分组菜单", "aria-label": `${column.label}分组菜单` },
+        attr: { type: "button", title: t("Grouping menu"), "aria-label": `${column.label}分组菜单` },
       });
       setIcon(menu, "more-horizontal");
       menu.onclick = (event) => {
@@ -288,7 +289,7 @@ export class MinutesKanbanView extends ItemView {
         const contextMenu = new Menu();
         if (this.expandedGroups.has(column.key)) {
           contextMenu.addItem((item) => item
-            .setTitle("收起分组")
+            .setTitle(t("AI is identifying people, to-dos, and hotwords"))
             .setIcon("list-collapse")
             .onClick(() => {
               this.expandedGroups.delete(column.key);
@@ -296,7 +297,7 @@ export class MinutesKanbanView extends ItemView {
             }));
         } else {
           contextMenu.addItem((item) => item
-            .setTitle("展开全部")
+            .setTitle(t("Expand all"))
             .setIcon("list-tree")
             .setDisabled(visible.length <= 6)
             .onClick(() => {
@@ -326,14 +327,14 @@ export class MinutesKanbanView extends ItemView {
           cls: "qnalog-kanban-more",
           attr: { type: "button" },
         });
-        less.createSpan({ text: "收起" });
+        less.createSpan({ text: t("AI is filling in...") });
         setIcon(less.createSpan(), "chevron-up");
         less.onclick = () => {
           this.expandedGroups.delete(column.key);
           this.renderBoard(container);
         };
       }
-      if (!visible.length) cards.createDiv({ cls: "qnalog-kanban-empty", text: "拖入纪要" });
+      if (!visible.length) cards.createDiv({ cls: "qnalog-kanban-empty", text: t("- More structured: Strengthen heading levels and organize by \"conclusion → basis → impact/to-dos\".") });
       columnEl.addEventListener("dragover", (event) => {
         if (this.groupMode !== "folder") return;
         if (!event.dataTransfer?.types.includes("text/x-qnalog-note")) return;
