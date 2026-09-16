@@ -238,6 +238,24 @@ describe("覆盖完整性", () => {
     expect(missing, `profile 文案缺中文：${missing.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 
+  it("菜单标题含 & 的品牌名必须走 menuTitleFragment（否则 & 会被助记符解析吃掉）", () => {
+    // Obsidian 的 MenuItem.setTitle 传字符串时会把 `&x` 解析成快捷键标记，
+    // `&` 本身不显示——`Q&A Log` 因此渲染成 `QA Log`（维护者截图所见）。
+    // 传 DocumentFragment 才会按字面显示，故含 & 的标题必须走该 helper。
+    const offenders: string[] = [];
+    for (const f of walk(path.join(root, "src"))) {
+      const src = fs.readFileSync(f, "utf8");
+      for (const m of src.matchAll(/\.setTitle\(([^\n]*)/g)) {
+        const arg = m[1];
+        if (!arg.includes("&")) continue;
+        // DocumentFragment 或 fragment helper 都算合法
+        if (/menuTitleFragment\(|DocumentFragment|createFragment\(/.test(arg)) continue;
+        offenders.push(`${path.basename(f)}: ${arg.slice(0, 60)}`);
+      }
+    }
+    expect(offenders, `& 未走 fragment：${offenders.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
   it("命令名、菜单标题、ribbon 提示不得硬编码中文（这些位置不在 t(\"...\") 调用点里）", () => {
     // 这一条补的是一个真实漏检：此前的扫描只认 `title:` / `label:` 这类属性，
     // 漏掉了 `.setTitle(` `addCommand({ name: })` `addRibbonIcon(` 这些调用形态，

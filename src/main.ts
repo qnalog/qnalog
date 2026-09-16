@@ -6,6 +6,7 @@ import { QnALogSettingTab } from "./ui/settings-tab";
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
 import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrectionModal } from "./ui/modals";
+import { menuTitleFragment } from "./ui/helpers";
 
 import {getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -379,7 +380,7 @@ class QnALogPlugin extends obsidian.Plugin {
       if (selection.includes("\n") || selection.length > 80) return;
       menu.addSeparator();
       menu.addItem((item) => {
-        item.setTitle(t("Q&A Log: Correct misrecognized text…"))
+        item.setTitle(menuTitleFragment(t("Q&A Log: Correct misrecognized text…")))
           .setIcon("replace")
           .onClick(() => new TextCorrectionModal(this.app, file, selection).open());
       });
@@ -391,7 +392,7 @@ class QnALogPlugin extends obsidian.Plugin {
       if (AUDIO_EXT.has(ext)) {
         menu.addSeparator();
         menu.addItem((item) => {
-          item.setTitle(t("Q&A Log: Transcribe and organize"))
+          item.setTitle(menuTitleFragment(t("Q&A Log: Transcribe and organize")))
             .setIcon("mic")
             .onClick(() => this.imports.openAudioImportOptions([file.path]));
         });
@@ -404,7 +405,7 @@ class QnALogPlugin extends obsidian.Plugin {
       const paths = audios.map((f) => f.path);
       menu.addSeparator();
       menu.addItem((item) => {
-        item.setTitle(`${t("Q&A Log: Merge ")}${audios.length}${t(" audio files…")}`).setIcon("mic");
+        item.setTitle(menuTitleFragment(`${t("Q&A Log: Merge ")}${audios.length}${t(" audio files…")}`)).setIcon("mic");
         const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
         const modes = getVisibleModeEntries(this.settings, false);
         for (const [m, label] of modes) {
