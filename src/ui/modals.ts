@@ -626,7 +626,7 @@ export class QueueModal extends obsidian.Modal {
       slow: i18nT("Processing"),
       stalled: i18nT("Still processing"),
       retrying: i18nT("Waiting to retry"),
-      failed: "已失败",
+      failed: i18nT("Failed"),
       cancelled: i18nT("Cancelled"),
       done: i18nT("Completed"),
     }[state] || i18nT("Processing"));
@@ -754,7 +754,7 @@ export class QueueModal extends obsidian.Modal {
     let pipelineSteps = [
       {
         key: "transcribe",
-        label: "转写",
+        label: i18nT("Transcription"),
         summary: detail && detail.count
           ? String(detail.count)
           : running.length || pending.length ? `${running.length + pending.length} 项待处理` : i18nT("Original transcription preserved"),
@@ -1231,7 +1231,7 @@ export class QueueModal extends obsidian.Modal {
     if (running.length || pending.length) {
       const queueHead = list.createDiv({ cls: "qnalog-progress-queue-head" });
       const queueTitle = queueHead.createDiv({ cls: "qnalog-progress-queue-title" });
-      queueTitle.createSpan({ text: "待处理" });
+      queueTitle.createSpan({ text: i18nT("Queued") });
       queueTitle.createSpan({ cls: "qnalog-progress-queue-count", text: ` ${pending.length}${i18nT(" items · all audio preserved")}` });
       if (pending.length) {
         const retryAllBtn = queueHead.createEl("button", { cls: "qnalog-progress-queue-retry", text: i18nT("Retry all"), attr: { type: "button" } });
@@ -1498,7 +1498,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     return {
       id,
       mode: id,
-      name: seed || "新自定义提示词",
+      name: seed || i18nT("New custom prompt"),
       description: "",
       baseMode: baseMode || "learning",
       prompt: prompt || [
@@ -1560,7 +1560,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     toolbar.createDiv({ cls: "qnalog-tpl-current", text: i18nT("Current default:") + (defaultMeta.prefix || defaultMeta.label || defaultMode) });
     const createBtn = toolbar.createEl("button", { text: i18nT("New custom prompt"), cls: "mod-cta" });
     createBtn.onclick = async () => {
-      const tpl = this.newCustomScene("新自定义提示词", "learning");
+      const tpl = this.newCustomScene(i18nT("New custom prompt"), "learning");
       await this.saveScene(tpl, true);
       this.editingId = tpl.id;
       this.onOpen();
@@ -1713,7 +1713,7 @@ export class PromptTemplateModal extends obsidian.Modal {
         new obsidian.Notice(i18nT("Refined draft generated; review it before saving"));
       } catch (e) {
         console.error(e);
-        new obsidian.Notice("AI 优化失败：" + ((e && e.message) || e));
+        new obsidian.Notice(i18nT("AI optimization failed:") + ((e && e.message) || e));
       } finally {
         optimizeBtn.disabled = false;
         optimizeBtn.setText(i18nT("AI refine prompt"));
@@ -1793,7 +1793,7 @@ export class ImportTextModal extends obsidian.Modal {
       this.renderFileList();
       this.updateButton();
     };
-    const clearBtn = toolbar.createEl("button", { text: "清空选择" });
+    const clearBtn = toolbar.createEl("button", { text: i18nT("Clear selection") });
     clearBtn.onclick = () => {
       this.selected.clear();
       this.syncCheckboxes();
@@ -2182,7 +2182,7 @@ export class ImportAudioModal extends obsidian.Modal {
       this.setBatchSelected(this.batches[0], true);
       this.updateButton();
     };
-    const clearBtn = toolbar.createEl("button", { text: "清空选择" });
+    const clearBtn = toolbar.createEl("button", { text: i18nT("Clear selection") });
     clearBtn.onclick = () => {
       this.selected.clear();
       this.syncAllCheckboxes();

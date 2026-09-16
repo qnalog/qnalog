@@ -173,7 +173,7 @@ export class MinutesKanbanView extends ItemView {
     const header = root.createDiv({ cls: "qnalog-kanban-header" });
     const title = header.createDiv({ cls: "qnalog-kanban-heading" });
     title.createEl("h2", { text: t("Minutes board") });
-    title.createSpan({ text: `${total} 篇 · ${groupCount} 个分组` });
+    title.createSpan({ text: `${total}${t(" notes · ")}${groupCount}${t(" groups")}` });
     const actions = header.createDiv({ cls: "qnalog-kanban-header-actions" });
     const addFolder = actions.createEl("button", {
       cls: "qnalog-kanban-new-group",
@@ -354,7 +354,7 @@ export class MinutesKanbanView extends ItemView {
         if (!item) return;
         void this.adapter.moveItem(item, column.path)
           .then(() => this.render())
-          .catch((error) => new Notice(`移动失败：${error instanceof Error ? error.message : String(error)}`));
+          .catch((error) => new Notice(`${t("Move failed:")}${error instanceof Error ? error.message : String(error)}`));
       });
     }
   }

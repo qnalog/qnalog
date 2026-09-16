@@ -930,7 +930,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       const channelResult = channelField.createDiv({ cls: "qnalog-audio-channel-result" });
       detectButton.onclick = async () => {
         detectButton.disabled = true;
-        detectButton.setText("正在测试…");
+        detectButton.setText(t("Testing…"));
         renderChannelProbeRows(channelResult, [
           { label: t("Test"), value: t("Please speak into each microphone in turn"), state: "running" },
         ]);
@@ -1360,7 +1360,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (profile.showTargetLanguage) {
       const targetLanguages = [
         ["en", t("English")],
-        ["zh", "中文 Chinese"],
+        ["zh", t("Chinese Chinese")],
         ["ja", t("Japanese 日本語")],
         ["ko", t("Korean 한국어")],
         ["fr", t("French Français")],
@@ -1394,7 +1394,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         const view = buildServiceView(provider, providerNeedsKey);
         const result = await this.runAndRecordProbe(`transcribe:${activeId}`, view, async () => {
           const text = await this.runAsrConnectivityTest();
-          return `${t("Returned:")}${(text || "<空>").slice(0, 30)}`;
+          return `${t("Returned:")}${(text || t("<empty>")).slice(0, 30)}`;
         });
         new obsidian.Notice(result.ok ? `${t("Connected successfully (")}${result.detail}）` : `${t("Test failed:")}${result.detail}`, 8000);
         b.setDisabled(false); b.setButtonText(t("Test"));
@@ -1516,7 +1516,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint));
         const result = await this.runAndRecordProbe("llm:active", view, async () => {
           const r = await testLlmConnection(this.plugin);
-          return `${r.model || "未命名模型"}${t("(returned:")}${r.preview || "<空>"}）`;
+          return `${r.model || t("Unnamed model")}${t("(returned:")}${r.preview || "<空>"}）`;
         });
         new obsidian.Notice(result.ok ? `大模型连通成功：${result.detail}` : `${t("LLM test failed: ")}${result.detail}`, 8000);
         b.setButtonText(t("Test connection"));
@@ -2264,8 +2264,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Number of segments processed simultaneously when importing long audio. If requests are throttled or service errors occur, set it back to 1."))
       .addDropdown(d => d
         .addOption("1", t("1 (most reliable)"))
-        .addOption("2", "2（平衡）")
-        .addOption("3", "3（较快）")
+        .addOption("2", t("2 (balanced)"))
+        .addOption("3", t("3 (faster)"))
         .setValue(String(normalizeAsrConcurrency(this.plugin.settings.asrConcurrency)))
         .onChange(async v => {
           this.plugin.settings.asrConcurrency = normalizeAsrConcurrency(v);
