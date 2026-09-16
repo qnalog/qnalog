@@ -3027,8 +3027,8 @@ export class OutlineView extends obsidian.ItemView {
     top.createDiv({ cls: "qnalog-deposit-candidate-title", text: item.name || i18nT("Unnamed person") });
     if (item.matchPath) top.createDiv({ cls: "qnalog-deposit-badge", text: i18nT("Can merge") });
     const meta = card.createDiv({ cls: "qnalog-deposit-candidate-meta" });
-    meta.createDiv({ text: `${i18nT("Role:")}${item.role || "待补充"}` });
-    meta.createDiv({ text: `${i18nT("Organization:")}${item.org || item.organization || "待补充"}` });
+    meta.createDiv({ text: `${i18nT("Role:")}${item.role || i18nT("To be filled in")}` });
+    meta.createDiv({ text: `${i18nT("Organization:")}${item.org || item.organization || i18nT("To be filled in")}` });
     if (item.aliases && item.aliases.length) meta.createDiv({ text: `${i18nT("Common aliases:")}${item.aliases.join("、")}` });
     card.createDiv({ cls: "qnalog-deposit-candidate-source", text: `${i18nT("Source:")}${item.sourceBasename || file.basename}` });
     const evidence = item.evidence || item.reason || item.note || "";
@@ -3589,7 +3589,7 @@ export class OutlineView extends obsidian.ItemView {
         this.setSedimentCandidateBucket(file, { hotwords: createVocabularyGroups(), hotwordTermRenames: {} });
         completed = this.markSedimentGroupDone(file, groupKey, displayItems.length || hotwordCount);
         const hotwordRenameNote = (hotwordRenames && hotwordRenames.length)
-          ? `，并把正文里的 ${hotwordRenames.map(r => `${r.from}→${r.to}`).join("、")} 一并更正`
+          ? `${i18nT(", and correct those in the body: ")}${hotwordRenames.map(r => `${r.from}→${r.to}`).join(", ")}${i18nT(" corrected as well")}`
           : "";
         successText = `${i18nT("Added to hotword library:")}${hotwordCount}${i18nT(" file items")}${hotwordRenameNote}`;
       } else {
@@ -3697,7 +3697,7 @@ export class OutlineView extends obsidian.ItemView {
       await this.persistSedimentCandidateBucket(file);
       this.render();
       const renameNote = (renames && renames.length)
-        ? `，并把正文/属性里的 ${renames.map(r => `${r.from}→${r.to}`).join("、")} 一并更正`
+        ? `${i18nT(", and correct those in the body/properties: ")}${renames.map(r => `${r.from}→${r.to}`).join(", ")}${i18nT(" corrected as well")}`
         : "";
       this.showSedimentCommitToast(`${i18nT("Added to person library: created")}${result.created || 0}${i18nT(", updated")}${result.updated || 0}${renameNote}`, undo);
       if (completed) this.scheduleSedimentAutoAdvance(file, "person");
@@ -4757,7 +4757,7 @@ export class OutlineView extends obsidian.ItemView {
       const status = entry.interaction.status || "";
       const reply = body.createDiv({ cls: `qnalog-outline-annotation-ai ${status ? "is-" + status : ""}` });
       if (status === "running" || status === "pending") {
-        reply.setText(status === "pending" ? "AI 将在转写空档补充..." : "AI 正在补充...");
+        reply.setText(status === "pending" ? i18nT("AI will add more when transcription pauses…") : i18nT("AI is adding more…"));
       } else if (entry.interaction.response) {
         reply.empty();
         reply.createSpan({ cls: "qnalog-outline-annotation-ai-label", text: "AI" });
@@ -5656,7 +5656,7 @@ export class OutlineView extends obsidian.ItemView {
     if (failedTasks.length) {
       this.createRecentActionButton(actions, {
         icon: "rotate-ccw",
-        label: `重试转写${failedTasks.length > 1 ? ` ${failedTasks.length}` : ""}`,
+        label: `${i18nT("Retry transcription")}${failedTasks.length > 1 ? ` ${failedTasks.length}` : ""}`,
         title: `${i18nT("Retry this minutes note's")}${failedTasks.length}${i18nT(" segments with transcription failures")}`,
         cls: "is-retry",
         onClick: () => this.retryRecentTranscription(r.file),
@@ -6281,7 +6281,7 @@ export class OutlineView extends obsidian.ItemView {
     this.showRecentHome = true;
     this.idlePanelTab = "recent";
     this.render();
-    new obsidian.Notice(`已删除转写记录${removedAudio ? `，并删除 ${removedAudio} 个录音文件` : ""}${removedTasks ? `，清理 ${removedTasks} 个队列任务` : ""}`);
+    new obsidian.Notice(`${i18nT("Deleted transcript record")}${removedAudio ? i18nT(", and deleted {0} recording files").replace("{0}", String(removedAudio)) : ""}${removedTasks ? `，清理 ${removedTasks} 个队列任务` : ""}`);
   }
 
   syncRecentNoteProcessingState(file, row, actions, failedTaskCount) {

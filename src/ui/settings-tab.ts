@@ -297,7 +297,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       this.plugin.settings.selectedVirtualDevice = virtual.deviceId;
       this.plugin.settings.captureMode = hasMic ? "mix-virtual" : "virtualCable";
       await this.plugin.saveSettings();
-      new obsidian.Notice(`${t("Selected:")}${audioInputModeLabel(this.plugin.settings.captureMode)}${t("(computer audio:")}${virtual.label || "虚拟声卡"}${t("). Confirm the device you speak into in the \"Microphone\" dropdown above.")}`, 8000);
+      new obsidian.Notice(`${t("Selected:")}${audioInputModeLabel(this.plugin.settings.captureMode)}${t("(computer audio:")}${virtual.label || t("virtual audio device")}${t("). Confirm the device you speak into in the \"Microphone\" dropdown above.")}`, 8000);
       return;
     }
     this.plugin.settings.selectedVirtualDevice = "";
@@ -1516,7 +1516,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint));
         const result = await this.runAndRecordProbe("llm:active", view, async () => {
           const r = await testLlmConnection(this.plugin);
-          return `${r.model || t("Unnamed model")}${t("(returned:")}${r.preview || "<空>"}）`;
+          return `${r.model || t("Unnamed model")}${t("(returned:")}${r.preview || t("<empty>")}${t(")")}`;
         });
         new obsidian.Notice(result.ok ? `大模型连通成功：${result.detail}` : `${t("LLM test failed: ")}${result.detail}`, 8000);
         b.setButtonText(t("Test connection"));

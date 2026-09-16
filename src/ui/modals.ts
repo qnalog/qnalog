@@ -250,7 +250,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
           ? `${i18nT("These are the ones already ignored:")}${this.options.ignoredCount || this.suggestions.length}${i18nT(" people suggestions. Suggestions ignored by mistake can be restored to pending first, or edited and saved into the person profiles directly; once saved they are removed from the ignored list automatically.")}`
         : this.options.fromCache
           ? `${i18nT("These are the ones not yet processed since the last scan:")}${this.options.cachedCount || this.suggestions.length}${i18nT(" people suggestions. They stay in the local settings until you save, ignore, or clear them, so you can continue later.")}`
-        : `${i18nT("Q&A Log scanned ")}${this.options.scannedCount || 0} 篇笔记，只显示需要确认的人员建议。已有人员资料仅在本地用于匹配和去重，不随请求发送。${this.options.remainingCount ? `本轮后仍有 ${this.options.remainingCount} 篇待扫描。` : ""}`,
+        : `${i18nT("Q&A Log scanned ")}${this.options.scannedCount || 0}${i18nT(" notes scanned")}，只显示需要确认的人员建议。已有人员资料仅在本地用于匹配和去重，不随请求发送。${this.options.remainingCount ? `本轮后仍有 ${this.options.remainingCount} 篇待扫描。` : ""}`,
     });
     contentEl.createDiv({
       cls: "setting-item-description qnalog-people-suggestion-guide",
@@ -307,7 +307,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
             }
             this.rows = this.rows.filter(row => row !== rowRef);
             box.remove();
-            new obsidian.Notice(`${i18nT("Restored to pending confirmation:")}${item.name || "这条建议"}`);
+            new obsidian.Notice(`${i18nT("Restored to pending confirmation:")}${item.name || i18nT("this suggestion")}`);
           } catch (e) {
             console.error("[QnALog] restore ignored people suggestion failed", e);
             new obsidian.Notice(`${i18nT("Restore failed:")}${(e && e.message) || e}`, 8000);
@@ -323,7 +323,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
             }
             this.rows = this.rows.filter(row => row !== rowRef);
             box.remove();
-            new obsidian.Notice(`${i18nT("Ignored:")}${item.name || "这条建议"}`);
+            new obsidian.Notice(`${i18nT("Ignored:")}${item.name || i18nT("this suggestion")}`);
           } catch (e) {
             console.error("[QnALog] ignore people suggestion failed", e);
             new obsidian.Notice(`${i18nT("Ignore failed:")}${(e && e.message) || e}`, 8000);
@@ -648,7 +648,7 @@ export class QueueModal extends obsidian.Modal {
     const fmtDur = (ms) => { const s = Math.max(0, Math.round(Number(ms) / 1000)); if (s < 60) return `${s}s`; const m = Math.floor(s / 60), r = s % 60; if (m < 60) return r ? `${m}m${r}s` : `${m}m`; const h = Math.floor(m / 60), rm = m % 60; return rm ? `${h}h${rm}m` : `${h}h`; };
     const fmtTime = (ms) => { try { return window.moment ? window.moment(ms).format("HH:mm:ss") : new Date(ms).toLocaleTimeString(); } catch { return ""; } };
     const tokenLabel = (n, exact) => { const v = Number(n) || 0; if (v <= 0) return ""; const num = v >= 10000 ? (v / 10000).toFixed(1).replace(/\.0$/, "") + "万" : String(v); return `${exact ? "" : "≈"}${num}`; };
-    const taskTitle = (t) => t.type === "transcribe" ? `${t.status === "live" ? "实时转写" : "转写重试"}${i18nT(" · segment ")}${(t.segmentIndex || 0) + 1}`
+    const taskTitle = (t) => t.type === "transcribe" ? `${t.status === "live" ? i18nT("Live transcription") : i18nT("Transcription retry")}${i18nT(" · segment ")}${(t.segmentIndex || 0) + 1}`
       : t.type === "merge" ? `${i18nT("Merge retry · ")}${(t.segments || []).length}${i18nT(" segments")}`
       : t.type === "generate-prompt" ? "提示词生成" : (t.type || i18nT("Task"));
 
@@ -1249,7 +1249,7 @@ export class QueueModal extends obsidian.Modal {
       const { row, ico, body } = makeRow("pending", "qnalog-progress-queue-row");
       ico.createSpan({ cls: "qnalog-progress-dot" });
       titleLine(body, taskTitle(t), "", false);
-      subLine(body, `${t.lastError || "等待下一次处理"}${i18nT(" · tried ")}${t.retries || 0}${i18nT(" times")}`);
+      subLine(body, `${t.lastError || i18nT("Waiting for the next attempt")}${i18nT(" · tried ")}${t.retries || 0}${i18nT(" times")}`);
       const acts = row.createDiv({ cls: "qnalog-progress-queue-actions" });
       const retryBtn = acts.createEl("button", { cls: "qnalog-progress-queue-retry", attr: { type: "button" }, text: i18nT("Retry") });
       retryBtn.onclick = async () => { try { await this.plugin.queue.processOne(t); } catch { /* intentionally empty */ } this.onOpen(); };
@@ -1664,7 +1664,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     let result = await callLlm(this.plugin, sys, user);
     result = String(result || "").trim().replace(/^```(?:markdown|md|text)?\s*/i, "").replace(/```$/i, "").trim();
     if (!result.includes("{{TRANSCRIPT}}")) {
-      result += "\n\n原始转写：\n{{TRANSCRIPT}}";
+      result += i18nT("\n\nOriginal transcript:\n{{TRANSCRIPT}}");
     }
     return result;
   }
@@ -2075,7 +2075,7 @@ export class AudioImportOptionsModal extends obsidian.Modal {
     contentEl.createDiv({
       cls: "qnalog-import-desc",
       text: this.paths.length > 1
-        ? `已选择 ${this.paths.length}${i18nT(" audio files. Confirm the organization method for this run.")}`
+        ? `${i18nT("Selected")} ${this.paths.length}${i18nT(" audio files. Confirm the organization method for this run.")}`
         : i18nT("Confirm the organization method for this run."),
     });
 
