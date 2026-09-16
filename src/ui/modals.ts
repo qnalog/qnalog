@@ -38,7 +38,7 @@ function resolveImportSpeakerSelection(plugin) {
 function renderImportSpeakerControl(parent, owner) {
   const box = parent.createDiv({ cls: "qnalog-import-mode qnalog-import-speaker" });
   const copy = box.createDiv();
-  copy.createDiv({ cls: "qnalog-import-mode-title", text: "说话人" });
+  copy.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Speaker") });
   const hint = copy.createDiv({ cls: "qnalog-import-mode-hint" });
   const control = box.createDiv({ cls: "qnalog-import-speaker-control" });
 
@@ -59,8 +59,8 @@ function renderImportSpeakerControl(parent, owner) {
         max: "100",
         step: "1",
         inputmode: "numeric",
-        placeholder: "自动",
-        "aria-label": "说话人数",
+        placeholder: i18nT("Auto"),
+        "aria-label": i18nT("Number of Speakers"),
       },
     });
     countInput.value = owner.selectedSpeakerCount > 0 ? String(owner.selectedSpeakerCount) : "";
@@ -104,9 +104,9 @@ export function pickReportAccentColor(app, defaultHex = null) {
     let settled = false;
     const finish = (val) => { if (settled) return; settled = true; resolve(val); try { modal.close(); } catch { /* intentionally empty */ } };
     const wrap = modal.contentEl.createDiv({ cls: "qnalog-color-pick" });
-    wrap.createEl("p", { cls: "qnalog-color-hint", text: "报告会使用所选颜色，版式保持不变。可重复生成，不会覆盖已有文件。" });
+    wrap.createEl("p", { cls: "qnalog-color-hint", text: i18nT("- Specify the use case, key content, required output, writing style, translation requirements, and anti-hallucination boundaries.") });
     const sw = wrap.createDiv({ cls: "qnalog-color-swatches" });
-    const presets = [["暖橙（默认）", "#E85F28"], ["宝石蓝", "#2F6BD8"], ["青墨", "#138A8A"], ["松绿", "#3B9A4B"], ["藕紫", "#7A4AD8"], ["玫红", "#D8407E"], ["棕金", "#B5811A"], ["石墨蓝", "#54627A"]];
+    const presets = [[i18nT("Warm orange (default)"), "#E85F28"], [i18nT("Sapphire"), "#2F6BD8"], ["青墨", "#138A8A"], [i18nT("Pine green"), "#3B9A4B"], ["藕紫", "#7A4AD8"], [i18nT("Rose red"), "#D8407E"], [i18nT("Brown gold"), "#B5811A"], [i18nT("Graphite blue"), "#54627A"]];
     const swatchEls = [];
     let customInput;
     const select = (hex) => {
@@ -129,7 +129,7 @@ export function pickReportAccentColor(app, defaultHex = null) {
     customInput.value = chosen;
     customInput.oninput = () => select(customInput.value);
     const actions = wrap.createDiv({ cls: "qnalog-color-actions" });
-    actions.createEl("button", { text: "生成报告", cls: "mod-cta" }).onclick = () => finish(chosen);
+    actions.createEl("button", { text: i18nT("Generate report"), cls: "mod-cta" }).onclick = () => finish(chosen);
     actions.createEl("button", { text: i18nT("Cancel") }).onclick = () => finish(null);
     modal.onClose = () => finish(null);
     select(chosen);
@@ -175,7 +175,7 @@ export class AudioTimeModal extends obsidian.Modal {
     }
 
     const actions = contentEl.createDiv({ cls: "qnalog-audio-modal-actions" });
-    actions.createEl("button", { text: "打开音频文件" }).onclick = () => {
+    actions.createEl("button", { text: i18nT("- Do not claim that voiceprint recognition was performed, and do not fabricate anyone's responsibility.") }).onclick = () => {
       void this.app.workspace.getLeaf(false).openFile(this.file);
     };
   }
@@ -199,21 +199,21 @@ export class PeopleHotwordsConsentModal extends obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-consent-modal");
-    contentEl.createEl("h2", { text: "启用人名热词前请确认" });
+    contentEl.createEl("h2", { text: i18nT("Please confirm before enabling name hotwords") });
     contentEl.createDiv({
       cls: "setting-item-description",
-      text: "启用后，Q&A Log 会从人员资料读取姓名和常用称呼，并把这些人名热词随转写或 AI 整理请求发送到当前配置的转写服务和大模型服务，用于提升人名识别和称呼对齐准确率。",
+      text: i18nT("Once enabled, Q&A Log reads names and common forms of address from person profiles and sends these name hotwords with transcription or AI processing requests to the currently configured transcription and LLM services, to improve the accuracy of name recognition and form-of-address alignment."),
     });
     const list = contentEl.createEl("ul", { cls: "qnalog-consent-list" });
-    list.createEl("li", { text: "只发送姓名与常用称呼，不发送角色、组织、备注、来源或人员关系。" });
-    list.createEl("li", { text: "如果 ASR 或 LLM 是云端服务，这些姓名与称呼会离开本地设备，受对应服务商的数据政策约束。" });
-    list.createEl("li", { text: "录音内容本身若包含人名，使用云端 ASR 时仍会被云端服务处理；本开关控制的是额外发送的人员资料热词。" });
-    list.createEl("li", { text: "此授权会保存在本地设置中，直到用户撤销授权或切回隐私优先。" });
-    list.createEl("li", { text: "涉密、隐私、客户资料、医疗、法务、人事等内容，建议使用「隐私优先」或「本地增强」。" });
+    list.createEl("li", { text: i18nT("Send only names and common forms of address, not roles, organizations, notes, sources, or person relationships.") });
+    list.createEl("li", { text: i18nT("If ASR or LLM is a cloud service, these names and terms will leave your local device and be subject to the respective provider's data policy.") });
+    list.createEl("li", { text: i18nT("If the recording content itself contains names, it will still be processed by the cloud service when using cloud ASR; this toggle controls the extra person-profile hotwords that are sent.") });
+    list.createEl("li", { text: i18nT("This authorization is stored in local settings until the user revokes it or switches back to privacy-first.") });
+    list.createEl("li", { text: i18nT("For confidential, private, client, medical, legal, HR and similar content, use \"Privacy First\" or \"Local Enhanced\".") });
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
     const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
-    const okBtn = actions.createEl("button", { text: "我已知情，启用人名热词" });
+    const okBtn = actions.createEl("button", { text: i18nT("I understand, enable name hotwords") });
     okBtn.addClass("mod-cta");
     okBtn.onclick = () => {
       this.confirmed = true;
@@ -241,7 +241,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
   async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "确认人员归属" });
+    contentEl.createEl("h2", { text: i18nT("Confirm person attribution") });
     contentEl.createDiv({
       cls: "setting-item-description",
       text: this.sourceFile
@@ -265,7 +265,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     const peopleByPath = new Map((peopleEntries || []).map(person => [obsidian.normalizePath(person.path || ""), person]));
     const getPathBasename = (path) => String(path || "").split("/").pop().replace(/\.md$/i, "");
     const getPersonOptionLabel = (person) => {
-      const main = String((person && person.name) || getPathBasename(person && person.path) || "未命名人员").trim();
+      const main = String((person && person.name) || getPathBasename(person && person.path) || i18nT("Unnamed person")).trim();
       const parts = [
         main,
         person && person.role,
@@ -290,19 +290,19 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       const top = box.createDiv({ cls: "qnalog-people-suggestion-top" });
       const checkbox = top.createEl("input", { type: "checkbox" });
       checkbox.checked = item.selected !== false;
-      const badge = top.createSpan({ text: this.options.fromIgnored ? "已忽略" : (item.matchPath ? "合并到已有人员" : "新建人员"), cls: "qnalog-people-suggestion-badge" });
+      const badge = top.createSpan({ text: this.options.fromIgnored ? "已忽略" : (item.matchPath ? "合并到已有人员" : i18nT("New person")), cls: "qnalog-people-suggestion-badge" });
       top.createSpan({ text: `置信度：${item.confidence || "中"}`, cls: "setting-item-description" });
       const matchMeta = top.createSpan({ text: item.matchPath ? ` · ${item.matchPath}` : "", cls: "setting-item-description" });
       if (!this.sourceFile && item.sourceBasename) top.createSpan({ text: ` · 来源：${item.sourceBasename}`, cls: "setting-item-description" });
       let rowRef = null;
-      const ignoreBtn = top.createEl("button", { text: this.options.fromIgnored ? "恢复待确认" : "忽略" });
+      const ignoreBtn = top.createEl("button", { text: this.options.fromIgnored ? i18nT("Restore pending confirmation") : i18nT("Ignore") });
       ignoreBtn.addClass("qnalog-people-suggestion-ignore");
       if (this.options.fromIgnored) {
         ignoreBtn.onclick = async () => {
           try {
             const removed = await this.plugin.people.restoreIgnoredPeopleDirectorySuggestion(item);
             if (!removed) {
-              new obsidian.Notice("这条建议暂时无法恢复");
+              new obsidian.Notice(i18nT("This suggestion cannot be restored right now"));
               return;
             }
             this.rows = this.rows.filter(row => row !== rowRef);
@@ -318,7 +318,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
           try {
             const ok = await this.plugin.people.ignorePeopleDirectorySuggestion(item);
             if (!ok) {
-              new obsidian.Notice("这条建议暂时无法忽略");
+              new obsidian.Notice(i18nT("This suggestion cannot be ignored right now"));
               return;
             }
             this.rows = this.rows.filter(row => row !== rowRef);
@@ -332,9 +332,9 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       }
 
       const targetBox = box.createDiv({ cls: "qnalog-people-suggestion-target" });
-      targetBox.createDiv({ cls: "qnalog-people-suggestion-target-label", text: "归属到" });
+      targetBox.createDiv({ cls: "qnalog-people-suggestion-target-label", text: i18nT("Assign to") });
       const targetSelect = targetBox.createEl("select", { cls: "dropdown qnalog-people-suggestion-target-select" });
-      targetSelect.createEl("option", { value: "", text: "新建人员档案" });
+      targetSelect.createEl("option", { value: "", text: i18nT("New person profile") });
       const currentPath = obsidian.normalizePath(item.matchPath || "");
       if (currentPath && !peopleByPath.has(currentPath)) {
         targetSelect.createEl("option", { value: currentPath, text: `${getPathBasename(currentPath)}（当前匹配）` });
@@ -351,11 +351,11 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         item.matchPath = path;
         if (rowRef) rowRef.item.matchPath = path;
         const person = path ? peopleByPath.get(path) : null;
-        if (this.options.fromIgnored) badge.setText(path ? "已忽略 · 合并到已有人员" : "已忽略 · 新建");
-        else badge.setText(path ? "合并到已有人员" : "新建人员");
+        if (this.options.fromIgnored) badge.setText(path ? i18nT("Ignored · Merged into existing person") : i18nT("Ignored · New"));
+        else badge.setText(path ? "合并到已有人员" : i18nT("New person"));
         matchMeta.setText(path ? ` · ${path}` : "");
         if (path && person) {
-          targetHint.setText(getPersonHint(person) || "将把本条建议作为本次会议提及，挂到选中的人员档案。");
+          targetHint.setText(getPersonHint(person) || i18nT("This suggestion will be added as a mention in this meeting and attached to the selected person's profile."));
         } else if (path) {
           targetHint.setText(i18nT("This suggestion will be recorded as mentioned in this meeting and attached to the currently matched people record."));
         } else {
@@ -371,8 +371,8 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         .addDropdown(d => {
           relationSelect = d;
           d.addOption("mentioned", "被提到的人");
-          d.addOption("participant", "参会人");
-          d.addOption("todo_owner", "待办责任人");
+          d.addOption("participant", i18nT("Participants"));
+          d.addOption("todo_owner", i18nT("To-do assignee"));
           d.setValue(normalizePeopleRelation(item.relation) || "mentioned");
         });
 
@@ -407,7 +407,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
     const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
-    const openBtn = actions.createEl("button", { text: "打开人员资料" });
+    const openBtn = actions.createEl("button", { text: i18nT("Open person profile") });
     openBtn.onclick = async () => {
       try {
         const file = await this.plugin.people.ensurePeopleDirectoryFiles({ overwrite: false });
@@ -416,7 +416,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         new obsidian.Notice(`打开人员资料失败：${(e && e.message) || e}`);
       }
     };
-    const saveBtn = actions.createEl("button", { text: "确认归属" });
+    const saveBtn = actions.createEl("button", { text: i18nT("Confirm attribution") });
     saveBtn.addClass("mod-cta");
     saveBtn.onclick = async () => {
       const selected = this.rows
@@ -445,7 +445,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         })
         .filter(Boolean);
       if (!selected.length) {
-        new obsidian.Notice("没有选择要保存的人员建议");
+        new obsidian.Notice(i18nT("No person suggestions selected to save"));
         return;
       }
       try {
@@ -494,15 +494,15 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
     const { contentEl, modalEl } = this;
     contentEl.empty();
     modalEl.addClass("qnalog-speaker-confirm-modal");
-    contentEl.createEl("h2", { text: "确认说话人" });
+    contentEl.createEl("h2", { text: i18nT("Confirm speaker") });
     contentEl.createDiv({
       cls: "qnalog-speaker-confirm-desc",
-      text: "转写已完成。填写姓名后，AI 会按姓名整理发言、结论和待办；留空则继续使用说话人编号。",
+      text: i18nT("Transcription is complete. Once you enter names, the AI will organize the speech, conclusions, and to-dos by name. Leave it blank to keep using speaker numbers."),
     });
     if (this.options.unstableAcrossSegments) {
       contentEl.createDiv({
         cls: "qnalog-speaker-confirm-warning",
-        text: "当前转写由多个独立分段生成，说话人编号可能在分段之间变化。请根据发言示例核对；不确定时可以暂不填写。",
+        text: i18nT("The current transcription was generated from multiple independent segments, so speaker numbers may change between segments. Please verify against the speech samples; if unsure, you can leave it blank for now."),
       });
     }
 
@@ -527,14 +527,14 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
       const samples = Array.isArray(candidate.samples) ? candidate.samples.filter(Boolean) : [];
       copy.createDiv({
         cls: "qnalog-speaker-confirm-sample",
-        text: samples.length ? samples.join(" / ") : "暂无可展示的发言示例",
+        text: samples.length ? samples.join(" / ") : i18nT("No speech samples to display yet"),
       });
       const input = row.createEl("input", {
         cls: "qnalog-speaker-confirm-input",
         type: "text",
         attr: {
           list: datalistId,
-          placeholder: "输入姓名",
+          placeholder: i18nT("Enter name"),
           "aria-label": `${candidate.label || candidate.id}的姓名`,
         },
       });
@@ -543,9 +543,9 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
     }
 
     const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-speaker-confirm-actions" });
-    const skip = actions.createEl("button", { text: "暂不填写" });
+    const skip = actions.createEl("button", { text: i18nT("Leave blank for now") });
     skip.onclick = () => this.close();
-    const confirm = actions.createEl("button", { text: "确认并继续" });
+    const confirm = actions.createEl("button", { text: i18nT("Confirm and continue") });
     confirm.addClass("mod-cta");
     confirm.onclick = () => {
       this.result = Object.fromEntries(this.rows.map(({ candidate, input }) => [candidate.id, input.value.trim()]));
@@ -616,32 +616,31 @@ export class QueueModal extends obsidian.Modal {
           : running.length
             ? "running"
             : pending.length
-              ? "retrying"
-              : "done";
+              ? "retrying" : "done";
     const headActive = active || taskActive.length > 0 || running.length > 0;
     const livenessLabel = (state) => ({
       queued: "等待处理",
-      pending: "尚未开始",
-      running: "进行中",
+      pending: i18nT("Not started"),
+      running: i18nT("In progress"),
       waiting: "等待服务响应",
-      slow: "处理中",
+      slow: i18nT("Processing"),
       stalled: "仍在处理",
       retrying: "等待重试",
       failed: "已失败",
-      cancelled: "已取消",
-      done: "已完成",
-    }[state] || "处理中");
+      cancelled: i18nT("Cancelled"),
+      done: i18nT("Completed"),
+    }[state] || i18nT("Processing"));
     const livenessDetail = (state) => ({
       queued: "任务已经登记，等待可用处理槽位",
-      pending: "前置步骤完成后自动开始",
+      pending: i18nT("Start automatically after prerequisites complete"),
       running: "",
-      waiting: "请求已经发出，服务尚未返回结果",
-      slow: "请求已经发出，服务正在处理",
-      stalled: "本阶段耗时超过预计，任务仍在继续，可关闭窗口在后台等待结果",
-      retrying: "本次请求未成功，已按退避规则等待下一次请求",
-      failed: "本阶段未得到可用结果",
+      waiting: i18nT("The request has been sent, but the service has not returned a result yet"),
+      slow: i18nT("The request has been sent and the service is processing it"),
+      stalled: i18nT("This stage is taking longer than expected; the task is still running, so you can close the window and wait for the result in the background"),
+      retrying: i18nT("This request failed; waiting for the next request per the backoff rule"),
+      failed: i18nT("This stage produced no usable result"),
       cancelled: "任务已由用户取消",
-      done: "本阶段已经完成",
+      done: i18nT("This stage is complete"),
     }[state] || "");
 
     const fmtDur = (ms) => { const s = Math.max(0, Math.round(Number(ms) / 1000)); if (s < 60) return `${s}秒`; const m = Math.floor(s / 60), r = s % 60; if (m < 60) return r ? `${m}分${r}秒` : `${m}分`; const h = Math.floor(m / 60), rm = m % 60; return rm ? `${h}时${rm}分` : `${h}时`; };
@@ -666,10 +665,10 @@ export class QueueModal extends obsidian.Modal {
       ? ["prepare", "transcribe", "persist"].includes(String(activePipelineStage.id || ""))
       : /(transcrib|asr|转写|音频|分段)/i.test(activityText);
     const headTitle = headLiveness === "done"
-      ? "处理完成"
+      ? i18nT("Processing complete")
       : headActive
-        ? (isTranscribing ? "正在转写" : "正在整理纪要")
-      : taskProblems.length ? "处理未完成" : "处理进度";
+        ? (isTranscribing ? "正在转写" : i18nT("Organizing note"))
+      : taskProblems.length ? i18nT("Processing incomplete") : i18nT("Processing progress");
     const head = contentEl.createDiv({ cls: "qnalog-progress-head" });
     const titleRow = head.createDiv({ cls: "qnalog-progress-title-row" });
     titleRow.createSpan({ cls: "qnalog-progress-title", text: headTitle });
@@ -684,7 +683,7 @@ export class QueueModal extends obsidian.Modal {
     });
 
     if (!running.length && !pending.length && !completed.length && !active && !taskActivities.length) {
-      contentEl.createDiv({ cls: "qnalog-progress-empty", text: "暂无处理任务。录音转写、AI 整理、重试任务的进度会显示在这里。" });
+      contentEl.createDiv({ cls: "qnalog-progress-empty", text: i18nT("No tasks in progress. Progress for transcription, AI cleanup, and retry tasks will appear here.") });
       return;
     }
 
@@ -734,9 +733,9 @@ export class QueueModal extends obsidian.Modal {
     const elapsedMs = progressStartedAt ? Math.max(0, Date.now() - progressStartedAt) : 0;
     const remainingText = percent > 0 && percent < 100
       ? `剩余约 ${fmtDur(elapsedMs * ((100 - percent) / percent))}`
-      : "剩余时间计算中";
+      : i18nT("Calculating remaining time");
     const timing = head.createDiv({ cls: "qnalog-progress-timing", attr: { "aria-live": "polite" } });
-    timing.setText(progressStartedAt ? `已用 ${fmtDur(elapsedMs)} · ${remainingText}` : "正在准备处理");
+    timing.setText(progressStartedAt ? `已用 ${fmtDur(elapsedMs)} · ${remainingText}` : i18nT("Preparing to process"));
 
     const phaseText = [
       detail && detail.stage,
@@ -756,16 +755,16 @@ export class QueueModal extends obsidian.Modal {
         label: "转写",
         summary: detail && detail.count
           ? String(detail.count)
-          : running.length || pending.length ? `${running.length + pending.length} 项待处理` : "原始转写已保留",
+          : running.length || pending.length ? `${running.length + pending.length} 项待处理` : i18nT("Original transcription preserved"),
       },
       {
         key: "organize",
-        label: "AI 整理",
-        summary: phase === "organize" && taskActive.length ? `${taskActive.length} 项进行中` : phase === "organize" ? (detail && detail.count ? String(detail.count) : "正在整理") : phaseIndex > 1 ? "已完成" : "等待转写完成",
+        label: i18nT("AI Organizing"),
+        summary: phase === "organize" && taskActive.length ? `${taskActive.length} 项进行中` : phase === "organize" ? (detail && detail.count ? String(detail.count) : i18nT("Organizing")) : phaseIndex > 1 ? "已完成" : "等待转写完成",
       },
       {
         key: "complete",
-        label: "完成",
+        label: i18nT("Done"),
         summary: phase === "complete" ? "已写入纪要" : "写入纪要",
       },
     ];
@@ -795,14 +794,14 @@ export class QueueModal extends obsidian.Modal {
       pipelineLiveness.set("organize", String(organizeStage.liveness || ""));
       pipelineLiveness.set("complete", String(writeStage.liveness || ""));
       pipelineSteps = [
-        { key: "prepare", label: "准备", summary: String(stageById("prepare").summary || "读取音频") },
+        { key: "prepare", label: "准备", summary: String(stageById("prepare").summary || i18nT("Read audio")) },
         {
           key: "transcribe",
-          label: "语音转写",
+          label: i18nT("Transcription"),
           summary: String((activeId === "persist" ? persistStage.summary : transcribeStage.summary) || detail.count || "等待处理"),
         },
-        { key: "organize", label: "AI 整理", summary: String(organizeStage.summary || "等待转写完成") },
-        { key: "complete", label: "完成", summary: String(writeStage.summary || "写入纪要") },
+        { key: "organize", label: i18nT("AI Organizing"), summary: String(organizeStage.summary || "等待转写完成") },
+        { key: "complete", label: i18nT("Done"), summary: String(writeStage.summary || "写入纪要") },
       ];
     }
     const pipeline = head.createDiv({ cls: `qnalog-progress-pipeline is-${headLiveness}` });
@@ -836,7 +835,7 @@ export class QueueModal extends obsidian.Modal {
     sum.createSpan({
       cls: "qnalog-progress-summary-left",
       text: hasStageProgress
-        ? `第 ${stagePosition.current} / ${stagePosition.total} 步 · ${detail.step || "处理中"}`
+        ? `第 ${stagePosition.current} / ${stagePosition.total} 步 · ${detail.step || i18nT("Processing")}`
         : `已完成 ${doneCount} / ${total}`,
     });
     const metaParts = [];
@@ -899,7 +898,7 @@ export class QueueModal extends obsidian.Modal {
         try { obsidian.setIcon(icon, iconName); } catch { icon.setText(state === "failed" ? "!" : ""); }
 
         const summaryCopy = summaryEl.createSpan({ cls: "qnalog-progress-activity-copy" });
-        summaryCopy.createSpan({ cls: "qnalog-progress-activity-title", text: activity.title || "后台任务" });
+        summaryCopy.createSpan({ cls: "qnalog-progress-activity-title", text: activity.title || i18nT("Background tasks") });
         summaryCopy.createSpan({
           cls: "qnalog-progress-activity-stage",
           text: [activity.stageLabel, activity.count].filter(Boolean).join(" · ") || livenessDetail(state),
@@ -917,21 +916,21 @@ export class QueueModal extends obsidian.Modal {
         }
 
         const facts = [];
-        if (Number(activity.startedAt) > 0) facts.push(["开始", fmtTime(Number(activity.startedAt))]);
-        if (Number(activity.updatedAt) > 0) facts.push(["最近活动", `${fmtDur(Date.now() - Number(activity.updatedAt))}前`]);
+        if (Number(activity.startedAt) > 0) facts.push([i18nT("Start"), fmtTime(Number(activity.startedAt))]);
+        if (Number(activity.updatedAt) > 0) facts.push([i18nT("Recent activity"), `${fmtDur(Date.now() - Number(activity.updatedAt))}前`]);
         if (Number(activity.startedAt) > 0 && !["done", "cancelled"].includes(state)) {
-          facts.push(["已运行", fmtDur(Date.now() - Number(activity.startedAt))]);
+          facts.push([i18nT("Running for"), fmtDur(Date.now() - Number(activity.startedAt))]);
         }
         if (Number(activity.retryAt) > Date.now()) facts.push(["再次尝试", `${fmtDur(Number(activity.retryAt) - Date.now())}后`]);
         if (Number(activity.attempt) > 0) {
-          facts.push(["尝试次数", activity.maxAttempts > 0
+          facts.push([i18nT("Attempts"), activity.maxAttempts > 0
             ? `${activity.attempt}/${activity.maxAttempts}`
             : String(activity.attempt)]);
         }
         if (activity.subject) {
           const subject = String(activity.subject);
           const shortSubject = subject.split(/[\\/]/).pop() || subject;
-          facts.push(["对象", shortSubject]);
+          facts.push([i18nT("Target"), shortSubject]);
         }
         if (facts.length) {
           const factGrid = panel.createDiv({ cls: "qnalog-progress-activity-facts" });
@@ -946,14 +945,14 @@ export class QueueModal extends obsidian.Modal {
           const errorBox = panel.createDiv({ cls: "qnalog-progress-activity-error", attr: { role: "alert" } });
           const rawError = String(activity.error).trim();
           const displayError = /file already exists|文件已存在|already exists/i.test(rawError)
-            ? "目标版本文件已存在，未重复创建。"
+            ? i18nT("The target version file already exists; not created again.")
             : rawError;
           const isFileExistsError = displayError !== rawError;
           if (rawError && rawError !== displayError) errorBox.setAttr("title", rawError);
           const errorHead = errorBox.createDiv({ cls: "qnalog-progress-activity-error-head" });
           const errorIcon = errorHead.createSpan({ cls: "qnalog-progress-activity-error-icon", attr: { "aria-hidden": "true" } });
           try { obsidian.setIcon(errorIcon, "triangle-alert"); } catch { errorIcon.setText("!"); }
-          errorHead.createSpan({ text: "处理未完成" });
+          errorHead.createSpan({ text: i18nT("Processing incomplete") });
           errorBox.createDiv({ cls: "qnalog-progress-activity-error-message", text: displayError });
           const hint = this.plugin.tasks.getTaskActivityErrorHint
             ? this.plugin.tasks.getTaskActivityErrorHint(activity)
@@ -965,12 +964,12 @@ export class QueueModal extends obsidian.Modal {
 
         if (Array.isArray(activity.events) && activity.events.length) {
           const chain = panel.createDiv({ cls: "qnalog-progress-activity-chain" });
-          chain.createDiv({ cls: "qnalog-progress-section-label", text: "最近链路" });
+          chain.createDiv({ cls: "qnalog-progress-section-label", text: i18nT("Recent chain") });
           for (const event of activity.events.slice(-5).reverse()) {
             const row = chain.createDiv({ cls: "qnalog-progress-event" });
             row.createSpan({ cls: "qnalog-progress-event-time", text: fmtTime(Number(event.at) || Date.now()) });
             const eventCopy = row.createSpan({ cls: "qnalog-progress-event-copy" });
-            eventCopy.createSpan({ cls: "qnalog-progress-event-label", text: String(event.label || "状态已更新") });
+            eventCopy.createSpan({ cls: "qnalog-progress-event-label", text: String(event.label || i18nT("Status updated")) });
             if (event.detail) eventCopy.createSpan({ cls: "qnalog-progress-event-detail", text: String(event.detail) });
           }
         }
@@ -998,17 +997,17 @@ export class QueueModal extends obsidian.Modal {
       }
     }
 
-    if (completed.length) list.createDiv({ cls: "qnalog-progress-section-title qnalog-progress-legacy-completed", text: "最近完成" });
+    if (completed.length) list.createDiv({ cls: "qnalog-progress-section-title qnalog-progress-legacy-completed", text: i18nT("Recently completed") });
     for (const c of completed) {
       const { ico, body } = makeRow("done", "qnalog-progress-legacy-completed");
       try { obsidian.setIcon(ico.createSpan({ cls: "qnalog-progress-check" }), "check"); } catch { /* intentionally empty */ }
       const right = [(c.durationMs > 0 ? fmtDur(c.durationMs) : ""), tokenLabel(c.tokens, c.tokensExact)].filter(Boolean).join(" · ");
-      titleLine(body, c.title || "完成", right, false);
+      titleLine(body, c.title || i18nT("Done"), right, false);
       subLine(body, `已完成${c.detail ? " · " + c.detail : ""}${c.at ? " · " + fmtTime(c.at) : ""}`);
     }
 
     if (active) {
-      list.createDiv({ cls: "qnalog-progress-section-title qnalog-progress-legacy-current", text: "当前任务" });
+      list.createDiv({ cls: "qnalog-progress-section-title qnalog-progress-legacy-current", text: i18nT("Current task") });
       const { ico, body } = makeRow("running", "qnalog-progress-legacy-current");
       if (activeLiveness === "failed") {
         const stateIcon = ico.createSpan({ cls: `qnalog-progress-task-state is-${activeLiveness}` });
@@ -1021,13 +1020,13 @@ export class QueueModal extends obsidian.Modal {
       }
       const sess = this.plugin.session;
       const fileName = sess && sess.mdPath ? String(sess.mdPath).split(/[\\/]/).pop().replace(/\.md$/i, "") : "";
-      const name = (detail && detail.sourceFile) || fileName || (detail ? [detail.kind, detail.modeLabel].filter(Boolean).join(" · ") : activityLabel) || "处理中";
+      const name = (detail && detail.sourceFile) || fileName || (detail ? [detail.kind, detail.modeLabel].filter(Boolean).join(" · ") : activityLabel) || i18nT("Processing");
       const detailStartedAt = detail && Number(detail.startedAt) > 0 ? Number(detail.startedAt) : (_tm && _tm.startedAt);
       const right = detailStartedAt ? [fmtDur(Date.now() - detailStartedAt), tmTokLabel].filter(Boolean).join(" · ") : "";
       titleLine(body, name, right, false);
       const stepBase = primaryActivity && primaryActivity.stageLabel
         ? String(primaryActivity.stageLabel)
-        : detail ? (detail.step || detail.kind || "处理中") : (activityLabel || "处理中");
+        : detail ? (detail.step || detail.kind || i18nT("Processing")) : (activityLabel || i18nT("Processing"));
       const currentProgress = primaryActivity && Number.isFinite(Number(primaryActivity.progress))
         ? Number(primaryActivity.progress)
         : detail && Number.isFinite(Number(detail.percent)) ? Number(detail.percent) : null;
@@ -1047,9 +1046,9 @@ export class QueueModal extends obsidian.Modal {
           ? `${sourceModeLabel} → ${targetModeLabel}`
           : "";
         const taskFacts = [
-          ["来源文件夹", detail.sourceFolder],
+          [i18nT("Source folder"), detail.sourceFolder],
           ["音频时长", Number(detail.durationMs) > 0 ? fmtDur(Number(detail.durationMs)) : ""],
-          ["模式", modeChange],
+          [i18nT("Mode"), modeChange],
         ].filter(([, value]) => String(value || "").trim());
         if (taskFacts.length) {
           const factGrid = body.createDiv({ cls: "qnalog-progress-current-facts" });
@@ -1072,7 +1071,7 @@ export class QueueModal extends obsidian.Modal {
         }
         const stages = body.createDiv({
           cls: "qnalog-progress-stages",
-          attr: { "aria-label": "处理步骤" },
+          attr: { "aria-label": i18nT("Processing steps") },
         });
         for (let index = 0; index < detail.stages.length; index++) {
           const stage = detail.stages[index];
@@ -1103,8 +1102,7 @@ export class QueueModal extends obsidian.Modal {
           const iconName = stageLiveness === "done" ? "check"
             : stageLiveness === "failed" ? "triangle-alert"
               : stageLiveness === "retrying" ? "refresh-cw"
-                : ["slow", "stalled"].includes(stageLiveness) ? "clock-3"
-                  : "";
+                : ["slow", "stalled"].includes(stageLiveness) ? "clock-3" : "";
           if (iconName) {
             try { obsidian.setIcon(marker, iconName); } catch { marker.setText(stageLiveness === "done" ? "✓" : "!"); }
           } else if (stage.status === "active") {
@@ -1123,9 +1121,9 @@ export class QueueModal extends obsidian.Modal {
           const panel = item.createDiv({ cls: "qnalog-progress-stage-panel" });
           if (stage.detail) panel.createDiv({ cls: "qnalog-progress-stage-description", text: stage.detail });
           const facts = [];
-          if (Number(stage.startedAt) > 0) facts.push(["开始", fmtTime(Number(stage.startedAt))]);
-          if (Number(stage.updatedAt) > 0) facts.push(["最近事件", `${fmtDur(Date.now() - Number(stage.updatedAt))}前`]);
-          if (Number(stage.startedAt) > 0 && stage.status === "active") facts.push(["本阶段", fmtDur(Date.now() - Number(stage.startedAt))]);
+          if (Number(stage.startedAt) > 0) facts.push([i18nT("Start"), fmtTime(Number(stage.startedAt))]);
+          if (Number(stage.updatedAt) > 0) facts.push([i18nT("Recent events"), `${fmtDur(Date.now() - Number(stage.updatedAt))}前`]);
+          if (Number(stage.startedAt) > 0 && stage.status === "active") facts.push([i18nT("This stage"), fmtDur(Date.now() - Number(stage.startedAt))]);
           if (facts.length) {
             const factGrid = panel.createDiv({ cls: "qnalog-progress-stage-facts" });
             for (const [factLabel, factValue] of facts) {
@@ -1174,9 +1172,9 @@ export class QueueModal extends obsidian.Modal {
 
           if (Array.isArray(stage.events) && stage.events.length) {
             const hiddenEventLabels = new Set([
-              "开始语音转写",
-              "正在上传音频",
-              "正在提交转写任务",
+              i18nT("Start speech transcription"),
+              i18nT("Uploading audio"),
+              i18nT("Submitting transcription task"),
             ]);
             const visibleEvents = stage.events.filter((event, index, events) => {
               if (hiddenEventLabels.has(String(event.label || "").trim())) return false;
@@ -1188,12 +1186,12 @@ export class QueueModal extends obsidian.Modal {
             });
             if (visibleEvents.length) {
               const eventSection = panel.createDiv({ cls: "qnalog-progress-events" });
-              eventSection.createDiv({ cls: "qnalog-progress-section-label", text: "最近事件" });
+              eventSection.createDiv({ cls: "qnalog-progress-section-label", text: i18nT("Recent events") });
               for (const event of visibleEvents.slice(-10).reverse()) {
                 const eventRow = eventSection.createDiv({ cls: "qnalog-progress-event" });
                 eventRow.createSpan({ cls: "qnalog-progress-event-time", text: fmtTime(Number(event.at) || Date.now()) });
                 const eventCopy = eventRow.createSpan({ cls: "qnalog-progress-event-copy" });
-                eventCopy.createSpan({ cls: "qnalog-progress-event-label", text: String(event.label || "状态已更新") });
+                eventCopy.createSpan({ cls: "qnalog-progress-event-label", text: String(event.label || i18nT("Status updated")) });
                 if (event.detail) eventCopy.createSpan({ cls: "qnalog-progress-event-detail", text: String(event.detail) });
               }
             }
@@ -1256,7 +1254,7 @@ export class QueueModal extends obsidian.Modal {
       const delBtn = acts.createEl("button", { cls: "qnalog-progress-queue-cancel", attr: { type: "button" }, text: i18nT("Cancel") });
       delBtn.onclick = async () => {
         await this.plugin.queue.remove(t.id);
-        new obsidian.Notice("已取消自动重试。缓存音频会暂时保留，之后仍可从纪要右键重新发起。", 6000);
+        new obsidian.Notice(i18nT("Automatic retry cancelled. The cached audio is kept for now; you can still restart it from the note's context menu later."), 6000);
         this.onOpen();
       };
     }
@@ -1265,17 +1263,17 @@ export class QueueModal extends obsidian.Modal {
     const foot = contentEl.createDiv({ cls: "qnalog-progress-foot" });
     if (tmTokLabel) foot.createSpan({ cls: "qnalog-progress-foot-token", text: `${tmTokLabel} token` });
     const footActions = foot.createDiv({ cls: "qnalog-progress-foot-actions" });
-    const logBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link", attr: { type: "button" }, text: "查看日志" });
+    const logBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link", attr: { type: "button" }, text: i18nT("View log") });
     logBtn.onclick = async () => { try { await this.plugin.diagnostics.copyDiagnosticReport(); } catch { /* intentionally empty */ } };
-    const backgroundBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link is-primary", attr: { type: "button" }, text: "后台运行" });
+    const backgroundBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link is-primary", attr: { type: "button" }, text: i18nT("Run in background") });
     backgroundBtn.onclick = () => this.close();
     if (pending.length) {
-      const clearBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link", attr: { type: "button" }, text: "取消全部" });
+      const clearBtn = footActions.createEl("button", { cls: "qnalog-progress-foot-link", attr: { type: "button" }, text: i18nT("Cancel all") });
       clearBtn.onclick = async () => {
         const n = this.plugin.queue.tasks.filter((t) => t && t.status !== "running" && t.status !== "live").length;
-        const ok = await qnalogConfirm(this.app, "取消全部自动重试？",
+        const ok = await qnalogConfirm(this.app, i18nT("Cancel all automatic retries?"),
           `取消后这 ${n} 个任务不再自动重试，对应纪要将停留在当前状态。缓存音频会暂时保留，处理中的任务不受影响。`,
-          "取消重试");
+          i18nT("Cancel retry"));
         if (!ok) return;
         const cancellable = this.plugin.queue.tasks.filter((t) => t && t.status !== "running" && t.status !== "live");
         for (const task of cancellable) {
@@ -1324,7 +1322,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     contentEl.empty();
     contentEl.addClass("qnalog-vcable-modal");
 
-    contentEl.createEl("h2", { text: "电脑音频捕获设置" });
+    contentEl.createEl("h2", { text: i18nT("Computer audio capture settings") });
     const desc = contentEl.createEl("p", { cls: "qnalog-vcable-desc" });
     desc.setText(i18nT("Q&A Log cannot listen directly to sound playing through your headphones or speakers. To record from a browser, a course, or the other side of a meeting, route that sound to a virtual audio device so Q&A Log recognizes it as computer-audio input, and monitor the same sound to your real speakers or headphones so you can still hear it. Configure once and it keeps working."));
 
@@ -1364,7 +1362,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
         new obsidian.Notice(`检测到电脑音频输入：${labels}`);
         this.close();
       } else {
-        new obsidian.Notice("尚未检测到电脑音频输入，请确认已安装虚拟声卡并重启 Obsidian。");
+        new obsidian.Notice(i18nT("No computer audio input detected yet; make sure a virtual audio device is installed and restart Obsidian."));
       }
     };
   }
@@ -1385,95 +1383,95 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     return s;
   }
   renderMacContent(parent) {
-    this.step(parent, 1, "安装 BlackHole（开源免费）", (b) => {
-      b.createEl("p", { text: "推荐 BlackHole 2ch（双声道版本足够会议使用）。" });
+    this.step(parent, 1, i18nT("Install BlackHole (open source, free)"), (b) => {
+      b.createEl("p", { text: i18nT("- Lets users save and then use it directly for recording, importing, and reorganizing.") });
       const ul = b.createEl("ul");
       const li1 = ul.createEl("li");
       li1.createSpan({ text: "下载页：" });
       const a1 = li1.createEl("a", { text: "existential.audio/blackhole/", href: "https://existential.audio/blackhole/" });
       a1.target = "_blank";
       const li2 = ul.createEl("li");
-      li2.createSpan({ text: "或用 Homebrew：" });
+      li2.createSpan({ text: i18nT("Or use Homebrew:") });
       li2.createEl("code", { text: "brew install blackhole-2ch" });
     });
     this.step(parent, 2, "创建多输出设备（Multi-Output Device）", (b) => {
       const ol = b.createEl("ol");
-      ol.createEl("li", { text: "启动台 → Audio MIDI Setup（音频 MIDI 设置）" });
-      ol.createEl("li", { text: "左下角「+」→ 创建多输出设备" });
-      ol.createEl("li", { text: "勾选「内建扬声器」（或耳机）+「BlackHole 2ch」" });
-      ol.createEl("li", { text: "Master Device 选择耳机或扬声器；Drift Correction 勾选 BlackHole" });
+      ol.createEl("li", { text: i18nT("Launchpad → Audio MIDI Setup") });
+      ol.createEl("li", { text: i18nT("Bottom-left \"+\" → Create Multi-Output Device") });
+      ol.createEl("li", { text: i18nT("Check \"Built-in Speakers\" (or headphones) + \"BlackHole 2ch\"") });
+      ol.createEl("li", { text: i18nT("For Master Device select your headphones or speakers; check Drift Correction for BlackHole") });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
       tip.setText(i18nT("This makes system audio go to both your real speakers/headphones and BlackHole: the former for playback, the latter for Q&A Log to record."));
     });
-    this.step(parent, 3, "把系统或应用输出切到这个多输出设备", (b) => {
+    this.step(parent, 3, i18nT("- The {{TRANSCRIPT}} placeholder must be preserved."), (b) => {
       const ol = b.createEl("ol");
       ol.createEl("li", { text: "系统设置 → 声音 → 输出" });
-      ol.createEl("li", { text: "选择刚才创建的「多输出设备」" });
-      ol.createEl("li", { text: "浏览器视频和大多数桌面视频客户端通常跟随系统输出；会议软件如单独设置了扬声器，也改成这个多输出设备" });
+      ol.createEl("li", { text: i18nT("Select the \"Multi-Output Device\" you just created") });
+      ol.createEl("li", { text: i18nT("Browser videos and most desktop video clients usually follow the system output; if meeting software has a separate speaker setting, also change it to this multi-output device") });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText(i18nT("Meeting apps may need you to reselect the speaker after switching."));
     });
-    this.step(parent, 4, "在 Q&A Log 选择电脑音频模式", (b) => {
-      b.createEl("p", { text: "只整理视频、课程或播客时选择「仅电脑音频」；线上会议或边听边讲解时选择「麦克风加电脑音频」。" });
+    this.step(parent, 4, i18nT("Select computer audio mode in Q&A Log"), (b) => {
+      b.createEl("p", { text: i18nT("Choose \"Computer audio only\" when processing only videos, courses, or podcasts; choose \"Microphone + computer audio\" for online meetings or when explaining while listening.") });
     });
   }
   renderWinContent(parent) {
-    this.step(parent, 1, "安装 VB-Cable（免费）", (b) => {
+    this.step(parent, 1, i18nT("Install VB-Cable (free)"), (b) => {
       b.createEl("p", { text: "下载：" });
       const a = b.createEl("a", { text: "https://vb-audio.com/Cable/", href: "https://vb-audio.com/Cable/" });
       a.target = "_blank";
       const ol = b.createEl("ol");
       ol.createEl("li", { text: "下载 VB-Cable Driver Pack 后解压" });
-      ol.createEl("li", { text: "右键 VBCABLE_Setup_x64.exe → 以管理员身份运行" });
-      ol.createEl("li", { text: "点击 Install Driver → 重启电脑" });
+      ol.createEl("li", { text: i18nT("Right-click VBCABLE_Setup_x64.exe → Run as administrator") });
+      ol.createEl("li", { text: i18nT("Click Install Driver → restart your computer") });
     });
-    this.step(parent, 2, "把要录制的声音输出切到 CABLE Input（播放设备）", (b) => {
+    this.step(parent, 2, i18nT("- Must output: State which parts the final note must contain, and which overly templated content should not appear."), (b) => {
       b.createEl("p", { text: "线上会议可以在飞书、腾讯会议或 Zoom 的音频设置里改扬声器；B 站客户端、浏览器视频、播放器等桌面应用，可以在 Windows 音量混合器里单独指定输出设备。目标输出统一改为：" });
       b.createEl("code", { text: "CABLE Input (VB-Audio Virtual Cable)" });
-      b.createEl("p", { cls: "qnalog-vcable-tip" }).setText("注意：这里选的是 CABLE Input。虽然名字叫 Input，但它在 Windows 里是“播放/输出设备”；Q&A Log 后面录的是同一根虚拟线缆另一端的 CABLE Output。");
+      b.createEl("p", { cls: "qnalog-vcable-tip" }).setText(i18nT("Note: CABLE Input is selected here. Although its name says Input, in Windows it is a playback/output device; Q&A Log records later from CABLE Output at the other end of the same virtual cable."));
       const ol = b.createEl("ol");
-      ol.createEl("li", { text: "录会议：在会议软件的扬声器/输出设备中选择 CABLE Input" });
-      ol.createEl("li", { text: "录 B 站客户端：先播放一段视频，让应用出现在音量混合器里；Windows 设置 → 系统 → 声音 → 音量混合器 → 找到哔哩哔哩/bilibili → 输出设备选择 CABLE Input" });
-      ol.createEl("li", { text: "录浏览器：同样在音量混合器中找到 Chrome、Edge、Firefox 等浏览器 → 输出设备选择 CABLE Input" });
-      ol.createEl("li", { text: "录全部系统声音：把系统默认输出设备直接改为 CABLE Input" });
+      ol.createEl("li", { text: i18nT("Recording meetings: select CABLE Input as the speaker/output device in your meeting app") });
+      ol.createEl("li", { text: i18nT("Recording the Bilibili client: play a video first so the app appears in the volume mixer; Windows Settings → System → Sound → Volume mixer → find 哔哩哔哩/bilibili → select CABLE Input as the output device") });
+      ol.createEl("li", { text: i18nT("Recording a browser: likewise find browsers such as Chrome, Edge, and Firefox in the volume mixer → select CABLE Input as the output device") });
+      ol.createEl("li", { text: i18nT("Recording all system audio: change the system default output device directly to CABLE Input") });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText(i18nT("This step temporarily stops system audio playing through your real headphones/speakers; listening is restored by the next step."));
     });
-    this.step(parent, 3, "用 CABLE Output 侦听到真实扬声器或耳机（关键）", (b) => {
+    this.step(parent, 3, i18nT("Use CABLE Output to monitor through your real speakers or headphones (important)"), (b) => {
       b.createEl("p", { text: "要恢复本机监听，需要把 CABLE Output 侦听到真实耳机或扬声器：" });
       const ol = b.createEl("ol");
-      ol.createEl("li", { text: "打开：控制面板 → 声音 → 录制（或右键任务栏喇叭图标 → 声音设置 → 更多声音设置）" });
-      ol.createEl("li", { text: "找到 CABLE Output" });
-      ol.createEl("li", { text: "双击 → 切到「侦听」标签" });
-      ol.createEl("li", { text: "勾选「侦听此设备」" });
+      ol.createEl("li", { text: i18nT("- Do not force in a large number of callouts; structure is fine, but the body should stay close to what was actually discussed.") });
+      ol.createEl("li", { text: i18nT("- Use a short list when needed, keeping the items, numbers, examples, and risks from the minutes.") });
+      ol.createEl("li", { text: i18nT("Double-click → switch to the \"Listen\" tab") });
+      ol.createEl("li", { text: i18nT("Check \"Listen to this device\"") });
       ol.createEl("li", { text: "「通过此设备播放」选择真实耳机或扬声器，不要选 CABLE Input" });
-      ol.createEl("li", { text: "点「应用」" });
+      ol.createEl("li", { text: i18nT("Click \"Apply\"") });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
       tip.setText(i18nT("The audio path is: app/browser \\\\u2192 CABLE Input (playback) \\\\u2192 CABLE Output (recording input, read by Q&A Log) \\\\u2192 monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
     });
-    this.step(parent, 4, "把默认输入改回真实麦克风", (b) => {
+    this.step(parent, 4, i18nT("- Faithful to the source: Do not extrapolate; organize only information explicitly present in the recording."), (b) => {
       const ol = b.createEl("ol");
       ol.createEl("li", { text: "Windows 设置 → 系统 → 声音 → 输入" });
-      ol.createEl("li", { text: "选择真实麦克风，不要选 CABLE Output" });
-      ol.createEl("li", { text: "如果其他语音输入软件也没声音，通常就是这里被改成了 CABLE Output" });
+      ol.createEl("li", { text: i18nT("Select the real microphone, not CABLE Output") });
+      ol.createEl("li", { text: i18nT("If other voice input software also has no sound, this is usually because it was changed to CABLE Output here") });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText(i18nT("CABLE Output is what recording apps like Q&A Log read to capture computer audio; it is not suitable as your everyday microphone."));
     });
-    this.step(parent, 5, "在 Q&A Log 选择电脑音频模式", (b) => {
-      b.createEl("p", { text: "看 B 站、YouTube、课程或播客时选择「仅电脑音频」；线上会议或需要同时录入本人讲解时选择「麦克风加电脑音频」。" });
+    this.step(parent, 5, i18nT("Select computer audio mode in Q&A Log"), (b) => {
+      b.createEl("p", { text: i18nT("When watching Bilibili, YouTube, courses or podcasts, choose \"Computer audio only\"; for online meetings, or when you also need to record your own commentary, choose \"Microphone + computer audio\".") });
     });
   }
   renderLinuxContent(parent) {
-    this.step(parent, 1, "PulseAudio：用 monitor source", (b) => {
-      b.createEl("p", { text: "PulseAudio 的每个真实输出设备都自带 monitor source。保持系统输出为耳机/扬声器，Q&A Log 选择对应的 Monitor of ... 输入，即可同时播放和录制系统音频。" });
-      b.createEl("p", { text: "查看可用 monitor source：" });
+    this.step(parent, 1, i18nT("PulseAudio: use the monitor source"), (b) => {
+      b.createEl("p", { text: i18nT("Every real output device in PulseAudio comes with its own monitor source. Keep the system output on your headphones/speakers and select the corresponding Monitor of ... input in Q&A Log to play and record system audio at the same time.") });
+      b.createEl("p", { text: i18nT("View available monitor source:") });
       const code = b.createEl("pre");
       code.createEl("code", { text: "pactl list sources short | grep monitor" });
     });
     this.step(parent, 2, "若用 PipeWire（较新发行版）", (b) => {
-      b.createEl("p", { text: "PipeWire 兼容 PulseAudio API，命令相同。如默认 monitor 不工作，可安装 pavucontrol，并在「录制」标签里把 Q&A Log 的输入切到 Monitor of <扬声器名称>。" });
+      b.createEl("p", { text: i18nT("PipeWire is compatible with the PulseAudio API, and the commands are the same. If the default monitor does not work, you can install pavucontrol and, on the “Recording” tab, switch the Q&A Log input to Monitor of <speaker name>.") });
     });
-    this.step(parent, 3, "在 Q&A Log 选择电脑音频模式", (b) => {
+    this.step(parent, 3, i18nT("Select computer audio mode in Q&A Log"), (b) => {
       b.createEl("p", { text: "Q&A Log 的设备检测会把名为「Monitor of ...」的输入识别为电脑音频输入。只整理视频/课程时选择「仅电脑音频」；需要同时录自己的声音时选择「麦克风加电脑音频」。" });
     });
   }
@@ -1504,15 +1502,15 @@ export class PromptTemplateModal extends obsidian.Modal {
       prompt: prompt || [
         "你是专业的录音整理助手。请根据下面规则，把原始转写整理成可直接保存到 Obsidian 的 Markdown 笔记。",
         "",
-        "请先补全这份提示词：",
-        "- 使用场景：说明这类录音通常来自什么任务、谁会继续使用这份笔记。",
-        "- 重点内容：说明必须识别哪些信息，例如事实、结论、待办、风险、争议、关键原话、术语、外语内容；待办 / 行动项必须输出为 `- [ ]` todo 任务。",
-        "- 必须输出：说明最终笔记必须包含哪些部分，以及不需要出现哪些过度模板化内容。",
-        "- 待办语法：如果有待办，统一写成 `- [ ] 事项：<具体动作>`，能确定时再补 `责任人：<人>` 和 `截止：<时间>`（无法判断就省略该字段，不要写「未提及」）；不要写成表格或普通列表。",
-        "- 写作要求：说明语气、详略、是否翻译、是否保留原文、如何处理不确定信息。",
-        "- 反幻觉：没有出现在转写里的信息不要编造，拿不准要标注不确定。",
+        i18nT("Please complete this prompt first:"),
+        i18nT("- Use case: explain what kind of task this recording usually comes from and who will keep using these notes."),
+        i18nT("- Key content: explain which information must be identified, such as facts, conclusions, to-dos, risks, disputes, key verbatim quotes, terminology and foreign-language content; to-dos / action items must be output as `- [ ]` todo tasks."),
+        i18nT("- Must output: explain which parts the final note must contain and which overly templated content should not appear."),
+        i18nT("- To-do syntax: if there are to-dos, always write them as `- [ ] 事项：<具体动作>`; when it can be determined, add `责任人：<人>` and `截止：<时间>` (omit the field if it cannot be determined, and do not write “not mentioned”); do not write them as a table or an ordinary list."),
+        i18nT("- Writing requirements: specify the tone, level of detail, whether to translate, whether to keep the original text, and how to handle uncertain information."),
+        i18nT("- Anti-hallucination: do not invent information that does not appear in the transcript, and mark anything uncertain as uncertain."),
         "",
-        "原始转写：",
+        i18nT("Original transcription:"),
         "{{TRANSCRIPT}}"
       ].join("\n"),
       isBuiltin: false,
@@ -1543,7 +1541,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-tpl-modal");
-    contentEl.createEl("h2", { text: this.editingId ? "编辑提示词" : "提示词库" });
+    contentEl.createEl("h2", { text: this.editingId ? "编辑提示词" : i18nT("1 (most stable)") });
 
     const desc = contentEl.createDiv({ cls: "setting-item-description qnalog-tpl-desc" });
     desc.setText(i18nT("This is where refinement rules are managed. Built-in prompts get you started quickly; create a custom prompt and set it as default when you need a fixed format, professional judgement, or a long-running workflow."));
@@ -1557,8 +1555,8 @@ export class PromptTemplateModal extends obsidian.Modal {
     const defaultMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode, "meeting");
     const defaultMeta = getModeMeta(this.plugin.settings, defaultMode);
     const toolbar = body.createDiv({ cls: "qnalog-tpl-toolbar" });
-    toolbar.createDiv({ cls: "qnalog-tpl-current", text: "当前默认：" + (defaultMeta.prefix || defaultMeta.label || defaultMode) });
-    const createBtn = toolbar.createEl("button", { text: "新建自定义提示词", cls: "mod-cta" });
+    toolbar.createDiv({ cls: "qnalog-tpl-current", text: i18nT("Current default:") + (defaultMeta.prefix || defaultMeta.label || defaultMode) });
+    const createBtn = toolbar.createEl("button", { text: i18nT("New custom prompt"), cls: "mod-cta" });
     createBtn.onclick = async () => {
       const tpl = this.newCustomScene("新自定义提示词", "learning");
       await this.saveScene(tpl, true);
@@ -1574,10 +1572,10 @@ export class PromptTemplateModal extends obsidian.Modal {
 
     const customSection = body.createDiv({ cls: "qnalog-tpl-section" });
     customSection.createDiv({ cls: "qnalog-tpl-section-title", text: "自定义提示词" });
-    customSection.createDiv({ cls: "qnalog-tpl-section-copy", text: "每个自定义提示词都会出现在录音、导入音频和重新整理菜单里，也可以设为默认。" });
+    customSection.createDiv({ cls: "qnalog-tpl-section-copy", text: i18nT("Every custom prompt appears in the recording, audio import, and re-organize menus, and can also be set as default.") });
     const customList = customSection.createDiv({ cls: "qnalog-tpl-list" });
     const customs = getCustomPromptModeTemplates(this.plugin.settings);
-    if (!customs.length) customList.createDiv({ cls: "qnalog-tpl-empty", text: "还没有自定义提示词。点击上方按钮新建一条。" });
+    if (!customs.length) customList.createDiv({ cls: "qnalog-tpl-empty", text: i18nT("No custom prompts yet. Click the button above to create one.") });
     for (const tpl of customs) this.renderCustomRow(customList, tpl);
   }
 
@@ -1613,7 +1611,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     pill.setAttr("aria-hidden", "true");
     const text = row.createDiv({ cls: "qnalog-tpl-row-meta" });
     text.createDiv({ cls: "qnalog-tpl-row-name", text: tpl.name || "自定义提示词" });
-    const updated = tpl.updatedAt && window.moment ? window.moment(tpl.updatedAt).format("YYYY-MM-DD HH:mm") : "未记录";
+    const updated = tpl.updatedAt && window.moment ? window.moment(tpl.updatedAt).format("YYYY-MM-DD HH:mm") : i18nT("Not recorded");
     text.createDiv({ cls: "qnalog-tpl-row-sub", text: "自定义 · 更新于 " + updated });
 
     const actions = row.createDiv({ cls: "qnalog-tpl-row-actions" });
@@ -1628,7 +1626,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     const delBtn = actions.createEl("button", { text: i18nT("Delete") });
     delBtn.addClass("mod-warning");
     delBtn.onclick = async () => {
-      const ok = await qnalogConfirm(this.app, "删除自定义提示词", "删除自定义提示词「" + (tpl.name || tpl.id) + "」？此操作不可恢复。", "删除");
+      const ok = await qnalogConfirm(this.app, i18nT("Delete custom prompt"), i18nT("Delete custom prompt \"") + (tpl.name || tpl.id) + "」？此操作不可恢复。", i18nT("Delete"));
       if (!ok) return;
       const tpls = Object.assign({}, this.plugin.settings.promptTemplates || {});
       delete tpls[tpl.id];
@@ -1647,18 +1645,18 @@ export class PromptTemplateModal extends obsidian.Modal {
     const seed = current || this.newCustomScene(tpl && tpl.name ? tpl.name : "自定义提示词", tpl && tpl.baseMode ? tpl.baseMode : "learning").prompt;
     const sys = "你是提示词优化专家，专门把用户草稿改写成稳定、清晰、可执行的录音转写整理 Prompt。";
     const user = [
-      "请优化下面这份 Q&A Log 转写整理提示词。",
+      i18nT("Please optimize the following Q&A Log transcription cleanup prompt."),
       "",
       "要求：",
-      "- 只输出优化后的完整 Prompt，不要解释、不要代码块。",
-      "- 必须保留 {{TRANSCRIPT}} 占位符。",
-      "- 明确使用场景、重点内容、必须输出的内容、写作风格、翻译要求和反幻觉边界。",
-      "- 不要强行套大量 callout；结构化可以有，但正文应贴近真实讨论内容。",
-      "- 让用户保存后可以直接用于录音、导入和重新整理。",
+      i18nT("- Output only the complete optimized Prompt, with no explanation and no code blocks."),
+      i18nT("- The {{TRANSCRIPT}} placeholder must be kept."),
+      i18nT("- Specify the use case, key content, required output, writing style, translation requirements and anti-hallucination boundaries."),
+      i18nT("- Do not force in a large number of callouts; structure is fine, but the body text should stay close to what was actually discussed."),
+      i18nT("- Make it directly usable for recording, importing and re-organizing right after the user saves it."),
       "",
-      "提示词名称：" + ((tpl && tpl.name) || "自定义提示词"),
+      i18nT("1. Open system settings and allow Obsidian to access the microphone.") + ((tpl && tpl.name) || "自定义提示词"),
       "",
-      "当前草稿：",
+      i18nT("Current draft:"),
       seed,
     ].join("\n");
     let result = await callLlm(this.plugin, sys, user);
@@ -1679,7 +1677,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     }
 
     const back = body.createDiv({ cls: "qnalog-tpl-back" });
-    const backBtn = back.createEl("button", { text: "返回列表" });
+    const backBtn = back.createEl("button", { text: i18nT("Back to list") });
     backBtn.onclick = () => { this.editingId = null; this.onOpen(); };
     back.createSpan({ cls: "qnalog-tpl-builtin-tag", text: "自定义" });
 
@@ -1710,7 +1708,7 @@ export class PromptTemplateModal extends obsidian.Modal {
         const optimized = await this.optimizePromptDraft(tpl, ta.value);
         ta.value = optimized;
         tpl.prompt = optimized;
-        new obsidian.Notice("已生成优化稿，请检查后保存");
+        new obsidian.Notice(i18nT("Refined draft generated; review it before saving"));
       } catch (e) {
         console.error(e);
         new obsidian.Notice("AI 优化失败：" + ((e && e.message) || e));
@@ -1728,8 +1726,8 @@ export class PromptTemplateModal extends obsidian.Modal {
       tpl.customMode = true;
       tpl.isBuiltin = false;
       tpl.prompt = ta.value.trim();
-      if (!tpl.prompt) { new obsidian.Notice("请填写提示词内容"); return; }
-      if (!tpl.prompt.includes("{{TRANSCRIPT}}")) { new obsidian.Notice("提示词必须包含 {{TRANSCRIPT}} 占位符"); return; }
+      if (!tpl.prompt) { new obsidian.Notice(i18nT("Please fill in the prompt content")); return; }
+      if (!tpl.prompt.includes("{{TRANSCRIPT}}")) { new obsidian.Notice(i18nT("2. Return to Q&A Log and start a new recording.")); return; }
       tpl.updatedAt = new Date().toISOString();
       await this.saveScene(tpl, true);
       new obsidian.Notice("自定义提示词已保存");
@@ -1769,7 +1767,7 @@ export class ImportTextModal extends obsidian.Modal {
     contentEl.addClass("qnalog-import-modal");
     this.selected.clear();
     this.fileCheckboxes = new Map();
-    contentEl.createEl("h2", { text: "导入文本" });
+    contentEl.createEl("h2", { text: i18nT("Import text") });
     contentEl.createEl("p", { cls: "qnalog-import-desc" })
       .setText(i18nT("Choose existing Markdown, a dictation draft, or a text note. Q&A Log will not call speech transcription; it goes straight through the \\\\u201cAI briefing\\\\u201d LLM pipeline on the API tab and structures the text using the current template."));
 
@@ -1781,11 +1779,11 @@ export class ImportTextModal extends obsidian.Modal {
     this.searchInput = toolbar.createEl("input", {
       type: "text",
       cls: "qnalog-import-search",
-      attr: { placeholder: "搜索文件名或路径" },
+      attr: { placeholder: i18nT("AI Organize Outline") },
     });
     this.searchInput.addEventListener("input", () => this.renderFileList());
     const activeFile = this.app.workspace.getActiveFile();
-    const currentBtn = toolbar.createEl("button", { text: "选择当前文档" });
+    const currentBtn = toolbar.createEl("button", { text: i18nT("Select the current document") });
     currentBtn.disabled = !(activeFile instanceof obsidian.TFile && TEXT_IMPORT_EXT.has(String(activeFile.extension || "").toLowerCase()));
     currentBtn.onclick = () => {
       if (!(activeFile instanceof obsidian.TFile)) return;
@@ -1808,10 +1806,10 @@ export class ImportTextModal extends obsidian.Modal {
     void this.loadTextFiles();
 
     const actions = contentEl.createDiv({ cls: "qnalog-import-actions" });
-    this.processBtn = actions.createEl("button", { text: "开始转写（0 个文件）", cls: "mod-cta" });
+    this.processBtn = actions.createEl("button", { text: i18nT("Start transcription (0 files)"), cls: "mod-cta" });
     this.processBtn.disabled = true;
     this.processBtn.onclick = () => this.process();
-    this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: "未选择文本" });
+    this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: i18nT("No text selected") });
     const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
     this.updateButton();
@@ -1843,9 +1841,9 @@ export class ImportTextModal extends obsidian.Modal {
       let content = "";
       let classification = {
         category: "external",
-        badge: "未读取",
-        reason: "文件内容读取失败",
-        statusTitle: "文件内容读取失败",
+        badge: i18nT("Not read"),
+        reason: i18nT("Failed to read file contents"),
+        statusTitle: i18nT("Failed to read file contents"),
       };
       try {
         content = typeof this.app.vault.cachedRead === "function"
@@ -1876,7 +1874,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.categoryButtons = new Map();
     const counts = this.getCategoryCounts();
     const filters = [
-      { id: "all", label: "全部", desc: "显示全部可导入文本" },
+      { id: "all", label: "全部", desc: i18nT("Show all importable text") },
       ...IMPORT_TEXT_CATEGORY_ORDER.map((id) => ({
         id,
         label: IMPORT_TEXT_CATEGORY_CONFIG[id].shortLabel,
@@ -1921,7 +1919,7 @@ export class ImportTextModal extends obsidian.Modal {
   updateModeHint() {
     if (!this.modeHint) return;
     const meta = getModeMeta(this.plugin.settings, this.selectedMode);
-    this.modeHint.setText((meta.goal || "用于生成结构化纪要。") + " 本次只处理文本，不调用语音转写服务。");
+    this.modeHint.setText((meta.goal || i18nT("Used to generate structured meeting notes.")) + i18nT(" This run processes text only and does not call the speech transcription service."));
   }
 
   renderFileList() {
@@ -1929,7 +1927,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.listEl.empty();
     this.fileCheckboxes = new Map();
     if (this.loadingFiles) {
-      this.listEl.createDiv({ cls: "qnalog-import-empty", text: "正在扫描可导入文本…" });
+      this.listEl.createDiv({ cls: "qnalog-import-empty", text: i18nT("Scanning for importable text…") });
       return;
     }
     const q = String(this.searchInput && this.searchInput.value || "").trim().toLowerCase();
@@ -1940,7 +1938,7 @@ export class ImportTextModal extends obsidian.Modal {
       return String(realFile.path || "").toLowerCase().includes(q) || String(realFile.basename || "").toLowerCase().includes(q);
     });
     if (!matched.length) {
-      this.listEl.createDiv({ cls: "qnalog-import-empty", text: q ? "没有匹配的文本文件" : "库中没有可导入的 Markdown / 文本文件" });
+      this.listEl.createDiv({ cls: "qnalog-import-empty", text: q ? "没有匹配的文本文件" : i18nT("No Markdown or text files to import in the vault") });
       return;
     }
     let rendered = 0;
@@ -1963,7 +1961,7 @@ export class ImportTextModal extends obsidian.Modal {
       if (rendered >= 240) break;
     }
     if (matched.length > rendered) {
-      this.listEl.createDiv({ cls: "qnalog-import-warn", text: "文件较多，可输入文件名或路径继续筛选。" });
+      this.listEl.createDiv({ cls: "qnalog-import-warn", text: i18nT("There are many files; type a file name or path to keep filtering.") });
     }
     this.syncCheckboxes();
   }
@@ -2014,7 +2012,7 @@ export class ImportTextModal extends obsidian.Modal {
       this.processBtn.disabled = count === 0;
     }
     if (this.selectionText) {
-      this.selectionText.setText(count ? "将按文件名升序合并为一份 Q&A Log 纪要" : "未选择文本");
+      this.selectionText.setText(count ? "将按文件名升序合并为一份 Q&A Log 纪要" : i18nT("No text selected"));
     }
   }
 
@@ -2033,7 +2031,7 @@ export class ImportTextModal extends obsidian.Modal {
       console.error("[QnALog] import text failed", e);
       if (this.plugin && this.plugin.diagnostics) {
         try {
-          await this.plugin.diagnostics.logDiagnostic("error", "text_import.failed", "导入文本整理失败", {
+          await this.plugin.diagnostics.logDiagnostic("error", "text_import.failed", i18nT("Failed to organize imported text"), {
             mode,
             count: paths.length,
             error: diagnosticError(e),
@@ -2071,18 +2069,18 @@ export class AudioImportOptionsModal extends obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-import-options-modal");
-    contentEl.createEl("h2", { text: "导入音频" });
+    contentEl.createEl("h2", { text: i18nT("Import audio") });
     contentEl.createDiv({
       cls: "qnalog-import-desc",
       text: this.paths.length > 1
         ? `已选择 ${this.paths.length} 个音频文件。确认本次整理方式。`
-        : "确认本次整理方式。",
+        : i18nT("Confirm the organization method for this run."),
     });
 
     const mode = contentEl.createDiv({ cls: "qnalog-import-mode" });
     const modeCopy = mode.createDiv();
     modeCopy.createDiv({ cls: "qnalog-import-mode-title", text: "整理方式" });
-    modeCopy.createDiv({ cls: "qnalog-import-mode-hint", text: "转写完成后生成对应类型的纪要。" });
+    modeCopy.createDiv({ cls: "qnalog-import-mode-hint", text: i18nT("After transcription is complete, generate minutes of the corresponding type.") });
     const modeSelect = mode.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
       modeSelect.createEl("option", { value: key, text: name });
@@ -2096,13 +2094,13 @@ export class AudioImportOptionsModal extends obsidian.Modal {
 
     contentEl.createDiv({
       cls: "qnalog-import-execution-note",
-      text: "本次选择只影响当前导入任务；默认转写服务可在设置的“说话人”页修改。",
+      text: i18nT("This choice only affects the current import task; the default transcription service can be changed on the \"Speakers\" page in settings."),
     });
 
     const actions = contentEl.createDiv({ cls: "qnalog-import-actions" });
     const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
     cancel.onclick = () => this.close();
-    const start = actions.createEl("button", { text: "开始转写", cls: "mod-cta", attr: { type: "button" } });
+    const start = actions.createEl("button", { text: i18nT("Start transcription"), cls: "mod-cta", attr: { type: "button" } });
     start.onclick = async () => {
       start.disabled = true;
       const payload = {
@@ -2144,7 +2142,7 @@ export class ImportAudioModal extends obsidian.Modal {
     this.selected.clear();
     this.groupCheckboxes = new Map();
     this.fileCheckboxes = new Map();
-    contentEl.createEl("h2", { text: "导入音频" });
+    contentEl.createEl("h2", { text: i18nT("Import audio") });
     const desc = contentEl.createEl("p", { cls: "qnalog-import-desc" });
     desc.setText(`从 ${this.plugin.settings.audioFolder} 选择音频。支持 WebM、M4A/MP4、MP3、WAV、AAC、OGG、FLAC 等格式；同一次录音的分段会合并显示。`);
 
@@ -2152,7 +2150,7 @@ export class ImportAudioModal extends obsidian.Modal {
     renderImportSpeakerControl(contentEl, this);
     contentEl.createDiv({
       cls: "qnalog-import-execution-note",
-      text: "本次选择只影响当前导入任务。",
+      text: i18nT("This choice only affects the current import task."),
     });
 
     const folderPath = obsidian.normalizePath(this.plugin.settings.audioFolder);
@@ -2174,7 +2172,7 @@ export class ImportAudioModal extends obsidian.Modal {
     this.batches = grouped.batches;
 
     const toolbar = contentEl.createDiv({ cls: "qnalog-import-toolbar" });
-    const latestBtn = toolbar.createEl("button", { text: "选择最近一组" });
+    const latestBtn = toolbar.createEl("button", { text: i18nT("Select the most recent group") });
     latestBtn.disabled = grouped.batches.length === 0;
     latestBtn.onclick = () => {
       if (!this.batches.length) return;
@@ -2191,7 +2189,7 @@ export class ImportAudioModal extends obsidian.Modal {
 
     const list = contentEl.createDiv({ cls: "qnalog-import-list" });
     if (grouped.batches.length) {
-      list.createDiv({ cls: "qnalog-import-section-title", text: "录音批次" });
+      list.createDiv({ cls: "qnalog-import-section-title", text: i18nT("Recording batch") });
       grouped.batches.forEach((batch) => this.renderBatch(list, batch));
     }
     if (grouped.singles.length) {
@@ -2200,10 +2198,10 @@ export class ImportAudioModal extends obsidian.Modal {
     }
 
     const actions = contentEl.createDiv({ cls: "qnalog-import-actions" });
-    this.processBtn = actions.createEl("button", { text: "开始处理（0 个文件）", cls: "mod-cta" });
+    this.processBtn = actions.createEl("button", { text: i18nT("Start processing (0 files)"), cls: "mod-cta" });
     this.processBtn.disabled = true;
     this.processBtn.onclick = () => this.process();
-    this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: "未选择音频" });
+    this.selectionText = actions.createSpan({ cls: "qnalog-import-selection", text: i18nT("No audio selected") });
     const cancelBtn = actions.createEl("button", { text: i18nT("Cancel") });
     cancelBtn.onclick = () => this.close();
     this.updateButton();
@@ -2228,7 +2226,7 @@ export class ImportAudioModal extends obsidian.Modal {
   updateModeHint() {
     if (!this.modeHint) return;
     const meta = getModeMeta(this.plugin.settings, this.selectedMode);
-    this.modeHint.setText((meta.goal || "用于生成结构化纪要。") + " 可在本次导入中临时切换，不会修改默认提示词。");
+    this.modeHint.setText((meta.goal || i18nT("Used to generate structured meeting notes.")) + i18nT(" Can be switched temporarily for this import; the default prompt will not be modified."));
   }
   parseSegmentRef(file) {
     const match = String(file.name || "").match(new RegExp(`^${NS_AUDIO_ALT}-(\\d{8}-\\d{6})-seg(\\d+)\\.([a-z0-9]+)$`, "i"));
@@ -2309,7 +2307,7 @@ export class ImportAudioModal extends obsidian.Modal {
 
     if (batch.missing.length || batch.emptyCount || batch.largeCount) {
       const warns = [];
-      if (batch.missing.length) warns.push("可能缺少 " + batch.missing.map((n) => "seg" + pad(n)).join("、"));
+      if (batch.missing.length) warns.push(i18nT("May be missing ") + batch.missing.map((n) => "seg" + pad(n)).join("、"));
       if (batch.emptyCount) warns.push(`${batch.emptyCount} 个片段接近空文件`);
       if (batch.largeCount) warns.push(`${batch.largeCount} 个片段超过 25 MB`);
       details.createDiv({ cls: "qnalog-import-warn", text: warns.join("；") });
@@ -2330,7 +2328,7 @@ export class ImportAudioModal extends obsidian.Modal {
     lbl.createDiv({ cls: "qnalog-import-name", text: name });
     lbl.createDiv({ cls: "qnalog-import-meta", text: this.formatFileMeta(file) });
     if (file.stat.size > 25 * 1024 * 1024) {
-      lbl.createDiv({ cls: "qnalog-import-warn", text: "文件超过 25 MB，多数转写 API 会拒绝。建议先降码率。" });
+      lbl.createDiv({ cls: "qnalog-import-warn", text: i18nT("The file exceeds 25 MB, and most transcription APIs will reject it. Lower the bitrate first.") });
     }
     this.fileCheckboxes.set(file.path, cb);
     cb.onchange = () => {
@@ -2367,7 +2365,7 @@ export class ImportAudioModal extends obsidian.Modal {
     this.processBtn.setText(`开始转写（${label}）`);
     this.processBtn.disabled = n === 0;
     if (this.selectionText) {
-      this.selectionText.setText(n ? `将按文件名升序合并处理` : "未选择音频");
+      this.selectionText.setText(n ? `将按文件名升序合并处理` : i18nT("No audio selected"));
     }
   }
   async process() {
@@ -2568,26 +2566,26 @@ export class BubbleWidget {
     };
     if (info.state === "idle") {
       this.el.addClass("is-idle");
-      makeDocButton("打开最近纪要", () => this.plugin.shell.openRecentNote());
+      makeDocButton(i18nT(" This run processes text only; the speech transcription service is not called."), () => this.plugin.shell.openRecentNote());
       const micBtn = this.el.createEl("button", {
         cls: "qnalog-bubble-main",
-        attr: { "aria-label": "开始会议录音", title: "开始会议录音" },
+        attr: { "aria-label": i18nT("Start meeting recording"), title: i18nT("Start meeting recording") },
       });
-      obsidian.setTooltip(micBtn, "开始会议录音", { placement: "top" });
+      obsidian.setTooltip(micBtn, i18nT("Start meeting recording"), { placement: "top" });
       this._paintIcon(micBtn, ["mic", "lucide-mic"]);
       micBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.startRecording(); };
       if (this.plugin.queue && this.plugin.queue.hasPendingGeneratePrompt && this.plugin.queue.hasPendingGeneratePrompt()) {
         const chip = this.el.createDiv({ cls: "qnalog-bubble-chip" });
         chip.setText(i18nT("Refining prompt"));
-        chip.setAttr("title", "后台正在生成自定义提示词。完成后会出现在提示词管理和录音模式列表里。");
+        chip.setAttr("title", i18nT("Generating custom prompt in the background. When complete, it will appear in the prompt management and recording mode lists."));
       }
     } else {
       this.el.addClass(info.state === "paused" ? "is-paused" : "is-recording");
       if (info.state === "recording" && this.wrapEl) this.wrapEl.addClass("is-recording-wrap");
       this.show();
-      makeDocButton("跳到当前录音笔记的转写位置", () => this.plugin.shell.openSessionNote());
+      makeDocButton(i18nT("Jump to the transcription position in the current recording note"), () => this.plugin.shell.openSessionNote());
       const ctrl = this.el.createDiv({ cls: "qnalog-bubble-ctrl" });
-      const pauseBtn = ctrl.createEl("button", { cls: `qnalog-bubble-btn ${info.state === "paused" ? "is-play-icon" : "is-pause-icon"}`, attr: { title: info.state === "paused" ? "继续" : "暂停", "aria-label": info.state === "paused" ? "继续" : "暂停" } });
+      const pauseBtn = ctrl.createEl("button", { cls: `qnalog-bubble-btn ${info.state === "paused" ? "is-play-icon" : "is-pause-icon"}`, attr: { title: info.state === "paused" ? "继续" : i18nT("Pause"), "aria-label": info.state === "paused" ? "继续" : i18nT("Pause") } });
       pauseBtn.onclick = (e) => { e.stopPropagation(); if (info.state === "paused") this.plugin.recorder.resume(); else this.plugin.recorder.pause(); };
       const stopBtn = ctrl.createEl("button", { cls: "qnalog-bubble-btn stop is-stop-icon", attr: { title: "停止并合并润色", "aria-label": "停止并合并润色" } });
       stopBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.stopRecording(); };
