@@ -4,7 +4,7 @@
 import type QnALogPlugin from "../main";
 import { isMobileRuntime } from "../shared/util-platform";
 
-import { isApimimoAsrProvider, makeRecordingIssue, resolveTranscribeProvider } from "../asr/transcribe";
+import { isChatInputAudioProvider, makeRecordingIssue, resolveTranscribeProvider } from "../asr/transcribe";
 
 import { assertAudioCaptureSupported, extFromMime, pickMimeType } from "../shared/util-audio";
 
@@ -180,9 +180,11 @@ export class RecorderService {
     this.issue = null;
     this.stopping = false;
     this.attachStreamInterruptionHandlers(this.stream);
-    // 选 APIMiMo 时录 Opus：它只收 wav/mp3，段落要本机解码转 WAV，而 Electron 解不了 AAC（解得了 Opus）。
+    // 选走 input_audio 协议的服务（MiMo、百炼 Qwen3-ASR Flash）时录 Opus：
+    // 这两条路都可能需要在本地解码音频（MiMo 必须转 WAV；百炼超过 5 分钟或 base64 超 10MB 时转码切块），
+    // 而 Electron 解不了 AAC、解得了 Opus。webm/opus 同时也在百炼的原生格式列表里，直发路径不受影响。
     let preferOpus = false;
-    try { preferOpus = isApimimoAsrProvider(resolveTranscribeProvider(this.plugin)); } catch { /* intentionally empty */ }
+    try { preferOpus = isChatInputAudioProvider(resolveTranscribeProvider(this.plugin)); } catch { /* intentionally empty */ }
     this.mime = pickMimeType(preferOpus);
     this.segmentIndex = 0;
     this.segmentStartOffsetMs = 0;

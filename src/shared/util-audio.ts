@@ -49,7 +49,7 @@ export function isAsrTransportError(error) {
 export function isAsrNonRetryableError(error) {
   if (error && error.nonRetryable) return true;
   const msg = String((error && error.message) || error || "");
-  return /密钥未配置|模型名称未配置|服务地址未配置|无法解码|仅 wav\/mp3|不被 MiMo 服务端接受|base64 仍超过|单次最多自动切|mime type must be/i.test(msg);
+  return /密钥未配置|模型名称未配置|服务地址未配置|无法解码|仅 wav\/mp3|不被 MiMo 服务端接受|不被 .{1,40} 接受|base64 仍超过|单次最多自动切|mime type must be/i.test(msg);
 }
 
 export function getNextAsrTaskRetryCount(currentRetries, maxRetries, error) {

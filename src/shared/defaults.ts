@@ -128,6 +128,19 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       language: "",
       hint: t("The cheapest streaming ASR in China, about ¥3.6/hour."),
     },
+    // 录音转写的分段方案。与上面的 dashscope 条目是两条独立路径：
+    // dashscope 走 WebSocket 实时识别，桌面可用、移动端不可用（移动端无法给 WebSocket 设鉴权头）；
+    // 本条目走 HTTP 的 OpenAI 兼容 Chat Completions，桌面与移动端都能用。
+    // 一站式快速配置选的是这一条，原因是移动端也要能跑通。
+    "dashscope-chat": {
+      name: "阿里云百炼 Qwen3-ASR Flash",
+      endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      apiKey: "",
+      model: "qwen3-asr-flash",
+      language: "",
+      protocol: "dashscope-chat-input-audio",
+      hint: t("Bailian Qwen3-ASR Flash. HTTP interface that works on both desktop and mobile; audio is uploaded segment by segment (up to 5 minutes and 10MB per request; longer recordings are converted and split automatically)."),
+    },
     "dashscope-filetrans": {
       name: t("Alibaba Cloud Bailian Fun-ASR"),
       endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",

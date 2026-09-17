@@ -169,11 +169,11 @@ describe("检测对象是候选配置", () => {
 
     const after = applyPresetPlan(saved, plan);
 
-    // 录音转写：实时流式模型
-    expect(after.activeTranscribeProvider).toBe("dashscope");
-    expect(after.transcribeProviders.dashscope.model).toBe("qwen-audio-3.0-asr-flash-streaming");
-    expect(after.transcribeProviders.dashscope.endpoint).toBe("wss://dashscope.aliyuncs.com/api-ws/v1/inference");
-    expect(after.transcribeProviders.dashscope.apiKey).toBe("sk-bailian");
+    // 录音转写：HTTP 分段模型（移动端也能用；实时流式在移动端拿不到鉴权头）
+    expect(after.activeTranscribeProvider).toBe("dashscope-chat");
+    expect(after.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
+    expect(after.transcribeProviders["dashscope-chat"].endpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    expect(after.transcribeProviders["dashscope-chat"].apiKey).toBe("sk-bailian");
 
     // 导入音频：整文件模型（与录音转写是两个独立服务）
     expect(after.importTranscribeProvider).toBe("dashscope-filetrans");
@@ -187,7 +187,7 @@ describe("检测对象是候选配置", () => {
     expect(after.llmApiKey).toBe("sk-bailian");
 
     // 三段共用同一把密钥
-    expect(after.transcribeProviders.dashscope.apiKey).toBe(after.llmApiKey);
+    expect(after.transcribeProviders["dashscope-chat"].apiKey).toBe(after.llmApiKey);
   });
 
   it("百炼一站式不需要用户提供任何地址或模型名", () => {
