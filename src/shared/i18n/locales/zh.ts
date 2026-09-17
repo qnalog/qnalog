@@ -10,15 +10,15 @@
 import type { MessageTable } from "../../i18n";
 
 export const ZH: MessageTable = {
-  "Q&A Log: Correct misrecognized text…": "Q&A Log：更正误识别词…",
-  "Q&A Log: Transcribe and organize": "Q&A Log：转写并整理",
-  "Q&A Log: Merge ": "Q&A Log：整合 ",
+  "QnALog: click to start/stop; hover to expand the controls": "QnALog：点击开始/停止，悬停展开控件",
+  "QnALog live minutes panel": "QnALog 实时纪要面板",
+  "QnALog: Correct misrecognized text…": "QnALog：更正误识别词…",
+  "QnALog: Transcribe and organize": "QnALog：转写并整理",
+  "QnALog: Merge ": "QnALog：整合 ",
   " audio files…": " 段音频…",
   "Organize as ": "整理为",
   " (": "（",
   " mode)": "模式）",
-  "Q&A Log: click to start/stop; hover to expand the controls": "Q&A Log：点击开始/停止，悬停展开控件",
-  "Q&A Log live minutes panel": "Q&A Log 实时纪要面板",
   "Organize as": "整理为",
   "OpenAI Official": "OpenAI 官方",
   "Alibaba Cloud Bailian Paraformer Realtime": "阿里云百炼 Paraformer Realtime",

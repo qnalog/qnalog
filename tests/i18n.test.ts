@@ -238,22 +238,30 @@ describe("覆盖完整性", () => {
     expect(missing, `profile 文案缺中文：${missing.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 
-  it("菜单标题含 & 的品牌名必须走 menuTitleFragment（否则 & 会被助记符解析吃掉）", () => {
-    // Obsidian 的 MenuItem.setTitle 传字符串时会把 `&x` 解析成快捷键标记，
-    // `&` 本身不显示——`Q&A Log` 因此渲染成 `QA Log`（维护者截图所见）。
-    // 传 DocumentFragment 才会按字面显示，故含 & 的标题必须走该 helper。
+  it("菜单标题不得出现 `&`（macOS 原生菜单会把它当快捷键标记吃掉）", () => {
+    // 实测结论：Obsidian 给 macOS 原生菜单转义 & 用的是 /\B&\B/，
+    // 要求 & 两侧都是非单词字符才双写成 &&。`Q&A` 两侧是 Q 与 A，转义不命中，
+    // Electron 便吃掉 `&A`，菜单显示成 `QA Log`。
+    // 这一层在 Obsidian 的菜单渲染代码里，插件侧改不掉：
+    // 传 DocumentFragment 也没用（丢失发生在渲染层，不是文本构建层）。
+    // 因此菜单标题里不要出现 &，品牌用标识符写法 `QnALog`。
     const offenders: string[] = [];
+    const menuApis = [
+      /\.setTitle\(([^\n]*)/g,
+      /\baddRibbonIcon\([^,]+,\s*([^,\n]*)/g,
+      /\baddCommand\(\{[^}]*?\bname:\s*([^,\n]*)/gs,
+    ];
     for (const f of walk(path.join(root, "src"))) {
       const src = fs.readFileSync(f, "utf8");
-      for (const m of src.matchAll(/\.setTitle\(([^\n]*)/g)) {
-        const arg = m[1];
-        if (!arg.includes("&")) continue;
-        // DocumentFragment 或 fragment helper 都算合法
-        if (/menuTitleFragment\(|DocumentFragment|createFragment\(/.test(arg)) continue;
-        offenders.push(`${path.basename(f)}: ${arg.slice(0, 60)}`);
+      for (const rx of menuApis) {
+        for (const m of src.matchAll(rx)) {
+          // 只看字面量里含 & 的；t("…") 里的键也要查
+          if (!/&/.test(m[1])) continue;
+          offenders.push(`${path.basename(f)}: ${m[1].slice(0, 56)}`);
+        }
       }
     }
-    expect(offenders, `& 未走 fragment：${offenders.slice(0, 3).join(" / ")}`).toEqual([]);
+    expect(offenders, `菜单标题含 &：${offenders.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 
   it("命令名、菜单标题、ribbon 提示不得硬编码中文（这些位置不在 t(\"...\") 调用点里）", () => {

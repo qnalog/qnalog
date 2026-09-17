@@ -133,18 +133,6 @@ export function getImportMarkerState(content) {
   };
 }
 
-/**
- * 把菜单标题包成 DocumentFragment，避免 `&` 被当成助记符吃掉。
- *
- * Obsidian 的 MenuItem.setTitle 接受 string | DocumentFragment。传字符串时
- * 里面的 `&x` 会被解析成快捷键标记，`&` 本身不显示——品牌名 `Q&A Log`
- * 因此渲染成 `QA Log`。传 DocumentFragment 则按字面显示。
- */
-export function menuTitleFragment(title: string): DocumentFragment {
-  const text = String(title == null ? "" : title);
-  return createFragment((fragment) => { fragment.textContent = text; });
-}
-
 export function qnalogConfirm(app, title, body, ctaText = t("Confirm")) {
   return new Promise((resolve) => {
     const modal = new obsidian.Modal(app);

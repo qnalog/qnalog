@@ -6,7 +6,6 @@ import { QnALogSettingTab } from "./ui/settings-tab";
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
 import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrectionModal } from "./ui/modals";
-import { menuTitleFragment } from "./ui/helpers";
 
 import {getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -238,7 +237,7 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.tasks.startStatusBar();
 
-    this.ribbonEl = this.addRibbonIcon("mic", t("Q&A Log: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
+    this.ribbonEl = this.addRibbonIcon("mic", t("QnALog: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
     this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this));
@@ -249,7 +248,7 @@ class QnALogPlugin extends obsidian.Plugin {
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
-    this.addRibbonIcon("list-tree", t("Q&A Log live minutes panel"), () => this.shell.openOutlineView());
+    this.addRibbonIcon("list-tree", t("QnALog live minutes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
@@ -371,6 +370,12 @@ class QnALogPlugin extends obsidian.Plugin {
     // 选中文字 → 右键 → 更正误识别词。只改当前笔记，不写词表。
     // 入口放在编辑器菜单而不是文件菜单：用户看到错词时正在正文里，
     // 让「选中即更正」一步可达，不必开弹窗再手打一遍错词。
+    //
+    // 菜单标题用 `QnALog`（标识符写法）而不是书面名 `Q&A Log`：
+    // macOS 原生菜单把 `&` 当快捷键标记。Obsidian 只在 `&` 两侧都是非单词字符时
+    // 才转义（正则 /\B&\B/），而 `Q&A` 的 `&` 两侧是 Q 与 A，转义不命中，
+    // Electron 便吃掉 `&A`，显示成 `QA Log`。用 DocumentFragment 传标题也无效——
+    // 丢失发生在菜单渲染层，不是文本构建层。
     this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor, info) => {
       const file = info && info.file;
       if (!(file instanceof obsidian.TFile)) return;
@@ -380,7 +385,7 @@ class QnALogPlugin extends obsidian.Plugin {
       if (selection.includes("\n") || selection.length > 80) return;
       menu.addSeparator();
       menu.addItem((item) => {
-        item.setTitle(menuTitleFragment(t("Q&A Log: Correct misrecognized text…")))
+        item.setTitle(t("QnALog: Correct misrecognized text…"))
           .setIcon("replace")
           .onClick(() => new TextCorrectionModal(this.app, file, selection).open());
       });
@@ -392,7 +397,7 @@ class QnALogPlugin extends obsidian.Plugin {
       if (AUDIO_EXT.has(ext)) {
         menu.addSeparator();
         menu.addItem((item) => {
-          item.setTitle(menuTitleFragment(t("Q&A Log: Transcribe and organize")))
+          item.setTitle(t("QnALog: Transcribe and organize"))
             .setIcon("mic")
             .onClick(() => this.imports.openAudioImportOptions([file.path]));
         });
@@ -405,7 +410,7 @@ class QnALogPlugin extends obsidian.Plugin {
       const paths = audios.map((f) => f.path);
       menu.addSeparator();
       menu.addItem((item) => {
-        item.setTitle(menuTitleFragment(`${t("Q&A Log: Merge ")}${audios.length}${t(" audio files…")}`)).setIcon("mic");
+        item.setTitle(`${t("QnALog: Merge ")}${audios.length}${t(" audio files…")}`).setIcon("mic");
         const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
         const modes = getVisibleModeEntries(this.settings, false);
         for (const [m, label] of modes) {
