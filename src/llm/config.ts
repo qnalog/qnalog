@@ -208,20 +208,23 @@ export const ONE_CARD_PROVIDERS = {
   // 一站式方案：一把百炼 API Key 同时配好「录音转写 / 导入音频 / AI 整理」三段。
   // 地址与模型全部内置，用户只需填密钥——这是首次配置唯一的正式推荐路径。
   //
-  // 模型依据（2026-09-15 查证阿里云百炼模型列表与 API 参考，见 MAINTAINING §11.1）：
-  //   - 录音转写 qwen-audio-3.0-asr-flash-streaming：WebSocket 实时识别，
-  //     走 wss://…/api-ws/v1/inference（与既有 dashscope-ws 协议一致）。
+  // 模型依据（2026-09-17 查证阿里云百炼模型列表与 Qwen-ASR API 参考，见 MAINTAINING §11.1）：
+  //   - 录音转写 qwen3-asr-flash：非实时、HTTP（OpenAI 兼容），走
+  //     /compatible-mode/v1/chat/completions 的 input_audio 字段（与既有 apimimo 协议同形状）。
+  //     选它而不是 qwen-audio-3.0-asr-flash-streaming：后者是 WebSocket 实时识别，
+  //     鉴权只能走 Authorization 请求头，而手机端浏览器的 WebSocket API 不允许设置请求头，
+  //     因此那条路在移动端必然失败。非实时模型桌面与移动端都能用，符合「一次配置到处可用」。
   //   - 导入音频 qwen-audio-3.0-asr-flash-filetrans：DashScope 异步调用，支持说话人分离，
   //     走 /api/v1/services/audio/asr/transcription（与既有 dashscope-filetrans 协议一致）。
   //   - AI 整理 qwen3.8-flash：OpenAI 兼容 Chat Completions。
   bailian: {
     label: "Alibaba Cloud Bailian",
     scope: "asr-llm",
-    // 录音转写（实时）
-    asrProvider: "dashscope",
+    // 录音转写（分段，桌面与移动端通用）
+    asrProvider: "dashscope-chat",
     asrTarget: "recording",
-    asrEndpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
-    asrModel: "qwen-audio-3.0-asr-flash-streaming",
+    asrEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    asrModel: "qwen3-asr-flash",
     // 导入音频（整文件，带说话人分离）
     importAsrProvider: "dashscope-filetrans",
     importAsrEndpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",

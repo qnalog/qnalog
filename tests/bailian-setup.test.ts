@@ -46,9 +46,10 @@ describe("百炼一站式配置", () => {
 
     const settings = applyPresetPlan(start, planPresetApplication(start, { providerId: "bailian", apiKey: KEY }));
 
-    expect(settings.transcribeProviders.dashscope.model).toBe("qwen-audio-3.0-asr-flash-streaming");
-    expect(settings.transcribeProviders.dashscope.endpoint).toBe("wss://dashscope.aliyuncs.com/api-ws/v1/inference");
-    expect(settings.activeTranscribeProvider).toBe("dashscope");
+    // 录音转写：HTTP 分段模型，桌面与移动端通用（实时流式在移动端拿不到鉴权头）
+    expect(settings.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
+    expect(settings.transcribeProviders["dashscope-chat"].endpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    expect(settings.activeTranscribeProvider).toBe("dashscope-chat");
 
     expect(settings.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.0-asr-flash-filetrans");
     expect(settings.importTranscribeProvider).toBe("dashscope-filetrans");
@@ -57,7 +58,7 @@ describe("百炼一站式配置", () => {
     expect(settings.llmEndpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     expect(settings.llmServicePreset).toBe("dashscope");
 
-    for (const key of [settings.transcribeProviders.dashscope.apiKey,
+    for (const key of [settings.transcribeProviders["dashscope-chat"].apiKey,
                        settings.transcribeProviders["dashscope-filetrans"].apiKey,
                        settings.llmApiKey]) {
       expect(key).toBe(KEY);

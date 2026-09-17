@@ -958,21 +958,52 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 | 用途 | 服务（provider id） | 模型 | 接入方式 |
 |---|---|---|---|
-| 录音转写（实时） | `dashscope` | `qwen-audio-3.0-asr-flash-streaming` | WebSocket `wss://dashscope.aliyuncs.com/api-ws/v1/inference` |
+| 录音转写（分段） | `dashscope-chat` | `qwen3-asr-flash` | HTTP（OpenAI 兼容）`/compatible-mode/v1/chat/completions` |
 | 导入音频（整文件） | `dashscope-filetrans` | `qwen-audio-3.0-asr-flash-filetrans` | DashScope 异步 `/api/v1/services/audio/asr/transcription` |
 | AI 整理 | 服务预设 `dashscope` | `qwen3.8-flash` | OpenAI 兼容 `/compatible-mode/v1` |
 
 三段共用同一把密钥，写入范围仍受 §10.1 的 `PRESET_WRITTEN_FIELDS` 约束。
 
-**模型与接入方式的核实依据**（2026-09-15 查阿里云百炼公开文档）：
+**录音转写为什么不用实时流式**（2026-09-17 改动）：
 
-- 三个模型均出现在百炼「选择模型 → 音频与语音 → 语音识别 / 文本生成」列表中。
+原选用的 `qwen-audio-3.0-asr-flash-streaming` 走 WebSocket 实时识别，
+鉴权只能通过 `Authorization` 请求头传递（官方 Python / Java / Node 三种示例均为自定义请求头；
+文档中 `Sec-WebSocket-Protocol` 出现 0 次，查询参数传密钥也是 0 次）。
+但浏览器的 `WebSocket` 构造器不接受请求头——第二参数是子协议字符串，
+传对象会抛 `SyntaxError: Failed to construct 'WebSocket': The subprotocol '[object Object]' is invalid`。
+插件因此只能用 Node 的 `ws` 包，而 Obsidian 移动端不提供 Node 模块
+（`scripts/check-mobile-bundle-load.mjs` 的沙箱会拒绝 `require("ws")`）。
+**结论：实时流式在移动端是规范级的死路，与模型和地址无关。**
+
+改用 `qwen3-asr-flash` 后桌面与移动端走同一条 HTTP 路径，一次配置两端可用。
+代价是失去「边说边出字」——但整段音频能容纳说话人自己的纠正
+（例如说完专有名词后逐字母拼读），实时流式在用户读出字母时已把前句定稿，拿不到这份信息。
+
+**模型与接入方式的核实依据**（2026-09-17 查阿里云百炼「语音识别概述」与「非实时语音识别（Qwen-ASR）API 参考」）：
+
+- `qwen3-asr-flash` 在模型表中标注为「非实时 / HTTP（OpenAI 兼容）」，
+  单次上限「5 分钟 / 10MB」。
+- 请求形状为 `POST {base}/chat/completions`，body 里
+  `messages[].content[].input_audio.data` 取 `data:{MIME};base64,...`；
+  与既有 `apimimo` 协议同形状，因此复用同一条实现（`src/asr/transcribe.ts`），只按服务取参数。
+- 文档要求语种不确定时**省略** `asr_options.language`，不能填 `auto`；
+  MiMo 则要求始终下发（含 `auto`）。这是两者唯一的协议差异点。
+- 响应正文在 `choices[0].message.content`（非流式）或 `choices[0].delta.content`（流式），
+  与既有解析一致。
+- 上限「10MB」按十进制 10,000,000 字节取值：文档没写清是哪一种 MB，取更严的那个。
+  切块尺寸因此定为 3 分钟（16kHz 单声道 16-bit WAV = 32,000 字节/秒，
+  3 分钟 base64 后约 7.68MB；4 分钟即达 10.24MB 超限）。
 - `qwen-audio-3.0-asr-flash-filetrans` 与 Fun-ASR 同为**异步调用**，用 `file_urls`、
   `X-DashScope-Async: enable`、轮询 `/api/v1/tasks/{id}`——与既有 `dashscope-filetrans` 实现一致，
   因此沿用该协议，未新增协议分支。
 - `qwen-audio-3.0-asr-flash-streaming` 走实时识别的 WebSocket 协议
   （`run-task` → `result-generated` → `finish-task`），与既有 `dashscope-ws` 实现一致。
+  该条目保留在设置里，桌面用户仍可手动选用。
 - 该模型支持 `language_hints`（最多 4 个值）、`format`、`sample_rate`。
+
+**对既有用户的影响**：预设只在用户于设置界面主动点「保存并启用」时才写入
+（`src/setup/index.ts` 的 `planPresetApplication` 由 `src/ui/settings-tab.ts` 调用，加载时不触发），
+因此已经在用 `dashscope` 实时流式的用户不受影响，配置不会被改写。
 
 ### 11.2 顺带修掉的协议缺陷（`src/asr/realtime-params.ts`）
 
@@ -998,8 +1029,12 @@ Qwen-Audio-3.0-ASR-Flash-Streaming / Fun-ASR-Realtime 的参数表中没有它�
 
 ### 11.4 已知限制
 
-- **移动端不支持流式录音转写**（既有限制，与模型无关）：移动端没有能设置鉴权头的 WebSocket。
-  移动端录音时插件会提示改用分段转写服务，音频仍会保留。
+- **录音转写不再是移动端限制。** 一站式方案现在用非实时的 `qwen3-asr-flash`（HTTP），
+  桌面与移动端走同一条路径。原先的实时流式模型在移动端不可用（无法给 WebSocket 设鉴权头），
+  该条目仍保留在设置里供桌面用户手动选用，移动端选中它时会提示改用分段服务。
+- 录音转写失去「边说边出字的实时流」。分段仍按分段间隔逐段出字（间隔默认 5 分钟）。
+  单段超过服务端单次上限（5 分钟 / base64 后 10MB）时，插件在本机解码并切成 3 分钟以内的块后上传；
+  MediaRecorder 录的 webm/opus 体积远小于 WAV，5 分钟的段通常可原样直发，不触发切块。
 - 百炼一站式方案需要用户在百炼控制台**开通对应模型**，否则检测会失败并如实报出是哪个环节。
 
 ### 11.5 真机验证发现的两处修正（2026-09-15）

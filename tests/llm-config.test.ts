@@ -14,11 +14,11 @@ describe("LLM 服务预设", () => {
     // 界面上不该再出现需要用户选择的模型项（见 MAINTAINING §10.6）。
     expect(ONE_CARD_PROVIDERS.bailian).toMatchObject({
       scope: "asr-llm",
-      // 录音转写走实时流式
-      asrProvider: "dashscope",
+      // 录音转写走 HTTP 分段：移动端无法给 WebSocket 设鉴权头，实时流式那条路在手机上必败。
+      asrProvider: "dashscope-chat",
       asrTarget: "recording",
-      asrModel: "qwen-audio-3.0-asr-flash-streaming",
-      asrEndpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+      asrModel: "qwen3-asr-flash",
+      asrEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
       // 导入音频走整文件 + 说话人分离
       importAsrProvider: "dashscope-filetrans",
       importAsrModel: "qwen-audio-3.0-asr-flash-filetrans",
