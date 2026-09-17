@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
-import { delayMs, extFromMime, isAsrTransportError } from '../shared/util-audio';
+import { delayMs, extFromMime, mimeFromExt, isAsrTransportError } from '../shared/util-audio';
 import { extractLlmContent } from '../shared/util-json';
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { assertSafeServiceEndpoint, canOmitServiceApiKey } from '../shared/util-llm-endpoint';
@@ -220,31 +220,163 @@ export function getTranscribeRequestTimeoutMs(provider, blobBytes?) {
 
 export const APIMIMO_ASR_PROTOCOL = "apimimo-chat-input-audio";
 
+// 百炼的 qwen3-asr-flash 用同一套 OpenAI 兼容 Chat Completions + input_audio 协议，
+// 但参数与 MiMo 不同：语种不可填 auto（文档要求不确定时整个字段省略）、
+// 单次 5 分钟 / base64 后 10MB、无 2K 输出上限、无 TPM 配速限制。
+export const DASHSCOPE_CHAT_ASR_PROTOCOL = "dashscope-chat-input-audio";
+
 export const APIMIMO_ASR_MAX_BASE64_BYTES = Math.floor(9.5 * 1024 * 1024);
 
-export const APIMIMO_ASR_NATIVE_EXTS = new Set(["mp3", "wav"]);
+// 百炼文档原文：「Base64 编码会增大体积，请控制原文件大小，确保编码后仍符合输入音频大小限制（10MB）」。
+// 按十进制 10,000,000 字节取值，而不是 10×1024×1024：文档没写清是哪种 MB，
+// 取更严的那个，两种读法下都不会超限。
+export const DASHSCOPE_CHAT_ASR_MAX_BASE64_BYTES = 10 * 1000 * 1000;
 
-// 2 分钟：MiMo 单次输出上限 2K tokens，3 分钟密集中文讲话的转写文字会超 2K 被截断（实测触顶）；
+// 走本机转码的格式：MediaRecorder 产出 webm/ogg/mp4，服务端虽多数格式都收，
+// 但只有统一转成 WAV 才能按精确时长切块（见 getChatInputAudioNativePlan 的说明）。
+export const CHAT_INPUT_AUDIO_NATIVE_EXTS = new Set(["mp3", "wav"]);
+
+export const APIMIMO_ASR_NATIVE_EXTS = CHAT_INPUT_AUDIO_NATIVE_EXTS;
+
+// MiMo 切块 2 分钟：单次输出上限 2K tokens，3 分钟密集中文讲话的转写文字会超 2K 被截断（实测触顶）；
 // 收窄到 2 分钟让输出稳在 2K 以内。总配速按音频秒数计、与块数无关，故缩小切块不增 TPM 压力。
 export const APIMIMO_ASR_CHUNK_MS = 2 * 60 * 1000;
 
+// 百炼切块 3 分钟：限制来自单次 5 分钟 / base64 后 10MB。16kHz 单声道 16-bit WAV 为
+// 32,000 字节/秒，3 分钟 = 5.76MB，base64 后约 7.68MB，留出余量；4 分钟则达 10.24MB 超出上限。
+// 官方没有输出 token 上限，故不必像 MiMo 那样为截断收窄。
+export const DASHSCOPE_CHAT_ASR_CHUNK_MS = 3 * 60 * 1000;
+
+// 服务端单次请求的硬上限：文档「≤10MB；≤5分钟」。切块尺寸（3 分钟）比它紧，
+// 所以只有明确不超过 5 分钟的音频才可能原样直发。
+export const DASHSCOPE_CHAT_ASR_MAX_DURATION_MS = 5 * 60 * 1000;
+
+// 百炼 natively 接受的格式（文档列出 aac/amr/avi/flac/flv/m4a/mkv/mov/mp3/mp4/mpeg/ogg/opus/wav/webm/wma/wmv）。
+// 这里只列 MediaRecorder 会产出的几种：列进去就能在时长合规时原样直发，
+// 省掉「5 分钟 opus ≈ 1.6MB」→「3 分钟 WAV base64 ≈ 7.7MB」的转码与体积膨胀。
+// 超过时长或体积上限时仍会解码切块，所以列进来不会绕过限制。
+export const DASHSCOPE_CHAT_ASR_NATIVE_EXTS = new Set(["webm", "ogg", "mp4", "m4a", "mp3", "wav", "flac", "aac"]);
+
+export const DASHSCOPE_CHAT_ASR_MAX_CHUNKS = 240;
+
 export const APIMIMO_ASR_MAX_CHUNKS = 160;
 
-export function apimimoNativeAudioMime(ext) {
-  switch (ext) {
-    case "mp3": return "audio/mpeg";
-    case "wav": return "audio/wav";
-    default: return "";
-  }
+/**
+ * 同一套 input_audio 协议下各服务的差异点。切块、SSE 解析、请求构造都是共用的，
+ * 只有这些参数按服务取值。
+ */
+export interface ChatInputAudioProfile {
+  /** 判定用：该 provider 是否走本协议。 */
+  protocol: string;
+  /**
+   * 切块时每块的最大时长（毫秒）。
+   * 取「服务端单次上限」与「单块 base64 体积上限」中更紧的一个：
+   * 16kHz 单声道 16-bit WAV 为 32,000 字节/秒，3 分钟 = 5.76MB，base64 后约 7.68MB。
+   */
+  chunkMs: number;
+  /**
+   * 服务端单次请求允许的最大音频时长（毫秒）。
+   * 只有它以内的音频才可能原样直发；超过就必须切块。
+   * MiMo 的瓶颈是 2K 输出 tokens，故与 chunkMs 同为 2 分钟；
+   * 百炼是 5 分钟，比切块尺寸（受体积限制）更宽松。
+   */
+  maxDurationMs: number;
+  /** 单次请求最多自动切多少块。 */
+  maxChunks: number;
+  /** 单块 base64 后允许的体积上限。 */
+  maxBase64Bytes: number;
+  /** 服务名，用于错误文案。 */
+  label: string;
+  /** 服务简称，用于「第 N/M 块」这类紧凑文案与诊断消息。 */
+  shortLabel: string;
+  /** 诊断键前缀，生成 `asr.<slug>_empty_chunk` 这类键名。 */
+  diagnosticSlug: string;
+  /** provider 未填模型时的兜底模型名。 */
+  defaultModel: string;
+  /**
+   * 服务端接受的原始音频格式（不经本机转码直接上传）。
+   * 空集合表示任何格式都先转码——百炼收 webm，但只有 WAV 能按精确时长切块。
+   */
+  nativeExts: Set<string>;
+  /**
+   * 服务端是否直接拒收 nativeExts 之外的格式。
+   * MiMo 实测发 audio/mp4 直接 400，属拒收；百炼多数格式都收，转码只为精确切块。
+   * 只影响解码失败时的错误措辞。
+   */
+  serverRejectsNonNative: boolean;
+  /** 原生格式的展示文本，用在错误信息里。显式写出来，不从 nativeExts 推导。 */
+  nativeFormatsLabel: string;
+  /** 语种参数取值；返回空串表示整个 asr_options.language 字段都不下发。 */
+  languageFor: (language: string) => string;
+  /** 是否启用按音频秒数计的 TPM 配速（MiMo 10K TPM 需要，百炼不需要）。 */
+  tpmPacing: boolean;
 }
 
-export function isApimimoAsrProvider(provider) {
+const APIMIMO_PROFILE: ChatInputAudioProfile = {
+  protocol: APIMIMO_ASR_PROTOCOL,
+  chunkMs: APIMIMO_ASR_CHUNK_MS,
+  maxDurationMs: APIMIMO_ASR_CHUNK_MS,
+  maxChunks: APIMIMO_ASR_MAX_CHUNKS,
+  maxBase64Bytes: APIMIMO_ASR_MAX_BASE64_BYTES,
+  label: "APIMiMo-V2.5-ASR",
+  shortLabel: "APIMiMo",
+  diagnosticSlug: "apimimo",
+  defaultModel: "mimo-v2.5-asr",
+  nativeExts: APIMIMO_ASR_NATIVE_EXTS,
+  serverRejectsNonNative: true,
+  nativeFormatsLabel: "wav/mp3",
+  // MiMo 文档仅支持 auto / zh / en；其它值（含空 / 方言码）一律归一为 auto。
+  languageFor: (language) => {
+    const lang = String(language || "").trim().toLowerCase();
+    return (lang === "zh" || lang === "en") ? lang : "auto";
+  },
+  tpmPacing: true,
+};
+
+const DASHSCOPE_CHAT_PROFILE: ChatInputAudioProfile = {
+  protocol: DASHSCOPE_CHAT_ASR_PROTOCOL,
+  chunkMs: DASHSCOPE_CHAT_ASR_CHUNK_MS,
+  maxDurationMs: DASHSCOPE_CHAT_ASR_MAX_DURATION_MS,
+  maxChunks: DASHSCOPE_CHAT_ASR_MAX_CHUNKS,
+  maxBase64Bytes: DASHSCOPE_CHAT_ASR_MAX_BASE64_BYTES,
+  label: "百炼 qwen3-asr-flash",
+  shortLabel: "百炼 qwen3-asr-flash",
+  diagnosticSlug: "dashscope_chat",
+  defaultModel: "qwen3-asr-flash",
+  // MediaRecorder 产出的 webm/ogg/mp4 都在此列：时长达标就原样直发，
+  // 超出 5 分钟或 base64 超 10MB 时才解码切块（见 getChatInputAudioPlan）。
+  nativeExts: DASHSCOPE_CHAT_ASR_NATIVE_EXTS,
+  serverRejectsNonNative: false,
+  nativeFormatsLabel: "webm/ogg/mp4/mp3/wav 等",
+  // 文档：「若音频语种不确定，或包含多种语种…请勿指定该参数」。故只透传明确的语种码，
+  // 其余（含 auto / 空）一律不下发该字段。取值域比 MiMo 宽。
+  languageFor: (language) => {
+    const lang = String(language || "").trim().toLowerCase();
+    if (!lang || lang === "auto") return "";
+    return /^[a-z]{2,3}$/.test(lang) ? lang : "";
+  },
+  tpmPacing: false,
+};
+
+export function getChatInputAudioProfile(provider): ChatInputAudioProfile | null {
   const p = provider || {};
-  if (p.protocol === APIMIMO_ASR_PROTOCOL) return true;
+  const protocol = String(p.protocol || "");
+  if (protocol === DASHSCOPE_CHAT_ASR_PROTOCOL) return DASHSCOPE_CHAT_PROFILE;
+  if (protocol === APIMIMO_ASR_PROTOCOL) return APIMIMO_PROFILE;
   const id = String(p.id || "").toLowerCase();
   const endpoint = String(p.endpoint || "").toLowerCase();
   const model = String(p.model || "").toLowerCase();
-  return id === "apimimo" || endpoint.includes("xiaomimimo.com") || model === "mimo-v2.5-asr";
+  if (id === "apimimo" || endpoint.includes("xiaomimimo.com") || model === "mimo-v2.5-asr") return APIMIMO_PROFILE;
+  if (id === "dashscope-chat" || model === "qwen3-asr-flash") return DASHSCOPE_CHAT_PROFILE;
+  return null;
+}
+
+export function isApimimoAsrProvider(provider) {
+  return getChatInputAudioProfile(provider)?.protocol === APIMIMO_ASR_PROTOCOL;
+}
+
+export function isChatInputAudioProvider(provider) {
+  return getChatInputAudioProfile(provider) !== null;
 }
 
 export function normalizeApimimoAsrEndpoint(endpoint) {
@@ -261,70 +393,81 @@ export function normalizeApimimoAsrEndpoint(endpoint) {
   return noTrail;
 }
 
-export function apimimoPermanentError(message) {
+/**
+ * 标记为不可重试的转写错误：格式不被接受、本机无法解码、超过体积上限等，
+ * 重试同样必败，队列据此直接吃满重试退出（见 src/notes/audio-refs.ts）。
+ */
+export function chatInputAudioPermanentError(message) {
   const err = new Error(message) as Error & { nonRetryable?: boolean };
   err.nonRetryable = true;
   return err;
 }
 
-// MiMo 的单次 2K 输出上限不仅受上传体积影响，也受音频时长影响。
-// WAV/MP3 都可能来自不同采样率或码率，仅凭文件体积无法可靠判断时长，因此原生格式也先解码核实。
+// 单次上限既受上传体积影响，也受音频时长影响。WAV/MP3 都可能来自不同采样率或码率，
+// 仅凭文件体积无法可靠判断时长，因此原生格式也先解码核实。
 // decodedDurationMs 传入后给出最终 direct/split 决策，未传时给出 inspect 预判。
-export function getApimimoNativeAudioPlan(blob, mime, decodedDurationMs?) {
+export function getChatInputAudioPlan(profile, blob, mime, decodedDurationMs?) {
   const inputMime = String(mime || (blob && blob.type) || "").toLowerCase();
   const ext = extFromMime(inputMime);
-  const nativeMime = APIMIMO_ASR_NATIVE_EXTS.has(ext) ? apimimoNativeAudioMime(ext) : "";
+  const isNative = profile.nativeExts.has(ext);
+  const nativeMime = isNative ? mimeFromExt(ext) : "";
   if (!nativeMime) return { nativeMime: "", action: "transcode" };
-  const overSize = approxBase64Bytes(blob && blob.size) > APIMIMO_ASR_MAX_BASE64_BYTES;
+  const overSize = approxBase64Bytes(blob && blob.size) > profile.maxBase64Bytes;
   if (Number.isFinite(Number(decodedDurationMs))) {
-    const tooLong = Math.max(0, Number(decodedDurationMs) || 0) > APIMIMO_ASR_CHUNK_MS;
+    const tooLong = Math.max(0, Number(decodedDurationMs) || 0) > profile.maxDurationMs;
     return { nativeMime, action: (!overSize && !tooLong) ? "direct" : "split" };
   }
   return { nativeMime, action: "inspect" };
 }
 
-export async function buildApimimoAsrChunks(blob, mime) {
+export async function buildChatInputAudioChunks(profile, blob, mime) {
   const inputMime = String(mime || (blob && blob.type) || "").toLowerCase();
-  const initialPlan = getApimimoNativeAudioPlan(blob, inputMime);
+  const initialPlan = getChatInputAudioPlan(profile, blob, inputMime);
   const nativeMime = initialPlan.nativeMime;
+  const chunkMinutes = Math.round(profile.chunkMs / 60000);
 
-  // 只有拿到解码后的真实时长才允许原样直发，避免低码率长音频绕过 2 分钟切块。
+  // 只有拿到解码后的真实时长才允许原样直发，避免低码率长音频绕过时长上限。
   if (initialPlan.action === "direct") {
     return [{ blob, mime: nativeMime }];
   }
 
-  // 走到这里：非 wav/mp3、原生音频可能超过 2 分钟，或 base64 超过 10MB。
+  // 走到这里：非原生格式、原生音频可能超过时长上限，或 base64 超过体积上限。
   let audioBuffer;
   try {
     audioBuffer = await decodeAudioBlob(blob);
   } catch (e) {
     // 原生格式本身能被服务端接收。仅在本机无法核实时长、且上传体积仍合法时保留兼容直发；
     // 非原生格式或超体积音频仍必须报错，不能把服务端必拒的请求发出去。
-    if (nativeMime && approxBase64Bytes(blob.size) <= APIMIMO_ASR_MAX_BASE64_BYTES) {
+    if (nativeMime && approxBase64Bytes(blob.size) <= profile.maxBase64Bytes) {
       return [{ blob, mime: nativeMime }];
     }
-    const hint = nativeMime
-      ? `该音频 base64 超 10MB 需切块，但本机无法解码它（${e && e.message ? e.message : e}）`
-      : `格式 ${inputMime || "unknown"} 不被 MiMo 服务端接受（仅 wav/mp3），需转码但本机无法解码（${e && e.message ? e.message : e}）`;
-    throw apimimoPermanentError(`APIMiMo-V2.5-ASR：${hint}。请改用 SiliconFlow 转写此段，或缩短分段间隔后重录。`);
+    const reason = profile.serverRejectsNonNative
+      ? `格式 ${inputMime || "unknown"} 不被 ${profile.label} 接受（仅 ${profile.nativeFormatsLabel}）`
+      : `格式 ${inputMime || "unknown"} 需先转成 WAV 才能按 ${chunkMinutes} 分钟切块`;
+    const detail = e && e.message ? e.message : e;
+    throw chatInputAudioPermanentError(`${profile.label}：${reason}，但本机无法解码它（${detail}）。请改用其它转写服务，或缩短分段间隔后重录。`);
   }
   const totalMs = Math.max(1, Math.round((audioBuffer.duration || 0) * 1000));
-  const decodedPlan = getApimimoNativeAudioPlan(blob, inputMime, totalMs);
+  const decodedPlan = getChatInputAudioPlan(profile, blob, inputMime, totalMs);
   if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime }];
-  const chunkCount = Math.ceil(totalMs / APIMIMO_ASR_CHUNK_MS);
-  if (chunkCount > APIMIMO_ASR_MAX_CHUNKS) {
-    throw apimimoPermanentError(`APIMiMo-V2.5-ASR 单次最多自动切 ${APIMIMO_ASR_MAX_CHUNKS} 块（约 ${Math.round(APIMIMO_ASR_MAX_CHUNKS * APIMIMO_ASR_CHUNK_MS / 60000)} 分钟）；当前约 ${Math.round(totalMs / 60000)} 分钟过长。请缩短分段间隔，或对超长录音改用支持大文件的 ASR 服务。`);
+  const chunkCount = Math.ceil(totalMs / profile.chunkMs);
+  if (chunkCount > profile.maxChunks) {
+    throw chatInputAudioPermanentError(`${profile.label} 单次最多自动切 ${profile.maxChunks} 块（约 ${Math.round(profile.maxChunks * profile.chunkMs / 60000)} 分钟）；当前约 ${Math.round(totalMs / 60000)} 分钟过长。请缩短分段间隔，或对超长录音改用支持大文件的 ASR 服务。`);
   }
   const chunks = [];
-  for (let startMs = 0; startMs < totalMs; startMs += APIMIMO_ASR_CHUNK_MS) {
-    const endMs = Math.min(totalMs, startMs + APIMIMO_ASR_CHUNK_MS);
+  for (let startMs = 0; startMs < totalMs; startMs += profile.chunkMs) {
+    const endMs = Math.min(totalMs, startMs + profile.chunkMs);
     const wavBlob = await renderAudioBufferSliceToWav(audioBuffer, startMs, endMs);
-    if (approxBase64Bytes(wavBlob.size) > APIMIMO_ASR_MAX_BASE64_BYTES) {
-      throw apimimoPermanentError(`APIMiMo-V2.5-ASR 转码后单块 base64 仍超过 10MB（${formatUploadSize(wavBlob.size)}）。请改用支持更大切片的 ASR 服务。`);
+    if (approxBase64Bytes(wavBlob.size) > profile.maxBase64Bytes) {
+      throw chatInputAudioPermanentError(`${profile.label} 转码后单块 base64 仍超过 ${Math.round(profile.maxBase64Bytes / 1024 / 1024)}MB（${formatUploadSize(wavBlob.size)}）。请改用支持更大切片的 ASR 服务。`);
     }
     chunks.push({ blob: wavBlob, mime: "audio/wav" });
   }
   return chunks;
+}
+
+export function getApimimoNativeAudioPlan(blob, mime, decodedDurationMs?) {
+  return getChatInputAudioPlan(APIMIMO_PROFILE, blob, mime, decodedDurationMs);
 }
 
 export function extractApimimoAsrText(data) {
@@ -393,7 +536,8 @@ export function applyApimimoSseData(acc, payloadStr) {
   return acc;
 }
 
-export async function requestApimimoAsrChunk(
+export async function requestChatInputAudioChunk(
+  profile: ChatInputAudioProfile,
   provider,
   prepared,
   endpoint,
@@ -401,7 +545,8 @@ export async function requestApimimoAsrChunk(
 ) {
   assertSafeServiceEndpoint(endpoint, "http", "转写服务地址");
   // 安全校验后立即执行 TPM 配速（在读 arrayBuffer/编码 base64 之前），确保跨块、跨会话的请求间隔满足 10K TPM。
-  await waitApimimoTpmSlot(prepared.blob, prepared.mime);
+  // 只有按量配速的服务才需要；百炼没有该限制，等下去只会平白拖慢录音分段。
+  if (profile.tpmPacing) await waitApimimoTpmSlot(prepared.blob, prepared.mime);
   const ab = await prepared.blob.arrayBuffer();
   const audioDataUrl = `data:${prepared.mime};base64,${qnalogArrayBufferToBase64(ab)}`;
   // 三段式超时（替代原先单一固定计时器）：
@@ -409,8 +554,8 @@ export async function requestApimimoAsrChunk(
   // - 空闲超时 60s：进入流式后每收到一个网络分片就重置——只要 token 还在流动就永不误杀；
   // - 总时长封顶 10 分钟：防御服务端无限慢速滴流。
   const firstByteTimeoutMs = getTranscribeRequestTimeoutMs(Object.assign({}, provider, { endpoint }), prepared.blob && prepared.blob.size);
-  const APIMIMO_SSE_IDLE_TIMEOUT_MS = 60 * 1000;
-  const APIMIMO_SSE_TOTAL_CAP_MS = 10 * 60 * 1000;
+  const CHAT_INPUT_SSE_IDLE_TIMEOUT_MS = 60 * 1000;
+  const CHAT_INPUT_SSE_TOTAL_CAP_MS = 10 * 60 * 1000;
   const requestStartedAt = Date.now();
   emitAsrLifecycle(observer, {
     type: "request-start",
@@ -428,17 +573,16 @@ export async function requestApimimoAsrChunk(
   };
   if (controller) {
     totalTimer = window.setTimeout(() => {
-      abortHint = `总时长超过 ${Math.round(APIMIMO_SSE_TOTAL_CAP_MS / 1000)} 秒仍未完成`;
+      abortHint = `总时长超过 ${Math.round(CHAT_INPUT_SSE_TOTAL_CAP_MS / 1000)} 秒仍未完成`;
       controller.abort();
-    }, APIMIMO_SSE_TOTAL_CAP_MS);
+    }, CHAT_INPUT_SSE_TOTAL_CAP_MS);
     armPhaseTimer(firstByteTimeoutMs, `${Math.round(firstByteTimeoutMs / 1000)} 秒内没有响应`);
   }
-  // asr_options.language：文档仅支持 auto / zh / en；其它值（含空 / 方言码）一律归一为 auto。
-  // 明确语种能提升准确率，所以默认 auto，用户在设置里选 zh/en 时透传。
-  const langRaw = String(provider.language || "").trim().toLowerCase();
-  const asrLanguage = (langRaw === "zh" || langRaw === "en") ? langRaw : "auto";
+  // asr_options.language：由各服务的 profile 决定取值。
+  // MiMo 只认 auto / zh / en；百炼在语种不确定时要求整个字段省略——所以空串表示不下发该字段。
+  const asrLanguage = profile.languageFor(provider.language);
   const payload = {
-    model: provider.model || "mimo-v2.5-asr",
+    model: provider.model || profile.defaultModel,
     messages: [{
       role: "user",
       content: [{
@@ -449,13 +593,14 @@ export async function requestApimimoAsrChunk(
         },
       }],
     }],
-    asr_options: { language: asrLanguage },
+    // 百炼在语种不确定时不下发该字段；MiMo 始终下发（含 auto）。
+    ...(asrLanguage ? { asr_options: { language: asrLanguage } } : {}),
     // 官方支持 OpenAI 兼容 SSE。非流式下服务端要攒完整段结果才回包，长块极易撞客户端总超时；
     // 流式 + 空闲超时后，只要服务端还在吐字就不会被误杀。
     stream: true,
   };
   try {
-    // 用 window.fetch（行为同 fetch、避开 no-restricted-globals）：APIMiMo ASR 上传需要 AbortController 超时，requestUrl 不暴露同等中止语义。
+    // 用 window.fetch（行为同 fetch、避开 no-restricted-globals）：ASR 上传需要 AbortController 超时，requestUrl 不暴露同等中止语义。
     const res = await window.fetch(endpoint, {
       method: "POST",
       headers: Object.assign({ "Content-Type": "application/json" }, provider.apiKey ? { "Authorization": `Bearer ${provider.apiKey}` } : {}),
@@ -469,14 +614,15 @@ export async function requestApimimoAsrChunk(
       const retryAfterHeader = res.headers && typeof res.headers.get === "function" ? String(res.headers.get("retry-after") || "").trim() : "";
       if (/^\d+$/.test(retryAfterHeader)) errText += `；Retry-After: ${retryAfterHeader}s`;
       const httpErr = new Error(errText) as Error & { nonRetryable?: boolean };
-      // MiMo 错误码语义：400 格式/大小、401 密钥、402 余额、403 风控、404 能力、421 内容审核——都不是重试能解决的。
+      // 400 格式/大小、401 密钥、402 余额、403 风控、404 能力、421 内容审核——都不是重试能解决的。
+      // 百炼同样用 4xx 表达参数与鉴权错误，两组码都有交集，故共用一套判定。
       if ([400, 401, 402, 403, 404, 421].includes(res.status)) httpErr.nonRetryable = true;
       throw httpErr;
     }
     emitAsrLifecycle(observer, {
       type: "response-start",
-      timeoutMs: APIMIMO_SSE_IDLE_TIMEOUT_MS,
-      deadlineAt: Date.now() + APIMIMO_SSE_IDLE_TIMEOUT_MS,
+      timeoutMs: CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
+      deadlineAt: Date.now() + CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
     });
     const contentType = res.headers && typeof res.headers.get === "function" ? String(res.headers.get("content-type") || "").toLowerCase() : "";
     const canReadStream = contentType.includes("text/event-stream") && res.body && typeof res.body.getReader === "function";
@@ -490,14 +636,14 @@ export async function requestApimimoAsrChunk(
         data = await res.json();
       } catch (e) {
         if (controller && controller.signal && controller.signal.aborted) throw e; // 外层 catch 统一报超时
-        throw new Error(`APIMiMo 响应解析失败（HTTP ${res.status} 但响应体非法或中断）：${(e && e.message) || e}`);
+        throw new Error(`${profile.label} 响应解析失败（HTTP ${res.status} 但响应体非法或中断）：${(e && e.message) || e}`);
       }
       const apiErr = data && data.error;
       if (typeof apiErr === "string" && apiErr.trim()) {
-        throw new Error(`APIMiMo 返回错误：${apiErr.trim()}`);
+        throw new Error(`${profile.label} 返回错误：${apiErr.trim()}`);
       }
       if (apiErr && (apiErr.message || apiErr.code)) {
-        const bodyErr = new Error(`APIMiMo 返回错误${apiErr.code ? `（${apiErr.code}）` : ""}：${apiErr.message || "未知错误"}`) as Error & { nonRetryable?: boolean };
+        const bodyErr = new Error(`${profile.label} 返回错误${apiErr.code ? `（${apiErr.code}）` : ""}：${apiErr.message || "未知错误"}`) as Error & { nonRetryable?: boolean };
         if (/^4/.test(String(apiErr.code || ""))) bodyErr.nonRetryable = true;
         throw bodyErr;
       }
@@ -505,8 +651,8 @@ export async function requestApimimoAsrChunk(
       emitAsrLifecycle(observer, {
         type: "stream-progress",
         receivedChars: String(text || "").length,
-        timeoutMs: APIMIMO_SSE_IDLE_TIMEOUT_MS,
-        deadlineAt: Date.now() + APIMIMO_SSE_IDLE_TIMEOUT_MS,
+        timeoutMs: CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
+        deadlineAt: Date.now() + CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
       });
       return text;
     }
@@ -525,7 +671,7 @@ export async function requestApimimoAsrChunk(
       const { value, done: readerDone } = await reader.read();
       if (readerDone) break;
       // 每收到一个网络分片就重置空闲计时：数据还在流动就不判超时（首字节到达后即切入 60s 空闲档）。
-      armPhaseTimer(APIMIMO_SSE_IDLE_TIMEOUT_MS, `${Math.round(APIMIMO_SSE_IDLE_TIMEOUT_MS / 1000)} 秒内无新数据`);
+      armPhaseTimer(CHAT_INPUT_SSE_IDLE_TIMEOUT_MS, `${Math.round(CHAT_INPUT_SSE_IDLE_TIMEOUT_MS / 1000)} 秒内无新数据`);
       lineBuffer += decoder.decode(value, { stream: true });
       const lines = lineBuffer.split(/\r?\n/);
       lineBuffer = lines.pop() || ""; // 最后一段可能是半行，留到下一分片
@@ -536,8 +682,8 @@ export async function requestApimimoAsrChunk(
         emitAsrLifecycle(observer, {
           type: "stream-progress",
           receivedChars: String(acc.text || "").length,
-          timeoutMs: APIMIMO_SSE_IDLE_TIMEOUT_MS,
-          deadlineAt: progressAt + APIMIMO_SSE_IDLE_TIMEOUT_MS,
+          timeoutMs: CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
+          deadlineAt: progressAt + CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
         });
       }
       if (acc.done) break;
@@ -546,16 +692,16 @@ export async function requestApimimoAsrChunk(
     if (tail) for (const line of tail.split(/\r?\n/)) feedLine(line);
     if (acc.done) { try { await reader.cancel(); } catch { /* intentionally empty */ } }
     // 反静默截断的完成规则：
-    // 1) finish_reason === "length"：输出撞 2K max tokens 被截断。保住已转出的部分（半截 >> 整块丢）+
+    // 1) finish_reason === "length"：输出撞服务的单次 max tokens 被截断。保住已转出的部分（半截 >> 整块丢）+
     //    可见标记 + 告警，不再硬失败（此前硬失败 nonRetryable 会让整块永久丢，比截断更糟）。
-    //    切块已收窄到 2 分钟，此路很少触发；真触发时仅末尾少量缺失，标记提示、LLM 合并可据此标注。
+    //    MiMo 的 2K 输出上限使此路可能触发（切块已收窄到 2 分钟）；百炼无该上限，一般不触发。
     if (acc.finishReason === "length") {
       const salvaged = String(acc.text || "").trim();
       if (salvaged) {
-        console.warn(`[QnALog] MiMo 输出触顶（2K）被截断，已保住 ${salvaged.length} 字（末尾可能缺失）`);
+        console.warn(`[QnALog] ${profile.label} 输出触顶被截断，已保住 ${salvaged.length} 字（末尾可能缺失）`);
         return `${salvaged}\n_[本段较长，末尾可能有少量内容未转完]_`;
       }
-      throw apimimoPermanentError("MiMo 输出触顶（2K tokens）被截断且无可保留文本：请缩短切块时长后重试");
+      throw chatInputAudioPermanentError(`${profile.label} 输出触顶被截断且无可保留文本：请缩短切块时长后重试`);
     }
     // 2) 收到 [DONE] 或非 length 的 finish_reason：正常完成，返回累积文本（空文本由调用方按软失败处理）；
     // 3) 两者都没有（连接中途断开）：绝不把半截文本当成功返回——那会重新引入"静默丢段"这一类 bug。
@@ -586,14 +732,15 @@ export async function requestApimimoAsrChunk(
   }
 }
 
-export async function requestApimimoAsrChunkWithEmptyRetry(
+export async function requestChatInputAudioChunkWithEmptyRetry(
+  profile: ChatInputAudioProfile,
   plugin,
   provider,
   prepared,
   endpoint,
   chunkIndex,
   chunkCount,
-  requestChunk = requestApimimoAsrChunk,
+  requestChunk,
   wait = delayMs,
   observer?: AsrLifecycleObserver,
 ) {
@@ -612,7 +759,7 @@ export async function requestApimimoAsrChunkWithEmptyRetry(
     if (part) return part;
     try {
       if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
-        await plugin.diagnostics.logDiagnostic("warn", "asr.apimimo_empty_chunk", "APIMiMo 单块转写为空", {
+        await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_empty_chunk`, `${profile.shortLabel} 单块转写为空`, {
           chunkIndex,
           chunkCount,
           chunkBytes: prepared && prepared.blob && prepared.blob.size,
@@ -633,10 +780,11 @@ export async function requestApimimoAsrChunkWithEmptyRetry(
       await wait(retryDelayMs);
     }
   }
-  throw new Error(`APIMiMo 第 ${chunkIndex + 1}/${chunkCount} 块连续返回空结果；音频已保留，可稍后重试`);
+  throw new Error(`${profile.shortLabel} 第 ${chunkIndex + 1}/${chunkCount} 块连续返回空结果；音频已保留，可稍后重试`);
 }
 
-export async function transcribeAudioWithApimimo(
+export async function transcribeAudioWithChatInputAudio(
+  profile: ChatInputAudioProfile,
   plugin,
   provider,
   blob,
@@ -644,20 +792,21 @@ export async function transcribeAudioWithApimimo(
   vocabularyGroups,
   observer?: AsrLifecycleObserver,
 ) {
-  const chunks = await buildApimimoAsrChunks(blob, mime);
+  const chunks = await buildChatInputAudioChunks(profile, blob, mime);
   const endpoint = normalizeApimimoAsrEndpoint(provider.endpoint);
   // 顺序转写各块（保留时序，避免并发触发限流），拼接后对全文统一做热词修正。
   const parts = [];
   for (let i = 0; i < chunks.length; i++) {
     // HTTP 200 但空文本通常是服务端瞬时异常。只重试当前块一次，避免重跑此前已成功的块并重复计费。
-    parts.push(await requestApimimoAsrChunkWithEmptyRetry(
+    parts.push(await requestChatInputAudioChunkWithEmptyRetry(
+      profile,
       plugin,
       provider,
       chunks[i],
       endpoint,
       i,
       chunks.length,
-      requestApimimoAsrChunk,
+      (p, prepared, url, obs) => requestChatInputAudioChunk(profile, p, prepared, url, obs),
       delayMs,
       observer,
     ));
@@ -666,7 +815,7 @@ export async function transcribeAudioWithApimimo(
   const cleaned = cleanApimimoAsrRepeatedLoops(rawText);
   if (cleaned.suppressedChars > 0) {
     try {
-      await plugin.diagnostics.logDiagnostic("warn", "asr.apimimo_repeat_detected", "APIMiMo 转写疑似存在重复循环，已保留原始转写", {
+      await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_repeat_detected`, `${profile.shortLabel} 转写疑似存在重复循环，已保留原始转写`, {
         suppressedChars: cleaned.suppressedChars,
         suppressedRepeats: cleaned.suppressedRepeats,
         chunkCount: chunks.length,
@@ -674,6 +823,41 @@ export async function transcribeAudioWithApimimo(
     } catch { /* intentionally empty */ }
   }
   return applyVocabularyCorrections(rawText, vocabularyGroups).trim();
+}
+
+export async function requestApimimoAsrChunk(
+  provider,
+  prepared,
+  endpoint,
+  observer?: AsrLifecycleObserver,
+) {
+  return await requestChatInputAudioChunk(APIMIMO_PROFILE, provider, prepared, endpoint, observer);
+}
+
+/** MiMo 入口。协议实现与百炼共用，此函数只固定 profile。 */
+export async function requestApimimoAsrChunkWithEmptyRetry(
+  plugin,
+  provider,
+  prepared,
+  endpoint,
+  chunkIndex,
+  chunkCount,
+  requestChunk = requestApimimoAsrChunk,
+  wait = delayMs,
+  observer?: AsrLifecycleObserver,
+) {
+  return await requestChatInputAudioChunkWithEmptyRetry(
+    APIMIMO_PROFILE,
+    plugin,
+    provider,
+    prepared,
+    endpoint,
+    chunkIndex,
+    chunkCount,
+    requestChunk,
+    wait,
+    observer,
+  );
 }
 
 export async function transcribeAudio(
@@ -692,8 +876,9 @@ export async function transcribeAudio(
   if (!p.apiKey && !canOmitServiceApiKey(p.endpoint)) throw new Error(`转写访问密钥未配置（当前服务：${p.name || p.id}）`);
   if (!p.model)    throw new Error(`转写模型名称未配置（当前服务：${p.name || p.id}）`);
   const vocabularyGroups = await loadVocabularyGroups(plugin);
-  if (isApimimoAsrProvider(p)) {
-    return await transcribeAudioWithApimimo(plugin, p, blob, mime, vocabularyGroups, observer);
+  const chatInputProfile = getChatInputAudioProfile(Object.assign({ id: p.id }, p));
+  if (chatInputProfile) {
+    return await transcribeAudioWithChatInputAudio(chatInputProfile, plugin, p, blob, mime, vocabularyGroups, observer);
   }
   const form = new FormData();
   const diarizationOptions = getSpeakerDiarizationRequestOptions(p);

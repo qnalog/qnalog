@@ -139,7 +139,7 @@ export function getAudioDurationMs(blob: Blob): Promise<number> {
 
 // 确定性 ASR 错误：格式不被服务端接受 / 本机无法解码 / 超过体积上限 / 4xx 拒绝（密钥、余额、审核）——
 // 重试同样必败，还会对大文件反复解码卡 UI、对服务端反复发必拒请求。队列对这类失败直接吃满重试退出自动重试。
-// 旗标 nonRetryable 由抛错处设置（apimimoPermanentError / HTTP 4xx 分支）；正则兜底匹配已落盘任务的 lastError。
+// 旗标 nonRetryable 由抛错处设置（chatInputAudioPermanentError / HTTP 4xx 分支）；正则兜底匹配已落盘任务的 lastError。
 
 export function getDurationMs(markdown) {
   const text = String(markdown || "");
