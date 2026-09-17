@@ -6036,7 +6036,7 @@ export class OutlineView extends obsidian.ItemView {
         .onClick(() => { void this.plugin.repolish.generateCleanScript(file); });
     });
     menu.addItem((item) => {
-      item.setTitle(detectedMode ? "重新整理为" : i18nT("Master Device: select your headphones or speakers; Drift Correction: check BlackHole"))
+      item.setTitle(detectedMode ? i18nT("Reorganize as") : i18nT("Organize as"))
         .setIcon("refresh-cw");
       const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
       // 偏好（可选修饰）：点击只在前面打钩/取消，就地更新、菜单不关（捕获阶段拦掉点击，阻止 Obsidian 关菜单）。

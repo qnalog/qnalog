@@ -1560,7 +1560,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     if (!savedIsUsable) {
       const savedLabel = savedImportProvider
-        ? (providers[savedImportProvider]?.name || savedImportProvider)
+        ? (t(providers[savedImportProvider]?.name) || savedImportProvider)
         : t("(Not set)");
       // 复用既有的风险提示样式，不新增 CSS 类。
       const box = c.createEl("details", { cls: "qnalog-risk-notice" });
@@ -1579,7 +1579,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         for (const id of supportedIds) {
           const item = providers[id] || {};
           const itemProfile = this.getTranscribeProviderProfile(id, item);
-          dropdown.addOption(id, itemProfile.title || item.name || id);
+          dropdown.addOption(id, itemProfile.title || t(item.name) || id);
         }
         dropdown.setValue(activeId).onChange(async (value) => {
           this.plugin.settings.importTranscribeProvider = value;

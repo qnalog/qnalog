@@ -238,6 +238,55 @@ describe("覆盖完整性", () => {
     expect(missing, `profile 文案缺中文：${missing.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 
+  it("菜单标题不得出现 `&`（macOS 原生菜单会把它当快捷键标记吃掉）", () => {
+    // 实测结论：Obsidian 给 macOS 原生菜单转义 & 用的是 /\B&\B/，
+    // 要求 & 两侧都是非单词字符才双写成 &&。`Q&A` 两侧是 Q 与 A，转义不命中，
+    // Electron 便吃掉 `&A`，菜单显示成 `QA Log`。
+    // 这一层在 Obsidian 的菜单渲染代码里，插件侧改不掉：
+    // 传 DocumentFragment 也没用（丢失发生在渲染层，不是文本构建层）。
+    // 因此菜单标题里不要出现 &，品牌用标识符写法 `QnALog`。
+    const offenders: string[] = [];
+    const menuApis = [
+      /\.setTitle\(([^\n]*)/g,
+      /\baddRibbonIcon\([^,]+,\s*([^,\n]*)/g,
+      /\baddCommand\(\{[^}]*?\bname:\s*([^,\n]*)/gs,
+    ];
+    for (const f of walk(path.join(root, "src"))) {
+      const src = fs.readFileSync(f, "utf8");
+      for (const rx of menuApis) {
+        for (const m of src.matchAll(rx)) {
+          // 只看字面量里含 & 的；t("…") 里的键也要查
+          if (!/&/.test(m[1])) continue;
+          offenders.push(`${path.basename(f)}: ${m[1].slice(0, 56)}`);
+        }
+      }
+    }
+    expect(offenders, `菜单标题含 &：${offenders.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
+  it("命令名、菜单标题、ribbon 提示不得硬编码中文（这些位置不在 t(\"...\") 调用点里）", () => {
+    // 这一条补的是一个真实漏检：此前的扫描只认 `title:` / `label:` 这类属性，
+    // 漏掉了 `.setTitle(` `addCommand({ name: })` `addRibbonIcon(` 这些调用形态，
+    // 于是 23 个命令名 + 2 个 ribbon 提示 + 3 个菜单标题在英文界面下一直是中文。
+    const targets = [
+      /\baddCommand\(\{[^}]*?\bname:\s*"((?:[^"\\]|\\.)*)"/gs,
+      /\baddRibbonIcon\([^,]+,\s*"((?:[^"\\]|\\.)*)"/g,
+      /\.setTitle\(\s*"((?:[^"\\]|\\.)*)"/g,
+    ];
+    const offenders: string[] = [];
+    for (const f of walk(path.join(root, "src"))) {
+      const src = fs.readFileSync(f, "utf8");
+      for (const rx of targets) {
+        for (const m of src.matchAll(rx)) {
+          if (/[\u4e00-\u9fa5]/.test(m[1]) && !tableKeys.has(m[1])) {
+            offenders.push(`${path.basename(f)}: ${m[1].slice(0, 40)}`);
+          }
+        }
+      }
+    }
+    expect(offenders, `硬编码中文：${offenders.slice(0, 3).join(" / ")}`).toEqual([]);
+  });
+
   it("界面用到的每个键都有中文（缺了会在中文界面显示英文）", () => {
     // 漏译在英文界面看不出来，只有中文界面暴露；而中文界面平时没人逐条看。
     // 语言下拉的 native name（日本語）是它自己的写法，按设计不译。

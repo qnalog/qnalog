@@ -2621,6 +2621,53 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   color: var(--text-warning);
 }
 
+.qnalog-text-correction-modal {
+  max-width: 560px;
+}
+
+.qnalog-correction-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  margin: var(--size-4-3) 0;
+}
+
+.qnalog-correction-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+
+.qnalog-correction-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-correction-input {
+  width: 100%;
+}
+
+.qnalog-correction-preview {
+  min-height: 4em;
+  padding: var(--size-4-2) var(--size-4-3);
+  border-radius: var(--radius-s);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.qnalog-correction-count {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+  margin-bottom: var(--size-2-1);
+}
+
+.qnalog-correction-lines {
+  margin: 0;
+  padding-inline-start: var(--size-4-4);
+  columns: 2;
+}
+
 .qnalog-audio-modal {
   max-width: 560px;
 }

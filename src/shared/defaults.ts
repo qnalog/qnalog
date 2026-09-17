@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Stable access in China, cheap. Moderate accuracy."),
     },
     openai: {
-      name: "OpenAI 官方",
+      name: t("OpenAI Official"),
       endpoint: "https://api.openai.com/v1/audio/transcriptions",
       apiKey: "",
       model: "gpt-4o-transcribe",
@@ -64,7 +64,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Chunked transcription. The accuracy ceiling. Strong at recognizing Chinese names/technical terms. Requires overseas network."),
     },
     "openai-diarize": {
-      name: "OpenAI · 说话人分离",
+      name: t("OpenAI · Speaker Diarization"),
       endpoint: "https://api.openai.com/v1/audio/transcriptions",
       apiKey: "",
       model: "gpt-4o-transcribe-diarize",
@@ -82,7 +82,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Xiaomi MiMo audio recognition. Chat Completions input_audio; the server accepts only wav/mp3 (other formats are transcoded and chunked automatically), each chunk's base64 ≤10MB; you can specify the language zh/en/auto for better accuracy."),
     },
     "openai-realtime": {
-      name: "OpenAI Realtime · 语音转写",
+      name: t("OpenAI Realtime · Speech Transcription"),
       endpoint: "wss://api.openai.com/v1/realtime",
       apiKey: "",
       model: "gpt-realtime-whisper",
@@ -90,7 +90,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Streaming ASR, subtitles as you speak. $0.017/min ≈ ¥7.2/hour."),
     },
     "openai-realtime-translate": {
-      name: "OpenAI Realtime · 语音翻译",
+      name: t("OpenAI Realtime · Speech Translation"),
       endpoint: "wss://api.openai.com/v1/realtime/translations",
       apiKey: "",
       model: "gpt-realtime-translate",
@@ -99,7 +99,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Streaming translation, 70+ inputs → 13 outputs. $0.034/min ≈ ¥14.4/hour."),
     },
     openrouter: {
-      name: "OpenRouter · 语音转写",
+      name: t("OpenRouter · Speech Transcription"),
       // 官方 STT 接口。OpenRouter 文档明确该端点同时接受 OpenAI 风格的 multipart/form-data，
       // 因此复用现有 OpenAI 兼容上传路径（file + model），无需新的协议分支。
       endpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
@@ -112,7 +112,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     // 与 openrouter 分开成两个条目，因为二者请求形状不同（分段 multipart vs 整文件
     // JSON + provider.options），模型与计费也不同；用户在「说话人识别」里单独选。
     "openrouter-diarize": {
-      name: "OpenRouter · 说话人分离",
+      name: t("OpenRouter · Speaker Diarization"),
       endpoint: "https://openrouter.ai/api/v1/audio/transcriptions",
       apiKey: "",
       model: "microsoft/mai-transcribe-2",
@@ -121,7 +121,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Whole-file transcription with speaker diarization. Which upstream a model routes to varies per model; the diarization switch is passed to that upstream. Speaker numbers can be mapped to real names after transcription."),
     },
     dashscope: {
-      name: "阿里云百炼 Paraformer Realtime",
+      name: t("Alibaba Cloud Bailian Paraformer Realtime"),
       endpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
       apiKey: "",
       model: "paraformer-realtime-v2",
@@ -142,7 +142,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Bailian Qwen3-ASR Flash. HTTP interface that works on both desktop and mobile; audio is uploaded segment by segment (up to 5 minutes and 10MB per request; longer recordings are converted and split automatically)."),
     },
     "dashscope-filetrans": {
-      name: "阿里云百炼 Fun-ASR",
+      name: t("Alibaba Cloud Bailian Fun-ASR"),
       endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
       apiKey: "",
       model: "fun-asr",
@@ -151,7 +151,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("For imported audio only. Whole-file asynchronous transcription with speaker diarization; standard transcription up to 12 hours, and no more than 2 hours recommended when speaker diarization is enabled."),
     },
     custom: {
-      name: "其他转写服务",
+      name: t("Other transcription services"),
       endpoint: "",
       apiKey: "",
       model: "",
@@ -159,7 +159,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Suitable for enterprise internal gateways, self-hosted transcription services, or third-party transcription services."),
     },
     local: {
-      name: "本地转写服务",
+      name: t("Local transcription service"),
       endpoint: "http://127.0.0.1:8000/v1/audio/transcriptions",
       apiKey: "",
       model: "whisper-large-v3",
@@ -167,7 +167,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: t("Suitable for local services such as Xinference, faster-whisper-server, and whisper.cpp; it must accept audio file uploads and return text."),
     },
     whisperx: {
-      name: "WhisperX · 带说话人分离（本地）",
+      name: t("WhisperX · Speaker Diarization (local)"),
       endpoint: "http://127.0.0.1:8000/v1/audio/transcriptions",
       apiKey: "",
       model: "whisper-large-v3",
