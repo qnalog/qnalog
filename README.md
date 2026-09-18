@@ -78,6 +78,7 @@ Edit owner, due date and sub-tasks inline at the candidate stage — no dialogs.
 - A device check in settings diagnoses "recorded but silent" problems.
 - Compatible independent multichannel input can be detected and transcribed by channel, with speaker labels that can be mapped to names. Separation stays off when independent channels cannot be verified.
 - Deleting a transcript offers to delete its audio file too.
+- Recordings under 10 seconds are not transcribed or turned into minutes. Audio under 3 seconds is discarded; audio between 3 and 10 seconds stays in the recording folder so you can import it manually if it turns out to matter.
 
 ### Export
 From one set of notes you can generate an HTML report, a PDF report, or an `.eml` email draft — same content, different presentation.

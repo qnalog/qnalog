@@ -259,8 +259,6 @@ export interface PreparedLiveSegment {
   isFinal?: boolean;
   /** 收尾时为 true：本段没有独立音频，回听要用整场录音。 */
   masterOnly?: boolean;
-  /** 过滤掉过短录音时标记；此段不参与转写。 */
-  filteredShort?: boolean;
   /** 音频来源（mic / 电脑音频）。 */
   source?: string;
   sourceUrl?: string;
@@ -490,8 +488,10 @@ export interface RecordingSession {
   pcmEncoder?: { stop(): void } | null;
   finalizing?: boolean;
   finalizationError?: string;
-  filteredShortRecording?: boolean;
-  filteredDurationMs?: number;
+  /** 短录音的处理级别：discard（丢弃）/ keep-audio（只留音频）；正常录音不写该字段。 */
+  shortRecordingTier?: "discard" | "keep-audio";
+  /** 短录音的总时长（毫秒），用于提示文案与诊断日志。 */
+  shortRecordingDurationMs?: number;
   _nextLiveSegmentIndex?: number;
   _interviewBriefBackgroundRunning?: boolean;
   _asrBacklogWarningNotified?: boolean;

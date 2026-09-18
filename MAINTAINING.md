@@ -737,7 +737,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `asrConcurrency` | `1` | `speech.asrConcurrency` | — | 导入长音频的并发转写数 | 录音 / 自动导入 | 高级 · 录音 |
 | `segmentCacheFolder` | `${NS_ROOT}/.cache/segments` | `storage.segmentCachePath` | — | 分段音频临时缓存目录 | 无 | 高级 · 录音 |
 | `keepSegmentAudioFiles` | `false` | `capture.keepSegmentAudioFiles` | — | 是否保留临时分段音频（排障用） | 录音 / 自动导入 | 高级 · 诊断与隐私 |
-| `filterShortRecordings` | `true` | `capture.discardVeryShortRecordings` | — | 是否丢弃 3 秒内的误触录音 | 录音 / 自动导入 | 高级 · 录音 |
+| `filterShortRecordings` | `true` | `capture.discardVeryShortRecordings` | — | 短录音保护：3 秒内丢弃，3–10 秒只留音频不建纪要 | 录音 / 自动导入 | 高级 · 录音 |
 | `captureMode` | `"mic"` | `capture.sourceMode` | — | 录音来源（麦克风/混合/电脑音频） | 常规 + 侧边栏 | 基本设置 |
 | `audioChannelMode` | `"auto"` | `capture.channelMode` | — | 是否按声道区分说话人 | 录音 | 高级 · 录音 |
 | `selectedVirtualDevice` | `""` | `capture.virtualDeviceId` | — | 电脑音频输入设备 id | 录音 | 基本设置 |
