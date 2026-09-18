@@ -4,7 +4,11 @@ import { NS_TAG } from "./namespace";
 
 export const QUICK_INTERIM_CUTS_MS = [10 * 1000, 60 * 1000, 3 * 60 * 1000];
 
+/** 短录音直接丢弃的时长上限：低于此值且开关为开时，不保存音频、不建纪要。 */
 export const SHORT_RECORDING_FILTER_MS = 3000;
+
+/** 短录音只保留音频的时长上限：低于此值不建纪要、不自动转写，音频留在录音目录里。 */
+export const SHORT_RECORDING_SKIP_NOTE_MS = 10 * 1000;
 
 export const KNOWLEDGE_EXTRACTION_BATCH_LIMIT = 20;
 
@@ -23,6 +27,9 @@ export const QNALOG_ACTIVE_VERSION_START = `<!-- ${NS_TAG}-active-version-start 
 
 export const QNALOG_ACTIVE_VERSION_END = `<!-- ${NS_TAG}-active-version-end -->`;
 
+// 「清理空白短录音」的判定上限：≤10 秒且无有效转写的独立纪要会被列为清理候选。
+// 与 SHORT_RECORDING_SKIP_NOTE_MS 数值相同但含义不同：那条决定新录音是否自动转写，
+// 这条决定既有笔记要不要清理，各自按需要调整，不要互相引用。
 export const QNALOG_EMPTY_SHORT_LIMIT_MS = 10 * 1000;
 
 export const TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS = 120000;

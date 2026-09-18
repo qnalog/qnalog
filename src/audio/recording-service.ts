@@ -20,7 +20,8 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { audioImportStageFromWorkProgress } from "../shared/activity-progress";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
-import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS, SHORT_RECORDING_FILTER_MS } from "../shared/limits";
+import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS } from "../shared/limits";
+import { classifyShortRecording } from "./short-recording-policy";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
 import { getDurationMs, getSegmentsDurationMs, getSessionMasterAudioName } from "../notes/audio-refs";
@@ -365,12 +366,22 @@ export class RecordingService {
     this.clearRecordingIssue();
   }
 
-  shouldFilterShortRecording(session, seg) {
-    if (!session || !seg || !seg.isFinal) return false;
-    if (this.host.settings.filterShortRecordings === false) return false;
-    if (session.segments && session.segments.length) return false;
-    const totalMs = Math.max(0, Number(seg.endOffsetMs) || 0);
-    return totalMs < SHORT_RECORDING_FILTER_MS;
+  /**
+   * 一场录音的处理级别：丢弃 / 只留音频 / 正常整理。
+   *
+   * 只对最后一个切片判定，因为在此之前总时长还没有定下来。已有切片（长度已经越过第一个
+   * 切点）、导入音频、续录到既有纪要三种情况都按正常流程走：前两种说明录音本身不短或
+   * 用户已指定要转写，第三种由用户显式发起且目标笔记已存在。
+   */
+  resolveShortRecordingTier(session, seg) {
+    return classifyShortRecording({
+      durationMs: seg && seg.isFinal ? Number(seg.endOffsetMs) || 0 : 0,
+      isFinal: !!(seg && seg.isFinal),
+      hasSegments: !!(session && session.segments && session.segments.length),
+      filterShortRecordings: this.host.settings.filterShortRecordings !== false,
+      isImported: !!(session && (session.source === "import" || session.source === "text-import")),
+      isContinuation: !!(session && session.continuationSourcePath),
+    });
   }
 
   async closeStreamingForDiscard(session) {
@@ -391,7 +402,13 @@ export class RecordingService {
     try { await this.host.meetingWorkbench.removeLiveTranscriptBlock(session.mdPath, session.id); } catch { /* intentionally empty */ }
   }
 
-  async discardFilteredShortSession(session) {
+  /**
+   * 删掉本次短录音在结尾创建的纪要（只保留它自己的段落块）。
+   *
+   * 两种短录音级别共用：时长 < 3 秒丢弃音频，3–10 秒保留音频。纪要文件只有这一段内容时
+   * 移到废纸篓，否则只摘掉这一段（续录目标笔记本来就存在，不会走到这里）。
+   */
+  async discardShortRecordingNote(session) {
     await this.closeStreamingForDiscard(session);
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
@@ -443,10 +460,21 @@ export class RecordingService {
 
   handleSegment(session: RecordingSession, seg: RecorderSegmentPayload) {
     if (!session) return;
-    const filteredShort = this.shouldFilterShortRecording(session, seg);
-    const masterAudioSavePromise = filteredShort ? Promise.resolve() : this.startMasterAudioSave(session, seg);
+    const tier = this.resolveShortRecordingTier(session, seg);
     let preparedSeg;
-    if (seg && seg.masterOnly) {
+    if (tier !== "process") {
+      // 短录音不转写。丢弃级别不落盘音频；只留音频级别把整场音频写进录音目录。
+      // 分级函数只在最后一个切片上返回短录音级别，所以这里的 isFinal 必为真。
+      session.shortRecordingTier = tier;
+      session.shortRecordingDurationMs = Math.max(0, Number(seg && seg.endOffsetMs) || 0);
+      preparedSeg = {
+        isFinal: true,
+        endOffsetMs: session.shortRecordingDurationMs,
+        masterAudioSavePromise: tier === "discard" ? Promise.resolve() : this.startMasterAudioSave(session, seg),
+      };
+      session.activeSegmentJobs = (Number(session.activeSegmentJobs) || 0) + 1;
+    } else if (seg && seg.masterOnly) {
+      const masterAudioSavePromise = this.startMasterAudioSave(session, seg);
       preparedSeg = {
         isFinal: !!seg.isFinal,
         masterOnly: true,
@@ -454,16 +482,9 @@ export class RecordingService {
         masterAudioSavePromise,
       };
       session.activeSegmentJobs = (Number(session.activeSegmentJobs) || 0) + 1;
-    } else if (filteredShort) {
-      preparedSeg = {
-        isFinal: !!seg.isFinal,
-        endOffsetMs: Math.max(0, Number(seg.endOffsetMs) || 0),
-        filteredShort: true,
-        masterAudioSavePromise,
-      };
-      session.activeSegmentJobs = (Number(session.activeSegmentJobs) || 0) + 1;
     } else {
       const descriptor = this.prepareLiveSegmentDescriptor(session, seg);
+      const masterAudioSavePromise = this.startMasterAudioSave(session, seg);
       preparedSeg = {
         ...descriptor,
         masterAudioSavePromise,

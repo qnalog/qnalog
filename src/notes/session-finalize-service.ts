@@ -38,6 +38,7 @@ import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { ViewShellService } from "../ui/view-shell-service";
 import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
+import { SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
 
 import { t } from "../shared/i18n";
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -79,7 +80,7 @@ export class SessionFinalizeService {
 
   async processSegment(session: RecordingSession, seg: PreparedLiveSegment) {
     if (!session) return;
-    if (seg && seg.isFinal && seg.masterOnly) {
+    if (seg && seg.isFinal && seg.masterOnly && !session.shortRecordingTier) {
       // 分段 recorder 已失效但独立 masterRecorder 仍拿到了完整录音。
       // 这里只保存母带并推进最终整理，不能把整场母带再次当作最后一段转写，
       // 否则前面已转写的内容会重复、并额外产生一次整场 ASR 费用。
@@ -101,9 +102,10 @@ export class SessionFinalizeService {
       this.host.shell.refreshOutlineView();
       return;
     }
-    if (seg && (seg.filteredShort || this.host.recording.shouldFilterShortRecording(session, seg))) {
-      session.filteredShortRecording = true;
-      session.filteredDurationMs = Math.max(0, Number(seg.endOffsetMs) || 0);
+    if (session.shortRecordingTier) {
+      // 短录音：音频（只留音频级别）已由 handleSegment 交给 saveMasterAudio 落盘，
+      // 这里只等它结束，后续收尾会按 shortRecordingTier 删掉结尾创建的纪要。
+      if (seg && seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
       await this.host.recording.closeStreamingForDiscard(session);
       return;
     }
@@ -606,17 +608,47 @@ export class SessionFinalizeService {
     };
   }
 
+  /**
+   * 短录音的收尾：删掉结尾创建的纪要，只保留音频（丢弃级别连音频也不留）。
+   *
+   * 录音开始时无法预知总时长，纪要头是那一刻就写进磁盘的，因此这里负责把它摘掉。
+   * `discard` 级别在 `handleSegment` 里就没保存音频；`keep-audio` 级别的音频已经写进
+   * 录音目录，用户之后可以用「导入已有音频文件」手动转写。
+   */
+  async finishShortRecording(session) {
+    const tier = session.shortRecordingTier;
+    const limitSeconds = Math.round(SHORT_RECORDING_SKIP_NOTE_MS / 1000);
+    await this.host.recording.discardShortRecordingNote(session);
+    const durationMs = Math.max(0, Number(session.shortRecordingDurationMs) || 0);
+    const audioName = session.masterAudioName || "";
+    if (tier === "discard") {
+      new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
+    } else if (audioName) {
+      new obsidian.Notice(`${t("Recording under {0} seconds: audio kept in the recording folder, no minutes created and no transcript kept. Import it manually if needed.").replace("{0}", String(limitSeconds))} （${audioName}）`, 8000);
+    } else {
+      // 母带录音器没产出音频（设备被收回等）→ 没有可留的文件，如实说明。
+      new obsidian.Notice(t("Recording under {0} seconds and its audio could not be saved; skipped.").replace("{0}", String(limitSeconds)), 8000);
+    }
+    try {
+      await this.host.diagnostics.logDiagnostic("info", "recording.short_recording_skipped", "短录音未自动转写", {
+        tier,
+        durationMs,
+        audioName,
+        mdPath: session.mdPath,
+      });
+    } catch { /* diagnostics must not change finalization behavior */ }
+    if (this.host.session === session) this.host.session = null;
+    this.host.shell.refreshOutlineView();
+  }
+
   async _finalizeSessionImpl(session) {
 
     // 静音统计快照：此刻录音刚结束、recorder 计数尚未被下一场 start() 重置，同步读取避免异步窗口被污染。
     const _silVoiced = this.host.recorder ? (this.host.recorder._voicedTicks || 0) : 0;
     const _silSilent = this.host.recorder ? (this.host.recorder._silentTicks || 0) : 0;
 
-    if (session.filteredShortRecording) {
-      await this.host.recording.discardFilteredShortSession(session);
-      new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
-      if (this.host.session === session) this.host.session = null;
-      this.host.shell.refreshOutlineView();
+    if (session.shortRecordingTier) {
+      await this.finishShortRecording(session);
       return;
     }
 
