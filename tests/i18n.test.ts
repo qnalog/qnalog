@@ -186,6 +186,48 @@ describe("词条表的形状", () => {
     const identity = pairs.filter(([k, v]) => k === v).map(([k]) => k);
     expect(identity, `自我映射：${identity.slice(0, 3).join(" / ")}`).toEqual([]);
   });
+
+  it("英文原文几乎相同的两条词条，中文译文不得明显无关", () => {
+    // 2026-09-21 的真实事故：批量补译时键值列表错位，一批「变体键」（同一句文案的
+    // 另一种写法，如 "AI is identifying people, to-dos, and hotwords" 与
+    // "AI is identifying people, to-dos and hot words"）拿到了其它键的中文值
+    // （"收起分组"），侧栏标题显示成「搜索或输入新名字…」。这类错位躲得过下面所有
+    // 形状检查（键是英文、值是中文、无重复键、覆盖率满），只能靠「同义键 ⇒ 同义值」
+    // 这条不变式拦下。
+    //
+    // 判据：英文键去标点小写后长度 ≥ 25、长度差 ≤ 6、3-gram 覆盖率 ≥ 0.92 的两条，
+    // 其译文 3-gram 覆盖率不得低于 0.2。阈值按当前词条表实测：修复后 0 条命中，
+    // 修复前命中 8 条错位；因此该检查不会对正常词条产生噪音。
+    const strip = (s: string): string => String(s).toLowerCase().replace(/[^0-9a-z\u4e00-\u9fff]+/g, "");
+    const trigrams = (s: string): Set<string> => {
+      const out = new Set<string>();
+      for (let i = 0; i + 3 <= s.length; i++) out.add(s.slice(i, i + 3));
+      return out;
+    };
+    const overlap = (a: Set<string>, b: Set<string>): number => {
+      if (!a.size || !b.size) return 0;
+      let shared = 0;
+      for (const g of a) if (b.has(g)) shared++;
+      return shared / Math.min(a.size, b.size);
+    };
+    const items = pairs
+      .map(([k, v]) => ({ k, v, nk: strip(k), tv: trigrams(strip(v)) }))
+      .filter((it) => it.nk.length >= 25)
+      .map((it) => ({ ...it, tk: trigrams(it.nk) }));
+    const offenders: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i];
+        const b = items[j];
+        if (Math.abs(a.nk.length - b.nk.length) > 6) continue;
+        if (overlap(a.tk, b.tk) < 0.92) continue;
+        if (overlap(a.tv, b.tv) < 0.2) {
+          offenders.push(`${a.k} → ${a.v} ／ ${b.k} → ${b.v}`);
+        }
+      }
+    }
+    expect(offenders, `同义英文键的译文不相关：${offenders.slice(0, 2).join(" | ")}`).toEqual([]);
+  });
 });
 
 describe("覆盖完整性", () => {

@@ -7,7 +7,7 @@ import { genId } from '../shared/util-common';
 import { assertEndpointAllowed, canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint } from '../shared/util-llm-endpoint';
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
-import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
+import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
 import { UI_LANGUAGES, getActiveUiLanguage, t } from '../shared/i18n';
 import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
 import { fetchLlmModelList, testLlmConnection } from '../llm/core';
@@ -1850,7 +1850,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Default note template"))
       .setDesc(t(currentMeta.label || currentMeta.prefix) + t(". Recordings, imported audio, and re-organizing use this template by default; you can still switch temporarily for a specific action."))
       .addDropdown(d => {
-        for (const [key, label] of getVisibleModeEntries(this.plugin.settings, false)) d.addOption(key, t(label));
+        for (const [key] of getVisibleModeEntries(this.plugin.settings, false)) d.addOption(key, getModeDisplayName(this.plugin.settings, key));
         d.setValue(currentMode);
         d.onChange(async v => { this.plugin.settings.polishMode = v; await this.plugin.saveSettings(); this.renderSettings(); });
       })

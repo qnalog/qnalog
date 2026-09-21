@@ -6059,11 +6059,21 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
+  /* 只在横轴滚动，纵向必须显式关掉：只写 overflow-x 时，overflow-y 的可见值
+     会被算成 auto，标签条于是也成了纵向滚动容器；而按钮原本的 margin-bottom:-1px
+     让内容比容器高 1px，纵向滚轮/触摸滑动就会被它吃掉并把它滚 1px——
+     表现为手指或触控板一动，标签整体上下跳动。1px 的错位改由标签条自己承担。 */
+  overflow-y: hidden;
+  margin-bottom: -1px;
   background: transparent;
   scrollbar-width: none;
+  /* 指针在标签上按下再拖动时不产生选区：选区会带动浏览器滚动可滚动祖先。 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .qnalog-settings-tabs button {
+  flex: 0 0 auto;
   background: transparent;
   border: none;
   border-radius: 0;
@@ -6074,7 +6084,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-bottom: 2px solid transparent;
   font-size: var(--font-ui-small);
   font-weight: var(--font-medium);
-  margin-bottom: -1px;
+  /* 与容器底边重叠 1px 的位移已上移到 .qnalog-settings-tabs：留在按钮上会让
+     内容高于容器 1px，把标签条变成纵向滚动容器（见该规则注释）。 */
   transition: color 0.12s ease, border-color 0.12s ease;
 }
 

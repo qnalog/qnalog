@@ -7,7 +7,7 @@ import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban
 
 import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrectionModal } from "./ui/modals";
 
-import {getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
+import {getModeDisplayName, getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
 
 import { UpdateService } from "./update-service";
 
@@ -244,7 +244,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerView(VIEW_TYPE_MINUTES_KANBAN, (leaf) => new MinutesKanbanView(leaf, {
       getRootPath: () => obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
       listItems: () => this.shell.getMinutesKanbanItems(),
-      getModeOptions: () => getVisibleModeEntries(this.settings, false).map(([value, label]) => ({ value, label })),
+      getModeOptions: () => getVisibleModeEntries(this.settings, false).map(([value]) => ({ value, label: getModeDisplayName(this.settings, value) })),
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
@@ -458,10 +458,9 @@ class QnALogPlugin extends obsidian.Plugin {
         item.setTitle(`${t("QnALog: Merge ")}${audios.length}${t(" audio files…")}`).setIcon("mic");
         const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
         const modes = getVisibleModeEntries(this.settings, false);
-        for (const [m, label] of modes) {
-          const meta = getModeMeta(this.settings, m);
+        for (const [m] of modes) {
           sub.addItem((sub_i) => {
-            sub_i.setTitle(`${t("Organize as ")}${label}${t(" (")}${meta.prefix}${t(" mode)")}`)
+            sub_i.setTitle(`${t("Organize as ")}${getModeDisplayName(this.settings, m)}`)
               .setIcon("mic")
               .onClick(() => this.imports.openAudioImportOptions(paths, m));
           });
