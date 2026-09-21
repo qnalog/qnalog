@@ -48,6 +48,7 @@ export const ZH: MessageTable = {
   "Clean Up Blank Short Recordings": "清理空白短录音",
   "Clean Up Expired Segmented Audio Cache": "清理过期分段音频缓存",
   "Reorganize This Note (Using Speaker Names)": "重新整理当前纪要（使用说话人姓名）",
+  "Before append": "续录前",
   "QnALog: Continue recording into this note": "QnALog：继续录音到这篇纪要",
   "Continue Recording into the Current Note": "继续录音到当前纪要",
   "Correct misrecognized text": "更正误识别词",

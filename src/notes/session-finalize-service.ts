@@ -37,6 +37,7 @@ import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { ViewShellService } from "../ui/view-shell-service";
+import { VersionStore } from "../versions/version-store";
 import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
 import { SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
 
@@ -61,6 +62,8 @@ export interface SessionFinalizeHost {
   settings: PluginSettings;
   shell: ViewShellService;
   tasks: TaskActivityService;
+  /** 版本块与派生笔记服务：续录覆盖前留档旧整理稿。 */
+  versions: VersionStore;
 }
 
 export class SessionFinalizeService {
@@ -860,6 +863,33 @@ export class SessionFinalizeService {
     }
 
     if (!mergeError) {
+      // 续录覆盖前留档：把当前笔记（旧场次的整理稿）存进版本缓存。
+      // 版本条目不切换当前显示（activate:false），需要回看旧稿时用版本切换恢复。
+      // 失败不阻断续录收尾——留档是保险，不是闸门，诊断里记一条即可。
+      if (session.continuationSourcePath) {
+        try {
+          const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+          if (targetFile instanceof obsidian.TFile) {
+            const priorContent = await this.host.app.vault.read(targetFile);
+            await this.host.versions.saveVersion(targetFile, priorContent, session.continuationBaseSegments || segmentsForFinal, {
+              kind: "pre-append",
+              label: t("Before append") + " " + window.moment().format("YYYY-MM-DD HH:mm"),
+              mode: session.mode,
+              idLabel: "pre-append-" + window.moment().format("YYYYMMDD-HHmmss"),
+              body: priorContent,
+              activate: false,
+            });
+          }
+        } catch (archiveError) {
+          console.warn("[QnALog] pre-append version archive failed", archiveError);
+          try {
+            await this.host.diagnostics.logDiagnostic("warn", "session.pre_append_archive_failed", "续录覆盖前旧稿留档失败，续录本身不受影响", {
+              mdPath: session.mdPath,
+              error: diagnosticError(archiveError),
+            });
+          } catch { /* intentionally empty */ }
+        }
+      }
       try {
         if (shouldRewriteConsolidatedNote(this.host.settings, writeSession)) {
           await this.host.noteWriter.rewriteConsolidated(writeSession, polished);
