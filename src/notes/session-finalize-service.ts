@@ -955,21 +955,25 @@ export class SessionFinalizeService {
     }
 
     if (!mergeError && polished) {
-      const beforeRenamePath = session.mdPath;
-      const renamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
-      if (renamed instanceof obsidian.TFile) {
-        session.mdPath = renamed.path;
-        writeSession.mdPath = renamed.path;
-      }
-      const renamedByPolished = renamed instanceof obsidian.TFile
-        && obsidian.normalizePath(renamed.path) !== obsidian.normalizePath(beforeRenamePath);
-      if ((session.source === "import" || session.source === "text-import") && !renamedByPolished) {
-        const rawTitleSource = buildTitleSourceFromSegments(segmentsForFinal);
-        if (rawTitleSource) {
-          const fallbackRenamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
-          if (fallbackRenamed instanceof obsidian.TFile) {
-            session.mdPath = fallbackRenamed.path;
-            writeSession.mdPath = fallbackRenamed.path;
+      // 续录会话跳过自动改名：用户心智是「同一篇笔记持续完善」，
+      // 文件名随新内容跳变会破坏指向这篇笔记的链接与习惯。
+      if (!session.continuationSourcePath) {
+        const beforeRenamePath = session.mdPath;
+        const renamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
+        if (renamed instanceof obsidian.TFile) {
+          session.mdPath = renamed.path;
+          writeSession.mdPath = renamed.path;
+        }
+        const renamedByPolished = renamed instanceof obsidian.TFile
+          && obsidian.normalizePath(renamed.path) !== obsidian.normalizePath(beforeRenamePath);
+        if ((session.source === "import" || session.source === "text-import") && !renamedByPolished) {
+          const rawTitleSource = buildTitleSourceFromSegments(segmentsForFinal);
+          if (rawTitleSource) {
+            const fallbackRenamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
+            if (fallbackRenamed instanceof obsidian.TFile) {
+              session.mdPath = fallbackRenamed.path;
+              writeSession.mdPath = fallbackRenamed.path;
+            }
           }
         }
       }
@@ -1006,7 +1010,9 @@ export class SessionFinalizeService {
           : mergeError instanceof BriefingPipelineIncompleteError
           ? `${mergeError.message}，已加入精确重试`
           : "AI 整理未完成，已加入重试队列")
-      : "Q&A Log 处理完成");
+      : (session.continuationSourcePath
+        ? `续录完成：本次 ${session.segments.length} 段，合并后共 ${segmentsForFinal.length} 段（旧稿已存入版本缓存）`
+        : "Q&A Log 处理完成"));
 
     if (this.host.settings.autoOpenNoteAfterFinish) {
       const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
