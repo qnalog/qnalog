@@ -24,7 +24,8 @@ import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS } from "../shared/lim
 import { classifyShortRecording } from "./short-recording-policy";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
-import { getDurationMs, getSegmentsDurationMs, getSessionMasterAudioName } from "../notes/audio-refs";
+import { getDurationMs, getSegmentsDurationMs, getSessionMasterAudioName, collectAudioRefs } from "../notes/audio-refs";
+import { extractDetailsBody } from "../notes/detail-blocks";
 import { extractTranscriptSegments, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -39,6 +40,19 @@ import { ViewShellService } from "../ui/view-shell-service";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+
+/**
+ * 从既有纪要正文读回「录音中实时大纲（草稿）」details 的内容，
+ * 剥掉引导行（"> 基于录音过程中…"）。没有该块或内容为空时返回空串。
+ * 续录重写时旧大纲按场次保留，不因整篇重建丢失。
+ */
+export function extractPriorOutline(markdown) {
+  const raw = extractDetailsBody(markdown, /录音中实时大纲/);
+  return String(raw || "")
+    .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
+    .trim();
+}
+
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
   appendToFile?: unknown;
@@ -115,6 +129,11 @@ export class RecordingService {
       durationMs,
       startedAt: inferNoteStartedAtIso(file, frontmatter),
       frontmatter,
+      // 旧场次的原始材料读回：续录重写笔记时按场次保留，不因重整丢失。
+      priorOutline: extractPriorOutline(content),
+      priorAudioNames: collectAudioRefs(content),
+      priorRecordingInfo: extractDetailsBody(content, /录音信息/),
+      priorRecordedAt: inferNoteStartedAtIso(file, frontmatter),
     };
   }
 
@@ -166,8 +185,16 @@ export class RecordingService {
         continuationSourcePath: continuationInfo ? continuationInfo.file.path : "",
         continuationSourceTitle: continuationInfo ? continuationInfo.file.basename : "",
         continuationRecordedAt: continuationInfo ? startedAt.toDate().toISOString() : "",
-        realtimeOutline: "",
-        realtimeOutlineState: { version: 1, nodes: [], memory: "" },
+        continuationPriorOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
+        continuationPriorAudioNames: continuationInfo ? (continuationInfo.priorAudioNames || []) : [],
+        continuationPriorRecordingInfo: continuationInfo ? (continuationInfo.priorRecordingInfo || "") : "",
+        // 旧场次大纲作为实时大纲种子：增量管线在新段到来时以它为基础冻结合并生长，
+        // 收尾追赶只处理新段；不是种子的话新会话大纲从零开始，笔记里的大纲 details
+        // 就只有旧场次内容（rewriteConsolidated 的"无新大纲"兜底分支），永不反映追加内容。
+        realtimeOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
+        realtimeOutlineState: continuationInfo && continuationInfo.priorOutline
+          ? normalizeRealtimeOutlineState(undefined, continuationInfo.priorOutline, "")
+          : { version: 1, nodes: [], memory: "" },
         realtimeOutlineMemory: "",
         realtimeOutlineSegmentCount: 0,
         realtimeOutlineAttemptedSegmentCount: 0,

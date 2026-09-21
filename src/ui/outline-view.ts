@@ -3838,6 +3838,18 @@ export class OutlineView extends obsidian.ItemView {
       return;
     }
 
+    // 对当前纪要的追加录音入口：与文件右键同一条 startRecording({appendToFile}) 路径。
+    // 只在录音器空闲时可用；录音进行中点击会被 startRecording 拒绝并提示。
+    const appendSec = root.createDiv({ cls: "qnalog-outline-section qnalog-append-actions" });
+    const appendBtn = appendSec.createEl("button", {
+      cls: "qnalog-outline-action-button",
+      attr: { type: "button", "aria-label": i18nT("QnALog: Continue recording into this note") },
+    });
+    try { obsidian.setIcon(appendBtn.createSpan({ cls: "qnalog-outline-action-icon" }), "mic"); } catch { /* intentionally empty */ }
+    appendBtn.createSpan({ text: i18nT("Append recording to this note") });
+    appendBtn.disabled = this.plugin.recorder.state !== "idle";
+    appendBtn.onclick = () => { void this.plugin.recording.startRecording({ appendToFile: file }); };
+
     this.renderCompletedNotePlayer(root, data, file);
     if (data.speakerIds && data.speakerIds.length) this.renderSedimentSpeakerMap(root, file, data);
 

@@ -12413,3 +12413,39 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     font-size: 15px;
   }
 }
+
+/* 成品纪要面板顶部的「追加录音」按钮：与 idle 头的主按钮同视觉语言，
+   但不挂在 .qnalog-outline-head.is-idle 下，需要独立作用域。 */
+.qnalog-append-actions {
+  display: flex;
+  gap: var(--size-2-2);
+}
+
+.qnalog-append-actions .qnalog-outline-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 82%, var(--text-accent) 18%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--background-primary) 94%, var(--background-secondary) 6%);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+}
+
+.qnalog-append-actions .qnalog-outline-action-button:hover {
+  background: color-mix(in srgb, var(--background-primary) 80%, var(--text-accent) 20%);
+}
+
+.qnalog-append-actions .qnalog-outline-action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.qnalog-append-actions .qnalog-outline-action-icon {
+  display: inline-flex;
+}

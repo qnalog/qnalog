@@ -706,7 +706,14 @@ export function extractTranscriptSegments(markdown) {
       const endOffsetMs = timeMatch ? parseElapsedMsToken(timeMatch[2]) : startOffsetMs;
       const rawBlock = section.slice(bodyStart, bodyEnd);
       const audioMatch = rawBlock.match(/!\[\[([^\]]+)\]\]/);
-      const audioName = audioMatch ? (getAudioLinkTarget(audioMatch[1]).split("/").pop() || getAudioLinkTarget(audioMatch[1])) : "";
+      // 音频名有两个来源，都要认：
+      //   ① 正文里的嵌入 `![[audio.m4a]]`（旧布局与多来源分段用）；
+      //   ② 段标题行尾的回听链接 `[[audio.m4a|mm:ss]]`（整合版布局的段标题带链接、
+      //      正文只有纯文本）。只认①会让这类笔记读回的段丢失 audioName，
+      //      续录/重新整理重写后回听链接消失、旧音频文件失去全部引用。
+      const audioLinkSource = audioMatch ? audioMatch[1] : (String(head[2] || "").match(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/) || [])[1] || "";
+      const audioTarget = audioLinkSource ? getAudioLinkTarget(audioLinkSource) : "";
+      const audioName = audioTarget ? (audioTarget.split("/").pop() || audioTarget) : "";
       segments.push({
         index: segments.length,
         startOffsetMs,
