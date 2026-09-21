@@ -398,6 +398,16 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor, info) => {
       const file = info && info.file;
       if (!(file instanceof obsidian.TFile)) return;
+      // 正文右键（无论是否选中文字）：当前笔记是自家纪要时给「继续录音到这篇纪要」，
+      // 与文件列表右键同一条路径。用户正在阅读纪要正文时想补充一段，不必回文件列表。
+      if (this.noteWriter.detectModeFromMarkdown(file)) {
+        menu.addSeparator();
+        menu.addItem((item) => {
+          item.setTitle(t("QnALog: Continue recording into this note"))
+            .setIcon("mic")
+            .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
+        });
+      }
       const selection = String(editor.getSelection() || "").trim();
       if (!selection) return;
       // 只处理单行内的短片段：多行或过长通常是整段，不是「误识别词」
@@ -431,7 +441,6 @@ class QnALogPlugin extends obsidian.Plugin {
       menu.addItem((item) => {
         item.setTitle(t("QnALog: Continue recording into this note"))
           .setIcon("mic")
-          .setChecked(this.recorder.state === "idle")
           .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
       });
     }));
