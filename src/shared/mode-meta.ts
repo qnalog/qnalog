@@ -99,8 +99,22 @@ export function getModePrefix(meta) {
 
 export function getVisibleModeEntries(settings, includeOff) {
   const entries = getVisiblePolishModeKeys(settings).map((key) => [key, getModeMeta(settings, key).prefix]);
-  // prefix 会被写进笔记文件名，保持中文；这里只返回显示名，由调用方 t()。
+  // 第二个元素是**前缀**（写进笔记文件名、供读取侧解析），不是界面显示名：
+  // 需要显示的地方用 getModeDisplayName()，不要直接 setTitle(这个值)。
   return includeOff ? [["off", t("Off (transcription only)")], ...entries] : entries;
+}
+
+/**
+ * 模板的界面显示名，跟随界面语言。
+ *
+ * MODE_META.label 是英文原文，同时是词条键（zh 表里有对应中文）；prefix 是中文前缀，
+ * 写进笔记标题与文件名、供读取侧解析用，不参与界面显示。此前各处的做法不一致：
+ * 侧栏模板下拉直接显示 label（中文界面下仍是英文），菜单与导入弹窗显示 prefix
+ * （英文界面下仍是中文）。显示一律走这里，两种语言才对得上。
+ */
+export function getModeDisplayName(settings, mode) {
+  const meta = getModeMeta(settings, mode);
+  return t(meta.label || meta.prefix || mode);
 }
 
 export function setModePillIcon(el, meta, fallbackMeta) {

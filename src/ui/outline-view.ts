@@ -10,7 +10,7 @@ import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, Queu
 
 import { getRecentNoteProcessingState, qnalogConfirm, trashVaultFileRef } from "./helpers";
 
-import { getEffectivePolishMode, getModeMeta, getVisibleModeEntries, getVisiblePolishModeKeys } from "../shared/mode-meta";
+import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries, getVisiblePolishModeKeys } from "../shared/mode-meta";
 import { stripModePrefixFromTitle } from "../notes/note-markdown";
 
 import { isMobileRuntime } from "../shared/util-platform";
@@ -4512,7 +4512,7 @@ export class OutlineView extends obsidian.ItemView {
     const currentMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode);
     const modeSelect = mkSelect(modeRow, {
       current: currentMode,
-      items: getVisiblePolishModeKeys(this.plugin.settings).map(k => ({ value: k, label: getModeMeta(this.plugin.settings, k).label })),
+      items: getVisiblePolishModeKeys(this.plugin.settings).map(k => ({ value: k, label: getModeDisplayName(this.plugin.settings, k) })),
       onPick: async (k) => { this.plugin.settings.polishMode = k; await this.plugin.saveSettings(); this.scheduleUpdate(); },
     });
     modeRow.onclick = (event) => {
@@ -5452,8 +5452,8 @@ export class OutlineView extends obsidian.ItemView {
 
   getRecentModeFilterOptions() {
     const opts = [{ id: "all", label: i18nT("All templates") }];
-    for (const [mode, label] of getVisibleModeEntries(this.plugin.settings, false)) {
-      opts.push({ id: mode, label });
+    for (const [mode] of getVisibleModeEntries(this.plugin.settings, false)) {
+      opts.push({ id: mode, label: getModeDisplayName(this.plugin.settings, mode) });
     }
     return opts;
   }
@@ -5654,13 +5654,13 @@ export class OutlineView extends obsidian.ItemView {
       this.showRecentNoteContextMenu(evt, r.file, () => this.beginRecentNoteRename(nameEl, r.file, r.title));
     });
     const meta = getModeMeta(this.plugin.settings, r.mode) || MODE_META.off;
-    const chip = row.createDiv({ cls: "qnalog-outline-recent-chip", attr: { title: meta.label || meta.prefix || i18nT("Recording") } });
+    const chip = row.createDiv({ cls: "qnalog-outline-recent-chip", attr: { title: getModeDisplayName(this.plugin.settings, r.mode) || i18nT("Recording") } });
     try { obsidian.setIcon(chip, meta.icon || "mic"); } catch { chip.setText((meta.prefix || i18nT("Recording")).slice(0, 1)); }
     const body = row.createDiv({ cls: "qnalog-outline-recent-body" });
     const titleLine = body.createDiv({ cls: "qnalog-outline-recent-title-line" });
     nameEl = titleLine.createDiv({ cls: "qnalog-outline-recent-name", text: r.title || r.file.basename });
     nameEl.addEventListener("click", (e) => { if (nameEl.isContentEditable) e.stopPropagation(); });
-    const metaText = [r.displayTime, meta.prefix, r.durationLabel].filter(Boolean).join(" · ");
+    const metaText = [r.displayTime, getModeDisplayName(this.plugin.settings, r.mode), r.durationLabel].filter(Boolean).join(" · ");
     body.createDiv({ cls: "qnalog-outline-recent-meta", text: metaText });
     const failedTasks = getQueueTasksForMarkdown(this.plugin, r.file, { types: ["transcribe"], failedOnly: true });
     const actions = body.createDiv({ cls: "qnalog-outline-recent-actions" });
@@ -5978,9 +5978,9 @@ export class OutlineView extends obsidian.ItemView {
   showRecentModeMenu(evt, file) {
     const menu = new obsidian.Menu();
     const modes = getVisibleModeEntries(this.plugin.settings, false);
-    for (const [mode, label] of modes) {
+    for (const [mode] of modes) {
       menu.addItem((item) => {
-        item.setTitle(label)
+        item.setTitle(getModeDisplayName(this.plugin.settings, mode))
           .setIcon("refresh-cw")
           .onClick(() => {
             const pref = this.plugin.settings.repolishPreference || "";
@@ -6078,9 +6078,9 @@ export class OutlineView extends obsidian.ItemView {
       }
       sub.addSeparator();
       const modes = getVisibleModeEntries(this.plugin.settings, false);
-      for (const [mode, label] of modes) {
+      for (const [mode] of modes) {
         sub.addItem((subItem) => {
-          subItem.setTitle(label)
+          subItem.setTitle(getModeDisplayName(this.plugin.settings, mode))
             .setIcon("refresh-cw")
             .onClick(() => {
               const pref = this.plugin.settings.repolishPreference || "";

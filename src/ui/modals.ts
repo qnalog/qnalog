@@ -11,7 +11,7 @@ import { formatElapsed, pad } from '../shared/util-common';
 import { AUDIO_EXT, IMPORT_TEXT_CATEGORY_CONFIG, IMPORT_TEXT_CATEGORY_ORDER, TEXT_IMPORT_EXT } from '../shared/catalog-import';
 import { callLlm } from '../llm/core';
 import { mimeFromExt } from '../shared/util-audio';
-import { getBuiltInVisiblePolishModeKeys, getCustomPromptModeTemplates, getEffectivePolishMode, getModeMeta, getVisibleModeEntries, isCustomPromptModeTemplate, makeCustomPromptModeId, sanitizePromptTemplate, setModePillIcon } from '../shared/mode-meta';
+import { getBuiltInVisiblePolishModeKeys, getCustomPromptModeTemplates, getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries, isCustomPromptModeTemplate, makeCustomPromptModeId, sanitizePromptTemplate, setModePillIcon } from '../shared/mode-meta';
 import { getActivityStagePosition } from '../shared/activity-progress';
 import { getDesktopProcess } from '../shared/desktop-runtime';
 import { isSpeakerDiarizationProvider, normalizeRequestedSpeakerCount } from '../asr/diarization';
@@ -1590,7 +1590,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     setModePillIcon(pill, meta);
     pill.setAttr("aria-hidden", "true");
     const text = row.createDiv({ cls: "qnalog-tpl-row-meta" });
-    text.createDiv({ cls: "qnalog-tpl-row-name", text: i18nT(meta.label || meta.prefix || mode) });
+    text.createDiv({ cls: "qnalog-tpl-row-name", text: getModeDisplayName(this.plugin.settings, mode) });
     const override = this.getBuiltinOverride(mode);
     const state = override ? "当前使用旧版自定义规则。" : i18nT("Built-in prompts");
     text.createDiv({ cls: "qnalog-tpl-row-sub", text: i18nT(meta.goal || "") + " · " + state });
@@ -1908,8 +1908,8 @@ export class ImportTextModal extends obsidian.Modal {
     label.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Organizing mode") });
     this.modeHint = label.createDiv({ cls: "qnalog-import-mode-hint" });
     this.modeSelect = box.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
-    for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
-      this.modeSelect.createEl("option", { value: key, text: name });
+    for (const [key] of getVisibleModeEntries(this.plugin.settings, false)) {
+      this.modeSelect.createEl("option", { value: key, text: getModeDisplayName(this.plugin.settings, key) });
     }
     this.modeSelect.value = this.selectedMode;
     this.modeSelect.onchange = () => {
@@ -2085,8 +2085,8 @@ export class AudioImportOptionsModal extends obsidian.Modal {
     modeCopy.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Organizing mode") });
     modeCopy.createDiv({ cls: "qnalog-import-mode-hint", text: i18nT("After transcription is complete, generate minutes of the corresponding type.") });
     const modeSelect = mode.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
-    for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
-      modeSelect.createEl("option", { value: key, text: name });
+    for (const [key] of getVisibleModeEntries(this.plugin.settings, false)) {
+      modeSelect.createEl("option", { value: key, text: getModeDisplayName(this.plugin.settings, key) });
     }
     modeSelect.value = this.selectedMode;
     modeSelect.onchange = () => {
@@ -2216,8 +2216,8 @@ export class ImportAudioModal extends obsidian.Modal {
     label.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Organizing mode") });
     this.modeHint = label.createDiv({ cls: "qnalog-import-mode-hint" });
     this.modeSelect = box.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
-    for (const [key, name] of getVisibleModeEntries(this.plugin.settings, false)) {
-      this.modeSelect.createEl("option", { value: key, text: name });
+    for (const [key] of getVisibleModeEntries(this.plugin.settings, false)) {
+      this.modeSelect.createEl("option", { value: key, text: getModeDisplayName(this.plugin.settings, key) });
     }
     this.modeSelect.value = this.selectedMode;
     this.modeSelect.onchange = () => {
