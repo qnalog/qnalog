@@ -431,6 +431,12 @@ export interface RecordingSession {
   continuationSourcePath?: string;
   continuationSourceTitle?: string;
   continuationRecordedAt?: string;
+  /** 续录来源笔记的实时大纲草稿文本；重写时按场次保留。 */
+  continuationPriorOutline?: string;
+  /** 续录来源笔记引用的音频文件名列表；重写时原始音频块按场次列出。 */
+  continuationPriorAudioNames?: string[];
+  /** 续录来源笔记的「录音信息」details 正文；重写时并入场次列表。 */
+  continuationPriorRecordingInfo?: string;
   meetingWorkbench?: unknown;
   pendingMeetingWorkbenchInteractions?: unknown[];
   /** 会话处理进度的用户可见文案；由 recording-service 的 setSessionWorkProgress 逐字段合并写入。 */
