@@ -188,8 +188,13 @@ export class RecordingService {
         continuationPriorOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
         continuationPriorAudioNames: continuationInfo ? (continuationInfo.priorAudioNames || []) : [],
         continuationPriorRecordingInfo: continuationInfo ? (continuationInfo.priorRecordingInfo || "") : "",
-        realtimeOutline: "",
-        realtimeOutlineState: { version: 1, nodes: [], memory: "" },
+        // 旧场次大纲作为实时大纲种子：增量管线在新段到来时以它为基础冻结合并生长，
+        // 收尾追赶只处理新段；不是种子的话新会话大纲从零开始，笔记里的大纲 details
+        // 就只有旧场次内容（rewriteConsolidated 的"无新大纲"兜底分支），永不反映追加内容。
+        realtimeOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
+        realtimeOutlineState: continuationInfo && continuationInfo.priorOutline
+          ? normalizeRealtimeOutlineState(undefined, continuationInfo.priorOutline, "")
+          : { version: 1, nodes: [], memory: "" },
         realtimeOutlineMemory: "",
         realtimeOutlineSegmentCount: 0,
         realtimeOutlineAttemptedSegmentCount: 0,

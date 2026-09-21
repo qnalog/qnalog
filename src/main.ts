@@ -398,21 +398,25 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor, info) => {
       const file = info && info.file;
       if (!(file instanceof obsidian.TFile)) return;
-      // 正文右键（无论是否选中文字）：当前笔记是自家纪要时给「继续录音到这篇纪要」，
-      // 与文件列表右键同一条路径。用户正在阅读纪要正文时想补充一段，不必回文件列表。
-      if (this.noteWriter.detectModeFromMarkdown(file)) {
-        menu.addSeparator();
+      const isMinutes = this.noteWriter.detectModeFromMarkdown(file);
+      const selection = String(editor.getSelection() || "").trim();
+      const hasCorrection = !!selection && !selection.includes("\n") && selection.length <= 80;
+      // 本插件的菜单项归入同一组：只在最前面加一条分隔线（与系统项隔开），
+      // 「继续录音」与「更正误识别词」之间不再分割——两条中间夹分隔线会把
+      // 同一插件的功能切成两组，视觉上像两家来源。
+      if (!isMinutes && !hasCorrection) return;
+      menu.addSeparator();
+      if (isMinutes) {
+        // 正文右键（无论是否选中文字）：当前笔记是自家纪要时给「继续录音到这篇纪要」，
+        // 与文件列表右键同一条路径。用户正在阅读纪要正文时想补充一段，不必回文件列表。
         menu.addItem((item) => {
           item.setTitle(t("QnALog: Continue recording into this note"))
             .setIcon("mic")
             .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
         });
       }
-      const selection = String(editor.getSelection() || "").trim();
-      if (!selection) return;
+      if (!hasCorrection) return;
       // 只处理单行内的短片段：多行或过长通常是整段，不是「误识别词」
-      if (selection.includes("\n") || selection.length > 80) return;
-      menu.addSeparator();
       menu.addItem((item) => {
         item.setTitle(t("QnALog: Correct misrecognized text…"))
           .setIcon("replace")

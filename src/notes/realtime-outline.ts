@@ -563,7 +563,16 @@ export function shouldRunRealtimeOutline(session, opts: { force?: boolean; final
     if (isRealtimeOutlineSilentIntervalActive(session, { local: !!opts.local })) return false;
     const newSegments = getRealtimeOutlineNewSegmentCount(session);
     const newChars = getRealtimeOutlineNewTextChars(session);
-    if (newSegments < REALTIME_OUTLINE_MIN_NEW_SEGMENTS && newChars < REALTIME_OUTLINE_MIN_NEW_CHARS) return false;
+    // 续录会话：种子是旧场次的大纲（不是本场产出），committed 从 0 起算，
+    // 按"已有产出"的 2 段/200 字门槛会把 1 段短追加卡到收尾才生成。
+    // 按本场视角回到初始门槛（2 段/120 字）。
+    const minNewSegments = session.continuationSourcePath
+      ? REALTIME_OUTLINE_INITIAL_MIN_SEGMENTS
+      : REALTIME_OUTLINE_MIN_NEW_SEGMENTS;
+    const minNewChars = session.continuationSourcePath
+      ? REALTIME_OUTLINE_INITIAL_MIN_CHARS
+      : REALTIME_OUTLINE_MIN_NEW_CHARS;
+    if (newSegments < minNewSegments && newChars < minNewChars) return false;
   }
   return true;
 }
