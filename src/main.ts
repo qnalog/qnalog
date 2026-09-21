@@ -367,6 +367,25 @@ class QnALogPlugin extends obsidian.Plugin {
       },
     });
 
+    // 续录当前笔记：对正在浏览的纪要追加一段录音，停止后与原纪要重新合并整理。
+    // 目标笔记没有可合并的原始转写分段时，startRecording 会给出具体原因提示。
+    this.addCommand({
+      id: "append-recording-to-active",
+      name: t("Continue Recording into the Current Note"),
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        const isMd = file instanceof obsidian.TFile && file.extension === "md";
+        if (!isMd || !this.noteWriter.detectModeFromMarkdown(file)) return false;
+        if (checking) return this.recorder.state === "idle";
+        if (this.recorder.state !== "idle") {
+          new obsidian.Notice(t("A recording is already in progress. Please stop it before continuing to record."), 5000);
+          return true;
+        }
+        void this.recording.startRecording({ appendToFile: file });
+        return true;
+      },
+    });
+
     // 选中文字 → 右键 → 更正误识别词。只改当前笔记，不写词表。
     // 入口放在编辑器菜单而不是文件菜单：用户看到错词时正在正文里，
     // 让「选中即更正」一步可达，不必开弹窗再手打一遍错词。
@@ -401,7 +420,20 @@ class QnALogPlugin extends obsidian.Plugin {
             .setIcon("mic")
             .onClick(() => this.imports.openAudioImportOptions([file.path]));
         });
+        return;
       }
+      // 纪要文件的续录入口：右键一篇已生成的转写纪要，追加一段录音。
+      // 只对自家纪要显示：续录建纪要时统一写 mode frontmatter
+      // （postProcessBriefingOutput），读回检测用 detectModeFromMarkdown。
+      // 录音进行中点击会被 startRecording 拒绝并提示，菜单不做状态轮询。
+      if (!this.noteWriter.detectModeFromMarkdown(file)) return;
+      menu.addSeparator();
+      menu.addItem((item) => {
+        item.setTitle(t("QnALog: Continue recording into this note"))
+          .setIcon("mic")
+          .setChecked(this.recorder.state === "idle")
+          .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
+      });
     }));
 
     this.registerEvent(this.app.workspace.on("files-menu", (menu, files) => {
