@@ -7143,10 +7143,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
    6.6. Prompt 模板管理 Modal
    ============================================================ */
 
-.qnalog-tpl-modal {
-  max-width: 760px;
-}
-
 .qnalog-tpl-desc {
   margin: 0 0 var(--size-4-3) 0;
 }
@@ -7693,8 +7689,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 
-.qnalog-tpl-modal {
+/* .modal 默认宽 560px（--dialog-width），内容区自己定宽会横向溢出；宽度加在 .modal 上，内容区跟随其内部宽度。 */
+.modal.qnalog-tpl-modal-shell {
   width: min(720px, calc(100vw - var(--size-4-8)));
+  max-width: min(720px, calc(100vw - var(--size-4-8)));
+}
+
+.qnalog-tpl-modal {
+  width: 100%;
   max-width: 720px;
 }
 
@@ -7721,6 +7723,18 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-weight: var(--font-semibold);
   color: var(--text-normal);
   margin-bottom: var(--size-2-2);
+}
+
+.qnalog-tpl-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2-2);
+  margin-bottom: var(--size-2-2);
+}
+
+.qnalog-tpl-section-head .qnalog-tpl-section-title {
+  margin-bottom: 0;
 }
 
 .qnalog-tpl-section {
@@ -7898,6 +7912,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 @media (max-width: 760px) {
   .qnalog-tpl-toolbar,
+  .qnalog-tpl-section-head,
   .qnalog-tpl-row {
     flex-direction: column;
     align-items: stretch;

@@ -1544,7 +1544,8 @@ export class PromptTemplateModal extends obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-tpl-modal");
-    contentEl.createEl("h2", { text: this.editingId ? "编辑提示词" : i18nT("1 (most stable)") });
+    this.modalEl.addClass("qnalog-tpl-modal-shell");
+    contentEl.createEl("h2", { text: this.editingId ? i18nT("Edit prompt") : i18nT("Prompt library") });
 
     const desc = contentEl.createDiv({ cls: "setting-item-description qnalog-tpl-desc" });
     desc.setText(i18nT("This is where refinement rules are managed. Built-in prompts get you started quickly; create a custom prompt and set it as default when you need a fixed format, professional judgement, or a long-running workflow."));
@@ -1559,13 +1560,6 @@ export class PromptTemplateModal extends obsidian.Modal {
     const defaultMeta = getModeMeta(this.plugin.settings, defaultMode);
     const toolbar = body.createDiv({ cls: "qnalog-tpl-toolbar" });
     toolbar.createDiv({ cls: "qnalog-tpl-current", text: i18nT("Current default:") + (defaultMeta.prefix || defaultMeta.label || defaultMode) });
-    const createBtn = toolbar.createEl("button", { text: i18nT("New custom prompt"), cls: "mod-cta" });
-    createBtn.onclick = async () => {
-      const tpl = this.newCustomScene(i18nT("New custom prompt"), "learning");
-      await this.saveScene(tpl, true);
-      this.editingId = tpl.id;
-      this.onOpen();
-    };
 
     const builtInSection = body.createDiv({ cls: "qnalog-tpl-section" });
     builtInSection.createDiv({ cls: "qnalog-tpl-section-title", text: i18nT("Built-in prompts") });
@@ -1574,7 +1568,15 @@ export class PromptTemplateModal extends obsidian.Modal {
     for (const mode of this.builtInModes()) this.renderBuiltinRow(list, mode);
 
     const customSection = body.createDiv({ cls: "qnalog-tpl-section" });
-    customSection.createDiv({ cls: "qnalog-tpl-section-title", text: i18nT("Custom prompt") });
+    const customHead = customSection.createDiv({ cls: "qnalog-tpl-section-head" });
+    customHead.createDiv({ cls: "qnalog-tpl-section-title", text: i18nT("Custom prompt") });
+    const createBtn = customHead.createEl("button", { text: i18nT("New custom prompt"), cls: "mod-cta" });
+    createBtn.onclick = async () => {
+      const tpl = this.newCustomScene(i18nT("New custom prompt"), "learning");
+      await this.saveScene(tpl, true);
+      this.editingId = tpl.id;
+      this.onOpen();
+    };
     customSection.createDiv({ cls: "qnalog-tpl-section-copy", text: i18nT("Every custom prompt appears in the recording, audio import, and re-organize menus, and can also be set as default.") });
     const customList = customSection.createDiv({ cls: "qnalog-tpl-list" });
     const customs = getCustomPromptModeTemplates(this.plugin.settings);
@@ -1657,7 +1659,7 @@ export class PromptTemplateModal extends obsidian.Modal {
       i18nT("- Do not force in a large number of callouts; structure is fine, but the body text should stay close to what was actually discussed."),
       i18nT("- Make it directly usable for recording, importing and re-organizing right after the user saves it."),
       "",
-      i18nT("1. Open system settings and allow Obsidian to access the microphone.") + ((tpl && tpl.name) || i18nT("Custom prompt")),
+      i18nT("Prompt name: ") + ((tpl && tpl.name) || i18nT("Custom prompt")),
       "",
       i18nT("Current draft:"),
       seed,
@@ -1730,7 +1732,7 @@ export class PromptTemplateModal extends obsidian.Modal {
       tpl.isBuiltin = false;
       tpl.prompt = ta.value.trim();
       if (!tpl.prompt) { new obsidian.Notice(i18nT("Please fill in the prompt content")); return; }
-      if (!tpl.prompt.includes("{{TRANSCRIPT}}")) { new obsidian.Notice(i18nT("2. Return to Q&A Log and start a new recording.")); return; }
+      if (!tpl.prompt.includes("{{TRANSCRIPT}}")) { new obsidian.Notice(i18nT("The prompt must contain the {{TRANSCRIPT}} placeholder")); return; }
       tpl.updatedAt = new Date().toISOString();
       await this.saveScene(tpl, true);
       new obsidian.Notice(i18nT("Custom prompt saved"));
