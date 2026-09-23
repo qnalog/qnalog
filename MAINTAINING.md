@@ -579,7 +579,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [ ] **设置界面精简（开箱即用方向）**：现状设置页偏复杂，把"必须先配的"和"少数人才调的"混在一起。方向是——默认路径只需填 API Key 即可工作（服务、模型、目录用内置默认值 + 一个推荐配置入口），其余自定义项收进"高级"分区。分期推进。注意：设置项读写受 `settings-io.ts` 白名单约束（新增键必须同时登记 normalize 与 serialize），**搬动 UI 分组不影响存储结构**——简单界面与高级界面读写同一批字段，不引入第二套同步逻辑。
   - [x] **任务 0：盘点**。已产出 §9 的逐键映射表（87 个键：默认值、落盘位置、读回别名、作用、现入口、拟归属）与 11 条规则冲突登记，并加 `check:settings-map` 门禁防表过期。
   - [ ] 目标状态：新用户不必理解"模型 / 协议 / 转写流程"就能录出第一条语音笔记；已有用户升级后配置不变。判据与约束见 §9.5。
-  - [x] **任务 1：统一配置与检测逻辑**。预设写入范围收敛为 9 个键（清单在 `PRESET_WRITTEN_FIELDS`）；四份检测合并为 `runPresetDetection` 一处；检测对象改为候选配置且不落盘；状态改为四态。见 §10。
+  - [x] **任务 1：统一配置与检测逻辑**。预设写入范围收敛为 10 个键（清单在 `PRESET_WRITTEN_FIELDS`）；四份检测合并为 `runPresetDetection` 一处；检测对象改为候选配置且不落盘；状态改为四态。见 §10。
   - [ ] 后续批次（每次一批，不夹带录音流水线重构）：① 按 §9.2 重排页面，首次配置收敛为一条路径（含说话人页拆分、方案应用内联副本）；② 最后处理工作面板。推荐用哪家服务需另行核实（§9.4）。
 - [x] **数据层命名的独立化**：已完成（2026-09-15，见 §1.1.2）。Q&A Log 按全新项目处理，不支持从历史项目迁移数据，代码里不再保留迁移逻辑；混淆盐已换新，已存 API Key 需重填。
 - [ ] 为自定义说话人分离服务（如 `siliconflow-diarize`）补预设条目（名称/提示/步骤文案）。纯展示性——能力已具备（`speaker-diarization` 协议），不做也能用。
@@ -688,7 +688,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `transcribeLanguage` | `"auto"` | `speech.compatLanguage` | — | 兼容兜底：provider 未填语言时的回退（asr/transcribe.ts:150） | 无 | 内部（保留存储，不进设置界面） |
 | `activeTranscribeProvider` | `"siliconflow"` | `speech.activeProviderId` | — | 实时录音使用的转写服务 id | API | 基本设置 |
 | `importTranscribeProvider` | `"dashscope-filetrans"` | `speech.importProviderId` | — | 导入音频（整文件）使用的转写服务 id | API | 高级 · 服务 |
-| `importSpeakerDiarization` | `true` | `speech.importSpeakerDiarization` | — | 导入音频是否区分说话人 | API | 高级 · 服务 |
+| `importSpeakerDiarization` | `false` | `speech.importSpeakerDiarization` | — | 导入音频是否区分说话人（可选项，默认不启用） | API | 高级 · 服务 |
 | `importSpeakerCount` | `0` | `speech.importSpeakerCount` | — | 导入音频预期的说话人数（0=自动） | API | 高级 · 服务 |
 | `transcribeProviders` | `{…}` | `speech.providers` | — | 各转写服务的地址/密钥/模型/语言注册表 | API（经 provider 子对象） | 基本设置 |
 | `llmEndpoint` | `"https://api.siliconflow.cn/v1/chat/completions"` | `composer.endpoint` | — | AI 整理服务地址 | API | 高级 · 服务 |
@@ -892,8 +892,8 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 | 写入 | 键 |
 |---|---|
-| 是 | `transcribeProviders`、`activeTranscribeProvider`、`importTranscribeProvider`、`llmServicePreset`、`llmEndpoint`、`llmModel`、`llmApiKey`、`llmProfiles`、`activeLlmProfile` |
-| 否 | 其余 78 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、日记、自动导入 |
+| 是 | `transcribeProviders`、`activeTranscribeProvider`、`importTranscribeProvider`、`importSpeakerDiarization`、`llmServicePreset`、`llmEndpoint`、`llmModel`、`llmApiKey`、`llmProfiles`、`activeLlmProfile` |
+| 否 | 其余 77 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、日记、自动导入 |
 
 `tests/setup.test.ts` 会拿一份「用户已经改过很多项」的设置逐键核对：清单之外的键必须逐项不变。
 反向验证过——一旦让预设顺手写 `audioFolder`，该用例立刻失败。
@@ -902,6 +902,8 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 - **不改用户已选的转写语言**：预设填地址、模型、密钥，`language` 只在用户没设过时才用默认值。
   用户把语言调成 `en` 之后套预设，仍是 `en`。
+- **说话人识别按供应商差异化**：预设自带导入服务（百炼 / OpenRouter，含说话人识别模型）写为启用；
+  否则（小米 MiMo、硅基流动没有说话人识别模型）写为未启用。该键的默认值也是未启用。
 - **密钥为空时不覆盖**：「先套推荐配置、再填密钥」的入口（`allowMissingKey`）只写地址与模型，
   不会把用户已填的密钥清成空串。
 
