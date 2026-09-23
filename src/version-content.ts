@@ -1,4 +1,4 @@
-import { NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_SEGMENTS_BLOCK_RE } from "./shared/namespace";
+import { NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "./shared/namespace";
 import { QNALOG_ACTIVE_VERSION_END } from "./shared/limits";
 
 const VERSION_FRONTMATTER_START = `<!-- ${NS_TAG}-version-frontmatter-start`;
@@ -159,7 +159,10 @@ export function foldRawTranscriptSection(markdown: string): string {
       return `<details>\n<summary>分段原始转写（${count} 段）</summary>\n\n${String(block).trim()}\n\n</details>`;
     });
   }
-  const rawPos = tail.search(new RegExp(`<details\\b|<!--\\s*${NS_TAG}-segments-start`, "i"));
+  // 机器壳（索引数据/沉淀数据）不是原始材料锚点：等长遮蔽后再定位，
+  // 否则裸尾（没有原始块）时标题会被插到折叠壳前面。
+  const masked = tail.replace(NS_MACHINE_SHELL_RE, (m) => " ".repeat(m.length));
+  const rawPos = masked.search(new RegExp(`<details\\b|<!--\\s*${NS_TAG}-segments-start`, "i"));
   if (rawPos < 0) return head + tail;
   const lineStart = tail.lastIndexOf("\n", rawPos) + 1;
   return head + tail.slice(0, lineStart) + "## 原始材料\n\n" + tail.slice(lineStart);

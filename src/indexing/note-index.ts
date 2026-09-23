@@ -1,10 +1,15 @@
 import { NS_TAG, nsRe } from "../shared/namespace";
 
-// 写入用新命名空间；读取同时接受旧值，否则既有笔记里的索引块会被重复插入。
-export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index`;
-export const QNALOG_NOTE_INDEX_END = `${NS_TAG}-note-index-end -->`;
+// 写入用折叠壳新格式（标记在外、details+json 围栏在内，阅读视图折叠为一行）；
+// 读取同时接受旧的单注释格式，否则既有笔记里的索引块会被重复插入。
+export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index -->`;
+export const QNALOG_NOTE_INDEX_END = `<!-- ${NS_TAG}-note-index-end -->`;
 
-const NOTE_INDEX_PATTERN = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*\\n([\\s\\S]*?)\\n${nsRe("note-index-end")}\\s*-->`, "i");
+const NOTE_INDEX_FENCED_PATTERN = new RegExp(
+  `<!--\\s*${nsRe("note-index")}\\s*-->\\s*<details>\\s*<summary>[^<]*</summary>\\s*\`\`\`json\\s*\\n([\\s\\S]*?)\\n\`\`\`\\s*</details>\\s*<!--\\s*${nsRe("note-index-end")}\\s*-->`,
+  "i",
+);
+const NOTE_INDEX_LEGACY_PATTERN = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*\\n([\\s\\S]*?)\\n${nsRe("note-index-end")}\\s*-->`, "i");
 const ACTIVE_VERSION_PATTERN = new RegExp(`<!--\\s*${nsRe("active-version-start")}\\s*-->([\\s\\S]*?)<!--\\s*${nsRe("active-version-end")}\\s*-->`, "i");
 const MAX_INDEX_TOPICS = 48;
 const MAX_CORE_TITLE_CHARS = 96;
@@ -110,7 +115,11 @@ function extractLastLegacyPolishBlock(markdown: string): string {
 }
 
 export function removeNoteIndex(markdown: unknown): string {
-  return textValue(markdown).replace(NOTE_INDEX_PATTERN, "").replace(/\n{3,}/g, "\n\n").trimEnd();
+  return textValue(markdown)
+    .replace(NOTE_INDEX_FENCED_PATTERN, "")
+    .replace(NOTE_INDEX_LEGACY_PATTERN, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
 }
 
 export function extractIndexSource(markdown: unknown): string {
@@ -120,7 +129,7 @@ export function extractIndexSource(markdown: unknown): string {
   visible = stripLeadingFrontmatter(visible);
   if (!active) visible = extractLastLegacyPolishBlock(visible);
   visible = stripUtilityTail(visible)
-    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
+    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
     .replace(/<!--[^>]*-->/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -272,7 +281,8 @@ function isIndexTopic(value: unknown): value is QnALogNoteIndexTopic {
 }
 
 export function readNoteIndex(markdown: unknown): QnALogNoteIndexCard | null {
-  const match = NOTE_INDEX_PATTERN.exec(textValue(markdown));
+  const text = textValue(markdown);
+  const match = NOTE_INDEX_FENCED_PATTERN.exec(text) || NOTE_INDEX_LEGACY_PATTERN.exec(text);
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[1]) as Record<string, unknown>;
@@ -287,19 +297,36 @@ export function readNoteIndex(markdown: unknown): QnALogNoteIndexCard | null {
 }
 
 export function serializeNoteIndex(index: QnALogNoteIndexCard): string {
+  // JSON 与标记都要安全：`<`/`>`/`--` 防旧注释格式与 HTML 解析，反引号防截断 json 围栏。
   const json = JSON.stringify(index)
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e")
+    .replace(/`/g, "\\u0060")
     .replace(/--/g, "\\u002d\\u002d");
-  return `${QNALOG_NOTE_INDEX_START}\n${json}\n${QNALOG_NOTE_INDEX_END}`;
+  return [
+    QNALOG_NOTE_INDEX_START,
+    "",
+    "<details>",
+    "<summary>索引数据</summary>",
+    "",
+    "```json",
+    json,
+    "```",
+    "",
+    "</details>",
+    QNALOG_NOTE_INDEX_END,
+  ].join("\n");
 }
 
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
   const text = textValue(markdown);
-  const existing = readNoteIndex(text);
-  if (existing && existing.sourceRevision === index.sourceRevision) return text;
   const block = serializeNoteIndex(index);
-  if (NOTE_INDEX_PATTERN.test(text)) return text.replace(NOTE_INDEX_PATTERN, block);
+  const hasFenced = NOTE_INDEX_FENCED_PATTERN.test(text);
+  // 内容没变且已是新格式才原地不动；旧格式在任意一次自然刷新时升级为新格式。
+  const existing = readNoteIndex(text);
+  if (existing && existing.sourceRevision === index.sourceRevision && hasFenced) return text;
+  if (hasFenced) return text.replace(NOTE_INDEX_FENCED_PATTERN, () => block);
+  if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block);
   return `${text.trimEnd()}\n\n${block}\n`;
 }
 

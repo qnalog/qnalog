@@ -22,11 +22,12 @@ import { TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS, parseElapsedMsToken, splitLongText
 import { mergeUniqueStrings, normalizePersonLookupText, normalizePersonNameForEmail, parsePeopleFromOutput, splitPersonFieldValue } from "../people";
 
 import { extractSedimentPreExtractionBlock, stripSedimentPreExtractionBlocks } from "../sediment";
+import { removeNoteIndex } from "../indexing/note-index";
 
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import { NS_TAG, NS_ROOT, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
+import { NS_TAG, NS_ROOT, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
 
 import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
@@ -212,7 +213,9 @@ export function clampProgress(value) {
 }
 
 export function stripImportAppendices(text) {
-  return stripSedimentPreExtractionBlocks(String(text || ""))
+  // 索引块（标记+折叠壳）整块剥掉：后面喂提示词的路径未必再剥 HTML 注释。
+  return removeNoteIndex(stripSedimentPreExtractionBlocks(String(text || "")))
+    .replace(NS_MACHINE_SHELL_RE, "\n")
     .replace(/<details>\s*<summary>\s*导入文本信息[\s\S]*?<\/details>/gi, "\n")
     .replace(/<details>\s*<summary>\s*导入文本原文[\s\S]*?<\/details>/gi, "\n")
     .replace(/<details>\s*<summary>\s*录音中实时大纲[\s\S]*?<\/details>/gi, "\n")
@@ -1163,7 +1166,7 @@ export function extractAllRawBlocksFromText(text) {
   s = s.replace(NS_SESSION_LINE_RE,
     (m) => stash(m.trim()));
 
-  // 4. \u6C89\u6DC0\u5757\uFF1A<!--LEXVOICE_SEDIMENT_BEGIN ... LEXVOICE_SEDIMENT_END-->
+  // 4. \u6C89\u6DC0\u5757\uFF1A<!--QNALOG_SEDIMENT_BEGIN ... QNALOG_SEDIMENT_END-->
   s = s.replace(NS_SEDIMENT_BLOCK_RE,
     (m) => stash(m));
 

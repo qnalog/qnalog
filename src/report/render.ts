@@ -3,6 +3,7 @@
 import { extractJsonObject } from '../shared/util-json';
 import { escapeHtmlText } from '../shared/util-markdown';
 import { isRecord, primitiveText } from '../shared/util-common';
+import { NS_MACHINE_SHELL_RE } from '../shared/namespace';
 import { SEMINAR_REPORT_TEMPLATE, SEMINAR_REPORT_PROMPT } from '../report-templates';
 import { callLlm } from '../llm/core';
 
@@ -155,6 +156,7 @@ export function extractMarkdownForHtmlReport(markdown) {
   if (rawMatch) text = text.slice(0, rawMatch.index);
   text = text
     .replace(/<details>\s*<summary>上一版纪要[\s\S]*?<\/details>/gi, "")
+    .replace(NS_MACHINE_SHELL_RE, "\n")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/!\[\[[^\]]+\]\]/g, "")
     .replace(/\n{3,}/g, "\n\n")

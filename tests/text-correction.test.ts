@@ -53,6 +53,29 @@ describe("就地更正：替换范围", () => {
     expect(r.text).toContain('{"core":{"title":"Hugging Face 视频制作"}}');
   });
 
+  it("折叠壳里的 json 围栏不动（新格式索引块受围栏保护）", () => {
+    const fenced = [
+      "# 笔记",
+      "",
+      "正文 Hugging Face 流程。",
+      "",
+      "<!-- qnalog-note-index -->",
+      "<details>",
+      "<summary>索引数据</summary>",
+      "",
+      "```json",
+      '{"core":{"title":"Hugging Face 视频制作"}}',
+      "```",
+      "",
+      "</details>",
+      "<!-- qnalog-note-index-end -->",
+    ].join("\n");
+    const r = applyNoteTextCorrection(fenced, "Hugging Face", "Hyperframes");
+    expect(r.text).toContain('{"core":{"title":"Hugging Face 视频制作"}}');
+    expect(r.text).toContain("正文 Hyperframes 流程。");
+    expect(r.replacements).toBe(1);
+  });
+
   it("围栏代码块不动（示例代码里的词常是刻意的）", () => {
     const r = applyNoteTextCorrection(NOTE, "Hugging Face", "Hyperframes");
     expect(r.text).toContain("示例：Hugging Face => Hyperframes");

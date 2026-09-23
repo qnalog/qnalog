@@ -3,6 +3,7 @@ import {
   buildNoteIndex,
   extractIndexSource,
   readNoteIndex,
+  removeNoteIndex,
   resolveNoteIndex,
   serializeNoteIndex,
   upsertNoteIndex,
@@ -105,13 +106,15 @@ describe("QnALog note index", () => {
     expect(index?.core.summary).not.toBe("已按时间顺序完成全部内容整理。");
   });
 
-  it("round-trips an HTML-comment-safe marker and replaces it idempotently", () => {
+  it("round-trips a folded shell marker and replaces it idempotently", () => {
     const first = buildNoteIndex(minutes, {
       noteTitle: "A --> B",
       generatedAt: "2026-08-25T10:00:00.000Z",
     })!;
     const marker = serializeNoteIndex(first);
     expect(marker).not.toContain("A --> B");
+    expect(marker).toContain("<summary>索引数据</summary>");
+    expect(marker).toContain("```json");
     expect(readNoteIndex(marker)?.core.title).toBe("A --> B");
 
     const inserted = upsertNoteIndex(minutes, first);
@@ -122,8 +125,78 @@ describe("QnALog note index", () => {
       generatedAt: "2026-08-25T11:00:00.000Z",
     })!;
     const replaced = upsertNoteIndex(inserted, changed);
-    expect((replaced.match(/qnalog-note-index\s*$/gm) || []).length).toBe(1);
+    expect((replaced.match(/<!-- qnalog-note-index -->/g) || []).length).toBe(1);
+    expect(replaced).not.toContain("<!-- qnalog-note-index\n");
     expect(readNoteIndex(replaced)?.sourceRevision).toBe(changed.sourceRevision);
+  });
+
+  it("upgrades a legacy comment block in place on refresh and never duplicates it", () => {
+    const legacyBlock = [
+      "<!-- qnalog-note-index",
+      '{"schemaVersion":1,"sourceRevision":"old-rev","core":{"title":"旧","summary":"旧摘要内容不足三十二个字符时会走兜底，这里写长一点以通过弱摘要判定","heading":""},"topics":[],"topicCount":0,"omittedTopicCount":0,"meetingDate":"2026-08-25","generatedAt":"2026-08-25T10:00:00.000Z"}',
+      "qnalog-note-index-end -->",
+    ].join("\n");
+    const note = `${minutes}\n\n${legacyBlock}\n`;
+    const next = buildNoteIndex(minutes, { noteTitle: "升级索引", generatedAt: "2026-08-25T12:00:00.000Z" })!;
+    const upgraded = upsertNoteIndex(note, next);
+    expect((upgraded.match(/<!-- qnalog-note-index -->/g) || []).length).toBe(1);
+    expect(upgraded).not.toContain("qnalog-note-index-end -->\n<!--");
+    expect(upgraded).not.toContain('"sourceRevision":"old-rev"');
+    expect(upgraded).toContain("<summary>索引数据</summary>");
+    expect(readNoteIndex(upgraded)?.sourceRevision).toBe(next.sourceRevision);
+    // 再刷一次：已是新格式且内容没变 → 原样返回。
+    expect(upsertNoteIndex(upgraded, next)).toBe(upgraded);
+    // 摘要里出现标记词也不能截断读取（换修订号触发一次真实重写）。
+    const tricky = { ...next, sourceRevision: `${next.sourceRevision}-tricky`, core: { ...next.core, summary: "结尾提到 qnalog-note-index-end --> 的场景" } };
+    expect(readNoteIndex(upsertNoteIndex(upgraded, tricky))?.core.summary).toContain("qnalog-note-index-end");
+  });
+
+  it("removes both folded and legacy index blocks without leftovers", () => {
+    const fenced = upsertNoteIndex(minutes, buildNoteIndex(minutes, { noteTitle: "去壳", generatedAt: "2026-08-25T13:00:00.000Z" })!);
+    const strippedFenced = removeNoteIndex(fenced);
+    expect(strippedFenced).not.toContain("<details>");
+    expect(strippedFenced).not.toContain("索引数据");
+    expect(strippedFenced).not.toContain("qnalog-note-index");
+    expect(strippedFenced).not.toContain("```json");
+    expect(strippedFenced).not.toContain("\n\n\n");
+
+    const legacy = `${minutes}\n\n<!-- qnalog-note-index\n{"schemaVersion":1}\nqnalog-note-index-end -->\n`;
+    const strippedLegacy = removeNoteIndex(legacy);
+    expect(strippedLegacy).not.toContain("qnalog-note-index");
+    expect(strippedLegacy).not.toContain("\n\n\n");
+  });
+
+  it("keeps folded index and sediment shells out of the index source", () => {
+    const shell = [
+      "<!-- qnalog-note-index -->",
+      "<details>",
+      "<summary>索引数据</summary>",
+      "",
+      "```json",
+      '{"schemaVersion":1,"sourceRevision":"x"}',
+      "```",
+      "",
+      "</details>",
+      "<!-- qnalog-note-index-end -->",
+      "",
+      "<!--QNALOG_SEDIMENT_BEGIN-->",
+      "<details>",
+      "<summary>沉淀数据</summary>",
+      "",
+      "```json",
+      '{"people":[{"name":"张三"}]}',
+      "```",
+      "",
+      "</details>",
+      "<!--QNALOG_SEDIMENT_END-->",
+    ].join("\n");
+    const source = extractIndexSource(`# 标题\n\n正文议题。\n\n${shell}`);
+    expect(source).toContain("正文议题");
+    expect(source).not.toContain("索引数据");
+    expect(source).not.toContain("沉淀数据");
+    expect(source).not.toContain("schemaVersion");
+    expect(source).not.toContain("张三");
+    expect(source).not.toContain("<details>");
   });
 
   it("does not persist move-sensitive paths inside the canonical marker", () => {

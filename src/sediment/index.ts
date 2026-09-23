@@ -260,10 +260,24 @@ export function extractSedimentPreExtractionBlock(markdown) {
 
 export function formatSedimentPreExtractionBlock(objects) {
   const normalized = normalizeSedimentExtractionModel(objects);
+  // 与索引块同款：标记在外、折叠壳（details + json 围栏）在内，阅读视图折叠为一行。
+  // JSON 转义 `<`/`>`/`--`/反引号：兼容旧注释读取正则、防 HTML 解析与围栏截断。
+  const json = JSON.stringify(normalized)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/`/g, "\\u0060")
+    .replace(/--/g, "\\u002d\\u002d");
   return [
-    `<!--${SEDIMENT_PREEXTRACT_BEGIN}`,
-    JSON.stringify(normalized),
-    `${SEDIMENT_PREEXTRACT_END}-->`,
+    `<!--${SEDIMENT_PREEXTRACT_BEGIN}-->`,
+    "<details>",
+    "<summary>沉淀数据</summary>",
+    "",
+    "```json",
+    json,
+    "```",
+    "",
+    "</details>",
+    `<!--${SEDIMENT_PREEXTRACT_END}-->`,
   ].join("\n");
 }
 
