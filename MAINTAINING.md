@@ -68,7 +68,7 @@ P2（视图层）在以上约定之外另有三条：
 #### 已完成的 P1（2026-09-14）
 
 `src/main.ts` 从 10,357 行 / 272 个成员降到 627 行 / 17 个成员（P1 完成时的实测值；此后随
-§7 的场景裁剪与死代码清理降到 513 行），抽出 22 个域服务与 3 个共享辅助
+§7 的场景裁剪与死代码清理降到 513 行，2026-09-23 实测 696 行），抽出 22 个域服务与 3 个共享辅助
 （下表为拆分当时的清单；招聘 RecruitService 已随 §7 的场景裁剪移除）：
 
 ```
@@ -458,73 +458,6 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 ---
 
-## 7. 功能边界：已裁剪的场景
-
-> 状态：HR 场景裁剪已合并进 `main`（PR #5，merge `4d77796`）并经维护者本机验证；学习卡片裁剪
-> 在本分支 `refactor/drop-learning-cards` 上待验证。若后续发现问题，HR 分支
-> `refactor/drop-hr-scenarios`（`a333db5`）仍在远端，可直接在其上修正后重新走流程，或整体 revert `4d77796`。
-
-
-
-**Q&A Log 只做四件事：开箱即用的配置、录音、可靠的转写、知识的沉淀与复用。** 围绕核心链路扩展出来的
-垂直场景不与核心目标竞争，占用的却是同一份维护成本（每个场景都要跟着提示词、设置页、视图与测试一起改）。
-
-2026-09-14 裁掉 HR 场景，即以下三个模式及其专属设施：
-
-| 移除内容 | 说明 |
-|---|---|
-| 模式 `recruit` / `recruit-needs` / `promotion-review` | 招聘评估、招聘需求挖掘、晋升评审 |
-| `src/recruit/`、`src/promotion/`、`src/prompts/recruit-hrbp.ts` | JD 库与项目三件套、候选人看板、招聘主页 code block、晋升初审生成 |
-| 招聘/晋升的 UI | 侧边栏「对象」卡片与内联编辑、招聘上下文弹窗、设置页招聘分组、5 次点击解锁彩蛋、招聘看板 Bases 视图 |
-| 招聘专用的提示词与解析 | 逐行问答协议、14 维画像覆盖扫描、追问卡派生、简历脱敏、JD 章节抽取 |
-| 相关设置键 | `recruit*`、`promotionReviewContext`、`polishPromptRecruit`；`SETTINGS_SCHEMA_VERSION` 4 → 5 |
-
-保留的模式：综合纪要、工作纪要、访谈、个人笔记、学习笔记、研讨会、圆桌讨论（兼容历史笔记）、关闭（仅转写）。
-
-2026-09-14 裁掉学习卡片场景，理由是它没有回流闭环：
-
-| 移除内容 | 说明 |
-|---|---|
-| 沉淀的「学习」分组 | `SEDIMENT_GROUP_CONFIG.card`、`SEDIMENT_GROUP_ORDER` 中的 `card`；侧边栏沉淀页少一组（原为人员 → 待办 → 学习 → 热词，现为人员 → 待办 → 热词） |
-| 卡片提取与写入 | 沉淀提示词里的 `learningCards` JSON 契约与两条卡片规则、`formatSedimentLearningCardMarkdown`、`getSedimentCardId`、`normalizeSedimentExtractionModel` 的卡片分支 |
-| 视图 | `formatLearningWallMarkdown`、`formatConceptWallMarkdown`；「概念墙」与「学习卡片墙」查的是同一批文件（学习卡片同时打 `lexvoice/learning-card` 与 `lexvoice/concept` 两个标签），因此「概念墙」不是独立功能 |
-| 命令 | `open-learning-card-wall`、`open-concept-wall`、`open-object-wall`（对象总览只聚合学习卡片+概念+待办，前两者移除后与待办墙等价，已合并为 `open-todo-wall`） |
-| 设置键 | `learningCardsFolder`（位于 `vocabulary` 分组内，**不是**顶层分组）；`SETTINGS_SCHEMA_VERSION` 5 → 6 |
-
-判定依据（三条互相独立）：
-
-1. **无回流闭环。** 人员经 `buildPeopleContextForLlm` 进入纪要提示词、经 `buildPeopleHotwordsForAsr` 进入 ASR；
-   热词经 `loadVocabularyGroups` 进入 ASR 与 LLM；待办除卡片外还写入当日日记。学习卡片写完即止——
-   全仓 `listLearningCards` / `readLearningCard` / `loadLearningCards` 命中 0，没有任何读回路径。
-2. **唯一复用路径依赖未声明的第三方插件。** 卡片墙写成 ```` ```dataviewjs ```` 代码块，未安装 Dataview 时
-   渲染为代码块。README 的 Requirements 从未列出该依赖。
-3. **提示文案与实现不符。** 概念墙空态写「会中用 `#概念` 标记…会出现在这里」，但 `#概念` 是会中 AI
-   **解释术语**的触发符（`src/notes/meeting-workbench.ts`），不生成任何卡片；全仓没有把该标记变成卡片的代码。
-
-**§3 保护的数据层字面量（不得改动取值，也不得改作他用）**：`lexvoice/learning-card`、`lexvoice/concept`
-两个标签写在用户已有的卡片文件里；`LexVoice/学习卡片`、`LexVoice/资料库/学习卡片` 是既有目录。
-用户已生成的学习卡片文件**不删除、不改写**，只是不再有入口。
-
-同一提交顺带修掉设置页「资料库」卡片区的两处排版问题（`styles.css` 的
-.`qnalog-object-overview-grid` / `.qnalog-object-overview-card`）：
-
-| 问题 | 原因 | 处理 |
-|---|---|---|
-| 卡片头部不齐（截图里「待办」比另两张低 18px） | 核心 `button` 规则设 `align-items` / `justify-content: center`，卡片只覆盖了 `display` 与 `height`。卡内内容不足 132px 时被垂直居中：说明文字两行的卡片顶部偏移 17.6px，一行的偏移 26.9px。4 张卡时同理（「学习卡片」与「待办」都是 26.9px），删掉一张后才在视觉上暴露 | 卡片补 `align-items: flex-start` 与 `justify-content: flex-start`，让标题、计数、说明文字都靠左上；说明文字此前也被水平居中，不再与标题左对齐 |
-| 右侧空出一列 | 列数写死 `repeat(4, …)`，卡片数 4 → 3 后第 4 列留空 | 改为 `repeat(auto-fit, minmax(170px, 1fr))`，列数随容器宽度与卡片数变化；同时删除两条 `@container` 里写死列数的规则（`600px` → 2 列、`320px` → 1 列），它们在 3 张卡片时会把卡折成两行并空出一格 |
-
-**兼容规则（改这一节前先读）**：
-
-- **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
-  用户已有的招聘/晋升笔记会留在原处，只是不再有对应入口；`data.json` 里残留的 `recruiting` /
-  `promotionReview` 分组不再被读取。这类残留分组随版本不一致的设置一起被丢弃，不再单独报告。
-- **统一使用 Q&A Log 命名空间**（标签、标记、frontmatter 键、视图类型）：命名空间已于 2026-09-15 重置，
-  读写都只认新值（见 §1.1.2）。插件不扫描、不改写用户的既有笔记。
-- **读旧笔记必须安全降级。** 旧笔记的 frontmatter 里可能仍是 `mode: recruit`，未知 mode 一律按
-  「识别不出模式」处理，不得抛错、不得让面板或流水线崩掉（`isKnownPolishMode`、`detectRecentNoteMode`
-  等处的兜底即为此）。
-- **要重新加回某个场景**：按第二条处理——自己实现，并把它当作一等公民补上提示词、设置登记、测试与本文档。
-
 ## 6. 待办（按 §1 的优先级排列）
 
 > **阶段分界（2026-09-15，1.0.0 发布）**：「偿还遗留技术债」阶段基本结束，重心转为
@@ -596,6 +529,73 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 回滚路径已脚本化（`npm run restore:vault`，安装改为整目录留档）；迁移结果自检已实现（首次加载输出对照表）；
 `src/main.ts` 首轮分解已完成（24,679 行 → 10,357 行，抽出 19 个模块，2026-09-13）；
 P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服务，2026-09-14）。
+
+## 7. 功能边界：已裁剪的场景
+
+> 状态：HR 场景裁剪已合并进 `main`（PR #5，merge `4d77796`）并经维护者本机验证；学习卡片裁剪
+> 在本分支 `refactor/drop-learning-cards` 上待验证。若后续发现问题，HR 分支
+> `refactor/drop-hr-scenarios`（`a333db5`）仍在远端，可直接在其上修正后重新走流程，或整体 revert `4d77796`。
+
+
+
+**Q&A Log 只做四件事：开箱即用的配置、录音、可靠的转写、知识的沉淀与复用。** 围绕核心链路扩展出来的
+垂直场景不与核心目标竞争，占用的却是同一份维护成本（每个场景都要跟着提示词、设置页、视图与测试一起改）。
+
+2026-09-14 裁掉 HR 场景，即以下三个模式及其专属设施：
+
+| 移除内容 | 说明 |
+|---|---|
+| 模式 `recruit` / `recruit-needs` / `promotion-review` | 招聘评估、招聘需求挖掘、晋升评审 |
+| `src/recruit/`、`src/promotion/`、`src/prompts/recruit-hrbp.ts` | JD 库与项目三件套、候选人看板、招聘主页 code block、晋升初审生成 |
+| 招聘/晋升的 UI | 侧边栏「对象」卡片与内联编辑、招聘上下文弹窗、设置页招聘分组、5 次点击解锁彩蛋、招聘看板 Bases 视图 |
+| 招聘专用的提示词与解析 | 逐行问答协议、14 维画像覆盖扫描、追问卡派生、简历脱敏、JD 章节抽取 |
+| 相关设置键 | `recruit*`、`promotionReviewContext`、`polishPromptRecruit`；`SETTINGS_SCHEMA_VERSION` 4 → 5 |
+
+保留的模式：综合纪要、工作纪要、访谈、个人笔记、学习笔记、研讨会、圆桌讨论（兼容历史笔记）、关闭（仅转写）。
+
+2026-09-14 裁掉学习卡片场景，理由是它没有回流闭环：
+
+| 移除内容 | 说明 |
+|---|---|
+| 沉淀的「学习」分组 | `SEDIMENT_GROUP_CONFIG.card`、`SEDIMENT_GROUP_ORDER` 中的 `card`；侧边栏沉淀页少一组（原为人员 → 待办 → 学习 → 热词，现为人员 → 待办 → 热词） |
+| 卡片提取与写入 | 沉淀提示词里的 `learningCards` JSON 契约与两条卡片规则、`formatSedimentLearningCardMarkdown`、`getSedimentCardId`、`normalizeSedimentExtractionModel` 的卡片分支 |
+| 视图 | `formatLearningWallMarkdown`、`formatConceptWallMarkdown`；「概念墙」与「学习卡片墙」查的是同一批文件（学习卡片同时打 `lexvoice/learning-card` 与 `lexvoice/concept` 两个标签），因此「概念墙」不是独立功能 |
+| 命令 | `open-learning-card-wall`、`open-concept-wall`、`open-object-wall`（对象总览只聚合学习卡片+概念+待办，前两者移除后与待办墙等价，已合并为 `open-todo-wall`） |
+| 设置键 | `learningCardsFolder`（位于 `vocabulary` 分组内，**不是**顶层分组）；`SETTINGS_SCHEMA_VERSION` 5 → 6 |
+
+判定依据（三条互相独立）：
+
+1. **无回流闭环。** 人员经 `buildPeopleContextForLlm` 进入纪要提示词、经 `buildPeopleHotwordsForAsr` 进入 ASR；
+   热词经 `loadVocabularyGroups` 进入 ASR 与 LLM；待办除卡片外还写入当日日记。学习卡片写完即止——
+   全仓 `listLearningCards` / `readLearningCard` / `loadLearningCards` 命中 0，没有任何读回路径。
+2. **唯一复用路径依赖未声明的第三方插件。** 卡片墙写成 ```` ```dataviewjs ```` 代码块，未安装 Dataview 时
+   渲染为代码块。README 的 Requirements 从未列出该依赖。
+3. **提示文案与实现不符。** 概念墙空态写「会中用 `#概念` 标记…会出现在这里」，但 `#概念` 是会中 AI
+   **解释术语**的触发符（`src/notes/meeting-workbench.ts`），不生成任何卡片；全仓没有把该标记变成卡片的代码。
+
+**§3 保护的数据层字面量（不得改动取值，也不得改作他用）**：`lexvoice/learning-card`、`lexvoice/concept`
+两个标签写在用户已有的卡片文件里；`LexVoice/学习卡片`、`LexVoice/资料库/学习卡片` 是既有目录。
+用户已生成的学习卡片文件**不删除、不改写**，只是不再有入口。
+
+同一提交顺带修掉设置页「资料库」卡片区的两处排版问题（`styles.css` 的
+.`qnalog-object-overview-grid` / `.qnalog-object-overview-card`）：
+
+| 问题 | 原因 | 处理 |
+|---|---|---|
+| 卡片头部不齐（截图里「待办」比另两张低 18px） | 核心 `button` 规则设 `align-items` / `justify-content: center`，卡片只覆盖了 `display` 与 `height`。卡内内容不足 132px 时被垂直居中：说明文字两行的卡片顶部偏移 17.6px，一行的偏移 26.9px。4 张卡时同理（「学习卡片」与「待办」都是 26.9px），删掉一张后才在视觉上暴露 | 卡片补 `align-items: flex-start` 与 `justify-content: flex-start`，让标题、计数、说明文字都靠左上；说明文字此前也被水平居中，不再与标题左对齐 |
+| 右侧空出一列 | 列数写死 `repeat(4, …)`，卡片数 4 → 3 后第 4 列留空 | 改为 `repeat(auto-fit, minmax(170px, 1fr))`，列数随容器宽度与卡片数变化；同时删除两条 `@container` 里写死列数的规则（`600px` → 2 列、`320px` → 1 列），它们在 3 张卡片时会把卡折成两行并空出一格 |
+
+**兼容规则（改这一节前先读）**：
+
+- **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
+  用户已有的招聘/晋升笔记会留在原处，只是不再有对应入口；`data.json` 里残留的 `recruiting` /
+  `promotionReview` 分组不再被读取。这类残留分组随版本不一致的设置一起被丢弃，不再单独报告。
+- **统一使用 Q&A Log 命名空间**（标签、标记、frontmatter 键、视图类型）：命名空间已于 2026-09-15 重置，
+  读写都只认新值（见 §1.1.2）。插件不扫描、不改写用户的既有笔记。
+- **读旧笔记必须安全降级。** 旧笔记的 frontmatter 里可能仍是 `mode: recruit`，未知 mode 一律按
+  「识别不出模式」处理，不得抛错、不得让面板或流水线崩掉（`isKnownPolishMode`、`detectRecentNoteMode`
+  等处的兜底即为此）。
+- **要重新加回某个场景**：按第二条处理——自己实现，并把它当作一等公民补上提示词、设置登记、测试与本文档。
 
 ## 8. 类型检查：逐步退出 `@ts-nocheck`
 
@@ -1194,7 +1194,7 @@ MacBook Pro 麦克风 · 可用
 
 **整行都是点击目标**，右侧箭头只是「这一行能点」的提示，因此保持低存在感
 （`--text-faint`、`opacity: 0.55`，hover 时才提亮）。
-跳转目标：语音转写 → `api`、AI 整理 → `ai`、说话人识别 → `speaker`、音频输入 → `general`。
+跳转目标：语音转写 → `api`、AI 整理 → `ai`、说话人识别 → `api`、音频输入 → `recording`。
 
 **条目之间只用低对比度分隔线**（`--background-modifier-border`），不画表格、不加卡片背景。
 四项放在一个容器里（`.qnalog-status-list`），保持 Obsidian 设置页的克制感，
@@ -1213,98 +1213,7 @@ MacBook Pro 麦克风 · 可用
 不重复模式名——「音频输入」这一行已经表达了输入来源。
 
 数据来自 `buildSetupStatus`（`src/setup/index.ts`，有类型检查），
-由 `tests/bailian-setup.test.ts` 的 8 项覆盖，含反向验证。
-
-### 11.6.1 音频设备识别与选择
-
-「麦克风」与「电脑音频」两个下拉共用一个分类函数（`classifyAudioInputDevices`、
-`pickComputerAudioDevices`，`src/ui/helpers.ts`），判据一致：
-
-| 下拉 | 列出什么 | 为什么 |
-|---|---|---|
-| 麦克风 | **全部**输入设备，按名字分组（默认 / 麦克风 / 虚拟声卡 / 当前选择） | 用户可能就想用虚拟声卡录人声；实体麦克风名字里也可能带 SoundWire 之类关键词。过滤会把真麦克风弄丢，所以只分组、不删项。 |
-| 电脑音频 | 正常只列虚拟声卡；**一个都认不出时退回列出全部** | 电脑音频要的是虚拟声卡输入。但关键词表只是启发式，认不出时若照旧只列虚拟声卡会得到空列表，比多列几只更难用。 |
-
-**两者都不做自动选择。** 判定哪只是虚拟声卡靠设备名关键词，判错就会录到错误的声音，
-而用户从界面上看不出来。所以一律留空让用户手动选，下拉里标「推荐 · 虚拟声卡」供参考。
-原先「自动设置」按钮会写 `selectedVirtualDevice`（`autoConfigureAudioInput`），已移除该行为，
-按钮只保留「测试设备」与「设置电脑音频」。
-
-**「名字读不到」不等于「没有设备」。** `enumerateDevices()` 在未授权时仍会返回设备与
-`deviceId`，只有 `label` 是空的。因此：
-
-- 有设备、名字全空 → 提示「设备名需授权才能显示（读到 N 个设备）」，并说明仍可按下拉顺序选；
-- 一个输入设备都没有 → 才说「未检测到音频输入设备」。
-
-把前者当后者会让用户看到「未检测到设备」而实际只是没授权。
-
-**权限申请只在用户动作里发生。** `enumerateAudioDevices({ requestPermission: true })`
-会调一次 `getUserMedia` 拿设备名；不传则只调 `enumerateDevices()`，不弹授权框、
-不点亮系统麦克风指示灯。调用点分两类：
-
-| 场景 | 是否申请权限 | 理由 |
-|---|---|---|
-| 首页「使用状态」读设备 | 否 | 只看状态却弹出麦克风授权请求，用户会以为插件在录音 |
-| 麦克风 / 电脑音频下拉 | 是 | 要显示设备名才能选，用户打开设置页就是为了选设备 |
-| 「检测设备」「测试设备」「自动设置」「重新检测」 | 是 | 用户主动发起的检测 |
-
-### 11.7 首页「使用状态」
-
-首页这块只回答两个问题：**现在能不能开始用？如果能，当前会用什么服务？**
-因此分两层，不再是平级的若干张卡：
-
-```
-使用状态
-
-● 已准备好
-转写与 AI 整理都已可用，可以开始录音。
-
-  语音转写     阿里云百炼实时转写          ›
-               qwen-audio-3.0-asr-flash-streaming
-  AI 整理      阿里云百炼 / DashScope       ›
-               qwen3.8-flash
-  说话人识别    已启用                      ›
-               qwen-audio-3.0-asr-flash-filetrans
-  音频输入      未检测（点下方「检测设备」）  ›
-               仅麦克风
-```
-
-上面一行是结论（一级信息），下面四行是结论的依据（二级信息，逐行可点）。
-原来的「使用准备」四张卡把「需要用户准备的」与「纯粹的偏好开关」混在一起，
-且模型 ID 因卡片面积成了页面上最大的内容之一——二级技术信息被放到了与结论同等的权重。
-
-**每一行自己就是入口**，点哪一项去哪个标签页（`api` / `ai` / `speaker` / `general`），
-不再是底部一个语意模糊的「调整配置」按钮（它与顶部的「快速配置」语义重复，已删除）。
-
-**四级内容口径**：
-
-| 行 | 一级内容 | 次级说明 |
-|---|---|---|
-| 语音转写 | 服务名（如「阿里云百炼实时转写」）；缺配置时写缺什么 | 模型标识 |
-| AI 整理 | 服务名（用 `getActiveLlmServicePresetId` 解析，认不出就报接口主机名） | 模型标识 |
-| 说话人识别 | 未启用 / 当前服务不支持 / 缺什么 / 已启用 | 模型标识（仅在已启用且可用时） |
-| 音频输入 | **真实设备状态**（设备名 · 可用 / 已选择的麦克风不可用） | 配置模式（如「仅麦克风」） |
-
-音频输入改成读真实设备：「仅麦克风」是配置值，回答不了「麦克风现在能不能用」，
-所以它降为次级说明，一级位置留给设备事实。
-读取只调 `enumerateDevices`，**不调 `getUserMedia`**：设置页不主动弹授权框、
-不点亮系统麦克风指示灯。未授权时如实写「未授权读取设备名」并给一个「检测设备」按钮，
-检测由用户发起（`enumerateAudioDevices` 只在点击时调用）。
-
-**判定口径**：只有语音转写与 AI 整理缺配置才拦得住「开始使用」——没有它们产不出纪要。
-说话人识别与音频输入不影响能否开始，因此既不参与 ready，也不计入「还需要完成 N 项」；
-两者口径必须一致，否则会出现「说还差 3 项、但结论是已准备好」这种自相矛盾。
-测试结果完全不参与（那属于 §10.3 的四态，由各服务自己的徽章承担）。
-
-**样式**：整套沿用仓库已有的 `qnalog-diag-*`（圆点 `is-ok` / `is-warn` / `is-fail` +
-`diag-label` + `diag-sub` + `diag-card`），只补了 `.qnalog-diag-row.is-clickable`、
-`.qnalog-status-value`、`.qnalog-status-go` 三个类。不新起样式族：
-两套样式会让同一类信息在两处长得不一样。
-
-数据来自 `buildSetupStatus`（`src/setup/index.ts`，有类型检查），
-由 `tests/bailian-setup.test.ts` 的 5 项覆盖，含反向验证（让它永远宣称可用、
-或让它不显示服务名，对应用例都会失败）。
-
+由 `tests/bailian-setup.test.ts` 的 9 项覆盖，含反向验证。
 
 ---
 
