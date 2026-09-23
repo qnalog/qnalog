@@ -136,13 +136,12 @@ export function normalizeVersionId(label) {
 
 export function buildActiveVersionBlock(versionMeta, body) {
   const label = String(versionMeta && versionMeta.label || versionMeta && versionMeta.kind || "当前版本");
-  const mode = String(versionMeta && versionMeta.mode || "");
-  const style = String(versionMeta && versionMeta.style || "");
   const created = String(versionMeta && versionMeta.createdAt || "");
   const sourceHash = String(versionMeta && versionMeta.sourceHash || "");
-  const desc = [label, mode, style].filter(Boolean).join(" · ");
+  // label 已含模式前缀与整理偏好，不再拼内部 mode 键（monologue 这类键直接见了用户）。
+  // 折叠默认收起：版本卡是元数据，正文摘要应当先被看到。
   const metaLines = [
-    `> [!info] 当前显示版本：${desc || "当前版本"}`,
+    `> [!info]- 当前显示版本：${label || "当前版本"}`,
     created ? `> 生成时间：${created}` : "",
     sourceHash ? `> 源转写指纹：${sourceHash}` : "",
   ].filter(Boolean).join("\n");
@@ -1246,6 +1245,8 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
     body = stripped.slice(fmMatch[0].length).replace(/^\n+/, "");
   }
   body = scrubBriefingTodoPlaceholders(normalizeCallouts(body));
+  // 一级标题由插件按会话时间统一写入；模型自作主张输出的 # 标题（含连续多条）会在母本里叠成重复标题，剥掉。
+  body = body.replace(/^(?:\s*#\s+[^\n]*(?:\n|$))+/, "");
 
   // base frontmatter 选择：重整时优先用 originalFrontmatter（保留用户改动），首次用 LLM 输出。
   // 随后只保留当前模式 schema 内的内容字段，避免 LLM 擅自加入 date/location/decision 等重复字段。

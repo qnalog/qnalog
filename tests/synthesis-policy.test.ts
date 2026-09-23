@@ -30,7 +30,8 @@ describe("综合纪要全局成文策略", () => {
     });
 
     expect(prompt).toContain("> [!abstract] 会议梗概");
-    expect(prompt).toContain("## 1. 议题名称");
+    expect(prompt).toContain("## 议题名称");
+    expect(prompt).not.toContain("## 1. 议题名称");
     expect(prompt).toContain("相同议题即使出现在不同时间，也必须合并到同一个章节");
     expect(prompt).toContain("以事情为主轴");
     expect(prompt).toContain("不得出现“第 N 部分”“内部窗口”“分段纪要”");

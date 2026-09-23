@@ -102,6 +102,9 @@ export function normalizeCallouts(markdown) {
     if (inFixedCallout) {
       if (isCalloutBoundary(line)) {
         inFixedCallout = false;
+        // callout 收尾：清掉尾部空引用行（`>`）并补一个真行首空行，
+        // 否则渲染后 callout 底部多一条空线、标题紧贴 callout 没有间距。
+        ensureCalloutGapBeforeHeader(out);
         out.push(line);
         continue;
       }
@@ -119,6 +122,13 @@ export function normalizeCallouts(markdown) {
     }
 
     out.push(line);
+  }
+
+  // 文档以 callout 收尾时去掉尾部空引用行：孤立的 `>` 后面没有可续内容，渲染成多余空线。
+  while (out.length) {
+    const last = String(out[out.length - 1] || "");
+    if (!last.trim() || /^\s*>\s*$/.test(last)) { out.pop(); continue; }
+    break;
   }
 
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
