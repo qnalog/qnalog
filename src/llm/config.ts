@@ -199,14 +199,8 @@ export const ONE_CARD_PROVIDERS = {
     llmModel: "mimo-v2.6-flash",
     applyDesc: "已用同一把 MiMo Key 配好语音转写（mimo-v2.5-asr）和 AI 整理（mimo-v2.6-flash）。",
   },
-  siliconflow: {
-    label: "SiliconFlow",
-    asrProvider: "siliconflow",
-    llmPreset: "siliconflow",
-    llmEndpoint: DEFAULT_SETTINGS.llmEndpoint,
-    llmModel: "", // 硅基流动大模型型号多，留给用户在「大模型服务」里选
-    applyDesc: "已用同一把硅基流动 Key 配好语音转写（SenseVoiceSmall）和大模型服务；硅基流动大模型型号较多，请到「大模型服务」填一个模型标识后测试连通。",
-  },
+  // 硅基流动不进快速配置（2026-09-23 维护者评估）：有合适的语音模型，但大语言模型价格普遍偏高，
+  // 用户照此配置成本代价大。它仍可手动配：LLM_SERVICE_PRESETS 与转写服务条目都保留。
   // 一站式方案：一把百炼 API Key 同时配好「录音转写 / 导入音频 / AI 整理」三段。
   // 地址与模型全部内置，用户只需填密钥——这是首次配置唯一的正式推荐路径。
   //
