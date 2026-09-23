@@ -136,6 +136,32 @@ describe("预设的写入范围", () => {
   });
 });
 
+describe("说话人识别按供应商差异化预置", () => {
+  it("默认不启用：说话人识别是可选项，不是开箱即用的前提", () => {
+    expect(DEFAULT_SETTINGS.importSpeakerDiarization).toBe(false);
+  });
+
+  it("mimo（没有说话人识别模型）应用后为未启用，即使用户之前打开过", () => {
+    const before = completedSettings();
+    before.importSpeakerDiarization = true;
+    const after = applyPresetPlan(before, planPresetApplication(before, { providerId: "mimo", apiKey: "sk-new" }));
+
+    expect(after.importSpeakerDiarization).toBe(false);
+    // 两件套成套：AI 整理用 V2.6 Flash，转录用 V2.5 ASR
+    expect(after.llmModel).toBe("mimo-v2.6-flash");
+    expect(after.transcribeProviders.apimimo.model).toBe("mimo-v2.5-asr");
+  });
+
+  it("百炼（自带说话人识别模型）应用后为启用，即使用户之前关闭过", () => {
+    const before = completedSettings();
+    before.importSpeakerDiarization = false;
+    const after = applyPresetPlan(before, planPresetApplication(before, { providerId: "bailian", apiKey: "sk-bailian" }));
+
+    expect(after.importSpeakerDiarization).toBe(true);
+    expect(after.importTranscribeProvider).toBe("dashscope-filetrans");
+  });
+});
+
 describe("检测对象是候选配置", () => {
   it("面向录制转写的预设把候选值构造成检测宿主的设置", async () => {
     const saved = completedSettings();

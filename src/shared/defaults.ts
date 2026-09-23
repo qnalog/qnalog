@@ -44,7 +44,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 
   activeTranscribeProvider: "siliconflow",
   importTranscribeProvider: "dashscope-filetrans",
-  importSpeakerDiarization: true,
+  // 说话人识别是可选项：默认不启用；带说话人识别模型的预设（百炼 / OpenRouter）或用户自己再打开。
+  importSpeakerDiarization: false,
   importSpeakerCount: 0,
   transcribeProviders: {
     siliconflow: {

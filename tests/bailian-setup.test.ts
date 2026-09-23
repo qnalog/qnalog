@@ -46,6 +46,9 @@ describe("百炼一站式配置", () => {
 
     const settings = applyPresetPlan(start, planPresetApplication(start, { providerId: "bailian", apiKey: KEY }));
 
+    // 说话人识别属于百炼三件套的第三件：预设必须写为启用（默认是未启用，漏写时本断言会失败）
+    expect(settings.importSpeakerDiarization).toBe(true);
+
     // 录音转写：HTTP 分段模型，桌面与移动端通用（实时流式在移动端拿不到鉴权头）
     expect(settings.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
     expect(settings.transcribeProviders["dashscope-chat"].endpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");

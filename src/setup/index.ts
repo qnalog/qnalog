@@ -26,6 +26,7 @@ export const PRESET_WRITTEN_FIELDS: Record<string, true> = {
   transcribeProviders: true,
   activeTranscribeProvider: true,
   importTranscribeProvider: true,
+  importSpeakerDiarization: true,
   llmServicePreset: true,
   llmEndpoint: true,
   llmModel: true,
@@ -201,6 +202,12 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
     changes.importTranscribeProvider = importProviderId;
     nextProviders = changes.transcribeProviders;
   }
+
+  // 说话人识别按预设差异化：预设自带导入服务（含说话人识别模型，如百炼 / OpenRouter）就写为启用，
+  // 否则写为未启用（例如小米 MiMo 没有说话人识别模型）。
+  // 说话人识别是可选项，不是「配置完整」的前提——两件套预设照样能录、能整理。
+  const importConfigured = !!importProviderId || asrTarget === "import";
+  changes.importSpeakerDiarization = importConfigured;
 
   changes.llmServicePreset = llmPresetId;
   changes.llmEndpoint = llmEndpoint;
