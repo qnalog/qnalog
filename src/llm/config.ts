@@ -73,9 +73,9 @@ export const LLM_SERVICE_PRESETS = [
     endpoint: "https://api.xiaomimimo.com/v1",
     altEndpoints: ["https://token-plan-cn.xiaomimimo.com/v1"],
     endpointHelp: "Xiaomi MiMo's OpenAI-compatible API Base URL. Enter up to /v1; Q&A Log will append /chat/completions automatically. It shares the same address and key as MiMo speech transcription.",
-    keyHelp: "Enter the access key (API Key) for the Xiaomi MiMo platform. The same key works for both speech transcription (mimo-v2.5-asr) and AI summarization (mimo-v2.5-pro), with no need to apply for them separately.",
-    modelPlaceholder: "mimo-v2.5-pro",
-    modelHelp: "mimo-v2.5-pro (the flagship chat model) is recommended, and mimo-v2.5 is also supported; refer to the MiMo console's model list. Note that MiMo is a reasoning model: too small a max_tokens will be spent on thinking and leave the body empty, while the allowance used for meeting summaries is large enough to be unaffected.",
+    keyHelp: "Enter the access key (API Key) for the Xiaomi MiMo platform. The same key works for both speech transcription (mimo-v2.5-asr) and AI summarization (mimo-v2.6-flash), with no need to apply for them separately.",
+    modelPlaceholder: "mimo-v2.6-flash",
+    modelHelp: "mimo-v2.6-flash (V2.6 series) is recommended; refer to the MiMo console's model list. Note that MiMo is a reasoning model: too small a max_tokens will be spent on thinking and leave the body empty, while the allowance used for meeting summaries is large enough to be unaffected.",
   },
   {
     id: "zhipu",
@@ -188,14 +188,16 @@ export const LLM_SERVICE_PRESETS = [
 ];
 
 export const ONE_CARD_PROVIDERS = {
+  // 小米 MiMo 平台只有大语言模型与转录模型，没有说话人识别模型：
+  // 预设因此只配两段（录音转写 + AI 整理），说话人识别写为未启用（见 src/setup 的 planPresetApplication）。
   mimo: {
     label: "Xiaomi MiMo",
     asrProvider: "apimimo",
     llmPreset: "mimo",
     llmEndpoint: "https://api.xiaomimimo.com/v1",
     tokenPlanEndpoint: "https://token-plan-cn.xiaomimimo.com/v1",
-    llmModel: "mimo-v2.5-pro",
-    applyDesc: "已用同一把 MiMo Key 配好语音转写（mimo-v2.5-asr）和 AI 整理（mimo-v2.5-pro）。",
+    llmModel: "mimo-v2.6-flash",
+    applyDesc: "已用同一把 MiMo Key 配好语音转写（mimo-v2.5-asr）和 AI 整理（mimo-v2.6-flash）。",
   },
   siliconflow: {
     label: "SiliconFlow",
