@@ -13,7 +13,8 @@
     "strictNullChecks": false,
     "lib": [
       "DOM",
-      "ES2020"
+      "ES2020",
+      "ES2024.Promise"
     ],
     "skipLibCheck": true
   },
