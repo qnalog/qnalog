@@ -329,6 +329,30 @@
   box-shadow: none;
 }
 
+/* 追加录音按钮：白底描边同普通控制钮；右上角 + 徽标表达「加进这篇笔记」。 */
+.qnalog-bubble-btn.append {
+  position: relative;
+}
+
+.qnalog-bubble-btn.append::after {
+  content: "+";
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 10px;
+  text-align: center;
+  pointer-events: none;
+}
+
 /* Core floating controls are drawn with CSS shapes instead of theme/icon-font glyphs.
    This keeps recording controls visible even when Obsidian button styles or icon sets change.
    注：jump 按钮已切换到 Lucide file-text，仅在 setIcon 失败的兜底场景才走 .is-fallback-icon 的 CSS 形状（见上方 line 233）。 */

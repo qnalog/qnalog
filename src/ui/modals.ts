@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // @ts-nocheck — Modal/Widget class 密集（this.plugin.* 等无 TS 字段声明）；已用 tsc 确认无漏引用(TS2304=0)，余者皆类字段类型噪音，故与 main.ts 同档跳过。
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
-import { NS_AUDIO_ALT } from "../shared/namespace";
+import { NS_AUDIO_ALT, NS_SESSION_RE, NS_SEGMENTS_START_RE } from "../shared/namespace";
 import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
 import { loadPeopleDirectory, normalizePeopleRelation, normalizePeopleSuggestion } from '../people';
@@ -2402,6 +2402,11 @@ export class BubbleWidget {
     this.ribbonHandlers = null;
     this.unsubscribe = null;
     this.resizeHandler = null;
+    // 追加录音目标：当前活动笔记是 Q&A Log 纪要时非 null。事件挂插件生命周期（构造只发生一次）。
+    this.appendFile = null;
+    plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", () => this.refreshActiveNote()));
+    plugin.registerEvent(plugin.app.workspace.on("file-open", () => this.refreshActiveNote()));
+    void this.refreshActiveNote();
   }
   mount(ribbonEl) {
     if (this.wrapEl) return;
@@ -2432,15 +2437,20 @@ export class BubbleWidget {
     window.addEventListener("resize", this.resizeHandler);
     this.attachHover();
     this.attachDrag();
+    void this.refreshActiveNote();
     this.unsubscribe = this.plugin.recorder.on(() => this.scheduleUpdate());
     this.bindRibbon();
   }
   placeDefault() {
     if (!this.wrapEl) return;
-    const rect = this.wrapEl.getBoundingClientRect();
+    // 量 el 而不是 wrap：wrap 带入场 transform（scale 0.92 过渡），量到的是过渡中的偏小值，
+    // 会把右缘顶出屏幕；el 只带尺寸档位的静态缩放，量到的就是最终视觉宽高。
+    const target = this.el || this.wrapEl;
+    const rect = target.getBoundingClientRect();
     const width = rect.width || 168;
     const height = rect.height || 40;
     const margin = 18;
+    // 默认停靠右下角，底边留 58px 避开状态栏。录音态变宽后由 scheduleUpdate 重新锚定。
     this.wrapEl.style.left = `${Math.max(margin, window.innerWidth - width - margin)}px`;
     this.wrapEl.style.top = `${Math.max(72, window.innerHeight - height - 58)}px`;
   }
@@ -2487,6 +2497,22 @@ export class BubbleWidget {
     this.unbindRibbon();
     if (this.wrapEl) { this.wrapEl.remove(); this.wrapEl = null; this.el = null; }
   }
+  // 判定当前活动笔记是否 Q&A Log 纪要：与侧边栏 panelData 的 hasMarker 同判据
+  // （会话标记或分段标记）。普通笔记与派生笔记没有标记 → 只保留标准录制按钮。
+  async refreshActiveNote() {
+    let next = null;
+    const file = this.plugin.app.workspace.getActiveFile();
+    if (file && file.extension === "md") {
+      try {
+        const text = await this.plugin.app.vault.cachedRead(file);
+        if (NS_SESSION_RE.test(text) || NS_SEGMENTS_START_RE.test(text)) next = file;
+      } catch { /* 读不到就按普通笔记处理，不影响气泡其它功能 */ }
+    }
+    const prev = this.appendFile;
+    this.appendFile = next;
+    // 只在判定翻转时要求重绘；sig 含 A 位，scheduleUpdate 会走完整渲染分支。
+    if (prev !== next) this.scheduleUpdate();
+  }
   scheduleUpdate() {
     if (this._renderRaf) return;
     this._renderRaf = window.requestAnimationFrame(() => {
@@ -2494,13 +2520,17 @@ export class BubbleWidget {
       const info = this.plugin.recorder.getInfo();
       const queue = this.plugin.queue;
       const hasPromptJob = !!(queue && queue.hasPendingGeneratePrompt && queue.hasPendingGeneratePrompt());
-      const sig = `${info.state}|${hasPromptJob ? "P" : ""}`;
+      const sig = `${info.state}|${hasPromptJob ? "P" : ""}|${this.appendFile ? "A" : ""}`;
       if (sig === this._lastSig) {
         const t = this.el && this.el.querySelector(".qnalog-bubble-timer");
         if (t) t.setText(formatElapsed(info.elapsed));
       } else {
         this._lastSig = sig;
         this.render();
+        // 状态切换会改药丸宽度（录音态多出跳转/暂停/停止/计时）：
+        // 未拖动过 → 重新吸右下角；拖动过 → 夹回视口内，防止右侧被裁。
+        if ((this.plugin.settings.floatingBallPos || {}).userSet) this.keepInViewport();
+        else this.placeDefault();
         this.updateDockTail();
       }
     });
@@ -2579,6 +2609,20 @@ export class BubbleWidget {
       obsidian.setTooltip(micBtn, i18nT("Start meeting recording"), { placement: "top" });
       this._paintIcon(micBtn, ["mic", "lucide-mic"]);
       micBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.startRecording(); };
+      // 活动笔记是 Q&A Log 纪要时追加「追加录音到这篇纪要」入口（与侧边栏成品面板同一能力）；
+      // 普通笔记只显示标准录制按钮。
+      if (this.appendFile) {
+        const appendBtn = this.el.createEl("button", {
+          cls: "qnalog-bubble-btn append",
+          attr: { title: i18nT("Append recording to this note"), "aria-label": i18nT("Append recording to this note") },
+        });
+        this._paintIcon(appendBtn, ["mic", "lucide-mic"]);
+        appendBtn.onclick = (e) => {
+          e.stopPropagation();
+          const target = this.appendFile;
+          if (target) void this.plugin.recording.startRecording({ appendToFile: target });
+        };
+      }
       if (this.plugin.queue && this.plugin.queue.hasPendingGeneratePrompt && this.plugin.queue.hasPendingGeneratePrompt()) {
         const chip = this.el.createDiv({ cls: "qnalog-bubble-chip" });
         chip.setText(i18nT("Refining prompt"));
