@@ -1,0 +1,32 @@
+name: "Feature request / 功能建议"
+description: "Suggest an improvement or a new capability / 提出改进或新功能建议"
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: "Before submitting / 提交前"
+      options:
+        - label: "Searched existing issues for the same request. / 已检索既有 issue 确认没有相同建议。"
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / 要解决的问题"
+      description: "What is hard or impossible today, and how often you hit it. / 现在什么做不了或不好做，出现频率如何。"
+      placeholder: "当……的时候，我无法……"
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: "Desired behavior / 期望的行为"
+      description: "What should happen instead, concretely. / 具体希望看到什么结果。"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered / 考虑过的替代方案（可选）"
+      description: "Workarounds you use today, or other tools' approaches. / 目前的变通办法，或其他工具的做法。"

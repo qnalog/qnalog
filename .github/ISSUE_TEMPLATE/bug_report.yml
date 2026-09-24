@@ -1,0 +1,69 @@
+name: "Bug report / 报告问题"
+description: "Report a problem with recording, transcription, or notes / 报告录音、转写或纪要的问题"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: "Before submitting / 提交前"
+      options:
+        - label: "Upgraded to the latest release and reloaded Obsidian (Cmd/Ctrl + R). / 已升级到最新 Release 并重载过 Obsidian（Cmd/Ctrl + R）。"
+          required: true
+        - label: "Searched existing issues for the same problem. / 已检索既有 issue 确认没有相同问题。"
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Plugin version / 插件版本"
+      description: "Shown in Settings → About / 在「设置 → 关于」里可见，形如 1.0.10。"
+      placeholder: "1.0.10"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: "Platform / 平台"
+      options:
+        - "Desktop (macOS)"
+        - "Desktop (Windows)"
+        - "Desktop (Linux)"
+        - "Mobile (iOS)"
+        - "Mobile (Android)"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce / 复现步骤"
+      description: "Exact operations, involved settings (no keys), and the note or recording type. / 具体操作、涉及的设置项（不要贴密钥）与笔记/录音类型。"
+      placeholder: "1. ... 2. ... 3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected / 期望结果"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual / 实际结果"
+      description: "Error notices, console text, or screenshots. / 报错提示、控制台文字或截图。"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: "Diagnostic report / 诊断报告"
+      description: "Settings → About → Diagnostics & Logs → Copy diagnostic report. The report automatically masks API keys, tokens, user directories, and the vault path; it contains no audio, transcript text, or prompt contents. / 「设置 → 关于 → 诊断与日志 → 复制诊断报告」。报告已自动隐藏密钥、Token、用户目录与知识库路径，不含音频、转写正文或提示词。"
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant log lines / 相关日志（可选）"
+      description: "Lines from Settings → About → Diagnostics & Logs / 「设置 → 关于 → 诊断与日志」里的相关行。"
+      render: text
