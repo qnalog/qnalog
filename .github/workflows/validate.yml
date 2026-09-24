@@ -1,8 +1,17 @@
 # 纯校验 CI：只验证，不发布。
 #
-# 发布是人工流程，由维护者在本地按 MAINTAINING.md §4.2 执行（`gh release create`
-# 上传 main.js / manifest.json / styles.css）。因此这里没有任何发布步骤，
-# 只有构建可复现性、测试与主线隔离检查。权限也仅需只读。
+# CI 的真实定义是 package.json 里的 verify:push——本工作流只做「装依赖 + 跑它」，
+# 不在这里另维护一份检查清单（否则同一批门禁要同时记在 package.json、
+# validate.yml、release.yml 三处，漏改一处就出现两边都绿、但有一项谁都没跑）。
+# 以后新增检查只要进入 build / verify，PR CI 与 Release 自动获得，不需要改本文件。
+#
+# 权限只读、不依赖 repository secret：fork 账号发 PR 同样能跑。
+# 发布是另一个工作流（release.yml：tag 触发、contents: write），两者分工不合并。
+#
+# 注意：workflow 名（Validate）与 job id（validate）是 required status check 绑定的
+# check context（Main Protect → Require status checks 选 `validate`）。
+# 改名后 GitHub 会继续等待旧 context，PR 永远无法满足规则；
+# 该约定由 tests/validate-workflow-contract.test.ts 钉住。
 name: Validate
 
 on:
@@ -32,28 +41,12 @@ jobs:
           cache: npm
 
       # 用 npm ci 而不是 npm install：package-lock.json 是构建可复现的前提，
-      # 本仓库要求「仓库里的 main.js 能由仓库源码逐字节重建」，锁定安装是这条约束的一部分。
+      # 「仓库里的 main.js 能由仓库源码逐字节重建」这条约束依赖锁定安装。
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      # build 内含：版本四处对齐、@ts-nocheck 文件的漏引用检查、插件成员与域服务的引用一致性检查、
-      # 类型检查、esbuild 打包、移动端可加载性检查（不依赖 Node/Electron 全局）、
-      # 以及在模拟宿主里跑 onload 的装配检查（域服务漏装不会编译报错）。
-      - name: Build and typecheck
-        run: npm run build
-
-      - name: Test
-        run: npm test
-
-      # 代码与产物不得指向上游仓库，否则插件内的检查更新会把闭源版本装回来。
-      - name: Check mainline isolation
-        run: node scripts/check-mainline-isolation.mjs
-
-      # 产物必须与源码一致：构建后工作区应无改动。
-      - name: Verify committed bundle matches source
-        run: |
-          if [ -n "$(git status --porcelain main.js)" ]; then
-            echo "::error::main.js 与当前源码不一致。请本地运行 npm run build 并提交产物。"
-            git --no-pager diff --stat main.js
-            exit 1
-          fi
+      # verify:push = lint + build（含静态检查、类型检查、架构门禁、打包、运行时冒烟）
+      # + 测试 + 主线隔离 + 旧前缀门禁 + 设置映射表门禁 + 产物一致性（从 HEAD 重建比对）。
+      # PR 上检出的是合并引用，因此它比的是「合并结果」是否自洽，而不只是分支自身。
+      - name: Verify
+        run: npm run verify:push

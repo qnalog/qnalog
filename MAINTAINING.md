@@ -347,31 +347,35 @@ git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 
 | 工作流 | 触发 | 权限 | 做什么 |
 |---|---|---|---|
-| `validate.yml` | 每次 push 与 PR | `contents: read` | 纯校验：`npm ci` → `npm run build` → `npm test` → 主线隔离 → 产物一致性 |
+| `validate.yml` | 每次 push 与 PR | `contents: read` | 纯校验：`npm ci` → `npm run verify:push`（唯一入口，见下） |
 | `release.yml` | 推 `[0-9]*` 形式的 tag | `contents: write` | 从 tag 干净检出、重建产物、逐字节比对后上传 Release 资产（§4.2） |
 
 `release.yml` 是**唯一**带写权限的工作流，且只由维护者推 tag 触发——它不接受 `workflow_dispatch`，
 也不在 push 分支时运行，避免任何人借它创建 Release。
 
-**CI 不是必选，也不是本地检查的替代品。** 2026-09-15 实测：触发器是 `push: [main]` + `pull_request`，裸推分支不会跑任何检查；`main` 没有分支保护，CI 不拦合并；历史上 39 次运行全部成功，未发现过一次回归。它的两个不可替代之处是**跨平台第二意见**（ubuntu / Node 20，本地是 macOS / Node 22）与**校验已推送状态**（干净检出后构建，比的是仓库里真实提交的东西，而不是工作区）。
+**CI 的真实定义 = `package.json` 里的 `verify:push`。** `validate.yml` 只有两步：装依赖、
+跑 `verify:push`——不在 workflow 里另维护一份检查清单。否则同一批门禁要同时记在
+package.json、validate.yml、release.yml 三处，新增检查漏改一处就会出现「两边都绿、
+但有一项谁都没跑」。以后新增检查只要进入 `build` / `verify`，PR CI 与 Release 自动获得，
+不需要记得改 workflow。
+CI 的两个不可替代之处是**跨平台第二意见**（ubuntu / Node 20，本地是 macOS / Node 22）
+与**校验已推送状态**（干净检出后从 HEAD 构建，比的是仓库里真实提交的东西，而不是工作区；
+PR 上检出的是合并引用，比的是 A+B 的合并结果）。触发器仍是 `push: [main]` +
+`pull_request`：裸推分支不跑，CI 不是内层循环工具。
 
-本地与 CI 的能力对照（2026-09-15 按工作流与脚本实测；**CI 比本地弱**，不是等价）：
+**required status check（Main Protect）**：ruleset 要求 check context `validate`
+（workflow `name: Validate` + job id `validate`，由 `tests/validate-workflow-contract.test.ts`
+钉住——改名后 GitHub 会继续等待旧 context，PR 永远无法满足规则）通过才允许合并，并开启
+「须基于最新 main」：产物复现（本文）、架构基线（§13）、设置结构（§4.5）都是**合并后状态**
+的属性，A 在旧 main 上的绿灯不能证明 A+B 也绿。配置顺序必须是：先把 `validate.yml` 的
+`verify:push` 入口合并进 main、确认 main 上跑绿一次，再在 ruleset 里选择该 check——
+先配规则会让 GitHub 等待一个从未出现过的 context，把仓库锁住。
 
-| 检查 | `npm run verify` | `npm run verify:push` | CI |
-|---|---|---|---|
-| build / test 全链路（含 6 个静态检查与类型检查） | ✅ | ✅ | ✅ |
-| lint（`eslint src`） | ✅ | ✅ | — |
-| 主线隔离 | ✅ | ✅ | ✅ |
-| 旧品牌前缀门禁 | ✅ | ✅ | — |
-| 设置映射表门禁 | ✅ | ✅ | — |
-| 提交的产物能否由同提交源码重建 | — | ✅ | ✅ |
-| 干净检出的产物一致（未提交内容不污染） | — | 部分（读 HEAD 对象） | ✅ |
+本地与 CI 的能力对照：`validate.yml` 逐字执行 `npm run verify:push`，因此 **CI 覆盖 =
+本地 `verify` 全链 + `check:bundle-consistency`**，两者的定义只存在于 package.json 一处。
+本地内层循环仍用 `verify`；推送前跑 `verify:push`，CI 跑的就是同一个命令。
 
-CI 的 `validate.yml` 只跑 `npm ci`、`npm run build`、`npm test`、`check-mainline-isolation` 与
-`git status --porcelain main.js`；**lint 与两个前缀/映射表门禁只在本地跑**。
-因此「本地 `verify` 全绿」比「CI 绿」覆盖更多，反向不成立——不要用 CI 绿灯替代本地 `verify`。
-
-`verify:push` 在推送前跑，比 `verify` 多一项 `check:bundle-consistency`：把 HEAD 里参与构建的文件导出到临时目录、在那里打包、与 HEAD 里的 `main.js` 逐字节比对。它补的是 §5.2 那条 `git status --porcelain main.js` 的结构性盲区——那条只发现「重新构建了但忘了 `git add`」，如果压根没重新构建，工作区的产物与 HEAD 一致，会给出假通过。该脚本要求源码已提交（否则直接报错退出，不静默忽略），所以不放进提交前跑的 `verify`。
+`verify:push` 在推送前跑，比 `verify` 多一项 `check:bundle-consistency`：把 HEAD 里参与构建的文件导出到临时目录、在那里打包、与 HEAD 里的 `main.js` 逐字节比对。它补的是「构建后看 `git status --porcelain main.js`」这条本地检查的结构性盲区——那条只发现「重新构建了但忘了 `git add`」，如果压根没重新构建，工作区的产物与 HEAD 一致，会给出假通过。该脚本要求源码已提交（否则直接报错退出，不静默忽略），所以不放进提交前跑的 `verify`。
 
 `npm run build` 内部依次跑下列检查，任一失败即中断；表中标注 `verify` 的三项只在 `npm run verify` 里跑
 （`verify` = `lint` + `build` + `test` + 主线隔离 + 旧前缀门禁 + 设置映射表门禁）：
@@ -381,6 +385,7 @@ CI 的 `validate.yml` 只跑 `npm ci`、`npm run build`、`npm test`、`check-ma
 | `npm run check:versions` | `build` | `manifest.json` / `package.json` / `package-lock.json` / `versions.json` 版本不一致 |
 | `npm run check:undefined-symbols` | `build` | `@ts-nocheck` 文件里因不做类型检查而漏掉的未定义引用（TS2304） |
 | `npm run check:domain-boundaries` | `build` | 插件成员与域服务之间的引用不一致：`plugin.<已搬走的成员>`、`this.host.<未声明的能力>`、`plugin.<域>.<成员>`、`this.host.<域>.<成员>`（后者以服务类为准，接口里手抄的内联类型不作为依据） |
+| `npm run check:architecture` | `build` | 新增的 `src/main.ts` 依赖、legacy 文件 `plugin.*` 能力面回涨、服务依赖图的新边或新环（基线制，见 §13） |
 | `npm run check:plugin-onload` | `build` | 域服务漏装或宿主装错；侧边栏「纪要」列表默认带隐藏筛选、或该筛选在筛选条上不可见 |
 | `npm run check:merge-pipeline` | `build` | 会话收尾到合并整理的目标链路跑不通：在模拟宿主里用桩模型真跑一遍，确认整合正文与原始转写都写进笔记 |
 | `npm run typecheck:core` + `tsc -noEmit` | `build` | 严格核心集与其余文件的类型错误 |
@@ -1285,7 +1290,7 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 ### 13.1 基线制：现有债务放行，新增债务失败
 
 第一版不要求架构立即达到理想状态。事实基线放在**仓库内**、所有贡献者共享的
-`scripts/architecture-baseline.json`（不在 AGENTS.md——那是本机约束，机器门禁需要仓库内事实来源）。
+`scripts/architecture-baseline.json`（机器门禁需要仓库内、所有贡献者共享的事实来源，不能依赖任何本机文件）。
 脚本只读源码与基线：不访问网络、不读构建产物、不依赖 git，本地、fork PR、CI、离线都能跑。
 行为测试在 `tests/architecture-gate.test.ts`，用注入的最小源码覆盖，不扫描真实仓库。
 
