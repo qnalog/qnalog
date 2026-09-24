@@ -261,11 +261,23 @@ describe("semantic outline graph protocol", () => {
       "## 不应进入语义图",
       "逐字内容",
       "</details>",
+      "<!-- qnalog-note-index -->",
+      "<details>",
+      "<summary>索引数据</summary>",
+      "",
+      "```json",
+      '{"schemaVersion":1,"sourceRevision":"rev-9"}',
+      "```",
+      "",
+      "</details>",
+      "<!-- qnalog-note-index-end -->",
       "<!-- qnalog-active-version-end -->",
     ].join("\n");
     const sections = extractSemanticSourceSections(markdown);
     expect(sections.map((section) => section.heading)).toEqual(["问题意识", "关键案例"]);
     expect(JSON.stringify(sections)).not.toContain("逐字内容");
+    expect(JSON.stringify(sections)).not.toContain("schemaVersion");
+    expect(JSON.stringify(sections)).not.toContain("索引数据");
   });
 });
 

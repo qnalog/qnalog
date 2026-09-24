@@ -32,9 +32,10 @@ interface Range {
  * 找出不参与替换的区间：前置 frontmatter、HTML 注释、围栏代码块。
  *
  * - frontmatter：YAML 结构，替换可能破坏转义与值语义。
- * - HTML 注释：机器数据与锚点。`qnalog-note-index` 的 JSON 正文在里面，
- *   直接替换可能破坏 JSON 转义；它由 refreshNoteIndex 从正文重算，不必在这里改。
- * - 围栏代码块：示例代码里的词通常是刻意写的。
+ * - HTML 注释：机器标记与旧格式 `qnalog-note-index` JSON 在里面，
+ *   直接替换可能破坏 JSON 转义；新格式 JSON 落在围栏代码块里（下一条）。
+ *   索引都由 refreshNoteIndex 从正文重算，不必在这里改。
+ * - 围栏代码块：示例代码里的词通常是刻意写的，新格式索引/沉淀 JSON 也在这里。
  */
 function findProtectedRanges(markdown: string): Range[] {
   const text = String(markdown || "");

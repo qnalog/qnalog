@@ -5,7 +5,8 @@ import * as obsidian from "obsidian";
 import type { PluginSettings } from "../shared/types";
 import { NoteIndexService } from "../notes/note-index-service";
 import { sanitizeFilename } from "../shared/util-common";
-import { buildVersionPayload, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitVersionPayload } from "../version-content";
+import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitVersionPayload, stripVersionBookkeepingFrontmatter } from "../version-content";
+import { getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";
 import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
@@ -207,7 +208,18 @@ export class VersionStore {
   async applyVersionToSource(sourceFile, versionMeta, body, frontmatter = "") {
     const cur = await this.host.app.vault.read(sourceFile);
     const withFrontmatter = replaceLeadingFrontmatter(cur, frontmatter);
-    const next = replaceActiveVersionBlock(withFrontmatter, versionMeta, body);
+    // 标题跟随当前显示版本；回退日期优先取本次内容的 time，再取版本创建时间。
+    const fmTime = (String(frontmatter || "").match(/^time:\s*(.+)$/m) || [])[1] || "";
+    const fallbackDatetime = normalizeTitleDatetime(fmTime) || normalizeTitleDatetime(String(versionMeta && versionMeta.createdAt || ""));
+    // 标题模式段与改名文件名同源（getModePrefix，随界面语言）；清稿等未知模式回退到版本标签。
+    const modeKey = String((versionMeta && versionMeta.mode) || "");
+    const labelFallback = String((versionMeta && (versionMeta.label || versionMeta.kind)) || "当前版本").split(" · ")[0].trim() || "当前版本";
+    const titleSuffix = isKnownPolishMode(this.host.settings, modeKey)
+      ? getModePrefix(getModeMeta(this.host.settings, modeKey))
+      : labelFallback;
+    const withTitle = applyVersionTitle(withFrontmatter, titleSuffix, fallbackDatetime);
+    // 原始转写区规范化：未收尾的母本首次激活时把裸露分段折叠并补「原始材料」标题。
+    const next = foldRawTranscriptSection(replaceActiveVersionBlock(withTitle, versionMeta, body));
     if (next !== cur) await this.host.app.vault.modify(sourceFile, next);
     await this.host.noteIndex.refreshNoteIndexSafely(sourceFile, { reason: "version-switch" });
   }
@@ -234,7 +246,10 @@ export class VersionStore {
       sourceHash: String(fm.source_segments_hash || ""),
       createdAt: String(fm.created || ""),
     };
-    await this.applyVersionToSource(sourceFile, meta, body, versionParts.frontmatter);
+    // 缓存文件：载荷标记里的内容 YAML；派生笔记：文件头 YAML 剥掉记账字段。
+    // 之前派生路径恒传空串，母本 frontmatter 因此一直补不上。
+    const contentFrontmatter = versionParts.frontmatter || stripVersionBookkeepingFrontmatter(parts.frontmatter);
+    await this.applyVersionToSource(sourceFile, meta, body, contentFrontmatter);
     const sourceContent = await this.host.app.vault.read(sourceFile);
     const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
     const folder = getVersionStoreFolder(this.host.settings, sourceId);
