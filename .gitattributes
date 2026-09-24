@@ -1,1 +1,8 @@
+# main.js 是 esbuild 压缩产物，源码在 src/，重建方式见 MAINTAINING.md 4.2。
+# text eol=lf：跨平台检出统一为 LF，保证「产物逐字节比对」在 Windows 上也成立。
 main.js text eol=lf
+# linguist-generated：PR diff 默认折叠这份 1.4MB 压缩代码（没有逐行 review 的价值），
+# Linguist 语言统计也不再把它计成 JavaScript，仓库主语言如实反映为 TypeScript。
+main.js linguist-generated=true
+
+# styles.css 刻意不标 generated：它是手写源码，真实改动必须出现在 diff 里。
