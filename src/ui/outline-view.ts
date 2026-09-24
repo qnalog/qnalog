@@ -808,6 +808,16 @@ export class OutlineView extends obsidian.ItemView {
     };
   }
 
+  renderNoRestorableDataEmpty(root) {
+    // 选中的笔记没有会话标记、实时大纲或回听时间轴（派生笔记走这里）。
+    // 与「未打开笔记」同一套空态视觉：section 提供内边距，空态块居中，避免一行裸文本贴在面板顶端。
+    const sec = root.createDiv({ cls: "qnalog-outline-section qnalog-outline-panel-empty qnalog-empty-state-section" });
+    const box = sec.createDiv({ cls: "qnalog-empty-state" });
+    const iconWrap = box.createDiv({ cls: "qnalog-empty-state-icon" });
+    try { obsidian.setIcon(iconWrap, "history"); } catch { /* intentionally empty */ }
+    box.createDiv({ cls: "qnalog-empty-state-title", text: i18nT("This note has no outline or playback timeline to restore.") });
+  }
+
   getAskState(file) {
     const path = file instanceof obsidian.TFile ? obsidian.normalizePath(file.path) : "";
     // entries: 本会话内该纪要的问答历史（最新在前），每条 { id, question, answer, ts, written, expanded }。
@@ -3830,11 +3840,11 @@ export class OutlineView extends obsidian.ItemView {
   renderCompletedNote(root, file) {
     const data = this.getCompletedNotePanelData(file);
     if (data === undefined) {
-      root.createDiv({ cls: "qnalog-outline-empty", text: i18nT("Reading the current note…") });
+      this.renderPanelEmpty(root, i18nT("Reading the current note…"));
       return;
     }
     if (!data) {
-      root.createDiv({ cls: "qnalog-outline-empty", text: i18nT("This note has no outline or playback timeline to restore.") });
+      this.renderNoRestorableDataEmpty(root);
       return;
     }
 
