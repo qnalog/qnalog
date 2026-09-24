@@ -116,25 +116,69 @@ export function isSameVaultPath(a, b) {
 
 /** 读取音频时长的毫秒数；无法解码或加载失败时返回 0。 */
 export function getAudioDurationMs(blob: Blob): Promise<number> {
-  return new Promise((resolve) => {
-    try {
-      const url = URL.createObjectURL(blob);
-      // Obsidian 在运行时把 createEl 挂在 Window 上（弹出窗口里要用它创建元素），但 obsidian.d.ts 只声明了
-      // 模块级的同名函数，因此这里补一个局部类型。createEl 的返回类型由标签名决定，这里显式写 audio。
-      const audio = (activeWindow as Window & {
-        createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K];
-      }).createEl("audio");
-      audio.preload = "metadata";
-      const cleanup = () => { try { URL.revokeObjectURL(url); } catch { /* intentionally empty */ } };
-      audio.addEventListener("loadedmetadata", () => {
-        const d = audio.duration;
-        cleanup();
-        resolve(isFinite(d) && d > 0 ? Math.round(d * 1000) : 0);
-      });
-      audio.addEventListener("error", () => { cleanup(); resolve(0); });
-      audio.src = url;
-    } catch { resolve(0); }
-  });
+  const { promise, resolve } = Promise.withResolvers<number>();
+  try {
+    const url = URL.createObjectURL(blob);
+    // Obsidian 在运行时把 createEl 挂在 Window 上（弹出窗口里要用它创建元素），但 obsidian.d.ts 只声明了
+    // 模块级的同名函数，因此这里补一个局部类型。createEl 的返回类型由标签名决定，这里显式写 audio。
+    const audio = (activeWindow as Window & {
+      createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K];
+    }).createEl("audio");
+    audio.preload = "metadata";
+    const cleanup = () => { try { URL.revokeObjectURL(url); } catch { /* intentionally empty */ } };
+    audio.addEventListener("loadedmetadata", () => {
+      // 头部无 Duration 的录音（MediaRecorder 边录边写、录音开始时总长未知，不回填该字段）
+      // 在这里读到的是 Infinity，按有限值直读会得到 0；改走 probeAudioDurationMs 扫描回填，
+      // 探测失败仍返回 0，与旧行为一致。
+      void probeAudioDurationMs(audio).then((ms) => { cleanup(); resolve(ms); });
+    });
+    audio.addEventListener("error", () => { cleanup(); resolve(0); });
+    audio.src = url;
+  } catch { resolve(0); }
+  return promise;
+}
+
+/**
+ * 读出音频元素已知的总时长（毫秒），供导入计时与回放界面使用。
+ *
+ * MediaRecorder 录出的 WebM 头部没有 Duration 字段（录音开始时总长未知，录完不回填；
+ * ffprobe 对这批文件同样报 duration=N/A），Chromium 因此把 audio.duration 报成 Infinity，
+ * 直读会得到 0，播放器的总时长、进度条比例和点击跳转随之全部失效。把播放头推到超出文件
+ * 末尾的位置（1e101 秒）会强制解码器扫描到文件结尾并回填真实总长（触发 durationchange，
+ * 已在 Chromium 实测：Infinity → 5.396 秒），探测结束后播放头放回原位，失败时也放回原位——
+ * 否则停在 1e101，按播放会直接结束。已是有限时长的文件直接返回现值、不动播放头；
+ * 超时或元素报错返回 0，与探测前的读数一致，调用方按「读不到时长」处理。
+ */
+export function probeAudioDurationMs(audio: HTMLAudioElement, timeoutMs = 4000): Promise<number> {
+  const readMs = () => {
+    const d = audio.duration;
+    return Number.isFinite(d) && d > 0 ? Math.round(d * 1000) : 0;
+  };
+  const immediate = readMs();
+  if (immediate > 0) return Promise.resolve(immediate);
+  const { promise, resolve } = Promise.withResolvers<number>();
+  const resumeTo = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+  let settled = false;
+  let timer = 0;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    audio.removeEventListener("durationchange", onDurationChange);
+    audio.removeEventListener("error", onError);
+    window.clearTimeout(timer);
+    const ms = readMs();
+    // 播放头被推到了超远位置，必须放回原位——否则停在 1e101，按播放会直接结束。
+    try { audio.currentTime = resumeTo; } catch { /* intentionally empty */ }
+    resolve(ms);
+  };
+  const onDurationChange = () => { if (readMs() > 0) finish(); };
+  const onError = () => finish();
+  timer = window.setTimeout(finish, timeoutMs);
+  audio.addEventListener("durationchange", onDurationChange);
+  audio.addEventListener("error", onError);
+  // 把播放头推到超出文件末尾的位置，强制解码器扫描到文件尾并回填真实总长（触发 durationchange）。
+  try { audio.currentTime = 1e101; } catch { finish(); }
+  return promise;
 }
 
 // 确定性 ASR 错误：格式不被服务端接受 / 本机无法解码 / 超过体积上限 / 4xx 拒绝（密钥、余额、审核）——
