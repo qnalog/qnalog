@@ -1273,3 +1273,56 @@ MacBook Pro 麦克风 · 可用
 provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接标签）在
 `settings-tab.ts` 的渲染处包 `t()`；它们是数据字段，不在 `t("...")` 调用点里，
 因此 `tests/i18n.test.ts` 另有一条用例专门扫这个模块。
+
+## 13. 架构门禁：check:architecture 与基线制
+
+`npm run check:architecture`（`scripts/check-architecture.mjs`）回答的是另一个问题：
+`check:domain-boundaries` 问「这个成员、Host 能力、Service 方法是否真实存在」，
+它问「**这个模块是否应该获得这项依赖？这次修改有没有扩大已有耦合？**」。
+已并入 `npm run build`，紧跟在 `check:domain-boundaries` 之后——两者是同一层静态约束：
+一个管引用是否合法，一个管依赖是否合法。`verify` / `verify:push` / CI 因此自动继承。
+
+### 13.1 基线制：现有债务放行，新增债务失败
+
+第一版不要求架构立即达到理想状态。事实基线放在**仓库内**、所有贡献者共享的
+`scripts/architecture-baseline.json`（不在 AGENTS.md——那是本机约束，机器门禁需要仓库内事实来源）。
+脚本只读源码与基线：不访问网络、不读构建产物、不依赖 git，本地、fork PR、CI、离线都能跑。
+行为测试在 `tests/architecture-gate.test.ts`，用注入的最小源码覆盖，不扫描真实仓库。
+
+三件事，对应基线的两个字段：
+
+1. **禁止新的 `src/main.ts` 依赖**（`pluginConsumers` 的键集合同时充当 import 白名单）。
+   除 `src/main.ts` 自身外，任何 import（含 re-export、动态 import）解析后指向 `src/main`
+   都必须失败，解析走 TypeScript AST + 相对路径归一，目录层级变化不会漏掉。
+   放行的 legacy 文件固定为：`src/queue/task-queue.ts`、`src/audio/recorder-service.ts`、
+   `src/ui/outline-view.ts`——三者在 1.0.9 仍直接 import `main.ts`，作为债务登记在基线里。
+2. **冻结三个 legacy consumer 的 `plugin.*` 能力面**（`pluginConsumers`）。
+   规则是**实际使用集合与基线精确一致**，不是单纯 subset：
+   新增一个 `this.plugin.imports` 直接失败；反之，若日后移除了某个能力的使用而基线没收缩，
+   也失败并要求同步删除。这样债务形成单向棘轮：24 → 23 可以（改代码时同步改基线），
+   23 → 24 不会无意发生——旧 allowlist 不及时收缩的话，删掉的依赖还能加回来。
+3. **Service 依赖图**（`serviceEdges`）。对每个 `XxxHost` 接口，取其成员在 main.ts 里
+   `this.<字段> = new <类>(...)` 对应的具体服务类，得到 `消费服务 → 依赖服务` 的有向边。
+   新增边一律失败（即使尚未构成环）——A → B 单看可能无害，但可能恰好把两条路径连成环，
+   要求开发者显式处理一次，比自动放行稳妥。删除边则要求同步收缩基线（同一条棘轮）。
+   脚本用 Tarjan 算法求强连通分量，每次运行输出 service count / edge count /
+   cyclic SCC count / largest SCC size。**第一阶段不要求 cycle = 0**：
+   现有环允许存在；失败条件是不得产生新环、不得扩大既有 SCC（既有 12 个服务的大环里
+   再插入一个节点，同样失败）。
+
+### 13.2 为什么基线更新不是「修检查」的步骤
+
+基线是**事实**（`scripts/architecture-baseline.json`），为什么这样设计写在本节（**理由**），
+两者分开存放。脚本没有 `architecture:update-baseline` 之类的 npm 命令，失败信息也不提示
+怎么刷新——否则最容易出现的循环是：检查失败 → 自动刷新基线 → 检查通过，门禁就此失效。
+**更新基线是架构决策**：先确认新增依赖确实是该走的路（优先 callback、port、
+独立 workflow service），再用 `node scripts/check-architecture.mjs --print-baseline`
+打印当前事实、人工裁剪后写回 JSON，与代码改动一起提交评审。
+收缩基线（删除条目）直接编辑 JSON 即可，不需要该命令。
+
+### 13.3 第一版不查什么
+
+文件行数上限、方法数量上限、所有 Host 禁止 `app`/`settings`、`shared/` 层级规则、
+目录依赖白名单——这些方向多数属于遗留状态，第一版检查会大面积误报。
+规则少，误报才少。第一版只管三件已有明确证据的问题：
+`QnALogPlugin` 依赖扩散、plugin capability 面扩大、service 边/环扩大。
