@@ -118,23 +118,23 @@ export function isSameVaultPath(a, b) {
 export function getAudioDurationMs(blob: Blob): Promise<number> {
   const { promise, resolve } = Promise.withResolvers<number>();
   try {
-      const url = URL.createObjectURL(blob);
-      // Obsidian 在运行时把 createEl 挂在 Window 上（弹出窗口里要用它创建元素），但 obsidian.d.ts 只声明了
-      // 模块级的同名函数，因此这里补一个局部类型。createEl 的返回类型由标签名决定，这里显式写 audio。
-      const audio = (activeWindow as Window & {
-        createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K];
-      }).createEl("audio");
-      audio.preload = "metadata";
-      const cleanup = () => { try { URL.revokeObjectURL(url); } catch { /* intentionally empty */ } };
-      audio.addEventListener("loadedmetadata", () => {
-        // 头部无 Duration 的录音（MediaRecorder 边录边写、录音开始时总长未知，不回填该字段）
-        // 在这里读到的是 Infinity，按有限值直读会得到 0；改走 probeAudioDurationMs 扫描回填，
-        // 探测失败仍返回 0，与旧行为一致。
-        void probeAudioDurationMs(audio).then((ms) => { cleanup(); resolve(ms); });
-      });
-      audio.addEventListener("error", () => { cleanup(); resolve(0); });
-      audio.src = url;
-    } catch { resolve(0); }
+    const url = URL.createObjectURL(blob);
+    // Obsidian 在运行时把 createEl 挂在 Window 上（弹出窗口里要用它创建元素），但 obsidian.d.ts 只声明了
+    // 模块级的同名函数，因此这里补一个局部类型。createEl 的返回类型由标签名决定，这里显式写 audio。
+    const audio = (activeWindow as Window & {
+      createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K];
+    }).createEl("audio");
+    audio.preload = "metadata";
+    const cleanup = () => { try { URL.revokeObjectURL(url); } catch { /* intentionally empty */ } };
+    audio.addEventListener("loadedmetadata", () => {
+      // 头部无 Duration 的录音（MediaRecorder 边录边写、录音开始时总长未知，不回填该字段）
+      // 在这里读到的是 Infinity，按有限值直读会得到 0；改走 probeAudioDurationMs 扫描回填，
+      // 探测失败仍返回 0，与旧行为一致。
+      void probeAudioDurationMs(audio).then((ms) => { cleanup(); resolve(ms); });
+    });
+    audio.addEventListener("error", () => { cleanup(); resolve(0); });
+    audio.src = url;
+  } catch { resolve(0); }
   return promise;
 }
 

@@ -49,10 +49,12 @@ jobs:
 
       # 用 npm ci 而非 install：package-lock.json 是构建可复现的前提，
       # 「产物能由源码逐字节重建」这条要求依赖锁定安装。
+      # 与 validate.yml 对齐 Node 22：本工作流同样跑 npm run verify:push（含全部测试），
+      # Node 20 缺 Promise.withResolvers 会让测试在发布阶段必挂。
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies (locked)
