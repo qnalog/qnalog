@@ -12,7 +12,7 @@ import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { splitLeadingFrontmatter } from "../version-content";
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
-import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
+import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
@@ -23,6 +23,52 @@ import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vau
 import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+
+/** rewriteConsolidated 组装实时大纲 details 的输入；对象参数便于测试逐项注入。 */
+export interface RealtimeOutlineAssemblyInput {
+  /** buildRealtimeOutlineDetails 产出的完整 details 块；空串表示本场次没有实时大纲。 */
+  liveBlock: string;
+  /** 本场次实时大纲文本（session.realtimeOutline）。 */
+  liveText: string;
+  /** 续录来源的旧大纲全文（continuationPriorOutline，可能含历史归档）。 */
+  priorText: string;
+  /** buildPriorSessionBlocks 产出的归档 appendix（横幅 + 旧大纲）。 */
+  appendix: string;
+}
+
+/**
+ * 把续录前大纲并进实时大纲 details，带一道去重闸门。
+ *
+ * 历史 bug：种子与 appendix 都来自旧笔记整个大纲 details 正文，重写于是执行
+ * 「新体 = 旧体 + 横幅 + 旧体」——每次追加精确翻倍（实测备份链 1→2→4→8 份、
+ * 横幅 0→1→3→7 条 = 2^k−1），且同一重写再执行一次就再翻一倍（不幂等）。
+ * 闸门：实时大纲里已包含（空白折叠后）旧大纲的实时部分时跳过 appendix——
+ * 种子场景必然成立，直接得到单份；只有大纲真的分叉（重新生成丢了旧话题、
+ * 或本场次没有实时大纲）才挂归档，历史仍按场次可查。
+ */
+export function assembleRealtimeOutlineDetails(input: RealtimeOutlineAssemblyInput): string {
+  const liveBlock = String(input.liveBlock || "");
+  const appendix = String(input.appendix || "");
+  if (liveBlock && appendix) {
+    const squash = (value: string) => value.replace(/\s+/g, " ").trim();
+    const live = squash(stripArchivedOutlineSections(String(input.liveText || "")));
+    const prior = squash(stripArchivedOutlineSections(String(input.priorText || "")));
+    if (live && prior && live.includes(prior)) return liveBlock;
+    return liveBlock.replace(/<\/details>\s*$/, `${appendix}</details>`);
+  }
+  if (liveBlock) return liveBlock;
+  if (appendix) {
+    return [
+      "<details>",
+      "<summary>录音中实时大纲（草稿）</summary>",
+      "",
+      "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。",
+      appendix,
+      "</details>",
+    ].join("\n");
+  }
+  return "";
+}
 
 /**
  * 续录会话（continuationSourcePath 非空）重写笔记时的旧场次原始材料块。
@@ -156,22 +202,14 @@ export class NoteWriter {
     const recordingInfoWithPrior = recordingInfoBlock && priorBlocks.recordingInfoAppendix
       ? recordingInfoBlock.replace(/<\/details>\s*$/, `${priorBlocks.recordingInfoAppendix}</details>`)
       : recordingInfoBlock;
-    // 续录：旧场次大纲并进实时大纲 details 内部；新会话没有大纲时单独为旧大纲建块。
-    let realtimeOutlineWithPrior = "";
-    if (realtimeOutlineBlock && priorBlocks.outlineAppendix) {
-      realtimeOutlineWithPrior = realtimeOutlineBlock.replace(/<\/details>\s*$/, `${priorBlocks.outlineAppendix}</details>`);
-    } else if (realtimeOutlineBlock) {
-      realtimeOutlineWithPrior = realtimeOutlineBlock;
-    } else if (priorBlocks.outlineAppendix) {
-      realtimeOutlineWithPrior = [
-        "<details>",
-        "<summary>录音中实时大纲（草稿）</summary>",
-        "",
-        "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。",
-        priorBlocks.outlineAppendix,
-        "</details>",
-      ].join("\n");
-    }
+    // 续录：旧场次大纲并进实时大纲 details 内部（去重闸门见 assembleRealtimeOutlineDetails）；
+    // 新会话没有大纲时单独为旧大纲建块。
+    const realtimeOutlineWithPrior = assembleRealtimeOutlineDetails({
+      liveBlock: realtimeOutlineBlock,
+      liveText: session.realtimeOutline || "",
+      priorText: session.continuationPriorOutline || "",
+      appendix: priorBlocks.outlineAppendix,
+    });
     const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
     const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
 

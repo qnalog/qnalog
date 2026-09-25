@@ -3,8 +3,10 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
   TFile: class {}, TFolder: class {},
 }));
-import { buildPriorSessionBlocks } from "../src/notes/note-writer";
+import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "../src/notes/note-writer";
 import { extractPriorOutline } from "../src/audio/recording-service";
+import { extractNotePanelData } from "../src/notes/detail-blocks";
+import { stripArchivedOutlineSections } from "../src/notes/realtime-outline";
 
 // 测试环境没有 Obsidian 注入的 window.moment；format 只用到 YYYY-MM-DD HH:mm:ss。
 vi.stubGlobal("window", {
@@ -86,5 +88,114 @@ describe("extractPriorOutline 旧大纲读回", () => {
 
   it("没有该 details 时返回空串", () => {
     expect(extractPriorOutline("# 笔记\n\n正文")).toBe("");
+  });
+});
+
+
+// 追加大纲翻倍回归：种子/读回若把归档副本一并带回，rewriteConsolidated 就执行
+// 「新体 = 旧体 + 横幅 + 旧体」——实测备份链 1→2→4→8 份、横幅 0→1→3→7 条（2^k−1）。
+describe("实时大纲归档去重（防追加翻倍）", () => {
+  const BANNER = "> 以下为追加录音前场次（旧笔记）的实时大纲草稿。";
+  const LIVE = "- 浮窗外观优化\n  - 要点一";
+  const liveBlock = (body: string) =>
+    [
+      "<details>",
+      "<summary>录音中实时大纲（草稿）</summary>",
+      "",
+      "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。",
+      "",
+      body,
+      "",
+      "</details>",
+    ].join("\n");
+  const corruptedDetails = liveBlock([LIVE, BANNER, LIVE, BANNER, LIVE].join("\n\n"));
+  const appendixOf = (prior: string) => `\n${BANNER}\n\n${prior}\n`;
+
+  it("stripArchivedOutlineSections：无横幅原样返回", () => {
+    expect(stripArchivedOutlineSections(LIVE)).toBe(LIVE);
+  });
+
+  it("stripArchivedOutlineSections：从第一条横幅截断，只留实时部分", () => {
+    const body = [LIVE, BANNER, LIVE, BANNER, LIVE].join("\n\n");
+    expect(stripArchivedOutlineSections(body)).toBe(LIVE);
+  });
+
+  it("extractPriorOutline：读回时连归档一起剥掉（种子与附录只带实时部分）", () => {
+    expect(extractPriorOutline(corruptedDetails)).toBe(LIVE);
+  });
+
+  it("assemble：实时已包含旧大纲（种子场景）→ 跳过 appendix，不翻倍", () => {
+    const out = assembleRealtimeOutlineDetails({
+      liveBlock: liveBlock(LIVE),
+      liveText: LIVE,
+      priorText: LIVE,
+      appendix: appendixOf(LIVE),
+    });
+    expect(out).toBe(liveBlock(LIVE));
+    expect(out).not.toContain(BANNER);
+    expect(out.split(LIVE).length - 1).toBe(1);
+  });
+
+  it("assemble：空白差异不影响包含判定（渲染往返容忍）", () => {
+    const out = assembleRealtimeOutlineDetails({
+      liveBlock: liveBlock(LIVE),
+      liveText: LIVE,
+      priorText: LIVE.replace(/\n/g, "\n\n"),
+      appendix: appendixOf(LIVE),
+    });
+    expect(out).not.toContain(BANNER);
+  });
+
+  it("assemble：大纲分叉 → 挂一条带标签的归档，历史可查且只有一条", () => {
+    const fresh = "- 追加场次的新话题";
+    const out = assembleRealtimeOutlineDetails({
+      liveBlock: liveBlock(fresh),
+      liveText: fresh,
+      priorText: LIVE,
+      appendix: appendixOf(LIVE),
+    });
+    expect(out).toContain(BANNER);
+    expect(out).toContain(LIVE);
+    expect(out).toContain(fresh);
+    expect(out.split(BANNER).length - 1).toBe(1);
+  });
+
+  it("assemble：本场次没有实时大纲 → 单独用归档建块（summary 与横幅齐全）", () => {
+    const out = assembleRealtimeOutlineDetails({
+      liveBlock: "",
+      liveText: "",
+      priorText: LIVE,
+      appendix: appendixOf(LIVE),
+    });
+    expect(out).toContain("<summary>录音中实时大纲（草稿）</summary>");
+    expect(out).toContain(BANNER);
+    expect(out).toContain(LIVE);
+  });
+
+  it("两轮重写模拟：产出→读回→再重写，份数不增长（直接锁死翻倍回归）", () => {
+    const first = assembleRealtimeOutlineDetails({
+      liveBlock: liveBlock(LIVE),
+      liveText: LIVE,
+      priorText: LIVE,
+      appendix: appendixOf(LIVE),
+    });
+    const prior2 = extractPriorOutline(first);
+    const second = assembleRealtimeOutlineDetails({
+      liveBlock: liveBlock(prior2),
+      liveText: prior2,
+      priorText: prior2,
+      appendix: appendixOf(prior2),
+    });
+    expect(prior2).toBe(LIVE);
+    expect(second.split(LIVE).length - 1).toBe(1);
+    expect(second.split(BANNER).length - 1).toBe(0);
+  });
+
+  it("extractNotePanelData：面板只显实时部分（现有坏笔记无需重写即干净）", () => {
+    const md = "---\nmode: monologue\n---\n\n# 标题\n\n" + corruptedDetails + "\n\n<!-- qnalog-session:test -->\n";
+    const data = extractNotePanelData(null, null, md);
+    expect(data).not.toBeNull();
+    expect(data!.outline).toBe(LIVE);
+    expect(data!.outline).not.toContain(BANNER);
   });
 });

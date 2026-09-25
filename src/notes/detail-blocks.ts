@@ -8,6 +8,7 @@ import { collectAudioRefs, getAudioTimeLink, getSessionMasterAudioName } from ".
 import { detectRecentNoteMode } from "../recent/recent-notes";
 
 import { isTextImportSession } from "./note-markdown";
+import { stripArchivedOutlineSections } from "./realtime-outline";
 
 import { extractSedimentPreExtractionBlock } from "../sediment";
 
@@ -128,9 +129,14 @@ export function extractNotePanelData(plugin, file, markdown) {
   const hasMarker = NS_SESSION_RE.test(text)
     || NS_SEGMENTS_START_RE.test(text);
   const outlineRaw = extractDetailsBody(text, /录音中实时大纲/);
-  const outline = outlineRaw
-    .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
-    .trim();
+  // 面板展示「当前实时大纲」：剥引导行后再剥归档横幅与历史副本——旧笔记的
+  // 大纲 details 按场次累积了重复归档（追加重写翻倍的历史 bug），原样展示会把
+  // 同一份大纲连横幅重复多遍；文件里的归档不动，阅读视图仍可见完整历史。
+  const outline = stripArchivedOutlineSections(
+    outlineRaw
+      .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
+      .trim()
+  );
   const timeline = extractDetailsBody(text, /回听时间轴/);
   if (!hasMarker && !outline && !timeline) return null;
   const body = text.replace(/^---\n[\s\S]*?\n---\n?/m, "");
