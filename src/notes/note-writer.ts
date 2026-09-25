@@ -149,7 +149,6 @@ export class NoteWriter {
 
     const currentBlock = [
       polishedFrontmatter || beforeParts.frontmatter.trimEnd() || null,
-      (polishedFrontmatter || beforeParts.frontmatter) ? "" : null,
       titleBlock ? titleBlock.trimEnd() : null,
       titleBlock ? "" : null,
       `## ${t("Current minutes")}（${getModePrefix(meta)} · ${stamp}）`,
@@ -232,7 +231,6 @@ export class NoteWriter {
 
     const content = [
       polishedFrontmatter || null,
-      polishedFrontmatter ? "" : null,
       `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
       "",
       polishedBody,
@@ -334,7 +332,7 @@ export class NoteWriter {
     let cur = await this.host.app.vault.read(file);
     if (polishedFrontmatter && !mergeError) {
       const currentParts = splitLeadingFrontmatter(cur);
-      cur = polishedFrontmatter + "\n\n" + currentParts.body.replace(/^\n+/, "");
+      cur = polishedFrontmatter + "\n" + currentParts.body.replace(/^\n+/, "");
     }
     const sep = cur.endsWith("\n") ? "" : "\n";
     let next = cur + sep + block;

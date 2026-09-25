@@ -1185,7 +1185,7 @@ export function mergeLeadingFrontmatterIntoDocument(documentText, generatedMarkd
   if (!generated.frontmatter) return { content: String(documentText || ""), body: String(generatedMarkdown || "") };
   const current = splitLeadingFrontmatter(documentText || "");
   return {
-    content: generated.frontmatter.trimEnd() + "\n\n" + current.body.replace(/^\n+/, ""),
+    content: generated.frontmatter.trimEnd() + "\n" + current.body.replace(/^\n+/, ""),
     body: generated.body.trim() || buildEmptyLlmOutputFallback(),
   };
 }
@@ -1335,7 +1335,7 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   }
   // topNotice（如截断告警）插在 frontmatter 之后、正文之前——保证 frontmatter 不被破坏、告警最显眼。
   const noticeBlock = topNotice ? String(topNotice).trim() + "\n\n" : "";
-  return "---\n" + yamlBlock + "---\n\n" + noticeBlock + body.trimStart();
+  return "---\n" + yamlBlock + "---\n" + noticeBlock + body.trimStart();
 }
 
 export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode, sessionMeta) {

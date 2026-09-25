@@ -208,6 +208,8 @@ async function main() {
     if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
     if (!/^---\r?\n[\s\S]*?\r?\n---/.test(content)) failures.push("笔记没有 frontmatter");
     if (!/^time:\s*\S/m.test(content)) failures.push("frontmatter 里没有 time 字段（重新整理入口会因缺少 time 不可用）");
+    // 只认 H1（# + 空格）：正文里 `---` 分隔线后的 `## 章节` 也以 # 开头，不是头部空行。
+    if (/^---\r?\n[ \t]*\r?\n#\s/m.test(content)) failures.push("frontmatter 与 H1 之间有多余空行（新格式：单换行紧贴标题）");
     for (const id of plugin.intervals) clearInterval(id);
   } finally {
     console.error = realError;
