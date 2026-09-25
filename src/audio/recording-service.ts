@@ -23,7 +23,7 @@ import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS } from "../shared/limits";
 import { classifyShortRecording } from "./short-recording-policy";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
-import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
+import { normalizeRealtimeOutlineState, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { getDurationMs, getSegmentsDurationMs, getSessionMasterAudioName, collectAudioRefs } from "../notes/audio-refs";
 import { extractDetailsBody } from "../notes/detail-blocks";
 import { extractTranscriptSegments, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
@@ -43,14 +43,18 @@ import { t } from "../shared/i18n";
 
 /**
  * 从既有纪要正文读回「录音中实时大纲（草稿）」details 的内容，
- * 剥掉引导行（"> 基于录音过程中…"）。没有该块或内容为空时返回空串。
+ * 剥掉引导行（"> 基于录音过程中…"）。剥掉归档段（"> 以下为追加录音前场次…" 及历史副本）后返回；没有该块或内容为空时返回空串。
  * 续录重写时旧大纲按场次保留，不因整篇重建丢失。
  */
 export function extractPriorOutline(markdown) {
   const raw = extractDetailsBody(markdown, /录音中实时大纲/);
-  return String(raw || "")
-    .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
-    .trim();
+  // 归档段（"> 以下为追加录音前场次…" 及其历史副本）不随读回进入种子与附录——
+  // 两者共用这一处读回，单点剥干净后新场次的 live 大纲与 appendix 都不再自引用。
+  return stripArchivedOutlineSections(
+    String(raw || "")
+      .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
+      .trim()
+  );
 }
 
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */

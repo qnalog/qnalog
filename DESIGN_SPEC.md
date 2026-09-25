@@ -16,51 +16,51 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
 ```css
 .qnalog-outline,
 .qnalog-view {
-  --lex-bg-base: var(--background-primary);
-  --lex-bg-card: var(--background-primary-alt, var(--background-primary));
-  --lex-bg-muted: var(--background-secondary);
-  --lex-bg-hover: var(--background-modifier-hover);
+  --qnalog-bg-base: var(--background-primary);
+  --qnalog-bg-card: var(--background-primary-alt, var(--background-primary));
+  --qnalog-bg-muted: var(--background-secondary);
+  --qnalog-bg-hover: var(--background-modifier-hover);
 
-  --lex-text-primary: var(--text-normal);
-  --lex-text-secondary: var(--text-muted);
-  --lex-text-tertiary: var(--text-faint);
-  --lex-text-hint: var(--text-faint);
-  --lex-on-primary: var(--text-on-accent);
+  --qnalog-text-primary: var(--text-normal);
+  --qnalog-text-secondary: var(--text-muted);
+  --qnalog-text-tertiary: var(--text-faint);
+  --qnalog-text-hint: var(--text-faint);
+  --qnalog-on-primary: var(--text-on-accent);
 
-  --lex-border-line: var(--background-modifier-border);
-  --lex-border-line-hover: var(--background-modifier-border-hover);
+  --qnalog-border-line: var(--background-modifier-border);
+  --qnalog-border-line-hover: var(--background-modifier-border-hover);
 
-  --lex-primary: var(--interactive-accent);
-  --lex-primary-hover: var(--interactive-accent-hover);
-  --lex-text-active: var(--text-accent);
-  --lex-bg-active: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
-  --lex-bg-active-strong: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
-  --lex-border-active: var(--interactive-accent);
-  --lex-border-active-soft: color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+  --qnalog-primary: var(--interactive-accent);
+  --qnalog-primary-hover: var(--interactive-accent-hover);
+  --qnalog-text-active: var(--text-accent);
+  --qnalog-bg-active: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  --qnalog-bg-active-strong: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  --qnalog-border-active: var(--interactive-accent);
+  --qnalog-border-active-soft: color-mix(in srgb, var(--interactive-accent) 35%, transparent);
 
   /* 录音/进行中也跟随主题强调色，不硬编码红色。 */
-  --lex-recording-color: var(--interactive-accent);
-  --lex-recording-glow: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  --qnalog-recording-color: var(--interactive-accent);
+  --qnalog-recording-glow: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
 
-  --lex-success-bg: var(--background-modifier-success);
-  --lex-success-text: var(--text-success);
-  --lex-danger-bg: var(--background-modifier-error);
-  --lex-danger-text: var(--text-error);
+  --qnalog-success-bg: var(--background-modifier-success);
+  --qnalog-success-text: var(--text-success);
+  --qnalog-danger-bg: var(--background-modifier-error);
+  --qnalog-danger-text: var(--text-error);
 }
 
 .theme-dark .qnalog-outline,
 .theme-dark .qnalog-view {
-  --lex-bg-active: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
-  --lex-bg-active-strong: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+  --qnalog-bg-active: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  --qnalog-bg-active-strong: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
 }
 ```
 
 规则：
 
-- 所有颜色使用 `var(--lex-*)` 或 Obsidian 官方变量。
-- 错误 / 失败 / 重试使用 `--lex-danger-text`，最终指向 `--text-error`。
-- 成功使用 `--lex-success-*`，最终指向 Obsidian 成功语义色。
-- 录音、进行中圆点、波形和进度使用 `--lex-recording-color`，最终指向 `--interactive-accent`。
+- 所有颜色使用 `var(--qnalog-*)` 或 Obsidian 官方变量。
+- 错误 / 失败 / 重试使用 `--qnalog-danger-text`，最终指向 `--text-error`。
+- 成功使用 `--qnalog-success-*`，最终指向 Obsidian 成功语义色。
+- 录音、进行中圆点、波形和进度使用 `--qnalog-recording-color`，最终指向 `--interactive-accent`。
 - 不要把主题主色、错误色、成功色写成固定 hex。
 
 ## 3. 间距规范
@@ -130,12 +130,12 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
 
 - 播放按钮 `28px` 圆，内部使用 Tabler icon。
 - 进度条 `3px`，handle `9px`。
-- 当前时间用 `--lex-text-active`，总时长用 `--lex-text-tertiary`。
+- 当前时间用 `--qnalog-text-active`，总时长用 `--qnalog-text-tertiary`。
 
 ## 8. 严禁清单
 
 - 硬编码主题色、主按钮色、活跃态底色。
-- 用 `#FFF` 写按钮文字色，必须用 `var(--lex-on-primary)` 或 `var(--text-on-accent)`。
+- 用 `#FFF` 写按钮文字色，必须用 `var(--qnalog-on-primary)` 或 `var(--text-on-accent)`。
 - 使用原生 `<select>` / checkbox / radio 做最终视觉。
 - 给 button / input 留浏览器默认边框。
 - 用 `<ul>` / `<ol>` / `<li>` / `<p>` / `<h1-h6>` 承载插件原生 UI 列表。

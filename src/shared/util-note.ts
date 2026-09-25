@@ -35,8 +35,8 @@ export function upsertFrontmatterInMarkdown(markdown, frontmatter) {
   const yaml = obsidian.stringifyYaml(frontmatter || {});
   const text = String(markdown || "");
   const match = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  if (match) return "---\n" + yaml + "---\n\n" + text.slice(match[0].length).replace(/^\n+/, "");
-  return "---\n" + yaml + "---\n\n" + text;
+  if (match) return "---\n" + yaml + "---\n" + text.slice(match[0].length).replace(/^\n+/, "");
+  return "---\n" + yaml + "---\n" + text;
 }
 
 export const TODO_CARD_TAG = `${NS_TAG_PREFIX}todo-card`;

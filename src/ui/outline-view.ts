@@ -57,7 +57,7 @@ import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_C
 
 import { extractNotePanelData } from "../notes/detail-blocks";
 
-import { getSessionLatestSegmentEndMs, isSameVaultPath, resolveAudioFileRef } from "../notes/audio-refs";
+import { getSessionLatestSegmentEndMs, isSameVaultPath, probeAudioDurationMs, resolveAudioFileRef } from "../notes/audio-refs";
 
 import { clampProgress } from "../notes/note-markdown";
 
@@ -3956,7 +3956,10 @@ export class OutlineView extends obsidian.ItemView {
     };
     const update = () => {
       const duration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0;
-      const current = Math.max(0, Number(player.currentTime) || 0);
+      // 探测期间播放头被推到 1e101（逼出总长的手段），seek 完成前 currentTime 还是这个哨兵值：
+      // 显示层按 0 处理，避免总时间/进度条闪出天文数字。超过 1e6 秒（约 277 小时）的录音不存在。
+      const rawCurrent = Number(player.currentTime) || 0;
+      const current = rawCurrent > 1e6 ? 0 : Math.max(0, rawCurrent);
       const pct = duration ? Math.max(0, Math.min(100, current / duration * 100)) : 0;
       fill.style.width = `${pct}%`;
       knob.style.left = `${pct}%`;
@@ -4022,7 +4025,16 @@ export class OutlineView extends obsidian.ItemView {
       try { obsidian.setIcon(volumeBtn, player.muted ? "volume-x" : "volume"); } catch { /* intentionally empty */ }
     };
     moreBtn.onclick = () => this.app.workspace.getLeaf(false).openFile(audioFile);
-    player.addEventListener("loadedmetadata", update);
+    player.addEventListener("loadedmetadata", () => {
+      update();
+      // MediaRecorder 录出的 WebM 头部没有 Duration，Chromium 把 duration 报成 Infinity：
+      // 总时长显示 0:00、进度条停在最左、点击进度条不跳转。推播放头扫到文件尾可让 Chromium
+      // 回填真实总长（见 probeAudioDurationMs），完成后刷新一次。正常文件探测直接短路，无额外动作。
+      if (!(Number.isFinite(player.duration) && player.duration > 0)) {
+        void probeAudioDurationMs(player).then(update);
+      }
+    });
+    player.addEventListener("durationchange", update);
     player.addEventListener("timeupdate", update);
     player.addEventListener("play", update);
     player.addEventListener("pause", update);

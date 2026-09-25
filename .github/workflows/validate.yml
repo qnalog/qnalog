@@ -34,10 +34,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Node 22 与本地一致；Node 20 已于 2026-04 结束维护，且不含 Promise.withResolvers
+      # （tests/audio-duration-probe.test.ts 直接引 src，需要 Node ≥ 22）。
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # 用 npm ci 而不是 npm install：package-lock.json 是构建可复现的前提，

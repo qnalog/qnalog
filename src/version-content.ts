@@ -121,7 +121,7 @@ export function applyVersionTitle(markdown: string, titleSuffix: string, fallbac
   const suffix = String(titleSuffix || "").trim().split(" · ").shift() || "";
   const parts = splitLeadingFrontmatter(text);
   const body = parts.body.replace(/^\s+/, "");
-  const head = parts.frontmatter ? parts.frontmatter.replace(/\n+$/, "\n\n") : "";
+  const head = parts.frontmatter ? parts.frontmatter.replace(/\n+$/, "\n") : "";
   const headingMatch = body.match(/^#\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?[^\n]*/);
   if (headingMatch) {
     const datetime = normalizeTitleDatetime(headingMatch[0].replace(/^#\s+/, ""));

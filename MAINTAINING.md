@@ -358,7 +358,7 @@ git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 package.json、validate.yml、release.yml 三处，新增检查漏改一处就会出现「两边都绿、
 但有一项谁都没跑」。以后新增检查只要进入 `build` / `verify`，PR CI 与 Release 自动获得，
 不需要记得改 workflow。
-CI 的两个不可替代之处是**跨平台第二意见**（ubuntu / Node 20，本地是 macOS / Node 22）
+CI 的两个不可替代之处是**跨平台第二意见**（ubuntu / Node 22，本地是 macOS / Node 22）
 与**校验已推送状态**（干净检出后从 HEAD 构建，比的是仓库里真实提交的东西，而不是工作区；
 PR 上检出的是合并引用，比的是 A+B 的合并结果）。触发器仍是 `push: [main]` +
 `pull_request`：裸推分支不跑，CI 不是内层循环工具。
