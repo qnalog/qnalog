@@ -76,7 +76,7 @@ const COMPAT_TEST_FILES = new Set([
 const LEGACY_PREFIX = /(?<![A-Za-z0-9_])((?:lexvoice|lvtask|lex|lvk|lv)-[a-z0-9-]*)/gi;
 
 /** README / NOTICE / MAINTAINING 说明「与 LexVoice 的关系」时会提到它，属正当引用。 */
-const DOC_ALLOWLIST = /(^|\/)(README[^/]*\.md|NOTICE|MAINTAINING\.md|LICENSE|THIRD_PARTY_NOTICES\.md|AGENTS\.md|ARCHITECTURE\.md|PRIVACY\.md|SECURITY\.md|DESIGN_SPEC\.md)$/;
+const DOC_ALLOWLIST = /(^|\/)(README[^/]*\.md|NOTICE|MAINTAINING\.md|LICENSE|THIRD_PARTY_NOTICES\.md|ARCHITECTURE\.md|PRIVACY\.md|SECURITY\.md|DESIGN_SPEC\.md)$/;
 
 /**
  * 发版说明常常**必须**写出旧前缀才能说清修了什么（"新录音的前缀仍是 lex-…，

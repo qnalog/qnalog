@@ -1,7 +1,7 @@
 // 产物一致性检查：确认仓库里提交的 main.js 能由同一提交的源码重建。
 //
-// 为什么要有这条：AGENTS.md §5 的本地检查是 `git status --porcelain main.js`，
-// 它只能发现「重新构建了但忘了 git add」。如果压根没重新构建，工作区的 main.js
+// 为什么要有这条：单靠 `git status --porcelain main.js`（构建后看工作区有没有变化）
+// 只能发现「重新构建了但忘了 git add」。如果压根没重新构建，工作区的 main.js
 // 与 HEAD 一致，那条检查会给出假通过。实测过：改一处 src 的取值、不构建、只提交源码，
 // 本地检查无输出，而 CI 从干净检出构建后判定失败。
 //
@@ -32,7 +32,8 @@ function git(args, options = {}) {
 function fail(message) {
   console.error("[bundle] 产物一致性检查未通过：");
   console.error(`  - ${message}`);
-  console.error("[bundle] 见 AGENTS.md §5：main.js 必须能由同一次提交的源码重建。");
+  console.error("[bundle] main.js 必须由同一提交的源码生产构建并一并提交。");
+  console.error("[bundle] 维护规则见 MAINTAINING.md §4。");
   process.exit(1);
 }
 
