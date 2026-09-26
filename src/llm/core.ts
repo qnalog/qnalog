@@ -590,8 +590,8 @@ export interface LlmModelEntry {
   type?: string;
 }
 
-/** 从多种响应形态里取模型条目：OpenAI 形态 data/models，DashScope 原生形态
- * output.models / output.model_list（条目字段是 model + type，不是 id/name）。 */
+/** 从多种响应形态里取模型条目：OpenAI 形态 data/models，百炼原生形态 output.models
+ * （条目字段是 model + name——id 取值必须 model 优先于 name，name 是展示名不是标识）。 */
 function parseModelEntries(payload): LlmModelEntry[] {
   const candidates = [
     payload && payload.data,
@@ -607,12 +607,25 @@ function parseModelEntries(payload): LlmModelEntry[] {
   return (Array.isArray(arr) ? arr : [])
     .map((m) => {
       if (typeof m === "string") return m.trim() ? { id: m.trim() } : null;
-      const id = String((m && (m.id || m.name || m.model || m.model_name)) || "").trim();
+      const id = String((m && (m.id || m.model || m.model_name || m.name)) || "").trim();
       if (!id) return null;
       const type = m && typeof m.type === "string" ? m.type.trim().toLowerCase() : "";
       return type ? { id, type } : { id };
     })
     .filter(Boolean);
+}
+
+/** 百炼原生列表按 page_no/page_size 分页（默认 20 条/页，总数数百条）：
+ * 翻页地址只在取到分页信封后追加，第一页保持与直连 curl 相同的干净地址。 */
+function withModelListPage(url: string, pageNo: number, pageSize: number): string {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("page_no", String(pageNo));
+    parsed.searchParams.set("page_size", String(pageSize));
+    return parsed.toString();
+  } catch {
+    return url;
+  }
 }
 
 export async function fetchLlmModelEntries(endpoint, apiKey): Promise<LlmModelEntry[]> {
@@ -630,24 +643,37 @@ export async function fetchLlmModelEntries(endpoint, apiKey): Promise<LlmModelEn
   delete headers["Content-Type"]; // GET 无 body
   const problems: string[] = [];
   for (const url of urls) {
-    const res = await obsidian.requestUrl({ url, method: "GET", headers, throw: false });
-    if (res.status < 200 || res.status >= 300) {
-      problems.push(`${url} → HTTP ${res.status}：${String(res.text || "").slice(0, 200)}`);
-      continue;
-    }
-    let data;
-    try { data = res.json || JSON.parse(res.text || "{}"); } catch {
-      problems.push(`${url} → 响应不是合法 JSON`);
-      continue;
-    }
-    // 同 id 去重，保留先出现的（原生与兼容地址条目字段不同，type 以先到为准）。
     const byId = new Map<string, LlmModelEntry>();
-    for (const entry of parseModelEntries(data)) {
-      if (!byId.has(entry.id)) byId.set(entry.id, entry);
+    const urlProblems: string[] = [];
+    let pageNo = 1;
+    let pageSize = 0;
+    for (let page = 0; page < 30; page += 1) {
+      const pageUrl = pageNo === 1 ? url : withModelListPage(url, pageNo, pageSize || 20);
+      const res = await obsidian.requestUrl({ url: pageUrl, method: "GET", headers, throw: false });
+      if (res.status < 200 || res.status >= 300) {
+        urlProblems.push(`${pageUrl} → HTTP ${res.status}：${String(res.text || "").slice(0, 200)}`);
+        break;
+      }
+      let data;
+      try { data = res.json || JSON.parse(res.text || "{}"); } catch {
+        urlProblems.push(`${pageUrl} → 响应不是合法 JSON`);
+        break;
+      }
+      const before = byId.size;
+      for (const entry of parseModelEntries(data)) {
+        if (!byId.has(entry.id)) byId.set(entry.id, entry);
+      }
+      const output = data && data.output;
+      const total = Number(output && output.total) || 0;
+      pageSize = Number(output && output.page_size) || 0;
+      // 无分页信封、已取全，或翻页参数不被支持（本页 0 新增）时止损。
+      if (!total || !pageSize || byId.size >= total || byId.size === before) break;
+      pageNo += 1;
     }
-    const entries = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
-    if (entries.length) return entries;
-    problems.push(`${url} → 未返回模型列表`);
+    if (byId.size) {
+      return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+    }
+    problems.push(...(urlProblems.length ? urlProblems : [`${url} → 未返回模型列表`]));
   }
   throw new Error(problems.join("；") || "获取模型列表失败");
 }

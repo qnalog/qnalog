@@ -46,6 +46,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import * as obsidian from "obsidian";
+import { filterModelsForCategory } from "../src/setup/model-catalog";
 import { callLlmWithContinuation, fetchLlmModelEntries, fetchLlmModelList, getLlmConfigIssue, getNextLlmOutputBudget, isLlmContextLimitError, isLlmOutputBudgetError, isLlmOutputParameterError, isTransientLlmError, readLlmSseStream, requestLlmChatCompletion, requestLlmChatCompletionViaObsidian, resetLearnedLlmTransportPreferences, resolveLlmModelListEndpoint } from "../src/llm/core";
 import { applyLearnedLlmCapability, getEffectiveLlmOutputBudget, getLearnedLlmOutputCeiling, getLearnedLlmOutputParameter, rememberLlmOutputCeiling, resetLearnedLlmCapabilities } from "../src/llm/output-budget";
 import { DashScopeStreamingClient, OpenAIRealtimeTranscriptionClient, OpenAIRealtimeTranslationClient } from "../src/asr/clients";
@@ -553,5 +554,50 @@ describe("模型条目的原生形态（model + type 字段）", () => {
     expect(entries.find((e) => e.id === "qwen3.8-flash")?.type).toBe("llm");
     // fetchLlmModelList 仍返回纯 id（设置页依赖这个形状）
     expect((await fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x")).length).toBe(3);
+  });
+});
+
+describe("百炼原生列表的真实分页形态（total/page_no/page_size + model 字段）", () => {
+  it("翻页取全，且 id 取 model 而不是展示名 name", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    const page1 = {
+      code: null, message: null, success: true,
+      output: {
+        total: 4, page_no: 1, page_size: 2,
+        models: [
+          { model: "qwen3.8-max", name: "Qwen3.8-Max" },
+          { model: "decision-model-preview", name: "决策模型（预览版）" },
+        ],
+      },
+    };
+    const page2 = {
+      code: null, message: null, success: true,
+      output: {
+        total: 4, page_no: 2, page_size: 2,
+        models: [
+          { model: "qwen3-asr-flash", name: "通义千问语音识别" },
+          { model: "paraformer-v2", name: "Paraformer V2" },
+        ],
+      },
+    };
+    requestUrlMock.mockImplementation((async ({ url }: { url: string }) => {
+      const body = url.includes("page_no=2") ? page2 : page1;
+      return { status: 200, text: JSON.stringify(body), json: undefined } as never;
+    }) as never);
+
+    const entries = await fetchLlmModelEntries("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x");
+    const ids = entries.map((e) => e.id);
+    expect(ids).toHaveLength(4);
+    // model 优先于 name：不能把展示名当 id
+    expect(ids).toContain("qwen3.8-max");
+    expect(ids).not.toContain("Qwen3.8-Max");
+    expect(ids).toContain("qwen3-asr-flash");
+    // 第二页确实带了翻页参数
+    const secondCallUrl = String(requestUrlMock.mock.calls[1][0].url);
+    expect(secondCallUrl).toContain("page_no=2");
+    expect(secondCallUrl).toContain("page_size=2");
+    // 分页取全后，转写命名族能命中后面的 ASR 模型
+    expect(filterModelsForCategory(entries, "asr")).toEqual(["paraformer-v2", "qwen3-asr-flash"]);
   });
 });
