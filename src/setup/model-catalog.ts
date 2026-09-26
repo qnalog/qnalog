@@ -19,21 +19,29 @@ const DIARIZATION_EXTRAS: Record<string, string[]> = {
   bailian: ["qwen-audio-3.0-asr-flash-filetrans", "paraformer-v2"],
 };
 
-/** 目录条目：字符串（纯 id）或带分类信息的条目（百炼带 type/输出模态，OpenRouter 带输出模态）。 */
-type CatalogItem = string | { id: string; type?: string; outputModalities?: string[] };
+/** 目录条目：字符串（纯 id）或带分类信息的条目（百炼带 type/模态/描述，OpenRouter 带模态/描述）。 */
+type CatalogItem = string | { id: string; type?: string; outputModalities?: string[]; inputModalities?: string[]; description?: string };
 
-function toEntries(items: CatalogItem[]): Array<{ id: string; type?: string; outputModalities?: string[] }> {
-  const out: Array<{ id: string; type?: string; outputModalities?: string[] }> = [];
+function toEntries(items: CatalogItem[]): Array<Exclude<CatalogItem, string>> {
+  const out: Array<Exclude<CatalogItem, string>> = [];
+  const seen = new Set<string>();
   for (const item of Array.isArray(items) ? items : []) {
     if (typeof item === "string") {
       const id = item.trim();
-      if (id && !out.some((e) => e.id === id)) out.push({ id });
+      if (id && !seen.has(id)) { seen.add(id); out.push({ id }); }
     } else if (item && typeof item.id === "string" && item.id.trim()) {
       const id = item.id.trim();
-      if (!out.some((e) => e.id === id)) out.push({ id, type: item.type, outputModalities: item.outputModalities });
+      if (!seen.has(id)) { seen.add(id); out.push({ ...item, id }); }
     }
   }
   return out;
+}
+
+/** 转写能力的三个信号：id 命名族、平台 type、输入模态含 audio。 */
+function isAsrFamily(entry: { id: string; type?: string; inputModalities?: string[] }): boolean {
+  if (ASR_FAMILY_RE.test(entry.id)) return true;
+  if (entry.type && /asr|speech|audio|stt/i.test(entry.type)) return true;
+  return !!entry.inputModalities && entry.inputModalities.includes("audio");
 }
 
 /** AI 整理要的是纯文本聊天模型：输出模态含 image/video/audio 的是生成类模型
@@ -44,18 +52,24 @@ function isTextChatModel(entry: { outputModalities?: string[] }): boolean {
   return modalities.includes("text") && !modalities.some((m) => m === "image" || m === "video" || m === "audio");
 }
 
-/** 平台目录 → 某分类的候选；asr 同时看命名族与平台的 type 字段（筛空由「当前默认值」
- * 合并兜底，不再把大模型整表端上来），llm 排除转写族与生成类模型、筛空回退全量。 */
+/** 非聊天族 id（即便模态信息缺失也要排除）：向量、重排、语音合成。 */
+const NON_CHAT_ID_RE = /embed|rerank|tts|cosyvoice|sambert/i;
+
+/** 说话人分离能力写在平台描述里：中英文关键词 + 同时具备转写能力（防误收描述里顺带提「说话人」的大模型）。 */
+const DIARIZATION_DESC_RE = /说话人|语者|分离|diariz|speaker/i;
+
+/** 平台目录 → 某分类的候选；asr 看命名族/类型/输入模态三信号，llm 排除转写族、
+ * 生成类与向量/重排/合成族，筛空回退全量。 */
 export function filterModelsForCategory(items: CatalogItem[], category: WizardModelCategory): string[] {
   const entries = toEntries(items);
   const ids = entries.map((entry) => entry.id);
   if (category === "asr") {
-    const byName = ids.filter((id) => ASR_FAMILY_RE.test(id));
-    const byType = entries.filter((entry) => entry.type && /asr|speech|audio|stt/i.test(entry.type)).map((entry) => entry.id);
-    return mergeModelCandidates(byName, byType);
+    return mergeModelCandidates(entries.filter(isAsrFamily).map((entry) => entry.id));
   }
   if (category === "llm") {
-    const llm = entries.filter((entry) => !ASR_FAMILY_RE.test(entry.id) && isTextChatModel(entry)).map((entry) => entry.id);
+    const llm = entries
+      .filter((entry) => !ASR_FAMILY_RE.test(entry.id) && !NON_CHAT_ID_RE.test(entry.id) && isTextChatModel(entry))
+      .map((entry) => entry.id);
     return llm.length ? llm : ids.slice();
   }
   return ids;
@@ -74,10 +88,12 @@ export function mergeModelCandidates(...groups: string[][]): string[] {
 }
 
 /**
- * 说话人分离模型候选：预设默认排最前，再补该平台仓库内已验证的候选。
- * 预设没有导入服务的平台（小米 MiMo）不会走到这里；即便走到也只回默认值。
+ * 说话人分离模型候选：预设默认排最前，再补该平台仓库内已验证的候选，
+ * 最后从平台目录里捞「描述写明说话人分离、且具备转写能力」的模型
+ *（两个条件同时满足才收，防误收描述里顺带提「说话人」的大模型）。
+ * 预设没有导入服务的平台（小米 MiMo）不会走到这里；目录拉取失败时传空数组即可。
  */
-export function diarizationModelCandidates(providerId: string, presetDefault: string): string[] {
+export function diarizationModelCandidates(providerId: string, presetDefault: string, catalog: CatalogItem[] = []): string[] {
   const out: string[] = [];
   const push = (model: string) => {
     const value = String(model || "").trim();
@@ -85,5 +101,11 @@ export function diarizationModelCandidates(providerId: string, presetDefault: st
   };
   push(presetDefault);
   for (const model of DIARIZATION_EXTRAS[providerId] || []) push(model);
+  if (catalog.length) {
+    const discovered = toEntries(catalog)
+      .filter((entry) => DIARIZATION_DESC_RE.test(entry.description || "") && isAsrFamily(entry))
+      .map((entry) => entry.id);
+    for (const id of discovered) push(id);
+  }
   return out;
 }

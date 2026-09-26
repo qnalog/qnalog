@@ -643,3 +643,27 @@ describe("输出模态解析（过滤视频/图片生成模型）", () => {
     expect(orEntries.find((e) => e.id === "deepseek/deepseek-v4.1-flash")?.outputModalities).toEqual(["text"]);
   });
 });
+
+describe("输入模态与描述的解析", () => {
+  it("OpenRouter input_modalities 与百炼 request_modality 都能解析，描述截断保留", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        data: [
+          { id: "qwen/qwen3.8-omni-flash", architecture: { input_modalities: ["audio", "text"], output_modalities: ["text"] }, description: "omni chat".repeat(200) },
+          { model: "qwen3-asr-flash", inference_metadata: { request_modality: ["Audio", "Text"], response_modality: ["Text"] }, description: "语音识别" },
+        ],
+      }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries("https://openrouter.ai/api/v1", "sk-x");
+    const omni = entries.find((e) => e.id === "qwen/qwen3.8-omni-flash");
+    expect(omni?.inputModalities).toEqual(["audio", "text"]);
+    expect(omni?.description).toHaveLength(800);
+    const asr = entries.find((e) => e.id === "qwen3-asr-flash");
+    expect(asr?.inputModalities).toEqual(["audio", "text"]);
+    expect(asr?.description).toBe("语音识别");
+  });
+});

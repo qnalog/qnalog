@@ -207,10 +207,17 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     const preset = PRESET_VIEW[this.controller.providerId] || {};
     try {
       let list: string[];
+      const endpoint = resolvePresetEndpoint(preset, apiKey);
       if (category === "diarization") {
-        list = diarizationModelCandidates(this.controller.providerId, current || preset.importAsrModel || "");
+        const fallbackDefault = current || preset.importAsrModel || "";
+        try {
+          const entries = await this.getPlatformModels(endpoint, apiKey);
+          list = diarizationModelCandidates(this.controller.providerId, fallbackDefault, entries);
+        } catch {
+          // 分离候选不被网络拖死：目录拉不到就退回仓库内已验证清单。
+          list = diarizationModelCandidates(this.controller.providerId, fallbackDefault);
+        }
       } else {
-        const endpoint = resolvePresetEndpoint(preset, apiKey);
         const entries = await this.getPlatformModels(endpoint, apiKey);
         // 框里当前值放最前：平台目录缺这类模型时（如百炼目录只列大模型），
         // 默认值仍是可选项，不会把大模型整表当转写候选端上来。

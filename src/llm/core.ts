@@ -585,12 +585,16 @@ export function resolveLlmModelListEndpoint(endpoint) {
 }
 
 /** 模型列表条目：id 必有；type 是部分平台附带的分类字段（llm/asr/…）；
- * outputModalities 是输出模态（text/image/video/audio，小写）——百炼原生取
- * inference_metadata.response_modality，OpenRouter 取 architecture.output_modalities。 */
+ * outputModalities 是输出模态（text/image/video/audio，小写）——百炼取
+ * inference_metadata.response_modality，OpenRouter 取 architecture.output_modalities；
+ * inputModalities 是输入模态（同两处来源的 request/input 字段）；
+ * description 是平台描述，用于说话人分离这类「描述里写明能力」的候选筛选。 */
 export interface LlmModelEntry {
   id: string;
   type?: string;
   outputModalities?: string[];
+  inputModalities?: string[];
+  description?: string;
 }
 
 /** 从多种响应形态里取模型条目：OpenAI 形态 data/models，百炼原生形态 output.models
@@ -613,18 +617,26 @@ function parseModelEntries(payload): LlmModelEntry[] {
       const id = String((m && (m.id || m.model || m.model_name || m.name)) || "").trim();
       if (!id) return null;
       const type = m && typeof m.type === "string" ? m.type.trim().toLowerCase() : "";
-      const modalityRaw = m && (
+      const outputRaw = m && (
         (m.inference_metadata && m.inference_metadata.response_modality)
         || (m.architecture && m.architecture.output_modalities)
         || m.output_modalities
       );
-      const outputModalities = Array.isArray(modalityRaw)
-        ? modalityRaw.map((x) => String(x || "").toLowerCase()).filter(Boolean)
-        : [];
+      const inputRaw = m && (
+        (m.architecture && m.architecture.input_modalities)
+        || (m.inference_metadata && m.inference_metadata.request_modality)
+        || m.input_modalities
+      );
+      const lowerList = (raw) => (Array.isArray(raw) ? raw.map((x) => String(x || "").toLowerCase()).filter(Boolean) : []);
+      const outputModalities = lowerList(outputRaw);
+      const inputModalities = lowerList(inputRaw);
+      const description = m && typeof m.description === "string" ? m.description.slice(0, 800) : "";
       return {
         id,
         ...(type ? { type } : {}),
         ...(outputModalities.length ? { outputModalities } : {}),
+        ...(inputModalities.length ? { inputModalities } : {}),
+        ...(description ? { description } : {}),
       };
     })
     .filter(Boolean);

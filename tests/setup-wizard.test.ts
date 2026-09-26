@@ -344,3 +344,55 @@ describe("AI 整理分类排除生成类模型", () => {
     expect(llm).not.toContain("qwen3-asr-flash");
   });
 });
+
+describe("三信号转写候选与非聊天族排除", () => {
+  it("输入模态含 audio 的条目进转写候选（id 无命名族词根也收）", () => {
+    const entries = [
+      { id: "qwen/qwen3.8-omni-flash", inputModalities: ["audio", "text"] },
+      { id: "qwen3.8-max", inputModalities: ["image", "text", "video"] },
+      { id: "pure-text-model" },
+    ];
+    const asr = filterModelsForCategory(entries, "asr");
+    expect(asr).toContain("qwen/qwen3.8-omni-flash");
+    expect(asr).not.toContain("qwen3.8-max");
+    expect(asr).not.toContain("pure-text-model");
+  });
+
+  it("AI 整理排除向量/重排/合成族 id（即便没有模态信息）", () => {
+    const entries = [
+      "text-embedding-v4",
+      "bge-reranker-v2",
+      "cosyvoice-v2",
+      "sambert-v1",
+      "tts-kimi",
+      "qwen3.8-flash",
+    ];
+    const llm = filterModelsForCategory(entries, "llm");
+    expect(llm).toEqual(["qwen3.8-flash"]);
+  });
+});
+
+describe("说话人分离候选的目录发现", () => {
+  it("描述写明说话人分离且具备转写能力的目录模型被收进来", () => {
+    const catalog = [
+      { id: "paraformer-v2", description: "支持说话人分离的中文语音识别模型" },
+      { id: "qwen-audio-filetrans", description: "Speaker diarization supported for long audio files." },
+      { id: "some-chat-model", description: "支持多说话人对话理解的大模型" },
+      { id: "audio-understanding", description: "支持说话人分离的音频理解", inputModalities: ["audio"] },
+    ];
+    const list = diarizationModelCandidates("bailian", "qwen-audio-3.0-asr-flash-filetrans", catalog);
+    expect(list[0]).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    expect(list).toContain("paraformer-v2");
+    expect(list).toContain("qwen-audio-filetrans");
+    expect(list).toContain("audio-understanding");
+    // 描述提到「说话人」但没有转写能力的大模型不收
+    expect(list).not.toContain("some-chat-model");
+    // 仓库内已验证候选仍在
+    expect(list).toContain("paraformer-v2");
+  });
+
+  it("目录为空（拉取失败回退）时只有仓库内候选", () => {
+    const list = diarizationModelCandidates("openrouter", "microsoft/mai-transcribe-2");
+    expect(list).toEqual(["microsoft/mai-transcribe-2"]);
+  });
+});
