@@ -108,6 +108,8 @@ class QnALogPlugin extends obsidian.Plugin {
   declare imports: ImportService;
   declare sessionFinalize: SessionFinalizeService;
   declare recording: RecordingService;
+  /** 装配别名：队列重试的熔断与切片缓存视图绑定到录音服务（QueueRetryHost.asrCircuit）。 */
+  declare asrCircuit: RecordingService;
   declare shell: ViewShellService;
   declare library: LibraryViewService;
   declare noteIndex: NoteIndexService;
@@ -181,6 +183,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
     this.recording = new RecordingService(this);
+    this.asrCircuit = this.recording;
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
     this.noteIndex = new NoteIndexService(this);
@@ -614,6 +617,14 @@ class QnALogPlugin extends obsidian.Plugin {
       console.warn("[QnALog] settings backup failed", e);
       return "";
     }
+  }
+  /** 装配层转发：队列批量重试节奏变化后刷新任务状态栏。 */
+  notifyTaskBusyChanged(): void {
+    this.tasks.updateBusyStatus();
+  }
+  /** 装配层转发：补转写成功后的说话人姓名确认；返回值在调用点不使用。 */
+  confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown> {
+    return this.sessionFinalize.confirmSpeakerNamesBeforeFinal(session, segments);
   }
   /** 装配层转发：诊断报告生成时一次性采集运行时快照。报告只拿纯数据，不持有服务对象。 */
   getDiagnosticsSnapshot(session: RecordingSession | null): DiagnosticsSnapshot {
