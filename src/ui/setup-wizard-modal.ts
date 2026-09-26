@@ -47,6 +47,8 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
   private modelFields: Array<{ category: WizardModelCategory; text: obsidian.TextComponent; button: obsidian.ButtonComponent }> = [];
   /** 平台模型目录按端点缓存，同一方案的三个分类共用一次拉取。 */
   private modelCache: { endpoint: string; ids: string[] } | null = null;
+  /** 模型拉取进行中：挡住重复点击叠出多份列表。 */
+  private pickerLoading = false;
 
   constructor(app: obsidian.App, private readonly deps: SetupWizardModalDeps<T>) {
     super(app);
@@ -151,7 +153,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
           void this.openModelPicker(category, input.getValue(), (id) => {
             input.setValue(id);
             this.refreshPlan(patch(id));
-          });
+          }, button);
         });
       });
       this.modelFields.push({ category, text: input, button: pickButton });
@@ -191,10 +193,15 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     }
   }
 
-  /** 拉取平台模型目录（按端点缓存，三个分类共用一次请求）→ 分类过滤 → 点选。 */
-  private async openModelPicker(category: WizardModelCategory, current: string, apply: (id: string) => void): Promise<void> {
+  /** 拉取平台模型目录（按端点缓存，三个分类共用一次请求）→ 分类过滤 → 点选。
+   * 拉取期间按钮禁用并换文案：网络时延里重复点击会叠出多份模型列表。 */
+  private async openModelPicker(category: WizardModelCategory, current: string, apply: (id: string) => void, button: obsidian.ButtonComponent): Promise<void> {
+    if (this.pickerLoading) return;
     const apiKey = (((this.controller.request && this.controller.request.apiKey) || "")).trim();
     if (!apiKey) return;
+    this.pickerLoading = true;
+    button.setDisabled(true);
+    button.setButtonText(t("Fetching…"));
     const preset = PRESET_VIEW[this.controller.providerId] || {};
     try {
       let list: string[];
@@ -212,6 +219,10 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       openPickListModal(this.app, `${t("Select a model ( ")}${list.length}${t(")")}`, list, apply);
     } catch (error) {
       new obsidian.Notice(`${t("Failed to get the model list:")}${(error && (error as Error).message) || error}${t(". You can enter the model ID manually.")}`, 8000);
+    } finally {
+      this.pickerLoading = false;
+      button.setButtonText(t("Get available models"));
+      button.setDisabled((((this.controller.request && this.controller.request.apiKey) || "")).trim().length === 0);
     }
   }
 
@@ -247,7 +258,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
 
   /** 步骤 3：分阶段显示检测结果；失败可重试或跳过（跳过后首页四态仍显示未测试）。 */
   private renderProbe(root: HTMLElement): void {
-    root.createEl("h3", { text: t("Checking…") });
+    root.createEl("h3", { text: t("Service check") });
     const list = root.createDiv({ cls: "qnalog-wizard-stages" });
     if (this.detecting) {
       list.createDiv({ cls: "qnalog-wizard-stage is-neutral", text: t("Checking…") });

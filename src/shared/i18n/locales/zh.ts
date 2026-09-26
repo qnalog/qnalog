@@ -1794,6 +1794,7 @@ export const ZH: MessageTable = {
   "Check for updates": "检查更新",
   "Check only": "仅检测",
   "Checking…": "检测中…",
+  "Service check": "服务检测",
   "Choose existing Markdown, a dictation draft, or a text note. Q&A Log will not call speech transcription; it goes straight through the “AI briefing” LLM pipeline on the API tab and structures the text using the current template.": "选择已有 Markdown、速录稿或文本纪要。Q&A Log 不会调用语音转写服务，会直接走 API 页的「AI 整理服务」LLM 链路并按当前模板结构化整理。",
   "Choose report colour scheme": "选择报告配色",
   "Choose the default organizing template, and manage long-term reusable formats, industry rules, and output preferences.": "选择默认整理模板，并管理长期复用的格式、行业规则和输出偏好。",

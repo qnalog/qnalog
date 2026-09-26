@@ -484,3 +484,46 @@ describe("readLlmSseStream completion contract", () => {
     });
   });
 });
+
+describe("模型列表的形态兼容与地址回退", () => {
+  it("DashScope 原生形态 output.models 也能解析出 id", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({ code: "OK", output: { models: [{ id: "qwen3-asr-flash" }, { id: "qwen3.8-flash" }] } }),
+      json: undefined,
+    } as never);
+    const ids = await fetchLlmModelList("https://api.example.com/v1", "secret");
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain("qwen3-asr-flash");
+    expect(ids).toContain("qwen3.8-flash");
+  });
+
+  it("百炼原生地址失败时回退到兼容地址下的 models", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockImplementation((async ({ url }: { url: string }) => {
+      if (url === "https://dashscope.aliyuncs.com/api/v1/models") {
+        return { status: 401, text: JSON.stringify({ code: "InvalidApiKey", message: "No API-key provided." }), json: undefined } as never;
+      }
+      if (url === "https://dashscope.aliyuncs.com/compatible-mode/v1/models") {
+        return { status: 200, text: JSON.stringify({ data: [{ id: "qwen3-asr-flash" }] }), json: undefined } as never;
+      }
+      throw new Error(`意外地址：${url}`);
+    }) as never);
+    const ids = await fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-real-key");
+    expect(ids).toEqual(["qwen3-asr-flash"]);
+    expect(requestUrlMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("两个地址都失败时聚合两段错误信息", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockImplementation((async ({ url }: { url: string }) => {
+      return { status: url.includes("/api/v1/models") ? 401 : 500, text: "err", json: undefined } as never;
+    }) as never);
+    await expect(fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-real-key"))
+      .rejects.toThrow(/HTTP 401[\s\S]*HTTP 500/);
+  });
+});

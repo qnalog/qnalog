@@ -584,25 +584,48 @@ export function resolveLlmModelListEndpoint(endpoint) {
     : base.replace(/\/+$/, "") + "/models";
 }
 
+/** 从多种响应形态里取模型 id：OpenAI 形态 data/models，DashScope 原生形态 output.models/results。 */
+function parseModelIds(payload) {
+  const arr = (payload && (payload.data || payload.models))
+    || (payload && payload.output && payload.output.models)
+    || (payload && payload.results)
+    || (Array.isArray(payload) ? payload : []);
+  return (Array.isArray(arr) ? arr : [])
+    .map(m => (typeof m === "string" ? m : (m && (m.id || m.name))))
+    .map(x => String(x || "").trim())
+    .filter(Boolean);
+}
+
 export async function fetchLlmModelList(endpoint, apiKey) {
   const base = normalizeLlmEndpoint(endpoint);
   if (!base) throw new Error("服务地址未配置");
   assertSafeServiceEndpoint(base, "http", "大模型服务地址");
-  const modelsUrl = resolveLlmModelListEndpoint(endpoint);
+  // 百炼的兼容地址与原生地址都要试：两者都真实存在（无钥均 401），
+  // 不同账号/网关下可用的一个可能与预设的改写地址不同，先按改写地址、再按通用地址。
+  const genericUrl = /\/chat\/completions$/i.test(base)
+    ? base.replace(/\/chat\/completions$/i, "/models")
+    : base.replace(/\/+$/, "") + "/models";
+  const urls = [resolveLlmModelListEndpoint(endpoint)];
+  if (!urls.includes(genericUrl)) urls.push(genericUrl);
   const headers = buildLlmHeaders(apiKey, base);
   delete headers["Content-Type"]; // GET 无 body
-  const res = await obsidian.requestUrl({ url: modelsUrl, method: "GET", headers, throw: false });
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`HTTP ${res.status}：${String(res.text || "").slice(0, 200)}`);
+  const problems: string[] = [];
+  for (const url of urls) {
+    const res = await obsidian.requestUrl({ url, method: "GET", headers, throw: false });
+    if (res.status < 200 || res.status >= 300) {
+      problems.push(`${url} → HTTP ${res.status}：${String(res.text || "").slice(0, 200)}`);
+      continue;
+    }
+    let data;
+    try { data = res.json || JSON.parse(res.text || "{}"); } catch {
+      problems.push(`${url} → 响应不是合法 JSON`);
+      continue;
+    }
+    const ids = Array.from(new Set(parseModelIds(data))).sort((a, b) => a.localeCompare(b));
+    if (ids.length) return ids;
+    problems.push(`${url} → 未返回模型列表`);
   }
-  let data;
-  try { data = res.json || JSON.parse(res.text || "{}"); } catch { throw new Error("响应不是合法 JSON"); }
-  const arr = (data && (data.data || data.models)) || (Array.isArray(data) ? data : []);
-  const ids = (Array.isArray(arr) ? arr : [])
-    .map(m => (typeof m === "string" ? m : (m && (m.id || m.name))))
-    .map(x => String(x || "").trim())
-    .filter(Boolean);
-  return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
+  throw new Error(problems.join("；") || "获取模型列表失败");
 }
 
 export function getLlmConfigIssue(settings) {
