@@ -19,6 +19,28 @@ const DIARIZATION_EXTRAS: Record<string, string[]> = {
   bailian: ["qwen-audio-3.0-asr-flash-filetrans", "paraformer-v2"],
 };
 
+/** 转写模型的平台特例清单。
+ * OpenRouter 的 `GET /models` 结构性不列转写模型（architecture.modality 为
+ * audio->transcription 的独立注册表；试遍 supported_parameters/category 等参数
+ * 均 0 命中），无法枚举——下列 id 于 2026-09-26 经 `/models/{id}/endpoints`
+ * 逐个实测 200（whisper / gpt-*-transcribe / qwen3-asr 系）。目录能枚举的
+ * 平台（百炼、小米）不放清单，靠命名族实时命中，避免清单过期。 */
+const ASR_EXTRAS: Record<string, string[]> = {
+  openrouter: [
+    "openai/gpt-4o-transcribe",
+    "openai/gpt-4o-mini-transcribe",
+    "openai/whisper-large-v3",
+    "openai/whisper-large-v3-turbo",
+    "openai/whisper-1",
+    "qwen/qwen3-asr-1.7b",
+  ],
+};
+
+/** 该平台的转写特例清单（目录枚举不到的已实测 id）。 */
+export function asrModelCandidates(providerId: string): string[] {
+  return (ASR_EXTRAS[providerId] || []).slice();
+}
+
 /** 目录条目：字符串（纯 id）或带分类信息的条目（百炼带 type/模态/描述，OpenRouter 带模态/描述）。 */
 type CatalogItem = string | { id: string; type?: string; outputModalities?: string[]; description?: string };
 

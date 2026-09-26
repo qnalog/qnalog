@@ -11,7 +11,7 @@ import { fetchLlmModelEntries } from "../llm/core";
 import type { LlmModelEntry } from "../llm/core";
 import { formatDetectionReport, resolvePresetEndpoint } from "../setup";
 import type { PresetDefinition } from "../setup";
-import { diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates } from "../setup/model-catalog";
+import { asrModelCandidates, diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates } from "../setup/model-catalog";
 import type { WizardModelCategory } from "../setup/model-catalog";
 import { SetupWizardController } from "../setup/wizard-controller";
 import type { SetupWizardDeps } from "../setup/wizard-controller";
@@ -219,9 +219,9 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
         }
       } else {
         const entries = await this.getPlatformModels(endpoint, apiKey);
-        // 框里当前值放最前：平台目录缺这类模型时（如百炼目录只列大模型），
-        // 默认值仍是可选项，不会把大模型整表当转写候选端上来。
-        list = mergeModelCandidates([current], filterModelsForCategory(entries, category));
+        // 框里当前值放最前，其次平台特例清单（OpenRouter 目录枚举不到转写模型），
+        // 最后是目录命名族命中；平台目录缺这类模型时也不会把大模型整表端上来。
+        list = mergeModelCandidates([current], asrModelCandidates(this.controller.providerId), filterModelsForCategory(entries, category));
       }
       if (!list.length) {
         new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000);
