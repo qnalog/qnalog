@@ -33,12 +33,29 @@ const ASR_EXTRAS: Record<string, string[]> = {
     "openai/whisper-large-v3-turbo",
     "openai/whisper-1",
     "qwen/qwen3-asr-1.7b",
+    "microsoft/mai-transcribe-2",
+    "deepgram/nova-3",
   ],
 };
 
 /** 该平台的转写特例清单（目录枚举不到的已实测 id）。 */
-export function asrModelCandidates(providerId: string): string[] {
+function asrModelCandidates(providerId: string): string[] {
   return (ASR_EXTRAS[providerId] || []).slice();
+}
+
+/**
+ * 向导模型列表的统一组装：当前值 → （仅转写）平台特例 → 目录分类命中。
+ * 特例清单只进转写列表——整理列表只信目录，防止 whisper 类混进 AI 整理。
+ */
+export function wizardModelCandidates(providerId: string, category: WizardModelCategory, current: string, catalog: CatalogItem[]): string[] {
+  const filtered = filterModelsForCategory(catalog, category);
+  if (category === "asr") {
+    return mergeModelCandidates([current], asrModelCandidates(providerId), filtered);
+  }
+  if (category === "llm") {
+    return mergeModelCandidates([current], filtered);
+  }
+  return filtered;
 }
 
 /** 目录条目：字符串（纯 id）或带分类信息的条目（百炼带 type/模态/描述，OpenRouter 带模态/描述）。 */

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import type { PluginSettings } from "../src/shared/types";
 import { applyPresetPlan } from "../src/setup";
-import { asrModelCandidates, diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates } from "../src/setup/model-catalog";
+import { diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates, wizardModelCandidates } from "../src/setup/model-catalog";
 import { SetupWizardController, needsFirstRunWizard } from "../src/setup/wizard-controller";
 import type { ProbePorts } from "../src/setup";
 
@@ -401,26 +401,41 @@ describe("说话人分离候选的目录发现", () => {
   });
 });
 
-describe("OpenRouter 转写特例清单（目录枚举不到的已实测 id）", () => {
-  it("openrouter 返回 whisper/gpt-transcribe/qwen3-asr 系，其它平台为空", () => {
-    const list = asrModelCandidates("openrouter");
+describe("向导列表组装（wizardModelCandidates）", () => {
+  it("openrouter 转写列表 = 预填值 ∪ 8 个实测特例 ∪ 目录命中，保序去重", () => {
+    const list = wizardModelCandidates(
+      "openrouter",
+      "asr",
+      "qwen/qwen3-asr-1.7b",
+      [{ id: "openai/gpt-audio" }, { id: "some-asr-model" }],
+    );
+    expect(list[0]).toBe("qwen/qwen3-asr-1.7b");
     expect(list).toContain("openai/whisper-large-v3");
     expect(list).toContain("openai/gpt-4o-transcribe");
-    expect(list).toContain("qwen/qwen3-asr-1.7b");
-    expect(list).toHaveLength(6);
-    expect(asrModelCandidates("bailian")).toEqual([]);
-    expect(asrModelCandidates("mimo")).toEqual([]);
+    expect(list).toContain("microsoft/mai-transcribe-2");
+    expect(list).toContain("deepgram/nova-3");
+    expect(list).toContain("some-asr-model");
+    expect(list).not.toContain("openai/gpt-audio");
+    // 8 个实测特例 + 目录命中的 some-asr-model；预填值与特例重复不计
+    expect(list).toHaveLength(9);
+    expect(new Set(list).size).toBe(list.length);
   });
 
-  it("清单与预填值、目录命中合并时保序去重", () => {
-    const merged = mergeModelCandidates(
-      ["qwen/qwen3-asr-1.7b"],
-      asrModelCandidates("openrouter"),
-      filterModelsForCategory([{ id: "openai/gpt-audio" }, { id: "some-asr-model" }], "asr"),
+  it("整理列表不含特例清单（whisper 类不能混进 AI 整理）", () => {
+    const llm = wizardModelCandidates(
+      "openrouter",
+      "llm",
+      "deepseek/deepseek-v4.1-flash",
+      [{ id: "deepseek/deepseek-v4.1-flash" }, { id: "qwen/qwen3.8-flash" }],
     );
-    expect(merged[0]).toBe("qwen/qwen3-asr-1.7b");
-    expect(merged).toContain("some-asr-model");
-    expect(merged).not.toContain("openai/gpt-audio");
-    expect(new Set(merged).size).toBe(merged.length);
+    expect(llm).toEqual(["deepseek/deepseek-v4.1-flash", "qwen/qwen3.8-flash"]);
+    expect(llm.join(",")).not.toContain("whisper");
+    expect(llm.join(",")).not.toContain("transcribe");
+  });
+
+  it("可枚举平台的转写列表不掺特例（百炼只信目录命名族）", () => {
+    const bailian = wizardModelCandidates("bailian", "asr", "qwen3-asr-flash", [{ id: "qwen3-asr-flash" }, { id: "paraformer-v2" }]);
+    expect(bailian).toEqual(["qwen3-asr-flash", "paraformer-v2"]);
+    expect(wizardModelCandidates("mimo", "asr", "mimo-v2.5-asr", [])).toEqual(["mimo-v2.5-asr"]);
   });
 });
