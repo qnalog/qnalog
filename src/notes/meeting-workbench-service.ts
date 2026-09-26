@@ -9,7 +9,6 @@ import { clipRealtimeContextText, hasRealtimeOutlineRunnableBacklog } from "../n
 import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_CHARS, MEETING_INTERACTION_TIMEOUT_MS, MEETING_METADATA_KINDS, clipMeetingInteractionSegmentLine, getMeetingInteractionMaxTokens, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { isAsrTransportError } from "../shared/util-audio";
 import { NS_LIVE_MARKER_END, NS_LIVE_MARKER_START, nsMarker, nsMarkerLegacyVariants } from "../shared/namespace";
 import type { RecordingSession } from "../shared/types";
 
