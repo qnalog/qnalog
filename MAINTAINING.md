@@ -1315,6 +1315,29 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
    现有环允许存在；失败条件是不得产生新环、不得扩大既有 SCC（既有 12 个服务的大环里
    再插入一个节点，同样失败）。
 
+**第二阶段已完成（2026-09-26，分支 `refactor/service-dependency-decycle`）**：
+12 节点的强连通分量已拆成有向无环图，`环状分量 0`，基线 82 → 62 条边（切掉 20 条）。
+插件实例同时是各服务的 Host，拆环手段三类，都在装配层 `src/main.ts` 完成：
+
+- **回调化**：Host 成员换成装配层转发方法（`requestOutlineRefresh`、`requestTaskQueueRetry`、
+  `confirmSpeakerNames` 等），插件方法转调具体服务；
+- **装配别名**：窄结构视图成员改名后由插件字段绑定同一实例（`asrCircuit`、`liveAsr`、
+  `sessionPipeline`、`sessionProgress`、`realtimeOutline`、`taskMeters`）。
+  门禁先按成员名匹配 main.ts 字段、再按类型文本兜底，所以改名必须同时把类型收窄到
+  实际使用的最小面，两条都不命中才成边；
+- **端口接口**：`src/shared/live-asr-pipeline.ts` 的 `LiveAsrPipeline`，
+  `RecordingService implements` 它，缺方法在编译期报错。
+
+拆完后保留的边（不构成环，方向朝汇点，属正常下行依赖）：
+`Recording → MeetingWorkbench`、`SessionFinalize → MeetingWorkbench`、
+`TaskActivity → Recording`，以及 `MeetingWorkbench`/`RealtimeOutline` → `Diagnostics` 等入边。
+
+后续两项（本次不做）：
+1. `LiveAsrPipeline` 目前只是接口隔离，live-ASR 状态仍挂在 `RecordingService` 上；
+   若录音服务继续膨胀，把它抽成独立的 `LiveAsrPipelineService`。
+2. 重打基线目前是人工步骤（`--print-baseline` 不接 npm）；若再出现一次批量切边，
+   再考虑是否给「重打基线」一个显式命令并配守护。
+
 ### 13.2 为什么基线更新不是「修检查」的步骤
 
 基线是**事实**（`scripts/architecture-baseline.json`），为什么这样设计写在本节（**理由**），
