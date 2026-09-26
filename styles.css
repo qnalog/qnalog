@@ -12535,7 +12535,26 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-wizard-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8em;
   margin-top: 0.7em;
+}
+
+/* 退出类动作：不与主按钮争夺注意力，只用文字弱化（配色沿用全局语义色的回退写法）。 */
+.qnalog-wizard-btn-quiet {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--qnalog-text-hint, var(--text-faint));
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.qnalog-wizard-btn-quiet:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 
 .qnalog-wizard-stage {

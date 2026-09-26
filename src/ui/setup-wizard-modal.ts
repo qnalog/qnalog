@@ -64,19 +64,29 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       case "probe": this.renderProbe(root); break;
       case "done": this.renderDone(root); break;
     }
-    if (!this.settled) {
+    // 页脚固定承载次要动作，跨步骤位置不变：左「稍后设置」（最弱的退出动作），
+    // 右「手动配置」（仅选方案步，与右侧主导航同侧）。主按钮一律强调色，二者用默认/弱化两级。
+    if (!this.settled || this.controller.step === "pick-preset") {
       const foot = root.createDiv({ cls: "qnalog-wizard-foot" });
-      const later = foot.createEl("button", { text: t("Set up later") });
-      later.onclick = () => { void this.dismissAndClose(); };
+      if (!this.settled) {
+        const later = foot.createEl("button", { text: t("Set up later"), cls: "qnalog-wizard-btn-quiet" });
+        later.onclick = () => { void this.dismissAndClose(); };
+      }
+      if (this.controller.step === "pick-preset") {
+        const manual = foot.createEl("button", { text: t("Manual setup") });
+        manual.onclick = () => {
+          this.deps.openSettingsTab("api");
+          this.close();
+        };
+      }
     }
   }
 
-  /** 步骤 1：选方案；下方是「手动配置」出口（关闭并跳设置 API 页）。 */
+  /** 步骤 1：选方案；「手动配置」出口在页脚，与「稍后设置」同一行。 */
   private renderPick(root: HTMLElement): void {
-    root.createEl("h3", { text: t("Choose a plan") });
     root.createDiv({
       cls: "qnalog-wizard-desc",
-      text: t("Record, transcribe, and organize into Markdown notes. Default services, models, and parameters are preset — add an API key when you are ready."),
+      text: t("Pick a preset plan below, choose a provider, and enter its API key to start recording voice notes and organizing them automatically."),
     });
     for (const [id, preset] of Object.entries(PRESET_VIEW)) {
       const row = root.createDiv({ cls: "qnalog-wizard-preset" });
@@ -86,11 +96,6 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       use.onclick = () => { this.controller.selectPreset(id); this.render(); };
       if (preset.applyDesc) row.createDiv({ cls: "qnalog-wizard-preset-desc", text: preset.applyDesc });
     }
-    const manual = root.createEl("button", { text: t("Manual setup") });
-    manual.onclick = () => {
-      this.deps.openSettingsTab("api");
-      this.close();
-    };
   }
 
   /** 步骤 2：填密钥（可改地址/模型的预设才显示模型输入）；计划 ok 才能进下一步。 */

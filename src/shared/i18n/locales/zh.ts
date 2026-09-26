@@ -2059,7 +2059,7 @@ export const ZH: MessageTable = {
   "「Audio input」 needs microphone permission to read device names. Click the button to read them once; recording will not start.": "「音频输入」需要麦克风授权才能读到设备名。点右侧按钮读取一次；不会开始录音。",
   "item(s)": "项配置",
   "Setup Wizard": "配置向导",
-  "Choose a plan": "选择方案",
+  "Pick a preset plan below, choose a provider, and enter its API key to start recording voice notes and organizing them automatically.": "以下是预置的配置方案，选择一个供应商，然后填入 API 密钥即可开始进行语音笔记的记录和自动整理。",
   "Manual setup": "手动配置",
   "Use this plan": "使用此方案",
   "Next": "下一步",
