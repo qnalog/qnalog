@@ -110,6 +110,10 @@ class QnALogPlugin extends obsidian.Plugin {
   declare recording: RecordingService;
   /** 装配别名：队列重试的熔断与切片缓存视图绑定到录音服务（QueueRetryHost.asrCircuit）。 */
   declare asrCircuit: RecordingService;
+  /** 装配别名：会话收尾的实时转写管线视图绑定到录音服务（SessionFinalizeHost.liveAsr）。 */
+  declare liveAsr: RecordingService;
+  /** 装配别名：录音服务的收尾管线视图绑定到会话收尾服务（RecordingHost.sessionPipeline）。 */
+  declare sessionPipeline: SessionFinalizeService;
   declare shell: ViewShellService;
   declare library: LibraryViewService;
   declare noteIndex: NoteIndexService;
@@ -182,7 +186,9 @@ class QnALogPlugin extends obsidian.Plugin {
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
+    this.sessionPipeline = this.sessionFinalize;
     this.recording = new RecordingService(this);
+    this.liveAsr = this.recording;
     this.asrCircuit = this.recording;
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);

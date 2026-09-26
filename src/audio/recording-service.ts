@@ -37,6 +37,7 @@ import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
+import type { LiveAsrPipeline } from "../shared/live-asr-pipeline";
 
 import { t } from "../shared/i18n";
 
@@ -75,8 +76,8 @@ export interface RecordingHost {
   recorder: RecorderService | null;
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
-  /** 会话收尾服务：切片转写与停止后的收尾。 */
-  sessionFinalize: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
+  /** 会话收尾服务：切片转写与停止后的收尾（装配层绑定，见 sessionPipeline 注释）。 */
+  sessionPipeline: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
   /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
@@ -86,7 +87,7 @@ export interface RecordingHost {
   tasks: TaskActivityService;
 }
 
-export class RecordingService {
+export class RecordingService implements LiveAsrPipeline {
   declare host: RecordingHost;
   /** 本次一次性录音的采集模式与润色模式（命令入口设置）。 */
   declare _oneShotCaptureMode;
@@ -529,7 +530,7 @@ export class RecordingService {
       console.error("[QnALog] recovered rejected write chain before next segment", e);
     }).then(async () => {
       try {
-        await this.host.sessionFinalize.processSegment(session, preparedSeg);
+        await this.host.sessionPipeline.processSegment(session, preparedSeg);
       } catch (e) {
         // 本段异常不能毒化后续写入链；processSegment 已尽力保留缓存并加入后台重试。
         console.error("[QnALog] processSegment failed (swallowed to protect write chain)", e);
@@ -555,8 +556,8 @@ export class RecordingService {
     if (preparedSeg.isFinal) {
       // 双分支：无论前序链 fulfilled 还是 rejected，finalizeSession 都必须跑。
       session.writeQueue = session.writeQueue.then(
-        () => this.host.sessionFinalize.finalizeSession(session),
-        (e) => { console.error("[QnALog] write chain rejected before finalize", e); return this.host.sessionFinalize.finalizeSession(session); }
+        () => this.host.sessionPipeline.finalizeSession(session),
+        (e) => { console.error("[QnALog] write chain rejected before finalize", e); return this.host.sessionPipeline.finalizeSession(session); }
       );
     }
     // 录音中的普通切段只等音频安全落盘，不应继续 await 慢速 ASR 链。

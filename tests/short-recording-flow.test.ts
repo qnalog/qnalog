@@ -107,7 +107,9 @@ function makeHost() {
       remove: async () => undefined,
       snapshot: () => [],
     },
-    queueRetry: { readVaultAudioBlob: async () => null, scheduleDeferredAsrRetry: () => undefined, scheduleTaskQueueRetry: () => undefined },
+    requestDeferredAsrRetry: () => undefined,
+    requestTaskQueueRetry: () => undefined,
+    readVaultAudioBlob: async () => null,
     diagnostics: { logDiagnostic: async (_level: string, event: string, message: string, data: unknown) => { diagnostics.push({ event, message, data }); } },
     tasks: { beginTaskMeter: () => null, endTaskMeter: () => null, logCompletedWork: () => undefined, _importBusy: null, updateImportActivity: () => undefined },
     requestOutlineRefresh: () => undefined,
@@ -115,14 +117,13 @@ function makeHost() {
     outline: { scheduleRealtimeOutline: () => undefined, ensureRealtimeOutlineForFinalNote: async () => undefined },
     noteIndex: { refreshNoteIndexSafely: async () => undefined, appendDailyMeetingOverview: async () => undefined, autoExtractSedimentAfterFinalize: () => undefined },
     saveSettings: async () => undefined,
-    recording: null as unknown,
   };
 
   const finalizeService = new SessionFinalizeService(host);
   host.sessionFinalize = finalizeService;
+  host.sessionPipeline = finalizeService;
   const recordingService = new RecordingService(host);
-  host.recording = recordingService;
-  finalizeService.host.recording = recordingService;
+  host.liveAsr = recordingService;
 
   return { host, files, folders, app, transcriptionCalls, diagnostics, finalizeService, recordingService };
 }
