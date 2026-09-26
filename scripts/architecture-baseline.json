@@ -200,10 +200,6 @@
     ],
     [
       "RecordingService",
-      "SessionFinalizeService"
-    ],
-    [
-      "RecordingService",
       "TaskActivityService"
     ],
     [
@@ -257,10 +253,6 @@
     [
       "SessionFinalizeService",
       "RecorderService"
-    ],
-    [
-      "SessionFinalizeService",
-      "RecordingService"
     ],
     [
       "SessionFinalizeService",
