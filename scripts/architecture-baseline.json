@@ -47,18 +47,6 @@
       "TaskQueue"
     ],
     [
-      "DiagnosticsService",
-      "RecorderService"
-    ],
-    [
-      "DiagnosticsService",
-      "RecordingService"
-    ],
-    [
-      "DiagnosticsService",
-      "TaskQueue"
-    ],
-    [
       "ExternalInboxService",
       "DiagnosticsService"
     ],
