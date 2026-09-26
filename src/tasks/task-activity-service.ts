@@ -13,7 +13,6 @@ import { getTaskErrorHint, getTaskErrorMessage } from "../shared/task-activity";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { QueueRetryService } from "../queue/queue-retry-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { TaskActivityStore } from "../shared/task-activity";
 import type { TaskActivity, TaskActivityAction, TaskActivityInput } from "../shared/task-activity";
@@ -116,8 +115,8 @@ export interface TaskActivityHost {
 
   openSettings(tabId?: string): void;
   queue: TaskQueue | null;
-  /** 队列失败恢复服务：熔断冷却结束后重新排期。 */
-  queueRetry: QueueRetryService;
+  /** 装配层转发：转写服务熔断冷却结束后重新排期（调用 QueueRetryService.scheduleTaskQueueRetry）。 */
+  requestTaskQueueRetry(delayMs: number, reason: string): void;
   recorder: RecorderService | null;
   /** 装配层转发：任务状态变化后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
   requestOutlineRefresh(): void;
@@ -590,7 +589,7 @@ export class TaskActivityService {
           await this.host.queue.processOne(task);
         } catch (error) {
           if (task.type === "transcribe" && isAsrTransportError(error)) {
-            this.host.queueRetry.scheduleTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
+            this.host.requestTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
           }
           throw error;
         }

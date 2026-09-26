@@ -82,9 +82,9 @@ describe("release runtime contracts", () => {
 
   it("actively schedules bounded retries after merge and note-write failures", () => {
     // 重排期调用点随合并重试实现一起搬到了队列模块，用全文断言调用形状与间隔不变。
-    expect(pluginSource).toContain('scheduleTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError');
+    expect(pluginSource).toContain('requestTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError');
     expect(pluginSource).toContain('? "briefing-partial"');
-    expect(pluginSource).toContain('scheduleTaskQueueRetry(1500, "briefing-write-failure")');
+    expect(pluginSource).toContain('requestTaskQueueRetry(1500, "briefing-write-failure")');
   });
 
   it("keeps long-meeting chunks internal and presents one continuous meeting", () => {

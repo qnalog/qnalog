@@ -618,6 +618,18 @@ class QnALogPlugin extends obsidian.Plugin {
       return "";
     }
   }
+  /** 装配层转发：队列失败重试排期（熔断冷却、任务中心传输失败等）。 */
+  requestTaskQueueRetry(delayMs: number, reason: string): void {
+    this.queueRetry.scheduleTaskQueueRetry(delayMs, reason);
+  }
+  /** 装配层转发：转写熔断后的延迟重试排期。 */
+  requestDeferredAsrRetry(session: RecordingSession): void {
+    this.queueRetry.scheduleDeferredAsrRetry(session);
+  }
+  /** 装配层转发：读取知识库里的音频缓存（含 .cache 目录）。 */
+  readVaultAudioBlob(path: string, fallbackName: string): Promise<{ blob: Blob; sourcePath: string; sourceName: string; recovered: boolean } | null> {
+    return this.queueRetry.readVaultAudioBlob(path, fallbackName);
+  }
   /** 装配层转发：队列批量重试节奏变化后刷新任务状态栏。 */
   notifyTaskBusyChanged(): void {
     this.tasks.updateBusyStatus();

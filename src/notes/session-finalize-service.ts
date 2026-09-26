@@ -31,7 +31,6 @@ import { mergeAndPolish } from "../briefing/merge-pipeline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { NoteWriter } from "../notes/note-writer";
-import { QueueRetryService } from "../queue/queue-retry-service";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
@@ -52,7 +51,12 @@ export interface SessionFinalizeHost {
   outline: RealtimeOutlineService;
   profiles: TranscribeProfileService;
   queue: TaskQueue | null;
-  queueRetry: QueueRetryService;
+  /** 装配层转发：转写熔断后的延迟重试排期（调用 QueueRetryService.scheduleDeferredAsrRetry）。 */
+  requestDeferredAsrRetry(session: RecordingSession): void;
+  /** 装配层转发：队列失败重试排期（调用 QueueRetryService.scheduleTaskQueueRetry）。 */
+  requestTaskQueueRetry(delayMs: number, reason: string): void;
+  /** 装配层转发：读取知识库里的音频缓存（调用 QueueRetryService.readVaultAudioBlob）。 */
+  readVaultAudioBlob(path: string, fallbackName: string): Promise<{ blob: Blob; sourcePath: string; sourceName: string; recovered: boolean } | null>;
   recorder: RecorderService | null;
   /** 录音采集服务：切片缓存与整场音频的落点、录音问题状态。 */
   recording: RecordingService & { setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
@@ -194,7 +198,7 @@ export class SessionFinalizeService {
       } else {
         transcribeBlob = spoolResult && spoolResult.fallbackBlob ? spoolResult.fallbackBlob : null;
         if (!transcribeBlob && spoolResult && spoolResult.persisted) {
-          const cachedAudio = await this.host.queueRetry.readVaultAudioBlob(segmentAudioPath, segmentAudioName);
+          const cachedAudio = await this.host.readVaultAudioBlob(segmentAudioPath, segmentAudioName);
           transcribeBlob = cachedAudio && cachedAudio.blob;
         }
         if (!transcribeBlob && seg.blob) transcribeBlob = seg.blob;
@@ -702,7 +706,7 @@ export class SessionFinalizeService {
           try { await this.host.app.workspace.getLeaf(false).openFile(file); } catch { /* intentionally empty */ }
         }
       }
-      this.host.queueRetry.scheduleDeferredAsrRetry(session);
+      this.host.requestDeferredAsrRetry(session);
       if (this.host.session === session) this.host.session = null;
       this.host.requestOutlineRefresh();
       return;
@@ -844,7 +848,7 @@ export class SessionFinalizeService {
         lastError: mergeError.message || String(mergeError),
       });
       if (!nonRetryableMergeError) {
-        this.host.queueRetry.scheduleTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError
+        this.host.requestTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError
           ? "briefing-partial"
           : "briefing-finalization-failure");
       }
@@ -929,7 +933,7 @@ export class SessionFinalizeService {
           sessionMeta: finalSessionMeta,
           lastError: `纪要写入失败：${getErrorMessage(writeError)}`,
         });
-        this.host.queueRetry.scheduleTaskQueueRetry(1500, "briefing-write-failure");
+        this.host.requestTaskQueueRetry(1500, "briefing-write-failure");
         this.host.recording.setSessionWorkProgress(session, {
           stage: "write-retrying",
           label: t("Minutes write waiting to retry"),
@@ -1020,7 +1024,7 @@ export class SessionFinalizeService {
         try { await this.host.app.workspace.getLeaf(false).openFile(file); } catch { /* intentionally empty */ }
       }
     }
-    this.host.queueRetry.scheduleDeferredAsrRetry(session);
+    this.host.requestDeferredAsrRetry(session);
     if (this.host.session === session) this.host.session = null;
     this.host.requestOutlineRefresh();
   }
