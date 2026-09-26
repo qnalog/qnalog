@@ -116,10 +116,6 @@
     ],
     [
       "MeetingWorkbenchService",
-      "RealtimeOutlineService"
-    ],
-    [
-      "MeetingWorkbenchService",
       "RecorderService"
     ],
     [
@@ -175,10 +171,6 @@
       "RealtimeOutlineCoordinator"
     ],
     [
-      "RealtimeOutlineService",
-      "RecordingService"
-    ],
-    [
       "RecordingService",
       "BubbleWidget"
     ],
@@ -197,10 +189,6 @@
     [
       "RecordingService",
       "RecorderService"
-    ],
-    [
-      "RecordingService",
-      "TaskActivityService"
     ],
     [
       "RecordingService",
@@ -253,10 +241,6 @@
     [
       "SessionFinalizeService",
       "RecorderService"
-    ],
-    [
-      "SessionFinalizeService",
-      "TaskActivityService"
     ],
     [
       "SessionFinalizeService",
