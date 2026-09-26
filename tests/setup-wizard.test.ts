@@ -345,17 +345,21 @@ describe("AI 整理分类排除生成类模型", () => {
   });
 });
 
-describe("三信号转写候选与非聊天族排除", () => {
-  it("输入模态含 audio 的条目进转写候选（id 无命名族词根也收）", () => {
+describe("转写候选只认 id 命名族与 type", () => {
+  it("理解型音频模型、裸 audio 词根与 type=audio 都不收（合成模型会挂这类值）", () => {
     const entries = [
-      { id: "qwen/qwen3.8-omni-flash", inputModalities: ["audio", "text"] },
-      { id: "qwen3.8-max", inputModalities: ["image", "text", "video"] },
+      "openai/gpt-audio",
+      "whisper-large-v3",
+      { id: "qwen3-asr-flash" },
+      { id: "vendor-x", type: "asr" },
+      { id: "vendor-tts", type: "audio" },
       { id: "pure-text-model" },
     ];
-    const asr = filterModelsForCategory(entries, "asr");
-    expect(asr).toContain("qwen/qwen3.8-omni-flash");
-    expect(asr).not.toContain("qwen3.8-max");
-    expect(asr).not.toContain("pure-text-model");
+    expect(filterModelsForCategory(entries, "asr")).toEqual([
+      "whisper-large-v3",
+      "qwen3-asr-flash",
+      "vendor-x",
+    ]);
   });
 
   it("AI 整理排除向量/重排/合成族 id（即便没有模态信息）", () => {
@@ -376,15 +380,15 @@ describe("说话人分离候选的目录发现", () => {
   it("描述写明说话人分离且具备转写能力的目录模型被收进来", () => {
     const catalog = [
       { id: "paraformer-v2", description: "支持说话人分离的中文语音识别模型" },
-      { id: "qwen-audio-filetrans", description: "Speaker diarization supported for long audio files." },
+      { id: "fun-asr-longform", description: "Speaker diarization supported for long audio files." },
       { id: "some-chat-model", description: "支持多说话人对话理解的大模型" },
-      { id: "audio-understanding", description: "支持说话人分离的音频理解", inputModalities: ["audio"] },
+      { id: "vendor-via-type", type: "asr", description: "支持说话人分离的音频理解" },
     ];
     const list = diarizationModelCandidates("bailian", "qwen-audio-3.0-asr-flash-filetrans", catalog);
     expect(list[0]).toBe("qwen-audio-3.0-asr-flash-filetrans");
     expect(list).toContain("paraformer-v2");
-    expect(list).toContain("qwen-audio-filetrans");
-    expect(list).toContain("audio-understanding");
+    expect(list).toContain("fun-asr-longform");
+    expect(list).toContain("vendor-via-type");
     // 描述提到「说话人」但没有转写能力的大模型不收
     expect(list).not.toContain("some-chat-model");
     // 仓库内已验证候选仍在

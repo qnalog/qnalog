@@ -12,7 +12,7 @@
 
 export type WizardModelCategory = "asr" | "llm" | "diarization";
 
-const ASR_FAMILY_RE = /asr|audio|whisper|stt|speech|transcri|sensevoice|paraformer/i;
+const ASR_FAMILY_RE = /asr|whisper|stt|speech|transcri|sensevoice|paraformer/i;
 
 const DIARIZATION_EXTRAS: Record<string, string[]> = {
   openrouter: ["microsoft/mai-transcribe-2"],
@@ -20,7 +20,7 @@ const DIARIZATION_EXTRAS: Record<string, string[]> = {
 };
 
 /** 目录条目：字符串（纯 id）或带分类信息的条目（百炼带 type/模态/描述，OpenRouter 带模态/描述）。 */
-type CatalogItem = string | { id: string; type?: string; outputModalities?: string[]; inputModalities?: string[]; description?: string };
+type CatalogItem = string | { id: string; type?: string; outputModalities?: string[]; description?: string };
 
 function toEntries(items: CatalogItem[]): Array<Exclude<CatalogItem, string>> {
   const out: Array<Exclude<CatalogItem, string>> = [];
@@ -37,11 +37,12 @@ function toEntries(items: CatalogItem[]): Array<Exclude<CatalogItem, string>> {
   return out;
 }
 
-/** 转写能力的三个信号：id 命名族、平台 type、输入模态含 audio。 */
-function isAsrFamily(entry: { id: string; type?: string; inputModalities?: string[] }): boolean {
+/** 转写能力的两个信号：id 命名族、平台 type。
+ * 不用「输入含 audio」——那只是理解型 chat 模型的属性，实测把 OpenRouter 的
+ * 49 个文本模型全放进了转写列表；也不认 type=audio/speech——语音合成模型会挂这类值。 */
+function isAsrFamily(entry: { id: string; type?: string }): boolean {
   if (ASR_FAMILY_RE.test(entry.id)) return true;
-  if (entry.type && /asr|speech|audio|stt/i.test(entry.type)) return true;
-  return !!entry.inputModalities && entry.inputModalities.includes("audio");
+  return !!entry.type && /asr|stt|transcri/i.test(entry.type);
 }
 
 /** AI 整理要的是纯文本聊天模型：输出模态含 image/video/audio 的是生成类模型

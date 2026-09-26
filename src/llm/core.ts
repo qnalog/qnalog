@@ -587,13 +587,13 @@ export function resolveLlmModelListEndpoint(endpoint) {
 /** 模型列表条目：id 必有；type 是部分平台附带的分类字段（llm/asr/…）；
  * outputModalities 是输出模态（text/image/video/audio，小写）——百炼取
  * inference_metadata.response_modality，OpenRouter 取 architecture.output_modalities；
- * inputModalities 是输入模态（同两处来源的 request/input 字段）；
- * description 是平台描述，用于说话人分离这类「描述里写明能力」的候选筛选。 */
+ * description 是平台描述，用于说话人分离这类「描述里写明能力」的候选筛选。
+ * 不解析输入模态：「能听音频」是理解型 chat 模型的属性，不代表能走转写端点，
+ * 曾据此扩过转写候选，实测把 OpenRouter 的 49 个文本模型全放了进来，已撤。 */
 export interface LlmModelEntry {
   id: string;
   type?: string;
   outputModalities?: string[];
-  inputModalities?: string[];
   description?: string;
 }
 
@@ -622,20 +622,13 @@ function parseModelEntries(payload): LlmModelEntry[] {
         || (m.architecture && m.architecture.output_modalities)
         || m.output_modalities
       );
-      const inputRaw = m && (
-        (m.architecture && m.architecture.input_modalities)
-        || (m.inference_metadata && m.inference_metadata.request_modality)
-        || m.input_modalities
-      );
       const lowerList = (raw) => (Array.isArray(raw) ? raw.map((x) => String(x || "").toLowerCase()).filter(Boolean) : []);
       const outputModalities = lowerList(outputRaw);
-      const inputModalities = lowerList(inputRaw);
       const description = m && typeof m.description === "string" ? m.description.slice(0, 800) : "";
       return {
         id,
         ...(type ? { type } : {}),
         ...(outputModalities.length ? { outputModalities } : {}),
-        ...(inputModalities.length ? { inputModalities } : {}),
         ...(description ? { description } : {}),
       };
     })
