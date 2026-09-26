@@ -56,6 +56,8 @@ import { OutlineView } from "./ui/outline-view";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
+import { SetupWizardModal } from "./ui/setup-wizard-modal";
+import { needsFirstRunWizard } from "./setup/wizard-controller";
 import { TaskActivityService } from "./tasks/task-activity-service";
 import { DeliveryService } from "./delivery/delivery-service";
 import { NoteWriter } from "./notes/note-writer";
@@ -331,6 +333,12 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.settingTab = new QnALogSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
+
+    // 首次配置向导：全新安装（转写与 AI 整理都缺配置）时等界面就绪后自动打开一次；
+    // 关闭过向导或已配置任一项都不弹。判据与设置首页四态同源，见 src/setup/wizard-controller.ts。
+    this.app.workspace.onLayoutReady(() => {
+      if (needsFirstRunWizard(this.settings, this.profiles)) this.openSetupWizard();
+    });
 
     this.registerEvent(this.app.vault.on("create", (file) => {
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox handler error", e));
@@ -632,6 +640,18 @@ class QnALogPlugin extends obsidian.Plugin {
       console.warn("[QnALog] settings backup failed", e);
       return "";
     }
+  }
+  /** 打开首次配置向导（装配层：组装依赖并实例化 Modal；首页按钮与自动触发同此入口）。 */
+  openSetupWizard(): void {
+    const tab = this.settingTab;
+    if (!tab) return;
+    new SetupWizardModal(this.app, {
+      plugin: this,
+      probePorts: () => tab.probePorts(),
+      saveSettings: () => this.saveSettings(),
+      openSettingsTab: (id) => this.openSettings(id),
+      openOutlineView: () => this.shell.openOutlineView(),
+    }).open();
   }
   /** 装配层转发：audio-import 流程进行中时，把会话进度同步进任务中心的导入忙态。 */
   syncImportBusyFromSessionProgress(session: RecordingSession): void {

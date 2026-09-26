@@ -12485,3 +12485,86 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-append-actions .qnalog-outline-action-icon {
   display: inline-flex;
 }
+
+/* ===== 首次配置向导（src/ui/setup-wizard-modal.ts） ===== */
+.qnalog-wizard-root {
+  max-width: 46rem;
+}
+
+.qnalog-wizard-desc {
+  color: var(--text-muted);
+  margin-bottom: 0.6em;
+}
+
+.qnalog-wizard-preset {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 0.6em 0.8em;
+  margin: 0.5em 0;
+}
+
+.qnalog-wizard-preset-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.qnalog-wizard-preset-label {
+  font-weight: 600;
+}
+
+.qnalog-wizard-preset-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-top: 0.25em;
+}
+
+.qnalog-wizard-reason {
+  color: var(--qnalog-danger-text, var(--text-error));
+  font-size: var(--font-ui-smaller);
+  min-height: 1.3em;
+  margin-top: 0.3em;
+}
+
+.qnalog-wizard-nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 0.9em;
+}
+
+.qnalog-wizard-foot {
+  margin-top: 0.7em;
+}
+
+.qnalog-wizard-stage {
+  display: flex;
+  gap: 0.5em;
+  align-items: baseline;
+  padding: 0.2em 0;
+}
+
+.qnalog-wizard-stage.is-ok {
+  color: var(--qnalog-success-text, var(--text-success));
+}
+
+.qnalog-wizard-stage.is-fail {
+  color: var(--qnalog-danger-text, var(--text-error));
+}
+
+.qnalog-wizard-stage.is-neutral {
+  color: var(--text-muted);
+}
+
+.qnalog-wizard-stage-detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-wizard-summary {
+  white-space: pre-wrap;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-top: 0.4em;
+}
