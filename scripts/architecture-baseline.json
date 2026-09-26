@@ -252,10 +252,6 @@
     ],
     [
       "SessionFinalizeService",
-      "QueueRetryService"
-    ],
-    [
-      "SessionFinalizeService",
       "RealtimeOutlineService"
     ],
     [
@@ -285,10 +281,6 @@
     [
       "TaskActivityService",
       "DiagnosticsService"
-    ],
-    [
-      "TaskActivityService",
-      "QueueRetryService"
     ],
     [
       "TaskActivityService",
