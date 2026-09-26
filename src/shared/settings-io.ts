@@ -349,6 +349,7 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.enableRealtimeOutline = firstBoolean(defaults.enableRealtimeOutline, liveOutline.enabled, raw.enableRealtimeOutline);
   s.realtimeOutlineDebounceMs = firstNumber(defaults.realtimeOutlineDebounceMs, liveOutline.debounceMs, raw.realtimeOutlineDebounceMs);
   s.autoOpenOutlineOnRecord = firstBoolean(defaults.autoOpenOutlineOnRecord, liveOutline.openOnCapture, raw.autoOpenOutlineOnRecord);
+  s.setupWizardDismissed = firstBoolean(defaults.setupWizardDismissed, raw.setupWizardDismissed);
 
   const dailyNote = asRecord(raw.dailyNote);
   s.writeDailyMeetingOverview = firstBoolean(defaults.writeDailyMeetingOverview, dailyNote.meetingOverviewEnabled, raw.writeDailyMeetingOverview);
@@ -558,6 +559,7 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       lastError: s.lastUpdateError || "",
       installedVersion: s.installedUpdateVersion || "",
     },
+    setupWizardDismissed: s.setupWizardDismissed === true,
     promptTemplates: s.promptTemplates || {},
     activeTemplateByMode: s.activeTemplateByMode || {},
   };
