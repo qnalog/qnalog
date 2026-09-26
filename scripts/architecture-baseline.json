@@ -156,19 +156,7 @@
     ],
     [
       "QueueRetryService",
-      "RecordingService"
-    ],
-    [
-      "QueueRetryService",
       "RepolishService"
-    ],
-    [
-      "QueueRetryService",
-      "SessionFinalizeService"
-    ],
-    [
-      "QueueRetryService",
-      "TaskActivityService"
     ],
     [
       "QueueRetryService",
