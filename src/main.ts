@@ -98,6 +98,8 @@ class QnALogPlugin extends obsidian.Plugin {
   declare delivery: DeliveryService;
   declare noteWriter: NoteWriter;
   declare tasks: TaskActivityService;
+  /** 装配别名：会话收尾的任务计量视图绑定到任务中心服务（SessionFinalizeHost.taskMeters）。 */
+  declare taskMeters: TaskActivityService;
   declare queueRetry: QueueRetryService;
   declare versions: VersionStore;
   declare people: PeopleDirectoryService;
@@ -112,6 +114,8 @@ class QnALogPlugin extends obsidian.Plugin {
   declare asrCircuit: RecordingService;
   /** 装配别名：会话收尾的实时转写管线视图绑定到录音服务（SessionFinalizeHost.liveAsr）。 */
   declare liveAsr: RecordingService;
+  /** 装配别名：实时大纲的会话进度视图绑定到录音服务（RealtimeOutlineHost.sessionProgress）。 */
+  declare sessionProgress: RecordingService;
   /** 装配别名：录音服务的收尾管线视图绑定到会话收尾服务（RecordingHost.sessionPipeline）。 */
   declare sessionPipeline: SessionFinalizeService;
   declare shell: ViewShellService;
@@ -120,6 +124,8 @@ class QnALogPlugin extends obsidian.Plugin {
   declare audioLinks: AudioTimeLinkService;
   declare meetingWorkbench: MeetingWorkbenchService;
   declare outline: RealtimeOutlineService;
+  /** 装配别名：互动看板的实时大纲视图绑定到实时大纲服务（MeetingWorkbenchHost.realtimeOutline）。 */
+  declare realtimeOutline: RealtimeOutlineService;
   declare cleanup: CleanupService;
   /** 本次加载时磁盘设置的版本判定；future 时禁止写盘。 */
   settingsSchemaState: SettingsSchemaState = "current";
@@ -177,6 +183,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.delivery = new DeliveryService(this);
     this.noteWriter = new NoteWriter(this);
     this.tasks = new TaskActivityService(this);
+    this.taskMeters = this.tasks;
     this.queueRetry = new QueueRetryService(this);
     this.versions = new VersionStore(this);
     this.people = new PeopleDirectoryService(this);
@@ -189,6 +196,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.sessionPipeline = this.sessionFinalize;
     this.recording = new RecordingService(this);
     this.liveAsr = this.recording;
+    this.sessionProgress = this.recording;
     this.asrCircuit = this.recording;
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
@@ -196,6 +204,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
     this.outline = new RealtimeOutlineService(this);
+    this.realtimeOutline = this.outline;
     this.cleanup = new CleanupService(this);
     this.vocabulary = new VocabularyService(this);
     this.profiles = new TranscribeProfileService(this);
@@ -623,6 +632,10 @@ class QnALogPlugin extends obsidian.Plugin {
       console.warn("[QnALog] settings backup failed", e);
       return "";
     }
+  }
+  /** 装配层转发：audio-import 流程进行中时，把会话进度同步进任务中心的导入忙态。 */
+  syncImportBusyFromSessionProgress(session: RecordingSession): void {
+    this.tasks.syncImportBusyFromSessionProgress(session);
   }
   /** 装配层转发：队列失败重试排期（熔断冷却、任务中心传输失败等）。 */
   requestTaskQueueRetry(delayMs: number, reason: string): void {

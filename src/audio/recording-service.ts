@@ -17,7 +17,6 @@ import { extFromMime, isAsrTransportError, isTransientAsrError } from "../shared
 import { LIVE_ASR_TASK_STATUS, classifyLiveAsrBacklog, createLiveAsrCircuitState, isLiveAsrCircuitOpen, recordLiveAsrFailure, recordLiveAsrSuccess, summarizeLiveAsrJobs } from "../asr/live-segment-policy";
 import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
-import { audioImportStageFromWorkProgress } from "../shared/activity-progress";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS } from "../shared/limits";
@@ -31,11 +30,9 @@ import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { makeRecordingIssue } from "../asr/transcribe";
-import { TaskActivityService } from "../tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
-import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 import type { LiveAsrPipeline } from "../shared/live-asr-pipeline";
 
@@ -69,7 +66,12 @@ export interface RecordingHost {
   /** 悬浮气泡：录音问题变化时请求刷新。 */
   bubble: { scheduleUpdate?: () => void } | null;
   diagnostics: DiagnosticsService;
-  meetingWorkbench: MeetingWorkbenchService;
+  /** 互动看板服务：实时转写块与互动调度（窄面：实际只用这 3 个方法）。 */
+  meetingWorkbench: {
+    makeStreamingNoteUpdater(session: RecordingSession): () => void;
+    removeLiveTranscriptBlock(mdPath: string, sessionId: string): Promise<void>;
+    scheduleMeetingWorkbenchInteraction(session: RecordingSession, interaction: unknown): void;
+  };
   noteWriter: NoteWriter;
   profiles: TranscribeProfileService;
   queue: TaskQueue | null;
@@ -84,7 +86,8 @@ export interface RecordingHost {
   requestOutlineRefresh(): void;
   /** 装配层转发：请求打开侧边栏（调用 ViewShellService.openOutlineView），仅录音流程自动打开使用。 */
   requestOpenOutlineView(): Promise<void>;
-  tasks: TaskActivityService;
+  /** 装配层转发：audio-import 流程进行中时，把会话进度同步进任务中心的导入忙态。 */
+  syncImportBusyFromSessionProgress(session: RecordingSession): void;
 }
 
 export class RecordingService implements LiveAsrPipeline {
@@ -469,20 +472,7 @@ export class RecordingService implements LiveAsrPipeline {
     session.workProgress = Object.assign({}, session.workProgress || {}, patch || {}, {
       updatedAt: new Date().toISOString(),
     });
-    if (this.host.tasks._importBusy
-      && this.host.tasks._importBusy.workflow === "audio-import"
-      && String(this.host.tasks._importBusy.sessionId || "") === String(session.id || "")) {
-      const stage = audioImportStageFromWorkProgress(session.workProgress.stage);
-      this.host.tasks.updateImportActivity({
-        phase: stage,
-        organizeLabel: stage === "organize" ? String(session.workProgress.label || "AI 整理") : this.host.tasks._importBusy.organizeLabel,
-        organizeDetail: stage === "organize" ? String(session.workProgress.detail || "") : this.host.tasks._importBusy.organizeDetail,
-        organizePercent: stage === "organize" ? Number(session.workProgress.percent) || 0 : this.host.tasks._importBusy.organizePercent,
-        writeLabel: stage === "write" ? String(session.workProgress.label || "写入纪要") : this.host.tasks._importBusy.writeLabel,
-        writeDetail: stage === "write" ? String(session.workProgress.detail || "") : this.host.tasks._importBusy.writeDetail,
-        writePercent: stage === "write" ? Number(session.workProgress.percent) || 0 : this.host.tasks._importBusy.writePercent,
-      });
-    }
+    this.host.syncImportBusyFromSessionProgress(session);
     try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
   }
 

@@ -8,7 +8,7 @@ import { formatElapsed } from "../shared/util-common";
 import { isAsrTransportError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
-import { appendActivityEvent, buildAudioImportStages, classifyActivityRequest, getDominantActivityLiveness, normalizeAudioImportStage, summarizeActivityRequests, upsertActivityRequest } from "../shared/activity-progress";
+import { appendActivityEvent, audioImportStageFromWorkProgress, buildAudioImportStages, classifyActivityRequest, getDominantActivityLiveness, normalizeAudioImportStage, summarizeActivityRequests, upsertActivityRequest } from "../shared/activity-progress";
 import { getTaskErrorHint, getTaskErrorMessage } from "../shared/task-activity";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -761,6 +761,24 @@ export class TaskActivityService {
     if (s && Number(s.activeSegmentJobs) > 0) return (s.workProgress && s.workProgress.label) || "转写中";
     if (this.host.recorder && this.host.recorder.state === "recording") return "录音中";
     return null;
+  }
+  /** 会话进度同步：audio-import 流程进行中时，把切片阶段进度写进导入忙态；
+   * 其它流程、其它会话或当前无导入任务时为空操作。
+   * 原先由录音服务跨服务读 _importBusy 私有字段拼补丁，判断与拼装都在这里完成。 */
+  syncImportBusyFromSessionProgress(session) {
+    const busy = this._importBusy;
+    if (!busy || busy.workflow !== "audio-import" || String(busy.sessionId || "") !== String(session && session.id || "")) return;
+    const progress = session && session.workProgress || {};
+    const stage = audioImportStageFromWorkProgress(progress.stage);
+    this.updateImportActivity({
+      phase: stage,
+      organizeLabel: stage === "organize" ? String(progress.label || "AI 整理") : busy.organizeLabel,
+      organizeDetail: stage === "organize" ? String(progress.detail || "") : busy.organizeDetail,
+      organizePercent: stage === "organize" ? Number(progress.percent) || 0 : busy.organizePercent,
+      writeLabel: stage === "write" ? String(progress.label || "写入纪要") : busy.writeLabel,
+      writeDetail: stage === "write" ? String(progress.detail || "") : busy.writeDetail,
+      writePercent: stage === "write" ? Number(progress.percent) || 0 : busy.writePercent,
+    });
   }
   updateImportActivity(patch: AudioImportBusyPatch = {}) {
     const current = this._importBusy;

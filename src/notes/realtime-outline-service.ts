@@ -49,8 +49,8 @@ export interface RealtimeOutlineHost {
   /** 装配层转发：大纲更新后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
   requestOutlineRefresh(): void;
   session: RecordingSession | null;
-  /** 录音采集服务：把大纲进度写进会话。 */
-  recording: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void; setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
+  /** 录音服务的会话进度视图：把大纲进度写进会话（装配层绑定到 RecordingService）。 */
+  sessionProgress: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void; setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
@@ -187,8 +187,8 @@ export class RealtimeOutlineService {
         signal: request.signal,
       });
       markRealtimeOutlineSuccess(session);
-      this.host.recording.clearRecordingIssue("network");
-      this.host.recording.clearRecordingIssue("service");
+      this.host.sessionProgress.clearRecordingIssue("network");
+      this.host.sessionProgress.clearRecordingIssue("service");
       await this.host.diagnostics.logDiagnostic("info", "outline.generate_succeeded", "实时大纲生成完成", {
         silent: !!request.silent,
         force: !!request.force,
@@ -231,7 +231,7 @@ export class RealtimeOutlineService {
         error: diagnosticError(e),
       });
       if (!request.silent) {
-        this.host.recording.setRecordingIssue(classifyRecordingIssue(e), {
+        this.host.sessionProgress.setRecordingIssue(classifyRecordingIssue(e), {
           source: "outline",
           message: getErrorMessage(e),
           startedAtMs: getSegmentsDurationMs(session.segments),
@@ -622,7 +622,7 @@ export class RealtimeOutlineService {
           ? Math.round((committedSegmentCount / totalSegmentCount) * 100)
           : 0;
         updateRealtimeOutlineCoverage(session, "processing");
-        this.host.recording.setSessionWorkProgress(session, {
+        this.host.sessionProgress.setSessionWorkProgress(session, {
           stage: "outline",
           label: `${t("Completing outline ")}${committedSegmentCount}/${totalSegmentCount}${t(" segments")}`,
           percent: Math.min(58, 32 + Math.round(coveragePercent * 0.26)),
@@ -656,7 +656,7 @@ export class RealtimeOutlineService {
       retryCount: drainResult.retryCount,
       error: drainResult.lastError ? diagnosticError(drainResult.lastError) : null,
     });
-    this.host.recording.setSessionWorkProgress(session, {
+    this.host.sessionProgress.setSessionWorkProgress(session, {
       stage: "outline",
       label: t("Outline not fully completed"),
       percent: 58,

@@ -29,11 +29,10 @@ import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { mergeAndPolish } from "../briefing/merge-pipeline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { TaskActivityService } from "../tasks/task-activity-service";
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
-import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
+import type { MeetingWorkbenchRunOptions } from "../notes/meeting-workbench-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { VersionStore } from "../versions/version-store";
 import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
@@ -45,7 +44,11 @@ export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   diagnostics: DiagnosticsService;
-  meetingWorkbench: MeetingWorkbenchService;
+  /** 互动看板服务：实时转写块清理与互动处理（窄面：实际只用这 2 个方法）。 */
+  meetingWorkbench: {
+    removeLiveTranscriptBlock(mdPath: string, sessionId: string): Promise<void>;
+    processPendingMeetingWorkbenchInteractions(session: RecordingSession, opts?: MeetingWorkbenchRunOptions): Promise<void>;
+  };
   noteIndex: NoteIndexService;
   noteWriter: NoteWriter;
   outline: RealtimeOutlineService;
@@ -65,7 +68,12 @@ export interface SessionFinalizeHost {
   settings: PluginSettings;
   /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
   requestOutlineRefresh(): void;
-  tasks: TaskActivityService;
+  /** 任务中心的任务计量窗口：会话收尾的计时、结算与完成记录（窄面：实际只用这 3 个方法）。 */
+  taskMeters: {
+    beginTaskMeter(): { inChars: number; outChars: number; exactTokens: number; calls: number; hasExact: boolean; startedAt: number };
+    endTaskMeter(expectedMeter?: unknown): { tokens: number; exact: boolean; durationMs: number } | null;
+    logCompletedWork(title: string, detail: string, meter: { tokens?: number; exact?: boolean; durationMs?: number } | null): void;
+  };
   /** 版本块与派生笔记服务：续录覆盖前留档旧整理稿。 */
   versions: VersionStore;
 }
@@ -475,7 +483,7 @@ export class SessionFinalizeService {
         session.finalizing = false;
         session.finalizationError = getErrorMessage(e);
         if (session._finalizeTaskMeter) {
-          this.host.tasks.endTaskMeter(session._finalizeTaskMeter);
+          this.host.taskMeters.endTaskMeter(session._finalizeTaskMeter);
           session._finalizeTaskMeter = null;
         }
         try {
@@ -777,7 +785,7 @@ export class SessionFinalizeService {
         percent: 62,
         detail: textImport ? "正在把导入文本交给大模型结构化整理" : "正在把分段转写合并成最终纪要",
       });
-      taskMeter = this.host.tasks.beginTaskMeter();
+      taskMeter = this.host.taskMeters.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
       session._finalizeTaskMeter = taskMeter;
       polished = await mergeAndPolish(this.host, segmentsForLlm.map(s => ({
@@ -802,7 +810,7 @@ export class SessionFinalizeService {
 
     if (mergeError) {
       if (taskMeter) {
-        this.host.tasks.endTaskMeter(taskMeter);
+        this.host.taskMeters.endTaskMeter(taskMeter);
         taskMeter = null;
         session._finalizeTaskMeter = null;
       }
@@ -994,13 +1002,13 @@ export class SessionFinalizeService {
 
     if (!mergeError) {
       await this.host.liveAsr.cleanupSuccessfulSegmentAudio(session);
-      const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
+      const completedTaskMeter = taskMeter ? this.host.taskMeters.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       session._finalizeTaskMeter = null;
       try {
         const doneLabel = isTextImportSession(session) ? "文本整理完成"
           : session.source === "import" ? "导入音频整理完成" : "录音纪要整理完成";
-        this.host.tasks.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
+        this.host.taskMeters.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
       } catch { /* intentionally empty */ }
       // 沉淀开关默认关闭：开启后转写完成自动跑沉淀扫描并入库；关闭则照旧手动点「沉淀」。后台执行、失败静默。
       if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
