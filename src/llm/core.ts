@@ -584,10 +584,13 @@ export function resolveLlmModelListEndpoint(endpoint) {
     : base.replace(/\/+$/, "") + "/models";
 }
 
-/** 模型列表条目：id 必有；type 是部分平台（如百炼原生接口）附带的分类字段（llm/asr/…）。 */
+/** 模型列表条目：id 必有；type 是部分平台附带的分类字段（llm/asr/…）；
+ * outputModalities 是输出模态（text/image/video/audio，小写）——百炼原生取
+ * inference_metadata.response_modality，OpenRouter 取 architecture.output_modalities。 */
 export interface LlmModelEntry {
   id: string;
   type?: string;
+  outputModalities?: string[];
 }
 
 /** 从多种响应形态里取模型条目：OpenAI 形态 data/models，百炼原生形态 output.models
@@ -610,7 +613,19 @@ function parseModelEntries(payload): LlmModelEntry[] {
       const id = String((m && (m.id || m.model || m.model_name || m.name)) || "").trim();
       if (!id) return null;
       const type = m && typeof m.type === "string" ? m.type.trim().toLowerCase() : "";
-      return type ? { id, type } : { id };
+      const modalityRaw = m && (
+        (m.inference_metadata && m.inference_metadata.response_modality)
+        || (m.architecture && m.architecture.output_modalities)
+        || m.output_modalities
+      );
+      const outputModalities = Array.isArray(modalityRaw)
+        ? modalityRaw.map((x) => String(x || "").toLowerCase()).filter(Boolean)
+        : [];
+      return {
+        id,
+        ...(type ? { type } : {}),
+        ...(outputModalities.length ? { outputModalities } : {}),
+      };
     })
     .filter(Boolean);
 }

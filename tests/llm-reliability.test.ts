@@ -601,3 +601,45 @@ describe("百炼原生列表的真实分页形态（total/page_no/page_size + mo
     expect(filterModelsForCategory(entries, "asr")).toEqual(["paraformer-v2", "qwen3-asr-flash"]);
   });
 });
+
+describe("输出模态解析（过滤视频/图片生成模型）", () => {
+  it("百炼 inference_metadata.response_modality 与 OpenRouter architecture.output_modalities 都能解析", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        output: {
+          total: 3, page_no: 1, page_size: 3,
+          models: [
+            { model: "qwen3.8-max", inference_metadata: { response_modality: ["Text"] } },
+            { model: "happyhorse-1.1-t2v", inference_metadata: { response_modality: ["Video"] } },
+            { model: "wan2.7-t2i", inference_metadata: { response_modality: ["Image"] } },
+          ],
+        },
+      }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x");
+    const byId = Object.fromEntries(entries.map((e) => [e.id, e.outputModalities]));
+    expect(byId["qwen3.8-max"]).toEqual(["text"]);
+    expect(byId["happyhorse-1.1-t2v"]).toEqual(["video"]);
+    expect(byId["wan2.7-t2i"]).toEqual(["image"]);
+
+    // OpenRouter 形态：architecture.output_modalities，生图混合模型带 image
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        data: [
+          { id: "google/gemini-3.1-flash-image", architecture: { output_modalities: ["image", "text"] } },
+          { id: "deepseek/deepseek-v4.1-flash", architecture: { output_modalities: ["text"] } },
+        ],
+      }),
+      json: undefined,
+    } as never);
+    const orEntries = await fetchLlmModelEntries("https://openrouter.ai/api/v1", "sk-x");
+    expect(orEntries.find((e) => e.id === "google/gemini-3.1-flash-image")?.outputModalities).toEqual(["image", "text"]);
+    expect(orEntries.find((e) => e.id === "deepseek/deepseek-v4.1-flash")?.outputModalities).toEqual(["text"]);
+  });
+});

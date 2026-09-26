@@ -19,25 +19,33 @@ const DIARIZATION_EXTRAS: Record<string, string[]> = {
   bailian: ["qwen-audio-3.0-asr-flash-filetrans", "paraformer-v2"],
 };
 
-/** 目录条目：字符串（纯 id）或带分类字段的条目（百炼原生形态带 type）。 */
-type CatalogItem = string | { id: string; type?: string };
+/** 目录条目：字符串（纯 id）或带分类信息的条目（百炼带 type/输出模态，OpenRouter 带输出模态）。 */
+type CatalogItem = string | { id: string; type?: string; outputModalities?: string[] };
 
-function toEntries(items: CatalogItem[]): Array<{ id: string; type?: string }> {
-  const out: Array<{ id: string; type?: string }> = [];
+function toEntries(items: CatalogItem[]): Array<{ id: string; type?: string; outputModalities?: string[] }> {
+  const out: Array<{ id: string; type?: string; outputModalities?: string[] }> = [];
   for (const item of Array.isArray(items) ? items : []) {
     if (typeof item === "string") {
       const id = item.trim();
       if (id && !out.some((e) => e.id === id)) out.push({ id });
     } else if (item && typeof item.id === "string" && item.id.trim()) {
       const id = item.id.trim();
-      if (!out.some((e) => e.id === id)) out.push({ id, type: item.type });
+      if (!out.some((e) => e.id === id)) out.push({ id, type: item.type, outputModalities: item.outputModalities });
     }
   }
   return out;
 }
 
+/** AI 整理要的是纯文本聊天模型：输出模态含 image/video/audio 的是生成类模型
+ *（文生图/文生视频/TTS），即使同时输出 text 也排除；没有模态信息的平台条目放行。 */
+function isTextChatModel(entry: { outputModalities?: string[] }): boolean {
+  const modalities = entry.outputModalities;
+  if (!modalities || !modalities.length) return true;
+  return modalities.includes("text") && !modalities.some((m) => m === "image" || m === "video" || m === "audio");
+}
+
 /** 平台目录 → 某分类的候选；asr 同时看命名族与平台的 type 字段（筛空由「当前默认值」
- * 合并兜底，不再把大模型整表端上来），llm 按命名族排除、筛空回退全量。 */
+ * 合并兜底，不再把大模型整表端上来），llm 排除转写族与生成类模型、筛空回退全量。 */
 export function filterModelsForCategory(items: CatalogItem[], category: WizardModelCategory): string[] {
   const entries = toEntries(items);
   const ids = entries.map((entry) => entry.id);
@@ -47,7 +55,7 @@ export function filterModelsForCategory(items: CatalogItem[], category: WizardMo
     return mergeModelCandidates(byName, byType);
   }
   if (category === "llm") {
-    const llm = ids.filter((id) => !ASR_FAMILY_RE.test(id));
+    const llm = entries.filter((entry) => !ASR_FAMILY_RE.test(entry.id) && isTextChatModel(entry)).map((entry) => entry.id);
     return llm.length ? llm : ids.slice();
   }
   return ids;

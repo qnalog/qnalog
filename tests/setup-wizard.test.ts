@@ -322,3 +322,25 @@ describe("带 type 字段的目录分类（百炼原生形态）", () => {
     expect(asr).toEqual(["qwen3-asr-flash", "other-asr-model"]);
   });
 });
+
+describe("AI 整理分类排除生成类模型", () => {
+  it("输出模态含 image/video/audio 的排除，纯文本与无模态信息的保留", () => {
+    const entries = [
+      { id: "qwen3.8-max", outputModalities: ["text"] },
+      { id: "happyhorse-1.1-t2v", outputModalities: ["video"] },
+      { id: "wan2.7-t2i", outputModalities: ["image"] },
+      { id: "cosyvoice-v2", outputModalities: ["audio"] },
+      { id: "gemini-3.1-flash-image", outputModalities: ["image", "text"] },
+      { id: "mimo-v2.6-flash" },
+      { id: "qwen3-asr-flash", outputModalities: ["text"] },
+    ];
+    const llm = filterModelsForCategory(entries, "llm");
+    expect(llm).toContain("qwen3.8-max");
+    expect(llm).toContain("mimo-v2.6-flash");
+    expect(llm).not.toContain("happyhorse-1.1-t2v");
+    expect(llm).not.toContain("wan2.7-t2i");
+    expect(llm).not.toContain("cosyvoice-v2");
+    expect(llm).not.toContain("gemini-3.1-flash-image");
+    expect(llm).not.toContain("qwen3-asr-flash");
+  });
+});
