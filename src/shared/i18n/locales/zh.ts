@@ -2070,5 +2070,7 @@ export const ZH: MessageTable = {
   "Skip the check and continue": "跳过检测，直接应用",
   "Apply and start": "应用并开始",
   "Finish setup": "完成设置",
+  "Speaker diarization model": "说话人分离模型",
+  "Model pickers below unlock once an API key is entered.": "填写 API 密钥后，下方模型选择会解锁，并可拉取平台模型列表。",
   "Check skipped": "已跳过检测；设置首页仍会把未检测的服务显示为「未测试」。",
 };

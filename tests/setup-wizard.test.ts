@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import type { PluginSettings } from "../src/shared/types";
+import { applyPresetPlan } from "../src/setup";
+import { diarizationModelCandidates, filterModelsForCategory } from "../src/setup/model-catalog";
 import { SetupWizardController, needsFirstRunWizard } from "../src/setup/wizard-controller";
 import type { ProbePorts } from "../src/setup";
 
@@ -217,5 +219,72 @@ describe("自动弹出判据", () => {
     const s = freshSettings();
     s.setupWizardDismissed = true;
     expect(needsFirstRunWizard(s, profiles)).toBe(false);
+  });
+});
+
+describe("模型候选的分类过滤（model-catalog）", () => {
+  const mixed = ["qwen3-asr-flash", "mimo-v2.6-flash", "whisper-large-v3", "qwen3.8-flash", "mimo-v2.5-asr", "deepseek-v4.1-flash"];
+
+  it("asr 分类取转写命名族内的模型", () => {
+    const asr = filterModelsForCategory(mixed, "asr");
+    expect(asr).toContain("qwen3-asr-flash");
+    expect(asr).toContain("whisper-large-v3");
+    expect(asr).not.toContain("qwen3.8-flash");
+  });
+
+  it("llm 分类排除转写族", () => {
+    const llm = filterModelsForCategory(mixed, "llm");
+    expect(llm).toContain("qwen3.8-flash");
+    expect(llm).not.toContain("mimo-v2.5-asr");
+  });
+
+  it("筛空时回退全量，不留空列表", () => {
+    expect(filterModelsForCategory(["gemini-2.5-pro"], "asr")).toEqual(["gemini-2.5-pro"]);
+    expect(filterModelsForCategory(["qwen3-asr-flash"], "llm")).toEqual(["qwen3-asr-flash"]);
+    expect(filterModelsForCategory([], "asr")).toEqual([]);
+  });
+});
+
+describe("说话人分离候选（只列仓库内有依据的模型）", () => {
+  it("预设默认排最前，再补平台已验证候选", () => {
+    expect(diarizationModelCandidates("openrouter", "microsoft/mai-transcribe-2")[0]).toBe("microsoft/mai-transcribe-2");
+    const bailian = diarizationModelCandidates("bailian", "qwen-audio-3.0-asr-flash-filetrans");
+    expect(bailian).toContain("qwen-audio-3.0-asr-flash-filetrans");
+    expect(bailian).toContain("paraformer-v2");
+  });
+
+  it("未知平台只回默认值", () => {
+    expect(diarizationModelCandidates("mimo", "mimo-v2.5-asr")).toEqual(["mimo-v2.5-asr"]);
+  });
+});
+
+describe("模型默认值继承预设", () => {
+  it("mimo：转写默认取服务默认模型，整理默认取预设内置，无分离模型", () => {
+    const { controller } = makeWizard();
+    controller.selectPreset("mimo");
+    const defaults = controller.modelDefaults();
+    expect(defaults.asrModel).toBe(DEFAULT_SETTINGS.transcribeProviders.apimimo.model);
+    expect(defaults.llmModel).toBe("mimo-v2.6-flash");
+    expect(defaults.importAsrModel).toBe("");
+  });
+
+  it("bailian：三个分类都有默认", () => {
+    const { controller } = makeWizard();
+    controller.selectPreset("bailian");
+    const defaults = controller.modelDefaults();
+    expect(defaults.asrModel).toBe("qwen3-asr-flash");
+    expect(defaults.llmModel).toBe("qwen3.8-flash");
+    expect(defaults.importAsrModel).toBe("qwen-audio-3.0-asr-flash-filetrans");
+  });
+
+  it("自定义模型经 updateRequest 进计划并由 apply 写入", () => {
+    const { controller, settings } = makeWizard();
+    controller.selectPreset("bailian");
+    controller.updateRequest({ apiKey: "sk-bailian", asrModel: "paraformer-v2", importAsrModel: "paraformer-v2" });
+    expect(controller.canProceed).toBe(true);
+    const plan = controller.plan!;
+    const after = applyPresetPlan(settings, plan);
+    expect(after.transcribeProviders["dashscope-chat"].model).toBe("paraformer-v2");
+    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("paraformer-v2");
   });
 });

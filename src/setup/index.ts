@@ -86,6 +86,8 @@ export interface PresetRequest {
   /** 只有需要挑选模型的预设（百炼）用得上。 */
   asrModel?: string;
   llmModel?: string;
+  /** 说话人分离（导入转写）模型；预设不带导入服务时忽略。 */
+  importAsrModel?: string;
 }
 
 export interface PresetPlan {
@@ -189,11 +191,12 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
   if (importProviderId) {
     const importDefaults = (DEFAULT_SETTINGS.transcribeProviders || {})[importProviderId] || {};
     const existingImport: TranscribeProviderSettings = nextProviders[importProviderId] || {};
+    const customImportAsrModel = String((request && request.importAsrModel) || "").trim();
     changes.transcribeProviders = Object.assign({}, nextProviders, {
       [importProviderId]: Object.assign({}, existingImport, {
         name: existingImport.name || importDefaults.name,
         endpoint: String(preset.importAsrEndpoint || "") || importDefaults.endpoint || existingImport.endpoint || "",
-        model: String(preset.importAsrModel || "").trim() || importDefaults.model || existingImport.model || "",
+        model: customImportAsrModel || String(preset.importAsrModel || "").trim() || importDefaults.model || existingImport.model || "",
         language: existingImport.language || importDefaults.language || "zh",
         protocol: importDefaults.protocol || existingImport.protocol,
         apiKey,

@@ -7,15 +7,22 @@
 
 import * as obsidian from "obsidian";
 import { ONE_CARD_PROVIDERS } from "../llm/config";
-import { formatDetectionReport } from "../setup";
+import { fetchLlmModelList } from "../llm/core";
+import { formatDetectionReport, resolvePresetEndpoint } from "../setup";
 import type { PresetDefinition } from "../setup";
+import { diarizationModelCandidates, filterModelsForCategory } from "../setup/model-catalog";
+import type { WizardModelCategory } from "../setup/model-catalog";
 import { SetupWizardController } from "../setup/wizard-controller";
 import type { SetupWizardDeps } from "../setup/wizard-controller";
 import { t } from "../shared/i18n";
 import type { PluginSettings } from "../shared/types";
+import { openPickListModal } from "./helpers";
 
 /** 与 src/setup 里的 PRESETS 同构的类型化视图（ONE_CARD_PROVIDERS 的字面量类型逐项兼容 PresetDefinition）。 */
 const PRESET_VIEW: Record<string, PresetDefinition> = ONE_CARD_PROVIDERS;
+
+/** 步骤 2 的输入补丁：与 PresetRequest 的可选字段同形（providerId 由控制器持有）。 */
+type ModelPatch = { apiKey?: string; asrModel?: string; llmModel?: string; importAsrModel?: string };
 
 /** 向导界面在控制器依赖之上还需要的两个跳转动作，由装配层注入。 */
 export interface SetupWizardModalDeps<T extends { settings: PluginSettings }> extends SetupWizardDeps<T> {
@@ -36,6 +43,10 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
   /** 步骤 2 的校验信息与「下一步」按钮，随输入就地刷新（不整体重渲染，避免输入框丢焦点）。 */
   private reasonEl: HTMLElement | null = null;
   private nextBtn: HTMLButtonElement | null = null;
+  /** 步骤 2 的模型输入与拉取按钮；锁定态随密钥是否填写切换。 */
+  private modelFields: Array<{ category: WizardModelCategory; text: obsidian.TextComponent; button: obsidian.ButtonComponent }> = [];
+  /** 平台模型目录按端点缓存，同一方案的三个分类共用一次拉取。 */
+  private modelCache: { endpoint: string; ids: string[] } | null = null;
 
   constructor(app: obsidian.App, private readonly deps: SetupWizardModalDeps<T>) {
     super(app);
@@ -55,6 +66,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
   private render(): void {
     this.reasonEl = null;
     this.nextBtn = null;
+    this.modelFields = [];
     const wrap = this.contentEl;
     wrap.empty();
     const root = wrap.createDiv({ cls: "qnalog-wizard-root" });
@@ -98,30 +110,65 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     }
   }
 
-  /** 步骤 2：填密钥（可改地址/模型的预设才显示模型输入）；计划 ok 才能进下一步。 */
+  /** 步骤 2：填密钥；模型选择默认继承预设，密钥非空后解锁并可拉取平台模型列表。 */
   private renderKeyEntry(root: HTMLElement): void {
     const preset = PRESET_VIEW[this.controller.providerId] || {};
     root.createEl("h3", { text: preset.label || this.controller.providerId });
+    const defaults = this.controller.modelDefaults();
+    const request = this.controller.request;
 
-    const keyRow = new obsidian.Setting(root).setName(t("API key"));
+    const keyRow = new obsidian.Setting(root)
+      .setName(t("API key"))
+      .setDesc(t("Model pickers below unlock once an API key is entered."));
     keyRow.addText((text) => {
       text.inputEl.type = "password";
       text.setPlaceholder("sk-…");
-      if (this.controller.request && this.controller.request.apiKey) text.setValue(this.controller.request.apiKey);
-      text.onChange((v) => { this.refreshPlan(v.trim() ? { apiKey: v.trim() } : { apiKey: "" }); });
+      if (request && request.apiKey) text.setValue(request.apiKey);
+      text.onChange((v) => {
+        this.refreshPlan(v.trim() ? { apiKey: v.trim() } : { apiKey: "" });
+        this.updateModelLocks();
+      });
     });
 
-    if (preset.scope === "asr-llm") {
-      new obsidian.Setting(root).setName(t("Transcription model")).addText((text) => {
-        text.setPlaceholder(preset.asrModel || "");
-        if (this.controller.request && this.controller.request.asrModel) text.setValue(this.controller.request.asrModel);
-        text.onChange((v) => { this.refreshPlan({ asrModel: v.trim() }); });
+    const addModelRow = (
+      label: string,
+      category: WizardModelCategory,
+      initial: string,
+      patch: (value: string) => ModelPatch,
+    ): void => {
+      let input!: obsidian.TextComponent;
+      let pickButton!: obsidian.ButtonComponent;
+      const row = new obsidian.Setting(root).setName(label);
+      row.addText((text) => {
+        input = text;
+        text.setValue(initial);
+        text.onChange((v) => { this.refreshPlan(patch(v.trim())); });
       });
-      new obsidian.Setting(root).setName(t("AI organizing model")).addText((text) => {
-        text.setPlaceholder(preset.llmModel || "");
-        if (this.controller.request && this.controller.request.llmModel) text.setValue(this.controller.request.llmModel);
-        text.onChange((v) => { this.refreshPlan({ llmModel: v.trim() }); });
+      row.addButton((button) => {
+        pickButton = button;
+        button.setButtonText(t("Get available models"));
+        button.onClick(() => {
+          void this.openModelPicker(category, input.getValue(), (id) => {
+            input.setValue(id);
+            this.refreshPlan(patch(id));
+          });
+        });
       });
+      this.modelFields.push({ category, text: input, button: pickButton });
+    };
+
+    addModelRow(t("Transcription model"), "asr",
+      request && request.asrModel ? request.asrModel : defaults.asrModel,
+      (value) => ({ asrModel: value }));
+    if (preset.llmPreset) {
+      addModelRow(t("AI organizing model"), "llm",
+        request && request.llmModel ? request.llmModel : defaults.llmModel,
+        (value) => ({ llmModel: value }));
+    }
+    if (preset.importAsrProvider) {
+      addModelRow(t("Speaker diarization model"), "diarization",
+        request && request.importAsrModel ? request.importAsrModel : defaults.importAsrModel,
+        (value) => ({ importAsrModel: value }));
     }
 
     this.reasonEl = root.createDiv({ cls: "qnalog-wizard-reason" });
@@ -132,10 +179,51 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     this.nextBtn = nav.createEl("button", { text: t("Next"), cls: "mod-cta" });
     this.nextBtn.onclick = () => { void this.startDetection(); };
     this.refreshPlan(null);
+    this.updateModelLocks();
+  }
+
+  /** 密钥非空才解锁模型选择；真正的有效性由步骤 3 的检测把关。 */
+  private updateModelLocks(): void {
+    const unlocked = (((this.controller.request && this.controller.request.apiKey) || "")).trim().length > 0;
+    for (const field of this.modelFields) {
+      field.text.inputEl.disabled = !unlocked;
+      field.button.setDisabled(!unlocked);
+    }
+  }
+
+  /** 拉取平台模型目录（按端点缓存，三个分类共用一次请求）→ 分类过滤 → 点选。 */
+  private async openModelPicker(category: WizardModelCategory, current: string, apply: (id: string) => void): Promise<void> {
+    const apiKey = (((this.controller.request && this.controller.request.apiKey) || "")).trim();
+    if (!apiKey) return;
+    const preset = PRESET_VIEW[this.controller.providerId] || {};
+    try {
+      let list: string[];
+      if (category === "diarization") {
+        list = diarizationModelCandidates(this.controller.providerId, current || preset.importAsrModel || "");
+      } else {
+        const endpoint = resolvePresetEndpoint(preset, apiKey);
+        const ids = await this.getPlatformModels(endpoint, apiKey);
+        list = filterModelsForCategory(ids, category);
+      }
+      if (!list.length) {
+        new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000);
+        return;
+      }
+      openPickListModal(this.app, `${t("Select a model ( ")}${list.length}${t(")")}`, list, apply);
+    } catch (error) {
+      new obsidian.Notice(`${t("Failed to get the model list:")}${(error && (error as Error).message) || error}${t(". You can enter the model ID manually.")}`, 8000);
+    }
+  }
+
+  private async getPlatformModels(endpoint: string, apiKey: string): Promise<string[]> {
+    if (this.modelCache && this.modelCache.endpoint === endpoint) return this.modelCache.ids;
+    const ids = await fetchLlmModelList(endpoint, apiKey);
+    this.modelCache = { endpoint, ids };
+    return ids;
   }
 
   /** 输入变化 → 控制器重算计划 → 就地刷新 reason 与「下一步」可用态。 */
-  private refreshPlan(patch: { apiKey?: string; asrModel?: string; llmModel?: string } | null): void {
+  private refreshPlan(patch: ModelPatch | null): void {
     if (patch) this.controller.updateRequest(patch);
     const plan = this.controller.plan;
     if (this.reasonEl) this.reasonEl.setText(plan && !plan.ok ? plan.reason : "");
