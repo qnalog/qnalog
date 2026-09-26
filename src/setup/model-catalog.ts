@@ -19,18 +19,30 @@ const DIARIZATION_EXTRAS: Record<string, string[]> = {
   bailian: ["qwen-audio-3.0-asr-flash-filetrans", "paraformer-v2"],
 };
 
-/** 平台目录 → 某分类的候选；筛空回退全量，diarization 不走目录（原样返回）。 */
+/** 平台目录 → 某分类的候选；asr 筛空返回空（由「当前默认值」合并兜底，不再把大模型整表端上来），
+ * llm 筛空回退全量，diarization 不走目录（原样返回）。 */
 export function filterModelsForCategory(ids: string[], category: WizardModelCategory): string[] {
   const all = Array.isArray(ids) ? ids.filter((id) => typeof id === "string" && id) : [];
   if (category === "asr") {
-    const asr = all.filter((id) => ASR_FAMILY_RE.test(id));
-    return asr.length ? asr : all.slice();
+    return all.filter((id) => ASR_FAMILY_RE.test(id));
   }
   if (category === "llm") {
     const llm = all.filter((id) => !ASR_FAMILY_RE.test(id));
     return llm.length ? llm : all.slice();
   }
   return all.slice();
+}
+
+/** 多组合并：保序去重，第一组通常是「框里当前值」，保证它一定在候选里。 */
+export function mergeModelCandidates(...groups: string[][]): string[] {
+  const out: string[] = [];
+  for (const group of groups) {
+    for (const id of group) {
+      const value = String(id || "").trim();
+      if (value && !out.includes(value)) out.push(value);
+    }
+  }
+  return out;
 }
 
 /**

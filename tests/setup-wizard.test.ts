@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import type { PluginSettings } from "../src/shared/types";
 import { applyPresetPlan } from "../src/setup";
-import { diarizationModelCandidates, filterModelsForCategory } from "../src/setup/model-catalog";
+import { diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates } from "../src/setup/model-catalog";
 import { SetupWizardController, needsFirstRunWizard } from "../src/setup/wizard-controller";
 import type { ProbePorts } from "../src/setup";
 
@@ -238,10 +238,20 @@ describe("模型候选的分类过滤（model-catalog）", () => {
     expect(llm).not.toContain("mimo-v2.5-asr");
   });
 
-  it("筛空时回退全量，不留空列表", () => {
-    expect(filterModelsForCategory(["gemini-2.5-pro"], "asr")).toEqual(["gemini-2.5-pro"]);
+  it("asr 筛空返回空，由「当前默认值」合并兜底，不再把大模型整表端上来", () => {
+    expect(filterModelsForCategory(["gemini-2.5-pro", "qwen3.8-flash"], "asr")).toEqual([]);
+    expect(mergeModelCandidates(["qwen3-asr-flash"], filterModelsForCategory(["qwen3.8-flash", "qwen-max"], "asr")))
+      .toEqual(["qwen3-asr-flash"]);
+  });
+
+  it("llm 筛空回退全量，不留空列表", () => {
     expect(filterModelsForCategory(["qwen3-asr-flash"], "llm")).toEqual(["qwen3-asr-flash"]);
-    expect(filterModelsForCategory([], "asr")).toEqual([]);
+    expect(filterModelsForCategory([], "llm")).toEqual([]);
+  });
+
+  it("mergeModelCandidates 保序去重", () => {
+    expect(mergeModelCandidates(["a"], ["a", "b"], ["b", "c"], [])).toEqual(["a", "b", "c"]);
+    expect(mergeModelCandidates([], [])).toEqual([]);
   });
 });
 

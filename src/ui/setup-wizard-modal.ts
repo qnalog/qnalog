@@ -10,7 +10,7 @@ import { ONE_CARD_PROVIDERS } from "../llm/config";
 import { fetchLlmModelList } from "../llm/core";
 import { formatDetectionReport, resolvePresetEndpoint } from "../setup";
 import type { PresetDefinition } from "../setup";
-import { diarizationModelCandidates, filterModelsForCategory } from "../setup/model-catalog";
+import { diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates } from "../setup/model-catalog";
 import type { WizardModelCategory } from "../setup/model-catalog";
 import { SetupWizardController } from "../setup/wizard-controller";
 import type { SetupWizardDeps } from "../setup/wizard-controller";
@@ -87,7 +87,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
         later.onclick = () => { void this.dismissAndClose(); };
       }
       if (this.controller.step === "pick-preset") {
-        const manual = foot.createEl("button", { text: t("Manual setup") });
+        const manual = foot.createEl("button", { text: t("Manual setup"), cls: "qnalog-wizard-btn-secondary" });
         manual.onclick = () => {
           this.deps.openSettingsTab("api");
           this.close();
@@ -106,7 +106,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       const row = root.createDiv({ cls: "qnalog-wizard-preset" });
       const head = row.createDiv({ cls: "qnalog-wizard-preset-head" });
       head.createSpan({ cls: "qnalog-wizard-preset-label", text: preset.label || id });
-      const use = head.createEl("button", { text: t("Use this plan") });
+      const use = head.createEl("button", { text: t("Use this plan"), cls: "mod-cta" });
       use.onclick = () => { this.controller.selectPreset(id); this.render(); };
       if (preset.applyDesc) row.createDiv({ cls: "qnalog-wizard-preset-desc", text: preset.applyDesc });
     }
@@ -149,6 +149,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       row.addButton((button) => {
         pickButton = button;
         button.setButtonText(t("Get available models"));
+        button.setClass("qnalog-wizard-btn-secondary");
         button.onClick(() => {
           void this.openModelPicker(category, input.getValue(), (id) => {
             input.setValue(id);
@@ -176,7 +177,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     this.reasonEl = root.createDiv({ cls: "qnalog-wizard-reason" });
 
     const nav = root.createDiv({ cls: "qnalog-wizard-nav" });
-    const back = nav.createEl("button", { text: t("Back") });
+    const back = nav.createEl("button", { text: t("Back"), cls: "qnalog-wizard-btn-quiet" });
     back.onclick = () => { this.controller.step = "pick-preset"; this.render(); };
     this.nextBtn = nav.createEl("button", { text: t("Next"), cls: "mod-cta" });
     this.nextBtn.onclick = () => { void this.startDetection(); };
@@ -210,7 +211,9 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       } else {
         const endpoint = resolvePresetEndpoint(preset, apiKey);
         const ids = await this.getPlatformModels(endpoint, apiKey);
-        list = filterModelsForCategory(ids, category);
+        // 框里当前值放最前：平台目录缺这类模型时（如百炼目录只列大模型），
+        // 默认值仍是可选项，不会把大模型整表当转写候选端上来。
+        list = mergeModelCandidates([current], filterModelsForCategory(ids, category));
       }
       if (!list.length) {
         new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000);
@@ -279,16 +282,16 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     if (!report && !this.probeError) return;
 
     const nav = root.createDiv({ cls: "qnalog-wizard-nav" });
-    const back = nav.createEl("button", { text: t("Back") });
+    const back = nav.createEl("button", { text: t("Back"), cls: "qnalog-wizard-btn-quiet" });
     back.onclick = () => { this.controller.step = "enter-key"; this.render(); };
     if (report && report.ok && !this.probeError) {
       const next = nav.createEl("button", { text: t("Next"), cls: "mod-cta" });
       next.onclick = () => { this.controller.step = "done"; this.render(); };
       return;
     }
-    const retry = nav.createEl("button", { text: t("Retry") });
+    const retry = nav.createEl("button", { text: t("Retry"), cls: "mod-cta" });
     retry.onclick = () => { void this.startDetection(); };
-    const skip = nav.createEl("button", { text: t("Skip the check and continue") });
+    const skip = nav.createEl("button", { text: t("Skip the check and continue"), cls: "qnalog-wizard-btn-secondary" });
     skip.onclick = () => { this.controller.proceedWithoutDetection(); this.render(); };
   }
 
@@ -310,11 +313,11 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
         void Promise.resolve(this.deps.openOutlineView()).catch(() => undefined);
         this.close();
       };
-      const done = nav.createEl("button", { text: t("Done") });
+      const done = nav.createEl("button", { text: t("Done"), cls: "qnalog-wizard-btn-secondary" });
       done.onclick = () => this.close();
       return;
     }
-    const back = nav.createEl("button", { text: t("Back") });
+    const back = nav.createEl("button", { text: t("Back"), cls: "qnalog-wizard-btn-quiet" });
     back.onclick = () => { this.controller.step = "probe"; this.render(); };
     const apply = nav.createEl("button", { text: t("Apply and start"), cls: "mod-cta" });
     apply.onclick = () => { void this.applyAndStart(apply); };

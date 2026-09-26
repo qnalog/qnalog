@@ -12542,19 +12542,34 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: 0.7em;
 }
 
-/* 退出类动作：不与主按钮争夺注意力，只用文字弱化（配色沿用全局语义色的回退写法）。 */
+/* 三级按钮层级（配色沿用项目色板的推导链：--qnalog-primary-action ← --interactive-accent）：
+   强调色实底 = 前进/应用（Obsidian mod-cta）；描边强调色 = 备选路径与工具；
+   弱化文字 = 退出类动作。向导不在 .qnalog-outline 作用域内，项目变量经回退取得同源值。 */
+
+/* 退出类动作：不与主按钮争夺注意力，弱化文字但保留正常点击面积（左右内边距）。 */
 .qnalog-wizard-btn-quiet {
   background: none;
   border: none;
   box-shadow: none;
-  color: var(--qnalog-text-hint, var(--text-faint));
-  padding-left: 0;
-  padding-right: 0;
+  color: var(--text-faint);
+  padding-inline: var(--size-2-3);
 }
 
 .qnalog-wizard-btn-quiet:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+/* 备选路径 / 工具按钮：透明底 + 描边强调色，与灰底默认按钮拉开区分度。 */
+.qnalog-wizard-btn-secondary {
+  color: var(--text-accent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border));
+}
+
+.qnalog-wizard-btn-secondary:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  border-color: var(--interactive-accent);
 }
 
 .qnalog-wizard-stage {
