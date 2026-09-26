@@ -12505,6 +12505,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-wizard-preset-head {
   display: flex;
+  /* 长方案名 + 按钮在窄屏换行，不互相挤压 */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 0.6em;
@@ -12529,6 +12531,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-wizard-nav {
   display: flex;
+  /* 窄屏（手机弹窗 ~360px）换行：检测失败屏的「上一步/重试/跳过检测，直接应用」
+     三个按钮单行放不下，flex 默认不换行会溢出 */
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5em;
   margin-top: 0.9em;
@@ -12536,6 +12541,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-wizard-foot {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 0.8em;
@@ -12574,6 +12580,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-wizard-stage {
   display: flex;
+  /* 阶段详情（错误信息）可能很长，允许换行而不是横向溢出 */
+  flex-wrap: wrap;
   gap: 0.5em;
   align-items: baseline;
   padding: 0.2em 0;
