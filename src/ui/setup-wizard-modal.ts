@@ -7,7 +7,8 @@
 
 import * as obsidian from "obsidian";
 import { ONE_CARD_PROVIDERS } from "../llm/config";
-import { fetchLlmModelList } from "../llm/core";
+import { fetchLlmModelEntries } from "../llm/core";
+import type { LlmModelEntry } from "../llm/core";
 import { formatDetectionReport, resolvePresetEndpoint } from "../setup";
 import type { PresetDefinition } from "../setup";
 import { diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates } from "../setup/model-catalog";
@@ -46,7 +47,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
   /** 步骤 2 的模型输入与拉取按钮；锁定态随密钥是否填写切换。 */
   private modelFields: Array<{ category: WizardModelCategory; text: obsidian.TextComponent; button: obsidian.ButtonComponent }> = [];
   /** 平台模型目录按端点缓存，同一方案的三个分类共用一次拉取。 */
-  private modelCache: { endpoint: string; ids: string[] } | null = null;
+  private modelCache: { endpoint: string; entries: LlmModelEntry[] } | null = null;
   /** 模型拉取进行中：挡住重复点击叠出多份列表。 */
   private pickerLoading = false;
 
@@ -210,10 +211,10 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
         list = diarizationModelCandidates(this.controller.providerId, current || preset.importAsrModel || "");
       } else {
         const endpoint = resolvePresetEndpoint(preset, apiKey);
-        const ids = await this.getPlatformModels(endpoint, apiKey);
+        const entries = await this.getPlatformModels(endpoint, apiKey);
         // 框里当前值放最前：平台目录缺这类模型时（如百炼目录只列大模型），
         // 默认值仍是可选项，不会把大模型整表当转写候选端上来。
-        list = mergeModelCandidates([current], filterModelsForCategory(ids, category));
+        list = mergeModelCandidates([current], filterModelsForCategory(entries, category));
       }
       if (!list.length) {
         new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000);
@@ -229,11 +230,11 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     }
   }
 
-  private async getPlatformModels(endpoint: string, apiKey: string): Promise<string[]> {
-    if (this.modelCache && this.modelCache.endpoint === endpoint) return this.modelCache.ids;
-    const ids = await fetchLlmModelList(endpoint, apiKey);
-    this.modelCache = { endpoint, ids };
-    return ids;
+  private async getPlatformModels(endpoint: string, apiKey: string): Promise<LlmModelEntry[]> {
+    if (this.modelCache && this.modelCache.endpoint === endpoint) return this.modelCache.entries;
+    const entries = await fetchLlmModelEntries(endpoint, apiKey);
+    this.modelCache = { endpoint, entries };
+    return entries;
   }
 
   /** 输入变化 → 控制器重算计划 → 就地刷新 reason 与「下一步」可用态。 */

@@ -46,7 +46,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import * as obsidian from "obsidian";
-import { callLlmWithContinuation, fetchLlmModelList, getLlmConfigIssue, getNextLlmOutputBudget, isLlmContextLimitError, isLlmOutputBudgetError, isLlmOutputParameterError, isTransientLlmError, readLlmSseStream, requestLlmChatCompletion, requestLlmChatCompletionViaObsidian, resetLearnedLlmTransportPreferences, resolveLlmModelListEndpoint } from "../src/llm/core";
+import { callLlmWithContinuation, fetchLlmModelEntries, fetchLlmModelList, getLlmConfigIssue, getNextLlmOutputBudget, isLlmContextLimitError, isLlmOutputBudgetError, isLlmOutputParameterError, isTransientLlmError, readLlmSseStream, requestLlmChatCompletion, requestLlmChatCompletionViaObsidian, resetLearnedLlmTransportPreferences, resolveLlmModelListEndpoint } from "../src/llm/core";
 import { applyLearnedLlmCapability, getEffectiveLlmOutputBudget, getLearnedLlmOutputCeiling, getLearnedLlmOutputParameter, rememberLlmOutputCeiling, resetLearnedLlmCapabilities } from "../src/llm/output-budget";
 import { DashScopeStreamingClient, OpenAIRealtimeTranscriptionClient, OpenAIRealtimeTranslationClient } from "../src/asr/clients";
 import { assertSafeServiceEndpoint, canOmitServiceApiKey, getServiceEndpointSecurityIssue, isLocalLlmEndpoint, isSharedAddressSpaceHost } from "../src/shared/util-llm-endpoint";
@@ -525,5 +525,33 @@ describe("模型列表的形态兼容与地址回退", () => {
     }) as never);
     await expect(fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-real-key"))
       .rejects.toThrow(/HTTP 401[\s\S]*HTTP 500/);
+  });
+});
+
+describe("模型条目的原生形态（model + type 字段）", () => {
+  it("DashScope output.models[].model 能解析出 id 与 type", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        code: "OK",
+        request_id: "r-1",
+        output: {
+          models: [
+            { model: "qwen3-asr-flash", type: "asr" },
+            { model: "qwen3.8-flash", type: "LLM" },
+            { model: "paraformer-v2", type: "asr" },
+          ],
+        },
+      }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x");
+    expect(entries.map((e) => e.id).sort((a, b) => a.localeCompare(b))).toEqual(["paraformer-v2", "qwen3-asr-flash", "qwen3.8-flash"]);
+    expect(entries.find((e) => e.id === "qwen3-asr-flash")?.type).toBe("asr");
+    expect(entries.find((e) => e.id === "qwen3.8-flash")?.type).toBe("llm");
+    // fetchLlmModelList 仍返回纯 id（设置页依赖这个形状）
+    expect((await fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x")).length).toBe(3);
   });
 });

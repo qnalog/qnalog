@@ -584,19 +584,38 @@ export function resolveLlmModelListEndpoint(endpoint) {
     : base.replace(/\/+$/, "") + "/models";
 }
 
-/** 从多种响应形态里取模型 id：OpenAI 形态 data/models，DashScope 原生形态 output.models/results。 */
-function parseModelIds(payload) {
-  const arr = (payload && (payload.data || payload.models))
-    || (payload && payload.output && payload.output.models)
-    || (payload && payload.results)
-    || (Array.isArray(payload) ? payload : []);
+/** 模型列表条目：id 必有；type 是部分平台（如百炼原生接口）附带的分类字段（llm/asr/…）。 */
+export interface LlmModelEntry {
+  id: string;
+  type?: string;
+}
+
+/** 从多种响应形态里取模型条目：OpenAI 形态 data/models，DashScope 原生形态
+ * output.models / output.model_list（条目字段是 model + type，不是 id/name）。 */
+function parseModelEntries(payload): LlmModelEntry[] {
+  const candidates = [
+    payload && payload.data,
+    payload && payload.models,
+    payload && payload.output && payload.output.models,
+    payload && payload.output && payload.output.model_list,
+    payload && payload.results,
+    payload && payload.data && payload.data.models,
+    payload && payload.data && payload.data.model_list,
+    payload,
+  ];
+  const arr = candidates.find((c) => Array.isArray(c)) || [];
   return (Array.isArray(arr) ? arr : [])
-    .map(m => (typeof m === "string" ? m : (m && (m.id || m.name))))
-    .map(x => String(x || "").trim())
+    .map((m) => {
+      if (typeof m === "string") return m.trim() ? { id: m.trim() } : null;
+      const id = String((m && (m.id || m.name || m.model || m.model_name)) || "").trim();
+      if (!id) return null;
+      const type = m && typeof m.type === "string" ? m.type.trim().toLowerCase() : "";
+      return type ? { id, type } : { id };
+    })
     .filter(Boolean);
 }
 
-export async function fetchLlmModelList(endpoint, apiKey) {
+export async function fetchLlmModelEntries(endpoint, apiKey): Promise<LlmModelEntry[]> {
   const base = normalizeLlmEndpoint(endpoint);
   if (!base) throw new Error("服务地址未配置");
   assertSafeServiceEndpoint(base, "http", "大模型服务地址");
@@ -621,11 +640,20 @@ export async function fetchLlmModelList(endpoint, apiKey) {
       problems.push(`${url} → 响应不是合法 JSON`);
       continue;
     }
-    const ids = Array.from(new Set(parseModelIds(data))).sort((a, b) => a.localeCompare(b));
-    if (ids.length) return ids;
+    // 同 id 去重，保留先出现的（原生与兼容地址条目字段不同，type 以先到为准）。
+    const byId = new Map<string, LlmModelEntry>();
+    for (const entry of parseModelEntries(data)) {
+      if (!byId.has(entry.id)) byId.set(entry.id, entry);
+    }
+    const entries = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+    if (entries.length) return entries;
     problems.push(`${url} → 未返回模型列表`);
   }
   throw new Error(problems.join("；") || "获取模型列表失败");
+}
+
+export async function fetchLlmModelList(endpoint, apiKey): Promise<string[]> {
+  return (await fetchLlmModelEntries(endpoint, apiKey)).map((entry) => entry.id);
 }
 
 export function getLlmConfigIssue(settings) {

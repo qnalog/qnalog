@@ -19,18 +19,38 @@ const DIARIZATION_EXTRAS: Record<string, string[]> = {
   bailian: ["qwen-audio-3.0-asr-flash-filetrans", "paraformer-v2"],
 };
 
-/** 平台目录 → 某分类的候选；asr 筛空返回空（由「当前默认值」合并兜底，不再把大模型整表端上来），
- * llm 筛空回退全量，diarization 不走目录（原样返回）。 */
-export function filterModelsForCategory(ids: string[], category: WizardModelCategory): string[] {
-  const all = Array.isArray(ids) ? ids.filter((id) => typeof id === "string" && id) : [];
+/** 目录条目：字符串（纯 id）或带分类字段的条目（百炼原生形态带 type）。 */
+type CatalogItem = string | { id: string; type?: string };
+
+function toEntries(items: CatalogItem[]): Array<{ id: string; type?: string }> {
+  const out: Array<{ id: string; type?: string }> = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (typeof item === "string") {
+      const id = item.trim();
+      if (id && !out.some((e) => e.id === id)) out.push({ id });
+    } else if (item && typeof item.id === "string" && item.id.trim()) {
+      const id = item.id.trim();
+      if (!out.some((e) => e.id === id)) out.push({ id, type: item.type });
+    }
+  }
+  return out;
+}
+
+/** 平台目录 → 某分类的候选；asr 同时看命名族与平台的 type 字段（筛空由「当前默认值」
+ * 合并兜底，不再把大模型整表端上来），llm 按命名族排除、筛空回退全量。 */
+export function filterModelsForCategory(items: CatalogItem[], category: WizardModelCategory): string[] {
+  const entries = toEntries(items);
+  const ids = entries.map((entry) => entry.id);
   if (category === "asr") {
-    return all.filter((id) => ASR_FAMILY_RE.test(id));
+    const byName = ids.filter((id) => ASR_FAMILY_RE.test(id));
+    const byType = entries.filter((entry) => entry.type && /asr|speech|audio|stt/i.test(entry.type)).map((entry) => entry.id);
+    return mergeModelCandidates(byName, byType);
   }
   if (category === "llm") {
-    const llm = all.filter((id) => !ASR_FAMILY_RE.test(id));
-    return llm.length ? llm : all.slice();
+    const llm = ids.filter((id) => !ASR_FAMILY_RE.test(id));
+    return llm.length ? llm : ids.slice();
   }
-  return all.slice();
+  return ids;
 }
 
 /** 多组合并：保序去重，第一组通常是「框里当前值」，保证它一定在候选里。 */

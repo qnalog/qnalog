@@ -298,3 +298,27 @@ describe("模型默认值继承预设", () => {
     expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("paraformer-v2");
   });
 });
+
+describe("带 type 字段的目录分类（百炼原生形态）", () => {
+  it("id 不含命名族词根、但 type 是 asr 的条目也能进转写候选", () => {
+    const entries = [
+      { id: "custom-voice-model-1", type: "asr" },
+      { id: "qwen3.8-flash", type: "llm" },
+      { id: "cosyvoice-v2", type: "tts" },
+    ];
+    const asr = filterModelsForCategory(entries, "asr");
+    expect(asr).toContain("custom-voice-model-1");
+    expect(asr).not.toContain("qwen3.8-flash");
+    // tts 不冒充转写模型
+    expect(asr).not.toContain("cosyvoice-v2");
+  });
+
+  it("命名族命中与 type 命中合并去重", () => {
+    const entries = [
+      { id: "qwen3-asr-flash", type: "asr" },
+      { id: "other-asr-model", type: "asr" },
+    ];
+    const asr = filterModelsForCategory(entries, "asr");
+    expect(asr).toEqual(["qwen3-asr-flash", "other-asr-model"]);
+  });
+});
