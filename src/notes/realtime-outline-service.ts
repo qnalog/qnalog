@@ -46,8 +46,8 @@ export interface RealtimeOutlineHost {
   diagnostics: DiagnosticsService;
   /** 实时大纲的调度器：防抖、串行、退避。 */
   outlineCoordinator: RealtimeOutlineCoordinator | null;
-  /** 视图外壳服务：大纲更新后刷新侧边栏。 */
-  shell: { refreshOutlineView(): void };
+  /** 装配层转发：大纲更新后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
   session: RecordingSession | null;
   /** 录音采集服务：把大纲进度写进会话。 */
   recording: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void; setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
@@ -200,7 +200,7 @@ export class RealtimeOutlineService {
         window: session.realtimeOutlineWindow || null,
         mode: session.mode,
       });
-      this.host.shell.refreshOutlineView();
+      this.host.requestOutlineRefresh();
       if (request.silent && hasRealtimeOutlineRunnableBacklog(session)) {
         this.scheduleRealtimeOutline({
           delayMs: getRealtimeOutlineQueuedDelayMs(session, { local }),
@@ -628,7 +628,7 @@ export class RealtimeOutlineService {
           percent: Math.min(58, 32 + Math.round(coveragePercent * 0.26)),
           detail: `已覆盖 ${coveragePercent}% 的转写内容`,
         });
-        this.host.shell.refreshOutlineView();
+        this.host.requestOutlineRefresh();
       },
     });
 

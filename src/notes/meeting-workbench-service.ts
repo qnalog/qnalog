@@ -19,8 +19,8 @@ export interface MeetingWorkbenchHost {
   diagnostics: DiagnosticsService;
   outline: RealtimeOutlineService;
   recorder: RecorderService | null;
-  /** 视图外壳服务：互动结果写回后刷新侧边栏。 */
-  shell: { refreshOutlineView(): void };
+  /** 装配层转发：互动结果写回后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
 }
 
 /** 会中互动是否可运行的选项。force=true 时跳过「正在录音/转写」等前置判断，由调用方自行保证安全。 */
@@ -51,7 +51,7 @@ export class MeetingWorkbenchService {
     });
     if (!changed) return false;
     session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, { entries }));
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
     return true;
   }
 
@@ -110,7 +110,7 @@ export class MeetingWorkbenchService {
     if (!queue.includes(entryId)) queue.push(entryId);
     session.pendingMeetingWorkbenchInteractions = queue;
     if (!this.canRunMeetingWorkbenchInteraction(session)) {
-      this.host.shell.refreshOutlineView();
+      this.host.requestOutlineRefresh();
       if (this._meetingWorkbenchInteractionTimer) window.clearTimeout(this._meetingWorkbenchInteractionTimer);
       this._meetingWorkbenchInteractionTimer = window.setTimeout(() => {
         this._meetingWorkbenchInteractionTimer = 0;

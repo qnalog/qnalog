@@ -36,7 +36,6 @@ import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 import { NoteIndexService } from "../notes/note-index-service";
-import { ViewShellService } from "../ui/view-shell-service";
 import { VersionStore } from "../versions/version-store";
 import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
 import { SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
@@ -60,7 +59,8 @@ export interface SessionFinalizeHost {
   session: RecordingSession | null;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
-  shell: ViewShellService;
+  /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
   tasks: TaskActivityService;
   /** 版本块与派生笔记服务：续录覆盖前留档旧整理稿。 */
   versions: VersionStore;
@@ -102,7 +102,7 @@ export class SessionFinalizeService {
           endOffsetMs: Number(seg.endOffsetMs) || 0,
         });
       } catch { /* intentionally empty */ }
-      this.host.shell.refreshOutlineView();
+      this.host.requestOutlineRefresh();
       return;
     }
     if (session.shortRecordingTier) {
@@ -435,7 +435,7 @@ export class SessionFinalizeService {
     await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
     if (!err || isStreamingProvider) await this.host.recording.removeLiveSegmentQueueTask(seg);
 
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
     this.host.recording.setSessionWorkProgress(session, {
       stage: seg.isFinal ? "transcribe-finalized" : "transcribed",
       label: seg.isFinal ? "转写收尾" : (err && err.asrDeferred ? `已缓存 ${session.segments.length} 段` : `已转写 ${session.segments.length} 段`),
@@ -493,7 +493,7 @@ export class SessionFinalizeService {
         } catch { /* intentionally empty */ }
         new obsidian.Notice(t("Failed to finalize minutes; the original transcript and recording have been kept. You can use \"Reorganize\" in the note."), 10000);
         if (this.host.session === session) this.host.session = null;
-        this.host.shell.refreshOutlineView();
+        this.host.requestOutlineRefresh();
       }
     })();
     session.finalizePromise = finalizePromise;
@@ -527,7 +527,7 @@ export class SessionFinalizeService {
         percent: 52,
         detail: `识别到 ${candidates.length} 位说话人，等待确认姓名后继续整理`,
       });
-      this.host.shell.refreshOutlineView();
+      this.host.requestOutlineRefresh();
       const providerId = session.importTranscribeProviderId
         || this.host.settings.activeTranscribeProvider
         || "siliconflow";
@@ -641,7 +641,7 @@ export class SessionFinalizeService {
       });
     } catch { /* diagnostics must not change finalization behavior */ }
     if (this.host.session === session) this.host.session = null;
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
   }
 
   async _finalizeSessionImpl(session) {
@@ -659,7 +659,7 @@ export class SessionFinalizeService {
       await this.host.noteWriter.removeEmptySessionBlock(session);
       new obsidian.Notice(t("⏭ This recording was too short or had no valid audio; skipped"));
       if (this.host.session === session) this.host.session = null;
-      this.host.shell.refreshOutlineView();
+      this.host.requestOutlineRefresh();
       return;
     }
 
@@ -704,7 +704,7 @@ export class SessionFinalizeService {
       }
       this.host.queueRetry.scheduleDeferredAsrRetry(session);
       if (this.host.session === session) this.host.session = null;
-      this.host.shell.refreshOutlineView();
+      this.host.requestOutlineRefresh();
       return;
     }
     session.finalizing = true;
@@ -728,7 +728,7 @@ export class SessionFinalizeService {
       percent: 12,
       detail: textImportSession ? "已跳过 ASR，正在准备结构化整理" : "转写已结束，正在整理上下文",
     });
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
     new obsidian.Notice(textImportSession ? "文本已读取，AI 结构化整理中…" : "所有段已处理，AI 合并润色中…");
 
     let polished = ""; let mergeError = null; let nonRetryableMergeError = false; let commitError = false;
@@ -1022,7 +1022,7 @@ export class SessionFinalizeService {
     }
     this.host.queueRetry.scheduleDeferredAsrRetry(session);
     if (this.host.session === session) this.host.session = null;
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
   }
 }
 

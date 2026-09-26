@@ -119,8 +119,8 @@ export interface TaskActivityHost {
   /** 队列失败恢复服务：熔断冷却结束后重新排期。 */
   queueRetry: QueueRetryService;
   recorder: RecorderService | null;
-  /** 视图外壳服务：任务状态变化后刷新侧边栏。 */
-  shell: { refreshOutlineView(): void };
+  /** 装配层转发：任务状态变化后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
 
   session: RecordingSession | null;
   /** 实时大纲服务：用户取消等待与后台补跑。 */
@@ -150,7 +150,7 @@ export class TaskActivityService {
     this.taskActivityStore = new TaskActivityStore();
     this.host.register(this.taskActivityStore.subscribe(() => {
       try { this.updateBusyStatus(); } catch { /* task observers must not break work */ }
-      try { this.host.shell.refreshOutlineView(); } catch { /* task observers must not break work */ }
+      try { this.host.requestOutlineRefresh(); } catch { /* task observers must not break work */ }
     }));
     this.host.registerInterval(window.setInterval(() => {
       try { this.taskActivityStore.prune(); } catch { /* maintenance must not break plugin */ }
@@ -830,7 +830,7 @@ export class TaskActivityService {
     this._importBusy = next;
     try { this.syncImportTaskActivity(next); } catch { /* progress must not interrupt import */ }
     try { this.updateBusyStatus(); } catch { /* intentionally empty */ }
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     return next;
   }
   updateImportRequest(patch) {

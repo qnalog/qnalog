@@ -613,6 +613,14 @@ class QnALogPlugin extends obsidian.Plugin {
       return "";
     }
   }
+  /** 装配层转发：域服务请求刷新侧边栏。域服务只拿这个方法，不持有 ViewShellService。 */
+  requestOutlineRefresh(): void {
+    this.shell.refreshOutlineView();
+  }
+  /** 装配层转发：录音流程结束后自动打开侧边栏。 */
+  requestOpenOutlineView(): Promise<void> {
+    return this.shell.openOutlineView();
+  }
   async saveAll() {
     // 磁盘设置的版本高于本版本时，用户是回退了插件：此时写盘会把新版字段洗掉。
     // 这里拦下所有写入路径（设置页、队列、诊断），而不只是 loadAll 那一刻。

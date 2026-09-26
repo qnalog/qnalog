@@ -47,8 +47,8 @@ export interface QueueRetryHost {
   noteWriter: NoteWriter;
   queue: TaskQueue | null;
   recorder: RecorderService | null;
-  /** 视图外壳服务：队列状态变化后刷新侧边栏。 */
-  shell: { refreshOutlineView(): void };
+  /** 装配层转发：队列状态变化后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
 
   saveAll(): Promise<void>;
   saveSettings(): Promise<void>;
@@ -209,7 +209,7 @@ export class QueueRetryService {
       this.host.tasks.updateBusyStatus();
     }
     await this.host.saveAll();
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
     new obsidian.Notice(paused
       ? `转写服务仍不可用：本次成功 ${ok} 个，失败 ${failed} 个；其余片段已保留，稍后继续`
       : `转写重试完成：成功 ${ok} 个${failed ? `，失败 ${failed} 个` : ""}`, 8000);
@@ -518,7 +518,7 @@ export class QueueRetryService {
       try { void (this.host.saveAll || this.host.saveSettings).call(this.host); } catch (e) {
         console.warn("[QnALog] queue delete cleanup save failed", e);
       }
-      try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     }
   }
   async retryMergeTask(task) {

@@ -36,7 +36,6 @@ import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault"
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
-import { ViewShellService } from "../ui/view-shell-service";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
@@ -80,7 +79,10 @@ export interface RecordingHost {
   sessionFinalize: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
-  shell: ViewShellService;
+  /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
+  /** 装配层转发：请求打开侧边栏（调用 ViewShellService.openOutlineView），仅录音流程自动打开使用。 */
+  requestOpenOutlineView(): Promise<void>;
   tasks: TaskActivityService;
 }
 
@@ -350,7 +352,7 @@ export class RecordingService {
         onStreamReady,
       });
       if (this.host.settings.autoOpenOutlineOnRecord) {
-        try { await this.host.shell.openOutlineView(); } catch (e) { console.error("[QnALog] auto-open outline failed", e); }
+        try { await this.host.requestOpenOutlineView(); } catch (e) { console.error("[QnALog] auto-open outline failed", e); }
       }
       const modeLabel = audioInputModeLabel(captureMode);
       const noticeText = isStreaming
@@ -386,7 +388,7 @@ export class RecordingService {
       this.host.session = null;
       this._oneShotCaptureMode = null;
       try { if (failedSession) await this.host.noteWriter.removeEmptySessionBlock(failedSession); } catch { /* intentionally empty */ }
-      try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     }
   }
 
@@ -480,13 +482,13 @@ export class RecordingService {
         writePercent: stage === "write" ? Number(session.workProgress.percent) || 0 : this.host.tasks._importBusy.writePercent,
       });
     }
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
   }
 
   clearSessionWorkProgress(session) {
     if (!session) return;
     delete session.workProgress;
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
   }
 
   handleSegment(session: RecordingSession, seg: RecorderSegmentPayload) {
@@ -1085,14 +1087,14 @@ export class RecordingService {
       kind: kind || current.kind || "service",
       at: patch && patch.at ? patch.at : (current.at || Date.now()),
     }));
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     try { if (this.host.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
   clearRecordingIssue(kind = undefined) {
     if (!this.recordingIssue) return;
     if (kind && this.recordingIssue.kind !== kind) return;
     this.recordingIssue = null;
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     try { if (this.host.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
   getRecordingIssue() {
