@@ -648,7 +648,7 @@ function withModelListPage(url: string, pageNo: number, pageSize: number): strin
   }
 }
 
-export async function fetchLlmModelEntries(endpoint, apiKey): Promise<LlmModelEntry[]> {
+export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record<string, string>): Promise<LlmModelEntry[]> {
   const base = normalizeLlmEndpoint(endpoint);
   if (!base) throw new Error("服务地址未配置");
   assertSafeServiceEndpoint(base, "http", "大模型服务地址");
@@ -657,8 +657,19 @@ export async function fetchLlmModelEntries(endpoint, apiKey): Promise<LlmModelEn
   const genericUrl = /\/chat\/completions$/i.test(base)
     ? base.replace(/\/chat\/completions$/i, "/models")
     : base.replace(/\/+$/, "") + "/models";
-  const urls = [resolveLlmModelListEndpoint(endpoint)];
-  if (!urls.includes(genericUrl)) urls.push(genericUrl);
+  const withQuery = (url: string) => {
+    if (!extraQuery || !Object.keys(extraQuery).length) return url;
+    try {
+      const parsed = new URL(url);
+      for (const [key, value] of Object.entries(extraQuery)) parsed.searchParams.set(key, value);
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  };
+  const urls = [withQuery(resolveLlmModelListEndpoint(endpoint))];
+  const genericQueried = withQuery(genericUrl);
+  if (!urls.includes(genericQueried)) urls.push(genericQueried);
   const headers = buildLlmHeaders(apiKey, base);
   delete headers["Content-Type"]; // GET 无 body
   const problems: string[] = [];

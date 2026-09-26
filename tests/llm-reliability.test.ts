@@ -663,3 +663,23 @@ describe("描述的解析与截断", () => {
     expect(entries.find((e) => e.id === "qwen3-asr-flash")?.description).toBe("语音识别");
   });
 });
+
+describe("模型列表的额外查询参数", () => {
+  it("extraQuery 拼进请求地址（OpenRouter 转写目录场景）", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({ data: [{ id: "openai/whisper-large-v3", architecture: { output_modalities: ["text"] } }] }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries(
+      "https://openrouter.ai/api/v1",
+      "sk-x",
+      { output_modalities: "transcription" },
+    );
+    expect(entries.map((e) => e.id)).toEqual(["openai/whisper-large-v3"]);
+    const firstUrl = String(requestUrlMock.mock.calls[0][0].url);
+    expect(firstUrl).toContain("output_modalities=transcription");
+  });
+});

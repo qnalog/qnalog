@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import type { PluginSettings } from "../src/shared/types";
 import { applyPresetPlan } from "../src/setup";
-import { diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates, wizardModelCandidates } from "../src/setup/model-catalog";
+import { diarizationModelCandidates, filterModelsForCategory, mergeModelCandidates, transcriptionListQuery, wizardModelCandidates } from "../src/setup/model-catalog";
 import { SetupWizardController, needsFirstRunWizard } from "../src/setup/wizard-controller";
 import type { ProbePorts } from "../src/setup";
 
@@ -437,5 +437,13 @@ describe("向导列表组装（wizardModelCandidates）", () => {
     const bailian = wizardModelCandidates("bailian", "asr", "qwen3-asr-flash", [{ id: "qwen3-asr-flash" }, { id: "paraformer-v2" }]);
     expect(bailian).toEqual(["qwen3-asr-flash", "paraformer-v2"]);
     expect(wizardModelCandidates("mimo", "asr", "mimo-v2.5-asr", [])).toEqual(["mimo-v2.5-asr"]);
+  });
+});
+
+describe("转写目录查询参数（transcriptionListQuery）", () => {
+  it("只有验证过参数的平台返回查询参数", () => {
+    expect(transcriptionListQuery("openrouter")).toEqual({ output_modalities: "transcription" });
+    expect(transcriptionListQuery("bailian")).toBeNull();
+    expect(transcriptionListQuery("mimo")).toBeNull();
   });
 });

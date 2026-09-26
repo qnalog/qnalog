@@ -38,7 +38,17 @@ const ASR_EXTRAS: Record<string, string[]> = {
   ],
 };
 
-/** 该平台的转写特例清单（目录枚举不到的已实测 id）。 */
+/**
+ * 平台的转写目录查询参数：OpenRouter 的 /models 支持
+ * `output_modalities=transcription`（与官网 /models?output_modalities=transcription
+ * 同源，2026-09-26 实测返回 24 条全是转写模型；无效值返回 0，参数被真实求值）。
+ * 只对验证过该参数的平台使用——百炼不认这个参数时会拒请求，它继续走命名族。
+ */
+export function transcriptionListQuery(providerId: string): Record<string, string> | null {
+  return providerId === "openrouter" ? { output_modalities: "transcription" } : null;
+}
+
+/** 该平台的转写特例清单：实时参数列表拉不到时的兜底（仍按实测 id 手工维护）。 */
 function asrModelCandidates(providerId: string): string[] {
   return (ASR_EXTRAS[providerId] || []).slice();
 }

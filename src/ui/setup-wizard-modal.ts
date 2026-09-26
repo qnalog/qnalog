@@ -11,7 +11,7 @@ import { fetchLlmModelEntries } from "../llm/core";
 import type { LlmModelEntry } from "../llm/core";
 import { formatDetectionReport, resolvePresetEndpoint } from "../setup";
 import type { PresetDefinition } from "../setup";
-import { diarizationModelCandidates, wizardModelCandidates } from "../setup/model-catalog";
+import { diarizationModelCandidates, transcriptionListQuery, wizardModelCandidates } from "../setup/model-catalog";
 import type { WizardModelCategory } from "../setup/model-catalog";
 import { SetupWizardController } from "../setup/wizard-controller";
 import type { SetupWizardDeps } from "../setup/wizard-controller";
@@ -47,7 +47,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
   /** 步骤 2 的模型输入与拉取按钮；锁定态随密钥是否填写切换。 */
   private modelFields: Array<{ category: WizardModelCategory; text: obsidian.TextComponent; button: obsidian.ButtonComponent }> = [];
   /** 平台模型目录按端点缓存，同一方案的三个分类共用一次拉取。 */
-  private modelCache: { endpoint: string; entries: LlmModelEntry[] } | null = null;
+  private modelCache: { endpoint: string; queryKey: string; entries: LlmModelEntry[] } | null = null;
   /** 模型拉取进行中：挡住重复点击叠出多份列表。 */
   private pickerLoading = false;
 
@@ -218,7 +218,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
           list = diarizationModelCandidates(this.controller.providerId, fallbackDefault);
         }
       } else {
-        const entries = await this.getPlatformModels(endpoint, apiKey);
+        const entries = await this.getPlatformModels(endpoint, apiKey, category === "asr" ? transcriptionListQuery(this.controller.providerId) : null);
         list = wizardModelCandidates(this.controller.providerId, category, current, entries);
       }
       if (!list.length) {
@@ -235,10 +235,12 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
     }
   }
 
-  private async getPlatformModels(endpoint: string, apiKey: string): Promise<LlmModelEntry[]> {
-    if (this.modelCache && this.modelCache.endpoint === endpoint) return this.modelCache.entries;
-    const entries = await fetchLlmModelEntries(endpoint, apiKey);
-    this.modelCache = { endpoint, entries };
+  /** 按端点 + 查询参数缓存：OpenRouter 的转写目录与普通目录是两份不同的列表。 */
+  private async getPlatformModels(endpoint: string, apiKey: string, query: Record<string, string> | null = null): Promise<LlmModelEntry[]> {
+    const queryKey = JSON.stringify(query || {});
+    if (this.modelCache && this.modelCache.endpoint === endpoint && this.modelCache.queryKey === queryKey) return this.modelCache.entries;
+    const entries = await fetchLlmModelEntries(endpoint, apiKey, query || undefined);
+    this.modelCache = { endpoint, queryKey, entries };
     return entries;
   }
 
