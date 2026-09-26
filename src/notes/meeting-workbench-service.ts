@@ -9,18 +9,23 @@ import { clipRealtimeContextText, hasRealtimeOutlineRunnableBacklog } from "../n
 import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_CHARS, MEETING_INTERACTION_TIMEOUT_MS, MEETING_METADATA_KINDS, clipMeetingInteractionSegmentLine, getMeetingInteractionMaxTokens, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { RealtimeOutlineService } from "../notes/realtime-outline-service";
+import { isAsrTransportError } from "../shared/util-audio";
 import { NS_LIVE_MARKER_END, NS_LIVE_MARKER_START, nsMarker, nsMarkerLegacyVariants } from "../shared/namespace";
+import type { RecordingSession } from "../shared/types";
 
 /** MeetingWorkbenchService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface MeetingWorkbenchHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
   diagnostics: DiagnosticsService;
-  outline: RealtimeOutlineService;
+  /** 实时大纲服务：协调器状态与进度（窄面：装配层绑定到 RealtimeOutlineService）。 */
+  realtimeOutline: {
+    getRealtimeOutlineCoordinatorState(): { phase: string; sessionId: string };
+    ensureRealtimeOutlineProgress(session: RecordingSession | null, reason?: string): boolean;
+  };
   recorder: RecorderService | null;
-  /** 视图外壳服务：互动结果写回后刷新侧边栏。 */
-  shell: { refreshOutlineView(): void };
+  /** 装配层转发：互动结果写回后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
 }
 
 /** 会中互动是否可运行的选项。force=true 时跳过「正在录音/转写」等前置判断，由调用方自行保证安全。 */
@@ -51,7 +56,7 @@ export class MeetingWorkbenchService {
     });
     if (!changed) return false;
     session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, { entries }));
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
     return true;
   }
 
@@ -84,7 +89,7 @@ export class MeetingWorkbenchService {
     if (!session) return false;
     if (opts.force) return true;
     if (this.hasActiveRecordingOrTranscription(session)) return false;
-    const outlineState = this.host.outline.getRealtimeOutlineCoordinatorState();
+    const outlineState = this.host.realtimeOutline.getRealtimeOutlineCoordinatorState();
     if (
       outlineState.sessionId === session.id
       && (outlineState.phase === "running" || outlineState.phase === "scheduled")
@@ -110,7 +115,7 @@ export class MeetingWorkbenchService {
     if (!queue.includes(entryId)) queue.push(entryId);
     session.pendingMeetingWorkbenchInteractions = queue;
     if (!this.canRunMeetingWorkbenchInteraction(session)) {
-      this.host.shell.refreshOutlineView();
+      this.host.requestOutlineRefresh();
       if (this._meetingWorkbenchInteractionTimer) window.clearTimeout(this._meetingWorkbenchInteractionTimer);
       this._meetingWorkbenchInteractionTimer = window.setTimeout(() => {
         this._meetingWorkbenchInteractionTimer = 0;
@@ -157,7 +162,7 @@ export class MeetingWorkbenchService {
       this._meetingWorkbenchInteractionRunning = false;
       // User annotations and instant answers have their own state. Whether they
       // succeed or fail, they cannot own or strand the outline cursor.
-      this.host.outline.ensureRealtimeOutlineProgress(session, "workbench-finished");
+      this.host.realtimeOutline.ensureRealtimeOutlineProgress(session, "workbench-finished");
     }
   }
 

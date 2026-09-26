@@ -17,7 +17,6 @@ import { extFromMime, isAsrTransportError, isTransientAsrError } from "../shared
 import { LIVE_ASR_TASK_STATUS, classifyLiveAsrBacklog, createLiveAsrCircuitState, isLiveAsrCircuitOpen, recordLiveAsrFailure, recordLiveAsrSuccess, summarizeLiveAsrJobs } from "../asr/live-segment-policy";
 import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
-import { audioImportStageFromWorkProgress } from "../shared/activity-progress";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { QUICK_INTERIM_CUTS_MS, SEGMENT_CACHE_RETENTION_MS } from "../shared/limits";
@@ -31,13 +30,11 @@ import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { makeRecordingIssue } from "../asr/transcribe";
-import { TaskActivityService } from "../tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
-import { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
-import { ViewShellService } from "../ui/view-shell-service";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
+import type { LiveAsrPipeline } from "../shared/live-asr-pipeline";
 
 import { t } from "../shared/i18n";
 
@@ -69,22 +66,31 @@ export interface RecordingHost {
   /** 悬浮气泡：录音问题变化时请求刷新。 */
   bubble: { scheduleUpdate?: () => void } | null;
   diagnostics: DiagnosticsService;
-  meetingWorkbench: MeetingWorkbenchService;
+  /** 互动看板服务：实时转写块与互动调度（窄面：实际只用这 3 个方法）。 */
+  meetingWorkbench: {
+    makeStreamingNoteUpdater(session: RecordingSession): () => void;
+    removeLiveTranscriptBlock(mdPath: string, sessionId: string): Promise<void>;
+    scheduleMeetingWorkbenchInteraction(session: RecordingSession, interaction: unknown): void;
+  };
   noteWriter: NoteWriter;
   profiles: TranscribeProfileService;
   queue: TaskQueue | null;
   recorder: RecorderService | null;
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
-  /** 会话收尾服务：切片转写与停止后的收尾。 */
-  sessionFinalize: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
+  /** 会话收尾服务：切片转写与停止后的收尾（装配层绑定，见 sessionPipeline 注释）。 */
+  sessionPipeline: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
-  shell: ViewShellService;
-  tasks: TaskActivityService;
+  /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
+  /** 装配层转发：请求打开侧边栏（调用 ViewShellService.openOutlineView），仅录音流程自动打开使用。 */
+  requestOpenOutlineView(): Promise<void>;
+  /** 装配层转发：audio-import 流程进行中时，把会话进度同步进任务中心的导入忙态。 */
+  syncImportBusyFromSessionProgress(session: RecordingSession): void;
 }
 
-export class RecordingService {
+export class RecordingService implements LiveAsrPipeline {
   declare host: RecordingHost;
   /** 本次一次性录音的采集模式与润色模式（命令入口设置）。 */
   declare _oneShotCaptureMode;
@@ -350,7 +356,7 @@ export class RecordingService {
         onStreamReady,
       });
       if (this.host.settings.autoOpenOutlineOnRecord) {
-        try { await this.host.shell.openOutlineView(); } catch (e) { console.error("[QnALog] auto-open outline failed", e); }
+        try { await this.host.requestOpenOutlineView(); } catch (e) { console.error("[QnALog] auto-open outline failed", e); }
       }
       const modeLabel = audioInputModeLabel(captureMode);
       const noticeText = isStreaming
@@ -386,7 +392,7 @@ export class RecordingService {
       this.host.session = null;
       this._oneShotCaptureMode = null;
       try { if (failedSession) await this.host.noteWriter.removeEmptySessionBlock(failedSession); } catch { /* intentionally empty */ }
-      try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     }
   }
 
@@ -466,27 +472,14 @@ export class RecordingService {
     session.workProgress = Object.assign({}, session.workProgress || {}, patch || {}, {
       updatedAt: new Date().toISOString(),
     });
-    if (this.host.tasks._importBusy
-      && this.host.tasks._importBusy.workflow === "audio-import"
-      && String(this.host.tasks._importBusy.sessionId || "") === String(session.id || "")) {
-      const stage = audioImportStageFromWorkProgress(session.workProgress.stage);
-      this.host.tasks.updateImportActivity({
-        phase: stage,
-        organizeLabel: stage === "organize" ? String(session.workProgress.label || "AI 整理") : this.host.tasks._importBusy.organizeLabel,
-        organizeDetail: stage === "organize" ? String(session.workProgress.detail || "") : this.host.tasks._importBusy.organizeDetail,
-        organizePercent: stage === "organize" ? Number(session.workProgress.percent) || 0 : this.host.tasks._importBusy.organizePercent,
-        writeLabel: stage === "write" ? String(session.workProgress.label || "写入纪要") : this.host.tasks._importBusy.writeLabel,
-        writeDetail: stage === "write" ? String(session.workProgress.detail || "") : this.host.tasks._importBusy.writeDetail,
-        writePercent: stage === "write" ? Number(session.workProgress.percent) || 0 : this.host.tasks._importBusy.writePercent,
-      });
-    }
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    this.host.syncImportBusyFromSessionProgress(session);
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
   }
 
   clearSessionWorkProgress(session) {
     if (!session) return;
     delete session.workProgress;
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
   }
 
   handleSegment(session: RecordingSession, seg: RecorderSegmentPayload) {
@@ -527,7 +520,7 @@ export class RecordingService {
       console.error("[QnALog] recovered rejected write chain before next segment", e);
     }).then(async () => {
       try {
-        await this.host.sessionFinalize.processSegment(session, preparedSeg);
+        await this.host.sessionPipeline.processSegment(session, preparedSeg);
       } catch (e) {
         // 本段异常不能毒化后续写入链；processSegment 已尽力保留缓存并加入后台重试。
         console.error("[QnALog] processSegment failed (swallowed to protect write chain)", e);
@@ -553,8 +546,8 @@ export class RecordingService {
     if (preparedSeg.isFinal) {
       // 双分支：无论前序链 fulfilled 还是 rejected，finalizeSession 都必须跑。
       session.writeQueue = session.writeQueue.then(
-        () => this.host.sessionFinalize.finalizeSession(session),
-        (e) => { console.error("[QnALog] write chain rejected before finalize", e); return this.host.sessionFinalize.finalizeSession(session); }
+        () => this.host.sessionPipeline.finalizeSession(session),
+        (e) => { console.error("[QnALog] write chain rejected before finalize", e); return this.host.sessionPipeline.finalizeSession(session); }
       );
     }
     // 录音中的普通切段只等音频安全落盘，不应继续 await 慢速 ASR 链。
@@ -1085,14 +1078,14 @@ export class RecordingService {
       kind: kind || current.kind || "service",
       at: patch && patch.at ? patch.at : (current.at || Date.now()),
     }));
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     try { if (this.host.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
   clearRecordingIssue(kind = undefined) {
     if (!this.recordingIssue) return;
     if (kind && this.recordingIssue.kind !== kind) return;
     this.recordingIssue = null;
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     try { if (this.host.bubble && this.host.bubble.scheduleUpdate) this.host.bubble.scheduleUpdate(); } catch { /* intentionally empty */ }
   }
   getRecordingIssue() {

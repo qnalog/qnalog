@@ -27,9 +27,7 @@ import { TaskQueue } from "../queue/task-queue";
 import { mergeAndPolish } from "../briefing/merge-pipeline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NoteIndexService } from "../notes/note-index-service";
-import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
-import { TaskActivityService } from "../tasks/task-activity-service";
 import { NoteWriter } from "../notes/note-writer";
 import { NS_AUDIO_ALT, nsMarker } from "../shared/namespace";
 
@@ -47,8 +45,8 @@ export interface QueueRetryHost {
   noteWriter: NoteWriter;
   queue: TaskQueue | null;
   recorder: RecorderService | null;
-  /** 视图外壳服务：队列状态变化后刷新侧边栏。 */
-  shell: { refreshOutlineView(): void };
+  /** 装配层转发：队列状态变化后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
 
   saveAll(): Promise<void>;
   saveSettings(): Promise<void>;
@@ -56,17 +54,18 @@ export interface QueueRetryHost {
   settingTab: QnALogSettingTab | null;
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
-  /** 录音采集服务：切片缓存清理与熔断状态。 */
-  recording: { getAsrServiceCircuitState(): LiveAsrCircuitState; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
-  /** 会话收尾服务：转写补齐后的说话人确认与收尾。 */
-  sessionFinalize: SessionFinalizeService;
+  /** 录音服务的熔断与切片缓存视图：装配层把这 5 个方法绑定到录音服务。 */
+  asrCircuit: { getAsrServiceCircuitState(): LiveAsrCircuitState; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
+  /** 装配层转发：补转写成功后请求说话人姓名确认（调用 SessionFinalizeService.confirmSpeakerNamesBeforeFinal），返回值在调用点不使用。 */
+  confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
   /** 词汇表与行业提示词服务。 */
   vocabulary: VocabularyService;
   /** 重新整理服务：导入转写完成后按说话人姓名重排纪要。 */
   repolish: { repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
-  tasks: TaskActivityService;
+  /** 装配层转发：批量重试节奏变化后刷新任务状态栏（调用 TaskActivityService.updateBusyStatus）。 */
+  notifyTaskBusyChanged(): void;
 }
 
 export class QueueRetryService {
@@ -112,7 +111,7 @@ export class QueueRetryService {
   }
   scheduleDeferredAsrRetry(session) {
     if (!session || !session.hasDeferredAsrJobs) return;
-    const serviceCircuit = this.host.recording.getAsrServiceCircuitState();
+    const serviceCircuit = this.host.asrCircuit.getAsrServiceCircuitState();
     const openUntilMs = Math.max(
       0,
       Number(session.asrCircuitState && session.asrCircuitState.openUntilMs) || 0,
@@ -157,7 +156,7 @@ export class QueueRetryService {
       return;
     }
     if (runnable.some((task) => task.type === "transcribe")) {
-      this.host.recording.resetAsrServiceCircuitForManualRetry("retry-all");
+      this.host.asrCircuit.resetAsrServiceCircuitForManualRetry("retry-all");
       for (const task of runnable) {
         if (task.type === "transcribe") task.nextRetryAt = undefined;
       }
@@ -183,11 +182,11 @@ export class QueueRetryService {
     // 批量游标喂状态栏：重新转写逐段 done/total 实时可见（之前直接 for 循环没设游标 → 状态栏黑盒）。
     this.host.queue._batchTotal = batch.length;
     this.host.queue._batchDone = 0;
-    this.host.tasks.updateBusyStatus();
-    this.host.recording.resetAsrServiceCircuitForManualRetry("note-retry");
+    this.host.notifyTaskBusyChanged();
+    this.host.asrCircuit.resetAsrServiceCircuitForManualRetry("note-retry");
     try {
       for (const task of batch) {
-        if (this.host.recording.isAsrServiceCircuitOpen()) break;
+        if (this.host.asrCircuit.isAsrServiceCircuitOpen()) break;
         try {
           await this.host.queue.processOne(task);
           ok++;
@@ -195,21 +194,21 @@ export class QueueRetryService {
           failed++;
           console.error("[QnALog] retry transcribe task from note list failed", e);
           if (isAsrTransportError(e)) {
-            this.scheduleTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "note-retry-transport-failure");
+            this.scheduleTaskQueueRetry(this.host.asrCircuit.getAsrServiceRetryDelayMs(), "note-retry-transport-failure");
             paused = true;
           }
         }
         this.host.queue._batchDone++;
-        this.host.tasks.updateBusyStatus();
+        this.host.notifyTaskBusyChanged();
         if (paused) break;
       }
     } finally {
       this.host.queue._batchTotal = 0;
       this.host.queue._batchDone = 0;
-      this.host.tasks.updateBusyStatus();
+      this.host.notifyTaskBusyChanged();
     }
     await this.host.saveAll();
-    this.host.shell.refreshOutlineView();
+    this.host.requestOutlineRefresh();
     new obsidian.Notice(paused
       ? `转写服务仍不可用：本次成功 ${ok} 个，失败 ${failed} 个；其余片段已保留，稍后继续`
       : `转写重试完成：成功 ${ok} 个${failed ? `，失败 ${failed} 个` : ""}`, 8000);
@@ -344,7 +343,7 @@ export class QueueRetryService {
       currentMarkdown = await this.host.app.vault.read(mdFile);
       if (currentMarkdown.includes(taskMarker) && !(taskPattern && taskPattern.test(currentMarkdown))) {
         // 正文已经写入，只是上次删除持久任务时中断。幂等收尾，不能再次调用 ASR 或重复插段。
-        await this.host.recording.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
+        await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
         return;
       }
     }
@@ -434,10 +433,10 @@ export class QueueRetryService {
       replaced = true;
     }
     if (!audio.recovered && (!task.wholeFileImport || task.ephemeralAudio)) {
-      await this.host.recording.maybeDeleteSegmentCacheFile(task.audioPath, task.id, !!task.ephemeralAudio);
+      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id, !!task.ephemeralAudio);
     }
     if (replaced && task.wholeFileImport && task.speakerDiarization !== false) {
-      await this.host.sessionFinalize.confirmSpeakerNamesBeforeFinal({
+      await this.host.confirmSpeakerNames({
         id: task.sessionId,
         mdPath: task.mdPath,
         source: "import",
@@ -518,7 +517,7 @@ export class QueueRetryService {
       try { void (this.host.saveAll || this.host.saveSettings).call(this.host); } catch (e) {
         console.warn("[QnALog] queue delete cleanup save failed", e);
       }
-      try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+      try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     }
   }
   async retryMergeTask(task) {

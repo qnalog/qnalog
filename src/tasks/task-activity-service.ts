@@ -8,12 +8,11 @@ import { formatElapsed } from "../shared/util-common";
 import { isAsrTransportError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
-import { appendActivityEvent, buildAudioImportStages, classifyActivityRequest, getDominantActivityLiveness, normalizeAudioImportStage, summarizeActivityRequests, upsertActivityRequest } from "../shared/activity-progress";
+import { appendActivityEvent, audioImportStageFromWorkProgress, buildAudioImportStages, classifyActivityRequest, getDominantActivityLiveness, normalizeAudioImportStage, summarizeActivityRequests, upsertActivityRequest } from "../shared/activity-progress";
 import { getTaskErrorHint, getTaskErrorMessage } from "../shared/task-activity";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { QueueRetryService } from "../queue/queue-retry-service";
 import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { TaskActivityStore } from "../shared/task-activity";
 import type { TaskActivity, TaskActivityAction, TaskActivityInput } from "../shared/task-activity";
@@ -116,11 +115,11 @@ export interface TaskActivityHost {
 
   openSettings(tabId?: string): void;
   queue: TaskQueue | null;
-  /** 队列失败恢复服务：熔断冷却结束后重新排期。 */
-  queueRetry: QueueRetryService;
+  /** 装配层转发：转写服务熔断冷却结束后重新排期（调用 QueueRetryService.scheduleTaskQueueRetry）。 */
+  requestTaskQueueRetry(delayMs: number, reason: string): void;
   recorder: RecorderService | null;
-  /** 视图外壳服务：任务状态变化后刷新侧边栏。 */
-  shell: { refreshOutlineView(): void };
+  /** 装配层转发：任务状态变化后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  requestOutlineRefresh(): void;
 
   session: RecordingSession | null;
   /** 实时大纲服务：用户取消等待与后台补跑。 */
@@ -150,7 +149,7 @@ export class TaskActivityService {
     this.taskActivityStore = new TaskActivityStore();
     this.host.register(this.taskActivityStore.subscribe(() => {
       try { this.updateBusyStatus(); } catch { /* task observers must not break work */ }
-      try { this.host.shell.refreshOutlineView(); } catch { /* task observers must not break work */ }
+      try { this.host.requestOutlineRefresh(); } catch { /* task observers must not break work */ }
     }));
     this.host.registerInterval(window.setInterval(() => {
       try { this.taskActivityStore.prune(); } catch { /* maintenance must not break plugin */ }
@@ -590,7 +589,7 @@ export class TaskActivityService {
           await this.host.queue.processOne(task);
         } catch (error) {
           if (task.type === "transcribe" && isAsrTransportError(error)) {
-            this.host.queueRetry.scheduleTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
+            this.host.requestTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
           }
           throw error;
         }
@@ -763,6 +762,24 @@ export class TaskActivityService {
     if (this.host.recorder && this.host.recorder.state === "recording") return "录音中";
     return null;
   }
+  /** 会话进度同步：audio-import 流程进行中时，把切片阶段进度写进导入忙态；
+   * 其它流程、其它会话或当前无导入任务时为空操作。
+   * 原先由录音服务跨服务读 _importBusy 私有字段拼补丁，判断与拼装都在这里完成。 */
+  syncImportBusyFromSessionProgress(session) {
+    const busy = this._importBusy;
+    if (!busy || busy.workflow !== "audio-import" || String(busy.sessionId || "") !== String(session && session.id || "")) return;
+    const progress = session && session.workProgress || {};
+    const stage = audioImportStageFromWorkProgress(progress.stage);
+    this.updateImportActivity({
+      phase: stage,
+      organizeLabel: stage === "organize" ? String(progress.label || "AI 整理") : busy.organizeLabel,
+      organizeDetail: stage === "organize" ? String(progress.detail || "") : busy.organizeDetail,
+      organizePercent: stage === "organize" ? Number(progress.percent) || 0 : busy.organizePercent,
+      writeLabel: stage === "write" ? String(progress.label || "写入纪要") : busy.writeLabel,
+      writeDetail: stage === "write" ? String(progress.detail || "") : busy.writeDetail,
+      writePercent: stage === "write" ? Number(progress.percent) || 0 : busy.writePercent,
+    });
+  }
   updateImportActivity(patch: AudioImportBusyPatch = {}) {
     const current = this._importBusy;
     if (!current || current.workflow !== "audio-import") return null;
@@ -830,7 +847,7 @@ export class TaskActivityService {
     this._importBusy = next;
     try { this.syncImportTaskActivity(next); } catch { /* progress must not interrupt import */ }
     try { this.updateBusyStatus(); } catch { /* intentionally empty */ }
-    try { this.host.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     return next;
   }
   updateImportRequest(patch) {

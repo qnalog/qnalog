@@ -47,18 +47,6 @@
       "TaskQueue"
     ],
     [
-      "DiagnosticsService",
-      "RecorderService"
-    ],
-    [
-      "DiagnosticsService",
-      "RecordingService"
-    ],
-    [
-      "DiagnosticsService",
-      "TaskQueue"
-    ],
-    [
       "ExternalInboxService",
       "DiagnosticsService"
     ],
@@ -128,15 +116,7 @@
     ],
     [
       "MeetingWorkbenchService",
-      "RealtimeOutlineService"
-    ],
-    [
-      "MeetingWorkbenchService",
       "RecorderService"
-    ],
-    [
-      "MeetingWorkbenchService",
-      "ViewShellService"
     ],
     [
       "NoteIndexService",
@@ -172,27 +152,11 @@
     ],
     [
       "QueueRetryService",
-      "RecordingService"
-    ],
-    [
-      "QueueRetryService",
       "RepolishService"
     ],
     [
       "QueueRetryService",
-      "SessionFinalizeService"
-    ],
-    [
-      "QueueRetryService",
-      "TaskActivityService"
-    ],
-    [
-      "QueueRetryService",
       "TaskQueue"
-    ],
-    [
-      "QueueRetryService",
-      "ViewShellService"
     ],
     [
       "QueueRetryService",
@@ -205,14 +169,6 @@
     [
       "RealtimeOutlineService",
       "RealtimeOutlineCoordinator"
-    ],
-    [
-      "RealtimeOutlineService",
-      "RecordingService"
-    ],
-    [
-      "RealtimeOutlineService",
-      "ViewShellService"
     ],
     [
       "RecordingService",
@@ -236,23 +192,11 @@
     ],
     [
       "RecordingService",
-      "SessionFinalizeService"
-    ],
-    [
-      "RecordingService",
-      "TaskActivityService"
-    ],
-    [
-      "RecordingService",
       "TaskQueue"
     ],
     [
       "RecordingService",
       "TranscribeProfileService"
-    ],
-    [
-      "RecordingService",
-      "ViewShellService"
     ],
     [
       "RepolishService",
@@ -292,23 +236,11 @@
     ],
     [
       "SessionFinalizeService",
-      "QueueRetryService"
-    ],
-    [
-      "SessionFinalizeService",
       "RealtimeOutlineService"
     ],
     [
       "SessionFinalizeService",
       "RecorderService"
-    ],
-    [
-      "SessionFinalizeService",
-      "RecordingService"
-    ],
-    [
-      "SessionFinalizeService",
-      "TaskActivityService"
     ],
     [
       "SessionFinalizeService",
@@ -323,16 +255,8 @@
       "VersionStore"
     ],
     [
-      "SessionFinalizeService",
-      "ViewShellService"
-    ],
-    [
       "TaskActivityService",
       "DiagnosticsService"
-    ],
-    [
-      "TaskActivityService",
-      "QueueRetryService"
     ],
     [
       "TaskActivityService",
@@ -349,10 +273,6 @@
     [
       "TaskActivityService",
       "TaskQueue"
-    ],
-    [
-      "TaskActivityService",
-      "ViewShellService"
     ],
     [
       "VersionStore",
