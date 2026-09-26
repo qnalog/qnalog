@@ -135,10 +135,6 @@
       "RecorderService"
     ],
     [
-      "MeetingWorkbenchService",
-      "ViewShellService"
-    ],
-    [
       "NoteIndexService",
       "DiagnosticsService"
     ],
@@ -192,10 +188,6 @@
     ],
     [
       "QueueRetryService",
-      "ViewShellService"
-    ],
-    [
-      "QueueRetryService",
       "VocabularyService"
     ],
     [
@@ -209,10 +201,6 @@
     [
       "RealtimeOutlineService",
       "RecordingService"
-    ],
-    [
-      "RealtimeOutlineService",
-      "ViewShellService"
     ],
     [
       "RecordingService",
@@ -251,10 +239,6 @@
       "TranscribeProfileService"
     ],
     [
-      "RecordingService",
-      "ViewShellService"
-    ],
-    [
       "RepolishService",
       "NoteIndexService"
     ],
@@ -323,10 +307,6 @@
       "VersionStore"
     ],
     [
-      "SessionFinalizeService",
-      "ViewShellService"
-    ],
-    [
       "TaskActivityService",
       "DiagnosticsService"
     ],
@@ -349,10 +329,6 @@
     [
       "TaskActivityService",
       "TaskQueue"
-    ],
-    [
-      "TaskActivityService",
-      "ViewShellService"
     ],
     [
       "VersionStore",
