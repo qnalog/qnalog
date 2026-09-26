@@ -6,13 +6,11 @@ import { getDesktopProcess } from "../shared/desktop-runtime";
 import { audioInputModeLabel } from "../ui/helpers";
 import { normalizeAsrConcurrency } from "../asr/transcribe";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import { createLiveAsrCircuitState, isLiveAsrCircuitOpen, summarizeLiveAsrJobs } from "../asr/live-segment-policy";
+import { createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "../asr/live-segment-policy";
 import { redactDiagnosticText, sanitizeDiagnosticData, diagnosticError } from "../shared/util-key-diag";
 import type { LiveAsrBacklogSummary } from "../asr/live-segment-policy";
-import type { PluginSettings, RecordingSession, RealtimeOutlineInputStats } from "../shared/types";
+import type { PluginSettings, QueueTask, RecordingSession, RealtimeOutlineInputStats } from "../shared/types";
 import type { PluginBuildInfo } from "../shared/build-info";
-import type { TaskQueue } from "../queue/task-queue";
-import type { RecorderService } from "../audio/recorder-service";
 import { ensureVaultFolder } from "../shared/util-vault";
 
 import { t } from "../shared/i18n";
@@ -31,6 +29,18 @@ function createEmptyRealtimeOutlineInputStats(): RealtimeOutlineInputStats {
   };
 }
 
+/** 诊断报告用的运行时快照：报告生成时刻一次性采集，纯数据，不引用任何服务对象。 */
+export interface DiagnosticsSnapshot {
+  /** 会话的实时转写积压统计；无会话时是空统计。 */
+  liveAsrBacklog: LiveAsrBacklogSummary;
+  /** 录音器当前缓存的内存块统计。 */
+  recorderBuffer: { masterChunkCount: number; masterChunkBytes: number; currentSegmentChunkCount: number; currentSegmentChunkBytes: number };
+  /** 录音器状态，无录音器或空值时为 "idle"。 */
+  recorderState: "idle" | "recording" | "paused";
+  /** 任务队列当前任务，用于统计各状态任务数；队列不可用时为空数组。 */
+  queueTasks: QueueTask[];
+}
+
 /** DiagnosticsService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface DiagnosticsHost {
   /** 知识库访问（读插件目录、读写日记式 jsonl 文件）。 */
@@ -41,19 +51,14 @@ export interface DiagnosticsHost {
   manifest?: { version?: string };
   /** 安装时写入的构建信息，报告里区分正式发布与开发版。 */
   buildInfo: PluginBuildInfo | null;
-  /** 任务队列，报告里统计各状态任务数。 */
-  queue: TaskQueue | null;
   /** 当前录音会话，报告里读熔断状态与实时大纲输入量。 */
   session: RecordingSession | null;
-  /** 录音器，报告里读状态。 */
-  recorder: RecorderService | null;
   /** 界面上显示的版本串。 */
   getDisplayVersion(): string;
   /** 当前构建的来源描述。 */
   getBuildSourceLabel(): string;
-  /** 会话的实时转写积压统计。 */
-  recording: { getLiveAsrBacklogSummary(session: RecordingSession | null): LiveAsrBacklogSummary; getRecorderBufferSummary(): { masterChunkCount: number; masterChunkBytes: number; currentSegmentChunkCount: number; currentSegmentChunkBytes: number } };
-  /** 录音器当前缓存的内存块统计。 */
+  /** 报告生成时刻一次性采集运行时快照（装配层从录音服务、录音器、任务队列读取）。 */
+  getDiagnosticsSnapshot(session: RecordingSession | null): DiagnosticsSnapshot;
 }
 
 export class DiagnosticsService {
@@ -153,16 +158,18 @@ export class DiagnosticsService {
   async buildDiagnosticReport() {
     const activeId = this.host.settings.activeTranscribeProvider || "";
     const provider = (this.host.settings.transcribeProviders || {})[activeId] || {};
-    const queueItems = this.host.queue && Array.isArray(this.host.queue.tasks) ? this.host.queue.tasks : [];
+    const lines = await this.readRecentDiagnosticLines(100);
+    const activeSession = this.host.session;
+    // 快照在报告生成时刻一次性采集：队列任务、实时转写积压与录音器状态来自同一时刻。
+    const snapshot = this.host.getDiagnosticsSnapshot(activeSession);
+    const queueItems = snapshot.queueTasks;
     const counts = queueItems.reduce((acc, task) => {
       const key = task.status || "pending";
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
-    const lines = await this.readRecentDiagnosticLines(100);
-    const activeSession = this.host.session;
-    const liveBacklog = activeSession ? this.host.recording.getLiveAsrBacklogSummary(activeSession) : summarizeLiveAsrJobs([]);
-    const recorderBuffer = this.host.recording.getRecorderBufferSummary();
+    const liveBacklog = snapshot.liveAsrBacklog;
+    const recorderBuffer = snapshot.recorderBuffer;
     const runtimeMemory = await this.getRuntimeMemorySummary();
     const circuit = activeSession && activeSession.asrCircuitState ? activeSession.asrCircuitState : createLiveAsrCircuitState();
     const outlineInput = activeSession && activeSession.realtimeOutlineInput || createEmptyRealtimeOutlineInputStats();
@@ -185,7 +192,7 @@ export class DiagnosticsService {
       `- 队列: ${JSON.stringify(counts)}`,
       "",
       "## 录音与实时转写状态",
-      `- 录音状态: ${this.host.recorder && this.host.recorder.state || "idle"}`,
+      `- 录音状态: ${snapshot.recorderState}`,
       `- 完整录音内存块: ${recorderBuffer.masterChunkCount} 块 / ${mib(recorderBuffer.masterChunkBytes)} MiB`,
       `- 当前分段内存块: ${recorderBuffer.currentSegmentChunkCount} 块 / ${mib(recorderBuffer.currentSegmentChunkBytes)} MiB`,
       `- 等待实时转写: ${liveBacklog.count} 段 / ${(liveBacklog.totalDurationMs / 60000).toFixed(1)} 分钟 / ${mib(liveBacklog.totalBytes)} MiB`,

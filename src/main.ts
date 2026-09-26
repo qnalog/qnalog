@@ -49,11 +49,13 @@ import { RecorderService } from "./audio/recorder-service";
 
 // 以下 1 个声明已抽到 ./queue/task-queue（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { TaskQueue } from "./queue/task-queue";
+import { summarizeLiveAsrJobs } from "./asr/live-segment-policy";
 
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
+import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
 import { TaskActivityService } from "./tasks/task-activity-service";
 import { DeliveryService } from "./delivery/delivery-service";
 import { NoteWriter } from "./notes/note-writer";
@@ -612,6 +614,15 @@ class QnALogPlugin extends obsidian.Plugin {
       console.warn("[QnALog] settings backup failed", e);
       return "";
     }
+  }
+  /** 装配层转发：诊断报告生成时一次性采集运行时快照。报告只拿纯数据，不持有服务对象。 */
+  getDiagnosticsSnapshot(session: RecordingSession | null): DiagnosticsSnapshot {
+    return {
+      liveAsrBacklog: session ? this.recording.getLiveAsrBacklogSummary(session) : summarizeLiveAsrJobs([]),
+      recorderBuffer: this.recording.getRecorderBufferSummary(),
+      recorderState: (this.recorder && this.recorder.state) || "idle",
+      queueTasks: this.queue && Array.isArray(this.queue.tasks) ? this.queue.tasks : [],
+    };
   }
   /** 装配层转发：域服务请求刷新侧边栏。域服务只拿这个方法，不持有 ViewShellService。 */
   requestOutlineRefresh(): void {
