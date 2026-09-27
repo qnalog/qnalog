@@ -639,7 +639,7 @@ export class SessionFinalizeService {
     if (tier === "discard") {
       new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
     } else if (audioName) {
-      new obsidian.Notice(`${t("Recording under {0} seconds: audio kept in the recording folder, no minutes created and no transcript kept. Import it manually if needed.").replace("{0}", String(limitSeconds))} （${audioName}）`, 8000);
+      new obsidian.Notice(t("Recording under {0} seconds: audio kept in the recording folder, no minutes created and no transcript kept. Import it manually if needed. ({1})").replace("{0}", String(limitSeconds)).replace("{1}", audioName), 8000);
     } else {
       // 母带录音器没产出音频（设备被收回等）→ 没有可留的文件，如实说明。
       new obsidian.Notice(t("Recording under {0} seconds and its audio could not be saved; skipped.").replace("{0}", String(limitSeconds)), 8000);

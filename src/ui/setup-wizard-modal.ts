@@ -342,7 +342,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       this.settled = true;
     } catch (error) {
       button.disabled = false;
-      new obsidian.Notice(`${t("Check failed")}：${(error && (error as Error).message) || error}`, 8000);
+      new obsidian.Notice(t("Check failed: {0}").replace("{0}", String((error && (error as Error).message) || error)), 8000);
       return;
     }
     this.render();

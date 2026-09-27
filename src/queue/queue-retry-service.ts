@@ -461,7 +461,7 @@ export class QueueRetryService {
     const remaining = tasks.filter(t => t && t.type === "transcribe" && t.id !== task.id
       && obsidian.normalizePath(String(t.mdPath || "")) === mdNorm);
     if (remaining.length) return;
-    new obsidian.Notice(`「${mdFile.basename}${t("\" All failed segments are transcribed; re-organizing the body...")}`, 8000);
+    new obsidian.Notice(t("\"{0}\" All failed segments are transcribed; re-organizing the body...").replace("{0}", mdFile.basename), 8000);
     const mode = this.host.noteWriter.detectModeFromMarkdown(mdFile) || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
     // fire-and-forget：不阻塞队列循环
     void (async () => {
@@ -589,7 +589,9 @@ export class QueueRetryService {
     if (!mode) throw new Error(t("Missing mode"));
     const tpl = await this.host.vocabulary.generateAndApplyIndustryPrompt(mode, { activate: task.activate !== false });
     const activated = task.activate !== false;
-    new obsidian.Notice(t("Created custom prompt \"") + tpl.name + "」" + (activated ? "，并设为当前默认。" : "。"), 7000);
+    new obsidian.Notice(activated
+      ? t("Created custom prompt \"{0}\", and it has been set as the current default.").replace("{0}", tpl.name)
+      : t("Created custom prompt \"{0}\".").replace("{0}", tpl.name), 7000);
     if (this.host.settingTab) {
       try { this.host.settingTab.display(); } catch { /* intentionally empty */ }
     }
@@ -603,7 +605,7 @@ export class QueueRetryService {
     const existing = this.host.queue.findActiveGeneratePromptTask(mode);
     if (existing) {
       const meta = getModeMeta(this.host.settings, mode);
-      new obsidian.Notice(t("A generation task already exists: reference \"") + (meta.prefix || mode) + "」的自定义提示词正在队列中", 5000);
+      new obsidian.Notice(t("A generation task already exists: the custom prompt referencing \"{0}\" is already in the queue").replace("{0}", meta.prefix || mode), 5000);
       return existing;
     }
     const task = await this.host.queue.add({
@@ -612,7 +614,7 @@ export class QueueRetryService {
       activate: !options || options.activate !== false,
     });
     const meta = getModeMeta(this.host.settings, mode);
-    new obsidian.Notice(t("Added to the background queue: reference \"") + (meta.prefix || mode) + "」生成自定义提示词（切换页面不会中断）", 5000);
+    new obsidian.Notice(t("Added to the background queue: generating the custom prompt that references \"{0}\" (switching pages will not interrupt it)").replace("{0}", meta.prefix || mode), 5000);
     try { this.host.recorder.emit(); } catch { /* intentionally empty */ }
     // 立刻拉起队列处理（不 await，让调用方立刻返回）
     this.host.queue.processAll()

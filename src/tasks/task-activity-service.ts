@@ -638,7 +638,7 @@ export class TaskActivityService {
       const ico = el.createSpan({ cls: "qnalog-statusbar-icon" + (spin ? " qnalog-statusbar-spin" : "") });
       try { obsidian.setIcon(ico, icon); } catch { /* intentionally empty */ }
       el.createSpan({ cls: "qnalog-statusbar-text", text });
-      el.setAttr("aria-label", text + "（点击查看转写队列）");
+      el.setAttr("aria-label", t("{0} (click to open the transcription queue)").replace("{0}", text));
     };
 
     const q = this.host.queue;

@@ -470,8 +470,10 @@ function errorMessage(error: unknown): string {
 export function formatDetectionReport(report: DetectionReport): string {
   if (!report || !report.stages.length) return t("Nothing to detect");
   return report.stages
-    .map((stage) => `${stage.label} ${stage.ok ? "✓" : "✗"}${stage.ok ? `（${stage.detail}）` : `：${stage.detail}`}`)
-    .join("　|　");
+    .map((stage) => stage.ok
+      ? t("{0} ✓ ({1})").replace("{0}", stage.label).replace("{1}", stage.detail)
+      : t("{0} ✗: {1}").replace("{0}", stage.label).replace("{1}", stage.detail))
+    .join(t(" | "));
 }
 
 /**

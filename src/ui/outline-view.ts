@@ -951,7 +951,7 @@ export class OutlineView extends obsidian.ItemView {
         const batch = body.createDiv({ cls: "qnalog-note-ask-batch" });
         const writeSel = batch.createEl("button", { cls: "qnalog-note-ask-batch-btn", attr: { type: "button" } });
         try { obsidian.setIcon(writeSel.createSpan({ cls: "qnalog-note-ask-button-icon" }), "file-plus-2"); } catch { /* intentionally empty */ }
-        writeSel.createSpan({ text: selCount ? `写入选中 ${selCount}${i18nT(" line items")}` : i18nT("Write selected") });
+        writeSel.createSpan({ text: selCount ? i18nT("Write selected {0} line items").replace("{0}", String(selCount)) : i18nT("Write selected") });
         writeSel.disabled = !selCount;
         writeSel.onclick = () => void this.writeSelectedAskAnswers(file);
       }
@@ -1544,7 +1544,7 @@ export class OutlineView extends obsidian.ItemView {
         attr: {
           type: "button",
           "data-group": item.key,
-          "aria-label": `${item.label}：${item.status}`,
+          "aria-label": i18nT("{0}: {1}").replace("{0}", item.label).replace("{1}", item.status),
         },
       });
       const clickable = nodeState === "pending" || (nodeState === "done" && item.key !== groupKey);
@@ -2272,7 +2272,7 @@ export class OutlineView extends obsidian.ItemView {
     try { obsidian.setIcon(addRow.createSpan({ cls: "qnalog-todo-inline-subtask-add-icon" }), "plus"); } catch { /* intentionally empty */ }
     const input = addRow.createEl("input", {
       cls: "qnalog-todo-inline-subtask-input",
-      attr: { type: "text", placeholder: existingSubs.length ? `已 ${existingSubs.length}/${MAX}${i18nT(", add more")}` : i18nT("Add subtask, press Enter to continue") },
+      attr: { type: "text", placeholder: existingSubs.length ? i18nT("Added {0}/{1}, add more").replace("{0}", String(existingSubs.length)).replace("{1}", String(MAX)) : i18nT("Add subtask, press Enter to continue") },
     });
     let done = false;
     const finish = () => {
@@ -2910,7 +2910,7 @@ export class OutlineView extends obsidian.ItemView {
     const canRollback = !!(review && review.restore);
     // 顶部说明：只有真有处理记录可看的时候才提"N 条记录可回看"
     const note = parent.createDiv({ cls: "qnalog-sediment-review-note" });
-    note.setText(items.length ? `本组已处理完毕 · ${items.length}${i18nT(" records can be reviewed")}` : i18nT("This group has been fully processed"));
+    note.setText(items.length ? i18nT("This group has been fully processed · {0} records can be reviewed").replace("{0}", String(items.length)) : i18nT("This group has been fully processed"));
     // 有记录才画列表；空记录不再硬塞"本组无处理记录"占位（会让用户困惑）
     if (items.length) {
       const list = parent.createDiv({ cls: "qnalog-sediment-list" });
@@ -2989,7 +2989,7 @@ export class OutlineView extends obsidian.ItemView {
     };
     actions.createEl("button", { text: i18nT("Ignore"), cls: "qnalog-sediment-action is-muted", attr: { type: "button" } }).onclick = () => this.ignorePeopleSuggestions([item], file);
     const org = item.org || item.organization || "";
-    const aliases = item.aliases && item.aliases.length ? item.aliases.join("、") : "";
+    const aliases = item.aliases && item.aliases.length ? item.aliases.join(i18nT(", ")) : "";
     const meta = [item.role || "", org, aliases].filter(Boolean).join(" · ");
     content.createDiv({ cls: "qnalog-sediment-item-meta", text: meta || i18nT("Identity to be filled in") });
   }
@@ -3046,7 +3046,7 @@ export class OutlineView extends obsidian.ItemView {
     const meta = card.createDiv({ cls: "qnalog-deposit-candidate-meta" });
     meta.createDiv({ text: `${i18nT("Role:")}${item.role || i18nT("To be filled in")}` });
     meta.createDiv({ text: `${i18nT("Organization:")}${item.org || item.organization || i18nT("To be filled in")}` });
-    if (item.aliases && item.aliases.length) meta.createDiv({ text: `${i18nT("Common aliases:")}${item.aliases.join("、")}` });
+    if (item.aliases && item.aliases.length) meta.createDiv({ text: `${i18nT("Common aliases:")}${item.aliases.join(i18nT(", "))}` });
     card.createDiv({ cls: "qnalog-deposit-candidate-source", text: `${i18nT("Source:")}${item.sourceBasename || file.basename}` });
     const evidence = item.evidence || item.reason || item.note || "";
     if (evidence) card.createDiv({ cls: "qnalog-deposit-candidate-evidence", text: `${i18nT("Basis:")}${evidence}` });
@@ -3085,7 +3085,7 @@ export class OutlineView extends obsidian.ItemView {
       [
         ["check", i18nT("Items already added to the library are unaffected")],
         ["check", i18nT("Ignored items will not appear again")],
-        ["alert-triangle", `${i18nT("Currently ")}${pendingCount}${i18nT(" unconfirmed candidates will be overwritten")}`],
+        ["alert-triangle", i18nT("Currently {0} unconfirmed candidates will be overwritten").replace("{0}", String(pendingCount))],
       ].forEach(([iconName, text]) => {
         const li = list.createEl("li");
         try { obsidian.setIcon(li.createSpan({ cls: "qnalog-sediment-confirm-list-icon" }), iconName); } catch { /* intentionally empty */ }
@@ -5111,10 +5111,10 @@ export class OutlineView extends obsidian.ItemView {
     );
     const coverageLabel = coverageIncomplete
       ? `${i18nT("Covering ")}${coverageCommitted}/${coverageTotal}${i18nT(" segments")}`
-      : (coverageTotal > 0 ? `已覆盖 ${coverageCommitted}/${coverageTotal}${i18nT(" segments")}` : i18nT("Organized from transcript"));
+      : (coverageTotal > 0 ? i18nT("Covered {0}/{1} segments").replace("{0}", String(coverageCommitted)).replace("{1}", String(coverageTotal)) : i18nT("Organized from transcript"));
     aiHead.createDiv({
       cls: `qnalog-outline-source-badge${coverageIncomplete || degradedBatchCount ? " is-partial" : ""}`,
-      text: `${coverageLabel}${degradedBatchCount ? ` · ${degradedBatchCount} 批待复核` : ""}`,
+      text: `${coverageLabel}${degradedBatchCount ? i18nT(" · {0} batches pending review").replace("{0}", String(degradedBatchCount)) : ""}`,
     });
     const headActions = aiHead.createDiv({ cls: "qnalog-outline-head-actions" });
     const refreshBtn = headActions.createEl("button", { text: outlineRunning ? i18nT("Stop waiting") : i18nT("Refresh") });
@@ -6047,7 +6047,7 @@ export class OutlineView extends obsidian.ItemView {
     const retryTasks = getQueueTasksForMarkdown(this.plugin, file, { types: ["transcribe"], failedOnly: true });
     if (retryTasks.length) {
       menu.addItem((item) => {
-        item.setTitle(`${i18nT("Retry failed transcription segments (")}${retryTasks.length}）`)
+        item.setTitle(i18nT("Retry failed transcription segments ({0})").replace("{0}", String(retryTasks.length)))
           .setIcon("rotate-ccw")
           .onClick(() => this.retryRecentTranscription(file));
       });
@@ -6233,7 +6233,7 @@ export class OutlineView extends obsidian.ItemView {
       const cb = option.createEl("input", { type: "checkbox", attr: { id } });
       const label = option.createEl("label", { attr: { for: id } });
       label.createSpan({ text: `${i18nT("Also delete the corresponding recording files (")}${audioFiles.length}${i18nT(")")}` });
-      const names = audioFiles.map((audio) => audio.path || audio.name).slice(0, 3).join("、");
+      const names = audioFiles.map((audio) => audio.path || audio.name).slice(0, 3).join(i18nT(", "));
       option.createDiv({
         cls: "qnalog-delete-note-option-hint",
         text: audioFiles.length > 3 ? `${names}${i18nT(" and more")}` : names,
@@ -6322,7 +6322,7 @@ export class OutlineView extends obsidian.ItemView {
     this.showRecentHome = true;
     this.idlePanelTab = "recent";
     this.render();
-    new obsidian.Notice(`${i18nT("Deleted transcript record")}${removedAudio ? i18nT(", and deleted {0} recording files").replace("{0}", String(removedAudio)) : ""}${removedTasks ? `，清理 ${removedTasks} 个队列任务` : ""}`);
+    new obsidian.Notice(`${i18nT("Deleted transcript record")}${removedAudio ? i18nT(", and deleted {0} recording files").replace("{0}", String(removedAudio)) : ""}${removedTasks ? i18nT(", and cleaned up {0} queue tasks").replace("{0}", String(removedTasks)) : ""}`);
   }
 
   syncRecentNoteProcessingState(file, row, actions, failedTaskCount) {

@@ -430,7 +430,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         new obsidian.Notice(t("Setup complete. You can start recording."), 8000);
         this.renderSettings();
       } catch (error) {
-        new obsidian.Notice(`${t("Check failed")}：${(error && error.message) || error}`, 8000);
+        new obsidian.Notice(t("Check failed: {0}").replace("{0}", (error && error.message) || error), 8000);
         b.setDisabled(false);
         b.setButtonText(t("Save and enable"));
       }
@@ -446,7 +446,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         const report = await runPresetDetection(host, plan, this.probePorts());
         new obsidian.Notice(formatDetectionReport(report), 10000);
       } catch (error) {
-        new obsidian.Notice(`${t("Check failed")}：${(error && error.message) || error}`, 8000);
+        new obsidian.Notice(t("Check failed: {0}").replace("{0}", (error && error.message) || error), 8000);
       } finally {
         b.setDisabled(false);
         b.setButtonText(t("Check only"));
@@ -683,7 +683,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       row.addClass("is-clickable");
       row.setAttr("role", "button");
       row.setAttr("tabindex", "0");
-      row.setAttr("aria-label", `${line.label}：${line.value}${t(", open the corresponding settings")}`);
+      row.setAttr("aria-label", t("{0}: {1}, open the corresponding settings").replace("{0}", line.label).replace("{1}", line.value));
       row.onclick = () => jump(line.target);
       row.onkeydown = (ev) => {
         if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); jump(line.target); }
@@ -973,7 +973,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           renderChannelProbeRows(channelResult, [
             { label: t("Input device"), value: `${info.channelCount}${t(" channels")}`, state: info.channelCount > 1 ? "success" : "muted" },
             { label: t("Test recording"), value: `${analysis.channelCount}${t(" channels")}`, state: analysis.channelCount > 1 ? "success" : "muted" },
-            { label: t("Audio detected"), value: activeChannels.length ? activeChannels.join("、") : t("None"), state: activeChannels.length ? "success" : "warning" },
+            { label: t("Audio detected"), value: activeChannels.length ? activeChannels.join(t(", ")) : t("None"), state: activeChannels.length ? "success" : "warning" },
             { label: t("Speaker separation"), value: contentStatus, state: contentState },
           ]);
           if (analysis.separation === "separated") {
@@ -1067,7 +1067,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const checklist = body.createEl("ol", { cls: "qnalog-provider-checklist" });
     for (const step of profile.steps || []) checklist.createEl("li", { text: t(step) });
     if (missing.length) {
-      body.createDiv({ cls: "qnalog-provider-missing", text: t("Still to be filled in:") + missing.join("、") });
+      body.createDiv({ cls: "qnalog-provider-missing", text: t("Still to be filled in:") + missing.join(t(", ")) });
     }
     if (profile.priceHint) {
       body.createDiv({ cls: "qnalog-provider-price", text: t(profile.priceHint) });
@@ -1200,7 +1200,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     await client.connect();
     // 握手（含鉴权）已通过即可判定连通；立刻结束，避免占用配额。
     try { await client.finish(); } catch { /* 关闭失败不影响连通结论 */ }
-    return `${t("Connected (")}${provider.model}）`;
+    return t("Connected ({0})").replace("{0}", provider.model);
   }
 
   // 依次测「转写 + 大模型」连通性，返回一行汇总文案。供 API 方案检测 / 首页快速配置检测共用。
@@ -1239,7 +1239,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       applyLlmProfileToWorkingConfig(this.plugin.settings, id);
       await this.plugin.saveSettings();
       const p = findLlmProfile(this.plugin.settings, id);
-      new obsidian.Notice(`${t("Switched to configuration \"")}${p ? p.name : id}」${p && p.asr ? t(" (transcription and AI briefing)") : t(" (AI briefing only)")}`, 5000);
+      new obsidian.Notice(t("Switched to configuration \"{0}\"{1}").replace("{0}", p ? p.name : id).replace("{1}", p && p.asr ? t(" (transcription and AI briefing)") : t(" (AI briefing only)")), 5000);
       this.renderSettings();
     });
 
@@ -1400,7 +1400,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const text = await this.runAsrConnectivityTest();
           return `${t("Returned:")}${(text || t("<empty>")).slice(0, 30)}`;
         });
-        new obsidian.Notice(result.ok ? `${t("Connected successfully (")}${result.detail}）` : `${t("Test failed:")}${result.detail}`, 8000);
+        new obsidian.Notice(result.ok ? t("Connected successfully ({0})").replace("{0}", result.detail) : `${t("Test failed:")}${result.detail}`, 8000);
         b.setDisabled(false); b.setButtonText(t("Test"));
         this.renderSettings();
       }));
@@ -1904,9 +1904,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       try {
         const content = await this.plugin.app.vault.cachedRead(file);
         const groups = parseVocabularyGroups(content);
-        setting.setDesc(`${t("Currently ")}${countVocabularyGroups(groups)}${t(" ASR hotwords (")}${summarizeVocabularyGroups(groups)}）。`);
+        setting.setDesc(t("Currently {0} ASR hotwords ({1}).").replace("{0}", String(countVocabularyGroups(groups))).replace("{1}", summarizeVocabularyGroups(groups)));
       } catch (e) {
-        setting.setDesc(`${t("Failed to read:")}${e.message || e}`);
+        setting.setDesc(t("Failed to read: {0}").replace("{0}", String(e.message || e)));
       }
     };
 
@@ -2047,9 +2047,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async setting => {
         try {
           const people = await loadPeopleDirectory(this.plugin);
-          setting.setDesc(`${t("Currently ")}${people.length}${t(" people. Person profiles are read locally only by default.")}`);
+          setting.setDesc(t("Currently {0} people. Person profiles are read locally only by default.").replace("{0}", String(people.length)));
         } catch (e) {
-          setting.setDesc(`${t("Failed to read:")}${e.message || e}`);
+          setting.setDesc(t("Failed to read: {0}").replace("{0}", String(e.message || e)));
         }
       });
 
@@ -2057,7 +2057,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async v => { this.plugin.settings.todoCardsFolder = v || DEFAULT_SETTINGS.todoCardsFolder; },
       async setting => {
         const count = countMarkdownInFolder(this.plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder);
-        setting.setDesc(`${t("Currently ")}${count}${t(" to-do cards. To-do cards are good for tracking action items across meetings and projects.")}`);
+        setting.setDesc(t("Currently {0} to-do cards. To-do cards are good for tracking action items across meetings and projects.").replace("{0}", String(count)));
       });
 
     createPathSetting(advancedBody, t("Views folder"), t("Save the resource overview and Base views generated by Q&A Log."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
@@ -2095,11 +2095,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       : (isSharedAddressSpaceEndpoint(this.plugin.settings.llmEndpoint)
         ? t("The current LLM service is detected as a private network such as Tailscale") : t("The current LLM service is detected as cloud"));
     const modeLabel = { privacy: t("Privacy first"), hotwords: t("Person name hotwords"), localFull: t("Local enhancement") }[normalizePeopleContextMode(this.plugin.settings.peopleContextMode)] || t("Privacy first");
-    const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? `已于 ${this.plugin.settings.peopleHotwordsConsentAt}${t(" authorized name hotwords.")}` : t("Name hotwords not yet authorized.");
+    const consentText = hasPeopleHotwordsConsent(this.plugin.settings) ? t("Name hotwords authorized on {0}.").replace("{0}", String(this.plugin.settings.peopleHotwordsConsentAt)) : t("Name hotwords not yet authorized.");
 
     this.createSettingsSubhead(advancedBody, t("Person profile privacy"), t("Determines whether person names and context are sent to the current service along with transcription or organizing requests."));
     new obsidian.Setting(advancedBody).setName(t("Person profile usage policy"))
-      .setDesc(`${modeLabel}。${asrScope}；${llmScope}。${consentText}`)
+      .setDesc(t("{0}. {1}; {2}. {3}").replace("{0}", modeLabel).replace("{1}", asrScope).replace("{2}", llmScope).replace("{3}", consentText))
       .addDropdown(d => d
         .addOption("privacy", t("Privacy first: do not send people data"))
         .addOption("hotwords", t("Person name hotwords: names/forms of address only, requires authorization"))
@@ -2178,7 +2178,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       if (existing instanceof obsidian.TFolder) return;
       warnEl = c.createDiv({ cls: "qnalog-folder-warn" });
       if (existing) {
-        warnEl.createSpan({ text: `「${p}${t("\" already exists but is not a folder; choose another path.")}` });
+        warnEl.createSpan({ text: t("\"{0}\" already exists but is not a folder; choose another path.").replace("{0}", p) });
       } else {
         warnEl.createSpan({ text: `${t("Folder \"")}${p}${t("\" does not exist yet.")}` });
         const btn = warnEl.createEl("button", { text: t("Create this folder"), cls: "mod-cta" });
@@ -2488,7 +2488,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       });
 
     new obsidian.Setting(c).setName(t("Task queue"))
-      .setDesc(`${t("Currently ")}${this.plugin.queue.tasks.length}${t(" tasks.")}`)
+      .setDesc(t("Currently {0} tasks.").replace("{0}", String(this.plugin.queue.tasks.length)))
       .addButton(b => b.setButtonText(t("Open queue")).onClick(() => new QueueModal(this.app, this.plugin).open()))
   }
 
@@ -2536,7 +2536,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       this.plugin.settings.lastUpdateError ? t("Last error:") + this.plugin.settings.lastUpdateError : "",
       rawBases.length > 1 ? t("Alternate download source:") + (rawBases.length - 1) + t(" available") : "",
       t("Write directory:") + pluginBasePath(this.plugin),
-    ].filter(Boolean).join("；");
+    ].filter(Boolean).join(t("; "));
 
     new obsidian.Setting(c).setName(t("Update Status"))
       .setDesc(status);
@@ -2599,7 +2599,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             try { await trashVaultFileRef(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
           }
         }
-        new obsidian.Notice(n ? `已清空诊断日志：${n}${t(" files (can be restored from the system trash)")}` : t("The diagnostic log folder is empty"));
+        new obsidian.Notice(n ? t("Diagnostic log cleared: {0} files (can be restored from the system trash)").replace("{0}", String(n)) : t("The diagnostic log folder is empty"));
       }));
 
     new obsidian.Setting(c).setName(t("Copyright & License"))

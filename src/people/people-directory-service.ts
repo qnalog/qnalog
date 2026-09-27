@@ -377,8 +377,10 @@ export class PeopleDirectoryService {
       await this.host.saveSettings();
       const suggestions = await this.getCachedPeopleDirectorySuggestions();
       if (!suggestions.length) {
-        const suffix = failed ? `，失败 ${failed}` : "";
-        new obsidian.Notice(`${t("No new people suggestions (ignored suggestions are not shown again)")}${suffix}`);
+        const noticeMessage = failed
+          ? t("No new people suggestions (ignored suggestions are not shown again), {0} failed").replace("{0}", String(failed))
+          : t("No new people suggestions (ignored suggestions are not shown again)");
+        new obsidian.Notice(noticeMessage);
         return;
       }
       if (failed) new obsidian.Notice(`${t("People scan complete, ")}${failed}${t(" notes could not be read or extracted; try again later.")}`, 8000);

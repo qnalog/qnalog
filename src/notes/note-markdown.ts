@@ -1408,7 +1408,10 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
     sourceName: `长文本预摘要 ${i + 1}`,
     sourcePath: "",
     rawText: "",
-    text: `${t("[Long-text pre-summary ")}${i + 1}/${summaries.length}】\n${summary}`,
+    text: t("[Long-text pre-summary {0}/{1}]\n{2}")
+      .replace("{0}", String(i + 1))
+      .replace("{1}", String(summaries.length))
+      .replace("{2}", summary),
   }));
 }
 

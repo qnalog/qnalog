@@ -245,7 +245,7 @@ export class SemanticCanvasService {
     const progressNotice = new obsidian.Notice(t("Reading note..."), 300000);
     const updateProgress = async (phase, label, current = 0, total = 1) => {
       this.progressByPath.set(sourceFile.path, { phase, label, current, total });
-      progressNotice.setMessage(total > 1 ? `${label}（${current}/${total}）` : label);
+      progressNotice.setMessage(total > 1 ? t("{0} ({1}/{2})").replace("{0}", label).replace("{1}", String(current)).replace("{2}", String(total)) : label);
       await this.host.diagnostics.logDiagnostic("info", "canvas.semantic_phase", label, {
         sourcePath: sourceFile.path,
         phase,

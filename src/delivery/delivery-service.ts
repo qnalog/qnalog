@@ -254,8 +254,15 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       if (!target) throw new Error(t("Unable to generate a usable email draft path"));
       const draft = await this.host.app.vault.create(target, eml);
       const opened = this.openVaultFileInSystem(draft.path);
-      const recipientHint = recipients.length ? `，已填入 ${recipients.length} 个收件人` : "，未匹配到邮箱";
-      new obsidian.Notice(`${t("Q&A Log: generated email draft ")}${recipientHint}${t(", attachments ")}${attachments.length}${t(".")}${opened ? "" : t("You can open it in the email drafts folder.")}`, 10000);
+      const recipientCount = recipients.length;
+      const attachmentCount = attachments.length;
+      const draftHint = recipientCount
+        ? t("Q&A Log: generated email draft, {0} recipients added, attachments {1}.")
+          .replace("{0}", String(recipientCount))
+          .replace("{1}", String(attachmentCount))
+        : t("Q&A Log: generated email draft, no email matched, attachments {0}.")
+          .replace("{0}", String(attachmentCount));
+      new obsidian.Notice(`${draftHint}${opened ? "" : t("You can open it in the email drafts folder.")}`, 10000);
     } catch (e) {
       console.error("[QnALog] create email draft failed", e);
       new obsidian.Notice(`${t("Email draft generation failed: ")}${(e && e.message) || e}`, 9000);

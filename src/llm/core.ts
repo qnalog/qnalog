@@ -74,7 +74,7 @@ export function decorateLlmHttpDetail(status, detail, endpoint) {
     hint = t("Poe is rate-limiting or busy right now; Q&A Log will back off per the server's Retry-After and retry once.");
   }
   if (!hint) return base;
-  return base ? `${base}。${hint}` : hint;
+  return base ? t("{0}. {1}").replace("{0}", base).replace("{1}", hint) : hint;
 }
 
 export function isTokenPlanLlmEndpoint(endpoint) {
@@ -707,7 +707,7 @@ export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record
     }
     problems.push(...(urlProblems.length ? urlProblems : [t("{0} → No model list returned").replace("{0}", url)]));
   }
-  throw new Error(problems.join("；") || t("Failed to fetch the model list"));
+  throw new Error(problems.join(t("; ")) || t("Failed to fetch the model list"));
 }
 
 export async function fetchLlmModelList(endpoint, apiKey): Promise<string[]> {

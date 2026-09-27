@@ -251,7 +251,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
           ? `${i18nT("These are the ones already ignored: ")}${this.options.ignoredCount || this.suggestions.length}${i18nT(" people suggestions. Suggestions ignored by mistake can be restored to pending first, or edited and saved into the person profiles directly; once saved they are removed from the ignored list automatically.")}`
         : this.options.fromCache
           ? `${i18nT("These are the ones not yet processed since the last scan: ")}${this.options.cachedCount || this.suggestions.length}${i18nT(" people suggestions. They stay in the local settings until you save, ignore, or clear them, so you can continue later.")}`
-        : `${i18nT("Q&A Log scanned ")}${this.options.scannedCount || 0}${i18nT(" notes scanned")}，只显示需要确认的人员建议。已有人员资料仅在本地用于匹配和去重，不随请求发送。${this.options.remainingCount ? i18nT("After this round, {0} notes still await scanning.").replace("{0}", String(this.options.remainingCount)) : ""}`,
+        : `${i18nT("Q&A Log scanned {0} notes in the minutes library; only person suggestions that need confirmation are shown. Existing person profiles are used only locally for matching and deduplication and are not sent with the request.").replace("{0}", String(this.options.scannedCount || 0))}${this.options.remainingCount ? i18nT("After this round, {0} notes still await scanning.").replace("{0}", String(this.options.remainingCount)) : ""}`,
     });
     contentEl.createDiv({
       cls: "setting-item-description qnalog-people-suggestion-guide",
@@ -276,7 +276,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     };
     const getPersonHint = (person) => {
       if (!person) return "";
-      const aliases = (person.aliases || []).filter(Boolean).slice(0, 4).join("、");
+      const aliases = (person.aliases || []).filter(Boolean).slice(0, 4).join(i18nT(", "));
       return [
         person.role ? `${i18nT("Role:")}${person.role}` : "",
         person.organization ? `${i18nT("Organization:")}${person.organization}` : "",
@@ -385,7 +385,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
         .addText(t => { nameInput = t; t.setValue(item.name || ""); });
       new obsidian.Setting(box).setName(i18nT("Common Aliases"))
         .setDesc(i18nT("Separate multiple aliases with commas or enumeration commas (、)."))
-        .addText(t => { aliasInput = t; t.setValue((item.aliases || []).join("、")); });
+        .addText(t => { aliasInput = t; t.setValue((item.aliases || []).join(i18nT(", "))); });
       new obsidian.Setting(box).setName(i18nT("Role"))
         .addText(t => { roleInput = t; t.setValue(item.role || ""); });
       new obsidian.Setting(box).setName(i18nT("Organization"))
@@ -398,7 +398,7 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
       if (item.evidence && item.evidence.length) {
         box.createDiv({
           cls: "setting-item-description",
-          text: i18nT("Basis:") + item.evidence.slice(0, 3).join("；"),
+          text: i18nT("Basis:") + item.evidence.slice(0, 3).join(i18nT("; ")),
         });
       }
       rowRef = { item, checkbox, nameInput, aliasInput, roleInput, orgInput, relationSelect, noteArea };
@@ -1033,7 +1033,7 @@ export class QueueModal extends obsidian.Modal {
       const currentProgress = primaryActivity && Number.isFinite(Number(primaryActivity.progress))
         ? Number(primaryActivity.progress)
         : detail && Number.isFinite(Number(detail.percent)) ? Number(detail.percent) : null;
-      const pctTxt = currentProgress !== null ? `（${Math.round(currentProgress)}%）` : "";
+      const pctTxt = currentProgress !== null ? i18nT("({0}%)").replace("{0}", String(Math.round(currentProgress))) : "";
       subLine(body, `${stepBase}${pctTxt}${detail && detail.count ? " · " + detail.count : ""}`);
       if (detail && detail.stepDetail) {
         body.createDiv({ cls: "qnalog-progress-detail", text: detail.stepDetail });
@@ -1362,7 +1362,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       // 用户点了「重新检测」，要设备名才能报出检测到哪些设备，申请权限是预期的。
       const info = await enumerateAudioDevices({ requestPermission: true });
       if (info.virtualCables.length > 0) {
-        const labels = info.virtualCables.map(d => d.label).join("、");
+        const labels = info.virtualCables.map(d => d.label).join(i18nT(", "));
         new obsidian.Notice(`${i18nT("Computer audio input detected:")}${labels}`);
         this.close();
       } else {
@@ -1956,7 +1956,7 @@ export class ImportTextModal extends obsidian.Modal {
       const section = this.listEl.createDiv({ cls: `qnalog-import-section qnalog-import-section-${category}` });
       const head = section.createDiv({ cls: "qnalog-import-section-head" });
       const titleWrap = head.createDiv({ cls: "qnalog-import-section-copy" });
-      titleWrap.createDiv({ cls: "qnalog-import-section-title", text: `${i18nT(config.label)}（${group.length}）` });
+      titleWrap.createDiv({ cls: "qnalog-import-section-title", text: i18nT("{0} ({1})").replace("{0}", i18nT(config.label)).replace("{1}", String(group.length)) });
       titleWrap.createDiv({ cls: "qnalog-import-section-desc", text: i18nT(config.desc) });
       const shown = group.slice(0, Math.max(0, 240 - rendered));
       shown.forEach((item, index) => this.renderSingleFile(section, item, rendered + index));
@@ -2313,10 +2313,10 @@ export class ImportAudioModal extends obsidian.Modal {
 
     if (batch.missing.length || batch.emptyCount || batch.largeCount) {
       const warns = [];
-      if (batch.missing.length) warns.push(i18nT("May be missing ") + batch.missing.map((n) => "seg" + pad(n)).join("、"));
+      if (batch.missing.length) warns.push(i18nT("May be missing ") + batch.missing.map((n) => "seg" + pad(n)).join(i18nT(", ")));
       if (batch.emptyCount) warns.push(`${batch.emptyCount}${i18nT(" segments are nearly empty files")}`);
       if (batch.largeCount) warns.push(`${batch.largeCount}${i18nT(" segments exceed 25 MB")}`);
-      details.createDiv({ cls: "qnalog-import-warn", text: warns.join("；") });
+      details.createDiv({ cls: "qnalog-import-warn", text: warns.join(i18nT("; ")) });
     }
 
     const fileList = details.createDiv({ cls: "qnalog-import-batch-files" });
@@ -2368,7 +2368,7 @@ export class ImportAudioModal extends obsidian.Modal {
     const n = this.selected.size;
     const fullBatches = (this.batches || []).filter((batch) => batch.files.length && batch.files.every((f) => this.selected.has(f.path))).length;
     const label = fullBatches > 0 ? `${fullBatches}${i18nT(" groups / ")}${n}${i18nT(" files")}` : `${n}${i18nT(" files")}`;
-    this.processBtn.setText(`${i18nT("Start transcription (")}${label}）`);
+    this.processBtn.setText(i18nT("Start transcription ({0})").replace("{0}", label));
     this.processBtn.disabled = n === 0;
     if (this.selectionText) {
       this.selectionText.setText(n ? i18nT("Will be merged and processed in ascending filename order") : i18nT("No audio selected"));

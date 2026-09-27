@@ -259,7 +259,7 @@ export class ImportService {
         }
       } catch (error) {
         console.error(error);
-        new obsidian.Notice(`${t("Failed to read:")}${displayName}`);
+        new obsidian.Notice(t("Failed to read: {0}").replace("{0}", String(displayName)));
         continue;
       }
 
@@ -335,8 +335,13 @@ export class ImportService {
           ? extractSpeakerIdsFromMarkdown(String(result.text || ""))
           : [];
         if (speakerCount >= 2 && String(result.text || "").trim() && detectedSpeakerIds.length < speakerCount) {
-          const mismatchMessage = `已指定 ${speakerCount} 位说话人，模型实际区分出 ${detectedSpeakerIds.length} 位`;
-          new obsidian.Notice(`${mismatchMessage}${t(". The original transcript is preserved; check it in the speaker editor.")}`, 9000);
+          const mismatchMessage = t("{0} speakers were specified, but the model distinguished {1}").replace("{0}", String(speakerCount)).replace("{1}", String(detectedSpeakerIds.length));
+          new obsidian.Notice(
+            t("{0} speakers were specified, but the model distinguished {1}. The original transcript is preserved; check it in the speaker editor.")
+              .replace("{0}", String(speakerCount))
+              .replace("{1}", String(detectedSpeakerIds.length)),
+            9000,
+          );
           await this.host.diagnostics.logDiagnostic("warn", "asr.import_speaker_count_mismatch", mismatchMessage, {
             provider: importProvider.id,
             model: importProvider.model || "",
@@ -599,7 +604,7 @@ export class ImportService {
         sources.push({ file, path: file.path, name: file.name, text });
       } catch (e) {
         console.error("[QnALog] import text read failed", e);
-        new obsidian.Notice(`${t("Failed to read:")}${file.name}`);
+        new obsidian.Notice(t("Failed to read: {0}").replace("{0}", String(file.name)));
       }
     }
     if (!sources.length) {

@@ -224,7 +224,7 @@ export class UpdateService {
       }
     }
     errors.push("requestUrl unavailable");
-    throw new Error(errors.join("；"));
+    throw new Error(errors.join(t("; ")));
   }
 
   private async fetchTextFromSources(rawBases: readonly string[], fileName: string): Promise<FetchedUpdateText> {
