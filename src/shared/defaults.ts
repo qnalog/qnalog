@@ -256,6 +256,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   enableRealtimeOutline: true,
   realtimeOutlineDebounceMs: 2500, // 读取点有 2500 下限，低于无效
   autoOpenOutlineOnRecord: true,
+  // 用户点过「稍后设置」或关闭过首次配置向导后不再自动弹；首页的向导按钮不受它控制
+  setupWizardDismissed: false,
 
   autoRenameWithTitle: true,
   consolidatedLayout: true,

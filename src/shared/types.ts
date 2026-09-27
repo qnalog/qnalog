@@ -178,6 +178,7 @@ export interface PluginSettings {
   enableRealtimeOutline: boolean;
   realtimeOutlineDebounceMs: number;
   autoOpenOutlineOnRecord: boolean;
+  setupWizardDismissed: boolean;
   autoRenameWithTitle: boolean;
   consolidatedLayout: boolean;
   maxRetries: number;
@@ -214,6 +215,7 @@ export interface PersistedPluginSettings {
   diagnostics: Record<string, unknown>;
   ui: Record<string, unknown>;
   updates: Record<string, unknown>;
+  setupWizardDismissed: boolean;
   promptTemplates: Record<string, PromptTemplate>;
   activeTemplateByMode: Record<string, string>;
 }

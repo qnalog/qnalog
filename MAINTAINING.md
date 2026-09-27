@@ -662,7 +662,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 ## 9. 设置映射表
 
-维护多个设置界面之前，先把**每一份设置的当前状态**盘清：入口、默认值、落盘键、作用与归属。本节是 2026-09-15 盘点的产物，覆盖 `PluginSettings` 的全部 **87** 个顶层键，`SETTINGS_SCHEMA_VERSION = 1`。
+维护多个设置界面之前，先把**每一份设置的当前状态**盘清：入口、默认值、落盘键、作用与归属。本节是 2026-09-15 盘点的产物，覆盖 `PluginSettings` 的全部 **89** 个顶层键，`SETTINGS_SCHEMA_VERSION = 1`。
 
 **三列由脚本从源码解析生成，不是手工抄写**，因此不会与代码脱节：默认值取自 `src/shared/defaults.ts`；落盘位置与读回别名取自 `src/shared/settings-io.ts` 的 `serializePluginSettings` 与 `normalizePluginSettings`；现入口取自 `src/ui/settings-tab.ts` 及其余 UI 写点（侧边栏、命令面板、弹窗、拖动）。`scripts/check-settings-map.mjs` 会核对本表的键集合与落盘路径，键增删或改路径而未更新本节时构建失败。
 
@@ -750,6 +750,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `enableRealtimeOutline` | `true` | `liveOutline.enabled` | — | 转写后是否自动更新实时大纲 | 录音 / 自动导入 | 高级 · 输出 |
 | `realtimeOutlineDebounceMs` | `2500` | `liveOutline.debounceMs` | — | 实时大纲请求防抖毫秒数 | 无 | 高级 · 输出 |
 | `autoOpenOutlineOnRecord` | `true` | `liveOutline.openOnCapture` | — | 录音开始时是否自动打开侧边栏 | 录音 / 自动导入 | 高级 · 输出 |
+| `setupWizardDismissed` | `false` | `setupWizardDismissed` | — | 关闭过首次配置向导后不再自动弹出；首页的向导按钮不受它控制 | 无 | 基本设置 |
 | `autoRenameWithTitle` | `true` | `noteNaming.renameWithTitle` | — | 是否用 AI 提炼主题追加到文件名 | 录音 / 自动导入 | 高级 · 输出 |
 | `consolidatedLayout` | `true` | `noteNaming.consolidatedLayout` | — | 纪要是否整合排版（顶部整合、底部原始分段） | 录音 / 自动导入 | 高级 · 输出 |
 | `maxRetries` | `3` | `retryPolicy.maxAttempts` | — | 转写/整理任务的自动重试上限 | 录音 / 自动导入 | 高级 · 自动化 |
