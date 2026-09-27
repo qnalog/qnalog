@@ -406,7 +406,7 @@ describe("向导列表组装（wizardModelCandidates）", () => {
     const list = wizardModelCandidates(
       "openrouter",
       "asr",
-      "qwen/qwen3-asr-1.7b",
+      ["qwen/qwen3-asr-1.7b", "qwen/qwen3-asr-1.7b"],
       [{ id: "openai/gpt-audio" }, { id: "some-asr-model" }],
     );
     expect(list[0]).toBe("qwen/qwen3-asr-1.7b");
@@ -425,7 +425,7 @@ describe("向导列表组装（wizardModelCandidates）", () => {
     const llm = wizardModelCandidates(
       "openrouter",
       "llm",
-      "deepseek/deepseek-v4.1-flash",
+      ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash"],
       [{ id: "deepseek/deepseek-v4.1-flash" }, { id: "qwen/qwen3.8-flash" }],
     );
     expect(llm).toEqual(["deepseek/deepseek-v4.1-flash", "qwen/qwen3.8-flash"]);
@@ -434,9 +434,21 @@ describe("向导列表组装（wizardModelCandidates）", () => {
   });
 
   it("可枚举平台的转写列表不掺特例（百炼只信目录命名族）", () => {
-    const bailian = wizardModelCandidates("bailian", "asr", "qwen3-asr-flash", [{ id: "qwen3-asr-flash" }, { id: "paraformer-v2" }]);
+    const bailian = wizardModelCandidates("bailian", "asr", ["qwen3-asr-flash", "qwen3-asr-flash"], [{ id: "qwen3-asr-flash" }, { id: "paraformer-v2" }]);
     expect(bailian).toEqual(["qwen3-asr-flash", "paraformer-v2"]);
-    expect(wizardModelCandidates("mimo", "asr", "mimo-v2.5-asr", [])).toEqual(["mimo-v2.5-asr"]);
+    expect(wizardModelCandidates("mimo", "asr", ["mimo-v2.5-asr", "mimo-v2.5-asr"], [])).toEqual(["mimo-v2.5-asr"]);
+  });
+
+  it("改动默认值后再拉取：预置默认仍作为种子在列（目录缺它也不消失）", () => {
+    // 用户把百炼转写模型从默认改成 paraformer-v2，目录里恰好没有默认模型的极端情况
+    const list = wizardModelCandidates(
+      "bailian",
+      "asr",
+      ["paraformer-v2", "qwen3-asr-flash"],
+      [{ id: "paraformer-v2" }, { id: "sensevoice-v1" }],
+    );
+    expect(list).toEqual(["paraformer-v2", "qwen3-asr-flash", "sensevoice-v1"]);
+    expect(list).toContain("qwen3-asr-flash");
   });
 });
 

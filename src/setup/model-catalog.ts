@@ -54,16 +54,19 @@ function asrModelCandidates(providerId: string): string[] {
 }
 
 /**
- * 向导模型列表的统一组装：当前值 → （仅转写）平台特例 → 目录分类命中。
- * 特例清单只进转写列表——整理列表只信目录，防止 whisper 类混进 AI 整理。
+ * 向导模型列表的统一组装：种子 → （仅转写）平台特例 → 目录分类命中。
+ * 种子必须同时含「输入框当前值」与「预设内置默认」——否则用户把默认改成
+ * 非默认后再拉取，默认值就只能指望目录，目录缺它时会从候选里消失
+ *（实测反馈：百炼改过转写模型后默认 qwen3-asr-flash 不见了）。
+ * 特例清单只进转写列表——整理列表只信种子与目录，防止 whisper 类混进 AI 整理。
  */
-export function wizardModelCandidates(providerId: string, category: WizardModelCategory, current: string, catalog: CatalogItem[]): string[] {
+export function wizardModelCandidates(providerId: string, category: WizardModelCategory, seeds: string[], catalog: CatalogItem[]): string[] {
   const filtered = filterModelsForCategory(catalog, category);
   if (category === "asr") {
-    return mergeModelCandidates([current], asrModelCandidates(providerId), filtered);
+    return mergeModelCandidates(seeds, asrModelCandidates(providerId), filtered);
   }
   if (category === "llm") {
-    return mergeModelCandidates([current], filtered);
+    return mergeModelCandidates(seeds, filtered);
   }
   return filtered;
 }

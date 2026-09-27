@@ -219,7 +219,10 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
         }
       } else {
         const entries = await this.getPlatformModels(endpoint, apiKey, category === "asr" ? transcriptionListQuery(this.controller.providerId) : null);
-        list = wizardModelCandidates(this.controller.providerId, category, current, entries);
+        // 种子 = 输入当前值 + 预设内置默认：默认值不依赖目录是否收录它。
+        const defaults = this.controller.modelDefaults();
+        const seeds = category === "asr" ? [current, defaults.asrModel] : [current, defaults.llmModel];
+        list = wizardModelCandidates(this.controller.providerId, category, seeds, entries);
       }
       if (!list.length) {
         new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000);
