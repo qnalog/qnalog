@@ -12485,3 +12485,128 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-append-actions .qnalog-outline-action-icon {
   display: inline-flex;
 }
+
+/* ===== 首次配置向导（src/ui/setup-wizard-modal.ts） ===== */
+.qnalog-wizard-root {
+  max-width: 46rem;
+}
+
+.qnalog-wizard-desc {
+  color: var(--text-muted);
+  margin-bottom: 0.6em;
+}
+
+.qnalog-wizard-preset {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 0.6em 0.8em;
+  margin: 0.5em 0;
+}
+
+.qnalog-wizard-preset-head {
+  display: flex;
+  /* 长方案名 + 按钮在窄屏换行，不互相挤压 */
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.qnalog-wizard-preset-label {
+  font-weight: 600;
+}
+
+.qnalog-wizard-preset-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-top: 0.25em;
+}
+
+.qnalog-wizard-reason {
+  color: var(--qnalog-danger-text, var(--text-error));
+  font-size: var(--font-ui-smaller);
+  min-height: 1.3em;
+  margin-top: 0.3em;
+}
+
+.qnalog-wizard-nav {
+  display: flex;
+  /* 窄屏（手机弹窗 ~360px）换行：检测失败屏的「上一步/重试/跳过检测，直接应用」
+     三个按钮单行放不下，flex 默认不换行会溢出 */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 0.9em;
+}
+
+.qnalog-wizard-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8em;
+  margin-top: 0.7em;
+}
+
+/* 三级按钮层级（配色沿用项目色板的推导链：--qnalog-primary-action ← --interactive-accent）：
+   强调色实底 = 前进/应用（Obsidian mod-cta）；描边强调色 = 备选路径与工具；
+   弱化文字 = 退出类动作。向导不在 .qnalog-outline 作用域内，项目变量经回退取得同源值。 */
+
+/* 退出类动作：不与主按钮争夺注意力，弱化文字但保留正常点击面积（左右内边距）。 */
+.qnalog-wizard-btn-quiet {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  padding-inline: var(--size-2-3);
+}
+
+.qnalog-wizard-btn-quiet:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* 备选路径 / 工具按钮：透明底 + 描边强调色，与灰底默认按钮拉开区分度。 */
+.qnalog-wizard-btn-secondary {
+  color: var(--text-accent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border));
+}
+
+.qnalog-wizard-btn-secondary:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  border-color: var(--interactive-accent);
+}
+
+.qnalog-wizard-stage {
+  display: flex;
+  /* 阶段详情（错误信息）可能很长，允许换行而不是横向溢出 */
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: baseline;
+  padding: 0.2em 0;
+}
+
+.qnalog-wizard-stage.is-ok {
+  color: var(--qnalog-success-text, var(--text-success));
+}
+
+.qnalog-wizard-stage.is-fail {
+  color: var(--qnalog-danger-text, var(--text-error));
+}
+
+.qnalog-wizard-stage.is-neutral {
+  color: var(--text-muted);
+}
+
+.qnalog-wizard-stage-detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-wizard-summary {
+  white-space: pre-wrap;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-top: 0.4em;
+}

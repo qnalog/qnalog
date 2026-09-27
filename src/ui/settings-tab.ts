@@ -351,12 +351,16 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       cls: "qnalog-home-summary",
       text: t("Record, transcribe, and organize into Markdown notes. Default services, models, and parameters are preset — add an API key when you are ready."),
     });
-    // 首页只保留两个动作：快速配置、打开侧边栏。
-    // 「配置服务」「AI 整理设置」两条跳转已移除——分别跳到 API 页与 AI 整理页，
-    // 用户面对四个按钮无法判断该点哪个；细节调整都在各自页面里，不需要首页再开入口。
+    // 首页三个动作：配置向导 = 分步引导新用户（也可从这里重开）；快速配置 = 已了解
+    // 流程的用户直接换密钥；打开侧边栏 = 开始用。仍然不加「配置服务」「AI 整理设置」
+    // 两条跳转——四个以上按钮无法判断该点哪个，细节调整都在各自页面里。
     const primary = head.createDiv({ cls: "qnalog-home-actions" });
+    const wizardBtn = primary.createEl("button", { text: t("Setup Wizard") });
+    // 主按钮用 Obsidian 强调色（即 qnalog 全局主色 --qnalog-primary-action），
+    // 只给向导一个：两个强调色按钮并排会互相抵消识别度。
+    wizardBtn.addClass("mod-cta");
+    wizardBtn.onclick = () => this.plugin.openSetupWizard();
     const quickBtn = primary.createEl("button", { text: t("Quick config") });
-    quickBtn.addClass("mod-cta");
     quickBtn.onclick = () => { void this.startQuickSetup(); };
     const panelBtn = primary.createEl("button", { text: t("Open sidebar") });
     panelBtn.onclick = () => this.plugin.shell.openOutlineView();

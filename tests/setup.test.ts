@@ -400,3 +400,47 @@ describe("计划与真实预设数据一致", () => {
     }
   });
 });
+
+describe("说话人分离模型的自定义覆盖", () => {
+  it("importAsrModel 写进导入转写服务的 model，转写与整理仍用预设内置值", () => {
+    const plan = planPresetApplication(freshSettings(), {
+      providerId: "bailian",
+      apiKey: "sk-bailian",
+      importAsrModel: "paraformer-v2",
+    });
+    expect(plan.ok).toBe(true);
+    const after = applyPresetPlan(freshSettings(), plan);
+    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("paraformer-v2");
+    expect(after.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
+    expect(after.llmModel).toBe("qwen3.8-flash");
+  });
+
+  it("不传 importAsrModel 时仍写预设内置的分离模型", () => {
+    const plan = planPresetApplication(freshSettings(), { providerId: "bailian", apiKey: "sk-bailian" });
+    const after = applyPresetPlan(freshSettings(), plan);
+    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.0-asr-flash-filetrans");
+  });
+
+  it("OpenRouter 的 importAsrModel 同样可覆盖", () => {
+    const plan = planPresetApplication(freshSettings(), {
+      providerId: "openrouter",
+      apiKey: "sk-or",
+      importAsrModel: "microsoft/mai-transcribe-2",
+    });
+    expect(plan.ok).toBe(true);
+    const after = applyPresetPlan(freshSettings(), plan);
+    expect(after.transcribeProviders["openrouter-diarize"].model).toBe("microsoft/mai-transcribe-2");
+  });
+
+  it("mimo 不带导入服务：忽略 importAsrModel，说话人分离仍写为未启用", () => {
+    const plan = planPresetApplication(freshSettings(), {
+      providerId: "mimo",
+      apiKey: "sk-mimo",
+      importAsrModel: "whatever",
+    });
+    expect(plan.ok).toBe(true);
+    expect(plan.importAsrProviderId).toBe("");
+    const after = applyPresetPlan(freshSettings(), plan);
+    expect(after.importSpeakerDiarization).toBe(false);
+  });
+});

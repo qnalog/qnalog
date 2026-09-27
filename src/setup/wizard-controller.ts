@@ -68,6 +68,7 @@ export class SetupWizardController<T extends { settings: PluginSettings }> {
       llmEndpoint: merged.llmEndpoint,
       asrModel: merged.asrModel,
       llmModel: merged.llmModel,
+      importAsrModel: merged.importAsrModel,
     };
     this.request = request;
     this.plan = planPresetApplication(this.settings, request);
@@ -111,6 +112,28 @@ export class SetupWizardController<T extends { settings: PluginSettings }> {
       this.settings.setupWizardDismissed = true;
       await this.deps.saveSettings();
     }
+  }
+
+  /**
+   * 各分类的生效默认模型：走计划的同一条计算链（回退顺序、既有值都一致），
+   * 界面预填的值因此与「不改模型直接应用」写入的值相同。
+   * 密钥位放占位值只为了让计划算出 changes——结果只读模型字段，不落盘。
+   */
+  modelDefaults(): { asrModel: string; llmModel: string; importAsrModel: string } {
+    const empty = { asrModel: "", llmModel: "", importAsrModel: "" };
+    if (!this.providerId) return empty;
+    const probe = planPresetApplication(this.settings, { providerId: this.providerId, apiKey: "sk-model-defaults-probe" });
+    if (!probe.ok) return empty;
+    const providers: Record<string, { model?: string } | undefined> = probe.changes.transcribeProviders || {};
+    const readModel = (providerId: string) => {
+      const provider = providerId ? providers[providerId] : undefined;
+      return provider ? String(provider.model || "") : "";
+    };
+    return {
+      asrModel: readModel(probe.asrProviderId),
+      llmModel: String(probe.changes.llmModel || ""),
+      importAsrModel: readModel(probe.importAsrProviderId),
+    };
   }
 
   private requirePlan(): PresetPlan {

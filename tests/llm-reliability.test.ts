@@ -46,7 +46,8 @@ vi.mock("obsidian", () => ({
 }));
 
 import * as obsidian from "obsidian";
-import { callLlmWithContinuation, fetchLlmModelList, getLlmConfigIssue, getNextLlmOutputBudget, isLlmContextLimitError, isLlmOutputBudgetError, isLlmOutputParameterError, isTransientLlmError, readLlmSseStream, requestLlmChatCompletion, requestLlmChatCompletionViaObsidian, resetLearnedLlmTransportPreferences, resolveLlmModelListEndpoint } from "../src/llm/core";
+import { filterModelsForCategory } from "../src/setup/model-catalog";
+import { callLlmWithContinuation, fetchLlmModelEntries, fetchLlmModelList, getLlmConfigIssue, getNextLlmOutputBudget, isLlmContextLimitError, isLlmOutputBudgetError, isLlmOutputParameterError, isTransientLlmError, readLlmSseStream, requestLlmChatCompletion, requestLlmChatCompletionViaObsidian, resetLearnedLlmTransportPreferences, resolveLlmModelListEndpoint } from "../src/llm/core";
 import { applyLearnedLlmCapability, getEffectiveLlmOutputBudget, getLearnedLlmOutputCeiling, getLearnedLlmOutputParameter, rememberLlmOutputCeiling, resetLearnedLlmCapabilities } from "../src/llm/output-budget";
 import { DashScopeStreamingClient, OpenAIRealtimeTranscriptionClient, OpenAIRealtimeTranslationClient } from "../src/asr/clients";
 import { assertSafeServiceEndpoint, canOmitServiceApiKey, getServiceEndpointSecurityIssue, isLocalLlmEndpoint, isSharedAddressSpaceHost } from "../src/shared/util-llm-endpoint";
@@ -482,5 +483,203 @@ describe("readLlmSseStream completion contract", () => {
       finishReason: "stop",
       usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
     });
+  });
+});
+
+describe("模型列表的形态兼容与地址回退", () => {
+  it("DashScope 原生形态 output.models 也能解析出 id", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({ code: "OK", output: { models: [{ id: "qwen3-asr-flash" }, { id: "qwen3.8-flash" }] } }),
+      json: undefined,
+    } as never);
+    const ids = await fetchLlmModelList("https://api.example.com/v1", "secret");
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain("qwen3-asr-flash");
+    expect(ids).toContain("qwen3.8-flash");
+  });
+
+  it("百炼原生地址失败时回退到兼容地址下的 models", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockImplementation((async ({ url }: { url: string }) => {
+      if (url === "https://dashscope.aliyuncs.com/api/v1/models") {
+        return { status: 401, text: JSON.stringify({ code: "InvalidApiKey", message: "No API-key provided." }), json: undefined } as never;
+      }
+      if (url === "https://dashscope.aliyuncs.com/compatible-mode/v1/models") {
+        return { status: 200, text: JSON.stringify({ data: [{ id: "qwen3-asr-flash" }] }), json: undefined } as never;
+      }
+      throw new Error(`意外地址：${url}`);
+    }) as never);
+    const ids = await fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-real-key");
+    expect(ids).toEqual(["qwen3-asr-flash"]);
+    expect(requestUrlMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("两个地址都失败时聚合两段错误信息", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockImplementation((async ({ url }: { url: string }) => {
+      return { status: url.includes("/api/v1/models") ? 401 : 500, text: "err", json: undefined } as never;
+    }) as never);
+    await expect(fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-real-key"))
+      .rejects.toThrow(/HTTP 401[\s\S]*HTTP 500/);
+  });
+});
+
+describe("模型条目的原生形态（model + type 字段）", () => {
+  it("DashScope output.models[].model 能解析出 id 与 type", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        code: "OK",
+        request_id: "r-1",
+        output: {
+          models: [
+            { model: "qwen3-asr-flash", type: "asr" },
+            { model: "qwen3.8-flash", type: "LLM" },
+            { model: "paraformer-v2", type: "asr" },
+          ],
+        },
+      }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x");
+    expect(entries.map((e) => e.id).sort((a, b) => a.localeCompare(b))).toEqual(["paraformer-v2", "qwen3-asr-flash", "qwen3.8-flash"]);
+    expect(entries.find((e) => e.id === "qwen3-asr-flash")?.type).toBe("asr");
+    expect(entries.find((e) => e.id === "qwen3.8-flash")?.type).toBe("llm");
+    // fetchLlmModelList 仍返回纯 id（设置页依赖这个形状）
+    expect((await fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x")).length).toBe(3);
+  });
+});
+
+describe("百炼原生列表的真实分页形态（total/page_no/page_size + model 字段）", () => {
+  it("翻页取全，且 id 取 model 而不是展示名 name", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    const page1 = {
+      code: null, message: null, success: true,
+      output: {
+        total: 4, page_no: 1, page_size: 2,
+        models: [
+          { model: "qwen3.8-max", name: "Qwen3.8-Max" },
+          { model: "decision-model-preview", name: "决策模型（预览版）" },
+        ],
+      },
+    };
+    const page2 = {
+      code: null, message: null, success: true,
+      output: {
+        total: 4, page_no: 2, page_size: 2,
+        models: [
+          { model: "qwen3-asr-flash", name: "通义千问语音识别" },
+          { model: "paraformer-v2", name: "Paraformer V2" },
+        ],
+      },
+    };
+    requestUrlMock.mockImplementation((async ({ url }: { url: string }) => {
+      const body = url.includes("page_no=2") ? page2 : page1;
+      return { status: 200, text: JSON.stringify(body), json: undefined } as never;
+    }) as never);
+
+    const entries = await fetchLlmModelEntries("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x");
+    const ids = entries.map((e) => e.id);
+    expect(ids).toHaveLength(4);
+    // model 优先于 name：不能把展示名当 id
+    expect(ids).toContain("qwen3.8-max");
+    expect(ids).not.toContain("Qwen3.8-Max");
+    expect(ids).toContain("qwen3-asr-flash");
+    // 第二页确实带了翻页参数
+    const secondCallUrl = String(requestUrlMock.mock.calls[1][0].url);
+    expect(secondCallUrl).toContain("page_no=2");
+    expect(secondCallUrl).toContain("page_size=2");
+    // 分页取全后，转写命名族能命中后面的 ASR 模型
+    expect(filterModelsForCategory(entries, "asr")).toEqual(["paraformer-v2", "qwen3-asr-flash"]);
+  });
+});
+
+describe("输出模态解析（过滤视频/图片生成模型）", () => {
+  it("百炼 inference_metadata.response_modality 与 OpenRouter architecture.output_modalities 都能解析", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        output: {
+          total: 3, page_no: 1, page_size: 3,
+          models: [
+            { model: "qwen3.8-max", inference_metadata: { response_modality: ["Text"] } },
+            { model: "happyhorse-1.1-t2v", inference_metadata: { response_modality: ["Video"] } },
+            { model: "wan2.7-t2i", inference_metadata: { response_modality: ["Image"] } },
+          ],
+        },
+      }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-x");
+    const byId = Object.fromEntries(entries.map((e) => [e.id, e.outputModalities]));
+    expect(byId["qwen3.8-max"]).toEqual(["text"]);
+    expect(byId["happyhorse-1.1-t2v"]).toEqual(["video"]);
+    expect(byId["wan2.7-t2i"]).toEqual(["image"]);
+
+    // OpenRouter 形态：architecture.output_modalities，生图混合模型带 image
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        data: [
+          { id: "google/gemini-3.1-flash-image", architecture: { output_modalities: ["image", "text"] } },
+          { id: "deepseek/deepseek-v4.1-flash", architecture: { output_modalities: ["text"] } },
+        ],
+      }),
+      json: undefined,
+    } as never);
+    const orEntries = await fetchLlmModelEntries("https://openrouter.ai/api/v1", "sk-x");
+    expect(orEntries.find((e) => e.id === "google/gemini-3.1-flash-image")?.outputModalities).toEqual(["image", "text"]);
+    expect(orEntries.find((e) => e.id === "deepseek/deepseek-v4.1-flash")?.outputModalities).toEqual(["text"]);
+  });
+});
+
+describe("描述的解析与截断", () => {
+  it("description 进条目，超长截到 800 字", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({
+        data: [
+          { id: "qwen3.8-max", description: "chat model ".repeat(200) },
+          { id: "qwen3-asr-flash", description: "语音识别" },
+        ],
+      }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries("https://openrouter.ai/api/v1", "sk-x");
+    expect(entries.find((e) => e.id === "qwen3.8-max")?.description).toHaveLength(800);
+    expect(entries.find((e) => e.id === "qwen3-asr-flash")?.description).toBe("语音识别");
+  });
+});
+
+describe("模型列表的额外查询参数", () => {
+  it("extraQuery 拼进请求地址（OpenRouter 转写目录场景）", async () => {
+    const requestUrlMock = vi.mocked(obsidian.requestUrl);
+    requestUrlMock.mockReset();
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      text: JSON.stringify({ data: [{ id: "openai/whisper-large-v3", architecture: { output_modalities: ["text"] } }] }),
+      json: undefined,
+    } as never);
+    const entries = await fetchLlmModelEntries(
+      "https://openrouter.ai/api/v1",
+      "sk-x",
+      { output_modalities: "transcription" },
+    );
+    expect(entries.map((e) => e.id)).toEqual(["openai/whisper-large-v3"]);
+    const firstUrl = String(requestUrlMock.mock.calls[0][0].url);
+    expect(firstUrl).toContain("output_modalities=transcription");
   });
 });

@@ -584,25 +584,133 @@ export function resolveLlmModelListEndpoint(endpoint) {
     : base.replace(/\/+$/, "") + "/models";
 }
 
-export async function fetchLlmModelList(endpoint, apiKey) {
+/** 模型列表条目：id 必有；type 是部分平台附带的分类字段（llm/asr/…）；
+ * outputModalities 是输出模态（text/image/video/audio，小写）——百炼取
+ * inference_metadata.response_modality，OpenRouter 取 architecture.output_modalities；
+ * description 是平台描述，用于说话人分离这类「描述里写明能力」的候选筛选。
+ * 不解析输入模态：「能听音频」是理解型 chat 模型的属性，不代表能走转写端点，
+ * 曾据此扩过转写候选，实测把 OpenRouter 的 49 个文本模型全放了进来，已撤。 */
+export interface LlmModelEntry {
+  id: string;
+  type?: string;
+  outputModalities?: string[];
+  description?: string;
+}
+
+/** 从多种响应形态里取模型条目：OpenAI 形态 data/models，百炼原生形态 output.models
+ * （条目字段是 model + name——id 取值必须 model 优先于 name，name 是展示名不是标识）。 */
+function parseModelEntries(payload): LlmModelEntry[] {
+  const candidates = [
+    payload && payload.data,
+    payload && payload.models,
+    payload && payload.output && payload.output.models,
+    payload && payload.output && payload.output.model_list,
+    payload && payload.results,
+    payload && payload.data && payload.data.models,
+    payload && payload.data && payload.data.model_list,
+    payload,
+  ];
+  const arr = candidates.find((c) => Array.isArray(c)) || [];
+  return (Array.isArray(arr) ? arr : [])
+    .map((m) => {
+      if (typeof m === "string") return m.trim() ? { id: m.trim() } : null;
+      const id = String((m && (m.id || m.model || m.model_name || m.name)) || "").trim();
+      if (!id) return null;
+      const type = m && typeof m.type === "string" ? m.type.trim().toLowerCase() : "";
+      const outputRaw = m && (
+        (m.inference_metadata && m.inference_metadata.response_modality)
+        || (m.architecture && m.architecture.output_modalities)
+        || m.output_modalities
+      );
+      const lowerList = (raw) => (Array.isArray(raw) ? raw.map((x) => String(x || "").toLowerCase()).filter(Boolean) : []);
+      const outputModalities = lowerList(outputRaw);
+      const description = m && typeof m.description === "string" ? m.description.slice(0, 800) : "";
+      return {
+        id,
+        ...(type ? { type } : {}),
+        ...(outputModalities.length ? { outputModalities } : {}),
+        ...(description ? { description } : {}),
+      };
+    })
+    .filter(Boolean);
+}
+
+/** 百炼原生列表按 page_no/page_size 分页（默认 20 条/页，总数数百条）：
+ * 翻页地址只在取到分页信封后追加，第一页保持与直连 curl 相同的干净地址。 */
+function withModelListPage(url: string, pageNo: number, pageSize: number): string {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("page_no", String(pageNo));
+    parsed.searchParams.set("page_size", String(pageSize));
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record<string, string>): Promise<LlmModelEntry[]> {
   const base = normalizeLlmEndpoint(endpoint);
   if (!base) throw new Error("服务地址未配置");
   assertSafeServiceEndpoint(base, "http", "大模型服务地址");
-  const modelsUrl = resolveLlmModelListEndpoint(endpoint);
+  // 百炼的兼容地址与原生地址都要试：两者都真实存在（无钥均 401），
+  // 不同账号/网关下可用的一个可能与预设的改写地址不同，先按改写地址、再按通用地址。
+  const genericUrl = /\/chat\/completions$/i.test(base)
+    ? base.replace(/\/chat\/completions$/i, "/models")
+    : base.replace(/\/+$/, "") + "/models";
+  const withQuery = (url: string) => {
+    if (!extraQuery || !Object.keys(extraQuery).length) return url;
+    try {
+      const parsed = new URL(url);
+      for (const [key, value] of Object.entries(extraQuery)) parsed.searchParams.set(key, value);
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  };
+  const urls = [withQuery(resolveLlmModelListEndpoint(endpoint))];
+  const genericQueried = withQuery(genericUrl);
+  if (!urls.includes(genericQueried)) urls.push(genericQueried);
   const headers = buildLlmHeaders(apiKey, base);
   delete headers["Content-Type"]; // GET 无 body
-  const res = await obsidian.requestUrl({ url: modelsUrl, method: "GET", headers, throw: false });
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`HTTP ${res.status}：${String(res.text || "").slice(0, 200)}`);
+  const problems: string[] = [];
+  for (const url of urls) {
+    const byId = new Map<string, LlmModelEntry>();
+    const urlProblems: string[] = [];
+    let pageNo = 1;
+    let pageSize = 0;
+    for (let page = 0; page < 30; page += 1) {
+      const pageUrl = pageNo === 1 ? url : withModelListPage(url, pageNo, pageSize || 20);
+      const res = await obsidian.requestUrl({ url: pageUrl, method: "GET", headers, throw: false });
+      if (res.status < 200 || res.status >= 300) {
+        urlProblems.push(`${pageUrl} → HTTP ${res.status}：${String(res.text || "").slice(0, 200)}`);
+        break;
+      }
+      let data;
+      try { data = res.json || JSON.parse(res.text || "{}"); } catch {
+        urlProblems.push(`${pageUrl} → 响应不是合法 JSON`);
+        break;
+      }
+      const before = byId.size;
+      for (const entry of parseModelEntries(data)) {
+        if (!byId.has(entry.id)) byId.set(entry.id, entry);
+      }
+      const output = data && data.output;
+      const total = Number(output && output.total) || 0;
+      pageSize = Number(output && output.page_size) || 0;
+      // 无分页信封、已取全，或翻页参数不被支持（本页 0 新增）时止损。
+      if (!total || !pageSize || byId.size >= total || byId.size === before) break;
+      pageNo += 1;
+    }
+    if (byId.size) {
+      return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+    }
+    problems.push(...(urlProblems.length ? urlProblems : [`${url} → 未返回模型列表`]));
   }
-  let data;
-  try { data = res.json || JSON.parse(res.text || "{}"); } catch { throw new Error("响应不是合法 JSON"); }
-  const arr = (data && (data.data || data.models)) || (Array.isArray(data) ? data : []);
-  const ids = (Array.isArray(arr) ? arr : [])
-    .map(m => (typeof m === "string" ? m : (m && (m.id || m.name))))
-    .map(x => String(x || "").trim())
-    .filter(Boolean);
-  return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
+  throw new Error(problems.join("；") || "获取模型列表失败");
+}
+
+export async function fetchLlmModelList(endpoint, apiKey): Promise<string[]> {
+  return (await fetchLlmModelEntries(endpoint, apiKey)).map((entry) => entry.id);
 }
 
 export function getLlmConfigIssue(settings) {
