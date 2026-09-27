@@ -122,7 +122,7 @@ export class MinutesKanbanView extends ItemView {
       const path = normalizePath(pathValue || "");
       if (byPath.has(path)) return;
       const relative = root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
-      byPath.set(path, { key: `folder:${path}`, path, label: path === root ? "未分类" : (relative || t("Uncategorized")), items: [] });
+      byPath.set(path, { key: `folder:${path}`, path, label: path === root ? t("Uncategorized") : (relative || t("Uncategorized")), items: [] });
     };
     add(root);
     for (const file of this.app.vault.getAllLoadedFiles()) {

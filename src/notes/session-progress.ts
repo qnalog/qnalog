@@ -17,9 +17,9 @@ export function getSessionWorkProgressState(session, recorderState) {
   if (session.finalizing) {
     return {
       kind: "processing",
-      label: label || "AI 整理中",
-      title: detail || "正在调用大模型整理纪要",
-      detail: detail || "正在调用大模型整理纪要",
+      label: label || t("AI organizing"),
+      title: detail || t("Calling the AI model to organize the minutes"),
+      detail: detail || t("Calling the AI model to organize the minutes"),
       percent: pct == null ? 65 : pct,
     };
   }
@@ -28,7 +28,7 @@ export function getSessionWorkProgressState(session, recorderState) {
       kind: "processing",
       label: t("Recording"),
       title: t("Recording; segmented transcriptions will be written to the note as they complete"),
-      detail: "正在录音；分段转写会陆续写入纪要",
+      detail: t("Recording; segmented transcriptions will be written to the note as they complete"),
       percent: pct,
     };
   }
@@ -37,15 +37,15 @@ export function getSessionWorkProgressState(session, recorderState) {
       kind: "processing",
       label: t("Paused"),
       title: t("Recording paused; processing will resume when you continue"),
-      detail: "录音已暂停，继续后会接着处理",
+      detail: t("Recording paused; processing will resume when you continue"),
       percent: pct,
     };
   }
   return {
     kind: "processing",
-    label: label || "转写中",
-    title: detail || "正在处理最后的音频片段",
-    detail: detail || "正在处理最后的音频片段",
+    label: label || t("Transcription in progress"),
+    title: detail || t("Processing the final audio segments"),
+    detail: detail || t("Processing the final audio segments"),
     percent: pct,
   };
 }

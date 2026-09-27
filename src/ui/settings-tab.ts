@@ -532,7 +532,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 因此把这一步交给用户：需要看真实设备名时点这个按钮。
     if (!this._audioDeviceInfo || this._audioDeviceInfo.permissionRequired) {
       const detectRow = new obsidian.Setting(statusBlock);
-      detectRow.setDesc(t("「Audio input」 needs microphone permission to read device names. Click the button to read them once; recording will not start."));
+      detectRow.setDesc(t("\"Audio input\" needs microphone permission to read device names. Click the button to read them once; recording will not start."));
       detectRow.addButton((btn) => btn.setButtonText(t("Detect devices")).onClick(async (evt) => {
         const button = evt && evt.currentTarget;
         if (button) { button.disabled = true; button.setText(t("Checking…")); }
@@ -826,7 +826,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const ordered = picked.listed;
     const virtualDevs = picked.virtualCables;
     for (const dev of ordered) {
-      const suffix = isVirtualCableLabel(dev.label) ? "（推荐 · 虚拟声卡）" : "";
+      const suffix = isVirtualCableLabel(dev.label) ? t("(recommended · virtual audio device)") : "";
       addOption(dev.deviceId, (dev.label || t("Not authorized to read device names")) + suffix);
       if (dev.deviceId === selected) hasSelected = true;
     }
@@ -1522,7 +1522,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           const r = await testLlmConnection(this.plugin);
           return `${r.model || t("Unnamed model")}${t("(returned:")}${r.preview || t("<empty>")}${t(")")}`;
         });
-        new obsidian.Notice(result.ok ? `大模型连通成功：${result.detail}` : `${t("LLM test failed: ")}${result.detail}`, 8000);
+        new obsidian.Notice(result.ok ? t("LLM connected successfully: {0}").replace("{0}", result.detail) : `${t("LLM test failed: ")}${result.detail}`, 8000);
         b.setButtonText(t("Test connection"));
         b.setDisabled(false);
         this.renderSettings();

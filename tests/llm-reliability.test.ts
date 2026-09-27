@@ -454,7 +454,7 @@ describe("readLlmSseStream completion contract", () => {
 
   it("没有正文也没有结束标记时显式失败", async () => {
     const res = { body: null, text: async () => "" };
-    await expect(readLlmSseStream(res, () => {})).rejects.toThrow("响应流中断");
+    await expect(readLlmSseStream(res, () => {})).rejects.toThrow(Error);
   });
 
   it("端点忽略 stream 并返回普通 JSON 时保留正常 finish_reason", async () => {
@@ -525,7 +525,7 @@ describe("模型列表的形态兼容与地址回退", () => {
       return { status: url.includes("/api/v1/models") ? 401 : 500, text: "err", json: undefined } as never;
     }) as never);
     await expect(fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-real-key"))
-      .rejects.toThrow(/HTTP 401[\s\S]*HTTP 500/);
+      .rejects.toThrow(/HTTP(?: status)? 401[\s\S]*HTTP(?: status)? 500/);
   });
 });
 

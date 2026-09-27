@@ -36,20 +36,20 @@ export function isTransientAsrError(error) {
   const msg = String((error && error.message) || error || "");
   // 中文关键字：限流（429 提示语）、超时（转写请求超时：…）、流中断（SSE 半路断线）都必须归为瞬时错误，
   // 否则这些典型的网络性故障不会进重试。
-  return /\b(429|500|502|503|504)\b|too many|rate\s*limit|timeout|timed?\s*out|network|temporarily|service unavailable|failed to fetch|empty result|限流|超时|流中断|空结果|空转写/i.test(msg);
+  return /\b(429|500|502|503|504)\b|too many|rate\s*limit|timeout|timed?\s*out|network|temporarily|service unavailable|failed to fetch|empty result|限流|超时|流中断|空结果|空转写|stream interrupted/i.test(msg);
 }
 
 export function isAsrTransportError(error) {
   if (isAsrNonRetryableError(error)) return false;
   if (error && error.asrTransport === true) return true;
   const msg = String((error && error.message) || error || "");
-  return /\b(429|500|502|503|504)\b|too many|rate\s*limit|timeout|timed?\s*out|network(?:error)?|temporarily|service unavailable|failed to fetch|fetch failed|err_(?:internet|network|connection)|dns|enotfound|econn(?:reset|refused|aborted)|etimedout|net::|限流|超时|流中断|无法连接|连接(?:失败|中断|关闭)|网络(?:错误|不可用)/i.test(msg);
+  return /\b(429|500|502|503|504)\b|too many|rate\s*limit|timeout|timed?\s*out|network(?:error)?|temporarily|service unavailable|failed to fetch|fetch failed|err_(?:internet|network|connection)|dns|enotfound|econn(?:reset|refused|aborted)|etimedout|net::|限流|超时|流中断|无法连接|连接(?:失败|中断|关闭)|网络(?:错误|不可用)|stream interrupted/i.test(msg);
 }
 
 export function isAsrNonRetryableError(error) {
   if (error && error.nonRetryable) return true;
   const msg = String((error && error.message) || error || "");
-  return /密钥未配置|模型名称未配置|服务地址未配置|无法解码|仅 wav\/mp3|不被 MiMo 服务端接受|不被 .{1,40} 接受|base64 仍超过|单次最多自动切|mime type must be/i.test(msg);
+  return /密钥未配置|模型名称未配置|服务地址未配置|无法解码|仅 wav\/mp3|不被 MiMo 服务端接受|不被 .{1,40} 接受|base64 仍超过|单次最多自动切|mime type must be|service address is not configured|model name is not configured|api key is not configured/i.test(msg);
 }
 
 export function getNextAsrTaskRetryCount(currentRetries, maxRetries, error) {

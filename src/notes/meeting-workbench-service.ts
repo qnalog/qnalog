@@ -5,6 +5,7 @@ import * as obsidian from "obsidian";
 import { callLlm } from "../llm/core";
 import { formatElapsed } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
+import { t } from "../shared/i18n";
 import { clipRealtimeContextText, hasRealtimeOutlineRunnableBacklog } from "../notes/realtime-outline";
 import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_CHARS, MEETING_INTERACTION_TIMEOUT_MS, MEETING_METADATA_KINDS, clipMeetingInteractionSegmentLine, getMeetingInteractionMaxTokens, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { RecorderService } from "../audio/recorder-service";
@@ -220,7 +221,7 @@ export class MeetingWorkbenchService {
           updatedAt: new Date().toISOString(),
         }),
       }));
-      await this.host.diagnostics.logDiagnostic("warn", "meeting_workbench.interaction_failed", "会中记录 AI 互动失败", {
+      await this.host.diagnostics.logDiagnostic("warn", "meeting_workbench.interaction_failed", t("In-meeting entry AI interaction failed"), {
         entryId,
         mode: session.mode,
         error: diagnosticError(e),

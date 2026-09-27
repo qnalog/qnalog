@@ -88,7 +88,7 @@ describe("百炼一站式配置", () => {
   it("缺密钥时给出原因且不产出改动（不落盘）", () => {
     const plan = planPresetApplication(empty(), { providerId: "bailian", apiKey: "   " });
     expect(plan.ok).toBe(false);
-    expect(plan.reason).toContain("API Key");
+    expect(plan.reason).toMatch(/api key/i);
     expect(Object.keys(plan.changes)).toHaveLength(0);
   });
 

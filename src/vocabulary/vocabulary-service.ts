@@ -46,9 +46,9 @@ export class VocabularyService {
   async generateIndustryPromptForMode(mode) {
     const p = this.host.settings.industryProfile || createEmptyIndustryProfile();
     if (!p.industry || !p.scenarios) {
-      throw new Error("请先在「AI 整理」填写「行业 / 角色」和「主要工作场景」");
+      throw new Error(t("Fill in \"Industry / role\" and \"Main work scenarios\" first in \"AI Organize\""));
     }
-    if (!this.host.settings.llmApiKey) throw new Error("请先在 API 页配置大模型服务");
+    if (!this.host.settings.llmApiKey) throw new Error(t("Please configure an LLM service on the API page first"));
     if (!isKnownPolishMode(this.host.settings, mode)) throw new Error("未知的 mode：" + mode);
     const meta = getModeMeta(this.host.settings, mode);
     const modeLabel = meta && meta.prefix ? meta.prefix : mode;
@@ -77,15 +77,15 @@ export class VocabularyService {
     const stamp = moment ? moment().format("YYYY-MM-DD HH:mm") : new Date().toISOString().slice(0, 16);
     const profile = this.host.settings.industryProfile || createEmptyIndustryProfile();
     const meta = getModeMeta(this.host.settings, mode);
-    const role = (profile.industry || "自定义").trim();
-    const firstScenario = String(profile.scenarios || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || (meta.prefix || "场景");
+    const role = (profile.industry || t("Custom")).trim();
+    const firstScenario = String(profile.scenarios || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || (meta.prefix || t("Scenario"));
     const name = (opts && opts.name) || (role + " · " + firstScenario);
     const id = makeCustomPromptModeId(name || "scene");
     const tpl = {
       id,
       mode: id,
       name,
-      description: "由角色、任务和输出偏好生成。参考提示词：" + (meta.prefix || meta.label || mode) + "。生成时间：" + stamp,
+      description: t("Generated from role, task, and output preferences. Reference prompt: {0}. Generated at: {1}").replace("{0}", (meta.prefix || meta.label || mode)).replace("{1}", stamp),
       baseMode: mode,
       prompt: promptText,
       isBuiltin: false,
@@ -131,7 +131,7 @@ export class VocabularyService {
 
   async extractVocabulary(merge) {
     const p = this.host.settings.industryProfile || createEmptyIndustryProfile();
-    if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) throw new Error("请先在 API 页配置大模型服务");
+    if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) throw new Error(t("Please configure an LLM service on the API page first"));
     const customPromptBrief = getCustomPromptModeTemplates(this.host.settings)
       .slice(0, 12)
       .map(t => `- ${t.name || t.id}: ${(t.prompt || t.description || "").replace(/\s+/g, " ").slice(0, 180)}`)
@@ -207,7 +207,7 @@ ${customPromptBrief}
   }
 
   async extractVocabularyFromMarkdown(file, markdown) {
-    if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) throw new Error("请先在 API 页配置大模型服务");
+    if (!this.host.settings.llmApiKey && !canOmitServiceApiKey(this.host.settings.llmEndpoint)) throw new Error(t("Please configure an LLM service on the API page first"));
     const source = String(markdown || "")
       .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/m, "")
       .slice(0, 18000);

@@ -198,10 +198,10 @@ describe("UpdateService checks", () => {
     expect(fixture.settings.lastUpdateCheckAt).toBe(new Date(NOW).toISOString());
     expect(fixture.settings.lastUpdateError).toBe("");
     expect(fixture.saveSettings).toHaveBeenCalledTimes(1);
-    expect(fixture.notices).toEqual([{
-      message: "Q&A Log：发现新版本 2.0.0（当前 1.0.0）。请在设置 > 更新 中查看发布页链接，从 GitHub Release 安装。",
-      duration: 12000,
-    }]);
+    expect(fixture.notices).toHaveLength(1);
+    expect(fixture.notices[0]?.duration).toBe(12000);
+    expect(fixture.notices[0]?.message).toContain("2.0.0");
+    expect(fixture.notices[0]?.message).toContain("1.0.0");
   });
 
   it("saves failed check status while respecting silent Notice semantics", async () => {
@@ -209,7 +209,7 @@ describe("UpdateService checks", () => {
     const result = await fixture.service.checkForUpdates({ silent: true });
     expect(result).toBeNull();
     expect(fixture.settings.lastUpdateCheckAt).toBe(new Date(NOW).toISOString());
-    expect(fixture.settings.lastUpdateError).toContain("所有更新源都不可用");
+    expect(fixture.settings.lastUpdateError).toContain("raw.githubusercontent.com");
     expect(fixture.saveSettings).toHaveBeenCalledTimes(1);
     expect(fixture.notices).toEqual([]);
     expect(fixture.warnings[0]?.message).toBe("[QnALog] update check failed");
@@ -223,9 +223,9 @@ describe("UpdateService skew warning", () => {
     expect(fixture.warnings[0]?.message).toBe(
       "[QnALog] build/manifest 版本错位：main.js=1.9.0 manifest=2.0.0",
     );
-    expect(fixture.notices).toEqual([{
-      message: "Q&A Log 版本错位：实际运行的 main.js 是 1.9.0，但 manifest 标的是 2.0.0。请从 GitHub Release 重新安装该版本后重启 Obsidian。",
-      duration: 0,
-    }]);
+    expect(fixture.notices).toHaveLength(1);
+    expect(fixture.notices[0]?.duration).toBe(0);
+    expect(fixture.notices[0]?.message).toContain("1.9.0");
+    expect(fixture.notices[0]?.message).toContain("2.0.0");
   });
 });

@@ -2,6 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { comparableLlmEndpoint } from '../shared/util-llm-endpoint';
+import { t } from '../shared/i18n';
 
 export const LLM_SERVICE_PRESETS = [
   {
@@ -197,7 +198,7 @@ export const ONE_CARD_PROVIDERS = {
     llmEndpoint: "https://api.xiaomimimo.com/v1",
     tokenPlanEndpoint: "https://token-plan-cn.xiaomimimo.com/v1",
     llmModel: "mimo-v2.6-flash",
-    applyDesc: "已用同一把 MiMo Key 配好语音转写（mimo-v2.5-asr）和 AI 整理（mimo-v2.6-flash）。",
+    applyDesc: t("Voice transcription (mimo-v2.5-asr) and AI organizing (mimo-v2.6-flash) are configured with a single MiMo key."),
   },
   // 硅基流动不进快速配置（2026-09-23 维护者评估）：有合适的语音模型，但大语言模型价格普遍偏高，
   // 用户照此配置成本代价大。它仍可手动配：LLM_SERVICE_PRESETS 与转写服务条目都保留。
@@ -228,7 +229,7 @@ export const ONE_CARD_PROVIDERS = {
     llmPreset: "dashscope",
     llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     llmModel: "qwen3.8-flash",
-    applyDesc: "已用一把百炼 Key 配好录音转写、音频导入与 AI 整理。",
+    applyDesc: t("Recording transcription, audio import, and AI organizing are configured with a single Bailian key."),
   },
   // 面向中国大陆以外用户：一把 OpenRouter Key 配好「录音转写 / 导入音频 / AI 整理」三段。
   // 与百炼的区别是「能不能连上」而不是界面语言——两者都在下拉里，由用户按网络环境自选。
@@ -255,7 +256,7 @@ export const ONE_CARD_PROVIDERS = {
     llmPreset: "openrouter",
     llmEndpoint: "https://openrouter.ai/api/v1",
     llmModel: "deepseek/deepseek-v4.1-flash",
-    applyDesc: "已用一把 OpenRouter Key 配好录音转写、音频导入与 AI 整理。",
+    applyDesc: t("Recording transcription, audio import, and AI organizing are configured with a single OpenRouter key."),
   },
 };
 
@@ -275,7 +276,7 @@ export function normalizeLlmProfiles(input) {
     seen.add(id);
     const profile: Record<string, unknown> = {
       id,
-      name: name || "未命名配置",
+      name: name || t("Untitled profile"),
       endpoint: String(item.endpoint || "").trim(),
       apiKey: String(item.apiKey || ""),
       model: String(item.model || "").trim(),

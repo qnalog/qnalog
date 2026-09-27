@@ -512,7 +512,7 @@ export class PeopleDirectoryService {
         if (folder) await ensureVaultFolder(this.host.app, folder);
         const safeName = sanitizeFilename(suggestion.name) || "未命名人员";
         const path = findAvailableVaultPath(this.host.app, obsidian.normalizePath(`${folder}/${safeName}.md`));
-        if (!path) throw new Error("无法创建人员信息文件");
+        if (!path) throw new Error(t("Could not create the person profile file"));
         const fm = mergePersonFrontmatter({ "姓名": suggestion.name }, suggestion, sourceFile);
         const body = formatPeopleNoteMarkdown(suggestion.name, this.host.settings.mdFolder);
         file = await this.host.app.vault.create(path, upsertFrontmatterInMarkdown(body, fm));

@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
 import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
 import { NS_CARDS_BLOCK_RE, NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, NS_TAG, legacySedimentIdVariants, nsMarker } from "../shared/namespace";
+import { t } from "../shared/i18n";
 
 // 取值是写在用户笔记里的注释标记，改名会让既有笔记的沉淀块不再被识别：
 // 常量名不带宽泛品牌前缀，取值保持上游的 LEXVOICE_ 字面量（随数据层命名空间重置一起改）。
@@ -369,7 +370,7 @@ ${source}`;
 }
 
 export async function generateSedimentObjects(plugin, file, markdown) {
-  if (!plugin.settings.llmApiKey && !canOmitServiceApiKey(plugin.settings.llmEndpoint)) throw new Error("请先在 API 页配置大模型服务");
+  if (!plugin.settings.llmApiKey && !canOmitServiceApiKey(plugin.settings.llmEndpoint)) throw new Error(t("Please configure an LLM service on the API page first"));
   const sys = "你是 Q&A Log 的纪要沉淀助手。你只根据当前纪要提炼结构化信息对象，输出合法 JSON，不编造，不泄露或要求任何配置。";
   // 沉淀输出是结构化 JSON，体量大、最易被输出上限截断（真实产物里这份 JSON 曾在中途被切断）。
   // 走续写拼接：截断后让模型从断点续写 JSON，再整体解析，避免沉淀对象不完整。

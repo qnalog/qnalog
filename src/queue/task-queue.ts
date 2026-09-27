@@ -68,7 +68,7 @@ export class TaskQueue {
           && task.status === "failed"
           && task.retries >= maxRetries
           && !isLlmNonRetryableError(task.lastError || "")
-          && /Failed to fetch|LLM 调用超时|429|500|502|503|504/.test(String(task.lastError || ""))) {
+          && /Failed to fetch|LLM 调用超时|LLM request timed out|429|500|502|503|504/.test(String(task.lastError || ""))) {
           task.status = "pending";
           task.retries = Math.max(0, maxRetries - 1);
           task.lastError = "上次整理疑似网络或服务端瞬时失败，已升级为可重试";

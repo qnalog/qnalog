@@ -101,7 +101,7 @@ export function getRecentNoteProcessingState(content) {
     if (noteHasUsableRawTranscriptDespiteFailures(visibleText)) {
       return {
         kind: "raw",
-        label: hasMergeFailure ? "整理失败" : t("To organize"),
+        label: hasMergeFailure ? t("Organization failed") : t("To organize"),
         title: hasMergeFailure
           ? t("AI organization failed; the original transcript can still be re-organized to generate the final notes")
           : t("Some segments in the original transcription failed, but no retryable tasks remain; right-click to reorganize and generate the final summary"),
@@ -318,7 +318,7 @@ export function classifyImportTextFileForModal(file, content) {
 
   const label = processingState && processingState.label
     ? processingState.label
-    : (marker.hasSegments ? "待整理" : t("Fragment draft"));
+    : (marker.hasSegments ? t("Pending organization") : t("Fragment draft"));
   return {
     category: "qnalog-repair",
     badge: label,

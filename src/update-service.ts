@@ -2,6 +2,7 @@ import type { AvailableUpdate, PluginSettings } from "./shared/types";
 import { compareVersions } from "./shared/version";
 import { baseVersion } from "./shared/build-info";
 import { resolveUpdateRawBase, resolveUpdateRawBases } from "./update-source";
+import { t } from "./shared/i18n";
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const UPDATE_STARTUP_DELAY_MS = 4000;
@@ -75,7 +76,7 @@ function errorMessage(error: unknown): string {
   }
   if (typeof error === "string") return error;
   if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") return String(error);
-  return "未知错误";
+  return t("Unknown error");
 }
 
 function parseRemoteManifest(text: string): { id: string; version: string } {
@@ -136,7 +137,7 @@ export class UpdateService {
     const silent = !!options.silent;
     const rawBases = this.getUpdateRawBases();
     if (!rawBases.length) {
-      if (!silent) this.runtime.notice("Q&A Log 更新源未解析成功，请确认插件文件完整。", 8000);
+      if (!silent) this.runtime.notice(t("Q&A Log update sources could not be resolved; please make sure the plugin files are complete."), 8000);
       return null;
     }
 
@@ -144,7 +145,7 @@ export class UpdateService {
       const manifestFetch = await this.fetchTextFromSources(rawBases, "manifest.json");
       const remoteManifest = parseRemoteManifest(manifestFetch.text);
       if (remoteManifest.id !== this.host.manifest.id) {
-        throw new Error("远端 manifest id 与当前插件不一致，已停止更新。");
+        throw new Error(t("The remote manifest id does not match the current plugin; update aborted."));
       }
       const currentVersion = this.host.manifest.version || "0.0.0";
       const remoteVersion = remoteManifest.version || "0.0.0";
@@ -162,7 +163,9 @@ export class UpdateService {
         this.host.settings.availableUpdate = info;
         await this.host.saveSettings();
         this.runtime.notice(
-          `Q&A Log：发现新版本 ${remoteVersion}（当前 ${currentVersion}）。请在设置 > 更新 中查看发布页链接，从 GitHub Release 安装。`,
+          t("Q&A Log: found a new version {0} (current {1}). Check the release page link under Settings > Updates, and install from the GitHub Release.")
+            .replace("{0}", remoteVersion)
+            .replace("{1}", currentVersion),
           silent ? 12000 : 8000,
         );
         return info;
@@ -170,14 +173,14 @@ export class UpdateService {
 
       this.host.settings.availableUpdate = null;
       await this.host.saveSettings();
-      if (!silent) this.runtime.notice(`Q&A Log 已是最新版本（${currentVersion}）。`);
+      if (!silent) this.runtime.notice(t("Q&A Log is already the latest version ({0}).").replace("{0}", currentVersion));
       return null;
     } catch (error) {
       const message = errorMessage(error);
       this.host.settings.lastUpdateCheckAt = new Date(this.runtime.now()).toISOString();
       this.host.settings.lastUpdateError = message;
       await this.host.saveSettings();
-      if (!silent) this.runtime.notice(`Q&A Log 更新检查失败：${message}`, 10000);
+      if (!silent) this.runtime.notice(t("Q&A Log update check failed: {0}").replace("{0}", message), 10000);
       else this.runtime.warn("[QnALog] update check failed", error);
       return null;
     }
@@ -192,8 +195,9 @@ export class UpdateService {
       if (built && declared && built !== declared) {
         this.runtime.warn(`[QnALog] build/manifest 版本错位：main.js=${built} manifest=${declared}`);
         this.runtime.notice(
-          `Q&A Log 版本错位：实际运行的 main.js 是 ${built}，但 manifest 标的是 ${declared}`
-          + "。请从 GitHub Release 重新安装该版本后重启 Obsidian。",
+          t("Q&A Log version mismatch: the running main.js is {0}, but the manifest declares {1}. Please reinstall this version from the GitHub Release and restart Obsidian.")
+            .replace("{0}", built)
+            .replace("{1}", declared),
           0,
         );
       }
@@ -234,7 +238,7 @@ export class UpdateService {
         errors.push(`${rawBase} -> ${errorMessage(error)}`);
       }
     }
-    throw new Error(`所有更新源都不可用：${errors.join(" | ")}`);
+    throw new Error(t("All update sources are unavailable: {0}").replace("{0}", errors.join(" | ")));
   }
 
 }

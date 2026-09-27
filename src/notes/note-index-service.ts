@@ -8,6 +8,7 @@ import { ensureTodayDailyNoteFile } from "../shared/util-note";
 import { generateSedimentObjects, writeSedimentObjectCards } from "../sediment";
 import type { PluginSettings } from "../shared/types";
 import { diagnosticError } from "../shared/util-key-diag";
+import { t } from "../shared/i18n";
 import { extractSessionId } from "../notes/note-markdown";
 import { buildDailyMeetingOverviewEntry, upsertDailyMeetingOverview } from "../notes/daily-overview";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
@@ -65,7 +66,7 @@ export class NoteIndexService {
       const filePath = typeof fileOrPath === "string" ? fileOrPath : (fileOrPath && fileOrPath.path) || "";
       console.warn("[QnALog] note index refresh failed", error);
       try {
-        await this.host.diagnostics.logDiagnostic("warn", "note.index_refresh_failed", "纪要索引更新失败，正文不受影响", {
+        await this.host.diagnostics.logDiagnostic("warn", "note.index_refresh_failed", t("Failed to update the minutes index; the note content is unaffected"), {
           filePath,
           reason: options.reason || "",
           error: diagnosticError(error),

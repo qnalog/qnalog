@@ -178,14 +178,14 @@ export class SemanticCanvasService {
         layoutMode: existingMeta.layoutMode || "adaptive",
       });
       await this.host.app.vault.modify(canvasFile, `${JSON.stringify(document, null, 2)}\n`);
-      await this.host.diagnostics.logDiagnostic("info", "canvas.semantic_layout_migrated", "旧版语义 Canvas 已更新排版", {
+      await this.host.diagnostics.logDiagnostic("info", "canvas.semantic_layout_migrated", t("Legacy semantic canvas layout has been updated"), {
         sourcePath: sourceFile.path,
         canvasPath: canvasFile.path,
       });
       return true;
     } catch (error) {
       console.warn("[QnALog] migrate semantic canvas layout failed", error);
-      await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_layout_migration_failed", "旧版语义 Canvas 排版更新失败", {
+      await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_layout_migration_failed", t("Failed to update the legacy semantic canvas layout"), {
         sourcePath: sourceFile.path,
         canvasPath: canvasFile.path,
         error: diagnosticError(error),
@@ -260,11 +260,11 @@ export class SemanticCanvasService {
       const sourceSections = extractSemanticSourceSections(sourceMarkdown);
       const policy = getSemanticGenerationPolicy(sourceSections);
       const state = await this.readSemanticCanvas(sourceFile);
-      if (state.canvasFile && !state.existing) throw new Error("已有语义 Canvas 文件无法解析，请先检查文件内容");
+      if (state.canvasFile && !state.existing) throw new Error(t("The existing semantic canvas file could not be parsed; please check the file content first."));
       let graph = readSemanticMeta<QnALogSemanticDocumentMeta>(state.existing)?.graph || null;
 
       if (options.mode === "full") {
-        await updateProgress("overview", "正在提取中心命题与内容主线");
+        await updateProgress("overview", t("Extracting the central thesis and main lines"));
         const prompt = buildSemanticOutlinePrompt(sourceFile.basename, outlineNodes, sourceSections, policy);
         const raw = await callLlm(this.host, prompt.system, prompt.user, {
           timeoutMs: 150000,
@@ -273,11 +273,11 @@ export class SemanticCanvasService {
           thinkingMode: "fast",
         });
         graph = parseSemanticOutlineGraph(raw, outlineNodes, sourceSections, policy);
-        if (!graph) throw new Error("模型没有返回可用的语义关系结构");
+        if (!graph) throw new Error(t("The model did not return a usable semantic relation structure"));
         if (policy.expandBranches) {
           const overview = graph;
           for (const [index, branch] of overview.branches.entries()) {
-            await updateProgress("expand", `正在展开主线：${branch.title}`, index + 1, overview.branches.length);
+            await updateProgress("expand", t("Expanding main line: {0}").replace("{0}", branch.title), index + 1, overview.branches.length);
             try {
               const branchPrompt = buildSemanticBranchExpansionPrompt(
                 sourceFile.basename,
@@ -294,12 +294,12 @@ export class SemanticCanvasService {
               });
               const expanded = parseSemanticBranchExpansion(branchRaw, branch, outlineNodes, sourceSections, policy);
               if (expanded) graph = replaceSemanticBranch(graph, branch.key, expanded);
-              else await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_invalid", "主线展开结果无法解析，已保留概览结构", {
+              else await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_invalid", t("The expanded main line could not be parsed; the overview structure has been kept"), {
                 sourcePath: sourceFile.path,
                 branchKey: branch.key,
               });
             } catch (branchError) {
-              await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_failed", "主线展开失败，已保留概览结构", {
+              await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_branch_failed", t("Failed to expand the main line; the overview structure has been kept"), {
                 sourcePath: sourceFile.path,
                 branchKey: branch.key,
                 error: diagnosticError(branchError),
@@ -308,10 +308,10 @@ export class SemanticCanvasService {
           }
         }
       } else if (options.mode === "branch" || options.mode === "drill") {
-        if (!graph) throw new Error("现有语义图缺少可更新的结构数据，请先更新整张语义图");
+        if (!graph) throw new Error(t("The existing semantic graph lacks updatable structural data; update the whole graph first."));
         const branch = graph.branches.find((item) => item.key === options.branchKey);
-        if (!branch) throw new Error("找不到需要更新的内容主线");
-        await updateProgress(options.mode, options.mode === "drill" ? `正在继续下钻：${branch.title}` : `正在更新主线：${branch.title}`);
+        if (!branch) throw new Error(t("Could not find the content main line to update"));
+        await updateProgress(options.mode, options.mode === "drill" ? t("Drilling down: {0}").replace("{0}", branch.title) : t("Updating main line: {0}").replace("{0}", branch.title));
         const branchPrompt = buildSemanticBranchExpansionPrompt(
           sourceFile.basename,
           branch,
@@ -327,15 +327,15 @@ export class SemanticCanvasService {
           thinkingMode: "fast",
         });
         const replacement = parseSemanticBranchExpansion(branchRaw, branch, outlineNodes, sourceSections, policy);
-        if (!replacement) throw new Error("模型没有返回可用的主线结构");
+        if (!replacement) throw new Error(t("The model did not return a usable main-line structure"));
         graph = replaceSemanticBranch(graph, branch.key, replacement);
       } else if (options.mode === "layout") {
-        if (!graph) throw new Error("现有语义图缺少结构数据，无法重新排版");
-        await updateProgress("layout", "正在重新排版");
+        if (!graph) throw new Error(t("The existing semantic graph lacks structural data and cannot be re-laid out."));
+        await updateProgress("layout", t("Re-laying out"));
       }
-      if (!graph) throw new Error("没有可写入的语义结构");
+      if (!graph) throw new Error(t("There is no semantic structure to write"));
 
-      await updateProgress("write", "正在写入语义 Canvas");
+      await updateProgress("write", t("Writing the semantic canvas"));
       const document = buildSemanticCanvasDocument(graph, {
         sourcePath: sourceFile.path,
         sourceTitle: sourceFile.basename,
@@ -359,7 +359,7 @@ export class SemanticCanvasService {
           await this.host.app.vault.modify(canvasFile, content);
         }
       }
-      await this.host.diagnostics.logDiagnostic("info", "canvas.semantic_generated", "语义 Canvas 已生成", {
+      await this.host.diagnostics.logDiagnostic("info", "canvas.semantic_generated", t("Semantic canvas generated"), {
         sourcePath: sourceFile.path,
         canvasPath: state.canvasPath,
         mode: options.mode,
@@ -374,10 +374,10 @@ export class SemanticCanvasService {
       await this.host.noteIndex.refreshNoteIndexSafely(sourceFile, { reason: "semantic-canvas" });
       if (canvasFile instanceof obsidian.TFile) await this.host.app.workspace.getLeaf(true).openFile(canvasFile);
       progressNotice.hide();
-      new obsidian.Notice(options.mode === "layout" ? "语义 Canvas 已重新排版。" : "语义 Canvas 已更新。", 4000);
+      new obsidian.Notice(options.mode === "layout" ? t("The semantic canvas has been re-laid out.") : t("The semantic canvas has been updated."), 4000);
     } catch (error) {
       console.error("[QnALog] generate semantic canvas failed", error);
-      await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_failed", "语义 Canvas 生成失败", {
+      await this.host.diagnostics.logDiagnostic("warn", "canvas.semantic_failed", t("Semantic canvas generation failed"), {
         sourcePath: sourceFile.path,
         error: diagnosticError(error),
       });
