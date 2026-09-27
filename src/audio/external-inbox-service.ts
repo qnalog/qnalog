@@ -178,7 +178,7 @@ export class ExternalInboxService {
       if (entry.status !== "processing") continue;
       entry.status = "failed";
       entry.nextRetryAt = 0;
-      entry.error = "上次处理在插件关闭前未完成";
+      entry.error = t("The previous processing did not finish before the plugin closed");
       entry.updatedAt = Date.now();
       recovered = true;
     }
@@ -415,7 +415,7 @@ export class ExternalInboxService {
     const current = await runtime.fileSystem.stat(file.fullPath);
     if (current.size !== file.size || current.mtimeMs !== file.mtimeMs) {
       try { if (await adapter.exists(cachePath)) await adapter.remove(cachePath); } catch { /* intentionally empty */ }
-      const changed = new Error("文件仍在同步，稍后重试");
+      const changed = new Error(t("The file is still syncing; try again later"));
       (changed as Error & { code?: string }).code = "EXTERNAL_FILE_CHANGED";
       throw changed;
     }

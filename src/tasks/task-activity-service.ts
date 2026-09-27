@@ -179,7 +179,7 @@ export class TaskActivityService {
   getTaskActivityErrorHint(activity) {
     const raw = getTaskErrorMessage(activity && activity.error, "");
     if (/file already exists|文件已存在|already exists/i.test(raw)) {
-      return "目标版本文件已存在。已保留原始转写，重新整理不会覆盖原始材料。";
+      return t("The target version file already exists. The original transcript has been kept; re-organizing will not overwrite the original material.");
     }
     return getTaskErrorHint(activity && activity.errorKind ? activity.errorKind : "");
   }

@@ -2727,4 +2727,9 @@ export const ZH: MessageTable = {
   "Currently {0} tasks.": "当前 {0} 个任务。",
   "Failed to read: {0}": "读取失败：{0}",
   "Currently {0} unconfirmed candidates will be overwritten": "当前 {0} 条未确认候选会被覆盖",
+  ": ": "：",
+  "The previous processing did not finish before the plugin closed": "上次处理在插件关闭前未完成",
+  "The file is still syncing; try again later": "文件仍在同步，稍后重试",
+  "Setup wizard: the plan is incomplete and cannot continue": "配置向导：计划不完整，不能继续",
+  "The target version file already exists. The original transcript has been kept; re-organizing will not overwrite the original material.": "目标版本文件已存在。已保留原始转写，重新整理不会覆盖原始材料。",
 };

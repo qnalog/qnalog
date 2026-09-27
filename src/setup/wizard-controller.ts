@@ -9,6 +9,7 @@
 // 写盘点只有两个：apply（应用候选配置）与 dismiss（记下「不再自动弹出」），
 // 都必须经装配层注入的 saveSettings，不直接触碰 saveData。
 
+import { t } from "../shared/i18n";
 import {
   applyPresetPlan,
   buildProbeHost,
@@ -137,7 +138,7 @@ export class SetupWizardController<T extends { settings: PluginSettings }> {
   }
 
   private requirePlan(): PresetPlan {
-    if (!this.plan || !this.plan.ok) throw new Error("配置向导：计划不完整，不能继续");
+    if (!this.plan || !this.plan.ok) throw new Error(t("Setup wizard: the plan is incomplete and cannot continue"));
     return this.plan;
   }
 }

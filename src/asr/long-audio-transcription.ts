@@ -357,7 +357,7 @@ async function getDashScopeUploadUrl(
   const uploadResponse = await window.fetch(uploadHost, { method: "POST", body: form });
   if (!uploadResponse.ok) {
     const body = await uploadResponse.text().catch(() => "");
-    throw new Error(t("Failed to upload the audio to Alibaba Cloud temporary storage (HTTP {0}){1}.").replace("{0}", String(uploadResponse.status)).replace("{1}", body ? `：${body.slice(0, 180)}` : ""));
+    throw new Error(t("Failed to upload the audio to Alibaba Cloud temporary storage (HTTP {0}){1}.").replace("{0}", String(uploadResponse.status)).replace("{1}", body ? t(": ") + body.slice(0, 180) : ""));
   }
   return `oss://${key}`;
 }
