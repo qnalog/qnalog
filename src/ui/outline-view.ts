@@ -45,7 +45,7 @@ import { getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots } from "../
 
 import { getTaskErrorMessage } from "../shared/task-activity";
 
-import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName, speakerLabelForChannel } from "../audio/channel-speakers";
+import { clampSpeakerChannelCount, extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName, speakerLabelForChannel } from "../audio/channel-speakers";
 
 import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 
@@ -1630,7 +1630,7 @@ export class OutlineView extends obsidian.ItemView {
       const channel = Math.max(1, Number(String(speakerId).replace(/^spk-/, "")) || 1);
       const row = list.createDiv({ cls: "qnalog-speaker-map-row" });
       const source = row.createDiv({ cls: "qnalog-speaker-map-source" });
-      source.createSpan({ cls: "qnalog-speaker-map-label", text: speakerLabelForChannel(channel) });
+      source.createSpan({ cls: "qnalog-speaker-map-label", text: i18nT("Speaker {0}").replace("{0}", String(clampSpeakerChannelCount(channel))) });
       const input = row.createEl("input", {
         cls: "qnalog-speaker-map-input",
         attr: {
@@ -1638,7 +1638,7 @@ export class OutlineView extends obsidian.ItemView {
           list: datalistId,
           placeholder: i18nT("Enter name"),
           value: String(mapping.personName || ""),
-          "aria-label": `${speakerLabelForChannel(channel)}${i18nT("Name")}`,
+          "aria-label": `${i18nT("Speaker {0}").replace("{0}", String(clampSpeakerChannelCount(channel)))}${i18nT("Name")}`,
         },
       });
       input.value = String(mapping.personName || "");
@@ -1711,7 +1711,7 @@ export class OutlineView extends obsidian.ItemView {
     this.notePanelCacheKey = "";
     this.notePanelCacheData = undefined;
     this.notePanelLoading = false;
-    new obsidian.Notice(`${speakerLabelForChannel(Number(String(speakerId).replace(/^spk-/, "")) || 1)}${i18nT(" updated to ")}${personName}`);
+    new obsidian.Notice(`${i18nT("Speaker {0}").replace("{0}", String(clampSpeakerChannelCount(Number(String(speakerId).replace(/^spk-/, "")) || 1)))}${i18nT(" updated to ")}${personName}`);
     this.render();
     return true;
   }

@@ -1,3 +1,5 @@
+import { t } from "../shared/i18n";
+
 export type TaskActivityStatus =
   | "queued"
   | "running"
@@ -147,7 +149,7 @@ function normalizeActions(value: unknown): TaskActivityAction[] {
   return result;
 }
 
-export function getTaskErrorMessage(error: unknown, fallback = "任务执行失败"): string {
+export function getTaskErrorMessage(error: unknown, fallback = t("Task execution failed")): string {
   if (error instanceof Error && error.message) return error.message.trim();
   if (error && typeof error === "object" && "message" in error) {
     const message = cleanText((error as { message?: unknown }).message);
@@ -160,27 +162,27 @@ export function classifyTaskError(error: unknown): TaskActivityErrorKind {
   const message = getTaskErrorMessage(error, "").toLowerCase();
   const name = error instanceof Error ? cleanText(error.name).toLowerCase() : "";
   if (name === "aborterror" || /取消|cancel(?:led)?|aborted/.test(message)) return "cancelled";
-  if (/401|403|unauthori[sz]ed|forbidden|api.?key|密钥|鉴权|认证/.test(message)) return "authentication";
+  if (/401|403|unauthori[sz]ed|forbidden|api.?key|access key|密钥|鉴权|认证/.test(message)) return "authentication";
   if (/429|rate.?limit|too many requests|限流|频率/.test(message)) return "rate-limit";
   if (/timeout|timed out|超时|deadline/.test(message)) return "timeout";
-  if (/failed to fetch|network|econn|enotfound|socket|网络|连接/.test(message)) return "network";
+  if (/failed to fetch|network|econn|enotfound|socket|connect|网络|连接/.test(message)) return "network";
   if (/empty|no (?:usable )?(?:text|output|result)|空结果|空文本|无输出|没有有效转写/.test(message)) return "empty-result";
-  if (/not found|missing|不存在|找不到|缺少|无法读取/.test(message)) return "missing-input";
+  if (/not found|missing|不存在|找不到|缺少|无法读取|cannot read|could not read/.test(message)) return "missing-input";
   if (/config|configuration|未配置|配置不完整|模型名称|endpoint|端点/.test(message)) return "configuration";
   return "internal";
 }
 
 export function getTaskErrorHint(kind: TaskActivityErrorKind | ""): string {
   const hints: Record<TaskActivityErrorKind, string> = {
-    configuration: "请检查对应服务的地址、模型和功能配置。",
-    authentication: "请检查 API Key、账号权限或登录状态。",
-    "rate-limit": "服务正在限流。稍后重试，或降低并发与请求频率。",
-    timeout: "服务在预期时间内没有返回。可重试，并检查网络或模型负载。",
-    network: "请检查网络、代理和服务端是否可访问。",
-    "empty-result": "服务已响应，但没有返回可用内容。原始材料会保留。",
-    "missing-input": "任务所需的文件或输入已不存在，请重新选择来源。",
-    cancelled: "任务已取消，原始材料不会因此删除。",
-    internal: "任务遇到未预期异常。请打开诊断信息查看详细记录。",
+    configuration: t("Please check the address, model, and capability configuration of the corresponding service."),
+    authentication: t("Please check the API key, account permissions, or sign-in status."),
+    "rate-limit": t("The service is rate limiting. Retry later, or reduce concurrency and request frequency."),
+    timeout: t("The service did not respond within the expected time. You can retry, and check network or model load."),
+    network: t("Please check whether the network, proxy, and service endpoint are reachable."),
+    "empty-result": t("The service responded but did not return usable content. The original material will be kept."),
+    "missing-input": t("The files or input the task needs no longer exist; please choose the source again."),
+    cancelled: t("The task was cancelled; the original material will not be deleted because of this."),
+    internal: t("The task hit an unexpected error. Open the diagnostics to view the detailed record."),
   };
   return kind ? hints[kind] : "";
 }
@@ -192,7 +194,7 @@ export function appendTaskActivityEvent(
 ): TaskActivityEvent[] {
   const at = finiteTimestamp(event.at) || Date.now();
   const type = cleanText(event.type) || "update";
-  const label = cleanText(event.label) || "任务状态已更新";
+  const label = cleanText(event.label) || t("Task status updated");
   const next: TaskActivityEvent = {
     id: cleanText(event.id) || `${at}:${type}:${label}`,
     at,
@@ -215,7 +217,7 @@ export function createTaskActivity(input: TaskActivityInput, now = Date.now()): 
   return {
     id: cleanText(input.id),
     kind: cleanText(input.kind) || "task",
-    title: cleanText(input.title) || "后台任务",
+    title: cleanText(input.title) || t("Background task"),
     subject: cleanText(input.subject),
     status,
     stage: cleanText(input.stage),
@@ -377,7 +379,7 @@ export class TaskActivityStore {
     });
   }
 
-  cancel(id: string, detail = "任务已取消"): TaskActivity | null {
+  cancel(id: string, detail = t("Task cancelled")): TaskActivity | null {
     return this.patch(id, {
       status: "cancelled",
       detail,

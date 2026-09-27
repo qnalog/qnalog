@@ -4,6 +4,8 @@
 import { assertSafeServiceEndpoint } from '../shared/util-llm-endpoint';
 import { buildRealtimeAsrParameters, normalizeRealtimeLanguage } from './realtime-params';
 import { isMobileRuntime } from '../shared/util-platform';
+import { t } from "../shared/i18n";
+import { t as i18nT } from "../shared/i18n";
 
 let nodeWebSocketCtorPromise = null;
 
@@ -20,7 +22,7 @@ async function getNodeWebSocketCtor() {
 async function requireHeaderCapableWebSocket(serviceLabel) {
   const WSCtor = await getNodeWebSocketCtor();
   if (WSCtor) return WSCtor;
-  throw new Error(`${serviceLabel}的实时流式转写需要桌面端 WebSocket；移动端请改用分段转写或整段音频转写。`);
+  throw new Error(t("{0} real-time streaming transcription requires the desktop WebSocket; on mobile, use segmented or whole-file transcription instead.").replace("{0}", serviceLabel));
 }
 
 export class DashScopeStreamingClient {
@@ -42,8 +44,8 @@ export class DashScopeStreamingClient {
     this._currentPartial = "";
   }
   async connect() {
-    assertSafeServiceEndpoint(this.endpoint, "websocket", "实时转写服务地址");
-    if (!this.apiKey) throw new Error("DashScope API Key 未配置");
+    assertSafeServiceEndpoint(this.endpoint, "websocket", t("Realtime transcription service URL"));
+    if (!this.apiKey) throw new Error(t("DashScope API key is not configured."));
     const WSCtor = await requireHeaderCapableWebSocket("DashScope");
     return new Promise((resolve, reject) => {
       let resolved = false;
@@ -98,7 +100,7 @@ export class DashScopeStreamingClient {
         }
       };
       const onError = (e) => {
-        const err = e instanceof Error ? e : new Error("WebSocket 错误：" + (e && e.message || "未知"));
+        const err = e instanceof Error ? e : new Error(t("WebSocket error:") + (e && e.message || t("unknown")));
         this.onError(err);
         if (!resolved) { resolved = true; reject(err); }
       };
@@ -106,7 +108,7 @@ export class DashScopeStreamingClient {
         this.closed = true;
         // 连接在 task-started 之前就被关闭（密钥无效 / 模型未开通 / 地址错误等）→ 让 connect() 拒绝，
         // 否则 Promise 既不 resolve 也不 reject，start() 会永久挂起、按钮彻底失灵。
-        if (!resolved) { resolved = true; reject(new Error("连接被服务端关闭：请检查密钥是否有效、Fun-ASR/Paraformer 是否已开通、地址是否为 wss://…/api-ws/v1/inference")); }
+        if (!resolved) { resolved = true; reject(new Error(t("Connection closed by the server: check that the key is valid, that Fun-ASR/Paraformer is enabled, and that the URL is wss://…/api-ws/v1/inference"))); }
         this.onClosed({ finalText: this.getFullText() });
       };
       if (typeof this.ws.on === "function") {
@@ -188,8 +190,8 @@ export class OpenAIRealtimeTranscriptionClient {
     this._partialByItem = new Map();
   }
   async connect() {
-    assertSafeServiceEndpoint(this.endpoint, "websocket", "实时转写服务地址");
-    if (!this.apiKey) throw new Error("OpenAI API Key 未配置");
+    assertSafeServiceEndpoint(this.endpoint, "websocket", t("Realtime transcription service URL"));
+    if (!this.apiKey) throw new Error(t("OpenAI API key is not configured."));
     const WSCtor = await requireHeaderCapableWebSocket("OpenAI Realtime");
     return new Promise((resolve, reject) => {
       let resolved = false;
@@ -249,11 +251,11 @@ export class OpenAIRealtimeTranscriptionClient {
           this.onPartial(this.getFullText(), true);
         } else if (t === "error") {
           const errMsg = (msg.error && (msg.error.message || msg.error.code)) || JSON.stringify(msg);
-          this.onError(new Error("OpenAI Realtime 错误：" + errMsg));
+          this.onError(new Error(i18nT("OpenAI Realtime error:") + errMsg));
         }
       };
       const onError = (e) => {
-        const err = e instanceof Error ? e : new Error("WebSocket 错误：" + (e && e.message || "未知"));
+        const err = e instanceof Error ? e : new Error(t("WebSocket error:") + (e && e.message || t("unknown")));
         this.onError(err);
         if (!resolved) { resolved = true; reject(err); }
       };
@@ -261,7 +263,7 @@ export class OpenAIRealtimeTranscriptionClient {
         this.closed = true;
         // 连接在 task-started 之前就被关闭（密钥无效 / 模型未开通 / 地址错误等）→ 让 connect() 拒绝，
         // 否则 Promise 既不 resolve 也不 reject，start() 会永久挂起、按钮彻底失灵。
-        if (!resolved) { resolved = true; reject(new Error("连接被服务端关闭：请检查 OpenAI API Key 是否有效、账户是否有 Realtime 权限、地址是否为 wss://api.openai.com/v1/realtime")); }
+        if (!resolved) { resolved = true; reject(new Error(t("Connection closed by the server: check that the OpenAI API key is valid, that the account has Realtime access, and that the URL is wss://api.openai.com/v1/realtime"))); }
         this.onClosed({ finalText: this.getFullText() });
       };
       if (typeof this.ws.on === "function") {
@@ -329,8 +331,8 @@ export class OpenAIRealtimeTranslationClient {
     this._translatedPartial = "";
   }
   async connect() {
-    assertSafeServiceEndpoint(this.endpointBase, "websocket", "实时翻译服务地址");
-    if (!this.apiKey) throw new Error("OpenAI API Key 未配置");
+    assertSafeServiceEndpoint(this.endpointBase, "websocket", t("Realtime translation service URL"));
+    if (!this.apiKey) throw new Error(t("OpenAI API key is not configured."));
     const WSCtor = await requireHeaderCapableWebSocket("OpenAI Realtime translation");
     const sep = this.endpointBase.indexOf("?") >= 0 ? "&" : "?";
     const url = this.endpointBase + sep + "model=" + encodeURIComponent(this.model);
@@ -387,18 +389,18 @@ export class OpenAIRealtimeTranslationClient {
           // 丢弃合成语音
         } else if (t === "error") {
           const errMsg = (msg.error && (msg.error.message || msg.error.code)) || JSON.stringify(msg);
-          this.onError(new Error("OpenAI Realtime 翻译错误：" + errMsg));
+          this.onError(new Error(i18nT("OpenAI Realtime translation error:") + errMsg));
         }
       };
       const onError = (e) => {
-        const err = e instanceof Error ? e : new Error("WebSocket 错误：" + (e && e.message || "未知"));
+        const err = e instanceof Error ? e : new Error(t("WebSocket error:") + (e && e.message || t("unknown")));
         this.onError(err);
         if (!resolved) { resolved = true; reject(err); }
       };
       const onClose = () => {
         this.closed = true;
         // 与另两个客户端同款守卫：open 前被关必须 reject，否则 connect() 永久挂起、调用方按钮失灵。
-        if (!resolved) { resolved = true; reject(new Error("连接被服务端关闭：请检查 OpenAI API Key 是否有效、账户是否有 Realtime 翻译权限")); }
+        if (!resolved) { resolved = true; reject(new Error(t("Connection closed by the server: check that the OpenAI API key is valid and that the account has Realtime translation access"))); }
         this.onClosed({
           finalText: this.getFullText(),
           sourceText: this.getSourceText(),

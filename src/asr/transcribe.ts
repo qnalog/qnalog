@@ -10,6 +10,7 @@ import { qnalogArrayBufferToBase64 } from './clients';
 import { extractTranscriptText } from './speaker-labels';
 import { cleanApimimoAsrRepeatedLoops } from './apimimo-clean';
 import { getSpeakerDiarizationRequestOptions } from './diarization';
+import { t } from "../shared/i18n";
 
 export type AsrLifecycleSignalType =
   | "attempt-start"
@@ -60,7 +61,7 @@ export const IMPORT_AUDIO_CHUNK_SAMPLE_RATE = 16000;
 
 export async function decodeAudioBlob(blob: Blob): Promise<AudioBuffer> {
   const AudioContextCtor = window.AudioContext || window["webkitAudioContext"];
-  if (!AudioContextCtor) throw new Error("当前环境不支持音频解码");
+  if (!AudioContextCtor) throw new Error(t("Audio decoding is not supported in the current environment."));
   const ctx = new AudioContextCtor();
   try {
     const ab = await blob.arrayBuffer();
@@ -72,7 +73,7 @@ export async function decodeAudioBlob(blob: Blob): Promise<AudioBuffer> {
 
 export async function renderAudioBufferSliceToWav(audioBuffer, startMs, endMs) {
   const OfflineContextCtor = window.OfflineAudioContext || window["webkitOfflineAudioContext"];
-  if (!OfflineContextCtor) throw new Error("当前环境不支持离线音频切片");
+  if (!OfflineContextCtor) throw new Error(t("Offline audio slicing is not supported in the current environment."));
   const startSec = Math.max(0, (Number(startMs) || 0) / 1000);
   const endSec = Math.max(startSec + 0.1, (Number(endMs) || 0) / 1000);
   const durationSec = endSec - startSec;
@@ -132,7 +133,7 @@ export function pickAsrRetryDelayMs(errorMessage, attempt?) {
   const retryAfter = msg.match(/retry-after[:：]?\s*(\d+)/i);
   if (retryAfter) return Math.min(90000, Number(retryAfter[1]) * 1000 + Math.floor(Math.random() * 2000));
   if (/(^|\D)429(\D|$)|限流|rate.?limit|too many request/i.test(msg)) return 30000 + Math.floor(Math.random() * 15000);
-  if (/\b(500|502|503|504)\b|timeout|timed?\s*out|network(?:error)?|failed to fetch|fetch failed|err_(?:internet|network|connection)|dns|enotfound|econn(?:reset|refused|aborted)|etimedout|net::|超时|流中断|连接(?:失败|中断|关闭)|网络(?:错误|不可用)/i.test(msg)) {
+  if (/\b(500|502|503|504)\b|timeout|timed?\s*out|network(?:error)?|failed to fetch|fetch failed|err_(?:internet|network|connection)|dns|enotfound|econn(?:reset|refused|aborted)|etimedout|net::|stream interrupted|超时|流中断|连接(?:失败|中断|关闭)|网络(?:错误|不可用)/i.test(msg)) {
     const retryIndex = Math.max(0, Math.min(3, (Math.floor(Number(attempt) || 1) - 1)));
     return Math.min(30000, 5000 * (2 ** retryIndex)) + Math.floor(Math.random() * 1000);
   }
@@ -176,28 +177,28 @@ export function buildTranscribeHttpError(res, body, provider, blob, mime) {
   const traceId = res && res.headers && typeof res.headers.get === "function"
     ? (res.headers.get("x-siliconcloud-trace-id") || res.headers.get("x-request-id") || res.headers.get("cf-ray") || "")
     : "";
-  const service = (provider && (provider.name || provider.id)) || "当前服务";
-  const model = provider && provider.model ? `模型：${provider.model}` : "";
+  const service = (provider && (provider.name || provider.id)) || t("current service");
+  const model = provider && provider.model ? t("Model: {0}").replace("{0}", provider.model) : "";
   const detail = compactErrorBody(body);
   const ext = extFromMime(mime || (blob && blob.type) || "");
-  const audioInfo = `音频：${ext || "unknown"} / ${formatUploadSize(blob && blob.size)}`;
+  const audioInfo = t("Audio: {0} / {1}").replace("{0}", ext || "unknown").replace("{1}", formatUploadSize(blob && blob.size));
   const hints = [];
 
-  if (status === 401 || status === 403) hints.push("请检查转写访问密钥和服务权限");
-  else if (status === 404) hints.push("请检查转写服务地址和模型名称");
-  else if (status === 413) hints.push("音频文件过大，请缩短切片或降低码率后重试");
-  else if (status === 429) hints.push("服务限流，请稍后重试或切换服务");
-  else if (status >= 500) hints.push("服务端错误，建议稍后重试；连续失败时可切换转写服务或调整音频格式");
+  if (status === 401 || status === 403) hints.push(t("Check the transcription access key and service permissions"));
+  else if (status === 404) hints.push(t("Check the transcription service URL and model name"));
+  else if (status === 413) hints.push(t("The audio file is too large; shorten the slices or lower the bit rate and retry"));
+  else if (status === 429) hints.push(t("The service is rate-limited; try again later or switch services"));
+  else if (status >= 500) hints.push(t("Server error; try again later. If failures persist, you can switch the transcription service or adjust the audio format"));
 
   return [
-    `转写失败 ${status}${statusText ? " " + statusText : ""}`,
-    `服务：${service}`,
+    t("Transcription failed {0}").replace("{0}", String(status) + (statusText ? " " + statusText : "")),
+    t("Service: {0}").replace("{0}", service),
     model,
     audioInfo,
-    traceId ? `Trace ID：${traceId}` : "",
-    detail ? `返回：${detail}` : "",
-    hints.join("；"),
-  ].filter(Boolean).join("；");
+    traceId ? t("Trace ID: {0}").replace("{0}", traceId) : "",
+    detail ? t("Response: {0}").replace("{0}", detail) : "",
+    hints.join(t(";")),
+  ].filter(Boolean).join(t(";"));
 }
 
 export function makeRecordingIssue(kind, patch) {
@@ -339,15 +340,15 @@ const DASHSCOPE_CHAT_PROFILE: ChatInputAudioProfile = {
   maxDurationMs: DASHSCOPE_CHAT_ASR_MAX_DURATION_MS,
   maxChunks: DASHSCOPE_CHAT_ASR_MAX_CHUNKS,
   maxBase64Bytes: DASHSCOPE_CHAT_ASR_MAX_BASE64_BYTES,
-  label: "百炼 qwen3-asr-flash",
-  shortLabel: "百炼 qwen3-asr-flash",
+  label: t("Bailian qwen3-asr-flash"),
+  shortLabel: t("Bailian qwen3-asr-flash"),
   diagnosticSlug: "dashscope_chat",
   defaultModel: "qwen3-asr-flash",
   // MediaRecorder 产出的 webm/ogg/mp4 都在此列：时长达标就原样直发，
   // 超出 5 分钟或 base64 超 10MB 时才解码切块（见 getChatInputAudioPlan）。
   nativeExts: DASHSCOPE_CHAT_ASR_NATIVE_EXTS,
   serverRejectsNonNative: false,
-  nativeFormatsLabel: "webm/ogg/mp4/mp3/wav 等",
+  nativeFormatsLabel: t("webm/ogg/mp4/mp3/wav, etc."),
   // 文档：「若音频语种不确定，或包含多种语种…请勿指定该参数」。故只透传明确的语种码，
   // 其余（含 auto / 空）一律不下发该字段。取值域比 MiMo 宽。
   languageFor: (language) => {
@@ -442,24 +443,31 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
       return [{ blob, mime: nativeMime }];
     }
     const reason = profile.serverRejectsNonNative
-      ? `格式 ${inputMime || "unknown"} 不被 ${profile.label} 接受（仅 ${profile.nativeFormatsLabel}）`
-      : `格式 ${inputMime || "unknown"} 需先转成 WAV 才能按 ${chunkMinutes} 分钟切块`;
+      ? t("Format {0} is not accepted by {1} (only {2})").replace("{0}", inputMime || "unknown").replace("{1}", profile.label).replace("{2}", profile.nativeFormatsLabel)
+      : t("Format {0} must be converted to WAV to slice into {1}-minute chunks").replace("{0}", inputMime || "unknown").replace("{1}", String(chunkMinutes));
     const detail = e && e.message ? e.message : e;
-    throw chatInputAudioPermanentError(`${profile.label}：${reason}，但本机无法解码它（${detail}）。请改用其它转写服务，或缩短分段间隔后重录。`);
+    throw chatInputAudioPermanentError(t("{0}: {1}, but it cannot be decoded locally ({2}). Use another transcription service, or re-record with a shorter segment interval.").replace("{0}", profile.label).replace("{1}", reason).replace("{2}", String(detail)));
   }
   const totalMs = Math.max(1, Math.round((audioBuffer.duration || 0) * 1000));
   const decodedPlan = getChatInputAudioPlan(profile, blob, inputMime, totalMs);
   if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime }];
   const chunkCount = Math.ceil(totalMs / profile.chunkMs);
   if (chunkCount > profile.maxChunks) {
-    throw chatInputAudioPermanentError(`${profile.label} 单次最多自动切 ${profile.maxChunks} 块（约 ${Math.round(profile.maxChunks * profile.chunkMs / 60000)} 分钟）；当前约 ${Math.round(totalMs / 60000)} 分钟过长。请缩短分段间隔，或对超长录音改用支持大文件的 ASR 服务。`);
+    throw chatInputAudioPermanentError(t("{0} can automatically split at most {1} chunks (about {2} minutes); this is about {3} minutes. Shorten the segment interval, or use an ASR service that supports large files for long recordings.")
+      .replace("{0}", profile.label)
+      .replace("{1}", String(profile.maxChunks))
+      .replace("{2}", String(Math.round(profile.maxChunks * profile.chunkMs / 60000)))
+      .replace("{3}", String(Math.round(totalMs / 60000))));
   }
   const chunks = [];
   for (let startMs = 0; startMs < totalMs; startMs += profile.chunkMs) {
     const endMs = Math.min(totalMs, startMs + profile.chunkMs);
     const wavBlob = await renderAudioBufferSliceToWav(audioBuffer, startMs, endMs);
     if (approxBase64Bytes(wavBlob.size) > profile.maxBase64Bytes) {
-      throw chatInputAudioPermanentError(`${profile.label} 转码后单块 base64 仍超过 ${Math.round(profile.maxBase64Bytes / 1024 / 1024)}MB（${formatUploadSize(wavBlob.size)}）。请改用支持更大切片的 ASR 服务。`);
+      throw chatInputAudioPermanentError(t("{0} transcoded chunk base64 still exceeds {1}MB ({2}). Use an ASR service that supports larger slices.")
+        .replace("{0}", profile.label)
+        .replace("{1}", String(Math.round(profile.maxBase64Bytes / 1024 / 1024)))
+        .replace("{2}", formatUploadSize(wavBlob.size)));
     }
     chunks.push({ blob: wavBlob, mime: "audio/wav" });
   }
@@ -543,7 +551,7 @@ export async function requestChatInputAudioChunk(
   endpoint,
   observer?: AsrLifecycleObserver,
 ) {
-  assertSafeServiceEndpoint(endpoint, "http", "转写服务地址");
+  assertSafeServiceEndpoint(endpoint, "http", t("Transcription service URL"));
   // 安全校验后立即执行 TPM 配速（在读 arrayBuffer/编码 base64 之前），确保跨块、跨会话的请求间隔满足 10K TPM。
   // 只有按量配速的服务才需要；百炼没有该限制，等下去只会平白拖慢录音分段。
   if (profile.tpmPacing) await waitApimimoTpmSlot(prepared.blob, prepared.mime);
@@ -573,10 +581,10 @@ export async function requestChatInputAudioChunk(
   };
   if (controller) {
     totalTimer = window.setTimeout(() => {
-      abortHint = `总时长超过 ${Math.round(CHAT_INPUT_SSE_TOTAL_CAP_MS / 1000)} 秒仍未完成`;
+      abortHint = t("Total time exceeded {0} seconds without finishing").replace("{0}", String(Math.round(CHAT_INPUT_SSE_TOTAL_CAP_MS / 1000)));
       controller.abort();
     }, CHAT_INPUT_SSE_TOTAL_CAP_MS);
-    armPhaseTimer(firstByteTimeoutMs, `${Math.round(firstByteTimeoutMs / 1000)} 秒内没有响应`);
+    armPhaseTimer(firstByteTimeoutMs, t("{0} seconds without a response").replace("{0}", String(Math.round(firstByteTimeoutMs / 1000))));
   }
   // asr_options.language：由各服务的 profile 决定取值。
   // MiMo 只认 auto / zh / en；百炼在语种不确定时要求整个字段省略——所以空串表示不下发该字段。
@@ -612,7 +620,7 @@ export async function requestChatInputAudioChunk(
       let errText = buildTranscribeHttpError(res, msg, provider, prepared.blob, prepared.mime);
       // 限流时服务端可能带 Retry-After（秒）：拼进错误信息，供 pickAsrRetryDelayMs 按服务端要求退避。
       const retryAfterHeader = res.headers && typeof res.headers.get === "function" ? String(res.headers.get("retry-after") || "").trim() : "";
-      if (/^\d+$/.test(retryAfterHeader)) errText += `；Retry-After: ${retryAfterHeader}s`;
+      if (/^\d+$/.test(retryAfterHeader)) errText += t("; Retry-After: {0}s").replace("{0}", retryAfterHeader);
       const httpErr = new Error(errText) as Error & { nonRetryable?: boolean };
       // 400 格式/大小、401 密钥、402 余额、403 风控、404 能力、421 内容审核——都不是重试能解决的。
       // 百炼同样用 4xx 表达参数与鉴权错误，两组码都有交集，故共用一套判定。
@@ -636,14 +644,17 @@ export async function requestChatInputAudioChunk(
         data = await res.json();
       } catch (e) {
         if (controller && controller.signal && controller.signal.aborted) throw e; // 外层 catch 统一报超时
-        throw new Error(`${profile.label} 响应解析失败（HTTP ${res.status} 但响应体非法或中断）：${(e && e.message) || e}`);
+        throw new Error(t("{0} failed to parse the response (HTTP {1} but the body is invalid or interrupted): {2}").replace("{0}", profile.label).replace("{1}", String(res.status)).replace("{2}", String((e && e.message) || e)));
       }
       const apiErr = data && data.error;
       if (typeof apiErr === "string" && apiErr.trim()) {
-        throw new Error(`${profile.label} 返回错误：${apiErr.trim()}`);
+        throw new Error(t("{0} returned an error: {1}").replace("{0}", profile.label).replace("{1}", apiErr.trim()));
       }
       if (apiErr && (apiErr.message || apiErr.code)) {
-        const bodyErr = new Error(`${profile.label} 返回错误${apiErr.code ? `（${apiErr.code}）` : ""}：${apiErr.message || "未知错误"}`) as Error & { nonRetryable?: boolean };
+        const bodyErr = new Error(apiErr.code
+          ? t("{0} returned an error ({1}): {2}").replace("{0}", profile.label).replace("{1}", String(apiErr.code)).replace("{2}", apiErr.message || t("unknown error"))
+          : t("{0} returned an error: {1}").replace("{0}", profile.label).replace("{1}", apiErr.message || t("unknown error"))
+        ) as Error & { nonRetryable?: boolean };
         if (/^4/.test(String(apiErr.code || ""))) bodyErr.nonRetryable = true;
         throw bodyErr;
       }
@@ -671,7 +682,7 @@ export async function requestChatInputAudioChunk(
       const { value, done: readerDone } = await reader.read();
       if (readerDone) break;
       // 每收到一个网络分片就重置空闲计时：数据还在流动就不判超时（首字节到达后即切入 60s 空闲档）。
-      armPhaseTimer(CHAT_INPUT_SSE_IDLE_TIMEOUT_MS, `${Math.round(CHAT_INPUT_SSE_IDLE_TIMEOUT_MS / 1000)} 秒内无新数据`);
+      armPhaseTimer(CHAT_INPUT_SSE_IDLE_TIMEOUT_MS, t("{0} seconds without new data").replace("{0}", String(Math.round(CHAT_INPUT_SSE_IDLE_TIMEOUT_MS / 1000))));
       lineBuffer += decoder.decode(value, { stream: true });
       const lines = lineBuffer.split(/\r?\n/);
       lineBuffer = lines.pop() || ""; // 最后一段可能是半行，留到下一分片
@@ -701,22 +712,23 @@ export async function requestChatInputAudioChunk(
         console.warn(`[QnALog] ${profile.label} 输出触顶被截断，已保住 ${salvaged.length} 字（末尾可能缺失）`);
         return `${salvaged}\n_[本段较长，末尾可能有少量内容未转完]_`;
       }
-      throw chatInputAudioPermanentError(`${profile.label} 输出触顶被截断且无可保留文本：请缩短切块时长后重试`);
+      throw chatInputAudioPermanentError(t("{0} output hit the cap and was truncated with no text to keep; shorten the chunk duration and retry.").replace("{0}", profile.label));
     }
     // 2) 收到 [DONE] 或非 length 的 finish_reason：正常完成，返回累积文本（空文本由调用方按软失败处理）；
     // 3) 两者都没有（连接中途断开）：绝不把半截文本当成功返回——那会重新引入"静默丢段"这一类 bug。
     if (!acc.done && !acc.finishReason) {
-      throw new Error(`转写流中断（已收到 ${acc.text.length} 字，未收到结束标记）`);
+      throw new Error(t("Transcription stream interrupted ({0} characters received, no end marker).").replace("{0}", String(acc.text.length)));
     }
     return String(acc.text || "").trim();
   } catch (e) {
     if (controller && controller.signal && controller.signal.aborted) {
       // 保留"超时"关键字：isTransientAsrError 据此归为瞬时错误，导入重试链路才会自动重试。
-      throw new Error(`转写请求超时：${abortHint || "等待响应超时"}；录音文件已保留，可稍后重试或降低 ASR 并发数`);
+      throw new Error(t("Transcription request timed out: {0}; the audio file is kept, so you can retry later or lower the ASR concurrency.")
+        .replace("{0}", abortHint || t("timed out waiting for a response")));
     }
     if (isAsrTransportError(e)) {
       const originalMessage = String((e && e.message) || e || "网络连接失败");
-      const transportError = new Error("无法连接转写服务；音频已保留，恢复连接后可继续重试") as Error & {
+      const transportError = new Error(t("Could not connect to the transcription service; the audio file is kept, so you can retry after the connection recovers.")) as Error & {
         asrTransport?: boolean;
         statusDetail?: string;
       };
@@ -759,7 +771,7 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
     if (part) return part;
     try {
       if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
-        await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_empty_chunk`, `${profile.shortLabel} 单块转写为空`, {
+        await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_empty_chunk`, t("{0} chunk transcription was empty.").replace("{0}", profile.shortLabel), {
           chunkIndex,
           chunkCount,
           chunkBytes: prepared && prepared.blob && prepared.blob.size,
@@ -773,14 +785,17 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
         type: "retry-wait",
         retryDelayMs,
         retryAt: Date.now() + retryDelayMs,
-        error: `服务内部第 ${chunkIndex + 1}/${chunkCount} 块返回空结果`,
+        error: t("Internal service chunk {0}/{1} returned an empty result.").replace("{0}", String(chunkIndex + 1)).replace("{1}", String(chunkCount)),
         providerChunkIndex: chunkIndex,
         providerChunkCount: chunkCount,
       });
       await wait(retryDelayMs);
     }
   }
-  throw new Error(`${profile.shortLabel} 第 ${chunkIndex + 1}/${chunkCount} 块连续返回空结果；音频已保留，可稍后重试`);
+  throw new Error(t("{0} chunk {1}/{2} returned empty results in a row; the audio file is kept, so you can retry later.")
+    .replace("{0}", profile.shortLabel)
+    .replace("{1}", String(chunkIndex + 1))
+    .replace("{2}", String(chunkCount)));
 }
 
 export async function transcribeAudioWithChatInputAudio(
@@ -815,7 +830,7 @@ export async function transcribeAudioWithChatInputAudio(
   const cleaned = cleanApimimoAsrRepeatedLoops(rawText);
   if (cleaned.suppressedChars > 0) {
     try {
-      await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_repeat_detected`, `${profile.shortLabel} 转写疑似存在重复循环，已保留原始转写`, {
+      await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_repeat_detected`, t("{0} transcription may contain a repeating loop; the original transcript is kept.").replace("{0}", profile.shortLabel), {
         suppressedChars: cleaned.suppressedChars,
         suppressedRepeats: cleaned.suppressedRepeats,
         chunkCount: chunks.length,
@@ -871,10 +886,10 @@ export async function transcribeAudio(
   const p = (providerOverride && typeof providerOverride === "object")
     ? providerOverride
     : resolveTranscribeProvider(plugin, providerOverride);
-  if (!p.endpoint) throw new Error(`转写服务地址未配置（当前服务：${p.name || p.id}）`);
-  assertSafeServiceEndpoint(p.endpoint, "http", "转写服务地址");
-  if (!p.apiKey && !canOmitServiceApiKey(p.endpoint)) throw new Error(`转写访问密钥未配置（当前服务：${p.name || p.id}）`);
-  if (!p.model)    throw new Error(`转写模型名称未配置（当前服务：${p.name || p.id}）`);
+  if (!p.endpoint) throw new Error(t("Transcription service URL is not configured (current service: {0}).").replace("{0}", p.name || p.id));
+  assertSafeServiceEndpoint(p.endpoint, "http", t("Transcription service URL"));
+  if (!p.apiKey && !canOmitServiceApiKey(p.endpoint)) throw new Error(t("Transcription access key is not configured (current service: {0}).").replace("{0}", p.name || p.id));
+  if (!p.model)    throw new Error(t("Transcription model name is not configured (current service: {0}).").replace("{0}", p.name || p.id));
   const vocabularyGroups = await loadVocabularyGroups(plugin);
   const chatInputProfile = getChatInputAudioProfile(Object.assign({ id: p.id }, p));
   if (chatInputProfile) {
@@ -917,7 +932,8 @@ export async function transcribeAudio(
   } catch (e) {
     if (timer) window.clearTimeout(timer);
     if (controller && controller.signal && controller.signal.aborted) {
-      throw new Error(`转写请求超时：${Math.round(timeoutMs / 1000)} 秒内没有响应；录音文件已保留，可稍后重试或降低 ASR 并发数`);
+      throw new Error(t("Transcription request timed out: no response within {0} seconds; the audio file is kept, so you can retry later or lower the ASR concurrency.")
+        .replace("{0}", String(Math.round(timeoutMs / 1000))));
     }
     throw e;
   }
@@ -929,7 +945,7 @@ export async function transcribeAudio(
       let errText = buildTranscribeHttpError(res, msg, p, blob, mime);
       // 限流时服务端可能带 Retry-After（秒）：拼进错误信息，供 pickAsrRetryDelayMs 按服务端要求退避。
       const retryAfterHeader = res.headers && typeof res.headers.get === "function" ? String(res.headers.get("retry-after") || "").trim() : "";
-      if (/^\d+$/.test(retryAfterHeader)) errText += `；Retry-After: ${retryAfterHeader}s`;
+      if (/^\d+$/.test(retryAfterHeader)) errText += t("; Retry-After: {0}s").replace("{0}", retryAfterHeader);
       throw new Error(errText);
     }
     // json() 失败必须显式报错——静默换 {} 会把超时/断流吞成"空转写"，段被标成功并删缓存音频 = 静默丢段。
@@ -938,9 +954,12 @@ export async function transcribeAudio(
       data = await res.json();
     } catch (e) {
       if (controller && controller.signal && controller.signal.aborted) {
-        throw new Error(`转写请求超时：${Math.round(timeoutMs / 1000)} 秒内响应未读完；录音文件已保留，可稍后重试或降低 ASR 并发数`);
+        throw new Error(t("Transcription request timed out: no response while reading within {0} seconds; the audio file is kept, so you can retry later or lower the ASR concurrency.")
+          .replace("{0}", String(Math.round(timeoutMs / 1000))));
       }
-      throw new Error(`转写响应解析失败（HTTP ${res.status} 但响应体非法或中断）：${(e && e.message) || e}`);
+      throw new Error(t("Failed to parse the transcription response (HTTP {0} but the body is invalid or interrupted): {1}")
+        .replace("{0}", String(res.status))
+        .replace("{1}", String((e && e.message) || e)));
     }
     // 取最终文本：若服务返回了说话人分离信息（segments[].speaker 或内联 [SPEAKER_00]），归一成 [说话人N] 前缀；否则同旧行为。
     const rawText = extractTranscriptText(data);

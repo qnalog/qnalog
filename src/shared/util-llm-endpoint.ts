@@ -1,17 +1,19 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
+import { t } from "./i18n";
+
 export type ServiceEndpointTransport = "http" | "websocket";
 
-export function getServiceEndpointSecurityIssue(endpoint, transport: ServiceEndpointTransport, label = "服务地址") {
+export function getServiceEndpointSecurityIssue(endpoint, transport: ServiceEndpointTransport, label = t("Service URL")) {
   const raw = String(endpoint || "").trim();
-  if (!raw) return `${label}未配置`;
+  if (!raw) return t("{0} is not configured").replace("{0}", label);
   let url;
   try {
     url = new URL(raw);
   } catch {
     const secureScheme = transport === "websocket" ? "wss://" : "https://";
-    return `${label}格式无效；请填写完整的 ${secureScheme} 地址`;
+    return t("{0} is invalid; enter a complete {1} address").replace("{0}", label).replace("{1}", secureScheme);
   }
   const protocol = url.protocol.toLowerCase();
   const secureProtocol = transport === "websocket" ? "wss:" : "https:";
@@ -21,12 +23,12 @@ export function getServiceEndpointSecurityIssue(endpoint, transport: ServiceEndp
   if (protocol === secureProtocol) return "";
   if (protocol === localProtocol && isPlaintextAllowedServiceHost(url.hostname)) return "";
   if (protocol === localProtocol) {
-    return `${label}不安全：公网地址必须使用 ${secureName}；只有 localhost、局域网/私网或 Tailscale 等私有网络地址可使用 ${localName}`;
+    return t("{0} is insecure: public addresses must use {1}; only localhost, LAN/private-network, or Tailscale addresses may use {2}").replace("{0}", label).replace("{1}", secureName).replace("{2}", localName);
   }
-  return `${label}协议不受支持；请使用 ${secureName}，本地、私网或 Tailscale 等私有网络服务可使用 ${localName}`;
+  return t("{0} uses an unsupported protocol; use {1}, or {2} for local, private-network, or Tailscale services").replace("{0}", label).replace("{1}", secureName).replace("{2}", localName);
 }
 
-export function assertSafeServiceEndpoint(endpoint, transport: ServiceEndpointTransport, label = "服务地址") {
+export function assertSafeServiceEndpoint(endpoint, transport: ServiceEndpointTransport, label = t("Service URL")) {
   const issue = getServiceEndpointSecurityIssue(endpoint, transport, label);
   if (issue) throw new Error(issue);
 }
@@ -45,12 +47,12 @@ export function inferEndpointTransport(endpoint: string): ServiceEndpointTranspo
 }
 
 /** 按地址自身的协议校验；wss:// 走 websocket 规则，其余走 http 规则。 */
-export function assertEndpointAllowed(endpoint, label = "服务地址") {
+export function assertEndpointAllowed(endpoint, label = t("Service URL")) {
   assertSafeServiceEndpoint(endpoint, inferEndpointTransport(endpoint), label);
 }
 
 /** 按地址自身的协议给出问题描述；没有问题时返回空串。 */
-export function describeEndpointIssue(endpoint, label = "服务地址") {
+export function describeEndpointIssue(endpoint, label = t("Service URL")) {
   return getServiceEndpointSecurityIssue(endpoint, inferEndpointTransport(endpoint), label);
 }
 

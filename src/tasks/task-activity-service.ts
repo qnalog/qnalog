@@ -188,13 +188,13 @@ export class TaskActivityService {
     const activity = this.taskActivityStore.start(input);
     this.taskActivityStore.event(activity.id, {
       type: "start",
-      label: input.stageLabel || input.detail || "任务已开始",
+      label: input.stageLabel || input.detail || t("Task started"),
     });
     return activity;
   }
   async runTaskActivity(input: TaskActivityInput, executor, completion: TaskActivityCompletion = {}) {
     if (!input || !input.id || typeof executor !== "function") {
-      throw new Error("任务定义不完整");
+      throw new Error(t("Incomplete task definition"));
     }
     const taskId = String(input.id);
     this.startTaskActivity(input);
@@ -220,7 +220,7 @@ export class TaskActivityService {
       if (!current || current.status !== "cancelled") {
         this.failTaskActivity(taskId, error, {
           stage: "failed",
-          stageLabel: completion.failureLabel || "任务未完成",
+          stageLabel: completion.failureLabel || t("Task not completed"),
           detail: getTaskErrorMessage(error),
           actions: completion.failureActions || input.actions || [],
         });
@@ -248,7 +248,7 @@ export class TaskActivityService {
     const failed = this.taskActivityStore.fail(id, error, patch);
     this.taskActivityStore.event(id, {
       type: "error",
-      label: patch.stageLabel || "任务失败",
+      label: patch.stageLabel || t("Task failed"),
       detail: message,
     });
     return failed;
@@ -260,12 +260,12 @@ export class TaskActivityService {
     const completed = this.taskActivityStore.complete(id, patch);
     this.taskActivityStore.event(id, {
       type: "complete",
-      label: patch.stageLabel || "任务已完成",
+      label: patch.stageLabel || t("Task completed"),
       detail: patch.detail || "",
     });
     return completed;
   }
-  cancelTaskActivity(id, detail = "任务已取消") {
+  cancelTaskActivity(id, detail = t("Task cancelled")) {
     if (!this.taskActivityStore || !id) return null;
     const current = this.taskActivityStore.get(id);
     if (!current) return null;
@@ -287,15 +287,15 @@ export class TaskActivityService {
     const type = String(task.type || "");
     const title = type === "transcribe"
       ? (task.wholeFileImport
-        ? `整文件转写 · ${String(task.sourceAudioName || task.audioName || "导入音频")}`
-        : `分段转写 · 第 ${Math.max(0, Number(task.segmentIndex) || 0) + 1} 段`)
-      : type === "merge" ? "AI 整理"
-        : type === "generate-prompt" ? "生成提示词" : "后台任务";
+        ? t("Whole-file transcription · {0}").replace("{0}", String(task.sourceAudioName || task.audioName || t("Import audio")))
+        : t("Segmented transcription · segment {0}").replace("{0}", String(Math.max(0, Number(task.segmentIndex) || 0) + 1)))
+      : type === "merge" ? t("AI Organize")
+        : type === "generate-prompt" ? t("Generate prompt") : t("Background task");
     const isPartialBriefing = type === "merge" && /纪要整理部分完成/.test(String(task.lastError || ""));
-    const stageLabel = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS ? "正在处理"
-      : task.status === "blocked" ? "等待修复配置"
-        : task.status === "missing" ? "缺少源文件"
-          : task.status === "failed" ? (isPartialBriefing ? "部分完成 · 等待重试" : "本次处理失败") : "等待处理";
+    const stageLabel = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS ? t("Currently processing")
+      : task.status === "blocked" ? t("Waiting for configuration fix")
+        : task.status === "missing" ? t("Source file missing")
+          : task.status === "failed" ? (isPartialBriefing ? t("Partially completed · waiting to retry") : t("This run failed")) : t("Waiting to process");
     const status = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS || task.status === "processing"
       ? "running"
       : task.status === "failed" || task.status === "blocked" || task.status === "missing"
@@ -317,14 +317,14 @@ export class TaskActivityService {
       status,
       stage: String(task.status || "pending"),
       stageLabel,
-      detail: String(task.lastError || (status === "queued" ? "任务已保存，稍后自动处理" : "")),
+      detail: String(task.lastError || (status === "queued" ? t("Task saved; it will be processed automatically later") : "")),
       progress: null,
-      count: task.attempt ? `第 ${task.attempt}/${maxAttempts} 次` : "",
+      count: task.attempt ? t("Attempt {0} of {1}").replace("{0}", task.attempt).replace("{1}", String(maxAttempts)) : "",
       attempt: Math.max(0, Number(task.attempt) || Number(task.retries) + 1 || 0),
       maxAttempts,
       startedAt: task.startedAt ? Date.parse(task.startedAt) : (task.createdAt ? Date.parse(task.createdAt) : Date.now()),
       updatedAt: task.updatedAt ? Date.parse(task.updatedAt) : Date.now(),
-      error: status === "failed" ? String(task.lastError || "任务未成功") : "",
+      error: status === "failed" ? String(task.lastError || t("Task did not succeed")) : "",
       actions,
     };
     const existing = this.taskActivityStore.get(id);
@@ -349,14 +349,14 @@ export class TaskActivityService {
     const subject = session && session.mdPath ? session.mdPath : "";
     const reason = String(state.reason || "");
     const reasonLabels = {
-      segment: "等待新增转写",
-      scheduled: "等待刷新",
-      waiting: "等待转写空档",
-      retry: "等待自动重试",
-      backoff: "稍后自动重试",
-      manual: "手动刷新",
-      "manual-refresh": "手动刷新",
-      final: "生成最终大纲",
+      segment: t("Waiting for new transcription"),
+      scheduled: t("Waiting to refresh"),
+      waiting: t("Waiting for a transcription gap"),
+      retry: t("Waiting for automatic retry"),
+      backoff: t("Retrying automatically later"),
+      manual: t("Manual refresh"),
+      "manual-refresh": t("Manual refresh"),
+      final: t("Generate final outline"),
     };
     const actions = state.phase === "running"
       ? [{ id: "cancel-outline", label: t("Stop this round") }]
@@ -376,7 +376,7 @@ export class TaskActivityService {
         subject,
         status: state.phase === "running" ? "running" : "waiting",
         stage: state.phase,
-        stageLabel: reasonLabels[reason] || (state.phase === "running" ? "正在生成大纲" : "等待刷新"),
+        stageLabel: reasonLabels[reason] || (state.phase === "running" ? t("Generating outline") : t("Waiting to refresh")),
         detail: "",
         startedAt: state.startedAt || Date.now(),
         updatedAt: Date.now(),
@@ -388,9 +388,9 @@ export class TaskActivityService {
       return this.taskActivityStore.heartbeat(id, {
         status: "running",
         stage: "running",
-        stageLabel: reasonLabels[reason] || "正在生成大纲",
-        detail: state.queued > 0 ? `本轮完成后还有 ${state.queued} 次更新待合并` : "正在根据最新转写更新结构",
-        count: state.queued > 0 ? `${state.queued} 次更新待合并` : "",
+        stageLabel: reasonLabels[reason] || t("Generating outline"),
+        detail: state.queued > 0 ? t("There will be {0} more updates to merge after this round").replace("{0}", state.queued) : t("Updating the structure from the latest transcription"),
+        count: state.queued > 0 ? t("{0} updates pending merge").replace("{0}", state.queued) : "",
         startedAt: state.startedAt || existing && existing.startedAt || Date.now(),
         error: "",
         errorKind: "",
@@ -402,8 +402,8 @@ export class TaskActivityService {
       return this.taskActivityStore.heartbeat(id, {
         status: state.phase === "backoff" ? "retrying" : "waiting",
         stage: state.phase,
-        stageLabel: state.phase === "backoff" ? "等待自动重试" : "等待刷新",
-        detail: state.lastError || reasonLabels[reason] || "新的转写到达后自动继续",
+        stageLabel: state.phase === "backoff" ? t("Waiting for automatic retry") : t("Waiting to refresh"),
+        detail: state.lastError || reasonLabels[reason] || t("Will continue automatically when new transcription arrives"),
         retryAt: state.nextRunAt || 0,
         error: state.lastError || "",
         actions,
@@ -432,7 +432,7 @@ export class TaskActivityService {
     return this.completeTaskActivity(id, {
       stage: "done",
       stageLabel: t("Outline updated"),
-      detail: "已根据当前转写完成本轮更新",
+      detail: t("This round of updates has been completed based on the current transcription"),
       subject,
       progress: 100,
       actions,
@@ -444,8 +444,8 @@ export class TaskActivityService {
       ? `import:${session.id}`
       : `finalize:${session.id}`;
     const wp = session.workProgress || {};
-    const sourceLabel = session.source === "text-import" ? "文本整理"
-        : session.source === "import" ? "导入音频整理" : "录音纪要整理";
+    const sourceLabel = session.source === "text-import" ? t("Text organization")
+        : session.source === "import" ? t("Imported audio organization") : t("Recording minutes organization");
     const failureStages = new Set(["finalize-failed", "transcript-empty", "merge-failed"]);
     const retryStages = new Set(["merge-retrying"]);
     const actions = failureStages.has(wp.stage)
@@ -461,12 +461,12 @@ export class TaskActivityService {
       subject: String(session.mdPath || ""),
       status: failureStages.has(wp.stage) ? "failed" : retryStages.has(wp.stage) ? "retrying" : "running",
       stage: String(wp.stage || "preparing"),
-      stageLabel: String(wp.label || "准备 AI 整理"),
+      stageLabel: String(wp.label || t("Preparing AI organization")),
       detail: String(wp.detail || ""),
       progress: wp.percent == null ? null : Number(wp.percent),
       startedAt: session.processingStartedAt ? Date.parse(session.processingStartedAt) : Date.parse(session.startedAt || "") || Date.now(),
       updatedAt: wp.updatedAt ? Date.parse(wp.updatedAt) : Date.now(),
-      error: failureStages.has(wp.stage) ? String(session.finalizationError || wp.detail || wp.label || "纪要整理失败") : "",
+      error: failureStages.has(wp.stage) ? String(session.finalizationError || wp.detail || wp.label || t("Minutes organization failed")) : "",
       actions: retryStages.has(wp.stage)
         ? [{ id: "open-task-note", label: t("Open original material"), primary: true }]
         : actions,
@@ -483,7 +483,7 @@ export class TaskActivityService {
     }
     if (wp.stage === "done") {
       return this.completeTaskActivity(id, Object.assign({}, patch, {
-        stageLabel: wp.label || "纪要处理完成",
+        stageLabel: wp.label || t("Minutes organization completed"),
         actions: session.mdPath
           ? [{ id: "open-task-note", label: t("Open minutes"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
           : [{ id: "dismiss-task", label: t("Close Recording") }],
@@ -500,11 +500,11 @@ export class TaskActivityService {
     const id = `import:${activity.sessionId}`;
     const phase = normalizeAudioImportStage(activity.phase);
     const labels = {
-      prepare: "准备音频",
-      transcribe: "语音转写",
-      persist: "写入原始转写",
-      organize: "AI 整理",
-      write: "写入纪要",
+      prepare: t("Preparing audio"),
+      transcribe: t("Speech transcription"),
+      persist: t("Writing the original transcription"),
+      organize: t("AI Organize"),
+      write: t("Write to Minutes"),
     };
     const total = Math.max(0, Number(activity.segmentTotal) || 0);
     const done = phase === "persist"
@@ -520,16 +520,16 @@ export class TaskActivityService {
     const patch: TaskActivityInput = {
       id,
       kind: "audio-import",
-      title: activity.file ? `导入音频 · ${activity.file}` : "导入音频",
+      title: activity.file ? t("Import audio · {0}").replace("{0}", activity.file) : t("Import audio"),
       subject: String(activity.mdPath || activity.file || ""),
       status: failure ? "failed" : completed ? "done" : "running",
       stage: phase,
-      stageLabel: labels[phase] || "处理音频",
+      stageLabel: labels[phase] || t("Processing audio"),
       detail: failed > 0
-        ? `${failed} 个音频文件未成功，原始音频已保留并进入重试流程`
+        ? t("{0} audio files failed; the original audio has been kept and entered the retry flow").replace("{0}", String(failed))
         : String(activity.label || ""),
       progress,
-      count: total > 0 ? `${done}/${total} 个文件` : activity.total > 1 ? `${activity.done || 0}/${activity.total} 个文件` : "",
+      count: total > 0 ? t("{0}/{1} files").replace("{0}", String(done)).replace("{1}", String(total)) : activity.total > 1 ? t("{0}/{1} files").replace("{0}", activity.done || 0).replace("{1}", activity.total) : "",
       startedAt: Number(activity.startedAt) || Date.now(),
       updatedAt: Number(activity.updatedAt) || Date.now(),
       error: failure,
@@ -571,13 +571,13 @@ export class TaskActivityService {
       }
       if (actionId === "cancel-outline") {
         this.host.outline.cancelRealtimeOutline(taskId.replace(/^outline:/, ""));
-        this.cancelTaskActivity(taskId, "已停止本轮大纲生成");
+        this.cancelTaskActivity(taskId, t("Stopped this round of outline generation"));
         return;
       }
       if (actionId === "retry-queue-task") {
         const queueId = taskId.replace(/^queue:/, "");
         const task = this.host.queue && this.host.queue.tasks.find((item) => item && item.id === queueId);
-        if (!task) throw new Error("对应的待处理任务已不存在");
+        if (!task) throw new Error(t("The corresponding pending task no longer exists"));
         if (task.status === "failed" || task.status === "blocked" || task.status === "missing") {
           await this.host.queue.update(task.id, {
             status: "pending",
@@ -603,20 +603,20 @@ export class TaskActivityService {
       }
       if (actionId === "open-task-note") {
         const file = this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(activity.subject || ""));
-        if (!(file instanceof obsidian.TFile)) throw new Error("对应笔记不存在或已被移动");
+        if (!(file instanceof obsidian.TFile)) throw new Error(t("The corresponding note does not exist or has been moved"));
         const leaf = this.host.app.workspace.getLeaf(true);
         await leaf.openFile(file);
         await this.host.app.workspace.revealLeaf(leaf);
       }
     } catch (error) {
-      const message = getTaskErrorMessage(error, "操作未完成");
+      const message = getTaskErrorMessage(error, t("Operation not completed"));
       this.failTaskActivity(taskId, error, {
         stageLabel: t("Operation not completed"),
         detail: message,
         actions: activity.actions,
       });
       try {
-        await this.host.diagnostics.logDiagnostic("error", "task.action_failed", "任务操作失败", {
+        await this.host.diagnostics.logDiagnostic("error", "task.action_failed", t("Task action failed"), {
           taskId,
           actionId,
           error: diagnosticError(error),
@@ -659,14 +659,14 @@ export class TaskActivityService {
         const phase = normalizeAudioImportStage(ip.phase);
         const completed = Math.max(0, Number(ip.segmentDone) || 0);
         const total = Math.max(0, Number(ip.segmentTotal) || 0);
-        const phaseLabel = phase === "prepare" ? "准备音频"
-          : phase === "transcribe" ? "语音转写"
-            : phase === "persist" ? "写入原始转写"
-              : phase === "organize" ? "AI 整理" : "写入纪要";
-        const chunkLabel = phase === "transcribe" && total > 1 ? ` ${completed}/${total} 段` : "";
+        const phaseLabel = phase === "prepare" ? t("Preparing audio")
+          : phase === "transcribe" ? t("Speech transcription")
+            : phase === "persist" ? t("Writing the original transcription")
+              : phase === "organize" ? t("AI Organize") : t("Write to Minutes");
+        const chunkLabel = phase === "transcribe" && total > 1 ? ` ${t("{0}/{1} segments").replace("{0}", String(completed)).replace("{1}", String(total))}` : "";
         show("loader-2", `${phaseLabel}${chunkLabel}`, true);
       } else {
-        show("loader-2", ip.label || `导入转写 ${Number(ip.done) || 0}/${ip.total}`, true);
+        show("loader-2", ip.label || t("Import transcription {0}/{1}").replace("{0}", String(Number(ip.done) || 0)).replace("{1}", ip.total), true);
       }
       return;
     }
@@ -674,7 +674,7 @@ export class TaskActivityService {
     // 只看 _batchTotal（processAll 和手动逐条循环都会设它），不要求 q.running，避免漏掉手动循环路径。
     if (q && Number(q._batchTotal) > 0) {
       const done = Math.min(Number(q._batchDone) || 0, Number(q._batchTotal));
-      show("loader-2", `转写处理中 ${done}/${q._batchTotal}${wpLabel ? " · " + wpLabel : ""}`, true);
+      show("loader-2", t("Transcribing in progress {0}/{1}").replace("{0}", String(done)).replace("{1}", String(q._batchTotal)) + (wpLabel ? " · " + wpLabel : ""), true);
       return;
     }
     // A2) 通用长操作（重新整理 / 整篇重新润色等，无可计数子任务）
@@ -684,7 +684,7 @@ export class TaskActivityService {
     }
     // B) 会后 AI 整理：多个子阶段（整理上下文 / 生成大纲 / 合并润色…）+ 百分比，跟着 workProgress 实时切换
     if (s && (s.finalizing || postProcessing)) {
-      show("loader-2", (wpLabel || "AI 整理中") + pct, true);
+      show("loader-2", (wpLabel || t("AI organizing")) + pct, true);
       return;
     }
     // C) 录音进行中：实时走动的录音时长 + 已转写段数；某段在转写时叠加"转写中"
@@ -695,24 +695,24 @@ export class TaskActivityService {
       try { elapsed = (rec.getInfo && rec.getInfo().elapsed) || 0; } catch { /* intentionally empty */ }
       const segN = Array.isArray(s.segments) ? s.segments.length : 0;
       if (recState === "paused") {
-        show("pause", `录音已暂停 ${formatElapsed(elapsed)}`, false);
+        show("pause", t("Recording paused {0}").replace("{0}", formatElapsed(elapsed)), false);
       } else if (Number(s.activeSegmentJobs) > 0) {
-        show("loader-2", `录音 ${formatElapsed(elapsed)} · 转写中`, true);
+        show("loader-2", t("Recording {0} · Transcribing").replace("{0}", formatElapsed(elapsed)), true);
       } else {
-        show("mic", `录音 ${formatElapsed(elapsed)}${segN ? " · 已转写 " + segN + " 段" : ""}`, false);
+        show("mic", segN ? t("Recording {0} · {1} segments transcribed").replace("{0}", formatElapsed(elapsed)).replace("{1}", String(segN)) : t("Recording {0}").replace("{0}", formatElapsed(elapsed)), false);
       }
       return;
     }
     // C2) 非录音但仍有段落在转写（停止后的尾段收尾）
     if (s && Number(s.activeSegmentJobs) > 0) {
-      show("loader-2", (wpLabel || "转写中") + pct, true);
+      show("loader-2", (wpLabel || t("Transcription in progress")) + pct, true);
       return;
     }
     // C3) 跨模块任务异常：不能因原业务弹窗关闭就消失。失败和卡住状态会常驻到用户处理或关闭记录。
     const taskActivities = this.getTaskActivities({ includeDone: false, includeCancelled: false });
     const attention = taskActivities.filter((activity) => activity && (activity.status === "failed" || activity.status === "stalled"));
     if (attention.length > 0) {
-      show("triangle-alert", `${attention.length} 个任务需要处理`, false);
+      show("triangle-alert", `${attention.length}${t(" tasks need processing")}`, false);
       return;
     }
     const background = taskActivities.filter((activity) => activity
@@ -720,9 +720,9 @@ export class TaskActivityService {
       && ["running", "waiting", "slow", "retrying"].includes(activity.status));
     if (background.length > 0) {
       const task = background[0];
-      const stateText = task.status === "retrying" ? "等待重试"
-        : task.status === "waiting" ? "等待继续"
-          : task.status === "slow" ? (task.stageLabel || "处理中") : (task.stageLabel || "后台处理中");
+      const stateText = task.status === "retrying" ? t("Waiting to retry")
+        : task.status === "waiting" ? t("Waiting to continue")
+          : task.status === "slow" ? (task.stageLabel || t("Processing")) : (task.stageLabel || t("Running in background"));
       show(task.status === "waiting" || task.status === "retrying" ? "clock-3" : "loader-2",
         `${task.title} · ${stateText}`,
         task.status === "running" || task.status === "slow");
@@ -730,11 +730,11 @@ export class TaskActivityService {
     }
     // D) 有待处理任务但空闲（可点重试）
     if (runnable.length > 0) {
-      show("clock", `${runnable.length} 个待转写`, false);
+      show("clock", t("{0} tasks pending transcription").replace("{0}", String(runnable.length)), false);
       return;
     }
     // E) 空闲 → 低调常驻锚点
-    show("circle-check", "Q&A Log 就绪", false, true);
+    show("circle-check", t("Q&A Log is ready"), false, true);
   }
   // 兼容旧调用名：早期代码里残留 this.renderStatusBar() 调用点，但 renderStatusBar 从未定义
   // → 运行时抛 TypeError（曾导致"重试失败转写/清空队列"中途崩、完成提示不弹）。统一别名到 updateBusyStatus。
@@ -745,21 +745,21 @@ export class TaskActivityService {
       const ip = this._importBusy;
       if (ip.workflow === "audio-import") {
         const detail = this.getCurrentActivityDetail();
-        return detail ? [detail.step, detail.count].filter(Boolean).join(" · ") : "导入转写";
+        return detail ? [detail.step, detail.count].filter(Boolean).join(" · ") : t("Import transcription");
       }
-      return ip.label || `导入转写 ${Number(ip.done) || 0}/${ip.total}`;
+      return ip.label || t("Import transcription {0}/{1}").replace("{0}", String(Number(ip.done) || 0)).replace("{1}", ip.total);
     }
     if (this.host.queue && Number(this.host.queue._batchTotal) > 0) {
       const done = Math.min(Number(this.host.queue._batchDone) || 0, Number(this.host.queue._batchTotal));
-      return `转写处理中 ${done}/${this.host.queue._batchTotal}`;
+      return t("Transcribing in progress {0}/{1}").replace("{0}", String(done)).replace("{1}", String(this.host.queue._batchTotal));
     }
     if (this._busyLabel) return String(this._busyLabel);
     const s = this.host.session;
     const wp = s && s.workProgress;
     const postProcessing = !!(wp && (wp.stage === "write-note" || wp.stage === "done"));
-    if (s && (s.finalizing || postProcessing)) return (wp && wp.label) || "AI 整理中";
-    if (s && Number(s.activeSegmentJobs) > 0) return (s.workProgress && s.workProgress.label) || "转写中";
-    if (this.host.recorder && this.host.recorder.state === "recording") return "录音中";
+    if (s && (s.finalizing || postProcessing)) return (wp && wp.label) || t("AI organizing");
+    if (s && Number(s.activeSegmentJobs) > 0) return (s.workProgress && s.workProgress.label) || t("Transcription in progress");
+    if (this.host.recorder && this.host.recorder.state === "recording") return t("Active recording");
     return null;
   }
   /** 会话进度同步：audio-import 流程进行中时，把切片阶段进度写进导入忙态；
@@ -772,10 +772,10 @@ export class TaskActivityService {
     const stage = audioImportStageFromWorkProgress(progress.stage);
     this.updateImportActivity({
       phase: stage,
-      organizeLabel: stage === "organize" ? String(progress.label || "AI 整理") : busy.organizeLabel,
+      organizeLabel: stage === "organize" ? String(progress.label || t("AI Organize")) : busy.organizeLabel,
       organizeDetail: stage === "organize" ? String(progress.detail || "") : busy.organizeDetail,
       organizePercent: stage === "organize" ? Number(progress.percent) || 0 : busy.organizePercent,
-      writeLabel: stage === "write" ? String(progress.label || "写入纪要") : busy.writeLabel,
+      writeLabel: stage === "write" ? String(progress.label || t("Write to Minutes")) : busy.writeLabel,
       writeDetail: stage === "write" ? String(progress.detail || "") : busy.writeDetail,
       writePercent: stage === "write" ? Number(progress.percent) || 0 : busy.writePercent,
     });
@@ -819,11 +819,11 @@ export class TaskActivityService {
         stageId: nextPhase,
         type: "stage",
         label: ({
-          prepare: "开始准备音频",
-          transcribe: "开始语音转写",
-          persist: "开始写入原始转写",
-          organize: "开始 AI 整理",
-          write: "开始写入纪要",
+          prepare: t("Started preparing audio"),
+          transcribe: t("Started speech transcription"),
+          persist: t("Started writing the original transcription"),
+          organize: t("Started AI organization"),
+          write: t("Started writing minutes"),
         })[nextPhase],
       });
     }
@@ -887,21 +887,21 @@ export class TaskActivityService {
       let detail = "";
       let requests = [];
       if (stage.id === "prepare") {
-        summary = prepareTotal > 0 ? `${prepareDone}/${prepareTotal} 个文件已准备` : "";
-        detail = "读取音频并确认文件、格式和时长。";
+        summary = prepareTotal > 0 ? t("{0}/{1} files ready").replace("{0}", String(prepareDone)).replace("{1}", String(prepareTotal)) : "";
+        detail = t("Read the audio and confirm the file, format, and duration.");
       } else if (stage.id === "transcribe") {
         requests = lifecycleRequests;
         summary = [
           stage.status === "active" ? String(ip.transcribeLabel || "") : "",
-          segmentTotal > 0 ? `${processedSegments}/${segmentTotal} 个文件转写成功` : "",
-          requestSummary.running ? `${requestSummary.running} 个请求已发出` : "",
-          requestSummary.waiting ? `${requestSummary.waiting} 个请求等待响应` : "",
-          requestSummary.slow ? `${requestSummary.slow} 个请求处理中` : "",
-          requestSummary.stalled ? `${requestSummary.stalled} 个请求超过预期` : "",
-          requestSummary.retrying ? `${requestSummary.retrying} 个请求等待重试` : "",
-          failedSegments ? `${failedSegments} 个文件待重试` : "",
+          segmentTotal > 0 ? t("{0}/{1} files transcribed successfully").replace("{0}", String(processedSegments)).replace("{1}", String(segmentTotal)) : "",
+          requestSummary.running ? t("{0} requests sent").replace("{0}", String(requestSummary.running)) : "",
+          requestSummary.waiting ? t("{0} requests awaiting response").replace("{0}", String(requestSummary.waiting)) : "",
+          requestSummary.slow ? t("{0} requests in progress").replace("{0}", String(requestSummary.slow)) : "",
+          requestSummary.stalled ? t("{0} requests taking longer than expected").replace("{0}", String(requestSummary.stalled)) : "",
+          requestSummary.retrying ? t("{0} requests waiting to retry").replace("{0}", String(requestSummary.retrying)) : "",
+          failedSegments ? t("{0} files pending retry").replace("{0}", String(failedSegments)) : "",
         ].filter(Boolean).join(" · ");
-        detail = String(ip.transcribeDetail || "每个音频文件独立提交；失败时保留音频并登记到重试队列。");
+        detail = String(ip.transcribeDetail || t("Each audio file is submitted separately; on failure the audio is kept and registered in the retry queue."));
         if (stage.status === "active") {
           liveness = getDominantActivityLiveness(requestSummary);
           if (liveness === "pending" || liveness === "done") {
@@ -914,14 +914,14 @@ export class TaskActivityService {
           liveness = "failed";
         }
       } else if (stage.id === "persist") {
-        summary = segmentTotal > 0 ? `${writtenSegments}/${segmentTotal} 个文件已写入` : "";
-        detail = "原始转写按时间顺序写入笔记，不会等待最终纪要后再一次性保存。";
+        summary = segmentTotal > 0 ? t("{0}/{1} files written").replace("{0}", String(writtenSegments)).replace("{1}", String(segmentTotal)) : "";
+        detail = t("The original transcription is written to the note in chronological order; it does not wait for the final minutes to be saved all at once.");
       } else if (stage.id === "organize") {
         summary = String(ip.organizeLabel || "");
-        detail = String(ip.organizeDetail || "使用已经落盘的原始转写生成结构化纪要。");
+        detail = String(ip.organizeDetail || t("Build the structured minutes from the original transcription that has already been written to disk."));
       } else if (stage.id === "write") {
         summary = String(ip.writeLabel || "");
-        detail = String(ip.writeDetail || "把整理结果写回笔记并完成索引更新。");
+        detail = String(ip.writeDetail || t("Write the organized result back to the note and finish updating the index."));
       }
       if (stage.status === "active" && stage.id !== "transcribe") {
         const quietMs = now - (Number(telemetry.updatedAt) || Number(ip.updatedAt) || now);
@@ -964,51 +964,51 @@ export class TaskActivityService {
         const activeSegments = Math.max(0, Number(ip.activeSegments) || 0);
         const failedSegments = Math.max(0, Number(ip.failedSegments) || 0);
         const processedSegments = Math.min(segmentTotal, segmentDone);
-        let step = "准备音频";
+        let step = t("Preparing audio");
         let stepDetail = ip.file
-          ? `正在读取并分析 ${ip.file}`
-          : "正在读取音频并准备整文件转写任务";
+          ? t("Reading and analyzing {0}").replace("{0}", ip.file)
+          : t("Reading the audio and preparing the whole-file transcription task");
         let percent = null;
-        let count = total > 1 ? `第 ${n} / ${total} 个文件` : "";
+        let count = total > 1 ? t("File {0} / {1}").replace("{0}", String(n)).replace("{1}", String(total)) : "";
         if (phase === "prepare" && prepareTotal > 1) {
           percent = Math.max(0, Math.min(100, (prepareDone / prepareTotal) * 100));
-          count = `已准备 ${prepareDone} / ${prepareTotal} 个文件`;
+          count = t("Prepared {0} / {1} files").replace("{0}", String(prepareDone)).replace("{1}", String(prepareTotal));
         }
         if (phase === "transcribe") {
-          step = "语音转写";
-          const runningText = activeSegments > 0 ? `${activeSegments} 个文件正在请求转写服务` : "正在等待转写服务返回";
+          step = t("Speech transcription");
+          const runningText = activeSegments > 0 ? t("{0} files are requesting the transcription service").replace("{0}", String(activeSegments)) : t("Waiting for the transcription service to respond");
           stepDetail = failedSegments > 0
-            ? `${runningText}；${failedSegments} 个文件未成功，已保留并进入重试流程`
+            ? t("{0}; {1} files failed; they have been kept and queued for retry").replace("{0}", runningText).replace("{1}", String(failedSegments))
             : runningText;
           if (segmentTotal > 1) {
             percent = Math.max(0, Math.min(100, (processedSegments / segmentTotal) * 100));
-            count = `成功 ${processedSegments} / ${segmentTotal} 个文件`;
+            count = t("Succeeded {0} / {1} files").replace("{0}", String(processedSegments)).replace("{1}", String(segmentTotal));
           } else {
-            count = segmentTotal === 1 && segmentDone > 0 ? "当前音频已转写" : "正在转写当前音频";
+            count = segmentTotal === 1 && segmentDone > 0 ? t("The current audio has been transcribed") : t("Transcribing the current audio");
           }
         } else if (phase === "persist") {
-          step = "写入原始转写";
-          stepDetail = "正在按时间顺序写入 Obsidian 笔记，原始转写会完整保留";
+          step = t("Writing the original transcription");
+          stepDetail = t("Writing to the Obsidian note in chronological order; the original transcription will be fully preserved");
           if (segmentTotal > 0) {
             percent = Math.max(0, Math.min(100, (writtenSegments / segmentTotal) * 100));
-            count = `已写入 ${writtenSegments} / ${segmentTotal} 段`;
+            count = t("{0} / {1} segments written").replace("{0}", String(writtenSegments)).replace("{1}", String(segmentTotal));
           }
         } else if (phase === "organize") {
-          step = String(ip.organizeLabel || "AI 整理");
-          stepDetail = String(ip.organizeDetail || "原始转写已保留，正在生成最终纪要");
+          step = String(ip.organizeLabel || t("AI Organize"));
+          stepDetail = String(ip.organizeDetail || t("The original transcription has been kept; generating the final minutes"));
           percent = Number.isFinite(Number(ip.organizePercent)) ? Number(ip.organizePercent) : null;
-          count = segmentTotal > 0 ? `转写已完成 ${segmentDone} / ${segmentTotal} 段` : "";
+          count = segmentTotal > 0 ? t("Transcription complete: {0} / {1} segments").replace("{0}", String(segmentDone)).replace("{1}", String(segmentTotal)) : "";
         } else if (phase === "write") {
-          step = String(ip.writeLabel || "写入纪要");
-          stepDetail = String(ip.writeDetail || "正在把整理结果写入 Obsidian");
+          step = String(ip.writeLabel || t("Write to Minutes"));
+          stepDetail = String(ip.writeDetail || t("Writing the organized result to Obsidian"));
           percent = Number.isFinite(Number(ip.writePercent)) ? Number(ip.writePercent) : null;
-          count = segmentTotal > 0 ? `${segmentDone} / ${segmentTotal} 段已转写` : "";
+          count = segmentTotal > 0 ? t("{0} / {1} segments transcribed").replace("{0}", String(segmentDone)).replace("{1}", String(segmentTotal)) : "";
         }
         const stages = this.buildAudioImportActivityStages(ip, phase);
         const lifecycleEvents = Array.isArray(ip.events) ? ip.events : [];
         const activeStage = stages.find((stage) => stage.status === "active") || null;
         return {
-          kind: "导入转写",
+          kind: t("Import transcription"),
           modeLabel: modeLabelOf(ip.mode),
           step,
           stepDetail,
@@ -1020,16 +1020,16 @@ export class TaskActivityService {
           startedAt: Number(ip.startedAt) || null,
           stageStartedAt: Number(ip.phaseStartedAt) || null,
           updatedAt: Number(ip.updatedAt) || null,
-          backgroundHint: "任务会继续在后台运行，可以关闭此窗口继续使用 Obsidian",
+          backgroundHint: t("The task will keep running in the background; you can close this window and keep using Obsidian"),
         };
       }
       return {
-        kind: "导入转写",
+        kind: t("Import transcription"),
         modeLabel: modeLabelOf(ip.mode),
-        step: "转写音频中",
-        stepDetail: ip.file ? `当前文件：${ip.file}` : "正在把音频发送到转写服务",
+        step: t("Transcribing audio"),
+        stepDetail: ip.file ? t("Current file: {0}").replace("{0}", ip.file) : t("Sending the audio to the transcription service"),
         percent: null,
-        count: `第 ${n} / ${total} 个文件`,
+        count: t("File {0} / {1}").replace("{0}", String(n)).replace("{1}", String(total)),
       };
     }
     // A) 批量转写处理（重试全部 / 整篇重转）——叠加 workProgress 子阶段
@@ -1038,12 +1038,12 @@ export class TaskActivityService {
       const done = Math.min(Number(q._batchDone) || 0, Number(q._batchTotal));
       const wp = this.host.session && this.host.session.workProgress;
       return {
-        kind: "转写批处理",
+        kind: t("Batch transcription"),
         modeLabel: this.host.session ? modeLabelOf(this.host.session.mode) : "",
-        step: (wp && wp.label) || "转写处理中",
+        step: (wp && wp.label) || t("Transcribing in progress"),
         stepDetail: (wp && wp.detail) || "",
         percent: pctOf(wp),
-        count: `${done} / ${q._batchTotal} 段`,
+        count: t("{0} / {1} segments").replace("{0}", String(done)).replace("{1}", String(q._batchTotal)),
       };
     }
     // A2) 通用长操作（重新整理 / 整篇重新润色）
@@ -1052,7 +1052,7 @@ export class TaskActivityService {
         ? this._busyContext
         : {};
       return {
-        kind: String(context.kind || "重新整理"),
+        kind: String(context.kind || t("Re-organize")),
         modeLabel: String(context.targetModeLabel || ""),
         sourceFile: String(context.sourceFile || ""),
         sourceFolder: String(context.sourceFolder || ""),
@@ -1071,26 +1071,26 @@ export class TaskActivityService {
       const wp = s.workProgress || null;
       const pct = pctOf(wp);
       const modeLabel = modeLabelOf(s.mode);
-      const srcKind = s.source === "import" ? "导入整理" : s.source === "text-import" ? "文本整理" : "录音整理";
+      const srcKind = s.source === "import" ? t("Import organization") : s.source === "text-import" ? t("Text organization") : t("Recording organization");
       if (s.finalizing) {
-        return { kind: srcKind, modeLabel, step: (wp && wp.label) || "AI 整理中", stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
+        return { kind: srcKind, modeLabel, step: (wp && wp.label) || t("AI organizing"), stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
       }
       const rec = this.host.recorder;
       const recState = rec && typeof rec.state === "string" ? rec.state : "idle";
       if (recState === "recording" || recState === "paused") {
         let elapsed = 0; try { elapsed = (rec.getInfo && rec.getInfo().elapsed) || 0; } catch { /* intentionally empty */ }
         const segN = Array.isArray(s.segments) ? s.segments.length : 0;
-        const countTxt = segN ? `已转写 ${segN} 段` : "";
+        const countTxt = segN ? t("{0} segments transcribed").replace("{0}", String(segN)) : "";
         if (recState === "paused") {
-          return { kind: "录音中", modeLabel, step: `录音已暂停 · ${formatElapsed(elapsed)}`, stepDetail: "", percent: null, count: countTxt };
+          return { kind: t("Active recording"), modeLabel, step: t("Recording paused · {0}").replace("{0}", formatElapsed(elapsed)), stepDetail: "", percent: null, count: countTxt };
         }
         if (Number(s.activeSegmentJobs) > 0) {
-          return { kind: "录音中", modeLabel, step: `录音 ${formatElapsed(elapsed)} · 转写中`, stepDetail: (wp && wp.detail) || "正在转写已切分的音频段", percent: pct, count: countTxt };
+          return { kind: t("Active recording"), modeLabel, step: t("Recording {0} · Transcribing").replace("{0}", formatElapsed(elapsed)), stepDetail: (wp && wp.detail) || t("Transcribing the segmented audio"), percent: pct, count: countTxt };
         }
-        return { kind: "录音中", modeLabel, step: `正在录音 · ${formatElapsed(elapsed)}`, stepDetail: segN ? "" : "等待第一段切分", percent: null, count: countTxt };
+        return { kind: t("Active recording"), modeLabel, step: t("Recording · {0}").replace("{0}", formatElapsed(elapsed)), stepDetail: segN ? "" : t("Waiting for the first segment split"), percent: null, count: countTxt };
       }
       if (Number(s.activeSegmentJobs) > 0) {
-        return { kind: srcKind, modeLabel, step: (wp && wp.label) || "转写中", stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
+        return { kind: srcKind, modeLabel, step: (wp && wp.label) || t("Transcription in progress"), stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
       }
     }
     return null;
@@ -1098,7 +1098,7 @@ export class TaskActivityService {
   // 记一笔"本次启动后已完成"的处理（供处理进度面板展示；不持久化，OB 重启清零）。
   logCompletedWork(title, detail, meter) {
     if (!Array.isArray(this.completedWorkLog)) this.completedWorkLog = [];
-    const entry: CompletedWorkEntry = { title: String(title || "完成"), detail: String(detail || ""), at: Date.now() };
+    const entry: CompletedWorkEntry = { title: String(title || t("Done")), detail: String(detail || ""), at: Date.now() };
     if (meter && Number(meter.durationMs) > 0) entry.durationMs = Math.round(Number(meter.durationMs));
     if (meter && Number(meter.tokens) > 0) { entry.tokens = Math.round(Number(meter.tokens)); entry.tokensExact = !!meter.exact; }
     this.completedWorkLog.unshift(entry);

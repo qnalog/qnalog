@@ -185,7 +185,7 @@ export function appendActivityEvent(
     at,
     stageId: normalizeAudioImportStage(event.stageId),
     type: String(event.type || "event"),
-    label: String(event.label || "任务状态已更新"),
+    label: String(event.label || t("Task status updated")),
     detail: String(event.detail || ""),
     chunkIndex,
     attempt,

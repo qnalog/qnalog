@@ -18,7 +18,7 @@ describe("transcribeAudio endpoint security", () => {
       model: "model",
     };
     await expect(transcribeAudio({ settings: {} }, new Blob(["audio"]), "audio/webm", provider))
-      .rejects.toThrow("公网地址必须使用 HTTPS");
+      .rejects.toThrow("must use HTTPS");
   });
 
   it("APIMiMo 底层请求也会在读取和编码音频前阻止公网 HTTP", async () => {
@@ -27,7 +27,7 @@ describe("transcribeAudio endpoint security", () => {
       { apiKey: "secret", model: "mimo-v2.5-asr" },
       { blob: { size: 5, arrayBuffer }, mime: "audio/webm" },
       "http://asr.example.com/v1/chat/completions",
-    )).rejects.toThrow("公网地址必须使用 HTTPS");
+    )).rejects.toThrow("must use HTTPS");
     expect(arrayBuffer).not.toHaveBeenCalled();
   });
 });

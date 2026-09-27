@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
+import { t } from "./i18n";
+
 export function mimeFromExt(ext) {
   const e = (ext || "").toLowerCase();
   if (e === "m4a" || e === "mp4") return "audio/mp4";
@@ -49,7 +51,7 @@ export function isAsrTransportError(error) {
 export function isAsrNonRetryableError(error) {
   if (error && error.nonRetryable) return true;
   const msg = String((error && error.message) || error || "");
-  return /密钥未配置|模型名称未配置|服务地址未配置|无法解码|仅 wav\/mp3|不被 MiMo 服务端接受|不被 .{1,40} 接受|base64 仍超过|单次最多自动切|mime type must be|service address is not configured|model name is not configured|api key is not configured/i.test(msg);
+  return /密钥未配置|模型名称未配置|服务地址未配置|无法解码|仅 wav\/mp3|不被 MiMo 服务端接受|不被 .{1,40} 接受|base64 仍超过|单次最多自动切|mime type must be|service address is not configured|service url is not configured|model name is not configured|api key is not configured|access key is not configured/i.test(msg);
 }
 
 export function getNextAsrTaskRetryCount(currentRetries, maxRetries, error) {
@@ -103,10 +105,10 @@ export function pickMimeType(preferOpus) {
 
 export function assertAudioCaptureSupported() {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-    throw new Error("当前 Obsidian 环境不支持麦克风录音。请升级 Obsidian，或在桌面端使用 Q&A Log。");
+    throw new Error(t("This Obsidian environment does not support microphone recording. Update Obsidian, or use Q&A Log on desktop."));
   }
   if (typeof MediaRecorder === "undefined") {
-    throw new Error("当前 Obsidian 环境不支持 MediaRecorder，暂时无法直接录音。可以先用系统录音后导入音频处理。");
+    throw new Error(t("This Obsidian environment does not support MediaRecorder, so recording is unavailable right now. You can record with a system app first and then import the audio."));
   }
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

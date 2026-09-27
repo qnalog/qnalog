@@ -10,10 +10,12 @@ import { assertAudioCaptureSupported, extFromMime, pickMimeType } from "../share
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import { MAX_SPEAKER_CHANNELS, buildMicrophoneAudioConstraints, configureMicrophoneTrackChannels, normalizeAudioChannelMode, speakerLabelForChannel } from "./channel-speakers";
+import { MAX_SPEAKER_CHANNELS, buildMicrophoneAudioConstraints, configureMicrophoneTrackChannels, normalizeAudioChannelMode, clampSpeakerChannelCount } from "./channel-speakers";
 
 import { resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import type { RecorderSegmentPayload } from "../shared/types";
+
+import { t } from "../shared/i18n";
 
 /** 录音过程中出现的问题（设备被回收、服务不可用等）。 */
 type RecordingIssue = {
@@ -176,7 +178,7 @@ export class RecorderService {
     assertAudioCaptureSupported();
     const captureMode = resolveRuntimeAudioInputMode((options && options.captureMode) || "mic");
     this.stream = await this.acquireStream(captureMode);
-    if (!this.stream) throw new Error("未取得可用的麦克风录音流。请检查系统麦克风权限。");
+    if (!this.stream) throw new Error(t("Could not get a usable microphone recording stream. Please check your system microphone permissions."));
     this.issue = null;
     this.stopping = false;
     this.attachStreamInterruptionHandlers(this.stream);
@@ -321,7 +323,7 @@ export class RecorderService {
     try {
       const meters = [];
       if (this.micStreamRef) {
-        const label = this.getStreamLabel(this.micStreamRef, "麦克风");
+        const label = this.getStreamLabel(this.micStreamRef, t("Microphone"));
         const channelCount = this.captureMode === "mic"
           ? Math.min(MAX_SPEAKER_CHANNELS, Math.max(1, Number(this.inputChannelCount) || 1))
           : 1;
@@ -330,7 +332,7 @@ export class RecorderService {
             const meter = this.createLevelMeter(
               `speaker-${channel + 1}`,
               "●",
-              `CH${channel + 1} · ${speakerLabelForChannel(channel + 1)}`,
+              `CH${channel + 1} · ${t("Speaker {0}").replace("{0}", String(clampSpeakerChannelCount(channel + 1)))}`,
               this.micStreamRef,
               channel,
               channelCount,
@@ -343,12 +345,12 @@ export class RecorderService {
         }
       }
       if (this.virtStreamRef) {
-        const label = this.getStreamLabel(this.virtStreamRef, "电脑音频输入");
+        const label = this.getStreamLabel(this.virtStreamRef, t("Computer audio input"));
         const meter = this.createLevelMeter("computer", "●", label, this.virtStreamRef);
         if (meter) meters.push(meter);
       }
       if (!meters.length && stream) {
-        const label = this.getStreamLabel(stream, "输入");
+        const label = this.getStreamLabel(stream, t("Input"));
         const meter = this.createLevelMeter("input", "●", label, stream);
         if (meter) meters.push(meter);
       }
@@ -523,7 +525,7 @@ export class RecorderService {
         const name = (e && e.name) || "";
         // 用户显式选的麦克风打不开（拔了 / 设备 ID 变了 / 被占用）→ 明确提示去重选，绝不偷偷换成别的设备。
         if (audioConstraints.deviceId && /Overconstrained|NotFound|NotReadable/i.test(name)) {
-          throw new Error(`所选麦克风当前不可用（${name}）。请到「设置 → 常规 → 音频输入」重新选择麦克风，或清空选择以使用系统默认麦克风。`);
+          throw new Error(t("The selected microphone is currently unavailable ({0}). Go to Settings → General → Audio input to reselect it, or clear the selection to use the system default microphone.").replace("{0}", name));
         }
         throw e;
       }
@@ -534,7 +536,7 @@ export class RecorderService {
       const virtId = this.plugin.settings.selectedVirtualDevice || "";
       if (!virtId) {
         if (micStream) micStream.getTracks().forEach((t) => t.stop());
-        throw new Error("请先在「设置 → 常规 → 音频输入」选择电脑音频设备。\n\n录制电脑声音需要先配置虚拟声卡：\n• Windows：VB-Cable（vb-audio.com/Cable/）\n• macOS：BlackHole（existential.audio/blackhole/）\n• Linux：PulseAudio/PipeWire monitor source\n\n配置完成后，返回「音频输入」选择对应设备。");
+        throw new Error(t("First select a computer audio device under Settings → General → Audio input.\n\nRecording computer sound requires a virtual audio cable:\n• Windows: VB-Cable (vb-audio.com/Cable/)\n• macOS: BlackHole (existential.audio/blackhole/)\n• Linux: PulseAudio/PipeWire monitor source\n\nAfter configuring it, return to Audio input and select the corresponding device."));
       }
       try {
         virtStream = await navigator.mediaDevices.getUserMedia({
@@ -545,7 +547,7 @@ export class RecorderService {
         if (micStream) micStream.getTracks().forEach((t) => t.stop());
         const name = (e && e.name) || "";
         if (/Overconstrained|NotFound|NotReadable/i.test(name)) {
-          throw new Error(`所选电脑音频设备当前不可用（${name}）。请到「设置 → 常规 → 音频输入」重新选择电脑音频输入。`);
+          throw new Error(t("The selected computer audio device is currently unavailable ({0}). Go to Settings → General → Audio input to reselect the computer audio input.").replace("{0}", name));
         }
         throw e;
       }
@@ -649,11 +651,11 @@ export class RecorderService {
       this.issue = makeRecordingIssue("service", {
         reason: "segment-restart-failed",
         stoppedAtMs: endOffset,
-        message: "录音分段无法继续，已暂停。请停止录音以保存完整音频后重试。",
+        message: t("Recording cannot continue and has been paused. Please stop recording to save the complete audio and try again."),
       });
       try { this.plugin.recording.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
       try {
-        void this.plugin.diagnostics.logDiagnostic("error", "recording.segment_cut_failed", "录音分段切换失败，已暂停并保留完整录音", {
+        void this.plugin.diagnostics.logDiagnostic("error", "recording.segment_cut_failed", t("Recording segment switch failed; recording paused and the full audio kept"), {
           index, startOffsetMs: startOffset, endOffsetMs: endOffset, error: diagnosticError(e),
         });
       } catch { /* intentionally empty */ }
@@ -708,7 +710,7 @@ export class RecorderService {
       this.issue = makeRecordingIssue("service", {
         reason: "recorder-resume-failed",
         stoppedAtMs: this.getInfo().elapsed,
-        message: "录音器未能恢复，仍保持暂停。请停止录音以保存已有音频。",
+        message: t("The recorder failed to resume and remains paused. Please stop recording to save the audio recorded so far."),
       });
       try { this.plugin.recording.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
       this.emit();

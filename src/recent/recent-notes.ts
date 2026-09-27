@@ -30,6 +30,7 @@ import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRe
 import { NS_TAG, isDerivedVersionType } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+import { t as i18nT } from "../shared/i18n";
 export function detectRecentModeFromFrontmatter(settings, frontmatter) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
   const explicitMode = normalizeModeFromLabel(settings, fm.mode || fm["mode"] || "");
@@ -97,7 +98,7 @@ export const RECENT_GROUP_OPTIONS = [
   { id: "folder", label: t("By folder") },
 ];
 
-export const RECENT_TOPIC_FALLBACKS = ["学习", "会议", "访谈", "PPT", "AI"];
+export const RECENT_TOPIC_FALLBACKS = [t("Learning"), t("Meeting"), t("Interview"), "PPT", "AI"];
 
 export function formatRecentDurationLabel(raw) {
   if (raw == null) return "";
@@ -148,9 +149,9 @@ export function collectRecentNoteTopics(frontmatter, title, mode) {
   collectRecentTopicValues(fm["tags"], topics);
 
   const source = `${title || ""} ${mode || ""}`;
-  if (mode === "learning" || /学习|课程|讲座|视频|B站|YouTube/i.test(source)) topics.add("学习");
-  if (["meeting", "huddle", "seminar"].includes(mode) || /会议|纪要|同步|复盘|研讨/.test(source)) topics.add("会议");
-  if (mode === "interview" || /访谈|调研|用户研究/.test(source)) topics.add("访谈");
+  if (mode === "learning" || /学习|课程|讲座|视频|B站|YouTube/i.test(source)) topics.add(t("Learning"));
+  if (["meeting", "huddle", "seminar"].includes(mode) || /会议|纪要|同步|复盘|研讨/.test(source)) topics.add(t("Meeting"));
+  if (mode === "interview" || /访谈|调研|用户研究/.test(source)) topics.add(t("Interview"));
   if (/PPT|幻灯片|AIPPT/i.test(source)) topics.add("PPT");
   if (/\bAI\b|大模型|LLM|智能/.test(source)) topics.add("AI");
   return Array.from(topics).slice(0, 8);
@@ -204,8 +205,8 @@ export function getRecentFolderInfo(plugin, file) {
   const folderPath = getRecentNoteParentPath(file && file.path);
   const root = getRecentRootForPath(plugin, folderPath || (file && file.path));
   const relativeFolder = getRecentNotePathRelativeToRoot(folderPath, root);
-  const rootLabel = root ? root.split("/").pop() : "库根目录";
-  const label = relativeFolder || rootLabel || "库根目录";
+  const rootLabel = root ? root.split("/").pop() : t("Vault root");
+  const label = relativeFolder || rootLabel || t("Vault root");
   return {
     key: folderPath || "__root__",
     label,
@@ -275,7 +276,7 @@ export function getRecentNotes(plugin, limit) {
       dateKey: t.format("YYYY-MM-DD"),
       groupTitle: weekday,
       axisPrimary: sameYear ? t.format("DD") : t.format("YYYY"),
-      axisSecondary: sameYear ? t.format("M月") : t.format("M月D日"),
+      axisSecondary: sameYear ? t.format(i18nT("MMM")) : t.format(i18nT("MMM D")),
       displayTime: t.format(m && m[2] ? "HH:mm" : "MM-DD"),
       durationLabel,
       folderKey: folder.key,
@@ -294,7 +295,7 @@ export function getRecentNotes(plugin, limit) {
       if (!host) continue;
       (host.variants || (host.variants = [])).push({
         file: v.file,
-        label: String(v.fm.variant_label || v.fm.variant_kind || "派生版本"),
+        label: String(v.fm.variant_label || v.fm.variant_kind || t("Derived version")),
         kind: String(v.fm.variant_kind || ""),
         sourcePath: sp,
         mtime: (v.file.stat && v.file.stat.mtime) || 0,
@@ -345,10 +346,10 @@ export function getRecentQueueProcessingState(plugin, file) {
     const configBlocked = isLlmConfigError(blockedMergeTask.lastError || "");
     return {
       kind: "raw",
-      label: configBlocked ? "待配置" : "AI 不可用",
+      label: configBlocked ? t("Not configured") : t("AI unavailable"),
       title: configBlocked
-        ? "AI 整理需要先补齐大模型配置；补齐后可重新整理"
-        : (serviceBlocked ? "大模型服务端或账号池暂不可用；可切换模型/端点后重试" : "AI 整理请求不可自动重试；请检查错误后手动重试"),
+        ? t("AI organizing needs the LLM configuration filled in first; after that you can re-organize.")
+        : (serviceBlocked ? t("The LLM service or account pool is temporarily unavailable; switch the model/endpoint and retry.") : t("The AI organizing request cannot be retried automatically; check the error and retry manually.")),
     };
   }
   if (transcribeTasks.some((task) => failedStatuses.has(statusOf(task)))) {

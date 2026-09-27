@@ -3,6 +3,7 @@
 
 import type { PluginSettings } from "../shared/types";
 import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
+import { t } from "../shared/i18n";
 
 /** TranscribeProfileService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface TranscribeProfileHost {
@@ -35,7 +36,7 @@ export class TranscribeProfileService {
         steps: ["Register or log in to a SiliconFlow account", "Create an access key in the console", "Confirm the service URL and model name, then run the connectivity test"],
         links: [
           ["Access Key", "https://cloud.siliconflow.cn/account/ak"],
-          ["转写文档", "https://docs.siliconflow.cn/cn/api-reference/audio/create-audio-transcriptions"],
+          [t("Transcription docs"), "https://docs.siliconflow.cn/cn/api-reference/audio/create-audio-transcriptions"],
         ],
       },
       openai: {
@@ -73,7 +74,7 @@ export class TranscribeProfileService {
         steps: ["Register or log in to an OpenRouter account", "Create an API Key in the console", "Keep the default service URL and model name", "Confirm speaker names after importing audio"],
         links: [
           ["Access Key", "https://openrouter.ai/settings/keys"],
-          ["说话人分离文档", "https://openrouter.ai/docs/guides/overview/multimodal/stt"],
+          [t("Speaker diarization docs"), "https://openrouter.ai/docs/guides/overview/multimodal/stt"],
         ],
         note: "Speaker diarization needs structured output, so this service sends audio as base64 JSON rather than a multipart upload. Upstream providers time out after about 60 seconds of processing, so very long recordings are better split.",
       },
@@ -96,7 +97,7 @@ export class TranscribeProfileService {
         steps: ["Confirm that your OpenAI API account is usable", "Enter the access key", "Run connectivity test", "Confirm speaker names after you stop recording"],
         links: [
           ["OpenAI API Key", "https://platform.openai.com/api-keys"],
-          ["说话人分离文档", "https://platform.openai.com/docs/api-reference/audio/createTranscription"],
+          [t("Speaker diarization docs"), "https://platform.openai.com/docs/api-reference/audio/createTranscription"],
         ],
         note: "To avoid speaker numbering restarting in different segments, audio is not uploaded in parts while recording; the whole recording is transcribed after you stop. The raw transcript keeps speaker numbers, and the name mapping is used for AI processing.",
       },
@@ -116,7 +117,7 @@ export class TranscribeProfileService {
         steps: ["Register or log in to an OpenRouter account", "Create an API Key in the console", "Confirm the model ID, then run the connectivity test"],
         links: [
           ["Access Key", "https://openrouter.ai/settings/keys"],
-          ["转写文档", "https://openrouter.ai/docs/guides/overview/multimodal/stt"],
+          [t("Transcription docs"), "https://openrouter.ai/docs/guides/overview/multimodal/stt"],
         ],
         note: "Maximum upload size is 25 MB per request; longer recordings are split according to the segment interval before uploading, so they are not subject to this limit.",
       },
@@ -139,7 +140,7 @@ export class TranscribeProfileService {
         steps: ["Create an API Key in the Bailian console", "Keep the default service URL and model name", "Run connection test", "Confirm speaker names after importing audio"],
         links: [
           ["Access Key", "https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key"],
-          ["录音文件识别文档", "https://help.aliyun.com/zh/model-studio/non-realtime-speech-recognition-user-guide"],
+          [t("Audio file transcription docs"), "https://help.aliyun.com/zh/model-studio/non-realtime-speech-recognition-user-guide"],
         ],
         note: "Whole-file transcription does not generate a real-time outline. Recordings longer than 2 hours can still be submitted, but speaker diarization accuracy may drop.",
       },
@@ -178,7 +179,7 @@ export class TranscribeProfileService {
         steps: ["Confirm that your OpenAI API account is usable and can access the Realtime API", "Enter the access key", "Keep the model name gpt-realtime-whisper", "Choose the \"Microphone only\" capture mode and start recording"],
         links: [
           ["OpenAI API Key", "https://platform.openai.com/api-keys"],
-          ["Realtime 文档", "https://developers.openai.com/api/docs/guides/realtime-transcription"],
+          [t("Realtime docs"), "https://developers.openai.com/api/docs/guides/realtime-transcription"],
         ],
         note: "In streaming mode the \"Segment Interval\" and \"Instant Segmentation\" settings have no effect; notes are appended with text in real time while recording.",
       },
@@ -204,7 +205,7 @@ export class TranscribeProfileService {
         ],
         links: [
           ["OpenAI API Key", "https://platform.openai.com/api-keys"],
-          ["Realtime 翻译文档", "https://developers.openai.com/api/docs/guides/realtime-translation"],
+          [t("Realtime translation docs"), "https://developers.openai.com/api/docs/guides/realtime-translation"],
         ],
         note: "Supported target languages: English (en), Chinese (zh), Japanese (ja), Korean (ko), French (fr), Spanish (es), German (de), Italian (it), Portuguese (pt), Russian (ru), Arabic (ar), Hindi (hi), Turkish (tr).",
         showTargetLanguage: true,
@@ -226,7 +227,7 @@ export class TranscribeProfileService {
         steps: ["Create an API Key in the Bailian console", "Keep the default service URL and model name", "Just start recording"],
         links: [
           ["Access Key", "https://help.aliyun.com/zh/model-studio/get-api-key"],
-          ["实时语音识别文档", "https://help.aliyun.com/zh/model-studio/real-time-speech-recognition-user-guide"],
+          [t("Real-time speech recognition docs"), "https://help.aliyun.com/zh/model-studio/real-time-speech-recognition-user-guide"],
         ],
         note: "In streaming mode the \"Segment Interval\" and \"Instant Segmentation\" settings have no effect; notes are appended with text in real time while recording. Desktop uses a streaming connection; on mobile, if you want real-time transcription, switch to a segmented transcription service under \"Advanced\".",
       },
@@ -246,7 +247,7 @@ export class TranscribeProfileService {
         steps: ["Create an API Key in the Bailian console", "Keep the default service URL and model name", "Just start recording"],
         links: [
           ["Access Key", "https://help.aliyun.com/zh/model-studio/get-api-key"],
-          ["非实时语音识别文档", "https://help.aliyun.com/zh/model-studio/non-realtime-speech-recognition-user-guide"],
+          [t("Non-real-time speech recognition docs"), "https://help.aliyun.com/zh/model-studio/non-realtime-speech-recognition-user-guide"],
         ],
         note: "Non-realtime, but text still appears segment by segment while recording, following the segment interval. If the language is left blank, Q&A Log omits the language field so the service detects it automatically; for mixed-language audio, leaving it blank is more accurate.",
       },

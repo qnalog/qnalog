@@ -154,7 +154,7 @@ export async function logLlmRequestDiagnostic(plugin, level, code, message, data
 }
 
 export async function requestLlmChatCompletionViaObsidian(endpoint, headers, payloadText, timeoutMs) {
-  assertSafeServiceEndpoint(endpoint, "http", "大模型服务地址");
+  assertSafeServiceEndpoint(endpoint, "http", t("LLM service address"));
   if (!obsidian || typeof obsidian.requestUrl !== "function") {
     throw new Error(t("Obsidian requestUrl is unavailable"));
   }
@@ -302,7 +302,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
   const { llmEndpoint, llmApiKey, llmModel } = plugin.settings;
   const endpoint = normalizeLlmEndpoint(llmEndpoint);
   if (!endpoint) throw new Error(t("LLM service address is not configured"));
-  assertSafeServiceEndpoint(endpoint, "http", "大模型服务地址");
+  assertSafeServiceEndpoint(endpoint, "http", t("LLM service address"));
   if (!llmModel) throw new Error(t("LLM model name is not configured"));
   if (!llmApiKey && !canOmitServiceApiKey(endpoint)) {
     throw new Error(t("LLM API key is not configured; only local, LAN, or Tailscale private-network services may leave it blank"));
@@ -652,7 +652,7 @@ function withModelListPage(url: string, pageNo: number, pageSize: number): strin
 export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record<string, string>): Promise<LlmModelEntry[]> {
   const base = normalizeLlmEndpoint(endpoint);
   if (!base) throw new Error(t("Service address is not configured"));
-  assertSafeServiceEndpoint(base, "http", "大模型服务地址");
+  assertSafeServiceEndpoint(base, "http", t("LLM service address"));
   // 百炼的兼容地址与原生地址都要试：两者都真实存在（无钥均 401），
   // 不同账号/网关下可用的一个可能与预设的改写地址不同，先按改写地址、再按通用地址。
   const genericUrl = /\/chat\/completions$/i.test(base)
@@ -719,7 +719,7 @@ export function getLlmConfigIssue(settings) {
   const model = String((settings && settings.llmModel) || "").trim();
   const apiKey = String((settings && settings.llmApiKey) || "").trim();
   if (!endpoint) return t("LLM service address is not configured");
-  const endpointSecurityIssue = getServiceEndpointSecurityIssue(endpoint, "http", "大模型服务地址");
+  const endpointSecurityIssue = getServiceEndpointSecurityIssue(endpoint, "http", t("LLM service address"));
   if (endpointSecurityIssue) return endpointSecurityIssue;
   if (!model) return t("LLM model name is not configured");
   if (!apiKey && !canOmitServiceApiKey(endpoint)) return t("LLM API key is not configured; only local, LAN, or Tailscale private-network services may leave it blank");
@@ -728,12 +728,12 @@ export function getLlmConfigIssue(settings) {
 
 export function isLlmConfigError(error) {
   const msg = String((error && error.message) || error || "");
-  return /大模型(?:服务地址|名称|访问密钥)(?:未配置|不安全|格式无效|协议不受支持)|LLM (?:service address|model name|api key) is not configured|请先在 API 页配置大模型服务|Please configure an LLM service on the API page first|LLM 配置/i.test(msg);
+  return /大模型(?:服务地址|名称|访问密钥)(?:未配置|不安全|格式无效|协议不受支持)|LLM service address (?:is not configured|is insecure|is invalid|uses an unsupported protocol)|LLM (?:model name|api key) is not configured|请先在 API 页配置大模型服务|Please configure an LLM service on the API page first|LLM 配置/i.test(msg);
 }
 
 export function isLlmServiceBlockedError(error) {
   const msg = String((error && error.message) || error || "");
-  return /暂无可用账号|no available account|账号不可用|账号池|余额不足|insufficient\s+quota|quota\s+exceeded|invalid[_\s-]*api[_\s-]*key|unauthorized|forbidden|access\s*denied|model[_\s-]*not[_\s-]*found|模型(?:不存在|不可用|无可用)|context[_\s-]*length|maximum context|too many tokens|上下文(?:过长|超限)|内容过长/i.test(msg);
+  return /暂无可用账号|no available account|账号不可用|账号池|余额不足|insufficient\s+quota|quota\s+exceeded|invalid[_\s-]*api[_\s-]*key|unauthorized|forbidden|access\s*denied|model[_\s-]*not[_\s-]*found|模型(?:不存在|不可用|无可用)|LLM unavailable|context[_\s-]*length|maximum context|too many tokens|上下文(?:过长|超限)|内容过长/i.test(msg);
 }
 
 export function isNonRetryableLlmHttpFailure(status, detail) {

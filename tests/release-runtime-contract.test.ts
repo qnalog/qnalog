@@ -110,7 +110,7 @@ describe("release runtime contracts", () => {
     expect(pluginSource).toContain("resolveImportTranscribeProvider(this.host)");
     expect(pluginSource).toContain("transcribeImportedAudio(this.host, blob, mime");
     expect(pluginSource).toContain("wholeFileImport: true");
-    expect(pluginSource).toContain('detail: "整文件提交，不切分为多个 ASR 任务"');
+    expect(pluginSource).toContain('detail: t("Submitted as a whole file; not split into multiple ASR tasks.")');
     expect(pluginSource).toContain('phase: "organize"');
   });
 

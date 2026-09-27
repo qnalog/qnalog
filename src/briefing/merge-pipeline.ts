@@ -213,10 +213,10 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
           { stream: true, thinkingMode: "fast", payload: { max_tokens: partMaxTokens } },
           createBriefingLlmActivityOptions(plugin, computedMeta, {
             stage: "llm",
-            stageLabel: partPlans.length > 1 ? `AI 整理 · 第 ${plan.index + 1}/${partPlans.length} 部分` : "AI 正在整理正文",
+            stageLabel: partPlans.length > 1 ? t("Organizing · Part {0}/{1}").replace("{0}", String(plan.index + 1)).replace("{1}", String(partPlans.length)) : t("AI is organizing the body text"),
             detail: partPlans.length > 1
-              ? `正在生成第 ${plan.index + 1}/${partPlans.length} 部分`
-              : "正在根据原始转写生成正文",
+              ? t("Generating part {0}/{1}").replace("{0}", String(plan.index + 1)).replace("{1}", String(partPlans.length))
+              : t("Generating the body text from the original transcript"),
             progress: Math.min(84, 12 + Math.round((plan.index / partPlans.length) * 72)),
           }),
         ),
@@ -254,7 +254,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
       }
       if (initialBody && !response.truncated && shouldAutoRepairBriefingPart(fidelity)) {
         repairAttempts = 1;
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_under_detailed", fidelity.needsExpansion ? "纪要分部明显短于原始材料，正在对照原文补回细节" : "纪要分部缺少多项可核验信息，正在对照原文重新整理", {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_under_detailed", fidelity.needsExpansion ? t("The minute part is much shorter than the source material; adding details back against the original transcript") : t("The minute part is missing multiple verifiable facts; re-organizing against the original transcript"), {
           mode,
           jobId: identity.id,
           part: plan.index + 1,
@@ -284,8 +284,8 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
               { stream: true, thinkingMode: "fast", payload: { max_tokens: partMaxTokens } },
               createBriefingLlmActivityOptions(plugin, computedMeta, {
                 stage: "llm-detail-repair",
-                stageLabel: partPlans.length > 1 ? `补充细节 · 第 ${plan.index + 1}/${partPlans.length} 部分` : "正在补充遗漏细节",
-                detail: `当前正文 ${fidelity.outputChars} 字，正在对照原始转写补全`,
+                stageLabel: partPlans.length > 1 ? t("Adding missing details · Part {0}/{1}").replace("{0}", String(plan.index + 1)).replace("{1}", String(partPlans.length)) : t("Adding missing details"),
+                detail: t("The current body text is {0} characters; completing it against the original transcript").replace("{0}", String(fidelity.outputChars)),
                 progress: Math.min(86, 18 + Math.round((plan.index / partPlans.length) * 68)),
               }),
             ),
@@ -304,7 +304,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             grounding = repairedGrounding;
           }
           const repairStillWeak = fidelity.needsExpansion || grounding.needsRepair;
-          await logLlmRequestDiagnostic(plugin, repairStillWeak ? "warn" : "info", "llm.briefing_part_detail_repaired", repairStillWeak ? "纪要分部补充后仍需复核，已保留信息更完整的版本" : "纪要分部已对照原文补回细节", {
+          await logLlmRequestDiagnostic(plugin, repairStillWeak ? "warn" : "info", "llm.briefing_part_detail_repaired", repairStillWeak ? t("The minute part still needs review after supplementation; the more complete version has been kept") : t("The minute part has been supplemented with details from the original transcript"), {
             mode,
             jobId: identity.id,
             part: plan.index + 1,
@@ -320,7 +320,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             groundingRatio: Number(grounding.ratio.toFixed(3)),
           });
         } catch (repairError) {
-          await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_repair_failed_preserved", "补充细节未完成，已保留本部分首版可用正文", {
+          await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_repair_failed_preserved", t("Detail supplementation did not finish; the first usable version of this part has been kept"), {
             mode,
             jobId: identity.id,
             part: plan.index + 1,
@@ -357,7 +357,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
       if (partStatus !== "complete") {
         checkpoint.status = "partial";
         await store.save(checkpoint);
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_incomplete", "纪要分部未完整生成，已保存检查点等待精确重试", {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_incomplete", t("The minute part was not fully generated; the checkpoint has been saved for a precise retry"), {
           mode, jobId: identity.id, part: plan.index + 1, partTotal: partPlans.length,
           finishReason: part.finishReason, outputChars: body.length, usage: part.usage,
         });
@@ -377,7 +377,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
       part.updatedAt = new Date().toISOString();
       checkpoint.status = "partial";
       await store.save(checkpoint);
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_failed", "纪要分部生成失败，已保存此前结果等待精确重试", {
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_failed", t("The minute part failed to generate; previous results have been saved for a precise retry"), {
         mode, jobId: identity.id, part: plan.index + 1, partTotal: partPlans.length,
         completedParts: checkpoint.parts.filter(item => item.status === "complete").length,
         error: diagnosticError(error),
@@ -439,7 +439,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             createBriefingLlmActivityOptions(plugin, computedMeta, {
               stage: "consolidate",
               stageLabel: t("Merge all session topics"),
-              detail: "正在把各时段材料整理成一篇综合纪要",
+              detail: t("Consolidating the materials from all segments into one set of minutes"),
               progress: 88,
             }),
           ),
@@ -448,7 +448,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         const parsed = parseBriefingPartResponse(consolidation.text);
         const body = normalizeBriefingPartBody(parsed.body, { fragmentMode: false });
         if (!body || consolidation.truncated) {
-          throw new Error(body ? "全局成文在续写后仍被输出上限截断" : "全局成文没有返回可见正文");
+          throw new Error(body ? t("The global consolidation still hit the output length limit after continuation") : t("The global consolidation returned no visible body text"));
         }
         finalVisibleBody = body;
         consolidatedPeople = parsed.people;
@@ -469,7 +469,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         checkpoint.status = "partial";
         checkpoint.updatedAt = new Date().toISOString();
         await store.save(checkpoint);
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_consolidation_failed", "分部材料已保留，全局成文未完成，可从该步骤重试", {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_consolidation_failed", t("The part materials have been kept; global consolidation did not finish and can be retried from this step"), {
           mode,
           jobId: identity.id,
           partTotal: partPlans.length,
@@ -477,7 +477,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
           error: diagnosticError(error),
         });
         throw new BriefingPipelineIncompleteError(
-          `纪要分部已完成 ${partPlans.length}/${partPlans.length}；全局成文需要重试：${getErrorMessage(error)}`,
+          t("All {0}/{1} minute parts are complete; global consolidation needs retry: {2}").replace("{0}", String(partPlans.length)).replace("{1}", String(partPlans.length)).replace("{2}", getErrorMessage(error)),
           partPlans.length,
           partPlans.length,
           [],
@@ -510,7 +510,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     await store.save(checkpoint);
   }
 
-  await logLlmRequestDiagnostic(plugin, "info", "llm.briefing_pipeline_completed", "纪要整理流水线已完成并保存检查点", {
+  await logLlmRequestDiagnostic(plugin, "info", "llm.briefing_pipeline_completed", t("The minutes pipeline completed and the checkpoint was saved"), {
     mode,
     jobId: identity.id,
     partTotal: partPlans.length,
@@ -612,7 +612,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
       createBriefingLlmActivityOptions(plugin, computedMeta, {
         stage: "llm",
         stageLabel: t("AI is organizing the body text"),
-        detail: "模型正在根据原始转写生成纪要",
+        detail: t("The model is generating the minutes from the original transcript"),
         progress: 18,
       }),
     ), { mode, segmentCount: segments.length, transcriptChars: joined.length });
@@ -620,7 +620,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
     // 上下文限制不是普通网络重试问题：把同一份超长 prompt 再发一遍只会重复失败或重复计费。
     // 第一次明确收到上下文超限后，立即切换到时间分段路径；分段失败的部分由原始转写保底。
     if (isLlmContextLimitError(e) && segments.length >= 2) {
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_context_chunk_retry", "单次整理上下文超限，已切换为分段整理", {
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_context_chunk_retry", t("The single-pass context limit was exceeded; switched to segmented organizing"), {
         mode,
         segmentCount: segments.length,
         transcriptChars: joined.length,
@@ -635,7 +635,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
   if (!String(raw || "").trim()) {
     const fallback = renderLongSessionRawFallbackGroup(segments, 1);
     const warning = buildEmptyLlmOutputFallback();
-    await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_raw_transcript_fallback", "AI 整理没有正文，已保留原始转写", {
+    await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_raw_transcript_fallback", t("AI organizing produced no body text; the original transcript has been kept"), {
       mode,
       segmentCount: segments.length,
       transcriptChars: joined.length,

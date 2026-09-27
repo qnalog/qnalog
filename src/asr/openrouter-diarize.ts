@@ -88,7 +88,7 @@ export async function transcribeWithOpenRouterDiarize(
 ): Promise<OpenRouterDiarizeResult> {
   const endpoint = String(provider && provider.endpoint || "").trim();
   if (!endpoint) throw new Error(t("Transcription service URL is not configured."));
-  assertSafeServiceEndpoint(endpoint, "http", "转写服务地址");
+  assertSafeServiceEndpoint(endpoint, "http", t("Transcription service URL"));
   if (!provider.apiKey) throw new Error(t("Transcription access key is not configured."));
   if (!provider.model) throw new Error(t("Transcription model name is not configured."));
 

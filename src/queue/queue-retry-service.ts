@@ -102,7 +102,7 @@ export class QueueRetryService {
         this.scheduleTaskQueueRetry(30 * 1000, "activity-still-busy");
         return;
       }
-      void this.host.diagnostics.logDiagnostic("info", "queue.scheduled_retry_started", "开始执行计划中的后台重试", {
+      void this.host.diagnostics.logDiagnostic("info", "queue.scheduled_retry_started", t("Starting the scheduled background retry"), {
         reason,
         taskCount: this.host.queue && Array.isArray(this.host.queue.tasks) ? this.host.queue.tasks.length : 0,
       });
@@ -136,8 +136,8 @@ export class QueueRetryService {
         }
         await this.host.saveAll();
         new obsidian.Notice(serviceBlocked
-          ? `已恢复 ${blockedMergeTasks.length} 个暂停整理任务，正在重新尝试大模型服务`
-          : `已恢复 ${blockedMergeTasks.length} 个待配置整理任务`);
+          ? t("Restored {0} paused organizing tasks; retrying the LLM service").replace("{0}", String(blockedMergeTasks.length))
+          : t("Restored {0} organizing tasks that need configuration").replace("{0}", String(blockedMergeTasks.length)));
       }
     }
     // 与 processAll 的实际可处理集对齐（排除 running/missing/blocked 和已达重试上限），避免"重试 N…剩余 N"误导。
@@ -150,9 +150,9 @@ export class QueueRetryService {
       const missingN = this.host.queue.tasks.filter((t) => t && t.status === "missing").length;
       const exhaustedN = this.host.queue.tasks.filter((t) => t && t.status === "failed" && (Number(t.retries) || 0) >= maxR).length;
       const hints = [];
-      if (missingN) hints.push(`${missingN} 个临时切片丢失`);
-      if (exhaustedN) hints.push(`${exhaustedN} 个已达重试上限——若已修正配置（如补好密钥/换转写服务），可在笔记右键「重试失败转写」或队列面板逐条重试`);
-      new obsidian.Notice(hints.length ? `没有可自动重试的任务（${hints.join("；")}）` : "没有可自动重试的任务", hints.length ? 9000 : 4000);
+      if (missingN) hints.push(t("{0} temporary clips missing").replace("{0}", String(missingN)));
+      if (exhaustedN) hints.push(t("{0} have reached the retry limit — if the configuration is fixed (e.g. API key added or transcription service switched), right-click the note and choose \"Retry failed transcription\", or retry them one by one in the queue panel").replace("{0}", String(exhaustedN)));
+      new obsidian.Notice(hints.length ? t("No tasks can be retried automatically ({0})").replace("{0}", hints.join(t(";"))) : t("No tasks can be retried automatically"), hints.length ? 9000 : 4000);
       return;
     }
     if (runnable.some((task) => task.type === "transcribe")) {
@@ -210,8 +210,10 @@ export class QueueRetryService {
     await this.host.saveAll();
     this.host.requestOutlineRefresh();
     new obsidian.Notice(paused
-      ? `转写服务仍不可用：本次成功 ${ok} 个，失败 ${failed} 个；其余片段已保留，稍后继续`
-      : `转写重试完成：成功 ${ok} 个${failed ? `，失败 ${failed} 个` : ""}`, 8000);
+      ? t("Transcription service is still unavailable: {0} succeeded and {1} failed this round; the remaining segments are kept and will continue later").replace("{0}", String(ok)).replace("{1}", String(failed))
+      : failed
+        ? t("Transcription retry finished: {0} succeeded, {1} failed").replace("{0}", String(ok)).replace("{1}", String(failed))
+        : t("Transcription retry finished: {0} succeeded").replace("{0}", String(ok)), 8000);
   }
   async readTranscribeTaskAudioBlob(task) {
     const direct = await this.readVaultAudioBlob(task.audioPath, task.audioName);
@@ -219,7 +221,7 @@ export class QueueRetryService {
 
     const recovered = await this.recoverTranscribeTaskAudioBlob(task);
     if (recovered) {
-      await this.host.diagnostics.logDiagnostic("warn", "queue.transcribe_audio_recovered", "转写重试已从完整录音恢复临时切片", {
+      await this.host.diagnostics.logDiagnostic("warn", "queue.transcribe_audio_recovered", t("Transcription retry recovered a temporary clip from the full recording"), {
         audioName: task.audioName || "",
         sourceAudioName: recovered.sourceName || "",
         startOffsetMs: task.startOffsetMs,
@@ -390,13 +392,13 @@ export class QueueRetryService {
     if (!String(text || "").trim()) {
       // 重试仍为空 = 失败（不再替换成"暂无有效转写"并删缓存了事）：
       // 抛错让队列按失败记录 + 计重试次数，缓存音频保留，后续还能继续重试。
-      await this.host.diagnostics.logDiagnostic("warn", "queue.transcribe_empty_result", "转写重试返回空文本，视作失败继续排队", {
+      await this.host.diagnostics.logDiagnostic("warn", "queue.transcribe_empty_result", t("Transcription retry returned empty text; treating it as a failure and re-queuing"), {
         mdPath: task.mdPath || "",
         audioName: task.audioName || "",
         startOffsetMs: task.startOffsetMs,
         endOffsetMs: task.endOffsetMs,
       });
-      throw new Error("转写重试返回空结果（服务 HTTP 200 但无文字）");
+      throw new Error(t("Transcription retry returned an empty result (the service responded HTTP 200 with no text)"));
     }
     let replaced = false;
     if (mdFile instanceof obsidian.TFile) {
@@ -467,7 +469,7 @@ export class QueueRetryService {
         await this.host.repolish.repolishMarkdownFile(mdFile, mode, null);
       } catch (e) {
         try {
-          await this.host.diagnostics.logDiagnostic("error", "queue.auto_repolish_failed", "补转写后自动重新整理失败", {
+          await this.host.diagnostics.logDiagnostic("error", "queue.auto_repolish_failed", t("Automatic re-organization after backfilling transcription failed"), {
             mdPath: mdNorm,
             error: diagnosticError(e),
           });
@@ -528,9 +530,9 @@ export class QueueRetryService {
       task.sessionMeta || null,
       task.speakerFrontmatter || null,
     );
-    if (!polished) throw new Error("合并返回为空");
+    if (!polished) throw new Error(t("Merge returned an empty result"));
     const file = this.host.app.vault.getAbstractFileByPath(task.mdPath);
-    if (!(file instanceof obsidian.TFile)) throw new Error(`笔记不存在：${task.mdPath}`);
+    if (!(file instanceof obsidian.TFile)) throw new Error(t("Note not found: {0}").replace("{0}", String(task.mdPath)));
     const retrySession = {
       id: task.sessionId || genId(),
       mdPath: file.path,
@@ -584,7 +586,7 @@ export class QueueRetryService {
   }
   async runGeneratePromptTask(task) {
     const mode = task.mode;
-    if (!mode) throw new Error("缺少 mode");
+    if (!mode) throw new Error(t("Missing mode"));
     const tpl = await this.host.vocabulary.generateAndApplyIndustryPrompt(mode, { activate: task.activate !== false });
     const activated = task.activate !== false;
     new obsidian.Notice(t("Created custom prompt \"") + tpl.name + "」" + (activated ? "，并设为当前默认。" : "。"), 7000);
@@ -596,8 +598,8 @@ export class QueueRetryService {
   async enqueueGeneratePromptTask(mode, options) {
     if (!isKnownPolishMode(this.host.settings, mode)) throw new Error("未知的 mode：" + mode);
     const p = this.host.settings.industryProfile;
-    if (!p || !p.industry || !p.scenarios) throw new Error("请先在 AI 整理填写「行业 / 角色」和「主要工作场景」");
-    if (!this.host.settings.llmApiKey) throw new Error("请先在 API 页配置大模型服务");
+    if (!p || !p.industry || !p.scenarios) throw new Error(t("Fill in \"Industry / role\" and \"Main work scenarios\" first in \"AI Organize\""));
+    if (!this.host.settings.llmApiKey) throw new Error(t("Please configure an LLM service on the API page first"));
     const existing = this.host.queue.findActiveGeneratePromptTask(mode);
     if (existing) {
       const meta = getModeMeta(this.host.settings, mode);
@@ -633,9 +635,8 @@ export function describeSegmentRetryUnavailable(host) {
       ? host.profiles.getActiveTranscribeProfile()
       : null;
     if (profile && profile.transcribeMode === "streaming") {
-      return `当前转写服务是流式服务（${profile.title || "实时转写"}），不能逐段重试——`
-        + "流式服务只支持录音时实时推送，无法把已录好的分段上传转写。"
-        + "请在「API」页改用分段或整文件转写服务，或在会话笔记里对整场录音重新转写。";
+      return t("The current transcription service is a streaming service ({0}), so segment-by-segment retry is unavailable — streaming services only push in real time while recording and cannot upload already-recorded segments for transcription. Switch to a segment-based or whole-file transcription service on the \"API\" page, or re-transcribe the whole recording from the session note.")
+        .replace("{0}", String(profile.title || t("Live transcription")));
     }
     return "";
   } catch {

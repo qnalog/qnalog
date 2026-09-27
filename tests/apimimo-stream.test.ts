@@ -225,14 +225,14 @@ describe("requestApimimoAsrChunkWithEmptyRetry", () => {
     expect(text).toBe("恢复后的正文");
     expect(request).toHaveBeenCalledTimes(2);
     expect(wait).toHaveBeenCalledTimes(1);
-    expect(logDiagnostic).toHaveBeenCalledWith("warn", "asr.apimimo_empty_chunk", "APIMiMo 单块转写为空", expect.objectContaining({ attempt: 1 }));
+    expect(logDiagnostic).toHaveBeenCalledWith("warn", "asr.apimimo_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 1 }));
   });
 
   it("连续空结果必须失败，不能把缺块拼成成功转写", async () => {
     const request = vi.fn().mockResolvedValue("");
     await expect(requestApimimoAsrChunkWithEmptyRetry(
       null, {}, { blob: { size: 123 }, mime: "audio/wav" }, "https://example.test", 0, 2, request, async () => {},
-    )).rejects.toThrow("连续返回空结果");
+    )).rejects.toThrow("chunk 1/2");
     expect(request).toHaveBeenCalledTimes(2);
   });
 });

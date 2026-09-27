@@ -165,10 +165,18 @@ describe("词条表的形状", () => {
 
   it("值必须是中文或标点（英文表为空，值若是英文说明这条写反了）", () => {
     // 全角标点映射（")" → "）"）没有汉字但合法；含拉丁字母才算漏译。
+    // 例外：技术片段键（"Trace ID: {0}"、"; Retry-After: {0}s"）的中文值只有全角
+    // 标点、不含汉字，其拉丁词全部来自键本身——这是本地化标点，不是抄英文。
+    // 仍然拦：值里出现键以外的英文词（别的英文句子抄进来、或键值错位拿到其它键的值）。
+    const words = (s: string): string[] => (s.match(/[A-Za-z]+/g) || []).map((w) => w.toLowerCase());
     const withoutCjk = pairs
-      .filter(([, v]) => !/[\u4e00-\u9fa5]/.test(v) && /[A-Za-z]/.test(v))
+      .filter(([, v]) => !/[一-龥]/.test(v) && /[A-Za-z]/.test(v))
+      .filter(([k, v]) => {
+        const keyWords = new Set(words(k));
+        return words(v).some((w) => !keyWords.has(w));
+      })
       .map(([k]) => k);
-    expect(withoutCjk, `值含拉丁字母但没有中文：${withoutCjk.slice(0, 3).join(" / ")}`).toEqual([]);
+    expect(withoutCjk, `值含键以外的拉丁词且没有中文：${withoutCjk.slice(0, 3).join(" / ")}`).toEqual([]);
   });
 
   it("中文值不得以空格结尾而英文键不以空格结尾（英文侧会与下一个片段粘连）", () => {
@@ -198,7 +206,12 @@ describe("词条表的形状", () => {
     // 判据：英文键去标点小写后长度 ≥ 25、长度差 ≤ 6、3-gram 覆盖率 ≥ 0.92 的两条，
     // 其译文 3-gram 覆盖率不得低于 0.2。阈值按当前词条表实测：修复后 0 条命中，
     // 修复前命中 8 条错位；因此该检查不会对正常词条产生噪音。
-    const strip = (s: string): string => String(s).toLowerCase().replace(/[^0-9a-z\u4e00-\u9fff]+/g, "");
+    //
+    // 短中文句的 3-gram 过稀（"转写已完成 01 段" 与 "分段转写完成" 只共享 1 个
+    // 3-gram，但共享 5/6 的字符——两条本就语义相关），因此 3-gram 不达标时再看
+    // 字符集合重合率：≥ 0.5 视为相关。错位事故的取值（如 "收起分组" 对
+    // "识别到的人物…"）字符重合接近 0，仍会被拦下。
+    const strip = (s: string): string => String(s).toLowerCase().replace(/[^0-9a-z一-鿿]+/g, "");
     const trigrams = (s: string): Set<string> => {
       const out = new Set<string>();
       for (let i = 0; i + 3 <= s.length; i++) out.add(s.slice(i, i + 3));
@@ -211,7 +224,7 @@ describe("词条表的形状", () => {
       return shared / Math.min(a.size, b.size);
     };
     const items = pairs
-      .map(([k, v]) => ({ k, v, nk: strip(k), tv: trigrams(strip(v)) }))
+      .map(([k, v]) => ({ k, v, nk: strip(k), tv: trigrams(strip(v)), cv: new Set(strip(v).split("")) }))
       .filter((it) => it.nk.length >= 25)
       .map((it) => ({ ...it, tk: trigrams(it.nk) }));
     const offenders: string[] = [];
@@ -221,9 +234,9 @@ describe("词条表的形状", () => {
         const b = items[j];
         if (Math.abs(a.nk.length - b.nk.length) > 6) continue;
         if (overlap(a.tk, b.tk) < 0.92) continue;
-        if (overlap(a.tv, b.tv) < 0.2) {
-          offenders.push(`${a.k} → ${a.v} ／ ${b.k} → ${b.v}`);
-        }
+        if (overlap(a.tv, b.tv) >= 0.2) continue;
+        if (overlap(a.cv, b.cv) >= 0.5) continue;
+        offenders.push(`${a.k} → ${a.v} ／ ${b.k} → ${b.v}`);
       }
     }
     expect(offenders, `同义英文键的译文不相关：${offenders.slice(0, 2).join(" | ")}`).toEqual([]);

@@ -22,8 +22,8 @@ describe("task activity error classification", () => {
   });
 
   it("provides a user-facing recovery hint", () => {
-    expect(getTaskErrorHint("timeout")).toContain("重试");
-    expect(getTaskErrorHint("authentication")).toContain("API Key");
+    expect(getTaskErrorHint("timeout")).toContain("retry");
+    expect(getTaskErrorHint("authentication")).toMatch(/api key/i);
   });
 });
 

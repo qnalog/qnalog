@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeBuildIdentity } from "../scripts/build-identity.mjs";
+import { t } from "../src/shared/i18n";
 import { describeBuildIdentity, computeBuildIdentity as compute } from "../scripts/build-identity.mjs";
 import { baseVersion, describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion } from "../src/shared/build-info";
 
@@ -56,14 +57,14 @@ describe("构建来源描述", () => {
 describe("构建身份读取", () => {
   it("没有 build-info.json（正式发布）时用 manifest 版本，不谎报开发版", () => {
     expect(resolveDisplayVersion(null, "1.0.0")).toBe("1.0.0");
-    expect(describeBuildSource({ version: "1.0.0", displayVersion: "1.0.0", channel: "release", branch: "main", sha: "abc1234", dirty: false, builtAt: "" })).toBe("发版构建");
+    expect(describeBuildSource({ version: "1.0.0", displayVersion: "1.0.0", channel: "release", branch: "main", sha: "abc1234", dirty: false, builtAt: "" })).toBe(t("Release build"));
   });
 
   it("开发版的 build-info 提供分支、提交与工作树状态", () => {
     const info = normalizePluginBuildInfo({ version: "1.0.0", displayVersion: "1.0.0-dev.feat-x.abc1234.dirty", channel: "dev", branch: "feat/x", sha: "abc1234", dirty: true, builtAt: "2026-09-13T00:00:00.000Z" });
     expect(info).not.toBeNull();
     expect(resolveDisplayVersion(info, "1.0.0")).toBe("1.0.0-dev.feat-x.abc1234.dirty");
-    expect(describeBuildSource(info)).toBe("开发分支 feat/x@abc1234（有未提交改动）");
+    expect(describeBuildSource(info)).toBe(t("Development branch {0}{1}").replace("{0}", "feat/x@abc1234").replace("{1}", t("(uncommitted changes)")));
   });
 
   it("build-info 内容不合规时按无标识处理，不影响启动", () => {

@@ -7,6 +7,7 @@ import {
   type SpeakerId,
 } from "../audio/channel-speakers";
 import { nsMarker } from "../shared/namespace";
+import { t } from "../shared/i18n";
 
 const OUTPUT_SAMPLE_RATE = 16000;
 
@@ -559,10 +560,10 @@ export async function transcribeAudioByChannels(
       const text = cleanChannelTranscript(await transcribeAudio(plugin, spanBlob, spanBlob.type));
       if (text) parts.push({ ...span, text });
     } catch (error) {
-      errors.push(`CH${span.channel} ${Math.round(span.startMs / 1000)}s：${error instanceof Error ? error.message : String(error)}`);
+      errors.push(t("CH{0} {1}s: {2}").replace("{0}", String(span.channel)).replace("{1}", String(Math.round(span.startMs / 1000))).replace("{2}", error instanceof Error ? error.message : String(error)));
     }
   }
-  if (!parts.length && errors.length) throw new Error(`分声道转写失败：${errors[0]}`);
+  if (!parts.length && errors.length) throw new Error(t("Channel transcription failed: {0}").replace("{0}", errors[0]));
   const deduplicated = deduplicateOverlappingSpeakerParts(parts);
   return {
     text: formatChannelTranscript(deduplicated.parts),

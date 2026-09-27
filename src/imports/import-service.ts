@@ -115,7 +115,9 @@ export class ImportService {
       ? normalizeRequestedSpeakerCount(requestedSpeakerCount)
       : 0;
     const speakerModeLabel = speakerDiarization
-      ? ` · 区分说话人${speakerCount > 0 ? `（预计 ${speakerCount} 人）` : "（自动识别人数）"}`
+      ? t(" · Distinguish speakers{0}").replace("{0}", speakerCount > 0
+        ? t("(estimated {0} people)").replace("{0}", String(speakerCount))
+        : t("(automatic speaker count)"))
       : "";
     const moment = window.moment;
     const startedAt = moment();
@@ -194,7 +196,7 @@ export class ImportService {
         stageId: "prepare",
         type: "created",
         label: t("Import task created"),
-        detail: `整文件转写 · ${importProfile.title || importProvider.id}${speakerModeLabel}`,
+        detail: t("Whole-file transcription · {0}{1}").replace("{0}", importProfile.title || importProvider.id).replace("{1}", speakerModeLabel),
       },
     });
 
@@ -242,7 +244,7 @@ export class ImportService {
           : await adapter.readBinary(obsidian.normalizePath(audioPath));
         if (!ab || ab.byteLength === 0) {
           new obsidian.Notice(`${t("Skipped: ")}${displayName}${t(" is an empty file (0 bytes). Make sure the download finished, then try again.")}`, 9000);
-          await this.host.diagnostics.logDiagnostic("warn", "import.empty_file", "导入音频为空文件", { audioName: displayName, size: 0 });
+          await this.host.diagnostics.logDiagnostic("warn", "import.empty_file", t("Imported audio file is empty."), { audioName: displayName, size: 0 });
           continue;
         }
         mime = mimeFromExt(file.extension);
@@ -287,7 +289,7 @@ export class ImportService {
           stageId: "transcribe",
           type: "started",
           label: `${t("Starting transcription of ")}${displayName}`,
-          detail: "整文件提交，不切分为多个 ASR 任务",
+          detail: t("Submitted as a whole file; not split into multiple ASR tasks."),
         },
       });
 
@@ -348,7 +350,7 @@ export class ImportService {
               stageId: "transcribe",
               type: "speaker-count-mismatch",
               label: mismatchMessage,
-              detail: "不同说话人的声音可能较接近或存在较多重叠，建议核对原始转写。",
+              detail: t("Speakers' voices may be similar or overlap; review the original transcript."),
             },
           });
         }
@@ -376,7 +378,7 @@ export class ImportService {
           && durationMs > 2 * 60 * 60 * 1000
           && isDashScopeFileTransProvider(importProvider);
         error = exceedsDiarizationRecommendation
-          ? new Error(`${originalError.message}。本文件超过说话人分离建议的 2 小时，可关闭“区分说话人”后重试`)
+          ? new Error(t("{0}. This file exceeds the 2 hours recommended for speaker separation; turn off \"Distinguish speakers\" and retry.").replace("{0}", originalError.message))
           : originalError;
         console.error(error);
         this.host.tasks.updateImportRequest({
@@ -392,7 +394,7 @@ export class ImportService {
           activeSegments: 0,
           failedSegments: Math.max(0, Number(this.host.tasks._importBusy && this.host.tasks._importBusy.failedSegments) || 0) + 1,
         });
-        await this.host.diagnostics.logDiagnostic("error", "asr.import_whole_file_failed", "导入音频整文件转写失败", {
+        await this.host.diagnostics.logDiagnostic("error", "asr.import_whole_file_failed", t("Whole-file transcription of the imported audio failed."), {
           provider: importProvider.id,
           model: importProvider.model || "",
           audioName: displayName,
@@ -474,7 +476,7 @@ export class ImportService {
     }
 
     if (processedFiles === 0) {
-      const error = new Error("没有可处理的音频文件");
+      const error = new Error(t("There are no audio files to process."));
       this.host.tasks.updateImportActivity({ error: error.message });
       this.host.tasks._importBusy = null;
       this.host.tasks.updateBusyStatus();
@@ -485,8 +487,8 @@ export class ImportService {
     const pendingTranscriptionCount = session.segments.filter((segment) => !!segment.error).length;
     if (successfulTranscriptions === 0) {
       const message = pendingTranscriptionCount > 0
-        ? "语音转写未完成；音频已保留，可在处理进度中重试"
-        : "没有获得可用于整理的有效转写文本";
+        ? t("Speech transcription is incomplete; the audio file is kept, so you can retry from the processing progress.")
+        : t("No valid transcript text was obtained for organizing.");
       this.host.tasks.updateImportActivity({
         phase: "transcribe",
         error: message,
@@ -502,20 +504,22 @@ export class ImportService {
     }
     const transcriptFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(transcriptFile instanceof obsidian.TFile)) {
-      throw new Error("原始转写写入后未找到对应笔记，已停止 AI 整理");
+      throw new Error(t("The corresponding note was not found after writing the original transcript; AI organizing stopped."));
     }
     const persistedMarkdown = await this.host.app.vault.read(transcriptFile);
     const transcriptCheckpoint = verifyTranscriptCheckpoint(persistedMarkdown, session.segments);
     if (!transcriptCheckpoint.ok) {
       const checkpointError = new Error(
-        `原始转写尚未完整写入笔记（${transcriptCheckpoint.persistedSegments}/${transcriptCheckpoint.expectedSegments}），已停止 AI 整理`,
+        t("The original transcript was not fully written to the note ({0}/{1}); AI organizing stopped.")
+          .replace("{0}", String(transcriptCheckpoint.persistedSegments))
+          .replace("{1}", String(transcriptCheckpoint.expectedSegments)),
       );
       this.host.tasks.updateImportActivity({
         phase: "persist",
         error: checkpointError.message,
         label: t("Original transcript write did not complete"),
       });
-      await this.host.diagnostics.logDiagnostic("error", "asr.import_transcript_checkpoint_failed", "导入音频原始转写检查点未通过", {
+      await this.host.diagnostics.logDiagnostic("error", "asr.import_transcript_checkpoint_failed", t("Imported audio transcript checkpoint validation failed."), {
         mdPath: session.mdPath,
         expectedSegments: transcriptCheckpoint.expectedSegments,
         persistedSegments: transcriptCheckpoint.persistedSegments,
@@ -524,7 +528,7 @@ export class ImportService {
       });
       throw checkpointError;
     }
-    await this.host.diagnostics.logDiagnostic("info", "asr.import_transcript_persisted", "导入音频原始转写已写入，允许进入 AI 整理", {
+    await this.host.diagnostics.logDiagnostic("info", "asr.import_transcript_persisted", t("Imported audio transcript written; allowing AI organizing to proceed."), {
       mdPath: session.mdPath,
       segmentCount: transcriptCheckpoint.expectedSegments,
       transcriptChars: transcriptCheckpoint.expectedChars,
@@ -532,13 +536,13 @@ export class ImportService {
     });
     this.host.tasks.updateImportActivity({
       phase: "organize",
-      organizeLabel: "准备 AI 整理",
-      organizeDetail: "原始转写已完整写入，正在按当前纪要模板生成正文。",
+      organizeLabel: t("Preparing AI organizing"),
+      organizeDetail: t("The original transcript has been fully written; generating the body from the current minutes template."),
     });
     await this.host.sessionFinalize.finalizeSession(session);
     const finalizationError = String(session.finalizationError || "").trim()
       || (session.workProgress && session.workProgress.stage === "transcript-empty"
-        ? "没有获得可用于整理的有效转写文本"
+        ? t("No valid transcript text was obtained for organizing.")
         : "");
     if (finalizationError) {
       this.host.tasks.updateImportActivity({
@@ -549,8 +553,8 @@ export class ImportService {
       this.host.tasks.updateImportActivity({
         phase: "write",
         completed: true,
-        writeLabel: "处理完成",
-        writeDetail: "纪要已经写入 Obsidian。",
+        writeLabel: t("Processing complete"),
+        writeDetail: t("The minutes have been written to Obsidian."),
       });
     }
     const completedImportId = session.id;
@@ -613,7 +617,7 @@ export class ImportService {
     const meta = getModeMeta(this.host.settings, mode);
     const llmIssue = getLlmConfigIssue(this.host.settings);
     if (llmIssue) {
-      await this.host.diagnostics.logDiagnostic("warn", "text_import.llm_config_missing", "导入文本前大模型配置不完整", {
+      await this.host.diagnostics.logDiagnostic("warn", "text_import.llm_config_missing", t("LLM configuration is incomplete before text import."), {
         mode,
         llmRoute: "composer.chat-completions",
         llmEndpoint: this.host.settings.llmEndpoint || "",
@@ -627,7 +631,7 @@ export class ImportService {
     await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
     const mdName = `${startedAt.format(this.host.settings.noteFileNameFormatNew)} · ${t("Text import")}`;
     const mdPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`));
-    if (!mdPath) throw new Error("无法生成文本导入笔记路径");
+    if (!mdPath) throw new Error(t("Could not generate a path for the text import note."));
 
     const session: RecordingSession = {
       id: genId(),
@@ -665,7 +669,7 @@ export class ImportService {
       stage: "text-import",
       label: t("Read text"),
       percent: 8,
-      detail: `已读取 ${sources.length} 个文本来源，准备进入 AI 整理`,
+      detail: t("Read {0} text sources, ready for AI organizing.").replace("{0}", String(sources.length)),
     });
     this.host.shell.refreshOutlineView();
     try { await this.host.shell.openOutlineView(); } catch (e) { console.warn("[QnALog] open outline for text import failed", e); }

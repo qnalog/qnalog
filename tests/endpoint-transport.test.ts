@@ -23,7 +23,7 @@ describe("服务地址按自身协议校验", () => {
   it("wss:// 公网地址合法（旧实现按 http 校验会误报协议不受支持）", () => {
     const endpoint = "wss://dashscope.aliyuncs.com/api-ws/v1/inference";
     // 旧实现的错误结论
-    expect(getServiceEndpointSecurityIssue(endpoint, "http", "转写服务地址")).toContain("协议不受支持");
+    expect(getServiceEndpointSecurityIssue(endpoint, "http", "转写服务地址")).toContain("unsupported protocol");
     // 正确结论
     expect(describeEndpointIssue(endpoint, "转写服务地址")).toBe("");
   });
@@ -33,8 +33,8 @@ describe("服务地址按自身协议校验", () => {
   });
 
   it("公网明文 ws:// 仍被拒绝（安全规则没有被放宽）", () => {
-    expect(describeEndpointIssue("ws://api.example.com/ws", "转写服务地址")).toContain("不安全");
-    expect(describeEndpointIssue("http://api.example.com/v1", "转写服务地址")).toContain("不安全");
+    expect(describeEndpointIssue("ws://api.example.com/ws", "转写服务地址")).toContain("is insecure");
+    expect(describeEndpointIssue("http://api.example.com/v1", "转写服务地址")).toContain("is insecure");
   });
 
   it("本机与私网的明文地址仍被允许", () => {

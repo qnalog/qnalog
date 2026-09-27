@@ -89,14 +89,19 @@ export class CleanupService {
 
     const preview = candidates
       .slice(0, 10)
-      .map((c) => `- ${c.file.path}（${formatElapsed(c.durationMs)}，录音 ${c.audioFiles.length} 个）`)
+      .map((c) => t("- {0} ({1}, {2} audio files)").replace("{0}", c.file.path).replace("{1}", formatElapsed(c.durationMs)).replace("{2}", String(c.audioFiles.length)))
       .join("\n");
-    const more = candidates.length > 10 ? `\n...另有 ${candidates.length - 10} 条` : "";
+    const more = candidates.length > 10 ? t("\n...and {0} more").replace("{0}", String(candidates.length - 10)) : "";
     const ok = await qnalogConfirm(
       this.host.app,
-      "清理空白短录音",
-      `发现 ${candidates.length} 条空白短录音。\n\n条件：时长不超过 10 秒，且没有有效转写文本。\n将移入系统废纸篓：${candidates.length} 篇纪要、${uniqueAudioFiles.length} 个录音文件。\n\n${preview}${more}\n\n继续清理吗？`,
-      "清理"
+      t("Clean up blank short recordings"),
+      t("Found {0} blank short recordings.\n\nCriteria: no longer than 10 seconds and no valid transcript text.\nThe following will be moved to the system trash: {0} notes and {1} audio files.\n\n{2}{3}\n\nContinue cleanup?")
+        .replace("{0}", String(candidates.length))
+        .replace("{0}", String(candidates.length))
+        .replace("{1}", String(uniqueAudioFiles.length))
+        .replace("{2}", preview)
+        .replace("{3}", more),
+      t("Clean up")
     );
     if (!ok) return;
 
