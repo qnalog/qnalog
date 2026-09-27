@@ -362,7 +362,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
           finishReason: part.finishReason, outputChars: body.length, usage: part.usage,
         });
         throw new BriefingPipelineIncompleteError(
-          `纪要整理部分完成：${checkpoint.parts.filter(item => item.status === "complete").length}/${partPlans.length} 部分已完成；第 ${plan.index + 1} 部分需要重试`,
+          t("The minutes are partially complete: {0}/{1} parts completed; part {2} needs retry").replace("{0}", String(checkpoint.parts.filter(item => item.status === "complete").length)).replace("{1}", String(partPlans.length)).replace("{2}", String(plan.index + 1)),
           checkpoint.parts.filter(item => item.status === "complete").length,
           partPlans.length,
           [plan.index],
@@ -383,7 +383,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         error: diagnosticError(error),
       });
       throw new BriefingPipelineIncompleteError(
-        `纪要整理部分完成：${checkpoint.parts.filter(item => item.status === "complete").length}/${partPlans.length} 部分已完成；第 ${plan.index + 1} 部分失败：${getErrorMessage(error)}`,
+        t("The minutes are partially complete: {0}/{1} parts completed; part {2} failed: {3}").replace("{0}", String(checkpoint.parts.filter(item => item.status === "complete").length)).replace("{1}", String(partPlans.length)).replace("{2}", String(plan.index + 1)).replace("{3}", getErrorMessage(error)),
         checkpoint.parts.filter(item => item.status === "complete").length,
         partPlans.length,
         [plan.index],

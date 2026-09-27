@@ -230,7 +230,7 @@ export class QueueRetryService {
       return recovered;
     }
 
-    throw new Error(`音频不存在：${task.audioPath || task.audioName || "未知音频"}`);
+    throw new Error(t("Audio missing: {0}").replace("{0}", String(task.audioPath || task.audioName || t("Unknown audio"))));
   }
   async readVaultAudioBlob(path, fallbackName) {
     const norm = obsidian.normalizePath(String(path || ""));
@@ -324,7 +324,7 @@ export class QueueRetryService {
         recovered: true,
       };
     } catch (e) {
-      throw new Error(`临时切片不存在，已找到完整录音但无法重新切片：${(e && e.message) || e}`);
+      throw new Error(t("Temporary clip missing; the full recording was found but cannot be re-sliced: {0}").replace("{0}", String((e && e.message) || e)));
     }
   }
   async retryTranscribeTask(task) {

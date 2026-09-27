@@ -47,7 +47,7 @@ export class TaskQueue {
         if (task.type === "transcribe"
           && task.status === "failed"
           && task.retries >= maxRetries
-          && /音频不存在/.test(String(task.lastError || ""))) {
+          && /音频不存在|Audio missing/.test(String(task.lastError || ""))) {
           task.status = "pending";
           task.retries = Math.max(0, maxRetries - 1);
           task.lastError = i18nT("Temporary clip missing; upgraded to recover the clip from the full recording and retry");
@@ -249,7 +249,7 @@ export class TaskQueue {
       } catch { /* intentionally empty */ }
     } catch (e) {
       const message = (e && e.message) || String(e);
-      const isMissingAudio = task.type === "transcribe" && /音频不存在|临时切片不存在/.test(message);
+      const isMissingAudio = task.type === "transcribe" && /音频不存在|临时切片不存在|Audio missing|Temporary clip missing/.test(message);
       const isBlockedMerge = task.type === "merge" && isLlmNonRetryableError(e);
       const isTransportAsr = task.type === "transcribe" && isAsrTransportError(e);
       // 确定性转写错误（格式/解码/超限/4xx）会直接吃满重试；

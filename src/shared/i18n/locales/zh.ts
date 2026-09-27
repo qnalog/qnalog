@@ -2701,4 +2701,10 @@ export const ZH: MessageTable = {
   "Rendering PDF": "PDF 渲染",
   "Unable to generate a usable email draft path": "无法生成可用的邮件草稿路径",
   "Active recording": "录音中",
+  "The minutes are partially complete: {0}/{1} parts completed": "纪要整理部分完成：{0}/{1} 部分已完成",
+  "The minutes are partially complete: {0}/{1} parts completed; part {2} needs retry": "纪要整理部分完成：{0}/{1} 部分已完成；第 {2} 部分需要重试",
+  "The minutes are partially complete: {0}/{1} parts completed; part {2} failed: {3}": "纪要整理部分完成：{0}/{1} 部分已完成；第 {2} 部分失败：{3}",
+  "Audio missing: {0}": "音频不存在：{0}",
+  "Temporary clip missing; the full recording was found but cannot be re-sliced: {0}": "临时切片不存在，已找到完整录音但无法重新切片：{0}",
+  "Unknown audio": "未知音频",
 };

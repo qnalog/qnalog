@@ -291,7 +291,7 @@ export class TaskActivityService {
         : t("Segmented transcription · segment {0}").replace("{0}", String(Math.max(0, Number(task.segmentIndex) || 0) + 1)))
       : type === "merge" ? t("AI Organize")
         : type === "generate-prompt" ? t("Generate prompt") : t("Background task");
-    const isPartialBriefing = type === "merge" && /纪要整理部分完成/.test(String(task.lastError || ""));
+    const isPartialBriefing = type === "merge" && /纪要整理部分完成|The minutes are partially complete/.test(String(task.lastError || ""));
     const stageLabel = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS ? t("Currently processing")
       : task.status === "blocked" ? t("Waiting for configuration fix")
         : task.status === "missing" ? t("Source file missing")
