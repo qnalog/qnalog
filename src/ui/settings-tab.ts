@@ -2382,7 +2382,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Watched folder"))
       .setDesc(t("Enter a relative path within the vault, or choose a folder synced to your computer such as Nutstore. Once new audio finishes syncing, a combined summary is generated automatically and the source file stays where it is."))
       .addText(txt => {
-        inboxFolderInput = t;
+        inboxFolderInput = txt;
         txt.setValue(this.plugin.settings.inboxFolder || "")
           .setPlaceholder(`${DEFAULT_SETTINGS.audioFolder}/inbox ${t("(or a folder on your computer)")}`)
           .onChange(async v => {
