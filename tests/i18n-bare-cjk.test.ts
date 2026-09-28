@@ -341,3 +341,44 @@ describe("界面文案与笔记内容的边界", () => {
   });
 });
 
+describe("语言在渲染时求值", () => {
+  it("模块期不得调用 t()/i18nT()（常量在导入时求值，语言尚未确定，会冻结成当时语言）", () => {
+    // 2026-09-28 实测事故：向导方案描述、四态徽章、ASR 名称等 58 处把 t() 写进模块常量，
+    // 导入发生在 onload 设置语言之前——常量被冻成默认英文，中文界面反而显示英文；
+    // 语言切换后这些常量也不再更新。常量应存英文键，渲染处再包 t()。
+    const offenders: string[] = [];
+    const walkFn = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          if (full.includes(path.join("i18n", "locales"))) continue;
+          walkFn(full);
+        } else if (e.name.endsWith(".ts")) scanFile(full);
+      }
+    };
+    const scanFile = (file: string): void => {
+      const rel = path.relative(root, file).split(path.sep).join("/");
+      const text = fs.readFileSync(file, "utf8");
+      const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+      const visit = (node: ts.Node, fnDepth: number): void => {
+        const isFn = ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) ||
+          ts.isArrowFunction(node) || ts.isMethodDeclaration(node) ||
+          ts.isGetAccessor(node) || ts.isConstructorDeclaration(node);
+        if (fnDepth === 0 && ts.isCallExpression(node)) {
+          const callee = node.expression;
+          const name = ts.isIdentifier(callee) ? callee.text
+            : ts.isPropertyAccessExpression(callee) ? callee.name.text : "";
+          if (name === "t" || name === "i18nT" || name === "translateInto") {
+            const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+            offenders.push(`${rel}:${line}`);
+          }
+        }
+        const depth = fnDepth + (isFn ? 1 : 0);
+        ts.forEachChild(node, (child) => visit(child, depth));
+      };
+      visit(sf, 0);
+    };
+    walkFn(path.join(root, "src"));
+    expect(offenders, `模块期 t()：${offenders.slice(0, 8).join(", ")}`).toEqual([]);
+  });
+});

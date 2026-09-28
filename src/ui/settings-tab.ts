@@ -1060,7 +1060,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const badgeClass = badgeState === "success" ? "is-ready" : badgeState === "untested" ? "" : "is-missing";
     badges.createDiv({
       cls: ("qnalog-provider-status " + badgeClass).trim(),
-      text: SETUP_STATE_LABELS[badgeState],
+      text: t(SETUP_STATE_LABELS[badgeState]),
     });
 
     const body = panel.createDiv({ cls: "qnalog-provider-body" });

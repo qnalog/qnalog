@@ -340,15 +340,15 @@ const DASHSCOPE_CHAT_PROFILE: ChatInputAudioProfile = {
   maxDurationMs: DASHSCOPE_CHAT_ASR_MAX_DURATION_MS,
   maxChunks: DASHSCOPE_CHAT_ASR_MAX_CHUNKS,
   maxBase64Bytes: DASHSCOPE_CHAT_ASR_MAX_BASE64_BYTES,
-  label: t("Bailian qwen3-asr-flash"),
-  shortLabel: t("Bailian qwen3-asr-flash"),
+  label: "Bailian qwen3-asr-flash",
+  shortLabel: "Bailian qwen3-asr-flash",
   diagnosticSlug: "dashscope_chat",
   defaultModel: "qwen3-asr-flash",
   // MediaRecorder 产出的 webm/ogg/mp4 都在此列：时长达标就原样直发，
   // 超出 5 分钟或 base64 超 10MB 时才解码切块（见 getChatInputAudioPlan）。
   nativeExts: DASHSCOPE_CHAT_ASR_NATIVE_EXTS,
   serverRejectsNonNative: false,
-  nativeFormatsLabel: t("webm/ogg/mp4/mp3/wav, etc."),
+  nativeFormatsLabel: "webm/ogg/mp4/mp3/wav, etc.",
   // 文档：「若音频语种不确定，或包含多种语种…请勿指定该参数」。故只透传明确的语种码，
   // 其余（含 auto / 空）一律不下发该字段。取值域比 MiMo 宽。
   languageFor: (language) => {
@@ -443,10 +443,10 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
       return [{ blob, mime: nativeMime }];
     }
     const reason = profile.serverRejectsNonNative
-      ? t("Format {0} is not accepted by {1} (only {2})").replace("{0}", inputMime || "unknown").replace("{1}", profile.label).replace("{2}", profile.nativeFormatsLabel)
+      ? t("Format {0} is not accepted by {1} (only {2})").replace("{0}", inputMime || "unknown").replace("{1}", t(profile.label)).replace("{2}", t(profile.nativeFormatsLabel))
       : t("Format {0} must be converted to WAV to slice into {1}-minute chunks").replace("{0}", inputMime || "unknown").replace("{1}", String(chunkMinutes));
     const detail = e && e.message ? e.message : e;
-    throw chatInputAudioPermanentError(t("{0}: {1}, but it cannot be decoded locally ({2}). Use another transcription service, or re-record with a shorter segment interval.").replace("{0}", profile.label).replace("{1}", reason).replace("{2}", String(detail)));
+    throw chatInputAudioPermanentError(t("{0}: {1}, but it cannot be decoded locally ({2}). Use another transcription service, or re-record with a shorter segment interval.").replace("{0}", t(profile.label)).replace("{1}", reason).replace("{2}", String(detail)));
   }
   const totalMs = Math.max(1, Math.round((audioBuffer.duration || 0) * 1000));
   const decodedPlan = getChatInputAudioPlan(profile, blob, inputMime, totalMs);
@@ -454,7 +454,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
   const chunkCount = Math.ceil(totalMs / profile.chunkMs);
   if (chunkCount > profile.maxChunks) {
     throw chatInputAudioPermanentError(t("{0} can automatically split at most {1} chunks (about {2} minutes); this is about {3} minutes. Shorten the segment interval, or use an ASR service that supports large files for long recordings.")
-      .replace("{0}", profile.label)
+      .replace("{0}", t(profile.label))
       .replace("{1}", String(profile.maxChunks))
       .replace("{2}", String(Math.round(profile.maxChunks * profile.chunkMs / 60000)))
       .replace("{3}", String(Math.round(totalMs / 60000))));
@@ -465,7 +465,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
     const wavBlob = await renderAudioBufferSliceToWav(audioBuffer, startMs, endMs);
     if (approxBase64Bytes(wavBlob.size) > profile.maxBase64Bytes) {
       throw chatInputAudioPermanentError(t("{0} transcoded chunk base64 still exceeds {1}MB ({2}). Use an ASR service that supports larger slices.")
-        .replace("{0}", profile.label)
+        .replace("{0}", t(profile.label))
         .replace("{1}", String(Math.round(profile.maxBase64Bytes / 1024 / 1024)))
         .replace("{2}", formatUploadSize(wavBlob.size)));
     }
@@ -644,16 +644,16 @@ export async function requestChatInputAudioChunk(
         data = await res.json();
       } catch (e) {
         if (controller && controller.signal && controller.signal.aborted) throw e; // 外层 catch 统一报超时
-        throw new Error(t("{0} failed to parse the response (HTTP {1} but the body is invalid or interrupted): {2}").replace("{0}", profile.label).replace("{1}", String(res.status)).replace("{2}", String((e && e.message) || e)));
+        throw new Error(t("{0} failed to parse the response (HTTP {1} but the body is invalid or interrupted): {2}").replace("{0}", t(profile.label)).replace("{1}", String(res.status)).replace("{2}", String((e && e.message) || e)));
       }
       const apiErr = data && data.error;
       if (typeof apiErr === "string" && apiErr.trim()) {
-        throw new Error(t("{0} returned an error: {1}").replace("{0}", profile.label).replace("{1}", apiErr.trim()));
+        throw new Error(t("{0} returned an error: {1}").replace("{0}", t(profile.label)).replace("{1}", apiErr.trim()));
       }
       if (apiErr && (apiErr.message || apiErr.code)) {
         const bodyErr = new Error(apiErr.code
-          ? t("{0} returned an error ({1}): {2}").replace("{0}", profile.label).replace("{1}", String(apiErr.code)).replace("{2}", apiErr.message || t("unknown error"))
-          : t("{0} returned an error: {1}").replace("{0}", profile.label).replace("{1}", apiErr.message || t("unknown error"))
+          ? t("{0} returned an error ({1}): {2}").replace("{0}", t(profile.label)).replace("{1}", String(apiErr.code)).replace("{2}", apiErr.message || t("unknown error"))
+          : t("{0} returned an error: {1}").replace("{0}", t(profile.label)).replace("{1}", apiErr.message || t("unknown error"))
         ) as Error & { nonRetryable?: boolean };
         if (/^4/.test(String(apiErr.code || ""))) bodyErr.nonRetryable = true;
         throw bodyErr;
@@ -712,7 +712,7 @@ export async function requestChatInputAudioChunk(
         console.warn(`[QnALog] ${profile.label} 输出触顶被截断，已保住 ${salvaged.length} 字（末尾可能缺失）`);
         return `${salvaged}\n_[本段较长，末尾可能有少量内容未转完]_`;
       }
-      throw chatInputAudioPermanentError(t("{0} output hit the cap and was truncated with no text to keep; shorten the chunk duration and retry.").replace("{0}", profile.label));
+      throw chatInputAudioPermanentError(t("{0} output hit the cap and was truncated with no text to keep; shorten the chunk duration and retry.").replace("{0}", t(profile.label)));
     }
     // 2) 收到 [DONE] 或非 length 的 finish_reason：正常完成，返回累积文本（空文本由调用方按软失败处理）；
     // 3) 两者都没有（连接中途断开）：绝不把半截文本当成功返回——那会重新引入"静默丢段"这一类 bug。
@@ -771,7 +771,7 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
     if (part) return part;
     try {
       if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
-        await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_empty_chunk`, t("{0} chunk transcription was empty.").replace("{0}", profile.shortLabel), {
+        await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_empty_chunk`, t("{0} chunk transcription was empty.").replace("{0}", t(profile.shortLabel)), {
           chunkIndex,
           chunkCount,
           chunkBytes: prepared && prepared.blob && prepared.blob.size,
@@ -793,7 +793,7 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
     }
   }
   throw new Error(t("{0} chunk {1}/{2} returned empty results in a row; the audio file is kept, so you can retry later.")
-    .replace("{0}", profile.shortLabel)
+    .replace("{0}", t(profile.shortLabel))
     .replace("{1}", String(chunkIndex + 1))
     .replace("{2}", String(chunkCount)));
 }
@@ -830,7 +830,7 @@ export async function transcribeAudioWithChatInputAudio(
   const cleaned = cleanApimimoAsrRepeatedLoops(rawText);
   if (cleaned.suppressedChars > 0) {
     try {
-      await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_repeat_detected`, t("{0} transcription may contain a repeating loop; the original transcript is kept.").replace("{0}", profile.shortLabel), {
+      await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_repeat_detected`, t("{0} transcription may contain a repeating loop; the original transcript is kept.").replace("{0}", t(profile.shortLabel)), {
         suppressedChars: cleaned.suppressedChars,
         suppressedRepeats: cleaned.suppressedRepeats,
         chunkCount: chunks.length,

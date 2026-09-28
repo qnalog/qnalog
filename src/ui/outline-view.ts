@@ -4637,11 +4637,11 @@ export class OutlineView extends obsidian.ItemView {
     const SIDEBAR_PREF_KEYS = ["detailed", "concise", "structured", "natural", "expanded"];
     const curPref = this.plugin.settings.repolishPreference || "";
     // 不放"无特殊偏好"项：未选偏好时触发器留空（blankWhenUnset）。菜单只列 5 个正交预设。
-    const prefItems = SIDEBAR_PREF_KEYS.map(k => ({ value: k, label: REPOLISH_PREFERENCE_PRESETS[k].label }));
+    const prefItems = SIDEBAR_PREF_KEYS.map(k => ({ value: k, label: i18nT(REPOLISH_PREFERENCE_PRESETS[k].label) }));
     // 当前偏好若是被精简掉的旧值，补一项让触发器显示其真实名字
     if (curPref && !SIDEBAR_PREF_KEYS.includes(curPref)) {
       const hiddenPreset = getRepolishPreferencePreset(curPref);
-      if (hiddenPreset) prefItems.push({ value: curPref, label: hiddenPreset.label });
+      if (hiddenPreset) prefItems.push({ value: curPref, label: i18nT(hiddenPreset.label) });
     }
     mkSelect(prefCell, {
       current: curPref,
@@ -5451,7 +5451,7 @@ export class OutlineView extends obsidian.ItemView {
     const current = this.getRecentGroupBy();
     for (const option of RECENT_GROUP_OPTIONS) {
       menu.addItem((item) => {
-        item.setTitle(option.label);
+        item.setTitle(i18nT(option.label));
         if (option.id === current) item.setIcon("check");
         item.onClick(() => this.setRecentGroupBy(option.id));
       });
@@ -5498,8 +5498,8 @@ export class OutlineView extends obsidian.ItemView {
 
   getRecentFilterLabel(kind, value, recents) {
     const v = value || "all";
-    if (kind === "time") return (RECENT_TIME_FILTER_OPTIONS.find(item => item.id === v) || RECENT_TIME_FILTER_OPTIONS[0]).label;
-    if (kind === "mode") return (this.getRecentModeFilterOptions().find(item => item.id === v) || { label: i18nT("All templates") }).label;
+    if (kind === "time") return i18nT((RECENT_TIME_FILTER_OPTIONS.find(item => item.id === v) || RECENT_TIME_FILTER_OPTIONS[0]).label);
+    if (kind === "mode") return i18nT((this.getRecentModeFilterOptions().find(item => item.id === v) || { label: "All templates" }).label);
     return i18nT("Filter");
   }
 
@@ -5579,7 +5579,7 @@ export class OutlineView extends obsidian.ItemView {
         menu.addItem((item) => item.setTitle(opt.group).setDisabled(true));
       }
       menu.addItem((item) => {
-        item.setTitle(opt.label);
+        item.setTitle(i18nT(opt.label));
         if (opt.id === currentValue) item.setIcon("check");
         item.onClick(() => this.setRecentFilter(kind, opt.id));
       });
@@ -5956,14 +5956,14 @@ export class OutlineView extends obsidian.ItemView {
   createRecentActionButton(parent, opt) {
     const btn = parent.createEl("button", {
       cls: `qnalog-outline-recent-action ${opt.cls || ""}`,
-      attr: { type: "button", title: opt.title || opt.label || "" },
+      attr: { type: "button", title: i18nT(opt.title || opt.label || "") },
     });
     if (opt.disabled) btn.disabled = true;
     if (opt.icon) {
       const icon = btn.createSpan({ cls: "qnalog-outline-recent-action-icon" });
       try { obsidian.setIcon(icon, opt.icon); } catch { /* intentionally empty */ }
     }
-    if (opt.label) btn.createSpan({ cls: "qnalog-outline-recent-action-label", text: opt.label });
+    if (opt.label) btn.createSpan({ cls: "qnalog-outline-recent-action-label", text: i18nT(opt.label) });
     btn.addEventListener("click", async (evt) => {
       evt.preventDefault();
       evt.stopPropagation();

@@ -109,7 +109,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       head.createSpan({ cls: "qnalog-wizard-preset-label", text: preset.label || id });
       const use = head.createEl("button", { text: t("Use this plan"), cls: "mod-cta" });
       use.onclick = () => { this.controller.selectPreset(id); this.render(); };
-      if (preset.applyDesc) row.createDiv({ cls: "qnalog-wizard-preset-desc", text: preset.applyDesc });
+      if (preset.applyDesc) row.createDiv({ cls: "qnalog-wizard-preset-desc", text: t(preset.applyDesc) });
     }
   }
 

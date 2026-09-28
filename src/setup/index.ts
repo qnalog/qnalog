@@ -356,10 +356,10 @@ export function deriveSetupState(view: SetupServiceView, result?: ProbeResult | 
 }
 
 export const SETUP_STATE_LABELS: Record<SetupState, string> = {
-  missing: t("Missing configuration"),
-  untested: t("Not tested"),
-  success: t("Passed"),
-  failure: t("Not passed"),
+  missing: "Missing configuration",
+  untested: "Not tested",
+  success: "Passed",
+  failure: "Not passed",
 };
 
 export interface DetectionStage {

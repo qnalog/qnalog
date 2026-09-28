@@ -87,18 +87,18 @@ export function detectRecentNoteMode(plugin, file, frontmatter) {
 export const QNALOG_EN_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export const RECENT_TIME_FILTER_OPTIONS = [
-  { id: "week", label: t("This week") },
-  { id: "today", label: t("Today") },
-  { id: "month", label: t("This month") },
-  { id: "all", label: t("All dates") },
+  { id: "week", label: "This week" },
+  { id: "today", label: "Today" },
+  { id: "month", label: "This month" },
+  { id: "all", label: "All dates" },
 ];
 
 export const RECENT_GROUP_OPTIONS = [
-  { id: "time", label: t("By time") },
-  { id: "folder", label: t("By folder") },
+  { id: "time", label: "By time" },
+  { id: "folder", label: "By folder" },
 ];
 
-export const RECENT_TOPIC_FALLBACKS = [t("Learning"), t("Meeting"), t("Interview"), "PPT", "AI"];
+export const RECENT_TOPIC_FALLBACKS = ["Learning", "Meeting", "Interview", "PPT", "AI"];
 
 export function formatRecentDurationLabel(raw) {
   if (raw == null) return "";
