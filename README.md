@@ -169,9 +169,14 @@ For sensitive content (client data, medical, legal, HR, recruiting, internal str
 
 ## Installation
 
-This plugin is not in the Obsidian community plugin directory. The directory's **LexVoice** entry is a different plugin — see [Relationship to LexVoice](#relationship-to-lexvoice).
+### Option 1 — community plugin directory (desktop and mobile)
 
-### Option 1 — BRAT (works on desktop and mobile)
+1. In Obsidian, open **Settings → Community plugins** and browse the directory.
+2. Search for **QnALog**, install it, then enable it.
+
+The directory's **LexVoice** entry is a different plugin — see [Relationship to LexVoice](#relationship-to-lexvoice).
+
+### Option 2 — BRAT (works on desktop and mobile)
 
 1. Install and enable **BRAT** from the community plugin directory.
 2. In BRAT, choose **Add beta plugin** and enter `qnalog/qnalog`.
@@ -179,7 +184,7 @@ This plugin is not in the Obsidian community plugin directory. The directory's *
 
 You can also download the release assets (`main.js`, `manifest.json`, `styles.css`, plus `LICENSE` and `NOTICE`) straight from the [releases page](https://github.com/qnalog/qnalog/releases) into `<vault>/.obsidian/plugins/qnalog/`. Each release is built from its own tag by CI, which rebuilds the bundle and byte-compares it before uploading.
 
-### Option 2 — build from source (desktop)
+### Option 3 — build from source (desktop)
 
 ```bash
 git clone https://github.com/qnalog/qnalog.git

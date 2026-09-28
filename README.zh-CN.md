@@ -169,9 +169,14 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 
 ## 安装
 
-本插件不在 Obsidian 社区插件目录中。目录里的 **LexVoice** 是另一个插件——见「与 LexVoice 的关系」。
+### 方式一：社区插件目录（桌面端与移动端）
 
-### 方式一：BRAT（桌面端与移动端都可用）
+1. 在 Obsidian 中打开「设置 → 第三方插件」，浏览社区插件目录。
+2. 搜索 **QnALog**，安装后启用。
+
+目录里的 **LexVoice** 是另一个插件——见「与 LexVoice 的关系」。
+
+### 方式二：BRAT（桌面端与移动端都可用）
 
 1. 从社区插件目录安装并启用 **BRAT**。
 2. 在 BRAT 中选择 **Add beta plugin**，填入 `qnalog/qnalog`。
@@ -179,7 +184,7 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 
 也可以直接从[发布页](https://github.com/qnalog/qnalog/releases)下载资产（`main.js`、`manifest.json`、`styles.css`，以及 `LICENSE` 与 `NOTICE`）放入 `<知识库>/.obsidian/plugins/qnalog/`。每个 Release 都由 CI 从对应的 tag 重建产物并逐字节比对后上传。
 
-### 方式二：从源码构建（桌面端）
+### 方式三：从源码构建（桌面端）
 
 ```bash
 git clone https://github.com/qnalog/qnalog.git
