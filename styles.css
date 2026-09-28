@@ -1730,7 +1730,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 
 .qnalog-input-meter {
   display: grid;
-  grid-template-columns: 22px minmax(72px, 1fr) 42px 92px;
+  grid-template-columns: 22px minmax(0, 1fr) max-content 76px;
   align-items: center;
   gap: var(--size-2-2);
   min-width: 0;
@@ -1753,6 +1753,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 }
 
 .qnalog-input-meter-state {
+  min-width: 0;
   white-space: nowrap;
   text-align: right;
   color: var(--text-muted);
@@ -7541,7 +7542,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 @media (max-width: 760px) {
   .qnalog-input-meter {
-    grid-template-columns: 22px minmax(0, 1fr) 36px 76px;
+    grid-template-columns: 22px minmax(0, 1fr) max-content 76px;
   }
 
   .qnalog-input-meter-bars {
@@ -9034,11 +9035,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
   color: var(--text-normal);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
   flex: 1 1 auto;
+}
+
+.qnalog-outline-source-title > span:not(.qnalog-outline-source-icon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qnalog-outline-source-icon {
@@ -9056,7 +9065,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-source-badge {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 2px 6px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--interactive-accent) 9%, transparent);
@@ -9226,7 +9238,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-chapter.is-generating {
-  animation: qnalog-slide-in 0.5s ease-out;
+  animation: qnalog-fade-in 0.5s ease-out;
 }
 
 .qnalog-outline-chapter.is-generating > .qnalog-time-link.qnalog-outline-leading-time::before,
@@ -9246,7 +9258,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--qnalog-bg-active);
   color: var(--qnalog-primary-soft);
   font-size: 9px;
-  vertical-align: middle;
+  line-height: 1.4;
+  vertical-align: -1px;
 }
 
 .qnalog-outline-chapter.is-viewing,
@@ -9820,7 +9833,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-head.is-active-session .qnalog-input-meter {
-  grid-template-columns: 18px minmax(66px, 1fr) 38px minmax(72px, 96px);
+  grid-template-columns: 18px minmax(0, 1fr) max-content minmax(64px, 96px);
 }
 
 .qnalog-outline-head.is-active-session .qnalog-input-meter-icon {
