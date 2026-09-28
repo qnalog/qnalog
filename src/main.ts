@@ -7,7 +7,7 @@ import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban
 
 import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrectionModal } from "./ui/modals";
 
-import {getModeDisplayName, getModeMeta, getVisibleModeEntries } from "./shared/mode-meta";
+import {getModeDisplayName, getVisibleModeEntries } from "./shared/mode-meta";
 
 import { UpdateService } from "./update-service";
 
