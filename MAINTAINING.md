@@ -222,7 +222,7 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 社区目录 | 上游 `lexvoice` 条目仍在 | 不可控。它只能被用户主动安装，不会替换本插件；README 已说明两者并存时的处理。 |
 | 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`QnALog`**（含 `manifest.json` 的 `name`）。2026-09-28 起弃用旧书面名 `Q&A Log`：Obsidian 插件命名规范只允许基本拉丁字母与连字符、加号、括号，`&` 不在允许列表；macOS 原生菜单还会把 `&` 当快捷键标记吃掉。**名称里不得再出现 `&`。** 版权署名 `Q&A Log Team` 与提交身份显示名 `Q&A Log` 属于署名，不随产品名改。程序性标识仍是小写 `qnalog` 与 `QNALOG_*`（见下两行）。 |
 | 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 2026-09-14 已统一为 `qnalog`：这些字符串只存在于代码里，不写用户文件。**新代码不得再引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量。** |
-| 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、frontmatter 键 `qnalog_speakers`、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 已重置为 QnALog 命名空间，**读写都只认新值**（见 §1.1.2）；字面量集中在 `src/shared/namespace.ts`，**新代码不得再引入 `lexvoice-*` 字面量**。 |
+| 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、frontmatter 键 `qnalog_speakers`、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 已重置为 QnALog 命名空间，**读写都只认新值**（见 §1.1.2）；字面量集中在 `src/shared/namespace.ts`，**新代码不得再引入 `lexvoice-*` 字面量**。默认目录的子目录名按界面语言在读取时取（中英两套，`src/shared/defaults.ts` 的 `FOLDER_NAMES`）：新装时定下一次，之后改语言不搬已有目录，落盘的路径始终优先。 |
 
 发版前的指针检查清单——已固化为脚本：CI 每次 push 都会跑，本地 `npm run verify` 也包含（2026-09-15 起并入，避免只在改动特定文件时手跑而漏掉）：
 
