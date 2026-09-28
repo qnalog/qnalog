@@ -1,16 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记索引与当日概要：索引刷新、当日日记概要与沉淀自动提取
+// 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记索引与沉淀自动提取
 
 import * as obsidian from "obsidian";
 import { getSemanticCanvasPath } from "../canvas/semantic-outline-canvas";
 import { buildNoteIndex, resolveNoteIndex, upsertNoteIndex } from "../indexing/note-index";
-import { ensureTodayDailyNoteFile } from "../shared/util-note";
 import { generateSedimentObjects, writeSedimentObjectCards } from "../sediment";
 import type { PluginSettings } from "../shared/types";
 import { diagnosticError } from "../shared/util-key-diag";
 import { t } from "../shared/i18n";
-import { extractSessionId } from "../notes/note-markdown";
-import { buildDailyMeetingOverviewEntry, upsertDailyMeetingOverview } from "../notes/daily-overview";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 
 /** NoteIndexService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -76,37 +73,6 @@ export class NoteIndexService {
     }
   }
 
-  async appendDailyMeetingOverview(session, polished) {
-    if (!this.host.settings.writeDailyMeetingOverview) return;
-    if (!session || !polished) return;
-    let dailyFile = null;
-    try {
-      dailyFile = await ensureTodayDailyNoteFile(this.host.app);
-    } catch (e) {
-      console.error("[QnALog] daily note ensure failed", e);
-    }
-    if (!(dailyFile instanceof obsidian.TFile)) return;
-    if (obsidian.normalizePath(dailyFile.path) === obsidian.normalizePath(session.mdPath)) return;
-    const entry = buildDailyMeetingOverviewEntry(session, polished, this.host.settings);
-    const cur = await this.host.app.vault.read(dailyFile);
-    const next = upsertDailyMeetingOverview(cur, session.id, entry, this.host.settings);
-    if (next !== cur) await this.host.app.vault.modify(dailyFile, next);
-  }
-
-  async appendDailyMeetingOverviewForMarkdown(file, markdown, polished, mode, segments, sessionMeta) {
-    if (!(file instanceof obsidian.TFile)) return;
-    const startedAt = sessionMeta && sessionMeta.startedAt
-      ? sessionMeta.startedAt
-      : new Date(file.stat && file.stat.ctime ? file.stat.ctime : Date.now()).toISOString();
-    const session = {
-      id: extractSessionId(markdown, obsidian.normalizePath(file.path).replace(/[^A-Za-z0-9_-]+/g, "-")),
-      mdPath: file.path,
-      mode,
-      startedAt,
-      segments: Array.isArray(segments) ? segments : [],
-    };
-    await this.appendDailyMeetingOverview(session, polished);
-  }
   // 转写完成后的自动沉淀（仅 settings.sedimentAutoExtract 开启时触发）：扫描纪要 → 待办自动入库。
   // 后台跑、try/catch 静默——绝不影响主流程；沉淀扫描已走续写拼接（callLlmWithContinuation），不会被输出上限截断。
   async autoExtractSedimentAfterFinalize(mdPath) {

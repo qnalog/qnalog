@@ -617,8 +617,6 @@ export class NoteWriter {
       });
       try { await this.host.app.workspace.getLeaf(false).openFile(finalFile); } catch { /* intentionally empty */ }
     }
-    try { await this.host.noteIndex.appendDailyMeetingOverview(session, polished); }
-    catch (e) { console.error("[QnALog] daily overview after merge notes failed", e); }
     new obsidian.Notice(`${t("Generated merged minutes: ")}${finalFile instanceof obsidian.TFile ? finalFile.basename : getModeMeta({}, "synthesis").prefix}`);
   }
   async appendMergeMetadataBlock(file, sources) {

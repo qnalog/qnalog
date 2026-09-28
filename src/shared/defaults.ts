@@ -14,17 +14,6 @@ export const DEFAULT_LIBRARY_PATHS = {
   duplicatePeopleArchiveFolder: `${NS_ROOT}/资料库/归档/重复人员`,
 } as const;
 
-export const DEFAULT_DAILY_MEETING_OVERVIEW_HEADING = "今日会议概要";
-
-export const DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE = [
-  "### {{time}} · {{note_link}}",
-  "> 模式：{{mode}} · 时长：{{duration}} · 分段：{{segments}} · 模型：{{model}}",
-  "",
-  "- 核心信息：{{summary}}",
-  "",
-  "{{todos_block}}",
-].join("\n");
-
 export const DEFAULT_SETTINGS: PluginSettings = {
   // 空串 = 跟随 Obsidian 界面语言（多数用户不会主动改插件语言）
   uiLanguage: "",
@@ -270,9 +259,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   floatingBallPos: { left: 60, top: 120 },
   autoOpenNoteAfterFinish: true,
   autoOpenHtmlReportAfterGenerate: true,
-  writeDailyMeetingOverview: true,
-  dailyMeetingOverviewHeading: DEFAULT_DAILY_MEETING_OVERVIEW_HEADING,
-  dailyMeetingOverviewTemplate: DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE,
 
   autoCheckUpdates: true,
   lastUpdateCheckAt: null,

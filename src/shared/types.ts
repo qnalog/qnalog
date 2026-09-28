@@ -189,9 +189,6 @@ export interface PluginSettings {
   floatingBallPos: FloatingBallPosition;
   autoOpenNoteAfterFinish: boolean;
   autoOpenHtmlReportAfterGenerate: boolean;
-  writeDailyMeetingOverview: boolean;
-  dailyMeetingOverviewHeading: string;
-  dailyMeetingOverviewTemplate: string;
   autoCheckUpdates: boolean;
   lastUpdateCheckAt: string | null;
   availableUpdate: AvailableUpdate | null;
@@ -210,7 +207,6 @@ export interface PersistedPluginSettings {
   vocabulary: Record<string, unknown>;
   views: Record<string, unknown>;
   liveOutline: Record<string, unknown>;
-  dailyNote: Record<string, unknown>;
   retryPolicy: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
   ui: Record<string, unknown>;

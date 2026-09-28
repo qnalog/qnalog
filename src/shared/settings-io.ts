@@ -352,13 +352,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.autoOpenOutlineOnRecord = firstBoolean(defaults.autoOpenOutlineOnRecord, liveOutline.openOnCapture, raw.autoOpenOutlineOnRecord);
   s.setupWizardDismissed = firstBoolean(defaults.setupWizardDismissed, raw.setupWizardDismissed);
 
-  const dailyNote = asRecord(raw.dailyNote);
-  s.writeDailyMeetingOverview = firstBoolean(defaults.writeDailyMeetingOverview, dailyNote.meetingOverviewEnabled, raw.writeDailyMeetingOverview);
-  s.dailyMeetingOverviewHeading = firstString(defaults.dailyMeetingOverviewHeading, dailyNote.meetingOverviewHeading, raw.dailyMeetingOverviewHeading)
-    .replace(/^#+\s*/, "").trim() || defaults.dailyMeetingOverviewHeading;
-  s.dailyMeetingOverviewTemplate = firstString(defaults.dailyMeetingOverviewTemplate, dailyNote.meetingOverviewTemplate, raw.dailyMeetingOverviewTemplate)
-    .trim() || defaults.dailyMeetingOverviewTemplate;
-
   const retryPolicy = asRecord(raw.retryPolicy);
   s.maxRetries = firstNumber(defaults.maxRetries, retryPolicy.maxAttempts, raw.maxRetries);
 
@@ -534,11 +527,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       enabled: s.enableRealtimeOutline,
       debounceMs: s.realtimeOutlineDebounceMs,
       openOnCapture: s.autoOpenOutlineOnRecord,
-    },
-    dailyNote: {
-      meetingOverviewEnabled: s.writeDailyMeetingOverview !== false,
-      meetingOverviewHeading: s.dailyMeetingOverviewHeading || DEFAULT_SETTINGS.dailyMeetingOverviewHeading,
-      meetingOverviewTemplate: s.dailyMeetingOverviewTemplate || DEFAULT_SETTINGS.dailyMeetingOverviewTemplate,
     },
     retryPolicy: {
       maxAttempts: s.maxRetries,

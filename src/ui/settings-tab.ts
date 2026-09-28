@@ -2,7 +2,7 @@
 // @ts-nocheck — PluginSettingTab class（this.plugin.* / 大量 setting builder 无 TS 字段声明）；已用 tsc 确认无漏引用(TS2304=0)，余者皆类字段类型噪音，故与 main.ts 同档跳过。
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
-import { DEFAULT_SETTINGS, DEFAULT_DAILY_MEETING_OVERVIEW_HEADING, DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE } from '../shared/defaults';
+import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { genId } from '../shared/util-common';
 import { assertEndpointAllowed, canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint } from '../shared/util-llm-endpoint';
 import { isLocalServiceEndpoint } from '../shared/util-note';
@@ -2334,45 +2334,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c)
       .setName(t("Actions after completion"))
-      .setDesc(t("Control whether the note opens after it completes, and whether the meeting summary and to-dos are written to today's daily note."))
+      .setDesc(t("Control whether the note opens after it completes."))
       .setHeading();
 
     new obsidian.Setting(c).setName(t("Automatically open the note when complete"))
       .addToggle(txt => txt.setValue(this.plugin.settings.autoOpenNoteAfterFinish).onChange(async v => { this.plugin.settings.autoOpenNoteAfterFinish = v; await this.plugin.saveSettings(); }));
-
-    new obsidian.Setting(c).setName(t("Write today's meeting summary to the daily note"))
-      .setDesc(t("When Obsidian daily notes are enabled, write the note link and summary after processing completes; detected to-dos are written using the - [ ] task syntax. If today's daily note does not exist, it is created automatically using the path and template configured in the Daily Notes plugin."))
-      .addToggle(txt => txt.setValue(this.plugin.settings.writeDailyMeetingOverview !== false).onChange(async v => { this.plugin.settings.writeDailyMeetingOverview = v; await this.plugin.saveSettings(); }));
-
-    new obsidian.Setting(c).setName(t("Daily note heading"))
-      .setDesc(t("Q&A Log finds or creates this level-2 heading in today's daily note and writes the summary from each completed processing run below the heading."))
-      .addText(t => t
-        .setPlaceholder(DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
-        .setValue(this.plugin.settings.dailyMeetingOverviewHeading || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING)
-        .onChange(async v => {
-          this.plugin.settings.dailyMeetingOverviewHeading = v.replace(/^#+\s*/, "").trim() || DEFAULT_DAILY_MEETING_OVERVIEW_HEADING;
-          await this.plugin.saveSettings();
-        }));
-
-    const dailyTplSetting = new obsidian.Setting(c)
-      .setName(t("Daily note template"))
-      .setDesc(t("Controls the format used when writing each summary to the daily note. Available placeholders: {{date}}, {{time}}, {{note_link}}, {{title}}, {{mode}}, {{duration}}, {{segments}}, {{model}}, {{summary}}, {{todos}}, {{todos_block}}, {{todo_count}}."));
-    dailyTplSetting.addButton(b => b.setButtonText(t("Restore default")).onClick(async () => {
-      const ok = await qnalogConfirm(this.app, t("Restore the default daily note template?"), t("The current custom template will be discarded, and this cannot be undone."), t("Restore default"));
-      if (!ok) return;
-      this.plugin.settings.dailyMeetingOverviewTemplate = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-      await this.plugin.saveSettings();
-      new obsidian.Notice(t("Default daily note template restored"));
-      this.renderSettings();
-    }));
-    const dailyTplTa = c.createEl("textarea", { cls: "qnalog-textarea qnalog-textarea-mono" });
-    dailyTplTa.rows = 8;
-    dailyTplTa.value = this.plugin.settings.dailyMeetingOverviewTemplate || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-    dailyTplTa.placeholder = DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-    dailyTplTa.addEventListener("change", async () => {
-      this.plugin.settings.dailyMeetingOverviewTemplate = dailyTplTa.value.trim() || DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE;
-      await this.plugin.saveSettings();
-    });
 
     new obsidian.Setting(c)
       .setName(t("Floating button"))

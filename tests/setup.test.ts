@@ -40,7 +40,7 @@ function completedSettings(): PluginSettings {
   s.maxRetries = 7;
   s.diagnosticsLogEnabled = false;
   s.briefingStructureLevel = "strict";
-  s.dailyMeetingOverviewTemplate = "自定义模板 {{time}}";
+  s.noteFileNameFormatNew = "YYYY-MM-DD_HHMM";
   s.inboxAutoImport = false;
   s.transcribeProviders.siliconflow.apiKey = "sk-existing-asr";
   s.llmApiKey = "sk-existing-llm";
@@ -75,7 +75,7 @@ describe("预设的写入范围", () => {
     expect(after.maxRetries).toBe(7);
     expect(after.diagnosticsLogEnabled).toBe(false);
     expect(after.briefingStructureLevel).toBe("strict");
-    expect(after.dailyMeetingOverviewTemplate).toBe("自定义模板 {{time}}");
+    expect(after.noteFileNameFormatNew).toBe("YYYY-MM-DD_HHMM");
     expect(after.inboxAutoImport).toBe(false);
   });
 
