@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 Open-source conversation intelligence for Obsidian: record, transcribe, and organize meetings, interviews, talks, and voice notes into Markdown you can reuse.
 
-QnALog connects to no cloud service of its own and ships **no API keys**: you configure your own speech-to-text (ASR) service and, optionally, your own large language model (LLM). Recordings and generated notes stay in your vault.
+QnALog ships **no API keys** and works **without an account**: you configure your own speech-to-text (ASR) service and, optionally, your own large language model (LLM). Recordings and generated notes stay in your vault.
 
 Supports desktop and mobile Obsidian. Mobile recording uses the device microphone. System audio, virtual audio devices, multichannel capture, desktop device diagnostics, and realtime streaming ASR providers that need custom authentication headers require the desktop app.
 
@@ -149,7 +149,9 @@ No ads, no analytics, no telemetry. Settings are stored locally in `.obsidian/pl
 - AI organization requests send transcript text and prompt context to the LLM service you configured.
 - The update check requests `manifest.json` from this project's GitHub release page so the plugin can tell you a newer version exists. It never downloads or installs anything.
 
-Recordings are saved to the local vault path you choose; there is no QnALog cloud and no QnALog server.
+**Where recordings live.** Recordings are saved to the local vault path you choose. The current version has no QnALog backend: it keeps no recordings, transcripts, or notes on servers of its own, and every request above goes to a service you selected.
+
+**Optional subscription (planned).** A paid subscription may be added later for users who would rather not manage API keys: sign in, and transcription and AI organization run through that service without any provider setup. It stays optional. If you turn it on, the audio and text of a recording go to that service instead of your own endpoints; recordings and notes are still written to your vault. If you leave it off, everything described above is unchanged.
 
 **Files outside your vault.** The optional external inbox feature can watch a folder outside your vault (an absolute path, for example a synced recordings directory) and import audio from it. That access happens only if you configure such a path, and it is limited to reading the files you point it at.
 
