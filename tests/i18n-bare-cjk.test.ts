@@ -91,10 +91,6 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     [" 创建失败：no AudioContext / no stream", "match"],
     ["系统在录音过程中收回了麦克风权限。", "data"],
   ],
-  "src/audio/recording-service.ts": [
-    ["（", "note"],
-    ["）", "note"],
-  ],
   "src/briefing/merge-pipeline.ts": [
     ["【必须核对的原文锚点】上一版遗漏较多可核验信息。请在语义正确的位置保留或解释这些原文锚点；如完整上下文能确认是 ASR 误写，可统一为正确写法，但不得直接丢弃：\\n- ", "prompt"],
     ["你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。", "prompt"],
@@ -144,22 +140,7 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["会议纪要：", "note"],
   ],
   "src/imports/import-service.ts": [
-    [" · 模型：", "note"],
-    [" · 模式：", "note"],
     [" · 结束", "note"],
-    [" · 转写：整文件", "note"],
-    ["### 文本来源 ", "note"],
-    ["### 音频 ", "note"],
-    ["> [!info] 导入信息", "note"],
-    ["> [!info] 文本导入信息", "note"],
-    ["> 文件数：", "note"],
-    ["> 来源文件：", "note"],
-    ["> 来源：自动导入 · ", "note"],
-    ["> 模型：", "note"],
-    ["_[此文本来源为空]_", "note"],
-    ["_[此音频无内容]_", "note"],
-    ["（文本导入处理中…）", "note"],
-    ["：[[", "note"],
   ],
   "src/llm/core.ts": [
     ["\\n\\n上一次生成因思考或输出过长被截断，且没有产生可见正文。请直接完整回答原始任务，不要提及截断，不要加前言。", "prompt"],
@@ -197,7 +178,6 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
   ],
   "src/notes/session-finalize-service.ts": [
     [" · 结束", "note"],
-    ["### 段落 ", "note"],
   ],
   "src/people/people-directory-service.ts": [
     ["\\n\\n此人员档案已合并到 ", "note"],
@@ -217,15 +197,8 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["邮箱", "note"],
   ],
   "src/queue/queue-retry-service.ts": [
-    ["### 段落 ", "note"],
-    ["((?:^|\\n)###\\s+段落\\s+", "match"],
-    ["\\n\\n## 整合版（补录 · ", "note"],
+    ["((?:^|\\n)###\\s+(?:段落|Segment)", "match"],
     ["未知的 mode：", "uncertain"],
-    ["）\\n\\n", "note"],
-  ],
-  "src/shared/util-audio.ts": [
-    ["_[此段尚未完成转写，音频已保留]_", "note"],
-    ["_[等待后台转写，音频已保留]_", "note"],
   ],
   "src/ui/modals.ts": [
     ["万", "uncertain"],

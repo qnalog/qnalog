@@ -32,6 +32,7 @@ import { NoteWriter } from "../notes/note-writer";
 import { NS_AUDIO_ALT, nsMarker } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+import { labelPattern, labelText } from "../shared/note-labels";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
@@ -329,7 +330,11 @@ export class QueueRetryService {
   }
   async retryTranscribeTask(task) {
     const mdFile = this.host.app.vault.getAbstractFileByPath(task.mdPath);
-    const failMark = /_\[(?:等待后台转写，音频已保留|此段尚未完成转写，音频已保留)\]_|_\[等待后台转写：[^\]]*\]_|_\[转写失败（空结果，已进入重试队列）\]_|_\[转写失败(?:（已进入重试队列）)?：[^\]]*\]_/;
+    // 目录外的历史占位（中文写死、已不再新写）：只放正则字面量，供已落盘旧笔记匹配。
+    const legacyFailMark = /_\[等待后台转写：[^\]]*\]_|_\[转写失败（空结果，已进入重试队列）\]_|_\[转写失败(?:（已进入重试队列）)?：[^\]]*\]_/;
+    const failMark = new RegExp(
+      `${labelPattern("waitingBackground").source}|${labelPattern("notFullyTranscribed").source}|${legacyFailMark.source}`,
+    );
     const taskMarker = task.id ? nsMarker("transcribe-task", task.id) : "";
     const taskPattern = taskMarker
       ? new RegExp(`${escapeRegExp(taskMarker)}\\s*(?:${failMark.source})`)
@@ -338,7 +343,7 @@ export class QueueRetryService {
     const segmentStart = formatElapsed(Math.max(0, Number(task.startOffsetMs) || 0));
     const segmentEnd = formatElapsed(Math.max(Number(task.startOffsetMs) || 0, Number(task.endOffsetMs) || 0));
     const legacySegmentPattern = new RegExp(
-      `((?:^|\\n)###\\s+段落\\s+${segmentNumber}\\s+\\(${escapeRegExp(segmentStart)}[–-]${escapeRegExp(segmentEnd)}\\)[^\\n]*\\n(?:\\s*\\n)?(?:<!--\\s*qnalog-transcribe-task:[^>]+-->\\s*)?)(?:${failMark.source})`,
+      `((?:^|\\n)###\\s+(?:段落|Segment)\\s+${segmentNumber}\\s+\\(${escapeRegExp(segmentStart)}[–-]${escapeRegExp(segmentEnd)}\\)[^\\n]*\\n(?:\\s*\\n)?(?:<!--\\s*qnalog-transcribe-task:[^>]+-->\\s*)?)(?:${failMark.source})`,
     );
     let currentMarkdown = "";
     if (mdFile instanceof obsidian.TFile && taskMarker) {
@@ -425,7 +430,7 @@ export class QueueRetryService {
         : 0;
       const recoveredBlock = [
         "",
-        `### 段落 ${segNumber} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(sourceAudioName, linkOffsetMs)}`,
+        `### ${labelText("segment", segNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(sourceAudioName, linkOffsetMs)}`,
         "",
         taskMarker,
         text,
@@ -550,14 +555,14 @@ export class QueueRetryService {
       await this.host.noteWriter.rewriteConsolidated(retrySession, polished);
     } else {
       const cur = await this.host.app.vault.read(file);
-      const failMark = /_\[合并润色失败（已加入重试队列）：[^\]]*\]_/;
+      const failMark = new RegExp(`_\\[(?:${labelPattern("mergeFailedQueued").source})[^\\]]*\\]_`);
       const merged = mergeLeadingFrontmatterIntoDocument(cur, polished);
       let next;
       if (failMark.test(cur)) {
         next = merged.content.replace(failMark, merged.body);
       } else {
         const meta = getModeMeta(this.host.settings, task.mode);
-        const block = `\n\n## 整合版（补录 · ${meta.prefix}）\n\n${merged.body}\n\n---\n`;
+        const block = `\n\n## ${labelText("mergedVersionAt", `${labelText("supplementaryRecording")} · ${meta.prefix}`)}\n\n${merged.body}\n\n---\n`;
         next = merged.content + block;
       }
       await this.host.app.vault.modify(file, next);

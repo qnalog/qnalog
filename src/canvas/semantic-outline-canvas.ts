@@ -2,6 +2,7 @@ import type { RealtimeOutlineNode } from "../outline-text";
 import { NS_ACTIVE_VERSION_BODY_RE, NS_SEGMENTS_START_ONLY_RE, NS_TAG, readSemanticMeta, writeSemanticMeta } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+import { UTILITY_HEADING_RE } from "../shared/note-labels";
 export interface SemanticCore {
   title: string;
   summary: string;
@@ -490,10 +491,12 @@ export function extractSemanticSourceSections(markdown: unknown): SemanticSource
   if (active) text = active[1];
   text = text
     .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
-    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
+    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
     .split(NS_SEGMENTS_START_ONLY_RE)[0]
     .replace(/<!--[^>]*-->/g, "");
-  const excludedHeading = /^(?:原始材料|原始转写|逐字稿|录音原文|回听时间轴|录音中实时大纲|会中补充材料)$/;
+  // 工具性标题统一排除（中英双语，取共享白名单 UTILITY_HEADING_RE）：
+  // 分段原始转写|问一问|附录|参考资料|版本信息 等也属 utility 标题，一并排除。
+  const excludedHeading = UTILITY_HEADING_RE;
   const sections: SemanticSourceSection[] = [];
   let heading = "";
   let level = 0;

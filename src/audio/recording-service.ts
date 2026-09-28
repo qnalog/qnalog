@@ -37,6 +37,7 @@ import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 import type { LiveAsrPipeline } from "../shared/live-asr-pipeline";
 
 import { t } from "../shared/i18n";
+import { labelPattern, labelText } from "../shared/note-labels";
 
 /**
  * 从既有纪要正文读回「录音中实时大纲（草稿）」details 的内容，
@@ -44,15 +45,18 @@ import { t } from "../shared/i18n";
  * 续录重写时旧大纲按场次保留，不因整篇重建丢失。
  */
 export function extractPriorOutline(markdown) {
-  const raw = extractDetailsBody(markdown, /录音中实时大纲/);
+  const raw = extractDetailsBody(markdown, labelPattern("liveOutlineDraft"));
   // 归档段（"> 以下为追加录音前场次…" 及其历史副本）不随读回进入种子与附录——
   // 两者共用这一处读回，单点剥干净后新场次的 live 大纲与 appendix 都不再自引用。
   return stripArchivedOutlineSections(
     String(raw || "")
-      .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
+      .replace(OUTLINE_INTRO_LINE_RE, "")
       .trim()
   );
 }
+
+/** 大纲 details 的引导行（`> 基于录音过程中…` / `> Outline generated…`）：双语，行锚点剥离。 */
+const OUTLINE_INTRO_LINE_RE = new RegExp(`^>\\s*(?:${labelPattern("outlineIntro").source})[^\\n]*\\n?`, "m");
 
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
@@ -142,7 +146,7 @@ export class RecordingService implements LiveAsrPipeline {
       // 旧场次的原始材料读回：续录重写笔记时按场次保留，不因重整丢失。
       priorOutline: extractPriorOutline(content),
       priorAudioNames: collectAudioRefs(content),
-      priorRecordingInfo: extractDetailsBody(content, /录音信息/),
+      priorRecordingInfo: extractDetailsBody(content, labelPattern("recordingInfo")),
       priorRecordedAt: inferNoteStartedAtIso(file, frontmatter),
     };
   }
@@ -246,7 +250,7 @@ export class RecordingService implements LiveAsrPipeline {
       const activeProfile = this.host.profiles.getActiveTranscribeProfile();
       const isStreaming = activeProfile && activeProfile.transcribeMode === "streaming";
       const titleLine = continuationInfo
-        ? `## ${t("Append to {0}").replace("{0}", getModePrefix(meta))}（${startedAt.format("YYYY-MM-DD HH:mm")}）`
+        ? `## ${labelText("appendToAt", getModePrefix(meta), startedAt.format("YYYY-MM-DD HH:mm"))}`
         : `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${t("(recording…)")}`;
       const header = [
         continuationInfo ? "" : null,

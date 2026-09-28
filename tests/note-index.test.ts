@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
+import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import {
   buildNoteIndex,
   extractIndexSource,
@@ -8,6 +9,9 @@ import {
   serializeNoteIndex,
   upsertNoteIndex,
 } from "../src/indexing/note-index";
+
+// 语言是模块级全局状态：每个用例从英文默认开始，需要锁中文标签的用例显式切 zh。
+afterEach(() => setActiveUiLanguage(resolveUiLanguage("en", "en")));
 
 const minutes = [
   "---",
@@ -107,6 +111,8 @@ describe("QnALog note index", () => {
   });
 
   it("round-trips a folded shell marker and replaces it idempotently", () => {
+    // 折叠标签随界面语言（labelText）：本断言锁 zh 写出的中文标签。
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const first = buildNoteIndex(minutes, {
       noteTitle: "A --> B",
       generatedAt: "2026-08-25T10:00:00.000Z",
@@ -131,6 +137,8 @@ describe("QnALog note index", () => {
   });
 
   it("upgrades a legacy comment block in place on refresh and never duplicates it", () => {
+    // 折叠标签随界面语言（labelText）：本断言锁 zh 写出的中文标签。
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const legacyBlock = [
       "<!-- qnalog-note-index",
       '{"schemaVersion":1,"sourceRevision":"old-rev","core":{"title":"旧","summary":"旧摘要内容不足三十二个字符时会走兜底，这里写长一点以通过弱摘要判定","heading":""},"topics":[],"topicCount":0,"omittedTopicCount":0,"meetingDate":"2026-08-25","generatedAt":"2026-08-25T10:00:00.000Z"}',
@@ -149,6 +157,19 @@ describe("QnALog note index", () => {
     // 摘要里出现标记词也不能截断读取（换修订号触发一次真实重写）。
     const tricky = { ...next, sourceRevision: `${next.sourceRevision}-tricky`, core: { ...next.core, summary: "结尾提到 qnalog-note-index-end --> 的场景" } };
     expect(readNoteIndex(upsertNoteIndex(upgraded, tricky))?.core.summary).toContain("qnalog-note-index-end");
+  });
+
+  it("英文界面下折叠标签写英文，读取与移除同样成立", () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const index = buildNoteIndex(minutes, { noteTitle: "EN", generatedAt: "2026-08-25T12:00:00.000Z" })!;
+    const marker = serializeNoteIndex(index);
+    expect(marker).toContain("<summary>Index data</summary>");
+    expect(marker).not.toContain("索引数据");
+    expect(readNoteIndex(marker)?.core.summary).toContain("团队围绕会议知识");
+    const inserted = upsertNoteIndex(minutes, index);
+    expect((inserted.match(/<!-- qnalog-note-index -->/g) || []).length).toBe(1);
+    expect(removeNoteIndex(inserted)).not.toContain("Index data");
+    expect(removeNoteIndex(inserted)).toContain("## 1. 从单次纪要走向项目记忆");
   });
 
   it("removes both folded and legacy index blocks without leftovers", () => {

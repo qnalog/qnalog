@@ -23,6 +23,7 @@ import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vau
 import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+import { labelText } from "../shared/note-labels";
 
 /** rewriteConsolidated 组装实时大纲 details 的输入；对象参数便于测试逐项注入。 */
 export interface RealtimeOutlineAssemblyInput {
@@ -60,9 +61,9 @@ export function assembleRealtimeOutlineDetails(input: RealtimeOutlineAssemblyInp
   if (appendix) {
     return [
       "<details>",
-      "<summary>录音中实时大纲（草稿）</summary>",
+      `<summary>${labelText("liveOutlineDraft")}</summary>`,
       "",
-      "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。",
+      `> ${labelText("outlineIntro")}`,
       appendix,
       "</details>",
     ].join("\n");
@@ -97,7 +98,7 @@ export function buildPriorSessionBlocks(session) {
   const audioLines = (priorAudios || [])
     .map((name) => String(name || "").trim())
     .filter(Boolean)
-    .map((name) => `![[${name}]]\n\n回听：[[${name}|00:00]]`);
+    .map((name) => `![[${name}]]\n\n${labelText("listenBack")}[[${name}|00:00]]`);
   const audioAppendix = audioLines.length ? `\n${audioLines.join("\n\n")}\n` : "";
 
   const outlineAppendix = priorOutline
@@ -151,7 +152,7 @@ export class NoteWriter {
       polishedFrontmatter || beforeParts.frontmatter.trimEnd() || null,
       titleBlock ? titleBlock.trimEnd() : null,
       titleBlock ? "" : null,
-      `## ${t("Current minutes")}（${getModePrefix(meta)} · ${stamp}）`,
+      `## ${labelText("currentMinutesAt", `${getModePrefix(meta)} · ${stamp}`)}`,
       "",
       `> [!info] 基于本文底部的原始转写重新生成 · 段数：${segments.length} · 模型：${this.host.settings.llmModel}`,
       "",
@@ -160,9 +161,9 @@ export class NoteWriter {
       "---",
       "",
       "<details>",
-      `<summary>上一版纪要（重新整理前 · ${stamp}）</summary>`,
+      `<summary>${labelText("previousVersion", stamp)}</summary>`,
       "",
-      previousBody || "_（上一版为空）_",
+      previousBody || `_${labelText("previousVersionEmpty")}_`,
       "",
       "</details>",
       "",
@@ -214,11 +215,11 @@ export class NoteWriter {
 
     const rawBlocks = textImport ? "" : session.segments.map(s => {
       const n = s.index + 1;
-      const head = `### 段落 ${n} (${formatElapsed(s.startOffsetMs)}–${formatElapsed(s.endOffsetMs)}) ${getAudioTimeLink(s.audioName, getSegmentAudioLinkOffsetMs(s))}${s.isFinal ? " · 结束" : ""}`;
+      const head = `### ${labelText("segment", n)} (${formatElapsed(s.startOffsetMs)}–${formatElapsed(s.endOffsetMs)}) ${getAudioTimeLink(s.audioName, getSegmentAudioLinkOffsetMs(s))}${s.isFinal ? " · 结束" : ""}`;
       const marker = s.queueTaskId ? `${nsMarker("transcribe-task", s.queueTaskId)}\n` : "";
       const body = s.error
         ? getTranscribeSegmentPlaceholder(s.error, { retryable: !!s.queueTaskId })
-        : (s.text || "_[此段无内容]_");
+        : (s.text || labelText("noContentSegment"));
       return `${head}\n\n${marker}${body}\n`;
     }).join("\n");
 
@@ -237,7 +238,7 @@ export class NoteWriter {
       "",
       "---",
       "",
-      "## 原始材料",
+      `## ${labelText("originalMaterial")}`,
       "",
       recordingInfoWithPrior || null,
       recordingInfoWithPrior ? "" : null,
@@ -250,7 +251,7 @@ export class NoteWriter {
       textImport ? textImportSourceBlock || null : playbackTimelineBlock || null,
       textImport ? (textImportSourceBlock ? "" : null) : (playbackTimelineBlock ? "" : null),
       retainAudio ? (masterAudioBlock ? null : "<details>") : null,
-      retainAudio ? (masterAudioBlock ? null : `<summary>原始音频（${session.segments.length} 段，${formatElapsed(totalMs)}${isContinuation ? "，含追加录音前场次" : ""}）</summary>`) : null,
+      retainAudio ? (masterAudioBlock ? null : `<summary>${isContinuation ? labelText("originalAudioSegmentsContinuation", session.segments.length, formatElapsed(totalMs)) : labelText("originalAudioSegments", session.segments.length, formatElapsed(totalMs))}</summary>`) : null,
       retainAudio ? "" : null,
       retainAudio && isContinuation && !masterAudioBlock && priorBlocks.audioAppendix ? priorBlocks.audioAppendix : null,
       retainAudio && isContinuation && !masterAudioBlock && priorBlocks.audioAppendix ? "" : null,
@@ -259,7 +260,7 @@ export class NoteWriter {
       retainAudio ? (masterAudioBlock ? null : "</details>") : null,
       retainAudio ? "" : null,
       textImport ? null : "<details>",
-      textImport ? null : `<summary>分段原始转写（${session.segments.length} 段）</summary>`,
+      textImport ? null : `<summary>${labelText("segmentedRawTranscript", session.segments.length)}</summary>`,
       textImport ? null : "",
       textImport ? null : rawBlocks,
       textImport ? null : "</details>",
@@ -302,12 +303,12 @@ export class NoteWriter {
     const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
     const failureText = mergeError
       ? (nonRetryableMergeError
-        ? `_[AI 整理失败：${formatLlmFailureIssue(mergeError.message || mergeError)}]_`
-        : `_[合并润色失败（已加入重试队列）：${mergeError.message || mergeError}]_`)
+        ? `_[${labelText("aiOrganizingFailed", formatLlmFailureIssue(mergeError.message || mergeError))}]_`
+        : `_[${labelText("mergeFailedQueued", mergeError.message || mergeError)}]_`)
       : "";
     const block = [
       "",
-      `## ${t("Merged version")}（${this.host.settings.llmModel} · ${getModePrefix(meta)}）`,
+      `## ${labelText("mergedVersionAt", `${this.host.settings.llmModel} · ${getModePrefix(meta)}`)}`,
       "",
       mergeError ? failureText : polishedBody,
       "",
@@ -336,10 +337,15 @@ export class NoteWriter {
     }
     const sep = cur.endsWith("\n") ? "" : "\n";
     let next = cur + sep + block;
-    // 标题占位 `（录音中…）` 用全角括号；旧 regex 的 `\)?` 是半角，匹配不到全角 `）`，
-    // 导致只替换"录音中…"留下原 `）` + 新拼的 `）` → 双括号 `（19:44））`。
-    // 用 [)）]? 同时吃掉半/全角收尾括号，替换后只补一个全角 `）`。
-    if (!textImport) next = next.replace(/录音中…[)）]?/g, `${formatElapsed(totalMs)}）`);
+    // 标题占位 `（录音中…）` 用全角括号、`(recording…)` 用半角；旧 regex 的 `\)?` 是半角，
+    // 匹配不到全角 `）`，导致只替换"录音中…"留下原 `）` + 新拼的 `）` → 双括号 `（19:44））`。
+    // 用 [)）]? 同时吃掉半/全角收尾括号，收尾括号跟随开括号风格（中文全角、英文半角）。
+    if (!textImport) {
+      next = next.replace(/([（(])?(?:录音中|recording)…[)）]?/g, (_match, open) => {
+        const prefix = open || "";
+        return `${prefix}${formatElapsed(totalMs)}${open === "(" ? ")" : "）"}`;
+      });
+    }
     await this.host.app.vault.modify(file, next);
   }
   async appendToNote(path, content) {

@@ -2,6 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
 import { t } from "./i18n";
+import { labelText } from "./note-labels";
 
 export function mimeFromExt(ext) {
   const e = (ext || "").toLowerCase();
@@ -62,9 +63,7 @@ export function getNextAsrTaskRetryCount(currentRetries, maxRetries, error) {
   return current + 1;
 }
 
-export const TRANSCRIBE_PENDING_PLACEHOLDER = "_[等待后台转写，音频已保留]_";
-export const TRANSCRIBE_INCOMPLETE_PLACEHOLDER = "_[此段尚未完成转写，音频已保留]_";
-
+// 占位文案按当前界面语言取（labelText 必须在函数体内求值，模块期常量会把语言冻住）。
 export function getTranscribeSegmentPlaceholder(error, options: {
   streaming?: boolean;
   retryable?: boolean;
@@ -75,8 +74,8 @@ export function getTranscribeSegmentPlaceholder(error, options: {
     ? !!options.retryable
     : (!!options.deferred || isTransientAsrError(error));
   return !streaming && retryable
-    ? TRANSCRIBE_PENDING_PLACEHOLDER
-    : TRANSCRIBE_INCOMPLETE_PLACEHOLDER;
+    ? labelText("waitingBackground")
+    : labelText("notFullyTranscribed");
 }
 
 export function getAsrTransportTaskRecoveryPatch(task, maxRetries) {

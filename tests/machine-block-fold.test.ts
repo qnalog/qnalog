@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 
 vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
@@ -16,6 +16,10 @@ import {
 } from "../src/sediment";
 import { foldRawTranscriptSection } from "../src/version-content";
 import { stripImportAppendices } from "../src/notes/note-markdown";
+import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+
+// 语言是模块级全局状态：每个用例从英文默认开始，需要锁中文标签的用例显式切 zh。
+afterEach(() => setActiveUiLanguage(resolveUiLanguage("en", "en")));
 
 const OBJECTS = {
   people: [{ name: "张三", aliases: ["老张"], role: "负责人", organization: "一组", note: "牵头", confidence: "高", evidence: ["决定周三交付"] }],
@@ -29,6 +33,8 @@ function legacyBlock(objects = OBJECTS) {
 
 describe("尾部机器块：折叠壳新格式", () => {
   it("沉淀块序列化为「标记在外、details+json 围栏在内」，读回等价", () => {
+    // 折叠标签随界面语言（labelText）：本断言锁 zh 写出的中文标签。
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const block = formatSedimentPreExtractionBlock(OBJECTS);
     expect(block.startsWith("<!--QNALOG_SEDIMENT_BEGIN-->")).toBe(true);
     expect(block.endsWith("<!--QNALOG_SEDIMENT_END-->")).toBe(true);
@@ -70,6 +76,8 @@ describe("尾部机器块：折叠壳新格式", () => {
   });
 
   it("strip 对新旧两种格式都剥干净（含折叠壳）", () => {
+    // 折叠标签随界面语言（labelText）：本断言锁 zh 写出的中文标签。
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const withFenced = appendSedimentPreExtractionBlock("# 正文", OBJECTS);
     expect(withFenced).toContain("沉淀数据");
     const strippedNew = stripSedimentPreExtractionBlocks(withFenced);
@@ -80,6 +88,18 @@ describe("尾部机器块：折叠壳新格式", () => {
     const strippedLegacy = stripSedimentPreExtractionBlocks(`# 正文\n\n${legacyBlock()}\n\n尾巴`);
     expect(strippedLegacy).not.toContain("QNALOG_SEDIMENT");
     expect(strippedLegacy).toContain("尾巴");
+  });
+
+  it("英文界面下折叠标签写英文，读回与剥壳同样成立", () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const block = formatSedimentPreExtractionBlock(OBJECTS);
+    expect(block).toContain("<summary>Distilled data</summary>");
+    expect(block).not.toContain("沉淀数据");
+    const extracted = extractSedimentPreExtractionBlock(`# 正文\n\n${block}`);
+    expect(extracted.found).toBe(true);
+    expect(extracted.objects?.people?.[0]?.name).toBe("张三");
+    expect(extracted.cleaned).toContain("# 正文");
+    expect(stripSedimentPreExtractionBlocks(block)).not.toContain("QNALOG_SEDIMENT");
   });
 
   it("NS_SEDIMENT_BLOCK_RE 整块吞下新格式（stash/搬运不断壳）", () => {
@@ -202,6 +222,8 @@ describe("foldRawTranscriptSection 锚点不落进机器壳", () => {
   });
 
   it("分段块在机器壳之前时，标题落在分段折叠区前、机器壳不受影响", () => {
+    // 折叠标签随界面语言（labelText）：本断言锁 zh 写出的中文标签。
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const segments = [
       "<!-- qnalog-segments-start:qnalog-s2 -->",
       "### 段落 1 (00:00–00:10)",

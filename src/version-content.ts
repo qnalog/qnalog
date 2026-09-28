@@ -1,5 +1,6 @@
 import { NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "./shared/namespace";
 import { QNALOG_ACTIVE_VERSION_END } from "./shared/limits";
+import { labelText } from "./shared/note-labels";
 
 const VERSION_FRONTMATTER_START = `<!-- ${NS_TAG}-version-frontmatter-start`;
 const VERSION_FRONTMATTER_END = `${NS_TAG}-version-frontmatter-end -->`;
@@ -147,16 +148,17 @@ export function applyVersionTitle(markdown: string, titleSuffix: string, fallbac
  */
 export function foldRawTranscriptSection(markdown: string): string {
   const text = String(markdown || "");
-  if (!text.trim() || /^##\s+(?:📁\s*)?原始材料\s*$/m.test(text)) return text;
+  // 守卫与计数都必须中英双语命中：英文笔记缺守卫会重复折叠插入。
+  if (!text.trim() || /^##\s+(?:📁\s*)?(?:原始材料|Original material)\s*$/m.test(text)) return text;
   const endIdx = text.indexOf(QNALOG_ACTIVE_VERSION_END);
   if (endIdx < 0) return text;
   const head = text.slice(0, endIdx + QNALOG_ACTIVE_VERSION_END.length);
   let tail = text.slice(endIdx + QNALOG_ACTIVE_VERSION_END.length);
   if (!tail.trim()) return text;
-  if (!/<summary>[^<]*分段原始转写/.test(tail)) {
+  if (!/<summary>[^<]*(?:分段原始转写|Segmented raw transcript)/.test(tail)) {
     tail = tail.replace(NS_SEGMENTS_BLOCK_RE, (block) => {
-      const count = (String(block).match(/^### 段落 /gm) || []).length;
-      return `<details>\n<summary>分段原始转写（${count} 段）</summary>\n\n${String(block).trim()}\n\n</details>`;
+      const count = (String(block).match(/^### (?:段落|Segment) /gm) || []).length;
+      return `<details>\n<summary>${labelText("segmentedRawTranscript", count)}</summary>\n\n${String(block).trim()}\n\n</details>`;
     });
   }
   // 机器壳（索引数据/沉淀数据）不是原始材料锚点：等长遮蔽后再定位，
@@ -165,7 +167,7 @@ export function foldRawTranscriptSection(markdown: string): string {
   const rawPos = masked.search(new RegExp(`<details\\b|<!--\\s*${NS_TAG}-segments-start`, "i"));
   if (rawPos < 0) return head + tail;
   const lineStart = tail.lastIndexOf("\n", rawPos) + 1;
-  return head + tail.slice(0, lineStart) + "## 原始材料\n\n" + tail.slice(lineStart);
+  return head + tail.slice(0, lineStart) + `## ${labelText("originalMaterial")}\n\n` + tail.slice(lineStart);
 }
 
 export function replaceExistingActiveVersionBlock(markdown: string, block: string): string | null {

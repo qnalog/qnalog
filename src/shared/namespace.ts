@@ -71,7 +71,7 @@ export const NS_CARDS_BLOCK_RE = new RegExp(
 export const NS_SEDIMENT_LINE_BEGIN_RE = /<!--\s*QNALOG_SEDIMENT_BEGIN/i;
 /** 机器数据折叠壳（索引数据 / 沉淀数据）：喂给提示词或语义抽取前整块剔除。 */
 export const NS_MACHINE_SHELL_RE =
-  /<details>\s*<summary>[^<]*(?:索引数据|沉淀数据)[^<]*<\/summary>[\s\S]*?<\/details>/gi;
+  /<details>\s*<summary>[^<]*(?:索引数据|沉淀数据|Index data|Distilled data)[^<]*<\/summary>[\s\S]*?<\/details>/gi;
 /** 分段逐字稿区块（开始到结束）。 */
 export const NS_SEGMENTS_BLOCK_RE = new RegExp(
   `<!--\\s*${nsRe("segments-start")}(?::[^>]*)?\\s*-->[\\s\\S]*?<!--\\s*${nsRe("segments-end")}(?::[^>]*)?\\s*-->`,

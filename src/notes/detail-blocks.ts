@@ -19,6 +19,7 @@ import { t } from "../shared/i18n";
 
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings } from "../audio/channel-speakers";
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
+import { labelPattern, labelText } from "../shared/note-labels";
 
 export function buildMeetingWorkbenchDetails(session) {
   const workbench = normalizeMeetingWorkbench(session && session.meetingWorkbench);
@@ -62,7 +63,7 @@ export function buildMeetingWorkbenchDetails(session) {
   }
   return [
     "<details>",
-    "<summary>会中补充材料</summary>",
+    `<summary>${labelText("meetingMaterial")}</summary>`,
     "",
     lines.join("\n").trim(),
     "",
@@ -103,7 +104,7 @@ export function buildPlaybackTimelineDetails(session) {
   if (!lines.length) return "";
   return [
     "<details>",
-    `<summary>回听时间轴（${lines.length} 个节点）</summary>`,
+    `<summary>${labelText("playbackTimeline")}（${lines.length} 个节点）</summary>`,
     "",
     '<div class="qnalog-playback-timeline">',
     lines.join(""),
@@ -124,21 +125,24 @@ export function extractDetailsBody(markdown, summaryPattern) {
   return "";
 }
 
+/** 大纲 details 的引导行（`> 基于录音过程中…` / `> Outline generated…`）：双语，行锚点剥离。 */
+const OUTLINE_INTRO_LINE_RE = new RegExp(`^>\\s*(?:${labelPattern("outlineIntro").source})[^\\n]*\\n?`, "m");
+
 export function extractNotePanelData(plugin, file, markdown) {
   const text = String(markdown || "");
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(text);
   const hasMarker = NS_SESSION_RE.test(text)
     || NS_SEGMENTS_START_RE.test(text);
-  const outlineRaw = extractDetailsBody(text, /录音中实时大纲/);
+  const outlineRaw = extractDetailsBody(text, labelPattern("liveOutlineDraft"));
   // 面板展示「当前实时大纲」：剥引导行后再剥归档横幅与历史副本——旧笔记的
   // 大纲 details 按场次累积了重复归档（追加重写翻倍的历史 bug），原样展示会把
   // 同一份大纲连横幅重复多遍；文件里的归档不动，阅读视图仍可见完整历史。
   const outline = stripArchivedOutlineSections(
     outlineRaw
-      .replace(/^>\s*基于录音过程中已完成的分段自动生成[^\n]*\n?/m, "")
+      .replace(OUTLINE_INTRO_LINE_RE, "")
       .trim()
   );
-  const timeline = extractDetailsBody(text, /回听时间轴/);
+  const timeline = extractDetailsBody(text, labelPattern("playbackTimeline"));
   if (!hasMarker && !outline && !timeline) return null;
   const body = text.replace(/^---\n[\s\S]*?\n---\n?/m, "");
   const h1 = body.match(/^#\s+(.+?)\s*$/m);
@@ -167,17 +171,17 @@ export function extractNotePanelData(plugin, file, markdown) {
 export function buildRecordingInfoDetails(info) {
   const lines = [];
   if (info && info.startedAt && window.moment) {
-    lines.push(`- 时间：${window.moment(info.startedAt).format("YYYY-MM-DD HH:mm:ss")}`);
+    lines.push(`- ${labelText("timeLabel")}${window.moment(info.startedAt).format("YYYY-MM-DD HH:mm:ss")}`);
   }
-  if (info && info.totalMs != null) lines.push(`- 时长：${formatElapsed(info.totalMs)}`);
-  if (info && info.modeLabel) lines.push(`- 模式：${info.modeLabel}`);
-  if (info && info.segmentText) lines.push(`- 分段：${info.segmentText}`);
-  else if (info && info.segmentCount != null) lines.push(`- 分段：${info.segmentCount}`);
-  if (info && info.model) lines.push(`- 模型：${info.model}`);
+  if (info && info.totalMs != null) lines.push(`- ${labelText("durationLabel")}${formatElapsed(info.totalMs)}`);
+  if (info && info.modeLabel) lines.push(`- ${labelText("modeLabel")}${info.modeLabel}`);
+  if (info && info.segmentText) lines.push(`- ${labelText("segmentsLabel")}${info.segmentText}`);
+  else if (info && info.segmentCount != null) lines.push(`- ${labelText("segmentsLabel")}${info.segmentCount}`);
+  if (info && info.model) lines.push(`- ${labelText("modelLabel")}${info.model}`);
   if (!lines.length) return "";
   return [
     "<details>",
-    "<summary>录音信息</summary>",
+    `<summary>${labelText("recordingInfo")}</summary>`,
     "",
     lines.join("\n"),
     "",
@@ -190,11 +194,11 @@ export function buildMasterAudioDetails(session, totalMs) {
   if (!audioName) return "";
   return [
     "<details>",
-    `<summary>原始音频（完整录音，${formatElapsed(totalMs || 0)}）</summary>`,
+    `<summary>${labelText("originalAudioFull", formatElapsed(totalMs || 0))}</summary>`,
     "",
     `![[${audioName}]]`,
     "",
-    `回听：${getAudioTimeLink(audioName, 0)}`,
+    `${labelText("listenBack")}${getAudioTimeLink(audioName, 0)}`,
     "",
     "</details>",
   ].join("\n");
@@ -203,13 +207,13 @@ export function buildMasterAudioDetails(session, totalMs) {
 export function buildTextImportInfoDetails(session, modeLabel, model) {
   if (!isTextImportSession(session)) return "";
   const lines = [];
-  if (session.startedAt && window.moment) lines.push(`- 时间：${window.moment(session.startedAt).format("YYYY-MM-DD HH:mm:ss")}`);
-  if (modeLabel) lines.push(`- 模式：${modeLabel}`);
+  if (session.startedAt && window.moment) lines.push(`- ${labelText("timeLabel")}${window.moment(session.startedAt).format("YYYY-MM-DD HH:mm:ss")}`);
+  if (modeLabel) lines.push(`- ${labelText("modeLabel")}${modeLabel}`);
   const sources = Array.isArray(session.textImportSources) ? session.textImportSources : [];
-  lines.push(`- 来源文件：${sources.length || (session.segments || []).length || 1}`);
-  if (model) lines.push(`- 模型：${model}`);
+  lines.push(`- ${labelText("sourceFilesLabel")}${sources.length || (session.segments || []).length || 1}`);
+  if (model) lines.push(`- ${labelText("modelLabel")}${model}`);
   if (sources.length) {
-    lines.push("", "来源：");
+    lines.push("", labelText("sourceLabel"));
     for (const item of sources) {
       const name = item.name || (item.path ? item.path.split("/").pop() : "") || "未命名文本";
       lines.push(`- ${item.path ? `[[${item.path}|${name}]]` : name}`);
@@ -217,7 +221,7 @@ export function buildTextImportInfoDetails(session, modeLabel, model) {
   }
   return [
     "<details>",
-    "<summary>导入文本信息</summary>",
+    `<summary>${labelText("importedTextInfo")}</summary>`,
     "",
     lines.join("\n"),
     "",
@@ -234,12 +238,12 @@ export function buildTextImportSourceDetails(session) {
     const name = seg.sourceName || `文本 ${i + 1}`;
     const path = seg.sourcePath || "";
     const link = path ? `[[${path}|${name}]]` : name;
-    const body = String(seg.rawText || seg.text || "").trim() || "_[此文本来源为空]_";
+    const body = String(seg.rawText || seg.text || "").trim() || labelText("emptyTextSource");
     lines.push(`### ${i + 1}. ${link}`, "", body, "");
   });
   return [
     "<details>",
-    `<summary>导入文本原文（${segments.length} 个来源）</summary>`,
+    `<summary>${labelText("importedTextSources", segments.length)}</summary>`,
     "",
     lines.join("\n").trim(),
     "",
@@ -277,9 +281,9 @@ export function buildExternalAudioSourceDetails(session) {
   if (!name) return "";
   return [
     "<details>",
-    "<summary>导入来源</summary>",
+    `<summary>${labelText("importSource")}</summary>`,
     "",
-    `文件：${name}`,
+    `${labelText("fileLabel")}${name}`,
     "",
     "源音频保留在同步文件夹中，未复制到当前知识库。",
     "",
@@ -296,10 +300,10 @@ export function renderLongSessionRawFallbackGroup(group, partIndex) {
     const segEnd = Math.max(segStart, Number(seg && seg.endOffsetMs) || segStart);
     const audioOffset = Math.max(0, Number(seg && seg.audioStartOffsetMs) || segStart);
     const anchor = seg && seg.audioName ? ` ${getAudioTimeLink(seg.audioName, audioOffset)}` : "";
-    const text = String((seg && seg.text) || "").trim() || "（本段未获得可用转写内容）";
-    return `### 段落 ${index + 1} · ${formatElapsed(segStart)}–${formatElapsed(segEnd)}${anchor}\n\n${text}`;
+    const text = String((seg && seg.text) || "").trim() || labelText("noUsableTranscript");
+    return `### ${labelText("segment", index + 1)} · ${formatElapsed(segStart)}–${formatElapsed(segEnd)}${anchor}\n\n${text}`;
   }).join("\n\n");
-  return `## 第 ${partIndex} 部分 · ${start}–${end}（原始转写保底）\n\n${segments || "（本部分没有可保留的原始转写片段）"}`;
+  return `## ${labelText("rawFallbackPart", partIndex, start, end)}\n\n${segments || labelText("noRawSegmentsInPart")}`;
 }
 
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

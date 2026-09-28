@@ -3,6 +3,7 @@
 import * as obsidian from "obsidian";
 import { VOCABULARY_SECTIONS } from '../shared/catalog-sediment';
 import { NS_SEDIMENT_ID_PREFIX } from '../shared/namespace';
+import { labelText } from "../shared/note-labels";
 import { sanitizeFilename, escapeRegExp } from '../shared/util-common';
 import { makeFileWikiLink } from '../shared/util-markdown';
 import { getPeopleSuggestionCacheKey, normalizePeopleSuggestionsModel, loadPeopleDirectory, isPeopleSuggestionIgnored, findMatchingPersonEntry } from '../people';
@@ -271,7 +272,7 @@ export function formatSedimentPreExtractionBlock(objects) {
   return [
     `<!--${SEDIMENT_PREEXTRACT_BEGIN}-->`,
     "<details>",
-    "<summary>沉淀数据</summary>",
+    `<summary>${labelText("distilledData")}</summary>`,
     "",
     "```json",
     json,

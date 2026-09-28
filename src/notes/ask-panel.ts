@@ -5,6 +5,7 @@ import { cleanImportedTextForPrompt, extractRawTranscriptForImport, markdownQuot
 
 import { truncateForLlmPrompt } from "../shared/util-text";
 import { NS_SEDIMENT_LINE_BEGIN_RE } from "../shared/namespace";
+import { t } from "../shared/i18n";
 
 export const NOTE_ASK_CONTEXT_MAX_CHARS = 18000;
 
@@ -22,7 +23,9 @@ export const NOTE_ASK_SUGGESTIONS = [
 ];
 
 export function stripAskBlocks(text) {
-  return String(text || "").replace(/\n##\s+问一问\b[\s\S]*?(?=\n(?:---\s*\n+)?##\s+(?:📁\s*)?原始材料\b|\n<!--\s*(?:QNALOG|LEXVOICE)_SEDIMENT_BEGIN|$)/g, "\n");
+  // 中英双语标题都必须命中：词尾用 (?!\w)——中文词后接换行时 \b 不成立（前一字符非 \w），
+  // (?!\w) 对中英文分支都给出同一种结果，切语言不改变解析结果。
+  return String(text || "").replace(/\n##\s+(?:问一问|Q&A)(?![\w])[\s\S]*?(?=\n(?:---\s*\n+)?##\s+(?:📁\s*)?(?:原始材料|Original material)(?![\w])|\n<!--\s*(?:QNALOG|LEXVOICE)_SEDIMENT_BEGIN|$)/g, "\n");
 }
 
 export function buildAskContext(markdown) {
@@ -43,21 +46,22 @@ export function buildAskContext(markdown) {
 }
 
 export function normalizeAskSections(text) {
-  const source = String(text || "").replace(/\n##\s+问一问\b/g, "\n\n## 问一问");
-  const parts = source.split(/\n##\s+问一问\b/);
+  const heading = `## ${t("Q&A")}`;
+  const source = String(text || "").replace(/\n##\s+(?:问一问|Q&A)(?![\w])/g, `\n\n${heading}`);
+  const parts = source.split(new RegExp(`\\n##\\s+(?:问一问|Q&A)(?![\\w])`));
   if (parts.length <= 2) return source.replace(/\s+$/g, "");
   const before = parts.shift().replace(/\s+$/g, "");
   const merged = parts.map(part => part.trim()).filter(Boolean).join("\n\n");
   return merged
-    ? `${before}\n\n## 问一问\n\n${merged}`.replace(/^\s+/, "").replace(/\s+$/g, "")
-    : `${before}\n\n## 问一问`.replace(/^\s+/, "").replace(/\s+$/g, "");
+    ? `${before}\n\n${heading}\n\n${merged}`.replace(/^\s+/, "").replace(/\s+$/g, "")
+    : `${before}\n\n${heading}`.replace(/^\s+/, "").replace(/\s+$/g, "");
 }
 
 export function findAskBoundary(markdown) {
   const text = String(markdown || "");
   const patterns = [
-    /\n---\s*\n+##\s+(?:📁\s*)?原始材料\b/i,
-    /\n##\s+(?:📁\s*)?原始材料\b/i,
+    /\n---\s*\n+##\s+(?:📁\s*)?(?:原始材料|Original material)(?![\w])/i,
+    /\n##\s+(?:📁\s*)?(?:原始材料|Original material)(?![\w])/i,
     NS_SEDIMENT_LINE_BEGIN_RE,
   ];
   const indexes = patterns
@@ -88,13 +92,13 @@ export function appendAskEntry(markdown, question, answer) {
   const entry = [
     `### ${stamp}`,
     "",
-    "> [!summary] 问一问",
+    `> [!summary] ${t("Q&A")}`,
     markdownQuoteBlock(callout),
   ].join("\n");
-  const hasAskSection = /\n##\s+问一问\b/.test(`\n${head}`);
+  const hasAskSection = /\n##\s+(?:问一问|Q&A)(?![\w])/.test(`\n${head}`);
   const body = hasAskSection
     ? `${head}\n\n${entry}`
-    : `${head}\n\n## 问一问\n\n${entry}`;
+    : `${head}\n\n## ${t("Q&A")}\n\n${entry}`;
   return tail ? `${body}\n\n${tail}` : `${body}\n`;
 }
 
