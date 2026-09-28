@@ -211,6 +211,10 @@ class QnALogPlugin extends obsidian.Plugin {
     this.vocabulary = new VocabularyService(this);
     this.profiles = new TranscribeProfileService(this);
     this.semanticCanvas = new SemanticCanvasService(this);
+    // 界面语言要在读取设置之前先按 Obsidian 自己的语言定下来：默认目录名按界面语言取，
+    // 而 loadAll 里的 normalizePluginSettings 正在这一步求默认值。设置读回后
+    // loadAll 末尾会再按用户在插件里显式选择的语言覆盖一次（applyUiLanguage(this.settings)）。
+    applyUiLanguage(null);
     await this.loadAll();
     await this.loadBuildInfo();
     this.updateService = new UpdateService({

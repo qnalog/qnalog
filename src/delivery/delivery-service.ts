@@ -8,11 +8,11 @@ import { pickReportAccentColor } from "../ui/modals";
 import { sanitizeReportFileStem, generateHtmlReportFromMarkdown, generateStyledReportFromMarkdown } from "../report/render";
 import { readFileFrontmatter } from "../shared/util-note";
 import { normalizePersonLookupText, loadPeopleDirectory } from "../people";
-import { DEFAULT_SETTINGS } from "../shared/defaults";
+import { DEFAULT_SETTINGS, defaultFolderPaths } from "../shared/defaults";
 import type { PluginSettings } from "../shared/types";
 import { escapeHtmlText } from "../shared/util-markdown";
 import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
-import { EMAIL_DRAFT_ATTACHMENT_FOLDER, EMAIL_DRAFT_FOLDER, arrayBufferToBase64, buildEmailDraftContent, buildMeetingEmailBody, extractMeetingAttendeeNames, guessEmailAttachmentMime, normalizeEmailAddressList } from "../notes/note-markdown";
+import { arrayBufferToBase64, buildEmailDraftContent, buildMeetingEmailBody, extractMeetingAttendeeNames, guessEmailAttachmentMime, normalizeEmailAddressList } from "../notes/note-markdown";
 import { detectRecentNoteMode } from "../recent/recent-notes";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 
@@ -248,7 +248,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
         attachmentsCount: attachments.length,
       });
       const eml = buildEmailDraftContent({ to: recipients, subject, body, attachments });
-      const folder = obsidian.normalizePath(EMAIL_DRAFT_FOLDER);
+      const folder = obsidian.normalizePath(defaultFolderPaths().emailDraftFolder);
       await ensureVaultFolder(this.host.app, folder);
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-邮件草稿.eml`);
       if (!target) throw new Error(t("Unable to generate a usable email draft path"));
@@ -322,7 +322,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
     return out.sort((a, b) => String(a.path).localeCompare(String(b.path)));
   }
   async ensureMarkdownPdfForEmail(file, markdown) {
-    const folder = obsidian.normalizePath(EMAIL_DRAFT_ATTACHMENT_FOLDER);
+    const folder = obsidian.normalizePath(defaultFolderPaths().emailDraftAttachmentFolder);
     await ensureVaultFolder(this.host.app, folder);
     const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-纪要PDF.pdf`);
     if (!target) throw new Error(t("Unable to generate a usable PDF path"));

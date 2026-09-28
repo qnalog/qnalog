@@ -1816,7 +1816,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("HTML report save folder"))
       .setDesc(t("Path relative to the current Obsidian vault. Generated HTML reports are saved as files inside the vault for easier archiving, syncing, or manual moving. Changes apply only to new files; existing files are not migrated automatically."))
       .addText(t => t
-        .setPlaceholder("QnALog/HTML报告")
+        .setPlaceholder(DEFAULT_SETTINGS.htmlReportFolder)
         .setValue(this.plugin.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder)
         .onChange(async v => {
           this.plugin.settings.htmlReportFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.htmlReportFolder);
@@ -2305,23 +2305,25 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setHeading();
 
     new obsidian.Setting(c).setName(t("QnALog recordings folder"))
-      .setDesc(t("Relative path within the Obsidian vault. Recording files are saved to QnALog/录音 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
+      .setDesc(t("Relative path within the Obsidian vault. Recording files are saved to {0} by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically.")
+        .replace("{0}", DEFAULT_SETTINGS.audioFolder))
       .addText(t => t
-        .setPlaceholder("QnALog/录音")
+        .setPlaceholder(DEFAULT_SETTINGS.audioFolder)
         .setValue(this.plugin.settings.audioFolder)
         .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("QnALog transcripts folder"))
-      .setDesc(t("Relative path within the Obsidian vault. Transcripts and organized notes are saved to QnALog/转写纪要 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
+      .setDesc(t("Relative path within the Obsidian vault. Transcripts and organized notes are saved to {0} by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically.")
+        .replace("{0}", DEFAULT_SETTINGS.mdFolder))
       .addText(txt => txt
-        .setPlaceholder("QnALog/转写纪要")
+        .setPlaceholder(DEFAULT_SETTINGS.mdFolder)
         .setValue(this.plugin.settings.mdFolder)
         .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("QnALog meeting materials folder"))
       .setDesc(t("Relative path within the Obsidian vault. Supplementary materials such as images, PPT, and PDF added from the recording sidebar are copied here, in a subfolder created for each recording."))
       .addText(txt => txt
-        .setPlaceholder("QnALog/会议资料")
+        .setPlaceholder(DEFAULT_SETTINGS.meetingMaterialsFolder)
         .setValue(this.plugin.settings.meetingMaterialsFolder || DEFAULT_SETTINGS.meetingMaterialsFolder)
         .onChange(async v => {
           this.plugin.settings.meetingMaterialsFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.meetingMaterialsFolder);
@@ -2382,7 +2384,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addText(txt => {
         inboxFolderInput = t;
         txt.setValue(this.plugin.settings.inboxFolder || "")
-          .setPlaceholder("QnALog/录音/inbox 或电脑文件夹")
+          .setPlaceholder(`${DEFAULT_SETTINGS.audioFolder}/inbox ${t("(or a folder on your computer)")}`)
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
             await this.plugin.saveSettings();

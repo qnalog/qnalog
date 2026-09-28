@@ -2,25 +2,147 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import type { PluginSettings } from "./types";
 import { NS_ROOT } from "./namespace";
+import { getActiveUiLanguage } from "./i18n";
 
-export const DEFAULT_LIBRARY_PATHS = {
-  vocabularyFile: `${NS_ROOT}/资料库/词汇表.md`,
-  peopleDirectoryFolder: `${NS_ROOT}/资料库/人员`,
-  peopleBaseFile: `${NS_ROOT}/资料库/视图/人员库.base`,
-  todoCardsFolder: `${NS_ROOT}/资料库/待办`,
-  basesFolder: `${NS_ROOT}/资料库/视图`,
-  diagnosticsLogFolder: `${NS_ROOT}/系统/诊断日志`,
-  archiveFolder: `${NS_ROOT}/资料库/归档`,
-  duplicatePeopleArchiveFolder: `${NS_ROOT}/资料库/归档/重复人员`,
-} as const;
+/**
+ * 默认目录名的分语言写法。目录名会写进用户的知识库，属于数据层。
+ *
+ * 只有中英两套：界面语言是中文就用中文目录，其余语言（含 Obsidian 的其他语言）
+ * 按 i18n 的规则回退英文。新装插件时按当时的语言选一次；用户之后改语言不会搬动
+ * 已建好的目录，落盘的路径也始终优先于默认值（settings-io 的 normalize 用保存值兜底）。
+ *
+ * 这些值一律用取值器（getter）在读取时计算，不写成常量：常量在模块导入那一刻求值，
+ * 而界面语言要到 onload 才确定，用常量会把所有用户的目录冻成同一种语言。
+ * 同一条约定见 tests/i18n-bare-cjk.test.ts「语言在渲染时求值」。
+ */
+export interface DefaultFolderNames {
+  audio: string;
+  notes: string;
+  meetingMaterials: string;
+  htmlReports: string;
+  library: string;
+  glossary: string;
+  people: string;
+  views: string;
+  peopleBase: string;
+  todos: string;
+  archive: string;
+  duplicatePeople: string;
+  system: string;
+  diagnosticsLog: string;
+  emailDrafts: string;
+  emailAttachments: string;
+}
+
+const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
+  zh: {
+    audio: "录音",
+    notes: "转写纪要",
+    meetingMaterials: "会议资料",
+    htmlReports: "HTML报告",
+    library: "资料库",
+    glossary: "词汇表.md",
+    people: "人员",
+    views: "视图",
+    peopleBase: "人员库.base",
+    todos: "待办",
+    archive: "归档",
+    duplicatePeople: "重复人员",
+    system: "系统",
+    diagnosticsLog: "诊断日志",
+    emailDrafts: "邮件草稿",
+    emailAttachments: "附件",
+  },
+  en: {
+    audio: "Recordings",
+    notes: "Transcribed notes",
+    meetingMaterials: "Meeting materials",
+    htmlReports: "HTML reports",
+    library: "Library",
+    glossary: "Glossary.md",
+    people: "People",
+    views: "Views",
+    peopleBase: "People.base",
+    todos: "Todos",
+    archive: "Archive",
+    duplicatePeople: "Duplicate people",
+    system: "System",
+    diagnosticsLog: "Diagnostics log",
+    emailDrafts: "Email drafts",
+    emailAttachments: "Attachments",
+  },
+};
+
+/** 由目录名拼出的默认路径，键名与设置键同名（邮件草稿两个键不属于设置）。 */
+export interface DefaultFolderPaths {
+  audioFolder: string;
+  mdFolder: string;
+  meetingMaterialsFolder: string;
+  htmlReportFolder: string;
+  vocabularyFile: string;
+  peopleDirectoryFolder: string;
+  peopleBaseFile: string;
+  todoCardsFolder: string;
+  basesFolder: string;
+  archiveFolder: string;
+  duplicatePeopleArchiveFolder: string;
+  diagnosticsLogFolder: string;
+  emailDraftFolder: string;
+  emailDraftAttachmentFolder: string;
+}
+
+const FOLDER_PATHS = new Map<string, DefaultFolderPaths>();
+
+/** 当前界面语言的默认目录路径；按语言各算一次，语言切换后取到的是新值。 */
+export function defaultFolderPaths(): DefaultFolderPaths {
+  const langId = getActiveUiLanguage().id === "zh" ? "zh" : "en";
+  const cached = FOLDER_PATHS.get(langId);
+  if (cached) return cached;
+  const n = FOLDER_NAMES[langId];
+  const paths: DefaultFolderPaths = {
+    audioFolder: `${NS_ROOT}/${n.audio}`,
+    mdFolder: `${NS_ROOT}/${n.notes}`,
+    meetingMaterialsFolder: `${NS_ROOT}/${n.meetingMaterials}`,
+    htmlReportFolder: `${NS_ROOT}/${n.htmlReports}`,
+    vocabularyFile: `${NS_ROOT}/${n.library}/${n.glossary}`,
+    peopleDirectoryFolder: `${NS_ROOT}/${n.library}/${n.people}`,
+    peopleBaseFile: `${NS_ROOT}/${n.library}/${n.views}/${n.peopleBase}`,
+    todoCardsFolder: `${NS_ROOT}/${n.library}/${n.todos}`,
+    basesFolder: `${NS_ROOT}/${n.library}/${n.views}`,
+    archiveFolder: `${NS_ROOT}/${n.library}/${n.archive}`,
+    duplicatePeopleArchiveFolder: `${NS_ROOT}/${n.library}/${n.archive}/${n.duplicatePeople}`,
+    diagnosticsLogFolder: `${NS_ROOT}/${n.system}/${n.diagnosticsLog}`,
+    emailDraftFolder: `${NS_ROOT}/${n.emailDrafts}`,
+    emailDraftAttachmentFolder: `${NS_ROOT}/${n.emailDrafts}/${n.emailAttachments}`,
+  };
+  FOLDER_PATHS.set(langId, paths);
+  return paths;
+}
+
+/** 资料库与诊断日志的默认路径；读取时按当前界面语言取值（键集合不变）。 */
+export type DefaultLibraryPathKey =
+  | "vocabularyFile" | "peopleDirectoryFolder" | "peopleBaseFile" | "todoCardsFolder"
+  | "basesFolder" | "diagnosticsLogFolder" | "archiveFolder" | "duplicatePeopleArchiveFolder";
+
+export const DEFAULT_LIBRARY_PATHS: Record<DefaultLibraryPathKey, string> = {
+  get vocabularyFile() { return defaultFolderPaths().vocabularyFile; },
+  get peopleDirectoryFolder() { return defaultFolderPaths().peopleDirectoryFolder; },
+  get peopleBaseFile() { return defaultFolderPaths().peopleBaseFile; },
+  get todoCardsFolder() { return defaultFolderPaths().todoCardsFolder; },
+  get basesFolder() { return defaultFolderPaths().basesFolder; },
+  get diagnosticsLogFolder() { return defaultFolderPaths().diagnosticsLogFolder; },
+  get archiveFolder() { return defaultFolderPaths().archiveFolder; },
+  get duplicatePeopleArchiveFolder() { return defaultFolderPaths().duplicatePeopleArchiveFolder; },
+};
 
 export const DEFAULT_SETTINGS: PluginSettings = {
   // 空串 = 跟随 Obsidian 界面语言（多数用户不会主动改插件语言）
   uiLanguage: "",
-  audioFolder: `${NS_ROOT}/录音`,
-  mdFolder: `${NS_ROOT}/转写纪要`,
-  meetingMaterialsFolder: `${NS_ROOT}/会议资料`,
-  htmlReportFolder: `${NS_ROOT}/HTML报告`,
+  // 目录默认值按界面语言取，读取时求值，原因见文件头注释
+  get audioFolder() { return defaultFolderPaths().audioFolder; },
+  get mdFolder() { return defaultFolderPaths().mdFolder; },
+  get meetingMaterialsFolder() { return defaultFolderPaths().meetingMaterialsFolder; },
+  get htmlReportFolder() { return defaultFolderPaths().htmlReportFolder; },
   reportBrandName: "",  // seminar 报告页脚公司名；留空则用纪要里的「公司/」标签。报告不含 logo。
   noteFileNameFormatNew: "YYYY-MM-DD HHmm",
 
@@ -211,13 +333,13 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   },
 
   customVocabulary: "",
-  vocabularyFile: DEFAULT_LIBRARY_PATHS.vocabularyFile,
-  peopleDirectoryFolder: DEFAULT_LIBRARY_PATHS.peopleDirectoryFolder,
-  peopleBaseFile: DEFAULT_LIBRARY_PATHS.peopleBaseFile,
-  todoCardsFolder: DEFAULT_LIBRARY_PATHS.todoCardsFolder,
+  get vocabularyFile() { return defaultFolderPaths().vocabularyFile; },
+  get peopleDirectoryFolder() { return defaultFolderPaths().peopleDirectoryFolder; },
+  get peopleBaseFile() { return defaultFolderPaths().peopleBaseFile; },
+  get todoCardsFolder() { return defaultFolderPaths().todoCardsFolder; },
   sedimentAutoExtract: false,  // 默认关闭：转写完成不自动沉淀，手动点「沉淀」再扫描（省 token）；开启则转写完成后自动扫描并入库
 
-  basesFolder: DEFAULT_LIBRARY_PATHS.basesFolder,
+  get basesFolder() { return defaultFolderPaths().basesFolder; },
   peopleContextMode: "privacy",
   peopleHotwordsConsentAt: "",
   peopleSuggestionIgnores: [],
@@ -252,7 +374,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 
   maxRetries: 3,
   diagnosticsLogEnabled: true,
-  diagnosticsLogFolder: DEFAULT_LIBRARY_PATHS.diagnosticsLogFolder,
+  get diagnosticsLogFolder() { return defaultFolderPaths().diagnosticsLogFolder; },
 
   showFloatingBall: true,
   bubbleSize: "large",  // 悬浮气泡大小：large / medium / small
