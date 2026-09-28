@@ -27,7 +27,7 @@ import { removeNoteIndex } from "../indexing/note-index";
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import { NS_TAG, NS_ROOT, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
+import { NS_TAG, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
 
 import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
@@ -330,10 +330,6 @@ export function splitImportedTextIntoNormalSegments(sources) {
 export function isTextImportSession(session) {
   return !!(session && session.source === "text-import");
 }
-
-export const EMAIL_DRAFT_FOLDER = `${NS_ROOT}/邮件草稿`;
-
-export const EMAIL_DRAFT_ATTACHMENT_FOLDER = `${EMAIL_DRAFT_FOLDER}/附件`;
 
 export const EMAIL_ATTENDEE_FIELDS = ["参会人", "与会人", "参与者", "出席人", "受访者", "访问者", "面试官", "候选人", "当事人", "相关人员", "人员", "人物"];
 

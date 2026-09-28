@@ -1,5 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifySettingsSchema } from "../src/shared/settings-schema";
+import { UI_LANGUAGES, setActiveUiLanguage } from "../src/shared/i18n";
+
+// 默认目录名跟随界面语言（见 tests/default-folders-language.test.ts），
+// 本文件里断言中文默认值的用例先切到中文，跑完切回英文，避免影响后面的用例。
+const ZH_LANG = UI_LANGUAGES.find(l => l.id === "zh")!;
+const EN_LANG = UI_LANGUAGES.find(l => l.id === "en")!;
+afterEach(() => setActiveUiLanguage(EN_LANG));
 
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+/g, "/"),
@@ -58,7 +65,8 @@ function roundTrip(settings: PluginSettings): PluginSettings {
 }
 
 describe("settings-io round-trip（白名单防丢键兜底）", () => {
-  it("默认资料目录集中在资料库，诊断日志集中在系统目录", () => {
+  it("默认资料目录集中在资料库，诊断日志集中在系统目录（中文界面）", () => {
+    setActiveUiLanguage(ZH_LANG);
     expect(DEFAULT_SETTINGS.vocabularyFile).toBe("QnALog/资料库/词汇表.md");
     expect(DEFAULT_SETTINGS.peopleDirectoryFolder).toBe("QnALog/资料库/人员");
     expect(DEFAULT_SETTINGS.peopleBaseFile).toBe("QnALog/资料库/视图/人员库.base");

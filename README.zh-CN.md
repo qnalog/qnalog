@@ -100,24 +100,24 @@ QnALog 不内置任何 API Key，也**无需注册账号**：语音转写（ASR�
 7. 打开“沉淀”，确认人员、待办和热词。
 8. 需要分享时，使用“导出”。
 
-默认目录如下，均可在设置中修改：
+默认目录如下，均可在设置中修改。目录名在首次安装时按当时的界面语言选定：
 
-| 内容 | 路径 |
-|---|---|
-| 录音 | `QnALog/录音` |
-| 转写纪要 | `QnALog/转写纪要` |
-| 会议资料 | `QnALog/会议资料` |
-| 人员档案 | `QnALog/资料库/人员` |
-| 待办卡片 | `QnALog/资料库/待办` |
-| 视图 | `QnALog/资料库/视图` |
-| 词汇表 | `QnALog/资料库/词汇表.md` |
-| 诊断日志 | `QnALog/系统/诊断日志` |
-| 归档 | `QnALog/资料库/归档` |
-| HTML 报告 | `QnALog/HTML报告` |
-| 邮件草稿 | `QnALog/邮件草稿` |
-| 分段缓存 | `QnALog/.cache/segments` |
+| 内容 | 中文界面 | 英文界面 |
+|---|---|---|
+| 录音 | `QnALog/录音` | `QnALog/Recordings` |
+| 转写纪要 | `QnALog/转写纪要` | `QnALog/Transcribed notes` |
+| 会议资料 | `QnALog/会议资料` | `QnALog/Meeting materials` |
+| 人员档案 | `QnALog/资料库/人员` | `QnALog/Library/People` |
+| 待办卡片 | `QnALog/资料库/待办` | `QnALog/Library/Todos` |
+| 视图 | `QnALog/资料库/视图` | `QnALog/Library/Views` |
+| 词汇表 | `QnALog/资料库/词汇表.md` | `QnALog/Library/Glossary.md` |
+| 诊断日志 | `QnALog/系统/诊断日志` | `QnALog/System/Diagnostics log` |
+| 归档 | `QnALog/资料库/归档` | `QnALog/Library/Archive` |
+| HTML 报告 | `QnALog/HTML报告` | `QnALog/HTML reports` |
+| 邮件草稿 | `QnALog/邮件草稿` | `QnALog/Email drafts` |
+| 分段缓存 | `QnALog/.cache/segments` | `QnALog/.cache/segments` |
 
-> 默认目录使用 `QnALog/` 前缀。它们只是普通路径，随时可以在设置中修改。
+> Obsidian 界面是中文就用「中文界面」列，其他语言用英文列（默认只提供这两套）。之后再改语言不会搬动已建好的目录。默认目录都使用 `QnALog/` 前缀，它们只是普通路径，随时可以在设置中修改。
 
 ## 使用要求
 

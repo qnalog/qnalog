@@ -100,24 +100,24 @@ The sidebar can organize recent notes by folder or by time. Folder groups can be
 7. Open **Sediment** and review people, todos, and hotwords.
 8. If you need to share, use **Export**.
 
-Default folders (all configurable in settings):
+Default folders (all configurable in settings). Names are chosen once at first install, from the interface language:
 
-| Content | Path |
-|---|---|
-| Recordings | `QnALog/录音` |
-| Transcribed notes | `QnALog/转写纪要` |
-| Meeting materials | `QnALog/会议资料` |
-| People | `QnALog/资料库/人员` |
-| Todo cards | `QnALog/资料库/待办` |
-| Views | `QnALog/资料库/视图` |
-| Glossary | `QnALog/资料库/词汇表.md` |
-| Diagnostics log | `QnALog/系统/诊断日志` |
-| Archive | `QnALog/资料库/归档` |
-| HTML reports | `QnALog/HTML报告` |
-| Email drafts | `QnALog/邮件草稿` |
-| Segment cache | `QnALog/.cache/segments` |
+| Content | Chinese interface | English interface |
+|---|---|---|
+| Recordings | `QnALog/录音` | `QnALog/Recordings` |
+| Transcribed notes | `QnALog/转写纪要` | `QnALog/Transcribed notes` |
+| Meeting materials | `QnALog/会议资料` | `QnALog/Meeting materials` |
+| People | `QnALog/资料库/人员` | `QnALog/Library/People` |
+| Todo cards | `QnALog/资料库/待办` | `QnALog/Library/Todos` |
+| Views | `QnALog/资料库/视图` | `QnALog/Library/Views` |
+| Glossary | `QnALog/资料库/词汇表.md` | `QnALog/Library/Glossary.md` |
+| Diagnostics log | `QnALog/系统/诊断日志` | `QnALog/System/Diagnostics log` |
+| Archive | `QnALog/资料库/归档` | `QnALog/Library/Archive` |
+| HTML reports | `QnALog/HTML报告` | `QnALog/HTML reports` |
+| Email drafts | `QnALog/邮件草稿` | `QnALog/Email drafts` |
+| Segment cache | `QnALog/.cache/segments` | `QnALog/.cache/segments` |
 
-> Default folders use the `QnALog/` prefix. They are ordinary paths and can be changed in settings at any time.
+> A Chinese interface gets the left column; every other language gets the right one (only Chinese and English names exist). Changing the language later does not move folders that already exist. Default folders use the `QnALog/` prefix; they are ordinary paths and can be changed in settings at any time.
 
 ## Requirements
 
