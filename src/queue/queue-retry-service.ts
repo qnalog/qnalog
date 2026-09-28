@@ -20,7 +20,7 @@ import { transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { getAudioTimeLink } from "../notes/audio-refs";
-import { extractSessionId, mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
+import { mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -570,19 +570,6 @@ export class QueueRetryService {
       meetingDate: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || "",
       reason: "merge-retry",
     });
-    try {
-      const latestContent = await this.host.app.vault.read(targetFile);
-      const session = {
-        id: task.sessionId || extractSessionId(latestContent, obsidian.normalizePath(targetFile.path).replace(/[^A-Za-z0-9_-]+/g, "-")),
-        mdPath: targetFile.path,
-        mode: task.mode,
-        startedAt: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || new Date().toISOString(),
-        segments: Array.isArray(task.segments) ? task.segments : [],
-      };
-      await this.host.noteIndex.appendDailyMeetingOverview(session, polished);
-    } catch (e) {
-      console.error("[QnALog] daily overview after merge retry failed", e);
-    }
   }
   async runGeneratePromptTask(task) {
     const mode = task.mode;

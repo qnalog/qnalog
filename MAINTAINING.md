@@ -515,7 +515,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 **第二条：提升性功能（按需，不排期）**
 
 - [ ] **设置界面精简（开箱即用方向）**：现状设置页偏复杂，把"必须先配的"和"少数人才调的"混在一起。方向是——默认路径只需填 API Key 即可工作（服务、模型、目录用内置默认值 + 一个推荐配置入口），其余自定义项收进"高级"分区。分期推进。注意：设置项读写受 `settings-io.ts` 白名单约束（新增键必须同时登记 normalize 与 serialize），**搬动 UI 分组不影响存储结构**——简单界面与高级界面读写同一批字段，不引入第二套同步逻辑。
-  - [x] **任务 0：盘点**。已产出 §9 的逐键映射表（87 个键：默认值、落盘位置、读回别名、作用、现入口、拟归属）与 11 条规则冲突登记，并加 `check:settings-map` 门禁防表过期。
+  - [x] **任务 0：盘点**。已产出 §9 的逐键映射表（86 个键：默认值、落盘位置、读回别名、作用、现入口、拟归属）与 11 条规则冲突登记，并加 `check:settings-map` 门禁防表过期。
   - [ ] 目标状态：新用户不必理解"模型 / 协议 / 转写流程"就能录出第一条语音笔记；已有用户升级后配置不变。判据与约束见 §9.5。
   - [x] **任务 1：统一配置与检测逻辑**。预设写入范围收敛为 10 个键（清单在 `PRESET_WRITTEN_FIELDS`）；四份检测合并为 `runPresetDetection` 一处；检测对象改为候选配置且不落盘；状态改为四态。见 §10。
   - [ ] 后续批次（每次一批，不夹带录音流水线重构）：① 按 §9.2 重排页面，首次配置收敛为一条路径（含说话人页拆分、方案应用内联副本）；② 最后处理工作面板。推荐用哪家服务需另行核实（§9.4）。
@@ -761,9 +761,6 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `floatingBallPos` | `{…}` | `ui.floatingControlPosition` | — | 悬浮按钮位置（拖动写入） | 录音（拖动写入） | 内部（保留存储，不进设置界面） |
 | `autoOpenNoteAfterFinish` | `true` | `noteNaming.openAfterFinish` | — | 处理完成后是否自动打开纪要 | 录音 | 高级 · 输出 |
 | `autoOpenHtmlReportAfterGenerate` | `true` | `presentation.openHtmlReportAfterGenerate` | — | 生成 HTML 报告后是否用浏览器打开 | AI 整理 | 高级 · 输出 |
-| `writeDailyMeetingOverview` | `true` | `dailyNote.meetingOverviewEnabled` | — | 是否把会议概要写入当日日记 | 录音 | 高级 · 输出 |
-| `dailyMeetingOverviewHeading` | `DEFAULT_DAILY_MEETING_OVERVIEW_HEADING` | `dailyNote.meetingOverviewHeading` | — | 写入日记的标题 | 录音 | 高级 · 输出 |
-| `dailyMeetingOverviewTemplate` | `DEFAULT_DAILY_MEETING_OVERVIEW_TEMPLATE` | `dailyNote.meetingOverviewTemplate` | — | 写入日记的模板 | 录音 | 高级 · 输出 |
 | `autoCheckUpdates` | `true` | `updates.autoCheck` | — | 启动时是否检查新版本 | 关于 | 高级 · 自动化 |
 | `lastUpdateCheckAt` | `null` | `updates.lastCheckedAt` | — | 上次检查更新时间 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
 | `availableUpdate` | `null` | `updates.available` | — | 已发现的可用更新 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
@@ -809,18 +806,18 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 | 层 | 放什么 | 键数 |
 |---|---|---:|
-| 基本设置 | 当前服务与状态、更换密钥、录音来源、笔记保存位置、默认整理方式 | 11 |
-| 高级设置 | 自定义地址与模型、分阶段服务、提示词、分段与并发、重试、命名、日记、自动导入、诊断 | 56 |
+| 基本设置 | 当前服务与状态、更换密钥、录音来源、笔记保存位置、默认整理方式 | 13 |
+| 高级设置 | 自定义地址与模型、分阶段服务、提示词、分段与并发、重试、命名、自动导入、诊断 | 53 |
 | 帮助与关于 | 配置说明、排障、版本与许可 | 0（全是展示项，无设置键） |
 | 内部（保留存储） | 程序生成或由其它界面/流程写入，不出现在设置界面 | 20 |
 
-「高级」内部按 **服务（11）/ 录音（6）/ 输出（26）/ 自动化（9）/ 诊断与隐私（4）** 五组划分，避免变成长列表。
+「高级」内部按 **服务（11）/ 录音（6）/ 输出（23）/ 自动化（9）/ 诊断与隐私（4）** 五组划分，避免变成长列表。
 
-11 + 56 + 20 = 87，与 §9.1 的键数一致。
+13 + 53 + 20 = 86，与 §9.1 的键数一致。
 
 **录音来源、保存位置、默认整理方式留在基本设置**，不放进高级：这三项直接决定用户录到了什么、
 文件在哪里、生成什么内容，属于第一次使用就要确认的项。其余个性化设置（自定义地址与模型、提示词、
-分段与并发、重试、命名规则、日记集成、自动导入、诊断）进高级。
+分段与并发、重试、命名规则、自动导入、诊断）进高级。
 
 有 20 个键标为「内部」：它们要么由程序写入（`floatingBallPos` 由拖动写、`availableUpdate` 由更新检查写、
 `knowledgeExtractionHistory` 由扫描写、`lastUpdateCheckAt` 等由更新服务写），要么是历史兼容字段
@@ -899,7 +896,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | 写入 | 键 |
 |---|---|
 | 是 | `transcribeProviders`、`activeTranscribeProvider`、`importTranscribeProvider`、`importSpeakerDiarization`、`llmServicePreset`、`llmEndpoint`、`llmModel`、`llmApiKey`、`llmProfiles`、`activeLlmProfile` |
-| 否 | 其余 77 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、日记、自动导入 |
+| 否 | 其余 76 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、自动导入 |
 
 `tests/setup.test.ts` 会拿一份「用户已经改过很多项」的设置逐键核对：清单之外的键必须逐项不变。
 反向验证过——一旦让预设顺手写 `audioFolder`，该用例立刻失败。

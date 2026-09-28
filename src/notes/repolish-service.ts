@@ -217,13 +217,6 @@ export class RepolishService {
         versionCacheError = getTaskErrorMessage(cacheError);
         console.warn("[QnALog] derived note created but version cache update failed", cacheError);
       }
-      try {
-        const dailyFile = derivedFile instanceof obsidian.TFile ? derivedFile : dailyTargetFile;
-        const dailyContent = await this.host.app.vault.read(dailyFile);
-        await this.host.noteIndex.appendDailyMeetingOverviewForMarkdown(dailyFile, dailyContent, polished, mode, segments, sessionMeta);
-      } catch (e) {
-        console.error("[QnALog] daily overview after repolish failed", e);
-      }
       const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
       new obsidian.Notice(`${t("Q&A Log: generated ")}${meta.prefix}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;

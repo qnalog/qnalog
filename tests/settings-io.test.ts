@@ -114,7 +114,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     a.enableRealtimeOutline = false;
     a.diagnosticsLogEnabled = false;
     a.autoCheckUpdates = false;
-    a.writeDailyMeetingOverview = false;
     a.filterShortRecordings = false;
     a.keepSegmentAudioFiles = true;
 
@@ -173,7 +172,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.enableRealtimeOutline).toBe(false);
     expect(b.diagnosticsLogEnabled).toBe(false);
     expect(b.autoCheckUpdates).toBe(false);
-    expect(b.writeDailyMeetingOverview).toBe(false);
     expect(b.filterShortRecordings).toBe(false);
     expect(b.keepSegmentAudioFiles).toBe(true);
 

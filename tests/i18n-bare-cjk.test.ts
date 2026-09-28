@@ -32,7 +32,6 @@ const CONTENT_FILES: Record<string, string> = {
   "src/notes/meeting-workbench.ts": "会中记录界面正文模板",
   "src/notes/ask-panel.ts": "问答写入笔记的引用文本",
   "src/notes/audio-refs.ts": "音频引用写入笔记的标记",
-  "src/notes/daily-overview.ts": "日记概要正文模板（决策 A）",
   "src/indexing/note-index.ts": "笔记标题/结构匹配正则（match）",
   "src/sediment/index.ts": "沉淀词库数据（既定不译的存量兼容项）",
   "src/vocabulary/index.ts": "词库分类数据",

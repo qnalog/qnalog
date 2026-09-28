@@ -116,7 +116,7 @@ function makeHost() {
     requestOutlineRefresh: () => undefined,
     requestOpenOutlineView: async () => undefined,
     outline: { scheduleRealtimeOutline: () => undefined, ensureRealtimeOutlineForFinalNote: async () => undefined },
-    noteIndex: { refreshNoteIndexSafely: async () => undefined, appendDailyMeetingOverview: async () => undefined, autoExtractSedimentAfterFinalize: () => undefined },
+    noteIndex: { refreshNoteIndexSafely: async () => undefined, autoExtractSedimentAfterFinalize: () => undefined },
     saveSettings: async () => undefined,
   };
 

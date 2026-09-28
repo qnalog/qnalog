@@ -996,8 +996,6 @@ export class SessionFinalizeService {
         meetingDate: session.startedAt,
         reason: "finalize",
       });
-      try { await this.host.noteIndex.appendDailyMeetingOverview(writeSession, polished); }
-      catch (e) { console.error("[QnALog] daily overview failed", e); }
     }
 
     if (!mergeError) {
