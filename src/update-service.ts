@@ -137,7 +137,7 @@ export class UpdateService {
     const silent = !!options.silent;
     const rawBases = this.getUpdateRawBases();
     if (!rawBases.length) {
-      if (!silent) this.runtime.notice(t("Q&A Log update sources could not be resolved; please make sure the plugin files are complete."), 8000);
+      if (!silent) this.runtime.notice(t("QnALog update sources could not be resolved; please make sure the plugin files are complete."), 8000);
       return null;
     }
 
@@ -163,7 +163,7 @@ export class UpdateService {
         this.host.settings.availableUpdate = info;
         await this.host.saveSettings();
         this.runtime.notice(
-          t("Q&A Log: found a new version {0} (current {1}). Check the release page link under Settings > Updates, and install from the GitHub Release.")
+          t("QnALog: found a new version {0} (current {1}). Check the release page link under Settings > Updates, and install from the GitHub Release.")
             .replace("{0}", remoteVersion)
             .replace("{1}", currentVersion),
           silent ? 12000 : 8000,
@@ -173,14 +173,14 @@ export class UpdateService {
 
       this.host.settings.availableUpdate = null;
       await this.host.saveSettings();
-      if (!silent) this.runtime.notice(t("Q&A Log is already the latest version ({0}).").replace("{0}", currentVersion));
+      if (!silent) this.runtime.notice(t("QnALog is already the latest version ({0}).").replace("{0}", currentVersion));
       return null;
     } catch (error) {
       const message = errorMessage(error);
       this.host.settings.lastUpdateCheckAt = new Date(this.runtime.now()).toISOString();
       this.host.settings.lastUpdateError = message;
       await this.host.saveSettings();
-      if (!silent) this.runtime.notice(t("Q&A Log update check failed: {0}").replace("{0}", message), 10000);
+      if (!silent) this.runtime.notice(t("QnALog update check failed: {0}").replace("{0}", message), 10000);
       else this.runtime.warn("[QnALog] update check failed", error);
       return null;
     }
@@ -195,7 +195,7 @@ export class UpdateService {
       if (built && declared && built !== declared) {
         this.runtime.warn(`[QnALog] build/manifest 版本错位：main.js=${built} manifest=${declared}`);
         this.runtime.notice(
-          t("Q&A Log version mismatch: the running main.js is {0}, but the manifest declares {1}. Please reinstall this version from the GitHub Release and restart Obsidian.")
+          t("QnALog version mismatch: the running main.js is {0}, but the manifest declares {1}. Please reinstall this version from the GitHub Release and restart Obsidian.")
             .replace("{0}", built)
             .replace("{1}", declared),
           0,

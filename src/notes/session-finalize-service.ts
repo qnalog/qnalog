@@ -1024,7 +1024,7 @@ export class SessionFinalizeService {
         ? t("Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).")
           .replace("{0}", String(session.segments.length))
           .replace("{1}", String(segmentsForFinal.length))
-        : t("Q&A Log processing completed")));
+        : t("QnALog processing completed")));
 
     if (this.host.settings.autoOpenNoteAfterFinish) {
       const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);

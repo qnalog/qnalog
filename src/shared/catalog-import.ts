@@ -7,12 +7,12 @@ export const TEXT_IMPORT_EXT = new Set(["md", "txt"]);
 
 export const IMPORT_TEXT_CATEGORY_CONFIG = {
   "qnalog-normal": {
-    label: "Completed Q&A Log minutes",
+    label: "Completed QnALog minutes",
     shortLabel: "Complete",
     desc: "Already organized by AI; can be merged, re-organized with another template, or converted to another mode.",
   },
   "qnalog-repair": {
-    label: "Unfinished Q&A Log transcripts",
+    label: "Unfinished QnALog transcripts",
     shortLabel: "Needs repair",
     desc: "Contains failed transcriptions, failed organizing, or only raw segments; suitable for re-organizing.",
   },

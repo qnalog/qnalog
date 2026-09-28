@@ -418,8 +418,8 @@ class QnALogPlugin extends obsidian.Plugin {
     // 入口放在编辑器菜单而不是文件菜单：用户看到错词时正在正文里，
     // 让「选中即更正」一步可达，不必开弹窗再手打一遍错词。
     //
-    // 菜单标题用 `QnALog`（标识符写法）而不是书面名 `Q&A Log`：
-    // macOS 原生菜单把 `&` 当快捷键标记。Obsidian 只在 `&` 两侧都是非单词字符时
+    // 菜单标题用产品名 `QnALog`，名称里不要再引入 `&`：旧书面名 `Q&A Log` 的 `&`
+    // 会被 macOS 原生菜单当快捷键标记吃掉。Obsidian 只在 `&` 两侧都是非单词字符时
     // 才转义（正则 /\B&\B/），而 `Q&A` 的 `&` 两侧是 Q 与 A，转义不命中，
     // Electron 便吃掉 `&A`，显示成 `QA Log`。用 DocumentFragment 传标题也无效——
     // 丢失发生在菜单渲染层，不是文本构建层。
@@ -497,7 +497,7 @@ class QnALogPlugin extends obsidian.Plugin {
     }));
 
     if (this.queue.tasks.length > 0) {
-      new obsidian.Notice(`${t("Q&A Log: found ")}${this.queue.tasks.length}${t(" pending tasks; retrying in the background...")}`);
+      new obsidian.Notice(`${t("QnALog: found ")}${this.queue.tasks.length}${t(" pending tasks; retrying in the background...")}`);
       window.setTimeout(() => { void this.queueRetry.retryQueue(); }, 2500);
     }
     this.app.workspace.onLayoutReady(() => {
@@ -558,14 +558,14 @@ class QnALogPlugin extends obsidian.Plugin {
       this.settings = normalizePluginSettings({ settings: migration.settings });
       this.persistedQueue = extractJobItems(saved);
       shouldPersistSchema = true;
-      schemaNotice = t("Q&A Log settings have been upgraded from version {0} to {1}; your service configuration and API keys are preserved.")
+      schemaNotice = t("QnALog settings have been upgraded from version {0} to {1}; your service configuration and API keys are preserved.")
         .replace("{0}", String(readSavedSchemaVersion(saved)))
         .replace("{1}", String(SETTINGS_SCHEMA_VERSION));
     } else if (schemaState === "future") {
       // 高于当前版本：只读回认识的键，但绝不写盘（shouldPersistSchema 保持 false）。
       this.settings = normalizePluginSettings(saved);
       this.persistedQueue = extractJobItems(saved);
-      schemaNotice = t("The settings on disk belong to a newer Q&A Log (version {0}, current {1}). To avoid overwriting fields written by the newer version, this version will not save settings changes. Please update the plugin before changing settings.")
+      schemaNotice = t("The settings on disk belong to a newer QnALog (version {0}, current {1}). To avoid overwriting fields written by the newer version, this version will not save settings changes. Please update the plugin before changing settings.")
         .replace("{0}", String(readSavedSchemaVersion(saved)))
         .replace("{1}", String(SETTINGS_SCHEMA_VERSION));
       console.warn(`[QnALog] 设置结构版本高于当前版本（${readSavedSchemaVersion(saved)} > ${SETTINGS_SCHEMA_VERSION}），本次不写盘`);
@@ -578,10 +578,10 @@ class QnALogPlugin extends obsidian.Plugin {
       if (stored) {
         const backup = await this.backupForeignSettings(saved);
         schemaNotice = backup
-          ? t("Q&A Log could not recognize the settings on disk (not written by version {0} of this plugin); default settings are used instead. The original file was backed up to: {1}")
+          ? t("QnALog could not recognize the settings on disk (not written by version {0} of this plugin); default settings are used instead. The original file was backed up to: {1}")
             .replace("{0}", String(SETTINGS_SCHEMA_VERSION))
             .replace("{1}", backup)
-          : t("Q&A Log could not recognize the settings on disk (not written by the current version of this plugin); default settings are used instead. Please reconfigure the save path and access key under Settings → Q&A Log.");
+          : t("QnALog could not recognize the settings on disk (not written by the current version of this plugin); default settings are used instead. Please reconfigure the save path and access key under Settings → QnALog.");
         console.warn("[QnALog] 设置无法识别来源，已丢弃并改用默认值");
       }
     }

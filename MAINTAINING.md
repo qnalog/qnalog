@@ -1,14 +1,14 @@
 # 维护说明
 
-本文件说明 Q&A Log 的维护主线、许可边界、项目身份与发版流程。**改动本仓库前先读第 1、2 节。**
+本文件说明 QnALog 的维护主线、许可边界、项目身份与发版流程。**改动本仓库前先读第 1、2 节。**
 
-> English summary: Q&A Log is MIT-licensed software derived from LexVoice's last MIT-licensed release (2.1.2). LexVoice 2.2.0+ is proprietary; its terms do not reach this repository. Never copy code, text, or assets out of a 2.2.0+ build — implement equivalent functionality independently. Keep the plugin id `qnalog` and keep every update source pointing at this repository.
+> English summary: QnALog is MIT-licensed software derived from LexVoice's last MIT-licensed release (2.1.2). LexVoice 2.2.0+ is proprietary; its terms do not reach this repository. Never copy code, text, or assets out of a 2.2.0+ build — implement equivalent functionality independently. Keep the plugin id `qnalog` and keep every update source pointing at this repository.
 
 ---
 
 ## 1. 维护主线
 
-Q&A Log 是面向 Obsidian 的开源对话智能插件：录音、转写，并把对话整理成结构化 Markdown 知识。三条主线按优先级排列：
+QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把对话整理成结构化 Markdown 知识。三条主线按优先级排列：
 
 ### 1.1 第一条：把原有功能维护好（稳定与安全第一）
 
@@ -88,7 +88,7 @@ P2（视图层）在以上约定之外另有三条：
 |---|---|---|
 | P1 | 拆 `QnALogPlugin`：定窄接口，按域搬成员与状态 | ✅ 已完成：`main.ts` 只剩装配、生命周期与宿主面（513 行） |
 | P2 | 拆 `OutlineView`（211 个方法 / 6,468 行）：界面与业务分层 | 已完成的部分：语义 Canvas 抽成独立域服务，该文件退出 `@ts-nocheck`。**维护者决定不再继续**（理由与重启条件见 §6） |
-| P3 | 命名空间重置：内部标识符与 CSS 类名、数据层字面量、视图类型统一为 Q&A Log | ✅ 已完成（见 §1.1.2）：两次改动均已落地 |
+| P3 | 命名空间重置：内部标识符与 CSS 类名、数据层字面量、视图类型统一为 QnALog | ✅ 已完成（见 §1.1.2）：两次改动均已落地 |
 | P4 | `src/ui/modals.ts` 按域拆包 | 可选，不影响维护 |
 
 #### 1.1.2 命名空间重置（P3，已完成）
@@ -105,7 +105,7 @@ P2（视图层）在以上约定之外另有三条：
 
 第二次的做法（只认一个命名空间）：
 
-- **写入与读取都只用 Q&A Log 字面量。** 字面量集中在 `src/shared/namespace.ts`，
+- **写入与读取都只用 QnALog 字面量。** 字面量集中在 `src/shared/namespace.ts`，
   读侧用 `nsRe()` 生成模式，不要在业务代码里硬编码品牌前缀。
 - `SETTINGS_SCHEMA_VERSION` 重置为 `1`（1.0.0 发布时的 clean break）。
 - 不提供笔记数据迁移命令：既有笔记里的旧命名空间标记不再被识别，也不改写。
@@ -117,7 +117,7 @@ P2（视图层）在以上约定之外另有三条：
 
 **第二次不做的事**：不自动改写知识库里 `LexVoice/` 这个目录名（那是用户自己的文件），
 也不在加载时扫描或改写任何笔记。插件只按默认值创建 `QnALog/…`。
-`install-to-vault.mjs` 不再从 `lexvoice` / `lexvoice-mit` 继承设置，只处理"已有 Q&A Log → 留档 → 装新 Q&A Log"。
+`install-to-vault.mjs` 不再从 `lexvoice` / `lexvoice-mit` 继承设置，只处理"已有 QnALog → 留档 → 装新 QnALog"。
 许可来源（`LICENSE`、`NOTICE`、README 的 Origin、产物 banner）不参与改名。
 
 **密钥混淆盐**（`qnk1:` + `QnALog/local-key-obfuscation/v1`）只认本插件自己的 marker：
@@ -220,7 +220,7 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 更新检查 | `src/update-source.ts` 常量指向 `qnalog/qnalog@main` | 不得指向上游。改动后必须同步 `tests/` 中的 URL 期望值。 |
 | 自更新 | **已移除** | 开发者政策 "Not allowed" 明列 *"Install or update themselves or their dependencies"*。本插件只检查版本并提示，安装交给 Obsidian 或 BRAT。**不得恢复写入自身文件的能力。** |
 | 社区目录 | 上游 `lexvoice` 条目仍在 | 不可控。它只能被用户主动安装，不会替换本插件；README 已说明两者并存时的处理。 |
-| 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`Q&A Log`**（含 `manifest.json` 的 `name`）。程序性与数据层保持 `qnalog` / `QnALog`（见下两行）——三层不得混用。 |
+| 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`QnALog`**（含 `manifest.json` 的 `name`）。2026-09-28 起弃用旧书面名 `Q&A Log`：Obsidian 插件命名规范只允许基本拉丁字母与连字符、加号、括号，`&` 不在允许列表；macOS 原生菜单还会把 `&` 当快捷键标记吃掉。**名称里不得再出现 `&`。** 版权署名 `Q&A Log Team` 与提交身份显示名 `Q&A Log` 属于署名，不随产品名改。程序性标识仍是小写 `qnalog` 与 `QNALOG_*`（见下两行）。 |
 | 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 2026-09-14 已统一为 `qnalog`：这些字符串只存在于代码里，不写用户文件。**新代码不得再引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量。** |
 | 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、frontmatter 键 `qnalog_speakers`、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 已重置为 QnALog 命名空间，**读写都只认新值**（见 §1.1.2）；字面量集中在 `src/shared/namespace.ts`，**新代码不得再引入 `lexvoice-*` 字面量**。 |
 
@@ -519,7 +519,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
   - [ ] 目标状态：新用户不必理解"模型 / 协议 / 转写流程"就能录出第一条语音笔记；已有用户升级后配置不变。判据与约束见 §9.5。
   - [x] **任务 1：统一配置与检测逻辑**。预设写入范围收敛为 10 个键（清单在 `PRESET_WRITTEN_FIELDS`）；四份检测合并为 `runPresetDetection` 一处；检测对象改为候选配置且不落盘；状态改为四态。见 §10。
   - [ ] 后续批次（每次一批，不夹带录音流水线重构）：① 按 §9.2 重排页面，首次配置收敛为一条路径（含说话人页拆分、方案应用内联副本）；② 最后处理工作面板。推荐用哪家服务需另行核实（§9.4）。
-- [x] **数据层命名的独立化**：已完成（2026-09-15，见 §1.1.2）。Q&A Log 按全新项目处理，不支持从历史项目迁移数据，代码里不再保留迁移逻辑；混淆盐已换新，已存 API Key 需重填。
+- [x] **数据层命名的独立化**：已完成（2026-09-15，见 §1.1.2）。QnALog 按全新项目处理，不支持从历史项目迁移数据，代码里不再保留迁移逻辑；混淆盐已换新，已存 API Key 需重填。
 - [ ] 为自定义说话人分离服务（如 `siliconflow-diarize`）补预设条目（名称/提示/步骤文案）。纯展示性——能力已具备（`speaker-diarization` 协议），不做也能用。
 - [ ] 设置页把未知服务显示为"其他转写服务"。
 
@@ -543,7 +543,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 
 
-**Q&A Log 只做四件事：开箱即用的配置、录音、可靠的转写、知识的沉淀与复用。** 围绕核心链路扩展出来的
+**QnALog 只做四件事：开箱即用的配置、录音、可靠的转写、知识的沉淀与复用。** 围绕核心链路扩展出来的
 垂直场景不与核心目标竞争，占用的却是同一份维护成本（每个场景都要跟着提示词、设置页、视图与测试一起改）。
 
 2026-09-14 裁掉 HR 场景，即以下三个模式及其专属设施：
@@ -595,7 +595,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 - **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
   用户已有的招聘/晋升笔记会留在原处，只是不再有对应入口；`data.json` 里残留的 `recruiting` /
   `promotionReview` 分组不再被读取。这类残留分组随版本不一致的设置一起被丢弃，不再单独报告。
-- **统一使用 Q&A Log 命名空间**（标签、标记、frontmatter 键、视图类型）：命名空间已于 2026-09-15 重置，
+- **统一使用 QnALog 命名空间**（标签、标记、frontmatter 键、视图类型）：命名空间已于 2026-09-15 重置，
   读写都只认新值（见 §1.1.2）。插件不扫描、不改写用户的既有笔记。
 - **读旧笔记必须安全降级。** 旧笔记的 frontmatter 里可能仍是 `mode: recruit`，未知 mode 一律按
   「识别不出模式」处理，不得抛错、不得让面板或流水线崩掉（`isKnownPolishMode`、`detectRecentNoteMode`

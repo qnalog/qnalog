@@ -139,7 +139,7 @@ export class PeopleDirectoryService {
     delete fm.aliases;
     const title = duplicateFile instanceof obsidian.TFile ? duplicateFile.basename : "已合并人员";
     const target = makeFileWikiLink(primaryFile);
-    return upsertFrontmatterInMarkdown(`# ${title}\n\n此人员档案已合并到 ${target}。\n\n保留此归档页用于回溯，Q&A Log 不再把它作为人员资料读取。\n`, fm);
+    return upsertFrontmatterInMarkdown(`# ${title}\n\n此人员档案已合并到 ${target}。\n\n保留此归档页用于回溯，QnALog 不再把它作为人员资料读取。\n`, fm);
   }
 
   replacePeopleWikiLinksInText(text, replacements) {
@@ -357,7 +357,7 @@ export class PeopleDirectoryService {
       new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return;
     }
-    new obsidian.Notice(`${t("Q&A Log: scanning ")}${batch.length}${t(" minutes notes to extract people from...")}`);
+    new obsidian.Notice(`${t("QnALog: scanning ")}${batch.length}${t(" minutes notes to extract people from...")}`);
     try {
       let cachedCount = 0;
       let processed = 0;

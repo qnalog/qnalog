@@ -71,7 +71,7 @@ export function decorateLlmHttpDetail(status, detail, endpoint) {
   } else if (code === 413) {
     hint = t("This request's context may exceed the target Poe bot's limit; shorten the input or switch to a bot with a longer context.");
   } else if (code === 429 || code === 503 || code === 529) {
-    hint = t("Poe is rate-limiting or busy right now; Q&A Log will back off per the server's Retry-After and retry once.");
+    hint = t("Poe is rate-limiting or busy right now; QnALog will back off per the server's Retry-After and retry once.");
   }
   if (!hint) return base;
   return base ? t("{0}. {1}").replace("{0}", base).replace("{1}", hint) : hint;
@@ -541,7 +541,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
 export async function testLlmConnection(plugin) {
   const data = await requestLlmChatCompletion(plugin, [
     { role: "system", content: "You are a connectivity test endpoint. Reply with OK only." },
-    { role: "user", content: "Q&A Log connection test. Reply OK." },
+    { role: "user", content: "QnALog connection test. Reply OK." },
   ], {});
   return {
     endpoint: normalizeLlmEndpoint(plugin.settings.llmEndpoint),

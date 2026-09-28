@@ -175,10 +175,10 @@ export class DiagnosticsService {
     const outlineInput = activeSession && activeSession.realtimeOutlineInput || createEmptyRealtimeOutlineInputStats();
     const mib = (bytes) => (Math.max(0, Number(bytes) || 0) / (1024 * 1024)).toFixed(1);
     return [
-      "# Q&A Log 诊断报告",
+      "# QnALog 诊断报告",
       "",
       "## 环境",
-      `- Q&A Log: ${this.host.getDisplayVersion()}${this.host.buildInfo && this.host.buildInfo.channel === "dev" ? `（${this.host.getBuildSourceLabel()}）` : ""}`,
+      `- QnALog: ${this.host.getDisplayVersion()}${this.host.buildInfo && this.host.buildInfo.channel === "dev" ? `（${this.host.getBuildSourceLabel()}）` : ""}`,
       `- Obsidian API: ${obsidian.apiVersion || "unknown"}`,
       `- 平台: ${redactDiagnosticText(obsidian.Platform.isMacOS ? "macOS" : obsidian.Platform.isWin ? "Windows" : obsidian.Platform.isLinux ? "Linux" : obsidian.Platform.isIosApp ? "iOS" : obsidian.Platform.isAndroidApp ? "Android" : "unknown")}`,
       "",
@@ -219,7 +219,7 @@ export class DiagnosticsService {
     const report = await this.buildDiagnosticReport();
     try {
       await navigator.clipboard.writeText(report);
-      new obsidian.Notice(t("Q&A Log diagnostic report copied; you can send it to the developer for troubleshooting."), 6000);
+      new obsidian.Notice(t("QnALog diagnostic report copied; you can send it to the developer for troubleshooting."), 6000);
     } catch (e) {
       await this.logDiagnostic("error", "diagnostics.copy_failed", t("Failed to copy the diagnostic report"), { error: diagnosticError(e) });
       new obsidian.Notice(`${t("Failed to copy the diagnostic report: ")}${(e && e.message) || e}`, 8000);

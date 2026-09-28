@@ -38,7 +38,7 @@ export class AudioTimeLinkService {
       const linkPath = link.getAttribute("data-href") || link.getAttribute("href") || "";
       if (!isTimeLabel(label) || !getAudioExtFromLinkPath(linkPath)) continue;
       link.classList.add("qnalog-time-link");
-      link.setAttribute("aria-label", t("Q&A Log listen back {0}").replace("{0}", label));
+      link.setAttribute("aria-label", t("QnALog listen back {0}").replace("{0}", label));
       // 锚元素上挂自定义处理器，用于重复调用时先解绑上一次（避免叠加多个 click）。
       const anyLink = link;
       if (anyLink.__qnalogTimeHandler) {
@@ -50,7 +50,7 @@ export class AudioTimeLinkService {
         if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
         this.openAudioTimeLink(linkPath, label, ctx && ctx.sourcePath, ctx).catch((e) => {
           console.error("[QnALog] open audio time link failed", e);
-          new obsidian.Notice(`${t("Q&A Log review failed: ")}${(e && e.message) || e}`);
+          new obsidian.Notice(`${t("QnALog review failed: ")}${(e && e.message) || e}`);
         });
       };
       anyLink.__qnalogTimeHandler = handler;
@@ -122,7 +122,7 @@ export class AudioTimeLinkService {
         }
       }
       if (this.seekOutlineInlineAudio(fallbackPayload)) return;
-      new obsidian.Notice(t("Q&A Log: the corresponding audio file was not found; it may have been moved or deleted."), 6000);
+      new obsidian.Notice(t("QnALog: the corresponding audio file was not found; it may have been moved or deleted."), 6000);
       return;
     }
     if (opts && typeof opts.onTimeLink === "function") {

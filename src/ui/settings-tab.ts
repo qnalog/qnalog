@@ -84,7 +84,7 @@ function renderChannelProbeRows(container, rows) {
 }
 
 export const LV_SETTINGS_TABS = [
-  { id: "home",     label: "Q&A Log" },
+  { id: "home",     label: "QnALog" },
   { id: "recording", label: "Recording" },
   { id: "api",      label: "API" },
   { id: "ai",       label: "AI Briefing" },
@@ -241,7 +241,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     box.createEl("summary", { cls: "qnalog-risk-title", text: t("AI has not read this note yet") });
     box.createDiv({
       cls: "qnalog-risk-body",
-      text: t("Q&A Log has no cloud storage of its own and does not upload recordings to a Q&A Log server; recordings are saved in the local Obsidian vault path you choose. During transcription and AI organizing, the audio, transcript text, and prompts are sent to the currently configured cloud API or local model. For sensitive content, use local transcription and a local LLM, and avoid processing confidential, private, customer, medical, legal, or HR information through a cloud API."),
+      text: t("QnALog has no cloud storage of its own and does not upload recordings to a QnALog server; recordings are saved in the local Obsidian vault path you choose. During transcription and AI organizing, the audio, transcript text, and prompts are sent to the currently configured cloud API or local model. For sensitive content, use local transcription and a local LLM, and avoid processing confidential, private, customer, medical, legal, or HR information through a cloud API."),
     });
   }
 
@@ -340,7 +340,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const head = page.createDiv({ cls: "qnalog-home-head" });
     const titleLine = head.createDiv({ cls: "qnalog-home-title-line" });
-    titleLine.createEl("h2", { text: "Q&A Log" });
+    titleLine.createEl("h2", { text: "QnALog" });
     const versionEl = titleLine.createDiv({ cls: "qnalog-home-version", text: this.plugin.getDisplayVersion() });
     const buildSource = this.plugin.getBuildSourceLabel();
     if (buildSource) {
@@ -547,7 +547,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
 
     const footer = page.createDiv({ cls: "qnalog-home-footnote" });
-    footer.setText(t("Costs: the Q&A Log plugin itself is free. Cloud transcription and LLM services bill per usage on their own platforms; local models incur no platform fees but you install, run, and maintain them yourself."));
+    footer.setText(t("Costs: the QnALog plugin itself is free. Cloud transcription and LLM services bill per usage on their own platforms; local models incur no platform fees but you install, run, and maintain them yourself."));
   }
 
   /**
@@ -1378,7 +1378,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         ["tr", t("Turkish (Türkçe)")],
       ];
       new obsidian.Setting(c).setName(t("Target Language (translation output)"))
-        .setDesc(t("Choose which language Q&A Log translates speech into. The speaker's language is detected automatically."))
+        .setDesc(t("Choose which language QnALog translates speech into. The speaker's language is detected automatically."))
         .addDropdown(d => {
           for (const [code, label] of targetLanguages) d.addOption(code, label);
           d.setValue(provider.targetLanguage || "zh")
@@ -1440,7 +1440,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     const llmEndpointHelp = activeLlmPreset && activeLlmPreset.endpointHelp
       ? t(activeLlmPreset.endpointHelp)
-      : t("Enter the LLM service endpoint (the \"OpenAI-compatible / Chat Completions\" URL). You can enter it up to /v1 or the root address and Q&A Log will complete it automatically; you can also enter the full /v1/chat/completions.");
+      : t("Enter the LLM service endpoint (the \"OpenAI-compatible / Chat Completions\" URL). You can enter it up to /v1 or the root address and QnALog will complete it automatically; you can also enter the full /v1/chat/completions.");
     const llmKeyHelp = activeLlmPreset && activeLlmPreset.keyHelp
       ? t(activeLlmPreset.keyHelp)
       : t("Enter the API Key provided by the provider or relay service. Can be left empty for local localhost LLM services.");
@@ -1995,7 +1995,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Person deduplication"))
       .setDesc(t("Merge duplicate records by name, update note references, and archive duplicate pages with -1 / -2 suffixes."))
       .addButton(b => b.setButtonText(t("Merge duplicate people")).onClick(async () => {
-        const ok = await qnalogConfirm(this.app, t("Merge duplicate person profiles?"), t("Q&A Log merges person pages with the same name into the main profile, rewrites all wiki links pointing to the duplicate pages, and moves the duplicates to the archive folder. Make sure syncing has finished first."), t("Start merging"));
+        const ok = await qnalogConfirm(this.app, t("Merge duplicate person profiles?"), t("QnALog merges person pages with the same name into the main profile, rewrites all wiki links pointing to the duplicate pages, and moves the duplicates to the archive folder. Make sure syncing has finished first."), t("Start merging"));
         if (!ok) return;
         try {
           const result = await this.plugin.people.mergeDuplicatePeopleDirectory();
@@ -2060,7 +2060,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         setting.setDesc(t("Currently {0} to-do cards. To-do cards are good for tracking action items across meetings and projects.").replace("{0}", String(count)));
       });
 
-    createPathSetting(advancedBody, t("Views folder"), t("Save the resource overview and Base views generated by Q&A Log."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
+    createPathSetting(advancedBody, t("Views folder"), t("Save the resource overview and Base views generated by QnALog."), this.plugin.settings.basesFolder || DEFAULT_SETTINGS.basesFolder, DEFAULT_SETTINGS.basesFolder,
       async v => { this.plugin.settings.basesFolder = v || DEFAULT_SETTINGS.basesFolder; });
 
     const vocabScanCount = countKnowledgeExtractionHistory(this.plugin.settings, "vocabulary");
@@ -2304,21 +2304,21 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Set where new recordings, notes, and meeting materials are saved, and the file name format for new notes."))
       .setHeading();
 
-    new obsidian.Setting(c).setName(t("Q&A Log recordings folder"))
+    new obsidian.Setting(c).setName(t("QnALog recordings folder"))
       .setDesc(t("Relative path within the Obsidian vault. Recording files are saved to QnALog/录音 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
       .addText(t => t
         .setPlaceholder("QnALog/录音")
         .setValue(this.plugin.settings.audioFolder)
         .onChange(async v => { this.plugin.settings.audioFolder = v.trim() || DEFAULT_SETTINGS.audioFolder; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName(t("Q&A Log transcripts folder"))
+    new obsidian.Setting(c).setName(t("QnALog transcripts folder"))
       .setDesc(t("Relative path within the Obsidian vault. Transcripts and organized notes are saved to QnALog/转写纪要 by default; change it to another location as needed. Changes only affect new files; existing files are not migrated automatically."))
       .addText(txt => txt
         .setPlaceholder("QnALog/转写纪要")
         .setValue(this.plugin.settings.mdFolder)
         .onChange(async v => { this.plugin.settings.mdFolder = v.trim() || DEFAULT_SETTINGS.mdFolder; await this.plugin.saveSettings(); }));
 
-    new obsidian.Setting(c).setName(t("Q&A Log meeting materials folder"))
+    new obsidian.Setting(c).setName(t("QnALog meeting materials folder"))
       .setDesc(t("Relative path within the Obsidian vault. Supplementary materials such as images, PPT, and PDF added from the recording sidebar are copied here, in a subfolder created for each recording."))
       .addText(txt => txt
         .setPlaceholder("QnALog/会议资料")
@@ -2430,7 +2430,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText(t("Scan")).onClick(() => this.plugin.inbox.scanInboxFolder()));
 
     new obsidian.Setting(c).setName(t("Clean up blank short recordings"))
-      .setDesc(t("Scan the transcripts folder and move Q&A Log entries that are 10 seconds or shorter and have no valid transcript text to the system trash, handling the recording files they reference at the same time. Accidental deletions can be restored from the system trash."))
+      .setDesc(t("Scan the transcripts folder and move QnALog entries that are 10 seconds or shorter and have no valid transcript text to the system trash, handling the recording files they reference at the same time. Accidental deletions can be restored from the system trash."))
       .addButton(b => b.setButtonText(t("Scan and clean")).onClick(() => this.plugin.cleanup.cleanupEmptyShortRecordings()));
 
     new obsidian.Setting(c)
@@ -2569,7 +2569,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
 
     new obsidian.Setting(c).setName(t("Copyright & License"))
-      .setDesc(t("Q&A Log is maintained by Q&A Log Team and released as open source under the MIT License. See NOTICE and LICENSE in the repository for its code provenance and license details. Third-party APIs, models, and virtual audio device tools are configured and paid for by users themselves; this plugin operates no cloud storage and never uploads recordings to any server of its own."));
+      .setDesc(t("QnALog is maintained by Q&A Log Team and released as open source under the MIT License. See NOTICE and LICENSE in the repository for its code provenance and license details. Third-party APIs, models, and virtual audio device tools are configured and paid for by users themselves; this plugin operates no cloud storage and never uploads recordings to any server of its own."));
   }
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

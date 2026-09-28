@@ -1,6 +1,6 @@
 # Contributing
 
-Q&A Log is an MIT-licensed Obsidian plugin: it records conversations and turns them into structured Markdown notes. Source lineage with the upstream project and the license boundary are recorded in `NOTICE` and `MAINTAINING.md`.
+QnALog is an MIT-licensed Obsidian plugin: it records conversations and turns them into structured Markdown notes. Source lineage with the upstream project and the license boundary are recorded in `NOTICE` and `MAINTAINING.md`.
 
 ## Read first
 

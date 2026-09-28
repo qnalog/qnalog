@@ -49,11 +49,11 @@ export function injectHtmlReportExportScript(html) {
   const button = document.getElementById("qnalog-save-report-image");
   const status = document.getElementById("qnalog-export-status");
   const setStatus = (text) => { if (status) status.textContent = text || ""; };
-  const safeName = (document.title || "Q&A Log-HTML报告")
+  const safeName = (document.title || "QnALog-HTML报告")
     .replace(/[\\\\/:*?"<>|]+/g, "-")
     .replace(/\\s+/g, " ")
     .trim()
-    .slice(0, 80) || "Q&A Log-HTML报告";
+    .slice(0, 80) || "QnALog-HTML报告";
   const downloadBlob = (blob, name) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -165,12 +165,12 @@ export function extractMarkdownForHtmlReport(markdown) {
 }
 
 export function sanitizeReportFileStem(name) {
-  const stem = String(name || "Q&A Log-HTML报告")
+  const stem = String(name || "QnALog-HTML报告")
     .replace(/\.md$/i, "")
     .replace(/[\\/:*?"<>|#^[\]]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return stem || "Q&A Log-HTML报告";
+  return stem || "QnALog-HTML报告";
 }
 
 export function normalizeReportArray(value, limit) {
@@ -190,9 +190,9 @@ export function normalizeReportObjects(value, fields, limit) {
 
 export function normalizeHtmlReportModel(raw, fileName, source) {
   const data = isRecord(raw) ? raw : {};
-  const fallbackTitle = sanitizeReportFileStem(fileName || "Q&A Log HTML 报告");
+  const fallbackTitle = sanitizeReportFileStem(fileName || "QnALog HTML 报告");
   const title = primitiveText(data.title || fallbackTitle).trim() || fallbackTitle;
-  const subtitle = primitiveText(data.subtitle || "由 Q&A Log 根据会议纪要生成").trim();
+  const subtitle = primitiveText(data.subtitle || "由 QnALog 根据会议纪要生成").trim();
   const theme = primitiveText(data.theme || data.topic || "").trim();
   const audience = primitiveText(data.audience || "").trim();
   const editorialNote = primitiveText(data.editorialNote || data.reportAngle || "").trim();
@@ -428,7 +428,7 @@ export function renderHtmlReport(model) {
 }
 
 export function buildHtmlReportPrompt(fileName, markdown) {
-  return `请把下面这份 Q&A Log 会议纪要，重构成一份适合生成 HTML 长图/报告的结构化内容。
+  return `请把下面这份 QnALog 会议纪要，重构成一份适合生成 HTML 长图/报告的结构化内容。
 
 文件名：${fileName}
 
