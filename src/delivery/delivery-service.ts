@@ -59,7 +59,7 @@ export class DeliveryService {
       accentHex = await pickReportAccentColor(this.host.app);
       if (accentHex === null) return null;  // 用户取消
     }
-    new obsidian.Notice(t("Q&A Log: generating report..."));
+    new obsidian.Notice(t("QnALog: generating report..."));
     const markdown = await this.host.app.vault.read(file);
     let html = styled
       ? await generateStyledReportFromMarkdown(this.host, mode, markdown)
@@ -76,7 +76,7 @@ export class DeliveryService {
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-HTML报告.html`);
       if (!target) throw new Error(t("Unable to generate a usable HTML report path"));
       const outFile = await this.host.app.vault.create(target, r.html);
-      new obsidian.Notice(`${t("Q&A Log: generated HTML report: ")}${target}`, 8000);
+      new obsidian.Notice(`${t("QnALog: generated HTML report: ")}${target}`, 8000);
       if (this.host.settings.autoOpenHtmlReportAfterGenerate !== false) {
         this.openVaultFileInSystem(outFile.path);
       }
@@ -89,7 +89,7 @@ export class DeliveryService {
     try {
       const r = await this.produceReportHtmlForFile(file);
       if (!r) return;
-      new obsidian.Notice(t("Q&A Log: rendering full-page PDF..."));
+      new obsidian.Notice(t("QnALog: rendering full-page PDF..."));
       const folder = obsidian.normalizePath(this.host.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder);
       await ensureVaultFolder(this.host.app, folder);
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-报告.pdf`);
@@ -98,7 +98,7 @@ export class DeliveryService {
       const bytes = pdfBuffer instanceof Uint8Array ? pdfBuffer : new Uint8Array(pdfBuffer || []);
       const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
       const outFile = await this.host.app.vault.createBinary(target, arrayBuffer);
-      new obsidian.Notice(`${t("Q&A Log: generated PDF report: ")}${target}`, 8000);
+      new obsidian.Notice(`${t("QnALog: generated PDF report: ")}${target}`, 8000);
       if (this.host.settings.autoOpenHtmlReportAfterGenerate !== false) {
         this.openVaultFileInSystem(outFile.path);
       }
@@ -192,7 +192,7 @@ export class DeliveryService {
       renderComponent.unload();
     }
     if (!contentHtml) contentHtml = `<pre>${escapeHtmlText(markdown)}</pre>`;
-    const title = escapeHtmlText(file && file.basename || "Q&A Log 会议纪要");
+    const title = escapeHtmlText(file && file.basename || "QnALog 会议纪要");
     return `<!doctype html>
 <html>
 <head>
@@ -216,7 +216,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
   async createEmailDraftForMarkdownFile(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
     try {
-      new obsidian.Notice(t("Q&A Log: generating email draft..."));
+      new obsidian.Notice(t("QnALog: generating email draft..."));
       const markdown = await this.host.app.vault.read(file);
       const { recipients, attendeeNames } = await this.resolveEmailRecipientsForMarkdownFile(file);
       const attachmentFiles = [file];
@@ -257,10 +257,10 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       const recipientCount = recipients.length;
       const attachmentCount = attachments.length;
       const draftHint = recipientCount
-        ? t("Q&A Log: generated email draft, {0} recipients added, attachments {1}.")
+        ? t("QnALog: generated email draft, {0} recipients added, attachments {1}.")
           .replace("{0}", String(recipientCount))
           .replace("{1}", String(attachmentCount))
-        : t("Q&A Log: generated email draft, no email matched, attachments {0}.")
+        : t("QnALog: generated email draft, no email matched, attachments {0}.")
           .replace("{0}", String(attachmentCount));
       new obsidian.Notice(`${draftHint}${opened ? "" : t("You can open it in the email drafts folder.")}`, 10000);
     } catch (e) {

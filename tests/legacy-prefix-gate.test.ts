@@ -26,7 +26,7 @@ describe("旧前缀静态门禁", () => {
     const clean = {
       "src/a.ts": 'const n = `qnalog-${stamp}.webm`; el.classList.add("qnalog-ms-active");',
       "styles.css": ".x { --qnalog-sidebar-surface: var(--background-secondary); }",
-      "README.md": "Q&A Log is derived from LexVoice — see NOTICE.",
+      "README.md": "QnALog is derived from LexVoice — see NOTICE.",
       "src/b.ts": 'const word = "flex-wrap"; const other = "shelve";',
     };
     expect(checkLegacyPrefixes(clean)).toEqual([]);

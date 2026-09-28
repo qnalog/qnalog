@@ -1,4 +1,4 @@
-# Q&A Log
+# QnALog
 
 English | [简体中文](README.zh-CN.md)
 
@@ -11,22 +11,22 @@ English | [简体中文](README.zh-CN.md)
 
 Open-source conversation intelligence for Obsidian: record, transcribe, and organize meetings, interviews, talks, and voice notes into Markdown you can reuse.
 
-Q&A Log connects to no cloud service of its own and ships **no API keys**: you configure your own speech-to-text (ASR) service and, optionally, your own large language model (LLM). Recordings and generated notes stay in your vault.
+QnALog connects to no cloud service of its own and ships **no API keys**: you configure your own speech-to-text (ASR) service and, optionally, your own large language model (LLM). Recordings and generated notes stay in your vault.
 
 Supports desktop and mobile Obsidian. Mobile recording uses the device microphone. System audio, virtual audio devices, multichannel capture, desktop device diagnostics, and realtime streaming ASR providers that need custom authentication headers require the desktop app.
 
 ## Origin
 
-Q&A Log is derived from [LexVoice](https://github.com/Lynn-x/LexVoice) by Lynnx, based on its last MIT-licensed release (2.1.2). Upstream relicensed to a proprietary license from 2.2.0 onward; this project is an independent continuation of the MIT-licensed code, not of that release line. See [`NOTICE`](NOTICE) and [`MAINTAINING.md`](MAINTAINING.md).
+QnALog is derived from [LexVoice](https://github.com/Lynn-x/LexVoice) by Lynnx, based on its last MIT-licensed release (2.1.2). Upstream relicensed to a proprietary license from 2.2.0 onward; this project is an independent continuation of the MIT-licensed code, not of that release line. See [`NOTICE`](NOTICE) and [`MAINTAINING.md`](MAINTAINING.md).
 
 ## Relationship to LexVoice
 
-Q&A Log is a separate project, not a newer version of LexVoice. It started from LexVoice's last MIT-licensed release and has since been reworked into a plugin with its own name, data namespace, and settings.
+QnALog is a separate project, not a newer version of LexVoice. It started from LexVoice's last MIT-licensed release and has since been reworked into a plugin with its own name, data namespace, and settings.
 
 **There is no data path between the two.**
 
-- **No migration.** Q&A Log has no import, export, or migration path for LexVoice data. It does not read LexVoice notes, markers, tags, folders, or settings, and it does not scan or rewrite your existing files on load.
-- **No settings inheritance.** A new install starts from Q&A Log's own defaults. If you have used LexVoice, its API keys, service configuration, folders, and prompts are not carried over — configure Q&A Log from scratch.
+- **No migration.** QnALog has no import, export, or migration path for LexVoice data. It does not read LexVoice notes, markers, tags, folders, or settings, and it does not scan or rewrite your existing files on load.
+- **No settings inheritance.** A new install starts from QnALog's own defaults. If you have used LexVoice, its API keys, service configuration, folders, and prompts are not carried over — configure QnALog from scratch.
 - **Its own namespace.** Tags, markers, and folders written to your vault use the `qnalog` / `QnALog` namespace only.
 - **Its own plugin id.** The id is `qnalog`, different from LexVoice's `lexvoice`, so Obsidian manages them as two separate plugins.
 
@@ -50,10 +50,10 @@ Mark only (no AI call):
 Half-width and full-width symbols are both accepted. In-meeting notes are fed into the final summarization prompt as clearly-labeled "live supplementary material", never mixed into the raw transcript.
 
 ### Ask this note
-Ask follow-up questions when the final notes miss a detail or you want to revisit a specific part of the discussion. Q&A Log answers from both the organized note and the preserved raw transcript. Useful answers can be written back to one compact **Ask this note** section in the Markdown file.
+Ask follow-up questions when the final notes miss a detail or you want to revisit a specific part of the discussion. QnALog answers from both the organized note and the preserved raw transcript. Useful answers can be written back to one compact **Ask this note** section in the Markdown file.
 
 ### Long meetings & recovery
-In standard meeting and learning-note modes, long recordings are organized in recoverable parts instead of relying on one all-or-nothing LLM response. Q&A Log builds a global topic map, saves each completed part as a local checkpoint, and assembles the final note in time order.
+In standard meeting and learning-note modes, long recordings are organized in recoverable parts instead of relying on one all-or-nothing LLM response. QnALog builds a global topic map, saves each completed part as a local checkpoint, and assembles the final note in time order.
 
 If a request is interrupted or a model reaches its output limit, completed work is reused and only unfinished parts are retried. The raw transcript remains available, and an incomplete result is shown as **partially completed** rather than being saved as an empty note.
 
@@ -67,7 +67,7 @@ After each note, AI splits the content into three candidate groups you review in
 - **Hotwords** — names, organizations, brands, terms, to improve later ASR accuracy
 
 ### Object library
-Q&A Log turns reusable meeting content into standalone Obsidian objects — people profiles, ASR hotwords, and a wall of todos assembled from the notes you confirmed. Everything lives in your own vault; the next time the same person comes up, it links to the existing profile.
+QnALog turns reusable meeting content into standalone Obsidian objects — people profiles, ASR hotwords, and a wall of todos assembled from the notes you confirmed. Everything lives in your own vault; the next time the same person comes up, it links to the existing profile.
 
 ### Todo enhancements
 Edit owner, due date and sub-tasks inline at the candidate stage — no dialogs. Stored todos use standard Markdown task syntax (recognized by plugins like Tasks). Source information is preserved on delete / redo for traceability.
@@ -88,7 +88,7 @@ The sidebar can organize recent notes by folder or by time. Folder groups can be
 
 ## Basic usage
 
-1. Open the Q&A Log sidebar.
+1. Open the QnALog sidebar.
 2. Choose a template and an audio input.
 3. Start recording; check that the level meter reacts.
 4. Watch the live outline; add in-meeting notes if needed.
@@ -114,7 +114,7 @@ Default folders (all configurable in settings):
 | Email drafts | `QnALog/邮件草稿` |
 | Segment cache | `QnALog/.cache/segments` |
 
-> Default folders use the `QnALog/` prefix. They are ordinary paths and can be changed in settings at any time. Q&A Log is an independent project: it does not migrate data from other projects, and it does not scan or rewrite your existing notes.
+> Default folders use the `QnALog/` prefix. They are ordinary paths and can be changed in settings at any time. QnALog is an independent project: it does not migrate data from other projects, and it does not scan or rewrite your existing notes.
 
 ## Requirements
 
@@ -139,7 +139,7 @@ Capturing system audio cross-platform from the Obsidian desktop app is unreliabl
 
 On Windows with VB-Cable, mind the naming:
 - Meeting apps, browsers, and system output → **CABLE Input**
-- Q&A Log reads **CABLE Output** (a recording device)
+- QnALog reads **CABLE Output** (a recording device)
 - To also record yourself, the **real microphone must be your physical mic** — not CABLE Output, BlackHole, VoiceMeeter, or Stereo Mix
 
 If the level meter does not move, run the device check before starting a long recording.
@@ -148,13 +148,13 @@ If the level meter does not move, run the device check before starting a long re
 
 No ads, no analytics, no telemetry. Settings are stored locally in `.obsidian/plugins/qnalog/data.json`.
 
-**Network use.** Q&A Log works offline unless you configure a service that needs the network. When you do, requests go only to the endpoints you configure:
+**Network use.** QnALog works offline unless you configure a service that needs the network. When you do, requests go only to the endpoints you configure:
 
 - Speech-to-text requests send audio to the transcription service you configured.
 - AI organization requests send transcript text and prompt context to the LLM service you configured.
 - The update check requests `manifest.json` from this project's GitHub release page so the plugin can tell you a newer version exists. It never downloads or installs anything.
 
-Recordings are saved to the local vault path you choose; there is no Q&A Log cloud and no Q&A Log server.
+Recordings are saved to the local vault path you choose; there is no QnALog cloud and no QnALog server.
 
 **Files outside your vault.** The optional external inbox feature can watch a folder outside your vault (an absolute path, for example a synced recordings directory) and import audio from it. That access happens only if you configure such a path, and it is limited to reading the files you point it at.
 
@@ -168,7 +168,7 @@ This plugin is not in the Obsidian community plugin directory. The directory's *
 
 1. Install and enable **BRAT** from the community plugin directory.
 2. In BRAT, choose **Add beta plugin** and enter `qnalog/qnalog`.
-3. Install, then enable **Q&A Log** under **Settings → Community plugins**.
+3. Install, then enable **QnALog** under **Settings → Community plugins**.
 
 You can also download the release assets (`main.js`, `manifest.json`, `styles.css`, plus `LICENSE` and `NOTICE`) straight from the [releases page](https://github.com/qnalog/qnalog/releases) into `<vault>/.obsidian/plugins/qnalog/`. Each release is built from its own tag by CI, which rebuilds the bundle and byte-compares it before uploading.
 
@@ -184,9 +184,9 @@ npm run install:vault -- "/path/to/your/vault"
 
 `install:vault` copies `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` into `<vault>/.obsidian/plugins/qnalog/`, and snapshots anything it overwrites (including `data.json`) into `<vault>/.obsidian/qnalog-install-backups/<timestamp>/`. It only touches the `qnalog` folder: settings are never inherited from other plugins.
 
-Then reload Obsidian (`Ctrl/Cmd + R`) and enable **Q&A Log**.
+Then reload Obsidian (`Ctrl/Cmd + R`) and enable **QnALog**.
 
-Q&A Log keeps your settings when the stored schema is older: it migrates them forward and your API keys, service configuration, prompts, paths, and device choices are preserved. Settings are only discarded when they cannot be recognized at all (written by a different project, or corrupted) — in that case the original file is backed up under `<plugin folder>/settings-backups/` before defaults are used.
+QnALog keeps your settings when the stored schema is older: it migrates them forward and your API keys, service configuration, prompts, paths, and device choices are preserved. Settings are only discarded when they cannot be recognized at all (written by a different project, or corrupted) — in that case the original file is backed up under `<plugin folder>/settings-backups/` before defaults are used.
 
 ### Rolling back
 

@@ -105,7 +105,7 @@ export function pickMimeType(preferOpus) {
 
 export function assertAudioCaptureSupported() {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-    throw new Error(t("This Obsidian environment does not support microphone recording. Update Obsidian, or use Q&A Log on desktop."));
+    throw new Error(t("This Obsidian environment does not support microphone recording. Update Obsidian, or use QnALog on desktop."));
   }
   if (typeof MediaRecorder === "undefined") {
     throw new Error(t("This Obsidian environment does not support MediaRecorder, so recording is unavailable right now. You can record with a system app first and then import the audio."));

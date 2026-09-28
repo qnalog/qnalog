@@ -1,6 +1,6 @@
 {
 	"id": "qnalog",
-	"name": "Q&A Log",
+	"name": "QnALog",
 	"version": "1.0.12",
 	"minAppVersion": "1.10.0",
 	"description": "Record and transcribe conversations, then turn them into structured Markdown notes with your own AI provider.",

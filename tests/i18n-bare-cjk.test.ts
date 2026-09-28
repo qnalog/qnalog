@@ -140,7 +140,7 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["-报告.pdf", "data"],
     ["-纪要PDF.pdf", "data"],
     ["-邮件草稿.eml", "data"],
-    ["Q&A Log 会议纪要", "note"],
+    ["QnALog 会议纪要", "note"],
     ["会议纪要：", "note"],
   ],
   "src/imports/import-service.ts": [
@@ -201,7 +201,7 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
   ],
   "src/people/people-directory-service.ts": [
     ["\\n\\n此人员档案已合并到 ", "note"],
-    ["。\\n\\n保留此归档页用于回溯，Q&A Log 不再把它作为人员资料读取。\\n", "note"],
+    ["。\\n\\n保留此归档页用于回溯，QnALog 不再把它作为人员资料读取。\\n", "note"],
     ["合并历史重复人员页：", "note"],
     ["合并日期", "note"],
     ["备注", "note"],

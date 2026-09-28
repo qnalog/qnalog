@@ -162,7 +162,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "whisper-large-v3",
       language: "zh",
       protocol: "speaker-diarization",
-      hint: "Local WhisperX / whisper-diarization service: speaker diarization is done alongside transcription. The service must return segments[].speaker in its response (or inline [SPEAKER_00] in text), and Q&A Log normalizes it to [Speaker N] automatically. Note: speaker numbering is only consistent throughout for whole-file imported audio; in segmented mode that records and splits as it goes, numbering may not match across segments.",
+      hint: "Local WhisperX / whisper-diarization service: speaker diarization is done alongside transcription. The service must return segments[].speaker in its response (or inline [SPEAKER_00] in text), and QnALog normalizes it to [Speaker N] automatically. Note: speaker numbering is only consistent throughout for whole-file imported audio; in segmented mode that records and splits as it goes, numbering may not match across segments.",
     },
   },
 

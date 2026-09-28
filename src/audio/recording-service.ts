@@ -772,7 +772,7 @@ export class RecordingService implements LiveAsrPipeline {
       });
       if (nextLevel === "warning" && !session._asrBacklogWarningNotified) {
         session._asrBacklogWarningNotified = true;
-        new obsidian.Notice(t("Transcription is temporarily slower than recording; audio segments have been safely written to cache and Q&A Log will keep processing."), 8000);
+        new obsidian.Notice(t("Transcription is temporarily slower than recording; audio segments have been safely written to cache and QnALog will keep processing."), 8000);
       }
       if (nextLevel === "critical" && !session._asrBacklogCriticalNotified) {
         session._asrBacklogCriticalNotified = true;

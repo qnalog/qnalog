@@ -210,7 +210,7 @@ async function main() {
   const PluginClass = sandbox.module.exports?.default || sandbox.module.exports;
   expect(typeof PluginClass === "function", "main.js 没有导出插件类");
 
-  const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "Q&A Log", minAppVersion: "1.0.0" });
+  const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
   try {
     await plugin.onload();
   } catch (error) {
@@ -289,7 +289,7 @@ async function main() {
   // 用独立实例驱动真实的 loadAll——复用主实例会把它的域服务状态搅乱，
   // 导致后面的装配断言误报（实测过）。
   try {
-    const probe = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "Q&A Log", minAppVersion: "1.0.0" });
+    const probe = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
     await probe.onload();
     // 直接 import .ts 会因 obsidian 包不可解析而失败；从已构建的 bundle 里取常量。
     const { readFileSync } = await import("node:fs");

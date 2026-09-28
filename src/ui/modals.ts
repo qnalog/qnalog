@@ -151,7 +151,7 @@ export class AudioTimeModal extends obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-audio-modal");
-    contentEl.createEl("h3", { text: i18nT("Q&A Log listen back") });
+    contentEl.createEl("h3", { text: i18nT("QnALog listen back") });
     contentEl.createDiv({ cls: "qnalog-audio-modal-meta", text: `${this.file.path} · ${this.label}` });
 
     const playerWrap = contentEl.createDiv({ cls: "qnalog-audio-player-wrap" });
@@ -203,7 +203,7 @@ export class PeopleHotwordsConsentModal extends obsidian.Modal {
     contentEl.createEl("h2", { text: i18nT("Please confirm before enabling name hotwords") });
     contentEl.createDiv({
       cls: "setting-item-description",
-      text: i18nT("Once enabled, Q&A Log reads names and common forms of address from person profiles and sends these name hotwords with transcription or AI processing requests to the currently configured transcription and LLM services, to improve the accuracy of name recognition and form-of-address alignment."),
+      text: i18nT("Once enabled, QnALog reads names and common forms of address from person profiles and sends these name hotwords with transcription or AI processing requests to the currently configured transcription and LLM services, to improve the accuracy of name recognition and form-of-address alignment."),
     });
     const list = contentEl.createEl("ul", { cls: "qnalog-consent-list" });
     list.createEl("li", { text: i18nT("Send only names and common forms of address, not roles, organizations, notes, sources, or person relationships.") });
@@ -246,12 +246,12 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     contentEl.createDiv({
       cls: "setting-item-description",
       text: this.sourceFile
-        ? i18nT("Q&A Log only sends the content of the current note to the configured LLM to generate candidate person suggestions; existing person profiles are used only locally for matching and deduplication and are not sent with the request. Once confirmed, the speaker attributions for this meeting are written back to the minutes and the corresponding person pages are maintained.")
+        ? i18nT("QnALog only sends the content of the current note to the configured LLM to generate candidate person suggestions; existing person profiles are used only locally for matching and deduplication and are not sent with the request. Once confirmed, the speaker attributions for this meeting are written back to the minutes and the corresponding person pages are maintained.")
         : this.options.fromIgnored
           ? `${i18nT("These are the ones already ignored: ")}${this.options.ignoredCount || this.suggestions.length}${i18nT(" people suggestions. Suggestions ignored by mistake can be restored to pending first, or edited and saved into the person profiles directly; once saved they are removed from the ignored list automatically.")}`
         : this.options.fromCache
           ? `${i18nT("These are the ones not yet processed since the last scan: ")}${this.options.cachedCount || this.suggestions.length}${i18nT(" people suggestions. They stay in the local settings until you save, ignore, or clear them, so you can continue later.")}`
-        : `${i18nT("Q&A Log scanned {0} notes in the minutes library; only person suggestions that need confirmation are shown. Existing person profiles are used only locally for matching and deduplication and are not sent with the request.").replace("{0}", String(this.options.scannedCount || 0))}${this.options.remainingCount ? i18nT("After this round, {0} notes still await scanning.").replace("{0}", String(this.options.remainingCount)) : ""}`,
+        : `${i18nT("QnALog scanned {0} notes in the minutes library; only person suggestions that need confirmation are shown. Existing person profiles are used only locally for matching and deduplication and are not sent with the request.").replace("{0}", String(this.options.scannedCount || 0))}${this.options.remainingCount ? i18nT("After this round, {0} notes still await scanning.").replace("{0}", String(this.options.remainingCount)) : ""}`,
     });
     contentEl.createDiv({
       cls: "setting-item-description qnalog-people-suggestion-guide",
@@ -1328,7 +1328,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
 
     contentEl.createEl("h2", { text: i18nT("Computer audio capture settings") });
     const desc = contentEl.createEl("p", { cls: "qnalog-vcable-desc" });
-    desc.setText(i18nT("Q&A Log cannot listen directly to sound playing through your headphones or speakers. To record from a browser, a course, or the other side of a meeting, route that sound to a virtual audio device so Q&A Log recognizes it as computer-audio input, and monitor the same sound to your real speakers or headphones so you can still hear it. Configure once and it keeps working."));
+    desc.setText(i18nT("QnALog cannot listen directly to sound playing through your headphones or speakers. To record from a browser, a course, or the other side of a meeting, route that sound to a virtual audio device so QnALog recognizes it as computer-audio input, and monitor the same sound to your real speakers or headphones so you can still hear it. Configure once and it keeps working."));
 
     // 平台 tabs
     const tabs = contentEl.createDiv({ cls: "qnalog-vcable-tabs" });
@@ -1405,7 +1405,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: i18nT("Check \"Built-in Speakers\" (or headphones) + \"BlackHole 2ch\"") });
       ol.createEl("li", { text: i18nT("For Master Device select your headphones or speakers; check Drift Correction for BlackHole") });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
-      tip.setText(i18nT("This makes system audio go to both your real speakers/headphones and BlackHole: the former for playback, the latter for Q&A Log to record."));
+      tip.setText(i18nT("This makes system audio go to both your real speakers/headphones and BlackHole: the former for playback, the latter for QnALog to record."));
     });
     this.step(parent, 3, i18nT("Switch system or app output to this multi-output device"), (b) => {
       const ol = b.createEl("ol");
@@ -1415,7 +1415,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
       warn.setText(i18nT("Meeting apps may need you to reselect the speaker after switching."));
     });
-    this.step(parent, 4, i18nT("Select computer audio mode in Q&A Log"), (b) => {
+    this.step(parent, 4, i18nT("Select computer audio mode in QnALog"), (b) => {
       b.createEl("p", { text: i18nT("Choose \"Computer audio only\" when processing only videos, courses, or podcasts; choose \"Microphone + computer audio\" for online meetings or when explaining while listening.") });
     });
   }
@@ -1432,7 +1432,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
     this.step(parent, 2, i18nT("Switch the audio you want to record to CABLE Input (playback device)"), (b) => {
       b.createEl("p", { text: i18nT("For online meetings, change the speaker in the audio settings of Feishu, Tencent Meeting, or Zoom; for desktop apps such as the Bilibili client, browser video, and media players, you can set the output device individually in the Windows volume mixer. Change the target output uniformly to:") });
       b.createEl("code", { text: "CABLE Input (VB-Audio Virtual Cable)" });
-      b.createEl("p", { cls: "qnalog-vcable-tip" }).setText(i18nT("Note: CABLE Input is selected here. Although its name says Input, in Windows it is a playback/output device; Q&A Log records later from CABLE Output at the other end of the same virtual cable."));
+      b.createEl("p", { cls: "qnalog-vcable-tip" }).setText(i18nT("Note: CABLE Input is selected here. Although its name says Input, in Windows it is a playback/output device; QnALog records later from CABLE Output at the other end of the same virtual cable."));
       const ol = b.createEl("ol");
       ol.createEl("li", { text: i18nT("Recording meetings: select CABLE Input as the speaker/output device in your meeting app") });
       ol.createEl("li", { text: i18nT("Recording the Bilibili client: play a video first so the app appears in the volume mixer; Windows Settings → System → Sound → Volume mixer → find 哔哩哔哩/bilibili → select CABLE Input as the output device") });
@@ -1451,7 +1451,7 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: i18nT("Under \"Playback through this device\", choose your real headphones or speakers, not CABLE Input") });
       ol.createEl("li", { text: i18nT("Click \"Apply\"") });
       const tip = b.createEl("p", { cls: "qnalog-vcable-tip" });
-      tip.setText(i18nT("The audio path is: app/browser → CABLE Input (playback) → CABLE Output (recording input, read by Q&A Log) → monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
+      tip.setText(i18nT("The audio path is: app/browser → CABLE Input (playback) → CABLE Output (recording input, read by QnALog) → monitored to real headphones/speakers. If monitoring latency is noticeable, use a mixer such as VoiceMeeter for multiple outputs."));
     });
     this.step(parent, 4, i18nT("Switch the default input back to the real microphone"), (b) => {
       const ol = b.createEl("ol");
@@ -1459,24 +1459,24 @@ export class VirtualCableSetupModal extends obsidian.Modal {
       ol.createEl("li", { text: i18nT("Select the real microphone, not CABLE Output") });
       ol.createEl("li", { text: i18nT("If other voice input software also has no sound, this is usually because it was changed to CABLE Output here") });
       const warn = b.createEl("p", { cls: "qnalog-vcable-warn" });
-      warn.setText(i18nT("CABLE Output is what recording apps like Q&A Log read to capture computer audio; it is not suitable as your everyday microphone."));
+      warn.setText(i18nT("CABLE Output is what recording apps like QnALog read to capture computer audio; it is not suitable as your everyday microphone."));
     });
-    this.step(parent, 5, i18nT("Select computer audio mode in Q&A Log"), (b) => {
+    this.step(parent, 5, i18nT("Select computer audio mode in QnALog"), (b) => {
       b.createEl("p", { text: i18nT("When watching Bilibili, YouTube, courses or podcasts, choose \"Computer audio only\"; for online meetings, or when you also need to record your own commentary, choose \"Microphone + computer audio\".") });
     });
   }
   renderLinuxContent(parent) {
     this.step(parent, 1, i18nT("PulseAudio: use the monitor source"), (b) => {
-      b.createEl("p", { text: i18nT("Every real output device in PulseAudio comes with its own monitor source. Keep the system output on your headphones/speakers and select the corresponding Monitor of ... input in Q&A Log to play and record system audio at the same time.") });
+      b.createEl("p", { text: i18nT("Every real output device in PulseAudio comes with its own monitor source. Keep the system output on your headphones/speakers and select the corresponding Monitor of ... input in QnALog to play and record system audio at the same time.") });
       b.createEl("p", { text: i18nT("View available monitor source:") });
       const code = b.createEl("pre");
       code.createEl("code", { text: "pactl list sources short | grep monitor" });
     });
     this.step(parent, 2, i18nT("If using PipeWire (newer distributions)"), (b) => {
-      b.createEl("p", { text: i18nT("PipeWire is compatible with the PulseAudio API, and the commands are the same. If the default monitor does not work, you can install pavucontrol and, on the “Recording” tab, switch the Q&A Log input to Monitor of <speaker name>.") });
+      b.createEl("p", { text: i18nT("PipeWire is compatible with the PulseAudio API, and the commands are the same. If the default monitor does not work, you can install pavucontrol and, on the “Recording” tab, switch the QnALog input to Monitor of <speaker name>.") });
     });
-    this.step(parent, 3, i18nT("Select computer audio mode in Q&A Log"), (b) => {
-      b.createEl("p", { text: i18nT("Q&A Log's device detection recognizes inputs named \"Monitor of ...\" as computer audio input. Choose \"Computer audio only\" when you only organize videos/courses; choose \"Microphone + computer audio\" when you also need to record your own voice.") });
+    this.step(parent, 3, i18nT("Select computer audio mode in QnALog"), (b) => {
+      b.createEl("p", { text: i18nT("QnALog's device detection recognizes inputs named \"Monitor of ...\" as computer audio input. Choose \"Computer audio only\" when you only organize videos/courses; choose \"Microphone + computer audio\" when you also need to record your own voice.") });
     });
   }
   onClose() {
@@ -1564,7 +1564,7 @@ export class PromptTemplateModal extends obsidian.Modal {
 
     const builtInSection = body.createDiv({ cls: "qnalog-tpl-section" });
     builtInSection.createDiv({ cls: "qnalog-tpl-section-title", text: i18nT("Built-in prompts") });
-    builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: i18nT("A default organizing rule provided by Q&A Log, suitable for setting as the default. When you need a fixed format or domain judgment, create a custom prompt instead.") });
+    builtInSection.createDiv({ cls: "qnalog-tpl-section-copy", text: i18nT("A default organizing rule provided by QnALog, suitable for setting as the default. When you need a fixed format or domain judgment, create a custom prompt instead.") });
     const list = builtInSection.createDiv({ cls: "qnalog-tpl-list" });
     for (const mode of this.builtInModes()) this.renderBuiltinRow(list, mode);
 
@@ -1651,7 +1651,7 @@ export class PromptTemplateModal extends obsidian.Modal {
     const seed = current || this.newCustomScene(tpl && tpl.name ? tpl.name : i18nT("Custom prompt"), tpl && tpl.baseMode ? tpl.baseMode : "learning").prompt;
     const sys = i18nT("You are a prompt optimization expert, specializing in rewriting user drafts into a stable, clear, and executable prompt for organizing recording transcripts.");
     const user = [
-      i18nT("Please optimize the following Q&A Log transcription cleanup prompt."),
+      i18nT("Please optimize the following QnALog transcription cleanup prompt."),
       "",
       i18nT("Requirements:"),
       i18nT("- Output only the complete optimized Prompt, with no explanation and no code blocks."),
@@ -1775,7 +1775,7 @@ export class ImportTextModal extends obsidian.Modal {
     this.fileCheckboxes = new Map();
     contentEl.createEl("h2", { text: i18nT("Import text") });
     contentEl.createEl("p", { cls: "qnalog-import-desc" })
-      .setText(i18nT("Choose existing Markdown, a dictation draft, or a text note. Q&A Log will not call speech transcription; it goes straight through the “AI briefing” LLM pipeline on the API tab and structures the text using the current template."));
+      .setText(i18nT("Choose existing Markdown, a dictation draft, or a text note. QnALog will not call speech transcription; it goes straight through the “AI briefing” LLM pipeline on the API tab and structures the text using the current template."));
 
     this.renderModeControl(contentEl);
 
@@ -2018,7 +2018,7 @@ export class ImportTextModal extends obsidian.Modal {
       this.processBtn.disabled = count === 0;
     }
     if (this.selectionText) {
-      this.selectionText.setText(count ? i18nT("Will be merged into one Q&A Log note in ascending filename order") : i18nT("No text selected"));
+      this.selectionText.setText(count ? i18nT("Will be merged into one QnALog note in ascending filename order") : i18nT("No text selected"));
     }
   }
 
@@ -2403,7 +2403,7 @@ export class BubbleWidget {
     this.ribbonHandlers = null;
     this.unsubscribe = null;
     this.resizeHandler = null;
-    // 追加录音目标：当前活动笔记是 Q&A Log 纪要时非 null。事件挂插件生命周期（构造只发生一次）。
+    // 追加录音目标：当前活动笔记是 QnALog 纪要时非 null。事件挂插件生命周期（构造只发生一次）。
     this.appendFile = null;
     plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", () => this.refreshActiveNote()));
     plugin.registerEvent(plugin.app.workspace.on("file-open", () => this.refreshActiveNote()));
@@ -2498,7 +2498,7 @@ export class BubbleWidget {
     this.unbindRibbon();
     if (this.wrapEl) { this.wrapEl.remove(); this.wrapEl = null; this.el = null; }
   }
-  // 判定当前活动笔记是否 Q&A Log 纪要：与侧边栏 panelData 的 hasMarker 同判据
+  // 判定当前活动笔记是否 QnALog 纪要：与侧边栏 panelData 的 hasMarker 同判据
   // （会话标记或分段标记）。普通笔记与派生笔记没有标记 → 只保留标准录制按钮。
   async refreshActiveNote() {
     let next = null;
@@ -2610,7 +2610,7 @@ export class BubbleWidget {
       obsidian.setTooltip(micBtn, i18nT("Start meeting recording"), { placement: "top" });
       this._paintIcon(micBtn, ["mic", "lucide-mic"]);
       micBtn.onclick = (e) => { e.stopPropagation(); this.plugin.recording.startRecording(); };
-      // 活动笔记是 Q&A Log 纪要时追加「追加录音到这篇纪要」入口（与侧边栏成品面板同一能力）；
+      // 活动笔记是 QnALog 纪要时追加「追加录音到这篇纪要」入口（与侧边栏成品面板同一能力）；
       // 普通笔记只显示标准录制按钮。
       if (this.appendFile) {
         const appendBtn = this.el.createEl("button", {

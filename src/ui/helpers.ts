@@ -301,7 +301,7 @@ export function classifyImportTextFileForModal(file, content) {
       category: "external",
       badge: file && String(file.extension || "").toLowerCase() === "txt" ? "TXT" : t("External transcript"),
       reason: t("Plain text"),
-      statusTitle: t("Not a Q&A Log transcript; can be organized directly as a dictation draft"),
+      statusTitle: t("Not a QnALog transcript; can be organized directly as a dictation draft"),
     };
   }
 
@@ -312,7 +312,7 @@ export function classifyImportTextFileForModal(file, content) {
       category: "qnalog-normal",
       badge: t("Organized"),
       reason: t("Can merge / switch template"),
-      statusTitle: t("Q&A Log has organized minutes that can be used for merging several notes, re-organizing with another template, or converting to another mode"),
+      statusTitle: t("QnALog has organized minutes that can be used for merging several notes, re-organizing with another template, or converting to another mode"),
     };
   }
 
@@ -322,7 +322,7 @@ export function classifyImportTextFileForModal(file, content) {
   return {
     category: "qnalog-repair",
     badge: label,
-    reason: processingState && processingState.title ? processingState.title : t("Detected Q&A Log markers, but no stable organized body text"),
+    reason: processingState && processingState.title ? processingState.title : t("Detected QnALog markers, but no stable organized body text"),
     statusTitle: processingState && processingState.title ? processingState.title : t("Suitable for re-cleaning or recovering failed transcriptions"),
   };
 }

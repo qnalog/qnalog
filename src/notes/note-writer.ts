@@ -492,7 +492,7 @@ export class NoteWriter {
   }
   async readMergeSourceFromMarkdown(file, offsetMs, startIndex) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-      throw new Error(t("Only Q&A Log Markdown minutes notes can be merged"));
+      throw new Error(t("Only QnALog Markdown minutes notes can be merged"));
     }
     const content = await this.host.app.vault.read(file);
     const rawSegments = extractTranscriptSegments(content);
@@ -521,7 +521,7 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile)) return;
     const previous = this.findPreviousRecentNoteFile(file);
     if (!(previous instanceof obsidian.TFile)) {
-      new obsidian.Notice(t("No most recent Q&A Log summary before this one was found."), 6000);
+      new obsidian.Notice(t("No most recent QnALog summary before this one was found."), 6000);
       return;
     }
     const ok = await qnalogConfirm(this.host.app, t("Merge minutes"), t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace("{0}", previous.basename).replace("{1}", file.basename), t("Merge"));
@@ -563,7 +563,7 @@ export class NoteWriter {
     const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · ${t("Merge")}.md`));
     if (!targetPath) throw new Error(t("Failed to generate a path for the merged minutes file"));
 
-    new obsidian.Notice(`${t("Q&A Log: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
+    new obsidian.Notice(`${t("QnALog: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
     await this.host.app.vault.create(targetPath, "");
     const session = {
       id: genId(),

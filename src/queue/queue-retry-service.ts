@@ -174,7 +174,7 @@ export class QueueRetryService {
       new obsidian.Notice(t("This note currently has no transcription tasks to retry."), 5000);
       return;
     }
-    new obsidian.Notice(`${t("Q&A Log: retrying ")}${tasks.length}${t(" transcript segments...")}`);
+    new obsidian.Notice(`${t("QnALog: retrying ")}${tasks.length}${t(" transcript segments...")}`);
     let ok = 0;
     let failed = 0;
     let paused = false;

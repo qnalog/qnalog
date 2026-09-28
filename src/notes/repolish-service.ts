@@ -56,7 +56,7 @@ export class RepolishService {
       taskId = `repolish:${sourceId || file.path}`;
       let segments = extractTranscriptSegments(content);
       if (!segments.length) {
-        new obsidian.Notice(t("No Q&A Log original transcript found. Use this on a minutes Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
+        new obsidian.Notice(t("No QnALog original transcript found. Use this on a minutes Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
         return;
       }
 
@@ -101,11 +101,11 @@ export class RepolishService {
 
       const preferenceLabel = repolishOptions && repolishOptions.label ? ` · ${repolishOptions.label}` : "";
       const mapNotice = roleMapping.length
-        ? t("Q&A Log: re-organizing via {1} mode{2}… after applying {0} role mappings…")
+        ? t("QnALog: re-organizing via {1} mode{2}… after applying {0} role mappings…")
           .replace("{0}", String(roleMapping.length))
           .replace("{1}", meta.prefix)
           .replace("{2}", preferenceLabel)
-        : t("Q&A Log: re-organizing via {0} mode{1}…")
+        : t("QnALog: re-organizing via {0} mode{1}…")
           .replace("{0}", meta.prefix)
           .replace("{1}", preferenceLabel);
       new obsidian.Notice(mapNotice);
@@ -218,7 +218,7 @@ export class RepolishService {
         console.warn("[QnALog] derived note created but version cache update failed", cacheError);
       }
       const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
-      new obsidian.Notice(`${t("Q&A Log: generated ")}${meta.prefix}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
+      new obsidian.Notice(`${t("QnALog: generated ")}${meta.prefix}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       try { this.host.tasks.logCompletedWork(t("Re-organize completed · {0}").replace("{0}", meta.prefix), (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
@@ -313,7 +313,7 @@ export class RepolishService {
         actions: [],
       });
       this.host.tasks.updateBusyStatus();
-      new obsidian.Notice(t("Q&A Log: Generating the clean transcript from the source transcript..."));
+      new obsidian.Notice(t("QnALog: Generating the clean transcript from the source transcript..."));
       taskMeter = this.host.tasks.beginTaskMeter();
       const { text: cleaned, truncated } = await cleanTranscript(this.host, segments, getLearnedLlmOutputCeiling(this.host.settings));
       if (!cleaned) throw new Error(t("The model did not return a usable clean transcript"));
@@ -330,7 +330,7 @@ export class RepolishService {
         body: noteBody,
       });
       await this.host.versions.applyVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
-      new obsidian.Notice(t("Q&A Log: Clean transcript generated and set as the current displayed version"), 6000);
+      new obsidian.Notice(t("QnALog: Clean transcript generated and set as the current displayed version"), 6000);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       try { this.host.tasks.logCompletedWork(t("Generate clean transcript"), sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }

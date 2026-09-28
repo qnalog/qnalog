@@ -138,7 +138,7 @@ export class VocabularyService {
       .join("\n") || "（暂无自定义提示词）";
     const currentMode = getEffectivePolishMode(this.host.settings, this.host.settings.polishMode, "meeting");
     const currentMeta = getModeMeta(this.host.settings, currentMode);
-    const sys = "你是 ASR 领域词汇提取助手。请根据用户的工作描述、常用提示词和 Q&A Log 使用场景，抽取最可能在录音中出现、ASR 容易识别错的专有词，并按固定类别输出。";
+    const sys = "你是 ASR 领域词汇提取助手。请根据用户的工作描述、常用提示词和 QnALog 使用场景，抽取最可能在录音中出现、ASR 容易识别错的专有词，并按固定类别输出。";
     const user = `【用户行业 / 角色】${p.industry || "（未指定）"}
 
 【主要工作场景】
@@ -212,7 +212,7 @@ ${customPromptBrief}
       .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/m, "")
       .slice(0, 18000);
     const sys = "你是 ASR 领域词汇提取助手。请只根据用户当前笔记提取可能提升语音转写准确率的词汇，不要编造，不要输出非指定格式。";
-    const user = `请从下面这篇 Q&A Log 笔记中提取适合加入 ASR 热词表的词汇。
+    const user = `请从下面这篇 QnALog 笔记中提取适合加入 ASR 热词表的词汇。
 
 文件名：${file && file.basename ? file.basename : "当前笔记"}
 
@@ -300,7 +300,7 @@ ${source}`;
       new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return { processed: 0, added: 0, failed: 0, remaining: 0 };
     }
-    new obsidian.Notice(`${t("Q&A Log: scanning ")}${batch.length}${t(" minutes notes to extract vocabulary from...")}`);
+    new obsidian.Notice(`${t("QnALog: scanning ")}${batch.length}${t(" minutes notes to extract vocabulary from...")}`);
     let processed = 0;
     let added = 0;
     let failed = 0;
