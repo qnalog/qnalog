@@ -201,7 +201,7 @@ export function formatObjectWallMarkdown(settings, options: QnALogObjectWallOpti
     "}",
     "function bindCards(){",
     "  root.querySelectorAll(\".qnalog-wall-card\").forEach(el => el.addEventListener(\"click\", event => { if (event.target && event.target.closest && event.target.closest(\"input,label,button\")) return; const path = el.dataset.path; if (path) app.workspace.openLinkText(path, \"\", false); }));",
-    "  root.querySelectorAll(\".qnalog-wall-todo-check input\").forEach(input => input.addEventListener(\"change\", async event => { event.stopPropagation(); const record = records.find(r => r.id === input.dataset.id); if (!record) return; const card = input.closest(\".qnalog-wall-todo-card\"); try { await setTaskDone(record, input.checked); if (card) card.classList.toggle(\"is-completed\", input.checked); } catch(e) { console.error(e); new Notice(\"待办状态写回失败：\" + (e.message || e)); input.checked = !input.checked; } }));",
+    "  root.querySelectorAll(\".qnalog-wall-todo-check input\").forEach(input => input.addEventListener(\"change\", async event => { event.stopPropagation(); const record = records.find(r => r.id === input.dataset.id); if (!record) return; const card = input.closest(\".qnalog-wall-todo-card\"); try { await setTaskDone(record, input.checked); if (card) card.classList.toggle(\"is-completed\", input.checked); } catch(e) { console.error(e); new Notice(" + JSON.stringify(t("Failed to write back the to-do status:")) + " + (e.message || e)); input.checked = !input.checked; } }));",
     "}",
     "let lastCols = 0; let raf = 0;",
     "function renderWall(){",

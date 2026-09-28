@@ -88,11 +88,11 @@ const AUDIO_IMPORT_STAGE_DEFINITIONS: ReadonlyArray<{
   id: AudioImportStageId;
   label: string;
 }> = [
-  { id: "prepare", label: t("Preparing audio") },
-  { id: "transcribe", label: t("Speech transcription") },
-  { id: "persist", label: t("Write source text") },
-  { id: "organize", label: t("AI Organize") },
-  { id: "write", label: t("Write to Minutes") },
+  { id: "prepare", label: "Preparing audio" },
+  { id: "transcribe", label: "Speech transcription" },
+  { id: "persist", label: "Write source text" },
+  { id: "organize", label: "AI Organize" },
+  { id: "write", label: "Write to Minutes" },
 ];
 
 export function normalizeAudioImportStage(value: unknown): AudioImportStageId {
@@ -118,7 +118,7 @@ export function buildAudioImportStages(
   const activeIndex = AUDIO_IMPORT_STAGE_DEFINITIONS.findIndex((item) => item.id === activeId);
   return AUDIO_IMPORT_STAGE_DEFINITIONS.map((item, index) => ({
     id: item.id,
-    label: item.label,
+    label: t(item.label),
     status: complete || index < activeIndex
       ? "done"
       : index === activeIndex
@@ -185,7 +185,7 @@ export function appendActivityEvent(
     at,
     stageId: normalizeAudioImportStage(event.stageId),
     type: String(event.type || "event"),
-    label: String(event.label || "任务状态已更新"),
+    label: String(event.label || t("Task status updated")),
     detail: String(event.detail || ""),
     chunkIndex,
     attempt,

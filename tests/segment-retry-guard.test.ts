@@ -16,8 +16,8 @@ describe("分段重试的服务能力判定", () => {
 
   it("流式服务不能逐段重试，给出原因", () => {
     const reason = describeSegmentRetryUnavailable(hostWith({ transcribeMode: "streaming", title: "阿里云百炼实时转写" }));
-    expect(reason).toContain("流式服务");
-    expect(reason).toContain("不能逐段重试");
+    expect(reason).toContain("streaming service");
+    expect(reason).toContain("segment-by-segment retry is unavailable");
   });
 
   it("分段上传型服务可以逐段重试", () => {

@@ -5,6 +5,7 @@ import { sanitizeFilename } from './util-common';
 import { isPrivateNetworkHost } from './util-llm-endpoint';
 import { ensureVaultFolder, findAvailableVaultPath } from "./util-vault";
 import { NS_TAG_PREFIX } from "./namespace";
+import { t } from "./i18n";
 
 export function getFrontmatterTags(frontmatter) {
   if (!frontmatter || typeof frontmatter !== "object") return [];
@@ -51,7 +52,7 @@ export async function upsertObjectNote(plugin, folder, name, content) {
     return { file, path: file.path, created: false, previousContent };
   }
   const target = findAvailableVaultPath(plugin.app, path);
-  if (!target) throw new Error("无法生成可用的对象文件路径");
+  if (!target) throw new Error(t("Could not generate a usable object file path."));
   const createdFile = await plugin.app.vault.create(target, content);
   return { file: createdFile, path: createdFile.path, created: true, previousContent: "" };
 }

@@ -377,8 +377,10 @@ export class PeopleDirectoryService {
       await this.host.saveSettings();
       const suggestions = await this.getCachedPeopleDirectorySuggestions();
       if (!suggestions.length) {
-        const suffix = failed ? `，失败 ${failed}` : "";
-        new obsidian.Notice(`${t("No new people suggestions (ignored suggestions are not shown again)")}${suffix}`);
+        const noticeMessage = failed
+          ? t("No new people suggestions (ignored suggestions are not shown again), {0} failed").replace("{0}", String(failed))
+          : t("No new people suggestions (ignored suggestions are not shown again)");
+        new obsidian.Notice(noticeMessage);
         return;
       }
       if (failed) new obsidian.Notice(`${t("People scan complete, ")}${failed}${t(" notes could not be read or extracted; try again later.")}`, 8000);
@@ -512,7 +514,7 @@ export class PeopleDirectoryService {
         if (folder) await ensureVaultFolder(this.host.app, folder);
         const safeName = sanitizeFilename(suggestion.name) || "未命名人员";
         const path = findAvailableVaultPath(this.host.app, obsidian.normalizePath(`${folder}/${safeName}.md`));
-        if (!path) throw new Error("无法创建人员信息文件");
+        if (!path) throw new Error(t("Could not create the person profile file"));
         const fm = mergePersonFrontmatter({ "姓名": suggestion.name }, suggestion, sourceFile);
         const body = formatPeopleNoteMarkdown(suggestion.name, this.host.settings.mdFolder);
         file = await this.host.app.vault.create(path, upsertFrontmatterInMarkdown(body, fm));

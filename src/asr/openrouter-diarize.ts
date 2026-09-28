@@ -88,7 +88,7 @@ export async function transcribeWithOpenRouterDiarize(
 ): Promise<OpenRouterDiarizeResult> {
   const endpoint = String(provider && provider.endpoint || "").trim();
   if (!endpoint) throw new Error(t("Transcription service URL is not configured."));
-  assertSafeServiceEndpoint(endpoint, "http", "转写服务地址");
+  assertSafeServiceEndpoint(endpoint, "http", t("Transcription service URL"));
   if (!provider.apiKey) throw new Error(t("Transcription access key is not configured."));
   if (!provider.model) throw new Error(t("Transcription model name is not configured."));
 
@@ -128,14 +128,15 @@ export async function transcribeWithOpenRouterDiarize(
       let detail = msg;
       try { detail = JSON.stringify(JSON.parse(msg)).slice(0, 400); } catch { /* 保留原文本 */ }
       throw new Error(
-        t("Transcription service returned HTTP {0}").replace("{0}", String(res.status))
-        + (detail ? `：${detail}` : ""),
+        detail
+          ? t("Transcription service returned HTTP {0}: {1}").replace("{0}", String(res.status)).replace("{1}", detail)
+          : t("Transcription service returned HTTP {0}").replace("{0}", String(res.status)),
       );
     }
     try {
       data = await res.json();
     } catch (e) {
-      throw new Error(t("Could not parse the transcription response.") + `：${(e && e.message) || e}`);
+      throw new Error(t("Could not parse the transcription response: {0}").replace("{0}", (e && e.message) || e));
     }
   } catch (e) {
     if (controller && controller.signal && controller.signal.aborted) {

@@ -15,7 +15,7 @@ import { diagnosticError } from "../shared/util-key-diag";
 
 import type { QueueTask } from "../shared/types";
 
-import { t } from "../shared/i18n";
+import { t, t as i18nT } from "../shared/i18n";
 export class TaskQueue {
   declare plugin: QnALogPlugin;
   declare tasks: QueueTask[];
@@ -40,17 +40,17 @@ export class TaskQueue {
         task.updatedAt = task.updatedAt || task.createdAt;
         if (task.status === "running" || task.status === "processing" || task.status === LIVE_ASR_TASK_STATUS) {
           task.status = "pending";
-          task.lastError = task.lastError || "上次运行中断，已恢复为待处理";
+          task.lastError = task.lastError || i18nT("Interrupted during the last run; restored to pending");
         }
         if (!["pending", "failed", "missing", "processing", "blocked"].includes(task.status)) task.status = "pending";
         const maxRetries = (this.plugin && this.plugin.settings && this.plugin.settings.maxRetries) || 3;
         if (task.type === "transcribe"
           && task.status === "failed"
           && task.retries >= maxRetries
-          && /音频不存在/.test(String(task.lastError || ""))) {
+          && /音频不存在|Audio missing/.test(String(task.lastError || ""))) {
           task.status = "pending";
           task.retries = Math.max(0, maxRetries - 1);
-          task.lastError = "临时切片缺失，已升级为从完整录音恢复切片后重试";
+          task.lastError = i18nT("Temporary clip missing; upgraded to recover the clip from the full recording and retry");
         }
         const transportRecoveryPatch = getAsrTransportTaskRecoveryPatch(task, maxRetries);
         if (transportRecoveryPatch) {
@@ -62,16 +62,16 @@ export class TaskQueue {
           && task.status === "failed"
           && isLlmNonRetryableError(task.lastError || "")) {
           task.status = "blocked";
-          task.lastError = task.lastError || "大模型不可用，等待用户处理后再重试";
+          task.lastError = task.lastError || i18nT("LLM unavailable; waiting for you to resolve it before retrying");
         }
         if (task.type === "merge"
           && task.status === "failed"
           && task.retries >= maxRetries
           && !isLlmNonRetryableError(task.lastError || "")
-          && /Failed to fetch|LLM 调用超时|429|500|502|503|504/.test(String(task.lastError || ""))) {
+          && /Failed to fetch|LLM 调用超时|LLM request timed out|429|500|502|503|504/.test(String(task.lastError || ""))) {
           task.status = "pending";
           task.retries = Math.max(0, maxRetries - 1);
-          task.lastError = "上次整理疑似网络或服务端瞬时失败，已升级为可重试";
+          task.lastError = i18nT("The last organizing attempt looks like a transient network or server failure; upgraded to retryable");
         }
         return task;
       });
@@ -183,7 +183,7 @@ export class TaskQueue {
           // 服务仍在限流/超时，继续扫后续音频只会扩大请求风暴。暂停整批，冷却后从持久化队列续跑。
           const retryDelayMs = this.plugin.recording.getAsrServiceRetryDelayMs();
           try {
-            await this.plugin.diagnostics.logDiagnostic("warn", "queue.asr_circuit_opened", "后台转写连续处理遇到瞬时故障，已暂停批次", {
+            await this.plugin.diagnostics.logDiagnostic("warn", "queue.asr_circuit_opened", i18nT("Background transcription hit a transient fault while processing; the batch was paused"), {
               remaining: Math.max(0, pending.length - this._batchDone),
               cooldownMs: retryDelayMs,
               consecutiveFailures: this.plugin.recording.getAsrServiceCircuitState().consecutiveFailures,
@@ -226,13 +226,13 @@ export class TaskQueue {
       }
       else if (task.type === "merge") await this.plugin.queueRetry.retryMergeTask(task);
       else if (task.type === "generate-prompt") await this.plugin.queueRetry.runGeneratePromptTask(task);
-      else throw new Error(`未知任务类型：${(task as QueueTask).type}`);
+      else throw new Error(t("Unknown task type: {0}").replace("{0}", String((task as QueueTask).type)));
       try {
         this.plugin.tasks.completeTaskActivity(this.plugin.tasks.queueTaskActivityId(task), {
           stage: "done",
-          stageLabel: task.type === "transcribe" ? "分段转写完成"
-            : task.type === "merge" ? "AI 整理完成"
-              : task.type === "generate-prompt" ? "提示词生成完成" : "任务完成",
+          stageLabel: task.type === "transcribe" ? t("Segment transcription complete")
+            : task.type === "merge" ? t("AI organizing complete")
+              : task.type === "generate-prompt" ? t("Prompt generation complete") : t("Task complete"),
           detail: String(task.mdPath || ""),
           actions: task.mdPath
             ? [{ id: "open-task-note", label: t("Open note"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
@@ -241,15 +241,15 @@ export class TaskQueue {
       } catch { /* task mirror must not block completion */ }
       await this.remove(task.id, { preserveActivity: true });
       try {
-        const doneLabel = task.type === "transcribe" ? `转写完成 · 段${(task.segmentIndex || 0) + 1}`
-          : task.type === "merge" ? "AI 整理完成"
-          : task.type === "generate-prompt" ? "提示词生成完成" : "任务完成";
+        const doneLabel = task.type === "transcribe" ? t("Transcription complete · segment {0}").replace("{0}", String((task.segmentIndex || 0) + 1))
+          : task.type === "merge" ? t("AI organizing complete")
+          : task.type === "generate-prompt" ? t("Prompt generation complete") : t("Task complete");
         const durationMs = Math.max(0, Date.now() - startedAt);
         this.plugin.tasks.logCompletedWork(doneLabel, task.mdPath || "", durationMs > 0 ? { durationMs } : null);
       } catch { /* intentionally empty */ }
     } catch (e) {
       const message = (e && e.message) || String(e);
-      const isMissingAudio = task.type === "transcribe" && /音频不存在|临时切片不存在/.test(message);
+      const isMissingAudio = task.type === "transcribe" && /音频不存在|临时切片不存在|Audio missing|Temporary clip missing/.test(message);
       const isBlockedMerge = task.type === "merge" && isLlmNonRetryableError(e);
       const isTransportAsr = task.type === "transcribe" && isAsrTransportError(e);
       // 确定性转写错误（格式/解码/超限/4xx）会直接吃满重试；
@@ -271,7 +271,7 @@ export class TaskQueue {
         lastError: message,
         lastEventAt: new Date().toISOString(),
       });
-      await this.plugin.diagnostics.logDiagnostic("error", "queue.task_failed", "队列任务失败", {
+      await this.plugin.diagnostics.logDiagnostic("error", "queue.task_failed", t("Queue task failed"), {
         taskType: task.type,
         retries: nextRetries,
         transportFailures: isTransportAsr ? Math.max(0, Number(task.transportFailures) || 0) + 1 : 0,

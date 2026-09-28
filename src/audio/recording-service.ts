@@ -120,12 +120,12 @@ export class RecordingService implements LiveAsrPipeline {
 
   async getContinuationTargetInfo(file) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-      throw new Error("目标不是 Markdown 纪要");
+      throw new Error(t("The target is not a Markdown note"));
     }
     const content = await this.host.app.vault.read(file);
     const segments = extractTranscriptSegments(content);
     if (!segments.length) {
-      throw new Error("这篇纪要里没有可续录合并的原始转写分段");
+      throw new Error(t("This note has no original transcript segments to continue recording from"));
     }
     const frontmatter = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
     const mode = this.host.noteWriter.detectModeFromMarkdown(file) || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
@@ -238,7 +238,7 @@ export class RecordingService implements LiveAsrPipeline {
         stage: "recording",
         label: t("Recording"),
         percent: null,
-        detail: "正在采集音频，分段后会自动转写",
+        detail: t("Collecting audio; segments are transcribed automatically"),
       });
 
       const activeProviderId = this.host.settings.activeTranscribeProvider || "siliconflow";
@@ -360,12 +360,12 @@ export class RecordingService implements LiveAsrPipeline {
       }
       const modeLabel = audioInputModeLabel(captureMode);
       const noticeText = isStreaming
-        ? `录音中（${modeLabel}），${activeProfile.title || "流式服务"} 实时转写中`
+        ? t("Recording in progress ({0}), real-time transcription with {1}.").replace("{0}", modeLabel).replace("{1}", activeProfile.title || t("Streaming service"))
         : requiresWholeSession
-          ? `录音中（${modeLabel}），停止后统一转写并确认说话人`
+          ? t("Recording in progress ({0}); transcription and speaker confirmation run after you stop.").replace("{0}", modeLabel)
         : (this.host.settings.enableInterimOutput
-          ? `录音中（${modeLabel}），启动期快速出片，之后每 ${this.host.settings.segmentIntervalMinutes} 分钟即时转写`
-          : `录音中（${modeLabel}），停止时统一处理`);
+          ? t("Recording in progress ({0}); quick output during startup, then instant transcription every {1} minutes.").replace("{0}", modeLabel).replace("{1}", String(this.host.settings.segmentIntervalMinutes))
+          : t("Recording in progress ({0}); everything is processed when you stop.").replace("{0}", modeLabel));
       new obsidian.Notice(noticeText);
       if (continuationInfo) {
         new obsidian.Notice(`${t("Started appending to \"")}${continuationInfo.file.basename}${t("\"; it will be merged back into the original minutes when stopped.")}`, 8000);
@@ -378,7 +378,7 @@ export class RecordingService implements LiveAsrPipeline {
       }
     } catch (e) {
       console.error(e);
-      await this.host.diagnostics.logDiagnostic("error", "recording.start_failed", "无法开始录音", {
+      await this.host.diagnostics.logDiagnostic("error", "recording.start_failed", t("Failed to start recording"), {
         captureMode: this.host.settings.captureMode,
         requestedMode: this._oneShotCaptureMode || "",
         error: diagnosticError(e),
@@ -533,7 +533,7 @@ export class RecordingService implements LiveAsrPipeline {
         } catch (queueError) {
           console.error("[QnALog] preserve live segment task after processing failure failed", queueError);
         }
-        try { await this.host.diagnostics.logDiagnostic("error", "segment.process_failed", "分段处理异常（已吞，避免毒化写入链）", { mode: session.mode, isFinal: !!preparedSeg.isFinal, error: diagnosticError(e) }); } catch { /* intentionally empty */ }
+        try { await this.host.diagnostics.logDiagnostic("error", "segment.process_failed", t("Segment processing error (swallowed to avoid poisoning the write chain)"), { mode: session.mode, isFinal: !!preparedSeg.isFinal, error: diagnosticError(e) }); } catch { /* intentionally empty */ }
       } finally {
         if (preparedSeg.jobId) this.getLiveAsrJobs(session).delete(preparedSeg.jobId);
         session.activeSegmentJobs = Math.max(0, (Number(session.activeSegmentJobs) || 1) - 1);
@@ -567,7 +567,7 @@ export class RecordingService implements LiveAsrPipeline {
       const ext = seg.masterExt || extFromMime(seg.masterMime || seg.masterBlob.type || "") || seg.ext || "webm";
       await ensureVaultFolder(this.host.app, this.host.settings.audioFolder);
       const target = findAvailableVaultPath(this.host.app, obsidian.normalizePath(`${this.host.settings.audioFolder}/${NS_AUDIO_PREFIX}-${session.sessionStamp}.${ext}`));
-      if (!target) throw new Error("无法生成完整录音文件路径");
+      if (!target) throw new Error(t("Could not build a path for the full recording file"));
       const ab = await seg.masterBlob.arrayBuffer();
       await this.host.app.vault.createBinary(target, ab);
       session.masterAudioPath = target;
@@ -725,7 +725,7 @@ export class RecordingService implements LiveAsrPipeline {
       }
     }
     if (deleted || failed) {
-      await this.host.diagnostics.logDiagnostic("info", "segment_cache.cleanup", "已清理过期转写分段", { folderPath, deleted, skipped, failed });
+      await this.host.diagnostics.logDiagnostic("info", "segment_cache.cleanup", t("Cleaned up expired transcription segments"), { folderPath, deleted, skipped, failed });
     }
     return { deleted, skipped, failed };
   }
@@ -763,7 +763,7 @@ export class RecordingService implements LiveAsrPipeline {
     }
     if (nextLevel !== previousLevel) {
       const recorderBuffer = this.getRecorderBufferSummary();
-      void this.host.diagnostics.logDiagnostic(nextLevel === "normal" ? "info" : "warn", "asr.live_backlog_changed", "实时转写积压状态变化", {
+      void this.host.diagnostics.logDiagnostic(nextLevel === "normal" ? "info" : "warn", "asr.live_backlog_changed", t("Live transcription backlog state changed"), {
         reason,
         previousLevel,
         nextLevel,
@@ -906,7 +906,7 @@ export class RecordingService implements LiveAsrPipeline {
     });
     session.activeSegmentJobs = (Number(session.activeSegmentJobs) || 0) + 1;
     const summary = this.updateLiveAsrBacklogPolicy(session, "enqueue");
-    void this.host.diagnostics.logDiagnostic("info", "asr.live_segment_enqueued", "录音分段已进入磁盘转写队列", {
+    void this.host.diagnostics.logDiagnostic("info", "asr.live_segment_enqueued", t("Recording segment entered the on-disk transcription queue"), {
       segmentIndex: descriptor.segmentIndex,
       durationMs: descriptor.durationMs,
       sizeBytes: descriptor.blobSize,
@@ -925,7 +925,7 @@ export class RecordingService implements LiveAsrPipeline {
         const job = jobs.get(descriptor.jobId);
         if (job) job.state = "queued";
         this.updateLiveAsrBacklogPolicy(session, "persist-failed");
-        await this.host.diagnostics.logDiagnostic("error", "asr.segment_cache_write_failed", "录音分段写入缓存失败，将临时保留该段内存兜底", {
+        await this.host.diagnostics.logDiagnostic("error", "asr.segment_cache_write_failed", t("Failed to write the recording segment to the cache; the segment is temporarily kept in memory as a fallback"), {
           segmentIndex: descriptor.segmentIndex,
           durationMs: descriptor.durationMs,
           sizeBytes: descriptor.blobSize,
@@ -942,7 +942,7 @@ export class RecordingService implements LiveAsrPipeline {
         // 音频一旦安全落盘，就立即登记任务。即使 Obsidian 此后崩溃，重启时也能从路径恢复。
         queueTask = await this.registerLiveSegmentQueueTask(session, descriptor);
       } catch (e) {
-        await this.host.diagnostics.logDiagnostic("error", "asr.segment_task_persist_failed", "录音分段已落盘，但持久任务登记失败", {
+        await this.host.diagnostics.logDiagnostic("error", "asr.segment_task_persist_failed", t("Recording segment was written to disk, but persistent task registration failed"), {
           segmentIndex: descriptor.segmentIndex,
           audioPath: descriptor.segmentAudioPath,
           error: diagnosticError(e),
@@ -1021,7 +1021,7 @@ export class RecordingService implements LiveAsrPipeline {
     const previousFailures = Math.max(0, Number(this.getAsrServiceCircuitState().consecutiveFailures) || 0);
     this.asrServiceCircuitState = recordLiveAsrSuccess();
     if (previousFailures > 0) {
-      void this.host.diagnostics.logDiagnostic("info", "asr.service_circuit_recovered", "转写服务连接已恢复", { previousFailures });
+      void this.host.diagnostics.logDiagnostic("info", "asr.service_circuit_recovered", t("Transcription service connection recovered"), { previousFailures });
     }
   }
 
@@ -1029,7 +1029,7 @@ export class RecordingService implements LiveAsrPipeline {
     const previousFailures = Math.max(0, Number(this.getAsrServiceCircuitState().consecutiveFailures) || 0);
     this.asrServiceCircuitState = recordLiveAsrSuccess();
     if (previousFailures > 0) {
-      void this.host.diagnostics.logDiagnostic("info", "asr.service_circuit_manual_probe", "用户发起转写重试，已允许一次立即探测", {
+      void this.host.diagnostics.logDiagnostic("info", "asr.service_circuit_manual_probe", t("User-initiated transcription retry; one immediate probe allowed"), {
         source,
         previousFailures,
       });
@@ -1042,7 +1042,7 @@ export class RecordingService implements LiveAsrPipeline {
     session.asrCircuitState = recordLiveAsrSuccess();
     this.recordAsrServiceAttemptSuccess();
     if (previousFailures > 0) {
-      void this.host.diagnostics.logDiagnostic("info", "asr.live_circuit_recovered", "实时转写服务已恢复", { previousFailures });
+      void this.host.diagnostics.logDiagnostic("info", "asr.live_circuit_recovered", t("Live transcription service recovered"), { previousFailures });
     }
   }
 
@@ -1058,7 +1058,7 @@ export class RecordingService implements LiveAsrPipeline {
     const afterOpen = isLiveAsrCircuitOpen(session.asrCircuitState);
     if (!beforeOpen && afterOpen) {
       session.hasDeferredAsrJobs = true;
-      void this.host.diagnostics.logDiagnostic("warn", "asr.live_circuit_opened", "连续转写故障，实时请求已暂时熔断", {
+      void this.host.diagnostics.logDiagnostic("warn", "asr.live_circuit_opened", t("Consecutive transcription failures; live requests are temporarily circuit-broken"), {
         segmentIndex: descriptor && descriptor.segmentIndex,
         consecutiveFailures: session.asrCircuitState.consecutiveFailures,
         openUntilMs: session.asrCircuitState.openUntilMs,

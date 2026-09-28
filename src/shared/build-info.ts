@@ -8,6 +8,8 @@
 // 通过 Obsidian / BRAT 安装的正式发布没有这个文件，此时版本号就是 manifest 的版本——
 // 那本来就是一个发版版。
 
+import { t } from "./i18n";
+
 export interface PluginBuildInfo {
   /** 仓库 manifest 的版本（发版身份），例如 1.0.0 */
   version: string;
@@ -55,9 +57,9 @@ export function resolveDisplayVersion(info: PluginBuildInfo | null, manifestVers
 
 /** 人可读的来源描述，例如「开发分支 refactor/x@a8c8a88（有未提交改动）」。 */
 export function describeBuildSource(info: PluginBuildInfo): string {
-  if (info.channel === "release") return "发版构建";
+  if (info.channel === "release") return t("Release build");
   const where = info.sha ? `${info.branch}@${info.sha}` : info.branch;
-  return `开发分支 ${where || "未知"}${info.dirty ? "（有未提交改动）" : ""}`;
+  return t("Development branch {0}{1}").replace("{0}", where || t("unknown")).replace("{1}", info.dirty ? t("(uncommitted changes)") : "");
 }
 
 /**

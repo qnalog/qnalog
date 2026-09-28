@@ -240,35 +240,35 @@ export function applyStructureLevelInstruction(prompt, settings, overrideLevel) 
 
 export const REPOLISH_PREFERENCE_PRESETS = {
   detailed: {
-    label: t("More detailed"),
+    label: "More detailed",
     detailLevel: "detailed",
     structureLevel: "balanced",
     fidelity: "faithful",
     description: "主体内容更充分，保留更多事实、论证、例子和上下文。",
   },
   concise: {
-    label: t("More concise"),
+    label: "More concise",
     detailLevel: "concise",
     structureLevel: "balanced",
     fidelity: "faithful",
     description: "压缩重复表达，保留结论、依据、待办和关键分歧。",
   },
   structured: {
-    label: t("More structured"),
+    label: "More structured",
     detailLevel: "balanced",
     structureLevel: "strict",
     fidelity: "faithful",
     description: "强化标题、层级、论点—支撑—证据关系，适合复杂讨论。",
   },
   natural: {
-    label: t("More natural"),
+    label: "More natural",
     detailLevel: "balanced",
     structureLevel: "loose",
     fidelity: "faithful",
     description: "减少框架感，用更连贯的散文段落呈现。",
   },
   markdown: {
-    label: t("MD Enhance"),
+    label: "MD Enhance",
     detailLevel: "balanced",
     structureLevel: "balanced",
     fidelity: "expanded",
@@ -276,7 +276,7 @@ export const REPOLISH_PREFERENCE_PRESETS = {
     description: "更多使用 Markdown 高亮、下划线和少量 callout，让重点更容易扫读。",
   },
   detailedExpanded: {
-    label: t("Detailed expansion"),
+    label: "Detailed expansion",
     detailLevel: "detailed",
     structureLevel: "balanced",
     fidelity: "expanded",
@@ -284,7 +284,7 @@ export const REPOLISH_PREFERENCE_PRESETS = {
     description: "在更完整保留上下文的同时，补充概念、疑问和分歧视角。",
   },
   structuredExpanded: {
-    label: t("Structural expansion"),
+    label: "Structural expansion",
     detailLevel: "balanced",
     structureLevel: "strict",
     fidelity: "expanded",
@@ -292,14 +292,14 @@ export const REPOLISH_PREFERENCE_PRESETS = {
     description: "在更清晰的结构里加入必要的 AI 补充和 Markdown 标记。",
   },
   faithful: {
-    label: t("Faithful to source"),
+    label: "Faithful to source",
     detailLevel: "balanced",
     structureLevel: "balanced",
     fidelity: "faithful",
     description: "不主动外推，只整理录音中明确出现的内容。",
   },
   expanded: {
-    label: t("Moderate expansion"),
+    label: "Moderate expansion",
     detailLevel: "balanced",
     structureLevel: "balanced",
     fidelity: "expanded",
@@ -533,7 +533,7 @@ export async function clearCommittedBriefingCheckpoint(plugin, meta) {
     await getBriefingCheckpointStore(plugin).remove(id);
     delete meta._briefingCheckpointId;
   } catch (error) {
-    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_checkpoint_cleanup_failed", "纪要已写入，但整理检查点未能清理", {
+    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_checkpoint_cleanup_failed", t("The minutes were written, but the organizing checkpoint could not be cleaned up"), {
       jobId: id,
       error: diagnosticError(error),
     });
@@ -586,7 +586,7 @@ export function createBriefingLlmActivityOptions(plugin, computedMeta, patch) {
     if (now - lastHeartbeatAt < 1500) return;
     lastHeartbeatAt = now;
     plugin.tasks.patchTaskActivity(taskId, Object.assign({}, basePatch, {
-      detail: detail || basePatch.detail || "模型正在返回内容",
+      detail: detail || basePatch.detail || t("The model is returning content"),
     }));
   };
   return {
@@ -595,7 +595,7 @@ export function createBriefingLlmActivityOptions(plugin, computedMeta, patch) {
     onQueued: () => plugin.tasks.patchTaskActivity(taskId, Object.assign({}, basePatch, {
       stage: "llm-queued",
       stageLabel: t("Waiting for AI service"),
-      detail: "前面的模型任务完成后会自动开始",
+      detail: t("It starts automatically after the previous model task finishes"),
     })),
     onStart: () => plugin.tasks.patchTaskActivity(taskId, basePatch),
     onActivity: () => heartbeat("The model is returning content"),
@@ -612,11 +612,11 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
       status: "running",
       stage: finished ? "assembling" : "llm",
       stageLabel: finished
-        ? "正在组装纪要"
-        : total > 1 ? `AI 整理 · 第 ${Math.min(total, Math.max(1, currentPart || completed + 1))}/${total} 部分` : "AI 正在整理正文",
+        ? t("Assembling the minutes")
+        : total > 1 ? t("Organizing · Part {0}/{1}").replace("{0}", String(Math.min(total, Math.max(1, currentPart || completed + 1)))).replace("{1}", String(total)) : t("AI is organizing the body text"),
       detail: finished
-        ? `${total} 个部分均已生成，正在按时间顺序合并`
-        : total > 1 ? `已完成 ${completed}/${total} 部分；每部分完成后都会立即保存` : "模型正在根据原始转写生成正文",
+        ? t("All {0} parts have been generated; merging in chronological order").replace("{0}", String(total))
+        : total > 1 ? t("Completed {0}/{1} parts; each part is saved as soon as it finishes").replace("{0}", String(completed)).replace("{1}", String(total)) : t("The model is generating the body text from the original transcript"),
       progress: finished ? 88 : Math.min(84, 12 + Math.round((completed / total) * 72)),
       deadlineAt: 0,
     });
@@ -626,11 +626,11 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
   if (computedMeta && computedMeta.startedAt && session.startedAt && computedMeta.startedAt !== session.startedAt) return;
   plugin.recording.setSessionWorkProgress(session, {
     stage: "llm-merge",
-    label: total > 1 ? `AI 整理 · ${completed}/${total} 部分` : "AI 整理中",
+    label: total > 1 ? t("AI organizing · {0}/{1} parts").replace("{0}", String(completed)).replace("{1}", String(total)) : t("AI organizing"),
     percent: Math.min(86, 48 + Math.round((completed / total) * 38)),
     detail: total > 1
-      ? `正在整理第 ${Math.min(total, Math.max(1, currentPart || completed + 1))}/${total} 部分；已完成部分会立即保存`
-      : "正在生成纪要正文",
+      ? t("Organizing part {0}/{1}; completed parts are saved immediately").replace("{0}", String(Math.min(total, Math.max(1, currentPart || completed + 1)))).replace("{1}", String(total))
+      : t("Generating the minutes body text"),
   });
   try { plugin.shell.refreshOutlineView(); } catch { /* progress rendering must not block briefing */ }
 }

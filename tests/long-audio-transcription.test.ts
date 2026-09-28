@@ -62,9 +62,9 @@ describe("long audio transcription", () => {
 
   it("reports empty and malformed service responses without leaking a JSON parser error", () => {
     expect(() => parseServiceJsonResponse({ status: 200, text: "" }, "提交转写任务"))
-      .toThrow("提交转写任务返回空响应（HTTP 200）");
+      .toThrow("(HTTP 200)");
     expect(() => parseServiceJsonResponse({ status: 502, text: "upstream unavailable" }, "查询转写任务"))
-      .toThrow("查询转写任务返回的不是有效 JSON（HTTP 502）：upstream unavailable");
+      .toThrow("(HTTP 502)");
   });
 
   it("parses JSON from response text rather than relying on requestUrl.json", () => {

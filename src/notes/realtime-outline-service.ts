@@ -189,7 +189,7 @@ export class RealtimeOutlineService {
       markRealtimeOutlineSuccess(session);
       this.host.sessionProgress.clearRecordingIssue("network");
       this.host.sessionProgress.clearRecordingIssue("service");
-      await this.host.diagnostics.logDiagnostic("info", "outline.generate_succeeded", "实时大纲生成完成", {
+      await this.host.diagnostics.logDiagnostic("info", "outline.generate_succeeded", t("Live outline generated successfully"), {
         silent: !!request.silent,
         force: !!request.force,
         reason: request.reason || "",
@@ -215,7 +215,7 @@ export class RealtimeOutlineService {
       const retryInMs = request.silent && hasRealtimeOutlineRunnableBacklog(session)
         ? getRealtimeOutlineQueuedDelayMs(session, { local })
         : 0;
-      await this.host.diagnostics.logDiagnostic("error", "outline.generate_failed", "实时大纲生成失败", {
+      await this.host.diagnostics.logDiagnostic("error", "outline.generate_failed", t("Live outline generation failed"), {
         silent: !!request.silent,
         force: !!request.force,
         reason: request.reason || "",
@@ -250,7 +250,7 @@ export class RealtimeOutlineService {
     // read-modify-write after an arbitrary lock timeout can overwrite a newer outline.
     return await runInOutlineSessionTail(session, async () => {
         if (opts.signal && opts.signal.aborted) {
-          const error = new Error("实时大纲生成已取消");
+          const error = new Error(t("Live outline generation cancelled"));
           error.name = "AbortError";
           throw error;
         }
@@ -379,7 +379,7 @@ export class RealtimeOutlineService {
       thinkingMode: "fast",
     });
     if (opts.signal && opts.signal.aborted) {
-      const error = new Error("实时大纲生成已取消");
+      const error = new Error(t("Live outline generation cancelled"));
       error.name = "AbortError";
       throw error;
     }
@@ -470,7 +470,7 @@ export class RealtimeOutlineService {
         input: inputMetrics,
       };
       try {
-        await this.host.diagnostics.logDiagnostic("warn", "outline.soft_rejected", "实时大纲本轮判废", {
+        await this.host.diagnostics.logDiagnostic("warn", "outline.soft_rejected", t("Live outline batch rejected this round"), {
           reason: validation.reason,
           force: !!opts.force,
           mode: session.mode,
@@ -495,7 +495,7 @@ export class RealtimeOutlineService {
       });
       // 判废只记录“尝试到哪里”，绝不推进已提交游标，也不污染主题记忆。
       // 外层统一进入退避重试；手动刷新也不能把不合格结果强行写进时间轴。
-      throw new Error(`实时大纲输出格式不合格：${validation.reason}`);
+      throw new Error(t("Live outline output failed validation: {0}").replace("{0}", validation.reason));
     }
     // 冻结合并：本轮通过验证的增量节点并入已有状态——历史话题冻结、
     // 只给同名历史话题补充子要点，并追加真正的新话题。大纲因此全部内容稳定存在、单调增量生长；
@@ -547,7 +547,7 @@ export class RealtimeOutlineService {
     };
     if (noChangeAcknowledged) {
       try {
-        await this.host.diagnostics.logDiagnostic("warn", "outline.no_change_acknowledged", "实时大纲增量连续无结构变化，已确认该批次以避免队列停滞", {
+        await this.host.diagnostics.logDiagnostic("warn", "outline.no_change_acknowledged", t("The live outline had no structural changes for consecutive increments; the batch was acknowledged to keep the queue moving"), {
           mode: session.mode,
           committedSegmentCount,
           attemptedSegmentCount,
@@ -590,7 +590,7 @@ export class RealtimeOutlineService {
       isComplete: () => isRealtimeOutlineCurrent(session),
       maxAttemptsPerBatch: REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS,
       maxBatches,
-      shouldRetryAttempt: ({ error }) => /实时大纲输出格式不合格/.test(
+      shouldRetryAttempt: ({ error }) => /实时大纲输出格式不合格|Live outline output failed validation/.test(
         getErrorMessage(error)
       ),
       runBatch: async ({ attemptIndex }) => {
@@ -604,14 +604,14 @@ export class RealtimeOutlineService {
       },
       onAttemptFailed: async ({ batchIndex, attemptIndex, beforeCommittedCount, error }) => {
         try {
-          await this.host.diagnostics.logDiagnostic("warn", "outline.final_batch_retry", "最终大纲批次失败", {
+          await this.host.diagnostics.logDiagnostic("warn", "outline.final_batch_retry", t("Final outline batch failed"), {
             batchIndex,
             attempt: attemptIndex + 1,
             maxAttempts: REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS,
             segmentCount: totalSegmentCount,
             committedSegmentCount: beforeCommittedCount,
             willRetry: attemptIndex + 1 < REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS
-              && /实时大纲输出格式不合格/.test(getErrorMessage(error)),
+              && /实时大纲输出格式不合格|Live outline output failed validation/.test(getErrorMessage(error)),
             mode: session.mode,
             error: diagnosticError(error),
           });
@@ -626,7 +626,7 @@ export class RealtimeOutlineService {
           stage: "outline",
           label: `${t("Completing outline ")}${committedSegmentCount}/${totalSegmentCount}${t(" segments")}`,
           percent: Math.min(58, 32 + Math.round(coveragePercent * 0.26)),
-          detail: `已覆盖 ${coveragePercent}% 的转写内容`,
+          detail: t("Covered {0}% of transcribed content").replace("{0}", String(coveragePercent)),
         });
         this.host.requestOutlineRefresh();
       },
@@ -638,7 +638,7 @@ export class RealtimeOutlineService {
         completedBatches: drainResult.completedBatches,
         retryCount: drainResult.retryCount,
       });
-      await this.host.diagnostics.logDiagnostic("info", "outline.final_completed", "最终大纲已覆盖全部转写", {
+      await this.host.diagnostics.logDiagnostic("info", "outline.final_completed", t("The final outline now covers the entire transcript"), {
         segmentCount: totalSegmentCount,
         committedSegmentCount: drainResult.committedSegmentCount,
         completedBatches: drainResult.completedBatches,
@@ -660,13 +660,17 @@ export class RealtimeOutlineService {
       stage: "outline",
       label: t("Outline not fully completed"),
       percent: 58,
-      detail: `已覆盖 ${drainResult.committedSegmentCount}/${totalSegmentCount} 段；最终纪要仍会使用全部转写`,
+      detail: t("Covered {0}/{1} segments; the final minutes will still use the full transcript")
+        .replace("{0}", String(drainResult.committedSegmentCount))
+        .replace("{1}", String(totalSegmentCount)),
     });
     new obsidian.Notice(
-      `大纲仅覆盖 ${drainResult.committedSegmentCount}/${totalSegmentCount} 段，最终纪要将继续基于完整转写生成。`
+      t("The outline covers only {0}/{1} segments; the final minutes will continue to be generated from the full transcript.")
+        .replace("{0}", String(drainResult.committedSegmentCount))
+        .replace("{1}", String(totalSegmentCount))
     );
     console.error("[QnALog] final realtime outline incomplete", drainResult.lastError);
-    await this.host.diagnostics.logDiagnostic("warn", "outline.final_incomplete", "最终大纲未覆盖全部转写", {
+    await this.host.diagnostics.logDiagnostic("warn", "outline.final_incomplete", t("Final outline does not cover the entire transcript"), {
       segmentCount: totalSegmentCount,
       committedSegmentCount: drainResult.committedSegmentCount,
       mode: session.mode,

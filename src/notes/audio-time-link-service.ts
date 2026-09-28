@@ -38,7 +38,7 @@ export class AudioTimeLinkService {
       const linkPath = link.getAttribute("data-href") || link.getAttribute("href") || "";
       if (!isTimeLabel(label) || !getAudioExtFromLinkPath(linkPath)) continue;
       link.classList.add("qnalog-time-link");
-      link.setAttribute("aria-label", `Q&A Log 回听 ${label}`);
+      link.setAttribute("aria-label", t("Q&A Log listen back {0}").replace("{0}", label));
       // 锚元素上挂自定义处理器，用于重复调用时先解绑上一次（避免叠加多个 click）。
       const anyLink = link;
       if (anyLink.__qnalogTimeHandler) {

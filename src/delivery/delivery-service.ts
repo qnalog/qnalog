@@ -74,7 +74,7 @@ export class DeliveryService {
       const folder = obsidian.normalizePath(this.host.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder);
       await ensureVaultFolder(this.host.app, folder);
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-HTML报告.html`);
-      if (!target) throw new Error("无法生成可用的 HTML 报告路径");
+      if (!target) throw new Error(t("Unable to generate a usable HTML report path"));
       const outFile = await this.host.app.vault.create(target, r.html);
       new obsidian.Notice(`${t("Q&A Log: generated HTML report: ")}${target}`, 8000);
       if (this.host.settings.autoOpenHtmlReportAfterGenerate !== false) {
@@ -93,7 +93,7 @@ export class DeliveryService {
       const folder = obsidian.normalizePath(this.host.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder);
       await ensureVaultFolder(this.host.app, folder);
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-报告.pdf`);
-      if (!target) throw new Error("无法生成可用的 PDF 路径");
+      if (!target) throw new Error(t("Unable to generate a usable PDF path"));
       const pdfBuffer = await this.printHtmlToSinglePagePdfBuffer(r.html);
       const bytes = pdfBuffer instanceof Uint8Array ? pdfBuffer : new Uint8Array(pdfBuffer || []);
       const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -119,7 +119,7 @@ export class DeliveryService {
         BrowserWindow = remote && remote.BrowserWindow;
       } catch { /* intentionally empty */ }
     }
-    if (!BrowserWindow) throw new Error("当前 Obsidian 环境不支持自动生成 PDF");
+    if (!BrowserWindow) throw new Error(t("The current Obsidian environment does not support automatic PDF generation"));
     const win = new BrowserWindow({
       show: false,
       webPreferences: {
@@ -145,20 +145,20 @@ export class DeliveryService {
     let BrowserWindow = null;
     try { const e = getDesktopModule<ElectronModule>("electron"); BrowserWindow = e && (e.BrowserWindow || (e.remote && e.remote.BrowserWindow)); } catch { /* intentionally empty */ }
     if (!BrowserWindow) { try { BrowserWindow = getDesktopModule<ElectronModule>("@electron/remote")?.BrowserWindow; } catch { /* intentionally empty */ } }
-    if (!BrowserWindow) throw new Error("当前 Obsidian 环境不支持自动生成 PDF");
+    if (!BrowserWindow) throw new Error(t("The current Obsidian environment does not support automatic PDF generation"));
     const win = new BrowserWindow({ show: false, width: 1024, height: 1400, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
     // 超时兜底：渲染进程崩溃/卡死时这些 await 可能永不 settle，不加超时会让用户卡在"正在渲染…"且无法取消。
     const withTimeout = (p, ms, label) => Promise.race([
       Promise.resolve(p),
-      new Promise((_, rej) => window.setTimeout(() => rej(new Error(`${label}超时（${ms / 1000}s）`)), ms)),
+      new Promise((_, rej) => window.setTimeout(() => rej(new Error(t("{0} timed out ({1}s)").replace("{0}", label).replace("{1}", String(ms / 1000)))), ms)),
     ]);
     try {
-      await withTimeout(win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`), 30000, "PDF 页面加载");
+      await withTimeout(win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`), 30000, t("PDF page loading"));
       await new Promise(r => window.setTimeout(r, 200));  // 等字体/布局稳定，量高才准
       // 页宽量 .doc（内容定宽容器，纯白弥散模板为 960px）实际宽度，避免把溢出/留白算进页宽导致左右白边；无 .doc 退回文档滚动宽。
       const dims = await withTimeout(win.webContents.executeJavaScript(
         "(()=>{const d=document.documentElement,b=document.body,doc=document.querySelector('.doc');return{w:(doc&&doc.offsetWidth)||Math.max(b.scrollWidth,d.scrollWidth,640),h:Math.max(b.scrollHeight,d.scrollHeight,400)};})()"
-      ), 10000, "PDF 内容测量");
+      ), 10000, t("PDF content measurement"));
       const wpx = Math.min(1600, Math.max(640, Math.ceil(Number(dims && dims.w) || 960)));
       const rawH = Math.max(400, Math.ceil(Number(dims && dims.h) || 1320) + 24);
       // 单页高度上限保护：PDF 单页约 200in≈19200px(96dpi)，超了会被裁，封顶 18000px 留余量。超长则提示用户，避免静默丢内容。
@@ -168,8 +168,8 @@ export class DeliveryService {
       }
       await withTimeout(win.webContents.executeJavaScript(
         "(()=>{const s=document.createElement('style');s.textContent='@page{size:" + wpx + "px " + hpx + "px;margin:0}';document.head.appendChild(s);return true;})()"
-      ), 10000, "PDF 页面尺寸注入");
-      const pdf = await withTimeout(win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { marginType: "none" } }), 45000, "PDF 渲染");
+      ), 10000, t("Injecting PDF page size"));
+      const pdf = await withTimeout(win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { marginType: "none" } }), 45000, t("Rendering PDF"));
       return pdf;
     } finally {
       try { win.destroy(); } catch { /* intentionally empty */ }
@@ -251,11 +251,18 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
       const folder = obsidian.normalizePath(EMAIL_DRAFT_FOLDER);
       await ensureVaultFolder(this.host.app, folder);
       const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-邮件草稿.eml`);
-      if (!target) throw new Error("无法生成可用的邮件草稿路径");
+      if (!target) throw new Error(t("Unable to generate a usable email draft path"));
       const draft = await this.host.app.vault.create(target, eml);
       const opened = this.openVaultFileInSystem(draft.path);
-      const recipientHint = recipients.length ? `，已填入 ${recipients.length} 个收件人` : "，未匹配到邮箱";
-      new obsidian.Notice(`${t("Q&A Log: generated email draft ")}${recipientHint}${t(", attachments ")}${attachments.length}${t(".")}${opened ? "" : t("You can open it in the email drafts folder.")}`, 10000);
+      const recipientCount = recipients.length;
+      const attachmentCount = attachments.length;
+      const draftHint = recipientCount
+        ? t("Q&A Log: generated email draft, {0} recipients added, attachments {1}.")
+          .replace("{0}", String(recipientCount))
+          .replace("{1}", String(attachmentCount))
+        : t("Q&A Log: generated email draft, no email matched, attachments {0}.")
+          .replace("{0}", String(attachmentCount));
+      new obsidian.Notice(`${draftHint}${opened ? "" : t("You can open it in the email drafts folder.")}`, 10000);
     } catch (e) {
       console.error("[QnALog] create email draft failed", e);
       new obsidian.Notice(`${t("Email draft generation failed: ")}${(e && e.message) || e}`, 9000);
@@ -318,7 +325,7 @@ td, th { border: 1px solid #ddd; padding: 6px 8px; }
     const folder = obsidian.normalizePath(EMAIL_DRAFT_ATTACHMENT_FOLDER);
     await ensureVaultFolder(this.host.app, folder);
     const target = findAvailableVaultPath(this.host.app, `${folder}/${sanitizeReportFileStem(file.basename)}-纪要PDF.pdf`);
-    if (!target) throw new Error("无法生成可用的 PDF 路径");
+    if (!target) throw new Error(t("Unable to generate a usable PDF path"));
     const html = await this.renderMarkdownToEmailHtml(file, markdown);
     const pdfBuffer = await this.printHtmlToPdfBuffer(html);
     const bytes = pdfBuffer instanceof Uint8Array ? pdfBuffer : new Uint8Array(pdfBuffer || []);

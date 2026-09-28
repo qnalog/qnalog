@@ -1,3 +1,5 @@
+import { t } from "./shared/i18n";
+
 export type OutlineDrainStopReason =
   | "complete"
   | "batch-failed"
@@ -98,7 +100,7 @@ export async function drainRealtimeOutlineBacklog(
         advanced = afterCommittedCount > beforeCommittedCount || options.isComplete();
         resolvedWithoutProgress = !advanced;
         if (advanced) break;
-        lastError = new Error("实时大纲批次未推进已提交游标");
+        lastError = new Error(t("The live outline batch did not advance the committed cursor"));
         break;
       } catch (error) {
         if (isAbortError(error)) throw error;

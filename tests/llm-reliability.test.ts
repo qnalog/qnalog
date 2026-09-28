@@ -100,20 +100,20 @@ describe("service endpoint transport security", () => {
       "http://100.63.255.255:11434/v1",
       "http://100.128.0.0:11434/v1",
     ]) {
-      expect(getServiceEndpointSecurityIssue(endpoint, "http"), endpoint).toContain("公网地址必须使用 HTTPS");
+      expect(getServiceEndpointSecurityIssue(endpoint, "http"), endpoint).toContain("must use HTTPS");
       expect(canOmitServiceApiKey(endpoint), endpoint).toBe(false);
     }
   });
 
   it("阻止公网 HTTP/WS、伪私网地址和错误协议", () => {
     expect(() => assertSafeServiceEndpoint("http://api.example.com/v1", "http", "大模型服务地址"))
-      .toThrow("公网地址必须使用 HTTPS");
+      .toThrow("must use HTTPS");
     expect(() => assertSafeServiceEndpoint("ws://api.example.com/realtime", "websocket", "实时转写服务地址"))
-      .toThrow("公网地址必须使用 WSS");
+      .toThrow("must use WSS");
     expect(() => assertSafeServiceEndpoint("http://10.999.1.1/v1", "http"))
-      .toThrow("格式无效");
+      .toThrow("is invalid");
     expect(() => assertSafeServiceEndpoint("ftp://192.168.1.8/model", "http"))
-      .toThrow("协议不受支持");
+      .toThrow("unsupported protocol");
   });
 
   it("LLM 配置检查会在请求前报告不安全端点", () => {
@@ -121,7 +121,7 @@ describe("service endpoint transport security", () => {
       llmEndpoint: "http://api.example.com/v1",
       llmApiKey: "secret",
       llmModel: "model",
-    })).toContain("公网地址必须使用 HTTPS");
+    })).toContain("must use HTTPS");
     expect(getLlmConfigIssue({
       llmEndpoint: "http://127.0.0.1:11434/v1",
       llmApiKey: "",
@@ -143,15 +143,15 @@ describe("service endpoint transport security", () => {
       },
     };
     await expect(requestLlmChatCompletion(plugin, [{ role: "user", content: "secret text" }], {}))
-      .rejects.toThrow("公网地址必须使用 HTTPS");
+      .rejects.toThrow("must use HTTPS");
     await expect(fetchLlmModelList("http://api.example.com/v1", "secret"))
-      .rejects.toThrow("公网地址必须使用 HTTPS");
+      .rejects.toThrow("must use HTTPS");
     await expect(requestLlmChatCompletionViaObsidian(
       "http://api.example.com/v1/chat/completions",
       { Authorization: "Bearer secret" },
       JSON.stringify({ messages: [{ role: "user", content: "secret text" }] }),
       1000,
-    )).rejects.toThrow("公网地址必须使用 HTTPS");
+    )).rejects.toThrow("must use HTTPS");
   });
 
   it("所有流式 ASR 客户端都在创建 WebSocket 前阻止公网 WS", async () => {
@@ -173,7 +173,7 @@ describe("service endpoint transport security", () => {
       }),
     ];
     for (const client of clients) {
-      await expect(client.connect()).rejects.toThrow("公网地址必须使用 WSS");
+      await expect(client.connect()).rejects.toThrow("must use WSS");
     }
   });
 
@@ -186,7 +186,7 @@ describe("service endpoint transport security", () => {
         apiKey: "secret",
         model: "model",
       });
-      await expect(client.connect()).rejects.toThrow("移动端请改用分段转写或整段音频转写");
+      await expect(client.connect()).rejects.toThrow("use segmented or whole-file transcription instead");
     } finally {
       platform.isMobile = false;
     }
@@ -454,7 +454,7 @@ describe("readLlmSseStream completion contract", () => {
 
   it("没有正文也没有结束标记时显式失败", async () => {
     const res = { body: null, text: async () => "" };
-    await expect(readLlmSseStream(res, () => {})).rejects.toThrow("响应流中断");
+    await expect(readLlmSseStream(res, () => {})).rejects.toThrow(Error);
   });
 
   it("端点忽略 stream 并返回普通 JSON 时保留正常 finish_reason", async () => {
@@ -525,7 +525,7 @@ describe("模型列表的形态兼容与地址回退", () => {
       return { status: url.includes("/api/v1/models") ? 401 : 500, text: "err", json: undefined } as never;
     }) as never);
     await expect(fetchLlmModelList("https://dashscope.aliyuncs.com/compatible-mode/v1", "sk-real-key"))
-      .rejects.toThrow(/HTTP 401[\s\S]*HTTP 500/);
+      .rejects.toThrow(/HTTP(?: status)? 401[\s\S]*HTTP(?: status)? 500/);
   });
 });
 

@@ -492,12 +492,12 @@ export class NoteWriter {
   }
   async readMergeSourceFromMarkdown(file, offsetMs, startIndex) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-      throw new Error("只能合并 Q&A Log Markdown 纪要");
+      throw new Error(t("Only Q&A Log Markdown minutes notes can be merged"));
     }
     const content = await this.host.app.vault.read(file);
     const rawSegments = extractTranscriptSegments(content);
     if (!rawSegments.length) {
-      throw new Error(`「${file.basename}」没有找到原始转写分段`);
+      throw new Error(t("No original transcription segments found in \"{0}\"").replace("{0}", file.basename));
     }
     const frontmatter = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
     const rawDurationMs = getSegmentsDurationMs(rawSegments) || getDurationMs(content);
@@ -524,7 +524,7 @@ export class NoteWriter {
       new obsidian.Notice(t("No most recent Q&A Log summary before this one was found."), 6000);
       return;
     }
-    const ok = await qnalogConfirm(this.host.app, "合并纪要", `将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. ${previous.basename}\n2. ${file.basename}\n\n继续合并？`, "合并");
+    const ok = await qnalogConfirm(this.host.app, t("Merge minutes"), t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace("{0}", previous.basename).replace("{1}", file.basename), t("Merge"));
     if (!ok) return;
     try {
       await this.mergeMarkdownFilesAsNew([previous, file]);
@@ -561,7 +561,7 @@ export class NoteWriter {
       ? startedAt.format(this.host.settings.noteFileNameFormatNew)
       : (moment ? moment().format(this.host.settings.noteFileNameFormatNew) : "合并纪要");
     const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · ${t("Merge")}.md`));
-    if (!targetPath) throw new Error("无法生成合并纪要路径");
+    if (!targetPath) throw new Error(t("Failed to generate a path for the merged minutes file"));
 
     new obsidian.Notice(`${t("Q&A Log: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
     await this.host.app.vault.create(targetPath, "");

@@ -291,7 +291,7 @@ class QnALogPlugin extends obsidian.Plugin {
       this.settings.showFloatingBall = !this.settings.showFloatingBall;
       void this.saveSettings();
       this.shell.syncBubbleVisibility();
-      new obsidian.Notice(this.settings.showFloatingBall ? "浮窗已启用（常驻显示，可拖动）" : "浮窗已关闭");
+      new obsidian.Notice(this.settings.showFloatingBall ? t("Floating ball enabled (always visible, draggable)") : t("Floating ball disabled"));
     }});
     this.addCommand({ id: "open-queue", name: t("Open Pending Queue"), callback: () => new QueueModal(this.app, this).open() });
     this.addCommand({ id: "retry-queue-all", name: t("Retry All Failed Tasks"), callback: () => this.queueRetry.retryQueue() });
@@ -558,13 +558,16 @@ class QnALogPlugin extends obsidian.Plugin {
       this.settings = normalizePluginSettings({ settings: migration.settings });
       this.persistedQueue = extractJobItems(saved);
       shouldPersistSchema = true;
-      schemaNotice = `Q&A Log 设置已从版本 ${readSavedSchemaVersion(saved)} 升级到 ${SETTINGS_SCHEMA_VERSION}，你的服务配置与密钥都已保留。`;
+      schemaNotice = t("Q&A Log settings have been upgraded from version {0} to {1}; your service configuration and API keys are preserved.")
+        .replace("{0}", String(readSavedSchemaVersion(saved)))
+        .replace("{1}", String(SETTINGS_SCHEMA_VERSION));
     } else if (schemaState === "future") {
       // 高于当前版本：只读回认识的键，但绝不写盘（shouldPersistSchema 保持 false）。
       this.settings = normalizePluginSettings(saved);
       this.persistedQueue = extractJobItems(saved);
-      schemaNotice = `磁盘上的设置来自更新的 Q&A Log（版本 ${readSavedSchemaVersion(saved)}，当前 ${SETTINGS_SCHEMA_VERSION}）。`
-        + "为避免覆盖较新版本写入的字段，本版本不会保存设置改动。请升级插件后再修改设置。";
+      schemaNotice = t("The settings on disk belong to a newer Q&A Log (version {0}, current {1}). To avoid overwriting fields written by the newer version, this version will not save settings changes. Please update the plugin before changing settings.")
+        .replace("{0}", String(readSavedSchemaVersion(saved)))
+        .replace("{1}", String(SETTINGS_SCHEMA_VERSION));
       console.warn(`[QnALog] 设置结构版本高于当前版本（${readSavedSchemaVersion(saved)} > ${SETTINGS_SCHEMA_VERSION}），本次不写盘`);
     } else {
       // foreign：别的项目、pre-1.0 遗留或损坏。先留档再丢弃。
@@ -575,8 +578,10 @@ class QnALogPlugin extends obsidian.Plugin {
       if (stored) {
         const backup = await this.backupForeignSettings(saved);
         schemaNotice = backup
-          ? `Q&A Log 未识别磁盘上的设置（不是本插件 ${SETTINGS_SCHEMA_VERSION} 版写的），已改用默认设置。原文件已留档到：${backup}`
-          : "Q&A Log 未识别磁盘上的设置（不是本插件当前版本写的），已改用默认设置。请在「设置 → Q&A Log」重新配置保存路径与访问密钥。";
+          ? t("Q&A Log could not recognize the settings on disk (not written by version {0} of this plugin); default settings are used instead. The original file was backed up to: {1}")
+            .replace("{0}", String(SETTINGS_SCHEMA_VERSION))
+            .replace("{1}", backup)
+          : t("Q&A Log could not recognize the settings on disk (not written by the current version of this plugin); default settings are used instead. Please reconfigure the save path and access key under Settings → Q&A Log.");
         console.warn("[QnALog] 设置无法识别来源，已丢弃并改用默认值");
       }
     }

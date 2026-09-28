@@ -89,7 +89,7 @@ function makeServiceError(prefix: string, payload: unknown): Error {
   const value = asRecord(payload);
   const output = asRecord(value.output);
   const message = asString(output.message) || asString(value.message) || asString(output.code) || asString(value.code);
-  return new Error(message ? `${prefix}：${message}` : prefix);
+  return new Error(message ? t("{0}: {1}").replace("{0}", prefix).replace("{1}", message) : prefix);
 }
 
 function parseJsonText(text: unknown): unknown {
@@ -106,11 +106,11 @@ export function parseServiceJsonResponse(response: HttpResponseLike, phase: stri
   const status = Number(response && response.status) || 0;
   const raw = typeof response?.text === "string" ? response.text.trim() : "";
   if (!raw) {
-    throw new Error(`${phase}返回空响应（HTTP ${status || "未知"}）`);
+    throw new Error(t("{0} returned an empty response (HTTP {1}).").replace("{0}", phase).replace("{1}", String(status || t("unknown"))));
   }
   const parsed = parseJsonText(raw);
   if (!parsed) {
-    throw new Error(`${phase}返回的不是有效 JSON（HTTP ${status || "未知"}）：${raw.slice(0, 180)}`);
+    throw new Error(t("{0} did not return valid JSON (HTTP {1}): {2}").replace("{0}", phase).replace("{1}", String(status || t("unknown"))).replace("{2}", raw.slice(0, 180)));
   }
   return asRecord(parsed);
 }
@@ -121,7 +121,7 @@ function requireSuccessfulJsonResponse(response: HttpResponseLike, phase: string
   const parsed = raw ? parseJsonText(raw) : null;
   if (status < 200 || status >= 300) {
     const payload = parsed || (raw ? { message: raw.slice(0, 180) } : {});
-    throw makeServiceError(`${phase}（HTTP ${status || "未知"}）`, payload);
+    throw makeServiceError(t("{0} (HTTP {1})").replace("{0}", phase).replace("{1}", String(status || t("unknown"))), payload);
   }
   return parseServiceJsonResponse(response, phase);
 }
@@ -260,10 +260,10 @@ async function getDashScopeUploadPolicy(
     },
     throw: false,
   });
-  const payload = requireSuccessfulJsonResponse(policyResponse, "获取阿里云文件上传凭证失败");
+  const payload = requireSuccessfulJsonResponse(policyResponse, t("Failed to get Alibaba Cloud upload credentials."));
   const policy = asRecord(payload.data);
   if (!asString(policy.upload_host) || !asString(policy.upload_dir)) {
-    throw new Error("阿里云上传凭证响应缺少上传地址，请检查模型名称是否支持录音文件识别");
+    throw new Error(t("Alibaba Cloud upload credential response lacks an upload URL; check that the model supports audio file transcription."));
   }
   return policy;
 }
@@ -276,21 +276,21 @@ export async function testImportTranscribeProvider(
     plugin,
     providerId || asString(asRecord(plugin && plugin.settings).importTranscribeProvider),
   );
-  if (!provider.endpoint) throw new Error("导入音频转写服务地址未配置");
-  if (!provider.apiKey) throw new Error("导入音频转写服务密钥未配置");
-  if (!provider.model) throw new Error("导入音频转写模型未配置");
+  if (!provider.endpoint) throw new Error(t("Import transcription service URL is not configured."));
+  if (!provider.apiKey) throw new Error(t("Import transcription service access key is not configured."));
+  if (!provider.model) throw new Error(t("Import transcription model is not configured."));
   if (isOpenRouterDiarizeProvider(provider)) {
     return testOpenRouterDiarizeProvider(provider);
   }
   if (!isDashScopeFileTransProvider(provider)) {
-    throw new Error("该服务暂不支持无音频连接测试，请导入一段短音频验证");
+    throw new Error(t("This service does not support connection testing without audio; import a short audio clip to verify."));
   }
   const policy = await getDashScopeUploadPolicy(provider.endpoint, provider.apiKey, provider.model);
   const maxSizeMb = asNumber(policy.max_file_size_mb);
   return {
     providerId: provider.id,
     model: provider.model,
-    detail: maxSizeMb > 0 ? `单文件上传上限 ${maxSizeMb} MB` : "上传凭证正常",
+    detail: maxSizeMb > 0 ? t("Single-file upload limit: {0} MB").replace("{0}", String(maxSizeMb)) : t("Upload credentials OK"),
   };
 }
 
@@ -303,7 +303,7 @@ export async function fetchImportTranscribeModels(
     providerId || asString(asRecord(plugin && plugin.settings).importTranscribeProvider),
   );
   if (!isDashScopeFileTransProvider(provider)) return provider.model ? [provider.model] : [];
-  if (!provider.apiKey) throw new Error("请先填写阿里云百炼 API Key");
+  if (!provider.apiKey) throw new Error(t("Please fill in the Bailian API key first."));
   const baseUrl = dashScopeBaseUrl(provider.endpoint || "");
   const response = await requestUrl({
     url: `${baseUrl}/api/v1/deployments/models?page_no=1&page_size=100&version=v1.0&model_source=base`,
@@ -315,7 +315,7 @@ export async function fetchImportTranscribeModels(
   if (response.status < 200 || response.status >= 300 || !String(response.text || "").trim()) {
     return Array.from(new Set<string>([provider.model, ...builtIns].filter((id): id is string => !!id)));
   }
-  const payload = parseServiceJsonResponse(response, "获取阿里云模型列表失败");
+  const payload = parseServiceJsonResponse(response, t("Failed to fetch the Alibaba Cloud model list."));
   const records = [
     ...asArray(payload.data),
     ...asArray(payload.models),
@@ -338,11 +338,11 @@ async function getDashScopeUploadUrl(
   const policy = await getDashScopeUploadPolicy(endpoint, apiKey, model);
   const maxSizeMb = asNumber(policy.max_file_size_mb);
   if (maxSizeMb > 0 && blob.size > maxSizeMb * 1024 * 1024) {
-    throw new Error(`音频文件超过阿里云临时上传上限 ${maxSizeMb} MB`);
+    throw new Error(t("The audio file exceeds the Alibaba Cloud temporary upload limit of {0} MB.").replace("{0}", String(maxSizeMb)));
   }
   const uploadHost = asString(policy.upload_host);
   const uploadDir = asString(policy.upload_dir).replace(/\/+$/, "");
-  if (!uploadHost || !uploadDir) throw new Error("阿里云未返回有效的文件上传地址");
+  if (!uploadHost || !uploadDir) throw new Error(t("Alibaba Cloud did not return a valid file upload URL."));
   const key = `${uploadDir}/${safeUploadFileName(fileName, blob.type || "audio/webm")}`;
   const form = new FormData();
   form.append("OSSAccessKeyId", asString(policy.oss_access_key_id));
@@ -357,7 +357,7 @@ async function getDashScopeUploadUrl(
   const uploadResponse = await window.fetch(uploadHost, { method: "POST", body: form });
   if (!uploadResponse.ok) {
     const body = await uploadResponse.text().catch(() => "");
-    throw new Error(`上传音频到阿里云临时存储失败（HTTP ${uploadResponse.status}）${body ? `：${body.slice(0, 180)}` : ""}`);
+    throw new Error(t("Failed to upload the audio to Alibaba Cloud temporary storage (HTTP {0}){1}.").replace("{0}", String(uploadResponse.status)).replace("{1}", body ? t(": ") + body.slice(0, 180) : ""));
   }
   return `oss://${key}`;
 }
@@ -367,9 +367,9 @@ async function transcribeWithDashScope(
   blob: Blob,
   options: LongAudioTranscriptionOptions,
 ): Promise<LongAudioTranscriptionResult> {
-  if (!provider.endpoint) throw new Error("导入音频转写服务地址未配置");
-  if (!provider.apiKey) throw new Error("导入音频转写服务密钥未配置");
-  if (!provider.model) throw new Error("导入音频转写模型未配置");
+  if (!provider.endpoint) throw new Error(t("Import transcription service URL is not configured."));
+  if (!provider.apiKey) throw new Error(t("Import transcription service access key is not configured."));
+  if (!provider.model) throw new Error(t("Import transcription model is not configured."));
   const notify = (progress: LongAudioProgress) => options.onProgress?.(progress);
   notify({ phase: "upload", label: t("Uploading audio") });
   const fileUrl = await getDashScopeUploadUrl(
@@ -397,22 +397,22 @@ async function transcribeWithDashScope(
     }),
     throw: false,
   });
-  const submitPayload = requireSuccessfulJsonResponse(submitResponse, "提交阿里云长音频转写任务失败");
+  const submitPayload = requireSuccessfulJsonResponse(submitResponse, t("Failed to submit the Alibaba Cloud long-audio transcription task."));
   const taskId = asString(asRecord(submitPayload.output).task_id);
-  if (!taskId) throw new Error("阿里云未返回转写任务 ID");
+  if (!taskId) throw new Error(t("Alibaba Cloud did not return a transcription task ID."));
   const queryUrl = `${dashScopeBaseUrl(provider.endpoint)}/api/v1/tasks/${encodeURIComponent(taskId)}`;
   const pollIntervalMs = Math.max(1500, Number(options.pollIntervalMs) || 3000);
   const timeoutMs = Math.max(60_000, Number(options.timeoutMs) || 6 * 60 * 60 * 1000);
   const deadline = Date.now() + timeoutMs;
   const estimate = estimateCloudTranscriptionDuration(options.audioDurationMs);
-  const durationLabel = Number(options.audioDurationMs) > 0 ? formatElapsed(Number(options.audioDurationMs)) : "未知";
-  const estimateLabel = `${formatEstimateMinutes(estimate.minMs)}–${formatEstimateMinutes(estimate.maxMs)} 分钟`;
+  const durationLabel = Number(options.audioDurationMs) > 0 ? formatElapsed(Number(options.audioDurationMs)) : t("unknown");
+  const estimateLabel = t("{0}–{1} minutes").replace("{0}", formatEstimateMinutes(estimate.minMs)).replace("{1}", formatEstimateMinutes(estimate.maxMs));
   let transcriptionUrl = "";
   while (Date.now() < deadline) {
     notify({
       phase: "waiting",
       label: t("Sending the full audio to the cloud for recognition"),
-      detail: `音频时长 ${durationLabel} · 预计约 ${estimateLabel}完成`,
+      detail: t("Audio duration {0} · estimated to finish in about {1}").replace("{0}", durationLabel).replace("{1}", estimateLabel),
       taskId,
     });
     const queryResponse = await requestUrl({
@@ -421,27 +421,27 @@ async function transcribeWithDashScope(
       headers: { Authorization: `Bearer ${provider.apiKey}` },
       throw: false,
     });
-    const queryPayload = requireSuccessfulJsonResponse(queryResponse, "查询阿里云转写任务失败");
+    const queryPayload = requireSuccessfulJsonResponse(queryResponse, t("Failed to query the Alibaba Cloud transcription task."));
     const output = asRecord(queryPayload.output);
     const status = asString(output.task_status).toUpperCase();
     if (status === "FAILED" || status === "CANCELED" || status === "UNKNOWN") {
-      throw makeServiceError("阿里云长音频转写失败", queryPayload);
+      throw makeServiceError(t("Alibaba Cloud long-audio transcription failed."), queryPayload);
     }
     if (status === "SUCCEEDED") {
       const result = asArray(output.results).map(asRecord).find((item) => asString(item.subtask_status).toUpperCase() === "SUCCEEDED")
         || asRecord(asArray(output.results)[0]);
       transcriptionUrl = asString(result.transcription_url);
-      if (!transcriptionUrl) throw makeServiceError("阿里云转写完成但没有返回结果地址", result);
+      if (!transcriptionUrl) throw makeServiceError(t("Alibaba Cloud transcription finished but returned no result URL."), result);
       break;
     }
     await delayMs(pollIntervalMs);
   }
-  if (!transcriptionUrl) throw new Error("阿里云长音频转写等待超时，任务仍可在服务端继续执行");
+  if (!transcriptionUrl) throw new Error(t("Timed out waiting for the Alibaba Cloud long-audio transcription; the task may still run on the server."));
   notify({ phase: "download", label: t("Reading transcription result"), taskId });
   const resultResponse = await requestUrl({ url: transcriptionUrl, method: "GET", throw: false });
-  const resultPayload = requireSuccessfulJsonResponse(resultResponse, "下载阿里云转写结果失败");
+  const resultPayload = requireSuccessfulJsonResponse(resultResponse, t("Failed to download the Alibaba Cloud transcription result."));
   const composed = composeDashScopeTranscript(resultPayload);
-  if (!composed.text.trim()) throw new Error("阿里云长音频转写完成，但结果中没有可用文本");
+  if (!composed.text.trim()) throw new Error(t("Alibaba Cloud long-audio transcription finished, but the result contains no usable text."));
   return {
     text: composed.text,
     providerId: provider.id,
@@ -472,6 +472,6 @@ export async function transcribeImportedAudio(
   }
   options.onProgress?.({ phase: "submit", label: t("Submitting the full audio") });
   const text = await transcribeAudio(plugin, blob, mime, provider.id);
-  if (!String(text || "").trim()) throw new Error("整段音频转写返回空结果");
+  if (!String(text || "").trim()) throw new Error(t("Whole-file transcription returned an empty result."));
   return { text: String(text).trim(), providerId: provider.id, sentenceCount: 0 };
 }

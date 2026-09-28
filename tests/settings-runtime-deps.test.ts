@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { t } from "../src/shared/i18n";
 import {
   normalizeAsrConcurrency,
   normalizeAudioInputMode,
@@ -25,7 +26,7 @@ describe("settings runtime normalizers", () => {
       { id: 1, name: "invalid" },
       { id: "b", name: "B", endpoint: "", apiKey: "", model: "m2", asr: { providerId: "openai" } },
     ])).toEqual([
-      { id: "a", name: "未命名配置", endpoint: "https://example.com", apiKey: "key", model: "m" },
+      { id: "a", name: t("Untitled profile"), endpoint: "https://example.com", apiKey: "key", model: "m" },
       {
         id: "b",
         name: "B",

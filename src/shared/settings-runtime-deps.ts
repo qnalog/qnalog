@@ -8,6 +8,7 @@ import type {
   PeopleSuggestionCache,
   PromptTemplate,
 } from "./types";
+import { t } from "./i18n";
 
 const AUDIO_INPUT_MODES = new Set<AudioInputMode>(["mic", "mix-virtual", "virtualCable"]);
 const PEOPLE_CONTEXT_MODES = new Set<PeopleContextMode>(["privacy", "hotwords", "localFull"]);
@@ -63,7 +64,7 @@ export function normalizeLlmProfiles(value: unknown): LlmProfile[] {
     seen.add(id);
     const profile: LlmProfile = {
       id,
-      name: text(item.name).trim() || "未命名配置",
+      name: text(item.name).trim() || t("Untitled profile"),
       endpoint: text(item.endpoint).trim(),
       apiKey: text(item.apiKey),
       model: text(item.model).trim(),

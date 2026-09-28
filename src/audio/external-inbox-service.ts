@@ -178,7 +178,7 @@ export class ExternalInboxService {
       if (entry.status !== "processing") continue;
       entry.status = "failed";
       entry.nextRetryAt = 0;
-      entry.error = "上次处理在插件关闭前未完成";
+      entry.error = t("The previous processing did not finish before the plugin closed");
       entry.updatedAt = Date.now();
       recovered = true;
     }
@@ -290,7 +290,7 @@ export class ExternalInboxService {
     if (this._externalInboxScanPromise) return this._externalInboxScanPromise;
     const run = (async () => {
       const runtime = this.getExternalInboxRuntime();
-      if (!runtime) throw new Error("当前桌面环境无法读取电脑文件夹");
+      if (!runtime) throw new Error(t("The current desktop environment cannot read computer folders"));
       if (!this.externalInboxScanner) this.externalInboxScanner = new ExternalInboxScanner();
       const quietMs = Math.max(3000, Number(this.host.settings.inboxStabilizeDelayMs) || 0);
       const result = await this.externalInboxScanner.scan(runtime.fileSystem, folder, AUDIO_EXT, {
@@ -306,12 +306,12 @@ export class ExternalInboxService {
       }
       if (result.errors.length && result.scanned === 0) {
         const first = result.errors[0];
-        throw new Error(first && first.message ? first.message : "无法读取自动导入文件夹");
+        throw new Error(first && first.message ? first.message : t("Could not read the auto-import folder"));
       }
       const ledger = await this.loadExternalInboxLedger();
       const now = Date.now();
       for (const file of result.waiting.slice(0, 20)) {
-        this.markExternalInboxWaiting(file, "等待文件同步完成");
+        this.markExternalInboxWaiting(file, t("Waiting for file sync to finish"));
         if (!ledger.entries[file.fingerprint]) {
           ledger.entries[file.fingerprint] = {
             fingerprint: file.fingerprint,
@@ -334,7 +334,7 @@ export class ExternalInboxService {
         !scheduled.has(file.fingerprint)
         && shouldImportExternalInboxFile(file, ledger, { manual, now, maxAttempts: 3 }));
       if (this.isForegroundAudioWorkActive()) {
-        for (const file of candidates.slice(0, 20)) this.markExternalInboxWaiting(file, "当前正在录音，录音结束后自动处理");
+        for (const file of candidates.slice(0, 20)) this.markExternalInboxWaiting(file, t("Recording is in progress; files will be processed automatically after recording stops"));
         await this.saveExternalInboxLedger();
         if (manual && candidates.length) new obsidian.Notice(`${t("Found ")}${candidates.length}${t(" audio files; recording is in progress, they will be processed automatically later")}`);
         return { queued: 0, waiting: result.waiting.length + candidates.length, skipped: result.ready.length - candidates.length };
@@ -363,7 +363,7 @@ export class ExternalInboxService {
           status: "waiting",
           updatedAt: now,
         });
-        this.markExternalInboxWaiting(file, "已发现新音频，等待处理");
+        this.markExternalInboxWaiting(file, t("New audio found; waiting to be processed"));
         this._externalInboxLock = (this._externalInboxLock || Promise.resolve())
           .then(() => this.processExternalInboxFile(file))
           .catch((error) => console.error("[QnALog] external inbox queue error", error));
@@ -381,7 +381,7 @@ export class ExternalInboxService {
     try {
       return await run;
     } catch (e) {
-      await this.host.diagnostics.logDiagnostic("error", "inbox.external_scan_failed", "外部音频文件夹扫描失败", {
+      await this.host.diagnostics.logDiagnostic("error", "inbox.external_scan_failed", t("External audio folder scan failed"), {
         source: options.source || "manual",
         error: diagnosticError(e),
       });
@@ -394,7 +394,7 @@ export class ExternalInboxService {
 
   async copyExternalInboxFileToCache(file) {
     const runtime = this.getExternalInboxRuntime();
-    if (!runtime) throw new Error("当前桌面环境无法读取电脑文件夹");
+    if (!runtime) throw new Error(t("The current desktop environment cannot read computer folders"));
     await this.host.recording.ensureSegmentCacheFolder();
     const safeStem = sanitizeFilename(String(file.name || "audio").replace(/\.[^.]+$/, "")) || "audio";
     const extension = String(file.extension || "audio").toLowerCase();
@@ -415,14 +415,14 @@ export class ExternalInboxService {
     const current = await runtime.fileSystem.stat(file.fullPath);
     if (current.size !== file.size || current.mtimeMs !== file.mtimeMs) {
       try { if (await adapter.exists(cachePath)) await adapter.remove(cachePath); } catch { /* intentionally empty */ }
-      const changed = new Error("文件仍在同步，稍后重试");
+      const changed = new Error(t("The file is still syncing; try again later"));
       (changed as Error & { code?: string }).code = "EXTERNAL_FILE_CHANGED";
       throw changed;
     }
     const copied = await adapter.stat(cachePath);
     if (!copied || Number(copied.size) !== file.size) {
       try { if (await adapter.exists(cachePath)) await adapter.remove(cachePath); } catch { /* intentionally empty */ }
-      throw new Error("临时音频复制不完整，稍后重试");
+      throw new Error(t("The temporary audio copy is incomplete; it will be retried later"));
     }
     return cachePath;
   }
@@ -434,7 +434,7 @@ export class ExternalInboxService {
     let cachePath = "";
     try {
       if (this.isForegroundAudioWorkActive()) {
-        this.markExternalInboxWaiting(file, "当前正在录音，录音结束后自动处理");
+        this.markExternalInboxWaiting(file, t("Recording is in progress; files will be processed automatically after recording stops"));
         return;
       }
       const now = Date.now();
@@ -458,7 +458,7 @@ export class ExternalInboxService {
         status: "running",
         stage: "copying-source",
         stageLabel: t("Reading audio"),
-        detail: "正在读取同步文件",
+        detail: t("Reading the synced file"),
         progress: 10,
         attempt,
         maxAttempts: 3,
@@ -468,10 +468,10 @@ export class ExternalInboxService {
         status: "running",
         stage: "transcribing",
         stageLabel: t("Transcription and organization"),
-        detail: "音频已就绪，正在生成纪要",
+        detail: t("Audio is ready; generating the note"),
         progress: 20,
       });
-      await this.host.diagnostics.logDiagnostic("info", "inbox.external_import_started", "开始自动导入外部音频", {
+      await this.host.diagnostics.logDiagnostic("info", "inbox.external_import_started", t("Start auto-importing external audio"), {
         audioName: file.name,
         size: file.size,
         fingerprint: file.fingerprint,
@@ -492,13 +492,13 @@ export class ExternalInboxService {
       await this.saveExternalInboxLedger();
       this.host.tasks.completeTaskActivity(activityId, {
         stage: "done",
-        stageLabel: pendingTranscriptionCount ? "纪要已创建" : "自动导入完成",
+        stageLabel: pendingTranscriptionCount ? t("Note created") : t("Auto-import completed"),
         detail: pendingTranscriptionCount
-          ? `纪要已创建；${pendingTranscriptionCount} 个片段已保留并等待转写重试`
-          : entry.notePath ? `纪要已写入 ${entry.notePath}` : "纪要已写入库中",
+          ? t("Note created; {0} segments kept and awaiting transcription retry").replace("{0}", String(pendingTranscriptionCount))
+          : entry.notePath ? t("Note written to {0}").replace("{0}", entry.notePath) : t("Saving the note…"),
         progress: 100,
       });
-      await this.host.diagnostics.logDiagnostic("info", "inbox.external_import_completed", "外部音频自动导入完成", {
+      await this.host.diagnostics.logDiagnostic("info", "inbox.external_import_completed", t("External audio auto-import completed"), {
         audioName: file.name,
         size: file.size,
         fingerprint: file.fingerprint,
@@ -526,7 +526,7 @@ export class ExternalInboxService {
       ledger.entries[file.fingerprint] = entry;
       await this.saveExternalInboxLedger();
       if (changedWhileSyncing) {
-        this.markExternalInboxWaiting(file, "文件仍在同步，稍后自动处理");
+        this.markExternalInboxWaiting(file, t("Files are still syncing; they will be processed automatically later"));
       } else {
         this.host.tasks.failTaskActivity(activityId, e, {
           stage: "failed",
@@ -535,7 +535,7 @@ export class ExternalInboxService {
           actions: [{ id: "open-settings", label: t("Check settings") }],
         });
       }
-      await this.host.diagnostics.logDiagnostic("error", "inbox.external_import_failed", "外部音频自动导入失败", {
+      await this.host.diagnostics.logDiagnostic("error", "inbox.external_import_failed", t("External audio auto-import failed"), {
         audioName: file.name,
         size: file.size,
         fingerprint: file.fingerprint,

@@ -1,3 +1,4 @@
+import { t } from "../shared/i18n";
 import {
   NS_PART_BODY_RE,
   NS_PART_ENTITY_LINE_RE,
@@ -583,7 +584,7 @@ export function assembleBriefingParts(parts: BriefingPartCheckpoint[]): string {
   const incomplete = ordered.filter((part) => part.status !== "complete" || !cleanText(part.text));
   if (incomplete.length) {
     throw new BriefingPipelineIncompleteError(
-      `纪要整理部分完成：${ordered.length - incomplete.length}/${ordered.length} 部分已完成`,
+      t("The minutes are partially complete: {0}/{1} parts completed").replace("{0}", String(ordered.length - incomplete.length)).replace("{1}", String(ordered.length)),
       ordered.length - incomplete.length,
       ordered.length,
       incomplete.map((part) => part.index),

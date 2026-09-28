@@ -10,6 +10,7 @@ import * as obsidian from "obsidian";
 import { DEFAULT_SETTINGS } from "./defaults";
 import { isTrustedUpdateSourceUrl } from "../update-source";
 import { MODE_META } from "./catalog-modes";
+import { t } from "./i18n";
 import {
   isCustomPromptModeTemplate,
   normalizeAsrConcurrency,
@@ -182,7 +183,7 @@ function normalizePromptTemplate(value: unknown): PromptTemplate | null {
   const result: PromptTemplate = {
     id,
     mode,
-    name: firstString("未命名", value.name),
+    name: firstString(t("Untitled"), value.name),
     prompt: firstString("", value.prompt),
     createdAt: firstString(now, value.createdAt),
     updatedAt: firstString(now, value.updatedAt),
@@ -399,7 +400,7 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
       builtin = {
         id: builtinId,
         mode,
-        name: "默认（内置）",
+        name: t("Default (built-in)"),
         prompt: legacyText,
         isBuiltin: true,
         createdAt: now,
@@ -427,7 +428,7 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   }
   for (const template of Object.values(s.promptTemplates)) {
     if (!isCustomPromptModeTemplate(template)) continue;
-    if (!template.name) template.name = "自定义提示词";
+    if (!template.name) template.name = t("Custom prompt");
     if (!template.baseMode || !(template.baseMode in MODE_META) || template.baseMode === "off") template.baseMode = "learning";
     template.mode = template.id;
     template.customMode = true;

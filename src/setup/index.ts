@@ -138,9 +138,9 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
     llmPresetId: "",
   });
 
-  if (!preset) return empty("请选择一个服务方案");
+  if (!preset) return empty(t("Please select a service plan"));
   // 密钥是唯一必填项：地址与模型都内置在预设里。
-  if (!apiKey) return empty("请先填写 API Key");
+  if (!apiKey) return empty(t("Please enter your API key first"));
 
   const llmPresetId = String(preset.llmPreset || "");
   const asrProviderId = String(preset.asrProvider || "");
@@ -158,7 +158,7 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
 
   // 需要挑选模型的预设（百炼）在模型缺失时不算完整，避免应用出半套配置。
   if (preset.scope === "asr-llm" && (!customAsrModel && !presetAsrModel || !customLlmModel && !presetLlmModel)) {
-    return empty("请先选择 ASR 模型和 AI 整理模型");
+    return empty(t("Please select an ASR model and an AI organization model first"));
   }
 
   const changes: Partial<PluginSettings> = {};
@@ -276,7 +276,7 @@ export function applyPresetPlan(settings: PluginSettings, plan: PresetPlan): Plu
  * 检测必须是只读的：用户点了「检测」不等于同意保存。
  */
 export function buildProbeHost<T extends object>(plugin: T, settings: PluginSettings): T & { settings: PluginSettings } {
-  const refuse = () => Promise.reject(new Error("检测过程不得写盘"));
+  const refuse = () => Promise.reject(new Error(t("Disk writes are not allowed during detection")));
   // Object.create 的返回值是 any；经 unknown 中转再断言成记录，避免 any 扩散。
   const proto: object = (Object.getPrototypeOf(plugin) as object | null) || Object.prototype;
   const host: Record<string, unknown> = Object.create(proto) as Record<string, unknown>;
@@ -311,9 +311,9 @@ export function buildServiceView(
 
 /** 缺什么配置；返回空串表示不缺。 */
 export function setupServiceIssue(view: SetupServiceView): string {
-  if (!view.endpoint) return "服务地址未填写";
-  if (!view.model) return "模型名称未填写";
-  if (view.requiresKey && !view.apiKey) return "访问密钥未填写";
+  if (!view.endpoint) return t("Service endpoint not set");
+  if (!view.model) return t("Model name not set");
+  if (view.requiresKey && !view.apiKey) return t("Access key not set");
   return "";
 }
 
@@ -356,10 +356,10 @@ export function deriveSetupState(view: SetupServiceView, result?: ProbeResult | 
 }
 
 export const SETUP_STATE_LABELS: Record<SetupState, string> = {
-  missing: "缺配置",
-  untested: "未测试",
-  success: "已通过",
-  failure: "未通过",
+  missing: "Missing configuration",
+  untested: "Not tested",
+  success: "Passed",
+  failure: "Not passed",
 };
 
 export interface DetectionStage {
@@ -402,7 +402,7 @@ export async function runPresetDetection(
   if (plan.asrTarget === "recording") {
     try {
       const text = await ports.transcribe(host);
-      stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: true, detail: `返回：${(text || "<空>").slice(0, 20)}` });
+      stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: true, detail: t("Returned: {0}").replace("{0}", (text || t("(empty)")).slice(0, 20)) });
     } catch (error) {
       stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: false, detail: errorMessage(error) });
     }
@@ -416,7 +416,7 @@ export async function runPresetDetection(
         stage: "import-transcribe",
         label: t("Audio import transcription"),
         ok: true,
-        detail: `${result && result.model ? result.model : "服务"}${result && result.detail ? ` · ${result.detail}` : ""}`,
+        detail: `${result && result.model ? result.model : t("Service")}${result && result.detail ? ` · ${result.detail}` : ""}`,
       });
     } catch (error) {
       stages.push({
@@ -436,7 +436,7 @@ export async function runPresetDetection(
         stage: "import-transcribe",
         label: t("Audio import transcription"),
         ok: true,
-        detail: `${result && result.model ? result.model : "服务"}${result && result.detail ? ` · ${result.detail}` : ""}`,
+        detail: `${result && result.model ? result.model : t("Service")}${result && result.detail ? ` · ${result.detail}` : ""}`,
       });
     } catch (error) {
       stages.push({ stage: "import-transcribe", label: t("Audio import transcription"), ok: false, detail: errorMessage(error) });
@@ -449,7 +449,7 @@ export async function runPresetDetection(
       stage: "llm",
       label: t("AI Organize"),
       ok: true,
-      detail: result && result.model ? result.model : "已连接",
+      detail: result && result.model ? result.model : t("Connected"),
     });
   } catch (error) {
     stages.push({ stage: "llm", label: t("AI Organize"), ok: false, detail: errorMessage(error) });
@@ -459,19 +459,21 @@ export async function runPresetDetection(
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message || "未知错误";
-  if (typeof error === "string") return error || "未知错误";
+  if (error instanceof Error) return error.message || t("Unknown error");
+  if (typeof error === "string") return error || t("Unknown error");
   const withMessage: unknown = error && typeof error === "object" ? (error as { message?: unknown }).message : undefined;
   if (typeof withMessage === "string" && withMessage) return withMessage;
-  return "未知错误";
+  return t("Unknown error");
 }
 
 /** 把一次检测报告转成可展示的一行文案。 */
 export function formatDetectionReport(report: DetectionReport): string {
-  if (!report || !report.stages.length) return "没有可检测的环节";
+  if (!report || !report.stages.length) return t("Nothing to detect");
   return report.stages
-    .map((stage) => `${stage.label} ${stage.ok ? "✓" : "✗"}${stage.ok ? `（${stage.detail}）` : `：${stage.detail}`}`)
-    .join("　|　");
+    .map((stage) => stage.ok
+      ? t("{0} ✓ ({1})").replace("{0}", stage.label).replace("{1}", stage.detail)
+      : t("{0} ✗: {1}").replace("{0}", stage.label).replace("{1}", stage.detail))
+    .join(t(" | "));
 }
 
 /**

@@ -68,8 +68,8 @@ export function getModeMeta(settings, mode) {
   if (MODE_META[mode]) return MODE_META[mode];
   const custom = getCustomPromptModeTemplate(settings, mode);
   if (custom) {
-    const name = custom.name || "自定义提示词";
-    return { prefix: name, emoji: "🧩", icon: "puzzle", label: t("Custom prompt:") + name, goal: custom.description || "用户自定义提示词。", baseMode: custom.baseMode || "learning", custom: true };
+    const name = custom.name || t("Custom prompt");
+    return { prefix: name, emoji: "🧩", icon: "puzzle", label: t("Custom prompt:") + name, goal: custom.description || t("User-defined prompt."), baseMode: custom.baseMode || "learning", custom: true };
   }
   return MODE_META.meeting;
 }
@@ -137,7 +137,7 @@ export function sanitizePromptTemplate(tpl, fallbackBaseMode) {
   const rawId = String(clean.id || "").trim();
   clean.id = rawId || makeCustomPromptModeId(clean.name || "scene");
   clean.mode = clean.id;
-  clean.name = String(clean.name || "自定义提示词").trim().slice(0, 80) || "自定义提示词";
+  clean.name = String(clean.name || t("Custom prompt")).trim().slice(0, 80) || t("Custom prompt");
   clean.description = String(clean.description || "").trim().slice(0, 240);
   const fallback = MODE_META[fallbackBaseMode] ? fallbackBaseMode : "learning";
   clean.baseMode = MODE_META[clean.baseMode] ? clean.baseMode : fallback;

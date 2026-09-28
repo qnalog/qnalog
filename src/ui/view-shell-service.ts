@@ -144,21 +144,21 @@ export class ViewShellService {
 
   async createMinutesKanbanFolder(rawName) {
     const name = sanitizeFilename(String(rawName || "").replace(/[\\/]+/g, " ")).trim();
-    if (!name) throw new Error("请输入有效的文件夹名称");
+    if (!name) throw new Error(t("Enter a valid folder name"));
     const root = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const path = obsidian.normalizePath(`${root}/${name}`);
     const existing = this.host.app.vault.getAbstractFileByPath(path);
-    if (existing && !(existing instanceof obsidian.TFolder)) throw new Error("同名文件已存在");
+    if (existing && !(existing instanceof obsidian.TFolder)) throw new Error(t("A file with the same name already exists"));
     if (!existing) await ensureVaultFolder(this.host.app, path);
     return path;
   }
 
   async moveMinutesKanbanItem(item, rawFolderPath) {
     const file = item && item.file;
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") throw new Error("纪要文件不存在");
+    if (!(file instanceof obsidian.TFile) || file.extension !== "md") throw new Error(t("Minutes note not found"));
     const root = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const folderPath = obsidian.normalizePath(rawFolderPath || root);
-    if (!(folderPath === root || folderPath.startsWith(`${root}/`))) throw new Error("目标分组不在纪要目录内");
+    if (!(folderPath === root || folderPath.startsWith(`${root}/`))) throw new Error(t("The target group is outside the minutes folder"));
     await ensureVaultFolder(this.host.app, folderPath);
     const currentFolder = file.parent ? obsidian.normalizePath(file.parent.path) : "";
     if (currentFolder === folderPath) return;
@@ -174,7 +174,7 @@ export class ViewShellService {
     }
 
     const noteTarget = findAvailableMarkdownPath(this.host.app, `${folderPath}/${file.name}`, oldNotePath);
-    if (!noteTarget) throw new Error("无法生成可用的目标文件名");
+    if (!noteTarget) throw new Error(t("Could not generate an available target filename"));
     await this.host.app.fileManager.renameFile(file, noteTarget);
     const movedNote = this.host.app.vault.getAbstractFileByPath(noteTarget);
     const newBase = movedNote instanceof obsidian.TFile

@@ -15,6 +15,7 @@ import { extractSedimentPreExtractionBlock } from "../sediment";
 import { formatElapsed, stripHtmlText } from "../shared/util-common";
 
 import { escapeHtmlText } from "../shared/util-markdown";
+import { t } from "../shared/i18n";
 
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings } from "../audio/channel-speakers";
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
@@ -150,7 +151,7 @@ export function extractNotePanelData(plugin, file, markdown) {
   const speakerMappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), speakerIds);
   return {
     file,
-    title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : "Q&A Log 纪要"),
+    title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : t("Q&A Log minutes")),
     mode,
     outline,
     timeline,

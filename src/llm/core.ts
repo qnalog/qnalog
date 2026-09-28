@@ -8,6 +8,7 @@ import { extractLlmContent } from '../shared/util-json';
 import { diagnosticError } from '../shared/util-key-diag';
 import { withPromiseTimeout, getHeaderValue, parseRetryAfterMs, parseRequestUrlJson, getRequestUrlText } from '../shared/util-http';
 import { LlmRequestQueue } from './request-queue';
+import { t } from '../shared/i18n';
 import {
   applyLearnedLlmCapability,
   getEffectiveLlmOutputBudget,
@@ -62,18 +63,18 @@ export function decorateLlmHttpDetail(status, detail, endpoint) {
   const code = Number(status) || 0;
   let hint = "";
   if (code === 400 || code === 404) {
-    hint = "Poe 的 model 必须填写 Poe bot 名，且区分大小写；请点「获取可用模型」从列表中选择。";
+    hint = t("For Poe, the model must be a Poe bot name and is case-sensitive; click \"Get available models\" and pick from the list.");
   } else if (code === 401 || code === 403) {
-    hint = "请检查 Poe API Key 是否有效，且已按 Bearer token 使用。";
+    hint = t("Check that your Poe API Key is valid and is used as a Bearer token.");
   } else if (code === 402) {
-    hint = "Poe 积分或订阅额度不足，请到 Poe 账户检查额度。";
+    hint = t("Not enough Poe credits or subscription quota; check your quota in your Poe account.");
   } else if (code === 413) {
-    hint = "本次请求上下文可能超过 Poe 目标 bot 的限制，请缩短输入或换更长上下文的 bot。";
+    hint = t("This request's context may exceed the target Poe bot's limit; shorten the input or switch to a bot with a longer context.");
   } else if (code === 429 || code === 503 || code === 529) {
-    hint = "Poe 当前限流或服务繁忙；Q&A Log 会按服务端 Retry-After 退避后重试一次。";
+    hint = t("Poe is rate-limiting or busy right now; Q&A Log will back off per the server's Retry-After and retry once.");
   }
   if (!hint) return base;
-  return base ? `${base}。${hint}` : hint;
+  return base ? t("{0}. {1}").replace("{0}", base).replace("{1}", hint) : hint;
 }
 
 export function isTokenPlanLlmEndpoint(endpoint) {
@@ -108,7 +109,7 @@ export async function readLlmError(res) {
 
 export function createLlmHttpError(status, detail, endpoint, headers) {
   const cleanDetail = decorateLlmHttpDetail(status, detail, endpoint).slice(0, 500);
-  const err = new Error(`LLM 调用失败 ${status}：${cleanDetail}`) as LlmHttpError;
+  const err = new Error(t("LLM request failed with status {0}: {1}").replace("{0}", String(status)).replace("{1}", cleanDetail)) as LlmHttpError;
   err.status = status;
   err.statusDetail = cleanDetail;
   err.retryAfterMs = getLlmRetryAfterMsFromHeaders(headers);
@@ -119,8 +120,8 @@ export function createLlmHttpError(status, detail, endpoint, headers) {
 export function pickLlmRequestError(fetchError, fallbackError) {
   const fallbackMessage = String((fallbackError && fallbackError.message) || fallbackError || "");
   const fetchMessage = String((fetchError && fetchError.message) || fetchError || "");
-  if (fallbackError && (fallbackError.status || /LLM 调用失败\s+\d+/.test(fallbackMessage))) return fallbackError;
-  if (/Obsidian requestUrl 不可用/.test(fallbackMessage)) return fetchError;
+  if (fallbackError && (fallbackError.status || /LLM 调用失败\s+\d+|LLM request failed with status\s+\d+/.test(fallbackMessage))) return fallbackError;
+  if (/Obsidian requestUrl 不可用|Obsidian requestUrl is unavailable/.test(fallbackMessage)) return fetchError;
   if (/Failed to fetch/i.test(fetchMessage) && fallbackMessage) return fallbackError;
   return fetchError || fallbackError;
 }
@@ -153,9 +154,9 @@ export async function logLlmRequestDiagnostic(plugin, level, code, message, data
 }
 
 export async function requestLlmChatCompletionViaObsidian(endpoint, headers, payloadText, timeoutMs) {
-  assertSafeServiceEndpoint(endpoint, "http", "大模型服务地址");
+  assertSafeServiceEndpoint(endpoint, "http", t("LLM service address"));
   if (!obsidian || typeof obsidian.requestUrl !== "function") {
-    throw new Error("Obsidian requestUrl 不可用");
+    throw new Error(t("Obsidian requestUrl is unavailable"));
   }
   const request = obsidian.requestUrl({
     url: endpoint,
@@ -165,7 +166,7 @@ export async function requestLlmChatCompletionViaObsidian(endpoint, headers, pay
     throw: false,
   });
   const response = await withPromiseTimeout(request, timeoutMs, () => {
-    const error = new Error(`LLM 兜底调用超时：${Math.round(timeoutMs / 1000)} 秒内没有响应`) as LlmHttpError;
+    const error = new Error(t("LLM fallback call timed out: no response within {0} seconds").replace("{0}", String(Math.round(timeoutMs / 1000)))) as LlmHttpError;
     // requestUrl cannot abort the underlying request. Retrying automatically could
     // submit the same paid generation twice while the first request is still running.
     error.nonRetryable = true;
@@ -240,7 +241,7 @@ export async function readLlmSseStream(res, onActivity) {
     const finalized = finalizeLlmSseContent(state, raw);
     if (!state.done && !finalized.finishReason) {
       if (finalized.content) finalized.finishReason = "aborted";
-      else throw new Error("LLM 响应流中断：未收到正文或结束标记");
+      else throw new Error(t("LLM response stream interrupted: no body or end marker received"));
     }
     return finalized;
   }
@@ -278,7 +279,7 @@ export async function readLlmSseStream(res, onActivity) {
   // 有正文时保住已计费内容并标记 aborted，供最终纪要续写；完全为空时显式失败并进入重试。
   if (!state.done && !finalized.finishReason) {
     if (finalized.content) finalized.finishReason = "aborted";
-    else throw new Error("LLM 响应流中断：未收到正文或结束标记");
+    else throw new Error(t("LLM response stream interrupted: no body or end marker received"));
   }
   return finalized;
 }
@@ -300,11 +301,11 @@ export function finalizeLlmSseContent(state, raw) {
 export async function requestLlmChatCompletion(plugin, messages, options) {
   const { llmEndpoint, llmApiKey, llmModel } = plugin.settings;
   const endpoint = normalizeLlmEndpoint(llmEndpoint);
-  if (!endpoint) throw new Error("大模型服务地址未配置");
-  assertSafeServiceEndpoint(endpoint, "http", "大模型服务地址");
-  if (!llmModel) throw new Error("大模型名称未配置");
+  if (!endpoint) throw new Error(t("LLM service address is not configured"));
+  assertSafeServiceEndpoint(endpoint, "http", t("LLM service address"));
+  if (!llmModel) throw new Error(t("LLM model name is not configured"));
   if (!llmApiKey && !canOmitServiceApiKey(endpoint)) {
-    throw new Error("大模型访问密钥未配置；只有本地、局域网或 Tailscale 等私有网络服务可以留空");
+    throw new Error(t("LLM API key is not configured; only local, LAN, or Tailscale private-network services may leave it blank"));
   }
   // 流式默认开启（opt-out：显式传 stream:false 才关）。流式 + 空闲超时能避免"服务端算完计费、
   // 客户端却因总超时 abort 丢结果"的浪费——这对所有 LLM 调用（merge / 大纲 / 沉淀 / 词汇 / 问答）都适用。
@@ -333,11 +334,11 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
     const externalSignal = options && options.signal;
     if (prefersObsidianRequestUrl(endpoint)) {
       if (externalSignal && externalSignal.aborted) {
-        const err = new Error("LLM 调用已取消");
+        const err = new Error(t("LLM request cancelled"));
         err.name = "AbortError";
         throw err;
       }
-      await logLlmRequestDiagnostic(plugin, "info", "llm.requesturl_preferred", "此端点已直接使用 Obsidian requestUrl", {
+      await logLlmRequestDiagnostic(plugin, "info", "llm.requesturl_preferred", t("This endpoint already uses Obsidian requestUrl directly"), {
         endpoint,
         model: llmModel ? "<set>" : "",
         messageChars,
@@ -390,14 +391,14 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
       if (controller && controller.signal && controller.signal.aborted) {
         const cancelled = !!(externalSignal && externalSignal.aborted);
         const err = new Error(cancelled
-          ? "LLM 调用已取消"
-          : `LLM 调用超时：${Math.round(timeoutMs / 1000)} 秒内没有响应`);
+          ? t("LLM request cancelled")
+          : t("LLM request timed out: no response within {0} seconds").replace("{0}", String(Math.round(timeoutMs / 1000))));
         if (cancelled) err.name = "AbortError";
         await logLlmRequestDiagnostic(
           plugin,
           cancelled ? "info" : "error",
           cancelled ? "llm.request_cancelled" : "llm.fetch_failed",
-          cancelled ? "LLM 请求已取消" : "LLM 请求发送失败",
+          cancelled ? t("LLM request cancelled") : t("Failed to send the LLM request"),
           {
           endpoint,
           model: llmModel ? "<set>" : "",
@@ -411,7 +412,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
         );
         throw err;
       }
-      await logLlmRequestDiagnostic(plugin, "error", "llm.fetch_failed", "LLM 请求发送失败", {
+      await logLlmRequestDiagnostic(plugin, "error", "llm.fetch_failed", t("Failed to send the LLM request"), {
         endpoint,
         model: llmModel ? "<set>" : "",
         messageChars,
@@ -420,7 +421,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
         aborted: false,
         error: diagnosticError(e),
       });
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.requesturl_fallback_start", "fetch 失败后尝试 Obsidian requestUrl 兜底", {
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.requesturl_fallback_start", t("fetch failed; falling back to Obsidian requestUrl"), {
         endpoint,
         model: llmModel ? "<set>" : "",
         messageChars,
@@ -430,7 +431,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
       try {
         const fallbackData = await requestLlmChatCompletionViaObsidian(endpoint, headers, fallbackPayloadText, timeoutMs);
         rememberObsidianRequestUrlPreference(endpoint);
-        await logLlmRequestDiagnostic(plugin, "info", "llm.requesturl_fallback_succeeded", "Obsidian requestUrl 兜底成功", {
+        await logLlmRequestDiagnostic(plugin, "info", "llm.requesturl_fallback_succeeded", t("Obsidian requestUrl fallback succeeded"), {
           endpoint,
           model: llmModel ? "<set>" : "",
           messageChars,
@@ -438,7 +439,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
         });
         return fallbackData;
       } catch (fallbackError) {
-        await logLlmRequestDiagnostic(plugin, "error", "llm.requesturl_fallback_failed", "Obsidian requestUrl 兜底失败", {
+        await logLlmRequestDiagnostic(plugin, "error", "llm.requesturl_fallback_failed", t("Obsidian requestUrl fallback failed"), {
           endpoint,
           model: llmModel ? "<set>" : "",
           messageChars,
@@ -475,7 +476,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
           });
           return retryData;
         }
-        await logLlmRequestDiagnostic(plugin, "error", "llm.http_failed", "LLM 返回非成功状态", {
+        await logLlmRequestDiagnostic(plugin, "error", "llm.http_failed", t("The LLM returned a non-success status"), {
           endpoint,
           model: llmModel ? "<set>" : "",
           status: res.status,
@@ -501,14 +502,14 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
       const cancelled = !!(externalSignal && externalSignal.aborted);
       if (controller && controller.signal && controller.signal.aborted) {
         const err = new Error(cancelled
-          ? "LLM 调用已取消"
-          : `LLM 调用超时：${Math.round(timeoutMs / 1000)} 秒内没有新数据`);
+          ? t("LLM request cancelled")
+          : t("LLM request timed out: no new data within {0} seconds").replace("{0}", String(Math.round(timeoutMs / 1000))));
         if (cancelled) err.name = "AbortError";
         await logLlmRequestDiagnostic(
           plugin,
           cancelled ? "info" : "error",
           cancelled ? "llm.request_cancelled" : "llm.response_timeout",
-          cancelled ? "LLM 请求已取消" : "LLM 响应读取超时",
+          cancelled ? t("LLM request cancelled") : t("Timed out reading the LLM response"),
           {
             endpoint,
             model: llmModel ? "<set>" : "",
@@ -521,7 +522,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
         );
         throw err;
       }
-      await logLlmRequestDiagnostic(plugin, "error", "llm.response_read_failed", "LLM 响应读取失败", {
+      await logLlmRequestDiagnostic(plugin, "error", "llm.response_read_failed", t("Failed to read the LLM response"), {
         endpoint,
         model: llmModel ? "<set>" : "",
         messageChars,
@@ -553,7 +554,7 @@ export function isTransientLlmError(error) {
   if (isLlmNonRetryableError(error)) return false;
   if (error && error.name === "AbortError") return false;
   const msg = String((error && error.message) || error || "");
-  return /Failed to fetch|network|ECONNRESET|ETIMEDOUT|timeout|timed?\s*out|\b(429|500|502|503|504|529)\b|rate\s*limit|temporarily|service unavailable|overloaded|超时|响应流中断/i.test(msg);
+  return /Failed to fetch|network|ECONNRESET|ETIMEDOUT|timeout|timed?\s*out|\b(429|500|502|503|504|529)\b|rate\s*limit|temporarily|service unavailable|overloaded|超时|响应流中断|stream interrupted/i.test(msg);
 }
 
 export function getLlmRetryDelayMs(error, attemptIndex) {
@@ -566,7 +567,7 @@ export function getLlmRetryDelayMs(error, attemptIndex) {
 
 export function resolveLlmModelListEndpoint(endpoint) {
   const base = normalizeLlmEndpoint(endpoint);
-  if (!base) throw new Error("服务地址未配置");
+  if (!base) throw new Error(t("Service address is not configured"));
   try {
     const url = new URL(base);
     const host = url.hostname.toLowerCase();
@@ -650,8 +651,8 @@ function withModelListPage(url: string, pageNo: number, pageSize: number): strin
 
 export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record<string, string>): Promise<LlmModelEntry[]> {
   const base = normalizeLlmEndpoint(endpoint);
-  if (!base) throw new Error("服务地址未配置");
-  assertSafeServiceEndpoint(base, "http", "大模型服务地址");
+  if (!base) throw new Error(t("Service address is not configured"));
+  assertSafeServiceEndpoint(base, "http", t("LLM service address"));
   // 百炼的兼容地址与原生地址都要试：两者都真实存在（无钥均 401），
   // 不同账号/网关下可用的一个可能与预设的改写地址不同，先按改写地址、再按通用地址。
   const genericUrl = /\/chat\/completions$/i.test(base)
@@ -682,12 +683,12 @@ export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record
       const pageUrl = pageNo === 1 ? url : withModelListPage(url, pageNo, pageSize || 20);
       const res = await obsidian.requestUrl({ url: pageUrl, method: "GET", headers, throw: false });
       if (res.status < 200 || res.status >= 300) {
-        urlProblems.push(`${pageUrl} → HTTP ${res.status}：${String(res.text || "").slice(0, 200)}`);
+        urlProblems.push(t("{0} → HTTP status {1}: {2}").replace("{0}", pageUrl).replace("{1}", String(res.status)).replace("{2}", String(res.text || "").slice(0, 200)));
         break;
       }
       let data;
       try { data = res.json || JSON.parse(res.text || "{}"); } catch {
-        urlProblems.push(`${pageUrl} → 响应不是合法 JSON`);
+        urlProblems.push(t("{0} → Response is not valid JSON").replace("{0}", pageUrl));
         break;
       }
       const before = byId.size;
@@ -704,9 +705,9 @@ export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record
     if (byId.size) {
       return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
     }
-    problems.push(...(urlProblems.length ? urlProblems : [`${url} → 未返回模型列表`]));
+    problems.push(...(urlProblems.length ? urlProblems : [t("{0} → No model list returned").replace("{0}", url)]));
   }
-  throw new Error(problems.join("；") || "获取模型列表失败");
+  throw new Error(problems.join(t("; ")) || t("Failed to fetch the model list"));
 }
 
 export async function fetchLlmModelList(endpoint, apiKey): Promise<string[]> {
@@ -717,22 +718,22 @@ export function getLlmConfigIssue(settings) {
   const endpoint = normalizeLlmEndpoint(settings && settings.llmEndpoint);
   const model = String((settings && settings.llmModel) || "").trim();
   const apiKey = String((settings && settings.llmApiKey) || "").trim();
-  if (!endpoint) return "大模型服务地址未配置";
-  const endpointSecurityIssue = getServiceEndpointSecurityIssue(endpoint, "http", "大模型服务地址");
+  if (!endpoint) return t("LLM service address is not configured");
+  const endpointSecurityIssue = getServiceEndpointSecurityIssue(endpoint, "http", t("LLM service address"));
   if (endpointSecurityIssue) return endpointSecurityIssue;
-  if (!model) return "大模型名称未配置";
-  if (!apiKey && !canOmitServiceApiKey(endpoint)) return "大模型访问密钥未配置；只有本地、局域网或 Tailscale 等私有网络服务可以留空";
+  if (!model) return t("LLM model name is not configured");
+  if (!apiKey && !canOmitServiceApiKey(endpoint)) return t("LLM API key is not configured; only local, LAN, or Tailscale private-network services may leave it blank");
   return "";
 }
 
 export function isLlmConfigError(error) {
   const msg = String((error && error.message) || error || "");
-  return /大模型(?:服务地址|名称|访问密钥)(?:未配置|不安全|格式无效|协议不受支持)|请先在 API 页配置大模型服务|LLM 配置/i.test(msg);
+  return /大模型(?:服务地址|名称|访问密钥)(?:未配置|不安全|格式无效|协议不受支持)|LLM service address (?:is not configured|is insecure|is invalid|uses an unsupported protocol)|LLM (?:model name|api key) is not configured|请先在 API 页配置大模型服务|Please configure an LLM service on the API page first|LLM 配置/i.test(msg);
 }
 
 export function isLlmServiceBlockedError(error) {
   const msg = String((error && error.message) || error || "");
-  return /暂无可用账号|no available account|账号不可用|账号池|余额不足|insufficient\s+quota|quota\s+exceeded|invalid[_\s-]*api[_\s-]*key|unauthorized|forbidden|access\s*denied|model[_\s-]*not[_\s-]*found|模型(?:不存在|不可用|无可用)|context[_\s-]*length|maximum context|too many tokens|上下文(?:过长|超限)|内容过长/i.test(msg);
+  return /暂无可用账号|no available account|账号不可用|账号池|余额不足|insufficient\s+quota|quota\s+exceeded|invalid[_\s-]*api[_\s-]*key|unauthorized|forbidden|access\s*denied|model[_\s-]*not[_\s-]*found|模型(?:不存在|不可用|无可用)|LLM unavailable|context[_\s-]*length|maximum context|too many tokens|上下文(?:过长|超限)|内容过长/i.test(msg);
 }
 
 export function isNonRetryableLlmHttpFailure(status, detail) {
@@ -804,7 +805,7 @@ export async function requestLlmChatCompletionWithBudgetFallback(plugin, message
       if (isLlmOutputParameterError(error) && !parameterFallbackUsed) {
         const requested = getLlmOutputBudgetFromOptions(currentOptions);
         parameterFallbackUsed = true;
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.output_parameter_fallback", "服务端不接受 max_tokens，已切换为 max_completion_tokens 重试", {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.output_parameter_fallback", t("The server rejected max_tokens; switched to max_completion_tokens and retried"), {
           requested,
           attempt: attempt + 1,
         });
@@ -821,7 +822,7 @@ export async function requestLlmChatCompletionWithBudgetFallback(plugin, message
       if (!nextBudget) throw error;
       budgetFallbackUsed = true;
       const requested = getLlmOutputBudgetFromOptions(currentOptions);
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.output_budget_fallback", "服务端拒绝当前输出预算，已按实际能力降档重试", {
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.output_budget_fallback", t("The server rejected the current output budget; lowered it to the actual capability and retried"), {
         requested,
         retryBudget: nextBudget,
         attempt: attempt + 1,
@@ -834,14 +835,14 @@ export async function requestLlmChatCompletionWithBudgetFallback(plugin, message
       });
     }
   }
-  throw new Error("LLM 输出预算重试次数已用尽");
+  throw new Error(t("The LLM output budget retry count is exhausted"));
 }
 
 export function formatLlmConfigIssue(issue) {
   const text = String(issue || "").trim();
   if (!text) return "";
-  if (/请到「设置/.test(text)) return text;
-  return `${text}。请到「设置 → API → AI 整理服务」补齐后先测试连接。`;
+  if (/请到「设置|Settings → API/.test(text)) return text;
+  return t("{0}. Please complete it under Settings → API → AI organizing service, then test the connection.").replace("{0}", text);
 }
 
 export function formatLlmFailureIssue(issue) {
@@ -849,7 +850,7 @@ export function formatLlmFailureIssue(issue) {
   if (!text) return "";
   if (isLlmConfigError(text)) return formatLlmConfigIssue(text);
   if (isLlmServiceBlockedError(text)) {
-    return `${text}。这是大模型服务端或账号池返回的问题，不是文本长度、ASR 或文本导入路径导致的；请切换模型/端点，或稍后手动重试。`;
+    return t("{0}. This is a problem returned by the LLM service or account pool, not caused by text length, ASR, or the text-import path; switch the model/endpoint, or retry manually later.").replace("{0}", text);
   }
   return text;
 }
@@ -957,7 +958,7 @@ export async function callLlmWithContinuation(plugin, system, user, options, opt
   if (isTruncatedFinishReason(finishReason) && !text.trim() && effectiveOptions.thinkingMode !== "fast") {
     const fastOptions = Object.assign({}, effectiveOptions, { thinkingMode: "fast" });
     try {
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.empty_truncated_fast_retry", "模型耗尽输出预算但未返回正文，已关闭深度思考重试", {});
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.empty_truncated_fast_retry", t("The model exhausted its output budget but returned no body text; deep thinking has been disabled and the request retried"), {});
       first = await callLlmWithMeta(plugin, system, user, fastOptions);
       effectiveOptions = fastOptions;
       text = String(first.text || "");
@@ -965,7 +966,7 @@ export async function callLlmWithContinuation(plugin, system, user, options, opt
       usage = addLlmUsage(usage, first.usage);
     } catch (error) {
       try {
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.empty_truncated_fast_retry_failed", "关闭深度思考后的空正文恢复请求失败", {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.empty_truncated_fast_retry_failed", t("The recovery request with deep thinking disabled failed for empty body text"), {
           error: diagnosticError(error),
         });
       } catch { /* intentionally empty */ }
@@ -990,7 +991,7 @@ export async function callLlmWithContinuation(plugin, system, user, options, opt
       data = await requestLlmChatCompletionWithBudgetFallback(plugin, messages, effectiveOptions);
     } catch (error) {
       try {
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.continuation_failed", "截断续写请求失败，已保留现有正文", {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.continuation_failed", t("Continuation request failed; the existing body text has been kept"), {
           attempt: continuationAttempts,
           hadVisibleText: !!text.trim(),
           error: diagnosticError(error),
@@ -1007,7 +1008,7 @@ export async function callLlmWithContinuation(plugin, system, user, options, opt
     } catch { /* intentionally empty */ }
     if (!piece) {
       try {
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.continuation_empty", "截断续写仍未返回可见正文", {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.continuation_empty", t("The continuation still returned no visible body text"), {
           attempt: continuationAttempts,
           finishReason: extractLlmFinishReason(data),
           hadVisibleText: !!text.trim(),
@@ -1033,7 +1034,7 @@ export async function callBriefingMergeLlm(plugin, system, user, options, diagCt
   const truncated = isTruncatedFinishReason(finishReason);
   if (!String(text || "").trim()) {
     try {
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_empty_output", "大模型请求完成但没有返回可见正文", Object.assign({
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_empty_output", t("The LLM request completed but returned no visible body text"), Object.assign({
         finishReason: finishReason || "",
         continuations,
         continuationAttempts,
@@ -1042,14 +1043,14 @@ export async function callBriefingMergeLlm(plugin, system, user, options, diagCt
   }
   if (continuations > 0) {
     try {
-      await logLlmRequestDiagnostic(plugin, "info", "llm.merge_continued", "输出被截断后自动续写拼接", Object.assign({
+      await logLlmRequestDiagnostic(plugin, "info", "llm.merge_continued", t("Automatically continued and stitched after truncated output"), Object.assign({
         continuations, truncatedAfter: truncated, outputChars: text.length,
       }, diagCtx || {}));
     } catch { /* intentionally empty */ }
   }
   if (truncated) {
     try {
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_truncated", "最终纪要在多次续写后仍疑似被输出长度上限截断", Object.assign({
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_truncated", t("The final minutes still appear truncated by the output length limit after multiple continuations"), Object.assign({
         finishReason, outputChars: text.length, continuations, continuationAttempts,
       }, diagCtx || {}));
     } catch { /* intentionally empty */ }

@@ -1350,7 +1350,7 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
   const chunks = splitLongTextForLlm(joined, chunkSize);
   if (chunks.length <= 1) return segments;
 
-  await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_long_text_presummary_start", "长文本导入启动分段预摘要", {
+  await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_long_text_presummary_start", t("Long-text import started chunked pre-summarization"), {
     mode,
     source: sessionMeta.source,
     segmentCount: Array.isArray(segments) ? segments.length : 0,
@@ -1380,7 +1380,7 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
       const summary = await callLlm(plugin, sys, user, { timeoutMs: 90000 });
       summaries.push(summary || "_[本片段预摘要为空]_");
     } catch (e) {
-      await logLlmRequestDiagnostic(plugin, "error", "llm.merge_long_text_presummary_failed", "长文本导入分段预摘要失败", {
+      await logLlmRequestDiagnostic(plugin, "error", "llm.merge_long_text_presummary_failed", t("Chunked pre-summarization for long-text import failed"), {
         mode,
         source: sessionMeta.source,
         chunkIndex: i + 1,
@@ -1392,7 +1392,7 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
     }
   }
 
-  await logLlmRequestDiagnostic(plugin, "info", "llm.merge_long_text_presummary_done", "长文本导入分段预摘要完成", {
+  await logLlmRequestDiagnostic(plugin, "info", "llm.merge_long_text_presummary_done", t("Chunked pre-summarization for long-text import completed"), {
     mode,
     source: sessionMeta.source,
     inputChars: joined.length,
@@ -1408,7 +1408,10 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
     sourceName: `长文本预摘要 ${i + 1}`,
     sourcePath: "",
     rawText: "",
-    text: `${t("[Long-text pre-summary ")}${i + 1}/${summaries.length}】\n${summary}`,
+    text: t("[Long-text pre-summary {0}/{1}]\n{2}")
+      .replace("{0}", String(i + 1))
+      .replace("{1}", String(summaries.length))
+      .replace("{2}", summary),
   }));
 }
 

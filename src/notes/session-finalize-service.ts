@@ -105,10 +105,10 @@ export class SessionFinalizeService {
         stage: "transcribe-finalized",
         label: t("Finalizing transcription"),
         percent: null,
-        detail: "分段录音已停止，完整录音已保留，正在整理已有转写",
+        detail: t("Segmented recording has stopped; the full recording has been kept; organizing the transcription collected so far"),
       });
       try {
-        await this.host.diagnostics.logDiagnostic("warn", "recording.master_only_finalize", "最后分段不可用，已用完整录音完成保存并整理已有转写", {
+        await this.host.diagnostics.logDiagnostic("warn", "recording.master_only_finalize", t("The last segment was unavailable; the full recording was saved and the transcription collected so far is being organized"), {
           mode: session.mode,
           segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
           endOffsetMs: Number(seg.endOffsetMs) || 0,
@@ -173,7 +173,7 @@ export class SessionFinalizeService {
       stage: "transcribing",
       label: `${t("Transcript segment ")}${segNumber}${t(" segments")}`,
       percent: null,
-      detail: "音频正在发送到转写服务",
+      detail: t("Audio is being sent to the transcription service"),
     });
     if (session.streamingClient) {
       // 流式转写：跳过 HTTP 切片转写，等流式客户端 finish 后取累计文本
@@ -192,15 +192,15 @@ export class SessionFinalizeService {
       session.streamingClient = null;
     } else if (isStreamingProvider) {
       // 流式服务但客户端连接失败：保留音频但不做 HTTP 切片转写（端点是 wss://，HTTP 必失败）
-      err = new Error("流式转写连接未建立，请检查 API Key 与网络后重新录音。");
+      err = new Error(t("The streaming transcription connection could not be established. Check your API key and network, then record again."));
       console.error("[QnALog]", err.message);
     } else {
       const circuitOpen = isLiveAsrCircuitOpen(session.asrCircuitState || createLiveAsrCircuitState())
         || this.host.liveAsr.isAsrServiceCircuitOpen();
       if (session.asrDeferredMode || circuitOpen) {
         err = new Error(session.asrDeferredMode
-          ? "实时转写积压超过保护阈值，已转入后台队列"
-          : "转写服务处于短暂冷却期，已转入后台队列");
+          ? t("Realtime transcription backlog exceeded the safety threshold and has moved to the background queue")
+          : t("The transcription service is in a brief cooldown; work has moved to the background queue"));
         err.asrDeferred = true;
         err.deferReason = session.asrDeferredMode ? "backlog-critical" : "circuit-open";
       } else {
@@ -211,7 +211,7 @@ export class SessionFinalizeService {
         }
         if (!transcribeBlob && seg.blob) transcribeBlob = seg.blob;
         if (!transcribeBlob) {
-          err = new Error("录音分段缓存无法读取，已保留后台重试任务");
+          err = new Error(t("The recorded segment cache could not be read; the background retry task has been kept"));
         } else {
           batchAsrAttempted = true;
           try {
@@ -258,14 +258,14 @@ export class SessionFinalizeService {
               if (channelTranscription.usedMultichannel && !session._channelSpeakersNotified) {
                 session._channelSpeakersNotified = true;
                 new obsidian.Notice(
-                  `已按声道区分 ${channelTranscription.processedChannelCount} 位说话人。可在纪要页顶部为他们填写姓名。`,
+                  t("Separated {0} speakers by channel. You can enter their names at the top of the note.").replace("{0}", String(channelTranscription.processedChannelCount)),
                   9000,
                 );
               }
               if (channelTranscription.deduplicatedParts > 0) {
                 session.channelCrosstalkDeduplicated = Math.max(0, Number(session.channelCrosstalkDeduplicated) || 0)
                   + channelTranscription.deduplicatedParts;
-                await this.host.diagnostics.logDiagnostic("info", "asr.channel_crosstalk_deduplicated", "已去除跨声道重复转写", {
+                await this.host.diagnostics.logDiagnostic("info", "asr.channel_crosstalk_deduplicated", t("Cross-channel duplicate transcription removed"), {
                   segmentIndex,
                   removedParts: channelTranscription.deduplicatedParts,
                   totalRemovedParts: session.channelCrosstalkDeduplicated,
@@ -276,7 +276,7 @@ export class SessionFinalizeService {
                 && !session._channelDuplicatedNotified) {
                 session._channelDuplicatedNotified = true;
                 new obsidian.Notice(t("All channels have identical content; transcribed as mono. Please change the receiver output to \"Stereo\" and try again."), 10000);
-                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_content_duplicated", "录音多声道内容重复，已回退为单声道转写", {
+                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_content_duplicated", t("Recording channels had duplicate content; fell back to mono transcription"), {
                   actualChannelCount: channelTranscription.actualChannelCount,
                   inputLabel: session.audioChannelLabel || "",
                 });
@@ -293,16 +293,16 @@ export class SessionFinalizeService {
                 session._channelDownmixNotified = true;
                 const actual = channelTranscription.actualChannelCount;
                 new obsidian.Notice(actual > 1
-                  ? `检测到 ${actual} 个可用声道，将按声道区分说话人。`
-                  : "输入设备为多声道，但录音文件只有单声道。本次将按单声道转写。", 9000);
-                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_encoder_downmix", "录音编码保留的声道少于设备输入声道", {
+                  ? t("Detected {0} available channel(s); speakers will be separated by channel.").replace("{0}", String(actual))
+                  : t("The input device has multiple channels, but the recording file is mono; transcription will proceed in mono."), 9000);
+                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_encoder_downmix", t("The recording encoding kept fewer channels than the device input"), {
                   expectedChannelCount: expectedHardwareChannels,
                   actualChannelCount: actual,
                   inputLabel: session.audioChannelLabel || "",
                 });
               }
               if (channelTranscription.errors.length) {
-                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_partial_failure", "部分声道转写失败，已保留其他声道的内容", {
+                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_partial_failure", t("Some channels failed to transcribe; content from the other channels was kept"), {
                   segmentIndex,
                   channelCount: channelTranscription.actualChannelCount,
                   errors: channelTranscription.errors,
@@ -323,13 +323,13 @@ export class SessionFinalizeService {
     if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000) {
       // HTTP 200 + 空正文并不等于成功。对长段按可重试软失败处理并保留切片，
       // 与导入音频路径保持一致，避免服务偶发空结果被静默写成“无内容”。
-      err = new Error("转写返回空结果（服务已响应但没有文字）");
+      err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
       if (batchAsrAttempted && !batchAsrFailureRecorded) {
         batchAsrFailureRecorded = true;
         this.host.liveAsr.recordLiveAsrAttemptFailure(session, err, seg);
       }
       try {
-        await this.host.diagnostics.logDiagnostic("warn", "asr.segment_empty", "录音分段转写返回空结果，已按软失败保留并排队", {
+        await this.host.diagnostics.logDiagnostic("warn", "asr.segment_empty", t("A recorded segment returned an empty transcription; it was kept as a soft failure and queued"), {
           segmentIndex,
           startOffsetMs: displayStartOffsetMs,
           endOffsetMs: displayEndOffsetMs,
@@ -341,7 +341,7 @@ export class SessionFinalizeService {
     if (!err && batchAsrAttempted) this.host.liveAsr.recordLiveAsrAttemptSuccess(session);
     if (err) {
       if (err.asrDeferred) {
-        await this.host.diagnostics.logDiagnostic("warn", "asr.segment_deferred", "录音分段已跳过实时请求并转入后台队列", {
+        await this.host.diagnostics.logDiagnostic("warn", "asr.segment_deferred", t("The recorded segment skipped the realtime request and moved to the background queue"), {
           segmentIndex,
           startOffsetMs: displayStartOffsetMs,
           endOffsetMs: displayEndOffsetMs,
@@ -356,7 +356,7 @@ export class SessionFinalizeService {
           message: getErrorMessage(err),
           startedAtMs: displayStartOffsetMs,
         });
-        await this.host.diagnostics.logDiagnostic("error", "asr.segment_failed", "录音分段转写失败", {
+        await this.host.diagnostics.logDiagnostic("error", "asr.segment_failed", t("Transcription failed for a recorded segment"), {
           provider: this.host.settings.activeTranscribeProvider,
           model: this.host.profiles.getActiveTranscribeProfile() && this.host.profiles.getActiveTranscribeProfile().model,
           mime: (transcribeBlob && transcribeBlob.type) || seg.blobType || "",
@@ -368,10 +368,10 @@ export class SessionFinalizeService {
           error: diagnosticError(err),
         });
         new obsidian.Notice(isStreamingProvider
-          ? `段 ${segNumber} 流式转写失败，无法离线重试；录音仍在本地继续，可整篇结束后用「重新整理」或重录该段。`
+          ? t("Segment {0} failed to transcribe in streaming mode and cannot be retried offline; recording continues locally. Use \"Re-organize\" when the whole recording finishes, or record that segment again.").replace("{0}", String(segNumber))
           : (!String(text || "").trim()
-            ? `段 ${segNumber} 没有返回文字，录音切片已保留并加入重试队列。`
-            : `段 ${segNumber} 转写失败，录音仍在本地继续，已加入重试队列。`), 7000);
+            ? t("Segment {0} returned no text; the audio slice has been kept and queued for retry.").replace("{0}", String(segNumber))
+            : t("Segment {0} failed to transcribe; recording continues locally and it has been queued for retry.").replace("{0}", String(segNumber))), 7000);
       }
     } else if (!text || !String(text).trim()) {
       // 转写成功返回，但内容为空 → 可能音频设备没选对 / 没有声音。
@@ -381,7 +381,7 @@ export class SessionFinalizeService {
       // 防误报：只在"本场此前从未产生过任何非空转写"时提示。
       // 否则会议中途的合理静默段（开头/中场没人说话）会骚扰正在正常录音的用户。
       const hadAnyText = Array.isArray(session.segments) && session.segments.some((s) => s && s.text && String(s.text).trim());
-      await this.host.diagnostics.logDiagnostic("warn", "asr.empty_result", "本段无转写内容", {
+      await this.host.diagnostics.logDiagnostic("warn", "asr.empty_result", t("This segment has no transcription"), {
         segmentIndex, mode: session.mode, hadAnyText,
       });
       if (!hadAnyText && !session._emptyAsrNotified) {
@@ -450,9 +450,9 @@ export class SessionFinalizeService {
     this.host.requestOutlineRefresh();
     this.host.liveAsr.setSessionWorkProgress(session, {
       stage: seg.isFinal ? "transcribe-finalized" : "transcribed",
-      label: seg.isFinal ? "转写收尾" : (err && err.asrDeferred ? `已缓存 ${session.segments.length} 段` : `已转写 ${session.segments.length} 段`),
+      label: seg.isFinal ? t("Finalizing transcription") : (err && err.asrDeferred ? t("Cached {0} segments").replace("{0}", String(session.segments.length)) : t("Transcribed {0} segments").replace("{0}", String(session.segments.length))),
       percent: null,
-      detail: seg.isFinal ? "正在进入 AI 整理" : (err && err.asrDeferred ? "音频已落盘，等待后台补转写" : "分段转写已写入纪要"),
+      detail: seg.isFinal ? t("Starting AI organizing") : (err && err.asrDeferred ? t("Audio saved to disk; waiting for background transcription retry") : t("Segment transcriptions have been written to the note")),
     });
 
     if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`${t(" segments ")}${segNumber}${t(" transcribed")}`);
@@ -491,12 +491,12 @@ export class SessionFinalizeService {
             stage: "finalize-failed",
             label: t("Failed to finalize minutes"),
             percent: null,
-            detail: "原始转写和录音已保留，可打开笔记后重新整理",
+            detail: t("The original transcript and recording were kept; open the note and re-organize"),
           });
         } catch { /* intentionally empty */ }
         console.error("[QnALog] finalize session failed", e);
         try {
-          await this.host.diagnostics.logDiagnostic("error", "session.finalize_failed", "纪要最终收尾异常，原始材料已保留", {
+          await this.host.diagnostics.logDiagnostic("error", "session.finalize_failed", t("Finalizing the minutes failed unexpectedly; the original material was kept"), {
             mode: session.mode,
             mdPath: session.mdPath,
             segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
@@ -537,7 +537,7 @@ export class SessionFinalizeService {
         stage: "speaker-confirm",
         label: t("Confirm speakers"),
         percent: 52,
-        detail: `识别到 ${candidates.length} 位说话人，等待确认姓名后继续整理`,
+        detail: t("Detected {0} speakers; waiting for name confirmation before continuing").replace("{0}", String(candidates.length)),
       });
       this.host.requestOutlineRefresh();
       const providerId = session.importTranscribeProviderId
@@ -594,7 +594,7 @@ export class SessionFinalizeService {
         namesPersisted = true;
       } catch (error) {
         try {
-          await this.host.diagnostics.logDiagnostic("warn", "speaker.names_persist_failed", "说话人姓名已保存到属性，但正文更新失败", {
+          await this.host.diagnostics.logDiagnostic("warn", "speaker.names_persist_failed", t("Speaker names were saved to properties, but updating the note body failed"), {
             mdPath: file.path,
             error: diagnosticError(error),
           });
@@ -603,7 +603,7 @@ export class SessionFinalizeService {
       }
       if (namesPersisted) {
         try {
-          await this.host.diagnostics.logDiagnostic("info", "speaker.names_persisted", "说话人姓名已写入原始转写", {
+          await this.host.diagnostics.logDiagnostic("info", "speaker.names_persisted", t("Speaker names have been written into the original transcript"), {
             mdPath: file.path,
             confirmedCount: Object.values(mappings).filter(mapping => String(mapping && mapping.personName || "").trim()).length,
             replacements: persistedReplacements,
@@ -639,13 +639,13 @@ export class SessionFinalizeService {
     if (tier === "discard") {
       new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
     } else if (audioName) {
-      new obsidian.Notice(`${t("Recording under {0} seconds: audio kept in the recording folder, no minutes created and no transcript kept. Import it manually if needed.").replace("{0}", String(limitSeconds))} （${audioName}）`, 8000);
+      new obsidian.Notice(t("Recording under {0} seconds: audio kept in the recording folder, no minutes created and no transcript kept. Import it manually if needed. ({1})").replace("{0}", String(limitSeconds)).replace("{1}", audioName), 8000);
     } else {
       // 母带录音器没产出音频（设备被收回等）→ 没有可留的文件，如实说明。
       new obsidian.Notice(t("Recording under {0} seconds and its audio could not be saved; skipped.").replace("{0}", String(limitSeconds)), 8000);
     }
     try {
-      await this.host.diagnostics.logDiagnostic("info", "recording.short_recording_skipped", "短录音未自动转写", {
+      await this.host.diagnostics.logDiagnostic("info", "recording.short_recording_skipped", t("Short recording was not transcribed automatically"), {
         tier,
         durationMs,
         audioName,
@@ -691,15 +691,15 @@ export class SessionFinalizeService {
       : Object.assign({}, session, { segments: segmentsForFinal, multiSourceAudio: true });
     const usableTranscriptSegments = segmentsForFinal.filter(s => s && String(s.text || "").trim());
     if (!usableTranscriptSegments.length) {
-      const noTranscriptError = new Error("没有可用于整理的有效转写文本；录音和失败切片已保留");
+      const noTranscriptError = new Error(t("No usable transcript text for organizing; the recording and failed slices were kept"));
       this.host.liveAsr.setSessionWorkProgress(session, {
         stage: "transcript-empty",
         label: t("No valid transcript obtained"),
         percent: null,
-        detail: "已保留录音，可检查转写服务后从待处理队列重试",
+        detail: t("The recording was kept; check the transcription service and retry from the pending queue"),
       });
       try {
-        await this.host.diagnostics.logDiagnostic("error", "session.no_transcript", "整场没有有效转写，已跳过 LLM 整理以避免无效计费", {
+        await this.host.diagnostics.logDiagnostic("error", "session.no_transcript", t("No valid transcript for the whole session; AI organizing was skipped to avoid wasted charges"), {
           mode: session.mode,
           segmentCount: segmentsForFinal.length,
           failedSegments: segmentsForFinal.filter(s => s && s.error).length,
@@ -726,7 +726,7 @@ export class SessionFinalizeService {
     } catch (error) {
       console.warn("[QnALog] speaker confirmation failed; continuing with generic labels", error);
       try {
-        await this.host.diagnostics.logDiagnostic("warn", "speaker.confirmation_failed", "说话人姓名确认未完成，已保留编号继续整理", {
+        await this.host.diagnostics.logDiagnostic("warn", "speaker.confirmation_failed", t("Speaker name confirmation did not finish; numbers were kept and organizing continued"), {
           mdPath: session.mdPath,
           error: diagnosticError(error),
         });
@@ -736,12 +736,12 @@ export class SessionFinalizeService {
     const speakerFrontmatter = speakerPreparation.frontmatter || null;
     this.host.liveAsr.setSessionWorkProgress(session, {
       stage: "finalize-start",
-      label: textImportSession ? "读取文本完成" : "准备 AI 整理",
+      label: textImportSession ? t("Text read complete") : t("Preparing AI organizing"),
       percent: 12,
-      detail: textImportSession ? "已跳过 ASR，正在准备结构化整理" : "转写已结束，正在整理上下文",
+      detail: textImportSession ? t("ASR skipped; preparing structured organizing") : t("Transcription finished; organizing the context"),
     });
     this.host.requestOutlineRefresh();
-    new obsidian.Notice(textImportSession ? "文本已读取，AI 结构化整理中…" : "所有段已处理，AI 合并润色中…");
+    new obsidian.Notice(textImportSession ? t("Text read; AI structuring in progress…") : t("All segments processed; AI merging and polishing in progress…"));
 
     let polished = ""; let mergeError = null; let nonRetryableMergeError = false; let commitError = false;
     let taskMeter = null;
@@ -757,7 +757,7 @@ export class SessionFinalizeService {
         stage: "workbench",
         label: t("Organize context"),
         percent: 22,
-        detail: "正在合并会中记录、附件和上下文",
+        detail: t("Merging meeting entries, attachments, and context"),
       });
       await this.host.meetingWorkbench.processPendingMeetingWorkbenchInteractions(session, { force: true });
       if (!textImportSession) {
@@ -765,7 +765,7 @@ export class SessionFinalizeService {
           stage: "outline",
           label: t("Generate outline"),
           percent: 36,
-          detail: "正在补齐实时大纲，供最终纪要参考",
+          detail: t("Completing the live outline for reference by the final minutes"),
         });
         await this.host.outline.ensureRealtimeOutlineForFinalNote(session);
       }
@@ -783,7 +783,7 @@ export class SessionFinalizeService {
         stage: "llm-merge",
         label: t("AI organizing"),
         percent: 62,
-        detail: textImport ? "正在把导入文本交给大模型结构化整理" : "正在把分段转写合并成最终纪要",
+        detail: textImport ? t("Sending the imported text to the AI model for structured organizing") : t("Merging the segmented transcriptions into the final minutes"),
       });
       taskMeter = this.host.taskMeters.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
@@ -803,7 +803,7 @@ export class SessionFinalizeService {
         stage: "write-note",
         label: t("Write to Minutes"),
         percent: 88,
-        detail: "AI 输出已返回，正在写入 Obsidian 笔记",
+        detail: t("AI output received; writing to the Obsidian note"),
       });
     } catch (e) { mergeError = e; console.error(e); }
     session.finalizing = false;
@@ -815,7 +815,7 @@ export class SessionFinalizeService {
         session._finalizeTaskMeter = null;
       }
       nonRetryableMergeError = isLlmNonRetryableError(mergeError);
-      await this.host.diagnostics.logDiagnostic("error", "llm.merge_failed", "LLM 合并整理失败", {
+      await this.host.diagnostics.logDiagnostic("error", "llm.merge_failed", t("LLM merging and organizing failed"), {
         mode: session.mode,
         segmentCount: segmentsForFinal.length,
         duration: isTextImportSession(session) ? "" : (segmentsForFinal.length ? formatElapsed(segmentsForFinal[segmentsForFinal.length - 1].endOffsetMs || 0) : ""),
@@ -864,13 +864,13 @@ export class SessionFinalizeService {
       const partialBriefing = mergeError instanceof BriefingPipelineIncompleteError;
       this.host.liveAsr.setSessionWorkProgress(session, {
         stage: nonRetryableMergeError ? "merge-failed" : "merge-retrying",
-        label: nonRetryableMergeError ? "AI 整理失败" : partialBriefing ? "纪要部分完成" : "AI 整理等待重试",
+        label: nonRetryableMergeError ? t("AI organizing failed") : partialBriefing ? t("Minutes partially completed") : t("AI organizing waiting to retry"),
         percent: null,
         detail: nonRetryableMergeError
-          ? "原始转写已保留；请修复大模型配置后重新整理"
+          ? t("The original transcript has been kept; fix the model configuration and re-organize.")
           : partialBriefing
-            ? `${mergeError.message}；已完成部分和原始转写均已保存`
-            : "原始转写已保留；后台队列会按退避规则再次尝试",
+            ? t("{0}; the completed portion and the original transcript have both been saved").replace("{0}", mergeError.message)
+            : t("The original transcript has been kept; the background queue will retry with backoff"),
       });
     }
 
@@ -895,7 +895,7 @@ export class SessionFinalizeService {
         } catch (archiveError) {
           console.warn("[QnALog] pre-append version archive failed", archiveError);
           try {
-            await this.host.diagnostics.logDiagnostic("warn", "session.pre_append_archive_failed", "续录覆盖前旧稿留档失败，续录本身不受影响", {
+            await this.host.diagnostics.logDiagnostic("warn", "session.pre_append_archive_failed", t("Archiving the previous draft before the append failed; the append itself is unaffected"), {
               mdPath: session.mdPath,
               error: diagnosticError(archiveError),
             });
@@ -912,7 +912,7 @@ export class SessionFinalizeService {
         commitError = true;
         mergeError = writeError;
         session.finalizationError = getErrorMessage(writeError);
-        await this.host.diagnostics.logDiagnostic("error", "briefing.commit_failed", "纪要正文已生成，但写入 Markdown 失败", {
+        await this.host.diagnostics.logDiagnostic("error", "briefing.commit_failed", t("The minutes body was generated, but writing the Markdown failed"), {
           mode: session.mode,
           mdPath: session.mdPath,
           checkpointId: finalSessionMeta && finalSessionMeta._briefingCheckpointId || "",
@@ -939,14 +939,14 @@ export class SessionFinalizeService {
           textImportSources: session.textImportSources || [],
           speakerFrontmatter,
           sessionMeta: finalSessionMeta,
-          lastError: `纪要写入失败：${getErrorMessage(writeError)}`,
+          lastError: t("Failed to write the minutes: {0}").replace("{0}", getErrorMessage(writeError)),
         });
         this.host.requestTaskQueueRetry(1500, "briefing-write-failure");
         this.host.liveAsr.setSessionWorkProgress(session, {
           stage: "write-retrying",
           label: t("Minutes write waiting to retry"),
           percent: null,
-          detail: "AI 整理结果已保存，不会重复调用模型；稍后只重试写入",
+          detail: t("The AI result was saved; the model will not be called again and only the write will be retried later"),
         });
       }
     } else {
@@ -962,7 +962,7 @@ export class SessionFinalizeService {
         stage: "done",
         label: t("Processing complete"),
         percent: 100,
-        detail: "纪要已写入，正在收尾",
+        detail: t("Minutes written; finishing up"),
       });
     }
 
@@ -1006,8 +1006,8 @@ export class SessionFinalizeService {
       taskMeter = null;
       session._finalizeTaskMeter = null;
       try {
-        const doneLabel = isTextImportSession(session) ? "文本整理完成"
-          : session.source === "import" ? "导入音频整理完成" : "录音纪要整理完成";
+        const doneLabel = isTextImportSession(session) ? t("Text organization completed")
+          : session.source === "import" ? t("Imported audio organization completed") : t("Recording minutes completed");
         this.host.taskMeters.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
       } catch { /* intentionally empty */ }
       // 沉淀开关默认关闭：开启后转写完成自动跑沉淀扫描并入库；关闭则照旧手动点「沉淀」。后台执行、失败静默。
@@ -1016,15 +1016,17 @@ export class SessionFinalizeService {
 
     new obsidian.Notice(mergeError
       ? (nonRetryableMergeError
-        ? `AI 整理失败：${formatLlmFailureIssue(mergeError.message || mergeError)}`
+        ? t("AI organizing failed: {0}").replace("{0}", formatLlmFailureIssue(mergeError.message || mergeError))
         : commitError
-          ? "纪要正文已生成，写入失败，已加入重试队列"
+          ? t("The minutes body has been generated but writing failed; queued for retry.")
           : mergeError instanceof BriefingPipelineIncompleteError
-          ? `${mergeError.message}，已加入精确重试`
-          : "AI 整理未完成，已加入重试队列")
+          ? t("{0}, queued for precise retry").replace("{0}", mergeError.message)
+          : t("AI organizing did not finish; queued for retry."))
       : (session.continuationSourcePath
-        ? `续录完成：本次 ${session.segments.length} 段，合并后共 ${segmentsForFinal.length} 段（旧稿已存入版本缓存）`
-        : "Q&A Log 处理完成"));
+        ? t("Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).")
+          .replace("{0}", String(session.segments.length))
+          .replace("{1}", String(segmentsForFinal.length))
+        : t("Q&A Log processing completed")));
 
     if (this.host.settings.autoOpenNoteAfterFinish) {
       const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);

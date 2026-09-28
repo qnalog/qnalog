@@ -149,7 +149,7 @@ export class VersionStore {
   }
 
   async createDerivedNote(sourceFile, sourceContent, version, label, mode, style = "") {
-    if (!(sourceFile instanceof obsidian.TFile)) throw new Error("找不到原始纪要");
+    if (!(sourceFile instanceof obsidian.TFile)) throw new Error(t("Original minutes note not found"));
     const sourceDir = sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "";
     const prefix = String(label || "综合纪要").trim() || "综合纪要";
     const stem = `【${prefix}】${sourceFile.basename}`;
@@ -162,7 +162,7 @@ export class VersionStore {
     const target = stableExisting instanceof obsidian.TFile
       ? stableTarget
       : findAvailableMarkdownPath(this.host.app, stableTarget);
-    if (!target) throw new Error("无法生成派生纪要文件路径");
+    if (!target) throw new Error(t("Failed to generate a path for the derived minutes file"));
 
     const sourceFm = ((this.host.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
     const versionFm = version && version.frontmatter

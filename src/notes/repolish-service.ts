@@ -101,8 +101,13 @@ export class RepolishService {
 
       const preferenceLabel = repolishOptions && repolishOptions.label ? ` · ${repolishOptions.label}` : "";
       const mapNotice = roleMapping.length
-        ? `Q&A Log：应用 ${roleMapping.length} 条角色映射后按${meta.prefix}模式重新整理${preferenceLabel}…`
-        : `Q&A Log：正在按${meta.prefix}模式重新整理${preferenceLabel}…`;
+        ? t("Q&A Log: re-organizing via {1} mode{2}… after applying {0} role mappings…")
+          .replace("{0}", String(roleMapping.length))
+          .replace("{1}", meta.prefix)
+          .replace("{2}", preferenceLabel)
+        : t("Q&A Log: re-organizing via {0} mode{1}…")
+          .replace("{0}", meta.prefix)
+          .replace("{1}", preferenceLabel);
       new obsidian.Notice(mapNotice);
       // 把笔记原 frontmatter 传给 mergeAndPolish，post-process 阶段会作为 base 保留用户改动
       // （包括用户已应用的角色映射变更，仅 system 字段被覆盖、tags 被 merge）
@@ -122,15 +127,15 @@ export class RepolishService {
           }
         }
       }
-      this.host.tasks._busyLabel = `重新整理中（${meta.prefix}）…`;
+      this.host.tasks._busyLabel = t("Re-organizing ({0})…").replace("{0}", meta.prefix);
       const sourceMode = detectRecentNoteMode(this.host, file, fmCache);
       const sourceModeLabel = sourceMode && sourceMode !== "off"
         ? ((getModeMeta(this.host.settings, sourceMode) || {}).label || sourceMode)
-        : "未标注";
+        : t("Unlabeled");
       this.host.tasks._busyContext = {
-        kind: "重新整理",
+        kind: t("Re-organize"),
         sourceFile: file.basename,
-        sourceFolder: file.parent && file.parent.path ? file.parent.path : "知识库根目录",
+        sourceFolder: file.parent && file.parent.path ? file.parent.path : t("Vault root"),
         durationMs: getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta),
         sourceModeLabel,
         targetModeLabel: [meta.label || meta.prefix, repolishOptions && repolishOptions.label]
@@ -146,7 +151,7 @@ export class RepolishService {
         status: "running",
         stage: "llm",
         stageLabel: t("AI reorganizing"),
-        detail: preferenceLabel ? `正在准备原始转写 · ${preferenceLabel.replace(/^\s*·\s*/, "")}` : "正在准备原始转写",
+        detail: preferenceLabel ? t("Preparing the original transcript · {0}").replace("{0}", preferenceLabel.replace(/^\s*·\s*/, "")) : t("Preparing the original transcript"),
         progress: 3,
         actions: [],
       });
@@ -157,7 +162,7 @@ export class RepolishService {
       this.host.tasks.patchTaskActivity(taskId, {
         stage: "writing",
         stageLabel: t("Generating new version"),
-        detail: "AI 正文已经完成，正在写入 Markdown",
+        detail: t("The AI draft is complete; writing the Markdown"),
         progress: 94,
         deadlineAt: 0,
       });
@@ -192,7 +197,7 @@ export class RepolishService {
       this.host.tasks.patchTaskActivity(taskId, {
         stage: "postprocess",
         stageLabel: t("Finishing file processing"),
-        detail: derivedFile instanceof obsidian.TFile ? derivedFile.path : "新版本已经写入",
+        detail: derivedFile instanceof obsidian.TFile ? derivedFile.path : t("The new version has been written"),
         progress: 98,
         deadlineAt: 0,
       });
@@ -223,11 +228,11 @@ export class RepolishService {
       new obsidian.Notice(`${t("Q&A Log: generated ")}${meta.prefix}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
-      try { this.host.tasks.logCompletedWork(`重新整理完成 · ${meta.prefix}`, (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
+      try { this.host.tasks.logCompletedWork(t("Re-organize completed · {0}").replace("{0}", meta.prefix), (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
       this.host.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: t("New version generated"),
-        detail: versionCacheError ? `${outputPath} · 版本索引未同步：${versionCacheError}` : outputPath,
+        detail: versionCacheError ? `${outputPath} · ${t("Version index not synced: {0}").replace("{0}", versionCacheError)}` : outputPath,
         subject: outputPath,
         progress: 100,
         actions: [
@@ -288,18 +293,18 @@ export class RepolishService {
       }
       const baseTitle = sourceFile.basename;
       taskId = `clean:${sourceFile.path}`;
-      this.host.tasks._busyLabel = "清稿生成中…";
+      this.host.tasks._busyLabel = t("Generating the clean transcript…");
       const sourceFm = ((this.host.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
       const sourceMode = detectRecentNoteMode(this.host, sourceFile, sourceFm);
       this.host.tasks._busyContext = {
-        kind: "生成清稿",
+        kind: t("Generate clean transcript"),
         sourceFile: sourceFile.basename,
-        sourceFolder: sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "知识库根目录",
+        sourceFolder: sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : t("Vault root"),
         durationMs: getSegmentsDurationMs(segments),
         sourceModeLabel: sourceMode && sourceMode !== "off"
           ? ((getModeMeta(this.host.settings, sourceMode) || {}).label || sourceMode)
-          : "未标注",
-        targetModeLabel: "清稿",
+          : t("Unlabeled"),
+        targetModeLabel: t("Clean transcript"),
       };
       taskStarted = true;
       this.host.tasks.startTaskActivity({
@@ -310,7 +315,7 @@ export class RepolishService {
         status: "running",
         stage: "llm",
         stageLabel: t("Organize verbatim transcript"),
-        detail: "去除口语赘词并保留原始事实，不覆盖母本",
+        detail: t("Removes filler words while keeping the original facts; the mother note is not overwritten"),
         progress: null,
         actions: [],
       });
@@ -318,7 +323,7 @@ export class RepolishService {
       new obsidian.Notice(t("Q&A Log: Generating the clean transcript from the source transcript..."));
       taskMeter = this.host.tasks.beginTaskMeter();
       const { text: cleaned, truncated } = await cleanTranscript(this.host, segments, getLearnedLlmOutputCeiling(this.host.settings));
-      if (!cleaned) throw new Error("模型没有返回可用清稿");
+      if (!cleaned) throw new Error(t("The model did not return a usable clean transcript"));
       const warn = truncated
         ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"
         : "";
@@ -335,7 +340,7 @@ export class RepolishService {
       new obsidian.Notice(t("Q&A Log: Clean transcript generated and set as the current displayed version"), 6000);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
-      try { this.host.tasks.logCompletedWork("生成清稿", sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
+      try { this.host.tasks.logCompletedWork(t("Generate clean transcript"), sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
       this.host.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: t("Clean transcript generated"),
