@@ -27,6 +27,7 @@ import { removeNoteIndex } from "../indexing/note-index";
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
+import { fmKey, labelText, labelPattern } from "../shared/note-labels";
 import { NS_TAG, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
 
 import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
@@ -212,15 +213,23 @@ export function clampProgress(value) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+// 折叠壳剥离模式（中英双语，`<summary>` 后的标签词中英任一即整块剥除）：
+// 目录 labelPattern 可直接嵌入的（导入文本信息/回听时间轴）从目录取；目录项带
+// （N 个来源）/（草稿）/（N 段）后缀的按裸前缀写中英分支，避免收窄旧笔记的匹配面。
+const IMPORT_APPENDIX_DETAILS_RES = [
+  new RegExp(`<details>\\s*<summary>\\s*(?:${labelPattern("importedTextInfo").source})[\\s\\S]*?<\\/details>`, "gi"),
+  /<details>\s*<summary>\s*(?:导入文本原文|Imported text \()[\s\S]*?<\/details>/gi,
+  /<details>\s*<summary>\s*(?:录音中实时大纲|Live outline while recording)[\s\S]*?<\/details>/gi,
+  new RegExp(`<details>\\s*<summary>\\s*(?:${labelPattern("playbackTimeline").source})[\\s\\S]*?<\\/details>`, "gi"),
+  /<details>\s*<summary>\s*(?:分段原始转写|Segmented raw transcript)[\s\S]*?<\/details>/gi,
+];
+
 export function stripImportAppendices(text) {
   // 索引块（标记+折叠壳）整块剥掉：后面喂提示词的路径未必再剥 HTML 注释。
-  return removeNoteIndex(stripSedimentPreExtractionBlocks(String(text || "")))
-    .replace(NS_MACHINE_SHELL_RE, "\n")
-    .replace(/<details>\s*<summary>\s*导入文本信息[\s\S]*?<\/details>/gi, "\n")
-    .replace(/<details>\s*<summary>\s*导入文本原文[\s\S]*?<\/details>/gi, "\n")
-    .replace(/<details>\s*<summary>\s*录音中实时大纲[\s\S]*?<\/details>/gi, "\n")
-    .replace(/<details>\s*<summary>\s*回听时间轴[\s\S]*?<\/details>/gi, "\n")
-    .replace(/<details>\s*<summary>\s*分段原始转写[\s\S]*?<\/details>/gi, "\n");
+  let out = removeNoteIndex(stripSedimentPreExtractionBlocks(String(text || "")))
+    .replace(NS_MACHINE_SHELL_RE, "\n");
+  for (const re of IMPORT_APPENDIX_DETAILS_RES) out = out.replace(re, "\n");
+  return out;
 }
 
 export function cleanImportedTextForPrompt(text) {
@@ -233,14 +242,14 @@ export function cleanImportedTextForPrompt(text) {
 
 export function extractIntegratedBriefing(text) {
   const source = String(text || "");
-  const matches = [...source.matchAll(/^##\s+(?:✨\s*)?整合版[^\n]*$/gm)];
+  const matches = [...source.matchAll(new RegExp(`^##\\s+(?:✨\\s*)?(?:${labelPattern("mergedVersion").source})[^\\n]*$`, "gm"))];
   if (!matches.length) return "";
   const match = matches[matches.length - 1];
   const start = (match.index || 0) + match[0].length;
   const tail = source.slice(start);
   const stopPatterns = [
-    /\n<details>\s*<summary>\s*导入文本信息/i,
-    /\n<details>\s*<summary>\s*导入文本原文/i,
+    new RegExp(`\\n<details>\\s*<summary>\\s*(?:${labelPattern("importedTextInfo").source})`, "i"),
+    /\n<details>\s*<summary>\s*(?:导入文本原文|Imported text \()/i,
     NS_SEDIMENT_LINE_BEGIN_RE,
   ];
   const stop = stopPatterns
@@ -275,7 +284,7 @@ export function stripImportedTextSource(text) {
   const withoutAppendices = stripImportAppendices(withoutFrontmatter);
   const hasMarkerNames = NS_SESSION_RE.test(withoutFrontmatter)
     || NS_SEGMENTS_START_RE.test(withoutFrontmatter)
-    || /##\s+(?:✨\s*)?整合版/.test(withoutFrontmatter);
+    || new RegExp(`##\\s+(?:✨\\s*)?(?:${labelPattern("mergedVersion").source})`).test(withoutFrontmatter);
   if (hasMarkerNames) {
     const integrated = extractIntegratedBriefing(withoutAppendices);
     if (integrated) return integrated;
@@ -298,7 +307,7 @@ export function buildImportedTextSegment(source, index) {
   const path = source && source.path ? source.path : (file && file.path) || "";
   const link = path ? `[[${path}|${name}]]` : name;
   const body = String(source && source.text || "").trim();
-  return [`【文本来源 ${index + 1}：${link}】`, "", body].join("\n");
+  return [`【${labelText("textSource", index + 1)}${link}】`, "", body].join("\n");
 }
 
 export function splitImportedTextIntoNormalSegments(sources) {
@@ -331,7 +340,8 @@ export function isTextImportSession(session) {
   return !!(session && session.source === "text-import");
 }
 
-export const EMAIL_ATTENDEE_FIELDS = ["参会人", "与会人", "参与者", "出席人", "受访者", "访问者", "面试官", "候选人", "当事人", "相关人员", "人员", "人物"];
+// 人物/people 双键：结构键随界面语言（fmKey），邮件参会人匹配两套都要认。
+export const EMAIL_ATTENDEE_FIELDS = ["参会人", "与会人", "参与者", "出席人", "受访者", "访问者", "面试官", "候选人", "当事人", "相关人员", "人员", "人物", "people"];
 
 export function normalizeEmailAddressList(value) {
   const raw = Array.isArray(value) ? value.flatMap(normalizeEmailAddressList) : String(value || "").split(/[，,、;；\s]+/);
@@ -454,7 +464,7 @@ export function stripMarkdownForEmailBrief(markdown) {
   let text = stripFrontmatterSimple(String(markdown || ""));
   text = text.replace(/<details[\s\S]*?<\/details>/gi, "\n");
   text = text.replace(/<!--[\s\S]*?-->/g, "\n");
-  const rawSplit = text.split(/\n(?=#{1,6}\s+(?:📁\s*)?(?:原始材料|原始转写|逐字稿|录音原文|回听时间轴|录音中实时大纲)\b)/);
+  const rawSplit = text.split(/\n(?=#{1,6}\s+(?:📁\s*)?(?:原始材料|原始转写|逐字稿|录音原文|回听时间轴|录音中实时大纲|Original material|Raw transcript|Verbatim transcript|Recording transcript|Playback timeline|Live outline while recording)(?!\w))/);
   return (rawSplit[0] || text).trim();
 }
 
@@ -465,7 +475,7 @@ export function cleanEmailMarkdownLine(line) {
   s = s.replace(/^>\s?/, "").trim();
   s = s.replace(/^\[![^\]]+\][+-]?\s*/i, "").trim();
   s = s.replace(/^\s{0,3}#{1,6}\s+/, "").replace(/\s+#+\s*$/, "").trim();
-  if (!s || /^(录音信息|回听时间轴|原始材料|原始转写|逐字稿|录音原文)$/i.test(s)) return "";
+  if (!s || /^(录音信息|回听时间轴|原始材料|原始转写|逐字稿|录音原文|Recording info|Playback timeline|Original material|Raw transcript|Verbatim transcript|Recording transcript)$/i.test(s)) return "";
   if (/^!\[\[.+?\]\]$/.test(s) || /^!\[[^\]]*\]\([^)]+\)$/.test(s)) return "";
   s = s.replace(/!\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "");
   s = s.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2");
@@ -640,10 +650,10 @@ export function cleanTranscriptBlock(block) {
     .replace(/<!--[^>]*-->/g, "")
     .replace(/<summary>[\s\S]*?<\/summary>/gi, "")
     .replace(/<\/?details>/gi, "")
-    .replace(/^###\s+段落\s+\d+[^\n]*$/gm, "")
+    .replace(/^###\s+(?:段落|Segment)\s+\d+[^\n]*$/gm, "")
     .replace(/!\[\[[^\]]+\]\]/g, "")
-    .replace(/^_\[(?:转写失败|等待后台转写|此段尚未完成转写)[^\n]*$/gm, "")
-    .replace(/^_\[此段无内容\]_$/gm, "")
+    .replace(/^_\[(?:转写失败|等待后台转写|此段尚未完成转写|Transcription failed|Waiting for background transcription|This segment is not fully transcribed yet)[^\n]*$/gm, "")
+    .replace(new RegExp(`^(?:${labelPattern("noContentSegment").source})$`, "gm"), "")
     .replace(/^\s*---\s*$/gm, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -655,7 +665,10 @@ export function splitTranscriptSections(markdown) {
   const sections = [];
   let searchFrom = 0;
   while (true) {
-    const labelIdx = text.indexOf("分段原始转写", searchFrom);
+    // 分段原始转写折叠壳：中英标签词任一命中即定位（取两者中靠前的一处）。
+    const zhLabelIdx = text.indexOf("分段原始转写", searchFrom);
+    const enLabelIdx = text.indexOf("Segmented raw transcript", searchFrom);
+    const labelIdx = zhLabelIdx < 0 ? enLabelIdx : enLabelIdx < 0 ? zhLabelIdx : Math.min(zhLabelIdx, enLabelIdx);
     if (labelIdx < 0) break;
     const summaryEnd = text.indexOf("</summary>", labelIdx);
     const detailsEnd = summaryEnd >= 0 ? text.indexOf("</details>", summaryEnd) : -1;
@@ -676,8 +689,14 @@ export function splitTranscriptSections(markdown) {
   }
 
   if (!sections.length) {
-    const rawIdx = text.lastIndexOf("原始转写：");
-    if (rawIdx >= 0) sections.push(text.slice(rawIdx + "原始转写：".length));
+    // 兜底老格式「原始转写：…」/「Raw transcript: …」：取两者中靠后的一处。
+    const zhRawIdx = text.lastIndexOf("原始转写：");
+    const enRawIdx = text.lastIndexOf("Raw transcript:");
+    if (zhRawIdx >= 0 || enRawIdx >= 0) {
+      const useZh = zhRawIdx >= enRawIdx;
+      const rawIdx = useZh ? zhRawIdx : enRawIdx;
+      sections.push(text.slice(rawIdx + (useZh ? "原始转写：".length : "Raw transcript:".length)));
+    }
   }
   return sections;
 }
@@ -686,7 +705,7 @@ export function extractTranscriptSegments(markdown) {
   const sections = splitTranscriptSections(markdown);
   const segments = [];
   for (const section of sections) {
-    const headingRe = /^###\s+段落\s+(\d+)([^\n]*)$/gm;
+    const headingRe = /^###\s+(?:段落|Segment)\s+(\d+)([^\n]*)$/gm;
     const heads = [...String(section).matchAll(headingRe)];
     if (!heads.length) {
       const text = cleanTranscriptBlock(section);
@@ -781,7 +800,8 @@ export function normalizeSegmentsForMergedNote(segments, offsetMs, startIndex, s
 export function stripEmptyPlaceholders(text) {
   return String(text || "")
     .replace(/!\[\[[^\]]+\]\]/g, "")
-    .replace(/_?\[(?:此段无内容|无输出|转写失败|等待后台转写|此段尚未完成转写|合并润色失败)[^\]\n]*\]_?/g, "")
+    .replace(/_?\[(?:此段无内容|无输出|转写失败|等待后台转写|此段尚未完成转写|合并润色失败|No content in this segment|No output|Transcription failed|Waiting for background transcription|This segment is not fully transcribed yet|Merge failed)[^\]\n]*\]_?/g, "")
+    // 下两行是历史中文 LLM 的空结果自述（无对应英文写入方、也不在标签目录内），维持中文匹配。
     .replace(/^(?:没有|暂无)(?:可整理内容|有效内容|实际内容|可用内容)[。.!！]*$/gm, "")
     .replace(/^转写(?:为空|返回为空|无内容)[。.!！]*$/gm, "")
     .replace(/[ \t]+\n/g, "\n")
@@ -809,8 +829,8 @@ export function getMeaningfulRemainder(markdown) {
     .replace(/!\[\[[^\]]+\]\]/g, "")
     .replace(/^#{1,6}\s+.*$/gm, "")
     .replace(/^>\s*\[!info\].*$/gm, "")
-    .replace(/^>\s*(?:开始|时间|合并自)[：:].*$/gm, "")
-    .replace(/^>\s*.*(?:时长|模式|分段|模型).*$/gm, "")
+    .replace(/^>\s*(?:开始|时间|合并自|Time)[：:].*$/gm, "")
+    .replace(/^>\s*.*(?:时长|模式|分段|模型|Duration|Mode|Segments|Model).*$/gm, "")
     .replace(/^\s*---\s*$/gm, "");
   text = stripEmptyPlaceholders(text);
   return text.replace(/^\s*$/gm, "").trim();
@@ -1099,12 +1119,16 @@ export function normalizeBriefingFrontmatterFields(raw, mode, baseKey) {
 
   const keys = FRONTMATTER_CONTENT_KEYS[baseKey || mode] || ["主题"];
   const allowed = new Set(keys);
-  allowed.add("人物"); // 人物 = 独立人员属性，全模式恒定保留（重整时不被当非白名单字段裁掉）
+  // 人物（people）= 独立人员属性，全模式恒定保留（重整时不被当非白名单字段裁掉）；
+  // zh 旧键 人物 与 en 新键 people 都要认。
+  allowed.add("人物");
+  allowed.add("people");
   const cleaned = {};
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(source, key)) cleaned[key] = source[key];
   }
   if (Object.prototype.hasOwnProperty.call(source, "人物")) cleaned["人物"] = source["人物"];
+  if (Object.prototype.hasOwnProperty.call(source, "people")) cleaned["people"] = source["people"];
   for (const key of Object.keys(source)) {
     if (!allowed.has(key)) continue;
     if (!Object.prototype.hasOwnProperty.call(cleaned, key)) cleaned[key] = source[key];
@@ -1133,15 +1157,15 @@ export function extractAllRawBlocksFromText(text) {
     return "";
   };
 
-  // 1. \u4EFB\u610F\u6DF1\u5EA6\u7684 \u2039details\u203A \u5143\u6570\u636E\u5757\uFF08summary \u5173\u952E\u5B57\u767D\u540D\u5355\uFF09
+  // 1. \u4EFB\u610F\u6DF1\u5EA6\u7684 \u2039details\u203A \u5143\u6570\u636E\u5757\uFF08summary \u5173\u952E\u5B57\u767D\u540D\u5355\uFF09\uFF1A\u4E2D\u82F1\u6807\u7B7E\u8BCD\u4EFB\u4E00\u547D\u4E2D\u5373\u6574\u5757\u62BD\u51FA
   const detailsPatterns = [
-    /<details>\s*\n?<summary>[^<\n]*?\u5F55\u97F3\u4FE1\u606F[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?\u539F\u59CB\u97F3\u9891[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?\u5F55\u97F3\u4E2D\u5B9E\u65F6\u5927\u7EB2[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?\u56DE\u542C\u65F6\u95F4\u8F74[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?\u5206\u6BB5\u539F\u59CB\u8F6C\u5199[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?\u6587\u672C\u5BFC\u5165\u6765\u6E90[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?\u4F1A\u8BAE\u5DE5\u4F5C\u53F0[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:\u5F55\u97F3\u4FE1\u606F|Recording info)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:\u539F\u59CB\u97F3\u9891|Original audio)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:\u5F55\u97F3\u4E2D\u5B9E\u65F6\u5927\u7EB2|Live outline while recording)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:\u56DE\u542C\u65F6\u95F4\u8F74|Playback timeline)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:\u5206\u6BB5\u539F\u59CB\u8F6C\u5199|Segmented raw transcript)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:\u6587\u672C\u5BFC\u5165\u6765\u6E90|Text import source)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:\u4F1A\u8BAE\u5DE5\u4F5C\u53F0|Meeting workbench)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
   ];
   // \u8FED\u4EE3\u62BD\u53D6\uFF0C\u9632\u6B62\u5D4C\u5957\u5305\u88F9\u672A\u4E00\u6B21\u6027\u6D88\u5E72\u51C0
   for (let iter = 0; iter < 32; iter++) {
@@ -1167,7 +1191,7 @@ export function extractAllRawBlocksFromText(text) {
     (m) => stash(m));
 
   // 5. \u65E7\u7248\u672C\u91CC"\u5931\u8D25\u7684\u6574\u5408\u7248"\u6B8B\u9AB8\uFF08\u5DF2\u88AB\u65B0\u7248\u672C\u66FF\u4EE3\uFF0C\u4E0D\u5FC5\u4FDD\u7559\uFF09
-  s = s.replace(/##\s+\u2728\s+\u6574\u5408\u7248[^\n]*\n+_\[(?:\u5408\u5E76\u6DA6\u8272\u5931\u8D25|AI \u6574\u7406\u5931\u8D25)[^\]]*\]_\s*\n?/g, "");
+  s = s.replace(/##\s+\u2728\s+(?:\u6574\u5408\u7248|Merged version)[^\n]*\n+_\[(?:\u5408\u5E76\u6DA6\u8272\u5931\u8D25|AI \u6574\u7406\u5931\u8D25|Merge failed|AI organizing failed)[^\]]*\]_\s*\n?/g, "");
 
   // 6. \u6E05\u7406\u53EF\u80FD\u6B8B\u7559\u7684\u7A7A details \u58F3
   s = s.replace(/<details>\s*<\/details>/gi, "");
@@ -1269,10 +1293,15 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
     const inferred = formatYamlDateTime(inferNoteStartedAtIso(null, originalFrontmatter || llmFm || {}));
     if (inferred) base.time = inferred;
   }
+  // 系统字段键随界面语言（fmKey）：zh 写 时长/状态/人物，en 写 duration/status/people；
+  // 解析侧（seenKeys、读取链）两套键都认，切语言不改变读回结果。
+  const durationKey = fmKey("duration");
+  const statusKey = fmKey("status");
+  const peopleKey = fmKey("people");
   if (sessionMeta && sessionMeta.duration) {
-    base["时长"] = sessionMeta.duration;
+    base[durationKey] = sessionMeta.duration;
   }
-  base["状态"] = "已整理";
+  base[statusKey] = labelText("organized");
 
   // merge tags：[qnalog/<mode>] + 已有 + 建议；其中 人物/x 前缀一律剥出转入人物属性，不进 tags。
   const sysTag = NS_TAG_PREFIX + mode;
@@ -1295,26 +1324,27 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
 
   // 人物：独立人员属性。三源合并（机器块 qnalog-people + tags 里 人物/ + base 旧人物），归一去重。
   // 这也是"重整一次旧笔记，人物从 tags 自动迁出到 人物 属性"的落点。
-  let people = splitPersonFieldValue(base["人物"] || rawBase["人物"] || rawBase.people || []);
+  let people = splitPersonFieldValue(base[peopleKey] || rawBase["人物"] || rawBase.people || []);
   people = mergeUniqueStrings(people, suggestedPeople);
   people = mergeUniqueStrings(people, peopleFromTags);
   people = mergeUniqueStrings(people, existingPeopleFromTags);
-  if (people.length) base["人物"] = people; else delete base["人物"];
+  if (people.length) base[peopleKey] = people; else delete base[peopleKey];
 
-  // 字段输出顺序：mode → time → 时长 → 人物 → 内容字段 → 状态 → tags。
+  // 字段输出顺序：mode → time → 时长/duration → 人物/people → 内容字段 → 状态/status → tags。
   // time 使用 YAML 可识别的日期时间标量，例如 2026-05-08T12:55:00；不再保留 date/日期。
   const ordered: FrontmatterFields = {};
   ordered.mode = base.mode;
   if (base.time) ordered.time = base.time;
-  if (base["时长"]) ordered["时长"] = base["时长"];
-  if (base["人物"] && base["人物"].length) ordered["人物"] = base["人物"];
-  // 中间字段：base 自身按插入顺序，但跳过已写入和末尾要写的（含 人物/people，防二次写入）
-  const seenKeys = new Set(["mode", "time", "date", "日期", "时间", "时长", "人物", "people", "状态", "status", "tags"]);
+  if (base[durationKey]) ordered[durationKey] = base[durationKey];
+  if (base[peopleKey] && base[peopleKey].length) ordered[peopleKey] = base[peopleKey];
+  // 中间字段：base 自身按插入顺序，但跳过已写入和末尾要写的（含 人物/people，防二次写入）；
+  // 中英两套键全部进 seenKeys，老键（如重整时残留的 人物）不会漏进中间段重复输出。
+  const seenKeys = new Set(["mode", "time", "date", "日期", "时间", "时长", "duration", "人物", "people", "状态", "status", "tags"]);
   for (const k of Object.keys(base)) {
     if (seenKeys.has(k)) continue;
     ordered[k] = base[k];
   }
-  ordered["状态"] = base["状态"];
+  ordered[statusKey] = base[statusKey];
   ordered.tags = base.tags;
 
   let yamlBlock;

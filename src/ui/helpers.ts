@@ -17,6 +17,7 @@ export {
 import { VIRTUAL_CABLE_PATTERNS } from '../shared/catalog-import';
 import { normalizeKnowledgeExtractionHistory } from '../shared/util-knowledge';
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
+import { INFO_LINE_WORDS_RE } from "../shared/note-labels";
 
 export const SUPPORTED_AUDIO_INPUT_MODES = new Set(["mic", "mix-virtual", "virtualCable"]);
 
@@ -35,13 +36,19 @@ export function stripArchivedDetailsBlocks(text) {
   return s;
 }
 
+// 归一化时剥掉的元信息行：`- 开始：…`、`- 时间：…`、`- Time: …`——词表取共享
+// INFO_LINE_WORDS_RE（时间/时长/模式/分段/模型/状态 + 英文对应词），`开始` 无英文对应词条、
+// 单独补一支（中文只放正则字面量：本文件无裸中文豁免，字符串字面量会被门禁扫描）。
+const META_INFO_LINE_START_RE = /^开始[:：]/;
+const META_INFO_LINE_RE = new RegExp(`^\\s*(?:${META_INFO_LINE_START_RE.source}|${INFO_LINE_WORDS_RE.source}).*$`, "gm");
+
 export function normalizeRecentNoteMeaningfulText(text) {
   return String(text || "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/!\[\[[^\]]+\]\]/g, "")
     .replace(/^#\s+.*$/gm, "")
     .replace(/^>\s*\[![^\]]+\].*$/gm, "")
-    .replace(/^\s*(开始|时间|时长|模式|分段|模型|状态)[:：].*$/gm, "")
+    .replace(META_INFO_LINE_RE, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -53,41 +60,41 @@ export function noteHasSuccessfulLlmBriefing(content) {
   const text = stripArchivedDetailsBlocks(fullText);
 
   // 新格式（v3 之后）：## ✨ 当前纪要（…）
-  const currentMatch = text.match(/(?:^|\n)##\s+(?:✨\s*)?当前纪要[^\n]*\n+([\s\S]*?)(?:\n---|\n##\s|$)/);
+  const currentMatch = text.match(/(?:^|\n)##\s+(?:✨\s*)?(?:当前纪要|Current minutes)[^\n]*\n+([\s\S]*?)(?:\n---|\n##\s|$)/);
   if (currentMatch) {
     const body = currentMatch[1] || "";
     const meaningful = normalizeRecentNoteMeaningfulText(body);
-    if (meaningful.length > 60 && !/合并润色失败|AI 整理失败|_\[无输出\]_|_\[转写失败/.test(body)) return true;
+    if (meaningful.length > 60 && !/合并润色失败|AI 整理失败|Merge failed|AI organizing failed|_\[无输出\]_|_\[No output\]_|_\[转写失败|_\[Transcription failed/.test(body)) return true;
   }
 
-  const rawMatch = /\n##\s+(?:📁\s*)?原始材料/.exec(text);
+  const rawMatch = /\n##\s+(?:📁\s*)?(?:原始材料|Original material)/.exec(text);
   if (rawMatch) {
     const beforeRaw = stripFrontmatterSimple(text.slice(0, rawMatch.index));
     const meaningful = normalizeRecentNoteMeaningfulText(beforeRaw);
-    if (meaningful.length > 60 && !/合并润色失败|AI 整理失败|_\[无输出\]_/.test(beforeRaw)) return true;
+    if (meaningful.length > 60 && !/合并润色失败|AI 整理失败|Merge failed|AI organizing failed|_\[无输出\]_|_\[No output\]_/.test(beforeRaw)) return true;
   }
 
-  const mergeMatch = text.match(/(?:^|\n)##\s+(?:✨\s*)?整合版[^\n]*\n+([\s\S]*?)(?:\n---|\n##\s|$)/);
+  const mergeMatch = text.match(/(?:^|\n)##\s+(?:✨\s*)?(?:整合版|Merged version)[^\n]*\n+([\s\S]*?)(?:\n---|\n##\s|$)/);
   if (mergeMatch) {
     const body = mergeMatch[1] || "";
     const meaningful = normalizeRecentNoteMeaningfulText(body);
-    if (meaningful.length > 40 && !/合并润色失败|AI 整理失败|_\[无输出\]_/.test(body)) return true;
+    if (meaningful.length > 40 && !/合并润色失败|AI 整理失败|Merge failed|AI organizing failed|_\[无输出\]_|_\[No output\]_/.test(body)) return true;
   }
 
-  // frontmatter 兜底：状态已整理 且 *当前可见正文里* 没有失败标记
-  return /(?:^|\n)(?:status:\s*(?:published|done|completed)|状态:\s*已整理)\s*$/im.test(fullText)
-    && !/合并润色失败（已加入重试队列）|AI 整理失败/.test(text);
+  // frontmatter 兜底：状态已整理 且 *当前可见正文里* 没有失败标记（en 写 status: Organized）
+  return /(?:^|\n)(?:status:\s*(?:published|done|completed|organized)|状态:\s*已整理)\s*$/im.test(fullText)
+    && !/合并润色失败（已加入重试队列）|Merge failed \(queued for retry\)|AI 整理失败|AI organizing failed/.test(text);
 }
 
 export function noteHasUsableRawTranscriptDespiteFailures(content) {
   const cleaned = String(content || "")
-    .replace(/_\[转写失败(?:（已进入重试队列）)?：[^\]]*\]_/g, "")
-    .replace(/_\[(?:等待后台转写，音频已保留|此段尚未完成转写，音频已保留)\]_/g, "")
-    .replace(/_\[合并润色失败（已加入重试队列）：[^\]]*\]_/g, "")
-    .replace(/_\[AI 整理失败：[^\]]*\]_/g, "")
-    .replace(/_\[(?:此段暂无有效转写|此段无内容|无输出)\]_/g, "");
+    .replace(/_\[(?:转写失败(?:（已进入重试队列）)?|Transcription failed(?: \(queued for retry\))?)[:：][^\]]*\]_/g, "")
+    .replace(/_\[(?:等待后台转写，音频已保留|此段尚未完成转写，音频已保留|Waiting for background transcription; the audio has been kept|This segment is not fully transcribed yet; the audio has been kept)\]_/g, "")
+    .replace(/_\[(?:合并润色失败（已加入重试队列）|Merge failed \(queued for retry\))[:：][^\]]*\]_/g, "")
+    .replace(/_\[(?:AI 整理失败|AI organizing failed)[:：][^\]]*\]_/g, "")
+    .replace(/_\[(?:此段暂无有效转写|此段无内容|无输出|No content in this segment|No output)\]_/g, "");
   const meaningful = normalizeRecentNoteMeaningfulText(stripFrontmatterSimple(cleaned));
-  return meaningful.length > 160 && (NS_SEGMENTS_START_RE.test(content) || /^###\s+段落\s+\d+/m.test(content));
+  return meaningful.length > 160 && (NS_SEGMENTS_START_RE.test(content) || /^###\s+(?:段落|Segment)\s+\d+/m.test(content));
 }
 
 export function getRecentNoteProcessingState(content) {
@@ -96,8 +103,8 @@ export function getRecentNoteProcessingState(content) {
   // 关键：失败标记的匹配同样要先剥掉 <details> 历史归档，
   // 避免旧版本里的 "_[合并润色失败...]_" 永久把当前纪要标成警告态。
   const visibleText = stripArchivedDetailsBlocks(fullText);
-  if (/合并润色失败|AI 整理失败|转写失败|已进入重试队列|等待后台转写|尚未完成转写|转写重试|Transcription failed|transcribe failed/i.test(visibleText)) {
-    const hasMergeFailure = /合并润色失败|AI 整理失败/i.test(visibleText);
+  if (/合并润色失败|AI 整理失败|转写失败|已进入重试队列|等待后台转写|尚未完成转写|转写重试|Merge failed|AI organizing failed|Waiting for background transcription|not fully transcribed|queued for retry|Transcription failed|transcribe failed/i.test(visibleText)) {
+    const hasMergeFailure = /合并润色失败|AI 整理失败|Merge failed|AI organizing failed/i.test(visibleText);
     if (noteHasUsableRawTranscriptDespiteFailures(visibleText)) {
       return {
         kind: "raw",
@@ -113,7 +120,7 @@ export function getRecentNoteProcessingState(content) {
       title: t("This minutes note still contains transcription or cleanup failure markers"),
     };
   }
-  if (NS_SEGMENTS_START_RE.test(visibleText) || /^###\s+段落\s+\d+/m.test(visibleText)) {
+  if (NS_SEGMENTS_START_RE.test(visibleText) || /^###\s+(?:段落|Segment)\s+\d+/m.test(visibleText)) {
     return {
       kind: "raw",
       label: t("To organize"),
@@ -127,9 +134,9 @@ export function getImportMarkerState(content) {
   const text = String(content || "");
   return {
     hasSession: NS_SESSION_RE.test(text),
-    hasSegments: NS_SEGMENTS_START_RE.test(text) || /^###\s+段落\s+\d+/m.test(text),
-    hasGeneratedBlock: /##\s+(?:✨\s*)?(?:当前纪要|整合版)/.test(text) || /##\s+(?:📁\s*)?原始材料/.test(text),
-    hasImportBlock: /<details>\s*<summary>\s*导入文本信息/i.test(text),
+    hasSegments: NS_SEGMENTS_START_RE.test(text) || /^###\s+(?:段落|Segment)\s+\d+/m.test(text),
+    hasGeneratedBlock: /##\s+(?:✨\s*)?(?:当前纪要|Current minutes|整合版|Merged version)/.test(text) || /##\s+(?:📁\s*)?(?:原始材料|Original material)/.test(text),
+    hasImportBlock: /<details>\s*<summary>\s*(?:导入文本信息|Imported text info)/i.test(text),
   };
 }
 

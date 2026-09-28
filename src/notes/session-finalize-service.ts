@@ -39,6 +39,7 @@ import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
 import { SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
 
 import { t } from "../shared/i18n";
+import { labelText } from "../shared/note-labels";
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
@@ -431,7 +432,7 @@ export class SessionFinalizeService {
       segmentRecord.queueTaskId = retryTask.id;
     }
 
-    const segTitle = `### 段落 ${segNumber} (${formatElapsed(displayStartOffsetMs)}–${formatElapsed(displayEndOffsetMs)}) ${getAudioTimeLink(playbackAudioName, Math.max(0, Number(seg.startOffsetMs) || 0))}${seg.isFinal ? " · 结束" : ""}`;
+    const segTitle = `### ${labelText("segment", segNumber)} (${formatElapsed(displayStartOffsetMs)}–${formatElapsed(displayEndOffsetMs)}) ${getAudioTimeLink(playbackAudioName, Math.max(0, Number(seg.startOffsetMs) || 0))}${seg.isFinal ? " · 结束" : ""}`;
     const block = [
       "",
       segTitle,
@@ -441,7 +442,7 @@ export class SessionFinalizeService {
         streaming: isStreamingProvider,
         deferred: !!err.asrDeferred,
         retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)),
-      }) : (text ? text : t("_[No content in this segment]_")),
+      }) : (text ? text : labelText("noContentSegment")),
       "",
     ].join("\n");
     await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);

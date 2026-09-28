@@ -152,10 +152,10 @@ export function injectHtmlReportExportScript(html) {
 
 export function extractMarkdownForHtmlReport(markdown) {
   let text = String(markdown || "").replace(/\r\n/g, "\n");
-  const rawMatch = /\n##\s+(?:📁\s*)?原始材料/.exec(text);
+  const rawMatch = /\n##\s+(?:📁\s*)?(?:原始材料|Original material)/.exec(text);
   if (rawMatch) text = text.slice(0, rawMatch.index);
   text = text
-    .replace(/<details>\s*<summary>上一版纪要[\s\S]*?<\/details>/gi, "")
+    .replace(/<details>\s*<summary>(?:上一版纪要|Previous version)[\s\S]*?<\/details>/gi, "")
     .replace(NS_MACHINE_SHELL_RE, "\n")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/!\[\[[^\]]+\]\]/g, "")

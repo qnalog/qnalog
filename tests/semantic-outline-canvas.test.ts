@@ -279,6 +279,60 @@ describe("semantic outline graph protocol", () => {
     expect(JSON.stringify(sections)).not.toContain("schemaVersion");
     expect(JSON.stringify(sections)).not.toContain("索引数据");
   });
+
+  it("英文笔记同构解析：英文 utility 标题与机器壳同样被剥除，正文小节保留", () => {
+    const markdown = [
+      "---",
+      "mode: synthesis",
+      "---",
+      "<!-- qnalog-active-version-start -->",
+      "## Problem framing",
+      "Teams are rebuilding the same things.",
+      "### Key case",
+      "The overseas PM hiring project had rework.",
+      "## Q&A",
+      "Should not enter the map.",
+      "<details>",
+      "<summary>Raw transcript</summary>",
+      "## Should not enter the semantic map",
+      "Verbatim content",
+      "</details>",
+      "<!-- qnalog-note-index -->",
+      "<details>",
+      "<summary>Index data</summary>",
+      "",
+      "```json",
+      '{"schemaVersion":1,"sourceRevision":"rev-9"}',
+      "```",
+      "",
+      "</details>",
+      "<!-- qnalog-note-index-end -->",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    const sections = extractSemanticSourceSections(markdown);
+    expect(sections.map((section) => section.heading)).toEqual(["Problem framing", "Key case"]);
+    expect(JSON.stringify(sections)).not.toContain("Verbatim content");
+    expect(JSON.stringify(sections)).not.toContain("schemaVersion");
+    expect(JSON.stringify(sections)).not.toContain("Index data");
+  });
+
+  it("utility 标题白名单双语并集：中英工具性标题都不进语义小节", () => {
+    const headings = [
+      "问一问", "附录", "参考资料", "版本信息", "分段原始转写", "会中补充材料",
+      "Q&A", "Appendix", "Reference materials", "Version info", "Segmented raw transcript", "Material added during the meeting",
+    ];
+    for (const heading of headings) {
+      const markdown = [
+        "<!-- qnalog-active-version-start -->",
+        "## 主线",
+        "有效内容。",
+        `## ${heading}`,
+        "工具内容。",
+        "<!-- qnalog-active-version-end -->",
+      ].join("\n");
+      expect(extractSemanticSourceSections(markdown).map((section) => section.heading)).toEqual(["主线"]);
+    }
+  });
 });
 
 describe("semantic canvas generation", () => {

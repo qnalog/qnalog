@@ -12,6 +12,8 @@ import { AUDIO_EXT } from "../shared/catalog-import";
 
 import { formatElapsed, normalizeAudioLinkTarget, safeDecodeUriText } from "../shared/util-common";
 
+import { labelText } from "../shared/note-labels";
+
 export function getAudioTimeLink(audioName, ms) {
   const name = String(audioName || "").trim();
   if (!name) return "";
@@ -31,11 +33,11 @@ export function getAudioSegmentListItem(segment, index) {
   const end = formatElapsed(segment.endOffsetMs || 0);
   const link = getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment));
   return [
-    `#### 段落 ${n}（${start}–${end}）`,
+    `#### ${labelText("segmentRange", n, start, end)}`,
     "",
     `![[${segment.audioName}]]`,
     "",
-    `回听：${link}`,
+    `${labelText("listenBack")}${link}`,
   ].join("\n");
 }
 
@@ -75,12 +77,12 @@ export function getAudioLinkTarget(linkPath) {
 export function extractAudioSegmentOffsets(markdown) {
   const map = new Map();
   const text = String(markdown || "");
-  const headingRe = /^###\s+段落\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)([^\n]*)$/gm;
+  const headingRe = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)([^\n]*)$/gm;
   let match;
   while ((match = headingRe.exec(text))) {
     const startOffsetMs = parseElapsedMsToken(match[1]);
     const bodyStart = match.index + match[0].length;
-    const nextHeading = text.slice(bodyStart).search(/^###\s+段落\s+\d+/m);
+    const nextHeading = text.slice(bodyStart).search(/^###\s+(?:段落|Segment)\s+\d+/m);
     const bodyEnd = nextHeading >= 0 ? bodyStart + nextHeading : text.length;
     const block = text.slice(bodyStart, bodyEnd);
     const embed = block.match(/!\[\[([^\]]+)\]\]/);
@@ -189,7 +191,7 @@ export function getDurationMs(markdown) {
   const text = String(markdown || "");
   let maxMs = 0;
   let sawDuration = false;
-  const segmentHeadingRe = /^###\s+段落\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)/gm;
+  const segmentHeadingRe = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)/gm;
   let match;
   while ((match = segmentHeadingRe.exec(text))) {
     sawDuration = true;

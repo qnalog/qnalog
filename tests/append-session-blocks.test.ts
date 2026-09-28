@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
   TFile: class {}, TFolder: class {},
@@ -161,15 +162,48 @@ describe("实时大纲归档去重（防追加翻倍）", () => {
   });
 
   it("assemble：本场次没有实时大纲 → 单独用归档建块（summary 与横幅齐全）", () => {
-    const out = assembleRealtimeOutlineDetails({
-      liveBlock: "",
-      liveText: "",
-      priorText: LIVE,
-      appendix: appendixOf(LIVE),
-    });
-    expect(out).toContain("<summary>录音中实时大纲（草稿）</summary>");
-    expect(out).toContain(BANNER);
-    expect(out).toContain(LIVE);
+    // summary/引导句随界面语言（labelText）：本断言锁 zh 写出的中文标签。
+    const original = getActiveUiLanguage();
+    setActiveUiLanguage(matchUiLanguage("zh") as never);
+    try {
+      const out = assembleRealtimeOutlineDetails({
+        liveBlock: "",
+        liveText: "",
+        priorText: LIVE,
+        appendix: appendixOf(LIVE),
+      });
+      expect(out).toContain("<summary>录音中实时大纲（草稿）</summary>");
+      expect(out).toContain("> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。");
+      expect(out).toContain(BANNER);
+      expect(out).toContain(LIVE);
+    } finally {
+      setActiveUiLanguage(original);
+    }
+  });
+
+  it("assemble（英文界面）：summary 与引导句写英文，归档同样齐全", () => {
+    const original = getActiveUiLanguage();
+    setActiveUiLanguage(matchUiLanguage("en") as never);
+    try {
+      const out = assembleRealtimeOutlineDetails({
+        liveBlock: "",
+        liveText: "",
+        priorText: LIVE,
+        appendix: appendixOf(LIVE),
+      });
+      expect(out).toContain("<summary>Live outline while recording (draft)</summary>");
+      expect(out).toContain("> Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts.");
+      expect(out).not.toContain("录音中实时大纲");
+      expect(out).toContain(BANNER);
+      expect(out).toContain(LIVE);
+      // 双语读回：英文 summary 的 details 仍能被 extractPriorOutline 认出，
+      // 剥掉英文引导句；横幅之后的归档不回流，横幅前的实时部分原样读回。
+      expect(extractPriorOutline(out)).toBe("");
+      const withLive = out.replace(BANNER, `${LIVE}\n\n${BANNER}`);
+      expect(extractPriorOutline(withLive)).toBe(LIVE);
+    } finally {
+      setActiveUiLanguage(original);
+    }
   });
 
   it("两轮重写模拟：产出→读回→再重写，份数不增长（直接锁死翻倍回归）", () => {

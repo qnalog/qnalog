@@ -29,6 +29,7 @@ import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { nsMarker } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+import { labelText } from "../shared/note-labels";
 /** 导入音频的返回：新建会话的路径、分段数，以及需要重试的转写段数；入参为空或中断时返回 undefined。 */
 export interface ImportAudioFilesResult {
   mdPath: string;
@@ -152,12 +153,12 @@ export class ImportService {
     };
 
     const header = [
-      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${t("(importing…)")}`,
+      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${labelText("importing")}`,
       "",
-      "> [!info] 导入信息",
-      `> 文件数：${paths.length} · 模式：${meta.prefix} · 转写：整文件${speakerModeLabel}`,
-      `> 模型：${importProvider.model || importProvider.id} → ${this.host.settings.llmModel}`,
-      externalSource && externalSource.name ? `> 来源：自动导入 · ${externalSource.name}` : null,
+      `> [!info] ${labelText("importInfo")}`,
+      `> ${labelText("filesLabel")}${paths.length} · ${labelText("modeLabel")}${meta.prefix} · ${labelText("transcriptionLabel")}${labelText("wholeFile")}${speakerModeLabel}`,
+      `> ${labelText("modelLabel")}${importProvider.model || importProvider.id} → ${this.host.settings.llmModel}`,
+      externalSource && externalSource.name ? `> ${labelText("sourceLabel")}${t("Auto Import")} · ${externalSource.name}` : null,
       "",
       nsMarker("session", session.id),
       nsMarker("segments-start", session.id),
@@ -463,12 +464,12 @@ export class ImportService {
       const audioAnchor = keepSourceAudio ? getAudioTimeLink(displayName, startOffsetMs) : "";
       const block = [
         "",
-        `### 音频 ${segIndex + 1}${audioAnchor ? ` ${audioAnchor}` : ""}${isFinal ? " · 结束" : ""}`,
+        `### ${labelText("audio", segIndex + 1)}${audioAnchor ? ` ${audioAnchor}` : ""}${isFinal ? " · 结束" : ""}`,
         "",
         retryTask ? nsMarker("transcribe-task", retryTask.id) : "",
         error
           ? getTranscribeSegmentPlaceholder(error, { retryable: true })
-          : (result.text || "_[此音频无内容]_"),
+          : (result.text || labelText("noContentAudio")),
         "",
       ].join("\n");
       await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
@@ -658,10 +659,10 @@ export class ImportService {
     };
 
     const header = [
-      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}（文本导入处理中…）`,
+      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}${labelText("textImporting")}`,
       "",
-      `> [!info] 文本导入信息`,
-      `> 来源文件：${sources.length} · 模式：${meta.prefix} · 模型：${this.host.settings.llmModel}`,
+      `> [!info] ${labelText("textImportInfo")}`,
+      `> ${labelText("sourceFilesLabel")}${sources.length} · ${labelText("modeLabel")}${meta.prefix} · ${labelText("modelLabel")}${this.host.settings.llmModel}`,
       "",
       nsMarker("session", session.id),
       nsMarker("segments-start", session.id),
@@ -684,9 +685,9 @@ export class ImportService {
     for (const seg of session.segments) {
       const block = [
         "",
-        `### 文本来源 ${seg.index + 1}：[[${seg.sourcePath}|${seg.sourceName}]]`,
+        `### ${labelText("textSource", seg.index + 1)}[[${seg.sourcePath}|${seg.sourceName}]]`,
         "",
-        seg.rawText || "_[此文本来源为空]_",
+        seg.rawText || labelText("emptyTextSource"),
         "",
       ].join("\n");
       await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import {
   getAsrTransportTaskRecoveryPatch,
   getNextAsrTaskRetryCount,
@@ -40,13 +41,29 @@ describe("ASR transport error classification", () => {
   });
 
   it("keeps technical transport errors out of the note body", () => {
-    const pending = getTranscribeSegmentPlaceholder(new Error("Failed to fetch"));
-    expect(pending).toBe("_[等待后台转写，音频已保留]_");
-    expect(pending).not.toContain("Failed to fetch");
+    // 占位文案随界面语言（labelText）：先锁 zh 校验存量中文占位，再锁 en 校验英文占位。
+    const original = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(matchUiLanguage("zh") as never);
+      const pending = getTranscribeSegmentPlaceholder(new Error("Failed to fetch"));
+      expect(pending).toBe("_[等待后台转写，音频已保留]_");
+      expect(pending).not.toContain("Failed to fetch");
 
-    const incomplete = getTranscribeSegmentPlaceholder(new Error("无法解码音频"), { retryable: false });
-    expect(incomplete).toBe("_[此段尚未完成转写，音频已保留]_");
-    expect(incomplete).not.toContain("无法解码");
+      const incomplete = getTranscribeSegmentPlaceholder(new Error("无法解码音频"), { retryable: false });
+      expect(incomplete).toBe("_[此段尚未完成转写，音频已保留]_");
+      expect(incomplete).not.toContain("无法解码");
+
+      setActiveUiLanguage(matchUiLanguage("en") as never);
+      const pendingEn = getTranscribeSegmentPlaceholder(new Error("Failed to fetch"));
+      expect(pendingEn).toBe("_[Waiting for background transcription; the audio has been kept]_");
+      expect(pendingEn).not.toContain("Failed to fetch");
+
+      const incompleteEn = getTranscribeSegmentPlaceholder(new Error("无法解码音频"), { retryable: false });
+      expect(incompleteEn).toBe("_[This segment is not fully transcribed yet; the audio has been kept]_");
+      expect(incompleteEn).not.toContain("无法解码");
+    } finally {
+      setActiveUiLanguage(original);
+    }
   });
 
   it("restores exhausted network tasks when loading an older queue", () => {

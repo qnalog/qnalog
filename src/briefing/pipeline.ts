@@ -677,7 +677,9 @@ export function normalizeBriefingPartBody(
     .replace(/<!--\s*qnalog-part-(?:body-start|body-end)\s*-->/gi, "")
     .replace(NS_PART_SUMMARY_BLOCK_RE, "")
     .replace(
-      /^\s*#{1,6}\s*(?:第\s*\d+\s*(?:\/\s*\d+\s*)?(?:部分|分部|时段)|(?:内部)?(?:时间窗口|转写窗口|分段)\s*\d+)(?:\s*[·:：—-]\s*[^\n]*)?\s*\n+/gim,
+      // 中文分支保持既有宽容写法（含 分部/时段 变体与无空格「第1部分」）；
+      // 英文分支与 note-labels 的 PART_HEADING_RE 英文侧一致（Part N / Part N/M）。
+      /^\s*#{1,6}\s*(?:第\s*\d+\s*(?:\/\s*\d+\s*)?(?:部分|分部|时段)|Part\s+\d+(?:\s*\/\s*\d+)?|(?:内部)?(?:时间窗口|转写窗口|分段)\s*\d+)(?:\s*[·:：—-]\s*[^\n]*)?\s*\n+/gim,
       "",
     )
     .trim();

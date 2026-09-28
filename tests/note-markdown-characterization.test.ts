@@ -3,14 +3,25 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
   TFile: class {}, TFolder: class {},
 }));
+// vitest 跑在 Node 环境，没有 window；formatYamlDateTime 等读 window.moment（无 moment 时走内置 Date 分支）。
+vi.stubGlobal("window", {});
 import {
   buildActiveVersionBlock,
+  buildImportedTextSegment,
+  cleanTranscriptBlock,
+  extractIntegratedBriefing,
+  extractTranscriptSegments,
   normalizeBriefingFrontmatterFields,
   parseSuggestedTagsFromOutput,
+  postProcessBriefingOutput,
   replaceActiveVersionBlock,
+  stripEmptyPlaceholders,
+  stripImportAppendices,
+  stripMarkdownForEmailBrief,
 } from "../src/notes/note-markdown";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_TAG } from "../src/shared/namespace";
+import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
 // note-markdown（1503 行）此前只有分段读回/文件名两组测试，frontmatter 与版本块这两组
 // 「错了就丢用户数据」的纯函数没有 characterization 锁定。这里锁现状契约，不改实现：
@@ -187,5 +198,140 @@ describe("版本块构建与替换", () => {
     // 旧渲染正文按契约被压缩（已持久化在版本库里）
     expect(out).not.toContain("这是旧的已渲染正文。");
     expect(out).not.toContain("## 优化录制时的浮窗外观");
+  });
+});
+
+// 解析双语是硬约束：同一段结构的中文 fixture 与等价英文 fixture 必须得到相同解析结果，
+// 且与当前界面语言无关（解析侧不读 activeUiLanguage）。下面的成对断言即该约束的回归锁。
+describe("笔记结构标签解析：中英 fixture 等价", () => {
+  it("stripImportAppendices：五类折叠壳（导入文本信息/原文、实时大纲、回听时间轴、分段原始转写）双语整块剥除", () => {
+    const shell = (summary: string) => ["<details>", `<summary>${summary}</summary>`, "", "BLOCK", "", "</details>", ""].join("\n");
+    const zh = ["# T", "", shell("导入文本信息"), shell("导入文本原文（2 个来源）"), shell("录音中实时大纲（草稿）"), shell("回听时间轴"), shell("分段原始转写（3 段）"), "正文。"].join("\n");
+    const en = ["# T", "", shell("Imported text info"), shell("Imported text (2 sources)"), shell("Live outline while recording (draft)"), shell("Playback timeline"), shell("Segmented raw transcript (3 segments)"), "正文。"].join("\n");
+    const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+    expect(norm(stripImportAppendices(zh))).toBe("# T 正文。");
+    expect(norm(stripImportAppendices(en))).toBe("# T 正文。");
+  });
+
+  it("extractIntegratedBriefing：最后一段整合版到导入折叠区为止（中英标题/停止位双语）", () => {
+    const tail = ["", "要点一。", "", "要点二。", "", "<details>", "<summary>{0}</summary>", "", "来源正文", "", "</details>"].join("\n");
+    const zh = ["# T", "", "## ✨ 整合版（2026-09-24）", ...tail.replace("{0}", "导入文本原文（2 个来源）").split("\n")].join("\n");
+    const en = ["# T", "", "## ✨ Merged version (2026-09-24)", ...tail.replace("{0}", "Imported text (2 sources)").split("\n")].join("\n");
+    expect(extractIntegratedBriefing(zh)).toBe("要点一。\n\n要点二。");
+    expect(extractIntegratedBriefing(en)).toBe("要点一。\n\n要点二。");
+  });
+
+  it("extractTranscriptSegments：分段原始转写 details 下的 段落/Segment 标题读回等价", () => {
+    const head = (summary: string, n1: string, n2: string) => [
+      "<details>", `<summary>${summary}</summary>`, "",
+      `### ${n1} (00:00–00:10)`, "", "甲段。", "",
+      `### ${n2} (00:10–00:20)`, "", "乙段。", "",
+      "</details>",
+    ].join("\n");
+    const zhSegs = extractTranscriptSegments(head("分段原始转写（2 段）", "段落 1", "段落 2"));
+    const enSegs = extractTranscriptSegments(head("Segmented raw transcript (2 segments)", "Segment 1", "Segment 2"));
+    expect(zhSegs).toHaveLength(2);
+    expect(zhSegs[0].text).toBe("甲段。");
+    expect(enSegs).toEqual(zhSegs);
+  });
+
+  it("extractTranscriptSegments：老格式「原始转写：/Raw transcript:」兜底读回等价", () => {
+    const zh = extractTranscriptSegments("# T\n\n原始转写：\n甲段。");
+    const en = extractTranscriptSegments("# T\n\nRaw transcript:\n甲段。");
+    expect(zh).toHaveLength(1);
+    expect(zh[0].text).toBe("甲段。");
+    expect(en).toEqual(zh);
+  });
+
+  it.each([
+    ["_[此段无内容]_", "_[No content in this segment]_"],
+    ["_[等待后台转写，音频已保留]_", "_[Waiting for background transcription; the audio has been kept]_"],
+    ["_[此段尚未完成转写，音频已保留]_", "_[This segment is not fully transcribed yet; the audio has been kept]_"],
+    ["_[无输出]_", "_[No output]_"],
+    ["_[转写失败：某某]_", "_[Transcription failed: 某某]_"],
+    ["_[合并润色失败（已加入重试队列）：某某]_", "_[Merge failed (queued for retry): 某某]_"],
+  ])("stripEmptyPlaceholders 空占位双语剥离：%s / %s", (zh, en) => {
+    expect(stripEmptyPlaceholders(zh)).toBe("");
+    expect(stripEmptyPlaceholders(en)).toBe("");
+  });
+
+  it("cleanTranscriptBlock：段落标题与无内容占位行双语剥离", () => {
+    expect(cleanTranscriptBlock("### 段落 1 (00:00–00:10)\n甲段。")).toBe("甲段。");
+    expect(cleanTranscriptBlock("### Segment 1 (00:00–00:10)\n甲段。")).toBe("甲段。");
+    expect(cleanTranscriptBlock("_[此段无内容]_")).toBe("");
+    expect(cleanTranscriptBlock("_[No content in this segment]_")).toBe("");
+  });
+
+  it("stripMarkdownForEmailBrief：正文在原始材料标题前截断，中英标题都认", () => {
+    expect(stripMarkdownForEmailBrief("# 正文\n\n## 📁 原始材料\n\n转写一。")).toBe("# 正文");
+    expect(stripMarkdownForEmailBrief("# Body\n\n## 📁 Original material\n\nTranscript.")).toBe("# Body");
+  });
+});
+
+// 写入点随界面语言：zh 输出与历史字节一致，en 输出英文标签与英文 frontmatter 键。
+describe("标签写入：随界面语言（fmKey/labelText）", () => {
+  const source = { name: "甲", path: "p/甲.md", text: "内容" };
+
+  it("buildImportedTextSegment：zh 头逐字节不变，en 头切英文", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    expect(buildImportedTextSegment(source, 0)).toBe("【文本来源 1：[[p/甲.md|甲]]】\n\n内容");
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    // 英文键尾是半角冒号、不带空格（目录 textSource 键如此约定），连接符紧贴。
+    expect(buildImportedTextSegment(source, 0)).toBe("【Text source 1:[[p/甲.md|甲]]】\n\n内容");
+  });
+
+  it("postProcessBriefingOutput（zh）：系统字段写 时长/状态/人物，值为已整理", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const out = postProcessBriefingOutput(
+      "<!-- qnalog-people: 张三 -->\n正文。",
+      "monologue",
+      { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
+      null,
+      "",
+    );
+    expect(out).toContain("时长: 01:02:03");
+    expect(out).toContain("状态: 已整理");
+    expect(out).toContain("人物:");
+    expect(out).not.toContain("duration:");
+    expect(out).not.toContain("status:");
+    expect(out).not.toContain("people:");
+  });
+
+  it("postProcessBriefingOutput（en）：系统字段写 duration/status/people（Organized），老键不重复输出", () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const out = postProcessBriefingOutput(
+      "<!-- qnalog-people: 张三 -->\n正文。",
+      "monologue",
+      { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
+      { mode: "monologue", time: "2026-09-24T10:01:38", "时长": "00:05:00", "状态": "草稿", "人物": ["李四"] },
+      "",
+    );
+    expect(out).toContain("duration: 01:02:03");
+    expect(out).toContain("status: Organized");
+    expect(out).toContain("people:");
+    expect(out).toContain("李四");
+    // 老 zh 键不残留、不重复输出
+    expect(out).not.toContain("时长:");
+    expect(out).not.toContain("状态:");
+    expect(out).not.toContain("人物:");
+    expect(out).not.toContain("草稿");
+  });
+
+  it("postProcessBriefingOutput（zh 重整 en 老笔记）：people 读回写成 人物", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const out = postProcessBriefingOutput(
+      "正文。",
+      "monologue",
+      { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
+      { mode: "monologue", time: "2026-09-24T10:01:38", duration: "00:05:00", status: "Organized", people: ["李四"] },
+      "",
+    );
+    expect(out).toContain("时长: 01:02:03");
+    expect(out).toContain("状态: 已整理");
+    expect(out).toContain("人物:");
+    expect(out).toContain("李四");
+    expect(out).not.toContain("people:");
+    expect(out).not.toContain("duration:");
+    expect(out).not.toContain("status:");
   });
 });

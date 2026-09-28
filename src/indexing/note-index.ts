@@ -1,4 +1,5 @@
 import { NS_TAG, nsRe } from "../shared/namespace";
+import { labelPattern, labelText, UTILITY_HEADING_RE } from "../shared/note-labels";
 
 // 写入用折叠壳新格式（标记在外、details+json 围栏在内，阅读视图折叠为一行）；
 // 读取同时接受旧的单注释格式，否则既有笔记里的索引块会被重复插入。
@@ -95,7 +96,7 @@ function extractFrontmatterScalar(markdown: string, keys: readonly string[]): st
 function stripUtilityTail(markdown: string): string {
   const boundaries = [
     new RegExp(`<!--\\s*${nsRe("segments-start")}\\b`, "i"),
-    /^##\s+(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲)\s*$/im,
+    /^##\s+(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲|Original material|Raw transcript|Verbatim transcript|Recording transcript|Segmented raw transcript|Playback timeline|Live outline while recording)\s*$/im,
   ];
   let end = markdown.length;
   for (const boundary of boundaries) {
@@ -106,7 +107,9 @@ function stripUtilityTail(markdown: string): string {
 }
 
 function extractLastLegacyPolishBlock(markdown: string): string {
-  const matches = Array.from(markdown.matchAll(/^##\s+整合版(?:（[^\n]*）)?\s*$/gim));
+  const matches = Array.from(markdown.matchAll(
+    new RegExp(`^##\\s+(?:${labelPattern("mergedVersion").source})(?:（[^\\n]*）|\\([^\\n]*\\))?\\s*$`, "gim"),
+  ));
   if (!matches.length) return markdown;
   const start = matches[matches.length - 1].index || 0;
   const tail = markdown.slice(start);
@@ -129,7 +132,7 @@ export function extractIndexSource(markdown: unknown): string {
   visible = stripLeadingFrontmatter(visible);
   if (!active) visible = extractLastLegacyPolishBlock(visible);
   visible = stripUtilityTail(visible)
-    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
+    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
     .replace(/<!--[^>]*-->/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -156,8 +159,6 @@ function extractAbstractSummary(markdown: string): string {
   return (candidates.find((item) => item.preferred) || candidates[0] || { text: "" }).text;
 }
 
-const UTILITY_HEADING_PATTERN = /^(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲|会中补充材料|问一问|附录|参考资料|版本信息)$/;
-
 function normalizeTopicTitle(value: unknown): string {
   return clampText(stripMarkdownInline(value)
     .replace(/^\s*(?:\d+(?:\.\d+)*[.、)）]?|[一二三四五六七八九十百]+[、.．)）])\s*/, "")
@@ -171,7 +172,7 @@ function extractTopics(markdown: string): { topics: QnALogNoteIndexTopic[]; topi
     if (!match) continue;
     const heading = stripMarkdownInline(match[2]);
     const title = normalizeTopicTitle(heading);
-    if (!title || UTILITY_HEADING_PATTERN.test(title)) continue;
+    if (!title || UTILITY_HEADING_RE.test(title)) continue;
     rows.push({ level: match[1].length, heading, title });
   }
   const preferredLevel = rows.some((row) => row.level === 2) ? 2 : 3;
@@ -307,7 +308,7 @@ export function serializeNoteIndex(index: QnALogNoteIndexCard): string {
     QNALOG_NOTE_INDEX_START,
     "",
     "<details>",
-    "<summary>索引数据</summary>",
+    `<summary>${labelText("indexData")}</summary>`,
     "",
     "```json",
     json,

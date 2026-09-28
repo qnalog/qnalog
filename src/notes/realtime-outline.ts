@@ -12,6 +12,7 @@ import { normalizeAudioInputMode } from "../ui/helpers";
 
 
 import { formatElapsed } from "../shared/util-common";
+import { labelText } from "../shared/note-labels";
 import { NS_VIEW_OUTLINE } from "../shared/namespace";
 
 
@@ -425,13 +426,13 @@ export function buildRealtimeOutlineDetails(session) {
     Math.max(0, Number(coverage && coverage.committedSegmentCount) || 0)
   );
   const coverageNotice = totalSegmentCount > 0 && committedSegmentCount < totalSegmentCount
-    ? `> 大纲仅覆盖 ${committedSegmentCount}/${totalSegmentCount} 个转写分段，未覆盖部分仍已用于正文纪要。可在侧边栏刷新大纲后补齐。`
+    ? `> ${labelText("outlineCoverage", committedSegmentCount, totalSegmentCount)}`
     : "";
   return [
     "<details>",
-    "<summary>录音中实时大纲（草稿）</summary>",
+    `<summary>${labelText("liveOutlineDraft")}</summary>`,
     "",
-    "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。",
+    `> ${labelText("outlineIntro")}`,
     ...(coverageNotice ? ["", coverageNotice] : []),
     "",
     outline,

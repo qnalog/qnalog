@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import {
   applyVersionTitle,
   buildVersionPayload,
@@ -248,7 +249,8 @@ describe("原始转写区折叠", () => {
     "<!-- qnalog-session:qnalog-s1 -->",
   ].join("\n");
 
-  it("裸露分段折叠进分段原始转写区并补原始材料标题", () => {
+  it("裸露分段折叠进分段原始转写区并补原始材料标题（zh 界面）", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const folded = foldRawTranscriptSection(bareMother);
     expect(folded).toContain("## 原始材料");
     expect(folded).toContain("<summary>分段原始转写（1 段）</summary>");
@@ -256,6 +258,18 @@ describe("原始转写区折叠", () => {
     expect(folded.indexOf("## 原始材料")).toBeLessThan(folded.indexOf("<details>"));
     expect(folded.indexOf("</details>")).toBeLessThan(folded.indexOf("<!-- qnalog-session:qnalog-s1 -->"));
     // 幂等：再跑一次原样返回
+    expect(foldRawTranscriptSection(folded)).toBe(folded);
+  });
+
+  it("en 界面折叠产出英文标签，守卫同样命中（幂等、不重复折叠）", () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const folded = foldRawTranscriptSection(bareMother);
+    expect(folded).toContain("## Original material");
+    expect(folded).toContain("<summary>Segmented raw transcript (1 segments)</summary>");
+    expect(folded).toContain("### 段落 1 (00:00–00:10)");
+    expect(folded.indexOf("## Original material")).toBeLessThan(folded.indexOf("<details>"));
+    expect(folded.indexOf("</details>")).toBeLessThan(folded.indexOf("<!-- qnalog-session:qnalog-s1 -->"));
+    // 幂等：en 守卫（## Original material / Segmented raw transcript）命中，原样返回
     expect(foldRawTranscriptSection(folded)).toBe(folded);
   });
 
@@ -274,6 +288,11 @@ describe("原始转写区折叠", () => {
       "<details>\n<summary>分段原始转写（1 段）</summary>\n\n### 段落 1 (00:00–00:10) x\n\n</details>",
     ].join("\n");
     expect(foldRawTranscriptSection(healthy)).toBe(healthy);
+    // 解析双语（与界面语言无关）：等价英文母本同样被守卫拦下、原样返回
+    const healthyEn = healthy
+      .replace("## 原始材料", "## Original material")
+      .replace("分段原始转写（1 段）", "Segmented raw transcript (1 segments)");
+    expect(foldRawTranscriptSection(healthyEn)).toBe(healthyEn);
     const noBlock = "# T\n\n<!-- qnalog-segments-start:s -->\nx\n<!-- qnalog-segments-end:s -->";
     expect(foldRawTranscriptSection(noBlock)).toBe(noBlock);
     expect(foldRawTranscriptSection("")).toBe("");
