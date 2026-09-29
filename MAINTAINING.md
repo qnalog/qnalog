@@ -313,7 +313,7 @@ git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 - `main.js` 必须入库且与源码同一次提交：运行时会用注入的 `QNALOG_BUILD_VERSION` 与磁盘 `manifest.json` 比对，版本错位会在设置页提示。
 - 工作流失败时**不要**改用本地 `gh release create` 绕过：那等于放弃 provenance，release 里的文件就不再保证来自 tag。先在 tag 上修源码、重打 tag。
 - 若已发布后需要修发版说明文字（不改产物），可直接 `gh release edit X.Y.Z --notes-file …`，无需重新发版。
-- 若改动触及设置结构（`SETTINGS_SCHEMA_VERSION`）：改动那个常量即可，**不要**为旧格式补逐键迁移。版本不一致时插件整份丢弃磁盘设置、按默认值重建（`src/shared/settings-schema.ts`），并弹通知。改动后要用一份真实的旧版 `data.json` 验一遍这条路径。
+- 改动触及设置结构（`SETTINGS_SCHEMA_VERSION`）：版本递增时必须在 `SETTINGS_MIGRATIONS` 登记逐版迁移，保留正式用户的 API Key 与其他配置；不要重建整个设置对象。用真实旧版 `data.json` 验证配置保留，并参照 §4.5。
 - 发版说明必须写明对用户的影响：设置结构是否变化、是否需要重新指定服务绑定、是否有功能删减。
 
 ### 4.3 安装与回滚
