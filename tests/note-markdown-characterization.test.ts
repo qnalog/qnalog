@@ -20,18 +20,11 @@ import {
   stripMarkdownForEmailBrief,
 } from "../src/notes/note-markdown";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
-import { NS_TAG } from "../src/shared/namespace";
-import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { NS_FM, NS_TAG } from "../src/shared/namespace";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
-// note-markdown（1503 行）此前只有分段读回/文件名两组测试，frontmatter 与版本块这两组
-// 「错了就丢用户数据」的纯函数没有 characterization 锁定。这里锁现状契约，不改实现：
-//   1) 标签建议注释：按分隔符解析 + 六道防御（去重 / # 前缀 / 空格 / 超长 / 系统前缀 / 人物转 people），
-//      注释必须从正文剥除——它是给机器的，不能出现在读者面前；
-//   2) frontmatter 白名单：按模式裁字段、旧字段别名迁移（录音主题→主题、与会人→参会人）、
-//      用户改过的「人物」恒保留——重整时被当非白名单裁掉就是数据丢失；
-//   3) 版本块：原位替换且只有一块（历史 bug：每次重整把旧 details 嵌进新 details 爆炸式增长）、
-//      首次采纳只留 frontmatter + H1 + 版本块 + 原始材料（原始材料 = 白名单 details 块
-//      + 分段标记 + session 行，fixture 按真实笔记结构构造）、可选元数据行缺省即省略。
+// note-markdown 的回归覆盖：机器字段名固定、旧中英字段安全读取、内容字段按模式白名单保留，
+// 以及版本块原位更新时不丢正文与原始材料。
 
 const START = QNALOG_ACTIVE_VERSION_START;
 const END = QNALOG_ACTIVE_VERSION_END;
@@ -71,25 +64,30 @@ describe("parseSuggestedTagsFromOutput 标签建议注释", () => {
   });
 });
 
-describe("normalizeBriefingFrontmatterFields 白名单与别名", () => {
-  it("按模式白名单裁掉未知字段", () => {
+describe("normalizeBriefingFrontmatterFields：固定键与历史别名", () => {
+  it("按模式白名单规范化旧属性并裁掉未知字段", () => {
     const r = normalizeBriefingFrontmatterFields({ 主题: "X", 来源: "会议记录", 幻想字段: "剔除" }, "learning", "");
-    expect(r).toEqual({ 主题: "X", 来源: "会议记录" });
+    expect(r).toEqual({ [NS_FM.topic]: "X", [NS_FM.source]: "会议记录" });
   });
 
-  it("旧字段录音主题迁移为主题，且旧键本身不残留", () => {
-    const r = normalizeBriefingFrontmatterFields({ 录音主题: "转写的主题" }, "monologue", "");
-    expect(r).toEqual({ 主题: "转写的主题" });
+  it("读取旧中文别名并只输出 canonical 字段", () => {
+    const r = normalizeBriefingFrontmatterFields({ 录音主题: "转写主题" }, "monologue", "");
+    expect(r).toEqual({ [NS_FM.topic]: "转写主题" });
   });
 
-  it("旧字段与会人迁移为参会人，数组值原样保留", () => {
+  it("兼容两个语言版本并列的人员数组，不丢任一值", () => {
+    const r = normalizeBriefingFrontmatterFields({ people: ["李四"], 人物: ["王五"] }, "monologue", "");
+    expect(r).toEqual({ [NS_FM.people]: ["李四", "王五"] });
+  });
+
+  it("canonical 属性存在时优先于旧别名", () => {
+    const r = normalizeBriefingFrontmatterFields({ [NS_FM.topic]: "canonical", 主题: "旧值" }, "monologue", "");
+    expect(r).toEqual({ [NS_FM.topic]: "canonical" });
+  });
+
+  it("旧参会人属性按 canonical 名称输出，数组值保持顺序", () => {
     const r = normalizeBriefingFrontmatterFields({ 与会人: ["甲", "乙"] }, "meeting", "");
-    expect(r).toEqual({ 参会人: ["甲", "乙"] });
-  });
-
-  it("人物字段不在任何模式白名单里也恒保留", () => {
-    const r = normalizeBriefingFrontmatterFields({ 主题: "T", 人物: ["张三"], 无关: "丢" }, "monologue", "");
-    expect(r).toEqual({ 主题: "T", 人物: ["张三"] });
+    expect(r).toEqual({ [NS_FM.participants]: ["甲", "乙"] });
   });
 });
 
@@ -268,70 +266,75 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
   });
 });
 
-// 写入点随界面语言：zh 输出与历史字节一致，en 输出英文标签与英文 frontmatter 键。
-describe("标签写入：随界面语言（fmKey/labelText）", () => {
+describe("Frontmatter 系统字段：键名和值不随界面语言变化", () => {
   const source = { name: "甲", path: "p/甲.md", text: "内容" };
 
-  it("buildImportedTextSegment：zh 头逐字节不变，en 头切英文", () => {
-    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
-    expect(buildImportedTextSegment(source, 0)).toBe("【文本来源 1：[[p/甲.md|甲]]】\n\n内容");
-    setActiveUiLanguage(resolveUiLanguage("en", "en"));
-    // 英文键尾是半角冒号、不带空格（目录 textSource 键如此约定），连接符紧贴。
-    expect(buildImportedTextSegment(source, 0)).toBe("【Text source 1:[[p/甲.md|甲]]】\n\n内容");
+  it("buildImportedTextSegment 的可见标签仍随界面语言切换", () => {
+    const originalLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+      expect(buildImportedTextSegment(source, 0)).toBe("【文本来源 1：[[p/甲.md|甲]]】\n\n内容");
+      setActiveUiLanguage(resolveUiLanguage("en", "en"));
+      expect(buildImportedTextSegment(source, 0)).toBe("【Text source 1:[[p/甲.md|甲]]】\n\n内容");
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
   });
 
-  it("postProcessBriefingOutput（zh）：系统字段写 时长/状态/人物，值为已整理", () => {
-    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
-    const out = postProcessBriefingOutput(
-      "<!-- qnalog-people: 张三 -->\n正文。",
-      "monologue",
-      { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
-      null,
-      "",
-    );
-    expect(out).toContain("时长: 01:02:03");
-    expect(out).toContain("状态: 已整理");
-    expect(out).toContain("人物:");
-    expect(out).not.toContain("duration:");
-    expect(out).not.toContain("status:");
-    expect(out).not.toContain("people:");
+  it("中英文界面写入相同 qnalog_* 字段和状态值", () => {
+    const originalLanguage = getActiveUiLanguage();
+    const outputs = [];
+    try {
+      for (const language of ["zh", "en"]) {
+        setActiveUiLanguage(resolveUiLanguage(language, language));
+        outputs.push(postProcessBriefingOutput(
+          "<!-- qnalog-people: 张三 -->\n正文。",
+          "monologue",
+          { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
+          null,
+          "",
+        ));
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
+    for (const out of outputs) {
+      expect(out).toContain(`${NS_FM.mode}: monologue`);
+      expect(out).toContain(`${NS_FM.time}: 2026-09-24T10:01:38`);
+      expect(out).toContain(`${NS_FM.duration}: 01:02:03`);
+      expect(out).toContain(`${NS_FM.status}: organized`);
+      expect(out).toContain(`${NS_FM.people}:`);
+      expect(out).not.toMatch(/^(?:时长|状态|人物|duration|status|people):/m);
+    }
   });
 
-  it("postProcessBriefingOutput（en）：系统字段写 duration/status/people（Organized），老键不重复输出", () => {
-    setActiveUiLanguage(resolveUiLanguage("en", "en"));
-    const out = postProcessBriefingOutput(
-      "<!-- qnalog-people: 张三 -->\n正文。",
-      "monologue",
-      { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
-      { mode: "monologue", time: "2026-09-24T10:01:38", "时长": "00:05:00", "状态": "草稿", "人物": ["李四"] },
-      "",
-    );
-    expect(out).toContain("duration: 01:02:03");
-    expect(out).toContain("status: Organized");
-    expect(out).toContain("people:");
-    expect(out).toContain("李四");
-    // 老 zh 键不残留、不重复输出
-    expect(out).not.toContain("时长:");
-    expect(out).not.toContain("状态:");
-    expect(out).not.toContain("人物:");
-    expect(out).not.toContain("草稿");
-  });
-
-  it("postProcessBriefingOutput（zh 重整 en 老笔记）：people 读回写成 人物", () => {
-    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
-    const out = postProcessBriefingOutput(
-      "正文。",
-      "monologue",
-      { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
-      { mode: "monologue", time: "2026-09-24T10:01:38", duration: "00:05:00", status: "Organized", people: ["李四"] },
-      "",
-    );
-    expect(out).toContain("时长: 01:02:03");
-    expect(out).toContain("状态: 已整理");
-    expect(out).toContain("人物:");
-    expect(out).toContain("李四");
-    expect(out).not.toContain("people:");
-    expect(out).not.toContain("duration:");
-    expect(out).not.toContain("status:");
+  it("重新整理旧中英属性时保留两组人员值并只写 canonical 键", () => {
+    const originalLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage("en", "en"));
+      const out = postProcessBriefingOutput(
+        "正文。",
+        "monologue",
+        { startedAt: "2026-09-24T10:01:38", duration: "01:02:03" },
+        {
+          mode: "monologue",
+          time: "2026-09-24T10:01:38",
+          duration: "00:05:00",
+          status: "draft",
+          people: ["李四"],
+          人物: ["王五"],
+          主题: "旧主题",
+        },
+        "",
+      );
+      expect(out).toContain(`${NS_FM.topic}: 旧主题`);
+      expect(out).toContain("李四");
+      expect(out).toContain("王五");
+      expect(out).toContain(`${NS_FM.status}: organized`);
+      expect(out).not.toMatch(/^(?:mode|time|duration|status|people|主题|人物|时长|状态):/m);
+      expect(out).not.toContain("draft");
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
   });
 });

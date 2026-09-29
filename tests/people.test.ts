@@ -8,11 +8,14 @@ vi.mock("obsidian", () => ({
 
 import {
   arePeopleSuggestionsRelated,
+  formatPeopleNoteMarkdown,
   mergePeopleSuggestions,
+  mergePersonFrontmatter,
   mergeSourceNoteRelatedPeopleFrontmatter,
   normalizePeopleRelation,
   normalizePersonLookupText,
 } from "../src/people";
+import { NS_FM } from "../src/shared/namespace";
 
 describe("people suggestion merging", () => {
   it("merges full name and short name into one person candidate", () => {
@@ -70,13 +73,51 @@ describe("people suggestion merging", () => {
       { file: owner, relation: "todo_owner" },
     ]);
 
-    expect(fm["相关人员"]).toEqual([
+    expect(fm[NS_FM.relatedPeople]).toEqual([
       "[[QnALog/人员/腾哥|腾哥]]",
       "[[QnALog/人员/李总|李总]]",
       "[[QnALog/人员/产品同事|产品同事]]",
     ]);
-    expect(fm.participants).toEqual(["[[QnALog/人员/腾哥|腾哥]]"]);
-    expect(fm.mentioned_people).toEqual(["[[QnALog/人员/李总|李总]]"]);
-    expect(fm.todo_owners).toEqual(["[[QnALog/人员/产品同事|产品同事]]"]);
+    expect(fm[NS_FM.participants]).toEqual(["[[QnALog/人员/腾哥|腾哥]]"]);
+    expect(fm[NS_FM.mentionedPeople]).toEqual(["[[QnALog/人员/李总|李总]]"]);
+    expect(fm[NS_FM.todoOwners]).toEqual(["[[QnALog/人员/产品同事|产品同事]]"]);
+    expect(fm["相关人员"]).toBeUndefined();
+    expect(fm.participants).toBeUndefined();
+    expect(fm.mentioned_people).toBeUndefined();
+    expect(fm.todo_owners).toBeUndefined();
+    });
+
+  it("merges parallel legacy people arrays into the canonical field when a note is edited", () => {
+    const fm = mergeSourceNoteRelatedPeopleFrontmatter({ people: ["李四"], 人物: ["王五"] }, []);
+    expect(fm[NS_FM.people]).toEqual(["李四", "王五"]);
+    expect(fm.people).toBeUndefined();
+    expect(fm["人物"]).toBeUndefined();
+  });
+
+  it("creates and updates person properties using stable canonical keys", async () => {
+    const { TFile } = await import("obsidian");
+    const source = new TFile() as any;
+    source.path = "QnALog/转写纪要/2026-09-29.md";
+    source.basename = "2026-09-29";
+    const updated = mergePersonFrontmatter(
+      { 姓名: "李四", 角色: "设计师", 常用称呼: ["小李"], 邮箱: "li@example.com" },
+      { name: "李四", role: "", organization: "产品组", aliases: ["老李"], note: "", evidence: [] },
+      source,
+    );
+    expect(updated[NS_FM.name]).toBe("李四");
+    expect(updated[NS_FM.role]).toBe("设计师");
+    expect(updated[NS_FM.organization]).toBe("产品组");
+    expect(updated[NS_FM.aliases]).toEqual(["小李", "老李"]);
+    expect(updated[NS_FM.email]).toBe("li@example.com");
+    expect(updated["姓名"]).toBeUndefined();
+    expect(updated["角色"]).toBeUndefined();
+    expect(updated["常用称呼"]).toBeUndefined();
+    expect(updated["邮箱"]).toBeUndefined();
+
+    const markdown = formatPeopleNoteMarkdown("李四");
+    expect(markdown).toContain(`${NS_FM.type}: qnalog-person`);
+    expect(markdown).toContain(`${NS_FM.name}:`);
+    expect(markdown).toContain(`${NS_FM.organization}:`);
+    expect(markdown).not.toMatch(/^(?:姓名|角色|组织|邮箱):/m);
   });
 });

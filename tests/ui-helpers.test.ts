@@ -10,6 +10,7 @@ import {
   noteHasSuccessfulLlmBriefing,
   noteHasUsableRawTranscriptDespiteFailures,
 } from "../src/ui/helpers";
+import { NS_FM } from "../src/shared/namespace";
 
 // 英文界面写 `## ✨ Current minutes` 与 `status: Organized`，此前 ui/helpers 只认中文标题与
 // `published|done|completed`，健康英文笔记被判成"未成功"（警告永不消除）——已知 bug 的回归锁。
@@ -48,6 +49,8 @@ describe("noteHasSuccessfulLlmBriefing：当前纪要标题与状态键双语", 
     expect(noteHasSuccessfulLlmBriefing(`状态: 已整理\n\n${LONG_BODY}`)).toBe(true);
     expect(noteHasSuccessfulLlmBriefing(`status: Organized\n\n${LONG_BODY}`)).toBe(true);
     expect(noteHasSuccessfulLlmBriefing(`status: draft\n\n${LONG_BODY}`)).toBe(false);
+    expect(noteHasSuccessfulLlmBriefing(`${NS_FM.status}: organized\n\n${LONG_BODY}`)).toBe(true);
+    expect(noteHasSuccessfulLlmBriefing(`${NS_FM.status}: draft\n\n${LONG_BODY}`)).toBe(false);
   });
 
   it("整合版标题与失败标记的判定中英对称", () => {

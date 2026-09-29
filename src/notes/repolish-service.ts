@@ -17,7 +17,7 @@ import { cleanTranscript, mergeAndPolish } from "../briefing/merge-pipeline";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { VersionStore } from "../versions/version-store";
 import { NoteIndexService } from "../notes/note-index-service";
-import { isDerivedVersionType } from "../shared/namespace";
+import { isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 /** RepolishService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -67,25 +67,26 @@ export class RepolishService {
         segments = applyRoleMappingToSegments(segments, roleMapping);
       }
 
-      // 从 frontmatter 取插件已注入的 time，作为 sessionMeta（避免 LLM 重新推断，保持时间不变）
+      // 从 Frontmatter 读取 qnalog_time，作为 sessionMeta，避免 LLM 重新推断并改变原时间。
       let sessionMeta = null;
       if (fmCache) {
-        const fullTimeStr = fmCache.time || "";
-        const durationStr = fmCache["时长"] || fmCache.duration || "";
+        const fullTimeStr = readNamespaceFrontmatter(fmCache, "time") || "";
+        const durationValue = readNamespaceFrontmatter(fmCache, "duration");
+        const durationStr = typeof durationValue === "string" ? durationValue : "";
         if (fullTimeStr) {
           const m = window.moment ? window.moment(fullTimeStr, [window.moment.ISO_8601, "YYYY-MM-DDTHH:mm:ss", "YYYY-MM-DD HH:mm:ss"], true) : null;
           if (m && m.isValid && m.isValid()) {
-            sessionMeta = { startedAt: m.toDate().toISOString(), duration: String(durationStr || "").trim() };
+            sessionMeta = { startedAt: m.toDate().toISOString(), duration: durationStr.trim() };
           }
         } else {
-          // 兼容旧笔记：早期版本可能写入"日期"和"时间"两个字段；重新整理后会迁移为 time。
+          // 兼容旧笔记里的日期/时间拆分字段；重整后统一写 qnalog_time。
           const dateStr = fmCache["日期"] || fmCache.date || "";
           const timeStr = fmCache["时间"] || "";
           if (dateStr) {
             const composed = String(dateStr).trim() + (timeStr ? "T" + String(timeStr).trim() : "");
             const m = window.moment ? window.moment(composed, ["YYYY-MM-DDTHH:mm", "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss"], true) : null;
             if (m && m.isValid && m.isValid()) {
-              sessionMeta = { startedAt: m.toDate().toISOString(), duration: String(durationStr || "").trim() };
+              sessionMeta = { startedAt: m.toDate().toISOString(), duration: durationStr.trim() };
             }
           }
         }
@@ -268,8 +269,10 @@ export class RepolishService {
       let sourceFile = file;
       let content = await this.host.app.vault.read(file);
       const fm = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-      if (isDerivedVersionType(fm["类型"]) || fm.contains_raw === false) {
-        const srcPath = fm.source_path ? obsidian.normalizePath(String(fm.source_path)) : "";
+      if (isDerivedVersionType(readNamespaceFrontmatter(fm, "type"))
+        || readNamespaceFrontmatter(fm, "containsRaw") === false) {
+        const sourcePath = readNamespaceFrontmatter(fm, "sourcePath");
+        const srcPath = typeof sourcePath === "string" && sourcePath ? obsidian.normalizePath(sourcePath) : "";
         const resolved = srcPath ? this.host.app.vault.getAbstractFileByPath(srcPath) : null;
         if (resolved instanceof obsidian.TFile) {
           sourceFile = resolved;

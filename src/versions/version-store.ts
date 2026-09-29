@@ -11,7 +11,7 @@ import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";
 import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE } from "../shared/namespace";
+import { NS_FM, NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 /** VersionStore 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -111,17 +111,17 @@ export class VersionStore {
     const payload = buildVersionPayload(frontmatter, body);
     const versionFileBody = [
       "---",
-      `类型: ${NS_TYPE_VERSION_CACHE}`,
+      `${NS_FM.type}: ${NS_TYPE_VERSION_CACHE}`,
       "payload_format: 2",
       `version_id: "${id}"`,
       `variant_kind: "${meta.kind}"`,
       `variant_label: "${meta.label}"`,
       meta.mode ? `variant_mode: "${meta.mode}"` : "",
       meta.style ? `variant_style: "${meta.style}"` : "",
-      `source_path: "${sourceFile.path}"`,
+      `${NS_FM.sourcePath}: "${sourceFile.path}"`,
       `source_id: "${sourceId}"`,
       `source_segments_hash: "${sourceHash}"`,
-      "contains_raw: false",
+      `${NS_FM.containsRaw}: false`,
       `contains_frontmatter: ${frontmatter ? "true" : "false"}`,
       `created: ${createdAt}`,
       "---",
@@ -169,16 +169,19 @@ export class VersionStore {
       ? (() => { try { return obsidian.parseYaml(splitLeadingFrontmatter(version.frontmatter).frontmatter.replace(/^---\n|\n---\n?$/g, "")) || {}; } catch { return {}; } })()
       : {};
     const derivedFm = Object.assign({}, sourceFm, versionFm, {
-      "类型": NS_TYPE_DERIVED,
+      [NS_FM.type]: NS_TYPE_DERIVED,
       variant_kind: "minutes",
       variant_label: prefix,
       variant_mode: mode || "",
       variant_style: style || "",
-      source_path: sourceFile.path,
+      [NS_FM.sourcePath]: sourceFile.path,
       source_id: version && version.meta ? version.meta.sourceId : "",
-      contains_raw: false,
+      [NS_FM.containsRaw]: false,
       created: version && version.meta ? version.meta.createdAt : new Date().toISOString(),
     });
+    setNamespaceFrontmatter(derivedFm, "type", NS_TYPE_DERIVED);
+    setNamespaceFrontmatter(derivedFm, "sourcePath", sourceFile.path);
+    setNamespaceFrontmatter(derivedFm, "containsRaw", false);
     const yaml = obsidian.stringifyYaml(derivedFm);
     const body = String(version && version.body || buildEmptyLlmOutputFallback()).trim() || buildEmptyLlmOutputFallback();
     const heading = /^#\s/m.test(body) ? "" : `# ${prefix} · ${sourceFile.basename}\n\n`;
@@ -198,7 +201,7 @@ export class VersionStore {
     }
     if (existing instanceof obsidian.TFile) {
       await this.host.noteIndex.refreshNoteIndexSafely(existing, {
-        meetingDate: derivedFm.time || derivedFm["日期"] || derivedFm.date || "",
+        meetingDate: readNamespaceFrontmatter(derivedFm, "time") || derivedFm["日期"] || derivedFm.date || "",
         reason: "derived-note",
       });
     }
@@ -228,7 +231,7 @@ export class VersionStore {
     if (!(versionFile instanceof obsidian.TFile)) return;
     const content = await this.host.app.vault.read(versionFile);
     const fm = ((this.host.app.metadataCache.getFileCache(versionFile) || {}).frontmatter) || {};
-    const sourcePath = obsidian.normalizePath(String(fm.source_path || fallbackSourcePath || ""));
+    const sourcePath = obsidian.normalizePath(String(readNamespaceFrontmatter(fm, "sourcePath") || fallbackSourcePath || ""));
     const sourceFile = sourcePath ? this.host.app.vault.getAbstractFileByPath(sourcePath) : null;
     if (!(sourceFile instanceof obsidian.TFile)) {
       new obsidian.Notice(t("Master copy not found; cannot switch versions."), 6000);

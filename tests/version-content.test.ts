@@ -89,30 +89,33 @@ describe("QnALog version content", () => {
     expect(sanitizeActiveVersionBody("# OnlyTitle")).toBe("_[当前版本无内容]_");
   });
 
-  it("drops derived bookkeeping keys and keeps content fields", () => {
+  it("drops canonical and legacy derived bookkeeping keys but keeps content fields", () => {
     const yaml = [
-      "mode: monologue",
-      "time: 2026-09-18T11:07:46",
-      "状态: 已整理",
+      "qnalog_mode: monologue",
+      "qnalog_time: 2026-09-18T11:07:46",
+      "qnalog_status: organized",
       "tags:",
       "  - qnalog/monologue",
       "  - 主题/视频制作",
+      "qnalog_type: QnALog派生版本",
       "类型: QnALog派生版本",
       "variant_kind: minutes",
       "variant_label: 个人笔记",
       "variant_mode: monologue",
-      "source_path: \"QnALog/转写纪要/2026-09-18 1107.md\"",
+      "qnalog_source_path: \"QnALog/转写纪要/2026-09-18 1107.md\"",
+      "source_path: \"QnALog/转写纪要/old.md\"",
       "source_id: qnalog-mu6doqqg-vglxge",
+      "qnalog_contains_raw: false",
       "contains_raw: false",
       "created: 2026-09-23 16:03:59",
     ].join("\n");
     const stripped = stripVersionBookkeepingFrontmatter(yaml);
-    expect(stripped).toContain("mode: monologue");
-    expect(stripped).toContain("time: 2026-09-18T11:07:46");
-    expect(stripped).toContain("状态: 已整理");
+    expect(stripped).toContain("qnalog_mode: monologue");
+    expect(stripped).toContain("qnalog_time: 2026-09-18T11:07:46");
+    expect(stripped).toContain("qnalog_status: organized");
     expect(stripped).toContain("- qnalog/monologue");
     expect(stripped).toContain("  - 主题/视频制作");
-    for (const key of ["类型", "variant_kind", "variant_label", "variant_mode", "source_path", "source_id", "contains_raw", "created"]) {
+    for (const key of ["qnalog_type", "类型", "variant_kind", "variant_label", "variant_mode", "qnalog_source_path", "source_path", "source_id", "qnalog_contains_raw", "contains_raw", "created"]) {
       expect(stripped).not.toContain(key);
     }
     expect(stripVersionBookkeepingFrontmatter("")).toBe("");

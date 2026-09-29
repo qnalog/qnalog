@@ -13,6 +13,7 @@ import { logLlmRequestDiagnostic } from "../llm/core";
 import { classifyBriefingLength } from "../llm/config";
 
 import { FRONTMATTER_SCHEMA } from "../shared/catalog-modes";
+import { NS_FM } from "../shared/namespace";
 
 import { formatElapsed } from "../shared/util-common";
 
@@ -35,10 +36,7 @@ export function buildStructureLevelInstruction(level) {
   return STRUCTURE_LEVEL_INSTRUCTIONS[level] || STRUCTURE_LEVEL_INSTRUCTIONS.balanced;
 }
 
-// 各模式的 YAML frontmatter schema —— LLM 必须按此 schema 输出
-// Frontmatter schema —— 字段名优先用中文（除 mode 程序识别 / tags Obsidian 约定）
-// 角色相关字段（受访者 / 访问者 / 参会人 / 当事人 / 参谋 / 候选人 / 面试官）
-// 用户后期可手动改成"代号 → 真名"形式，触发"重新整理"时插件会按映射替换正文里的代号
+// 各模式的 YAML frontmatter schema 使用固定 qnalog_* 属性名；字段值仍按内容语言生成。
 
 export function buildPrompt(modeBody, isMerged, modeKey) {
   const inputDesc = isMerged
@@ -46,7 +44,7 @@ export function buildPrompt(modeBody, isMerged, modeKey) {
     : `原始转写文本`;
   const fmSchema = FRONTMATTER_SCHEMA[modeKey] || "";
   const frontmatterSection = fmSchema
-    ? `**输出文件必须以 YAML frontmatter 开头**，仅包含以下精简字段（不要添加任何其他字段——\`mode\`/\`time\`/\`时长\`/\`状态\`/\`tags\`/\`人物\` 由插件自动注入，**LLM 不要输出**；也不要输出 \`date\`/\`日期\`/\`location\`/\`decision\`/\`decisions\`/\`todos\`/\`type\`/\`status\`/\`people\`）：
+    ? `**输出文件必须以 YAML frontmatter 开头**，仅包含以下精简字段（不要添加任何其他字段——\`${NS_FM.mode}\`、\`${NS_FM.time}\`、\`${NS_FM.duration}\`、\`${NS_FM.status}\`、\`${NS_FM.people}\`、\`tags\` 由插件自动注入，**LLM 不要输出**；旧键 mode、time、duration、时长、status、状态、people、人物也不要输出）：
 
 \`\`\`yaml
 ---
@@ -63,7 +61,7 @@ ${fmSchema}
 <!-- qnalog-tags: 主题/上线范围, 主题/AI转型, 项目/示例项目, 公司/示例科技, 行业/互联网 -->
 \`\`\`
 
-**qnalog-people**：本纪要中**确实出现或被点名**的关键人名（真实姓名或明确角色称呼），逗号分隔，0–6 个；只写转写里真实出现的，不带任何前缀，会写进独立的 \`人物\` 属性。⚠️**上面示例里的"张三/李四"只是占位格式，绝对不要照抄进结果；转写里没有明确人名时，这条注释整行留空（\`<!-- qnalog-people: -->\`）或不输出——宁可没有，也不要编造或套用任何示例名。**
+**qnalog-people**：本纪要中**确实出现或被点名**的关键人名（真实姓名或明确角色称呼），逗号分隔，0–6 个；只写转写里真实出现的，不带任何前缀，会写进独立的 \`${NS_FM.people}\` 属性。⚠️**上面示例里的"张三/李四"只是占位格式，绝对不要照抄进结果；转写里没有明确人名时，这条注释整行留空（\`<!-- qnalog-people: -->\`）或不输出——宁可没有，也不要编造或套用任何示例名。**
 
 **qnalog-tags**：多维度中文 nested 标签，每个用「中文前缀 + 斜杠 + 具体词」，让 Obsidian 标签面板按维度自动分组。维度只剩 4 个（**人物已单列到 qnalog-people，这里绝不要再写 \`人物/x\`**）：
 
@@ -76,7 +74,7 @@ ${fmSchema}
 
 - qnalog-tags 总数 4–9 个，主题维度至少 3 个
 - 每个 tag 的"具体词"部分 ≤6 个汉字，避免空格和标点（"AI转型" 而非 "AI 转型"）
-- 不要重复 mode 字段语义（**禁止** 输出 \`\`主题/会议\`、\`主题/访谈\` 这类与 mode 重复的词）
+- 不要重复 mode 字段语义（**禁止** 输出 \`主题/会议\`、\`主题/访谈\` 这类与 mode 重复的词）
 - 转写中**没明确出现**的项目/公司/人物**一律不写**，不要编造
 - 优先具体词（"转写延迟指标" 而非 "指标"；"迁移计划" 而非 "项目"）
 - 系统标签 \`qnalog/<mode>\` 由代码自动注入，**不要在标签建议里重复**
@@ -156,19 +154,17 @@ export function buildSessionMetaPrefix(meta, mode, options = {}) {
   const sections = [];
   if (meta && meta.startedAt) {
     const m = window.moment(meta.startedAt);
-    const date = m.format("YYYY-MM-DD");
-    const time = m.format("HH:mm");
+    const time = m.format("YYYY-MM-DDTHH:mm:ss");
     const duration = meta.duration || "";
     const lines = [
-      "## 会话元信息（**直接填入 frontmatter 对应字段，不要推断、不要修改**）",
+      "## 会话元信息（程序管理的 Frontmatter 字段；不要推断或改写）",
       "",
-      "- 日期: " + date,
-      "- 时间: " + time,
+      `- ${NS_FM.time}: ${time}`,
     ];
-    if (duration) lines.push("- 时长: " + duration);
-    if (mode) lines.push("- mode: " + mode);
+    if (duration) lines.push(`- ${NS_FM.duration}: ${duration}`);
+    if (mode) lines.push(`- ${NS_FM.mode}: ${mode}`);
     lines.push("");
-    lines.push("frontmatter 的「日期」「时间」「时长」「mode」字段必须照搬上面给定的值；其他字段（主题、参会人等）根据转写内容推断。");
+    lines.push(`这些 qnalog_* 字段由插件注入；请勿在模型输出的 Frontmatter 中重复添加。`);
     sections.push(lines.join("\n"));
   }
   return sections.join("\n\n---\n\n");

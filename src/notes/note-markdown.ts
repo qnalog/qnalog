@@ -27,8 +27,9 @@ import { removeNoteIndex } from "../indexing/note-index";
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import { fmKey, labelText, labelPattern } from "../shared/note-labels";
-import { NS_TAG, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, nsMarkerGlobalRe } from "../shared/namespace";
+import { labelText, labelPattern } from "../shared/note-labels";
+import { NS_FM, NS_FM_SPEAKERS, NS_TAG, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, hasNamespaceFrontmatter, nsMarkerGlobalRe, readNamespaceFrontmatter } from "../shared/namespace";
+import type { NamespaceFrontmatterField } from "../shared/namespace";
 
 import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
@@ -340,8 +341,13 @@ export function isTextImportSession(session) {
   return !!(session && session.source === "text-import");
 }
 
-// 人物/people 双键：结构键随界面语言（fmKey），邮件参会人匹配两套都要认。
-export const EMAIL_ATTENDEE_FIELDS = ["参会人", "与会人", "参与者", "出席人", "受访者", "访问者", "面试官", "候选人", "当事人", "相关人员", "人员", "人物", "people"];
+// canonical 属性与历史中文/英文属性都接受，写入只输出 canonical 形式。
+export const EMAIL_ATTENDEE_FIELDS = [
+  NS_FM.participants, NS_FM.interviewee, NS_FM.interviewer, NS_FM.decisionMaker,
+  NS_FM.advisors, NS_FM.people, NS_FM.relatedPeople,
+  "参会人", "与会人", "参与者", "出席人", "受访者", "访问者", "面试官", "候选人",
+  "当事人", "参谋", "相关人员", "人员", "人物", "participants", "people",
+];
 
 export function normalizeEmailAddressList(value) {
   const raw = Array.isArray(value) ? value.flatMap(normalizeEmailAddressList) : String(value || "").split(/[，,、;；\s]+/);
@@ -362,7 +368,7 @@ export function extractMeetingAttendeeNames(frontmatter) {
     if (Array.isArray(value)) {
       value.forEach(walk);
     } else if (value && typeof value === "object") {
-      const direct = value["姓名"] || value.name || value["人员"] || value.person || value.label;
+      const direct = value[NS_FM.name] || value["姓名"] || value.name || value["人员"] || value.person || value.label;
       if (direct) raw.push(direct);
       else Object.values(value).forEach(walk);
     } else if (value != null) {
@@ -747,8 +753,7 @@ export function inferNoteStartedAtIso(file, frontmatter) {
   const moment = window.moment;
   const fm = frontmatter || {};
   const candidates = [
-    fm.time,
-    fm["time"],
+    readNamespaceFrontmatter(fm, "time"),
     fm["日期"] && fm["时间"] ? `${fm["日期"]}T${fm["时间"]}` : "",
     fm["日期"] || fm.date || "",
   ].map(v => String(v || "").trim()).filter(Boolean);
@@ -856,7 +861,11 @@ export function analyzeEmptyShortNote(file, markdown, settings) {
 // 解析 frontmatter 角色字段中的"代号 → 真名"映射
 // 用户在 yaml 里把 `参会人:` 数组的某项改成 `业务需求方 → 某候选人`，
 // 重新整理时这条会被解析成 { from: "业务需求方", to: "某候选人" }
-export const ROLE_MAPPING_FIELDS = ["参会人", "参谋", "受访者", "访问者", "面试官", "候选人", "当事人"];
+export const ROLE_MAPPING_FIELDS = [
+  NS_FM.participants, NS_FM.advisors, NS_FM.interviewee, NS_FM.interviewer,
+  NS_FM.decisionMaker, "参会人", "与会人", "参与者", "出席人", "参谋",
+  "受访者", "访问者", "面试官", "候选人", "当事人",
+];
 
 export function parseRoleMapItem(item) {
   const text = String(item == null ? "" : item).trim();
@@ -1076,15 +1085,16 @@ export function makeNoteLink(path) {
   return `[[${target}|${label}]]`;
 }
 
-// 由代码注入的会话元信息前缀 —— LLM 不需要推断 frontmatter 里的 time/时长
-// 这些字段从 session.startedAt / session 时长直接给定
-export const FRONTMATTER_CONTENT_KEYS = {
-  learning: ["主题", "来源", "语言"],
-  interview: ["主题", "受访者", "访问者"],
-  meeting: ["主题", "参会人"],
-  seminar: ["主题", "研讨对象", "参与者"],
-  huddle: ["主题", "当事人", "参谋"],
-  monologue: ["主题"],
+// 由代码注入的会话元信息前缀 —— LLM 不需要推断 qnalog_time/qnalog_duration。
+// qnalog_mode、qnalog_time 和 qnalog_duration 由插件按会话状态写入。
+export const FRONTMATTER_CONTENT_KEYS: Record<string, readonly NamespaceFrontmatterField[]> = {
+  synthesis: ["topic", "coreQuestion", "participants"],
+  learning: ["topic", "source", "language"],
+  interview: ["topic", "interviewee", "interviewer"],
+  meeting: ["topic", "participants"],
+  seminar: ["topic", "seminarSubject", "participants"],
+  huddle: ["topic", "decisionMaker", "advisors"],
+  monologue: ["topic"],
 };
 
 // 把任意 mode（含 custom-xxx）映射到用于查 frontmatter schema 表的 baseKey。
@@ -1093,7 +1103,7 @@ export function frontmatterBaseModeKey(plugin, mode) {
   if (FRONTMATTER_CONTENT_KEYS[mode]) return mode;
   const custom = plugin && getCustomPromptModeTemplate(plugin.settings, mode);
   if (custom && custom.baseMode && FRONTMATTER_CONTENT_KEYS[custom.baseMode]) return custom.baseMode;
-  return "meeting"; // 默认回退到 meeting（含 主题+参会人），而非裸 ["主题"]，避免 custom 内容字段被裁光
+  return "meeting"; // custom mode 使用 meeting 内容字段白名单，保留 qnalog_topic 与 qnalog_participants。
 }
 
 export function formatYamlDateTime(value) {
@@ -1114,24 +1124,16 @@ export type FrontmatterFields = Record<string, string | string[] | undefined>;
 
 export function normalizeBriefingFrontmatterFields(raw, mode, baseKey) {
   const source = (raw && typeof raw === "object") ? Object.assign({}, raw) : {};
-  if (source["录音主题"] && !source["主题"]) source["主题"] = source["录音主题"];
-  if (source["与会人"] && !source["参会人"]) source["参会人"] = source["与会人"];
-
-  const keys = FRONTMATTER_CONTENT_KEYS[baseKey || mode] || ["主题"];
-  const allowed = new Set(keys);
-  // 人物（people）= 独立人员属性，全模式恒定保留（重整时不被当非白名单字段裁掉）；
-  // zh 旧键 人物 与 en 新键 people 都要认。
-  allowed.add("人物");
-  allowed.add("people");
+  const keys = FRONTMATTER_CONTENT_KEYS[baseKey || mode] || ["topic"];
   const cleaned = {};
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) cleaned[key] = source[key];
+  for (const field of keys) {
+    if (hasNamespaceFrontmatter(source, field)) cleaned[NS_FM[field]] = readNamespaceFrontmatter(source, field);
   }
-  if (Object.prototype.hasOwnProperty.call(source, "人物")) cleaned["人物"] = source["人物"];
-  if (Object.prototype.hasOwnProperty.call(source, "people")) cleaned["people"] = source["people"];
-  for (const key of Object.keys(source)) {
-    if (!allowed.has(key)) continue;
-    if (!Object.prototype.hasOwnProperty.call(cleaned, key)) cleaned[key] = source[key];
+  if (hasNamespaceFrontmatter(source, "people")) {
+    cleaned[NS_FM.people] = readNamespaceFrontmatter(source, "people");
+  }
+  if (Object.prototype.hasOwnProperty.call(source, NS_FM_SPEAKERS)) {
+    cleaned[NS_FM_SPEAKERS] = source[NS_FM_SPEAKERS];
   }
   return cleaned;
 }
@@ -1248,11 +1250,10 @@ export function parseSuggestedTagsFromOutput(text) {
 // 与 tags 物理分离：人物单列成独立 frontmatter 属性，不再挤进 tags。
 
 // 把 LLM 输出（含 frontmatter + 正文 + 末尾 tags 注释）规整成最终笔记内容：
-//   - 强制覆盖系统字段：mode / time / 时长 / 状态
-//   - merge tags：[qnalog/<mode>] + LLM 标签建议 + (可选) 已有 tags
+//   - 强制覆盖 qnalog_mode / qnalog_time / qnalog_duration / qnalog_status
+//   - 合并标签：[qnalog/<mode>] + LLM 标签建议 + (可选) 已有 tags
 //   - 删除末尾的 qnalog-tags 注释
-//   - originalFrontmatter 非空时（重新整理场景），保留它的内容字段（用户改过的代号映射等），
-//     不让 LLM 的 frontmatter 覆盖；只 merge 新的 tag 建议
+//   - originalFrontmatter 非空时（重新整理场景），按当前模式保留 canonical 内容字段与说话人映射；旧别名只读不写
 export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, originalFrontmatter, baseKey, topNotice = "") {
   if (!rawOutput) return rawOutput || "";
   // 先剥人员机器块、再剥标签机器块（cleaned 串联，保证注释不残留在正文末尾）。
@@ -1278,30 +1279,22 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
     : (llmFm && typeof llmFm === "object" ? Object.assign({}, llmFm) : {});
   const base: FrontmatterFields = normalizeBriefingFrontmatterFields(rawBase, mode, baseKey);
 
-  // 强制覆盖系统字段
-  base.mode = mode;
+  base[NS_FM.mode] = mode;
   if (sessionMeta && sessionMeta.startedAt) {
     const time = formatYamlDateTime(sessionMeta.startedAt);
-    if (time) base.time = time;
-  } else if (originalFrontmatter && originalFrontmatter.time) {
-    const time = formatYamlDateTime(originalFrontmatter.time);
-    if (time) base.time = time;
+    if (time) base[NS_FM.time] = time;
+  } else {
+    const priorTime = readNamespaceFrontmatter(originalFrontmatter || llmFm || {}, "time");
+    const time = formatYamlDateTime(priorTime);
+    if (time) base[NS_FM.time] = time;
   }
-  // time 第三路兜底：前两路都拿不到时（典型：重整一篇本就缺 time 的 custom 笔记），从 fm 的
-  // 日期/时间/文件名线索推断，最终回退当天——保证 time 永远非空，打断 custom 模式"缺 time 自锁"。
-  if (!base.time) {
+  // 从旧日期字段、文件名或文件时间推断，最终回退当天，确保 qnalog_time 非空。
+  if (!base[NS_FM.time]) {
     const inferred = formatYamlDateTime(inferNoteStartedAtIso(null, originalFrontmatter || llmFm || {}));
-    if (inferred) base.time = inferred;
+    if (inferred) base[NS_FM.time] = inferred;
   }
-  // 系统字段键随界面语言（fmKey）：zh 写 时长/状态/人物，en 写 duration/status/people；
-  // 解析侧（seenKeys、读取链）两套键都认，切语言不改变读回结果。
-  const durationKey = fmKey("duration");
-  const statusKey = fmKey("status");
-  const peopleKey = fmKey("people");
-  if (sessionMeta && sessionMeta.duration) {
-    base[durationKey] = sessionMeta.duration;
-  }
-  base[statusKey] = labelText("organized");
+  if (sessionMeta && sessionMeta.duration) base[NS_FM.duration] = sessionMeta.duration;
+  base[NS_FM.status] = "organized";
 
   // merge tags：[qnalog/<mode>] + 已有 + 建议；其中 人物/x 前缀一律剥出转入人物属性，不进 tags。
   const sysTag = NS_TAG_PREFIX + mode;
@@ -1322,29 +1315,30 @@ export function postProcessBriefingOutput(rawOutput, mode, sessionMeta, original
   for (const t of suggested) push(t);
   base.tags = tags;
 
-  // 人物：独立人员属性。三源合并（机器块 qnalog-people + tags 里 人物/ + base 旧人物），归一去重。
-  // 这也是"重整一次旧笔记，人物从 tags 自动迁出到 人物 属性"的落点。
-  let people = splitPersonFieldValue(base[peopleKey] || rawBase["人物"] || rawBase.people || []);
+  // qnalog_people：合并机器块、标签里的 人物/ 值与已有属性，归一去重。
+  // 重新整理时旧 tags 会在此按需迁入 canonical 属性。
+  let people = splitPersonFieldValue(base[NS_FM.people] || []);
   people = mergeUniqueStrings(people, suggestedPeople);
   people = mergeUniqueStrings(people, peopleFromTags);
   people = mergeUniqueStrings(people, existingPeopleFromTags);
-  if (people.length) base[peopleKey] = people; else delete base[peopleKey];
+  if (people.length) base[NS_FM.people] = people; else delete base[NS_FM.people];
 
-  // 字段输出顺序：mode → time → 时长/duration → 人物/people → 内容字段 → 状态/status → tags。
-  // time 使用 YAML 可识别的日期时间标量，例如 2026-05-08T12:55:00；不再保留 date/日期。
+  // 字段输出顺序：系统字段、内容字段、tags。时间值使用 YAML 可识别的日期时间标量。
   const ordered: FrontmatterFields = {};
-  ordered.mode = base.mode;
-  if (base.time) ordered.time = base.time;
-  if (base[durationKey]) ordered[durationKey] = base[durationKey];
-  if (base[peopleKey] && base[peopleKey].length) ordered[peopleKey] = base[peopleKey];
-  // 中间字段：base 自身按插入顺序，但跳过已写入和末尾要写的（含 人物/people，防二次写入）；
-  // 中英两套键全部进 seenKeys，老键（如重整时残留的 人物）不会漏进中间段重复输出。
-  const seenKeys = new Set(["mode", "time", "date", "日期", "时间", "时长", "duration", "人物", "people", "状态", "status", "tags"]);
+  ordered[NS_FM.mode] = base[NS_FM.mode];
+  if (base[NS_FM.time]) ordered[NS_FM.time] = base[NS_FM.time];
+  if (base[NS_FM.duration]) ordered[NS_FM.duration] = base[NS_FM.duration];
+  if (base[NS_FM.people] && base[NS_FM.people].length) ordered[NS_FM.people] = base[NS_FM.people];
+  const seenKeys = new Set([
+    NS_FM.mode, NS_FM.time, NS_FM.duration, NS_FM.people, NS_FM.status,
+    "mode", "模式", "模板", "time", "date", "日期", "时间", "时长", "duration",
+    "人物", "people", "状态", "status", "tags",
+  ]);
   for (const k of Object.keys(base)) {
     if (seenKeys.has(k)) continue;
     ordered[k] = base[k];
   }
-  ordered[statusKey] = base[statusKey];
+  ordered[NS_FM.status] = base[NS_FM.status];
   ordered.tags = base.tags;
 
   let yamlBlock;

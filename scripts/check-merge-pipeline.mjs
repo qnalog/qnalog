@@ -42,7 +42,7 @@ class TFolder { constructor(path) { this.path = path; this.children = []; } }
 
 const NOTE_PATH = "2026-09-14 1133.md";
 const NOTE_BODY = [
-  "---", "mode: monologue", "time: 2026-09-14 11:33", "状态: 待整理", "---", "",
+  "---", "qnalog_mode: monologue", "qnalog_time: 2026-09-14T11:33:00", "qnalog_status: draft", "---", "",
   "# 2026-09-14 11:33 · 个人笔记", "",
   "<!-- qnalog-segments-start:s1 -->",
   "### 段落 1 (00:00–00:05)", "今天的会议讨论了上线范围。", "",
@@ -207,7 +207,7 @@ async function main() {
     if (!/分段原始转写/.test(content)) failures.push("笔记里没有保留原始转写");
     if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
     if (!/^---\r?\n[\s\S]*?\r?\n---/.test(content)) failures.push("笔记没有 frontmatter");
-    if (!/^time:\s*\S/m.test(content)) failures.push("frontmatter 里没有 time 字段（重新整理入口会因缺少 time 不可用）");
+    if (!/^qnalog_time:\s*\S/m.test(content)) failures.push("frontmatter 里没有 qnalog_time 字段（重新整理入口会因缺少时间属性不可用）");
     // 只认 H1（# + 空格）：正文里 `---` 分隔线后的 `## 章节` 也以 # 开头，不是头部空行。
     if (/^---\r?\n[ \t]*\r?\n#\s/m.test(content)) failures.push("frontmatter 与 H1 之间有多余空行（新格式：单换行紧贴标题）");
     for (const id of plugin.intervals) clearInterval(id);

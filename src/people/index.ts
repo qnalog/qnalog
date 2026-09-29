@@ -9,7 +9,8 @@ import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { extractJsonObject } from '../shared/util-json';
 import { getFrontmatterTags, readFileFrontmatter, isLocalServiceEndpoint } from '../shared/util-note';
 import { callLlm } from '../llm/core';
-import { NS_PEOPLE_RE } from "../shared/namespace";
+import { NS_FM, NS_PEOPLE_RE, hasNamespaceFrontmatter, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
+import type { NamespaceFrontmatterField } from "../shared/namespace";
 
 export const PEOPLE_SUGGESTION_CACHE_LIMIT = 500;
 
@@ -68,34 +69,31 @@ export function normalizePersonLookupText(text) {
     .toLowerCase();
 }
 
-export function firstPersonField(frontmatter, keys) {
-  for (const key of keys) {
-    const value = frontmatter && frontmatter[key];
-    if (Array.isArray(value)) {
-      const first = value.map(v => String(v || "").trim()).find(Boolean);
-      if (first) return first;
-    } else if (value != null && String(value).trim()) {
-      return String(value).trim();
-    }
+export function firstPersonField(frontmatter: unknown, field: NamespaceFrontmatterField): string {
+  const value = readNamespaceFrontmatter(frontmatter, field);
+  if (Array.isArray(value)) {
+    const first = value.map((item) => String(item || "").trim()).find(Boolean);
+    if (first) return first;
   }
+  if (typeof value === "string" || typeof value === "number") return String(value).trim();
   return "";
 }
 
 export function personEntryFromFrontmatter(frontmatter, file) {
   if (!frontmatter || typeof frontmatter !== "object") return null;
   const tags = getFrontmatterTags(frontmatter);
-  const type = String(frontmatter.type || frontmatter["类型"] || "").trim();
+  const type = firstPersonField(frontmatter, "type");
   const inPersonSet = tags.includes(PEOPLE_DIRECTORY_TAG) || type === "qnalog-person";
-  const explicitName = firstPersonField(frontmatter, ["姓名", "name", "人员", "person"]);
+  const explicitName = firstPersonField(frontmatter, "name");
   const name = explicitName || (inPersonSet && file && file.basename ? file.basename : "");
   if (!name || (!inPersonSet && !explicitName)) return null;
   return {
     name,
-    role: firstPersonField(frontmatter, ["角色", "role", "岗位", "职能", "职位", "职称", "title"]),
-    organization: firstPersonField(frontmatter, ["组织", "organization", "公司", "团队", "部门", "机构", "institute"]),
-    aliases: splitPersonFieldValue(frontmatter["常用称呼"] || frontmatter["称呼"] || frontmatter.aliases || frontmatter.alias),
-    email: firstPersonField(frontmatter, ["邮箱", "邮箱地址", "邮件", "email", "mail", "e-mail"]),
-    note: firstPersonField(frontmatter, ["备注", "note", "说明", "简介", "abstract"]),
+    role: firstPersonField(frontmatter, "role"),
+    organization: firstPersonField(frontmatter, "organization"),
+    aliases: splitPersonFieldValue(readNamespaceFrontmatter(frontmatter, "aliases")),
+    email: firstPersonField(frontmatter, "email"),
+    note: firstPersonField(frontmatter, "note"),
     path: file && file.path ? file.path : "",
   };
 }
@@ -240,23 +238,23 @@ filters:
 properties:
   file.name:
     displayName: 纪要
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.mode:
+  note.${NS_FM.mode}:
     displayName: 模式
-  note.录音主题:
+  note.${NS_FM.topic}:
     displayName: 主题
-  note.状态:
+  note.${NS_FM.status}:
     displayName: 状态
 views:
   - type: table
     name: 相关纪要
     order:
       - file.name
-      - note.time
-      - note.mode
-      - note.录音主题
-      - note.状态
+      - note.${NS_FM.time}
+      - note.${NS_FM.mode}
+      - note.${NS_FM.topic}
+      - note.${NS_FM.status}
     sort:
       - property: file.mtime
         direction: DESC
@@ -267,7 +265,7 @@ views:
 \`\`\`dataview
 TASK
 FROM "${folder}"
-WHERE contains(text, this.file.name) OR contains(string(file.frontmatter.todo_owners), this.file.name)
+WHERE contains(text, this.file.name) OR contains(string(file.frontmatter.${NS_FM.todoOwners}), this.file.name)
 SORT file.mtime DESC
 \`\`\`
 
@@ -275,7 +273,7 @@ SORT file.mtime DESC
 
 此处适合手动补充需要长期回看的原文片段。自动聚合以「相关纪要」为准，避免把每次会议里的偶发提及都硬写进人员页。
 
-上方视图由 Obsidian Bases 根据纪要里的「相关人员 / participants / mentioned_people / todo_owners」链接自动聚合；QnALog 只在用户确认人员归属后维护这些本地链接。
+上方视图由 Obsidian Bases 根据纪要里的「相关人员 / ${NS_FM.participants} / ${NS_FM.mentionedPeople} / ${NS_FM.todoOwners}」链接自动聚合；QnALog 只在用户确认人员归属后维护这些本地链接。
 `;
 }
 
@@ -295,46 +293,46 @@ export function formatPeopleBaseYaml() {
 properties:
   file.name:
     displayName: 人员笔记
-  note.姓名:
+  note.${NS_FM.name}:
     displayName: 姓名
-  note.角色:
+  note.${NS_FM.role}:
     displayName: 角色
-  note.常用称呼:
+  note.${NS_FM.aliases}:
     displayName: 常用称呼
-  note.组织:
+  note.${NS_FM.organization}:
     displayName: 组织
-  note.邮箱:
+  note.${NS_FM.email}:
     displayName: 邮箱
-  note.来源:
+  note.${NS_FM.sources}:
     displayName: 相关纪要
-  note.最近更新:
+  note.${NS_FM.updatedAt}:
     displayName: 最近更新
-  note.备注:
+  note.${NS_FM.note}:
     displayName: 备注
 views:
   - type: table
     name: 人员表
     order:
       - file.name
-      - note.姓名
-      - note.角色
-      - note.常用称呼
-      - note.组织
-      - note.邮箱
-      - note.来源
-      - note.最近更新
-      - note.备注
+      - note.${NS_FM.name}
+      - note.${NS_FM.role}
+      - note.${NS_FM.aliases}
+      - note.${NS_FM.organization}
+      - note.${NS_FM.email}
+      - note.${NS_FM.sources}
+      - note.${NS_FM.updatedAt}
+      - note.${NS_FM.note}
     sort:
-      - property: note.姓名
+      - property: note.${NS_FM.name}
         direction: ASC
   - type: cards
     name: 人员卡片
     order:
       - file.name
-      - note.角色
-      - note.组织
-      - note.邮箱
-      - note.最近更新
+      - note.${NS_FM.role}
+      - note.${NS_FM.organization}
+      - note.${NS_FM.email}
+      - note.${NS_FM.updatedAt}
     cardSize: 170
 `;
 }
@@ -342,15 +340,15 @@ views:
 export function formatPeopleNoteMarkdown(name, mdFolder = DEFAULT_SETTINGS.mdFolder) {
   const safeName = String(name || "").trim() || "未命名人员";
   return `---
-type: qnalog-person
-姓名: "${escapeYamlScalar(safeName)}"
-角色: ""
-常用称呼: []
-组织: ""
-邮箱: ""
-来源: []
-最近更新: ""
-备注: ""
+${NS_FM.type}: qnalog-person
+${NS_FM.name}: "${escapeYamlScalar(safeName)}"
+${NS_FM.role}: ""
+${NS_FM.aliases}: []
+${NS_FM.organization}: ""
+${NS_FM.email}: ""
+${NS_FM.sources}: []
+${NS_FM.updatedAt}: ""
+${NS_FM.note}: ""
 tags:
   - ${PEOPLE_DIRECTORY_TAG}
 ---
@@ -364,14 +362,14 @@ tags:
 - 常用称呼：
 - 邮箱：
 
+## 备注
+
+
 ${formatPersonRelatedBriefingsBase(mdFolder).trim()}
 
 ## 最新动态
 
-这里适合手动补充长期观察、合作背景、观点变化和需要回看的重要记录。
-
-## 备注
-
+- 
 `;
 }
 
@@ -798,6 +796,14 @@ ${source}`;
 
 export function mergeSourceNoteRelatedPeopleFrontmatter(frontmatter, personFiles) {
   const fm = Object.assign({}, frontmatter || {});
+  const legacyPeopleLinks = splitPersonFieldValue(fm.people).filter(value => /\[\[[^\]]+\]\]/.test(value));
+  for (const field of [
+    "mode", "time", "duration", "status", "people", "topic", "source", "language",
+    "coreQuestion", "participants", "interviewee", "interviewer", "seminarSubject",
+    "decisionMaker", "advisors",
+  ] as const) {
+    if (hasNamespaceFrontmatter(fm, field)) setNamespaceFrontmatter(fm, field, readNamespaceFrontmatter(fm, field));
+  }
   const records = (personFiles || [])
     .map(item => {
       if (item instanceof obsidian.TFile) return { file: item, relation: "mentioned" };
@@ -805,16 +811,12 @@ export function mergeSourceNoteRelatedPeopleFrontmatter(frontmatter, personFiles
       return null;
     })
     .filter(Boolean);
-  const links = records
-    .map(item => makeFileWikiLink(item.file))
-    .filter(Boolean);
-  const merged = mergeUniqueStrings(fm["相关人员"] || fm.relatedPeople || fm.people || [], links);
-  if (merged.length) fm["相关人员"] = merged;
-  const byRelation = {
-    participants: [],
-    mentioned_people: [],
-    todo_owners: [],
-  };
+  const links = records.map(item => makeFileWikiLink(item.file)).filter(Boolean);
+  const related = mergeUniqueStrings(readNamespaceFrontmatter(fm, "relatedPeople") || legacyPeopleLinks, links);
+  if (related.length || hasNamespaceFrontmatter(fm, "relatedPeople") || legacyPeopleLinks.length) {
+    setNamespaceFrontmatter(fm, "relatedPeople", related);
+  }
+  const byRelation = { participants: [], mentioned_people: [], todo_owners: [] };
   for (const item of records) {
     const link = makeFileWikiLink(item.file);
     if (!link) continue;
@@ -822,31 +824,36 @@ export function mergeSourceNoteRelatedPeopleFrontmatter(frontmatter, personFiles
     else if (item.relation === "todo_owner") byRelation.todo_owners.push(link);
     else byRelation.mentioned_people.push(link);
   }
-  const participants = mergeUniqueStrings(fm.participants || fm["参会人"] || [], byRelation.participants);
-  const mentioned = mergeUniqueStrings(fm.mentioned_people || fm["被提到的人"] || [], byRelation.mentioned_people);
-  const owners = mergeUniqueStrings(fm.todo_owners || fm["待办责任人"] || [], byRelation.todo_owners);
-  if (participants.length) fm.participants = participants;
-  if (mentioned.length) fm.mentioned_people = mentioned;
-  if (owners.length) fm.todo_owners = owners;
-  delete fm.relatedPeople;
-  delete fm.people;
+  const participants = mergeUniqueStrings(readNamespaceFrontmatter(fm, "participants") || [], byRelation.participants);
+  const mentioned = mergeUniqueStrings(readNamespaceFrontmatter(fm, "mentionedPeople") || [], byRelation.mentioned_people);
+  const owners = mergeUniqueStrings(readNamespaceFrontmatter(fm, "todoOwners") || [], byRelation.todo_owners);
+  if (participants.length || hasNamespaceFrontmatter(fm, "participants")) setNamespaceFrontmatter(fm, "participants", participants);
+  if (mentioned.length || hasNamespaceFrontmatter(fm, "mentionedPeople")) setNamespaceFrontmatter(fm, "mentionedPeople", mentioned);
+  if (owners.length || hasNamespaceFrontmatter(fm, "todoOwners")) setNamespaceFrontmatter(fm, "todoOwners", owners);
   return fm;
 }
 
 export function mergePersonFrontmatter(frontmatter, suggestion, sourceFile) {
   const fm = Object.assign({}, frontmatter || {});
-  fm.type = "qnalog-person";
-  if (!String(fm["姓名"] || "").trim()) fm["姓名"] = String(fm.name || "").trim() || suggestion.name;
-  if (!String(fm["角色"] || "").trim()) fm["角色"] = String(fm.role || "").trim() || suggestion.role || "";
-  if (!String(fm["组织"] || "").trim()) fm["组织"] = String(fm.organization || "").trim() || suggestion.organization || "";
-  const aliases = mergeUniqueStrings(fm["常用称呼"] || fm.aliases || [], suggestion.aliases || []);
-  if (aliases.length) fm["常用称呼"] = aliases;
+  setNamespaceFrontmatter(fm, "type", "qnalog-person");
+  const existingName = firstPersonField(fm, "name");
+  const name = existingName || String(suggestion.name || "").trim();
+  setNamespaceFrontmatter(fm, "name", name);
+  for (const field of ["role", "organization", "email"] as const) {
+    const current = readNamespaceFrontmatter(fm, field);
+    const currentText = typeof current === "string" ? current.trim() : "";
+    const suggested = field === "role" ? suggestion.role : field === "organization" ? suggestion.organization : "";
+    setNamespaceFrontmatter(fm, field, currentText ? current : (suggested || ""));
+  }
+  const aliases = mergeUniqueStrings(readNamespaceFrontmatter(fm, "aliases") || [], suggestion.aliases || []);
+  if (aliases.length || hasNamespaceFrontmatter(fm, "aliases")) setNamespaceFrontmatter(fm, "aliases", aliases);
   const sourceLink = makeFileWikiLink(sourceFile);
-  const sources = mergeUniqueStrings(fm["来源"] || fm.sources || [], sourceLink ? [sourceLink] : []);
-  if (sources.length) fm["来源"] = sources;
-  fm["最近更新"] = new Date().toISOString().slice(0, 10);
+  const sources = mergeUniqueStrings(readNamespaceFrontmatter(fm, "sources") || [], sourceLink ? [sourceLink] : []);
+  setNamespaceFrontmatter(fm, "sources", sources);
+  setNamespaceFrontmatter(fm, "updatedAt", new Date().toISOString().slice(0, 10));
   const noteParts = [];
-  if (String(fm["备注"] || fm.note || "").trim()) noteParts.push(String(fm["备注"] || fm.note).trim());
+  const existingNote = firstPersonField(fm, "note");
+  if (existingNote) noteParts.push(existingNote);
   const additions = [];
   if (suggestion.note) additions.push(suggestion.note);
   if (suggestion.evidence && suggestion.evidence.length) additions.push("依据：" + suggestion.evidence.slice(0, 2).join("；"));
@@ -854,17 +861,12 @@ export function mergePersonFrontmatter(frontmatter, suggestion, sourceFile) {
     const line = (sourceLink ? `${sourceLink}：` : "") + additions.join("；");
     if (!noteParts.some(n => n.includes(line))) noteParts.push(line);
   }
-  if (noteParts.length) fm["备注"] = noteParts.join("\n");
+  if (noteParts.length || hasNamespaceFrontmatter(fm, "note")) setNamespaceFrontmatter(fm, "note", noteParts.join("\n"));
   const tags = mergeUniqueStrings(fm.tags || [], [PEOPLE_DIRECTORY_TAG]);
   fm.tags = tags;
-  delete fm.name;
-  delete fm.role;
-  delete fm.organization;
-  delete fm.aliases;
-  delete fm.sources;
-  delete fm.note;
   return fm;
 }
+
 
 export async function generatePeopleDirectorySuggestions(plugin, file, markdown) {
   const people = await loadPeopleDirectory(plugin);

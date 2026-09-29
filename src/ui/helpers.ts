@@ -16,7 +16,7 @@ export {
 } from "../update-source";
 import { VIRTUAL_CABLE_PATTERNS } from '../shared/catalog-import';
 import { normalizeKnowledgeExtractionHistory } from '../shared/util-knowledge';
-import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
+import { NS_FM, NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
 import { INFO_LINE_WORDS_RE } from "../shared/note-labels";
 
 export const SUPPORTED_AUDIO_INPUT_MODES = new Set(["mic", "mix-virtual", "virtualCable"]);
@@ -81,8 +81,13 @@ export function noteHasSuccessfulLlmBriefing(content) {
     if (meaningful.length > 40 && !/合并润色失败|AI 整理失败|Merge failed|AI organizing failed|_\[无输出\]_|_\[No output\]_/.test(body)) return true;
   }
 
-  // frontmatter 兜底：状态已整理 且 *当前可见正文里* 没有失败标记（en 写 status: Organized）
-  return /(?:^|\n)(?:status:\s*(?:published|done|completed|organized)|状态:\s*已整理)\s*$/im.test(fullText)
+  // 新笔记写 canonical 状态；旧英文键与中文值仍用于读取。
+  const successfulStatus = new RegExp(
+    `(?:^|\\n)(?:${NS_FM.status}:\\s*(?:published|done|completed|organized)|status:\\s*(?:published|done|completed|organized))\\s*$`,
+    "im",
+  );
+  const legacyChineseStatus = /(?:^|\n)状态:\s*已整理\s*$/im;
+  return (successfulStatus.test(fullText) || legacyChineseStatus.test(fullText))
     && !/合并润色失败（已加入重试队列）|Merge failed \(queued for retry\)|AI 整理失败|AI organizing failed/.test(text);
 }
 

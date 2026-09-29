@@ -27,15 +27,15 @@ import { escapeRegExp, formatElapsed } from "../shared/util-common";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent-note-paths";
-import { NS_TAG, isDerivedVersionType } from "../shared/namespace";
+import { NS_TAG, isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 import { t as i18nT } from "../shared/i18n";
 export function detectRecentModeFromFrontmatter(settings, frontmatter) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
-  const explicitMode = normalizeModeFromLabel(settings, fm.mode || fm["mode"] || "");
+  const explicitMode = normalizeModeFromLabel(settings, readNamespaceFrontmatter(fm, "mode") || "");
   if (explicitMode) return explicitMode;
-  const explicitType = normalizeModeFromLabel(settings, fm["类型"] || fm.type || fm["模板"] || fm.template || "");
+  const explicitType = normalizeModeFromLabel(settings, readNamespaceFrontmatter(fm, "type") || fm["模板"] || fm.template || "");
   if (explicitType) return explicitType;
   const tags = getFrontmatterTags(fm);
   for (const tag of tags) {
@@ -142,11 +142,8 @@ export function collectRecentTopicValues(value, out) {
 export function collectRecentNoteTopics(frontmatter, title, mode) {
   const topics = new Set();
   const fm = frontmatter || {};
-  collectRecentTopicValues(fm["主题"], topics);
-  collectRecentTopicValues(fm.topic, topics);
-  collectRecentTopicValues(fm.topics, topics);
+  collectRecentTopicValues(readNamespaceFrontmatter(fm, "topic"), topics);
   collectRecentTopicValues(fm.tags, topics);
-  collectRecentTopicValues(fm["tags"], topics);
 
   const source = `${title || ""} ${mode || ""}`;
   if (mode === "learning" || /学习|课程|讲座|视频|B站|YouTube/i.test(source)) topics.add(t("Learning"));
@@ -173,7 +170,8 @@ export function getRecentNoteQuickStatus(plugin, file, pendingPathSet) {
   const path = file && file.path ? obsidian.normalizePath(file.path) : "";
   if (path && pendingPathSet && pendingPathSet.has(path)) return "pending";
   const frontmatter = ((plugin.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-  const statusText = String(frontmatter.status || frontmatter["状态"] || "").trim();
+  const statusValue = readNamespaceFrontmatter(frontmatter, "status");
+  const statusText = typeof statusValue === "string" ? statusValue.trim() : "";
   if (/失败|failed/i.test(statusText)) return "failed";
   if (/待|草稿|未整理|raw|draft/i.test(statusText)) return "raw";
   return "done";
@@ -224,15 +222,16 @@ export function getRecentNotes(plugin, limit) {
   for (const f of getMarkdownFilesUnderRecentRoots(plugin)) {
     if (!(f instanceof obsidian.TFile) || f.extension !== "md") continue;
     const frontmatter = ((plugin.app.metadataCache.getFileCache(f) || {}).frontmatter) || {};
-    // 派生版本（清稿/另存版本等）不当独立会议罗列——收集起来，稍后按 source_path 挂到母本下。
-    if (isDerivedVersionType(frontmatter["类型"]) || frontmatter.contains_raw === false) {
+    // 派生版本（清稿/另存版本等）不当独立会议罗列，按 qnalog_source_path 归并到母本。
+    if (isDerivedVersionType(readNamespaceFrontmatter(frontmatter, "type"))
+      || readNamespaceFrontmatter(frontmatter, "containsRaw") === false) {
       variantFiles.push({ file: f, fm: frontmatter });
       continue;
     }
     const mode = detectRecentNoteMode(plugin, f, frontmatter);
     // 是否 QnALog 纪要：能识别出 mode（非 off）或 frontmatter 自带 mode / qnalog 标记。
     // 手动改名（丢掉日期前缀）的纪要也要保留，否则在纪要面板里找不到、没法重新整理。
-    const isNoteRef = (mode && mode !== "off") || !!frontmatter.mode
+    const isNoteRef = (mode && mode !== "off") || !!readNamespaceFrontmatter(frontmatter, "mode")
       || new RegExp(NS_TAG, "i").test(String(frontmatter.tags || frontmatter.tag || ""));
     const m = f.basename.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{4}))?/);
     if (!m && !isNoteRef) continue;
@@ -243,7 +242,7 @@ export function getRecentNotes(plugin, limit) {
     }
     if (!t || !t.isValid()) {
       // 无合法日期前缀（典型=被手动改名）→ 退回 frontmatter 时间，再退回文件 ctime/mtime。
-      const fmTime = frontmatter.time || frontmatter["时间"] || frontmatter.date || frontmatter["日期"];
+      const fmTime = readNamespaceFrontmatter(frontmatter, "time") || frontmatter.date || frontmatter["日期"];
       t = fmTime ? moment(fmTime) : null;
       if (!t || !t.isValid()) t = moment((f.stat && (f.stat.ctime || f.stat.mtime)) || undefined);
     }
@@ -262,7 +261,7 @@ export function getRecentNotes(plugin, limit) {
     if (!title) title = f.basename;
     const weekday = QNALOG_EN_WEEKDAYS[t.day()] || t.format("dddd");
     const sameYear = t.year() === currentYear;
-    const durationLabel = formatRecentDurationLabel(frontmatter["时长"] || frontmatter.duration || frontmatter["duration"]);
+    const durationLabel = formatRecentDurationLabel(readNamespaceFrontmatter(frontmatter, "duration"));
     const topics = collectRecentNoteTopics(frontmatter, title, mode);
     const quickStatus = getRecentNoteQuickStatus(plugin, f, pendingPathSet);
     const folder = getRecentFolderInfo(plugin, f);
@@ -290,7 +289,8 @@ export function getRecentNotes(plugin, limit) {
     const byPath = new Map();
     for (const it of items) byPath.set(obsidian.normalizePath(it.file.path), it);
     for (const v of variantFiles) {
-      const sp = v.fm.source_path ? obsidian.normalizePath(String(v.fm.source_path)) : "";
+      const sourcePath = readNamespaceFrontmatter(v.fm, "sourcePath");
+      const sp = typeof sourcePath === "string" && sourcePath ? obsidian.normalizePath(sourcePath) : "";
       const host = sp ? byPath.get(sp) : null;
       if (!host) continue;
       (host.variants || (host.variants = [])).push({

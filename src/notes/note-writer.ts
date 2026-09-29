@@ -20,7 +20,7 @@ import { buildRenamedMarkdownPath, extractAllRawBlocksFromText, extractTranscrip
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker } from "../shared/namespace";
+import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, readNamespaceFrontmatter } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 import { labelText } from "../shared/note-labels";
@@ -454,9 +454,9 @@ export class NoteWriter {
       const fallbackMode = detectRecentModeFromFilename(this.host.settings, file.basename);
       return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
     }
-    const m = cache.mode;
+    const m = readNamespaceFrontmatter(cache, "mode");
     if (typeof m === "string" && isKnownPolishMode(this.host.settings, m)) return m;
-    const typeStr = String(cache["类型"] || cache.type || "").trim();
+    const typeStr = String(readNamespaceFrontmatter(cache, "type") || cache["模板"] || cache.template || "").trim();
     const typeToMode = {
       "学习": "learning",
       "学习记录": "learning",

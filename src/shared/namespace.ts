@@ -1,10 +1,10 @@
 // 数据层命名空间：写在用户文件里的品牌字面量。
 //
-// QnALog 是独立项目，与任何历史项目不共享数据。因此这里的规则只有一条：
-//
-//   **写入与读取都只认 QnALog 字面量。**
-//
-// 本模块是这些字面量的唯一来源，业务代码不要自行拼接 `qnalog-` 前缀。
+// QnALog 是独立项目，不读取其他项目的品牌标记。标签和标记只写入、读取 QnALog 字面量。
+// Frontmatter 业务字段另有明确的别名表：兼容 QnALog 旧版的中文与未加前缀英文键，
+// 新写入始终使用下方 canonical qnalog_* 键；这不构成旧项目数据迁移。
+
+// 本模块是品牌与 Frontmatter 字面量的唯一来源。业务代码不得拼接 qnalog 前缀；
 // 新增标记时在这里登记名字，读侧用 nsRe(name) 生成正则。
 
 /** 命名空间。 */
@@ -117,12 +117,133 @@ export function isNamespaceTag(tag: unknown): boolean {
 
 /** frontmatter 键：说话人映射。 */
 export const NS_FM_SPEAKERS = "qnalog_speakers";
+/** QnALog 管理的稳定 Frontmatter 字段；`tags` 保留为 Obsidian 标准属性。 */
+export const NS_FM = {
+  mode: "qnalog_mode",
+  time: "qnalog_time",
+  duration: "qnalog_duration",
+  status: "qnalog_status",
+  people: "qnalog_people",
+  topic: "qnalog_topic",
+  source: "qnalog_source",
+  language: "qnalog_language",
+  coreQuestion: "qnalog_core_question",
+  participants: "qnalog_participants",
+  interviewee: "qnalog_interviewee",
+  interviewer: "qnalog_interviewer",
+  seminarSubject: "qnalog_seminar_subject",
+  decisionMaker: "qnalog_decision_maker",
+  advisors: "qnalog_advisors",
+  type: "qnalog_type",
+  sourcePath: "qnalog_source_path",
+  containsRaw: "qnalog_contains_raw",
+  name: "qnalog_name",
+  role: "qnalog_role",
+  aliases: "qnalog_aliases",
+  organization: "qnalog_organization",
+  email: "qnalog_email",
+  sources: "qnalog_sources",
+  updatedAt: "qnalog_updated_at",
+  note: "qnalog_note",
+  relatedPeople: "qnalog_related_people",
+  mentionedPeople: "qnalog_mentioned_people",
+  todoOwners: "qnalog_todo_owners",
+  mergedInto: "qnalog_merged_into",
+  mergedAt: "qnalog_merged_at",
+} as const;
+
+export type NamespaceFrontmatterField = keyof typeof NS_FM;
+
+const NS_FM_LEGACY_KEYS: Partial<Record<NamespaceFrontmatterField, readonly string[]>> = {
+  mode: ["mode", "模式", "模板"],
+  time: ["time"],
+  duration: ["duration", "时长"],
+  status: ["status", "状态"],
+  people: ["people", "人物"],
+  topic: ["topic", "topics", "主题", "录音主题"],
+  source: ["source", "来源"],
+  language: ["language", "语言"],
+  coreQuestion: ["core_question", "核心问题"],
+  participants: ["participants", "参会人", "与会人", "参与者", "出席人"],
+  interviewee: ["interviewee", "受访者"],
+  interviewer: ["interviewer", "访问者", "面试官"],
+  seminarSubject: ["seminar_subject", "subject", "研讨对象", "议题"],
+  decisionMaker: ["decision_maker", "当事人"],
+  advisors: ["advisors", "参谋"],
+  type: ["type", "类型"],
+  sourcePath: ["source_path"],
+  containsRaw: ["contains_raw"],
+  name: ["name", "姓名", "人员", "person"],
+  role: ["role", "角色", "岗位", "职能", "职位", "职称", "title"],
+  aliases: ["aliases", "常用称呼", "称呼", "alias"],
+  organization: ["organization", "组织", "公司", "团队", "部门", "机构", "institute"],
+  email: ["email", "邮箱", "邮箱地址", "邮件", "mail", "e-mail"],
+  sources: ["sources", "来源"],
+  updatedAt: ["updated_at", "最近更新"],
+  note: ["note", "备注", "说明", "简介", "abstract"],
+  relatedPeople: ["relatedPeople", "相关人员"],
+  mentionedPeople: ["mentioned_people", "被提到的人"],
+  todoOwners: ["todo_owners", "待办责任人"],
+  mergedInto: ["merged_into", "已合并到"],
+  mergedAt: ["merged_at", "合并日期"],
+};
+
+/** canonical key 优先；没有 canonical key 时兼容旧中文/英文属性，并合并并列数组。 */
+export function readNamespaceFrontmatter(frontmatter: unknown, field: NamespaceFrontmatterField): unknown {
+  if (!frontmatter || typeof frontmatter !== "object") return undefined;
+  const values = frontmatter as Record<string, unknown>;
+  const canonical = NS_FM[field];
+  if (Object.prototype.hasOwnProperty.call(values, canonical)) return values[canonical];
+  const legacyKeys = NS_FM_LEGACY_KEYS[field] || [];
+  let firstValue: unknown;
+  let found = false;
+  let merged: unknown[] | null = null;
+  for (const legacyKey of legacyKeys) {
+    if (!Object.prototype.hasOwnProperty.call(values, legacyKey)) continue;
+    const value = values[legacyKey];
+    if (!found) {
+      firstValue = value;
+      found = true;
+      continue;
+    }
+    if (field !== "people" && field !== "participants" && field !== "advisors"
+      && field !== "interviewee" && field !== "aliases" && field !== "sources"
+      && field !== "relatedPeople" && field !== "mentionedPeople" && field !== "todoOwners"
+      && !Array.isArray(firstValue) && !Array.isArray(value)) continue;
+    if (!merged) merged = Array.isArray(firstValue) ? firstValue.slice() : [firstValue];
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined && item !== null && !merged.includes(item)) merged.push(item);
+    }
+  }
+  return merged || (found ? firstValue : undefined);
+}
+
+/** true when canonical or historical spelling is present, including an explicitly empty value. */
+export function hasNamespaceFrontmatter(frontmatter: unknown, field: NamespaceFrontmatterField): boolean {
+  if (!frontmatter || typeof frontmatter !== "object") return false;
+  const values = frontmatter as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(values, NS_FM[field])) return true;
+  for (const legacyKey of NS_FM_LEGACY_KEYS[field] || []) {
+    if (Object.prototype.hasOwnProperty.call(values, legacyKey)) return true;
+  }
+  return false;
+}
+
+/** 写入 canonical key，并从本次更新的 frontmatter 副本中移除对应旧键。 */
+export function setNamespaceFrontmatter(
+  frontmatter: Record<string, unknown>,
+  field: NamespaceFrontmatterField,
+  value: unknown,
+): void {
+  frontmatter[NS_FM[field]] = value;
+  for (const legacyKey of NS_FM_LEGACY_KEYS[field] || []) delete frontmatter[legacyKey];
+}
 
 /** frontmatter 类型值。 */
 export const NS_TYPE_DERIVED = "QnALog派生版本";
 export const NS_TYPE_VERSION_CACHE = "QnALog版本缓存";
 
-/** `类型` 字段是否为「派生版本」。 */
+/** `qnalog_type`（历史别名 `类型`）是否表示派生版本。 */
 export function isDerivedVersionType(value: unknown): boolean {
   const text = typeof value === "string" ? value.trim() : "";
   return text === NS_TYPE_DERIVED;

@@ -19,7 +19,7 @@ Facts to know before changing code:
 
 - `main.js` is a committed build artifact. After changing `src/`, run `npm run build` and commit `main.js` in the same commit — CI rebuilds from a clean checkout and rejects any byte mismatch.
 - The version number lives in four files (`manifest.json`, `package.json`, `package-lock.json`, `versions.json`); `npm run check:versions` fails the build if they drift.
-- All project identifiers use the `qnalog` namespace (tags `qnalog/*`, folders `QnALog/`, CSS `qnalog-*`, frontmatter keys `qnalog_*`). References to the upstream repository or its update sources are rejected by CI (`check:mainline-isolation`).
+- QnALog note and people metadata use stable `qnalog_*` properties in every interface language; `tags` remains Obsidian's standard property. Readers accept historical Chinese and unprefixed English field names. New notes and notes rewritten through their normal user-triggered workflow use canonical `qnalog_*` names; the plugin does not scan the vault to migrate old notes.
 
 ## Pull requests
 

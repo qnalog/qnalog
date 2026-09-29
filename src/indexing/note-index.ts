@@ -1,4 +1,4 @@
-import { NS_TAG, nsRe } from "../shared/namespace";
+import { NS_FM, NS_TAG, nsRe } from "../shared/namespace";
 import { labelPattern, labelText, UTILITY_HEADING_RE } from "../shared/note-labels";
 
 // 写入用折叠壳新格式（标记在外、details+json 围栏在内，阅读视图折叠为一行）；
@@ -226,7 +226,7 @@ function firstSentence(value: string): string {
 
 function inferMeetingDate(markdown: string, explicit: unknown, noteTitle: unknown): string {
   const source = textValue(explicit).trim()
-    || extractFrontmatterScalar(markdown, ["time", "日期", "date", "created"])
+    || extractFrontmatterScalar(markdown, [NS_FM.time, "time", "日期", "date", "created"])
     || textValue(noteTitle);
   const match = /(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/.exec(source);
   if (!match) return "";
