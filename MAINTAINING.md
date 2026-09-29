@@ -507,7 +507,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 - [x] 设置页不得静默改写用户配置：已完成。`renderSpeaker` 改为只在内存里借用第一个可用服务渲染界面，设置保持用户原值，并在页面上说明原因（`settings-tab.ts:1436`）。
 - [x] 自定义服务的密钥必填判定：已完成。未知 provider 按 endpoint 推断（`asr/transcribe-profile-service.ts:253`）。
-- [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
+- [x] 依赖锁定：`obsidian` 已由 PR #77 钉为 1.11.4；其余 9 个包于 2026-09-29 钉到 lock 已解析版本。`esbuild` 与 vite 8 的 peer 范围冲突已通过选择 0.28.2 解决。
 - [ ] 类型检查盲区：3 个文件带 `@ts-nocheck`（`asr/clients.ts`、`ui/settings-tab.ts`、`ui/modals.ts`），不参与类型检查；`tsconfig.strict-core.json` 覆盖 52 个文件（2026-09-24 起）。2026-09-14 已把其余 44 个清完（47 → 3），做法与逐文件成本见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算，能通过检查就不加。
   - 已完成：2026-09-14 分两批让 26 个文件退出 `@ts-nocheck`（47 → 21）：先 14 个零错误的，再 12 个低错误的（1–7 处）。做法、逐文件成本与修法见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算确认能否通过检查，能通过就不加。
 
