@@ -115,6 +115,8 @@ export interface PluginSettings {
   htmlReportFolder: string;
   reportBrandName: string;
   noteFileNameFormatNew: string;
+  /** 稳定区分不同知识库的 Obsidian SecretStorage 条目；不是密钥。 */
+  apiKeyStorageNamespace: string;
   transcribeEndpoint: string;
   transcribeApiKey: string;
   transcribeModel: string;
@@ -198,6 +200,7 @@ export interface PluginSettings {
 
 export interface PersistedPluginSettings {
   schemaVersion: number;
+  security: Record<string, unknown>;
   storage: Record<string, unknown>;
   noteNaming: Record<string, unknown>;
   capture: Record<string, unknown>;

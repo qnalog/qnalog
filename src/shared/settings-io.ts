@@ -37,7 +37,7 @@ import type {
 //   saved > current → 不写盘（用户回退了插件版本）；
 //   无版本号/无法识别 → 丢弃重建，但先留档。
 // 这个常量因此只再作为「这份 data.json 是不是本版本写的」的标记存在。
-export const SETTINGS_SCHEMA_VERSION = 1;
+export const SETTINGS_SCHEMA_VERSION = 2;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -222,6 +222,8 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   const defaults = DEFAULT_SETTINGS;
   const s: PluginSettings = { ...defaults };
 
+  const security = asRecord(raw.security);
+  s.apiKeyStorageNamespace = firstString(defaults.apiKeyStorageNamespace, security.apiKeyStorageNamespace, raw.apiKeyStorageNamespace);
   const storage = asRecord(raw.storage);
   s.audioFolder = firstString(defaults.audioFolder, storage.recordingLibraryPath, raw.audioFolder);
   s.mdFolder = firstString(defaults.mdFolder, storage.briefingNotePath, raw.mdFolder);
@@ -434,6 +436,9 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
 export function serializePluginSettings(s: PluginSettings): PersistedPluginSettings {
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
+    security: {
+      apiKeyStorageNamespace: s.apiKeyStorageNamespace,
+    },
     storage: {
       recordingLibraryPath: s.audioFolder,
       briefingNotePath: s.mdFolder,

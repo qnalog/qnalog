@@ -12,7 +12,7 @@ QnALog stores plugin settings locally in your vault under:
 .obsidian/plugins/qnalog/data.json
 ```
 
-This file may contain service addresses, model names, API keys, prompt templates, queue items, and user-entered context. It is intentionally excluded from the repository by `.gitignore` and should not be committed or shared. Note that API keys are stored obfuscated, not encrypted: the decoding salt ships in `main.js`, so treat the file as sensitive.
+This file may contain service addresses, model names, prompt templates, queue items, and user-entered context. It is intentionally excluded from the repository by `.gitignore` and should not be committed or shared. Current API keys are stored through Obsidian SecretStorage and are not written to `data.json` after migration. Older plugin data and install backups may still contain API keys in plaintext or obfuscated form. The Obsidian API reference does not specify whether SecretStorage syncs or how it stores values; verify key availability on each installation.
 
 ## Network access
 

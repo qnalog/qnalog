@@ -119,9 +119,7 @@ P2（视图层）在以上约定之外另有三条：
 `install-to-vault.mjs` 不再从 `lexvoice` / `lexvoice-mit` 继承设置，只处理"已有 QnALog → 留档 → 装新 QnALog"。
 许可来源（`LICENSE`、`NOTICE`、README 的 Origin、产物 banner）不参与改名。
 
-**密钥混淆盐**（`qnk1:` + `QnALog/local-key-obfuscation/v1`）只认本插件自己的 marker：
-前缀不匹配的串不解密、原样返回，不会被当成密文处理。换过盐的旧值解不出来，
-用户在设置页重新填写即可。
+**旧 API Key 混淆格式**（marker `qnk1:`，盐 `QnALog/local-key-obfuscation/v1`）只用于读取旧版 `data.json`。设置结构迁移 1 → 2 会把这些值解码后写入 Obsidian SecretStorage；新写入的 `data.json` 中 API Key 字段为空。Obsidian 1.11.4 起提供 `app.secretStorage`，因此 `manifest.json` 的最低版本为 1.11.4。
 
 ### 1.2 第二条：按需要灵活添加提升性功能
 
@@ -221,7 +219,7 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 社区目录 | 上游 `lexvoice` 条目仍在 | 不可控。它只能被用户主动安装，不会替换本插件；README 已说明两者并存时的处理。 |
 | 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`QnALog`**（含 `manifest.json` 的 `name`）。2026-09-28 起弃用旧书面名 `Q&A Log`：Obsidian 插件命名规范只允许基本拉丁字母与连字符、加号、括号，`&` 不在允许列表；macOS 原生菜单还会把 `&` 当快捷键标记吃掉。**名称里不得再出现 `&`。** 版权署名 `Q&A Log Team` 与提交身份显示名 `Q&A Log` 属于署名，不随产品名改。程序性标识仍是小写 `qnalog` 与 `QNALOG_*`（见下两行）。 |
 | 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 2026-09-14 已统一为 `qnalog`：这些字符串只存在于代码里，不写用户文件。**新代码不得再引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量。** |
-| 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、Frontmatter 业务字段 `qnalog_*`（`qnalog_speakers` 等）、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 起统一品牌命名空间；Frontmatter 业务字段另按 §1.1.2 兼容历史中文和未加前缀的英文键。插件不扫描或批量改写笔记，单篇重整/更新写 canonical 键。字段字面量集中在 `src/shared/namespace.ts`；新代码不得引入 `lexvoice-*` 字面量。默认目录子目录名按界面语言在读取时取（`src/shared/defaults.ts` 的 `FOLDER_NAMES`），已保存路径优先。 |
+| 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、Frontmatter 业务字段 `qnalog_*`（`qnalog_speakers` 等）、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、旧密钥解码 marker `qnk1:` 与盐 `QnALog/local-key-obfuscation/v1` | 2026-09-15 起统一品牌命名空间；Frontmatter 业务字段另按 §1.1.2 兼容历史中文和未加前缀的英文键。插件不扫描或批量改写笔记，单篇重整/更新写 canonical 键。字段字面量集中在 `src/shared/namespace.ts`；新代码不得引入 `lexvoice-*` 字面量。`qnk1:` 与盐仅用于读取迁移前的 `data.json`，新写入的 API Key 使用 Obsidian SecretStorage。默认目录子目录名按界面语言在读取时取（`src/shared/defaults.ts` 的 `FOLDER_NAMES`），已保存路径优先。 |
 
 发版前的指针检查清单——已固化为脚本：CI 每次 push 都会跑，本地 `npm run verify` 也包含（2026-09-15 起并入，避免只在改动特定文件时手跑而漏掉）：
 
@@ -322,7 +320,7 @@ git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
 
 - `npm run install:vault -- "<知识库>"`：安装/更新到知识库。覆盖前把目标插件目录**整份**留档到 `<知识库>/.obsidian/qnalog-install-backups/<时间戳>/`；2026-09-15 起不再从 `lexvoice` / `lexvoice-mit` 目录继承设置（本插件按独立产品维护）。检测到上游插件目录时只提示存在，不读取、不移动、不删除其内容。
 - `npm run restore:vault -- "<备份目录>" ["<知识库>"] [--set-enabled]`：从备份还原。动手前再把当前目录另存一份（`<时间戳>-before-restore/`），所以回滚本身可撤销。
-- 设置结构不一致时：`loadAll` 丢弃磁盘上的设置与持久化队列，按默认值重建，弹通知并在诊断日志里记一条（`settings.schema_reset`）。**不要**把这段逻辑退回成静默沿用旧值。
+- 设置结构处理见 §4.5：旧版且可迁移时保留配置并向前迁移；当前版本直接读回；更新版本保持只读；无法识别的数据先留档再用默认值重建。
 
 ### 4.3.1 合并前置：维护者本地验证
 
@@ -443,6 +441,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 2. 在 `SETTINGS_MIGRATIONS` 里登记 `[旧版本]: (settings) => 迁移后的 settings`，
    只负责那一次结构变更，**不要重建整个对象**（那会把用户填的值换成默认值）；
 3. 在 `tests/settings-schema-policy.test.ts` 加一条「旧版 data.json → 用户配置仍在」的用例。
+
+本次 1 → 2 迁移新增 `security.apiKeyStorageNamespace`，用于区分不同知识库的 SecretStorage 条目。`loadAll` 先恢复或导入 API Key；只有 SecretStorage 写入成功后，`saveAll` 才清空设置快照中的密钥字段。Obsidian SecretStorage 没有删除方法，清除密钥时写入空值；设置版本高于当前版本时不改动 SecretStorage，也不写 `data.json`。
 
 缺链时 `migrateSettingsForward` 返回 `null` 而不是半成品，调用方据此不写盘——
 宁可让用户停在可读状态，也不要用一半的迁移结果覆盖他的配置。
@@ -658,7 +658,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 ## 9. 设置映射表
 
-维护多个设置界面之前，先把**每一份设置的当前状态**盘清：入口、默认值、落盘键、作用与归属。本节是 2026-09-15 盘点的产物，覆盖 `PluginSettings` 的全部 **89** 个顶层键，`SETTINGS_SCHEMA_VERSION = 1`。
+维护多个设置界面之前，先把**每一份设置的当前状态**盘清：入口、默认值、落盘键、作用与归属。本节覆盖 `PluginSettings` 的全部 **87** 个顶层键，`SETTINGS_SCHEMA_VERSION = 2`。
 
 **三列由脚本从源码解析生成，不是手工抄写**，因此不会与代码脱节：默认值取自 `src/shared/defaults.ts`；落盘位置与读回别名取自 `src/shared/settings-io.ts` 的 `serializePluginSettings` 与 `normalizePluginSettings`；现入口取自 `src/ui/settings-tab.ts` 及其余 UI 写点（侧边栏、命令面板、弹窗、拖动）。`scripts/check-settings-map.mjs` 会核对本表的键集合与落盘路径，键增删或改路径而未更新本节时构建失败。
 
@@ -683,6 +683,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `htmlReportFolder` | `${NS_ROOT}/HTML报告` | `storage.htmlReportPath` | — | HTML 报告保存目录 | AI 整理 | 高级 · 输出 |
 | `reportBrandName` | `""` | `presentation.reportBrandName` | — | 「研讨」报告页脚公司名；留空则取纪要里的公司标签 | AI 整理 | 高级 · 输出 |
 | `noteFileNameFormatNew` | `"YYYY-MM-DD HHmm"` | `noteNaming.sessionPattern` | — | 纪要文件名日期格式 | 录音 | 高级 · 输出 |
+| `apiKeyStorageNamespace` | `""` | `security.apiKeyStorageNamespace` | — | 区分不同知识库的 SecretStorage 条目 | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeEndpoint` | `"https://api.siliconflow.cn/v1/audio/transcriptions"` | `speech.compatEndpoint` | — | 兼容兜底：provider 未填地址时的回退（asr/transcribe.ts:147） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeApiKey` | `""` | `speech.compatApiKey` | — | 兼容兜底：provider 未填密钥时的回退（asr/transcribe.ts:148） | 无 | 内部（保留存储，不进设置界面） |
 | `transcribeModel` | `"FunAudioLLM/SenseVoiceSmall"` | `speech.compatModel` | — | 兼容兜底：provider 未填模型时的回退（asr/transcribe.ts:149） | 无 | 内部（保留存储，不进设置界面） |

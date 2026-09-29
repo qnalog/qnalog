@@ -185,11 +185,6 @@ export function replaceActiveVersionBlock(markdown, versionMeta, body) {
   ].filter(Boolean).join("\n") + rawTail;
 }
 
-// ===== API 密钥本地存储混淆 =====
-// 目标：data.json 里不出现可直接读取的明文密钥（满足"不是明文"承诺、防止截图/误分享 data.json 泄露）。
-// 诚实说明：这是「混淆」不是「加密」—— 因为本插件开源，变换算法公开，能拿到 data.json + 读源码的人仍可还原。
-// 但它消除了"密钥以 sk-xxx 明文躺在配置文件里"这一最常见的泄露面，且密钥从不离开本地（仅在调用 API 时发往对应服务端点）。
-// 内存中 settings 始终保存明文密钥，所有调用大模型/转写的代码无需改动；只有落盘的 data.json 是混淆态。
 
 export function normalizeModeFromLabel(settings, label) {
   const text = String(label || "").trim();

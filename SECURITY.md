@@ -10,6 +10,6 @@ Report suspected vulnerabilities privately to this repository's maintainer rathe
 
 ## Notes for users
 
-- Do not publish `.obsidian/plugins/qnalog/data.json`; it may contain API keys and prompt/context data.
+- Do not publish `.obsidian/plugins/qnalog/data.json`; it may contain prompt/context data or API keys left by an older version. Current API keys are stored through Obsidian SecretStorage.
 - Use your own API keys and rotate them if they were ever committed or shared.
 - Review configured transcription and AI endpoints before sending sensitive recordings.

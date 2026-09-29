@@ -13,6 +13,12 @@ export const NS_TAG = "qnalog";
 /** 知识库数据根目录。 */
 export const NS_ROOT = "QnALog";
 
+/** Obsidian SecretStorage key prefix. */
+export const NS_API_KEY_SECRET_PREFIX = nsRe("key");
+/** Legacy API-key encoding identifiers; read-only after the SecretStorage migration. */
+export const NS_LEGACY_KEY_OBFUSCATION_MARKER = "qnk1:";
+export const NS_LEGACY_KEY_OBFUSCATION_SALT = "QnALog/local-key-obfuscation/v1";
+
 /** 生成标记正则片段。`nsRe("session")` → `qnalog-session` */
 export function nsRe(name: string): string {
   return `${NS_TAG}-${name}`;

@@ -123,7 +123,7 @@ Default folders (all configurable in settings). Names are chosen once at first i
 
 Required:
 
-- Obsidian 1.10.0 or later
+- Obsidian 1.11.4 or later
 - A speech-to-text service (cloud API or local)
 - A vault folder for recordings and notes
 
@@ -151,7 +151,7 @@ If the level meter does not move, run the device check before starting a long re
 
 ## Privacy, network, and file access
 
-No ads, no analytics, no telemetry. Settings are stored locally in `.obsidian/plugins/qnalog/data.json`.
+No ads, no analytics, no telemetry. Plugin settings are stored locally in `.obsidian/plugins/qnalog/data.json`; API keys are stored through Obsidian SecretStorage, not in that file. When using another Obsidian installation, confirm that SecretStorage has the keys and re-enter any that are missing.
 
 **Network use.** QnALog works offline unless you configure a service that needs the network. When you do, requests go only to the endpoints you configure:
 

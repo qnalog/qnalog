@@ -388,7 +388,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     let oneCardProvider = getActiveUiLanguage().id === "en" ? "openrouter" : "bailian";
     let oneCardKey = "";
     const providerRow = new obsidian.Setting(oneCard).setName(t("Provider"));
-    providerRow.setDesc(t("Enter the API key for this provider. Keys are stored only in this vault's plugin settings."));
+    providerRow.setDesc(t("Enter the API key for this provider. QnALog stores keys through Obsidian SecretStorage, not in its plugin settings file."));
     providerRow.addDropdown(d => {
       for (const [id, preset] of Object.entries(ONE_CARD_PROVIDERS)) {
         d.addOption(id, preset.label);

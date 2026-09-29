@@ -107,7 +107,17 @@ class PluginBase extends ObsidianBase {
   onLayoutReady(fn) { fn(); }
 }
 
+const secrets = new Map();
+
 const app = {
+  secretStorage: {
+    getSecret: (id) => secrets.has(id) ? secrets.get(id) : null,
+    listSecrets: () => [...secrets.keys()],
+    setSecret: (id, secret) => {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error("invalid SecretStorage id");
+      secrets.set(id, secret);
+    },
+  },
   vault: {
     configDir: ".obsidian",
     adapter: { exists: async () => false, read: async () => "{}", write: async () => undefined, readBinary: async () => new ArrayBuffer(0) },
@@ -176,6 +186,15 @@ function makeSandbox() {
       return require(id);
     },
     console,
+    TextEncoder,
+    TextDecoder,
+    atob,
+    crypto: {
+      getRandomValues: (bytes) => {
+        for (let index = 0; index < bytes.length; index += 1) bytes[index] = index + 1;
+        return bytes;
+      },
+    },
     setTimeout, clearTimeout, setInterval, clearInterval,
     document,
     navigator: { clipboard: { writeText: async () => undefined } },
@@ -210,7 +229,7 @@ async function main() {
   const PluginClass = sandbox.module.exports?.default || sandbox.module.exports;
   expect(typeof PluginClass === "function", "main.js 没有导出插件类");
 
-  const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
+  const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.11.4" });
   try {
     await plugin.onload();
   } catch (error) {
@@ -289,43 +308,49 @@ async function main() {
   // 用独立实例驱动真实的 loadAll——复用主实例会把它的域服务状态搅乱，
   // 导致后面的装配断言误报（实测过）。
   try {
-    const probe = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
+    const probe = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.11.4" });
     await probe.onload();
-    // 直接 import .ts 会因 obsidian 包不可解析而失败；从已构建的 bundle 里取常量。
-    const { readFileSync } = await import("node:fs");
-    const bundleText = readFileSync(new URL("../main.js", import.meta.url), "utf8");
-    const versionMatch = bundleText.match(/SETTINGS_SCHEMA_VERSION\s*=\s*(\d+)/)
-      || bundleText.match(/schemaVersion:\s*(\d+)/);
+    const settingsSource = readFileSync(new URL("../src/shared/settings-io.ts", import.meta.url), "utf8");
+    const versionMatch = settingsSource.match(/SETTINGS_SCHEMA_VERSION\s*=\s*(\d+)/);
     const CURRENT = versionMatch ? Number(versionMatch[1]) : NaN;
-    expect(Number.isFinite(CURRENT), "无法从产物里读出 SETTINGS_SCHEMA_VERSION");
+    expect(Number.isFinite(CURRENT), "无法从设置源码读出 SETTINGS_SCHEMA_VERSION");
     const userData = {
       settings: {
         schemaVersion: CURRENT,
         storage: { recordingLibraryPath: "QnALog/录音", briefingNotePath: "QnALog/转写纪要" },
-        speech: { providers: { siliconflow: { apiKey: "qnk1:用户的密钥" } } },
-        composer: { apiKey: "qnk1:用户的LLM密钥", model: "用户选的模型" },
+        speech: { providers: { siliconflow: { apiKey: "qnk1:JQsyOEIGXwVCCAQV" } } },
+        composer: { apiKey: "qnk1:JQsyOEIGXwVCCAQV", model: "用户选的模型" },
       },
       backgroundJobs: { items: [{ id: "t1", mdPath: "QnALog/转写纪要/a.md" }] },
     };
     probe.storedData = userData;
     probe.savedCount = 0;
     await probe.loadAll();
-    expect(probe.settings.transcribeProviders?.siliconflow?.apiKey === "qnk1:用户的密钥",
-      "版本一致时用户的转写服务密钥丢失");
-    expect(probe.settings.llmApiKey === "qnk1:用户的LLM密钥", "版本一致时用户的 LLM 密钥丢失");
+    expect(probe.settings.transcribeProviders?.siliconflow?.apiKey === "test-api-key",
+      `版本一致时用户的转写服务密钥丢失（SecretStorage 条目数 ${secrets.size}）`);
+    expect(probe.settings.llmApiKey === "test-api-key", `版本一致时用户的 LLM 密钥丢失（SecretStorage 条目数 ${secrets.size}）`);
     expect(probe.settings.llmModel === "用户选的模型", "版本一致时用户选的模型丢失");
     // 注意：loadAll 只负责把队列读进 persistedQueue，queue.load() 在 onload 里另调一次。
-    expect(probe.persistedQueue.length === 1, `版本一致时持久化队列被清空（${probe.persistedQueue.length}）`);
+    expect(probe.persistedQueue.length === 1, "版本一致时持久化队列被清空");
+    expect(probe.lastSaved.settings.speech.providers.siliconflow.apiKey === "",
+      "迁移后 data.json 仍包含转写 API Key");
+    expect(probe.lastSaved.settings.composer.apiKey === "",
+      "迁移后 data.json 仍包含 LLM API Key");
+    expect([...secrets.values()].filter(value => value === "test-api-key").length === 2,
+      "迁移后 SecretStorage 缺少转写或 LLM API Key");
 
+    secrets.clear();
     // 版本更高（用户回退了插件）：必须一个字节都不写回
-    probe.storedData = { settings: { schemaVersion: CURRENT + 1, composer: { apiKey: "qnk1:新版的密钥" } } };
+    probe.storedData = { settings: { schemaVersion: CURRENT + 1, security: { apiKeyStorageNamespace: probe.settings.apiKeyStorageNamespace }, composer: { apiKey: "future-key" } } };
     probe.savedCount = 0;
     await probe.loadAll();
     await probe.saveAll();
     expect(probe.savedCount === 0,
       `磁盘设置来自更高版本时仍写盘了 ${probe.savedCount} 次，会覆盖新版字段`);
     expect(probe.settingsSchemaState === "future", "更高版本未被标记为 future");
+    expect(secrets.size === 0, "future 设置读取时写入了 SecretStorage");
 
+    secrets.clear();
     // 无法识别来源：回到默认值，且必须写一次盘完成重建
     probe.storedData = { settings: { schemaVersion: 0, whatever: true } };
     probe.savedCount = 0;

@@ -1,14 +1,6 @@
+import { NS_LEGACY_KEY_OBFUSCATION_MARKER, NS_LEGACY_KEY_OBFUSCATION_SALT } from "./namespace";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
-function utf8ToBase64(text) {
-  const bytes = new TextEncoder().encode(String(text || ""));
-  let binary = "";
-  const size = 0x8000;
-  for (let i = 0; i < bytes.length; i += size) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + size));
-  }
-  return btoa(binary);
-}
 
 function base64ToUtf8(value) {
   const binary = atob(String(value || ""));
@@ -17,14 +9,6 @@ function base64ToUtf8(value) {
   return new TextDecoder("utf-8").decode(bytes);
 }
 
-export function obfuscateApiKey(plain) {
-  const s = String(plain == null ? "" : plain);
-  if (!s) return "";
-  if (isObfuscatedApiKey(s)) return s; // 已混淆，幂等
-  try {
-    return QNALOG_KEY_OBFUSCATION_MARKER + utf8ToBase64(qnalogXorTransform(s));
-  } catch { return s; }
-}
 
 /**
  * 解混淆。两种输入：
@@ -36,22 +20,14 @@ export function obfuscateApiKey(plain) {
  */
 export function deobfuscateApiKey(stored) {
   const s = String(stored == null ? "" : stored);
-  if (!s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER)) return s;
+  if (!s.startsWith(NS_LEGACY_KEY_OBFUSCATION_MARKER)) return s;
   try {
-    return qnalogXorTransform(base64ToUtf8(s.slice(QNALOG_KEY_OBFUSCATION_MARKER.length)));
+    return qnalogXorTransform(base64ToUtf8(s.slice(NS_LEGACY_KEY_OBFUSCATION_MARKER.length)));
   } catch { return s; }
 }
 
-// marker 前缀写在用户 data.json 的 apiKey 字段里，salt 参与编解码，两者都属于数据层。
-export const QNALOG_KEY_OBFUSCATION_MARKER = "qnk1:";
+// 仅用于读取旧 data.json 中的混淆密钥；新密钥由 Obsidian SecretStorage 管理。
 
-export const QNALOG_KEY_OBFUSCATION_SALT = "QnALog/local-key-obfuscation/v1";
-
-/** 是否为本插件写过的混淆串。 */
-export function isObfuscatedApiKey(stored) {
-  const s = String(stored == null ? "" : stored);
-  return s.startsWith(QNALOG_KEY_OBFUSCATION_MARKER);
-}
 
 export function redactDiagnosticText(value) {
   return String(value == null ? "" : value)
@@ -89,7 +65,7 @@ export function sanitizeDiagnosticData(data, depth = 0) {
 }
 
 export function qnalogXorTransform(text) {
-  const salt = QNALOG_KEY_OBFUSCATION_SALT;
+  const salt = NS_LEGACY_KEY_OBFUSCATION_SALT;
   let out = "";
   for (let i = 0; i < text.length; i++) {
     out += String.fromCharCode(text.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));

@@ -55,7 +55,17 @@ const noteFile = new TFile(NOTE_PATH);
 noteFile._content = NOTE_BODY;
 files.set(NOTE_PATH, noteFile);
 
+const secrets = new Map();
+
 const app = {
+  secretStorage: {
+    getSecret: (id) => secrets.has(id) ? secrets.get(id) : null,
+    listSecrets: () => [...secrets.keys()],
+    setSecret: (id, secret) => {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error("invalid SecretStorage id");
+      secrets.set(id, secret);
+    },
+  },
   vault: {
     configDir: ".obsidian",
     adapter: {
@@ -146,6 +156,12 @@ function makeSandbox() {
     module: { exports: {} }, exports: {},
     require: (id) => { if (id === "obsidian") return obsidian; throw new Error(`加载了不可用的模块：${id}`); },
     console, setTimeout, clearTimeout, setInterval, clearInterval,
+    crypto: {
+      getRandomValues: (bytes) => {
+        for (let index = 0; index < bytes.length; index += 1) bytes[index] = index + 1;
+        return bytes;
+      },
+    },
     document, navigator: { clipboard: { writeText: async () => undefined } },
     MutationObserver: class { observe() {} disconnect() {} },
     ResizeObserver: class { observe() {} disconnect() {} },

@@ -71,14 +71,36 @@ describe("向前迁移", () => {
     }
   });
 
-  it("缺链时拒绝产出半成品，调用方据此不写盘", () => {
-    // 磁盘是 1、当前是 N>1，但没有任何登记过的迁移步骤 → 必须返回 null
-    if (SETTINGS_SCHEMA_VERSION > 1) {
-      expect(SETTINGS_MIGRATIONS[1]).toBeUndefined();
-      const out = migrateSettingsForward({ settings: { schemaVersion: 1, 用户数据: "保留" } });
+  it("缺少迁移步骤时拒绝产出半成品，调用方据此不写盘", () => {
+    const version = SETTINGS_SCHEMA_VERSION - 1;
+    const original = SETTINGS_MIGRATIONS[version];
+    delete SETTINGS_MIGRATIONS[version];
+    try {
+      const out = migrateSettingsForward({ settings: { schemaVersion: version, 用户数据: "保留" } });
       expect(out.state).toBe("migrate");
       expect(out.settings).toBeNull();
+      expect(out.path).toEqual([]);
+    } finally {
+      if (original !== undefined) SETTINGS_MIGRATIONS[version] = original;
     }
+  });
+
+  it("1 → 2 为 SecretStorage 增加命名空间且保留现有 API Key 与配置", () => {
+    const out = migrateSettingsForward({
+      settings: {
+        schemaVersion: 1,
+        speech: { compatApiKey: "transcribe-key", providers: { openai: { apiKey: "provider-key" } } },
+        composer: { apiKey: "llm-key", profiles: [{ id: "p1", apiKey: "profile-key" }] },
+        prompts: { custom: "keep" },
+      },
+    });
+    expect(out.state).toBe("migrate");
+    expect(out.settings?.security).toEqual({ apiKeyStorageNamespace: "" });
+    expect(out.settings?.speech).toEqual({ compatApiKey: "transcribe-key", providers: { openai: { apiKey: "provider-key" } } });
+    expect(out.settings?.composer).toEqual({ apiKey: "llm-key", profiles: [{ id: "p1", apiKey: "profile-key" }] });
+    expect(out.settings?.prompts).toEqual({ custom: "keep" });
+    expect(out.settings?.schemaVersion).toBe(2);
+    expect(out.path).toEqual([2]);
   });
 
   it("迁移保留用户既有字段（不是重建默认值）", () => {

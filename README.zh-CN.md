@@ -123,7 +123,7 @@ QnALog 不内置任何 API Key，也**无需注册账号**：语音转写（ASR�
 
 必需：
 
-- Obsidian 1.10.0 或更高版本。
+- Obsidian 1.11.4 或更高版本。
 - 一个语音转写服务，可以是云端 API 或本地服务。
 - 用于保存录音和纪要的知识库目录。
 
@@ -151,7 +151,7 @@ Obsidian 桌面端无法在所有平台上稳定、统一地直接采集电脑�
 
 ## 隐私、网络与文件访问
 
-没有广告、行为分析或遥测。设置保存在 `.obsidian/plugins/qnalog/data.json`。
+没有广告、行为分析或遥测。插件设置保存在 `.obsidian/plugins/qnalog/data.json`；API Key 通过 Obsidian SecretStorage 保存，不写入该文件。换到另一套 Obsidian 安装时，请确认 SecretStorage 中有对应密钥；缺少的密钥需要重新填写。
 
 **网络用途。** 除非你配置了需要联网的服务，QnALog 完全离线工作。需要联网时，请求只会发往你自行配置的地址：
 
