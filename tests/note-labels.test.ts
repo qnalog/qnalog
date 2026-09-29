@@ -13,7 +13,6 @@ import {
   NOTE_LABELS,
   PART_HEADING_RE,
   UTILITY_HEADING_RE,
-  fmKey,
   labelText,
   labelPattern,
 } from "../src/shared/note-labels";
@@ -105,33 +104,6 @@ describe("labelText 按界面语言取词并填充占位符", () => {
   });
 });
 
-describe("fmKey：frontmatter 系统键跟随界面语言", () => {
-  it("zh 返回 时长/状态/人物，en 返回 duration/status/people", () => {
-    const original = getActiveUiLanguage();
-    try {
-      setActiveUiLanguage(matchUiLanguage("zh") as never);
-      expect(fmKey("duration")).toBe("时长");
-      expect(fmKey("status")).toBe("状态");
-      expect(fmKey("people")).toBe("人物");
-      setActiveUiLanguage(matchUiLanguage("en") as never);
-      expect(fmKey("duration")).toBe("duration");
-      expect(fmKey("status")).toBe("status");
-      expect(fmKey("people")).toBe("people");
-    } finally {
-      setActiveUiLanguage(original);
-    }
-  });
-
-  it("地区变体（zh-TW 归一到 zh）也返回中文键", () => {
-    const original = getActiveUiLanguage();
-    try {
-      setActiveUiLanguage(matchUiLanguage("zh-TW") as never);
-      expect(fmKey("duration")).toBe("时长");
-    } finally {
-      setActiveUiLanguage(original);
-    }
-  });
-});
 
 describe("共享解析片段", () => {
   it("UTILITY_HEADING_RE 中英都认，且不误伤普通议题标题", () => {

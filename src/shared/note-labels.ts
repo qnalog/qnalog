@@ -11,11 +11,10 @@
  *   2. 不得在模块期调用 t()/translateInto——常量在导入时求值会把语言冻住，
  *      取词只能发生在函数体内（labelText 即如此）。
  *
- * frontmatter 系统键（时长/状态/人物）走 fmKey 而不是 t()：zh.ts 里
- * "people" 已被设置页单位占用（"位"），键冲突，不能进词条表。
+ * Frontmatter 属性名由 namespace.ts 固定管理，与界面语言无关。
  */
 
-import { getActiveUiLanguage, t } from "./i18n";
+import { t } from "./i18n";
 
 /** 一条笔记结构标签：英文源键 + 中英双语解析模式 + 占位符个数。 */
 export interface NoteLabelSpec {
@@ -134,31 +133,6 @@ export function labelPattern(name: string): RegExp {
   return spec.re;
 }
 
-// ============================================================
-// frontmatter 系统键
-// ============================================================
-
-export type FmKeyKind = "duration" | "status" | "people";
-
-/**
- * 中文写法只放正则字面量（门禁不扫正则，模块内因此没有中文字符串字面量）。
- * 运行时经 .source 取回原串，等价于键名本身。
- */
-const FM_KEY_ZH: Record<FmKeyKind, RegExp> = {
-  duration: /时长/,
-  status: /状态/,
-  people: /人物/,
-};
-
-/**
- * frontmatter 系统键：中文界面返回 时长/状态/人物，否则 duration/status/people。
- * 不走 t()——zh.ts 里 "people" 已被设置页单位（"位"）占用，键冲突。
- * 语言标识经 matchUiLanguage 归一，zh-TW 等地区变体也落在 zh 上。
- */
-export function fmKey(kind: FmKeyKind): string {
-  if (getActiveUiLanguage().id !== "zh") return kind;
-  return FM_KEY_ZH[kind].source;
-}
 
 // ============================================================
 // 共享解析片段（写入/解析改造簇直接取用，勿再各自复制）

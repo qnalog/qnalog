@@ -1,4 +1,4 @@
-import { NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "./shared/namespace";
+import { NS_FM, NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "./shared/namespace";
 import { QNALOG_ACTIVE_VERSION_END } from "./shared/limits";
 import { labelText } from "./shared/note-labels";
 
@@ -83,8 +83,8 @@ export function sanitizeActiveVersionBody(body: string): string {
 // 记账字段（类型/variant_*/source_* 等）写进母本会让母本被识别成派生笔记，
 // 触发"跳回来源"等错误分支。只删顶层键；这些键的值都是单行标量，tags 等嵌套字段不受影响。
 const VERSION_BOOKKEEPING_KEYS = [
-  "类型", "variant_kind", "variant_label", "variant_mode", "variant_style",
-  "source_path", "source_id", "contains_raw", "contains_frontmatter",
+  NS_FM.type, "类型", "variant_kind", "variant_label", "variant_mode", "variant_style",
+  NS_FM.sourcePath, "source_path", "source_id", NS_FM.containsRaw, "contains_raw", "contains_frontmatter",
   "created", "payload_format", "version_id", "source_segments_hash",
 ];
 

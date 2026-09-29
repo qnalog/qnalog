@@ -3,6 +3,8 @@
 
 
 
+import { NS_FM } from "../shared/namespace";
+
 export const LV_BASE_DEFINITIONS = [
   // —— 按模式 ——
   {
@@ -13,11 +15,11 @@ export const LV_BASE_DEFINITIONS = [
 properties:
   file.name:
     displayName: 笔记
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.主题:
+  note.${NS_FM.topic}:
     displayName: 主题
-  note.参会人:
+  note.${NS_FM.participants}:
     displayName: 参会人
   note.tags:
     displayName: 标签
@@ -26,12 +28,12 @@ views:
     name: 列表
     order:
       - file.name
-      - note.time
-      - note.主题
-      - note.参会人
+      - note.${NS_FM.time}
+      - note.${NS_FM.topic}
+      - note.${NS_FM.participants}
       - note.tags
     sort:
-      - property: note.time
+      - property: note.${NS_FM.time}
         direction: DESC
 `,
   },
@@ -43,25 +45,25 @@ views:
 properties:
   file.name:
     displayName: 笔记
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.议题:
+  note.${NS_FM.coreQuestion}:
     displayName: 议题
-  note.当事人:
+  note.${NS_FM.decisionMaker}:
     displayName: 当事人
-  note.参谋:
+  note.${NS_FM.advisors}:
     displayName: 参谋
 views:
   - type: table
     name: 列表
     order:
       - file.name
-      - note.time
-      - note.议题
-      - note.当事人
-      - note.参谋
+      - note.${NS_FM.time}
+      - note.${NS_FM.coreQuestion}
+      - note.${NS_FM.decisionMaker}
+      - note.${NS_FM.advisors}
     sort:
-      - property: note.time
+      - property: note.${NS_FM.time}
         direction: DESC
 `,
   },
@@ -73,25 +75,25 @@ views:
 properties:
   file.name:
     displayName: 笔记
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.主题:
+  note.${NS_FM.topic}:
     displayName: 主题
-  note.受访者:
+  note.${NS_FM.interviewee}:
     displayName: 受访者
-  note.访问者:
+  note.${NS_FM.interviewer}:
     displayName: 访问者
 views:
   - type: table
     name: 列表
     order:
       - file.name
-      - note.time
-      - note.主题
-      - note.受访者
-      - note.访问者
+      - note.${NS_FM.time}
+      - note.${NS_FM.topic}
+      - note.${NS_FM.interviewee}
+      - note.${NS_FM.interviewer}
     sort:
-      - property: note.time
+      - property: note.${NS_FM.time}
         direction: DESC
 `,
   },
@@ -103,19 +105,19 @@ views:
 properties:
   file.name:
     displayName: 笔记
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.主题:
+  note.${NS_FM.topic}:
     displayName: 主题
 views:
   - type: table
     name: 列表
     order:
       - file.name
-      - note.time
-      - note.主题
+      - note.${NS_FM.time}
+      - note.${NS_FM.topic}
     sort:
-      - property: note.time
+      - property: note.${NS_FM.time}
         direction: DESC
 `,
   },
@@ -126,15 +128,15 @@ views:
     yaml: `filters:
   and:
     - file.hasTag("qnalog")
-    - date(note.time) >= date("today") - "7 days"
+    - date(note.${NS_FM.time}) >= date("today") - "7 days"
 properties:
   file.name:
     displayName: 笔记
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.mode:
+  note.${NS_FM.mode}:
     displayName: 模式
-  note.主题:
+  note.${NS_FM.topic}:
     displayName: 主题
   note.tags:
     displayName: 标签
@@ -143,12 +145,12 @@ views:
     name: 本周
     order:
       - file.name
-      - note.time
-      - note.mode
-      - note.主题
+      - note.${NS_FM.time}
+      - note.${NS_FM.mode}
+      - note.${NS_FM.topic}
       - note.tags
     sort:
-      - property: note.time
+      - property: note.${NS_FM.time}
         direction: DESC
 `,
   },
@@ -161,17 +163,17 @@ views:
 properties:
   file.name:
     displayName: 笔记
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.mode:
+  note.${NS_FM.mode}:
     displayName: 类型
-  note.主题:
+  note.${NS_FM.topic}:
     displayName: 主题
-  note.议题:
+  note.${NS_FM.coreQuestion}:
     displayName: 议题
-  note.参会人:
+  note.${NS_FM.participants}:
     displayName: 参会人
-  note.当事人:
+  note.${NS_FM.decisionMaker}:
     displayName: 当事人
   note.tags:
     displayName: 标签
@@ -180,15 +182,15 @@ views:
     name: 列表
     order:
       - file.name
-      - note.time
-      - note.mode
-      - note.主题
-      - note.议题
-      - note.参会人
-      - note.当事人
+      - note.${NS_FM.time}
+      - note.${NS_FM.mode}
+      - note.${NS_FM.topic}
+      - note.${NS_FM.coreQuestion}
+      - note.${NS_FM.participants}
+      - note.${NS_FM.decisionMaker}
       - note.tags
     sort:
-      - property: note.time
+      - property: note.${NS_FM.time}
         direction: DESC
 `,
   },
@@ -200,13 +202,13 @@ views:
 properties:
   file.name:
     displayName: 笔记
-  note.time:
+  note.${NS_FM.time}:
     displayName: 时间
-  note.mode:
+  note.${NS_FM.mode}:
     displayName: 模式
-  note.主题:
+  note.${NS_FM.topic}:
     displayName: 主题
-  note.议题:
+  note.${NS_FM.coreQuestion}:
     displayName: 议题
   note.tags:
     displayName: 主题词
@@ -215,13 +217,13 @@ views:
     name: 全部
     order:
       - file.name
-      - note.time
-      - note.mode
-      - note.主题
-      - note.议题
+      - note.${NS_FM.time}
+      - note.${NS_FM.mode}
+      - note.${NS_FM.topic}
+      - note.${NS_FM.coreQuestion}
       - note.tags
     sort:
-      - property: note.time
+      - property: note.${NS_FM.time}
         direction: DESC
 `,
   },

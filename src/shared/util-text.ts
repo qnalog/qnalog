@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
+import { readNamespaceFrontmatter } from "./namespace";
 export const BRIEFING_LANGUAGE_LABELS = {
   "zh-CN": "中文",
   en: "English",
@@ -69,7 +70,7 @@ export function getSessionMetaDurationMs(meta) {
   if (!meta) return 0;
   const direct = Number(meta.durationMs || meta.elapsedMs || meta.totalMs || 0);
   if (Number.isFinite(direct) && direct > 0) return direct;
-  const raw = meta.duration || meta["时长"] || "";
+  const raw = readNamespaceFrontmatter(meta, "duration") || meta.duration || "";
   return parseDurationLabel(raw);
 }
 

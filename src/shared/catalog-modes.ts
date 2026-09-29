@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
+import { NS_FM } from "./namespace";
+
 
 export const MODE_META = {
   synthesis: { prefix: "综合纪要", emoji: "", icon: "layers", label: "Synthesis minutes", goal: "Best for most meetings. First distill the through-line of the whole session, then organize it in three layers: overview, body, and reference material." },
@@ -13,30 +15,30 @@ export const MODE_META = {
 };
 
 export const FRONTMATTER_SCHEMA = {
-  synthesis: `主题: <一句话主题>
-核心问题: <这场讨论真正在攻的那一个问题；即脊柱，一句话>
-参与者:
+  synthesis: `${NS_FM.topic}: <一句话主题>
+${NS_FM.coreQuestion}: <这场讨论真正在攻的那一个问题；即脊柱，一句话>
+${NS_FM.participants}:
   - <姓名或中性角色；不确定时写 "未提及">`,
-  learning: `主题: <一句话主题>
-来源: <B站 / YouTube / 播客 / 课程 / 讲座 / 未提及>
-语言: <中文 / 英文 / 日文 / 多语种 / 未提及>`,
-  interview: `主题: <一句话主题>
-受访者:
+  learning: `${NS_FM.topic}: <一句话主题>
+${NS_FM.source}: <B站 / YouTube / 播客 / 课程 / 讲座 / 未提及>
+${NS_FM.language}: <中文 / 英文 / 日文 / 多语种 / 未提及>`,
+  interview: `${NS_FM.topic}: <一句话主题>
+${NS_FM.interviewee}:
   - <受访者姓名；推断不确定时写代号如 "受访者A（推断）">
-访问者: <访问者姓名；未提及写 "未提及">`,
-  meeting: `主题: <一句话主题>
-参会人:
+${NS_FM.interviewer}: <访问者姓名；未提及写 "未提及">`,
+  meeting: `${NS_FM.topic}: <一句话主题>
+${NS_FM.participants}:
   - <姓名 1；不确定时用中性角色如 "业务需求方" 或写 "未提及">
   - <姓名 2>`,
-  seminar: `主题: <一句话主题>
-研讨对象: <理论 / 议题 / 案例 / 文本 / 项目；未提及写 "未提及">
-参与者:
+  seminar: `${NS_FM.topic}: <一句话主题>
+${NS_FM.seminarSubject}: <理论 / 议题 / 案例 / 文本 / 项目；未提及写 "未提及">
+${NS_FM.participants}:
   - <姓名或角色；不确定时用 "发言人A（推断）" 或写 "未提及">`,
-  huddle: `主题: <一句话主题>
-当事人: <决策当事人；未点明写 "未提及"，不要凭一两句假设句指认>
-参谋:
+  huddle: `${NS_FM.topic}: <一句话主题>
+${NS_FM.decisionMaker}: <决策当事人；未点明写 "未提及"，不要凭一两句假设句指认>
+${NS_FM.advisors}:
   - <参谋姓名或角色；不确定写 "未提及">`,
-  monologue: `主题: <一句话主题>`,
+  monologue: `${NS_FM.topic}: <一句话主题>`,
 };
 
 export const MODE_PREFIX_TO_KEY = {

@@ -105,11 +105,10 @@ P2（视图层）在以上约定之外另有三条：
 
 第二次的做法（只认一个命名空间）：
 
-- **写入与读取都只用 QnALog 字面量。** 字面量集中在 `src/shared/namespace.ts`，
-  读侧用 `nsRe()` 生成模式，不要在业务代码里硬编码品牌前缀。
+- 标签、标记、目录等项目命名空间只写 QnALog 字面量。字面量集中在 `src/shared/namespace.ts`，读侧用 `nsRe()` 生成模式，不要在业务代码里硬编码品牌前缀。
+- 纪要与人员资料的 Frontmatter 业务字段使用固定 `qnalog_*` 英文键，不随界面语言变化；`tags` 保留为 Obsidian 标准字段。读取兼容历史中文键和未加命名空间的英文键，重整或用户主动更新单篇资料时写回 canonical 键。此字段兼容不识别 LexVoice 的旧标记。
 - `SETTINGS_SCHEMA_VERSION` 重置为 `1`（1.0.0 发布时的 clean break）。
-- 不提供笔记数据迁移命令：既有笔记里的旧命名空间标记不再被识别，也不改写。
-  用户按全新项目使用，自行决定旧目录里的文件如何处置。
+- 不提供笔记数据迁移命令：既有笔记里的旧命名空间标记不再被识别，也不扫描或批量改写。用户按全新项目使用，自行决定旧目录里的文件如何处置。
 
 **设置版本政策（2026-09-15 起，见 §4.5）**：clean break 只对 **pre-1.0** 成立。
 1.0.0 之后存在正式用户，版本向前走时**必须迁移、不得丢弃**——API Key、服务配置、
@@ -222,7 +221,7 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 社区目录 | 上游 `lexvoice` 条目仍在 | 不可控。它只能被用户主动安装，不会替换本插件；README 已说明两者并存时的处理。 |
 | 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`QnALog`**（含 `manifest.json` 的 `name`）。2026-09-28 起弃用旧书面名 `Q&A Log`：Obsidian 插件命名规范只允许基本拉丁字母与连字符、加号、括号，`&` 不在允许列表；macOS 原生菜单还会把 `&` 当快捷键标记吃掉。**名称里不得再出现 `&`。** 版权署名 `Q&A Log Team` 与提交身份显示名 `Q&A Log` 属于署名，不随产品名改。程序性标识仍是小写 `qnalog` 与 `QNALOG_*`（见下两行）。 |
 | 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 2026-09-14 已统一为 `qnalog`：这些字符串只存在于代码里，不写用户文件。**新代码不得再引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量。** |
-| 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、frontmatter 键 `qnalog_speakers`、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 已重置为 QnALog 命名空间，**读写都只认新值**（见 §1.1.2）；字面量集中在 `src/shared/namespace.ts`，**新代码不得再引入 `lexvoice-*` 字面量**。默认目录的子目录名按界面语言在读取时取（中英两套，`src/shared/defaults.ts` 的 `FOLDER_NAMES`）：新装时定下一次，之后改语言不搬已有目录，落盘的路径始终优先。 |
+| 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、Frontmatter 业务字段 `qnalog_*`（`qnalog_speakers` 等）、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、混淆盐 `QnALog/local-key-obfuscation/v1`（marker `qnk1:`） | 2026-09-15 起统一品牌命名空间；Frontmatter 业务字段另按 §1.1.2 兼容历史中文和未加前缀的英文键。插件不扫描或批量改写笔记，单篇重整/更新写 canonical 键。字段字面量集中在 `src/shared/namespace.ts`；新代码不得引入 `lexvoice-*` 字面量。默认目录子目录名按界面语言在读取时取（`src/shared/defaults.ts` 的 `FOLDER_NAMES`），已保存路径优先。 |
 
 发版前的指针检查清单——已固化为脚本：CI 每次 push 都会跑，本地 `npm run verify` 也包含（2026-09-15 起并入，避免只在改动特定文件时手跑而漏掉）：
 
@@ -595,11 +594,8 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 - **不删除、不改写用户已有文件。** 迁移只重写 `data.json`，不扫描知识库、不动 `.base`、不改笔记内容。
   用户已有的招聘/晋升笔记会留在原处，只是不再有对应入口；`data.json` 里残留的 `recruiting` /
   `promotionReview` 分组不再被读取。这类残留分组随版本不一致的设置一起被丢弃，不再单独报告。
-- **统一使用 QnALog 命名空间**（标签、标记、frontmatter 键、视图类型）：命名空间已于 2026-09-15 重置，
-  读写都只认新值（见 §1.1.2）。插件不扫描、不改写用户的既有笔记。
-- **读旧笔记必须安全降级。** 旧笔记的 frontmatter 里可能仍是 `mode: recruit`，未知 mode 一律按
-  「识别不出模式」处理，不得抛错、不得让面板或流水线崩掉（`isKnownPolishMode`、`detectRecentNoteMode`
-  等处的兜底即为此）。
+- **统一使用 QnALog 项目命名空间**（标签、标记、目录、视图类型）：这类品牌标记只认新值，不读取 LexVoice 标记（见 §1.1.2）。Frontmatter 业务字段不同：写入只用 canonical `qnalog_*` 英文键，读取兼容历史中文和未加前缀的英文键；插件不扫描或批量改写已有笔记，单篇用户主动重整/更新时才写回 canonical 键。
+- **读旧笔记必须安全降级。** 历史模式属性（如 `mode: recruit`）无法识别时按「识别不出模式」处理；不得抛错或让面板、流水线崩溃。Frontmatter 业务字段别名由 `readNamespaceFrontmatter` 读取。
 - **要重新加回某个场景**：按第二条处理——自己实现，并把它当作一等公民补上提示词、设置登记、测试与本文档。
 
 ## 8. 类型检查：逐步退出 `@ts-nocheck`

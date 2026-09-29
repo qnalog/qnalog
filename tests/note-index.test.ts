@@ -9,14 +9,15 @@ import {
   serializeNoteIndex,
   upsertNoteIndex,
 } from "../src/indexing/note-index";
+import { NS_FM } from "../src/shared/namespace";
 
 // 语言是模块级全局状态：每个用例从英文默认开始，需要锁中文标签的用例显式切 zh。
 afterEach(() => setActiveUiLanguage(resolveUiLanguage("en", "en")));
 
 const minutes = [
   "---",
-  "time: 2026-08-25T09:30:00",
-  "mode: synthesis",
+  `${NS_FM.time}: 2026-08-25T09:30:00`,
+  `${NS_FM.mode}: synthesis`,
   "---",
   "",
   "# 2026-08-25 09:30 · 综合纪要",
@@ -58,6 +59,14 @@ describe("QnALog note index", () => {
       "待办与下一步",
     ]);
     expect(extractIndexSource(minutes)).not.toContain("原始转写也不应进入索引");
+  });
+
+  it("uses qnalog_time when the note title has no date", () => {
+    const index = buildNoteIndex(minutes, {
+      noteTitle: "Meeting without a date",
+      generatedAt: "2027-01-01T00:00:00.000Z",
+    });
+    expect(index?.meetingDate).toBe("2026-08-25");
   });
 
   it("prefers the active display version over stale mother-note content", () => {

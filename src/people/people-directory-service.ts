@@ -7,6 +7,7 @@ import { getFrontmatterTags, readFileFrontmatter, upsertFrontmatterInMarkdown } 
 import { PEOPLE_SUGGESTION_CACHE_LIMIT, splitPersonFieldValue, normalizePersonLookupText, loadPeopleDirectory, ensurePeopleNoteRelatedBaseSection, formatPeopleBaseYaml, formatPeopleNoteMarkdown, mergeUniqueStrings, normalizePeopleSuggestion, normalizePeopleSuggestionIgnores, isPeopleSuggestionIgnored, addPeopleSuggestionIgnore, removePeopleSuggestionIgnores, getPeopleSuggestionCacheKey, normalizePeopleSuggestionCache, makePeopleSuggestionCacheRecord, isPeopleSuggestionCacheRecordCurrent, peopleSuggestionRecordToSuggestion, peopleSuggestionIgnoreRecordToSuggestion, findMatchingPersonEntry, arePeopleSuggestionsRelated, mergePeopleSuggestions, mergeSourceNoteRelatedPeopleFrontmatter, mergePersonFrontmatter, generatePeopleDirectorySuggestions, personEntryFromFrontmatter } from "../people";
 import { DEFAULT_LIBRARY_PATHS, DEFAULT_SETTINGS } from "../shared/defaults";
 import { PEOPLE_DIRECTORY_TAG, PEOPLE_DIRECTORY_TAG_MERGED } from "../shared/catalog-sediment";
+import { NS_FM, hasNamespaceFrontmatter, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 import type { PluginSettings } from "../shared/types";
 import { KnowledgeExtractionService } from "../indexing/knowledge-extraction-service";
 import { sanitizeFilename, escapeRegExp } from "../shared/util-common";
@@ -93,54 +94,68 @@ export class PeopleDirectoryService {
   mergeDuplicatePeopleFrontmatter(primaryFm, duplicateFm, duplicateEntry, duplicateFile) {
     const next = Object.assign({}, primaryFm || {});
     const dup = Object.assign({}, duplicateFm || {});
-    const canonicalName = String(next["姓名"] || next.name || "").trim();
-    const duplicateName = String(duplicateEntry && duplicateEntry.name || dup["姓名"] || dup.name || "").trim();
-    if (!canonicalName && duplicateName) next["姓名"] = duplicateName;
-    for (const key of ["角色", "组织", "邮箱"]) {
-      if (!String(next[key] || "").trim() && String(dup[key] || "").trim()) next[key] = dup[key];
+    const canonicalNameValue = readNamespaceFrontmatter(next, "name");
+    const canonicalName = typeof canonicalNameValue === "string" ? canonicalNameValue.trim() : "";
+    const duplicateEntryName = duplicateEntry && duplicateEntry.name;
+    const duplicateNameValue = duplicateEntryName || readNamespaceFrontmatter(dup, "name");
+    const duplicateName = typeof duplicateNameValue === "string" ? duplicateNameValue.trim() : "";
+    if (canonicalName || duplicateName) setNamespaceFrontmatter(next, "name", canonicalName || duplicateName);
+    for (const field of ["role", "organization", "email"] as const) {
+      const current = readNamespaceFrontmatter(next, field);
+      const incoming = readNamespaceFrontmatter(dup, field);
+      const currentText = typeof current === "string" ? current.trim() : "";
+      const incomingText = typeof incoming === "string" ? incoming.trim() : "";
+      if (currentText || incomingText) setNamespaceFrontmatter(next, field, currentText ? current : incoming);
     }
     const aliasCandidates = [];
-    aliasCandidates.push(...splitPersonFieldValue(next["常用称呼"] || next.aliases || []));
-    aliasCandidates.push(...splitPersonFieldValue(dup["常用称呼"] || dup.aliases || []));
-    if (duplicateName && normalizePersonLookupText(duplicateName) !== normalizePersonLookupText(next["姓名"] || canonicalName)) aliasCandidates.push(duplicateName);
+    aliasCandidates.push(...splitPersonFieldValue(readNamespaceFrontmatter(next, "aliases") || []));
+    aliasCandidates.push(...splitPersonFieldValue(readNamespaceFrontmatter(dup, "aliases") || []));
+    if (duplicateName && normalizePersonLookupText(duplicateName) !== normalizePersonLookupText(canonicalName || duplicateName)) aliasCandidates.push(duplicateName);
     const aliases = mergeUniqueStrings([], aliasCandidates)
       .filter(item => !/-\d+$/.test(String(item || "").trim()));
-    if (aliases.length) next["常用称呼"] = aliases;
-    const sources = mergeUniqueStrings(next["来源"] || next.sources || [], dup["来源"] || dup.sources || []);
-    if (sources.length) next["来源"] = sources;
+    if (aliases.length || hasNamespaceFrontmatter(next, "aliases") || hasNamespaceFrontmatter(dup, "aliases")) {
+      setNamespaceFrontmatter(next, "aliases", aliases);
+    }
+    const sources = mergeUniqueStrings(
+      readNamespaceFrontmatter(next, "sources") || [],
+      readNamespaceFrontmatter(dup, "sources") || [],
+    );
+    if (sources.length || hasNamespaceFrontmatter(next, "sources") || hasNamespaceFrontmatter(dup, "sources")) {
+      setNamespaceFrontmatter(next, "sources", sources);
+    }
     const notes = [];
-    for (const value of [next["备注"] || next.note, dup["备注"] || dup.note]) {
-      const text = String(value || "").trim();
+    for (const value of [readNamespaceFrontmatter(next, "note"), readNamespaceFrontmatter(dup, "note")]) {
+      const text = typeof value === "string" ? value.trim() : "";
       if (text && !notes.includes(text)) notes.push(text);
     }
     const duplicateLabel = duplicateFile instanceof obsidian.TFile ? duplicateFile.basename : "";
     if (duplicateLabel) notes.push(`合并历史重复人员页：${duplicateLabel}`);
-    if (notes.length) next["备注"] = notes.join("\n\n");
-    next.type = "qnalog-person";
-    next["最近更新"] = new Date().toISOString().slice(0, 10);
+    if (notes.length || hasNamespaceFrontmatter(next, "note") || hasNamespaceFrontmatter(dup, "note")) {
+      setNamespaceFrontmatter(next, "note", notes.join("\n\n"));
+    }
+    setNamespaceFrontmatter(next, "type", "qnalog-person");
+    setNamespaceFrontmatter(next, "updatedAt", new Date().toISOString().slice(0, 10));
     next.tags = mergeUniqueStrings(getFrontmatterTags(next), [PEOPLE_DIRECTORY_TAG]);
-    delete next.name;
-    delete next.aliases;
-    delete next.sources;
-    delete next.note;
     return next;
   }
 
   formatMergedPeopleArchiveMarkdown(duplicateFile, primaryFile, duplicateFm) {
     const fm = Object.assign({}, duplicateFm || {});
-    fm.type = "qnalog-person-merged";
-    fm["已合并到"] = makeFileWikiLink(primaryFile);
-    fm["合并日期"] = new Date().toISOString().slice(0, 10);
+    for (const field of ["name", "role", "aliases", "organization", "email", "sources", "updatedAt", "note"] as const) {
+      if (hasNamespaceFrontmatter(fm, field)) setNamespaceFrontmatter(fm, field, readNamespaceFrontmatter(fm, field));
+    }
+    setNamespaceFrontmatter(fm, "type", "qnalog-person-merged");
+    setNamespaceFrontmatter(fm, "mergedInto", makeFileWikiLink(primaryFile));
+    setNamespaceFrontmatter(fm, "mergedAt", new Date().toISOString().slice(0, 10));
     fm.tags = mergeUniqueStrings(
       getFrontmatterTags(fm).filter(tag => tag !== PEOPLE_DIRECTORY_TAG),
       [PEOPLE_DIRECTORY_TAG_MERGED],
     );
-    delete fm.name;
-    delete fm.aliases;
     const title = duplicateFile instanceof obsidian.TFile ? duplicateFile.basename : "已合并人员";
     const target = makeFileWikiLink(primaryFile);
     return upsertFrontmatterInMarkdown(`# ${title}\n\n此人员档案已合并到 ${target}。\n\n保留此归档页用于回溯，QnALog 不再把它作为人员资料读取。\n`, fm);
   }
+
 
   replacePeopleWikiLinksInText(text, replacements) {
     let next = String(text || "");
@@ -515,7 +530,7 @@ export class PeopleDirectoryService {
         const safeName = sanitizeFilename(suggestion.name) || "未命名人员";
         const path = findAvailableVaultPath(this.host.app, obsidian.normalizePath(`${folder}/${safeName}.md`));
         if (!path) throw new Error(t("Could not create the person profile file"));
-        const fm = mergePersonFrontmatter({ "姓名": suggestion.name }, suggestion, sourceFile);
+        const fm = mergePersonFrontmatter({ [NS_FM.name]: suggestion.name }, suggestion, sourceFile);
         const body = formatPeopleNoteMarkdown(suggestion.name, this.host.settings.mdFolder);
         file = await this.host.app.vault.create(path, upsertFrontmatterInMarkdown(body, fm));
         linkedPeopleRecords.push({ file, relation: suggestion.relation || "mentioned" });
