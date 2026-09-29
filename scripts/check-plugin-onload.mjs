@@ -114,7 +114,7 @@ const app = {
     getSecret: (id) => secrets.has(id) ? secrets.get(id) : null,
     listSecrets: () => [...secrets.keys()],
     setSecret: (id, secret) => {
-      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error("invalid SecretStorage id");
+      if (id.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error("invalid SecretStorage id");
       secrets.set(id, secret);
     },
   },

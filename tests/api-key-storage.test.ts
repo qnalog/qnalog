@@ -23,6 +23,7 @@ class MemorySecretStorage implements ApiKeySecretStorage {
 
   setSecret(id: string, secret: string): void {
     this.writeCount += 1;
+    if (id.length > 64) throw new Error("SecretStorage ID too long");
     if (this.failWrites || this.writeCount === this.failOnWriteNumber) throw new Error("storage unavailable");
     this.values.set(id, secret);
   }
@@ -52,6 +53,7 @@ describe("API Key SecretStorage", () => {
 
     expect(restored).toEqual({ needsPersist: true, failures: 0 });
     expect(storage.values.size).toBe(5);
+    expect([...storage.values.keys()].every(id => id.length <= 64)).toBe(true);
     expect([...storage.values.keys()].every(id => /^qnalog-key-[a-f0-9-]+$/.test(id))).toBe(true);
 
     const savedSnapshot = JSON.parse(JSON.stringify(snapshot)) as ReturnType<typeof settingsWithKeys>;

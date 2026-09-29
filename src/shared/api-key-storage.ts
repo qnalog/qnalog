@@ -49,11 +49,22 @@ function apiKeySecretPrefix(namespace: string): string {
   return `${NS_API_KEY_SECRET_PREFIX}-${namespace}-`;
 }
 
+function compactPathTag(path: SecretPathPart[]): string {
+  const text = JSON.stringify(path);
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193) >>> 0;
+    second = Math.imul(second ^ code, 0x5bd1e995) >>> 0;
+    second = (second ^ (second >>> 13)) >>> 0;
+  }
+  return `${first.toString(16).padStart(8, "0")}${second.toString(16).padStart(8, "0")}`;
+}
+
 function apiKeySecretId(namespace: string, path: SecretPathPart[]): string {
-  const pathBytes = new TextEncoder().encode(JSON.stringify(path));
-  let encodedPath = "";
-  for (const byte of pathBytes) encodedPath += byte.toString(16).padStart(2, "0");
-  return `${apiKeySecretPrefix(namespace)}${encodedPath}`;
+  // The full hex-encoded path exceeds Obsidian's accepted SecretStorage ID size.
+  return `${apiKeySecretPrefix(namespace)}${compactPathTag(path)}`;
 }
 
 function collectApiKeyEntries(
