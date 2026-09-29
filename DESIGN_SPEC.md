@@ -28,13 +28,11 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
   --qnalog-on-primary: var(--text-on-accent);
 
   --qnalog-border-line: var(--background-modifier-border);
-  --qnalog-border-line-hover: var(--background-modifier-border-hover);
 
   --qnalog-primary: var(--interactive-accent);
   --qnalog-primary-hover: var(--interactive-accent-hover);
   --qnalog-text-active: var(--text-accent);
   --qnalog-bg-active: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
-  --qnalog-bg-active-strong: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
   --qnalog-border-active: var(--interactive-accent);
   --qnalog-border-active-soft: color-mix(in srgb, var(--interactive-accent) 35%, transparent);
 
@@ -51,7 +49,6 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
 .theme-dark .qnalog-outline,
 .theme-dark .qnalog-view {
   --qnalog-bg-active: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
-  --qnalog-bg-active-strong: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
 }
 ```
 

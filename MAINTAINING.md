@@ -508,7 +508,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - [x] 设置页不得静默改写用户配置：已完成。`renderSpeaker` 改为只在内存里借用第一个可用服务渲染界面，设置保持用户原值，并在页面上说明原因（`settings-tab.ts:1436`）。
 - [x] 自定义服务的密钥必填判定：已完成。未知 provider 按 endpoint 推断（`asr/transcribe-profile-service.ts:253`）。
 - [ ] 依赖锁定：`package.json` 中 `"obsidian": "latest"` 与其余 `^` 范围应改为精确版本。注：`esbuild` 与 vite 8 的 peer 范围冲突已修（devDep `^0.28.2`）。
-- [ ] 类型检查盲区：3 个文件带 `@ts-nocheck`（`asr/clients.ts`、`ui/settings-tab.ts`、`ui/modals.ts`），不参与类型检查；`tsconfig.strict-core.json` 只覆盖 14 个文件。2026-09-14 已把其余 44 个清完（47 → 3），做法与逐文件成本见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算，能通过检查就不加。
+- [ ] 类型检查盲区：3 个文件带 `@ts-nocheck`（`asr/clients.ts`、`ui/settings-tab.ts`、`ui/modals.ts`），不参与类型检查；`tsconfig.strict-core.json` 覆盖 52 个文件（2026-09-24 起）。2026-09-14 已把其余 44 个清完（47 → 3），做法与逐文件成本见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算，能通过检查就不加。
   - 已完成：2026-09-14 分两批让 26 个文件退出 `@ts-nocheck`（47 → 21）：先 14 个零错误的，再 12 个低错误的（1–7 处）。做法、逐文件成本与修法见 §8。**新抽出的文件不要再默认加 `@ts-nocheck`**：先按 §8 试算确认能否通过检查，能通过就不加。
 
 **第二条：提升性功能（按需，不排期）**
@@ -528,6 +528,15 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 - 这条同样不绝对：如果某个能力对稳定使用确有价值，按第二条处理——自己实现即可，见 §2。
 
 ---
+
+**上架后反馈通道（2026-09-29 审计建议，维护者执行）**
+
+- [ ] 按固定节奏安排补丁（例如每两周），不因单条反馈立即发布。
+- [ ] 使用英文界面在真实 Obsidian 环境走查主路径：录音 → 转写 → 整理 → 知识沉淀。
+- [ ] 定期查看 Obsidian 社区目录评价；发布更新时在论坛 `Share & showcase` 与 Discord `#updates` 发布公告。
+- [ ] 先按 §9.4 核实推荐服务，再决定设置精简批次①的推荐配置。
+
+`@ts-nocheck` 退出策略的复审结论见 §8 末尾。
 
 已完成（记录，不再列在待办里）：自更新已移除（仅检查版本并提示，安装交给 Obsidian / BRAT）；
 回滚路径已脚本化（`npm run restore:vault`，安装改为整目录留档）；迁移结果自检已实现（首次加载输出对照表）；
@@ -653,6 +662,16 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 **不要用严格档衡量这批文件。** `strictNullChecks` + `noImplicitAny`（`tsconfig.strict-core.json` 的口径）
 下，第一批那 14 个文件及其依赖闭包实测有 740 处错误，与「能否退出 `@ts-nocheck`」是两个独立目标。
 退出 `@ts-nocheck` 只要求文件在 `tsconfig.json` 现有选项下零错误，不要求 stricter 选项。
+
+### 2026-09-29 复审
+
+本轮不按审计建议直接让 `settings-tab.ts` 整文件退出 `@ts-nocheck`：约 471 处错误需要逐个方法收窄，而设置精简批次②还会从该文件拆出有类型检查的模块，先处理整文件会与拆包重复投入。后续按以下顺序处理：
+
+1. 设置精简批次②完成后，按本节方法重新量 `settings-tab.ts` 的错误数并完成退出。
+2. `modals.ts` 随 P4 按域拆包；新拆出的文件落地时不加 `@ts-nocheck`，各自进入类型检查。
+3. 若主动挑选一个独立文件先做，优先 `asr/clients.ts`（约 250 处错误）；它与设置页和弹窗拆包没有交集。
+
+在三个文件退出前，`check:undefined-symbols` 继续兜底检查未定义符号（TS2304）。
 
 ---
 
@@ -845,20 +864,15 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | 8 | **`settings-io.ts` 头部的政策注释过期。** 仍写「版本号与当前值不一致时一律丢弃」，与 §4.5 的四态判定矛盾 | `src/shared/settings-io.ts` 的 `SETTINGS_SCHEMA_VERSION` 上方注释（改动前为第 33–34 行） | **已修正**（改为指向 §4.5 的四态） |
 | 9 | **`MAINTAINING.md` 的章节编号乱序。** 「功能边界」编成 7 却排在 6 之前；另有一条悬空引用「按 §9 仍不进仓库」，而 §9 当时不存在 | 章节顺序：功能边界排在待办之前，编号却是 7 与 6；悬空引用在改动前为 `MAINTAINING.md:557` | 悬空引用**已修正**；编号乱序未动（牵动多份交叉引用，单独批次处理） |
 | 10 | **`MAINTAINING.md` 待办里有两条已完成。** 「设置页静默改写 `importTranscribeProvider`」已在 `renderSpeaker` 改为只读借用 + 页面说明；「自定义服务的密钥必填判定」已按 endpoint 推断 | 待办清单「第一条」下两条（改动前为 `MAINTAINING.md:561`、`:562`）vs `settings-tab.ts:1436`、`transcribe-profile-service.ts:253` | **已勾掉** |
-| 11 | **`DESIGN_SPEC.md` 的颜色规范已失效。** 全文 32 处引用 `--lex-*`，而 `styles.css` 有 68 个 `--qnalog-*`、0 个 `--lex-*`，源码里没有 `--lex-` 读取方 | `DESIGN_SPEC.md` 第 2 节「颜色系统」（第 17–60 行）vs `styles.css` | **未改**：其中 `--lex-border-line-hover`、`--lex-bg-active-strong` 在 `styles.css` 里连 `--qnalog-*` 对应项都不存在，需先确认是被删除还是改了名，不能机械批量替换 |
+| 11 | **`DESIGN_SPEC.md` 的颜色规范已失效。** 两项变量 `--qnalog-border-line-hover` 与 `--qnalog-bg-active-strong` 在 `styles.css` 当前内容及 Git 历史中均无定义记录 | `DESIGN_SPEC.md` 第 2 节「颜色系统」（第 17–60 行）vs `styles.css` 与 Git 历史 | **已解决（2026-09-29）**：两项属于规格草稿残留；已删掉对应三行，保留 dark 变体里的 `--qnalog-bg-active` |
 
 
 #### 9.3.3 同批发现的两处命名与死代码
 
 不构成规则冲突，但属于同一批该清的东西：
 
-- **两个旧前缀标识符。** `src/ui/settings-tab.ts:71` 的 `LV_SETTINGS_TABS` 与
-  `src/views/base-definitions.ts:6` 的 `LV_BASE_DEFINITIONS` 仍用旧前缀。`check:legacy-prefixes`
-  的正则要求前缀后跟连字符（`lex-` / `lv-` / `lvk-`），因此拦不住这种裸 `LV_` 常量名——
-  该门禁的覆盖范围到此为止，不要以为它绿了就没有旧前缀。
-- **三个方法没有调用方。** `addFolderPathSetting`（`settings-tab.ts:2253`）、
-  `getAllVaultFolderPaths`（`:2241`，仅被前者调用）、`restoreTranscribeProviderDefaults`（`:298`）。
-  三者都只在本文件内出现，删除不影响任何调用点。
+- **两个旧前缀标识符。** 已于 2026-09-29 将 `LV_SETTINGS_TABS` 与 `LV_BASE_DEFINITIONS` 改为 `QNALOG_` 前缀；`check:legacy-prefixes` 现覆盖连字符前缀与全大写下划线常量。小写裸前缀（如 `lv_foo`）仍不覆盖；目前未发现这种用法，出现后再补。
+- **三个无调用方法。** 已于 2026-09-29 删除 `addFolderPathSetting`、`getAllVaultFolderPaths` 与 `restoreTranscribeProviderDefaults`；没有其他代码调用这些方法，`getAllVaultFolderPaths` 只由同时删除的 `addFolderPathSetting` 调用。
 
 ### 9.4 本轮不决定的事
 
