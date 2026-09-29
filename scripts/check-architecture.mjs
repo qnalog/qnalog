@@ -1,7 +1,7 @@
 // 架构依赖检查：这个模块是否应该获得这项依赖？这次修改有没有扩大耦合？
 //
 // 与 check-domain-boundaries 的分工：那边回答「这个成员/能力/方法是否真实存在」，
-// 这边回答「这条依赖本身是否被允许」。第一版只查三件已有明确证据的问题（基线见
+// 这边回答「这条依赖本身是否被允许」。当前检查四类已有明确证据的问题（基线见
 // scripts/architecture-baseline.json，为什么这样设计见 MAINTAINING.md §13）：
 //   A. 禁止新的模块直接依赖 src/main.ts / QnALogPlugin（三个 legacy 文件放行）；
 //   B. 冻结 legacy 消费者的 plugin.* 能力面：实际使用集合必须与基线精确一致——
@@ -10,6 +10,7 @@
 //      新增边一律失败（即使尚未构成环）；用 Tarjan 求强连通分量，同时报告
 //      service count / edge count / cyclic SCC count / largest SCC size，
 //      并拦住「新增边形成新环」与「新增边扩大既有 SCC」。
+//   D. 非 ui 模块不得新增 import src/ui/**；现存引用进基线，双向棘轮。
 // 基线更新是架构决策，不是修检查失败的步骤——因此本脚本不提供 npm 刷新命令，
 // 失败信息也不提示刷新方式（流程见 MAINTAINING.md §13）。
 //
@@ -42,10 +43,6 @@ function resolveSpecifier(fromFile, spec) {
   return target.replace(/\.(ts|tsx|js|mjs)$/, "");
 }
 
-function isMainModule(fromFile, spec) {
-  return resolveSpecifier(fromFile, spec) === MAIN_MODULE;
-}
-
 /** main.ts 里的 `this.<字段> = new <类>(...)` 装配语句：plugin 字段 → 具体服务类。 */
 function fieldClassMap(mainSource) {
   const map = new Map();
@@ -74,7 +71,7 @@ function uniquePush(list, value) {
 }
 
 /**
- * 单次遍历收集三件事：main.ts 的 import、插件能力面、Host 接口及其消费类。
+ * 单次遍历收集四件事：main.ts 与 src/ui 的 import、插件能力面、Host 接口及其消费类。
  * files 为 { 相对路径: 内容 }，便于单测注入。
  */
 function analyze(files) {
@@ -87,6 +84,7 @@ function analyze(files) {
     fieldClass: fieldClassMap(normalized["src/main.ts"]),
     mainImporters: new Set(),          // 引用了 src/main 的文件
     mainImportLines: new Map(),        // 文件 → 引用行号（用于失败信息）
+    uiImports: new Map(),              // 文件 → Map<解析后 ui 目标, 行号[]>
     pluginCaps: new Map(),             // 文件 → 实际使用的 plugin 能力集合
     fileClassNames: new Map(),         // 文件 → 首个导出类名（用于失败信息）
     hosts: [],                         // { file, hostName, className|null, members: [{ name, typeText }] }
@@ -102,20 +100,33 @@ function analyze(files) {
     let exportedClass = null;
     let firstClass = null;
 
+    const recordUiImport = (target, line) => {
+      if (target !== "src/ui" && !target.startsWith("src/ui/")) return;
+      let targets = facts.uiImports.get(file);
+      if (!targets) { targets = new Map(); facts.uiImports.set(file, targets); }
+      let uiLines = targets.get(target);
+      if (!uiLines) { uiLines = []; targets.set(target, uiLines); }
+      uniquePush(uiLines, line);
+    };
+
     const visit = (node) => {
-      // A：import / re-export / 动态 import 指向 src/main
+      // A：import / re-export / 动态 import 指向 src/main；同时收集对 src/ui 的 import
       if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-        if (isMainModule(file, node.moduleSpecifier.text)) {
+        const resolved = resolveSpecifier(file, node.moduleSpecifier.text);
+        if (resolved === MAIN_MODULE) {
           facts.mainImporters.add(file);
           uniquePush(lines, lineOf(content, node.moduleSpecifier.getStart(sf)));
         }
+        recordUiImport(resolved, lineOf(content, node.moduleSpecifier.getStart(sf)));
       }
       if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword
           && node.arguments.length && ts.isStringLiteral(node.arguments[0])) {
-        if (isMainModule(file, node.arguments[0].getText(sf).slice(1, -1))) {
+        const resolved = resolveSpecifier(file, node.arguments[0].text);
+        if (resolved === MAIN_MODULE) {
           facts.mainImporters.add(file);
           uniquePush(lines, lineOf(content, node.arguments[0].getStart(sf)));
         }
+        recordUiImport(resolved, lineOf(content, node.arguments[0].getStart(sf)));
       }
       // B：plugin 能力面（只对基线登记的 legacy 文件有意义，但对所有文件收集成本可忽略）
       if (ts.isPropertyAccessExpression(node) && node.name.kind === ts.SyntaxKind.Identifier && isPluginObject(node.expression)) {
@@ -301,6 +312,16 @@ function edgeKeySet(edges) {
   return new Set(edges.map((e) => `${e.from}\u0000${e.to}`));
 }
 
+/** 非 ui 模块对 src/ui/** 的依赖；排除装配根 src/main.ts 与 src/ui/ 内部文件。 */
+function uiImportMap(facts) {
+  const out = new Map();
+  for (const [file, targets] of facts.uiImports) {
+    if (file === "src/main.ts" || file.startsWith("src/ui/")) continue;
+    out.set(file, targets);
+  }
+  return out;
+}
+
 /**
  * 服务依赖图统计：服务数（声明 Host 的类 ∪ 边端点）、边数、
  * 环状强连通分量数、最大环状分量的节点数（无环时为 0）。
@@ -331,9 +352,14 @@ export function collectFacts(files) {
   for (const file of [...facts.mainImporters].sort()) {
     pluginConsumers[file] = [...(facts.pluginCaps.get(file) || [])].sort();
   }
+  const uiImportsFromNonUi = {};
+  for (const [file, targets] of [...uiImportMap(facts)].sort((a, b) => a[0].localeCompare(b[0]))) {
+    uiImportsFromNonUi[file] = [...targets.keys()].sort();
+  }
   return {
     pluginConsumers,
     serviceEdges: edges.map((e) => [e.from, e.to]),
+    uiImportsFromNonUi,
   };
 }
 
@@ -350,6 +376,9 @@ export function checkArchitecture(files, baseline) {
   }
   if (!Array.isArray(baseline.serviceEdges)) {
     return [`[architecture] ${BASELINE_FILE} 缺少 serviceEdges 数组`];
+  }
+  if (!baseline.uiImportsFromNonUi || typeof baseline.uiImportsFromNonUi !== "object") {
+    return [`[architecture] ${BASELINE_FILE} 缺少 uiImportsFromNonUi 对象`];
   }
 
   const facts = analyze(files);
@@ -456,6 +485,39 @@ export function checkArchitecture(files, baseline) {
     }
   }
 
+  // D：非 ui 模块对 src/ui 的依赖与基线精确一致（双向棘轮）。
+  const actualUiImports = uiImportMap(facts);
+  for (const [file, targets] of [...actualUiImports].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const expected = baseline.uiImportsFromNonUi[file];
+    if (expected !== undefined && (!Array.isArray(expected) || expected.some((target) => typeof target !== "string"))) {
+      violations.push(`[architecture] ${BASELINE_FILE} 中 ${file} 的 UI 依赖不是字符串数组`);
+      continue;
+    }
+    const expectedTargets = new Set(expected || []);
+    for (const [target, lines] of [...targets].sort((a, b) => a[0].localeCompare(b[0]))) {
+      if (!expectedTargets.has(target)) {
+        violations.push(`[architecture] ${file}:${lines[0]} 非 UI 模块不得新增对 ${target} 的依赖。业务/数据层模块不得依赖界面实现；请把界面交互上移到调用方，或通过 callback/port 注入。`);
+      }
+    }
+  }
+  for (const [file, expected] of Object.entries(baseline.uiImportsFromNonUi).sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (!Array.isArray(expected) || expected.some((target) => typeof target !== "string")) {
+      violations.push(`[architecture] ${BASELINE_FILE} 中 ${file} 的 UI 依赖不是字符串数组`);
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(facts.files, file)) {
+      violations.push(`[architecture] 基线 uiImportsFromNonUi 登记的 ${file} 已不存在；请同步从 ${BASELINE_FILE} 删除该条目。`);
+      continue;
+    }
+    const actualTargets = new Set(actualUiImports.get(file)?.keys() || []);
+    for (const target of [...expected].sort()) {
+      if (!actualTargets.has(target)) {
+        violations.push(`[architecture] ${file} 的基线 UI 依赖 ${target} 已不存在；请同步从 ${BASELINE_FILE} 删除该条目（棘轮只允许收缩）。`);
+      }
+    }
+  }
+
+
   return violations;
 }
 
@@ -508,7 +570,7 @@ function main() {
 
   const violations = checkArchitecture(files, baseline);
   if (!violations.length) {
-    console.log(`[architecture] OK: main.ts 引用、legacy plugin 能力面、服务依赖边均与基线一致（扫描 ${Object.keys(files).length} 个文件）`);
+    console.log(`[architecture] OK: main.ts 引用、legacy plugin 能力面、UI 依赖、服务依赖边均与基线一致（扫描 ${Object.keys(files).length} 个文件）`);
     return;
   }
   console.error(`[architecture] 发现 ${violations.length} 项架构违规：`);

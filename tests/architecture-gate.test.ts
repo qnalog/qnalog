@@ -18,8 +18,12 @@ function files(extra: Record<string, string>) {
   return { "src/main.ts": MAIN, ...extra };
 }
 
-function baseline(overrides: { pluginConsumers?: Record<string, string[]>; serviceEdges?: [string, string][] } = {}) {
-  return { pluginConsumers: {}, serviceEdges: [], ...overrides };
+function baseline(overrides: {
+  pluginConsumers?: Record<string, string[]>;
+  serviceEdges?: [string, string][];
+  uiImportsFromNonUi?: Record<string, string[]>;
+} = {}) {
+  return { pluginConsumers: {}, serviceEdges: [], uiImportsFromNonUi: {}, ...overrides };
 }
 
 // 三个 legacy 消费者的最小替身：都直接 import main.ts，都通过 this.plugin 取能力。
@@ -261,5 +265,72 @@ export class TaskQueue {
     expect(source).not.toMatch(/https?:\/\//);
     expect(source).not.toContain("child_process");
     expect(source).not.toContain("main.js");
+  });
+});
+
+describe("non-UI module UI dependencies", () => {
+  const importer = "src/vault/cleanup-service.ts";
+  const importsModals = `import { QueueModal } from "../ui/modals";\nexport function open() { return QueueModal; }\n`;
+
+  it("allows a non-UI dependency recorded in the baseline", () => {
+    const problems = checkArchitecture(files({ [importer]: importsModals }), baseline({
+      uiImportsFromNonUi: { [importer]: ["src/ui/modals"] },
+    }));
+    expect(problems).toEqual([]);
+  });
+
+  it("rejects a new UI import from an unregistered file", () => {
+    const problems = checkArchitecture(files({ [importer]: importsModals }), baseline());
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("非 UI 模块不得新增");
+    expect(problems[0]).toContain("src/ui/modals");
+  });
+
+  it("rejects only the newly added UI target for a registered file", () => {
+    const source = `${importsModals}import { helper } from "../ui/helpers";\nvoid helper;\n`;
+    const problems = checkArchitecture(files({ [importer]: source }), baseline({
+      uiImportsFromNonUi: { [importer]: ["src/ui/modals"] },
+    }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("src/ui/helpers");
+    expect(problems[0]).toContain("非 UI 模块不得新增");
+  });
+
+  it("allows a removed UI dependency when its baseline entry is removed", () => {
+    const problems = checkArchitecture(files({ [importer]: "export function cleanup() {}\n" }), baseline());
+    expect(problems).toEqual([]);
+  });
+
+  it("rejects a removed UI dependency until the baseline shrinks", () => {
+    const problems = checkArchitecture(files({ [importer]: "export function cleanup() {}\n" }), baseline({
+      uiImportsFromNonUi: { [importer]: ["src/ui/modals"] },
+    }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("棘轮只允许收缩");
+  });
+
+  it("excludes imports from src/main.ts and modules inside src/ui", () => {
+    const problems = checkArchitecture(files({
+      "src/main.ts": `import { QueueModal } from "./ui/modals";\nexport class QnALogPlugin {}\nvoid QueueModal;\n`,
+      "src/ui/panel.ts": `import { helper } from "./helpers";\nexport const panel = helper;\n`,
+    }), baseline());
+    expect(problems).toEqual([]);
+  });
+
+  it("rejects dynamic imports of UI modules", () => {
+    const problems = checkArchitecture(files({
+      [importer]: `export const load = () => import("../ui/modals");\n`,
+    }), baseline());
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("非 UI 模块不得新增");
+    expect(problems[0]).toContain("src/ui/modals");
+  });
+
+  it("rejects a baseline without uiImportsFromNonUi", () => {
+    const missingKey = baseline();
+    Reflect.deleteProperty(missingKey, "uiImportsFromNonUi");
+    const problems = checkArchitecture(files({}), missingKey);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("缺少 uiImportsFromNonUi");
   });
 });

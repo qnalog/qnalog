@@ -27,6 +27,11 @@ if (!Object.prototype.hasOwnProperty.call(versions, current)) {
   failures.push(`versions.json[${current}]=${versions[current]}，manifest minAppVersion=${manifest.minAppVersion}`);
 }
 
+const obsidianDep = packageJson.devDependencies?.obsidian;
+if (obsidianDep !== manifest.minAppVersion) {
+  failures.push(`obsidian 类型版本=${obsidianDep || "<missing>"}，manifest minAppVersion=${manifest.minAppVersion}`);
+}
+
 if (failures.length) {
   console.error(`[versions] 版本文件不一致：${failures.join("；")}`);
   process.exit(1);
