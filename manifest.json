@@ -1,8 +1,8 @@
 {
 	"id": "qnalog",
 	"name": "QnALog",
-	"version": "1.2.0",
-	"minAppVersion": "1.10.0",
+	"version": "1.3.0",
+	"minAppVersion": "1.11.4",
 	"description": "Record and transcribe conversations, then turn them into structured Markdown notes with your own AI provider.",
 	"author": "Q&A Log Team",
 	"authorUrl": "https://github.com/qnalog",

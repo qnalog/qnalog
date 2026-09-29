@@ -70,13 +70,21 @@ export function classifySettingsSchema(savedData: unknown): SettingsSchemaState 
  * 1.0.0 之后新增结构变更时：
  *   1. `SETTINGS_SCHEMA_VERSION` +1；
  *   2. 在下面登记一个 `[旧版本, 迁移函数]`；
- *   3. 在 `tests/settings-migration.test.ts` 里加一条「旧 data.json → 用户配置仍在」的用例。
+ *   3. 在 `tests/settings-schema-policy.test.ts` 里加一条「旧 data.json → 用户配置仍在」的用例。
  *
  * **不要**在这里处理 pre-1.0 / LexVoice 的数据：那些版本走 foreign 分支。
  */
+// 1 → 2：为 SecretStorage 条目增加每个知识库独立的命名空间。
 export const SETTINGS_MIGRATIONS: Record<number, (settings: Record<string, unknown>) => Record<string, unknown>> = {
-  // 尚无 1.0.0 之后的变更。下一版在此登记：
-  // 1: (s) => ({ ...s, 新字段: 默认值 }),
+  1: (settings) => ({
+    ...settings,
+    security: {
+      ...(settings.security && typeof settings.security === "object" && !Array.isArray(settings.security)
+        ? settings.security
+        : {}),
+      apiKeyStorageNamespace: "",
+    },
+  }),
 };
 
 export interface SettingsMigrationOutcome {

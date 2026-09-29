@@ -75,7 +75,7 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(DEFAULT_SETTINGS.diagnosticsLogFolder).toBe("QnALog/系统/诊断日志");
     expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("QnALog/资料库/归档");
     expect(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder).toBe("QnALog/资料库/归档/重复人员");
-    expect(SETTINGS_SCHEMA_VERSION).toBe(1);
+    expect(SETTINGS_SCHEMA_VERSION).toBe(2);
   });
 
   it("serialize 输出携带 schemaVersion", () => {

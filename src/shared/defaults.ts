@@ -136,6 +136,8 @@ export const DEFAULT_LIBRARY_PATHS: Record<DefaultLibraryPathKey, string> = {
 };
 
 export const DEFAULT_SETTINGS: PluginSettings = {
+  // 空串表示尚未生成本知识库的 SecretStorage 命名空间；loadAll 会生成随机值。
+  apiKeyStorageNamespace: "",
   // 空串 = 跟随 Obsidian 界面语言（多数用户不会主动改插件语言）
   uiLanguage: "",
   // 目录默认值按界面语言取，读取时求值，原因见文件头注释

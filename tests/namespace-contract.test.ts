@@ -114,7 +114,7 @@ describe("数据层命名空间与 Frontmatter schema", () => {
     }
   });
 
-  it("设置结构版本为 1（QnALog 不承接历史项目的设置）", () => {
-    expect(SETTINGS_SCHEMA_VERSION).toBe(1);
+  it("设置结构版本为 2（保留 QnALog 1.x 设置，不承接其他项目）", () => {
+    expect(SETTINGS_SCHEMA_VERSION).toBe(2);
   });
 });

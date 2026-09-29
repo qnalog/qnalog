@@ -21,6 +21,7 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
 import { resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
 import { classifySettingsSchema, hasStoredSettings, migrateSettingsForward, readSavedSchemaVersion, type SettingsSchemaState } from "./shared/settings-schema";
+import { ApiKeyStorageError, createApiKeyStorageNamespace, isValidApiKeyStorageNamespace, restoreApiKeySecrets, storeApiKeySecrets } from "./shared/api-key-storage";
 
 import type {PluginSettings, RecordingSession } from "./shared/types";
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
@@ -28,7 +29,7 @@ import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, t
 import {AUDIO_EXT } from "./shared/catalog-import";
 
 
-import {obfuscateApiKey, deobfuscateApiKey } from "./shared/util-key-diag";
+import {deobfuscateApiKey } from "./shared/util-key-diag";
 import { getDesktopModule } from "./shared/desktop-runtime";
 
 import {RealtimeOutlineCoordinator } from "./outline-coordinator";
@@ -542,16 +543,21 @@ class QnALogPlugin extends obsidian.Plugin {
 
   async loadAll() {
     const saved: unknown = (await this.loadData()) || {};
-    // 还原密钥：data.json 里的密钥是混淆态，读入内存前先解混淆（旧明文数据会原样通过，下次保存自动转混淆）
-    try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
     // 设置结构版本政策（见 shared/settings-schema.ts）：
     //   current → 直接读回；migrate → 向前迁移，保留用户配置；
     //   future  → 用户回退了插件版本，**不写盘**，避免把新版字段洗掉；
     //   foreign → 别的项目/损坏的数据，丢弃前先留档。
     const schemaState: SettingsSchemaState = classifySettingsSchema(saved);
+    // 旧版 data.json 可能包含 qnk1: 混淆密钥；仅对可识别的 QnALog 数据解码。
+    // foreign 数据留在原样，避免把解码后的密钥写进留档副本。
+    if (schemaState !== "foreign") {
+      try { transformApiKeyFieldsDeep(saved, deobfuscateApiKey); } catch (e) { console.warn("[QnALog] key deobfuscate failed", e); }
+    }
     this.settingsSchemaState = schemaState;
     const migration = migrateSettingsForward(saved);
     let schemaNotice = "";
+    let keyStorageNotice = "";
+    let schemaPersisted = true;
     let shouldPersistSchema = false;
 
     if (schemaState === "current") {
@@ -589,6 +595,24 @@ class QnALogPlugin extends obsidian.Plugin {
         console.warn("[QnALog] 设置无法识别来源，已丢弃并改用默认值");
       }
     }
+    if (!isValidApiKeyStorageNamespace(this.settings.apiKeyStorageNamespace)) {
+      this.settings.apiKeyStorageNamespace = createApiKeyStorageNamespace();
+      if (schemaState !== "future") shouldPersistSchema = true;
+    }
+    // 先序列化成规范路径，再读 SecretStorage：数组、provider 与方案的路径必须与写盘时一致。
+    const normalizedSettings = serializePluginSettings(this.settings);
+    const restoredKeys = restoreApiKeySecrets(
+      normalizedSettings,
+      this.app.secretStorage,
+      this.settings.apiKeyStorageNamespace,
+      schemaState !== "future",
+    );
+    this.settings = normalizePluginSettings({ settings: normalizedSettings });
+    if (restoredKeys.needsPersist && schemaState !== "future") shouldPersistSchema = true;
+    if (restoredKeys.failures > 0) {
+      keyStorageNotice = t("QnALog could not access or migrate one or more API keys in Obsidian SecretStorage. Check the service settings and re-enter any missing keys.");
+      console.warn("[QnALog] API key SecretStorage read or migration failed; no key values were logged");
+    }
 
     // installedUpdateVersion 既记录内置更新器刚写入的待生效版本，也应在插件真正加载后
     // 与 manifest 对齐。否则通过 Obsidian 社区目录更新时，这个字段会永久停留在旧版本。
@@ -599,13 +623,21 @@ class QnALogPlugin extends obsidian.Plugin {
       shouldPersistSchema = true;
     }
     if (shouldPersistSchema) {
-      try { await this.saveAll(); } catch (e) { console.warn("[QnALog] schema save failed", e); }
+      schemaPersisted = false;
+      try {
+        await this.saveAll();
+        schemaPersisted = true;
+        keyStorageNotice = "";
+      } catch (e) {
+        console.warn("[QnALog] schema save failed", e);
+        if (e instanceof ApiKeyStorageError) keyStorageNotice = "";
+      }
     }
     // 界面语言在设置读回后立刻生效：之后所有渲染（设置页、侧边栏、对话框）
     // 都按当前语言取词条。空串表示跟随 Obsidian 自己的界面语言。
     applyUiLanguage(this.settings);
 
-    if (schemaNotice) {
+    if (schemaNotice && (schemaState !== "migrate" || schemaPersisted)) {
       try {
         void this.diagnostics.logDiagnostic(
           schemaState === "migrate" ? "info" : "warn",
@@ -618,6 +650,7 @@ class QnALogPlugin extends obsidian.Plugin {
         console.warn("[QnALog] schema notice failed", e);
       }
     }
+    if (keyStorageNotice) new obsidian.Notice(keyStorageNotice, 10000);
   }
 
   /**
@@ -732,15 +765,23 @@ class QnALogPlugin extends obsidian.Plugin {
         items: this.queue ? this.queue.snapshot() : (this.persistedQueue || []),
       },
     };
-    // 落盘前深拷贝再混淆密钥：serialize 里有的字段（如 transcribeProviders）是对内存的引用，
-    // 直接混淆会污染内存里的明文密钥导致后续 API 调用失败。深拷贝隔离后只混淆磁盘副本。
+    // SecretStorage 写入成功后才清空副本里的密钥字段；失败时不覆盖原设置文件。
     let safe;
     try {
       safe = JSON.parse(JSON.stringify(payload));
-      transformApiKeyFieldsDeep(safe.settings, obfuscateApiKey);
     } catch (e) {
-      console.warn("[QnALog] key obfuscate failed, fallback to plain", e);
-      safe = payload;
+      console.warn("[QnALog] settings snapshot copy failed; settings were not saved");
+      throw e;
+    }
+    try {
+      storeApiKeySecrets(safe.settings, this.app.secretStorage, this.settings.apiKeyStorageNamespace);
+    } catch (e) {
+      console.warn("[QnALog] API key SecretStorage write failed; settings were not saved");
+      if (e instanceof ApiKeyStorageError && e.rollbackFailed) {
+        console.error("[QnALog] SecretStorage rollback failed; some stored keys may have changed");
+      }
+      new obsidian.Notice(t("QnALog could not save API keys to Obsidian SecretStorage. The settings file was left unchanged."), 10000);
+      throw e instanceof ApiKeyStorageError ? e : new ApiKeyStorageError();
     }
     await this.saveData(safe);
   }
