@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import type { PluginSettings } from "../shared/types";
 import { PeopleDirectoryService } from "../people/people-directory-service";
-import { LV_BASE_DEFINITIONS } from "../views/base-definitions";
+import { QNALOG_BASE_DEFINITIONS } from "../views/base-definitions";
 import { TODO_WALL_FILE, formatTodoWallMarkdown, getBasesFolder, getWallPath, insertGeneratedWallMarker } from "../views/wall-markdown";
 import { ensureVaultFolder } from "../shared/util-vault";
 import { NS_WALL_MARKER_RE } from "../shared/namespace";
@@ -40,7 +40,7 @@ export class LibraryViewService {
     await ensureVaultFolder(this.host.app, basesFolder + "/按模式");
     await ensureVaultFolder(this.host.app, basesFolder + "/场景");
     let created = 0, updated = 0, skipped = 0;
-    for (const def of LV_BASE_DEFINITIONS) {
+    for (const def of QNALOG_BASE_DEFINITIONS) {
       const path = obsidian.normalizePath(basesFolder + "/" + def.relPath);
       const existing = this.host.app.vault.getAbstractFileByPath(path);
       if (existing instanceof obsidian.TFile) {

@@ -5,7 +5,7 @@
 
 import { NS_FM } from "../shared/namespace";
 
-export const LV_BASE_DEFINITIONS = [
+export const QNALOG_BASE_DEFINITIONS = [
   // —— 按模式 ——
   {
     relPath: "按模式/所有会议.base",

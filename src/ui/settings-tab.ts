@@ -83,7 +83,7 @@ function renderChannelProbeRows(container, rows) {
   }
 }
 
-export const LV_SETTINGS_TABS = [
+export const QNALOG_SETTINGS_TABS = [
   { id: "home",     label: "QnALog" },
   { id: "recording", label: "Recording" },
   { id: "api",      label: "API" },
@@ -111,7 +111,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   getVisibleSettingsTabs() {
     // 标签在调用时翻译，不在模块加载时：语言可以在「关于」里随时改，
     // 若在常量定义处翻译，改完语言标签不会跟着变。
-    return LV_SETTINGS_TABS.map((tab) => ({ id: tab.id, label: t(tab.label) }));
+    return QNALOG_SETTINGS_TABS.map((tab) => ({ id: tab.id, label: t(tab.label) }));
   }
   display() {
     this.renderSettings();
