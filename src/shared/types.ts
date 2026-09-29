@@ -191,7 +191,6 @@ export interface PluginSettings {
   floatingBallPos: FloatingBallPosition;
   autoOpenNoteAfterFinish: boolean;
   autoOpenHtmlReportAfterGenerate: boolean;
-  autoCheckUpdates: boolean;
   lastUpdateCheckAt: string | null;
   availableUpdate: AvailableUpdate | null;
   lastUpdateError: string;

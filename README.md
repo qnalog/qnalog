@@ -157,7 +157,7 @@ No ads, no analytics, no telemetry. Plugin settings are stored locally in `.obsi
 
 - Speech-to-text requests send audio to the transcription service you configured.
 - AI organization requests send transcript text and prompt context to the LLM service you configured.
-- The update check requests `manifest.json` from this project's GitHub release page so the plugin can tell you a newer version exists. It never downloads or installs anything.
+- The update check requests `manifest.json` from this project's GitHub release page only when you click **Check for updates** in Settings > About or run **Check for Updates** from the command palette. Plugin startup makes no update-check requests. It never downloads or installs anything.
 
 **Where recordings live.** The current version has no QnALog backend: it keeps no recordings, transcripts, or notes on servers of its own, and everything it writes — recordings and generated notes — stays in the local vault path you choose.
 
