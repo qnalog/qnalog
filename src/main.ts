@@ -241,11 +241,8 @@ class QnALogPlugin extends obsidian.Plugin {
       },
       now: () => Date.now(),
       normalizePath: (path) => obsidian.normalizePath(path),
-      setTimeout: (handler, delayMs) => window.setTimeout(handler, delayMs),
-      clearTimeout: (handle) => window.clearTimeout(handle),
       buildVersion: this.manifest && this.manifest.version ? this.manifest.version : "",
     });
-    this.register(() => this.updateService.dispose());
     this.tasks.start();
     this.recorder = new RecorderService(this);
     this.queue = new TaskQueue(this);
@@ -507,7 +504,6 @@ class QnALogPlugin extends obsidian.Plugin {
     }
     this.app.workspace.onLayoutReady(() => {
       this.warnIfBuildManifestSkew();
-      this.checkForUpdatesOnStartup();
       this.externalInbox.refreshExternalInboxWatcher();
       const inboxTimer = window.setTimeout(() => {
         if (this.settings.inboxAutoImport && isAbsoluteExternalInboxPath(this.settings.inboxFolder)) {
@@ -801,17 +797,11 @@ class QnALogPlugin extends obsidian.Plugin {
     }
   }
 
-  getUpdateRawBase() {
-    return this.updateService.getUpdateRawBase();
-  }
 
   getUpdateRawBases() {
     return this.updateService.getUpdateRawBases();
   }
 
-  checkForUpdatesOnStartup() {
-    return this.updateService.checkForUpdatesOnStartup();
-  }
 
   async checkForUpdates(options = {}) {
     return this.updateService.checkForUpdates(options);

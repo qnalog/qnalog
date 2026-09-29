@@ -2462,8 +2462,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
   /**
    * 「关于」选项卡：版本与更新、诊断日志、版权与许可。
-   * 三者都不是配置项（只有「启动时自动检查」一个开关），
-   * 原先分散在「更新」与「进阶」两处。
+   * 三者都不是配置项，原先分散在「更新」与「进阶」两处。
    */
   renderAbout(c) {
     // 界面语言放在最前面：它是这一页唯一会影响「其余所有界面长什么样」的设置项，
@@ -2514,10 +2513,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText(t("Open GitHub")).onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL)))
       .addButton(b => b.setButtonText(t("View versions")).onClick(() => openExternalUrl(QNALOG_UPDATE_REPO_URL + "/releases")));
 
-    new obsidian.Setting(c).setName(t("Check Automatically on Startup"))
-      .setDesc(t("When enabled, this repository is checked at most once every 24 hours."))
-      .addToggle(t => t.setValue(this.plugin.settings.autoCheckUpdates !== false)
-        .onChange(async v => { this.plugin.settings.autoCheckUpdates = v; await this.plugin.saveSettings(); }));
 
     // 本插件不下载也不安装任何文件（Obsidian 开发者政策：插件不得自我更新）。
     // 这里只检查版本并引导到 GitHub Release，安装交给 Obsidian 或 BRAT。

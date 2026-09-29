@@ -83,6 +83,16 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(serializePluginSettings(a).schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
   });
 
+  it("drops the retired automatic update setting when saving", () => {
+    const settings = normalizePluginSettings({
+      autoCheckUpdates: true,
+      updates: { autoCheck: true },
+    });
+    const persisted = serializePluginSettings(settings);
+    expect("autoCheckUpdates" in settings).toBe(false);
+    expect(persisted.updates).not.toHaveProperty("autoCheck");
+  });
+
   it("默认设置：DEFAULT_SETTINGS 的每个顶层键都必须在 normalize→serialize→normalize 后原样存活", () => {
     const a = normalizePluginSettings({});
     const b = roundTrip(a);
@@ -121,7 +131,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     a.showFloatingBall = false;
     a.enableRealtimeOutline = false;
     a.diagnosticsLogEnabled = false;
-    a.autoCheckUpdates = false;
     a.filterShortRecordings = false;
     a.keepSegmentAudioFiles = true;
 
@@ -179,7 +188,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.showFloatingBall).toBe(false);
     expect(b.enableRealtimeOutline).toBe(false);
     expect(b.diagnosticsLogEnabled).toBe(false);
-    expect(b.autoCheckUpdates).toBe(false);
     expect(b.filterShortRecordings).toBe(false);
     expect(b.keepSegmentAudioFiles).toBe(true);
 

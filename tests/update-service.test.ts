@@ -6,8 +6,6 @@ vi.mock("obsidian", () => ({
 
 import type { AvailableUpdate } from "../src/shared/types";
 import {
-  UPDATE_CHECK_INTERVAL_MS,
-  UPDATE_STARTUP_DELAY_MS,
   UpdateService,
   type UpdateAdapter,
   type UpdateRuntime,
@@ -72,16 +70,11 @@ function createFixture(options: FixtureOptions = {}) {
   const events: string[] = [];
   const notices: Array<{ message: string; duration?: number }> = [];
   const warnings: Array<{ message: string; error?: unknown }> = [];
-  const timers = new Map<number, () => void>();
-  const clearedTimers: number[] = [];
-  let nextTimer = 1;
   const now = options.now ?? NOW;
   const settings: UpdateSettings = {
-    autoCheckUpdates: true,
     lastUpdateCheckAt: null,
     availableUpdate: options.availableUpdate ?? null,
     lastUpdateError: "",
-    installedUpdateVersion: "",
   };
   const adapter = new MemoryAdapter(events, options.initialFiles);
   const request = options.request ?? (async (url: string) => {
@@ -101,17 +94,6 @@ function createFixture(options: FixtureOptions = {}) {
     warn: (message, error) => warnings.push({ message, error }),
     now: () => now,
     normalizePath: (path) => path.replace(/\\/g, "/").replace(/\/+/g, "/"),
-    setTimeout: (handler, delayMs) => {
-      events.push(`timer:set:${delayMs}`);
-      const handle = nextTimer++;
-      timers.set(handle, handler);
-      return handle;
-    },
-    clearTimeout: (handle) => {
-      events.push(`timer:clear:${handle}`);
-      clearedTimers.push(handle);
-      timers.delete(handle);
-    },
     buildVersion: options.buildVersion ?? options.currentVersion ?? "1.0.0",
   };
   const service = new UpdateService({
@@ -128,8 +110,6 @@ function createFixture(options: FixtureOptions = {}) {
     events,
     notices,
     warnings,
-    timers,
-    clearedTimers,
     saveSettings,
   };
 }
@@ -148,37 +128,6 @@ describe("update source and path resolution", () => {
   });
 });
 
-describe("UpdateService startup scheduling", () => {
-  it("applies 24-hour gating, fires after four seconds, and does not clear an already-fired timer", async () => {
-    const fixture = createFixture({
-      request: async () => ({ status: 200, text: JSON.stringify({ id: "qnalog", version: "1.0.0" }) }),
-    });
-    fixture.settings.lastUpdateCheckAt = new Date(NOW - UPDATE_CHECK_INTERVAL_MS + 1).toISOString();
-    fixture.service.checkForUpdatesOnStartup();
-    expect(fixture.timers.size).toBe(0);
-
-    fixture.settings.lastUpdateCheckAt = new Date(NOW - UPDATE_CHECK_INTERVAL_MS).toISOString();
-    fixture.service.checkForUpdatesOnStartup();
-    expect(fixture.events).toContain(`timer:set:${UPDATE_STARTUP_DELAY_MS}`);
-    expect(fixture.events.some(event => event.startsWith("request:"))).toBe(false);
-
-    const handler = [...fixture.timers.values()][0];
-    handler();
-    await vi.waitFor(() => expect(fixture.events.some(event => event.startsWith("request:"))).toBe(true));
-    fixture.service.dispose();
-    expect(fixture.clearedTimers).toEqual([]);
-  });
-
-  it("dispose clears only a startup timer that has not fired", () => {
-    const fixture = createFixture();
-    fixture.service.checkForUpdatesOnStartup();
-    fixture.service.dispose();
-    fixture.service.checkForUpdatesOnStartup();
-    expect(fixture.clearedTimers).toEqual([1]);
-    expect(fixture.timers.size).toBe(0);
-    expect(fixture.events.filter(event => event.startsWith("timer:set:"))).toHaveLength(1);
-  });
-});
 
 describe("UpdateService checks", () => {
   it("falls back in source order, writes check state, and still notices a new version when silent", async () => {

@@ -64,6 +64,5 @@ describe("设置选项卡结构", () => {
 
     const about = source.slice(source.indexOf("renderAbout(c) {"));
     expect(about).toContain("diagnosticsLogFolder");
-    expect(about).toContain("autoCheckUpdates");
   });
 });

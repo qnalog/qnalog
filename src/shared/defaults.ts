@@ -384,7 +384,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   autoOpenNoteAfterFinish: true,
   autoOpenHtmlReportAfterGenerate: true,
 
-  autoCheckUpdates: true,
   lastUpdateCheckAt: null,
   availableUpdate: null,
   lastUpdateError: "",

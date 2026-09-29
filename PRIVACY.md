@@ -20,7 +20,7 @@ QnALog does not include analytics, advertising, or telemetry. It may make networ
 
 - Speech-to-text requests send audio data to the transcription service configured by the user.
 - AI organization requests send transcript text and prompt context to the large-language-model service configured by the user.
-- Update checks request `manifest.json` only, from this repository's `main` branch (raw source and jsDelivr mirrors). The plugin compares the version and, if a newer one exists, points you at the GitHub release page. It never downloads or installs plugin files, and it does not update itself. The update source is a fixed constant and is not user-configurable.
+- Update checks request `manifest.json` only, from this repository's `main` branch (raw source and jsDelivr mirrors). They run only after the user clicks **Check for updates** in Settings > About or runs **Check for Updates** from the command palette; plugin startup makes no update-check requests. The plugin compares the version and, if a newer one exists, points you at the GitHub release page. It never downloads or installs plugin files, and it does not update itself. The update source is a fixed constant and is not user-configurable.
 - Documentation links in settings open external web pages in the system browser.
 
 If recording is enabled, audio files are saved only to the local Obsidian vault path chosen by the user. The current version has no QnALog backend: it does not operate its own cloud storage service and does not upload recordings, transcripts, or notes to any server of its own.

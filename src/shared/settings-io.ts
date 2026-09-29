@@ -370,7 +370,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   const updates = asRecord(raw.updates);
   // updateRepoUrl/Branch/PluginDir/RawBaseUrl 已收编为模块常量 QNALOG_UPDATE_*：
   // 此前 normalize 始终重置为默认值，用户落盘值从未生效过，作为设置项是假象。
-  s.autoCheckUpdates = firstBoolean(defaults.autoCheckUpdates, updates.autoCheck, raw.autoCheckUpdates);
   s.lastUpdateCheckAt = firstNullableString(defaults.lastUpdateCheckAt, updates.lastCheckedAt, raw.lastUpdateCheckAt);
   s.availableUpdate = normalizeAvailableUpdate(firstDefined(updates.available, raw.availableUpdate));
   s.lastUpdateError = firstString(defaults.lastUpdateError, updates.lastError, raw.lastUpdateError);
@@ -547,7 +546,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       floatingControlPosition: s.floatingBallPos || {},
     },
     updates: {
-      autoCheck: s.autoCheckUpdates !== false,
       lastCheckedAt: s.lastUpdateCheckAt || null,
       available: s.availableUpdate || null,
       lastError: s.lastUpdateError || "",

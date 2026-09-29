@@ -498,7 +498,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
             + 读写只认新值 + 删除全部迁移逻辑（迁移命令、`MigrationService`、迁移报告）+
             `SETTINGS_SCHEMA_VERSION` 重置为 1 + 删除 `install-to-vault.mjs` 的旧插件设置继承。
 - [ ] P4 `src/ui/modals.ts`（2,627 行 / 11 个 Modal 类 + 悬浮气泡 `BubbleWidget`）按域拆包。可选。
-- [ ] 更新检查的 5 个转发（`getUpdateRawBase(s)`、`checkForUpdates(OnStartup)`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
+- [ ] 更新检查的 3 个转发（`getUpdateRawBases`、`checkForUpdates`、`warnIfBuildManifestSkew`）仍留在插件类上，各 2–3 行；
       可并入一个更新域服务，属收尾性质。
 - [x] 文档债务：`ARCHITECTURE.md` 的 `main.ts:NNNN` 行号引用已随 P1 失效，已按域服务重新标注（2026-09-14）。
       该文件是本地工作稿（未入库，也不在 `.gitignore` 中），待整体重构完成后再并入。
@@ -658,7 +658,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 
 ## 9. 设置映射表
 
-维护多个设置界面之前，先把**每一份设置的当前状态**盘清：入口、默认值、落盘键、作用与归属。本节覆盖 `PluginSettings` 的全部 **87** 个顶层键，`SETTINGS_SCHEMA_VERSION = 2`。
+维护多个设置界面之前，先把**每一份设置的当前状态**盘清：入口、默认值、落盘键、作用与归属。本节覆盖 `PluginSettings` 的全部 **86** 个顶层键，`SETTINGS_SCHEMA_VERSION = 2`。
 
 **三列由脚本从源码解析生成，不是手工抄写**，因此不会与代码脱节：默认值取自 `src/shared/defaults.ts`；落盘位置与读回别名取自 `src/shared/settings-io.ts` 的 `serializePluginSettings` 与 `normalizePluginSettings`；现入口取自 `src/ui/settings-tab.ts` 及其余 UI 写点（侧边栏、命令面板、弹窗、拖动）。`scripts/check-settings-map.mjs` 会核对本表的键集合与落盘路径，键增删或改路径而未更新本节时构建失败。
 
@@ -758,7 +758,6 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | `floatingBallPos` | `{…}` | `ui.floatingControlPosition` | — | 悬浮按钮位置（拖动写入） | 录音（拖动写入） | 内部（保留存储，不进设置界面） |
 | `autoOpenNoteAfterFinish` | `true` | `noteNaming.openAfterFinish` | — | 处理完成后是否自动打开纪要 | 录音 | 高级 · 输出 |
 | `autoOpenHtmlReportAfterGenerate` | `true` | `presentation.openHtmlReportAfterGenerate` | — | 生成 HTML 报告后是否用浏览器打开 | AI 整理 | 高级 · 输出 |
-| `autoCheckUpdates` | `true` | `updates.autoCheck` | — | 启动时是否检查新版本 | 关于 | 高级 · 自动化 |
 | `lastUpdateCheckAt` | `null` | `updates.lastCheckedAt` | — | 上次检查更新时间 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
 | `availableUpdate` | `null` | `updates.available` | — | 已发现的可用更新 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
 | `lastUpdateError` | `""` | `updates.lastError` | — | 上次检查失败原因 | 关于（只读展示） | 内部（保留存储，不进设置界面） |
@@ -788,8 +787,7 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 2. **「常规」改名「录音」**。原名的「常规」什么都没说；这一页的实际内容是
    声音怎么进来、存到哪里、录完发生什么，改名后名实相符。
    分组顺序也按这个顺序重排，把「音频输入」放在最前。
-3. **「更新」扩为「关于」**。更新、诊断日志、版权与许可三者都不是配置项
-   （全会话只有「启动时自动检查」一个开关），原先分散在两处，现集中一页。
+3. **「更新」扩为「关于」**。更新、诊断日志、版权与许可都不是配置项，原先分散在两处，现集中一页。
 
 「说话人」选项卡并入「API」见 §11.8。首页「使用状态」见 §11.7。
 
@@ -804,19 +802,19 @@ P1 拆 `LexVoicePlugin` 已完成（10,357 行 → 513 行，抽出 22 个域服
 | 层 | 放什么 | 键数 |
 |---|---|---:|
 | 基本设置 | 当前服务与状态、更换密钥、录音来源、笔记保存位置、默认整理方式 | 13 |
-| 高级设置 | 自定义地址与模型、分阶段服务、提示词、分段与并发、重试、命名、自动导入、诊断 | 53 |
+| 高级设置 | 自定义地址与模型、分阶段服务、提示词、分段与并发、重试、命名、自动导入、诊断 | 52 |
 | 帮助与关于 | 配置说明、排障、版本与许可 | 0（全是展示项，无设置键） |
-| 内部（保留存储） | 程序生成或由其它界面/流程写入，不出现在设置界面 | 20 |
+| 内部（保留存储） | 程序生成或由其它界面/流程写入，不出现在设置界面 | 21 |
 
-「高级」内部按 **服务（11）/ 录音（6）/ 输出（23）/ 自动化（9）/ 诊断与隐私（4）** 五组划分，避免变成长列表。
+「高级」内部按 **服务（11）/ 录音（6）/ 输出（23）/ 自动化（8）/ 诊断与隐私（4）** 五组划分，避免变成长列表。
 
-13 + 53 + 20 = 86，与 §9.1 的键数一致。
+13 + 52 + 21 = 86，与 §9.1 的键数一致。
 
 **录音来源、保存位置、默认整理方式留在基本设置**，不放进高级：这三项直接决定用户录到了什么、
 文件在哪里、生成什么内容，属于第一次使用就要确认的项。其余个性化设置（自定义地址与模型、提示词、
 分段与并发、重试、命名规则、自动导入、诊断）进高级。
 
-有 20 个键标为「内部」：它们要么由程序写入（`floatingBallPos` 由拖动写、`availableUpdate` 由更新检查写、
+有 21 个键标为「内部」：它们要么由程序写入（`floatingBallPos` 由拖动写、`availableUpdate` 由更新检查写、
 `knowledgeExtractionHistory` 由扫描写、`lastUpdateCheckAt` 等由更新服务写），要么是历史兼容字段
 （`transcribeEndpoint` 等 4 个兼容兜底、`polishPrompt*` 6 个模板迁移来源），要么只作展示
 （`peopleSuggestionCache` 等的计数）。**它们继续参与落盘与读回，只是不再占用设置界面**——
