@@ -1287,7 +1287,7 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 脚本只读源码与基线：不访问网络、不读构建产物、不依赖 git，本地、fork PR、CI、离线都能跑。
 行为测试在 `tests/architecture-gate.test.ts`，用注入的最小源码覆盖，不扫描真实仓库。
 
-三件事，对应基线的两个字段：
+四件事，对应基线的三个字段：
 
 1. **禁止新的 `src/main.ts` 依赖**（`pluginConsumers` 的键集合同时充当 import 白名单）。
    除 `src/main.ts` 自身外，任何 import（含 re-export、动态 import）解析后指向 `src/main`
@@ -1307,6 +1307,7 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
    cyclic SCC count / largest SCC size。**第一阶段不要求 cycle = 0**：
    现有环允许存在；失败条件是不得产生新环、不得扩大既有 SCC（既有 12 个服务的大环里
    再插入一个节点，同样失败）。
+4. **冻结非 UI 模块对界面实现的直接依赖**（`uiImportsFromNonUi`）。除装配根 `src/main.ts` 与 `src/ui/` 内部模块外，其他模块不得新增解析到 `src/ui/` 的静态 import、re-export 或动态 import。已有依赖先登记在基线；新增依赖失败，删除依赖但未同步收缩基线也失败。界面内部的依赖与装配入口的依赖不在此检查范围内。
 
 **第二阶段已完成（2026-09-26，分支 `refactor/service-dependency-decycle`）**：
 12 节点的强连通分量已拆成有向无环图，`环状分量 0`，基线 82 → 62 条边（切掉 20 条）。
@@ -1345,5 +1346,5 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 
 文件行数上限、方法数量上限、所有 Host 禁止 `app`/`settings`、`shared/` 层级规则、
 目录依赖白名单——这些方向多数属于遗留状态，第一版检查会大面积误报。
-规则少，误报才少。第一版只管三件已有明确证据的问题：
-`QnALogPlugin` 依赖扩散、plugin capability 面扩大、service 边/环扩大。
+规则少，误报才少。当前检查四类已有明确证据的问题：
+`QnALogPlugin` 依赖扩散、plugin capability 面扩大、service 边/环扩大、非 UI 模块对 UI 的依赖扩大。
