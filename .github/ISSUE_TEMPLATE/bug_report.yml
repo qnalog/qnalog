@@ -53,6 +53,13 @@ body:
       description: "Error notices, console text, or screenshots. / 报错提示、控制台文字或截图。"
     validations:
       required: true
+  - type: input
+    id: audio-device
+    attributes:
+      label: "Recording device / 录音设备（可选）"
+      description: "Microphone or audio input used when the problem occurred. / 问题发生时使用的麦克风或音频输入设备。"
+    validations:
+      required: false
   - type: textarea
     id: diagnostics
     attributes:

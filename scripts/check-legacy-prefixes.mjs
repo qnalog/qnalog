@@ -69,11 +69,14 @@ const COMPAT_TEST_FILES = new Set([
  *   `"lv-"`              裸前缀串
  *   `lvtask-`            前缀无连字符（显式列出）
  *   `--lex-sidebar-…`    CSS 自定义属性前是 `-` → 不能用 `[^\w-]` 排除连字符
+ *   `LV_SETTINGS_TABS`   全大写下划线常量
  *
  * 前视用 `(?<![A-Za-z0-9_])` 而非 `\b`：`flex-wrap`、`shelve`、`solve-` 里的
- * lex/lv 都被前一个字母挡住，不会误报。
+ * lex/lv 都被前一个字母挡住，不会误报。小写裸前缀（如 `lv_foo`）不在覆盖范围——
+ * 从未出现过，出现再补。
  */
 const LEGACY_PREFIX = /(?<![A-Za-z0-9_])((?:lexvoice|lvtask|lex|lvk|lv)-[a-z0-9-]*)/gi;
+const LEGACY_CONSTANT = /(?<![A-Za-z0-9_])(?:LEXVOICE|LVTASK|LEX|LVK|LV)_[A-Z0-9_]+/g;
 
 /** README / NOTICE / MAINTAINING 说明「与 LexVoice 的关系」时会提到它，属正当引用。 */
 const DOC_ALLOWLIST = /(^|\/)(README[^/]*\.md|NOTICE|MAINTAINING\.md|LICENSE|THIRD_PARTY_NOTICES\.md|ARCHITECTURE\.md|PRIVACY\.md|SECURITY\.md|DESIGN_SPEC\.md)$/;
@@ -143,6 +146,10 @@ export function checkLegacyPrefixes(files, { allowlist = ALLOWED, docAllowlist =
         const before = line.slice(Math.max(0, at - 2), at);
         const display = before === "--" ? `--${token}` : token;
         violations.push(`${file}:${i + 1} 出现旧品牌前缀 ${display}：${line.trim().slice(0, 110)}`);
+      }
+      LEGACY_CONSTANT.lastIndex = 0;
+      while ((match = LEGACY_CONSTANT.exec(line)) !== null) {
+        violations.push(`${file}:${i + 1} 出现旧品牌前缀 ${match[0]}：${line.trim().slice(0, 110)}`);
       }
     }
   }

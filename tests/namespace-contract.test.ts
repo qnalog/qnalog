@@ -25,7 +25,7 @@ import {
   readSemanticMeta,
   setNamespaceFrontmatter,
 } from "../src/shared/namespace";
-import { LV_BASE_DEFINITIONS } from "../src/views/base-definitions";
+import { QNALOG_BASE_DEFINITIONS } from "../src/views/base-definitions";
 import { formatPeopleBaseYaml } from "../src/people";
 import { FRONTMATTER_SCHEMA } from "../src/shared/catalog-modes";
 import { SETTINGS_SCHEMA_VERSION } from "../src/shared/settings-io";
@@ -85,7 +85,7 @@ describe("数据层命名空间与 Frontmatter schema", () => {
   });
 
   it("Bases 查询使用 canonical 键，显示名与属性名分离", () => {
-    for (const definition of LV_BASE_DEFINITIONS) {
+    for (const definition of QNALOG_BASE_DEFINITIONS) {
       expect(definition.yaml).not.toMatch(/note\.[^:\n]*[\u3400-\u9fff]/);
       expect(definition.yaml).toContain(`note.${NS_FM.time}`);
     }

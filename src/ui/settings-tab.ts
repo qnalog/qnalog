@@ -83,7 +83,7 @@ function renderChannelProbeRows(container, rows) {
   }
 }
 
-export const LV_SETTINGS_TABS = [
+export const QNALOG_SETTINGS_TABS = [
   { id: "home",     label: "QnALog" },
   { id: "recording", label: "Recording" },
   { id: "api",      label: "API" },
@@ -111,7 +111,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   getVisibleSettingsTabs() {
     // 标签在调用时翻译，不在模块加载时：语言可以在「关于」里随时改，
     // 若在常量定义处翻译，改完语言标签不会跟着变。
-    return LV_SETTINGS_TABS.map((tab) => ({ id: tab.id, label: t(tab.label) }));
+    return QNALOG_SETTINGS_TABS.map((tab) => ({ id: tab.id, label: t(tab.label) }));
   }
   display() {
     this.renderSettings();
@@ -262,22 +262,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 就地写入，不替换 settings 对象：域服务持有的是同一个引用，
     // 换对象会让它们继续读旧值。
     Object.assign(this.plugin.settings, applyPresetPlan(this.plugin.settings, plan));
-    await this.plugin.saveSettings();
-    return true;
-  }
-
-  async restoreTranscribeProviderDefaults(providerId) {
-    const defaults = DEFAULT_SETTINGS.transcribeProviders[providerId];
-    if (!defaults) return false;
-    const current = (this.plugin.settings.transcribeProviders || {})[providerId] || {};
-    this.plugin.settings.transcribeProviders[providerId] = Object.assign({}, current, {
-      name: current.name || defaults.name,
-      endpoint: defaults.endpoint || "",
-      model: defaults.model || "",
-      language: defaults.language || "",
-      protocol: defaults.protocol || current.protocol || "",
-      targetLanguage: current.targetLanguage || defaults.targetLanguage || "zh",
-    });
     await this.plugin.saveSettings();
     return true;
   }
@@ -2148,75 +2132,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
   }
 
-
-
-
-
-  // 列出库内所有文件夹路径（供路径输入框的原生 datalist 自动补全）。
-  getAllVaultFolderPaths() {
-    const out = [];
-    try {
-      const files = this.app.vault.getAllLoadedFiles ? this.app.vault.getAllLoadedFiles() : [];
-      for (const f of files) {
-        if (f instanceof obsidian.TFolder && f.path && f.path !== "/") out.push(f.path);
-      }
-    } catch { /* intentionally empty */ }
-    return out.sort();
-  }
-
-  // 文件夹路径设置项：原生 datalist 补全 + 不存在时在输入框下方渲染警示行与「创建此文件夹」按钮。
-  addFolderPathSetting(c, opts) {
-    const setting = new obsidian.Setting(c).setName(opts.name);
-    if (opts.desc) setting.setDesc(opts.desc);
-    const listId = "qnalog-folder-list-" + (this._folderSettingSeq = (this._folderSettingSeq || 0) + 1);
-    let warnEl = null;
-    const renderWarn = (path) => {
-      if (warnEl) { warnEl.remove(); warnEl = null; }
-      const p = obsidian.normalizePath(String(path || "").trim());
-      if (!p || p === "." || p === "/") return;
-      const existing = this.app.vault.getAbstractFileByPath(p);
-      if (existing instanceof obsidian.TFolder) return;
-      warnEl = c.createDiv({ cls: "qnalog-folder-warn" });
-      if (existing) {
-        warnEl.createSpan({ text: t("\"{0}\" already exists but is not a folder; choose another path.").replace("{0}", p) });
-      } else {
-        warnEl.createSpan({ text: `${t("Folder \"")}${p}${t("\" does not exist yet.")}` });
-        const btn = warnEl.createEl("button", { text: t("Create this folder"), cls: "mod-cta" });
-        btn.onclick = async () => {
-          try {
-            await this.app.vault.createFolder(p);
-            new obsidian.Notice(`${t("Created folder:")}${p}`);
-            renderWarn(p);
-          } catch (e) {
-            new obsidian.Notice(`${t("Create failed: ")}${(e && e.message) || e}`);
-          }
-        };
-      }
-      setting.settingEl.insertAdjacentElement("afterend", warnEl);
-    };
-    setting.addText((text) => {
-      text.setPlaceholder(opts.placeholder || "").setValue(opts.getValue() || "");
-      try {
-        text.inputEl.setAttribute("list", listId);
-        const dl = setting.settingEl.createEl("datalist");
-        dl.id = listId;
-        for (const fp of this.getAllVaultFolderPaths()) dl.createEl("option", { value: fp });
-      } catch { /* intentionally empty */ }
-      text.onChange(async (v) => {
-        await opts.setValue(String(v || "").trim());
-        renderWarn(v);
-      });
-    });
-    renderWarn(opts.getValue());
-    return setting;
-  }
-
-
-  /**
-   * 「录音」选项卡。原先这部分与诊断、自动导入、队列挤在「进阶」里，
-   * 而它们与录音的关系远近不同：分段与并发直接决定录到了什么，
-   * 诊断与自动导入是旁路功能，分开后录音参数不再被埋在长列表里。
-   */
   /**
    * 「录音」选项卡。整体只讲一件事：声音怎么进来、存到哪里、录完发生什么。
    *

@@ -14,7 +14,7 @@ const source = fs.readFileSync(path.join(root, "src/ui/settings-tab.ts"), "utf8"
 
 /** 选项卡列表里声明的 id。 */
 function declaredTabIds(): string[] {
-  const block = source.slice(source.indexOf("export const LV_SETTINGS_TABS"), source.indexOf("];", source.indexOf("export const LV_SETTINGS_TABS")));
+  const block = source.slice(source.indexOf("export const QNALOG_SETTINGS_TABS"), source.indexOf("];", source.indexOf("export const QNALOG_SETTINGS_TABS")));
   return [...block.matchAll(/\{\s*id:\s*"([a-z]+)"/g)].map((m) => m[1]);
 }
 

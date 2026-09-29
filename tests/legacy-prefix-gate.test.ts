@@ -15,6 +15,7 @@ describe("旧前缀静态门禁", () => {
       ["src/ui/outline-view.ts", 'el.classList.add("lex-ms-active");'],
       ["src/notes/x.ts", 'const m = `<!-- lexvoice-session:${id} -->`;'],
       ["tests/some.test.ts", 'expect(f("lv-import-1")).toBe(1);'],
+      ["src/ui/settings-tab.ts", 'export const LV_SETTINGS_TABS = [];'],
     ];
     for (const [file, content] of cases) {
       const found = checkLegacyPrefixes({ [file]: content });
@@ -28,6 +29,7 @@ describe("旧前缀静态门禁", () => {
       "styles.css": ".x { --qnalog-sidebar-surface: var(--background-secondary); }",
       "README.md": "QnALog is derived from LexVoice — see NOTICE.",
       "src/b.ts": 'const word = "flex-wrap"; const other = "shelve";',
+      "src/c.ts": 'export const QNALOG_SETTINGS_TABS = []; const DELIVERY_STATE = 1;',
     };
     expect(checkLegacyPrefixes(clean)).toEqual([]);
   });
