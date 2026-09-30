@@ -25,7 +25,7 @@ import {
   reportHueDelta,
   recolorReportHtml,
   REPORT_BASE_ACCENT_HEX,
-} from "../src/outline-text";
+} from "../src/notes/outline-text";
 
 const countSubPoints = (md: string) => md.split("\n").filter((l) => /^ {2,}[-*+]\s/.test(l)).length;
 const countTopBullets = (md: string) => md.split("\n").filter((l) => /^ {0,1}[-*+]\s/.test(l)).length;

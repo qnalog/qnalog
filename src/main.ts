@@ -9,7 +9,7 @@ import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrect
 
 import {getModeDisplayName, getVisibleModeEntries } from "./shared/mode-meta";
 
-import { UpdateService } from "./update-service";
+import { UpdateService } from "./update/update-service";
 
 
 
@@ -32,7 +32,7 @@ import {AUDIO_EXT } from "./shared/catalog-import";
 import {deobfuscateApiKey } from "./shared/util-key-diag";
 import { getDesktopModule } from "./shared/desktop-runtime";
 
-import {RealtimeOutlineCoordinator } from "./outline-coordinator";
+import {RealtimeOutlineCoordinator } from "./notes/outline-coordinator";
 
 import {ExternalInboxScanner, isAbsoluteExternalInboxPath } from "./audio/external-inbox";
 

@@ -7,7 +7,7 @@ import { getSessionMetaDurationMs } from "../shared/util-text";
 import { stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings } from "../shared/types";
 import { getLearnedLlmOutputCeiling } from "../llm/output-budget";
-import { splitVersionPayload } from "../version-content";
+import { splitVersionPayload } from "../versions/version-content";
 import { getTaskErrorMessage } from "../shared/task-activity";
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { getSegmentsDurationMs } from "../notes/audio-refs";

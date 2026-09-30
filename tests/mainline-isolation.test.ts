@@ -7,7 +7,7 @@ function files(overrides = {}) {
   return {
     "manifest.json": JSON.stringify({ id: "qnalog", version: "2.1.5" }),
     "main.js": `/* banner */ const url = "https://github.com/qnalog/qnalog";`,
-    "src/update-source.ts": `export const QNALOG_UPDATE_REPO_URL = "https://github.com/qnalog/qnalog";`,
+    "src/update/update-source.ts": `export const QNALOG_UPDATE_REPO_URL = "https://github.com/qnalog/qnalog";`,
     ...overrides,
   };
 }
@@ -19,10 +19,10 @@ describe("mainline isolation check", () => {
 
   it("flags an upstream repository URL in source", () => {
     const violations = checkMainlineIsolation(files({
-      "src/update-source.ts": `export const QNALOG_UPDATE_REPO_URL = "https://github.com/Lynn-x/LexVoice";`,
+      "src/update/update-source.ts": `export const QNALOG_UPDATE_REPO_URL = "https://github.com/Lynn-x/LexVoice";`,
     }));
     expect(violations).toHaveLength(1);
-    expect(violations[0]).toContain("src/update-source.ts:1");
+    expect(violations[0]).toContain("src/update/update-source.ts:1");
   });
 
   it("flags an upstream URL that only survives in the built bundle", () => {

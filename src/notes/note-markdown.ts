@@ -10,7 +10,7 @@ import { normalizeCallouts } from "./callout-normalize";
 import { buildEmptyLlmOutputFallback, formatMergeSegmentForPrompt } from "../prompts/briefing-prompts";
 
 import * as obsidian from "obsidian";
-import { findLowEvidenceEntities, hashRealtimeOutlineText } from "../outline-text";
+import { findLowEvidenceEntities, hashRealtimeOutlineText } from "./outline-text";
 
 import { stripFrontmatterSimple } from "../ui/helpers";
 
@@ -37,7 +37,7 @@ import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "..
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import { replaceExistingActiveVersionBlock, sanitizeActiveVersionBody, splitLeadingFrontmatter } from "../version-content";
+import { replaceExistingActiveVersionBlock, sanitizeActiveVersionBody, splitLeadingFrontmatter } from "../versions/version-content";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";

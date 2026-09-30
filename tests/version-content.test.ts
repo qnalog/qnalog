@@ -11,7 +11,7 @@ import {
   splitLeadingFrontmatter,
   splitVersionPayload,
   stripVersionBookkeepingFrontmatter,
-} from "../src/version-content";
+} from "../src/versions/version-content";
 
 const generatedDocument = [
   "---",

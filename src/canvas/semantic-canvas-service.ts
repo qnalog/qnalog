@@ -21,7 +21,7 @@ import {
 } from "../canvas/semantic-outline-canvas";
 import type { SemanticCanvasLayoutMode } from "../canvas/semantic-outline-canvas";
 import { inferSemanticCanvasSourcePath, parseSemanticCanvasSourcePath } from "../canvas/source-note";
-import { parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
+import { parseRealtimeOutlineStateFromMarkdown } from "../notes/outline-text";
 import { diagnosticError } from "../shared/util-key-diag";
 import type { PluginSettings } from "../shared/types";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";

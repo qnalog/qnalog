@@ -20,10 +20,10 @@ const CJK = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/;
 const CONTENT_FILES: Record<string, string> = {
   "src/prompts/": "发给模型的指令文本（i18n.ts 头部声明：提示词与界面语言无关）",
   "src/report/render.ts": "HTML 报告正文——生成的文档，非界面（决策 A）",
-  "src/report-templates.ts": "报告模板与注入哨兵",
-  "src/version-content.ts": "笔记正文与版本区标记（决策 A）",
+  "src/report/report-templates.ts": "报告模板与注入哨兵",
+  "src/versions/version-content.ts": "笔记正文与版本区标记（决策 A）",
   "src/versions/version-store.ts": "版本信息区标签（写入笔记的数据）",
-  "src/outline-text.ts": "大纲正文文本工具（笔记内容）",
+  "src/notes/outline-text.ts": "大纲正文文本工具（笔记内容）",
   "src/notes/note-markdown.ts": "笔记解析/生成的正文模板与标题匹配（note/match）",
   "src/notes/note-writer.ts": "笔记写入的正文结构与占位标题（决策 A）",
   "src/notes/detail-blocks.ts": "笔记明细块正文（决策 A）",
@@ -242,7 +242,7 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
   "src/ui/view-shell-service.ts": [
     [" · 语义图", "data"],
   ],
-  "src/update-service.ts": [
+  "src/update/update-service.ts": [
     ["[QnALog] build/manifest 版本错位：main.js=", "match"],
   ],
   "src/views/library-view-service.ts": [

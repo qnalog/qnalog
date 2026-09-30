@@ -26,7 +26,7 @@ import { escapeRegExp, formatElapsed } from "../shared/util-common";
 
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
-import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent-note-paths";
+import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "./recent-note-paths";
 import { NS_TAG, isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
 
 import { t } from "../shared/i18n";

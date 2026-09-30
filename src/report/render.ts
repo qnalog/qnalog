@@ -4,7 +4,7 @@ import { extractJsonObject } from '../shared/util-json';
 import { escapeHtmlText } from '../shared/util-markdown';
 import { isRecord, primitiveText } from '../shared/util-common';
 import { NS_MACHINE_SHELL_RE } from '../shared/namespace';
-import { SEMINAR_REPORT_TEMPLATE, SEMINAR_REPORT_PROMPT } from '../report-templates';
+import { SEMINAR_REPORT_TEMPLATE, SEMINAR_REPORT_PROMPT } from './report-templates';
 import { callLlm } from '../llm/core';
 
 import { t } from "../shared/i18n";

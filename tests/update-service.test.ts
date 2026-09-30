@@ -10,11 +10,11 @@ import {
   type UpdateAdapter,
   type UpdateRuntime,
   type UpdateSettings,
-} from "../src/update-service";
+} from "../src/update/update-service";
 import {
   pluginBasePath,
   resolveUpdateRawBases,
-} from "../src/update-source";
+} from "../src/update/update-source";
 
 const NOW = Date.parse("2025-02-03T04:05:06.789Z");
 const BASE_PATH = ".obsidian/plugins/qnalog";

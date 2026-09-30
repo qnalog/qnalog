@@ -13,7 +13,7 @@ export {
   resolveUpdateRawBase,
   resolveUpdateRawBases,
   pluginBasePath,
-} from "../update-source";
+} from "../update/update-source";
 import { VIRTUAL_CABLE_PATTERNS } from '../shared/catalog-import';
 import { normalizeKnowledgeExtractionHistory } from '../shared/util-knowledge';
 import { NS_FM, NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";

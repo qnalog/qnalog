@@ -4,7 +4,7 @@ import {
   getRecentNotePathRelativeToRoot,
   isPathUnderRecentNoteRoots,
   normalizeRecentNoteRoots,
-} from "../src/recent-note-paths";
+} from "../src/recent/recent-note-paths";
 
 describe("最近纪要索引范围", () => {
   it("同时覆盖普通纪要目录和招聘项目目录", () => {

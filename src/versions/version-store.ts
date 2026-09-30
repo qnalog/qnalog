@@ -5,7 +5,7 @@ import * as obsidian from "obsidian";
 import type { PluginSettings } from "../shared/types";
 import { NoteIndexService } from "../notes/note-index-service";
 import { sanitizeFilename } from "../shared/util-common";
-import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitVersionPayload, stripVersionBookkeepingFrontmatter } from "../version-content";
+import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, replaceLeadingFrontmatter, splitLeadingFrontmatter, splitVersionPayload, stripVersionBookkeepingFrontmatter } from "./version-content";
 import { getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";

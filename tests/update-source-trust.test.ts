@@ -4,7 +4,7 @@ vi.mock("obsidian", () => ({
   normalizePath: (path: string) => path.replace(/\\/g, "/").replace(/\/+/g, "/"),
 }));
 
-import { isTrustedUpdateSourceUrl, resolveUpdateRawBases } from "../src/update-source";
+import { isTrustedUpdateSourceUrl, resolveUpdateRawBases } from "../src/update/update-source";
 
 // 从上游版本迁移过来时，data.json 里会残留指向上游仓库的 availableUpdate
 // （典型是 version 2.3.2）。设置页会把它显示成"可用版本"，「安装更新」也可能据此

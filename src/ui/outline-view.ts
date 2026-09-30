@@ -4,7 +4,7 @@
 import type QnALogPlugin from "../main";
 import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
-import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
+import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../notes/outline-text";
 
 import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal } from "./modals";
 
@@ -41,7 +41,7 @@ import { escapeRegExp, formatElapsed, genId, primitiveText, sanitizeFilename } f
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import { getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots } from "../recent-note-paths";
+import { getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots } from "../recent/recent-note-paths";
 
 import { getTaskErrorMessage } from "../shared/task-activity";
 

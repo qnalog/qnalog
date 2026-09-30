@@ -1,6 +1,6 @@
-import { NS_FM, NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "./shared/namespace";
-import { QNALOG_ACTIVE_VERSION_END } from "./shared/limits";
-import { labelText } from "./shared/note-labels";
+import { NS_FM, NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
+import { QNALOG_ACTIVE_VERSION_END } from "../shared/limits";
+import { labelText } from "../shared/note-labels";
 
 const VERSION_FRONTMATTER_START = `<!-- ${NS_TAG}-version-frontmatter-start`;
 const VERSION_FRONTMATTER_END = `${NS_TAG}-version-frontmatter-end -->`;

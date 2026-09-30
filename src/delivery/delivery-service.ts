@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：交付物生成：HTML 报告、整页 PDF、.eml 邮件草稿
 
 import * as obsidian from "obsidian";
-import { recolorReportHtml } from "../outline-text";
+import { recolorReportHtml } from "../notes/outline-text";
 import { getDesktopModule } from "../shared/desktop-runtime";
 import { pickReportAccentColor } from "../ui/modals";
 import { sanitizeReportFileStem, generateHtmlReportFromMarkdown, generateStyledReportFromMarkdown } from "../report/render";
