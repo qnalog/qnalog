@@ -246,6 +246,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.tasks.start();
     this.recorder = new RecorderService(this);
     this.queue = new TaskQueue(this);
+    this.register(this.queue.onChange(() => this.shell.refreshOutlineView()));
     this.queue.load(this.persistedQueue);
     this.session = null;
     this.outlineCoordinator = new RealtimeOutlineCoordinator({
