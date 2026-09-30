@@ -200,6 +200,16 @@ export function checkDomainBoundaries(files) {
       const sf = ts.createSourceFile(file, String(content), ts.ScriptTarget.ES2020, true);
       const lineOfNode = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
       const visit = (node) => {
+        if (ts.isConstructorDeclaration(node)) {
+          const hostParameter = node.parameters[0];
+          if (hostParameter && hostParameter.name.getText(sf) === "host" && !hostParameter.type) {
+            const hostName = sf.statements.find((statement) =>
+              ts.isInterfaceDeclaration(statement) && statement.name.getText(sf).endsWith("Host")
+            )?.name.getText(sf) || "XxxHost";
+            const className = node.parent.name?.getText(sf) || "<类>";
+            problems.push(`${file}:${lineOfNode(node)} 构造函数参数 host 未标注类型：写成 constructor(host: ${hostName})，否则 src/main.ts 里的 new ${className}(this) 不检查插件实例是否满足 Host 接口`);
+          }
+        }
         if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && consumers.has(node.expression.getText(sf))) {
           node.arguments.forEach((arg, index) => {
             if (arg.kind === ts.SyntaxKind.ThisKeyword) {

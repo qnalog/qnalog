@@ -39,7 +39,7 @@ export class MeetingWorkbenchService {
   declare _meetingWorkbenchInteractionTimer;
   declare _meetingWorkbenchInteractionRunning;
 
-  constructor(host) {
+  constructor(host: MeetingWorkbenchHost) {
     this.host = host;
     this._meetingWorkbenchInteractionTimer = null;
     this._meetingWorkbenchInteractionRunning = null;

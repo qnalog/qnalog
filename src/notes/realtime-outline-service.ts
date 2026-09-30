@@ -57,7 +57,7 @@ export interface RealtimeOutlineHost {
 
 export class RealtimeOutlineService {
   declare host: RealtimeOutlineHost;
-  constructor(host) {
+  constructor(host: RealtimeOutlineHost) {
     this.host = host;
   }
 

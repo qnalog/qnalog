@@ -153,4 +153,24 @@ export class RepolishService {
     }));
     expect(problems).toEqual([]);
   });
+  it("要求域服务构造函数为 host 参数声明 Host 类型", () => {
+    const untyped = checkDomainBoundaries(files({
+      "src/domain/thing-service.ts": `export interface ThingHost { settings: unknown }
+export class ThingService {
+  declare host: ThingHost;
+  constructor(host) { this.host = host; }
+}`,
+    }));
+    expect(untyped.some((problem) => problem.includes("constructor(host: ThingHost)"))).toBe(true);
+
+    const typed = checkDomainBoundaries(files({
+      "src/domain/thing-service.ts": `export interface ThingHost { settings: unknown }
+export class ThingService {
+  declare host: ThingHost;
+  constructor(host: ThingHost) { this.host = host; }
+}`,
+    }));
+    expect(typed.some((problem) => problem.includes("构造函数参数 host 未标注类型"))).toBe(false);
+  });
+
 });

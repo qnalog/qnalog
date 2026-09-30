@@ -56,7 +56,7 @@ export class RepolishService {
   declare _repolishInFlight: Set<string> | null;
   /** 同一来源的清稿任务单飞，避免重复请求同时写同一份版本文件。 */
   declare _cleanInFlight: Set<string>;
-  constructor(host) {
+  constructor(host: RepolishHost) {
     this.host = host;
     this._repolishInFlight = null;
     this._cleanInFlight = new Set();

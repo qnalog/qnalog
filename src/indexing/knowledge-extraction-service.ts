@@ -17,7 +17,7 @@ export interface KnowledgeExtractionHost {
 
 export class KnowledgeExtractionService {
   declare host: KnowledgeExtractionHost;
-  constructor(host) {
+  constructor(host: KnowledgeExtractionHost) {
     this.host = host;
   }
 

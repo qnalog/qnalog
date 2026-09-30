@@ -29,7 +29,7 @@ export interface RefreshNoteIndexOptions {
 
 export class NoteIndexService {
   declare host: NoteIndexHost;
-  constructor(host) {
+  constructor(host: NoteIndexHost) {
     this.host = host;
   }
 

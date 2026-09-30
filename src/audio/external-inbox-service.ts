@@ -59,7 +59,7 @@ export interface ExternalInboxHost {
   manifest: { version?: string; id: string; dir?: string };
   recorder: RecorderService | null;
   /** 录音采集服务：分段缓存目录与缓存清理。 */
-  recording: { ensureSegmentCacheFolder(): Promise<void>; getSegmentCacheFolder(): string; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
+  recording: { ensureSegmentCacheFolder(): Promise<unknown>; getSegmentCacheFolder(): string; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
   session: RecordingSession | null;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
@@ -82,7 +82,7 @@ export class ExternalInboxService {
   declare _externalInboxScanPromise;
   /** 库外目录扫描器：按绝对路径轮询与事件监听。 */
   declare externalInboxScanner;
-  constructor(host) {
+  constructor(host: ExternalInboxHost) {
     this.host = host;
     this._externalInboxLedger = null;
     this._externalInboxWatcher = null;

@@ -78,7 +78,7 @@ export class QueueRetryService {
   declare _taskQueueRetryTimer;
   declare _taskQueueRetryAt;
 
-  constructor(host) {
+  constructor(host: QueueRetryHost) {
     this.host = host;
     this._taskQueueRetryTimer = null;
     this._taskQueueRetryAt = 0;

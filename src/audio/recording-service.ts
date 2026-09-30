@@ -83,7 +83,7 @@ export interface RecordingHost {
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
   /** 会话收尾服务：切片转写与停止后的收尾（装配层绑定，见 sessionPipeline 注释）。 */
-  sessionPipeline: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
+  sessionPipeline: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
   /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
@@ -106,7 +106,7 @@ export class RecordingService implements LiveAsrPipeline {
   /** 当前录音问题（设备/服务/切片），无问题时为空。 */
   declare recordingIssue;
 
-  constructor(host) {
+  constructor(host: RecordingHost) {
     this.host = host;
     this._oneShotCaptureMode = null;
     this.recordingIssue = null;

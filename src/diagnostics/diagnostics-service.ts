@@ -65,7 +65,7 @@ export class DiagnosticsService {
   declare host: DiagnosticsHost;
   /** 诊断日志写入串行链的两端：保证并发调用不互相覆盖。 */
   declare _diagnosticWriteTail;
-  constructor(host) {
+  constructor(host: DiagnosticsHost) {
     this.host = host;
     this._diagnosticWriteTail = null;
   }

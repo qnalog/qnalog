@@ -34,7 +34,7 @@ export interface DeliveryHost {
 
 export class DeliveryService {
   declare host: DeliveryHost;
-  constructor(host) {
+  constructor(host: DeliveryHost) {
     this.host = host;
   }
 

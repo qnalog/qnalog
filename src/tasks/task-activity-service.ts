@@ -140,7 +140,7 @@ export class TaskActivityService {
   declare _busyContext;
   declare progressStatusEl;
 
-  constructor(host) {
+  constructor(host: TaskActivityHost) {
     this.host = host;
   }
 

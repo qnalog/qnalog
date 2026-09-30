@@ -33,7 +33,7 @@ export class PeopleDirectoryService {
   /** 人员目录缓存：按文件夹与修改时间戳命中，避免重复解析全库。 */
   declare _peopleDirectoryCache;
 
-  constructor(host) {
+  constructor(host: PeopleDirectoryHost) {
     this.host = host;
     this._peopleDirectoryCache = null;
   }

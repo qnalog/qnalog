@@ -120,7 +120,7 @@ export interface NoteWriterHost {
 
 export class NoteWriter {
   declare host: NoteWriterHost;
-  constructor(host) {
+  constructor(host: NoteWriterHost) {
     this.host = host;
   }
 

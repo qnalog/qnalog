@@ -82,7 +82,7 @@ export class SemanticCanvasService {
   /** 递增序号，用于丢弃过期的异步解析结果（用户快速切换文件时）。 */
   activeCanvasSourceSeq: number;
 
-  constructor(host) {
+  constructor(host: SemanticCanvasHost) {
     this.host = host;
     this.runningPaths = new Set();
     this.progressByPath = new Map();

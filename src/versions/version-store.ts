@@ -46,7 +46,7 @@ export interface VersionStoreHost {
 
 export class VersionStore {
   declare host: VersionStoreHost;
-  constructor(host) {
+  constructor(host: VersionStoreHost) {
     this.host = host;
   }
   findDerivedNoteForSource(

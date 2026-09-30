@@ -16,7 +16,7 @@ export interface InboxWatcherHost {
   /** 外部收件箱服务：扫描库外文件夹。 */
   externalInbox: { scanExternalInboxFolder(options?: unknown): Promise<void> };
   /** 导入服务：把收件箱里的文件送进导入流程。 */
-  imports: { importAudioFiles(paths: string[], modeOverride?: string, options?: unknown): Promise<void>; importTextFiles(paths: string[], modeOverride?: string): Promise<void> };
+  imports: { importAudioFiles(paths: string[], modeOverride?: string, options?: unknown): Promise<unknown>; importTextFiles(paths: string[], modeOverride?: string): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
@@ -28,7 +28,7 @@ export class InboxWatcherService {
   declare _inboxLock;
   declare _inboxPending;
   declare _inboxProcessing;
-  constructor(host) {
+  constructor(host: InboxWatcherHost) {
     this.host = host;
     this._inboxConflictNotified = null;
     this._inboxLock = null;

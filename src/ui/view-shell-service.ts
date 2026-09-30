@@ -33,7 +33,7 @@ export interface ViewShellHost {
 
 export class ViewShellService {
   declare host: ViewShellHost;
-  constructor(host) {
+  constructor(host: ViewShellHost) {
     this.host = host;
   }
 

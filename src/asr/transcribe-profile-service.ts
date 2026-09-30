@@ -13,7 +13,7 @@ export interface TranscribeProfileHost {
 
 export class TranscribeProfileService {
   declare host: TranscribeProfileHost;
-  constructor(host) {
+  constructor(host: TranscribeProfileHost) {
     this.host = host;
   }
 
