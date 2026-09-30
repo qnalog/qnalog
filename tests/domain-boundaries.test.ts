@@ -170,6 +170,27 @@ export class PipelineService {
     }));
     expect(problems).toEqual([]);
   });
+  it("recognizes generic service methods when checking host-field calls", () => {
+    const problems = checkDomainBoundaries({
+      "src/main.ts": `
+class QnALogPlugin extends obsidian.Plugin {
+  async onload() { this.coordinator = new CoordinatorService(this); }
+}`,
+      "src/coordinator/coordinator-service.ts": `export interface CoordinatorHost { value: string }
+export class CoordinatorService {
+  declare host: CoordinatorHost;
+  constructor(host: CoordinatorHost) { this.host = host; }
+  run<T>(operation: () => Promise<T>): Promise<T> { return operation(); }
+}`,
+      "src/consumer/consumer-service.ts": `export interface ConsumerHost { coordinator: CoordinatorService }
+export class ConsumerService {
+  declare host: ConsumerHost;
+  constructor(host: ConsumerHost) { this.host = host; }
+  run() { return this.host.coordinator.run(async () => 1); }
+}`,
+    });
+    expect(problems).toEqual([]);
+  });
   it("要求域服务构造函数为 host 参数声明 Host 类型", () => {
     const untyped = checkDomainBoundaries(files({
       "src/domain/thing-service.ts": `export interface ThingHost { settings: unknown }

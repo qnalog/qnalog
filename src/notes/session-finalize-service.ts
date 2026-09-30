@@ -23,7 +23,7 @@ import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { getAudioTimeLink } from "../notes/audio-refs";
+import { getAudioTimeLink, getSegmentsDurationMs } from "../notes/audio-refs";
 import { buildTitleSourceFromSegments, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -46,11 +46,13 @@ import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { bindTranscriptSegmentToAudio } from "../transcript/audio-binding";
 import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelText } from "../shared/note-labels";
+import type { ContinuationService } from "../session/continuation-service";
 import type { SessionStore } from "../session/session-store";
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
+  continuations: ContinuationService;
   diagnostics: DiagnosticsService;
   /** 互动看板服务：实时转写块清理与互动处理（窄面：实际只用这 2 个方法）。 */
   meetingWorkbench: {
@@ -541,7 +543,12 @@ export class SessionFinalizeService {
     if (session.finalizePromise !== null && session.finalizePromise !== undefined) return session.finalizePromise;
     const finalizePromise = (async () => {
       try {
-        await this._finalizeSessionImpl(session);
+        const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+        if (targetFile instanceof obsidian.TFile) {
+          await this.host.continuations.runOnTarget(targetFile, () => this._finalizeSessionImpl(session));
+        } else {
+          await this._finalizeSessionImpl(session);
+        }
         // 只有完整收尾流程返回后才锁定。此前在函数入口置 true，任何意外写盘异常
         // 都会把半成品会话永久标成已完成，后续无法再收尾。
         session.finalized = true;
@@ -580,6 +587,34 @@ export class SessionFinalizeService {
       return await finalizePromise;
     } finally {
       if (session.finalizePromise === finalizePromise) session.finalizePromise = null;
+      if (session.continuationTaskId && this.host.queue) {
+        const continuation = {
+          ...session.continuation,
+          realtimeOutline: String(session.realtimeOutline || ""),
+          masterAudioPath: String(session.masterAudioPath || ""),
+          masterAudioName: String(session.masterAudioName || ""),
+        };
+        try {
+          await this.host.queue.update(session.continuationTaskId, {
+            status: "pending",
+            mdPath: session.mdPath,
+            temporarySourcePath: session.mdPath,
+            segments: (session.segments || []).map(segment => ({ ...segment })),
+            continuation,
+            sessionMeta: {
+              startedAt: session.startedAt,
+              duration: formatElapsed(getSegmentsDurationMs(session.segments || [])),
+              meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
+              _briefingCheckpointId: session._briefingCheckpointId || "",
+            },
+            speakerFrontmatter: null,
+            lastError: session.finalizationError || "",
+          });
+        } catch (error) {
+          console.error("[QnALog] continuation recovery task update failed", error);
+        }
+      }
+      this.host.continuations.releaseSession(session.id);
     }
   }
 
@@ -878,7 +913,9 @@ export class SessionFinalizeService {
       taskMeter = this.host.taskMeters.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
       session._finalizeTaskMeter = taskMeter;
-      polished = await mergeAndPolish(this.host, segmentsForLlm.map((segment) => ({ ...segment })), session.mode, sessionMeta, speakerFrontmatter);
+      polished = session.continuation
+        ? ""
+        : await mergeAndPolish(this.host, segmentsForLlm.map((segment) => ({ ...segment })), session.mode, sessionMeta, speakerFrontmatter);
       session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
       this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "write-note",
@@ -952,7 +989,7 @@ export class SessionFinalizeService {
       // 续录覆盖前留档：把当前笔记（旧场次的整理稿）存进版本缓存。
       // 版本条目不切换当前显示（activate:false），需要回看旧稿时用版本切换恢复。
       // 失败不阻断续录收尾——留档是保险，不是闸门，诊断里记一条即可。
-      if (session.continuationSourcePath) {
+      if (session.continuationSourcePath && !session.continuation) {
         try {
           const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
           if (targetFile instanceof obsidian.TFile) {
@@ -1064,17 +1101,18 @@ export class SessionFinalizeService {
     }
 
     if (!mergeError) {
-      await this.host.asrPipeline.cleanupSuccessfulSegmentAudio(session);
+      if (!session.continuation) await this.host.asrPipeline.cleanupSuccessfulSegmentAudio(session);
       const completedTaskMeter = taskMeter ? this.host.taskMeters.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       session._finalizeTaskMeter = null;
-      try {
-        const doneLabel = isTextImportSession(session) ? t("Text organization completed")
-          : session.source === "import" ? t("Imported audio organization completed") : t("Recording minutes completed");
-        this.host.taskMeters.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
-      } catch { /* intentionally empty */ }
-      // 沉淀开关默认关闭：开启后转写完成自动跑沉淀扫描并入库；关闭则照旧手动点「沉淀」。后台执行、失败静默。
-      if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
+      if (!session.continuation) {
+        try {
+          const doneLabel = isTextImportSession(session) ? t("Text organization completed")
+            : session.source === "import" ? t("Imported audio organization completed") : t("Recording minutes completed");
+          this.host.taskMeters.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
+        } catch { /* intentionally empty */ }
+        if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
+      }
     }
 
     new obsidian.Notice(mergeError
@@ -1085,11 +1123,14 @@ export class SessionFinalizeService {
           : mergeError instanceof BriefingPipelineIncompleteError
           ? t("{0}, queued for precise retry").replace("{0}", mergeError.message)
           : t("AI organizing did not finish; queued for retry."))
-      : (session.continuationSourcePath
-        ? t("Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).")
-          .replace("{0}", String(session.segments.length))
-          .replace("{1}", String(segmentsForFinal.length))
-        : t("QnALog processing completed")));
+      : (session.continuation
+        ? t("Continuation recording saved separately; it will be merged into \"{0}\" after its current processing finishes.")
+          .replace("{0}", session.continuation.targetPath.split("/").pop()?.replace(/\.md$/i, "") || session.continuation.targetPath)
+        : session.continuationSourcePath
+          ? t("Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).")
+            .replace("{0}", String(session.segments.length))
+            .replace("{1}", String(segmentsForFinal.length))
+          : t("QnALog processing completed")));
 
     if (this.host.settings.autoOpenNoteAfterFinish) {
       const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);

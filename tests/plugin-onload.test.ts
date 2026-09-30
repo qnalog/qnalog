@@ -29,14 +29,14 @@ describe("plugin onload assembly check", () => {
     const originalMain = readFileSync(mainPath, "utf8");
     const originalBundle = readFileSync(bundlePath, "utf8");
     // 去掉一个服务的装配语句，重新打包后检查必须失败（顺带证明这条检查真的在跑 onload）
-    const withoutRecording = originalMain.replace("    this.recording = new RecordingService(this);\n", "");
-    expect(withoutRecording).not.toBe(originalMain);
+    const withoutAudioLinks = originalMain.replace("    this.audioLinks = new AudioTimeLinkService(this);\n", "");
+    expect(withoutAudioLinks).not.toBe(originalMain);
     try {
-      writeFileSync(mainPath, withoutRecording);
+      writeFileSync(mainPath, withoutAudioLinks);
       execFileSync("node", [path.join(root, "esbuild.config.mjs"), "production"], { cwd: root, stdio: "ignore" });
       const result = runCheck();
       expect(result.code).toBe(1);
-      expect(result.output).toContain("域服务未装配：this.recording");
+      expect(result.output).toContain("域服务未装配：this.audioLinks");
     } finally {
       writeFileSync(mainPath, originalMain);
       writeFileSync(bundlePath, originalBundle);

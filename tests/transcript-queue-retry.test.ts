@@ -135,6 +135,9 @@ describe("transcript queue retry persistence", () => {
       profiles: { getActiveTranscribeProfile: () => ({ transcribeMode: "segmented" }) },
       asrPipeline: { maybeDeleteSegmentCacheFile: deleteAudio },
       noteIndex: { refreshNoteIndexSafely: refreshIndex },
+      continuations: {
+        runOnTarget: (_target: unknown, operation: () => Promise<unknown>) => operation(),
+      },
       diagnostics: { logDiagnostic: vi.fn().mockResolvedValue(undefined) },
       queue: { snapshot: () => [task, { id: "other-task", type: "transcribe", mdPath: task.mdPath }] },
       confirmSpeakerNames: vi.fn().mockResolvedValue(undefined),

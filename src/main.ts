@@ -83,6 +83,7 @@ import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
+import { ContinuationService } from "./session/continuation-service";
 import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
 /**
  * 按设置与 Obsidian 的界面语言，决定插件当前使用的语言并记录到 i18n 模块。
@@ -115,6 +116,7 @@ class QnALogPlugin extends obsidian.Plugin {
   declare externalInbox: ExternalInboxService;
   declare imports: ImportService;
   declare sessionFinalize: SessionFinalizeService;
+  declare continuations: ContinuationService;
   declare recording: RecordingService;
   declare asrPipeline: LiveAsrPipelineService;
   declare shell: ViewShellService;
@@ -192,6 +194,16 @@ class QnALogPlugin extends obsidian.Plugin {
     this.diagnostics = new DiagnosticsService(this);
     this.delivery = new DeliveryService(this);
     this.noteWriter = new NoteWriter(this);
+    this.continuations = new ContinuationService({
+      vault: this.app.vault,
+      fileManager: this.app.fileManager,
+      getSettings: () => this.settings,
+      detectModeFromMarkdown: (file) => this.noteWriter.detectModeFromMarkdown(file),
+      queueTasks: () => this.queue ? this.queue.snapshot() : [],
+      addTask: (task) => this.queue.add(task),
+      removeTask: (id) => this.queue.remove(id),
+      scheduleTaskQueueRetry: () => this.queueRetry.scheduleTaskQueueRetry(1500, "continuation-ready"),
+    });
     this.tasks = new TaskActivityService(this);
     this.taskMeters = this.tasks;
     this.queueRetry = new QueueRetryService(this);
@@ -264,7 +276,10 @@ class QnALogPlugin extends obsidian.Plugin {
     this.tasks.start();
     this.recorder = new RecorderService(this);
     this.queue = new TaskQueue(this);
-    this.register(this.queue.onChange(() => this.shell.refreshOutlineView()));
+    this.register(this.queue.onChange(() => {
+      this.shell.refreshOutlineView();
+      this.continuations.notifyQueueChanged();
+    }));
     this.queue.load(this.persistedQueue);
     this.outlineCoordinator = new RealtimeOutlineCoordinator({
       getActiveSessionId: () => (this.sessionStore.get() && this.sessionStore.get().id) || "",
@@ -378,6 +393,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (file instanceof obsidian.TFile) {
         this.queueRetry.migrateQueueTasksAfterRename(oldPath, file.path);
+        this.continuations.onRename(file, oldPath);
         this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox rename handler error", e));
       }
     }));

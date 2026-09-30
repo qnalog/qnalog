@@ -172,7 +172,7 @@ function serviceClassMembers(files, readFile) {
       }
       const inner = body.slice(0, i);
       const names = new Set();
-      for (const mem of inner.matchAll(/^\s{2}(?:declare\s+|async\s+|static\s+|readonly\s+|private\s+|public\s+)*(?:get\s+|set\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*[(:;=]/gm)) {
+      for (const mem of inner.matchAll(/^\s{2}(?:declare\s+|async\s+|static\s+|readonly\s+|private\s+|public\s+)*(?:get\s+|set\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:<[^>\n]+>)?\s*[(:;=]/gm)) {
         names.add(mem[1]);
       }
       // 构造函数与其它方法里动态赋值的字段（this.x = ...）也算成员

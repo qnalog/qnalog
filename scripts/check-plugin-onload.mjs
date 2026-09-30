@@ -14,10 +14,9 @@ const code = readFileSync(new URL("../main.js", import.meta.url), "utf8");
 const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
-  "library", "shell", "recording", "asrPipeline", "sessionFinalize", "imports", "externalInbox", "repolish",
-  "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas", "sessionStore",
+  "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
 ];
-const PORT_HOST_FIELDS = new Set(["asrPipeline"]);
+const PORT_HOST_FIELDS = new Set(["asrPipeline", "continuations"]);
 
 const noop = () => undefined;
 

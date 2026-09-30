@@ -44,6 +44,10 @@ Mark only (no AI call):
 
 Half-width and full-width symbols are both accepted. In-meeting notes are fed into the final summarization prompt as clearly-labeled "live supplementary material", never mixed into the raw transcript.
 
+### Continue a recording into an existing note
+
+Choose **Append recording to this note** from the open note's sidebar or file menu. QnALog records the new audio and transcript in a separate pending note, then merges them into the target after its active processing and transcription tasks finish. If the target note is missing or its transcript identity changes, the separate recording is kept instead of being written to a different note.
+
 ### Ask this note
 
 Ask follow-up questions when the final notes miss a detail or you want to revisit a specific part of the discussion. QnALog answers from both the organized note and the preserved raw transcript. Useful answers can be written back to one compact **Ask this note** section in the Markdown file.

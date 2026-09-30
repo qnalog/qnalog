@@ -80,9 +80,24 @@ function makeHost() {
 
 
   const sessionStore = new SessionStore();
+  const continuationCalls: string[] = [];
+  const continuations = {
+    trackSession: (session: { id: string }) => { continuationCalls.push(`track:${session.id}`); },
+    releaseSession: (sessionId: string) => { continuationCalls.push(`release:${sessionId}`); },
+    resolveTarget: () => null,
+    prepare: async () => { throw new Error("unexpected continuation preparation"); },
+    isSessionTracked: () => false,
+    hasActiveSessions: () => false,
+    getTrackedSessionIds: () => [],
+    runOnTarget: async (_target: unknown, operation: () => Promise<unknown>) => operation(),
+    notifyQueueChanged: () => undefined,
+    onRename: () => undefined,
+    cancelPrepared: async () => undefined,
+  };
   const host = {
     app,
     sessionStore,
+    continuations,
     settings: { ...DEFAULT_SETTINGS, audioFolder: "QnALog/录音", mdFolder: "QnALog/转写纪要", segmentCacheFolder: "QnALog/.cache/segments" },
     bubble: null,
     recorder: { state: "idle", _voicedTicks: 0, _silentTicks: 0, getInfo: () => ({ elapsed: 0, issue: null }), start: async () => { throw new Error("microphone unavailable"); }, stop: async () => undefined, releaseStream: () => undefined },

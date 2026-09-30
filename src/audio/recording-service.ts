@@ -15,40 +15,18 @@ import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
 import { classifyShortRecording } from "./short-recording-policy";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
-import { normalizeRealtimeOutlineState, stripArchivedOutlineSections } from "../notes/realtime-outline";
-import { extractDetailsBody } from "../notes/detail-blocks";
-import { ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
-import { getDurationMs, getSegmentsDurationMs, collectAudioRefs } from "../notes/audio-refs";
+import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { nsMarker } from "../shared/namespace";
 import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { ensureVaultFolder } from "../shared/util-vault";
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
-import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
+import type { ContinuationPreparation, ContinuationService } from "../session/continuation-service";
 
 import { t } from "../shared/i18n";
 import type { SessionStore } from "../session/session-store";
-import { labelPattern, labelText } from "../shared/note-labels";
-
-/**
- * 从既有纪要正文读回「录音中实时大纲（草稿）」details 的内容，
- * 剥掉引导行（"> 基于录音过程中…"）。剥掉归档段（"> 以下为追加录音前场次…" 及历史副本）后返回；没有该块或内容为空时返回空串。
- * 续录重写时旧大纲按场次保留，不因整篇重建丢失。
- */
-export function extractPriorOutline(markdown) {
-  const raw = extractDetailsBody(markdown, labelPattern("liveOutlineDraft"));
-  // 归档段（"> 以下为追加录音前场次…" 及其历史副本）不随读回进入种子与附录——
-  // 两者共用这一处读回，单点剥干净后新场次的 live 大纲与 appendix 都不再自引用。
-  return stripArchivedOutlineSections(
-    String(raw || "")
-      .replace(OUTLINE_INTRO_LINE_RE, "")
-      .trim()
-  );
-}
-
-/** 大纲 details 的引导行（`> 基于录音过程中…` / `> Outline generated…`）：双语，行锚点剥离。 */
-const OUTLINE_INTRO_LINE_RE = new RegExp(`^>\\s*(?:${labelPattern("outlineIntro").source})[^\\n]*\\n?`, "m");
 
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
@@ -67,6 +45,7 @@ export interface RecordingHost {
   };
   noteWriter: NoteWriter;
   profiles: TranscribeProfileService;
+  continuations: ContinuationService;
   recorder: RecorderService | null;
   saveSettings(): Promise<void>;
   sessionStore: SessionStore;
@@ -86,6 +65,7 @@ export class RecordingService {
   /** 本次一次性录音的采集模式与润色模式（命令入口设置）。 */
   declare _oneShotCaptureMode;
   declare _oneShotPolishMode;
+  starting = false;
   constructor(host: RecordingHost) {
     this.host = host;
     this._oneShotCaptureMode = null;
@@ -97,122 +77,99 @@ export class RecordingService {
     else await this.stopRecording();
   }
 
-  async getContinuationTargetInfo(file) {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-      throw new Error(t("The target is not a Markdown note"));
-    }
-    let content = await this.host.app.vault.read(file);
-    const sourceId = getSourceIdFromMarkdown(content, file);
-    const transcriptReady = ensureTranscriptBlocks(content, sourceId);
-    if (transcriptReady !== content) {
-      await this.host.app.vault.modify(file, transcriptReady);
-      content = transcriptReady;
-    }
-    const segments = extractTranscriptSegments(content);
-    if (!segments.length) {
-      throw new Error(t("This note has no original transcript segments to continue recording from"));
-    }
-    const frontmatter = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-    const mode = this.host.noteWriter.detectModeFromMarkdown(file) || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
-    const normalized = normalizeSegmentsForMergedNote(segments, 0, 0, file);
-    const durationMs = getSegmentsDurationMs(normalized) || getDurationMs(content);
-    return {
-      file,
-      content,
-      mode,
-      segments: normalized,
-      durationMs,
-      startedAt: inferNoteStartedAtIso(file, frontmatter),
-      frontmatter,
-      // 旧场次的原始材料读回：续录重写笔记时按场次保留，不因重整丢失。
-      priorOutline: extractPriorOutline(content),
-      priorAudioNames: collectAudioRefs(content),
-      priorRecordingInfo: extractDetailsBody(content, labelPattern("recordingInfo")),
-      priorRecordedAt: inferNoteStartedAtIso(file, frontmatter),
-    };
-  }
 
   async startRecording(options: StartRecordingOptions = {}) {
+    if (this.starting) return;
     if (this.host.recorder.state !== "idle") {
       new obsidian.Notice(t("A recording is already in progress. Please stop it before continuing to record."), 5000);
       return;
     }
-    const appendTargetFile = options && options.appendToFile instanceof obsidian.TFile ? options.appendToFile : null;
-    let continuationInfo = null;
-    if (appendTargetFile) {
-      try {
-        continuationInfo = await this.getContinuationTargetInfo(appendTargetFile);
-      } catch (e) {
-        console.error("[QnALog] prepare continuation target failed", e);
-        new obsidian.Notice(`${t("Cannot continue recording into this minutes note: ")}${(e && e.message) || e}`, 8000);
-        return;
-      }
-    }
-    const mode = continuationInfo && continuationInfo.mode
-      ? continuationInfo.mode
-      : getEffectivePolishMode(this.host.settings, this._oneShotPolishMode || this.host.settings.polishMode);
-    let createdSession: RecordingSession | null = null;
+    this.starting = true;
     try {
-      this.host.asrPipeline.clearRecordingIssue();
-      await ensureVaultFolder(this.host.app, this.host.settings.audioFolder);
-      await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
+      const requestedTarget = options && options.appendToFile instanceof obsidian.TFile ? options.appendToFile : null;
+      let appendTargetFile = requestedTarget;
+      let preparation: ContinuationPreparation | null = null;
       const moment = window.moment;
       const startedAt = moment();
       const sessionStamp = startedAt.format("YYYYMMDD-HHmmss");
-      const mdName = startedAt.format(this.host.settings.noteFileNameFormatNew);
-      const mdPath = continuationInfo
-        ? obsidian.normalizePath(continuationInfo.file.path)
-        : obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`);
+      const recordedAt = startedAt.toDate().toISOString();
+      const sessionId = genId();
+      if (requestedTarget) {
+        try {
+          appendTargetFile = this.host.continuations.resolveTarget(requestedTarget) || requestedTarget;
+          preparation = await this.host.continuations.prepare(appendTargetFile, sessionId, sessionStamp, recordedAt);
+        } catch (e) {
+          console.error("[QnALog] prepare continuation target failed", e);
+          new obsidian.Notice(`${t("Cannot continue recording into this minutes note: ")}${(e && e.message) || e}`, 8000);
+          return;
+        }
+      }
+      const continuationInfo = preparation;
+      const mode = continuationInfo && continuationInfo.mode
+        ? continuationInfo.mode
+        : getEffectivePolishMode(this.host.settings, this._oneShotPolishMode || this.host.settings.polishMode);
+      let createdSession: RecordingSession | null = null;
+      try {
+        this.host.asrPipeline.clearRecordingIssue();
+        await ensureVaultFolder(this.host.app, this.host.settings.audioFolder);
+        if (!continuationInfo) await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
+        const mdName = startedAt.format(this.host.settings.noteFileNameFormatNew);
+        const mdPath = continuationInfo
+          ? continuationInfo.stageFile.path
+          : obsidian.normalizePath(`${this.host.settings.mdFolder}/${mdName}.md`);
 
-      const meta = getModeMeta(this.host.settings, mode);
-      const oneShotMode = this._oneShotCaptureMode;
-      const requestedCaptureMode = oneShotMode || this.host.settings.captureMode || "mic";
-      const captureMode = resolveRuntimeAudioInputMode(requestedCaptureMode);
-      const forcedMobileMic = isMobileRuntime() && normalizeAudioInputMode(requestedCaptureMode) !== "mic";
-      createdSession = {
-        id: genId(),
-        sessionStamp,
-        startedAt: continuationInfo && continuationInfo.startedAt ? continuationInfo.startedAt : startedAt.toDate().toISOString(),
-        mdPath,
-        mode,
-        segments: [],
-        continuationBaseSegments: continuationInfo ? continuationInfo.segments : [],
-        continuationOffsetMs: continuationInfo ? continuationInfo.durationMs : 0,
-        continuationSourcePath: continuationInfo ? continuationInfo.file.path : "",
-        continuationSourceTitle: continuationInfo ? continuationInfo.file.basename : "",
-        continuationRecordedAt: continuationInfo ? startedAt.toDate().toISOString() : "",
-        continuationPriorOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
-        continuationPriorAudioNames: continuationInfo ? (continuationInfo.priorAudioNames || []) : [],
-        continuationPriorRecordingInfo: continuationInfo ? (continuationInfo.priorRecordingInfo || "") : "",
-        // 旧场次大纲作为实时大纲种子：增量管线在新段到来时以它为基础冻结合并生长，
-        // 收尾追赶只处理新段；不是种子的话新会话大纲从零开始，笔记里的大纲 details
-        // 就只有旧场次内容（rewriteConsolidated 的"无新大纲"兜底分支），永不反映追加内容。
-        realtimeOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
-        realtimeOutlineState: continuationInfo && continuationInfo.priorOutline
-          ? normalizeRealtimeOutlineState(undefined, continuationInfo.priorOutline, "")
-          : { version: 1, nodes: [], memory: "" },
-        realtimeOutlineMemory: "",
-        realtimeOutlineSegmentCount: 0,
-        realtimeOutlineAttemptedSegmentCount: 0,
-        realtimeOutlineAttemptedAt: "",
-        realtimeOutlineWorkbenchSignature: "",
-        realtimeOutlineFailureCount: 0,
-        realtimeOutlineNextAllowedAt: 0,
-        realtimeOutlineNoChangeCommittedCount: -1,
-        realtimeOutlineNoChangeRetryCount: 0,
-        writeQueue: Promise.resolve(),
-        pendingMeetingWorkbenchInteractions: [],
-        finalized: false,
-        captureMode,
-        audioChannelCount: 1,
-        audioChannelMaxCount: 1,
-        audioChannelLabel: "",
-        audioChannelMode: normalizeAudioChannelMode(this.host.settings.audioChannelMode),
-        audioChannelRuntimeMode: "mono",
-        speakerChannels: {},
-        channelSeparationMode: "single",
-        meetingWorkbench: { notes: "", draft: "", materials: [], entries: [] },
-      };
+        const meta = getModeMeta(this.host.settings, mode);
+        const oneShotMode = this._oneShotCaptureMode;
+        const requestedCaptureMode = oneShotMode || this.host.settings.captureMode || "mic";
+        const captureMode = resolveRuntimeAudioInputMode(requestedCaptureMode);
+        const forcedMobileMic = isMobileRuntime() && normalizeAudioInputMode(requestedCaptureMode) !== "mic";
+        createdSession = {
+          id: sessionId,
+          sessionStamp,
+          startedAt: recordedAt,
+          mdPath,
+          mode,
+          segments: [],
+          continuationBaseSegments: [],
+          continuationOffsetMs: 0,
+          continuationSourcePath: continuationInfo ? (appendTargetFile?.path || "") : "",
+          continuationSourceTitle: continuationInfo ? (appendTargetFile?.basename || "") : "",
+          continuationRecordedAt: continuationInfo ? recordedAt : "",
+          continuationPriorOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
+          continuationPriorAudioNames: [],
+          continuationPriorRecordingInfo: "",
+          ...(continuationInfo ? {
+            continuation: continuationInfo.continuation,
+            continuationTaskId: continuationInfo.taskId,
+          } : {}),
+          // 旧场次大纲作为实时大纲种子；目标笔记本身只读，实时更新仅写入暂存文件。
+          realtimeOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
+          realtimeOutlineState: continuationInfo && continuationInfo.priorOutline
+            ? normalizeRealtimeOutlineState(undefined, continuationInfo.priorOutline, "")
+            : { version: 1, nodes: [], memory: "" },
+          realtimeOutlineMemory: "",
+          realtimeOutlineSegmentCount: 0,
+          realtimeOutlineAttemptedSegmentCount: 0,
+          realtimeOutlineAttemptedAt: "",
+          realtimeOutlineWorkbenchSignature: "",
+          realtimeOutlineFailureCount: 0,
+          realtimeOutlineNextAllowedAt: 0,
+          realtimeOutlineNoChangeCommittedCount: -1,
+          realtimeOutlineNoChangeRetryCount: 0,
+          writeQueue: Promise.resolve(),
+          pendingMeetingWorkbenchInteractions: [],
+          finalized: false,
+          captureMode,
+          audioChannelCount: 1,
+          audioChannelMaxCount: 1,
+          audioChannelLabel: "",
+          audioChannelMode: normalizeAudioChannelMode(this.host.settings.audioChannelMode),
+          audioChannelRuntimeMode: "mono",
+          speakerChannels: {},
+          channelSeparationMode: "single",
+          meetingWorkbench: { notes: "", draft: "", materials: [], entries: [] },
+        };
+
       this.host.asrPipeline.initializeSession(createdSession);
       this.host.sessionStore.begin(createdSession);
       this.host.asrPipeline.setSessionWorkProgress(createdSession, {
@@ -226,19 +183,23 @@ export class RecordingService {
       const activeProvider = (this.host.settings.transcribeProviders || {})[activeProviderId] || {};
       const activeProfile = this.host.profiles.getActiveTranscribeProfile();
       const isStreaming = activeProfile && activeProfile.transcribeMode === "streaming";
-      const titleLine = continuationInfo
-        ? `## ${labelText("appendToAt", getModePrefix(meta), startedAt.format("YYYY-MM-DD HH:mm"))}`
-        : `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${t("(recording…)")}`;
+      const titleLine = `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${t("(recording…)")}`;
       const header = [
-        continuationInfo ? "" : null,
         titleLine,
         "",
         nsMarker("session", createdSession.id),
         nsMarker("segments-start", createdSession.id),
         nsMarker("segments-end", createdSession.id),
         "",
-      ].filter(v => v !== null).join("\n");
-      await this.host.noteWriter.appendToNote(mdPath, header);
+      ].join("\n");
+      if (!continuationInfo) await this.host.noteWriter.appendToNote(mdPath, header);
+      const targetToTrack = continuationInfo
+        ? appendTargetFile
+        : this.host.app.vault.getAbstractFileByPath(mdPath);
+      if (!(targetToTrack instanceof obsidian.TFile)) {
+        throw new Error(t("Could not find the note file for this recording"));
+      }
+      this.host.continuations.trackSession(createdSession, targetToTrack);
 
       const requiresWholeSession = !!(activeProfile && activeProfile.requiresWholeSession)
         || isSpeakerDiarizationProvider(activeProvider);
@@ -349,7 +310,11 @@ export class RecordingService {
           : t("Recording in progress ({0}); everything is processed when you stop.").replace("{0}", modeLabel));
       new obsidian.Notice(noticeText);
       if (continuationInfo) {
-        new obsidian.Notice(`${t("Started appending to \"")}${continuationInfo.file.basename}${t("\"; it will be merged back into the original minutes when stopped.")}`, 8000);
+        new obsidian.Notice(
+          t('Continuation recording saved separately; it will be merged into "{0}" after its current processing finishes.')
+            .replace("{0}", appendTargetFile.basename),
+          8000,
+        );
       }
       if (forcedMobileMic) {
         new obsidian.Notice(t("Mobile only supports microphone recording for now; use computer audio / virtual audio devices on desktop."), 8000);
@@ -359,21 +324,34 @@ export class RecordingService {
       }
     } catch (e) {
       console.error(e);
-      await this.host.diagnostics.logDiagnostic("error", "recording.start_failed", t("Failed to start recording"), {
-        captureMode: this.host.settings.captureMode,
-        requestedMode: this._oneShotCaptureMode || "",
-        error: diagnosticError(e),
-      });
+      try {
+        await this.host.diagnostics.logDiagnostic("error", "recording.start_failed", t("Failed to start recording"), {
+          captureMode: this.host.settings.captureMode,
+          requestedMode: this._oneShotCaptureMode || "",
+          error: diagnosticError(e),
+        });
+      } catch (diagnosticFailure) {
+        console.error("[QnALog] failed to log recording startup failure", diagnosticFailure);
+      }
       new obsidian.Notice(`${t("Cannot start recording: ")}${(e && e.message) || e}`);
       // 清理半初始化状态：启动异常后只结束本次创建的会话，避免清除随后开始的新会话。
       try { if (this.host.recorder && this.host.recorder.state !== "idle") await this.host.recorder.stop(); } catch { /* intentionally empty */ }
       try { if (this.host.recorder && typeof this.host.recorder.releaseStream === "function") this.host.recorder.releaseStream(); } catch { /* intentionally empty */ }
       if (createdSession) {
+        this.host.continuations.releaseSession(createdSession.id);
         this.host.sessionStore.end(createdSession);
         try { await this.host.noteWriter.removeEmptySessionBlock(createdSession); } catch { /* intentionally empty */ }
       }
+      if (continuationInfo) {
+        try { await this.host.continuations.cancelPrepared(continuationInfo.taskId, continuationInfo.stageFile); } catch (cleanupError) {
+          console.error("[QnALog] cancel failed continuation preparation", cleanupError);
+        }
+      }
       this._oneShotCaptureMode = null;
       try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
+      }
+    } finally {
+      this.starting = false;
     }
   }
 

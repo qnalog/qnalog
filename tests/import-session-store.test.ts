@@ -63,6 +63,7 @@ function makeHost(): { host: ImportHost; sessionStore: SessionStore; sourcePath:
   };
   const sessionStore = new SessionStore();
   const host = {
+    continuations: { trackSession: () => undefined, releaseSession: () => undefined } as never,
     app,
     diagnostics: { logDiagnostic: async () => undefined },
     noteWriter: {

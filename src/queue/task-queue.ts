@@ -13,7 +13,7 @@ import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import type { QueueTask } from "../shared/types";
+import type { QueueTask, QueueTaskDeferred } from "../shared/types";
 
 import { t, t as i18nT } from "../shared/i18n";
 export class TaskQueue {
@@ -52,6 +52,29 @@ export class TaskQueue {
         if (task.status === "running" || task.status === "processing" || task.status === LIVE_ASR_TASK_STATUS) {
           task.status = "pending";
           task.lastError = task.lastError || i18nT("Interrupted during the last run; restored to pending");
+        }
+        const invalidDependencies = task.dependsOnSessionIds !== undefined
+          && (!Array.isArray(task.dependsOnSessionIds)
+            || task.dependsOnSessionIds.some(id => typeof id !== "string" || !id.trim()));
+        if (task.dependsOnSessionIds !== undefined) {
+          task.dependsOnSessionIds = Array.isArray(task.dependsOnSessionIds)
+            ? task.dependsOnSessionIds.filter(id => typeof id === "string" && id.trim())
+            : [];
+        }
+        if (task.type === "merge" && task.continuation !== undefined) {
+          const continuation = task.continuation;
+          const validContinuation = !invalidDependencies && typeof task.sessionId === "string" && task.sessionId.trim().length > 0
+            && continuation && typeof continuation === "object"
+            && typeof continuation.targetPath === "string" && continuation.targetPath.trim().length > 0
+            && typeof continuation.targetSourceId === "string" && continuation.targetSourceId.trim().length > 0
+            && typeof continuation.recordedAt === "string" && Number.isFinite(Date.parse(continuation.recordedAt))
+            && (continuation.realtimeOutline === undefined || typeof continuation.realtimeOutline === "string")
+            && (continuation.masterAudioPath === undefined || typeof continuation.masterAudioPath === "string")
+            && (continuation.masterAudioName === undefined || typeof continuation.masterAudioName === "string");
+          if (!validContinuation) {
+            task.status = "blocked";
+            task.lastError = i18nT("Continuation recovery information is invalid; the separately recorded audio was kept.");
+          }
         }
         if (!["pending", "failed", "missing", "processing", "blocked"].includes(task.status)) task.status = "pending";
         const maxRetries = (this.plugin && this.plugin.settings && this.plugin.settings.maxRetries) || 3;
@@ -171,6 +194,7 @@ export class TaskQueue {
         && t.status !== LIVE_ASR_TASK_STATUS
         && t.status !== "missing"
         && t.status !== "blocked"
+        && !this.hasUnresolvedDependencies(t)
         && isRetryDue(t)
         && (t.retries < maxRetries || (t.type === "transcribe" && isAsrTransportError(t.lastError || ""))));
       // 批量进度游标：喂状态栏指示器，让"重试全部 / 多任务"跑到哪一目了然。
@@ -214,15 +238,33 @@ export class TaskQueue {
       try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
     }
   }
+  private hasUnresolvedDependencies(task: QueueTask): boolean {
+    if (task.status === LIVE_ASR_TASK_STATUS) return true;
+    const dependencies = Array.isArray(task.dependsOnSessionIds) ? task.dependsOnSessionIds : [];
+    if (dependencies.some(sessionId => this.tasks.some(candidate =>
+      candidate.type !== "generate-prompt" && candidate.sessionId === sessionId,
+    ))) return true;
+    return task.type === "merge"
+      && this.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId);
+  }
+
   async processOne(task: QueueTask) {
     if (!task || !task.id) return;
+    // Re-resolve by id: callers may retain a stale row after it was removed or replaced.
+    const queuedTask = this.tasks.find(candidate => candidate.id === task.id);
+    if (!queuedTask || this.hasUnresolvedDependencies(queuedTask)) return;
+    task = queuedTask;
     // per-task 在途锁：processAll / 手动逐篇重试 / 队列面板逐条重试 / 启动自动重试 多条入口可能选中同一任务，
     // 若并发进入会对同一段音频发两次 ASR = 重复扣费。这个内存级 Set 同步闭合"选中→标 running"的竞态窗口。
     if (!this._inflight) this._inflight = new Set();
     if (this._inflight.has(task.id)) return;
     this._inflight.add(task.id);
-    const startedAt = Date.now(); // 记录任务开始时间，完成时算出处理时长（转写重试/合并重试/提示词生成等队列任务也能记时长）
+    const startedAt = Date.now(); // 记录任务开始时间，完成时算时长
     try {
+    // Recheck after acquiring the per-task lock, before mutating persisted state.
+    const stillQueued = this.tasks.find(candidate => candidate.id === task.id);
+    if (!stillQueued || this.hasUnresolvedDependencies(stillQueued)) return;
+    task = stillQueued;
     await this.update(task.id, {
       status: "running",
       lastError: "",
@@ -231,13 +273,23 @@ export class TaskQueue {
       attempt: Math.max(1, (Number(task.retries) || 0) + 1),
     });
     try {
+      let deferred: QueueTaskDeferred | void;
       if (task.type === "transcribe") {
         await this.plugin.queueRetry.retryTranscribeTask(task);
         this.plugin.asrPipeline.recordAsrServiceAttemptSuccess();
       }
-      else if (task.type === "merge") await this.plugin.queueRetry.retryMergeTask(task);
+      else if (task.type === "merge") deferred = await this.plugin.queueRetry.retryMergeTask(task);
       else if (task.type === "generate-prompt") await this.plugin.queueRetry.runGeneratePromptTask(task);
       else throw new Error(t("Unknown task type: {0}").replace("{0}", String((task as QueueTask).type)));
+
+      if (deferred && deferred.deferred === true) {
+        await this.update(task.id, {
+          status: deferred.status || "pending",
+          lastError: deferred.reason,
+          lastEventAt: new Date().toISOString(),
+        });
+        return;
+      }
       try {
         this.plugin.tasks.completeTaskActivity(this.plugin.tasks.queueTaskActivityId(task), {
           stage: "done",
@@ -263,8 +315,6 @@ export class TaskQueue {
       const isMissingAudio = task.type === "transcribe" && /音频不存在|临时切片不存在|Audio missing|Temporary clip missing/.test(message);
       const isBlockedMerge = task.type === "merge" && isLlmNonRetryableError(e);
       const isTransportAsr = task.type === "transcribe" && isAsrTransportError(e);
-      // 确定性转写错误（格式/解码/超限/4xx）会直接吃满重试；
-      // 网络中断则保留原额度，避免把服务故障错误记在某个音频片段头上。
       const maxR = (this.plugin.settings && this.plugin.settings.maxRetries) || 3;
       const nextRetries = isBlockedMerge ? (task.retries || 0)
         : task.type === "transcribe" ? getNextAsrTaskRetryCount(task.retries, maxR, e)

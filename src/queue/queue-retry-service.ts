@@ -7,10 +7,10 @@ import { QnALogSettingTab } from "../ui/settings-tab";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue, isLlmServiceBlockedError, formatLlmConfigIssue } from "../llm/core";
-import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { PluginSettings, Segment } from "../shared/types";
+import type { MergeQueueTaskPayload, PluginSettings, QueueTaskDeferred, Segment } from "../shared/types";
 import type { SessionStore } from "../session/session-store";
 import { AUDIO_EXT } from "../shared/catalog-import";
+import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { genId, formatElapsed, escapeRegExp } from "../shared/util-common";
 import { mimeFromExt, isAsrTransportError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
@@ -20,8 +20,9 @@ import { renderMultichannelAudioBufferSliceToWav, transcribeAudioByChannels } fr
 import { transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
-import { getAudioTimeLink } from "../notes/audio-refs";
-import { ensureTranscriptBlocks, getSourceIdFromMarkdown, mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
+import { collectAudioRefs, getAudioTimeLink, getSegmentsDurationMs } from "../notes/audio-refs";
+import { extractDetailsBody } from "../notes/detail-blocks";
+import { ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, mergeLeadingFrontmatterIntoDocument, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -30,14 +31,16 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { NoteWriter } from "../notes/note-writer";
-import { NS_AUDIO_ALT, nsMarker, nsRe } from "../shared/namespace";
+import { NS_AUDIO_ALT, NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
 import type { AsrTranscriptResult } from "../asr/transcript-result";
-import { attachTranscriptResult } from "../transcript/session-transcript";
+import { attachTranscriptResult, getCurrentTranscript } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelPattern, labelText } from "../shared/note-labels";
+import { extractPriorOutline, getContinuationTargetIdentity, type ContinuationService } from "../session/continuation-service";
+import { VersionStore } from "../versions/version-store";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
@@ -60,8 +63,10 @@ export interface QueueRetryHost {
   settingTab: QnALogSettingTab | null;
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
+  continuations: ContinuationService;
+  versions: VersionStore;
   /** ASR 熔断与切片缓存操作。 */
-  asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile">;
+  asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile" | "cleanupSuccessfulSegmentAudio">;
   /** 装配层转发：补转写成功后请求说话人姓名确认（调用 SessionFinalizeService.confirmSpeakerNamesBeforeFinal），返回值在调用点不使用。 */
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
   /** 词汇表与行业提示词服务。 */
@@ -335,6 +340,11 @@ export class QueueRetryService {
     }
   }
   async retryTranscribeTask(task) {
+    const target = this.host.app.vault.getAbstractFileByPath(task.mdPath);
+    if (!(target instanceof obsidian.TFile)) return this.retryTranscribeTaskImpl(task);
+    return this.host.continuations.runOnTarget(target, () => this.retryTranscribeTaskImpl(task));
+  }
+  private async retryTranscribeTaskImpl(task) {
     const mdFile = this.host.app.vault.getAbstractFileByPath(task.mdPath);
     // 目录外的历史占位（中文写死、已不再新写）：只放正则字面量，供已落盘旧笔记匹配。
     const legacyFailMark = /_\[等待后台转写：[^\]]*\]_|_\[转写失败（空结果，已进入重试队列）\]_|_\[转写失败(?:（已进入重试队列）)?：[^\]]*\]_/;
@@ -557,6 +567,7 @@ export class QueueRetryService {
     const remaining = tasks.filter(t => t && t.type === "transcribe" && t.id !== task.id
       && obsidian.normalizePath(String(t.mdPath || "")) === mdNorm);
     if (remaining.length) return;
+    if (tasks.some(t => t && t.type === "merge" && t.continuation && t.sessionId === task.sessionId)) return;
     new obsidian.Notice(t("\"{0}\" All failed segments are transcribed; re-organizing the body...").replace("{0}", mdFile.basename), 8000);
     const mode = this.host.noteWriter.detectModeFromMarkdown(mdFile) || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
     // fire-and-forget：不阻塞队列循环
@@ -588,11 +599,19 @@ export class QueueRetryService {
         task.mdPath = newNorm;
         migrated++;
       }
-      // 顺便把 task 里其他指向同一 md 的引用字段也迁移
-      // sourceMdPath 只出现在旧版持久化的队列数据里，当前 QueueTask 类型不含该字段；按遗留数据处理。
-      const legacySourceMdPath = (task as { sourceMdPath?: string }).sourceMdPath;
-      if (legacySourceMdPath && obsidian.normalizePath(legacySourceMdPath) === oldNorm) {
-        (task as { sourceMdPath?: string }).sourceMdPath = newNorm;
+      const temporarySourcePath = task.type === "generate-prompt" ? "" : task.temporarySourcePath;
+      if ((task.type === "merge" || task.type === "transcribe")
+        && temporarySourcePath && obsidian.normalizePath(temporarySourcePath) === oldNorm) {
+        task.temporarySourcePath = newNorm;
+        migrated++;
+      }
+      if (task.type === "merge" && task.continuation
+        && obsidian.normalizePath(task.continuation.targetPath) === oldNorm) {
+        task.continuation.targetPath = newNorm;
+        migrated++;
+      }
+      if ("sourceMdPath" in task && typeof task.sourceMdPath === "string" && obsidian.normalizePath(task.sourceMdPath) === oldNorm) {
+        task.sourceMdPath = newNorm;
       }
     }
     if (migrated > 0) {
@@ -607,18 +626,210 @@ export class QueueRetryService {
     const norm = obsidian.normalizePath(String(path || ""));
     if (!norm) return;
     const before = this.host.queue.tasks.length;
-    this.host.queue.tasks = this.host.queue.tasks.filter((task) =>
-      !(task && task.mdPath && obsidian.normalizePath(task.mdPath) === norm)
-    );
+    let preservedContinuation = false;
+    this.host.queue.tasks = this.host.queue.tasks.filter((task) => {
+      if (!task) return false;
+      const continuation = task.type === "merge" ? task.continuation : undefined;
+      const temporarySourcePath = task.type === "generate-prompt" ? "" : task.temporarySourcePath;
+      const referencesPath = (task.mdPath && obsidian.normalizePath(task.mdPath) === norm)
+        || (temporarySourcePath && obsidian.normalizePath(temporarySourcePath) === norm)
+        || (continuation && obsidian.normalizePath(continuation.targetPath) === norm);
+      const continuationTask = task.type === "merge" && !!continuation;
+      if (continuationTask && referencesPath) {
+        task.status = "missing";
+        task.lastError = t("The target or separate recording file was deleted; the remaining recovery material was kept.");
+        preservedContinuation = true;
+        return true;
+      }
+      return !referencesPath;
+    });
     const removed = before - this.host.queue.tasks.length;
-    if (removed > 0) {
+    if (removed > 0 || preservedContinuation) {
       try { void (this.host.saveAll || this.host.saveSettings).call(this.host); } catch (e) {
         console.warn("[QnALog] queue delete cleanup save failed", e);
       }
       try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     }
   }
+  async runAppendTask(task: MergeQueueTaskPayload & { id: string; status: string; dependsOnSessionIds?: string[]; temporarySourcePath?: string }) {
+    const context = task.continuation;
+    if (!context || typeof context.targetPath !== "string" || typeof context.targetSourceId !== "string" || !context.targetSourceId) {
+      return { deferred: true, status: "blocked", reason: t("Continuation recovery information is invalid; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
+    }
+    const target = this.host.app.vault.getAbstractFileByPath(context.targetPath);
+    if (!(target instanceof obsidian.TFile)) {
+      return { deferred: true, status: "missing", reason: t("The target note is missing; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
+    }
+    if (this.host.continuations.isSessionTracked(task.sessionId)) {
+      return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
+    }
+    const activeDependencies = (task.dependsOnSessionIds || []).filter(id =>
+      this.host.continuations.isSessionTracked(id)
+      || this.host.queue?.tasks.some(candidate => candidate.type !== "generate-prompt" && candidate.sessionId === id),
+    );
+    if (activeDependencies.length) {
+      return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
+    }
+    if (this.host.queue?.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId)) {
+      return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
+    }
+    return this.host.continuations.runOnTarget(target, async () => {
+      const reloadedTarget = this.host.app.vault.getAbstractFileByPath(target.path);
+      if (!(reloadedTarget instanceof obsidian.TFile)) {
+        return { deferred: true, status: "missing", reason: t("The target note is missing; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
+      }
+      if (this.host.continuations.hasActiveSessions(target)) {
+        return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
+      }
+      const targetMarkdown = await this.host.app.vault.read(reloadedTarget);
+      if (getContinuationTargetIdentity(targetMarkdown, reloadedTarget) !== context.targetSourceId) {
+        return { deferred: true, status: "blocked", reason: t("The target note identity changed; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
+      }
+      const committedMarker = nsMarker(NS_CONTINUATION_COMMITTED_MARKER, task.sessionId);
+      if (targetMarkdown.includes(committedMarker)) {
+        const committedSegments = Array.isArray(task.segments) ? task.segments : [];
+        if (!committedSegments.length) {
+          return { deferred: true, status: "blocked", reason: t("A committed continuation has no saved transcript ledger; recovery material was kept.") } satisfies QueueTaskDeferred;
+        }
+        await this.host.noteWriter.commitContinuation({
+          id: task.sessionId,
+          sessionStamp: window.moment(context.recordedAt).format("YYYYMMDD-HHmmss"),
+          mdPath: reloadedTarget.path,
+          mode: task.mode,
+          startedAt: context.recordedAt,
+          segments: committedSegments,
+          finalized: false,
+          continuation: context,
+        }, "", []);
+        const recoveryMeta = task.sessionMeta && typeof task.sessionMeta === "object" && !Array.isArray(task.sessionMeta)
+          ? task.sessionMeta as Record<string, unknown>
+          : null;
+        if (recoveryMeta && recoveryMeta._briefingCheckpointId) {
+          await clearCommittedBriefingCheckpoint(this.host, recoveryMeta);
+        }
+        await this.host.noteIndex.refreshNoteIndexSafely(reloadedTarget, {
+          meetingDate: context.recordedAt,
+          reason: "continuation-merge-recovery",
+        });
+        await this.host.asrPipeline.cleanupSuccessfulSegmentAudio({
+          id: task.sessionId,
+          segments: committedSegments,
+          masterAudioPath: context.masterAudioPath || "",
+          masterAudioName: context.masterAudioName || "",
+        });
+        const committedStage = this.host.app.vault.getAbstractFileByPath(String(task.temporarySourcePath || task.mdPath || ""));
+        if (committedStage instanceof obsidian.TFile) await this.host.app.fileManager.trashFile(committedStage);
+        return;
+      }
+      const stagePath = String(task.temporarySourcePath || task.mdPath || "");
+      const stageFile = this.host.app.vault.getAbstractFileByPath(stagePath);
+      if (!(stageFile instanceof obsidian.TFile)) {
+        return { deferred: true, status: "missing", reason: t("The separate recording file is missing; the target was not changed.") } satisfies QueueTaskDeferred;
+      }
+      const stageMarkdown = await this.host.app.vault.read(stageFile);
+      const fresh = extractTranscriptSegments(stageMarkdown);
+      if (!fresh.length) {
+        return { deferred: true, status: "missing", reason: t("The separate recording has no complete transcript yet; its audio was kept.") } satisfies QueueTaskDeferred;
+      }
+      if (fresh.some(segment => !segment.transcript || segment.transcript.sourceId !== task.sessionId)) {
+        return { deferred: true, status: "blocked", reason: t("The separate recording transcript identity is invalid; its audio was kept.") } satisfies QueueTaskDeferred;
+      }
+      const targetSegments = extractTranscriptSegments(targetMarkdown);
+      const freshIds = new Set(fresh.map(segment => segment.transcript?.sourceId).filter(Boolean));
+      const freshBlockIds = new Set(fresh.map(segment => segment.transcript?.id).filter(Boolean));
+      const existingFresh = targetSegments.filter(segment => freshBlockIds.has(segment.transcript?.id || ""));
+      for (const segment of fresh) {
+        const existing = existingFresh.filter(candidate => candidate.transcript?.id === segment.transcript?.id);
+        const incomingRevision = segment.transcript ? getCurrentTranscript(segment.transcript) : null;
+        const existingRevision = existing[0]?.transcript ? getCurrentTranscript(existing[0].transcript) : null;
+        if (existing.length > 1 || (existing.length === 1
+          && (!incomingRevision || !existingRevision
+            || existing[0].transcript?.sourceId !== segment.transcript?.sourceId
+            || existingRevision.revision !== incomingRevision.revision
+            || existingRevision.normalizationRevision !== incomingRevision.normalizationRevision))) {
+          return { deferred: true, status: "blocked", reason: t("A transcript source conflicts with the target note; the separate recording was kept.") } satisfies QueueTaskDeferred;
+        }
+      }
+      const base = targetSegments.filter(segment => !freshIds.has(segment.transcript?.sourceId || ""));
+      const durationMs = getSegmentsDurationMs(base);
+      const normalizedFresh = fresh.map(segment =>
+        existingFresh.find(existing => existing.transcript?.id === segment.transcript?.id)
+          || normalizeSegmentsForMergedNote([segment], durationMs, base.length, stageFile)[0],
+      );
+      const mergedSegments = [...base, ...normalizedFresh];
+      task.segments = normalizedFresh;
+      if (this.host.queue) await this.host.queue.update(task.id, { segments: normalizedFresh });
+      const metadata = this.host.app.metadataCache.getFileCache(reloadedTarget);
+      const startedAt = inferNoteStartedAtIso(reloadedTarget, metadata?.frontmatter || {});
+      const savedSessionMeta = task.sessionMeta && typeof task.sessionMeta === "object" && !Array.isArray(task.sessionMeta)
+        ? task.sessionMeta as Record<string, unknown>
+        : {};
+      const sessionMeta: Record<string, unknown> = Object.assign({}, savedSessionMeta, {
+        startedAt,
+        duration: formatElapsed(getSegmentsDurationMs(mergedSegments)),
+        _previousKnowledge: readSessionKnowledge(targetMarkdown),
+      });
+      const writeSession: import("../shared/types").RecordingSession = {
+        id: task.sessionId,
+        sessionStamp: window.moment(context.recordedAt).format("YYYYMMDD-HHmmss"),
+        mdPath: reloadedTarget.path,
+        mode: task.mode,
+        startedAt,
+        source: task.source || "",
+        sourceMeta: task.sourceMeta || null,
+        externalAudioSource: task.externalAudioSource || null,
+        textImportSources: task.textImportSources || [],
+        meetingWorkbench: sessionMeta.meetingWorkbench || null,
+        segments: mergedSegments,
+        continuationSourcePath: reloadedTarget.path,
+        continuationSourceTitle: reloadedTarget.basename,
+        continuationRecordedAt: context.recordedAt,
+        continuationPriorOutline: extractPriorOutline(targetMarkdown),
+        continuationPriorAudioNames: collectAudioRefs(targetMarkdown),
+        continuationPriorRecordingInfo: extractDetailsBody(targetMarkdown, labelPattern("recordingInfo")),
+        continuationBaseSegments: base,
+        continuationOffsetMs: durationMs,
+        continuation: context,
+        masterAudioPath: context.masterAudioPath || "",
+        masterAudioName: context.masterAudioName || "",
+        multiSourceAudio: true,
+        finalized: false,
+      };
+      let polished: string;
+      try {
+        polished = await mergeAndPolish(this.host, mergedSegments, task.mode, sessionMeta, task.speakerFrontmatter || null);
+      } catch (error) {
+        task.sessionMeta = sessionMeta;
+        if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta });
+        throw error;
+      }
+      if (!polished) throw new Error(t("Merge returned an empty result"));
+      task.sessionMeta = sessionMeta;
+      if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta });
+      try {
+        await this.host.versions.saveVersion(reloadedTarget, targetMarkdown, base, {
+          kind: "pre-append", label: t("Before append") + " " + window.moment().format("YYYY-MM-DD HH:mm"),
+          mode: task.mode, idLabel: `pre-append-${window.moment().format("YYYYMMDD-HHmmss")}`,
+          body: targetMarkdown, activate: false,
+        });
+      } catch (error) {
+        console.warn("[QnALog] pre-append version archive failed", error);
+      }
+      await this.host.noteWriter.commitContinuation(writeSession, polished, []);
+      if (sessionMeta._briefingCheckpointId) await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
+      await this.host.noteIndex.refreshNoteIndexSafely(reloadedTarget, { meetingDate: startedAt, reason: "continuation-merge" });
+      await this.host.asrPipeline.cleanupSuccessfulSegmentAudio(writeSession);
+      await this.host.app.fileManager.trashFile(stageFile);
+      return;
+    });
+  }
   async retryMergeTask(task) {
+    if (task.continuation) return this.runAppendTask(task);
+    const target = this.host.app.vault.getAbstractFileByPath(task.mdPath);
+    if (!(target instanceof obsidian.TFile)) throw new Error(t("Note not found: {0}").replace("{0}", String(task.mdPath)));
+    return this.host.continuations.runOnTarget(target, () => this.retryMergeTaskImpl(task));
+  }
+  private async retryMergeTaskImpl(task) {
     const file = this.host.app.vault.getAbstractFileByPath(task.mdPath);
     if (!(file instanceof obsidian.TFile)) throw new Error(t("Note not found: {0}").replace("{0}", String(task.mdPath)));
     const currentMarkdown = await this.host.app.vault.read(file);

@@ -91,6 +91,8 @@ export const NS_TRANSCRIPT_DATA = nsRe("transcript-data");
 export const NS_TRANSCRIPT_END = nsRe("transcript-end");
 /** Session knowledge snapshot stored as a hidden machine comment. */
 export const NS_SESSION_KNOWLEDGE = nsRe("session-knowledge");
+/** Marker for an idempotently committed staged continuation. */
+export const NS_CONTINUATION_COMMITTED_MARKER = "continuation-committed";
 /** 独占一行的会话标记。 */
 export const NS_SESSION_LINE_RE = new RegExp(
   `^[ \\t]*<!--\\s*${nsRe("session")}(?::[^>]*|\\s*--)[^>]*-->[ \\t]*\\r?\\n?`,
