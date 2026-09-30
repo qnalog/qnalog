@@ -1,4 +1,5 @@
-import { NS_TAG, NS_FM_SPEAKERS, nsMarker, nsRe } from "../shared/namespace";
+import { NS_TAG, NS_FM_SPEAKERS, NS_TRANSCRIPT_DATA, nsMarker, nsRe } from "../shared/namespace";
+import { updateTranscriptSpeakerName } from "../transcript/transcript-markdown";
 export const MAX_SPEAKER_CHANNELS = 4;
 export const DEFAULT_SPEAKER_CHANNELS = 2;
 
@@ -281,6 +282,12 @@ export function replaceSpeakerDisplayName(
   const channel = Math.max(1, Math.floor(Number(speakerId.slice(4))) || 1);
   const safeName = String(personName || "").replace(/[\r\n]+/g, " ").trim();
   if (!safeName) return { markdown: String(markdown || ""), replacements: 0 };
+  const original = String(markdown || "");
+  const previousNames = new Set<string>([`说话人${channel}`, `说话人 ${channel}`]);
+  const anchoredNames = new RegExp(`<!--\\s*${nsRe("speaker")}:${speakerId}\\s*-->\\s*\\n?\\s*(?:\\[[^\\]]+\\]\\s*)?\\*\\*([^*\\n]{1,80})[：:]\\*\\*`, "gi");
+  for (const match of original.matchAll(anchoredNames)) previousNames.add(match[1]);
+  const inlineNames = new RegExp(`<!--\\s*${nsRe("speaker-ref")}:${speakerId}\\s*-->([^<\\n]*?)<!--\\s*${nsRe("speaker-ref-end")}:${speakerId}\\s*-->`, "gi");
+  for (const match of original.matchAll(inlineNames)) previousNames.add(match[1]);
   const anchored = new RegExp(
     `(<!--\\s*${nsRe("speaker")}:${speakerId}\\s*-->\\s*\\n?\\s*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\*\\*[^*\\n]{1,80}[：:]\\*\\*`,
     "gi",
@@ -331,13 +338,16 @@ export function replaceSpeakerDisplayName(
       inFence = !inFence;
       continue;
     }
-    if (inFence || new RegExp(`^\\s*(?:<!--\\s*)?${NS_TAG}-(?:people|tags|part-summary)\\s*:`, "i").test(line)) continue;
+    if (inFence || new RegExp(`^\\s*<!--\\s*${NS_TRANSCRIPT_DATA}\\b`, "i").test(line)
+      || new RegExp(`^\\s*(?:<!--\\s*)?${NS_TAG}-(?:people|tags|part-summary)\\s*:`, "i").test(line)) continue;
     lines[index] = line.replace(genericInline, () => {
       replacements += 1;
       return inlineMarker;
     });
   }
-  next = lines.join("\n");
+  next = replacements
+    ? updateTranscriptSpeakerName(lines.join("\n"), speakerId, safeName, [...previousNames])
+    : lines.join("\n");
   const result = { markdown: next, replacements };
   return result;
 }

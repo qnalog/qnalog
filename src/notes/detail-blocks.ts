@@ -20,6 +20,8 @@ import { t } from "../shared/i18n";
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings } from "../audio/channel-speakers";
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
+import { attachTextTranscript } from "../transcript/session-transcript";
+import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 export function buildMeetingWorkbenchDetails(session) {
   const workbench = normalizeMeetingWorkbench(session && session.meetingWorkbench);
@@ -234,18 +236,22 @@ export function buildTextImportSourceDetails(session) {
   const segments = Array.isArray(session.segments) ? session.segments : [];
   if (!segments.length) return "";
   const lines = [];
-  segments.forEach((seg, i) => {
-    const name = seg.sourceName || `文本 ${i + 1}`;
-    const path = seg.sourcePath || "";
+  segments.forEach((segment, index) => {
+    const name = segment.sourceName || `文本 ${index + 1}`;
+    const path = segment.sourcePath || "";
     const link = path ? `[[${path}|${name}]]` : name;
-    const body = String(seg.rawText || seg.text || "").trim() || labelText("emptyTextSource");
-    lines.push(`### ${i + 1}. ${link}`, "", body, "");
+    const heading = `### ${index + 1}. ${link}`;
+    const visibleText = String(segment.rawText ?? segment.text ?? "") || labelText("emptyTextSource");
+    const storedSegment = segment.transcript
+      ? segment
+      : attachTextTranscript(segment, session.id, "text-import");
+    lines.push(serializeTranscriptBlock(storedSegment, heading, visibleText));
   });
   return [
     "<details>",
     `<summary>${labelText("importedTextSources", segments.length)}</summary>`,
     "",
-    lines.join("\n").trim(),
+    lines.join("\n\n"),
     "",
     "</details>",
   ].join("\n");

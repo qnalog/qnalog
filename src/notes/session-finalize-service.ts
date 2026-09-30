@@ -39,6 +39,12 @@ import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
 import { SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
 
 import { t } from "../shared/i18n";
+import type { AsrTranscriptResult, AsrTranscriptUnit } from "../asr/transcript-result";
+import { attachTranscriptResult, getCurrentTranscript, splitTranscriptTextUnits } from "../transcript/session-transcript";
+import { readSessionKnowledge } from "../briefing/session-knowledge";
+import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { bindTranscriptSegmentToAudio } from "../transcript/audio-binding";
+import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelText } from "../shared/note-labels";
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
@@ -166,6 +172,8 @@ export class SessionFinalizeService {
     let text = ""; let err = null;
     let transcribeBlob = null;
     let channelTranscription = null;
+    let asrResult: AsrTranscriptResult | null = null;
+    let streamingRawText = "";
     let batchAsrAttempted = false;
     let batchAsrFailureRecorded = false;
     const activeProfile = this.host.profiles.getActiveTranscribeProfile();
@@ -181,14 +189,37 @@ export class SessionFinalizeService {
       try {
         if (session.pcmEncoder) { try { session.pcmEncoder.stop(); } catch { /* intentionally empty */ } session.pcmEncoder = null; }
         await session.streamingClient.finish();
-        text = session.streamingClient.getFullText() || session.streamingFullText || "";
+        streamingRawText = session.streamingClient.getFullText() || session.streamingFullText || "";
+        text = streamingRawText;
       } catch (e) {
         err = e;
         console.error("[QnALog] streaming finish failed", e);
-        text = session.streamingFullText || "";
+        streamingRawText = session.streamingFullText || "";
+        text = streamingRawText;
       }
-      // 提升转写质量：流式整段文本补一遍热词修正（分段批量路径在 transcribeAudio 内部已做，流式此前漏了）
-      try { text = applyVocabularyCorrections(text, await loadVocabularyGroups(this.host)); } catch { /* intentionally empty */ }
+      let vocabularyGroups = null;
+      try {
+        vocabularyGroups = await loadVocabularyGroups(this.host);
+        text = applyVocabularyCorrections(text, vocabularyGroups);
+      } catch { /* keep the service text when vocabulary storage is unavailable */ }
+      if (!err) {
+        const rawStreamText = streamingRawText;
+        const units: AsrTranscriptUnit[] = splitTranscriptTextUnits(rawStreamText).map((rawText) => ({
+          rawText,
+          normalizedText: vocabularyGroups ? applyVocabularyCorrections(rawText, vocabularyGroups) : rawText,
+          speakerId: null,
+          speakerName: null,
+          startMs: null,
+          endMs: null,
+          timing: "unknown",
+        }));
+        asrResult = {
+          text,
+          rawText: rawStreamText,
+          providerId: String(activeProfile && activeProfile.id || session.importTranscribeProviderId || this.host.settings.activeTranscribeProvider || ""),
+          units,
+        };
+      }
       try { await this.host.meetingWorkbench.removeLiveTranscriptBlock(session.mdPath, session.id); } catch { /* intentionally empty */ }
       session.streamingClient = null;
     } else if (isStreamingProvider) {
@@ -236,6 +267,7 @@ export class SessionFinalizeService {
                 { requireSeparatedChannels: channelMode === "auto" && runtimeChannelMode === "probing" },
               );
               text = channelTranscription.text;
+              asrResult = channelTranscription;
               session.audioChannelCount = channelTranscription.actualChannelCount;
               session.audioChannelRuntimeMode = resolveAudioChannelRuntimeMode({
                 channelMode,
@@ -310,7 +342,8 @@ export class SessionFinalizeService {
                 });
               }
             } else {
-              text = await transcribeAudio(this.host, transcribeBlob, transcribeMime);
+              asrResult = await transcribeAudio(this.host, transcribeBlob, transcribeMime);
+              text = asrResult.text;
             }
           } catch (e) {
             err = e;
@@ -325,6 +358,7 @@ export class SessionFinalizeService {
       // HTTP 200 + 空正文并不等于成功。对长段按可重试软失败处理并保留切片，
       // 与导入音频路径保持一致，避免服务偶发空结果被静默写成“无内容”。
       err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
+      asrResult = null;
       if (batchAsrAttempted && !batchAsrFailureRecorded) {
         batchAsrFailureRecorded = true;
         this.host.liveAsr.recordLiveAsrAttemptFailure(session, err, seg);
@@ -396,7 +430,7 @@ export class SessionFinalizeService {
 
     const playbackAudioName = session.masterAudioName || segmentAudioName;
     const playbackAudioPath = session.masterAudioPath || segmentAudioPath;
-    const segmentRecord: Segment = {
+    let segmentRecord: Segment = {
       index: segmentIndex,
       startOffsetMs: displayStartOffsetMs,
       endOffsetMs: displayEndOffsetMs,
@@ -416,6 +450,7 @@ export class SessionFinalizeService {
       // seg.source 优先（来自 RecordSession 未来的双流路径），fallback 到 session.captureMode
       source: (seg && seg.source) || session.captureMode || "mic",
     };
+    const segmentArrayIndex = session.segments.length;
     session.segments.push(segmentRecord);
 
     if (err && !isStreamingProvider) {
@@ -431,20 +466,24 @@ export class SessionFinalizeService {
       }), err);
       segmentRecord.queueTaskId = retryTask.id;
     }
+    const visibleText = err ? getTranscribeSegmentPlaceholder(err, {
+      streaming: isStreamingProvider,
+      deferred: !!err.asrDeferred,
+      retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)),
+    }) : (text ? text : labelText("noContentSegment"));
+    segmentRecord = attachTranscriptResult(
+      segmentRecord,
+      session.id,
+      err ? null : asrResult,
+      isStreamingProvider ? "streaming-transcript" : "asr",
+    );
+    session.segments[segmentArrayIndex] = segmentRecord;
 
     const segTitle = `### ${labelText("segment", segNumber)} (${formatElapsed(displayStartOffsetMs)}–${formatElapsed(displayEndOffsetMs)}) ${getAudioTimeLink(playbackAudioName, Math.max(0, Number(seg.startOffsetMs) || 0))}${seg.isFinal ? " · 结束" : ""}`;
-    const block = [
-      "",
-      segTitle,
-      "",
-      segmentRecord.queueTaskId ? nsMarker("transcribe-task", segmentRecord.queueTaskId) : "",
-      err ? getTranscribeSegmentPlaceholder(err, {
-        streaming: isStreamingProvider,
-        deferred: !!err.asrDeferred,
-        retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)),
-      }) : (text ? text : labelText("noContentSegment")),
-      "",
-    ].join("\n");
+    const heading = [segTitle, segmentRecord.queueTaskId ? nsMarker("transcribe-task", segmentRecord.queueTaskId) : ""]
+      .filter(Boolean)
+      .join("\n\n");
+    const block = `\n${serializeTranscriptBlock(segmentRecord, heading, visibleText)}\n`;
     await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
     if (!err || isStreamingProvider) await this.host.liveAsr.removeLiveSegmentQueueTask(seg);
 
@@ -461,6 +500,32 @@ export class SessionFinalizeService {
     if (this.host.settings.enableRealtimeOutline && text && !err) {
       this.host.outline.scheduleRealtimeOutline();
     }
+  }
+
+  async syncTranscriptAudioSource(session: RecordingSession): Promise<void> {
+    const masterPath = String(session && session.masterAudioPath || "");
+    if (!masterPath) return;
+    const segments = Array.isArray(session.segments) ? session.segments : [];
+    const updated = segments.map((segment) => bindTranscriptSegmentToAudio(segment, masterPath, String(session.masterAudioName || masterPath.split("/").pop() || "")));
+    const changed = updated.filter((segment, index) => segment !== segments[index] && segment.transcript);
+    if (!changed.length) return;
+    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    if (!(file instanceof obsidian.TFile)) throw new Error("Cannot bind transcript sources without the session note");
+    const markdown = await this.host.app.vault.read(file);
+    const blocks = readTranscriptBlocks(markdown);
+    const replacements = changed.map((segment) => {
+      const id = segment.transcript.id;
+      const matches = blocks.filter((block) => block.segment.transcript?.id === id);
+      if (matches.length !== 1) throw new Error(`Expected one transcript block for source ${id}; found ${matches.length}`);
+      if (matches[0].drifted) throw new Error(`Transcript block ${id} was edited before final audio binding`);
+      return { block: matches[0], segment };
+    }).sort((left, right) => right.block.start - left.block.start);
+    let next = markdown;
+    for (const replacement of replacements) {
+      next = replaceTranscriptBlock(next, replacement.block, replacement.segment, replacement.block.visibleBlock);
+    }
+    if (next !== markdown) await this.host.app.vault.modify(file, next);
+    session.segments = updated;
   }
 
   getSegmentsForFinalSession(session) {
@@ -613,14 +678,25 @@ export class SessionFinalizeService {
       }
     }
     const llmSegments = hasConfirmedName
-      ? segments.map(segment => Object.assign({}, segment, {
-          text: applySpeakerNamesForLlm(segment.text, mappings),
-          rawText: segment.rawText || segment.text,
-        }))
+      ? segments.map((segment) => ({ ...segment, text: applySpeakerNamesForLlm(segment.text, mappings) }))
       : segments;
+    const utteranceProjections = hasConfirmedName
+      ? segments.flatMap((segment) => {
+        if (!segment.transcript) return [];
+        return getCurrentTranscript(segment.transcript).utterances.flatMap((utterance) => {
+          const normalizedText = applySpeakerNamesForLlm(utterance.normalizedText, mappings);
+          const channel = Number(utterance.speakerId?.match(/(?:channel|speaker|spk)[:-]?(\d+)$/)?.[1]) || 0;
+          const speakerName = String(mappings[`spk-${channel}`]?.personName || utterance.speakerName || "").trim() || null;
+          return normalizedText !== utterance.normalizedText || speakerName !== utterance.speakerName
+            ? [{ utteranceId: utterance.id, normalizedText, speakerName }]
+            : [];
+        });
+      })
+      : [];
     return {
       segments: llmSegments,
       frontmatter: hasConfirmedName ? Object.assign({}, frontmatter, { [NS_FM_SPEAKERS]: mappings }) : null,
+      utteranceProjections,
     };
   }
 
@@ -686,8 +762,9 @@ export class SessionFinalizeService {
     }
 
     const textImportSession = isTextImportSession(session);
+    await this.syncTranscriptAudioSource(session);
     const segmentsForFinal = this.getSegmentsForFinalSession(session);
-    const writeSession = segmentsForFinal === session.segments
+    let writeSession = segmentsForFinal === session.segments
       ? session
       : Object.assign({}, session, { segments: segmentsForFinal, multiSourceAudio: true });
     const usableTranscriptSegments = segmentsForFinal.filter(s => s && String(s.text || "").trim());
@@ -720,8 +797,11 @@ export class SessionFinalizeService {
       this.host.requestOutlineRefresh();
       return;
     }
-    session.finalizing = true;
-    let speakerPreparation = { segments: segmentsForFinal, frontmatter: null };
+    let speakerPreparation: {
+      segments: Segment[];
+      frontmatter: Record<string, unknown> | null;
+      utteranceProjections?: Array<{ utteranceId: string; normalizedText: string; speakerName: string | null }>;
+    } = { segments: segmentsForFinal, frontmatter: null, utteranceProjections: [] };
     try {
       speakerPreparation = await this.confirmSpeakerNamesBeforeFinal(session, segmentsForFinal);
     } catch (error) {
@@ -735,6 +815,9 @@ export class SessionFinalizeService {
     }
     const segmentsForLlm = speakerPreparation.segments || segmentsForFinal;
     const speakerFrontmatter = speakerPreparation.frontmatter || null;
+    if (segmentsForLlm !== segmentsForFinal) {
+      writeSession = Object.assign({}, writeSession, { segments: segmentsForLlm });
+    }
     this.host.liveAsr.setSessionWorkProgress(session, {
       stage: "finalize-start",
       label: textImportSession ? t("Text read complete") : t("Preparing AI organizing"),
@@ -778,7 +861,12 @@ export class SessionFinalizeService {
         source: session.source || "",
         sourceMeta: session.sourceMeta || null,
         meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
+        _utteranceProjections: speakerPreparation.utteranceProjections || [],
       };
+      const noteFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+      if (noteFile instanceof obsidian.TFile) {
+        sessionMeta._previousKnowledge = readSessionKnowledge(await this.host.app.vault.read(noteFile));
+      }
       finalSessionMeta = sessionMeta;
       this.host.liveAsr.setSessionWorkProgress(session, {
         stage: "llm-merge",
@@ -789,16 +877,7 @@ export class SessionFinalizeService {
       taskMeter = this.host.taskMeters.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
       session._finalizeTaskMeter = taskMeter;
-      polished = await mergeAndPolish(this.host, segmentsForLlm.map(s => ({
-        index: s.index, startOffsetMs: s.startOffsetMs, endOffsetMs: s.endOffsetMs, text: s.text,
-        audioName: s.audioName,
-        audioStartOffsetMs: s.audioStartOffsetMs,
-        audioEndOffsetMs: s.audioEndOffsetMs,
-        sourceName: s.sourceName,
-        sourcePath: s.sourcePath,
-        sourceUrl: s.sourceUrl,
-        rawText: s.rawText,
-      })), session.mode, sessionMeta, speakerFrontmatter);
+      polished = await mergeAndPolish(this.host, segmentsForLlm.map((segment) => ({ ...segment })), session.mode, sessionMeta, speakerFrontmatter);
       session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
       this.host.liveAsr.setSessionWorkProgress(session, {
         stage: "write-note",
@@ -826,34 +905,27 @@ export class SessionFinalizeService {
         error: diagnosticError(mergeError),
       });
       const lastSeg = segmentsForFinal[segmentsForFinal.length - 1];
+      const retrySessionMeta = Object.assign({}, finalSessionMeta || {
+        startedAt: session.startedAt,
+        duration: isTextImportSession(session) ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
+        source: session.source || "",
+        sourceMeta: session.sourceMeta || null,
+        meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
+      });
+      delete retrySessionMeta._previousKnowledge;
       await this.host.queue.add({
         type: "merge",
         sessionId: session.id,
         mdPath: session.mdPath,
         mode: session.mode,
         status: nonRetryableMergeError ? "blocked" : "pending",
-        segments: segmentsForLlm.map(s => ({
-          index: s.index, startOffsetMs: s.startOffsetMs, endOffsetMs: s.endOffsetMs, text: s.text,
-          audioName: s.audioName,
-          audioStartOffsetMs: s.audioStartOffsetMs,
-          audioEndOffsetMs: s.audioEndOffsetMs,
-          sourceName: s.sourceName,
-          sourcePath: s.sourcePath,
-          sourceUrl: s.sourceUrl,
-          rawText: s.rawText,
-        })),
+        segments: segmentsForLlm.map((segment) => ({ ...segment })),
         source: session.source || "",
         sourceMeta: session.sourceMeta || null,
         externalAudioSource: session.externalAudioSource || null,
         textImportSources: session.textImportSources || [],
         speakerFrontmatter,
-        sessionMeta: finalSessionMeta || {
-          startedAt: session.startedAt,
-          duration: isTextImportSession(session) ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
-          source: session.source || "",
-          sourceMeta: session.sourceMeta || null,
-            meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-        },
+        sessionMeta: retrySessionMeta,
         lastError: mergeError.message || String(mergeError),
       });
       if (!nonRetryableMergeError) {
@@ -924,16 +996,7 @@ export class SessionFinalizeService {
           sessionId: session.id,
           mdPath: session.mdPath,
           mode: session.mode,
-          segments: segmentsForLlm.map(s => ({
-            index: s.index, startOffsetMs: s.startOffsetMs, endOffsetMs: s.endOffsetMs, text: s.text,
-            audioName: s.audioName,
-            audioStartOffsetMs: s.audioStartOffsetMs,
-            audioEndOffsetMs: s.audioEndOffsetMs,
-            sourceName: s.sourceName,
-            sourcePath: s.sourcePath,
-            sourceUrl: s.sourceUrl,
-            rawText: s.rawText,
-          })),
+          segments: segmentsForLlm.map((segment) => ({ ...segment })),
           source: session.source || "",
           sourceMeta: session.sourceMeta || null,
           externalAudioSource: session.externalAudioSource || null,

@@ -1,6 +1,10 @@
+import type { TranscriptSegmentRecord } from "../transcript/session-transcript";
+import { readTranscriptBlocks } from "../transcript/transcript-markdown";
+
 export interface TranscriptCheckpointSegment {
   text?: string | null;
   error?: string | null;
+  transcript?: TranscriptSegmentRecord;
 }
 
 export interface TranscriptCheckpointResult {
@@ -18,16 +22,34 @@ function transcriptProbe(value: string): string {
   return `${text.slice(0, 120)}\n${text.slice(-120)}`;
 }
 
+function sameTranscriptRecord(expected: TranscriptSegmentRecord, stored: TranscriptSegmentRecord): boolean {
+  return JSON.stringify(expected) === JSON.stringify(stored);
+}
+
 export function verifyTranscriptCheckpoint(
   markdown: string,
   segments: TranscriptCheckpointSegment[],
 ): TranscriptCheckpointResult {
-  const content = markdown;
+  const content = String(markdown || "");
+  let blocks: ReturnType<typeof readTranscriptBlocks> | null = null;
+  try {
+    blocks = readTranscriptBlocks(content);
+  } catch {
+    blocks = null;
+  }
   const usable = (Array.isArray(segments) ? segments : [])
-    .map((segment, index) => ({ index, text: String(segment?.text || "").trim(), error: segment?.error }))
+    .map((segment, index) => ({ index, text: String(segment?.text || "").trim(), error: segment?.error, transcript: segment?.transcript }))
     .filter((segment) => segment.text && !segment.error);
   const missingSegmentIndexes = usable
     .filter((segment) => {
+      if (segment.transcript) {
+        if (!blocks) return true;
+        const matches = blocks.filter((block) => block.segment.transcript?.id === segment.transcript?.id);
+        return matches.length !== 1
+          || matches[0].drifted
+          || !matches[0].segment.transcript
+          || !sameTranscriptRecord(segment.transcript, matches[0].segment.transcript);
+      }
       const probe = transcriptProbe(segment.text);
       if (!probe) return false;
       if (segment.text.length <= 240) return !content.includes(probe);

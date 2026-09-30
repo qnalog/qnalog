@@ -450,7 +450,7 @@ class QnALogPlugin extends obsidian.Plugin {
       menu.addItem((item) => {
         item.setTitle(t("QnALog: Correct misrecognized text…"))
           .setIcon("replace")
-          .onClick(() => new TextCorrectionModal(this.app, file, selection).open());
+          .onClick(() => new TextCorrectionModal(this.app, file, selection, () => this.noteIndex.refreshNoteIndexSafely(file, { reason: "text-correction" })).open());
       });
     }));
 

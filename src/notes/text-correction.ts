@@ -8,6 +8,9 @@
  * 因此除机器数据外全稿替换——摘要、正文、实时大纲、原始转写都改。
  */
 
+import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
+import { readSelectedSessionKnowledge, upsertSelectedSessionKnowledge } from "../briefing/session-knowledge";
+import type { Segment } from "../shared/types";
 /** 受保护、不参与替换的区域。 */
 export interface CorrectionOptions {
   /** 大小写敏感。默认 false（与既有易错写法替换一致：英文词忽略大小写）。 */
@@ -69,6 +72,41 @@ function escapeRegExp(value: string): string {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function findLiteralMatches(value: string, needle: string, caseSensitive: boolean): Range[] {
+  const pattern = new RegExp(escapeRegExp(needle), caseSensitive ? "g" : "gi");
+  const matches: Range[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    matches.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return matches;
+}
+
+function replaceAcrossUnits<T extends { normalizedText: string }>(
+  units: readonly T[],
+  matches: readonly Range[],
+  replacement: string,
+): T[] {
+  const source = units.map((unit) => unit.normalizedText).join("");
+  let unitStart = 0;
+  return units.map((unit) => {
+    const start = unitStart;
+    const end = start + unit.normalizedText.length;
+    unitStart = end;
+    let cursor = start;
+    let next = "";
+    for (const match of matches) {
+      if (match.end <= start || match.start >= end) continue;
+      const beforeEnd = Math.min(match.start, end);
+      if (beforeEnd > cursor) next += source.slice(cursor, beforeEnd);
+      if (match.start >= start && match.start < end) next += replacement;
+      cursor = Math.max(cursor, Math.min(match.end, end));
+    }
+    next += source.slice(cursor, end);
+    return { ...unit, normalizedText: next };
+  });
+}
+
 /** 统计某个偏移量落在第几行（1 起）。 */
 function lineAt(text: string, index: number): number {
   let line = 1;
@@ -116,6 +154,47 @@ export function applyNoteTextCorrection(
   }
   if (!replacements) return { text, replacements: 0, lines: [] };
   out += text.slice(cursor);
-
-  return { text: out, replacements, lines };
+  let corrected = out;
+  const blocks = readTranscriptBlocks(corrected);
+  for (const block of blocks.filter((item) => item.drifted).sort((left, right) => right.start - left.start)) {
+    const record = block.segment.transcript;
+    if (!record) continue;
+    const current = record.revisions.find((revision) => revision.revision === record.currentRevision);
+    if (!current) continue;
+    const projection = current.utterances.map((utterance) => utterance.normalizedText).join("");
+    const unitMatches = findLiteralMatches(projection, needle, !!options.caseSensitive);
+    const visibleMatches = findLiteralMatches(String(block.segment.text || ""), needle, !!options.caseSensitive);
+    if (!unitMatches.length || unitMatches.length !== visibleMatches.length) continue;
+    const normalizationRevision = current.normalizationRevision + 1;
+    const utterances = replaceAcrossUnits(current.utterances, unitMatches, replacement);
+    const corrections = [...current.corrections];
+    for (let index = 0; index < utterances.length; index += 1) {
+      if (utterances[index].normalizedText === current.utterances[index].normalizedText) continue;
+      corrections.push({
+        revision: normalizationRevision,
+        kind: "text",
+        from: current.utterances[index].normalizedText,
+        to: utterances[index].normalizedText,
+        utteranceIds: [current.utterances[index].id],
+      });
+    }
+    const revisions = record.revisions.map((revision) => revision.revision === current.revision
+      ? { ...revision, normalizationRevision, displayText: block.visibleBlock, utterances, corrections }
+      : revision);
+    const segment: Segment = {
+      ...block.segment,
+      text: String(block.segment.text || "").replace(new RegExp(escapeRegExp(needle), options.caseSensitive ? "g" : "gi"), () => replacement),
+      transcript: { ...record, revisions },
+    };
+    corrected = replaceTranscriptBlock(corrected, block, segment, block.visibleBlock);
+  }
+  const knowledge = readSelectedSessionKnowledge(text);
+  if (knowledge) {
+    knowledge.status = "stale";
+    if (!knowledge.issues.some((issue) => issue.reason === "source-changed")) {
+      knowledge.issues.push({ part: 0, reason: "source-changed" });
+    }
+    corrected = upsertSelectedSessionKnowledge(corrected, knowledge);
+  }
+  return { text: corrected, replacements, lines };
 }

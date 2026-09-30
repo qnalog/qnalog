@@ -371,6 +371,16 @@ export function formatMergeSegmentForPrompt(seg, fallbackIndex) {
   const safeIndex = Number.isFinite(Number(seg && seg.index)) ? Number(seg.index) : fallbackIndex;
   const start = Number(seg && seg.startOffsetMs) || 0;
   const end = Number(seg && seg.endOffsetMs) || 0;
+  const text = String((seg && seg.text) || "");
+  if (seg && seg.utteranceId) {
+    const speaker = seg.speakerId || seg.speakerName
+      ? ` speaker=${JSON.stringify([seg.speakerId || null, seg.speakerName || null])}`
+      : "";
+    const time = seg.timing === "provider" && Number.isFinite(start) && Number.isFinite(end)
+      ? ` time=${JSON.stringify([start, end])}ms`
+      : "";
+    return `===UTTERANCE ${JSON.stringify(String(seg.utteranceId))}${speaker}${time}===\n${text}`;
+  }
   const segmentAnchor = seg && seg.audioName
     ? getAudioTimeLink(seg.audioName, getSegmentAudioLinkOffsetMs(seg))
     : "";
@@ -378,11 +388,10 @@ export function formatMergeSegmentForPrompt(seg, fallbackIndex) {
   const tag = `===SEG ${safeIndex + 1} (${formatElapsed(start)}-${formatElapsed(end)})${anchor}===`;
   // 转写失败段只向模型说明时间范围缺失。技术错误留在任务中心和诊断日志，
   // 不进入长期文档，也不消耗模型上下文去解释网络故障。
-  const text = String((seg && seg.text) || "").trim();
-  if (!text && seg && seg.error) {
+  if (!text.trim() && seg && seg.error) {
     return `${tag}\n_[此时间段（${formatElapsed(start)}–${formatElapsed(end)}）尚未完成转写；如需引用该时段内容，请标注“待补转写”，不要推测或补写。]_`;
   }
-  return `${tag}\n${text || "_[此段无内容]_"}`;
+  return `${tag}\n${text.trim() || "_[此段无内容]_"}`;
 }
 
 // 把段按累计字符数贪心切成若干组，边界落在段边界（不切碎单段），每组 ~targetChars。
@@ -553,6 +562,7 @@ export function getBriefingPipelineTargetChars(plugin, mode, repolishOptions) {
 export function buildBriefingPipelineOptionsKey(plugin, mode, repolishOptions) {
   return JSON.stringify({
     pipeline: 2,
+    sessionKnowledgeSchema: 2,
     mode,
     promptTemplate: String(plugin.settings.activeTemplateByMode && plugin.settings.activeTemplateByMode[mode] || ""),
     structureLevel: String(repolishOptions && repolishOptions.structureLevel || plugin.settings.briefingStructureLevel || "balanced"),

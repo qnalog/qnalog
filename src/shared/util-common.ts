@@ -3,7 +3,7 @@
 import { NS_ID_PREFIX } from "./namespace";
 
 /** 判为字符串键的对象；用作类型谓词，让调用方收窄 unknown 后可直接取属性。 */
-export function isRecord(value): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -15,27 +15,28 @@ export function primitiveText(value: unknown): string {
   return "";
 }
 
-export function getErrorMessage(error) {
+export function getErrorMessage(error: unknown): string {
   if (!error) return "";
   if (typeof error === "string") return error;
-  if (error && typeof error.message === "string") return error.message;
-  try { return String(error); } catch { return ""; }
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
+  return primitiveText(error);
 }
 
-export function pickDefined(...args) {
+export function pickDefined<T>(...args: (T | undefined)[]): T | undefined {
   for (const value of args) {
     if (value !== undefined) return value;
   }
   return undefined;
 }
 
-export function genId() {
+export function genId(): string {
   return NS_ID_PREFIX + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 }
 
-export function pad(n) { return n < 10 ? "0" + n : "" + n; }
 
-export function formatElapsed(ms) {
+export function pad(n: number): string { return n < 10 ? "0" + n : "" + n; }
+
+export function formatElapsed(ms: number): string {
   const t = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(t / 3600);
   const m = Math.floor((t % 3600) / 60);
@@ -43,9 +44,9 @@ export function formatElapsed(ms) {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-export function sanitizeFilename(s) {
+export function sanitizeFilename(s: unknown): string {
   if (!s) return "";
-  return String(s)
+  return primitiveText(s)
     .replace(/["“”‘’`]/g, "")
     .replace(/[\\/:*?"<>|#^[\]]/g, "")
     .replace(/[｜：？＊＜＞＂＃＾「」『』【】、，。；！]/g, "")
@@ -54,12 +55,12 @@ export function sanitizeFilename(s) {
     .slice(0, 50);
 }
 
-export function escapeRegExp(s) {
-  return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export function escapeRegExp(s: unknown): string {
+  return primitiveText(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function stripHtmlText(text) {
-  return String(text || "")
+export function stripHtmlText(text: unknown): string {
+  return primitiveText(text)
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -70,13 +71,13 @@ export function stripHtmlText(text) {
     .trim();
 }
 
-export function safeDecodeUriText(text) {
-  try { return decodeURIComponent(String(text || "")); }
-  catch { return String(text || ""); }
+export function safeDecodeUriText(text: unknown): string {
+  try { return decodeURIComponent(primitiveText(text)); }
+  catch { return primitiveText(text); }
 }
 
-export function normalizeAudioLinkTarget(linkPath) {
-  let target = String(linkPath || "").split("#")[0].split("|")[0].trim();
+export function normalizeAudioLinkTarget(linkPath: unknown): string {
+  let target = primitiveText(linkPath).split("#")[0].split("|")[0].trim();
   if (!target) return "";
   try {
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(target)) {

@@ -50,6 +50,44 @@ const NOTE_BODY = [
   "<!-- qnalog-segments-end:s1 -->", "",
 ].join("\n");
 
+function transcriptSegment(index, text, startOffsetMs, endOffsetMs) {
+  const id = `seg:s1:${index}`;
+  const utteranceId = `${id}:r1:u1`;
+  return {
+    index, startOffsetMs, endOffsetMs, text,
+    transcript: {
+      schemaVersion: 2,
+      id,
+      sourceId: "s1",
+      sourcePath: null,
+      sourceName: null,
+      currentRevision: 1,
+      revisions: [{
+        revision: 1,
+        normalizationRevision: 1,
+        source: "text-import",
+        providerId: null,
+        rawText: text,
+        displayText: text,
+        utterances: [{
+          id: utteranceId,
+          parentSegmentId: id,
+          rawText: text,
+          normalizedText: text,
+          speakerId: null,
+          speakerName: null,
+          startMs: null,
+          endMs: null,
+          timing: "unknown",
+          audioRef: null,
+          source: "text-import",
+        }],
+        corrections: [],
+      }],
+    },
+  };
+}
+
 const files = new Map();
 const noteFile = new TFile(NOTE_PATH);
 noteFile._content = NOTE_BODY;
@@ -95,12 +133,35 @@ const app = {
   internalPlugins: { getPluginById: () => null, plugins: {} },
 };
 
-// 桩 LLM：合并整理与后续索引都走这里。
-const LLM_REPLY = JSON.stringify({
-  choices: [{ message: { role: "assistant", content: "## 议题\n\n上线范围已确定，先做内部灰度。\n\n## 结论\n\n内部灰度后按反馈扩大。" }, finish_reason: "stop" }],
-  usage: { prompt_tokens: 100, completion_tokens: 60, total_tokens: 160 },
-});
+// 桩 LLM：从实际请求中的来源标题读取允许的证据 ID，只返回一个分部回复。
 const llmCalls = [];
+function requestPrompt(request) {
+  try {
+    const body = JSON.parse(request?.body || "{}");
+    return (body.messages || []).map((message) => String(message.content || "")).join("\n");
+  } catch { return ""; }
+}
+function makeLlmReply(request) {
+  const prompt = requestPrompt(request);
+  const evidenceIds = [...new Set(Array.from(prompt.matchAll(/^===UTTERANCE ("(?:[^"\\]|\\.)*")/gm), (match) => JSON.parse(match[1])))];
+  const evidence = evidenceIds.slice(0, 1);
+  const protocol = JSON.stringify({
+    schemaVersion: 2,
+    topics: [{ key: "release", title: "灰度发布", summary: "先进行内部灰度", evidence }],
+    decisions: [{ text: "先做内部灰度", topics: ["release"], evidence }],
+    actions: [], questions: [],
+  });
+  return JSON.stringify({
+    choices: [{
+      message: {
+        role: "assistant",
+        content: `## 议题\n\n上线范围已确定，先做内部灰度。\n\n## 结论\n\n内部灰度后按反馈扩大。\n\n<!-- qnalog-session-knowledge ${protocol} -->`,
+      },
+      finish_reason: "stop",
+    }],
+    usage: { prompt_tokens: 100, completion_tokens: 60, total_tokens: 160 },
+  });
+}
 
 const obsidian = {
   apiVersion: "1.13.7",
@@ -138,9 +199,10 @@ const obsidian = {
   stringifyYaml: (value) => yamlDump(value || {}, { lineWidth: -1 }),
   parseLinktext: (l) => ({ path: l, subpath: "" }), getLinkpath: (l) => l, htmlToMarkdown: (h) => String(h),
   prepareFuzzySearch: () => () => null, sanitizeHTMLToDom: () => makeEl(),
-  requestUrl: async () => {
-    llmCalls.push("requestUrl");
-    return { status: 200, text: LLM_REPLY, json: JSON.parse(LLM_REPLY), headers: {}, arrayBuffer: new ArrayBuffer(0) };
+  requestUrl: async (request) => {
+    llmCalls.push(request);
+    const text = makeLlmReply(request);
+    return { status: 200, text, json: JSON.parse(text), headers: {}, arrayBuffer: new ArrayBuffer(0) };
   },
   setIcon: noop, setTooltip: noop,
   moment: Object.assign(() => ({ format: () => "2026-09-14" }), { locale: () => "zh-cn" }),
@@ -201,13 +263,14 @@ async function main() {
     plugin.settings.llmApiKey = "stub-key";
     plugin.settings.consolidatedLayout = true;
     plugin.settings.briefingStructureLevel = "balanced";
+    plugin.settings.sedimentAutoExtract = false;
 
     const session = {
       id: "s1", mode: "monologue", mdPath: NOTE_PATH,
       startedAt: Date.now() - 600_000, workProgress: {}, segmentMeta: [],
       segments: [
-        { text: "今天的会议讨论了上线范围。", startMs: 0, endMs: 5000, index: 0 },
-        { text: "确定先做内部灰度。", startMs: 5000, endMs: 10000, index: 1 },
+        transcriptSegment(0, "今天的会议讨论了上线范围。", 0, 5000),
+        transcriptSegment(1, "确定先做内部灰度。", 5000, 10000),
       ],
     };
     try {
@@ -224,6 +287,52 @@ async function main() {
     if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
     if (!/^---\r?\n[\s\S]*?\r?\n---/.test(content)) failures.push("笔记没有 frontmatter");
     if (!/^qnalog_time:\s*\S/m.test(content)) failures.push("frontmatter 里没有 qnalog_time 字段（重新整理入口会因缺少时间属性不可用）");
+    const knowledgeMatch = content.match(/<!--\s*qnalog-session-knowledge\s+([\s\S]*?)\s*-->/);
+    let savedKnowledge = null;
+    if (!knowledgeMatch) failures.push("纪要没有保存结构化知识快照");
+    else {
+      try {
+        savedKnowledge = JSON.parse(knowledgeMatch[1]);
+        if (savedKnowledge.schemaVersion !== 2 || savedKnowledge.status !== "complete" || savedKnowledge.decisions?.length !== 1) {
+          failures.push("纪要知识快照没有按 schema v2 完整保存");
+        }
+        if (!savedKnowledge.decisions?.[0]?.evidence?.[0]?.startsWith("seg:s1:")) {
+          failures.push("纪要决定没有引用转写账本中的 utterance ID");
+        }
+      } catch { failures.push("纪要知识快照不是有效 JSON"); }
+    }
+    const sourceUtteranceIds = new Set();
+    for (const match of content.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)) {
+      try {
+        const data = JSON.parse(match[1]);
+        const current = data.transcript.revisions.find((revision) => revision.revision === data.transcript.currentRevision);
+        for (const unit of current?.utterances || []) sourceUtteranceIds.add(unit.id);
+      } catch { failures.push("转写来源块的元数据不是有效 JSON"); }
+    }
+    const citedIds = [
+      ...(savedKnowledge?.topics || []).flatMap((item) => item.evidence || []),
+      ...(savedKnowledge?.decisions || []).flatMap((item) => item.evidence || []),
+      ...(savedKnowledge?.actions || []).flatMap((item) => item.evidence || []),
+      ...(savedKnowledge?.questions || []).flatMap((item) => item.evidence || []),
+    ];
+    if (!citedIds.length || citedIds.some((id) => !sourceUtteranceIds.has(id))) {
+      failures.push("知识快照证据未全部指向笔记中持久化的 utterance");
+    }
+    const indexMatch = content.match(/<!--\s*qnalog-note-index\s*-->\s*<details>[\s\S]*?```json\s*([\s\S]*?)\s*```\s*<\/details>/);
+    if (!indexMatch) failures.push("收尾后没有生成 note-index 块");
+    else {
+      try {
+        const index = JSON.parse(indexMatch[1]);
+        if (index.schemaVersion !== 2 || index.knowledge?.status !== "complete") {
+          failures.push("note-index 没有保存知识快照摘要");
+        }
+      } catch { failures.push("note-index 数据不是有效 JSON"); }
+    }
+    const protocolRequests = llmCalls.filter((request) => requestPrompt(request).includes("机器证据协议"));
+    if (!protocolRequests.length || protocolRequests.length > 2 || protocolRequests.some((request) => !requestPrompt(request).includes("===UTTERANCE"))) {
+      failures.push(`结构化知识必须随既有分部整理回复返回，不得另发提取请求；实际协议调用 ${protocolRequests.length} 次`);
+    }
+    if ((content.match(/qnalog-transcript-start:/g) || []).length !== 2) failures.push("成品笔记没有保留两个转写来源块");
     // 只认 H1（# + 空格）：正文里 `---` 分隔线后的 `## 章节` 也以 # 开头，不是头部空行。
     if (/^---\r?\n[ \t]*\r?\n#\s/m.test(content)) failures.push("frontmatter 与 H1 之间有多余空行（新格式：单换行紧贴标题）");
     for (const id of plugin.intervals) clearInterval(id);
@@ -239,7 +348,7 @@ async function main() {
     for (const failure of failures) console.error("  " + failure);
     return 1;
   }
-  console.log(`[merge-pipeline] OK: 会话收尾到合并整理跑通，模型调用 ${llmCalls.length} 次，笔记保留正文与原始转写`);
+  console.log(`[merge-pipeline] OK: 会话收尾到合并整理跑通，模型调用 ${llmCalls.length} 次（知识随 ${llmCalls.filter((request) => requestPrompt(request).includes("机器证据协议")).length} 个既有请求返回），笔记保留正文、证据与原始转写`);
   return 0;
 }
 

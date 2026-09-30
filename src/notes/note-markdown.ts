@@ -28,7 +28,7 @@ import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { labelText, labelPattern } from "../shared/note-labels";
-import { NS_FM, NS_FM_SPEAKERS, NS_TAG, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, hasNamespaceFrontmatter, nsMarkerGlobalRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_FM, NS_FM_SPEAKERS, NS_TAG, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, hasNamespaceFrontmatter, nsMarkerGlobalRe, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import type { NamespaceFrontmatterField } from "../shared/namespace";
 
 import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
@@ -38,12 +38,16 @@ import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "..
 import { diagnosticError } from "../shared/util-key-diag";
 
 import { replaceExistingActiveVersionBlock, sanitizeActiveVersionBody, splitLeadingFrontmatter } from "../version-content";
+import type { Segment } from "../shared/types";
+import { attachTextTranscript } from "../transcript/session-transcript";
+import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 import { readSpeakerMappings, speakerLabelForChannel } from "../audio/channel-speakers";
 
 import { extractBriefingPartEnvelope } from "../briefing/pipeline";
 
 import { getActiveUiLanguage, t } from "../shared/i18n";
+import { parseSessionKnowledgeResponse, stripSessionKnowledgeBlocks } from "../briefing/session-knowledge";
 export function isTimeLabel(text) {
   const time = "(?:\\d{1,2}:)?\\d{1,2}:\\d{2}";
   return new RegExp("^" + time + "(?:\\s*[–-]\\s*" + time + ")?$").test(String(text || "").trim());
@@ -666,10 +670,9 @@ export function splitTranscriptSections(markdown) {
   const sections = [];
   let searchFrom = 0;
   while (true) {
-    // 分段原始转写折叠壳：中英标签词任一命中即定位（取两者中靠前的一处）。
-    const zhLabelIdx = text.indexOf("分段原始转写", searchFrom);
-    const enLabelIdx = text.indexOf("Segmented raw transcript", searchFrom);
-    const labelIdx = zhLabelIdx < 0 ? enLabelIdx : enLabelIdx < 0 ? zhLabelIdx : Math.min(zhLabelIdx, enLabelIdx);
+    const sectionLabels = ["分段原始转写", "Segmented raw transcript", "导入文本来源", "导入文本原文", "Text import sources", "Text import source"];
+    const labelIndexes = sectionLabels.map((label) => text.indexOf(label, searchFrom)).filter((index) => index >= 0);
+    const labelIdx = labelIndexes.length ? Math.min(...labelIndexes) : -1;
     if (labelIdx < 0) break;
     const summaryEnd = text.indexOf("</summary>", labelIdx);
     const detailsEnd = summaryEnd >= 0 ? text.indexOf("</details>", summaryEnd) : -1;
@@ -703,45 +706,74 @@ export function splitTranscriptSections(markdown) {
 }
 
 export function extractTranscriptSegments(markdown) {
-  const sections = splitTranscriptSections(markdown);
-  const segments = [];
+  const source = String(markdown || "");
+  const transcriptBlocks = readTranscriptBlocks(source);
+  let legacyMarkdown = source;
+  for (const block of [...transcriptBlocks].sort((left, right) => right.start - left.start)) {
+    legacyMarkdown = legacyMarkdown.slice(0, block.start) + legacyMarkdown.slice(block.end);
+  }
+  const sortedBlocks = [...transcriptBlocks].sort((left, right) => left.start - right.start);
+  const toSourceOffset = (offset) => {
+    let removedLength = 0;
+    for (const block of sortedBlocks) {
+      const maskedStart = block.start - removedLength;
+      if (offset < maskedStart) break;
+      removedLength += block.end - block.start;
+    }
+    return offset + removedLength;
+  };
+  const entries = transcriptBlocks.map((block) => ({ segment: block.segment, position: block.start }));
+  const sections = splitTranscriptSections(legacyMarkdown);
+  let sectionSearchFrom = 0;
   for (const section of sections) {
-    const headingRe = /^###\s+(?:段落|Segment)\s+(\d+)([^\n]*)$/gm;
+    const foundAt = legacyMarkdown.indexOf(section, sectionSearchFrom);
+    const sectionStart = foundAt >= 0 ? foundAt : sectionSearchFrom;
+    sectionSearchFrom = sectionStart + section.length;
+    const headingRe = /^###\s+(?:(?:段落|Segment|Audio(?: source)?|Text source|音频|文本来源)\s+(\d+)([^\n]*)|(\d+)[.、]\s*([^\n]*))$/gm;
     const heads = [...String(section).matchAll(headingRe)];
     if (!heads.length) {
       const text = cleanTranscriptBlock(section);
-      if (text) segments.push({ index: segments.length, startOffsetMs: 0, endOffsetMs: 0, text });
+      if (text) entries.push({ segment: { index: entries.length, startOffsetMs: 0, endOffsetMs: 0, text }, position: toSourceOffset(sectionStart) });
       continue;
     }
-    for (let i = 0; i < heads.length; i++) {
-      const head = heads[i];
-      const bodyStart = head.index + head[0].length;
-      const bodyEnd = i + 1 < heads.length ? heads[i + 1].index : section.length;
-      const body = cleanTranscriptBlock(section.slice(bodyStart, bodyEnd));
+    for (let index = 0; index < heads.length; index += 1) {
+      const heading = heads[index];
+      const bodyStart = heading.index + heading[0].length;
+      const bodyEnd = index + 1 < heads.length ? heads[index + 1].index : section.length;
+      const rawBlock = section.slice(bodyStart, bodyEnd);
+      const body = cleanTranscriptBlock(rawBlock);
       if (!body) continue;
-      const timeMatch = head[2].match(/\(([^)]+?)[–-]([^)]+?)\)/);
+      const tail = String(heading[2] || heading[4] || "");
+      const textSource = heading[3] !== undefined || /(?:Text source|文本来源)/.test(heading[0]);
+      const timeMatch = tail.match(/\(([^)]+?)[–-]([^)]+?)\)/);
       const startOffsetMs = timeMatch ? parseElapsedMsToken(timeMatch[1]) : 0;
       const endOffsetMs = timeMatch ? parseElapsedMsToken(timeMatch[2]) : startOffsetMs;
-      const rawBlock = section.slice(bodyStart, bodyEnd);
       const audioMatch = rawBlock.match(/!\[\[([^\]]+)\]\]/);
-      // 音频名有两个来源，都要认：
-      //   ① 正文里的嵌入 `![[audio.m4a]]`（旧布局与多来源分段用）；
-      //   ② 段标题行尾的回听链接 `[[audio.m4a|mm:ss]]`（整合版布局的段标题带链接、
-      //      正文只有纯文本）。只认①会让这类笔记读回的段丢失 audioName，
-      //      续录/重新整理重写后回听链接消失、旧音频文件失去全部引用。
-      const audioLinkSource = audioMatch ? audioMatch[1] : (String(head[2] || "").match(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/) || [])[1] || "";
-      const audioTarget = audioLinkSource ? getAudioLinkTarget(audioLinkSource) : "";
-      const audioName = audioTarget ? (audioTarget.split("/").pop() || audioTarget) : "";
-      segments.push({
-        index: segments.length,
-        startOffsetMs,
-        endOffsetMs,
-        audioName,
-        text: body,
+      const wikiMatch = tail.match(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/);
+      const linkTarget = audioMatch ? audioMatch[1] : wikiMatch?.[1] || "";
+      const target = linkTarget ? getAudioLinkTarget(linkTarget) : "";
+      const name = textSource ? (wikiMatch?.[2] || target.split("/").pop() || target) : (target.split("/").pop() || target);
+      const taskMatch = rawBlock.match(new RegExp(`<!--\\s*${nsRe("transcribe-task")}:([^>\\s]+)\\s*-->`));
+      entries.push({
+        segment: {
+          index: entries.length,
+          startOffsetMs,
+          endOffsetMs,
+          audioName: textSource ? "" : name,
+          audioPath: textSource ? "" : target,
+          sourceName: textSource ? name : "",
+          sourcePath: textSource ? target : "",
+          rawText: textSource ? body : undefined,
+          source: textSource ? "text-import" : "",
+          queueTaskId: taskMatch?.[1],
+          text: body,
+        },
+        position: toSourceOffset(sectionStart + heading.index),
       });
     }
   }
-  return segments;
+  entries.sort((left, right) => left.position - right.position);
+  return entries.map((entry, index) => ({ ...entry.segment, index }));
 }
 
 export function inferNoteStartedAtIso(file, frontmatter) {
@@ -756,6 +788,7 @@ export function inferNoteStartedAtIso(file, frontmatter) {
     for (const value of candidates) {
       const parsed = moment(value, [
         moment.ISO_8601,
+
         "YYYY-MM-DDTHH:mm:ss",
         "YYYY-MM-DD HH:mm:ss",
         "YYYY-MM-DDTHH:mm",
@@ -771,6 +804,145 @@ export function inferNoteStartedAtIso(file, frontmatter) {
     }
   }
   return new Date(file && file.stat && file.stat.ctime ? file.stat.ctime : Date.now()).toISOString();
+}
+/** Persist source records before an active reorganization pays for a model response. */
+export function ensureTranscriptBlocks(
+  markdown: string,
+  sourceId: string,
+  options: { reconcileEditedText?: boolean } = {},
+): string {
+  let next = String(markdown || "");
+  const originalBlocks = readTranscriptBlocks(next);
+  for (const block of [...originalBlocks].filter((item) => options.reconcileEditedText !== false && item.drifted).sort((left, right) => right.start - left.start)) {
+    const record = block.segment.transcript;
+    const current = record.revisions.find((revision) => revision.revision === record.currentRevision);
+    const editedText = block.visibleBlock
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/!\[\[[^\]]+\]\]/g, "");
+    const edited = attachTextTranscript({ ...block.segment, text: editedText, rawText: undefined }, record.sourceId || sourceId, "edited-transcript");
+    const contextText = String(block.segment.text || "");
+    const previousUnitText = current.utterances.map((unit) => unit.normalizedText).join("");
+    const updatedText = previousUnitText && contextText.includes(previousUnitText)
+      ? contextText.replace(previousUnitText, editedText)
+      : editedText;
+    next = replaceTranscriptBlock(next, block, { ...edited, text: updatedText }, block.visibleBlock);
+  }
+
+  const currentBlocks = readTranscriptBlocks(next);
+  let legacyMarkdown = next;
+  for (const block of [...currentBlocks].sort((left, right) => right.start - left.start)) {
+    legacyMarkdown = legacyMarkdown.slice(0, block.start) + legacyMarkdown.slice(block.end);
+  }
+  const orderedBlocks = [...currentBlocks].sort((left, right) => left.start - right.start);
+  const toSourceOffset = (offset: number): number => {
+    let removedLength = 0;
+    for (const block of orderedBlocks) {
+      if (offset < block.start - removedLength) break;
+      removedLength += block.end - block.start;
+    }
+    return offset + removedLength;
+  };
+  const sections = splitTranscriptSections(legacyMarkdown);
+  const legacyEntries: Array<{
+    segment: Segment;
+    position: number;
+    start: number;
+    end: number;
+    heading: string;
+    visibleText: string;
+  }> = [];
+  const seenRanges = new Set<string>();
+  let sectionSearchFrom = 0;
+  for (const section of sections) {
+    const foundAt = legacyMarkdown.indexOf(section, sectionSearchFrom);
+    const sectionStart = foundAt >= 0 ? foundAt : sectionSearchFrom;
+    sectionSearchFrom = sectionStart + section.length;
+    const headingRe = /^###\s+(?:(?:段落|Segment|Audio(?: source)?|Text source|音频|文本来源)\s+(\d+)([^\n]*)|(\d+)[.、]\s*([^\n]*))$/gm;
+    const headings = [...section.matchAll(headingRe)];
+    if (!headings.length) {
+      const body = cleanTranscriptBlock(section);
+      if (!body) continue;
+      const start = toSourceOffset(sectionStart);
+      const end = toSourceOffset(sectionStart + section.length);
+      const key = `${start}:${end}`;
+      if (seenRanges.has(key)) continue;
+      seenRanges.add(key);
+      legacyEntries.push({ segment: { index: -1, startOffsetMs: 0, endOffsetMs: 0, text: body }, position: start, start, end, heading: "", visibleText: section });
+      continue;
+    }
+    for (let index = 0; index < headings.length; index += 1) {
+      const headingMatch = headings[index];
+      const bodyStart = headingMatch.index + headingMatch[0].length;
+      const bodyEnd = index + 1 < headings.length ? headings[index + 1].index : section.length;
+      const rawBlock = section.slice(bodyStart, bodyEnd);
+      const body = cleanTranscriptBlock(rawBlock);
+      if (!body) continue;
+      const start = toSourceOffset(sectionStart + headingMatch.index!);
+      const end = toSourceOffset(sectionStart + bodyEnd);
+      const key = `${start}:${end}`;
+      if (seenRanges.has(key)) continue;
+      seenRanges.add(key);
+      const tail = String(headingMatch[2] || headingMatch[4] || "");
+      const textSource = headingMatch[3] !== undefined || /(?:Text source|文本来源)/.test(headingMatch[0]);
+      const timeMatch = tail.match(/\(([^)]+?)[–-]([^)]+?)\)/);
+      const startOffsetMs = timeMatch ? parseElapsedMsToken(timeMatch[1]) : 0;
+      const endOffsetMs = timeMatch ? parseElapsedMsToken(timeMatch[2]) : startOffsetMs;
+      const audioMatch = rawBlock.match(/!\[\[([^\]]+)\]\]/);
+      const wikiMatch = tail.match(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/);
+      const linkTarget = audioMatch ? audioMatch[1] : wikiMatch?.[1] || "";
+      const target = linkTarget ? getAudioLinkTarget(linkTarget) : "";
+      const name = textSource ? (wikiMatch?.[2] || target.split("/").pop() || target) : (target.split("/").pop() || target);
+      const taskMatch = rawBlock.match(new RegExp(`<!--\\s*${nsRe("transcribe-task")}:([^>\\s]+)\\s*-->`));
+      legacyEntries.push({
+        segment: {
+          index: -1,
+          startOffsetMs,
+          endOffsetMs,
+          audioStartOffsetMs: !textSource && target ? startOffsetMs : undefined,
+          audioEndOffsetMs: !textSource && target ? endOffsetMs : undefined,
+          audioName: textSource ? "" : name,
+          audioPath: textSource ? "" : target,
+          source: textSource ? "text-import" : "",
+          sourceName: textSource ? name : "",
+          sourcePath: textSource ? target : "",
+          rawText: textSource ? body : undefined,
+          queueTaskId: taskMatch?.[1],
+          text: body,
+        },
+        position: start,
+        start,
+        end,
+        heading: headingMatch[0],
+        visibleText: rawBlock,
+      });
+    }
+  }
+  if (!legacyEntries.length) return next;
+
+  const orderedEntries: Array<{ position: number; id: string; legacy: (typeof legacyEntries)[number] | null }> = [
+    ...currentBlocks.map((block) => ({ position: block.start, id: block.segment.transcript.id, legacy: null })),
+    ...legacyEntries.map((entry) => ({ position: entry.position, id: "", legacy: entry })),
+  ].sort((left, right) => left.position - right.position);
+  const usedIds = new Set(orderedEntries.map((entry) => entry.id).filter(Boolean));
+  const replacements: Array<{ start: number; end: number; block: string }> = [];
+  for (let index = 0; index < orderedEntries.length; index += 1) {
+    const entry = orderedEntries[index];
+    if (!entry.legacy) continue;
+    let segmentIndex = index;
+    while (usedIds.has(`seg:${encodeURIComponent(sourceId)}:${segmentIndex}`)) segmentIndex += 1;
+    const origin = entry.legacy.segment.source === "text-import" ? "text-import" : "legacy-transcript";
+    const segment = attachTextTranscript({ ...entry.legacy.segment, index: segmentIndex }, sourceId, origin);
+    usedIds.add(segment.transcript.id);
+    replacements.push({
+      start: entry.legacy.start,
+      end: entry.legacy.end,
+      block: serializeTranscriptBlock(segment, entry.legacy.heading, entry.legacy.visibleText),
+    });
+  }
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+    next = next.slice(0, replacement.start) + replacement.block + next.slice(replacement.end);
+  }
+  return next;
 }
 
 export function normalizeSegmentsForMergedNote(segments, offsetMs, startIndex, sourceFile) {
@@ -1450,8 +1622,11 @@ export function appendEntityEvidenceWarning(outputMd, transcript) {
   }
 }
 
-export function parseBriefingPartResponse(raw) {
-  const sedimentPreExtraction = extractSedimentPreExtractionBlock(String(raw || ""));
+export function parseBriefingPartResponse(raw, knowledgeContext = undefined) {
+  const knowledgeResult = knowledgeContext
+    ? parseSessionKnowledgeResponse(String(raw || ""), knowledgeContext)
+    : { body: stripSessionKnowledgeBlocks(String(raw || "")), knowledge: null };
+  const sedimentPreExtraction = extractSedimentPreExtractionBlock(knowledgeResult.body);
   const parsedPeople = parsePeopleFromOutput(sedimentPreExtraction.cleaned);
   const parsedTags = parseSuggestedTagsFromOutput(parsedPeople.cleaned);
   const envelope = extractBriefingPartEnvelope(parsedTags.cleaned);
@@ -1462,6 +1637,7 @@ export function parseBriefingPartResponse(raw) {
     people: mergeUniqueStrings([], (parsedPeople.people || []).concat(parsedTags.people || [])),
     tags: mergeUniqueStrings([], parsedTags.tags || []),
     sedimentObjects: sedimentPreExtraction.objects || null,
+    knowledge: knowledgeResult.knowledge,
   };
 }
 

@@ -218,11 +218,11 @@ describe("requestApimimoAsrChunkWithEmptyRetry", () => {
       .mockResolvedValueOnce("恢复后的正文");
     const wait = vi.fn().mockResolvedValue(undefined);
     const logDiagnostic = vi.fn().mockResolvedValue(undefined);
-    const text = await requestApimimoAsrChunkWithEmptyRetry(
+    const result = await requestApimimoAsrChunkWithEmptyRetry(
       { diagnostics: { logDiagnostic } }, {}, { blob: { size: 123 }, mime: "audio/wav" }, "https://example.test", 1, 3, request, wait,
     );
 
-    expect(text).toBe("恢复后的正文");
+    expect(result).toEqual({ text: "恢复后的正文", rawText: "恢复后的正文" });
     expect(request).toHaveBeenCalledTimes(2);
     expect(wait).toHaveBeenCalledTimes(1);
     expect(logDiagnostic).toHaveBeenCalledWith("warn", "asr.apimimo_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 1 }));

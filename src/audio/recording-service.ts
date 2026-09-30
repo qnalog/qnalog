@@ -25,7 +25,7 @@ import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRunt
 import { normalizeRealtimeOutlineState, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { getDurationMs, getSegmentsDurationMs, getSessionMasterAudioName, collectAudioRefs } from "../notes/audio-refs";
 import { extractDetailsBody } from "../notes/detail-blocks";
-import { extractTranscriptSegments, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
+import { ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
@@ -126,7 +126,13 @@ export class RecordingService implements LiveAsrPipeline {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
       throw new Error(t("The target is not a Markdown note"));
     }
-    const content = await this.host.app.vault.read(file);
+    let content = await this.host.app.vault.read(file);
+    const sourceId = getSourceIdFromMarkdown(content, file);
+    const transcriptReady = ensureTranscriptBlocks(content, sourceId);
+    if (transcriptReady !== content) {
+      await this.host.app.vault.modify(file, transcriptReady);
+      content = transcriptReady;
+    }
     const segments = extractTranscriptSegments(content);
     if (!segments.length) {
       throw new Error(t("This note has no original transcript segments to continue recording from"));

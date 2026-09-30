@@ -7,10 +7,12 @@ import { assertSafeServiceEndpoint, canOmitServiceApiKey } from '../shared/util-
 import { buildVocabularyPrompt, applyVocabularyCorrections, loadVocabularyGroups } from '../vocabulary';
 import { buildPeopleHotwordsForAsr } from '../people';
 import { qnalogArrayBufferToBase64 } from './clients';
-import { extractTranscriptText } from './speaker-labels';
+import { extractTranscriptText, friendlySpeakerLabel, normalizeInlineSpeakerTags } from './speaker-labels';
 import { cleanApimimoAsrRepeatedLoops } from './apimimo-clean';
 import { getSpeakerDiarizationRequestOptions } from './diarization';
 import { t } from "../shared/i18n";
+import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
+import { splitTranscriptTextUnits } from "../transcript/session-transcript";
 
 export type AsrLifecycleSignalType =
   | "attempt-start"
@@ -266,6 +268,11 @@ export const APIMIMO_ASR_MAX_CHUNKS = 160;
  * 同一套 input_audio 协议下各服务的差异点。切块、SSE 解析、请求构造都是共用的，
  * 只有这些参数按服务取值。
  */
+export interface ChatInputAudioChunkResult {
+  text: string;
+  rawText: string;
+}
+
 export interface ChatInputAudioProfile {
   /** 判定用：该 provider 是否走本协议。 */
   protocol: string;
@@ -488,6 +495,15 @@ export function extractApimimoAsrText(data) {
   ).trim();
 }
 
+function extractApimimoAsrRawText(data): string {
+  const content = extractLlmContent(data);
+  if (content) return content;
+  for (const candidate of [data?.text, data?.transcript, data?.result, data?.output_text]) {
+    if (typeof candidate === "string") return candidate;
+  }
+  return "";
+}
+
 // 据 blob 体积估算音频秒数（纯函数，供测试）：
 // wav = 16kHz 单声道 16-bit ⇒ 32,000 字节/秒；其余按 mp3 ~16,000 字节/秒估。
 export function estimateApimimoAudioSeconds(blob, mime) {
@@ -550,7 +566,7 @@ export async function requestChatInputAudioChunk(
   prepared,
   endpoint,
   observer?: AsrLifecycleObserver,
-) {
+): Promise<ChatInputAudioChunkResult> {
   assertSafeServiceEndpoint(endpoint, "http", t("Transcription service URL"));
   // 安全校验后立即执行 TPM 配速（在读 arrayBuffer/编码 base64 之前），确保跨块、跨会话的请求间隔满足 10K TPM。
   // 只有按量配速的服务才需要；百炼没有该限制，等下去只会平白拖慢录音分段。
@@ -659,13 +675,14 @@ export async function requestChatInputAudioChunk(
         throw bodyErr;
       }
       const text = extractApimimoAsrText(data);
+      const rawText = extractApimimoAsrRawText(data);
       emitAsrLifecycle(observer, {
         type: "stream-progress",
         receivedChars: String(text || "").length,
         timeoutMs: CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
         deadlineAt: Date.now() + CHAT_INPUT_SSE_IDLE_TIMEOUT_MS,
       });
-      return text;
+      return { text, rawText };
     }
     // —— SSE 流式路径 ——：逐网络分片解码、按行切分，data: 事件交给纯累加器 applyApimimoSseData。
     const reader = res.body.getReader();
@@ -707,10 +724,11 @@ export async function requestChatInputAudioChunk(
     //    可见标记 + 告警，不再硬失败（此前硬失败 nonRetryable 会让整块永久丢，比截断更糟）。
     //    MiMo 的 2K 输出上限使此路可能触发（切块已收窄到 2 分钟）；百炼无该上限，一般不触发。
     if (acc.finishReason === "length") {
-      const salvaged = String(acc.text || "").trim();
+      const rawText = String(acc.text || "");
+      const salvaged = rawText.trim();
       if (salvaged) {
         console.warn(`[QnALog] ${profile.label} 输出触顶被截断，已保住 ${salvaged.length} 字（末尾可能缺失）`);
-        return `${salvaged}\n_[本段较长，末尾可能有少量内容未转完]_`;
+        return { text: `${salvaged}\n_[本段较长，末尾可能有少量内容未转完]_`, rawText };
       }
       throw chatInputAudioPermanentError(t("{0} output hit the cap and was truncated with no text to keep; shorten the chunk duration and retry.").replace("{0}", t(profile.label)));
     }
@@ -719,7 +737,7 @@ export async function requestChatInputAudioChunk(
     if (!acc.done && !acc.finishReason) {
       throw new Error(t("Transcription stream interrupted ({0} characters received, no end marker).").replace("{0}", String(acc.text.length)));
     }
-    return String(acc.text || "").trim();
+    return { text: String(acc.text || "").trim(), rawText: String(acc.text || "") };
   } catch (e) {
     if (controller && controller.signal && controller.signal.aborted) {
       // 保留"超时"关键字：isTransientAsrError 据此归为瞬时错误，导入重试链路才会自动重试。
@@ -755,9 +773,9 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
   requestChunk,
   wait = delayMs,
   observer?: AsrLifecycleObserver,
-) {
+): Promise<ChatInputAudioChunkResult> {
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const part = String(await requestChunk(
+    const requested = await requestChunk(
       provider,
       prepared,
       endpoint,
@@ -767,8 +785,10 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
           providerChunkCount: chunkCount,
         }))
         : undefined,
-    ) || "").trim();
-    if (part) return part;
+    );
+    const response = typeof requested === "string" ? { text: requested, rawText: requested } : requested;
+    const part = String(response && response.text || "").trim();
+    if (part) return { text: part, rawText: typeof response.rawText === "string" ? response.rawText : part };
     try {
       if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
         await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_empty_chunk`, t("{0} chunk transcription was empty.").replace("{0}", t(profile.shortLabel)), {
@@ -806,7 +826,7 @@ export async function transcribeAudioWithChatInputAudio(
   mime,
   vocabularyGroups,
   observer?: AsrLifecycleObserver,
-) {
+): Promise<AsrTranscriptResult> {
   const chunks = await buildChatInputAudioChunks(profile, blob, mime);
   const endpoint = normalizeApimimoAsrEndpoint(provider.endpoint);
   // 顺序转写各块（保留时序，避免并发触发限流），拼接后对全文统一做热词修正。
@@ -826,8 +846,8 @@ export async function transcribeAudioWithChatInputAudio(
       observer,
     ));
   }
-  const rawText = parts.join(" ").replace(/\s+/g, " ").trim();
-  const cleaned = cleanApimimoAsrRepeatedLoops(rawText);
+  const mergedText = parts.map((part) => part.text).join(" ").replace(/\s+/g, " ").trim();
+  const cleaned = cleanApimimoAsrRepeatedLoops(mergedText);
   if (cleaned.suppressedChars > 0) {
     try {
       await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_repeat_detected`, t("{0} transcription may contain a repeating loop; the original transcript is kept.").replace("{0}", t(profile.shortLabel)), {
@@ -837,7 +857,17 @@ export async function transcribeAudioWithChatInputAudio(
       });
     } catch { /* intentionally empty */ }
   }
-  return applyVocabularyCorrections(rawText, vocabularyGroups).trim();
+  const text = applyVocabularyCorrections(mergedText, vocabularyGroups).trim();
+  const units: AsrTranscriptUnit[] = parts.flatMap((part) => splitTranscriptTextUnits(part.rawText).map((unit) => ({
+    rawText: unit,
+    normalizedText: applyVocabularyCorrections(unit, vocabularyGroups),
+    speakerId: null,
+    speakerName: null,
+    startMs: null,
+    endMs: null,
+    timing: "unknown",
+  })));
+  return { text, rawText: null, providerId: String(provider.id || ""), units };
 }
 
 export async function requestApimimoAsrChunk(
@@ -845,7 +875,7 @@ export async function requestApimimoAsrChunk(
   prepared,
   endpoint,
   observer?: AsrLifecycleObserver,
-) {
+): Promise<ChatInputAudioChunkResult> {
   return await requestChatInputAudioChunk(APIMIMO_PROFILE, provider, prepared, endpoint, observer);
 }
 
@@ -860,7 +890,7 @@ export async function requestApimimoAsrChunkWithEmptyRetry(
   requestChunk = requestApimimoAsrChunk,
   wait = delayMs,
   observer?: AsrLifecycleObserver,
-) {
+): Promise<ChatInputAudioChunkResult> {
   return await requestChatInputAudioChunkWithEmptyRetry(
     APIMIMO_PROFILE,
     plugin,
@@ -875,13 +905,78 @@ export async function requestApimimoAsrChunkWithEmptyRetry(
   );
 }
 
+function responseTextField(data): string | null {
+  for (const key of ["text", "transcript", "result"]) {
+    const value = data && data[key];
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
+function providerSecondsToMs(value): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : null;
+}
+
+function buildAsrTranscriptResult(data, providerId: string, displayText: string, vocabularyGroups): AsrTranscriptResult {
+  const segments = Array.isArray(data && data.segments) ? data.segments : [];
+  const speakerMap = new Map();
+  const structuredUnits: AsrTranscriptUnit[] = [];
+  for (const value of segments) {
+    if (!value || typeof value.text !== "string" || !value.text.trim()) continue;
+    const speakerValue = value.speaker ?? value.speaker_id ?? value.speakerId;
+    const speakerId = typeof speakerValue === "string" || typeof speakerValue === "number" ? String(speakerValue) : null;
+    const speakerName = speakerId ? friendlySpeakerLabel(speakerId, speakerMap) : null;
+    const startMs = providerSecondsToMs(value.start ?? value.start_time);
+    const endMs = providerSecondsToMs(value.end ?? value.end_time);
+    const hasValidRange = startMs !== null && endMs !== null && endMs >= startMs;
+    structuredUnits.push({
+      rawText: value.text,
+      normalizedText: applyVocabularyCorrections(value.text, vocabularyGroups),
+      speakerId,
+      speakerName,
+      startMs: hasValidRange ? startMs : null,
+      endMs: hasValidRange ? endMs : null,
+      timing: hasValidRange ? "provider" : "unknown",
+    });
+  }
+  if (structuredUnits.length) {
+    return { text: applyVocabularyCorrections(displayText, vocabularyGroups).trim(), rawText: null, providerId: String(providerId || ""), units: structuredUnits };
+  }
+
+  const rawText = responseTextField(data);
+  const inlineSpeakers = new Map();
+  let activeSpeakerId: string | null = null;
+  const units = rawText === null ? [] : splitTranscriptTextUnits(rawText).map((unit): AsrTranscriptUnit => {
+    const tag = /^\s*\[?((?:SPEAKER|SPK)[\s_-]*\d+)\]?\s*/i.exec(unit);
+    if (tag) activeSpeakerId = tag[1];
+    const speakerName = activeSpeakerId ? friendlySpeakerLabel(activeSpeakerId, inlineSpeakers) : null;
+    return {
+      rawText: unit,
+      normalizedText: applyVocabularyCorrections(normalizeInlineSpeakerTags(unit), vocabularyGroups),
+      speakerId: activeSpeakerId,
+      speakerName,
+      startMs: null,
+      endMs: null,
+      timing: "unknown",
+    };
+  });
+  return {
+    text: applyVocabularyCorrections(displayText, vocabularyGroups).trim(),
+    rawText,
+    providerId: String(providerId || ""),
+    units,
+  };
+}
+
 export async function transcribeAudio(
   plugin,
   blob,
   mime,
   providerOverride?,
   observer?: AsrLifecycleObserver,
-) {
+): Promise<AsrTranscriptResult> {
   // providerOverride 可为：provider id 字符串（走注册表解析）或完整 provider 对象（快速口述专用服务直传）。
   const p = (providerOverride && typeof providerOverride === "object")
     ? providerOverride
@@ -962,14 +1057,17 @@ export async function transcribeAudio(
         .replace("{1}", String((e && e.message) || e)));
     }
     // 取最终文本：若服务返回了说话人分离信息（segments[].speaker 或内联 [SPEAKER_00]），归一成 [说话人N] 前缀；否则同旧行为。
-    const rawText = extractTranscriptText(data);
+    const extractedText = extractTranscriptText(data);
+    const displayText = extractedText || (Array.isArray(data && data.segments)
+      ? data.segments.map((segment) => typeof segment?.text === "string" ? segment.text.trim() : "").filter(Boolean).join(" ")
+      : "");
     emitAsrLifecycle(observer, {
       type: "stream-progress",
-      receivedChars: String(rawText || "").length,
+      receivedChars: String(displayText || "").length,
       timeoutMs,
       deadlineAt: requestStartedAt + timeoutMs,
     });
-    return applyVocabularyCorrections(rawText, vocabularyGroups).trim();
+    return buildAsrTranscriptResult(data, p.id, displayText, vocabularyGroups);
   } finally {
     if (timer) window.clearTimeout(timer);
   }

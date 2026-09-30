@@ -27,6 +27,8 @@ import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import { ViewShellService } from "../ui/view-shell-service";
 import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { nsMarker } from "../shared/namespace";
+import { attachTextTranscript, attachTranscriptResult } from "../transcript/session-transcript";
+import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 import { t } from "../shared/i18n";
 import { labelText } from "../shared/note-labels";
@@ -445,34 +447,30 @@ export class ImportService {
         });
       }
 
-      const segmentRecord = {
+      const visibleText = error
+        ? getTranscribeSegmentPlaceholder(error, { retryable: true })
+        : (result?.text || labelText("noContentAudio"));
+      const segmentRecord = attachTranscriptResult({
         index: segIndex,
         startOffsetMs,
         endOffsetMs,
         audioName: keepSourceAudio ? displayName : "",
         audioPath: keepSourceAudio ? audioPath : "",
-        segmentAudioName: displayName,
-        segmentAudioPath: audioPath,
+        segmentAudioName: keepSourceAudio || error ? displayName : "",
+        segmentAudioPath: keepSourceAudio || error ? audioPath : "",
         text: result ? result.text : "",
         error: error ? error.message : null,
         isFinal,
         source: "import",
         queueTaskId: retryTask ? retryTask.id : undefined,
-      };
+      }, session.id, error ? null : result, "asr");
       session.segments.push(segmentRecord);
 
       const audioAnchor = keepSourceAudio ? getAudioTimeLink(displayName, startOffsetMs) : "";
-      const block = [
-        "",
-        `### ${labelText("audio", segIndex + 1)}${audioAnchor ? ` ${audioAnchor}` : ""}${isFinal ? " · 结束" : ""}`,
-        "",
-        retryTask ? nsMarker("transcribe-task", retryTask.id) : "",
-        error
-          ? getTranscribeSegmentPlaceholder(error, { retryable: true })
-          : (result.text || labelText("noContentAudio")),
-        "",
-      ].join("\n");
+      const heading = `### ${labelText("audio", segIndex + 1)}${audioAnchor ? ` ${audioAnchor}` : ""}${isFinal ? " · 结束" : ""}${retryTask ? `\n\n${nsMarker("transcribe-task", retryTask.id)}` : ""}`;
+      const block = `\n${serializeTranscriptBlock(segmentRecord, heading, visibleText)}\n`;
       await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
+
       this.host.tasks.updateImportActivity({
         done: i + 1,
         writtenSegments: session.segments.length,
@@ -680,16 +678,13 @@ export class ImportService {
     this.host.shell.refreshOutlineView();
     try { await this.host.shell.openOutlineView(); } catch (e) { console.warn("[QnALog] open outline for text import failed", e); }
 
-    session.segments = splitImportedTextIntoNormalSegments(sources);
+    session.segments = splitImportedTextIntoNormalSegments(sources)
+      .map((segment) => attachTextTranscript(segment, session.id, "text-import"));
 
     for (const seg of session.segments) {
-      const block = [
-        "",
-        `### ${labelText("textSource", seg.index + 1)}[[${seg.sourcePath}|${seg.sourceName}]]`,
-        "",
-        seg.rawText || labelText("emptyTextSource"),
-        "",
-      ].join("\n");
+      const heading = `### ${labelText("textSource", seg.index + 1)}[[${seg.sourcePath}|${seg.sourceName}]]`;
+      const visibleText = seg.rawText ?? labelText("emptyTextSource");
+      const block = `\n${serializeTranscriptBlock(seg, heading, visibleText)}\n`;
       await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
     }
 

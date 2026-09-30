@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { verifyTranscriptCheckpoint } from "../src/imports/transcript-checkpoint";
+import { attachTranscriptResult } from "../src/transcript/session-transcript";
+import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 
 describe("verifyTranscriptCheckpoint", () => {
   it("accepts imported transcripts only after every successful segment is persisted", () => {
@@ -29,5 +31,30 @@ describe("verifyTranscriptCheckpoint", () => {
     expect(result.expectedSegments).toBe(2);
     expect(result.persistedSegments).toBe(1);
     expect(result.missingSegmentIndexes).toEqual([1]);
+  });
+  it("requires each successful v2 source record and an unchanged visible projection", () => {
+    const segment = attachTranscriptResult({
+      index: 0,
+      startOffsetMs: 0,
+      endOffsetMs: 1000,
+      text: "Original phrase.",
+    }, "session-checkpoint", {
+      text: "Original phrase.",
+      rawText: "Original phrase.",
+      providerId: "test-asr",
+      units: [{
+        rawText: "Original phrase.",
+        normalizedText: "Original phrase.",
+        speakerId: null,
+        speakerName: null,
+        startMs: null,
+        endMs: null,
+        timing: "unknown",
+      }],
+    }, "asr");
+    const block = serializeTranscriptBlock(segment, "### Segment 1", segment.text);
+    expect(verifyTranscriptCheckpoint(block, [segment]).ok).toBe(true);
+    expect(verifyTranscriptCheckpoint(block.replace(/<!-- qnalog-transcript-data[\s\S]*?-->/, ""), [segment]).ok).toBe(false);
+    expect(verifyTranscriptCheckpoint(block.replace("Original phrase.", "Edited phrase."), [segment]).ok).toBe(false);
   });
 });

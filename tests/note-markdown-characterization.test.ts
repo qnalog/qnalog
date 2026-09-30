@@ -10,7 +10,9 @@ import {
   buildImportedTextSegment,
   cleanTranscriptBlock,
   extractIntegratedBriefing,
+  ensureTranscriptBlocks,
   extractTranscriptSegments,
+  splitImportedTextIntoNormalSegments,
   normalizeBriefingFrontmatterFields,
   parseSuggestedTagsFromOutput,
   postProcessBriefingOutput,
@@ -22,6 +24,9 @@ import {
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
+import { buildTextImportSourceDetails } from "../src/notes/detail-blocks";
+import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
 
 // note-markdown 的回归覆盖：机器字段名固定、旧中英字段安全读取、内容字段按模式白名单保留，
 // 以及版本块原位更新时不丢正文与原始材料。
@@ -239,6 +244,71 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(zh).toHaveLength(1);
     expect(zh[0].text).toBe("甲段。");
     expect(en).toEqual(zh);
+  });
+
+  it("writes stable source ledgers before active processing and records direct edits as new revisions", () => {
+    const legacy = [
+      `<!-- ${NS_TAG}-session:legacy-session -->`,
+      `<!-- ${NS_TAG}-segments-start:legacy-session -->`,
+      "### Segment 1 (00:00–00:10) [[old.wav|00:00]]",
+      "",
+      `<!-- ${NS_TAG}-transcribe-task:task-legacy -->`,
+      "**说话人1：** 原始内容。",
+      "",
+      `<!-- ${NS_TAG}-segments-end:legacy-session -->`,
+    ].join("\n");
+    const upgraded = ensureTranscriptBlocks(legacy, "legacy-session");
+    const [original] = readTranscriptBlocks(upgraded);
+    expect(original.segment.transcript?.id).toBe("seg:legacy-session:0");
+    expect(original.segment.queueTaskId).toBe("task-legacy");
+    expect(original.segment.transcript?.revisions[0]).toMatchObject({ source: "legacy-transcript", rawText: null });
+    expect(original.segment.transcript?.revisions[0].utterances[0].rawText).toBeNull();
+    expect(original.visibleBlock).toContain("qnalog-transcribe-task:task-legacy");
+    expect(ensureTranscriptBlocks(upgraded, "legacy-session")).toBe(upgraded);
+
+    const directlyEdited = ensureTranscriptBlocks(upgraded.replace("原始内容。", "手动修正内容。"), "legacy-session");
+    const [edited] = readTranscriptBlocks(directlyEdited);
+    expect(edited.segment.transcript?.id).toBe(original.segment.transcript?.id);
+    expect(edited.segment.transcript?.currentRevision).toBe(1);
+    expect(edited.segment.transcript?.revisions[0].source).toBe("legacy-transcript");
+    expect(edited.segment.transcript?.revisions[1]).toMatchObject({ source: "edited-transcript", rawText: null });
+    expect(edited.segment.transcript?.revisions[1].utterances[0].normalizedText).toContain("手动修正内容");
+  });
+
+  it("keeps imported text raw separate from its source label in details", () => {
+    const sessionId = "text-import-session";
+    const segments = splitImportedTextIntoNormalSegments([{
+      name: "source.md",
+      path: "Notes/source.md",
+      text: "  QnALog was selected.\nThe source label is not transcript evidence.  ",
+    }]).map((segment) => attachTextTranscript(segment, sessionId, "text-import"));
+    const details = buildTextImportSourceDetails({ id: sessionId, source: "text-import", segments });
+    const [block] = readTranscriptBlocks(details);
+    const transcript = getCurrentTranscript(block.segment.transcript!);
+    expect(block.visibleBlock).toBe(segments[0].rawText);
+    expect(transcript.rawText).toBe(segments[0].rawText);
+    expect(transcript.utterances.map((unit) => unit.rawText).join("")).toBe(segments[0].rawText);
+    expect(block.segment.text).toContain("source.md");
+  });
+
+  it("migrates numbered text source details without putting the source label in raw text", () => {
+    const legacy = [
+      "<details>",
+      "<summary>导入文本原文（1 个来源）</summary>",
+      "",
+      "### 1. [[Notes/source.md|source.md]]",
+      "",
+      "原始来源内容。",
+      "",
+      "</details>",
+    ].join("\n");
+    const upgraded = ensureTranscriptBlocks(legacy, "legacy-text-import");
+    const [block] = readTranscriptBlocks(upgraded);
+    const transcript = getCurrentTranscript(block.segment.transcript!);
+    expect(transcript.source).toBe("text-import");
+    expect(transcript.rawText).toBe("原始来源内容。");
+    expect(transcript.utterances.map((unit) => unit.rawText).join("")).toBe("原始来源内容。");
+    expect(block.segment.sourcePath).toBe("Notes/source.md");
   });
 
   it.each([
