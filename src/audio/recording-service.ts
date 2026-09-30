@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：录音采集：开始/停止、切片与整场音频落盘、分段缓存、实时 ASR 积压与熔断、片段入队
 
 import * as obsidian from "obsidian";
-import { getRealtimeOutlineAnchorTime } from "../outline-text";
+import { getRealtimeOutlineAnchorTime } from "../notes/outline-text";
 import { normalizeAudioInputMode, audioInputModeLabel } from "../ui/helpers";
 import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
@@ -83,7 +83,7 @@ export interface RecordingHost {
   saveSettings(): Promise<void>;
   session: RecordingSession | null;
   /** 会话收尾服务：切片转写与停止后的收尾（装配层绑定，见 sessionPipeline 注释）。 */
-  sessionPipeline: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void>; confirmSpeakerNamesBeforeFinal(session: RecordingSession, segments: unknown[]): Promise<boolean> };
+  sessionPipeline: { finalizeSession(session: RecordingSession): Promise<void>; processSegment(session: RecordingSession, seg: unknown): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
   /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
@@ -106,7 +106,7 @@ export class RecordingService implements LiveAsrPipeline {
   /** 当前录音问题（设备/服务/切片），无问题时为空。 */
   declare recordingIssue;
 
-  constructor(host) {
+  constructor(host: RecordingHost) {
     this.host = host;
     this._oneShotCaptureMode = null;
     this.recordingIssue = null;

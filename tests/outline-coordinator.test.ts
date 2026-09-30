@@ -3,7 +3,7 @@ import {
   RealtimeOutlineCoordinator,
   runInOutlineSessionTail,
   type OutlineCoordinatorRequest,
-} from "../src/outline-coordinator";
+} from "../src/notes/outline-coordinator";
 
 describe("RealtimeOutlineCoordinator", () => {
   beforeEach(() => vi.useFakeTimers());

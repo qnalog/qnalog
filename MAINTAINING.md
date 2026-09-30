@@ -214,7 +214,7 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 环节 | 现状 | 约束 |
 |---|---|---|
 | 插件 `id` / 目录 | `qnalog` / `.obsidian/plugins/qnalog/` | 上架后**不可更改**（改 id 会重置下载量并要求所有用户重装），所以 id 必须在首次提交前定死。也不得与社区目录中的 `lexvoice` 相同。 |
-| 更新检查 | `src/update-source.ts` 常量指向 `qnalog/qnalog@main` | 不得指向上游。改动后必须同步 `tests/` 中的 URL 期望值。 |
+| 更新检查 | `src/update/update-source.ts` 常量指向 `qnalog/qnalog@main` | 不得指向上游。改动后必须同步 `tests/` 中的 URL 期望值。 |
 | 自更新 | **已移除** | 开发者政策 "Not allowed" 明列 *"Install or update themselves or their dependencies"*。本插件只检查版本并提示，安装交给 Obsidian 或 BRAT。**不得恢复写入自身文件的能力。** |
 | 社区目录 | 上游 `lexvoice` 条目仍在 | 不可控。它只能被用户主动安装，不会替换本插件；README 已说明两者并存时的处理。 |
 | 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`QnALog`**（含 `manifest.json` 的 `name`）。2026-09-28 起弃用旧书面名 `Q&A Log`：Obsidian 插件命名规范只允许基本拉丁字母与连字符、加号、括号，`&` 不在允许列表；macOS 原生菜单还会把 `&` 当快捷键标记吃掉。**名称里不得再出现 `&`。** 版权署名 `Q&A Log Team` 与提交身份显示名 `Q&A Log` 属于署名，不随产品名改。程序性标识仍是小写 `qnalog` 与 `QNALOG_*`（见下两行）。 |
@@ -475,7 +475,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 2. **对外材料与代码一致**：默认目录表、PRIVACY 的更新检查描述、workflow 注释（已完成）。
 3. **发布链路自动化**：`release.yml` 提供 tag → 干净检出 → 重建 → 比对 → 上传的 provenance（§4.2）。
 4. **首次配置体验**：见下方「第二条：提升性功能」的设置界面精简。
-5. **收尾性工程债**：3 个 `@ts-nocheck`、`modals.ts` 拆包、更新检查转发——均低风险、可延后。
+5. **收尾性工程债**：3 个 `@ts-nocheck`、`modals.ts` 拆包、更新检查转发（见下方结构项）——均低风险、可延后。
 
 **结构（§1.1.1）**
 
@@ -492,6 +492,10 @@ frontmatter 仍有 `time`、运行期没有异常日志。
         与 §1.1「不改变既有行为语义」相冲突，需要独立的设计与逐项视觉验证。
       - **重启条件**：若将来出现必须改 `outline-view.ts` 结构性问题的需求（例如某个面板要独立成视图、
         或某类 bug 反复出现且定位困难），再按 §1.1.1 的抽取约定分簇推进，不要为了「文件变小」而拆。
+        2026-09-30 评审已把沉淀簇排入第三阶段，见 §14.4。
+- [ ] §14.4 第二阶段第 1 项：会话状态收口
+- [ ] §14.4 第二阶段第 2–6 项
+- [ ] §14.4 第三阶段：OutlineView 沉淀簇
 - [ ] P3 命名空间重置（见 §1.1.2）：
       - [x] 第一次：内部标识符（82 个）+ `lexvoice-*` 类名与自定义属性（862 个）+ `QNALOG_VAULT`（2026-09-14）。
       - [x] 第二次（2026-09-15）：数据层命名空间（默认目录、标签、笔记标记与 frontmatter 键、视图类型、混淆盐）
@@ -1321,6 +1325,7 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
    cyclic SCC count / largest SCC size。**第一阶段不要求 cycle = 0**：
    现有环允许存在；失败条件是不得产生新环、不得扩大既有 SCC（既有 12 个服务的大环里
    再插入一个节点，同样失败）。
+   环状分量统计不包含装配别名所代表的调用，见 §14 A4。
 4. **冻结非 UI 模块对界面实现的直接依赖**（`uiImportsFromNonUi`）。除装配根 `src/main.ts` 与 `src/ui/` 内部模块外，其他模块不得新增解析到 `src/ui/` 的静态 import、re-export 或动态 import。已有依赖先登记在基线；新增依赖失败，删除依赖但未同步收缩基线也失败。界面内部的依赖与装配入口的依赖不在此检查范围内。
 
 **第二阶段已完成（2026-09-26，分支 `refactor/service-dependency-decycle`）**：
@@ -1362,3 +1367,96 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 目录依赖白名单——这些方向多数属于遗留状态，第一版检查会大面积误报。
 规则少，误报才少。当前检查四类已有明确证据的问题：
 `QnALogPlugin` 依赖扩散、plugin capability 面扩大、service 边/环扩大、非 UI 模块对 UI 的依赖扩大。
+
+## 14. 架构评审（2026-09-30）
+
+### 14.1 结论
+
+- `src/main.ts` 作为装配入口、`check:architecture` 以基线阻止新增依赖，方向正确。
+- 主要问题集中在 A1–A4：Host 接口此前不受构造点的编译器检查；会话状态是全局可变状态；依赖图因装配别名少计了运行时的双向调用。
+- A6 的笔记 Markdown 解析分散，以及 A7 的严格类型检查覆盖不足，是后续改动的主要风险来源。
+- 第一阶段先修门禁与明确模块归属，不改变用户可见功能；会话状态和文档模型留在后续阶段。
+
+### 14.2 问题清单
+
+|编号|问题|证据|处理阶段|
+|---|---|---|---|
+|A1|Host 接口在装配处不受类型检查|23 个服务原为 `constructor(host)`；`tsconfig.json` 的 `noImplicitAny` 为 false，因此 `src/main.ts:185-214` 的 `new XService(this)` 不检查插件实例是否满足 Host。补类型后发现 3 处返回类型不一致：导入音频返回值、分段缓存目录返回值、录音 Host 中未使用的 speaker 确认方法|已完成（分支 `refactor/architecture-phase1`）|
+|A2|Host 接口只是名义上的窄接口|26 个 `XxxHost` 中，23 个包含完整 `settings: PluginSettings`，22 个包含完整 `app: obsidian.App`；27 个服务都以插件实例构造|第二阶段|
+|A3|录音会话是挂在插件对象上的全局可变状态|`RecordingSession` 在 `src/shared/types.ts:403` 起约 100 行可选字段，以 `finalized`、`finalizing`、`hasDeferredAsrJobs` 等布尔字段表达生命周期；`host.session =` 共 9 处；10 个 Host 声明 `session`；`src/ui/outline-view.ts:4701-5063` 直接改写 `session.meetingWorkbench`|第二阶段|
+|A4|门禁输出“环状分量 0”不代表运行时没有环|`src/main.ts:117-131` 的装配别名使依赖图漏计 `RecordingHost.sessionPipeline`（`src/audio/recording-service.ts:86`）与 `SessionFinalizeHost.liveAsr`（`src/notes/session-finalize-service.ts:72`）的双向调用；`RealtimeOutlineHost.sessionProgress`（`src/notes/realtime-outline-service.ts:53`）与 `QueueRetryHost.asrCircuit`（`src/queue/queue-retry-service.ts:63`）也都指向 RecordingService|第二阶段，与 A3 一起处理|
+|A5|基础组件反向调用界面|`TaskQueue` 原有 4 处直接调用 `plugin.shell.refreshOutlineView()`（`src/queue/task-queue.ts`）；这违反基础组件不得反向调用高层工作流的约定|已完成（分支 `refactor/architecture-phase1`）|
+|A6|笔记 Markdown 没有统一的文档模型|至少 10 个模块各自用正则解析标记与区块：`notes/note-markdown.ts:708-800`、`transcript/transcript-markdown.ts:126-155`、`versions/version-content.ts`、`notes/detail-blocks.ts:125+`、`notes/audio-refs.ts:87+`、`notes/ask-panel.ts:64+`、`audio/channel-speakers.ts:232-315`、`notes/outline-text.ts:256+`、`notes/repolish-service.ts:84+`、`notes/note-writer.ts:144+`、`indexing/note-index.ts:14-19`。标记字面量集中在 `shared/namespace.ts`，解析和序列化没有集中|第二阶段|
+|A7|类型检查覆盖不足|`tsconfig.json` 的 `noImplicitAny`、`strictNullChecks` 均为 false；全仓开启 `strictNullChecks` 有 803 处错误，前五名为 `ui/outline-view.ts` 132、`notes/session-finalize-service.ts` 66、`people/index.ts` 57、`audio/recording-service.ts` 45、`notes/note-markdown.ts` 44；另有 78 个文件在文件头关闭整组 `no-unsafe-*` 规则|第二阶段|
+|A8|OutlineView 沉淀簇|`src/ui/outline-view.ts:1189-3839` 约 2,650 行，占文件 41%；`sedimentGroup`、`sedimentScanToken`、`sedimentToastTimer` 等状态位于 331-365 行；扫描令牌、自动推进、撤销与提交和 DOM 同处一个类|第三阶段|
+|A9|目录归属不清|`src/` 根目录原有 8 个领域文件：outline-text、outline-coordinator、outline-finalizer、recent-note-paths、version-content、report-templates、update-service、update-source；`shared/` 有领域逻辑；`shared/types.ts` 反向 import transcript 与 ASR；`people/index.ts`（939 行）、`sediment/index.ts`（568）、`setup/index.ts`（609）、`vocabulary/index.ts`（258）是实现文件而非汇总导出|根目录 8 个文件已完成（分支 `refactor/architecture-phase1`）；其余第二阶段|
+|A10|非 UI 模块依赖 `src/ui/`|基线 `uiImportsFromNonUi` 登记 14 个文件，其中 7 个依赖 `ui/helpers.ts`|第二阶段|
+|A11|门禁自身有缺陷|`scripts/check-legacy-prefixes.mjs` 的 `ALLOWED` 有一条指向不存在的 `src/ui/outline-text.ts`，脚本此前未检查登记路径是否存在；`scripts/check-domain-boundaries.mjs` 的类成员与引用识别仍使用正则|失效 `ALLOWED` 检查已完成（分支 `refactor/architecture-phase1`）；正则识别问题只记录|
+|A12|待决：两条并行路径|笔记索引在收尾、重试、版本切换等路径写入 `qnalog-note-index` 块（调用点见 `session-finalize-service.ts:1059`、`queue-retry-service.ts:361,369,525,529,667`、`version-store.ts:285,309`、`note-writer.ts:619`、`semantic-canvas-service.ts:374`、`main.ts:453`）；`readNoteIndex` 只由 `indexing/note-index.ts:266,482` 内部调用，插件内没有读取方。笔记写入由 `consolidatedLayout`（`settings-tab.ts:2205`，默认 true）选择 `rewriteConsolidated` 或 `appendPolishBlock`；导入来源另由 `note-layout-policy.ts:25-30` 强制使用 rewrite|待维护者决定|
+|A13|低优先级事实|`styles.css` 12,625 行；855 个 `qnalog-*` 类中 18 个在 `src/` 找不到字面引用（11 个 `qnalog-diag-*`、5 个 `qnalog-device-status-*`、`qnalog-sediment-item-summary`、`qnalog-folder-warn`）；`main.js` 1.59 MB，其中中文词条表约 365 KB，其余为本仓库源码，唯一运行时依赖为 `ws`|记录|
+
+### 14.3 保持现状的设计
+
+- `src/main.ts` 保持装配入口，架构门禁继续采用基线制；门禁拦新增依赖，不要求一次清除全部旧债。
+- 纪要分部断点先写 `.tmp` 再改名（`src/briefing/checkpoint-store.ts:46-53`），避免中断时留下半份数据。
+- `saveAll` 保持串行尾链（`src/main.ts:735-753`），避免并发保存覆盖。
+- `scripts/check-merge-pipeline.mjs` 继续用桩模型运行真实产物，检查从会话收尾到笔记写入的流程。
+- `src/notes/outline-text.ts` 保持纯函数边界，不引入 Obsidian、DOM 或文件读写依赖。
+- OutlineView 按渲染签名判断是否重建 DOM（`src/ui/outline-view.ts:498-562`），不同刷新时机不可合并。
+- i18n 继续以英文原文为键；`src/shared/i18n/locales/en.ts` 为空是有意设计，缺少翻译时显示英文。
+- ASR、LLM、队列三层重试策略分别处理服务不可用、模型请求与任务恢复，不合并为一个策略。
+
+核对后排除：
+
+- `src/shared/settings-io.ts:11` 对 `update-source` 的依赖是合理的。`update-source.ts` 仅依赖 `obsidian.normalizePath`，是无副作用的叶子模块；设置读回校验更新地址不构成错误依赖。
+- 构建链中的 `check-merge-pipeline` 只执行一次：`check:plugin-onload` 会运行自己的装配检查，构建脚本另行直接执行一次 `check-merge-pipeline`，两者不是重复调用。
+
+### 14.4 路线图
+
+#### 第一阶段（已完成）
+
+1. 失效旧前缀白名单会导致门禁失败：`build(gates): fail on stale legacy-prefix allowlist entries`。
+2. 服务构造函数标注 Host 类型并修正三处 Host 契约：`refactor(types): type service host constructors and fix host contract mismatches`。
+3. TaskQueue 通过变更通知刷新侧边栏：`refactor(queue): notify queue changes via listeners instead of refreshing the sidebar`。
+4. 根目录 8 个领域模块归入所属目录：`refactor(layout): move root-level domain modules into their domain directories`。
+5. 本评审与路线图：`docs(maintaining): add 2026-09-30 architecture review and roadmap`。
+
+#### 第二阶段（按顺序；每项单独分支，均需维护者在真实 Obsidian 中验证）
+
+1. **会话状态收口（A3、A4）**：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 9 处 `host.session =` 赋值。把 live-ASR 状态从 `RecordingService` 移至 `LiveAsrPipelineService`，使 Recording 与 SessionFinalize 都依赖该服务，彼此不再互相调用。完成判据：从 `src/main.ts` 删除 `liveAsr`、`sessionPipeline`、`asrCircuit`、`sessionProgress` 四个别名后，`check:architecture` 在 Recording 与 SessionFinalize 之间两个方向都没有边。验证录音、暂停、续录、导入音频、转写失败后重试。
+2. **Host 能力面棘轮（A2）**：`check:architecture` 增加第五个基线字段，登记当前含完整 `settings: PluginSettings` 或 `app: obsidian.App` 的 Host 接口（23 / 22 个），沿用使用集合与基线完全一致的规则。之后改动服务时，顺带把相关 Host 改成 `Pick<PluginSettings, …>` 或具体 vault 能力，并收缩基线。
+3. **笔记文档模型（A6）**：新建 `src/notes/note-document.ts`，集中解析与序列化 frontmatter、正文、原始材料、分段逐字稿块、会话标记和机器注释。先由 `tests/note-markdown-characterization.test.ts` 固定现有输出，再逐个迁移 A6 所列读取方；旧格式兼容只留在该模块。
+4. **类型检查棘轮（A7）**：改动某个文件时先把它加入 `tsconfig.strict-core.json`，按 `strictNullChecks` 错误数从少到多推进；A7 列出的前五个文件在各自结构改动完成后再处理。
+5. **收缩非 UI 对 UI 的依赖（A10）**：把 `ui/helpers.ts` 中不涉及 DOM 的函数移到 `shared/` 或所属领域，收缩 `uiImportsFromNonUi`。
+6. **其余目录归属（A9）**：把 `shared/` 中的领域文件归位、按领域拆分 `types.ts`、将实现型 `index.ts` 改名；只在改动相关代码时顺带处理，不单独排期。
+
+#### 第三阶段
+
+把 OutlineView 沉淀簇（A8）抽为 `src/sediment/SedimentPanelController`；视图只保留渲染与事件绑定。前提是第二阶段第 1 项完成，因为视图当前直接改写会话字段。每项改动都需视觉验证。
+
+#### 待决项（由维护者决定）
+
+- **笔记索引**：
+  - a) 停止写入：删除 `refreshNoteIndexSafely` 的 11 处调用（A12 所列调用点）及 `NoteIndexService` 的索引写入。收尾、重试、版本切换各少一次笔记写入；已有笔记索引块保留，`text-correction.ts` 的保护区仍能识别它。
+  - b) 保留并为它增加插件内读取方（例如侧边栏或 Base 视图）；这需要新的功能设计。
+- **两种笔记写入方式**：
+  - a) 通过设置迁移下线 `consolidatedLayout=false` 与 `appendPolishBlock`。设置页少一项，只维护一种写入方式；关闭过该项的用户笔记结构会改变。
+  - b) 保留两种方式；继续分别维护，修改笔记结构时两处都要更新。
+
+## 15. 笔记版本保存流程
+
+`.versions` 是插件保存的可切换快照；清单和快照内容通过 Vault adapter 读取，不依赖 Obsidian 的文件索引是否返回隐藏路径。Obsidian 文件历史记录的是母本 Markdown 的实际改动，两者不是同一份版本清单。下表中的“可见正文”指母本中活动版本块外的整理正文，“原始转写”指母本的原始分段及其修订记录。
+
+| 操作 | 入口 | 写入时刻与保存内容 | 母本可见正文 / 原始转写 | `.versions` kind 与 `activeVersionId` | 失败处理 |
+|---|---|---|---|---|---|
+| 录音建稿 | `RecordingService.startRecording` | 开始录音时创建母本并写标题、会话标记和空分段边界；每段转写由 `SessionFinalizeService.processSegment` 写入分段块 | 尚无整理正文；转写逐段写入母本 | 无版本快照 | 单段处理异常保留可重试任务，不阻止后续分段 |
+| 首次 AI 整理 | `SessionFinalizeService._finalizeSessionImpl` → `NoteWriter.rewriteConsolidated` / `appendPolishBlock` | AI 返回后直接将成稿写入母本；重写布局替换正文，追加布局添加整理块 | 成稿成为母本可见正文；原始转写保留在原始材料区 | 不创建原稿快照；无对应 `activeVersionId` | Markdown 写入失败将任务加入后台重试；此时不会自动保留整理前的可见正文快照 |
+| 普通重新整理 | `RepolishService.repolishMarkdownFile` | 先确保原稿快照及 manifest 可读、可写，再创建可见派生 Markdown，最后写 `.versions` 的 `minutes` 缓存 | 按代码不改母本正文；原始转写留在母本 | `minutes`；缓存以 `activate:false` 写入，保持原活动 ID | 原稿快照或其 manifest 验证失败时停止，不创建派生文件；派生文件已写但后续纪要缓存索引失败时保留派生文件并显示提示 |
+| 清稿生成 / 再次生成 | `RepolishService.generateCleanScript` | 创建或更新清稿派生文件；首次生成前先确保原稿快照，再通过 `switchVersion` 切换母本 | 清稿成为母本可见正文；原始转写保留 | 清稿派生类型为 `clean`；切换后将清稿 ID 设为活动版本；不另存隐藏清稿缓存 | 原稿快照失败时停止生成；派生文件写入或切换失败通过任务错误路径报告。已有清稿直接切换；显式重新生成则更新同一派生文件 |
+| 点击原稿或派生版本 | `OutlineView.renderRecentNoteRow` → `VersionStore.switchVersion` | 点击前读取缓存正文和 frontmatter；确保原稿安全后，在严格读取的 manifest 下改母本并更新活动 ID | 母本替换为该缓存正文；母本原始转写仍保留 | 原稿快照使用 `source-original`；派生缓存可为 `minutes`；成功切换后设为所选 ID | 缺失或损坏的类型、清单或原稿快照必须在改母本前拒绝；母本写入成功但活动 ID 写入失败属于部分提交，缓存仍保留且可再次切换 |
+| 续录 | `RecordingService.startRecording({ appendToFile })` → `SessionFinalizeService._finalizeSessionImpl` | 续录收尾覆盖正文前尝试保存当前母本为 `pre-append`，随后重写或追加新成稿 | 新成稿成为母本可见正文；合并后的分段转写继续保留 | `pre-append`；保存时 `activate:false`，保留活动 ID | 归档失败目前仅记录警告，仍继续续录写入；这是 best-effort 保护，不保证旧可见正文可由插件版本列表恢复 |
+| 音频 / 文字导入 | `ImportService` 建立会话并调用 `SessionFinalizeService.finalizeSession` | 导入内容先写入新母本；转写检查通过后进入首次 AI 整理写入 | 音频导入保存 ASR 分段；文字导入保留来源文字；整理结果写母本 | 首次整理本身不创建原稿快照 | 转写检查未通过时停止 AI 整理；收尾错误保留在会话状态及任务进度中 |
+| 后台合并重试 | `QueueRetryService.retryMergeTask` | 重试成功后直接重写或追加母本，再更新索引；不先归档当前可见正文 | 重试成稿写入母本；原始转写仍留在母本 | 不创建版本缓存，不更新 `activeVersionId` | 异常向队列重试路径返回；已有可见正文没有插件快照保护 |
+同一插件实例按来源 ID 串行执行版本缓存和活动 ID 的 manifest 读改写；它不协调 Obsidian 同步或其他插件对同一文件的写入。仅凭磁盘状态无法归因外部修改或同步冲突。
+
+首次整理、续录和后台重试的归档差异是当前代码事实，不据此推断 Obsidian 同步或外部修改导致的历史原因。普通重新整理按代码只生成派生文件、不自动激活；若 Obsidian 实际表现不同，应先核实触发入口。用户手动修改 Markdown 的逐次历史由 Obsidian 文件历史记录，插件不追踪逐字编辑。

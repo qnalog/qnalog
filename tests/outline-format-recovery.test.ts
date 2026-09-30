@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeRealtimeOutlineList,
   validateRealtimeOutlineMarkdown,
-} from "../src/outline-text";
+} from "../src/notes/outline-text";
 
 describe("normalizeRealtimeOutlineList - common model list syntax", () => {
   it("normalizes headings, numbered lists, and Unicode bullets", () => {

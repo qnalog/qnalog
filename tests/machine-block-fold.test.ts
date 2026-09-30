@@ -14,7 +14,7 @@ import {
   splitOutSedimentBlock,
   stripSedimentPreExtractionBlocks,
 } from "../src/sediment";
-import { foldRawTranscriptSection } from "../src/version-content";
+import { foldRawTranscriptSection } from "../src/versions/version-content";
 import { stripImportAppendices } from "../src/notes/note-markdown";
 import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 

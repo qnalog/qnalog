@@ -1,6 +1,6 @@
-import { NS_FM, NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "./shared/namespace";
-import { QNALOG_ACTIVE_VERSION_END } from "./shared/limits";
-import { labelText } from "./shared/note-labels";
+import { NS_FM, NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
+import { QNALOG_ACTIVE_VERSION_END } from "../shared/limits";
+import { labelText } from "../shared/note-labels";
 
 const VERSION_FRONTMATTER_START = `<!-- ${NS_TAG}-version-frontmatter-start`;
 const VERSION_FRONTMATTER_END = `${NS_TAG}-version-frontmatter-end -->`;
@@ -176,10 +176,13 @@ export function replaceExistingActiveVersionBlock(markdown: string, block: strin
   return text.replace(ACTIVE_VERSION_PATTERN, String(block || ""));
 }
 
-export function replaceLeadingFrontmatter(markdown: string, frontmatter: string): string {
-  const yaml = getFrontmatterYaml(frontmatter);
-  if (!yaml) return String(markdown || "");
+export function replaceLeadingFrontmatter(markdown: string, frontmatter: string, clearWhenEmpty = false): string {
   const current = splitLeadingFrontmatter(markdown);
+  const yaml = getFrontmatterYaml(frontmatter);
+  if (!yaml) {
+    if (!clearWhenEmpty || !current.frontmatter) return String(markdown || "");
+    return current.body.replace(/^(?:\r?\n)+/, "");
+  }
   const body = current.body.replace(/^(?:\r?\n)+/, "");
   return `${wrapFrontmatterYaml(yaml).trimEnd()}${body ? `\n\n${body}` : "\n"}`;
 }

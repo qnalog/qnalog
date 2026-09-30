@@ -38,7 +38,7 @@ export interface VocabularyHost {
 
 export class VocabularyService {
   declare host: VocabularyHost;
-  constructor(host) {
+  constructor(host: VocabularyHost) {
     this.host = host;
   }
 

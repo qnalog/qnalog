@@ -22,11 +22,22 @@ export class TaskQueue {
   declare running: boolean;
   declare _inflight?: Set<string>;
   declare _batchTotal: number;
+  declare changeListeners: Set<() => void>;
   declare _batchDone: number;
   constructor(plugin: QnALogPlugin) {
     this.plugin = plugin;
     this.tasks = [];
     this.running = false;
+    this.changeListeners = new Set();
+  }
+  onChange(fn: () => void): () => void {
+    this.changeListeners.add(fn);
+    return () => { this.changeListeners.delete(fn); };
+  }
+  emitChange(): void {
+    for (const fn of this.changeListeners) {
+      try { fn(); } catch { /* intentionally empty */ }
+    }
   }
   load(saved: unknown) {
     const raw = Array.isArray(saved) ? saved.slice() : [];
@@ -114,7 +125,7 @@ export class TaskQueue {
         status: task.status || existing.status || "pending",
       });
       await this.plugin.saveAll();
-      try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+      this.emitChange();
       return existing;
     }
     task.id = task.id || genId();
@@ -124,7 +135,7 @@ export class TaskQueue {
     task.status = task.status || "pending";
     this.tasks.push(task);
     await this.plugin.saveAll();
-    try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    this.emitChange();
     return task;
   }
   /**
@@ -136,14 +147,14 @@ export class TaskQueue {
     void opts;
     this.tasks = this.tasks.filter(t => t.id !== id);
     await this.plugin.saveAll();
-    try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    this.emitChange();
   }
   async update(id, patch) {
     const t = this.tasks.find(x => x.id === id);
     if (!t) return;
     Object.assign(t, patch, { updatedAt: new Date().toISOString() });
     await this.plugin.saveAll();
-    try { this.plugin.shell.refreshOutlineView(); } catch { /* intentionally empty */ }
+    this.emitChange();
   }
   async processAll() {
     if (this.running) return;

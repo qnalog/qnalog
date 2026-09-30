@@ -8,7 +8,7 @@
 // round-trip 测试兜底：DEFAULT_SETTINGS 的每个顶层键都必须在 normalize→serialize→normalize 后原样存活。
 import * as obsidian from "obsidian";
 import { DEFAULT_SETTINGS } from "./defaults";
-import { isTrustedUpdateSourceUrl } from "../update-source";
+import { isTrustedUpdateSourceUrl } from "../update/update-source";
 import { MODE_META } from "./catalog-modes";
 import { t } from "./i18n";
 import {

@@ -10,14 +10,15 @@ import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
-import { splitLeadingFrontmatter } from "../version-content";
+import { splitLeadingFrontmatter } from "../versions/version-content";
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
-import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractAllRawBlocksFromText, extractTranscriptSegments, generateTitleTag, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
+import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractAllRawBlocksFromText, extractTranscriptSegments, generateTitleTag, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { getFrontmatterTags } from "../shared/util-note";
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
@@ -120,7 +121,7 @@ export interface NoteWriterHost {
 
 export class NoteWriter {
   declare host: NoteWriterHost;
-  constructor(host) {
+  constructor(host: NoteWriterHost) {
     this.host = host;
   }
 
@@ -460,6 +461,15 @@ export class NoteWriter {
       return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
     }
     const m = readNamespaceFrontmatter(cache, "mode");
+    if (m === "cleanscript") {
+      for (const tag of getFrontmatterTags(cache)) {
+        const tagMode = normalizeModeFromLabel(this.host.settings, tag);
+        if (tagMode && tagMode !== "off" && isKnownPolishMode(this.host.settings, tagMode)) return tagMode;
+      }
+      const filenameMode = detectRecentModeFromFilename(this.host.settings, file.basename);
+      if (filenameMode && filenameMode !== "off") return filenameMode;
+      return getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
+    }
     if (typeof m === "string" && isKnownPolishMode(this.host.settings, m)) return m;
     const typeStr = String(readNamespaceFrontmatter(cache, "type") || cache["模板"] || cache.template || "").trim();
     const typeToMode = {

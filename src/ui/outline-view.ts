@@ -4,7 +4,7 @@
 import type QnALogPlugin from "../main";
 import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
-import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
+import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../notes/outline-text";
 
 import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal } from "./modals";
 
@@ -41,7 +41,7 @@ import { escapeRegExp, formatElapsed, genId, primitiveText, sanitizeFilename } f
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import { getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots } from "../recent-note-paths";
+import { getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots } from "../recent/recent-note-paths";
 
 import { getTaskErrorMessage } from "../shared/task-activity";
 
@@ -5477,6 +5477,7 @@ export class OutlineView extends obsidian.ItemView {
     for (const [mode] of getVisibleModeEntries(this.plugin.settings, false)) {
       opts.push({ id: mode, label: getModeDisplayName(this.plugin.settings, mode) });
     }
+    opts.push({ id: "cleanscript", label: i18nT("Clean transcript") });
     return opts;
   }
 
@@ -5705,6 +5706,22 @@ export class OutlineView extends obsidian.ItemView {
     }
     this.syncRecentNoteProcessingState(r.file, row, actions, failedTasks.length);
     if (r.variants && r.variants.length) {
+      const anchor = document.createComment("qnalog-original-version");
+      parent.appendChild(anchor);
+      void this.plugin.versions.findOriginalVersionForSource(r.file).then((snapshot) => {
+        if (!snapshot || !row.isConnected || !anchor.parentNode) return;
+        const snapshotRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
+        const chip = snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
+        try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
+        snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: snapshot.label });
+        snapshotRow.addEventListener("click", () => {
+          void this.plugin.versions.switchVersion(snapshot.path, r.file.path)
+            .catch((error) => console.error(error));
+        });
+        anchor.parentNode.insertBefore(snapshotRow, anchor);
+      }).catch((error) => {
+        console.error("[QnALog] original version lookup failed", error);
+      }).finally(() => anchor.remove());
       for (const v of r.variants) {
         const vrow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
         if (activePath && obsidian.normalizePath(v.file.path) === activePath) vrow.addClass("is-active");
@@ -5713,8 +5730,7 @@ export class OutlineView extends obsidian.ItemView {
         vrow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: v.label || v.file.basename });
         vrow.addEventListener("click", async () => {
           try {
-            if (v.kind === "clean") await this.app.workspace.getLeaf(false).openFile(v.file);
-            else await this.plugin.versions.switchVersion(v.file, v.sourcePath);
+            await this.plugin.versions.switchVersion(v.file, v.sourcePath);
           } catch (e) { console.error(e); }
         });
         vrow.addEventListener("contextmenu", (evt) => {
@@ -6037,7 +6053,7 @@ export class OutlineView extends obsidian.ItemView {
         return;
       }
       try {
-        await this.plugin.app.workspace.getLeaf(false).openFile(current);
+        await this.plugin.versions.switchVersion(current, file.path);
       } catch (error) {
         new obsidian.Notice(`${i18nT("Could not open the clean copy: ")}${(error && error.message) || error}`, 8000);
       }

@@ -1,4 +1,4 @@
-import type { RealtimeOutlineNode } from "../outline-text";
+import type { RealtimeOutlineNode } from "../notes/outline-text";
 import { NS_ACTIVE_VERSION_BODY_RE, NS_SEGMENTS_START_ONLY_RE, NS_TAG, readSemanticMeta, writeSemanticMeta } from "../shared/namespace";
 
 import { t } from "../shared/i18n";

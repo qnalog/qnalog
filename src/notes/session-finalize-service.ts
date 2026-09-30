@@ -93,7 +93,7 @@ export class SessionFinalizeService {
   declare notePanelCacheData;
   declare notePanelLoading;
 
-  constructor(host) {
+  constructor(host: SessionFinalizeHost) {
     this.host = host;
     this.notePanelCacheKey = null;
     this.notePanelCacheData = null;

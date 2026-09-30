@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkLegacyPrefixes } from "../scripts/check-legacy-prefixes.mjs";
+import { checkLegacyPrefixes, findStaleAllowlistEntries } from "../scripts/check-legacy-prefixes.mjs";
 
 // 静态门禁本身要有测试：它拦的是「改名漏了几处」，而漏改会变成用户数据的兼容负担
 // （lex- 录音文件名已经写进 1.0.0 用户的知识库）。这里验证它确实能拦住新增的旧前缀。
@@ -57,5 +57,15 @@ describe("旧前缀静态门禁", () => {
   it("报告里带文件与行号，能直接定位", () => {
     const found = checkLegacyPrefixes({ "src/x.ts": "line1\nconst a = 'lv-abc';\n" });
     expect(found[0]).toContain("src/x.ts:2");
+  });
+
+  it("报告 ALLOWED 中指向不存在文件的条目", () => {
+    const allowlist = [
+      { file: "src/a.ts", reason: "x" },
+      { file: "src/gone.ts", reason: "y" },
+    ];
+    const found = findStaleAllowlistEntries(["src/a.ts"], allowlist);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("src/gone.ts");
   });
 });

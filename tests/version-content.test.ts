@@ -11,7 +11,7 @@ import {
   splitLeadingFrontmatter,
   splitVersionPayload,
   stripVersionBookkeepingFrontmatter,
-} from "../src/version-content";
+} from "../src/versions/version-content";
 
 const generatedDocument = [
   "---",
@@ -133,6 +133,11 @@ describe("QnALog version content", () => {
     const mother = "---\nmode: synthesis\n---\n\n# Mother";
     expect(replaceLeadingFrontmatter(mother, "")).toBe(mother);
     expect(sanitizeActiveVersionBody("# Clean script\n\n清理后的正文")).toBe("清理后的正文");
+  });
+  it("clears derived frontmatter only when restoring a snapshot without YAML", () => {
+    const mother = "---\nqnalog_mode: synthesis\nqnalog_custom: keep-derived-only\n---\n\n# Mother\n\nDisplayed version";
+    expect(replaceLeadingFrontmatter(mother, "")).toBe(mother);
+    expect(replaceLeadingFrontmatter(mother, "", true)).toBe("# Mother\n\nDisplayed version");
   });
 
   it("repairs a mother note that already contains duplicate YAML in its active block", () => {

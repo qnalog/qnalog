@@ -16,7 +16,7 @@ import {
   parseRealtimeOutlineStateFromMarkdown,
   normalizeOutlineMarkdownForDisplay,
   validateRealtimeOutlineMarkdown,
-} from "../src/outline-text";
+} from "../src/notes/outline-text";
 import { normalizeRealtimeOutlineState, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline } from "../src/notes/realtime-outline";
 
 const PRIOR_OUTLINE = [

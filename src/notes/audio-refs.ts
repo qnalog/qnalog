@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：音频引用、时间锚与时长计算
 
 import * as obsidian from "obsidian";
-import { hashRealtimeOutlineText } from "../outline-text";
+import { hashRealtimeOutlineText } from "./outline-text";
 
 import { parseElapsedMsToken, parseDurationLabel } from "../shared/util-text";
 

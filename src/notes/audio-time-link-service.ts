@@ -24,7 +24,7 @@ type AudioTimeLinkElement = HTMLAnchorElement & { __qnalogTimeHandler?: (evt: Ev
 
 export class AudioTimeLinkService {
   declare host: AudioTimeLinkHost;
-  constructor(host) {
+  constructor(host: AudioTimeLinkHost) {
     this.host = host;
   }
 

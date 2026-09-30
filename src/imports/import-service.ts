@@ -71,7 +71,7 @@ export interface ImportHost {
 
 export class ImportService {
   declare host: ImportHost;
-  constructor(host) {
+  constructor(host: ImportHost) {
     this.host = host;
   }
 

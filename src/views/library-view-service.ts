@@ -27,7 +27,7 @@ export interface UpsertGeneratedMarkdownOptions {
 
 export class LibraryViewService {
   declare host: LibraryViewHost;
-  constructor(host) {
+  constructor(host: LibraryViewHost) {
     this.host = host;
   }
 

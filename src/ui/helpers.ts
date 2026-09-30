@@ -13,7 +13,7 @@ export {
   resolveUpdateRawBase,
   resolveUpdateRawBases,
   pluginBasePath,
-} from "../update-source";
+} from "../update/update-source";
 import { VIRTUAL_CABLE_PATTERNS } from '../shared/catalog-import';
 import { normalizeKnowledgeExtractionHistory } from '../shared/util-knowledge';
 import { NS_FM, NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
@@ -183,10 +183,10 @@ export function chooseExistingCleanCopy(app: obsidian.App, basename: string): Pr
     contentEl.empty();
     contentEl.createEl("h3", { text: t("A clean copy already exists") });
     contentEl.createEl("p", {
-      text: t("A clean copy already exists: {0}. You can open it or regenerate it.").replace("{0}", basename),
+      text: t("A clean copy already exists: {0}. You can show it in the source note or regenerate it.").replace("{0}", basename),
     });
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
-    actions.createEl("button", { text: t("Open existing clean copy"), cls: "mod-cta", attr: { type: "button" } })
+    actions.createEl("button", { text: t("Show clean copy in original note"), cls: "mod-cta", attr: { type: "button" } })
       .addEventListener("click", () => decide("open"));
     actions.createEl("button", { text: t("Regenerate existing clean copy"), cls: "mod-warning", attr: { type: "button" } })
       .addEventListener("click", () => decide("regenerate"));

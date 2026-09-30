@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RealtimeOutlineNode } from "../src/outline-text";
+import type { RealtimeOutlineNode } from "../src/notes/outline-text";
 import {
   buildSemanticCanvasDocument,
   buildSemanticBranchExpansionPrompt,

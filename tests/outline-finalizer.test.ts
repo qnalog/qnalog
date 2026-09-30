@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { drainRealtimeOutlineBacklog } from "../src/outline-finalizer";
+import { drainRealtimeOutlineBacklog } from "../src/notes/outline-finalizer";
 
 describe("drainRealtimeOutlineBacklog", () => {
   it("retries only the malformed batch and then drains all segments", async () => {

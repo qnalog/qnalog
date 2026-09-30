@@ -1,8 +1,8 @@
-import type { AvailableUpdate, PluginSettings } from "./shared/types";
-import { compareVersions } from "./shared/version";
-import { baseVersion } from "./shared/build-info";
+import type { AvailableUpdate, PluginSettings } from "../shared/types";
+import { compareVersions } from "../shared/version";
+import { baseVersion } from "../shared/build-info";
 import { resolveUpdateRawBases } from "./update-source";
-import { t } from "./shared/i18n";
+import { t } from "../shared/i18n";
 
 export type UpdateSettings = Pick<
   PluginSettings,

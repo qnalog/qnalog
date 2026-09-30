@@ -21,7 +21,7 @@ import {
 } from "../canvas/semantic-outline-canvas";
 import type { SemanticCanvasLayoutMode } from "../canvas/semantic-outline-canvas";
 import { inferSemanticCanvasSourcePath, parseSemanticCanvasSourcePath } from "../canvas/source-note";
-import { parseRealtimeOutlineStateFromMarkdown } from "../outline-text";
+import { parseRealtimeOutlineStateFromMarkdown } from "../notes/outline-text";
 import { diagnosticError } from "../shared/util-key-diag";
 import type { PluginSettings } from "../shared/types";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
@@ -82,7 +82,7 @@ export class SemanticCanvasService {
   /** 递增序号，用于丢弃过期的异步解析结果（用户快速切换文件时）。 */
   activeCanvasSourceSeq: number;
 
-  constructor(host) {
+  constructor(host: SemanticCanvasHost) {
     this.host = host;
     this.runningPaths = new Set();
     this.progressByPath = new Map();

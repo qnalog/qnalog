@@ -4,7 +4,7 @@ vi.mock("obsidian", () => ({
   TFile: class {}, TFolder: class {},
 }));
 import { setActiveUiLanguage, resolveUiLanguage } from "../src/shared/i18n";
-import { getModeMeta, getModePrefix } from "../src/shared/mode-meta";
+import { getModeMeta, getModePrefix, getModeDisplayName, isKnownPolishMode } from "../src/shared/mode-meta";
 import { normalizeModeFromLabel } from "../src/notes/note-markdown";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 
@@ -24,5 +24,13 @@ describe("模板前缀随语言", () => {
     expect(normalizeModeFromLabel(settings, "Synthesis minutes")).toBe("synthesis");
     expect(normalizeModeFromLabel(settings, "Work notes")).toBe("meeting");
     expect(normalizeModeFromLabel(settings, "工作纪要")).toBe("meeting");
+  });
+
+  it("shows clean transcript as a display state without registering it as a polish mode", () => {
+    const settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    expect(getModeMeta(settings, "cleanscript").label).toBe("Clean transcript");
+    expect(getModeDisplayName(settings, "cleanscript")).toBe("清稿");
+    expect(isKnownPolishMode(settings, "cleanscript")).toBe(false);
   });
 });

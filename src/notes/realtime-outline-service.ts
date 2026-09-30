@@ -2,8 +2,8 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：实时大纲：调度与执行、增量生成、收尾补全
 
 import * as obsidian from "obsidian";
-import { advanceRealtimeOutlineCursor, parseRealtimeOutlineStateFromMarkdown, selectIncrementalRealtimeOutlineSegments, repairRealtimeOutlineAnchors, mergeStableRealtimeOutlineNodes, normalizeOutlineMarkdownForDisplay, validateRealtimeOutlineMarkdown } from "../outline-text";
-import { drainRealtimeOutlineBacklog } from "../outline-finalizer";
+import { advanceRealtimeOutlineCursor, parseRealtimeOutlineStateFromMarkdown, selectIncrementalRealtimeOutlineSegments, repairRealtimeOutlineAnchors, mergeStableRealtimeOutlineNodes, normalizeOutlineMarkdownForDisplay, validateRealtimeOutlineMarkdown } from "./outline-text";
+import { drainRealtimeOutlineBacklog } from "./outline-finalizer";
 import { getModeMeta } from "../shared/mode-meta";
 import { buildBriefingLanguageInstruction, getSegmentsDurationMs } from "../shared/util-text";
 import { callLlm } from "../llm/core";
@@ -11,7 +11,7 @@ import type { PluginSettings, RecordingSession } from "../shared/types";
 import { primitiveText, getErrorMessage } from "../shared/util-common";
 import { isLocalLlmEndpoint } from "../shared/util-llm-endpoint";
 import { diagnosticError } from "../shared/util-key-diag";
-import { RealtimeOutlineCoordinator, runInOutlineSessionTail } from "../outline-coordinator";
+import { RealtimeOutlineCoordinator, runInOutlineSessionTail } from "./outline-coordinator";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS, REALTIME_OUTLINE_FINAL_MAX_BATCHES, REALTIME_OUTLINE_FINAL_MAX_TOKENS, REALTIME_OUTLINE_FINAL_TIMEOUT_MS, REALTIME_OUTLINE_LOOKBACK_SEGMENTS, REALTIME_OUTLINE_MANUAL_TIMEOUT_MS, REALTIME_OUTLINE_MAX_MEMORY_CHARS, REALTIME_OUTLINE_MAX_NO_CHANGE_REJECTIONS, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS, REALTIME_OUTLINE_MAX_SEGMENTS, REALTIME_OUTLINE_MAX_TRANSCRIPT_CHARS, REALTIME_OUTLINE_MIN_NEW_SEGMENTS, REALTIME_OUTLINE_MIN_SEMANTIC_DELTA_CHARS, REALTIME_OUTLINE_SILENT_MAX_TOKENS, REALTIME_OUTLINE_SILENT_TIMEOUT_MS, buildOutlinePrompt, buildRealtimeOutlineAnchorSources, buildRealtimeOutlineTranscript, buildRollingOutlineContext, clipRealtimeContextText, getRealtimeOutlineNewSegmentCount, getRealtimeOutlineQueuedDelayMs, getRealtimeOutlineTimeoutMs, hasRealtimeOutlineRunnableBacklog, isRealtimeOutlineBackoffActive, isRealtimeOutlineCurrent, isRealtimeOutlineSilentIntervalActive, markRealtimeOutlineFailure, markRealtimeOutlineSuccess, normalizeRealtimeOutlineState, parseRealtimeOutlineResponse, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline, updateRealtimeOutlineCoverage } from "../notes/realtime-outline";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
@@ -57,7 +57,7 @@ export interface RealtimeOutlineHost {
 
 export class RealtimeOutlineService {
   declare host: RealtimeOutlineHost;
-  constructor(host) {
+  constructor(host: RealtimeOutlineHost) {
     this.host = host;
   }
 
