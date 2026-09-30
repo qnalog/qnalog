@@ -65,6 +65,7 @@ export function getVisiblePolishModeKeys(settings) {
 }
 
 export function getModeMeta(settings, mode) {
+  if (mode === "cleanscript") return { prefix: t("Clean transcript"), label: "Clean transcript", icon: "file-text" };
   if (MODE_META[mode]) return MODE_META[mode];
   const custom = getCustomPromptModeTemplate(settings, mode);
   if (custom) {

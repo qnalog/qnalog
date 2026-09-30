@@ -48,6 +48,8 @@ export interface RepolishHost {
   settings: PluginSettings;
   tasks: TaskActivityService;
   versions: VersionStore;
+  /** 生成新派生纪要后刷新最近纪要列表。 */
+  requestOutlineRefresh(): void;
 }
 
 export class RepolishService {
@@ -216,8 +218,8 @@ export class RepolishService {
         },
       };
 
-      // 可见副本是用户交付物，必须先落盘；版本缓存/manifest 只是索引，
-      // 即使索引写入异常，也不能阻断新纪要生成。
+      // 原稿快照与派生文件同属保全前提；索引不可安全写入时，不创建派生稿。
+      await this.host.versions.ensureOriginalVersionForSource(dailyTargetFile);
       const derivedFile = await this.host.versions.createDerivedNote(
         dailyTargetFile,
         latestSourceContent,
@@ -249,6 +251,7 @@ export class RepolishService {
         versionCacheError = getTaskErrorMessage(cacheError);
         console.warn("[QnALog] derived note created but version cache update failed", cacheError);
       }
+      try { this.host.requestOutlineRefresh(); } catch { /* generation must not fail because the sidebar is unavailable */ }
       const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
       new obsidian.Notice(`${t("QnALog: generated ")}${meta.prefix}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
@@ -334,15 +337,11 @@ export class RepolishService {
       if (sourceFile.path === file.path && !options.regenerateExisting) {
         const existingClean = this.host.versions.findDerivedNoteForSource(sourceFile, sourceId, "clean");
         if (existingClean instanceof obsidian.TFile) {
-          try {
-            await this.host.app.workspace.getLeaf(false).openFile(existingClean);
-            new obsidian.Notice(`${t("A clean transcript already exists; opened: ")}${existingClean.path}`, 6000);
-          } catch {
-            new obsidian.Notice(`${t("A clean transcript already exists at: ")}${existingClean.path}`, 8000);
-          }
+          await this.host.versions.switchVersion(existingClean, sourceFile.path);
           return;
         }
       }
+      await this.host.versions.ensureOriginalVersionForSource(sourceFile);
       const segments = extractTranscriptSegments(content);
       if (!segments.length) {
         new obsidian.Notice(t("No original transcript (verbatim transcript) found. Generate the clean transcript on a recording source note that contains \"Segmented raw transcript\"."), 8000);
@@ -370,7 +369,7 @@ export class RepolishService {
         status: "running",
         stage: "llm",
         stageLabel: t("Organize verbatim transcript"),
-        detail: t("Removes filler words while keeping the original facts; the mother note is not overwritten"),
+        detail: t("The clean transcript is shown in the source note; generation does not replace the source transcript"),
         progress: null,
         actions: [],
       });
@@ -401,7 +400,8 @@ export class RepolishService {
         "cleanscript",
       );
       if (!(cleanFile instanceof obsidian.TFile)) throw new Error(t("Failed to create the clean transcript note"));
-      new obsidian.Notice(t("QnALog: Clean transcript generated as a separate note"), 6000);
+      await this.host.versions.switchVersion(cleanFile, sourceFile.path);
+      new obsidian.Notice(t("QnALog: Clean transcript generated and set as the current displayed version"), 6000);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       try { this.host.tasks.logCompletedWork(t("Generate clean transcript"), cleanFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
@@ -409,13 +409,12 @@ export class RepolishService {
         stage: "done",
         stageLabel: t("Clean transcript generated"),
         detail: cleanFile.path,
-        subject: cleanFile.path,
+        subject: sourceFile.path,
         actions: [
-          { id: "open-task-note", label: t("Open clean transcript"), primary: true },
+          { id: "open-task-note", label: t("Open minutes"), primary: true },
           { id: "dismiss-task", label: t("Close Recording") },
         ],
       });
-      try { await this.host.app.workspace.getLeaf(false).openFile(cleanFile); } catch { /* intentionally empty */ }
     } catch (e) {
       console.error("[QnALog] generate clean script failed", e);
       if (taskStarted) {

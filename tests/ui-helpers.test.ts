@@ -167,9 +167,9 @@ describe("existing clean-copy choices", () => {
     modalState.texts.length = 0;
     const choice = chooseExistingCleanCopy({} as never, "【清稿】2026-09-29 会议");
     expect(modalState.texts).toContain("A clean copy already exists");
-    expect(modalState.texts).toContain("A clean copy already exists: 【清稿】2026-09-29 会议. You can open it or regenerate it.");
+    expect(modalState.texts).toContain("A clean copy already exists: 【清稿】2026-09-29 会议. You can show it in the source note or regenerate it.");
     expect(modalState.buttons.map((button) => button.text)).toEqual([
-      "Open existing clean copy",
+      "Show clean copy in original note",
       "Regenerate existing clean copy",
       "Cancel",
     ]);

@@ -27,13 +27,15 @@ import { escapeRegExp, formatElapsed } from "../shared/util-common";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "./recent-note-paths";
-import { NS_TAG, isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_TAG, NS_TYPE_VERSION_CACHE, isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 import { t as i18nT } from "../shared/i18n";
 export function detectRecentModeFromFrontmatter(settings, frontmatter) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
-  const explicitMode = normalizeModeFromLabel(settings, readNamespaceFrontmatter(fm, "mode") || "");
+  const canonicalMode = readNamespaceFrontmatter(fm, "mode");
+  if (canonicalMode === "cleanscript") return "cleanscript";
+  const explicitMode = normalizeModeFromLabel(settings, canonicalMode || "");
   if (explicitMode) return explicitMode;
   const explicitType = normalizeModeFromLabel(settings, readNamespaceFrontmatter(fm, "type") || fm["模板"] || fm.template || "");
   if (explicitType) return explicitType;
@@ -241,6 +243,7 @@ export function getRecentNotes(plugin, limit) {
   for (const f of getMarkdownFilesUnderRecentRoots(plugin)) {
     if (!(f instanceof obsidian.TFile) || f.extension !== "md") continue;
     const frontmatter = ((plugin.app.metadataCache.getFileCache(f) || {}).frontmatter) || {};
+    if (readNamespaceFrontmatter(frontmatter, "type") === NS_TYPE_VERSION_CACHE) continue;
     // 派生版本（清稿/另存版本等）不当独立会议罗列，按 qnalog_source_path 归并到母本。
     if (isDerivedVersionType(readNamespaceFrontmatter(frontmatter, "type"))
       || readNamespaceFrontmatter(frontmatter, "containsRaw") === false) {

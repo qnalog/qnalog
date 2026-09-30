@@ -176,10 +176,13 @@ export function replaceExistingActiveVersionBlock(markdown: string, block: strin
   return text.replace(ACTIVE_VERSION_PATTERN, String(block || ""));
 }
 
-export function replaceLeadingFrontmatter(markdown: string, frontmatter: string): string {
-  const yaml = getFrontmatterYaml(frontmatter);
-  if (!yaml) return String(markdown || "");
+export function replaceLeadingFrontmatter(markdown: string, frontmatter: string, clearWhenEmpty = false): string {
   const current = splitLeadingFrontmatter(markdown);
+  const yaml = getFrontmatterYaml(frontmatter);
+  if (!yaml) {
+    if (!clearWhenEmpty || !current.frontmatter) return String(markdown || "");
+    return current.body.replace(/^(?:\r?\n)+/, "");
+  }
   const body = current.body.replace(/^(?:\r?\n)+/, "");
   return `${wrapFrontmatterYaml(yaml).trimEnd()}${body ? `\n\n${body}` : "\n"}`;
 }

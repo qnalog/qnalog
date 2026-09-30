@@ -1442,3 +1442,21 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 - **两种笔记写入方式**：
   - a) 通过设置迁移下线 `consolidatedLayout=false` 与 `appendPolishBlock`。设置页少一项，只维护一种写入方式；关闭过该项的用户笔记结构会改变。
   - b) 保留两种方式；继续分别维护，修改笔记结构时两处都要更新。
+
+## 15. 笔记版本保存流程
+
+`.versions` 是插件保存的可切换快照；清单和快照内容通过 Vault adapter 读取，不依赖 Obsidian 的文件索引是否返回隐藏路径。Obsidian 文件历史记录的是母本 Markdown 的实际改动，两者不是同一份版本清单。下表中的“可见正文”指母本中活动版本块外的整理正文，“原始转写”指母本的原始分段及其修订记录。
+
+| 操作 | 入口 | 写入时刻与保存内容 | 母本可见正文 / 原始转写 | `.versions` kind 与 `activeVersionId` | 失败处理 |
+|---|---|---|---|---|---|
+| 录音建稿 | `RecordingService.startRecording` | 开始录音时创建母本并写标题、会话标记和空分段边界；每段转写由 `SessionFinalizeService.processSegment` 写入分段块 | 尚无整理正文；转写逐段写入母本 | 无版本快照 | 单段处理异常保留可重试任务，不阻止后续分段 |
+| 首次 AI 整理 | `SessionFinalizeService._finalizeSessionImpl` → `NoteWriter.rewriteConsolidated` / `appendPolishBlock` | AI 返回后直接将成稿写入母本；重写布局替换正文，追加布局添加整理块 | 成稿成为母本可见正文；原始转写保留在原始材料区 | 不创建原稿快照；无对应 `activeVersionId` | Markdown 写入失败将任务加入后台重试；此时不会自动保留整理前的可见正文快照 |
+| 普通重新整理 | `RepolishService.repolishMarkdownFile` | 先确保原稿快照及 manifest 可读、可写，再创建可见派生 Markdown，最后写 `.versions` 的 `minutes` 缓存 | 按代码不改母本正文；原始转写留在母本 | `minutes`；缓存以 `activate:false` 写入，保持原活动 ID | 原稿快照或其 manifest 验证失败时停止，不创建派生文件；派生文件已写但后续纪要缓存索引失败时保留派生文件并显示提示 |
+| 清稿生成 / 再次生成 | `RepolishService.generateCleanScript` | 创建或更新清稿派生文件；首次生成前先确保原稿快照，再通过 `switchVersion` 切换母本 | 清稿成为母本可见正文；原始转写保留 | 清稿派生类型为 `clean`；切换后将清稿 ID 设为活动版本；不另存隐藏清稿缓存 | 原稿快照失败时停止生成；派生文件写入或切换失败通过任务错误路径报告。已有清稿直接切换；显式重新生成则更新同一派生文件 |
+| 点击原稿或派生版本 | `OutlineView.renderRecentNoteRow` → `VersionStore.switchVersion` | 点击前读取缓存正文和 frontmatter；确保原稿安全后，在严格读取的 manifest 下改母本并更新活动 ID | 母本替换为该缓存正文；母本原始转写仍保留 | 原稿快照使用 `source-original`；派生缓存可为 `minutes`；成功切换后设为所选 ID | 缺失或损坏的类型、清单或原稿快照必须在改母本前拒绝；母本写入成功但活动 ID 写入失败属于部分提交，缓存仍保留且可再次切换 |
+| 续录 | `RecordingService.startRecording({ appendToFile })` → `SessionFinalizeService._finalizeSessionImpl` | 续录收尾覆盖正文前尝试保存当前母本为 `pre-append`，随后重写或追加新成稿 | 新成稿成为母本可见正文；合并后的分段转写继续保留 | `pre-append`；保存时 `activate:false`，保留活动 ID | 归档失败目前仅记录警告，仍继续续录写入；这是 best-effort 保护，不保证旧可见正文可由插件版本列表恢复 |
+| 音频 / 文字导入 | `ImportService` 建立会话并调用 `SessionFinalizeService.finalizeSession` | 导入内容先写入新母本；转写检查通过后进入首次 AI 整理写入 | 音频导入保存 ASR 分段；文字导入保留来源文字；整理结果写母本 | 首次整理本身不创建原稿快照 | 转写检查未通过时停止 AI 整理；收尾错误保留在会话状态及任务进度中 |
+| 后台合并重试 | `QueueRetryService.retryMergeTask` | 重试成功后直接重写或追加母本，再更新索引；不先归档当前可见正文 | 重试成稿写入母本；原始转写仍留在母本 | 不创建版本缓存，不更新 `activeVersionId` | 异常向队列重试路径返回；已有可见正文没有插件快照保护 |
+同一插件实例按来源 ID 串行执行版本缓存和活动 ID 的 manifest 读改写；它不协调 Obsidian 同步或其他插件对同一文件的写入。仅凭磁盘状态无法归因外部修改或同步冲突。
+
+首次整理、续录和后台重试的归档差异是当前代码事实，不据此推断 Obsidian 同步或外部修改导致的历史原因。普通重新整理按代码只生成派生文件、不自动激活；若 Obsidian 实际表现不同，应先核实触发入口。用户手动修改 Markdown 的逐次历史由 Obsidian 文件历史记录，插件不追踪逐字编辑。
