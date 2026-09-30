@@ -46,7 +46,7 @@ Half-width and full-width symbols are both accepted. In-meeting notes are fed in
 
 ### Continue a recording into an existing note
 
-Choose **Append recording to this note** from the open note's sidebar or file menu. QnALog records the new audio and transcript in a separate pending note, then merges them into the target after its active processing and transcription tasks finish. If the target note is missing or its transcript identity changes, the separate recording is kept instead of being written to a different note.
+Choose **Append recording to this note** from the open note's sidebar or file menu. The floating bubble checks the note that is active when you click and again after reading it; a delayed read cannot redirect the recording to an earlier note. QnALog records the new audio and transcript in a separate pending note, then merges them into the selected target after its active processing and transcription tasks finish. A complete transcript ledger is sufficient even when the target has no outer transcript-container marker. Failed merges keep the staged note and audio for retry; the progress window shows the active step, failure, and retry state. If the target note is missing or its transcript identity changes, the separate recording is kept instead of being written to a different note.
 
 ### Ask this note
 

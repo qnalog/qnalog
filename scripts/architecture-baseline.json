@@ -79,6 +79,7 @@
     ["QueueRetryService", "RecorderService"],
     ["QueueRetryService", "RepolishService"],
     ["QueueRetryService", "SessionStore"],
+    ["QueueRetryService", "TaskActivityService"],
     ["QueueRetryService", "TaskQueue"],
     ["QueueRetryService", "VersionStore"],
     ["QueueRetryService", "VocabularyService"],

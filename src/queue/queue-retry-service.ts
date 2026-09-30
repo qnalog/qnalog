@@ -41,6 +41,7 @@ import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock 
 import { labelPattern, labelText } from "../shared/note-labels";
 import { extractPriorOutline, getContinuationTargetIdentity, type ContinuationService } from "../session/continuation-service";
 import { VersionStore } from "../versions/version-store";
+import type { TaskActivityService } from "../tasks/task-activity-service";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
@@ -75,6 +76,7 @@ export interface QueueRetryHost {
   repolish: { repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
+  tasks: Pick<TaskActivityService, "queueTaskActivityId" | "patchTaskActivity">;
   /** 装配层转发：批量重试节奏变化后刷新任务状态栏（调用 TaskActivityService.updateBusyStatus）。 */
   notifyTaskBusyChanged(): void;
 }
@@ -691,6 +693,15 @@ export class QueueRetryService {
         if (!committedSegments.length) {
           return { deferred: true, status: "blocked", reason: t("A committed continuation has no saved transcript ledger; recovery material was kept.") } satisfies QueueTaskDeferred;
         }
+        this.host.tasks.patchTaskActivity(this.host.tasks.queueTaskActivityId(task), {
+          status: "running",
+          stage: "write-note",
+          stageLabel: t("Write to Minutes"),
+          progress: 88,
+          detail: t("Writing the organized result to Obsidian"),
+          error: "",
+          completedAt: 0,
+        });
         await this.host.noteWriter.commitContinuation({
           id: task.sessionId,
           sessionStamp: window.moment(context.recordedAt).format("YYYYMMDD-HHmmss"),
@@ -795,17 +806,22 @@ export class QueueRetryService {
         multiSourceAudio: true,
         finalized: false,
       };
+      const persistedSessionMeta = () => Object.fromEntries(
+        Object.entries(sessionMeta).filter(([key, value]) =>
+          key !== "_taskActivityId" && key !== "_taskMeter" && typeof value !== "function"),
+      );
+      sessionMeta._taskActivityId = this.host.tasks.queueTaskActivityId(task);
       let polished: string;
       try {
         polished = await mergeAndPolish(this.host, mergedSegments, task.mode, sessionMeta, task.speakerFrontmatter || null);
       } catch (error) {
-        task.sessionMeta = sessionMeta;
-        if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta });
+        task.sessionMeta = persistedSessionMeta();
+        if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta: task.sessionMeta });
         throw error;
       }
       if (!polished) throw new Error(t("Merge returned an empty result"));
-      task.sessionMeta = sessionMeta;
-      if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta });
+      task.sessionMeta = persistedSessionMeta();
+      if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta: task.sessionMeta });
       try {
         await this.host.versions.saveVersion(reloadedTarget, targetMarkdown, base, {
           kind: "pre-append", label: t("Before append") + " " + window.moment().format("YYYY-MM-DD HH:mm"),
@@ -815,6 +831,15 @@ export class QueueRetryService {
       } catch (error) {
         console.warn("[QnALog] pre-append version archive failed", error);
       }
+      this.host.tasks.patchTaskActivity(this.host.tasks.queueTaskActivityId(task), {
+        status: "running",
+        stage: "write-note",
+        stageLabel: t("Write to Minutes"),
+        progress: 88,
+        detail: t("Writing the organized result to Obsidian"),
+        error: "",
+        completedAt: 0,
+      });
       await this.host.noteWriter.commitContinuation(writeSession, polished, []);
       if (sessionMeta._briefingCheckpointId) await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
       await this.host.noteIndex.refreshNoteIndexSafely(reloadedTarget, { meetingDate: startedAt, reason: "continuation-merge" });
@@ -844,11 +869,14 @@ export class QueueRetryService {
       task.speakerFrontmatter || null,
     );
     if (!polished) throw new Error(t("Merge returned an empty result"));
+    const retryStartedAt = (sessionMeta && sessionMeta.startedAt) || task.createdAt || new Date().toISOString();
     const retrySession = {
       id: task.sessionId || genId(),
+      sessionStamp: window.moment(retryStartedAt).format("YYYYMMDD-HHmmss"),
       mdPath: file.path,
       mode: task.mode,
-      startedAt: (sessionMeta && sessionMeta.startedAt) || task.createdAt || new Date().toISOString(),
+      startedAt: retryStartedAt,
+      finalized: true,
       source: task.source || "",
       sourceMeta: task.sourceMeta || null,
       externalAudioSource: task.externalAudioSource || null,

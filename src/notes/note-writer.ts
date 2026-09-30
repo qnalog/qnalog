@@ -23,7 +23,9 @@ import { getFrontmatterTags } from "../shared/util-note";
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_CONTINUATION_COMMITTED_MARKER, NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_CONTINUATION_COMMITTED_MARKER, NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, nsMarkerAnyRe, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+
+import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 
 import { t } from "../shared/i18n";
 import { labelText } from "../shared/note-labels";
@@ -176,7 +178,7 @@ export class NoteWriter {
 
     await this.host.app.vault.modify(file, currentBlock.replace(/\n{4,}/g, "\n\n\n"));
   }
-  async rewriteConsolidated(session, polished) {
+  async rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = ""): Promise<void> {
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
     const currentMarkdown = await this.host.app.vault.read(file);
@@ -272,8 +274,10 @@ export class NoteWriter {
       "",
       sediment.block || null,
       sediment.block ? "" : null,
-      ...[...currentMarkdown.matchAll(new RegExp(`<!--\\s*${nsRe(NS_CONTINUATION_COMMITTED_MARKER)}:[^>\\s]+\\s*-->`, "g"))].map(match => match[0]),
-      session.continuation ? nsMarker(NS_CONTINUATION_COMMITTED_MARKER, session.id) : null,
+      ...new Set([
+        ...[...currentMarkdown.matchAll(new RegExp(`<!--\\s*${nsRe(NS_CONTINUATION_COMMITTED_MARKER)}:[^>\\s]+\\s*-->`, "g"))].map(match => match[0]),
+        ...(continuationSessionId ? [nsMarker(NS_CONTINUATION_COMMITTED_MARKER, continuationSessionId)] : []),
+      ]),
     ].filter(v => v !== null).join("\n");
     await this.host.app.vault.modify(file, content);
   }
@@ -362,8 +366,11 @@ export class NoteWriter {
       counts.set(id, (counts.get(id) || 0) + 1);
       existingById.set(id, block);
     }
+    const incomingIds = new Set<string>();
     for (const segment of incoming) {
       const id = segment.transcript.id;
+      if (incomingIds.has(id)) throw new Error(`Continuation contains duplicate transcript block ${id}`);
+      incomingIds.add(id);
       const count = counts.get(id) || 0;
       if (count > 1) throw new Error(`Expected one transcript block for ${id}; found ${count}`);
       const existing = existingById.get(id);
@@ -392,7 +399,11 @@ export class NoteWriter {
         throw new Error(`Previously committed continuation marker is missing for ${id}`);
       }
     }
-    let withFreshBlocks = current;
+    if (shouldRewriteConsolidatedNote(this.host.settings, session)) {
+      await this.rewriteConsolidated(session, polished, session.id);
+      return;
+    }
+    const freshBlocks: string[] = [];
     for (const segment of incoming) {
       if (existingById.has(segment.transcript.id)) continue;
       const number = segment.index + 1;
@@ -400,17 +411,19 @@ export class NoteWriter {
       const body = segment.error
         ? getTranscribeSegmentPlaceholder(segment.error, { retryable: !!segment.queueTaskId })
         : (segment.text || labelText("noContentSegment"));
-      const raw = serializeTranscriptBlock(segment, heading, body);
-      const endMarker = new RegExp(`<!--\\s*${nsRe("segments-end")}(?::[^>]*)?\\s*-->`);
-      const match = endMarker.exec(withFreshBlocks);
-      if (!match) throw new Error("Continuation target has no transcript insertion marker");
-      withFreshBlocks = `${withFreshBlocks.slice(0, match.index)}\n${raw}\n${withFreshBlocks.slice(match.index)}`;
+      freshBlocks.push(serializeTranscriptBlock(segment, heading, body));
     }
-    if (this.host.settings.consolidatedLayout) {
-      await this.rewriteConsolidated(session, polished);
-    } else {
-      await this.appendPolishBlock(session, polished, null, false, session.id, withFreshBlocks);
+    let withFreshBlocks = current;
+    if (freshBlocks.length) {
+      const markerMatch = nsMarkerAnyRe("segments-end").exec(current);
+      const insertionAt = markerMatch
+        ? markerMatch.index
+        : blocks.length ? blocks[blocks.length - 1].end : -1;
+      if (insertionAt < 0) throw new Error("Continuation target has no transcript insertion marker");
+      const insertion = `\n${freshBlocks.join("\n")}\n`;
+      withFreshBlocks = current.slice(0, insertionAt) + insertion + current.slice(insertionAt);
     }
+    await this.appendPolishBlock(session, polished, null, false, session.id, withFreshBlocks);
   }
   async appendToNote(path, content) {
     const existing = this.host.app.vault.getAbstractFileByPath(path);
@@ -656,6 +669,7 @@ export class NoteWriter {
       mdPath: targetPath,
       mode,
       startedAt: startedAtIso,
+      finalized: true,
       source: "merged-notes",
       segments,
       multiSourceAudio: true,

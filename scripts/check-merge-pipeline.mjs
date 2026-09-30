@@ -139,7 +139,13 @@ const app = {
     create: async (p, c) => { const f = new TFile(p); f._content = c; files.set(p, f); return f; },
     read: async (f) => f._content || "",
     cachedRead: async (f) => f._content || "",
-    modify: async (f, c) => { f._content = c; },
+    modify: async (f, c) => {
+      if (failContinuationCommit && String(c).includes("qnalog-continuation-committed:s2")) {
+        failContinuationCommit = false;
+        throw new Error("simulated target write failure");
+      }
+      f._content = c;
+    },
     delete: async () => undefined,
     on: () => ({}),
   },
@@ -155,6 +161,10 @@ const app = {
   },
   internalPlugins: { getPluginById: () => null, plugins: {} },
 };
+
+let failContinuationCommit = false;
+let gateNextLlmRequest = false;
+let releaseGatedLlmRequest = null;
 
 // 桩 LLM：从实际请求中的来源标题读取允许的证据 ID，只返回一个分部回复。
 const llmCalls = [];
@@ -224,6 +234,10 @@ const obsidian = {
   prepareFuzzySearch: () => () => null, sanitizeHTMLToDom: () => makeEl(),
   requestUrl: async (request) => {
     llmCalls.push(request);
+    if (gateNextLlmRequest) {
+      gateNextLlmRequest = false;
+      await new Promise((resolve) => { releaseGatedLlmRequest = resolve; });
+    }
     const text = makeLlmReply(request);
     return { status: 200, text, json: JSON.parse(text), headers: {}, arrayBuffer: new ArrayBuffer(0) };
   },
@@ -379,10 +393,44 @@ async function main() {
         retries: 0,
         dependsOnSessionIds: [],
       });
-      await plugin.queueRetry.retryMergeTask(task);
+      gateNextLlmRequest = true;
+      failContinuationCommit = true;
+      const continuationRun = plugin.queue.processOne(task);
+      const gateDeadline = Date.now() + 5000;
+      while (!releaseGatedLlmRequest && Date.now() < gateDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      if (!releaseGatedLlmRequest) throw new Error("continuation model request did not reach the gate");
+      const activeId = plugin.tasks.queueTaskActivityId(task);
+      const duringModel = plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true })
+        .find((activity) => activity.id === activeId);
+      if (!duringModel || duringModel.status !== "running" || duringModel.stage === "write-note") {
+        failures.push(`continuation did not retain its live model activity while the request was pending: ${JSON.stringify(duringModel)}`);
+      }
+      releaseGatedLlmRequest();
+      releaseGatedLlmRequest = null;
+      let firstAttemptError = null;
+      try { await continuationRun; } catch (error) { firstAttemptError = error; }
+      if (!firstAttemptError || !String(firstAttemptError.message || firstAttemptError).includes("simulated target write failure")) {
+        failures.push("simulated continuation write failure did not reach the queue retry path");
+      }
+      const failedTask = plugin.queue.tasks.find((candidate) => candidate.id === task.id);
+      const failedActivity = plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true })
+        .find((activity) => activity.id === activeId);
+      if (!failedTask || failedTask.status !== "failed" || !failedActivity || failedActivity.status !== "failed"
+        || failedActivity.completedAt <= 0 || !String(failedActivity.error || "").includes("simulated target write failure")) {
+        failures.push(`continuation failure state was not retained for recovery: ${JSON.stringify({ failedTask, failedActivity })}`);
+      }
+      if ((noteFile._content || "").includes("qnalog-continuation-committed:s2")) {
+        failures.push("failed continuation write marked the target as committed");
+      }
+      if (failedTask) {
+        failedTask.retries = 1;
+        await plugin.queue.processOne(failedTask);
+      }
       const appended = noteFile._content || "";
       if (!appended.includes("追加录音确认按反馈扩大灰度。")) failures.push("续录的逐字稿没有并入目标笔记");
-      if (!appended.includes("<!-- qnalog-continuation-committed:s2 -->")) failures.push("目标笔记没有写入续录提交标记");
+      if ((appended.match(/<!-- qnalog-continuation-committed:s2 -->/g) || []).length !== 1) failures.push("目标笔记没有恰好一个续录提交标记");
       if ((appended.match(/qnalog-transcript-start:/g) || []).length !== 3) failures.push("续录提交后目标笔记没有保留三段逐字稿");
       if (files.has(continuationPreparation.stageFile.path)) failures.push("续录成功后暂存文件没有清理");
     } catch (error) {
