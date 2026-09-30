@@ -1,10 +1,43 @@
 import { describe, expect, it, vi } from "vitest";
-vi.mock("obsidian", () => ({
-  normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
-  TFile: class {}, TFolder: class {},
+const modalState = vi.hoisted(() => ({
+  buttons: [] as Array<{ text: string; click: () => void }>,
+  texts: [] as string[],
 }));
 
+vi.mock("obsidian", () => {
+  class FakeElement {
+    tag: string;
+    text: string;
+    listeners: Record<string, () => void> = {};
+    constructor(tag = "", text = "") { this.tag = tag; this.text = text; }
+    empty() {}
+    createEl(tag: string, options: { text?: string } = {}) {
+      const element = new FakeElement(tag, options.text || "");
+      modalState.texts.push(element.text);
+      return element;
+    }
+    createDiv(options: { cls?: string } = {}) { return new FakeElement("div", options.cls || ""); }
+    addEventListener(event: string, callback: () => void) {
+      this.listeners[event] = callback;
+      if (this.tag === "button" && event === "click") modalState.buttons.push({ text: this.text, click: callback });
+    }
+  }
+  class FakeModal {
+    contentEl = new FakeElement();
+    onOpen = () => undefined;
+    onClose = () => undefined;
+    open() { this.onOpen(); }
+    close() { this.onClose(); }
+  }
+  return {
+    normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
+    TFile: class {}, TFolder: class {},
+    Modal: FakeModal,
+  };
+});
+
 import {
+  chooseExistingCleanCopy,
   getImportMarkerState,
   normalizeRecentNoteMeaningfulText,
   noteHasSuccessfulLlmBriefing,
@@ -121,5 +154,26 @@ describe("noteHasUsableRawTranscriptDespiteFailures：失败占位双语剥离",
     const en = `${transcript}\n${enMarkers.join("\n")}\n<!-- qnalog-segments-start -->\n<!-- qnalog-segments-end -->`;
     expect(noteHasUsableRawTranscriptDespiteFailures(zh)).toBe(true);
     expect(noteHasUsableRawTranscriptDespiteFailures(en)).toBe(true);
+  });
+});
+
+describe("existing clean-copy choices", () => {
+  it.each([
+    [0, "open"],
+    [1, "regenerate"],
+    [2, null],
+  ] as const)("returns the selected action (%s)", async (index, expected) => {
+    modalState.buttons.length = 0;
+    modalState.texts.length = 0;
+    const choice = chooseExistingCleanCopy({} as never, "【清稿】2026-09-29 会议");
+    expect(modalState.texts).toContain("A clean copy already exists");
+    expect(modalState.texts).toContain("A clean copy already exists: 【清稿】2026-09-29 会议. You can open it or regenerate it.");
+    expect(modalState.buttons.map((button) => button.text)).toEqual([
+      "Open existing clean copy",
+      "Regenerate existing clean copy",
+      "Cancel",
+    ]);
+    modalState.buttons[index].click();
+    await expect(choice).resolves.toBe(expected);
   });
 });

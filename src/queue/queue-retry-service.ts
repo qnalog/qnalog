@@ -8,7 +8,7 @@ import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../share
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue, isLlmServiceBlockedError, formatLlmConfigIssue } from "../llm/core";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession, Segment } from "../shared/types";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { genId, formatElapsed, escapeRegExp } from "../shared/util-common";
 import { mimeFromExt, isAsrTransportError } from "../shared/util-audio";
@@ -20,7 +20,7 @@ import { transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { getAudioTimeLink } from "../notes/audio-refs";
-import { mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
+import { ensureTranscriptBlocks, getSourceIdFromMarkdown, mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -29,9 +29,13 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { NoteWriter } from "../notes/note-writer";
-import { NS_AUDIO_ALT, nsMarker } from "../shared/namespace";
+import { NS_AUDIO_ALT, nsMarker, nsRe } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+import { readSessionKnowledge } from "../briefing/session-knowledge";
+import type { AsrTranscriptResult } from "../asr/transcript-result";
+import { attachTranscriptResult } from "../transcript/session-transcript";
+import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelPattern, labelText } from "../shared/note-labels";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
@@ -343,19 +347,33 @@ export class QueueRetryService {
     const segmentStart = formatElapsed(Math.max(0, Number(task.startOffsetMs) || 0));
     const segmentEnd = formatElapsed(Math.max(Number(task.startOffsetMs) || 0, Number(task.endOffsetMs) || 0));
     const legacySegmentPattern = new RegExp(
-      `((?:^|\\n)###\\s+(?:段落|Segment)\\s+${segmentNumber}\\s+\\(${escapeRegExp(segmentStart)}[–-]${escapeRegExp(segmentEnd)}\\)[^\\n]*\\n(?:\\s*\\n)?(?:<!--\\s*qnalog-transcribe-task:[^>]+-->\\s*)?)(?:${failMark.source})`,
+      `((?:^|\\n)###\\s+(?:段落|Segment)\\s+${segmentNumber}\\s+\\(${escapeRegExp(segmentStart)}[–-]${escapeRegExp(segmentEnd)}\\)[^\\n]*\\n(?:\\s*\\n)?(?:<!--\\s*${nsRe("transcribe-task")}:[^>]+-->\\s*)?)(?:${failMark.source})`,
     );
-    let currentMarkdown = "";
-    if (mdFile instanceof obsidian.TFile && taskMarker) {
-      currentMarkdown = await this.host.app.vault.read(mdFile);
-      if (currentMarkdown.includes(taskMarker) && !(taskPattern && taskPattern.test(currentMarkdown))) {
-        // 正文已经写入，只是上次删除持久任务时中断。幂等收尾，不能再次调用 ASR 或重复插段。
-        await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
-        return;
+    const currentMarkdown = mdFile instanceof obsidian.TFile ? await this.host.app.vault.read(mdFile) : "";
+    const sourceId = String(task.sessionId || (mdFile instanceof obsidian.TFile ? getSourceIdFromMarkdown(currentMarkdown, mdFile) : task.mdPath || "note"));
+    const sourceSegmentIndex = Math.max(0, Number(task.segmentIndex) || 0);
+    const parentSegmentId = `seg:${encodeURIComponent(sourceId)}:${sourceSegmentIndex}`;
+    const existingTranscriptBlocks = readTranscriptBlocks(currentMarkdown);
+    const matchingTranscriptBlocks = existingTranscriptBlocks.filter((block) => block.segment.transcript?.id === parentSegmentId);
+    if (matchingTranscriptBlocks.length > 1) throw new Error(`Multiple transcript blocks match source ${parentSegmentId}`);
+    const existingTranscriptBlock = matchingTranscriptBlocks[0] || null;
+    if (existingTranscriptBlock && !existingTranscriptBlock.segment.error && !failMark.test(existingTranscriptBlock.visibleBlock)) {
+      if (mdFile instanceof obsidian.TFile) await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry-idempotent" });
+      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
+      return;
+    }
+    if (!existingTranscriptBlock && taskMarker && currentMarkdown.includes(taskMarker) && !(taskPattern && taskPattern.test(currentMarkdown))) {
+      // Upgrade a successful legacy block without repeating its paid ASR request.
+      if (mdFile instanceof obsidian.TFile) {
+        const migrated = await this.host.app.vault.process(mdFile, (latest) => ensureTranscriptBlocks(latest, sourceId, { reconcileEditedText: false }));
+        if (migrated !== currentMarkdown) await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry-legacy-upgrade" });
       }
+      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
+      return;
     }
     const audio = await this.readTranscribeTaskAudioBlob(task);
     let text = "";
+    let transcriptionResult: AsrTranscriptResult | null = null;
     if (!task.wholeFileImport) {
       // 分段任务只能交给 HTTP 上传型的转写服务。
       // 若当前激活的是流式服务（端点 wss://），分段上传必然失败——
@@ -371,6 +389,7 @@ export class QueueRetryService {
         speakerCount: task.speakerCount,
         fileName: task.sourceAudioName || task.audioName || "import-audio",
       });
+      transcriptionResult = result;
       text = result.text;
     } else {
       const reportedChannelCount = Math.max(1, Number(task.audioChannelCount) || 1);
@@ -390,9 +409,13 @@ export class QueueRetryService {
           { requireSeparatedChannels: channelMode === "auto" && runtimeChannelMode === "probing" },
         )
         : null;
-      text = channelTranscription
-        ? channelTranscription.text
-        : await transcribeAudio(this.host, audio.blob, audio.blob.type || "audio/wav");
+      if (channelTranscription) {
+        transcriptionResult = channelTranscription;
+        text = channelTranscription.text;
+      } else {
+        transcriptionResult = await transcribeAudio(this.host, audio.blob, audio.blob.type || "audio/wav");
+        text = transcriptionResult.text;
+      }
     }
     if (!String(text || "").trim()) {
       // 重试仍为空 = 失败（不再替换成"暂无有效转写"并删缓存了事）：
@@ -405,39 +428,105 @@ export class QueueRetryService {
       });
       throw new Error(t("Transcription retry returned an empty result (the service responded HTTP 200 with no text)"));
     }
+    if (!transcriptionResult) throw new Error(t("Transcription retry returned no structured result"));
+    const segmentIndex = sourceSegmentIndex;
+    const startOffsetMs = Math.max(0, Number(task.startOffsetMs) || 0);
+    const endOffsetMs = Math.max(startOffsetMs, Number(task.endOffsetMs) || startOffsetMs);
+    const sourceAudioName = String(task.masterAudioName || task.sourceAudioName || task.audioName || "");
+    const masterAudioPath = String(task.masterAudioPath || task.sourceAudioPath || "");
+    const discardClipPath = !!task.ephemeralAudio || !!audio.recovered;
     let replaced = false;
-    if (mdFile instanceof obsidian.TFile) {
-      const cur = currentMarkdown || await this.host.app.vault.read(mdFile);
-      const next = taskPattern && taskPattern.test(cur)
-        ? cur.replace(taskPattern, `${taskMarker}\n${text}`)
-        : legacySegmentPattern.test(cur)
-          ? cur.replace(legacySegmentPattern, `$1${taskMarker}\n${text}`)
-          : cur.replace(failMark, text);
-      if (next !== cur) {
-        await this.host.app.vault.modify(mdFile, next);
-        replaced = true;
-      }
-    }
-    if (!replaced) {
-      // 崩溃可能发生在“切片和任务已落盘、占位段尚未写入纪要”之间。
-      // 重启补转成功时主动恢复该段，而不是静默删掉任务和音频。
-      const segNumber = Math.max(0, Number(task.segmentIndex) || 0) + 1;
-      const startOffsetMs = Math.max(0, Number(task.startOffsetMs) || 0);
-      const endOffsetMs = Math.max(startOffsetMs, Number(task.endOffsetMs) || startOffsetMs);
-      const sourceAudioName = String(task.sourceAudioName || task.masterAudioName || task.audioName || "");
-      const linkOffsetMs = (task.sourceAudioName || task.masterAudioName)
-        ? Math.max(0, Number(task.audioStartOffsetMs) || 0)
-        : 0;
-      const recoveredBlock = [
-        "",
-        `### ${labelText("segment", segNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(sourceAudioName, linkOffsetMs)}`,
-        "",
-        taskMarker,
+    let alreadyCommitted = false;
+    let writtenSegment: Segment | null = null;
+    const makeUpdatedSegment = (base: Segment | null): Segment => {
+      const retainedBaseAudio = base?.audioPath && base.audioPath !== task.audioPath ? base.audioPath : "";
+      const audioPath = masterAudioPath || retainedBaseAudio || (discardClipPath ? "" : base?.audioPath || task.audioPath || "");
+      const segmentAudioPath = discardClipPath ? "" : base?.segmentAudioPath || task.audioPath || "";
+      const segment = {
+        ...(base || {}),
+        index: base?.index ?? segmentIndex,
+        startOffsetMs,
+        endOffsetMs,
+        audioStartOffsetMs: base?.audioStartOffsetMs ?? task.audioStartOffsetMs,
+        audioEndOffsetMs: base?.audioEndOffsetMs ?? task.audioEndOffsetMs,
+        audioName: audioPath ? (base?.audioName || sourceAudioName || task.audioName || "") : "",
+        audioPath,
+        segmentAudioName: segmentAudioPath ? (base?.segmentAudioName || task.audioName || "") : "",
+        segmentAudioPath,
         text,
-        "",
-      ].join("\n");
-      await this.host.noteWriter.insertBeforeSegmentsEnd(task.mdPath, recoveredBlock, task.sessionId);
+        error: null,
+        isFinal: task.isFinal ?? base?.isFinal,
+        source: base?.source || task.source || "recording",
+        queueTaskId: task.id || base?.queueTaskId,
+      };
+      return attachTranscriptResult(segment, sourceId, transcriptionResult, "asr");
+    };
+    const makeTranscriptBlock = (segment: Segment): string => {
+      const linkOffsetMs = masterAudioPath ? Math.max(0, Number(task.audioStartOffsetMs) || 0) : 0;
+      const heading = [
+        `### ${labelText("segment", segmentNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(sourceAudioName, linkOffsetMs)}`,
+        taskMarker,
+      ].filter(Boolean).join("\n\n");
+      return `\n${serializeTranscriptBlock(segment, heading, text)}\n`;
+    };
+    const findTarget = (blocks: ReturnType<typeof readTranscriptBlocks>) => {
+      const matches = blocks.filter((block) => block.segment.transcript?.id === parentSegmentId
+        || (!!task.id && block.segment.queueTaskId === task.id));
+      if (matches.length > 1) throw new Error(`Multiple transcript blocks match source ${parentSegmentId}`);
+      if (matches.length === 1 && matches[0].segment.transcript?.id !== parentSegmentId) {
+        throw new Error(`Transcript task ${task.id} points to a different source ID`);
+      }
+      return matches[0] || null;
+    };
+    if (mdFile instanceof obsidian.TFile) {
+      await this.host.app.vault.process(mdFile, (latest) => {
+        const latestBlocks = readTranscriptBlocks(latest);
+        let target = findTarget(latestBlocks);
+        if (target && !target.segment.error && !failMark.test(target.visibleBlock)) {
+          alreadyCommitted = true;
+          return latest;
+        }
+        let candidate = latest;
+        if (!target) {
+          if (taskPattern && taskPattern.test(candidate)) {
+            candidate = candidate.replace(taskPattern, () => `${taskMarker}\n${text}`);
+          } else {
+            const legacyMatch = legacySegmentPattern.exec(candidate);
+            if (legacyMatch) {
+              const prefix = legacyMatch[1];
+              const addMarker = taskMarker && !prefix.includes(taskMarker) ? `${taskMarker}\n` : "";
+              candidate = candidate.replace(legacySegmentPattern, () => `${prefix}${addMarker}${text}`);
+            }
+          }
+          if (candidate !== latest) {
+            candidate = ensureTranscriptBlocks(candidate, sourceId, { reconcileEditedText: false });
+            target = findTarget(readTranscriptBlocks(candidate));
+          }
+        }
+        const updated = makeUpdatedSegment(target?.segment || null);
+        writtenSegment = updated;
+        replaced = true;
+        if (target) return replaceTranscriptBlock(candidate, target, updated, text);
+        const block = makeTranscriptBlock(updated);
+        const endMarker = task.sessionId ? nsMarker("segments-end", task.sessionId) : nsMarker("segments-end");
+        const endAt = candidate.lastIndexOf(endMarker);
+        return endAt >= 0
+          ? `${candidate.slice(0, endAt)}${block}${candidate.slice(endAt)}`
+          : `${candidate.trimEnd()}\n\n${block.trim()}\n`;
+      });
+    } else {
+      const recoveredSegment = makeUpdatedSegment(null);
+      writtenSegment = recoveredSegment;
+      await this.host.noteWriter.insertBeforeSegmentsEnd(task.mdPath, makeTranscriptBlock(recoveredSegment), task.sessionId);
       replaced = true;
+    }
+    if (alreadyCommitted) {
+      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
+      if (mdFile instanceof obsidian.TFile) await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry-idempotent" });
+      return;
+    }
+    if (replaced && mdFile instanceof obsidian.TFile) {
+      await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry" });
     }
     if (!audio.recovered && (!task.wholeFileImport || task.ephemeralAudio)) {
       await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id, !!task.ephemeralAudio);
@@ -448,7 +537,7 @@ export class QueueRetryService {
         mdPath: task.mdPath,
         source: "import",
         importTranscribeProviderId: task.providerId,
-      }, [{ text }]);
+      }, writtenSegment ? [writtenSegment] : [{ text }]);
     }
     if (replaced) this.maybeAutoRepolishAfterTranscribeRetry(task, mdFile);
   }
@@ -528,26 +617,30 @@ export class QueueRetryService {
     }
   }
   async retryMergeTask(task) {
+    const file = this.host.app.vault.getAbstractFileByPath(task.mdPath);
+    if (!(file instanceof obsidian.TFile)) throw new Error(t("Note not found: {0}").replace("{0}", String(task.mdPath)));
+    const currentMarkdown = await this.host.app.vault.read(file);
+    const sessionMeta = Object.assign({}, task.sessionMeta || {}, {
+      _previousKnowledge: readSessionKnowledge(currentMarkdown),
+    });
     const polished = await mergeAndPolish(
-          this.host,
+      this.host,
       task.segments || [],
       task.mode,
-      task.sessionMeta || null,
+      sessionMeta,
       task.speakerFrontmatter || null,
     );
     if (!polished) throw new Error(t("Merge returned an empty result"));
-    const file = this.host.app.vault.getAbstractFileByPath(task.mdPath);
-    if (!(file instanceof obsidian.TFile)) throw new Error(t("Note not found: {0}").replace("{0}", String(task.mdPath)));
     const retrySession = {
       id: task.sessionId || genId(),
       mdPath: file.path,
       mode: task.mode,
-      startedAt: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || new Date().toISOString(),
+      startedAt: (sessionMeta && sessionMeta.startedAt) || task.createdAt || new Date().toISOString(),
       source: task.source || "",
       sourceMeta: task.sourceMeta || null,
       externalAudioSource: task.externalAudioSource || null,
       textImportSources: task.textImportSources || [],
-      meetingWorkbench: task.sessionMeta && task.sessionMeta.meetingWorkbench || null,
+      meetingWorkbench: sessionMeta && sessionMeta.meetingWorkbench || null,
       segments: Array.isArray(task.segments) ? task.segments : [],
       multiSourceAudio: task.source === "merged-notes",
     };

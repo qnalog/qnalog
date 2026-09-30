@@ -6,6 +6,8 @@ import { buildDashScopeTranscriptionParameters } from "./diarization";
 
 import { t } from "../shared/i18n";
 import { isOpenRouterDiarizeProvider, testOpenRouterDiarizeProvider, transcribeWithOpenRouterDiarize } from "./openrouter-diarize";
+import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
+import { splitTranscriptTextUnits } from "../transcript/session-transcript";
 export const DASHSCOPE_FILETRANS_PROTOCOL = "dashscope-filetrans";
 
 export interface LongAudioTranscriptionOptions {
@@ -26,9 +28,7 @@ export interface LongAudioProgress {
   taskId?: string;
 }
 
-export interface LongAudioTranscriptionResult {
-  text: string;
-  providerId: string;
+export interface LongAudioTranscriptionResult extends AsrTranscriptResult {
   taskId?: string;
   sentenceCount: number;
   durationMs?: number;
@@ -158,9 +158,41 @@ function resolveTypedTranscribeProvider(
   return resolveTranscribeProvider(plugin, providerId);
 }
 
+function validDashScopeTime(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
+  const milliseconds = Number(value);
+  return Number.isFinite(milliseconds) && milliseconds >= 0 ? Math.round(milliseconds) : null;
+}
+
+function getDashScopePlainTexts(payload: unknown): string[] {
+  const root = asRecord(payload);
+  const transcriptGroups = [
+    root.transcripts,
+    asRecord(root.output).transcripts,
+    asRecord(root.result).transcripts,
+    asRecord(asRecord(root.output).result).transcripts,
+  ];
+  const transcripts = transcriptGroups.map(asArray).find((items) => items.length) || [];
+  const texts = transcripts
+    .map((value) => {
+      const row = asRecord(value);
+      return (typeof row.transcript === "string" ? row.transcript : "")
+        || (typeof row.text === "string" ? row.text : "");
+    })
+    .filter((text) => text.length > 0);
+  if (texts.length) return texts;
+  if (typeof root.text === "string") return [root.text];
+  const outputText = asRecord(root.output).text;
+  return typeof outputText === "string" ? [outputText] : [];
+}
+
+export function extractDashScopePlainTexts(payload: unknown): string[] {
+  return getDashScopePlainTexts(payload);
+}
+
 export interface DashScopeSentence {
-  beginTimeMs: number;
-  endTimeMs: number;
+  beginTimeMs: number | null;
+  endTimeMs: number | null;
   text: string;
   speakerId: string;
 }
@@ -179,12 +211,16 @@ export function extractDashScopeSentences(payload: unknown): DashScopeSentence[]
     const transcript = asRecord(transcriptValue);
     for (const sentenceValue of asArray(transcript.sentences)) {
       const sentence = asRecord(sentenceValue);
-      const text = asString(sentence.text);
-      if (!text) continue;
+      const rawText = typeof sentence.text === "string" ? sentence.text
+        : typeof sentence.text === "number" ? String(sentence.text) : "";
+      if (!rawText.trim()) continue;
+      const beginMs = validDashScopeTime(sentence.begin_time ?? sentence.beginTime ?? sentence.start_time);
+      const endMs = validDashScopeTime(sentence.end_time ?? sentence.endTime ?? sentence.stop_time);
+      const hasRange = beginMs !== null && endMs !== null && endMs >= beginMs;
       sentences.push({
-        beginTimeMs: Math.max(0, asNumber(sentence.begin_time ?? sentence.beginTime ?? sentence.start_time)),
-        endTimeMs: Math.max(0, asNumber(sentence.end_time ?? sentence.endTime ?? sentence.stop_time)),
-        text,
+        beginTimeMs: hasRange ? beginMs : null,
+        endTimeMs: hasRange ? endMs : null,
+        text: rawText,
         speakerId: asString(sentence.speaker_id ?? sentence.speakerId ?? sentence.speaker),
       });
     }
@@ -213,7 +249,7 @@ export function composeDashScopeTranscript(payload: unknown): { text: string; se
   }
 
   const speakerMap = new Map<string, string>();
-  const turns: Array<{ startMs: number; speaker: string; parts: string[] }> = [];
+  const turns: Array<{ startMs: number | null; speaker: string; parts: string[] }> = [];
   for (const sentence of sentences) {
     let speaker = "";
     if (sentence.speakerId) {
@@ -230,11 +266,12 @@ export function composeDashScopeTranscript(payload: unknown): { text: string; se
     }
   }
   const text = turns.map((turn) => {
-    const timestamp = `[${formatElapsed(turn.startMs)}]`;
-    const speaker = turn.speaker ? ` [${turn.speaker}]` : "";
-    return `${timestamp}${speaker} ${turn.parts.join(" ").replace(/\s+/g, " ").trim()}`;
+    const timestamp = turn.startMs === null ? "" : `[${formatElapsed(turn.startMs)}]`;
+    const speaker = turn.speaker ? `[${turn.speaker}]` : "";
+    const prefix = [timestamp, speaker].filter(Boolean).join(" ");
+    return `${prefix ? `${prefix} ` : ""}${turn.parts.join(" ").replace(/\s+/g, " ").trim()}`;
   }).join("\n\n");
-  const durationMs = sentences.reduce((max, sentence) => Math.max(max, sentence.endTimeMs), 0);
+  const durationMs = sentences.reduce((max, sentence) => sentence.endTimeMs === null ? max : Math.max(max, sentence.endTimeMs), 0);
   return { text, sentenceCount: sentences.length, durationMs: durationMs || undefined };
 }
 
@@ -442,9 +479,37 @@ async function transcribeWithDashScope(
   const resultPayload = requireSuccessfulJsonResponse(resultResponse, t("Failed to download the Alibaba Cloud transcription result."));
   const composed = composeDashScopeTranscript(resultPayload);
   if (!composed.text.trim()) throw new Error(t("Alibaba Cloud long-audio transcription finished, but the result contains no usable text."));
+  const sentences = extractDashScopeSentences(resultPayload);
+  const speakerMap = new Map<string, string>();
+  const plainTexts = sentences.length ? [] : getDashScopePlainTexts(resultPayload);
+  const rawText = plainTexts.length === 1 ? plainTexts[0] : null;
+  const units: AsrTranscriptUnit[] = sentences.length
+    ? sentences.map((sentence) => {
+      let speakerName: string | null = null;
+      if (sentence.speakerId) {
+        if (!speakerMap.has(sentence.speakerId)) speakerMap.set(sentence.speakerId, `说话人${speakerMap.size + 1}`);
+        speakerName = speakerMap.get(sentence.speakerId) || null;
+      }
+      const hasRange = sentence.beginTimeMs !== null && sentence.endTimeMs !== null && sentence.endTimeMs >= sentence.beginTimeMs;
+      return {
+        rawText: sentence.text,
+        normalizedText: sentence.text,
+        speakerId: sentence.speakerId || null,
+        speakerName,
+        startMs: hasRange ? sentence.beginTimeMs : null,
+        endMs: hasRange ? sentence.endTimeMs : null,
+        timing: hasRange ? "provider" : "unknown",
+      };
+    })
+    : plainTexts.flatMap((plainText) => splitTranscriptTextUnits(plainText).map((unit): AsrTranscriptUnit => ({
+      rawText: unit, normalizedText: unit, speakerId: null, speakerName: null,
+      startMs: null, endMs: null, timing: "unknown",
+    })));
   return {
     text: composed.text,
+    rawText,
     providerId: provider.id,
+    units,
     taskId,
     sentenceCount: composed.sentenceCount,
     durationMs: composed.durationMs,
@@ -471,7 +536,7 @@ export async function transcribeImportedAudio(
     });
   }
   options.onProgress?.({ phase: "submit", label: t("Submitting the full audio") });
-  const text = await transcribeAudio(plugin, blob, mime, provider.id);
-  if (!String(text || "").trim()) throw new Error(t("Whole-file transcription returned an empty result."));
-  return { text: String(text).trim(), providerId: provider.id, sentenceCount: 0 };
+  const result = await transcribeAudio(plugin, blob, mime, provider.id);
+  if (!result.text.trim()) throw new Error(t("Whole-file transcription returned an empty result."));
+  return { ...result, sentenceCount: 0 };
 }

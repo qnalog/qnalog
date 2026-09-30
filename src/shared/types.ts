@@ -1,3 +1,4 @@
+import type { TranscriptSegmentRecord } from "../transcript/session-transcript";
 import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 export type AudioInputMode = "mic" | "mix-virtual" | "virtualCable";
 export type AudioChannelMode = "auto" | "mono" | "multichannel";
@@ -297,6 +298,10 @@ export interface SessionMetaForMerge {
   _taskMeter?: unknown;
   /** 整理检查点 id；merge-pipeline 写入，提示词层读它。 */
   _briefingCheckpointId?: string;
+  /** Source-faithful speaker/text projection applied for a single organizing run. */
+  _utteranceProjections?: Array<{ utteranceId: string; normalizedText: string; speakerName: string | null }>;
+  /** Previous snapshot used only to retain identities whose source evidence is unchanged. */
+  _previousKnowledge?: unknown;
 }
 
 export interface Segment {
@@ -323,6 +328,8 @@ export interface Segment {
   isFinal?: boolean;
   /** 本段对应的转写队列任务 id；写入笔记作为 `qnalog-transcribe-task` 注释。 */
   queueTaskId?: string;
+  /** Durable transcript source and revision ledger; text remains the visible projection. */
+  transcript?: TranscriptSegmentRecord;
 }
 
 export type QueueTaskStatus = "pending" | "running" | "processing" | "live" | "failed" | "missing" | "blocked";

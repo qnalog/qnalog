@@ -8,7 +8,7 @@ import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealt
 
 import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal } from "./modals";
 
-import { getRecentNoteProcessingState, qnalogConfirm, trashVaultFileRef } from "./helpers";
+import { chooseExistingCleanCopy, getRecentNoteProcessingState, qnalogConfirm, trashVaultFileRef } from "./helpers";
 
 import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries, getVisiblePolishModeKeys } from "../shared/mode-meta";
 import { stripModePrefixFromTitle } from "../notes/note-markdown";
@@ -5712,7 +5712,10 @@ export class OutlineView extends obsidian.ItemView {
         try { obsidian.setIcon(vchip, v.kind === "clean" ? "file-text" : "files"); } catch { /* intentionally empty */ }
         vrow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: v.label || v.file.basename });
         vrow.addEventListener("click", async () => {
-          try { await this.plugin.versions.switchVersion(v.file, v.sourcePath); } catch (e) { console.error(e); }
+          try {
+            if (v.kind === "clean") await this.app.workspace.getLeaf(false).openFile(v.file);
+            else await this.plugin.versions.switchVersion(v.file, v.sourcePath);
+          } catch (e) { console.error(e); }
         });
         vrow.addEventListener("contextmenu", (evt) => {
           evt.preventDefault();
@@ -6013,6 +6016,36 @@ export class OutlineView extends obsidian.ItemView {
     this.showMenuAtMouse(menu, evt);
   }
 
+  async handleGenerateCleanCopy(file: obsidian.TFile): Promise<void> {
+    let existing;
+    try {
+      existing = await this.plugin.repolish.findCleanCopy(file);
+    } catch (error) {
+      console.error("[QnALog] clean copy lookup failed", error);
+      new obsidian.Notice(`${i18nT("Could not check for an existing clean copy: ")}${(error && error.message) || error}`, 8000);
+      return;
+    }
+    if (!(existing instanceof obsidian.TFile)) {
+      await this.plugin.repolish.generateCleanScript(file);
+      return;
+    }
+    const choice = await chooseExistingCleanCopy(this.app, existing.basename);
+    if (choice === "open") {
+      const current = this.plugin.app.vault.getAbstractFileByPath(existing.path);
+      if (!(current instanceof obsidian.TFile)) {
+        new obsidian.Notice(i18nT("The clean copy is no longer available."));
+        return;
+      }
+      try {
+        await this.plugin.app.workspace.getLeaf(false).openFile(current);
+      } catch (error) {
+        new obsidian.Notice(`${i18nT("Could not open the clean copy: ")}${(error && error.message) || error}`, 8000);
+      }
+    } else if (choice === "regenerate") {
+      await this.plugin.repolish.generateCleanScript(file, { regenerateExisting: true });
+    }
+  }
+
   showVariantContextMenu(evt, file, sourcePath) {
     const menu = new obsidian.Menu();
     menu.addItem((item) => item.setTitle(i18nT("Open Parent Note")).setIcon("corner-left-up").onClick(async () => {
@@ -6024,7 +6057,9 @@ export class OutlineView extends obsidian.ItemView {
         new obsidian.Notice(i18nT("Source note not found; it may have been renamed or moved."), 6000);
       }
     }));
-    menu.addItem((item) => item.setTitle(i18nT("Regenerate Clean Copy")).setIcon("refresh-cw").onClick(() => { void this.plugin.repolish.generateCleanScript(file); }));
+    menu.addItem((item) => item.setTitle(i18nT("Regenerate Clean Copy")).setIcon("refresh-cw").onClick(() => {
+      void this.plugin.repolish.generateCleanScript(file, { regenerateExisting: true });
+    }));
     menu.addSeparator();
     menu.addItem((item) => item.setTitle(i18nT("Delete This Version")).setIcon("trash").onClick(async () => {
       const ok = await qnalogConfirm(this.plugin.app, i18nT("Delete derived version"), i18nT("Delete \"{0}\"? The parent note and the raw transcript are not affected.").replace("{0}", file.basename), i18nT("Delete"));
@@ -6067,7 +6102,7 @@ export class OutlineView extends obsidian.ItemView {
     menu.addItem((item) => {
       item.setTitle(i18nT("Generate Clean Copy"))
         .setIcon("file-text")
-        .onClick(() => { void this.plugin.repolish.generateCleanScript(file); });
+        .onClick(() => { void this.handleGenerateCleanCopy(file); });
     });
     menu.addItem((item) => {
       item.setTitle(detectedMode ? i18nT("Reorganize as") : i18nT("Organize as"))

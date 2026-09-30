@@ -54,6 +54,10 @@ In standard meeting and learning-note modes, long recordings are organized in re
 
 If a request is interrupted or a model reaches its output limit, completed work is reused and only unfinished parts are retried. The raw transcript remains available, and an incomplete result is shown as **partially completed** rather than being saved as an empty note.
 
+### Source-linked notes
+
+Transcribed notes retain the original ASR text and revision history alongside the visible transcript. Decisions, actions, questions, and topics can include references to exact transcript passages. If a passage changes, the saved references are marked stale instead of being presented as current. The evidence is returned with existing organization requests; it does not trigger a separate extraction request. **Generate Clean Copy** creates a separate readable transcript note from the raw segments and leaves the source note's current minutes unchanged. Clean copies appear below their source note in Recent Notes. If one already exists, **Generate Clean Copy** offers to open or regenerate it; regeneration updates that same file, and Obsidian's built-in Version History can restore an earlier version. Clicking the clean variant opens its separate file; it does not activate it in the source note.
+
 ### Task progress
 
 The processing panel separates transcription, AI organization, and Markdown writing. It shows the active stage, recent activity, failures, and retry or cancel actions. Failed transcription and failed AI organization remain distinct so you can resume from the step that actually failed.

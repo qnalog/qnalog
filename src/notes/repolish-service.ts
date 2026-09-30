@@ -11,7 +11,7 @@ import { splitVersionPayload } from "../version-content";
 import { getTaskErrorMessage } from "../shared/task-activity";
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { getSegmentsDurationMs } from "../notes/audio-refs";
-import { ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, extractTranscriptSegments, extractRoleMappingFromFrontmatter, getSourceIdFromMarkdown, parseRoleMapItem } from "../notes/note-markdown";
+import { ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, ensureTranscriptBlocks, extractTranscriptSegments, extractRoleMappingFromFrontmatter, getSourceIdFromMarkdown, parseRoleMapItem } from "../notes/note-markdown";
 import { detectRecentNoteMode } from "../recent/recent-notes";
 import { cleanTranscript, mergeAndPolish } from "../briefing/merge-pipeline";
 import { TaskActivityService } from "../tasks/task-activity-service";
@@ -20,6 +20,25 @@ import { NoteIndexService } from "../notes/note-index-service";
 import { isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
+import { getCurrentTranscript } from "../transcript/session-transcript";
+import { readSessionKnowledge } from "../briefing/session-knowledge";
+
+function buildUtteranceProjections(segments, mapping) {
+  const orderedMapping = [...(mapping || [])].sort((left, right) => right.from.length - left.from.length);
+  return (segments || []).flatMap((segment) => {
+    if (!segment.transcript) return [];
+    return getCurrentTranscript(segment.transcript).utterances.flatMap((utterance) => {
+      let normalizedText = utterance.normalizedText;
+      for (const item of orderedMapping) {
+        if (item.from) normalizedText = normalizedText.split(item.from).join(item.to);
+      }
+      const speakerName = orderedMapping.find((item) => item.from === utterance.speakerName)?.to ?? utterance.speakerName;
+      return normalizedText !== utterance.normalizedText || speakerName !== utterance.speakerName
+        ? [{ utteranceId: utterance.id, normalizedText, speakerName: speakerName || null }]
+        : [];
+    });
+  });
+}
 /** RepolishService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RepolishHost {
   /** 知识库与工作区访问。 */
@@ -34,10 +53,13 @@ export interface RepolishHost {
 export class RepolishService {
   declare host: RepolishHost;
   /** 同一篇笔记的重新整理串行化标记。 */
-  declare _repolishInFlight;
+  declare _repolishInFlight: Set<string> | null;
+  /** 同一来源的清稿任务单飞，避免重复请求同时写同一份版本文件。 */
+  declare _cleanInFlight: Set<string>;
   constructor(host) {
     this.host = host;
     this._repolishInFlight = null;
+    this._cleanInFlight = new Set();
   }
 
   async repolishMarkdownFile(file, mode, repolishOptions = null) {
@@ -51,9 +73,14 @@ export class RepolishService {
     let taskStarted = false;
     let repolishLockAcquired = false;
     try {
-      const content = await this.host.app.vault.read(file);
+      let content = await this.host.app.vault.read(file);
       const sourceId = getSourceIdFromMarkdown(content, file);
       taskId = `repolish:${sourceId || file.path}`;
+      const reconciled = ensureTranscriptBlocks(content, sourceId);
+      if (reconciled !== content) {
+        await this.host.app.vault.modify(file, reconciled);
+        content = reconciled;
+      }
       let segments = extractTranscriptSegments(content);
       if (!segments.length) {
         new obsidian.Notice(t("No QnALog original transcript found. Use this on a minutes Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
@@ -91,6 +118,10 @@ export class RepolishService {
           }
         }
       }
+      sessionMeta = Object.assign({}, sessionMeta || {}, {
+        _previousKnowledge: readSessionKnowledge(content),
+        _utteranceProjections: buildUtteranceProjections(segments, roleMapping),
+      });
 
       if (!this._repolishInFlight) this._repolishInFlight = new Set();
       if (this._repolishInFlight.has(taskId)) {
@@ -257,13 +288,22 @@ export class RepolishService {
       this.host.tasks.updateBusyStatus();
     }
   }
+  async findCleanCopy(sourceFile: obsidian.TFile): Promise<obsidian.TFile | null> {
+    if (!(sourceFile instanceof obsidian.TFile) || sourceFile.extension !== "md") return null;
+    const content = await this.host.app.vault.read(sourceFile);
+    const sourceId = getSourceIdFromMarkdown(content, sourceFile);
+    return this.host.versions.findDerivedNoteForSource(sourceFile, sourceId, "clean");
+  }
+
   // 生成清稿（派生版本·只读快照）：从母本逐字稿忠实清理成可读稿，写成独立文件、双链回指母本。
   // 永远从母本 raw 读（在派生上触发会先跳回母本）；清稿不含 raw、不参与「重新整理」回写。
-  async generateCleanScript(file) {
+  async generateCleanScript(file: obsidian.TFile, options: { regenerateExisting?: boolean } = {}): Promise<void> {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
     let taskMeter = null;
     let taskId = `clean:${file.path}`;
     let taskStarted = false;
+    let cleanLockKey = "";
+    let cleanLockAcquired = false;
     try {
       // 在派生文件上触发 → 先跳回母本（派生 contains_raw:false，本身没有 raw 可读）。
       let sourceFile = file;
@@ -282,13 +322,32 @@ export class RepolishService {
           return;
         }
       }
+      const sourceId = getSourceIdFromMarkdown(content, sourceFile);
+      cleanLockKey = `clean:${sourceId || sourceFile.path}`;
+      if (this._cleanInFlight.has(cleanLockKey)) {
+        new obsidian.Notice(t("A clean transcript is already being generated."), 5000);
+        return;
+      }
+      this._cleanInFlight.add(cleanLockKey);
+      cleanLockAcquired = true;
+      taskId = cleanLockKey;
+      if (sourceFile.path === file.path && !options.regenerateExisting) {
+        const existingClean = this.host.versions.findDerivedNoteForSource(sourceFile, sourceId, "clean");
+        if (existingClean instanceof obsidian.TFile) {
+          try {
+            await this.host.app.workspace.getLeaf(false).openFile(existingClean);
+            new obsidian.Notice(`${t("A clean transcript already exists; opened: ")}${existingClean.path}`, 6000);
+          } catch {
+            new obsidian.Notice(`${t("A clean transcript already exists at: ")}${existingClean.path}`, 8000);
+          }
+          return;
+        }
+      }
       const segments = extractTranscriptSegments(content);
       if (!segments.length) {
         new obsidian.Notice(t("No original transcript (verbatim transcript) found. Generate the clean transcript on a recording source note that contains \"Segmented raw transcript\"."), 8000);
         return;
       }
-      const baseTitle = sourceFile.basename;
-      taskId = `clean:${sourceFile.path}`;
       this.host.tasks._busyLabel = t("Generating the clean transcript…");
       const sourceFm = ((this.host.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
       const sourceMode = detectRecentNoteMode(this.host, sourceFile, sourceFm);
@@ -323,30 +382,40 @@ export class RepolishService {
       const warn = truncated
         ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"
         : "";
-      const noteBody = `# [清稿] ${baseTitle}\n\n> [!note] 从母本逐字稿忠实清理的可读稿（非纪要、不摘要）。母本（事实源 / 逐字稿）：[[${baseTitle}]]\n\n${warn}${cleaned}`;
-      const version = await this.host.versions.saveVersion(sourceFile, content, segments, {
-        kind: "clean",
-        label: t("Clean transcript"),
-        mode: "cleanscript",
-        style: "",
-        idLabel: "清稿",
+      const noteBody = `> [!note] ${t("A readable transcript cleaned from the source transcript; not minutes or a summary.")}\n\n${warn}${cleaned}`;
+      // 清稿历史由目标 Markdown 文件的 Obsidian Version History 保存；不额外写隐藏 .versions 快照。
+      const version = {
+        meta: {
+          sourceId,
+          kind: "clean",
+          createdAt: new Date().toISOString(),
+        },
+        frontmatter: "",
         body: noteBody,
-      });
-      await this.host.versions.applyVersionToSource(sourceFile, version.meta, version.body, version.frontmatter);
-      new obsidian.Notice(t("QnALog: Clean transcript generated and set as the current displayed version"), 6000);
+      };
+      const cleanFile = await this.host.versions.createDerivedNote(
+        sourceFile,
+        content,
+        version,
+        t("Clean transcript"),
+        "cleanscript",
+      );
+      if (!(cleanFile instanceof obsidian.TFile)) throw new Error(t("Failed to create the clean transcript note"));
+      new obsidian.Notice(t("QnALog: Clean transcript generated as a separate note"), 6000);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
-      try { this.host.tasks.logCompletedWork(t("Generate clean transcript"), sourceFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
+      try { this.host.tasks.logCompletedWork(t("Generate clean transcript"), cleanFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
       this.host.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: t("Clean transcript generated"),
-        detail: sourceFile.path,
+        detail: cleanFile.path,
+        subject: cleanFile.path,
         actions: [
-          { id: "open-task-note", label: t("Open source note"), primary: true },
+          { id: "open-task-note", label: t("Open clean transcript"), primary: true },
           { id: "dismiss-task", label: t("Close Recording") },
         ],
       });
-      try { await this.host.app.workspace.getLeaf(false).openFile(sourceFile); } catch { /* intentionally empty */ }
+      try { await this.host.app.workspace.getLeaf(false).openFile(cleanFile); } catch { /* intentionally empty */ }
     } catch (e) {
       console.error("[QnALog] generate clean script failed", e);
       if (taskStarted) {
@@ -363,9 +432,12 @@ export class RepolishService {
       new obsidian.Notice(`${t("Clean copy generation failed: ")}${(e && e.message) || e}`, 8000);
     } finally {
       if (taskMeter) this.host.tasks.endTaskMeter(taskMeter);
-      this.host.tasks._busyLabel = null;
-      this.host.tasks._busyContext = null;
-      this.host.tasks.updateBusyStatus();
+      if (cleanLockAcquired) {
+        this._cleanInFlight.delete(cleanLockKey);
+        this.host.tasks._busyLabel = null;
+        this.host.tasks._busyContext = null;
+        this.host.tasks.updateBusyStatus();
+      }
     }
   }
 }

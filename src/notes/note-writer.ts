@@ -16,7 +16,8 @@ import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../no
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
-import { buildRenamedMarkdownPath, extractAllRawBlocksFromText, extractTranscriptSegments, generateTitleTag, inferNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
+import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractAllRawBlocksFromText, extractTranscriptSegments, generateTitleTag, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
+import { readTranscriptBlocks, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
@@ -176,6 +177,7 @@ export class NoteWriter {
   async rewriteConsolidated(session, polished) {
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
+    readTranscriptBlocks(await this.host.app.vault.read(file));
     const meta = getModeMeta(this.host.settings, session.mode);
     const moment = window.moment;
     const startedAt = moment(session.startedAt);
@@ -213,14 +215,17 @@ export class NoteWriter {
     const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
     const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
 
-    const rawBlocks = textImport ? "" : session.segments.map(s => {
-      const n = s.index + 1;
-      const head = `### ${labelText("segment", n)} (${formatElapsed(s.startOffsetMs)}–${formatElapsed(s.endOffsetMs)}) ${getAudioTimeLink(s.audioName, getSegmentAudioLinkOffsetMs(s))}${s.isFinal ? " · 结束" : ""}`;
-      const marker = s.queueTaskId ? `${nsMarker("transcribe-task", s.queueTaskId)}\n` : "";
-      const body = s.error
-        ? getTranscribeSegmentPlaceholder(s.error, { retryable: !!s.queueTaskId })
-        : (s.text || labelText("noContentSegment"));
-      return `${head}\n\n${marker}${body}\n`;
+    const rawBlocks = textImport ? "" : session.segments.map((segment) => {
+      const number = segment.index + 1;
+      const heading = `### ${labelText("segment", number)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment))}${segment.isFinal ? " · 结束" : ""}`;
+      const taskMarker = segment.queueTaskId ? nsMarker("transcribe-task", segment.queueTaskId) : "";
+      const body = segment.error
+        ? getTranscribeSegmentPlaceholder(segment.error, { retryable: !!segment.queueTaskId })
+        : (segment.text || labelText("noContentSegment"));
+      const blockHeading = taskMarker ? `${heading}\n\n${taskMarker}` : heading;
+      return segment.transcript
+        ? serializeTranscriptBlock(segment, blockHeading, body)
+        : `${heading}\n\n${taskMarker ? `${taskMarker}\n` : ""}${body}\n`;
     }).join("\n");
 
     const emptyBriefingFallback = buildEmptyLlmOutputFallback();
@@ -500,7 +505,13 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
       throw new Error(t("Only QnALog Markdown minutes notes can be merged"));
     }
-    const content = await this.host.app.vault.read(file);
+    let content = await this.host.app.vault.read(file);
+    const sourceId = getSourceIdFromMarkdown(content, file);
+    const transcriptReady = ensureTranscriptBlocks(content, sourceId);
+    if (transcriptReady !== content) {
+      await this.host.app.vault.modify(file, transcriptReady);
+      content = transcriptReady;
+    }
     const rawSegments = extractTranscriptSegments(content);
     if (!rawSegments.length) {
       throw new Error(t("No original transcription segments found in \"{0}\"").replace("{0}", file.basename));
@@ -594,19 +605,7 @@ export class NoteWriter {
       source: "merged-notes",
       meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
     };
-    const polished = await mergeAndPolish(this.host, segments.map((s) => ({
-      index: s.index,
-      startOffsetMs: s.startOffsetMs,
-      endOffsetMs: s.endOffsetMs,
-      text: s.text,
-      audioName: s.audioName,
-      audioStartOffsetMs: s.audioStartOffsetMs,
-      audioEndOffsetMs: s.audioEndOffsetMs,
-      sourceName: s.sourceName,
-      sourcePath: s.sourcePath,
-      sourceUrl: s.sourceUrl,
-      rawText: s.rawText,
-    })), mode, null, sessionMeta);
+    const polished = await mergeAndPolish(this.host, segments.map((segment) => ({ ...segment })), mode, null, sessionMeta);
     await this.rewriteConsolidated(session, polished);
     await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
     let finalFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);

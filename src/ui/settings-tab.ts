@@ -1159,7 +1159,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
       await new Promise((resolve) => { rec.onstop = resolve; rec.start(); window.setTimeout(() => rec.stop(), 1000); });
       const blob = new Blob(chunks, { type: rec.mimeType });
-      return await transcribeAudio(target, blob, blob.type);
+      return (await transcribeAudio(target, blob, blob.type)).text;
     } finally {
       try { await ctx.close(); } catch { /* intentionally empty */ }
     }

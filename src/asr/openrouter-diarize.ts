@@ -18,8 +18,10 @@
 import * as obsidian from "obsidian";
 import { assertSafeServiceEndpoint } from "../shared/util-llm-endpoint";
 import { qnalogArrayBufferToBase64 } from "./clients";
-import { extractTranscriptText } from "./speaker-labels";
+import { extractTranscriptText, friendlySpeakerLabel } from "./speaker-labels";
 import { t } from "../shared/i18n";
+import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
+import { splitTranscriptTextUnits } from "../transcript/session-transcript";
 
 export const OPENROUTER_DIARIZE_PROTOCOL = "openrouter-diarize";
 
@@ -33,9 +35,7 @@ interface ResolvedProvider {
   protocol?: string;
 }
 
-export interface OpenRouterDiarizeResult {
-  text: string;
-  providerId: string;
+export interface OpenRouterDiarizeResult extends AsrTranscriptResult {
   sentenceCount: number;
   durationMs?: number;
 }
@@ -78,6 +78,75 @@ async function resolveUpstreamSlug(model: string): Promise<string> {
     console.warn("[QnALog] 查询 OpenRouter 上游失败，将不带分离参数重试", e);
   }
   return "";
+}
+
+function providerTimeMs(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : null;
+}
+
+function speakerValue(value: Record<string, unknown>): string | null {
+  const candidate = value.speaker ?? value.speaker_id ?? value.speakerId;
+  return typeof candidate === "string" || typeof candidate === "number" ? String(candidate) : null;
+}
+
+function readDiarizedUnits(payload: Record<string, unknown>): AsrTranscriptUnit[] {
+  const speakerMap = new Map<string, string>();
+  const segments = Array.isArray(payload.segments) ? payload.segments : [];
+  if (segments.length) {
+    return segments.flatMap((value): AsrTranscriptUnit[] => {
+      if (!value || typeof value !== "object" || typeof value.text !== "string" || !value.text.trim()) return [];
+      const row = value as Record<string, unknown>;
+      const speakerId = speakerValue(row);
+      const startMs = providerTimeMs(row.start ?? row.start_time);
+      const endMs = providerTimeMs(row.end ?? row.end_time);
+      const hasRange = startMs !== null && endMs !== null && endMs >= startMs;
+      return [{
+        rawText: row.text as string,
+        normalizedText: row.text as string,
+        speakerId,
+        speakerName: speakerId ? friendlySpeakerLabel(speakerId, speakerMap) : null,
+        startMs: hasRange ? startMs : null,
+        endMs: hasRange ? endMs : null,
+        timing: hasRange ? "provider" : "unknown",
+      }];
+    });
+  }
+
+  const words = Array.isArray(payload.words) ? payload.words : [];
+  const units: AsrTranscriptUnit[] = [];
+  let pending: { rawText: string; speakerId: string | null; startMs: number | null; endMs: number | null } | null = null;
+  const flush = () => {
+    if (!pending || !pending.rawText.trim()) { pending = null; return; }
+    const hasRange = pending.startMs !== null && pending.endMs !== null && pending.endMs >= pending.startMs;
+    units.push({
+      rawText: pending.rawText,
+      normalizedText: pending.rawText,
+      speakerId: pending.speakerId,
+      speakerName: pending.speakerId ? friendlySpeakerLabel(pending.speakerId, speakerMap) : null,
+      startMs: hasRange ? pending.startMs : null,
+      endMs: hasRange ? pending.endMs : null,
+      timing: hasRange ? "provider" : "unknown",
+    });
+    pending = null;
+  };
+  for (const value of words) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as Record<string, unknown>;
+    const rawWord = typeof row.word === "string" ? row.word : typeof row.text === "string" ? row.text : "";
+    if (!rawWord) continue;
+    const speakerId = speakerValue(row);
+    if (pending && pending.speakerId !== speakerId) flush();
+    const startMs = providerTimeMs(row.start);
+    const endMs = providerTimeMs(row.end);
+    if (!pending) pending = { rawText: "", speakerId, startMs, endMs };
+    else pending.endMs = endMs;
+    pending.rawText += rawWord;
+    if (/[。！？.!?;；]$/.test(rawWord.trim())) flush();
+  }
+  flush();
+  return units;
 }
 
 export async function transcribeWithOpenRouterDiarize(
@@ -151,11 +220,26 @@ export async function transcribeWithOpenRouterDiarize(
   const text = String(extractTranscriptText(payload) || "").trim();
   if (!text) throw new Error(t("The transcription service returned no usable text."));
   const segments = Array.isArray(payload.segments) ? payload.segments : [];
+  const responseUnits = readDiarizedUnits(payload);
+  const rawField = typeof payload.text === "string" ? payload.text
+    : typeof payload.transcript === "string" ? payload.transcript
+      : typeof payload.result === "string" ? payload.result : null;
+  const units = responseUnits.length || rawField === null ? responseUnits : splitTranscriptTextUnits(rawField).map((rawText): AsrTranscriptUnit => ({
+    rawText,
+    normalizedText: rawText,
+    speakerId: null,
+    speakerName: null,
+    startMs: null,
+    endMs: null,
+    timing: "unknown",
+  }));
   const durationSec = Number(payload.duration);
   return {
     text,
+    rawText: responseUnits.length ? null : rawField,
     providerId: String(provider.id || ""),
-    sentenceCount: segments.length,
+    units,
+    sentenceCount: segments.length || units.length,
     durationMs: Number.isFinite(durationSec) && durationSec > 0 ? Math.round(durationSec * 1000) : undefined,
   };
 }

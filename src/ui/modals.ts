@@ -2689,11 +2689,12 @@ export class BubbleWidget {
  * 全局替换会污染后续转写。
  */
 export class TextCorrectionModal extends obsidian.Modal {
-  constructor(app, file, selection) {
+  constructor(app, file, selection, onCommit = null) {
     super(app);
     this.file = file;
     this.from = String(selection || "").trim();
     this.to = "";
+    this.onCommit = onCommit;
     this.result = null;
     this.previewEl = null;
     this.confirmBtn = null;
@@ -2760,8 +2761,18 @@ export class TextCorrectionModal extends obsidian.Modal {
 
   async commit() {
     if (!this.result || !this.result.replacements) return;
-    await this.app.vault.modify(this.file, this.result.text);
-    new obsidian.Notice(`${i18nT("Corrected ")}${this.result.replacements}${i18nT(" occurrence(s)")}`, 4000);
+    let committedResult = null;
+    await this.app.vault.process(this.file, (latest) => {
+      committedResult = applyNoteTextCorrection(latest, this.from, this.to);
+      return committedResult.text;
+    });
+    if (committedResult.replacements && typeof this.onCommit === "function") await this.onCommit();
+    if (!committedResult.replacements) {
+      new obsidian.Notice(i18nT("No matches in this note."), 4000);
+      this.close();
+      return;
+    }
+    new obsidian.Notice(`${i18nT("Corrected ")}${committedResult.replacements}${i18nT(" occurrence(s)")}`, 4000);
     this.close();
   }
 

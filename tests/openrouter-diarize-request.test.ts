@@ -27,5 +27,46 @@ describe("OpenRouter 分离请求形状", () => {
     expect(body.file).toBeUndefined();
     // 说话人标签被归一成 [说话人N] 前缀（既有 extractTranscriptText 的行为）
     expect(out.text).toBe("[说话人1] hi");
+    expect(out.rawText).toBeNull();
+    expect(out.units).toEqual([expect.objectContaining({
+      rawText: "hi",
+      normalizedText: "hi",
+      speakerId: "0",
+      speakerName: "说话人1",
+      startMs: 0,
+      endMs: 1000,
+      timing: "provider",
+    })]);
+  });
+
+  it("groups word-only responses by speaker and sentence punctuation", async () => {
+    (globalThis as any).window = {
+      fetch: async () => ({
+        ok: true,
+        json: async () => ({
+          text: "Let's go.",
+          words: [
+            { word: "Let", speaker: 0, start: 0, end: 0.2 },
+            { word: " us", speaker: 0, start: 0.2, end: 0.4 },
+            { word: " go.", speaker: 0, start: 0.4, end: 0.8 },
+          ],
+        }),
+      }),
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    };
+    const out = await transcribeWithOpenRouterDiarize(
+      { id: "openrouter-diarize", endpoint: "https://openrouter.ai/api/v1/audio/transcriptions", apiKey: "sk-x", model: "microsoft/mai-transcribe-2" },
+      new Blob([new Uint8Array([1, 2, 3])], { type: "audio/mpeg" }),
+      "audio/mpeg",
+    );
+    expect(out.units).toEqual([expect.objectContaining({
+      rawText: "Let us go.",
+      speakerId: "0",
+      speakerName: "说话人1",
+      startMs: 0,
+      endMs: 800,
+      timing: "provider",
+    })]);
   });
 });

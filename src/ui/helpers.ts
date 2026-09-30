@@ -166,6 +166,43 @@ export function qnalogConfirm(app, title, body, ctaText = t("Confirm")) {
   });
 }
 
+export type ExistingCleanCopyChoice = "open" | "regenerate" | null;
+
+export function chooseExistingCleanCopy(app: obsidian.App, basename: string): Promise<ExistingCleanCopyChoice> {
+  const { promise, resolve } = Promise.withResolvers<ExistingCleanCopyChoice>();
+  const modal = new obsidian.Modal(app);
+  let decided = false;
+  const decide = (value: ExistingCleanCopyChoice) => {
+    if (decided) return;
+    decided = true;
+    resolve(value);
+    modal.close();
+  };
+  modal.onOpen = () => {
+    const { contentEl } = modal;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: t("A clean copy already exists") });
+    contentEl.createEl("p", {
+      text: t("A clean copy already exists: {0}. You can open it or regenerate it.").replace("{0}", basename),
+    });
+    const actions = contentEl.createDiv({ cls: "modal-button-container" });
+    actions.createEl("button", { text: t("Open existing clean copy"), cls: "mod-cta", attr: { type: "button" } })
+      .addEventListener("click", () => decide("open"));
+    actions.createEl("button", { text: t("Regenerate existing clean copy"), cls: "mod-warning", attr: { type: "button" } })
+      .addEventListener("click", () => decide("regenerate"));
+    actions.createEl("button", { text: t("Cancel"), attr: { type: "button" } })
+      .addEventListener("click", () => decide(null));
+  };
+  modal.onClose = () => {
+    if (!decided) {
+      decided = true;
+      resolve(null);
+    }
+  };
+  modal.open();
+  return promise;
+}
+
 export function qnalogPromptText(app, title, placeholder, initialValue) {
   return new Promise((resolve) => {
     const modal = new obsidian.Modal(app);

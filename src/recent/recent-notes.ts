@@ -213,6 +213,25 @@ export function getRecentFolderInfo(plugin, file) {
   };
 }
 
+type RecentNoteVariantHost = { file: { path: string; basename: string } };
+
+export function findRecentNoteVariantHost<T extends RecentNoteVariantHost>(
+  items: readonly T[],
+  sourcePath: string,
+  variantKind: string,
+  variantBasename: string,
+): T | null {
+  const normalizedSourcePath = sourcePath ? obsidian.normalizePath(sourcePath) : "";
+  const exact = normalizedSourcePath
+    ? items.find((item) => obsidian.normalizePath(item.file.path) === normalizedSourcePath)
+    : null;
+  if (exact || variantKind !== "clean") return exact || null;
+
+  const matches = items.filter((item) => variantBasename.endsWith(`】${item.file.basename}`));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+
 export function getRecentNotes(plugin, limit) {
   const moment = window.moment;
   const currentYear = moment ? moment().year() : new Date().getFullYear();
@@ -284,24 +303,26 @@ export function getRecentNotes(plugin, limit) {
       folderDepth: folder.depth,
     });
   }
-  // 把派生版本挂到各自母本下（按 source_path 归并；母本不在列表里的派生暂不显示，仍可经反链/文件树找到）。
+  // 把派生版本挂到母本下。路径标记失配时，仅对唯一同名来源笔记回退匹配清稿。
   if (variantFiles.length) {
     const byPath = new Map();
-    for (const it of items) byPath.set(obsidian.normalizePath(it.file.path), it);
-    for (const v of variantFiles) {
-      const sourcePath = readNamespaceFrontmatter(v.fm, "sourcePath");
-      const sp = typeof sourcePath === "string" && sourcePath ? obsidian.normalizePath(sourcePath) : "";
-      const host = sp ? byPath.get(sp) : null;
+    for (const item of items) byPath.set(obsidian.normalizePath(item.file.path), item);
+    for (const variant of variantFiles) {
+      const sourcePath = readNamespaceFrontmatter(variant.fm, "sourcePath");
+      const normalizedSourcePath = typeof sourcePath === "string" && sourcePath ? obsidian.normalizePath(sourcePath) : "";
+      const variantKind = String(variant.fm.variant_kind || "");
+      const host = byPath.get(normalizedSourcePath)
+        || findRecentNoteVariantHost(items, normalizedSourcePath, variantKind, variant.file.basename);
       if (!host) continue;
       (host.variants || (host.variants = [])).push({
-        file: v.file,
-        label: String(v.fm.variant_label || v.fm.variant_kind || t("Derived version")),
-        kind: String(v.fm.variant_kind || ""),
-        sourcePath: sp,
-        mtime: (v.file.stat && v.file.stat.mtime) || 0,
+        file: variant.file,
+        label: String(variant.fm.variant_label || variantKind || t("Derived version")),
+        kind: variantKind,
+        sourcePath: obsidian.normalizePath(host.file.path),
+        mtime: (variant.file.stat && variant.file.stat.mtime) || 0,
       });
     }
-    for (const it of items) if (it.variants) it.variants.sort((a, b) => a.mtime - b.mtime);
+    for (const item of items) if (item.variants) item.variants.sort((a, b) => a.mtime - b.mtime);
   }
   items.sort((a, b) => b.timestamp - a.timestamp);
   return items.slice(0, limit || 24);

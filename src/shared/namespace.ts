@@ -83,6 +83,14 @@ export const NS_SEGMENTS_BLOCK_RE = new RegExp(
   `<!--\\s*${nsRe("segments-start")}(?::[^>]*)?\\s*-->[\\s\\S]*?<!--\\s*${nsRe("segments-end")}(?::[^>]*)?\\s*-->`,
   "gi",
 );
+/** Transcript source-record markers; persisted beside the visible transcript block. */
+export const NS_TRANSCRIPT_START = nsRe("transcript-start");
+export const NS_TRANSCRIPT_TEXT_START = nsRe("transcript-text-start");
+export const NS_TRANSCRIPT_TEXT_END = nsRe("transcript-text-end");
+export const NS_TRANSCRIPT_DATA = nsRe("transcript-data");
+export const NS_TRANSCRIPT_END = nsRe("transcript-end");
+/** Session knowledge snapshot stored as a hidden machine comment. */
+export const NS_SESSION_KNOWLEDGE = nsRe("session-knowledge");
 /** 独占一行的会话标记。 */
 export const NS_SESSION_LINE_RE = new RegExp(
   `^[ \\t]*<!--\\s*${nsRe("session")}(?::[^>]*|\\s*--)[^>]*-->[ \\t]*\\r?\\n?`,

@@ -1,3 +1,4 @@
+import type { SessionKnowledge } from "./session-knowledge";
 import { t } from "../shared/i18n";
 import {
   NS_PART_BODY_RE,
@@ -9,13 +10,18 @@ import {
   NS_PART_SUMMARY_STRIP_RE,
 } from "../shared/namespace";
 
-export const BRIEFING_PIPELINE_VERSION = 6;
+export const BRIEFING_PIPELINE_VERSION = 7;
 
 export type BriefingSegment = {
   index?: number;
   startOffsetMs?: number;
   endOffsetMs?: number;
   text?: string;
+  utteranceId?: string;
+  transcriptSourceRevision?: string;
+  speakerId?: string | null;
+  speakerName?: string | null;
+  timing?: string;
 };
 
 export type BriefingUsage = {
@@ -40,6 +46,7 @@ export type BriefingPartCheckpoint = {
   people: string[];
   tags: string[];
   sedimentObjects: unknown;
+  knowledge: SessionKnowledge | null;
   finishReason: string;
   attempts: number;
   usage: BriefingUsage;
@@ -80,6 +87,7 @@ export type BriefingCheckpoint = {
   auditFinishReason: string;
   auditUsage: BriefingUsage;
   parts: BriefingPartCheckpoint[];
+  assembledKnowledge: SessionKnowledge | null;
   assembledBody: string;
   createdAt: string;
   updatedAt: string;
@@ -163,6 +171,8 @@ export function getBriefingSourceHash(segments: BriefingSegment[]): string {
     finiteNonNegative(segment?.startOffsetMs),
     finiteNonNegative(segment?.endOffsetMs),
     cleanText(segment?.text),
+    cleanText(segment?.utteranceId),
+    cleanText(segment?.transcriptSourceRevision),
   ].join("|")).join("\n"));
 }
 
@@ -234,11 +244,17 @@ export function expandOversizedBriefingSegments(
       const pieceStartRatio = text.length ? consumedChars / text.length : 0;
       consumedChars += piece.length;
       const pieceEndRatio = text.length ? Math.min(1, consumedChars / text.length) : 1;
+      const startOffsetMs = source.utteranceId
+        ? start
+        : Math.round(start + (end - start) * pieceStartRatio);
+      const endOffsetMs = source.utteranceId
+        ? end
+        : Math.round(start + (end - start) * pieceEndRatio);
       expanded.push({
         ...source,
         index: expanded.length,
-        startOffsetMs: Math.round(start + (end - start) * pieceStartRatio),
-        endOffsetMs: Math.round(start + (end - start) * pieceEndRatio),
+        startOffsetMs,
+        endOffsetMs,
         text: piece,
       });
     }
@@ -472,6 +488,7 @@ function createPartCheckpoint(plan: BriefingPartPlan): BriefingPartCheckpoint {
     people: [],
     tags: [],
     sedimentObjects: null,
+    knowledge: null,
     finishReason: "",
     attempts: 0,
     usage: { ...EMPTY_BRIEFING_USAGE },
@@ -506,6 +523,7 @@ export function createBriefingCheckpoint(input: {
     status: "running",
     topicMap: "",
     topicMapSource: "",
+    assembledKnowledge: null,
     topicMapFinishReason: "",
     topicMapUsage: { ...EMPTY_BRIEFING_USAGE },
     consolidationStatus: "pending",

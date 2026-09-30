@@ -7,6 +7,7 @@ vi.mock("obsidian", () => ({
 import {
   composeDashScopeTranscript,
   estimateCloudTranscriptionDuration,
+  extractDashScopePlainTexts,
   extractDashScopeSentences,
   isDashScopeFileTransProvider,
   parseServiceJsonResponse,
@@ -44,6 +45,25 @@ describe("long audio transcription", () => {
     });
   });
 
+  it("preserves sentence text and does not convert absent or invalid times to zero", () => {
+    const payload = {
+      transcripts: [{ sentences: [
+        { text: "  原始文本  " },
+        { text: "NaN 时间", begin_time: "NaN", end_time: 900 },
+        { text: "倒序时间", begin_time: 2200, end_time: 2100 },
+        { text: "真实零点", begin_time: 0, end_time: 0 },
+      ] }],
+    };
+    expect(extractDashScopeSentences(payload)).toEqual([
+      { text: "  原始文本  ", beginTimeMs: null, endTimeMs: null, speakerId: "" },
+      { text: "NaN 时间", beginTimeMs: null, endTimeMs: null, speakerId: "" },
+      { text: "倒序时间", beginTimeMs: null, endTimeMs: null, speakerId: "" },
+      { text: "真实零点", beginTimeMs: 0, endTimeMs: 0, speakerId: "" },
+    ]);
+    expect(composeDashScopeTranscript({ transcripts: [{ sentences: [{ text: "无时间戳", speaker_id: 1 }] }] }).text)
+      .toBe("[说话人1] 无时间戳");
+  });
+
   it("accepts nested output payloads and plain transcript fallback", () => {
     expect(composeDashScopeTranscript({
       output: { transcripts: [{ sentences: [{ begin_time: 1000, end_time: 2000, speaker_id: 0, text: "测试。" }] }] },
@@ -58,6 +78,14 @@ describe("long audio transcription", () => {
       text: "嵌套完整逐字稿",
       sentenceCount: 0,
     });
+  });
+  it("retains every plain DashScope transcript entry as an independent source unit", () => {
+    const payload = { transcripts: [
+      { text: "First entry." },
+      { transcript: "Second entry." },
+    ] };
+    expect(extractDashScopePlainTexts(payload)).toEqual(["First entry.", "Second entry."]);
+    expect(composeDashScopeTranscript(payload).text).toBe("First entry.\nSecond entry.");
   });
 
   it("reports empty and malformed service responses without leaking a JSON parser error", () => {

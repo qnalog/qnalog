@@ -1,6 +1,11 @@
+import type { KnowledgeSourceRevision, KnowledgeStatus, SessionKnowledge } from "../briefing/session-knowledge";
+import { readSelectedSessionKnowledge } from "../briefing/session-knowledge";
+import type { Segment } from "../shared/types";
+import { getTranscriptSourceRevision } from "../transcript/session-transcript";
+import { readTranscriptBlocks } from "../transcript/transcript-markdown";
+import { stableHash } from "../shared/stable-hash";
 import { NS_FM, NS_TAG, nsRe } from "../shared/namespace";
 import { labelPattern, labelText, UTILITY_HEADING_RE } from "../shared/note-labels";
-
 // 写入用折叠壳新格式（标记在外、details+json 围栏在内，阅读视图折叠为一行）；
 // 读取同时接受旧的单注释格式，否则既有笔记里的索引块会被重复插入。
 export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index -->`;
@@ -16,6 +21,7 @@ const MAX_INDEX_TOPICS = 48;
 const MAX_CORE_TITLE_CHARS = 96;
 const MAX_CORE_SUMMARY_CHARS = 720;
 const MIN_USEFUL_SUMMARY_CHARS = 32;
+const LEGACY_INDEX_CARDS = new WeakSet<object>();
 
 export interface QnALogNoteIndexTopic {
   order: number;
@@ -23,8 +29,18 @@ export interface QnALogNoteIndexTopic {
   heading: string;
 }
 
+export interface NoteIndexKnowledge {
+  snapshotId: string | null;
+  sourceRevision: string | null;
+  status: KnowledgeStatus;
+  topics: Array<{ id: string; title: string; summary: string; evidence: string[] }>;
+  decisions: string[];
+  actions: string[];
+  questions: string[];
+}
+
 export interface QnALogNoteIndexCard {
-  schemaVersion: 1;
+  schemaVersion: 2;
   sourceRevision: string;
   generatedAt: string;
   meetingDate: string;
@@ -35,7 +51,15 @@ export interface QnALogNoteIndexCard {
   topics: QnALogNoteIndexTopic[];
   topicCount: number;
   omittedTopicCount: number;
+  knowledge: NoteIndexKnowledge;
 }
+
+export interface FutureNoteIndexSchema {
+  status: "future-schema";
+  schemaVersion: number;
+}
+
+export type NoteIndexReadResult = QnALogNoteIndexCard | FutureNoteIndexSchema;
 
 export interface ResolvedNoteIndex extends QnALogNoteIndexCard {
   filePath: string;
@@ -233,20 +257,14 @@ function inferMeetingDate(markdown: string, explicit: unknown, noteTitle: unknow
   return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
 
-function stableHash(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
 
 export function buildNoteIndex(
   markdown: unknown,
   options: BuildNoteIndexOptions = {},
 ): QnALogNoteIndexCard | null {
   const fullMarkdown = textValue(markdown);
+  const existingIndex = readNoteIndex(fullMarkdown, { includeFuture: true });
+  if (existingIndex && "status" in existingIndex) return null;
   const source = extractIndexSource(fullMarkdown);
   if (!source || /^_?\[(?:无输出|版本内容为空)\]_?$/i.test(source)) return null;
   const extracted = extractTopics(source);
@@ -262,9 +280,24 @@ export function buildNoteIndex(
     ? (firstSentence(summary) || extracted.topics[0]?.title || "会议纪要")
     : titleCandidate;
   const meetingDate = inferMeetingDate(fullMarkdown, options.meetingDate, options.noteTitle || h1);
-  const sourceRevision = `idx-${stableHash(JSON.stringify({ title, meetingDate, source }))}`;
+  const transcriptSegments = readTranscriptBlocks(fullMarkdown).map(({ segment }) => segment);
+  const knowledge = getKnowledgeSnapshot(fullMarkdown, transcriptSegments);
+  const sourceRevision = `idx-${stableHash(JSON.stringify({
+    title,
+    meetingDate,
+    source,
+    knowledge: {
+      snapshotId: knowledge.snapshotId,
+      sourceRevision: knowledge.sourceRevision,
+      status: knowledge.status,
+      topics: knowledge.topics,
+      decisions: knowledge.decisions,
+      actions: knowledge.actions,
+      questions: knowledge.questions,
+    },
+  }))}`;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceRevision,
     generatedAt: options.generatedAt || new Date().toISOString(),
     meetingDate,
@@ -272,7 +305,110 @@ export function buildNoteIndex(
     topics: extracted.topics,
     topicCount: extracted.topicCount,
     omittedTopicCount: Math.max(0, extracted.topicCount - extracted.topics.length),
+    knowledge,
   };
+}
+
+function validStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isKnowledgeIndex(value: unknown): value is NoteIndexKnowledge {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return (row.snapshotId === null || typeof row.snapshotId === "string")
+    && (row.sourceRevision === null || typeof row.sourceRevision === "string")
+    && (row.status === "complete" || row.status === "partial" || row.status === "unavailable" || row.status === "stale")
+    && Array.isArray(row.topics) && row.topics.every((topic) => {
+      if (!topic || typeof topic !== "object" || Array.isArray(topic)) return false;
+      const entry = topic as Record<string, unknown>;
+      return typeof entry.id === "string" && typeof entry.title === "string"
+        && typeof entry.summary === "string" && validStringArray(entry.evidence);
+    })
+    && validStringArray(row.decisions) && validStringArray(row.actions) && validStringArray(row.questions);
+}
+
+function isNoteIndexCard(value: unknown): value is QnALogNoteIndexCard {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  const core = row.core as Record<string, unknown> | undefined;
+  return row.schemaVersion === 2 && typeof row.sourceRevision === "string" && typeof row.generatedAt === "string"
+    && typeof row.meetingDate === "string" && !!core && typeof core.title === "string" && typeof core.summary === "string"
+    && Array.isArray(row.topics) && row.topics.every(isIndexTopic)
+    && Number.isFinite(row.topicCount) && Number.isFinite(row.omittedTopicCount)
+    && isKnowledgeIndex(row.knowledge);
+}
+
+function getKnowledgeSnapshot(markdown: string, segments: readonly Segment[]): NoteIndexKnowledge {
+  const saved = readSelectedSessionKnowledge(markdown);
+  if (!saved) return unavailableKnowledge();
+  const knowledge = compactKnowledge(saved);
+  const topicIds = new Set(saved.topics.map(({ id }) => id));
+  const topicReferencesValid = [...saved.decisions, ...saved.actions, ...saved.questions]
+    .every((item) => item.topicIds.every((id) => topicIds.has(id)));
+  if (!topicReferencesValid) return { ...knowledge, status: "stale" };
+  if (segments.length === 0) return knowledge;
+  const currentRevision = getTranscriptSourceRevision(segments);
+  const currentSourcesById = new Map<string, KnowledgeSourceRevision>();
+  const sourceConflicts = new Set<string>();
+  for (const segment of segments) {
+    const record = segment.transcript;
+    if (!record) continue;
+    const current = record.revisions.find((revision) => revision.revision === record.currentRevision);
+    if (!current) continue;
+    const source = {
+      segmentId: record.id,
+      revision: current.revision,
+      normalizationRevision: current.normalizationRevision,
+    };
+    const previous = currentSourcesById.get(source.segmentId);
+    if (previous && JSON.stringify(previous) !== JSON.stringify(source)) sourceConflicts.add(source.segmentId);
+    else currentSourcesById.set(source.segmentId, source);
+  }
+  const currentSources = [...currentSourcesById.values()].sort((left, right) => left.segmentId.localeCompare(right.segmentId));
+  const savedSources = [...saved.sources].sort((left, right) => left.segmentId.localeCompare(right.segmentId));
+  if (sourceConflicts.size || currentRevision !== saved.sourceRevision || JSON.stringify(currentSources) !== JSON.stringify(savedSources)) {
+    return { ...knowledge, status: "stale" };
+  }
+  const utteranceContent = new Map<string, string>();
+  const conflicts = new Set<string>();
+  for (const segment of segments) {
+    const record = segment.transcript;
+    if (!record) continue;
+    const revision = record.revisions.find((entry) => entry.revision === record.currentRevision);
+    for (const utterance of revision?.utterances || []) {
+      const content = JSON.stringify(utterance);
+      const previous = utteranceContent.get(utterance.id);
+      if (previous !== undefined && previous !== content) conflicts.add(utterance.id);
+      else utteranceContent.set(utterance.id, content);
+    }
+  }
+  const utteranceIds = new Set(utteranceContent.keys());
+  const evidenceIds = [
+    ...saved.topics.flatMap(({ evidence }) => evidence),
+    ...saved.decisions.flatMap(({ evidence }) => evidence),
+    ...saved.actions.flatMap(({ evidence }) => evidence),
+    ...saved.questions.flatMap(({ evidence }) => evidence),
+  ];
+  return evidenceIds.every((id) => utteranceIds.has(id) && !conflicts.has(id))
+    ? knowledge
+    : { ...knowledge, status: "stale" };
+}
+
+function compactKnowledge(saved: SessionKnowledge): NoteIndexKnowledge {
+  return {
+    snapshotId: saved.id,
+    sourceRevision: saved.sourceRevision,
+    status: saved.status,
+    topics: saved.topics.map(({ id, title, summary, evidence }) => ({ id, title, summary, evidence: [...evidence] })),
+    decisions: saved.decisions.map(({ id }) => id),
+    actions: saved.actions.map(({ id }) => id),
+    questions: saved.questions.map(({ id }) => id),
+  };
+}
+
+function unavailableKnowledge(): NoteIndexKnowledge {
+  return { snapshotId: null, sourceRevision: null, status: "unavailable", topics: [], decisions: [], actions: [], questions: [] };
 }
 
 function isIndexTopic(value: unknown): value is QnALogNoteIndexTopic {
@@ -281,17 +417,39 @@ function isIndexTopic(value: unknown): value is QnALogNoteIndexTopic {
   return Number.isFinite(Number(row.order)) && typeof row.title === "string" && typeof row.heading === "string";
 }
 
-export function readNoteIndex(markdown: unknown): QnALogNoteIndexCard | null {
+export function readNoteIndex(markdown: unknown): QnALogNoteIndexCard | null;
+export function readNoteIndex(markdown: unknown, options: { includeFuture: true }): NoteIndexReadResult | null;
+export function readNoteIndex(
+  markdown: unknown,
+  options?: { includeFuture: true },
+): NoteIndexReadResult | null {
   const text = textValue(markdown);
   const match = NOTE_INDEX_FENCED_PATTERN.exec(text) || NOTE_INDEX_LEGACY_PATTERN.exec(text);
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[1]) as Record<string, unknown>;
+    if (typeof parsed.schemaVersion === "number" && parsed.schemaVersion > 2) {
+      return options?.includeFuture ? { status: "future-schema", schemaVersion: parsed.schemaVersion } : null;
+    }
     const core = parsed.core as Record<string, unknown> | undefined;
-    if (parsed.schemaVersion !== 1 || typeof parsed.sourceRevision !== "string" || !core
-      || typeof core.title !== "string" || typeof core.summary !== "string"
-      || !Array.isArray(parsed.topics) || !parsed.topics.every(isIndexTopic)) return null;
-    return parsed as unknown as QnALogNoteIndexCard;
+    if (parsed.schemaVersion === 1 && typeof parsed.sourceRevision === "string" && core
+      && typeof core.title === "string" && typeof core.summary === "string"
+      && Array.isArray(parsed.topics) && parsed.topics.every(isIndexTopic)) {
+      const migrated: QnALogNoteIndexCard = {
+        schemaVersion: 2,
+        sourceRevision: parsed.sourceRevision,
+        generatedAt: typeof parsed.generatedAt === "string" ? parsed.generatedAt : "",
+        meetingDate: typeof parsed.meetingDate === "string" ? parsed.meetingDate : "",
+        core: { title: core.title, summary: core.summary },
+        topics: parsed.topics,
+        topicCount: Number.isFinite(parsed.topicCount) ? Number(parsed.topicCount) : parsed.topics.length,
+        omittedTopicCount: Number.isFinite(parsed.omittedTopicCount) ? Number(parsed.omittedTopicCount) : 0,
+        knowledge: unavailableKnowledge(),
+      };
+      LEGACY_INDEX_CARDS.add(migrated);
+      return migrated;
+    }
+    return isNoteIndexCard(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -321,11 +479,13 @@ export function serializeNoteIndex(index: QnALogNoteIndexCard): string {
 
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
   const text = textValue(markdown);
+  const existing = readNoteIndex(text, { includeFuture: true });
+  if (existing && "status" in existing) return text;
+  const existingCard = existing && !("status" in existing) ? existing : null;
   const block = serializeNoteIndex(index);
   const hasFenced = NOTE_INDEX_FENCED_PATTERN.test(text);
-  // 内容没变且已是新格式才原地不动；旧格式在任意一次自然刷新时升级为新格式。
-  const existing = readNoteIndex(text);
-  if (existing && existing.sourceRevision === index.sourceRevision && hasFenced) return text;
+  // Contents unchanged and already fenced means no write; legacy blocks upgrade naturally.
+  if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return text;
   if (hasFenced) return text.replace(NOTE_INDEX_FENCED_PATTERN, () => block);
   if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block);
   return `${text.trimEnd()}\n\n${block}\n`;

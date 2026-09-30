@@ -7,6 +7,7 @@ import {
   type SpeakerId,
 } from "../audio/channel-speakers";
 import { nsMarker } from "../shared/namespace";
+import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
 import { t } from "../shared/i18n";
 
 const OUTPUT_SAMPLE_RATE = 16000;
@@ -21,10 +22,10 @@ export interface SpeakerAudioSpan {
 
 export interface SpeakerTranscriptPart extends SpeakerAudioSpan {
   text: string;
+  units?: AsrTranscriptUnit[];
 }
 
-export interface ChannelTranscriptionResult {
-  text: string;
+export interface ChannelTranscriptionResult extends AsrTranscriptResult {
   actualChannelCount: number;
   processedChannelCount: number;
   usedMultichannel: boolean;
@@ -503,25 +504,25 @@ export async function transcribeAudioByChannels(
   try {
     decoded = await decodeAudioBlob(blob);
   } catch {
-    const text = await transcribeAudio(plugin, blob, mime);
-    return { text, actualChannelCount: 1, processedChannelCount: 1, usedMultichannel: false, separation: "unknown", parts: [], deduplicatedParts: 0, errors: [] };
+    const result = await transcribeAudio(plugin, blob, mime);
+    return { ...result, actualChannelCount: 1, processedChannelCount: 1, usedMultichannel: false, separation: "unknown", parts: [], deduplicatedParts: 0, errors: [] };
   }
   const actualChannelCount = clampSpeakerChannelCount(decoded.numberOfChannels);
   const processedChannelCount = Math.min(actualChannelCount, clampSpeakerChannelCount(expectedChannelCount));
   if (actualChannelCount <= 1 || processedChannelCount <= 1) {
-    const text = await transcribeAudio(plugin, blob, mime);
-    return { text, actualChannelCount, processedChannelCount: 1, usedMultichannel: false, separation: "single", parts: [], deduplicatedParts: 0, errors: [] };
+    const result = await transcribeAudio(plugin, blob, mime);
+    return { ...result, actualChannelCount, processedChannelCount: 1, usedMultichannel: false, separation: "single", parts: [], deduplicatedParts: 0, errors: [] };
   }
   const channels = Array.from({ length: processedChannelCount }, (_item, index) => decoded.getChannelData(index));
   const analysis = analyzeAudioBufferChannels(decoded);
   if (analysis.separation === "duplicated") {
-    const text = await transcribeAudio(plugin, blob, mime);
-    return { text, actualChannelCount, processedChannelCount, usedMultichannel: false, separation: "duplicated", parts: [], deduplicatedParts: 0, errors: [] };
+    const result = await transcribeAudio(plugin, blob, mime);
+    return { ...result, actualChannelCount, processedChannelCount, usedMultichannel: false, separation: "duplicated", parts: [], deduplicatedParts: 0, errors: [] };
   }
   if (options.requireSeparatedChannels && analysis.separation !== "separated") {
-    const text = await transcribeAudio(plugin, blob, mime);
+    const result = await transcribeAudio(plugin, blob, mime);
     return {
-      text,
+      ...result,
       actualChannelCount,
       processedChannelCount,
       usedMultichannel: false,
@@ -554,19 +555,39 @@ export async function transcribeAudioByChannels(
   }
   const parts: SpeakerTranscriptPart[] = [];
   const errors: string[] = [];
+  let providerId = "";
   for (const span of spans) {
     try {
       const spanBlob = renderSpeakerSpan(decoded, span);
-      const text = cleanChannelTranscript(await transcribeAudio(plugin, spanBlob, spanBlob.type));
-      if (text) parts.push({ ...span, text });
+      const result = await transcribeAudio(plugin, spanBlob, spanBlob.type);
+      if (!providerId) providerId = result.providerId;
+      const text = cleanChannelTranscript(result.text);
+      const units = result.units.map((unit): AsrTranscriptUnit => ({
+        ...unit,
+        normalizedText: cleanChannelTranscript(unit.normalizedText),
+        speakerId: `channel:${span.speakerId}`,
+        speakerName: speakerLabelForChannel(span.channel),
+        startMs: unit.timing === "provider" && unit.startMs !== null && unit.endMs !== null
+          ? span.startMs + unit.startMs
+          : span.startMs,
+        endMs: unit.timing === "provider" && unit.startMs !== null && unit.endMs !== null
+          ? span.startMs + unit.endMs
+          : span.endMs,
+        timing: unit.timing === "provider" ? "provider" : "audio-span",
+      }));
+      if (text) parts.push({ ...span, text, units });
     } catch (error) {
       errors.push(t("CH{0} {1}s: {2}").replace("{0}", String(span.channel)).replace("{1}", String(Math.round(span.startMs / 1000))).replace("{2}", error instanceof Error ? error.message : String(error)));
     }
   }
   if (!parts.length && errors.length) throw new Error(t("Channel transcription failed: {0}").replace("{0}", errors[0]));
   const deduplicated = deduplicateOverlappingSpeakerParts(parts);
+  const text = formatChannelTranscript(deduplicated.parts);
   return {
-    text: formatChannelTranscript(deduplicated.parts),
+    text,
+    rawText: null,
+    providerId,
+    units: deduplicated.parts.flatMap((part) => part.units || []),
     actualChannelCount,
     processedChannelCount,
     usedMultichannel: true,

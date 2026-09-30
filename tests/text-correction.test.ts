@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyNoteTextCorrection } from "../src/notes/text-correction";
+import { attachTranscriptResult, getCurrentTranscript, getTranscriptSourceRevision } from "../src/transcript/session-transcript";
+import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import { readSelectedSessionKnowledge, readSessionKnowledge, resolveKnowledgeEvidence, serializeSessionKnowledge, type SessionKnowledge } from "../src/briefing/session-knowledge";
 
 const NOTE = [
   "---",
@@ -115,5 +118,93 @@ describe("就地更正：匹配行为", () => {
   it("返回被改动的行号，供预览显示", () => {
     const r = applyNoteTextCorrection("l1\nl2 Hugging Face\nl3\nl4 Hugging Face", "Hugging Face", "X");
     expect(r.lines).toEqual([2, 4]);
+  });
+});
+
+describe("transcript ledger corrections", () => {
+  it("updates normalized evidence without changing raw source text or unit IDs", () => {
+    const segment = attachTranscriptResult({
+      index: 0,
+      startOffsetMs: 0,
+      endOffsetMs: 1000,
+      text: "QnALog ships today.",
+    }, "session-correction", {
+      text: "QnALog ships today.",
+      rawText: null,
+      providerId: "asr-test",
+      units: [{
+        rawText: "QNA 洛格 ships today.",
+        normalizedText: "QnALog ships today.",
+        speakerId: null,
+        speakerName: null,
+        startMs: null,
+        endMs: null,
+        timing: "unknown",
+      }],
+    }, "asr");
+    const note = serializeTranscriptBlock(segment, "### Segment 1", segment.text);
+    const corrected = applyNoteTextCorrection(note, "QnALog", "Hyperframes");
+    const block = readTranscriptBlocks(corrected.text)[0];
+    const revision = getCurrentTranscript(block.segment.transcript!);
+    expect(corrected.replacements).toBe(1);
+    expect(block.visibleBlock).toBe("Hyperframes ships today.");
+    expect(block.drifted).toBe(false);
+    expect(revision.utterances[0].rawText).toBe("QNA 洛格 ships today.");
+    expect(revision.utterances[0].normalizedText).toBe("Hyperframes ships today.");
+    expect(revision.normalizationRevision).toBe(2);
+    expect(revision.corrections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "text", from: "QnALog ships today.", to: "Hyperframes ships today." }),
+    ]));
+  });
+  it("replaces text that crosses adjacent utterance boundaries", () => {
+    const segment = attachTranscriptResult({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "Hugging Face today.",
+    }, "session-correction-boundary", {
+      text: "Hugging Face today.", rawText: null, providerId: "asr-test",
+      units: [
+        { rawText: "Hugging ", normalizedText: "Hugging ", speakerId: null, speakerName: null, startMs: null, endMs: null, timing: "unknown" },
+        { rawText: "Face today.", normalizedText: "Face today.", speakerId: null, speakerName: null, startMs: null, endMs: null, timing: "unknown" },
+      ],
+    }, "asr");
+    const note = serializeTranscriptBlock(segment, "### Segment 1", segment.text);
+    const corrected = applyNoteTextCorrection(note, "Hugging Face", "Hyperframes");
+    const block = readTranscriptBlocks(corrected.text)[0];
+    const revision = getCurrentTranscript(block.segment.transcript!);
+
+    expect(block.visibleBlock).toBe("Hyperframes today.");
+    expect(block.drifted).toBe(false);
+    expect(revision.utterances.map((unit) => unit.normalizedText)).toEqual(["Hyperframes", " today."]);
+    expect(revision.utterances.map((unit) => unit.rawText)).toEqual(["Hugging ", "Face today."]);
+    expect(revision.normalizationRevision).toBe(2);
+  });
+
+  it("marks saved knowledge stale when the transcript is corrected", () => {
+    const segment = attachTranscriptResult({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "QnALog ships today.",
+    }, "session-correction-stale", {
+      text: "QnALog ships today.", rawText: null, providerId: "asr-test",
+      units: [{
+        rawText: "QNA 洛格 ships today.", normalizedText: "QnALog ships today.",
+        speakerId: null, speakerName: null, startMs: null, endMs: null, timing: "unknown",
+      }],
+    }, "asr");
+    const current = getCurrentTranscript(segment.transcript!);
+    const knowledge: SessionKnowledge = {
+      schemaVersion: 2,
+      id: "knowledge:test",
+      sourceRevision: getTranscriptSourceRevision([segment]),
+      sources: [{ segmentId: segment.transcript!.id, revision: current.revision, normalizationRevision: current.normalizationRevision }],
+      status: "complete", issues: [], topics: [],
+      decisions: [{ id: "decision:test", text: "Ships today", evidence: [current.utterances[0].id], topicIds: [] }],
+      actions: [], questions: [], projections: [],
+    };
+    const archived = { ...knowledge, id: "knowledge:archived" };
+    const markdown = `${serializeSessionKnowledge(archived)}\n\n<!-- qnalog-active-version-start -->\n${serializeSessionKnowledge(knowledge)}\n\n${serializeTranscriptBlock(segment, "### Segment 1", segment.text)}\n<!-- qnalog-active-version-end -->`;
+    const result = applyNoteTextCorrection(markdown, "QnALog", "Hyperframes");
+    expect(result.text).toContain("qnalog-transcript-data");
+    const stale = readSelectedSessionKnowledge(result.text)!;
+    expect(readSessionKnowledge(result.text)?.id).toBe("knowledge:archived");
+    expect(stale.status).toBe("stale");
+    expect(resolveKnowledgeEvidence(stale, "decision:test", [readTranscriptBlocks(result.text)[0].segment]).status).toBe("stale");
   });
 });

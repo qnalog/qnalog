@@ -107,9 +107,9 @@ describe("百炼分段转写的请求形状", () => {
   });
 
   it("从 SSE 里取出正文", async () => {
-    stubFetch("百炼返回的正文。");
-    const text = await requestChatInputAudioChunk(dashscopeProfile, dashscopeProvider, { blob, mime: "audio/webm" }, endpoint);
-    expect(text).toBe("百炼返回的正文。");
+    stubFetch("  百炼返回的正文。  ");
+    const result = await requestChatInputAudioChunk(dashscopeProfile, dashscopeProvider, { blob, mime: "audio/webm" }, endpoint);
+    expect(result).toEqual({ text: "百炼返回的正文。", rawText: "  百炼返回的正文。  " });
   });
 
   it("APIMiMo 仍下发 auto，未被百炼的改动带偏", async () => {

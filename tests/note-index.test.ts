@@ -10,6 +10,9 @@ import {
   upsertNoteIndex,
 } from "../src/indexing/note-index";
 import { NS_FM } from "../src/shared/namespace";
+import { attachTextTranscript, getCurrentTranscript, getTranscriptSourceRevision } from "../src/transcript/session-transcript";
+import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import { serializeSessionKnowledge, type SessionKnowledge } from "../src/briefing/session-knowledge";
 
 // 语言是模块级全局状态：每个用例从英文默认开始，需要锁中文标签的用例显式切 zh。
 afterEach(() => setActiveUiLanguage(resolveUiLanguage("en", "en")));
@@ -249,4 +252,115 @@ describe("QnALog note index", () => {
     expect(index.topicCount).toBe(55);
     expect(index.omittedTopicCount).toBe(7);
   });
+  it("keeps evidence snapshots and marks them stale when the transcript ledger changes", () => {
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "We will ship a pilot.",
+    }, "index-source", "text-import");
+    const current = getCurrentTranscript(segment.transcript!);
+    const snapshot: SessionKnowledge = {
+      schemaVersion: 2,
+      id: "knowledge:index-test",
+      sourceRevision: getTranscriptSourceRevision([segment]),
+      sources: [{ segmentId: segment.transcript!.id, revision: current.revision, normalizationRevision: current.normalizationRevision }],
+      status: "complete", issues: [],
+      topics: [{ id: "topic:release", title: "Release", summary: "Ship a pilot", evidence: [current.utterances[0].id] }],
+      decisions: [{ id: "decision:pilot", text: "Ship a pilot", evidence: [current.utterances[0].id], topicIds: ["topic:release"] }],
+      actions: [], questions: [], projections: [],
+    };
+    const ledger = serializeTranscriptBlock(segment, "### Segment 1", segment.text);
+    const markdown = `${minutes}\n\n${ledger}\n\n${serializeSessionKnowledge(snapshot)}`;
+    expect(buildNoteIndex(markdown)?.knowledge).toMatchObject({
+      status: "complete",
+      snapshotId: "knowledge:index-test",
+      decisions: ["decision:pilot"],
+    });
+    const visibleAt = markdown.lastIndexOf("We will ship a pilot.");
+    const edited = `${markdown.slice(0, visibleAt)}We may ship a pilot.${markdown.slice(visibleAt + "We will ship a pilot.".length)}`;
+    expect(buildNoteIndex(edited)?.knowledge.status).toBe("stale");
+  });
+  it("deduplicates identical copied transcript sources and rejects conflicting copies", () => {
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "We will ship a pilot.",
+    }, "copied-index", "text-import");
+    const copy = structuredClone(segment);
+    const current = getCurrentTranscript(segment.transcript!);
+    const snapshotFor = (sources: typeof segment[]): SessionKnowledge => ({
+      schemaVersion: 2,
+      id: "knowledge:copied-index",
+      sourceRevision: getTranscriptSourceRevision(sources),
+      sources: [{ segmentId: segment.transcript!.id, revision: current.revision, normalizationRevision: current.normalizationRevision }],
+      status: "complete", issues: [],
+      topics: [], decisions: [{ id: "decision:copy", text: "Ship a pilot", evidence: [current.utterances[0].id], topicIds: [] }],
+      actions: [], questions: [], projections: [],
+    });
+    const indexCopiedSources = (sources: typeof segment[]) => {
+      const sourceBlocks = sources.map((source, index) => serializeTranscriptBlock(source, `### Segment ${index + 1}`, source.text));
+      return buildNoteIndex(`${minutes}\n\n${sourceBlocks.join("\n\n")}\n\n${serializeSessionKnowledge(snapshotFor(sources))}`);
+    };
+    expect(indexCopiedSources([segment, copy])?.knowledge.status).toBe("complete");
+
+    const conflictingCopy = structuredClone(copy);
+    const record = conflictingCopy.transcript!;
+    conflictingCopy.transcript = {
+      ...record,
+      revisions: record.revisions.map((revision) => ({
+        ...revision,
+        utterances: revision.utterances.map((utterance) => ({ ...utterance, normalizedText: "We will not ship a pilot." })),
+      })),
+    };
+    expect(indexCopiedSources([segment, conflictingCopy])?.knowledge.status).toBe("stale");
+  });
+  it("uses the selected active version knowledge instead of an earlier appended snapshot", () => {
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "We will ship a pilot.",
+    }, "active-index", "text-import");
+    const current = getCurrentTranscript(segment.transcript!);
+    const activeKnowledge: SessionKnowledge = {
+      schemaVersion: 2,
+      id: "knowledge:active",
+      sourceRevision: getTranscriptSourceRevision([segment]),
+      sources: [{ segmentId: segment.transcript!.id, revision: current.revision, normalizationRevision: current.normalizationRevision }],
+      status: "complete", issues: [],
+      topics: [{ id: "topic:active", title: "Active", summary: "Current topic", evidence: [current.utterances[0].id] }],
+      decisions: [{ id: "decision:active", text: "Ship pilot", evidence: [current.utterances[0].id], topicIds: ["topic:active"] }],
+      actions: [], questions: [], projections: [],
+    };
+    const earlierKnowledge: SessionKnowledge = {
+      ...activeKnowledge,
+      id: "knowledge:earlier",
+      sourceRevision: "older-source",
+      topics: [],
+      decisions: [],
+    };
+    const markdown = [
+      "# 2026-08-25 09:30 · 综合纪要",
+      "",
+      serializeSessionKnowledge(earlierKnowledge),
+      "",
+      "<!-- qnalog-active-version-start -->",
+      "> [!info] 当前显示版本：综合纪要",
+      "",
+      "## 当前正文",
+      "选中的版本正文。",
+      serializeSessionKnowledge(activeKnowledge),
+      "<!-- qnalog-active-version-end -->",
+      "",
+      serializeTranscriptBlock(segment, "### Segment 1", segment.text),
+    ].join("\n");
+    const index = buildNoteIndex(markdown)!;
+    expect(index.knowledge).toMatchObject({
+      status: "complete",
+      snapshotId: "knowledge:active",
+      decisions: ["decision:active"],
+    });
+  });
+  it("does not rewrite a note-index block from a newer schema", () => {
+    const current = buildNoteIndex(minutes, { generatedAt: "2026-08-25T10:00:00.000Z" })!;
+    const futureBlock = serializeNoteIndex(current).replace(/("schemaVersion"\s*:\s*)2/, "$13");
+    const markdown = `${minutes}\n\n${futureBlock}`;
+    expect(readNoteIndex(markdown, { includeFuture: true })).toEqual({ status: "future-schema", schemaVersion: 3 });
+    expect(buildNoteIndex(markdown)).toBeNull();
+    expect(upsertNoteIndex(markdown, current)).toBe(markdown);
+  });
+
 });
