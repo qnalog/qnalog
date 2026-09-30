@@ -42,10 +42,6 @@ const ALLOWED = [
     file: "src/report/render.ts",
     reason: "HTML 报告模板的 .lv-* 类与 --lv-* 变量：报告是自带内联样式表的独立 HTML，不改动（维护者 2026-09-15 决定）。",
   },
-  {
-    file: "src/ui/outline-text.ts",
-    reason: "注释里举例说明残缺锚点，不含实际前缀用法。",
-  },
 ];
 
 /** 本脚本自身必须能写出这些前缀才能识别它们，与 check-mainline-isolation 同样的自我豁免。 */
@@ -155,6 +151,13 @@ export function checkLegacyPrefixes(files, { allowlist = ALLOWED, docAllowlist =
   }
   return violations;
 }
+/** 返回 ALLOWED 中已不存在的文件条目。 */
+export function findStaleAllowlistEntries(existingFiles, allowlist = ALLOWED) {
+  const existing = new Set(existingFiles);
+  return allowlist
+    .filter((entry) => !existing.has(entry.file))
+    .map((entry) => `${entry.file} 登记在 ALLOWED 中，但仓库里没有这个文件：删除该条目，或改成文件的实际路径`);
+}
 
 function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -168,14 +171,19 @@ function main() {
   }
 
   const violations = checkLegacyPrefixes(files);
+  const staleEntries = findStaleAllowlistEntries(Object.keys(files));
+  if (staleEntries.length) {
+    console.error("[legacy-prefix] ALLOWED 中有失效条目：");
+    for (const line of staleEntries) console.error(`  - ${line}`);
+  }
   if (violations.length) {
     console.error("[legacy-prefix] 发现白名单之外的旧品牌前缀：");
     for (const line of violations.slice(0, 40)) console.error(`  - ${line}`);
     if (violations.length > 40) console.error(`  …另有 ${violations.length - 40} 处`);
     console.error("[legacy-prefix] 若是漏改，请改成 qnalog-*；若是读取 1.0.0 遗留数据的兼容代码，");
     console.error("[legacy-prefix] 请把它集中到 src/shared/namespace.ts，并在此脚本的 ALLOWED 里登记理由。");
-    process.exit(1);
   }
+  if (violations.length || staleEntries.length) process.exit(1);
   console.log(`[legacy-prefix] OK: 检查 ${Object.keys(files).length} 个文件，白名单之外无旧前缀`);
 }
 
