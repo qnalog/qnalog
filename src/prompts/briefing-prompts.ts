@@ -627,10 +627,10 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
       deadlineAt: 0,
     });
   }
-  const session = plugin && plugin.session;
-  if (!session || typeof plugin.recording.setSessionWorkProgress !== "function") return;
+  const session = plugin && plugin.getCurrentSession();
+  if (!session || typeof plugin.asrPipeline.setSessionWorkProgress !== "function") return;
   if (computedMeta && computedMeta.startedAt && session.startedAt && computedMeta.startedAt !== session.startedAt) return;
-  plugin.recording.setSessionWorkProgress(session, {
+  plugin.asrPipeline.setSessionWorkProgress(session, {
     stage: "llm-merge",
     label: total > 1 ? t("AI organizing · {0}/{1} parts").replace("{0}", String(completed)).replace("{1}", String(total)) : t("AI organizing"),
     percent: Math.min(86, 48 + Math.round((completed / total) * 38)),

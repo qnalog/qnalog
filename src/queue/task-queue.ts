@@ -178,8 +178,8 @@ export class TaskQueue {
       this._batchDone = 0;
       try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
       for (const t of pending) {
-        if (t.type === "transcribe" && this.plugin.recording.isAsrServiceCircuitOpen()) {
-          const retryDelayMs = this.plugin.recording.getAsrServiceRetryDelayMs();
+        if (t.type === "transcribe" && this.plugin.asrPipeline.isAsrServiceCircuitOpen()) {
+          const retryDelayMs = this.plugin.asrPipeline.getAsrServiceRetryDelayMs();
           this.plugin.queueRetry.scheduleTaskQueueRetry(retryDelayMs, "asr-service-circuit-open");
           continue;
         }
@@ -192,12 +192,12 @@ export class TaskQueue {
         try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
         if (transportAsrFailure) {
           // 服务仍在限流/超时，继续扫后续音频只会扩大请求风暴。暂停整批，冷却后从持久化队列续跑。
-          const retryDelayMs = this.plugin.recording.getAsrServiceRetryDelayMs();
+          const retryDelayMs = this.plugin.asrPipeline.getAsrServiceRetryDelayMs();
           try {
             await this.plugin.diagnostics.logDiagnostic("warn", "queue.asr_circuit_opened", i18nT("Background transcription hit a transient fault while processing; the batch was paused"), {
               remaining: Math.max(0, pending.length - this._batchDone),
               cooldownMs: retryDelayMs,
-              consecutiveFailures: this.plugin.recording.getAsrServiceCircuitState().consecutiveFailures,
+              consecutiveFailures: this.plugin.asrPipeline.getAsrServiceCircuitState().consecutiveFailures,
               error: diagnosticError(transportAsrFailure),
             });
           } catch { /* intentionally empty */ }
@@ -233,7 +233,7 @@ export class TaskQueue {
     try {
       if (task.type === "transcribe") {
         await this.plugin.queueRetry.retryTranscribeTask(task);
-        this.plugin.recording.recordAsrServiceAttemptSuccess();
+        this.plugin.asrPipeline.recordAsrServiceAttemptSuccess();
       }
       else if (task.type === "merge") await this.plugin.queueRetry.retryMergeTask(task);
       else if (task.type === "generate-prompt") await this.plugin.queueRetry.runGeneratePromptTask(task);
@@ -269,7 +269,7 @@ export class TaskQueue {
       const nextRetries = isBlockedMerge ? (task.retries || 0)
         : task.type === "transcribe" ? getNextAsrTaskRetryCount(task.retries, maxR, e)
         : (task.retries || 0) + 1;
-      const serviceCircuit = isTransportAsr ? this.plugin.recording.recordAsrServiceAttemptFailure(e) : null;
+      const serviceCircuit = isTransportAsr ? this.plugin.asrPipeline.recordAsrServiceAttemptFailure(e) : null;
       const nextRetryAt = serviceCircuit && serviceCircuit.openUntilMs > Date.now()
         ? new Date(serviceCircuit.openUntilMs).toISOString()
         : undefined;

@@ -14,9 +14,10 @@ const code = readFileSync(new URL("../main.js", import.meta.url), "utf8");
 const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
-  "library", "shell", "recording", "sessionFinalize", "imports", "externalInbox", "repolish",
-  "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas",
+  "library", "shell", "recording", "asrPipeline", "sessionFinalize", "imports", "externalInbox", "repolish",
+  "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas", "sessionStore",
 ];
+const PORT_HOST_FIELDS = new Set(["asrPipeline"]);
 
 const noop = () => undefined;
 
@@ -245,12 +246,20 @@ async function main() {
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(value)).filter((n) => n !== "constructor");
     if (!methods.length) failures.push(`this.${field} 没有任何方法，可能装配成了空对象`);
   }
-  // 每个域服务的宿主必须是插件实例：装配成别的对象（包括服务自身）时，
-  // 服务里读 host.settings / host.app 会读到 undefined，且多数被 try/catch 吞成静默失效。
+  // 插件宿主服务使用插件实例；明确的窄端口必须持有装配时指定的能力，而非整个插件。
   for (const field of DOMAIN_FIELDS) {
     const service = plugin[field];
     if (!service || typeof service !== "object") continue;
     if (!("host" in service)) continue;
+    if (PORT_HOST_FIELDS.has(field)) {
+      if (service.host === plugin) failures.push(`this.${field}.host 应使用窄能力对象，不得接收完整插件实例`);
+      if (typeof service.host?.getSettings !== "function"
+          || service.host?.vault !== app.vault
+          || service.host?.fileManager !== app.fileManager) {
+        failures.push(`this.${field}.host 未绑定预期的设置、知识库与文件管理能力`);
+      }
+      continue;
+    }
     if (service.host !== plugin) {
       failures.push(`this.${field}.host 不是插件实例（装配错了宿主对象）`);
     }

@@ -5,7 +5,8 @@
 import * as obsidian from "obsidian";
 import { qnalogConfirm, trashVaultFileRef } from "../ui/helpers";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
+import type { SessionStore } from "../session/session-store";
 import { formatElapsed } from "../shared/util-common";
 import { resolveAudioFileRef } from "../notes/audio-refs";
 import { analyzeEmptyShortNote } from "../notes/note-markdown";
@@ -18,7 +19,7 @@ export interface CleanupHost {
   app: obsidian.App;
   queue: TaskQueue | null;
   saveAll(): Promise<void>;
-  session: RecordingSession | null;
+  sessionStore: SessionStore;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
@@ -47,7 +48,8 @@ export class CleanupService {
     };
     walk(folder);
 
-    const currentPath = this.host.session && this.host.session.mdPath ? obsidian.normalizePath(this.host.session.mdPath) : "";
+    const session = this.host.sessionStore.get();
+    const currentPath = session && session.mdPath ? obsidian.normalizePath(session.mdPath) : "";
     const candidates = [];
     for (const file of files) {
       if (currentPath && obsidian.normalizePath(file.path) === currentPath) continue;

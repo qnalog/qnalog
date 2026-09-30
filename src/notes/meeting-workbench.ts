@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：会中补充材料与交互
 
 import * as obsidian from "obsidian";
-import { formatElapsed } from "../shared/util-common";
+import { formatElapsed, primitiveText } from "../shared/util-common";
 
 export const MEETING_INTERACTION_OUTLINE_MAX_CHARS = 1200;
 
@@ -22,10 +22,42 @@ export const MEETING_INTERACTION_CONCEPT_MAX_TOKENS = 700;
 
 export const MEETING_INTERACTION_IMPORTANT_MAX_TOKENS = 500;
 
-// 最终纪要（merge）max_tokens：按材料体量计算需求；只有明确识别为旧模型时才钳制。
-// 新模型、网关模型和本地模型不再套用历史 8K 默认值，服务端若拒绝会由 llm/core.ts 有界降档。
+export type MeetingMaterial = {
+  path: string;
+  name: string;
+  kind: string;
+  addedAt: string;
+};
 
-export function normalizeMeetingMaterials(materials, limit = 30) {
+export type MeetingInteraction = {
+  kind: string;
+  query: string;
+  status: string;
+  response: string;
+  error: string;
+  updatedAt: string;
+  assignee?: string;
+  task?: string;
+};
+
+export type MeetingWorkbenchEntry = {
+  id: string;
+  atMs: number;
+  createdAt: string;
+  source: string;
+  text: string;
+  materials: MeetingMaterial[];
+  interaction: MeetingInteraction | null;
+};
+
+export type MeetingWorkbenchState = {
+  notes: string;
+  draft: string;
+  materials: MeetingMaterial[];
+  entries: MeetingWorkbenchEntry[];
+};
+
+export function normalizeMeetingMaterials(materials: unknown, limit = 30): MeetingMaterial[] {
   const normalized = [];
   const seen = new Set();
   for (const item of (Array.isArray(materials) ? materials : [])) {
@@ -43,8 +75,8 @@ export function normalizeMeetingMaterials(materials, limit = 30) {
   return normalized.slice(-limit);
 }
 
-export function normalizeMeetingWorkbench(value) {
-  const raw = value && typeof value === "object" ? value : {};
+export function normalizeMeetingWorkbench(value: unknown): MeetingWorkbenchState {
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const entries = [];
   for (const item of (Array.isArray(raw.entries) ? raw.entries : [])) {
     if (!item || typeof item !== "object") continue;
@@ -61,6 +93,8 @@ export function normalizeMeetingWorkbench(value) {
       response: String(rawInteraction.response || "").trim(),
       error: String(rawInteraction.error || "").trim(),
       updatedAt: String(rawInteraction.updatedAt || ""),
+      assignee: String(rawInteraction.assignee || "").trim(),
+      task: String(rawInteraction.task || "").trim(),
     } : null;
     entries.push({
       id: String(item.id || `meeting-entry-${entries.length}-${atMs}-${createdAt || "time"}`),
@@ -73,8 +107,8 @@ export function normalizeMeetingWorkbench(value) {
     });
   }
   return {
-    notes: String(raw.notes || "").trim(),
-    draft: String(raw.draft || ""),
+    notes: primitiveText(raw.notes).trim(),
+    draft: primitiveText(raw.draft),
     materials: normalizeMeetingMaterials(raw.materials, 30),
     entries: entries.slice(-100),
   };
@@ -83,8 +117,8 @@ export function normalizeMeetingWorkbench(value) {
 // 元数据型符号（不触发 AI 即时助理，只用于结构化标注 + 传给 merge prompt）
 export const MEETING_METADATA_KINDS = new Set(["assignee", "todo"]);
 
-export function detectMeetingWorkbenchInteraction(text) {
-  const value = String(text || "").trim();
+export function detectMeetingWorkbenchInteraction(text: unknown): (Pick<MeetingInteraction, "kind"> & Partial<Pick<MeetingInteraction, "query" | "assignee" | "task">>) | null {
+  const value = primitiveText(text).trim();
   if (!value) return null;
   // ---------- AI 触发型（concept / question / focus） ----------
   let match = value.match(/^[#＃]\s*(.+)$/);

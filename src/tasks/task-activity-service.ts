@@ -3,7 +3,9 @@
 
 import * as obsidian from "obsidian";
 import { getModeMeta } from "../shared/mode-meta";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
+import type { SessionStore } from "../session/session-store";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { formatElapsed } from "../shared/util-common";
 import { isAsrTransportError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
@@ -121,11 +123,11 @@ export interface TaskActivityHost {
   /** 装配层转发：任务状态变化后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
   requestOutlineRefresh(): void;
 
-  session: RecordingSession | null;
+  sessionStore: SessionStore;
   /** 实时大纲服务：用户取消等待与后台补跑。 */
   outline: RealtimeOutlineService;
-  /** 录音采集服务：熔断状态与冷却时长。 */
-  recording: { isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown };
+  /** 转写服务熔断状态与手动重试入口。 */
+  asrPipeline: Pick<LiveAsrPipelineService, "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry">;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
@@ -343,7 +345,8 @@ export class TaskActivityService {
   syncOutlineTaskActivity(state) {
     if (!state || !state.sessionId || !this.taskActivityStore) return null;
     const id = `outline:${state.sessionId}`;
-    const session = this.host.session && this.host.session.id === state.sessionId ? this.host.session : null;
+    const currentSession = this.host.sessionStore.get();
+    const session = currentSession && currentSession.id === state.sessionId ? currentSession : null;
     const existing = this.taskActivityStore.get(id);
     if (state.phase === "idle" && !existing) return null;
     const subject = session && session.mdPath ? session.mdPath : "";
@@ -584,12 +587,12 @@ export class TaskActivityService {
             retries: Math.max(0, Math.min(Number(task.retries) || 0, (this.host.settings.maxRetries || 3) - 1)),
           });
         }
-        if (task.type === "transcribe") this.host.recording.resetAsrServiceCircuitForManualRetry("task-center");
+        if (task.type === "transcribe") this.host.asrPipeline.resetAsrServiceCircuitForManualRetry("task-center");
         try {
           await this.host.queue.processOne(task);
         } catch (error) {
           if (task.type === "transcribe" && isAsrTransportError(error)) {
-            this.host.requestTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
+            this.host.requestTaskQueueRetry(this.host.asrPipeline.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
           }
           throw error;
         }
@@ -646,7 +649,7 @@ export class TaskActivityService {
     const tasks = q && Array.isArray(q.tasks) ? q.tasks : [];
     const runnable = tasks.filter((t) => t && t.status !== "running" && t.status !== "missing" && t.status !== "blocked" && (Number(t.retries) || 0) < maxR);
 
-    const s = this.host.session;
+    const s = this.host.sessionStore.get();
     const wp = s && s.workProgress ? s.workProgress : null;
     const wpLabel = wp && wp.label ? String(wp.label) : "";
     const pct = wp && wp.percent != null && Number.isFinite(Number(wp.percent)) ? ` ${Math.round(Number(wp.percent))}%` : "";
@@ -754,7 +757,7 @@ export class TaskActivityService {
       return t("Transcribing in progress {0}/{1}").replace("{0}", String(done)).replace("{1}", String(this.host.queue._batchTotal));
     }
     if (this._busyLabel) return String(this._busyLabel);
-    const s = this.host.session;
+    const s = this.host.sessionStore.get();
     const wp = s && s.workProgress;
     const postProcessing = !!(wp && (wp.stage === "write-note" || wp.stage === "done"));
     if (s && (s.finalizing || postProcessing)) return (wp && wp.label) || t("AI organizing");
@@ -1036,10 +1039,11 @@ export class TaskActivityService {
     const q = this.host.queue;
     if (q && Number(q._batchTotal) > 0) {
       const done = Math.min(Number(q._batchDone) || 0, Number(q._batchTotal));
-      const wp = this.host.session && this.host.session.workProgress;
+      const session = this.host.sessionStore.get();
+      const wp = session && session.workProgress;
       return {
         kind: t("Batch transcription"),
-        modeLabel: this.host.session ? modeLabelOf(this.host.session.mode) : "",
+        modeLabel: session ? modeLabelOf(session.mode) : "",
         step: (wp && wp.label) || t("Transcribing in progress"),
         stepDetail: (wp && wp.detail) || "",
         percent: pctOf(wp),
@@ -1065,8 +1069,8 @@ export class TaskActivityService {
         count: "",
       };
     }
-    // B/C) 录音 / 段落转写 / 会后 AI 整理（this.host.session）
-    const s = this.host.session;
+    // B/C) 录音 / 段落转写 / 会后 AI 整理（当前会话）
+    const s = this.host.sessionStore.get();
     if (s) {
       const wp = s.workProgress || null;
       const pct = pctOf(wp);

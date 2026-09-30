@@ -51,7 +51,7 @@ export function getSessionWorkProgressState(session, recorderState) {
 }
 
 export function getActiveSessionProcessingState(plugin, file) {
-  const session = plugin && plugin.session;
+  const session = plugin && plugin.getCurrentSession();
   if (!session || !(file instanceof obsidian.TFile) || !session.mdPath) return null;
   if (!isSameVaultPath(session.mdPath, file.path)) return null;
   const recorderState = plugin.recorder && plugin.recorder.state;

@@ -13,6 +13,11 @@ class QnALogPlugin {
   }
 }
 `;
+const MAIN_WITH_SERVICE_ALIASES = MAIN.replace(
+  "this.gamma = new GammaService(this);",
+  "this.gamma = new GammaService(this);\n    this.alphaAlias = this.alpha;\n    this.betaAlias = this.beta;",
+);
+
 
 function files(extra: Record<string, string>) {
   return { "src/main.ts": MAIN, ...extra };
@@ -92,6 +97,21 @@ export class GammaService {
   declare host: GammaHost;
 }
 `;
+const ALPHA_ALIAS = `export interface AlphaHost {
+  betaAlias: BetaService;
+}
+export class AlphaService {
+  declare host: AlphaHost;
+}
+`;
+const BETA_ALIAS = `export interface BetaHost {
+  alphaAlias: AlphaService;
+}
+export class BetaService {
+  declare host: BetaHost;
+}
+`;
+
 
 describe("architecture gate", () => {
   // 场景 1：新文件 import main.ts
@@ -252,6 +272,17 @@ export class TaskQueue {
       "src/foo/gamma.ts": GAMMA_IDLE,
     }));
     expect(stats).toEqual({ services: 3, edges: 2, cyclicSccs: 1, largestScc: 2 });
+  });
+  it("resolves unambiguous main-service aliases in both directions", () => {
+    const problems = checkArchitecture({
+      "src/main.ts": MAIN_WITH_SERVICE_ALIASES,
+      "src/foo/alpha.ts": ALPHA_ALIAS,
+      "src/foo/beta.ts": BETA_ALIAS,
+    }, baseline());
+    expect(problems.filter((problem) => problem.includes("新增服务依赖"))).toHaveLength(2);
+    expect(problems.some((problem) => problem.includes("AlphaService -> BetaService"))).toBe(true);
+    expect(problems.some((problem) => problem.includes("BetaService -> AlphaService"))).toBe(true);
+    expect(problems.some((problem) => problem.includes("形成了新的依赖环"))).toBe(true);
   });
 
   // 检查脚本自身只读源码：不依赖 GitHub、网络、构建产物或 git。

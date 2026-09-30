@@ -11,6 +11,7 @@ import { redactDiagnosticText, sanitizeDiagnosticData, diagnosticError } from ".
 import type { LiveAsrBacklogSummary } from "../asr/live-segment-policy";
 import type { PluginSettings, QueueTask, RecordingSession, RealtimeOutlineInputStats } from "../shared/types";
 import type { PluginBuildInfo } from "../shared/build-info";
+import type { SessionStore } from "../session/session-store";
 import { ensureVaultFolder } from "../shared/util-vault";
 
 import { t } from "../shared/i18n";
@@ -51,8 +52,8 @@ export interface DiagnosticsHost {
   manifest?: { version?: string };
   /** 安装时写入的构建信息，报告里区分正式发布与开发版。 */
   buildInfo: PluginBuildInfo | null;
-  /** 当前录音会话，报告里读熔断状态与实时大纲输入量。 */
-  session: RecordingSession | null;
+  /** 当前录音会话，由唯一会话存储持有。 */
+  sessionStore: SessionStore;
   /** 界面上显示的版本串。 */
   getDisplayVersion(): string;
   /** 当前构建的来源描述。 */
@@ -156,10 +157,10 @@ export class DiagnosticsService {
     return result;
   }
   async buildDiagnosticReport() {
+    const activeSession = this.host.sessionStore.get();
     const activeId = this.host.settings.activeTranscribeProvider || "";
     const provider = (this.host.settings.transcribeProviders || {})[activeId] || {};
     const lines = await this.readRecentDiagnosticLines(100);
-    const activeSession = this.host.session;
     // 快照在报告生成时刻一次性采集：队列任务、实时转写积压与录音器状态来自同一时刻。
     const snapshot = this.host.getDiagnosticsSnapshot(activeSession);
     const queueItems = snapshot.queueTasks;

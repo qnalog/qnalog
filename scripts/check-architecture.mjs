@@ -43,14 +43,51 @@ function resolveSpecifier(fromFile, spec) {
   return target.replace(/\.(ts|tsx|js|mjs)$/, "");
 }
 
-/** main.ts 里的 `this.<字段> = new <类>(...)` 装配语句：plugin 字段 → 具体服务类。 */
+/** main.ts 中唯一赋值的服务实例字段与别名字段 → 具体服务类；歧义赋值不推断。 */
 function fieldClassMap(mainSource) {
-  const map = new Map();
-  if (mainSource === undefined) return map;
-  for (const m of mainSource.matchAll(/this\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*new\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g)) {
-    map.set(m[1], m[2]);
+  const assignments = new Map();
+  if (mainSource === undefined) return new Map();
+  const sourceFile = parse("src/main.ts", mainSource);
+  const add = (field, value) => {
+    let values = assignments.get(field);
+    if (!values) { values = []; assignments.set(field, values); }
+    values.push(value);
+  };
+  const isThisField = (node) => ts.isPropertyAccessExpression(node)
+    && node.expression.kind === ts.SyntaxKind.ThisKeyword
+    && ts.isIdentifier(node.name);
+  const visit = (node) => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && isThisField(node.left)) {
+      const field = node.left.name.text;
+      if (ts.isNewExpression(node.right) && ts.isIdentifier(node.right.expression)) {
+        add(field, { kind: "class", name: node.right.expression.text });
+      } else if (isThisField(node.right)) {
+        add(field, { kind: "alias", name: node.right.name.text });
+      } else {
+        add(field, null);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  const resolved = new Map();
+  for (const [field, values] of assignments) {
+    if (values.length === 1 && values[0]?.kind === "class") resolved.set(field, values[0].name);
   }
-  return map;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [field, values] of assignments) {
+      if (values.length !== 1 || values[0]?.kind !== "alias" || resolved.has(field)) continue;
+      const className = resolved.get(values[0].name);
+      if (className) {
+        resolved.set(field, className);
+        changed = true;
+      }
+    }
+  }
+  return resolved;
 }
 
 /** `this.plugin.X` 或构造参数 `plugin.X`（三个 legacy 文件两种都有）→ 能力名 X。 */

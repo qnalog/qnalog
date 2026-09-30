@@ -592,9 +592,10 @@ export class QueueModal extends obsidian.Modal {
     const activityLabel = this.plugin.tasks.getCurrentActivityLabel ? this.plugin.tasks.getCurrentActivityLabel() : null;
     const active = !!(detail || activityLabel);
     const activeLiveness = detail && detail.liveness ? String(detail.liveness) : (active ? "running" : "done");
+    const currentSession = this.plugin.getCurrentSession();
     const sessionId = this.plugin.tasks._importBusy && this.plugin.tasks._importBusy.sessionId
       ? String(this.plugin.tasks._importBusy.sessionId)
-      : this.plugin.session && this.plugin.session.id ? String(this.plugin.session.id) : "";
+      : currentSession && currentSession.id ? String(currentSession.id) : "";
     const currentActivityIds = new Set(sessionId && active
       ? [`import:${sessionId}`, `finalize:${sessionId}`]
       : []);
@@ -1021,7 +1022,7 @@ export class QueueModal extends obsidian.Modal {
       } else {
         ico.createSpan({ cls: `qnalog-progress-spinner is-${activeLiveness}` });
       }
-      const sess = this.plugin.session;
+      const sess = this.plugin.getCurrentSession();
       const fileName = sess && sess.mdPath ? String(sess.mdPath).split(/[\\/]/).pop().replace(/\.md$/i, "") : "";
       const name = (detail && detail.sourceFile) || fileName || (detail ? [detail.kind, detail.modeLabel].filter(Boolean).join(" · ") : activityLabel) || i18nT("Processing");
       const detailStartedAt = detail && Number(detail.startedAt) > 0 ? Number(detail.startedAt) : (_tm && _tm.startedAt);

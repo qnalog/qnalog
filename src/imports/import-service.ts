@@ -19,7 +19,6 @@ import { splitImportedTextIntoNormalSegments, stripImportedTextSource } from "..
 import { TaskQueue } from "../queue/task-queue";
 import type { PluginSettings, RecordingSession } from "../shared/types";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { RecordingService } from "../audio/recording-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 import { NoteWriter } from "../notes/note-writer";
@@ -32,6 +31,8 @@ import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 import { t } from "../shared/i18n";
 import { labelText } from "../shared/note-labels";
+import type { SessionStore } from "../session/session-store";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 /** 导入音频的返回：新建会话的路径、分段数，以及需要重试的转写段数；入参为空或中断时返回 undefined。 */
 export interface ImportAudioFilesResult {
   mdPath: string;
@@ -59,9 +60,9 @@ export interface ImportHost {
   noteWriter: NoteWriter;
   profiles: TranscribeProfileService;
   queue: TaskQueue | null;
-  /** 录音采集服务：切片缓存与整场音频的落点。 */
-  recording: RecordingService;
-  session: RecordingSession | null;
+  /** 独立的实时转写管线：切片缓存与当前会话进度。 */
+  asrPipeline: LiveAsrPipelineService;
+  sessionStore: SessionStore;
   sessionFinalize: SessionFinalizeService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
@@ -153,6 +154,7 @@ export class ImportService {
       externalAudioSource: externalSource,
       importTranscribeProviderId: importProvider.id,
     };
+    this.host.asrPipeline.initializeSession(session);
 
     const header = [
       `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}${labelText("importing")}`,
@@ -209,7 +211,7 @@ export class ImportService {
     for (let i = 0; i < paths.length; i++) {
       const audioPath = paths[i];
       const indexedFile = this.host.app.vault.getAbstractFileByPath(audioPath);
-      const externalCache = !!externalSource && this.host.recording.isSegmentCachePath(audioPath);
+      const externalCache = !!externalSource && this.host.asrPipeline.isSegmentCachePath(audioPath);
       const adapter = this.host.app.vault.adapter;
       const sourceExists = indexedFile instanceof obsidian.TFile
         || (externalCache && await adapter.exists(obsidian.normalizePath(audioPath)));
@@ -378,7 +380,7 @@ export class ImportService {
           segmentDone: Math.max(0, Number(this.host.tasks._importBusy && this.host.tasks._importBusy.segmentDone) || 0) + 1,
         });
         if (externalSource) {
-          await this.host.recording.maybeDeleteSegmentCacheFile(audioPath, undefined, true);
+          await this.host.asrPipeline.maybeDeleteSegmentCacheFile(audioPath, undefined, true);
         }
       } catch (caught) {
         const originalError = caught instanceof Error ? caught : new Error(String(caught));
@@ -487,7 +489,7 @@ export class ImportService {
       throw error;
     }
 
-    this.host.session = session;
+    this.host.sessionStore.begin(session);
     const pendingTranscriptionCount = session.segments.filter((segment) => !!segment.error).length;
     if (successfulTranscriptions === 0) {
       const message = pendingTranscriptionCount > 0
@@ -655,6 +657,7 @@ export class ImportService {
       finalized: false,
       textImportSources: sources.map(s => ({ path: s.path, name: s.name, chars: s.text.length })),
     };
+    this.host.asrPipeline.initializeSession(session);
 
     const header = [
       `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${meta.prefix}${labelText("textImporting")}`,
@@ -668,8 +671,8 @@ export class ImportService {
       "",
     ].join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);
-    this.host.session = session;
-    this.host.recording.setSessionWorkProgress(session, {
+    this.host.sessionStore.begin(session);
+    this.host.asrPipeline.setSessionWorkProgress(session, {
       stage: "text-import",
       label: t("Read text"),
       percent: 8,

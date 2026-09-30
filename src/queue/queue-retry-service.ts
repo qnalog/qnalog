@@ -2,13 +2,14 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：队列任务的失败恢复：转写重试、合并重试、提示词任务、改名与删除后的任务迁移
 
 import * as obsidian from "obsidian";
-import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { QnALogSettingTab } from "../ui/settings-tab";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue, isLlmServiceBlockedError, formatLlmConfigIssue } from "../llm/core";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { PluginSettings, RecordingSession, Segment } from "../shared/types";
+import type { PluginSettings, Segment } from "../shared/types";
+import type { SessionStore } from "../session/session-store";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { genId, formatElapsed, escapeRegExp } from "../shared/util-common";
 import { mimeFromExt, isAsrTransportError } from "../shared/util-audio";
@@ -55,12 +56,12 @@ export interface QueueRetryHost {
 
   saveAll(): Promise<void>;
   saveSettings(): Promise<void>;
-  session: RecordingSession | null;
+  sessionStore: SessionStore;
   settingTab: QnALogSettingTab | null;
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
-  /** 录音服务的熔断与切片缓存视图：装配层把这 5 个方法绑定到录音服务。 */
-  asrCircuit: { getAsrServiceCircuitState(): LiveAsrCircuitState; isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
+  /** ASR 熔断与切片缓存操作。 */
+  asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile">;
   /** 装配层转发：补转写成功后请求说话人姓名确认（调用 SessionFinalizeService.confirmSpeakerNamesBeforeFinal），返回值在调用点不使用。 */
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
   /** 词汇表与行业提示词服务。 */
@@ -100,8 +101,9 @@ export class QueueRetryService {
     this._taskQueueRetryTimer = window.setTimeout(() => {
       this._taskQueueRetryTimer = null;
       this._taskQueueRetryAt = 0;
+      const session = this.host.sessionStore.get();
       const recorderBusy = this.host.recorder && this.host.recorder.state !== "idle";
-      const segmentBusy = this.host.session && Number(this.host.session.activeSegmentJobs || 0) > 0;
+      const segmentBusy = session && Number(session.activeSegmentJobs || 0) > 0;
       const queueBusy = this.host.queue && this.host.queue.running;
       if (recorderBusy || segmentBusy || queueBusy) {
         this.scheduleTaskQueueRetry(30 * 1000, "activity-still-busy");
@@ -116,7 +118,7 @@ export class QueueRetryService {
   }
   scheduleDeferredAsrRetry(session) {
     if (!session || !session.hasDeferredAsrJobs) return;
-    const serviceCircuit = this.host.asrCircuit.getAsrServiceCircuitState();
+    const serviceCircuit = this.host.asrPipeline.getAsrServiceCircuitState();
     const openUntilMs = Math.max(
       0,
       Number(session.asrCircuitState && session.asrCircuitState.openUntilMs) || 0,
@@ -161,7 +163,7 @@ export class QueueRetryService {
       return;
     }
     if (runnable.some((task) => task.type === "transcribe")) {
-      this.host.asrCircuit.resetAsrServiceCircuitForManualRetry("retry-all");
+      this.host.asrPipeline.resetAsrServiceCircuitForManualRetry("retry-all");
       for (const task of runnable) {
         if (task.type === "transcribe") task.nextRetryAt = undefined;
       }
@@ -188,10 +190,10 @@ export class QueueRetryService {
     this.host.queue._batchTotal = batch.length;
     this.host.queue._batchDone = 0;
     this.host.notifyTaskBusyChanged();
-    this.host.asrCircuit.resetAsrServiceCircuitForManualRetry("note-retry");
+    this.host.asrPipeline.resetAsrServiceCircuitForManualRetry("note-retry");
     try {
       for (const task of batch) {
-        if (this.host.asrCircuit.isAsrServiceCircuitOpen()) break;
+        if (this.host.asrPipeline.isAsrServiceCircuitOpen()) break;
         try {
           await this.host.queue.processOne(task);
           ok++;
@@ -199,7 +201,7 @@ export class QueueRetryService {
           failed++;
           console.error("[QnALog] retry transcribe task from note list failed", e);
           if (isAsrTransportError(e)) {
-            this.scheduleTaskQueueRetry(this.host.asrCircuit.getAsrServiceRetryDelayMs(), "note-retry-transport-failure");
+            this.scheduleTaskQueueRetry(this.host.asrPipeline.getAsrServiceRetryDelayMs(), "note-retry-transport-failure");
             paused = true;
           }
         }
@@ -359,7 +361,7 @@ export class QueueRetryService {
     const existingTranscriptBlock = matchingTranscriptBlocks[0] || null;
     if (existingTranscriptBlock && !existingTranscriptBlock.segment.error && !failMark.test(existingTranscriptBlock.visibleBlock)) {
       if (mdFile instanceof obsidian.TFile) await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry-idempotent" });
-      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
+      await this.host.asrPipeline.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
       return;
     }
     if (!existingTranscriptBlock && taskMarker && currentMarkdown.includes(taskMarker) && !(taskPattern && taskPattern.test(currentMarkdown))) {
@@ -368,7 +370,7 @@ export class QueueRetryService {
         const migrated = await this.host.app.vault.process(mdFile, (latest) => ensureTranscriptBlocks(latest, sourceId, { reconcileEditedText: false }));
         if (migrated !== currentMarkdown) await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry-legacy-upgrade" });
       }
-      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
+      await this.host.asrPipeline.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
       return;
     }
     const audio = await this.readTranscribeTaskAudioBlob(task);
@@ -521,7 +523,7 @@ export class QueueRetryService {
       replaced = true;
     }
     if (alreadyCommitted) {
-      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
+      await this.host.asrPipeline.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
       if (mdFile instanceof obsidian.TFile) await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry-idempotent" });
       return;
     }
@@ -529,7 +531,7 @@ export class QueueRetryService {
       await this.host.noteIndex.refreshNoteIndexSafely(mdFile, { reason: "transcript-retry" });
     }
     if (!audio.recovered && (!task.wholeFileImport || task.ephemeralAudio)) {
-      await this.host.asrCircuit.maybeDeleteSegmentCacheFile(task.audioPath, task.id, !!task.ephemeralAudio);
+      await this.host.asrPipeline.maybeDeleteSegmentCacheFile(task.audioPath, task.id, !!task.ephemeralAudio);
     }
     if (replaced && task.wholeFileImport && task.speakerDiarization !== false) {
       await this.host.confirmSpeakerNames({

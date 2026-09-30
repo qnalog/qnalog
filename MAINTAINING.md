@@ -45,7 +45,7 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 
 - **一个域一个服务类**：文件 `src/<域>/<域>-service.ts`，类名与文件名对应（`XService`）。类里只放该域的方法与该域自己的状态，
   状态在构造函数里初始化；需要随插件卸载清理的（定时器、监听器、防抖器）由服务提供 `dispose()` 或 `start()`，由插件在 `onload`/`onunload` 调用。
-- **窄接口**：服务自带 `export interface <类名去 Service>Host`，只列该域真正用到的宿主能力，运行时传插件实例。
+- **窄接口**：服务自带 `export interface <类名去 Service>Host`，只列该域真正用到的宿主能力。默认传插件实例；若服务需要独立端口，则在 `main.ts` 装配时传入只含所需能力的对象，并由边界检查确认其契约。
   跨域能力不回到插件上再转发，而是挂拥有它的服务（如 `host.noteWriter.insertBeforeSegmentsStart`、`host.recording.startRecording`）。
 - **主体保留装配与生命周期**：插件类只留 `onload`/`onunload`、`loadAll`/`saveAll`/`saveSettings`、构建信息与更新检查转发；
   域字段按域命名（`this.diagnostics`、`this.recording`…），调用点写 `plugin.<域>.<成员>`。
@@ -493,7 +493,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
       - **重启条件**：若将来出现必须改 `outline-view.ts` 结构性问题的需求（例如某个面板要独立成视图、
         或某类 bug 反复出现且定位困难），再按 §1.1.1 的抽取约定分簇推进，不要为了「文件变小」而拆。
         2026-09-30 评审已把沉淀簇排入第三阶段，见 §14.4。
-- [ ] §14.4 第二阶段第 1 项：会话状态收口
+- [x] §14.4 第二阶段第 1 项代码与自动检查完成；真实 Obsidian 验证待维护者执行
 - [ ] §14.4 第二阶段第 2–6 项
 - [ ] §14.4 第三阶段：OutlineView 沉淀簇
 - [ ] P3 命名空间重置（见 §1.1.2）：
@@ -1423,7 +1423,7 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 
 #### 第二阶段（按顺序；每项单独分支，均需维护者在真实 Obsidian 中验证）
 
-1. **会话状态收口（A3、A4）**：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 9 处 `host.session =` 赋值。把 live-ASR 状态从 `RecordingService` 移至 `LiveAsrPipelineService`，使 Recording 与 SessionFinalize 都依赖该服务，彼此不再互相调用。完成判据：从 `src/main.ts` 删除 `liveAsr`、`sessionPipeline`、`asrCircuit`、`sessionProgress` 四个别名后，`check:architecture` 在 Recording 与 SessionFinalize 之间两个方向都没有边。验证录音、暂停、续录、导入音频、转写失败后重试。
+1. **会话状态收口（A3、A4）**【代码与自动检查完成；待维护者在真实 Obsidian 验证】：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 `host.session =` 赋值。把 live-ASR 状态从 `RecordingService` 移至 `LiveAsrPipelineService`，使 Recording 与 SessionFinalize 都依赖该服务，彼此不再互相调用。`scripts/check-architecture.mjs` 现在能解析唯一的服务别名赋值，基线同时反映新的 `SessionStore` / `LiveAsrPipelineService` 依赖与移除的旧边；端口注入由 Host 边界检查识别并在装配冒烟中核对。人工验收：录音、暂停与恢复、续录、音频与文本导入、ASR 失败后重试，以及短录音收尾；未完成这些步骤前不把用户可见行为视为验证通过。
 2. **Host 能力面棘轮（A2）**：`check:architecture` 增加第五个基线字段，登记当前含完整 `settings: PluginSettings` 或 `app: obsidian.App` 的 Host 接口（23 / 22 个），沿用使用集合与基线完全一致的规则。之后改动服务时，顺带把相关 Host 改成 `Pick<PluginSettings, …>` 或具体 vault 能力，并收缩基线。
 3. **笔记文档模型（A6）**：新建 `src/notes/note-document.ts`，集中解析与序列化 frontmatter、正文、原始材料、分段逐字稿块、会话标记和机器注释。先由 `tests/note-markdown-characterization.test.ts` 固定现有输出，再逐个迁移 A6 所列读取方；旧格式兼容只留在该模块。
 4. **类型检查棘轮（A7）**：改动某个文件时先把它加入 `tsconfig.strict-core.json`，按 `strictNullChecks` 错误数从少到多推进；A7 列出的前五个文件在各自结构改动完成后再处理。
