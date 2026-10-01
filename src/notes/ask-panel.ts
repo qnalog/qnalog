@@ -6,6 +6,8 @@ import { cleanImportedTextForPrompt, extractRawTranscriptForImport, markdownQuot
 import { truncateForLlmPrompt } from "../shared/util-text";
 import { NS_SEDIMENT_LINE_BEGIN_RE } from "../shared/namespace";
 import { t } from "../shared/i18n";
+import { findFirstNoteBoundary } from "./note-document";
+
 
 export const NOTE_ASK_CONTEXT_MAX_CHARS = 18000;
 
@@ -64,14 +66,7 @@ export function findAskBoundary(markdown) {
     /\n##\s+(?:📁\s*)?(?:原始材料|Original material)(?![\w])/i,
     NS_SEDIMENT_LINE_BEGIN_RE,
   ];
-  const indexes = patterns
-    .map((re) => {
-      const m = re.exec(text);
-      return m ? m.index : -1;
-    })
-    .filter(idx => idx >= 0)
-    .sort((a, b) => a - b);
-  return indexes.length ? indexes[0] : text.length;
+  return findFirstNoteBoundary(text, patterns);
 }
 
 export function appendAskEntry(markdown, question, answer) {

@@ -6,7 +6,7 @@ import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { stableHash } from "../shared/stable-hash";
 import { NS_FM, NS_TAG, nsRe } from "../shared/namespace";
 import { labelPattern, labelText, UTILITY_HEADING_RE } from "../shared/note-labels";
-import { findActiveVersionBlock, stripUtilityDetailsBlocks } from "../notes/note-document";
+import { findActiveVersionBlock, findFirstNoteBoundary, stripUtilityDetailsBlocks } from "../notes/note-document";
 // 写入用折叠壳新格式（标记在外、details+json 围栏在内，阅读视图折叠为一行）；
 // 读取同时接受旧的单注释格式，否则既有笔记里的索引块会被重复插入。
 export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index -->`;
@@ -122,12 +122,7 @@ function stripUtilityTail(markdown: string): string {
     new RegExp(`<!--\\s*${nsRe("segments-start")}\\b`, "i"),
     /^##\s+(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲|Original material|Raw transcript|Verbatim transcript|Recording transcript|Segmented raw transcript|Playback timeline|Live outline while recording)\s*$/im,
   ];
-  let end = markdown.length;
-  for (const boundary of boundaries) {
-    const match = boundary.exec(markdown);
-    if (match && match.index < end) end = match.index;
-  }
-  return markdown.slice(0, end);
+  return markdown.slice(0, findFirstNoteBoundary(markdown, boundaries));
 }
 
 function extractLastLegacyPolishBlock(markdown: string): string {
@@ -137,8 +132,7 @@ function extractLastLegacyPolishBlock(markdown: string): string {
   if (!matches.length) return markdown;
   const start = matches[matches.length - 1].index || 0;
   const tail = markdown.slice(start);
-  const divider = /^---\s*$/m.exec(tail);
-  return divider ? tail.slice(0, divider.index) : tail;
+  return tail.slice(0, findFirstNoteBoundary(tail, [/^---\s*$/m]));
 }
 
 export function removeNoteIndex(markdown: unknown): string {

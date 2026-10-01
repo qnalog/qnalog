@@ -7,7 +7,7 @@ vi.mock("obsidian", () => ({
 vi.stubGlobal("window", {});
 
 import { appendAskEntry, findAskBoundary, normalizeAskSections, stripAskBlocks } from "../src/notes/ask-panel";
-import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
 // 问一问区的解析必须中英双语（老笔记中文、新笔记随界面语言），且与当前界面语言无关；
 // 写入（appendAskEntry 的 `## 问一问` / `> [!summary] 问一问`）随界面语言取词。
@@ -59,6 +59,33 @@ describe("findAskBoundary：边界落在原始材料标题前（双语）", () =
     expect(zhNote.slice(findAskBoundary(zhNote))).toBe("\n## 📁 原始材料\n\n转写。");
     expect(enNote.slice(findAskBoundary(enNote))).toBe("\n## 📁 Original material\n\nTranscript.");
   });
+});
+it("findAskBoundary preserves raw-material and sediment precedence, including missing and offset-zero cases", () => {
+  const note = "# T\n---\n\n## 原始材料\nRAW";
+  expect(findAskBoundary(note)).toBe("# T".length);
+  expect(note.slice(findAskBoundary(note))).toBe("\n---\n\n## 原始材料\nRAW");
+  const sediment = "# T\n<!-- QNALOG_SEDIMENT_BEGIN -->\nDATA\n## Original material\nRAW";
+  expect(findAskBoundary(sediment)).toBe(sediment.indexOf("<!--"));
+  expect(findAskBoundary("## Original material\nRAW")).toBe("## Original material\nRAW".length);
+  expect(findAskBoundary("Text mentions Original material only")).toBe("Text mentions Original material only".length);
+  expect(findAskBoundary("No boundary")).toBe("No boundary".length);
+  expect(findAskBoundary("\n## Original material\nRAW")).toBe(0);
+});
+
+it("appendAskEntry preserves the exact raw-material tail", () => {
+  const previous = getActiveUiLanguage();
+  setActiveUiLanguage(resolveUiLanguage("en", "en"));
+  vi.stubGlobal("window", { moment: () => ({ format: () => "2026-10-01 12:00" }) });
+  try {
+    const result = appendAskEntry("# T\n---\n\n## Original material\nRAW", "Q?", "A!");
+    expect(result).toBe("# T\n\n## Q&A\n\n### 2026-10-01 12:00\n\n> [!summary] Q&A\n> **问：**\n> Q?\n> \n> ---\n> \n> **答：**\n> A!\n\n---\n\n## Original material\nRAW");
+    const twice = appendAskEntry(result, "Q2?", "A2!");
+    expect(twice.match(/\n## Q&A/g)).toHaveLength(1);
+    expect(twice.endsWith("---\n\n## Original material\nRAW")).toBe(true);
+  } finally {
+    vi.stubGlobal("window", {});
+    setActiveUiLanguage(previous);
+  }
 });
 
 describe("normalizeAskSections：多段问一问合并（双语、输出标题随界面语言）", () => {

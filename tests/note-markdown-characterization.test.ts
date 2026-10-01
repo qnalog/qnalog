@@ -22,7 +22,7 @@ import {
   stripMarkdownForEmailBrief,
   getSourceIdFromMarkdown,
 } from "../src/notes/note-markdown";
-import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, iterateNoteDetailsBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
@@ -561,4 +561,48 @@ describe("笔记外层结构", () => {
     expect(extractSessionId("<!-- qnalog-segments-start -->", "fallback")).toBe("fallback");
   });
 
+});
+
+describe("共享笔记结构范围定位", () => {
+  it("返回首个边界且不修改 global 正则的 lastIndex", () => {
+    const text = "xx target yy";
+    const pattern = /target/g;
+    pattern.lastIndex = 4;
+    expect(findFirstNoteBoundary(text, [])).toBe(text.length);
+    expect(findFirstNoteBoundary(text, [/missing/, /target/])).toBe(3);
+    expect(pattern.lastIndex).toBe(4);
+    expect(findFirstNoteBoundary(text, [pattern])).toBe(3);
+    expect(pattern.lastIndex).toBe(4);
+    expect(findFirstNoteBoundary("hit before", [/hit/, /before/])).toBe(0);
+    expect(findFirstNoteBoundary("none", [/absent/])).toBe(4);
+  });
+
+  it("yields exact UTF-16 slices in order with independent iterator state", () => {
+    const text = "\uFEFF😀\r\n<details><summary>same</summary>\r\nsame</details>\r\n<DETAILS><SUMMARY>same</SUMMARY></DETAILS>";
+    const expected = [
+      { outer: "<details><summary>same</summary>\r\nsame</details>", summary: "same", body: "same" },
+      { outer: "<DETAILS><SUMMARY>same</SUMMARY></DETAILS>", summary: "same", body: "" },
+    ];
+    const first = iterateNoteDetailsBlocks(text);
+    const second = iterateNoteDetailsBlocks(text);
+    const firstRange = first.next().value!;
+    const secondRange = second.next().value!;
+    expect(text.slice(firstRange.start, firstRange.end)).toBe(expected[0].outer);
+    expect(text.slice(firstRange.summaryStart, firstRange.summaryEnd)).toBe(expected[0].summary);
+    expect(text.slice(firstRange.bodyStart, firstRange.bodyEnd)).toBe(expected[0].body);
+    expect(secondRange).toEqual(firstRange);
+    const remainder = [...first];
+    expect(remainder).toHaveLength(1);
+    expect(text.slice(remainder[0].start, remainder[0].end)).toBe(expected[1].outer);
+    expect(text.slice(remainder[0].summaryStart, remainder[0].summaryEnd)).toBe("same");
+    expect(text.slice(remainder[0].bodyStart, remainder[0].bodyEnd)).toBe("");
+    expect([...iterateNoteDetailsBlocks("<details><summary>open</summary>")]).toEqual([]);
+  });
+
+  it("keeps the existing flat match when an earlier opening tag closes later", () => {
+    const text = "<details><summary>Wanted</summary>outer<details><summary>Inner</summary>inner</details>tail</details>";
+    const range = [...iterateNoteDetailsBlocks(text)][0];
+    expect(text.slice(range.bodyStart, range.bodyEnd)).toBe("outer<details><summary>Inner</summary>inner");
+    expect(stripUtilityDetailsBlocks("<details><summary><b>Raw transcript</b></summary>keep</details>")).toContain("keep");
+  });
 });
