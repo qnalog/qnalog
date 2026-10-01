@@ -22,7 +22,7 @@ import {
   stripMarkdownForEmailBrief,
   getSourceIdFromMarkdown,
 } from "../src/notes/note-markdown";
-import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, iterateNoteDetailsBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
@@ -39,6 +39,32 @@ const END = QNALOG_ACTIVE_VERSION_END;
 const SESSION_LINE = "<!-- " + NS_TAG + "-session:" + NS_TAG + "-test1234-abcdef -->";
 const EMBED = "![]" + "[[qnalog-20260924-100138.webm]]";
 const count = (text: string, needle: string) => text.split(needle).length - 1;
+
+describe("iterateNoteHeadingBlocks", () => {
+  it("returns original heading captures and exact ranges for adjacent and final headings", () => {
+    const markdown = "### Segment 1\r\n### Segment 2\r\nbody\r\n### Segment 3\r\nlast";
+    const pattern = /^### Segment (\d+)([^\n]*)$/gm;
+    pattern.lastIndex = 7;
+    const ranges = [...iterateNoteHeadingBlocks(markdown, pattern)];
+    expect(pattern.lastIndex).toBe(7);
+    expect(ranges.map((range) => range.match[1])).toEqual(["1", "2", "3"]);
+    expect(markdown.slice(ranges[0].bodyStart, ranges[0].bodyEnd)).toBe("\n");
+    expect(markdown.slice(ranges[1].bodyStart, ranges[1].bodyEnd)).toBe("\nbody\r\n");
+    expect(markdown.slice(ranges[2].bodyStart, ranges[2].bodyEnd)).toBe("\nlast");
+  });
+
+  it("returns no ranges without a heading and lets a broader boundary truncate a timed body", () => {
+    const timedHeading = /^### Segment \d+ \(([^)\n]+?)[–-]([^\n)]+?)\)([^\n]*)$/m;
+    expect([...iterateNoteHeadingBlocks("plain text", timedHeading)]).toEqual([]);
+    const markdown = "### Segment 1 (00:00–00:10)\nbody\n### Segment 2\nlater.wav";
+    const [range] = iterateNoteHeadingBlocks(
+      markdown,
+      timedHeading,
+      /^### Segment \d+/m,
+    );
+    expect(markdown.slice(range.bodyStart, range.bodyEnd)).toBe("\nbody\n");
+  });
+});
 
 describe("parseSuggestedTagsFromOutput 标签建议注释", () => {
   it("解析标签并把注释从正文剥除，去重且保持顺序", () => {

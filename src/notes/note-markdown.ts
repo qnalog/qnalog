@@ -38,7 +38,7 @@ import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "..
 import { diagnosticError } from "../shared/util-key-diag";
 
 import { sanitizeActiveVersionBody } from "../versions/version-content";
-import { extractAllRawBlocksFromText, extractSessionId, replaceExistingActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
+import { extractAllRawBlocksFromText, extractSessionId, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
@@ -49,6 +49,7 @@ import { extractBriefingPartEnvelope } from "../briefing/pipeline";
 
 import { getActiveUiLanguage, t } from "../shared/i18n";
 import { parseSessionKnowledgeResponse, stripSessionKnowledgeBlocks } from "../briefing/session-knowledge";
+const LEGACY_TRANSCRIPT_HEADING_RE = /^###\s+(?:(?:段落|Segment|Audio(?: source)?|Text source|音频|文本来源)\s+(\d+)([^\n]*)|(\d+)[.、]\s*([^\n]*))$/gm;
 export function isTimeLabel(text) {
   const time = "(?:\\d{1,2}:)?\\d{1,2}:\\d{2}";
   return new RegExp("^" + time + "(?:\\s*[–-]\\s*" + time + ")?$").test(String(text || "").trim());
@@ -730,18 +731,11 @@ export function extractTranscriptSegments(markdown) {
     const foundAt = legacyMarkdown.indexOf(section, sectionSearchFrom);
     const sectionStart = foundAt >= 0 ? foundAt : sectionSearchFrom;
     sectionSearchFrom = sectionStart + section.length;
-    const headingRe = /^###\s+(?:(?:段落|Segment|Audio(?: source)?|Text source|音频|文本来源)\s+(\d+)([^\n]*)|(\d+)[.、]\s*([^\n]*))$/gm;
-    const heads = [...String(section).matchAll(headingRe)];
-    if (!heads.length) {
-      const text = cleanTranscriptBlock(section);
-      if (text) entries.push({ segment: { index: entries.length, startOffsetMs: 0, endOffsetMs: 0, text }, position: toSourceOffset(sectionStart) });
-      continue;
-    }
-    for (let index = 0; index < heads.length; index += 1) {
-      const heading = heads[index];
-      const bodyStart = heading.index + heading[0].length;
-      const bodyEnd = index + 1 < heads.length ? heads[index + 1].index : section.length;
-      const rawBlock = section.slice(bodyStart, bodyEnd);
+    let hadHeading = false;
+    for (const range of iterateNoteHeadingBlocks(section, LEGACY_TRANSCRIPT_HEADING_RE)) {
+      hadHeading = true;
+      const heading = range.match;
+      const rawBlock = section.slice(range.bodyStart, range.bodyEnd);
       const body = cleanTranscriptBlock(rawBlock);
       if (!body) continue;
       const tail = String(heading[2] || heading[4] || "");
@@ -769,8 +763,12 @@ export function extractTranscriptSegments(markdown) {
           queueTaskId: taskMatch?.[1],
           text: body,
         },
-        position: toSourceOffset(sectionStart + heading.index),
+        position: toSourceOffset(sectionStart + range.start),
       });
+    }
+    if (!hadHeading) {
+      const text = cleanTranscriptBlock(section);
+      if (text) entries.push({ segment: { index: entries.length, startOffsetMs: 0, endOffsetMs: 0, text }, position: toSourceOffset(sectionStart) });
     }
   }
   entries.sort((left, right) => left.position - right.position);
@@ -858,28 +856,15 @@ export function ensureTranscriptBlocks(
     const foundAt = legacyMarkdown.indexOf(section, sectionSearchFrom);
     const sectionStart = foundAt >= 0 ? foundAt : sectionSearchFrom;
     sectionSearchFrom = sectionStart + section.length;
-    const headingRe = /^###\s+(?:(?:段落|Segment|Audio(?: source)?|Text source|音频|文本来源)\s+(\d+)([^\n]*)|(\d+)[.、]\s*([^\n]*))$/gm;
-    const headings = [...section.matchAll(headingRe)];
-    if (!headings.length) {
-      const body = cleanTranscriptBlock(section);
-      if (!body) continue;
-      const start = toSourceOffset(sectionStart);
-      const end = toSourceOffset(sectionStart + section.length);
-      const key = `${start}:${end}`;
-      if (seenRanges.has(key)) continue;
-      seenRanges.add(key);
-      legacyEntries.push({ segment: { index: -1, startOffsetMs: 0, endOffsetMs: 0, text: body }, position: start, start, end, heading: "", visibleText: section });
-      continue;
-    }
-    for (let index = 0; index < headings.length; index += 1) {
-      const headingMatch = headings[index];
-      const bodyStart = headingMatch.index + headingMatch[0].length;
-      const bodyEnd = index + 1 < headings.length ? headings[index + 1].index : section.length;
-      const rawBlock = section.slice(bodyStart, bodyEnd);
+    let hadHeading = false;
+    for (const range of iterateNoteHeadingBlocks(section, LEGACY_TRANSCRIPT_HEADING_RE)) {
+      hadHeading = true;
+      const headingMatch = range.match;
+      const rawBlock = section.slice(range.bodyStart, range.bodyEnd);
       const body = cleanTranscriptBlock(rawBlock);
       if (!body) continue;
-      const start = toSourceOffset(sectionStart + headingMatch.index!);
-      const end = toSourceOffset(sectionStart + bodyEnd);
+      const start = toSourceOffset(sectionStart + range.start);
+      const end = toSourceOffset(sectionStart + range.bodyEnd);
       const key = `${start}:${end}`;
       if (seenRanges.has(key)) continue;
       seenRanges.add(key);
@@ -916,6 +901,16 @@ export function ensureTranscriptBlocks(
         heading: headingMatch[0],
         visibleText: rawBlock,
       });
+    }
+    if (!hadHeading) {
+      const body = cleanTranscriptBlock(section);
+      if (!body) continue;
+      const start = toSourceOffset(sectionStart);
+      const end = toSourceOffset(sectionStart + section.length);
+      const key = `${start}:${end}`;
+      if (seenRanges.has(key)) continue;
+      seenRanges.add(key);
+      legacyEntries.push({ segment: { index: -1, startOffsetMs: 0, endOffsetMs: 0, text: body }, position: start, start, end, heading: "", visibleText: section });
     }
   }
   if (!legacyEntries.length) return next;

@@ -59,6 +59,38 @@ export function* iterateNoteDetailsBlocks(markdown: string): IterableIterator<No
   }
 }
 
+export interface NoteHeadingBlockRange {
+  start: number;
+  bodyStart: number;
+  bodyEnd: number;
+  match: RegExpExecArray;
+}
+
+export function* iterateNoteHeadingBlocks(
+  markdown: string,
+  headingPattern: RegExp,
+  nextBoundaryPattern?: RegExp,
+): IterableIterator<NoteHeadingBlockRange> {
+  const text = String(markdown || "");
+  const flags = headingPattern.flags.includes("g") ? headingPattern.flags : `${headingPattern.flags}g`;
+  const headings = new RegExp(headingPattern.source, flags);
+  let match: RegExpExecArray | null = headings.exec(text);
+  while (match) {
+    const start = match.index;
+    const bodyStart = start + match[0].length;
+    const nextHeading = headings.exec(text);
+    let bodyEnd = text.length;
+    if (nextBoundaryPattern) {
+      const boundary = text.slice(bodyStart).search(nextBoundaryPattern);
+      if (boundary >= 0) bodyEnd = bodyStart + boundary;
+    } else if (nextHeading) {
+      bodyEnd = nextHeading.index;
+    }
+    yield { start, bodyStart, bodyEnd, match };
+    match = nextHeading;
+  }
+}
+
 export function findActiveVersionBlock(markdown: string): ActiveVersionBlockRange | null {
   const text = String(markdown || "");
   const match = NS_ACTIVE_VERSION_BODY_RE.exec(text);

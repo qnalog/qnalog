@@ -14,6 +14,7 @@ import { formatElapsed, normalizeAudioLinkTarget, safeDecodeUriText } from "../s
 
 import { labelText } from "../shared/note-labels";
 
+import { iterateNoteHeadingBlocks } from "./note-document";
 export function getAudioTimeLink(audioName, ms) {
   const name = String(audioName || "").trim();
   if (!name) return "";
@@ -77,14 +78,12 @@ export function getAudioLinkTarget(linkPath) {
 export function extractAudioSegmentOffsets(markdown) {
   const map = new Map();
   const text = String(markdown || "");
-  const headingRe = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)([^\n]*)$/gm;
-  let match;
-  while ((match = headingRe.exec(text))) {
+  const headingPattern = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\\n]+?)\)([^\n]*)$/gm;
+  const nextBoundaryPattern = /^###\s+(?:段落|Segment)\s+\d+/m;
+  for (const range of iterateNoteHeadingBlocks(text, headingPattern, nextBoundaryPattern)) {
+    const match = range.match;
     const startOffsetMs = parseElapsedMsToken(match[1]);
-    const bodyStart = match.index + match[0].length;
-    const nextHeading = text.slice(bodyStart).search(/^###\s+(?:段落|Segment)\s+\d+/m);
-    const bodyEnd = nextHeading >= 0 ? bodyStart + nextHeading : text.length;
-    const block = text.slice(bodyStart, bodyEnd);
+    const block = text.slice(range.bodyStart, range.bodyEnd);
     const embed = block.match(/!\[\[([^\]]+)\]\]/);
     if (!embed) continue;
     const target = getAudioLinkTarget(embed[1]);
