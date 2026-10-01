@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { getSourceIdFromMarkdown, getVersionStoreFolder } from "../src/notes/note-markdown";
 
 const { cleanTranscriptMock, mergeAndPolishMock } = vi.hoisted(() => ({
@@ -125,10 +126,17 @@ const sourceContent = [
 
 
 
+let languageBeforeTest = getActiveUiLanguage();
+
 beforeEach(() => {
+  languageBeforeTest = getActiveUiLanguage();
   vi.stubGlobal("window", {});
   cleanTranscriptMock.mockReset().mockResolvedValue({ text: "Readable cleaned transcript.", truncated: false });
   mergeAndPolishMock.mockReset();
+});
+
+afterEach(() => {
+  setActiveUiLanguage(languageBeforeTest);
 });
 
 describe("clean transcript storage", () => {
@@ -431,7 +439,92 @@ describe("clean transcript storage", () => {
       && candidate.data.includes('variant_kind: "clean"') && candidate.data.includes("Readable cleaned transcript."))).toBe(true);
     expect(cleanTranscript).toHaveBeenCalledOnce();
   });
+  it("uses an English built-in mode prefix for new repolished files and cache records", async () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/旧中文纪要.md", sourceContent);
+    const oldChineseDerived = new obsidian.TFile(
+      "QnALog/转写纪要/【工作纪要】旧中文纪要.md",
+      "legacy Chinese derived note",
+    );
+    files.set(sourceFile.path, sourceFile);
+    files.set(oldChineseDerived.path, oldChineseDerived);
+    const settings = {
+      mdFolder: "QnALog/转写纪要",
+      promptTemplates: {
+        "custom-output": {
+          id: "custom-output",
+          mode: "custom-output",
+          customMode: true,
+          name: "我的模板",
+          baseMode: "meeting",
+          prompt: "Custom prompt fixture.",
+        },
+      },
+    };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_time: "2026-09-29T21:49:00", qnalog_mode: "meeting" } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
+    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const tasks = {
+      startTaskActivity: vi.fn(), patchTaskActivity: vi.fn(), updateBusyStatus: vi.fn(),
+      beginTaskMeter: vi.fn(() => ({ id: "meter" })), endTaskMeter: vi.fn(() => ({ elapsedMs: 1 })),
+      logCompletedWork: vi.fn(), completeTaskActivity: vi.fn(), failTaskActivity: vi.fn(),
+    };
+    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    mergeAndPolishMock.mockResolvedValue("Generated body fixture.");
+
+    await service.repolishMarkdownFile(sourceFile, "meeting", { label: "简洁" });
+
+    const derived = files.get("QnALog/转写纪要/【Work notes · 简洁】旧中文纪要.md");
+    expect(derived?.data).toContain("Generated body fixture.");
+    expect(derived?.data).toContain('variant_label: "Work notes · 简洁"');
+    expect(derived?.data).toContain('variant_mode: "meeting"');
+    expect(derived?.data).toContain('variant_style: "简洁"');
+    const folder = getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const manifestPath = `${folder}/manifest.json`;
+    const manifest = JSON.parse(await vault.adapter.read(manifestPath));
+    const record = manifest.versions.find((entry: { label: string }) => entry.label === "Work notes · 简洁");
+    expect(record).toBeDefined();
+    expect(record.mode).toBe("meeting");
+    expect(record.style).toBe("简洁");
+    const cache = files.get(`${folder}/${record.fileName}`);
+    expect(cache?.data).toContain('variant_label: "Work notes · 简洁"');
+    expect(cache?.data).toContain('variant_mode: "meeting"');
+    expect(cache?.data).toContain('variant_style: "简洁"');
+    const activeBeforeSwitch = manifest.activeVersionId;
+    await service.repolishMarkdownFile(sourceFile, "meeting");
+    await service.repolishMarkdownFile(sourceFile, "meeting");
+    const noPreferenceDerived = files.get("QnALog/转写纪要/【Work notes】旧中文纪要.md");
+    expect(noPreferenceDerived?.data).toContain('variant_label: "Work notes"');
+    expect(noPreferenceDerived?.data).toContain('variant_style: ""');
+    const afterRepeated = JSON.parse(await vault.adapter.read(manifestPath));
+    expect(afterRepeated.activeVersionId).toBe(activeBeforeSwitch);
+    expect(afterRepeated.versions.filter((entry: { label: string; kind: string }) =>
+      entry.label === "Work notes" && entry.kind === "minutes")).toHaveLength(2);
+    expect(oldChineseDerived.data).toBe("legacy Chinese derived note");
+    await versions.switchVersion(cache!, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("> [!info]- Currently displayed version: Work notes · 简洁");
+    expect(await vault.read(sourceFile)).toContain("Original ASR transcript.");
+    expect(JSON.parse(await vault.adapter.read(manifestPath)).activeVersionId).toBe(record.id);
+    expect(activeBeforeSwitch).not.toBe(record.id);
+
+    await service.repolishMarkdownFile(sourceFile, "custom-output", { label: "简洁" });
+    const customDerived = files.get("QnALog/转写纪要/【我的模板 · 简洁】旧中文纪要.md");
+    expect(customDerived?.data).toContain('variant_label: "我的模板 · 简洁"');
+    expect(customDerived?.data).toContain('variant_mode: "custom-output"');
+    expect(customDerived?.data).toContain('variant_style: "简洁"');
+    expect(customDerived?.data).not.toContain("Custom prompt:");
+    const afterCustom = JSON.parse(await vault.adapter.read(manifestPath));
+    expect(afterCustom.versions.some((entry: { label: string; mode: string }) =>
+      entry.label === "我的模板 · 简洁" && entry.mode === "custom-output")).toBe(true);
+  });
+
   it("saves and exposes a personal-note original when a synthesis version is generated", async () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const { files, vault } = createMemoryVault();
     const originalContent = sourceContent.replace("qnalog_mode: meeting", "qnalog_mode: monologue");
     const sourceFile = new obsidian.TFile("QnALog/转写纪要/个人笔记-假期安排-中秋国庆拼假.md", originalContent);

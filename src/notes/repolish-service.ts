@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：重新整理：按说话人姓名重排当前纪要、生成清稿
 
 import * as obsidian from "obsidian";
-import { getModeMeta } from "../shared/mode-meta";
+import { getModeMeta, getModePrefix } from "../shared/mode-meta";
 import { getSessionMetaDurationMs } from "../shared/util-text";
 import { stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings } from "../shared/types";
@@ -205,7 +205,8 @@ export class RepolishService {
       // LLM 输入使用，原始转写和用户已经保存的 YAML 必须保持可追溯。
       const dailyTargetFile = file;
       const latestSourceContent = await this.host.app.vault.read(dailyTargetFile);
-      const versionLabel = `${meta.prefix}${preferenceLabel}`;
+      const outputPrefix = meta.custom ? meta.prefix : getModePrefix(meta);
+      const versionLabel = `${outputPrefix}${preferenceLabel}`;
       const versionStyle = repolishOptions && repolishOptions.label ? repolishOptions.label : "";
       const versionBody = stripModeSuggestionBlocks(polished || buildEmptyLlmOutputFallback()).trim();
       const versionParts = splitVersionPayload(versionBody);
@@ -243,7 +244,7 @@ export class RepolishService {
           label: versionLabel,
           mode,
           style: versionStyle,
-          idLabel: `${meta.prefix}${versionStyle ? "-" + versionStyle : ""}`,
+          idLabel: `${outputPrefix}${versionStyle ? "-" + versionStyle : ""}`,
           body: versionBody,
           activate: false,
         });
