@@ -37,7 +37,7 @@ import { SEDIMENT_GROUP_CONFIG, SEDIMENT_GROUP_ORDER, VOCABULARY_SECTIONS } from
 
 import { AUDIO_EXT } from "../shared/catalog-import";
 
-import { escapeRegExp, formatElapsed, genId, primitiveText, sanitizeFilename } from "../shared/util-common";
+import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "../shared/util-common";
 
 import { diagnosticError } from "../shared/util-key-diag";
 
@@ -51,9 +51,9 @@ import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from ".
 
 import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../prompts/briefing-prompts";
 
-import { VIEW_TYPE_OUTLINE, clipRealtimeContextText } from "../notes/realtime-outline";
+import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 
-import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_CHARS, MEETING_INTERACTION_TIMEOUT_MS, MEETING_METADATA_KINDS, clipMeetingInteractionSegmentLine, detectMeetingWorkbenchInteraction, getMeetingInteractionMaxTokens, isImageMeetingMaterial, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
+import { isImageMeetingMaterial, MEETING_METADATA_KINDS, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 
 import { extractNotePanelData } from "../notes/detail-blocks";
 
@@ -456,9 +456,10 @@ export class OutlineView extends obsidian.ItemView {
         this.queueRecentVaultRefresh(260);
       }
     }));
+    const session = this.plugin.getCurrentSession();
     if (this.plugin.settings.enableRealtimeOutline
-        && this.plugin.session
-        && this.plugin.session.segments.length > 0
+        && session
+        && session.segments.length > 0
         && !this.aiOutline) {
       window.setTimeout(() => {
         this.plugin.outline.scheduleRealtimeOutline({ delayMs: 0, reason: "view-open" });
@@ -509,7 +510,7 @@ export class OutlineView extends obsidian.ItemView {
     });
   }
   computeSignature() {
-    const session = this.plugin.session;
+    const session = this.plugin.getCurrentSession();
     const recState = this.plugin.recorder.state;
     const segs = session ? session.segments : [];
     let segDone = 0, segErr = 0;
@@ -565,7 +566,7 @@ export class OutlineView extends obsidian.ItemView {
   updateLiveStats() {
     const root = this.containerEl.children[1];
     if (!root) return;
-    const session = this.plugin.session;
+    const session = this.plugin.getCurrentSession();
     const info = this.plugin.recorder.getInfo();
     const metaEl = root.querySelector(".qnalog-outline-meta");
     if (metaEl && session) {
@@ -599,7 +600,7 @@ export class OutlineView extends obsidian.ItemView {
     root.removeClass("has-meeting-composer");
     this._lastRenderedOutline = "";
 
-    const session = this.plugin.session;
+    const session = this.plugin.getCurrentSession();
     const recInfo = this.plugin.recorder.getInfo();
     const recordingIssue = this.getRecordingIssue(recInfo);
     if (recordingIssue && recordingIssue.kind) {
@@ -1074,7 +1075,7 @@ export class OutlineView extends obsidian.ItemView {
       } catch { /* intentionally empty */ }
     } finally {
       state.running = false;
-      this.plugin.outline.ensureRealtimeOutlineProgress(this.plugin.session, "note-ask-finished");
+      this.plugin.outline.ensureRealtimeOutlineProgress(this.plugin.getCurrentSession(), "note-ask-finished");
       this.render();
     }
   }
@@ -4284,7 +4285,8 @@ export class OutlineView extends obsidian.ItemView {
     if (!issue || !issue.kind) return null;
     if (issue.kind === "microphone") return issue;
     const state = recInfo && recInfo.state ? recInfo.state : "idle";
-    if (state === "idle" && !(this.plugin && this.plugin.session && this.plugin.session.finalizing)) return null;
+    const session = this.plugin && this.plugin.getCurrentSession();
+    if (state === "idle" && !(session && session.finalizing)) return null;
     return issue;
   }
 
@@ -4698,9 +4700,7 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   renderMeetingComposer(root, session) {
-    if (!session.meetingWorkbench) session.meetingWorkbench = { notes: "", draft: "", materials: [], entries: [] };
-    const workbench = normalizeMeetingWorkbench(session.meetingWorkbench);
-    session.meetingWorkbench = workbench;
+    const workbench = this.plugin.meetingWorkbench.readWorkbench(session);
     const isMobile = isMobileRuntime();
     const composer = root.createDiv({ cls: "qnalog-meeting-composer" });
     if (isMobile) composer.addClass("is-mobile");
@@ -4711,7 +4711,7 @@ export class OutlineView extends obsidian.ItemView {
     textarea.placeholder = i18nT("Jot down · #Concept ?Question !Key point @Assignee /To-do");
     textarea.value = workbench.draft || "";
     textarea.addEventListener("input", () => {
-      session.meetingWorkbench.draft = textarea.value;
+      this.plugin.meetingWorkbench.setDraft(session, textarea.value);
     });
     textarea.addEventListener("keydown", (evt) => {
       if (evt.key === "Enter" && !evt.shiftKey && !evt.isComposing) {
@@ -4816,10 +4816,7 @@ export class OutlineView extends obsidian.ItemView {
     const removeBtn = row.createEl("button", { cls: "clickable-icon qnalog-outline-annotation-remove", attr: { "aria-label": i18nT("Remove this addition"), title: i18nT("Remove") } });
     try { obsidian.setIcon(removeBtn, "x"); } catch { removeBtn.setText("×"); }
     removeBtn.onclick = () => {
-      const current = normalizeMeetingWorkbench(session.meetingWorkbench);
-      session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, {
-        entries: current.entries.filter(item => item.id !== entry.id),
-      }));
+      this.plugin.meetingWorkbench.removeEntry(session, entry.id);
       this.render();
     };
     return container;
@@ -4867,8 +4864,8 @@ export class OutlineView extends obsidian.ItemView {
     if (!session || !files || !files.length) return;
     const folder = this.getMeetingMaterialsFolder(session);
     await ensureVaultFolder(this.plugin.app, folder);
-    const current = normalizeMeetingWorkbench(session.meetingWorkbench);
     const added = [];
+
     for (const file of files) {
       if (!file) continue;
       const safeName = sanitizeFilename(file.name || "meeting-material") || "meeting-material";
@@ -4883,18 +4880,8 @@ export class OutlineView extends obsidian.ItemView {
       });
     }
     if (added.length) {
-      const entry = {
-        id: genId(),
-        atMs: this.getMeetingWorkbenchOffsetMs(),
-        createdAt: new Date().toISOString(),
-        source: kind === "image" ? "image" : "material",
-        text: kind === "image" ? i18nT("Added an image/photo") : i18nT("Added an attachment"),
-        materials: added,
-      };
-      session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, {
-        entries: current.entries.concat(entry),
-      }));
-      new obsidian.Notice(`${i18nT("Added ")}${added.length}${i18nT(" meeting materials")}`);
+      const entry = this.plugin.meetingWorkbench.addMaterialEntry(session, added, this.getMeetingWorkbenchOffsetMs(), kind);
+      if (entry) new obsidian.Notice(`${i18nT("Added ")}${added.length}${i18nT(" meeting materials")}`);
     }
     this.render();
   }
@@ -4904,168 +4891,10 @@ export class OutlineView extends obsidian.ItemView {
     return Math.max(0, Number((info as { elapsed?: number }).elapsed) || 0);
   }
 
-  updateMeetingWorkbenchEntry(session, entryId, updater) {
-    if (!session || !entryId || typeof updater !== "function") return false;
-    const current = normalizeMeetingWorkbench(session.meetingWorkbench);
-    let changed = false;
-    const entries = current.entries.map((item) => {
-      if (item.id !== entryId) return item;
-      changed = true;
-      return Object.assign({}, item, updater(Object.assign({}, item)) || {});
-    });
-    if (!changed) return false;
-    session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, { entries }));
-    this.render();
-    return true;
-  }
-
-  buildMeetingWorkbenchInteractionContext(session, entry) {
-    const atMs = Number(entry && entry.atMs) || 0;
-    const before = [];
-    const after = [];
-    for (const s of (Array.isArray(session && session.segments) ? session.segments : [])) {
-      if (!s || !s.text) continue;
-      const start = Number(s.startOffsetMs) || 0;
-      const end = Number(s.endOffsetMs ?? s.startOffsetMs) || start;
-      const line = clipMeetingInteractionSegmentLine(`[${formatElapsed(start)}-${formatElapsed(end)}] ${String(s.text || "").trim()}`);
-      if (end <= atMs) before.push(line);
-      else if (start >= atMs) after.push(line);
-    }
-    return [
-      session && session.realtimeOutline ? `【当前实时大纲】\n${clipRealtimeContextText(String(session.realtimeOutline).trim(), MEETING_INTERACTION_OUTLINE_MAX_CHARS)}` : "",
-      session && session.realtimeOutlineMemory ? `【主题记忆】\n${clipRealtimeContextText(String(session.realtimeOutlineMemory).trim(), MEETING_INTERACTION_MEMORY_MAX_CHARS)}` : "",
-      before.length ? `【该记录前的转写片段】\n${before.slice(-3).join("\n")}` : "",
-      after.length ? `【该记录后的转写片段】\n${after.slice(0, 1).join("\n")}` : "",
-    ].filter(Boolean).join("\n\n");
-  }
-
-  async processMeetingWorkbenchInteraction(session, entryId) {
-    if (!session || !entryId) return;
-    const workbench = normalizeMeetingWorkbench(session.meetingWorkbench);
-    const entry = workbench.entries.find(item => item.id === entryId);
-    if (!entry || !entry.interaction || !entry.interaction.kind) return;
-    // 元数据 kinds（assignee / todo）不走 AI 助理
-    if (MEETING_METADATA_KINDS.has(entry.interaction.kind)) return;
-    if (entry.interaction.status === "running" || entry.interaction.status === "done") return;
-    this.updateMeetingWorkbenchEntry(session, entryId, (item) => ({
-      interaction: Object.assign({}, item.interaction, { status: "running", error: "", updatedAt: new Date().toISOString() }),
-    }));
-    try {
-      const latest = normalizeMeetingWorkbench(session.meetingWorkbench).entries.find(item => item.id === entryId) || entry;
-      const context = this.buildMeetingWorkbenchInteractionContext(session, latest);
-      const kind = latest.interaction.kind;
-      const label = kind === "concept" ? i18nT("Concept explanation") : (kind === "question" ? i18nT("Answer to question") : i18nT("Key point handling"));
-      const system = i18nT("You are QnALog's in-meeting instant assistant. Answer only this in-meeting entry from the user; do not rewrite the live outline and do not generate complete minutes. Keep the answer short, specific, and directly attachable below this entry.");
-      const user = [
-        `${i18nT("In-meeting entry time: ")}${formatElapsed(latest.atMs || 0)}`,
-        `${i18nT("Trigger type:")}${label}`,
-        `${i18nT("Original user text:")}${latest.text || latest.interaction.query}`,
-        "",
-        context || i18nT("There is not enough transcription context yet; please answer mainly based on the user's question itself."),
-        "",
-        i18nT("Answer rules:"),
-        i18nT("- #concept: give the definition, how to use it, broader and narrower concepts, and its meaning in the current context; at most 5 short sentences."),
-        i18nT("- ?question: answer the question directly, drawing on the current outline/transcript context; at most 5 short sentences."),
-        i18nT("- !key point: explain why this key point should be kept and how the final notes should handle it; at most 4 short sentences."),
-        i18nT("- Do not write empty fields such as “not mentioned” or “to be confirmed”; when information is insufficient, just say “the available context is not enough to judge”."),
-        i18nT("- Do not claim to have performed voiceprint recognition, and do not invent who is responsible for what."),
-      ].join("\n");
-      const raw = await callLlm(this.plugin, system, user, {
-        timeoutMs: MEETING_INTERACTION_TIMEOUT_MS,
-        payload: { max_tokens: getMeetingInteractionMaxTokens(kind) },
-        priority: "user",
-        noRetry: true,
-      });
-      const response = String(raw || "").trim();
-      this.updateMeetingWorkbenchEntry(session, entryId, (item) => ({
-        interaction: Object.assign({}, item.interaction, {
-          status: "done",
-          response: response || i18nT("The available context is insufficient to determine this."),
-          error: "",
-          updatedAt: new Date().toISOString(),
-        }),
-      }));
-    } catch (e) {
-      console.error("[QnALog] meeting workbench interaction failed", e);
-      this.updateMeetingWorkbenchEntry(session, entryId, (item) => ({
-        interaction: Object.assign({}, item.interaction, {
-          status: "error",
-          error: (e && e.message) || String(e),
-          updatedAt: new Date().toISOString(),
-        }),
-      }));
-      await this.plugin.diagnostics.logDiagnostic("warn", "meeting_workbench.interaction_failed", i18nT("In-meeting entry AI interaction failed"), {
-        entryId,
-        mode: session.mode,
-        error: diagnosticError(e),
-      });
-    }
-  }
-
-  addMeetingWorkbenchEntry(session, entry) {
-    if (!session) return;
-    const current = normalizeMeetingWorkbench(session.meetingWorkbench);
-    const nextEntry = Object.assign({
-      id: genId(),
-      atMs: this.getMeetingWorkbenchOffsetMs(),
-      createdAt: new Date().toISOString(),
-      source: "manual",
-      text: "",
-      materials: [],
-      interaction: null,
-    }, entry || {});
-    if (!nextEntry.interaction) {
-      const interaction = detectMeetingWorkbenchInteraction(nextEntry.text);
-      if (interaction) {
-        const isMetadata = MEETING_METADATA_KINDS.has(interaction.kind);
-        nextEntry.interaction = Object.assign({}, interaction, {
-          status: isMetadata ? "done" : "pending",
-          response: "",
-          error: "",
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    }
-    session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, {
-      draft: current.draft,
-      entries: current.entries.concat(nextEntry),
-    }));
-    this.render();
-    if (nextEntry.interaction && nextEntry.interaction.kind && !MEETING_METADATA_KINDS.has(nextEntry.interaction.kind)) {
-      this.plugin.meetingWorkbench.scheduleMeetingWorkbenchInteraction(session, nextEntry.id);
-    }
-  }
-
   addMeetingWorkbenchTextEntry(session, text) {
-    const value = String(text || "").trim();
-    if (!value) return;
-    const current = normalizeMeetingWorkbench(session.meetingWorkbench);
-    const entry = {
-      id: genId(),
-      atMs: this.getMeetingWorkbenchOffsetMs(),
-      createdAt: new Date().toISOString(),
-      source: "manual",
-      text: value,
-      materials: [],
-      interaction: null,
-    };
-    const interaction = detectMeetingWorkbenchInteraction(value);
-    if (interaction) {
-      const isMetadata = MEETING_METADATA_KINDS.has(interaction.kind);
-      entry.interaction = Object.assign({}, interaction, {
-        // 元数据型（@assignee / /todo）直接落 done，无需 AI 助理处理
-        status: isMetadata ? "done" : "pending",
-        response: "",
-        error: "",
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    session.meetingWorkbench = normalizeMeetingWorkbench(Object.assign({}, current, {
-      draft: "",
-      entries: current.entries.concat(entry),
-    }));
+    const entry = this.plugin.meetingWorkbench.addTextEntry(session, text, this.getMeetingWorkbenchOffsetMs());
+    if (!entry) return;
     this.render();
-    // 只为非元数据 kinds 排队 AI 即时助理
     if (entry.interaction && entry.interaction.kind && !MEETING_METADATA_KINDS.has(entry.interaction.kind)) {
       this.plugin.meetingWorkbench.scheduleMeetingWorkbenchInteraction(session, entry.id);
     }
@@ -6409,7 +6238,7 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   cancelOutlineGeneration() {
-    const session = this.plugin.session;
+    const session = this.plugin.getCurrentSession();
     if (session) this.plugin.outline.cancelRealtimeOutline(session.id);
     void this.plugin.diagnostics.logDiagnostic("warn", "outline.cancel_waiting", i18nT("User stopped waiting for live outline generation"), {
       segmentCount: session && session.segments ? session.segments.length : 0,
@@ -6421,7 +6250,7 @@ export class OutlineView extends obsidian.ItemView {
   async refreshAIOutline(opts) {
     const silent = !!(opts && opts.silent);
     const force = !!(opts && opts.force);
-    const session = this.plugin.session;
+    const session = this.plugin.getCurrentSession();
     if (!session || session.segments.length === 0) return;
     this.syncSessionOutline(session);
     if (silent && !force) {
@@ -6440,7 +6269,7 @@ export class OutlineView extends obsidian.ItemView {
     } catch (e) {
       if (!(e && e.name === "AbortError")) console.error("[QnALog] realtime outline refresh failed", e);
     } finally {
-      this.syncSessionOutline(this.plugin.session);
+      this.syncSessionOutline(this.plugin.getCurrentSession());
       this.render();
     }
   }

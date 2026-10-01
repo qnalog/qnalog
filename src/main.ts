@@ -23,7 +23,9 @@ import { resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
 import { classifySettingsSchema, hasStoredSettings, migrateSettingsForward, readSavedSchemaVersion, type SettingsSchemaState } from "./shared/settings-schema";
 import { ApiKeyStorageError, createApiKeyStorageNamespace, isValidApiKeyStorageNamespace, restoreApiKeySecrets, storeApiKeySecrets } from "./shared/api-key-storage";
 
-import type {PluginSettings, RecordingSession } from "./shared/types";
+import type {PluginSettings, RecordingSession, PreparedLiveSegment } from "./shared/types";
+import { SessionStore } from "./session/session-store";
+
 import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import {AUDIO_EXT } from "./shared/catalog-import";
@@ -50,7 +52,6 @@ import { RecorderService } from "./audio/recorder-service";
 
 // 以下 1 个声明已抽到 ./queue/task-queue（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { TaskQueue } from "./queue/task-queue";
-import { summarizeLiveAsrJobs } from "./asr/live-segment-policy";
 
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
@@ -75,12 +76,14 @@ import { NoteIndexService } from "./notes/note-index-service";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
+import { LiveAsrPipelineService } from "./asr/live-asr-pipeline-service";
 import { SessionFinalizeService } from "./notes/session-finalize-service";
 import { ImportService } from "./imports/import-service";
 import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
+import { ContinuationService } from "./session/continuation-service";
 import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
 /**
  * 按设置与 Obsidian 的界面语言，决定插件当前使用的语言并记录到 i18n 模块。
@@ -98,6 +101,7 @@ class QnALogPlugin extends obsidian.Plugin {
   // 域服务字段在 onload 里赋值。TypeScript 不推断「仅赋值」的属性，
   // 因此跨模块读取 plugin.<域> 的调用方（如 TaskQueue）需要这里的显式声明。
   declare diagnostics: DiagnosticsService;
+  declare sessionStore: SessionStore;
   declare delivery: DeliveryService;
   declare noteWriter: NoteWriter;
   declare tasks: TaskActivityService;
@@ -112,15 +116,9 @@ class QnALogPlugin extends obsidian.Plugin {
   declare externalInbox: ExternalInboxService;
   declare imports: ImportService;
   declare sessionFinalize: SessionFinalizeService;
+  declare continuations: ContinuationService;
   declare recording: RecordingService;
-  /** 装配别名：队列重试的熔断与切片缓存视图绑定到录音服务（QueueRetryHost.asrCircuit）。 */
-  declare asrCircuit: RecordingService;
-  /** 装配别名：会话收尾的实时转写管线视图绑定到录音服务（SessionFinalizeHost.liveAsr）。 */
-  declare liveAsr: RecordingService;
-  /** 装配别名：实时大纲的会话进度视图绑定到录音服务（RealtimeOutlineHost.sessionProgress）。 */
-  declare sessionProgress: RecordingService;
-  /** 装配别名：录音服务的收尾管线视图绑定到会话收尾服务（RecordingHost.sessionPipeline）。 */
-  declare sessionPipeline: SessionFinalizeService;
+  declare asrPipeline: LiveAsrPipelineService;
   declare shell: ViewShellService;
   declare library: LibraryViewService;
   declare noteIndex: NoteIndexService;
@@ -137,8 +135,6 @@ class QnALogPlugin extends obsidian.Plugin {
   declare semanticCanvas: SemanticCanvasService;
   declare recorder: RecorderService;
   declare queue: TaskQueue;
-  /** 当前录音会话；未在录音时为 null。 */
-  declare session: RecordingSession | null;
   /** 当前会话的实时大纲协调器。 */
   declare outlineCoordinator: RealtimeOutlineCoordinator;
   /** 悬浮气泡；未挂载时为 null。 */
@@ -159,6 +155,18 @@ class QnALogPlugin extends obsidian.Plugin {
   /** 界面上显示的版本串：开发版用安装时的标识，否则用 manifest 版本。 */
   getDisplayVersion(): string {
     return resolveDisplayVersion(this.buildInfo, this.manifest && this.manifest.version);
+  }
+
+  getCurrentSession(): RecordingSession | null {
+    return this.sessionStore.get();
+  }
+
+  processRecordedSegment(session: RecordingSession, segment: PreparedLiveSegment): Promise<void> {
+    return this.sessionFinalize.processSegment(session, segment);
+  }
+
+  finalizeRecordedSession(session: RecordingSession): Promise<void> {
+    return this.sessionFinalize.finalizeSession(session);
   }
 
   /** 当前构建的来源描述，供设置页与诊断报告使用。 */
@@ -182,9 +190,20 @@ class QnALogPlugin extends obsidian.Plugin {
   async onload() {
     // 域服务在加载设置之前装配：loadAll 的设置迁移与迁移报告要经 migration / diagnostics 两个服务；
     // 状态栏与录音器晚于 loadAll 建立，所以 tasks.start()/startStatusBar() 仍留在原位调用。
+    this.sessionStore = new SessionStore();
     this.diagnostics = new DiagnosticsService(this);
     this.delivery = new DeliveryService(this);
     this.noteWriter = new NoteWriter(this);
+    this.continuations = new ContinuationService({
+      vault: this.app.vault,
+      fileManager: this.app.fileManager,
+      getSettings: () => this.settings,
+      detectModeFromMarkdown: (file) => this.noteWriter.detectModeFromMarkdown(file),
+      queueTasks: () => this.queue ? this.queue.snapshot() : [],
+      addTask: (task) => this.queue.add(task),
+      removeTask: (id) => this.queue.remove(id),
+      scheduleTaskQueueRetry: () => this.queueRetry.scheduleTaskQueueRetry(1500, "continuation-ready"),
+    });
     this.tasks = new TaskActivityService(this);
     this.taskMeters = this.tasks;
     this.queueRetry = new QueueRetryService(this);
@@ -196,11 +215,22 @@ class QnALogPlugin extends obsidian.Plugin {
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
-    this.sessionPipeline = this.sessionFinalize;
     this.recording = new RecordingService(this);
-    this.liveAsr = this.recording;
-    this.sessionProgress = this.recording;
-    this.asrCircuit = this.recording;
+    this.asrPipeline = new LiveAsrPipelineService({
+      getSettings: () => this.settings,
+      vault: this.app.vault,
+      fileManager: this.app.fileManager,
+      diagnostics: this.diagnostics,
+      queueTasks: () => this.queue.tasks,
+      addQueueTask: (task) => this.queue.add(task),
+      updateQueueTask: (id, patch) => this.queue.update(id, patch),
+      removeQueueTask: (id) => this.queue.remove(id),
+      removeLiveTranscriptBlock: (path, id) => this.meetingWorkbench.removeLiveTranscriptBlock(path, id),
+      getRecorderBufferSummary: () => this.recording.getRecorderBufferSummary(),
+      syncImportBusyFromSessionProgress: (session) => this.tasks.syncImportBusyFromSessionProgress(session),
+      requestOutlineRefresh: () => this.shell.refreshOutlineView(),
+      requestBubbleUpdate: () => this.bubble?.scheduleUpdate(),
+    });
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
     this.noteIndex = new NoteIndexService(this);
@@ -246,11 +276,15 @@ class QnALogPlugin extends obsidian.Plugin {
     this.tasks.start();
     this.recorder = new RecorderService(this);
     this.queue = new TaskQueue(this);
-    this.register(this.queue.onChange(() => this.shell.refreshOutlineView()));
+    this.register(this.queue.onChange(() => {
+      this.tasks.syncQueueTaskActivities();
+      this.shell.refreshOutlineView();
+      this.continuations.notifyQueueChanged();
+    }));
     this.queue.load(this.persistedQueue);
-    this.session = null;
+    this.tasks.syncQueueTaskActivities();
     this.outlineCoordinator = new RealtimeOutlineCoordinator({
-      getActiveSessionId: () => (this.session && this.session.id) || "",
+      getActiveSessionId: () => (this.sessionStore.get() && this.sessionStore.get().id) || "",
       evaluate: (request) => this.outline.evaluateRealtimeOutlineRequest(request),
       execute: (request) => this.outline.executeRealtimeOutlineRequest(request),
       onFailure: (request, error) => this.outline.getRealtimeOutlineRetryDecision(request, error),
@@ -259,6 +293,10 @@ class QnALogPlugin extends obsidian.Plugin {
         this.shell.refreshOutlineView();
       },
     });
+
+    this.register(this.sessionStore.subscribe(() => {
+      try { this.shell.refreshOutlineView(); } catch (error) { console.error("[QnALog] session view refresh failed", error); }
+    }));
 
     this.tasks.startStatusBar();
 
@@ -357,6 +395,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (file instanceof obsidian.TFile) {
         this.queueRetry.migrateQueueTasksAfterRename(oldPath, file.path);
+        this.continuations.onRename(file, oldPath);
         this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox rename handler error", e));
       }
     }));
@@ -377,7 +416,7 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.addCommand({ id: "cleanup-empty-short-recordings", name: t("Clean Up Blank Short Recordings"), callback: () => this.cleanup.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: t("Clean Up Expired Segmented Audio Cache"), callback: async () => {
-      const result = await this.recording.cleanupExpiredSegmentCacheFiles();
+      const result = await this.asrPipeline.cleanupExpiredSegmentCacheFiles();
       new obsidian.Notice(
         `${t("Segment cache cleanup complete: deleted ")}${result.deleted}${t(", skipped ")}${result.skipped}${result.failed ? t(", failed {0}").replace("{0}", String(result.failed)) : ""}`,
         8000,
@@ -513,7 +552,7 @@ class QnALogPlugin extends obsidian.Plugin {
       }, 4000);
       this.register(() => window.clearTimeout(inboxTimer));
       const cleanupTimer = window.setTimeout(() => {
-        void this.recording.cleanupExpiredSegmentCacheFiles().catch((e) => console.error("[QnALog] startup segment cache cleanup failed", e));
+        void this.asrPipeline.cleanupExpiredSegmentCacheFiles().catch((e) => console.error("[QnALog] startup segment cache cleanup failed", e));
       }, 6000);
       this.register(() => window.clearTimeout(cleanupTimer));
     });
@@ -719,7 +758,7 @@ class QnALogPlugin extends obsidian.Plugin {
   /** 装配层转发：诊断报告生成时一次性采集运行时快照。报告只拿纯数据，不持有服务对象。 */
   getDiagnosticsSnapshot(session: RecordingSession | null): DiagnosticsSnapshot {
     return {
-      liveAsrBacklog: session ? this.recording.getLiveAsrBacklogSummary(session) : summarizeLiveAsrJobs([]),
+      liveAsrBacklog: this.asrPipeline.getLiveAsrBacklogSummary(session),
       recorderBuffer: this.recording.getRecorderBufferSummary(),
       recorderState: (this.recorder && this.recorder.state) || "idle",
       queueTasks: this.queue && Array.isArray(this.queue.tasks) ? this.queue.tasks : [],

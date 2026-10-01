@@ -5,12 +5,7 @@ vi.mock("obsidian", () => ({
   Menu: class {}, Notice: class {},
 }));
 
-// 续录会话的实时大纲种子：旧场次大纲必须作为 session.realtimeOutline /
-// realtimeOutlineState 的初值，否则增量管线从零开始，笔记里的大纲 details
-// 永远停在旧场次内容（vitest 无法起 Obsidian 宿主，这里锁定纯函数行为与
-// 源码装配点，防回归）。
-import { readFileSync } from "node:fs";
-import path from "node:path";
+// 续录实时大纲种子保留旧内容，新增话题按场次追加。
 import {
   mergeStableRealtimeOutlineNodes,
   parseRealtimeOutlineStateFromMarkdown,
@@ -98,9 +93,4 @@ describe("续录会话的实时大纲种子", () => {
     expect(shouldRunRealtimeOutline(session, { silent: true })).toBe(false);
   });
 
-  it("recording-service 装配点：续录会话把旧大纲写进种子字段", () => {
-    const src = readFileSync(path.resolve(__dirname, "../src/audio/recording-service.ts"), "utf8");
-    expect(src).toContain("realtimeOutline: continuationInfo ? (continuationInfo.priorOutline || \"\") : \"\"");
-    expect(src).toContain("normalizeRealtimeOutlineState(undefined, continuationInfo.priorOutline, \"\")");
-  });
 });

@@ -45,7 +45,7 @@ QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把
 
 - **一个域一个服务类**：文件 `src/<域>/<域>-service.ts`，类名与文件名对应（`XService`）。类里只放该域的方法与该域自己的状态，
   状态在构造函数里初始化；需要随插件卸载清理的（定时器、监听器、防抖器）由服务提供 `dispose()` 或 `start()`，由插件在 `onload`/`onunload` 调用。
-- **窄接口**：服务自带 `export interface <类名去 Service>Host`，只列该域真正用到的宿主能力，运行时传插件实例。
+- **窄接口**：服务自带 `export interface <类名去 Service>Host`，只列该域真正用到的宿主能力。默认传插件实例；若服务需要独立端口，则在 `main.ts` 装配时传入只含所需能力的对象，并由边界检查确认其契约。
   跨域能力不回到插件上再转发，而是挂拥有它的服务（如 `host.noteWriter.insertBeforeSegmentsStart`、`host.recording.startRecording`）。
 - **主体保留装配与生命周期**：插件类只留 `onload`/`onunload`、`loadAll`/`saveAll`/`saveSettings`、构建信息与更新检查转发；
   域字段按域命名（`this.diagnostics`、`this.recording`…），调用点写 `plugin.<域>.<成员>`。
@@ -493,7 +493,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
       - **重启条件**：若将来出现必须改 `outline-view.ts` 结构性问题的需求（例如某个面板要独立成视图、
         或某类 bug 反复出现且定位困难），再按 §1.1.1 的抽取约定分簇推进，不要为了「文件变小」而拆。
         2026-09-30 评审已把沉淀簇排入第三阶段，见 §14.4。
-- [ ] §14.4 第二阶段第 1 项：会话状态收口
+- [x] §14.4 第二阶段第 1 项代码与自动检查完成；真实 Obsidian 验证待维护者执行
 - [ ] §14.4 第二阶段第 2–6 项
 - [ ] §14.4 第三阶段：OutlineView 沉淀簇
 - [ ] P3 命名空间重置（见 §1.1.2）：
@@ -1423,7 +1423,7 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 
 #### 第二阶段（按顺序；每项单独分支，均需维护者在真实 Obsidian 中验证）
 
-1. **会话状态收口（A3、A4）**：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 9 处 `host.session =` 赋值。把 live-ASR 状态从 `RecordingService` 移至 `LiveAsrPipelineService`，使 Recording 与 SessionFinalize 都依赖该服务，彼此不再互相调用。完成判据：从 `src/main.ts` 删除 `liveAsr`、`sessionPipeline`、`asrCircuit`、`sessionProgress` 四个别名后，`check:architecture` 在 Recording 与 SessionFinalize 之间两个方向都没有边。验证录音、暂停、续录、导入音频、转写失败后重试。
+1. **会话状态收口（A3、A4）**【代码与自动检查完成；待维护者在真实 Obsidian 验证】：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 `host.session =` 赋值。把 live-ASR 状态从 `RecordingService` 移至 `LiveAsrPipelineService`，使 Recording 与 SessionFinalize 都依赖该服务，彼此不再互相调用。`scripts/check-architecture.mjs` 现在能解析唯一的服务别名赋值，基线同时反映新的 `SessionStore` / `LiveAsrPipelineService` 依赖与移除的旧边；端口注入由 Host 边界检查识别并在装配冒烟中核对。人工验收：录音、暂停与恢复、续录、音频与文本导入、ASR 失败后重试，以及短录音收尾；未完成这些步骤前不把用户可见行为视为验证通过。
 2. **Host 能力面棘轮（A2）**：`check:architecture` 增加第五个基线字段，登记当前含完整 `settings: PluginSettings` 或 `app: obsidian.App` 的 Host 接口（23 / 22 个），沿用使用集合与基线完全一致的规则。之后改动服务时，顺带把相关 Host 改成 `Pick<PluginSettings, …>` 或具体 vault 能力，并收缩基线。
 3. **笔记文档模型（A6）**：新建 `src/notes/note-document.ts`，集中解析与序列化 frontmatter、正文、原始材料、分段逐字稿块、会话标记和机器注释。先由 `tests/note-markdown-characterization.test.ts` 固定现有输出，再逐个迁移 A6 所列读取方；旧格式兼容只留在该模块。
 4. **类型检查棘轮（A7）**：改动某个文件时先把它加入 `tsconfig.strict-core.json`，按 `strictNullChecks` 错误数从少到多推进；A7 列出的前五个文件在各自结构改动完成后再处理。
@@ -1454,9 +1454,11 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 | 普通重新整理 | `RepolishService.repolishMarkdownFile` | 先确保原稿快照及 manifest 可读、可写，再创建可见派生 Markdown，最后写 `.versions` 的 `minutes` 缓存 | 按代码不改母本正文；原始转写留在母本 | `minutes`；缓存以 `activate:false` 写入，保持原活动 ID | 原稿快照或其 manifest 验证失败时停止，不创建派生文件；派生文件已写但后续纪要缓存索引失败时保留派生文件并显示提示 |
 | 清稿生成 / 再次生成 | `RepolishService.generateCleanScript` | 创建或更新清稿派生文件；首次生成前先确保原稿快照，再通过 `switchVersion` 切换母本 | 清稿成为母本可见正文；原始转写保留 | 清稿派生类型为 `clean`；切换后将清稿 ID 设为活动版本；不另存隐藏清稿缓存 | 原稿快照失败时停止生成；派生文件写入或切换失败通过任务错误路径报告。已有清稿直接切换；显式重新生成则更新同一派生文件 |
 | 点击原稿或派生版本 | `OutlineView.renderRecentNoteRow` → `VersionStore.switchVersion` | 点击前读取缓存正文和 frontmatter；确保原稿安全后，在严格读取的 manifest 下改母本并更新活动 ID | 母本替换为该缓存正文；母本原始转写仍保留 | 原稿快照使用 `source-original`；派生缓存可为 `minutes`；成功切换后设为所选 ID | 缺失或损坏的类型、清单或原稿快照必须在改母本前拒绝；母本写入成功但活动 ID 写入失败属于部分提交，缓存仍保留且可再次切换 |
-| 续录 | `RecordingService.startRecording({ appendToFile })` → `SessionFinalizeService._finalizeSessionImpl` | 续录收尾覆盖正文前尝试保存当前母本为 `pre-append`，随后重写或追加新成稿 | 新成稿成为母本可见正文；合并后的分段转写继续保留 | `pre-append`；保存时 `activate:false`，保留活动 ID | 归档失败目前仅记录警告，仍继续续录写入；这是 best-effort 保护，不保证旧可见正文可由插件版本列表恢复 |
+| 续录 | 侧边栏 / 文件菜单 / `BubbleWidget` → `RecordingService.startRecording({ appendToFile })` | 入口确定目标；悬浮气泡在点击和异步读取后都核对活动笔记。新音频与逐字稿写入独立暂存；队列确认目标路径和来源身份后，凭完整 v2 转写账本提交成稿与成功标记 | 成稿及逐字稿只写入目标；暂存只在提交、索引更新和清理成功后移除 | `pre-append`；保存时 `activate:false`，保留活动 ID | 缺少外层分段容器不阻止有效账本合入；账本损坏、来源冲突或目标变化时拒绝提交并保留恢复材料。失败进度同步到队列活动，重试按当前尝试和写回阶段显示 |
 | 音频 / 文字导入 | `ImportService` 建立会话并调用 `SessionFinalizeService.finalizeSession` | 导入内容先写入新母本；转写检查通过后进入首次 AI 整理写入 | 音频导入保存 ASR 分段；文字导入保留来源文字；整理结果写母本 | 首次整理本身不创建原稿快照 | 转写检查未通过时停止 AI 整理；收尾错误保留在会话状态及任务进度中 |
 | 后台合并重试 | `QueueRetryService.retryMergeTask` | 重试成功后直接重写或追加母本，再更新索引；不先归档当前可见正文 | 重试成稿写入母本；原始转写仍留在母本 | 不创建版本缓存，不更新 `activeVersionId` | 异常向队列重试路径返回；已有可见正文没有插件快照保护 |
+续录暂存使用队列中保存的 `targetPath` 与 `targetSourceId`；重试不会根据当前活动笔记改写目标。`readTranscriptBlocks` 校验完整逐字稿块及其来源、版本和可见文本；追加布局在现有分段容器结束标记前插入，若缺少容器标记则接在最后一个完整转写块后。整篇布局根据已验证的账本重建原始材料区。只有目标提交路径写入续录成功标记；暂存收尾与普通整篇重写不授予该标记。
+
 同一插件实例按来源 ID 串行执行版本缓存和活动 ID 的 manifest 读改写；它不协调 Obsidian 同步或其他插件对同一文件的写入。仅凭磁盘状态无法归因外部修改或同步冲突。
 
 首次整理、续录和后台重试的归档差异是当前代码事实，不据此推断 Obsidian 同步或外部修改导致的历史原因。普通重新整理按代码只生成派生文件、不自动激活；若 Obsidian 实际表现不同，应先核实触发入口。用户手动修改 Markdown 的逐次历史由 Obsidian 文件历史记录，插件不追踪逐字编辑。

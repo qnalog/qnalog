@@ -3,11 +3,12 @@
 
 import * as obsidian from "obsidian";
 import { callLlm } from "../llm/core";
-import { formatElapsed } from "../shared/util-common";
+import { formatElapsed, genId } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 import { t } from "../shared/i18n";
 import { clipRealtimeContextText, hasRealtimeOutlineRunnableBacklog } from "../notes/realtime-outline";
-import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_CHARS, MEETING_INTERACTION_TIMEOUT_MS, MEETING_METADATA_KINDS, clipMeetingInteractionSegmentLine, getMeetingInteractionMaxTokens, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
+import { MEETING_INTERACTION_MEMORY_MAX_CHARS, MEETING_INTERACTION_OUTLINE_MAX_CHARS, MEETING_INTERACTION_TIMEOUT_MS, MEETING_METADATA_KINDS, clipMeetingInteractionSegmentLine, detectMeetingWorkbenchInteraction, getMeetingInteractionMaxTokens, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
+import type { MeetingMaterial, MeetingWorkbenchEntry, MeetingWorkbenchState } from "../notes/meeting-workbench";
 import { RecorderService } from "../audio/recorder-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NS_LIVE_MARKER_END, NS_LIVE_MARKER_START, nsMarker, nsMarkerLegacyVariants } from "../shared/namespace";
@@ -45,7 +46,80 @@ export class MeetingWorkbenchService {
     this._meetingWorkbenchInteractionRunning = null;
   }
 
-  updateMeetingWorkbenchEntry(session, entryId, updater) {
+  readWorkbench(session: RecordingSession): MeetingWorkbenchState {
+    return normalizeMeetingWorkbench(session.meetingWorkbench);
+  }
+
+  setDraft(session: RecordingSession, draft: string): void {
+    const current = this.readWorkbench(session);
+    session.meetingWorkbench = Object.assign({}, current, { draft });
+  }
+
+  removeEntry(session: RecordingSession, id: string): boolean {
+    if (!id) return false;
+    const current = this.readWorkbench(session);
+    const entries = current.entries.filter(entry => entry.id !== id);
+    if (entries.length === current.entries.length) return false;
+    session.meetingWorkbench = Object.assign({}, current, { entries });
+    return true;
+  }
+
+  addTextEntry(session: RecordingSession, text: string, atMs: number): MeetingWorkbenchEntry | null {
+    const value = String(text || "").trim();
+    if (!value) return null;
+    const current = this.readWorkbench(session);
+    const entry: MeetingWorkbenchEntry = {
+      id: genId(),
+      atMs: Math.max(0, Number(atMs) || 0),
+      createdAt: new Date().toISOString(),
+      source: "manual",
+      text: value,
+      materials: [],
+      interaction: null,
+    };
+    const interaction = detectMeetingWorkbenchInteraction(value);
+    if (interaction) {
+      const isMetadata = MEETING_METADATA_KINDS.has(interaction.kind);
+      entry.interaction = {
+        kind: interaction.kind,
+        query: interaction.query || "",
+        status: isMetadata ? "done" : "pending",
+        response: "",
+        error: "",
+        updatedAt: new Date().toISOString(),
+        assignee: interaction.assignee,
+        task: interaction.task,
+      };
+    }
+    const next = normalizeMeetingWorkbench(Object.assign({}, current, {
+      draft: "",
+      entries: current.entries.concat(entry),
+    }));
+    session.meetingWorkbench = next;
+    return next.entries[next.entries.length - 1] || null;
+  }
+
+  addMaterialEntry(session: RecordingSession, materials: MeetingMaterial[], atMs: number, kind: string): MeetingWorkbenchEntry | null {
+    if (!materials || !materials.length) return null;
+    const current = this.readWorkbench(session);
+    const image = kind === "image";
+    const entry: MeetingWorkbenchEntry = {
+      id: genId(),
+      atMs: Math.max(0, Number(atMs) || 0),
+      createdAt: new Date().toISOString(),
+      source: image ? "image" : "material",
+      text: t(image ? "Added an image/photo" : "Added an attachment"),
+      materials,
+      interaction: null,
+    };
+    const next = normalizeMeetingWorkbench(Object.assign({}, current, {
+      entries: current.entries.concat(entry),
+    }));
+    session.meetingWorkbench = next;
+    return next.entries[next.entries.length - 1] || null;
+  }
+
+  updateMeetingWorkbenchEntry(session: RecordingSession, entryId: string, updater: (entry: MeetingWorkbenchEntry) => Partial<MeetingWorkbenchEntry>): boolean {
     if (!session || !entryId || typeof updater !== "function") return false;
     const current = normalizeMeetingWorkbench(session.meetingWorkbench);
     let changed = false;

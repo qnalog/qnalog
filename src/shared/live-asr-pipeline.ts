@@ -1,12 +1,18 @@
-// 实时转写管线端口：SessionFinalizeService 对录音服务 live-ASR 状态的全部依赖面。
-// 设计原因：这两个服务互相需要对方的能力，直接互持具体类会在服务依赖图里成环；
-// 这里声明成纯接口后，录音服务实现它（implements 在编译期校验缺方法），会话收尾
-// 服务只依赖接口。成员集合以 session-finalize-service.ts 的实际调用为准。
+// 实时转写管线的共享消费者端口。
+// 由独立的 ASR 管线服务实现，供收尾与其他消费者使用。
 import type { QueueTask } from "./types";
 import type { RecordingSession } from "./types";
 import type { LiveAsrBacklogSummary, LiveAsrJob } from "../asr/live-segment-policy";
 
 export interface LiveAsrPipeline {
+  /** Initialize session-scoped transcription work state. */
+  initializeSession(session: RecordingSession): void;
+  /** Record one active segment's transcription work. */
+  beginSessionSegmentWork(session: RecordingSession): void;
+  /** Release one active segment's transcription work and update its backlog. */
+  finishSessionSegmentWork(session: RecordingSession, jobId?: string, reason?: string): void;
+  /** Mark that at least one segment must be retried from the background queue. */
+  markSessionAsrJobsDeferred(session: RecordingSession): void;
   /** 整段音频落盘（收尾与切片完成时）。 */
   saveMasterAudio(session: RecordingSession, seg: unknown): Promise<void>;
   /** 停止流式通道并丢弃当前会话的流式状态。 */
@@ -43,4 +49,6 @@ export interface LiveAsrPipeline {
   setRecordingIssue(kind: string, patch?: unknown): void;
   /** 清除录音问题。 */
   clearRecordingIssue(kind?: string): void;
+  /** Snapshot of the pipeline's current recording issue. */
+  getRecordingIssue(): unknown;
 }

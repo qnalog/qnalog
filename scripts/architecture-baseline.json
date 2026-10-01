@@ -1,14 +1,14 @@
 {
   "pluginConsumers": {
     "src/audio/recorder-service.ts": [
+      "asrPipeline",
       "diagnostics",
-      "recording",
       "settings"
     ],
     "src/queue/task-queue.ts": [
+      "asrPipeline",
       "diagnostics",
       "queueRetry",
-      "recording",
       "saveAll",
       "settings",
       "tasks"
@@ -18,6 +18,7 @@
       "audioLinks",
       "delivery",
       "diagnostics",
+      "getCurrentSession",
       "knowledgeExtraction",
       "meetingWorkbench",
       "noteWriter",
@@ -32,7 +33,6 @@
       "saveAll",
       "saveSettings",
       "semanticCanvas",
-      "session",
       "settings",
       "shell",
       "tasks",
@@ -41,254 +41,89 @@
     ]
   },
   "serviceEdges": [
-    [
-      "CleanupService",
-      "TaskQueue"
-    ],
-    [
-      "ExternalInboxService",
-      "DiagnosticsService"
-    ],
-    [
-      "ExternalInboxService",
-      "ImportService"
-    ],
-    [
-      "ExternalInboxService",
-      "RecorderService"
-    ],
-    [
-      "ExternalInboxService",
-      "RecordingService"
-    ],
-    [
-      "ExternalInboxService",
-      "TaskActivityService"
-    ],
-    [
-      "ImportService",
-      "DiagnosticsService"
-    ],
-    [
-      "ImportService",
-      "NoteWriter"
-    ],
-    [
-      "ImportService",
-      "RecordingService"
-    ],
-    [
-      "ImportService",
-      "SessionFinalizeService"
-    ],
-    [
-      "ImportService",
-      "TaskActivityService"
-    ],
-    [
-      "ImportService",
-      "TaskQueue"
-    ],
-    [
-      "ImportService",
-      "TranscribeProfileService"
-    ],
-    [
-      "ImportService",
-      "ViewShellService"
-    ],
-    [
-      "InboxWatcherService",
-      "ExternalInboxService"
-    ],
-    [
-      "InboxWatcherService",
-      "ImportService"
-    ],
-    [
-      "LibraryViewService",
-      "PeopleDirectoryService"
-    ],
-    [
-      "MeetingWorkbenchService",
-      "DiagnosticsService"
-    ],
-    [
-      "MeetingWorkbenchService",
-      "RecorderService"
-    ],
-    [
-      "NoteIndexService",
-      "DiagnosticsService"
-    ],
-    [
-      "NoteWriter",
-      "NoteIndexService"
-    ],
-    [
-      "PeopleDirectoryService",
-      "KnowledgeExtractionService"
-    ],
-    [
-      "QueueRetryService",
-      "DiagnosticsService"
-    ],
-    [
-      "QueueRetryService",
-      "NoteIndexService"
-    ],
-    [
-      "QueueRetryService",
-      "NoteWriter"
-    ],
-    [
-      "QueueRetryService",
-      "QnALogSettingTab"
-    ],
-    [
-      "QueueRetryService",
-      "RecorderService"
-    ],
-    [
-      "QueueRetryService",
-      "RepolishService"
-    ],
-    [
-      "QueueRetryService",
-      "TaskQueue"
-    ],
-    [
-      "QueueRetryService",
-      "VocabularyService"
-    ],
-    [
-      "RealtimeOutlineService",
-      "DiagnosticsService"
-    ],
-    [
-      "RealtimeOutlineService",
-      "RealtimeOutlineCoordinator"
-    ],
-    [
-      "RecordingService",
-      "BubbleWidget"
-    ],
-    [
-      "RecordingService",
-      "DiagnosticsService"
-    ],
-    [
-      "RecordingService",
-      "MeetingWorkbenchService"
-    ],
-    [
-      "RecordingService",
-      "NoteWriter"
-    ],
-    [
-      "RecordingService",
-      "RecorderService"
-    ],
-    [
-      "RecordingService",
-      "TaskQueue"
-    ],
-    [
-      "RecordingService",
-      "TranscribeProfileService"
-    ],
-    [
-      "RepolishService",
-      "NoteIndexService"
-    ],
-    [
-      "RepolishService",
-      "TaskActivityService"
-    ],
-    [
-      "RepolishService",
-      "VersionStore"
-    ],
-    [
-      "SemanticCanvasService",
-      "DiagnosticsService"
-    ],
-    [
-      "SemanticCanvasService",
-      "NoteIndexService"
-    ],
-    [
-      "SessionFinalizeService",
-      "DiagnosticsService"
-    ],
-    [
-      "SessionFinalizeService",
-      "MeetingWorkbenchService"
-    ],
-    [
-      "SessionFinalizeService",
-      "NoteIndexService"
-    ],
-    [
-      "SessionFinalizeService",
-      "NoteWriter"
-    ],
-    [
-      "SessionFinalizeService",
-      "RealtimeOutlineService"
-    ],
-    [
-      "SessionFinalizeService",
-      "RecorderService"
-    ],
-    [
-      "SessionFinalizeService",
-      "TaskQueue"
-    ],
-    [
-      "SessionFinalizeService",
-      "TranscribeProfileService"
-    ],
-    [
-      "SessionFinalizeService",
-      "VersionStore"
-    ],
-    [
-      "TaskActivityService",
-      "DiagnosticsService"
-    ],
-    [
-      "TaskActivityService",
-      "RealtimeOutlineService"
-    ],
-    [
-      "TaskActivityService",
-      "RecorderService"
-    ],
-    [
-      "TaskActivityService",
-      "RecordingService"
-    ],
-    [
-      "TaskActivityService",
-      "TaskQueue"
-    ],
-    [
-      "VersionStore",
-      "NoteIndexService"
-    ],
-    [
-      "ViewShellService",
-      "BubbleWidget"
-    ],
-    [
-      "ViewShellService",
-      "TaskActivityService"
-    ],
-    [
-      "VocabularyService",
-      "KnowledgeExtractionService"
-    ]
+    ["CleanupService", "SessionStore"],
+    ["CleanupService", "TaskQueue"],
+    ["DiagnosticsService", "SessionStore"],
+    ["ExternalInboxService", "DiagnosticsService"],
+    ["ExternalInboxService", "ImportService"],
+    ["ExternalInboxService", "LiveAsrPipelineService"],
+    ["ExternalInboxService", "SessionStore"],
+    ["ExternalInboxService", "RecorderService"],
+    ["ExternalInboxService", "TaskActivityService"],
+    ["ImportService", "ContinuationService"],
+    ["ImportService", "DiagnosticsService"],
+    ["ImportService", "LiveAsrPipelineService"],
+    ["ImportService", "NoteWriter"],
+    ["ImportService", "SessionFinalizeService"],
+    ["ImportService", "SessionStore"],
+    ["ImportService", "TaskActivityService"],
+    ["ImportService", "TaskQueue"],
+    ["ImportService", "TranscribeProfileService"],
+    ["ImportService", "ViewShellService"],
+    ["InboxWatcherService", "ExternalInboxService"],
+    ["InboxWatcherService", "ImportService"],
+    ["LibraryViewService", "PeopleDirectoryService"],
+    ["LiveAsrPipelineService", "DiagnosticsService"],
+    ["MeetingWorkbenchService", "DiagnosticsService"],
+    ["MeetingWorkbenchService", "RealtimeOutlineService"],
+    ["MeetingWorkbenchService", "RecorderService"],
+    ["NoteIndexService", "DiagnosticsService"],
+    ["NoteWriter", "NoteIndexService"],
+    ["PeopleDirectoryService", "KnowledgeExtractionService"],
+    ["QueueRetryService", "ContinuationService"],
+    ["QueueRetryService", "DiagnosticsService"],
+    ["QueueRetryService", "LiveAsrPipelineService"],
+    ["QueueRetryService", "NoteIndexService"],
+    ["QueueRetryService", "NoteWriter"],
+    ["QueueRetryService", "QnALogSettingTab"],
+    ["QueueRetryService", "RecorderService"],
+    ["QueueRetryService", "RepolishService"],
+    ["QueueRetryService", "SessionStore"],
+    ["QueueRetryService", "TaskActivityService"],
+    ["QueueRetryService", "TaskQueue"],
+    ["QueueRetryService", "VersionStore"],
+    ["QueueRetryService", "VocabularyService"],
+    ["RealtimeOutlineService", "DiagnosticsService"],
+    ["RealtimeOutlineService", "LiveAsrPipelineService"],
+    ["RealtimeOutlineService", "RealtimeOutlineCoordinator"],
+    ["RealtimeOutlineService", "SessionStore"],
+    ["RecordingService", "ContinuationService"],
+    ["RecordingService", "DiagnosticsService"],
+    ["RecordingService", "LiveAsrPipelineService"],
+    ["RecordingService", "MeetingWorkbenchService"],
+    ["RecordingService", "NoteWriter"],
+    ["RecordingService", "RecorderService"],
+    ["RecordingService", "SessionStore"],
+    ["RecordingService", "TranscribeProfileService"],
+    ["RepolishService", "NoteIndexService"],
+    ["RepolishService", "TaskActivityService"],
+    ["RepolishService", "VersionStore"],
+    ["SemanticCanvasService", "DiagnosticsService"],
+    ["SemanticCanvasService", "NoteIndexService"],
+    ["SessionFinalizeService", "ContinuationService"],
+    ["SessionFinalizeService", "DiagnosticsService"],
+    ["SessionFinalizeService", "LiveAsrPipelineService"],
+    ["SessionFinalizeService", "MeetingWorkbenchService"],
+    ["SessionFinalizeService", "NoteIndexService"],
+    ["SessionFinalizeService", "NoteWriter"],
+    ["SessionFinalizeService", "RealtimeOutlineService"],
+    ["SessionFinalizeService", "RecorderService"],
+    ["SessionFinalizeService", "SessionStore"],
+    ["SessionFinalizeService", "TaskActivityService"],
+    ["SessionFinalizeService", "TaskQueue"],
+    ["SessionFinalizeService", "TranscribeProfileService"],
+    ["SessionFinalizeService", "VersionStore"],
+    ["TaskActivityService", "DiagnosticsService"],
+    ["TaskActivityService", "LiveAsrPipelineService"],
+    ["TaskActivityService", "RealtimeOutlineService"],
+    ["TaskActivityService", "RecorderService"],
+    ["TaskActivityService", "SessionStore"],
+    ["TaskActivityService", "TaskQueue"],
+    ["VersionStore", "NoteIndexService"],
+    ["ViewShellService", "BubbleWidget"],
+    ["ViewShellService", "SessionStore"],
+    ["ViewShellService", "TaskActivityService"],
+    ["VocabularyService", "KnowledgeExtractionService"]
   ],
   "uiImportsFromNonUi": {
     "src/audio/recording-service.ts": [

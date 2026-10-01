@@ -8,7 +8,7 @@ import { readFileFrontmatter } from "../shared/util-note";
 import { loadVocabularyGroups, applyVocabularyCorrections } from "../vocabulary";
 import { getLlmConfigIssue, isLlmNonRetryableError, formatLlmFailureIssue } from "../llm/core";
 import type { PluginSettings, RecordingSession, PreparedLiveSegment, SessionMetaForMerge, Segment } from "../shared/types";
-import type { LiveAsrPipeline } from "../shared/live-asr-pipeline";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { getErrorMessage, pad, formatElapsed } from "../shared/util-common";
 import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } from "../shared/util-audio";
 import { createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "../asr/live-segment-policy";
@@ -23,7 +23,7 @@ import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { getAudioTimeLink } from "../notes/audio-refs";
+import { getAudioTimeLink, getSegmentsDurationMs } from "../notes/audio-refs";
 import { buildTitleSourceFromSegments, isTextImportSession, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -46,10 +46,13 @@ import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { bindTranscriptSegmentToAudio } from "../transcript/audio-binding";
 import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelText } from "../shared/note-labels";
+import type { ContinuationService } from "../session/continuation-service";
+import type { SessionStore } from "../session/session-store";
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
+  continuations: ContinuationService;
   diagnostics: DiagnosticsService;
   /** 互动看板服务：实时转写块清理与互动处理（窄面：实际只用这 2 个方法）。 */
   meetingWorkbench: {
@@ -68,9 +71,9 @@ export interface SessionFinalizeHost {
   /** 装配层转发：读取知识库里的音频缓存（调用 QueueRetryService.readVaultAudioBlob）。 */
   readVaultAudioBlob(path: string, fallbackName: string): Promise<{ blob: Blob; sourcePath: string; sourceName: string; recovered: boolean } | null>;
   recorder: RecorderService | null;
-  /** 实时转写管线端口：录音服务的 live-ASR 状态操作（接口见 src/shared/live-asr-pipeline.ts）。 */
-  liveAsr: LiveAsrPipeline;
-  session: RecordingSession | null;
+  /** 实时转写管线：负责分段持久化、重试任务与转写状态。 */
+  asrPipeline: LiveAsrPipelineService;
+  sessionStore: SessionStore;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
   /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
@@ -107,8 +110,8 @@ export class SessionFinalizeService {
       // 这里只保存母带并推进最终整理，不能把整场母带再次当作最后一段转写，
       // 否则前面已转写的内容会重复、并额外产生一次整场 ASR 费用。
       if (seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
-      else await this.host.liveAsr.saveMasterAudio(session, seg);
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      else await this.host.asrPipeline.saveMasterAudio(session, seg);
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "transcribe-finalized",
         label: t("Finalizing transcription"),
         percent: null,
@@ -128,7 +131,7 @@ export class SessionFinalizeService {
       // 短录音：音频（只留音频级别）已由 handleSegment 交给 saveMasterAudio 落盘，
       // 这里只等它结束，后续收尾会按 shortRecordingTier 删掉结尾创建的纪要。
       if (seg && seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
-      await this.host.liveAsr.closeStreamingForDiscard(session);
+      await this.host.asrPipeline.closeStreamingForDiscard(session);
       return;
     }
     const continuationOffsetMs = Math.max(0, Number(session.continuationOffsetMs) || 0);
@@ -144,7 +147,7 @@ export class SessionFinalizeService {
       ? Number(seg.displayEndOffsetMs)
       : Math.max(displayStartOffsetMs, (Number(seg.endOffsetMs) || 0) + continuationOffsetMs);
     const segmentAudioName = seg.segmentAudioName || `${NS_AUDIO_PREFIX}-${session.sessionStamp}-seg${pad(segNumber)}.${seg.ext}`;
-    const segmentAudioPath = seg.segmentAudioPath || obsidian.normalizePath(`${this.host.liveAsr.getSegmentCacheFolder()}/${segmentAudioName}`);
+    const segmentAudioPath = seg.segmentAudioPath || obsidian.normalizePath(`${this.host.asrPipeline.getSegmentCacheFolder()}/${segmentAudioName}`);
     const segmentDurationMs = Math.max(0, displayEndOffsetMs - displayStartOffsetMs);
 
     let spoolResult = null;
@@ -152,7 +155,7 @@ export class SessionFinalizeService {
       spoolResult = await seg.spoolPromise;
     } else if (seg.blob) {
       try {
-        await this.host.liveAsr.ensureSegmentCacheFolder();
+        await this.host.asrPipeline.ensureSegmentCacheFolder();
         await this.host.app.vault.adapter.writeBinary(segmentAudioPath, await seg.blob.arrayBuffer());
         spoolResult = { persisted: true, fallbackBlob: null, error: null };
       } catch (e) {
@@ -162,12 +165,12 @@ export class SessionFinalizeService {
       }
     }
     if (spoolResult && spoolResult.queueTaskId) seg.queueTaskId = spoolResult.queueTaskId;
-    await this.host.liveAsr.markLiveSegmentQueueTaskRunning(seg);
-    const liveJob = seg.jobId ? this.host.liveAsr.getLiveAsrJobs(session).get(seg.jobId) : null;
+    await this.host.asrPipeline.markLiveSegmentQueueTaskRunning(seg);
+    const liveJob = seg.jobId ? this.host.asrPipeline.getLiveAsrJobs(session).get(seg.jobId) : null;
     if (liveJob) liveJob.state = "transcribing";
-    this.host.liveAsr.updateLiveAsrBacklogPolicy(session, "transcribing");
+    this.host.asrPipeline.updateLiveAsrBacklogPolicy(session, "transcribing");
     if (seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
-    else if (seg.isFinal) await this.host.liveAsr.saveMasterAudio(session, seg);
+    else if (seg.isFinal) await this.host.asrPipeline.saveMasterAudio(session, seg);
 
     let text = ""; let err = null;
     let transcribeBlob = null;
@@ -178,7 +181,7 @@ export class SessionFinalizeService {
     let batchAsrFailureRecorded = false;
     const activeProfile = this.host.profiles.getActiveTranscribeProfile();
     const isStreamingProvider = activeProfile && activeProfile.transcribeMode === "streaming";
-    this.host.liveAsr.setSessionWorkProgress(session, {
+    this.host.asrPipeline.setSessionWorkProgress(session, {
       stage: "transcribing",
       label: `${t("Transcript segment ")}${segNumber}${t(" segments")}`,
       percent: null,
@@ -228,7 +231,7 @@ export class SessionFinalizeService {
       console.error("[QnALog]", err.message);
     } else {
       const circuitOpen = isLiveAsrCircuitOpen(session.asrCircuitState || createLiveAsrCircuitState())
-        || this.host.liveAsr.isAsrServiceCircuitOpen();
+        || this.host.asrPipeline.isAsrServiceCircuitOpen();
       if (session.asrDeferredMode || circuitOpen) {
         err = new Error(session.asrDeferredMode
           ? t("Realtime transcription backlog exceeded the safety threshold and has moved to the background queue")
@@ -348,7 +351,7 @@ export class SessionFinalizeService {
           } catch (e) {
             err = e;
             batchAsrFailureRecorded = true;
-            this.host.liveAsr.recordLiveAsrAttemptFailure(session, e, seg);
+            this.host.asrPipeline.recordLiveAsrAttemptFailure(session, e, seg);
             console.error(e);
           }
         }
@@ -361,7 +364,7 @@ export class SessionFinalizeService {
       asrResult = null;
       if (batchAsrAttempted && !batchAsrFailureRecorded) {
         batchAsrFailureRecorded = true;
-        this.host.liveAsr.recordLiveAsrAttemptFailure(session, err, seg);
+        this.host.asrPipeline.recordLiveAsrAttemptFailure(session, err, seg);
       }
       try {
         await this.host.diagnostics.logDiagnostic("warn", "asr.segment_empty", t("A recorded segment returned an empty transcription; it was kept as a soft failure and queued"), {
@@ -373,7 +376,7 @@ export class SessionFinalizeService {
         });
       } catch { /* intentionally empty */ }
     }
-    if (!err && batchAsrAttempted) this.host.liveAsr.recordLiveAsrAttemptSuccess(session);
+    if (!err && batchAsrAttempted) this.host.asrPipeline.recordLiveAsrAttemptSuccess(session);
     if (err) {
       if (err.asrDeferred) {
         await this.host.diagnostics.logDiagnostic("warn", "asr.segment_deferred", t("The recorded segment skipped the realtime request and moved to the background queue"), {
@@ -382,11 +385,11 @@ export class SessionFinalizeService {
           endOffsetMs: displayEndOffsetMs,
           durationMs: segmentDurationMs,
           reason: err.deferReason || "deferred",
-          pendingDurationMs: this.host.liveAsr.getLiveAsrBacklogSummary(session).totalDurationMs,
+          pendingDurationMs: this.host.asrPipeline.getLiveAsrBacklogSummary(session).totalDurationMs,
         });
       } else {
         const issueKind = classifyRecordingIssue(err);
-        this.host.liveAsr.setRecordingIssue(issueKind, {
+        this.host.asrPipeline.setRecordingIssue(issueKind, {
           source: "asr",
           message: getErrorMessage(err),
           startedAtMs: displayStartOffsetMs,
@@ -411,8 +414,8 @@ export class SessionFinalizeService {
     } else if (!text || !String(text).trim()) {
       // 转写成功返回，但内容为空 → 可能音频设备没选对 / 没有声音。
       // 请求既然成功返回，网络/服务是通的，清掉遗留横幅。
-      this.host.liveAsr.clearRecordingIssue("network");
-      this.host.liveAsr.clearRecordingIssue("service");
+      this.host.asrPipeline.clearRecordingIssue("network");
+      this.host.asrPipeline.clearRecordingIssue("service");
       // 防误报：只在"本场此前从未产生过任何非空转写"时提示。
       // 否则会议中途的合理静默段（开头/中场没人说话）会骚扰正在正常录音的用户。
       const hadAnyText = Array.isArray(session.segments) && session.segments.some((s) => s && s.text && String(s.text).trim());
@@ -424,8 +427,8 @@ export class SessionFinalizeService {
         new obsidian.Notice(t("No speech detected in this segment. Go to \"Settings → General → Audio input\" to test the selected device."), 9000);
       }
     } else {
-      this.host.liveAsr.clearRecordingIssue("network");
-      this.host.liveAsr.clearRecordingIssue("service");
+      this.host.asrPipeline.clearRecordingIssue("network");
+      this.host.asrPipeline.clearRecordingIssue("service");
     }
 
     const playbackAudioName = session.masterAudioName || segmentAudioName;
@@ -456,8 +459,8 @@ export class SessionFinalizeService {
     if (err && !isStreamingProvider) {
       // 流式 provider(endpoint 是 wss://)的失败段不入 transcribe 重试队列——重试走 HTTP 必然再失败、
       // 把任务卡在 failed 永远清不掉。流式无法离线重切重传，留在笔记里标失败即可。
-      if (err.asrDeferred || isTransientAsrError(err)) session.hasDeferredAsrJobs = true;
-      const retryTask = await this.host.liveAsr.keepLiveSegmentQueueTaskForRetry(session, Object.assign({}, seg, {
+      if (err.asrDeferred || isTransientAsrError(err)) this.host.asrPipeline.markSessionAsrJobsDeferred(session);
+      const retryTask = await this.host.asrPipeline.keepLiveSegmentQueueTaskForRetry(session, Object.assign({}, seg, {
         segmentAudioPath,
         segmentAudioName,
         segmentIndex,
@@ -485,10 +488,10 @@ export class SessionFinalizeService {
       .join("\n\n");
     const block = `\n${serializeTranscriptBlock(segmentRecord, heading, visibleText)}\n`;
     await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
-    if (!err || isStreamingProvider) await this.host.liveAsr.removeLiveSegmentQueueTask(seg);
+    if (!err || isStreamingProvider) await this.host.asrPipeline.removeLiveSegmentQueueTask(seg);
 
     this.host.requestOutlineRefresh();
-    this.host.liveAsr.setSessionWorkProgress(session, {
+    this.host.asrPipeline.setSessionWorkProgress(session, {
       stage: seg.isFinal ? "transcribe-finalized" : "transcribed",
       label: seg.isFinal ? t("Finalizing transcription") : (err && err.asrDeferred ? t("Cached {0} segments").replace("{0}", String(session.segments.length)) : t("Transcribed {0} segments").replace("{0}", String(session.segments.length))),
       percent: null,
@@ -540,7 +543,12 @@ export class SessionFinalizeService {
     if (session.finalizePromise !== null && session.finalizePromise !== undefined) return session.finalizePromise;
     const finalizePromise = (async () => {
       try {
-        await this._finalizeSessionImpl(session);
+        const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+        if (targetFile instanceof obsidian.TFile) {
+          await this.host.continuations.runOnTarget(targetFile, () => this._finalizeSessionImpl(session));
+        } else {
+          await this._finalizeSessionImpl(session);
+        }
         // 只有完整收尾流程返回后才锁定。此前在函数入口置 true，任何意外写盘异常
         // 都会把半成品会话永久标成已完成，后续无法再收尾。
         session.finalized = true;
@@ -553,7 +561,7 @@ export class SessionFinalizeService {
           session._finalizeTaskMeter = null;
         }
         try {
-          this.host.liveAsr.setSessionWorkProgress(session, {
+          this.host.asrPipeline.setSessionWorkProgress(session, {
             stage: "finalize-failed",
             label: t("Failed to finalize minutes"),
             percent: null,
@@ -570,7 +578,7 @@ export class SessionFinalizeService {
           });
         } catch { /* intentionally empty */ }
         new obsidian.Notice(t("Failed to finalize minutes; the original transcript and recording have been kept. You can use \"Reorganize\" in the note."), 10000);
-        if (this.host.session === session) this.host.session = null;
+        this.host.sessionStore.end(session);
         this.host.requestOutlineRefresh();
       }
     })();
@@ -579,6 +587,34 @@ export class SessionFinalizeService {
       return await finalizePromise;
     } finally {
       if (session.finalizePromise === finalizePromise) session.finalizePromise = null;
+      if (session.continuationTaskId && this.host.queue) {
+        const continuation = {
+          ...session.continuation,
+          realtimeOutline: String(session.realtimeOutline || ""),
+          masterAudioPath: String(session.masterAudioPath || ""),
+          masterAudioName: String(session.masterAudioName || ""),
+        };
+        try {
+          await this.host.queue.update(session.continuationTaskId, {
+            status: "pending",
+            mdPath: session.mdPath,
+            temporarySourcePath: session.mdPath,
+            segments: (session.segments || []).map(segment => ({ ...segment })),
+            continuation,
+            sessionMeta: {
+              startedAt: session.startedAt,
+              duration: formatElapsed(getSegmentsDurationMs(session.segments || [])),
+              meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
+              _briefingCheckpointId: session._briefingCheckpointId || "",
+            },
+            speakerFrontmatter: null,
+            lastError: session.finalizationError || "",
+          });
+        } catch (error) {
+          console.error("[QnALog] continuation recovery task update failed", error);
+        }
+      }
+      this.host.continuations.releaseSession(session.id);
     }
   }
 
@@ -599,7 +635,7 @@ export class SessionFinalizeService {
     let mappings = initialMappings;
 
     if (!alreadyConfirmed && !session._speakerNameConfirmationSkipped) {
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "speaker-confirm",
         label: t("Confirm speakers"),
         percent: 52,
@@ -710,7 +746,7 @@ export class SessionFinalizeService {
   async finishShortRecording(session) {
     const tier = session.shortRecordingTier;
     const limitSeconds = Math.round(SHORT_RECORDING_SKIP_NOTE_MS / 1000);
-    await this.host.liveAsr.discardShortRecordingNote(session);
+    await this.host.asrPipeline.discardShortRecordingNote(session);
     const durationMs = Math.max(0, Number(session.shortRecordingDurationMs) || 0);
     const audioName = session.masterAudioName || "";
     if (tier === "discard") {
@@ -729,7 +765,7 @@ export class SessionFinalizeService {
         mdPath: session.mdPath,
       });
     } catch { /* diagnostics must not change finalization behavior */ }
-    if (this.host.session === session) this.host.session = null;
+    this.host.sessionStore.end(session);
     this.host.requestOutlineRefresh();
   }
 
@@ -747,7 +783,7 @@ export class SessionFinalizeService {
     if (!session.segments || session.segments.length === 0) {
       await this.host.noteWriter.removeEmptySessionBlock(session);
       new obsidian.Notice(t("⏭ This recording was too short or had no valid audio; skipped"));
-      if (this.host.session === session) this.host.session = null;
+      this.host.sessionStore.end(session);
       this.host.requestOutlineRefresh();
       return;
     }
@@ -770,7 +806,7 @@ export class SessionFinalizeService {
     const usableTranscriptSegments = segmentsForFinal.filter(s => s && String(s.text || "").trim());
     if (!usableTranscriptSegments.length) {
       const noTranscriptError = new Error(t("No usable transcript text for organizing; the recording and failed slices were kept"));
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "transcript-empty",
         label: t("No valid transcript obtained"),
         percent: null,
@@ -793,7 +829,7 @@ export class SessionFinalizeService {
         }
       }
       this.host.requestDeferredAsrRetry(session);
-      if (this.host.session === session) this.host.session = null;
+      this.host.sessionStore.end(session);
       this.host.requestOutlineRefresh();
       return;
     }
@@ -818,7 +854,7 @@ export class SessionFinalizeService {
     if (segmentsForLlm !== segmentsForFinal) {
       writeSession = Object.assign({}, writeSession, { segments: segmentsForLlm });
     }
-    this.host.liveAsr.setSessionWorkProgress(session, {
+    this.host.asrPipeline.setSessionWorkProgress(session, {
       stage: "finalize-start",
       label: textImportSession ? t("Text read complete") : t("Preparing AI organizing"),
       percent: 12,
@@ -837,7 +873,7 @@ export class SessionFinalizeService {
         (configurationError as Error & { nonRetryable?: boolean }).nonRetryable = true;
         throw configurationError;
       }
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "workbench",
         label: t("Organize context"),
         percent: 22,
@@ -845,7 +881,7 @@ export class SessionFinalizeService {
       });
       await this.host.meetingWorkbench.processPendingMeetingWorkbenchInteractions(session, { force: true });
       if (!textImportSession) {
-        this.host.liveAsr.setSessionWorkProgress(session, {
+        this.host.asrPipeline.setSessionWorkProgress(session, {
           stage: "outline",
           label: t("Generate outline"),
           percent: 36,
@@ -868,7 +904,7 @@ export class SessionFinalizeService {
         sessionMeta._previousKnowledge = readSessionKnowledge(await this.host.app.vault.read(noteFile));
       }
       finalSessionMeta = sessionMeta;
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "llm-merge",
         label: t("AI organizing"),
         percent: 62,
@@ -877,9 +913,11 @@ export class SessionFinalizeService {
       taskMeter = this.host.taskMeters.beginTaskMeter();
       sessionMeta._taskMeter = taskMeter;
       session._finalizeTaskMeter = taskMeter;
-      polished = await mergeAndPolish(this.host, segmentsForLlm.map((segment) => ({ ...segment })), session.mode, sessionMeta, speakerFrontmatter);
+      polished = session.continuation
+        ? ""
+        : await mergeAndPolish(this.host, segmentsForLlm.map((segment) => ({ ...segment })), session.mode, sessionMeta, speakerFrontmatter);
       session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "write-note",
         label: t("Write to Minutes"),
         percent: 88,
@@ -935,7 +973,7 @@ export class SessionFinalizeService {
       }
       session.finalizationError = getErrorMessage(mergeError);
       const partialBriefing = mergeError instanceof BriefingPipelineIncompleteError;
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: nonRetryableMergeError ? "merge-failed" : "merge-retrying",
         label: nonRetryableMergeError ? t("AI organizing failed") : partialBriefing ? t("Minutes partially completed") : t("AI organizing waiting to retry"),
         percent: null,
@@ -951,7 +989,7 @@ export class SessionFinalizeService {
       // 续录覆盖前留档：把当前笔记（旧场次的整理稿）存进版本缓存。
       // 版本条目不切换当前显示（activate:false），需要回看旧稿时用版本切换恢复。
       // 失败不阻断续录收尾——留档是保险，不是闸门，诊断里记一条即可。
-      if (session.continuationSourcePath) {
+      if (session.continuationSourcePath && !session.continuation) {
         try {
           const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
           if (targetFile instanceof obsidian.TFile) {
@@ -1006,7 +1044,7 @@ export class SessionFinalizeService {
           lastError: t("Failed to write the minutes: {0}").replace("{0}", getErrorMessage(writeError)),
         });
         this.host.requestTaskQueueRetry(1500, "briefing-write-failure");
-        this.host.liveAsr.setSessionWorkProgress(session, {
+        this.host.asrPipeline.setSessionWorkProgress(session, {
           stage: "write-retrying",
           label: t("Minutes write waiting to retry"),
           percent: null,
@@ -1022,7 +1060,7 @@ export class SessionFinalizeService {
     }
 
     if (!mergeError) {
-      this.host.liveAsr.setSessionWorkProgress(session, {
+      this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "done",
         label: t("Processing complete"),
         percent: 100,
@@ -1063,17 +1101,18 @@ export class SessionFinalizeService {
     }
 
     if (!mergeError) {
-      await this.host.liveAsr.cleanupSuccessfulSegmentAudio(session);
+      if (!session.continuation) await this.host.asrPipeline.cleanupSuccessfulSegmentAudio(session);
       const completedTaskMeter = taskMeter ? this.host.taskMeters.endTaskMeter(taskMeter) : null;
       taskMeter = null;
       session._finalizeTaskMeter = null;
-      try {
-        const doneLabel = isTextImportSession(session) ? t("Text organization completed")
-          : session.source === "import" ? t("Imported audio organization completed") : t("Recording minutes completed");
-        this.host.taskMeters.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
-      } catch { /* intentionally empty */ }
-      // 沉淀开关默认关闭：开启后转写完成自动跑沉淀扫描并入库；关闭则照旧手动点「沉淀」。后台执行、失败静默。
-      if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
+      if (!session.continuation) {
+        try {
+          const doneLabel = isTextImportSession(session) ? t("Text organization completed")
+            : session.source === "import" ? t("Imported audio organization completed") : t("Recording minutes completed");
+          this.host.taskMeters.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
+        } catch { /* intentionally empty */ }
+        if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
+      }
     }
 
     new obsidian.Notice(mergeError
@@ -1084,11 +1123,14 @@ export class SessionFinalizeService {
           : mergeError instanceof BriefingPipelineIncompleteError
           ? t("{0}, queued for precise retry").replace("{0}", mergeError.message)
           : t("AI organizing did not finish; queued for retry."))
-      : (session.continuationSourcePath
-        ? t("Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).")
-          .replace("{0}", String(session.segments.length))
-          .replace("{1}", String(segmentsForFinal.length))
-        : t("QnALog processing completed")));
+      : (session.continuation
+        ? t("Continuation recording saved separately; it will be merged into \"{0}\" after its current processing finishes.")
+          .replace("{0}", session.continuation.targetPath.split("/").pop()?.replace(/\.md$/i, "") || session.continuation.targetPath)
+        : session.continuationSourcePath
+          ? t("Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).")
+            .replace("{0}", String(session.segments.length))
+            .replace("{1}", String(segmentsForFinal.length))
+          : t("QnALog processing completed")));
 
     if (this.host.settings.autoOpenNoteAfterFinish) {
       const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
@@ -1097,7 +1139,7 @@ export class SessionFinalizeService {
       }
     }
     this.host.requestDeferredAsrRetry(session);
-    if (this.host.session === session) this.host.session = null;
+    this.host.sessionStore.end(session);
     this.host.requestOutlineRefresh();
   }
 }

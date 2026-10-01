@@ -7,7 +7,7 @@ import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode }
 import { splitOutSedimentBlock } from "../sediment";
 import { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
-import type { PluginSettings } from "../shared/types";
+import type { PluginSettings, RecordingSession } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { splitLeadingFrontmatter } from "../versions/version-content";
@@ -18,11 +18,14 @@ import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingW
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractAllRawBlocksFromText, extractTranscriptSegments, generateTitleTag, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { getCurrentTranscript } from "../transcript/session-transcript";
 import { getFrontmatterTags } from "../shared/util-note";
 import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
 import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_CONTINUATION_COMMITTED_MARKER, NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, nsMarkerAnyRe, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+
+import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 
 import { t } from "../shared/i18n";
 import { labelText } from "../shared/note-labels";
@@ -175,10 +178,11 @@ export class NoteWriter {
 
     await this.host.app.vault.modify(file, currentBlock.replace(/\n{4,}/g, "\n\n\n"));
   }
-  async rewriteConsolidated(session, polished) {
+  async rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = ""): Promise<void> {
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
-    readTranscriptBlocks(await this.host.app.vault.read(file));
+    const currentMarkdown = await this.host.app.vault.read(file);
+    readTranscriptBlocks(currentMarkdown);
     const meta = getModeMeta(this.host.settings, session.mode);
     const moment = window.moment;
     const startedAt = moment(session.startedAt);
@@ -186,7 +190,6 @@ export class NoteWriter {
     const textImport = isTextImportSession(session);
     const externalAudioImport = !!session.externalAudioSource;
     const retainAudio = !textImport && !externalAudioImport;
-    // 续录会话：旧场次的录音信息/大纲/音频读回并按场次保留（普通会话三段都是空串，路径不变）。
     const priorBlocks = buildPriorSessionBlocks(session);
     const isContinuation = !!priorBlocks.recordingInfoAppendix || !!priorBlocks.outlineAppendix || !!priorBlocks.audioAppendix;
     const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
@@ -201,12 +204,9 @@ export class NoteWriter {
       segmentCount: session.segments.length,
       model: this.host.settings.llmModel,
     });
-    // 续录：把旧场次信息行并进录音信息 details 内部（buildRecordingInfoDetails 以 "</details>" 结尾）。
     const recordingInfoWithPrior = recordingInfoBlock && priorBlocks.recordingInfoAppendix
       ? recordingInfoBlock.replace(/<\/details>\s*$/, `${priorBlocks.recordingInfoAppendix}</details>`)
       : recordingInfoBlock;
-    // 续录：旧场次大纲并进实时大纲 details 内部（去重闸门见 assembleRealtimeOutlineDetails）；
-    // 新会话没有大纲时单独为旧大纲建块。
     const realtimeOutlineWithPrior = assembleRealtimeOutlineDetails({
       liveBlock: realtimeOutlineBlock,
       liveText: session.realtimeOutline || "",
@@ -215,7 +215,6 @@ export class NoteWriter {
     });
     const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
     const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
-
     const rawBlocks = textImport ? "" : session.segments.map((segment) => {
       const number = segment.index + 1;
       const heading = `### ${labelText("segment", number)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment))}${segment.isFinal ? " · 结束" : ""}`;
@@ -228,14 +227,11 @@ export class NoteWriter {
         ? serializeTranscriptBlock(segment, blockHeading, body)
         : `${heading}\n\n${taskMarker ? `${taskMarker}\n` : ""}${body}\n`;
     }).join("\n");
-
     const emptyBriefingFallback = buildEmptyLlmOutputFallback();
     const polishedParts = splitLeadingFrontmatter(polished || emptyBriefingFallback);
     const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    // 把沉淀元数据注释从正文末尾拆出来，稍后挪到整篇笔记最末尾（不再夹在正文与原始材料之间）。
     const sediment = splitOutSedimentBlock(polishedParts.body);
     const polishedBody = sediment.body.trim() || emptyBriefingFallback;
-
     const content = [
       polishedFrontmatter || null,
       `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
@@ -268,19 +264,24 @@ export class NoteWriter {
       textImport ? null : "<details>",
       textImport ? null : `<summary>${labelText("segmentedRawTranscript", session.segments.length)}</summary>`,
       textImport ? null : "",
+      textImport ? null : nsMarker("segments-start", session.id),
+      textImport ? null : "",
       textImport ? null : rawBlocks,
+      textImport ? null : nsMarker("segments-end", session.id),
       textImport ? null : "</details>",
       textImport ? null : "",
       nsMarker("session", session.id),
       "",
-      // 沉淀元数据放最末尾（HTML 注释，阅读视图隐藏；挪到此处后编辑模式也不再夹在正文中间）。
       sediment.block || null,
       sediment.block ? "" : null,
+      ...new Set([
+        ...[...currentMarkdown.matchAll(new RegExp(`<!--\\s*${nsRe(NS_CONTINUATION_COMMITTED_MARKER)}:[^>\\s]+\\s*-->`, "g"))].map(match => match[0]),
+        ...(continuationSessionId ? [nsMarker(NS_CONTINUATION_COMMITTED_MARKER, continuationSessionId)] : []),
+      ]),
     ].filter(v => v !== null).join("\n");
-
     await this.host.app.vault.modify(file, content);
   }
-  async appendPolishBlock(session, polished, mergeError, nonRetryableMergeError = false) {
+  async appendPolishBlock(session, polished, mergeError, nonRetryableMergeError = false, continuationSessionId = "", initialMarkdown: string | null = null) {
     const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
     const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
@@ -288,7 +289,6 @@ export class NoteWriter {
     const emptyBriefingFallback = buildEmptyLlmOutputFallback();
     const polishedParts = splitLeadingFrontmatter(polished || emptyBriefingFallback);
     const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    // 沉淀元数据从正文拆出，挪到本块最末尾，避免夹在正文与原始材料之间。
     const sediment = splitOutSedimentBlock(polishedParts.body);
     const polishedBody = sediment.body.trim() || emptyBriefingFallback;
     const textImport = isTextImportSession(session);
@@ -332,27 +332,98 @@ export class NoteWriter {
       textImport ? null : (playbackTimelineBlock ? "" : null),
       "---",
       "",
-      // 沉淀元数据放本整合块最末尾（HTML 注释，阅读视图隐藏）。
       sediment.block || null,
       sediment.block ? "" : null,
     ].filter(v => v !== null).join("\n");
-    let cur = await this.host.app.vault.read(file);
+    let cur = initialMarkdown ?? await this.host.app.vault.read(file);
     if (polishedFrontmatter && !mergeError) {
       const currentParts = splitLeadingFrontmatter(cur);
       cur = polishedFrontmatter + "\n" + currentParts.body.replace(/^\n+/, "");
     }
     const sep = cur.endsWith("\n") ? "" : "\n";
     let next = cur + sep + block;
-    // 标题占位 `（录音中…）` 用全角括号、`(recording…)` 用半角；旧 regex 的 `\)?` 是半角，
-    // 匹配不到全角 `）`，导致只替换"录音中…"留下原 `）` + 新拼的 `）` → 双括号 `（19:44））`。
-    // 用 [)）]? 同时吃掉半/全角收尾括号，收尾括号跟随开括号风格（中文全角、英文半角）。
     if (!textImport) {
       next = next.replace(/([（(])?(?:录音中|recording)…[)）]?/g, (_match, open) => {
         const prefix = open || "";
         return `${prefix}${formatElapsed(totalMs)}${open === "(" ? ")" : "）"}`;
       });
     }
+    if (continuationSessionId) next = `${next.replace(/\s*$/, "")}\n${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, continuationSessionId)}\n`;
     await this.host.app.vault.modify(file, next);
+  }
+
+  async commitContinuation(session: RecordingSession, polished: string, committedSessionIds: readonly string[]): Promise<void> {
+    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    if (!(file instanceof obsidian.TFile)) throw new Error("Continuation target note is missing");
+    const current = await this.host.app.vault.read(file);
+    const blocks = readTranscriptBlocks(current);
+    const incoming = session.segments.filter(segment => segment.transcript?.sourceId === session.id);
+    const counts = new Map<string, number>();
+    const existingById = new Map<string, typeof blocks[number]>();
+    for (const block of blocks) {
+      const id = block.segment.transcript?.id;
+      if (!id) continue;
+      counts.set(id, (counts.get(id) || 0) + 1);
+      existingById.set(id, block);
+    }
+    const incomingIds = new Set<string>();
+    for (const segment of incoming) {
+      const id = segment.transcript.id;
+      if (incomingIds.has(id)) throw new Error(`Continuation contains duplicate transcript block ${id}`);
+      incomingIds.add(id);
+      const count = counts.get(id) || 0;
+      if (count > 1) throw new Error(`Expected one transcript block for ${id}; found ${count}`);
+      const existing = existingById.get(id);
+      const incomingRevision = getCurrentTranscript(segment.transcript);
+      const existingRevision = existing?.segment.transcript
+        ? getCurrentTranscript(existing.segment.transcript)
+        : null;
+      if (existing && (existing.drifted
+        || existing.segment.transcript?.sourceId !== segment.transcript.sourceId
+        || existingRevision?.revision !== incomingRevision.revision
+        || existingRevision?.normalizationRevision !== incomingRevision.normalizationRevision)) {
+        throw new Error(`Transcript block drifted for ${id}`);
+      }
+    }
+    const marker = nsMarker(NS_CONTINUATION_COMMITTED_MARKER, session.id);
+    if (current.includes(marker)) {
+      for (const segment of incoming) {
+        if ((counts.get(segment.transcript.id) || 0) !== 1) {
+          throw new Error(`Committed continuation is missing transcript block ${segment.transcript.id}`);
+        }
+      }
+      return;
+    }
+    for (const id of committedSessionIds) {
+      if (!current.includes(nsMarker(NS_CONTINUATION_COMMITTED_MARKER, id))) {
+        throw new Error(`Previously committed continuation marker is missing for ${id}`);
+      }
+    }
+    if (shouldRewriteConsolidatedNote(this.host.settings, session)) {
+      await this.rewriteConsolidated(session, polished, session.id);
+      return;
+    }
+    const freshBlocks: string[] = [];
+    for (const segment of incoming) {
+      if (existingById.has(segment.transcript.id)) continue;
+      const number = segment.index + 1;
+      const heading = `### ${labelText("segment", number)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment))}${segment.isFinal ? " · 结束" : ""}`;
+      const body = segment.error
+        ? getTranscribeSegmentPlaceholder(segment.error, { retryable: !!segment.queueTaskId })
+        : (segment.text || labelText("noContentSegment"));
+      freshBlocks.push(serializeTranscriptBlock(segment, heading, body));
+    }
+    let withFreshBlocks = current;
+    if (freshBlocks.length) {
+      const markerMatch = nsMarkerAnyRe("segments-end").exec(current);
+      const insertionAt = markerMatch
+        ? markerMatch.index
+        : blocks.length ? blocks[blocks.length - 1].end : -1;
+      if (insertionAt < 0) throw new Error("Continuation target has no transcript insertion marker");
+      const insertion = `\n${freshBlocks.join("\n")}\n`;
+      withFreshBlocks = current.slice(0, insertionAt) + insertion + current.slice(insertionAt);
+    }
+    await this.appendPolishBlock(session, polished, null, false, session.id, withFreshBlocks);
   }
   async appendToNote(path, content) {
     const existing = this.host.app.vault.getAbstractFileByPath(path);
@@ -598,6 +669,7 @@ export class NoteWriter {
       mdPath: targetPath,
       mode,
       startedAt: startedAtIso,
+      finalized: true,
       source: "merged-notes",
       segments,
       multiSourceAudio: true,

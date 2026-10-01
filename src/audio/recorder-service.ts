@@ -245,8 +245,8 @@ export class RecorderService {
     this.state = "paused";
     this.pausedAt = Date.now();
     try {
-      if (this.plugin && this.plugin.recording && typeof this.plugin.recording.setRecordingIssue === "function") {
-        this.plugin.recording.setRecordingIssue("microphone", this.issue);
+      if (this.plugin && this.plugin.asrPipeline && typeof this.plugin.asrPipeline.setRecordingIssue === "function") {
+        this.plugin.asrPipeline.setRecordingIssue("microphone", this.issue);
       }
     } catch { /* intentionally empty */ }
     this.emit();
@@ -653,7 +653,7 @@ export class RecorderService {
         stoppedAtMs: endOffset,
         message: t("Recording cannot continue and has been paused. Please stop recording to save the complete audio and try again."),
       });
-      try { this.plugin.recording.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
+      try { this.plugin.asrPipeline.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
       try {
         void this.plugin.diagnostics.logDiagnostic("error", "recording.segment_cut_failed", t("Recording segment switch failed; recording paused and the full audio kept"), {
           index, startOffsetMs: startOffset, endOffsetMs: endOffset, error: diagnosticError(e),
@@ -712,13 +712,13 @@ export class RecorderService {
         stoppedAtMs: this.getInfo().elapsed,
         message: t("The recorder failed to resume and remains paused. Please stop recording to save the audio recorded so far."),
       });
-      try { this.plugin.recording.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
+      try { this.plugin.asrPipeline.setRecordingIssue("service", this.issue); } catch { /* intentionally empty */ }
       this.emit();
       return;
     }
     this.pausedFor += Date.now() - this.pausedAt;
     this.issue = null;
-    try { this.plugin.recording.clearRecordingIssue("service"); } catch { /* intentionally empty */ }
+    try { this.plugin.asrPipeline.clearRecordingIssue("service"); } catch { /* intentionally empty */ }
     this.state = "recording";
     this.emit();
   }

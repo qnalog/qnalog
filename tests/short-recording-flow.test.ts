@@ -29,7 +29,10 @@ vi.mock("obsidian", () => {
 
 import * as obsidian from "obsidian";
 import { RecordingService } from "../src/audio/recording-service";
+import type { RecordingHost } from "../src/audio/recording-service";
 import { SessionFinalizeService } from "../src/notes/session-finalize-service";
+import { SessionStore } from "../src/session/session-store";
+import { LiveAsrPipelineService } from "../src/asr/live-asr-pipeline-service";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 
 /** 只实现短录音路径真正会碰到的部分；其余能力一旦被调用即抛出，避免测试掩盖真实依赖。 */
@@ -75,22 +78,37 @@ function makeHost() {
   const transcriptionCalls: string[] = [];
   const diagnostics: Array<Record<string, unknown>> = [];
 
-  const sessionFinalize = { finalizeSession: async () => undefined, processSegment: async () => undefined, confirmSpeakerNamesBeforeFinal: async () => ({ segments: [], frontmatter: null }) };
 
-  const host: Record<string, unknown> = {
+  const sessionStore = new SessionStore();
+  const continuationCalls: string[] = [];
+  const continuations = {
+    trackSession: (session: { id: string }) => { continuationCalls.push(`track:${session.id}`); },
+    releaseSession: (sessionId: string) => { continuationCalls.push(`release:${sessionId}`); },
+    resolveTarget: () => null,
+    prepare: async () => { throw new Error("unexpected continuation preparation"); },
+    isSessionTracked: () => false,
+    hasActiveSessions: () => false,
+    getTrackedSessionIds: () => [],
+    runOnTarget: async (_target: unknown, operation: () => Promise<unknown>) => operation(),
+    notifyQueueChanged: () => undefined,
+    onRename: () => undefined,
+    cancelPrepared: async () => undefined,
+  };
+  const host = {
     app,
-    session: null,
+    sessionStore,
+    continuations,
     settings: { ...DEFAULT_SETTINGS, audioFolder: "QnALog/录音", mdFolder: "QnALog/转写纪要", segmentCacheFolder: "QnALog/.cache/segments" },
     bubble: null,
-    recorder: { state: "idle", _voicedTicks: 0, _silentTicks: 0, getInfo: () => ({ elapsed: 0, issue: null }) },
-    meetingWorkbench: { removeLiveTranscriptBlock: async () => undefined, processPendingMeetingWorkbenchInteractions: async () => undefined, scheduleMeetingWorkbenchInteraction: () => undefined },
+    recorder: { state: "idle", _voicedTicks: 0, _silentTicks: 0, getInfo: () => ({ elapsed: 0, issue: null }), start: async () => { throw new Error("microphone unavailable"); }, stop: async () => undefined, releaseStream: () => undefined },
+    meetingWorkbench: { removeLiveTranscriptBlock: async () => undefined, processPendingMeetingWorkbenchInteractions: async () => undefined, scheduleMeetingWorkbenchInteraction: () => undefined, makeStreamingNoteUpdater: () => () => undefined },
     noteWriter: {
       appendToNote: async (path: string, content: string) => {
         const cur = String(files.get(path)?.content ?? "");
         files.set(path, { content: cur + content });
       },
       insertBeforeSegmentsEnd: async () => undefined,
-      removeEmptySessionBlock: async () => undefined,
+      removeEmptySessionBlock: async (session: { mdPath: string }) => { files.delete(session.mdPath); },
       appendPolishBlock: async () => undefined,
       rewriteConsolidated: async () => undefined,
       renameMarkdownWithGeneratedTitle: async () => null,
@@ -118,15 +136,30 @@ function makeHost() {
     outline: { scheduleRealtimeOutline: () => undefined, ensureRealtimeOutlineForFinalNote: async () => undefined },
     noteIndex: { refreshNoteIndexSafely: async () => undefined, autoExtractSedimentAfterFinalize: () => undefined },
     saveSettings: async () => undefined,
-  };
+  } as unknown as RecordingHost & SessionFinalizeHost;
 
   const finalizeService = new SessionFinalizeService(host);
-  host.sessionFinalize = finalizeService;
-  host.sessionPipeline = finalizeService;
-  const recordingService = new RecordingService(host);
-  host.liveAsr = recordingService;
-
+  let recordingService: RecordingService;
+  host.asrPipeline = new LiveAsrPipelineService({
+    getSettings: () => host.settings,
+    vault: app.vault,
+    fileManager: app.fileManager,
+    diagnostics: host.diagnostics,
+    queueTasks: () => host.queue.tasks as never,
+    addQueueTask: (task) => host.queue.add(task) as never,
+    updateQueueTask: (id, patch) => host.queue.update(id, patch),
+    removeQueueTask: (id) => host.queue.remove(id),
+    removeLiveTranscriptBlock: (path, sessionId) => host.meetingWorkbench.removeLiveTranscriptBlock(path, sessionId),
+    getRecorderBufferSummary: () => recordingService.getRecorderBufferSummary(),
+    syncImportBusyFromSessionProgress: () => undefined,
+    requestOutlineRefresh: () => host.requestOutlineRefresh(),
+    requestBubbleUpdate: () => undefined,
+  });
+  host.processRecordedSegment = (session, segment) => finalizeService.processSegment(session, segment);
+  host.finalizeRecordedSession = (session) => finalizeService.finalizeSession(session);
+  recordingService = new RecordingService(host);
   return { host, files, folders, app, transcriptionCalls, diagnostics, finalizeService, recordingService };
+
 }
 
 /** 与 startRecording 写入磁盘的纪要头一致：标题 + 会话标记 + 分段区标记。 */
@@ -168,37 +201,37 @@ describe("短录音整条路径", () => {
   it("4 秒录音：音频写入录音目录，纪要文件被清除，不发出转写请求", async () => {
     notices.length = 0;
     trashed.length = 0;
-    const { host, files, transcriptionCalls, recordingService } = makeHost();
+    const { host, files, transcriptionCalls, recordingService, finalizeService } = makeHost();
     const mdPath = "QnALog/转写纪要/2026-09-18 1200.md";
     files.set(mdPath, { content: sessionHeader("2026-09-18 12:00") });
     const session = makeSession(mdPath);
-    (host as Record<string, unknown>).session = session;
+    host.sessionStore.begin(session);
 
     await recordingService.handleSegment(session as never, finalPayload(4000) as never);
     await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
-    await host.sessionFinalize.finalizeSession(session as never);
+    await finalizeService.finalizeSession(session as never);
 
     const audioFiles = [...files.keys()].filter((p) => p.startsWith("QnALog/录音/"));
     expect(audioFiles).toHaveLength(1);
     expect(audioFiles[0]).toContain("qnalog-20260918-120000");
     expect(trashed).toContain(mdPath);
     expect(transcriptionCalls).toEqual([]);
-    expect(host.session).toBeNull();
+    expect(host.sessionStore.get()).toBeNull();
     expect(notices.join("\n")).toContain("audio kept in the recording folder");
   });
 
   it("2 秒录音：不写音频文件，纪要文件被清除", async () => {
     notices.length = 0;
     trashed.length = 0;
-    const { host, files, recordingService } = makeHost();
+    const { host, files, recordingService, finalizeService } = makeHost();
     const mdPath = "QnALog/转写纪要/2026-09-18 1201.md";
     files.set(mdPath, { content: sessionHeader("2026-09-18 12:01") });
     const session = makeSession(mdPath);
-    (host as Record<string, unknown>).session = session;
+    host.sessionStore.begin(session);
 
     await recordingService.handleSegment(session as never, finalPayload(2000) as never);
     await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
-    await host.sessionFinalize.finalizeSession(session as never);
+    await finalizeService.finalizeSession(session as never);
 
     expect([...files.keys()].filter((p) => p.startsWith("QnALog/录音/"))).toEqual([]);
     expect(trashed).toContain(mdPath);
@@ -212,7 +245,7 @@ describe("短录音整条路径", () => {
     const mdPath = "QnALog/转写纪要/2026-09-18 1202.md";
     files.set(mdPath, { content: sessionHeader("2026-09-18 12:02") });
     const session = makeSession(mdPath);
-    (host as Record<string, unknown>).session = session;
+    host.sessionStore.begin(session);
 
     await recordingService.handleSegment(session as never, finalPayload(12_000) as never);
 
@@ -223,5 +256,40 @@ describe("短录音整条路径", () => {
     expect(transcriptionCalls).toContain("queue");
     expect(trashed).toEqual([]);
     expect(files.get(mdPath)?.content).toContain("qnalog-segments-start:session-1");
+  });
+
+  it("an old short-recording finalizer does not clear the replacement session", async () => {
+    const { host, files, finalizeService } = makeHost();
+    const first = Object.assign(makeSession("QnALog/转写纪要/first.md"), {
+      shortRecordingTier: "discard",
+      shortRecordingDurationMs: 2000,
+    });
+    const second = makeSession("QnALog/转写纪要/second.md");
+    files.set(first.mdPath, { content: sessionHeader("first") });
+    host.sessionStore.begin(first);
+    host.sessionStore.begin(second);
+
+    await finalizeService.finishShortRecording(first as never);
+
+    expect(host.sessionStore.get()).toBe(second);
+  });
+  it("a failed recording start removes its placeholder and ends only its own session", async () => {
+    notices.length = 0;
+    const { host, files, recordingService } = makeHost();
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260918-120300" : "2026-09-18 12:03",
+        toDate: () => new Date("2026-09-18T12:03:00.000Z"),
+      }),
+    });
+    try {
+      await recordingService.startRecording();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(host.sessionStore.get()).toBeNull();
+    expect(files.has("QnALog/转写纪要/2026-09-18 12:03.md")).toBe(false);
+    expect(notices.join("\n")).toContain("Cannot start recording");
   });
 });

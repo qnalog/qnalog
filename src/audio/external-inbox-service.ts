@@ -6,7 +6,8 @@ import type { ImportAudioFilesOptions, ImportAudioFilesResult } from "../imports
 import type { TaskActivityInput } from "../shared/task-activity";
 import { getDesktopModule } from "../shared/desktop-runtime";
 import { isMobileRuntime } from "../shared/util-platform";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
+import type { SessionStore } from "../session/session-store";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { sanitizeFilename } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -18,6 +19,7 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { TaskActivityService } from "../tasks/task-activity-service";
 
 import { t } from "../shared/i18n";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 /** 扫描电脑文件夹时的选项。 */
 export interface ExternalInboxScanOptions {
   /** 用户从命令面板手动触发；手动触发时对不满足条件的来源给出提示。 */
@@ -57,10 +59,9 @@ export interface ExternalInboxHost {
   /** 导入服务：把稳定的文件送进导入流程。 */
   imports: { importAudioFiles(paths: string[], modeOverride?: string, options?: ImportAudioFilesOptions): Promise<ImportAudioFilesResult | undefined> };
   manifest: { version?: string; id: string; dir?: string };
-  recorder: RecorderService | null;
-  /** 录音采集服务：分段缓存目录与缓存清理。 */
-  recording: { ensureSegmentCacheFolder(): Promise<unknown>; getSegmentCacheFolder(): string; maybeDeleteSegmentCacheFile(path: string, excludeTaskId?: string, force?: boolean): Promise<void> };
-  session: RecordingSession | null;
+  asrPipeline: Pick<LiveAsrPipelineService, "ensureSegmentCacheFolder" | "getSegmentCacheFolder" | "maybeDeleteSegmentCacheFile">;
+  recorder: Pick<RecorderService, "state"> | null;
+  sessionStore: SessionStore;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
   tasks: TaskActivityService;
@@ -246,10 +247,11 @@ export class ExternalInboxService {
 
   isForegroundAudioWorkActive() {
     const recorderState = this.host.recorder && this.host.recorder.state;
+    const session = this.host.sessionStore.get();
     return !!(
       (recorderState && recorderState !== "idle")
       || this.host.tasks._importBusy
-      || (this.host.session && !this.host.session.finalized)
+      || (session && !session.finalized)
     );
   }
 
@@ -395,11 +397,11 @@ export class ExternalInboxService {
   async copyExternalInboxFileToCache(file) {
     const runtime = this.getExternalInboxRuntime();
     if (!runtime) throw new Error(t("The current desktop environment cannot read computer folders"));
-    await this.host.recording.ensureSegmentCacheFolder();
+    await this.host.asrPipeline.ensureSegmentCacheFolder();
     const safeStem = sanitizeFilename(String(file.name || "audio").replace(/\.[^.]+$/, "")) || "audio";
     const extension = String(file.extension || "audio").toLowerCase();
     const cacheName = `${file.fingerprint}-${safeStem}.${extension}`;
-    const cachePath = obsidian.normalizePath(`${this.host.recording.getSegmentCacheFolder()}/${cacheName}`);
+    const cachePath = obsidian.normalizePath(`${this.host.asrPipeline.getSegmentCacheFolder()}/${cacheName}`);
     const adapter = this.host.app.vault.adapter;
     if (await adapter.exists(cachePath)) await adapter.remove(cachePath);
     const desktopAdapter = adapter as { getFullPath?: (p: string) => string };
@@ -546,7 +548,7 @@ export class ExternalInboxService {
     } finally {
       scheduled.delete(file.fingerprint);
       if (cachePath) {
-        try { await this.host.recording.maybeDeleteSegmentCacheFile(cachePath, undefined, true); } catch { /* queue references keep required retry files */ }
+        try { await this.host.asrPipeline.maybeDeleteSegmentCacheFile(cachePath, undefined, true); } catch { /* queue references keep required retry files */ }
       }
     }
   }

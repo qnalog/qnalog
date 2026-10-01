@@ -7,13 +7,15 @@ import { drainRealtimeOutlineBacklog } from "./outline-finalizer";
 import { getModeMeta } from "../shared/mode-meta";
 import { buildBriefingLanguageInstruction, getSegmentsDurationMs } from "../shared/util-text";
 import { callLlm } from "../llm/core";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
+import type { SessionStore } from "../session/session-store";
 import { primitiveText, getErrorMessage } from "../shared/util-common";
 import { isLocalLlmEndpoint } from "../shared/util-llm-endpoint";
 import { diagnosticError } from "../shared/util-key-diag";
 import { RealtimeOutlineCoordinator, runInOutlineSessionTail } from "./outline-coordinator";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS, REALTIME_OUTLINE_FINAL_MAX_BATCHES, REALTIME_OUTLINE_FINAL_MAX_TOKENS, REALTIME_OUTLINE_FINAL_TIMEOUT_MS, REALTIME_OUTLINE_LOOKBACK_SEGMENTS, REALTIME_OUTLINE_MANUAL_TIMEOUT_MS, REALTIME_OUTLINE_MAX_MEMORY_CHARS, REALTIME_OUTLINE_MAX_NO_CHANGE_REJECTIONS, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS, REALTIME_OUTLINE_MAX_SEGMENTS, REALTIME_OUTLINE_MAX_TRANSCRIPT_CHARS, REALTIME_OUTLINE_MIN_NEW_SEGMENTS, REALTIME_OUTLINE_MIN_SEMANTIC_DELTA_CHARS, REALTIME_OUTLINE_SILENT_MAX_TOKENS, REALTIME_OUTLINE_SILENT_TIMEOUT_MS, buildOutlinePrompt, buildRealtimeOutlineAnchorSources, buildRealtimeOutlineTranscript, buildRollingOutlineContext, clipRealtimeContextText, getRealtimeOutlineNewSegmentCount, getRealtimeOutlineQueuedDelayMs, getRealtimeOutlineTimeoutMs, hasRealtimeOutlineRunnableBacklog, isRealtimeOutlineBackoffActive, isRealtimeOutlineCurrent, isRealtimeOutlineSilentIntervalActive, markRealtimeOutlineFailure, markRealtimeOutlineSuccess, normalizeRealtimeOutlineState, parseRealtimeOutlineResponse, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline, updateRealtimeOutlineCoverage } from "../notes/realtime-outline";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 
 import { t } from "../shared/i18n";
@@ -48,9 +50,8 @@ export interface RealtimeOutlineHost {
   outlineCoordinator: RealtimeOutlineCoordinator | null;
   /** 装配层转发：大纲更新后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
   requestOutlineRefresh(): void;
-  session: RecordingSession | null;
-  /** 录音服务的会话进度视图：把大纲进度写进会话（装配层绑定到 RecordingService）。 */
-  sessionProgress: { setSessionWorkProgress(session: RecordingSession, patch: unknown): void; setRecordingIssue(kind: string, patch?: unknown): void; clearRecordingIssue(kind: string): void };
+  sessionStore: SessionStore;
+  asrPipeline: Pick<LiveAsrPipelineService, "setSessionWorkProgress" | "setRecordingIssue" | "clearRecordingIssue">;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
@@ -60,9 +61,8 @@ export class RealtimeOutlineService {
   constructor(host: RealtimeOutlineHost) {
     this.host = host;
   }
-
   scheduleRealtimeOutline(opts: RealtimeOutlineRequestOptions = {}) {
-    const session = this.host.session;
+    const session = this.host.sessionStore.get();
     if (!session || !session.id) return;
     const requestedDelay = Number(opts && opts.delayMs);
     const delay = Number.isFinite(requestedDelay) && requestedDelay >= 0
@@ -77,8 +77,8 @@ export class RealtimeOutlineService {
     });
   }
 
-  ensureRealtimeOutlineProgress(session = this.host.session, reason = "progress-check") {
-    if (!session || session !== this.host.session || !session.id) return false;
+  ensureRealtimeOutlineProgress(session = this.host.sessionStore.get(), reason = "progress-check") {
+    if (!session || session !== this.host.sessionStore.get() || !session.id) return false;
     if (!this.host.settings.enableRealtimeOutline) return false;
     if (!hasRealtimeOutlineRunnableBacklog(session)) return false;
     const local = isLocalLlmEndpoint(this.host.settings.llmEndpoint);
@@ -90,7 +90,7 @@ export class RealtimeOutlineService {
   }
 
   async refreshRealtimeOutlineInBackground(opts: RealtimeOutlineRequestOptions = {}) {
-    const session = this.host.session;
+    const session = this.host.sessionStore.get();
     if (!session || !session.id || !session.segments || !session.segments.length) return "";
     const local = isLocalLlmEndpoint(this.host.settings.llmEndpoint);
     return await this.host.outlineCoordinator.request({
@@ -111,7 +111,7 @@ export class RealtimeOutlineService {
       : { phase: "idle", sessionId: "", runId: 0, queued: 0, reason: "", startedAt: 0, nextRunAt: 0, lastError: "" };
   }
 
-  isRealtimeOutlineRunning(session = this.host.session) {
+  isRealtimeOutlineRunning(session = this.host.sessionStore.get()) {
     const state = this.getRealtimeOutlineCoordinatorState();
     return !!(session && state.phase === "running" && state.sessionId === session.id);
   }
@@ -121,7 +121,7 @@ export class RealtimeOutlineService {
   }
 
   evaluateRealtimeOutlineRequest(request) {
-    const session = this.host.session;
+    const session = this.host.sessionStore.get();
     if (!session || session.id !== request.sessionId) {
       return { ready: false, retry: false, reason: "stale-session" };
     }
@@ -154,7 +154,7 @@ export class RealtimeOutlineService {
 
   /** 失败重试决策；error 由协调器传入但当前实现只依据 request 与会话状态判断。 */
   getRealtimeOutlineRetryDecision(request, error = undefined) {
-    const session = this.host.session;
+    const session = this.host.sessionStore.get();
     if (!request.silent || !session || session.id !== request.sessionId) {
       return { retry: false, reason: "failed" };
     }
@@ -170,7 +170,7 @@ export class RealtimeOutlineService {
   }
 
   async executeRealtimeOutlineRequest(request) {
-    const session = this.host.session;
+    const session = this.host.sessionStore.get();
     if (!session || session.id !== request.sessionId) return "";
     const local = !!request.local || isLocalLlmEndpoint(this.host.settings.llmEndpoint);
     const explicitTimeout = Number(request.timeoutMs) > 0 ? Number(request.timeoutMs) : 0;
@@ -187,8 +187,8 @@ export class RealtimeOutlineService {
         signal: request.signal,
       });
       markRealtimeOutlineSuccess(session);
-      this.host.sessionProgress.clearRecordingIssue("network");
-      this.host.sessionProgress.clearRecordingIssue("service");
+      this.host.asrPipeline.clearRecordingIssue("network");
+      this.host.asrPipeline.clearRecordingIssue("service");
       await this.host.diagnostics.logDiagnostic("info", "outline.generate_succeeded", t("Live outline generated successfully"), {
         silent: !!request.silent,
         force: !!request.force,
@@ -231,7 +231,7 @@ export class RealtimeOutlineService {
         error: diagnosticError(e),
       });
       if (!request.silent) {
-        this.host.sessionProgress.setRecordingIssue(classifyRecordingIssue(e), {
+        this.host.asrPipeline.setRecordingIssue(classifyRecordingIssue(e), {
           source: "outline",
           message: getErrorMessage(e),
           startedAtMs: getSegmentsDurationMs(session.segments),
@@ -622,7 +622,7 @@ export class RealtimeOutlineService {
           ? Math.round((committedSegmentCount / totalSegmentCount) * 100)
           : 0;
         updateRealtimeOutlineCoverage(session, "processing");
-        this.host.sessionProgress.setSessionWorkProgress(session, {
+        this.host.asrPipeline.setSessionWorkProgress(session, {
           stage: "outline",
           label: `${t("Completing outline ")}${committedSegmentCount}/${totalSegmentCount}${t(" segments")}`,
           percent: Math.min(58, 32 + Math.round(coveragePercent * 0.26)),
@@ -656,7 +656,7 @@ export class RealtimeOutlineService {
       retryCount: drainResult.retryCount,
       error: drainResult.lastError ? diagnosticError(drainResult.lastError) : null,
     });
-    this.host.sessionProgress.setSessionWorkProgress(session, {
+    this.host.asrPipeline.setSessionWorkProgress(session, {
       stage: "outline",
       label: t("Outline not fully completed"),
       percent: 58,

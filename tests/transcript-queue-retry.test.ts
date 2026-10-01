@@ -12,6 +12,7 @@ import { QueueRetryService } from "../src/queue/queue-retry-service";
 import { attachTranscriptResult } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock, readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
+import { SessionStore } from "../src/session/session-store";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -75,6 +76,9 @@ describe("transcript queue retry persistence", () => {
       ),
       "<!-- qnalog-segments-end:session-retry -->",
     ].join("\n"));
+    const sessionStore = new SessionStore();
+    const currentSession = { id: "current-recording" };
+    sessionStore.begin(currentSession as never);
 
     let asrRequests = 0;
     vi.stubGlobal("window", {
@@ -113,6 +117,7 @@ describe("transcript queue retry persistence", () => {
     const refreshIndex = vi.fn().mockResolvedValue(undefined);
     const host = {
       app: { vault },
+      sessionStore,
       settings: {
         activeTranscribeProvider: "test-asr",
         transcribeProviders: {
@@ -128,8 +133,11 @@ describe("transcript queue retry persistence", () => {
         audioChannelMode: "mono",
       },
       profiles: { getActiveTranscribeProfile: () => ({ transcribeMode: "segmented" }) },
-      asrCircuit: { maybeDeleteSegmentCacheFile: deleteAudio },
+      asrPipeline: { maybeDeleteSegmentCacheFile: deleteAudio },
       noteIndex: { refreshNoteIndexSafely: refreshIndex },
+      continuations: {
+        runOnTarget: (_target: unknown, operation: () => Promise<unknown>) => operation(),
+      },
       diagnostics: { logDiagnostic: vi.fn().mockResolvedValue(undefined) },
       queue: { snapshot: () => [task, { id: "other-task", type: "transcribe", mdPath: task.mdPath }] },
       confirmSpeakerNames: vi.fn().mockResolvedValue(undefined),
@@ -163,6 +171,7 @@ describe("transcript queue retry persistence", () => {
     await service.retryTranscribeTask(task);
     expect(asrRequests).toBe(3);
     expect(deleteAudio).toHaveBeenCalledTimes(2);
+    expect(sessionStore.get()).toBe(currentSession);
     expect(refreshIndex).toHaveBeenCalledTimes(2);
 });
 });

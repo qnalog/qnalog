@@ -346,6 +346,22 @@ export interface QueueTaskLifecycle {
   attempt?: number;
   transportFailures?: number;
   nextRetryAt?: string;
+  dependsOnSessionIds?: string[];
+}
+
+export interface QueueTaskDeferred {
+  deferred: true;
+  reason: string;
+  status?: "pending" | "missing" | "blocked";
+}
+
+export interface ContinuationContext {
+  targetPath: string;
+  targetSourceId: string;
+  recordedAt: string;
+  realtimeOutline?: string;
+  masterAudioPath?: string;
+  masterAudioName?: string;
 }
 
 export interface TranscribeQueueTaskPayload {
@@ -395,6 +411,7 @@ export interface MergeQueueTaskPayload {
   sessionMeta?: unknown;
   speakerFrontmatter?: Record<string, unknown> | null;
   temporarySourcePath?: string;
+  continuation?: ContinuationContext;
 }
 
 export interface GeneratePromptQueueTaskPayload {
@@ -438,6 +455,8 @@ export interface RecordingSession {
   continuationSourcePath?: string;
   continuationSourceTitle?: string;
   continuationRecordedAt?: string;
+  continuation?: ContinuationContext;
+  continuationTaskId?: string;
   /** 续录来源笔记的实时大纲草稿文本；重写时按场次保留。 */
   continuationPriorOutline?: string;
   /** 续录来源笔记引用的音频文件名列表；重写时原始音频块按场次列出。 */

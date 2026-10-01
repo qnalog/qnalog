@@ -50,15 +50,15 @@ const NOTE_BODY = [
   "<!-- qnalog-segments-end:s1 -->", "",
 ].join("\n");
 
-function transcriptSegment(index, text, startOffsetMs, endOffsetMs) {
-  const id = `seg:s1:${index}`;
+function transcriptSegment(index, text, startOffsetMs, endOffsetMs, sourceId = "s1") {
+  const id = `seg:${sourceId}:${index}`;
   const utteranceId = `${id}:r1:u1`;
   return {
     index, startOffsetMs, endOffsetMs, text,
     transcript: {
       schemaVersion: 2,
       id,
-      sourceId: "s1",
+      sourceId,
       sourcePath: null,
       sourceName: null,
       currentRevision: 1,
@@ -87,6 +87,18 @@ function transcriptSegment(index, text, startOffsetMs, endOffsetMs) {
     },
   };
 }
+function serializeTranscriptSegment(segment) {
+  const { transcript, ...storedSegment } = segment;
+  return [
+    `<!-- qnalog-transcript-start:${transcript.id} -->`,
+    `### Segment ${segment.index + 1}`,
+    `<!-- qnalog-transcript-text-start:${transcript.id} -->`,
+    segment.text,
+    `<!-- qnalog-transcript-text-end:${transcript.id} -->`,
+    `<!-- qnalog-transcript-data ${JSON.stringify({ schemaVersion: 2, segment: storedSegment, transcript })} -->`,
+    `<!-- qnalog-transcript-end:${transcript.id} -->`,
+  ].join("\n");
+}
 
 const files = new Map();
 const noteFile = new TFile(NOTE_PATH);
@@ -94,6 +106,7 @@ noteFile._content = NOTE_BODY;
 files.set(NOTE_PATH, noteFile);
 
 const secrets = new Map();
+const adapterData = new Map();
 
 const app = {
   secretStorage: {
@@ -107,9 +120,16 @@ const app = {
   vault: {
     configDir: ".obsidian",
     adapter: {
-      exists: async () => false, read: async () => "{}", write: async () => undefined,
-      readBinary: async () => new ArrayBuffer(0), mkdir: async () => undefined, rename: async () => undefined,
-      remove: async () => undefined, stat: async () => ({ mtime: Date.now(), size: 0 }),
+      exists: async (path) => adapterData.has(path) || files.has(path),
+      read: async (path) => adapterData.get(path) ?? files.get(path)?._content ?? "{}",
+      write: async (path, content) => { adapterData.set(path, String(content)); },
+      readBinary: async () => new ArrayBuffer(0),
+      mkdir: async () => undefined,
+      rename: async (from, to) => {
+        if (adapterData.has(from)) { adapterData.set(to, adapterData.get(from)); adapterData.delete(from); }
+      },
+      remove: async (path) => { adapterData.delete(path); },
+      stat: async () => ({ mtime: Date.now(), size: 0 }),
       list: async () => ({ files: [], folders: [] }),
     },
     getAbstractFileByPath: (p) => files.get(String(p).replace(/^\/+/, "")) || null,
@@ -119,7 +139,13 @@ const app = {
     create: async (p, c) => { const f = new TFile(p); f._content = c; files.set(p, f); return f; },
     read: async (f) => f._content || "",
     cachedRead: async (f) => f._content || "",
-    modify: async (f, c) => { f._content = c; },
+    modify: async (f, c) => {
+      if (failContinuationCommit && String(c).includes("qnalog-continuation-committed:s2")) {
+        failContinuationCommit = false;
+        throw new Error("simulated target write failure");
+      }
+      f._content = c;
+    },
     delete: async () => undefined,
     on: () => ({}),
   },
@@ -128,10 +154,17 @@ const app = {
     getLeavesOfType: () => [], getLeaf: () => ({ openFile: async () => undefined, view: null }),
     iterateAllLeaves: noop,
   },
-  metadataCache: { getFirstLinkpathDest: () => null, on: () => ({}) },
-  fileManager: { renameFile: async () => undefined },
+  metadataCache: { getFirstLinkpathDest: () => null, getFileCache: () => null, on: () => ({}) },
+  fileManager: {
+    renameFile: async () => undefined,
+    trashFile: async (file) => { files.delete(file.path); },
+  },
   internalPlugins: { getPluginById: () => null, plugins: {} },
 };
+
+let failContinuationCommit = false;
+let gateNextLlmRequest = false;
+let releaseGatedLlmRequest = null;
 
 // 桩 LLM：从实际请求中的来源标题读取允许的证据 ID，只返回一个分部回复。
 const llmCalls = [];
@@ -201,6 +234,10 @@ const obsidian = {
   prepareFuzzySearch: () => () => null, sanitizeHTMLToDom: () => makeEl(),
   requestUrl: async (request) => {
     llmCalls.push(request);
+    if (gateNextLlmRequest) {
+      gateNextLlmRequest = false;
+      await new Promise((resolve) => { releaseGatedLlmRequest = resolve; });
+    }
     const text = makeLlmReply(request);
     return { status: 200, text, json: JSON.parse(text), headers: {}, arrayBuffer: new ArrayBuffer(0) };
   },
@@ -335,6 +372,70 @@ async function main() {
     if ((content.match(/qnalog-transcript-start:/g) || []).length !== 2) failures.push("成品笔记没有保留两个转写来源块");
     // 只认 H1（# + 空格）：正文里 `---` 分隔线后的 `## 章节` 也以 # 开头，不是头部空行。
     if (/^---\r?\n[ \t]*\r?\n#\s/m.test(content)) failures.push("frontmatter 与 H1 之间有多余空行（新格式：单换行紧贴标题）");
+    const continuationId = "s2";
+    const continuationTime = "2026-09-14T11:43:00.000Z";
+    let continuationPreparation;
+    try {
+      continuationPreparation = await plugin.continuations.prepare(noteFile, continuationId, "20260914-114300", continuationTime);
+      const addedSegment = transcriptSegment(0, "追加录音确认按反馈扩大灰度。", 0, 4000, continuationId);
+      continuationPreparation.stageFile._content += `\n${serializeTranscriptSegment(addedSegment)}\n`;
+      const task = await plugin.queue.add({
+        id: continuationPreparation.taskId,
+        type: "merge",
+        sessionId: continuationId,
+        mdPath: continuationPreparation.stageFile.path,
+        temporarySourcePath: continuationPreparation.stageFile.path,
+        mode: continuationPreparation.mode,
+        segments: [addedSegment],
+        continuation: continuationPreparation.continuation,
+        sessionMeta: { startedAt: continuationTime, duration: "00:04" },
+        status: "pending",
+        retries: 0,
+        dependsOnSessionIds: [],
+      });
+      gateNextLlmRequest = true;
+      failContinuationCommit = true;
+      const continuationRun = plugin.queue.processOne(task);
+      const gateDeadline = Date.now() + 5000;
+      while (!releaseGatedLlmRequest && Date.now() < gateDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      if (!releaseGatedLlmRequest) throw new Error("continuation model request did not reach the gate");
+      const activeId = plugin.tasks.queueTaskActivityId(task);
+      const duringModel = plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true })
+        .find((activity) => activity.id === activeId);
+      if (!duringModel || duringModel.status !== "running" || duringModel.stage === "write-note") {
+        failures.push(`continuation did not retain its live model activity while the request was pending: ${JSON.stringify(duringModel)}`);
+      }
+      releaseGatedLlmRequest();
+      releaseGatedLlmRequest = null;
+      let firstAttemptError = null;
+      try { await continuationRun; } catch (error) { firstAttemptError = error; }
+      if (!firstAttemptError || !String(firstAttemptError.message || firstAttemptError).includes("simulated target write failure")) {
+        failures.push("simulated continuation write failure did not reach the queue retry path");
+      }
+      const failedTask = plugin.queue.tasks.find((candidate) => candidate.id === task.id);
+      const failedActivity = plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true })
+        .find((activity) => activity.id === activeId);
+      if (!failedTask || failedTask.status !== "failed" || !failedActivity || failedActivity.status !== "failed"
+        || failedActivity.completedAt <= 0 || !String(failedActivity.error || "").includes("simulated target write failure")) {
+        failures.push(`continuation failure state was not retained for recovery: ${JSON.stringify({ failedTask, failedActivity })}`);
+      }
+      if ((noteFile._content || "").includes("qnalog-continuation-committed:s2")) {
+        failures.push("failed continuation write marked the target as committed");
+      }
+      if (failedTask) {
+        failedTask.retries = 1;
+        await plugin.queue.processOne(failedTask);
+      }
+      const appended = noteFile._content || "";
+      if (!appended.includes("追加录音确认按反馈扩大灰度。")) failures.push("续录的逐字稿没有并入目标笔记");
+      if ((appended.match(/<!-- qnalog-continuation-committed:s2 -->/g) || []).length !== 1) failures.push("目标笔记没有恰好一个续录提交标记");
+      if ((appended.match(/qnalog-transcript-start:/g) || []).length !== 3) failures.push("续录提交后目标笔记没有保留三段逐字稿");
+      if (files.has(continuationPreparation.stageFile.path)) failures.push("续录成功后暂存文件没有清理");
+    } catch (error) {
+      failures.push(`续录收尾到目标笔记合并失败：${(error && error.message) || error}`);
+    }
     for (const id of plugin.intervals) clearInterval(id);
   } finally {
     console.error = realError;

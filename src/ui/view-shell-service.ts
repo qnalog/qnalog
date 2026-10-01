@@ -8,7 +8,8 @@ import { BubbleWidget } from "../ui/modals";
 import { getModeMeta, getModePrefix} from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
+import type { SessionStore } from "../session/session-store";
 import { MODE_META } from "../shared/catalog-modes";
 import { sanitizeFilename } from "../shared/util-common";
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
@@ -25,7 +26,7 @@ export interface ViewShellHost {
   bubble: BubbleWidget | null;
   /** 录音功能区图标；气泡挂载在它旁边。 */
   ribbonEl: HTMLElement | null;
-  session: RecordingSession | null;
+  sessionStore: SessionStore;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
   tasks: TaskActivityService;
@@ -204,7 +205,8 @@ export class ViewShellService {
   }
 
   async openSessionNote() {
-    const mdPath = this.host.session && this.host.session.mdPath;
+    const session = this.host.sessionStore.get();
+    const mdPath = session && session.mdPath;
     if (!mdPath) { await this.openRecentNote(); return; }
     const file = this.host.app.vault.getAbstractFileByPath(mdPath);
     if (!(file instanceof obsidian.TFile)) { new obsidian.Notice(t("The current recording note has not been generated yet")); return; }
@@ -215,7 +217,7 @@ export class ViewShellService {
       const editor = view && view.editor;
       if (editor) {
         const content = editor.getValue();
-        const marker = nsMarker("segments-end", this.host.session && this.host.session.id ? this.host.session.id : undefined);
+        const marker = nsMarker("segments-end", session && session.id ? session.id : undefined);
         const idx = content.lastIndexOf(marker);
         if (idx >= 0) {
           const line = content.slice(0, idx).split("\n").length - 1;

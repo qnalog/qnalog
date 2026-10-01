@@ -590,22 +590,26 @@ export class QueueModal extends obsidian.Modal {
     const completed = Array.isArray(this.plugin.tasks.completedWorkLog) ? this.plugin.tasks.completedWorkLog : [];
     const detail = this.plugin.tasks.getCurrentActivityDetail ? this.plugin.tasks.getCurrentActivityDetail() : null;
     const activityLabel = this.plugin.tasks.getCurrentActivityLabel ? this.plugin.tasks.getCurrentActivityLabel() : null;
-    const active = !!(detail || activityLabel);
-    const activeLiveness = detail && detail.liveness ? String(detail.liveness) : (active ? "running" : "done");
+    const activeLiveness = detail && detail.liveness ? String(detail.liveness) : (activityLabel ? "running" : "done");
+    const active = !!activityLabel || ["running", "waiting", "slow", "stalled"].includes(activeLiveness);
+    const currentSession = this.plugin.getCurrentSession();
     const sessionId = this.plugin.tasks._importBusy && this.plugin.tasks._importBusy.sessionId
       ? String(this.plugin.tasks._importBusy.sessionId)
-      : this.plugin.session && this.plugin.session.id ? String(this.plugin.session.id) : "";
-    const currentActivityIds = new Set(sessionId && active
-      ? [`import:${sessionId}`, `finalize:${sessionId}`]
-      : []);
-    const taskActivities = (this.plugin.tasks.getTaskActivities
+      : currentSession && currentSession.id ? String(currentSession.id) : "";
+    const currentActivityIds = new Set(sessionId && active ? [`import:${sessionId}`, `finalize:${sessionId}`] : []);
+    const allActivities = this.plugin.tasks.getTaskActivities
       ? this.plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: false })
-      : [])
+      : [];
+    const taskActivities = allActivities
       .filter((task) => task && !String(task.kind || "").startsWith("queue-"))
       .filter((task) => !currentActivityIds.has(String(task.id || "")));
     // 当前处理链由顶部流程展示；这里只保留真正需要用户处理的后台异常，避免同一任务重复展开。
     const visibleTaskActivities = taskActivities.filter((task) => ["failed", "stalled"].includes(String(task.status || "")));
-    const taskProblems = taskActivities.filter((task) => String(task.status || "") === "failed");
+    const queueProblems = allActivities.filter((task) => String(task.kind || "").startsWith("queue-") && task.status === "failed");
+    const taskProblems = [
+      ...taskActivities.filter((task) => String(task.status || "") === "failed"),
+      ...queueProblems,
+    ];
     const taskActive = taskActivities.filter((task) => ["queued", "running", "waiting", "slow", "stalled", "retrying"].includes(String(task.status || "")));
     const taskDone = taskActivities.filter((task) => task.status === "done");
     const headLiveness = taskProblems.length
@@ -616,8 +620,8 @@ export class QueueModal extends obsidian.Modal {
           ? String(taskActive[0].status || "running")
           : running.length
             ? "running"
-            : pending.length
-              ? "retrying" : "done";
+            : pending.length && detail && detail.liveness === "queued"
+              ? "queued" : pending.length ? "retrying" : "done";
     const headActive = active || taskActive.length > 0 || running.length > 0;
     const livenessLabel = (state) => ({
       queued: i18nT("Queued"),
@@ -667,11 +671,13 @@ export class QueueModal extends obsidian.Modal {
     const isTranscribing = activePipelineStage
       ? ["prepare", "transcribe", "persist"].includes(String(activePipelineStage.id || ""))
       : /(transcrib|asr|转写|音频|分段)/i.test(activityText);
-    const headTitle = headLiveness === "done"
-      ? i18nT("Processing complete")
-      : headActive
-        ? (isTranscribing ? i18nT("Transcribing") : i18nT("Organizing note"))
-      : taskProblems.length ? i18nT("Processing incomplete") : i18nT("Processing progress");
+    const headTitle = taskProblems.length
+      ? i18nT("Processing incomplete")
+      : headLiveness === "done"
+        ? i18nT("Processing complete")
+        : headActive
+          ? (isTranscribing ? i18nT("Transcribing") : i18nT("Organizing note"))
+          : i18nT("Processing progress");
     const head = contentEl.createDiv({ cls: "qnalog-progress-head" });
     const titleRow = head.createDiv({ cls: "qnalog-progress-title-row" });
     titleRow.createSpan({ cls: "qnalog-progress-title", text: headTitle });
@@ -733,12 +739,18 @@ export class QueueModal extends obsidian.Modal {
       : primaryActivity && Number(primaryActivity.startedAt) > 0
         ? Number(primaryActivity.startedAt)
         : _tm && Number(_tm.startedAt) > 0 ? Number(_tm.startedAt) : 0;
-    const elapsedMs = progressStartedAt ? Math.max(0, Date.now() - progressStartedAt) : 0;
-    const remainingText = percent > 0 && percent < 100
-      ? `${i18nT("Est. remaining ")}${fmtDur(elapsedMs * ((100 - percent) / percent))}`
-      : i18nT("Calculating remaining time");
+    const progressEndedAt = detail && detail.liveness === "failed" && Number(detail.completedAt) > 0
+      ? Number(detail.completedAt)
+      : Date.now();
+    const elapsedMs = progressStartedAt ? Math.max(0, progressEndedAt - progressStartedAt) : 0;
+    const remainingText = detail && detail.liveness === "failed" ? i18nT("This run failed")
+      : percent > 0 && percent < 100
+        ? `${i18nT("Est. remaining ")}${fmtDur(elapsedMs * ((100 - percent) / percent))}`
+        : i18nT("Calculating remaining time");
     const timing = head.createDiv({ cls: "qnalog-progress-timing", attr: { "aria-live": "polite" } });
-    timing.setText(progressStartedAt ? i18nT("Elapsed {0} · {1}").replace("{0}", fmtDur(elapsedMs)).replace("{1}", remainingText) : i18nT("Preparing to process"));
+    timing.setText(progressStartedAt
+      ? i18nT("Elapsed {0} · {1}").replace("{0}", fmtDur(elapsedMs)).replace("{1}", remainingText)
+      : i18nT("Preparing to process"));
 
     const phaseText = [
       detail && detail.stage,
@@ -748,9 +760,13 @@ export class QueueModal extends obsidian.Modal {
       primaryActivity && primaryActivity.stageLabel,
       primaryActivity && primaryActivity.title,
     ].filter(Boolean).join(" ").toLowerCase();
-    const phase = headActive || pending.length || running.length
-      ? (/(transcrib|asr|转写|音频|分段)/i.test(phaseText) ? "transcribe" : "organize")
-      : "complete";
+    const queueDetail = detail && detail.queueTaskId ? detail : null;
+    const phase = queueDetail
+      ? queueDetail.stage === "write-note" ? "complete"
+        : queueDetail.liveness === "failed" ? "organize" : "transcribe"
+      : headActive || running.length
+        ? (/(transcrib|asr|转写|音频|分段)/i.test(phaseText) ? "transcribe" : "organize")
+        : "complete";
     let phaseIndex = { transcribe: 0, organize: 1, complete: 2 }[phase] || 0;
     let pipelineSteps = [
       {
@@ -1021,7 +1037,7 @@ export class QueueModal extends obsidian.Modal {
       } else {
         ico.createSpan({ cls: `qnalog-progress-spinner is-${activeLiveness}` });
       }
-      const sess = this.plugin.session;
+      const sess = this.plugin.getCurrentSession();
       const fileName = sess && sess.mdPath ? String(sess.mdPath).split(/[\\/]/).pop().replace(/\.md$/i, "") : "";
       const name = (detail && detail.sourceFile) || fileName || (detail ? [detail.kind, detail.modeLabel].filter(Boolean).join(" · ") : activityLabel) || i18nT("Processing");
       const detailStartedAt = detail && Number(detail.startedAt) > 0 ? Number(detail.startedAt) : (_tm && _tm.startedAt);
@@ -1237,7 +1253,13 @@ export class QueueModal extends obsidian.Modal {
       queueTitle.createSpan({ cls: "qnalog-progress-queue-count", text: ` ${pending.length}${i18nT(" items · all audio preserved")}` });
       if (pending.length) {
         const retryAllBtn = queueHead.createEl("button", { cls: "qnalog-progress-queue-retry", text: i18nT("Retry all"), attr: { type: "button" } });
-        retryAllBtn.onclick = async () => { retryAllBtn.disabled = true; await this.plugin.queueRetry.retryQueue(); this.onOpen(); };
+        retryAllBtn.onclick = async () => {
+          retryAllBtn.disabled = true;
+          const retry = this.plugin.queueRetry.retryQueue();
+          this.plugin.tasks.syncQueueTaskActivities();
+          this.onOpen();
+          try { await retry; } finally { this.onOpen(); }
+        };
       }
     }
     for (const t of running) {
@@ -1254,7 +1276,13 @@ export class QueueModal extends obsidian.Modal {
       subLine(body, `${t.lastError || i18nT("Waiting for the next attempt")}${i18nT(" · tried ")}${t.retries || 0}${i18nT(" times")}`);
       const acts = row.createDiv({ cls: "qnalog-progress-queue-actions" });
       const retryBtn = acts.createEl("button", { cls: "qnalog-progress-queue-retry", attr: { type: "button" }, text: i18nT("Retry") });
-      retryBtn.onclick = async () => { try { await this.plugin.queue.processOne(t); } catch { /* intentionally empty */ } this.onOpen(); };
+      retryBtn.onclick = async () => {
+        const attempt = this.plugin.queue.processOne(t);
+        this.plugin.tasks.syncQueueTaskActivities();
+        this.onOpen();
+        try { await attempt; } catch { /* task state retains the failure */ }
+        finally { this.onOpen(); }
+      };
       const delBtn = acts.createEl("button", { cls: "qnalog-progress-queue-cancel", attr: { type: "button" }, text: i18nT("Cancel") });
       delBtn.onclick = async () => {
         await this.plugin.queue.remove(t.id);
@@ -2393,6 +2421,7 @@ export class BubbleWidget {
    * 显式声明：TypeScript 不推断只在构造函数里赋值的属性，未声明时外部读 `bubble.wrapEl` 会报「属性不存在」。
    */
   declare wrapEl: HTMLElement | null;
+  declare _activeNoteReadId: number;
   constructor(plugin) {
     this.plugin = plugin;
     this.wrapEl = null;
@@ -2403,10 +2432,11 @@ export class BubbleWidget {
     this.ribbonHandlers = null;
     this.unsubscribe = null;
     this.resizeHandler = null;
-    // 追加录音目标：当前活动笔记是 QnALog 纪要时非 null。事件挂插件生命周期（构造只发生一次）。
+    // 追加录音目标：读取结果只在活动笔记仍匹配本次读取时发布。
     this.appendFile = null;
-    plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", () => this.refreshActiveNote()));
-    plugin.registerEvent(plugin.app.workspace.on("file-open", () => this.refreshActiveNote()));
+    this._activeNoteReadId = 0;
+    plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", () => { void this.refreshActiveNote(); }));
+    plugin.registerEvent(plugin.app.workspace.on("file-open", () => { void this.refreshActiveNote(); }));
     void this.refreshActiveNote();
   }
   mount(ribbonEl) {
@@ -2500,19 +2530,25 @@ export class BubbleWidget {
   }
   // 判定当前活动笔记是否 QnALog 纪要：与侧边栏 panelData 的 hasMarker 同判据
   // （会话标记或分段标记）。普通笔记与派生笔记没有标记 → 只保留标准录制按钮。
-  async refreshActiveNote() {
-    let next = null;
+  async refreshActiveNote(): Promise<obsidian.TFile | null> {
+    const readId = ++this._activeNoteReadId;
     const file = this.plugin.app.workspace.getActiveFile();
-    if (file && file.extension === "md") {
+    if (this.appendFile !== file && this.appendFile !== null) {
+      this.appendFile = null;
+      this.scheduleUpdate();
+    }
+    let next: obsidian.TFile | null = null;
+    if (file instanceof obsidian.TFile && file.extension === "md") {
       try {
         const text = await this.plugin.app.vault.cachedRead(file);
         if (NS_SESSION_RE.test(text) || NS_SEGMENTS_START_RE.test(text)) next = file;
       } catch { /* 读不到就按普通笔记处理，不影响气泡其它功能 */ }
     }
+    if (readId !== this._activeNoteReadId || this.plugin.app.workspace.getActiveFile() !== file) return null;
     const prev = this.appendFile;
     this.appendFile = next;
-    // 只在判定翻转时要求重绘；sig 含 A 位，scheduleUpdate 会走完整渲染分支。
     if (prev !== next) this.scheduleUpdate();
+    return next;
   }
   scheduleUpdate() {
     if (this._renderRaf) return;
@@ -2620,8 +2656,13 @@ export class BubbleWidget {
         this._paintIcon(appendBtn, ["mic", "lucide-mic"]);
         appendBtn.onclick = (e) => {
           e.stopPropagation();
-          const target = this.appendFile;
-          if (target) void this.plugin.recording.startRecording({ appendToFile: target });
+          const clickedFile = this.plugin.app.workspace.getActiveFile();
+          void this.refreshActiveNote().then((target) => {
+            if (target && target === clickedFile && this.plugin.app.workspace.getActiveFile() === clickedFile) {
+              return this.plugin.recording.startRecording({ appendToFile: target });
+            }
+            return undefined;
+          });
         };
       }
       if (this.plugin.queue && this.plugin.queue.hasPendingGeneratePrompt && this.plugin.queue.hasPendingGeneratePrompt()) {

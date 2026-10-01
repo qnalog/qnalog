@@ -140,6 +140,23 @@ function pluginMembers(mainSource) {
   return members;
 }
 
+/** 识别 main.ts 把插件实例还是独立能力对象传给服务构造函数。 */
+function servicesWithPortHosts(mainSource) {
+  const sourceFile = ts.createSourceFile("src/main.ts", mainSource, ts.ScriptTarget.ES2020, true);
+  const classes = new Set();
+  const visit = (node) => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        && ts.isPropertyAccessExpression(node.left) && node.left.expression.kind === ts.SyntaxKind.ThisKeyword
+        && ts.isNewExpression(node.right) && ts.isIdentifier(node.right.expression)) {
+      const firstArgument = node.right.arguments?.[0];
+      if (firstArgument && ts.isObjectLiteralExpression(firstArgument)) classes.add(node.right.expression.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return classes;
+}
+
 /** 服务类索引：类名 → 成员名集合，用于校验 this.host.<字段>.<成员>。 */
 function serviceClassMembers(files, readFile) {
   const index = new Map();
@@ -155,7 +172,7 @@ function serviceClassMembers(files, readFile) {
       }
       const inner = body.slice(0, i);
       const names = new Set();
-      for (const mem of inner.matchAll(/^\s{2}(?:declare\s+|async\s+|static\s+|readonly\s+|private\s+|public\s+)*(?:get\s+|set\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*[(:;=]/gm)) {
+      for (const mem of inner.matchAll(/^\s{2}(?:declare\s+|async\s+|static\s+|readonly\s+|private\s+|public\s+)*(?:get\s+|set\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:<[^>\n]+>)?\s*[(:;=]/gm)) {
         names.add(mem[1]);
       }
       // 构造函数与其它方法里动态赋值的字段（this.x = ...）也算成员
@@ -175,6 +192,7 @@ export function checkDomainBoundaries(files) {
   if (mainSource === undefined) return ["src/main.ts 缺失：无法取得插件成员清单"];
 
   const members = pluginMembers(mainSource);
+  const portHostClasses = servicesWithPortHosts(mainSource);
   // 域字段 → 服务类：来自 main.ts 里的 this.<字段> = new <类>(this) 装配语句
   const fieldClass = new Map();
   for (const m of mainSource.matchAll(/this\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*new\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g)) {
@@ -257,6 +275,9 @@ export function checkDomainBoundaries(files) {
     const hostUses = [...text.matchAll(/\bthis\.host\.([A-Za-z_$][A-Za-z0-9_$]*)/g)];
     if (!hostUses.length) continue;
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2020, true);
+    const portHost = sf.statements.some((statement) =>
+      ts.isClassDeclaration(statement) && statement.name && portHostClasses.has(statement.name.text)
+    );
     const iface = sf.statements.find((s) => ts.isInterfaceDeclaration(s) && s.name.getText().endsWith("Host"));
     if (!iface) {
       problems.push(`${file}: 用到 this.host 但没有声明 Host 接口`);
@@ -272,7 +293,7 @@ export function checkDomainBoundaries(files) {
         problems.push(`${file}${lineOf(content, m.index)}: this.host.${name} 未在 Host 接口里声明`);
         continue;
       }
-      if (!members.has(name) && !classMembers.has(name)) {
+      if (!portHost && !members.has(name) && !classMembers.has(name)) {
         problems.push(`${file}${lineOf(content, m.index)}: this.host.${name} 不在插件对象上（能力可能已搬走）`);
       }
     }

@@ -2,9 +2,12 @@ import * as obsidian from "obsidian";
 
 /**
  * 逐级创建知识库内的文件夹；已存在的层级跳过。
- * 只依赖 app，因此是纯函数，不挂在插件对象上。
+ * 只依赖知识库 Vault，因此不要求调用方提供完整 Obsidian App。
  */
-export async function ensureVaultFolder(app: obsidian.App, folderPath: string): Promise<void> {
+type VaultPathLookup = Pick<obsidian.Vault, "getAbstractFileByPath">;
+type VaultFolderAccess = Pick<obsidian.Vault, "getAbstractFileByPath" | "createFolder">;
+
+export async function ensureVaultFolder(app: { vault: VaultFolderAccess }, folderPath: string): Promise<void> {
   const norm = obsidian.normalizePath(String(folderPath || "").trim());
   if (!norm || norm === "." || norm === "/") return;
   const parts = norm.split("/").filter(Boolean);
@@ -21,7 +24,7 @@ export async function ensureVaultFolder(app: obsidian.App, folderPath: string): 
 /**
  * 目标路径被占用时依次追加 -2、-3…；尝试 99 次仍冲突则返回空串（调用方按失败处理）。
  */
-export function findAvailableVaultPath(app: obsidian.App, targetPath: string): string {
+export function findAvailableVaultPath(app: { vault: VaultPathLookup }, targetPath: string): string {
   let candidate = obsidian.normalizePath(targetPath || "");
   if (!candidate) return "";
   const dot = candidate.lastIndexOf(".");

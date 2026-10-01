@@ -3,7 +3,9 @@
 
 import * as obsidian from "obsidian";
 import { getModeMeta } from "../shared/mode-meta";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings } from "../shared/types";
+import type { SessionStore } from "../session/session-store";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { formatElapsed } from "../shared/util-common";
 import { isAsrTransportError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
@@ -121,11 +123,11 @@ export interface TaskActivityHost {
   /** 装配层转发：任务状态变化后请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
   requestOutlineRefresh(): void;
 
-  session: RecordingSession | null;
+  sessionStore: SessionStore;
   /** 实时大纲服务：用户取消等待与后台补跑。 */
   outline: RealtimeOutlineService;
-  /** 录音采集服务：熔断状态与冷却时长。 */
-  recording: { isAsrServiceCircuitOpen(): boolean; getAsrServiceRetryDelayMs(): number; resetAsrServiceCircuitForManualRetry(source?: string): unknown };
+  /** 转写服务熔断状态与手动重试入口。 */
+  asrPipeline: Pick<LiveAsrPipelineService, "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry">;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
@@ -281,25 +283,37 @@ export class TaskActivityService {
     const id = typeof taskOrId === "string" ? taskOrId : taskOrId && taskOrId.id;
     return id ? `queue:${id}` : "";
   }
-  syncQueueTaskActivity(task) {
+  syncQueueTaskActivities(): void {
+    const tasks = this.host.queue && Array.isArray(this.host.queue.tasks) ? this.host.queue.tasks : [];
+    const activeIds = new Set<string>();
+    for (const task of tasks) {
+      const activity = this.syncQueueTaskActivity(task);
+      if (activity) activeIds.add(activity.id);
+    }
+    for (const activity of this.getTaskActivities({ includeDone: true, includeCancelled: true })) {
+      if (!String(activity.kind || "").startsWith("queue-") || activeIds.has(activity.id)) continue;
+      if (!["done", "cancelled"].includes(activity.status)) this.cancelTaskActivity(activity.id);
+    }
+  }
+  syncQueueTaskActivity(task: import("../shared/types").QueueTask): TaskActivity | null {
     if (!task || !task.id || !this.taskActivityStore) return null;
     const id = this.queueTaskActivityId(task);
     const type = String(task.type || "");
-    const title = type === "transcribe"
+    const title = task.type === "transcribe"
       ? (task.wholeFileImport
         ? t("Whole-file transcription · {0}").replace("{0}", String(task.sourceAudioName || task.audioName || t("Import audio")))
         : t("Segmented transcription · segment {0}").replace("{0}", String(Math.max(0, Number(task.segmentIndex) || 0) + 1)))
-      : type === "merge" ? t("AI Organize")
-        : type === "generate-prompt" ? t("Generate prompt") : t("Background task");
+      : task.type === "merge" ? t("AI Organize")
+        : task.type === "generate-prompt" ? t("Generate prompt") : t("Background task");
+    const queueStatus = String(task.status || "pending");
     const isPartialBriefing = type === "merge" && /纪要整理部分完成|The minutes are partially complete/.test(String(task.lastError || ""));
-    const stageLabel = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS ? t("Currently processing")
-      : task.status === "blocked" ? t("Waiting for configuration fix")
-        : task.status === "missing" ? t("Source file missing")
-          : task.status === "failed" ? (isPartialBriefing ? t("Partially completed · waiting to retry") : t("This run failed")) : t("Waiting to process");
-    const status = task.status === "running" || task.status === LIVE_ASR_TASK_STATUS || task.status === "processing"
+    const stageLabel = queueStatus === "running" || queueStatus === LIVE_ASR_TASK_STATUS ? t("Currently processing")
+      : queueStatus === "blocked" ? t("Waiting for configuration fix")
+        : queueStatus === "missing" ? t("Source file missing")
+          : queueStatus === "failed" ? (isPartialBriefing ? t("Partially completed · waiting to retry") : t("This run failed")) : t("Waiting to process");
+    const status = queueStatus === "running" || queueStatus === LIVE_ASR_TASK_STATUS || queueStatus === "processing"
       ? "running"
-      : task.status === "failed" || task.status === "blocked" || task.status === "missing"
-        ? "failed" : "queued";
+      : ["failed", "blocked", "missing"].includes(queueStatus) ? "failed" : "queued";
     const maxAttempts = Math.max(1, Number(this.host.settings && this.host.settings.maxRetries) || 3);
     const actions = status === "failed"
       ? [
@@ -309,25 +323,36 @@ export class TaskActivityService {
       : status === "queued"
         ? [{ id: "cancel-queue-task", label: t("Cancel retry") }]
         : [];
+    const startedAt = Date.parse(task.startedAt || task.createdAt || "") || Date.now();
+    const persistedUpdatedAt = Date.parse(task.lastEventAt || task.updatedAt || "") || Date.now();
+    const existing = this.taskActivityStore.get(id);
+    const newAttempt = !!existing && existing.startedAt !== startedAt;
+    const updatedAt = status === "running" && existing && !newAttempt
+      ? existing.updatedAt
+      : persistedUpdatedAt;
     const input = {
       id,
       kind: `queue-${type || "task"}`,
       title,
-      subject: String(task.mdPath || task.audioPath || ""),
+      subject: String(task.mdPath || (task.type === "transcribe" ? task.audioPath : "")),
       status,
-      stage: String(task.status || "pending"),
-      stageLabel,
-      detail: String(task.lastError || (status === "queued" ? t("Task saved; it will be processed automatically later") : "")),
-      progress: null,
-      count: task.attempt ? t("Attempt {0} of {1}").replace("{0}", task.attempt).replace("{1}", String(maxAttempts)) : "",
+      stage: (status === "running" || status === "failed") && existing && !newAttempt ? existing.stage
+        : String(queueStatus === "failed" && task.type === "merge" ? "organize" : queueStatus),
+      detail: status === "failed" ? String(task.lastError || t("Task did not succeed"))
+        : status === "queued" ? String(task.lastError || t("Task saved; it will be processed automatically later"))
+          : newAttempt || !existing ? "" : existing.detail,
+      progress: status === "running" && existing && !newAttempt ? existing.progress : null,
+      count: t("Attempt {0} of {1}").replace("{0}", String(task.attempt || Math.max(1, Number(task.retries) + 1))).replace("{1}", String(maxAttempts)),
       attempt: Math.max(0, Number(task.attempt) || Number(task.retries) + 1 || 0),
       maxAttempts,
-      startedAt: task.startedAt ? Date.parse(task.startedAt) : (task.createdAt ? Date.parse(task.createdAt) : Date.now()),
-      updatedAt: task.updatedAt ? Date.parse(task.updatedAt) : Date.now(),
+      startedAt,
+      updatedAt,
+      completedAt: status === "failed" ? updatedAt : 0,
       error: status === "failed" ? String(task.lastError || t("Task did not succeed")) : "",
+      deadlineAt: status === "running" && existing && !newAttempt ? existing.deadlineAt : 0,
+      retryAt: status === "running" && existing && !newAttempt ? existing.retryAt : 0,
       actions,
     };
-    const existing = this.taskActivityStore.get(id);
     const activity = existing
       ? this.taskActivityStore.patch(id, input)
       : this.taskActivityStore.start(input);
@@ -343,7 +368,8 @@ export class TaskActivityService {
   syncOutlineTaskActivity(state) {
     if (!state || !state.sessionId || !this.taskActivityStore) return null;
     const id = `outline:${state.sessionId}`;
-    const session = this.host.session && this.host.session.id === state.sessionId ? this.host.session : null;
+    const currentSession = this.host.sessionStore.get();
+    const session = currentSession && currentSession.id === state.sessionId ? currentSession : null;
     const existing = this.taskActivityStore.get(id);
     if (state.phase === "idle" && !existing) return null;
     const subject = session && session.mdPath ? session.mdPath : "";
@@ -584,12 +610,12 @@ export class TaskActivityService {
             retries: Math.max(0, Math.min(Number(task.retries) || 0, (this.host.settings.maxRetries || 3) - 1)),
           });
         }
-        if (task.type === "transcribe") this.host.recording.resetAsrServiceCircuitForManualRetry("task-center");
+        if (task.type === "transcribe") this.host.asrPipeline.resetAsrServiceCircuitForManualRetry("task-center");
         try {
           await this.host.queue.processOne(task);
         } catch (error) {
           if (task.type === "transcribe" && isAsrTransportError(error)) {
-            this.host.requestTaskQueueRetry(this.host.recording.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
+            this.host.requestTaskQueueRetry(this.host.asrPipeline.getAsrServiceRetryDelayMs(), "task-center-transport-failure");
           }
           throw error;
         }
@@ -646,7 +672,7 @@ export class TaskActivityService {
     const tasks = q && Array.isArray(q.tasks) ? q.tasks : [];
     const runnable = tasks.filter((t) => t && t.status !== "running" && t.status !== "missing" && t.status !== "blocked" && (Number(t.retries) || 0) < maxR);
 
-    const s = this.host.session;
+    const s = this.host.sessionStore.get();
     const wp = s && s.workProgress ? s.workProgress : null;
     const wpLabel = wp && wp.label ? String(wp.label) : "";
     const pct = wp && wp.percent != null && Number.isFinite(Number(wp.percent)) ? ` ${Math.round(Number(wp.percent))}%` : "";
@@ -739,6 +765,47 @@ export class TaskActivityService {
   // 兼容旧调用名：早期代码里残留 this.renderStatusBar() 调用点，但 renderStatusBar 从未定义
   // → 运行时抛 TypeError（曾导致"重试失败转写/清空队列"中途崩、完成提示不弹）。统一别名到 updateBusyStatus。
   renderStatusBar() { try { this.updateBusyStatus(); } catch { /* intentionally empty */ } }
+  private getQueueActivityDetail(): {
+    queueTaskId: string;
+    kind: string;
+    modeLabel: string;
+    stage: string;
+    step: string;
+    stepDetail: string;
+    percent: number | null;
+    count: string;
+    liveness: TaskActivity["status"];
+    startedAt: number;
+    updatedAt: number;
+    completedAt: number;
+  } | null {
+    const tasks = this.host.queue && Array.isArray(this.host.queue.tasks) ? this.host.queue.tasks : [];
+    const priorities = (status: string) => ["running", "live", "processing"].includes(status) ? 0
+      : ["failed", "blocked", "missing"].includes(status) ? 1 : 2;
+    for (const task of [...tasks].sort((a, b) => priorities(String(a.status || "")) - priorities(String(b.status || "")))) {
+      const activity = this.taskActivityStore && this.taskActivityStore.get(this.queueTaskActivityId(task));
+      if (!activity) continue;
+      let modeLabel = "";
+      try { modeLabel = (getModeMeta(this.host.settings, task.mode) || {}).label || ""; } catch { /* optional mode metadata */ }
+      return {
+        queueTaskId: String(task.id),
+        kind: String(activity.title || ""),
+        modeLabel,
+        stage: String(activity.stage || ""),
+        step: String(activity.stageLabel || ""),
+        stepDetail: String(task.status === "failed" || task.status === "blocked" || task.status === "missing"
+          ? task.lastError || activity.error || activity.detail
+          : activity.detail || ""),
+        percent: activity.progress,
+        count: String(activity.count || ""),
+        liveness: activity.status,
+        startedAt: activity.startedAt,
+        updatedAt: activity.updatedAt,
+        completedAt: activity.completedAt,
+      };
+    }
+    return null;
+  }
   // 当前正在进行的处理标签（导入/批量/重整/录音整理/转写/录音），空闲返回 null。供处理进度面板的"处理中"区用。
   getCurrentActivityLabel() {
     if (this._importBusy && Number(this._importBusy.total) > 0) {
@@ -754,7 +821,9 @@ export class TaskActivityService {
       return t("Transcribing in progress {0}/{1}").replace("{0}", String(done)).replace("{1}", String(this.host.queue._batchTotal));
     }
     if (this._busyLabel) return String(this._busyLabel);
-    const s = this.host.session;
+    const queueDetail = this.getQueueActivityDetail();
+    if (queueDetail && ["running", "waiting", "slow", "stalled"].includes(queueDetail.liveness)) return queueDetail.step;
+    const s = this.host.sessionStore.get();
     const wp = s && s.workProgress;
     const postProcessing = !!(wp && (wp.stage === "write-note" || wp.stage === "done"));
     if (s && (s.finalizing || postProcessing)) return (wp && wp.label) || t("AI organizing");
@@ -1035,11 +1104,14 @@ export class TaskActivityService {
     // A) 批量转写处理（重试全部 / 整篇重转）——叠加 workProgress 子阶段
     const q = this.host.queue;
     if (q && Number(q._batchTotal) > 0) {
+      const queueDetail = this.getQueueActivityDetail();
+      if (queueDetail && ["running", "waiting", "slow", "stalled"].includes(queueDetail.liveness)) return queueDetail;
       const done = Math.min(Number(q._batchDone) || 0, Number(q._batchTotal));
-      const wp = this.host.session && this.host.session.workProgress;
+      const session = this.host.sessionStore.get();
+      const wp = session && session.workProgress;
       return {
         kind: t("Batch transcription"),
-        modeLabel: this.host.session ? modeLabelOf(this.host.session.mode) : "",
+        modeLabel: session ? modeLabelOf(session.mode) : "",
         step: (wp && wp.label) || t("Transcribing in progress"),
         stepDetail: (wp && wp.detail) || "",
         percent: pctOf(wp),
@@ -1065,8 +1137,8 @@ export class TaskActivityService {
         count: "",
       };
     }
-    // B/C) 录音 / 段落转写 / 会后 AI 整理（this.host.session）
-    const s = this.host.session;
+    // B/C) 录音 / 段落转写 / 会后 AI 整理（当前会话）
+    const s = this.host.sessionStore.get();
     if (s) {
       const wp = s.workProgress || null;
       const pct = pctOf(wp);
@@ -1093,7 +1165,7 @@ export class TaskActivityService {
         return { kind: srcKind, modeLabel, step: (wp && wp.label) || t("Transcription in progress"), stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
       }
     }
-    return null;
+    return this.getQueueActivityDetail();
   }
   // 记一笔"本次启动后已完成"的处理（供处理进度面板展示；不持久化，OB 重启清零）。
   logCompletedWork(title, detail, meter) {

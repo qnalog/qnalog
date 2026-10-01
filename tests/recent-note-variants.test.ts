@@ -108,6 +108,7 @@ describe("recent clean-copy grouping", () => {
     });
     vi.stubGlobal("window", { moment });
     const items = getRecentNotes({
+      getCurrentSession: () => null,
       settings: { mdFolder: "Notes" },
       queue: { tasks: [] },
       app: {

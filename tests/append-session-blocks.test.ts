@@ -5,7 +5,7 @@ vi.mock("obsidian", () => ({
   TFile: class {}, TFolder: class {},
 }));
 import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "../src/notes/note-writer";
-import { extractPriorOutline } from "../src/audio/recording-service";
+import { extractPriorOutline } from "../src/session/continuation-service";
 import { extractNotePanelData } from "../src/notes/detail-blocks";
 import { stripArchivedOutlineSections } from "../src/notes/realtime-outline";
 
