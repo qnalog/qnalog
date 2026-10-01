@@ -1,5 +1,6 @@
 import type { RealtimeOutlineNode } from "../notes/outline-text";
-import { NS_ACTIVE_VERSION_BODY_RE, NS_SEGMENTS_START_ONLY_RE, NS_TAG, readSemanticMeta, writeSemanticMeta } from "../shared/namespace";
+import { NS_SEGMENTS_START_ONLY_RE, NS_TAG, readSemanticMeta, writeSemanticMeta } from "../shared/namespace";
+import { findActiveVersionBlock, stripUtilityDetailsBlocks } from "../notes/note-document";
 
 import { t } from "../shared/i18n";
 import { UTILITY_HEADING_RE } from "../shared/note-labels";
@@ -487,11 +488,11 @@ function cleanSemanticSectionContent(lines: readonly string[]): string {
 
 export function extractSemanticSourceSections(markdown: unknown): SemanticSourceSection[] {
   let text = typeof markdown === "string" ? markdown : "";
-  const active = NS_ACTIVE_VERSION_BODY_RE.exec(text);
-  if (active) text = active[1];
+  const active = findActiveVersionBlock(text);
+  if (active) text = active.body;
   text = text
-    .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
-    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
+    .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "");
+  text = stripUtilityDetailsBlocks(text)
     .split(NS_SEGMENTS_START_ONLY_RE)[0]
     .replace(/<!--[^>]*-->/g, "");
   // 工具性标题统一排除（中英双语，取共享白名单 UTILITY_HEADING_RE）：

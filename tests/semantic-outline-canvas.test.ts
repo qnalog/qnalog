@@ -333,6 +333,85 @@ describe("semantic outline graph protocol", () => {
       expect(extractSemanticSourceSections(markdown).map((section) => section.heading)).toEqual(["主线"]);
     }
   });
+  it("uses the first complete active block, preserves empty-block selection, and leaves unwrapped notes intact", () => {
+    const empty = [
+      "<!-- qnalog-active-version-start -->",
+      "<!-- qnalog-active-version-end -->",
+      "## Archived",
+      "Archived content.",
+    ].join("\n");
+    expect(extractSemanticSourceSections(empty)).toEqual([]);
+
+    const multiple = [
+      "<!-- qnalog-active-version-start -->",
+      "## First",
+      "First content.",
+      "<!-- qnalog-active-version-end -->",
+      "<!-- qnalog-active-version-start -->",
+      "## Second",
+      "Second content.",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    expect(extractSemanticSourceSections(multiple)).toEqual([
+      { id: "sec-1", heading: "First", level: 2, content: "First content." },
+    ]);
+    expect(extractSemanticSourceSections("## Whole note\nVisible content.")).toEqual([
+      { id: "sec-1", heading: "Whole note", level: 2, content: "Visible content." },
+    ]);
+  });
+
+  it("does not broaden tool details removal to HTML summaries or attributed details", () => {
+    const markdown = [
+      "<!-- qnalog-active-version-start -->",
+      "## Keep",
+      "Visible text.",
+      "<details><summary><b>Raw transcript</b></summary>",
+      "HTML summary body remains.",
+      "</details>",
+      "<details open><summary>Index data</summary>",
+      "Attributed details body remains.",
+      "</details>",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    const sections = extractSemanticSourceSections(markdown);
+    expect(sections[0]?.content).toContain("HTML summary body remains.");
+    expect(sections[0]?.content).toContain("Attributed details body remains.");
+  });
+  it("strips the narrow bilingual utility details set but retains unmatched shells", () => {
+    const markdown = [
+      "<!-- qnalog-active-version-start -->",
+      "## Keep",
+      "Visible first.",
+      "<details><summary>Raw transcript</summary>",
+      "HIDDEN RAW BODY",
+      "</details>",
+      "<details><summary>Distilled data</summary>",
+      "HIDDEN DISTILLED BODY",
+      "</details>",
+      "## KeepAfter",
+      "Visible after.",
+      "<details><summary>Custom</summary>",
+      "Custom visible body.",
+      "</details>",
+      "<details><summary><b>Raw transcript</b></summary>",
+      "HTML summary body remains.",
+      "</details>",
+      "<details open><summary>Index data</summary>",
+      "Attributed details body remains.",
+      "</details>",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    const sections = extractSemanticSourceSections(markdown);
+    expect(sections.map(({ heading }) => heading)).toEqual(["Keep", "KeepAfter"]);
+    const content = sections.map(({ content }) => content).join("\n");
+    expect(content).toContain("Visible first.");
+    expect(content).toContain("Visible after.");
+    expect(content).not.toContain("HIDDEN RAW BODY");
+    expect(content).not.toContain("HIDDEN DISTILLED BODY");
+    expect(content).toContain("Custom visible body.");
+    expect(content).toContain("HTML summary body remains.");
+    expect(content).toContain("Attributed details body remains.");
+  });
 });
 
 describe("semantic canvas generation", () => {

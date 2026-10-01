@@ -5,14 +5,14 @@ import * as obsidian from "obsidian";
 import type { PluginSettings } from "../shared/types";
 import { NoteIndexService } from "../notes/note-index-service";
 import { sanitizeFilename } from "../shared/util-common";
-import { extractAllRawBlocksFromText, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../notes/note-document";
+import { extractAllRawBlocksFromText, findActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../notes/note-document";
 import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, splitVersionPayload, stripVersionBookkeepingFrontmatter, sanitizeActiveVersionBody } from "./version-content";
 import { getModeDisplayName, getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";
 import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder, normalizeModeFromLabel, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
 import { findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_ACTIVE_VERSION_BODY_RE, NS_FM, NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE, isDerivedVersionType, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
+import { NS_FM, NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE, isDerivedVersionType, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 
 import { labelPattern } from "../shared/note-labels";
 
@@ -183,7 +183,7 @@ export class VersionStore {
       throw new Error(t("Could not read version metadata"));
     }
     const content = await this.host.app.vault.read(sourceFile);
-    if (NS_ACTIVE_VERSION_BODY_RE.test(content)) {
+    if (findActiveVersionBlock(content)) {
       throw new Error(t("Could not read version metadata"));
     }
     const parts = splitLeadingFrontmatter(content);

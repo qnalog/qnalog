@@ -5,6 +5,40 @@ import {
   NS_SESSION_LINE_RE,
   NS_SESSION_VALUE_RE,
 } from "../shared/namespace";
+import { UTILITY_DETAILS_SUMMARY_RE } from "../shared/note-labels";
+
+const UTILITY_DETAILS_BLOCK_RE = new RegExp(
+  String.raw`<details>\s*<summary>[^<]*${UTILITY_DETAILS_SUMMARY_RE.source}[^<]*<\/summary>[\s\S]*?<\/details>`,
+  "gi",
+);
+
+export interface ActiveVersionBlockRange {
+  start: number;
+  end: number;
+  bodyStart: number;
+  bodyEnd: number;
+  body: string;
+}
+
+export function findActiveVersionBlock(markdown: string): ActiveVersionBlockRange | null {
+  const text = String(markdown || "");
+  const match = NS_ACTIVE_VERSION_BODY_RE.exec(text);
+  if (!match) return null;
+  const start = match.index;
+  const relativeBodyStart = match[0].indexOf(match[1], match[0].indexOf("-->") + 3);
+  const bodyStart = start + relativeBodyStart;
+  return {
+    start,
+    end: start + match[0].length,
+    bodyStart,
+    bodyEnd: bodyStart + match[1].length,
+    body: match[1],
+  };
+}
+
+export function stripUtilityDetailsBlocks(markdown: string): string {
+  return String(markdown || "").replace(UTILITY_DETAILS_BLOCK_RE, "\n");
+}
 
 export interface NoteDocumentParts {
   frontmatter: string;
@@ -55,9 +89,10 @@ export function replaceLeadingFrontmatter(markdown: string, frontmatter: string,
 
 export function replaceExistingActiveVersionBlock(markdown: string, block: string): string | null {
   const text = String(markdown || "");
-  if (!NS_ACTIVE_VERSION_BODY_RE.test(text)) return null;
+  if (!findActiveVersionBlock(text)) return null;
   return text.replace(NS_ACTIVE_VERSION_BODY_RE, String(block || ""));
 }
+
 
 export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts {
   let s = String(text || "");
