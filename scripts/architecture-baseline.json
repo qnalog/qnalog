@@ -169,5 +169,100 @@
     "src/vault/cleanup-service.ts": [
       "src/ui/helpers"
     ]
+  },
+  "hostCapabilities": {
+    "src/asr/transcribe-profile-service.ts": [
+      "TranscribeProfileHost.settings:PluginSettings"
+    ],
+    "src/audio/external-inbox-service.ts": [
+      "ExternalInboxHost.app:App",
+      "ExternalInboxHost.settings:PluginSettings"
+    ],
+    "src/audio/recording-service.ts": [
+      "RecordingHost.app:App",
+      "RecordingHost.settings:PluginSettings"
+    ],
+    "src/canvas/semantic-canvas-service.ts": [
+      "SemanticCanvasHost.app:App",
+      "SemanticCanvasHost.settings:PluginSettings"
+    ],
+    "src/delivery/delivery-service.ts": [
+      "DeliveryHost.app:App",
+      "DeliveryHost.settings:PluginSettings"
+    ],
+    "src/diagnostics/diagnostics-service.ts": [
+      "DiagnosticsHost.app:App",
+      "DiagnosticsHost.settings:PluginSettings"
+    ],
+    "src/imports/import-service.ts": [
+      "ImportHost.app:App",
+      "ImportHost.settings:PluginSettings"
+    ],
+    "src/imports/inbox-watcher-service.ts": [
+      "InboxWatcherHost.app:App",
+      "InboxWatcherHost.settings:PluginSettings"
+    ],
+    "src/indexing/knowledge-extraction-service.ts": [
+      "KnowledgeExtractionHost.app:App",
+      "KnowledgeExtractionHost.settings:PluginSettings"
+    ],
+    "src/notes/audio-time-link-service.ts": [
+      "AudioTimeLinkHost.app:App",
+      "AudioTimeLinkHost.settings:PluginSettings"
+    ],
+    "src/notes/meeting-workbench-service.ts": [
+      "MeetingWorkbenchHost.app:App"
+    ],
+    "src/notes/note-index-service.ts": [
+      "NoteIndexHost.app:App",
+      "NoteIndexHost.settings:PluginSettings"
+    ],
+    "src/notes/note-writer.ts": [
+      "NoteWriterHost.app:App",
+      "NoteWriterHost.settings:PluginSettings"
+    ],
+    "src/notes/realtime-outline-service.ts": [
+      "RealtimeOutlineHost.settings:PluginSettings"
+    ],
+    "src/notes/repolish-service.ts": [
+      "RepolishHost.app:App",
+      "RepolishHost.settings:PluginSettings"
+    ],
+    "src/notes/session-finalize-service.ts": [
+      "SessionFinalizeHost.app:App",
+      "SessionFinalizeHost.settings:PluginSettings"
+    ],
+    "src/people/people-directory-service.ts": [
+      "PeopleDirectoryHost.app:App",
+      "PeopleDirectoryHost.settings:PluginSettings"
+    ],
+    "src/queue/queue-retry-service.ts": [
+      "QueueRetryHost.app:App",
+      "QueueRetryHost.settings:PluginSettings"
+    ],
+    "src/tasks/task-activity-service.ts": [
+      "TaskActivityHost.app:App",
+      "TaskActivityHost.settings:PluginSettings"
+    ],
+    "src/ui/view-shell-service.ts": [
+      "ViewShellHost.app:App",
+      "ViewShellHost.settings:PluginSettings"
+    ],
+    "src/vault/cleanup-service.ts": [
+      "CleanupHost.app:App",
+      "CleanupHost.settings:PluginSettings"
+    ],
+    "src/versions/version-store.ts": [
+      "VersionStoreHost.app:App",
+      "VersionStoreHost.settings:PluginSettings"
+    ],
+    "src/views/library-view-service.ts": [
+      "LibraryViewHost.app:App",
+      "LibraryViewHost.settings:PluginSettings"
+    ],
+    "src/vocabulary/vocabulary-service.ts": [
+      "VocabularyHost.app:App",
+      "VocabularyHost.settings:PluginSettings"
+    ]
   }
 }

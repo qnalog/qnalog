@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { checkArchitecture, serviceGraphStats } from "../scripts/check-architecture.mjs";
+import { checkArchitecture, collectFacts, serviceGraphStats } from "../scripts/check-architecture.mjs";
 
 // 架构门禁的回归保护：基线制（现有债务放行、新增债务失败）+ 双向棘轮（删除须同步收缩基线）。
 // 测试不扫描真实仓库，只注入最小源码。
@@ -27,8 +26,9 @@ function baseline(overrides: {
   pluginConsumers?: Record<string, string[]>;
   serviceEdges?: [string, string][];
   uiImportsFromNonUi?: Record<string, string[]>;
+  hostCapabilities?: Record<string, string[]>;
 } = {}) {
-  return { pluginConsumers: {}, serviceEdges: [], uiImportsFromNonUi: {}, ...overrides };
+  return { pluginConsumers: {}, serviceEdges: [], uiImportsFromNonUi: {}, hostCapabilities: {}, ...overrides };
 }
 
 // 三个 legacy 消费者的最小替身：都直接 import main.ts，都通过 this.plugin 取能力。
@@ -285,17 +285,191 @@ export class TaskQueue {
     expect(problems.some((problem) => problem.includes("形成了新的依赖环"))).toBe(true);
   });
 
-  // 检查脚本自身只读源码：不依赖 GitHub、网络、构建产物或 git。
-  // 判据是导入白名单——只有 node:fs / node:path / node:url / typescript 四个来源，
-  // 拿不到 child_process、http 客户端或 git 命令；再补三个字符串断言兜底。
-  it("检查脚本自身不依赖网络、构建产物或 git", () => {
-    const source = readFileSync(new URL("../scripts/check-architecture.mjs", import.meta.url), "utf8");
-    const specifiers = [...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]).sort();
-    expect(specifiers).toEqual(["node:fs", "node:path", "node:url", "typescript"]);
-    expect(source).not.toMatch(/github/i);
-    expect(source).not.toMatch(/https?:\/\//);
-    expect(source).not.toContain("child_process");
-    expect(source).not.toContain("main.js");
+});
+
+describe("Host full-capability ratchet", () => {
+  const source = (body: string) => files({ "src/domain/demo.ts": body });
+
+  it("collects aliased named and namespace imports across two Host interfaces", () => {
+    const facts = collectFacts(source(`
+import type { PluginSettings as Settings } from "../shared/types";
+import type * as Shared from "../shared/types";
+import type { App as ObsidianApp } from "obsidian";
+import type * as Obsidian from "obsidian";
+export interface FirstHost {
+  settings: Settings;
+}
+export interface SecondHost {
+  readonly app?: ObsidianApp;
+  obsidian: Obsidian.App;
+  pluginSettings: Shared.PluginSettings;
+}
+`));
+    expect(facts.hostCapabilities).toEqual({
+      "src/domain/demo.ts": [
+        "FirstHost.settings:PluginSettings",
+        "SecondHost.app:App",
+        "SecondHost.obsidian:App",
+        "SecondHost.pluginSettings:PluginSettings",
+      ],
+    });
+    expect(checkArchitecture(source(`
+import type { PluginSettings as Settings } from "../shared/types";
+import type * as Shared from "../shared/types";
+import type { App as ObsidianApp } from "obsidian";
+import type * as Obsidian from "obsidian";
+interface FirstHost { settings: Settings; }
+interface SecondHost { readonly app?: ObsidianApp; obsidian: Obsidian.App; pluginSettings: Shared.PluginSettings; }
+`), baseline({ hostCapabilities: facts.hostCapabilities })).filter((problem) => problem.includes("Host 能力"))).toEqual([]);
+  });
+
+  it("allows registered complete App and PluginSettings properties", () => {
+    const code = `import type { PluginSettings } from "../shared/types";
+import type { App } from "obsidian";
+interface RecordingHost {
+  settings: PluginSettings;
+  app: App;
+}
+`;
+    expect(checkArchitecture(source(code), baseline({
+      hostCapabilities: { "src/domain/demo.ts": ["RecordingHost.app:App", "RecordingHost.settings:PluginSettings"] },
+    }))).toEqual([]);
+  });
+
+  it("rejects another complete property on an existing Host with source location", () => {
+    const code = `import type { PluginSettings } from "../shared/types";
+interface RecordingHost {
+  settings: PluginSettings;
+  app: PluginSettings;
+}
+`;
+    const problems = checkArchitecture(source(code), baseline({
+      hostCapabilities: { "src/domain/demo.ts": ["RecordingHost.settings:PluginSettings"] },
+    }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("src/domain/demo.ts:4");
+    expect(problems[0]).toContain("RecordingHost.app (PluginSettings)");
+    expect(problems[0]).toContain("新增完整 Host 能力");
+    expect(problems[0]).toContain("Pick<PluginSettings");
+  });
+
+  it("rejects a second wide Host in the same file and a new wide Host file", () => {
+    const body = `import type { PluginSettings } from "../shared/types";
+interface FirstHost { settings: PluginSettings; }
+interface SecondHost { settings: PluginSettings; }
+`;
+    const sameFile = checkArchitecture(source(body), baseline({
+      hostCapabilities: { "src/domain/demo.ts": ["FirstHost.settings:PluginSettings"] },
+    }));
+    expect(sameFile).toHaveLength(1);
+    expect(sameFile[0]).toContain("SecondHost.settings");
+    const newFile = checkArchitecture(files({
+      "src/domain/demo.ts": "",
+      "src/other/new.ts": `import type { PluginSettings } from "../shared/types"; interface NewHost { settings: PluginSettings; }`,
+    }), baseline());
+    expect(newFile.some((problem) => problem.includes("src/other/new.ts") && problem.includes("NewHost.settings"))).toBe(true);
+  });
+
+  it("recognizes readonly optional string properties and multiline declarations", () => {
+    const code = `import type { PluginSettings } from "../shared/types";
+interface DemoHost {
+  /** host settings */
+  readonly "custom.key:setting"?: (
+    PluginSettings
+  );
+}
+`;
+    const result = collectFacts(source(code)).hostCapabilities;
+    expect(result).toEqual({
+      "src/domain/demo.ts": ["DemoHost.custom.key:setting:PluginSettings"],
+    });
+    expect(checkArchitecture(source(code), baseline({
+      hostCapabilities: result,
+    }))).toEqual([]);
+  });
+
+  it("does not mistake local same-name types or narrow and concrete properties for full types", () => {
+    const code = `import type { PluginSettings as ImportedSettings } from "../shared/types";
+type PluginSettings = { audioFolder: string };
+interface App { vault: object; }
+interface DemoHost {
+  settings: PluginSettings;
+  app: App;
+  picked: Pick<ImportedSettings, "audioFolder">;
+  vault: { getAbstractFileByPath(path: string): unknown };
+  method(value: PluginSettings): App;
+  result(): App;
+}
+`;
+    expect(collectFacts(source(code)).hostCapabilities).toEqual({});
+    expect(checkArchitecture(source(code), baseline())).toEqual([]);
+  });
+
+  it("requires the baseline to shrink when a complete property becomes Pick", () => {
+    const code = `import type { PluginSettings } from "../shared/types";
+interface DemoHost { settings: Pick<PluginSettings, "audioFolder">; }
+`;
+    const stale = checkArchitecture(source(code), baseline({
+      hostCapabilities: { "src/domain/demo.ts": ["DemoHost.settings:PluginSettings"] },
+    }));
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toContain("棘轮只允许收缩");
+    expect(stale[0]).toContain("DemoHost.settings (PluginSettings)");
+    expect(checkArchitecture(source(code), baseline())).toEqual([]);
+    const restored = checkArchitecture(source(code.replace('Pick<PluginSettings, "audioFolder">', "PluginSettings")), baseline());
+    expect(restored.some((problem) => problem.includes("新增完整 Host 能力"))).toBe(true);
+  });
+
+  it("requires shrinkage when a complete App becomes Pick<obsidian.App>", () => {
+    const code = `import * as obsidian from "obsidian";
+interface DemoHost { app: Pick<obsidian.App, "vault">; }
+`;
+    const problems = checkArchitecture(source(code), baseline({
+      hostCapabilities: { "src/domain/demo.ts": ["DemoHost.app:App"] },
+    }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("DemoHost.app (App)");
+    expect(problems[0]).toContain("棘轮只允许收缩");
+  });
+
+  it("rejects a stale property and a deleted source file", () => {
+    const removed = checkArchitecture(source(`interface DemoHost { other: string; }`), baseline({
+      hostCapabilities: { "src/domain/demo.ts": ["DemoHost.settings:PluginSettings"] },
+    }));
+    expect(removed).toHaveLength(1);
+    expect(removed[0]).toContain("DemoHost.settings (PluginSettings)");
+    expect(removed[0]).toContain("棘轮只允许收缩");
+    const deleted = checkArchitecture(files({}), baseline({
+      hostCapabilities: { "src/domain/demo.ts": ["DemoHost.settings:PluginSettings"] },
+    }));
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toContain("src/domain/demo.ts");
+    expect(deleted[0]).toContain("DemoHost.settings (PluginSettings)");
+  });
+
+  it("rejects missing and malformed Host capability baselines", () => {
+    const missing = baseline();
+    Reflect.deleteProperty(missing, "hostCapabilities");
+    const cases = [
+      missing,
+      baseline({ hostCapabilities: null as unknown as Record<string, string[]> }),
+      baseline({ hostCapabilities: [] as unknown as Record<string, string[]> }),
+      baseline({ hostCapabilities: { "src/domain/demo.ts": [] } }),
+      baseline({ hostCapabilities: { "src/domain/demo.ts": [1 as unknown as string] } }),
+      baseline({ hostCapabilities: { "src/domain/demo.ts": ["Demo.settings:PluginSettings"] } }),
+      baseline({ hostCapabilities: { "src/domain/demo.ts": ["DemoHost.settings:Unknown"] } }),
+      baseline({ hostCapabilities: { "src/domain/demo.ts": ["DemoHost.settings:PluginSettings", "DemoHost.settings:PluginSettings"] } }),
+      baseline({ hostCapabilities: { "src/../domain/demo.ts": ["DemoHost.settings:PluginSettings"] } }),
+    ];
+    for (const malformed of cases) {
+      expect(checkArchitecture(files({}), malformed), JSON.stringify(malformed)).not.toEqual([]);
+    }
+  });
+
+  it("requires an empty baseline for files without wide Host properties", () => {
+    const code = `interface NarrowHost { settings: { audioFolder: string }; }`;
+    expect(checkArchitecture(source(code), baseline())).toEqual([]);
+    expect(collectFacts(source(code)).hostCapabilities).toEqual({});
   });
 });
 

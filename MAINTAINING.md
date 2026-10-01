@@ -473,7 +473,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 2. **对外材料与代码一致**：默认目录表、PRIVACY 的更新检查描述、workflow 注释，已完成。
 3. **发布链路自动化**：`release.yml` 提供 tag → 干净检出 → 重建 → 比对 → 上传的 provenance（§4.2）。
 4. **近期开发，按顺序独立处理**：
-   - [ ] **A2：Host 宽能力登记与棘轮门禁**。当前尚未实现；本批工具分支的关闭判据是新增完整 Host 属性失败、已删除属性要求收缩基线、完全一致时通过。完成自动约束不代表现有 Host 已收窄。
+   - [x] **A2：Host 宽能力登记与棘轮门禁**。已实现；注入源码行为测试覆盖新增、正确收缩、残留基线、畸形登记与导入别名，真实 CLI 夹具覆盖新增失败、登记通过、收缩失败/通过和缺字段失败。现有 24 个接口、45 个属性仍保持原样。
    - [ ] **A6：笔记文档模型**。A2 后另行设计；已有 `tests/note-markdown-characterization.test.ts`，扩展现有测试，不新建同名测试。兼顾两种笔记布局，并保留转写与版本保护；本批不实施。
    - [ ] **A10：非 UI 对 UI 辅助函数依赖收缩**。已有 `uiImportsFromNonUi` 门禁不代表现存依赖已删除；A6 后独立处理不涉及 DOM 的函数，并同步收缩 UI 基线。
 5. **随相关代码推进**：A7 严格核心类型覆盖、A9 领域文件归属与实现型 `index.ts` 命名。只在改动相关模块时推进，不安排全仓重写。
@@ -482,10 +482,10 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 **已合并；人工补验单独跟踪**
 
-- #81：Host 构造类型、队列通知与根目录领域归位。
-- #79：转写证据与知识协议。
-- #83：会话状态收口、实时转写服务抽取；维护者确认整理进行期间续录成功。普通录音/暂停恢复、音频与文本导入、失败重试、短录音和活动笔记切换竞态未见逐项人工记录；这不表示这些场景从未验证，也不要求重验已确认场景。
-- #85：Q 图标与 1.5.2。桌面端辨识已由维护者确认；移动端尚无测试条件，留待手机验证。
+- [#81](https://github.com/qnalog/qnalog/pull/81)：Host 构造类型、队列通知与根目录领域归位。
+- [#79](https://github.com/qnalog/qnalog/pull/79)：转写证据与知识协议。
+- [#83](https://github.com/qnalog/qnalog/pull/83)：会话状态收口、实时转写服务抽取；维护者确认整理进行期间续录成功。普通录音/暂停恢复、音频与文本导入、失败重试、短录音和活动笔记切换竞态未见逐项人工记录；这不表示这些场景从未验证，也不要求重验已确认场景。
+- [#85](https://github.com/qnalog/qnalog/pull/85)：Q 图标与 1.5.2。桌面端辨识已由维护者确认；移动端尚无测试条件，留待手机验证。
 
 **结构状态**
 
@@ -1328,11 +1328,10 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
 
 Host 能力基线在当前代码扫描中涉及 24 个接口、45 个完整属性：23 个 `PluginSettings`、
 22 个 `App`。通过 `getSettings(): Pick<PluginSettings, …>` 等窄能力注入的服务不计入。
-这是本地扫描事实，门禁实施时再从 `--print-baseline` 复核。
+`--print-baseline` 输出与新增 JSON 字段已人工核对；门禁当前报告 139 个源码文件、33 个服务、
+83 条边、0 个识别环。
 
-后续两项（本批不做）：
-1. Host 宽能力基线的实现见 §14.4 第二阶段第 2 项。
-2. 重打基线目前是人工步骤（`--print-baseline` 不接 npm）；不新增自动刷新命令。
+重打基线仍是人工步骤（`--print-baseline` 不接 npm）；不新增自动刷新命令。
 
 ### 13.2 为什么基线更新不是「修检查」的步骤
 
@@ -1364,7 +1363,7 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 |编号|问题|证据|处理阶段|
 |---|---|---|---|
 |A1|Host 接口在装配处不受类型检查|23 个服务原为 `constructor(host)`；`tsconfig.json` 的 `noImplicitAny` 为 false，因此 `src/main.ts:185-214` 的 `new XService(this)` 不检查插件实例是否满足 Host。补类型后发现 3 处返回类型不一致：导入音频返回值、分段缓存目录返回值、录音 Host 中未使用的 speaker 确认方法|已完成（分支 `refactor/architecture-phase1`）|
-|A2|Host 接口存在完整宽能力|只读 AST 扫描：24 个 Host 接口含 45 个完整属性，其中 23 个为 `PluginSettings`、22 个为 `App`；完整 `obsidian.App` / `PluginSettings` 属性是本阶段门禁目标，不包含 `Pick` 等窄能力|第二阶段第 2 项（本批）|
+|A2|Host 接口存在完整宽能力|只读 AST 扫描：24 个 Host 接口含 45 个完整属性，其中 23 个为 `PluginSettings`、22 个为 `App`；完整 `obsidian.App` / `PluginSettings` 属性是门禁目标，不包含 `Pick` 等窄能力|门禁与行为检查完成；存量宽能力尚未收窄|
 |A3|录音会话曾挂在插件对象上的全局可变状态|原评审依据：`RecordingSession` 在 `src/shared/types.ts:403` 起约 100 行可选字段，`host.session =` 9 处，10 个 Host 声明 `session`，OutlineView 直接改写 `session.meetingWorkbench`|已由 #83 合并；续录期间成功已确认，其他人工场景逐项状态见 §6|
 |A4|门禁输出“环状分量 0”曾未覆盖运行时环|原评审依据为装配别名导致的 Recording / SessionFinalize 双向调用及指向 RecordingService 的别名|已由 #83 合并；当前静态图为 33 服务、83 条边、0 个识别环；人工场景记录见 §6|
 |A5|基础组件反向调用界面|`TaskQueue` 原有 4 处直接调用 `plugin.shell.refreshOutlineView()`（`src/queue/task-queue.ts`）；这违反基础组件不得反向调用高层工作流的约定|已完成（分支 `refactor/architecture-phase1`）|
@@ -1406,7 +1405,7 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 #### 第二阶段（按顺序；每项单独分支）
 
 1. **会话状态收口（A3、A4）**【#83 已合并】：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 `host.session =` 赋值。live-ASR 状态已从 `RecordingService` 移至 `LiveAsrPipelineService`，Recording 与 SessionFinalize 不再互相调用。维护者确认整理进行期间续录成功；普通录音/暂停恢复、音频与文本导入、失败重试、短录音及活动笔记切换竞态未见逐项人工记录，见 §6。
-2. **Host 能力面棘轮（A2）**【本批实施】：在 `check:architecture` 增加第四个 JSON 基线字段、第五类检查，登记直接属性中完整 `PluginSettings` 与 `obsidian.App` 能力。当前扫描为 24 个 Host 接口、45 个属性（23 个 `PluginSettings`、22 个 `App`）；新增失败，类型收窄后须同步收缩基线。门禁只覆盖直接属性，不解析类型别名链、继承、重新导出或结构等价类型。
+2. **Host 能力面棘轮（A2）**【门禁与行为检查完成；存量宽能力尚未收窄】：`check:architecture` 新增第四个 JSON 基线字段、第五类检查，登记直接属性中完整 `PluginSettings` 与 `obsidian.App` 能力。当前仍有 24 个 Host 接口、45 个属性（23 个 `PluginSettings`、22 个 `App`）；新增失败，类型收窄后须同步收缩基线。门禁只覆盖直接属性，不解析类型别名链、继承、重新导出或结构等价类型。
 3. **笔记文档模型（A6）**【待设计】：集中解析与序列化 frontmatter、正文、原始材料、分段逐字稿块、会话标记和机器注释。扩展既有 `tests/note-markdown-characterization.test.ts`，不新建同名测试；兼顾两种笔记布局，保留转写与版本保护。
 4. **类型检查棘轮（A7）**：改动某个文件时先把它加入 `tsconfig.strict-core.json`，按 `strictNullChecks` 错误数从少到多推进；A7 列出的前五个文件在各自结构改动完成后再处理。
 5. **收缩非 UI 对 UI 的依赖（A10）**【已有门禁，存量未收缩】：A6 后把 `ui/helpers.ts` 中不涉及 DOM 的函数移到所属领域，并同步收缩 `uiImportsFromNonUi` 基线。

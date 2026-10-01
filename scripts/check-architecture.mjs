@@ -1,7 +1,7 @@
 // 架构依赖检查：这个模块是否应该获得这项依赖？这次修改有没有扩大耦合？
 //
 // 与 check-domain-boundaries 的分工：那边回答「这个成员/能力/方法是否真实存在」，
-// 这边回答「这条依赖本身是否被允许」。当前检查四类已有明确证据的问题（基线见
+// 这边回答「这条依赖本身是否被允许」。当前检查五类已有明确证据的问题（基线见
 // scripts/architecture-baseline.json，为什么这样设计见 MAINTAINING.md §13）：
 //   A. 禁止新的模块直接依赖 src/main.ts / QnALogPlugin（三个 legacy 文件放行）；
 //   B. 冻结 legacy 消费者的 plugin.* 能力面：实际使用集合必须与基线精确一致——
@@ -10,7 +10,8 @@
 //      新增边一律失败（即使尚未构成环）；用 Tarjan 求强连通分量，同时报告
 //      service count / edge count / cyclic SCC count / largest SCC size，
 //      并拦住「新增边形成新环」与「新增边扩大既有 SCC」。
-//   D. 非 ui 模块不得新增 import src/ui/**；现存引用进基线，双向棘轮。
+//   D. 非 ui 模块不得新增 import src/ui/**；现存引用进基线，双向棘轮；
+//   E. 冻结 *Host 接口直接属性中的完整 PluginSettings / obsidian.App 类型。
 // 基线更新是架构决策，不是修检查失败的步骤——因此本脚本不提供 npm 刷新命令，
 // 失败信息也不提示刷新方式（流程见 MAINTAINING.md §13）。
 //
@@ -106,10 +107,71 @@ function typeIdentifiers(text) {
 function uniquePush(list, value) {
   if (!list.includes(value)) list.push(value);
 }
+function importedTypeBindings(sourceFile, file) {
+  const bindings = {
+    pluginSettings: new Set(),
+    pluginSettingsNamespaces: new Set(),
+    app: new Set(),
+    obsidianNamespaces: new Set(),
+  };
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const specifier = statement.moduleSpecifier.text;
+    const target = resolveSpecifier(file, specifier);
+    const isSettings = target === "src/shared/types";
+    const isObsidian = specifier === "obsidian";
+    if (!isSettings && !isObsidian) continue;
+    const clause = statement.importClause;
+    if (!clause?.namedBindings) continue;
+    if (ts.isNamespaceImport(clause.namedBindings)) {
+      (isSettings ? bindings.pluginSettingsNamespaces : bindings.obsidianNamespaces).add(clause.namedBindings.name.text);
+      continue;
+    }
+    for (const element of clause.namedBindings.elements) {
+      const imported = (element.propertyName || element.name).text;
+      if (isSettings && imported === "PluginSettings") bindings.pluginSettings.add(element.name.text);
+      if (isObsidian && imported === "App") bindings.app.add(element.name.text);
+    }
+  }
+  return bindings;
+}
+
+function completeHostType(type, bindings) {
+  let node = type;
+  while (node && ts.isParenthesizedTypeNode(node)) node = node.type;
+  if (!node || !ts.isTypeReferenceNode(node) || node.typeArguments?.length) return null;
+  const name = node.typeName;
+  if (ts.isIdentifier(name)) {
+    if (bindings.pluginSettings.has(name.text)) return "PluginSettings";
+    if (bindings.app.has(name.text)) return "App";
+    return null;
+  }
+  if (ts.isQualifiedName(name) && ts.isIdentifier(name.left)) {
+    if (name.right.text === "PluginSettings" && bindings.pluginSettingsNamespaces.has(name.left.text)) return "PluginSettings";
+    if (name.right.text === "App" && bindings.obsidianNamespaces.has(name.left.text)) return "App";
+  }
+  return null;
+}
+
+function hostCapabilityEntry(hostName, member, kind) {
+  return `${hostName}.${member}:${kind}`;
+}
+
+function parseHostCapabilityEntry(value) {
+  if (typeof value !== "string") return null;
+  const separator = value.indexOf(".");
+  const kindSeparator = value.lastIndexOf(":");
+  if (separator < 1 || kindSeparator <= separator + 1) return null;
+  const hostName = value.slice(0, separator);
+  const member = value.slice(separator + 1, kindSeparator);
+  const kind = value.slice(kindSeparator + 1);
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*Host$/.test(hostName) || !member || !["App", "PluginSettings"].includes(kind)) return null;
+  return { hostName, member, kind };
+}
 
 /**
- * 单次遍历收集四件事：main.ts 与 src/ui 的 import、插件能力面、Host 接口及其消费类。
- * files 为 { 相对路径: 内容 }，便于单测注入。
+ * 单次遍历收集五类事实：main.ts 与 src/ui 的 import、插件能力面、Host 接口及其消费类、
+ * 以及 Host 直接属性中的完整宿主能力。files 为 { 相对路径: 内容 }，便于单测注入。
  */
 function analyze(files) {
   const normalized = {};
@@ -125,11 +187,13 @@ function analyze(files) {
     pluginCaps: new Map(),             // 文件 → 实际使用的 plugin 能力集合
     fileClassNames: new Map(),         // 文件 → 首个导出类名（用于失败信息）
     hosts: [],                         // { file, hostName, className|null, members: [{ name, typeText }] }
+    hostCapabilities: new Map(),       // 文件 → [{ hostName, member, kind, line }]
     consumerClasses: new Set(),        // 声明了 host 的服务类（统计用）
   };
 
   for (const [file, content] of Object.entries(normalized)) {
     const sf = parse(file, content);
+    const typeBindings = importedTypeBindings(sf, file);
     const caps = new Set();
     const lines = [];
     const fileHosts = [];
@@ -200,8 +264,16 @@ function analyze(files) {
           const name = (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) ? m.name.text : null;
           if (!name) continue;
           members.push({ name, typeText: m.type ? m.type.getText(sf) : "" });
+          if (ts.isPropertySignature(m) && m.type) {
+            const kind = completeHostType(m.type, typeBindings);
+            if (kind) {
+              let entries = facts.hostCapabilities.get(file);
+              if (!entries) { entries = []; facts.hostCapabilities.set(file, entries); }
+              entries.push({ hostName: node.name.text, member: name, kind, line: lineOf(content, m.name.getStart(sf)) });
+            }
+          }
         }
-        fileHosts.push({ file, hostName: node.name.text, members });
+        fileHosts.push({ file, hostName: node.name.text, line: lineOf(content, node.name.getStart(sf)), members });
       }
       ts.forEachChild(node, visit);
     };
@@ -393,10 +465,15 @@ export function collectFacts(files) {
   for (const [file, targets] of [...uiImportMap(facts)].sort((a, b) => a[0].localeCompare(b[0]))) {
     uiImportsFromNonUi[file] = [...targets.keys()].sort();
   }
+  const hostCapabilities = {};
+  for (const [file, entries] of [...facts.hostCapabilities].sort((a, b) => a[0].localeCompare(b[0]))) {
+    hostCapabilities[file] = [...new Set(entries.map(({ hostName, member, kind }) => hostCapabilityEntry(hostName, member, kind)))].sort();
+  }
   return {
     pluginConsumers,
     serviceEdges: edges.map((e) => [e.from, e.to]),
     uiImportsFromNonUi,
+    hostCapabilities,
   };
 }
 
@@ -405,17 +482,32 @@ export function collectFacts(files) {
  * scripts/architecture-baseline.json 解析后的对象，均可注入，便于单测。
  */
 export function checkArchitecture(files, baseline) {
-  if (!baseline || typeof baseline !== "object") {
+  if (!baseline || typeof baseline !== "object" || Array.isArray(baseline)) {
     return [`[architecture] ${BASELINE_FILE} 无效：无法解析为对象`];
   }
-  if (!baseline.pluginConsumers || typeof baseline.pluginConsumers !== "object") {
+  if (!baseline.pluginConsumers || typeof baseline.pluginConsumers !== "object" || Array.isArray(baseline.pluginConsumers)) {
     return [`[architecture] ${BASELINE_FILE} 缺少 pluginConsumers 对象`];
   }
   if (!Array.isArray(baseline.serviceEdges)) {
     return [`[architecture] ${BASELINE_FILE} 缺少 serviceEdges 数组`];
   }
-  if (!baseline.uiImportsFromNonUi || typeof baseline.uiImportsFromNonUi !== "object") {
+  if (!baseline.uiImportsFromNonUi || typeof baseline.uiImportsFromNonUi !== "object" || Array.isArray(baseline.uiImportsFromNonUi)) {
     return [`[architecture] ${BASELINE_FILE} 缺少 uiImportsFromNonUi 对象`];
+  }
+  if (!baseline.hostCapabilities || typeof baseline.hostCapabilities !== "object" || Array.isArray(baseline.hostCapabilities)) {
+    return [`[architecture] ${BASELINE_FILE} 缺少 hostCapabilities 对象`];
+  }
+  for (const [file, entries] of Object.entries(baseline.hostCapabilities)) {
+    const parts = file.split("/");
+    if (!file.startsWith("src/") || !file.endsWith(".ts") || parts.some((part) => !part || part === "." || part === "..")) {
+      return [`[architecture] ${BASELINE_FILE} 中的 Host 能力路径无效：${file}`];
+    }
+    if (!Array.isArray(entries) || entries.length === 0 || entries.some((entry) => !parseHostCapabilityEntry(entry))) {
+      return [`[architecture] ${BASELINE_FILE} 中 ${file} 的 Host 能力必须是非空、合法条目组成的字符串数组`];
+    }
+    if (new Set(entries).size !== entries.length) {
+      return [`[architecture] ${BASELINE_FILE} 中 ${file} 的 Host 能力包含重复条目`];
+    }
   }
 
   const facts = analyze(files);
@@ -553,6 +645,28 @@ export function checkArchitecture(files, baseline) {
       }
     }
   }
+  // E：Host 的完整宿主能力与基线精确一致（双向棘轮）。
+  for (const [file, entries] of [...facts.hostCapabilities].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const expected = new Set(baseline.hostCapabilities[file] || []);
+    for (const entry of entries) {
+      const key = hostCapabilityEntry(entry.hostName, entry.member, entry.kind);
+      if (!expected.has(key)) {
+        violations.push(`[architecture] ${file}:${entry.line} ${entry.hostName}.${entry.member} (${entry.kind}) 新增完整 Host 能力。请改用具体能力，或使用 Pick<PluginSettings, ...> 收窄设置依赖。`);
+      }
+    }
+  }
+  for (const [file, expected] of Object.entries(baseline.hostCapabilities).sort((a, b) => a[0].localeCompare(b[0]))) {
+    const actual = new Set((facts.hostCapabilities.get(file) || []).map(({ hostName, member, kind }) => hostCapabilityEntry(hostName, member, kind)));
+    const hostLines = new Map(facts.hosts.filter((host) => host.file === file).map((host) => [host.hostName, host.line]));
+    for (const key of expected) {
+      if (actual.has(key)) continue;
+      const { hostName, member, kind } = parseHostCapabilityEntry(key);
+      const line = hostLines.get(hostName);
+      const location = line ? `${file}:${line}` : file;
+      violations.push(`[architecture] ${location} ${hostName}.${member} (${kind}) 的基线完整 Host 能力已不存在；请同步从 ${BASELINE_FILE} 删除该条目（棘轮只允许收缩）。`);
+    }
+  }
+
 
 
   return violations;
@@ -607,7 +721,7 @@ function main() {
 
   const violations = checkArchitecture(files, baseline);
   if (!violations.length) {
-    console.log(`[architecture] OK: main.ts 引用、legacy plugin 能力面、UI 依赖、服务依赖边均与基线一致（扫描 ${Object.keys(files).length} 个文件）`);
+    console.log(`[architecture] OK: main.ts 引用、legacy plugin 能力面、UI 依赖、服务依赖边、Host 宽能力均与基线一致（扫描 ${Object.keys(files).length} 个文件）`);
     return;
   }
   console.error(`[architecture] 发现 ${violations.length} 项架构违规：`);
