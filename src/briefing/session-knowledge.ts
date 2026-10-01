@@ -1,4 +1,5 @@
-import { NS_ACTIVE_VERSION_BODY_RE, NS_SESSION_KNOWLEDGE } from "../shared/namespace";
+import { NS_SESSION_KNOWLEDGE } from "../shared/namespace";
+import { findActiveVersionBlock } from "../notes/note-document";
 import { genId, isRecord } from "../shared/util-common";
 import type { Segment } from "../shared/types";
 import { getCurrentTranscript, getTranscriptSourceRevision, type Utterance } from "../transcript/session-transcript";
@@ -65,21 +66,18 @@ export function stripSessionKnowledgeBlocks(raw: string): string {
 }
 
 export function readSelectedSessionKnowledge(markdown: string): SessionKnowledge | null {
-  const active = NS_ACTIVE_VERSION_BODY_RE.exec(String(markdown || ""));
-  return active ? readSessionKnowledge(active[1]) : readSessionKnowledge(markdown);
+  const active = findActiveVersionBlock(markdown);
+  return active ? readSessionKnowledge(active.body) : readSessionKnowledge(markdown);
 }
 
 /** Replace the snapshot for the selected display version without moving raw source blocks. */
 export function upsertSelectedSessionKnowledge(markdown: string, knowledge: SessionKnowledge): string {
   const text = String(markdown || "");
   const serialized = serializeSessionKnowledge(knowledge);
-  const active = NS_ACTIVE_VERSION_BODY_RE.exec(text);
+  const active = findActiveVersionBlock(text);
   if (!active) return replaceKnowledgeInSection(text, serialized);
-  const bodyStart = active[0].indexOf(active[1], active[0].indexOf("-->") + 3);
-  const bodyEnd = bodyStart + active[1].length;
-  const body = replaceKnowledgeInSection(active[1], serialized);
-  const nextBlock = `${active[0].slice(0, bodyStart)}${body}${active[0].slice(bodyEnd)}`;
-  return `${text.slice(0, active.index)}${nextBlock}${text.slice(active.index + active[0].length)}`;
+  const body = replaceKnowledgeInSection(active.body, serialized);
+  return `${text.slice(0, active.bodyStart)}${body}${text.slice(active.bodyEnd)}`;
 }
 function exactStrings(values: unknown): values is string[] {
   return Array.isArray(values) && values.length > 0 && values.every((value) => typeof value === "string" && value.length > 0);

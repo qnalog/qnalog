@@ -147,6 +147,9 @@ export function labelPattern(name: string): RegExp {
 export const UTILITY_HEADING_RE =
   /^(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲|会中补充材料|问一问|附录|参考资料|版本信息|Original material|Raw transcript|Verbatim transcript|Recording transcript|Segmented raw transcript|Playback timeline|Live outline while recording|Material added during the meeting|Q&A|Appendix|Reference materials|Version info)$/;
 
+/** Summary 名称白名单与索引、语义图原先的工具 details 读取范围一致。 */
+export const UTILITY_DETAILS_SUMMARY_RE =
+  /(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data)/;
 /**
  * 信息行词（时间/时长/模式/分段/模型/状态 + 英文对应词），供剥离
  * `- 时间：…` / `- Time: …` 这类元信息行（如 ui/helpers.ts 的归一化）。

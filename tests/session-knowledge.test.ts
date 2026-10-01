@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { attachTextTranscript, getCurrentTranscript, getTranscriptSourceRevision } from "../src/transcript/session-transcript";
 import type { Segment } from "../src/shared/types";
-import { mergeSessionKnowledge, parseSessionKnowledgeResponse, readSessionKnowledge, resolveKnowledgeEvidence, serializeSessionKnowledge, stripSessionKnowledgeBlocks, type SessionKnowledge } from "../src/briefing/session-knowledge";
+import { mergeSessionKnowledge, parseSessionKnowledgeResponse, readSelectedSessionKnowledge, readSessionKnowledge, resolveKnowledgeEvidence, serializeSessionKnowledge, stripSessionKnowledgeBlocks, type SessionKnowledge, upsertSelectedSessionKnowledge } from "../src/briefing/session-knowledge";
 
 function source(text: string, sourceId = "source-a"): Segment {
   return attachTextTranscript({ index: 1, startOffsetMs: 0, endOffsetMs: 1000, text }, sourceId, "text-import");
@@ -94,5 +94,31 @@ describe("session knowledge protocol", () => {
     const merged = mergeSessionKnowledge([knowledge, another], [segment]);
     expect(merged.decisions).toHaveLength(2);
     expect(merged.decisions.map((item) => item.text)).toEqual(["Ship a pilot", "Do not ship a pilot"]);
+  });
+  it("reads and updates only the first complete active block, including an empty block", () => {
+    const segment = source("We will ship a pilot.");
+    const selected = knowledgeFor(segment);
+    const archived = { ...selected, id: "knowledge:archived" };
+    const first = { ...selected, id: "knowledge:first" };
+    const second = { ...selected, id: "knowledge:second" };
+
+    const empty = `Archived\n${serializeSessionKnowledge(archived)}\n<!-- qnalog-active-version-start --><!-- qnalog-active-version-end -->`;
+    expect(readSelectedSessionKnowledge(empty)).toBeNull();
+
+    const multiple = [
+      `<!-- qnalog-active-version-start -->${serializeSessionKnowledge(first)}<!-- qnalog-active-version-end -->`,
+      `<!-- qnalog-active-version-start -->${serializeSessionKnowledge(second)}<!-- qnalog-active-version-end -->`,
+    ].join("\n");
+    expect(readSelectedSessionKnowledge(multiple)?.id).toBe("knowledge:first");
+
+    const updated = upsertSelectedSessionKnowledge(empty, selected);
+    expect(readSelectedSessionKnowledge(updated)).toEqual(selected);
+    expect(updated.slice(0, updated.indexOf("<!-- qnalog-active-version-start -->"))).toBe(
+      empty.slice(0, empty.indexOf("<!-- qnalog-active-version-start -->")),
+    );
+    expect(updated).toContain(serializeSessionKnowledge(archived));
+
+    const unwrapped = upsertSelectedSessionKnowledge("Visible note", selected);
+    expect(readSessionKnowledge(unwrapped)).toEqual(selected);
   });
 });

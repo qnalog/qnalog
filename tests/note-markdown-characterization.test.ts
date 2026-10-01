@@ -22,7 +22,7 @@ import {
   stripMarkdownForEmailBrief,
   getSourceIdFromMarkdown,
 } from "../src/notes/note-markdown";
-import { extractAllRawBlocksFromText, extractSessionId, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../src/notes/note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
@@ -204,6 +204,54 @@ describe("版本块构建与替换", () => {
     // 旧渲染正文按契约被压缩（已持久化在版本库里）
     expect(out).not.toContain("这是旧的已渲染正文。");
     expect(out).not.toContain("## 优化录制时的浮窗外观");
+  });
+});
+describe("活动版本范围读取", () => {
+  it("returns exact UTF-16 ranges for the first complete CRLF block and preserves an empty body", () => {
+    const text = `before\r\n<!-- QNALOG-active-version-start -->\r\nAlpha\r\n<!-- qnalog-active-version-end -->\r\nafter`;
+    const range = findActiveVersionBlock(text)!;
+    expect(text.slice(range.start, range.end)).toBe("<!-- QNALOG-active-version-start -->\r\nAlpha\r\n<!-- qnalog-active-version-end -->");
+    expect(text.slice(range.bodyStart, range.bodyEnd)).toBe("\r\nAlpha\r\n");
+    expect(range).toMatchObject({ start: 8, body: "\r\nAlpha\r\n" });
+
+    const emptyText = "<!-- qnalog-active-version-start --><!-- qnalog-active-version-end -->";
+    const empty = findActiveVersionBlock(emptyText)!;
+    expect(empty.body).toBe("");
+    expect(empty.bodyStart).toBe(empty.bodyEnd);
+  });
+
+  it("prefers the first full block, rejects an incomplete block, and leaves String.replace semantics intact", () => {
+    const first = "<!-- qnalog-active-version-start -->one<!-- qnalog-active-version-end -->";
+    const second = "<!-- qnalog-active-version-start -->two<!-- qnalog-active-version-end -->";
+    const text = `prefix${first}middle${second}suffix`;
+    const range = findActiveVersionBlock(text)!;
+    expect(text.slice(range.bodyStart, range.bodyEnd)).toBe("one");
+    const replacement = replaceExistingActiveVersionBlock(text, "changed");
+    expect(replacement).toBe(`prefixchangedmiddle${second}suffix`);
+    expect(replaceExistingActiveVersionBlock(first, "$&")).toBe(first);
+    expect(findActiveVersionBlock("<!-- qnalog-active-version-start -->unfinished")).toBeNull();
+    expect(findActiveVersionBlock(text)).toEqual(range);
+    expect(findActiveVersionBlock(text)).toEqual(range);
+  });
+});
+describe("工具 details 壳读取", () => {
+  it("removes adjacent matching shells without normalizing line endings or unmatched text", () => {
+    const input = [
+      "before",
+      "<details>",
+      "<summary>Raw transcript</summary>",
+      "private one",
+      "</details>",
+      "<details>",
+      "<summary>Index data</summary>",
+      "{\"secret\":true}",
+      "</details>",
+      "after",
+    ].join("\r\n");
+    const expected = "before\r\n\n\r\n\n\r\nafter";
+    expect(stripUtilityDetailsBlocks(input)).toBe(expected);
+    expect(stripUtilityDetailsBlocks(stripUtilityDetailsBlocks(input))).toBe(expected);
+    expect(stripUtilityDetailsBlocks("untouched\r\ntext")).toBe("untouched\r\ntext");
   });
 });
 

@@ -6,6 +6,7 @@ import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { stableHash } from "../shared/stable-hash";
 import { NS_FM, NS_TAG, nsRe } from "../shared/namespace";
 import { labelPattern, labelText, UTILITY_HEADING_RE } from "../shared/note-labels";
+import { findActiveVersionBlock, stripUtilityDetailsBlocks } from "../notes/note-document";
 // 写入用折叠壳新格式（标记在外、details+json 围栏在内，阅读视图折叠为一行）；
 // 读取同时接受旧的单注释格式，否则既有笔记里的索引块会被重复插入。
 export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index -->`;
@@ -16,7 +17,6 @@ const NOTE_INDEX_FENCED_PATTERN = new RegExp(
   "i",
 );
 const NOTE_INDEX_LEGACY_PATTERN = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*\\n([\\s\\S]*?)\\n${nsRe("note-index-end")}\\s*-->`, "i");
-const ACTIVE_VERSION_PATTERN = new RegExp(`<!--\\s*${nsRe("active-version-start")}\\s*-->([\\s\\S]*?)<!--\\s*${nsRe("active-version-end")}\\s*-->`, "i");
 const MAX_INDEX_TOPICS = 48;
 const MAX_CORE_TITLE_CHARS = 96;
 const MAX_CORE_SUMMARY_CHARS = 720;
@@ -151,12 +151,11 @@ export function removeNoteIndex(markdown: unknown): string {
 
 export function extractIndexSource(markdown: unknown): string {
   const original = removeNoteIndex(markdown);
-  const active = ACTIVE_VERSION_PATTERN.exec(original);
-  let visible = active ? active[1] : original;
+  const active = findActiveVersionBlock(original);
+  let visible = active ? active.body : original;
   visible = stripLeadingFrontmatter(visible);
   if (!active) visible = extractLastLegacyPolishBlock(visible);
-  visible = stripUtilityTail(visible)
-    .replace(/<details>\s*<summary>[^<]*(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data)[^<]*<\/summary>[\s\S]*?<\/details>/gi, "\n")
+  visible = stripUtilityDetailsBlocks(stripUtilityTail(visible))
     .replace(/<!--[^>]*-->/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

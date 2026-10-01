@@ -363,4 +363,102 @@ describe("QnALog note index", () => {
     expect(upsertNoteIndex(markdown, current)).toBe(markdown);
   });
 
+  it("treats an empty complete active block as selected and prefers the first complete block", () => {
+    const empty = [
+      "<!-- qnalog-active-version-start -->",
+      "<!-- qnalog-active-version-end -->",
+      "",
+      "## Archived",
+      "Archived content.",
+    ].join("\n");
+    expect(extractIndexSource(empty)).toBe("");
+    expect(buildNoteIndex(empty)).toBeNull();
+
+    const multiple = [
+      "<!-- qnalog-active-version-start -->",
+      "## First topic",
+      "First content.",
+      "<!-- qnalog-active-version-end -->",
+      "<!-- qnalog-active-version-start -->",
+      "## Second topic",
+      "Second content.",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    expect(buildNoteIndex(multiple)?.topics.map(({ title }) => title)).toEqual(["First topic"]);
+  });
+
+  it("keeps the appended legacy-polish fallback when no complete active block exists", () => {
+    const markdown = [
+      "# Mother",
+      "Old body.",
+      "<!-- qnalog-polish-start -->",
+      "## Last integrated",
+      "Integrated body.",
+      "<!-- qnalog-polish-end -->",
+    ].join("\n");
+    expect(extractIndexSource(markdown)).toContain("Integrated body.");
+  });
+
+  it("removes only the established utility details shells", () => {
+    const markdown = [
+      "<!-- qnalog-active-version-start -->",
+      "## Keep",
+      "Visible before.",
+      "<details>",
+      "<summary>Raw transcript</summary>",
+      "Hidden raw text.",
+      "</details>",
+      "<details>",
+      "<summary>Custom</summary>",
+      "Custom body remains.",
+      "</details>",
+      "<details open>",
+      "<summary>Index data</summary>",
+      "Attributed shell remains.",
+      "</details>",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    const visible = extractIndexSource(markdown);
+    expect(visible).toContain("Visible before.");
+    expect(visible).not.toContain("Hidden raw text.");
+    expect(visible).toContain("Custom body remains.");
+    expect(visible).toContain("Attributed shell remains.");
+  });
+  it("strips only the shared bilingual utility details summaries inside the active version", () => {
+    const markdown = [
+      "<!-- qnalog-active-version-start -->",
+      "## Keep",
+      "Visible first.",
+      "<details><summary>Raw transcript</summary>",
+      "HIDDEN RAW BODY",
+      "</details>",
+      "<details><summary>Index data</summary>",
+      "{\"hidden\":true}",
+      "</details>",
+      "<details><summary>沉淀数据</summary>",
+      "HIDDEN DISTILLED BODY",
+      "</details>",
+      "## KeepAfter",
+      "Visible after.",
+      "<details><summary>Custom</summary>",
+      "Custom visible body.",
+      "</details>",
+      "<details><summary><b>Raw transcript</b></summary>",
+      "HTML summary body remains.",
+      "</details>",
+      "<details open><summary>Index data</summary>",
+      "Attributed details body remains.",
+      "</details>",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    const visible = extractIndexSource(markdown);
+    expect(visible).toContain("Visible first.");
+    expect(visible).toContain("Visible after.");
+    expect(visible).not.toContain("HIDDEN RAW BODY");
+    expect(visible).not.toContain("HIDDEN DISTILLED BODY");
+    expect(visible).not.toContain('"hidden":true');
+    expect(visible).toContain("Custom visible body.");
+    expect(visible).toContain("HTML summary body remains.");
+    expect(visible).toContain("Attributed details body remains.");
+  });
 });
