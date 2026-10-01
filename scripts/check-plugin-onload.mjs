@@ -152,6 +152,7 @@ const obsidian = {
   PluginSettingTab: ObsidianBase, TextComponent: ObsidianBase, SuggestModal: ObsidianBase,
   AbstractInputSuggest: ObsidianBase, MarkdownView: ObsidianBase,
   Plugin: PluginBase, TFile, TFolder,
+  addIcon() {},
   Platform: { isMacOS: true, isWin: false, isLinux: false, isIosApp: false, isAndroidApp: false, isDesktop: true, isMobile: false },
   // Obsidian 1.8.7+ 的公开 API：读取界面语言。插件据此决定界面文案语言。
   getLanguage: () => "zh",

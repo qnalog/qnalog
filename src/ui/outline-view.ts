@@ -65,7 +65,7 @@ import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACK
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendAskEntry, buildAskContext } from "../notes/ask-panel";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_FM_SPEAKERS, readSemanticMeta } from "../shared/namespace";
+import { NS_FM_SPEAKERS, QNALOG_PLUGIN_ICON_ID, readSemanticMeta } from "../shared/namespace";
 import type { QnALogSemanticDocumentMeta } from "../canvas/semantic-outline-canvas";
 
 // 会后整合 prompt（叙述式自然生长，v2）：整场转写 → 依据实际讨论生长出来的 Markdown 岗位画像。
@@ -415,7 +415,7 @@ export class OutlineView extends obsidian.ItemView {
   }
   getViewType() { return VIEW_TYPE_OUTLINE; }
   getDisplayText() { return i18nT("QnALog live minutes"); }
-  getIcon() { return "list-tree"; }
+  getIcon() { return QNALOG_PLUGIN_ICON_ID; }
   async onOpen() {
     this.containerEl.children[1].empty();
     this._lastSig = "";
