@@ -37,6 +37,7 @@ export interface NoteLabelSpec {
 export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   // —— 标题类 ——
   originalMaterial: { key: "Original material", re: /原始材料|Original material/ },
+  currentVersion: { key: "Current version", re: /当前版本|Current version/ },
   currentMinutes: { key: "Current minutes", re: /当前纪要|Current minutes/ },
   currentMinutesAt: { key: "Current minutes ({0})", params: 1, re: /当前纪要（[^）]*）|Current minutes \([^)]*\)/ },
   mergedVersion: { key: "Merged version", re: /整合版|Merged version/ },
@@ -76,6 +77,9 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   rawFallbackPart: { key: "Part {0} · {1}–{2} (raw transcript fallback)", params: 3, re: /第\s*\d+\s+部分\s*·[^（]*（原始转写保底）|Part\s+\d+\s+·[^)]*\(raw transcript fallback\)/ },
 
   // —— 信息行（键尾带空格：英文靠它与后继值衔接，中文值以全角冒号收尾、不带空格） ——
+  currentDisplayedVersionLabel: { key: "Currently displayed version: ", re: /当前显示版本：|Currently displayed version:/ },
+  versionGeneratedAtLabel: { key: "Generated at: ", re: /生成时间：|Generated at:/ },
+  sourceTranscriptFingerprintLabel: { key: "Source transcript fingerprint: ", re: /源转写指纹：|Source transcript fingerprint:/ },
   timeLabel: { key: "Time: ", re: /时间：|Time:/ },
   durationLabel: { key: "Duration: ", re: /时长：|Duration:/ },
   modeLabel: { key: "Mode: ", re: /模式：|Mode:/ },

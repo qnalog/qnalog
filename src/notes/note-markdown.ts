@@ -143,15 +143,15 @@ export function normalizeVersionId(label) {
 }
 
 export function buildActiveVersionBlock(versionMeta, body) {
-  const label = String(versionMeta && versionMeta.label || versionMeta && versionMeta.kind || "当前版本");
+  const label = String(versionMeta && versionMeta.label || versionMeta && versionMeta.kind || labelText("currentVersion"));
   const created = String(versionMeta && versionMeta.createdAt || "");
   const sourceHash = String(versionMeta && versionMeta.sourceHash || "");
   // label 已含模式前缀与整理偏好，不再拼内部 mode 键（monologue 这类键直接见了用户）。
   // 折叠默认收起：版本卡是元数据，正文摘要应当先被看到。
   const metaLines = [
-    `> [!info]- 当前显示版本：${label || "当前版本"}`,
-    created ? `> 生成时间：${created}` : "",
-    sourceHash ? `> 源转写指纹：${sourceHash}` : "",
+    `> [!info]- ${labelText("currentDisplayedVersionLabel")}${label}`,
+    created ? `> ${labelText("versionGeneratedAtLabel")}${created}` : "",
+    sourceHash ? `> ${labelText("sourceTranscriptFingerprintLabel")}${sourceHash}` : "",
   ].filter(Boolean).join("\n");
   return [
     QNALOG_ACTIVE_VERSION_START,

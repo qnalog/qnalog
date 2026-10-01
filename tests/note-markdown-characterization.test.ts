@@ -147,65 +147,90 @@ function buildNote(existingBlock: boolean): string {
 const META = { label: "个人笔记 ·新标签", createdAt: "2026-09-24T11:00:00", sourceHash: "hash1" };
 
 describe("版本块构建与替换", () => {
-  it("构建：三行元数据齐全；可选字段缺省即省略", () => {
-    const full = buildActiveVersionBlock(META, "显示正文");
-    expect(full).toContain("> [!info]- 当前显示版本：个人笔记 ·新标签");
-    expect(full).toContain("> 生成时间：2026-09-24T11:00:00");
-    expect(full).toContain("> 源转写指纹：hash1");
-    expect(full).toContain("显示正文");
-    expect(count(full, START)).toBe(1);
-    expect(count(full, END)).toBe(1);
+  it("renders version-card metadata in the active language without translating version names", () => {
+    const originalLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage("en", "en"));
+      const english = buildActiveVersionBlock({
+        label: "Synthesis minutes",
+        createdAt: "2026-10-01 21:36:37",
+        sourceHash: "hash-fixture",
+      }, "中文正文 stays unchanged.");
+      expect(english).toContain("> [!info]- Currently displayed version: Synthesis minutes");
+      expect(english).toContain("> Generated at: 2026-10-01 21:36:37");
+      expect(english).toContain("> Source transcript fingerprint: hash-fixture");
+      expect(english).toContain("中文正文 stays unchanged.");
+      expect(count(english, START)).toBe(1);
+      expect(count(english, END)).toBe(1);
+      expect(buildActiveVersionBlock({ label: "旧中文版本" }, "正文")).toContain(
+        "> [!info]- Currently displayed version: 旧中文版本",
+      );
+      expect(buildActiveVersionBlock({ kind: "Original" }, "正文")).toContain(
+        "> [!info]- Currently displayed version: Original",
+      );
+      expect(buildActiveVersionBlock(null, "正文")).toContain(
+        "> [!info]- Currently displayed version: Current version",
+      );
+      const minimalEnglish = buildActiveVersionBlock({ label: "L" }, "正文");
+      expect(minimalEnglish).not.toContain("Generated at:");
+      expect(minimalEnglish).not.toContain("Source transcript fingerprint:");
 
-    const minimal = buildActiveVersionBlock({ label: "L" }, "正文");
-    expect(minimal).toContain("当前显示版本：L");
-    expect(minimal).not.toContain("生成时间");
-    expect(minimal).not.toContain("源转写指纹");
-
-    const empty = buildActiveVersionBlock(null, "正文");
-    expect(empty).toContain("当前显示版本：当前版本");
+      setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+      const chinese = buildActiveVersionBlock({
+        label: "个人笔记 ·新标签",
+        createdAt: "2026-09-24T11:00:00",
+        sourceHash: "hash1",
+      }, "显示正文");
+      expect(chinese).toContain("> [!info]- 当前显示版本：个人笔记 ·新标签");
+      expect(chinese).toContain("> 生成时间：2026-09-24T11:00:00");
+      expect(chinese).toContain("> 源转写指纹：hash1");
+      expect(buildActiveVersionBlock(null, "正文")).toContain("> [!info]- 当前显示版本：当前版本");
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
   });
 
-  it("已有块时原位替换：只有一块，新旧标签交替，前后内容不动", () => {
-    const out = replaceActiveVersionBlock(buildNote(true), META, "新的显示正文");
-    expect(count(out, START)).toBe(1);
-    expect(count(out, END)).toBe(1);
-    expect(out).toContain("个人笔记 ·新标签");
-    expect(out).toContain("新的显示正文");
-    expect(out).not.toContain("旧标签");
-    expect(out).not.toContain("旧内容");
-    expect(out).toContain("mode: monologue");
-    expect(out).toContain("# 2026-09-24 10:01 · 个人笔记");
-    expect(out).toContain("## 优化录制时的浮窗外观");
-    expect(out).toContain("## 原始材料");
-    expect(out).toContain("<summary>原始音频</summary>");
-    expect(out).toContain(EMBED);
-    expect(out).toContain(SESSION_LINE);
-  });
+  it("replaces only the active block and preserves legacy Chinese raw content", () => {
+    const originalLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage("en", "en"));
+      const original = buildNote(true);
+      const rawTail = original.slice(original.indexOf("## 原始材料"));
+      const out = replaceActiveVersionBlock(original, META, "新的显示正文");
+      expect(count(out, START)).toBe(1);
+      expect(count(out, END)).toBe(1);
+      expect(out).toContain("> [!info]- Currently displayed version: 个人笔记 ·新标签");
+      expect(out).toContain("新的显示正文");
+      expect(out).not.toContain("旧标签");
+      expect(out).not.toContain("旧内容");
+      expect(out).toContain("mode: monologue");
+      expect(out).toContain("# 2026-09-24 10:01 · 个人笔记");
+      expect(out.slice(out.indexOf("## 原始材料"))).toBe(rawTail);
+      expect(out).toContain("<summary>原始音频</summary>");
+      expect(out).toContain(EMBED);
+      expect(out).toContain(SESSION_LINE);
 
-  it("重复应用同一元数据不嵌套：仍然只有一块（历史 details 双层嵌套回归）", () => {
-    const once = replaceActiveVersionBlock(buildNote(true), META, "显示正文");
-    const twice = replaceActiveVersionBlock(once, META, "显示正文");
-    expect(count(twice, START)).toBe(1);
-    expect(count(twice, END)).toBe(1);
-    expect(count(twice, "当前显示版本：")).toBe(1);
-  });
+      const once = replaceActiveVersionBlock(original, META, "显示正文");
+      const twice = replaceActiveVersionBlock(once, META, "显示正文");
+      expect(twice).toBe(once);
 
-  it("首次采纳（尚无块）：只留 frontmatter、H1、版本块与原始材料，旧渲染正文被压缩掉", () => {
-    const out = replaceActiveVersionBlock(buildNote(false), META, "显示正文");
-    expect(count(out, START)).toBe(1);
-    expect(out).toContain("mode: monologue");
-    expect(out).toContain("# 2026-09-24 10:01 · 个人笔记");
-    expect(out).toContain("当前显示版本：个人笔记 ·新标签");
-    // 原始材料的可保留部分：白名单 details 块与 session 行必须活着进尾部
-    expect(out).toContain("<summary>录音信息</summary>");
-    expect(out).toContain("<summary>原始音频</summary>");
-    expect(out).toContain(EMBED);
-    expect(out).toContain(SESSION_LINE);
-    // 旧渲染正文按契约被压缩（已持久化在版本库里）
-    expect(out).not.toContain("这是旧的已渲染正文。");
-    expect(out).not.toContain("## 优化录制时的浮窗外观");
+      const adopted = replaceActiveVersionBlock(buildNote(false), META, "显示正文");
+      expect(count(adopted, START)).toBe(1);
+      expect(adopted).toContain("mode: monologue");
+      expect(adopted).toContain("# 2026-09-24 10:01 · 个人笔记");
+      expect(adopted).toContain("> [!info]- Currently displayed version: 个人笔记 ·新标签");
+      expect(adopted).toContain("<summary>录音信息</summary>");
+      expect(adopted).toContain("<summary>原始音频</summary>");
+      expect(adopted).toContain(EMBED);
+      expect(adopted).toContain(SESSION_LINE);
+      expect(adopted).not.toContain("这是旧的已渲染正文。");
+      expect(adopted).not.toContain("## 优化录制时的浮窗外观");
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
   });
 });
+
 describe("活动版本范围读取", () => {
   it("returns exact UTF-16 ranges for the first complete CRLF block and preserves an empty body", () => {
     const text = `before\r\n<!-- QNALOG-active-version-start -->\r\nAlpha\r\n<!-- qnalog-active-version-end -->\r\nafter`;
