@@ -398,6 +398,35 @@ describe("QnALog note index", () => {
     ].join("\n");
     expect(extractIndexSource(markdown)).toContain("Integrated body.");
   });
+  it("selects the last legacy merged section and preserves the complete index output", () => {
+    const markdown = "# Mother\nOld body.\n## Merged version (first)\n## Old topic\nOld details.\n## 整合版（second）\n## Selected topic\nSelected details.\n---\n## Excluded\nHidden suffix.";
+    const expected = "## 整合版（second）\n## Selected topic\nSelected details.";
+    expect(extractIndexSource(markdown)).toBe(expected);
+    expect(buildNoteIndex(markdown, { noteTitle: "Fixture meeting", generatedAt: "2026-10-01T12:00:00.000Z" })).toEqual({
+      schemaVersion: 2,
+      sourceRevision: "idx-4b8d2953",
+      generatedAt: "2026-10-01T12:00:00.000Z",
+      meetingDate: "",
+      core: { title: "Fixture meeting", summary: "Selected details." },
+      topics: [
+        { order: 1, title: "整合版（second）", heading: "整合版（second）" },
+        { order: 2, title: "Selected topic", heading: "Selected topic" },
+      ],
+      topicCount: 2,
+      omittedTopicCount: 0,
+      knowledge: { snapshotId: null, sourceRevision: null, status: "unavailable", topics: [], decisions: [], actions: [], questions: [] },
+    });
+  });
+
+  it("truncates only established utility H2 and segments-start boundaries", () => {
+    const segment = "<!-- qnalog-segments-start trailing";
+    expect(extractIndexSource(`## Keep\nVisible.\n## Original material\nHidden.`)).toBe("## Keep\nVisible.");
+    expect(extractIndexSource(`## Keep\nVisible.\n${segment}\nHidden.`)).toBe("## Keep\nVisible.");
+    expect(extractIndexSource(`## Keep\nVisible.\n${segment}\n## Original material\nHidden.`)).toBe("## Keep\nVisible.");
+    expect(extractIndexSource(`## Keep\nVisible.\n## Original material\nHidden.\n${segment}`)).toBe("## Keep\nVisible.");
+    expect(extractIndexSource("## Keep\nOriginal material is mentioned here.\n### Raw transcript\nStill visible."))
+      .toBe("## Keep\nOriginal material is mentioned here.\n### Raw transcript\nStill visible.");
+  });
 
   it("removes only the established utility details shells", () => {
     const markdown = [

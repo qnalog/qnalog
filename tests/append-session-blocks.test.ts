@@ -6,7 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "../src/notes/note-writer";
 import { extractPriorOutline } from "../src/session/continuation-service";
-import { extractNotePanelData } from "../src/notes/detail-blocks";
+import { extractDetailsBody, extractNotePanelData } from "../src/notes/detail-blocks";
 import { stripArchivedOutlineSections } from "../src/notes/realtime-outline";
 
 // 测试环境没有 Obsidian 注入的 window.moment；format 只用到 YYYY-MM-DD HH:mm:ss。
@@ -89,6 +89,57 @@ describe("extractPriorOutline 旧大纲读回", () => {
 
   it("没有该 details 时返回空串", () => {
     expect(extractPriorOutline("# 笔记\n\n正文")).toBe("");
+  });
+});
+
+describe("extractDetailsBody 原文范围读取", () => {
+  it("取首个匹配块的正文，保留 CRLF 并 trim；匹配的空正文不跳到后项", () => {
+    const markdown = "<DETAILS><SUMMARY><b>Wanted</b></SUMMARY>\r\n A\r\nB \r\n</DETAILS>";
+    expect(extractDetailsBody(markdown, /Wanted/)).toBe("A\r\nB");
+    expect(markdown).toContain("\r\n");
+    expect(extractDetailsBody("<details><summary>Wanted</summary></details><details><summary>Wanted</summary>later</details>", /Wanted/)).toBe("");
+  });
+
+  it("保留平面首闭合标签匹配，不修复嵌套或未闭合标记", () => {
+    expect(extractDetailsBody("<details><summary>Wanted</summary>outer<details><summary>Inner</summary>inner</details>tail</details>", /Wanted/))
+      .toBe("outer<details><summary>Inner</summary>inner");
+    expect(extractDetailsBody("<details><summary>Wanted</summary>open", /Wanted/)).toBe("");
+    expect(extractDetailsBody("<details open><summary>Wanted</summary>body</details>", /Wanted/)).toBe("");
+  });
+});
+
+describe("extractNotePanelData 面板可见的大纲与时间轴", () => {
+  it("读取中英文实时大纲与 timeline 正文，同时排除引导行及旧归档", () => {
+    const fixtures = [
+      {
+        summary: "录音中实时大纲（草稿）",
+        intro: "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。",
+        timeline: "回听时间轴",
+      },
+      {
+        summary: "Live outline while recording (draft)",
+        intro: "> Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts.",
+        timeline: "Playback timeline",
+      },
+    ];
+    for (const fixture of fixtures) {
+      const markdown = [
+        `<details><summary>${fixture.summary}</summary>`,
+        fixture.intro,
+        "- Live outline",
+        "> 以下为追加录音前场次（旧笔记）的实时大纲草稿。",
+        "- Archived outline",
+        "</details>",
+        `<details><summary>${fixture.timeline}</summary>`,
+        "00:00–00:05 [[audio.webm#t=0,5]]",
+        "</details>",
+        "<!-- qnalog-session:test -->",
+      ].join("\n");
+      const data = extractNotePanelData(null, null, markdown);
+      expect(data?.outline).toBe("- Live outline");
+      expect(data?.timeline).toBe("00:00–00:05 [[audio.webm#t=0,5]]");
+      expect(extractPriorOutline(markdown)).toBe("- Live outline");
+    }
   });
 });
 

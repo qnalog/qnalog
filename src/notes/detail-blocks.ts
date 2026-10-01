@@ -16,6 +16,8 @@ import { formatElapsed, stripHtmlText } from "../shared/util-common";
 
 import { escapeHtmlText } from "../shared/util-markdown";
 import { t } from "../shared/i18n";
+import { iterateNoteDetailsBlocks } from "./note-document";
+
 
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings } from "../audio/channel-speakers";
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
@@ -116,13 +118,12 @@ export function buildPlaybackTimelineDetails(session) {
   ].join("\n");
 }
 
+
 export function extractDetailsBody(markdown, summaryPattern) {
   const text = String(markdown || "");
-  const re = /<details>\s*<summary>([\s\S]*?)<\/summary>\s*([\s\S]*?)<\/details>/gi;
-  let match;
-  while ((match = re.exec(text))) {
-    const summary = stripHtmlText(match[1]);
-    if (summaryPattern.test(summary)) return String(match[2] || "").trim();
+  for (const range of iterateNoteDetailsBlocks(text)) {
+    const summary = stripHtmlText(text.slice(range.summaryStart, range.summaryEnd));
+    if (summaryPattern.test(summary)) return text.slice(range.bodyStart, range.bodyEnd).trim();
   }
   return "";
 }

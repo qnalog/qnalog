@@ -20,6 +20,45 @@ export interface ActiveVersionBlockRange {
   body: string;
 }
 
+export function findFirstNoteBoundary(markdown: string, patterns: readonly RegExp[]): number {
+  const text = String(markdown || "");
+  let boundary = text.length;
+  for (const pattern of patterns) {
+    const index = text.search(pattern);
+    if (index >= 0 && index < boundary) boundary = index;
+  }
+  return boundary;
+}
+
+export interface NoteDetailsBlockRange {
+  start: number;
+  end: number;
+  summaryStart: number;
+  summaryEnd: number;
+  bodyStart: number;
+  bodyEnd: number;
+}
+
+export function* iterateNoteDetailsBlocks(markdown: string): IterableIterator<NoteDetailsBlockRange> {
+  const text = String(markdown || "");
+  const re = /(<details>\s*<summary>)([\s\S]*?)(<\/summary>\s*)([\s\S]*?)<\/details>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const start = match.index;
+    const summaryStart = start + match[1].length;
+    const summaryEnd = summaryStart + match[2].length;
+    const bodyStart = summaryEnd + match[3].length;
+    yield {
+      start,
+      end: start + match[0].length,
+      summaryStart,
+      summaryEnd,
+      bodyStart,
+      bodyEnd: bodyStart + match[4].length,
+    };
+  }
+}
+
 export function findActiveVersionBlock(markdown: string): ActiveVersionBlockRange | null {
   const text = String(markdown || "");
   const match = NS_ACTIVE_VERSION_BODY_RE.exec(text);
