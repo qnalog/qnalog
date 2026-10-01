@@ -99,7 +99,7 @@ The sidebar can organize recent notes by folder or by time. Folder groups can be
 
 ## Basic usage
 
-1. Open the QnALog sidebar.
+1. Click the Q-shaped QnALog icon in the left ribbon to open the sidebar. Hover over it to see the **QnALog live minutes panel** name.
 2. Choose a template and an audio input.
 3. Start recording; check that the level meter reacts.
 4. Watch the live outline; add in-meeting notes if needed.

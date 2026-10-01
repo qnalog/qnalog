@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
+import { QNALOG_PLUGIN_ICON_ID } from "./shared/namespace";
+import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
 
@@ -300,6 +302,7 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.tasks.startStatusBar();
 
+    obsidian.addIcon(QNALOG_PLUGIN_ICON_ID, QNALOG_PLUGIN_ICON_SVG);
     this.ribbonEl = this.addRibbonIcon("mic", t("QnALog: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
@@ -311,7 +314,7 @@ class QnALogPlugin extends obsidian.Plugin {
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
-    this.addRibbonIcon("list-tree", t("QnALog live minutes panel"), () => this.shell.openOutlineView());
+    this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog live minutes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);

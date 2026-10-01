@@ -264,30 +264,27 @@ node scripts/check-mainline-isolation.mjs
 
 ### 4.2 发版步骤
 
-推 tag 之后由 `.github/workflows/release.yml` 自动完成构建校验与上传，维护者只做前四步：
+在开发分支完成版本号、发版说明与产品改动，提交后开 PR 合并进 `main`；合并成功后才打 tag。`release.yml` 根据 tag 重建、校验并上传。
 
 ```bash
 npm version X.Y.Z --no-git-tag-version   # 同步 package.json / package-lock.json
-# 编辑 manifest.json 的 version（如 minAppVersion 有变，一并更新）
-node version-bump.mjs                    # 写入 versions.json
-# 写发版说明：.github/release-notes/X.Y.Z.md（工作流要求该文件存在）
-npm ci && npm run verify:push            # lint + build + test + 主线隔离 + 产物一致性
-git add -A && git commit                 # 含重建后的 main.js
-git push origin main                     # ⚠ 会被分支保护拒绝，改用 PR（见下）
-git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发发布工作流
+# 将 manifest.json 的 version 更新为 X.Y.Z；如 minAppVersion 有变，一并更新
+node version-bump.mjs                    # 按 manifest 写入 versions.json
+# 编写 .github/release-notes/X.Y.Z.md，写明用户影响
+npm run verify                            # lint、build、tests 与本地门禁
+git add -A && git commit                  # 含重建后的 main.js
+npm run verify:push                       # 已提交 HEAD 的完整验证与产物一致性
+git push -u origin <branch>
+gh pr create --base main
+# 等待 validate 全绿；按 §4.1 取得合并授权后，以 merge commit 合并
+git fetch origin main && git switch main && git pull --ff-only origin main
+npm run install:vault -- "<知识库>"       # 安装 main 上的发版构建并按 §4.3.1 验证
+git tag X.Y.Z && git push origin X.Y.Z   # 推 tag 触发唯一发布工作流
 ```
 
-> **先确认 `main` 到位，再推 tag。** `main` 有 `Main Protect` 规则，**直推会被拒绝**：
-> `! [remote rejected] main -> main (push declined due to repository rule violations)`。
-> 而 tag 推送**不受该规则约束**，于是「提交 → 推 main → 推 tag」这套顺序会走成
-> 「main 没动，tag 却推出去了」——2026-09-15 发 1.0.1 时就是这样：Release 正常发布，
-> 但 `main` 的 `manifest.json` 仍停在上一个版本。
->
-> 正确做法：版本提交走 PR 合并进 `main`，**合并成功后再**打 tag、推 tag。
-> 若已经从 tag 发了版，事后用 PR 把版本提交补回 `main`（提交内容与 tag 逐字节相同，
-> 可用 `git diff X.Y.Z HEAD --stat` 为空来核对）。
->
-> Release 本身不受影响：发布工作流检出的是 **tag 指向的提交**，不是 `main` 的指针。
+> **先合并，再推 tag。** `main` 的变更必须经 PR；main 直推会被拒绝，而 tag 推送不受相同规则约束。
+> 2026-09-15 发 1.0.1 时曾出现 main 未更新但 tag 已推送的状态。发版工作流现要求 tag 指向的提交已在 main 上。
+
 
 发布工作流（`Release`）在 tag 上依次做：
 
@@ -476,6 +473,10 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 3. **发布链路自动化**：`release.yml` 提供 tag → 干净检出 → 重建 → 比对 → 上传的 provenance（§4.2）。
 4. **首次配置体验**：见下方「第二条：提升性功能」的设置界面精简。
 5. **收尾性工程债**：3 个 `@ts-nocheck`、`modals.ts` 拆包、更新检查转发（见下方结构项）——均低风险、可延后。
+
+**常驻入口辨识（2026-10）**：维护者确认左侧功能区入口已存在，但原通用树状图标与其他按钮相似，难以辨认。
+本次只把主入口和实时纪要面板标签改为原创 Q 形对话图标；保留入口位置、悬停名称、打开动作与麦克风快捷入口。
+桌面端真实 Obsidian 验收已由维护者完成：Q 形图标可识别。移动端当前无测试条件，且入口逻辑不同，暂不验证；维护者计划在发版后用手机检查。
 
 **结构（§1.1.1）**
 

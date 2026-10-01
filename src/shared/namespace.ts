@@ -269,6 +269,9 @@ export function isDerivedVersionType(value: unknown): boolean {
 export const NS_VIEW_OUTLINE = "qnalog-outline-view";
 export const NS_VIEW_MINUTES_KANBAN = "qnalog-minutes-kanban-view";
 
+/** Custom icon shared by the left ribbon entry and the live-minutes view. */
+export const QNALOG_PLUGIN_ICON_ID = nsRe("plugin-icon");
+
 /** 语义 Canvas 的 JSON 键。 */
 export const NS_FM_SEMANTIC = "qnalogSemantic";
 

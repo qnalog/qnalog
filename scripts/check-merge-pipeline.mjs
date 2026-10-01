@@ -217,6 +217,7 @@ const obsidian = {
     registerMarkdownCodeBlockProcessor() {}
     addChild() {}
   },
+  addIcon() {},
   TFile, TFolder,
   ItemView: class { constructor() { this.containerEl = makeEl(); } }, MarkdownView: class {},
   Modal: class { open() {} close() {} }, Component: class {}, Menu: class {}, TextComponent: class {},

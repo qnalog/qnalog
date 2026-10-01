@@ -20,6 +20,7 @@ const obsidian = {
   TextComponent: ObsidianBase,
   TFile: ObsidianBase,
   TFolder: ObsidianBase,
+  addIcon: noop,
   Platform: {
     isMobile: true,
     isMobileApp: true,

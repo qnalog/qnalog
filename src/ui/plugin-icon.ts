@@ -1,0 +1,1 @@
+export const QNALOG_PLUGIN_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><path d="M68 68A32 32 0 1 1 68 32" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/><path d="m60 60 22 22" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/></svg>';
