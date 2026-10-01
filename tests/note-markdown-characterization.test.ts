@@ -350,6 +350,150 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(edited.segment.transcript?.revisions[1]).toMatchObject({ source: "edited-transcript", rawText: null });
     expect(edited.segment.transcript?.revisions[1].utterances[0].normalizedText).toContain("手动修正内容");
   });
+  it("preserves valid transcript ledgers while upgrading legacy sections around them", () => {
+    const middle = attachTextTranscript({
+      index: 1,
+      startOffsetMs: 10000,
+      endOffsetMs: 20000,
+      text: "B",
+      audioName: "mid.wav",
+      audioPath: "Audio/mid.wav",
+    }, "fixture", "text-import");
+    const middleBlock = serializeTranscriptBlock(middle, "### Segment 2 (00:10–00:20)", "B");
+    const original = [
+      "<details>",
+      "<summary>Segmented raw transcript</summary>",
+      "",
+      "### Segment 1 (00:00–00:10)",
+      "",
+      "![[Audio/a.wav]]",
+      "<!-- qnalog-transcribe-task:task-a -->",
+      "A",
+      "",
+      middleBlock,
+      "",
+      "### Text source 3 [[Notes/c.md|c]]",
+      "",
+      "C",
+      "",
+      "</details>",
+      "AFTER",
+    ].join("\n");
+
+    expect(extractTranscriptSegments(original).map((segment) => segment.text)).toEqual(["A", "B", "C"]);
+    const upgraded = ensureTranscriptBlocks(original, "fixture");
+    const blocks = readTranscriptBlocks(upgraded);
+    expect(blocks.map((block) => block.segment.transcript?.id)).toEqual([
+      "seg:fixture:0",
+      "seg:fixture:1",
+      "seg:fixture:2",
+    ]);
+    expect(blocks.map((block) => block.segment.text)).toEqual(["A", "B", "C"]);
+    expect(blocks.find((block) => block.segment.transcript?.id === "seg:fixture:1")?.segment).toEqual(
+      readTranscriptBlocks(original)[0].segment,
+    );
+    expect(upgraded).toContain(middleBlock);
+    expect(extractTranscriptSegments(upgraded).map((segment) => segment.text)).toEqual(["A", "B", "C"]);
+    expect(blocks[0].segment.audioPath).toBe("Audio/a.wav");
+    expect(blocks[0].segment.audioName).toBe("a.wav");
+    expect(blocks[0].segment.queueTaskId).toBe("task-a");
+    expect(blocks[2].segment.sourcePath).toBe("Notes/c.md");
+    expect(blocks[2].segment.rawText).toBe("C");
+    expect(getCurrentTranscript(blocks[2].segment.transcript!).rawText).toBe("C");
+    expect(upgraded.endsWith("</details>\nAFTER")).toBe(true);
+    expect(ensureTranscriptBlocks(upgraded, "fixture")).toBe(upgraded);
+  });
+
+  it("keeps legacy bytes outside CRLF and consecutive protected ledger ranges", () => {
+    const ledger = (index: number, text: string) => {
+      const segment = attachTextTranscript({
+        index,
+        startOffsetMs: index * 10000,
+        endOffsetMs: (index + 1) * 10000,
+        text,
+      }, "fixture", "text-import");
+      return serializeTranscriptBlock(segment, `### Segment ${index + 1}`, text);
+    };
+    const firstLedger = ledger(1, "B");
+    const secondLedger = ledger(2, "D");
+    const source = [
+      "<details>",
+      "<summary>Segmented raw transcript</summary>",
+      "",
+      "### Segment 1",
+      "",
+      "A-before",
+      "",
+      firstLedger.replace(/\n/g, "\r\n"),
+      "",
+      secondLedger,
+      "",
+      "A-after",
+      "",
+      "</details>",
+    ].join("\n");
+
+    const upgraded = ensureTranscriptBlocks(source, "fixture");
+    const blocks = readTranscriptBlocks(upgraded);
+    expect(blocks.map((block) => block.segment.transcript?.id)).toEqual([
+      "seg:fixture:0",
+      "seg:fixture:1",
+      "seg:fixture:2",
+    ]);
+    expect(upgraded).toContain(firstLedger.replace(/\n/g, "\r\n"));
+    expect(upgraded).toContain(secondLedger);
+    expect(blocks[0].segment.text).toContain("A-before");
+    expect(blocks[0].segment.text).toContain("A-after");
+    expect(blocks[0].segment.text.match(/A-before/g)).toHaveLength(1);
+    expect(blocks[0].segment.text.match(/A-after/g)).toHaveLength(1);
+    expect(blocks.slice(1).map((block) => block.segment.text)).toEqual(["B", "D"]);
+    expect(ensureTranscriptBlocks(upgraded, "fixture")).toBe(upgraded);
+  });
+
+  it("avoids IDs already owned by a protected ledger and rejects damaged or future ledgers", () => {
+    const segment = attachTextTranscript({
+      index: 0,
+      startOffsetMs: 10000,
+      endOffsetMs: 20000,
+      text: "B",
+    }, "fixture", "text-import");
+    const middleBlock = serializeTranscriptBlock(segment, "### Segment 2", "B");
+    const source = [
+      "<details>",
+      "<summary>Segmented raw transcript</summary>",
+      "",
+      "### Segment 1",
+      "",
+      "A",
+      "",
+      middleBlock,
+      "",
+      "### Segment 3",
+      "",
+      "C",
+      "",
+      "</details>",
+    ].join("\n");
+    const upgraded = ensureTranscriptBlocks(source, "fixture");
+    expect(readTranscriptBlocks(upgraded).map((block) => block.segment.transcript?.id)).toEqual([
+      "seg:fixture:1",
+      "seg:fixture:0",
+      "seg:fixture:2",
+    ]);
+    expect(extractTranscriptSegments(upgraded).map((item) => item.index)).toEqual([0, 1, 2]);
+
+    const damaged = middleBlock.replace(/<!--\s*qnalog-transcript-text-end:[^>]+-->/, "");
+    const damagedSource = source.replace(middleBlock, damaged);
+    expect(() => extractTranscriptSegments(damagedSource)).toThrow(/damaged metadata boundaries/);
+    expect(() => ensureTranscriptBlocks(damagedSource, "fixture")).toThrow(/damaged metadata boundaries/);
+
+    const future = middleBlock.replace('"schemaVersion":2', '"schemaVersion":3');
+    const futureSource = source.replace(middleBlock, future);
+    expect(() => extractTranscriptSegments(futureSource)).toThrow(/uses an unsupported schema/);
+    expect(() => ensureTranscriptBlocks(futureSource, "fixture")).toThrow(/uses an unsupported schema/);
+  });
+
+
 
   it("keeps imported text raw separate from its source label in details", () => {
     const sessionId = "text-import-session";

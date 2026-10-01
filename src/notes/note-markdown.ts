@@ -934,11 +934,31 @@ export function ensureTranscriptBlocks(
     const origin = entry.legacy.segment.source === "text-import" ? "text-import" : "legacy-transcript";
     const segment = attachTextTranscript({ ...entry.legacy.segment, index: segmentIndex }, sourceId, origin);
     usedIds.add(segment.transcript.id);
-    replacements.push({
-      start: entry.legacy.start,
-      end: entry.legacy.end,
-      block: serializeTranscriptBlock(segment, entry.legacy.heading, entry.legacy.visibleText),
-    });
+    const block = serializeTranscriptBlock(segment, entry.legacy.heading, entry.legacy.visibleText);
+    let cursor = entry.legacy.start;
+    let firstGap = true;
+    for (const protectedBlock of orderedBlocks) {
+      if (protectedBlock.end <= cursor) continue;
+      if (protectedBlock.start >= entry.legacy.end) break;
+      const gapEnd = Math.min(protectedBlock.start, entry.legacy.end);
+      if (gapEnd > cursor) {
+        replacements.push({
+          start: cursor,
+          end: gapEnd,
+          block: firstGap ? block : "",
+        });
+        firstGap = false;
+      }
+      cursor = Math.max(cursor, protectedBlock.end);
+      if (cursor >= entry.legacy.end) break;
+    }
+    if (cursor < entry.legacy.end) {
+      replacements.push({
+        start: cursor,
+        end: entry.legacy.end,
+        block: firstGap ? block : "",
+      });
+    }
   }
   for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
     next = next.slice(0, replacement.start) + replacement.block + next.slice(replacement.end);
