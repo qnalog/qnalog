@@ -5,13 +5,11 @@ import {
   buildVersionPayload,
   foldRawTranscriptSection,
   normalizeTitleDatetime,
-  replaceExistingActiveVersionBlock,
-  replaceLeadingFrontmatter,
   sanitizeActiveVersionBody,
-  splitLeadingFrontmatter,
   splitVersionPayload,
   stripVersionBookkeepingFrontmatter,
 } from "../src/versions/version-content";
+import { replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../src/notes/note-document";
 
 const generatedDocument = [
   "---",

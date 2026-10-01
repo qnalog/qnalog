@@ -1,0 +1,107 @@
+import {
+  NS_ACTIVE_VERSION_BODY_RE,
+  NS_SEDIMENT_BLOCK_RE,
+  NS_SEGMENTS_BLOCK_RE,
+  NS_SESSION_LINE_RE,
+  NS_SESSION_VALUE_RE,
+} from "../shared/namespace";
+
+export interface NoteDocumentParts {
+  frontmatter: string;
+  body: string;
+}
+
+export interface RawNoteDocumentParts {
+  tail: string;
+  withoutRaw: string;
+}
+
+export function splitLeadingFrontmatter(markdown: string): NoteDocumentParts {
+  const text = String(markdown || "").replace(/^\uFEFF/, "");
+  const match = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  if (!match) return { frontmatter: "", body: text };
+  return {
+    frontmatter: match[0].replace(/\r\n/g, "\n").replace(/\n*$/, "\n"),
+    body: text.slice(match[0].length).replace(/^(?:\r?\n)+/, ""),
+  };
+}
+
+export function getFrontmatterYaml(frontmatter: string): string {
+  const normalized = String(frontmatter || "").replace(/\r\n/g, "\n").trim();
+  if (!normalized) return "";
+  const parts = splitLeadingFrontmatter(`${normalized}\n`);
+  if (!parts.frontmatter) return normalized;
+  return parts.frontmatter
+    .replace(/^---\n/, "")
+    .replace(/\n---\n?$/, "")
+    .trim();
+}
+
+export function wrapFrontmatterYaml(yaml: string): string {
+  const value = String(yaml || "").replace(/\r\n/g, "\n").trim();
+  return value ? `---\n${value}\n---\n` : "";
+}
+
+export function replaceLeadingFrontmatter(markdown: string, frontmatter: string, clearWhenEmpty = false): string {
+  const current = splitLeadingFrontmatter(markdown);
+  const yaml = getFrontmatterYaml(frontmatter);
+  if (!yaml) {
+    if (!clearWhenEmpty || !current.frontmatter) return String(markdown || "");
+    return current.body.replace(/^(?:\r?\n)+/, "");
+  }
+  const body = current.body.replace(/^(?:\r?\n)+/, "");
+  return `${wrapFrontmatterYaml(yaml).trimEnd()}${body ? `\n\n${body}` : "\n"}`;
+}
+
+export function replaceExistingActiveVersionBlock(markdown: string, block: string): string | null {
+  const text = String(markdown || "");
+  if (!NS_ACTIVE_VERSION_BODY_RE.test(text)) return null;
+  return text.replace(NS_ACTIVE_VERSION_BODY_RE, String(block || ""));
+}
+
+export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts {
+  let s = String(text || "");
+  const seen = new Set<string>();
+  const tailParts: string[] = [];
+  const stash = (block: string): string => {
+    const trimmed = String(block || "").trim();
+    if (!trimmed) return "";
+    if (seen.has(trimmed)) return "";
+    seen.add(trimmed);
+    tailParts.push(trimmed);
+    return "";
+  };
+
+  const detailsPatterns: RegExp[] = [
+    /<details>\s*\n?<summary>[^<\n]*?(?:录音信息|Recording info)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:原始音频|Original audio)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:录音中实时大纲|Live outline while recording)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:回听时间轴|Playback timeline)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:分段原始转写|Segmented raw transcript)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:文本导入来源|Text import source)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:会议工作台|Meeting workbench)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+  ];
+  for (let iter = 0; iter < 32; iter++) {
+    let changed = false;
+    for (const re of detailsPatterns) {
+      const before = s;
+      s = s.replace(re, (match: string) => stash(match));
+      if (s !== before) changed = true;
+    }
+    if (!changed) break;
+  }
+
+  s = s.replace(NS_SEGMENTS_BLOCK_RE, (match: string) => stash(match));
+  s = s.replace(NS_SESSION_LINE_RE, (match: string) => stash(match.trim()));
+  s = s.replace(NS_SEDIMENT_BLOCK_RE, (match: string) => stash(match));
+  s = s.replace(/##\s+✨\s+(?:整合版|Merged version)[^\n]*\n+_\[(?:合并润色失败|AI 整理失败|Merge failed|AI organizing failed)[^\]]*\]_\s*\n?/g, "");
+  s = s.replace(/<details>\s*<\/details>/gi, "");
+  s = s.replace(/<details>\s*\n+\s*<\/details>/gi, "");
+
+  return { tail: tailParts.join("\n\n"), withoutRaw: s };
+}
+
+export function extractSessionId(content: string, fallback: string): string {
+  const match = String(content || "").match(NS_SESSION_VALUE_RE);
+  return match ? match[1].trim() : fallback;
+}

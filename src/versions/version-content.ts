@@ -1,37 +1,11 @@
-import { NS_FM, NS_TAG, NS_ACTIVE_VERSION_BODY_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
+import { NS_FM, NS_TAG, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
+import { splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END } from "../shared/limits";
 import { labelText } from "../shared/note-labels";
 
 const VERSION_FRONTMATTER_START = `<!-- ${NS_TAG}-version-frontmatter-start`;
 const VERSION_FRONTMATTER_END = `${NS_TAG}-version-frontmatter-end -->`;
-const ACTIVE_VERSION_PATTERN = NS_ACTIVE_VERSION_BODY_RE;
 const EMPTY_VERSION_BODY_FALLBACK = "> [!warning] AI 整理未完成\n> 当前版本没有可显示的整理正文；原始转写仍保留在母本中。";
-
-export function splitLeadingFrontmatter(markdown: string): { frontmatter: string; body: string } {
-  const text = String(markdown || "").replace(/^\uFEFF/, "");
-  const match = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  if (!match) return { frontmatter: "", body: text };
-  return {
-    frontmatter: match[0].replace(/\r\n/g, "\n").replace(/\n*$/, "\n"),
-    body: text.slice(match[0].length).replace(/^(?:\r?\n)+/, ""),
-  };
-}
-
-function getFrontmatterYaml(frontmatter: string): string {
-  const normalized = String(frontmatter || "").replace(/\r\n/g, "\n").trim();
-  if (!normalized) return "";
-  const parts = splitLeadingFrontmatter(`${normalized}\n`);
-  if (!parts.frontmatter) return normalized;
-  return parts.frontmatter
-    .replace(/^---\n/, "")
-    .replace(/\n---\n?$/, "")
-    .trim();
-}
-
-function wrapFrontmatterYaml(yaml: string): string {
-  const value = String(yaml || "").replace(/\r\n/g, "\n").trim();
-  return value ? `---\n${value}\n---\n` : "";
-}
 
 export function splitVersionPayload(content: string): { frontmatter: string; body: string } {
   const text = String(content || "").replace(/^\uFEFF/, "");
@@ -168,21 +142,4 @@ export function foldRawTranscriptSection(markdown: string): string {
   if (rawPos < 0) return head + tail;
   const lineStart = tail.lastIndexOf("\n", rawPos) + 1;
   return head + tail.slice(0, lineStart) + `## ${labelText("originalMaterial")}\n\n` + tail.slice(lineStart);
-}
-
-export function replaceExistingActiveVersionBlock(markdown: string, block: string): string | null {
-  const text = String(markdown || "");
-  if (!ACTIVE_VERSION_PATTERN.test(text)) return null;
-  return text.replace(ACTIVE_VERSION_PATTERN, String(block || ""));
-}
-
-export function replaceLeadingFrontmatter(markdown: string, frontmatter: string, clearWhenEmpty = false): string {
-  const current = splitLeadingFrontmatter(markdown);
-  const yaml = getFrontmatterYaml(frontmatter);
-  if (!yaml) {
-    if (!clearWhenEmpty || !current.frontmatter) return String(markdown || "");
-    return current.body.replace(/^(?:\r?\n)+/, "");
-  }
-  const body = current.body.replace(/^(?:\r?\n)+/, "");
-  return `${wrapFrontmatterYaml(yaml).trimEnd()}${body ? `\n\n${body}` : "\n"}`;
 }

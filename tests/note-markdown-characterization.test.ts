@@ -20,13 +20,16 @@ import {
   stripEmptyPlaceholders,
   stripImportAppendices,
   stripMarkdownForEmailBrief,
+  getSourceIdFromMarkdown,
 } from "../src/notes/note-markdown";
+import { extractAllRawBlocksFromText, extractSessionId, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
-import { buildTextImportSourceDetails } from "../src/notes/detail-blocks";
+import { hashRealtimeOutlineText } from "../src/notes/outline-text";
+import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
+import { buildTextImportSourceDetails } from "../src/notes/detail-blocks";
 
 // note-markdown 的回归覆盖：机器字段名固定、旧中英字段安全读取、内容字段按模式白名单保留，
 // 以及版本块原位更新时不丢正文与原始材料。
@@ -407,4 +410,82 @@ describe("Frontmatter 系统字段：键名和值不随界面语言变化", () =
       setActiveUiLanguage(originalLanguage);
     }
   });
+});
+describe("笔记外层结构", () => {
+  it("只拆开头 frontmatter，规范化头部换行并保留正文分隔语义", () => {
+    const parts = splitLeadingFrontmatter("\uFEFF---\r\nmode: monologue\r\n---\r\n\r\n# Title\r\nbody");
+    expect(parts.frontmatter).toBe("---\nmode: monologue\n---\n");
+    expect(parts.body).toBe("# Title\r\nbody");
+    expect(splitLeadingFrontmatter("正文\n---\n不是头部").body).toBe("正文\n---\n不是头部");
+    expect(splitLeadingFrontmatter("---\nmode: x\n正文").body).toBe("---\nmode: x\n正文");
+  });
+
+  it("空 YAML 默认不改原稿，显式清除才移除头部", () => {
+    const original = "---\nmode: monologue\n---\n\n# Title";
+    expect(replaceLeadingFrontmatter(original, "")).toBe(original);
+    expect(replaceLeadingFrontmatter(original, "", true)).toBe("# Title");
+  });
+
+  it("更新活动版本块不改变合法账本与来源材料，重复更新保持单块", () => {
+    const segment = attachTextTranscript({
+      index: 0,
+      startOffsetMs: 0,
+      endOffsetMs: 1000,
+      text: "source",
+      rawText: "source",
+    }, "s1", "text-import");
+    const transcriptBlock = serializeTranscriptBlock(segment, "### 转写", getCurrentTranscript(segment.transcript!).displayText);
+    const original = [
+      "<!-- qnalog-session:s1 -->",
+      "<details><summary>分段原始转写</summary>",
+      transcriptBlock,
+      "</details>",
+      START,
+      "old body",
+      END,
+      "<details><summary>原始音频</summary>![[qnalog-audio.webm]]</details>",
+    ].join("\n");
+    const before = readTranscriptBlocks(original);
+    expect(before).toHaveLength(1);
+    const first = replaceExistingActiveVersionBlock(original, `${START}\nnew body\n${END}`);
+    expect(first).not.toBeNull();
+    const second = replaceExistingActiveVersionBlock(first!, `${START}\nnewer body\n${END}`);
+    expect(second).not.toBeNull();
+    const after = readTranscriptBlocks(second!);
+    expect(after).toHaveLength(1);
+    expect(after[0].segment).toEqual(before[0].segment);
+    expect(after[0].visibleBlock).toBe(before[0].visibleBlock);
+    expect(after[0].segment.transcript).toEqual(before[0].segment.transcript);
+    expect(second).toContain("qnalog-session:s1");
+    expect(second).toContain("newer body");
+    expect(second).toContain("原始音频");
+    expect(second).toContain("![[qnalog-audio.webm]]");
+    expect(second?.match(/qnalog-active-version-start/g)).toHaveLength(1);
+    expect(second?.match(/qnalog-active-version-end/g)).toHaveLength(1);
+  });
+
+  it("来源身份使用首个会话 ID，否则按路径与创建时间稳定回退", () => {
+    expect(getSourceIdFromMarkdown("<!-- qnalog-session: source/id -->", { path: "note.md", stat: { ctime: 1 } })).toBe("sourceid");
+    const file = { path: "note.md", stat: { ctime: 1 } };
+    const expected = `note-${hashRealtimeOutlineText("note.md:1")}`;
+    expect(getSourceIdFromMarkdown("", file)).toBe(expected);
+    expect(getSourceIdFromMarkdown("changed body", file)).toBe(expected);
+    expect(getSourceIdFromMarkdown("", { path: "other.md", stat: { ctime: 1 } })).not.toBe(expected);
+    expect(getSourceIdFromMarkdown("", { path: "note.md", stat: { ctime: 2 } })).not.toBe(expected);
+    expect(getSourceIdFromMarkdown("<!-- qnalog-session://// -->", file)).toBe("////");
+    expect(getSourceIdFromMarkdown("<!-- qnalog-session:first --><!-- qnalog-session:second -->", file)).toBe("first");
+  });
+
+  it("原始材料提取按白名单保留来源块，未知 details 留在正文", () => {
+    const recognized = "<details><summary>录音信息</summary>source</details>";
+    const input = `正文\n${recognized}\n${recognized}\n<details><summary>未知资料</summary>keep</details>\n<!-- qnalog-session:s1 -->`;
+    const extracted = extractAllRawBlocksFromText(input);
+    expect(extracted.tail).toContain(recognized);
+    expect(extracted.tail.match(/录音信息/g)).toHaveLength(1);
+    expect(extracted.withoutRaw).toContain("未知资料");
+    expect(extracted.withoutRaw).not.toContain("qnalog-session:s1");
+    expect(extractSessionId("<!-- qnalog-session: source-id -->", "fallback")).toBe("source-id");
+    expect(extractSessionId("<!-- qnalog-segments-start -->", "fallback")).toBe("fallback");
+  });
+
 });

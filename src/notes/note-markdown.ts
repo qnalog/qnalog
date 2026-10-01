@@ -28,7 +28,7 @@ import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { labelText, labelPattern } from "../shared/note-labels";
-import { NS_FM, NS_FM_SPEAKERS, NS_TAG, NS_SEDIMENT_BLOCK_RE, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE, NS_SEGMENTS_START_RE, NS_SESSION_LINE_RE, NS_SESSION_RE, NS_SESSION_VALUE_RE, NS_TAGS_RE, NS_TAG_PREFIX, hasNamespaceFrontmatter, nsMarkerGlobalRe, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_FM, NS_FM_SPEAKERS, NS_TAG, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_START_RE, NS_SESSION_RE, NS_TAGS_RE, NS_TAG_PREFIX, hasNamespaceFrontmatter, nsMarkerGlobalRe, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import type { NamespaceFrontmatterField } from "../shared/namespace";
 
 import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
@@ -37,7 +37,8 @@ import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "..
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import { replaceExistingActiveVersionBlock, sanitizeActiveVersionBody, splitLeadingFrontmatter } from "../versions/version-content";
+import { sanitizeActiveVersionBody } from "../versions/version-content";
+import { extractAllRawBlocksFromText, extractSessionId, replaceExistingActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
@@ -107,8 +108,8 @@ export function buildRenamedMarkdownPath(currentPath, mode, titleTag, settings) 
 
 export function getSourceIdFromMarkdown(markdown, file) {
   const text = String(markdown || "");
-  const sidMatch = text.match(NS_SESSION_VALUE_RE);
-  if (sidMatch && sidMatch[1]) return sanitizeFilename(sidMatch[1]) || sidMatch[1];
+  const sessionId = extractSessionId(text, "");
+  if (sessionId) return sanitizeFilename(sessionId) || sessionId;
   const basis = `${file && file.path || "note"}:${file && file.stat && file.stat.ctime || ""}`;
   return `note-${hashRealtimeOutlineText(basis)}`;
 }
@@ -1106,10 +1107,6 @@ export function applyRoleMappingToSegments(segments, mapping) {
   });
 }
 
-export function extractSessionId(content, fallback) {
-  const match = String(content || "").match(NS_SESSION_VALUE_RE);
-  return match ? match[1].trim() : fallback;
-}
 
 export function cleanInlineMarkdown(text) {
   return String(text || "")
@@ -1303,70 +1300,6 @@ export function normalizeBriefingFrontmatterFields(raw, mode, baseKey) {
     cleaned[NS_FM_SPEAKERS] = source[NS_FM_SPEAKERS];
   }
   return cleaned;
-}
-
-// \u4ECE\u5168\u6587\u91CC\u628A\u6240\u6709"\u539F\u59CB / \u5143\u6570\u636E"\u5757\uFF08\u4EFB\u610F\u6DF1\u5EA6\uFF09\u62BD\u51FA\u6765\uFF0C\u4F5C\u4E3A rawTail \u4FDD\u7559\u5230\u672B\u5C3E\u3002
-// \u8C03\u7528\u8005\u62FF\u5230 withoutRaw \u4E4B\u540E\u53EF\u4EE5\u5B89\u5168\u5730\u628A"\u5DF2\u6574\u7406\u5185\u5BB9"\u5377\u6210 <details>\u4E0A\u4E00\u7248\u7EAA\u8981>\uFF0C
-// \u4E0D\u4F1A\u518D\u628A\u6BB5\u843D / \u539F\u59CB\u97F3\u9891 / \u6C89\u6DC0\u5757\u8FD9\u4E9B\u91CD\u578B\u5185\u5BB9\u5D4C\u5957\u8FDB details \u9020\u6210\u7206\u70B8\u5F0F\u589E\u957F\u3002
-//
-// \u89E3\u51B3\u7684\u5177\u4F53 bug\uFF1A
-//   appendRepolishBlock \u539F\u672C\u53EA\u8BC6\u522B ## \uD83D\uDCC1 \u539F\u59CB\u6750\u6599 \u4F5C\u4E3A raw \u8FB9\u754C\uFF0C\u5BF9 appendPolishBlock
-//   \u4EA7\u51FA\u7684 "## \u2728 \u6574\u5408\u7248 + \u2039details\u203A\u5F55\u97F3\u4FE1\u606F/\u539F\u59CB\u97F3\u9891/...\u2039/details\u203A" \u7ED3\u6784\u8BC6\u522B\u4E0D\u5230\uFF0C
-//   \u5BFC\u81F4\u6BCF\u6B21\u91CD\u65B0\u6574\u7406\u90FD\u628A\u6574\u4E2A\u65E7\u6587\u4EF6\u5D4C\u5957\u8FDB\u65B0\u7684 \u2039details\u203A\u4E0A\u4E00\u7248\u7EAA\u8981\u203A\uFF0C\u91CD\u590D\u5B58\u653E\u6BB5\u843D\u548C\u5143\u6570\u636E\u3002
-export function extractAllRawBlocksFromText(text) {
-  let s = String(text || "");
-  const seen = new Set();
-  const tailParts = [];
-  const stash = (block) => {
-    const trimmed = String(block || "").trim();
-    if (!trimmed) return "";
-    if (seen.has(trimmed)) return "";
-    seen.add(trimmed);
-    tailParts.push(trimmed);
-    return "";
-  };
-
-  // 1. \u4EFB\u610F\u6DF1\u5EA6\u7684 \u2039details\u203A \u5143\u6570\u636E\u5757\uFF08summary \u5173\u952E\u5B57\u767D\u540D\u5355\uFF09\uFF1A\u4E2D\u82F1\u6807\u7B7E\u8BCD\u4EFB\u4E00\u547D\u4E2D\u5373\u6574\u5757\u62BD\u51FA
-  const detailsPatterns = [
-    /<details>\s*\n?<summary>[^<\n]*?(?:\u5F55\u97F3\u4FE1\u606F|Recording info)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:\u539F\u59CB\u97F3\u9891|Original audio)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:\u5F55\u97F3\u4E2D\u5B9E\u65F6\u5927\u7EB2|Live outline while recording)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:\u56DE\u542C\u65F6\u95F4\u8F74|Playback timeline)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:\u5206\u6BB5\u539F\u59CB\u8F6C\u5199|Segmented raw transcript)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:\u6587\u672C\u5BFC\u5165\u6765\u6E90|Text import source)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:\u4F1A\u8BAE\u5DE5\u4F5C\u53F0|Meeting workbench)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-  ];
-  // \u8FED\u4EE3\u62BD\u53D6\uFF0C\u9632\u6B62\u5D4C\u5957\u5305\u88F9\u672A\u4E00\u6B21\u6027\u6D88\u5E72\u51C0
-  for (let iter = 0; iter < 32; iter++) {
-    let changed = false;
-    for (const re of detailsPatterns) {
-      const before = s;
-      s = s.replace(re, (m) => stash(m));
-      if (s !== before) changed = true;
-    }
-    if (!changed) break;
-  }
-
-  // 2. \u6BB5\u843D\u539F\u6587\uFF1A<!-- qnalog-segments-start --> ... <!-- qnalog-segments-end -->
-  s = s.replace(NS_SEGMENTS_BLOCK_RE,
-    (m) => stash(m));
-
-  // 3. session \u6807\u8BB0\uFF08\u5982\u679C\u8FD8\u6B8B\u7559\uFF09
-  s = s.replace(NS_SESSION_LINE_RE,
-    (m) => stash(m.trim()));
-
-  // 4. \u6C89\u6DC0\u5757\uFF1A<!--QNALOG_SEDIMENT_BEGIN ... QNALOG_SEDIMENT_END-->
-  s = s.replace(NS_SEDIMENT_BLOCK_RE,
-    (m) => stash(m));
-
-  // 5. \u65E7\u7248\u672C\u91CC"\u5931\u8D25\u7684\u6574\u5408\u7248"\u6B8B\u9AB8\uFF08\u5DF2\u88AB\u65B0\u7248\u672C\u66FF\u4EE3\uFF0C\u4E0D\u5FC5\u4FDD\u7559\uFF09
-  s = s.replace(/##\s+\u2728\s+(?:\u6574\u5408\u7248|Merged version)[^\n]*\n+_\[(?:\u5408\u5E76\u6DA6\u8272\u5931\u8D25|AI \u6574\u7406\u5931\u8D25|Merge failed|AI organizing failed)[^\]]*\]_\s*\n?/g, "");
-
-  // 6. \u6E05\u7406\u53EF\u80FD\u6B8B\u7559\u7684\u7A7A details \u58F3
-  s = s.replace(/<details>\s*<\/details>/gi, "");
-  s = s.replace(/<details>\s*\n+\s*<\/details>/gi, "");
-
-  return { tail: tailParts.join("\n\n"), withoutRaw: s };
 }
 
 export function mergeLeadingFrontmatterIntoDocument(documentText, generatedMarkdown) {
