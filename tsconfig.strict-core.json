@@ -57,6 +57,7 @@
     "src/shared/task-activity.ts",
     "src/shared/util-platform.ts",
     "src/shared/util-vault.ts",
+    "src/notes/note-document.ts",
     "src/versions/version-content.ts",
     "src/views/base-definitions.ts"
   ]

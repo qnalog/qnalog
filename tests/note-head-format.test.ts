@@ -9,8 +9,8 @@ vi.mock("obsidian", () => ({
 }));
 import { mergeLeadingFrontmatterIntoDocument } from "../src/notes/note-markdown";
 import { upsertFrontmatterInMarkdown } from "../src/shared/util-note";
-import { applyVersionTitle, splitLeadingFrontmatter } from "../src/versions/version-content";
-
+import { splitLeadingFrontmatter } from "../src/notes/note-document";
+import { applyVersionTitle } from "../src/versions/version-content";
 // 新格式约定：frontmatter 闭合 --- 与正文首行（通常是 H1）之间只留一个换行，属性面板
 // 下方不再出现空行。1.0.0 起各写入点用空串 spacer / "\n\n" 多写了一个空行（b822319 起，
 // 全部既有笔记字节同构），维护者决定新笔记去掉；既有笔记不迁移——所以本组测试同时锁住

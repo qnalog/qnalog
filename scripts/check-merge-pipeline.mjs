@@ -7,12 +7,14 @@
 // 那处缺陷通过了 tsc、ESLint、既有契约测试与静态门禁，只有真的执行一次才能发现。
 // 因此固化成脚本：CI 每次 push 跑，本地也可随时跑。
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import vm from "node:vm";
 // Obsidian 提供 parseYaml / stringifyYaml；模拟宿主用它俩做等价实现，
 // 否则流水线写出的 frontmatter 会被序列化成空串（harness 缺实现，不是产品缺陷）。
 import { dump as yamlDump, load as yamlLoad } from "js-yaml";
 
 const code = readFileSync(new URL("../main.js", import.meta.url), "utf8");
+const appendLayout = process.argv.includes("--append-layout");
 const noop = () => undefined;
 
 function makeEl() {
@@ -44,10 +46,14 @@ const NOTE_PATH = "2026-09-14 1133.md";
 const NOTE_BODY = [
   "---", "qnalog_mode: monologue", "qnalog_time: 2026-09-14T11:33:00", "qnalog_status: draft", "---", "",
   "# 2026-09-14 11:33 · 个人笔记", "",
+  "<details><summary>原始音频</summary>![[qnalog-20260914-113300.webm]]</details>", "",
+  "<details><summary>分段原始转写</summary>",
   "<!-- qnalog-segments-start:s1 -->",
-  "### 段落 1 (00:00–00:05)", "今天的会议讨论了上线范围。", "",
-  "### 段落 2 (00:05–00:10)", "确定先做内部灰度。",
-  "<!-- qnalog-segments-end:s1 -->", "",
+  serializeTranscriptSegment(transcriptSegment(0, "今天的会议讨论了上线范围。", 0, 5000)),
+  serializeTranscriptSegment(transcriptSegment(1, "确定先做内部灰度。", 5000, 10000)),
+  "<!-- qnalog-segments-end:s1 -->",
+  "</details>",
+  "<!-- qnalog-session:s1 -->",
 ].join("\n");
 
 function transcriptSegment(index, text, startOffsetMs, endOffsetMs, sourceId = "s1") {
@@ -55,6 +61,8 @@ function transcriptSegment(index, text, startOffsetMs, endOffsetMs, sourceId = "
   const utteranceId = `${id}:r1:u1`;
   return {
     index, startOffsetMs, endOffsetMs, text,
+    audioName: `qnalog-${sourceId}-${index}.webm`,
+    audioPath: `QnALog/Audio/qnalog-${sourceId}-${index}.webm`,
     transcript: {
       schemaVersion: 2,
       id,
@@ -252,10 +260,19 @@ function makeSandbox() {
     body: makeEl(), head: makeEl(), addEventListener: noop, removeEventListener: noop,
     querySelectorAll: () => [], querySelector: () => null,
   };
+  const fixedNow = Date.parse("2026-09-14T12:00:00.000Z");
+  let randomSeed = 0;
+  class FixedDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [fixedNow])); }
+    static now() { return fixedNow; }
+  }
+  const deterministicMath = Object.create(Math);
+  deterministicMath.random = () => (++randomSeed % 1_000_000) / 1_000_000;
   const sandbox = {
     module: { exports: {} }, exports: {},
     require: (id) => { if (id === "obsidian") return obsidian; throw new Error(`加载了不可用的模块：${id}`); },
-    console, setTimeout, clearTimeout, setInterval, clearInterval,
+    console, Date: FixedDate, setTimeout, clearTimeout, setInterval, clearInterval,
+    Math: deterministicMath,
     crypto: {
       getRandomValues: (bytes) => {
         for (let index = 0; index < bytes.length; index += 1) bytes[index] = index + 1;
@@ -286,8 +303,11 @@ function makeSandbox() {
 
 const failures = [];
 const errorLog = [];
+let smokeDigest = "";
 
 async function main() {
+  const realDateNow = Date.now;
+  Date.now = () => Date.parse("2026-09-14T12:00:00.000Z");
   const sandbox = makeSandbox();
   const realError = console.error;
   console.error = (...args) => { errorLog.push(args.map(String).join(" ")); };
@@ -299,7 +319,7 @@ async function main() {
     plugin.settings.llmEndpoint = "http://localhost:55990/v1";
     plugin.settings.llmModel = "stub-model";
     plugin.settings.llmApiKey = "stub-key";
-    plugin.settings.consolidatedLayout = true;
+    plugin.settings.consolidatedLayout = !appendLayout;
     plugin.settings.briefingStructureLevel = "balanced";
     plugin.settings.sedimentAutoExtract = false;
 
@@ -320,7 +340,14 @@ async function main() {
     const content = noteFile._content || "";
     if (!llmCalls.length) failures.push("流水线没有发起任何模型调用（可能停在配置校验或根本没走到整理）");
     const beforeRaw = content.split("## 原始材料")[0];
-    if (!/议题[\s\S]*结论/.test(beforeRaw)) failures.push("笔记正文里没有写入整合后的内容（原始材料之前）");
+    if (appendLayout) {
+      const integratedStart = content.search(/^## .*整合版/m);
+      if (integratedStart < 0 || !/议题[\s\S]*结论/.test(content.slice(integratedStart))) {
+        failures.push("追加布局的整合版段落没有保留成稿正文");
+      }
+    } else if (!/议题[\s\S]*结论/.test(beforeRaw)) {
+      failures.push("笔记正文里没有写入整合后的内容（原始材料之前）");
+    }
     if (!/分段原始转写/.test(content)) failures.push("笔记里没有保留原始转写");
     if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
     if (!/^---\r?\n[\s\S]*?\r?\n---/.test(content)) failures.push("笔记没有 frontmatter");
@@ -397,8 +424,8 @@ async function main() {
       gateNextLlmRequest = true;
       failContinuationCommit = true;
       const continuationRun = plugin.queue.processOne(task);
-      const gateDeadline = Date.now() + 5000;
-      while (!releaseGatedLlmRequest && Date.now() < gateDeadline) {
+      const gateDeadline = performance.now() + 5000;
+      while (!releaseGatedLlmRequest && performance.now() < gateDeadline) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
       if (!releaseGatedLlmRequest) throw new Error("continuation model request did not reach the gate");
@@ -434,16 +461,131 @@ async function main() {
       if ((appended.match(/<!-- qnalog-continuation-committed:s2 -->/g) || []).length !== 1) failures.push("目标笔记没有恰好一个续录提交标记");
       if ((appended.match(/qnalog-transcript-start:/g) || []).length !== 3) failures.push("续录提交后目标笔记没有保留三段逐字稿");
       if (files.has(continuationPreparation.stageFile.path)) failures.push("续录成功后暂存文件没有清理");
+      const transcriptData = (text) => [...text.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)].map((match) => match[1]);
+      const mediaReferences = (text) => text.match(/!?\[\[[^\]]+\]\]/g) || [];
+      const sameMediaReferences = (left, right) =>
+        JSON.stringify([...mediaReferences(left)].sort()) === JSON.stringify([...mediaReferences(right)].sort());
+      const initialRecords = transcriptData(appended);
+      const audioFixture = initialRecords.map((record) => JSON.parse(record))
+        .find((record) => typeof record.segment?.audioPath === "string" && record.segment.audioPath);
+      if (!audioFixture) throw new Error("source ledger has no audio target fixture");
+      const withAudioFixture = appended.replace(
+        /(<summary>原始音频[^<]*<\/summary>)/,
+        `$1![[${audioFixture.segment.audioPath}]]`,
+      );
+      if (withAudioFixture === appended) throw new Error("raw audio fixture insertion point is missing");
+      await app.vault.modify(noteFile, `${withAudioFixture}\n\nOriginal snapshot smoke body.`);
+      const postContinuation = noteFile._content || "";
+      const sourceRecords = transcriptData(postContinuation);
+      const sourceReferences = mediaReferences(postContinuation);
+      if (!sourceReferences.includes(`![[${audioFixture.segment.audioPath}]]`)) {
+        throw new Error("audio target fixture is not present in source note");
+      }
+      const parseOuterYaml = (text) => {
+        const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+        if (!match) throw new Error("source note has no parseable outer frontmatter");
+        const value = yamlLoad(match[1]);
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          throw new Error("source note outer frontmatter is not a YAML object");
+        }
+        return value;
+      };
+      const sourceYaml = parseOuterYaml(postContinuation);
+      if (!sourceYaml.qnalog_time || !sourceYaml.qnalog_mode) {
+        throw new Error("source note outer content properties are missing");
+      }
+      try {
+        const originalPath = await plugin.versions.ensureOriginalVersionForSource(noteFile);
+        if (!originalPath || !(await app.vault.adapter.exists(originalPath))) {
+          throw new Error("original snapshot was not saved");
+        }
+        const originalSnapshot = await app.vault.adapter.read(originalPath);
+        if (!originalSnapshot.includes("qnalog_time:") || !originalSnapshot.includes("Original snapshot smoke body.")
+          || !/议题[\s\S]*结论/.test(originalSnapshot)) {
+          throw new Error("original snapshot did not retain source content properties and body");
+        }
+        const originalManifestPath = `${originalPath.slice(0, originalPath.lastIndexOf("/"))}/manifest.json`;
+        const manifestBeforeSave = JSON.parse(await app.vault.adapter.read(originalManifestPath));
+        const activeVersionBeforeSave = manifestBeforeSave.activeVersionId ?? null;
+        const savedVersion = await plugin.versions.saveVersion(noteFile, postContinuation, [], {
+          kind: "minutes",
+          label: "Outer document smoke",
+          mode: "synthesis",
+          body: "---\nqnalog_time: 2026-09-14T11:43:00\nqnalog_mode: synthesis\n---\n# Smoke minutes\n\nVersioned minutes body.",
+          activate: false,
+        });
+        const manifestAfterSave = JSON.parse(await app.vault.adapter.read(originalManifestPath));
+        if ((manifestAfterSave.activeVersionId ?? null) !== activeVersionBeforeSave) {
+          throw new Error("saving inactive minutes changed the active version ID");
+        }
+        const cachePath = `${savedVersion.folder}/${savedVersion.meta.fileName}`;
+        const cachedContent = await app.vault.adapter.read(cachePath);
+        if (!cachedContent.includes("Versioned minutes body.") || !cachedContent.includes("qnalog_mode: synthesis")) {
+          throw new Error("saved version cache did not retain its body and content properties");
+        }
+        await plugin.versions.switchVersion(cachePath, NOTE_PATH);
+        const switched = noteFile._content || "";
+        if (!switched.includes("Versioned minutes body.")) failures.push("切换版本后母本没有显示缓存正文");
+        if ((switched.match(/qnalog-active-version-start/g) || []).length !== 1) failures.push("切换版本后活动版本块数量不是一");
+        if ((switched.match(/qnalog-active-version-end/g) || []).length !== 1) failures.push("切换版本后活动版本结束标记数量不是一");
+        const outerYaml = parseOuterYaml(switched);
+        if (outerYaml.qnalog_mode !== "synthesis" || !outerYaml.qnalog_time) {
+          failures.push("切换版本未更新母本内容属性");
+        }
+        const bookkeepingKeys = ["qnalog_type", "type", "variant_kind", "variant_label", "variant_mode", "variant_style", "qnalog_source_path", "source_path", "source_id", "qnalog_contains_raw", "contains_raw", "contains_frontmatter", "created", "payload_format", "version_id", "source_segments_hash"];
+        if (bookkeepingKeys.some((key) => Object.prototype.hasOwnProperty.call(outerYaml, key))) {
+          failures.push("版本记账字段泄漏到母本 frontmatter");
+        }
+        if (JSON.stringify(transcriptData(switched)) !== JSON.stringify(sourceRecords)) {
+          failures.push("切换版本改变了母本转写来源账本");
+        }
+        if (!sameMediaReferences(switched, postContinuation)) {
+          failures.push("切换版本改变了母本来源或媒体引用");
+        }
+        const activeManifest = JSON.parse(await app.vault.adapter.read(`${savedVersion.folder}/manifest.json`));
+        if (activeManifest.activeVersionId !== savedVersion.meta.id) failures.push("切换版本后清单活动 ID 不匹配");
+
+        await plugin.versions.switchVersion(originalPath, NOTE_PATH);
+        const restored = noteFile._content || "";
+        const restoredYaml = parseOuterYaml(restored);
+        const restoredActiveBlock = restored.match(/<!-- qnalog-active-version-start -->([\s\S]*?)<!-- qnalog-active-version-end -->/)?.[1] || "";
+        if (!restored.includes("Original snapshot smoke body.") || !/议题[\s\S]*结论/.test(restored)
+          || restoredActiveBlock.includes("Versioned minutes body.")) {
+          failures.push("恢复原稿未还原固定正文、模型正文或原稿活动块");
+        }
+        if (JSON.stringify(restoredYaml) !== JSON.stringify(sourceYaml)) {
+          failures.push("恢复原稿快照改变了母本内容属性");
+        }
+        if (!restored.includes("qnalog-transcript-start:")) {
+          failures.push("恢复原稿快照后原始转写缺失");
+        }
+        if (JSON.stringify(transcriptData(restored)) !== JSON.stringify(sourceRecords)) {
+          failures.push("恢复原稿快照改变了母本转写来源账本");
+        }
+        if (!sameMediaReferences(restored, postContinuation)) {
+          failures.push("恢复原稿快照改变了母本来源或媒体引用");
+        }
+        const restoredManifest = JSON.parse(await app.vault.adapter.read(`${savedVersion.folder}/manifest.json`));
+        const originalFileName = originalPath.slice(originalPath.lastIndexOf("/") + 1);
+        const originalMeta = restoredManifest.versions.find((record) => record.fileName === originalFileName && record.kind === "source-original");
+        if (!originalMeta || restoredManifest.activeVersionId !== originalMeta.id) failures.push("恢复原稿后清单活动 ID 不匹配");
+      } catch (error) {
+        failures.push(`版本缓存切换与原稿恢复失败：${(error && error.message) || error}`);
+      }
     } catch (error) {
       failures.push(`续录收尾到目标笔记合并失败：${(error && error.message) || error}`);
     }
     for (const id of plugin.intervals) clearInterval(id);
   } finally {
+    Date.now = realDateNow;
     console.error = realError;
   }
 
   const stray = errorLog.filter((line) => !/update check failed/.test(line));
   for (const line of stray) failures.push(`运行期报错：${line.split("\n")[0]}`);
+  smokeDigest = createHash("sha256")
+    .update(JSON.stringify({ note: noteFile._content || "", adapterData: [...adapterData].sort(([left], [right]) => left.localeCompare(right)) }))
+    .digest("hex");
 
   if (failures.length) {
     console.error("[merge-pipeline] 检查失败：");
@@ -451,6 +593,7 @@ async function main() {
     return 1;
   }
   console.log(`[merge-pipeline] OK: 会话收尾到合并整理跑通，模型调用 ${llmCalls.length} 次（知识随 ${llmCalls.filter((request) => requestPrompt(request).includes("机器证据协议")).length} 个既有请求返回），笔记保留正文、证据与原始转写`);
+  console.log(`[merge-pipeline] ${appendLayout ? "append" : "rewrite"} digest: ${smokeDigest}`);
   return 0;
 }
 

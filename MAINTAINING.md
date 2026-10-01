@@ -474,7 +474,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 3. **发布链路自动化**：`release.yml` 提供 tag → 干净检出 → 重建 → 比对 → 上传的 provenance（§4.2）。
 4. **近期开发，按顺序独立处理**：
    - [x] **A2：Host 宽能力登记与棘轮门禁**。已实现；注入源码行为测试覆盖新增、正确收缩、残留基线、畸形登记与导入别名，真实 CLI 夹具覆盖新增失败、登记通过、收缩失败/通过和缺字段失败。现有 24 个接口、45 个属性仍保持原样。
-   - [ ] **A6：笔记文档模型**。A2 后另行设计；已有 `tests/note-markdown-characterization.test.ts`，扩展现有测试，不新建同名测试。兼顾两种笔记布局，并保留转写与版本保护；本批不实施。
+   - [ ] **A6：笔记文档模型**。第一批外层结构抽取已完成，覆盖两种笔记布局并保留转写与版本保护；验收防线已补足。其他读取方、分段账本与机器注释仍待统一，A6 整体未完成。
    - [ ] **A10：非 UI 对 UI 辅助函数依赖收缩**。已有 `uiImportsFromNonUi` 门禁不代表现存依赖已删除；A6 后独立处理不涉及 DOM 的函数，并同步收缩 UI 基线。
 5. **随相关代码推进**：A7 严格核心类型覆盖、A9 领域文件归属与实现型 `index.ts` 命名。只在改动相关模块时推进，不安排全仓重写。
 6. **后续独立设计**：A8 OutlineView 沉淀控制器。会话抽取的代码前提已满足，但控制器未实现；不重新拆整个视图，也不把 `ContinuationService` 当作沉淀控制器。
@@ -1355,8 +1355,8 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 
 - `src/main.ts` 作为装配入口、`check:architecture` 以基线阻止新增依赖，方向正确。
 - A1–A4 的代码问题已由对应阶段处理：Host 构造点类型、会话状态归属与依赖图别名识别已更新；A2 的完整 Host 能力仍待棘轮门禁约束。
-- A6 的笔记 Markdown 解析分散，以及 A7 的严格类型检查覆盖不足，是后续改动的主要风险来源。
-- 第一阶段先修门禁与明确模块归属，不改变用户可见功能；会话状态抽取已完成，笔记文档模型留在后续阶段。
+- A6 的 Markdown 处理仍分散；frontmatter、活动版本块、原始材料和会话 ID 的外层操作已集中到 `notes/note-document.ts`，其他读取方、分段账本和机器注释尚未统一。A7 的严格类型覆盖仍有限。
+- 第一阶段已修门禁与明确模块归属，不改变用户可见功能；会话状态抽取已完成。A6 仍在推进，本批仅统一笔记外层结构。
 
 ### 14.2 问题清单
 
@@ -1367,7 +1367,7 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 |A3|录音会话曾挂在插件对象上的全局可变状态|原评审依据：`RecordingSession` 在 `src/shared/types.ts:403` 起约 100 行可选字段，`host.session =` 9 处，10 个 Host 声明 `session`，OutlineView 直接改写 `session.meetingWorkbench`|已由 #83 合并；续录期间成功已确认，其他人工场景逐项状态见 §6|
 |A4|门禁输出“环状分量 0”曾未覆盖运行时环|原评审依据为装配别名导致的 Recording / SessionFinalize 双向调用及指向 RecordingService 的别名|已由 #83 合并；当前静态图为 33 服务、83 条边、0 个识别环；人工场景记录见 §6|
 |A5|基础组件反向调用界面|`TaskQueue` 原有 4 处直接调用 `plugin.shell.refreshOutlineView()`（`src/queue/task-queue.ts`）；这违反基础组件不得反向调用高层工作流的约定|已完成（分支 `refactor/architecture-phase1`）|
-|A6|笔记 Markdown 没有统一的文档模型|至少 10 个模块各自用正则解析标记与区块：`notes/note-markdown.ts:708-800`、`transcript/transcript-markdown.ts:126-155`、`versions/version-content.ts`、`notes/detail-blocks.ts:125+`、`notes/audio-refs.ts:87+`、`notes/ask-panel.ts:64+`、`audio/channel-speakers.ts:232-315`、`notes/outline-text.ts:256+`、`notes/repolish-service.ts:84+`、`notes/note-writer.ts:144+`、`indexing/note-index.ts:14-19`。标记字面量集中在 `shared/namespace.ts`，解析和序列化没有集中|第二阶段|
+|A6|笔记 Markdown 尚无完整统一的文档模型|至少 10 个模块仍各自用正则解析标记与区块：`notes/note-markdown.ts`、`transcript/transcript-markdown.ts:126-155`、`versions/version-content.ts`、`notes/detail-blocks.ts:125+`、`notes/audio-refs.ts:87+`、`notes/ask-panel.ts:64+`、`audio/channel-speakers.ts:232-315`、`notes/outline-text.ts:256+`、`notes/repolish-service.ts:84+`、`notes/note-writer.ts:144+`、`indexing/note-index.ts:14-19`。外层 frontmatter、活动版本块、原始材料与会话 ID 操作已集中到 `notes/note-document.ts`；逐字稿块和其他读取方未迁移。标记字面量集中在 `shared/namespace.ts`|第一批部分完成；A6 未完成|
 |A7|类型检查覆盖不足|`tsconfig.json` 的 `noImplicitAny`、`strictNullChecks` 均为 false；全仓开启 `strictNullChecks` 有 803 处错误，前五名为 `ui/outline-view.ts` 132、`notes/session-finalize-service.ts` 66、`people/index.ts` 57、`audio/recording-service.ts` 45、`notes/note-markdown.ts` 44；另有 78 个文件在文件头关闭整组 `no-unsafe-*` 规则|第二阶段|
 |A8|OutlineView 沉淀簇|`src/ui/outline-view.ts:1189-3839` 约 2,650 行，占文件 41%；`sedimentGroup`、`sedimentScanToken`、`sedimentToastTimer` 等状态位于 331-365 行；扫描令牌、自动推进、撤销与提交和 DOM 同处一个类|第三阶段|
 |A9|目录归属不清|`src/` 根目录原有 8 个领域文件：outline-text、outline-coordinator、outline-finalizer、recent-note-paths、version-content、report-templates、update-service、update-source；`shared/` 有领域逻辑；`shared/types.ts` 反向 import transcript 与 ASR；`people/index.ts`（939 行）、`sediment/index.ts`（568）、`setup/index.ts`（609）、`vocabulary/index.ts`（258）是实现文件而非汇总导出|根目录 8 个文件已完成（分支 `refactor/architecture-phase1`）；其余第二阶段|
@@ -1406,8 +1406,8 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 
 1. **会话状态收口（A3、A4）**【#83 已合并】：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 `host.session =` 赋值。live-ASR 状态已从 `RecordingService` 移至 `LiveAsrPipelineService`，Recording 与 SessionFinalize 不再互相调用。维护者确认整理进行期间续录成功；普通录音/暂停恢复、音频与文本导入、失败重试、短录音及活动笔记切换竞态未见逐项人工记录，见 §6。
 2. **Host 能力面棘轮（A2）**【门禁与行为检查完成；存量宽能力尚未收窄】：`check:architecture` 新增第四个 JSON 基线字段、第五类检查，登记直接属性中完整 `PluginSettings` 与 `obsidian.App` 能力。当前仍有 24 个 Host 接口、45 个属性（23 个 `PluginSettings`、22 个 `App`）；新增失败，类型收窄后须同步收缩基线。门禁只覆盖直接属性，不解析类型别名链、继承、重新导出或结构等价类型。
-3. **笔记文档模型（A6）**【待设计】：集中解析与序列化 frontmatter、正文、原始材料、分段逐字稿块、会话标记和机器注释。扩展既有 `tests/note-markdown-characterization.test.ts`，不新建同名测试；兼顾两种笔记布局，保留转写与版本保护。
-4. **类型检查棘轮（A7）**：改动某个文件时先把它加入 `tsconfig.strict-core.json`，按 `strictNullChecks` 错误数从少到多推进；A7 列出的前五个文件在各自结构改动完成后再处理。
+3. **笔记文档模型（A6）**【外层结构第一批完成，A6 未完成】：新增 `src/notes/note-document.ts`，统一 frontmatter 拆分与替换、活动版本块替换、原始材料提取和会话 ID 读取；版本持久化和逐字稿账本校验仍由原模块负责。扩展既有 `tests/note-markdown-characterization.test.ts`，兼顾整篇与追加布局并保留转写、版本保护。其他读取方、分段块与机器注释尚未统一，完整文档模型仍待后续设计。
+4. **类型检查棘轮（A7）**：`tsconfig.strict-core.json` 当前纳入 53 个文件；改动某个文件时先加入该清单，按 `strictNullChecks` 错误数从少到多推进；A7 列出的前五个文件在各自结构改动完成后再处理。
 5. **收缩非 UI 对 UI 的依赖（A10）**【已有门禁，存量未收缩】：A6 后把 `ui/helpers.ts` 中不涉及 DOM 的函数移到所属领域，并同步收缩 `uiImportsFromNonUi` 基线。
 6. **其余目录归属（A9）**：把 `shared/` 中的领域文件归位、按领域拆分 `types.ts`、将实现型 `index.ts` 改名；只在改动相关代码时顺带处理，不单独排期。
 
