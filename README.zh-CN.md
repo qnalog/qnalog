@@ -218,7 +218,7 @@ npm run install:vault -- "/你的知识库路径"
 npm run restore:vault -- "<知识库>/.obsidian/qnalog-install-backups/<时间戳>" "/你的知识库路径"
 ```
 
-`restore:vault` 从备份的 `manifest.json` 读出插件 id 与版本、还原对应目录，并先把当前目录另存一份——所以回滚本身也可以撤销（命令会打印出来）。它还会告诉你 Obsidian 当前启用的是哪个插件 id；加 `--set-enabled` 可让脚本直接改写 `community-plugins.json`（否则在 Obsidian 界面里切换）。备份位于知识库之外时，请显式传入知识库路径。
+`restore:vault` 从备份的 `manifest.json` 读取插件 id 与版本并还原对应目录，动手前会先另存当前目录，因此回滚本身也可以撤销（命令会打印出来）。脚本会拒绝不安全的单目录名，并在写入前拒绝含链接或彼此重叠的还原路径。它还会告诉你 Obsidian 当前启用的是哪个插件 id；加 `--set-enabled` 可让脚本直接改写 `community-plugins.json`（否则在 Obsidian 界面里切换）。备份位于知识库之外时，请显式传入知识库路径。
 
 其余开发与校验命令见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 

@@ -472,13 +472,27 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 1. **已完成的 P0**：设置改为向前迁移，不再整份丢弃（§4.5）；设置页不再在渲染时静默改写用户的导入服务选择。
 2. **对外材料与代码一致**：默认目录表、PRIVACY 的更新检查描述、workflow 注释，已完成。
 3. **发布链路自动化**：`release.yml` 提供 tag → 干净检出 → 重建 → 比对 → 上传的 provenance（§4.2）。
-4. **近期开发，按顺序独立处理**：
-   - [x] **A2：Host 宽能力登记与棘轮门禁**。已实现；注入源码行为测试覆盖新增、正确收缩、残留基线、畸形登记与导入别名，真实 CLI 夹具覆盖新增失败、登记通过、收缩失败/通过和缺字段失败。现有 24 个接口、45 个属性仍保持原样。
-   - [ ] **A6：笔记文档模型**。第一批外层结构抽取已完成，覆盖两种笔记布局并保留转写与版本保护；验收防线已补足。后续批次统一问答插入、details 阅读和索引边界定位，并将只读消费者迁入共享文档入口；混排转写升级对有效账本的保护、旧段标题范围计算、旧转写容器成对边界定位及空会话区块移除范围统一已完成；分段账本其余边界、写入定位与机器注释仍待统一，A6 整体未完成。
-   - [ ] **A10：非 UI 对 UI 辅助函数依赖收缩**。已有 `uiImportsFromNonUi` 门禁不代表现存依赖已删除；A6 后独立处理不涉及 DOM 的函数，并同步收缩 UI 基线。
-5. **随相关代码推进**：A7 严格核心类型覆盖、A9 领域文件归属与实现型 `index.ts` 命名。只在改动相关模块时推进，不安排全仓重写。
-6. **后续独立设计**：A8 OutlineView 沉淀控制器。会话抽取的代码前提已满足，但控制器未实现；不重新拆整个视图，也不把 `ContinuationService` 当作沉淀控制器。
-7. **条件触发**：§11.6 历史流式分段任务恢复。保留现有守卫与用户处置记录；有实际恢复需求时优先调查，不因 #83 续录恢复而关闭，不自动取消或切换服务。
+4. **后续队列（2026-10-02：AI agent 执行尺度；有限完整性审计见 `local://ai-agent-completeness-audit.md`）**：
+   - **P0 已完成：项目完整性审计**。按 README 主流程完成录音/恢复、笔记/版本、配置/安全、可见交互/派生对象四个只读切片，交叉项已去重。审计发现恢复脚本可由备份 `manifest.id` 将文件写到插件目录之外；隔离临时目录已复现覆盖外部文件，先作为安全修复处理。
+   - **P0.1 已完成：恢复脚本路径边界**。`scripts/restore-from-backup.mjs` 在写入前校验普通插件 id、源/目标拓扑、vault 派生目录及树内文件类型。真实 CLI 测试覆盖非法 id、可读与悬空链接、硬链接、重叠目录、vault 内旧安装留档、完整回滚留档及启用列表边界；独立临时目录冒烟确认合法回滚字节正确，`../../outside` 与 `--set-enabled` 组合被拒绝且无文件变化。不访问知识库；真实 Obsidian 宿主未验证。
+   - **P1.1：短续录终止、清理与恢复任务一致性**。一次性内存冒烟已实际调用 `ContinuationService.prepare`、`RecordingService.handleSegment` 与 `SessionFinalizeService.finalizeSession`：2000ms discard 后目标笔记（含活动版本块与历史转写账本）逐字未变、stage 被删除、session 结束且 tracking 释放，但 merge task 仍为 `pending` 且无分段。队列使用内存宿主；持久化重载/重试与真实 Obsidian/录音设备尚未验证。先闭合已复现的状态矛盾，不擅改 3–10 秒续录豁免。
+   - **P1.2：用户反馈与已审计的可见行为**。分别处理初稿与同类型派生稿链接重名、英文模式任务/通知残留中文前缀、编辑/阅读视图中的机器数据展示及知识提取 partial 状态的呈现/原因核对；同步更正安装脚本中与 schema 迁移政策冲突的提示。后两项保留产品与服务证据边界；不得把 `invalid-json` 说成落盘 JSON 损坏。
+   - **P1.3：并行开发验证隔离**。隔离 `tests/plugin-onload.test.ts` 的负向漏装构建，使临时 fixture 不改写共享 `src/main.ts` / `main.js`；正常装配通过、漏装仍失败，并比对文件哈希。
+   - **P2.1：A6 笔记结构操作完整归属**。在同一验收矩阵中完成会话写入定位、分段账本边界与机器标记操作迁移；盘点所有消费者、删除旧转发出口，并保留两种布局、旧格式、账本和原稿不变量。三个写入定位策略各自不同的首末选择、缺失回退与错误行为不得被合并改义；A6 整体未完成。
+   - **P2.2：A10 非 DOM 辅助函数归属**。将实际纯函数迁到所属领域，迁移所有消费者、删除旧 UI 出口并精确收缩 `uiImportsFromNonUi` 基线。确认、废纸篓等真实宿主交互保留；不以非 UI→UI 依赖数量归零为目标。
+   - **P2.3：关键持久化域的类型与能力闭合（A2、A7及必要 A9）**。范围限于录音/续录终止、队列恢复、笔记写入和版本保全所有者；先按实际状态与 Host 契约收窄能力，再纳入严格核心检查。不得用 `any`、ignore 或 `@ts-nocheck` 绕过；不混入 P1 用户问题，也不按纳入文件数验收。
+5. **P3：A8 沉淀交互控制器**。一次定义并验收扫描、取消、自动推进、提交、撤销及 DOM 边界；不按 OutlineView 行数重拆整个界面。真实视觉验证仍由维护者完成。
+6. **条件任务**：A12 的索引写入及笔记布局方案由维护者决定；未决定前保留两种布局和索引写入。历史流式任务恢复只在实际恢复需求出现时调查，不因 #83 续录恢复而关闭。真实 Obsidian、设备、模型/ASR 服务补验只在需要的场景执行，不阻塞无关离线任务。
+**实现与验证状态分列**
+
+| 范围 | 源码状态 | 消费者自动验证 | 真实宿主确认 | 产品待决 |
+|---|---|---|---|---|
+| 恢复脚本插件 id 路径 | 写入前校验 id、路径拓扑、链接和文件类型 | 真实 CLI 测试及独立临时目录冒烟通过：合法回滚 payload 与旧目标留档字节匹配；非法 id 不改源、目标、外侧哨兵、启用列表或目录结构 | 未进行真实 Obsidian 宿主验证 | 无 |
+| 2000ms 短续录 | finalizer 会把 discard 任务写回 pending | 真实 `prepare`→`handleSegment`→finalizer 内存冒烟通过并观察到矛盾；阈值对照只调用真实分级方法 | 持久化重载、Obsidian、录音设备未验证 | 3–10 秒续录豁免是否取消待决定 |
+| 英文版本卡/派生稿 | 版本卡文案与派生稿输出前缀已本地化；通知/任务前缀仍有 `meta.prefix` | 对应输出测试已有；初稿链接仍重名 | 修复后宿主显示未确认 | 初稿文案可在 UI 修改时确定 |
+| 机器注释/partial 知识 | 结构可读，`partial` 与 `invalid-json` 状态存在 | 协议与解析测试可证明数据读取，不证明编辑器显示或历史模型响应 | 实时预览、源码、阅读视图及服务响应均未核实 | 不隐藏/删除状态；展示方式后续评估 |
+| 负向装配 fixture | 测试临时改写共享源文件/产物 | 当前测试设计已读；本轮未运行 | 不适用 | 无 |
+| A12 索引/布局 | 当前两种行为都保留 | 对应 policy/format contracts 已登记 | 本轮未做宿主测试 | 维护者决定 |
 
 **A6 本批宿主反馈与独立观察（2026-10-01）**
 
@@ -488,8 +502,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 **英文模式写入跟进（2026-10-01；独立于 A6 读取统一）**
 
-- [ ] **新写入的版本卡文案本地化**：维护者在 fresh 库切换英文界面后，对已有中文纪要重新整理并查看版本，仍见“当前显示版本／生成时间／源转写指纹”为中文，版本名称可为英文。`src/notes/note-markdown.ts` 的 `buildActiveVersionBlock`（目前 145-154）直接写中文说明，没有使用已有翻译机制。这是写入侧缺口；本次只记录，不在活动版本范围与工具折叠区读取重构中修改输出。
-- [ ] **重新整理的派生版本名与文件模式前缀本地化**：本次实际生成了母本同目录的 `【工作纪要】<母本原文件名>.md`，其 `variant_label` 为“工作纪要”、`variant_mode` 为 `meeting`，对应缓存亦使用中文前缀。`src/notes/repolish-service.ts`（目前 208、246）直接使用 `meta.prefix`；`getModeMeta` 返回内建中文 prefix，未经过 `src/shared/mode-meta.ts` 的 `getModePrefix`（目前 94-99，英文 meeting 返回 `Work notes`）。`src/versions/version-store.ts` 的 `createDerivedNote`（目前 352-360）用该 label 与母本 basename 组合文件名。后续独立修复应区分新写入的模式前缀与保留的母本名称，不能将英文界面理解为要翻译已有文件名或纪要正文。
+- [x] **新写入的版本卡文案本地化（源码与消费者契约已实现）**：维护者在 fresh 库的英文模式观察到版本卡标签仍为中文。当前 `src/notes/note-markdown.ts:146–163` 已通过 `labelText("currentDisplayedVersionLabel")`、`labelText("versionGeneratedAtLabel")` 与 `labelText("sourceTranscriptFingerprintLabel")` 输出本地化标签；`tests/note-markdown-characterization.test.ts:266–300` 覆盖生成结果。此源码修复后的真实 Obsidian 写入和显示状态尚未核实，不宣称宿主验收完成。
+- [x] **重新整理派生稿前缀（Markdown、缓存与消费者契约已实现）**：`src/notes/repolish-service.ts:208–249` 使用 `outputPrefix` 生成版本标签、派生文件及缓存 ID；英文 meeting 前缀使用 `getModePrefix`。`tests/clean-transcript-storage.test.ts:442–512` 覆盖对应输出。**未完成全链路本地化**：同文件 `:183,257,260` 的任务/通知显示仍使用 `meta.prefix`，须在 P1.2 单独核对。实际宿主验证该源码状态尚未核实。
 - **旧原始材料的中英混排是现有保留规则**：母本外层为 `Original material`，其下原有“录音信息／原始音频／录音中实时大纲／分段原始转写”等折叠区仍为中文。`src/notes/note-document.ts` 的 `extractAllRawBlocksFromText`（目前 97-136）保留旧区块文字，`src/versions/version-content.ts` 的 `foldRawTranscriptSection`（目前 123-144）只在缺失时补结构；不翻译已存在的区块。新插件标签跟随界面语言，旧笔记不翻译的政策见 `.github/release-notes/1.1.2.md` 的标签说明与“旧笔记不动”。不要批量改写原始转写、实时大纲、回听引用或机器账本以统一语言。
 - **输出定位与列表观察分开记录**：本次派生 Markdown 与 minutes 缓存均已找到，母本 manifest 的 activeVersionId 仍指向 `source-original`，所以英文原稿版本名不代表新派生稿的名称。普通重新整理以 `activate: false` 保存版本（`repolish-service.ts` 目前 241-249），不重命名母本、不自动激活新版本。`src/recent/recent-notes.ts`（目前 246-251、310-331）把派生稿归到母本的 variants，`src/ui/outline-view.ts`（目前 5554-5563）显示其版本名并允许点击切换，不将派生稿当作独立会议条目。维护者报告未在列表找到输出；文件存在已核实，实际列表为何未显示仍需观察对应界面，不能据此宣称丢文件或列表缺陷已定位。
 
@@ -500,8 +514,9 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 **续录短录音的过滤与合并跟进（2026-10-02；独立于 A6 空会话区块范围统一）**
 
 - [ ] **短续录仍触发追加合并**：维护者报告，在 fresh 库向既有纪要追加录音时，不足五秒的录音仍被追加到文档并进行合并，预期短录音不应写入纪要。定位线索为 `QnALog/转写纪要/2026-10-02 1141 · 个人笔记-QNALog插件-文档规划.md`，来自维护者提供的 Obsidian 链接；本轮未读取该文件，也未重跑私人笔记。准确录音时长、宿主已安装构建、短录音保护开关及实际切片/流式状态尚未核实。
-  - **当前规则与范围判断**：`src/shared/limits.ts:8,11` 的阈值是 3 秒与 10 秒，不是 5 秒。`src/audio/short-recording-policy.ts:44–52` 在最终切片、无已有切片、非导入且保护开启时，先将低于 3 秒的录音分为 `discard`；3–10 秒普通录音为 `keep-audio`，续录因 `isContinuation` 为 `process`。`tests/short-recording-policy.test.ts:40–44` 明确覆盖续录 1200 毫秒丢弃及 3000/8000 毫秒正常处理。因此，3–5 秒续录进入正常处理与当前分级规则一致，但与维护者本次预期不一致；若实际不足 3 秒也进入合并，则仍需核对会话状态与保护开关，不能仅据此判定原因。`RecordingService.resolveShortRecordingTier`（`src/audio/recording-service.ts:372–380`）负责分级，`SessionFinalizeService._finalizeSessionImpl`（`src/notes/session-finalize-service.ts:780–783`）仅在已有 `shortRecordingTier` 时进入短录音收尾。当前 `refactor/session-note-block-ranges` 只统一已经进入清理流程后的区块范围，不改变分级或续录合并策略；其新增消费者测试不覆盖短续录是否进入合并，不能将本反馈记为本批已修复或已验证，也暂无本批回归证据。
-  - **后续任务与验收**：独立核对续录豁免是否应取消，以及不足 3 秒仍合并是否另有缺陷；保留本次“不足五秒”的观察，不擅自改成新的五秒阈值。用新建测试笔记或维护者选定副本记录保护开关、分级时长与会话切片状态，覆盖 2 秒、4 秒、边界 2999/3000/9999/10000 毫秒及保护关闭的续录。若按维护者预期过滤本应跳过的续录，应证明目标纪要正文、历史转写与活动版本不变，本次短录音不触发追加合并或遗留待执行追加任务；音频处置须与最终确认的分级规则一致；正常续录仍可合并。此处只登记后续检查要求，不确认新的过滤策略。本轮未进行真实宿主验证，未修改录音代码或知识库。
+- **隔离运行证据（范围分两次补全）**：较早的 finalizer-only 冒烟只调用收尾方法；本轮后续一次性内存宿主又执行了实际 `ContinuationService.prepare`、`RecordingService.handleSegment` 和 `SessionFinalizeService.finalizeSession`。2000ms `discard` 后，目标笔记（含活动版本块与历史转写账本）逐字未变，stage 被删除，session 结束且 tracking 释放；但 merge task 仍为 `pending`、`segments=[]`。队列更新由内存 host 实现，尚未执行 TaskQueue 持久化重载/重试、真实录音设备或 Obsidian；不据此确认维护者不足五秒反馈的全部原因。
+- **当前规则与范围判断**：`src/shared/limits.ts:8,11` 的阈值是 3 秒与 10 秒，不是 5 秒。`src/audio/short-recording-policy.ts:44–52` 在最终切片、无已有切片、非导入且保护开启时，将低于 3 秒的录音分为 `discard`；3–10 秒普通录音为 `keep-audio`，续录豁免 `keep-audio` 而进入 `process`。`tests/short-recording-policy.test.ts:40–44` 覆盖续录 1200 毫秒丢弃及 3000/8000 毫秒正常处理。3–5 秒续录进入正常处理符合当前分级规则但不符合维护者报告的预期；不能据此发明 5 秒阈值或断言真实宿主当时的录音时长、保护开关和会话状态。现有 `tests/short-recording-flow.test.ts` 的续录 prepare 替身拒绝调用，因此它不能证明短续录完整链路。
+- **后续任务与验收**：P1.1 继续验证队列经真实持久化保存、插件重载后的状态，以及 discard 清理/持久化失败时失败可观察并保留恢复材料；正常续录仍能失败恢复。当前内存冒烟已覆盖完整服务 prepare → handleSegment → finalize、目标正文/历史账本/活动版本不变及 stage/tracking 清理；本轮另用真实分类方法核对 4000/10000ms 和保护关闭 2000ms 的级别，不是完整服务处理对照。后续服务验收覆盖 3000/9999ms 当前豁免、10000ms 正常、保护关闭、导入和已有片段。维护者原“不足五秒”报告保留为未完全解释的反馈；取消 3–10 秒豁免须另行产品选择。本轮未访问或修改知识库。
 
 **已合并；人工补验单独跟踪**
 
@@ -535,8 +550,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 **维护者待决**
 
-- A12 笔记索引：是否保留 `qnalog-note-index` 写入或设计插件内读取方，待维护者决定；不把会话知识协议与索引块混为一项。
-- 两种笔记布局：是否下线 `consolidatedLayout=false` / `appendPolishBlock`，或继续维护两种布局，待维护者决定。
+- A12 笔记索引：是否保留 `qnalog-note-index` 写入或设计插件内读取方，待维护者决定；不把会话知识协议与索引块混为一项。各选项的影响与维护成本见 §14.4。
+- 两种笔记布局：是否下线 `consolidatedLayout=false` / `appendPolishBlock`，或继续维护两种布局，待维护者决定。各选项的影响与维护成本见 §14.4。
 - 不以新增门禁替代以上产品取舍；在决定前不删除索引写入、不新增索引读取功能。
 
 **维护者持续任务**
@@ -1329,31 +1344,26 @@ provider 卡片的文案（标题 / 徽章 / 说明 / 步骤 / 备注 / 链接�
    cyclic SCC count / largest SCC size。**第一阶段不要求 cycle = 0**：
    现有环允许存在；失败条件是不得产生新环、不得扩大既有 SCC（既有 12 个服务的大环里
    再插入一个节点，同样失败）。
-   环状分量统计不包含装配别名所代表的调用，见 §14 A4。
+   2026-09-26 第一版未计入装配别名调用；#83 后按 `main.ts` 中唯一赋值的实例与别名链解析服务类，歧义赋值不推断（`scripts/check-architecture.mjs:47–91`），见 §14 A4。
 4. **冻结非 UI 模块对界面实现的直接依赖**（`uiImportsFromNonUi`）。除装配根 `src/main.ts` 与 `src/ui/` 内部模块外，其他模块不得新增解析到 `src/ui/` 的静态 import、re-export 或动态 import。已有依赖先登记在基线；新增依赖失败，删除依赖但未同步收缩基线也失败。界面内部的依赖与装配入口的依赖不在此检查范围内。
 5. **冻结 Host 的完整宿主能力**（`hostCapabilities`）。登记 `*Host` 接口直接属性中类型为完整 `PluginSettings` 或完整 `obsidian.App` 的成员；实际集合必须与基线精确一致。新增失败，类型收窄、成员删除、接口或文件删除/改名后未同步收缩基线也失败。只检查直接属性，不解析类型别名链、继承、重新导出或结构等价类型；`Pick`、`Omit`、方法参数/返回类型与具体能力接口不属于完整类型。
 
 
 **第二阶段已完成（2026-09-26；分支 `refactor/service-dependency-decycle`）**：
-12 节点的强连通分量已拆成有向无环图，保留 2026-09-26 实测的 62 条边历史记录（当时从 82 条边切掉 20 条）。
-插件实例同时是各服务的 Host，拆环手段三类，都在装配层 `src/main.ts` 完成：
+12 节点的强连通分量已拆成有向无环图，保留 2026-09-26 实测的 62 条边历史记录（当时从 82 条边切掉 20 条）。以下为当时记录的拆环手段，不代表当前实现细节：
 
 - **回调化**：Host 成员换成装配层转发方法（`requestOutlineRefresh`、`requestTaskQueueRetry`、
   `confirmSpeakerNames` 等），插件方法转调具体服务；
-- **装配别名**：窄结构视图成员改名后由插件字段绑定同一实例（`asrCircuit`、`liveAsr`、
-  `sessionPipeline`、`sessionProgress`、`realtimeOutline`、`taskMeters`）。
-  门禁先按成员名匹配 main.ts 字段、再按类型文本兜底，所以改名必须同时把类型收窄到
-  实际使用的最小面，两条都不命中才成边；
-- **端口接口**：`src/shared/live-asr-pipeline.ts` 的 `LiveAsrPipeline`，
-  `RecordingService implements` 它，缺方法在编译期报错。
+- **装配别名**：窄结构视图成员曾改名并绑定同一实例（`asrCircuit`、`liveAsr`、
+  `sessionPipeline`、`sessionProgress`、`realtimeOutline`、`taskMeters`）。旧版门禁曾先按成员名匹配
+  main.ts 字段、再按类型文本兜底；当前解析规则见上文。
+- **端口接口**：当时由 `RecordingService` 实现 `src/shared/live-asr-pipeline.ts` 的
+  `LiveAsrPipeline`。#83 后改由 `LiveAsrPipelineService` 实现 `LiveAsrPipeline`
+  （`src/asr/live-asr-pipeline-service.ts:54`）。
 
-2026-09-30 评审记录的 LiveAsrPipelineService 后续项已由 #83 完成。当前重新测量为 33 个服务、
-83 条边、0 个识别环（2026-10-01）；当前边数与 2026-09-26 历史值不同，不覆盖历史记录。
+2026-09-30 评审记录的 LiveAsrPipelineService 后续项已由 #83 完成。历史依赖图测量：2026-09-26 为 62 条边，2026-10-01 为 33 个服务、83 条边、0 个识别环；两者均保留为各自日期的快照，不覆盖历史记录。
 
-Host 能力基线在当前代码扫描中涉及 24 个接口、45 个完整属性：23 个 `PluginSettings`、
-22 个 `App`。通过 `getSettings(): Pick<PluginSettings, …>` 等窄能力注入的服务不计入。
-`--print-baseline` 输出与新增 JSON 字段已人工核对；门禁当前报告 139 个源码文件、33 个服务、
-83 条边、0 个识别环。
+2026-10-02 本次扫描：144 个源文件、33 个服务、86 条依赖边、0 个识别环、最大强连通分量 0。当前 Host 能力扫描涉及 24 个接口、45 个完整属性：23 个 `PluginSettings`、22 个 `App`；通过 `getSettings(): Pick<PluginSettings, …>` 等窄能力注入的服务不计入。`--print-baseline` 输出与新增 JSON 字段已人工核对；本次门禁与 Host 宽能力均与基线一致。
 
 重打基线仍是人工步骤（`--print-baseline` 不接 npm）；不新增自动刷新命令。
 
@@ -1375,12 +1385,17 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 
 ## 14. 架构评审（2026-09-30）
 
+评审来源：omp 会话 `01a0f059-3fd7-7569-bf27-8d44aefd9f2c`，2026-09-30；模型日志标识为 `anthropic/claude-opus-5-5`。同会话的 `local/architecture-review-phase1-plan.md` 保存评审与第一阶段方案；第一阶段执行记录位于会话 `01a0f06d-84f5-75b2-8938-0befad2e22bc`。
+
+2026-10-02 对照记录：A1–A13 的问题主题、八项保留设计及两项排除事项均已收录；A12 原方案的选项代价说明此前未完整保留，现补入 §14.4 的待决项。实现状态与人工验证状态分别记录；本次对照不表示 A6 或全部架构工作已完成。
+
+
 ### 14.1 结论
 
 - `src/main.ts` 作为装配入口、`check:architecture` 以基线阻止新增依赖，方向正确。
-- A1–A4 的代码问题已由对应阶段处理：Host 构造点类型、会话状态归属与依赖图别名识别已更新；A2 的完整 Host 能力仍待棘轮门禁约束。
-- A6 的 Markdown 处理仍分散；外层结构已集中到 `notes/note-document.ts`，本批又统一活动版本范围读取与索引、语义图共用的工具 details 剔除，并迁移索引、语义图、会话知识和原稿保护读取。分段账本、机器注释及其他结构语义仍由原模块处理。A7 的严格类型覆盖仍有限。
-- 第一阶段已修门禁与明确模块归属；本批仅收敛既有 Markdown 读取职责，不改变用户可见功能。A6 仍在推进。
+- A1、A3、A4 的代码问题已由对应阶段处理；A2 的完整 Host 能力门禁与行为检查已完成，存量宽能力尚未收窄。代码完成不代替 §6 所列人工场景验证。
+- A6 已统一外层结构、活动版本读取、工具 details 壳、旧转写容器成对边界及空会话移除范围；分段账本其余边界、写入定位和机器注释仍待统一。A7 继续逐文件扩大严格类型覆盖。
+- 第一阶段已修门禁与明确模块归属；后续仅收敛既有 Markdown 处理职责，不改变用户可见功能。A6 整体未完成，#93 不是完整文档模型。
 
 ### 14.2 问题清单
 
@@ -1389,16 +1404,16 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 |A1|Host 接口在装配处不受类型检查|23 个服务原为 `constructor(host)`；`tsconfig.json` 的 `noImplicitAny` 为 false，因此 `src/main.ts:185-214` 的 `new XService(this)` 不检查插件实例是否满足 Host。补类型后发现 3 处返回类型不一致：导入音频返回值、分段缓存目录返回值、录音 Host 中未使用的 speaker 确认方法|已完成（分支 `refactor/architecture-phase1`）|
 |A2|Host 接口存在完整宽能力|只读 AST 扫描：24 个 Host 接口含 45 个完整属性，其中 23 个为 `PluginSettings`、22 个为 `App`；完整 `obsidian.App` / `PluginSettings` 属性是门禁目标，不包含 `Pick` 等窄能力|门禁与行为检查完成；存量宽能力尚未收窄|
 |A3|录音会话曾挂在插件对象上的全局可变状态|原评审依据：`RecordingSession` 在 `src/shared/types.ts:403` 起约 100 行可选字段，`host.session =` 9 处，10 个 Host 声明 `session`，OutlineView 直接改写 `session.meetingWorkbench`|已由 #83 合并；续录期间成功已确认，其他人工场景逐项状态见 §6|
-|A4|门禁输出“环状分量 0”曾未覆盖运行时环|原评审依据为装配别名导致的 Recording / SessionFinalize 双向调用及指向 RecordingService 的别名|已由 #83 合并；当前静态图为 33 服务、83 条边、0 个识别环；人工场景记录见 §6|
+|A4|门禁输出“环状分量 0”曾未覆盖运行时环|原评审依据为装配别名导致的 Recording / SessionFinalize 双向调用及指向 RecordingService 的别名|已由 #83 合并；当前静态图见 §13.1 最新带日期快照；人工场景记录见 §6|
 |A5|基础组件反向调用界面|`TaskQueue` 原有 4 处直接调用 `plugin.shell.refreshOutlineView()`（`src/queue/task-queue.ts`）；这违反基础组件不得反向调用高层工作流的约定|已完成（分支 `refactor/architecture-phase1`）|
 |A6|笔记 Markdown 尚无完整统一的文档模型|至少 10 个模块仍各自处理不同的 Markdown 结构；外层 frontmatter、活动版本完整范围、工具 details 壳、原始材料与会话 ID 操作已集中到 `notes/note-document.ts`，索引、语义图、会话知识和原稿保护已使用活动版本范围读取。逐字稿账本、机器注释与其他结构仍由原模块负责；标记字面量集中在 `shared/namespace.ts`|分批推进；A6 未完成|
-|A7|类型检查覆盖不足|`tsconfig.json` 的 `noImplicitAny`、`strictNullChecks` 均为 false；全仓开启 `strictNullChecks` 有 803 处错误，前五名为 `ui/outline-view.ts` 132、`notes/session-finalize-service.ts` 66、`people/index.ts` 57、`audio/recording-service.ts` 45、`notes/note-markdown.ts` 44；另有 78 个文件在文件头关闭整组 `no-unsafe-*` 规则|第二阶段|
-|A8|OutlineView 沉淀簇|`src/ui/outline-view.ts:1189-3839` 约 2,650 行，占文件 41%；`sedimentGroup`、`sedimentScanToken`、`sedimentToastTimer` 等状态位于 331-365 行；扫描令牌、自动推进、撤销与提交和 DOM 同处一个类|第三阶段|
+|A7|类型检查覆盖不足|`tsconfig.json` 的 `noImplicitAny`、`strictNullChecks` 均为 false；**2026-09-30 评审时记录**：全仓开启 `strictNullChecks` 有 803 处错误，前五名为 `ui/outline-view.ts` 132、`notes/session-finalize-service.ts` 66、`people/index.ts` 57、`audio/recording-service.ts` 45、`notes/note-markdown.ts` 44；另有 78 个文件在文件头关闭整组 `no-unsafe-*` 规则|第二阶段|
+|A8|OutlineView 沉淀簇|**2026-09-30 评审时记录**：`src/ui/outline-view.ts:1189-3839` 约 2,650 行，占文件 41%；`sedimentGroup`、`sedimentScanToken`、`sedimentToastTimer` 等状态位于 331-365 行；扫描令牌、自动推进、撤销与提交和 DOM 同处一个类|第三阶段|
 |A9|目录归属不清|`src/` 根目录原有 8 个领域文件：outline-text、outline-coordinator、outline-finalizer、recent-note-paths、version-content、report-templates、update-service、update-source；`shared/` 有领域逻辑；`shared/types.ts` 反向 import transcript 与 ASR；`people/index.ts`（939 行）、`sediment/index.ts`（568）、`setup/index.ts`（609）、`vocabulary/index.ts`（258）是实现文件而非汇总导出|根目录 8 个文件已完成（分支 `refactor/architecture-phase1`）；其余第二阶段|
-|A10|非 UI 模块依赖 `src/ui/`|基线 `uiImportsFromNonUi` 登记 14 个文件，其中 7 个依赖 `ui/helpers.ts`|第二阶段|
+|A10|非 UI 模块依赖 `src/ui/`|**2026-09-30 评审时记录**：基线 `uiImportsFromNonUi` 登记 14 个文件，其中 7 个依赖 `ui/helpers.ts`|第二阶段|
 |A11|门禁自身有缺陷|`scripts/check-legacy-prefixes.mjs` 的 `ALLOWED` 有一条指向不存在的 `src/ui/outline-text.ts`，脚本此前未检查登记路径是否存在；`scripts/check-domain-boundaries.mjs` 的类成员与引用识别仍使用正则|失效 `ALLOWED` 检查已完成（分支 `refactor/architecture-phase1`）；正则识别问题只记录|
 |A12|待决：两条并行路径|`qnalog-note-index` 在收尾、重试、版本切换等路径写入；`readNoteIndex` 只由 `indexing/note-index.ts` 内部调用，插件内没有读取方。笔记写入由 `consolidatedLayout` 选择 `rewriteConsolidated` 或 `appendPolishBlock`；导入来源另由 `note-layout-policy.ts` 强制使用 rewrite|待维护者决定|
-|A13|低优先级事实|`styles.css` 12,625 行；855 个 `qnalog-*` 类中 18 个在 `src/` 找不到字面引用（11 个 `qnalog-diag-*`、5 个 `qnalog-device-status-*`、`qnalog-sediment-item-summary`、`qnalog-folder-warn`）；`main.js` 1.59 MB，其中中文词条表约 365 KB，其余为本仓库源码，唯一运行时依赖为 `ws`|记录|
+|A13|低优先级事实|**2026-09-30 评审时记录**：`styles.css` 12,625 行；855 个 `qnalog-*` 类中 18 个在 `src/` 找不到字面引用（11 个 `qnalog-diag-*`、5 个 `qnalog-device-status-*`、`qnalog-sediment-item-summary`、`qnalog-folder-warn`）；`main.js` 1.59 MB，其中中文词条表约 365 KB，其余为本仓库源码，唯一运行时依赖为 `ws`|记录|
 
 ### 14.3 保持现状的设计
 
@@ -1426,23 +1441,28 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 4. 根目录 8 个领域模块归入所属目录：`refactor(layout): move root-level domain modules into their domain directories`。
 5. 本评审与路线图：`docs(maintaining): add 2026-09-30 architecture review and roadmap`。
 
-#### 第二阶段（按顺序；每项单独分支）
+#### 第二阶段（2026-10-02 AI agent 执行队列；顺序与 §6 一致）
 
-1. **会话状态收口（A3、A4）**【#83 已合并】：新建 `src/session/session-store.ts`，统一持有当前会话并提供开始、结束、读取、订阅能力，取代 Host 上的 `session` 字段及 `host.session =` 赋值。live-ASR 状态已从 `RecordingService` 移至 `LiveAsrPipelineService`，Recording 与 SessionFinalize 不再互相调用。维护者确认整理进行期间续录成功；普通录音/暂停恢复、音频与文本导入、失败重试、短录音及活动笔记切换竞态未见逐项人工记录，见 §6。
-2. **Host 能力面棘轮（A2）**【门禁与行为检查完成；存量宽能力尚未收窄】：`check:architecture` 新增第四个 JSON 基线字段、第五类检查，登记直接属性中完整 `PluginSettings` 与 `obsidian.App` 能力。当前仍有 24 个 Host 接口、45 个属性（23 个 `PluginSettings`、22 个 `App`）；新增失败，类型收窄后须同步收缩基线。门禁只覆盖直接属性，不解析类型别名链、继承、重新导出或结构等价类型。
-3. **笔记文档模型（A6）**【外层结构与两类读取已统一，A6 未完成】：`src/notes/note-document.ts` 统一 frontmatter 拆分与替换、活动版本完整范围读取与替换、索引和语义图共用的工具 details 壳剔除、原始材料提取和会话 ID 读取。索引、语义图、会话知识及原稿保护读取已迁移；此前批次为旧转写容器增加成对边界定位入口，并迁移两类旧容器读取；本批增加精确会话标记的区块范围定位，`NoteWriter` 与 `LiveAsrPipelineService` 复用它计算空会话移除范围，文件保留与废纸篓策略不变。逐字稿账本、机器注释和其他语义不同的 Markdown 结构仍留在原模块。测试扩展在 `tests/note-markdown-characterization.test.ts` 及既有消费者测试中，覆盖活动块边界、空块、首块选择和工具壳边界。A6 仍待后续处理。
-4. **类型检查棘轮（A7）**：`tsconfig.strict-core.json` 当前纳入 53 个文件；改动某个文件时先加入该清单，按 `strictNullChecks` 错误数从少到多推进；A7 列出的前五个文件在各自结构改动完成后再处理。
-5. **收缩非 UI 对 UI 的依赖（A10）**【已有门禁，存量未收缩】：A6 后把 `ui/helpers.ts` 中不涉及 DOM 的函数移到所属领域，并同步收缩 `uiImportsFromNonUi` 基线。
-6. **其余目录归属（A9）**：把 `shared/` 中的领域文件归位、按领域拆分 `types.ts`、将实现型 `index.ts` 改名；只在改动相关代码时顺带处理，不单独排期。
+会话状态抽取（A3/A4，#83）及 A2 Host 能力门禁已完成；A2 存量宽能力仍未收窄。以下工作不把门禁完成写成存量债务消除，也不把人工宿主确认并入代码状态。
+
+1. **P0.1 恢复脚本路径边界**：已修复并完成批准的 CLI 验收。独立临时目录实际执行确认：合法 qnalog 回滚写入完整 payload，旧目标留档完整；`../../outside` 与 `--set-enabled` 组合以退出码 1 拒绝，源、目标、外侧哨兵、启用列表及目录结构均未变化。未访问私人知识库，未进行真实 Obsidian 验证；此本地改动作为独立 PR 候选，不自动推送或合并。
+2. **P1.1 短续录终止与恢复任务一致性**：一次性内存冒烟实际执行真实 `ContinuationService.prepare` → `RecordingService.handleSegment` → `SessionFinalizeService.finalizeSession`；2000ms discard 后目标正文（含活动版本块与历史 ledger）逐字未变、stage 被删除、session finalized 且 tracking 释放，但合并任务仍为 `pending` 且 `segments=[]`。队列更新由内存 host 实现；尚未执行实际 TaskQueue 持久化重载/重试或真实 Obsidian。完整规格与边界见 §6；不据此改动 3–10 秒续录豁免。
+3. **P1.2 用户反馈及对外行为说明**：区分初稿与同类型派生稿链接；核对英文模式派生稿任务/通知前缀；分别检查机器注释在源码、实时预览、阅读视图中的展示；查明知识快照 partial 的响应原因与可见状态；更正安装脚本中过期的 schema 提示。旧原始材料不翻译，`invalid-json` 不解释为落盘 JSON 损坏。
+4. **P1.3 负向构建 fixture 隔离**：`tests/plugin-onload.test.ts` 当前通过暂时改写共享 `src/main.ts` 并重建 `main.js` 测试漏装。迁至隔离临时目录后，验证正常装配通过、漏装仍失败，并确认真实源码和产物哈希不变。
+5. **P2.1 笔记结构操作完整归属（A6）**：`note-document.ts` 已统一外层、活动版本、details 与部分会话范围操作；全量结构操作/消费者映射见审计矩阵。先核对并统一写入定位消费者，再统一剩余分段账本边界与机器标记操作；迁移所有消费者、删除旧出口。保持 `NoteWriter.commitContinuation`、`insertBeforeSegmentsStart`、`insertBeforeSegmentsEnd` 各自的 marker 优先级、首末选择、缺失回退和错误语义。两种布局、旧格式、完整原稿与账本字节结果按 §6 验收；A6 不按子批完成关闭。
+6. **P2.2 非 UI 对 UI 辅助依赖（A10）**：独立于 A6，按实际纯函数所有者迁移 `ui/helpers.ts` 消费者并精确收缩 `uiImportsFromNonUi` 基线；保留真实确认、废纸篓与 DOM 交互能力，不要求依赖计数归零。
+7. **P2.3 持久化域类型/能力闭合（A2、A7及必要 A9）**：范围为 `RecordingService`、`LiveAsrPipelineService`、`SessionFinalizeService`、`ContinuationService`、`TaskQueue`、`QueueRetryService`、`NoteWriter`、`VersionStore` 及实际输入/持久化边界。先按状态契约收窄 Host 能力，再纳入严格核心类型检查；全域闭合后才记该子范围完成，不按文件数增加验收。其他目录/命名迁移不另开全仓任务。
 
 #### 第三阶段
 
-设计 OutlineView 沉淀控制器（A8）；会话状态抽取的代码前提已满足。控制器尚未实现，不重新拆整个视图，也不把 `ContinuationService` 算作沉淀控制器。每项改动都需视觉验证。
+**P3：A8 OutlineView 沉淀控制器**。一次定义并验收扫描、取消、自动推进、提交、撤销与 DOM 边界；不重新拆整个视图，不将 `ContinuationService` 算作沉淀控制器。视觉与交互仍需维护者在真实 Obsidian 确认。
+
+**P4 与条件任务**：A11 剩余正则门禁和 A13 CSS/产物事实，只有审计证明漏检或真实输出问题时才提升。A12 的索引写入与两种笔记布局保持待维护者决定；历史流式任务恢复只在实际需求出现时调查。真实宿主、设备与模型服务条件缺失时，完成无关离线工作并单独登记人工补验，不推断已确认。
 
 #### 待决项（由维护者决定）
 
-- **笔记索引**：是否保留 `qnalog-note-index` 写入或为其增加插件内读取方，待维护者决定；不以“11 处”作为当前调用数，不把会话知识协议与索引块混为一项。
-- **两种笔记写入方式**：是否通过迁移下线 `consolidatedLayout=false` 与 `appendPolishBlock`，或继续维护两种布局，待维护者决定。
+- **笔记索引**：两种方案仍待维护者决定。① 停止自动写入：取消索引刷新调用及对应写入，不删除用户笔记中的已有索引块，保留文字校正对 HTML 注释与围栏代码的保护；可减少索引更新检查，并减少索引变化时产生的额外笔记写入。当前 `NoteIndexService.refreshNoteIndex` 仅在内容变化时写盘，不能把原评审的预期写成“每次必定少一次写入”。② 保留写入并增加插件内读取方：需要先确定使用场景和界面，再实施功能设计。当前 `readNoteIndex` 只在索引模块内调用；不把会话知识协议与索引块混为一项，不以原评审的“11 处”作为当前刷新调用数。
+- **两种笔记写入方式**：两种方案仍待维护者决定。① 通过设置迁移下线 `consolidatedLayout=false` 与 `appendPolishBlock`：设置页减少一个选择、代码只维护一种写入方式，但曾关闭该选项的用户在后续写入时会得到不同的笔记结构；必须按 §4.5 保留用户配置，不批量改写既有笔记。② 保留两种布局：保留用户当前选择，涉及笔记结构的修改必须分别覆盖整篇重写与追加写入。导入来源按 `src/briefing/note-layout-policy.ts` 强制整篇重写的现有规则不在此处改动。
 
 ## 15. 笔记版本保存流程
 
