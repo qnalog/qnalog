@@ -4,6 +4,7 @@ import {
   NS_SEGMENTS_BLOCK_RE,
   NS_SESSION_LINE_RE,
   NS_SESSION_VALUE_RE,
+  nsMarker,
 } from "../shared/namespace";
 import { UTILITY_DETAILS_SUMMARY_RE } from "../shared/note-labels";
 
@@ -60,6 +61,25 @@ export function findNoteDelimitedBlock(
     end: endMatch.index + endMatch[0].length,
     bodyStart,
     bodyEnd: endMatch.index,
+  };
+}
+
+export function findSessionNoteBlock(
+  markdown: string,
+  sessionId: string,
+): { start: number; end: number } | null {
+  const text = String(markdown || "");
+  const sessionMarker = nsMarker("session", sessionId);
+  const endMarker = nsMarker("segments-end", sessionId);
+  const sessionIndex = text.indexOf(sessionMarker);
+  const endIndex = text.indexOf(endMarker);
+  if (sessionIndex < 0 || endIndex < sessionIndex) return null;
+  const h2Index = text.lastIndexOf("\n## ", sessionIndex);
+  const h1Index = text.lastIndexOf("\n# ", sessionIndex);
+  const headingIndex = Math.max(h2Index, h1Index);
+  return {
+    start: headingIndex >= 0 ? headingIndex + 1 : 0,
+    end: endIndex + endMarker.length,
   };
 }
 

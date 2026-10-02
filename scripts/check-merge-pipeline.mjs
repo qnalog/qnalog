@@ -644,6 +644,68 @@ async function main() {
     } catch (error) {
       failures.push(`续录收尾到目标笔记合并失败：${(error && error.message) || error}`);
     }
+    try {
+      const disposablePath = "qnalog-session-cleanup-smoke.md";
+      const block = "## Disposable\n<!-- qnalog-session:smoke-session -->\n<!-- qnalog-segments-start:smoke-session -->\n<!-- qnalog-segments-end:smoke-session -->";
+      const full = `KEEP-A\n\n${block}\n\nKEEP-B\n`;
+      const expected = "KEEP-A\n\nKEEP-B\n";
+      const makeTemporaryNote = (content) => {
+        const file = new TFile(disposablePath);
+        file._content = content;
+        files.set(disposablePath, file);
+        return file;
+      };
+      const noteSession = () => ({ id: "smoke-session", mdPath: disposablePath });
+
+      makeTemporaryNote(full);
+      await plugin.noteWriter.removeEmptySessionBlock(noteSession());
+      if (!files.has(disposablePath) || files.get(disposablePath)._content !== expected) {
+        failures.push("NoteWriter 空会话清理未精确保留区块前后正文");
+      }
+      files.delete(disposablePath);
+
+      makeTemporaryNote(full);
+      await plugin.asrPipeline.discardShortRecordingNote(noteSession());
+      if (!files.has(disposablePath) || files.get(disposablePath)._content !== expected) {
+        failures.push("短录音空会话清理未精确保留区块前后正文");
+      }
+      files.delete(disposablePath);
+
+      makeTemporaryNote(block);
+      await plugin.noteWriter.removeEmptySessionBlock(noteSession());
+      if (!files.has(disposablePath) || files.get(disposablePath)._content !== "") {
+        failures.push("NoteWriter 清除唯一会话区块时未保留空文件");
+      }
+      files.delete(disposablePath);
+
+      makeTemporaryNote(block);
+      await plugin.asrPipeline.discardShortRecordingNote(noteSession());
+      if (files.has(disposablePath)) failures.push("短录音清除唯一会话区块时未移除文件");
+      files.delete(disposablePath);
+
+      const incomplete = full.replace("qnalog-segments-end:smoke-session", "qnalog-segments-end:other");
+      makeTemporaryNote(incomplete);
+      await plugin.noteWriter.removeEmptySessionBlock(noteSession());
+      if (!files.has(disposablePath) || files.get(disposablePath)._content !== incomplete) {
+        failures.push("NoteWriter 对缺失匹配结束标记的文件执行了修改");
+      }
+      files.delete(disposablePath);
+
+      makeTemporaryNote(incomplete);
+      const encoder = { stopped: false, stop() { this.stopped = true; } };
+      const streamingClient = { closed: false, _safeClose() { this.closed = true; } };
+      const liveSession = Object.assign(noteSession(), { pcmEncoder: encoder, streamingClient });
+      await plugin.asrPipeline.discardShortRecordingNote(liveSession);
+      if (!files.has(disposablePath) || files.get(disposablePath)._content !== incomplete
+        || !encoder.stopped || !streamingClient.closed
+        || liveSession.pcmEncoder !== null || liveSession.streamingClient !== null) {
+        failures.push("短录音清理未保留缺失匹配标记的文件或关闭流式资源");
+      }
+      files.delete(disposablePath);
+    } catch (error) {
+      failures.push(`空会话清理冒烟失败：${(error && error.message) || error}`);
+      files.delete("qnalog-session-cleanup-smoke.md");
+    }
     for (const id of plugin.intervals) clearInterval(id);
   } finally {
     Date.now = realDateNow;

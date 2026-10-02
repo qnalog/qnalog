@@ -33,6 +33,8 @@ import type { RecordingHost } from "../src/audio/recording-service";
 import { SessionFinalizeService } from "../src/notes/session-finalize-service";
 import { SessionStore } from "../src/session/session-store";
 import { LiveAsrPipelineService } from "../src/asr/live-asr-pipeline-service";
+import { NoteWriter } from "../src/notes/note-writer";
+import type { NoteWriterHost } from "../src/notes/note-writer";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 
 /** 只实现短录音路径真正会碰到的部分；其余能力一旦被调用即抛出，避免测试掩盖真实依赖。 */
@@ -291,5 +293,75 @@ describe("短录音整条路径", () => {
     expect(host.sessionStore.get()).toBeNull();
     expect(files.has("QnALog/转写纪要/2026-09-18 12:03.md")).toBe(false);
     expect(notices.join("\n")).toContain("Cannot start recording");
+  });
+});
+
+describe("session note block cleanup consumers", () => {
+  const mdPath = "QnALog/转写纪要/session-cleanup.md";
+  const completeBlock = "## Disposable\n<!-- qnalog-session:session-1 -->\n<!-- qnalog-segments-start:session-1 -->\n<!-- qnalog-segments-end:session-1 -->";
+  const fullInput = `KEEP-A\n\n${completeBlock}\n\nKEEP-B\n`;
+  const expected = "KEEP-A\n\nKEEP-B\n";
+
+  it("NoteWriter removes only its session range and leaves a repeated cleanup unchanged", async () => {
+    const { host, files } = makeHost();
+    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    files.set(mdPath, { content: fullInput });
+
+    await writer.removeEmptySessionBlock(makeSession(mdPath));
+
+    expect(files.get(mdPath)?.content).toBe(expected);
+    expect(files.has(mdPath)).toBe(true);
+    await writer.removeEmptySessionBlock(makeSession(mdPath));
+    expect(files.get(mdPath)?.content).toBe(expected);
+  });
+
+  it("short-recording cleanup removes a matching session and trashes a file emptied by removal", async () => {
+    trashed.length = 0;
+    const { host, files } = makeHost();
+    const session = { id: "session-1", mdPath };
+    files.set(mdPath, { content: sessionHeader("short") });
+
+    await host.asrPipeline.discardShortRecordingNote(session as never);
+
+    expect(files.has(mdPath)).toBe(false);
+    expect(trashed).toContain(mdPath);
+  });
+
+  it("both consumers retain an incomplete target range and preserve the next session", async () => {
+    const { host, files } = makeHost();
+    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    files.set(mdPath, { content: fullInput.replace("qnalog-segments-end:session-1", "qnalog-segments-end:session-other") });
+    await writer.removeEmptySessionBlock(makeSession(mdPath));
+    expect(files.get(mdPath)?.content).toBe(fullInput.replace("qnalog-segments-end:session-1", "qnalog-segments-end:session-other"));
+
+    const streaming = { _safeClose: vi.fn() };
+    const encoder = { stop: vi.fn() };
+    const session = { id: "session-1", mdPath, pcmEncoder: encoder, streamingClient: streaming };
+    await host.asrPipeline.discardShortRecordingNote(session as never);
+
+    expect(files.get(mdPath)?.content).toBe(fullInput.replace("qnalog-segments-end:session-1", "qnalog-segments-end:session-other"));
+    expect(encoder.stop).toHaveBeenCalledOnce();
+    expect(streaming._safeClose).toHaveBeenCalledOnce();
+    expect(session.pcmEncoder).toBeNull();
+    expect(session.streamingClient).toBeNull();
+  });
+
+  it("both consumers remove the second block while retaining the first session", async () => {
+    const first = completeBlock.replace("Disposable", "First").replaceAll("session-1", "session-first");
+    const second = completeBlock.replace("Disposable", "Second").replaceAll("session-1", "session-2");
+    const input = `${first}\n\n${second}\n`;
+    const expectedAfter = `${first}\n`;
+
+    const writerHost = makeHost();
+    const writer = new NoteWriter({ app: writerHost.host.app, settings: writerHost.host.settings } as NoteWriterHost);
+    writerHost.files.set(mdPath, { content: input });
+    await writer.removeEmptySessionBlock(Object.assign(makeSession(mdPath), { id: "session-2" }) as never);
+    expect(writerHost.files.get(mdPath)?.content).toBe(expectedAfter);
+
+    const asrHost = makeHost();
+    asrHost.files.set(mdPath, { content: input });
+    await asrHost.host.asrPipeline.discardShortRecordingNote(Object.assign(makeSession(mdPath), { id: "session-2" }) as never);
+    expect(asrHost.files.get(mdPath)?.content).toBe(expectedAfter);
+    expect(asrHost.files.has(mdPath)).toBe(true);
   });
 });
