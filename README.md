@@ -218,7 +218,7 @@ Every install snapshots the plugin folder it is about to overwrite, so rollback 
 npm run restore:vault -- "<vault>/.obsidian/qnalog-install-backups/<timestamp>" "/path/to/your/vault"
 ```
 
-`restore:vault` reads the plugin id and version from the backup's `manifest.json`, restores that folder, and snapshots your current folder first — so the rollback itself is undoable (the undo command is printed). It also tells you which plugin id Obsidian currently has enabled; add `--set-enabled` to rewrite `community-plugins.json` instead of switching in the UI. Pass the vault path explicitly when the backup lives outside a vault.
+`restore:vault` reads the plugin id and version from the backup's `manifest.json`, restores that folder, and snapshots your current folder first — so the rollback itself is undoable (the undo command is printed). It rejects ids that are not safe single directory names and refuses linked or overlapping restore trees before writing. It also tells you which plugin id Obsidian currently has enabled; add `--set-enabled` to rewrite `community-plugins.json` instead of switching in the UI. Pass the vault path explicitly when the backup lives outside a vault.
 
 Other development and check commands: see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
