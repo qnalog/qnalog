@@ -8,6 +8,7 @@ import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "../src/
 import { extractPriorOutline } from "../src/session/continuation-service";
 import { extractDetailsBody, extractNotePanelData } from "../src/notes/detail-blocks";
 import { stripArchivedOutlineSections } from "../src/notes/realtime-outline";
+import { buildOutlineCoverageMetadata, readCurrentOutlineBlock } from "../src/notes/outline-storage";
 
 // 测试环境没有 Obsidian 注入的 window.moment；format 只用到 YYYY-MM-DD HH:mm:ss。
 vi.stubGlobal("window", {
@@ -142,6 +143,46 @@ describe("extractNotePanelData 面板可见的大纲与时间轴", () => {
     }
   });
 });
+  it("reads the last current outline in append layout and never falls back through an empty latest block", () => {
+    const block = (text: string) => [
+      "<details>",
+      "<summary>Live outline while recording (draft)</summary>",
+      "> Outline generated from the segments completed while recording; the final minutes take precedence.",
+      text,
+      "</details>",
+    ].join("\n");
+    const old = block("- Old session outline");
+    const latest = block("- Whole-note outline");
+    const appended = `${old}\n\n${latest}\n\n<!-- qnalog-session:test -->`;
+    expect(extractPriorOutline(appended)).toBe("- Whole-note outline");
+    expect(extractNotePanelData(null, null, appended)?.outline).toBe("- Whole-note outline");
+
+    const emptyLatest = `${old}\n\n${block("")}\n\n<!-- qnalog-session:test -->`;
+    expect(extractPriorOutline(emptyLatest)).toBe("");
+    expect(extractNotePanelData(null, null, emptyLatest)?.outline).toBe("");
+  });
+
+  it("does not leak coverage metadata or archived outline text into the current seed", () => {
+    const proof = {
+      version: 1 as const,
+      outlineHash: "outline-hash",
+      sourceHash: "source-hash",
+      committedSegmentCount: 4,
+      totalSegmentCount: 8,
+    };
+    const markdown = [
+      "<details>",
+      "<summary>录音中实时大纲（草稿）</summary>",
+      "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。",
+      "- Current outline",
+      buildOutlineCoverageMetadata(proof),
+      "> 以下为追加录音前场次（旧笔记）的实时大纲草稿。",
+      "- Archived outline",
+      "</details>",
+    ].join("\n");
+    expect(readCurrentOutlineBlock(markdown)?.sourceCoverage).toEqual(proof);
+    expect(extractPriorOutline(markdown)).toBe("- Current outline");
+  });
 
 
 // 追加大纲翻倍回归：种子/读回若把归档副本一并带回，rewriteConsolidated 就执行

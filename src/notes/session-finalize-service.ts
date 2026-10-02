@@ -591,6 +591,8 @@ export class SessionFinalizeService {
         const continuation = {
           ...session.continuation,
           realtimeOutline: String(session.realtimeOutline || ""),
+          realtimeOutlineSegmentCount: Number(session.realtimeOutlineSegmentCount) || 0,
+          realtimeOutlineSourceCoverage: session.realtimeOutlineSourceCoverage,
           masterAudioPath: String(session.masterAudioPath || ""),
           masterAudioName: String(session.masterAudioName || ""),
         };

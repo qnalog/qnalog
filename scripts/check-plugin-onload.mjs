@@ -16,7 +16,7 @@ const DOMAIN_FIELDS = [
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
   "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
 ];
-const PORT_HOST_FIELDS = new Set(["asrPipeline", "continuations"]);
+const PORT_HOST_FIELDS = new Set(["asrPipeline", "continuations", "outline"]);
 
 const noop = () => undefined;
 
@@ -253,6 +253,16 @@ async function main() {
     if (!("host" in service)) continue;
     if (PORT_HOST_FIELDS.has(field)) {
       if (service.host === plugin) failures.push(`this.${field}.host 应使用窄能力对象，不得接收完整插件实例`);
+      if (field === "outline") {
+        if (service.host === plugin
+          || service.host?.noteWriter !== plugin.noteWriter
+          || service.host?.continuations !== plugin.continuations
+          || service.host?.settings !== plugin.settings
+          || service.host?.diagnostics !== plugin.diagnostics) {
+          failures.push("this.outline.host 未绑定预期的笔记写入、续录协调、设置与诊断能力");
+        }
+        continue;
+      }
       if (typeof service.host?.getSettings !== "function"
           || service.host?.vault !== app.vault
           || service.host?.fileManager !== app.fileManager) {

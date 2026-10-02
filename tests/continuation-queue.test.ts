@@ -46,4 +46,31 @@ describe("continuation queue lifecycle", () => {
     expect(continuation.lastError).toBe("waiting for earlier session");
     expect(continuation.retries).toBe(2);
   });
+  it("drops malformed outline proof without blocking transcript recovery", () => {
+    const queue = new TaskQueue({
+      settings: { maxRetries: 3 },
+      saveAll: vi.fn(async () => undefined),
+    } as never);
+    queue.load([{
+      id: "continuation",
+      type: "merge",
+      sessionId: "session-b",
+      status: "pending",
+      mdPath: "stage.md",
+      continuation: {
+        targetPath: "target.md",
+        targetSourceId: "source-a",
+        recordedAt: "2026-09-21T10:00:00.000Z",
+        realtimeOutline: "- Partial outline",
+        realtimeOutlineSourceCoverage: "invalid proof",
+      },
+    }]);
+
+    const task = queue.tasks[0];
+    expect(task?.type).toBe("merge");
+    if (!task || task.type !== "merge" || !task.continuation) throw new Error("continuation task was not restored");
+    expect(task.status).toBe("pending");
+    expect(task.continuation.realtimeOutline).toBe("- Partial outline");
+    expect(task.continuation.realtimeOutlineSourceCoverage).toBeUndefined();
+  });
 });

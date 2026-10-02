@@ -63,10 +63,24 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
     key: "Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts.",
     re: /基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。|Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts./,
   },
+  outlineIntroPrefix: {
+    key: "Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts.",
+    re: /基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。|Outline generated from the segments completed while recording; the final minutes take precedence\./,
+  },
   outlineCoverage: {
     key: "The outline covers only {0}/{1} transcript segments; the rest still went into the minutes. Refresh the outline in the sidebar to fill the gaps.",
     params: 2,
     re: /大纲仅覆盖 \d+\/\d+ 个转写分段，未覆盖部分仍已用于正文纪要。可在侧边栏刷新大纲后补齐。|The outline covers only \d+\/\d+ transcript segments; the rest still went into the minutes. Refresh the outline in the sidebar to fill the gaps./,
+  },
+  outlineCoverageCurrentRecording: {
+    key: "The outline covers only {0}/{1} segments of this recording; the rest still went into the minutes.",
+    params: 2,
+    re: /本次录音大纲仅覆盖 \d+\/\d+ 段，其余转写仍已用于正文纪要。|The outline covers only \d+\/\d+ segments of this recording; the rest still went into the minutes./,
+  },
+  outlineCoverageWholeNote: {
+    key: "The outline covers only {0}/{1} segments of the whole note; the rest still went into the minutes.",
+    params: 2,
+    re: /整篇笔记大纲仅覆盖 \d+\/\d+ 段，其余转写仍已用于正文纪要。|The outline covers only \d+\/\d+ segments of the whole note; the rest still went into the minutes./,
   },
 
   // —— 段落 / 分段 ——

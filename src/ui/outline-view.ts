@@ -66,6 +66,8 @@ import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACK
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendAskEntry, buildAskContext } from "../notes/ask-panel";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
 import { NS_FM_SPEAKERS, QNALOG_PLUGIN_ICON_ID, readSemanticMeta } from "../shared/namespace";
+import { mapAudioTimeToNote, type NoteAudioInterval } from "../notes/note-audio-timeline";
+import { OutlinePlaybackController } from "./outline-playback-controller";
 import type { QnALogSemanticDocumentMeta } from "../canvas/semantic-outline-canvas";
 
 // 会后整合 prompt（叙述式自然生长，v2）：整场转写 → 依据实际讨论生长出来的 Markdown 岗位画像。
@@ -308,6 +310,8 @@ export class OutlineView extends obsidian.ItemView {
   declare lastOutlineWorkbenchSignature: string;
   /** 当前视图绑定的会话 id；切换会话时用于重置面板状态。 */
   declare outlineSessionId: string;
+  /** Paths whose completed-note outlines are being rebuilt manually. */
+  declare outlineRebuildPaths: Set<string>;
   /** 下一次渲染的 rAF 句柄；0 表示当前没有排队中的渲染。 */
   declare _renderRaf: number;
   /** 纪要列表的合并刷新定时器句柄。 */
@@ -346,6 +350,8 @@ export class OutlineView extends obsidian.ItemView {
   declare inlineAudioEl: HTMLAudioElement | null;
   /** 内联回听对应的音频文件。 */
   declare inlineAudioFile: unknown;
+  declare inlinePlaybackController: OutlinePlaybackController | null;
+  declare inlinePlaybackState: { currentMs: number; totalMs: number; sourcePath: string; playing: boolean; error: string } | null;
   /** 内联回听对应的大纲 DOM 容器。 */
   declare inlineOutlineBody: unknown;
   /** 回听进度（毫秒）；null 表示未在回听。 */
@@ -383,6 +389,7 @@ export class OutlineView extends obsidian.ItemView {
     this.lastOutlineSegmentCount = 0;
     this.lastOutlineWorkbenchSignature = "";
     this.outlineSessionId = "";
+    this.outlineRebuildPaths = new Set();
     this._renderRaf = 0;
     this._recentVaultRefreshTimer = 0;
     this._preserveScrollOnNextRender = false;
@@ -404,6 +411,8 @@ export class OutlineView extends obsidian.ItemView {
     this.inlineAudioEl = null;
     this.inlineAudioFile = null;
     this.inlineOutlineBody = null;
+    this.inlinePlaybackController = null;
+    this.inlinePlaybackState = null;
     this.outlineViewingMs = null;
     this.lastLiveOutlineFocusKey = "";
     this._outlineFollowRaf = 0;
@@ -473,6 +482,7 @@ export class OutlineView extends obsidian.ItemView {
     if (this._outlineFollowRaf) { cancelAnimationFrame(this._outlineFollowRaf); this._outlineFollowRaf = 0; }
     if (this.sedimentToastTimer) { window.clearTimeout(this.sedimentToastTimer); this.sedimentToastTimer = 0; }
     if (this.sedimentAdvanceTimer) { window.clearTimeout(this.sedimentAdvanceTimer); this.sedimentAdvanceTimer = 0; }
+    this.disposeInlineAudio();
   }
   syncSessionOutline(session) {
     const id = session && session.id ? session.id : "";
@@ -581,6 +591,22 @@ export class OutlineView extends obsidian.ItemView {
     }
     this.updateInputMeter(root, info);
   }
+  disposeInlineAudio() {
+    if (this.inlinePlaybackController) {
+      this.inlinePlaybackController.dispose();
+      this.inlinePlaybackController = null;
+    }
+    const audio = this.inlineAudioEl;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    this.inlineAudioEl = null;
+    this.inlineAudioFile = null;
+    this.inlineOutlineBody = null;
+    this.inlinePlaybackState = null;
+  }
   render() {
     const root = this.containerEl.children[1];
     if (!root) return;
@@ -594,6 +620,7 @@ export class OutlineView extends obsidian.ItemView {
         if (this.containerEl.children[1] === root) root.scrollTop = previousScrollTop;
       });
     };
+    this.disposeInlineAudio();
     root.empty();
     root.addClass("qnalog-outline");
     root.toggleClass("is-mobile", isMobileRuntime());
@@ -3837,6 +3864,88 @@ export class OutlineView extends obsidian.ItemView {
     }
     this.showMenuAtMouse(menu, event, "qnalog-semantic-canvas-menu");
   }
+  renderRebuildNoteOutlineButton(parent, file) {
+    const rebuilding = this.outlineRebuildPaths.has(file.path);
+    const button = parent.createEl("button", {
+      cls: "qnalog-outline-action-button qnalog-rebuild-outline-button",
+      attr: { type: "button", "aria-label": i18nT("Rebuild outline from all transcripts") },
+    });
+    try { obsidian.setIcon(button.createSpan({ cls: "qnalog-outline-action-icon" }), "refresh-cw"); } catch { /* intentionally empty */ }
+    const label = button.createSpan({ text: i18nT(rebuilding ? "Rebuilding outline…" : "Rebuild outline from all transcripts") });
+    button.disabled = rebuilding;
+    button.onclick = async () => {
+      if (this.outlineRebuildPaths.has(file.path)) return;
+      this.outlineRebuildPaths.add(file.path);
+      button.disabled = true;
+      label.setText(i18nT("Rebuilding outline…"));
+      try {
+        const result = await this.plugin.outline.rebuildNoteOutline(file);
+        if (result.status === "completed") {
+          const message = i18nT("Outline rebuilt from {0}/{1} transcript segments. Backup: {2}")
+            .replace("{0}", String(result.coveredSegmentCount))
+            .replace("{1}", String(result.totalSegmentCount))
+            .replace("{2}", String(result.backupPath || ""));
+          new obsidian.Notice(message, 8000);
+        } else {
+          const reason = result.stopReason;
+          let detail: string;
+          switch (reason) {
+            case "busy":
+              detail = i18nT("A recording or continuation is active for this note.");
+              break;
+            case "invalid-target":
+              detail = i18nT("Outline rebuild is only available for Markdown notes.");
+              break;
+            case "no-transcripts":
+              detail = i18nT("No original transcript segments were found in this note.");
+              break;
+            case "invalid-transcripts":
+              detail = i18nT("The original transcript ledger could not be read: {0}").replace("{0}", result.errorMessage || "");
+              break;
+            case "read-failed":
+              detail = i18nT("Could not read this note for outline rebuild: {0}").replace("{0}", result.errorMessage || "");
+              break;
+            case "cancelled":
+              detail = i18nT("Outline rebuild was cancelled; the note was not changed.");
+              break;
+            case "model-failed":
+              detail = i18nT("The model could not complete the outline: {0}").replace("{0}", result.errorMessage || "");
+              break;
+            case "batch-failed":
+            case "no-progress":
+            case "max-batches":
+              detail = i18nT("The outline could not cover every transcript segment; the note was not changed.");
+              break;
+            case "stale":
+              detail = i18nT("The note changed during outline rebuild; the generated outline was not written.");
+              break;
+            case "backup-failed":
+              detail = i18nT("The note could not be backed up; it was not changed.");
+              break;
+            case "operation-failed":
+              detail = i18nT("Outline rebuild stopped unexpectedly: {0}").replace("{0}", result.errorMessage || "");
+              break;
+            case "write-failed":
+            default:
+              detail = i18nT("The outline was generated but could not be written: {0}").replace("{0}", result.errorMessage || "");
+              break;
+          }
+          const message = i18nT("Outline rebuild stopped ({0}/{1} segments): {2}")
+            .replace("{0}", String(result.coveredSegmentCount))
+            .replace("{1}", String(result.totalSegmentCount))
+            .replace("{2}", detail);
+          new obsidian.Notice(message, 9000);
+        }
+      } catch (error) {
+        const message = i18nT("Outline rebuild failed: {0}").replace("{0}", error instanceof Error ? error.message : String(error));
+        new obsidian.Notice(message, 9000);
+      } finally {
+        this.outlineRebuildPaths.delete(file.path);
+        this.render();
+      }
+    };
+  }
+
 
   renderCompletedNote(root, file) {
     const data = this.getCompletedNotePanelData(file);
@@ -3871,6 +3980,7 @@ export class OutlineView extends obsidian.ItemView {
     try { obsidian.setIcon(outlineIcon, "sparkles"); } catch { /* intentionally empty */ }
     outlineTitle.createSpan({ text: i18nT("AI organizing outline") });
     const outlineActions = outlineHead.createDiv({ cls: "qnalog-outline-head-actions" });
+    this.renderRebuildNoteOutlineButton(outlineActions, file);
     if (data.outline) this.renderSemanticCanvasButton(outlineActions, file, data.outline);
     const outlineBody = outlineSec.createDiv({ cls: "qnalog-outline-ai-body" });
     if (data.outline) {
@@ -3878,13 +3988,17 @@ export class OutlineView extends obsidian.ItemView {
       const decorateCompletedOutline = () => {
         this.enhanceRenderedOutline(outlineBody, {
           sourcePath: file.path,
+          audioTimeline: data.audioTimelineComplete ? data.audioTimeline : null,
           onTimeLink: (payload) => this.seekInlineAudio(payload),
         });
         this.inlineOutlineBody = outlineBody;
         this.decoratePlaybackOutlineChapters(outlineBody);
       };
       const rendered = obsidian.MarkdownRenderer.render(this.app, outlineText, outlineBody, file.path, this);
-      void Promise.resolve(rendered).then(decorateCompletedOutline);
+      void Promise.resolve(rendered).then(() => {
+        if (!outlineBody.isConnected) return;
+        decorateCompletedOutline();
+      });
     } else {
       outlineBody.createDiv({ cls: "qnalog-outline-empty", text: i18nT("This minutes note did not save a live outline.") });
     }
@@ -3902,11 +4016,13 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   renderCompletedNotePlayer(root, data, sourceFile) {
+    const timeline = data && data.audioTimelineComplete && Array.isArray(data.audioTimeline) ? data.audioTimeline : [];
     const refs = data && Array.isArray(data.audioRefs) ? data.audioRefs : [];
-    const audioFile = refs
-      .map((ref) => this.plugin.audioLinks.resolveAudioLinkFile(ref, sourceFile.path))
-      .find((f) => f instanceof obsidian.TFile);
-    if (!(audioFile instanceof obsidian.TFile)) {
+    const firstPath = timeline.length ? timeline[0].sourcePath : "";
+    const firstSource = firstPath
+      ? this.plugin.audioLinks.resolveAudioLinkFile(firstPath, sourceFile.path)
+      : refs.map((ref) => this.plugin.audioLinks.resolveAudioLinkFile(ref, sourceFile.path)).find((f) => f instanceof obsidian.TFile);
+    if (!(firstSource instanceof obsidian.TFile) && !timeline.length) {
       this.inlineAudioEl = null;
       this.inlineAudioFile = null;
       return;
@@ -3914,11 +4030,7 @@ export class OutlineView extends obsidian.ItemView {
 
     const sec = root.createDiv({ cls: "qnalog-outline-section qnalog-outline-player-section" });
     const ui = sec.createDiv({ cls: "qnalog-inline-player" });
-    const playBtn = ui.createEl("button", {
-      cls: "qnalog-inline-player-play",
-      attr: { type: "button", "aria-label": i18nT("AI is organizing the final minutes") },
-    });
-
+    const playBtn = ui.createEl("button", { cls: "qnalog-inline-player-play", attr: { type: "button", "aria-label": i18nT("Play recording") } });
     const progressWrap = ui.createDiv({ cls: "qnalog-inline-player-progress-wrap" });
     const track = progressWrap.createDiv({ cls: "qnalog-inline-player-track" });
     const fill = track.createDiv({ cls: "qnalog-inline-player-fill" });
@@ -3926,61 +4038,78 @@ export class OutlineView extends obsidian.ItemView {
     const times = progressWrap.createDiv({ cls: "qnalog-inline-player-times" });
     const currentTime = times.createSpan({ cls: "qnalog-inline-player-time is-current", text: "0:00" });
     const totalTime = times.createSpan({ cls: "qnalog-inline-player-time", text: "0:00" });
-
-    const volumeBtn = ui.createEl("button", {
-      cls: "qnalog-inline-player-icon-btn",
-      attr: { type: "button", "aria-label": i18nT("Mute/Unmute"), title: i18nT("Mute/Unmute") },
-    });
+    const volumeBtn = ui.createEl("button", { cls: "qnalog-inline-player-icon-btn", attr: { type: "button", "aria-label": i18nT("Mute/Unmute"), title: i18nT("Mute/Unmute") } });
     try { obsidian.setIcon(volumeBtn, "volume"); } catch { volumeBtn.setText(i18nT("Volume")); }
-    const moreBtn = ui.createEl("button", {
-      cls: "qnalog-inline-player-icon-btn",
-      attr: { type: "button", "aria-label": i18nT(" Can be switched temporarily for this import only; the default prompts are not modified."), title: i18nT(" Can be switched temporarily for this import only; the default prompts are not modified.") },
-    });
+    const moreBtn = ui.createEl("button", { cls: "qnalog-inline-player-icon-btn", attr: { type: "button", "aria-label": i18nT("Open audio"), title: i18nT("Open audio") } });
     try { obsidian.setIcon(moreBtn, "more-horizontal"); } catch { moreBtn.setText(i18nT("More")); }
-
-    const player = sec.createEl("audio", {
-      cls: "qnalog-outline-player-native",
-      attr: { preload: "metadata" },
-    });
-    try {
-      player.src = this.app.vault.getResourcePath(audioFile);
-    } catch {
-      player.src = "";
-    }
+    const errorEl = sec.createDiv({ cls: "qnalog-inline-player-error", attr: { role: "status", "aria-live": "polite" } });
+    errorEl.hide();
+    const player = sec.createEl("audio", { cls: "qnalog-outline-player-native", attr: { preload: "metadata" } });
     this.inlineAudioEl = player;
-    this.inlineAudioFile = audioFile;
+    this.inlineAudioFile = firstSource;
+    const completeTimeline = timeline.length > 0;
+    let update = () => {};
+    if (completeTimeline) {
+      this.inlinePlaybackController = new OutlinePlaybackController({
+        audio: player,
+        timeline,
+        resolveSource: (path, name) => {
+          const file = this.plugin.audioLinks.resolveAudioLinkFile(path || name, sourceFile.path);
+          return file instanceof obsidian.TFile ? this.app.vault.getResourcePath(file) : null;
+        },
+        onState: (state) => {
+          this.inlinePlaybackState = state;
+          const file = state.sourcePath
+            ? this.plugin.audioLinks.resolveAudioLinkFile(state.sourcePath, sourceFile.path)
+            : null;
+          if (file instanceof obsidian.TFile) this.inlineAudioFile = file;
+          update();
+        },
+      });
+      // Controller selects sources by ledger path; loading the first range is deferred until a seek or play.
+    } else {
+      try { player.src = this.app.vault.getResourcePath(firstSource); } catch { player.src = ""; }
+    }
 
-    const setPlayIcon = () => {
-      playBtn.classList.toggle("is-playing", !player.paused);
-      playBtn.classList.toggle("is-paused", player.paused);
-      playBtn.setAttribute("aria-label", player.paused ? i18nT("Play recording") : i18nT("Pause recording"));
-    };
-    const update = () => {
-      const duration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0;
-      // 探测期间播放头被推到 1e101（逼出总长的手段），seek 完成前 currentTime 还是这个哨兵值：
-      // 显示层按 0 处理，避免总时间/进度条闪出天文数字。超过 1e6 秒（约 277 小时）的录音不存在。
-      const rawCurrent = Number(player.currentTime) || 0;
-      const current = rawCurrent > 1e6 ? 0 : Math.max(0, rawCurrent);
-      const pct = duration ? Math.max(0, Math.min(100, current / duration * 100)) : 0;
+    update = () => {
+      const state = this.inlinePlaybackState;
+      const currentMs = completeTimeline ? (state?.currentMs || 0) : Math.max(0, Number(player.currentTime) || 0) * 1000;
+      const totalMs = completeTimeline
+        ? (state?.totalMs || 0)
+        : (Number.isFinite(player.duration) && player.duration > 0 ? player.duration * 1000 : 0);
+      const pct = totalMs ? Math.max(0, Math.min(100, currentMs / totalMs * 100)) : 0;
       fill.style.width = `${pct}%`;
       knob.style.left = `${pct}%`;
-      currentTime.setText(formatElapsed(Math.round(current * 1000)));
-      totalTime.setText(duration ? formatElapsed(Math.round(duration * 1000)) : "0:00");
-      setPlayIcon();
+      currentTime.setText(formatElapsed(Math.round(currentMs)));
+      totalTime.setText(totalMs ? formatElapsed(Math.round(totalMs)) : "0:00");
+      const playing = completeTimeline ? !!state?.playing : !player.paused;
+      playBtn.classList.toggle("is-playing", playing);
+      playBtn.classList.toggle("is-paused", !playing);
+      playBtn.setAttribute("aria-label", playing ? i18nT("Pause recording") : i18nT("Play recording"));
+      const error = state?.error || "";
+      errorEl.setText(error);
+      if (error) errorEl.show();
+      else errorEl.hide();
       this.decoratePlaybackOutlineChapters(this.inlineOutlineBody);
     };
-    playBtn.onclick = () => {
-      if (player.paused) player.play().catch(() => { /* intentionally empty */ });
-      else player.pause();
-      update();
-    };
-    const seekFromClientX = (clientX, autoplay = false) => {
+    const seekRatio = (clientX, autoplay = false) => {
       const rect = track.getBoundingClientRect();
       const ratio = rect.width ? Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) : 0;
-      if (Number.isFinite(player.duration) && player.duration > 0) {
+      if (completeTimeline) {
+        const totalMs = timeline.reduce((max, interval) => Math.max(max, interval.noteEndMs), 0);
+        this.inlinePlaybackController?.seekGlobal(totalMs * ratio, autoplay);
+      } else if (Number.isFinite(player.duration) && player.duration > 0) {
         player.currentTime = player.duration * ratio;
-        if (autoplay) player.play().catch(() => { /* intentionally empty */ });
+        if (autoplay) player.play().catch(() => { /* handled by native media state */ });
       }
+      update();
+    };
+    playBtn.onclick = () => {
+      if (completeTimeline) {
+        if (this.inlinePlaybackState?.playing) this.inlinePlaybackController?.pause();
+        else this.inlinePlaybackController?.play();
+      } else if (player.paused) player.play().catch(() => { /* handled by native media state */ });
+      else player.pause();
       update();
     };
     let draggingProgress = false;
@@ -3991,54 +4120,57 @@ export class OutlineView extends obsidian.ItemView {
       if (evt.pointerType === "mouse" && evt.button !== 0) return;
       draggingProgress = true;
       dragMoved = false;
-      resumeAfterDrag = !player.paused;
-      seekFromClientX(evt.clientX, false);
+      resumeAfterDrag = completeTimeline ? !!this.inlinePlaybackState?.playing : !player.paused;
+      seekRatio(evt.clientX);
       try { track.setPointerCapture(evt.pointerId); } catch { /* intentionally empty */ }
       evt.preventDefault();
     });
     track.addEventListener("pointermove", (evt) => {
       if (!draggingProgress) return;
       dragMoved = true;
-      seekFromClientX(evt.clientX, false);
+      seekRatio(evt.clientX);
       evt.preventDefault();
     });
     const endProgressDrag = (evt) => {
       if (!draggingProgress) return;
-      seekFromClientX(evt.clientX, false);
+      seekRatio(evt.clientX);
       draggingProgress = false;
       if (dragMoved) {
         suppressNextTrackClick = true;
         window.setTimeout(() => { suppressNextTrackClick = false; }, 0);
       }
-      if (resumeAfterDrag) player.play().catch(() => { /* intentionally empty */ });
+      if (resumeAfterDrag) {
+        if (completeTimeline) this.inlinePlaybackController?.play();
+        else player.play().catch(() => { /* handled by native media state */ });
+      }
       try { track.releasePointerCapture(evt.pointerId); } catch { /* intentionally empty */ }
       evt.preventDefault();
     };
     track.addEventListener("pointerup", endProgressDrag);
     track.addEventListener("pointercancel", endProgressDrag);
-    track.onclick = (evt) => {
-      if (suppressNextTrackClick) return;
-      seekFromClientX(evt.clientX, true);
-    };
+    track.onclick = (evt) => { if (!suppressNextTrackClick) seekRatio(evt.clientX, true); };
     volumeBtn.onclick = () => {
       player.muted = !player.muted;
       volumeBtn.empty();
       try { obsidian.setIcon(volumeBtn, player.muted ? "volume-x" : "volume"); } catch { /* intentionally empty */ }
     };
-    moreBtn.onclick = () => this.app.workspace.getLeaf(false).openFile(audioFile);
-    player.addEventListener("loadedmetadata", () => {
-      update();
-      // MediaRecorder 录出的 WebM 头部没有 Duration，Chromium 把 duration 报成 Infinity：
-      // 总时长显示 0:00、进度条停在最左、点击进度条不跳转。推播放头扫到文件尾可让 Chromium
-      // 回填真实总长（见 probeAudioDurationMs），完成后刷新一次。正常文件探测直接短路，无额外动作。
-      if (!(Number.isFinite(player.duration) && player.duration > 0)) {
-        void probeAudioDurationMs(player).then(update);
-      }
-    });
-    player.addEventListener("durationchange", update);
-    player.addEventListener("timeupdate", update);
-    player.addEventListener("play", update);
-    player.addEventListener("pause", update);
+    moreBtn.onclick = () => {
+      const currentPath = this.inlinePlaybackState?.sourcePath;
+      const activeFile = currentPath
+        ? this.plugin.audioLinks.resolveAudioLinkFile(currentPath, sourceFile.path)
+        : this.inlineAudioFile;
+      if (activeFile instanceof obsidian.TFile) void this.app.workspace.getLeaf(false).openFile(activeFile);
+    };
+    if (!completeTimeline) {
+      player.addEventListener("loadedmetadata", () => {
+        update();
+        if (!(Number.isFinite(player.duration) && player.duration > 0)) void probeAudioDurationMs(player).then(update);
+      });
+      player.addEventListener("durationchange", update);
+      player.addEventListener("timeupdate", update);
+      player.addEventListener("play", update);
+      player.addEventListener("pause", update);
+    }
     update();
   }
 
@@ -4053,7 +4185,11 @@ export class OutlineView extends obsidian.ItemView {
   getOutlineChapterTimeMs(li: HTMLElement | null): number {
     if (!li) return NaN;
     const link = li.querySelector(".qnalog-time-link.qnalog-outline-leading-time");
-    return link ? parseElapsedMsToken((link.textContent || "").trim()) : NaN;
+    if (!link || link.hasAttribute("data-qnalog-unmapped-time")) return NaN;
+    const mappedValue = link.getAttribute("data-qnalog-global-ms");
+    const mapped = mappedValue === null ? NaN : Number(mappedValue);
+    if (Number.isFinite(mapped)) return mapped;
+    return parseElapsedMsToken((link.getAttribute("data-qnalog-local-label") || link.textContent || "").trim());
   }
 
   appendOutlineTitleAdornment(li: HTMLElement, node: HTMLElement) {
@@ -4186,8 +4322,16 @@ export class OutlineView extends obsidian.ItemView {
     if (!body || !this.inlineAudioEl) return;
     const items = this.getOutlineChapterItems(body);
     if (!items.length) return;
-    const currentMs = Math.max(0, Number(this.inlineAudioEl.currentTime) || 0) * 1000;
-    const times = items.map((li) => this.getOutlineChapterTimeMs(li));
+    const currentMs = this.inlinePlaybackController
+      ? this.inlinePlaybackState?.currentMs || 0
+      : Math.max(0, Number(this.inlineAudioEl.currentTime) || 0) * 1000;
+    const currentSourcePath = this.inlinePlaybackState?.sourcePath || "";
+    const times = items.map((li) => {
+      const link = li.querySelector(".qnalog-time-link.qnalog-outline-leading-time");
+      const sourcePath = link?.getAttribute("data-qnalog-source-path") || "";
+      if (this.inlinePlaybackController && sourcePath !== currentSourcePath) return NaN;
+      return this.getOutlineChapterTimeMs(li);
+    });
     let activeTime = NaN;
     for (let i = 0; i < times.length; i++) {
       if (Number.isFinite(times[i]) && times[i] <= currentMs + 250) activeTime = times[i];
@@ -4218,36 +4362,53 @@ export class OutlineView extends obsidian.ItemView {
         const target = evt.target;
         const targetEl = target as HTMLElement | null;
         if (targetEl && targetEl.closest && targetEl.closest("a,button")) return;
-        const ms = times[i];
-        if (!Number.isFinite(ms) || !this.inlineAudioEl) return;
-        this.inlineAudioEl.currentTime = ms / 1000;
-        this.inlineAudioEl.play().catch(() => { /* intentionally empty */ });
+        const link = li.querySelector(".qnalog-time-link.qnalog-outline-leading-time");
+        if (!link) return;
+        if (this.inlinePlaybackController) {
+          const globalMs = Number(link.getAttribute("data-qnalog-global-ms"));
+          if (!Number.isFinite(globalMs)) return;
+          this.inlinePlaybackController.seekGlobal(globalMs, true);
+        } else {
+          const localMs = Number(link.getAttribute("data-qnalog-local-ms"));
+          const path = link.getAttribute("data-qnalog-source-path") || "";
+          const file = this.plugin.audioLinks.resolveAudioLinkFile(path, "");
+          if (!Number.isFinite(localMs) || !(file instanceof obsidian.TFile) || !(this.inlineAudioFile instanceof obsidian.TFile)
+            || obsidian.normalizePath(file.path) !== obsidian.normalizePath(this.inlineAudioFile.path)) return;
+          this.inlineAudioEl.currentTime = localMs / 1000;
+          this.inlineAudioEl.play().catch(() => { /* handled by native media state */ });
+        }
         this.decoratePlaybackOutlineChapters(body);
       };
     }
   }
 
   seekInlineAudio(payload) {
-    const audio = this.inlineAudioEl;
-    const audioFile = this.inlineAudioFile;
-    if (!audio || !(audioFile instanceof obsidian.TFile) || !payload) return false;
-    const sameFile = payload.file instanceof obsidian.TFile
-      && obsidian.normalizePath(audioFile.path) === obsidian.normalizePath(payload.file.path);
-    const ms = sameFile
-      ? (Number.isFinite(payload.localMs) ? payload.localMs : payload.globalMs)
-      : (Number.isFinite(payload.globalMs) ? payload.globalMs : payload.localMs);
+    if (!this.inlineAudioEl || !payload || !(payload.file instanceof obsidian.TFile)) return false;
+    if (this.inlinePlaybackController) {
+      const sourcePath = obsidian.normalizePath(payload.file.path);
+      if (!Number.isFinite(payload.globalMs) || !Number.isFinite(payload.localMs)) return false;
+      const timeline = this.notePanelCacheData?.audioTimelineComplete ? this.notePanelCacheData.audioTimeline : [];
+      const mappedGlobalMs = mapAudioTimeToNote(timeline, sourcePath, payload.localMs);
+      if (mappedGlobalMs === null || mappedGlobalMs !== payload.globalMs) return false;
+      const handled = this.inlinePlaybackController.seekGlobal(mappedGlobalMs, true);
+      if (handled) this.inlineAudioEl.focus();
+      return handled;
+    }
+    if (!(this.inlineAudioFile instanceof obsidian.TFile)
+      || obsidian.normalizePath(this.inlineAudioFile.path) !== obsidian.normalizePath(payload.file.path)
+      || !Number.isFinite(payload.localMs)) return false;
     const seek = () => {
       try {
-        const target = Math.max(0, Math.min(Number.isFinite(audio.duration) ? audio.duration : Number.MAX_SAFE_INTEGER, (ms || 0) / 1000));
-        audio.currentTime = target;
-        audio.play().catch(() => { /* intentionally empty */ });
-        audio.focus();
+        const target = Math.max(0, Math.min(Number.isFinite(this.inlineAudioEl.duration) ? this.inlineAudioEl.duration : Number.MAX_SAFE_INTEGER, payload.localMs / 1000));
+        this.inlineAudioEl.currentTime = target;
+        this.inlineAudioEl.play().catch(() => { /* handled by native media state */ });
+        this.inlineAudioEl.focus();
       } catch (e) {
         console.warn("[QnALog] inline audio seek failed", e);
       }
     };
-    if (audio.readyState >= 1) seek();
-    else audio.addEventListener("loadedmetadata", seek, { once: true });
+    if (this.inlineAudioEl.readyState >= 1) seek();
+    else this.inlineAudioEl.addEventListener("loadedmetadata", seek, { once: true });
     return true;
   }
 
@@ -5125,11 +5286,12 @@ export class OutlineView extends obsidian.ItemView {
     if (!body) return;
     this.plugin.audioLinks.enhanceAudioTimeLinks(body, opts || {});
     this.decorateOutlineSourceTags(body);
-    this.promoteOutlineTimeLinks(body);
+    this.promoteOutlineTimeLinks(body, opts || {});
   }
 
-  promoteOutlineTimeLinks(body) {
+  promoteOutlineTimeLinks(body, opts: { audioTimeline?: readonly NoteAudioInterval[] | null; sourcePath?: string } = {}) {
     if (!body) return;
+    const timeline = Array.isArray(opts.audioTimeline) ? opts.audioTimeline : [];
     const listItems = body.querySelectorAll("li") as NodeListOf<HTMLElement>;
     for (const li of Array.from(listItems)) {
       const list = li.parentElement;
@@ -5138,6 +5300,28 @@ export class OutlineView extends obsidian.ItemView {
       const links = (Array.from(li.querySelectorAll("a.qnalog-time-link")))
         .filter((link) => link.closest("li") === li);
       if (!links.length) continue;
+      for (const link of links) {
+        if (link.hasAttribute("data-qnalog-local-label")) continue;
+        const rawLabel = (link.textContent || "").trim();
+        const linkPath = link.getAttribute("data-href") || link.getAttribute("href") || "";
+        const localMs = parseElapsedMsToken(rawLabel);
+        link.setAttribute("data-qnalog-link-path", linkPath);
+        link.setAttribute("data-qnalog-local-label", rawLabel);
+        link.setAttribute("data-qnalog-local-ms", String(localMs));
+        link.setAttribute("data-qnalog-note-path", opts.sourcePath || "");
+        const source = this.plugin.audioLinks.resolveAudioLinkFile(linkPath, opts.sourcePath || "");
+        if (!(source instanceof obsidian.TFile)) continue;
+        const sourcePath = obsidian.normalizePath(source.path);
+        link.setAttribute("data-qnalog-source-path", sourcePath);
+        if (!timeline.length || !Number.isFinite(localMs)) continue;
+        const globalMs = mapAudioTimeToNote(timeline, sourcePath, localMs);
+        if (globalMs === null) {
+          link.setAttribute("data-qnalog-unmapped-time", "true");
+          continue;
+        }
+        link.setAttribute("data-qnalog-global-ms", String(globalMs));
+        link.setText(formatElapsed(globalMs));
+      }
       if (!isTopLevel) {
         links.forEach((link) => link.addClass("qnalog-outline-secondary-time"));
         continue;
@@ -5152,33 +5336,25 @@ export class OutlineView extends obsidian.ItemView {
       target.insertBefore(first, target.firstChild);
       for (const extra of links.slice(1)) extra.addClass("qnalog-outline-secondary-time");
     }
-    // 连续重复时间戳标记：段落切分粗时（如段5是5分钟），多个 L1 可能都只能锚到段起点（同一个 [[file|08:00]]）
-    // 视觉上两个相邻 08:00 看像 bug，但实际跳转是对的。给第二个开始的连续重复打 .is-duplicate-time，
-    // CSS 把时间文字淡化 / 替换成 ↘ 延续标志；rail 圆点和点击仍正常工作
+    // Continued arrows only claim equivalence when the ledger proves the same source and global position.
     const rails = body.querySelectorAll("ul.qnalog-outline-time-rail") as NodeListOf<HTMLElement>;
     for (const rail of Array.from(rails)) {
       for (const child of Array.from(rail.children || []) as HTMLElement[]) {
         if (!child || child.tagName !== "LI" || !child.classList) continue;
-        if (!child.classList.contains("qnalog-outline-has-leading-time") && !child.classList.contains("qnalog-outline-annotation-li")) {
-          child.classList.add("qnalog-outline-untimed-top");
-        } else {
-          child.classList.remove("qnalog-outline-untimed-top");
-        }
+        child.toggleClass("qnalog-outline-untimed-top", !child.classList.contains("qnalog-outline-has-leading-time") && !child.classList.contains("qnalog-outline-annotation-li"));
       }
       const leadingLinks = rail.querySelectorAll(":scope > li .qnalog-outline-leading-time");
-      let prevHref = "";
-      let prevText = "";
+      let prevKey = "";
       for (const link of Array.from(leadingLinks)) {
-        const href = link.getAttribute("data-href") || link.getAttribute("href") || "";
-        const text = (link.textContent || "").trim();
-        // 只标连续完全相同的（同 href + 同显示文字）
-        if (href && href === prevHref && text && text === prevText) {
+        const globalMs = link.getAttribute("data-qnalog-global-ms");
+        const sourcePath = link.getAttribute("data-qnalog-source-path") || "";
+        const key = globalMs !== null && sourcePath ? `${sourcePath}|${globalMs}` : "";
+        if (key && key === prevKey) {
           link.classList.add("is-duplicate-time");
           const parentLi = link.closest("li");
           if (parentLi) parentLi.classList.add("qnalog-outline-duplicate-leading");
         }
-        prevHref = href;
-        prevText = text;
+        prevKey = key;
       }
     }
   }

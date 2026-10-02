@@ -11966,7 +11966,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 0;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-wrap {
+/* Recent-list styling is shared by idle, recording, and paused views. */
+.qnalog-outline .qnalog-outline-recent-filter-wrap {
   container-type: inline-size;
   display: flex;
   flex-wrap: nowrap;
@@ -11978,7 +11979,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 7px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-search-box {
+.qnalog-outline .qnalog-outline-recent-search-box {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -11991,18 +11992,18 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: color-mix(in srgb, var(--background-secondary) 76%, var(--background-primary));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-search-icon {
+.qnalog-outline .qnalog-outline-recent-search-icon {
   display: inline-flex;
   flex: 0 0 auto;
   color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-search-icon svg {
+.qnalog-outline .qnalog-outline-recent-search-icon svg {
   width: 14px;
   height: 14px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-search {
+.qnalog-outline .qnalog-outline-recent-search {
   flex: 1 1 auto;
   min-width: 0;
   height: 32px;
@@ -12015,8 +12016,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-size: 12.5px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-chip,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear {
+.qnalog-outline .qnalog-outline-recent-filter-chip,
+.qnalog-outline .qnalog-outline-recent-filter-clear {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -12034,46 +12035,46 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group-chip {
+.qnalog-outline .qnalog-outline-recent-group-chip {
   padding-inline: 11px;
   background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
   color: var(--qnalog-text-active, var(--text-accent));
   font-weight: 700;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-chip:hover {
+.qnalog-outline .qnalog-outline-recent-filter-chip:hover {
   background: var(--background-modifier-hover);
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-chevron,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-chevron svg {
+.qnalog-outline .qnalog-outline-recent-filter-chevron,
+.qnalog-outline .qnalog-outline-recent-filter-chevron svg {
   width: 11px;
   height: 11px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear {
+.qnalog-outline .qnalog-outline-recent-filter-clear {
   padding-inline: 3px;
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear:hover,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear:focus,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear:active {
+.qnalog-outline .qnalog-outline-recent-filter-clear:hover,
+.qnalog-outline .qnalog-outline-recent-filter-clear:focus,
+.qnalog-outline .qnalog-outline-recent-filter-clear:active {
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-text-active, var(--text-accent));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent {
+.qnalog-outline .qnalog-outline-recent {
   position: relative;
   display: block;
   margin: 14px 0 0;
   padding: 0 0 8px 40px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent::before {
+.qnalog-outline .qnalog-outline-recent::before {
   content: "";
   position: absolute;
   top: 10px;
@@ -12083,18 +12084,18 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--qnalog-border-line, var(--background-modifier-border));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group {
+.qnalog-outline .qnalog-outline-recent-group {
   position: relative;
   display: block;
   min-width: 0;
   padding: 14px 0 0;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group:first-child {
+.qnalog-outline .qnalog-outline-recent-group:first-child {
   padding-top: 10px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis {
+.qnalog-outline .qnalog-outline-recent-axis {
   position: absolute;
   top: 13px;
   left: -40px;
@@ -12105,11 +12106,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   text-align: right;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis::before {
+.qnalog-outline .qnalog-outline-recent-axis::before {
   display: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis::after {
+.qnalog-outline .qnalog-outline-recent-axis::after {
   content: "";
   position: absolute;
   top: 1px;
@@ -12122,31 +12123,31 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-sizing: border-box;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis-primary {
+.qnalog-outline .qnalog-outline-recent-axis-primary {
   color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 12px;
   font-weight: 650;
   line-height: 1;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis-secondary {
+.qnalog-outline .qnalog-outline-recent-axis-secondary {
   margin-top: 3px;
   color: var(--qnalog-text-tertiary, var(--text-faint));
   font-size: 9.5px;
   line-height: 1;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group.is-today .qnalog-outline-recent-axis::after {
+.qnalog-outline .qnalog-outline-recent-group.is-today .qnalog-outline-recent-axis::after {
   border-color: var(--qnalog-text-active, var(--interactive-accent));
   background: var(--qnalog-text-active, var(--interactive-accent));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 12%, transparent);
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis--named::after {
+.qnalog-outline .qnalog-outline-recent-axis--named::after {
   display: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis-icon {
+.qnalog-outline .qnalog-outline-recent-axis-icon {
   position: absolute;
   top: -5px;
   left: 26px;
@@ -12162,27 +12163,27 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-axis-icon svg {
+.qnalog-outline .qnalog-outline-recent-axis-icon svg {
   width: 19px;
   height: 19px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent--project .qnalog-outline-recent-axis--named::after {
+.qnalog-outline .qnalog-outline-recent--project .qnalog-outline-recent-axis--named::after {
   display: block;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent--project .qnalog-outline-recent-axis-icon {
+.qnalog-outline .qnalog-outline-recent--project .qnalog-outline-recent-axis-icon {
   left: -16px;
   width: 20px;
   background: transparent;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent--project .qnalog-outline-recent-axis-icon svg {
+.qnalog-outline .qnalog-outline-recent--project .qnalog-outline-recent-axis-icon svg {
   width: 15px;
   height: 15px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-items {
+.qnalog-outline .qnalog-outline-recent-items {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -12191,7 +12192,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 2px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group-title {
+.qnalog-outline .qnalog-outline-recent-group-title {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -12203,7 +12204,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: default;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group-title::after {
+.qnalog-outline .qnalog-outline-recent-group-title::after {
   content: "";
   flex: 1 1 auto;
   min-width: 8px;
@@ -12211,21 +12212,21 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--qnalog-border-line, var(--background-modifier-border));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group-title[role="button"] {
+.qnalog-outline .qnalog-outline-recent-group-title[role="button"] {
   cursor: pointer;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-toggle {
+.qnalog-outline .qnalog-outline-recent-folder-toggle {
   /* The approved folder tree uses indentation and folder icons, not a second
      visual language of chevrons. The whole title remains the collapse target. */
   display: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-toggle svg {
+.qnalog-outline .qnalog-outline-recent-folder-toggle svg {
   display: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group-weekday {
+.qnalog-outline .qnalog-outline-recent-group-weekday {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -12237,13 +12238,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group-today {
+.qnalog-outline .qnalog-outline-recent-group-today {
   flex: 0 0 auto;
   color: var(--qnalog-text-active, var(--interactive-accent));
   font-size: 10px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group-count {
+.qnalog-outline .qnalog-outline-recent-group-count {
   flex: 0 0 auto;
   order: 3;
   color: var(--qnalog-text-tertiary, var(--text-faint));
@@ -12251,7 +12252,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row {
+.qnalog-outline .qnalog-outline-recent-row {
   position: relative;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -12267,19 +12268,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-shadow: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row::before {
+.qnalog-outline .qnalog-outline-recent-row::before {
   display: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row:hover {
+.qnalog-outline .qnalog-outline-recent-row:hover {
   background: var(--background-modifier-hover);
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row.is-active {
+.qnalog-outline .qnalog-outline-recent-row.is-active {
   background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-chip {
+.qnalog-outline .qnalog-outline-recent-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -12293,21 +12294,21 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-chip svg {
+.qnalog-outline .qnalog-outline-recent-chip svg {
   width: 15px;
   height: 15px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-body {
+.qnalog-outline .qnalog-outline-recent-body {
   min-width: 0;
   padding-right: 72px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-title-line {
+.qnalog-outline .qnalog-outline-recent-title-line {
   min-width: 0;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-name {
+.qnalog-outline .qnalog-outline-recent-name {
   overflow: hidden;
   color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 14px;
@@ -12317,11 +12318,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row.is-active .qnalog-outline-recent-name {
+.qnalog-outline .qnalog-outline-recent-row.is-active .qnalog-outline-recent-name {
   color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-meta {
+.qnalog-outline .qnalog-outline-recent-meta {
   overflow: hidden;
   margin-top: 3px;
   color: var(--qnalog-text-tertiary, var(--text-muted));
@@ -12331,7 +12332,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-actions {
+.qnalog-outline .qnalog-outline-recent-actions {
   position: absolute;
   top: 50%;
   right: 8px;
@@ -12341,7 +12342,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   transform: translateY(-50%);
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-action {
+.qnalog-outline .qnalog-outline-recent-action {
   min-width: 28px;
   height: 28px;
   padding: 0 7px;
@@ -12352,42 +12353,42 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-secondary, var(--text-muted));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-action:hover {
+.qnalog-outline .qnalog-outline-recent-action:hover {
   background: var(--background-modifier-hover);
   color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-action.is-rename {
+.qnalog-outline .qnalog-outline-recent-action.is-rename {
   opacity: 0;
   transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-rename,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-rename,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-rename {
+.qnalog-outline .qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-rename,
+.qnalog-outline .qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-rename,
+.qnalog-outline .qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-rename {
   opacity: 1;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-variant {
+.qnalog-outline .qnalog-outline-recent-variant {
   min-height: 32px;
   margin-left: 46px;
   padding: 5px 8px;
   border-radius: 8px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-content {
+.qnalog-outline .qnalog-outline-recent-folder-content {
   display: flex;
   flex-direction: column;
   min-width: 0;
   gap: 2px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node {
+.qnalog-outline .qnalog-outline-recent-folder-node {
   min-width: 0;
   margin-left: 17px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-title {
+.qnalog-outline .qnalog-outline-recent-folder-node-title {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -12398,7 +12399,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-title::after {
+.qnalog-outline .qnalog-outline-recent-folder-node-title::after {
   content: "";
   order: 2;
   flex: 1 1 auto;
@@ -12407,57 +12408,57 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--qnalog-border-line, var(--background-modifier-border));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-folder-toggle {
+.qnalog-outline .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-folder-toggle {
   display: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-icon {
+.qnalog-outline .qnalog-outline-recent-folder-node-icon {
   display: inline-flex;
   order: 0;
   flex: 0 0 14px;
   color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-icon svg {
+.qnalog-outline .qnalog-outline-recent-folder-node-icon svg {
   width: 14px;
   height: 14px;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-group-weekday {
+.qnalog-outline .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-group-weekday {
   order: 1;
   flex: 0 1 auto;
   font-size: 12.5px;
   font-weight: 600;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-group-count {
+.qnalog-outline .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-group-count {
   order: 3;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-node.is-collapsed > .qnalog-outline-recent-folder-content,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-folder-root.is-collapsed > .qnalog-outline-recent-items > .qnalog-outline-recent-folder-content {
+.qnalog-outline .qnalog-outline-recent-folder-node.is-collapsed > .qnalog-outline-recent-folder-content,
+.qnalog-outline .qnalog-outline-recent-folder-root.is-collapsed > .qnalog-outline-recent-items > .qnalog-outline-recent-folder-content {
   display: none;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group.is-collapsed .qnalog-outline-recent-row,
-.qnalog-outline.is-idle-view .qnalog-outline-recent-group.is-collapsed .qnalog-outline-recent-variant {
+.qnalog-outline .qnalog-outline-recent-group.is-collapsed .qnalog-outline-recent-row,
+.qnalog-outline .qnalog-outline-recent-group.is-collapsed .qnalog-outline-recent-variant {
   display: none;
 }
 
 @container (max-width: 350px) {
-  .qnalog-outline.is-idle-view .qnalog-outline-recent-filter-chip {
+  .qnalog-outline .qnalog-outline-recent-filter-chip {
     max-width: 70px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear {
+  .qnalog-outline .qnalog-outline-recent-filter-clear {
     font-size: 0;
     width: 24px;
     padding: 0;
   }
 
-  .qnalog-outline.is-idle-view .qnalog-outline-recent-filter-clear::after {
+  .qnalog-outline .qnalog-outline-recent-filter-clear::after {
     content: "×";
     font-size: 15px;
   }

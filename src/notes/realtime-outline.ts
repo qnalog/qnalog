@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：实时大纲：状态机、提示词与增量判据
 
+import { validateRealtimeOutlineSourceCoverage } from "./outline-coverage";
 import { cleanRealtimeLlmText } from "./recording-issues";
 
 import { getAudioTimeLink, getSegmentAudioLinkOffsetMs } from "./audio-refs";
@@ -15,6 +16,8 @@ import { formatElapsed } from "../shared/util-common";
 import { labelText } from "../shared/note-labels";
 import { NS_VIEW_OUTLINE } from "../shared/namespace";
 
+
+import { buildOutlineCoverageMetadata } from "./outline-storage";
 
 // 实时大纲：归并到共同上层概念，层级由内容涌现，不强加结构
 export const REALTIME_OUTLINE_MAX_SEGMENTS = 10;
@@ -420,13 +423,22 @@ export function buildRealtimeOutlineDetails(session) {
   const outline = String(session && session.realtimeOutline ? session.realtimeOutline : "").trim();
   if (!outline) return "";
   const coverage = session && session.realtimeOutlineCoverage;
+  const rawSourceCoverage = session && session.realtimeOutlineSourceCoverage;
+  const segments = session && Array.isArray(session.segments) ? session.segments : [];
+  const sourceCoverage = rawSourceCoverage
+    && validateRealtimeOutlineSourceCoverage(rawSourceCoverage, outline, segments)
+    ? rawSourceCoverage
+    : null;
   const totalSegmentCount = Math.max(0, Number(coverage && coverage.totalSegmentCount) || 0);
   const committedSegmentCount = Math.min(
     totalSegmentCount,
-    Math.max(0, Number(coverage && coverage.committedSegmentCount) || 0)
+    Math.max(0, Number(sourceCoverage && sourceCoverage.committedSegmentCount) || 0)
   );
+  const coverageLabel = session && session.realtimeOutlineCoverageScope === "whole-note"
+    ? "outlineCoverageWholeNote"
+    : "outlineCoverageCurrentRecording";
   const coverageNotice = totalSegmentCount > 0 && committedSegmentCount < totalSegmentCount
-    ? `> ${labelText("outlineCoverage", committedSegmentCount, totalSegmentCount)}`
+    ? `> ${labelText(coverageLabel, committedSegmentCount, totalSegmentCount)}`
     : "";
   return [
     "<details>",
@@ -437,16 +449,20 @@ export function buildRealtimeOutlineDetails(session) {
     "",
     outline,
     "",
+    ...(sourceCoverage ? [buildOutlineCoverageMetadata(sourceCoverage), ""] : []),
     "</details>",
   ].join("\n");
 }
 
 export function isRealtimeOutlineCurrent(session) {
-  if (!session || !session.realtimeOutline) return false;
-  const segmentCount = Array.isArray(session.segments) ? session.segments.length : 0;
-  const processedCount = Number(session.realtimeOutlineSegmentCount) || 0;
-  return processedCount >= segmentCount;
+  if (!session || !session.realtimeOutline || !Array.isArray(session.segments)) return false;
+  const segmentCount = session.segments.length;
+  const proof = session.realtimeOutlineSourceCoverage;
+  return !!proof && proof.committedSegmentCount === segmentCount
+    && validateRealtimeOutlineSourceCoverage(proof, session.realtimeOutline, session.segments);
 }
+
+
 
 export function getRealtimeOutlineNewSegmentCount(session) {
   if (!session) return 0;

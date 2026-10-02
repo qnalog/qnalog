@@ -17,12 +17,13 @@ import {
   parseSuggestedTagsFromOutput,
   postProcessBriefingOutput,
   replaceActiveVersionBlock,
+  splitTranscriptSections,
   stripEmptyPlaceholders,
   stripImportAppendices,
   stripMarkdownForEmailBrief,
   getSourceIdFromMarkdown,
 } from "../src/notes/note-markdown";
-import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteDelimitedBlock, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
@@ -65,6 +66,92 @@ describe("iterateNoteHeadingBlocks", () => {
     expect(markdown.slice(range.bodyStart, range.bodyEnd)).toBe("\nbody\n");
   });
 });
+describe("findNoteDelimitedBlock", () => {
+  it("returns original UTF-16 ranges from a requested offset with repeated body text", () => {
+    const markdown = "😀\r\n<box>same</box>\r\n<box>same</box>";
+    const firstStart = markdown.indexOf("<box>");
+    const secondStart = markdown.indexOf("<box>", firstStart + 1);
+    const first = findNoteDelimitedBlock(markdown, /<box>/, /<\/box>/);
+    const second = findNoteDelimitedBlock(markdown, /<box>/, /<\/box>/, secondStart);
+    expect(first).toEqual({
+      start: firstStart,
+      end: firstStart + "<box>same</box>".length,
+      bodyStart: firstStart + "<box>".length,
+      bodyEnd: firstStart + "<box>same".length,
+    });
+    expect(markdown.slice(first.start, first.end)).toBe("<box>same</box>");
+    expect(markdown.slice(first.bodyStart, first.bodyEnd)).toBe("same");
+    expect(markdown.slice(second.bodyStart, second.bodyEnd)).toBe("same");
+    expect(second.start).toBe(secondStart);
+  });
+
+  it("accepts adjacent boundaries, returns null for missing boundaries, and scans nested starts from bodyStart", () => {
+    const adjacent = findNoteDelimitedBlock("[]", /\[/g, /\]/g);
+    expect(adjacent).not.toBeNull();
+    expect("[]".slice(adjacent!.bodyStart, adjacent!.bodyEnd)).toBe("");
+    expect(findNoteDelimitedBlock("", /</, />/)).toBeNull();
+    expect(findNoteDelimitedBlock("no opener", /</, />/)).toBeNull();
+    expect(findNoteDelimitedBlock("<open>", /<open>/, /<close>/)).toBeNull();
+
+    const nested = "<x>outer <x>inner</x>";
+    const outer = findNoteDelimitedBlock(nested, /<x>/, /<\/x>/)!;
+    const inner = findNoteDelimitedBlock(nested, /<x>/, /<\/x>/, outer.bodyStart)!;
+    expect(nested.slice(outer.bodyStart, outer.bodyEnd)).toBe("outer <x>inner");
+    expect(nested.slice(inner.bodyStart, inner.bodyEnd)).toBe("inner");
+  });
+
+  it("does not consume or retain lastIndex from caller-owned global expressions", () => {
+    const start = /<item>/g;
+    const end = /<\/item>/g;
+    start.lastIndex = 11;
+    end.lastIndex = 17;
+    const first = findNoteDelimitedBlock("<item>payload</item>", start, end);
+    expect(start.lastIndex).toBe(11);
+    expect(end.lastIndex).toBe(17);
+    expect(findNoteDelimitedBlock("<item>payload</item>", start, end)).toEqual(first);
+  });
+});
+
+describe("splitTranscriptSections 容器提取", () => {
+  it("保留转写容器的原始换行，并解析文本来源字段", () => {
+    const audio = "<details><summary>分段原始转写</summary>\r\n### Segment 1\r\n甲\r\n</details>";
+    expect(splitTranscriptSections(audio)).toEqual(["\r\n### Segment 1\r\n甲\r\n"]);
+    expect(extractTranscriptSegments(audio).map((segment) => segment.text)).toEqual(["甲"]);
+
+    const imported = [
+      "<details><summary>Text import sources</summary>",
+      "",
+      "### Text source 2 [[Notes/b.md|B]]",
+      "",
+      "乙",
+      "",
+      "</details>",
+    ].join("\n");
+    expect(extractTranscriptSegments(imported)).toMatchObject([
+      { source: "text-import", sourceName: "B", sourcePath: "Notes/b.md", text: "乙" },
+    ]);
+  });
+
+  it("returns details sections before marker sections, regardless of document order", () => {
+    const markdown = [
+      "<!-- qnalog-segments-start -->MARKER<!-- qnalog-segments-end -->",
+      "<details><summary>分段原始转写</summary>DETAILS</details>",
+    ].join("\n");
+    expect(splitTranscriptSections(markdown)).toEqual(["DETAILS", "MARKER"]);
+  });
+
+  it("keeps empty complete containers and does not fall back, but ignores an unclosed container", () => {
+    expect(
+      splitTranscriptSections("<summary>Segmented raw transcript</summary></details>Raw transcript:FALLBACK"),
+    ).toEqual([""]);
+    expect(splitTranscriptSections("<summary>Segmented raw transcript</summary>orphaned")).toEqual([]);
+  });
+
+  it("uses the later legacy-language fallback when no complete container exists", () => {
+    expect(splitTranscriptSections("原始转写：早期正文\nRaw transcript:最终正文")).toEqual(["最终正文"]);
+  });
+});
+
 
 describe("parseSuggestedTagsFromOutput 标签建议注释", () => {
   it("解析标签并把注释从正文剥除，去重且保持顺序", () => {

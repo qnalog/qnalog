@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { hashRealtimeOutlineText } from "./outline-text";
 
-import { parseElapsedMsToken, parseDurationLabel } from "../shared/util-text";
+import { parseDurationLabel } from "../shared/util-text";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 
@@ -14,7 +14,7 @@ import { formatElapsed, normalizeAudioLinkTarget, safeDecodeUriText } from "../s
 
 import { labelText } from "../shared/note-labels";
 
-import { iterateNoteHeadingBlocks } from "./note-document";
+
 export function getAudioTimeLink(audioName, ms) {
   const name = String(audioName || "").trim();
   if (!name) return "";
@@ -75,24 +75,6 @@ export function getAudioLinkTarget(linkPath) {
   return normalizeAudioLinkTarget(linkPath);
 }
 
-export function extractAudioSegmentOffsets(markdown) {
-  const map = new Map();
-  const text = String(markdown || "");
-  const headingPattern = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\\n]+?)\)([^\n]*)$/gm;
-  const nextBoundaryPattern = /^###\s+(?:段落|Segment)\s+\d+/m;
-  for (const range of iterateNoteHeadingBlocks(text, headingPattern, nextBoundaryPattern)) {
-    const match = range.match;
-    const startOffsetMs = parseElapsedMsToken(match[1]);
-    const block = text.slice(range.bodyStart, range.bodyEnd);
-    const embed = block.match(/!\[\[([^\]]+)\]\]/);
-    if (!embed) continue;
-    const target = getAudioLinkTarget(embed[1]);
-    const name = (target.split("/").pop() || target).trim();
-    if (target) map.set(obsidian.normalizePath(target), startOffsetMs);
-    if (name) map.set(name, startOffsetMs);
-  }
-  return map;
-}
 
 // ============================================================
 // 虚拟声卡识别 · 跨平台 audioinput 设备检测

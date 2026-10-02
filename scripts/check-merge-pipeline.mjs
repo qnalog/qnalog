@@ -60,7 +60,7 @@ function transcriptSegment(index, text, startOffsetMs, endOffsetMs, sourceId = "
   const id = `seg:${sourceId}:${index}`;
   const utteranceId = `${id}:r1:u1`;
   return {
-    index, startOffsetMs, endOffsetMs, text,
+    index, startOffsetMs, endOffsetMs, audioStartOffsetMs: 0, audioEndOffsetMs: endOffsetMs - startOffsetMs, text,
     audioName: `qnalog-${sourceId}-${index}.webm`,
     audioPath: `QnALog/Audio/qnalog-${sourceId}-${index}.webm`,
     transcript: {
@@ -184,6 +184,29 @@ function requestPrompt(request) {
 }
 function makeLlmReply(request) {
   const prompt = requestPrompt(request);
+  if (prompt.includes("<qnalog-outline>")) {
+    return JSON.stringify({
+      choices: [{
+        message: {
+          role: "assistant",
+          content: [
+            "<qnalog-memory>连续录音按内容顺序补全主题。</qnalog-memory>",
+            "<qnalog-outline>",
+            "- [[qnalog-s1-0.webm|00:00]] 首次录音范围主题",
+            "  - 讨论发布范围",
+            "- [[qnalog-s1-1.webm|00:00]] 首次录音决定主题",
+            "  - 确认内部灰度",
+            "- [[qnalog-s2-0.webm|00:00]] 续录灰度反馈主题",
+            "- [[qnalog-s2-1.webm|00:00]] 续录回滚责任主题",
+            "- [[qnalog-s2-2.webm|00:00]] 续录检查清单主题",
+            "</qnalog-outline>",
+          ].join("\n"),
+        },
+        finish_reason: "stop",
+      }],
+      usage: { prompt_tokens: 100, completion_tokens: 60, total_tokens: 160 },
+    });
+  }
   const evidenceIds = [...new Set(Array.from(prompt.matchAll(/^===UTTERANCE ("(?:[^"\\]|\\.)*")/gm), (match) => JSON.parse(match[1])))];
   const evidence = evidenceIds.slice(0, 1);
   const protocol = JSON.stringify({
@@ -319,6 +342,7 @@ async function main() {
     plugin.settings.llmEndpoint = "http://localhost:55990/v1";
     plugin.settings.llmModel = "stub-model";
     plugin.settings.llmApiKey = "stub-key";
+    plugin.settings.enableRealtimeOutline = false;
     plugin.settings.consolidatedLayout = !appendLayout;
     plugin.settings.briefingStructureLevel = "balanced";
     plugin.settings.sedimentAutoExtract = false;
@@ -402,11 +426,37 @@ async function main() {
     if (/^---\r?\n[ \t]*\r?\n#\s/m.test(content)) failures.push("frontmatter 与 H1 之间有多余空行（新格式：单换行紧贴标题）");
     const continuationId = "s2";
     const continuationTime = "2026-09-14T11:43:00.000Z";
+    const originalLiveOutline = "- [[qnalog-s1-0.webm|00:00]] 首次录音已保存主题";
+    const addedSegments = [
+      transcriptSegment(0, "追加录音确认按反馈扩大灰度。", 0, 4000, continuationId),
+      transcriptSegment(1, "追加录音补充回滚阈值与负责人。", 4000, 8000, continuationId),
+      transcriptSegment(2, "追加录音补充发布检查清单。", 8000, 12000, continuationId),
+    ];
+    const appendedLiveOutline = [
+      originalLiveOutline,
+      "- [[qnalog-s2-0.webm|00:00]] QNALOG_CONTINUATION_OUTLINE_PERSISTENCE_1",
+      "- [[qnalog-s2-1.webm|00:00]] QNALOG_CONTINUATION_OUTLINE_PERSISTENCE_2",
+      "- [[qnalog-s2-2.webm|00:00]] QNALOG_CONTINUATION_OUTLINE_PERSISTENCE_3",
+    ].join("\n");
+    noteFile._content += [
+      "",
+      "<details>",
+      "<summary>录音中实时大纲（草稿）</summary>",
+      "",
+      "> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。",
+      "",
+      originalLiveOutline,
+      "</details>",
+      "",
+    ].join("\n");
     let continuationPreparation;
     try {
       continuationPreparation = await plugin.continuations.prepare(noteFile, continuationId, "20260914-114300", continuationTime);
-      const addedSegment = transcriptSegment(0, "追加录音确认按反馈扩大灰度。", 0, 4000, continuationId);
-      continuationPreparation.stageFile._content += `\n${serializeTranscriptSegment(addedSegment)}\n`;
+      plugin.settings.enableRealtimeOutline = true;
+      continuationPreparation.continuation.realtimeOutline = appendedLiveOutline;
+      for (const segment of addedSegments) {
+        continuationPreparation.stageFile._content += `\n${serializeTranscriptSegment(segment)}\n`;
+      }
       const task = await plugin.queue.add({
         id: continuationPreparation.taskId,
         type: "merge",
@@ -414,9 +464,9 @@ async function main() {
         mdPath: continuationPreparation.stageFile.path,
         temporarySourcePath: continuationPreparation.stageFile.path,
         mode: continuationPreparation.mode,
-        segments: [addedSegment],
+        segments: addedSegments,
         continuation: continuationPreparation.continuation,
-        sessionMeta: { startedAt: continuationTime, duration: "00:04" },
+        sessionMeta: { startedAt: continuationTime, duration: "00:12" },
         status: "pending",
         retries: 0,
         dependsOnSessionIds: [],
@@ -457,9 +507,28 @@ async function main() {
         await plugin.queue.processOne(failedTask);
       }
       const appended = noteFile._content || "";
-      if (!appended.includes("追加录音确认按反馈扩大灰度。")) failures.push("续录的逐字稿没有并入目标笔记");
+      const outlineBlocks = [...appended.matchAll(/<details>\s*<summary>录音中实时大纲（草稿）<\/summary>[\s\S]*?<\/details>/g)];
+      const continuationOutline = outlineBlocks.at(-1)?.[0] || "";
+      for (const topic of ["首次录音范围主题", "首次录音决定主题", "续录灰度反馈主题", "续录回滚责任主题", "续录检查清单主题"]) {
+        if (!continuationOutline.includes(topic)) failures.push(`续录实时大纲未覆盖完整录音材料：${topic}`);
+      }
+      for (const phrase of ["追加录音确认按反馈扩大灰度。", "追加录音补充回滚阈值与负责人。", "追加录音补充发布检查清单。"]) {
+        if (!appended.includes(phrase)) failures.push(`续录逐字稿没有并入目标笔记：${phrase}`);
+      }
       if ((appended.match(/<!-- qnalog-continuation-committed:s2 -->/g) || []).length !== 1) failures.push("目标笔记没有恰好一个续录提交标记");
-      if ((appended.match(/qnalog-transcript-start:/g) || []).length !== 3) failures.push("续录提交后目标笔记没有保留三段逐字稿");
+      if ((appended.match(/qnalog-transcript-start:/g) || []).length !== 5) failures.push("续录提交后目标笔记没有保留五段逐字稿");
+      const ledgerSegments = [...appended.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)]
+        .map((match) => JSON.parse(match[1]).segment);
+      if (JSON.stringify(ledgerSegments.map((segment) => segment.index)) !== JSON.stringify([0, 1, 2, 3, 4])) {
+        failures.push(`续录账本分段编号不连续：${JSON.stringify(ledgerSegments.map((segment) => segment.index))}`);
+      }
+      const coverageBlocks = [...appended.matchAll(/<!--\s*qnalog-realtime-outline-source-coverage\s*:\s*([\s\S]*?)\s*-->/g)];
+      try {
+        const coverage = JSON.parse(coverageBlocks.at(-1)?.[1] || "null");
+        if (coverage?.committedSegmentCount !== 5 || coverage?.totalSegmentCount !== 5) {
+          failures.push(`续录大纲覆盖范围不是五段完整账本：${JSON.stringify(coverage)}; markers=${coverageBlocks.length}; outline=${continuationOutline.slice(-800)}; task=${JSON.stringify(failedTask?.continuation)}`);
+        }
+      } catch { failures.push("续录大纲来源覆盖证明不是有效 JSON"); }
       if (files.has(continuationPreparation.stageFile.path)) failures.push("续录成功后暂存文件没有清理");
       const transcriptData = (text) => [...text.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)].map((match) => match[1]);
       const mediaReferences = (text) => text.match(/!?\[\[[^\]]+\]\]/g) || [];
