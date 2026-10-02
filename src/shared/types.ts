@@ -355,11 +355,22 @@ export interface QueueTaskDeferred {
   status?: "pending" | "missing" | "blocked";
 }
 
+export interface RealtimeOutlineSourceCoverage {
+  version: 1;
+  outlineHash: string;
+  sourceHash: string;
+  committedSegmentCount: number;
+  totalSegmentCount: number;
+}
+
 export interface ContinuationContext {
   targetPath: string;
   targetSourceId: string;
   recordedAt: string;
   realtimeOutline?: string;
+  realtimeOutlineSegmentCount?: number;
+  realtimeOutlineSourceCoverage?: RealtimeOutlineSourceCoverage;
+  priorOutlineHash?: string;
   masterAudioPath?: string;
   masterAudioName?: string;
 }
@@ -472,7 +483,8 @@ export interface RecordingSession {
   realtimeOutline?: string;
   realtimeOutlineState?: unknown;
   realtimeOutlineMemory?: string;
-  realtimeOutlineCoverage?: unknown;
+  realtimeOutlineSourceCoverage?: RealtimeOutlineSourceCoverage;
+  realtimeOutlineCoverageScope?: "current-recording" | "whole-note";
   /** 导入音频时实际使用的转写服务 id；重新整理时要沿用同一个服务。 */
   importTranscribeProviderId?: string;
   /** 最近一次实时大纲请求的输入统计，由 realtime-outline-service 写入。 */

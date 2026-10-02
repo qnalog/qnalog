@@ -7,10 +7,12 @@ import { collectAudioRefs, getAudioTimeLink, getSessionMasterAudioName } from ".
 
 import { detectRecentNoteMode } from "../recent/recent-notes";
 
-import { isTextImportSession } from "./note-markdown";
+import { extractTranscriptSegments, isTextImportSession } from "./note-markdown";
+import { buildNoteAudioTimeline } from "./note-audio-timeline";
 import { stripArchivedOutlineSections } from "./realtime-outline";
 
 import { extractSedimentPreExtractionBlock } from "../sediment";
+import { readCurrentOutlineBlock } from "./outline-storage";
 
 import { formatElapsed, stripHtmlText } from "../shared/util-common";
 
@@ -128,28 +130,28 @@ export function extractDetailsBody(markdown, summaryPattern) {
   return "";
 }
 
-/** 大纲 details 的引导行（`> 基于录音过程中…` / `> Outline generated…`）：双语，行锚点剥离。 */
-const OUTLINE_INTRO_LINE_RE = new RegExp(`^>\\s*(?:${labelPattern("outlineIntro").source})[^\\n]*\\n?`, "m");
-
 export function extractNotePanelData(plugin, file, markdown) {
   const text = String(markdown || "");
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(text);
   const hasMarker = NS_SESSION_RE.test(text)
     || NS_SEGMENTS_START_RE.test(text);
-  const outlineRaw = extractDetailsBody(text, labelPattern("liveOutlineDraft"));
-  // 面板展示「当前实时大纲」：剥引导行后再剥归档横幅与历史副本——旧笔记的
-  // 大纲 details 按场次累积了重复归档（追加重写翻倍的历史 bug），原样展示会把
-  // 同一份大纲连横幅重复多遍；文件里的归档不动，阅读视图仍可见完整历史。
-  const outline = stripArchivedOutlineSections(
-    outlineRaw
-      .replace(OUTLINE_INTRO_LINE_RE, "")
-      .trim()
-  );
+  const currentOutline = readCurrentOutlineBlock(text);
+  const outline = stripArchivedOutlineSections(currentOutline?.outline || "");
   const timeline = extractDetailsBody(text, labelPattern("playbackTimeline"));
   if (!hasMarker && !outline && !timeline) return null;
   const body = text.replace(/^---\n[\s\S]*?\n---\n?/m, "");
   const h1 = body.match(/^#\s+(.+?)\s*$/m);
   const audioRefs = collectAudioRefs(text);
+  const audioSegments = extractTranscriptSegments(text);
+  const audioTimelineComplete = audioSegments.length > 0 && audioSegments.every(segment =>
+    Number.isFinite(segment.startOffsetMs) && Number.isFinite(segment.endOffsetMs)
+    && Number.isFinite(segment.audioStartOffsetMs) && Number.isFinite(segment.audioEndOffsetMs)
+    && segment.endOffsetMs > segment.startOffsetMs
+    && segment.audioEndOffsetMs > segment.audioStartOffsetMs
+    && !!String(segment.audioPath || segment.sourcePath || "").trim()
+    && !!String(segment.audioName || segment.sourceName || "").trim(),
+  );
+  const audioTimeline = audioTimelineComplete ? buildNoteAudioTimeline(audioSegments) : [];
   const frontmatter = plugin && plugin.app && file
     ? (((plugin.app.metadataCache.getFileCache(file) || {}).frontmatter) || {})
     : {};
@@ -163,6 +165,8 @@ export function extractNotePanelData(plugin, file, markdown) {
     outline,
     timeline,
     audioRefs,
+    audioTimeline,
+    audioTimelineComplete,
     hasMarker,
     preExtractedSediment: sedimentPreExtraction.objects,
     hasPreExtractedSediment: !!sedimentPreExtraction.objects,

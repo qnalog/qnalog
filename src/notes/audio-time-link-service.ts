@@ -7,7 +7,9 @@ import { parseElapsedMsToken } from "../shared/util-text";
 import type { PluginSettings } from "../shared/types";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
-import { extractAudioSegmentOffsets, getAudioExtFromLinkPath, getAudioLinkCandidates, getAudioLinkTarget } from "../notes/audio-refs";
+import { getAudioExtFromLinkPath, getAudioLinkCandidates } from "../notes/audio-refs";
+import { buildNoteAudioTimeline, mapAudioTimeToNote } from "./note-audio-timeline";
+import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { isTimeLabel } from "../notes/note-markdown";
 
 import { t } from "../shared/i18n";
@@ -86,42 +88,36 @@ export class AudioTimeLinkService {
 
   async resolveAudioTimeLinkContext(linkPath, label, sourcePath) {
     const file = this.resolveAudioLinkFile(linkPath, sourcePath);
-    if (!(file instanceof obsidian.TFile)) {
-      return null;
-    }
-    const globalMs = parseElapsedMsToken(label);
-    let localMs = globalMs;
+    if (!(file instanceof obsidian.TFile)) return null;
+
+    // Wiki labels are audio-local by contract. The note ledger is the only
+    // authority for converting that position to the cumulative note clock.
+    const localMs = isTimeLabel(label) ? parseElapsedMsToken(label) : 0;
+    let globalMs = null;
     if (sourcePath) {
       const sourceFile = this.host.app.vault.getAbstractFileByPath(sourcePath);
       if (sourceFile instanceof obsidian.TFile) {
         try {
           const content = await this.host.app.vault.cachedRead(sourceFile);
-          const offsets = extractAudioSegmentOffsets(content);
-          const target = getAudioLinkTarget(linkPath);
-          const name = (target.split("/").pop() || target).trim();
-          const offset = offsets.get(file.path) ?? offsets.get(obsidian.normalizePath(target)) ?? offsets.get(name) ?? offsets.get(file.name);
-          if (Number.isFinite(offset)) localMs = Math.max(0, globalMs - offset);
+          const segments = readTranscriptBlocks(content).map(block => ({
+            ...block.segment,
+            audioPath: obsidian.normalizePath(String(block.segment.audioPath || block.segment.sourcePath || "")),
+          }));
+          const timeline = buildNoteAudioTimeline(segments);
+          globalMs = mapAudioTimeToNote(timeline, obsidian.normalizePath(file.path), localMs);
         } catch (e) {
-          console.warn("[QnALog] read source note for audio offset failed", e);
+          console.warn("[QnALog] read source note audio ledger failed", e);
         }
       }
     }
-    return { file, globalMs, localMs, label, linkPath, sourcePath };
+    return { file, localMs, globalMs, label, linkPath, sourcePath };
   }
 
   async openAudioTimeLink(linkPath, label, sourcePath, opts) {
     const payload = await this.resolveAudioTimeLinkContext(linkPath, label, sourcePath);
     if (!payload) {
-      const globalMs = parseElapsedMsToken(label);
-      const fallbackPayload = { file: null, globalMs, localMs: globalMs, label, linkPath, sourcePath };
-      if (opts && typeof opts.onTimeLink === "function") {
-        try {
-          if (opts.onTimeLink(fallbackPayload) === true) return;
-        } catch (e) {
-          console.warn("[QnALog] inline time link fallback failed", e);
-        }
-      }
-      if (this.seekOutlineInlineAudio(fallbackPayload)) return;
+      // A missing media file must not be routed to an unrelated outline
+      // player: there is no resolved source to seek.
       new obsidian.Notice(t("QnALog: the corresponding audio file was not found; it may have been moved or deleted."), 6000);
       return;
     }

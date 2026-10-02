@@ -71,7 +71,7 @@ import { PeopleDirectoryService } from "./people/people-directory-service";
 import { TranscribeProfileService } from "./asr/transcribe-profile-service";
 import { VocabularyService } from "./vocabulary/vocabulary-service";
 import { CleanupService } from "./vault/cleanup-service";
-import { RealtimeOutlineService } from "./notes/realtime-outline-service";
+import { RealtimeOutlineService, type RealtimeOutlineHost } from "./notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
@@ -238,7 +238,19 @@ class QnALogPlugin extends obsidian.Plugin {
     this.noteIndex = new NoteIndexService(this);
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
-    this.outline = new RealtimeOutlineService(this);
+    const outlineHost = Object.assign(Object.create(null) as RealtimeOutlineHost, {
+      diagnostics: this.diagnostics,
+      requestOutlineRefresh: () => this.shell.refreshOutlineView(),
+      sessionStore: this.sessionStore,
+      asrPipeline: this.asrPipeline,
+    });
+    Object.defineProperties(outlineHost, {
+      outlineCoordinator: { get: () => this.outlineCoordinator },
+      noteWriter: { get: () => this.noteWriter },
+      continuations: { get: () => this.continuations },
+      settings: { get: () => this.settings },
+    });
+    this.outline = new RealtimeOutlineService(outlineHost);
     this.realtimeOutline = this.outline;
     this.cleanup = new CleanupService(this);
     this.vocabulary = new VocabularyService(this);

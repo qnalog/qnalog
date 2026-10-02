@@ -3,7 +3,7 @@
 
 import * as obsidian from "obsidian";
 import { advanceRealtimeOutlineCursor, parseRealtimeOutlineStateFromMarkdown, selectIncrementalRealtimeOutlineSegments, repairRealtimeOutlineAnchors, mergeStableRealtimeOutlineNodes, normalizeOutlineMarkdownForDisplay, validateRealtimeOutlineMarkdown } from "./outline-text";
-import { drainRealtimeOutlineBacklog } from "./outline-finalizer";
+import { drainRealtimeOutlineBacklog, type OutlineDrainResult } from "./outline-finalizer";
 import { getModeMeta } from "../shared/mode-meta";
 import { buildBriefingLanguageInstruction, getSegmentsDurationMs } from "../shared/util-text";
 import { callLlm } from "../llm/core";
@@ -15,10 +15,64 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { RealtimeOutlineCoordinator, runInOutlineSessionTail } from "./outline-coordinator";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS, REALTIME_OUTLINE_FINAL_MAX_BATCHES, REALTIME_OUTLINE_FINAL_MAX_TOKENS, REALTIME_OUTLINE_FINAL_TIMEOUT_MS, REALTIME_OUTLINE_LOOKBACK_SEGMENTS, REALTIME_OUTLINE_MANUAL_TIMEOUT_MS, REALTIME_OUTLINE_MAX_MEMORY_CHARS, REALTIME_OUTLINE_MAX_NO_CHANGE_REJECTIONS, REALTIME_OUTLINE_MAX_PREVIOUS_CHARS, REALTIME_OUTLINE_MAX_SEGMENTS, REALTIME_OUTLINE_MAX_TRANSCRIPT_CHARS, REALTIME_OUTLINE_MIN_NEW_SEGMENTS, REALTIME_OUTLINE_MIN_SEMANTIC_DELTA_CHARS, REALTIME_OUTLINE_SILENT_MAX_TOKENS, REALTIME_OUTLINE_SILENT_TIMEOUT_MS, buildOutlinePrompt, buildRealtimeOutlineAnchorSources, buildRealtimeOutlineTranscript, buildRollingOutlineContext, clipRealtimeContextText, getRealtimeOutlineNewSegmentCount, getRealtimeOutlineQueuedDelayMs, getRealtimeOutlineTimeoutMs, hasRealtimeOutlineRunnableBacklog, isRealtimeOutlineBackoffActive, isRealtimeOutlineCurrent, isRealtimeOutlineSilentIntervalActive, markRealtimeOutlineFailure, markRealtimeOutlineSuccess, normalizeRealtimeOutlineState, parseRealtimeOutlineResponse, renderRealtimeOutlineStateMarkdown, shouldRunRealtimeOutline, updateRealtimeOutlineCoverage } from "../notes/realtime-outline";
+import { createRealtimeOutlineSourceCoverage, getValidatedOutlineCommittedCount, rebaseRealtimeOutlineSourceCoverage } from "./outline-coverage";
+import type { RealtimeOutlineSourceCoverage, RecordingSession, Segment } from "../shared/types";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-
+import { buildRealtimeOutlineDetails } from "./realtime-outline";
+import { extractTranscriptSegments } from "./note-markdown";
+import type { ContinuationService } from "../session/continuation-service";
+import type { NoteWriter, RealtimeOutlineReplacementResult } from "./note-writer";
 import { t } from "../shared/i18n";
+
+export type RealtimeOutlineRebuildStopReason =
+  | "busy"
+  | "invalid-target"
+  | "invalid-transcripts"
+  | "read-failed"
+  | "no-transcripts"
+  | "operation-failed"
+  | "model-failed"
+  | "cancelled"
+  | "batch-failed"
+  | "no-progress"
+  | "max-batches"
+  | "stale"
+  | "backup-failed"
+  | "write-failed";
+
+export interface RealtimeOutlineRebuildResult {
+  status: "completed" | "stopped";
+  coveredSegmentCount: number;
+  totalSegmentCount: number;
+  backupPath: string | null;
+  stopReason: RealtimeOutlineRebuildStopReason | null;
+  errorMessage?: string;
+}
+
+function isOutlineCancellation(error: unknown): boolean {
+  if (error && typeof error === "object" && "name" in error && typeof error.name === "string" && error.name === "AbortError") return true;
+  return /cancell?ed|aborted/i.test(getErrorMessage(error));
+}
+
+function stoppedOutlineRebuild(
+  stopReason: RealtimeOutlineRebuildStopReason,
+  coveredSegmentCount = 0,
+  totalSegmentCount = 0,
+  backupPath: string | null = null,
+  errorMessage?: string,
+): RealtimeOutlineRebuildResult {
+  return {
+    status: "stopped",
+    coveredSegmentCount,
+    totalSegmentCount,
+    backupPath,
+    stopReason,
+    ...(errorMessage ? { errorMessage } : {}),
+  };
+}
+
+
 /** 实时大纲的调度与生成参数；四个入口共用同一套可选项。 */
 export interface RealtimeOutlineRequestOptions {
   /** 请求的防抖延迟（毫秒）；缺省按设置的 realtimeOutlineDebounceMs。 */
@@ -52,15 +106,225 @@ export interface RealtimeOutlineHost {
   requestOutlineRefresh(): void;
   sessionStore: SessionStore;
   asrPipeline: Pick<LiveAsrPipelineService, "setSessionWorkProgress" | "setRecordingIssue" | "clearRecordingIssue">;
+  noteWriter: Pick<NoteWriter, "readNoteMarkdown" | "detectModeFromMarkdown" | "replaceRealtimeOutline">;
+  continuations: Pick<ContinuationService, "runOnTarget" | "isTargetBusy">;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
+
 
 export class RealtimeOutlineService {
   declare host: RealtimeOutlineHost;
   constructor(host: RealtimeOutlineHost) {
     this.host = host;
   }
+  async rebuildNoteOutline(file: obsidian.TFile): Promise<RealtimeOutlineRebuildResult> {
+    if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
+      return stoppedOutlineRebuild("invalid-target");
+    }
+    return this.host.continuations.runOnTarget(file, async (): Promise<RealtimeOutlineRebuildResult> => {
+      if (this.host.continuations.isTargetBusy(file)) return stoppedOutlineRebuild("busy");
+
+      let originalMarkdown: string;
+      try {
+        originalMarkdown = await this.host.noteWriter.readNoteMarkdown(file);
+      } catch (error) {
+        return stoppedOutlineRebuild("read-failed", 0, 0, null, getErrorMessage(error));
+      }
+      let segments: Segment[];
+      try {
+        segments = extractTranscriptSegments(originalMarkdown);
+      } catch (error) {
+        return stoppedOutlineRebuild("invalid-transcripts", 0, 0, null, getErrorMessage(error));
+      }
+      const totalSegmentCount = segments.length;
+      if (!totalSegmentCount) return stoppedOutlineRebuild("no-transcripts");
+
+      const session = {
+        id: `manual-outline-${Date.now()}`,
+        sessionStamp: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
+        mdPath: file.path,
+        mode: this.host.noteWriter.detectModeFromMarkdown(file) || this.host.settings.polishMode || "monologue",
+        segments,
+        finalized: false,
+        realtimeOutline: "",
+        realtimeOutlineSegmentCount: 0,
+        realtimeOutlineSourceCoverage: undefined,
+        realtimeOutlineState: undefined,
+        realtimeOutlineMemory: "",
+        realtimeOutlineCoverageScope: "whole-note",
+      } as RecordingSession;
+
+      const maxBatches = Math.min(
+        REALTIME_OUTLINE_FINAL_MAX_BATCHES,
+        Math.max(1, Math.ceil(totalSegmentCount / 4) + 2),
+      );
+      let drainResult: OutlineDrainResult;
+      try {
+        drainResult = await drainRealtimeOutlineBacklog({
+          totalSegmentCount,
+          getCommittedCount: () => Number(session.realtimeOutlineSegmentCount) || 0,
+          isComplete: () => isRealtimeOutlineCurrent(session),
+          maxAttemptsPerBatch: REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS,
+          maxBatches,
+          shouldRetryAttempt: ({ error }) => /实时大纲输出格式不合格|Live outline output failed validation/.test(getErrorMessage(error)),
+          runBatch: async ({ attemptIndex }) => {
+            await this.generateRealtimeOutlineForSession(session, {
+              timeoutMs: REALTIME_OUTLINE_FINAL_TIMEOUT_MS,
+              force: true,
+              final: true,
+              formatRetry: attemptIndex > 0,
+              maxTokens: REALTIME_OUTLINE_FINAL_MAX_TOKENS,
+            });
+          },
+        });
+      } catch (error) {
+        return stoppedOutlineRebuild(
+          isOutlineCancellation(error) ? "cancelled" : "model-failed",
+          Number(session.realtimeOutlineSegmentCount) || 0,
+          totalSegmentCount,
+          null,
+          getErrorMessage(error),
+        );
+      }
+
+      if (!drainResult.complete) {
+        let stopReason: RealtimeOutlineRebuildStopReason;
+        if (drainResult.reason === "no-progress") {
+          stopReason = "no-progress";
+        } else if (drainResult.lastError) {
+          stopReason = isOutlineCancellation(drainResult.lastError) ? "cancelled" : "model-failed";
+        } else if (drainResult.reason === "batch-failed") {
+          stopReason = "batch-failed";
+        } else {
+          stopReason = "max-batches";
+        }
+        return stoppedOutlineRebuild(
+          stopReason,
+          drainResult.committedSegmentCount,
+          totalSegmentCount,
+          null,
+          drainResult.lastError ? getErrorMessage(drainResult.lastError) : undefined,
+        );
+      }
+
+      const outline = String(session.realtimeOutline || "");
+      session.realtimeOutlineSourceCoverage = createRealtimeOutlineSourceCoverage(
+        outline,
+        segments,
+        drainResult.committedSegmentCount,
+      );
+      const outlineDetails = buildRealtimeOutlineDetails(session);
+      if (!outlineDetails) {
+        return stoppedOutlineRebuild("write-failed", drainResult.committedSegmentCount, totalSegmentCount);
+      }
+
+      let replacement: RealtimeOutlineReplacementResult;
+      try {
+        replacement = await this.host.noteWriter.replaceRealtimeOutline(file, originalMarkdown, outlineDetails);
+      } catch (error) {
+        return stoppedOutlineRebuild(
+          "write-failed",
+          drainResult.committedSegmentCount,
+          totalSegmentCount,
+          null,
+          getErrorMessage(error),
+        );
+      }
+      if (replacement.status !== "written") {
+        return stoppedOutlineRebuild(
+          replacement.status,
+          drainResult.committedSegmentCount,
+          totalSegmentCount,
+          replacement.backupPath,
+          replacement.errorMessage,
+        );
+      }
+
+      try { this.host.requestOutlineRefresh(); } catch { /* the write result must not depend on view refresh */ }
+      return {
+        status: "completed",
+        coveredSegmentCount: drainResult.committedSegmentCount,
+        totalSegmentCount,
+        backupPath: replacement.backupPath,
+        stopReason: null,
+      };
+    }).catch((error): RealtimeOutlineRebuildResult => stoppedOutlineRebuild("operation-failed", 0, 0, null, getErrorMessage(error)));
+  }
+  async completeRealtimeOutlineForMergedSegments(
+    segments: Segment[],
+    resume: { outline?: string; sourceCoverage?: RealtimeOutlineSourceCoverage },
+    mode = "monologue",
+    onProgress?: (progress: { outline: string; committedSegmentCount: number; sourceCoverage: RealtimeOutlineSourceCoverage }) => Promise<void> | void,
+  ): Promise<{ outline: string; sourceCoverage: RealtimeOutlineSourceCoverage; complete: boolean; drainResult: OutlineDrainResult } | null> {
+    if (!this.host.settings.enableRealtimeOutline || !segments.length) return null;
+    const outline = String(resume.outline || "").trim();
+    const committedCount = getValidatedOutlineCommittedCount(resume.sourceCoverage, outline, segments);
+    const session = {
+      id: `continuation-outline-${Date.now()}`,
+      mode,
+      segments,
+      realtimeOutline: committedCount ? outline : "",
+      realtimeOutlineSegmentCount: committedCount,
+      realtimeOutlineSourceCoverage: committedCount ? resume.sourceCoverage : undefined,
+      realtimeOutlineState: undefined,
+      realtimeOutlineMemory: "",
+    } as RecordingSession;
+    const totalSegmentCount = segments.length;
+    const remainingSegmentCount = totalSegmentCount - committedCount;
+    const maxBatches = Math.min(
+      REALTIME_OUTLINE_FINAL_MAX_BATCHES,
+      Math.max(1, Math.ceil(remainingSegmentCount / 4) + 2),
+    );
+    const result = await drainRealtimeOutlineBacklog({
+      totalSegmentCount,
+      getCommittedCount: () => Number(session.realtimeOutlineSegmentCount) || 0,
+      isComplete: () => isRealtimeOutlineCurrent(session),
+      maxAttemptsPerBatch: REALTIME_OUTLINE_FINAL_BATCH_MAX_ATTEMPTS,
+      maxBatches,
+      shouldRetryAttempt: ({ error }) => /实时大纲输出格式不合格|Live outline output failed validation/.test(getErrorMessage(error)),
+      runBatch: async ({ attemptIndex }) => {
+        await this.generateRealtimeOutlineForSession(session, {
+          timeoutMs: REALTIME_OUTLINE_FINAL_TIMEOUT_MS,
+          force: true,
+          final: true,
+          formatRetry: attemptIndex > 0,
+          maxTokens: REALTIME_OUTLINE_FINAL_MAX_TOKENS,
+        });
+      },
+      onBatchCompleted: async () => {
+        const committedSegmentCount = Number(session.realtimeOutlineSegmentCount) || 0;
+        const sourceCoverage = createRealtimeOutlineSourceCoverage(
+          String(session.realtimeOutline || ""),
+          segments,
+          committedSegmentCount,
+        );
+        session.realtimeOutlineSourceCoverage = sourceCoverage;
+        await onProgress?.({
+          outline: String(session.realtimeOutline || ""),
+          committedSegmentCount,
+          sourceCoverage,
+        });
+      },
+    });
+    const finalOutline = String(session.realtimeOutline || "");
+    const finalCoverage = createRealtimeOutlineSourceCoverage(
+      finalOutline,
+      segments,
+      Number(session.realtimeOutlineSegmentCount) || 0,
+    );
+    session.realtimeOutlineSourceCoverage = finalCoverage;
+    return { outline: finalOutline, sourceCoverage: finalCoverage, complete: result.complete, drainResult: result };
+  }
+  mergeContinuationOutlineText(baseOutline: string, freshOutline: string): string {
+    const existing = parseRealtimeOutlineStateFromMarkdown(baseOutline);
+    const fresh = parseRealtimeOutlineStateFromMarkdown(freshOutline);
+    const nodes = mergeStableRealtimeOutlineNodes(existing, fresh);
+    const merged = normalizeRealtimeOutlineState({ version: 1, nodes, memory: "" });
+    return normalizeOutlineMarkdownForDisplay(renderRealtimeOutlineStateMarkdown(merged));
+  }
+
   scheduleRealtimeOutline(opts: RealtimeOutlineRequestOptions = {}) {
     const session = this.host.sessionStore.get();
     if (!session || !session.id) return;
@@ -261,10 +525,23 @@ export class RealtimeOutlineService {
   async _genOutlineInner(session, opts: RealtimeOutlineRequestOptions = {}) {
     if (!session || !session.segments || !session.segments.length) return "";
     const processedSegmentCount = session.segments.length;
-    const committedSegmentCount = Math.min(
-      processedSegmentCount,
-      Math.max(0, Number(session.realtimeOutlineSegmentCount) || 0)
+    session.realtimeOutlineSourceCoverage = rebaseRealtimeOutlineSourceCoverage(
+      session.realtimeOutlineSourceCoverage,
+      String(session.realtimeOutline || ""),
+      session.segments,
+    ) || session.realtimeOutlineSourceCoverage;
+    const committedSegmentCount = getValidatedOutlineCommittedCount(
+      session.realtimeOutlineSourceCoverage,
+      String(session.realtimeOutline || ""),
+      session.segments,
     );
+    if (!committedSegmentCount) {
+      session.realtimeOutline = "";
+      session.realtimeOutlineMemory = "";
+      session.realtimeOutlineState = undefined;
+      session.realtimeOutlineSegmentCount = 0;
+      session.realtimeOutlineSourceCoverage = undefined;
+    }
     // 只处理最早一批尚未提交的转写，并带一段只读回看保持语义连续。
     // 关键不是“从尾部截最近 N 段”，而是按顺序消费 backlog；否则窗口封顶时会直接跳过中间内容。
     const windowed = selectIncrementalRealtimeOutlineSegments(session.segments, {
@@ -289,6 +566,11 @@ export class RealtimeOutlineService {
         committedSegmentCount,
         attemptedSegmentCount,
         processedSegmentCount
+      );
+      session.realtimeOutlineSourceCoverage = createRealtimeOutlineSourceCoverage(
+        String(session.realtimeOutline || ""),
+        session.segments,
+        Number(session.realtimeOutlineSegmentCount) || 0,
       );
       session.realtimeOutlineWindow = {
         usedCount: windowed.usedCount,
@@ -513,6 +795,11 @@ export class RealtimeOutlineService {
       attemptedSegmentCount,
       processedSegmentCount
     );
+    session.realtimeOutlineSourceCoverage = createRealtimeOutlineSourceCoverage(
+      String(session.realtimeOutline || ""),
+      session.segments,
+      Number(session.realtimeOutlineSegmentCount) || 0,
+    );
     session.realtimeOutlineAttemptedSegmentCount = attemptedSegmentCount;
     session.realtimeOutlineWorkbenchSignature = workbenchSignature;
     session.realtimeOutlineUpdatedAt = new Date().toISOString();
@@ -574,7 +861,23 @@ export class RealtimeOutlineService {
     }
 
     const totalSegmentCount = session.segments.length;
-    const initialCommittedCount = Math.max(0, Number(session.realtimeOutlineSegmentCount) || 0);
+    session.realtimeOutlineSourceCoverage = rebaseRealtimeOutlineSourceCoverage(
+      session.realtimeOutlineSourceCoverage,
+      String(session.realtimeOutline || ""),
+      session.segments,
+    ) || session.realtimeOutlineSourceCoverage;
+    const initialCommittedCount = getValidatedOutlineCommittedCount(
+      session.realtimeOutlineSourceCoverage,
+      String(session.realtimeOutline || ""),
+      session.segments,
+    );
+    if (!initialCommittedCount) {
+      session.realtimeOutline = "";
+      session.realtimeOutlineMemory = "";
+      session.realtimeOutlineState = undefined;
+      session.realtimeOutlineSegmentCount = 0;
+      session.realtimeOutlineSourceCoverage = undefined;
+    }
     const remainingSegmentCount = Math.max(0, totalSegmentCount - initialCommittedCount);
     // 正常一批最多消费 9 个新分段（另留 1 个回看段）。按每批至少 4
     // 个新分段保守估算，再加两批余量；同时硬封顶 16，避免异常模型放大费用。

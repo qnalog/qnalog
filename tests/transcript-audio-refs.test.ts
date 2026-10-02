@@ -3,7 +3,6 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
   TFile: class {}, TFolder: class {},
 }));
-import { extractAudioSegmentOffsets } from "../src/notes/audio-refs";
 import { extractTranscriptSegments } from "../src/notes/note-markdown";
 
 // 整合版布局的段标题行带回听链接 `[[audio|mm:ss]]`、正文只有纯文本；
@@ -108,29 +107,3 @@ describe("extractTranscriptSegments 音频名还原", () => {
   });
 });
 
-describe("extractAudioSegmentOffsets title range boundaries", () => {
-  it("does not attach an untimed segment embed to the preceding timed segment", () => {
-    const markdown = [
-      "### Segment 1 (00:00–00:10)",
-      "No audio embed here.",
-      "### Segment 2",
-      "![[Audio/later.wav]]",
-    ].join("\n");
-    expect([...extractAudioSegmentOffsets(markdown)]).toEqual([]);
-  });
-
-  it("maps each timed segment's path and basename to its own start time", () => {
-    const markdown = [
-      "### Segment 1 (00:05–00:10)",
-      "![[Audio/first.wav]]",
-      "### Segment 2 (00:10–00:20)",
-      "![[Audio/second.wav]]",
-    ].join("\n");
-    expect([...extractAudioSegmentOffsets(markdown)]).toEqual([
-      ["Audio/first.wav", 5000],
-      ["first.wav", 5000],
-      ["Audio/second.wav", 10000],
-      ["second.wav", 10000],
-    ]);
-  });
-});

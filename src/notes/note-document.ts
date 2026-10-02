@@ -30,6 +30,39 @@ export function findFirstNoteBoundary(markdown: string, patterns: readonly RegEx
   return boundary;
 }
 
+export interface NoteDelimitedBlockRange {
+  start: number;
+  end: number;
+  bodyStart: number;
+  bodyEnd: number;
+}
+
+export function findNoteDelimitedBlock(
+  markdown: string,
+  startPattern: RegExp,
+  endPattern: RegExp,
+  fromIndex = 0,
+): NoteDelimitedBlockRange | null {
+  const text = String(markdown || "");
+  const startFlags = startPattern.flags.includes("g") ? startPattern.flags : `${startPattern.flags}g`;
+  const endFlags = endPattern.flags.includes("g") ? endPattern.flags : `${endPattern.flags}g`;
+  const startRe = new RegExp(startPattern.source, startFlags);
+  const endRe = new RegExp(endPattern.source, endFlags);
+  startRe.lastIndex = fromIndex;
+  const startMatch = startRe.exec(text);
+  if (!startMatch) return null;
+  const bodyStart = startMatch.index + startMatch[0].length;
+  endRe.lastIndex = bodyStart;
+  const endMatch = endRe.exec(text);
+  if (!endMatch) return null;
+  return {
+    start: startMatch.index,
+    end: endMatch.index + endMatch[0].length,
+    bodyStart,
+    bodyEnd: endMatch.index,
+  };
+}
+
 export interface NoteDetailsBlockRange {
   start: number;
   end: number;

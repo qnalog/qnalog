@@ -71,6 +71,22 @@ export class TaskQueue {
             && (continuation.realtimeOutline === undefined || typeof continuation.realtimeOutline === "string")
             && (continuation.masterAudioPath === undefined || typeof continuation.masterAudioPath === "string")
             && (continuation.masterAudioName === undefined || typeof continuation.masterAudioName === "string");
+          if (continuation && typeof continuation === "object") {
+            if (continuation.realtimeOutline !== undefined && typeof continuation.realtimeOutline !== "string") {
+              delete continuation.realtimeOutline;
+            }
+            if (continuation.priorOutlineHash !== undefined && typeof continuation.priorOutlineHash !== "string") {
+              delete continuation.priorOutlineHash;
+            }
+            if (continuation.realtimeOutlineSegmentCount !== undefined
+              && (!Number.isInteger(continuation.realtimeOutlineSegmentCount) || continuation.realtimeOutlineSegmentCount < 0)) {
+              delete continuation.realtimeOutlineSegmentCount;
+            }
+            if (continuation.realtimeOutlineSourceCoverage !== undefined
+              && (!continuation.realtimeOutlineSourceCoverage || typeof continuation.realtimeOutlineSourceCoverage !== "object")) {
+              delete continuation.realtimeOutlineSourceCoverage;
+            }
+          }
           if (!validContinuation) {
             task.status = "blocked";
             task.lastError = i18nT("Continuation recovery information is invalid; the separately recorded audio was kept.");

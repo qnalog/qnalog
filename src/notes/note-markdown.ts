@@ -38,7 +38,7 @@ import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "..
 import { diagnosticError } from "../shared/util-key-diag";
 
 import { sanitizeActiveVersionBody } from "../versions/version-content";
-import { extractAllRawBlocksFromText, extractSessionId, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findNoteDelimitedBlock, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
@@ -676,22 +676,26 @@ export function splitTranscriptSections(markdown) {
     const labelIndexes = sectionLabels.map((label) => text.indexOf(label, searchFrom)).filter((index) => index >= 0);
     const labelIdx = labelIndexes.length ? Math.min(...labelIndexes) : -1;
     if (labelIdx < 0) break;
-    const summaryEnd = text.indexOf("</summary>", labelIdx);
-    const detailsEnd = summaryEnd >= 0 ? text.indexOf("</details>", summaryEnd) : -1;
-    if (summaryEnd >= 0 && detailsEnd > summaryEnd) {
-      sections.push(text.slice(summaryEnd + "</summary>".length, detailsEnd));
-      searchFrom = detailsEnd + "</details>".length;
+    const range = findNoteDelimitedBlock(text, /<\/summary>/g, /<\/details>/g, labelIdx);
+    if (range) {
+      sections.push(text.slice(range.bodyStart, range.bodyEnd));
+      searchFrom = range.end;
     } else {
       searchFrom = labelIdx + 1;
     }
   }
 
-  const startRe = nsMarkerGlobalRe("segments-start");
-  while (startRe.exec(text)) {
-    const endRe = nsMarkerGlobalRe("segments-end");
-    endRe.lastIndex = startRe.lastIndex;
-    const endMatch = endRe.exec(text);
-    if (endMatch) sections.push(text.slice(startRe.lastIndex, endMatch.index));
+  let markerSearchFrom = 0;
+  while (true) {
+    const range = findNoteDelimitedBlock(
+      text,
+      nsMarkerGlobalRe("segments-start"),
+      nsMarkerGlobalRe("segments-end"),
+      markerSearchFrom,
+    );
+    if (!range) break;
+    sections.push(text.slice(range.bodyStart, range.bodyEnd));
+    markerSearchFrom = range.bodyStart;
   }
 
   if (!sections.length) {

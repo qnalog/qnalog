@@ -7,26 +7,21 @@ import type {
   QueueTaskLifecycle,
   RecordingSession,
 } from "../shared/types";
-import { extractDetailsBody } from "../notes/detail-blocks";
+import { readCurrentOutlineBlock } from "../notes/outline-storage";
 import { extractTranscriptSegments, getSourceIdFromMarkdown } from "../notes/note-markdown";
 import { stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { getEffectivePolishMode } from "../shared/mode-meta";
-import { labelPattern, labelText } from "../shared/note-labels";
+import { labelText } from "../shared/note-labels";
 import { nsMarker } from "../shared/namespace";
+import { stableHash } from "../shared/stable-hash";
 import { genId } from "../shared/util-common";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 import { t } from "../shared/i18n";
 
-const OUTLINE_INTRO_LINE_RE = new RegExp(`^>\\s*(?:${labelPattern("outlineIntro").source})[^\\n]*\\n?`, "m");
 
 /** Read the live outline from an existing note as a continuation seed, without archived copies. */
 export function extractPriorOutline(markdown: string): string {
-  const raw = extractDetailsBody(markdown, labelPattern("liveOutlineDraft"));
-  return stripArchivedOutlineSections(
-    String(raw || "")
-      .replace(OUTLINE_INTRO_LINE_RE, "")
-      .trim()
-  );
+  return stripArchivedOutlineSections(readCurrentOutlineBlock(markdown)?.outline || "").trim();
 }
 export function getContinuationTargetIdentity(markdown: string, file: obsidian.TFile): string {
   const firstSourceId = extractTranscriptSegments(markdown)
@@ -181,6 +176,7 @@ export class ContinuationService {
         targetSourceId,
         recordedAt,
         ...(priorOutline ? { realtimeOutline: priorOutline } : {}),
+        priorOutlineHash: stableHash(priorOutline),
       };
       const task = await this.host.addTask({
         type: "merge",
@@ -222,6 +218,17 @@ export class ContinuationService {
   isSessionTracked(sessionId: string): boolean {
     return this.trackedBySessionId.has(sessionId);
   }
+
+  isTargetBusy(target: obsidian.TFile): boolean {
+    if (this.hasActiveSessions(target)) return true;
+    const targetPath = obsidian.normalizePath(target.path);
+    return this.host.queueTasks().some(task =>
+      task.type === "merge"
+      && !!task.continuation
+      && obsidian.normalizePath(task.continuation.targetPath) === targetPath,
+    );
+  }
+
 
   hasActiveSessions(target: obsidian.TFile): boolean {
     return (this.sessionsByTarget.get(target)?.size || 0) > 0;

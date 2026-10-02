@@ -7,7 +7,7 @@ import { QnALogSettingTab } from "../ui/settings-tab";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue, isLlmServiceBlockedError, formatLlmConfigIssue } from "../llm/core";
-import type { MergeQueueTaskPayload, PluginSettings, QueueTaskDeferred, Segment } from "../shared/types";
+import type { MergeQueueTaskPayload, PluginSettings, QueueTaskDeferred, RecordingSession, RealtimeOutlineSourceCoverage, Segment } from "../shared/types";
 import type { SessionStore } from "../session/session-store";
 import { AUDIO_EXT } from "../shared/catalog-import";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
@@ -22,6 +22,9 @@ import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { collectAudioRefs, getAudioTimeLink, getSegmentsDurationMs } from "../notes/audio-refs";
 import { extractDetailsBody } from "../notes/detail-blocks";
+import { readCurrentOutlineBlock } from "../notes/outline-storage";
+import { validateRealtimeOutlineSourceCoverage, createRealtimeOutlineSourceCoverage } from "../notes/outline-coverage";
+import { stableHash } from "../shared/stable-hash";
 import { ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, mergeLeadingFrontmatterIntoDocument, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
@@ -40,6 +43,7 @@ import { attachTranscriptResult, getCurrentTranscript } from "../transcript/sess
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelPattern, labelText } from "../shared/note-labels";
 import { extractPriorOutline, getContinuationTargetIdentity, type ContinuationService } from "../session/continuation-service";
+import type { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { VersionStore } from "../versions/version-store";
 import type { TaskActivityService } from "../tasks/task-activity-service";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -64,8 +68,7 @@ export interface QueueRetryHost {
   settingTab: QnALogSettingTab | null;
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
-  continuations: ContinuationService;
-  versions: VersionStore;
+  outline: Pick<RealtimeOutlineService, "completeRealtimeOutlineForMergedSegments" | "mergeContinuationOutlineText">;
   /** ASR 熔断与切片缓存操作。 */
   asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile" | "cleanupSuccessfulSegmentAudio">;
   /** 装配层转发：补转写成功后请求说话人姓名确认（调用 SessionFinalizeService.confirmSpeakerNamesBeforeFinal），返回值在调用点不使用。 */
@@ -76,6 +79,9 @@ export interface QueueRetryHost {
   repolish: { repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
+  continuations: Pick<ContinuationService, "runOnTarget" | "hasActiveSessions" | "isSessionTracked">;
+  /** 版本快照持久化。 */
+  versions: Pick<VersionStore, "saveVersion">;
   tasks: Pick<TaskActivityService, "queueTaskActivityId" | "patchTaskActivity">;
   /** 装配层转发：批量重试节奏变化后刷新任务状态栏（调用 TaskActivityService.updateBusyStatus）。 */
   notifyTaskBusyChanged(): void;
@@ -763,11 +769,75 @@ export class QueueRetryService {
       }
       const base = targetSegments.filter(segment => !freshIds.has(segment.transcript?.sourceId || ""));
       const durationMs = getSegmentsDurationMs(base);
-      const normalizedFresh = fresh.map(segment =>
-        existingFresh.find(existing => existing.transcript?.id === segment.transcript?.id)
-          || normalizeSegmentsForMergedNote([segment], durationMs, base.length, stageFile)[0],
-      );
+      const normalizedBatch = normalizeSegmentsForMergedNote(fresh, durationMs, base.length, stageFile);
+      const normalizedFresh = fresh.map((segment, index) => {
+        const existing = existingFresh.find(candidate => candidate.transcript?.id === segment.transcript?.id);
+        const normalized = existing || normalizedBatch[index];
+        return { ...normalized, index: base.length + index };
+      });
       const mergedSegments = [...base, ...normalizedFresh];
+      let outlineText = "";
+      let outlineCoverage: RealtimeOutlineSourceCoverage | undefined;
+      let outlineCommittedCount = 0;
+      if (validateRealtimeOutlineSourceCoverage(context.realtimeOutlineSourceCoverage, context.realtimeOutline || "", mergedSegments)) {
+        outlineText = context.realtimeOutline || "";
+        outlineCoverage = context.realtimeOutlineSourceCoverage;
+        outlineCommittedCount = context.realtimeOutlineSegmentCount || 0;
+      } else {
+        const currentOutline = readCurrentOutlineBlock(targetMarkdown);
+        const targetOutline = extractPriorOutline(targetMarkdown);
+        const targetProof = currentOutline?.sourceCoverage;
+        if (targetProof && validateRealtimeOutlineSourceCoverage(targetProof, targetOutline, base)) {
+          const baseCommittedCount = targetProof.committedSegmentCount;
+          const freshProofValid = validateRealtimeOutlineSourceCoverage(
+            context.realtimeOutlineSourceCoverage,
+            context.realtimeOutline || "",
+            fresh,
+          );
+          const freshIsComplete = freshProofValid
+            && context.realtimeOutlineSegmentCount === fresh.length
+            && stableHash(targetOutline) === context.priorOutlineHash;
+          if (baseCommittedCount === base.length && freshIsComplete && context.realtimeOutline) {
+            outlineText = this.host.outline.mergeContinuationOutlineText(targetOutline, context.realtimeOutline);
+            outlineCommittedCount = mergedSegments.length;
+            outlineCoverage = createRealtimeOutlineSourceCoverage(outlineText, mergedSegments, outlineCommittedCount);
+          } else {
+            outlineText = targetOutline;
+            outlineCommittedCount = baseCommittedCount;
+            outlineCoverage = createRealtimeOutlineSourceCoverage(outlineText, mergedSegments, outlineCommittedCount);
+          }
+        }
+      }
+      const outlineEnabled = !!this.host.settings.enableRealtimeOutline;
+      if (outlineEnabled && this.host.queue) {
+        context.realtimeOutline = outlineText;
+        context.realtimeOutlineSegmentCount = outlineCommittedCount;
+        context.realtimeOutlineSourceCoverage = outlineCoverage;
+        await this.host.queue.update(task.id, { continuation: context, segments: normalizedFresh });
+      }
+      const completedOutline = await this.host.outline.completeRealtimeOutlineForMergedSegments(
+        mergedSegments,
+        { outline: outlineText, sourceCoverage: outlineCoverage },
+        task.mode,
+        async progress => {
+          outlineText = progress.outline;
+          outlineCommittedCount = progress.committedSegmentCount;
+          outlineCoverage = progress.sourceCoverage;
+          context.realtimeOutline = outlineText;
+          context.realtimeOutlineSegmentCount = outlineCommittedCount;
+          context.realtimeOutlineSourceCoverage = outlineCoverage;
+          if (this.host.queue) await this.host.queue.update(task.id, { continuation: context, segments: normalizedFresh });
+        },
+      );
+      if (completedOutline) {
+        outlineText = completedOutline.outline;
+        outlineCoverage = completedOutline.sourceCoverage;
+        outlineCommittedCount = outlineCoverage.committedSegmentCount;
+        context.realtimeOutline = outlineText;
+        context.realtimeOutlineSegmentCount = outlineCommittedCount;
+        context.realtimeOutlineSourceCoverage = outlineCoverage;
+        if (this.host.queue) await this.host.queue.update(task.id, { continuation: context, segments: normalizedFresh });
+      }
       task.segments = normalizedFresh;
       if (this.host.queue) await this.host.queue.update(task.id, { segments: normalizedFresh });
       const metadata = this.host.app.metadataCache.getFileCache(reloadedTarget);
@@ -780,7 +850,7 @@ export class QueueRetryService {
         duration: formatElapsed(getSegmentsDurationMs(mergedSegments)),
         _previousKnowledge: readSessionKnowledge(targetMarkdown),
       });
-      const writeSession: import("../shared/types").RecordingSession = {
+      const writeSession: RecordingSession = {
         id: task.sessionId,
         sessionStamp: window.moment(context.recordedAt).format("YYYYMMDD-HHmmss"),
         mdPath: reloadedTarget.path,
@@ -792,6 +862,10 @@ export class QueueRetryService {
         textImportSources: task.textImportSources || [],
         meetingWorkbench: sessionMeta.meetingWorkbench || null,
         segments: mergedSegments,
+        realtimeOutline: outlineText,
+        realtimeOutlineSegmentCount: outlineCommittedCount,
+        realtimeOutlineSourceCoverage: outlineCoverage,
+        realtimeOutlineCoverageScope: "whole-note",
         continuationSourcePath: reloadedTarget.path,
         continuationSourceTitle: reloadedTarget.basename,
         continuationRecordedAt: context.recordedAt,

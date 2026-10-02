@@ -91,6 +91,10 @@ export const NS_TRANSCRIPT_DATA = nsRe("transcript-data");
 export const NS_TRANSCRIPT_END = nsRe("transcript-end");
 /** Session knowledge snapshot stored as a hidden machine comment. */
 export const NS_SESSION_KNOWLEDGE = nsRe("session-knowledge");
+/** Source-material proof embedded in the current outline details. */
+export const NS_REALTIME_OUTLINE_SOURCE_COVERAGE = nsRe("realtime-outline-source-coverage");
+/** Vault-relative folder for exact pre-rebuild note backups. */
+export const NS_OUTLINE_BACKUP_FOLDER = "qnalog-outline-backups";
 /** Marker for an idempotently committed staged continuation. */
 export const NS_CONTINUATION_COMMITTED_MARKER = "continuation-committed";
 /** 独占一行的会话标记。 */

@@ -27,6 +27,8 @@ Supports desktop and mobile Obsidian. Mobile recording uses the device microphon
 
 Chapters grow as you record. After recording, chapters link to the player — click a chapter to jump to that position in the audio. When recording stops, AI completes the chapters into a full set of notes.
 
+From a completed note's sidebar, choose **Rebuild outline from all transcripts** to regenerate only the outline from the full original transcript ledger, even when automatic live outlines are off. Before replacing the current outline details, QnALog backs up the exact note under `<vault>/<configDir>/qnalog-outline-backups/<timestamp>/<filename>`. If generation is incomplete or fails, or if the note changes while the outline is being generated, the note is left unchanged. This action does not reorganize the note body.
+
 ### In-meeting notes
 
 While recording, jot live notes under the outline. The first character can trigger different handling:
