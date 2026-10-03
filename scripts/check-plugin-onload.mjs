@@ -6,9 +6,28 @@
 // 而它们当时在 loadAll 之后才装配，迁移被静默跳过（catch 里只打一行警告）。
 // 因此固化成脚本：CI 每次 push 跑，本地也可随时跑。
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
-const code = readFileSync(new URL("../main.js", import.meta.url), "utf8");
+const usage = "[plugin-onload] Usage: node scripts/check-plugin-onload.mjs [--bundle <path>]";
+function parseBundleArgument(args) {
+  if (args.length === 0) return fileURLToPath(new URL("../main.js", import.meta.url));
+  if (args.length !== 2 || args[0] !== "--bundle" || !args[1]) {
+    process.stderr.write(`${usage}\n`);
+    process.exit(1);
+  }
+  return path.resolve(process.cwd(), args[1]);
+}
+
+let code;
+const bundlePath = parseBundleArgument(process.argv.slice(2));
+try {
+  code = readFileSync(bundlePath, "utf8");
+} catch (error) {
+  process.stderr.write(`[plugin-onload] ${error.message}\n`);
+  process.exit(1);
+}
 
 // onload 里应当装配好的域服务字段。新增域服务时在这里补一行。
 const DOMAIN_FIELDS = [

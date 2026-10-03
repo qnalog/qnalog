@@ -5,7 +5,7 @@
 // lexvoice-mit 都不同：id 若与社区目录条目相同，Obsidian 会把上游版本提示为更新，
 // 一次误点就会覆盖本项目。
 //
-// 覆盖前把目标插件目录整份留档，并在首次安装时按优先级沿用已有插件的设置（data.json）。
+// 覆盖前把现有 QnALog 插件目录整份留档；保留该目录的 data.json，不继承其它插件设置。
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -144,20 +144,22 @@ if (buildIdentity.channel === "dev") {
   }
 }
 
-// 安装只处理 qnalog 自己的目录：覆盖前整份留档，沿用上一次 qnalog 的 data.json。
-//
-// 2026-09-15 起不再从 lexvoice / lexvoice-mit 目录继承设置：本插件按独立产品维护，
-// 不承担上游插件的兼容责任（AGENTS §2 的隔离要求）。设置结构版本不一致时由插件
-// 自己的版本检查丢弃并重建，用户的旧设置留在原目录里，需要时手工取回。
-// 检测到上游插件目录时只提示存在，不读取、不移动、不删除它的内容。
+// 安装只处理 qnalog 自己的目录：覆盖前整份留档，并原样保留已有 data.json。
+
+// 设置结构版本一致时直接读取；较低且有迁移链时逐级迁移；较高版本保持只读；
+// 无法识别的设置先留档再重建。缺少迁移链时拒绝写盘。
+// 不从 lexvoice / lexvoice-mit 目录继承设置，也不读取、移动或删除上游插件目录内容。
+
+const settingsPolicyNotice = `[install] 下次加载时，如有 data.json：设置结构版本一致直接读取；较旧的 QnALog 设置按迁移链升级，缺少迁移链时不写盘；较新的设置保持只读；无法识别的设置先备份再恢复默认值。`;
 
 console.log(`[install] 已安装 QnALog ${manifest.version} → ${targetDir}`);
 if (installedVersion && compareVersions(installedVersion, manifest.version) > 0) {
   console.log(`[install] 注意：覆盖的是更高版本 ${installedVersion}（降级安装）。
-[install] 首次加载时，版本不一致的 data.json 会被丢弃，设置回到默认值（插件会弹通知）。
+${settingsPolicyNotice}
 [install] 如需回退到 ${installedVersion}：npm run restore:vault -- "${backupDir || "<备份目录>"}"`);
 } else if (installedVersion) {
-  console.log(`[install] 覆盖了原有版本 ${installedVersion}。data.json 由插件自身的结构版本检查处理，请确认设置仍然正确。
+  console.log(`[install] 覆盖了原有版本 ${installedVersion}。
+${settingsPolicyNotice}
 [install] 如需回退：npm run restore:vault -- "${backupDir || "<备份目录>"}"`);
 }
 if (existsSync(upstreamDir)) {

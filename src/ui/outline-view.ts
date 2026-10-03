@@ -5718,7 +5718,7 @@ export class OutlineView extends obsidian.ItemView {
         const snapshotRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
         const chip = snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
         try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
-        snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: snapshot.label });
+        snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: i18nT("Original") });
         snapshotRow.addEventListener("click", () => {
           void this.plugin.versions.switchVersion(snapshot.path, r.file.path)
             .catch((error) => console.error(error));

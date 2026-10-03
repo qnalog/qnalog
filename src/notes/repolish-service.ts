@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：重新整理：按说话人姓名重排当前纪要、生成清稿
 
 import * as obsidian from "obsidian";
-import { getModeMeta, getModePrefix } from "../shared/mode-meta";
+import { getModeDisplayName, getModeMeta, getModePrefix } from "../shared/mode-meta";
 import { getSessionMetaDurationMs } from "../shared/util-text";
 import { stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings } from "../shared/types";
@@ -67,6 +67,7 @@ export class RepolishService {
   async repolishMarkdownFile(file, mode, repolishOptions = null) {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
     const meta = getModeMeta(this.host.settings, mode);
+    const modeDisplayName = getModeDisplayName(this.host.settings, mode);
     let taskMeter = null;
     // 重新整理必须按来源纪要单飞。否则用户连续切换模式/重复点击时，两个
     // LLM 任务会同时写同一个版本缓存文件，Obsidian 会把后到的 create 请求
@@ -137,10 +138,10 @@ export class RepolishService {
       const mapNotice = roleMapping.length
         ? t("QnALog: re-organizing via {1} mode{2}… after applying {0} role mappings…")
           .replace("{0}", String(roleMapping.length))
-          .replace("{1}", meta.prefix)
+          .replace("{1}", modeDisplayName)
           .replace("{2}", preferenceLabel)
         : t("QnALog: re-organizing via {0} mode{1}…")
-          .replace("{0}", meta.prefix)
+          .replace("{0}", modeDisplayName)
           .replace("{1}", preferenceLabel);
       new obsidian.Notice(mapNotice);
       // 把笔记原 frontmatter 传给 mergeAndPolish，post-process 阶段会作为 base 保留用户改动
@@ -161,10 +162,10 @@ export class RepolishService {
           }
         }
       }
-      this.host.tasks._busyLabel = t("Re-organizing ({0})…").replace("{0}", meta.prefix);
+      this.host.tasks._busyLabel = t("Re-organizing ({0})…").replace("{0}", modeDisplayName);
       const sourceMode = detectRecentNoteMode(this.host, file, fmCache);
       const sourceModeLabel = sourceMode && sourceMode !== "off"
-        ? ((getModeMeta(this.host.settings, sourceMode) || {}).label || sourceMode)
+        ? getModeDisplayName(this.host.settings, sourceMode)
         : t("Unlabeled");
       this.host.tasks._busyContext = {
         kind: t("Re-organize"),
@@ -172,7 +173,7 @@ export class RepolishService {
         sourceFolder: file.parent && file.parent.path ? file.parent.path : t("Vault root"),
         durationMs: getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta),
         sourceModeLabel,
-        targetModeLabel: [meta.label || meta.prefix, repolishOptions && repolishOptions.label]
+        targetModeLabel: [modeDisplayName, repolishOptions && repolishOptions.label]
           .filter(Boolean)
           .join(" · "),
       };
@@ -180,7 +181,7 @@ export class RepolishService {
       this.host.tasks.startTaskActivity({
         id: taskId,
         kind: "repolish",
-        title: `${t("Re-organize · ")}${meta.prefix}`,
+        title: `${t("Re-organize · ")}${modeDisplayName}`,
         subject: file.path,
         status: "running",
         stage: "llm",
@@ -254,10 +255,10 @@ export class RepolishService {
       }
       try { this.host.requestOutlineRefresh(); } catch { /* generation must not fail because the sidebar is unavailable */ }
       const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
-      new obsidian.Notice(`${t("QnALog: generated ")}${meta.prefix}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
+      new obsidian.Notice(`${t("QnALog: generated ")}${modeDisplayName}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
       const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
       taskMeter = null;
-      try { this.host.tasks.logCompletedWork(t("Re-organize completed · {0}").replace("{0}", meta.prefix), (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
+      try { this.host.tasks.logCompletedWork(t("Re-organize completed · {0}").replace("{0}", modeDisplayName), (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
       this.host.tasks.completeTaskActivity(taskId, {
         stage: "done",
         stageLabel: t("New version generated"),
