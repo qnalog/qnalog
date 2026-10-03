@@ -73,4 +73,29 @@ describe("continuation queue lifecycle", () => {
     expect(task.continuation.realtimeOutline).toBe("- Partial outline");
     expect(task.continuation.realtimeOutlineSourceCoverage).toBeUndefined();
   });
+  it("blocks an unknown continuation disposition without rewriting the task", () => {
+    const queue = new TaskQueue({
+      settings: { maxRetries: 3 },
+      saveAll: vi.fn(async () => undefined),
+    } as never);
+    queue.load([{
+      id: "continuation-cleanup",
+      type: "merge",
+      sessionId: "session-cleanup",
+      status: "pending",
+      mdPath: "stage.md",
+      continuationDisposition: "unexpected",
+      continuation: {
+        targetPath: "target.md",
+        targetSourceId: "source-a",
+        recordedAt: "2026-09-21T10:00:00.000Z",
+      },
+    }]);
+
+    expect(queue.tasks[0]).toMatchObject({
+      status: "blocked",
+      lastError: "Continuation cleanup information is invalid; the target was not changed.",
+      continuationDisposition: "unexpected",
+    });
+  });
 });

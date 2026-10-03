@@ -92,6 +92,12 @@ export class TaskQueue {
             task.lastError = i18nT("Continuation recovery information is invalid; the separately recorded audio was kept.");
           }
         }
+        if (task.type === "merge"
+          && task.continuationDisposition !== undefined
+          && task.continuationDisposition !== "discard") {
+          task.status = "blocked";
+          task.lastError = i18nT("Continuation cleanup information is invalid; the target was not changed.");
+        }
         if (!["pending", "failed", "missing", "processing", "blocked"].includes(task.status)) task.status = "pending";
         const maxRetries = (this.plugin && this.plugin.settings && this.plugin.settings.maxRetries) || 3;
         if (task.type === "transcribe"

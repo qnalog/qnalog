@@ -168,6 +168,7 @@ export const ZH: MessageTable = {
   "Continuation recovery information is invalid; the separately recorded audio was kept.": "续录恢复信息无效；单独录下的音频已保留。",
   "The target note is missing; the separately recorded audio was kept.": "目标笔记不存在；单独录下的音频已保留。",
   "The target note identity changed; the separately recorded audio was kept.": "目标笔记身份已变化；单独录下的音频已保留。",
+  "Continuation cleanup information is invalid; the target was not changed.": "续录清理信息无效；目标笔记未修改。",
   "The separate recording file is missing; the target was not changed.": "单独录音文件不存在；目标笔记未修改。",
   "The separate recording has no complete transcript yet; its audio was kept.": "单独录音尚无完整逐字稿；音频已保留。",
   "The separate recording transcript identity is invalid; its audio was kept.": "单独录音逐字稿身份无效；音频已保留。",

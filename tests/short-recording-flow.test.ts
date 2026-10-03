@@ -32,27 +32,41 @@ import { RecordingService } from "../src/audio/recording-service";
 import type { RecordingHost } from "../src/audio/recording-service";
 import { SessionFinalizeService } from "../src/notes/session-finalize-service";
 import { SessionStore } from "../src/session/session-store";
+import { ContinuationService } from "../src/session/continuation-service";
+import { TaskQueue } from "../src/queue/task-queue";
+import { QueueRetryService } from "../src/queue/queue-retry-service";
 import { LiveAsrPipelineService } from "../src/asr/live-asr-pipeline-service";
 import { NoteWriter } from "../src/notes/note-writer";
 import type { NoteWriterHost } from "../src/notes/note-writer";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
+import { attachTextTranscript } from "../src/transcript/session-transcript";
+import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 
 /** 只实现短录音路径真正会碰到的部分；其余能力一旦被调用即抛出，避免测试掩盖真实依赖。 */
 function makeHost() {
   const files = new Map<string, { content?: string; binary?: ArrayBuffer }>();
   const folders = new Set<string>();
+  const fileRefs = new Map<string, obsidian.TFile>();
+  const getFileRef = (path: string) => {
+    let file = fileRefs.get(path);
+    if (!file) {
+      file = new (obsidian.TFile as never)(path);
+      fileRefs.set(path, file);
+    }
+    return file;
+  };
   const app = {
     vault: {
       getAbstractFileByPath: (path: string) => {
         const p = String(path || "");
-        if (files.has(p)) return new (obsidian.TFile as never)(p);
+        if (files.has(p)) return getFileRef(p);
         if (folders.has(p)) return new (obsidian.TFolder as never)(p);
         return null;
       },
       read: async (file: { path: string }) => String(files.get(file.path)?.content ?? ""),
       create: async (path: string, content: string) => {
         files.set(path, { content: String(content) });
-        return new (obsidian.TFile as never)(path);
+        return getFileRef(path);
       },
       modify: async (file: { path: string }, content: string) => { files.set(file.path, { content: String(content) }); },
       createBinary: async (path: string, data: ArrayBuffer) => {
@@ -163,6 +177,73 @@ function makeHost() {
   return { host, files, folders, app, transcriptionCalls, diagnostics, finalizeService, recordingService };
 
 }
+async function makeContinuationDiscardFixture() {
+  const fixture = makeHost();
+  let persistedQueue = "[]";
+  let queue: TaskQueue;
+  let retryService: QueueRetryService;
+  let nextSaveError = "";
+  const queuePlugin = {
+    settings: { maxRetries: 3 },
+    saveAll: async () => {
+      if (nextSaveError) {
+        const error = nextSaveError;
+        nextSaveError = "";
+        throw new Error(error);
+      }
+      persistedQueue = JSON.stringify(queue.snapshot());
+    },
+    tasks: { updateBusyStatus: () => undefined, queueTaskActivityId: () => "activity", completeTaskActivity: () => undefined, logCompletedWork: () => undefined },
+    diagnostics: fixture.host.diagnostics,
+    asrPipeline: { recordAsrServiceAttemptSuccess: () => undefined },
+    queueRetry: { retryMergeTask: (task: never) => retryService.retryMergeTask(task) },
+  };
+  queue = new TaskQueue(queuePlugin as never);
+  const continuations = new ContinuationService({
+    vault: fixture.app.vault as never,
+    fileManager: fixture.app.fileManager as never,
+    getSettings: () => fixture.host.settings as never,
+    detectModeFromMarkdown: () => "synthesis",
+    queueTasks: () => queue.tasks,
+    addTask: task => queue.add(task as never) as never,
+    removeTask: id => queue.remove(id),
+    scheduleTaskQueueRetry: () => undefined,
+  });
+  fixture.host.queue = queue;
+  fixture.host.continuations = continuations;
+  retryService = new QueueRetryService({
+    app: fixture.app,
+    continuations,
+    queue,
+    asrPipeline: fixture.host.asrPipeline,
+  } as never);
+  const prior = attachTextTranscript({ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "OLD BODY MUST STAY" }, "old-session", "text-import");
+  const oldBody = `# Existing minutes\n\n${serializeTranscriptBlock(prior, "### Original transcript", prior.text)}\n`;
+  const targetPath = "QnALog/转写纪要/existing.md";
+  fixture.files.set(targetPath, { content: oldBody });
+  const target = fixture.app.vault.getAbstractFileByPath(targetPath) as obsidian.TFile;
+  vi.stubGlobal("window", {
+    moment: () => ({
+      format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260918-120000" : "2026-09-18 12:00",
+    }),
+  });
+  const prepared = await continuations.prepare(target, "session-1", "20260918-120000", "2026-09-18T12:00:00.000Z");
+  const session = Object.assign(makeSession(prepared.stageFile.path), {
+    shortRecordingTier: "discard",
+    shortRecordingDurationMs: 2000,
+    continuationTaskId: prepared.taskId,
+    continuation: prepared.continuation,
+    continuationSourcePath: target.path,
+  });
+  fixture.host.sessionStore.begin(session);
+  continuations.trackSession(session as never, target);
+  const reloadQueue = () => {
+    queue = new TaskQueue(queuePlugin as never);
+    queue.load(JSON.parse(persistedQueue));
+    return queue;
+  };
+  return { ...fixture, get queue() { return queue; }, reloadQueue, retryService, continuations, targetPath, oldBody, session, persistedQueue: () => persistedQueue, failNextSave: (message: string) => { nextSaveError = message; } };
+}
 
 /** 与 startRecording 写入磁盘的纪要头一致：标题 + 会话标记 + 分段区标记。 */
 function sessionHeader(stamp: string) {
@@ -239,7 +320,145 @@ describe("短录音整条路径", () => {
     expect(trashed).toContain(mdPath);
     expect(notices.join("\n")).toContain("Filtered out recordings shorter than three seconds");
   });
+  it("a two-second continuation leaves the target untouched and removes its persisted merge task", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    try {
+      await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
+      await fixture.session.writeQueue;
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(fixture.files.has(fixture.session.mdPath)).toBe(false);
+      expect(fixture.session.finalized).toBe(true);
+      expect(fixture.host.sessionStore.get()).toBeNull();
+      expect(fixture.queue.tasks).toEqual([]);
+      expect(JSON.parse(fixture.persistedQueue())).toEqual([]);
+      expect(fixture.transcriptionCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("does not remove the stage when saving discard intent fails and permits same-session finalization retry", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    fixture.failNextSave("intent save failed");
+    try {
+      await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
+      await fixture.session.writeQueue;
 
+      expect(fixture.files.has(fixture.session.mdPath)).toBe(true);
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(fixture.session.finalized).toBe(false);
+      expect(fixture.session.finalizationError).toContain("intent save failed");
+      expect(fixture.continuations.isSessionTracked(fixture.session.id)).toBe(false);
+
+      await fixture.finalizeService.finalizeSession(fixture.session as never);
+      expect(fixture.files.has(fixture.session.mdPath)).toBe(false);
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(fixture.session.finalized).toBe(true);
+      expect(fixture.queue.tasks).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("persists discard intent across cleanup failure and retries only stage cleanup after reload", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    const trashFile = fixture.app.fileManager.trashFile;
+    let trashFailures = 2;
+    fixture.app.fileManager.trashFile = async (file: { path: string }) => {
+      if (trashFailures > 0) {
+        trashFailures--;
+        throw new Error("trash I/O failed");
+      }
+      await trashFile(file);
+    };
+    try {
+      await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
+      await fixture.session.writeQueue;
+
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(fixture.files.has(fixture.session.mdPath)).toBe(true);
+      expect(fixture.session.finalized).toBe(false);
+      const savedAfterFailure = JSON.parse(fixture.persistedQueue());
+      expect(savedAfterFailure).toHaveLength(1);
+      expect(savedAfterFailure[0]).toMatchObject({
+        continuationDisposition: "discard",
+        status: "failed",
+        lastError: "trash I/O failed",
+        segments: [],
+      });
+      const restoredQueue = fixture.reloadQueue();
+      await expect(restoredQueue.processOne(restoredQueue.tasks[0])).rejects.toThrow("trash I/O failed");
+      expect(restoredQueue.tasks[0]).toMatchObject({ status: "failed", retries: 1, lastError: "trash I/O failed" });
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(restoredQueue.tasks[0].continuationDisposition).toBe("discard");
+      await restoredQueue.processOne(restoredQueue.tasks[0]);
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(fixture.files.has(fixture.session.mdPath)).toBe(false);
+      expect(restoredQueue.tasks).toEqual([]);
+      expect(JSON.parse(fixture.persistedQueue())).toEqual([]);
+      expect(fixture.transcriptionCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("removes a discard task after reload when stage trash succeeded but queue removal was not saved", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    const trashFile = fixture.app.fileManager.trashFile;
+    fixture.app.fileManager.trashFile = async (file: { path: string }) => {
+      await trashFile(file);
+      fixture.failNextSave("remove save failed");
+    };
+    try {
+      await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
+      await fixture.session.writeQueue;
+
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(fixture.files.has(fixture.session.mdPath)).toBe(false);
+      expect(fixture.session.finalized).toBe(false);
+      expect(fixture.queue.tasks).toEqual([]);
+      expect(JSON.parse(fixture.persistedQueue())).toMatchObject([
+        { continuationDisposition: "discard", temporarySourcePath: fixture.session.mdPath },
+      ]);
+
+      const restoredQueue = fixture.reloadQueue();
+      await restoredQueue.processAll();
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(restoredQueue.tasks).toEqual([]);
+      expect(JSON.parse(fixture.persistedQueue())).toEqual([]);
+      expect(fixture.transcriptionCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("validates discard cleanup paths and treats an already missing stage as complete", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    try {
+      const task = fixture.queue.tasks[0];
+      if (!task || task.type !== "merge") throw new Error("continuation task missing");
+      task.continuationDisposition = "discard";
+      const tracked = await fixture.retryService.runAppendTask(task as never);
+      expect(tracked).toMatchObject({ deferred: true });
+
+      fixture.continuations.releaseSession(task.sessionId);
+      task.temporarySourcePath = fixture.targetPath;
+      expect(await fixture.retryService.runAppendTask(task as never)).toMatchObject({ status: "blocked" });
+      task.temporarySourcePath = "QnALog/folder";
+      fixture.folders.add("QnALog/folder");
+      expect(await fixture.retryService.runAppendTask(task as never)).toMatchObject({ status: "blocked" });
+      task.temporarySourcePath = fixture.session.mdPath;
+      task.continuationDisposition = "unexpected" as never;
+      expect(await fixture.retryService.runAppendTask(task as never)).toMatchObject({ status: "blocked" });
+
+      task.continuationDisposition = "discard";
+      fixture.files.delete(fixture.targetPath);
+      expect(await fixture.retryService.runAppendTask(task as never)).toBeUndefined();
+      expect(fixture.files.has(fixture.session.mdPath)).toBe(false);
+      expect(fixture.files.has(fixture.targetPath)).toBe(false);
+      expect(await fixture.retryService.runAppendTask(task as never)).toBeUndefined();
+      expect(fixture.transcriptionCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("12 秒录音仍走正常流程：切片进缓存并登记转写任务，纪要保留", async () => {
     notices.length = 0;
     trashed.length = 0;

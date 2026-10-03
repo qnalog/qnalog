@@ -475,7 +475,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 4. **后续队列（2026-10-02：AI agent 执行尺度；有限完整性审计见 `local://ai-agent-completeness-audit.md`）**：
    - **P0 已完成：项目完整性审计**。按 README 主流程完成录音/恢复、笔记/版本、配置/安全、可见交互/派生对象四个只读切片，交叉项已去重。审计发现恢复脚本可由备份 `manifest.id` 将文件写到插件目录之外；隔离临时目录已复现覆盖外部文件，先作为安全修复处理。
    - **P0.1 已完成：恢复脚本路径边界**。`scripts/restore-from-backup.mjs` 在写入前校验普通插件 id、源/目标拓扑、vault 派生目录及树内文件类型。真实 CLI 测试覆盖非法 id、可读与悬空链接、硬链接、重叠目录、vault 内旧安装留档、完整回滚留档及启用列表边界；独立临时目录冒烟确认合法回滚字节正确，`../../outside` 与 `--set-enabled` 组合被拒绝且无文件变化。不访问知识库；真实 Obsidian 宿主未验证。
-   - **P1.1：短续录终止、清理与恢复任务一致性**。一次性内存冒烟已实际调用 `ContinuationService.prepare`、`RecordingService.handleSegment` 与 `SessionFinalizeService.finalizeSession`：2000ms discard 后目标笔记（含活动版本块与历史转写账本）逐字未变、stage 被删除、session 结束且 tracking 释放，但 merge task 仍为 `pending` 且无分段。队列使用内存宿主；持久化重载/重试与真实 Obsidian/录音设备尚未验证。先闭合已复现的状态矛盾，不擅改 3–10 秒续录豁免。
+   - **P1.1 已完成：短续录 discard 与恢复队列一致性**。finalizer 先持久化 `continuationDisposition: "discard"`，清理成功后移除任务；清理失败时保留带意图的 failed 任务，由重试只清理 stage。真实服务与 TaskQueue 测试覆盖目标原文保全、各类清理/保存失败、JSON 重载和幂等重试；独立临时目录文件系统冒烟通过。维护者在 `fresh` 的真实 Obsidian 中确认 2 秒续录丢弃、4/8 秒续录正常追加；保留现有 3 秒分界及 3–10 秒续录规则。
    - **P1.2：用户反馈与已审计的可见行为**。分别处理初稿与同类型派生稿链接重名、英文模式任务/通知残留中文前缀、编辑/阅读视图中的机器数据展示及知识提取 partial 状态的呈现/原因核对；同步更正安装脚本中与 schema 迁移政策冲突的提示。后两项保留产品与服务证据边界；不得把 `invalid-json` 说成落盘 JSON 损坏。
    - **P1.3：并行开发验证隔离**。隔离 `tests/plugin-onload.test.ts` 的负向漏装构建，使临时 fixture 不改写共享 `src/main.ts` / `main.js`；正常装配通过、漏装仍失败，并比对文件哈希。
    - **P2.1：A6 笔记结构操作完整归属**。在同一验收矩阵中完成会话写入定位、分段账本边界与机器标记操作迁移；盘点所有消费者、删除旧转发出口，并保留两种布局、旧格式、账本和原稿不变量。三个写入定位策略各自不同的首末选择、缺失回退与错误行为不得被合并改义；A6 整体未完成。
@@ -488,7 +488,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 | 范围 | 源码状态 | 消费者自动验证 | 真实宿主确认 | 产品待决 |
 |---|---|---|---|---|
 | 恢复脚本插件 id 路径 | 写入前校验 id、路径拓扑、链接和文件类型 | 真实 CLI 测试及独立临时目录冒烟通过：合法回滚 payload 与旧目标留档字节匹配；非法 id 不改源、目标、外侧哨兵、启用列表或目录结构 | 未进行真实 Obsidian 宿主验证 | 无 |
-| 2000ms 短续录 | finalizer 会把 discard 任务写回 pending | 真实 `prepare`→`handleSegment`→finalizer 内存冒烟通过并观察到矛盾；阈值对照只调用真实分级方法 | 持久化重载、Obsidian、录音设备未验证 | 3–10 秒续录豁免是否取消待决定 |
+| 2000ms 短续录 | `discard` 意图先落入 merge task；成功清理后移除，失败时保留可恢复的 failed task | 真实服务/队列测试、JSON 重载与独立临时目录文件系统冒烟通过；维护者在真实 Obsidian 验证 2 秒续录丢弃、4/8 秒续录追加到目标笔记 | fresh 库维护者确认；不代表其它宿主/设备验证 | 保留既有低于 3 秒丢弃与 3–10 秒续录豁免 |
 | 英文版本卡/派生稿 | 版本卡文案与派生稿输出前缀已本地化；通知/任务前缀仍有 `meta.prefix` | 对应输出测试已有；初稿链接仍重名 | 修复后宿主显示未确认 | 初稿文案可在 UI 修改时确定 |
 | 机器注释/partial 知识 | 结构可读，`partial` 与 `invalid-json` 状态存在 | 协议与解析测试可证明数据读取，不证明编辑器显示或历史模型响应 | 实时预览、源码、阅读视图及服务响应均未核实 | 不隐藏/删除状态；展示方式后续评估 |
 | 负向装配 fixture | 测试临时改写共享源文件/产物 | 当前测试设计已读；本轮未运行 | 不适用 | 无 |
@@ -513,10 +513,10 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 
 **续录短录音的过滤与合并跟进（2026-10-02；独立于 A6 空会话区块范围统一）**
 
-- [ ] **短续录仍触发追加合并**：维护者报告，在 fresh 库向既有纪要追加录音时，不足五秒的录音仍被追加到文档并进行合并，预期短录音不应写入纪要。定位线索为 `QnALog/转写纪要/2026-10-02 1141 · 个人笔记-QNALog插件-文档规划.md`，来自维护者提供的 Obsidian 链接；本轮未读取该文件，也未重跑私人笔记。准确录音时长、宿主已安装构建、短录音保护开关及实际切片/流式状态尚未核实。
-- **隔离运行证据（范围分两次补全）**：较早的 finalizer-only 冒烟只调用收尾方法；本轮后续一次性内存宿主又执行了实际 `ContinuationService.prepare`、`RecordingService.handleSegment` 和 `SessionFinalizeService.finalizeSession`。2000ms `discard` 后，目标笔记（含活动版本块与历史转写账本）逐字未变，stage 被删除，session 结束且 tracking 释放；但 merge task 仍为 `pending`、`segments=[]`。队列更新由内存 host 实现，尚未执行 TaskQueue 持久化重载/重试、真实录音设备或 Obsidian；不据此确认维护者不足五秒反馈的全部原因。
-- **当前规则与范围判断**：`src/shared/limits.ts:8,11` 的阈值是 3 秒与 10 秒，不是 5 秒。`src/audio/short-recording-policy.ts:44–52` 在最终切片、无已有切片、非导入且保护开启时，将低于 3 秒的录音分为 `discard`；3–10 秒普通录音为 `keep-audio`，续录豁免 `keep-audio` 而进入 `process`。`tests/short-recording-policy.test.ts:40–44` 覆盖续录 1200 毫秒丢弃及 3000/8000 毫秒正常处理。3–5 秒续录进入正常处理符合当前分级规则但不符合维护者报告的预期；不能据此发明 5 秒阈值或断言真实宿主当时的录音时长、保护开关和会话状态。现有 `tests/short-recording-flow.test.ts` 的续录 prepare 替身拒绝调用，因此它不能证明短续录完整链路。
-- **后续任务与验收**：P1.1 继续验证队列经真实持久化保存、插件重载后的状态，以及 discard 清理/持久化失败时失败可观察并保留恢复材料；正常续录仍能失败恢复。当前内存冒烟已覆盖完整服务 prepare → handleSegment → finalize、目标正文/历史账本/活动版本不变及 stage/tracking 清理；本轮另用真实分类方法核对 4000/10000ms 和保护关闭 2000ms 的级别，不是完整服务处理对照。后续服务验收覆盖 3000/9999ms 当前豁免、10000ms 正常、保护关闭、导入和已有片段。维护者原“不足五秒”报告保留为未完全解释的反馈；取消 3–10 秒豁免须另行产品选择。本轮未访问或修改知识库。
+- [x] **短续录结果已核实**：维护者更正，最初约 4 秒和 8 秒的测试使用“新建笔记”，不是续录；其只保留音频符合普通录音的 3–10 秒规则。随后对本节指定纪要实际续录，维护者确认 4 秒与 8 秒均正常追加。纪要的录音信息记录 2026-10-03 22:05:32、22:06:03 两次追加；分段账本升至 17 段，并出现对应续录提交标记（本节指定笔记）。这两次测试不需要调整短录音规则。
+- **已记录问题的修复与自动验收（2026-10-02）**：`SessionFinalizeService.finishShortRecording` 在删 stage 前保存 `continuationDisposition: "discard"`；清理成功后移除 merge task。收尾失败时不设置 `finalized`，持久化 failed 任务与错误；`QueueRetryService.runAppendTask` 对该意图只删本场 stage 块，路径相同/文件夹/非法意图阻断，缺失 stage 幂等完成。`TaskQueue.load` 阻断非法 disposition，保留合法 discard 意图。
+- **验收证据**：`tests/short-recording-flow.test.ts` 用真实 `ContinuationService.prepare`、`RecordingService.handleSegment`、`SessionFinalizeService`、`TaskQueue.processOne/processAll` 与 JSON 新队列重载覆盖 2000ms 丢弃、保存失败、stage 清理失败及移除保存失败；旧目标全文逐字保留，转写/整理请求计数为零。独立临时目录文件系统冒烟使用 esbuild 打包生产服务，实际读写 stage、目标笔记、废纸篓与队列 JSON；注入 trash I/O 失败后重建队列并清理成功。维护者随后在 fresh 的真实 Obsidian 中补验 2 秒丢弃及 4/8 秒追加。未访问其它知识库。
+- **范围边界**：未修改 `src/audio/short-recording-policy.ts`。现有 3 秒以下 discard 与 3–10 秒续录 `process` 规则不变。
 
 **已合并；人工补验单独跟踪**
 

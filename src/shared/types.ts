@@ -423,6 +423,7 @@ export interface MergeQueueTaskPayload {
   speakerFrontmatter?: Record<string, unknown> | null;
   temporarySourcePath?: string;
   continuation?: ContinuationContext;
+  continuationDisposition?: "discard";
 }
 
 export interface GeneratePromptQueueTaskPayload {

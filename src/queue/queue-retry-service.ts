@@ -69,8 +69,8 @@ export interface QueueRetryHost {
   /** 笔记索引与当日概要服务。 */
   noteIndex: NoteIndexService;
   outline: Pick<RealtimeOutlineService, "completeRealtimeOutlineForMergedSegments" | "mergeContinuationOutlineText">;
-  /** ASR 熔断与切片缓存操作。 */
-  asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile" | "cleanupSuccessfulSegmentAudio">;
+  /** ASR 与录音 stage 清理。 */
+  asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile" | "cleanupSuccessfulSegmentAudio" | "discardShortRecordingNote">;
   /** 装配层转发：补转写成功后请求说话人姓名确认（调用 SessionFinalizeService.confirmSpeakerNamesBeforeFinal），返回值在调用点不使用。 */
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
   /** 词汇表与行业提示词服务。 */
@@ -663,6 +663,28 @@ export class QueueRetryService {
     const context = task.continuation;
     if (!context || typeof context.targetPath !== "string" || typeof context.targetSourceId !== "string" || !context.targetSourceId) {
       return { deferred: true, status: "blocked", reason: t("Continuation recovery information is invalid; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
+    }
+    const cleanupBlocked = () => ({
+      deferred: true,
+      status: "blocked",
+      reason: t("Continuation cleanup information is invalid; the target was not changed."),
+    } satisfies QueueTaskDeferred);
+    if (task.continuationDisposition !== undefined && task.continuationDisposition !== "discard") {
+      return cleanupBlocked();
+    }
+    if (task.continuationDisposition === "discard") {
+      if (this.host.continuations.isSessionTracked(task.sessionId)) {
+        return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
+      }
+      const stagePath = String(task.temporarySourcePath || task.mdPath || "");
+      const normalizedStagePath = obsidian.normalizePath(stagePath);
+      if (!normalizedStagePath || normalizedStagePath === obsidian.normalizePath(context.targetPath)) return cleanupBlocked();
+      const stageFile = this.host.app.vault.getAbstractFileByPath(stagePath);
+      if (stageFile instanceof obsidian.TFolder) return cleanupBlocked();
+      if (stageFile instanceof obsidian.TFile) {
+        await this.host.asrPipeline.discardShortRecordingNote({ id: task.sessionId, mdPath: stageFile.path });
+      }
+      return;
     }
     const target = this.host.app.vault.getAbstractFileByPath(context.targetPath);
     if (!(target instanceof obsidian.TFile)) {
