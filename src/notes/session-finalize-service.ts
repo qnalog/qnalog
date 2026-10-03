@@ -586,37 +586,58 @@ export class SessionFinalizeService {
     try {
       return await finalizePromise;
     } finally {
-      if (session.finalizePromise === finalizePromise) session.finalizePromise = null;
       if (session.continuationTaskId && this.host.queue) {
-        const continuation = {
-          ...session.continuation,
-          realtimeOutline: String(session.realtimeOutline || ""),
-          realtimeOutlineSegmentCount: Number(session.realtimeOutlineSegmentCount) || 0,
-          realtimeOutlineSourceCoverage: session.realtimeOutlineSourceCoverage,
-          masterAudioPath: String(session.masterAudioPath || ""),
-          masterAudioName: String(session.masterAudioName || ""),
-        };
-        try {
-          await this.host.queue.update(session.continuationTaskId, {
-            status: "pending",
-            mdPath: session.mdPath,
-            temporarySourcePath: session.mdPath,
-            segments: (session.segments || []).map(segment => ({ ...segment })),
-            continuation,
-            sessionMeta: {
-              startedAt: session.startedAt,
-              duration: formatElapsed(getSegmentsDurationMs(session.segments || [])),
-              meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-              _briefingCheckpointId: session._briefingCheckpointId || "",
-            },
-            speakerFrontmatter: null,
-            lastError: session.finalizationError || "",
-          });
-        } catch (error) {
-          console.error("[QnALog] continuation recovery task update failed", error);
+        const isDiscardedContinuation = session.shortRecordingTier === "discard"
+          && !!session.continuation
+          && !!session.continuationTaskId;
+        if (isDiscardedContinuation) {
+          if (!session.finalized) {
+            try {
+              await this.host.queue.update(session.continuationTaskId, {
+                status: "failed",
+                mdPath: session.mdPath,
+                temporarySourcePath: session.mdPath,
+                continuation: session.continuation,
+                segments: [],
+                continuationDisposition: "discard",
+                lastError: session.finalizationError || "",
+              });
+            } catch (error) {
+              console.error("[QnALog] discarded continuation recovery task update failed", error);
+            }
+          }
+        } else {
+          const continuation = {
+            ...session.continuation,
+            realtimeOutline: String(session.realtimeOutline || ""),
+            realtimeOutlineSegmentCount: Number(session.realtimeOutlineSegmentCount) || 0,
+            realtimeOutlineSourceCoverage: session.realtimeOutlineSourceCoverage,
+            masterAudioPath: String(session.masterAudioPath || ""),
+            masterAudioName: String(session.masterAudioName || ""),
+          };
+          try {
+            await this.host.queue.update(session.continuationTaskId, {
+              status: "pending",
+              mdPath: session.mdPath,
+              temporarySourcePath: session.mdPath,
+              segments: (session.segments || []).map(segment => ({ ...segment })),
+              continuation,
+              sessionMeta: {
+                startedAt: session.startedAt,
+                duration: formatElapsed(getSegmentsDurationMs(session.segments || [])),
+                meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
+                _briefingCheckpointId: session._briefingCheckpointId || "",
+              },
+              speakerFrontmatter: null,
+              lastError: session.finalizationError || "",
+            });
+          } catch (error) {
+            console.error("[QnALog] continuation recovery task update failed", error);
+          }
         }
       }
       this.host.continuations.releaseSession(session.id);
+      if (session.finalizePromise === finalizePromise) session.finalizePromise = null;
     }
   }
 
@@ -748,8 +769,24 @@ export class SessionFinalizeService {
   async finishShortRecording(session) {
     const tier = session.shortRecordingTier;
     const limitSeconds = Math.round(SHORT_RECORDING_SKIP_NOTE_MS / 1000);
-    await this.host.asrPipeline.discardShortRecordingNote(session);
     const durationMs = Math.max(0, Number(session.shortRecordingDurationMs) || 0);
+    const discardedContinuation = tier === "discard"
+      && !!session.continuation
+      && !!session.continuationTaskId
+      && this.host.queue;
+    if (discardedContinuation) {
+      await this.host.queue.update(session.continuationTaskId, {
+        status: "live",
+        mdPath: session.mdPath,
+        temporarySourcePath: session.mdPath,
+        continuation: session.continuation,
+        segments: [],
+        continuationDisposition: "discard",
+        lastError: "",
+      });
+    }
+    await this.host.asrPipeline.discardShortRecordingNote(session);
+    if (discardedContinuation) await this.host.queue.remove(session.continuationTaskId);
     const audioName = session.masterAudioName || "";
     if (tier === "discard") {
       new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
