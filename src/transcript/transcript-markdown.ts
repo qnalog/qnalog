@@ -84,7 +84,7 @@ function validTranscriptRevision(value: unknown): value is TranscriptSegmentReco
     && Array.isArray(row.corrections) && row.corrections.every(validCorrection);
 }
 
-function validTranscript(value: unknown): value is TranscriptSegmentRecord {
+export function isTranscriptSegmentRecord(value: unknown): value is TranscriptSegmentRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Record<string, unknown>;
   return row.schemaVersion === 2
@@ -174,7 +174,7 @@ export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
     }
     const row = payload as Record<string, unknown>;
     if (row.schemaVersion !== 2) throw new Error(`Transcript block ${parentId} uses an unsupported schema`);
-    if (!validSegment(row.segment) || !validTranscript(row.transcript)) {
+    if (!validSegment(row.segment) || !isTranscriptSegmentRecord(row.transcript)) {
       throw new Error(`Transcript block ${parentId} has an invalid source record`);
     }
     const transcript = row.transcript;

@@ -5,8 +5,12 @@ vi.mock("obsidian", () => ({
   Notice: class Notice {},
   setIcon: vi.fn(),
 }));
-
+vi.mock("../src/ui/helpers", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, qnalogConfirm: vi.fn().mockResolvedValue(true) };
+});
 import { QueueModal } from "../src/ui/modals";
+import { TaskQueue } from "../src/queue/task-queue";
 
 class MemoryElement {
   className = "";
@@ -96,8 +100,10 @@ function makeProgressHarness() {
     updatedAt: Date.parse(task.updatedAt),
     completedAt: Date.parse(task.updatedAt),
   };
+  const recoveryEntries: Array<Record<string, unknown>> = [];
   const queue = {
     tasks: [task],
+    recoveryEntries: () => recoveryEntries,
     processOne: vi.fn(() => Promise.resolve()),
     remove: vi.fn(async () => undefined),
   };
@@ -108,7 +114,7 @@ function makeProgressHarness() {
     _importBusy: null,
     getCurrentActivityDetail: () => detail,
     getCurrentActivityLabel: () => activityStatus === "running" ? String(detail.step) : null,
-    getTaskActivities: () => [{
+    getTaskActivities: () => queue.tasks.length ? [{
       id: `queue:${task.id}`,
       kind: "queue-merge",
       status: activityStatus,
@@ -120,8 +126,9 @@ function makeProgressHarness() {
       error: String(detail.stepDetail),
       events: [],
       actions: [],
-    }],
+    }] : [],
     syncQueueTaskActivities: () => undefined,
+    renderStatusBar: vi.fn(),
   };
   const plugin = {
     queue,
@@ -136,11 +143,11 @@ function makeProgressHarness() {
 
   return {
     modal,
+    plugin,
     task,
     queue,
     queueRetry,
-    get detail() { return detail; },
-    get activityStatus() { return activityStatus; },
+    recoveryEntries,
     setRunning(stage: string, label: string, progress: number | null = null) {
       activityStatus = "running";
       task.status = "running";
@@ -255,6 +262,85 @@ describe("QueueModal rendered recovery states", () => {
     expect(root.querySelector(".qnalog-progress-pipeline-pulse")).not.toBeNull();
     request.resolve();
     await result;
+    harness.modal.onClose();
+  });
+  it("shows retained entries without executable actions and keeps them visible during valid retry-all", async () => {
+    vi.stubGlobal("window", {
+      requestAnimationFrame: (callback: () => void) => { callback(); return 1; },
+      setInterval,
+      clearInterval,
+    });
+    const harness = makeProgressHarness();
+    harness.queue.tasks = [];
+    harness.recoveryEntries.push({
+      entryIndex: 2,
+      issue: "unsupported-type",
+      mdPath: "notes/kept.md",
+      raw: { type: "future-secret", transcript: "private transcript" },
+    });
+    harness.modal.onOpen();
+    let root = harness.modal.contentEl as never as MemoryElement;
+    expect(root.textContent).toContain("Processing incomplete");
+    expect(root.textContent).toContain("Paused recovery entries");
+    expect(root.textContent).not.toContain("Completed 0 / 0");
+    expect(root.textContent).toContain("Queue entry 3");
+    expect(root.textContent).toContain("Unsupported task type");
+    expect(root.textContent).toContain("notes/kept.md");
+    expect(root.textContent).not.toContain("future-secret");
+    expect(root.textContent).not.toContain("private transcript");
+    expect(root.querySelector(".qnalog-progress-recovery-row")).not.toBeNull();
+    expect(root.querySelector(".qnalog-progress-pipeline-pulse")).toBeNull();
+    expect(root.querySelectorAll(".qnalog-progress-queue-retry")).toHaveLength(0);
+    expect(root.querySelectorAll(".qnalog-progress-queue-cancel")).toHaveLength(0);
+
+    harness.queue.tasks = [harness.task];
+    harness.modal.onOpen();
+    root = harness.modal.contentEl as never as MemoryElement;
+    const retryAll = root.querySelector(".qnalog-progress-queue-head .qnalog-progress-queue-retry");
+    expect(retryAll).not.toBeNull();
+    await retryAll!.onclick!({ preventDefault() {}, stopPropagation() {} });
+    root = harness.modal.contentEl as never as MemoryElement;
+    expect(harness.queueRetry.retryQueue).toHaveBeenCalledOnce();
+    expect(root.querySelector(".qnalog-progress-recovery-row")).not.toBeNull();
+    expect(harness.recoveryEntries).toHaveLength(1);
+    harness.modal.onClose();
+  });
+  it("keeps parser-retained rows after retry-all and cancel-all act on real queue tasks", async () => {
+    vi.stubGlobal("window", {
+      requestAnimationFrame: (callback: () => void) => { callback(); return 1; },
+      setInterval,
+      clearInterval,
+    });
+    const harness = makeProgressHarness();
+    const retained = { id: "damaged", type: "future-task", audioPath: "private.wav", mdPath: "notes/kept.md", text: "private transcript" };
+    let queue!: TaskQueue;
+    const persisted: string[] = [];
+    queue = new TaskQueue({
+      getMaxRetries: () => 3,
+      persistQueue: async () => { persisted.push(JSON.stringify(queue.persistedSnapshot())); },
+    } as never);
+    queue.load([retained, { id: "valid", type: "generate-prompt", mode: "custom", status: "failed" }]);
+    harness.plugin.queue = queue as never;
+    harness.modal.onOpen();
+    let root = harness.modal.contentEl as never as MemoryElement;
+    expect(root.querySelectorAll(".qnalog-progress-recovery-row")).toHaveLength(1);
+    expect(root.textContent).toContain("notes/kept.md");
+    expect(root.textContent).not.toContain("private transcript");
+
+    const retryAll = root.querySelector(".qnalog-progress-queue-head .qnalog-progress-queue-retry");
+    await retryAll!.onclick!({ preventDefault() {}, stopPropagation() {} });
+    expect(queue.tasks).toHaveLength(1);
+    expect(queue.recoveryEntries()).toHaveLength(1);
+
+    root = harness.modal.contentEl as never as MemoryElement;
+    const cancelAll = root.querySelectorAll(".qnalog-progress-foot-link").find((button) => button.textContent === "Cancel all");
+    await cancelAll!.onclick!({ preventDefault() {}, stopPropagation() {} });
+    root = harness.modal.contentEl as never as MemoryElement;
+    expect(queue.tasks).toEqual([]);
+    expect(queue.recoveryEntries()).toHaveLength(1);
+    expect(queue.persistedSnapshot()).toEqual([retained]);
+    expect(JSON.parse(persisted.at(-1) || "[]")).toEqual([retained]);
+    expect(root.querySelectorAll(".qnalog-progress-recovery-row")).toHaveLength(1);
     harness.modal.onClose();
   });
 });

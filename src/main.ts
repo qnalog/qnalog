@@ -202,6 +202,7 @@ class QnALogPlugin extends obsidian.Plugin {
       getSettings: () => this.settings,
       detectModeFromMarkdown: (file) => this.noteWriter.detectModeFromMarkdown(file),
       queueTasks: () => this.queue ? this.queue.snapshot() : [],
+      queueRecoveryEntries: () => this.queue ? this.queue.recoveryEntries() : [],
       addTask: (task) => this.queue.add(task),
       removeTask: (id) => this.queue.remove(id),
       scheduleTaskQueueRetry: () => this.queueRetry.scheduleTaskQueueRetry(1500, "continuation-ready"),
@@ -230,6 +231,7 @@ class QnALogPlugin extends obsidian.Plugin {
       fileManager: this.app.fileManager,
       diagnostics: this.diagnostics,
       queueTasks: () => this.queue.tasks,
+      queueRecoveryEntries: () => this.queue.recoveryEntries(),
       addQueueTask: (task) => this.queue.add(task),
       updateQueueTask: (id, patch) => this.queue.update(id, patch),
       removeQueueTask: (id) => this.queue.remove(id),
@@ -320,6 +322,17 @@ class QnALogPlugin extends obsidian.Plugin {
       this.continuations.notifyQueueChanged();
     }));
     this.queue.load(this.persistedQueue);
+    const recoveryEntries = this.queue.recoveryEntries();
+    if (recoveryEntries.length) {
+      const counts = { "invalid-entry": 0, "unsupported-type": 0, "invalid-field": 0, "invalid-continuation": 0, "invalid-disposition": 0, "duplicate-id": 0 };
+      for (const entry of recoveryEntries) counts[entry.issue]++;
+      void this.diagnostics.logDiagnostic("warn", "queue.recovery_paused", t("Queue recovery entries were paused"), {
+        total: Array.isArray(this.persistedQueue) ? this.persistedQueue.length : 0,
+        retained: recoveryEntries.length,
+        issues: counts,
+      }).catch((error) => console.warn("[QnALog] queue recovery diagnostic failed", error));
+      new obsidian.Notice(t("QnALog: {0} queue entries could not be restored; their original data was kept. Open Pending Queue for details.").replace("{0}", String(recoveryEntries.length)));
+    }
     this.tasks.syncQueueTaskActivities();
     this.outlineCoordinator = new RealtimeOutlineCoordinator({
       getActiveSessionId: () => (this.sessionStore.get() && this.sessionStore.get().id) || "",
@@ -837,7 +850,7 @@ class QnALogPlugin extends obsidian.Plugin {
       backgroundJobs: {
         schemaVersion: 1,
         updatedAt: new Date().toISOString(),
-        items: this.queue ? this.queue.snapshot() : (this.persistedQueue || []),
+        items: this.queue ? this.queue.persistedSnapshot() : (this.persistedQueue || []),
       },
     };
     // SecretStorage 写入成功后才清空副本里的密钥字段；失败时不覆盖原设置文件。

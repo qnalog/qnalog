@@ -304,7 +304,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 ### 6.1 当前推进
 
 - **P2.3：关键持久化域的类型与能力闭合**。范围：录音/续录终止、队列恢复、笔记写入、版本保全。`TaskQueue` 与 `VersionStore` 已使用窄宿主能力；LLM 失败分类已迁入严格检查的纯策略模块。
-- 2026-10-04 将 `src/queue/task-queue.ts` 纳入 strict-core；队列公开方法、任务生命周期和重试流程的临时严格诊断与常规 TypeScript 诊断均为 0。`load(saved: unknown)` 仍通过动态对象读取旧任务，严格检查不代表持久化输入已验证；下一批单独定义并验收此恢复边界。录音/续录终止、笔记写入和版本保全仍未完成。不得把 `QueueRetryService` / `NoteWriter` 间接 host 能力写成已收窄。
+- 2026-10-04 将 `src/queue/task-queue.ts` 纳入 strict-core；队列公开方法、任务生命周期和重试流程的临时严格诊断与常规 TypeScript 诊断均为 0。`load(saved: unknown)` 的恢复边界已在本地分支 `fix/queue-recovery-boundary` 实现：合法三类任务经字段校验后恢复；其它原行暂停并按原顺序保留，相关会话依赖和音频引用继续受保护。模拟宿主与自动化覆盖已完成，真实 Obsidian 验收尚未进行。录音/续录终止、笔记写入和版本保全仍未完成。不得把 `QueueRetryService` / `NoteWriter` 间接 host 能力写成已收窄。
 - **P3：A8 沉淀交互控制器**。后续任务需整体定义并验收扫描、取消、自动推进、提交、撤销和 DOM 边界；不重新拆整个 `OutlineView`。真实视觉与交互由维护者确认。
 - 真实用户数据损坏或安全问题优先。尚未定位的截图或 `partial` 状态不作为已定位故障。
 
@@ -331,7 +331,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 | 会话状态与实时转写 | PR #83 完成抽取；维护者确认整理期间续录成功 | 其它场景仅按 §6.4 条件补验 |
 | Q 图标 | PR #85 完成图标更新 | 桌面辨识已确认；移动端见 §6.4 |
 | 首次配置与说话人设置 | 向导、快捷配置、侧栏入口已实现；API 页含说话人配置，见 §10–§12 | 未记录的新写入场景不宣称已人工确认 |
-| 持久化域能力与失败分类 | `TaskQueue` / `VersionStore` 窄能力及纯失败策略已完成；`util-audio.ts`、`util-key-diag.ts` 与 `task-queue.ts` 已纳入 strict-core。持久化 `load` 输入验证及 P2.3 其余范围未完成 | 按当前修改场景验证 |
+| 持久化域能力与失败分类 | `TaskQueue` / `VersionStore` 窄能力及纯失败策略已完成；`util-audio.ts`、`util-key-diag.ts`、`task-queue.ts` 与 `queue-recovery.ts` 已纳入 strict-core。队列恢复解析、原行保留、依赖/音频引用保护及暂停条目界面见 `tests/queue-recovery.test.ts`、`tests/continuation-queue.test.ts`、`tests/live-asr-pipeline-service.test.ts`、`tests/progress-modal-contract.test.ts` | 队列恢复行为等待维护者在测试库副本中进行真实 Obsidian 验收 |
 
 ### 6.4 人工补验清单
 

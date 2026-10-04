@@ -435,6 +435,22 @@ export interface GeneratePromptQueueTaskPayload {
 }
 
 export type QueueTaskPayload = TranscribeQueueTaskPayload | MergeQueueTaskPayload | GeneratePromptQueueTaskPayload;
+
+export type QueueRecoveryIssue =
+  | "invalid-entry" | "unsupported-type" | "invalid-field"
+  | "invalid-continuation" | "invalid-disposition" | "duplicate-id";
+export interface QueueRecoveryEntrySummary {
+  readonly entryIndex: number;
+  readonly issue: QueueRecoveryIssue;
+  readonly field?: string;
+  readonly storedId?: string;
+  readonly taskType?: "transcribe" | "merge" | "generate-prompt";
+  readonly sessionId?: string;
+  readonly mdPath?: string;
+  readonly temporarySourcePath?: string;
+  readonly targetPath?: string;
+  readonly audioPaths: readonly string[];
+}
 export type QueueTask = QueueTaskPayload & QueueTaskLifecycle;
 
 export interface RecordingSession {

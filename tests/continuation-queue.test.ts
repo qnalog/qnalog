@@ -5,8 +5,11 @@ vi.mock("obsidian", () => ({
   TFile: class TFile { path: string; extension: string; constructor(path: string) { this.path = path; this.extension = path.split(".").pop() || ""; } },
 }));
 
+import * as obsidian from "obsidian";
 import { TaskQueue } from "../src/queue/task-queue";
 import type { TaskQueueHost } from "../src/queue/task-queue";
+import { QueueRetryService } from "../src/queue/queue-retry-service";
+import { ContinuationService } from "../src/session/continuation-service";
 import type { MergeQueueTaskPayload, QueueTaskLifecycle, TranscribeQueueTaskPayload } from "../src/shared/types";
 
 function makeQueueHost(overrides: Partial<TaskQueueHost> = {}): TaskQueueHost {
@@ -34,7 +37,7 @@ describe("continuation queue lifecycle", () => {
   it("coalesces normalized transcription paths while retaining the first queue identity", async () => {
     const persisted: unknown[][] = [];
     const queue = new TaskQueue(makeQueueHost({
-      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.persistedSnapshot()))),
     }));
     const first: TranscribeQueueTaskPayload & Partial<QueueTaskLifecycle> = {
       type: "transcribe", sessionId: "session-a", mdPath: "notes\\meeting.md",
@@ -69,7 +72,7 @@ describe("continuation queue lifecycle", () => {
     const logCompletedWork = vi.fn();
     const handler = vi.fn();
     const queue = new TaskQueue(makeQueueHost({
-      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.persistedSnapshot()))),
       completeTaskActivity,
       logCompletedWork,
       ...(type === "transcribe" ? { retryTranscribeTask: handler } : { runGeneratePromptTask: handler }),
@@ -92,15 +95,16 @@ describe("continuation queue lifecycle", () => {
     const logCompletedWork = vi.fn();
     const retryMergeTask = vi.fn().mockResolvedValue({ deferred: true, reason: "waiting for earlier session" });
     const queue = new TaskQueue(makeQueueHost({
-      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.persistedSnapshot()))),
       retryMergeTask,
       completeTaskActivity,
       logCompletedWork,
     }));
     queue.load([
-      { id: "earlier", type: "merge", sessionId: "session-a", status: "pending", mdPath: "target.md" },
+      { id: "earlier", type: "merge", sessionId: "session-a", status: "pending", mdPath: "target.md", mode: "meeting", segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "earlier source" }] },
       {
         id: "continuation", type: "merge", sessionId: "session-b", status: "pending", mdPath: "stage.md",
+        mode: "meeting", segments: [],
         continuation: { targetPath: "target.md", targetSourceId: "source-a", recordedAt: "2026-09-21T10:00:00.000Z" },
         dependsOnSessionIds: ["session-a"], retries: 2,
       },
@@ -130,7 +134,7 @@ describe("continuation queue lifecycle", () => {
     const completeTaskActivity = vi.fn();
     const logCompletedWork = vi.fn();
     const queue = new TaskQueue(makeQueueHost({
-      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.persistedSnapshot()))),
       retryTranscribeTask: async () => { throw error; },
       recordAsrServiceAttemptFailure,
       completeTaskActivity,
@@ -165,6 +169,8 @@ describe("continuation queue lifecycle", () => {
       sessionId: "session-b",
       status: "pending",
       mdPath: "stage.md",
+      mode: "meeting",
+      segments: [],
       continuation: {
         targetPath: "target.md",
         targetSourceId: "source-a",
@@ -181,27 +187,121 @@ describe("continuation queue lifecycle", () => {
     expect(task.continuation.realtimeOutline).toBe("- Partial outline");
     expect(task.continuation.realtimeOutlineSourceCoverage).toBeUndefined();
   });
-  it("blocks an unknown continuation disposition without rewriting the task", () => {
+  it("retains an unknown continuation disposition without rewriting the task", () => {
     const queue = new TaskQueue(makeQueueHost());
-    queue.load([{
+    const raw = {
       id: "continuation-cleanup",
       type: "merge",
       sessionId: "session-cleanup",
       status: "pending",
       mdPath: "stage.md",
+      mode: "meeting",
+      segments: [],
       continuationDisposition: "unexpected",
       continuation: {
         targetPath: "target.md",
         targetSourceId: "source-a",
         recordedAt: "2026-09-21T10:00:00.000Z",
       },
-    }]);
+    };
+    queue.load([raw]);
 
-    expect(queue.tasks[0]).toMatchObject({
-      status: "blocked",
-      lastError: "Continuation cleanup information is invalid; the target was not changed.",
-      continuationDisposition: "unexpected",
+    expect(queue.snapshot()).toEqual([]);
+    expect(queue.recoveryEntries()).toMatchObject([{ issue: "invalid-disposition", entryIndex: 0 }]);
+    expect(queue.persistedSnapshot()).toEqual([raw]);
+  });
+  it("keeps invalid rows byte-for-byte through valid task completion, retained-ID operations, and reload", async () => {
+    const persisted: unknown[][] = [];
+    const badTranscribe = {
+      id: "bad-asr",
+      type: "transcribe",
+      sessionId: "session-a",
+      mdPath: "meeting.md",
+      audioPath: ".cache/keep.wav",
+      segmentIndex: "wrong",
+      extraSecret: "must-not-be-executed",
+    };
+    const futureTask = { id: "future", type: "future-task", audioPath: ".cache/future.wav", text: "private source" };
+    let queue!: TaskQueue;
+    const runPrompt = vi.fn();
+    queue = new TaskQueue(makeQueueHost({
+      persistQueue: async () => { persisted.push(JSON.parse(JSON.stringify(queue.persistedSnapshot()))); },
+      runGeneratePromptTask: async () => { runPrompt(); },
+    }));
+    queue.load([badTranscribe, futureTask, { id: "prompt", type: "generate-prompt", mode: "custom" }]);
+
+    expect(queue.snapshot().map(task => task.id)).toEqual(["prompt"]);
+    expect(queue.recoveryEntries().map(entry => entry.issue)).toEqual(["invalid-field", "unsupported-type"]);
+    await queue.processOne({ id: "bad-asr", type: "generate-prompt", mode: "forged" } as never);
+    await queue.update("bad-asr", { status: "pending" });
+    await queue.processOne(queue.snapshot()[0]);
+    await queue.remove("future");
+
+    expect(runPrompt).toHaveBeenCalledOnce();
+    expect(persisted.at(-1)).toEqual([badTranscribe, futureTask]);
+    expect(queue.persistedSnapshot()).toEqual([badTranscribe, futureTask]);
+    const restored = new TaskQueue(makeQueueHost());
+    restored.load(persisted.at(-1));
+    expect(restored.snapshot()).toEqual([]);
+    expect(restored.recoveryEntries()).toMatchObject([
+      { issue: "invalid-field", sessionId: "session-a", mdPath: "meeting.md", audioPaths: [".cache/keep.wav"] },
+      { issue: "unsupported-type", audioPaths: [".cache/future.wav"] },
+    ]);
+  });
+
+  it("blocks work behind retained sessions in queue, continuation scheduling, and direct append retry", async () => {
+    const retryMergeTask = vi.fn().mockResolvedValue(undefined);
+    const runPrompt = vi.fn();
+    const target = new obsidian.TFile("target.md");
+    let scheduled = 0;
+    let queue!: TaskQueue;
+    queue = new TaskQueue(makeQueueHost({ retryMergeTask, runGeneratePromptTask: async () => { runPrompt(); } }));
+    queue.load([
+      { id: "bad-asr", type: "transcribe", sessionId: "session-a", mdPath: "stage.md", audioPath: "cache.wav", segmentIndex: "broken" },
+      {
+        id: "bad-merge", type: "merge", sessionId: "session-a", mdPath: "damaged.md", segments: [],
+        continuation: { targetPath: "target.md", targetSourceId: "source", recordedAt: "2026-09-21T10:00:00.000Z" },
+      },
+      {
+        id: "dependent", type: "merge", sessionId: "session-b", mdPath: "stage-b.md", mode: "meeting", segments: [],
+        continuation: { targetPath: "target.md", targetSourceId: "source-b", recordedAt: "2026-09-21T10:00:00.000Z" },
+        dependsOnSessionIds: ["session-a"],
+      },
+      {
+        id: "same-session", type: "merge", sessionId: "session-a", mdPath: "stage-a.md", mode: "meeting", segments: [],
+        continuation: { targetPath: "target.md", targetSourceId: "source-a", recordedAt: "2026-09-21T10:00:00.000Z" },
+      },
+      { id: "unrelated-prompt", type: "generate-prompt", mode: "custom" },
+    ]);
+    const continuations = new ContinuationService({
+      vault: { getAbstractFileByPath: (path: string) => path === target.path ? target : null } as never,
+      fileManager: {} as never,
+      getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD", consolidatedLayout: false, polishMode: "meeting" }),
+      detectModeFromMarkdown: () => "meeting",
+      queueTasks: () => queue.snapshot(),
+      queueRecoveryEntries: () => queue.recoveryEntries(),
+      addTask: async () => { throw new Error("unexpected continuation write"); },
+      removeTask: async () => undefined,
+      scheduleTaskQueueRetry: () => { scheduled++; },
     });
+    continuations.notifyQueueChanged();
+    expect(scheduled).toBe(0);
+    expect(continuations.isTargetBusy(target)).toBe(true);
+
+    const retry = new QueueRetryService({
+      app: { vault: { getAbstractFileByPath: () => target } },
+      continuations,
+      queue,
+    } as never);
+    const dependent = queue.tasks.find(task => task.id === "dependent");
+    const sameSession = queue.tasks.find(task => task.id === "same-session");
+    if (!dependent || !sameSession) throw new Error("valid merge fixtures were not restored");
+    await expect(retry.runAppendTask(dependent)).resolves.toMatchObject({ deferred: true });
+    await queue.processOne(dependent);
+    await queue.processOne(sameSession);
+    await queue.processOne(queue.tasks.find(task => task.id === "unrelated-prompt")!);
+    expect(retryMergeTask).not.toHaveBeenCalled();
+    expect(runPrompt).toHaveBeenCalledOnce();
   });
   it("reads the current retry limit when processing tasks", async () => {
     let settings = { maxRetries: 2 };
@@ -209,7 +309,7 @@ describe("continuation queue lifecycle", () => {
     let queue!: TaskQueue;
     queue = new TaskQueue(makeQueueHost({
       getMaxRetries: () => settings.maxRetries,
-      persistQueue: async () => { persistedQueue = JSON.stringify(queue.snapshot()); },
+      persistQueue: async () => { persistedQueue = JSON.stringify(queue.persistedSnapshot()); },
       runGeneratePromptTask: async () => undefined,
     }));
     queue.load([{
@@ -273,7 +373,7 @@ describe("continuation queue lifecycle", () => {
     const logCompletedWork = vi.fn();
     let queue!: TaskQueue;
     queue = new TaskQueue(makeQueueHost({
-      persistQueue: async () => { persistedJson = JSON.stringify(queue.snapshot()); },
+      persistQueue: async () => { persistedJson = JSON.stringify(queue.persistedSnapshot()); },
       retryMergeTask: async () => { throw error; },
       completeTaskActivity,
       logCompletedWork,

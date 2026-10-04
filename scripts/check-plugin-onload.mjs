@@ -395,6 +395,14 @@ async function main() {
     expect(probe.settings.llmModel === "用户选的模型", "版本一致时用户选的模型丢失");
     // 注意：loadAll 只负责把队列读进 persistedQueue，queue.load() 在 onload 里另调一次。
     expect(probe.persistedQueue.length === 1, "版本一致时持久化队列被清空");
+    probe.queue.load(probe.persistedQueue);
+    expect(probe.queue.snapshot().length === 0, "无效队列稀疏行进入了可执行队列");
+    expect(probe.queue.recoveryEntries().length === 1, "稀疏队列行未进入恢复保留区");
+    await probe.saveAll();
+    expect(JSON.stringify(probe.lastSaved.backgroundJobs.items) === JSON.stringify(userData.backgroundJobs.items),
+      "保存后稀疏队列原行未保留");
+    probe.queue.load(probe.lastSaved.backgroundJobs.items);
+    expect(probe.queue.recoveryEntries().length === 1, "重载后稀疏队列原行丢失");
     expect(probe.lastSaved.settings.speech.providers.siliconflow.apiKey === "",
       "迁移后 data.json 仍包含转写 API Key");
     expect(probe.lastSaved.settings.composer.apiKey === "",

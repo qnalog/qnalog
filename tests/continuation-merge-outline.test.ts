@@ -98,6 +98,7 @@ describe("continuation queue merge normalization", () => {
     });
     const queue = {
       tasks: [task],
+      recoveryEntries: () => [],
       update: vi.fn(async (_id: string, patch: Record<string, unknown>) => Object.assign(task, patch)),
     };
     const host = {
