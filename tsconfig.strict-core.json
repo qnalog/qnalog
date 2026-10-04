@@ -62,6 +62,8 @@
     "src/shared/task-activity.ts",
     "src/shared/util-platform.ts",
     "src/shared/util-vault.ts",
+    "src/shared/util-audio.ts",
+    "src/shared/util-key-diag.ts",
     "src/notes/note-document.ts",
     "src/versions/version-content.ts",
     "src/views/base-definitions.ts"

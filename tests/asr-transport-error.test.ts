@@ -5,6 +5,7 @@ import {
   getAsrTransportTaskRecoveryPatch,
   getNextAsrTaskRetryCount,
   getTranscribeSegmentPlaceholder,
+  isAsrNonRetryableError,
   isAsrTransportError,
   isTransientAsrError,
 } from "../src/shared/util-audio";
@@ -66,22 +67,30 @@ describe("ASR transport error classification", () => {
     }
   });
 
-  it("restores exhausted network tasks when loading an older queue", () => {
-    expect(getAsrTransportTaskRecoveryPatch({
+  it("preserves classification and recovery behavior for unknown queue inputs", () => {
+    expect(isAsrTransportError("Failed to fetch")).toBe(true);
+    expect(isAsrTransportError({ message: "ECONNRESET" })).toBe(true);
+    expect(isAsrTransportError({ asrTransport: true, nonRetryable: true })).toBe(false);
+    expect(isTransientAsrError({ asrTransport: true, nonRetryable: true })).toBe(false);
+    expect(isAsrNonRetryableError("API key is not configured")).toBe(true);
+    expect(getNextAsrTaskRetryCount(1, 3, "API key is not configured")).toBe(3);
+    expect(getNextAsrTaskRetryCount(1, 3, "转写返回空结果")).toBe(2);
+
+    const persistedTask = {
       type: "transcribe",
       status: "failed",
-      retries: 3,
+      retries: "3",
       lastError: "Failed to fetch",
-    }, 3)).toEqual({
+      unrelated: "retained",
+    };
+    const snapshot = JSON.stringify(persistedTask);
+    expect(getAsrTransportTaskRecoveryPatch(persistedTask, 3)).toEqual({
       status: "pending",
       retries: 2,
       deferredReason: "service-unavailable",
     });
-    expect(getAsrTransportTaskRecoveryPatch({
-      type: "transcribe",
-      status: "failed",
-      retries: 3,
-      lastError: "无法解码音频",
-    }, 3)).toBeNull();
+    expect(persistedTask).toEqual(JSON.parse(snapshot));
+    expect(getAsrTransportTaskRecoveryPatch({ ...persistedTask, type: "merge" }, 3)).toBeNull();
+    expect(getAsrTransportTaskRecoveryPatch({ ...persistedTask, status: "pending" }, 3)).toBeNull();
   });
 });
