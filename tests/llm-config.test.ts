@@ -11,7 +11,7 @@ import {
 describe("LLM 服务预设", () => {
   it("百炼一站式预设内置三段服务与全部模型", () => {
     // 首次配置的主路径：只填密钥。因此地址与三个模型必须都写在预设里，
-    // 界面上不该再出现需要用户选择的模型项（见 MAINTAINING §10.6）。
+    // 界面上不该再出现需要用户选择的模型项（见 MAINTAINING §11.1）。
     expect(ONE_CARD_PROVIDERS.bailian).toMatchObject({
       scope: "asr-llm",
       // 录音转写走 HTTP 分段：移动端无法给 WebSocket 设鉴权头，实时流式那条路在手机上必败。
