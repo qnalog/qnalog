@@ -13,7 +13,7 @@ import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import type { QueueTask, QueueTaskDeferred } from "../shared/types";
+import type { QueueTask, QueueTaskDeferred, QueueTaskLifecycle, QueueTaskPayload } from "../shared/types";
 
 import { t, t as i18nT } from "../shared/i18n";
 import type { TaskActivity } from "../shared/task-activity";
@@ -59,7 +59,7 @@ export class TaskQueue {
       try { fn(); } catch { /* intentionally empty */ }
     }
   }
-  load(saved: unknown) {
+  load(saved: unknown): void {
     const raw = Array.isArray(saved) ? saved.slice() : [];
     this.tasks = raw
       .filter(t => t && typeof t === "object" && t.type)
@@ -75,10 +75,10 @@ export class TaskQueue {
         }
         const invalidDependencies = task.dependsOnSessionIds !== undefined
           && (!Array.isArray(task.dependsOnSessionIds)
-            || task.dependsOnSessionIds.some(id => typeof id !== "string" || !id.trim()));
+            || task.dependsOnSessionIds.some((id: unknown) => typeof id !== "string" || !id.trim()));
         if (task.dependsOnSessionIds !== undefined) {
           task.dependsOnSessionIds = Array.isArray(task.dependsOnSessionIds)
-            ? task.dependsOnSessionIds.filter(id => typeof id === "string" && id.trim())
+            ? task.dependsOnSessionIds.filter((id: unknown) => typeof id === "string" && id.trim())
             : [];
         }
         if (task.type === "merge" && task.continuation !== undefined) {
@@ -152,8 +152,8 @@ export class TaskQueue {
         return task;
       });
   }
-  snapshot() { return this.tasks.slice(); }
-  findActiveGeneratePromptTask(mode) {
+  snapshot(): QueueTask[] { return this.tasks.slice(); }
+  findActiveGeneratePromptTask(mode: string): QueueTask | undefined {
     return this.tasks.find(t =>
       t &&
       t.type === "generate-prompt" &&
@@ -162,9 +162,9 @@ export class TaskQueue {
       t.status !== "missing"
     );
   }
-  findDuplicateTask(task) {
+  findDuplicateTask(task: QueueTaskPayload & Partial<QueueTaskLifecycle>): QueueTask | undefined | null {
     if (!task || !task.type) return null;
-    const samePath = (a, b) => obsidian.normalizePath(String(a || "")) === obsidian.normalizePath(String(b || ""));
+    const samePath = (a: string | null | undefined, b: string | null | undefined) => obsidian.normalizePath(String(a || "")) === obsidian.normalizePath(String(b || ""));
     if (task.type === "transcribe") {
       return this.tasks.find(t => t && t.type === "transcribe"
         && samePath(t.mdPath, task.mdPath)
@@ -179,7 +179,7 @@ export class TaskQueue {
     if (task.type === "generate-prompt") return this.findActiveGeneratePromptTask(task.mode);
     return null;
   }
-  async add(task) {
+  async add(task: QueueTaskPayload & Partial<QueueTaskLifecycle>): Promise<QueueTask> {
     const existing = this.findDuplicateTask(task);
     if (existing) {
       Object.assign(existing, task, {
@@ -198,36 +198,37 @@ export class TaskQueue {
     task.updatedAt = new Date().toISOString();
     task.retries = task.retries || 0;
     task.status = task.status || "pending";
-    this.tasks.push(task);
+    const queuedTask = task as QueueTask;
+    this.tasks.push(queuedTask);
     await this.host.persistQueue();
     this.emitChange();
-    return task;
+    return queuedTask;
   }
   /**
    * 从队列移除任务。
    * opts.preserveActivity 由调用方传入以表明「保留任务活动记录」，但本方法只改队列、不碰活动记录，
    * 因此该选项目前不影响行为；保留签名以免调用方语义丢失。
    */
-  async remove(id, opts: { preserveActivity?: boolean } = {}) {
+  async remove(id: string, opts: { preserveActivity?: boolean } = {}): Promise<void> {
     void opts;
     this.tasks = this.tasks.filter(t => t.id !== id);
     await this.host.persistQueue();
     this.emitChange();
   }
-  async update(id, patch) {
+  async update(id: string, patch: Partial<QueueTask>): Promise<void> {
     const t = this.tasks.find(x => x.id === id);
     if (!t) return;
     Object.assign(t, patch, { updatedAt: new Date().toISOString() });
     await this.host.persistQueue();
     this.emitChange();
   }
-  async processAll() {
+  async processAll(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
       const maxRetries = this.host.getMaxRetries() || 3;
       const now = Date.now();
-      const isRetryDue = (task) => {
+      const isRetryDue = (task: QueueTask): boolean => {
         if (!task.nextRetryAt) return true;
         const retryAt = Date.parse(String(task.nextRetryAt));
         return !Number.isFinite(retryAt) || retryAt <= now;
@@ -290,7 +291,7 @@ export class TaskQueue {
       && this.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId);
   }
 
-  async processOne(task: QueueTask) {
+  async processOne(task: QueueTask): Promise<void> {
     if (!task || !task.id) return;
     // Re-resolve by id: callers may retain a stale row after it was removed or replaced.
     const queuedTask = this.tasks.find(candidate => candidate.id === task.id);
@@ -315,7 +316,7 @@ export class TaskQueue {
       attempt: Math.max(1, (Number(task.retries) || 0) + 1),
     });
     try {
-      let deferred: QueueTaskDeferred | void;
+      let deferred: QueueTaskDeferred | void = undefined;
       if (task.type === "transcribe") {
         await this.host.retryTranscribeTask(task);
         this.host.recordAsrServiceAttemptSuccess();
@@ -391,7 +392,7 @@ export class TaskQueue {
       this._inflight.delete(task.id);
     }
   }
-  hasPendingGeneratePrompt() {
+  hasPendingGeneratePrompt(): boolean {
     return this.tasks.some(t => t && t.type === "generate-prompt" && t.status !== "failed");
   }
 }

@@ -7,7 +7,7 @@ vi.mock("obsidian", () => ({
 
 import { TaskQueue } from "../src/queue/task-queue";
 import type { TaskQueueHost } from "../src/queue/task-queue";
-import type { MergeQueueTaskPayload, QueueTaskLifecycle } from "../src/shared/types";
+import type { MergeQueueTaskPayload, QueueTaskLifecycle, TranscribeQueueTaskPayload } from "../src/shared/types";
 
 function makeQueueHost(overrides: Partial<TaskQueueHost> = {}): TaskQueueHost {
   return {
@@ -31,10 +31,72 @@ function makeQueueHost(overrides: Partial<TaskQueueHost> = {}): TaskQueueHost {
 }
 
 describe("continuation queue lifecycle", () => {
+  it("coalesces normalized transcription paths while retaining the first queue identity", async () => {
+    const persisted: unknown[][] = [];
+    const queue = new TaskQueue(makeQueueHost({
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+    }));
+    const first: TranscribeQueueTaskPayload & Partial<QueueTaskLifecycle> = {
+      type: "transcribe", sessionId: "session-a", mdPath: "notes\\meeting.md",
+      audioPath: "audio\\clip.wav", segmentIndex: 2, audioName: "first.wav", ephemeralAudio: true,
+      retries: 2,
+    };
+    const original = await queue.add(first);
+    const originalId = original.id;
+    const originalCreatedAt = original.createdAt;
+    const second: TranscribeQueueTaskPayload & Partial<QueueTaskLifecycle> = {
+      type: "transcribe", sessionId: "session-a", mdPath: "notes/meeting.md",
+      audioPath: "audio/clip.wav", segmentIndex: 2, audioName: "updated.wav", lastError: "retry later",
+    };
+
+    const duplicate = await queue.add(second);
+
+    expect(duplicate.id).toBe(originalId);
+    expect(duplicate.createdAt).toBe(originalCreatedAt);
+    expect(duplicate.retries).toBe(2);
+    expect(duplicate.audioName).toBe("updated.wav");
+    expect(duplicate.lastError).toBe("retry later");
+    expect(queue.snapshot()).toHaveLength(1);
+    expect(persisted.at(-1)).toEqual(queue.snapshot());
+  });
+
+  it.each([
+    { type: "transcribe" as const, task: { type: "transcribe" as const, sessionId: "session-a", mdPath: "meeting.md", audioPath: "clip.wav", segmentIndex: 0 } },
+    { type: "generate-prompt" as const, task: { type: "generate-prompt" as const, mode: "meeting" } },
+  ])("removes successfully completed $type work after recording completion", async ({ type, task }) => {
+    const persisted: unknown[][] = [];
+    const completeTaskActivity = vi.fn();
+    const logCompletedWork = vi.fn();
+    const handler = vi.fn();
+    const queue = new TaskQueue(makeQueueHost({
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+      completeTaskActivity,
+      logCompletedWork,
+      ...(type === "transcribe" ? { retryTranscribeTask: handler } : { runGeneratePromptTask: handler }),
+    }));
+    const queued = await queue.add(task);
+
+    await queue.processOne(queued);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(completeTaskActivity).toHaveBeenCalledWith(queued, expect.objectContaining({ stage: "done" }));
+    expect(logCompletedWork).toHaveBeenCalledTimes(1);
+    expect(queue.snapshot()).toEqual([]);
+    expect(persisted.some(snapshot => snapshot.some(row => row.id === queued.id && row.status === "running"))).toBe(true);
+    expect(persisted.at(-1)).toEqual([]);
+  });
+
   it("keeps a continuation deferred until its earlier target session is gone", async () => {
+    const persisted: unknown[][] = [];
+    const completeTaskActivity = vi.fn();
+    const logCompletedWork = vi.fn();
     const retryMergeTask = vi.fn().mockResolvedValue({ deferred: true, reason: "waiting for earlier session" });
-    const host = makeQueueHost({ retryMergeTask });
-    const queue = new TaskQueue(host);
+    const queue = new TaskQueue(makeQueueHost({
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+      retryMergeTask,
+      completeTaskActivity,
+      logCompletedWork,
+    }));
     queue.load([
       { id: "earlier", type: "merge", sessionId: "session-a", status: "pending", mdPath: "target.md" },
       {
@@ -43,7 +105,6 @@ describe("continuation queue lifecycle", () => {
         dependsOnSessionIds: ["session-a"], retries: 2,
       },
     ]);
-
     const continuation = queue.tasks.find(task => task.id === "continuation")!;
     await queue.processOne(continuation);
     expect(retryMergeTask).not.toHaveBeenCalled();
@@ -52,10 +113,49 @@ describe("continuation queue lifecycle", () => {
 
     await queue.remove("earlier");
     await queue.processOne(continuation);
-    expect(retryMergeTask).toHaveBeenCalledTimes(1);
-    expect(continuation.status).toBe("pending");
-    expect(continuation.lastError).toBe("waiting for earlier session");
-    expect(continuation.retries).toBe(2);
+
+    expect(persisted.at(-1)).toEqual([expect.objectContaining({
+      id: "continuation", status: "pending", retries: 2, lastError: "waiting for earlier session",
+    })]);
+    expect(completeTaskActivity).not.toHaveBeenCalled();
+    expect(logCompletedWork).not.toHaveBeenCalled();
+  });
+
+  it("preserves a retryable ASR transport failure through persisted queue recovery", async () => {
+    const persisted: unknown[][] = [];
+    const error = new Error("Failed to fetch");
+    const recordAsrServiceAttemptFailure = vi.fn(() => ({
+      consecutiveFailures: 1, openUntilMs: Date.parse("2100-01-01T00:00:00.000Z"), lastError: error.message,
+    }));
+    const completeTaskActivity = vi.fn();
+    const logCompletedWork = vi.fn();
+    const queue = new TaskQueue(makeQueueHost({
+      persistQueue: async () => persisted.push(JSON.parse(JSON.stringify(queue.snapshot()))),
+      retryTranscribeTask: async () => { throw error; },
+      recordAsrServiceAttemptFailure,
+      completeTaskActivity,
+      logCompletedWork,
+    }));
+    const queued = await queue.add({
+      type: "transcribe", sessionId: "session-a", mdPath: "meeting.md",
+      audioPath: "clip.wav", segmentIndex: 1, retries: 2, transportFailures: 0,
+    });
+    await expect(queue.processOne(queued)).rejects.toBe(error);
+
+    expect(queued.status).toBe("pending");
+    expect(queued.retries).toBe(2);
+    expect(queued.transportFailures).toBe(1);
+    expect(queued.nextRetryAt).toBe("2100-01-01T00:00:00.000Z");
+    expect(queued.deferredReason).toBe("service-unavailable");
+    expect(recordAsrServiceAttemptFailure).toHaveBeenCalledWith(error);
+    expect(completeTaskActivity).not.toHaveBeenCalled();
+    expect(logCompletedWork).not.toHaveBeenCalled();
+    const restored = new TaskQueue(makeQueueHost());
+    restored.load(persisted.at(-1));
+    expect(restored.snapshot()).toEqual([expect.objectContaining({
+      id: queued.id, audioPath: "clip.wav", sessionId: "session-a", status: "pending",
+      retries: 2, transportFailures: 1, nextRetryAt: "2100-01-01T00:00:00.000Z",
+    })]);
   });
   it("drops malformed outline proof without blocking transcript recovery", () => {
     const queue = new TaskQueue(makeQueueHost());

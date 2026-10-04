@@ -405,6 +405,7 @@ export interface TranscribeQueueTaskPayload {
   audioChannelRuntimeMode?: AudioChannelRuntimeMode;
   providerId?: string;
   wholeFileImport?: boolean;
+  ephemeralAudio?: boolean;
   speakerDiarization?: boolean;
   speakerCount?: number;
 }
