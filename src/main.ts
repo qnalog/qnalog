@@ -289,7 +289,25 @@ class QnALogPlugin extends obsidian.Plugin {
     });
     this.tasks.start();
     this.recorder = new RecorderService(this);
-    this.queue = new TaskQueue(this);
+    this.queue = new TaskQueue({
+      getMaxRetries: () => this.settings.maxRetries,
+      persistQueue: () => this.saveAll(),
+      updateBusyStatus: () => this.tasks.updateBusyStatus(),
+      retryTranscribeTask: (task) => this.queueRetry.retryTranscribeTask(task),
+      retryMergeTask: (task) => this.queueRetry.retryMergeTask(task),
+      runGeneratePromptTask: (task) => this.queueRetry.runGeneratePromptTask(task),
+      scheduleTaskQueueRetry: (delayMs, reason) => this.queueRetry.scheduleTaskQueueRetry(delayMs, reason),
+      isAsrServiceCircuitOpen: () => this.asrPipeline.isAsrServiceCircuitOpen(),
+      getAsrServiceRetryDelayMs: () => this.asrPipeline.getAsrServiceRetryDelayMs(),
+      getAsrServiceCircuitState: () => this.asrPipeline.getAsrServiceCircuitState(),
+      recordAsrServiceAttemptSuccess: () => this.asrPipeline.recordAsrServiceAttemptSuccess(),
+      recordAsrServiceAttemptFailure: (error) => this.asrPipeline.recordAsrServiceAttemptFailure(error),
+      completeTaskActivity: (task, patch) => {
+        this.tasks.completeTaskActivity(this.tasks.queueTaskActivityId(task), patch);
+      },
+      logCompletedWork: (title, detail, meter) => this.tasks.logCompletedWork(title, detail, meter),
+      logDiagnostic: (level, code, message, data) => this.diagnostics.logDiagnostic(level, code, message, data),
+    });
     this.register(this.queue.onChange(() => {
       this.tasks.syncQueueTaskActivities();
       this.shell.refreshOutlineView();

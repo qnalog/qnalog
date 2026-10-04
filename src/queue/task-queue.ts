@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：可持久化任务队列：转写 / 合并 / 提示词生成
 
-import type QnALogPlugin from "../main";
+import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 import * as obsidian from "obsidian";
 import { isLlmNonRetryableError } from "../llm/core";
 
@@ -16,16 +16,36 @@ import { diagnosticError } from "../shared/util-key-diag";
 import type { QueueTask, QueueTaskDeferred } from "../shared/types";
 
 import { t, t as i18nT } from "../shared/i18n";
+import type { TaskActivity } from "../shared/task-activity";
+
+export interface TaskQueueHost {
+  getMaxRetries(): number | undefined;
+  persistQueue(): Promise<void>;
+  updateBusyStatus(): void;
+  retryTranscribeTask(task: Extract<QueueTask, { type: "transcribe" }>): Promise<void>;
+  retryMergeTask(task: Extract<QueueTask, { type: "merge" }>): Promise<QueueTaskDeferred | void>;
+  runGeneratePromptTask(task: Extract<QueueTask, { type: "generate-prompt" }>): Promise<void>;
+  scheduleTaskQueueRetry(delayMs: number, reason: string): void;
+  isAsrServiceCircuitOpen(): boolean;
+  getAsrServiceRetryDelayMs(): number;
+  getAsrServiceCircuitState(): LiveAsrCircuitState;
+  recordAsrServiceAttemptSuccess(): void;
+  recordAsrServiceAttemptFailure(error: unknown): LiveAsrCircuitState;
+  completeTaskActivity(task: QueueTask, patch: Partial<TaskActivity>): void;
+  logCompletedWork(title: string, detail: string, meter: { durationMs: number } | null): void;
+  logDiagnostic(level: "warn" | "error", code: string, message: string, data: Record<string, unknown>): Promise<void>;
+}
+
 export class TaskQueue {
-  declare plugin: QnALogPlugin;
+  declare host: TaskQueueHost;
   declare tasks: QueueTask[];
   declare running: boolean;
   declare _inflight?: Set<string>;
   declare _batchTotal: number;
   declare changeListeners: Set<() => void>;
   declare _batchDone: number;
-  constructor(plugin: QnALogPlugin) {
-    this.plugin = plugin;
+  constructor(host: TaskQueueHost) {
+    this.host = host;
     this.tasks = [];
     this.running = false;
     this.changeListeners = new Set();
@@ -99,7 +119,7 @@ export class TaskQueue {
           task.lastError = i18nT("Continuation cleanup information is invalid; the target was not changed.");
         }
         if (!["pending", "failed", "missing", "processing", "blocked"].includes(task.status)) task.status = "pending";
-        const maxRetries = (this.plugin && this.plugin.settings && this.plugin.settings.maxRetries) || 3;
+        const maxRetries = (this.host && this.host.getMaxRetries()) || 3;
         if (task.type === "transcribe"
           && task.status === "failed"
           && task.retries >= maxRetries
@@ -169,7 +189,7 @@ export class TaskQueue {
         retries: Math.max(0, Number(existing.retries) || 0),
         status: task.status || existing.status || "pending",
       });
-      await this.plugin.saveAll();
+      await this.host.persistQueue();
       this.emitChange();
       return existing;
     }
@@ -179,7 +199,7 @@ export class TaskQueue {
     task.retries = task.retries || 0;
     task.status = task.status || "pending";
     this.tasks.push(task);
-    await this.plugin.saveAll();
+    await this.host.persistQueue();
     this.emitChange();
     return task;
   }
@@ -191,21 +211,21 @@ export class TaskQueue {
   async remove(id, opts: { preserveActivity?: boolean } = {}) {
     void opts;
     this.tasks = this.tasks.filter(t => t.id !== id);
-    await this.plugin.saveAll();
+    await this.host.persistQueue();
     this.emitChange();
   }
   async update(id, patch) {
     const t = this.tasks.find(x => x.id === id);
     if (!t) return;
     Object.assign(t, patch, { updatedAt: new Date().toISOString() });
-    await this.plugin.saveAll();
+    await this.host.persistQueue();
     this.emitChange();
   }
   async processAll() {
     if (this.running) return;
     this.running = true;
     try {
-      const maxRetries = this.plugin.settings.maxRetries || 3;
+      const maxRetries = this.host.getMaxRetries() || 3;
       const now = Date.now();
       const isRetryDue = (task) => {
         if (!task.nextRetryAt) return true;
@@ -222,11 +242,11 @@ export class TaskQueue {
       // 批量进度游标：喂状态栏指示器，让"重试全部 / 多任务"跑到哪一目了然。
       this._batchTotal = pending.length;
       this._batchDone = 0;
-      try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
+      try { this.host.updateBusyStatus(); } catch { /* intentionally empty */ }
       for (const t of pending) {
-        if (t.type === "transcribe" && this.plugin.asrPipeline.isAsrServiceCircuitOpen()) {
-          const retryDelayMs = this.plugin.asrPipeline.getAsrServiceRetryDelayMs();
-          this.plugin.queueRetry.scheduleTaskQueueRetry(retryDelayMs, "asr-service-circuit-open");
+        if (t.type === "transcribe" && this.host.isAsrServiceCircuitOpen()) {
+          const retryDelayMs = this.host.getAsrServiceRetryDelayMs();
+          this.host.scheduleTaskQueueRetry(retryDelayMs, "asr-service-circuit-open");
           continue;
         }
         let transportAsrFailure = null;
@@ -235,20 +255,20 @@ export class TaskQueue {
           if (t && t.type === "transcribe" && isAsrTransportError(e)) transportAsrFailure = e;
         });
         this._batchDone++;
-        try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
+        try { this.host.updateBusyStatus(); } catch { /* intentionally empty */ }
         if (transportAsrFailure) {
           // 服务仍在限流/超时，继续扫后续音频只会扩大请求风暴。暂停整批，冷却后从持久化队列续跑。
-          const retryDelayMs = this.plugin.asrPipeline.getAsrServiceRetryDelayMs();
+          const retryDelayMs = this.host.getAsrServiceRetryDelayMs();
           try {
-            await this.plugin.diagnostics.logDiagnostic("warn", "queue.asr_circuit_opened", i18nT("Background transcription hit a transient fault while processing; the batch was paused"), {
+            await this.host.logDiagnostic("warn", "queue.asr_circuit_opened", i18nT("Background transcription hit a transient fault while processing; the batch was paused"), {
               remaining: Math.max(0, pending.length - this._batchDone),
               cooldownMs: retryDelayMs,
-              consecutiveFailures: this.plugin.asrPipeline.getAsrServiceCircuitState().consecutiveFailures,
+              consecutiveFailures: this.host.getAsrServiceCircuitState().consecutiveFailures,
               error: diagnosticError(transportAsrFailure),
             });
           } catch { /* intentionally empty */ }
-          if (this.plugin && typeof this.plugin.queueRetry.scheduleTaskQueueRetry === "function") {
-            this.plugin.queueRetry.scheduleTaskQueueRetry(retryDelayMs, "transient-asr-failure");
+          if (typeof this.host.scheduleTaskQueueRetry === "function") {
+            this.host.scheduleTaskQueueRetry(retryDelayMs, "transient-asr-failure");
           }
           break;
         }
@@ -257,7 +277,7 @@ export class TaskQueue {
       this.running = false;
       this._batchTotal = 0;
       this._batchDone = 0;
-      try { this.plugin.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
+      try { this.host.updateBusyStatus(); } catch { /* intentionally empty */ }
     }
   }
   private hasUnresolvedDependencies(task: QueueTask): boolean {
@@ -297,11 +317,11 @@ export class TaskQueue {
     try {
       let deferred: QueueTaskDeferred | void;
       if (task.type === "transcribe") {
-        await this.plugin.queueRetry.retryTranscribeTask(task);
-        this.plugin.asrPipeline.recordAsrServiceAttemptSuccess();
+        await this.host.retryTranscribeTask(task);
+        this.host.recordAsrServiceAttemptSuccess();
       }
-      else if (task.type === "merge") deferred = await this.plugin.queueRetry.retryMergeTask(task);
-      else if (task.type === "generate-prompt") await this.plugin.queueRetry.runGeneratePromptTask(task);
+      else if (task.type === "merge") deferred = await this.host.retryMergeTask(task);
+      else if (task.type === "generate-prompt") await this.host.runGeneratePromptTask(task);
       else throw new Error(t("Unknown task type: {0}").replace("{0}", String((task as QueueTask).type)));
 
       if (deferred && deferred.deferred === true) {
@@ -313,7 +333,7 @@ export class TaskQueue {
         return;
       }
       try {
-        this.plugin.tasks.completeTaskActivity(this.plugin.tasks.queueTaskActivityId(task), {
+        this.host.completeTaskActivity(task, {
           stage: "done",
           stageLabel: task.type === "transcribe" ? t("Segment transcription complete")
             : task.type === "merge" ? t("AI organizing complete")
@@ -330,18 +350,18 @@ export class TaskQueue {
           : task.type === "merge" ? t("AI organizing complete")
           : task.type === "generate-prompt" ? t("Prompt generation complete") : t("Task complete");
         const durationMs = Math.max(0, Date.now() - startedAt);
-        this.plugin.tasks.logCompletedWork(doneLabel, task.mdPath || "", durationMs > 0 ? { durationMs } : null);
+        this.host.logCompletedWork(doneLabel, task.mdPath || "", durationMs > 0 ? { durationMs } : null);
       } catch { /* intentionally empty */ }
     } catch (e) {
       const message = (e && e.message) || String(e);
       const isMissingAudio = task.type === "transcribe" && /音频不存在|临时切片不存在|Audio missing|Temporary clip missing/.test(message);
       const isBlockedMerge = task.type === "merge" && isLlmNonRetryableError(e);
       const isTransportAsr = task.type === "transcribe" && isAsrTransportError(e);
-      const maxR = (this.plugin.settings && this.plugin.settings.maxRetries) || 3;
+      const maxR = (this.host.getMaxRetries() || 3);
       const nextRetries = isBlockedMerge ? (task.retries || 0)
         : task.type === "transcribe" ? getNextAsrTaskRetryCount(task.retries, maxR, e)
         : (task.retries || 0) + 1;
-      const serviceCircuit = isTransportAsr ? this.plugin.asrPipeline.recordAsrServiceAttemptFailure(e) : null;
+      const serviceCircuit = isTransportAsr ? this.host.recordAsrServiceAttemptFailure(e) : null;
       const nextRetryAt = serviceCircuit && serviceCircuit.openUntilMs > Date.now()
         ? new Date(serviceCircuit.openUntilMs).toISOString()
         : undefined;
@@ -354,12 +374,12 @@ export class TaskQueue {
         lastError: message,
         lastEventAt: new Date().toISOString(),
       });
-      await this.plugin.diagnostics.logDiagnostic("error", "queue.task_failed", t("Queue task failed"), {
+      await this.host.logDiagnostic("error", "queue.task_failed", t("Queue task failed"), {
         taskType: task.type,
         retries: nextRetries,
         transportFailures: isTransportAsr ? Math.max(0, Number(task.transportFailures) || 0) + 1 : 0,
         nextRetryAt: nextRetryAt || "",
-        maxRetries: this.plugin.settings.maxRetries || 3,
+        maxRetries: this.host.getMaxRetries() || 3,
         mdPath: task.mdPath || "",
         audioPath: "audioPath" in task ? task.audioPath || "" : "",
         mode: task.mode || "",

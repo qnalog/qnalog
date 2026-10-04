@@ -5,14 +5,6 @@
       "diagnostics",
       "settings"
     ],
-    "src/queue/task-queue.ts": [
-      "asrPipeline",
-      "diagnostics",
-      "queueRetry",
-      "saveAll",
-      "settings",
-      "tasks"
-    ],
     "src/ui/outline-view.ts": [
       "app",
       "audioLinks",

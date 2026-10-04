@@ -34,6 +34,7 @@ import { SessionFinalizeService } from "../src/notes/session-finalize-service";
 import { SessionStore } from "../src/session/session-store";
 import { ContinuationService } from "../src/session/continuation-service";
 import { TaskQueue } from "../src/queue/task-queue";
+import type { TaskQueueHost } from "../src/queue/task-queue";
 import { QueueRetryService } from "../src/queue/queue-retry-service";
 import { LiveAsrPipelineService } from "../src/asr/live-asr-pipeline-service";
 import { NoteWriter } from "../src/notes/note-writer";
@@ -183,9 +184,9 @@ async function makeContinuationDiscardFixture() {
   let queue: TaskQueue;
   let retryService: QueueRetryService;
   let nextSaveError = "";
-  const queuePlugin = {
-    settings: { maxRetries: 3 },
-    saveAll: async () => {
+  const queueHost: TaskQueueHost = {
+    getMaxRetries: () => fixture.host.settings.maxRetries,
+    persistQueue: async () => {
       if (nextSaveError) {
         const error = nextSaveError;
         nextSaveError = "";
@@ -193,12 +194,21 @@ async function makeContinuationDiscardFixture() {
       }
       persistedQueue = JSON.stringify(queue.snapshot());
     },
-    tasks: { updateBusyStatus: () => undefined, queueTaskActivityId: () => "activity", completeTaskActivity: () => undefined, logCompletedWork: () => undefined },
-    diagnostics: fixture.host.diagnostics,
-    asrPipeline: { recordAsrServiceAttemptSuccess: () => undefined },
-    queueRetry: { retryMergeTask: (task: never) => retryService.retryMergeTask(task) },
+    updateBusyStatus: () => undefined,
+    retryTranscribeTask: async () => { throw new Error("Unexpected transcription task in discard fixture"); },
+    retryMergeTask: (task) => retryService.retryMergeTask(task),
+    runGeneratePromptTask: async () => { throw new Error("Unexpected prompt task in discard fixture"); },
+    scheduleTaskQueueRetry: () => undefined,
+    isAsrServiceCircuitOpen: () => false,
+    getAsrServiceRetryDelayMs: () => 0,
+    getAsrServiceCircuitState: () => ({ consecutiveFailures: 0, openUntilMs: 0, lastError: "" }),
+    recordAsrServiceAttemptSuccess: () => undefined,
+    recordAsrServiceAttemptFailure: () => ({ consecutiveFailures: 0, openUntilMs: 0, lastError: "" }),
+    completeTaskActivity: () => undefined,
+    logCompletedWork: () => undefined,
+    logDiagnostic: async (level, code, message, data) => fixture.host.diagnostics.logDiagnostic(level, code, message, data),
   };
-  queue = new TaskQueue(queuePlugin as never);
+  queue = new TaskQueue(queueHost);
   const continuations = new ContinuationService({
     vault: fixture.app.vault as never,
     fileManager: fixture.app.fileManager as never,
@@ -238,7 +248,7 @@ async function makeContinuationDiscardFixture() {
   fixture.host.sessionStore.begin(session);
   continuations.trackSession(session as never, target);
   const reloadQueue = () => {
-    queue = new TaskQueue(queuePlugin as never);
+    queue = new TaskQueue(queueHost);
     queue.load(JSON.parse(persistedQueue));
     return queue;
   };
