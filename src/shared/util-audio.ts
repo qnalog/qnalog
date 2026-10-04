@@ -1,10 +1,20 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
 import { t } from "./i18n";
 import { labelText } from "./note-labels";
 
-export function mimeFromExt(ext) {
+const stringifyAsrValue = String as (value: unknown) => string;
+
+function readAsrField(
+  value: unknown,
+  field: "message" | "asrTransport" | "nonRetryable" | "type" | "status" | "lastError" | "retries",
+): unknown {
+  if (!value) return value;
+  if (typeof value === "object" || typeof value === "function") return Reflect.get(value, field);
+  return undefined;
+}
+
+export function mimeFromExt(ext: string | null | undefined): string {
   const e = (ext || "").toLowerCase();
   if (e === "m4a" || e === "mp4") return "audio/mp4";
   if (e === "aac" || e === "acc") return "audio/aac";
@@ -16,7 +26,7 @@ export function mimeFromExt(ext) {
   return "audio/" + e;
 }
 
-export function extFromMime(mime) {
+export function extFromMime(mime: string | null | undefined): string {
   if (!mime) return "webm";
   if (mime.includes("wav")) return "wav";
   if (mime.includes("webm")) return "webm";
@@ -29,33 +39,33 @@ export function extFromMime(mime) {
   return "webm";
 }
 
-export function delayMs(ms) {
-  return new Promise(resolve => window.setTimeout(resolve, ms));
+export function delayMs(ms: number): Promise<void> {
+  return new Promise<void>(resolve => window.setTimeout(resolve, ms));
 }
 
-export function isTransientAsrError(error) {
+export function isTransientAsrError(error: unknown): boolean {
   if (isAsrNonRetryableError(error)) return false;
   if (isAsrTransportError(error)) return true;
-  const msg = String((error && error.message) || error || "");
+  const msg = stringifyAsrValue((readAsrField(error, "message") || error || ""));
   // 中文关键字：限流（429 提示语）、超时（转写请求超时：…）、流中断（SSE 半路断线）都必须归为瞬时错误，
   // 否则这些典型的网络性故障不会进重试。
   return /\b(429|500|502|503|504)\b|too many|rate\s*limit|timeout|timed?\s*out|network|temporarily|service unavailable|failed to fetch|empty result|限流|超时|流中断|空结果|空转写|stream interrupted/i.test(msg);
 }
 
-export function isAsrTransportError(error) {
+export function isAsrTransportError(error: unknown): boolean {
   if (isAsrNonRetryableError(error)) return false;
-  if (error && error.asrTransport === true) return true;
-  const msg = String((error && error.message) || error || "");
+  if (readAsrField(error, "asrTransport") === true) return true;
+  const msg = stringifyAsrValue((readAsrField(error, "message") || error || ""));
   return /\b(429|500|502|503|504)\b|too many|rate\s*limit|timeout|timed?\s*out|network(?:error)?|temporarily|service unavailable|failed to fetch|fetch failed|err_(?:internet|network|connection)|dns|enotfound|econn(?:reset|refused|aborted)|etimedout|net::|限流|超时|流中断|无法连接|连接(?:失败|中断|关闭)|网络(?:错误|不可用)|stream interrupted/i.test(msg);
 }
 
-export function isAsrNonRetryableError(error) {
-  if (error && error.nonRetryable) return true;
-  const msg = String((error && error.message) || error || "");
+export function isAsrNonRetryableError(error: unknown): boolean {
+  if (readAsrField(error, "nonRetryable")) return true;
+  const msg = stringifyAsrValue((readAsrField(error, "message") || error || ""));
   return /密钥未配置|模型名称未配置|服务地址未配置|无法解码|仅 wav\/mp3|不被 MiMo 服务端接受|不被 .{1,40} 接受|base64 仍超过|单次最多自动切|mime type must be|service address is not configured|service url is not configured|model name is not configured|api key is not configured|access key is not configured/i.test(msg);
 }
 
-export function getNextAsrTaskRetryCount(currentRetries, maxRetries, error) {
+export function getNextAsrTaskRetryCount(currentRetries: unknown, maxRetries: unknown, error: unknown): number {
   const current = Math.max(0, Math.floor(Number(currentRetries) || 0));
   const maximum = Math.max(1, Math.floor(Number(maxRetries) || 1));
   if (isAsrTransportError(error)) return current;
@@ -64,11 +74,10 @@ export function getNextAsrTaskRetryCount(currentRetries, maxRetries, error) {
 }
 
 // 占位文案按当前界面语言取（labelText 必须在函数体内求值，模块期常量会把语言冻住）。
-export function getTranscribeSegmentPlaceholder(error, options: {
-  streaming?: boolean;
-  retryable?: boolean;
-  deferred?: boolean;
-} = {}) {
+export function getTranscribeSegmentPlaceholder(
+  error: unknown,
+  options: { streaming?: boolean; retryable?: boolean; deferred?: boolean } = {},
+): string {
   const streaming = !!options.streaming;
   const retryable = options.retryable !== undefined
     ? !!options.retryable
@@ -78,19 +87,29 @@ export function getTranscribeSegmentPlaceholder(error, options: {
     : labelText("notFullyTranscribed");
 }
 
-export function getAsrTransportTaskRecoveryPatch(task, maxRetries) {
-  if (!task || task.type !== "transcribe" || task.status !== "failed" || !isAsrTransportError(task.lastError || "")) {
+export function getAsrTransportTaskRecoveryPatch(
+  task: unknown,
+  maxRetries: unknown,
+): { status: "pending"; retries: number; deferredReason: "service-unavailable" } | null {
+  if (
+    readAsrField(task, "type") !== "transcribe"
+    || readAsrField(task, "status") !== "failed"
+    || !isAsrTransportError(readAsrField(task, "lastError") || "")
+  ) {
     return null;
   }
   const maximum = Math.max(1, Math.floor(Number(maxRetries) || 1));
   return {
     status: "pending",
-    retries: Math.min(Math.max(0, Number(task.retries) || 0), Math.max(0, maximum - 1)),
+    retries: Math.min(
+      Math.max(0, Number(readAsrField(task, "retries")) || 0),
+      Math.max(0, maximum - 1),
+    ),
     deferredReason: "service-unavailable",
   };
 }
 
-export function pickMimeType(preferOpus) {
+export function pickMimeType(preferOpus: boolean): string {
   // 默认 mp4/AAC 优先：SiliconFlow 等云端 ASR 原生收 m4a，直接上传最稳；WebM 作为 Chromium 兜底。
   // preferOpus（选 APIMiMo 时传入）：MiMo 服务端只收 wav/mp3（实测发 audio/mp4 直接 400 拒绝），
   // 段落必须本机转码成 WAV 再发；而 Electron 的 decodeAudioData 解不了 AAC、能解 Opus——
@@ -102,7 +121,7 @@ export function pickMimeType(preferOpus) {
   return "";
 }
 
-export function assertAudioCaptureSupported() {
+export function assertAudioCaptureSupported(): void {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
     throw new Error(t("This Obsidian environment does not support microphone recording. Update Obsidian, or use QnALog on desktop."));
   }
@@ -110,4 +129,3 @@ export function assertAudioCaptureSupported() {
     throw new Error(t("This Obsidian environment does not support MediaRecorder, so recording is unavailable right now. You can record with a system app first and then import the audio."));
   }
 }
-/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
