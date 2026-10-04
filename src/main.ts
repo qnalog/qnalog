@@ -209,7 +209,13 @@ class QnALogPlugin extends obsidian.Plugin {
     this.tasks = new TaskActivityService(this);
     this.taskMeters = this.tasks;
     this.queueRetry = new QueueRetryService(this);
-    this.versions = new VersionStore(this);
+    this.versions = new VersionStore({
+      vault: this.app.vault,
+      getSettings: () => this.settings,
+      getFileFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
+      refreshNoteIndexSafely: (file, options) => this.noteIndex.refreshNoteIndexSafely(file, options),
+      openSourceFile: async (file) => { await this.app.workspace.getLeaf(false).openFile(file); },
+    });
     this.people = new PeopleDirectoryService(this);
     this.knowledgeExtraction = new KnowledgeExtractionService(this);
     this.inbox = new InboxWatcherService(this);
