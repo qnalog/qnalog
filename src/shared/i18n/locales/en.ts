@@ -9,4 +9,14 @@
  */
 import type { MessageTable } from "../../i18n";
 
-export const EN: MessageTable = {};
+export const EN: MessageTable = {
+  "Paused recovery entries": "Paused recovery entries",
+  "Queue entry {0}": "Queue entry {0}",
+  "Invalid queue entry": "Invalid queue entry",
+  "Unsupported task type": "Unsupported task type",
+  "Invalid task field: {0}": "Invalid task field: {0}",
+  "Duplicate task ID": "Duplicate task ID",
+  "Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired.": "Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired.",
+  "QnALog: {0} queue entries could not be restored; their original data was kept. Open Pending Queue for details.": "QnALog: {0} queue entries could not be restored; their original data was kept. Open Pending Queue for details.",
+  "Queue recovery entries were paused": "Queue recovery entries were paused",
+};

@@ -143,7 +143,12 @@ export class QueueRetryService {
     this.scheduleTaskQueueRetry(delayMs, "session-deferred-asr");
   }
   async retryQueue() {
-    if (!this.host.queue.tasks.length) { new obsidian.Notice(t("Queue is empty")); return; }
+    if (!this.host.queue.tasks.length) {
+      new obsidian.Notice(this.host.queue.recoveryEntries().length
+        ? t("Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired.")
+        : t("Queue is empty"));
+      return;
+    }
     const blockedMergeTasks = this.host.queue.tasks.filter((task) => task && task.type === "merge" && task.status === "blocked");
     if (blockedMergeTasks.length) {
       const llmIssue = getLlmConfigIssue(this.host.settings);
@@ -695,14 +700,17 @@ export class QueueRetryService {
     if (this.host.continuations.isSessionTracked(task.sessionId)) {
       return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
     }
+    const retained = this.host.queue?.recoveryEntries() || [];
     const activeDependencies = (task.dependsOnSessionIds || []).filter(id =>
       this.host.continuations.isSessionTracked(id)
-      || this.host.queue?.tasks.some(candidate => candidate.type !== "generate-prompt" && candidate.sessionId === id),
+      || this.host.queue?.tasks.some(candidate => candidate.type !== "generate-prompt" && candidate.sessionId === id)
+      || retained.some(entry => entry.taskType !== "generate-prompt" && entry.sessionId === id),
     );
     if (activeDependencies.length) {
       return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
     }
-    if (this.host.queue?.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId)) {
+    if (this.host.queue?.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId)
+      || retained.some(entry => entry.taskType !== "generate-prompt" && entry.sessionId === task.sessionId)) {
       return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
     }
     return this.host.continuations.runOnTarget(target, async () => {

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- service retains the recording pipeline's dynamic session data */
 import * as obsidian from "obsidian";
-import type { PluginSettings, QueueTask, QueueTaskLifecycle, RecordingSession, TranscribeQueueTaskPayload } from "../shared/types";
+import type { PluginSettings, QueueRecoveryEntrySummary, QueueTask, QueueTaskLifecycle, RecordingSession, TranscribeQueueTaskPayload } from "../shared/types";
 import type { LiveAsrPipeline } from "../shared/live-asr-pipeline";
 import type { LiveAsrCircuitState } from "./live-segment-policy";
 import { LIVE_ASR_TASK_STATUS, classifyLiveAsrBacklog, createLiveAsrCircuitState, isLiveAsrCircuitOpen, recordLiveAsrFailure, recordLiveAsrSuccess, summarizeLiveAsrJobs } from "./live-segment-policy";
@@ -41,6 +41,7 @@ export interface LiveAsrPipelineHost {
   fileManager: { trashFile(file: obsidian.TFile): Promise<void> };
   diagnostics: DiagnosticsService;
   queueTasks(): readonly QueueTask[];
+  queueRecoveryEntries(): readonly QueueRecoveryEntrySummary[];
   addQueueTask(task: TranscribeQueueTaskPayload & Partial<QueueTaskLifecycle>): Promise<QueueTask>;
   updateQueueTask(id: string, patch: Partial<QueueTask>): Promise<void>;
   removeQueueTask(id: string): Promise<void>;
@@ -114,7 +115,10 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
   isQueuedTranscribeAudioReferenced(path, excludeTaskId = undefined) {
     const norm = obsidian.normalizePath(String(path || ""));
     const tasks = this.host.queueTasks();
-    return tasks.some(t => t && t.type === "transcribe"
+    const retainedReferences = this.host.queueRecoveryEntries().some(entry =>
+      entry.audioPaths.some(audioPath => obsidian.normalizePath(audioPath) === norm),
+    );
+    return retainedReferences || tasks.some(t => t && t.type === "transcribe"
       && t.id !== excludeTaskId
       && obsidian.normalizePath(String(t.audioPath || "")) === norm);
   }

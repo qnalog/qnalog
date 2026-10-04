@@ -7,9 +7,9 @@ vi.mock("obsidian", () => ({
   TFolder: class TFolder {},
 }));
 
+import { TFile, TFolder } from "obsidian";
 import { LiveAsrPipelineService } from "../src/asr/live-asr-pipeline-service";
 import type { LiveAsrPipelineHost } from "../src/asr/live-asr-pipeline-service";
-
 function makeService(writeBinary: () => Promise<void>) {
   const diagnostics = { logDiagnostic: vi.fn().mockResolvedValue(undefined) };
   const addQueueTask = vi.fn().mockResolvedValue({ id: "task-1" });
@@ -40,6 +40,7 @@ function makeService(writeBinary: () => Promise<void>) {
     fileManager: { trashFile: vi.fn().mockResolvedValue(undefined) },
     diagnostics,
     queueTasks: () => [],
+    queueRecoveryEntries: () => [],
     addQueueTask,
     updateQueueTask: vi.fn().mockResolvedValue(undefined),
     removeQueueTask: vi.fn().mockResolvedValue(undefined),
@@ -51,6 +52,65 @@ function makeService(writeBinary: () => Promise<void>) {
   } as unknown as LiveAsrPipelineHost;
   return { service: new LiveAsrPipelineService(host), diagnostics, addQueueTask, host };
 }
+
+describe.each(["trash", "adapter"] as const)("LiveAsrPipelineService retained audio references via %s", (cleanupRoute) => {
+  it("protects every retained reference shape from forced and expired cleanup", async () => {
+    const { service, host } = makeService(vi.fn().mockResolvedValue(undefined));
+    const cacheFolder = "QnALog/.cache/segments";
+    const storedId = "damaged-task";
+    const retainedEntries = [
+      // Retained audio references from the top-level audioPath field.
+      { entryIndex: 0, issue: "invalid-field" as const, storedId, audioPaths: ["QnALog/.cache/segments/top-level-audio-path.wav"] },
+      // Retained audio references from a nested Segment.segmentAudioPath field.
+      { entryIndex: 1, issue: "invalid-field" as const, storedId, audioPaths: ["QnALog/.cache/segments/nested-segment-audio-path.wav"] },
+      // Retained audio references from a transcript revision utterance audioRef.path.
+      { entryIndex: 2, issue: "invalid-field" as const, storedId, audioPaths: ["QnALog/.cache/segments/transcript-revision-audio-ref-path.wav"] },
+    ];
+    const retainedPaths = retainedEntries.flatMap(entry => entry.audioPaths);
+    const unrelatedPath = `${cacheFolder}/unreferenced.wav`;
+    host.queueRecoveryEntries = () => retainedEntries;
+    const nowOld = Date.now() - 2 * 60 * 60 * 1000;
+    const cacheFiles = [...retainedPaths, unrelatedPath].map(path => {
+      const file = new TFile();
+      Object.assign(file, { path, stat: { mtime: nowOld } });
+      return file;
+    });
+    const trashFile = vi.fn().mockResolvedValue(undefined);
+    host.fileManager.trashFile = trashFile;
+    const adapterRemove = vi.fn().mockResolvedValue(undefined);
+    host.vault.adapter.exists = vi.fn().mockResolvedValue(true);
+    host.vault.adapter.remove = adapterRemove;
+    host.vault.adapter.list = vi.fn().mockImplementation(async (path: string) =>
+      path === cacheFolder ? { files: [...retainedPaths, unrelatedPath], folders: [] } : { files: [], folders: [] },
+    );
+    host.vault.adapter.stat = vi.fn().mockResolvedValue({ mtime: nowOld });
+    host.vault.getAbstractFileByPath = (path: string) => {
+      if (cleanupRoute === "adapter") return null;
+      if (path === cacheFolder) {
+        const folder = new TFolder();
+        Object.assign(folder, { path, children: cacheFiles });
+        return folder;
+      }
+      return cacheFiles.find(file => file.path === path) ?? null;
+    };
+
+    for (const path of retainedPaths) {
+      await service.maybeDeleteSegmentCacheFile(path, storedId, true);
+    }
+    const result = await service.cleanupExpiredSegmentCacheFiles(60 * 60 * 1000);
+
+    expect(result.deleted).toBe(1);
+    expect(result.skipped).toBe(3);
+    if (cleanupRoute === "trash") {
+      expect(trashFile.mock.calls.map(([file]) => file.path)).toEqual([unrelatedPath]);
+      expect(adapterRemove).not.toHaveBeenCalled();
+    } else {
+      expect(adapterRemove).toHaveBeenCalledExactlyOnceWith(unrelatedPath);
+      expect(trashFile).not.toHaveBeenCalled();
+    }
+  });
+});
+
 
 describe("LiveAsrPipelineService segment persistence", () => {
   it("keeps the original blob available when cache writing fails and does not register a retry task", async () => {

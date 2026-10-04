@@ -65,6 +65,7 @@
     "src/shared/util-audio.ts",
     "src/shared/util-key-diag.ts",
     "src/queue/task-queue.ts",
+    "src/queue/queue-recovery.ts",
     "src/notes/note-document.ts",
     "src/versions/version-content.ts",
     "src/views/base-definitions.ts"

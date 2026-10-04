@@ -2821,4 +2821,13 @@ export const ZH: MessageTable = {
   "Outline rebuild failed: {0}": "大纲重建失败：{0}",
   "The original transcript ledger could not be read: {0}": "原始转写账本无法读取：{0}",
   "Outline rebuild stopped unexpectedly: {0}": "大纲重建意外停止：{0}",
+  "Paused recovery entries": "暂停恢复的任务",
+  "Queue entry {0}": "队列记录 {0}",
+  "Invalid queue entry": "队列记录格式无效",
+  "Unsupported task type": "任务类型暂不支持",
+  "Invalid task field: {0}": "任务字段无效：{0}",
+  "Duplicate task ID": "任务标识重复",
+  "Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired.": "恢复已暂停，原始队列数据和材料引用仍保留。任务类型不受支持时请更新 QnALog；任务数据损坏时请保留备份，通过“查看日志”把诊断报告交给维护者。相关任务会等待恢复数据修复后再执行。",
+  "QnALog: {0} queue entries could not be restored; their original data was kept. Open Pending Queue for details.": "QnALog：有 {0} 条队列记录无法恢复，原始数据仍保留。请打开待处理队列查看详情。",
+  "Queue recovery entries were paused": "队列恢复记录已暂停",
 };

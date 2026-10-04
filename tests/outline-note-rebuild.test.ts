@@ -330,6 +330,7 @@ describe("manual note outline rebuild", () => {
       getSettings: () => ({ mdFolder: "Notes", noteFileNameFormatNew: "YYYY-MM-DD", consolidatedLayout: false, polishMode: "meeting" }),
       detectModeFromMarkdown: () => "meeting",
       queueTasks: () => tasks as never,
+      queueRecoveryEntries: () => [],
       addTask: async () => { throw new Error("unexpected queue write"); },
       removeTask: async () => undefined,
       scheduleTaskQueueRetry: () => undefined,

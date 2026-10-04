@@ -7,13 +7,14 @@ import { isLlmNonRetryableError } from "../llm/failure-policy";
 
 import { genId } from "../shared/util-common";
 
-import { getAsrTransportTaskRecoveryPatch, getNextAsrTaskRetryCount, isAsrTransportError } from "../shared/util-audio";
+import { getNextAsrTaskRetryCount, isAsrTransportError } from "../shared/util-audio";
 
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import type { QueueTask, QueueTaskDeferred, QueueTaskLifecycle, QueueTaskPayload } from "../shared/types";
+import type { QueueRecoveryEntrySummary, QueueTask, QueueTaskDeferred, QueueTaskLifecycle, QueueTaskPayload } from "../shared/types";
+import { restoreQueue, type QueueRecoveryResult } from "./queue-recovery";
 
 import { t, t as i18nT } from "../shared/i18n";
 import type { TaskActivity } from "../shared/task-activity";
@@ -44,11 +45,17 @@ export class TaskQueue {
   declare _batchTotal: number;
   declare changeListeners: Set<() => void>;
   declare _batchDone: number;
+  declare retainedRows: QueueRecoveryResult["retained"];
+  declare recoveryOrder: QueueRecoveryResult["order"];
+  declare recoveryView: readonly QueueRecoveryEntrySummary[];
   constructor(host: TaskQueueHost) {
     this.host = host;
     this.tasks = [];
     this.running = false;
     this.changeListeners = new Set();
+    this.retainedRows = [];
+    this.recoveryOrder = [];
+    this.recoveryView = Object.freeze([]);
   }
   onChange(fn: () => void): () => void {
     this.changeListeners.add(fn);
@@ -60,99 +67,41 @@ export class TaskQueue {
     }
   }
   load(saved: unknown): void {
-    const raw = Array.isArray(saved) ? saved.slice() : [];
-    this.tasks = raw
-      .filter(t => t && typeof t === "object" && t.type)
-      .map(t => {
-        const task = Object.assign({}, t);
-        task.id = task.id || genId();
-        task.retries = Math.max(0, Number(task.retries) || 0);
-        task.createdAt = task.createdAt || new Date().toISOString();
-        task.updatedAt = task.updatedAt || task.createdAt;
-        if (task.status === "running" || task.status === "processing" || task.status === LIVE_ASR_TASK_STATUS) {
-          task.status = "pending";
-          task.lastError = task.lastError || i18nT("Interrupted during the last run; restored to pending");
-        }
-        const invalidDependencies = task.dependsOnSessionIds !== undefined
-          && (!Array.isArray(task.dependsOnSessionIds)
-            || task.dependsOnSessionIds.some((id: unknown) => typeof id !== "string" || !id.trim()));
-        if (task.dependsOnSessionIds !== undefined) {
-          task.dependsOnSessionIds = Array.isArray(task.dependsOnSessionIds)
-            ? task.dependsOnSessionIds.filter((id: unknown) => typeof id === "string" && id.trim())
-            : [];
-        }
-        if (task.type === "merge" && task.continuation !== undefined) {
-          const continuation = task.continuation;
-          const validContinuation = !invalidDependencies && typeof task.sessionId === "string" && task.sessionId.trim().length > 0
-            && continuation && typeof continuation === "object"
-            && typeof continuation.targetPath === "string" && continuation.targetPath.trim().length > 0
-            && typeof continuation.targetSourceId === "string" && continuation.targetSourceId.trim().length > 0
-            && typeof continuation.recordedAt === "string" && Number.isFinite(Date.parse(continuation.recordedAt))
-            && (continuation.realtimeOutline === undefined || typeof continuation.realtimeOutline === "string")
-            && (continuation.masterAudioPath === undefined || typeof continuation.masterAudioPath === "string")
-            && (continuation.masterAudioName === undefined || typeof continuation.masterAudioName === "string");
-          if (continuation && typeof continuation === "object") {
-            if (continuation.realtimeOutline !== undefined && typeof continuation.realtimeOutline !== "string") {
-              delete continuation.realtimeOutline;
-            }
-            if (continuation.priorOutlineHash !== undefined && typeof continuation.priorOutlineHash !== "string") {
-              delete continuation.priorOutlineHash;
-            }
-            if (continuation.realtimeOutlineSegmentCount !== undefined
-              && (!Number.isInteger(continuation.realtimeOutlineSegmentCount) || continuation.realtimeOutlineSegmentCount < 0)) {
-              delete continuation.realtimeOutlineSegmentCount;
-            }
-            if (continuation.realtimeOutlineSourceCoverage !== undefined
-              && (!continuation.realtimeOutlineSourceCoverage || typeof continuation.realtimeOutlineSourceCoverage !== "object")) {
-              delete continuation.realtimeOutlineSourceCoverage;
-            }
-          }
-          if (!validContinuation) {
-            task.status = "blocked";
-            task.lastError = i18nT("Continuation recovery information is invalid; the separately recorded audio was kept.");
-          }
-        }
-        if (task.type === "merge"
-          && task.continuationDisposition !== undefined
-          && task.continuationDisposition !== "discard") {
-          task.status = "blocked";
-          task.lastError = i18nT("Continuation cleanup information is invalid; the target was not changed.");
-        }
-        if (!["pending", "failed", "missing", "processing", "blocked"].includes(task.status)) task.status = "pending";
-        const maxRetries = (this.host && this.host.getMaxRetries()) || 3;
-        if (task.type === "transcribe"
-          && task.status === "failed"
-          && task.retries >= maxRetries
-          && /音频不存在|Audio missing/.test(String(task.lastError || ""))) {
-          task.status = "pending";
-          task.retries = Math.max(0, maxRetries - 1);
-          task.lastError = i18nT("Temporary clip missing; upgraded to recover the clip from the full recording and retry");
-        }
-        const transportRecoveryPatch = getAsrTransportTaskRecoveryPatch(task, maxRetries);
-        if (transportRecoveryPatch) {
-          // 网络/服务中断属于服务级故障，不应让某一个音频片段永久耗尽重试额度。
-          // 保留音频并恢复为 pending，等待共享熔断器允许下一次探测。
-          Object.assign(task, transportRecoveryPatch);
-        }
-        if (task.type === "merge"
-          && task.status === "failed"
-          && isLlmNonRetryableError(task.lastError || "")) {
-          task.status = "blocked";
-          task.lastError = task.lastError || i18nT("LLM unavailable; waiting for you to resolve it before retrying");
-        }
-        if (task.type === "merge"
-          && task.status === "failed"
-          && task.retries >= maxRetries
-          && !isLlmNonRetryableError(task.lastError || "")
-          && /Failed to fetch|LLM 调用超时|LLM request timed out|429|500|502|503|504/.test(String(task.lastError || ""))) {
-          task.status = "pending";
-          task.retries = Math.max(0, maxRetries - 1);
-          task.lastError = i18nT("The last organizing attempt looks like a transient network or server failure; upgraded to retryable");
-        }
-        return task;
-      });
+    const restored = restoreQueue(saved, {
+      createId: genId,
+      nowIso: () => new Date().toISOString(),
+      getMaxRetries: () => this.host.getMaxRetries() || 3,
+    });
+    const recoveryView = restored.retained.map(({ summary }) => Object.freeze({
+      ...summary,
+      audioPaths: Object.freeze(summary.audioPaths.slice()),
+    }));
+    this.tasks = restored.tasks;
+    this.retainedRows = restored.retained;
+    this.recoveryOrder = restored.order;
+    this.recoveryView = Object.freeze(recoveryView);
   }
   snapshot(): QueueTask[] { return this.tasks.slice(); }
+  recoveryEntries(): readonly QueueRecoveryEntrySummary[] { return this.recoveryView; }
+  persistedSnapshot(): unknown[] {
+    const tasksById = new Map(this.tasks.map(task => [task.id, task]));
+    const retainedByIndex = new Map(this.retainedRows.map(entry => [entry.summary.entryIndex, entry.raw]));
+    const output: unknown[] = [];
+    const emittedTaskIds = new Set<string>();
+    const emittedRetainedIndexes = new Set<number>();
+    for (const entry of this.recoveryOrder) {
+      if (entry.kind === "task") {
+        const task = tasksById.get(entry.id);
+        if (task) { output.push(task); emittedTaskIds.add(entry.id); }
+      } else if (retainedByIndex.has(entry.entryIndex)) {
+        output.push(retainedByIndex.get(entry.entryIndex));
+        emittedRetainedIndexes.add(entry.entryIndex);
+      }
+    }
+    for (const task of this.tasks) if (!emittedTaskIds.has(task.id)) output.push(task);
+    for (const row of this.retainedRows) if (!emittedRetainedIndexes.has(row.summary.entryIndex)) output.push(row.raw);
+    return output;
+  }
   findActiveGeneratePromptTask(mode: string): QueueTask | undefined {
     return this.tasks.find(t =>
       t &&
@@ -284,11 +233,13 @@ export class TaskQueue {
   private hasUnresolvedDependencies(task: QueueTask): boolean {
     if (task.status === LIVE_ASR_TASK_STATUS) return true;
     const dependencies = Array.isArray(task.dependsOnSessionIds) ? task.dependsOnSessionIds : [];
+    const retained = this.recoveryView;
     if (dependencies.some(sessionId => this.tasks.some(candidate =>
       candidate.type !== "generate-prompt" && candidate.sessionId === sessionId,
-    ))) return true;
+    ) || retained.some(entry => entry.taskType !== "generate-prompt" && entry.sessionId === sessionId))) return true;
     return task.type === "merge"
-      && this.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId);
+      && (this.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId)
+        || retained.some(entry => entry.taskType !== "generate-prompt" && entry.sessionId === task.sessionId));
   }
 
   async processOne(task: QueueTask): Promise<void> {

@@ -20,6 +20,7 @@ describe("continuation target coordination", () => {
       getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD HHmm", consolidatedLayout: false, polishMode: "synthesis" }),
       detectModeFromMarkdown: () => "synthesis",
       queueTasks: () => [],
+      queueRecoveryEntries: () => [],
       addTask: async () => { throw new Error("unexpected queue write"); },
       removeTask: async () => undefined,
       scheduleTaskQueueRetry: () => undefined,

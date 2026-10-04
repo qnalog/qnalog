@@ -5,7 +5,7 @@ import { NS_AUDIO_ALT, NS_SESSION_RE, NS_SEGMENTS_START_RE } from "../shared/nam
 import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
 import { loadPeopleDirectory, normalizePeopleRelation, normalizePeopleSuggestion } from '../people';
-import { diagnosticError } from '../shared/util-key-diag';
+import { diagnosticError, redactDiagnosticText } from "../shared/util-key-diag";
 import { classifyImportTextFileForModal, enumerateAudioDevices, qnalogConfirm, makeImportTextCheckboxId } from './helpers';
 import { formatElapsed, pad } from '../shared/util-common';
 import { AUDIO_EXT, IMPORT_TEXT_CATEGORY_CONFIG, IMPORT_TEXT_CATEGORY_ORDER, TEXT_IMPORT_EXT } from '../shared/catalog-import';
@@ -585,6 +585,9 @@ export class QueueModal extends obsidian.Modal {
     try { if (this.modalEl) this.modalEl.addClass("qnalog-progress-modal"); } catch { /* intentionally empty */ }
 
     const allTasks = (this.plugin.queue && Array.isArray(this.plugin.queue.tasks)) ? this.plugin.queue.tasks : [];
+    const recoveryEntries = this.plugin.queue && typeof this.plugin.queue.recoveryEntries === "function"
+      ? this.plugin.queue.recoveryEntries() : [];
+    const retainedOnly = recoveryEntries.length > 0 && allTasks.length === 0;
     const running = allTasks.filter((t) => t && (t.status === "running" || t.status === "live"));
     const pending = allTasks.filter((t) => t && t.status !== "running" && t.status !== "live");
     const completed = Array.isArray(this.plugin.tasks.completedWorkLog) ? this.plugin.tasks.completedWorkLog : [];
@@ -620,8 +623,9 @@ export class QueueModal extends obsidian.Modal {
           ? String(taskActive[0].status || "running")
           : running.length
             ? "running"
-            : pending.length && detail && detail.liveness === "queued"
-              ? "queued" : pending.length ? "retrying" : "done";
+            : retainedOnly ? "failed"
+              : pending.length && detail && detail.liveness === "queued"
+                ? "queued" : pending.length ? "retrying" : "done";
     const headActive = active || taskActive.length > 0 || running.length > 0;
     const livenessLabel = (state) => ({
       queued: i18nT("Queued"),
@@ -671,7 +675,7 @@ export class QueueModal extends obsidian.Modal {
     const isTranscribing = activePipelineStage
       ? ["prepare", "transcribe", "persist"].includes(String(activePipelineStage.id || ""))
       : /(transcrib|asr|转写|音频|分段)/i.test(activityText);
-    const headTitle = taskProblems.length
+    const headTitle = taskProblems.length || retainedOnly
       ? i18nT("Processing incomplete")
       : headLiveness === "done"
         ? i18nT("Processing complete")
@@ -685,13 +689,15 @@ export class QueueModal extends obsidian.Modal {
       cls: `qnalog-progress-state is-${headLiveness}${headActive ? " is-active" : ""}`,
       text: taskProblems.length
         ? `${taskProblems.length}${i18nT(" tasks need processing")}`
-        : headActive
-          ? livenessLabel(headLiveness)
-          : i18nT("Idle"),
+        : retainedOnly
+          ? `${recoveryEntries.length} · ${i18nT("Paused recovery entries")}`
+          : headActive
+            ? livenessLabel(headLiveness)
+            : i18nT("Idle"),
       attr: { "aria-live": "polite" },
     });
 
-    if (!running.length && !pending.length && !completed.length && !active && !taskActivities.length) {
+    if (!running.length && !pending.length && !completed.length && !active && !taskActivities.length && !recoveryEntries.length) {
       contentEl.createDiv({ cls: "qnalog-progress-empty", text: i18nT("No tasks in progress. Progress for transcription, AI cleanup, and retry tasks will appear here.") });
       return;
     }
@@ -823,22 +829,23 @@ export class QueueModal extends obsidian.Modal {
         { key: "complete", label: i18nT("Done"), summary: String(writeStage.summary || i18nT("Write to note")) },
       ];
     }
-    const pipeline = head.createDiv({ cls: `qnalog-progress-pipeline is-${headLiveness}` });
-    for (let index = 0; index < pipelineSteps.length; index++) {
-      const step = pipelineSteps[index];
-      const stepLiveness = pipelineLiveness.get(step.key) || "";
-      const state = stepLiveness === "failed"
-        ? "failed"
-        : index < phaseIndex ? "done" : index === phaseIndex ? (headLiveness === "failed" ? "failed" : "active") : "pending";
-      const stepEl = pipeline.createDiv({ cls: `qnalog-progress-pipeline-step is-${state}` });
-      const marker = stepEl.createDiv({ cls: "qnalog-progress-pipeline-marker", attr: { "aria-hidden": "true" } });
-      if (state === "done") {
-        try { obsidian.setIcon(marker, "check"); } catch { marker.setText("✓"); }
-      } else if (state === "active") {
-        marker.createSpan({ cls: "qnalog-progress-pipeline-pulse" });
+    if (!retainedOnly) {
+      const pipeline = head.createDiv({ cls: `qnalog-progress-pipeline is-${headLiveness}` });
+      for (let index = 0; index < pipelineSteps.length; index++) {
+        const step = pipelineSteps[index];
+        const state = pipelineLiveness.get(step.key) === "failed"
+          ? "failed"
+          : index < phaseIndex ? "done" : index === phaseIndex ? (headLiveness === "failed" ? "failed" : "active") : "pending";
+        const stepEl = pipeline.createDiv({ cls: `qnalog-progress-pipeline-step is-${state}` });
+        const marker = stepEl.createDiv({ cls: "qnalog-progress-pipeline-marker", attr: { "aria-hidden": "true" } });
+        if (state === "done") {
+          try { obsidian.setIcon(marker, "check"); } catch { marker.setText("✓"); }
+        } else if (state === "active") {
+          marker.createSpan({ cls: "qnalog-progress-pipeline-pulse" });
+        }
+        stepEl.createDiv({ cls: "qnalog-progress-pipeline-label", text: step.label });
+        stepEl.createDiv({ cls: "qnalog-progress-pipeline-summary", text: step.summary });
       }
-      stepEl.createDiv({ cls: "qnalog-progress-pipeline-label", text: step.label });
-      stepEl.createDiv({ cls: "qnalog-progress-pipeline-summary", text: step.summary });
     }
 
     const canAnimateProgress = headActive
@@ -855,7 +862,7 @@ export class QueueModal extends obsidian.Modal {
       cls: "qnalog-progress-summary-left",
       text: hasStageProgress
         ? `${"# "}${stagePosition.current} / ${stagePosition.total}${i18nT(" · ")}${detail.step || i18nT("Processing")}`
-        : `${i18nT("Completed ")}${doneCount} / ${total}`,
+        : retainedOnly ? i18nT("Processing incomplete") : `${i18nT("Completed ")}${doneCount} / ${total}`,
     });
     const metaParts = [];
     if (detail && detail.count) metaParts.push(detail.count);
@@ -1289,6 +1296,31 @@ export class QueueModal extends obsidian.Modal {
         new obsidian.Notice(i18nT("Automatic retry cancelled. The cached audio is kept for now; you can still restart it from the note's context menu later."), 6000);
         this.onOpen();
       };
+    }
+    if (recoveryEntries.length) {
+      list.createDiv({ cls: "qnalog-progress-section-title", text: `${i18nT("Paused recovery entries")} (${recoveryEntries.length})` });
+      list.createDiv({
+        cls: "qnalog-progress-recovery-guidance",
+        text: i18nT("Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired."),
+      });
+      const issueText = {
+        "invalid-entry": i18nT("Invalid queue entry"),
+        "unsupported-type": i18nT("Unsupported task type"),
+        "invalid-field": (entry) => i18nT("Invalid task field: {0}").replace("{0}", entry.field || ""),
+        "duplicate-id": i18nT("Duplicate task ID"),
+        "invalid-continuation": i18nT("Continuation recovery information is invalid; the separately recorded audio was kept."),
+        "invalid-disposition": i18nT("Continuation cleanup information is invalid; the target was not changed."),
+      };
+      for (const entry of recoveryEntries) {
+        const { body } = makeRow("failed", "qnalog-progress-recovery-row");
+        const reason = typeof issueText[entry.issue] === "function"
+          ? issueText[entry.issue](entry) : issueText[entry.issue] || i18nT("Invalid queue entry");
+        const paths = [entry.mdPath, entry.temporarySourcePath, entry.targetPath]
+          .filter((path) => typeof path === "string" && path.length > 0);
+        const diagnosticPath = paths.length ? redactDiagnosticText(paths[0]) : "";
+        titleLine(body, i18nT("Queue entry {0}").replace("{0}", String(entry.entryIndex + 1)), "", false);
+        subLine(body, diagnosticPath ? `${reason} · ${diagnosticPath}` : reason);
+      }
     }
 
     // —— 底部操作 ——

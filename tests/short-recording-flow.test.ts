@@ -163,6 +163,7 @@ function makeHost() {
     fileManager: app.fileManager,
     diagnostics: host.diagnostics,
     queueTasks: () => host.queue.tasks as never,
+    queueRecoveryEntries: () => host.queue.recoveryEntries(),
     addQueueTask: (task) => host.queue.add(task) as never,
     updateQueueTask: (id, patch) => host.queue.update(id, patch),
     removeQueueTask: (id) => host.queue.remove(id),
@@ -192,7 +193,7 @@ async function makeContinuationDiscardFixture() {
         nextSaveError = "";
         throw new Error(error);
       }
-      persistedQueue = JSON.stringify(queue.snapshot());
+      persistedQueue = JSON.stringify(queue.persistedSnapshot());
     },
     updateBusyStatus: () => undefined,
     retryTranscribeTask: async () => { throw new Error("Unexpected transcription task in discard fixture"); },
@@ -215,6 +216,7 @@ async function makeContinuationDiscardFixture() {
     getSettings: () => fixture.host.settings as never,
     detectModeFromMarkdown: () => "synthesis",
     queueTasks: () => queue.tasks,
+    queueRecoveryEntries: () => queue.recoveryEntries(),
     addTask: task => queue.add(task as never) as never,
     removeTask: id => queue.remove(id),
     scheduleTaskQueueRetry: () => undefined,

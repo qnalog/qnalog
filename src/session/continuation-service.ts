@@ -3,6 +3,7 @@ import type {
   ContinuationContext,
   MergeQueueTaskPayload,
   PluginSettings,
+  QueueRecoveryEntrySummary,
   QueueTask,
   QueueTaskLifecycle,
   RecordingSession,
@@ -46,6 +47,7 @@ export interface ContinuationServiceHost {
   getSettings(): Pick<PluginSettings, "mdFolder" | "noteFileNameFormatNew" | "consolidatedLayout" | "polishMode">;
   detectModeFromMarkdown(file: obsidian.TFile): string | null | undefined;
   queueTasks(): readonly QueueTask[];
+  queueRecoveryEntries(): readonly QueueRecoveryEntrySummary[];
   addTask(task: MergeQueueTaskPayload & Partial<QueueTaskLifecycle>): Promise<QueueTask>;
   removeTask(id: string): Promise<void>;
   scheduleTaskQueueRetry(): void;
@@ -226,6 +228,8 @@ export class ContinuationService {
       task.type === "merge"
       && !!task.continuation
       && obsidian.normalizePath(task.continuation.targetPath) === targetPath,
+    ) || this.host.queueRecoveryEntries().some(entry =>
+      !!entry.targetPath && obsidian.normalizePath(entry.targetPath) === targetPath,
     );
   }
 
@@ -256,13 +260,18 @@ export class ContinuationService {
 
   notifyQueueChanged(): void {
     const tasks = this.host.queueTasks();
-    const queuedSessionIds = new Set(tasks.flatMap(task => task.type === "generate-prompt" ? [] : [task.sessionId]).filter(Boolean));
+    const retained = this.host.queueRecoveryEntries();
+    const queuedSessionIds = new Set([
+      ...tasks.flatMap(task => task.type === "generate-prompt" ? [] : [task.sessionId]).filter(Boolean),
+      ...retained.flatMap(entry => entry.taskType === "generate-prompt" || !entry.sessionId ? [] : [entry.sessionId]),
+    ]);
     for (const task of tasks) {
       if (task.type !== "merge" || !task.continuation || task.status !== "pending") continue;
       if (this.trackedBySessionId.has(task.sessionId)) continue;
       const target = this.host.vault.getAbstractFileByPath(task.continuation.targetPath);
       if (target instanceof obsidian.TFile && this.hasActiveSessions(target)) continue;
       if (tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId)) continue;
+      if (retained.some(entry => entry.taskType !== "generate-prompt" && entry.sessionId === task.sessionId)) continue;
       if ((task.dependsOnSessionIds || []).some(id => queuedSessionIds.has(id) || this.trackedBySessionId.has(id))) continue;
       this.host.scheduleTaskQueueRetry();
       return;
@@ -271,10 +280,16 @@ export class ContinuationService {
 
   private getDependencySessionIds(target: obsidian.TFile): string[] {
     const ids = Array.from(this.sessionsByTarget.get(target)?.keys() || []);
-    const targetPath = target.path;
+    const targetPath = obsidian.normalizePath(target.path);
     for (const task of this.host.queueTasks()) {
-      if (task.type === "merge" && task.continuation?.targetPath === targetPath && task.sessionId) {
+      if (task.type === "merge" && task.continuation
+        && obsidian.normalizePath(task.continuation.targetPath) === targetPath && task.sessionId) {
         ids.push(task.sessionId);
+      }
+    }
+    for (const entry of this.host.queueRecoveryEntries()) {
+      if (entry.targetPath && obsidian.normalizePath(entry.targetPath) === targetPath && entry.taskType !== "generate-prompt" && entry.sessionId) {
+        ids.push(entry.sessionId);
       }
     }
     return Array.from(new Set(ids));
