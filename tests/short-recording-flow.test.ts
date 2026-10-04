@@ -584,3 +584,54 @@ describe("session note block cleanup consumers", () => {
     expect(asrHost.files.has(mdPath)).toBe(true);
   });
 });
+
+describe("NoteWriter segment insertion consumer", () => {
+  const mdPath = "QnALog/转写纪要/segments-insert.md";
+  const content = "Literal $&; $` and $' plus $$ stays literal.";
+
+  it("inserts literally before the first matching session marker and preserves other sessions", async () => {
+    const { host, files } = makeHost();
+    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    const input = [
+      "FIRST",
+      "<!-- qnalog-segments-end:other -->",
+      "MIDDLE",
+      "<!-- qnalog-segments-end:target -->",
+      "BETWEEN",
+      "<!-- qnalog-segments-end:target -->",
+      "LAST",
+    ].join("\n");
+    files.set(mdPath, { content: input });
+
+    await writer.insertBeforeSegmentsEnd(mdPath, content, "target");
+
+    expect(files.get(mdPath)?.content).toBe([
+      "FIRST",
+      "<!-- qnalog-segments-end:other -->",
+      "MIDDLE",
+      `${content}`,
+      "<!-- qnalog-segments-end:target -->",
+      "BETWEEN",
+      "<!-- qnalog-segments-end:target -->",
+      "LAST",
+    ].join("\n"));
+  });
+
+  it("inserts before the last no-session marker and appends when no marker exists", async () => {
+    const { host, files } = makeHost();
+    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    const input = "BEFORE\n<!-- qnalog-segments-end -->\nMIDDLE\n<!-- qnalog-segments-end -->\nAFTER";
+    files.set(mdPath, { content: input });
+
+    await writer.insertBeforeSegmentsEnd(mdPath, content, "missing-session");
+
+    expect(files.get(mdPath)?.content).toBe(
+      "BEFORE\n<!-- qnalog-segments-end -->\nMIDDLE\n" +
+      `${content}\n<!-- qnalog-segments-end -->\nAFTER`,
+    );
+
+    files.set(mdPath, { content: "NO MARKER\n" });
+    await writer.insertBeforeSegmentsEnd(mdPath, content, "missing-session");
+    expect(files.get(mdPath)?.content).toBe(`NO MARKER\n${content}`);
+  });
+});

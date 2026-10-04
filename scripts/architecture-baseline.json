@@ -129,14 +129,8 @@
     ["VocabularyService", "KnowledgeExtractionService"]
   ],
   "uiImportsFromNonUi": {
-    "src/audio/recording-service.ts": [
-      "src/ui/helpers"
-    ],
     "src/delivery/delivery-service.ts": [
       "src/ui/modals"
-    ],
-    "src/diagnostics/diagnostics-service.ts": [
-      "src/ui/helpers"
     ],
     "src/imports/import-service.ts": [
       "src/ui/modals",
@@ -145,16 +139,7 @@
     "src/notes/audio-time-link-service.ts": [
       "src/ui/modals"
     ],
-    "src/notes/note-markdown.ts": [
-      "src/ui/helpers"
-    ],
     "src/notes/note-writer.ts": [
-      "src/ui/helpers"
-    ],
-    "src/notes/realtime-outline.ts": [
-      "src/ui/helpers"
-    ],
-    "src/notes/recording-issues.ts": [
       "src/ui/helpers"
     ],
     "src/notes/session-finalize-service.ts": [

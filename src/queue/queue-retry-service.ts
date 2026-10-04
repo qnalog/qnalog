@@ -34,6 +34,7 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { NoteWriter } from "../notes/note-writer";
+import { findNoteMarkerOffset } from "../notes/note-document";
 import { NS_AUDIO_ALT, NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
@@ -529,7 +530,7 @@ export class QueueRetryService {
         if (target) return replaceTranscriptBlock(candidate, target, updated, text);
         const block = makeTranscriptBlock(updated);
         const endMarker = task.sessionId ? nsMarker("segments-end", task.sessionId) : nsMarker("segments-end");
-        const endAt = candidate.lastIndexOf(endMarker);
+        const endAt = findNoteMarkerOffset(candidate, endMarker, "last");
         return endAt >= 0
           ? `${candidate.slice(0, endAt)}${block}${candidate.slice(endAt)}`
           : `${candidate.trimEnd()}\n\n${block.trim()}\n`;

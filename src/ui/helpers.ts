@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
+import { isVirtualCableLabel } from "../audio/audio-input";
 import { t } from '../shared/i18n';
 import { getDesktopModule } from "../shared/desktop-runtime";
 export {
@@ -14,16 +15,11 @@ export {
   resolveUpdateRawBases,
   pluginBasePath,
 } from "../update/update-source";
-import { VIRTUAL_CABLE_PATTERNS } from '../shared/catalog-import';
 import { normalizeKnowledgeExtractionHistory } from '../shared/util-knowledge';
 import { NS_FM, NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
+import { stripFrontmatterSimple } from "../notes/note-document";
 import { INFO_LINE_WORDS_RE } from "../shared/note-labels";
 
-export const SUPPORTED_AUDIO_INPUT_MODES = new Set(["mic", "mix-virtual", "virtualCable"]);
-
-export function stripFrontmatterSimple(text) {
-  return String(text || "").replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-}
 
 export function stripArchivedDetailsBlocks(text) {
   let s = String(text || "");
@@ -313,10 +309,6 @@ export async function enumerateAudioDevices(options?: { requestPermission?: bool
   return { all: devices, mics, virtualCables, outputs, permissionRequired };
 }
 
-export function isVirtualCableLabel(label) {
-  if (!label) return false;
-  return VIRTUAL_CABLE_PATTERNS.some((p) => p.test(label));
-}
 
 export async function trashVaultFileRef(app, file) {
   if (app.vault && typeof app.vault.trash === "function") {
@@ -326,20 +318,6 @@ export async function trashVaultFileRef(app, file) {
   }
 }
 
-export function normalizeAudioInputMode(mode) {
-  if (mode === "mix") return "mix-virtual";
-  if (mode === "system") return "virtualCable";
-  return SUPPORTED_AUDIO_INPUT_MODES.has(mode) ? mode : "mic";
-}
-
-export function audioInputModeLabel(mode) {
-  const labels = {
-    mic: t("Microphone only"),
-    "mix-virtual": t("Microphone + computer audio"),
-    virtualCable: t("Computer audio only"),
-  };
-  return labels[normalizeAudioInputMode(mode)] || labels.mic;
-}
 
 export function classifyImportTextFileForModal(file, content) {
   const text = String(content || "");
@@ -392,63 +370,3 @@ export function countKnowledgeExtractionHistory(settings, kind) {
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
 
-/** 设备对象的形状。enumerateDevices() 在 @ts-nocheck 区域里被读成动态类型，这里显式声明。 */
-export interface AudioDeviceLike {
-  kind?: string;
-  deviceId?: string;
-  label?: string;
-}
-
-/**
- * 把音频输入设备分类，供「麦克风」与「电脑音频」两个下拉共用同一套判据。
- *
- * 只负责如实归类，**不做任何自动选择**：判错一只设备会让录音录到错误的声音，
- * 而用户从界面上看不出来。选哪一只始终由用户决定。
- *
- * `dongles` 是除系统默认项以外的全部输入设备（含虚拟声卡，不隐藏）：
- * 用户的虚拟声卡名字可能不在关键词表里，隐藏他反而没法选。
- * `selectedInput` 是当前显式选定那一只（可能为空）。
- */
-export function classifyAudioInputDevices(devices: AudioDeviceLike[] | null | undefined, selectedId = "") {
-  const inputs = (devices || []).filter((d) => !!d && d.kind === "audioinput");
-  const selected = String(selectedId || "");
-  return {
-    selectedInput: selected ? inputs.find((d) => d.deviceId === selected) || null : null,
-    // 系统默认那一项（deviceId 为 "default" 或空）由下拉里的空值选项代表，不重复列出。
-    dongles: inputs.filter((d) => !isSystemDefaultDeviceId(d.deviceId)),
-  };
-}
-
-/**
- * 电脑音频下拉该列出哪些设备。
- *
- * 电脑音频要的是虚拟声卡输入，所以正常情况下只列虚拟声卡，不把普通麦克风铺进来。
- * 但一个虚拟声卡都认不出时**退回列出全部输入设备**：关键词只是启发式，
- * 用户的虚拟声卡名字不在表里时若照旧只列虚拟声卡，列表就空了，他反而没得选。
- * 宁可多列几只让他自己认，也不要给他一个空列表。
- */
-export function pickComputerAudioDevices(devices: AudioDeviceLike[] | null | undefined) {
-  const { dongles } = classifyAudioInputDevices(devices);
-  const virtualCables = dongles.filter((d) => isVirtualCableLabel(d.label));
-  return { listed: virtualCables.length ? virtualCables : dongles, virtualCables };
-}
-
-/** 浏览器约定：deviceId 为 "default" 或空串表示系统默认输入设备。 */
-function isSystemDefaultDeviceId(deviceId?: string) {
-  const id = String(deviceId || "");
-  return id === "default" || id === "";
-}
-
-/**
- * 设备名读不到时，该给用户什么提示。
- *
- * `enumerateDevices()` 在未授权时仍会返回设备与 deviceId，只有 label 是空的；
- * 因此「名字为空」不等于「没有设备」。两者处理完全不同：
- * 前者让用户授权或仍可按下拉顺序选，后者才是真的没接设备。
- */
-export function describeAudioDeviceAvailability(devices: AudioDeviceLike[] | null | undefined) {
-  const inputs = (devices || []).filter((d) => !!d && d.kind === "audioinput");
-  if (!inputs.length) return { state: "none", count: 0 };
-  const named = inputs.some((d) => !!d.label);
-  return { state: named ? "named" : "unnamed", count: inputs.length };
-}

@@ -10,11 +10,11 @@ import * as obsidian from "obsidian";
 import { DEFAULT_SETTINGS } from "./defaults";
 import { isTrustedUpdateSourceUrl } from "../update/update-source";
 import { MODE_META } from "./catalog-modes";
+import { normalizeAudioInputMode } from "../audio/audio-input";
 import { t } from "./i18n";
 import {
   isCustomPromptModeTemplate,
   normalizeAsrConcurrency,
-  normalizeAudioInputMode,
   normalizeKnowledgeExtractionHistory,
   normalizeLlmProfiles,
   normalizePeopleContextMode,

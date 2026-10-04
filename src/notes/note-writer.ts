@@ -10,7 +10,7 @@ import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings, RecordingSession } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
-import { extractAllRawBlocksFromText, findSessionNoteBlock, iterateNoteDetailsBlocks, splitLeadingFrontmatter } from "./note-document";
+import { extractAllRawBlocksFromText, findFirstNoteBoundary, findNoteMarkerOffset, findSessionNoteBlock, iterateNoteDetailsBlocks, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
@@ -543,9 +543,9 @@ export class NoteWriter {
     }
     let withFreshBlocks = current;
     if (freshBlocks.length) {
-      const markerMatch = nsMarkerAnyRe("segments-end").exec(current);
-      const insertionAt = markerMatch
-        ? markerMatch.index
+      const markerAt = findFirstNoteBoundary(current, [nsMarkerAnyRe("segments-end")]);
+      const insertionAt = markerAt < current.length
+        ? markerAt
         : blocks.length ? blocks[blocks.length - 1].end : -1;
       if (insertionAt < 0) throw new Error("Continuation target has no transcript insertion marker");
       const insertion = `\n${freshBlocks.join("\n")}\n`;
@@ -569,7 +569,7 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
     const cur = await this.host.app.vault.read(file);
     const marker = nsMarker("segments-start", sessionId || undefined);
-    const idx = cur.indexOf(marker);
+    const idx = findNoteMarkerOffset(cur, marker, "first");
     if (idx >= 0) {
       const next = cur.slice(0, idx) + content + "\n" + cur.slice(idx);
       await this.host.app.vault.modify(file, next);
@@ -582,13 +582,14 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
     const cur = await this.host.app.vault.read(file);
     const specific = sessionId ? nsMarker("segments-end", sessionId) : null;
-    if (specific && cur.includes(specific)) {
-      const next = cur.replace(specific, `${content}\n${specific}`);
+    const legacy = nsMarker("segments-end");
+    const specificIndex = specific ? findNoteMarkerOffset(cur, specific, "first") : -1;
+    if (specific && specificIndex >= 0) {
+      const next = cur.slice(0, specificIndex) + `${content}\n${specific}` + cur.slice(specificIndex + specific.length);
       await this.host.app.vault.modify(file, next);
       return;
     }
-    const legacy = nsMarker("segments-end");
-    const lastIdx = cur.lastIndexOf(legacy);
+    const lastIdx = findNoteMarkerOffset(cur, legacy, "last");
     if (lastIdx >= 0) {
       const next = cur.slice(0, lastIdx) + content + "\n" + cur.slice(lastIdx);
       await this.host.app.vault.modify(file, next);

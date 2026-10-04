@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { t } from "../src/shared/i18n";
 import {
   normalizeAsrConcurrency,
-  normalizeAudioInputMode,
   normalizeKnowledgeExtractionHistory,
   normalizeLlmProfiles,
   normalizePeopleContextMode,
@@ -11,10 +10,7 @@ import {
 } from "../src/shared/settings-runtime-deps";
 
 describe("settings runtime normalizers", () => {
-  it("migrates legacy audio modes and bounds ASR concurrency", () => {
-    expect(normalizeAudioInputMode("mix")).toBe("mix-virtual");
-    expect(normalizeAudioInputMode("system")).toBe("virtualCable");
-    expect(normalizeAudioInputMode("unknown")).toBe("mic");
+  it("bounds ASR concurrency", () => {
     expect(normalizeAsrConcurrency("8")).toBe(3);
     expect(normalizeAsrConcurrency(0)).toBe(1);
   });

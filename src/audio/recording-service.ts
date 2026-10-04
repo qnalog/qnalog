@@ -2,7 +2,7 @@
 // 录音采集服务：开始/停止、录音状态与分段写入顺序。
 
 import * as obsidian from "obsidian";
-import { normalizeAudioInputMode, audioInputModeLabel } from "../ui/helpers";
+import { audioInputModeLabel, normalizeAudioInputMode } from "./audio-input";
 import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
 import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload } from "../shared/types";

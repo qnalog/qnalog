@@ -12,7 +12,6 @@ import { buildEmptyLlmOutputFallback, formatMergeSegmentForPrompt } from "../pro
 import * as obsidian from "obsidian";
 import { findLowEvidenceEntities, hashRealtimeOutlineText } from "./outline-text";
 
-import { stripFrontmatterSimple } from "../ui/helpers";
 
 import { getCustomPromptModeTemplate, getCustomPromptModeTemplates, getModeMeta, getModePrefix, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
 
@@ -38,7 +37,7 @@ import { escapeRegExp, formatElapsed, primitiveText, sanitizeFilename } from "..
 import { diagnosticError } from "../shared/util-key-diag";
 
 import { sanitizeActiveVersionBody } from "../versions/version-content";
-import { extractAllRawBlocksFromText, extractSessionId, findNoteDelimitedBlock, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findNoteDelimitedBlock, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, splitLeadingFrontmatter, stripFrontmatterSimple } from "./note-document";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
