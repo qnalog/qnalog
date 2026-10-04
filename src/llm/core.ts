@@ -16,6 +16,13 @@ import {
   rememberLlmOutputCeiling,
   rememberLlmOutputParameter,
 } from './output-budget';
+import {
+  isLlmConfigError,
+  isLlmContextLimitError,
+  isLlmNonRetryableError,
+  isLlmServiceBlockedError,
+  isNonRetryableLlmHttpFailure,
+} from "./failure-policy";
 export { LlmRequestQueue } from './request-queue';
 
 type LlmHttpError = Error & {
@@ -726,34 +733,6 @@ export function getLlmConfigIssue(settings) {
   return "";
 }
 
-export function isLlmConfigError(error) {
-  const msg = String((error && error.message) || error || "");
-  return /大模型(?:服务地址|名称|访问密钥)(?:未配置|不安全|格式无效|协议不受支持)|LLM service address (?:is not configured|is insecure|is invalid|uses an unsupported protocol)|LLM (?:model name|api key) is not configured|请先在 API 页配置大模型服务|Please configure an LLM service on the API page first|LLM 配置/i.test(msg);
-}
-
-export function isLlmServiceBlockedError(error) {
-  const msg = String((error && error.message) || error || "");
-  return /暂无可用账号|no available account|账号不可用|账号池|余额不足|insufficient\s+quota|quota\s+exceeded|invalid[_\s-]*api[_\s-]*key|unauthorized|forbidden|access\s*denied|model[_\s-]*not[_\s-]*found|模型(?:不存在|不可用|无可用)|LLM unavailable|context[_\s-]*length|maximum context|too many tokens|上下文(?:过长|超限)|内容过长/i.test(msg);
-}
-
-export function isNonRetryableLlmHttpFailure(status, detail) {
-  const code = Number(status) || 0;
-  const msg = String(detail || "");
-  if (isLlmServiceBlockedError(msg)) return true;
-  return [400, 401, 403, 404].includes(code);
-}
-
-export function isLlmNonRetryableError(error) {
-  if (error && error.nonRetryable) return true;
-  return isLlmConfigError(error) || isLlmServiceBlockedError(error);
-}
-
-export function isLlmContextLimitError(error) {
-  const status = Number(error && error.status) || 0;
-  if (![400, 413].includes(status)) return false;
-  const message = String((error && (error.statusDetail || error.message)) || error || "");
-  return /context(?:\s|[_-])?(?:length|window|limit)|maximum\s+context|prompt\s+(?:is\s+)?too\s+long|input\s+(?:is\s+)?too\s+long|too\s+many\s+(?:input\s+)?tokens|上下文(?:过长|超限)|输入(?:过长|超限)/i.test(message);
-}
 
 // 只有服务端明确说输出预算不被接受时才降档；普通上下文超限、鉴权失败和网络错误不走这条路径。
 // 这样新模型可以先按实际需求请求更大的输出，旧模型仍能在真实拒绝后兼容，而不是事先被模型名猜测绑死。

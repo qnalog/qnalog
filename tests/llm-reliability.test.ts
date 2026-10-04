@@ -47,7 +47,14 @@ vi.mock("obsidian", () => ({
 
 import * as obsidian from "obsidian";
 import { filterModelsForCategory } from "../src/setup/model-catalog";
-import { callLlmWithContinuation, fetchLlmModelEntries, fetchLlmModelList, getLlmConfigIssue, getNextLlmOutputBudget, isLlmContextLimitError, isLlmOutputBudgetError, isLlmOutputParameterError, isTransientLlmError, readLlmSseStream, requestLlmChatCompletion, requestLlmChatCompletionViaObsidian, resetLearnedLlmTransportPreferences, resolveLlmModelListEndpoint } from "../src/llm/core";
+import { callLlmWithContinuation, fetchLlmModelEntries, fetchLlmModelList, getLlmConfigIssue, getNextLlmOutputBudget, isLlmOutputBudgetError, isLlmOutputParameterError, isTransientLlmError, readLlmSseStream, requestLlmChatCompletion, requestLlmChatCompletionViaObsidian, resetLearnedLlmTransportPreferences, resolveLlmModelListEndpoint } from "../src/llm/core";
+import {
+  isLlmConfigError,
+  isLlmContextLimitError,
+  isLlmNonRetryableError,
+  isLlmServiceBlockedError,
+  isNonRetryableLlmHttpFailure,
+} from "../src/llm/failure-policy";
 import { applyLearnedLlmCapability, getEffectiveLlmOutputBudget, getLearnedLlmOutputCeiling, getLearnedLlmOutputParameter, rememberLlmOutputCeiling, resetLearnedLlmCapabilities } from "../src/llm/output-budget";
 import { DashScopeStreamingClient, OpenAIRealtimeTranscriptionClient, OpenAIRealtimeTranslationClient } from "../src/asr/clients";
 import { assertSafeServiceEndpoint, canOmitServiceApiKey, getServiceEndpointSecurityIssue, isLocalLlmEndpoint, isSharedAddressSpaceHost } from "../src/shared/util-llm-endpoint";
@@ -289,6 +296,39 @@ describe("LLM 输出预算兼容", () => {
     expect(isLlmContextLimitError(contextError)).toBe(true);
     expect(isLlmOutputBudgetError(contextError)).toBe(false);
     expect(isLlmOutputBudgetError({ status: 400, message: "max_tokens is too large" })).toBe(true);
+  });
+
+  it("keeps non-retryable and service-blocked classification for error shapes", () => {
+    expect(isLlmConfigError("LLM model name is not configured")).toBe(true);
+    expect(isLlmConfigError(new Error("LLM model name is not configured"))).toBe(true);
+    expect(isLlmNonRetryableError(new Error("network timeout"))).toBe(false);
+    expect(isLlmNonRetryableError({ nonRetryable: 1, message: "ordinary network error" })).toBe(true);
+
+    expect(isLlmServiceBlockedError(Object.create({ message: "insufficient quota" }) as { message?: string })).toBe(true);
+    expect(isLlmServiceBlockedError({ message: "", toString: () => "no available account" })).toBe(true);
+    for (const error of [null, undefined, false, {}]) {
+      expect(isLlmServiceBlockedError(error)).toBe(false);
+      expect(isLlmContextLimitError(error)).toBe(false);
+    }
+  });
+
+  it("preserves HTTP status coercion and service-detail precedence", () => {
+    expect(isNonRetryableLlmHttpFailure("401", "ordinary detail")).toBe(true);
+    expect(isNonRetryableLlmHttpFailure(500, "insufficient quota")).toBe(true);
+    expect(isNonRetryableLlmHttpFailure(500, "network timeout")).toBe(false);
+    expect(isNonRetryableLlmHttpFailure(413, "ordinary detail")).toBe(false);
+
+    expect(isLlmContextLimitError({
+      status: "413",
+      statusDetail: "maximum context length exceeded",
+      message: "request failed",
+    })).toBe(true);
+    expect(isLlmContextLimitError({ status: 429, message: "maximum context length exceeded" })).toBe(false);
+    expect(isLlmContextLimitError({
+      status: 400,
+      statusDetail: "network timeout",
+      message: "maximum context length exceeded",
+    })).toBe(false);
   });
 
   it("只在服务端明确要求时切换 max_completion_tokens", () => {
