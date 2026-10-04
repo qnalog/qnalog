@@ -16,7 +16,7 @@ import { getFrontmatterTags } from "../shared/util-note";
 
 import { normalizePeopleSuggestionCache } from "../people";
 
-import { isLlmConfigError, isLlmServiceBlockedError } from "../llm/core";
+import { isLlmConfigError, isLlmServiceBlockedError } from "../llm/failure-policy";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 

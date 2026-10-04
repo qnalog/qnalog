@@ -7,6 +7,7 @@ vi.mock("obsidian", () => ({
 
 import { TaskQueue } from "../src/queue/task-queue";
 import type { TaskQueueHost } from "../src/queue/task-queue";
+import type { MergeQueueTaskPayload, QueueTaskLifecycle } from "../src/shared/types";
 
 function makeQueueHost(overrides: Partial<TaskQueueHost> = {}): TaskQueueHost {
   return {
@@ -128,5 +129,90 @@ describe("continuation queue lifecycle", () => {
     await queue.processAll();
     expect(queue.snapshot()).toEqual([]);
     expect(persistedQueue).toBe("[]");
+  });
+  it.each([
+    { lastError: "insufficient quota", status: "blocked", retries: 3 },
+    { lastError: "Failed to fetch", status: "pending", retries: 2 },
+  ] as const)("restores a failed merge from its JSON snapshot ($lastError)", ({ lastError, status, retries }) => {
+    const makeTask = (): MergeQueueTaskPayload & QueueTaskLifecycle => ({
+      id: "merge-policy-load",
+      type: "merge",
+      sessionId: "policy-session",
+      mdPath: "policy.md",
+      mode: "monologue",
+      status: "failed",
+      retries: 3,
+      createdAt: "2026-10-04T00:00:00.000Z",
+      updatedAt: "2026-10-04T00:00:00.000Z",
+      lastError: "",
+      segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "policy fixture transcript" }],
+    });
+    const storedTask = makeTask();
+    storedTask.lastError = lastError;
+    const persistedJson = JSON.stringify([storedTask]);
+    const queue = new TaskQueue(makeQueueHost());
+    queue.load(JSON.parse(persistedJson));
+
+    expect(queue.snapshot()).toMatchObject([{
+      id: "merge-policy-load",
+      sessionId: "policy-session",
+      mdPath: "policy.md",
+      status,
+      retries,
+      segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "policy fixture transcript" }],
+    }]);
+  });
+
+
+  it.each([
+    { error: Object.assign(new Error("upstream rejection"), { nonRetryable: true }), status: "blocked", retries: 2 },
+    { error: new Error("Failed to fetch"), status: "failed", retries: 3 },
+  ] as const)("persists failed merge classification and restores it ($status)", async ({ error, status, retries }) => {
+    let persistedJson = "";
+    const completeTaskActivity = vi.fn();
+    const logCompletedWork = vi.fn();
+    let queue!: TaskQueue;
+    queue = new TaskQueue(makeQueueHost({
+      persistQueue: async () => { persistedJson = JSON.stringify(queue.snapshot()); },
+      retryMergeTask: async () => { throw error; },
+      completeTaskActivity,
+      logCompletedWork,
+    }));
+    queue.load([{
+      id: "merge-policy-process",
+      type: "merge",
+      sessionId: "policy-session",
+      mdPath: "policy.md",
+      mode: "monologue",
+      status: "pending",
+      retries: 2,
+      createdAt: "2026-10-04T00:00:00.000Z",
+      updatedAt: "2026-10-04T00:00:00.000Z",
+      segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "policy fixture transcript" }],
+    }]);
+
+    await expect(queue.processOne(queue.tasks[0])).rejects.toBe(error);
+    const persistedTask = JSON.parse(persistedJson) as Array<MergeQueueTaskPayload & QueueTaskLifecycle>;
+    expect(persistedTask[0]).toMatchObject({
+      id: "merge-policy-process",
+      sessionId: "policy-session",
+      mdPath: "policy.md",
+      status,
+      retries,
+      segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "policy fixture transcript" }],
+    });
+    expect(completeTaskActivity).not.toHaveBeenCalled();
+    expect(logCompletedWork).not.toHaveBeenCalled();
+
+    const restoredQueue = new TaskQueue(makeQueueHost());
+    restoredQueue.load(persistedTask);
+    expect(restoredQueue.snapshot()).toMatchObject([{
+      id: "merge-policy-process",
+      sessionId: "policy-session",
+      mdPath: "policy.md",
+      status: status === "failed" ? "pending" : "blocked",
+      retries: status === "failed" ? 2 : 2,
+      segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "policy fixture transcript" }],
+    }]);
   });
 });

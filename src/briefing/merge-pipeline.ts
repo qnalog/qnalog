@@ -9,7 +9,8 @@ import { buildPeopleContextForLlm, mergeUniqueStrings } from "../people";
 
 import { appendSedimentPreExtractionBlock, extractSedimentPreExtractionBlock } from "../sediment";
 
-import { callBriefingMergeLlm, callLlm, isLlmContextLimitError, logLlmRequestDiagnostic } from "../llm/core";
+import { callBriefingMergeLlm, callLlm, logLlmRequestDiagnostic } from "../llm/core";
+import { isLlmContextLimitError } from "../llm/failure-policy";
 
 import { getBriefingMergeMaxTokens } from "../llm/config";
 

@@ -3,7 +3,7 @@
 
 import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 import * as obsidian from "obsidian";
-import { isLlmNonRetryableError } from "../llm/core";
+import { isLlmNonRetryableError } from "../llm/failure-policy";
 
 import { genId } from "../shared/util-common";
 
