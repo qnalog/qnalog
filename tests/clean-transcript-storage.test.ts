@@ -28,7 +28,10 @@ vi.mock("obsidian", () => {
   }
   return {
     TFile,
-    TFolder: class TFolder {},
+    TFolder: class TFolder {
+      path: string;
+      constructor(path = "") { this.path = path; }
+    },
     Modal: class Modal { open(): void {} },
     Notice: class Notice { constructor(message: string) { notices.push(String(message)); } },
     normalizePath: (value: string) => String(value || "").replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\.\//, ""),
@@ -60,25 +63,67 @@ vi.mock("../src/briefing/merge-pipeline", () => ({
   mergeAndPolish: mergeAndPolishMock,
 }));
 import * as obsidian from "obsidian";
+import type { PluginSettings } from "../src/shared/types";
 import { cleanTranscript } from "../src/briefing/merge-pipeline";
 import { RepolishService } from "../src/notes/repolish-service";
-import { VersionStore } from "../src/versions/version-store";
+import { VersionStore, type VersionStoreHost } from "../src/versions/version-store";
 import { TaskActivityService } from "../src/tasks/task-activity-service";
 import { TaskActivityStore } from "../src/shared/task-activity";
 
 type MemoryFile = InstanceType<typeof obsidian.TFile>;
+type MemoryFolder = InstanceType<typeof obsidian.TFolder>;
+type VersionFixtureApp = {
+  vault: VersionStoreHost["vault"];
+  metadataCache: {
+    getFileCache(file: MemoryFile): { frontmatter?: Record<string, unknown> } | null | undefined;
+  };
+  workspace?: { getLeaf(create: boolean): { openFile(file: MemoryFile): unknown } };
+};
+
+function makeVersionHost(
+  app: VersionFixtureApp,
+  getSettings: () => {
+    mdFolder: string;
+    promptTemplates?: Pick<PluginSettings, "promptTemplates">["promptTemplates"];
+  },
+  refreshIndex?: VersionStoreHost["refreshNoteIndexSafely"],
+): VersionStoreHost {
+  return {
+    vault: {
+      adapter: app.vault.adapter,
+      getAbstractFileByPath: (path) => app.vault.getAbstractFileByPath(path),
+      getMarkdownFiles: () => app.vault.getMarkdownFiles(),
+      read: (file) => app.vault.read(file),
+      create: (path, content) => app.vault.create(path, content),
+      modify: async (file, content) => { await app.vault.modify(file, content); },
+    },
+    getSettings: () => {
+      const current = getSettings();
+      return { mdFolder: current.mdFolder, promptTemplates: current.promptTemplates || {} };
+    },
+    getFileFrontmatter: (file) => app.metadataCache.getFileCache(file)?.frontmatter,
+    refreshNoteIndexSafely: refreshIndex || (async () => {
+      throw new Error("Unexpected index refresh in version fixture");
+    }),
+    openSourceFile: async (file) => {
+      if (!app.workspace) throw new Error("Unexpected source open in version fixture");
+      await app.workspace.getLeaf(false).openFile(file);
+    },
+  };
+}
 
 function createMemoryVault() {
   const files = new Map<string, MemoryFile>();
   const unindexedFiles = new Set<string>();
   const folders = new Set<string>();
   const vault = {
-    getAbstractFileByPath: (path: string) => !unindexedFiles.has(path) ? files.get(path) || (folders.has(path) ? { path } : null) : null,
+    getAbstractFileByPath: (path: string): MemoryFile | MemoryFolder | null =>
+      !unindexedFiles.has(path) ? files.get(path) || (folders.has(path) ? new obsidian.TFolder(path) : null) : null,
     getMarkdownFiles: () => [...files.values()].filter((file) => !unindexedFiles.has(file.path)),
-    createFolder: async (path: string) => { folders.add(path); return { path }; },
     read: async (file: MemoryFile) => file.data,
     cachedRead: async (file: MemoryFile) => file.data,
-    modify: async (file: MemoryFile, content: string) => { file.data = content; return file; },
+    modify: async (file: MemoryFile, content: string): Promise<void> => { file.data = content; },
+    createFolder: async (path: string) => { folders.add(path); return new obsidian.TFolder(path); },
     create: async (path: string, content: string) => {
       if (files.has(path)) throw new Error(`File already exists: ${path}`);
       const file = new obsidian.TFile(path, content);
@@ -144,6 +189,71 @@ afterEach(() => {
 });
 
 describe("clean transcript storage", () => {
+  it("uses current mode templates and storage folder for original snapshots", async () => {
+    const { files, vault } = createMemoryVault();
+    const originalContent = sourceContent
+      .replace("qnalog_time: 2026-09-29T21:49:00", "qnalog_time: 2026-10-04T00:00:00.000Z")
+      .replace("qnalog_mode: meeting", "qnalog_mode: custom-note");
+    const sourceFile = new obsidian.TFile("QnALog/notes/custom-source.md", originalContent);
+    files.set(sourceFile.path, sourceFile);
+    const template = (name: string) => ({
+      id: "custom-note",
+      mode: "custom-note",
+      name,
+      prompt: "Custom mode fixture.",
+      customMode: true,
+      createdAt: "2026-10-04T00:00:00.000Z",
+      updatedAt: "2026-10-04T00:00:00.000Z",
+    });
+    let settings: Pick<PluginSettings, "mdFolder" | "promptTemplates"> = {
+      mdFolder: "QnALog/version-port-a",
+      promptTemplates: { "custom-note": template("Name A") },
+    };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "custom-note" } }) },
+    };
+    const versions = new VersionStore(makeVersionHost(app, () => settings));
+    const originalText = await vault.read(sourceFile);
+
+    const firstPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    expect(firstPath).toBeTruthy();
+    const first = await versions.findOriginalVersionForSource(sourceFile);
+    expect(first?.mode).toBe("custom-note");
+    expect(first?.label).toContain("Name A");
+    const folderA = getVersionStoreFolder(settings, getSourceIdFromMarkdown(originalText, sourceFile));
+    const manifestPathA = `${folderA}/manifest.json`;
+    const snapshotA = files.get(firstPath!);
+    if (!snapshotA) throw new Error("Original snapshot A was not written");
+    const snapshotABytes = snapshotA.data;
+    const manifestABytes = files.get(manifestPathA)?.data;
+    if (!manifestABytes) throw new Error("Version manifest A was not written");
+
+    settings = {
+      ...settings,
+      promptTemplates: { "custom-note": template("Name B") },
+    };
+    const sameSnapshot = await versions.findOriginalVersionForSource(sourceFile);
+    expect(sameSnapshot?.path).toBe(firstPath);
+    expect(sameSnapshot?.label).toContain("Name B");
+
+    settings = { ...settings, mdFolder: "QnALog/version-port-b" };
+    const secondPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    expect(secondPath).toContain("QnALog/version-port-b");
+    const folderB = getVersionStoreFolder(settings, getSourceIdFromMarkdown(originalText, sourceFile));
+    const manifestPathB = `${folderB}/manifest.json`;
+    const manifestB = JSON.parse(files.get(manifestPathB)?.data || "{}");
+    expect(manifestB.versions).toHaveLength(1);
+    expect(manifestB.versions[0].kind).toBe("source-original");
+    expect(snapshotA.data).toBe(snapshotABytes);
+    expect(files.get(manifestPathA)?.data).toBe(manifestABytes);
+    expect(await vault.read(sourceFile)).toBe(originalText);
+    for (const snapshotPath of [firstPath!, secondPath!]) {
+      const snapshot = files.get(snapshotPath);
+      expect(snapshot?.data).toContain("First generated minutes must stay visible.");
+      expect(snapshot?.data).not.toContain("Original ASR transcript.");
+    }
+  });
   it("recovers an unindexed manifest, preserves orphan snapshots, and switches back to the personal note", async () => {
     const { files, unindexedFiles, vault } = createMemoryVault();
     const originalContent = sourceContent.replace("qnalog_mode: meeting", "qnalog_mode: monologue")
@@ -176,7 +286,7 @@ describe("clean transcript storage", () => {
     };
 
     const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
-    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, noteIndex.refreshNoteIndexSafely));
     const tasks = {
       _busyLabel: null,
       _busyContext: null,
@@ -241,7 +351,7 @@ describe("clean transcript storage", () => {
     const versionFolder = getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile));
     const manifestPath = `${versionFolder}/manifest.json`;
     files.set(manifestPath, new obsidian.TFile(manifestPath, JSON.stringify({ version: 1, activeVersionId: "minutes:existing", versions: [] })));
-    const versions = new VersionStore({ app, settings, noteIndex: cleanNoteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, cleanNoteIndex.refreshNoteIndexSafely));
     const openFile = vi.fn(async () => undefined);
     const tasks = {
       startTaskActivity: vi.fn(),
@@ -421,7 +531,7 @@ describe("clean transcript storage", () => {
       workspace: { getLeaf: () => ({ openFile: vi.fn() }) },
     };
     const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
-    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, noteIndex.refreshNoteIndexSafely));
     const tasks = {
       startTaskActivity: vi.fn(),
       patchTaskActivity: vi.fn(),
@@ -472,7 +582,7 @@ describe("clean transcript storage", () => {
       workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
     };
     const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
-    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, noteIndex.refreshNoteIndexSafely));
     const tasks = {
       startTaskActivity: vi.fn(), patchTaskActivity: vi.fn(), updateBusyStatus: vi.fn(),
       beginTaskMeter: vi.fn(() => ({ id: "meter" })), endTaskMeter: vi.fn(() => ({ elapsedMs: 1 })),
@@ -544,7 +654,7 @@ describe("clean transcript storage", () => {
       workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
     };
     const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
-    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, noteIndex.refreshNoteIndexSafely));
     const requestOutlineRefresh = vi.fn();
     const tasks = {
       _busyLabel: null,
@@ -583,7 +693,7 @@ describe("clean transcript storage", () => {
       vault,
       metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_time: "2026-09-30T09:00:00", qnalog_mode: "monologue" } }) },
     };
-    const versions = new VersionStore({ app, settings: { mdFolder: "QnALog/转写纪要" }, noteIndex: {} } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => ({ mdFolder: "QnALog/转写纪要" })));
     const createDerivedNote = vi.spyOn(versions, "createDerivedNote");
     let contentAtSnapshotGate = "";
     vi.spyOn(versions, "ensureOriginalVersionForSource").mockImplementation(async () => {
@@ -619,7 +729,7 @@ describe("clean transcript storage", () => {
       vault,
       metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_time: "2026-09-29T21:49:00", qnalog_mode: "monologue" } }) },
     };
-    const versions = new VersionStore({ app, settings, noteIndex: {} } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings));
     const createDerivedNote = vi.spyOn(versions, "createDerivedNote");
     const originalWrite = vault.adapter.write;
     let contentAtManifestFailure = "";
@@ -659,11 +769,11 @@ describe("clean transcript storage", () => {
       metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
       workspace: { getLeaf: () => ({ openFile: vi.fn() }) },
     };
-    const versions = new VersionStore({
+    const versions = new VersionStore(makeVersionHost(
       app,
-      settings: { mdFolder: "QnALog/转写纪要" },
-      noteIndex: { refreshNoteIndexSafely: vi.fn(async () => undefined) },
-    } as never);
+      () => ({ mdFolder: "QnALog/转写纪要" }),
+      async () => undefined,
+    ));
     const malformed = new obsidian.TFile(
       "QnALog/转写纪要/.versions/source/untyped.md",
       `---\nversion_id: "untyped"\nvariant_label: "Invalid"\nqnalog_source_path: "${sourceFile.path}"\nsource_id: "${getSourceIdFromMarkdown(sourceContent, sourceFile)}"\n---\n\nMust not replace the source.`,
@@ -687,7 +797,7 @@ describe("clean transcript storage", () => {
       metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
       workspace: { getLeaf: () => ({ openFile: vi.fn() }) },
     };
-    const versions = new VersionStore({ app, settings, noteIndex: {} } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings));
     const previous = await versions.saveVersion(sourceFile, sourceContent, [], {
       kind: "minutes",
       idLabel: "previous-minutes",
@@ -753,11 +863,10 @@ describe("clean transcript storage", () => {
       const manifestFile = new obsidian.TFile(manifestPath, manifestData);
       files.set(manifestPath, manifestFile);
       unindexedFiles.add(manifestPath);
-      const versions = new VersionStore({
-        app: { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
-        settings,
-        noteIndex: {},
-      } as never);
+      const versions = new VersionStore(makeVersionHost(
+        { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+        () => settings,
+      ));
 
       await expect(versions.saveVersion(sourceFile, sourceContent, [], {
         kind: "minutes", idLabel: "attempt", label: "Attempt", body: "Must not be written.",
@@ -780,11 +889,10 @@ describe("clean transcript storage", () => {
     const originalRead = vault.adapter.read;
     vi.spyOn(vault.adapter, "read").mockImplementation(async (path) =>
       path.endsWith(".md") ? "Corrupted adapter readback." : originalRead(path));
-    const versions = new VersionStore({
-      app: { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
-      settings,
-      noteIndex: {},
-    } as never);
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
 
     await expect(versions.ensureOriginalVersionForSource(sourceFile)).rejects.toThrow("Could not verify version metadata");
 
@@ -808,11 +916,7 @@ describe("clean transcript storage", () => {
       metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
       workspace: { getLeaf: () => ({ openFile }) },
     };
-    const versions = new VersionStore({
-      app,
-      settings,
-      noteIndex: { refreshNoteIndexSafely: vi.fn(async () => undefined) },
-    } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, async () => undefined));
     const original = await versions.saveVersion(sourceFile, sourceContent, [], {
       kind: "source-original",
       idLabel: "source-original",
@@ -867,7 +971,7 @@ describe("clean transcript storage", () => {
       workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
     };
     const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
-    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, noteIndex.refreshNoteIndexSafely));
     const tasks = new TaskActivityService({ settings } as never);
     tasks.taskActivityStore = new TaskActivityStore();
     tasks.completedWorkLog = [];
@@ -930,7 +1034,7 @@ describe("clean transcript storage", () => {
       workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
     };
     const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
-    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, noteIndex.refreshNoteIndexSafely));
     const tasks = new TaskActivityService({ settings } as never);
     tasks.taskActivityStore = new TaskActivityStore();
     tasks.completedWorkLog = [];
@@ -969,7 +1073,7 @@ describe("clean transcript storage", () => {
       workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
     };
     const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
-    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, noteIndex.refreshNoteIndexSafely));
     const tasks = new TaskActivityService({ settings } as never);
     tasks.taskActivityStore = new TaskActivityStore();
     tasks.completedWorkLog = [];

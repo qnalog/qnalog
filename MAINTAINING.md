@@ -481,7 +481,7 @@ frontmatter 仍有 `time`、运行期没有异常日志。
    - **笔记内容损坏修复**：实时转写块清理现在按实际匹配的结束标记长度截断；分段转写按字面量插入，不解释 `$&` 等替换模板字符。服务消费者回归测试覆盖完整 Markdown 保存结果、旧/新标记、其他会话、缺标记不写、会话标记选择和追加回退；续录缺少插入边界时拒绝写入并保留原文。临时目录文件系统冒烟实际调用两个服务方法，确认旧标记后的 Unicode/多行正文保留、替换模板字符原样写入。未进行真实 Obsidian 宿主验证。
    - **P2.1 已完成：A6 笔记结构操作归属**。`note-document.ts` 现在提供首/末字面标记偏移、原始材料锚点行首定位与原有前言剥离；NoteWriter、QueueRetryService、MeetingWorkbenchService、VersionContent 使用共享位置操作。协议语义仍由逐字稿账本、会话知识、索引和沉淀模块各自拥有；§14.4 记录消费者矩阵与保留理由。写入策略、两种布局、旧格式、机器壳和账本不变量由消费者测试覆盖。
    - **P2.2 已完成：A10 非 UI 对 UI 辅助依赖**。音频输入模式、标签、设备分类/可用性纯函数迁入 `audio/audio-input.ts`；前言剥离归入 `note-document.ts`。五个非 UI `ui/helpers` 基线例外已移除；设备枚举、确认、弹窗、外链与废纸篓仍留在 UI/宿主交互层。
-   - **P2.3：关键持久化域的类型与能力闭合（A2、A7及必要 A9）**。范围限于录音/续录终止、队列恢复、笔记写入和版本保全所有者。`TaskQueue` 已收窄为显式队列能力端口；其他持久化域和严格核心纳入仍待完成，因此 P2.3 整体未完成。不得用 `any`、ignore 或 `@ts-nocheck` 绕过；不混入 P1 用户问题，也不按纳入文件数验收。
+   - **P2.3：关键持久化域的类型与能力闭合（A2、A7及必要 A9）**。范围限于录音/续录终止、队列恢复、笔记写入和版本保全所有者。`TaskQueue` 已收窄为显式队列能力端口；`VersionStore` 已改为显式知识库、调用时设置、frontmatter、索引刷新和工作区能力端口。版本消费者测试覆盖设置模板与存储目录整体替换后的快照读写；其他持久化域和严格核心纳入仍待完成，因此 P2.3 整体未完成。不得用 `any`、ignore 或 `@ts-nocheck` 绕过；不混入 P1 用户问题，也不按纳入文件数验收。
 5. **P3：A8 沉淀交互控制器**。一次定义并验收扫描、取消、自动推进、提交、撤销及 DOM 边界；不按 OutlineView 行数重拆整个界面。真实视觉验证仍由维护者完成。
 6. **条件任务**：A12 的索引写入及笔记布局方案由维护者决定；未决定前保留两种布局和索引写入。历史流式任务恢复只在实际恢复需求出现时调查，不因 #83 续录恢复而关闭。真实 Obsidian、设备、模型/ASR 服务补验只在需要的场景执行，不阻塞无关离线任务。
 **实现与验证状态分列**
@@ -1455,7 +1455,7 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 4. **P1.3 已完成：负向构建 fixture 隔离**：`tests/plugin-onload.test.ts` 使用 `esbuild` API 从内存变换真实 `src/main.ts`，构建到每次独占的临时目录；没有改写共享源码/产物。正向、漏装、并发检查、错误参数均通过，源码与根 `main.js`、manifest 的哈希稳定，工厂生成的无变换 bundle 与根 `main.js` 逐字节一致。
 5. **P2.1 已完成：A6 笔记结构操作完整归属**。`note-document.ts` 统一可复用的结构位置/范围机械操作，所有实际消费者已迁移或按协议专属行为保留在原领域。首/末选择、缺失回退、错误语义与两种布局未改；不建立统一 ledger/JSON dispatcher。
 6. **P2.2 已完成：A10 非 UI 对 UI 辅助依赖**。音频输入纯函数及设备类型归入 `audio/audio-input.ts`，简单前言剥离归入 `notes/note-document.ts`；所有既有调用点迁移，精确移除五个非 UI `ui/helpers` 例外。授权探测、设备枚举和确认、Modal、外链与废纸篓仍由 UI/交互模块负责。
-7. **P2.3 持久化域类型/能力闭合（A2、A7及必要 A9）**。范围为 `RecordingService`、`LiveAsrPipelineService`、`SessionFinalizeService`、`ContinuationService`、`TaskQueue`、`QueueRetryService`、`NoteWriter`、`VersionStore` 及实际输入/持久化边界。`TaskQueue` 已改用显式队列能力端口；其余域和严格核心纳入尚未完成，全域闭合后才记该子范围完成，不按文件数增加验收。其他目录/命名迁移不另开全仓任务。
+7. **P2.3 持久化域类型/能力闭合（A2、A7及必要 A9）**。范围为 `RecordingService`、`LiveAsrPipelineService`、`SessionFinalizeService`、`ContinuationService`、`TaskQueue`、`QueueRetryService`、`NoteWriter`、`VersionStore` 及实际输入/持久化边界。`TaskQueue` 已改用显式队列能力端口；`VersionStore` 已改用窄能力端口，动态设置/索引/工作区读取由装配回调提供，版本内容、manifest 和切换由消费者测试与真实 bundle 冒烟验证。其余域和严格核心纳入尚未完成，全域闭合后才记该子范围完成，不按文件数增加验收。其他目录/命名迁移不另开全仓任务。
 
 **A6 消费者矩阵**
 

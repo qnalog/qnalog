@@ -114,7 +114,6 @@
     ["TaskActivityService", "RecorderService"],
     ["TaskActivityService", "SessionStore"],
     ["TaskActivityService", "TaskQueue"],
-    ["VersionStore", "NoteIndexService"],
     ["ViewShellService", "BubbleWidget"],
     ["ViewShellService", "SessionStore"],
     ["ViewShellService", "TaskActivityService"],
@@ -231,10 +230,6 @@
     "src/vault/cleanup-service.ts": [
       "CleanupHost.app:App",
       "CleanupHost.settings:PluginSettings"
-    ],
-    "src/versions/version-store.ts": [
-      "VersionStoreHost.app:App",
-      "VersionStoreHost.settings:PluginSettings"
     ],
     "src/views/library-view-service.ts": [
       "LibraryViewHost.app:App",

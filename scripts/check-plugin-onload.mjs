@@ -35,7 +35,13 @@ const DOMAIN_FIELDS = [
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
   "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
 ];
-const PORT_HOST_FIELDS = new Set(["asrPipeline", "continuations", "outline", "queue"]);
+const PORT_HOST_FIELDS = {
+  asrPipeline: true,
+  continuations: true,
+  outline: true,
+  queue: true,
+  versions: true,
+};
 
 const noop = () => undefined;
 
@@ -270,8 +276,19 @@ async function main() {
     const service = plugin[field];
     if (!service || typeof service !== "object") continue;
     if (!("host" in service)) continue;
-    if (PORT_HOST_FIELDS.has(field)) {
+    if (Object.hasOwn(PORT_HOST_FIELDS, field)) {
       if (service.host === plugin) failures.push(`this.${field}.host 应使用窄能力对象，不得接收完整插件实例`);
+      if (field === "versions") {
+        if (service.host?.vault !== app.vault
+          || typeof service.host?.getSettings !== "function"
+          || typeof service.host?.getFileFrontmatter !== "function"
+          || typeof service.host?.refreshNoteIndexSafely !== "function"
+          || typeof service.host?.openSourceFile !== "function"
+          || service.host.getSettings() !== plugin.settings) {
+          failures.push("this.versions.host 未绑定预期的知识库与动态设置、frontmatter、索引和工作区能力");
+        }
+        continue;
+      }
       if (field === "queue") {
         if (typeof service.host?.getMaxRetries !== "function"
           || typeof service.host?.persistQueue !== "function"

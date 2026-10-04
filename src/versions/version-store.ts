@@ -3,7 +3,6 @@
 
 import * as obsidian from "obsidian";
 import type { PluginSettings } from "../shared/types";
-import { NoteIndexService } from "../notes/note-index-service";
 import { sanitizeFilename } from "../shared/util-common";
 import { extractAllRawBlocksFromText, findActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../notes/note-document";
 import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, splitVersionPayload, stripVersionBookkeepingFrontmatter, sanitizeActiveVersionBody } from "./version-content";
@@ -52,14 +51,25 @@ function matchesDerivedNote(
   return typeof storedPath === "string" && obsidian.normalizePath(storedPath) === sourcePath;
 }
 
-/** VersionStore 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
+/** VersionStore 需要的最小宿主能力；由 src/main.ts 在调用时绑定动态成员。 */
 export interface VersionStoreHost {
-  /** 知识库与工作区访问。 */
-  app: obsidian.App;
-  /** 笔记索引与当日概要服务。 */
-  noteIndex: NoteIndexService;
-  /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: PluginSettings;
+  vault: {
+    adapter: {
+      exists(path: string): Promise<boolean>;
+      read(path: string): Promise<string>;
+      write(path: string, content: string): Promise<void>;
+      mkdir(path: string): Promise<void>;
+    };
+    getAbstractFileByPath(path: string): obsidian.TAbstractFile | null;
+    getMarkdownFiles(): obsidian.TFile[];
+    read(file: obsidian.TFile): Promise<string>;
+    create(path: string, content: string): Promise<obsidian.TFile>;
+    modify(file: obsidian.TFile, content: string): Promise<void>;
+  };
+  getSettings(): Pick<PluginSettings, "mdFolder" | "promptTemplates">;
+  getFileFrontmatter(file: obsidian.TFile): Record<string, unknown> | null | undefined;
+  refreshNoteIndexSafely(file: obsidian.TFile, options: { meetingDate?: string; reason?: string }): Promise<unknown>;
+  openSourceFile(file: obsidian.TFile): Promise<void>;
 }
 
 export class VersionStore {
@@ -86,7 +96,7 @@ export class VersionStore {
     }
   }
   private async ensureVersionFolder(folder: string): Promise<void> {
-    const adapter = this.host.app.vault.adapter;
+    const adapter = this.host.vault.adapter;
     let current = "";
     for (const part of obsidian.normalizePath(folder).split("/").filter(Boolean)) {
       current = current ? `${current}/${part}` : part;
@@ -95,12 +105,12 @@ export class VersionStore {
   }
   private async readStrictVersionManifest(folder: string, sourceId: string): Promise<Record<string, unknown>> {
     const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
-    if (!(await this.host.app.vault.adapter.exists(manifestPath))) {
+    if (!(await this.host.vault.adapter.exists(manifestPath))) {
       return { version: 1, activeVersionId: "", versions: [], sourceId };
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await this.host.app.vault.adapter.read(manifestPath));
+      parsed = JSON.parse(await this.host.vault.adapter.read(manifestPath));
     } catch {
       throw new Error(t("Could not read version metadata"));
     }
@@ -123,8 +133,8 @@ export class VersionStore {
       const fileName = typeof record.fileName === "string" ? record.fileName : "";
       if (!fileName || obsidian.normalizePath(fileName) !== fileName || fileName.includes("/") || fileName.includes("\\") || !fileName.endsWith(".md")) return null;
       const path = obsidian.normalizePath(`${folder}/${fileName}`);
-      if (!(await this.host.app.vault.adapter.exists(path))) return null;
-      const parts = splitLeadingFrontmatter(await this.host.app.vault.adapter.read(path));
+      if (!(await this.host.vault.adapter.exists(path))) return null;
+      const parts = splitLeadingFrontmatter(await this.host.vault.adapter.read(path));
       const fileFm = parseFrontmatterObject(parts.frontmatter);
       const versionParts = splitVersionPayload(parts.body);
       const storedSourcePath = fileFm ? readNamespaceFrontmatter(fileFm, "sourcePath") : "";
@@ -137,8 +147,8 @@ export class VersionStore {
         || readNamespaceFrontmatter(fileFm, "type") !== NS_TYPE_VERSION_CACHE
         || !versionParts.body.trim()) return null;
       const mode = typeof record.mode === "string" ? record.mode : "";
-      const label = mode && isKnownPolishMode(this.host.settings, mode)
-        ? getModeDisplayName(this.host.settings, mode)
+      const label = mode && isKnownPolishMode(this.host.getSettings(), mode)
+        ? getModeDisplayName(this.host.getSettings(), mode)
         : (typeof record.label === "string" && record.kind === "source-original" ? record.label : t("Original minutes"));
       return { path, mode, label };
     }
@@ -147,9 +157,9 @@ export class VersionStore {
   async findOriginalVersionForSource(sourceFile: obsidian.TFile): Promise<OriginalSnapshot | null> {
     if (!(sourceFile instanceof obsidian.TFile) || sourceFile.extension !== "md") return null;
     try {
-      const sourceContent = await this.host.app.vault.read(sourceFile);
+      const sourceContent = await this.host.vault.read(sourceFile);
       const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
-      const folder = getVersionStoreFolder(this.host.settings, sourceId);
+      const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
       const manifest = await this.readStrictVersionManifest(folder, sourceId);
       return await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, manifest);
     } catch (error) {
@@ -159,7 +169,7 @@ export class VersionStore {
   }
   async ensureOriginalVersionForSource(sourceFile: obsidian.TFile): Promise<string | null> {
     if (!(sourceFile instanceof obsidian.TFile) || sourceFile.extension !== "md") return null;
-    const sourceId = getSourceIdFromMarkdown(await this.host.app.vault.read(sourceFile), sourceFile);
+    const sourceId = getSourceIdFromMarkdown(await this.host.vault.read(sourceFile), sourceFile);
     const pending = this._originalSnapshotInFlight.get(sourceId);
     if (pending !== undefined) return pending;
     const task = this.ensureOriginalVersion(sourceFile, sourceId);
@@ -174,7 +184,7 @@ export class VersionStore {
     }
   }
   private async ensureOriginalVersion(sourceFile: obsidian.TFile, sourceId: string): Promise<string | null> {
-    const folder = getVersionStoreFolder(this.host.settings, sourceId);
+    const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
     const manifest = await this.readStrictVersionManifest(folder, sourceId);
     const existing = await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, manifest);
     if (existing) return existing.path;
@@ -182,7 +192,7 @@ export class VersionStore {
     if (records.some((item) => item && (item.kind === "source-original" || item.kind === "pre-clean"))) {
       throw new Error(t("Could not read version metadata"));
     }
-    const content = await this.host.app.vault.read(sourceFile);
+    const content = await this.host.vault.read(sourceFile);
     if (findActiveVersionBlock(content)) {
       throw new Error(t("Could not read version metadata"));
     }
@@ -198,9 +208,9 @@ export class VersionStore {
       .trim();
     if (!originalBody) return null;
     const rawMode = fm ? readNamespaceFrontmatter(fm, "mode") : "";
-    const mode = typeof rawMode === "string" ? normalizeModeFromLabel(this.host.settings, rawMode) : "";
-    const validMode = mode && mode !== "off" && isKnownPolishMode(this.host.settings, mode) ? mode : "";
-    const label = validMode ? getModeDisplayName(this.host.settings, validMode) : t("Original minutes");
+    const mode = typeof rawMode === "string" ? normalizeModeFromLabel(this.host.getSettings(), rawMode) : "";
+    const validMode = mode && mode !== "off" && isKnownPolishMode(this.host.getSettings(), mode) ? mode : "";
+    const label = validMode ? getModeDisplayName(this.host.getSettings(), validMode) : t("Original minutes");
     const saved = await this.saveVersion(sourceFile, content, [], {
       kind: "source-original",
       label,
@@ -223,12 +233,12 @@ export class VersionStore {
   ): obsidian.TFile | null {
     const sourcePath = obsidian.normalizePath(sourceFile.path);
     const sourceDir = obsidian.normalizePath(sourceFile.parent?.path || "");
-    const candidates = this.host.app.vault.getMarkdownFiles().filter((candidate) => {
+    const candidates = this.host.vault.getMarkdownFiles().filter((candidate) => {
       if (!(candidate instanceof obsidian.TFile) || candidate.extension !== "md" || candidate.path === sourcePath) return false;
       if (obsidian.normalizePath(candidate.parent?.path || "") !== sourceDir) return false;
-      const current = this.host.app.vault.getAbstractFileByPath(candidate.path);
+      const current = this.host.vault.getAbstractFileByPath(candidate.path);
       if (!(current instanceof obsidian.TFile) || current.path !== candidate.path) return false;
-      const frontmatter = this.host.app.metadataCache.getFileCache(current)?.frontmatter || {};
+      const frontmatter = this.host.getFileFrontmatter(current) || {};
       const identityMatches = matchesDerivedNote(frontmatter, sourceId, sourcePath, variantKind);
       const canonicalCleanName = variantKind === "clean"
         && current.basename.endsWith(`】${sourceFile.basename}`)
@@ -243,7 +253,7 @@ export class VersionStore {
 
   async writeVersionManifest(folder, manifest) {
     await this.ensureVersionFolder(folder);
-    const adapter = this.host.app.vault.adapter;
+    const adapter = this.host.vault.adapter;
     const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
     const payload = JSON.stringify(Object.assign({ version: 1 }, manifest || {}), null, 2);
     await adapter.write(manifestPath, payload);
@@ -253,26 +263,26 @@ export class VersionStore {
   async writeVersionFile(folder, fileName, content) {
     await this.ensureVersionFolder(folder);
     const path = obsidian.normalizePath(`${folder}/${fileName}`);
-    if (await this.host.app.vault.adapter.exists(path)) {
+    if (await this.host.vault.adapter.exists(path)) {
       throw new Error(t("Version cache file already exists"));
     }
     let file;
     try {
-      file = await this.host.app.vault.create(path, content);
+      file = await this.host.vault.create(path, content);
     } catch (error) {
-      if (await this.host.app.vault.adapter.exists(path)) {
+      if (await this.host.vault.adapter.exists(path)) {
         throw new Error(t("Version cache file already exists"));
       }
       throw error;
     }
-    if (await this.host.app.vault.adapter.read(path) !== content) throw new Error(t("Could not verify version metadata"));
+    if (await this.host.vault.adapter.read(path) !== content) throw new Error(t("Could not verify version metadata"));
     return file;
   }
 
   async saveVersion(sourceFile, sourceContent, segments, versionInput) {
     const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
     const sourceHash = getSegmentsHash(segments);
-    const folder = getVersionStoreFolder(this.host.settings, sourceId);
+    const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
     return this.withManifestLock(sourceId, async () => {
       const manifest = await this.readStrictVersionManifest(folder, sourceId);
       const createdAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
@@ -282,7 +292,7 @@ export class VersionStore {
       let fileName = `${sanitizeFilename(id) || id}.md`;
       let suffix = 2;
       while (versions.some((record) => record && (record.id === id || record.fileName === fileName))
-        || await this.host.app.vault.adapter.exists(obsidian.normalizePath(`${folder}/${fileName}`))) {
+        || await this.host.vault.adapter.exists(obsidian.normalizePath(`${folder}/${fileName}`))) {
         id = `${baseId}-${suffix}`;
         fileName = `${sanitizeFilename(id) || id}.md`;
         suffix++;
@@ -361,10 +371,10 @@ export class VersionStore {
     const existingClean = variantKind === "clean"
       ? this.findDerivedNoteForSource(sourceFile, sourceId, variantKind)
       : null;
-    const stableExisting = this.host.app.vault.getAbstractFileByPath(stableTarget);
+    const stableExisting = this.host.vault.getAbstractFileByPath(stableTarget);
     const stableIsOwnedClean = variantKind === "clean" && stableExisting instanceof obsidian.TFile
       && matchesDerivedNote(
-        this.host.app.metadataCache.getFileCache(stableExisting)?.frontmatter || {},
+        this.host.getFileFrontmatter(stableExisting) || {},
         sourceId,
         sourcePath,
         variantKind,
@@ -372,10 +382,10 @@ export class VersionStore {
     let target = existingClean?.path
       || (stableExisting instanceof obsidian.TFile && (variantKind !== "clean" || stableIsOwnedClean)
         ? stableTarget
-        : findAvailableMarkdownPath(this.host.app, stableTarget));
+        : findAvailableMarkdownPath(this.host, stableTarget));
     if (!target) throw new Error(t("Failed to generate a path for the derived minutes file"));
 
-    const sourceFm = ((this.host.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
+    const sourceFm = this.host.getFileFrontmatter(sourceFile) || {};
     const versionFm = version && version.frontmatter
       ? (() => { try { return obsidian.parseYaml(splitLeadingFrontmatter(version.frontmatter).frontmatter.replace(/^---\n|\n---\n?$/g, "")) || {}; } catch { return {}; } })()
       : {};
@@ -401,39 +411,39 @@ export class VersionStore {
       ? `> [!note] 从母本逐字稿忠实清理 · 母本：[[${sourceFile.basename}]]`
       : `> [!info] 基于原始转写重新生成 · 原始纪要：[[${sourceFile.basename}]]`;
     const content = `---\n${yaml.trimEnd()}\n---\n\n${heading}${backlink}\n\n${body}\n`;
-    let existing = this.host.app.vault.getAbstractFileByPath(target);
+    let existing = this.host.vault.getAbstractFileByPath(target);
     const existingFm = existing instanceof obsidian.TFile
-      ? this.host.app.metadataCache.getFileCache(existing)?.frontmatter || {}
+      ? this.host.getFileFrontmatter(existing) || {}
       : {};
     const mayReplace = existing instanceof obsidian.TFile
       && (variantKind !== "clean"
         || existingClean?.path === existing.path
         || matchesDerivedNote(existingFm, sourceId, sourcePath, variantKind));
     if (mayReplace && existing instanceof obsidian.TFile) {
-      await this.host.app.vault.modify(existing, content);
+      await this.host.vault.modify(existing, content);
     } else {
       if (existing) {
-        target = findAvailableMarkdownPath(this.host.app, stableTarget);
+        target = findAvailableMarkdownPath(this.host, stableTarget);
         if (!target) throw new Error(t("Failed to generate a path for the derived minutes file"));
-        existing = this.host.app.vault.getAbstractFileByPath(target);
+        existing = this.host.vault.getAbstractFileByPath(target);
       }
       if (!(existing instanceof obsidian.TFile)) {
         try {
-          existing = await this.host.app.vault.create(target, content);
+          existing = await this.host.vault.create(target, content);
         } catch (error) {
-          const raced = this.host.app.vault.getAbstractFileByPath(target);
+          const raced = this.host.vault.getAbstractFileByPath(target);
           const racedFm = raced instanceof obsidian.TFile
-            ? this.host.app.metadataCache.getFileCache(raced)?.frontmatter || {}
+            ? this.host.getFileFrontmatter(raced) || {}
             : {};
           if (raced instanceof obsidian.TFile
             && (variantKind !== "clean" || matchesDerivedNote(racedFm, sourceId, sourcePath, variantKind))) {
-            await this.host.app.vault.modify(raced, content);
+            await this.host.vault.modify(raced, content);
             existing = raced;
           } else if (raced) {
-            const alternate = findAvailableMarkdownPath(this.host.app, stableTarget);
+            const alternate = findAvailableMarkdownPath(this.host, stableTarget);
             if (!alternate || alternate === target) throw error;
             target = alternate;
-            existing = await this.host.app.vault.create(target, content);
+            existing = await this.host.vault.create(target, content);
           } else {
             throw error;
           }
@@ -441,7 +451,7 @@ export class VersionStore {
       }
     }
     if (existing instanceof obsidian.TFile) {
-      await this.host.noteIndex.refreshNoteIndexSafely(existing, {
+      await this.host.refreshNoteIndexSafely(existing, {
         meetingDate: readNamespaceFrontmatter(derivedFm, "time") || derivedFm["日期"] || derivedFm.date || "",
         reason: "derived-note",
       });
@@ -450,7 +460,7 @@ export class VersionStore {
   }
 
   async applyVersionToSource(sourceFile, versionMeta, body, frontmatter = "") {
-    const cur = await this.host.app.vault.read(sourceFile);
+    const cur = await this.host.vault.read(sourceFile);
     const sourceOriginal = versionMeta?.kind === "source-original" || versionMeta?.kind === "pre-clean";
     const withFrontmatter = replaceLeadingFrontmatter(cur, frontmatter, sourceOriginal);
     // 标题跟随当前显示版本；回退日期优先取本次内容的 time，再取版本创建时间。
@@ -459,14 +469,15 @@ export class VersionStore {
     // 标题模式段与改名文件名同源（getModePrefix，随界面语言）；清稿等未知模式回退到版本标签。
     const modeKey = String((versionMeta && versionMeta.mode) || "");
     const labelFallback = String((versionMeta && (versionMeta.label || versionMeta.kind)) || "当前版本").split(" · ")[0].trim() || "当前版本";
-    const titleSuffix = isKnownPolishMode(this.host.settings, modeKey)
-      ? getModePrefix(getModeMeta(this.host.settings, modeKey))
+    const settings = this.host.getSettings();
+    const titleSuffix = isKnownPolishMode(settings, modeKey)
+      ? getModePrefix(getModeMeta(settings, modeKey))
       : labelFallback;
     const withTitle = applyVersionTitle(withFrontmatter, titleSuffix, fallbackDatetime);
     // 原始转写区规范化：未收尾的母本首次激活时把裸露分段折叠并补「原始材料」标题。
     const next = foldRawTranscriptSection(replaceActiveVersionBlock(withTitle, versionMeta, body));
-    if (next !== cur) await this.host.app.vault.modify(sourceFile, next);
-    await this.host.noteIndex.refreshNoteIndexSafely(sourceFile, { reason: "version-switch" });
+    if (next !== cur) await this.host.vault.modify(sourceFile, next);
+    await this.host.refreshNoteIndexSafely(sourceFile, { reason: "version-switch" });
   }
 
 
@@ -475,10 +486,10 @@ export class VersionStore {
     const versionPath = typeof versionFile === "string" ? obsidian.normalizePath(versionFile) : versionFile.path;
     if (!versionPath) return;
     const content = indexedFile
-      ? await this.host.app.vault.read(indexedFile)
-      : await this.host.app.vault.adapter.read(versionPath);
+      ? await this.host.vault.read(indexedFile)
+      : await this.host.vault.adapter.read(versionPath);
     const parts = splitLeadingFrontmatter(content);
-    const cachedFm = indexedFile ? this.host.app.metadataCache.getFileCache(indexedFile)?.frontmatter : null;
+    const cachedFm = indexedFile ? this.host.getFileFrontmatter(indexedFile) : null;
     const parsedFm = parseFrontmatterObject(parts.frontmatter);
     if (parts.frontmatter && !parsedFm) {
       new obsidian.Notice(t("Could not read version metadata"), 6000);
@@ -493,18 +504,18 @@ export class VersionStore {
     }
     const storedSourcePath = readNamespaceFrontmatter(fm, "sourcePath");
     const normalizedStoredPath = typeof storedSourcePath === "string" ? obsidian.normalizePath(storedSourcePath) : "";
-    let sourceFile = normalizedStoredPath ? this.host.app.vault.getAbstractFileByPath(normalizedStoredPath) : null;
+    let sourceFile = normalizedStoredPath ? this.host.vault.getAbstractFileByPath(normalizedStoredPath) : null;
     if (!(sourceFile instanceof obsidian.TFile) && fallbackSourcePath) {
-      const fallback = this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(fallbackSourcePath));
+      const fallback = this.host.vault.getAbstractFileByPath(obsidian.normalizePath(fallbackSourcePath));
       if (fallback instanceof obsidian.TFile) sourceFile = fallback;
     }
     if (!(sourceFile instanceof obsidian.TFile)) {
       new obsidian.Notice(t("Master copy not found; cannot switch versions."), 6000);
       throw new Error(t("Master copy not found; cannot switch versions."));
     }
-    const sourceContentForId = await this.host.app.vault.read(sourceFile);
+    const sourceContentForId = await this.host.vault.read(sourceFile);
     const sourceId = getSourceIdFromMarkdown(sourceContentForId, sourceFile);
-    const folder = getVersionStoreFolder(this.host.settings, sourceId);
+    const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
     if (!indexedFile) {
       const versionId = typeof fm.version_id === "string" ? fm.version_id : "";
       const kind = typeof fm.variant_kind === "string" ? fm.variant_kind : "";
@@ -524,14 +535,22 @@ export class VersionStore {
     }
     const versionParts = splitVersionPayload(parts.body);
     const body = sanitizeActiveVersionBody(versionParts.body);
+    const versionId = fm.version_id;
+    const versionKind = fm.variant_kind;
     const meta = {
-      id: String(fm.version_id || versionPath.slice(versionPath.lastIndexOf("/") + 1).replace(/\.md$/i, "")),
-      kind: String(fm.variant_kind || ""),
-      label: String(fm.variant_label || fm.variant_kind || "版本"),
-      mode: String(fm.variant_mode || ""),
-      style: String(fm.variant_style || ""),
-      sourceHash: String(fm.source_segments_hash || ""),
-      createdAt: String(fm.created || ""),
+      id: typeof versionId === "string" && versionId
+        ? versionId
+        : versionPath.slice(versionPath.lastIndexOf("/") + 1).replace(/\.md$/i, ""),
+      kind: typeof versionKind === "string" ? versionKind : "",
+      label: typeof fm.variant_label === "string" && fm.variant_label
+        ? fm.variant_label
+        : typeof versionKind === "string" && versionKind ? versionKind : "版本",
+      mode: typeof fm.variant_mode === "string" ? fm.variant_mode : "",
+      style: typeof fm.variant_style === "string" ? fm.variant_style : "",
+      sourceHash: typeof fm.source_segments_hash === "string" ? fm.source_segments_hash : "",
+      createdAt: typeof fm.created === "string"
+        ? fm.created
+        : Object.prototype.toString.call(fm.created) === "[object Date]" ? Date.prototype.toString.call(fm.created) : "",
     };
     if (!meta.kind.trim()) {
       new obsidian.Notice(t("Could not read version metadata"), 6000);
@@ -549,7 +568,7 @@ export class VersionStore {
       }
     }
     if (meta.kind === "clean") {
-      const currentSource = await this.host.app.vault.read(sourceFile);
+      const currentSource = await this.host.vault.read(sourceFile);
       const currentParts = splitLeadingFrontmatter(currentSource);
       const currentYaml = parseFrontmatterObject(currentParts.frontmatter);
       const versionYaml = parseFrontmatterObject(contentFrontmatter);
@@ -573,7 +592,7 @@ export class VersionStore {
         throw new Error(t("Could not verify version metadata"));
       }
     });
-    await this.host.app.workspace.getLeaf(false).openFile(sourceFile);
+    await this.host.openSourceFile(sourceFile);
     new obsidian.Notice(`${t("Switched to version: ")}${meta.label}`, 3000);
   }
 }
