@@ -8,7 +8,7 @@ import { getAudioTimeLink, getSegmentAudioLinkOffsetMs } from "./audio-refs";
 
 import { cleanRealtimeOutlineItemText, makeRealtimeOutlineNode, normalizeRealtimeOutlineList, parseRealtimeOutlineStateFromMarkdown } from "./outline-text";
 
-import { normalizeAudioInputMode } from "../ui/helpers";
+import { normalizeAudioInputMode } from "../audio/audio-input";
 
 
 

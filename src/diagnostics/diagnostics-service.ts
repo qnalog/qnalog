@@ -3,7 +3,7 @@
 
 import * as obsidian from "obsidian";
 import { getDesktopProcess } from "../shared/desktop-runtime";
-import { audioInputModeLabel } from "../ui/helpers";
+import { audioInputModeLabel } from "../audio/audio-input";
 import { normalizeAsrConcurrency } from "../asr/transcribe";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "../asr/live-segment-policy";

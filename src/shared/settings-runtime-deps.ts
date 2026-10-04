@@ -1,5 +1,4 @@
 import type {
-  AudioInputMode,
   KnowledgeExtractionHistory,
   KnowledgeExtractionRecord,
   LlmAsrSnapshot,
@@ -10,7 +9,6 @@ import type {
 } from "./types";
 import { t } from "./i18n";
 
-const AUDIO_INPUT_MODES = new Set<AudioInputMode>(["mic", "mix-virtual", "virtualCable"]);
 const PEOPLE_CONTEXT_MODES = new Set<PeopleContextMode>(["privacy", "hotwords", "localFull"]);
 const PEOPLE_SUGGESTION_CACHE_LIMIT = 500;
 
@@ -26,13 +24,6 @@ function normalizeVaultPath(value: string): string {
   return value.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
-export function normalizeAudioInputMode(value: unknown): AudioInputMode {
-  if (value === "mix") return "mix-virtual";
-  if (value === "system") return "virtualCable";
-  return typeof value === "string" && AUDIO_INPUT_MODES.has(value as AudioInputMode)
-    ? value as AudioInputMode
-    : "mic";
-}
 
 export function normalizeAsrConcurrency(value: unknown): number {
   const number = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;

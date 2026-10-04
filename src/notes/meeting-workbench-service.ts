@@ -2,6 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：会中工作台：互动排队与执行、实时转写块写入
 
 import * as obsidian from "obsidian";
+import { findNoteMarkerOffset } from "./note-document";
 import { callLlm } from "../llm/core";
 import { formatElapsed, genId } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -331,15 +332,15 @@ export class MeetingWorkbenchService {
     const body = safe || "> _（等待说话…）_";
     const block = `${startMarker}\n> [!quote]+ 实时转写中…\n${body}\n${endMarker}`;
     const cur = await this.host.app.vault.read(file);
-    const startIdx = cur.indexOf(startMarker);
-    const endIdx = cur.indexOf(endMarker);
+    const startIdx = findNoteMarkerOffset(cur, startMarker, "first");
+    const endIdx = findNoteMarkerOffset(cur, endMarker, "first");
     if (startIdx >= 0 && endIdx > startIdx) {
       const next = cur.slice(0, startIdx) + block + cur.slice(endIdx + endMarker.length);
       if (next !== cur) await this.host.app.vault.modify(file, next);
       return;
     }
     const segEnd = nsMarker("segments-end", sessionId);
-    const segIdx = cur.indexOf(segEnd);
+    const segIdx = findNoteMarkerOffset(cur, segEnd, "first");
     if (segIdx >= 0) {
       const next = cur.slice(0, segIdx) + block + "\n" + cur.slice(segIdx);
       await this.host.app.vault.modify(file, next);
@@ -355,18 +356,18 @@ export class MeetingWorkbenchService {
     // 1.0.0 写的是 `lv-live-*`。两种都找，否则升级前中断的录音会在笔记里
     // 留下一个再也不会被清理的"实时转写中…"引用块。
     const findMarker = (primary, legacyName) => {
-      const at = cur.indexOf(primary);
-      if (at >= 0) return at;
+      const at = findNoteMarkerOffset(cur, primary, "first");
+      if (at >= 0) return { at, marker: primary };
       for (const candidate of nsMarkerLegacyVariants(legacyName, sessionId)) {
-        const legacyAt = cur.indexOf(candidate);
-        if (legacyAt >= 0) return legacyAt;
+        const legacyAt = findNoteMarkerOffset(cur, candidate, "first");
+        if (legacyAt >= 0) return { at: legacyAt, marker: candidate };
       }
-      return -1;
+      return null;
     };
-    const startIdx = findMarker(startMarker, NS_LIVE_MARKER_START);
-    const endIdx = findMarker(endMarker, NS_LIVE_MARKER_END);
-    if (startIdx < 0 || endIdx < 0) return;
-    const next = cur.slice(0, startIdx).replace(/\n+$/, "") + cur.slice(endIdx + endMarker.length).replace(/^\n+/, "\n");
+    const start = findMarker(startMarker, NS_LIVE_MARKER_START);
+    const end = findMarker(endMarker, NS_LIVE_MARKER_END);
+    if (!start || !end) return;
+    const next = cur.slice(0, start.at).replace(/\n+$/, "") + cur.slice(end.at + end.marker.length).replace(/^\n+/, "\n");
     await this.host.app.vault.modify(file, next);
   }
 }

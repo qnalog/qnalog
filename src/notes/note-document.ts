@@ -1,12 +1,18 @@
 import {
   NS_ACTIVE_VERSION_BODY_RE,
+  NS_MACHINE_SHELL_RE,
   NS_SEDIMENT_BLOCK_RE,
   NS_SEGMENTS_BLOCK_RE,
   NS_SESSION_LINE_RE,
   NS_SESSION_VALUE_RE,
   nsMarker,
+  nsRe,
 } from "../shared/namespace";
 import { UTILITY_DETAILS_SUMMARY_RE } from "../shared/note-labels";
+
+export function stripFrontmatterSimple(text: string): string {
+  return String(text || "").replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+}
 
 const UTILITY_DETAILS_BLOCK_RE = new RegExp(
   String.raw`<details>\s*<summary>[^<]*${UTILITY_DETAILS_SUMMARY_RE.source}[^<]*<\/summary>[\s\S]*?<\/details>`,
@@ -29,6 +35,18 @@ export function findFirstNoteBoundary(markdown: string, patterns: readonly RegEx
     if (index >= 0 && index < boundary) boundary = index;
   }
   return boundary;
+}
+
+export function findNoteMarkerOffset(markdown: string, marker: string, occurrence: "first" | "last"): number {
+  const text = String(markdown || "");
+  return occurrence === "first" ? text.indexOf(marker) : text.lastIndexOf(marker);
+}
+
+export function findRawMaterialInsertionOffset(markdown: string): number {
+  const text = String(markdown || "");
+  const masked = text.replace(NS_MACHINE_SHELL_RE, (block) => " ".repeat(block.length));
+  const rawPos = masked.search(new RegExp(`<details\\b|<!--\\s*${nsRe("segments-start")}`, "i"));
+  return rawPos < 0 ? -1 : text.lastIndexOf("\n", rawPos) + 1;
 }
 
 export interface NoteDelimitedBlockRange {

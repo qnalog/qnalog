@@ -15,11 +15,6 @@ vi.mock("obsidian", () => ({
 }));
 
 vi.mock("../src/shared/settings-runtime-deps", () => ({
-  normalizeAudioInputMode: (value: unknown) => {
-    if (value === "mix") return "mix-virtual";
-    if (value === "system") return "virtualCable";
-    return value === "mic" || value === "mix-virtual" || value === "virtualCable" ? value : "mic";
-  },
   normalizeAsrConcurrency: (value: unknown) => {
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(1, Math.min(3, Math.floor(number))) : 1;

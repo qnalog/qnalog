@@ -1,15 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
-vi.mock("obsidian", () => ({
-  normalizePath: (p: string) => String(p || ""),
-  TFile: class {}, TFolder: class {},
-}));
-import { classifyAudioInputDevices, describeAudioDeviceAvailability, pickComputerAudioDevices } from "../src/ui/helpers";
+import { describe, expect, it } from "vitest";
+import { classifyAudioInputDevices, describeAudioDeviceAvailability, normalizeAudioInputMode, pickComputerAudioDevices } from "../src/audio/audio-input";
 
 // 「麦克风」下拉必须列出全部输入设备，虚拟声卡不能因为名字像虚拟设备就被藏掉：
 // 用户可能就想用虚拟声卡录人声，也可能自己的实体麦克风名字里带 SoundWire 之类关键词，
 // 过滤会把他真正的麦克风弄丢。这里锁定「分类只影响分组与标注，不减少可选项」。
 
 const dev = (deviceId: string, label: string, kind = "audioinput") => ({ deviceId, label, kind });
+
+describe("音频输入模式归一化", () => {
+  it("保留 canonical 模式并归一化历史别名与未知值", () => {
+    expect(normalizeAudioInputMode("mic")).toBe("mic");
+    expect(normalizeAudioInputMode("mix-virtual")).toBe("mix-virtual");
+    expect(normalizeAudioInputMode("virtualCable")).toBe("virtualCable");
+    expect(normalizeAudioInputMode("mix")).toBe("mix-virtual");
+    expect(normalizeAudioInputMode("system")).toBe("virtualCable");
+    expect(normalizeAudioInputMode("unknown")).toBe("mic");
+    expect(normalizeAudioInputMode(null)).toBe("mic");
+  });
+});
 
 describe("音频输入设备分类", () => {
   it("虚拟声卡与实体麦克风都留在列表里，只按名字分到不同组", () => {

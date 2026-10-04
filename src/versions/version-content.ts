@@ -1,5 +1,5 @@
-import { NS_FM, NS_TAG, NS_MACHINE_SHELL_RE, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
-import { splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
+import { NS_FM, NS_TAG, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
+import { findRawMaterialInsertionOffset, splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END } from "../shared/limits";
 import { labelText } from "../shared/note-labels";
 
@@ -135,11 +135,8 @@ export function foldRawTranscriptSection(markdown: string): string {
       return `<details>\n<summary>${labelText("segmentedRawTranscript", count)}</summary>\n\n${String(block).trim()}\n\n</details>`;
     });
   }
-  // 机器壳（索引数据/沉淀数据）不是原始材料锚点：等长遮蔽后再定位，
-  // 否则裸尾（没有原始块）时标题会被插到折叠壳前面。
-  const masked = tail.replace(NS_MACHINE_SHELL_RE, (m) => " ".repeat(m.length));
-  const rawPos = masked.search(new RegExp(`<details\\b|<!--\\s*${NS_TAG}-segments-start`, "i"));
-  if (rawPos < 0) return head + tail;
-  const lineStart = tail.lastIndexOf("\n", rawPos) + 1;
-  return head + tail.slice(0, lineStart) + `## ${labelText("originalMaterial")}\n\n` + tail.slice(lineStart);
+  // Machine shells are not raw-material anchors; the document layer returns the original tail's line start.
+  const rawOffset = findRawMaterialInsertionOffset(tail);
+  if (rawOffset < 0) return head + tail;
+  return head + tail.slice(0, rawOffset) + `## ${labelText("originalMaterial")}\n\n` + tail.slice(rawOffset);
 }

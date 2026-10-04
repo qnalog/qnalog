@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：录音问题分类与运行模式归一
 
 import * as obsidian from "obsidian";
-import { normalizeAudioInputMode } from "../ui/helpers";
+import { normalizeAudioInputMode } from "../audio/audio-input";
 
 import { isMobileRuntime } from "../shared/util-platform";
 

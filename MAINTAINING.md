@@ -478,8 +478,9 @@ frontmatter 仍有 `time`、运行期没有异常日志。
    - **P1.1 已完成：短续录 discard 与恢复队列一致性**。finalizer 先持久化 `continuationDisposition: "discard"`，清理成功后移除任务；清理失败时保留带意图的 failed 任务，由重试只清理 stage。真实服务与 TaskQueue 测试覆盖目标原文保全、各类清理/保存失败、JSON 重载和幂等重试；独立临时目录文件系统冒烟通过。维护者在 `fresh` 的真实 Obsidian 中确认 2 秒续录丢弃、4/8 秒续录正常追加；保留现有 3 秒分界及 3–10 秒续录规则。
    - **P1.2（部分完成）**：`OutlineView` 的初稿链接在有有效快照时显示「初稿」/ “Original”，而派生稿继续显示其类型；重新整理任务、通知和进度日志使用界面模式名称，不改变派生文件前缀与版本记录。安装提示现按设置结构版本政策说明读取、迁移、未来版本只读和无法识别数据的备份重建。消费者测试及临时文件系统服务冒烟通过；未安装，真实宿主显示未确认。机器数据在实时预览/阅读视图的展示、知识提取 `partial` 的历史响应原因仍待独立取证；`invalid-json` 不是落盘 JSON 损坏的证据。
    - **P1.3 已完成：并行开发验证隔离**。负向漏装 fixture 只在内存中变换 `src/main.ts` 并写入独占临时 bundle；真实 bundle 正向通过、临时漏装失败并指出字段；并行构建/检查时 `src/main.ts`、根 `main.js` 和 `manifest.json` 的 SHA-256 保持不变。
-   - **P2.1：A6 笔记结构操作完整归属**。在同一验收矩阵中完成会话写入定位、分段账本边界与机器标记操作迁移；盘点所有消费者、删除旧转发出口，并保留两种布局、旧格式、账本和原稿不变量。三个写入定位策略各自不同的首末选择、缺失回退与错误行为不得被合并改义；A6 整体未完成。
-   - **P2.2：A10 非 DOM 辅助函数归属**。将实际纯函数迁到所属领域，迁移所有消费者、删除旧 UI 出口并精确收缩 `uiImportsFromNonUi` 基线。确认、废纸篓等真实宿主交互保留；不以非 UI→UI 依赖数量归零为目标。
+   - **笔记内容损坏修复**：实时转写块清理现在按实际匹配的结束标记长度截断；分段转写按字面量插入，不解释 `$&` 等替换模板字符。服务消费者回归测试覆盖完整 Markdown 保存结果、旧/新标记、其他会话、缺标记不写、会话标记选择和追加回退；续录缺少插入边界时拒绝写入并保留原文。临时目录文件系统冒烟实际调用两个服务方法，确认旧标记后的 Unicode/多行正文保留、替换模板字符原样写入。未进行真实 Obsidian 宿主验证。
+   - **P2.1 已完成：A6 笔记结构操作归属**。`note-document.ts` 现在提供首/末字面标记偏移、原始材料锚点行首定位与原有前言剥离；NoteWriter、QueueRetryService、MeetingWorkbenchService、VersionContent 使用共享位置操作。协议语义仍由逐字稿账本、会话知识、索引和沉淀模块各自拥有；§14.4 记录消费者矩阵与保留理由。写入策略、两种布局、旧格式、机器壳和账本不变量由消费者测试覆盖。
+   - **P2.2 已完成：A10 非 UI 对 UI 辅助依赖**。音频输入模式、标签、设备分类/可用性纯函数迁入 `audio/audio-input.ts`；前言剥离归入 `note-document.ts`。五个非 UI `ui/helpers` 基线例外已移除；设备枚举、确认、弹窗、外链与废纸篓仍留在 UI/宿主交互层。
    - **P2.3：关键持久化域的类型与能力闭合（A2、A7及必要 A9）**。范围限于录音/续录终止、队列恢复、笔记写入和版本保全所有者；先按实际状态与 Host 契约收窄能力，再纳入严格核心检查。不得用 `any`、ignore 或 `@ts-nocheck` 绕过；不混入 P1 用户问题，也不按纳入文件数验收。
 5. **P3：A8 沉淀交互控制器**。一次定义并验收扫描、取消、自动推进、提交、撤销及 DOM 边界；不按 OutlineView 行数重拆整个界面。真实视觉验证仍由维护者完成。
 6. **条件任务**：A12 的索引写入及笔记布局方案由维护者决定；未决定前保留两种布局和索引写入。历史流式任务恢复只在实际恢复需求出现时调查，不因 #83 续录恢复而关闭。真实 Obsidian、设备、模型/ASR 服务补验只在需要的场景执行，不阻塞无关离线任务。
@@ -492,6 +493,9 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 | 初稿/派生稿及重新整理模式显示 | 快照子行显示本地化「初稿」/ “Original”；任务、忙碌状态、通知和完成日志使用界面模式名称；磁盘前缀及版本标签不变 | 真实服务、版本存储、任务状态与 DOM 消费者测试通过；临时文件系统冒烟观察 running→done、派生文件/manifest、标签和切换目标；安装器临时知识库 CLI 确认 data.json 与备份字节保全 | 未进行真实 Obsidian 宿主验证 | 无 |
 | 机器注释/partial 知识 | 结构可读，`partial` 与 `invalid-json` 状态存在 | 协议与解析测试可证明数据读取，不证明编辑器显示或历史模型响应 | 实时预览、源码、阅读视图及服务响应均未核实 | 不隐藏/删除状态；展示方式后续评估 |
 | 负向装配 fixture | `createBuildOptions` 可导入且无副作用；checker 支持独立 bundle 路径 | 正向/漏装及并发 fixture 测试通过；源码、根产物、manifest 哈希不变；无变换生产临时 bundle 与根产物逐字节一致 | 不适用 | 无 |
+| 笔记写入内容保全 | 实时转写清理按匹配标记实际长度截断；分段内容按字面量写入；续录缺少边界时拒写 | 消费者测试断言完整 Markdown；临时目录文件系统冒烟检查旧标记尾部和 `$&` 等字面量；`npm run verify` 及 `typecheck:core` 通过 | 未进行真实 Obsidian 宿主验证 | 无 |
+| 笔记结构操作归属（A6） | `note-document.ts` 管理外层、活动版本、details、会话范围、字面标记偏移与原始材料锚点位置；账本及 JSON 协议保持各自领域所有者 | `note-markdown-characterization`、`version-content`、`machine-block-fold`、`continuation-commit`、`transcript-queue-retry`、`short-recording-flow`、`meeting-workbench-service` 测试通过；覆盖两种布局、首/末选择、缺失回退、账本/原稿保全、机器壳伪锚点与双语折叠 | 本批未进行真实 Obsidian 验证；代码仅迁移结构操作归属 | 无 |
+| 音频输入与前言辅助归属（A10） | 音频模式与设备纯函数位于 `audio/audio-input.ts`；简单前言剥离位于 `note-document.ts`；宿主设备枚举及确认交互仍由 UI 承担 | 设备分类、模式归一化、设置读写、笔记邮件摘要、设置助手及架构基线测试通过；strict-core typecheck 通过 | 本批未进行真实 Obsidian 验证；无界面行为改动 | 无 |
 | A12 索引/布局 | 当前两种行为都保留 | 对应 policy/format contracts 已登记 | 本轮未做宿主测试 | 维护者决定 |
 
 **A6 本批宿主反馈与独立观察（2026-10-01）**
@@ -1394,8 +1398,8 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 
 - `src/main.ts` 作为装配入口、`check:architecture` 以基线阻止新增依赖，方向正确。
 - A1、A3、A4 的代码问题已由对应阶段处理；A2 的完整 Host 能力门禁与行为检查已完成，存量宽能力尚未收窄。代码完成不代替 §6 所列人工场景验证。
-- A6 已统一外层结构、活动版本读取、工具 details 壳、旧转写容器成对边界及空会话移除范围；分段账本其余边界、写入定位和机器注释仍待统一。A7 继续逐文件扩大严格类型覆盖。
-- 第一阶段已修门禁与明确模块归属；后续仅收敛既有 Markdown 处理职责，不改变用户可见功能。A6 整体未完成，#93 不是完整文档模型。
+- A6 的共享结构几何操作已归入 `note-document.ts`；逐字稿账本、会话知识、索引与沉淀保留协议所有者，消费者范围与自动验收见 §6、§14.4。A7 继续逐文件扩大严格类型覆盖。
+- 本阶段只归并现有 Markdown 位置/范围职责和纯函数所有者，不改变格式或恢复规则；A6 消费者矩阵已闭合，不引入统一 payload 解析器。
 
 ### 14.2 问题清单
 
@@ -1406,11 +1410,11 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 |A3|录音会话曾挂在插件对象上的全局可变状态|原评审依据：`RecordingSession` 在 `src/shared/types.ts:403` 起约 100 行可选字段，`host.session =` 9 处，10 个 Host 声明 `session`，OutlineView 直接改写 `session.meetingWorkbench`|已由 #83 合并；续录期间成功已确认，其他人工场景逐项状态见 §6|
 |A4|门禁输出“环状分量 0”曾未覆盖运行时环|原评审依据为装配别名导致的 Recording / SessionFinalize 双向调用及指向 RecordingService 的别名|已由 #83 合并；当前静态图见 §13.1 最新带日期快照；人工场景记录见 §6|
 |A5|基础组件反向调用界面|`TaskQueue` 原有 4 处直接调用 `plugin.shell.refreshOutlineView()`（`src/queue/task-queue.ts`）；这违反基础组件不得反向调用高层工作流的约定|已完成（分支 `refactor/architecture-phase1`）|
-|A6|笔记 Markdown 尚无完整统一的文档模型|至少 10 个模块仍各自处理不同的 Markdown 结构；外层 frontmatter、活动版本完整范围、工具 details 壳、原始材料与会话 ID 操作已集中到 `notes/note-document.ts`，索引、语义图、会话知识和原稿保护已使用活动版本范围读取。逐字稿账本、机器注释与其他结构仍由原模块负责；标记字面量集中在 `shared/namespace.ts`|分批推进；A6 未完成|
+|A6|笔记 Markdown 缺少明确的结构操作所有者|`note-document.ts` 统一外层 frontmatter、活动版本范围、details/heading 范围、会话范围、首末标记位置、原始材料锚点与简单前言剥离；`transcript-markdown`、`session-knowledge`、`note-index`、`sediment` 保留各自的数据协议|本批闭合结构操作消费者矩阵；协议语义仍由领域模块负责，详见 §14.4|
 |A7|类型检查覆盖不足|`tsconfig.json` 的 `noImplicitAny`、`strictNullChecks` 均为 false；**2026-09-30 评审时记录**：全仓开启 `strictNullChecks` 有 803 处错误，前五名为 `ui/outline-view.ts` 132、`notes/session-finalize-service.ts` 66、`people/index.ts` 57、`audio/recording-service.ts` 45、`notes/note-markdown.ts` 44；另有 78 个文件在文件头关闭整组 `no-unsafe-*` 规则|第二阶段|
 |A8|OutlineView 沉淀簇|**2026-09-30 评审时记录**：`src/ui/outline-view.ts:1189-3839` 约 2,650 行，占文件 41%；`sedimentGroup`、`sedimentScanToken`、`sedimentToastTimer` 等状态位于 331-365 行；扫描令牌、自动推进、撤销与提交和 DOM 同处一个类|第三阶段|
 |A9|目录归属不清|`src/` 根目录原有 8 个领域文件：outline-text、outline-coordinator、outline-finalizer、recent-note-paths、version-content、report-templates、update-service、update-source；`shared/` 有领域逻辑；`shared/types.ts` 反向 import transcript 与 ASR；`people/index.ts`（939 行）、`sediment/index.ts`（568）、`setup/index.ts`（609）、`vocabulary/index.ts`（258）是实现文件而非汇总导出|根目录 8 个文件已完成（分支 `refactor/architecture-phase1`）；其余第二阶段|
-|A10|非 UI 模块依赖 `src/ui/`|**2026-09-30 评审时记录**：基线 `uiImportsFromNonUi` 登记 14 个文件，其中 7 个依赖 `ui/helpers.ts`|第二阶段|
+|A10|非 UI 模块依赖 `src/ui/`|原基线登记 14 个文件，其中 7 个依赖 `ui/helpers.ts`；本批将音频纯函数与前言剥离移到领域模块|已移除 recording-service、diagnostics-service、note-markdown、realtime-outline、recording-issues 五项旧 helpers 例外；保留真实交互依赖|
 |A11|门禁自身有缺陷|`scripts/check-legacy-prefixes.mjs` 的 `ALLOWED` 有一条指向不存在的 `src/ui/outline-text.ts`，脚本此前未检查登记路径是否存在；`scripts/check-domain-boundaries.mjs` 的类成员与引用识别仍使用正则|失效 `ALLOWED` 检查已完成（分支 `refactor/architecture-phase1`）；正则识别问题只记录|
 |A12|待决：两条并行路径|`qnalog-note-index` 在收尾、重试、版本切换等路径写入；`readNoteIndex` 只由 `indexing/note-index.ts` 内部调用，插件内没有读取方。笔记写入由 `consolidatedLayout` 选择 `rewriteConsolidated` 或 `appendPolishBlock`；导入来源另由 `note-layout-policy.ts` 强制使用 rewrite|待维护者决定|
 |A13|低优先级事实|**2026-09-30 评审时记录**：`styles.css` 12,625 行；855 个 `qnalog-*` 类中 18 个在 `src/` 找不到字面引用（11 个 `qnalog-diag-*`、5 个 `qnalog-device-status-*`、`qnalog-sediment-item-summary`、`qnalog-folder-warn`）；`main.js` 1.59 MB，其中中文词条表约 365 KB，其余为本仓库源码，唯一运行时依赖为 `ws`|记录|
@@ -1449,9 +1453,19 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 2. **P1.1 短续录终止与恢复任务一致性**：一次性内存冒烟实际执行真实 `ContinuationService.prepare` → `RecordingService.handleSegment` → `SessionFinalizeService.finalizeSession`；2000ms discard 后目标正文（含活动版本块与历史 ledger）逐字未变、stage 被删除、session finalized 且 tracking 释放，但合并任务仍为 `pending` 且 `segments=[]`。队列更新由内存 host 实现；尚未执行实际 TaskQueue 持久化重载/重试或真实 Obsidian。完整规格与边界见 §6；不据此改动 3–10 秒续录豁免。
 3. **P1.2（部分完成）用户反馈及对外行为说明**：初稿链接显示本地化身份，重新整理 UI 模式名称与安装脚本设置政策提示已修正并完成自动消费者/临时文件系统验收；真实宿主尚未验证。编辑/阅读视图中的机器数据展示及历史知识快照 `partial` 原因仍待授权证据，`invalid-json` 不代表落盘 JSON 损坏。
 4. **P1.3 已完成：负向构建 fixture 隔离**：`tests/plugin-onload.test.ts` 使用 `esbuild` API 从内存变换真实 `src/main.ts`，构建到每次独占的临时目录；没有改写共享源码/产物。正向、漏装、并发检查、错误参数均通过，源码与根 `main.js`、manifest 的哈希稳定，工厂生成的无变换 bundle 与根 `main.js` 逐字节一致。
-5. **P2.1 笔记结构操作完整归属（A6）**：`note-document.ts` 已统一外层、活动版本、details 与部分会话范围操作；全量结构操作/消费者映射见审计矩阵。先核对并统一写入定位消费者，再统一剩余分段账本边界与机器标记操作；迁移所有消费者、删除旧出口。保持 `NoteWriter.commitContinuation`、`insertBeforeSegmentsStart`、`insertBeforeSegmentsEnd` 各自的 marker 优先级、首末选择、缺失回退和错误语义。两种布局、旧格式、完整原稿与账本字节结果按 §6 验收；A6 不按子批完成关闭。
-6. **P2.2 非 UI 对 UI 辅助依赖（A10）**：独立于 A6，按实际纯函数所有者迁移 `ui/helpers.ts` 消费者并精确收缩 `uiImportsFromNonUi` 基线；保留真实确认、废纸篓与 DOM 交互能力，不要求依赖计数归零。
-7. **P2.3 持久化域类型/能力闭合（A2、A7及必要 A9）**：范围为 `RecordingService`、`LiveAsrPipelineService`、`SessionFinalizeService`、`ContinuationService`、`TaskQueue`、`QueueRetryService`、`NoteWriter`、`VersionStore` 及实际输入/持久化边界。先按状态契约收窄 Host 能力，再纳入严格核心类型检查；全域闭合后才记该子范围完成，不按文件数增加验收。其他目录/命名迁移不另开全仓任务。
+5. **P2.1 已完成：A6 笔记结构操作完整归属**。`note-document.ts` 统一可复用的结构位置/范围机械操作，所有实际消费者已迁移或按协议专属行为保留在原领域。首/末选择、缺失回退、错误语义与两种布局未改；不建立统一 ledger/JSON dispatcher。
+6. **P2.2 已完成：A10 非 UI 对 UI 辅助依赖**。音频输入纯函数及设备类型归入 `audio/audio-input.ts`，简单前言剥离归入 `notes/note-document.ts`；所有既有调用点迁移，精确移除五个非 UI `ui/helpers` 例外。授权探测、设备枚举和确认、Modal、外链与废纸篓仍由 UI/交互模块负责。
+7. **P2.3 持久化域类型/能力闭合（A2、A7及必要 A9）**。范围为 `RecordingService`、`LiveAsrPipelineService`、`SessionFinalizeService`、`ContinuationService`、`TaskQueue`、`QueueRetryService`、`NoteWriter`、`VersionStore` 及实际输入/持久化边界。先按状态契约收窄 Host 能力，再纳入严格核心类型检查；全域闭合后才记该子范围完成，不按文件数增加验收。其他目录/命名迁移不另开全仓任务。
+
+**A6 消费者矩阵**
+
+| 结构 | 归属与边界 | 消费者与现有验证 |
+|---|---|---|
+| 外层前言、活动版本、details/heading、会话范围、字面标记偏移、原始材料插入位置 | `notes/note-document.ts` 只返回结构范围/位置；调用者决定追加、替换、错误和写盘策略 | `note-markdown.ts`、`note-writer.ts`、`queue-retry-service.ts`、`meeting-workbench-service.ts`、`version-content.ts`；`note-markdown-characterization`、`continuation-commit`、`transcript-queue-retry`、`short-recording-flow`、`meeting-workbench-service`、`version-content` 与 `machine-block-fold` |
+| 带来源 ID、修订记录和可见正文配对的逐字稿账本 | `transcript/transcript-markdown.ts` 保留 source/revision/evidence 验证、正文/JSON 顺序、损坏拒写与尾部恢复；不替换为通用配对扫描 | `session-transcript`、`asr-transcript-result`、`continuation-commit`、`transcript-queue-retry` |
+| 会话知识 HTML 注释及证据状态 | `briefing/session-knowledge.ts` 保留 JSON schema、证据校验、`partial`/`stale` 状态和 malformed 处理 | `session-knowledge`、`text-correction`、`note-index` |
+| 笔记索引与沉淀机器壳 | `indexing/note-index.ts` 与 `sediment/` 分别拥有各自 JSON/容器格式；仅共用通用 details 范围，不搬 schema | `note-index`、`machine-block-fold`、`note-markdown-characterization` |
+| 旧版转写标题与原始材料提取 | `notes/note-markdown.ts` 保留 legacy heading 解析、布局次序和旧材料白名单；共通范围扫描由 `note-document.ts` 提供 | `note-markdown-characterization`、`version-content`、`machine-block-fold` |
 
 #### 第三阶段
 

@@ -106,6 +106,32 @@ describe("staged continuation commit", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("rejects a continuation target with no transcript insertion boundary without changing it", async () => {
+    const initial = "# Existing minutes\n\nTarget body without transcript markers";
+    const memory = createMemoryWriter(initial, false);
+    const session = {
+      id: "continuation-a",
+      sessionStamp: "20260921-100000",
+      startedAt: "2026-09-21T10:00:00.000Z",
+      mdPath: memory.path,
+      mode: "synthesis",
+      source: "recording",
+      segments: [makeSegment(0, "continued transcript")],
+      finalized: false,
+    } as RecordingSession;
+
+    vi.stubGlobal("window", { moment: (value?: string) => ({ format: () => value || "2026-09-21 10:00" }) });
+    try {
+      await expect(memory.writer.commitContinuation(session, "Organized continuation body", [])).rejects.toThrow(
+        "Continuation target has no transcript insertion marker",
+      );
+      expect(memory.markdown).toBe(initial);
+      expect(memory.writes).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it.each([true, false])("commits complete transcript ledgers without an outer marker (consolidated=%s)", async (consolidatedLayout) => {
     const oldSegment = makeSegment(0, "original transcript", "target-source");
     const freshSegment = makeSegment(1, "continued transcript");

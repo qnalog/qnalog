@@ -23,7 +23,7 @@ import {
   stripMarkdownForEmailBrief,
   getSourceIdFromMarkdown,
 } from "../src/notes/note-markdown";
-import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteDelimitedBlock, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
@@ -666,6 +666,8 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
   it("stripMarkdownForEmailBrief：正文在原始材料标题前截断，中英标题都认", () => {
     expect(stripMarkdownForEmailBrief("# 正文\n\n## 📁 原始材料\n\n转写一。")).toBe("# 正文");
     expect(stripMarkdownForEmailBrief("# Body\n\n## 📁 Original material\n\nTranscript.")).toBe("# Body");
+    expect(stripMarkdownForEmailBrief("\uFEFF---\r\nmode: mic\r\n---\r\n# Body")).toBe("# Body");
+    expect(stripMarkdownForEmailBrief("---\nmode: mic\n# Unclosed")).toBe("---\nmode: mic\n# Unclosed");
   });
 });
 
@@ -833,6 +835,25 @@ describe("共享笔记结构范围定位", () => {
     expect(findFirstNoteBoundary("hit before", [/hit/, /before/])).toBe(0);
     expect(findFirstNoteBoundary("none", [/absent/])).toBe(4);
   });
+  it("locates the requested first or last literal marker and preserves UTF-16 offsets", () => {
+    const markdown = "😀<!-- marker -->middle<!-- marker -->";
+    const first = markdown.indexOf("<!-- marker -->");
+    const last = markdown.lastIndexOf("<!-- marker -->");
+    expect(findNoteMarkerOffset(markdown, "<!-- marker -->", "first")).toBe(first);
+    expect(findNoteMarkerOffset(markdown, "<!-- marker -->", "last")).toBe(last);
+    expect(findNoteMarkerOffset(markdown, "absent", "first")).toBe(-1);
+    expect(findNoteMarkerOffset(markdown, "absent", "last")).toBe(-1);
+  });
+
+  it("finds the original-material line start outside machine shells", () => {
+    const shell = "<details><summary>Index data</summary>\n<!-- qnalog-segments-start:fake -->\n</details>";
+    const realAnchor = "<!-- qnalog-segments-start:real -->";
+    const tail = `before\n${shell}\nafter\n${realAnchor}\n`;
+    expect(findRawMaterialInsertionOffset(tail)).toBe(tail.indexOf(realAnchor));
+    expect(findRawMaterialInsertionOffset(shell)).toBe(-1);
+    expect(findRawMaterialInsertionOffset("plain body")).toBe(-1);
+  });
+
 
   it("yields exact UTF-16 slices in order with independent iterator state", () => {
     const text = "\uFEFF😀\r\n<details><summary>same</summary>\r\nsame</details>\r\n<DETAILS><SUMMARY>same</SUMMARY></DETAILS>";

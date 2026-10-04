@@ -15,7 +15,8 @@ import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-sche
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
 import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabularyMarkdown, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
-import { QNALOG_UPDATE_REPO_URL, audioInputModeLabel, classifyAudioInputDevices, describeAudioDeviceAvailability, pickComputerAudioDevices, countKnowledgeExtractionHistory, enumerateAudioDevices, isVirtualCableLabel, qnalogConfirm, qnalogPromptText, normalizeAudioInputMode, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, trashVaultFileRef } from './helpers';
+import { QNALOG_UPDATE_REPO_URL, countKnowledgeExtractionHistory, enumerateAudioDevices, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, qnalogConfirm, qnalogPromptText, trashVaultFileRef } from './helpers';
+import { audioInputModeLabel, classifyAudioInputDevices, describeAudioDeviceAvailability, isVirtualCableLabel, normalizeAudioInputMode, pickComputerAudioDevices } from '../audio/audio-input';
 import { PeopleHotwordsConsentModal, PromptTemplateModal, QueueModal, VirtualCableSetupModal } from './modals';
 import { createStreamingTranscriptionClient } from '../notes/recording-issues';
 import {
