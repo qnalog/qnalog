@@ -476,8 +476,8 @@ frontmatter 仍有 `time`、运行期没有异常日志。
    - **P0 已完成：项目完整性审计**。按 README 主流程完成录音/恢复、笔记/版本、配置/安全、可见交互/派生对象四个只读切片，交叉项已去重。审计发现恢复脚本可由备份 `manifest.id` 将文件写到插件目录之外；隔离临时目录已复现覆盖外部文件，先作为安全修复处理。
    - **P0.1 已完成：恢复脚本路径边界**。`scripts/restore-from-backup.mjs` 在写入前校验普通插件 id、源/目标拓扑、vault 派生目录及树内文件类型。真实 CLI 测试覆盖非法 id、可读与悬空链接、硬链接、重叠目录、vault 内旧安装留档、完整回滚留档及启用列表边界；独立临时目录冒烟确认合法回滚字节正确，`../../outside` 与 `--set-enabled` 组合被拒绝且无文件变化。不访问知识库；真实 Obsidian 宿主未验证。
    - **P1.1 已完成：短续录 discard 与恢复队列一致性**。finalizer 先持久化 `continuationDisposition: "discard"`，清理成功后移除任务；清理失败时保留带意图的 failed 任务，由重试只清理 stage。真实服务与 TaskQueue 测试覆盖目标原文保全、各类清理/保存失败、JSON 重载和幂等重试；独立临时目录文件系统冒烟通过。维护者在 `fresh` 的真实 Obsidian 中确认 2 秒续录丢弃、4/8 秒续录正常追加；保留现有 3 秒分界及 3–10 秒续录规则。
-   - **P1.2：用户反馈与已审计的可见行为**。分别处理初稿与同类型派生稿链接重名、英文模式任务/通知残留中文前缀、编辑/阅读视图中的机器数据展示及知识提取 partial 状态的呈现/原因核对；同步更正安装脚本中与 schema 迁移政策冲突的提示。后两项保留产品与服务证据边界；不得把 `invalid-json` 说成落盘 JSON 损坏。
-   - **P1.3：并行开发验证隔离**。隔离 `tests/plugin-onload.test.ts` 的负向漏装构建，使临时 fixture 不改写共享 `src/main.ts` / `main.js`；正常装配通过、漏装仍失败，并比对文件哈希。
+   - **P1.2（部分完成）**：`OutlineView` 的初稿链接在有有效快照时显示「初稿」/ “Original”，而派生稿继续显示其类型；重新整理任务、通知和进度日志使用界面模式名称，不改变派生文件前缀与版本记录。安装提示现按设置结构版本政策说明读取、迁移、未来版本只读和无法识别数据的备份重建。消费者测试及临时文件系统服务冒烟通过；未安装，真实宿主显示未确认。机器数据在实时预览/阅读视图的展示、知识提取 `partial` 的历史响应原因仍待独立取证；`invalid-json` 不是落盘 JSON 损坏的证据。
+   - **P1.3 已完成：并行开发验证隔离**。负向漏装 fixture 只在内存中变换 `src/main.ts` 并写入独占临时 bundle；真实 bundle 正向通过、临时漏装失败并指出字段；并行构建/检查时 `src/main.ts`、根 `main.js` 和 `manifest.json` 的 SHA-256 保持不变。
    - **P2.1：A6 笔记结构操作完整归属**。在同一验收矩阵中完成会话写入定位、分段账本边界与机器标记操作迁移；盘点所有消费者、删除旧转发出口，并保留两种布局、旧格式、账本和原稿不变量。三个写入定位策略各自不同的首末选择、缺失回退与错误行为不得被合并改义；A6 整体未完成。
    - **P2.2：A10 非 DOM 辅助函数归属**。将实际纯函数迁到所属领域，迁移所有消费者、删除旧 UI 出口并精确收缩 `uiImportsFromNonUi` 基线。确认、废纸篓等真实宿主交互保留；不以非 UI→UI 依赖数量归零为目标。
    - **P2.3：关键持久化域的类型与能力闭合（A2、A7及必要 A9）**。范围限于录音/续录终止、队列恢复、笔记写入和版本保全所有者；先按实际状态与 Host 契约收窄能力，再纳入严格核心检查。不得用 `any`、ignore 或 `@ts-nocheck` 绕过；不混入 P1 用户问题，也不按纳入文件数验收。
@@ -489,9 +489,9 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 |---|---|---|---|---|
 | 恢复脚本插件 id 路径 | 写入前校验 id、路径拓扑、链接和文件类型 | 真实 CLI 测试及独立临时目录冒烟通过：合法回滚 payload 与旧目标留档字节匹配；非法 id 不改源、目标、外侧哨兵、启用列表或目录结构 | 未进行真实 Obsidian 宿主验证 | 无 |
 | 2000ms 短续录 | `discard` 意图先落入 merge task；成功清理后移除，失败时保留可恢复的 failed task | 真实服务/队列测试、JSON 重载与独立临时目录文件系统冒烟通过；维护者在真实 Obsidian 验证 2 秒续录丢弃、4/8 秒续录追加到目标笔记 | fresh 库维护者确认；不代表其它宿主/设备验证 | 保留既有低于 3 秒丢弃与 3–10 秒续录豁免 |
-| 英文版本卡/派生稿 | 版本卡文案与派生稿输出前缀已本地化；通知/任务前缀仍有 `meta.prefix` | 对应输出测试已有；初稿链接仍重名 | 修复后宿主显示未确认 | 初稿文案可在 UI 修改时确定 |
+| 初稿/派生稿及重新整理模式显示 | 快照子行显示本地化「初稿」/ “Original”；任务、忙碌状态、通知和完成日志使用界面模式名称；磁盘前缀及版本标签不变 | 真实服务、版本存储、任务状态与 DOM 消费者测试通过；临时文件系统冒烟观察 running→done、派生文件/manifest、标签和切换目标；安装器临时知识库 CLI 确认 data.json 与备份字节保全 | 未进行真实 Obsidian 宿主验证 | 无 |
 | 机器注释/partial 知识 | 结构可读，`partial` 与 `invalid-json` 状态存在 | 协议与解析测试可证明数据读取，不证明编辑器显示或历史模型响应 | 实时预览、源码、阅读视图及服务响应均未核实 | 不隐藏/删除状态；展示方式后续评估 |
-| 负向装配 fixture | 测试临时改写共享源文件/产物 | 当前测试设计已读；本轮未运行 | 不适用 | 无 |
+| 负向装配 fixture | `createBuildOptions` 可导入且无副作用；checker 支持独立 bundle 路径 | 正向/漏装及并发 fixture 测试通过；源码、根产物、manifest 哈希不变；无变换生产临时 bundle 与根产物逐字节一致 | 不适用 | 无 |
 | A12 索引/布局 | 当前两种行为都保留 | 对应 policy/format contracts 已登记 | 本轮未做宿主测试 | 维护者决定 |
 
 **A6 本批宿主反馈与独立观察（2026-10-01）**
@@ -503,13 +503,13 @@ frontmatter 仍有 `time`、运行期没有异常日志。
 **英文模式写入跟进（2026-10-01；独立于 A6 读取统一）**
 
 - [x] **新写入的版本卡文案本地化（源码与消费者契约已实现）**：维护者在 fresh 库的英文模式观察到版本卡标签仍为中文。当前 `src/notes/note-markdown.ts:146–163` 已通过 `labelText("currentDisplayedVersionLabel")`、`labelText("versionGeneratedAtLabel")` 与 `labelText("sourceTranscriptFingerprintLabel")` 输出本地化标签；`tests/note-markdown-characterization.test.ts:266–300` 覆盖生成结果。此源码修复后的真实 Obsidian 写入和显示状态尚未核实，不宣称宿主验收完成。
-- [x] **重新整理派生稿前缀（Markdown、缓存与消费者契约已实现）**：`src/notes/repolish-service.ts:208–249` 使用 `outputPrefix` 生成版本标签、派生文件及缓存 ID；英文 meeting 前缀使用 `getModePrefix`。`tests/clean-transcript-storage.test.ts:442–512` 覆盖对应输出。**未完成全链路本地化**：同文件 `:183,257,260` 的任务/通知显示仍使用 `meta.prefix`，须在 P1.2 单独核对。实际宿主验证该源码状态尚未核实。
+- [x] **重新整理派生稿前缀（Markdown、缓存与消费者契约已实现）**：`src/notes/repolish-service.ts` 的持久化 `outputPrefix` 继续生成版本标签、派生文件及缓存 ID；UI 通知、任务标题、忙碌上下文和完成日志改用 `getModeDisplayName`。英文 meeting 显示 “Work notes”，中文显示“工作纪要”，用户自定义名称和偏好标签保留。`tests/clean-transcript-storage.test.ts` 覆盖实际服务/版本存储/任务状态；临时文件系统冒烟确认输出。真实宿主显示尚未核实。
 - **旧原始材料的中英混排是现有保留规则**：母本外层为 `Original material`，其下原有“录音信息／原始音频／录音中实时大纲／分段原始转写”等折叠区仍为中文。`src/notes/note-document.ts` 的 `extractAllRawBlocksFromText`（目前 97-136）保留旧区块文字，`src/versions/version-content.ts` 的 `foldRawTranscriptSection`（目前 123-144）只在缺失时补结构；不翻译已存在的区块。新插件标签跟随界面语言，旧笔记不翻译的政策见 `.github/release-notes/1.1.2.md` 的标签说明与“旧笔记不动”。不要批量改写原始转写、实时大纲、回听引用或机器账本以统一语言。
 - **输出定位与列表观察分开记录**：本次派生 Markdown 与 minutes 缓存均已找到，母本 manifest 的 activeVersionId 仍指向 `source-original`，所以英文原稿版本名不代表新派生稿的名称。普通重新整理以 `activate: false` 保存版本（`repolish-service.ts` 目前 241-249），不重命名母本、不自动激活新版本。`src/recent/recent-notes.ts`（目前 246-251、310-331）把派生稿归到母本的 variants，`src/ui/outline-view.ts`（目前 5554-5563）显示其版本名并允许点击切换，不将派生稿当作独立会议条目。维护者报告未在列表找到输出；文件存在已核实，实际列表为何未显示仍需观察对应界面，不能据此宣称丢文件或列表缺陷已定位。
 
 **初稿与衍生稿的列表标识跟进（2026-10-02；独立于 A6 转写读取统一）**
 
-- [ ] **初稿与同类型衍生稿的链接重名**：维护者截图显示「界面语言-语音笔记显示测试」下有两个「个人笔记」链接；该笔记首次以个人笔记类型创建，再以同类型重新整理。维护者确认再次生成同类型版本会覆盖衍生文档，不继续增加条目，按版本标识不清跟进，不作为重复创建文件处理。`src/ui/outline-view.ts:5537–5570` 在存在衍生稿时分别显示 `snapshot.label` 与 `v.label || v.file.basename`；`src/versions/version-store.ts:139–143` 对已知模式的初始版本返回类型名，`src/recent/recent-notes.ts:320–326` 对衍生稿读取 `variant_label`，所以当前展示不区分初稿身份。建议初始版本子链接显示「初稿」，衍生稿仍显示「个人笔记」等类型名，父行保留笔记标题与类型信息；维护者提出的「个人笔记（初稿）」保留为另一种文案参考，最终文案在后续界面修改时确定。本批只记录，不修改版本数据或文件名，不改变同类型覆盖与点击切换规则。后续验收：同类型、不同类型衍生稿都可区分初稿；再次生成同类型稿仍覆盖衍生文档；无衍生稿时不新增子链接；中英文界面均有对应标识；各链接仍切换到对应版本。本轮未进行真实宿主验证，未读取或修改知识库。
+- [x] **初稿与同类型派生稿链接标识**：有衍生稿和有效初稿快照时，初稿子链接显示「初稿」/ “Original”，派生稿仍显示自己的类型名；父行、文件名、持久化标签和类型覆盖规则不变。中英文消费者测试覆盖同类型、不同类型、缺失快照、无衍生稿及点击目标；临时 DOM/文件系统冒烟确认两条链接分别切换到快照和派生文件。未安装或进行真实 Obsidian 宿主验证。
 
 **续录短录音的过滤与合并跟进（2026-10-02；独立于 A6 空会话区块范围统一）**
 
@@ -1447,8 +1447,8 @@ Host 检查只约束完整 `PluginSettings` / `App` 的直接属性，不覆盖�
 
 1. **P0.1 恢复脚本路径边界**：已修复并完成批准的 CLI 验收。独立临时目录实际执行确认：合法 qnalog 回滚写入完整 payload，旧目标留档完整；`../../outside` 与 `--set-enabled` 组合以退出码 1 拒绝，源、目标、外侧哨兵、启用列表及目录结构均未变化。未访问私人知识库，未进行真实 Obsidian 验证；此本地改动作为独立 PR 候选，不自动推送或合并。
 2. **P1.1 短续录终止与恢复任务一致性**：一次性内存冒烟实际执行真实 `ContinuationService.prepare` → `RecordingService.handleSegment` → `SessionFinalizeService.finalizeSession`；2000ms discard 后目标正文（含活动版本块与历史 ledger）逐字未变、stage 被删除、session finalized 且 tracking 释放，但合并任务仍为 `pending` 且 `segments=[]`。队列更新由内存 host 实现；尚未执行实际 TaskQueue 持久化重载/重试或真实 Obsidian。完整规格与边界见 §6；不据此改动 3–10 秒续录豁免。
-3. **P1.2 用户反馈及对外行为说明**：区分初稿与同类型派生稿链接；核对英文模式派生稿任务/通知前缀；分别检查机器注释在源码、实时预览、阅读视图中的展示；查明知识快照 partial 的响应原因与可见状态；更正安装脚本中过期的 schema 提示。旧原始材料不翻译，`invalid-json` 不解释为落盘 JSON 损坏。
-4. **P1.3 负向构建 fixture 隔离**：`tests/plugin-onload.test.ts` 当前通过暂时改写共享 `src/main.ts` 并重建 `main.js` 测试漏装。迁至隔离临时目录后，验证正常装配通过、漏装仍失败，并确认真实源码和产物哈希不变。
+3. **P1.2（部分完成）用户反馈及对外行为说明**：初稿链接显示本地化身份，重新整理 UI 模式名称与安装脚本设置政策提示已修正并完成自动消费者/临时文件系统验收；真实宿主尚未验证。编辑/阅读视图中的机器数据展示及历史知识快照 `partial` 原因仍待授权证据，`invalid-json` 不代表落盘 JSON 损坏。
+4. **P1.3 已完成：负向构建 fixture 隔离**：`tests/plugin-onload.test.ts` 使用 `esbuild` API 从内存变换真实 `src/main.ts`，构建到每次独占的临时目录；没有改写共享源码/产物。正向、漏装、并发检查、错误参数均通过，源码与根 `main.js`、manifest 的哈希稳定，工厂生成的无变换 bundle 与根 `main.js` 逐字节一致。
 5. **P2.1 笔记结构操作完整归属（A6）**：`note-document.ts` 已统一外层、活动版本、details 与部分会话范围操作；全量结构操作/消费者映射见审计矩阵。先核对并统一写入定位消费者，再统一剩余分段账本边界与机器标记操作；迁移所有消费者、删除旧出口。保持 `NoteWriter.commitContinuation`、`insertBeforeSegmentsStart`、`insertBeforeSegmentsEnd` 各自的 marker 优先级、首末选择、缺失回退和错误语义。两种布局、旧格式、完整原稿与账本字节结果按 §6 验收；A6 不按子批完成关闭。
 6. **P2.2 非 UI 对 UI 辅助依赖（A10）**：独立于 A6，按实际纯函数所有者迁移 `ui/helpers.ts` 消费者并精确收缩 `uiImportsFromNonUi` 基线；保留真实确认、废纸篓与 DOM 交互能力，不要求依赖计数归零。
 7. **P2.3 持久化域类型/能力闭合（A2、A7及必要 A9）**：范围为 `RecordingService`、`LiveAsrPipelineService`、`SessionFinalizeService`、`ContinuationService`、`TaskQueue`、`QueueRetryService`、`NoteWriter`、`VersionStore` 及实际输入/持久化边界。先按状态契约收窄 Host 能力，再纳入严格核心类型检查；全域闭合后才记该子范围完成，不按文件数增加验收。其他目录/命名迁移不另开全仓任务。

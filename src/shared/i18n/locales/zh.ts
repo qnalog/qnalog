@@ -137,6 +137,7 @@ export const ZH: MessageTable = {
   "Study notes": "学习笔记",
   "Seminar": "研讨会",
   "Roundtable": "圆桌讨论",
+  "Original": "初稿",
   "Off (transcription only)": "关闭（仅转写）",
   "You can open it in the email drafts folder.": "可在邮件草稿文件夹中打开。",
   "Scan failed: ": "扫描失败：",

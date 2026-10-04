@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-import { getSourceIdFromMarkdown, getVersionStoreFolder } from "../src/notes/note-markdown";
+import { ensureTranscriptBlocks, getSourceIdFromMarkdown, getVersionStoreFolder } from "../src/notes/note-markdown";
 
-const { cleanTranscriptMock, mergeAndPolishMock } = vi.hoisted(() => ({
+const { cleanTranscriptMock, mergeAndPolishMock, notices } = vi.hoisted(() => ({
   cleanTranscriptMock: vi.fn(),
   mergeAndPolishMock: vi.fn(),
+  notices: [] as string[],
 }));
 
 
@@ -28,7 +29,8 @@ vi.mock("obsidian", () => {
   return {
     TFile,
     TFolder: class TFolder {},
-    Notice: class Notice {},
+    Modal: class Modal { open(): void {} },
+    Notice: class Notice { constructor(message: string) { notices.push(String(message)); } },
     normalizePath: (value: string) => String(value || "").replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\.\//, ""),
     stringifyYaml: (value: Record<string, unknown>) => Object.entries(value)
       .map(([key, item]) => `${key}: ${typeof item === "string" ? JSON.stringify(item) : String(item)}`)
@@ -59,9 +61,10 @@ vi.mock("../src/briefing/merge-pipeline", () => ({
 }));
 import * as obsidian from "obsidian";
 import { cleanTranscript } from "../src/briefing/merge-pipeline";
-import { mergeAndPolish } from "../src/briefing/merge-pipeline";
 import { RepolishService } from "../src/notes/repolish-service";
 import { VersionStore } from "../src/versions/version-store";
+import { TaskActivityService } from "../src/tasks/task-activity-service";
+import { TaskActivityStore } from "../src/shared/task-activity";
 
 type MemoryFile = InstanceType<typeof obsidian.TFile>;
 
@@ -129,10 +132,11 @@ const sourceContent = [
 let languageBeforeTest = getActiveUiLanguage();
 
 beforeEach(() => {
-  languageBeforeTest = getActiveUiLanguage();
-  vi.stubGlobal("window", {});
   cleanTranscriptMock.mockReset().mockResolvedValue({ text: "Readable cleaned transcript.", truncated: false });
   mergeAndPolishMock.mockReset();
+  languageBeforeTest = getActiveUiLanguage();
+  vi.stubGlobal("window", {});
+  notices.length = 0;
 });
 
 afterEach(() => {
@@ -838,5 +842,150 @@ describe("clean transcript storage", () => {
     await versions.switchVersion(original.meta ? files.get(`${folder}/${original.meta.fileName}`)! : sourceFile, sourceFile.path);
     expect(await vault.read(sourceFile)).toContain("Personal text A.");
     expect(openFile).toHaveBeenCalledWith(sourceFile);
+  });
+  it.each([
+    ["en", "Work notes", "Preference"],
+    ["zh", "工作纪要", "Preference"],
+  ] as const)("shows localized repolish progress and completion in %s without changing source data", async (language, displayName, preferenceLabel) => {
+    setActiveUiLanguage(resolveUiLanguage(language, language));
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/localized-repolish.md", "");
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const sourceBefore = ensureTranscriptBlocks(sourceContent, sourceId);
+    sourceFile.data = sourceBefore;
+    files.set(sourceFile.path, sourceFile);
+    const media = new obsidian.TFile("QnALog/录音/localized-repolish.wav", "fixture audio bytes");
+    files.set(media.path, media);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: {
+        qnalog_time: "2026-09-29T21:49:00",
+        qnalog_mode: "meeting",
+        qnalog_participants: ["Alias → Real"],
+      } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
+    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const tasks = new TaskActivityService({ settings } as never);
+    tasks.taskActivityStore = new TaskActivityStore();
+    tasks.completedWorkLog = [];
+    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    let resolveModel: (body: string) => void = () => undefined;
+    mergeAndPolishMock.mockReturnValue(new Promise<string>((resolve) => { resolveModel = resolve; }));
+
+    const pending = service.repolishMarkdownFile(sourceFile, "meeting", { label: preferenceLabel });
+    await vi.waitFor(() => expect(mergeAndPolishMock).toHaveBeenCalledOnce());
+    const running = tasks.getTaskActivities().find((activity) => activity.id === `repolish:${sourceId}`);
+    expect(running?.status).toBe("running");
+    expect(running?.title).toContain(displayName);
+    expect(tasks._busyLabel).toContain(displayName);
+    expect(tasks._busyContext.sourceModeLabel).toBe(displayName);
+    expect(tasks._busyContext.targetModeLabel).toBe(`${displayName} · ${preferenceLabel}`);
+    expect(notices[0]).toContain(displayName);
+    expect(notices[0]).toContain(language === "en" ? "1 role mappings" : "1 条角色映射");
+
+    resolveModel("Localized derived body.");
+    await pending;
+
+    const completed = tasks.getTaskActivities().find((activity) => activity.id === `repolish:${sourceId}`);
+    expect(completed?.status).toBe("done");
+    expect(completed?.title).toContain(displayName);
+    expect(tasks.completedWorkLog[0]?.title).toContain(displayName);
+    expect(notices.slice(1).some((message) => message.includes(displayName))).toBe(true);
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+    expect(media.data).toBe("fixture audio bytes");
+    const derived = [...files.values()].find((candidate) => candidate.path !== sourceFile.path
+      && candidate.path.startsWith(`${sourceFile.parent.path}/`) && !candidate.path.includes("/.versions/")
+      && candidate.data.includes("Localized derived body."));
+    expect(derived).toBeDefined();
+    const manifestPath = `${getVersionStoreFolder(settings, sourceId)}/manifest.json`;
+    const manifest = JSON.parse(await vault.adapter.read(manifestPath));
+    expect(manifest.versions.some((record: { kind: string; mode: string; style: string; label: string }) =>
+      record.kind === "minutes" && record.mode === "meeting" && record.style === "Preference"
+      && record.label === (language === "en" ? "Work notes · Preference" : "工作纪要 · Preference"))).toBe(true);
+  });
+
+  it("keeps the custom mode explanation visible in repolish task UI", async () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/custom-repolish.md", "");
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const sourceBefore = ensureTranscriptBlocks(sourceContent, sourceId);
+    sourceFile.data = sourceBefore;
+    files.set(sourceFile.path, sourceFile);
+    const settings = {
+      mdFolder: "QnALog/转写纪要",
+      promptTemplates: {
+        "custom-output": {
+          id: "custom-output", mode: "custom-output", customMode: true,
+          name: "My template", baseMode: "meeting", prompt: "Custom prompt fixture.",
+        },
+      },
+    };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting" } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
+    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const tasks = new TaskActivityService({ settings } as never);
+    tasks.taskActivityStore = new TaskActivityStore();
+    tasks.completedWorkLog = [];
+    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    let resolveModel: (body: string) => void = () => undefined;
+    mergeAndPolishMock.mockReturnValue(new Promise<string>((resolve) => { resolveModel = resolve; }));
+
+    const pending = service.repolishMarkdownFile(sourceFile, "custom-output", { label: "Concise" });
+    await vi.waitFor(() => expect(mergeAndPolishMock).toHaveBeenCalledOnce());
+    expect(tasks._busyLabel).toContain("Custom prompt:My template");
+    expect(tasks._busyContext.targetModeLabel).toBe("Custom prompt:My template · Concise");
+    expect(tasks.getTaskActivities()[0]?.title).toContain("Custom prompt:My template");
+    expect(notices[0]).toContain("Custom prompt:My template");
+    resolveModel("Custom derived body.");
+    await pending;
+    expect(tasks.completedWorkLog[0]?.title).toContain("Custom prompt:My template");
+    expect(notices.some((message) => message.includes("Custom prompt:My template") && message.includes("derived minutes"))).toBe(true);
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+    expect([...files.values()].some((candidate) => candidate.data.includes("Custom derived body."))).toBe(true);
+  });
+
+  it("keeps repolish visibly failed and preserves the source when the model rejects", async () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/failed-repolish.md", "");
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const sourceBefore = ensureTranscriptBlocks(sourceContent, sourceId);
+    sourceFile.data = sourceBefore;
+    files.set(sourceFile.path, sourceFile);
+    const media = new obsidian.TFile("QnALog/录音/failed-repolish.wav", "preserved audio bytes");
+    files.set(media.path, media);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting" } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const noteIndex = { refreshNoteIndexSafely: vi.fn(async () => undefined) };
+    const versions = new VersionStore({ app, settings, noteIndex } as never);
+    const tasks = new TaskActivityService({ settings } as never);
+    tasks.taskActivityStore = new TaskActivityStore();
+    tasks.completedWorkLog = [];
+    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    mergeAndPolishMock.mockRejectedValue(new Error("Model request failed"));
+
+    await service.repolishMarkdownFile(sourceFile, "meeting");
+
+    const failed = tasks.getTaskActivities().find((activity) => activity.id === `repolish:${sourceId}`);
+    expect(failed?.status).toBe("failed");
+    expect(failed?.stage).toBe("failed");
+    expect(tasks.completedWorkLog).toHaveLength(0);
+    expect(notices.some((message) => message.includes("Re-organize failed") && message.includes("Model request failed"))).toBe(true);
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+    expect(media.data).toBe("preserved audio bytes");
+    expect([...files.values()].some((candidate) => candidate.path !== sourceFile.path
+      && candidate.data.includes('variant_kind: "minutes"'))).toBe(false);
   });
 });
