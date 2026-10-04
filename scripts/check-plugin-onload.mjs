@@ -35,7 +35,7 @@ const DOMAIN_FIELDS = [
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
   "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
 ];
-const PORT_HOST_FIELDS = new Set(["asrPipeline", "continuations", "outline"]);
+const PORT_HOST_FIELDS = new Set(["asrPipeline", "continuations", "outline", "queue"]);
 
 const noop = () => undefined;
 
@@ -272,6 +272,14 @@ async function main() {
     if (!("host" in service)) continue;
     if (PORT_HOST_FIELDS.has(field)) {
       if (service.host === plugin) failures.push(`this.${field}.host 应使用窄能力对象，不得接收完整插件实例`);
+      if (field === "queue") {
+        if (typeof service.host?.getMaxRetries !== "function"
+          || typeof service.host?.persistQueue !== "function"
+          || service.host.getMaxRetries() !== plugin.settings.maxRetries) {
+          failures.push("this.queue.host 未绑定预期的最大重试数与队列持久化能力");
+        }
+        continue;
+      }
       if (field === "outline") {
         if (service.host === plugin
           || service.host?.noteWriter !== plugin.noteWriter

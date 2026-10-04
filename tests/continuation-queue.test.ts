@@ -6,24 +6,34 @@ vi.mock("obsidian", () => ({
 }));
 
 import { TaskQueue } from "../src/queue/task-queue";
+import type { TaskQueueHost } from "../src/queue/task-queue";
+
+function makeQueueHost(overrides: Partial<TaskQueueHost> = {}): TaskQueueHost {
+  return {
+    getMaxRetries: () => 3,
+    persistQueue: async () => undefined,
+    updateBusyStatus: () => undefined,
+    retryTranscribeTask: async (_task) => { throw new Error("Unexpected transcription task in queue fixture"); },
+    retryMergeTask: async (_task) => { throw new Error("Unexpected merge task in queue fixture"); },
+    runGeneratePromptTask: async (_task) => { throw new Error("Unexpected prompt task in queue fixture"); },
+    scheduleTaskQueueRetry: () => undefined,
+    isAsrServiceCircuitOpen: () => false,
+    getAsrServiceRetryDelayMs: () => 0,
+    getAsrServiceCircuitState: () => ({ consecutiveFailures: 0, openUntilMs: 0, lastError: "" }),
+    recordAsrServiceAttemptSuccess: () => undefined,
+    recordAsrServiceAttemptFailure: () => ({ consecutiveFailures: 0, openUntilMs: 0, lastError: "" }),
+    completeTaskActivity: () => undefined,
+    logCompletedWork: () => undefined,
+    logDiagnostic: async () => undefined,
+    ...overrides,
+  };
+}
 
 describe("continuation queue lifecycle", () => {
   it("keeps a continuation deferred until its earlier target session is gone", async () => {
     const retryMergeTask = vi.fn().mockResolvedValue({ deferred: true, reason: "waiting for earlier session" });
-    const plugin = {
-      settings: { maxRetries: 3 },
-      saveAll: vi.fn(async () => undefined),
-      queueRetry: { retryMergeTask },
-      tasks: {
-        updateBusyStatus: vi.fn(),
-        queueTaskActivityId: vi.fn(() => "activity"),
-        completeTaskActivity: vi.fn(),
-        logCompletedWork: vi.fn(),
-      },
-      diagnostics: { logDiagnostic: vi.fn(async () => undefined) },
-      asrPipeline: { recordAsrServiceAttemptSuccess: vi.fn() },
-    };
-    const queue = new TaskQueue(plugin as never);
+    const host = makeQueueHost({ retryMergeTask });
+    const queue = new TaskQueue(host);
     queue.load([
       { id: "earlier", type: "merge", sessionId: "session-a", status: "pending", mdPath: "target.md" },
       {
@@ -47,10 +57,7 @@ describe("continuation queue lifecycle", () => {
     expect(continuation.retries).toBe(2);
   });
   it("drops malformed outline proof without blocking transcript recovery", () => {
-    const queue = new TaskQueue({
-      settings: { maxRetries: 3 },
-      saveAll: vi.fn(async () => undefined),
-    } as never);
+    const queue = new TaskQueue(makeQueueHost());
     queue.load([{
       id: "continuation",
       type: "merge",
@@ -74,10 +81,7 @@ describe("continuation queue lifecycle", () => {
     expect(task.continuation.realtimeOutlineSourceCoverage).toBeUndefined();
   });
   it("blocks an unknown continuation disposition without rewriting the task", () => {
-    const queue = new TaskQueue({
-      settings: { maxRetries: 3 },
-      saveAll: vi.fn(async () => undefined),
-    } as never);
+    const queue = new TaskQueue(makeQueueHost());
     queue.load([{
       id: "continuation-cleanup",
       type: "merge",
@@ -97,5 +101,32 @@ describe("continuation queue lifecycle", () => {
       lastError: "Continuation cleanup information is invalid; the target was not changed.",
       continuationDisposition: "unexpected",
     });
+  });
+  it("reads the current retry limit when processing tasks", async () => {
+    let settings = { maxRetries: 2 };
+    let persistedQueue = "";
+    let queue!: TaskQueue;
+    queue = new TaskQueue(makeQueueHost({
+      getMaxRetries: () => settings.maxRetries,
+      persistQueue: async () => { persistedQueue = JSON.stringify(queue.snapshot()); },
+      runGeneratePromptTask: async () => undefined,
+    }));
+    queue.load([{
+      id: "prompt-retry",
+      type: "generate-prompt",
+      mode: "synthesis",
+      status: "failed",
+      retries: 2,
+      createdAt: "2026-09-21T10:00:00.000Z",
+      updatedAt: "2026-09-21T10:00:00.000Z",
+    }]);
+
+    await queue.processAll();
+    expect(queue.snapshot()).toMatchObject([{ id: "prompt-retry", status: "failed", retries: 2 }]);
+
+    settings = { maxRetries: 3 };
+    await queue.processAll();
+    expect(queue.snapshot()).toEqual([]);
+    expect(persistedQueue).toBe("[]");
   });
 });
