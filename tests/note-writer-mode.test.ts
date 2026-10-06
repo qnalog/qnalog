@@ -23,9 +23,21 @@ describe("NoteWriter mode detection for clean transcript display state", () => {
   const detect = (filename: string, frontmatter: Record<string, unknown>, polishMode = "synthesis") => {
     const file = new obsidian.TFile(filename, frontmatter);
     const writer = new NoteWriter({
+      vault: {} as never,
       settings: { ...DEFAULT_SETTINGS, polishMode },
-      app: { metadataCache: { getFileCache: (candidate: typeof file) => ({ frontmatter: candidate.frontmatter }) } },
-    } as never);
+      noteIndex: { refreshNoteIndexSafely: async () => undefined },
+      getFileFrontmatter: () => frontmatter,
+      ensureFolder: async () => { throw new Error("unexpected folder creation"); },
+      findAvailableMarkdownPath: () => { throw new Error("unexpected path allocation"); },
+      renameFile: async () => { throw new Error("unexpected rename"); },
+      openFile: async () => { throw new Error("unexpected file open"); },
+      confirm: async () => { throw new Error("unexpected confirmation"); },
+      getRecentNotes: () => { throw new Error("unexpected recent-note lookup"); },
+      generateTitleTag: async () => { throw new Error("unexpected title generation"); },
+      polishTranscript: async () => { throw new Error("unexpected transcript polish"); },
+      mergeAndPolish: async () => { throw new Error("unexpected note merge"); },
+      clearCommittedBriefingCheckpoint: async () => { throw new Error("unexpected checkpoint cleanup"); },
+    });
     return writer.detectModeFromMarkdown(file);
   };
 

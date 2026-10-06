@@ -66,7 +66,7 @@ import { SetupWizardModal } from "./ui/setup-wizard-modal";
 import { needsFirstRunWizard } from "./setup/wizard-controller";
 import { TaskActivityService } from "./tasks/task-activity-service";
 import { DeliveryService } from "./delivery/delivery-service";
-import { NoteWriter } from "./notes/note-writer";
+import { NoteWriter, type NoteWriterHost } from "./notes/note-writer";
 import { QueueRetryService } from "./queue/queue-retry-service";
 import { VersionStore } from "./versions/version-store";
 import { PeopleDirectoryService } from "./people/people-directory-service";
@@ -80,9 +80,14 @@ import { NoteIndexService } from "./notes/note-index-service";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
-import { ensureVaultFolder } from "./shared/util-vault";
+import { ensureVaultFolder, findAvailableMarkdownPath } from "./shared/util-vault";
 import { LiveAsrPipelineService } from "./asr/live-asr-pipeline-service";
 import { SessionFinalizeService } from "./notes/session-finalize-service";
+import { generateTitleTag } from "./notes/note-markdown";
+import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
+import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
+import { getRecentNotes } from "./recent/recent-notes";
+import { qnalogConfirm } from "./ui/helpers";
 import { ImportService } from "./imports/import-service";
 import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
@@ -198,7 +203,24 @@ class QnALogPlugin extends obsidian.Plugin {
     this.sessionStore = new SessionStore();
     this.diagnostics = new DiagnosticsService(this);
     this.delivery = new DeliveryService(this);
-    this.noteWriter = new NoteWriter(this);
+    const getNoteWriterOwner = () => this;
+    const noteWriterHost: NoteWriterHost = {
+      get vault() { return getNoteWriterOwner().app.vault; },
+      get settings() { return getNoteWriterOwner().settings; },
+      get noteIndex() { return getNoteWriterOwner().noteIndex; },
+      getFileFrontmatter: (file: obsidian.TFile) => getNoteWriterOwner().app.metadataCache.getFileCache(file)?.frontmatter,
+      ensureFolder: (path: string) => ensureVaultFolder(getNoteWriterOwner().app, path),
+      findAvailableMarkdownPath: (targetPath: string, currentPath?: string) => findAvailableMarkdownPath(getNoteWriterOwner().app, targetPath, currentPath),
+      renameFile: (file: obsidian.TFile, path: string) => getNoteWriterOwner().app.fileManager.renameFile(file, path),
+      openFile: async (file: obsidian.TFile) => { await getNoteWriterOwner().app.workspace.getLeaf(false).openFile(file); },
+      confirm: (title: string, body: string, ctaText: string) => qnalogConfirm(getNoteWriterOwner().app, title, body, ctaText),
+      getRecentNotes: (limit: number) => getRecentNotes(getNoteWriterOwner(), limit),
+      generateTitleTag: (polished: string, mode: string) => generateTitleTag(getNoteWriterOwner(), polished, mode),
+      polishTranscript: (raw: string, mode: string) => polishTranscript(getNoteWriterOwner(), raw, mode, null, null, null),
+      mergeAndPolish: (segments, mode, sessionMeta) => mergeAndPolish(getNoteWriterOwner(), segments, mode, null, sessionMeta),
+      clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(getNoteWriterOwner(), sessionMeta),
+    };
+    this.noteWriter = new NoteWriter(noteWriterHost);
     this.continuations = new ContinuationService({
       vault: this.app.vault,
       fileManager: this.app.fileManager,

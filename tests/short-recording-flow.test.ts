@@ -204,6 +204,27 @@ function makeHost() {
   return { host, files, folders, app, transcriptionCalls, diagnostics, finalizeService, recordingService };
 
 }
+function makeNoteWriterHost(host: {
+  app: { vault: unknown; metadataCache: { getFileCache: (file: obsidian.TFile) => { frontmatter?: obsidian.CachedMetadata["frontmatter"] } | null } };
+  settings: NoteWriterHost["settings"];
+}): NoteWriterHost {
+  return {
+    vault: host.app.vault as never,
+    settings: host.settings,
+    noteIndex: { refreshNoteIndexSafely: async () => undefined },
+    getFileFrontmatter: (file) => host.app.metadataCache.getFileCache(file)?.frontmatter,
+    ensureFolder: async (path) => ensureVaultFolder(host.app as never, path),
+    findAvailableMarkdownPath: () => { throw new Error("unexpected path allocation"); },
+    renameFile: async () => { throw new Error("unexpected rename"); },
+    openFile: async () => { throw new Error("unexpected file open"); },
+    confirm: async () => { throw new Error("unexpected confirmation"); },
+    getRecentNotes: () => { throw new Error("unexpected recent-note lookup"); },
+    generateTitleTag: async () => { throw new Error("unexpected title generation"); },
+    polishTranscript: async () => { throw new Error("unexpected transcript polish"); },
+    mergeAndPolish: async () => { throw new Error("unexpected note merge"); },
+    clearCommittedBriefingCheckpoint: async () => { throw new Error("unexpected checkpoint cleanup"); },
+  };
+}
 async function makeContinuationDiscardFixture() {
   const fixture = makeHost();
   let persistedQueue = "[]";
@@ -865,7 +886,7 @@ describe("session note block cleanup consumers", () => {
 
   it("NoteWriter removes only its session range and leaves a repeated cleanup unchanged", async () => {
     const { host, files } = makeHost();
-    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    const writer = new NoteWriter(makeNoteWriterHost(host));
     files.set(mdPath, { content: fullInput });
 
     await writer.removeEmptySessionBlock(makeSession(mdPath));
@@ -890,7 +911,7 @@ describe("session note block cleanup consumers", () => {
 
   it("both consumers retain an incomplete target range and preserve the next session", async () => {
     const { host, files } = makeHost();
-    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    const writer = new NoteWriter(makeNoteWriterHost(host));
     files.set(mdPath, { content: fullInput.replace("qnalog-segments-end:session-1", "qnalog-segments-end:session-other") });
     await writer.removeEmptySessionBlock(makeSession(mdPath));
     expect(files.get(mdPath)?.content).toBe(fullInput.replace("qnalog-segments-end:session-1", "qnalog-segments-end:session-other"));
@@ -914,7 +935,7 @@ describe("session note block cleanup consumers", () => {
     const expectedAfter = `${first}\n`;
 
     const writerHost = makeHost();
-    const writer = new NoteWriter({ app: writerHost.host.app, settings: writerHost.host.settings } as NoteWriterHost);
+    const writer = new NoteWriter(makeNoteWriterHost(writerHost.host));
     writerHost.files.set(mdPath, { content: input });
     await writer.removeEmptySessionBlock(Object.assign(makeSession(mdPath), { id: "session-2" }) as never);
     expect(writerHost.files.get(mdPath)?.content).toBe(expectedAfter);
@@ -933,7 +954,7 @@ describe("NoteWriter segment insertion consumer", () => {
 
   it("inserts literally before the first matching session marker and preserves other sessions", async () => {
     const { host, files } = makeHost();
-    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    const writer = new NoteWriter(makeNoteWriterHost(host));
     const input = [
       "FIRST",
       "<!-- qnalog-segments-end:other -->",
@@ -961,7 +982,7 @@ describe("NoteWriter segment insertion consumer", () => {
 
   it("inserts before the last no-session marker and appends when no marker exists", async () => {
     const { host, files } = makeHost();
-    const writer = new NoteWriter({ app: host.app, settings: host.settings } as NoteWriterHost);
+    const writer = new NoteWriter(makeNoteWriterHost(host));
     const input = "BEFORE\n<!-- qnalog-segments-end -->\nMIDDLE\n<!-- qnalog-segments-end -->\nAFTER";
     files.set(mdPath, { content: input });
 

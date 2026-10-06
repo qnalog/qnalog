@@ -125,9 +125,6 @@
     "src/notes/audio-time-link-service.ts": [
       "src/ui/modals"
     ],
-    "src/notes/note-writer.ts": [
-      "src/ui/helpers"
-    ],
     "src/notes/session-finalize-service.ts": [
       "src/ui/modals"
     ],
@@ -186,10 +183,6 @@
     "src/notes/note-index-service.ts": [
       "NoteIndexHost.app:App",
       "NoteIndexHost.settings:PluginSettings"
-    ],
-    "src/notes/note-writer.ts": [
-      "NoteWriterHost.app:App",
-      "NoteWriterHost.settings:PluginSettings"
     ],
     "src/notes/realtime-outline-service.ts": [
       "RealtimeOutlineHost.settings:PluginSettings"

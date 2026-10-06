@@ -36,6 +36,7 @@ const DOMAIN_FIELDS = [
   "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
 ];
 const PORT_HOST_FIELDS = {
+  noteWriter: true,
   asrPipeline: true,
   continuations: true,
   outline: true,
@@ -280,6 +281,21 @@ async function main() {
     if (!("host" in service)) continue;
     if (Object.hasOwn(PORT_HOST_FIELDS, field)) {
       if (service.host === plugin) failures.push(`this.${field}.host 应使用窄能力对象，不得接收完整插件实例`);
+      if (field === "noteWriter") {
+        const methods = [
+          "getFileFrontmatter", "ensureFolder", "findAvailableMarkdownPath", "renameFile", "openFile",
+          "confirm", "getRecentNotes", "generateTitleTag", "polishTranscript", "mergeAndPolish",
+          "clearCommittedBriefingCheckpoint",
+        ];
+        if (service.host === plugin
+          || service.host?.vault !== app.vault
+          || service.host?.settings !== plugin.settings
+          || service.host?.noteIndex !== plugin.noteIndex
+          || methods.some((method) => typeof service.host?.[method] !== "function")) {
+          failures.push("this.noteWriter.host 未绑定预期的知识库、动态设置、索引与具体能力");
+        }
+        continue;
+      }
       if (field === "recorder") {
         const methods = [
           "getSettings", "prefersOpus", "resolveCaptureMode", "makeRecordingIssue",

@@ -18,6 +18,7 @@ vi.mock("obsidian", () => ({
 
 import * as obsidian from "obsidian";
 import { NoteWriter } from "../src/notes/note-writer";
+import type { NoteWriterHost } from "../src/notes/note-writer";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
@@ -37,16 +38,28 @@ function createMemoryWriter(initialMarkdown: string, consolidatedLayout: boolean
   let markdown = initialMarkdown;
   let writes = 0;
   const target = new (obsidian.TFile as never)(path);
+  const vault = {
+    getAbstractFileByPath: (requestedPath: string) => requestedPath === path ? target : null,
+    read: async () => markdown,
+    modify: async (_file: unknown, next: string) => { markdown = next; writes++; },
+  };
+  const settings = { ...DEFAULT_SETTINGS, consolidatedLayout, llmModel: "test-model" };
   const writer = new NoteWriter({
-    settings: { ...DEFAULT_SETTINGS, consolidatedLayout, llmModel: "test-model" },
-    app: {
-      vault: {
-        getAbstractFileByPath: (requestedPath: string) => requestedPath === path ? target : null,
-        read: async () => markdown,
-        modify: async (_file: unknown, next: string) => { markdown = next; writes++; },
-      },
-    },
-  } as never);
+    vault,
+    settings,
+    noteIndex: { refreshNoteIndexSafely: async () => undefined },
+    getFileFrontmatter: () => undefined,
+    ensureFolder: async () => { throw new Error("unexpected folder creation"); },
+    findAvailableMarkdownPath: () => { throw new Error("unexpected path allocation"); },
+    renameFile: async () => { throw new Error("unexpected rename"); },
+    openFile: async () => { throw new Error("unexpected file open"); },
+    confirm: async () => { throw new Error("unexpected confirmation"); },
+    getRecentNotes: () => { throw new Error("unexpected recent-note lookup"); },
+    generateTitleTag: async () => { throw new Error("unexpected title generation"); },
+    polishTranscript: async () => { throw new Error("unexpected transcript polish"); },
+    mergeAndPolish: async () => { throw new Error("unexpected note merge"); },
+    clearCommittedBriefingCheckpoint: async () => { throw new Error("unexpected checkpoint cleanup"); },
+  } as NoteWriterHost);
   return { writer, path, get markdown() { return markdown; }, get writes() { return writes; } };
 }
 
@@ -63,16 +76,27 @@ describe("staged continuation commit", () => {
     ].join("\n");
     let writes = 0;
     const target = new (obsidian.TFile as never)(path);
+    const markdownHost = {
+      getAbstractFileByPath: (requestedPath: string) => requestedPath === path ? target : null,
+      read: async () => markdown,
+      modify: async (_file: unknown, next: string) => { markdown = next; writes++; },
+    };
     const writer = new NoteWriter({
+      vault: markdownHost,
       settings: { ...DEFAULT_SETTINGS, consolidatedLayout: false, llmModel: "test-model" },
-      app: {
-        vault: {
-          getAbstractFileByPath: (requestedPath: string) => requestedPath === path ? target : null,
-          read: async () => markdown,
-          modify: async (_file: unknown, next: string) => { markdown = next; writes++; },
-        },
-      },
-    } as never);
+      noteIndex: { refreshNoteIndexSafely: async () => undefined },
+      getFileFrontmatter: () => undefined,
+      ensureFolder: async () => { throw new Error("unexpected folder creation"); },
+      findAvailableMarkdownPath: () => { throw new Error("unexpected path allocation"); },
+      renameFile: async () => { throw new Error("unexpected rename"); },
+      openFile: async () => { throw new Error("unexpected file open"); },
+      confirm: async () => { throw new Error("unexpected confirmation"); },
+      getRecentNotes: () => { throw new Error("unexpected recent-note lookup"); },
+      generateTitleTag: async () => { throw new Error("unexpected title generation"); },
+      polishTranscript: async () => { throw new Error("unexpected transcript polish"); },
+      mergeAndPolish: async () => { throw new Error("unexpected note merge"); },
+      clearCommittedBriefingCheckpoint: async () => { throw new Error("unexpected checkpoint cleanup"); },
+    } as NoteWriterHost);
     const session = {
       id: "continuation-a",
       sessionStamp: "20260921-100000",

@@ -23,6 +23,7 @@ vi.mock("obsidian", () => {
 
 import * as obsidian from "obsidian";
 import { NoteWriter } from "../src/notes/note-writer";
+import type { NoteWriterHost } from "../src/notes/note-writer";
 import { RealtimeOutlineService } from "../src/notes/realtime-outline-service";
 import { readCurrentOutlineBlock } from "../src/notes/outline-storage";
 import { createRealtimeOutlineSourceCoverage } from "../src/notes/outline-coverage";
@@ -70,7 +71,7 @@ function createOriginalNote(includeCurrentOutline = true): string {
 }
 
 
-function createMemoryVault(initialMarkdown: string) {
+function createMemoryVault(initialMarkdown: string, configDir = ".obsidian") {
   const files = new Map<string, { file: MemoryFile; markdown: string }>();
   const folders = new Map<string, InstanceType<typeof obsidian.TFolder>>();
   const adapterFiles = new Map<string, string>();
@@ -81,7 +82,7 @@ function createMemoryVault(initialMarkdown: string) {
   let processCount = 0;
 
   const vault = {
-    configDir: ".obsidian",
+    get configDir() { return configDir; },
     adapter: {
       async exists(path: string) {
         return files.has(path) || folders.has(path) || adapterFiles.has(path);
@@ -146,15 +147,24 @@ function createMemoryVault(initialMarkdown: string) {
 
 function makeWriterAndService(initialMarkdown: string, generation: "success" | "incomplete" | "failure" | "cancel" = "success", busy = false) {
   const memory = createMemoryVault(initialMarkdown);
-  const app = {
-    vault: memory.vault,
-    metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting" } }) },
-  };
-  const writer = new NoteWriter({
-    app,
+  let writerVault: NoteWriterHost["vault"] = memory.vault as never;
+  const writerHost: NoteWriterHost = {
+    get vault() { return writerVault; },
     settings: { ...DEFAULT_SETTINGS, enableRealtimeOutline: false, polishMode: "meeting" },
-    noteIndex: {} as never,
-  } as never);
+    noteIndex: { refreshNoteIndexSafely: async () => undefined },
+    getFileFrontmatter: () => ({ qnalog_mode: "meeting" }),
+    ensureFolder: async () => { throw new Error("unexpected folder creation"); },
+    findAvailableMarkdownPath: () => { throw new Error("unexpected path allocation"); },
+    renameFile: async () => { throw new Error("unexpected rename"); },
+    openFile: async () => { throw new Error("unexpected file open"); },
+    confirm: async () => { throw new Error("unexpected confirmation"); },
+    getRecentNotes: () => { throw new Error("unexpected recent-note lookup"); },
+    generateTitleTag: async () => { throw new Error("unexpected title generation"); },
+    polishTranscript: async () => { throw new Error("unexpected transcript polish"); },
+    mergeAndPolish: async () => { throw new Error("unexpected note merge"); },
+    clearCommittedBriefingCheckpoint: async () => { throw new Error("unexpected checkpoint cleanup"); },
+  };
+  const writer = new NoteWriter(writerHost);
   const service = new RealtimeOutlineService({
     diagnostics: {} as never,
     outlineCoordinator: null,
@@ -181,7 +191,7 @@ function makeWriterAndService(initialMarkdown: string, generation: "success" | "
     session.realtimeOutlineSegmentCount = session.segments.length;
     session.realtimeOutlineSourceCoverage = createRealtimeOutlineSourceCoverage(outline, session.segments, session.segments.length);
   };
-  return { memory, writer, service };
+  return { memory, writer, service, setWriterVault: (vault: NoteWriterHost["vault"]) => { writerVault = vault; } };
 }
 
 describe("manual note outline rebuild", () => {
@@ -346,5 +356,19 @@ describe("manual note outline rebuild", () => {
     expect(continuations.isTargetBusy(target)).toBe(false);
     tasks.push({ type: "merge", continuation: { targetPath: target.path } });
     expect(continuations.isTargetBusy(target)).toBe(true);
+  });
+  it("uses the current vault and config directory for replacement backups", async () => {
+    const original = createOriginalNote();
+    const { memory, service, setWriterVault } = makeWriterAndService(original);
+    const replacementStorage = createMemoryVault(original, ".alternate-config");
+    setWriterVault(replacementStorage.vault as never);
+
+    const result = await service.rebuildNoteOutline(memory.target);
+
+    expect(result.status).toBe("completed");
+    expect(result.backupPath).toMatch(/^\.alternate-config\/qnalog-outline-backups\/[^/]+\/source\.md$/);
+    expect(replacementStorage.readPath(result.backupPath!)).toBe(original);
+    expect(memory.markdown).toBe(original);
+    expect(replacementStorage.readPath(memory.target.path)).toContain("Rebuilt topic");
   });
 });

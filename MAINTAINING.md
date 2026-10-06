@@ -309,6 +309,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 - 2026-10-06 将派生笔记查找、frontmatter/正文构造、创建/覆盖与竞争恢复迁入 strict-core 的 `src/versions/derived-note-store.ts`。`VersionStore` 保留同步查找和异步创建入口，能力仍在执行时读取；`RepolishService` 调用形状不变，未新增服务依赖边。`tests/clean-transcript-storage.test.ts` 覆盖来源查找/排序、规范清稿名后备、普通派生稿覆盖、路径冲突、写入与索引失败后的文件状态、YAML 合并、动态 vault 能力及耗尽路径。未改变用户可见行为；未进行真实 Obsidian 验证。续录收尾、笔记写入及 `RecordingService` 启停仍未完成。
 - 2026-10-06 将会话收尾外层的单飞、完成/失败状态、续录任务交付与 tracking 释放顺序迁入 strict-core 的 `src/notes/session-finalize-flow.ts`。`SessionFinalizeService.finalizeSession` 保留公开入口；目标串行、失败提示与任务恢复 payload 留在服务适配方法，能力在执行时读取。未新增服务依赖边或改变用户行为。`tests/session-finalize-flow.test.ts` 覆盖并发收尾、失败重试、续录 settlement 等待、promise 替换与释放异常；`tests/short-recording-flow.test.ts` 覆盖队列交付及持久化失败保全；`scripts/check-merge-pipeline.mjs` 现在经真实 `finalizeSession` 创建 pending 任务，再跑队列失败重试，rewrite/append 两种布局均通过。未进行真实 Obsidian 验证。录音启停控制流、笔记写入和版本保全仍未全部完成；不得把 `QueueRetryService` / `NoteWriter` 间接 host 能力写成已收窄。
+- 2026-10-06 将 `NoteWriterHost` 收窄为知识库、七项设置、frontmatter、索引和具体写入/模型能力；`main.ts` 用动态 getter 与执行时回调适配，保留最近笔记、标题生成、整理、检查点清理的插件状态来源。直接构造调用者已迁移，装配与依赖边界检查覆盖新接口；`scripts/check-merge-pipeline.mjs` 使用合成笔记验证多篇纪要合并、原稿保留、索引、打开、标题改名与编辑器整理。用户行为与服务依赖边未改变。`NoteWriter` 仍未纳入 strict-core，笔记写入逻辑尚未全部类型闭合；未进行真实 Obsidian 验证。
 - **P3：A8 沉淀交互控制器**。后续任务需整体定义并验收扫描、取消、自动推进、提交、撤销和 DOM 边界；不重新拆整个 `OutlineView`。真实视觉与交互由维护者确认。
 - 真实用户数据损坏或安全问题优先。尚未定位的截图或 `partial` 状态不作为已定位故障。
 
