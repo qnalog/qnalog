@@ -145,7 +145,14 @@ const app = {
     getMarkdownFiles: () => [...files.values()],
     createFolder: async () => new TFolder(),
     create: async (p, c) => { const f = new TFile(p); f._content = c; files.set(p, f); return f; },
-    read: async (f) => f._content || "",
+    read: async (f) => {
+      if (gateContinuationStageRead && f.path === continuationStagePath) {
+        gateContinuationStageRead = false;
+        continuationStageReadReached();
+        await continuationStageReadGate.promise;
+      }
+      return f._content || "";
+    },
     cachedRead: async (f) => f._content || "",
     modify: async (f, c) => {
       if (failContinuationCommit && String(c).includes("qnalog-continuation-committed:s2")) {
@@ -173,6 +180,11 @@ const app = {
 let failContinuationCommit = false;
 let gateNextLlmRequest = false;
 let releaseGatedLlmRequest = null;
+let gateContinuationStageRead = false;
+let continuationStagePath = "";
+let continuationStageReadReached = () => undefined;
+let continuationStageReadGate = null;
+let continuationStageReadObserved = false;
 
 // 桩 LLM：从实际请求中的来源标题读取允许的证据 ID，只返回一个分部回复。
 const llmCalls = [];
@@ -452,25 +464,66 @@ async function main() {
     let continuationPreparation;
     try {
       continuationPreparation = await plugin.continuations.prepare(noteFile, continuationId, "20260914-114300", continuationTime);
-      plugin.settings.enableRealtimeOutline = true;
-      continuationPreparation.continuation.realtimeOutline = appendedLiveOutline;
+      plugin.settings.enableRealtimeOutline = false;
       for (const segment of addedSegments) {
         continuationPreparation.stageFile._content += `\n${serializeTranscriptSegment(segment)}\n`;
       }
-      const task = await plugin.queue.add({
-        id: continuationPreparation.taskId,
-        type: "merge",
-        sessionId: continuationId,
-        mdPath: continuationPreparation.stageFile.path,
-        temporarySourcePath: continuationPreparation.stageFile.path,
+      const continuationSession = {
+        id: continuationId,
         mode: continuationPreparation.mode,
+        mdPath: continuationPreparation.stageFile.path,
+        startedAt: continuationTime,
         segments: addedSegments,
+        workProgress: {},
+        segmentMeta: [],
+        finalized: false,
+        finalizing: false,
+        finalizePromise: null,
+        continuationTaskId: continuationPreparation.taskId,
         continuation: continuationPreparation.continuation,
-        sessionMeta: { startedAt: continuationTime, duration: "00:12" },
-        status: "pending",
-        retries: 0,
-        dependsOnSessionIds: [],
-      });
+        continuationSourcePath: noteFile.path,
+        realtimeOutline: appendedLiveOutline,
+      };
+      plugin.sessionStore.begin(continuationSession);
+      plugin.continuations.trackSession(continuationSession, noteFile);
+      const targetBeforeFinalize = noteFile._content;
+      continuationStagePath = continuationPreparation.stageFile.path;
+      const stageReadGate = Promise.withResolvers();
+      const stageReadReached = Promise.withResolvers();
+      continuationStageReadGate = stageReadGate;
+      continuationStageReadReached = () => { continuationStageReadObserved = true; stageReadReached.resolve(); };
+      gateContinuationStageRead = true;
+      const firstFinalize = plugin.sessionFinalize.finalizeSession(continuationSession);
+      const stageReadDeadline = performance.now() + 5000;
+      while (!continuationStageReadObserved && performance.now() < stageReadDeadline) {
+        await Promise.race([stageReadReached.promise, new Promise((resolve) => setTimeout(resolve, 0))]);
+      }
+      if (!continuationStageReadObserved) throw new Error("continuation finalizer did not reach the stage read gate within 5 seconds");
+      const secondFinalize = plugin.sessionFinalize.finalizeSession(continuationSession);
+      if (continuationSession.finalized || !continuationSession.finalizePromise
+        || noteFile._content !== targetBeforeFinalize
+        || !plugin.queue.tasks.some((candidate) => candidate.id === continuationPreparation.taskId)) {
+        failures.push("continuation finalization changed state or target before staged material was read");
+      }
+      stageReadGate.resolve();
+      await Promise.all([firstFinalize, secondFinalize]);
+      gateContinuationStageRead = false;
+      continuationStageReadGate = null;
+      plugin.settings.enableRealtimeOutline = true;
+      const task = plugin.queue.tasks.find((candidate) => candidate.id === continuationPreparation.taskId);
+      if (!continuationSession.finalized || continuationSession.finalizationError || continuationSession.finalizePromise !== null
+        || plugin.continuations.isSessionTracked(continuationId)
+        || !files.has(continuationPreparation.stageFile.path)
+        || plugin.sessionStore.get() !== null
+        || !task || task.status !== "pending"
+        || task.mdPath !== continuationPreparation.stageFile.path
+        || task.temporarySourcePath !== continuationPreparation.stageFile.path
+        || JSON.stringify(task.segments) !== JSON.stringify(addedSegments)
+        || task.continuation?.realtimeOutline !== appendedLiveOutline) {
+        failures.push(`finalizeSession did not hand off the prepared continuation task: ${JSON.stringify({ finalized: continuationSession.finalized, finalizationError: continuationSession.finalizationError, activeSession: plugin.sessionStore.get(), task })}`);
+      }
+      if (noteFile._content !== targetBeforeFinalize) failures.push("continuation finalization changed its target note before queue processing");
+      if (!task) throw new Error("continuation finalize handoff did not create the prepared queue task");
       gateNextLlmRequest = true;
       failContinuationCommit = true;
       const continuationRun = plugin.queue.processOne(task);

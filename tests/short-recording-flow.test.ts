@@ -770,6 +770,91 @@ describe("短录音整条路径", () => {
     expect(files.has("QnALog/转写纪要/2026-09-18 12:03.md")).toBe(false);
     expect(notices.join("\n")).toContain("Cannot start recording");
   });
+  it("hands a completed continuation back to its existing queue task with all session metadata", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    const segments = [{ index: 4, startOffsetMs: 12000, endOffsetMs: 16000, text: "continued transcript", audioPath: "audio.webm" }];
+    Object.assign(fixture.session, {
+      shortRecordingTier: undefined,
+      shortRecordingDurationMs: undefined,
+      segments,
+      realtimeOutline: "continued outline",
+      masterAudioPath: "master.webm",
+      masterAudioName: "master.webm",
+      meetingWorkbench: { notes: "handoff metadata", entries: [] },
+    });
+    fixture.finalizeService._finalizeSessionImpl = async () => undefined;
+
+    await fixture.finalizeService.finalizeSession(fixture.session as never);
+
+    const task = fixture.queue.tasks.find((candidate) => candidate.id === (fixture.session as never).continuationTaskId);
+    const saved = JSON.parse(fixture.persistedQueue()).find((candidate: { id: string }) => candidate.id === task?.id);
+    expect(task).toMatchObject({ status: "pending", mdPath: fixture.session.mdPath, temporarySourcePath: fixture.session.mdPath });
+    expect(saved).toMatchObject({
+      status: "pending",
+      segments,
+      continuation: { realtimeOutline: "continued outline", masterAudioPath: "master.webm", masterAudioName: "master.webm" },
+      sessionMeta: { startedAt: fixture.session.startedAt, meetingWorkbench: { notes: "handoff metadata", entries: [], draft: "", materials: [] } },
+    });
+    expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+    expect(fixture.files.has(fixture.session.mdPath)).toBe(true);
+    expect(fixture.continuations.isSessionTracked(fixture.session.id)).toBe(false);
+    expect(fixture.session.finalized).toBe(true);
+  });
+
+  it("keeps a failed ordinary continuation pending with its error, then clears it after retry", async () => {
+    notices.length = 0;
+    const fixture = await makeContinuationDiscardFixture();
+    const segments = [{ index: 4, startOffsetMs: 12000, endOffsetMs: 16000, text: "retryable transcript", audioPath: "retryable.webm" }];
+    Object.assign(fixture.session, { shortRecordingTier: undefined, shortRecordingDurationMs: undefined, segments });
+    let failOnce = true;
+    fixture.finalizeService._finalizeSessionImpl = async () => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("final note write failed");
+      }
+    };
+
+    await fixture.finalizeService.finalizeSession(fixture.session as never);
+
+    const taskId = (fixture.session as never).continuationTaskId;
+    expect(fixture.queue.tasks.find((candidate) => candidate.id === taskId)).toMatchObject({
+      status: "pending",
+      segments,
+      lastError: "final note write failed",
+    });
+    expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+    expect(fixture.files.has(fixture.session.mdPath)).toBe(true);
+    expect(fixture.session.finalized).toBe(false);
+    expect(fixture.session.finalizationError).toBe("final note write failed");
+    expect(fixture.session.workProgress).toMatchObject({ stage: "finalize-failed", percent: null });
+    expect(notices.join("\n")).toContain("Failed to finalize minutes");
+
+    await fixture.finalizeService.finalizeSession(fixture.session as never);
+
+    expect(fixture.queue.tasks.find((candidate) => candidate.id === taskId)).toMatchObject({ status: "pending", lastError: "" });
+    expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+    expect(fixture.files.has(fixture.session.mdPath)).toBe(true);
+    expect(fixture.session).toMatchObject({ finalized: true, finalizationError: "", finalizePromise: null });
+  });
+
+  it("keeps the in-memory continuation update when persistence fails and preserves staged materials", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    const segments = [{ index: 4, startOffsetMs: 12000, endOffsetMs: 16000, text: "continued transcript" }];
+    Object.assign(fixture.session, { shortRecordingTier: undefined, shortRecordingDurationMs: undefined, segments });
+    fixture.finalizeService._finalizeSessionImpl = async () => undefined;
+    const taskId = (fixture.session as never).continuationTaskId;
+    const savedBefore = JSON.parse(fixture.persistedQueue());
+    fixture.failNextSave("handoff save failed");
+
+    await fixture.finalizeService.finalizeSession(fixture.session as never);
+
+    expect(fixture.queue.tasks.find((candidate) => candidate.id === taskId)).toMatchObject({ status: "pending", segments });
+    expect(JSON.parse(fixture.persistedQueue())).toEqual(savedBefore);
+    expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+    expect(fixture.files.has(fixture.session.mdPath)).toBe(true);
+    expect(fixture.continuations.isSessionTracked(fixture.session.id)).toBe(false);
+    expect(fixture.session.finalizePromise).toBeNull();
+  });
 });
 
 describe("session note block cleanup consumers", () => {

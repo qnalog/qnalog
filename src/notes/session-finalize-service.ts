@@ -49,6 +49,8 @@ import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/tran
 import { labelText } from "../shared/note-labels";
 import type { ContinuationService } from "../session/continuation-service";
 import type { SessionStore } from "../session/session-store";
+import type { SessionFinalizeFlowHost } from "./session-finalize-flow";
+import { finalizeSessionFlow } from "./session-finalize-flow";
 /** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
@@ -96,9 +98,16 @@ export class SessionFinalizeService {
   declare notePanelCacheKey;
   declare notePanelCacheData;
   declare notePanelLoading;
+  private readonly finalizeFlowHost: SessionFinalizeFlowHost;
 
   constructor(host: SessionFinalizeHost) {
     this.host = host;
+    this.finalizeFlowHost = {
+      runFinalizer: (session) => this.runSessionFinalizer(session),
+      reportFailure: (session, error) => this.reportSessionFinalizationFailure(session, error),
+      settleContinuation: (session) => this.settleContinuationFinalization(session),
+      releaseSession: (sessionId) => this.host.continuations.releaseSession(sessionId),
+    };
     this.notePanelCacheKey = null;
     this.notePanelCacheData = null;
     this.notePanelLoading = null;
@@ -539,107 +548,100 @@ export class SessionFinalizeService {
     return normalizeSegmentsForMergedNote([...base, ...fresh], 0, 0, null);
   }
 
-  async finalizeSession(session: RecordingSession) {
-    if (!session || session.finalized) return;
-    if (session.finalizePromise !== null && session.finalizePromise !== undefined) return session.finalizePromise;
-    const finalizePromise = (async () => {
-      try {
-        const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
-        if (targetFile instanceof obsidian.TFile) {
-          await this.host.continuations.runOnTarget(targetFile, () => this._finalizeSessionImpl(session));
-        } else {
-          await this._finalizeSessionImpl(session);
-        }
-        // 只有完整收尾流程返回后才锁定。此前在函数入口置 true，任何意外写盘异常
-        // 都会把半成品会话永久标成已完成，后续无法再收尾。
-        session.finalized = true;
-        session.finalizationError = "";
-      } catch (e) {
-        session.finalizing = false;
-        session.finalizationError = getErrorMessage(e);
-        if (session._finalizeTaskMeter) {
-          this.host.taskMeters.endTaskMeter(session._finalizeTaskMeter);
-          session._finalizeTaskMeter = null;
-        }
-        try {
-          this.host.asrPipeline.setSessionWorkProgress(session, {
-            stage: "finalize-failed",
-            label: t("Failed to finalize minutes"),
-            percent: null,
-            detail: t("The original transcript and recording were kept; open the note and re-organize"),
-          });
-        } catch { /* intentionally empty */ }
-        console.error("[QnALog] finalize session failed", e);
-        try {
-          await this.host.diagnostics.logDiagnostic("error", "session.finalize_failed", t("Finalizing the minutes failed unexpectedly; the original material was kept"), {
-            mode: session.mode,
-            mdPath: session.mdPath,
-            segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
-            error: diagnosticError(e),
-          });
-        } catch { /* intentionally empty */ }
-        new obsidian.Notice(t("Failed to finalize minutes; the original transcript and recording have been kept. You can use \"Reorganize\" in the note."), 10000);
-        this.host.sessionStore.end(session);
-        this.host.requestOutlineRefresh();
-      }
-    })();
-    session.finalizePromise = finalizePromise;
+  finalizeSession(session: RecordingSession): Promise<void> {
+    return finalizeSessionFlow(this.finalizeFlowHost, session);
+  }
+
+  private async runSessionFinalizer(session: RecordingSession): Promise<void> {
+    const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    if (targetFile instanceof obsidian.TFile) {
+      await this.host.continuations.runOnTarget(targetFile, () => this._finalizeSessionImpl(session));
+    } else {
+      await this._finalizeSessionImpl(session);
+    }
+  }
+
+  private async reportSessionFinalizationFailure(session: RecordingSession, error: unknown): Promise<void> {
+    if (session._finalizeTaskMeter) {
+      this.host.taskMeters.endTaskMeter(session._finalizeTaskMeter);
+      session._finalizeTaskMeter = null;
+    }
     try {
-      return await finalizePromise;
-    } finally {
-      if (session.continuationTaskId && this.host.queue) {
-        const isDiscardedContinuation = session.shortRecordingTier === "discard"
-          && !!session.continuation
-          && !!session.continuationTaskId;
-        if (isDiscardedContinuation) {
-          if (!session.finalized) {
-            try {
-              await this.host.queue.update(session.continuationTaskId, {
-                status: "failed",
-                mdPath: session.mdPath,
-                temporarySourcePath: session.mdPath,
-                continuation: session.continuation,
-                segments: [],
-                continuationDisposition: "discard",
-                lastError: session.finalizationError || "",
-              });
-            } catch (error) {
-              console.error("[QnALog] discarded continuation recovery task update failed", error);
-            }
-          }
-        } else {
-          const continuation = {
-            ...session.continuation,
-            realtimeOutline: String(session.realtimeOutline || ""),
-            realtimeOutlineSegmentCount: Number(session.realtimeOutlineSegmentCount) || 0,
-            realtimeOutlineSourceCoverage: session.realtimeOutlineSourceCoverage,
-            masterAudioPath: String(session.masterAudioPath || ""),
-            masterAudioName: String(session.masterAudioName || ""),
-          };
+      this.host.asrPipeline.setSessionWorkProgress(session, {
+        stage: "finalize-failed",
+        label: t("Failed to finalize minutes"),
+        percent: null,
+        detail: t("The original transcript and recording were kept; open the note and re-organize"),
+      });
+    } catch { /* intentionally empty */ }
+    console.error("[QnALog] finalize session failed", error);
+    try {
+      await this.host.diagnostics.logDiagnostic("error", "session.finalize_failed", t("Finalizing the minutes failed unexpectedly; the original material was kept"), {
+        mode: session.mode,
+        mdPath: session.mdPath,
+        segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
+        error: diagnosticError(error),
+      });
+    } catch { /* intentionally empty */ }
+    new obsidian.Notice(t("Failed to finalize minutes; the original transcript and recording have been kept. You can use \"Reorganize\" in the note."), 10000);
+    this.host.sessionStore.end(session);
+    this.host.requestOutlineRefresh();
+  }
+
+  private settleContinuationFinalization(session: RecordingSession): Promise<void> | undefined {
+    if (!session.continuationTaskId || !this.host.queue) return undefined;
+    const isDiscardedContinuation = session.shortRecordingTier === "discard"
+      && !!session.continuation
+      && !!session.continuationTaskId;
+    if (isDiscardedContinuation) {
+      if (!session.finalized) {
+        return (async () => {
           try {
             await this.host.queue.update(session.continuationTaskId, {
-              status: "pending",
+              status: "failed",
               mdPath: session.mdPath,
               temporarySourcePath: session.mdPath,
-              segments: (session.segments || []).map(segment => ({ ...segment })),
-              continuation,
-              sessionMeta: {
-                startedAt: session.startedAt,
-                duration: formatElapsed(getSegmentsDurationMs(session.segments || [])),
-                meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-                _briefingCheckpointId: session._briefingCheckpointId || "",
-              },
-              speakerFrontmatter: null,
+              continuation: session.continuation,
+              segments: [],
+              continuationDisposition: "discard",
               lastError: session.finalizationError || "",
             });
           } catch (error) {
-            console.error("[QnALog] continuation recovery task update failed", error);
+            console.error("[QnALog] discarded continuation recovery task update failed", error);
           }
-        }
+        })();
       }
-      this.host.continuations.releaseSession(session.id);
-      if (session.finalizePromise === finalizePromise) session.finalizePromise = null;
+      return undefined;
     }
+    const continuation = {
+      ...session.continuation,
+      realtimeOutline: String(session.realtimeOutline || ""),
+      realtimeOutlineSegmentCount: Number(session.realtimeOutlineSegmentCount) || 0,
+      realtimeOutlineSourceCoverage: session.realtimeOutlineSourceCoverage,
+      masterAudioPath: String(session.masterAudioPath || ""),
+      masterAudioName: String(session.masterAudioName || ""),
+    };
+    return (async () => {
+      try {
+        await this.host.queue.update(session.continuationTaskId, {
+          status: "pending",
+          mdPath: session.mdPath,
+          temporarySourcePath: session.mdPath,
+          segments: (session.segments || []).map(segment => ({ ...segment })),
+          continuation,
+          sessionMeta: {
+            startedAt: session.startedAt,
+            duration: formatElapsed(getSegmentsDurationMs(session.segments || [])),
+            meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
+            _briefingCheckpointId: session._briefingCheckpointId || "",
+          },
+          speakerFrontmatter: null,
+          lastError: session.finalizationError || "",
+        });
+      } catch (error) {
+        console.error("[QnALog] continuation recovery task update failed", error);
+      }
+    })();
   }
 
   async confirmSpeakerNamesBeforeFinal(session, segments) {
