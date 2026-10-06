@@ -2,16 +2,15 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记正文写入：整合版重写与追加、分段标记插入、重新整理、合并历史笔记
 
 import * as obsidian from "obsidian";
-import { qnalogConfirm } from "../ui/helpers";
 import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { splitOutSedimentBlock } from "../sediment";
-import { NoteIndexService } from "./note-index-service";
+import type { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
-import type { PluginSettings, RecordingSession } from "../shared/types";
+import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { extractAllRawBlocksFromText, findFirstNoteBoundary, findNoteMarkerOffset, findSessionNoteBlock, iterateNoteDetailsBlocks, splitLeadingFrontmatter } from "./note-document";
-import { buildEmptyLlmOutputFallback, clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
+import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
@@ -20,12 +19,10 @@ import { readCurrentOutlineBlock } from "./outline-storage";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { getCurrentTranscript } from "../transcript/session-transcript";
 import { getFrontmatterTags } from "../shared/util-note";
-import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, generateTitleTag, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
-import { detectRecentModeFromFilename, getRecentNotes } from "../recent/recent-notes";
-import { mergeAndPolish, polishTranscript } from "../briefing/merge-pipeline";
+import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
+import { detectRecentModeFromFilename } from "../recent/recent-notes";
 import { NS_CONTINUATION_COMMITTED_MARKER, NS_MERGE_BLOCK_RE, NS_OUTLINE_BACKUP_FOLDER, NS_TAG, nsMarker, nsMarkerAnyRe, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
-import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 
@@ -118,14 +115,32 @@ export function buildPriorSessionBlocks(session) {
   return { recordingInfoAppendix, outlineAppendix, audioAppendix };
 }
 
-/** NoteWriter 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
+export type NoteWriterSettings = Pick<PluginSettings,
+  | "promptTemplates" | "polishMode" | "llmModel" | "consolidatedLayout"
+  | "autoRenameWithTitle" | "mdFolder" | "noteFileNameFormatNew"
+>;
+
+export type NoteWriterVault = Pick<obsidian.Vault,
+  "getAbstractFileByPath" | "read" | "modify" | "create" | "process" | "configDir"
+> & {
+  readonly adapter?: Pick<obsidian.DataAdapter, "exists" | "mkdir" | "write" | "read">;
+};
+
 export interface NoteWriterHost {
-  /** 知识库与工作区访问。 */
-  app: obsidian.App;
-  /** 笔记索引与当日概要服务。 */
-  noteIndex: NoteIndexService;
-  /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: PluginSettings;
+  readonly vault: NoteWriterVault;
+  readonly settings: NoteWriterSettings;
+  readonly noteIndex: Pick<NoteIndexService, "refreshNoteIndexSafely">;
+  getFileFrontmatter(file: obsidian.TFile): obsidian.CachedMetadata["frontmatter"];
+  ensureFolder(path: string): Promise<void>;
+  findAvailableMarkdownPath(targetPath: string, currentPath?: string): string;
+  renameFile(file: obsidian.TFile, path: string): Promise<void>;
+  openFile(file: obsidian.TFile): Promise<void>;
+  confirm(title: string, body: string, ctaText: string): Promise<unknown>;
+  getRecentNotes(limit: number): Array<{ file: obsidian.TFile; timestamp: number }>;
+  generateTitleTag(polished: string, mode: string): Promise<string>;
+  polishTranscript(raw: string, mode: string): Promise<string>;
+  mergeAndPolish(segments: Segment[], mode: string, sessionMeta: SessionMetaForMerge): Promise<string>;
+  clearCommittedBriefingCheckpoint(sessionMeta: SessionMetaForMerge): Promise<void>;
 }
 
 export class NoteWriter {
@@ -134,7 +149,7 @@ export class NoteWriter {
     this.host = host;
   }
   async readNoteMarkdown(file: obsidian.TFile): Promise<string> {
-    return this.host.app.vault.read(file);
+    return this.host.vault.read(file);
   }
 
   async replaceRealtimeOutline(
@@ -142,7 +157,7 @@ export class NoteWriter {
     expectedMarkdown: string,
     outlineDetails: string,
   ): Promise<RealtimeOutlineReplacementResult> {
-    const vault = this.host.app.vault;
+    const vault = this.host.vault;
     const generatedOutlineBlock = readCurrentOutlineBlock(outlineDetails);
     if (!(file instanceof obsidian.TFile) || file.extension !== "md" || !generatedOutlineBlock
       || generatedOutlineBlock.range.start !== 0 || generatedOutlineBlock.range.end !== outlineDetails.length) {
@@ -225,7 +240,7 @@ export class NoteWriter {
   }
 
   private async backupOutlineSource(file: obsidian.TFile, originalMarkdown: string): Promise<string> {
-    const vault = this.host.app.vault;
+    const vault = this.host.vault;
     const adapter = vault.adapter;
     if (!adapter) throw new Error("Vault storage adapter is unavailable");
     const configDir = obsidian.normalizePath(String(vault.configDir || "").trim());
@@ -259,7 +274,7 @@ export class NoteWriter {
   async appendRepolishBlock(file, polished, mode, segments) {
     const meta = getModeMeta(this.host.settings, mode);
     const stamp = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-    const cur = await this.host.app.vault.read(file);
+    const cur = await this.host.vault.read(file);
 
     // 关键：从全文里把所有原始 / 元数据块（任意深度）抽出来，避免再次嵌套。
     // 旧实现只识别 "## 📁 原始材料"，对 appendPolishBlock 产出的
@@ -304,12 +319,12 @@ export class NoteWriter {
       "",
     ].filter(v => v !== null).join("\n");
 
-    await this.host.app.vault.modify(file, currentBlock.replace(/\n{4,}/g, "\n\n\n"));
+    await this.host.vault.modify(file, currentBlock.replace(/\n{4,}/g, "\n\n\n"));
   }
   async rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = ""): Promise<void> {
-    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
-    const currentMarkdown = await this.host.app.vault.read(file);
+    const currentMarkdown = await this.host.vault.read(file);
     readTranscriptBlocks(currentMarkdown);
     const meta = getModeMeta(this.host.settings, session.mode);
     const moment = window.moment;
@@ -407,10 +422,10 @@ export class NoteWriter {
         ...(continuationSessionId ? [nsMarker(NS_CONTINUATION_COMMITTED_MARKER, continuationSessionId)] : []),
       ]),
     ].filter(v => v !== null).join("\n");
-    await this.host.app.vault.modify(file, content);
+    await this.host.vault.modify(file, content);
   }
   async appendPolishBlock(session, polished, mergeError, nonRetryableMergeError = false, continuationSessionId = "", initialMarkdown: string | null = null) {
-    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
     const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
     const meta = getModeMeta(this.host.settings, session.mode);
@@ -463,7 +478,7 @@ export class NoteWriter {
       sediment.block || null,
       sediment.block ? "" : null,
     ].filter(v => v !== null).join("\n");
-    let cur = initialMarkdown ?? await this.host.app.vault.read(file);
+    let cur = initialMarkdown ?? await this.host.vault.read(file);
     if (polishedFrontmatter && !mergeError) {
       const currentParts = splitLeadingFrontmatter(cur);
       cur = polishedFrontmatter + "\n" + currentParts.body.replace(/^\n+/, "");
@@ -477,13 +492,13 @@ export class NoteWriter {
       });
     }
     if (continuationSessionId) next = `${next.replace(/\s*$/, "")}\n${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, continuationSessionId)}\n`;
-    await this.host.app.vault.modify(file, next);
+    await this.host.vault.modify(file, next);
   }
 
   async commitContinuation(session: RecordingSession, polished: string, committedSessionIds: readonly string[]): Promise<void> {
-    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) throw new Error("Continuation target note is missing");
-    const current = await this.host.app.vault.read(file);
+    const current = await this.host.vault.read(file);
     const blocks = readTranscriptBlocks(current);
     const incoming = session.segments.filter(segment => segment.transcript?.sourceId === session.id);
     const counts = new Map<string, number>();
@@ -554,75 +569,75 @@ export class NoteWriter {
     await this.appendPolishBlock(session, polished, null, false, session.id, withFreshBlocks);
   }
   async appendToNote(path, content) {
-    const existing = this.host.app.vault.getAbstractFileByPath(path);
+    const existing = this.host.vault.getAbstractFileByPath(path);
     if (existing instanceof obsidian.TFile) {
-      const cur = await this.host.app.vault.read(existing);
+      const cur = await this.host.vault.read(existing);
       const sep = cur.endsWith("\n") ? "" : "\n";
-      await this.host.app.vault.modify(existing, cur + sep + content);
+      await this.host.vault.modify(existing, cur + sep + content);
     } else {
-      await this.host.app.vault.create(path, content);
+      await this.host.vault.create(path, content);
     }
   }
   // 把内容插到 segments-start marker 之前（即分段转写区上方），用于录音期把会中生成的提纲放在段落之上。
   async insertBeforeSegmentsStart(path, content, sessionId) {
-    const file = this.host.app.vault.getAbstractFileByPath(path);
+    const file = this.host.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
-    const cur = await this.host.app.vault.read(file);
+    const cur = await this.host.vault.read(file);
     const marker = nsMarker("segments-start", sessionId || undefined);
     const idx = findNoteMarkerOffset(cur, marker, "first");
     if (idx >= 0) {
       const next = cur.slice(0, idx) + content + "\n" + cur.slice(idx);
-      await this.host.app.vault.modify(file, next);
+      await this.host.vault.modify(file, next);
       return;
     }
     await this.appendToNote(path, content);
   }
   async insertBeforeSegmentsEnd(path, content, sessionId) {
-    const file = this.host.app.vault.getAbstractFileByPath(path);
+    const file = this.host.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
-    const cur = await this.host.app.vault.read(file);
+    const cur = await this.host.vault.read(file);
     const specific = sessionId ? nsMarker("segments-end", sessionId) : null;
     const legacy = nsMarker("segments-end");
     const specificIndex = specific ? findNoteMarkerOffset(cur, specific, "first") : -1;
     if (specific && specificIndex >= 0) {
       const next = cur.slice(0, specificIndex) + `${content}\n${specific}` + cur.slice(specificIndex + specific.length);
-      await this.host.app.vault.modify(file, next);
+      await this.host.vault.modify(file, next);
       return;
     }
     const lastIdx = findNoteMarkerOffset(cur, legacy, "last");
     if (lastIdx >= 0) {
       const next = cur.slice(0, lastIdx) + content + "\n" + cur.slice(lastIdx);
-      await this.host.app.vault.modify(file, next);
+      await this.host.vault.modify(file, next);
       return;
     }
     await this.appendToNote(path, content);
   }
   async removeEmptySessionBlock(session) {
-    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
-    const cur = await this.host.app.vault.read(file);
+    const cur = await this.host.vault.read(file);
     const range = findSessionNoteBlock(cur, session.id);
     if (!range) return;
     const before = cur.slice(0, range.start).replace(/\n+$/, "\n");
     const after = cur.slice(range.end).replace(/^\n+/, "");
     const next = before + (after ? "\n" + after : "");
-    if (next !== cur) await this.host.app.vault.modify(file, next);
+    if (next !== cur) await this.host.vault.modify(file, next);
   }
 
   async renameMarkdownWithGeneratedTitle(fileOrPath, polished, mode) {
     if (!this.host.settings.autoRenameWithTitle || !polished || mode === "off") return null;
     const file = typeof fileOrPath === "string"
-      ? this.host.app.vault.getAbstractFileByPath(fileOrPath)
+      ? this.host.vault.getAbstractFileByPath(fileOrPath)
       : fileOrPath;
     if (!(file instanceof obsidian.TFile)) return null;
     try {
-      const tag = await generateTitleTag(this.host, polished, mode);
+      const tag = await this.host.generateTitleTag(polished, mode);
       if (!tag) return file;
       const target = buildRenamedMarkdownPath(file.path, mode, tag, this.host.settings);
-      const newPath = findAvailableMarkdownPath(this.host.app, target, file.path);
+      const newPath = this.host.findAvailableMarkdownPath(target, file.path);
       if (!newPath || obsidian.normalizePath(newPath) === obsidian.normalizePath(file.path)) return file;
-      await this.host.app.fileManager.renameFile(file, newPath);
-      const renamed = this.host.app.vault.getAbstractFileByPath(newPath);
+      await this.host.renameFile(file, newPath);
+      const renamed = this.host.vault.getAbstractFileByPath(newPath);
       return renamed instanceof obsidian.TFile ? renamed : file;
     } catch (e) {
       console.error("[QnALog] rename failed", e);
@@ -636,7 +651,7 @@ export class NoteWriter {
     new obsidian.Notice(t("AI polishing..."));
     try {
       const mode = getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
-      const polished = await polishTranscript(this.host, raw, mode, null, null, null);
+      const polished = await this.host.polishTranscript(raw, mode);
       if (sel) editor.replaceSelection(polished); else editor.setValue(polished);
       new obsidian.Notice(t("Polishing complete"));
     } catch (e) {
@@ -647,7 +662,7 @@ export class NoteWriter {
   // 从 .md 文件的 frontmatter 推断模式（mode 字段；找不到时尝试 类型 字段中文映射）
   detectModeFromMarkdown(file) {
     if (!(file instanceof obsidian.TFile)) return null;
-    const cache = (this.host.app.metadataCache.getFileCache(file) || {}).frontmatter;
+    const cache = this.host.getFileFrontmatter(file);
     if (!cache) {
       const fallbackMode = detectRecentModeFromFilename(this.host.settings, file.basename);
       return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
@@ -695,7 +710,7 @@ export class NoteWriter {
   findPreviousRecentNoteFile(file) {
     if (!(file instanceof obsidian.TFile)) return null;
     const currentPath = obsidian.normalizePath(file.path);
-    const recents = getRecentNotes(this.host, 240);
+    const recents = this.host.getRecentNotes(240);
     const current = recents.find((item) => item && item.file && obsidian.normalizePath(item.file.path) === currentPath);
     if (!current) return null;
     const older = recents
@@ -707,18 +722,18 @@ export class NoteWriter {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
       throw new Error(t("Only QnALog Markdown minutes notes can be merged"));
     }
-    let content = await this.host.app.vault.read(file);
+    let content = await this.host.vault.read(file);
     const sourceId = getSourceIdFromMarkdown(content, file);
     const transcriptReady = ensureTranscriptBlocks(content, sourceId);
     if (transcriptReady !== content) {
-      await this.host.app.vault.modify(file, transcriptReady);
+      await this.host.vault.modify(file, transcriptReady);
       content = transcriptReady;
     }
     const rawSegments = extractTranscriptSegments(content);
     if (!rawSegments.length) {
       throw new Error(t("No original transcription segments found in \"{0}\"").replace("{0}", file.basename));
     }
-    const frontmatter = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
+    const frontmatter = this.host.getFileFrontmatter(file) || {};
     const rawDurationMs = getSegmentsDurationMs(rawSegments) || getDurationMs(content);
     const segments = normalizeSegmentsForMergedNote(rawSegments, offsetMs, startIndex, file);
     if (segments.length) {
@@ -743,7 +758,7 @@ export class NoteWriter {
       new obsidian.Notice(t("No most recent QnALog summary before this one was found."), 6000);
       return;
     }
-    const ok = await qnalogConfirm(this.host.app, t("Merge minutes"), t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace("{0}", previous.basename).replace("{1}", file.basename), t("Merge"));
+    const ok = await this.host.confirm(t("Merge minutes"), t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace("{0}", previous.basename).replace("{1}", file.basename), t("Merge"));
     if (!ok) return;
     try {
       await this.mergeMarkdownFilesAsNew([previous, file]);
@@ -772,18 +787,18 @@ export class NoteWriter {
       return;
     }
     const mode = sources[sources.length - 1].mode || sources[0].mode || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
-    await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
+    await this.host.ensureFolder(this.host.settings.mdFolder);
     const moment = window.moment;
     const startedAtIso = sources[0].startedAt || new Date().toISOString();
     const startedAt = moment ? moment(startedAtIso) : null;
     const stamp = startedAt && startedAt.isValid && startedAt.isValid()
       ? startedAt.format(this.host.settings.noteFileNameFormatNew)
       : (moment ? moment().format(this.host.settings.noteFileNameFormatNew) : "合并纪要");
-    const targetPath = findAvailableMarkdownPath(this.host.app, obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · ${t("Merge")}.md`));
+    const targetPath = this.host.findAvailableMarkdownPath(obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · ${t("Merge")}.md`));
     if (!targetPath) throw new Error(t("Failed to generate a path for the merged minutes file"));
 
     new obsidian.Notice(`${t("QnALog: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
-    await this.host.app.vault.create(targetPath, "");
+    await this.host.vault.create(targetPath, "");
     const session = {
       id: genId(),
       sessionStamp: moment ? moment().format("YYYYMMDD-HHmmss") : String(Date.now()),
@@ -808,10 +823,10 @@ export class NoteWriter {
       source: "merged-notes",
       meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
     };
-    const polished = await mergeAndPolish(this.host, segments.map((segment) => ({ ...segment })), mode, null, sessionMeta);
+    const polished = await this.host.mergeAndPolish(segments.map((segment) => ({ ...segment })), mode, sessionMeta);
     await this.rewriteConsolidated(session, polished);
-    await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
-    let finalFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+    await this.host.clearCommittedBriefingCheckpoint(sessionMeta);
+    let finalFile = this.host.vault.getAbstractFileByPath(session.mdPath);
     const renamed = await this.renameMarkdownWithGeneratedTitle(session.mdPath, polished, mode);
     if (renamed instanceof obsidian.TFile) {
       session.mdPath = renamed.path;
@@ -823,7 +838,7 @@ export class NoteWriter {
         meetingDate: session.startedAt,
         reason: "merge-notes",
       });
-      try { await this.host.app.workspace.getLeaf(false).openFile(finalFile); } catch { /* intentionally empty */ }
+      try { await this.host.openFile(finalFile); } catch { /* intentionally empty */ }
     }
     new obsidian.Notice(`${t("Generated merged minutes: ")}${finalFile instanceof obsidian.TFile ? finalFile.basename : getModeMeta({}, "synthesis").prefix}`);
   }
@@ -838,11 +853,11 @@ export class NoteWriter {
       })),
     };
     const block = `${nsMarker("merge")}\n${JSON.stringify(payload, null, 2)}\n${NS_TAG}-merge-end -->`;
-    const cur = await this.host.app.vault.read(file);
+    const cur = await this.host.vault.read(file);
     if (NS_MERGE_BLOCK_RE.test(cur)) {
-      await this.host.app.vault.modify(file, cur.replace(NS_MERGE_BLOCK_RE, block));
+      await this.host.vault.modify(file, cur.replace(NS_MERGE_BLOCK_RE, block));
     } else {
-      await this.host.app.vault.modify(file, cur.replace(/\s*$/, "\n\n" + block + "\n"));
+      await this.host.vault.modify(file, cur.replace(/\s*$/, "\n\n" + block + "\n"));
     }
   }
 }

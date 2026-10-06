@@ -109,6 +109,8 @@ function serializeTranscriptSegment(segment) {
 }
 
 const files = new Map();
+const frontmatterByPath = new Map();
+const openedFiles = [];
 const noteFile = new TFile(NOTE_PATH);
 noteFile._content = NOTE_BODY;
 files.set(NOTE_PATH, noteFile);
@@ -166,12 +168,22 @@ const app = {
   },
   workspace: {
     on: () => ({}), onLayoutReady: (fn) => fn(), getActiveFile: () => null,
-    getLeavesOfType: () => [], getLeaf: () => ({ openFile: async () => undefined, view: null }),
+    getLeavesOfType: () => [], getLeaf: () => ({ openFile: async (file) => { openedFiles.push(file); }, view: null }),
     iterateAllLeaves: noop,
   },
-  metadataCache: { getFirstLinkpathDest: () => null, getFileCache: () => null, on: () => ({}) },
+  metadataCache: {
+    getFirstLinkpathDest: () => null,
+    getFileCache: (file) => frontmatterByPath.has(file.path) ? { frontmatter: frontmatterByPath.get(file.path) } : null,
+    on: () => ({}),
+  },
   fileManager: {
-    renameFile: async () => undefined,
+    renameFile: async (file, path) => {
+      files.delete(file.path);
+      file.path = path;
+      file.name = path.slice(path.lastIndexOf("/") + 1);
+      file.basename = file.name.replace(/\.[^.]+$/, "");
+      files.set(path, file);
+    },
     trashFile: async (file) => { files.delete(file.path); },
   },
   internalPlugins: { getPluginById: () => null, plugins: {} },
@@ -196,6 +208,13 @@ function requestPrompt(request) {
 }
 function makeLlmReply(request) {
   const prompt = requestPrompt(request);
+  if (prompt.includes("You name files and extract short topic tags from meeting notes.")
+    || prompt.includes("你是文件命名助手，擅长从中文内容中提取简洁的主题标签。")) {
+    return JSON.stringify({
+      choices: [{ message: { role: "assistant", content: "Writer topic" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 20, completion_tokens: 3, total_tokens: 23 },
+    });
+  }
   if (prompt.includes("<qnalog-outline>")) {
     return JSON.stringify({
       choices: [{
@@ -758,6 +777,118 @@ async function main() {
     } catch (error) {
       failures.push(`空会话清理冒烟失败：${(error && error.message) || error}`);
       files.delete("qnalog-session-cleanup-smoke.md");
+    }
+    let settingsBeforeWriterSmoke = null;
+    let momentBeforeWriterSmoke = null;
+    try {
+      settingsBeforeWriterSmoke = {
+        mdFolder: plugin.settings.mdFolder,
+        polishMode: plugin.settings.polishMode,
+        autoRenameWithTitle: plugin.settings.autoRenameWithTitle,
+        noteFileNameFormatNew: plugin.settings.noteFileNameFormatNew,
+      };
+      momentBeforeWriterSmoke = sandbox.moment;
+      const openedBeforeWriterSmoke = openedFiles.length;
+      const sourceAPath = "QnALog/WriterSmoke/2026-09-14 1100.md";
+      const sourceBPath = "QnALog/WriterSmoke/2026-09-14 1101.md";
+      const makeSource = (path, sourceId, text, time) => {
+        const segment = transcriptSegment(0, text, 0, 1000, sourceId);
+        const content = [
+          "---", "qnalog_mode: monologue", `qnalog_time: ${time}`, "---", "",
+          `# ${path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "")}`, "",
+          `<!-- qnalog-segments-start:${sourceId} -->`,
+          serializeTranscriptSegment(segment),
+          `<!-- qnalog-segments-end:${sourceId} -->`,
+        ].join("\n");
+        const file = new TFile(path);
+        file._content = content;
+        files.set(path, file);
+        frontmatterByPath.set(path, { qnalog_mode: "monologue", qnalog_time: time });
+        return { file, content };
+      };
+      const sourceA = makeSource(sourceAPath, "writer-source-a", "Writer source A transcript remains intact.", "2026-09-14T11:00:00.000Z");
+      const sourceB = makeSource(sourceBPath, "writer-source-b", "Writer source B transcript remains intact.", "2026-09-14T11:01:00.000Z");
+      plugin.settings.mdFolder = "QnALog/WriterSmoke";
+      plugin.settings.polishMode = "monologue";
+      plugin.settings.autoRenameWithTitle = false;
+      const writerMoment = (input) => {
+        const parsed = input instanceof Date
+          ? input
+          : typeof input === "string" && /^\d{4}-\d{2}-\d{2} \d{4}$/.test(input)
+            ? new Date(`${input.slice(0, 10)}T${input.slice(11, 13)}:${input.slice(13, 15)}:00.000Z`)
+            : input ? new Date(input) : new Date("2026-09-14T12:00:00.000Z");
+        const valid = Number.isFinite(parsed.getTime());
+        return {
+          isValid: () => valid,
+          year: () => parsed.getUTCFullYear(),
+          day: () => parsed.getUTCDay(),
+          valueOf: () => parsed.getTime(),
+          format: (pattern) => pattern === "YYYY-MM-DD"
+            ? parsed.toISOString().slice(0, 10)
+            : pattern === "YYYY-MM-DD HHmm"
+              ? `${parsed.toISOString().slice(0, 10)} ${parsed.toISOString().slice(11, 16).replace(":", "")}`
+              : pattern === "HH:mm"
+                ? parsed.toISOString().slice(11, 16)
+                : pattern === "DD"
+                  ? parsed.toISOString().slice(8, 10)
+                  : "Sep",
+        };
+      };
+      sandbox.moment = writerMoment;
+      const previousSource = plugin.noteWriter.findPreviousRecentNoteFile(sourceB.file);
+      sandbox.moment = momentBeforeWriterSmoke;
+      if (previousSource !== sourceA.file) failures.push("真实 recent 查询没有把 source A 识别为 source B 的上一篇纪要");
+      await plugin.noteWriter.mergeMarkdownFilesAsNew([sourceA.file, sourceB.file]);
+      const merged = [...files.values()].find((file) =>
+        file.path.startsWith("QnALog/WriterSmoke/")
+        && file.path !== sourceAPath && file.path !== sourceBPath
+        && String(file._content || "").includes("上线范围已确定"));
+      if (!merged) throw new Error("合并场景没有生成包含模型正文的成稿");
+      if (!merged._content.includes("writer-source-a") || !merged._content.includes("writer-source-b")
+        || !merged._content.includes("Writer source A transcript remains intact.")
+        || !merged._content.includes("Writer source B transcript remains intact.")) {
+        failures.push("合并成稿没有保留两篇来源账本及其可见转写");
+      }
+      if (!merged._content.includes("qnalog-merge") || !merged._content.includes("qnalog-merge-end")
+        || !merged._content.includes("qnalog-note-index")) {
+        failures.push("合并成稿缺少来源元数据或真实索引");
+      }
+      if (sourceA.file._content !== sourceA.content || sourceB.file._content !== sourceB.content) {
+        failures.push("合并操作修改了来源笔记");
+      }
+      if (openedFiles.length !== openedBeforeWriterSmoke + 1 || openedFiles.at(-1) !== merged) {
+        failures.push("合并操作没有打开实际生成的成稿");
+      }
+      plugin.settings.autoRenameWithTitle = true;
+      const originalMergedPath = merged.path;
+      const originalMergedBody = merged._content;
+      const renamed = await plugin.noteWriter.renameMarkdownWithGeneratedTitle(merged, originalMergedBody, "monologue");
+      if (renamed !== merged || !merged.path.includes("Writer topic") || files.has(originalMergedPath)
+        || merged._content !== originalMergedBody) {
+        failures.push("模型生成标题后没有按当前文件状态完成同文件改名并保留正文");
+      }
+      const originalEditorText = "The complete editor document must remain unchanged.";
+      let selectedResult = "";
+      const editor = {
+        getSelection: () => "selected passage to polish",
+        getValue: () => originalEditorText,
+        replaceSelection: (value) => { selectedResult = value; },
+        setValue: () => { failures.push("选区整理错误地替换了整篇编辑器文本"); },
+      };
+      await plugin.noteWriter.polishEditor(editor);
+      if (!selectedResult.includes("上线范围已确定") || originalEditorText !== editor.getValue()) {
+        failures.push("编辑器整理未仅把模型结果写入原选区");
+      }
+      if (sourceA.file._content !== sourceA.content || sourceB.file._content !== sourceB.content) {
+        failures.push("Writer smoke 后来源笔记内容发生变化");
+      }
+    } catch (error) {
+      failures.push(`NoteWriter 能力边界冒烟失败：${(error && error.message) || error}`);
+    } finally {
+      if (settingsBeforeWriterSmoke) Object.assign(plugin.settings, settingsBeforeWriterSmoke);
+      if (momentBeforeWriterSmoke) sandbox.moment = momentBeforeWriterSmoke;
+      frontmatterByPath.delete("QnALog/WriterSmoke/2026-09-14 1100.md");
+      frontmatterByPath.delete("QnALog/WriterSmoke/2026-09-14 1101.md");
     }
     for (const id of plugin.intervals) clearInterval(id);
   } finally {

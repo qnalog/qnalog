@@ -144,12 +144,24 @@ function pluginMembers(mainSource) {
 function servicesWithPortHosts(mainSource) {
   const sourceFile = ts.createSourceFile("src/main.ts", mainSource, ts.ScriptTarget.ES2020, true);
   const classes = new Set();
+  const typedHostVariables = new Set();
+  const collectTypedHostVariables = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)
+        && node.type?.getText(sourceFile).endsWith("Host")) {
+      typedHostVariables.add(node.name.text);
+    }
+    ts.forEachChild(node, collectTypedHostVariables);
+  };
+  collectTypedHostVariables(sourceFile);
   const visit = (node) => {
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
         && ts.isPropertyAccessExpression(node.left) && node.left.expression.kind === ts.SyntaxKind.ThisKeyword
         && ts.isNewExpression(node.right) && ts.isIdentifier(node.right.expression)) {
       const firstArgument = node.right.arguments?.[0];
-      if (firstArgument && ts.isObjectLiteralExpression(firstArgument)) classes.add(node.right.expression.text);
+      if (firstArgument && (ts.isObjectLiteralExpression(firstArgument)
+          || (ts.isIdentifier(firstArgument) && typedHostVariables.has(firstArgument.text)))) {
+        classes.add(node.right.expression.text);
+      }
     }
     ts.forEachChild(node, visit);
   };
