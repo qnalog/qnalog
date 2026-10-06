@@ -230,7 +230,7 @@ export interface RecorderSegmentPayload {
   /** 收尾时为 true：本段没有独立音频，回听要用整场录音。 */
   masterOnly?: boolean;
   masterBlob?: Blob | null;
-  masterMime?: string;
+  masterMime?: string | null;
   masterExt?: string;
 }
 

@@ -41,6 +41,7 @@ const PORT_HOST_FIELDS = {
   outline: true,
   queue: true,
   versions: true,
+  recorder: true,
 };
 
 const noop = () => undefined;
@@ -278,6 +279,18 @@ async function main() {
     if (!("host" in service)) continue;
     if (Object.hasOwn(PORT_HOST_FIELDS, field)) {
       if (service.host === plugin) failures.push(`this.${field}.host 应使用窄能力对象，不得接收完整插件实例`);
+      if (field === "recorder") {
+        const methods = [
+          "getSettings", "prefersOpus", "resolveCaptureMode", "makeRecordingIssue",
+          "setRecordingIssue", "clearRecordingIssue", "logDiagnostic",
+        ];
+        if (service.host === plugin
+          || methods.some((method) => typeof service.host?.[method] !== "function")
+          || service.host?.getSettings() !== plugin.settings) {
+          failures.push("this.recorder.host 未绑定预期的动态设置与录音采集能力");
+        }
+        continue;
+      }
       if (field === "versions") {
         if (service.host?.vault !== app.vault
           || typeof service.host?.getSettings !== "function"
