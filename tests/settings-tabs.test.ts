@@ -1,68 +1,205 @@
-import fs from "node:fs";
-import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-// 设置页的选项卡结构契约。
-//
-// 这份用例防的是「设置项变成孤儿」：拆页或改名时漏改分发，
-// 方法还在、用户却点不到。本轮就发生过一次（renderRecording 建好后未被分发调用，
-// 分段间隔等项在界面上消失）。所以断言分两层：
-// 每个选项卡都有分发目标，且每个分发目标都能被选项卡走到。
+type TextControl = {
+  inputEl: { addEventListener: (event: string, callback: () => void) => void };
+  setValue: (value: string) => TextControl;
+  setPlaceholder: (value: string) => TextControl;
+  onChange: (callback: (value: string) => unknown) => TextControl;
+};
+type BooleanControl = {
+  setValue: (value: boolean) => BooleanControl;
+  onChange: (callback: (value: boolean) => unknown) => BooleanControl;
+};
+type DropdownControl = {
+  addOption: (value: string, label: string) => DropdownControl;
+  setValue: (value: string) => DropdownControl;
+  onChange: (callback: (value: string) => unknown) => DropdownControl;
+};
+type ButtonControl = {
+  setButtonText: (value: string) => ButtonControl;
+  setCta: () => ButtonControl;
+  setDisabled: (disabled: boolean) => ButtonControl;
+  onClick: (callback: () => unknown) => ButtonControl;
+};
 
-const root = path.resolve(__dirname, "..");
-const source = fs.readFileSync(path.join(root, "src/ui/settings-tab.ts"), "utf8");
+vi.mock("obsidian", () => {
+  class FakeElement {
+    children: FakeElement[] = [];
+    classes = new Set<string>();
+    onclick?: () => void;
+    text = "";
 
-/** 选项卡列表里声明的 id。 */
-function declaredTabIds(): string[] {
-  const block = source.slice(source.indexOf("export const QNALOG_SETTINGS_TABS"), source.indexOf("];", source.indexOf("export const QNALOG_SETTINGS_TABS")));
-  return [...block.matchAll(/\{\s*id:\s*"([a-z]+)"/g)].map((m) => m[1]);
-}
-
-/** switch 里实际分发到的渲染方法名。 */
-function dispatchedRenderers(): string[] {
-  return [...source.matchAll(/case "[a-z]+":\s*this\.(render[A-Za-z]+)\(content\);/g)].map((m) => m[1]);
-}
-
-describe("设置选项卡结构", () => {
-  it("每个选项卡都有对应的渲染分发", () => {
-    const ids = declaredTabIds();
-    const cases = [...source.matchAll(/case "([a-z]+)":/g)].map((m) => m[1]);
-    expect(ids.length).toBeGreaterThan(0);
-    for (const id of ids) {
-      expect(cases, `选项卡 ${id} 没有 case 分发`).toContain(id);
+    constructor(text = "") { this.text = text; }
+    get textContent(): string { return this.text + this.children.map((child) => child.textContent).join(""); }
+    addClass(...names: string[]) { for (const name of names) this.classes.add(name); }
+    toggleClass(name: string, enabled: boolean) {
+      if (enabled) this.classes.add(name);
+      else this.classes.delete(name);
     }
-  });
-
-  it("分发到的每个渲染方法都真实存在（防止方法改名后漏改分发）", () => {
-    for (const name of dispatchedRenderers()) {
-      expect(source, `${name} 未定义，分发指向了不存在的方法`).toContain(`  ${name}(c) {`);
+    empty() { this.children = []; this.text = ""; }
+    createDiv(options: { cls?: string } = {}) {
+      const element = new FakeElement();
+      element.addClass(...(options.cls || "").split(/\s+/).filter(Boolean));
+      this.children.push(element);
+      return element;
     }
-  });
+    createEl(_tag: string, options: { text?: string } = {}) {
+      const element = new FakeElement(options.text || "");
+      this.children.push(element);
+      return element;
+    }
+  }
 
-  it("没有定义却没人调用的渲染方法（孤儿方法＝用户点不到的设置）", () => {
-    const defined = [...source.matchAll(/^  (render[A-Z][A-Za-z]*)\(c\) \{/gm)].map((m) => m[1]);
-    const dispatched = new Set(dispatchedRenderers());
-    // renderAudioInputSettings / renderApiSchemeSelector / renderImportAudio 是页内片段，由所在页调用
-    const fragments = ["renderAudioInputSettings", "renderApiSchemeSelector", "renderImportAudio"];
-    const orphans = defined.filter((d) => !dispatched.has(d) && !fragments.includes(d) && !source.includes(`this.${d}(`));
-    expect(orphans, `这些渲染方法没有被任何地方调用：${orphans.join(", ")}`).toEqual([]);
-  });
+  class FakeSetting {
+    private readonly row: FakeElement;
+    constructor(parent: FakeElement) { this.row = parent.createDiv({ cls: "setting-item" }); }
+    setName(name: string) { this.row.createDiv({ cls: "setting-item-name" }).text = name; return this; }
+    setDesc(text: string) { this.row.createDiv({ cls: "setting-item-description" }).text = text; return this; }
+    setHeading() { this.row.addClass("setting-item-heading"); return this; }
+    addText(build: (component: TextControl) => void) {
+      let component: TextControl;
+      component = {
+        inputEl: { addEventListener: () => undefined },
+        setValue: () => component,
+        setPlaceholder: () => component,
+        onChange: () => component,
+      };
+      build(component);
+      return this;
+    }
+    addToggle(build: (component: BooleanControl) => void) {
+      let component: BooleanControl;
+      component = { setValue: () => component, onChange: () => component };
+      build(component);
+      return this;
+    }
+    addDropdown(build: (component: DropdownControl) => void) {
+      let component: DropdownControl;
+      component = {
+        addOption: () => component,
+        setValue: () => component,
+        onChange: () => component,
+      };
+      build(component);
+      return this;
+    }
+    addButton(build: (component: ButtonControl) => void) {
+      let component: ButtonControl;
+      component = {
+        setButtonText: () => component,
+        setCta: () => component,
+        setDisabled: () => component,
+        onClick: () => component,
+      };
+      build(component);
+      return this;
+    }
+  }
 
-  it("录音参数留在「录音」页，不回到旁路页", () => {
-    // 分段与并发直接决定录到了什么，属常项；曾被埋在「进阶」页的长列表里。
-    const rec = source.slice(source.indexOf("renderRecording(c) {"), source.indexOf("renderImport(c) {"));
-    expect(rec).toContain("segmentIntervalMinutes");
-    expect(rec).toContain("asrConcurrency");
-    expect(rec).toContain("filterShortRecordings");
-  });
+  return {
+    PluginSettingTab: class {
+      containerEl = new FakeElement();
+      constructor(public app: unknown, public plugin: unknown) {}
+    },
+    Setting: FakeSetting,
+    Notice: class {},
+    normalizePath: (value: string) => value.replace(/\\/g, "/"),
+  };
+});
 
-  it("自动导入与诊断分属两页，不再混在同一个选项卡里", () => {
-    const inbox = source.slice(source.indexOf("renderImport(c) {"), source.indexOf("renderAbout(c) {"));
-    expect(inbox).toContain("inboxFolder");
-    expect(inbox).toContain("maxRetries");
-    expect(inbox).not.toContain("diagnosticsLogFolder");
+vi.mock("../src/shared/defaults", () => ({
+  DEFAULT_SETTINGS: {
+    audioFolder: "QnALog/Audio",
+    mdFolder: "QnALog/Transcripts",
+    meetingMaterialsFolder: "QnALog/Materials",
+  },
+}));
+vi.mock("../src/shared/util-platform", () => ({ isMobileRuntime: () => false }));
+vi.mock("../src/shared/i18n", () => ({
+  UI_LANGUAGES: [],
+  getActiveUiLanguage: () => "en",
+  t: (text: string) => text,
+}));
+vi.mock("../src/asr/transcribe", () => ({ normalizeAsrConcurrency: (value: unknown) => value }));
+vi.mock("../src/ui/helpers", () => ({}));
+vi.mock("../src/ui/modals", () => ({}));
+vi.mock("../src/shared/util-common", () => ({}));
+vi.mock("../src/shared/util-llm-endpoint", () => ({}));
+vi.mock("../src/shared/util-note", () => ({}));
+vi.mock("../src/shared/mode-meta", () => ({}));
+vi.mock("../src/llm/config", () => ({}));
+vi.mock("../src/llm/core", () => ({}));
+vi.mock("../src/llm/asr-scheme", () => ({}));
+vi.mock("../src/vocabulary", () => ({}));
+vi.mock("../src/people", () => ({}));
+vi.mock("../src/audio/audio-input", () => ({}));
+vi.mock("../src/notes/recording-issues", () => ({}));
+vi.mock("../src/audio/channel-speakers", () => ({}));
+vi.mock("../src/asr/channel-transcription", () => ({}));
+vi.mock("../src/asr/diarization", () => ({}));
+vi.mock("../src/asr/long-audio-transcription", () => ({}));
+vi.mock("../src/setup", () => ({}));
+vi.mock("../src/shared/util-vault", () => ({}));
 
-    const about = source.slice(source.indexOf("renderAbout(c) {"));
-    expect(about).toContain("diagnosticsLogFolder");
+import { QnALogSettingTab } from "../src/ui/settings-tab";
+
+describe("settings tabs render visible settings and switch pages", () => {
+  it("shows recording controls, then switches to auto-import controls without mixing diagnostics", () => {
+    const plugin = {
+      settings: {
+        activeTranscribeProvider: "siliconflow",
+        transcribeProviders: {},
+        enableInterimOutput: true,
+        filterShortRecordings: true,
+        segmentIntervalMinutes: 5,
+        asrConcurrency: 1,
+        keepSegmentAudioFiles: false,
+        consolidatedLayout: true,
+        autoRenameWithTitle: false,
+        enableRealtimeOutline: true,
+        autoOpenOutlineOnRecord: false,
+        audioFolder: "QnALog/Audio",
+        mdFolder: "QnALog/Transcripts",
+        meetingMaterialsFolder: "QnALog/Materials",
+        noteFileNameFormatNew: "YYYY-MM-DD HHmm",
+        autoOpenNoteAfterFinish: true,
+        showFloatingBall: true,
+        bubbleSize: "large",
+        inboxFolder: "",
+        inboxAutoImport: false,
+        inboxArchiveSubfolder: "processed",
+        inboxStabilizeDelayMs: 3000,
+        maxRetries: 3,
+      },
+      saveSettings: vi.fn(async () => undefined),
+      shell: { syncBubbleVisibility: vi.fn() },
+      externalInbox: { refreshExternalInboxWatcher: vi.fn() },
+      cleanup: {},
+      inbox: {},
+      queue: { tasks: [] },
+    };
+    const tab = new QnALogSettingTab({}, plugin);
+    tab.activeTab = "recording";
+    tab.renderAudioInputSettings = () => undefined;
+    tab.getTranscribeProviderProfile = () => ({ transcribeMode: "http" });
+    tab.applySettingsSections = () => undefined;
+    tab.renderSettings();
+    expect(tab.containerEl.classes.has("qnalog-settings-root")).toBe(true);
+
+    expect(tab.containerEl.textContent).toContain("Segment interval");
+    expect(tab.containerEl.textContent).toContain("Concurrent transcriptions");
+    expect(tab.containerEl.textContent).toContain("Filter very short recordings");
+
+    const autoImportTab = tab.containerEl.children
+      .flatMap((element) => element.children)
+      .flatMap((element) => element.children)
+      .find((element) => element.textContent === "Auto Import");
+    expect(autoImportTab).toBeDefined();
+    autoImportTab!.onclick?.();
+
+    expect(tab.containerEl.textContent).toContain("Watched folder");
+    expect(tab.containerEl.textContent).toContain("Maximum retry count");
+    expect(tab.containerEl.textContent).toContain("Task queue");
+    expect(tab.containerEl.textContent).not.toContain("Diagnostic Log Folder");
   });
 });

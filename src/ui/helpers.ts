@@ -147,11 +147,12 @@ export function qnalogConfirm(app, title, body, ctaText = t("Confirm")) {
     let decided = false;
     const decide = (val) => { if (!decided) { decided = true; resolve(val); } modal.close(); };
     modal.onOpen = () => {
+      modal.modalEl.addClass("qnalog-utility-modal");
       const { contentEl } = modal;
       contentEl.empty();
       contentEl.createEl("h3", { text: title });
       contentEl.createEl("p", { text: body });
-      const actions = contentEl.createDiv({ cls: "modal-button-container" });
+      const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-modal-actions" });
       const cancel = actions.createEl("button", { text: t("Cancel"), attr: { type: "button" } });
       const ok = actions.createEl("button", { text: ctaText, cls: "mod-warning", attr: { type: "button" } });
       cancel.onclick = () => decide(false);
@@ -175,13 +176,14 @@ export function chooseExistingCleanCopy(app: obsidian.App, basename: string): Pr
     modal.close();
   };
   modal.onOpen = () => {
+    modal.modalEl.addClass("qnalog-utility-modal");
     const { contentEl } = modal;
     contentEl.empty();
     contentEl.createEl("h3", { text: t("A clean copy already exists") });
     contentEl.createEl("p", {
       text: t("A clean copy already exists: {0}. You can show it in the source note or regenerate it.").replace("{0}", basename),
     });
-    const actions = contentEl.createDiv({ cls: "modal-button-container" });
+    const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-modal-actions" });
     actions.createEl("button", { text: t("Show clean copy in original note"), cls: "mod-cta", attr: { type: "button" } })
       .addEventListener("click", () => decide("open"));
     actions.createEl("button", { text: t("Regenerate existing clean copy"), cls: "mod-warning", attr: { type: "button" } })
@@ -205,6 +207,7 @@ export function qnalogPromptText(app, title, placeholder, initialValue) {
     let settled = false;
     const done = (value) => { if (settled) return; settled = true; resolve(value); modal.close(); };
     modal.onOpen = () => {
+      modal.modalEl.addClass("qnalog-utility-modal");
       const { contentEl } = modal;
       contentEl.empty();
       contentEl.createEl("h3", { text: title || t("Input") });
@@ -215,7 +218,7 @@ export function qnalogPromptText(app, title, placeholder, initialValue) {
         if (e.key === "Enter") { e.preventDefault(); done(input.value); }
         else if (e.key === "Escape") { e.preventDefault(); done(null); }
       });
-      const actions = contentEl.createDiv({ cls: "qnalog-modal-actions" });
+      const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-modal-actions" });
       const cancel = actions.createEl("button", { text: t("Cancel") });
       cancel.onclick = () => done(null);
       const ok = actions.createEl("button", { text: t("OK"), cls: "mod-cta" });

@@ -4414,7 +4414,10 @@ export class OutlineView extends obsidian.ItemView {
 
   renderTitleRow(head, title, options: { noteFile?: unknown } = {}) {
     const row = head.createDiv({ cls: "qnalog-outline-title-row" });
-    row.createDiv({ cls: "qnalog-outline-title", text: title });
+    const titleWrap = row.createDiv({ cls: "qnalog-outline-title" });
+    const mark = titleWrap.createSpan({ cls: "qnalog-outline-title-mark", attr: { "aria-hidden": "true" } });
+    obsidian.setIcon(mark, QNALOG_PLUGIN_ICON_ID);
+    titleWrap.createSpan({ cls: "qnalog-outline-title-text", text: title });
     const actions = row.createDiv({ cls: "qnalog-outline-title-actions" });
     const noteFile = options && options.noteFile instanceof obsidian.TFile ? options.noteFile : null;
     if (noteFile) {
