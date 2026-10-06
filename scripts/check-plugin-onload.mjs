@@ -33,7 +33,7 @@ try {
 const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
-  "inbox", "knowledgeExtraction", "recorder", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
+  "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
 ];
 const PORT_HOST_FIELDS = {
   asrPipeline: true,
@@ -42,6 +42,7 @@ const PORT_HOST_FIELDS = {
   queue: true,
   versions: true,
   recorder: true,
+  recording: true,
 };
 
 const noop = () => undefined;
@@ -288,6 +289,17 @@ async function main() {
           || methods.some((method) => typeof service.host?.[method] !== "function")
           || service.host?.getSettings() !== plugin.settings) {
           failures.push("this.recorder.host 未绑定预期的动态设置与录音采集能力");
+        }
+        continue;
+      }
+      if (field === "recording") {
+        if (service.host?.settings !== plugin.settings
+          || service.host?.recorder !== plugin.recorder
+          || service.host?.asrPipeline !== plugin.asrPipeline
+          || service.host?.continuations !== plugin.continuations
+          || typeof service.host?.ensureFolder !== "function"
+          || typeof service.host?.getFileByPath !== "function") {
+          failures.push("this.recording.host 未绑定预期的动态设置、录音器、ASR、续录与知识库能力");
         }
         continue;
       }

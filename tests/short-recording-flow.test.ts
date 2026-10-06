@@ -24,12 +24,14 @@ vi.mock("obsidian", () => {
     PluginSettingTab: class {},
     normalizePath: (p: string) => String(p || "").replace(/\\/g, "/").replace(/\/+$/, ""),
     requestUrl: async () => ({ status: 200, text: "{}", json: {} }),
+    Platform: { isMobile: false, isMobileApp: false },
   };
 });
 
 import * as obsidian from "obsidian";
 import { RecordingService } from "../src/audio/recording-service";
 import type { RecordingHost } from "../src/audio/recording-service";
+import { ensureVaultFolder } from "../src/shared/util-vault";
 import { SessionFinalizeService } from "../src/notes/session-finalize-service";
 import { SessionStore } from "../src/session/session-store";
 import { ContinuationService } from "../src/session/continuation-service";
@@ -153,11 +155,36 @@ function makeHost() {
     outline: { scheduleRealtimeOutline: () => undefined, ensureRealtimeOutlineForFinalNote: async () => undefined },
     noteIndex: { refreshNoteIndexSafely: async () => undefined, autoExtractSedimentAfterFinalize: () => undefined },
     saveSettings: async () => undefined,
-  } as unknown as RecordingHost & SessionFinalizeHost;
+  } as unknown as SessionFinalizeHost & {
+    asrPipeline: LiveAsrPipelineService;
+    saveSettings: () => Promise<void>;
+    processRecordedSegment: RecordingHost["processRecordedSegment"];
+    finalizeRecordedSession: RecordingHost["finalizeRecordedSession"];
+  };
 
   const finalizeService = new SessionFinalizeService(host);
+  host.processRecordedSegment = (session, segment) => finalizeService.processSegment(session, segment);
+  host.finalizeRecordedSession = (session) => finalizeService.finalizeSession(session);
+  const recordingHost: RecordingHost = {
+    ensureFolder: (path) => ensureVaultFolder(app, path),
+    getFileByPath: (path) => app.vault.getAbstractFileByPath(path),
+    get settings() { return host.settings; },
+    get diagnostics() { return host.diagnostics; },
+    get meetingWorkbench() { return host.meetingWorkbench as RecordingHost["meetingWorkbench"]; },
+    get noteWriter() { return host.noteWriter; },
+    get profiles() { return host.profiles; },
+    get continuations() { return host.continuations; },
+    get recorder() { return host.recorder; },
+    saveSettings: () => host.saveSettings(),
+    get sessionStore() { return host.sessionStore; },
+    get asrPipeline() { return host.asrPipeline; },
+    processRecordedSegment: (session, segment) => host.processRecordedSegment(session, segment),
+    finalizeRecordedSession: (session) => host.finalizeRecordedSession(session),
+    requestOutlineRefresh: () => host.requestOutlineRefresh(),
+    requestOpenOutlineView: () => host.requestOpenOutlineView(),
+  };
   let recordingService: RecordingService;
-  recordingService = new RecordingService(host);
+  recordingService = new RecordingService(recordingHost);
   host.asrPipeline = new LiveAsrPipelineService({
     getSettings: () => host.settings,
     vault: app.vault,
@@ -174,8 +201,6 @@ function makeHost() {
     requestOutlineRefresh: () => host.requestOutlineRefresh(),
     requestBubbleUpdate: () => undefined,
   });
-  host.processRecordedSegment = (session, segment) => finalizeService.processSegment(session, segment);
-  host.finalizeRecordedSession = (session) => finalizeService.finalizeSession(session);
   return { host, files, folders, app, transcriptionCalls, diagnostics, finalizeService, recordingService };
 
 }
@@ -606,10 +631,125 @@ describe("短录音整条路径", () => {
     files.set(first.mdPath, { content: sessionHeader("first") });
     host.sessionStore.begin(first);
     host.sessionStore.begin(second);
-
     await finalizeService.finishShortRecording(first as never);
 
     expect(host.sessionStore.get()).toBe(second);
+  });
+  it("reads replacement recording settings when starting and creates the note only in the new folder", async () => {
+    const { host, files, recordingService } = makeHost();
+    host.settings = {
+      ...host.settings,
+      audioFolder: "QnALog/New Audio",
+      mdFolder: "QnALog/New Notes",
+      noteFileNameFormatNew: "fixed-note",
+    };
+    vi.spyOn(host.recorder!, "start").mockImplementation(async () => {
+      host.recorder!.state = "recording";
+      return undefined as never;
+    });
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260918-120400" : format === "fixed-note" ? "fixed-note" : "2026-09-18 12:04",
+        toDate: () => new Date("2026-09-18T12:04:00.000Z"),
+      }),
+    });
+    try {
+      await recordingService.startRecording();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(host.sessionStore.get()?.mdPath).toBe("QnALog/New Notes/fixed-note.md");
+    expect(files.has("QnALog/New Notes/fixed-note.md")).toBe(true);
+    expect(files.has("QnALog/转写纪要/fixed-note.md")).toBe(false);
+  });
+
+  it("ignores a second continuation target while the first preparation is pending", async () => {
+    const { host, files, recordingService } = makeHost();
+    const firstTarget = new (obsidian.TFile as never)("QnALog/转写纪要/first-target.md");
+    const secondTarget = new (obsidian.TFile as never)("QnALog/转写纪要/second-target.md");
+    const firstBody = "FIRST TARGET MUST REMAIN UNCHANGED";
+    const secondBody = "SECOND TARGET MUST REMAIN UNCHANGED";
+    files.set(firstTarget.path, { content: firstBody });
+    files.set(secondTarget.path, { content: secondBody });
+    const { promise: preparation, resolve: finishPreparation } = Promise.withResolvers<unknown>();
+    const prepare = vi.spyOn(host.continuations, "prepare").mockReturnValue(preparation as never);
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260918-120500" : "2026-09-18 12:05",
+        toDate: () => new Date("2026-09-18T12:05:00.000Z"),
+      }),
+    });
+    try {
+      const firstStart = recordingService.startRecording({ appendToFile: firstTarget });
+      await Promise.resolve();
+      await recordingService.startRecording({ appendToFile: secondTarget });
+      finishPreparation({
+        stageFile: new (obsidian.TFile as never)("QnALog/.staging/first.md"),
+        taskId: "pending-first",
+        continuation: {},
+        dependsOnSessionIds: [],
+        mode: "synthesis",
+        priorOutline: "",
+      } as never);
+      await firstStart;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(files.get(firstTarget.path)?.content).toBe(firstBody);
+    expect(files.get(secondTarget.path)?.content).toBe(secondBody);
+    expect(recordingService.starting).toBe(false);
+  });
+
+  it("keeps a replacement session and its note when the earlier device start fails", async () => {
+    const { host, files, recordingService } = makeHost();
+    const replacement = makeSession("QnALog/转写纪要/replacement.md");
+    files.set(replacement.mdPath, { content: "REPLACEMENT NOTE BODY" });
+    vi.spyOn(host.recorder!, "start").mockImplementation(async () => {
+      host.sessionStore.begin(replacement);
+      throw new Error("fixed device failure");
+    });
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260918-120600" : "2026-09-18 12:06",
+        toDate: () => new Date("2026-09-18T12:06:00.000Z"),
+      }),
+    });
+    try {
+      await recordingService.startRecording();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(host.sessionStore.get()).toBe(replacement);
+    expect(files.has("QnALog/转写纪要/2026-09-18 12:06.md")).toBe(false);
+    expect(files.get(replacement.mdPath)?.content).toBe("REPLACEMENT NOTE BODY");
+    expect(notices.join("\n")).toContain("fixed device failure");
+    expect(recordingService.starting).toBe(false);
+  });
+
+  it("clears a recording issue only after stop resolves and retains it when stop rejects", async () => {
+    const { host, recordingService } = makeHost();
+    host.recorder!.state = "recording";
+    host.asrPipeline.setRecordingIssue("service", { message: "pending stop issue" });
+    const { promise: stopping, resolve: finishStop } = Promise.withResolvers<null>();
+    vi.spyOn(host.recorder!, "stop").mockReturnValue(stopping);
+    const stop = recordingService.stopRecording();
+    expect(recordingService.getRecordingIssue()).not.toBeNull();
+    finishStop();
+    await stop;
+    expect(recordingService.getRecordingIssue()).toBeNull();
+
+    host.asrPipeline.setRecordingIssue("service", { message: "failed stop issue" });
+    vi.spyOn(host.recorder!, "stop").mockRejectedValueOnce(new Error("stop failed"));
+    await expect(recordingService.stopRecording()).rejects.toThrow("stop failed");
+    expect(recordingService.getRecordingIssue()).not.toBeNull();
+
+    host.recorder!.state = "idle";
+    await recordingService.stopRecording();
+    expect(recordingService.getRecordingIssue()).not.toBeNull();
   });
   it("a failed recording start removes its placeholder and ends only its own session", async () => {
     notices.length = 0;

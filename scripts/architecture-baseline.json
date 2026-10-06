@@ -152,10 +152,6 @@
       "ExternalInboxHost.app:App",
       "ExternalInboxHost.settings:PluginSettings"
     ],
-    "src/audio/recording-service.ts": [
-      "RecordingHost.app:App",
-      "RecordingHost.settings:PluginSettings"
-    ],
     "src/canvas/semantic-canvas-service.ts": [
       "SemanticCanvasHost.app:App",
       "SemanticCanvasHost.settings:PluginSettings"
