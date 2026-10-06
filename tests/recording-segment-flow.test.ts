@@ -45,10 +45,10 @@ function makeHost(options: {
   process?: (segment: PreparedLiveSegment) => Promise<void>;
   finalize?: () => Promise<void>;
   filterShortRecordings?: () => boolean;
-} = {}): { host: RecordingSegmentHost; cached: Map<string, string>; masters: string[]; tasks: Map<string, Pick<QueueTask, "status">>; processOrder: number[]; diagnostics: unknown[] } {
+} = {}): { host: RecordingSegmentHost; cached: Map<string, string>; masters: string[]; tasks: Map<string, Pick<QueueTask, "status"> & { lastError?: string }>; processOrder: number[]; diagnostics: unknown[] } {
   const cached = new Map<string, string>();
   const masters: string[] = [];
-  const tasks = new Map<string, Pick<QueueTask, "status">>();
+  const tasks = new Map<string, Pick<QueueTask, "status"> & { lastError?: string }>();
   const processOrder: number[] = [];
   const diagnostics: unknown[] = [];
   const host: RecordingSegmentHost = {
@@ -76,7 +76,7 @@ function makeHost(options: {
     keepLiveSegmentQueueTaskForRetry: async (_session, descriptor, error) => {
       const reason = error instanceof Error ? error.message : String(error);
       diagnostics.push(reason);
-      tasks.set(descriptor.queueTaskId ?? "", { status: "pending" });
+      tasks.set(descriptor.queueTaskId ?? "", { status: "pending", lastError: reason });
       return undefined;
     },
     markSessionAsrJobsDeferred: () => undefined,
@@ -188,10 +188,10 @@ describe("recording segment delivery", () => {
   });
 
   it("recovers a rejected prior chain, preserves failed material for retry, and does not replace terminal tasks", async () => {
-    let failNext = true;
+    let failuresRemaining = 2;
     const fixture = makeHost({ process: async () => {
-      if (failNext) {
-        failNext = false;
+      if (failuresRemaining > 0) {
+        failuresRemaining -= 1;
         throw new Error("transcription failed");
       }
     } });
@@ -203,18 +203,18 @@ describe("recording segment delivery", () => {
     await firstReturn;
     await session.writeQueue;
     expect(fixture.cached.get("cache/segment-0.webm")).toBe("segment-0");
-    expect(fixture.tasks.get("task-0")).toEqual({ status: "pending" });
+    expect(fixture.tasks.get("task-0")).toEqual({ status: "pending", lastError: "transcription failed" });
     expect(fixture.diagnostics).toContain("transcription failed");
     expect(session.activeSegmentJobs).toBe(0);
 
-    fixture.tasks.set("task-1", { status: "failed" });
+    fixture.tasks.set("task-1", { status: "failed", lastError: "older failure" });
     const next = payload(1);
     const nextReturn = handleRecordedSegment(fixture.host, session, next);
     if (!nextReturn) throw new Error("next segment unexpectedly skipped");
     await nextReturn;
     await session.writeQueue;
     expect(fixture.cached.get("cache/segment-1.webm")).toBe("segment-1");
-    expect(fixture.tasks.get("task-1")).toEqual({ status: "failed" });
+    expect(fixture.tasks.get("task-1")).toEqual({ status: "failed", lastError: "older failure" });
 
     session.writeQueue = Promise.reject(new Error("earlier write chain failed"));
     const finalReturn = handleRecordedSegment(fixture.host, session, payload(2, true));
