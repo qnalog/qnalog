@@ -16,6 +16,7 @@ import { NS_FM, NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE, isDerivedVersionType, re
 import { labelPattern } from "../shared/note-labels";
 
 import { t } from "../shared/i18n";
+import { VersionManifestStore, type VersionManifest } from "./version-manifest-store";
 
 type OriginalSnapshot = { path: string; mode: string; label: string };
 
@@ -75,58 +76,19 @@ export interface VersionStoreHost {
 export class VersionStore {
   declare host: VersionStoreHost;
   declare _originalSnapshotInFlight: Map<string, Promise<string | null>>;
-  declare _manifestTails: Map<string, Promise<void>>;
+  declare manifests: VersionManifestStore;
   constructor(host: VersionStoreHost) {
     this.host = host;
     this._originalSnapshotInFlight = new Map();
-    this._manifestTails = new Map();
+    this.manifests = new VersionManifestStore({
+      exists: (path) => this.host.vault.adapter.exists(path),
+      read: (path) => this.host.vault.adapter.read(path),
+      write: (path, content) => this.host.vault.adapter.write(path, content),
+      mkdir: (path) => this.host.vault.adapter.mkdir(path),
+    });
   }
-  private async withManifestLock<T>(sourceId: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this._manifestTails.get(sourceId);
-    let release: () => void = () => undefined;
-    const current = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous?.then(() => current) ?? current;
-    this._manifestTails.set(sourceId, tail);
-    if (previous !== undefined) await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this._manifestTails.get(sourceId) === tail) this._manifestTails.delete(sourceId);
-    }
-  }
-  private async ensureVersionFolder(folder: string): Promise<void> {
-    const adapter = this.host.vault.adapter;
-    let current = "";
-    for (const part of obsidian.normalizePath(folder).split("/").filter(Boolean)) {
-      current = current ? `${current}/${part}` : part;
-      if (!(await adapter.exists(current))) await adapter.mkdir(current);
-    }
-  }
-  private async readStrictVersionManifest(folder: string, sourceId: string): Promise<Record<string, unknown>> {
-    const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
-    if (!(await this.host.vault.adapter.exists(manifestPath))) {
-      return { version: 1, activeVersionId: "", versions: [], sourceId };
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(await this.host.vault.adapter.read(manifestPath));
-    } catch {
-      throw new Error(t("Could not read version metadata"));
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(t("Could not read version metadata"));
-    const manifest = parsed as Record<string, unknown>;
-    if ((manifest.sourceId !== undefined && manifest.sourceId !== sourceId)
-      || !Array.isArray(manifest.versions)
-      || manifest.versions.some((record) => !record || typeof record !== "object" || Array.isArray(record)
-        || typeof record.id !== "string" || typeof record.fileName !== "string" || typeof record.kind !== "string")
-      || (manifest.activeVersionId !== undefined && typeof manifest.activeVersionId !== "string")) {
-      throw new Error(t("Could not read version metadata"));
-    }
-    return manifest;
-  }
-  private async resolveOriginalSnapshot(folder: string, sourceId: string, sourcePath: string, manifest: Record<string, unknown>): Promise<OriginalSnapshot | null> {
-    const records = (manifest.versions as Record<string, unknown>[])
+  private async resolveOriginalSnapshot(folder: string, sourceId: string, sourcePath: string, manifest: VersionManifest): Promise<OriginalSnapshot | null> {
+    const records = manifest.versions
       .filter((item) => item && (item.kind === "source-original" || item.kind === "pre-clean"))
       .sort((left, right) => Number(right.kind === "source-original") - Number(left.kind === "source-original"));
     for (const record of records) {
@@ -160,7 +122,7 @@ export class VersionStore {
       const sourceContent = await this.host.vault.read(sourceFile);
       const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
       const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
-      const manifest = await this.readStrictVersionManifest(folder, sourceId);
+      const manifest = await this.manifests.read(folder, sourceId);
       return await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, manifest);
     } catch (error) {
       console.warn("[QnALog] original version lookup failed", error);
@@ -185,10 +147,10 @@ export class VersionStore {
   }
   private async ensureOriginalVersion(sourceFile: obsidian.TFile, sourceId: string): Promise<string | null> {
     const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
-    const manifest = await this.readStrictVersionManifest(folder, sourceId);
+    const manifest = await this.manifests.read(folder, sourceId);
     const existing = await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, manifest);
     if (existing) return existing.path;
-    const records = manifest.versions as Record<string, unknown>[];
+    const records = manifest.versions;
     if (records.some((item) => item && (item.kind === "source-original" || item.kind === "pre-clean"))) {
       throw new Error(t("Could not read version metadata"));
     }
@@ -218,7 +180,7 @@ export class VersionStore {
       body: buildVersionPayload(sourceParts.frontmatter, sanitizeActiveVersionBody(originalBody)),
       activate: false,
     });
-    const verifiedManifest = await this.readStrictVersionManifest(folder, sourceId);
+    const verifiedManifest = await this.manifests.read(folder, sourceId);
     const verified = await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, verifiedManifest);
     const savedPath = obsidian.normalizePath(`${folder}/${saved.meta.fileName}`);
     if (!verified || verified.path !== savedPath) {
@@ -251,17 +213,9 @@ export class VersionStore {
 
 
 
-  async writeVersionManifest(folder, manifest) {
-    await this.ensureVersionFolder(folder);
-    const adapter = this.host.vault.adapter;
-    const manifestPath = obsidian.normalizePath(`${folder}/manifest.json`);
-    const payload = JSON.stringify(Object.assign({ version: 1 }, manifest || {}), null, 2);
-    await adapter.write(manifestPath, payload);
-    if (await adapter.read(manifestPath) !== payload) throw new Error(t("Could not verify version metadata"));
-  }
 
   async writeVersionFile(folder, fileName, content) {
-    await this.ensureVersionFolder(folder);
+    await this.manifests.ensureFolder(folder);
     const path = obsidian.normalizePath(`${folder}/${fileName}`);
     if (await this.host.vault.adapter.exists(path)) {
       throw new Error(t("Version cache file already exists"));
@@ -283,11 +237,11 @@ export class VersionStore {
     const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
     const sourceHash = getSegmentsHash(segments);
     const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
-    return this.withManifestLock(sourceId, async () => {
-      const manifest = await this.readStrictVersionManifest(folder, sourceId);
+    return this.manifests.withLock(sourceId, async () => {
+      const manifest = await this.manifests.read(folder, sourceId);
       const createdAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
       const baseId = normalizeVersionId(versionInput.idLabel || versionInput.label || versionInput.kind || "version");
-      const versions = manifest.versions as Record<string, unknown>[];
+      const versions = manifest.versions;
       let id = baseId;
       let fileName = `${sanitizeFilename(id) || id}.md`;
       let suffix = 2;
@@ -347,10 +301,10 @@ export class VersionStore {
         updatedAt: createdAt,
         versions: [...versions, meta],
       });
-      await this.writeVersionManifest(folder, manifest);
-      const savedManifest = await this.readStrictVersionManifest(folder, sourceId);
-      const savedRecord = (savedManifest.versions as Record<string, unknown>[])
-        .find((record) => record && record.id === id && record.fileName === fileName);
+      await this.manifests.write(folder, manifest);
+      const savedManifest = await this.manifests.read(folder, sourceId);
+      const savedRecord = savedManifest.versions
+        .find((record) => record.id === id && record.fileName === fileName);
       const expectedActiveId = versionInput.activate === false ? (manifest.activeVersionId || "") : id;
       if (!savedRecord || savedManifest.activeVersionId !== expectedActiveId) {
         throw new Error(t("Could not verify version metadata"));
@@ -520,8 +474,8 @@ export class VersionStore {
       const versionId = typeof fm.version_id === "string" ? fm.version_id : "";
       const kind = typeof fm.variant_kind === "string" ? fm.variant_kind : "";
       const versionName = versionPath.slice(versionPath.lastIndexOf("/") + 1);
-      const manifest = await this.readStrictVersionManifest(folder, sourceId);
-      const record = (manifest.versions as Record<string, unknown>[])
+      const manifest = await this.manifests.read(folder, sourceId);
+      const record = manifest.versions
         .find((item) => item.id === versionId && item.fileName === versionName && item.kind === kind);
       if (obsidian.normalizePath(versionPath) !== obsidian.normalizePath(`${folder}/${versionName}`)
         || !record
@@ -581,13 +535,13 @@ export class VersionStore {
       contentFrontmatter = `---\n${obsidian.stringifyYaml(cleanFm).trimEnd()}\n---\n`;
     }
     await this.ensureOriginalVersionForSource(sourceFile);
-    await this.withManifestLock(sourceId, async () => {
-      const manifest = await this.readStrictVersionManifest(folder, sourceId);
+    await this.manifests.withLock(sourceId, async () => {
+      const manifest = await this.manifests.read(folder, sourceId);
       await this.applyVersionToSource(sourceFile, meta, body, contentFrontmatter);
       manifest.activeVersionId = meta.id;
       manifest.updatedAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-      await this.writeVersionManifest(folder, manifest);
-      const verifiedManifest = await this.readStrictVersionManifest(folder, sourceId);
+      await this.manifests.write(folder, manifest);
+      const verifiedManifest = await this.manifests.read(folder, sourceId);
       if (verifiedManifest.activeVersionId !== meta.id) {
         throw new Error(t("Could not verify version metadata"));
       }

@@ -69,6 +69,7 @@
     "src/notes/note-document.ts",
     "src/versions/version-content.ts",
     "src/views/base-definitions.ts",
+    "src/versions/version-manifest-store.ts",
     "src/audio/recorder-service.ts",
     "src/audio/recording-segment-flow.ts",
   ]
