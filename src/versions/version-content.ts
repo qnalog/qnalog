@@ -3,6 +3,21 @@ import { findRawMaterialInsertionOffset, splitLeadingFrontmatter, getFrontmatter
 import { QNALOG_ACTIVE_VERSION_END } from "../shared/limits";
 import { labelText } from "../shared/note-labels";
 
+export function parseVersionFrontmatter(
+  frontmatter: string,
+  parseYaml: (yaml: string) => unknown,
+): Record<string, unknown> | null {
+  const yaml = String(frontmatter || "").replace(/^---\s*\n?/, "").replace(/\n?---\s*$/, "").trim();
+  if (!yaml) return {};
+  try {
+    const parsed: unknown = parseYaml(yaml);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
 const VERSION_FRONTMATTER_START = `<!-- ${NS_TAG}-version-frontmatter-start`;
 const VERSION_FRONTMATTER_END = `${NS_TAG}-version-frontmatter-end -->`;
 const EMPTY_VERSION_BODY_FALLBACK = "> [!warning] AI 整理未完成\n> 当前版本没有可显示的整理正文；原始转写仍保留在母本中。";

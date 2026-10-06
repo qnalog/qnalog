@@ -4,8 +4,8 @@
 import * as obsidian from "obsidian";
 import type { PluginSettings } from "../shared/types";
 import { sanitizeFilename } from "../shared/util-common";
-import { extractAllRawBlocksFromText, findActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../notes/note-document";
-import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, splitVersionPayload, stripVersionBookkeepingFrontmatter, sanitizeActiveVersionBody } from "./version-content";
+import { replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../notes/note-document";
+import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, splitVersionPayload, stripVersionBookkeepingFrontmatter, sanitizeActiveVersionBody, parseVersionFrontmatter } from "./version-content";
 import { getModeDisplayName, getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";
@@ -13,25 +13,12 @@ import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder,
 import { findAvailableMarkdownPath } from "../shared/util-vault";
 import { NS_FM, NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE, isDerivedVersionType, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 
-import { labelPattern } from "../shared/note-labels";
+ 
 
 import { t } from "../shared/i18n";
-import { VersionManifestStore, type VersionManifest } from "./version-manifest-store";
+import { VersionManifestStore } from "./version-manifest-store";
+import { OriginalSnapshotStore, type OriginalSnapshot } from "./original-snapshot-store";
 
-type OriginalSnapshot = { path: string; mode: string; label: string };
-
-function parseFrontmatterObject(frontmatter: string): Record<string, unknown> | null {
-  const yaml = String(frontmatter || "").replace(/^---\s*\n?/, "").replace(/\n?---\s*$/, "").trim();
-  if (!yaml) return {};
-  try {
-    const parsed: unknown = obsidian.parseYaml(yaml);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
-}
 
 function isCleanDerivedNote(frontmatter: Record<string, unknown>, variantKind: string): boolean {
   if (typeof frontmatter.variant_kind !== "string" || frontmatter.variant_kind !== variantKind) return false;
@@ -75,118 +62,34 @@ export interface VersionStoreHost {
 
 export class VersionStore {
   declare host: VersionStoreHost;
-  declare _originalSnapshotInFlight: Map<string, Promise<string | null>>;
   declare manifests: VersionManifestStore;
+  declare originals: OriginalSnapshotStore;
   constructor(host: VersionStoreHost) {
     this.host = host;
-    this._originalSnapshotInFlight = new Map();
     this.manifests = new VersionManifestStore({
       exists: (path) => this.host.vault.adapter.exists(path),
       read: (path) => this.host.vault.adapter.read(path),
       write: (path, content) => this.host.vault.adapter.write(path, content),
       mkdir: (path) => this.host.vault.adapter.mkdir(path),
     });
-  }
-  private async resolveOriginalSnapshot(folder: string, sourceId: string, sourcePath: string, manifest: VersionManifest): Promise<OriginalSnapshot | null> {
-    const records = manifest.versions
-      .filter((item) => item && (item.kind === "source-original" || item.kind === "pre-clean"))
-      .sort((left, right) => Number(right.kind === "source-original") - Number(left.kind === "source-original"));
-    for (const record of records) {
-      const fileName = typeof record.fileName === "string" ? record.fileName : "";
-      if (!fileName || obsidian.normalizePath(fileName) !== fileName || fileName.includes("/") || fileName.includes("\\") || !fileName.endsWith(".md")) return null;
-      const path = obsidian.normalizePath(`${folder}/${fileName}`);
-      if (!(await this.host.vault.adapter.exists(path))) return null;
-      const parts = splitLeadingFrontmatter(await this.host.vault.adapter.read(path));
-      const fileFm = parseFrontmatterObject(parts.frontmatter);
-      const versionParts = splitVersionPayload(parts.body);
-      const storedSourcePath = fileFm ? readNamespaceFrontmatter(fileFm, "sourcePath") : "";
-      if (!fileFm
-        || fileFm.version_id !== record.id
-        || fileFm.variant_kind !== record.kind
-        || fileFm.source_id !== sourceId
-        || typeof storedSourcePath !== "string"
-        || obsidian.normalizePath(storedSourcePath) !== obsidian.normalizePath(sourcePath)
-        || readNamespaceFrontmatter(fileFm, "type") !== NS_TYPE_VERSION_CACHE
-        || !versionParts.body.trim()) return null;
-      const mode = typeof record.mode === "string" ? record.mode : "";
-      const label = mode && isKnownPolishMode(this.host.getSettings(), mode)
-        ? getModeDisplayName(this.host.getSettings(), mode)
-        : (typeof record.label === "string" && record.kind === "source-original" ? record.label : t("Original minutes"));
-      return { path, mode, label };
-    }
-    return null;
+    this.originals = new OriginalSnapshotStore({
+      readSource: (file) => this.host.vault.read(file),
+      getSourceId: (content, file) => getSourceIdFromMarkdown(content, file),
+      getFolder: (sourceId) => getVersionStoreFolder(this.host.getSettings(), sourceId),
+      exists: (path) => this.host.vault.adapter.exists(path),
+      readCache: (path) => this.host.vault.adapter.read(path),
+      readManifest: (folder, sourceId) => this.manifests.read(folder, sourceId),
+      saveVersion: (file, content, input) => this.saveVersion(file, content, [], input),
+      normalizeMode: (label) => normalizeModeFromLabel(this.host.getSettings(), label),
+      isKnownMode: (mode) => isKnownPolishMode(this.host.getSettings(), mode),
+      getModeDisplayName: (mode) => getModeDisplayName(this.host.getSettings(), mode),
+    });
   }
   async findOriginalVersionForSource(sourceFile: obsidian.TFile): Promise<OriginalSnapshot | null> {
-    if (!(sourceFile instanceof obsidian.TFile) || sourceFile.extension !== "md") return null;
-    try {
-      const sourceContent = await this.host.vault.read(sourceFile);
-      const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
-      const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
-      const manifest = await this.manifests.read(folder, sourceId);
-      return await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, manifest);
-    } catch (error) {
-      console.warn("[QnALog] original version lookup failed", error);
-      return null;
-    }
+    return this.originals.findForSource(sourceFile);
   }
   async ensureOriginalVersionForSource(sourceFile: obsidian.TFile): Promise<string | null> {
-    if (!(sourceFile instanceof obsidian.TFile) || sourceFile.extension !== "md") return null;
-    const sourceId = getSourceIdFromMarkdown(await this.host.vault.read(sourceFile), sourceFile);
-    const pending = this._originalSnapshotInFlight.get(sourceId);
-    if (pending !== undefined) return pending;
-    const task = this.ensureOriginalVersion(sourceFile, sourceId);
-    this._originalSnapshotInFlight.set(sourceId, task);
-    try {
-      return await task;
-    } catch (error) {
-      new obsidian.Notice(t("Could not save the original version; no version was switched. Check version storage. If an older version has already been overwritten, recover its original text from Obsidian file history."), 10000);
-      throw error;
-    } finally {
-      this._originalSnapshotInFlight.delete(sourceId);
-    }
-  }
-  private async ensureOriginalVersion(sourceFile: obsidian.TFile, sourceId: string): Promise<string | null> {
-    const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
-    const manifest = await this.manifests.read(folder, sourceId);
-    const existing = await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, manifest);
-    if (existing) return existing.path;
-    const records = manifest.versions;
-    if (records.some((item) => item && (item.kind === "source-original" || item.kind === "pre-clean"))) {
-      throw new Error(t("Could not read version metadata"));
-    }
-    const content = await this.host.vault.read(sourceFile);
-    if (findActiveVersionBlock(content)) {
-      throw new Error(t("Could not read version metadata"));
-    }
-    const parts = splitLeadingFrontmatter(content);
-    const fm = parseFrontmatterObject(parts.frontmatter);
-    if (parts.frontmatter && !fm) throw new Error(t("Could not read version metadata"));
-    const extracted = extractAllRawBlocksFromText(content);
-    const sourceParts = splitLeadingFrontmatter(extracted.withoutRaw);
-    const originalBody = sourceParts.body
-      .replace(/^#\s+[^\n]*(?:\n+|$)/, "")
-      .replace(/^\s*---+\s*$/gm, "")
-      .replace(new RegExp(`^#{1,6}\\s+.*${labelPattern("originalMaterial").source}.*$`, "gim"), "")
-      .trim();
-    if (!originalBody) return null;
-    const rawMode = fm ? readNamespaceFrontmatter(fm, "mode") : "";
-    const mode = typeof rawMode === "string" ? normalizeModeFromLabel(this.host.getSettings(), rawMode) : "";
-    const validMode = mode && mode !== "off" && isKnownPolishMode(this.host.getSettings(), mode) ? mode : "";
-    const label = validMode ? getModeDisplayName(this.host.getSettings(), validMode) : t("Original minutes");
-    const saved = await this.saveVersion(sourceFile, content, [], {
-      kind: "source-original",
-      label,
-      mode: validMode,
-      body: buildVersionPayload(sourceParts.frontmatter, sanitizeActiveVersionBody(originalBody)),
-      activate: false,
-    });
-    const verifiedManifest = await this.manifests.read(folder, sourceId);
-    const verified = await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, verifiedManifest);
-    const savedPath = obsidian.normalizePath(`${folder}/${saved.meta.fileName}`);
-    if (!verified || verified.path !== savedPath) {
-      throw new Error(t("Could not verify version metadata"));
-    }
-    return verified.path;
+    return this.originals.ensureForSource(sourceFile);
   }
   findDerivedNoteForSource(
     sourceFile: obsidian.TFile,
@@ -444,7 +347,7 @@ export class VersionStore {
       : await this.host.vault.adapter.read(versionPath);
     const parts = splitLeadingFrontmatter(content);
     const cachedFm = indexedFile ? this.host.getFileFrontmatter(indexedFile) : null;
-    const parsedFm = parseFrontmatterObject(parts.frontmatter);
+    const parsedFm = parseVersionFrontmatter(parts.frontmatter, obsidian.parseYaml);
     if (parts.frontmatter && !parsedFm) {
       new obsidian.Notice(t("Could not read version metadata"), 6000);
       throw new Error(t("Could not read version metadata"));
@@ -515,7 +418,7 @@ export class VersionStore {
         ? ""
         : stripVersionBookkeepingFrontmatter(parts.frontmatter));
     if (meta.kind === "source-original" || meta.kind === "pre-clean") {
-      const originalYaml = parseFrontmatterObject(contentFrontmatter);
+      const originalYaml = parseVersionFrontmatter(contentFrontmatter, obsidian.parseYaml);
       if (contentFrontmatter && !originalYaml) {
         new obsidian.Notice(t("Could not read version metadata"), 6000);
         throw new Error(t("Could not read version metadata"));
@@ -524,8 +427,8 @@ export class VersionStore {
     if (meta.kind === "clean") {
       const currentSource = await this.host.vault.read(sourceFile);
       const currentParts = splitLeadingFrontmatter(currentSource);
-      const currentYaml = parseFrontmatterObject(currentParts.frontmatter);
-      const versionYaml = parseFrontmatterObject(contentFrontmatter);
+      const currentYaml = parseVersionFrontmatter(currentParts.frontmatter, obsidian.parseYaml);
+      const versionYaml = parseVersionFrontmatter(contentFrontmatter, obsidian.parseYaml);
       if (contentFrontmatter && !versionYaml) {
         new obsidian.Notice(t("Could not read version metadata"), 6000);
         throw new Error(t("Could not read version metadata"));

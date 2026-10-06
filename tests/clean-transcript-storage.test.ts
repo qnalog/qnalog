@@ -1210,4 +1210,244 @@ describe("clean transcript storage", () => {
     expect([...files.values()].some((candidate) => candidate.path !== sourceFile.path
       && candidate.data.includes('variant_kind: "minutes"'))).toBe(false);
   });
+  it("shares same-source snapshot work without blocking another source", async () => {
+    const { files, vault } = createMemoryVault();
+    const settings = { mdFolder: "QnALog/notes" };
+    const textFor = (id: string, body: string) => sourceContent
+      .replace("First generated minutes must stay visible.", body)
+      .concat(`\n\n<!-- qnalog-session:${id} -->`);
+    const sourceA = new obsidian.TFile("QnALog/notes/source-a.md", textFor("s1", "Source A body."));
+    const sourceB = new obsidian.TFile("QnALog/notes/source-b.md", textFor("s2", "Source B body."));
+    const sourceABefore = sourceA.data;
+    const sourceBBefore = sourceB.data;
+    files.set(sourceA.path, sourceA);
+    files.set(sourceB.path, sourceB);
+    const sourceIdA = getSourceIdFromMarkdown(sourceA.data, sourceA);
+    const sourceIdB = getSourceIdFromMarkdown(sourceB.data, sourceB);
+    const folderA = getVersionStoreFolder(settings, sourceIdA);
+    const manifestPathA = `${folderA}/manifest.json`;
+    const seed = {
+      version: 1,
+      sourceId: sourceIdA,
+      activeVersionId: "prior",
+      unknown: { nested: ["preserve"] },
+      versions: [],
+    };
+    await vault.adapter.write(manifestPathA, JSON.stringify(seed));
+    let enterRead: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => { enterRead = resolve; });
+    let releaseRead: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let shouldBlock = true;
+    const originalRead = vault.adapter.read;
+    vi.spyOn(vault.adapter, "read").mockImplementation(async (path) => {
+      if (path === manifestPathA && shouldBlock) {
+        shouldBlock = false;
+        enterRead();
+        await blocked;
+      }
+      return originalRead(path);
+    });
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+
+    const first = versions.ensureOriginalVersionForSource(sourceA);
+    await entered;
+    const second = versions.ensureOriginalVersionForSource(sourceA);
+    const independent = await versions.ensureOriginalVersionForSource(sourceB);
+    releaseRead();
+    const [pathA1, pathA2] = await Promise.all([first, second]);
+
+    expect(pathA1).toBe(pathA2);
+    expect(independent).toBeTruthy();
+    expect(independent).not.toBe(pathA1);
+    const manifest = JSON.parse(await originalRead(manifestPathA));
+    expect(manifest.versions.filter((record: { kind: string }) => record.kind === "source-original")).toHaveLength(1);
+    expect(manifest.activeVersionId).toBe("prior");
+    expect(manifest.unknown).toEqual(seed.unknown);
+    expect(await vault.read(sourceA)).toBe(sourceABefore);
+    expect(await vault.read(sourceB)).toBe(sourceBBefore);
+    expect(files.get(pathA1!)?.data).toContain("Source A body.");
+    expect(files.get(pathA1!)?.data).not.toContain("Original ASR transcript.");
+    expect(files.get(independent!)?.data).toContain("Source B body.");
+  });
+
+  it("shares a failed snapshot write and allows a fresh retry", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceText = sourceContent.replace("First generated minutes must stay visible.", "Recoverable source body.");
+    const sourceFile = new obsidian.TFile("QnALog/notes/retry.md", sourceText);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/notes" };
+    const manifestPath = `${getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceText, sourceFile))}/manifest.json`;
+    let enterWrite: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => { enterWrite = resolve; });
+    let rejectWrite: () => void = () => undefined;
+    const blocked = new Promise<void>((_resolve, reject) => { rejectWrite = () => reject(new Error("disk denied")); });
+    let failOnce = true;
+    const originalWrite = vault.adapter.write;
+    vi.spyOn(vault.adapter, "write").mockImplementation(async (path, content) => {
+      if (path === manifestPath && failOnce) {
+        failOnce = false;
+        enterWrite();
+        await blocked;
+      }
+      await originalWrite(path, content);
+    });
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+
+    const first = versions.ensureOriginalVersionForSource(sourceFile);
+    await entered;
+    const second = versions.ensureOriginalVersionForSource(sourceFile);
+    rejectWrite();
+    await expect(first).rejects.toThrow("disk denied");
+    await expect(second).rejects.toThrow("disk denied");
+    const orphan = [...files.values()].find((file) => file.data.includes('variant_kind: "source-original"'));
+    if (!orphan) throw new Error("Failed original cache was not retained");
+    const orphanBytes = orphan.data;
+    expect(await vault.adapter.exists(manifestPath)).toBe(false);
+    expect(await vault.read(sourceFile)).toBe(sourceText);
+
+    const retryPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    expect(retryPath).not.toBe(orphan.path);
+    expect(orphan.data).toBe(orphanBytes);
+    const manifest = JSON.parse(await vault.adapter.read(manifestPath));
+    expect(manifest.versions.filter((record: { kind: string }) => record.kind === "source-original")).toHaveLength(1);
+    expect(await vault.read(sourceFile)).toBe(sourceText);
+  });
+
+  it.each([
+    ["filename with forward slash", (manifest: Record<string, unknown>, cache: string) => {
+      (manifest.versions as Array<Record<string, unknown>>)[0].fileName = "../escape.md";
+      return cache;
+    }],
+    ["filename with backslash", (manifest: Record<string, unknown>, cache: string) => {
+      (manifest.versions as Array<Record<string, unknown>>)[0].fileName = "..\\\\escape.md";
+      return cache;
+    }],
+    ["version id", (manifest: Record<string, unknown>, cache: string) => cache.replace(/version_id: \"[^\"]+\"/, 'version_id: \"foreign\"')],
+    ["variant kind", (manifest: Record<string, unknown>, cache: string) => cache.replace('variant_kind: \"source-original\"', 'variant_kind: \"minutes\"')],
+    ["source id", (manifest: Record<string, unknown>, cache: string) => cache.replace(/source_id: \"[^\"]+\"/, 'source_id: \"foreign\"')],
+    ["source path", (manifest: Record<string, unknown>, cache: string) => cache.replace(/qnalog_source_path: \"[^\"]+\"/, 'qnalog_source_path: \"elsewhere.md\"')],
+    ["cache type", (manifest: Record<string, unknown>, cache: string) => cache.replace("qnalog_type: QnALog版本缓存", "qnalog_type: wrong")],
+    ["empty cache body", (_manifest: Record<string, unknown>, cache: string) => cache.replace("Identity source body.", "")],
+  ] as const)("rejects a corrupted original snapshot identity: %s", async (_case, corrupt) => {
+    const { files, vault } = createMemoryVault();
+    const sourceText = sourceContent.replace("First generated minutes must stay visible.", "Identity source body.");
+    const sourceFile = new obsidian.TFile("QnALog/notes/identity.md", sourceText);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/notes" };
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    const snapshotPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    if (!snapshotPath) throw new Error("Original snapshot was not created");
+    const sourceId = getSourceIdFromMarkdown(sourceText, sourceFile);
+    const manifestPath = `${getVersionStoreFolder(settings, sourceId)}/manifest.json`;
+    const manifest = JSON.parse(await vault.adapter.read(manifestPath));
+    const cache = files.get(snapshotPath)?.data;
+    if (cache === undefined) throw new Error("Original cache was not written");
+    const nextCache = corrupt(manifest, cache);
+    if (nextCache !== cache) files.get(snapshotPath)!.data = nextCache;
+    await vault.adapter.write(manifestPath, JSON.stringify(manifest));
+    const before = new Map([...files].map(([path, file]) => [path, file.data]));
+
+    expect(await versions.findOriginalVersionForSource(sourceFile)).toBeNull();
+    await expect(versions.ensureOriginalVersionForSource(sourceFile)).rejects.toThrow("Could not read version metadata");
+    expect(new Map([...files].map(([path, file]) => [path, file.data]))).toEqual(before);
+    expect(await vault.read(sourceFile)).toBe(sourceText);
+  });
+
+  it("does not fall back from a corrupt original to pre-clean, but reuses a valid pre-clean alone", async () => {
+    for (const includeOriginal of [true, false]) {
+      const { files, vault } = createMemoryVault();
+      const sourceText = sourceContent.replace("First generated minutes must stay visible.", "Pre-clean recovery body.");
+      const sourceFile = new obsidian.TFile(`QnALog/notes/pre-clean-${includeOriginal}.md`, sourceText);
+      files.set(sourceFile.path, sourceFile);
+      const settings = { mdFolder: "QnALog/notes" };
+      const versions = new VersionStore(makeVersionHost(
+        { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+        () => settings,
+      ));
+      const sourceId = getSourceIdFromMarkdown(sourceText, sourceFile);
+      const originalPath = includeOriginal ? await versions.ensureOriginalVersionForSource(sourceFile) : null;
+      const preClean = await versions.saveVersion(sourceFile, sourceText, [], {
+        kind: "pre-clean", idLabel: "pre-clean", label: "Pre-clean", body: "Pre-clean body.", activate: false,
+      });
+      const folder = getVersionStoreFolder(settings, sourceId);
+      if (includeOriginal) {
+        const originalCache = files.get(originalPath!);
+        if (!originalCache) throw new Error("Original cache was not written");
+        originalCache.data = originalCache.data.replace(/source_id: \"[^\"]+\"/, 'source_id: \"foreign\"');
+        expect(await versions.findOriginalVersionForSource(sourceFile)).toBeNull();
+        await expect(versions.ensureOriginalVersionForSource(sourceFile)).rejects.toThrow("Could not read version metadata");
+      } else {
+        const reused = await versions.ensureOriginalVersionForSource(sourceFile);
+        expect(reused).toBe(`${folder}/${preClean.meta.fileName}`);
+      }
+    }
+  });
+
+  it("rejects a saved snapshot when final metadata points to another valid cache", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceText = sourceContent.replace("First generated minutes must stay visible.", "Verified path source body.");
+    const sourceFile = new obsidian.TFile("QnALog/notes/verify-path.md", sourceText);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/notes" };
+    const sourceId = getSourceIdFromMarkdown(sourceText, sourceFile);
+    const folder = getVersionStoreFolder(settings, sourceId);
+    const manifestPath = `${folder}/manifest.json`;
+    const originalWrite = vault.adapter.write;
+    let redirected = false;
+    vi.spyOn(vault.adapter, "write").mockImplementation(async (path, content) => {
+      if (path === manifestPath && !redirected) {
+        const manifest = JSON.parse(content);
+        const record = manifest.versions.find((item: { kind: string }) => item.kind === "source-original");
+        if (record) {
+          const savedPath = `${folder}/${record.fileName}`;
+          const savedCache = files.get(savedPath);
+          if (!savedCache) throw new Error("Saved original cache was not written");
+          const redirectedPath = `${folder}/redirected-original.md`;
+          files.set(redirectedPath, new obsidian.TFile(redirectedPath, savedCache.data));
+          record.fileName = "redirected-original.md";
+          redirected = true;
+          content = JSON.stringify(manifest, null, 2);
+        }
+      }
+      await originalWrite(path, content);
+    });
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+
+    await expect(versions.ensureOriginalVersionForSource(sourceFile)).rejects.toThrow("Could not verify version metadata");
+    expect(redirected).toBe(true);
+    expect(await vault.read(sourceFile)).toBe(sourceText);
+    expect(files.get(`${folder}/redirected-original.md`)?.data).toContain("Verified path source body.");
+    expect([...files.values()].filter((file) => file.data.includes('variant_kind: "source-original"'))).toHaveLength(2);
+  });
+
+  it("does not write an original snapshot for raw-only source notes", async () => {
+    const { files, vault } = createMemoryVault();
+    const rawOnly = sourceContent.replace("First generated minutes must stay visible.", "")
+      .replace("Original ASR transcript.", "Only raw evidence.");
+    const sourceFile = new obsidian.TFile("QnALog/notes/raw-only.md", rawOnly);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/notes" };
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+
+    expect(await versions.ensureOriginalVersionForSource(sourceFile)).toBeNull();
+    expect([...files.values()].some((file) => file.data.includes('variant_kind: "source-original"'))).toBe(false);
+    expect(await vault.read(sourceFile)).toBe(rawOnly);
+  });
+
 });
