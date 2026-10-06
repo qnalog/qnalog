@@ -305,6 +305,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 - **P2.3：关键持久化域的类型与能力闭合**。范围：录音/续录终止、队列恢复、笔记写入、版本保全。`TaskQueue` 与 `VersionStore` 已使用窄宿主能力；LLM 失败分类已迁入严格检查的纯策略模块。
 - 2026-10-04 将 `src/queue/task-queue.ts` 纳入 strict-core；队列公开方法、任务生命周期和重试流程的临时严格诊断与常规 TypeScript 诊断均为 0。`load(saved: unknown)` 的恢复边界已在本地分支 `fix/queue-recovery-boundary` 实现：合法三类任务经字段校验后恢复；其它原行暂停并按原顺序保留，相关会话依赖和音频引用继续受保护。模拟宿主与自动化覆盖已完成，真实 Obsidian 验收尚未进行。`RecorderService` 已改用七项录音宿主能力，纳入 strict-core；自动化覆盖停止事件、超时、最终回调、母带回退、切段重启失败、暂停恢复、动态设备设置与 MIME 选择。录音切片交付流程现位于严格检查的 `src/audio/recording-segment-flow.ts`；普通切片返回前等待切片与母带落盘，最终切片等待串行处理和会话收尾。`tests/recording-segment-flow.test.ts` 覆盖等待时点、处理顺序、失败材料、任务状态、收尾拒绝和动态短录音设置；`tests/short-recording-flow.test.ts` 补充 masterOnly 消费者验证。真实麦克风、Obsidian 和移动端未验证。`RecordingService` 启停、续录收尾控制流、笔记写入和版本保全仍未完成；不得把 `QueueRetryService` / `NoteWriter` 间接 host 能力写成已收窄。
+- 2026-10-06 将版本清单读取校验、按来源串行化、逐级建目录、写入与逐字节回读确认迁入 `src/versions/version-manifest-store.ts` 并纳入 strict-core；`VersionStore` 的清单消费者改用该能力，原稿快照单飞、缓存文件写入和版本切换流程未搬迁。`tests/version-manifest-store.test.ts` 与 `tests/clean-transcript-storage.test.ts` 覆盖清单校验、失败释放、未知字段保留及当前 adapter 读取；未进行真实 Obsidian 验证。VersionStore 其余版本保全、续录收尾、笔记写入与 RecordingService 启停仍未完成。
 - **P3：A8 沉淀交互控制器**。后续任务需整体定义并验收扫描、取消、自动推进、提交、撤销和 DOM 边界；不重新拆整个 `OutlineView`。真实视觉与交互由维护者确认。
 - 真实用户数据损坏或安全问题优先。尚未定位的截图或 `partial` 状态不作为已定位故障。
 

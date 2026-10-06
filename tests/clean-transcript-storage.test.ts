@@ -850,6 +850,124 @@ describe("clean transcript storage", () => {
     expect(files.get(`${folder}/${original.meta.fileName}`)?.data).toContain("Personal text A.");
 
   });
+  it("releases the source lock after a manifest write failure and retains the orphan cache", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/source.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const folder = getVersionStoreFolder(settings, sourceId);
+    const manifestPath = `${folder}/manifest.json`;
+    const originalWrite = vault.adapter.write;
+    let failNextManifestWrite = true;
+    vi.spyOn(vault.adapter, "write").mockImplementation(async (path, content) => {
+      if (path === manifestPath && failNextManifestWrite) {
+        failNextManifestWrite = false;
+        throw new Error("disk denied");
+      }
+      await originalWrite(path, content);
+    });
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    const failed = versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "failed", label: "Failed", body: "Orphan material.",
+    });
+    const later = versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "later", label: "Later", body: "Committed material.",
+    });
+
+    await expect(failed).rejects.toThrow("disk denied");
+    const saved = await later;
+    const manifest = JSON.parse(files.get(manifestPath)!.data);
+    expect(manifest.versions.map((record: { id: string }) => record.id)).toContain(saved.meta.id);
+    expect(manifest.versions.map((record: { id: string }) => record.id)).not.toContain("failed");
+    const orphan = [...files.values()].find((file) => file.data.includes("Orphan material."));
+    expect(orphan?.path).toContain(`${folder}/`);
+    expect(orphan?.data).toContain("Orphan material.");
+    expect(files.get(`${folder}/${saved.meta.fileName}`)?.data).toContain("Committed material.");
+  });
+
+  it("preserves unknown manifest fields through a VersionStore save", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/source.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const folder = getVersionStoreFolder(settings, sourceId);
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "first", label: "First", body: "First saved version.",
+    });
+    const manifestFile = files.get(`${folder}/manifest.json`);
+    if (!manifestFile) throw new Error("Version manifest was not written");
+    const manifest = JSON.parse(manifestFile.data);
+    manifest.unknown = { nested: ["preserve", { flag: true }] };
+    manifest.versions[0].vendorField = { untouched: true };
+    manifestFile.data = JSON.stringify(manifest);
+
+    await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "second", label: "Second", body: "Second saved version.",
+    });
+
+    const savedManifest = JSON.parse(manifestFile.data);
+    expect(savedManifest.unknown).toEqual({ nested: ["preserve", { flag: true }] });
+    expect(savedManifest.versions[0].vendorField).toEqual({ untouched: true });
+    const savedIds = savedManifest.versions.map((record: { id: string }) => record.id);
+    expect(savedIds).toHaveLength(2);
+    expect(savedIds[0]).toContain("-first");
+    expect(savedIds[1]).toContain("-second");
+  });
+
+  it("uses the current adapter when manifest capabilities execute", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/source.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const initialManifest = vault.adapter;
+    const alternateFiles = new Map<string, string>();
+    const alternateFolders = new Set<string>();
+    const alternateAdapter: VersionStoreHost["vault"]["adapter"] = {
+      exists: async (path) => alternateFiles.has(path) || files.has(path) || alternateFolders.has(path),
+      read: async (path) => {
+        const content = alternateFiles.get(path) ?? files.get(path)?.data;
+        if (content === undefined) throw new Error(`File not found: ${path}`);
+        return content;
+      },
+      write: async (path, content) => { alternateFiles.set(path, content); },
+      mkdir: async (path) => { alternateFolders.add(path); },
+    };
+    const app = { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } };
+    const baseHost = makeVersionHost(app, () => settings);
+    const host: VersionStoreHost = {
+      ...baseHost,
+      vault: {
+        ...baseHost.vault,
+        get adapter() { return app.vault.adapter; },
+      },
+    };
+    const versions = new VersionStore(host);
+    expect(files.size).toBe(1);
+    await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "initial", label: "Initial", body: "Initial adapter.",
+    });
+    expect(files.has(`${getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile))}/manifest.json`)).toBe(true);
+
+    app.vault.adapter = alternateAdapter;
+    await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "alternate", label: "Alternate", body: "Alternate adapter.",
+    });
+
+    const manifestPath = `${getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile))}/manifest.json`;
+    expect(alternateFiles.get(manifestPath)).toContain("alternate");
+    const initialManifestContent = await initialManifest.read(manifestPath);
+    expect(initialManifestContent).toContain("initial");
+    expect(initialManifestContent).not.toContain("alternate");
+  });
 
   it("rejects malformed or foreign manifests even when the vault index cannot see them", async () => {
     for (const manifestData of ["{", JSON.stringify({ version: 1, sourceId: "another-source", versions: [] })]) {
