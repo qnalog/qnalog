@@ -3,40 +3,17 @@
 
 import * as obsidian from "obsidian";
 import type { PluginSettings, Segment } from "../shared/types";
-import { splitLeadingFrontmatter } from "../notes/note-document";
 import { VersionActivationStore } from "./version-activation-store";
 import { getModeDisplayName, getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";
 import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder, normalizeModeFromLabel, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
 import { findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_FM, NS_TYPE_DERIVED, isDerivedVersionType, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
-
-
-import { t } from "../shared/i18n";
+import { readNamespaceFrontmatter } from "../shared/namespace";
 import { VersionManifestStore } from "./version-manifest-store";
 import { OriginalSnapshotStore, type OriginalSnapshot } from "./original-snapshot-store";
 import { VersionSaveStore, type SavedVersion, type VersionSaveInput } from "./version-save-store";
-
-
-function isCleanDerivedNote(frontmatter: Record<string, unknown>, variantKind: string): boolean {
-  if (typeof frontmatter.variant_kind !== "string" || frontmatter.variant_kind !== variantKind) return false;
-  const type = readNamespaceFrontmatter(frontmatter, "type");
-  return isDerivedVersionType(type) || readNamespaceFrontmatter(frontmatter, "containsRaw") === false;
-}
-
-function matchesDerivedNote(
-  frontmatter: Record<string, unknown>,
-  sourceId: string,
-  sourcePath: string,
-  variantKind: string,
-): boolean {
-  if (!isCleanDerivedNote(frontmatter, variantKind)) return false;
-  const storedId = frontmatter.source_id;
-  if (typeof storedId === "string" && storedId === sourceId) return true;
-  const storedPath = readNamespaceFrontmatter(frontmatter, "sourcePath");
-  return typeof storedPath === "string" && obsidian.normalizePath(storedPath) === sourcePath;
-}
+import { DerivedNoteStore, type DerivedNoteVersion } from "./derived-note-store";
 
 /** VersionStore 需要的最小宿主能力；由 src/main.ts 在调用时绑定动态成员。 */
 export interface VersionStoreHost {
@@ -65,8 +42,24 @@ export class VersionStore {
   declare saves: VersionSaveStore;
   declare originals: OriginalSnapshotStore;
   declare activation: VersionActivationStore;
+  declare derived: DerivedNoteStore;
   constructor(host: VersionStoreHost) {
     this.host = host;
+    this.derived = new DerivedNoteStore({
+      getAbstractFileByPath: (path) => this.host.vault.getAbstractFileByPath(path),
+      getMarkdownFiles: () => this.host.vault.getMarkdownFiles(),
+      getFileFrontmatter: (file) => this.host.getFileFrontmatter(file),
+      getSourceId: (content, file) => getSourceIdFromMarkdown(content, file),
+      findAvailableMarkdownPath: (target) => findAvailableMarkdownPath(this.host, target),
+      create: (path, content) => this.host.vault.create(path, content),
+      modify: (file, content) => this.host.vault.modify(file, content),
+      refreshDerivedNote: (file, fm) => this.host.refreshNoteIndexSafely(file, {
+        meetingDate: readNamespaceFrontmatter(fm, "time") || fm["日期"] || fm.date || "",
+        reason: "derived-note",
+      } as Parameters<VersionStoreHost["refreshNoteIndexSafely"]>[1]),
+      buildEmptyBody: () => buildEmptyLlmOutputFallback(),
+      getCreatedAt: () => new Date().toISOString(),
+    });
     this.manifests = new VersionManifestStore({
       exists: (path) => this.host.vault.adapter.exists(path),
       read: (path) => this.host.vault.adapter.read(path),
@@ -135,22 +128,7 @@ export class VersionStore {
     sourceId: string,
     variantKind: string,
   ): obsidian.TFile | null {
-    const sourcePath = obsidian.normalizePath(sourceFile.path);
-    const sourceDir = obsidian.normalizePath(sourceFile.parent?.path || "");
-    const candidates = this.host.vault.getMarkdownFiles().filter((candidate) => {
-      if (!(candidate instanceof obsidian.TFile) || candidate.extension !== "md" || candidate.path === sourcePath) return false;
-      if (obsidian.normalizePath(candidate.parent?.path || "") !== sourceDir) return false;
-      const current = this.host.vault.getAbstractFileByPath(candidate.path);
-      if (!(current instanceof obsidian.TFile) || current.path !== candidate.path) return false;
-      const frontmatter = this.host.getFileFrontmatter(current) || {};
-      const identityMatches = matchesDerivedNote(frontmatter, sourceId, sourcePath, variantKind);
-      const canonicalCleanName = variantKind === "clean"
-        && current.basename.endsWith(`】${sourceFile.basename}`)
-        && isCleanDerivedNote(frontmatter, variantKind);
-      return identityMatches || canonicalCleanName;
-    });
-    candidates.sort((left, right) => (right.stat?.mtime || 0) - (left.stat?.mtime || 0) || left.path.localeCompare(right.path));
-    return candidates[0] || null;
+    return this.derived.findDerivedNoteForSource(sourceFile, sourceId, variantKind);
   }
 
 
@@ -165,104 +143,15 @@ export class VersionStore {
     return this.saves.save(sourceFile, sourceContent, segments, versionInput);
   }
 
-  async createDerivedNote(sourceFile, sourceContent, version, label, mode, style = "") {
-    if (!(sourceFile instanceof obsidian.TFile)) throw new Error(t("Original minutes note not found"));
-    const sourceDir = sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "";
-    const sourcePath = obsidian.normalizePath(sourceFile.path);
-    const sourceId = String(version && version.meta && version.meta.sourceId || getSourceIdFromMarkdown(sourceContent, sourceFile));
-    const prefix = String(label || "综合纪要").trim() || "综合纪要";
-    const variantKind = String(version && version.meta && version.meta.kind || "minutes");
-    const stem = `【${prefix}】${sourceFile.basename}`;
-    const stableTarget = obsidian.normalizePath(sourceDir ? `${sourceDir}/${stem}.md` : `${stem}.md`);
-    const existingClean = variantKind === "clean"
-      ? this.findDerivedNoteForSource(sourceFile, sourceId, variantKind)
-      : null;
-    const stableExisting = this.host.vault.getAbstractFileByPath(stableTarget);
-    const stableIsOwnedClean = variantKind === "clean" && stableExisting instanceof obsidian.TFile
-      && matchesDerivedNote(
-        this.host.getFileFrontmatter(stableExisting) || {},
-        sourceId,
-        sourcePath,
-        variantKind,
-      );
-    let target = existingClean?.path
-      || (stableExisting instanceof obsidian.TFile && (variantKind !== "clean" || stableIsOwnedClean)
-        ? stableTarget
-        : findAvailableMarkdownPath(this.host, stableTarget));
-    if (!target) throw new Error(t("Failed to generate a path for the derived minutes file"));
-
-    const sourceFm = this.host.getFileFrontmatter(sourceFile) || {};
-    const versionFm = version && version.frontmatter
-      ? (() => { try { return obsidian.parseYaml(splitLeadingFrontmatter(version.frontmatter).frontmatter.replace(/^---\n|\n---\n?$/g, "")) || {}; } catch { return {}; } })()
-      : {};
-    const derivedFm = Object.assign({}, sourceFm, versionFm, {
-      [NS_FM.type]: NS_TYPE_DERIVED,
-      variant_kind: variantKind,
-      variant_label: prefix,
-      variant_mode: mode || "",
-      variant_style: style || "",
-      [NS_FM.sourcePath]: sourceFile.path,
-      source_id: sourceId,
-      [NS_FM.containsRaw]: false,
-      created: version && version.meta ? version.meta.createdAt : new Date().toISOString(),
-    });
-    setNamespaceFrontmatter(derivedFm, "type", NS_TYPE_DERIVED);
-    setNamespaceFrontmatter(derivedFm, "sourcePath", sourceFile.path);
-    setNamespaceFrontmatter(derivedFm, "containsRaw", false);
-    if (variantKind === "clean") setNamespaceFrontmatter(derivedFm, "mode", "cleanscript");
-    const yaml = obsidian.stringifyYaml(derivedFm);
-    const body = String(version && version.body || buildEmptyLlmOutputFallback()).trim() || buildEmptyLlmOutputFallback();
-    const heading = /^#\s/m.test(body) ? "" : `# ${prefix} · ${sourceFile.basename}\n\n`;
-    const backlink = variantKind === "clean"
-      ? `> [!note] 从母本逐字稿忠实清理 · 母本：[[${sourceFile.basename}]]`
-      : `> [!info] 基于原始转写重新生成 · 原始纪要：[[${sourceFile.basename}]]`;
-    const content = `---\n${yaml.trimEnd()}\n---\n\n${heading}${backlink}\n\n${body}\n`;
-    let existing = this.host.vault.getAbstractFileByPath(target);
-    const existingFm = existing instanceof obsidian.TFile
-      ? this.host.getFileFrontmatter(existing) || {}
-      : {};
-    const mayReplace = existing instanceof obsidian.TFile
-      && (variantKind !== "clean"
-        || existingClean?.path === existing.path
-        || matchesDerivedNote(existingFm, sourceId, sourcePath, variantKind));
-    if (mayReplace && existing instanceof obsidian.TFile) {
-      await this.host.vault.modify(existing, content);
-    } else {
-      if (existing) {
-        target = findAvailableMarkdownPath(this.host, stableTarget);
-        if (!target) throw new Error(t("Failed to generate a path for the derived minutes file"));
-        existing = this.host.vault.getAbstractFileByPath(target);
-      }
-      if (!(existing instanceof obsidian.TFile)) {
-        try {
-          existing = await this.host.vault.create(target, content);
-        } catch (error) {
-          const raced = this.host.vault.getAbstractFileByPath(target);
-          const racedFm = raced instanceof obsidian.TFile
-            ? this.host.getFileFrontmatter(raced) || {}
-            : {};
-          if (raced instanceof obsidian.TFile
-            && (variantKind !== "clean" || matchesDerivedNote(racedFm, sourceId, sourcePath, variantKind))) {
-            await this.host.vault.modify(raced, content);
-            existing = raced;
-          } else if (raced) {
-            const alternate = findAvailableMarkdownPath(this.host, stableTarget);
-            if (!alternate || alternate === target) throw error;
-            target = alternate;
-            existing = await this.host.vault.create(target, content);
-          } else {
-            throw error;
-          }
-        }
-      }
-    }
-    if (existing instanceof obsidian.TFile) {
-      await this.host.refreshNoteIndexSafely(existing, {
-        meetingDate: readNamespaceFrontmatter(derivedFm, "time") || derivedFm["日期"] || derivedFm.date || "",
-        reason: "derived-note",
-      });
-    }
-    return existing instanceof obsidian.TFile ? existing : null;
+  async createDerivedNote(
+    sourceFile: obsidian.TFile,
+    sourceContent: string,
+    version: DerivedNoteVersion | null | undefined,
+    label: string,
+    mode: string,
+    style = "",
+  ): Promise<obsidian.TFile | null> {
+    return this.derived.createDerivedNote(sourceFile, sourceContent, version, label, mode, style);
   }
 
   async switchVersion(versionFile: obsidian.TFile | string, fallbackSourcePath?: string): Promise<void> {
