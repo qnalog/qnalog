@@ -80,6 +80,7 @@ import { NoteIndexService } from "./notes/note-index-service";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
+import { ensureVaultFolder } from "./shared/util-vault";
 import { LiveAsrPipelineService } from "./asr/live-asr-pipeline-service";
 import { SessionFinalizeService } from "./notes/session-finalize-service";
 import { ImportService } from "./imports/import-service";
@@ -226,7 +227,25 @@ class QnALogPlugin extends obsidian.Plugin {
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
-    this.recording = new RecordingService(this);
+    const getRecordingOwner = () => this;
+    this.recording = new RecordingService({
+      ensureFolder: (path) => ensureVaultFolder(getRecordingOwner().app, path),
+      getFileByPath: (path) => getRecordingOwner().app.vault.getAbstractFileByPath(path),
+      get settings() { return getRecordingOwner().settings; },
+      get diagnostics() { return getRecordingOwner().diagnostics; },
+      get meetingWorkbench() { return getRecordingOwner().meetingWorkbench; },
+      get noteWriter() { return getRecordingOwner().noteWriter; },
+      get profiles() { return getRecordingOwner().profiles; },
+      get continuations() { return getRecordingOwner().continuations; },
+      get recorder() { return getRecordingOwner().recorder; },
+      saveSettings: () => getRecordingOwner().saveSettings(),
+      get sessionStore() { return getRecordingOwner().sessionStore; },
+      get asrPipeline() { return getRecordingOwner().asrPipeline; },
+      processRecordedSegment: (session, segment) => getRecordingOwner().processRecordedSegment(session, segment),
+      finalizeRecordedSession: (session) => getRecordingOwner().finalizeRecordedSession(session),
+      requestOutlineRefresh: () => getRecordingOwner().requestOutlineRefresh(),
+      requestOpenOutlineView: () => getRecordingOwner().requestOpenOutlineView(),
+    });
     this.asrPipeline = new LiveAsrPipelineService({
       getSettings: () => this.settings,
       vault: this.app.vault,

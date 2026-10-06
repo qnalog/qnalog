@@ -14,17 +14,17 @@ import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
-import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { nsMarker } from "../shared/namespace";
-import { RecorderService } from "../audio/recorder-service";
-import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { ensureVaultFolder } from "../shared/util-vault";
-import { NoteWriter } from "../notes/note-writer";
-import { TranscribeProfileService } from "../asr/transcribe-profile-service";
+import type { RecorderService } from "../audio/recorder-service";
+import type { DiagnosticsService } from "../diagnostics/diagnostics-service";
+import type { NoteWriter } from "../notes/note-writer";
+import type { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import type { ContinuationPreparation, ContinuationService } from "../session/continuation-service";
 import { handleRecordedSegment, type RecordingSegmentHost } from "./recording-segment-flow";
 import { t } from "../shared/i18n";
 import type { SessionStore } from "../session/session-store";
+import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
+import type { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
 
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
@@ -33,28 +33,37 @@ export interface StartRecordingOptions {
 
 /** RecordingService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RecordingHost {
-  /** 知识库与工作区访问。 */
-  app: obsidian.App;
-  diagnostics: DiagnosticsService;
-  /** 互动看板服务：实时互动调度与流式笔记更新。 */
-  meetingWorkbench: {
-    makeStreamingNoteUpdater(session: RecordingSession): () => void;
-    scheduleMeetingWorkbenchInteraction(session: RecordingSession, interaction: unknown): void;
-  };
-  noteWriter: NoteWriter;
-  profiles: TranscribeProfileService;
-  continuations: ContinuationService;
-  recorder: RecorderService | null;
+  /** 知识库能力。 */
+  ensureFolder(path: string): Promise<void>;
+  getFileByPath(path: string): obsidian.TAbstractFile | null;
+  diagnostics: Pick<DiagnosticsService, "logDiagnostic">;
+  meetingWorkbench: Pick<MeetingWorkbenchService, "makeStreamingNoteUpdater" | "scheduleMeetingWorkbenchInteraction">;
+  noteWriter: Pick<NoteWriter, "appendToNote" | "removeEmptySessionBlock">;
+  profiles: Pick<TranscribeProfileService, "getActiveTranscribeProfile">;
+  continuations: Pick<ContinuationService, "resolveTarget" | "prepare" | "trackSession" | "releaseSession" | "cancelPrepared">;
+  recorder: Pick<RecorderService, "state" | "start" | "stop" | "releaseStream" | "getInfo" | "masterChunks" | "chunks"> | null;
   saveSettings(): Promise<void>;
-  sessionStore: SessionStore;
-  asrPipeline: LiveAsrPipelineService;
+  sessionStore: Pick<SessionStore, "begin" | "end">;
+  asrPipeline: Pick<LiveAsrPipelineService,
+    | "startMasterAudioSave"
+    | "beginSessionSegmentWork"
+    | "prepareLiveSegmentDescriptor"
+    | "queueLiveSegmentPersistence"
+    | "getQueueTask"
+    | "keepLiveSegmentQueueTaskForRetry"
+    | "markSessionAsrJobsDeferred"
+    | "finishSessionSegmentWork"
+    | "clearRecordingIssue"
+    | "initializeSession"
+    | "setSessionWorkProgress"
+    | "setRecordingIssue"
+    | "getRecordingIssue"
+  >;
   processRecordedSegment(session: RecordingSession, seg: PreparedLiveSegment): Promise<void>;
   finalizeRecordedSession(session: RecordingSession): Promise<void>;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
-  settings: PluginSettings;
-  /** 装配层转发：请求刷新侧边栏（调用 ViewShellService.refreshOutlineView）。 */
+  settings: Pick<PluginSettings, "polishMode" | "promptTemplates" | "audioFolder" | "mdFolder" | "noteFileNameFormatNew" | "captureMode" | "audioChannelMode" | "activeTranscribeProvider" | "transcribeProviders" | "enableInterimOutput" | "segmentIntervalMinutes" | "autoOpenOutlineOnRecord" | "filterShortRecordings">;
   requestOutlineRefresh(): void;
-  /** 装配层转发：请求打开侧边栏（调用 ViewShellService.openOutlineView），仅录音流程自动打开使用。 */
   requestOpenOutlineView(): Promise<void>;
 }
 
@@ -125,8 +134,8 @@ export class RecordingService {
       let createdSession: RecordingSession | null = null;
       try {
         this.host.asrPipeline.clearRecordingIssue();
-        await ensureVaultFolder(this.host.app, this.host.settings.audioFolder);
-        if (!continuationInfo) await ensureVaultFolder(this.host.app, this.host.settings.mdFolder);
+        await this.host.ensureFolder(this.host.settings.audioFolder);
+        if (!continuationInfo) await this.host.ensureFolder(this.host.settings.mdFolder);
         const mdName = startedAt.format(this.host.settings.noteFileNameFormatNew);
         const mdPath = continuationInfo
           ? continuationInfo.stageFile.path
@@ -209,7 +218,7 @@ export class RecordingService {
       if (!continuationInfo) await this.host.noteWriter.appendToNote(mdPath, header);
       const targetToTrack = continuationInfo
         ? appendTargetFile
-        : this.host.app.vault.getAbstractFileByPath(mdPath);
+        : this.host.getFileByPath(mdPath);
       if (!(targetToTrack instanceof obsidian.TFile)) {
         throw new Error(t("Could not find the note file for this recording"));
       }
