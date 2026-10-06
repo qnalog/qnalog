@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import {
   applyVersionTitle,
@@ -7,6 +7,7 @@ import {
   normalizeTitleDatetime,
   sanitizeActiveVersionBody,
   splitVersionPayload,
+  parseVersionFrontmatter,
   stripVersionBookkeepingFrontmatter,
 } from "../src/versions/version-content";
 import { replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../src/notes/note-document";
@@ -171,6 +172,17 @@ describe("QnALog version content", () => {
     expect(repaired!.slice(0, repaired!.indexOf("<!-- qnalog-active-version-end -->"))).not.toContain("mode: synthesis");
     expect(repaired!.slice(0, repaired!.indexOf("<!-- qnalog-active-version-end -->"))).toContain("mode: seminar");
     expect(repaired).toContain("<details>Raw transcript</details>");
+  });
+  it("parses version YAML through an injected parser and rejects non-object results", () => {
+    const parseYaml = vi.fn((yaml: string): unknown => ({ topic: yaml }));
+    expect(parseVersionFrontmatter("---\n  topic: Audio test\n---", parseYaml)).toEqual({ topic: "topic: Audio test" });
+    expect(parseYaml).toHaveBeenCalledWith("topic: Audio test");
+    expect(parseVersionFrontmatter("---\n \n---", parseYaml)).toEqual({});
+    expect(parseYaml).toHaveBeenCalledOnce();
+    for (const value of [null, "text", 2, [], ["entry"]]) {
+      expect(parseVersionFrontmatter("key: value", () => value)).toBeNull();
+    }
+    expect(parseVersionFrontmatter("key: value", () => { throw new Error("invalid YAML"); })).toBeNull();
   });
 });
 
