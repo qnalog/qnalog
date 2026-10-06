@@ -71,6 +71,7 @@
     "src/views/base-definitions.ts",
     "src/versions/version-manifest-store.ts",
     "src/versions/original-snapshot-store.ts",
+    "src/versions/version-save-store.ts",
     "src/audio/recorder-service.ts",
     "src/audio/recording-segment-flow.ts",
   ]

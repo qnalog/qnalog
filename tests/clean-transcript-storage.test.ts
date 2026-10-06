@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { ensureTranscriptBlocks, getSourceIdFromMarkdown, getVersionStoreFolder } from "../src/notes/note-markdown";
+import { getSegmentsHash } from "../src/notes/audio-refs";
 
 const { cleanTranscriptMock, mergeAndPolishMock, notices } = vi.hoisted(() => ({
   cleanTranscriptMock: vi.fn(),
@@ -63,7 +64,7 @@ vi.mock("../src/briefing/merge-pipeline", () => ({
   mergeAndPolish: mergeAndPolishMock,
 }));
 import * as obsidian from "obsidian";
-import type { PluginSettings } from "../src/shared/types";
+import type { PluginSettings, Segment } from "../src/shared/types";
 import { cleanTranscript } from "../src/briefing/merge-pipeline";
 import { RepolishService } from "../src/notes/repolish-service";
 import { VersionStore, type VersionStoreHost } from "../src/versions/version-store";
@@ -784,7 +785,7 @@ describe("clean transcript storage", () => {
     await expect(versions.switchVersion(malformed, sourceFile.path)).rejects.toThrow("Could not read version metadata");
     expect(await vault.read(sourceFile)).toBe(original);
   });
-  it("serializes simultaneous version saves without replacing the original or active version", async () => {
+  it("serializes simultaneous saves per source while independent sources progress", async () => {
     const { files, vault } = createMemoryVault();
     const sourceFile = new obsidian.TFile("QnALog/转写纪要/source.md", sourceContent);
     files.set(sourceFile.path, sourceFile);
@@ -799,20 +800,20 @@ describe("clean transcript storage", () => {
     };
     const versions = new VersionStore(makeVersionHost(app, () => settings));
     const previous = await versions.saveVersion(sourceFile, sourceContent, [], {
-      kind: "minutes",
-      idLabel: "previous-minutes",
-      label: "Previous",
-      body: "Previous version.",
-      activate: true,
+      kind: "minutes", idLabel: "previous-minutes", label: "Previous", body: "Previous version.", activate: true,
     });
     const original = await versions.saveVersion(sourceFile, sourceContent, [], {
-      kind: "source-original",
-      idLabel: "source-original",
-      label: "Personal note",
-      mode: "monologue",
-      body: "Personal text A.",
-      activate: false,
+      kind: "source-original", idLabel: "source-original", label: "Personal note",
+      mode: "monologue", body: "Personal text A.", activate: false,
     });
+    const sourceBefore = await vault.read(sourceFile);
+    const secondSource = new obsidian.TFile("QnALog/转写纪要/second-source.md", sourceContent);
+    files.set(secondSource.path, secondSource);
+    const secondContent = await vault.read(secondSource);
+    const secondSourceId = getSourceIdFromMarkdown(secondContent, secondSource);
+    const secondFolder = getVersionStoreFolder(settings, secondSourceId);
+    const secondManifestPath = `${secondFolder}/manifest.json`;
+    const secondSourceBytes = await vault.read(secondSource);
 
     let enterManifestRead: () => void = () => undefined;
     let releaseManifestRead: () => void = () => undefined;
@@ -825,15 +826,22 @@ describe("clean transcript storage", () => {
         enterManifestRead();
         await manifestReadGate;
       }
-      return files.get(path)?.data || "";
+      const file = files.get(path);
+      if (!file) throw new Error(`File not found: ${path}`);
+      return file.data;
     });
-    const saveOne = versions.saveVersion(sourceFile, sourceContent, [], {
+    const saveOne = versions.saveVersion(sourceFile, sourceBefore, [], {
       kind: "minutes", idLabel: "minutes", label: "Meeting", body: "Minutes A.", activate: false,
     });
     await manifestReadEntered;
-    const saveTwo = versions.saveVersion(sourceFile, sourceContent, [], {
+    const saveTwo = versions.saveVersion(sourceFile, sourceBefore, [], {
       kind: "minutes", idLabel: "minutes", label: "Meeting", body: "Minutes B.", activate: false,
     });
+    const independent = versions.saveVersion(secondSource, secondContent, [], {
+      kind: "minutes", idLabel: "independent", label: "Independent", body: "Separate source.", activate: false,
+    });
+    const savedIndependent = await independent;
+    expect(files.has(secondManifestPath)).toBe(true);
     releaseManifestRead();
     const [savedOne, savedTwo] = await Promise.all([saveOne, saveTwo]);
 
@@ -848,6 +856,10 @@ describe("clean transcript storage", () => {
     expect(files.get(`${folder}/${savedOne.meta.fileName}`)?.data).toContain("Minutes A.");
     expect(files.get(`${folder}/${savedTwo.meta.fileName}`)?.data).toContain("Minutes B.");
     expect(files.get(`${folder}/${original.meta.fileName}`)?.data).toContain("Personal text A.");
+    expect(files.get(`${secondFolder}/${savedIndependent.meta.fileName}`)?.data).toContain("Separate source.");
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+    expect(await vault.read(secondSource)).toBe(secondSourceBytes);
+    expect(savedIndependent.manifest.sourceId).toBe(secondSourceId);
 
   });
   it("releases the source lock after a manifest write failure and retains the orphan cache", async () => {
@@ -882,8 +894,10 @@ describe("clean transcript storage", () => {
     const saved = await later;
     const manifest = JSON.parse(files.get(manifestPath)!.data);
     expect(manifest.versions.map((record: { id: string }) => record.id)).toContain(saved.meta.id);
-    expect(manifest.versions.map((record: { id: string }) => record.id)).not.toContain("failed");
     const orphan = [...files.values()].find((file) => file.data.includes("Orphan material."));
+    const failedId = orphan?.data.match(/^version_id: "([^"]+)"$/m)?.[1];
+    expect(failedId).toBeTruthy();
+    expect(manifest.versions.map((record: { id: string }) => record.id)).not.toContain(failedId);
     expect(orphan?.path).toContain(`${folder}/`);
     expect(orphan?.data).toContain("Orphan material.");
     expect(files.get(`${folder}/${saved.meta.fileName}`)?.data).toContain("Committed material.");
@@ -922,6 +936,192 @@ describe("clean transcript storage", () => {
     expect(savedIds[0]).toContain("-first");
     expect(savedIds[1]).toContain("-second");
   });
+  it("rejects a cache path that appears between name selection and creation", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/path-race.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    const originalExists = vault.adapter.exists;
+    let targetPath = "";
+    let targetChecks = 0;
+    vi.spyOn(vault.adapter, "exists").mockImplementation(async (path) => {
+      if (path.includes("/.versions/") && path.endsWith("-attempt.md")) {
+        targetPath = path;
+        targetChecks++;
+        if (targetChecks === 2) {
+          files.set(path, new obsidian.TFile(path, "Concurrent writer bytes."));
+          return true;
+        }
+      }
+      return originalExists(path);
+    });
+
+    await expect(versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "attempt", label: "Attempt", body: "Must not replace competitor.",
+    })).rejects.toThrow("Version cache file already exists");
+    expect(targetChecks).toBe(2);
+    expect(files.get(targetPath)?.data).toBe("Concurrent writer bytes.");
+    expect([...files.values()].some((file) => file.data.includes("Must not replace competitor."))).toBe(false);
+  });
+
+  it.each([true, false])("preserves cache create failure state when a competitor appears: %s", async (competitorAppears) => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/create-race.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    const originalCreate = vault.create;
+    const sourceBefore = await vault.read(sourceFile);
+    let conflictPath = "";
+    vi.spyOn(vault, "create").mockImplementation(async (path, content) => {
+      if (!content.includes("Uncommitted body.")) return originalCreate(path, content);
+      conflictPath = path;
+      if (competitorAppears) files.set(path, new obsidian.TFile(path, "Competitor bytes."));
+      throw new Error("create denied");
+    });
+
+    await expect(versions.saveVersion(sourceFile, sourceBefore, [], {
+      kind: "minutes", idLabel: "attempt", label: "Attempt", body: "Uncommitted body.",
+    })).rejects.toThrow(competitorAppears ? "Version cache file already exists" : "create denied");
+    expect(conflictPath).not.toBe("");
+    expect(files.get(conflictPath)?.data).toBe(competitorAppears ? "Competitor bytes." : undefined);
+    const manifestPath = `${getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceBefore, sourceFile))}/manifest.json`;
+    expect(files.has(manifestPath)).toBe(false);
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+
+    vi.mocked(vault.create).mockRestore();
+    const retry = await versions.saveVersion(sourceFile, sourceBefore, [], {
+      kind: "minutes", idLabel: "attempt", label: "Attempt", body: "Retry body.",
+    });
+    const collisionName = conflictPath.split("/").pop() || "";
+    expect(retry.meta.fileName).toBe(competitorAppears
+      ? collisionName.replace(/\.md$/, "-2.md")
+      : collisionName);
+    expect(files.get(manifestPath)?.data).toContain(retry.meta.id);
+  });
+
+  it("keeps a mismatched cache readback orphaned and retries with another path", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/cache-readback.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const manifestPath = `${getVersionStoreFolder(settings, sourceId)}/manifest.json`;
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    const prior = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "prior", label: "Prior", body: "Prior stays.",
+    });
+    const manifestBefore = files.get(manifestPath)!.data;
+    const sourceBefore = await vault.read(sourceFile);
+    const originalCreate = vault.create;
+    const originalRead = vault.adapter.read;
+    let corruptedPath = "";
+    vi.spyOn(vault, "create").mockImplementation(async (path, content) => {
+      if (content.includes("Corrupted on readback.")) corruptedPath = path;
+      return originalCreate(path, content);
+    });
+    vi.spyOn(vault.adapter, "read").mockImplementation(async (path) =>
+      path === corruptedPath ? "Different readback bytes." : originalRead(path));
+
+    await expect(versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "retry-id", label: "Retry", body: "Corrupted on readback.",
+    })).rejects.toThrow("Could not verify version metadata");
+    const orphanBytes = files.get(corruptedPath)?.data;
+    expect(orphanBytes).toContain("Corrupted on readback.");
+    expect(files.get(manifestPath)?.data).toBe(manifestBefore);
+    expect(files.get(`${prior.folder}/${prior.meta.fileName}`)?.data).toContain("Prior stays.");
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+
+    vi.mocked(vault.adapter.read).mockRestore();
+    const retry = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "retry-id", label: "Retry", body: "Successful retry.",
+    });
+    expect(retry.meta.fileName).not.toBe(corruptedPath.split("/").pop());
+    expect(files.get(corruptedPath)?.data).toBe(orphanBytes);
+    expect(files.get(manifestPath)?.data).toContain(retry.meta.id);
+  });
+
+  it.each(["remove-record", "wrong-active"] as const)("rejects failed final manifest confirmation (%s) without deleting saved material", async (failure) => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/final-confirm.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const manifestPath = `${getVersionStoreFolder(settings, sourceId)}/manifest.json`;
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    const sourceBefore = await vault.read(sourceFile);
+    const originalRead = vault.adapter.read;
+    let manifestReadCount = 0;
+    vi.spyOn(vault.adapter, "read").mockImplementation(async (path) => {
+      const content = await originalRead(path);
+      if (path !== manifestPath) return content;
+      manifestReadCount++;
+      if (manifestReadCount !== 2) return content;
+      const projected = JSON.parse(content);
+      if (failure === "remove-record") projected.versions = [];
+      else projected.activeVersionId = "unexpected-active";
+      return JSON.stringify(projected);
+    });
+
+    await expect(versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "confirmed", label: "Confirmed", body: "Saved but unconfirmed.",
+    })).rejects.toThrow("Could not verify version metadata");
+    const diskManifest = JSON.parse(files.get(manifestPath)!.data);
+    const savedRecord = diskManifest.versions.find((record: { id: string }) => record.id.includes("confirmed"));
+    expect(savedRecord).toBeTruthy();
+    expect(files.get(`${getVersionStoreFolder(settings, sourceId)}/${savedRecord.fileName}`)?.data).toContain("Saved but unconfirmed.");
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+
+    vi.mocked(vault.adapter.read).mockRestore();
+    const recovered = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "after-confirmation-failure", label: "Recovered", body: "Lock released.",
+    });
+    expect(files.get(manifestPath)?.data).toContain(recovered.meta.id);
+  });
+
+  it("persists segment order, status, end offsets, and the production source hash", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/segment-metadata.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要" };
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const folder = getVersionStoreFolder(settings, sourceId);
+    const segments: Segment[] = [
+      { index: 0, startOffsetMs: 1000, endOffsetMs: 0, text: " " },
+      { index: 1, startOffsetMs: 2000, endOffsetMs: 3000, text: "Words." },
+    ];
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+
+    const saved = await versions.saveVersion(sourceFile, sourceContent, segments, {
+      kind: "minutes", idLabel: "segments", label: "Segments", body: "Segment metadata.",
+    });
+    const manifest = JSON.parse(files.get(`${folder}/manifest.json`)!.data);
+    expect(manifest.segments).toEqual([
+      expect.objectContaining({ id: "seg-0001", index: 0, startOffsetMs: 1000, endOffsetMs: 1000, status: "pending" }),
+      expect.objectContaining({ id: "seg-0002", index: 1, startOffsetMs: 2000, endOffsetMs: 3000, status: "done" }),
+    ]);
+    const cache = files.get(`${folder}/${saved.meta.fileName}`);
+    expect(cache).toBeDefined();
+    const cacheFrontmatter = obsidian.parseYaml(cache!.data.split("---")[1]) as Record<string, unknown>;
+    expect(cacheFrontmatter.source_segments_hash).toBe(getSegmentsHash(segments));
+  });
+
 
   it("uses the current adapter when manifest capabilities execute", async () => {
     const { files, vault } = createMemoryVault();
