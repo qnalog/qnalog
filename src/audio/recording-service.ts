@@ -8,11 +8,9 @@ import { isMobileRuntime } from "../shared/util-platform";
 import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload } from "../shared/types";
 import { PcmStreamEncoder } from "../asr/clients";
 import { getErrorMessage, genId } from "../shared/util-common";
-import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
-import { classifyShortRecording } from "./short-recording-policy";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
@@ -24,7 +22,7 @@ import { ensureVaultFolder } from "../shared/util-vault";
 import { NoteWriter } from "../notes/note-writer";
 import { TranscribeProfileService } from "../asr/transcribe-profile-service";
 import type { ContinuationPreparation, ContinuationService } from "../session/continuation-service";
-
+import { handleRecordedSegment, type RecordingSegmentHost } from "./recording-segment-flow";
 import { t } from "../shared/i18n";
 import type { SessionStore } from "../session/session-store";
 
@@ -62,12 +60,28 @@ export interface RecordingHost {
 
 export class RecordingService {
   declare host: RecordingHost;
+  private readonly segmentHost: RecordingSegmentHost;
   /** 本次一次性录音的采集模式与润色模式（命令入口设置）。 */
   declare _oneShotCaptureMode;
   declare _oneShotPolishMode;
   starting = false;
   constructor(host: RecordingHost) {
     this.host = host;
+    this.segmentHost = {
+      getFilterShortRecordings: () => this.host.settings.filterShortRecordings !== false,
+      startMasterAudioSave: (session, seg) => this.host.asrPipeline.startMasterAudioSave(session, seg),
+      beginSessionSegmentWork: (session) => this.host.asrPipeline.beginSessionSegmentWork(session),
+      prepareLiveSegmentDescriptor: (session, seg) => this.host.asrPipeline.prepareLiveSegmentDescriptor(session, seg),
+      queueLiveSegmentPersistence: (session, descriptor, blob) => this.host.asrPipeline.queueLiveSegmentPersistence(session, descriptor, blob),
+      getQueueTask: (id) => this.host.asrPipeline.getQueueTask(id),
+      keepLiveSegmentQueueTaskForRetry: (session, descriptor, error) => this.host.asrPipeline.keepLiveSegmentQueueTaskForRetry(session, descriptor, error),
+      markSessionAsrJobsDeferred: (session) => this.host.asrPipeline.markSessionAsrJobsDeferred(session),
+      finishSessionSegmentWork: (session, jobId, reason) => this.host.asrPipeline.finishSessionSegmentWork(session, jobId, reason),
+      scheduleMeetingWorkbenchInteraction: (session, interaction) => this.host.meetingWorkbench.scheduleMeetingWorkbenchInteraction(session, interaction),
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
+      processRecordedSegment: (session, seg) => this.host.processRecordedSegment(session, seg),
+      finalizeRecordedSession: (session) => this.host.finalizeRecordedSession(session),
+    };
     this._oneShotCaptureMode = null;
     this._oneShotPolishMode = null;
   }
@@ -362,100 +376,10 @@ export class RecordingService {
     this.host.asrPipeline.clearRecordingIssue();
   }
 
-  /**
-   * 一场录音的处理级别：丢弃 / 只留音频 / 正常整理。
-   *
-   * 只对最后一个切片判定，因为在此之前总时长还没有定下来。已有切片（长度已经越过第一个
-   * 切点）、导入音频、续录到既有纪要三种情况都按正常流程走：前两种说明录音本身不短或
-   * 用户已指定要转写，第三种由用户显式发起且目标笔记已存在。
-   */
-  resolveShortRecordingTier(session, seg) {
-    return classifyShortRecording({
-      durationMs: seg && seg.isFinal ? Number(seg.endOffsetMs) || 0 : 0,
-      isFinal: !!(seg && seg.isFinal),
-      hasSegments: !!(session && session.segments && session.segments.length),
-      filterShortRecordings: this.host.settings.filterShortRecordings !== false,
-      isImported: !!(session && (session.source === "import" || session.source === "text-import")),
-      isContinuation: !!(session && session.continuationSourcePath),
-    });
-  }
 
 
-  handleSegment(session: RecordingSession, seg: RecorderSegmentPayload) {
-    if (!session) return;
-    const tier = this.resolveShortRecordingTier(session, seg);
-    let preparedSeg;
-    if (tier !== "process") {
-      // 短录音不转写。丢弃级别不落盘音频；只留音频级别把整场音频写进录音目录。
-      // 分级函数只在最后一个切片上返回短录音级别，所以这里的 isFinal 必为真。
-      session.shortRecordingTier = tier;
-      session.shortRecordingDurationMs = Math.max(0, Number(seg && seg.endOffsetMs) || 0);
-      preparedSeg = {
-        isFinal: true,
-        endOffsetMs: session.shortRecordingDurationMs,
-        masterAudioSavePromise: tier === "discard" ? Promise.resolve() : this.host.asrPipeline.startMasterAudioSave(session, seg),
-      };
-      this.host.asrPipeline.beginSessionSegmentWork(session);
-    } else if (seg && seg.masterOnly) {
-      const masterAudioSavePromise = this.host.asrPipeline.startMasterAudioSave(session, seg);
-      preparedSeg = {
-        isFinal: !!seg.isFinal,
-        masterOnly: true,
-        endOffsetMs: Math.max(0, Number(seg.endOffsetMs) || 0),
-        masterAudioSavePromise,
-      };
-      this.host.asrPipeline.beginSessionSegmentWork(session);
-    } else {
-      const descriptor = this.host.asrPipeline.prepareLiveSegmentDescriptor(session, seg);
-      const masterAudioSavePromise = this.host.asrPipeline.startMasterAudioSave(session, seg);
-      preparedSeg = {
-        ...descriptor,
-        masterAudioSavePromise,
-        spoolPromise: this.host.asrPipeline.queueLiveSegmentPersistence(session, descriptor, seg.blob),
-      };
-    }
-
-    session.writeQueue = Promise.resolve(session.writeQueue).catch((e) => {
-      console.error("[QnALog] recovered rejected write chain before next segment", e);
-    }).then(async () => {
-      try {
-        await this.host.processRecordedSegment(session, preparedSeg);
-      } catch (e) {
-        // 本段异常不能毒化后续写入链；processSegment 已尽力保留缓存并加入后台重试。
-        console.error("[QnALog] processSegment failed (swallowed to protect write chain)", e);
-        try {
-          const task = preparedSeg.queueTaskId && this.host.asrPipeline.getQueueTask(preparedSeg.queueTaskId);
-          if (preparedSeg.segmentAudioPath && (!task || task.status === LIVE_ASR_TASK_STATUS || task.status === "running")) {
-            await this.host.asrPipeline.keepLiveSegmentQueueTaskForRetry(session, preparedSeg, e);
-            this.host.asrPipeline.markSessionAsrJobsDeferred(session);
-          }
-        } catch (queueError) {
-          console.error("[QnALog] preserve live segment task after processing failure failed", queueError);
-        }
-        try { await this.host.diagnostics.logDiagnostic("error", "segment.process_failed", t("Segment processing error (swallowed to avoid poisoning the write chain)"), { mode: session.mode, isFinal: !!preparedSeg.isFinal, error: diagnosticError(e) }); } catch { /* intentionally empty */ }
-      } finally {
-        this.host.asrPipeline.finishSessionSegmentWork(session, preparedSeg.jobId, "completed");
-        if (!preparedSeg.isFinal && session.pendingMeetingWorkbenchInteractions && session.pendingMeetingWorkbenchInteractions.length) {
-          this.host.meetingWorkbench.scheduleMeetingWorkbenchInteraction(session, session.pendingMeetingWorkbenchInteractions[0]);
-        }
-      }
-    });
-    if (preparedSeg.isFinal) {
-      // 双分支：无论前序链 fulfilled 还是 rejected，finalizeSession 都必须跑。
-      session.writeQueue = session.writeQueue.then(
-        () => this.host.finalizeRecordedSession(session),
-        (e) => { console.error("[QnALog] write chain rejected before finalize", e); return this.host.finalizeRecordedSession(session); }
-      );
-    }
-    // 录音中的普通切段只等音频安全落盘，不应继续 await 慢速 ASR 链。
-    // 否则每个 cutSegment 异步栈都会持有原 Blob，等于从队列外侧把内存积压重新引回来。
-    // 最终段仍等待完整收尾，保持“停止录音完成后才允许下一场”的既有会话语义。
-    if (preparedSeg.isFinal) return session.writeQueue;
-    const releasePromises = [];
-    if (preparedSeg.spoolPromise) releasePromises.push(preparedSeg.spoolPromise);
-    if (preparedSeg.masterAudioSavePromise) releasePromises.push(preparedSeg.masterAudioSavePromise);
-    if (releasePromises.length) return Promise.all(releasePromises).then(() => undefined);
-    return session.writeQueue;
+  handleSegment(session: RecordingSession, seg: RecorderSegmentPayload): Promise<void> | undefined {
+    return handleRecordedSegment(this.segmentHost, session, seg);
   }
 
 

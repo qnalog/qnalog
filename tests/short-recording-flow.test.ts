@@ -157,6 +157,7 @@ function makeHost() {
 
   const finalizeService = new SessionFinalizeService(host);
   let recordingService: RecordingService;
+  recordingService = new RecordingService(host);
   host.asrPipeline = new LiveAsrPipelineService({
     getSettings: () => host.settings,
     vault: app.vault,
@@ -175,7 +176,6 @@ function makeHost() {
   });
   host.processRecordedSegment = (session, segment) => finalizeService.processSegment(session, segment);
   host.finalizeRecordedSession = (session) => finalizeService.finalizeSession(session);
-  recordingService = new RecordingService(host);
   return { host, files, folders, app, transcriptionCalls, diagnostics, finalizeService, recordingService };
 
 }
@@ -489,6 +489,111 @@ describe("短录音整条路径", () => {
     expect(transcriptionCalls).toContain("queue");
     expect(trashed).toEqual([]);
     expect(files.get(mdPath)?.content).toContain("qnalog-segments-start:session-1");
+  });
+  it("masterOnly finalization saves the full recording without retranscribing existing segments", async () => {
+    const { host, files, transcriptionCalls, recordingService } = makeHost();
+    const mdPath = "QnALog/转写纪要/master-only.md";
+    const prior = attachTextTranscript(
+      { index: 0, startOffsetMs: 0, endOffsetMs: 8000, text: "Existing transcript must remain unchanged" },
+      "session-1",
+      "text-import",
+    );
+    const initialBody = `${sessionHeader("master-only")}${serializeTranscriptBlock(prior, "### Original transcript", prior.text)}\n`;
+    files.set(mdPath, { content: initialBody });
+    const session = makeSession(mdPath);
+    session.segments = [prior];
+    host.sessionStore.begin(session);
+    host.finalizeRecordedSession = async () => undefined;
+    const payload = {
+      ...finalPayload(12_000),
+      blob: new Blob([], { type: "audio/webm" }),
+      masterOnly: true,
+      masterBlob: new Blob(["complete recording"], { type: "audio/webm" }),
+    };
+
+    await recordingService.handleSegment(session as never, payload as never);
+
+    expect(files.get(mdPath)?.content).toBe(initialBody);
+    expect(session.segments).toEqual([prior]);
+    expect([...files.keys()].filter((path) => path.startsWith("QnALog/.cache/segments/"))).toEqual([]);
+    expect([...files.keys()].filter((path) => path.startsWith("QnALog/录音/"))).toHaveLength(1);
+    expect(transcriptionCalls).toEqual([]);
+  });
+  it("RecordingService releases ordinary-cut audio after real saves and waits through final processing", async () => {
+    const { host, files, recordingService } = makeHost();
+    let releaseSpool!: () => void;
+    let releaseMaster!: () => void;
+    let releaseProcessing!: () => void;
+    let releaseFinalize!: () => void;
+    const spoolGate = new Promise<void>((resolve) => { releaseSpool = resolve; });
+    const masterGate = new Promise<void>((resolve) => { releaseMaster = resolve; });
+    const processingGate = new Promise<void>((resolve) => { releaseProcessing = resolve; });
+    const finalizeGate = new Promise<void>((resolve) => { releaseFinalize = resolve; });
+    const pipeline = host.asrPipeline;
+    const saveSegment = pipeline.queueLiveSegmentPersistence.bind(pipeline);
+    const saveMaster = pipeline.startMasterAudioSave.bind(pipeline);
+    let cachePath = "";
+    pipeline.queueLiveSegmentPersistence = (session, descriptor, blob) => {
+      cachePath = descriptor.segmentAudioPath || "";
+      return spoolGate.then(() => saveSegment(session, descriptor, blob));
+    };
+    pipeline.startMasterAudioSave = (session, segment) => masterGate.then(() => saveMaster(session, segment));
+
+    const processedSegments: number[] = [];
+    host.processRecordedSegment = async (_session, segment) => {
+      processedSegments.push(Number(segment.endOffsetMs));
+      await processingGate;
+    };
+    let finalizeStarted = false;
+    host.finalizeRecordedSession = async () => {
+      finalizeStarted = true;
+      await finalizeGate;
+    };
+
+    const session = makeSession("QnALog/转写纪要/segment-flow.md");
+    files.set(session.mdPath, { content: sessionHeader("segment-flow") });
+    host.sessionStore.begin(session);
+    let ordinaryReturned = false;
+    const ordinaryResult = recordingService.handleSegment(session as never, {
+      ...finalPayload(8000),
+      index: 0,
+      isFinal: false,
+    } as never);
+    if (!ordinaryResult) throw new Error("ordinary segment unexpectedly skipped");
+    void ordinaryResult.then(() => { ordinaryReturned = true; });
+
+    for (let attempt = 0; attempt < 20 && !cachePath; attempt += 1) await Promise.resolve();
+    expect(cachePath).not.toBe("");
+    expect(ordinaryReturned).toBe(false);
+    releaseSpool();
+    for (let attempt = 0; attempt < 20 && !files.has(cachePath); attempt += 1) await Promise.resolve();
+    expect(files.has(cachePath)).toBe(true);
+    expect(ordinaryReturned).toBe(false);
+    releaseMaster();
+    await ordinaryResult;
+    expect(ordinaryReturned).toBe(true);
+    expect(processedSegments).toEqual([8000]);
+
+    let finalReturned = false;
+    const finalResult = recordingService.handleSegment(session as never, {
+      ...finalPayload(12_000),
+      index: 1,
+      masterOnly: true,
+    } as never);
+    if (!finalResult) throw new Error("final segment unexpectedly skipped");
+    void finalResult.then(() => { finalReturned = true; });
+    await Promise.resolve();
+    expect(processedSegments).toEqual([8000]);
+    expect(finalReturned).toBe(false);
+
+    releaseProcessing();
+    for (let attempt = 0; attempt < 20 && !finalizeStarted; attempt += 1) await Promise.resolve();
+    expect(processedSegments).toEqual([8000, 12_000]);
+    expect(finalizeStarted).toBe(true);
+    expect(finalReturned).toBe(false);
+    releaseFinalize();
+    await finalResult;
+    expect(finalReturned).toBe(true);
   });
 
   it("an old short-recording finalizer does not clear the replacement session", async () => {
