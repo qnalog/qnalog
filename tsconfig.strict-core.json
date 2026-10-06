@@ -68,6 +68,7 @@
     "src/queue/queue-recovery.ts",
     "src/notes/note-document.ts",
     "src/versions/version-content.ts",
-    "src/views/base-definitions.ts"
+    "src/views/base-definitions.ts",
+    "src/audio/recorder-service.ts"
   ]
 }

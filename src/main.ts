@@ -49,6 +49,8 @@ import {transformApiKeyFieldsDeep } from "./notes/recording-issues";
 // 以下 39 个声明已抽到 ./notes/realtime-outline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {VIEW_TYPE_OUTLINE } from "./notes/realtime-outline";
 
+import { isChatInputAudioProvider, makeRecordingIssue, resolveTranscribeProvider } from "./asr/transcribe";
+import { resolveRuntimeAudioInputMode } from "./notes/recording-issues";
 // 以下 1 个声明已抽到 ./audio/recorder-service（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { RecorderService } from "./audio/recorder-service";
 
@@ -296,7 +298,15 @@ class QnALogPlugin extends obsidian.Plugin {
       buildVersion: this.manifest && this.manifest.version ? this.manifest.version : "",
     });
     this.tasks.start();
-    this.recorder = new RecorderService(this);
+    this.recorder = new RecorderService({
+      getSettings: () => this.settings,
+      prefersOpus: () => isChatInputAudioProvider(resolveTranscribeProvider(this)),
+      resolveCaptureMode: (mode) => resolveRuntimeAudioInputMode(mode),
+      makeRecordingIssue,
+      setRecordingIssue: (kind, issue) => this.asrPipeline.setRecordingIssue(kind, issue),
+      clearRecordingIssue: (kind) => this.asrPipeline.clearRecordingIssue(kind),
+      logDiagnostic: (level, code, message, data) => this.diagnostics.logDiagnostic(level, code, message, data),
+    });
     this.queue = new TaskQueue({
       getMaxRetries: () => this.settings.maxRetries,
       persistQueue: () => this.saveAll(),

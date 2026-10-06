@@ -1,10 +1,5 @@
 {
   "pluginConsumers": {
-    "src/audio/recorder-service.ts": [
-      "asrPipeline",
-      "diagnostics",
-      "settings"
-    ],
     "src/ui/outline-view.ts": [
       "app",
       "audioLinks",
