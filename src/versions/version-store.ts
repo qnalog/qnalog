@@ -2,10 +2,9 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记版本块：清单读写、版本文件落盘、派生笔记、版本切换
 
 import * as obsidian from "obsidian";
-import type { PluginSettings } from "../shared/types";
-import { sanitizeFilename } from "../shared/util-common";
+import type { PluginSettings, Segment } from "../shared/types";
 import { replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../notes/note-document";
-import { applyVersionTitle, buildVersionPayload, foldRawTranscriptSection, normalizeTitleDatetime, splitVersionPayload, stripVersionBookkeepingFrontmatter, sanitizeActiveVersionBody, parseVersionFrontmatter } from "./version-content";
+import { applyVersionTitle, foldRawTranscriptSection, normalizeTitleDatetime, splitVersionPayload, stripVersionBookkeepingFrontmatter, sanitizeActiveVersionBody, parseVersionFrontmatter } from "./version-content";
 import { getModeDisplayName, getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getSegmentsHash } from "../notes/audio-refs";
@@ -13,11 +12,11 @@ import { buildSegmentStatusList, getSourceIdFromMarkdown, getVersionStoreFolder,
 import { findAvailableMarkdownPath } from "../shared/util-vault";
 import { NS_FM, NS_TYPE_DERIVED, NS_TYPE_VERSION_CACHE, isDerivedVersionType, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 
- 
 
 import { t } from "../shared/i18n";
 import { VersionManifestStore } from "./version-manifest-store";
 import { OriginalSnapshotStore, type OriginalSnapshot } from "./original-snapshot-store";
+import { VersionSaveStore, type SavedVersion, type VersionSaveInput } from "./version-save-store";
 
 
 function isCleanDerivedNote(frontmatter: Record<string, unknown>, variantKind: string): boolean {
@@ -63,6 +62,7 @@ export interface VersionStoreHost {
 export class VersionStore {
   declare host: VersionStoreHost;
   declare manifests: VersionManifestStore;
+  declare saves: VersionSaveStore;
   declare originals: OriginalSnapshotStore;
   constructor(host: VersionStoreHost) {
     this.host = host;
@@ -72,6 +72,20 @@ export class VersionStore {
       write: (path, content) => this.host.vault.adapter.write(path, content),
       mkdir: (path) => this.host.vault.adapter.mkdir(path),
     });
+    this.saves = new VersionSaveStore({
+      exists: (path) => this.host.vault.adapter.exists(path),
+      readCache: (path) => this.host.vault.adapter.read(path),
+      createCache: (path, content) => this.host.vault.create(path, content),
+      getSourceId: (content, file) => getSourceIdFromMarkdown(content, file),
+      getSourceHash: (segments) => getSegmentsHash(segments),
+      getFolder: (sourceId) => getVersionStoreFolder(this.host.getSettings(), sourceId),
+      getCreatedAt: () => window.moment
+        ? window.moment().format("YYYY-MM-DD HH:mm:ss")
+        : new Date().toISOString(),
+      normalizeId: (label) => normalizeVersionId(label),
+      buildSegmentStatusList: (segments) => buildSegmentStatusList(segments),
+      buildEmptyBody: () => buildEmptyLlmOutputFallback(),
+    }, this.manifests);
     this.originals = new OriginalSnapshotStore({
       readSource: (file) => this.host.vault.read(file),
       getSourceId: (content, file) => getSourceIdFromMarkdown(content, file),
@@ -117,103 +131,13 @@ export class VersionStore {
 
 
 
-  async writeVersionFile(folder, fileName, content) {
-    await this.manifests.ensureFolder(folder);
-    const path = obsidian.normalizePath(`${folder}/${fileName}`);
-    if (await this.host.vault.adapter.exists(path)) {
-      throw new Error(t("Version cache file already exists"));
-    }
-    let file;
-    try {
-      file = await this.host.vault.create(path, content);
-    } catch (error) {
-      if (await this.host.vault.adapter.exists(path)) {
-        throw new Error(t("Version cache file already exists"));
-      }
-      throw error;
-    }
-    if (await this.host.vault.adapter.read(path) !== content) throw new Error(t("Could not verify version metadata"));
-    return file;
-  }
-
-  async saveVersion(sourceFile, sourceContent, segments, versionInput) {
-    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
-    const sourceHash = getSegmentsHash(segments);
-    const folder = getVersionStoreFolder(this.host.getSettings(), sourceId);
-    return this.manifests.withLock(sourceId, async () => {
-      const manifest = await this.manifests.read(folder, sourceId);
-      const createdAt = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-      const baseId = normalizeVersionId(versionInput.idLabel || versionInput.label || versionInput.kind || "version");
-      const versions = manifest.versions;
-      let id = baseId;
-      let fileName = `${sanitizeFilename(id) || id}.md`;
-      let suffix = 2;
-      while (versions.some((record) => record && (record.id === id || record.fileName === fileName))
-        || await this.host.vault.adapter.exists(obsidian.normalizePath(`${folder}/${fileName}`))) {
-        id = `${baseId}-${suffix}`;
-        fileName = `${sanitizeFilename(id) || id}.md`;
-        suffix++;
-      }
-      const versionParts = splitVersionPayload(versionInput.body);
-      const body = versionParts.body.trim() || buildEmptyLlmOutputFallback();
-      const frontmatter = versionParts.frontmatter;
-      const meta = {
-        id,
-        kind: versionInput.kind || "",
-        label: versionInput.label || versionInput.kind || "版本",
-        mode: versionInput.mode || "",
-        style: versionInput.style || "",
-        sourcePath: sourceFile.path,
-        sourceId,
-        sourceHash,
-        fileName,
-        createdAt,
-        containsRaw: false,
-        containsFrontmatter: Boolean(frontmatter),
-      };
-      const payload = buildVersionPayload(frontmatter, body);
-      const versionFileBody = [
-        "---",
-        `${NS_FM.type}: ${NS_TYPE_VERSION_CACHE}`,
-        "payload_format: 2",
-        `version_id: "${id}"`,
-        `variant_kind: "${meta.kind}"`,
-        `variant_label: "${meta.label}"`,
-        meta.mode ? `variant_mode: "${meta.mode}"` : "",
-        meta.style ? `variant_style: "${meta.style}"` : "",
-        `${NS_FM.sourcePath}: "${sourceFile.path}"`,
-        `source_id: "${sourceId}"`,
-        `source_segments_hash: "${sourceHash}"`,
-        `${NS_FM.containsRaw}: false`,
-        `contains_frontmatter: ${frontmatter ? "true" : "false"}`,
-        `created: ${createdAt}`,
-        "---",
-        "",
-        payload,
-        "",
-      ].filter(v => v !== "").join("\n");
-      await this.writeVersionFile(folder, fileName, versionFileBody);
-      Object.assign(manifest, {
-        version: 1,
-        sourcePath: sourceFile.path,
-        sourceId,
-        sourceHash,
-        segments: buildSegmentStatusList(segments),
-        // 派生文件不改变母本当前显示版本；清稿/历史版本仍可显式激活。
-        activeVersionId: versionInput.activate === false ? (manifest.activeVersionId || "") : id,
-        updatedAt: createdAt,
-        versions: [...versions, meta],
-      });
-      await this.manifests.write(folder, manifest);
-      const savedManifest = await this.manifests.read(folder, sourceId);
-      const savedRecord = savedManifest.versions
-        .find((record) => record.id === id && record.fileName === fileName);
-      const expectedActiveId = versionInput.activate === false ? (manifest.activeVersionId || "") : id;
-      if (!savedRecord || savedManifest.activeVersionId !== expectedActiveId) {
-        throw new Error(t("Could not verify version metadata"));
-      }
-      return { folder, manifest: savedManifest, meta, body, frontmatter };
-    });
+  async saveVersion(
+    sourceFile: obsidian.TFile,
+    sourceContent: string,
+    segments: readonly Segment[],
+    versionInput: VersionSaveInput,
+  ): Promise<SavedVersion> {
+    return this.saves.save(sourceFile, sourceContent, segments, versionInput);
   }
 
   async createDerivedNote(sourceFile, sourceContent, version, label, mode, style = "") {

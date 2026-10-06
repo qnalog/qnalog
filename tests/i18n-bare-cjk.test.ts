@@ -23,6 +23,7 @@ const CONTENT_FILES: Record<string, string> = {
   "src/report/report-templates.ts": "报告模板与注入哨兵",
   "src/versions/version-content.ts": "笔记正文与版本区标记（决策 A）",
   "src/versions/version-store.ts": "版本信息区标签（写入笔记的数据）",
+  "src/versions/version-save-store.ts": "版本缓存的保存元数据字段（写入笔记的数据）",
   "src/notes/outline-text.ts": "大纲正文文本工具（笔记内容）",
   "src/notes/note-markdown.ts": "笔记解析/生成的正文模板与标题匹配（note/match）",
   "src/notes/note-writer.ts": "笔记写入的正文结构与占位标题（决策 A）",
