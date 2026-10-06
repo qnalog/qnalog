@@ -1994,4 +1994,214 @@ describe("clean transcript storage", () => {
     expect(await vault.read(sourceFile)).toBe(rawOnly);
   });
 
+  describe("derived note persistence boundary", () => {
+    function fixture(refreshIndex?: VersionStoreHost["refreshNoteIndexSafely"]) {
+      const { files, vault } = createMemoryVault();
+      const sourceFile = new obsidian.TFile("QnALog/notes/source.md", sourceContent);
+      files.set(sourceFile.path, sourceFile);
+      const app = {
+        vault,
+        metadataCache: {
+          getFileCache: (file: MemoryFile) => {
+            const parts = file.data.split("---");
+            const yaml = parts.length > 2 ? parts[1] : "";
+            return { frontmatter: obsidian.parseYaml(yaml) as Record<string, unknown> };
+          },
+        },
+      };
+      const versions = new VersionStore(makeVersionHost(app, () => ({ mdFolder: "QnALog/notes" }), refreshIndex));
+      const version = (body: string, kind = "clean") => ({
+        meta: { sourceId: getSourceIdFromMarkdown(sourceContent, sourceFile), kind, createdAt: "2026-10-06T15:00:00" },
+        frontmatter: "",
+        body,
+      });
+      return { files, vault, sourceFile, versions, version };
+    }
+
+    it("reuses an owned clean copy, preserves source materials, and allocates around an unrelated note", async () => {
+      const { files, vault, sourceFile, versions, version } = fixture(async () => undefined);
+      const originalSource = sourceFile.data;
+      const cleanA = await versions.createDerivedNote(sourceFile, sourceFile.data, version("Body A."), "Clean", "cleanscript");
+      if (!cleanA) throw new Error("Clean note was not created");
+      const path = cleanA.path;
+      const cleanB = await versions.createDerivedNote(sourceFile, sourceFile.data, version("Body B."), "Clean", "cleanscript");
+
+      expect(cleanB).toBe(cleanA);
+      expect(cleanA.data).toContain("Body B.");
+      expect(files.get(sourceFile.path)?.data).toBe(originalSource);
+      expect(sourceFile.data).toContain("Original ASR transcript.");
+      files.delete(cleanA.path);
+
+      const unrelated = new obsidian.TFile("QnALog/notes/【Other】source.md", "User-owned note.");
+      files.set(unrelated.path, unrelated);
+      const userAtTarget = new obsidian.TFile("QnALog/notes/【User】source.md", "Preserve this note.");
+      files.set(userAtTarget.path, userAtTarget);
+      const allocated = await versions.createDerivedNote(sourceFile, sourceFile.data, version("Clean body.", "clean"), "User", "cleanscript");
+      expect(allocated?.path).toBe("QnALog/notes/【User】source-2.md");
+      expect(userAtTarget.data).toBe("Preserve this note.");
+
+      const ordinaryAtStable = new obsidian.TFile("QnALog/notes/【Replace】source.md", "Replace under existing ordinary-kind policy.");
+      files.set(ordinaryAtStable.path, ordinaryAtStable);
+      const replaced = await versions.createDerivedNote(sourceFile, sourceFile.data, version("Replacement body.", "minutes"), "Replace", "meeting");
+      expect(replaced).toBe(ordinaryAtStable);
+      expect(ordinaryAtStable.data).toContain("Replacement body.");
+      expect(await vault.read(sourceFile)).toBe(originalSource);
+    });
+
+    it("retains written derived content after index failure and can retry through current vault capabilities", async () => {
+      let failIndex = true;
+      const { files, vault, sourceFile, versions, version } = fixture(async () => {
+        if (failIndex) throw new Error("index denied");
+      });
+      await expect(versions.createDerivedNote(sourceFile, sourceFile.data, version("Recoverable body."), "Clean", "cleanscript"))
+        .rejects.toThrow("index denied");
+      const stablePath = "QnALog/notes/【Clean】source.md";
+      const persisted = files.get(stablePath);
+      expect(persisted?.data).toContain("Recoverable body.");
+      expect(await vault.read(sourceFile)).toBe(sourceContent);
+
+      failIndex = false;
+      const originalLookup = vault.getAbstractFileByPath;
+      const originalCreate = vault.create;
+      const originalModify = vault.modify;
+      let lookups = 0;
+      let modifications = 0;
+      vault.getAbstractFileByPath = (path) => {
+        lookups++;
+        return originalLookup(path);
+      };
+      vault.create = (path, content) => originalCreate(path, content);
+      vault.modify = async (file, content) => {
+        modifications++;
+        await originalModify(file, content);
+      };
+      const result = await versions.createDerivedNote(sourceFile, sourceFile.data, version("Retry body."), "Clean", "cleanscript");
+      expect(result?.path).toBe(stablePath);
+      expect(result?.data).toContain("Retry body.");
+      expect(lookups).toBeGreaterThan(0);
+      expect(modifications).toBe(1);
+    });
+
+    it("propagates modify failures without replacing the existing clean note", async () => {
+      const { files, vault, sourceFile, versions, version } = fixture(async () => undefined);
+      const original = await versions.createDerivedNote(sourceFile, sourceFile.data, version("Original clean."), "Clean", "cleanscript");
+      if (!original) throw new Error("Clean note was not created");
+      const priorBytes = original.data;
+      const modify = vault.modify;
+      vault.modify = async () => { throw new Error("modify denied"); };
+      await expect(versions.createDerivedNote(sourceFile, sourceFile.data, version("Rejected replacement."), "Clean", "cleanscript"))
+        .rejects.toThrow("modify denied");
+      expect(files.get(original.path)?.data).toBe(priorBytes);
+      vault.modify = modify;
+      await expect(versions.createDerivedNote(sourceFile, sourceFile.data, version("Successful retry."), "Clean", "cleanscript"))
+        .resolves.toBe(original);
+      expect(original.data).toContain("Successful retry.");
+    });
+
+    it("selects the newest indexed same-folder clean copy and exposes it through RepolishService", async () => {
+      const { files, vault, sourceFile, versions } = fixture(async () => undefined);
+      const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+      const makeCandidate = (path: string, mtime: number, id = sourceId) => {
+        const file = new obsidian.TFile(path, [
+          "---",
+          'variant_kind: "clean"',
+          `source_id: "${id}"`,
+          'qnalog_type: "QnALog派生版本"',
+          "qnalog_contains_raw: false",
+          "---",
+          "Clean copy.",
+        ].join("\n"));
+        file.stat = { ctime: mtime, mtime, size: file.data.length };
+        files.set(path, file);
+        return file;
+      };
+      const newest = makeCandidate("QnALog/notes/z-clean.md", 10);
+      const tiedPathFirst = makeCandidate("QnALog/notes/a-clean.md", 10);
+      makeCandidate("QnALog/other/unrelated.md", 999);
+      const service = new RepolishService({
+        app: { vault },
+        versions,
+        settings: {},
+        tasks: {},
+        noteIndex: {},
+        requestOutlineRefresh: () => undefined,
+      } as never);
+
+      expect(versions.findDerivedNoteForSource(sourceFile, sourceId, "clean")).toBe(tiedPathFirst);
+      expect(newest.path).toBe("QnALog/notes/z-clean.md");
+      await expect(service.findCleanCopy(sourceFile)).resolves.toBe(tiedPathFirst);
+
+      files.delete(tiedPathFirst.path);
+      expect(versions.findDerivedNoteForSource(sourceFile, sourceId, "clean")).toBe(newest);
+      files.delete(newest.path);
+      const canonicalName = makeCandidate("QnALog/notes/【Old label】source.md", 1, "stale-source-id");
+      expect(versions.findDerivedNoteForSource(sourceFile, sourceId, "clean")).toBe(canonicalName);
+    });
+
+    it("recovers a clean-note creation race without overwriting a foreign contender", async () => {
+      const { files, vault, sourceFile, versions, version } = fixture(async () => undefined);
+      const originalCreate = vault.create;
+      const contenderPath = "QnALog/notes/【Clean】source.md";
+      const contender = new obsidian.TFile(contenderPath, "User bytes remain.");
+      let first = true;
+      vault.create = async (path, content) => {
+        if (first) {
+          first = false;
+          files.set(path, contender);
+          throw new Error("create denied");
+        }
+        return originalCreate(path, content);
+      };
+      const created = await versions.createDerivedNote(sourceFile, sourceFile.data, version("Race-safe body."), "Clean", "cleanscript");
+      expect(created?.path).toBe("QnALog/notes/【Clean】source-2.md");
+      expect(files.get(contenderPath)?.data).toBe("User bytes remain.");
+      expect(created?.data).toContain("Race-safe body.");
+    });
+    it("merges version frontmatter before derived fields and preserves source metadata on invalid YAML", async () => {
+      const { files, sourceFile, versions, version } = fixture(async () => undefined);
+      const merged = await versions.createDerivedNote(
+        sourceFile,
+        sourceFile.data,
+        {
+          ...version("# Existing heading\n\nBody."),
+          frontmatter: "---\nqnalog_custom: from-version\nvariant_kind: wrong\n---\n",
+        },
+        "Clean",
+        "cleanscript",
+      );
+      if (!merged) throw new Error("Merged derived note was not created");
+      expect(merged.data).toContain('qnalog_custom: "from-version"');
+      expect(merged.data).toContain('variant_kind: "clean"');
+      expect(merged.data).toContain("# Existing heading");
+      expect(merged.data.match(/^# /gm)).toHaveLength(1);
+
+      files.delete(merged.path);
+      const malformed = await versions.createDerivedNote(
+        sourceFile,
+        sourceFile.data,
+        { ...version("Body after invalid YAML."), frontmatter: "---\nmalformed: [\n---\n" },
+        "Clean",
+        "cleanscript",
+      );
+      if (!malformed) throw new Error("Derived note with invalid version YAML was not created");
+      expect(malformed.data).toContain('qnalog_custom: "keep-me"');
+      expect(malformed.data).toContain("Body after invalid YAML.");
+    });
+    it("preserves every occupied path when clean-name allocation is exhausted", async () => {
+      let indexCalls = 0;
+      const { files, sourceFile, versions, version } = fixture(async () => {
+        indexCalls++;
+      });
+      const stable = "QnALog/notes/【Clean】source.md";
+      for (let suffix = 1; suffix <= 99; suffix++) {
+        const path = suffix === 1 ? stable : `QnALog/notes/【Clean】source-${suffix}.md`;
+        files.set(path, new obsidian.TFile(path, `occupied-${suffix}`));
+      }
+      const before = [...files.values()].map((file) => [file.path, file.data]);
+      await expect(versions.createDerivedNote(sourceFile, sourceFile.data, version("No path."), "Clean", "cleanscript"))
+        .rejects.toThrow("Failed to generate a path for the derived minutes file");
+      expect([...files.values()].map((file) => [file.path, file.data])).toEqual(before);
+      expect(indexCalls).toBe(0);
+    });
+  });
 });
