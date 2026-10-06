@@ -173,6 +173,25 @@ const sourceContent = [
   "</details>",
 ].join("\n");
 
+function createActivationFixture() {
+  const { files, vault } = createMemoryVault();
+  const sourceFile = new obsidian.TFile("QnALog/notes/activation-source.md", sourceContent);
+  files.set(sourceFile.path, sourceFile);
+  const settings: Pick<PluginSettings, "mdFolder" | "promptTemplates"> = {
+    mdFolder: "QnALog/notes",
+    promptTemplates: {},
+  };
+  const openFile = vi.fn(async () => undefined);
+  const app = {
+    vault,
+    metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
+    workspace: { getLeaf: () => ({ openFile }) },
+  };
+  const refresh = vi.fn(async () => undefined);
+  const versions = new VersionStore(makeVersionHost(app, () => settings, refresh));
+  return { files, vault, sourceFile, settings, openFile, refresh, versions };
+}
+
 
 
 let languageBeforeTest = getActiveUiLanguage();
@@ -1219,6 +1238,331 @@ describe("clean transcript storage", () => {
     const orphan = [...files.values()].find((file) => file.data.includes('variant_kind: "source-original"'));
     expect(orphan?.data).toContain("Personal text that must remain unchanged.");
   });
+
+  it.each([
+    ["version_id", "foreign-id"],
+    ["variant_kind", "foreign-kind"],
+    ["source_id", "foreign-source"],
+    ["qnalog_source_path", "QnALog/notes/missing.md"],
+    ["qnalog_type", "ForeignCache"],
+  ])("rejects string activation when cached %s identity is changed", async (key, value) => {
+    const { files, vault, sourceFile, versions, openFile } = createActivationFixture();
+    const saved = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "identity-target", label: "Meeting", body: "Target body.", activate: false,
+    });
+    const folder = getVersionStoreFolder({ mdFolder: "QnALog/notes" }, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const targetPath = `${folder}/${saved.meta.fileName}`;
+    const target = files.get(targetPath);
+    if (!target) throw new Error("Target cache was not written");
+    const originalCache = target.data;
+    const originalSource = await vault.read(sourceFile);
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    target.data = target.data.replace(new RegExp(`^${escapedKey}:.*$`, "m"), `${key}: ${JSON.stringify(value)}`);
+    const corruptedCache = target.data;
+    const originalManifest = await vault.adapter.read(`${folder}/manifest.json`);
+
+    await expect(versions.switchVersion(targetPath, sourceFile.path)).rejects.toThrow("Could not read version metadata");
+
+    expect(await vault.read(sourceFile)).toBe(originalSource);
+    expect(target.data).toBe(corruptedCache);
+    expect(await vault.adapter.read(`${folder}/manifest.json`)).toBe(originalManifest);
+    expect(openFile).not.toHaveBeenCalled();
+    expect(notices.some((notice) => notice.includes("Switched to version:"))).toBe(false);
+    expect(originalCache).not.toBe(corruptedCache);
+  });
+
+  it("rejects a cache copied to another folder but permits a TFile fallback source", async () => {
+    const { files, vault, sourceFile, versions, openFile } = createActivationFixture();
+    const saved = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "fallback-target", label: "Meeting", body: "Target body.", activate: false,
+    });
+    const folder = getVersionStoreFolder({ mdFolder: "QnALog/notes" }, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const targetPath = `${folder}/${saved.meta.fileName}`;
+    const target = files.get(targetPath);
+    if (!target) throw new Error("Target cache was not written");
+    const originalCache = target.data;
+    target.data = target.data.replace(
+      `qnalog_source_path: \"${sourceFile.path}\"`,
+      `qnalog_source_path: \"QnALog/notes/missing.md\"`,
+    );
+    await versions.switchVersion(target, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("Target body.");
+    expect(openFile).toHaveBeenCalledWith(sourceFile);
+    const afterFallback = await vault.read(sourceFile);
+    await expect(versions.switchVersion(targetPath, sourceFile.path)).rejects.toThrow("Could not read version metadata");
+    const copiedPath = `QnALog/notes/.versions/other/${saved.meta.fileName}`;
+    files.set(copiedPath, new obsidian.TFile(copiedPath, originalCache));
+    await expect(versions.switchVersion(copiedPath, sourceFile.path)).rejects.toThrow("Could not read version metadata");
+    expect(await vault.read(sourceFile)).toBe(afterFallback);
+  });
+
+  it("does not treat a missing source or invalid fallback as an activatable cache", async () => {
+    const { files, sourceFile, versions, openFile } = createActivationFixture();
+    const saved = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "missing-source-target", label: "Meeting", body: "Target body.", activate: false,
+    });
+    const folder = getVersionStoreFolder({ mdFolder: "QnALog/notes" }, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const targetPath = `${folder}/${saved.meta.fileName}`;
+    const target = files.get(targetPath);
+    if (!target) throw new Error("Target cache was not written");
+    target.data = target.data.replace(
+      `qnalog_source_path: \"${sourceFile.path}\"`,
+      `qnalog_source_path: \"QnALog/notes/missing.md\"`,
+    );
+    await expect(versions.switchVersion(target, "QnALog/notes/also-missing.md"))
+      .rejects.toThrow("Master copy not found; cannot switch versions.");
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps the committed activation when opening the source fails and releases the lock", async () => {
+    const { files, vault, sourceFile, versions, openFile } = createActivationFixture();
+    const original = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "source-original", idLabel: "activation-original", label: "Personal note", mode: "monologue",
+      body: "Original body.", activate: false,
+    });
+    const target = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "activation-target", label: "Meeting", body: "Target body.", activate: false,
+    });
+    const folder = getVersionStoreFolder({ mdFolder: "QnALog/notes" }, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const targetFile = files.get(`${folder}/${target.meta.fileName}`);
+    if (!targetFile) throw new Error("Target cache was not written");
+    const manifestPath = `${folder}/manifest.json`;
+    const previousNoticeCount = notices.length;
+    openFile.mockRejectedValueOnce(new Error("open denied"));
+    await expect(versions.switchVersion(targetFile, sourceFile.path)).rejects.toThrow("open denied");
+    expect(await vault.read(sourceFile)).toContain("Target body.");
+    expect(JSON.parse(await vault.adapter.read(manifestPath)).activeVersionId).toBe(target.meta.id);
+    expect(notices.slice(previousNoticeCount).some((notice) => notice.includes("Switched to version:"))).toBe(false);
+    const originalFile = files.get(`${folder}/${original.meta.fileName}`);
+    if (!originalFile) throw new Error("Original cache was not written");
+    await versions.switchVersion(originalFile, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("Original body.");
+  });
+
+  it.each(["modify", "index", "manifest-readback"] as const)("retains recoverable state after a %s activation failure", async (failure) => {
+    const { files, vault, sourceFile, versions, refresh, openFile } = createActivationFixture();
+    const original = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "source-original", idLabel: `failure-original-${failure}`, label: "Personal note",
+      mode: "monologue", body: "Original body.", activate: false,
+    });
+    const target = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: `failure-target-${failure}`, label: "Meeting",
+      body: "Target body.", activate: false,
+    });
+    const folder = getVersionStoreFolder({ mdFolder: "QnALog/notes" }, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const targetFile = files.get(`${folder}/${target.meta.fileName}`);
+    const originalFile = files.get(`${folder}/${original.meta.fileName}`);
+    if (!targetFile || !originalFile) throw new Error("Activation fixtures were not written");
+    const manifestPath = `${folder}/manifest.json`;
+    const manifestBefore = await vault.adapter.read(manifestPath);
+    const sourceBefore = await vault.read(sourceFile);
+    const cachedBefore = targetFile.data;
+    const modify = vi.spyOn(vault, "modify");
+    const originalAdapterRead = vault.adapter.read;
+    const originalAdapterWrite = vault.adapter.write;
+    const adapterRead = vi.spyOn(vault.adapter, "read");
+    const adapterWrite = vi.spyOn(vault.adapter, "write");
+    if (failure === "modify") {
+      modify.mockRejectedValueOnce(new Error("modify denied"));
+    } else if (failure === "index") {
+      refresh.mockRejectedValueOnce(new Error("index denied"));
+    } else {
+      let manifestWriteCompleted = false;
+      let postWriteManifestReads = 0;
+      adapterWrite.mockImplementation(async (path, content) => {
+        await originalAdapterWrite(path, content);
+        if (path === manifestPath) manifestWriteCompleted = true;
+      });
+      adapterRead.mockImplementation(async (path) => {
+        const actual = await originalAdapterRead(path);
+        if (manifestWriteCompleted && path === manifestPath && ++postWriteManifestReads === 2) {
+          return actual.replace(target.meta.id, "unexpected-active-id");
+        }
+        return actual;
+      });
+    }
+
+    await expect(versions.switchVersion(targetFile, sourceFile.path)).rejects.toThrow(
+      failure === "modify" ? "modify denied"
+        : failure === "index" ? "index denied"
+          : "Could not verify version metadata",
+    );
+    if (failure === "modify") {
+      expect(await vault.read(sourceFile)).toBe(sourceBefore);
+      expect(await vault.adapter.read(manifestPath)).toBe(manifestBefore);
+    } else if (failure === "index") {
+      expect(await vault.read(sourceFile)).toContain("Target body.");
+      expect(JSON.parse(await vault.adapter.read(manifestPath)).activeVersionId).toBe("");
+    } else {
+      expect(await vault.read(sourceFile)).toContain("Target body.");
+      expect(JSON.parse(await vault.adapter.read(manifestPath)).activeVersionId).toBe(target.meta.id);
+    }
+    expect(targetFile.data).toBe(cachedBefore);
+    expect(openFile).not.toHaveBeenCalled();
+    modify.mockRestore();
+    adapterRead.mockRestore();
+    adapterWrite.mockRestore();
+    refresh.mockReset().mockResolvedValue(undefined);
+    await versions.switchVersion(originalFile, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("Original body.");
+    expect(openFile).toHaveBeenCalledWith(sourceFile);
+  });
+  it("serializes activations and inactive saves per source while independent sources complete", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceOne = new obsidian.TFile("QnALog/notes/lock-one.md", sourceContent);
+    const sourceTwo = new obsidian.TFile("QnALog/notes/lock-two.md", sourceContent);
+    files.set(sourceOne.path, sourceOne);
+    files.set(sourceTwo.path, sourceTwo);
+    const settings = { mdFolder: "QnALog/notes", promptTemplates: {} };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    let enteredResolve: () => void = () => undefined;
+    let releaseResolve: () => void = () => undefined;
+    let queuedResolve: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => { enteredResolve = resolve; });
+    const release = new Promise<void>((resolve) => { releaseResolve = resolve; });
+    const threeCallsQueued = new Promise<void>((resolve) => { queuedResolve = resolve; });
+    let sourceOneRefreshes = 0;
+    const refresh = vi.fn(async (file: MemoryFile) => {
+      if (file === sourceOne && ++sourceOneRefreshes === 1) {
+        enteredResolve();
+        await release;
+      }
+    });
+    const versions = new VersionStore(makeVersionHost(app, () => settings, refresh));
+    await versions.ensureOriginalVersionForSource(sourceOne);
+    await versions.ensureOriginalVersionForSource(sourceTwo);
+    const [a, b, c] = await Promise.all([
+      versions.saveVersion(sourceOne, sourceContent, [], { kind: "minutes", idLabel: "lock-a", label: "A", body: "Body A.", activate: false }),
+      versions.saveVersion(sourceOne, sourceContent, [], { kind: "minutes", idLabel: "lock-b", label: "B", body: "Body B.", activate: false }),
+      versions.saveVersion(sourceTwo, sourceContent, [], { kind: "minutes", idLabel: "lock-c", label: "C", body: "Body C.", activate: false }),
+    ]);
+    const folderOne = getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceOne));
+    const folderTwo = getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceTwo));
+    const targetA = files.get(`${folderOne}/${a.meta.fileName}`);
+    const targetB = files.get(`${folderOne}/${b.meta.fileName}`);
+    const targetC = files.get(`${folderTwo}/${c.meta.fileName}`);
+    if (!targetA || !targetB || !targetC) throw new Error("Lock fixtures were not written");
+    const sourceOneId = getSourceIdFromMarkdown(sourceContent, sourceOne);
+    const originalWithLock = versions.manifests.withLock.bind(versions.manifests);
+    let sourceOneLockCalls = 0;
+    vi.spyOn(versions.manifests, "withLock").mockImplementation((sourceId, operation) => {
+      if (sourceId === sourceOneId && ++sourceOneLockCalls === 3) queuedResolve();
+      return originalWithLock(sourceId, operation);
+    });
+
+    const switchA = versions.switchVersion(targetA, sourceOne.path);
+    await entered;
+    const switchB = versions.switchVersion(targetB, sourceOne.path);
+    const saveD = versions.saveVersion(sourceOne, sourceContent, [], {
+      kind: "minutes", idLabel: "lock-d", label: "D", body: "Body D.", activate: false,
+    });
+    await threeCallsQueued;
+    await versions.switchVersion(targetC, sourceTwo.path);
+    const manifestOnePath = `${folderOne}/manifest.json`;
+    expect(await vault.read(sourceOne)).toContain("Body A.");
+    expect(JSON.parse(await vault.adapter.read(manifestOnePath)).activeVersionId).toBe("");
+    expect(JSON.parse(await vault.adapter.read(manifestOnePath)).versions.some((record: { id: string }) => record.id === "lock-d")).toBe(false);
+    releaseResolve();
+    const [, , savedD] = await Promise.all([switchA, switchB, saveD]);
+    expect(await vault.read(sourceOne)).toContain("Body B.");
+    expect(JSON.parse(await vault.adapter.read(manifestOnePath)).activeVersionId).toBe(b.meta.id);
+    expect(files.get(`${folderOne}/${savedD.meta.fileName}`)?.data).toContain("Body D.");
+    expect(JSON.parse(await vault.adapter.read(`${folderTwo}/manifest.json`)).activeVersionId).toBe(c.meta.id);
+  });
+  it("rejects a damaged original snapshot before modifying the source and succeeds after repair", async () => {
+    const { files, vault, sourceFile, versions, openFile } = createActivationFixture();
+    const originalPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    if (!originalPath) throw new Error("Original snapshot was not created");
+    const target = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "snapshot-guard-target", label: "Meeting",
+      body: "Target body.", activate: false,
+    });
+    const folder = getVersionStoreFolder({ mdFolder: "QnALog/notes" }, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const targetFile = files.get(`${folder}/${target.meta.fileName}`);
+    const originalFile = files.get(originalPath);
+    if (!targetFile || !originalFile) throw new Error("Snapshot fixtures were not written");
+    const sourceBefore = await vault.read(sourceFile);
+    const targetBytes = targetFile.data;
+    const originalBytes = originalFile.data;
+    originalFile.data = originalBytes.replace(/source_id:.*$/m, 'source_id: "foreign-source"');
+
+    await expect(versions.switchVersion(targetFile, sourceFile.path)).rejects.toThrow();
+
+    expect(await vault.read(sourceFile)).toBe(sourceBefore);
+    expect(targetFile.data).toBe(targetBytes);
+    expect(originalFile.data).toContain('source_id: "foreign-source"');
+    expect(openFile).not.toHaveBeenCalled();
+    originalFile.data = originalBytes;
+    await versions.switchVersion(targetFile, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("Target body.");
+  });
+
+  it("reads version caches and manifest confirmation through the current adapter", async () => {
+    const { files, vault, sourceFile, settings, openFile, versions } = createActivationFixture();
+    const saved = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "dynamic-adapter-target", label: "Meeting",
+      body: "Target body.", activate: false,
+    });
+    const folder = getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const targetPath = `${folder}/${saved.meta.fileName}`;
+    let activeAdapter = vault.adapter;
+    Object.defineProperty(versions.host.vault, "adapter", {
+      configurable: true,
+      get: () => activeAdapter,
+    });
+    const oldAdapter = activeAdapter;
+    oldAdapter.read = async () => { throw new Error("stale adapter used"); };
+    activeAdapter = {
+      exists: async (path) => files.has(path),
+      read: async (path) => {
+        const file = files.get(path);
+        if (!file) throw new Error(`File not found: ${path}`);
+        return file.data;
+      },
+      write: async (path, content) => {
+        const file = files.get(path);
+        if (file) file.data = content;
+        else files.set(path, new obsidian.TFile(path, content));
+      },
+      mkdir: async () => undefined,
+    };
+
+    await versions.switchVersion(targetPath, sourceFile.path);
+
+    expect(await vault.read(sourceFile)).toContain("Target body.");
+    expect(JSON.parse(files.get(`${folder}/manifest.json`)?.data || "{}").activeVersionId).toBe(saved.meta.id);
+    expect(openFile).toHaveBeenCalledWith(sourceFile);
+  });
+
+  it("uses the current custom mode name when activating a cached custom-mode version", async () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const { files, vault, sourceFile, settings, versions } = createActivationFixture();
+    const template = (name: string) => ({
+      id: "custom-note", mode: "custom-note", name, prompt: "Fixture.",
+      customMode: true, createdAt: "2026-10-06T15:00:00", updatedAt: "2026-10-06T15:00:00",
+    });
+    settings.promptTemplates = { "custom-note": template("Name A") };
+    const saved = await versions.saveVersion(sourceFile, sourceContent, [], {
+      kind: "minutes", idLabel: "custom-mode-version", label: "Name A",
+      mode: "custom-note", body: "Custom body.", activate: false,
+    });
+    const folder = getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile));
+    const cached = files.get(`${folder}/${saved.meta.fileName}`);
+    if (!cached) throw new Error("Custom mode cache was not written");
+    const cachedBytes = cached.data;
+    settings.promptTemplates = { "custom-note": template("Name B") };
+
+    await versions.switchVersion(cached, sourceFile.path);
+
+    expect(await vault.read(sourceFile)).toContain("· Name B");
+    expect(await vault.read(sourceFile)).not.toContain("· Name A");
+    expect(cached.data).toBe(cachedBytes);
+  });
+
 
   it("keeps the written source body recoverable when updating activeVersionId fails", async () => {
     const { files, vault } = createMemoryVault();
