@@ -282,19 +282,20 @@ describe("模型默认值继承预设", () => {
     const { controller } = makeWizard();
     controller.selectPreset("bailian");
     const defaults = controller.modelDefaults();
-    expect(defaults.asrModel).toBe("qwen3-asr-flash");
+    expect(defaults.asrModel).toBe("qwen-audio-3.1-asr-flash");
     expect(defaults.llmModel).toBe("qwen3.8-flash");
-    expect(defaults.importAsrModel).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    expect(defaults.importAsrModel).toBe("qwen-audio-3.1-asr-flash-filetrans");
   });
+
 
   it("自定义模型经 updateRequest 进计划并由 apply 写入", () => {
     const { controller, settings } = makeWizard();
     controller.selectPreset("bailian");
-    controller.updateRequest({ apiKey: "sk-bailian", asrModel: "paraformer-v2", importAsrModel: "paraformer-v2" });
+    controller.updateRequest({ apiKey: "sk-bailian", asrModel: "qwen3-asr-flash", importAsrModel: "paraformer-v2" });
     expect(controller.canProceed).toBe(true);
     const plan = controller.plan!;
     const after = applyPresetPlan(settings, plan);
-    expect(after.transcribeProviders["dashscope-chat"].model).toBe("paraformer-v2");
+    expect(after.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
     expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("paraformer-v2");
   });
 });
@@ -376,23 +377,25 @@ describe("转写候选只认 id 命名族与 type", () => {
   });
 });
 
-describe("说话人分离候选的目录发现", () => {
-  it("描述写明说话人分离且具备转写能力的目录模型被收进来", () => {
+describe("Bailian speaker-model candidates", () => {
+  it("requires an implemented speaker-capable file model", () => {
     const catalog = [
-      { id: "paraformer-v2", description: "支持说话人分离的中文语音识别模型" },
+      { id: "paraformer-v2", description: "Supports speaker diarization and transcription" },
+      { id: "qwen-audio-3.1-asr-flash-filetrans", description: "speaker diarization" },
       { id: "fun-asr-longform", description: "Speaker diarization supported for long audio files." },
+      { id: "qwen3-asr-flash-filetrans", description: "speaker diarization" },
+      { id: "qwen-audio-3.1-asr-flash-streaming", description: "speaker diarization" },
       { id: "some-chat-model", description: "支持多说话人对话理解的大模型" },
       { id: "vendor-via-type", type: "asr", description: "支持说话人分离的音频理解" },
     ];
-    const list = diarizationModelCandidates("bailian", "qwen-audio-3.0-asr-flash-filetrans", catalog);
-    expect(list[0]).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    const list = diarizationModelCandidates("bailian", "qwen-audio-3.1-asr-flash-filetrans", catalog);
+    expect(list[0]).toBe("qwen-audio-3.1-asr-flash-filetrans");
     expect(list).toContain("paraformer-v2");
-    expect(list).toContain("fun-asr-longform");
-    expect(list).toContain("vendor-via-type");
-    // 描述提到「说话人」但没有转写能力的大模型不收
+    expect(list).not.toContain("fun-asr-longform");
+    expect(list).not.toContain("qwen3-asr-flash-filetrans");
+    expect(list).not.toContain("qwen-audio-3.1-asr-flash-streaming");
+    expect(list).not.toContain("vendor-via-type");
     expect(list).not.toContain("some-chat-model");
-    // 仓库内已验证候选仍在
-    expect(list).toContain("paraformer-v2");
   });
 
   it("目录为空（拉取失败回退）时只有仓库内候选", () => {
@@ -433,22 +436,32 @@ describe("向导列表组装（wizardModelCandidates）", () => {
     expect(llm.join(",")).not.toContain("transcribe");
   });
 
-  it("可枚举平台的转写列表不掺特例（百炼只信目录命名族）", () => {
-    const bailian = wizardModelCandidates("bailian", "asr", ["qwen3-asr-flash", "qwen3-asr-flash"], [{ id: "qwen3-asr-flash" }, { id: "paraformer-v2" }]);
-    expect(bailian).toEqual(["qwen3-asr-flash", "paraformer-v2"]);
+  it("Bailian recording candidates contain only models supported by the selected HTTP protocol", () => {
+    const bailian = wizardModelCandidates(
+      "bailian",
+      "asr",
+      ["qwen3-asr-flash"],
+      [
+        { id: "qwen3-asr-flash" },
+        { id: "qwen-audio-3.1-asr-flash" },
+        { id: "qwen-audio-3.1-asr-flash-streaming" },
+        { id: "qwen-audio-3.1-asr-flash-filetrans" },
+        { id: "qwen-audio-3.1-asr-flash-message" },
+        { id: "paraformer-v2" },
+      ],
+    );
+    expect(bailian).toEqual(["qwen3-asr-flash", "qwen-audio-3.1-asr-flash"]);
     expect(wizardModelCandidates("mimo", "asr", ["mimo-v2.5-asr", "mimo-v2.5-asr"], [])).toEqual(["mimo-v2.5-asr"]);
   });
 
-  it("改动默认值后再拉取：预置默认仍作为种子在列（目录缺它也不消失）", () => {
-    // 用户把百炼转写模型从默认改成 paraformer-v2，目录里恰好没有默认模型的极端情况
+  it("Keeps an existing invalid model visible instead of silently substituting another candidate", () => {
     const list = wizardModelCandidates(
       "bailian",
       "asr",
-      ["paraformer-v2", "qwen3-asr-flash"],
-      [{ id: "paraformer-v2" }, { id: "sensevoice-v1" }],
+      ["paraformer-v2", "qwen-audio-3.1-asr-flash"],
+      [{ id: "paraformer-v2" }, { id: "qwen-audio-3.1-asr-flash-streaming" }],
     );
-    expect(list).toEqual(["paraformer-v2", "qwen3-asr-flash", "sensevoice-v1"]);
-    expect(list).toContain("qwen3-asr-flash");
+    expect(list).toEqual(["paraformer-v2", "qwen-audio-3.1-asr-flash"]);
   });
 });
 

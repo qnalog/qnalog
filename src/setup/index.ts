@@ -17,6 +17,7 @@ import { snapshotActiveAsr } from "../llm/asr-scheme";
 import type { LlmProfile, PluginSettings, TranscribeProviderSettings } from "../shared/types";
 
 import { t } from "../shared/i18n";
+import { resolveBailianRecordingProvider } from "../asr/bailian-model-capabilities";
 /**
  * 预设允许写入的设置键。
  * 这张表之外的一律不碰——`tests/setup.test.ts` 会拿一份完整设置逐项核对。
@@ -143,7 +144,7 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
   if (!apiKey) return empty(t("Please enter your API key first"));
 
   const llmPresetId = String(preset.llmPreset || "");
-  const asrProviderId = String(preset.asrProvider || "");
+  let asrProviderId = String(preset.asrProvider || "");
   const asrTarget: PresetAsrTarget = !asrProviderId
     ? "none"
     : preset.asrTarget === "import" ? "import" : "recording";
@@ -155,6 +156,13 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
   const customLlmModel = String((request && request.llmModel) || "").trim();
   const presetAsrModel = String(preset.asrModel || "").trim();
   const presetLlmModel = String(preset.llmModel || "").trim();
+  if (providerId === "bailian" && asrTarget === "recording") {
+    const model = customAsrModel || presetAsrModel;
+    const resolvedProvider = resolveBailianRecordingProvider(model);
+    if (!resolvedProvider) return empty(t("This Bailian recording model is not supported by QnALog's configured HTTP protocol. Choose qwen-audio-3.1-asr-flash or the legacy qwen3-asr-flash model."));
+    asrProviderId = resolvedProvider;
+  }
+
 
   // 需要挑选模型的预设（百炼）在模型缺失时不算完整，避免应用出半套配置。
   if (preset.scope === "asr-llm" && (!customAsrModel && !presetAsrModel || !customLlmModel && !presetLlmModel)) {
@@ -173,7 +181,7 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
     changes.transcribeProviders = Object.assign({}, current, {
       [asrProviderId]: Object.assign({}, existing, {
         name: existing.name || defaults.name,
-        endpoint: String(preset.asrEndpoint || "") || defaults.endpoint || existing.endpoint || llmEndpoint,
+        endpoint: (asrProviderId === String(preset.asrProvider || "") ? String(preset.asrEndpoint || "") : "") || defaults.endpoint || existing.endpoint || llmEndpoint,
         model: customAsrModel || presetAsrModel || defaults.model || existing.model || "",
         language: existing.language || defaults.language || "auto",
         protocol: defaults.protocol || existing.protocol,

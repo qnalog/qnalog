@@ -7,13 +7,13 @@ import {
 
 // 依据（2026-09-15 查证阿里云百炼文档）：
 //   `disfluency_removal_enabled` 等字段被文档标注为「仅 Paraformer 支持」，
-//   Qwen-Audio-3.0-ASR-Flash-Streaming / Fun-ASR-Realtime 的参数表里没有它们。
+//   Qwen-Audio-3.x-ASR-Flash-Streaming / Fun-ASR-Realtime 的参数表里没有这些字段。
 // 这条测试钉住「只发目标模型支持的参数」，避免把 Paraformer 专属字段发给别的模型。
 describe("实时转写请求参数", () => {
   it("识别 Paraformer 系列", () => {
     expect(isParaformerRealtimeModel("paraformer-realtime-v2")).toBe(true);
     expect(isParaformerRealtimeModel("paraformer-realtime-8k-v2")).toBe(true);
-    expect(isParaformerRealtimeModel("qwen-audio-3.0-asr-flash-streaming")).toBe(false);
+    expect(isParaformerRealtimeModel("qwen-audio-3.1-asr-flash-streaming")).toBe(false);
     expect(isParaformerRealtimeModel("fun-asr-realtime")).toBe(false);
   });
 
@@ -21,15 +21,17 @@ describe("实时转写请求参数", () => {
     const paraformer = buildRealtimeAsrParameters({ model: "paraformer-realtime-v2", sampleRate: 16000 });
     expect(paraformer.disfluency_removal_enabled).toBe(false);
 
-    const qwen = buildRealtimeAsrParameters({ model: "qwen-audio-3.0-asr-flash-streaming", sampleRate: 16000 });
-    expect(qwen).not.toHaveProperty("disfluency_removal_enabled");
+    for (const model of ["qwen-audio-3.0-asr-flash-streaming", "qwen-audio-3.1-asr-flash-streaming"]) {
+      const qwen = buildRealtimeAsrParameters({ model, sampleRate: 16000 });
+      expect(qwen).not.toHaveProperty("disfluency_removal_enabled");
+    }
 
     const funAsr = buildRealtimeAsrParameters({ model: "fun-asr-realtime", sampleRate: 16000 });
     expect(funAsr).not.toHaveProperty("disfluency_removal_enabled");
   });
 
   it("始终带上必填的 format 与 sample_rate", () => {
-    for (const model of ["paraformer-realtime-v2", "qwen-audio-3.0-asr-flash-streaming", "fun-asr-realtime"]) {
+    for (const model of ["paraformer-realtime-v2", "qwen-audio-3.0-asr-flash-streaming", "qwen-audio-3.1-asr-flash-streaming", "fun-asr-realtime"]) {
       const parameters = buildRealtimeAsrParameters({ model, sampleRate: 16000 });
       expect(parameters.format, model).toBe("pcm");
       expect(parameters.sample_rate, model).toBe(16000);

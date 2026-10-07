@@ -14,6 +14,11 @@ import { t } from "../shared/i18n";
 import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
 import { splitTranscriptTextUnits } from "../transcript/session-transcript";
 
+import {
+  DASHSCOPE_FLASH_ASR_PROTOCOL,
+  requestDashScopeFlashChunk,
+} from "./dashscope-flash-asr";
+import type { DashScopeFlashChunkResult } from "./dashscope-flash-asr";
 export type AsrLifecycleSignalType =
   | "attempt-start"
   | "request-start"
@@ -227,6 +232,72 @@ export const APIMIMO_ASR_PROTOCOL = "apimimo-chat-input-audio";
 // 但参数与 MiMo 不同：语种不可填 auto（文档要求不确定时整个字段省略）、
 // 单次 5 分钟 / base64 后 10MB、无 2K 输出上限、无 TPM 配速限制。
 export const DASHSCOPE_CHAT_ASR_PROTOCOL = "dashscope-chat-input-audio";
+
+export const DASHSCOPE_FLASH_ASR_CHUNK_MS = 3 * 60 * 1000;
+export const DASHSCOPE_FLASH_ASR_MAX_BASE64_BYTES = 10 * 1000 * 1000;
+export const DASHSCOPE_FLASH_ASR_MAX_DURATION_MS = 5 * 60 * 1000;
+
+const DASHSCOPE_FLASH_PROFILE: ChatInputAudioProfile = {
+  protocol: DASHSCOPE_FLASH_ASR_PROTOCOL,
+  chunkMs: DASHSCOPE_FLASH_ASR_CHUNK_MS,
+  maxDurationMs: DASHSCOPE_FLASH_ASR_MAX_DURATION_MS,
+  maxChunks: 240,
+  maxBase64Bytes: DASHSCOPE_FLASH_ASR_MAX_BASE64_BYTES,
+  label: "Bailian Qwen-Audio-3.1-ASR-Flash",
+  shortLabel: "Bailian Qwen-Audio-3.1-ASR-Flash",
+  diagnosticSlug: "dashscope_flash",
+  defaultModel: "qwen-audio-3.1-asr-flash",
+  nativeExts: new Set(["webm", "ogg", "mp4", "m4a", "mp3", "wav", "flac", "aac", "opus"]),
+  serverRejectsNonNative: false,
+  nativeFormatsLabel: "wav/mp3/opus and other supported audio formats",
+  languageFor: (language) => {
+    const value = String(language || "").trim().toLowerCase();
+    return value && value !== "auto" && /^[a-z]{2,3}$/.test(value) ? value : "";
+  },
+  tpmPacing: false,
+};
+
+export async function transcribeAudioWithDashScopeFlash(
+  plugin,
+  provider,
+  blob,
+  mime,
+  vocabularyGroups,
+  observer?: AsrLifecycleObserver,
+): Promise<AsrTranscriptResult> {
+  const chunks = await buildChatInputAudioChunks(DASHSCOPE_FLASH_PROFILE, blob, mime);
+  const parts: DashScopeFlashChunkResult[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    parts.push(await requestChatInputAudioChunkWithEmptyRetry(
+      DASHSCOPE_FLASH_PROFILE,
+      plugin,
+      provider,
+      chunks[i],
+      provider.endpoint,
+      i,
+      chunks.length,
+      (currentProvider, prepared, _url, requestObserver) => requestDashScopeFlashChunk(
+        currentProvider,
+        prepared,
+        getTranscribeRequestTimeoutMs(currentProvider, prepared.blob.size),
+        requestObserver,
+      ),
+      delayMs,
+      observer,
+    ));
+  }
+  const text = applyVocabularyCorrections(parts.map((part) => part.text).join(" ").replace(/\s+/g, " ").trim(), vocabularyGroups).trim();
+  const units: AsrTranscriptUnit[] = parts.flatMap((part) => splitTranscriptTextUnits(part.rawText).map((unit) => ({
+    rawText: unit,
+    normalizedText: applyVocabularyCorrections(unit, vocabularyGroups),
+    speakerId: null,
+    speakerName: null,
+    startMs: null,
+    endMs: null,
+    timing: "unknown",
+  })));
+  return { text, rawText: null, providerId: String(provider.id || ""), units };
+}
 
 export const APIMIMO_ASR_MAX_BASE64_BYTES = Math.floor(9.5 * 1024 * 1024);
 
@@ -989,6 +1060,9 @@ export async function transcribeAudio(
   const chatInputProfile = getChatInputAudioProfile(Object.assign({ id: p.id }, p));
   if (chatInputProfile) {
     return await transcribeAudioWithChatInputAudio(chatInputProfile, plugin, p, blob, mime, vocabularyGroups, observer);
+  }
+  if (p.protocol === DASHSCOPE_FLASH_ASR_PROTOCOL) {
+    return await transcribeAudioWithDashScopeFlash(plugin, p, blob, mime, vocabularyGroups, observer);
   }
   const form = new FormData();
   const diarizationOptions = getSpeakerDiarizationRequestOptions(p);

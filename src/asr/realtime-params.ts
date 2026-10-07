@@ -7,9 +7,8 @@
 // 依据（2026-09-15 查证阿里云百炼文档）：
 //   1. `disfluency_removal_enabled`、`semantic_punctuation_enabled`、`max_sentence_silence`、
 //      `punctuation_prediction_enabled`、`inverse_text_normalization_enabled` 文档均标注
-//      **仅 Paraformer 支持**。Qwen-Audio-3.0-ASR-Flash-Streaming / Fun-ASR-Realtime 的参数表
-//      里没有这些字段（该参数表见「实时语音识别（Qwen-Audio-3.0-ASR-Flash-Streaming/Fun-ASR-Realtime）
-//      客户端事件 → run-task → parameters」）。
+//      **仅 Paraformer 支持**。Qwen-Audio-3.x-ASR-Flash-Streaming / Fun-ASR-Realtime 的参数表
+//      里没有这些字段（参数表见 DashScope 实时语音识别 WebSocket 文档）。
 //   2. `language_hints` 两类模型都支持；Qwen 系列最多 4 个值，Fun-ASR-Realtime 系列只取第一个。
 //   3. `format` / `sample_rate` 是必填项。
 
