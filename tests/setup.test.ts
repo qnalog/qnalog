@@ -171,7 +171,7 @@ describe("检测对象是候选配置", () => {
 
     const seen: PluginSettings[] = [];
     const ports: ProbePorts = {
-      transcribe: async (h) => { seen.push((h as { settings: PluginSettings }).settings); return "你好"; },
+      transcribe: async (h) => { seen.push((h as { settings: PluginSettings }).settings); return "test-asr-model"; },
       importTranscribe: async () => { throw new Error("不应走到导入链路"); },
       llm: async (h) => { seen.push((h as { settings: PluginSettings }).settings); return { model: "m" }; },
     };
@@ -232,7 +232,7 @@ describe("检测对象是候选配置", () => {
     let transcribeCalls = 0;
     let importCalls = 0;
     const report = await runPresetDetection(host as never, plan, {
-      transcribe: async () => { transcribeCalls += 1; return "你好"; },
+      transcribe: async () => { transcribeCalls += 1; return "qwen-audio-3.1-asr-flash"; },
       importTranscribe: async (_h, providerId) => { importCalls += 1; expect(providerId).toBe("dashscope-filetrans"); return { model: "qwen-audio-3.1-asr-flash-filetrans" }; },
       llm: async () => ({ model: "qwen3.8-flash" }),
     });
@@ -320,7 +320,7 @@ describe("取消与失败不覆盖已有配置", () => {
     const host = buildProbeHost({ settings: saved, saveSettings }, applyPresetPlan(saved, plan));
 
     await runPresetDetection(host as never, plan, {
-      transcribe: async () => "ok",
+      transcribe: async () => "test-asr-model",
       importTranscribe: async () => ({ model: "m" }),
       llm: async () => ({ model: "m" }),
     });

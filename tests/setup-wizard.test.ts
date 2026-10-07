@@ -24,7 +24,7 @@ function makeWizard(settings: PluginSettings = freshSettings()) {
       saveSettings: async () => { saveCalls += 1; },
     },
     probePorts: (): ProbePorts => ({
-      transcribe: async () => "你好",
+      transcribe: async () => "test-asr-model",
       importTranscribe: async () => ({}),
       llm: async () => ({ model: "m" }),
     }),
@@ -116,7 +116,7 @@ describe("检测用候选配置且不落盘", () => {
           } catch {
             refused += 1;
           }
-          return "你好";
+          return "test-asr-model";
         },
         importTranscribe: async (h) => {
           const probe = h as unknown as { settings: PluginSettings };

@@ -127,7 +127,7 @@ describe("百炼一站式配置", () => {
     const host = buildProbeHost({ settings: before }, applyPresetPlan(before, plan));
 
     const ports: ProbePorts = {
-      transcribe: async () => "你好",
+      transcribe: async () => "qwen-audio-3.1-asr-flash",
       importTranscribe: async () => ({ model: "qwen-audio-3.1-asr-flash-filetrans" }),
       llm: async () => ({ model: "qwen3.8-flash" }),
     };
@@ -135,7 +135,7 @@ describe("百炼一站式配置", () => {
 
     expect(report.stages.map((s) => s.stage)).toEqual(["transcribe", "import-transcribe", "llm"]);
     expect(report.ok).toBe(true);
-    expect(formatDetectionReport(report)).toContain("Recording transcription ✓");
+    expect(formatDetectionReport(report)).toContain("Recording transcription ✓ (qwen-audio-3.1-asr-flash)");
   });
 
   it("任一段失败都如实报出是哪一段，且整体判为未通过", async () => {
@@ -144,7 +144,7 @@ describe("百炼一站式配置", () => {
     const host = buildProbeHost({ settings: before }, applyPresetPlan(before, plan));
 
     const report = await runPresetDetection(host as never, plan, {
-      transcribe: async () => "你好",
+      transcribe: async () => "qwen-audio-3.1-asr-flash",
       importTranscribe: async () => { throw new Error("模型未开通"); },
       llm: async () => ({ model: "qwen3.8-flash" }),
     });

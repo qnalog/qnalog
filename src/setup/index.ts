@@ -385,7 +385,7 @@ export interface DetectionReport {
 
 /** 检测要调用的外部动作。界面注入真实实现，测试注入桩。 */
 export interface ProbePorts {
-  /** 录音转写链路：返回识别到的文本。 */
+  /** 录音转写链路：连通性成功后返回所用的模型名。 */
   transcribe(host: never): Promise<string>;
   /** 导入音频转写链路。 */
   importTranscribe(host: never, providerId: string): Promise<{ model?: string; detail?: string }>;
@@ -409,8 +409,8 @@ export async function runPresetDetection(
   // 录音转写
   if (plan.asrTarget === "recording") {
     try {
-      const text = await ports.transcribe(host);
-      stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: true, detail: t("Returned: {0}").replace("{0}", (text || t("(empty)")).slice(0, 20)) });
+      const model = await ports.transcribe(host);
+      stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: true, detail: model });
     } catch (error) {
       stages.push({ stage: "transcribe", label: t("Recording transcription"), ok: false, detail: errorMessage(error) });
     }

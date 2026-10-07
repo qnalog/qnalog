@@ -1148,6 +1148,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (profile && profile.transcribeMode === "streaming") {
       return await this.runStreamingConnectivityTest(target, providerId, profile);
     }
+    const model = resolveTranscribeProvider(target, providerId).model;
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     try {
       const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -1162,9 +1163,10 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       await new Promise((resolve) => { rec.onstop = resolve; rec.start(); window.setTimeout(() => rec.stop(), 1000); });
       const blob = new Blob(chunks, { type: rec.mimeType });
       try {
-        return (await transcribeAudio(target, blob, blob.type)).text;
+        await transcribeAudio(target, blob, blob.type);
+        return model;
       } catch (error) {
-        if (providerId === "dashscope-flash" && isDashScopeFlashNoWordsError(error)) return "";
+        if (providerId === "dashscope-flash" && isDashScopeFlashNoWordsError(error)) return model;
         throw error;
       }
     } finally {
@@ -1191,7 +1193,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     await client.connect();
     // 握手（含鉴权）已通过即可判定连通；立刻结束，避免占用配额。
     try { await client.finish(); } catch { /* 关闭失败不影响连通结论 */ }
-    return t("Connected ({0})").replace("{0}", provider.model);
+    return provider.model;
   }
 
   // 依次测「转写 + 大模型」连通性，返回一行汇总文案。供 API 方案检测 / 首页快速配置检测共用。
@@ -1388,8 +1390,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         b.setDisabled(true); b.setButtonText(t("Testing…"));
         const view = buildServiceView(provider, providerNeedsKey);
         const result = await this.runAndRecordProbe(`transcribe:${activeId}`, view, async () => {
-          const text = await this.runAsrConnectivityTest();
-          return `${t("Returned:")}${(text || t("<empty>")).slice(0, 30)}`;
+          return await this.runAsrConnectivityTest();
         });
         new obsidian.Notice(result.ok ? t("Connected successfully ({0})").replace("{0}", result.detail) : `${t("Test failed:")}${result.detail}`, 8000);
         b.setDisabled(false); b.setButtonText(t("Test"));

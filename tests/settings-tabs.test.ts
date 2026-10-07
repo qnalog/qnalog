@@ -123,7 +123,7 @@ vi.mock("../src/shared/i18n", () => ({
 }));
 vi.mock("../src/asr/transcribe", () => ({
   normalizeAsrConcurrency: (value: unknown) => value,
-  resolveTranscribeProvider: vi.fn(),
+  resolveTranscribeProvider: (plugin, providerId) => (plugin.settings.transcribeProviders || {})[providerId] || { model: "" },
   transcribeAudio: transcribeAudioMock,
 }));
 vi.mock("../src/ui/helpers", () => ({}));
@@ -208,7 +208,7 @@ describe("settings tabs render visible settings and switch pages", () => {
     expect(tab.containerEl.textContent).not.toContain("Diagnostic Log Folder");
   });
 
-  it("accepts Qwen no-words only for the Flash connectivity probe", async () => {
+  it("reports the configured model after a successful Flash probe", async () => {
     transcribeAudioMock.mockReset();
     class FakeAudioContext {
       sampleRate = 16_000;
@@ -231,14 +231,23 @@ describe("settings tabs render visible settings and switch pages", () => {
     });
     vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
     const plugin = {
-      settings: { activeTranscribeProvider: "dashscope-flash", transcribeProviders: {} },
+      settings: {
+        activeTranscribeProvider: "dashscope-flash",
+        transcribeProviders: {
+          "dashscope-flash": { model: "qwen-audio-3.1-asr-flash" },
+          siliconflow: { model: "sensevoice" },
+        },
+      },
     };
     const tab = new QnALogSettingTab({}, plugin);
     tab.getTranscribeProviderProfile = () => ({ transcribeMode: "http" });
 
     try {
+      transcribeAudioMock.mockResolvedValueOnce({ text: "synthetic recognized text" });
+      await expect(tab.runAsrConnectivityTest()).resolves.toBe("qwen-audio-3.1-asr-flash");
+
       transcribeAudioMock.mockRejectedValueOnce(new Error("HTTP 400: CLIENT_ERROR: ASR_RESPONSE_HAVE_NO_WORDS."));
-      await expect(tab.runAsrConnectivityTest()).resolves.toBe("");
+      await expect(tab.runAsrConnectivityTest()).resolves.toBe("qwen-audio-3.1-asr-flash");
 
       plugin.settings.activeTranscribeProvider = "siliconflow";
       transcribeAudioMock.mockRejectedValueOnce(new Error("HTTP 400: CLIENT_ERROR: ASR_RESPONSE_HAVE_NO_WORDS."));
