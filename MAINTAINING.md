@@ -616,15 +616,36 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 | 用途 | 服务（provider id） | 模型 | 接入方式 |
 |---|---|---|---|
-| 录音转写（分段） | `dashscope-chat` | `qwen3-asr-flash` | HTTP（OpenAI 兼容）`/compatible-mode/v1/chat/completions` |
-| 导入音频（整文件） | `dashscope-filetrans` | `qwen-audio-3.0-asr-flash-filetrans` | DashScope 异步 `/api/v1/services/audio/asr/transcription` |
+| 录音转写（分段） | `dashscope-flash` | `qwen-audio-3.1-asr-flash` | DashScope 原生 HTTP `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` |
+| 导入音频（整文件） | `dashscope-filetrans` | `qwen-audio-3.1-asr-flash-filetrans` | HTTP 异步提交、轮询和下载 |
 | AI 整理 | 服务预设 `dashscope` | `qwen3.8-flash` | OpenAI 兼容 `/compatible-mode/v1` |
 
-此预设共用一把密钥，写入字段受 §10.1 的 `PRESET_WRITTEN_FIELDS` 约束。录音转写使用 HTTP，桌面和移动端共用路径；浏览器 WebSocket 不能设置鉴权请求头，因此实时流式只供可用桌面环境手动选择。实现按 3 分钟切块预算处理，服务请求上限以供应商文档为准。整文件识别使用异步提交与轮询。
+录音转写与整文件导入共用一把百炼密钥。只对新建配置和用户主动应用的方案使用上述默认值；设置加载不会改写已保存模型、地址、密钥、活动服务、语言或完整方案快照。旧 `dashscope-chat` 仍单独使用 `qwen3-asr-flash` 与 Chat Completions 协议；不能把 `qwen-audio-3.1-asr-flash` 填入旧 endpoint。`qwen3-asr-flash` 仍在百炼官方模型列表中，本项目不声明它已下线。
+
+Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].content[].input_audio.data` 与 `parameters`；响应文本从 `output.text` 读取。百炼[短音频 API 文档](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)允许使用 `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`；新建录音转写配置使用该 endpoint。千问 AI 平台模型页展示的是另一个服务域名，不自动替换百炼地址，也不假定两处 API Key 通用。语言未指定时省略 `language_hints`。WAV 只有在头部读到采样率时才发送 `sample_rate`；原样上传的 WebM/MP4 不会被标记为 16 kHz。短音频默认不请求说话人分离或时间戳；转写正文经过现有本地词汇纠正，原始服务文字保留在转写单元中。该模型可执行原生文本润色，结果可能不是逐字转写。
+
+转写服务连通性检测使用一段静音录音。若百炼返回 `ASR_RESPONSE_HAVE_NO_WORDS`，检测将其视为请求已到达并通过服务鉴权的证据；成功结果显示目标模型名，不显示空转写文本。这只验证连接，不验证有声录音的识别效果。其他 HTTP 或服务错误仍显示为检测失败。
+
+客户端保守使用 10,000,000 字节 Base64 上传预算与 3 分钟 WAV 分块；这不是官方文件规格。官方模型列表列出的 Flash 输入规格为最多 5 分钟/2 GB，而 API 示例对 Base64 请求提示 10 MB，故客户端继续采用较严的预算，不把上传限制扩大至 2 GB。`input_audio.data` 使用规范化的 `audio/<format>` Data URI MIME，不附带 MediaRecorder 的 `codecs` 参数；音频字节保持原样，`parameters.format` 与 Data URI 后缀一致。只有从 WAV 头部确认采样率时才附带该字段。
+
+### 百炼语音识别原价（不含免费额度及存储、网络费用）
+
+| 模型 | 北京 | 新加坡 |
+|---|---|---|
+| 3.1 Flash / 3.1 Filetrans | 输入 ¥0.8 / 百万 Token；输出 ¥2.7 / 百万 Token | 输入 ¥1.094 / 百万 Token；输出 ¥3.427 / 百万 Token |
+| 3.1 Streaming / 3.1 Message | 输入 ¥6 / 百万 Token；输出 ¥4.5 / 百万 Token | 输入 ¥6.781 / 百万 Token；输出 ¥5.104 / 百万 Token |
+| 3.0 Flash / 3.0 Filetrans、旧 Qwen3 Flash / Filetrans | ¥0.00022 / 秒 | ¥0.00026 / 秒 |
+| Paraformer 文件识别 | ¥0.00008 / 秒 | 官方价格表未列该地域价格 |
+
+北京 3.1 Flash / Filetrans 的估算公式为 `0.8 × input_tokens / 1,000,000 + 2.7 × output_tokens / 1,000,000`。官方没有可用于这些 ASR 模型的固定音频时长与 Token 换算率，因此不把费用折算成固定每小时价格，也不据此宣称它是所有 ASR 中最便宜。真实成本要以同一段音频的 API Token 用量和控制台账单为准。
+
+价格来源：[百炼模型调用价格](https://help.aliyun.com/zh/model-studio/model-pricing)、[短音频原生 HTTP API](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)、[整文件 HTTP API](https://help.aliyun.com/zh/model-studio/fun-asr-recorded-speech-recognition-http-api)、[Streaming WebSocket 指南](https://help.aliyun.com/zh/model-studio/fun-asr-realtime-websocket-api)。千问 AI 平台单模型价格页也列出 Flash/Filetrans 的 Token 单价，但其通用语音识别计费指南仍写按秒计费；本文只采用百炼模型专属价格与接口资料，不混用不同平台的计费说明。
+
+一站式预设的实时字幕不是默认方案。手动选择时使用 `qwen-audio-3.1-asr-flash-streaming` 和 DashScope WebSocket，沿用桌面客户端；移动端不承诺可用。整文件识别继续走异步提交与轮询。
 
 ### 11.2 协议参数
 
-`disfluency_removal_enabled` 只对 Paraformer 下发；`language_hints` 仅在用户指定语种时发送，否则省略。参数构造位于 `src/asr/realtime-params.ts`，由 `tests/realtime-params.test.ts` 覆盖。
+`disfluency_removal_enabled` 只对 Paraformer 下发；Qwen-Audio-3.1-ASR-Flash-Streaming 不发送该参数。`language_hints` 仅在用户指定语种时发送，否则省略。参数构造位于 `src/asr/realtime-params.ts`，由 `tests/realtime-params.test.ts` 覆盖。
 
 ### 11.3 快捷配置与入口
 
@@ -632,7 +653,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 ### 11.4 平台与请求限制
 
-HTTP 分段转写支持桌面与移动端；实时 WebSocket 受浏览器鉴权头限制，仅在可用桌面环境手动选择。HTTP 请求超过服务单次限制时按实现切块；非实时整文件识别按服务协议异步执行。服务限制和费用以供应商当前文档为准。
+HTTP 分段转写支持桌面与移动端；实时 WebSocket 受浏览器鉴权头限制，仅在可用桌面环境手动选择。Flash 请求不超过客户端 10,000,000 字节 Base64 预算，并以 3 分钟 WAV 块处理较长录音；此预算不等同于官方文件规格。非实时整文件识别按服务协议异步执行。服务限制和费用以供应商当前文档为准。
 
 ### 11.5 已修复的协议检测问题
 

@@ -49,24 +49,53 @@ describe("百炼一站式配置", () => {
     // 说话人识别属于百炼三件套的第三件：预设必须写为启用（默认是未启用，漏写时本断言会失败）
     expect(settings.importSpeakerDiarization).toBe(true);
 
-    // 录音转写：HTTP 分段模型，桌面与移动端通用（实时流式在移动端拿不到鉴权头）
-    expect(settings.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
-    expect(settings.transcribeProviders["dashscope-chat"].endpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
-    expect(settings.activeTranscribeProvider).toBe("dashscope-chat");
+    expect(settings.transcribeProviders["dashscope-flash"].model).toBe("qwen-audio-3.1-asr-flash");
+    expect(settings.transcribeProviders["dashscope-flash"].endpoint).toBe("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
+    expect(settings.activeTranscribeProvider).toBe("dashscope-flash");
 
-    expect(settings.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    expect(settings.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.1-asr-flash-filetrans");
     expect(settings.importTranscribeProvider).toBe("dashscope-filetrans");
 
     expect(settings.llmModel).toBe("qwen3.8-flash");
     expect(settings.llmEndpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     expect(settings.llmServicePreset).toBe("dashscope");
 
-    for (const key of [settings.transcribeProviders["dashscope-chat"].apiKey,
+    for (const key of [settings.transcribeProviders["dashscope-flash"].apiKey,
                        settings.transcribeProviders["dashscope-filetrans"].apiKey,
                        settings.llmApiKey]) {
       expect(key).toBe(KEY);
     }
   });
+  it("routes the still-supported Qwen3 model through its separate legacy endpoint", () => {
+    const settings = empty();
+    const plan = planPresetApplication(settings, {
+      providerId: "bailian",
+      apiKey: KEY,
+      asrModel: "qwen3-asr-flash",
+    });
+    expect(plan.ok).toBe(true);
+    const applied = applyPresetPlan(settings, plan);
+    expect(applied.activeTranscribeProvider).toBe("dashscope-chat");
+    expect(applied.transcribeProviders["dashscope-chat"]).toMatchObject({
+      model: "qwen3-asr-flash",
+      endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      protocol: "dashscope-chat-input-audio",
+      apiKey: KEY,
+    });
+    expect(applied.transcribeProviders["dashscope-flash"].apiKey).toBe("");
+  });
+
+  it("rejects recording models without an implemented Bailian HTTP protocol", () => {
+    const plan = planPresetApplication(empty(), {
+      providerId: "bailian",
+      apiKey: KEY,
+      asrModel: "qwen-audio-3.1-asr-flash-streaming",
+    });
+    expect(plan.ok).toBe(false);
+    expect(plan.reason).toContain("not supported");
+    expect(Object.keys(plan.changes)).toHaveLength(0);
+  });
+
 
   it("不覆盖用户的目录、提示词与设备选择", () => {
     const before = empty();
@@ -98,15 +127,15 @@ describe("百炼一站式配置", () => {
     const host = buildProbeHost({ settings: before }, applyPresetPlan(before, plan));
 
     const ports: ProbePorts = {
-      transcribe: async () => "你好",
-      importTranscribe: async () => ({ model: "qwen-audio-3.0-asr-flash-filetrans" }),
+      transcribe: async () => "qwen-audio-3.1-asr-flash",
+      importTranscribe: async () => ({ model: "qwen-audio-3.1-asr-flash-filetrans" }),
       llm: async () => ({ model: "qwen3.8-flash" }),
     };
     const report = await runPresetDetection(host as never, plan, ports);
 
     expect(report.stages.map((s) => s.stage)).toEqual(["transcribe", "import-transcribe", "llm"]);
     expect(report.ok).toBe(true);
-    expect(formatDetectionReport(report)).toContain("Recording transcription ✓");
+    expect(formatDetectionReport(report)).toContain("Recording transcription ✓ (qwen-audio-3.1-asr-flash)");
   });
 
   it("任一段失败都如实报出是哪一段，且整体判为未通过", async () => {
@@ -115,7 +144,7 @@ describe("百炼一站式配置", () => {
     const host = buildProbeHost({ settings: before }, applyPresetPlan(before, plan));
 
     const report = await runPresetDetection(host as never, plan, {
-      transcribe: async () => "你好",
+      transcribe: async () => "qwen-audio-3.1-asr-flash",
       importTranscribe: async () => { throw new Error("模型未开通"); },
       llm: async () => ({ model: "qwen3.8-flash" }),
     });

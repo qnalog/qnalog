@@ -65,7 +65,7 @@ export class DashScopeStreamingClient {
             task_group: "audio", task: "asr", function: "recognition",
             model: this.model,
             // 只发目标模型支持的参数：Paraformer 专属字段（disfluency_removal_enabled 等）
-            // 不能发给 Qwen-Audio-3.0-ASR-Flash-Streaming / Fun-ASR-Realtime，
+            // 不能发给 Qwen-Audio-3.x-ASR-Flash-Streaming / Fun-ASR-Realtime，
             // 依据见 src/asr/realtime-params.ts 的文件头。
             parameters: buildRealtimeAsrParameters({
               model: this.model,

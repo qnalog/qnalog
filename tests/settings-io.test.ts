@@ -213,6 +213,41 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
 
     expect(b.floatingBallPos).toEqual({ left: 10, top: 20 });
   });
+  it("retains legacy Bailian values separately from the new native HTTP provider", () => {
+    const settings = normalizePluginSettings({
+      transcribeProviders: {
+        "dashscope-chat": {
+          model: "qwen3-asr-flash",
+          endpoint: "https://custom-bailian.example/compatible-mode/v1",
+          apiKey: "sk-old-provider",
+          language: "en",
+          protocol: "dashscope-chat-input-audio",
+        },
+        "dashscope-flash": {
+          model: "qwen-audio-3.1-asr-flash",
+          endpoint: "https://custom-bailian.example/api/v1/services/aigc/multimodal-generation/generation",
+          apiKey: "sk-native-provider",
+          language: "ja",
+        },
+      },
+    });
+    const restored = roundTrip(settings);
+    expect(restored.transcribeProviders["dashscope-chat"]).toMatchObject({
+      model: "qwen3-asr-flash",
+      endpoint: "https://custom-bailian.example/compatible-mode/v1",
+      apiKey: "sk-old-provider",
+      language: "en",
+      protocol: "dashscope-chat-input-audio",
+    });
+    expect(restored.transcribeProviders["dashscope-flash"]).toMatchObject({
+      model: "qwen-audio-3.1-asr-flash",
+      endpoint: "https://custom-bailian.example/api/v1/services/aigc/multimodal-generation/generation",
+      apiKey: "sk-native-provider",
+      language: "ja",
+      protocol: "dashscope-flash-input-audio",
+    });
+  });
+
 
   it("坏 JSON 字段不能污染核心设置，且同组的合法字段仍可读取", () => {
     const settings = normalizePluginSettings({

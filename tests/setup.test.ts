@@ -171,7 +171,7 @@ describe("检测对象是候选配置", () => {
 
     const seen: PluginSettings[] = [];
     const ports: ProbePorts = {
-      transcribe: async (h) => { seen.push((h as { settings: PluginSettings }).settings); return "你好"; },
+      transcribe: async (h) => { seen.push((h as { settings: PluginSettings }).settings); return "test-asr-model"; },
       importTranscribe: async () => { throw new Error("不应走到导入链路"); },
       llm: async (h) => { seen.push((h as { settings: PluginSettings }).settings); return { model: "m" }; },
     };
@@ -195,25 +195,21 @@ describe("检测对象是候选配置", () => {
 
     const after = applyPresetPlan(saved, plan);
 
-    // 录音转写：HTTP 分段模型（移动端也能用；实时流式在移动端拿不到鉴权头）
-    expect(after.activeTranscribeProvider).toBe("dashscope-chat");
-    expect(after.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
-    expect(after.transcribeProviders["dashscope-chat"].endpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
-    expect(after.transcribeProviders["dashscope-chat"].apiKey).toBe("sk-bailian");
+    expect(after.activeTranscribeProvider).toBe("dashscope-flash");
+    expect(after.transcribeProviders["dashscope-flash"].model).toBe("qwen-audio-3.1-asr-flash");
+    expect(after.transcribeProviders["dashscope-flash"].endpoint).toBe("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
+    expect(after.transcribeProviders["dashscope-flash"].apiKey).toBe("sk-bailian");
 
-    // 导入音频：整文件模型（与录音转写是两个独立服务）
     expect(after.importTranscribeProvider).toBe("dashscope-filetrans");
-    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.1-asr-flash-filetrans");
     expect(after.transcribeProviders["dashscope-filetrans"].apiKey).toBe("sk-bailian");
 
-    // AI 整理
     expect(after.llmServicePreset).toBe("dashscope");
     expect(after.llmModel).toBe("qwen3.8-flash");
     expect(after.llmEndpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     expect(after.llmApiKey).toBe("sk-bailian");
 
-    // 三段共用同一把密钥
-    expect(after.transcribeProviders["dashscope-chat"].apiKey).toBe(after.llmApiKey);
+    expect(after.transcribeProviders["dashscope-flash"].apiKey).toBe(after.llmApiKey);
   });
 
   it("百炼一站式不需要用户提供任何地址或模型名", () => {
@@ -236,8 +232,8 @@ describe("检测对象是候选配置", () => {
     let transcribeCalls = 0;
     let importCalls = 0;
     const report = await runPresetDetection(host as never, plan, {
-      transcribe: async () => { transcribeCalls += 1; return "你好"; },
-      importTranscribe: async (_h, providerId) => { importCalls += 1; expect(providerId).toBe("dashscope-filetrans"); return { model: "qwen-audio-3.0-asr-flash-filetrans" }; },
+      transcribe: async () => { transcribeCalls += 1; return "qwen-audio-3.1-asr-flash"; },
+      importTranscribe: async (_h, providerId) => { importCalls += 1; expect(providerId).toBe("dashscope-filetrans"); return { model: "qwen-audio-3.1-asr-flash-filetrans" }; },
       llm: async () => ({ model: "qwen3.8-flash" }),
     });
 
@@ -324,7 +320,7 @@ describe("取消与失败不覆盖已有配置", () => {
     const host = buildProbeHost({ settings: saved, saveSettings }, applyPresetPlan(saved, plan));
 
     await runPresetDetection(host as never, plan, {
-      transcribe: async () => "ok",
+      transcribe: async () => "test-asr-model",
       importTranscribe: async () => ({ model: "m" }),
       llm: async () => ({ model: "m" }),
     });
@@ -389,8 +385,7 @@ describe("计划与真实预设数据一致", () => {
       const plan = planPresetApplication(s, {
         providerId,
         apiKey: "sk-test",
-        llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        asrModel: "fun-asr",
+        asrModel: providerId === "bailian" ? "qwen-audio-3.1-asr-flash" : "fun-asr",
         llmModel: "qwen-plus",
       });
       expect(plan.ok, `${providerId} 应能产出计划`).toBe(true);
@@ -411,14 +406,14 @@ describe("说话人分离模型的自定义覆盖", () => {
     expect(plan.ok).toBe(true);
     const after = applyPresetPlan(freshSettings(), plan);
     expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("paraformer-v2");
-    expect(after.transcribeProviders["dashscope-chat"].model).toBe("qwen3-asr-flash");
+    expect(after.transcribeProviders["dashscope-flash"].model).toBe("qwen-audio-3.1-asr-flash");
     expect(after.llmModel).toBe("qwen3.8-flash");
   });
 
   it("不传 importAsrModel 时仍写预设内置的分离模型", () => {
     const plan = planPresetApplication(freshSettings(), { providerId: "bailian", apiKey: "sk-bailian" });
     const after = applyPresetPlan(freshSettings(), plan);
-    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.0-asr-flash-filetrans");
+    expect(after.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.1-asr-flash-filetrans");
   });
 
   it("OpenRouter 的 importAsrModel 同样可覆盖", () => {

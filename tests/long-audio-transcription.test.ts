@@ -1,18 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", () => ({
   requestUrl: vi.fn(),
 }));
 
+import { requestUrl } from "obsidian";
 import {
   composeDashScopeTranscript,
+  DASHSCOPE_IMPORT_MODEL_OPTIONS,
   estimateCloudTranscriptionDuration,
   extractDashScopePlainTexts,
   extractDashScopeSentences,
   isDashScopeFileTransProvider,
   parseServiceJsonResponse,
+  transcribeImportedAudio,
 } from "../src/asr/long-audio-transcription";
-
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 describe("long audio transcription", () => {
   it("estimates a clear processing window from the full audio duration", () => {
     expect(estimateCloudTranscriptionDuration(3 * 60 * 60 * 1000)).toEqual({
@@ -25,6 +31,15 @@ describe("long audio transcription", () => {
     expect(isDashScopeFileTransProvider({ protocol: "dashscope-filetrans" })).toBe(true);
     expect(isDashScopeFileTransProvider({ protocol: "dashscope-ws" })).toBe(false);
   });
+  it("offers only models implemented by the whole-file endpoint", () => {
+    expect(DASHSCOPE_IMPORT_MODEL_OPTIONS).toEqual([
+      "qwen-audio-3.1-asr-flash-filetrans",
+      "qwen-audio-3.0-asr-flash-filetrans",
+      "fun-asr",
+      "paraformer-v2",
+    ]);
+  });
+
 
   it("extracts speaker-labelled sentences from DashScope results", () => {
     const payload = {
@@ -100,5 +115,68 @@ describe("long audio transcription", () => {
       status: 200,
       text: JSON.stringify({ output: { task_id: "task-1" } }),
     }, "提交转写任务")).toEqual({ output: { task_id: "task-1" } });
+  });
+
+  it("runs the Qwen-Audio 3.1 filetrans upload and maps provider sentences into transcript units", async () => {
+    const responses = [
+      { status: 200, text: JSON.stringify({ data: {
+        upload_host: "https://oss.example",
+        upload_dir: "audio",
+        oss_access_key_id: "access-id",
+        policy: "policy",
+        signature: "signature",
+      } }) },
+      { status: 200, text: JSON.stringify({ output: { task_id: "task-1" } }) },
+      { status: 200, text: JSON.stringify({ output: {
+        task_status: "SUCCEEDED",
+        results: [{ subtask_status: "SUCCEEDED", transcription_url: "https://result.example/transcript" }],
+      } }) },
+      { status: 200, text: JSON.stringify({ output: { transcripts: [{ sentences: [
+        { begin_time: 0, end_time: 500, speaker_id: 0, text: "你好。" },
+        { begin_time: 700, end_time: 1200, speaker_id: 4, text: "再见。" },
+      ] }] } }) },
+    ];
+    let callIndex = 0;
+    vi.mocked(requestUrl).mockImplementation(() => {
+      const response = responses[callIndex++];
+      const parsed = JSON.parse(response.text);
+      const buffer = new ArrayBuffer(0);
+      return Object.assign(Promise.resolve({
+        status: response.status,
+        headers: {},
+        arrayBuffer: buffer,
+        json: parsed,
+        text: response.text,
+      }), {
+        arrayBuffer: Promise.resolve(buffer),
+        json: Promise.resolve(parsed),
+        text: Promise.resolve(response.text),
+      });
+    });
+    const fetch = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("window", { fetch });
+    const provider = {
+      id: "dashscope-filetrans",
+      endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
+      apiKey: "test-key",
+      model: "qwen-audio-3.1-asr-flash-filetrans",
+      language: "",
+      protocol: "dashscope-filetrans",
+    };
+
+    const result = await transcribeImportedAudio(
+      { settings: { importTranscribeProvider: provider.id, transcribeProviders: { [provider.id]: provider } } },
+      new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }),
+      "audio/wav",
+      { fileName: "meeting.wav", pollIntervalMs: 1500, timeoutMs: 60_000 },
+    );
+
+    expect(callIndex).toBe(4);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result.text).toBe(["[00:00] [说话人1] 你好。", "[00:00] [说话人2] 再见。"].join("\n\n"));
+    expect(result.units).toEqual([
+      expect.objectContaining({ rawText: "你好。", speakerId: "0", speakerName: "说话人1", startMs: 0, endMs: 500, timing: "provider" }),
+      expect.objectContaining({ rawText: "再见。", speakerId: "4", speakerName: "说话人2", startMs: 700, endMs: 1200, timing: "provider" }),
+    ]);
   });
 });

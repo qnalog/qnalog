@@ -8,6 +8,8 @@ import { t } from "../shared/i18n";
 import { isOpenRouterDiarizeProvider, testOpenRouterDiarizeProvider, transcribeWithOpenRouterDiarize } from "./openrouter-diarize";
 import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
 import { splitTranscriptTextUnits } from "../transcript/session-transcript";
+import { isBailianFileTranscriptionModel } from "./bailian-model-capabilities";
+
 export const DASHSCOPE_FILETRANS_PROTOCOL = "dashscope-filetrans";
 
 export interface LongAudioTranscriptionOptions {
@@ -50,7 +52,12 @@ interface ImportTranscribeProvider {
   protocol?: string;
 }
 
-export const DASHSCOPE_IMPORT_MODEL_OPTIONS = ["fun-asr", "paraformer-v2"] as const;
+export const DASHSCOPE_IMPORT_MODEL_OPTIONS = [
+  "qwen-audio-3.1-asr-flash-filetrans",
+  "qwen-audio-3.0-asr-flash-filetrans",
+  "fun-asr",
+  "paraformer-v2",
+] as const;
 
 export function estimateCloudTranscriptionDuration(audioDurationMs: unknown): { minMs: number; maxMs: number } {
   const durationMs = Math.max(0, Number(audioDurationMs) || 0);
@@ -360,7 +367,7 @@ export async function fetchImportTranscribeModels(
   ];
   const remoteIds = records
     .map((item) => asString(asRecord(item).model_name ?? asRecord(item).model ?? asRecord(item).id ?? asRecord(item).name))
-    .filter((id) => /(?:asr|paraformer)/i.test(id));
+    .filter(isBailianFileTranscriptionModel);
   return Array.from(new Set<string>([provider.model, ...builtIns, ...remoteIds].filter((id): id is string => !!id)))
     .sort((a, b) => a.localeCompare(b));
 }

@@ -234,34 +234,41 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       hint: "Whole-file transcription with speaker diarization. Which upstream a model routes to varies per model; the diarization switch is passed to that upstream. Speaker numbers can be mapped to real names after transcription.",
     },
     dashscope: {
-      name: "Alibaba Cloud Bailian Paraformer Realtime",
+      name: "Alibaba Cloud Bailian Qwen-Audio-3.1-ASR-Flash Streaming",
       endpoint: "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
       apiKey: "",
-      model: "paraformer-realtime-v2",
+      model: "qwen-audio-3.1-asr-flash-streaming",
       language: "",
-      hint: "The cheapest streaming ASR in China, about ¥3.6/hour.",
+      hint: "Optional desktop-only real-time transcription over DashScope WebSocket. Check Bailian pricing for the configured region.",
     },
-    // 录音转写的分段方案。与上面的 dashscope 条目是两条独立路径：
-    // dashscope 走 WebSocket 实时识别，桌面可用、移动端不可用（移动端无法给 WebSocket 设鉴权头）；
-    // 本条目走 HTTP 的 OpenAI 兼容 Chat Completions，桌面与移动端都能用。
-    // 一站式快速配置选的是这一条，原因是移动端也要能跑通。
+    // This native HTTP protocol is separate from the legacy Qwen3 Chat Completions entry below.
+    "dashscope-flash": {
+      name: "Alibaba Cloud Bailian Qwen-Audio-3.1-ASR-Flash",
+      endpoint: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+      apiKey: "",
+      model: "qwen-audio-3.1-asr-flash",
+      language: "",
+      protocol: "dashscope-flash-input-audio",
+      hint: "Native HTTP transcription for desktop and mobile. QnALog uses a 10 MB Base64 upload budget and converts long recordings into 3-minute WAV chunks.",
+    },
+    // Legacy Qwen3 Chat Completions remains available for existing and manually selected configurations.
     "dashscope-chat": {
-      name: "阿里云百炼 Qwen3-ASR Flash",
+      name: "Alibaba Cloud Bailian Qwen3-ASR Flash (legacy Chat API)",
       endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
       apiKey: "",
       model: "qwen3-asr-flash",
       language: "",
       protocol: "dashscope-chat-input-audio",
-      hint: "Bailian Qwen3-ASR Flash. HTTP interface that works on both desktop and mobile; audio is uploaded segment by segment (up to 5 minutes and 10MB per request; longer recordings are converted and split automatically).",
+      hint: "Legacy Qwen3-ASR Flash Chat Completions API. Do not use qwen-audio-3.1-asr-flash with this endpoint.",
     },
     "dashscope-filetrans": {
-      name: "Alibaba Cloud Bailian Fun-ASR",
+      name: "Alibaba Cloud Bailian Qwen-Audio-3.1-ASR-Flash-Filetrans",
       endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
       apiKey: "",
-      model: "fun-asr",
+      model: "qwen-audio-3.1-asr-flash-filetrans",
       language: "zh",
       protocol: "dashscope-filetrans",
-      hint: "For imported audio only. Whole-file asynchronous transcription with speaker diarization; standard transcription up to 12 hours, and no more than 2 hours recommended when speaker diarization is enabled.",
+      hint: "For imported audio only. Whole-file asynchronous transcription with speaker diarization; standard transcription supports up to 12 hours, and no more than 2 hours is recommended when diarization is enabled.",
     },
     custom: {
       name: "Other transcription services",

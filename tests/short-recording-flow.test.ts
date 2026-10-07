@@ -340,6 +340,59 @@ const finalPayload = (endOffsetMs: number) => ({
 });
 
 describe("短录音整条路径", () => {
+  it("sends the configured Bailian Flash request through segment finalization into the note", async () => {
+    notices.length = 0;
+    const { host, files, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/bailian-flash-smoke.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:00") });
+    const session = makeSession(mdPath);
+    host.sessionStore.begin(session);
+    host.settings.activeTranscribeProvider = "dashscope-flash";
+    host.settings.transcribeProviders["dashscope-flash"] = {
+      ...DEFAULT_SETTINGS.transcribeProviders["dashscope-flash"],
+      apiKey: "test-key",
+    };
+    host.settings.vocabularyFile = "";
+    host.settings.customVocabulary = "";
+    host.noteWriter = new NoteWriter(makeNoteWriterHost(host));
+
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal("window", {
+      fetch: vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, init });
+        return { ok: true, status: 200, json: async () => ({ output: { text: "模拟模型返回的转写。" } }) };
+      }),
+      AudioContext: class {
+        decodeAudioData = async () => ({ duration: 15, sampleRate: 48000, numberOfChannels: 1 });
+        close = async () => undefined;
+      },
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+
+    try {
+      await finalizeService.processSegment(session as never, {
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm;codecs=opus" }),
+        index: 0,
+        startOffsetMs: 0,
+        endOffsetMs: 15_000,
+        isFinal: false,
+        ext: "webm",
+      } as never);
+
+      const markdown = files.get(mdPath)?.content || "";
+      expect(requests).toHaveLength(1);
+      expect(requests[0].url).toBe("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
+      expect(JSON.parse(String(requests[0].init.body)).model).toBe("qwen-audio-3.1-asr-flash");
+      expect(JSON.parse(String(requests[0].init.body)).input.messages[0].content[0].input_audio.data).toMatch(/^data:audio\/webm;base64,/);
+      expect(session.segments[0].text).toBe("模拟模型返回的转写。");
+      expect(markdown).toContain("模拟模型返回的转写。");
+      expect(markdown).toContain("qnalog-transcript-start");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("4 秒录音：音频写入录音目录，纪要文件被清除，不发出转写请求", async () => {
     notices.length = 0;
     trashed.length = 0;

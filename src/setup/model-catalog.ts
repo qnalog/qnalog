@@ -1,3 +1,5 @@
+import { isBailianRecordingModel, isBailianSpeakerFileTranscriptionModel } from "../asr/bailian-model-capabilities";
+
 // 配置向导的模型候选：平台模型目录的分类过滤 + 说话人分离的仓库内已验证候选。
 //
 // 分类过滤是启发式：三个平台的 /models 目录都不带「用途」字段，只能按模型 id 的
@@ -16,15 +18,11 @@ const ASR_FAMILY_RE = /asr|whisper|stt|speech|transcri|sensevoice|paraformer/i;
 
 const DIARIZATION_EXTRAS: Record<string, string[]> = {
   openrouter: ["microsoft/mai-transcribe-2"],
-  bailian: ["qwen-audio-3.0-asr-flash-filetrans", "paraformer-v2"],
+  bailian: ["qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash-filetrans", "paraformer-v2"],
 };
 
-/** 转写模型的平台特例清单。
- * OpenRouter 的 `GET /models` 结构性不列转写模型（architecture.modality 为
- * audio->transcription 的独立注册表；试遍 supported_parameters/category 等参数
- * 均 0 命中），无法枚举——下列 id 于 2026-09-26 经 `/models/{id}/endpoints`
- * 逐个实测 200（whisper / gpt-*-transcribe / qwen3-asr 系）。目录能枚举的
- * 平台（百炼、小米）不放清单，靠命名族实时命中，避免清单过期。 */
+/** Provider-specific transcription candidates that do not belong to the general model-directory query.
+ * Bailian entries are restricted to model ids handled by this repository's configured protocols. */
 const ASR_EXTRAS: Record<string, string[]> = {
   openrouter: [
     "openai/gpt-4o-transcribe",
@@ -36,6 +34,7 @@ const ASR_EXTRAS: Record<string, string[]> = {
     "microsoft/mai-transcribe-2",
     "deepgram/nova-3",
   ],
+  bailian: ["qwen-audio-3.1-asr-flash", "qwen3-asr-flash"],
 };
 
 /**
@@ -56,20 +55,21 @@ function asrModelCandidates(providerId: string): string[] {
 /**
  * 向导模型列表的统一组装：种子 → （仅转写）平台特例 → 目录分类命中。
  * 种子必须同时含「输入框当前值」与「预设内置默认」——否则用户把默认改成
- * 非默认后再拉取，默认值就只能指望目录，目录缺它时会从候选里消失
- *（实测反馈：百炼改过转写模型后默认 qwen3-asr-flash 不见了）。
+ * 非默认后再拉取，默认值就只能指望目录，目录缺它时会从候选里消失。
  * 特例清单只进转写列表——整理列表只信种子与目录，防止 whisper 类混进 AI 整理。
  */
 export function wizardModelCandidates(providerId: string, category: WizardModelCategory, seeds: string[], catalog: CatalogItem[]): string[] {
   const filtered = filterModelsForCategory(catalog, category);
   if (category === "asr") {
+    if (providerId === "bailian") {
+      return mergeModelCandidates(seeds, filtered.filter(isBailianRecordingModel));
+    }
     return mergeModelCandidates(seeds, asrModelCandidates(providerId), filtered);
   }
-  if (category === "llm") {
-    return mergeModelCandidates(seeds, filtered);
-  }
+  if (category === "llm") return mergeModelCandidates(seeds, filtered);
   return filtered;
 }
+
 
 /** 目录条目：字符串（纯 id）或带分类信息的条目（百炼带 type/模态/描述，OpenRouter 带模态/描述）。 */
 type CatalogItem = string | { id: string; type?: string; outputModalities?: string[]; description?: string };
@@ -157,6 +157,7 @@ export function diarizationModelCandidates(providerId: string, presetDefault: st
   if (catalog.length) {
     const discovered = toEntries(catalog)
       .filter((entry) => DIARIZATION_DESC_RE.test(entry.description || "") && isAsrFamily(entry))
+      .filter((entry) => providerId !== "bailian" || isBailianSpeakerFileTranscriptionModel(entry.id))
       .map((entry) => entry.id);
     for (const id of discovered) push(id);
   }

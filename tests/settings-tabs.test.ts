@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+const transcribeAudioMock = vi.hoisted(() => vi.fn());
 
 type TextControl = {
   inputEl: { addEventListener: (event: string, callback: () => void) => void };
@@ -120,7 +121,11 @@ vi.mock("../src/shared/i18n", () => ({
   getActiveUiLanguage: () => "en",
   t: (text: string) => text,
 }));
-vi.mock("../src/asr/transcribe", () => ({ normalizeAsrConcurrency: (value: unknown) => value }));
+vi.mock("../src/asr/transcribe", () => ({
+  normalizeAsrConcurrency: (value: unknown) => value,
+  resolveTranscribeProvider: (plugin, providerId) => (plugin.settings.transcribeProviders || {})[providerId] || { model: "" },
+  transcribeAudio: transcribeAudioMock,
+}));
 vi.mock("../src/ui/helpers", () => ({}));
 vi.mock("../src/ui/modals", () => ({}));
 vi.mock("../src/shared/util-common", () => ({}));
@@ -201,5 +206,54 @@ describe("settings tabs render visible settings and switch pages", () => {
     expect(tab.containerEl.textContent).toContain("Maximum retry count");
     expect(tab.containerEl.textContent).toContain("Task queue");
     expect(tab.containerEl.textContent).not.toContain("Diagnostic Log Folder");
+  });
+
+  it("reports the configured model after a successful Flash probe", async () => {
+    transcribeAudioMock.mockReset();
+    class FakeAudioContext {
+      sampleRate = 16_000;
+      createBuffer() { return {}; }
+      createMediaStreamDestination() { return { stream: {} }; }
+      createBufferSource() { return { connect() {}, start() {} }; }
+      async close() {}
+    }
+    class FakeMediaRecorder {
+      mimeType = "audio/webm";
+      state = "recording";
+      ondataavailable?: (event: { data: Blob }) => void;
+      onstop?: () => void;
+      start() { this.ondataavailable?.({ data: new Blob(["silent sample"], { type: this.mimeType }) }); }
+      stop() { this.state = "inactive"; this.onstop?.(); }
+    }
+    vi.stubGlobal("window", {
+      AudioContext: FakeAudioContext,
+      setTimeout: (callback: () => void) => { callback(); return 1; },
+    });
+    vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+    const plugin = {
+      settings: {
+        activeTranscribeProvider: "dashscope-flash",
+        transcribeProviders: {
+          "dashscope-flash": { model: "qwen-audio-3.1-asr-flash" },
+          siliconflow: { model: "sensevoice" },
+        },
+      },
+    };
+    const tab = new QnALogSettingTab({}, plugin);
+    tab.getTranscribeProviderProfile = () => ({ transcribeMode: "http" });
+
+    try {
+      transcribeAudioMock.mockResolvedValueOnce({ text: "synthetic recognized text" });
+      await expect(tab.runAsrConnectivityTest()).resolves.toBe("qwen-audio-3.1-asr-flash");
+
+      transcribeAudioMock.mockRejectedValueOnce(new Error("HTTP 400: CLIENT_ERROR: ASR_RESPONSE_HAVE_NO_WORDS."));
+      await expect(tab.runAsrConnectivityTest()).resolves.toBe("qwen-audio-3.1-asr-flash");
+
+      plugin.settings.activeTranscribeProvider = "siliconflow";
+      transcribeAudioMock.mockRejectedValueOnce(new Error("HTTP 400: CLIENT_ERROR: ASR_RESPONSE_HAVE_NO_WORDS."));
+      await expect(tab.runAsrConnectivityTest()).rejects.toThrow("ASR_RESPONSE_HAVE_NO_WORDS");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
