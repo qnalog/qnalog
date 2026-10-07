@@ -728,6 +728,70 @@ async function main() {
         return file;
       };
       const noteSession = () => ({ id: "smoke-session", mdPath: disposablePath });
+      const segmentStorePath = "qnalog-segment-store-smoke.md";
+      const segmentStoreInput = [
+        "# First",
+        "<!-- qnalog-session:s1 -->",
+        "<!-- qnalog-segments-start:s1 -->",
+        "FIRST BODY",
+        "<!-- qnalog-segments-end:s1 -->",
+        "",
+        "## Second",
+        "<!-- qnalog-session:s2 -->",
+        "<!-- qnalog-segments-start:s2 -->",
+        "SECOND BODY",
+        "<!-- qnalog-segments-end:s2 -->",
+        "AFTER",
+      ].join("\n");
+      const startText = "提纲\n$& $` $' $$";
+      const endText = "转写 $& $` $' $$";
+      await plugin.noteWriter.appendToNote(segmentStorePath, segmentStoreInput);
+      await plugin.noteWriter.insertBeforeSegmentsStart(segmentStorePath, startText, "s1");
+      await plugin.noteWriter.insertBeforeSegmentsEnd(segmentStorePath, endText, "s2");
+      const segmentFile = files.get(segmentStorePath);
+      const expectedSegments = [
+        "# First",
+        "<!-- qnalog-session:s1 -->",
+        startText,
+        "<!-- qnalog-segments-start:s1 -->",
+        "FIRST BODY",
+        "<!-- qnalog-segments-end:s1 -->",
+        "",
+        "## Second",
+        "<!-- qnalog-session:s2 -->",
+        "<!-- qnalog-segments-start:s2 -->",
+        "SECOND BODY",
+        endText,
+        "<!-- qnalog-segments-end:s2 -->",
+        "AFTER",
+      ].join("\n");
+      if (!segmentFile || segmentFile._content !== expectedSegments) {
+        failures.push("分段存储插入没有按指定会话边界保留字面文本与其它正文");
+      }
+      await plugin.noteWriter.removeEmptySessionBlock({ id: "s2", mdPath: segmentStorePath });
+      const expectedAfterSegmentCleanup = [
+        "# First",
+        "<!-- qnalog-session:s1 -->",
+        `${startText}`,
+        "<!-- qnalog-segments-start:s1 -->",
+        "FIRST BODY",
+        "<!-- qnalog-segments-end:s1 -->",
+        "",
+        "AFTER",
+      ].join("\n");
+      if (!files.has(segmentStorePath) || files.get(segmentStorePath)._content !== expectedAfterSegmentCleanup) {
+        failures.push("分段存储清理会话时未保留其它会话与周围正文");
+      }
+      files.delete(segmentStorePath);
+
+      const fallbackPath = "qnalog-segment-store-fallback-smoke.md";
+      await plugin.noteWriter.insertBeforeSegmentsEnd(fallbackPath, startText, "missing");
+      await plugin.noteWriter.appendToNote(fallbackPath, endText);
+      if (files.get(fallbackPath)?._content !== `${startText}\n${endText}`) {
+        failures.push("分段存储缺少目标标记时未创建并追加到目标笔记");
+      }
+      files.delete(fallbackPath);
+
 
       makeTemporaryNote(full);
       await plugin.noteWriter.removeEmptySessionBlock(noteSession());

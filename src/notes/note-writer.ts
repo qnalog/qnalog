@@ -9,7 +9,7 @@ import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
-import { extractAllRawBlocksFromText, findNoteMarkerOffset, findSessionNoteBlock, splitLeadingFrontmatter } from "./note-document";
+import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
@@ -26,6 +26,13 @@ import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost, type ContinuationTranscriptSegment } from "./continuation-commit-flow";
 import { appendPolishNoteContent, buildConsolidatedNoteContent, buildPolishAppendBlock } from "./note-write-content";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
+import {
+  appendNoteText,
+  insertBeforeSessionSegmentsEnd,
+  insertBeforeSessionSegmentsStart,
+  removeSessionNoteBlock,
+  type NoteSegmentStoreHost,
+} from "./note-segment-store";
 
 import { t } from "../shared/i18n";
 
@@ -144,9 +151,14 @@ export class NoteWriter {
   declare host: NoteWriterHost;
   private readonly continuationCommitHost: ContinuationCommitFlowHost;
   private readonly outlineNoteStoreHost: OutlineNoteStoreHost;
+  private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
     this.outlineNoteStoreHost = { getVault: () => this.host.vault };
+    this.noteSegmentStoreHost = {
+      getVault: () => this.host.vault,
+      appendToNote: (path, content) => this.appendToNote(path, content),
+    };
     this.continuationCommitHost = {
       readTarget: async (mdPath) => {
         const file = this.host.vault.getAbstractFileByPath(mdPath);
@@ -387,60 +399,18 @@ export class NoteWriter {
       : (segment.text || labelText("noContentSegment"));
     return serializeTranscriptBlock(segment, heading, body);
   }
-  async appendToNote(path, content) {
-    const existing = this.host.vault.getAbstractFileByPath(path);
-    if (existing instanceof obsidian.TFile) {
-      const cur = await this.host.vault.read(existing);
-      const sep = cur.endsWith("\n") ? "" : "\n";
-      await this.host.vault.modify(existing, cur + sep + content);
-    } else {
-      await this.host.vault.create(path, content);
-    }
+  appendToNote(path: string, content: string): Promise<void> {
+    return appendNoteText(this.noteSegmentStoreHost, path, content);
   }
   // 把内容插到 segments-start marker 之前（即分段转写区上方），用于录音期把会中生成的提纲放在段落之上。
-  async insertBeforeSegmentsStart(path, content, sessionId) {
-    const file = this.host.vault.getAbstractFileByPath(path);
-    if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
-    const cur = await this.host.vault.read(file);
-    const marker = nsMarker("segments-start", sessionId || undefined);
-    const idx = findNoteMarkerOffset(cur, marker, "first");
-    if (idx >= 0) {
-      const next = cur.slice(0, idx) + content + "\n" + cur.slice(idx);
-      await this.host.vault.modify(file, next);
-      return;
-    }
-    await this.appendToNote(path, content);
+  insertBeforeSegmentsStart(path: string, content: string, sessionId?: string | null): Promise<void> {
+    return insertBeforeSessionSegmentsStart(this.noteSegmentStoreHost, path, content, sessionId);
   }
-  async insertBeforeSegmentsEnd(path, content, sessionId) {
-    const file = this.host.vault.getAbstractFileByPath(path);
-    if (!(file instanceof obsidian.TFile)) return this.appendToNote(path, content);
-    const cur = await this.host.vault.read(file);
-    const specific = sessionId ? nsMarker("segments-end", sessionId) : null;
-    const legacy = nsMarker("segments-end");
-    const specificIndex = specific ? findNoteMarkerOffset(cur, specific, "first") : -1;
-    if (specific && specificIndex >= 0) {
-      const next = cur.slice(0, specificIndex) + `${content}\n${specific}` + cur.slice(specificIndex + specific.length);
-      await this.host.vault.modify(file, next);
-      return;
-    }
-    const lastIdx = findNoteMarkerOffset(cur, legacy, "last");
-    if (lastIdx >= 0) {
-      const next = cur.slice(0, lastIdx) + content + "\n" + cur.slice(lastIdx);
-      await this.host.vault.modify(file, next);
-      return;
-    }
-    await this.appendToNote(path, content);
+  insertBeforeSegmentsEnd(path: string, content: string, sessionId?: string | null): Promise<void> {
+    return insertBeforeSessionSegmentsEnd(this.noteSegmentStoreHost, path, content, sessionId);
   }
-  async removeEmptySessionBlock(session) {
-    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return;
-    const cur = await this.host.vault.read(file);
-    const range = findSessionNoteBlock(cur, session.id);
-    if (!range) return;
-    const before = cur.slice(0, range.start).replace(/\n+$/, "\n");
-    const after = cur.slice(range.end).replace(/^\n+/, "");
-    const next = before + (after ? "\n" + after : "");
-    if (next !== cur) await this.host.vault.modify(file, next);
+  removeEmptySessionBlock(session: Pick<RecordingSession, "mdPath" | "id">): Promise<void> {
+    return removeSessionNoteBlock(this.noteSegmentStoreHost, session);
   }
 
   async renameMarkdownWithGeneratedTitle(fileOrPath, polished, mode) {
