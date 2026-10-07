@@ -17,7 +17,7 @@ describe("LLM 服务预设", () => {
       asrProvider: "dashscope-flash",
       asrTarget: "recording",
       asrModel: "qwen-audio-3.1-asr-flash",
-      asrEndpoint: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+      asrEndpoint: "https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation",
       importAsrProvider: "dashscope-filetrans",
       importAsrModel: "qwen-audio-3.1-asr-flash-filetrans",
       llmPreset: "dashscope",

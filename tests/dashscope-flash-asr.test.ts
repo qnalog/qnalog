@@ -11,17 +11,17 @@ import {
   requestDashScopeFlashChunk,
 } from "../src/asr/dashscope-flash-asr";
 import { transcribeAudio } from "../src/asr/transcribe";
-const endpoint = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+const endpoint = "https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation";
 const audio = { blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" }), mime: "audio/webm" };
 const provider = { id: "dashscope-flash", endpoint, apiKey: "test-key", model: "qwen-audio-3.1-asr-flash", language: "" };
 let request: { url: string; init: RequestInit } | null = null;
 
-function installWindow(response: unknown = { output: { text: "  原始转写正文。  " } }): void {
+function installWindow(response: unknown = { output: { text: "  原始转写正文。  " } }, status = 200): void {
   request = null;
   vi.stubGlobal("window", {
     fetch: vi.fn(async (url: string, init: RequestInit) => {
       request = { url, init };
-      return { ok: true, status: 200, json: async () => response };
+      return { ok: status >= 200 && status < 300, status, json: async () => response };
     }),
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
@@ -39,6 +39,7 @@ describe("Bailian Qwen-Audio-3.1-ASR-Flash native HTTP", () => {
     installWindow();
     const result = await requestDashScopeFlashChunk(provider, audio, 5000);
     expect(result).toEqual({ text: "原始转写正文。", rawText: "  原始转写正文。  " });
+    expect(endpoint).toBe("https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation");
     expect(request?.url).toBe(endpoint);
     const headers = request?.init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer test-key");
@@ -110,8 +111,22 @@ describe("Bailian Qwen-Audio-3.1-ASR-Flash native HTTP", () => {
     })]);
   });
 
-  it("does not include audio bytes in HTTP or API error messages", async () => {
-    installWindow({ output: { code: "InvalidParameter", message: "bad request" } });
-    await expect(requestDashScopeFlashChunk(provider, audio, 5000)).rejects.toThrow("InvalidParameter: bad request");
+  it("shows redacted provider details for HTTP failures", async () => {
+    installWindow({
+      code: "InvalidParameter",
+      message: "Rejected audio for API key test-key: data:audio/webm;base64,c2VjcmV0YXVkaW8=",
+    }, 400);
+    let message = "";
+    try {
+      await requestDashScopeFlashChunk(provider, audio, 5000);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("HTTP 400");
+    expect(message).toContain("InvalidParameter");
+    expect(message).toContain("[redacted]");
+    expect(message).toContain("[audio omitted]");
+    expect(message).not.toContain("test-key");
+    expect(message).not.toContain("c2VjcmV0YXVkaW8=");
   });
 });

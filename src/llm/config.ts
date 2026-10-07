@@ -206,7 +206,7 @@ export const ONE_CARD_PROVIDERS = {
   // 地址与模型全部内置，用户只需填密钥——这是首次配置唯一的正式推荐路径。
   //
   // Official model/protocol references and the token-price boundary are recorded in MAINTAINING §11.1.
-  //   - Recording uses qwen-audio-3.1-asr-flash through Bailian's native HTTP API. It works on desktop
+  //   - Recording uses qwen-audio-3.1-asr-flash through its official native HTTP endpoint. It works on desktop
   //     and mobile without the authenticated WebSocket headers unavailable to mobile browsers.
   //   - The still-supported qwen3-asr-flash remains a separate legacy Chat Completions service.
   //   - Audio import uses qwen-audio-3.1-asr-flash-filetrans through the existing asynchronous file API.
@@ -216,7 +216,7 @@ export const ONE_CARD_PROVIDERS = {
     scope: "asr-llm",
     asrProvider: "dashscope-flash",
     asrTarget: "recording",
-    asrEndpoint: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+    asrEndpoint: "https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation",
     asrModel: "qwen-audio-3.1-asr-flash",
     importAsrProvider: "dashscope-filetrans",
     importAsrEndpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",

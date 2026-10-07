@@ -50,7 +50,7 @@ describe("百炼一站式配置", () => {
     expect(settings.importSpeakerDiarization).toBe(true);
 
     expect(settings.transcribeProviders["dashscope-flash"].model).toBe("qwen-audio-3.1-asr-flash");
-    expect(settings.transcribeProviders["dashscope-flash"].endpoint).toBe("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
+    expect(settings.transcribeProviders["dashscope-flash"].endpoint).toBe("https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation");
     expect(settings.activeTranscribeProvider).toBe("dashscope-flash");
 
     expect(settings.transcribeProviders["dashscope-filetrans"].model).toBe("qwen-audio-3.1-asr-flash-filetrans");

@@ -3,7 +3,7 @@ import { assertSafeServiceEndpoint } from "../shared/util-llm-endpoint";
 import { t } from "../shared/i18n";
 
 export const DASHSCOPE_FLASH_ASR_PROTOCOL = "dashscope-flash-input-audio";
-export const DASHSCOPE_FLASH_ASR_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+export const DASHSCOPE_FLASH_ASR_ENDPOINT = "https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation";
 
 export interface DashScopeFlashProvider {
   endpoint: string;
@@ -44,7 +44,7 @@ function wavSampleRate(data: ArrayBuffer): number | null {
   return rate > 0 ? rate : null;
 }
 
-function responseError(data: unknown): string {
+function responseError(data: unknown, apiKey: string): string {
   if (!data || typeof data !== "object" || Array.isArray(data)) return "";
   const root = data as Record<string, unknown>;
   const output = root.output && typeof root.output === "object" ? root.output as Record<string, unknown> : {};
@@ -53,10 +53,19 @@ function responseError(data: unknown): string {
   const messageValue = output.message ?? root.message ?? error.message;
   const code = typeof codeValue === "string" ? codeValue.trim() : typeof codeValue === "number" ? String(codeValue) : "";
   const message = typeof messageValue === "string" ? messageValue.trim() : typeof messageValue === "number" ? String(messageValue) : "";
-  return [code, message].filter(Boolean).join(": ");
+  const redact = (value: string): string => {
+    let safe = apiKey ? value.split(apiKey).join("[redacted]") : value;
+    safe = safe
+      .replace(/data:audio\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi, "[audio omitted]")
+      .replace(/\b[A-Za-z0-9+/_=-]{128,}\b/g, "[binary data omitted]")
+      .replace(/\s+/g, " ")
+      .trim();
+    return safe.slice(0, 300);
+  };
+  return [code, message].filter(Boolean).map(redact).filter(Boolean).join(": ");
 }
 
-/** Sends one audio chunk using Bailian's native multimodal-generation HTTP API. */
+/** Sends one audio chunk using the native multimodal-generation HTTP API. */
 export async function requestDashScopeFlashChunk(
   provider: DashScopeFlashProvider,
   audio: DashScopeFlashAudio,
@@ -100,7 +109,19 @@ export async function requestDashScopeFlashChunk(
     });
     notify({ type: "response-start", timeoutMs, deadlineAt: requestStartedAt + timeoutMs });
     if (!response.ok) {
-      const error = new Error(t("Bailian speech recognition request failed (HTTP {0}).").replace("{0}", String(response.status))) as Error & { nonRetryable?: boolean };
+      let data: unknown = null;
+      try {
+        data = await response.json();
+      } catch {
+        // Keep the status-only error when the service returns a non-JSON body.
+      }
+      const detail = responseError(data, provider.apiKey);
+      const message = detail
+        ? t("Bailian speech recognition request failed (HTTP {0}): {1}.")
+          .replace("{0}", String(response.status))
+          .replace("{1}", detail)
+        : t("Bailian speech recognition request failed (HTTP {0}).").replace("{0}", String(response.status));
+      const error = new Error(message) as Error & { nonRetryable?: boolean };
       if ([400, 401, 402, 403, 404, 421].includes(response.status)) error.nonRetryable = true;
       throw error;
     }
@@ -111,7 +132,7 @@ export async function requestDashScopeFlashChunk(
       if (controller?.signal.aborted) throw error;
       throw new Error(t("Failed to parse the Bailian speech recognition response."));
     }
-    const serviceError = responseError(data);
+    const serviceError = responseError(data, provider.apiKey);
     if (serviceError) {
       const error = new Error(t("Bailian speech recognition returned an error: {0}").replace("{0}", serviceError)) as Error & { nonRetryable?: boolean };
       if (/^4\d{2}/.test(serviceError)) error.nonRetryable = true;
