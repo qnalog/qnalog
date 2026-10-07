@@ -12,6 +12,7 @@ import { UI_LANGUAGES, getActiveUiLanguage, t } from '../shared/i18n';
 import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
 import { fetchLlmModelList, testLlmConnection } from '../llm/core';
 import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
+import { isDashScopeFlashNoWordsError } from "../asr/dashscope-flash-asr";
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
 import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabularyMarkdown, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
@@ -1160,7 +1161,12 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
       await new Promise((resolve) => { rec.onstop = resolve; rec.start(); window.setTimeout(() => rec.stop(), 1000); });
       const blob = new Blob(chunks, { type: rec.mimeType });
-      return (await transcribeAudio(target, blob, blob.type)).text;
+      try {
+        return (await transcribeAudio(target, blob, blob.type)).text;
+      } catch (error) {
+        if (providerId === "dashscope-flash" && isDashScopeFlashNoWordsError(error)) return "";
+        throw error;
+      }
     } finally {
       try { await ctx.close(); } catch { /* intentionally empty */ }
     }

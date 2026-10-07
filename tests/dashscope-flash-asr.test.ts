@@ -8,6 +8,7 @@ vi.mock("obsidian", () => ({
 
 import {
   DASHSCOPE_FLASH_ASR_PROTOCOL,
+  isDashScopeFlashNoWordsError,
   requestDashScopeFlashChunk,
 } from "../src/asr/dashscope-flash-asr";
 import { transcribeAudio } from "../src/asr/transcribe";
@@ -130,6 +131,21 @@ describe("Bailian Qwen-Audio-3.1-ASR-Flash native HTTP", () => {
     expect(message).not.toContain("test-key");
     expect(message).not.toContain("c2VjcmV0YXVkaW8=");
   });
+
+  it("recognizes only the provider's explicit no-words response", () => {
+    expect(isDashScopeFlashNoWordsError(new Error("HTTP 400: CLIENT_ERROR: ASR_RESPONSE_HAVE_NO_WORDS."))).toBe(true);
+    expect(isDashScopeFlashNoWordsError(new Error("HTTP 400: InvalidParameter"))).toBe(false);
+  });
+
+  it("keeps the no-words response as an error on the normal request path", async () => {
+    installWindow({ code: "CLIENT_ERROR", message: "ASR_RESPONSE_HAVE_NO_WORDS." }, 400);
+    await expect(requestDashScopeFlashChunk(provider, audio, 5000)).rejects.toThrow("ASR_RESPONSE_HAVE_NO_WORDS");
+  });
+
+  it("does not classify unrelated provider failures as connectivity", () => {
+    expect(isDashScopeFlashNoWordsError(new Error("HTTP 401: InvalidApiKey"))).toBe(false);
+  });
+
   it("reports a safe actionable error when the browser cannot fetch the service", async () => {
     installWindow(undefined, 200, new TypeError("Failed to fetch"));
     await expect(requestDashScopeFlashChunk(provider, audio, 5000)).rejects.toThrow(

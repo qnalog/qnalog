@@ -624,6 +624,8 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].content[].input_audio.data` 与 `parameters`；响应文本从 `output.text` 读取。百炼[短音频 API 文档](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)允许使用 `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`；新建录音转写配置使用该 endpoint。千问 AI 平台模型页展示的是另一个服务域名，不自动替换百炼地址，也不假定两处 API Key 通用。语言未指定时省略 `language_hints`。WAV 只有在头部读到采样率时才发送 `sample_rate`；原样上传的 WebM/MP4 不会被标记为 16 kHz。短音频默认不请求说话人分离或时间戳；转写正文经过现有本地词汇纠正，原始服务文字保留在转写单元中。该模型可执行原生文本润色，结果可能不是逐字转写。
 
+首次配置的 Qwen Flash 连通性检测会发送一段静音录音。若百炼返回 `ASR_RESPONSE_HAVE_NO_WORDS`，检测将其视为请求已到达并通过服务鉴权的证据；这只验证连接，不验证有声录音的识别效果。其他 HTTP 或服务错误仍显示为检测失败。
+
 客户端保守使用 10,000,000 字节 Base64 上传预算与 3 分钟 WAV 分块；这不是官方文件规格。官方模型列表列出的 Flash 输入规格为最多 5 分钟/2 GB，而 API 示例对 Base64 请求提示 10 MB，故客户端继续采用较严的预算，不把上传限制扩大至 2 GB。`input_audio.data` 使用规范化的 `audio/<format>` Data URI MIME，不附带 MediaRecorder 的 `codecs` 参数；音频字节保持原样，`parameters.format` 与 Data URI 后缀一致。只有从 WAV 头部确认采样率时才附带该字段。
 
 ### 百炼语音识别原价（不含免费额度及存储、网络费用）

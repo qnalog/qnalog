@@ -158,3 +158,8 @@ export async function requestDashScopeFlashChunk(
     if (timer !== null) window.clearTimeout(timer);
   }
 }
+/** Detects the provider's explicit no-speech result for setup connectivity checks. */
+export function isDashScopeFlashNoWordsError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return message.includes("ASR_RESPONSE_HAVE_NO_WORDS");
+}
