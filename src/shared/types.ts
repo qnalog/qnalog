@@ -23,6 +23,7 @@ export interface LlmAsrSnapshot {
   apiKey?: string;
   model?: string;
   language?: string;
+  protocol?: string;
 }
 
 export interface LlmProfile {

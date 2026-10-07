@@ -18,6 +18,9 @@ import {
   DASHSCOPE_FLASH_ASR_PROTOCOL,
   requestDashScopeFlashChunk,
 } from "./dashscope-flash-asr";
+import { resolveBailianAsrRoute, resolveBailianEndpoint } from "./bailian-asr-registry";
+import { transcribeDashScopeFile } from "./dashscope-filetrans-asr";
+
 import type { DashScopeFlashChunkResult } from "./dashscope-flash-asr";
 export type AsrLifecycleSignalType =
   | "attempt-start"
@@ -151,13 +154,26 @@ export function resolveTranscribeProvider(plugin, forceId?: string) {
   const s = plugin.settings;
   const id = forceId || s.activeTranscribeProvider || "siliconflow";
   const provider = (s.transcribeProviders && s.transcribeProviders[id]) || null;
-  // 优先用 provider 子对象；否则回退到顶层旧字段
   const endpoint = (provider && provider.endpoint) || s.transcribeEndpoint || "";
-  const apiKey   = (provider && provider.apiKey)   || s.transcribeApiKey   || "";
-  const model    = (provider && provider.model)    || s.transcribeModel    || "";
+  const apiKey = (provider && provider.apiKey) || s.transcribeApiKey || "";
+  const model = (provider && provider.model) || s.transcribeModel || "";
   const language = (provider && provider.language !== undefined ? provider.language : s.transcribeLanguage) || "";
-  const protocol = provider && provider.protocol ? String(provider.protocol) : "";
-  return { id, endpoint, apiKey, model, language, protocol, name: provider ? provider.name : "" };
+  const storedProtocol = provider && provider.protocol ? String(provider.protocol) : "";
+  let hostname = "";
+  try { hostname = new URL(endpoint).hostname; } catch { /* invalid endpoint is reported by the request path */ }
+  const isBailian = /^(?:bailian|dashscope)(?:-|$)/i.test(String(id))
+    || /^dashscope(?:-|$)/i.test(storedProtocol)
+    || /(?:^|\.)aliyuncs\.com$/i.test(hostname);
+  const route = isBailian ? resolveBailianAsrRoute(model) : null;
+  return {
+    id,
+    endpoint: route ? resolveBailianEndpoint(endpoint, route.endpointKind) : endpoint,
+    apiKey,
+    model,
+    language,
+    protocol: route?.protocol || storedProtocol,
+    name: provider ? provider.name : "",
+  };
 }
 
 export function formatUploadSize(bytes) {
@@ -1048,14 +1064,31 @@ export async function transcribeAudio(
   providerOverride?,
   observer?: AsrLifecycleObserver,
 ): Promise<AsrTranscriptResult> {
-  // providerOverride 可为：provider id 字符串（走注册表解析）或完整 provider 对象（快速口述专用服务直传）。
-  const p = (providerOverride && typeof providerOverride === "object")
+  let p = (providerOverride && typeof providerOverride === "object")
     ? providerOverride
     : resolveTranscribeProvider(plugin, providerOverride);
+  const route = resolveBailianAsrRoute(String(p.model || ""));
+  let hostname = "";
+  try { hostname = new URL(String(p.endpoint || "")).hostname; } catch { /* request validation below reports malformed URLs */ }
+  const isBailian = /^(?:bailian|dashscope)(?:-|$)/i.test(String(p.id || ""))
+    || /^dashscope(?:-|$)/i.test(String(p.protocol || ""))
+    || /(?:^|\.)aliyuncs\.com$/i.test(hostname);
+  if (route && isBailian) {
+    p = { ...p, protocol: route.protocol, endpoint: resolveBailianEndpoint(String(p.endpoint || ""), route.endpointKind) };
+  }
   if (!p.endpoint) throw new Error(t("Transcription service URL is not configured (current service: {0}).").replace("{0}", p.name || p.id));
+  if (route && isBailian && route.transcribeMode === "streaming") {
+    assertSafeServiceEndpoint(p.endpoint, "websocket", t("Realtime transcription service URL"));
+    throw new Error(t("This Bailian model requires a live WebSocket session; it cannot transcribe a completed audio upload."));
+  }
   assertSafeServiceEndpoint(p.endpoint, "http", t("Transcription service URL"));
   if (!p.apiKey && !canOmitServiceApiKey(p.endpoint)) throw new Error(t("Transcription access key is not configured (current service: {0}).").replace("{0}", p.name || p.id));
-  if (!p.model)    throw new Error(t("Transcription model name is not configured (current service: {0}).").replace("{0}", p.name || p.id));
+  if (!p.model) throw new Error(t("Transcription model name is not configured (current service: {0}).").replace("{0}", p.name || p.id));
+  if (route && isBailian) {
+    if (route.endpointKind === "filetrans-http") {
+      return transcribeDashScopeFile(p, blob, { diarization: route.speakerDiarization });
+    }
+  }
   const vocabularyGroups = await loadVocabularyGroups(plugin);
   const chatInputProfile = getChatInputAudioProfile(Object.assign({ id: p.id }, p));
   if (chatInputProfile) {

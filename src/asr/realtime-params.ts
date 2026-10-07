@@ -12,6 +12,8 @@
 //   2. `language_hints` 两类模型都支持；Qwen 系列最多 4 个值，Fun-ASR-Realtime 系列只取第一个。
 //   3. `format` / `sample_rate` 是必填项。
 
+import { resolveBailianAsrRoute } from "./bailian-asr-registry";
+
 /** 需要的音频与语种信息；由调用方从 provider 配置得来。 */
 export interface RealtimeAsrRequestInput {
   model: string;
@@ -47,16 +49,13 @@ export function buildRealtimeAsrParameters(input: RealtimeAsrRequestInput): Reco
     sample_rate: sampleRate,
   };
 
-  if (isParaformerRealtimeModel(model)) {
-    // 关掉语气词过滤：保留原话，「嗯/啊」不参与识别结果清洗。
+  const route = resolveBailianAsrRoute(model);
+  if (route?.family === "paraformer-realtime") {
     parameters.disfluency_removal_enabled = false;
   }
 
-  // 明确语种能提升准确率；不指定时服务端自动识别。
-  // 取值限定为两类模型共同支持的语种，避免下发服务端不认的代码。
-  if (language && language !== "auto") {
-    parameters.language_hints = [language];
-  }
+  const validLanguage = normalizeRealtimeLanguage(language);
+  if (route?.supportsLanguage && validLanguage) parameters.language_hints = [validLanguage];
 
   return parameters;
 }
@@ -71,5 +70,5 @@ export function normalizeRealtimeLanguage(value: string): string {
   if (raw.startsWith("zh")) return "zh";
   if (raw.startsWith("en")) return "en";
   if (raw.startsWith("ja")) return "ja";
-  return raw;
+  return /^(yue|de|ko|ru|fr|pt|ar|it|es|hi|id|th|tr|uk|vi|cs|da|fil|fi|is|ms|no|pl|sv)$/.test(raw) ? raw : "";
 }

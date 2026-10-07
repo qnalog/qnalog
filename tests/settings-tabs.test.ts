@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 const transcribeAudioMock = vi.hoisted(() => vi.fn());
 
 type TextControl = {
@@ -28,7 +28,12 @@ vi.mock("obsidian", () => {
     children: FakeElement[] = [];
     classes = new Set<string>();
     onclick?: () => void;
+    onkeydown?: (event: { key: string; preventDefault: () => void }) => void;
+    parentElement?: FakeElement;
     text = "";
+    open = false;
+    scrolled = false;
+    attrs: Record<string, string> = {};
 
     constructor(text = "") { this.text = text; }
     get textContent(): string { return this.text + this.children.map((child) => child.textContent).join(""); }
@@ -37,23 +42,34 @@ vi.mock("obsidian", () => {
       if (enabled) this.classes.add(name);
       else this.classes.delete(name);
     }
+    setAttr(name: string, value: string) { this.attrs[name] = value; }
     empty() { this.children = []; this.text = ""; }
-    createDiv(options: { cls?: string } = {}) {
-      const element = new FakeElement();
+    createDiv(options: { cls?: string; text?: string } = {}) {
+      const element = new FakeElement(options.text || "");
       element.addClass(...(options.cls || "").split(/\s+/).filter(Boolean));
+      element.parentElement = this;
       this.children.push(element);
       return element;
     }
-    createEl(_tag: string, options: { text?: string } = {}) {
+    createEl(_tag: string, options: { text?: string; cls?: string } = {}) {
       const element = new FakeElement(options.text || "");
+      element.addClass(...(options.cls || "").split(/\s+/).filter(Boolean));
+      element.parentElement = this;
       this.children.push(element);
       return element;
+    }
+    createSpan(options: { cls?: string; text?: string } = {}) {
+      return this.createDiv(options);
     }
   }
 
   class FakeSetting {
     private readonly row: FakeElement;
-    constructor(parent: FakeElement) { this.row = parent.createDiv({ cls: "setting-item" }); }
+    readonly settingEl: FakeElement;
+    constructor(parent: FakeElement) {
+      this.row = parent.createDiv({ cls: "setting-item" });
+      this.settingEl = this.row;
+    }
     setName(name: string) { this.row.createDiv({ cls: "setting-item-name" }).text = name; return this; }
     setDesc(text: string) { this.row.createDiv({ cls: "setting-item-description" }).text = text; return this; }
     setHeading() { this.row.addClass("setting-item-heading"); return this; }
@@ -108,6 +124,12 @@ vi.mock("obsidian", () => {
   };
 });
 
+import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+
+afterEach(() => {
+  setActiveUiLanguage(resolveUiLanguage("en", "en"));
+});
+
 vi.mock("../src/shared/defaults", () => ({
   DEFAULT_SETTINGS: {
     audioFolder: "QnALog/Audio",
@@ -116,11 +138,6 @@ vi.mock("../src/shared/defaults", () => ({
   },
 }));
 vi.mock("../src/shared/util-platform", () => ({ isMobileRuntime: () => false }));
-vi.mock("../src/shared/i18n", () => ({
-  UI_LANGUAGES: [],
-  getActiveUiLanguage: () => "en",
-  t: (text: string) => text,
-}));
 vi.mock("../src/asr/transcribe", () => ({
   normalizeAsrConcurrency: (value: unknown) => value,
   resolveTranscribeProvider: (plugin, providerId) => (plugin.settings.transcribeProviders || {})[providerId] || { model: "" },
@@ -255,5 +272,38 @@ describe("settings tabs render visible settings and switch pages", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+  it("translates tab labels per render while keeping tab identity stable", () => {
+    const tab = new QnALogSettingTab({}, { settings: {} });
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    expect(tab.getVisibleSettingsTabs().find(item => item.id === "ai")?.label).toBe("AI Briefing");
+    expect(tab.getVisibleSettingsTabs().find(item => item.id === "knowledge")?.label).toBe("Knowledge");
+
+    setActiveUiLanguage(resolveUiLanguage("zh", "en"));
+    const chineseTabs = tab.getVisibleSettingsTabs();
+    expect(chineseTabs.find(item => item.id === "ai")?.label).toBe("AI 整理");
+    expect(chineseTabs.find(item => item.id === "knowledge")?.label).toBe("资料库");
+    expect(chineseTabs.find(item => item.label === "AI 整理")?.id).toBe("ai");
+    expect(resolveUiLanguage("", "zh").table["AI Briefing"]).toBe("AI 整理");
+  });
+
+  it("passes the status stage on click and keyboard navigation", () => {
+    const tab = new QnALogSettingTab({}, { settings: {} });
+    const targets: Array<[string, string]> = [];
+    const parent = tab.containerEl.createDiv();
+    const row = tab.buildStatusRow(parent, {
+      stage: "llm",
+      label: "AI Organize",
+      value: "Configured",
+      detail: "",
+      icon: "",
+      target: "api",
+    }, (target, stage) => targets.push([target, stage]));
+    row.onclick();
+    let prevented = false;
+    row.onkeydown({ key: "Enter", preventDefault: () => { prevented = true; } });
+    row.onkeydown({ key: " ", preventDefault: () => { prevented = true; } });
+    expect(targets).toEqual([["api", "llm"], ["api", "llm"], ["api", "llm"]]);
+    expect(prevented).toBe(true);
   });
 });

@@ -6,12 +6,14 @@ export function snapshotActiveAsr(settings) {
   const providerId = String((settings && settings.activeTranscribeProvider) || "").trim();
   if (!providerId) return undefined;
   const p = (settings.transcribeProviders || {})[providerId] || {};
+  const protocol = String(p.protocol || "").trim();
   return {
     providerId,
     apiKey: String(p.apiKey || ""),
     endpoint: String(p.endpoint || "").trim(),
     model: String(p.model || "").trim(),
     language: String(p.language || "").trim(),
+    ...(protocol ? { protocol } : {}),
   };
 }
 

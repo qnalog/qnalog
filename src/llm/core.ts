@@ -602,6 +602,7 @@ export interface LlmModelEntry {
   id: string;
   type?: string;
   outputModalities?: string[];
+  capabilities?: string[];
   description?: string;
 }
 
@@ -632,19 +633,26 @@ function parseModelEntries(payload): LlmModelEntry[] {
       );
       const lowerList = (raw) => (Array.isArray(raw) ? raw.map((x) => String(x || "").toLowerCase()).filter(Boolean) : []);
       const outputModalities = lowerList(outputRaw);
+      const rawCapabilities = m && m.capabilities;
+      const capabilities = Array.isArray(rawCapabilities)
+        ? rawCapabilities.map((value) => String(value || "").trim()).filter(Boolean)
+        : rawCapabilities && typeof rawCapabilities === "object"
+          ? Object.entries(rawCapabilities).filter(([, enabled]) => Boolean(enabled)).map(([key]) => key)
+          : typeof rawCapabilities === "string" ? [rawCapabilities] : [];
       const description = m && typeof m.description === "string" ? m.description.slice(0, 800) : "";
       return {
         id,
         ...(type ? { type } : {}),
         ...(outputModalities.length ? { outputModalities } : {}),
+        ...(capabilities.length ? { capabilities } : {}),
         ...(description ? { description } : {}),
       };
     })
     .filter(Boolean);
 }
 
-/** 百炼原生列表按 page_no/page_size 分页（默认 20 条/页，总数数百条）：
- * 翻页地址只在取到分页信封后追加，第一页保持与直连 curl 相同的干净地址。 */
+/** 百炼目录按 page_no/page_size 分页。完整目录请求显式使用平台支持的 100 条上限，
+ * 减少逐页请求触发频率限制的机会；后续分页仍严格依据响应里的总数与页大小。 */
 function withModelListPage(url: string, pageNo: number, pageSize: number): string {
   try {
     const parsed = new URL(url);
@@ -656,12 +664,20 @@ function withModelListPage(url: string, pageNo: number, pageSize: number): strin
   }
 }
 
-export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record<string, string>): Promise<LlmModelEntry[]> {
+export interface FetchLlmModelEntriesOptions {
+  requireCompletePagination?: boolean;
+}
+
+export async function fetchLlmModelEntries(
+  endpoint,
+  apiKey,
+  extraQuery?: Record<string, string>,
+  options: FetchLlmModelEntriesOptions = {},
+): Promise<LlmModelEntry[]> {
   const base = normalizeLlmEndpoint(endpoint);
   if (!base) throw new Error(t("Service address is not configured"));
   assertSafeServiceEndpoint(base, "http", t("LLM service address"));
-  // 百炼的兼容地址与原生地址都要试：两者都真实存在（无钥均 401），
-  // 不同账号/网关下可用的一个可能与预设的改写地址不同，先按改写地址、再按通用地址。
+  const requireCompletePagination = options.requireCompletePagination === true;
   const genericUrl = /\/chat\/completions$/i.test(base)
     ? base.replace(/\/chat\/completions$/i, "/models")
     : base.replace(/\/+$/, "") + "/models";
@@ -679,15 +695,18 @@ export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record
   const genericQueried = withQuery(genericUrl);
   if (!urls.includes(genericQueried)) urls.push(genericQueried);
   const headers = buildLlmHeaders(apiKey, base);
-  delete headers["Content-Type"]; // GET 无 body
+  delete headers["Content-Type"];
   const problems: string[] = [];
   for (const url of urls) {
     const byId = new Map<string, LlmModelEntry>();
     const urlProblems: string[] = [];
     let pageNo = 1;
     let pageSize = 0;
-    for (let page = 0; page < 30; page += 1) {
-      const pageUrl = pageNo === 1 ? url : withModelListPage(url, pageNo, pageSize || 20);
+    let expectedTotal: number | null = null;
+    let complete = false;
+    const firstPageUrl = requireCompletePagination ? withModelListPage(url, 1, 100) : url;
+    for (let page = 0; page < 100; page += 1) {
+      const pageUrl = pageNo === 1 ? firstPageUrl : withModelListPage(url, pageNo, pageSize || 100);
       const res = await obsidian.requestUrl({ url: pageUrl, method: "GET", headers, throw: false });
       if (res.status < 200 || res.status >= 300) {
         urlProblems.push(t("{0} → HTTP status {1}: {2}").replace("{0}", pageUrl).replace("{1}", String(res.status)).replace("{2}", String(res.text || "").slice(0, 200)));
@@ -703,16 +722,36 @@ export async function fetchLlmModelEntries(endpoint, apiKey, extraQuery?: Record
         if (!byId.has(entry.id)) byId.set(entry.id, entry);
       }
       const output = data && data.output;
-      const total = Number(output && output.total) || 0;
+      const total = Number(output && output.total);
+      const reportedPage = Number(output && output.page_no);
       pageSize = Number(output && output.page_size) || 0;
-      // 无分页信封、已取全，或翻页参数不被支持（本页 0 新增）时止损。
-      if (!total || !pageSize || byId.size >= total || byId.size === before) break;
+      if (requireCompletePagination) {
+        if (!Number.isInteger(total) || total < 0 || !Number.isInteger(reportedPage) || reportedPage !== pageNo || !Number.isInteger(pageSize) || pageSize < 1) {
+          urlProblems.push(t("{0} → Pagination metadata is missing or invalid").replace("{0}", pageUrl));
+          break;
+        }
+        if (expectedTotal === null) expectedTotal = total;
+        if (total !== expectedTotal || (byId.size === before && byId.size < expectedTotal)) {
+          urlProblems.push(t("{0} → Model list pagination did not make progress or changed total count").replace("{0}", pageUrl));
+          break;
+        }
+        if (byId.size >= expectedTotal) {
+          complete = true;
+          break;
+        }
+      } else if (!total || !pageSize || byId.size >= total || byId.size === before) {
+        complete = true;
+        break;
+      }
       pageNo += 1;
     }
-    if (byId.size) {
+    if (requireCompletePagination && !complete && !urlProblems.length) {
+      urlProblems.push(t("{0} → Model list exceeded the maximum page count").replace("{0}", url));
+    }
+    if (complete && (!requireCompletePagination || byId.size === expectedTotal)) {
       return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
     }
-    problems.push(...(urlProblems.length ? urlProblems : [t("{0} → No model list returned").replace("{0}", url)]));
+    problems.push(...(urlProblems.length ? urlProblems : [t("{0} → No complete model list returned").replace("{0}", url)]));
   }
   throw new Error(problems.join(t("; ")) || t("Failed to fetch the model list"));
 }

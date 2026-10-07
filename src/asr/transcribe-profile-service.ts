@@ -4,6 +4,7 @@
 import type { PluginSettings } from "../shared/types";
 import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
 import { t } from "../shared/i18n";
+import { resolveBailianAsrRoute } from "./bailian-asr-registry";
 
 /** TranscribeProfileService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface TranscribeProfileHost {
@@ -328,6 +329,32 @@ export class TranscribeProfileService {
         links: [],
       },
     };
+    const route = resolveBailianAsrRoute(String(provider && provider.model || ""));
+    let bailianHost = "";
+    try { bailianHost = new URL(String(provider && provider.endpoint || "")).hostname; } catch { /* not a URL */ }
+    const isBailianProvider = /^(?:bailian|dashscope)(?:-|$)/i.test(String(id || ""))
+      || /^dashscope(?:-|$)/i.test(String(provider && provider.protocol || ""))
+      || /(?:^|\.)aliyuncs\.com$/i.test(bailianHost);
+    if (route && isBailianProvider) {
+      const routeProfile = route.transcribeMode === "streaming"
+        ? profiles.dashscope
+        : route.transcribeMode === "whole-file"
+          ? profiles["dashscope-filetrans"]
+          : route.protocol === "dashscope-chat-input-audio"
+            ? profiles["dashscope-chat"]
+            : profiles["dashscope-flash"];
+      const mode = route.transcribeMode;
+      return Object.assign({}, routeProfile, {
+        title: `Alibaba Cloud Bailian · ${route.family}`,
+        transcribeMode: mode,
+        streamProtocol: mode === "streaming" ? route.protocol : undefined,
+        speakerDiarization: route.speakerDiarization,
+        speakerLabelScope: route.speakerDiarization ? "session" : undefined,
+        requiresWholeSession: mode === "whole-file" || route.speakerDiarization,
+        sampleRate: route.sampleRate,
+        modelHelp: `${route.family}: ${mode} transcription via ${route.protocol}. The complete model ID is sent to Bailian.`,
+      });
+    }
     const base = profiles[id] || profiles.custom;
     const title = id === "custom" && provider && provider.name ? provider.name : base.title;
     // 没有预设的 provider（用户自建、其它服务）原先一律沿用 custom 的 requiresKey: false，

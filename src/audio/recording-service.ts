@@ -248,7 +248,7 @@ export class RecordingService {
         new obsidian.Notice(t("Streaming transcription is not supported on mobile yet; this recording will keep its audio, so use streaming on desktop or switch to a segmented transcription service."), 9000);
       } else if (isStreaming) {
         onStreamReady = async (mediaStream) => {
-          const sampleRate = activeProfile.streamProtocol && activeProfile.streamProtocol.startsWith("openai-realtime") ? 24000 : 16000;
+          const sampleRate = Number(activeProfile.sampleRate) || (activeProfile.streamProtocol && activeProfile.streamProtocol.startsWith("openai-realtime") ? 24000 : 16000);
           const client = createStreamingTranscriptionClient(activeProfile, activeProvider, {
             onPartial: (fullText: string, isFinal: boolean) => {
               this.host.asrPipeline.clearRecordingIssue("network");

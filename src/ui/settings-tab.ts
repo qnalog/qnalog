@@ -29,6 +29,8 @@ import {
 import { analyzeRecordedAudioChannels } from '../asr/channel-transcription';
 import { isImportCapableTranscribeProvider, isSpeakerDiarizationProvider } from '../asr/diarization';
 import { fetchImportTranscribeModels, testImportTranscribeProvider } from '../asr/long-audio-transcription';
+import { fetchRecordingTranscribeModels } from "../asr/recording-model-catalog";
+import { resolveBailianAsrRoute, selectBailianAsrModel } from "../asr/bailian-asr-registry";
 import {
   applyPresetPlan,
   buildProbeHost,
@@ -301,7 +303,16 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   renderHome(c) {
     const page = c.createDiv({ cls: "qnalog-home" });
     let statusList;
-    const jump = (tab) => { this.activeTab = tab; this.renderSettings(); };
+    const jump = (tab, stage) => {
+      this.activeTab = tab;
+      this.renderSettings();
+      if (tab !== "api" || stage !== "llm") return;
+      const modelRow = this.containerEl.querySelector(".qnalog-ai-model-setting");
+      if (!modelRow) return;
+      const section = modelRow.closest("details.qnalog-settings-section");
+      if (section) section.open = true;
+      modelRow.scrollIntoView({ block: "center" });
+    };
     // 三处服务的状态都按「缺配置 / 未测试 / 已通过 / 未通过」四态呈现，
     // 而不是只看字段在不在：字段填了但没测过，与测过并通过是两回事。
     const transcribeState = (() => {
@@ -670,9 +681,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       row.setAttr("role", "button");
       row.setAttr("tabindex", "0");
       row.setAttr("aria-label", t("{0}: {1}, open the corresponding settings").replace("{0}", line.label).replace("{1}", line.value));
-      row.onclick = () => jump(line.target);
+      row.onclick = () => jump(line.target, line.stage);
       row.onkeydown = (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); jump(line.target); }
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); jump(line.target, line.stage); }
       };
       // 箭头只是「这一行能点」的提示，整行都是点击目标，所以它保持低存在感。
       row.createSpan({ cls: "qnalog-status-row-go", text: "›" });
@@ -1328,7 +1339,35 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       syncWorkingAsrToActiveScheme(this.plugin.settings);
       await this.plugin.saveSettings();
     };
-
+    const writeSelectedBailianModel = async (model, requireRoute = false) => {
+      const isBailianProvider = /^(?:bailian|dashscope)(?:-|$)/i.test(String(activeId || ""))
+        || /^dashscope(?:-|$)/i.test(String(provider.protocol || ""))
+        || /(?:^|\.)aliyuncs\.com$/i.test((() => { try { return new URL(String(provider.endpoint || "")).hostname; } catch { return ""; } })());
+      const selection = selectBailianAsrModel(activeId, provider, model);
+      if (isBailianProvider && !selection && requireRoute) {
+        if (resolveBailianAsrRoute(model)) throw new Error(t("The Bailian endpoint could not be mapped safely. Keep the current settings unchanged and enter a recognized Bailian API path."));
+        throw new Error(t("This Bailian model has no supported transcription protocol, so it was not selected."));
+      }
+      if (!selection) return writeProvider("model", String(model || "").trim());
+      const currentProvider = this.plugin.settings.transcribeProviders[activeId];
+      if (!currentProvider) throw new Error(t("The transcription service changed. Get the models again."));
+      const previous = { ...currentProvider };
+      Object.assign(currentProvider, selection.provider);
+      syncWorkingAsrToActiveScheme(this.plugin.settings);
+      try {
+        await this.plugin.saveSettings();
+      } catch (error) {
+        if (this.plugin.settings.transcribeProviders[activeId] === currentProvider
+          && currentProvider.model === selection.provider.model
+          && currentProvider.endpoint === selection.provider.endpoint
+          && currentProvider.protocol === selection.provider.protocol) {
+          Object.assign(currentProvider, previous);
+          syncWorkingAsrToActiveScheme(this.plugin.settings);
+        }
+        throw error;
+      }
+      this.renderSettings();
+    };
     const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
     new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
       .setDesc(t(profile.keyHelp))
@@ -1340,11 +1379,78 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         .setPlaceholder(profile.endpointPlaceholder || "")
         .onChange(v => writeProvider("endpoint", v.trim())));
 
-    new obsidian.Setting(c).setName(t("Model Name"))
-      .setDesc(t(profile.modelHelp))
-      .addText(t => t.setValue(provider.model || "")
+    const recordingModelRow = new obsidian.Setting(c).setName(t("Model Name"))
+      .setDesc(t(profile.modelHelp));
+    recordingModelRow
+      .addText(modelInput => modelInput.setValue(provider.model || "")
         .setPlaceholder(profile.modelPlaceholder || "")
-        .onChange(v => writeProvider("model", v.trim())));
+        .onChange(v => writeSelectedBailianModel(v.trim())))
+      .addButton(button => button.setButtonText(t("Get models")).onClick(async () => {
+        const endpoint = String(provider.endpoint || "");
+        const apiKey = String(provider.apiKey || "");
+        const protocol = String(provider.protocol || "");
+        const modelSnapshot = String(provider.model || "");
+        const schemeId = String(this.plugin.settings.activeLlmProfile || "");
+        const isCurrentConfiguration = () => {
+          const currentProvider = (this.plugin.settings.transcribeProviders || {})[activeId];
+          return (this.plugin.settings.activeTranscribeProvider || "siliconflow") === activeId
+            && String(this.plugin.settings.activeLlmProfile || "") === schemeId
+            && currentProvider === provider
+            && String(currentProvider.endpoint || "") === endpoint
+            && String(currentProvider.apiKey || "") === apiKey
+            && String(currentProvider.protocol || "") === protocol
+            && String(currentProvider.model || "") === modelSnapshot;
+        };
+        if (!endpoint.trim()) {
+          new obsidian.Notice(t("Please fill in the service endpoint first"), 4000);
+          return;
+        }
+        button.setDisabled(true);
+        button.setButtonText(t("Fetching…"));
+        try {
+          const models = await fetchRecordingTranscribeModels(
+            { id: activeId, endpoint, apiKey, protocol },
+            profile.streamProtocol,
+          );
+          if (!isCurrentConfiguration()) {
+            new obsidian.Notice(t("The transcription service changed. Get the models again."), 4000);
+            return;
+          }
+          if (!models.length) {
+            new obsidian.Notice(t("The service returned no usable models. Enter the model name manually."), 6000);
+            return;
+          }
+          openPickListModal(this.app, `${t("Select a model ( ")}${models.length}${t(")")}`, models, async model => {
+            if (!isCurrentConfiguration()) {
+              new obsidian.Notice(t("The transcription service changed. Get the models again."), 4000);
+              return;
+            }
+            try {
+              await writeSelectedBailianModel(model, true);
+              new obsidian.Notice(`${t("Selected model:")}${model}`, 4000);
+              this.renderSettings();
+            } catch (error) {
+              new obsidian.Notice(`${t("Failed to save the selected model:")}${(error && error.message) || error}`, 8000);
+            }
+          }, model => {
+            const isBailianProvider = /^(?:bailian|dashscope)(?:-|$)/i.test(String(activeId || ""))
+              || /^dashscope(?:-|$)/i.test(protocol)
+              || /(?:^|\.)aliyuncs\.com$/i.test((() => { try { return new URL(endpoint).hostname; } catch { return ""; } })());
+            if (!isBailianProvider) return "";
+            const route = resolveBailianAsrRoute(model);
+            if (!route) return t("No supported execution protocol");
+            const modeLabel = t(route.transcribeMode === "whole-file" ? "Whole-file" : route.transcribeMode === "streaming" ? "Streaming" : "Segmented");
+            const deviceLabel = route.transcribeMode === "streaming" && isMobileRuntime() ? t("Requires desktop WebSocket") : "";
+            const lifecycleLabel = route.lifecycle ? t("Lifecycle notice") : "";
+            return [modeLabel, `${route.sampleRate} Hz`, deviceLabel, lifecycleLabel].filter(Boolean).join(" · ");
+          });
+        } catch (error) {
+          new obsidian.Notice(`${t("Failed to get the model list:")}${(error && error.message) || error}${t(". You can enter the model ID manually.")}`, 8000);
+        } finally {
+          button.setDisabled(false);
+          button.setButtonText(t("Get models"));
+        }
+      }));
 
     if (!profile.hideLanguage) {
       new obsidian.Setting(c).setName(t("Recognition Language"))
@@ -1472,8 +1578,10 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }));
     }
 
-    new obsidian.Setting(c).setName(t("Model ID"))
-      .setDesc(llmModelHelp)
+    const llmModelRow = new obsidian.Setting(c).setName(t("Model ID"))
+      .setDesc(llmModelHelp);
+    llmModelRow.settingEl.addClass("qnalog-ai-model-setting");
+    llmModelRow
       .addText(txt => {
         txt.setPlaceholder(activeLlmPreset && activeLlmPreset.modelPlaceholder ? activeLlmPreset.modelPlaceholder : t("For example: the model ID shown in the provider's console"));
         txt.setValue(this.plugin.settings.llmModel);

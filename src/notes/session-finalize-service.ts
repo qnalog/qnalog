@@ -267,7 +267,9 @@ export class SessionFinalizeService {
             const channelMode = normalizeAudioChannelMode(session.audioChannelMode || this.host.settings.audioChannelMode);
             const runtimeChannelMode = session.audioChannelRuntimeMode
               || initialAudioChannelRuntimeMode(channelMode, reportedChannelCount);
-            const inspectRecordedChannels = session.captureMode === "mic" && runtimeChannelMode !== "mono";
+            const inspectRecordedChannels = session.captureMode === "mic"
+              && runtimeChannelMode !== "mono"
+              && activeProfile?.transcribeMode !== "whole-file";
             // Only probe an auto-mode device until independent channel content is
             // confirmed. Once resolved, the session stays on one stable path.
             const expectedChannels = inspectRecordedChannels ? MAX_SPEAKER_CHANNELS : 1;

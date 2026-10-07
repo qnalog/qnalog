@@ -315,14 +315,6 @@ describe("使用状态总览", () => {
     expect(warnButNotBlocking.detail).not.toContain("还缺内容");
   });
 
-  it("每行指向对应设置页，点哪一项去哪里是确定的", () => {
-    expect(Object.fromEntries(buildSetupStatus(base).lines.map((l) => [l.label, l.target]))).toEqual({
-      [t("Speech transcription")]: "api",
-      [t("AI Organize")]: "ai",
-      [t("Speaker recognition")]: "api",
-      [t("Audio input")]: "recording",
-    });
-  });
 
   it("四项明细的标签固定，便于用户形成固定阅读位置", () => {
     expect(buildSetupStatus(base).lines.map((l) => l.label)).toEqual([

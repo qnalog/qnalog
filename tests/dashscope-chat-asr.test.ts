@@ -130,7 +130,7 @@ describe("百炼分段服务在设置界面里的归类", () => {
     const { TranscribeProfileService } = await import("../src/asr/transcribe-profile-service");
     const service = new TranscribeProfileService({ settings: {} });
     const profile = service.getTranscribeProviderProfile("dashscope", { model: "paraformer-realtime-v2" });
-    expect(profile.title).toContain("Real-time");
+    expect(profile.title).toContain("paraformer-realtime");
     expect(profile.transcribeMode).toBe("streaming");
   });
 });

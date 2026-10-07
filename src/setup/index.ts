@@ -589,7 +589,7 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
   });
   const lines: SetupStatusLine[] = [
     toLine({ stage: "transcribe", label: t("Speech transcription"), target: "api", ...input.transcribe }),
-    toLine({ stage: "llm", label: t("AI Organize"), target: "ai", ...input.llm }),
+    toLine({ stage: "llm", label: t("AI Organize"), target: "api", ...input.llm }),
     toLine({ stage: "speaker", label: t("Speaker recognition"), target: "api", ...input.speaker }),
     // 目标必须是 settings-tab.ts 里真实存在的选项卡 id。
     // 曾写作 "general"，而该页已改名 "recording"，导致这一行点了没反应。

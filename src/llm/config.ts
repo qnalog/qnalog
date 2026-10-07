@@ -3,6 +3,7 @@
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { comparableLlmEndpoint } from '../shared/util-llm-endpoint';
 import { t } from '../shared/i18n';
+import { resolveBailianAsrRoute, resolveBailianEndpoint } from "../asr/bailian-asr-registry";
 
 export const LLM_SERVICE_PRESETS = [
   {
@@ -310,12 +311,23 @@ export function applyLlmProfileToWorkingConfig(settings, id) {
     const providers = settings.transcribeProviders || (settings.transcribeProviders = {});
     const dft = (DEFAULT_SETTINGS.transcribeProviders || {})[asr.providerId] || {};
     const cur = providers[asr.providerId] || {};
+    const savedEndpoint = asr.endpoint || cur.endpoint || dft.endpoint || "";
+    const route = resolveBailianAsrRoute(String(asr.model || cur.model || ""));
+    let endpointHost = "";
+    try { endpointHost = new URL(savedEndpoint).hostname; } catch { /* not a URL */ }
+    const isBailianProvider = /^(?:bailian|dashscope)(?:-|$)/i.test(String(asr.providerId))
+      || /^dashscope(?:-|$)/i.test(String(asr.protocol || ""))
+      || /(?:^|\.)aliyuncs\.com$/i.test(endpointHost);
+    let routedEndpoint = savedEndpoint;
+    if (isBailianProvider && route) {
+      try { routedEndpoint = resolveBailianEndpoint(savedEndpoint, route.endpointKind); } catch { /* retain the saved service address */ }
+    }
     providers[asr.providerId] = Object.assign({}, cur, {
       name: cur.name || dft.name,
-      endpoint: asr.endpoint || cur.endpoint || dft.endpoint || "",
+      endpoint: routedEndpoint,
       model: asr.model || cur.model || dft.model || "",
       language: asr.language || cur.language || dft.language || "auto",
-      protocol: dft.protocol || cur.protocol,
+      protocol: isBailianProvider && route ? route.protocol : asr.protocol || dft.protocol || cur.protocol,
       apiKey: asr.apiKey || "",
     });
     settings.activeTranscribeProvider = asr.providerId;
@@ -422,12 +434,14 @@ export function normalizeSchemeAsrSnapshot(asr) {
   if (!asr || typeof asr !== "object") return undefined;
   const providerId = String(asr.providerId || "").trim();
   if (!providerId) return undefined;
+  const protocol = String(asr.protocol || "").trim();
   return {
     providerId,
     apiKey: String(asr.apiKey || ""),
     endpoint: String(asr.endpoint || "").trim(),
     model: String(asr.model || "").trim(),
     language: String(asr.language || "").trim(),
+    ...(protocol ? { protocol } : {}),
   };
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

@@ -230,7 +230,7 @@ export function qnalogPromptText(app, title, placeholder, initialValue) {
   });
 }
 
-export function openPickListModal(app, title, items, onPick) {
+export function openPickListModal(app, title, items, onPick, itemDescription?) {
   const modal = new obsidian.Modal(app);
   modal.onOpen = () => {
     const { contentEl } = modal;
@@ -238,18 +238,26 @@ export function openPickListModal(app, title, items, onPick) {
     contentEl.createEl("h3", { text: title });
     const search = contentEl.createEl("input", { cls: "qnalog-pick-search", attr: { type: "text", placeholder: t("AI answer") } });
     const listEl = contentEl.createDiv({ cls: "qnalog-pick-list" });
+    let limit = 300;
     const render = (filter) => {
       listEl.empty();
       const f = String(filter || "").toLowerCase();
-      const shown = items.filter(x => !f || x.toLowerCase().includes(f)).slice(0, 300);
+      const matches = items.filter(x => !f || x.toLowerCase().includes(f));
+      const shown = matches.slice(0, limit);
       if (!shown.length) { listEl.createDiv({ cls: "qnalog-pick-empty", text: t("No matches") }); return; }
       for (const id of shown) {
         const row = listEl.createEl("button", { cls: "qnalog-pick-item", text: id, attr: { type: "button" } });
+        const detail = typeof itemDescription === "function" ? itemDescription(id) : "";
+        if (detail) row.createSpan({ cls: "qnalog-pick-hint", text: ` — ${detail}` });
         row.onclick = () => { modal.close(); onPick(id); };
+      }
+      if (shown.length < matches.length) {
+        listEl.createEl("button", { cls: "qnalog-pick-more", text: t("Show more"), attr: { type: "button" } })
+          .addEventListener("click", () => { limit += 300; render(filter); });
       }
     };
     render("");
-    search.addEventListener("input", () => render(search.value));
+    search.addEventListener("input", () => { limit = 300; render(search.value); });
     window.setTimeout(() => search.focus(), 30);
   };
   modal.open();
