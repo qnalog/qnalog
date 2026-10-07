@@ -311,7 +311,7 @@ export function parseRealtimeOutlineResponse(raw, fallbackOutline, fallbackMemor
   };
 }
 
-export function normalizeRealtimeOutlineState(value, fallbackMarkdown = undefined, fallbackMemory = undefined) {
+export function normalizeRealtimeOutlineState(value, fallbackMarkdown: unknown = undefined, fallbackMemory: unknown = undefined) {
   const raw = value && typeof value === "object" ? value : {};
   const nodes = [];
   for (const item of (Array.isArray(raw.nodes) ? raw.nodes : [])) {

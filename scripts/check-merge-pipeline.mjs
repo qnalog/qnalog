@@ -890,6 +890,164 @@ async function main() {
       frontmatterByPath.delete("QnALog/WriterSmoke/2026-09-14 1100.md");
       frontmatterByPath.delete("QnALog/WriterSmoke/2026-09-14 1101.md");
     }
+    let recorderBeforeLifecycleSmoke = null;
+    let momentBeforeLifecycleSmoke = null;
+    let lifecycleSettingsBefore = null;
+    let lifecycleFilesBefore = null;
+    let lifecycleAdapterDataBefore = null;
+    let lifecycleFrontmatterBefore = null;
+    let lifecycleSession = null;
+    let lifecycleIssueBefore = null;
+    let lifecycleIssueInjected = false;
+    let lifecycleStopGate = null;
+    let lifecycleStopReached = null;
+    let lifecycleStopPromise = null;
+    try {
+      recorderBeforeLifecycleSmoke = plugin.recorder;
+      momentBeforeLifecycleSmoke = sandbox.moment;
+      lifecycleSettingsBefore = {
+        audioFolder: plugin.settings.audioFolder,
+        mdFolder: plugin.settings.mdFolder,
+        noteFileNameFormatNew: plugin.settings.noteFileNameFormatNew,
+        autoOpenOutlineOnRecord: plugin.settings.autoOpenOutlineOnRecord,
+        filterShortRecordings: plugin.settings.filterShortRecordings,
+        captureMode: plugin.settings.captureMode,
+        activeTranscribeProvider: plugin.settings.activeTranscribeProvider,
+        enableInterimOutput: plugin.settings.enableInterimOutput,
+      };
+      lifecycleFilesBefore = [...files].map(([path, file]) => [path, file, file._content]);
+      lifecycleAdapterDataBefore = new Map(adapterData);
+      lifecycleFrontmatterBefore = new Map(frontmatterByPath);
+      lifecycleIssueBefore = plugin.recording.getRecordingIssue();
+      const requestCountBefore = llmCalls.length;
+      const taskIdsBefore = plugin.queue.tasks.map((task) => task.id);
+      const cacheFolder = plugin.settings.segmentCacheFolder;
+      const cachePathsBefore = [...files.keys()].filter((path) => path.startsWith(`${cacheFolder}/`)).sort();
+      const targetBodyBefore = noteFile._content;
+      plugin.settings.audioFolder = "QnALog/RecordingSmoke/Audio";
+      plugin.settings.mdFolder = "QnALog/RecordingSmoke";
+      plugin.settings.noteFileNameFormatNew = "YYYY-MM-DD HHmm";
+      plugin.settings.autoOpenOutlineOnRecord = false;
+      plugin.settings.filterShortRecordings = true;
+      plugin.settings.captureMode = "mic";
+      plugin.settings.activeTranscribeProvider = "siliconflow";
+      plugin.settings.enableInterimOutput = false;
+      sandbox.moment = () => ({
+        format: (pattern) => pattern === "YYYYMMDD-HHmmss"
+          ? "20260914-120000"
+          : pattern === "YYYY-MM-DD HH:mm"
+            ? "2026-09-14 12:00"
+            : "2026-09-14 1200",
+        toDate: () => new Date("2026-09-14T12:00:00.000Z"),
+      });
+      lifecycleStopGate = Promise.withResolvers();
+      lifecycleStopReached = Promise.withResolvers();
+      const smokeRecorder = {
+        state: "idle",
+        chunks: [],
+        masterChunks: [],
+        options: null,
+        getInfo() { return { state: this.state, elapsed: 0, issue: null }; },
+        releaseStream() {},
+        async start(options) {
+          this.options = options;
+          this.state = "recording";
+          if (options.onStreamReady) {
+            await options.onStreamReady({}, {
+              channelCount: 1, maxChannelCount: 1, label: "Smoke microphone",
+              mode: "mic", channelMode: "mono",
+            });
+          }
+        },
+        async stop() {
+          lifecycleStopReached.resolve();
+          await lifecycleStopGate.promise;
+          await this.options.onSegment({
+            blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" }),
+            index: 0,
+            startOffsetMs: 0,
+            endOffsetMs: 2000,
+            isFinal: true,
+            ext: "webm",
+          });
+          this.state = "idle";
+        },
+      };
+      plugin.recorder = smokeRecorder;
+      await plugin.recording.startRecording();
+      lifecycleSession = plugin.sessionStore.get();
+      const placeholderPath = lifecycleSession?.mdPath;
+      const placeholder = placeholderPath ? files.get(placeholderPath)?._content || "" : "";
+      if (!placeholderPath?.startsWith("QnALog/RecordingSmoke/")
+        || !placeholder.includes(`<!-- qnalog-session:${lifecycleSession?.id} -->`)
+        || !placeholder.includes(`<!-- qnalog-segments-start:${lifecycleSession?.id} -->`)
+        || !placeholder.includes(`<!-- qnalog-segments-end:${lifecycleSession?.id} -->`)
+        || !lifecycleSession
+        || !plugin.continuations.isSessionTracked(lifecycleSession.id)) {
+        throw new Error("recording start did not create and track the expected placeholder session");
+      }
+      plugin.asrPipeline.setRecordingIssue("service", {
+        source: "recording-lifecycle-smoke",
+        message: "Lifecycle smoke issue",
+      });
+      lifecycleIssueInjected = true;
+      let stopCompleted = false;
+      lifecycleStopPromise = plugin.recording.stopRecording().then(() => { stopCompleted = true; });
+      await lifecycleStopReached.promise;
+      const issueWhileStopping = plugin.recording.getRecordingIssue();
+      if (stopCompleted || issueWhileStopping?.source !== "recording-lifecycle-smoke") {
+        throw new Error("stop did not wait for final-segment processing while retaining the recording issue");
+      }
+      lifecycleStopGate.resolve();
+      await lifecycleStopPromise;
+      if (files.has(placeholderPath)
+        || plugin.sessionStore.get() !== null
+        || plugin.continuations.isSessionTracked(lifecycleSession.id)
+        || plugin.recording.getRecordingIssue() !== null) {
+        throw new Error("short-recording finalization did not discard the placeholder and release session state");
+      }
+      if (llmCalls.length !== requestCountBefore
+        || JSON.stringify(plugin.queue.tasks.map((task) => task.id)) !== JSON.stringify(taskIdsBefore)
+        || JSON.stringify([...files.keys()].filter((path) => path.startsWith(`${cacheFolder}/`)).sort()) !== JSON.stringify(cachePathsBefore)
+        || noteFile._content !== targetBodyBefore) {
+        throw new Error("short recording created requests, tasks, cache files, or modified the existing note");
+      }
+      console.log("[recording-lifecycle] OK: start created placeholder; final discard removed it and released session tracking");
+    } catch (error) {
+      failures.push(`录音启停生命周期冒烟失败：${(error && error.message) || error}`);
+    } finally {
+      if (lifecycleStopGate) lifecycleStopGate.resolve();
+      if (lifecycleStopPromise) await lifecycleStopPromise.catch(() => undefined);
+      if (lifecycleSession) {
+        plugin.continuations.releaseSession(lifecycleSession.id);
+        plugin.sessionStore.end(lifecycleSession);
+      }
+      if (lifecycleIssueInjected) {
+        if (lifecycleIssueBefore && typeof lifecycleIssueBefore === "object" && typeof lifecycleIssueBefore.kind === "string") {
+          plugin.asrPipeline.setRecordingIssue(lifecycleIssueBefore.kind, lifecycleIssueBefore);
+        } else {
+          plugin.asrPipeline.clearRecordingIssue();
+        }
+      }
+      if (recorderBeforeLifecycleSmoke) plugin.recorder = recorderBeforeLifecycleSmoke;
+      if (momentBeforeLifecycleSmoke) sandbox.moment = momentBeforeLifecycleSmoke;
+      if (lifecycleSettingsBefore) Object.assign(plugin.settings, lifecycleSettingsBefore);
+      if (lifecycleFilesBefore) {
+        files.clear();
+        for (const [path, file, content] of lifecycleFilesBefore) {
+          file._content = content;
+          files.set(path, file);
+        }
+      }
+      if (lifecycleAdapterDataBefore) {
+        adapterData.clear();
+        for (const [path, content] of lifecycleAdapterDataBefore) adapterData.set(path, content);
+      }
+      if (lifecycleFrontmatterBefore) {
+        frontmatterByPath.clear();
+        for (const [path, metadata] of lifecycleFrontmatterBefore) frontmatterByPath.set(path, metadata);
+      }
+    }
     for (const id of plugin.intervals) clearInterval(id);
   } finally {
     Date.now = realDateNow;

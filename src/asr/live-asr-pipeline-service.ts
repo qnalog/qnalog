@@ -604,7 +604,7 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
     try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     try { this.host.requestBubbleUpdate(); } catch { /* intentionally empty */ }
   }
-  clearRecordingIssue(kind = undefined) {
+  clearRecordingIssue(kind?: string): void {
     if (!this.recordingIssue || typeof this.recordingIssue !== "object") return;
     const issue = this.recordingIssue as { kind?: string };
     if (kind && issue.kind !== kind) return;
