@@ -37,15 +37,21 @@ function createMemoryWriter(initialMarkdown: string, consolidatedLayout: boolean
   const path = "QnALog/Minutes/target.md";
   let markdown = initialMarkdown;
   let writes = 0;
+  let targetExists = true;
+  let rejectModify = false;
   const target = new (obsidian.TFile as never)(path);
-  const vault = {
-    getAbstractFileByPath: (requestedPath: string) => requestedPath === path ? target : null,
+  let vault = {
+    getAbstractFileByPath: (requestedPath: string) => requestedPath === path && targetExists ? target : null,
     read: async () => markdown,
-    modify: async (_file: unknown, next: string) => { markdown = next; writes++; },
+    modify: async (_file: unknown, next: string) => {
+      if (rejectModify) throw new Error("write rejected");
+      markdown = next;
+      writes++;
+    },
   };
   const settings = { ...DEFAULT_SETTINGS, consolidatedLayout, llmModel: "test-model" };
   const writer = new NoteWriter({
-    vault,
+    get vault() { return vault; },
     settings,
     noteIndex: { refreshNoteIndexSafely: async () => undefined },
     getFileFrontmatter: () => undefined,
@@ -60,7 +66,28 @@ function createMemoryWriter(initialMarkdown: string, consolidatedLayout: boolean
     mergeAndPolish: async () => { throw new Error("unexpected note merge"); },
     clearCommittedBriefingCheckpoint: async () => { throw new Error("unexpected checkpoint cleanup"); },
   } as NoteWriterHost);
-  return { writer, path, get markdown() { return markdown; }, get writes() { return writes; } };
+  return {
+    writer,
+    path,
+    settings,
+    setTargetExists(value: boolean) { targetExists = value; },
+    setRejectModify(value: boolean) { rejectModify = value; },
+    replaceVault(value: typeof vault) { vault = value; },
+    get markdown() { return markdown; },
+    get writes() { return writes; },
+  };
+}
+function makeSession(path: string, segments: Segment[]): RecordingSession {
+  return {
+    id: "continuation-a",
+    sessionStamp: "20260921-100000",
+    startedAt: "2026-09-21T10:00:00.000Z",
+    mdPath: path,
+    mode: "synthesis",
+    source: "recording",
+    segments,
+    finalized: false,
+  } as RecordingSession;
 }
 
 describe("staged continuation commit", () => {
@@ -261,6 +288,152 @@ describe("staged continuation commit", () => {
       );
       expect(memory.markdown).toBe(initial);
       expect(memory.writes).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("rejects a missing target without creating a note", async () => {
+    const memory = createMemoryWriter("# Original\n", false);
+    memory.setTargetExists(false);
+    const initial = memory.markdown;
+    await expect(memory.writer.commitContinuation(makeSession(memory.path, [makeSegment(0, "incoming")]), "Polished", []))
+      .rejects.toThrow("Continuation target note is missing");
+    expect(memory.markdown).toBe(initial);
+    expect(memory.writes).toBe(0);
+  });
+
+  it("rejects duplicate incoming ids before accepting an existing commit marker", async () => {
+    const incoming = makeSegment(0, "incoming");
+    const initial = `# Existing\n\n${serializeTranscriptBlock(incoming, "### Incoming", incoming.text)}\n<!-- qnalog-continuation-committed:continuation-a -->\n`;
+    const memory = createMemoryWriter(initial, false);
+    await expect(memory.writer.commitContinuation(makeSession(memory.path, [incoming, incoming]), "Polished", []))
+      .rejects.toThrow("Continuation contains duplicate transcript block seg:continuation-a:0");
+    expect(memory.markdown).toBe(initial);
+    expect(memory.writes).toBe(0);
+  });
+
+  it("rejects an edited visible transcript block without modifying the note", async () => {
+    const incoming = makeSegment(0, "incoming transcript");
+    const serialized = serializeTranscriptBlock(incoming, "### Incoming", incoming.text);
+    const initial = serialized.replace("incoming transcript", "edited transcript");
+    const memory = createMemoryWriter(initial, false);
+    await expect(memory.writer.commitContinuation(makeSession(memory.path, [incoming]), "Polished", []))
+      .rejects.toThrow("Transcript block drifted for seg:continuation-a:0");
+    expect(memory.markdown).toBe(initial);
+    expect(memory.writes).toBe(0);
+  });
+
+  it("requires a missing ledger block for a previously marked continuation and preserves predecessor validation order", async () => {
+    const incoming = makeSegment(0, "incoming");
+    const absentLedger = `# Existing\n\n<!-- qnalog-continuation-committed:continuation-a -->\n`;
+    const memory = createMemoryWriter(absentLedger, false);
+    await expect(memory.writer.commitContinuation(makeSession(memory.path, [incoming]), "Polished", []))
+      .rejects.toThrow("Committed continuation is missing transcript block seg:continuation-a:0");
+    expect(memory.markdown).toBe(absentLedger);
+    expect(memory.writes).toBe(0);
+
+    const ledger = serializeTranscriptBlock(incoming, "### Incoming", incoming.text);
+    const marked = `${ledger}\n<!-- qnalog-continuation-committed:continuation-a -->\n`;
+    const alreadyCommitted = createMemoryWriter(marked, false);
+    await alreadyCommitted.writer.commitContinuation(makeSession(alreadyCommitted.path, [incoming]), "Polished", ["missing-predecessor"]);
+    expect(alreadyCommitted.markdown).toBe(marked);
+    expect(alreadyCommitted.writes).toBe(0);
+
+    const unmarked = createMemoryWriter(ledger, false);
+    await expect(unmarked.writer.commitContinuation(makeSession(unmarked.path, [incoming]), "Polished", ["missing-predecessor"]))
+      .rejects.toThrow("Previously committed continuation marker is missing for missing-predecessor");
+    expect(unmarked.markdown).toBe(ledger);
+    expect(unmarked.writes).toBe(0);
+  });
+
+  it("rejects damaged transcript metadata and preserves the source note", async () => {
+    const initial = "<!-- qnalog-transcript-start:continuation-a:0 -->\n<!-- qnalog-transcript-data {bad} -->\n";
+    const memory = createMemoryWriter(initial, false);
+    await expect(memory.writer.commitContinuation(makeSession(memory.path, [makeSegment(0, "incoming")]), "Polished", []))
+      .rejects.toThrow("Transcript block continuation-a:0 has no matching end marker");
+    expect(memory.markdown).toBe(initial);
+    expect(memory.writes).toBe(0);
+  });
+
+  it("retains transcript and marker state after a rejected write, then retries idempotently", async () => {
+    const initial = "<!-- qnalog-segments-start:target -->\n<!-- qnalog-segments-end:target -->\nOriginal prose\n";
+    const incoming = makeSegment(0, "continued transcript");
+    const memory = createMemoryWriter(initial, false);
+    const session = makeSession(memory.path, [incoming]);
+    vi.stubGlobal("window", { moment: (value?: string) => ({ format: () => value || "2026-09-21 10:00" }) });
+    try {
+      memory.setRejectModify(true);
+      await expect(memory.writer.commitContinuation(session, "Organized continuation body", [])).rejects.toThrow("write rejected");
+      expect(memory.markdown).toBe(initial);
+      expect(memory.markdown).not.toContain("qnalog-continuation-committed:continuation-a");
+      expect(memory.writes).toBe(0);
+      memory.setRejectModify(false);
+      await memory.writer.commitContinuation(session, "Organized continuation body", []);
+      const committed = memory.markdown;
+      expect(readTranscriptBlocks(committed).map((block) => block.visibleBlock)).toEqual(["continued transcript"]);
+      expect(committed.match(/<!-- qnalog-continuation-committed:continuation-a -->/g)).toHaveLength(1);
+      await memory.writer.commitContinuation(session, "Organized continuation body", []);
+      expect(memory.markdown).toBe(committed);
+      expect(memory.writes).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("appends a completed ledger without requiring an insertion boundary", async () => {
+    const incoming = makeSegment(0, "already inserted");
+    const initial = `${serializeTranscriptBlock(incoming, "### Incoming", incoming.text)}\nOriginal prose\n`;
+    const memory = createMemoryWriter(initial, false);
+    vi.stubGlobal("window", { moment: (value?: string) => ({ format: () => value || "2026-09-21 10:00" }) });
+    try {
+      await memory.writer.commitContinuation(makeSession(memory.path, [incoming]), "Organized continuation body", []);
+      expect(readTranscriptBlocks(memory.markdown)).toHaveLength(1);
+      expect(memory.markdown.match(/<!-- qnalog-continuation-committed:continuation-a -->/g)).toHaveLength(1);
+      expect(memory.markdown).toContain("Organized continuation body");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it.each(["sourceId", "revision", "normalizationRevision"])("rejects a transcript ledger with changed %s metadata", async (field) => {
+    const incoming = makeSegment(0, "incoming transcript");
+    const existing = makeSegment(0, "incoming transcript");
+    if (field === "sourceId") existing.transcript!.sourceId = "different-source";
+    else if (field === "revision") {
+      existing.transcript!.currentRevision = 2;
+      existing.transcript!.revisions[0].revision = 2;
+    } else existing.transcript!.revisions[0].normalizationRevision += 1;
+    const initial = serializeTranscriptBlock(existing, "### Incoming", existing.text);
+    const memory = createMemoryWriter(initial, false);
+    await expect(memory.writer.commitContinuation(makeSession(memory.path, [incoming]), "Polished", []))
+      .rejects.toThrow("Transcript block drifted for seg:continuation-a:0");
+    expect(memory.markdown).toBe(initial);
+    expect(memory.writes).toBe(0);
+  });
+
+  it("uses current layout settings and vault when the continuation is committed", async () => {
+    const incoming = makeSegment(0, "continued transcript");
+    const memory = createMemoryWriter(
+      "<!-- qnalog-segments-start:old -->\n<!-- qnalog-segments-end:old -->\nOld vault prose\n",
+      false,
+    );
+    const oldMarkdown = memory.markdown;
+    const newPath = memory.path;
+    let newMarkdown = "<!-- qnalog-segments-start:new -->\n<!-- qnalog-segments-end:new -->\nNew vault prose\n";
+    let newWrites = 0;
+    const newTarget = new (obsidian.TFile as never)(newPath);
+    memory.replaceVault({
+      getAbstractFileByPath: (requestedPath: string) => requestedPath === newPath ? newTarget : null,
+      read: async () => newMarkdown,
+      modify: async (_file: unknown, next: string) => { newMarkdown = next; newWrites++; },
+    });
+    memory.settings.consolidatedLayout = true;
+    vi.stubGlobal("window", { moment: (value?: string) => ({ format: () => value || "2026-09-21 10:00" }) });
+    try {
+      await memory.writer.commitContinuation(makeSession(memory.path, [incoming]), "Organized continuation body", []);
+      expect(memory.markdown).toBe(oldMarkdown);
+      expect(newWrites).toBe(1);
+      expect(newMarkdown).toContain("Organized continuation body");
+      expect(newMarkdown).toContain("qnalog-continuation-committed:continuation-a");
     } finally {
       vi.unstubAllGlobals();
     }
