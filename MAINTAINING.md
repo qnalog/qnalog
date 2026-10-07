@@ -622,6 +622,12 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 录音转写与整文件导入共用一把百炼密钥。只对新建配置和用户主动应用的方案使用上述默认值；设置加载不会改写已保存模型、地址、密钥、活动服务、语言或完整方案快照。旧 `dashscope-chat` 仍单独使用 `qwen3-asr-flash` 与 Chat Completions 协议；不能把 `qwen-audio-3.1-asr-flash` 填入旧 endpoint。`qwen3-asr-flash` 仍在百炼官方模型列表中，本项目不声明它已下线。
 
+
+录音模型目录可以返回录音转写、导入整文件和实时模型。只识别为百炼模型且命中 `src/asr/bailian-asr-registry.ts` 登记项的模型，才会由选择器写入对应 endpoint 与协议；转换保留当前服务 host、区域和代理前缀，不猜测默认 host。分页目录必须完整读取，每页请求100条以减少请求次数；按平台实际返回的页大小继续分页。页码、总数或结果不一致，或任一页请求失败时，报告目录失败，不返回部分结果、不拼接静态模型清单。未登记的模型可手动输入，但不会自动改用百炼协议。
+
+登记的接口族包括 Qwen Audio 原生短音频 HTTP、旧 `qwen3-asr-flash` Chat Completions、Qwen Audio / Fun-ASR / Paraformer / SenseVoice 文件转写、DashScope 任务式实时 WebSocket，以及独立的 Qwen3-ASR-Realtime 事件 WebSocket。文件转写接收整段音频，录音分段间隔不会拆分该请求；任务失败或队列重试都重新发送保留的完整音频。流式模型不会降级到 HTTP multipart。
+
+Qwen3 事件 WebSocket 使用 `/api-ws/v1/realtime`，通过握手 `Authorization` 头发送 Key、在 URL 查询中发送完整模型 ID，并为客户端事件提供唯一 `event_id`。音频使用 16 kHz PCM；服务端 partial / completed 事件更新实时文本，`session.finish` 只在收到 `session.finished` 后完成。其他 DashScope 实时模型使用 `/api-ws/v1/inference` 的任务事件协议；8 kHz Paraformer / Fun-ASR 型号使用对应采样率。`gummy-chat-v1` 每个任务识别一句话；客户端按 55 秒输入音频边界结束并新建任务，任务交接时暂存尚未发送的 PCM 帧。
 Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].content[].input_audio.data` 与 `parameters`；响应文本从 `output.text` 读取。百炼[短音频 API 文档](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)允许使用 `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`；新建录音转写配置使用该 endpoint。千问 AI 平台模型页展示的是另一个服务域名，不自动替换百炼地址，也不假定两处 API Key 通用。语言未指定时省略 `language_hints`。WAV 只有在头部读到采样率时才发送 `sample_rate`；原样上传的 WebM/MP4 不会被标记为 16 kHz。短音频默认不请求说话人分离或时间戳；转写正文经过现有本地词汇纠正，原始服务文字保留在转写单元中。该模型可执行原生文本润色，结果可能不是逐字转写。
 
 转写服务连通性检测使用一段静音录音。若百炼返回 `ASR_RESPONSE_HAVE_NO_WORDS`，检测将其视为请求已到达并通过服务鉴权的证据；成功结果显示目标模型名，不显示空转写文本。这只验证连接，不验证有声录音的识别效果。其他 HTTP 或服务错误仍显示为检测失败。
@@ -641,11 +647,11 @@ Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].co
 
 价格来源：[百炼模型调用价格](https://help.aliyun.com/zh/model-studio/model-pricing)、[短音频原生 HTTP API](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)、[整文件 HTTP API](https://help.aliyun.com/zh/model-studio/fun-asr-recorded-speech-recognition-http-api)、[Streaming WebSocket 指南](https://help.aliyun.com/zh/model-studio/fun-asr-realtime-websocket-api)。千问 AI 平台单模型价格页也列出 Flash/Filetrans 的 Token 单价，但其通用语音识别计费指南仍写按秒计费；本文只采用百炼模型专属价格与接口资料，不混用不同平台的计费说明。
 
-一站式预设的实时字幕不是默认方案。手动选择时使用 `qwen-audio-3.1-asr-flash-streaming` 和 DashScope WebSocket，沿用桌面客户端；移动端不承诺可用。整文件识别继续走异步提交与轮询。
+百炼快捷配置仍选用 `qwen-audio-3.1-asr-flash`。模型目录可以让维护者另选已登记的识别模型；DashScope 任务 WebSocket 与 Qwen3 事件 WebSocket 均需桌面端。`gummy-chat-v1` 使用单句任务，客户端在输入音频达到 55 秒时结束并重新启动任务，交接期间暂存新到的音频帧；导入整文件模型继续走异步提交、轮询和下载。
 
 ### 11.2 协议参数
 
-`disfluency_removal_enabled` 只对 Paraformer 下发；Qwen-Audio-3.1-ASR-Flash-Streaming 不发送该参数。`language_hints` 仅在用户指定语种时发送，否则省略。参数构造位于 `src/asr/realtime-params.ts`，由 `tests/realtime-params.test.ts` 覆盖。
+Paraformer 实时模型使用 Paraformer 专属 `disfluency_removal_enabled`；其他家族不发送该参数。`language_hints` 只对登记且接受语种参数的模型发送，Gummy 族不发送。8 kHz 型号将采样率同时用于音频编码和 `parameters.sample_rate`。参数构造位于 `src/asr/realtime-params.ts`；模型协议和采样率登记于 `src/asr/bailian-asr-registry.ts`，由 `tests/realtime-params.test.ts` 覆盖。
 
 ### 11.3 快捷配置与入口
 

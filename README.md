@@ -32,10 +32,12 @@ Download `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` from 
 1. Open **Settings → QnALog**. Choose **Setup Wizard** to select a preset, enter the required API key and model details, test the services, then choose **Apply and start**.
 2. Open **Settings → QnALog → Open sidebar**. The wizard may appear automatically on first enable when setup is incomplete; reopen it from the settings home at any time.
 3. **Quick config** is a separate shortcut for a preset configuration. If a setup is already present, confirm before replacing it. To configure services individually, open **Settings → QnALog → API**.
+On the settings home, click the **AI Organize** status row to open its model field on the API tab. Under **API → Speech Recognition**, **Get models** lists models returned by the configured transcription service; if no usable catalogue is available, enter the model ID manually. Settings tab labels follow the selected interface language.
+
 
 Recording transcription needs a configured speech-to-text (ASR) service. Importing a complete audio file may use a separate transcription service. AI organization, questions, knowledge extraction, and generated reports need a configured large language model (LLM); an ASR key alone does not enable those features. You can use local services where supported.
 
-Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native HTTP API for recording transcription and Qwen-Audio-3.1-ASR-Flash-Filetrans for whole-file imports with speaker diarization. Recording transcription uses the same HTTP path on desktop and mobile. QnALog applies a conservative 10,000,000-byte Base64 upload budget and 3-minute WAV chunks to long recordings; this is the client budget, not the service's published maximum. Optional DashScope streaming remains a manual desktop choice. See [`MAINTAINING.md`](MAINTAINING.md) for protocol details and region-specific pricing.
+Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native HTTP API for recording transcription and Qwen-Audio-3.1-ASR-Flash-Filetrans for whole-file imports with speaker diarization. Under **API → Speech Recognition**, **Get models** lists the service catalogue; selecting a recognized Bailian ASR model updates its endpoint and protocol together. Bailian models use their registered native HTTP, Chat Completions, file-transcription, task WebSocket, or Qwen3 event WebSocket path. WebSocket recording requires desktop Obsidian; Gummy one-sentence tasks rotate before the service's one-minute audio limit. The quick-config defaults remain unchanged. See [`MAINTAINING.md`](MAINTAINING.md) for protocol details and region-specific pricing.
 
 ## Basic usage
 
@@ -123,7 +125,7 @@ Saved configurable paths do not change when the interface language changes, and 
 
 ## Platform and audio setup
 
-QnALog supports desktop and mobile Obsidian. Mobile recording uses the device microphone and transcription can use segmented or whole-file HTTP requests. System audio, virtual devices, multichannel capture, desktop device diagnostics, and realtime WebSocket transcription require the desktop app. Bailian Qwen-Audio-3.1-ASR-Flash recording transcription uses native HTTP on both platforms; Bailian streaming remains optional and desktop-only.
+QnALog supports desktop and mobile Obsidian. Mobile recording uses the device microphone and transcription can use segmented or whole-file HTTP requests. System audio, virtual devices, multichannel capture, desktop device diagnostics, and realtime WebSocket transcription require the desktop app. Bailian Qwen-Audio-3.1-ASR-Flash recording transcription uses native HTTP on both platforms; manually selected Bailian WebSocket models are desktop-only.
 
 Capturing computer audio usually needs a virtual audio device:
 

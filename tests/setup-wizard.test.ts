@@ -391,7 +391,7 @@ describe("Bailian speaker-model candidates", () => {
     const list = diarizationModelCandidates("bailian", "qwen-audio-3.1-asr-flash-filetrans", catalog);
     expect(list[0]).toBe("qwen-audio-3.1-asr-flash-filetrans");
     expect(list).toContain("paraformer-v2");
-    expect(list).not.toContain("fun-asr-longform");
+    expect(list).toContain("fun-asr-longform");
     expect(list).not.toContain("qwen3-asr-flash-filetrans");
     expect(list).not.toContain("qwen-audio-3.1-asr-flash-streaming");
     expect(list).not.toContain("vendor-via-type");

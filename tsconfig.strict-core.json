@@ -26,6 +26,7 @@
     "src/update/update-service.ts",
     "src/briefing/pipeline.ts",
     "src/briefing/checkpoint-store.ts",
+    "src/asr/bailian-asr-registry.ts",
     "src/asr/apimimo-clean.ts",
     "src/asr/diarization.ts",
     "src/asr/live-segment-policy.ts",

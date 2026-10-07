@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   ONE_CARD_PROVIDERS,
+  applyLlmProfileToWorkingConfig,
   getBriefingMergeDesiredTokens,
   getBriefingMergeMaxTokens,
   getLlmOutputCeiling,
   inferLlmServicePresetId,
   isDashscopeCompatibleLlmEndpoint,
 } from "../src/llm/config";
-
 describe("LLM 服务预设", () => {
   it("百炼一站式预设内置三段服务与全部模型", () => {
     // 首次配置的主路径：只填密钥。因此地址与三个模型必须都写在预设里，
@@ -37,6 +37,33 @@ describe("LLM 服务预设", () => {
     // 下拉按注册表顺序渲染（settings-tab 的 Object.entries 循环），成员与顺序就是用户看到的列表。
     // 硅基流动已退出：有合适的语音模型，但大语言模型价格偏高，不进快捷配置（2026-09-23 维护者决定）。
     expect(Object.keys(ONE_CARD_PROVIDERS)).toEqual(["mimo", "bailian", "openrouter"]);
+  });
+  it("restores Bailian routing from the selected model instead of the provider default", () => {
+    const settings = {
+      llmProfiles: [{
+        id: "saved",
+        endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        asr: {
+          providerId: "dashscope-flash",
+          endpoint: "https://cn-shanghai.example/proxy/api/v1/services/aigc/multimodal-generation/generation",
+          apiKey: "saved-key",
+          model: "paraformer-realtime-v2",
+          language: "zh",
+          protocol: "dashscope-ws",
+        },
+      }],
+      activeLlmProfile: "",
+      activeTranscribeProvider: "",
+      transcribeProviders: { "dashscope-flash": { protocol: "dashscope-flash-input-audio" } },
+    };
+    expect(applyLlmProfileToWorkingConfig(settings, "saved")).toBe(true);
+    expect(settings.transcribeProviders["dashscope-flash"]).toMatchObject({
+      endpoint: "wss://cn-shanghai.example/proxy/api-ws/v1/inference",
+      apiKey: "saved-key",
+      model: "paraformer-realtime-v2",
+      language: "zh",
+      protocol: "dashscope-ws",
+    });
   });
 });
 

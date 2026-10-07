@@ -12,6 +12,8 @@ import { normalizeSedimentExtractionModel } from "../sediment";
 
 import { DashScopeStreamingClient, OpenAIRealtimeTranscriptionClient, OpenAIRealtimeTranslationClient } from "../asr/clients";
 
+import { DashScopeQwen3RealtimeClient } from "../asr/dashscope-qwen3-realtime";
+
 import { getErrorMessage } from "../shared/util-common";
 
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings, speakerLabelForChannel } from "../audio/channel-speakers";
@@ -139,9 +141,21 @@ export function createStreamingTranscriptionClient(profile, provider, callbacks)
       return new OpenAIRealtimeTranscriptionClient(opts);
     case "openai-realtime-translation":
       return new OpenAIRealtimeTranslationClient(opts);
+    case "dashscope-qwen3-realtime": {
+      const client = new DashScopeQwen3RealtimeClient(Object.assign({}, opts, {
+        onTranscript: callbacks && callbacks.onPartial,
+      }));
+      return {
+        connect: () => client.connect(),
+        sendAudioFrame: (frame) => client.appendAudio(frame),
+        finish: () => client.finish(),
+        getFullText: () => client.getFullText(),
+      };
+    }
     case "dashscope-ws":
-    default:
       return new DashScopeStreamingClient(opts);
+    default:
+      throw new Error(`Unsupported streaming transcription protocol: ${profile.streamProtocol}`);
   }
 }
 

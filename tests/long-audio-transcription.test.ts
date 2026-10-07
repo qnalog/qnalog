@@ -7,7 +7,6 @@ vi.mock("obsidian", () => ({
 import { requestUrl } from "obsidian";
 import {
   composeDashScopeTranscript,
-  DASHSCOPE_IMPORT_MODEL_OPTIONS,
   estimateCloudTranscriptionDuration,
   extractDashScopePlainTexts,
   extractDashScopeSentences,
@@ -15,6 +14,7 @@ import {
   parseServiceJsonResponse,
   transcribeImportedAudio,
 } from "../src/asr/long-audio-transcription";
+import { transcribeAudio } from "../src/asr/transcribe";
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -31,14 +31,6 @@ describe("long audio transcription", () => {
     expect(isDashScopeFileTransProvider({ protocol: "dashscope-filetrans" })).toBe(true);
     expect(isDashScopeFileTransProvider({ protocol: "dashscope-ws" })).toBe(false);
   });
-  it("offers only models implemented by the whole-file endpoint", () => {
-    expect(DASHSCOPE_IMPORT_MODEL_OPTIONS).toEqual([
-      "qwen-audio-3.1-asr-flash-filetrans",
-      "qwen-audio-3.0-asr-flash-filetrans",
-      "fun-asr",
-      "paraformer-v2",
-    ]);
-  });
 
 
   it("extracts speaker-labelled sentences from DashScope results", () => {
@@ -54,7 +46,7 @@ describe("long audio transcription", () => {
 
     expect(extractDashScopeSentences(payload)).toHaveLength(3);
     expect(composeDashScopeTranscript(payload)).toEqual({
-      text: "[00:00] [说话人1] 大家好。 先看第一项。\n\n[00:04] [说话人2] 我补充一点。",
+      text: "[00:00] [Speaker 1] 大家好。 先看第一项。\n\n[00:04] [Speaker 2] 我补充一点。",
       sentenceCount: 3,
       durationMs: 7200,
     });
@@ -76,13 +68,13 @@ describe("long audio transcription", () => {
       { text: "真实零点", beginTimeMs: 0, endTimeMs: 0, speakerId: "" },
     ]);
     expect(composeDashScopeTranscript({ transcripts: [{ sentences: [{ text: "无时间戳", speaker_id: 1 }] }] }).text)
-      .toBe("[说话人1] 无时间戳");
+      .toBe("[Speaker 1] 无时间戳");
   });
 
   it("accepts nested output payloads and plain transcript fallback", () => {
     expect(composeDashScopeTranscript({
       output: { transcripts: [{ sentences: [{ begin_time: 1000, end_time: 2000, speaker_id: 0, text: "测试。" }] }] },
-    }).text).toBe("[00:01] [说话人1] 测试。");
+    }).text).toBe("[00:01] [Speaker 1] 测试。");
 
     expect(composeDashScopeTranscript({ transcripts: [{ text: "完整逐字稿" }] })).toEqual({
       text: "完整逐字稿",
@@ -138,7 +130,7 @@ describe("long audio transcription", () => {
     ];
     let callIndex = 0;
     vi.mocked(requestUrl).mockImplementation(() => {
-      const response = responses[callIndex++];
+      const response = responses[callIndex++ % responses.length];
       const parsed = JSON.parse(response.text);
       const buffer = new ArrayBuffer(0);
       return Object.assign(Promise.resolve({
@@ -164,19 +156,30 @@ describe("long audio transcription", () => {
       protocol: "dashscope-filetrans",
     };
 
-    const result = await transcribeImportedAudio(
+    const imported = await transcribeImportedAudio(
       { settings: { importTranscribeProvider: provider.id, transcribeProviders: { [provider.id]: provider } } },
       new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }),
       "audio/wav",
       { fileName: "meeting.wav", pollIntervalMs: 1500, timeoutMs: 60_000 },
     );
+    const direct = await transcribeAudio(
+      { settings: { activeTranscribeProvider: provider.id, transcribeProviders: { [provider.id]: provider } } },
+      new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }),
+      "audio/wav",
+    );
 
-    expect(callIndex).toBe(4);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(result.text).toBe(["[00:00] [说话人1] 你好。", "[00:00] [说话人2] 再见。"].join("\n\n"));
-    expect(result.units).toEqual([
-      expect.objectContaining({ rawText: "你好。", speakerId: "0", speakerName: "说话人1", startMs: 0, endMs: 500, timing: "provider" }),
-      expect.objectContaining({ rawText: "再见。", speakerId: "4", speakerName: "说话人2", startMs: 700, endMs: 1200, timing: "provider" }),
+    expect(callIndex).toBe(8);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(imported.text).toBe(["[00:00] [Speaker 1] 你好。", "[00:00] [Speaker 2] 再见。"].join("\n\n"));
+    expect(direct.text).toBe(imported.text);
+    expect(imported.units).toEqual([
+      expect.objectContaining({ rawText: "你好。", speakerId: "0", speakerName: "Speaker 1", startMs: 0, endMs: 500, timing: "provider" }),
+      expect.objectContaining({ rawText: "再见。", speakerId: "4", speakerName: "Speaker 2", startMs: 700, endMs: 1200, timing: "provider" }),
     ]);
+    expect(vi.mocked(requestUrl).mock.calls[5][0]).toMatchObject({
+      method: "POST",
+      url: provider.endpoint,
+    });
+
   });
 });

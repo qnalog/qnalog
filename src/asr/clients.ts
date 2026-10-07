@@ -35,6 +35,13 @@ export class DashScopeStreamingClient {
     this.onPartial = opts.onPartial || (() => { /* intentionally empty */ });
     this.onError = opts.onError || ((e) => console.error("[DashScopeStream]", e));
     this.onClosed = opts.onClosed || (() => { /* intentionally empty */ });
+    this.socketFactory = opts.socketFactory;
+    this.gummyChat = /^gummy-chat(?:[-.].*)?$/i.test(this.model);
+    this.gummyRotating = false;
+    this.gummyReconnectPending = false;
+    this.gummyAudioBytes = 0;
+    this.gummyPendingFrames = [];
+    this.finishTaskSent = false;
     this.taskId = "qnalogtask-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
     this.ws = null;
     this.started = false;
@@ -46,7 +53,7 @@ export class DashScopeStreamingClient {
   async connect() {
     assertSafeServiceEndpoint(this.endpoint, "websocket", t("Realtime transcription service URL"));
     if (!this.apiKey) throw new Error(t("DashScope API key is not configured."));
-    const WSCtor = await requireHeaderCapableWebSocket("DashScope");
+    const WSCtor = this.socketFactory ?? (await requireHeaderCapableWebSocket("DashScope"));
     return new Promise((resolve, reject) => {
       let resolved = false;
       try {
@@ -57,6 +64,7 @@ export class DashScopeStreamingClient {
         });
       } catch (e) { reject(e instanceof Error ? e : new Error(typeof e === "string" ? e : JSON.stringify(e))); return; }
       try { this.ws.binaryType = "arraybuffer"; } catch { /* intentionally empty */ }
+      const taskSocket = this.ws;
 
       const onOpen = () => {
         const runTask = {
@@ -84,14 +92,21 @@ export class DashScopeStreamingClient {
         if (!text || text[0] !== "{") return;
         let msg;
         try { msg = JSON.parse(text); } catch { return; }
+        if (msg.header && msg.header.task_id && msg.header.task_id !== this.taskId) return;
         const ev = msg.header && msg.header.event;
         if (ev === "task-started") {
           this.started = true;
+          this.gummyRotating = false;
+          this.gummyReconnectPending = false;
+          this.finishTaskSent = false;
+          if (this.gummyChat) this._flushGummyPendingFrames();
+          if (this.finishing) this._sendFinishTask();
           if (!resolved) { resolved = true; resolve(); }
         } else if (ev === "result-generated") {
           this._handleResult(msg.payload);
         } else if (ev === "task-finished") {
-          this._safeClose();
+          if (this.gummyChat && !this.finishing) this._rotateGummyChatTask();
+          else this._safeClose();
         } else if (ev === "task-failed") {
           const err = (msg.header && (msg.header.error_message || msg.header.error_code)) || JSON.stringify(msg);
           this.onError(new Error("DashScope task-failed: " + err));
@@ -105,10 +120,9 @@ export class DashScopeStreamingClient {
         if (!resolved) { resolved = true; reject(err); }
       };
       const onClose = () => {
+        if (this.ws !== taskSocket || this.gummyRotating) return;
         this.closed = true;
-        // 连接在 task-started 之前就被关闭（密钥无效 / 模型未开通 / 地址错误等）→ 让 connect() 拒绝，
-        // 否则 Promise 既不 resolve 也不 reject，start() 会永久挂起、按钮彻底失灵。
-        if (!resolved) { resolved = true; reject(new Error(t("Connection closed by the server: check that the key is valid, that Fun-ASR/Paraformer is enabled, and that the URL is wss://…/api-ws/v1/inference"))); }
+        if (!resolved) { resolved = true; reject(new Error(t("Connection closed by the server: check that the key is valid, that the model is enabled, and that the URL uses the DashScope inference WebSocket endpoint"))); }
         this.onClosed({ finalText: this.getFullText() });
       };
       if (typeof this.ws.on === "function") {
@@ -124,9 +138,68 @@ export class DashScopeStreamingClient {
       }
     });
   }
+  _newTaskId() {
+    return "qnalogtask-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+  _sendFinishTask() {
+    if (this.finishTaskSent || !this.ws || (this.ws.readyState != null && this.ws.readyState !== 1)) return;
+    this.finishTaskSent = true;
+    try {
+      this.ws.send(JSON.stringify({
+        header: { action: "finish-task", task_id: this.taskId, streaming: "duplex" },
+        payload: { input: {} },
+      }));
+    } catch (error) {
+      this.onError(error instanceof Error ? error : new Error(String(error || "Could not finish the DashScope task.")));
+    }
+  }
+  _flushGummyPendingFrames() {
+    const frames = this.gummyPendingFrames.splice(0);
+    for (let index = 0; index < frames.length; index++) {
+      this._sendGummyFrame(frames[index]);
+      if (this.gummyRotating) {
+        this.gummyPendingFrames.unshift(...frames.slice(index + 1));
+        break;
+      }
+    }
+  }
+  _sendGummyFrame(frame) {
+    if (!this.ws || !this.started || this.gummyRotating) {
+      this.gummyPendingFrames.push(frame);
+      return;
+    }
+    try {
+      this.ws.send(frame);
+      this.gummyAudioBytes += frame.byteLength || 0;
+      if (this.gummyAudioBytes >= 55 * this.sampleRate * 2 && !this.gummyRotating) {
+        this.gummyRotating = true;
+        this._sendFinishTask();
+      }
+    } catch (error) {
+      this.gummyPendingFrames.push(frame);
+      this.onError(error instanceof Error ? error : new Error(String(error || "Could not send Gummy audio.")));
+    }
+  }
+  _rotateGummyChatTask() {
+    if (!this.gummyChat || this.finishing || this.gummyReconnectPending) return;
+    this.gummyReconnectPending = true;
+    this.gummyRotating = true;
+    this.started = false;
+    this._currentPartial = "";
+    this.gummyAudioBytes = 0;
+    this._safeClose();
+    this.taskId = this._newTaskId();
+    void this.connect().catch((error) => {
+      this.gummyRotating = false;
+      this.gummyReconnectPending = false;
+      this.onError(error instanceof Error ? error : new Error(String(error || "Could not restart the Gummy task.")));
+    });
+  }
   _handleResult(payload) {
     if (!payload) return;
-    const sentence = (payload.output || {}).sentence;
+    const output = payload.output || {};
+    const sentence = output.sentence
+      || (/^gummy(?:-chat)?(?:[-.].*)?$/i.test(this.model) ? output.transcription : null);
     if (!sentence) return;
     if (sentence.heartbeat === true) return; // 心跳包（sentence_id=0），按文档跳过
     const text = String(sentence.text || "");
@@ -145,6 +218,10 @@ export class DashScopeStreamingClient {
     return (this._finalizedText + this._currentPartial).trim();
   }
   sendAudioFrame(arrayBuffer) {
+    if (this.gummyChat) {
+      this._sendGummyFrame(arrayBuffer);
+      return;
+    }
     if (!this.ws || !this.started) return;
     const state = (this.ws.readyState != null) ? this.ws.readyState : 1;
     if (state !== 1) return;
@@ -153,14 +230,7 @@ export class DashScopeStreamingClient {
   async finish() {
     if (this.finishing || this.closed) return;
     this.finishing = true;
-    try {
-      if (this.ws && (this.ws.readyState == null || this.ws.readyState === 1)) {
-        this.ws.send(JSON.stringify({
-          header: { action: "finish-task", task_id: this.taskId, streaming: "duplex" },
-          payload: { input: {} },
-        }));
-      }
-    } catch { /* intentionally empty */ }
+    if (this.started) this._sendFinishTask();
     return new Promise((resolve) => {
       const t = window.setTimeout(() => { this._safeClose(); resolve(); }, 5000);
       const orig = this.onClosed;

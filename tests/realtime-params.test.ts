@@ -62,4 +62,16 @@ describe("实时转写请求参数", () => {
     expect(normalizeRealtimeLanguage("auto")).toBe("");
     expect(normalizeRealtimeLanguage("")).toBe("");
   });
+  it("does not send language hints to Gummy families or unsupported language codes", () => {
+    expect(buildRealtimeAsrParameters({
+      model: "gummy-realtime-v1",
+      sampleRate: 16000,
+      language: "zh",
+    })).not.toHaveProperty("language_hints");
+    expect(buildRealtimeAsrParameters({
+      model: "qwen-audio-3.1-asr-flash-streaming",
+      sampleRate: 16000,
+      language: "not-a-language",
+    })).not.toHaveProperty("language_hints");
+  });
 });
