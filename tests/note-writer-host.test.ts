@@ -17,11 +17,14 @@ vi.mock("obsidian", () => ({
   Notice: class Notice { constructor(message: string) { notices.push(String(message)); } },
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, ""),
 }));
-
 import * as obsidian from "obsidian";
 import { NoteWriter } from "../src/notes/note-writer";
 import type { NoteWriterHost, NoteWriterSettings, NoteWriterVault } from "../src/notes/note-writer";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
+import { attachTextTranscript } from "../src/transcript/session-transcript";
+import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import { splitLeadingFrontmatter } from "../src/notes/note-document";
+import type { RecordingSession, Segment } from "../src/shared/types";
 
 type File = InstanceType<typeof obsidian.TFile>;
 
@@ -91,7 +94,75 @@ function unexpectedHost(vault: NoteWriterVault, settings: NoteWriterSettings, ov
   };
 }
 
+
 describe("NoteWriter narrow host capabilities", () => {
+  it("preserves the transcript ledger and frontmatter ordering across rewrite and append", async () => {
+    const path = "QnALog/Minutes/content.md";
+    const file = new obsidian.TFile(path);
+    const sourceText = "Q&A：第一行\n第二行 $& `$` $$ literal $' ending";
+    const segment: Segment = attachTextTranscript({
+      index: 0,
+      startOffsetMs: 0,
+      endOffsetMs: 12_000,
+      text: sourceText,
+      isFinal: true,
+    }, "content-session", "text-import");
+    const ledger = serializeTranscriptBlock(segment, "### Source transcript", sourceText);
+    const oldMarker = "<!-- qnalog-continuation-committed:prior-session -->";
+    const original = [
+      "---",
+      "title: old",
+      "---",
+      "",
+      "# Existing note",
+      ledger,
+      oldMarker,
+      oldMarker,
+    ].join("\n");
+    const vault = memoryVault([{ file, markdown: original }]);
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-10-07 12:00" }) });
+    try {
+      const writer = new NoteWriter(unexpectedHost(vault.vault, {
+        ...DEFAULT_SETTINGS,
+        llmModel: "consumer-test-model",
+      }));
+      const session: RecordingSession = {
+        id: "content-session",
+        sessionStamp: "content-session",
+        startedAt: "2026-10-07T12:00:00.000Z",
+        mdPath: path,
+        mode: "meeting",
+        segments: [segment],
+        finalized: true,
+      };
+
+      await writer.rewriteConsolidated(session, "---\ntitle: polished\n---\n\nRewrite body", "new-session");
+      const rewritten = (await vault.vault.read(file));
+      expect(splitLeadingFrontmatter(rewritten).frontmatter).toContain("title: polished");
+      expect(rewritten.indexOf("Rewrite body")).toBeLessThan(rewritten.indexOf("## Original material"));
+      expect(readTranscriptBlocks(rewritten).map(block => block.visibleBlock)).toEqual([sourceText]);
+      expect(rewritten.match(/<!-- qnalog-continuation-committed:prior-session -->/g)).toHaveLength(1);
+      expect(rewritten.match(/<!-- qnalog-continuation-committed:new-session -->/g)).toHaveLength(1);
+
+      const appendOriginal = [
+        "---",
+        "title: old",
+        "---",
+        "",
+        "# Existing note",
+        ledger,
+      ].join("\n");
+      await vault.vault.modify(file, appendOriginal);
+      await writer.appendPolishBlock(session, "---\ntitle: appended\n---\n\nAppend body", null, false, "append-session", appendOriginal);
+      const appended = await vault.vault.read(file);
+      expect(splitLeadingFrontmatter(appended).frontmatter).toContain("title: appended");
+      expect(appended.indexOf("# Existing note")).toBeLessThan(appended.indexOf("Append body"));
+      expect(readTranscriptBlocks(appended).map(block => block.visibleBlock)).toEqual([sourceText]);
+      expect(appended.endsWith("<!-- qnalog-continuation-committed:append-session -->\n")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("uses the current vault, settings, and frontmatter provider after construction", async () => {
     const file = new obsidian.TFile("QnALog/Minutes/current.md");
     const oldVault = memoryVault([{ file, markdown: "old vault bytes" }]);

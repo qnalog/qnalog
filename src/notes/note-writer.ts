@@ -20,11 +20,12 @@ import { readTranscriptBlocks, serializeTranscriptBlock } from "../transcript/tr
 import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
-import { NS_CONTINUATION_COMMITTED_MARKER, NS_MERGE_BLOCK_RE, NS_OUTLINE_BACKUP_FOLDER, NS_TAG, nsMarker, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_MERGE_BLOCK_RE, NS_OUTLINE_BACKUP_FOLDER, NS_TAG, nsMarker, readNamespaceFrontmatter } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost, type ContinuationTranscriptSegment } from "./continuation-commit-flow";
+import { appendPolishNoteContent, buildConsolidatedNoteContent, buildPolishAppendBlock } from "./note-write-content";
 
 import { t } from "../shared/i18n";
 
@@ -389,56 +390,40 @@ export class NoteWriter {
     const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
     const sediment = splitOutSedimentBlock(polishedParts.body);
     const polishedBody = sediment.body.trim() || emptyBriefingFallback;
-    const content = [
-      polishedFrontmatter || null,
-      `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
-      "",
-      polishedBody,
-      "",
-      "---",
-      "",
-      `## ${labelText("originalMaterial")}`,
-      "",
-      recordingInfoWithPrior || null,
-      recordingInfoWithPrior ? "" : null,
-      externalAudioSourceBlock || null,
-      externalAudioSourceBlock ? "" : null,
-      meetingWorkbenchBlock || null,
-      meetingWorkbenchBlock ? "" : null,
-      realtimeOutlineWithPrior || null,
-      realtimeOutlineWithPrior ? "" : null,
-      textImport ? textImportSourceBlock || null : playbackTimelineBlock || null,
-      textImport ? (textImportSourceBlock ? "" : null) : (playbackTimelineBlock ? "" : null),
-      retainAudio ? (masterAudioBlock ? null : "<details>") : null,
-      retainAudio ? (masterAudioBlock ? null : `<summary>${isContinuation ? labelText("originalAudioSegmentsContinuation", session.segments.length, formatElapsed(totalMs)) : labelText("originalAudioSegments", session.segments.length, formatElapsed(totalMs))}</summary>`) : null,
-      retainAudio ? "" : null,
-      retainAudio && isContinuation && !masterAudioBlock && priorBlocks.audioAppendix ? priorBlocks.audioAppendix : null,
-      retainAudio && isContinuation && !masterAudioBlock && priorBlocks.audioAppendix ? "" : null,
-      retainAudio ? audioRow : null,
-      retainAudio ? "" : null,
-      retainAudio ? (masterAudioBlock ? null : "</details>") : null,
-      retainAudio ? "" : null,
-      textImport ? null : "<details>",
-      textImport ? null : `<summary>${labelText("segmentedRawTranscript", session.segments.length)}</summary>`,
-      textImport ? null : "",
-      textImport ? null : nsMarker("segments-start", session.id),
-      textImport ? null : "",
-      textImport ? null : rawBlocks,
-      textImport ? null : nsMarker("segments-end", session.id),
-      textImport ? null : "</details>",
-      textImport ? null : "",
-      nsMarker("session", session.id),
-      "",
-      sediment.block || null,
-      sediment.block ? "" : null,
-      ...new Set([
-        ...[...currentMarkdown.matchAll(new RegExp(`<!--\\s*${nsRe(NS_CONTINUATION_COMMITTED_MARKER)}:[^>\\s]+\\s*-->`, "g"))].map(match => match[0]),
-        ...(continuationSessionId ? [nsMarker(NS_CONTINUATION_COMMITTED_MARKER, continuationSessionId)] : []),
-      ]),
-    ].filter(v => v !== null).join("\n");
+    const content = buildConsolidatedNoteContent({
+      currentMarkdown,
+      title: `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
+      sessionId: session.id,
+      continuationSessionId,
+      totalMs,
+      segmentCount: session.segments.length,
+      textImport,
+      retainAudio,
+      isContinuation,
+      masterAudioBlock,
+      audioRow,
+      priorAudioAppendix: priorBlocks.audioAppendix,
+      rawBlocks,
+      polish: { frontmatter: polishedFrontmatter, body: polishedBody, sedimentBlock: sediment.block },
+      materials: {
+        recordingInfo: recordingInfoWithPrior,
+        externalAudioSource: externalAudioSourceBlock,
+        meetingWorkbench: meetingWorkbenchBlock,
+        realtimeOutline: realtimeOutlineWithPrior,
+        textImportSource: textImportSourceBlock,
+        playbackTimeline: playbackTimelineBlock,
+      },
+    });
     await this.host.vault.modify(file, content);
   }
-  async appendPolishBlock(session, polished, mergeError, nonRetryableMergeError = false, continuationSessionId = "", initialMarkdown: string | null = null) {
+  async appendPolishBlock(
+    session: RecordingSession,
+    polished: string,
+    mergeError: unknown,
+    nonRetryableMergeError = false,
+    continuationSessionId = "",
+    initialMarkdown: string | null = null,
+  ): Promise<void> {
     const file = this.host.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
     const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
@@ -464,48 +449,41 @@ export class NoteWriter {
     const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
     const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
     const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
+    const hasMergeError = !!mergeError;
+    const mergeErrorMessage = mergeError && (typeof mergeError === "object" || typeof mergeError === "function") && "message" in mergeError
+      ? mergeError.message || mergeError
+      : mergeError;
     const failureText = mergeError
       ? (nonRetryableMergeError
-        ? `_[${labelText("aiOrganizingFailed", formatLlmFailureIssue(mergeError.message || mergeError))}]_`
-        : `_[${labelText("mergeFailedQueued", mergeError.message || mergeError)}]_`)
+        ? `_[${labelText("aiOrganizingFailed", formatLlmFailureIssue(mergeErrorMessage))}]_`
+        : `_[${labelText("mergeFailedQueued", mergeErrorMessage as string | number)}]_`)
       : "";
-    const block = [
-      "",
-      `## ${labelText("mergedVersionAt", `${this.host.settings.llmModel} · ${getModePrefix(meta)}`)}`,
-      "",
-      mergeError ? failureText : polishedBody,
-      "",
-      recordingInfoBlock || null,
-      recordingInfoBlock ? "" : null,
-      externalAudioSourceBlock || null,
-      externalAudioSourceBlock ? "" : null,
-      textImport ? textImportSourceBlock || null : masterAudioBlock || null,
-      textImport ? (textImportSourceBlock ? "" : null) : (masterAudioBlock ? "" : null),
-      meetingWorkbenchBlock || null,
-      meetingWorkbenchBlock ? "" : null,
-      realtimeOutlineBlock || null,
-      realtimeOutlineBlock ? "" : null,
-      textImport ? null : playbackTimelineBlock || null,
-      textImport ? null : (playbackTimelineBlock ? "" : null),
-      "---",
-      "",
-      sediment.block || null,
-      sediment.block ? "" : null,
-    ].filter(v => v !== null).join("\n");
-    let cur = initialMarkdown ?? await this.host.vault.read(file);
-    if (polishedFrontmatter && !mergeError) {
-      const currentParts = splitLeadingFrontmatter(cur);
-      cur = polishedFrontmatter + "\n" + currentParts.body.replace(/^\n+/, "");
-    }
-    const sep = cur.endsWith("\n") ? "" : "\n";
-    let next = cur + sep + block;
-    if (!textImport) {
-      next = next.replace(/([（(])?(?:录音中|recording)…[)）]?/g, (_match, open) => {
-        const prefix = open || "";
-        return `${prefix}${formatElapsed(totalMs)}${open === "(" ? ")" : "）"}`;
-      });
-    }
-    if (continuationSessionId) next = `${next.replace(/\s*$/, "")}\n${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, continuationSessionId)}\n`;
+    const block = buildPolishAppendBlock({
+      modelAndModeLabel: `${this.host.settings.llmModel} · ${getModePrefix(meta)}`,
+      textImport,
+      masterAudioBlock,
+      hasMergeError,
+      failureText,
+      polish: { frontmatter: polishedFrontmatter, body: polishedBody, sedimentBlock: sediment.block },
+      materials: {
+        recordingInfo: recordingInfoBlock,
+        externalAudioSource: externalAudioSourceBlock,
+        meetingWorkbench: meetingWorkbenchBlock,
+        realtimeOutline: realtimeOutlineBlock,
+        textImportSource: textImportSourceBlock,
+        playbackTimeline: playbackTimelineBlock,
+      },
+    });
+    const cur = initialMarkdown ?? await this.host.vault.read(file);
+    const next = appendPolishNoteContent({
+      currentMarkdown: cur,
+      block,
+      polishedFrontmatter,
+      hasMergeError,
+      textImport,
+      totalMs,
+      continuationSessionId,
+    });
     await this.host.vault.modify(file, next);
   }
 
