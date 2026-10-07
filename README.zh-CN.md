@@ -3,10 +3,7 @@
 [English](README.md) | 简体中文
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/qnalog-lockup-reversed.svg">
-    <img src="docs/brand/qnalog-lockup.svg" alt="QnALog" width="298" height="96">
-  </picture>
+  <img src="https://raw.githubusercontent.com/qnalog/qnalog/main/docs/brand/qnalog-lockup-readme.svg" alt="QnALog" width="298" height="96">
 </p>
 
 在 Obsidian 中录制或导入音频、转写，并将对话整理为 Markdown 纪要。QnALog 不内置 API Key，无需 QnALog 账号，使用你自行选择的服务。需要 Obsidian 1.11.4 或更高版本。
@@ -42,10 +39,7 @@
 
 1. 点击左侧功能区的 **QnALog 实时纪要面板**打开侧栏。Obsidian 工具栏显示随主题变化的单色 Q 图标。
 
-   <picture>
-     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/qnalog-mark-reversed.svg">
-     <img src="docs/brand/qnalog-mark.svg" alt="QnALog 面板图标" width="32" height="32">
-   </picture>
+   <img src="https://raw.githubusercontent.com/qnalog/qnalog/main/docs/brand/qnalog-mark-readme.svg" alt="QnALog 面板图标" width="32" height="32">
 
 2. 选择模板和音频输入，并确认音量电平会随声音变化。
 3. 开始录音，查看实时大纲，并按需添加标记或现场笔记。

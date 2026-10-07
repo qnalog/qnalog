@@ -3,10 +3,7 @@
 English | [简体中文](README.zh-CN.md)
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/qnalog-lockup-reversed.svg">
-    <img src="docs/brand/qnalog-lockup.svg" alt="QnALog" width="298" height="96">
-  </picture>
+  <img src="https://raw.githubusercontent.com/qnalog/qnalog/main/docs/brand/qnalog-lockup-readme.svg" alt="QnALog" width="298" height="96">
 </p>
 
 Record or import audio, transcribe it, and organize the conversation into Markdown notes in Obsidian. QnALog includes no API keys, requires no QnALog account, and uses services you choose. Requires Obsidian 1.11.4 or later.
@@ -42,10 +39,7 @@ Recording transcription needs a configured speech-to-text (ASR) service. Importi
 
 1. Open the **QnALog live minutes panel** from the left ribbon. The Obsidian toolbar shows a monochrome Q icon that follows the theme.
 
-   <picture>
-     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/qnalog-mark-reversed.svg">
-     <img src="docs/brand/qnalog-mark.svg" alt="QnALog panel icon" width="32" height="32">
-   </picture>
+   <img src="https://raw.githubusercontent.com/qnalog/qnalog/main/docs/brand/qnalog-mark-readme.svg" alt="QnALog panel icon" width="32" height="32">
 
 2. Choose a template and audio input, then check that the level meter reacts.
 3. Start recording. Follow the live outline and add markers or notes as needed.
