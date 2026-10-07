@@ -282,7 +282,7 @@ const obsidian = {
   addIcon() {},
   TFile, TFolder,
   ItemView: class { constructor() { this.containerEl = makeEl(); } }, MarkdownView: class {},
-  Modal: class { open() {} close() {} }, Component: class {}, Menu: class {}, TextComponent: class {},
+  Modal: class { modalEl = makeEl(); contentEl = makeEl(); open() {} close() {} }, Component: class {}, Menu: class {}, TextComponent: class {},
   Setting: class {}, PluginSettingTab: class {}, BasesView: class {},
   SuggestModal: class {}, FuzzySuggestModal: class {}, AbstractInputSuggest: class {},
   Platform: { isMacOS: true, isWin: false, isLinux: false, isIosApp: false, isAndroidApp: false, isDesktop: true, isMobile: false },

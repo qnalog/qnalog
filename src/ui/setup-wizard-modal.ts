@@ -53,6 +53,7 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
 
   constructor(app: obsidian.App, private readonly deps: SetupWizardModalDeps<T>) {
     super(app);
+    this.modalEl.addClass("qnalog-wizard-modal");
     this.controller = new SetupWizardController(deps);
   }
 

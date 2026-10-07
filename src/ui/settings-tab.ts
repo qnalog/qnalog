@@ -136,11 +136,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   }
 
   renderSettings() {
-    const { containerEl } = this;
-    containerEl.empty();
+    this.containerEl.addClass("qnalog-settings-root");
+    this.containerEl.empty();
 
     const tabs = this.getVisibleSettingsTabs();
-    const tabShell = containerEl.createDiv({ cls: "qnalog-settings-tabs-shell" });
+    const tabShell = this.containerEl.createDiv({ cls: "qnalog-settings-tabs-shell" });
     const tabBar = tabShell.createDiv({ cls: "qnalog-settings-tabs" });
     for (const tab of tabs) {
       const btn = tabBar.createEl("button", { text: tab.label });
@@ -148,7 +148,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       btn.onclick = () => this.handleSettingsTabClick(tab.id);
     }
 
-    const content = containerEl.createDiv({ cls: "qnalog-settings-content" });
+    const content = this.containerEl.createDiv({ cls: "qnalog-settings-content" });
     // 移动端运行时强制单列堆叠（手机设置面板有时宽于 760px CSS px，纯靠 @media 会漏）。
     content.toggleClass("is-mobile", isMobileRuntime());
     switch (this.activeTab) {

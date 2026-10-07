@@ -5,7 +5,7 @@
 ## 1. 核心原则
 
 - QnALog 是 Obsidian 插件，颜色必须融入当前主题和 Style Settings 配置。
-- 视觉个性来自结构：大纲 / 沉淀 / 纪要三 tab、时间轴语言、沉淀流水线、轻量编辑机制。
+- 视觉识别来自四个侧边栏标签（大纲 / 沉淀 / 问一问 / 纪要）、QnALog 标识、时间轴语言、沉淀流水线和轻量编辑机制。
 - 常态界面保持克制：少边框、浅背景、小字号、明确动作。
 - 状态切换不能靠 `transform` 推动布局，避免时间轴和列表发生位移。
 
@@ -36,9 +36,9 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
   --qnalog-border-active: var(--interactive-accent);
   --qnalog-border-active-soft: color-mix(in srgb, var(--interactive-accent) 35%, transparent);
 
-  /* 录音/进行中也跟随主题强调色，不硬编码红色。 */
-  --qnalog-recording-color: var(--interactive-accent);
-  --qnalog-recording-glow: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  /* 录音停止控件使用主题错误语义色；普通活跃状态仍使用强调色。 */
+  --qnalog-recording-color: var(--text-error);
+  --qnalog-recording-glow: color-mix(in srgb, var(--text-error) 25%, transparent);
 
   --qnalog-success-bg: var(--background-modifier-success);
   --qnalog-success-text: var(--text-success);
@@ -57,7 +57,7 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
 - 所有颜色使用 `var(--qnalog-*)` 或 Obsidian 官方变量。
 - 错误 / 失败 / 重试使用 `--qnalog-danger-text`，最终指向 `--text-error`。
 - 成功使用 `--qnalog-success-*`，最终指向 Obsidian 成功语义色。
-- 录音、进行中圆点、波形和进度使用 `--qnalog-recording-color`，最终指向 `--interactive-accent`。
+- 录音停止控件使用 `--qnalog-recording-color`，最终指向 Obsidian 的 `--text-error`；普通进行中状态使用 `--interactive-accent`。
 - 不要把主题主色、错误色、成功色写成固定 hex。
 
 ## 3. 间距规范
@@ -72,6 +72,13 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
   - 要点之间靠 `line-height: 1.7`
 
 严禁用空 div、`<br>`、额外 padding 制造大段空白。
+
+### 标题与纪要列表动作
+
+- 侧栏标题中的 Q 标记与产品名保持同一水平行；录音态允许标题文字收缩或省略，但不让标记独占一行或与文字重叠。
+- 纪要列表标题行使用完整内容宽度；重命名、重试和状态标记与元数据并排显示，避免状态图标挤压标题。窄宽度下标题可省略，操作仍须可见和可达。
+
+此处不改变纪要打开、重命名、重试或查看状态的行为。
 
 ## 4. 字号规范
 
@@ -152,4 +159,5 @@ QnALog 变量必须从 Obsidian 官方变量派生。不要写死产品色板。
 - [ ] 播放按钮图标正确显示。
 - [ ] 热词候选单行展示，不出现三行字段视图。
 - [ ] 指挥棒 current / pending / done / empty 四态可区分。
+- [ ] 侧栏、看板、设置页与弹窗的键盘焦点有可见主题色轮廓。
 - [ ] `npm run build` 通过。

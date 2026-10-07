@@ -8,6 +8,7 @@ vi.mock("obsidian", () => {
   class FakeElement {
     tag: string;
     text: string;
+    addClass() {}
     listeners: Record<string, () => void> = {};
     constructor(tag = "", text = "") { this.tag = tag; this.text = text; }
     empty() {}
@@ -23,6 +24,7 @@ vi.mock("obsidian", () => {
     }
   }
   class FakeModal {
+    modalEl = new FakeElement();
     contentEl = new FakeElement();
     onOpen = () => undefined;
     onClose = () => undefined;

@@ -91,6 +91,8 @@ const notices = [];
 // Modal 的标准方法：插件在 onload 的布局就绪回调里会打开首次配置向导，
 // 装配检查因此需要 open/close 存在（断言内容不变，只是补全 API 面）。
 class ObsidianBase {
+  modalEl = makeEl();
+  contentEl = makeEl();
   open() {}
   close() {}
   setTitle() { return this; }

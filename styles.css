@@ -1,5 +1,5 @@
 /* ============================================================
-   LexVoice — Obsidian Plugin Stylesheet
+   QnALog — Obsidian Plugin Stylesheet
    设计原则：
    - 全部颜色走 Obsidian 主题变量（var(--color-*) / var(--text-*) / var(--background-*)）
    - 字号统一用 --font-ui-* 系列
@@ -139,16 +139,15 @@
 }
 
 .qnalog-bubble.is-idle .qnalog-bubble-main:hover {
-  transform: scale(1.1);
   background: var(--interactive-accent-hover);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  box-shadow: none;
 }
 
 .qnalog-bubble-chip {
   margin-left: 2px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(var(--color-accent-rgb), 0.14);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
   color: var(--text-accent);
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-medium);
@@ -171,7 +170,7 @@
   flex: 0 0 7px;
   border-radius: 50%;
   margin-right: 6px;
-  background: var(--color-red);
+  background: var(--text-error);
   animation: qnalog-rec-dot 1.6s ease-in-out infinite;
 }
 
@@ -257,6 +256,7 @@
 }
 
 .qnalog-bubble-timer {
+  font-family: var(--font-monospace);
   font-variant-numeric: tabular-nums;
   display: inline-flex;
   align-items: center;
@@ -301,14 +301,13 @@
 
 .qnalog-bubble-btn:hover {
   background: var(--background-modifier-hover);
-  transform: scale(1.08);
 }
 
-/* 停止按钮是录音态唯一的红色焦点：白底上一枚 28px 红底白方块，
-   保留「正在录音」的识别度，又不把整颗浮窗染红。 */
+/* 停止按钮与计时红点使用 Obsidian 错误语义色；色彩只占两个小元素，
+   浮窗底色仍保持中性。 */
 .qnalog-bubble-btn.stop {
-  background: var(--color-red);
-  color: #fff;
+  background: color-mix(in srgb, var(--text-error) 12%, var(--background-secondary));
+  color: var(--text-error);
   box-shadow: none;
 }
 
@@ -325,7 +324,7 @@
 }
 
 .qnalog-bubble-btn.stop:hover {
-  background: color-mix(in srgb, var(--color-red) 84%, #000);
+  background: color-mix(in srgb, var(--text-error) 18%, var(--background-secondary));
   box-shadow: none;
 }
 
@@ -1078,7 +1077,8 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   font-size: var(--font-ui-smallest);
 }
 .qnalog-progress-event-time {
-  color: var(--text-faint);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
   font-variant-numeric: tabular-nums;
 }
 .qnalog-progress-event-copy {
@@ -1182,9 +1182,16 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   .qnalog-progress-stage-pulse,
   .qnalog-progress-activity-icon,
   .qnalog-progress-activity-icon svg,
-  .qnalog-bubble-wrap.is-recording-wrap,
-  .qnalog-bubble.is-recording .qnalog-bubble-timer::before {
+  .qnalog-bubble-wrap,
+  .qnalog-bubble-chip,
+  .qnalog-bubble-btn,
+  .qnalog-bubble-main,
+  .qnalog-bubble.is-recording .qnalog-bubble-timer::before,
+  .qnalog-outline-recent-failure-status.is-processing .qnalog-outline-recent-failure-icon svg,
+  .qnalog-outline-ai-body ul.qnalog-outline-time-rail > li.is-active::after,
+  .qnalog-outline-ai-body ul.qnalog-outline-time-rail > li.is-generating::after {
     animation: none;
+    transition: none;
   }
 }
 
@@ -2880,7 +2887,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 /* 自定义菜单（mkSelect 弹出的 Obsidian Menu，挂了 qnalog-ms-menu 类，只影响我们自己的下拉）：
    ① 无图标——隐藏左侧图标占位槽，让文本左对齐、左右留白对称；
    ② 当前项不用色点，只把文字变成主题色来区分，所有项文本起点一致、不被色点顶偏。 */
-/* LexVoice context menus use Obsidian Menu. Keep icons readable across themes. */
+/* QnALog context menus use Obsidian Menu. Keep icons readable across themes. */
 body .menu.qnalog-menu .menu-item-icon,
 body .qnalog-menu .menu-item-icon {
   --icon-size: 16px;
@@ -5679,6 +5686,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding: 0;
   color: var(--text-accent);
 }
+.qnalog-outline-recent-failure-status.is-failed .qnalog-outline-recent-failure-icon {
+  color: var(--text-error);
+}
+
 
 .qnalog-outline-recent-failure-status.is-failed > span:not(.qnalog-outline-recent-failure-icon),
 .qnalog-outline-recent-failure-status.is-raw > span:not(.qnalog-outline-recent-failure-icon),
@@ -7934,7 +7945,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   }
 }
 
-/* LexVoice generated walls: Dataview-based card walls, separate from Obsidian Bases. */
+/* QnALog-generated walls: Dataview-based card walls, separate from Obsidian Bases. */
 .markdown-preview-view.qnalog-wall-page .markdown-preview-sizer,
 .markdown-reading-view.qnalog-wall-page .markdown-preview-sizer,
 .qnalog-wall-page .markdown-preview-sizer,
@@ -8434,7 +8445,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   }
 }
 
-/* LexVoice lightweight styling for Obsidian Bases card views.
+/* QnALog styling for Obsidian Bases card views.
    Keep this conservative: no real border/margin/width changes, so Bases layout stays stable. */
 .bases-view .bases-cards-item {
   border: none;
@@ -8498,7 +8509,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 /* ============================================================
-   LexVoice outline / recording interaction polish
+   QnALog outline / recording interaction polish
    ============================================================ */
 
 .qnalog-outline {
@@ -8516,7 +8527,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-primary-soft: var(--text-accent);
   --qnalog-primary-accent: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-primary));
   --qnalog-on-primary: var(--text-on-accent);
-  --qnalog-border-line: color-mix(in srgb, var(--background-modifier-border) 78%, var(--interactive-accent) 22%);
+  --qnalog-border-line: var(--background-modifier-border);
   --qnalog-border-active: var(--interactive-accent);
   --qnalog-border-active-soft: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
   --qnalog-text-primary: var(--text-normal);
@@ -8524,8 +8535,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-text-tertiary: var(--text-faint);
   --qnalog-text-hint: var(--text-faint);
   --qnalog-text-toast: var(--background-primary);
-  --qnalog-recording-color: var(--interactive-accent);
-  --qnalog-recording-glow: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  --qnalog-recording-color: var(--text-error);
+  --qnalog-recording-glow: color-mix(in srgb, var(--text-error) 25%, transparent);
   --qnalog-success-bg: var(--background-modifier-success);
   --qnalog-success-text: var(--text-success);
   --qnalog-warning-text: var(--text-warning, var(--text-accent));
@@ -8644,6 +8655,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-head.is-active-session .qnalog-outline-title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
   color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 20px;
   line-height: 1.15;
@@ -11008,10 +11024,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-bg-active: color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary));
   --qnalog-primary: var(--interactive-accent);
   --qnalog-primary-soft: var(--text-accent);
-  --qnalog-border-line: color-mix(in srgb, var(--background-modifier-border) 82%, var(--interactive-accent) 18%);
+  --qnalog-border-line: var(--background-modifier-border);
   --qnalog-text-primary: var(--text-normal);
   --qnalog-text-secondary: var(--text-muted);
-  --qnalog-text-tertiary: var(--text-faint);
+  --qnalog-text-tertiary: var(--text-muted);
+  container-name: qnalog-kanban;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -11020,7 +11038,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 26px 26px 20px;
+  padding: 20px;
   background: var(--qnalog-bg-muted);
   color: var(--qnalog-text-primary);
 }
@@ -11047,9 +11065,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-kanban-heading h2 {
   margin: 0;
-  font-size: 28px;
-  font-weight: 800;
-  line-height: 1.2;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
   letter-spacing: 0;
 }
 
@@ -11075,7 +11093,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
   background: var(--qnalog-bg-base);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: none;
   color: var(--qnalog-text-secondary);
   font-size: var(--font-ui-small, 13px);
   font-weight: 550;
@@ -11114,7 +11132,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
   background: var(--qnalog-bg-base);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: none;
 }
 
 .qnalog-kanban-search > span {
@@ -11158,7 +11176,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
   background: var(--qnalog-bg-base);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: none;
 }
 
 .qnalog-kanban-grouping-label,
@@ -11208,7 +11226,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
   background: var(--qnalog-bg-base);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: none;
   white-space: nowrap;
   color: var(--qnalog-text-secondary);
   font-size: var(--font-ui-small, 13px);
@@ -11284,9 +11302,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   max-width: none;
   min-height: 0;
   border: 1px solid var(--qnalog-border-line);
-  border-radius: 14px;
+  border-radius: var(--radius-m);
   background: var(--qnalog-bg-base);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: none;
   scroll-snap-align: start;
   transition: border-color 120ms ease, background-color 120ms ease;
 }
@@ -11310,7 +11328,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 1;
   min-width: 0;
   font-size: var(--font-ui-medium, 14px);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .qnalog-kanban-column-label span:last-child {
@@ -11355,16 +11373,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 9px;
   min-height: 50px;
   padding: 10px;
-  border: 0;
+  border: 1px solid var(--qnalog-border-line);
   border-radius: 8px;
   background: var(--qnalog-bg-card);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: none;
   cursor: pointer;
 }
 
 .qnalog-kanban-card:hover {
-  background: var(--qnalog-bg-card);
-  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.11);
+  background: var(--background-modifier-hover);
+  box-shadow: none;
 }
 
 .qnalog-kanban-card.is-dragging {
@@ -11381,9 +11399,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1.5px solid color-mix(in srgb, var(--qnalog-primary) 28%, var(--background-modifier-border));
+  border: 1px solid var(--background-modifier-border);
   border-radius: 50%;
-  color: var(--qnalog-primary-soft);
+  color: var(--text-muted);
 }
 
 .qnalog-kanban-card-icon svg {
@@ -11401,9 +11419,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--qnalog-text-primary);
-  font-size: var(--font-ui-small, 13px);
-  font-weight: 600;
-  line-height: 1.45;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .qnalog-kanban-card-meta {
@@ -11411,7 +11429,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: 3px;
   overflow: hidden;
   color: var(--qnalog-text-tertiary);
-  font-size: var(--font-ui-smaller, 12px);
+  font-size: 11px;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -11468,11 +11486,31 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: var(--size-4-4, 16px);
 }
 
+@container qnalog-kanban (max-width: 600px) {
+  .qnalog-kanban-header,
+  .qnalog-kanban-filters {
+    flex-wrap: wrap;
+  }
+
+  .qnalog-kanban-heading {
+    flex: 1 1 100%;
+  }
+
+  .qnalog-kanban-header-actions {
+    margin-left: auto;
+  }
+
+  .qnalog-kanban-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
 @media (max-width: 600px) {
   .qnalog-kanban-view {
     --qnalog-kanban-column-width: min(82vw, 300px);
     --qnalog-kanban-column-min-width: min(82vw, 300px);
-    padding: 16px 12px 12px;
+    padding: 16px 16px 12px;
   }
 
   .qnalog-kanban-heading h2 {
@@ -11497,10 +11535,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 /* ============================================================
    Minutes sidebar v2
-   Geometry follows the approved sidebar reference. Colors remain
-   derived from Obsidian and LexVoice theme tokens.
+  Geometry follows the approved sidebar reference. Colors remain
+  derived from Obsidian theme tokens.
    ============================================================ */
 .qnalog-outline.is-idle-view {
+  container-name: qnalog-outline;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -11552,12 +11592,31 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
   min-width: 0;
-  color: var(--qnalog-text-primary, var(--text-normal));
-  font-size: calc(var(--font-ui-medium) * 1.65);
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: 0;
+  gap: 8px;
+  color: var(--text-normal);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.qnalog-outline-title-mark,
+.qnalog-outline-title-mark svg {
+  display: block;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  color: var(--text-normal);
+}
+
+.qnalog-outline-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-kanban-btn,
@@ -11917,7 +11976,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: flex-end;
   min-height: 39px;
   margin: 0;
-  padding: 0 18px;
+  padding: 0 16px;
   gap: 20px;
   overflow-x: auto;
   overflow-y: hidden;
@@ -11942,12 +12001,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-shadow: none;
   color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .qnalog-outline.is-idle-view > .qnalog-outline-sticky-chrome > .qnalog-outline-tabs button.is-active {
   color: var(--qnalog-text-active, var(--interactive-accent));
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .qnalog-outline.is-idle-view > .qnalog-outline-sticky-chrome > .qnalog-outline-tabs button.is-active::after {
@@ -11962,15 +12021,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline.is-idle-view > .qnalog-outline-section {
-  padding: 14px 18px 18px;
+  padding: 14px 16px 18px;
   gap: 0;
 }
 
 /* Recent-list styling is shared by idle, recording, and paused views. */
 .qnalog-outline .qnalog-outline-recent-filter-wrap {
+  container-name: qnalog-recent-filters;
   container-type: inline-size;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   width: 100%;
   min-width: 0;
@@ -12125,16 +12185,17 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline .qnalog-outline-recent-axis-primary {
   color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
 }
 
 .qnalog-outline .qnalog-outline-recent-axis-secondary {
   margin-top: 3px;
-  color: var(--qnalog-text-tertiary, var(--text-faint));
-  font-size: 9.5px;
-  line-height: 1;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .qnalog-outline .qnalog-outline-recent-group.is-today .qnalog-outline-recent-axis::after {
@@ -12232,7 +12293,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   overflow: hidden;
   color: inherit;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 500;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12247,7 +12308,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-group-count {
   flex: 0 0 auto;
   order: 3;
-  color: var(--qnalog-text-tertiary, var(--text-faint));
+  color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 10.5px;
   white-space: nowrap;
 }
@@ -12300,20 +12361,25 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
   min-width: 0;
-  padding-right: 72px;
+  padding-right: 0;
 }
 
 .qnalog-outline .qnalog-outline-recent-title-line {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
 .qnalog-outline .qnalog-outline-recent-name {
   overflow: hidden;
   color: var(--qnalog-text-primary, var(--text-normal));
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 1.25;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12323,31 +12389,38 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-meta {
+  grid-column: 1;
+  min-width: 0;
   overflow: hidden;
   margin-top: 3px;
-  color: var(--qnalog-text-tertiary, var(--text-muted));
-  font-size: 11.5px;
-  line-height: 1.2;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-size: 11px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .qnalog-outline .qnalog-outline-recent-actions {
-  position: absolute;
-  top: 50%;
-  right: 8px;
+  position: static;
+  grid-column: 2;
+  top: auto;
+  right: auto;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 3px;
-  transform: translateY(-50%);
+  margin-top: 3px;
+  transform: none;
 }
 
+/* 动作与元数据同列排列，标题行跨满内容宽度；异常状态标记不再缩窄纪要标题。 */
+
 .qnalog-outline .qnalog-outline-recent-action {
-  min-width: 28px;
-  height: 28px;
+  min-width: 36px;
+  height: 36px;
   padding: 0 7px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-s);
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-text-secondary, var(--text-muted));
@@ -12444,25 +12517,73 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-group.is-collapsed .qnalog-outline-recent-variant {
   display: none;
 }
+@container qnalog-recent-filters (max-width: 360px) {
 
-@container (max-width: 350px) {
-  .qnalog-outline .qnalog-outline-recent-filter-chip {
-    max-width: 70px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .qnalog-outline .qnalog-outline-recent-search-box {
+    flex: 1 0 100%;
   }
 
+  .qnalog-outline .qnalog-outline-recent-filter-chip,
   .qnalog-outline .qnalog-outline-recent-filter-clear {
-    font-size: 0;
-    width: 24px;
-    padding: 0;
-  }
-
-  .qnalog-outline .qnalog-outline-recent-filter-clear::after {
-    content: "×";
-    font-size: 15px;
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
   }
 }
+
+.qnalog-outline :is(button, summary, [role="button"]):focus-visible,
+.qnalog-kanban-view :is(button, summary, [role="button"]):focus-visible,
+.qnalog-settings-root :is(button, summary, [role="button"]):focus-visible,
+.qnalog-utility-modal :is(button, summary, [role="button"]):focus-visible,
+.qnalog-wizard-modal :is(button, summary, [role="button"]):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.qnalog-outline :is(input, textarea, [contenteditable="true"]):focus-visible,
+.qnalog-settings-root :is(input, textarea, [contenteditable="true"]):focus-visible,
+.qnalog-utility-modal :is(input, textarea, [contenteditable="true"]):focus-visible,
+.qnalog-wizard-modal :is(input, textarea, [contenteditable="true"]):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-box:focus-within,
+.qnalog-kanban-view .qnalog-kanban-search:focus-within {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.qnalog-outline .qnalog-outline-recent-search:focus-visible {
+  outline: 0;
+}
+
+.modal.qnalog-utility-modal {
+  width: min(520px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 32px));
+}
+
+.qnalog-utility-modal .modal-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.qnalog-utility-modal .qnalog-modal-actions {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.qnalog-utility-modal .qnalog-modal-actions button {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.qnalog-utility-modal h3,
+.qnalog-utility-modal p {
+  overflow-wrap: anywhere;
+}
+
+
 
 /* 成品纪要面板顶部的「追加录音」按钮：与 idle 头的主按钮同视觉语言，
    但不挂在 .qnalog-outline-head.is-idle 下，需要独立作用域。 */
