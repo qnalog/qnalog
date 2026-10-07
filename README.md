@@ -2,199 +2,158 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**Turns conversations into structured knowledge.**
-
-Open-source conversation intelligence for Obsidian: record, transcribe, and organize meetings, interviews, talks, and voice notes into Markdown you can reuse.
-
-QnALog ships **no API keys** and works **without an account**: you configure your own speech-to-text (ASR) service and, optionally, your own large language model (LLM). Recordings and generated notes stay in your vault.
-
-Supports desktop and mobile Obsidian. Mobile recording uses the device microphone. System audio, virtual audio devices, multichannel capture, desktop device diagnostics, and realtime streaming ASR providers that need custom authentication headers require the desktop app.
-
-## Relationship to LexVoice
-
-**Origin.** QnALog is derived from [LexVoice](https://github.com/Lynn-x/LexVoice) by Lynnx, based on its last MIT-licensed release (2.1.2). Upstream relicensed to a proprietary license from 2.2.0 onward; QnALog is an independent project, not a newer version of LexVoice and not a continuation of that release line. It has since been reworked into a plugin with its own name, data namespace, and settings. See [`NOTICE`](NOTICE) and [`MAINTAINING.md`](MAINTAINING.md).
-
-**There is no data path between the two.**
-
-- **No migration.** QnALog has no import, export, or migration path for LexVoice data. It does not read LexVoice notes, markers, tags, folders, or settings, and it does not scan or rewrite your existing files on load.
-- **No settings inheritance.** A new install starts from QnALog's own defaults. If you have used LexVoice, its API keys, service configuration, folders, and prompts are not carried over — configure QnALog from scratch.
-- **Its own namespace.** Tags, markers, and folders written to your vault use the `qnalog` / `QnALog` namespace only.
-- **Its own plugin id.** The id is `qnalog`, different from LexVoice's `lexvoice`, so Obsidian manages them as two separate plugins.
-
-## Features
-
-### Live outline
-
-Chapters grow as you record. After recording, chapters link to the player — click a chapter to jump to that position in the audio. When recording stops, AI completes the chapters into a full set of notes.
-
-From a completed note's sidebar, choose **Rebuild outline from all transcripts** to regenerate only the outline from the full original transcript ledger, even when automatic live outlines are off. Before replacing the current outline details, QnALog backs up the exact note under `<vault>/<configDir>/qnalog-outline-backups/<timestamp>/<filename>`. If generation is incomplete or fails, or if the note changes while the outline is being generated, the note is left unchanged. This action does not reorganize the note body.
-
-### In-meeting notes
-
-While recording, jot live notes under the outline. The first character can trigger different handling:
-
-Trigger the AI assistant:
-
-- `#term` — the AI explains the term in the context of the current discussion.
-- `?question` — the AI answers using the current transcript and outline.
-- `!highlight` — marks something important and has the final notes treat it accordingly.
-
-Mark only (no AI call):
-
-- `@assignee` — record "@alice follows up"; the final notes prefer assigning that todo to them.
-- `/todo` — capture an explicit todo candidate.
-
-Half-width and full-width symbols are both accepted. In-meeting notes are fed into the final summarization prompt as clearly-labeled "live supplementary material", never mixed into the raw transcript.
-
-### Continue a recording into an existing note
-
-Choose **Append recording to this note** from the open note's sidebar or file menu. The floating bubble checks the note that is active when you click and again after reading it; a delayed read cannot redirect the recording to an earlier note. QnALog records the new audio and transcript in a separate pending note, then merges them into the selected target after its active processing and transcription tasks finish. A complete transcript ledger is sufficient even when the target has no outer transcript-container marker. Failed merges keep the staged note and audio for retry; the progress window shows the active step, failure, and retry state. If the target note is missing or its transcript identity changes, the separate recording is kept instead of being written to a different note.
-
-### Ask this note
-
-Ask follow-up questions when the final notes miss a detail or you want to revisit a specific part of the discussion. QnALog answers from both the organized note and the preserved raw transcript. Useful answers can be written back to one compact **Ask this note** section in the Markdown file.
-
-### Long meetings & recovery
-
-In standard meeting and learning-note modes, long recordings are organized in recoverable parts instead of relying on one all-or-nothing LLM response. QnALog builds a global topic map, saves each completed part as a local checkpoint, and assembles the final note in time order.
-
-If a request is interrupted or a model reaches its output limit, completed work is reused and only unfinished parts are retried. The raw transcript remains available, and an incomplete result is shown as **partially completed** rather than being saved as an empty note.
-
-### Source-linked notes
-
-Transcribed notes retain the original ASR text and revision history alongside the visible transcript. Decisions, actions, questions, and topics can include references to exact transcript passages. If a passage changes, the saved references are marked stale instead of being presented as current. The evidence is returned with existing organization requests; it does not trigger a separate extraction request. **Generate Clean Copy** writes a separate derived file and activates that version in the source note without replacing the raw transcript. Regular reorganization creates a derived Markdown file and a `minutes` cache but does not activate it automatically. Before the first derived version, QnALog stores the safely identifiable visible source text as a `source-original` cache; if that snapshot or its index cannot be verified, generation or switching stops before changing the source body. Recent Notes shows the original row only when a valid snapshot exists, followed by derived versions; clicking a row displays its content in the source note. QnALog's `.versions` cache is separate from Obsidian's built-in file Version History: the plugin cache stores selectable versions, while file history records physical Markdown edits and can restore an earlier source body. If a clean copy already exists, **Generate Clean Copy** offers to show it or regenerate the same file.
-
-### Task progress
-
-The processing panel separates transcription, AI organization, and Markdown writing. It shows the active stage, recent activity, failures, and retry or cancel actions. Failed transcription and failed AI organization remain distinct so you can resume from the step that actually failed.
-
-### Sediment & object library
-
-After each note, AI splits the content into three candidate groups:
-
-- **People** — adjudicated one by one: keep, merge, or ignore
-- **Todos** — selected by default
-- **Hotwords** — names, organizations, brands, terms, to improve later ASR accuracy
-
-Confirmed items become standalone Obsidian objects — people profiles, todo cards, and ASR hotwords — and the sidebar can assemble confirmed todos into a todo wall. When the same person comes up again, a note links to the existing profile instead of creating a duplicate.
-
-### Todo enhancements
-
-Edit owner, due date and sub-tasks inline at the candidate stage — no dialogs. Stored todos use standard Markdown task syntax (recognized by plugins like Tasks). Source information is preserved on delete / redo for traceability.
-
-### Recording reliability
-
-- Level meters before and after recording show whether the mic and system audio are actually working.
-- Audio inputs remain user-selectable; virtual or remote device names are shown as guidance rather than being selected or rejected automatically.
-- A device check in settings diagnoses "recorded but silent" problems.
-- Compatible independent multichannel input can be detected and transcribed by channel, with speaker labels that can be mapped to names. Separation stays off when independent channels cannot be verified.
-- Deleting a transcript offers to delete its audio file too.
-- Recordings under 10 seconds are not transcribed or turned into minutes. Audio under 3 seconds is discarded; audio between 3 and 10 seconds stays in the recording folder so you can import it manually if it turns out to matter.
-
-### Export
-
-From one set of notes you can generate an HTML report, a PDF report, or an `.eml` email draft — same content, different presentation.
-
-### Note list
-
-The sidebar can organize recent notes by folder or by time. Folder groups can be collapsed, the open note is highlighted, and search and template filters remain available in either view.
-
-## Basic usage
-
-1. Click the Q-shaped QnALog icon in the left ribbon to open the sidebar. Hover over it to see the **QnALog live minutes panel** name.
-2. Choose a template and an audio input.
-3. Start recording; check that the level meter reacts.
-4. Watch the live outline; add in-meeting notes if needed.
-5. Stop recording and follow transcription and AI organization in **Task progress**.
-6. If processing was interrupted, retry only the failed stage; if the notes miss a detail, use **Ask this note**.
-7. Open **Sediment** and review people, todos, and hotwords.
-8. If you need to share, use **Export**.
-
-Default folders (all configurable in settings). Names are chosen once at first install, from the interface language:
-
-| Content | Chinese interface | English interface |
-|---|---|---|
-| Recordings | `QnALog/录音` | `QnALog/Recordings` |
-| Transcribed notes | `QnALog/转写纪要` | `QnALog/Transcribed notes` |
-| Meeting materials | `QnALog/会议资料` | `QnALog/Meeting materials` |
-| People | `QnALog/资料库/人员` | `QnALog/Library/People` |
-| Todo cards | `QnALog/资料库/待办` | `QnALog/Library/Todos` |
-| Views | `QnALog/资料库/视图` | `QnALog/Library/Views` |
-| Glossary | `QnALog/资料库/词汇表.md` | `QnALog/Library/Glossary.md` |
-| Diagnostics log | `QnALog/系统/诊断日志` | `QnALog/System/Diagnostics log` |
-| Archive | `QnALog/资料库/归档` | `QnALog/Library/Archive` |
-| HTML reports | `QnALog/HTML报告` | `QnALog/HTML reports` |
-| Email drafts | `QnALog/邮件草稿` | `QnALog/Email drafts` |
-| Segment cache | `QnALog/.cache/segments` | `QnALog/.cache/segments` |
-
-> A Chinese interface gets the left column; every other language gets the right one (only Chinese and English names exist). Changing the language later does not move folders that already exist. Default folders use the `QnALog/` prefix; they are ordinary paths and can be changed in settings at any time.
-
-## Requirements
-
-Required:
-
-- Obsidian 1.11.4 or later
-- A speech-to-text service (cloud API or local)
-- A vault folder for recordings and notes
-
-Recommended:
-
-- An LLM service — for the live outline, note organization, sediment, export, and template tuning
-- A virtual audio device and a real microphone — to record system / online-meeting audio and your own voice; see below
-- A domain glossary — improves recognition of names, products, organizations, and terms
-
-## Audio input & real microphone
-
-Capturing system audio cross-platform from the Obsidian desktop app is unreliable, so recording online meetings, web video, courses, or anything played by the computer usually needs a **virtual audio device**:
-
-- Windows: VB-Cable
-- macOS: BlackHole
-- Linux: PulseAudio / PipeWire monitor source
-
-On Windows with VB-Cable, mind the naming:
-
-- Meeting apps, browsers, and system output → **CABLE Input**
-- QnALog reads **CABLE Output** (a recording device)
-- To also record yourself, the **real microphone must be your physical mic** — not CABLE Output, BlackHole, VoiceMeeter, or Stereo Mix
-
-If the level meter does not move, run the device check before starting a long recording.
-
-## Privacy, network, and file access
-
-No ads, no analytics, no telemetry. Plugin settings are stored locally in `.obsidian/plugins/qnalog/data.json`; API keys are stored through Obsidian SecretStorage, not in that file. When using another Obsidian installation, confirm that SecretStorage has the keys and re-enter any that are missing.
-
-**Network use.** QnALog works offline unless you configure a service that needs the network. When you do, requests go only to the endpoints you configure:
-
-- Speech-to-text requests send audio to the transcription service you configured.
-- AI organization requests send transcript text and prompt context to the LLM service you configured.
-- The update check requests `manifest.json` from this project's GitHub release page only when you click **Check for updates** in Settings > About or run **Check for Updates** from the command palette. Plugin startup makes no update-check requests. It never downloads or installs anything.
-
-**Where recordings live.** The current version has no QnALog backend: it keeps no recordings, transcripts, or notes on servers of its own, and everything it writes — recordings and generated notes — stays in the local vault path you choose.
-
-**Optional subscription (planned).** A paid subscription may be added later for users who would rather not manage API keys: sign in, and transcription and AI organization run through that service without any provider setup. It stays optional. If you turn it on, the audio and text of a recording go to that service instead of your own endpoints; recordings and notes are still written to your vault. If you leave it off, everything described above is unchanged.
-
-**Files outside your vault.** The optional external inbox feature can watch a folder outside your vault (an absolute path, for example a synced recordings directory) and import audio from it. That access happens only if you configure such a path, and it is limited to reading the files you point it at.
-
-For sensitive content (client data, medical, legal, HR, recruiting, internal strategy), prefer local transcription with a local model, and obtain consent before recording. Details: [`PRIVACY.md`](PRIVACY.md).
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/qnalog-lockup-reversed.svg">
+    <img src="docs/brand/qnalog-lockup.svg" alt="QnALog" width="298" height="96">
+  </picture>
+</p>
+
+Record or import audio, transcribe it, and organize the conversation into Markdown notes in Obsidian. QnALog includes no API keys, requires no QnALog account, and uses services you choose. Requires Obsidian 1.11.4 or later.
+
+[Installation](#installation) · [First-time setup](#first-time-setup) · [Basic usage](#basic-usage) · [Features](#features) · [Files and folders](#files-and-folders) · [Privacy and network](#privacy-network-and-updates)
 
 ## Installation
 
-### Option 1 — community plugin directory (desktop and mobile)
+### Community plugin directory (recommended)
 
 1. In Obsidian, open **Settings → Community plugins** and browse the directory.
 2. Search for **QnALog**, install it, then enable it.
 
-The directory's **LexVoice** entry is a different plugin — see [Relationship to LexVoice](#relationship-to-lexvoice).
-
-### Option 2 — BRAT (works on desktop and mobile)
+### BRAT
 
 1. Install and enable **BRAT** from the community plugin directory.
 2. In BRAT, choose **Add beta plugin** and enter `qnalog/qnalog`.
 3. Install, then enable **QnALog** under **Settings → Community plugins**.
 
-You can also download the release assets (`main.js`, `manifest.json`, `styles.css`, plus `LICENSE` and `NOTICE`) straight from the [releases page](https://github.com/qnalog/qnalog/releases) into `<vault>/.obsidian/plugins/qnalog/`. Each release is built from its own tag by CI, which rebuilds the bundle and byte-compares it before uploading.
+### Manual release installation
 
-### Option 3 — build from source (desktop)
+Download `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` from the [releases page](https://github.com/qnalog/qnalog/releases) into `<vault>/.obsidian/plugins/qnalog/`. This manual method does not create an installation backup. For source installation and rollback, see [Source installation and rollback](#source-installation-and-rollback).
+
+## First-time setup
+
+1. Open **Settings → QnALog**. Choose **Setup Wizard** to select a preset, enter the required API key and model details, test the services, then choose **Apply and start**.
+2. Open **Settings → QnALog → Open sidebar**. The wizard may appear automatically on first enable when setup is incomplete; reopen it from the settings home at any time.
+3. **Quick config** is a separate shortcut for a preset configuration. If a setup is already present, confirm before replacing it. To configure services individually, open **Settings → QnALog → API**.
+
+Recording transcription needs a configured speech-to-text (ASR) service. Importing a complete audio file may use a separate transcription service. AI organization, questions, knowledge extraction, and generated reports need a configured large language model (LLM); an ASR key alone does not enable those features. You can use local services where supported.
+
+## Basic usage
+
+1. Open the **QnALog live minutes panel** from the left ribbon. The Obsidian toolbar shows a monochrome Q icon that follows the theme.
+
+   <picture>
+     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/qnalog-mark-reversed.svg">
+     <img src="docs/brand/qnalog-mark.svg" alt="QnALog panel icon" width="32" height="32">
+   </picture>
+
+2. Choose a template and audio input, then check that the level meter reacts.
+3. Start recording. Follow the live outline and add markers or notes as needed.
+4. Stop recording and follow transcription, AI organization, and Markdown writing in **Task progress**. Retry from the failed step if processing stops.
+5. Use the **Distill** and **Q&A** tabs as needed, or generate a report from a completed note.
+
+The sidebar tabs are **Outline**, **Distill**, **Q&A**, and **Notes**. They show the live outline and markers, reviewable knowledge candidates, questions about a note, and the note list. **Minutes Board** is a separate view, opened with its command or the button in the panel; it is not a fifth tab.
+
+The 1.6.1 interface follows the active light or dark theme and supports narrow panels, visible keyboard focus, and reduced-motion preferences.
+
+## Features
+
+### Outline and live markers
+
+Chapters grow during recording and link to the audio position. After recording, AI can complete the outline. To rebuild only an outline, choose **Rebuild outline from all transcripts** in the completed note's sidebar. QnALog saves a backup at `<vault>/<configDir>/qnalog-outline-backups/<timestamp>/<filename>` before replacing outline details. If generation fails or is incomplete, or the note changes during generation, the existing note is not replaced. The action does not change the note body.
+
+During recording, markers support `#term` (explain a term), `?question` (ask about the current discussion), `!highlight` (mark an important point), `@assignee` (suggest a todo owner), and `/todo` (mark a todo candidate). Half-width and full-width symbols are accepted. These notes are labeled supplementary material in the organization prompt; they are not presented as transcript text.
+
+### Continue a recording and preserve its sources
+
+Choose **Append recording to this note** from the open note's sidebar, the file menu, or the floating control. QnALog verifies the target note, records into a separate pending note, and waits for active processing and transcription tasks before merging. If a merge fails, the staged note and audio remain available for retry. If the target disappears or its transcript identity changes, the separate recording is kept rather than written to a different note. Continued recordings accumulate audio sources and retain their source references and continuous numbering.
+
+Transcribed notes preserve the original speech-to-text text and revision history. Decisions, actions, questions, and topics can link to transcript passages; changed passages are marked stale. Evidence is included with existing organization requests rather than sent in a separate extraction request.
+
+<details>
+<summary>Original, derived, and clean-copy versions</summary>
+
+Before the first derived version, QnALog caches recoverable original text. If the snapshot or its index cannot be saved or verified, it does not replace the source. **Generate Clean Copy** creates a separate file and activates that version in the source note. Regular reorganization creates a derived Markdown file and a `minutes` cache but does not activate the derived version automatically. The `.versions` cache is not a substitute for Obsidian file history.
+
+</details>
+
+### Long content, task progress, and recovery
+
+For standard meeting and learning-note modes, long recordings are organized in parts with local checkpoints, then assembled in time order. If a request is interrupted or the model reaches its output limit, completed parts are reused and unfinished parts can be retried. Incomplete work is shown as partially completed, not as an empty note.
+
+The processing panel separates transcription, AI organization, and Markdown writing, and shows the active stage, failures, and retry or cancel actions. Supported failed tasks can resume from the failed step. Unknown or damaged queue records are paused with their original data and references retained; inspect the pending queue for the reason. A paused damaged record is not automatically repaired by retry.
+
+### Distill and the knowledge library
+
+Knowledge extraction is user-initiated by default. Optional automatic extraction is off by default; when enabled, it automatically writes todo candidates only. People and glossary candidates still require review or maintenance.
+
+People can be kept, merged, or ignored. Confirmed todos become standalone cards; terms can be maintained in the glossary. The sidebar can assemble confirmed todos into a todo wall, and knowledge items retain source links. Candidate todos support inline edits to owner, due date, and subtasks.
+
+### Notes, board, and deliverables
+
+The note list can group recent notes by folder or time, with search and template filters. **Minutes Board** is a separate view for saved meeting materials.
+
+HTML and PDF reports are generated from a note by calling the configured LLM; they do not modify the original note. HTML and PDF are available from commands and the note list's context menu under **Generate**. PDF generation requires desktop Obsidian and very tall single-page reports have a height limit; use HTML for complete reading.
+
+The note list's **Generate** menu can also create an `.eml` email draft. It can contain a summary and attachments including the original Markdown, a generated PDF, or existing exported files; recipients can be matched from the people library. Review and send the draft in your email client. QnALog does not send email automatically.
+
+### Recording reliability
+
+- Level meters help check microphone and system audio input before and during recording. Device checks are available in settings.
+- Inputs remain user-selectable. Compatible independent multichannel inputs can be transcribed by channel; separation stays off when independent channels cannot be verified.
+- Deleting a transcript offers to delete its audio file too.
+- Short-recording filtering is on by default. A new recording under 3 seconds is discarded; one from 3 to under 10 seconds keeps audio only. You can import audio manually. If filtering is turned off, short recordings follow the ordinary processing flow. Imported audio bypasses this filter. Continued recordings still discard audio under 3 seconds, while 3 to under 10 seconds is appended normally.
+
+## Files and folders
+
+These are default locations; folders and files are created as needed. The segment cache is temporary processing storage, not a place to organize notes.
+
+| Content | Default path |
+|---|---|
+| Recordings | `QnALog/Recordings` |
+| Transcribed notes | `QnALog/Transcribed notes` |
+| Meeting materials | `QnALog/Meeting materials` |
+| People | `QnALog/Library/People` |
+| Todo cards | `QnALog/Library/Todos` |
+| Views | `QnALog/Library/Views` |
+| Glossary | `QnALog/Library/Glossary.md` |
+| Diagnostics log | `QnALog/System/Diagnostics log` |
+| Archive | `QnALog/Library/Archive` |
+| HTML reports | `QnALog/HTML reports` |
+| Email drafts | `QnALog/Email drafts` |
+| Segment cache | `QnALog/.cache/segments` |
+
+Saved configurable paths do not change when the interface language changes, and existing files are not moved. Unset paths and computed defaults such as the email-draft location use the current resolved interface language: Chinese uses Chinese directory names; other resolved languages use English names. Obsidian determines the interface language by default. The email-draft location has no separate setting. Cache locations are not user-configurable folder settings.
+
+## Platform and audio setup
+
+QnALog supports desktop and mobile Obsidian. Mobile recording uses the device microphone and transcription can use segmented or whole-file HTTP requests. System audio, virtual devices, multichannel capture, desktop device diagnostics, and realtime WebSocket transcription require the desktop app.
+
+Capturing computer audio usually needs a virtual audio device:
+
+- Windows: VB-Cable
+- macOS: BlackHole
+- Linux: PulseAudio / PipeWire monitor source
+
+With VB-Cable, meeting apps, browsers, and system output go to **CABLE Input**; QnALog reads **CABLE Output** as a recording device. To record yourself as well, select your physical microphone as the microphone input. See **Settings → QnALog → Recording** for device selection and checks.
+
+## Privacy, network, and updates
+
+QnALog requires no QnALog account and has no QnALog-operated backend, ads, analytics, or telemetry. Settings, queue items, and context are stored in `.obsidian/plugins/qnalog/data.json`. Current API keys use Obsidian SecretStorage; older data and install backups may still contain plaintext or obfuscated keys. SecretStorage behavior across installations or sync is not guaranteed, so re-enter keys that are missing. See [`PRIVACY.md`](PRIVACY.md) and [`SECURITY.md`](SECURITY.md).
+
+Network requests depend on the feature you use:
+
+- Transcription sends audio to the configured speech-to-text service.
+- Organization, Q&A, knowledge extraction, and report generation send relevant text and prompts to the configured LLM. Manual service tests and model-list retrieval can also make requests.
+- When you click **Check for updates** in Settings → About or run **Check for Updates** from the command palette, QnALog reads this repository's `main` branch `manifest.json` from raw GitHub or jsDelivr mirrors. There is no background update check; QnALog does not download or install plugin files. Obsidian or BRAT manages installation.
+
+The optional desktop external-import feature reads audio from the one directory you select, copies it into the vault's QnALog cache, and stores import state in the plugin directory. It leaves source files in place. Transcription and organization of imported audio still use your configured services.
+
+For sensitive content, use local services where practical and obtain consent before recording. Provider terms apply to content you send to a third-party service.
+
+## Source installation and rollback
+
+Source installation is for desktop. It builds the committed source and backs up the existing plugin directory before copying files, including `data.json`:
 
 ```bash
 git clone https://github.com/qnalog/qnalog.git
@@ -204,26 +163,30 @@ npm run build
 npm run install:vault -- "/path/to/your/vault"
 ```
 
-`install:vault` copies `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` into `<vault>/.obsidian/plugins/qnalog/`, and snapshots anything it overwrites (including `data.json`) into `<vault>/.obsidian/qnalog-install-backups/<timestamp>/`. It only touches the `qnalog` folder: settings are never inherited from other plugins. The settings folder follows the plugin id, so a build installed from source and a BRAT install keep their settings in the same folder.
+The installer copies `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` into `<vault>/.obsidian/plugins/qnalog/`. Its backup is stored under `<vault>/.obsidian/qnalog-install-backups/<timestamp>/`. The community directory and BRAT manage their own installations.
 
-Then reload Obsidian (`Ctrl/Cmd + R`) and enable **QnALog**.
+Settings with the same schema version are read as-is. Recognized releases from version 1 onward migrate forward when a migration path exists, preserving user configuration. A higher on-disk version is read-only and is not overwritten. If the source version cannot be identified, the original file is backed up under `<plugin folder>/settings-backups/` before defaults are used. These rules do not guarantee migration from every older version.
 
-QnALog keeps your settings when the stored schema is older: it migrates them forward and your API keys, service configuration, prompts, paths, and device choices are preserved. Settings are only discarded when they cannot be recognized at all (written by a different project, or corrupted) — in that case the original file is backed up under `<plugin folder>/settings-backups/` before defaults are used.
-
-### Rolling back
-
-Every install snapshots the plugin folder it is about to overwrite, so rollback is one command:
+To restore an installation backup:
 
 ```bash
 npm run restore:vault -- "<vault>/.obsidian/qnalog-install-backups/<timestamp>" "/path/to/your/vault"
 ```
 
-`restore:vault` reads the plugin id and version from the backup's `manifest.json`, restores that folder, and snapshots your current folder first — so the rollback itself is undoable (the undo command is printed). It rejects ids that are not safe single directory names and refuses linked or overlapping restore trees before writing. It also tells you which plugin id Obsidian currently has enabled; add `--set-enabled` to rewrite `community-plugins.json` instead of switching in the UI. Pass the vault path explicitly when the backup lives outside a vault.
+`restore:vault` saves the current plugin directory before restoring, making the restore reversible. It rejects unsafe plugin ids and linked or overlapping restore paths. Add `--set-enabled` to update `community-plugins.json`; otherwise switch plugins in Obsidian. Pass the vault path when the backup is outside a vault. Restoring an older build may leave newer settings read-only, and restoring files does not guarantee recovery of SecretStorage keys from another installation.
 
-Other development and check commands: see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+## Project background
+
+QnALog is derived from [LexVoice](https://github.com/Lynn-x/LexVoice), based on its last MIT-licensed release (2.1.2). It is independently maintained. See [`NOTICE`](NOTICE) and [`MAINTAINING.md`](MAINTAINING.md) for origin and licensing details.
+
+QnALog does not inherit settings or migrate notes from the predecessor project. It does not scan or rewrite existing notes on load. The plugin id is `qnalog`, distinct from the predecessor's id, and written data uses the QnALog namespace.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development commands and contribution guidance. The maintenance workflow and validation requirements are in [`MAINTAINING.md`](MAINTAINING.md).
 
 ## License & credits
 
-MIT — see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and the maintenance policy in [`MAINTAINING.md`](MAINTAINING.md).
+MIT — see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and [`MAINTAINING.md`](MAINTAINING.md).
 
-Copyright (c) 2026 Lynnx (original LexVoice work); modifications copyright (c) 2026 Q&A Log Team.
+Copyright (c) 2026 Lynnx (original work); modifications copyright (c) 2026 Q&A Log Team.
