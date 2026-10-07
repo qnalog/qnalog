@@ -8655,6 +8655,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-head.is-active-session .qnalog-outline-title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
   color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 20px;
   line-height: 1.15;
@@ -12356,11 +12361,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
   min-width: 0;
-  padding-right: 84px;
+  padding-right: 0;
 }
 
 .qnalog-outline .qnalog-outline-recent-title-line {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
@@ -12379,6 +12389,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-meta {
+  grid-column: 1;
+  min-width: 0;
   overflow: hidden;
   margin-top: 3px;
   color: var(--qnalog-text-secondary, var(--text-muted));
@@ -12389,14 +12401,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-actions {
-  position: absolute;
-  top: 50%;
-  right: 8px;
+  position: static;
+  grid-column: 2;
+  top: auto;
+  right: auto;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 3px;
-  transform: translateY(-50%);
+  margin-top: 3px;
+  transform: none;
 }
+
+/* 动作与元数据同列排列，标题行跨满内容宽度；异常状态标记不再缩窄纪要标题。 */
 
 .qnalog-outline .qnalog-outline-recent-action {
   min-width: 36px;
