@@ -197,7 +197,7 @@ describe("检测对象是候选配置", () => {
 
     expect(after.activeTranscribeProvider).toBe("dashscope-flash");
     expect(after.transcribeProviders["dashscope-flash"].model).toBe("qwen-audio-3.1-asr-flash");
-    expect(after.transcribeProviders["dashscope-flash"].endpoint).toBe("https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation");
+    expect(after.transcribeProviders["dashscope-flash"].endpoint).toBe("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
     expect(after.transcribeProviders["dashscope-flash"].apiKey).toBe("sk-bailian");
 
     expect(after.importTranscribeProvider).toBe("dashscope-filetrans");

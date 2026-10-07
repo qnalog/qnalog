@@ -616,13 +616,13 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 | 用途 | 服务（provider id） | 模型 | 接入方式 |
 |---|---|---|---|
-| 录音转写（分段） | `dashscope-flash` | `qwen-audio-3.1-asr-flash` | Qwen 官方原生 HTTP `https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation` |
+| 录音转写（分段） | `dashscope-flash` | `qwen-audio-3.1-asr-flash` | DashScope 原生 HTTP `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` |
 | 导入音频（整文件） | `dashscope-filetrans` | `qwen-audio-3.1-asr-flash-filetrans` | HTTP 异步提交、轮询和下载 |
 | AI 整理 | 服务预设 `dashscope` | `qwen3.8-flash` | OpenAI 兼容 `/compatible-mode/v1` |
 
 录音转写与整文件导入共用一把百炼密钥。只对新建配置和用户主动应用的方案使用上述默认值；设置加载不会改写已保存模型、地址、密钥、活动服务、语言或完整方案快照。旧 `dashscope-chat` 仍单独使用 `qwen3-asr-flash` 与 Chat Completions 协议；不能把 `qwen-audio-3.1-asr-flash` 填入旧 endpoint。`qwen3-asr-flash` 仍在百炼官方模型列表中，本项目不声明它已下线。
 
-Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].content[].input_audio.data` 与 `parameters`；响应文本从 `output.text` 读取。官方[模型页](https://www.qianwenai.com/models/qwen-audio-3.1-asr-flash)的请求示例使用 `https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation`、`X-DashScope-SSE: disable` 与 Bearer API Key；新建录音转写配置使用该 endpoint。语言未指定时省略 `language_hints`。WAV 只有在头部读到采样率时才发送 `sample_rate`；原样上传的 WebM/MP4 不会被标记为 16 kHz。短音频默认不请求说话人分离或时间戳；转写正文经过现有本地词汇纠正，原始服务文字保留在转写单元中。该模型可执行原生文本润色，结果可能不是逐字转写。
+Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].content[].input_audio.data` 与 `parameters`；响应文本从 `output.text` 读取。百炼[短音频 API 文档](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)允许使用 `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`；新建录音转写配置使用该 endpoint。千问 AI 平台模型页展示的是另一个服务域名，不自动替换百炼地址，也不假定两处 API Key 通用。语言未指定时省略 `language_hints`。WAV 只有在头部读到采样率时才发送 `sample_rate`；原样上传的 WebM/MP4 不会被标记为 16 kHz。短音频默认不请求说话人分离或时间戳；转写正文经过现有本地词汇纠正，原始服务文字保留在转写单元中。该模型可执行原生文本润色，结果可能不是逐字转写。
 
 客户端保守使用 10,000,000 字节 Base64 上传预算与 3 分钟 WAV 分块；这不是官方文件规格。官方模型列表列出的 Flash 输入规格为最多 5 分钟/2 GB，而 API 示例对 Base64 请求提示 10 MB，故客户端继续采用较严的预算，不把上传限制扩大至 2 GB。`input_audio.data` 使用规范化的 `audio/<format>` Data URI MIME，不附带 MediaRecorder 的 `codecs` 参数；音频字节保持原样，`parameters.format` 与 Data URI 后缀一致。只有从 WAV 头部确认采样率时才附带该字段。
 

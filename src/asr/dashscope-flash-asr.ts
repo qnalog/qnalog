@@ -3,7 +3,7 @@ import { assertSafeServiceEndpoint } from "../shared/util-llm-endpoint";
 import { t } from "../shared/i18n";
 
 export const DASHSCOPE_FLASH_ASR_PROTOCOL = "dashscope-flash-input-audio";
-export const DASHSCOPE_FLASH_ASR_ENDPOINT = "https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation";
+export const DASHSCOPE_FLASH_ASR_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
 
 export interface DashScopeFlashProvider {
   endpoint: string;
@@ -149,6 +149,9 @@ export async function requestDashScopeFlashChunk(
   } catch (error) {
     if (controller?.signal.aborted) {
       throw new Error(t("Transcription request timed out; the audio file is kept, so you can retry later."));
+    }
+    if (error instanceof TypeError) {
+      throw new Error(t("Could not connect to the transcription service. Check the service URL and network access from Obsidian, then retry."));
     }
     throw error;
   } finally {

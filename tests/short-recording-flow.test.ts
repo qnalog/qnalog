@@ -382,7 +382,7 @@ describe("短录音整条路径", () => {
 
       const markdown = files.get(mdPath)?.content || "";
       expect(requests).toHaveLength(1);
-      expect(requests[0].url).toBe("https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation");
+      expect(requests[0].url).toBe("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
       expect(JSON.parse(String(requests[0].init.body)).model).toBe("qwen-audio-3.1-asr-flash");
       expect(JSON.parse(String(requests[0].init.body)).input.messages[0].content[0].input_audio.data).toMatch(/^data:audio\/webm;base64,/);
       expect(session.segments[0].text).toBe("模拟模型返回的转写。");

@@ -11,16 +11,17 @@ import {
   requestDashScopeFlashChunk,
 } from "../src/asr/dashscope-flash-asr";
 import { transcribeAudio } from "../src/asr/transcribe";
-const endpoint = "https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation";
+const endpoint = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
 const audio = { blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" }), mime: "audio/webm" };
 const provider = { id: "dashscope-flash", endpoint, apiKey: "test-key", model: "qwen-audio-3.1-asr-flash", language: "" };
 let request: { url: string; init: RequestInit } | null = null;
 
-function installWindow(response: unknown = { output: { text: "  原始转写正文。  " } }, status = 200): void {
+function installWindow(response: unknown = { output: { text: "  原始转写正文。  " } }, status = 200, fetchError?: unknown): void {
   request = null;
   vi.stubGlobal("window", {
     fetch: vi.fn(async (url: string, init: RequestInit) => {
       request = { url, init };
+      if (fetchError !== undefined) throw fetchError;
       return { ok: status >= 200 && status < 300, status, json: async () => response };
     }),
     setTimeout: globalThis.setTimeout.bind(globalThis),
@@ -39,7 +40,7 @@ describe("Bailian Qwen-Audio-3.1-ASR-Flash native HTTP", () => {
     installWindow();
     const result = await requestDashScopeFlashChunk(provider, audio, 5000);
     expect(result).toEqual({ text: "原始转写正文。", rawText: "  原始转写正文。  " });
-    expect(endpoint).toBe("https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation");
+    expect(endpoint).toBe("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
     expect(request?.url).toBe(endpoint);
     const headers = request?.init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer test-key");
@@ -128,5 +129,11 @@ describe("Bailian Qwen-Audio-3.1-ASR-Flash native HTTP", () => {
     expect(message).toContain("[audio omitted]");
     expect(message).not.toContain("test-key");
     expect(message).not.toContain("c2VjcmV0YXVkaW8=");
+  });
+  it("reports a safe actionable error when the browser cannot fetch the service", async () => {
+    installWindow(undefined, 200, new TypeError("Failed to fetch"));
+    await expect(requestDashScopeFlashChunk(provider, audio, 5000)).rejects.toThrow(
+      "Could not connect to the transcription service. Check the service URL and network access from Obsidian, then retry.",
+    );
   });
 });

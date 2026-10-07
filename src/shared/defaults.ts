@@ -244,7 +244,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     // This native HTTP protocol is separate from the legacy Qwen3 Chat Completions entry below.
     "dashscope-flash": {
       name: "Alibaba Cloud Bailian Qwen-Audio-3.1-ASR-Flash",
-      endpoint: "https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation",
+      endpoint: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
       apiKey: "",
       model: "qwen-audio-3.1-asr-flash",
       language: "",
