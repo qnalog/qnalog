@@ -67,7 +67,7 @@ export async function requestDashScopeFlashChunk(
   const format = audioFormat(audio.mime);
   if (!format) throw new Error(t("Could not determine the audio format for the Bailian request."));
   const audioBytes = await audio.blob.arrayBuffer();
-  const audioData = `data:${audio.mime};base64,${qnalogArrayBufferToBase64(audioBytes)}`;
+  const audioData = `data:audio/${format};base64,${qnalogArrayBufferToBase64(audioBytes)}`;
   const language = String(provider.language || "").trim().toLowerCase();
   const parameters: Record<string, unknown> = { format };
   const sampleRate = format === "wav" ? wavSampleRate(audioBytes) : null;

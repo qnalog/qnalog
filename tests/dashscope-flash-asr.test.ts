@@ -50,6 +50,20 @@ describe("Bailian Qwen-Audio-3.1-ASR-Flash native HTTP", () => {
     expect(body.messages).toBeUndefined();
   });
 
+  it("removes recorder codec parameters from WebM and MP4 data URI MIME types", async () => {
+    for (const [mime, format] of [
+      ["audio/webm;codecs=opus", "webm"],
+      ["audio/mp4;codecs=mp4a.40.2", "mp4"],
+    ]) {
+      const codecAudio = { blob: new Blob([new Uint8Array([1, 2, 3])], { type: mime }), mime };
+      installWindow();
+      await requestDashScopeFlashChunk(provider, codecAudio, 5000);
+      const body = JSON.parse(String(request?.init.body));
+      expect(body.input.messages[0].content[0].input_audio.data).toMatch(new RegExp(`^data:audio/${format};base64,`));
+      expect(body.parameters.format).toBe(format);
+    }
+  });
+
   it("omits automatic language and applies explicit language_hints", async () => {
     installWindow();
     await requestDashScopeFlashChunk(provider, audio, 5000);

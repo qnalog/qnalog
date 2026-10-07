@@ -624,7 +624,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].content[].input_audio.data` 与 `parameters`；响应文本从 `output.text` 读取。语言未指定时省略 `language_hints`。WAV 只有在头部读到采样率时才发送 `sample_rate`；原样上传的 WebM/MP4 不会被标记为 16 kHz。短音频默认不请求说话人分离或时间戳；转写正文经过现有本地词汇纠正，原始服务文字保留在转写单元中。该模型可执行原生文本润色，结果可能不是逐字转写。
 
-客户端保守使用 10,000,000 字节 Base64 上传预算与 3 分钟 WAV 分块；这不是官方文件规格。官方模型列表列出的 Flash 输入规格为最多 5 分钟/2 GB，而 API 示例对 Base64 请求提示 10 MB，故客户端继续采用较严的预算，不把上传限制扩大至 2 GB。原样接收的格式按实际音频格式填写；只有从 WAV 头部确认采样率时才附带该字段。
+客户端保守使用 10,000,000 字节 Base64 上传预算与 3 分钟 WAV 分块；这不是官方文件规格。官方模型列表列出的 Flash 输入规格为最多 5 分钟/2 GB，而 API 示例对 Base64 请求提示 10 MB，故客户端继续采用较严的预算，不把上传限制扩大至 2 GB。`input_audio.data` 使用规范化的 `audio/<format>` Data URI MIME，不附带 MediaRecorder 的 `codecs` 参数；音频字节保持原样，`parameters.format` 与 Data URI 后缀一致。只有从 WAV 头部确认采样率时才附带该字段。
 
 ### 百炼语音识别原价（不含免费额度及存储、网络费用）
 
