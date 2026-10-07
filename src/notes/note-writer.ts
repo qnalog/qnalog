@@ -9,7 +9,7 @@ import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
-import { extractAllRawBlocksFromText, findFirstNoteBoundary, findNoteMarkerOffset, findSessionNoteBlock, iterateNoteDetailsBlocks, splitLeadingFrontmatter } from "./note-document";
+import { extractAllRawBlocksFromText, findNoteMarkerOffset, findSessionNoteBlock, iterateNoteDetailsBlocks, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../notes/realtime-outline";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
@@ -17,14 +17,14 @@ import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingW
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { readCurrentOutlineBlock } from "./outline-storage";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../transcript/transcript-markdown";
-import { getCurrentTranscript } from "../transcript/session-transcript";
 import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
-import { NS_CONTINUATION_COMMITTED_MARKER, NS_MERGE_BLOCK_RE, NS_OUTLINE_BACKUP_FOLDER, NS_TAG, nsMarker, nsMarkerAnyRe, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_CONTINUATION_COMMITTED_MARKER, NS_MERGE_BLOCK_RE, NS_OUTLINE_BACKUP_FOLDER, NS_TAG, nsMarker, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
+import { commitContinuationFlow, type ContinuationCommitFlowHost, type ContinuationTranscriptSegment } from "./continuation-commit-flow";
 
 import { t } from "../shared/i18n";
 
@@ -145,8 +145,22 @@ export interface NoteWriterHost {
 
 export class NoteWriter {
   declare host: NoteWriterHost;
+  private readonly continuationCommitHost: ContinuationCommitFlowHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
+    this.continuationCommitHost = {
+      readTarget: async (mdPath) => {
+        const file = this.host.vault.getAbstractFileByPath(mdPath);
+        if (!(file instanceof obsidian.TFile)) throw new Error("Continuation target note is missing");
+        return this.host.vault.read(file);
+      },
+      shouldRewrite: (session) => shouldRewriteConsolidatedNote(this.host.settings, session),
+      serializeIncomingSegment: (segment) => this.serializeContinuationSegment(segment),
+      rewrite: (session, polished, continuationSessionId) => this.rewriteConsolidated(session, polished, continuationSessionId),
+      append: (session, polished, continuationSessionId, initialMarkdown) => this.appendPolishBlock(
+        session, polished, null, false, continuationSessionId, initialMarkdown,
+      ),
+    };
   }
   async readNoteMarkdown(file: obsidian.TFile): Promise<string> {
     return this.host.vault.read(file);
@@ -496,77 +510,16 @@ export class NoteWriter {
   }
 
   async commitContinuation(session: RecordingSession, polished: string, committedSessionIds: readonly string[]): Promise<void> {
-    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) throw new Error("Continuation target note is missing");
-    const current = await this.host.vault.read(file);
-    const blocks = readTranscriptBlocks(current);
-    const incoming = session.segments.filter(segment => segment.transcript?.sourceId === session.id);
-    const counts = new Map<string, number>();
-    const existingById = new Map<string, typeof blocks[number]>();
-    for (const block of blocks) {
-      const id = block.segment.transcript?.id;
-      if (!id) continue;
-      counts.set(id, (counts.get(id) || 0) + 1);
-      existingById.set(id, block);
-    }
-    const incomingIds = new Set<string>();
-    for (const segment of incoming) {
-      const id = segment.transcript.id;
-      if (incomingIds.has(id)) throw new Error(`Continuation contains duplicate transcript block ${id}`);
-      incomingIds.add(id);
-      const count = counts.get(id) || 0;
-      if (count > 1) throw new Error(`Expected one transcript block for ${id}; found ${count}`);
-      const existing = existingById.get(id);
-      const incomingRevision = getCurrentTranscript(segment.transcript);
-      const existingRevision = existing?.segment.transcript
-        ? getCurrentTranscript(existing.segment.transcript)
-        : null;
-      if (existing && (existing.drifted
-        || existing.segment.transcript?.sourceId !== segment.transcript.sourceId
-        || existingRevision?.revision !== incomingRevision.revision
-        || existingRevision?.normalizationRevision !== incomingRevision.normalizationRevision)) {
-        throw new Error(`Transcript block drifted for ${id}`);
-      }
-    }
-    const marker = nsMarker(NS_CONTINUATION_COMMITTED_MARKER, session.id);
-    if (current.includes(marker)) {
-      for (const segment of incoming) {
-        if ((counts.get(segment.transcript.id) || 0) !== 1) {
-          throw new Error(`Committed continuation is missing transcript block ${segment.transcript.id}`);
-        }
-      }
-      return;
-    }
-    for (const id of committedSessionIds) {
-      if (!current.includes(nsMarker(NS_CONTINUATION_COMMITTED_MARKER, id))) {
-        throw new Error(`Previously committed continuation marker is missing for ${id}`);
-      }
-    }
-    if (shouldRewriteConsolidatedNote(this.host.settings, session)) {
-      await this.rewriteConsolidated(session, polished, session.id);
-      return;
-    }
-    const freshBlocks: string[] = [];
-    for (const segment of incoming) {
-      if (existingById.has(segment.transcript.id)) continue;
-      const number = segment.index + 1;
-      const heading = `### ${labelText("segment", number)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment))}${segment.isFinal ? " · 结束" : ""}`;
-      const body = segment.error
-        ? getTranscribeSegmentPlaceholder(segment.error, { retryable: !!segment.queueTaskId })
-        : (segment.text || labelText("noContentSegment"));
-      freshBlocks.push(serializeTranscriptBlock(segment, heading, body));
-    }
-    let withFreshBlocks = current;
-    if (freshBlocks.length) {
-      const markerAt = findFirstNoteBoundary(current, [nsMarkerAnyRe("segments-end")]);
-      const insertionAt = markerAt < current.length
-        ? markerAt
-        : blocks.length ? blocks[blocks.length - 1].end : -1;
-      if (insertionAt < 0) throw new Error("Continuation target has no transcript insertion marker");
-      const insertion = `\n${freshBlocks.join("\n")}\n`;
-      withFreshBlocks = current.slice(0, insertionAt) + insertion + current.slice(insertionAt);
-    }
-    await this.appendPolishBlock(session, polished, null, false, session.id, withFreshBlocks);
+    return commitContinuationFlow(this.continuationCommitHost, session, polished, committedSessionIds);
+  }
+
+  private serializeContinuationSegment(segment: ContinuationTranscriptSegment): string {
+    const number = segment.index + 1;
+    const heading = `### ${labelText("segment", number)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment))}${segment.isFinal ? " · 结束" : ""}`;
+    const body = segment.error
+      ? getTranscribeSegmentPlaceholder(segment.error, { retryable: !!segment.queueTaskId })
+      : (segment.text || labelText("noContentSegment"));
+    return serializeTranscriptBlock(segment, heading, body);
   }
   async appendToNote(path, content) {
     const existing = this.host.vault.getAbstractFileByPath(path);

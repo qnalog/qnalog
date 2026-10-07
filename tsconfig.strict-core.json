@@ -77,5 +77,6 @@
     "src/audio/recorder-service.ts",
     "src/audio/recording-segment-flow.ts",
     "src/notes/session-finalize-flow.ts",
+    "src/notes/continuation-commit-flow.ts",
   ]
 }
