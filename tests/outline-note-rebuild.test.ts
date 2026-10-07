@@ -27,7 +27,7 @@ import type { NoteWriterHost } from "../src/notes/note-writer";
 import { RealtimeOutlineService } from "../src/notes/realtime-outline-service";
 import { readCurrentOutlineBlock } from "../src/notes/outline-storage";
 import { createRealtimeOutlineSourceCoverage } from "../src/notes/outline-coverage";
-import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import type { RecordingSession, Segment } from "../src/shared/types";
@@ -142,11 +142,13 @@ function createMemoryVault(initialMarkdown: string, configDir = ".obsidian") {
     writeTarget(markdown: string) { files.get(target.path)!.markdown = markdown; },
     changeBeforeProcess(change: () => void) { beforeProcess = change; },
     failBackupWrites() { failBackupWrite = true; },
+    get backupPaths() { return [...adapterFiles.keys()]; },
+    get folderPaths() { return [...folders.keys()]; },
   };
 }
 
-function makeWriterAndService(initialMarkdown: string, generation: "success" | "incomplete" | "failure" | "cancel" = "success", busy = false) {
-  const memory = createMemoryVault(initialMarkdown);
+function makeWriterAndService(initialMarkdown: string, generation: "success" | "incomplete" | "failure" | "cancel" = "success", busy = false, configDir = ".obsidian") {
+  const memory = createMemoryVault(initialMarkdown, configDir);
   let writerVault: NoteWriterHost["vault"] = memory.vault as never;
   const writerHost: NoteWriterHost = {
     get vault() { return writerVault; },
@@ -370,5 +372,497 @@ describe("manual note outline rebuild", () => {
     expect(replacementStorage.readPath(result.backupPath!)).toBe(original);
     expect(memory.markdown).toBe(original);
     expect(replacementStorage.readPath(memory.target.path)).toContain("Rebuilt topic");
+  });
+  it("replaces an empty last outline block without changing archived bytes", async () => {
+    const archived = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- Archived bytes\n</details>";
+    const empty = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n</details>";
+    const original = `Unicode 保留。\n\n${createOriginalNote().replace(/<details>\n<summary>Live outline while recording \(draft\)<\/summary>\n\n- Old current topic\n<\/details>/, archived)}\n\n${empty}`;
+    const last = readCurrentOutlineBlock(original)!;
+    const { memory, writer } = makeWriterAndService(original);
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New topic\n</details>";
+
+    const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+
+    expect(result.status).toBe("written");
+    expect(memory.markdown).toBe(`${original.slice(0, last.range.start)}${generated}${original.slice(last.range.end)}`);
+    expect(memory.readPath(result.backupPath!)).toBe(original);
+    const originalTranscript = readTranscriptBlocks(original);
+    const updatedTranscript = readTranscriptBlocks(memory.markdown);
+    expect(updatedTranscript.map((block) => block.segment.transcript?.sourceId))
+      .toEqual(originalTranscript.map((block) => block.segment.transcript?.sourceId));
+    expect(updatedTranscript.map((block) => block.visibleBlock))
+      .toEqual(originalTranscript.map((block) => block.visibleBlock));
+  });
+
+  it("does not back up or process a stale expected snapshot", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    memory.writeTarget(`${original}\n\nConcurrent change.`);
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New topic\n</details>";
+
+    const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+
+    expect(result).toEqual({ status: "stale", backupPath: null });
+    expect(memory.processCount).toBe(0);
+    expect(memory.backupPaths).toEqual([]);
+  });
+
+  it.each([
+    ["wrong extension", new obsidian.TFile("Notes/source.txt"), "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>"],
+    ["invalid details", new obsidian.TFile("Notes/source.md"), "not a details block"],
+    ["trailing byte", new obsidian.TFile("Notes/source.md"), "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>\n"],
+  ])("rejects %s before backup or process", async (_case, file, generated) => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+
+    const result = await writer.replaceRealtimeOutline(file as MemoryFile, original, generated);
+
+    expect(result).toEqual({
+      status: "write-failed",
+      backupPath: null,
+      errorMessage: "Invalid outline replacement target or details block",
+    });
+    expect(memory.backupPaths).toEqual([]);
+    expect(memory.processCount).toBe(0);
+    expect(memory.markdown).toBe(original);
+  });
+
+  it.each([new Error("read unavailable"), "read unavailable"])("preserves initial read errors", async (failure) => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const read = vi.spyOn(memory.vault, "read").mockRejectedValueOnce(failure);
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result).toEqual({
+        status: "write-failed",
+        backupPath: null,
+        errorMessage: failure instanceof Error ? failure.message : String(failure),
+      });
+      expect(memory.backupPaths).toEqual([]);
+      expect(memory.processCount).toBe(0);
+      expect(memory.markdown).toBe(original);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it("allocates the next available backup timestamp directory", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T12:00:00.000Z"));
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const root = ".obsidian/qnalog-outline-backups";
+    await memory.vault.adapter!.mkdir(`${root}/2026-10-07T12-00-00-000Z`);
+    await memory.vault.adapter!.mkdir(`${root}/2026-10-07T12-00-00-000Z-2`);
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result.status).toBe("written");
+      expect(result.backupPath).toBe(`${root}/2026-10-07T12-00-00-000Z-3/source.md`);
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retains a completed backup and concurrent bytes when process rejects after editing", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const concurrent = `${original}\n\nConcurrent process edit.`;
+    const process = vi.spyOn(memory.vault, "process").mockImplementation(async (file, transform) => {
+      memory.writeTarget(concurrent);
+      transform(concurrent);
+      throw new Error("process unavailable");
+    });
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result.status).toBe("write-failed");
+      expect(result.errorMessage).toBe("process unavailable");
+      expect(result.backupPath).toBeTruthy();
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+      expect(memory.markdown).toBe(concurrent);
+    } finally {
+      process.mockRestore();
+    }
+  });
+
+  it("keeps the replacement and backup when final readback fails", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const read = vi.spyOn(memory.vault, "read");
+    read.mockImplementationOnce(async () => original);
+    read.mockImplementationOnce(async () => original);
+    read.mockImplementationOnce(async () => { throw new Error("readback unavailable"); });
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result.status).toBe("write-failed");
+      expect(result.errorMessage).toBe("readback unavailable");
+      expect(result.backupPath).toBeTruthy();
+      expect(memory.markdown).toContain("- New");
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it("keeps target and adapter capabilities bound to their separate capture times", async () => {
+    const original = createOriginalNote();
+    const { memory, writer, setWriterVault } = makeWriterAndService(original);
+    const backupVault = createMemoryVault(original, ".alternate-config");
+    const latestVault = createMemoryVault(original, ".latest-config");
+    const initialRead = vi.spyOn(memory.vault, "read");
+    const backupAdapter = backupVault.vault.adapter!;
+    const originalWrite = backupAdapter.write.bind(backupAdapter);
+    const write = vi.spyOn(backupAdapter, "write");
+    let releaseRead!: () => void;
+    let reachedRead!: () => void;
+    let releaseWrite!: () => void;
+    let reachedWrite!: () => void;
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    const readReached = new Promise<void>((resolve) => { reachedRead = resolve; });
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const writeReached = new Promise<void>((resolve) => { reachedWrite = resolve; });
+    initialRead.mockImplementationOnce(async () => {
+      reachedRead();
+      await readGate;
+      return memory.markdown;
+    });
+    write.mockImplementationOnce(async function (path, content) {
+      reachedWrite();
+      await writeGate;
+      return originalWrite(path, content);
+    });
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const pending = writer.replaceRealtimeOutline(memory.target, original, generated);
+      await readReached;
+      setWriterVault(backupVault.vault as never);
+      releaseRead();
+      await writeReached;
+      setWriterVault(latestVault.vault as never);
+      releaseWrite();
+      const result = await pending;
+      expect(result.status).toBe("written");
+      expect(result.backupPath).toMatch(/^\.alternate-config\/qnalog-outline-backups\//);
+      expect(backupVault.readPath(result.backupPath!)).toBe(original);
+      expect(latestVault.backupPaths).toEqual([]);
+      expect(memory.markdown).toContain("- New");
+      expect(backupVault.markdown).toBe(original);
+      expect(latestVault.markdown).toBe(original);
+    } finally {
+      releaseRead();
+      releaseWrite();
+      initialRead.mockRestore();
+      write.mockRestore();
+    }
+  });
+  it.each([0, 1, 2].flatMap((beforeLines) => [0, 1, 2].map((afterLines) => [beforeLines, afterLines] as const)))(
+    "preserves insertion separators with %i leading and %i trailing newlines",
+    async (beforeLines, afterLines) => {
+      const info = "<details>\n<summary>Recording info</summary>\n\nDetails\n</details>";
+      const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- Inserted\n</details>";
+      const original = `A${"\n".repeat(beforeLines)}${info}${"\n".repeat(afterLines)}B`;
+      const before = `A${"\n".repeat(beforeLines)}${info}`;
+      const after = `${"\n".repeat(afterLines)}B`;
+      const beforeSeparator = before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
+      const afterSeparator = after.startsWith("\n\n") ? "" : after.startsWith("\n") ? "\n" : "\n\n";
+      const expected = `${before}${beforeSeparator}${generated}${afterSeparator}${after}`;
+      const { memory, writer } = makeWriterAndService(original);
+
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+
+      expect(result.status).toBe("written");
+      expect(memory.markdown).toBe(expected);
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+    },
+  );
+
+  it("inserts after the last recording-info block", async () => {
+    const first = "<details>\n<summary>Recording info</summary>\n\nFirst info\n</details>";
+    const last = "<details>\n<summary>Recording info</summary>\n\nLast info\n</details>";
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- Inserted\n</details>";
+    const original = `${first}\n\nBetween\n\n${last}\n\nTail`;
+    const { memory, writer } = makeWriterAndService(original);
+
+    const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+
+    expect(result.status).toBe("written");
+    expect(memory.markdown).toBe(`${first}\n\nBetween\n\n${last}\n\n${generated}\n\nTail`);
+  });
+
+  it.each([
+    ["mkdir rejects", "mkdir unavailable"],
+    ["backup write rejects", "write unavailable"],
+    ["backup read rejects", "backup read unavailable"],
+    ["backup read differs", "Outline backup readback did not match the original note"],
+  ])("does not process the note when %s", async (scenario, message) => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const adapter = memory.vault.adapter!;
+    const spies = [
+      vi.spyOn(adapter, "mkdir"),
+      vi.spyOn(adapter, "write"),
+      vi.spyOn(adapter, "read"),
+    ];
+    if (scenario === "mkdir rejects") spies[0].mockRejectedValueOnce(new Error(message));
+    if (scenario === "backup write rejects") spies[1].mockRejectedValueOnce(new Error(message));
+    if (scenario === "backup read rejects") spies[2].mockRejectedValueOnce(new Error(message));
+    if (scenario === "backup read differs") spies[2].mockResolvedValueOnce("different bytes");
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result.status).toBe("backup-failed");
+      expect(result.backupPath).toBeNull();
+      expect(result.errorMessage).toBe(message);
+      expect(memory.processCount).toBe(0);
+      expect(memory.markdown).toBe(original);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it("reports a backup root that remains absent after mkdir", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const exists = vi.spyOn(memory.vault.adapter!, "exists").mockResolvedValue(false);
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result).toEqual({
+        status: "backup-failed",
+        backupPath: null,
+        errorMessage: "Could not create the outline backup folder",
+      });
+      expect(memory.processCount).toBe(0);
+    } finally {
+      exists.mockRestore();
+    }
+  });
+
+  it("uses a root without a config-directory prefix when configDir is empty", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original, "success", false, "");
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+
+    expect(result.status).toBe("written");
+    expect(result.backupPath).toMatch(/^qnalog-outline-backups\/[^/]+\/source\.md$/);
+    expect(memory.readPath(result.backupPath!)).toBe(original);
+  });
+
+  it("does not overwrite any backup after exhausting 100 timestamp directories", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T12:00:00.000Z"));
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const adapter = memory.vault.adapter!;
+    const root = ".obsidian/qnalog-outline-backups";
+    const timestamp = "2026-10-07T12-00-00-000Z";
+    const oldBytes = new Map<string, string>();
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const suffix = attempt === 0 ? "" : `-${attempt + 1}`;
+      const path = `${root}/${timestamp}${suffix}`;
+      await adapter.mkdir(path);
+      const backupPath = `${path}/source.md`;
+      await adapter.write(backupPath, `old-${attempt}`);
+      oldBytes.set(backupPath, `old-${attempt}`);
+    }
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result).toEqual({
+        status: "backup-failed",
+        backupPath: null,
+        errorMessage: "Could not allocate a unique outline backup timestamp",
+      });
+      expect(memory.processCount).toBe(0);
+      expect(memory.markdown).toBe(original);
+      for (const [path, bytes] of oldBytes) expect(memory.readPath(path)).toBe(bytes);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("maps storage failures to stopped service results without losing backup state", async () => {
+    const original = createOriginalNote();
+    const backupFailure = makeWriterAndService(original);
+    backupFailure.memory.failBackupWrites();
+    const backupResult = await backupFailure.service.rebuildNoteOutline(backupFailure.memory.target);
+    expect(backupResult).toMatchObject({
+      status: "stopped",
+      stopReason: "backup-failed",
+      backupPath: null,
+      errorMessage: "Backup storage unavailable",
+    });
+
+    const writeFailure = makeWriterAndService(original);
+    const process = vi.spyOn(writeFailure.memory.vault, "process").mockRejectedValue(new Error("process unavailable"));
+    try {
+      const result = await writeFailure.service.rebuildNoteOutline(writeFailure.memory.target);
+      expect(result).toMatchObject({
+        status: "stopped",
+        stopReason: "write-failed",
+        errorMessage: "process unavailable",
+      });
+      expect(result.backupPath).toBeTruthy();
+      expect(writeFailure.memory.readPath(result.backupPath!)).toBe(original);
+    } finally {
+      process.mockRestore();
+    }
+  });
+  it("skips a timestamp directory created by a racing mkdir", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T12:00:00.000Z"));
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const adapter = memory.vault.adapter!;
+    const mkdir = adapter.mkdir.bind(adapter);
+    let timestampMkdirs = 0;
+    const spy = vi.spyOn(adapter, "mkdir").mockImplementation(async (path) => {
+      await mkdir(path);
+      if (path.includes("2026-10-07T12-00-00-000Z") && ++timestampMkdirs === 1) {
+        throw new Error("directory already created");
+      }
+    });
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result.status).toBe("written");
+      expect(result.backupPath).toBe(".obsidian/qnalog-outline-backups/2026-10-07T12-00-00-000Z-2/source.md");
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves a backup file collision after creating its timestamp directory", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T12:00:00.000Z"));
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const adapter = memory.vault.adapter!;
+    const mkdir = adapter.mkdir.bind(adapter);
+    let timestampMkdirs = 0;
+    const spy = vi.spyOn(adapter, "mkdir").mockImplementation(async (path) => {
+      await mkdir(path);
+      if (path.includes("2026-10-07T12-00-00-000Z") && ++timestampMkdirs === 1) {
+        await adapter.write(`${path}/source.md`, "pre-existing bytes");
+      }
+    });
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result.status).toBe("written");
+      expect(result.backupPath).toBe(".obsidian/qnalog-outline-backups/2026-10-07T12-00-00-000Z-2/source.md");
+      expect(memory.readPath(".obsidian/qnalog-outline-backups/2026-10-07T12-00-00-000Z/source.md")).toBe("pre-existing bytes");
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the note unchanged when process rejects before editing", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const process = vi.spyOn(memory.vault, "process").mockRejectedValue(new Error("process unavailable"));
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result.status).toBe("write-failed");
+      expect(result.errorMessage).toBe("process unavailable");
+      expect(result.backupPath).toBeTruthy();
+      expect(memory.markdown).toBe(original);
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+    } finally {
+      process.mockRestore();
+    }
+  });
+
+  it("reports mismatched final readback without rolling back the replacement", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const read = vi.spyOn(memory.vault, "read");
+    read.mockImplementationOnce(async () => original);
+    read.mockImplementationOnce(async () => original);
+    read.mockImplementationOnce(async () => "different final bytes");
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result).toMatchObject({
+        status: "write-failed",
+        errorMessage: "Outline replacement readback did not match",
+      });
+      expect(result.backupPath).toBeTruthy();
+      expect(memory.markdown).toContain("- New");
+      expect(memory.readPath(result.backupPath!)).toBe(original);
+    } finally {
+      read.mockRestore();
+    }
+  });
+  it("returns the adapter-unavailable backup error before processing", async () => {
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const descriptor = Object.getOwnPropertyDescriptor(memory.vault, "adapter")!;
+    Object.defineProperty(memory.vault, "adapter", { configurable: true, value: undefined });
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result).toEqual({
+        status: "backup-failed",
+        backupPath: null,
+        errorMessage: "Vault storage adapter is unavailable",
+      });
+      expect(memory.processCount).toBe(0);
+      expect(memory.markdown).toBe(original);
+    } finally {
+      Object.defineProperty(memory.vault, "adapter", descriptor);
+    }
+  });
+
+  it("returns the original mkdir error when a timestamp directory remains absent", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T12:00:00.000Z"));
+    const original = createOriginalNote();
+    const { memory, writer } = makeWriterAndService(original);
+    const adapter = memory.vault.adapter!;
+    const mkdir = adapter.mkdir.bind(adapter);
+    const spy = vi.spyOn(adapter, "mkdir").mockImplementation(async (path) => {
+      if (path.includes("2026-10-07T12-00-00-000Z")) throw new Error("timestamp mkdir failed");
+      await mkdir(path);
+    });
+    const generated = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- New\n</details>";
+
+    try {
+      const result = await writer.replaceRealtimeOutline(memory.target, original, generated);
+      expect(result).toMatchObject({
+        status: "backup-failed",
+        backupPath: null,
+        errorMessage: "timestamp mkdir failed",
+      });
+      expect(memory.processCount).toBe(0);
+      expect(memory.markdown).toBe(original);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

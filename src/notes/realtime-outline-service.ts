@@ -22,7 +22,8 @@ import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { buildRealtimeOutlineDetails } from "./realtime-outline";
 import { extractTranscriptSegments } from "./note-markdown";
 import type { ContinuationService } from "../session/continuation-service";
-import type { NoteWriter, RealtimeOutlineReplacementResult } from "./note-writer";
+import type { NoteWriter } from "./note-writer";
+import type { RealtimeOutlineReplacementResult } from "./outline-note-store";
 import { t } from "../shared/i18n";
 
 export type RealtimeOutlineRebuildStopReason =

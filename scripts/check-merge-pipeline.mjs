@@ -1048,6 +1048,102 @@ async function main() {
         for (const [path, metadata] of lifecycleFrontmatterBefore) frontmatterByPath.set(path, metadata);
       }
     }
+    let outlineSmokeFile = null;
+    const outlineSmokePath = "qnalog-outline-store-smoke.md";
+    const adapter = app.vault.adapter;
+    const savedAdapterDescriptors = {
+      exists: Object.getOwnPropertyDescriptor(adapter, "exists"),
+      mkdir: Object.getOwnPropertyDescriptor(adapter, "mkdir"),
+      process: Object.getOwnPropertyDescriptor(app.vault, "process"),
+    };
+    const savedOutlineFile = files.get(outlineSmokePath);
+    const savedOutlineContent = savedOutlineFile?._content;
+    const outlineAdapterDataBefore = new Map(adapterData);
+    const outlineFolders = new Set();
+    let outlineSmokePassed = false;
+    try {
+      const archivedDetails = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- Archived smoke outline\n</details>";
+      const currentDetails = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- Current smoke outline\n</details>";
+      const replacementDetails = "<details>\n<summary>Live outline while recording (draft)</summary>\n\n- Replaced smoke outline\n</details>";
+      const transcript = serializeTranscriptSegment(transcriptSegment(
+        0, "Outline smoke transcript must remain.", 0, 1000, "outline-smoke",
+      ));
+      const original = [
+        "---\nqnalog_mode: meeting\n---",
+        "# Outline smoke",
+        "KEEP-A",
+        archivedDetails,
+        currentDetails,
+        transcript,
+        "KEEP-B",
+      ].join("\n\n");
+      const expectedWritten = original.replace(currentDetails, replacementDetails);
+      outlineSmokeFile = new TFile(outlineSmokePath);
+      outlineSmokeFile.name = outlineSmokePath;
+      outlineSmokeFile.basename = outlineSmokePath.replace(/\.md$/, "");
+      outlineSmokeFile._content = original;
+      files.set(outlineSmokePath, outlineSmokeFile);
+
+      const previousExists = adapter.exists;
+      const previousMkdir = adapter.mkdir;
+      adapter.exists = async function (path) {
+        return outlineFolders.has(path) || await previousExists.call(this, path);
+      };
+      adapter.mkdir = async function (path) {
+        outlineFolders.add(path);
+        return previousMkdir.call(this, path);
+      };
+      let outlineProcessCount = 0;
+      app.vault.process = async function (file, transform) {
+        outlineProcessCount += 1;
+        const current = outlineProcessCount === 2
+          ? `${file._content}\n\nConcurrent outline smoke edit.`
+          : file._content;
+        if (outlineProcessCount === 2) file._content = current;
+        const next = transform(current);
+        if (next !== current) file._content = next;
+        return next;
+      };
+
+      const written = await plugin.noteWriter.replaceRealtimeOutline(outlineSmokeFile, original, replacementDetails);
+      if (written.status !== "written"
+        || !written.backupPath?.startsWith(".obsidian/qnalog-outline-backups/")
+        || adapterData.get(written.backupPath) !== original
+        || outlineSmokeFile._content !== expectedWritten) {
+        throw new Error("exact outline replacement or original-byte backup did not match");
+      }
+
+      outlineSmokeFile._content = original;
+      const stale = await plugin.noteWriter.replaceRealtimeOutline(outlineSmokeFile, original, replacementDetails);
+      const expectedConcurrent = `${original}\n\nConcurrent outline smoke edit.`;
+      if (stale.status !== "stale"
+        || !stale.backupPath
+        || adapterData.get(stale.backupPath) !== original
+        || outlineSmokeFile._content !== expectedConcurrent) {
+        throw new Error("stale outline replacement did not preserve the concurrent edit and exact backup");
+      }
+      outlineSmokePassed = true;
+    } catch (error) {
+      failures.push(`大纲存储冒烟失败：${(error && error.message) || error}`);
+    } finally {
+      if (savedAdapterDescriptors.exists) Object.defineProperty(adapter, "exists", savedAdapterDescriptors.exists);
+      else delete adapter.exists;
+      if (savedAdapterDescriptors.mkdir) Object.defineProperty(adapter, "mkdir", savedAdapterDescriptors.mkdir);
+      else delete adapter.mkdir;
+      if (savedAdapterDescriptors.process) Object.defineProperty(app.vault, "process", savedAdapterDescriptors.process);
+      else delete app.vault.process;
+      adapterData.clear();
+      for (const [path, content] of outlineAdapterDataBefore) adapterData.set(path, content);
+      if (savedOutlineFile) {
+        savedOutlineFile._content = savedOutlineContent;
+        files.set(outlineSmokePath, savedOutlineFile);
+      } else {
+        files.delete(outlineSmokePath);
+      }
+    }
+    if (outlineSmokePassed) {
+      console.log("[outline-note-store] OK: exact backup, last-outline replacement, and concurrent edit preservation");
+    }
     for (const id of plugin.intervals) clearInterval(id);
   } finally {
     Date.now = realDateNow;
