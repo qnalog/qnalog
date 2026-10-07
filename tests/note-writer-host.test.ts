@@ -350,4 +350,120 @@ describe("NoteWriter narrow host capabilities", () => {
       error.mockRestore();
     }
   });
+  it("preserves append boundaries for existing and newly created notes", async () => {
+    const vault = memoryVault();
+    const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS }));
+    const path = "QnALog/Minutes/append.md";
+    const inputs = [
+      [null, "body", "body"],
+      ["existing", "body", "existing\nbody"],
+      ["existing\n", "body", "existing\nbody"],
+      ["existing\n\n", "body", "existing\n\nbody"],
+      ["existing", "", "existing\n"],
+      ["", "", "\n"],
+    ] as const;
+
+    for (const [initial, content, expected] of inputs) {
+      if (initial !== null) await vault.vault.create(path, initial);
+      await writer.appendToNote(path, content);
+      expect(vault.files.get(path)?.markdown).toBe(expected);
+      vault.files.delete(path);
+    }
+  });
+
+  it("inserts before the first start marker and appends literally when the marker is absent", async () => {
+    const file = new obsidian.TFile("QnALog/Minutes/start.md");
+    const original = "before\n<!-- qnalog-segments-start:s1 -->\nmiddle\n<!-- qnalog-segments-start:s1 -->\nafter";
+    const literal = "插入内容\n第二行 $& $` $' $$ $`tail";
+    const vault = memoryVault([{ file, markdown: original }]);
+    const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS }));
+
+    await writer.insertBeforeSegmentsStart(file.path, literal, "s1");
+    expect(vault.files.get(file.path)?.markdown).toBe(
+      `before\n${literal}\n<!-- qnalog-segments-start:s1 -->\nmiddle\n<!-- qnalog-segments-start:s1 -->\nafter`,
+    );
+
+    const noIdPath = "QnALog/Minutes/start-no-id.md";
+    await writer.appendToNote(noIdPath, "head\n<!-- qnalog-segments-start:s1 -->\n<!-- qnalog-segments-start -->");
+    await writer.insertBeforeSegmentsStart(noIdPath, literal, null);
+    expect(vault.files.get(noIdPath)?.markdown).toBe(`head\n<!-- qnalog-segments-start:s1 -->\n${literal}\n<!-- qnalog-segments-start -->`);
+
+    await writer.insertBeforeSegmentsStart(file.path, literal, "missing");
+    expect(vault.files.get(file.path)?.markdown).toBe(
+      `before\n${literal}\n<!-- qnalog-segments-start:s1 -->\nmiddle\n<!-- qnalog-segments-start:s1 -->\nafter\n${literal}`,
+    );
+  });
+
+  it("re-reads after a missing end marker before falling back to append", async () => {
+    const file = new obsidian.TFile("QnALog/Minutes/end-fallback.md");
+    const vault = memoryVault([{ file, markdown: "initial" }]);
+    const read = vi.spyOn(vault.vault, "read");
+    read.mockImplementationOnce(async () => {
+      await vault.vault.modify(file, "concurrent update");
+      return "stale read";
+    });
+    const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS }));
+
+    await writer.insertBeforeSegmentsEnd(file.path, "literal $& $' $$", "missing");
+
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(vault.files.get(file.path)?.markdown).toBe("concurrent update\nliteral $& $' $$");
+  });
+
+  it("uses the vault selected at each existing read and write point", async () => {
+    const file = new obsidian.TFile("QnALog/Minutes/dynamic-segment.md");
+    const oldVault = memoryVault([{ file, markdown: "old source" }]);
+    const newVault = memoryVault([{ file, markdown: "new target" }]);
+    let activeVault = oldVault;
+    const host = unexpectedHost(oldVault.vault, { ...DEFAULT_SETTINGS });
+    Object.defineProperty(host, "vault", { get: () => activeVault.vault });
+    const writer = new NoteWriter(host);
+
+    activeVault = newVault;
+    await writer.appendToNote(file.path, "after construction");
+    expect(oldVault.files.get(file.path)?.markdown).toBe("old source");
+    expect(newVault.files.get(file.path)?.markdown).toBe("new target\nafter construction");
+
+    activeVault = oldVault;
+    const readGate = Promise.withResolvers<string>();
+    vi.spyOn(oldVault.vault, "read").mockImplementationOnce(() => readGate.promise);
+    const insert = writer.insertBeforeSegmentsStart(file.path, "insert", "s1");
+    activeVault = newVault;
+    readGate.resolve("<!-- qnalog-segments-start:s1 -->");
+    await insert;
+    expect(oldVault.files.get(file.path)?.markdown).toBe("old source");
+    expect(newVault.files.get(file.path)?.markdown).toBe("insert\n<!-- qnalog-segments-start:s1 -->");
+  });
+
+  it("propagates storage failures and preserves incomplete session blocks", async () => {
+    const file = new obsidian.TFile("QnALog/Minutes/failure.md");
+    const vault = memoryVault([{ file, markdown: "before\n<!-- qnalog-session:s1 -->\n## S\n<!-- qnalog-segments-end:other -->" }]);
+    const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS }));
+    const readError = new Error("read failed");
+    vi.spyOn(vault.vault, "read").mockRejectedValueOnce(readError);
+    await expect(writer.appendToNote(file.path, "new")).rejects.toBe(readError);
+    expect(vault.files.get(file.path)?.markdown).toContain("before");
+    const modifyError = new Error("modify failed");
+    vi.spyOn(vault.vault, "modify").mockRejectedValueOnce(modifyError);
+    await expect(writer.appendToNote(file.path, "new")).rejects.toBe(modifyError);
+    expect(vault.files.get(file.path)?.markdown).toContain("before");
+    await writer.appendToNote(file.path, "new");
+    expect(vault.files.get(file.path)?.markdown).toBe("before\n<!-- qnalog-session:s1 -->\n## S\n<!-- qnalog-segments-end:other -->\nnew");
+
+    const createError = new Error("create failed");
+    vi.spyOn(vault.vault, "create").mockRejectedValueOnce(createError);
+    await expect(writer.appendToNote("QnALog/Minutes/create-failure.md", "new")).rejects.toBe(createError);
+    await writer.appendToNote("QnALog/Minutes/create-failure.md", "new");
+    expect(vault.files.get("QnALog/Minutes/create-failure.md")?.markdown).toBe("new");
+
+    const incomplete = vault.files.get(file.path)!.markdown;
+    await writer.removeEmptySessionBlock({ mdPath: file.path, id: "s1" } as never);
+    expect(vault.files.get(file.path)?.markdown).toBe(incomplete);
+
+    const uniquePath = "QnALog/Minutes/empty-after-cleanup.md";
+    await vault.vault.create(uniquePath, "## S\n<!-- qnalog-session:s1 -->\n<!-- qnalog-segments-start:s1 -->\n<!-- qnalog-segments-end:s1 -->");
+    await writer.removeEmptySessionBlock({ mdPath: uniquePath, id: "s1" } as never);
+    expect(vault.files.has(uniquePath)).toBe(true);
+    expect(vault.files.get(uniquePath)?.markdown).toBe("");
+  });
 });
