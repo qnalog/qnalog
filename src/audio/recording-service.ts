@@ -5,7 +5,7 @@ import * as obsidian from "obsidian";
 import { audioInputModeLabel, normalizeAudioInputMode } from "./audio-input";
 import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
-import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload } from "../shared/types";
+import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload, AudioInputMode } from "../shared/types";
 import { PcmStreamEncoder } from "../asr/clients";
 import { getErrorMessage, genId } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -15,7 +15,7 @@ import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
 import { nsMarker } from "../shared/namespace";
-import type { RecorderService } from "../audio/recorder-service";
+import type { RecorderChannelInfo, RecorderService } from "../audio/recorder-service";
 import type { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import type { NoteWriter } from "../notes/note-writer";
 import type { TranscribeProfileService } from "../asr/transcribe-profile-service";
@@ -71,8 +71,8 @@ export class RecordingService {
   declare host: RecordingHost;
   private readonly segmentHost: RecordingSegmentHost;
   /** 本次一次性录音的采集模式与润色模式（命令入口设置）。 */
-  declare _oneShotCaptureMode;
-  declare _oneShotPolishMode;
+  declare _oneShotCaptureMode: AudioInputMode | null;
+  declare _oneShotPolishMode: string | null;
   starting = false;
   constructor(host: RecordingHost) {
     this.host = host;
@@ -95,13 +95,14 @@ export class RecordingService {
     this._oneShotPolishMode = null;
   }
 
-  async toggleRecording() {
+  async toggleRecording(): Promise<void> {
+    // The host assembles the recorder before registering these public recording operations.
     if (this.host.recorder.state === "idle") await this.startRecording();
     else await this.stopRecording();
   }
 
 
-  async startRecording(options: StartRecordingOptions = {}) {
+  async startRecording(options: StartRecordingOptions = {}): Promise<void> {
     if (this.starting) return;
     if (this.host.recorder.state !== "idle") {
       new obsidian.Notice(t("A recording is already in progress. Please stop it before continuing to record."), 5000);
@@ -240,7 +241,7 @@ export class RecordingService {
         await this.host.saveSettings();
       }
 
-      let onStreamReady = null;
+      let onStreamReady: ((mediaStream: MediaStream, channelInfo?: RecorderChannelInfo) => Promise<void>) | null = null;
       if (isStreaming && isMobileRuntime()) {
         // 移动端无 Node WebSocket（设不了鉴权头），流式必败：不建流式客户端，提前明示。
         // 录音照常进行，停止时走既有的「流式连接未建立」兜底（音频保留）。
@@ -249,13 +250,13 @@ export class RecordingService {
         onStreamReady = async (mediaStream) => {
           const sampleRate = activeProfile.streamProtocol && activeProfile.streamProtocol.startsWith("openai-realtime") ? 24000 : 16000;
           const client = createStreamingTranscriptionClient(activeProfile, activeProvider, {
-            onPartial: (fullText, isFinal) => {
+            onPartial: (fullText: string, isFinal: boolean) => {
               this.host.asrPipeline.clearRecordingIssue("network");
               this.host.asrPipeline.clearRecordingIssue("service");
               sessionRef.streamingFullText = fullText || "";
               if (sessionRef.scheduleStreamingNoteUpdate) sessionRef.scheduleStreamingNoteUpdate();
             },
-            onError: (e) => {
+            onError: (e: Error) => {
               console.error("[QnALog] streaming error", e);
               this.host.asrPipeline.setRecordingIssue(classifyRecordingIssue(e), {
                 source: "streaming-asr",
@@ -263,7 +264,7 @@ export class RecordingService {
               });
               new obsidian.Notice(`${t("Streaming transcription error: ")}${(e && e.message) || e}`);
             },
-            onClosed: (info) => {
+            onClosed: (info: { translatedText?: string; sourceText?: string } | null) => {
               if (info && info.translatedText) sessionRef.streamingTranslatedText = info.translatedText;
               if (info && info.sourceText) sessionRef.streamingSourceText = info.sourceText;
             },
@@ -284,7 +285,7 @@ export class RecordingService {
           }
           const encoder = new PcmStreamEncoder(mediaStream, {
             sampleRate,
-            onFrame: (ab) => client.sendAudioFrame(ab),
+            onFrame: (ab: ArrayBuffer) => client.sendAudioFrame(ab),
           });
           encoder.start();
           sessionRef.pcmEncoder = encoder;
@@ -292,7 +293,7 @@ export class RecordingService {
       }
 
       const providerStreamReady = onStreamReady;
-      onStreamReady = async (mediaStream, channelInfo) => {
+      onStreamReady = async (mediaStream: MediaStream, channelInfo?: RecorderChannelInfo) => {
         const count = Math.max(1, Math.min(4, Number(channelInfo && channelInfo.channelCount) || 1));
         sessionRef.audioChannelCount = count;
         sessionRef.audioChannelMaxCount = Math.max(count, Number(channelInfo && channelInfo.maxChannelCount) || count);
@@ -378,7 +379,8 @@ export class RecordingService {
     }
   }
 
-  async stopRecording() {
+  async stopRecording(): Promise<void> {
+    // The host assembles the recorder before registering these public recording operations.
     if (this.host.recorder.state === "idle") return;
     new obsidian.Notice(t("⏹ Stop requested, processing the final segment..."));
     await this.host.recorder.stop();
@@ -393,8 +395,8 @@ export class RecordingService {
 
 
 
-  getRecorderBufferSummary() {
-    const sumBytes = (items) => (Array.isArray(items) ? items : []).reduce((total, item) => total + Math.max(0, Number(item && item.size) || 0), 0);
+  getRecorderBufferSummary(): { masterChunkCount: number; masterChunkBytes: number; currentSegmentChunkCount: number; currentSegmentChunkBytes: number } {
+    const sumBytes = (items: Blob[]): number => (Array.isArray(items) ? items : []).reduce((total, item) => total + Math.max(0, Number(item && item.size) || 0), 0);
     const masterChunks = this.host.recorder && Array.isArray(this.host.recorder.masterChunks) ? this.host.recorder.masterChunks : [];
     const segmentChunks = this.host.recorder && Array.isArray(this.host.recorder.chunks) ? this.host.recorder.chunks : [];
     return {
@@ -406,7 +408,7 @@ export class RecordingService {
   }
 
 
-  getRecordingIssue() {
+  getRecordingIssue(): unknown {
     const recorderIssue = this.host.recorder && this.host.recorder.getInfo ? (this.host.recorder.getInfo().issue || null) : null;
     if (recorderIssue && recorderIssue.kind === "microphone") return recorderIssue;
     return this.host.asrPipeline.getRecordingIssue() || recorderIssue || null;

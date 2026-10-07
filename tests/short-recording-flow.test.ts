@@ -41,6 +41,7 @@ import { QueueRetryService } from "../src/queue/queue-retry-service";
 import { LiveAsrPipelineService } from "../src/asr/live-asr-pipeline-service";
 import { NoteWriter } from "../src/notes/note-writer";
 import type { NoteWriterHost } from "../src/notes/note-writer";
+import type { ContinuationPreparation } from "../src/session/continuation-service";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
@@ -377,6 +378,56 @@ describe("短录音整条路径", () => {
     expect([...files.keys()].filter((p) => p.startsWith("QnALog/录音/"))).toEqual([]);
     expect(trashed).toContain(mdPath);
     expect(notices.join("\n")).toContain("Filtered out recordings shorter than three seconds");
+  });
+  it("starts a continuation in the prepared stage and seeds the prior outline without modifying the target", async () => {
+    const fixture = makeHost();
+    const targetPath = "QnALog/转写纪要/continuation-target.md";
+    const stagePath = "QnALog/转写纪要/continuation-stage.md";
+    const targetBody = "# Existing minutes\n\nTarget body must remain unchanged.\n";
+    const priorOutline = "- [[qnalog-prior.webm|00:00]] Prior decision";
+    fixture.files.set(targetPath, { content: targetBody });
+    fixture.files.set(stagePath, { content: "" });
+    const target = fixture.app.vault.getAbstractFileByPath(targetPath) as obsidian.TFile;
+    const stageFile = fixture.app.vault.getAbstractFileByPath(stagePath) as obsidian.TFile;
+    const preparation: ContinuationPreparation = {
+      stageFile,
+      taskId: "continuation-task",
+      continuation: { targetPath, targetSourceId: "source-1", recordedAt: "2026-09-18T12:00:00.000Z" },
+      dependsOnSessionIds: [],
+      mode: "synthesis",
+      priorOutline,
+    };
+    Object.assign(fixture.host.continuations, {
+      resolveTarget: () => target,
+      prepare: async () => preparation,
+    });
+    fixture.host.recorder.start = async () => { fixture.host.recorder.state = "recording"; };
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (pattern: string) => pattern === "YYYYMMDD-HHmmss" ? "20260918-120000" : "2026-09-18 12:00",
+        toDate: () => new Date("2026-09-18T12:00:00.000Z"),
+      }),
+    });
+
+    try {
+      await fixture.recordingService.startRecording({ appendToFile: target });
+      const session = fixture.host.sessionStore.get();
+      expect(session).toMatchObject({
+        mdPath: stagePath,
+        continuationSourcePath: targetPath,
+        realtimeOutline: priorOutline,
+      });
+      expect(session?.realtimeOutlineState.nodes).toHaveLength(1);
+      expect(session?.realtimeOutlineState.nodes[0]).toMatchObject({
+        title: "Prior decision",
+        anchor: "[[qnalog-prior.webm|00:00]]",
+      });
+      expect(fixture.files.get(targetPath)?.content).toBe(targetBody);
+      expect(fixture.files.get(stagePath)?.content).toBe("");
+      expect(fixture.recordingService.starting).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
   it("a two-second continuation leaves the target untouched and removes its persisted merge task", async () => {
     const fixture = await makeContinuationDiscardFixture();
