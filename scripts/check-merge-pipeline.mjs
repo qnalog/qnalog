@@ -1759,6 +1759,9 @@ async function main() {
               session, audioModelOutput, layout === "failed" ? new Error("audio failure") : null, false, "", originalContent,
             );
             const result = retryFile._content;
+            if (/<details>\s*<summary>\s*(?:回听时间轴|Playback timeline)[\s\S]*?<\/details>/i.test(result)) {
+              throw new Error(`${state.name} ${layout} generated playback timeline details`);
+            }
             const infoSummary = result.includes("<summary>录音信息</summary>") || result.includes("<summary>导入文本信息</summary>")
               ? "zh" : "en";
             const sourceTextSummary = infoSummary === "zh" ? "<summary>导入文本原文（1 个来源）</summary>" : "<summary>Imported text (1 sources)</summary>";
