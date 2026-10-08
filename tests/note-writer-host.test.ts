@@ -467,3 +467,54 @@ describe("NoteWriter narrow host capabilities", () => {
     expect(vault.files.get(uniquePath)?.markdown).toBe("");
   });
 });
+describe("NoteWriter literal preservation", () => {
+  it("retains continuation materials and transcript across repeated rewrites", async () => {
+    const path = "QnALog/Minutes/literal-continuation.md";
+    const file = new obsidian.TFile(path);
+    const sourceText = "账本转写原文";
+    const segment: Segment = attachTextTranscript({
+      index: 0,
+      startOffsetMs: 0,
+      endOffsetMs: 12_000,
+      text: sourceText,
+      isFinal: true,
+    }, "literal-session", "text-import");
+    const ledger = serializeTranscriptBlock(segment, "### Source transcript", sourceText);
+    const vault = memoryVault([{ file, markdown: `# Previous\n\n${ledger}` }]);
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-10-07 12:00:00" }) });
+    try {
+      const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "consumer-test-model" }));
+      const priorInfo = "- 旧录音信息：多行中文\n$&\n$` 和反引号\n$'\n$$";
+      const priorOutline = "- 旧大纲：多行中文\n  - $&\n  - $` 与反引号\n  - $'\n  - $$";
+      const session: RecordingSession = {
+        id: "literal-session",
+        sessionStamp: "literal-session",
+        startedAt: "2026-10-07T12:00:00.000Z",
+        mdPath: path,
+        mode: "meeting",
+        segments: [segment],
+        finalized: true,
+        continuationSourcePath: "QnALog/Minutes/prior.md",
+        continuationSourceTitle: "旧纪要",
+        continuationPriorRecordingInfo: priorInfo,
+        continuationPriorOutline: priorOutline,
+        realtimeOutline: "- 本场实时新主题",
+      };
+      await writer.rewriteConsolidated(session, "---\ntitle: literal\n---\n\n重写正文");
+      const first = await vault.vault.read(file);
+      expect(first).toContain(priorInfo);
+      expect(first).toContain("- 本场实时新主题");
+      expect(first).toContain("> 以下为追加录音前场次（旧纪要）的实时大纲草稿。");
+      expect(first).toContain(priorOutline);
+      expect(first).toContain("重写正文");
+      expect(readTranscriptBlocks(first).map(block => block.visibleBlock)).toEqual([sourceText]);
+
+      await writer.rewriteConsolidated(session, "---\ntitle: literal\n---\n\n重写正文");
+      const second = await vault.vault.read(file);
+      expect(second).toBe(first);
+      expect(readTranscriptBlocks(second).map(block => block.visibleBlock)).toEqual([sourceText]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

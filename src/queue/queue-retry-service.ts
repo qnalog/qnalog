@@ -999,7 +999,7 @@ export class QueueRetryService {
       const merged = mergeLeadingFrontmatterIntoDocument(cur, polished);
       let next;
       if (failMark.test(cur)) {
-        next = merged.content.replace(failMark, merged.body);
+        next = merged.content.replace(failMark, () => merged.body);
       } else {
         const meta = getModeMeta(this.host.settings, task.mode);
         const block = `\n\n## ${labelText("mergedVersionAt", `${labelText("supplementaryRecording")} · ${meta.prefix}`)}\n\n${merged.body}\n\n---\n`;

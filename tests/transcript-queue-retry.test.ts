@@ -7,6 +7,8 @@ vi.mock("obsidian", () => ({
   Notice: class Notice {},
   requestUrl: async () => ({ status: 200, text: "{}" }),
 }));
+const { mergeAndPolishMock } = vi.hoisted(() => ({ mergeAndPolishMock: vi.fn() }));
+vi.mock("../src/briefing/merge-pipeline", () => ({ mergeAndPolish: mergeAndPolishMock }));
 
 import { QueueRetryService } from "../src/queue/queue-retry-service";
 import { attachTranscriptResult } from "../src/transcript/session-transcript";
@@ -15,6 +17,7 @@ import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
 import { SessionStore } from "../src/session/session-store";
 
 afterEach(() => vi.unstubAllGlobals());
+import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 
 function makeFile(TFile: new () => object, path: string, name: string, extension: string): Record<string, unknown> {
   return Object.assign(new TFile(), { path, name, basename: name.replace(/\.[^.]+$/, ""), extension });
@@ -173,5 +176,99 @@ describe("transcript queue retry persistence", () => {
     expect(deleteAudio).toHaveBeenCalledTimes(2);
     expect(sessionStore.get()).toBe(currentSession);
     expect(refreshIndex).toHaveBeenCalledTimes(2);
+});
+describe("merge queue retry literal preservation", () => {
+  it.each([
+    "_[Merge failed (queued for retry): temporary]_",
+    "_[合并润色失败（已加入重试队列）：temporary]_",
+  ])("replaces only the retry marker and preserves model text and surrounding note after a write failure: %s", async (failure) => {
+    const obsidian = await import("obsidian") as unknown as { TFile: new () => object };
+    const note = makeFile(obsidian.TFile, "Notes/merge-retry.md", "merge-retry.md", "md");
+    const files = new Map<string, Record<string, unknown>>([[String(note.path), note]]);
+    const transcript = "<!-- qnalog-transcript-data {\"source\":\"ledger\"} -->\nTranscript body.";
+    const original = [
+      "---\ntitle: existing\n---",
+      "KEEP BEFORE",
+      failure,
+      "KEEP AFTER",
+      transcript,
+    ].join("\n\n");
+    const contents = new Map<string, string>([[String(note.path), original]]);
+    const body = "整理正文：多行\n$&\n$` 与反引号\n$'\n$$";
+    const polished = `---\ntitle: updated\n---\n\n${body}`;
+    mergeAndPolishMock.mockReset().mockResolvedValue(polished);
+    let rejectModify = true;
+    const vault = {
+      getAbstractFileByPath: (path: string) => files.get(path) || null,
+      read: async (file: { path: string }) => contents.get(file.path) || "",
+      modify: async (file: { path: string }, text: string) => {
+        if (rejectModify) {
+          rejectModify = false;
+          throw new Error("vault write failed");
+        }
+        contents.set(file.path, text);
+      },
+    };
+    const writer = {
+      renameMarkdownWithGeneratedTitle: async () => note,
+    };
+    const host = {
+      app: { vault },
+      settings: { ...DEFAULT_SETTINGS, consolidatedLayout: false, autoRenameWithTitle: false },
+      noteWriter: writer,
+      continuations: { runOnTarget: (_target: unknown, operation: () => Promise<unknown>) => operation() },
+      noteIndex: { refreshNoteIndexSafely: async () => undefined },
+      clearCommittedBriefingCheckpoint: async () => undefined,
+    };
+    const task = { mdPath: String(note.path), mode: "meeting", source: "recording", segments: [] };
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-10-07T12:00:00.000Z" }) });
+    const service = new QueueRetryService(host as never);
+
+    await expect(service.retryMergeTask(task as never)).rejects.toThrow("vault write failed");
+    expect(contents.get(String(note.path))).toBe(original);
+    await service.retryMergeTask(task as never);
+
+    expect(contents.get(String(note.path))).toBe([
+      "---\ntitle: updated\n---",
+      "KEEP BEFORE",
+      body,
+      "KEEP AFTER",
+      transcript,
+    ].join("\n\n").replace("---\n\nKEEP BEFORE", "---\nKEEP BEFORE"));
+    expect(mergeAndPolishMock).toHaveBeenCalledTimes(2);
+  });
+  it("appends the merged body when the note has no failure marker", async () => {
+    const obsidian = await import("obsidian") as unknown as { TFile: new () => object };
+    const note = makeFile(obsidian.TFile, "Notes/merge-append.md", "merge-append.md", "md");
+    const files = new Map<string, Record<string, unknown>>([[String(note.path), note]]);
+    const transcript = "<!-- qnalog-transcript-data {\"source\":\"ledger\"} -->\nTranscript body.";
+    const original = `---\ntitle: existing\n---\n\nKEEP EXISTING\n\n${transcript}`;
+    const contents = new Map<string, string>([[String(note.path), original]]);
+    const body = "Append literal $& $` $' $$\n多行正文";
+    mergeAndPolishMock.mockReset().mockResolvedValue(`---\ntitle: updated\n---\n\n${body}`);
+    const vault = {
+      getAbstractFileByPath: (path: string) => files.get(path) || null,
+      read: async (file: { path: string }) => contents.get(file.path) || "",
+      modify: async (file: { path: string }, text: string) => { contents.set(file.path, text); },
+    };
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-10-07T12:00:00.000Z" }) });
+    const host = {
+      app: { vault },
+      settings: { ...DEFAULT_SETTINGS, consolidatedLayout: false, autoRenameWithTitle: false },
+      noteWriter: { renameMarkdownWithGeneratedTitle: async () => note },
+      continuations: { runOnTarget: (_target: unknown, operation: () => Promise<unknown>) => operation() },
+      noteIndex: { refreshNoteIndexSafely: async () => undefined },
+    };
+
+    await new QueueRetryService(host as never).retryMergeTask({
+      mdPath: String(note.path), mode: "meeting", source: "recording", segments: [],
+    } as never);
+
+    const saved = contents.get(String(note.path)) || "";
+    expect(saved).toContain("KEEP EXISTING");
+    expect(saved).toContain(transcript);
+    expect(saved).toContain(body);
+    expect(saved).toMatch(/## Merged version/i);
+  });
 });
 });
