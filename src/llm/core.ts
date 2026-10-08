@@ -17,10 +17,8 @@ import {
   rememberLlmOutputParameter,
 } from './output-budget';
 import {
-  isLlmConfigError,
   isLlmContextLimitError,
   isLlmNonRetryableError,
-  isLlmServiceBlockedError,
   isNonRetryableLlmHttpFailure,
 } from "./failure-policy";
 export { LlmRequestQueue } from './request-queue';
@@ -854,23 +852,6 @@ export async function requestLlmChatCompletionWithBudgetFallback(plugin, message
     }
   }
   throw new Error(t("The LLM output budget retry count is exhausted"));
-}
-
-export function formatLlmConfigIssue(issue) {
-  const text = String(issue || "").trim();
-  if (!text) return "";
-  if (/请到「设置|Settings → API/.test(text)) return text;
-  return t("{0}. Please complete it under Settings → API → AI organizing service, then test the connection.").replace("{0}", text);
-}
-
-export function formatLlmFailureIssue(issue) {
-  const text = String(issue || "").trim();
-  if (!text) return "";
-  if (isLlmConfigError(text)) return formatLlmConfigIssue(text);
-  if (isLlmServiceBlockedError(text)) {
-    return t("{0}. This is a problem returned by the LLM service or account pool, not caused by text length, ASR, or the text-import path; switch the model/endpoint, or retry manually later.").replace("{0}", text);
-  }
-  return text;
 }
 
 export function isTruncatedFinishReason(reason) {

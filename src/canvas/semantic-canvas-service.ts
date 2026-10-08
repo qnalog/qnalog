@@ -5,7 +5,8 @@
 // 重建 DOM 由视图自己决定：需要重绘的时机通过 SemanticCanvasRepaint 回调交给视图，服务不直接碰视图。
 
 import * as obsidian from "obsidian";
-import { callLlm, formatLlmConfigIssue, getLlmConfigIssue } from "../llm/core";
+import { callLlm, getLlmConfigIssue } from "../llm/core";
+import { formatLlmConfigIssue } from "../llm/failure-presentation";
 import {
   buildSemanticBranchExpansionPrompt,
   buildSemanticCanvasDocument,

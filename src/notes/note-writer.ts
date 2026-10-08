@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import type { NoteIndexService } from "./note-index-service";
-import { formatLlmFailureIssue } from "../llm/core";
+import { formatLlmFailureIssue } from "../llm/failure-presentation";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getAudioTimeLink } from "../notes/audio-reference-text";

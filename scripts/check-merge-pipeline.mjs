@@ -2480,6 +2480,44 @@ async function main() {
       }
       const polishExecutionDigest = createHash("sha256").update(JSON.stringify(polishExecutionResults)).digest("hex");
       console.log(`[note-polish-flow] execution digest: ${polishExecutionDigest}`);
+      {
+        let probeText = polishOriginal;
+        const probeVault = {
+          getAbstractFileByPath: (path) => path === polishSession.mdPath ? retryFile : null,
+          read: async () => { throw new Error("failure presentation probe must use explicit initialMarkdown"); },
+          modify: async (file, markdown) => {
+            if (file !== retryFile) throw new Error("unexpected failure presentation write target");
+            probeText = markdown;
+          },
+        };
+        const dynamicHost = Object.create(polishOriginalHost);
+        Object.defineProperty(dynamicHost, "vault", { get: () => probeVault });
+        const callsBefore = llmCalls.length;
+        polishWriter.host = dynamicHost;
+        try {
+          await polishWriter.appendPolishBlock(
+            polishSession,
+            "BODY MUST NOT BE WRITTEN",
+            new Error("no available account"),
+            true,
+            "",
+            polishOriginal,
+          );
+          const ledger = readTextMaterialLedger(probeText, "seg:literal-retry:0");
+          const failureGuidance = /\n_\[(?:AI organizing failed: no available account\. This is a problem returned by the LLM service or account pool, not caused by text length, ASR, or the text-import path; switch the model\/endpoint, or retry manually later\.|AI 整理失败：no available account。这是大模型服务端或账号池返回的问题，不是文本长度、ASR 或文本导入路径导致的；请切换模型\/端点，或稍后手动重试。)\]_\n/;
+          if (!probeText.startsWith(polishOriginal) || probeText.includes("BODY MUST NOT BE WRITTEN")
+            || !failureGuidance.test(probeText)
+            || ledger.visible !== "Retry smoke transcript ledger."
+            || ledger.rawText !== "Retry smoke transcript ledger."
+            || JSON.stringify(ledger.transcript) !== JSON.stringify(retrySegment.transcript)
+            || llmCalls.length !== callsBefore) {
+            throw new Error("non-retryable failure guidance changed or transcript was not preserved");
+          }
+        } finally {
+          polishWriter.host = polishOriginalHost;
+        }
+      }
+      console.log("[llm-failure-presentation] OK: non-retryable failure guidance and transcript preserved");
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);

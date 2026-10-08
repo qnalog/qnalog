@@ -23,7 +23,8 @@ import { generateSedimentObjects, getSedimentHotwordId, getSedimentPersonId, get
 
 import { countVocabularyGroups, createVocabularyGroups, formatVocabularyMarkdown, loadVocabularyGroups, mergeVocabularyGroups } from "../vocabulary";
 
-import { callLlm, formatLlmConfigIssue, getLlmConfigIssue } from "../llm/core";
+import { callLlm, getLlmConfigIssue } from "../llm/core";
+import { formatLlmConfigIssue } from "../llm/failure-presentation";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 
