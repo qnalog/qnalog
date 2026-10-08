@@ -29,6 +29,7 @@ import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
 import type { RecordingSession, Segment } from "../src/shared/types";
+import { buildEmptyLlmOutputFallback } from "../src/prompts/briefing-prompts";
 
 type File = InstanceType<typeof obsidian.TFile>;
 
@@ -98,6 +99,111 @@ function unexpectedHost(vault: NoteWriterVault, settings: NoteWriterSettings, ov
   };
 }
 
+
+
+describe("NoteWriter polish materials", () => {
+  it("preserves fallback, frontmatter, sediment blocks, and transcript ledgers in both layouts", async () => {
+    const literalBody = "模型正文\n$& $` $' $$";
+    const folded = [
+      "<!--QNALOG_SEDIMENT_BEGIN-->",
+      "<details>",
+      "<summary>Fixture data</summary>",
+      "",
+      "```json",
+      '{"people":[],"todos":[],"hotwords":{}}',
+      "```",
+      "",
+      "</details>",
+      "<!--QNALOG_SEDIMENT_END-->",
+    ].join("\n");
+    const legacy = "<!--QNALOG_SEDIMENT_BEGIN\n{\"people\":[]}\nQNALOG_SEDIMENT_END-->";
+    const fallback = buildEmptyLlmOutputFallback();
+    const cases = [
+      { input: "", frontmatter: "", body: fallback, block: "" },
+      { input: " \r\n\t ", frontmatter: "", body: fallback, block: "" },
+      { input: "---\r\ntitle: only\r\n---\r\n\r\n", frontmatter: "---\ntitle: only\n---", body: fallback, block: "" },
+      { input: "\uFEFF---\r\ntitle: literal\r\n---\r\n\r\n  " + literalBody + " \r\n\r\n" + folded + "\n", frontmatter: "---\ntitle: literal\n---", body: literalBody, block: folded },
+      { input: folded, frontmatter: "", body: fallback, block: folded },
+      { input: literalBody + "\n\n" + legacy, frontmatter: "", body: literalBody, block: legacy },
+      { input: "prefix\n---\ntitle: not-leading\n---\nbody", frontmatter: "", body: "prefix\n---\ntitle: not-leading\n---\nbody", block: "" },
+      { input: literalBody + "\n<!--QNALOG_SEDIMENT_BEGIN\nincomplete", frontmatter: "", body: literalBody + "\n<!--QNALOG_SEDIMENT_BEGIN\nincomplete", block: "" },
+    ];
+    const path = "QnALog/Minutes/polish-materials.md";
+    const file = new obsidian.TFile(path);
+    const source = "来源原文 $& $` $' $$";
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1_000, text: source, isFinal: true,
+    }, "polish-materials", "asr");
+    const ledger = serializeTranscriptBlock(segment, "### Source transcript", source);
+    const original = `---\ntitle: old\n---\n\n# Existing note\n\n${ledger}`;
+    const vault = memoryVault([{ file, markdown: original }]);
+    const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "consumer-test-model" }));
+    const originalLanguage = getActiveUiLanguage();
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00" }) });
+    try {
+      for (const language of ["zh", "en"]) {
+        setActiveUiLanguage(matchUiLanguage(language)!);
+        const session: RecordingSession = {
+          id: "polish-materials",
+          sessionStamp: "polish-materials",
+          startedAt: "2026-09-14T12:00:00.000Z",
+          mdPath: path,
+          mode: "meeting",
+          source: "recording",
+          segments: [segment],
+          finalized: true,
+          multiSourceAudio: true,
+        };
+        for (const entry of cases) {
+          await vault.vault.modify(file, original);
+          await writer.rewriteConsolidated(session, entry.input);
+          const rewritten = await vault.vault.read(file);
+          const rewriteParts = splitLeadingFrontmatter(rewritten);
+          expect(rewriteParts.frontmatter.replace(/\n$/, "")).toBe(entry.frontmatter);
+          const originalHeading = `## ${labelText("originalMaterial")}`;
+          const bodyStart = rewritten.indexOf(entry.body);
+          expect(bodyStart).toBeGreaterThanOrEqual(0);
+          expect(bodyStart).toBeLessThan(rewritten.indexOf(originalHeading));
+          expect(rewriteParts.body).toContain(`${entry.body}\n\n---`);
+          expect(rewritten.split(entry.block || "\u0000").length - 1).toBe(entry.block ? 1 : 0);
+          expect(readTranscriptBlocks(rewritten).map(block => block.visibleBlock)).toEqual([source]);
+          const transcript = readTranscriptBlocks(rewritten)[0].segment.transcript!;
+          expect(transcript.id).toBe(segment.transcript!.id);
+          expect(transcript.sourceId).toBe(segment.transcript!.sourceId);
+          expect(transcript.currentRevision).toBe(segment.transcript!.currentRevision);
+          expect(transcript.revisions.find(revision => revision.revision === transcript.currentRevision)?.rawText)
+            .toBe(segment.transcript!.revisions.find(revision => revision.revision === segment.transcript!.currentRevision)?.rawText);
+          if (entry === cases[3]) {
+            await writer.rewriteConsolidated(session, entry.input);
+            expect(await vault.vault.read(file)).toBe(rewritten);
+          }
+
+          await vault.vault.modify(file, original);
+          await writer.appendPolishBlock(session, entry.input, null, false, "", original);
+          const appended = await vault.vault.read(file);
+          const appendedParts = splitLeadingFrontmatter(appended);
+          expect(appendedParts.frontmatter.replace(/\n$/, "")).toBe(entry.frontmatter || "---\ntitle: old\n---");
+          const appendHeading = labelText("mergedVersionAt", "consumer-test-model ·");
+          expect(appended).toContain(entry.body);
+          expect(appended.indexOf(entry.body)).toBeGreaterThan(appended.indexOf(appendHeading.slice(0, 8)));
+          expect(appended.split(entry.block || "\u0000").length - 1).toBe(entry.block ? 1 : 0);
+          expect(readTranscriptBlocks(appended).map(block => block.visibleBlock)).toEqual([source]);
+        }
+        await vault.vault.modify(file, original);
+        await writer.appendPolishBlock(session, cases[3].input, new Error("temporary failure"), false, "", original);
+        const failedAppend = await vault.vault.read(file);
+        expect(splitLeadingFrontmatter(failedAppend).frontmatter).toContain("title: old");
+        expect(failedAppend).toContain(labelText("mergeFailedQueued", "temporary failure"));
+        expect(failedAppend).not.toContain(literalBody);
+        expect(failedAppend.split(folded).length - 1).toBe(1);
+        expect(readTranscriptBlocks(failedAppend).map(block => block.visibleBlock)).toEqual([source]);
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("NoteWriter narrow host capabilities", () => {
   it("preserves the transcript ledger and frontmatter ordering across rewrite and append", async () => {

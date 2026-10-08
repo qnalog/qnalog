@@ -13,8 +13,9 @@ import { canOmitServiceApiKey } from '../shared/util-llm-endpoint';
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
 import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
-import { NS_CARDS_BLOCK_RE, NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, NS_TAG, legacySedimentIdVariants, nsMarker } from "../shared/namespace";
+import { NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, NS_TAG, legacySedimentIdVariants, nsMarker } from "../shared/namespace";
 import { t } from "../shared/i18n";
+import { getSedimentPreExtractionBlockPatterns, stripSedimentPreExtractionBlocks } from "./text-blocks";
 
 // 取值是写在用户笔记里的注释标记，改名会让既有笔记的沉淀块不再被识别：
 // 常量名不带宽泛品牌前缀，取值保持上游的 LEXVOICE_ 字面量（随数据层命名空间重置一起改）。
@@ -226,22 +227,6 @@ export function appendSedimentPreExtractionInstruction(prompt) {
   return `${String(prompt || "").trimEnd()}\n\n---\n\n${buildSedimentPreExtractionInstruction()}`;
 }
 
-export function getSedimentPreExtractionBlockPatterns(global) {
-  const flags = global ? "gi" : "i";
-  return [
-    new RegExp(`<!--\\s*${SEDIMENT_PREEXTRACT_BEGIN}\\s*([\\s\\S]*?)\\s*${SEDIMENT_PREEXTRACT_END}\\s*-->`, flags),
-    new RegExp(`<!--\\s*${SEDIMENT_PREEXTRACT_BEGIN}\\s*-->\\s*(?:\`\`\`json\\s*)?([\\s\\S]*?)(?:\\s*\`\`\`)?\\s*<!--\\s*${SEDIMENT_PREEXTRACT_END}\\s*-->`, flags),
-    NS_CARDS_BLOCK_RE,
-  ];
-}
-
-export function stripSedimentPreExtractionBlocks(markdown) {
-  let text = String(markdown || "");
-  for (const pattern of getSedimentPreExtractionBlockPatterns(true)) {
-    text = text.replace(pattern, "");
-  }
-  return text.trimEnd();
-}
 
 export function extractSedimentPreExtractionBlock(markdown) {
   const text = String(markdown || "");
@@ -283,16 +268,6 @@ export function formatSedimentPreExtractionBlock(objects) {
   ].join("\n");
 }
 
-export function splitOutSedimentBlock(markdown) {
-  const text = String(markdown || "");
-  for (const pattern of getSedimentPreExtractionBlockPatterns(false)) {
-    const m = pattern.exec(text);
-    if (m && m[0]) {
-      return { body: stripSedimentPreExtractionBlocks(text), block: String(m[0]).trim() };
-    }
-  }
-  return { body: text, block: "" };
-}
 
 export function appendSedimentPreExtractionBlock(markdown, objects) {
   if (!objects) return stripSedimentPreExtractionBlocks(markdown);

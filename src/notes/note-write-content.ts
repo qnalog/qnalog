@@ -2,12 +2,21 @@ import { formatElapsed } from "../shared/util-common";
 import { NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/namespace";
 import { labelText } from "../shared/note-labels";
 import { splitLeadingFrontmatter } from "./note-document";
+import { splitOutSedimentBlock } from "../sediment/text-blocks";
 
 export interface NotePolishParts {
   frontmatter: string;
   body: string;
   sedimentBlock: string;
 }
+
+export function prepareNotePolishParts(markdown: string, emptyFallback: string): NotePolishParts {
+  const parts = splitLeadingFrontmatter(markdown || emptyFallback);
+  const frontmatter = parts.frontmatter ? parts.frontmatter.trimEnd() : "";
+  const sediment = splitOutSedimentBlock(parts.body);
+  return { frontmatter, body: sediment.body.trim() || emptyFallback, sedimentBlock: sediment.block };
+}
+
 
 export interface NoteMaterialBlocks {
   recordingInfo: string;

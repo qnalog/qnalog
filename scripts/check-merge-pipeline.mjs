@@ -1350,6 +1350,93 @@ async function main() {
         || !retryResult.includes("Retry smoke transcript ledger.")) {
         throw new Error("merge retry did not preserve model text, surrounding content, and transcript");
       }
+      const polishLiteralBody = "模型正文\n$& $` $' $$";
+      const polishFolded = [
+        "<!--QNALOG_SEDIMENT_BEGIN-->",
+        "<details>",
+        "<summary>Fixture data</summary>",
+        "",
+        "```json",
+        '{"people":[],"todos":[],"hotwords":{}}',
+        "```",
+        "",
+        "</details>",
+        "<!--QNALOG_SEDIMENT_END-->",
+      ].join("\n");
+      const polishLegacy = "<!--QNALOG_SEDIMENT_BEGIN\n{\"people\":[]}\nQNALOG_SEDIMENT_END-->";
+      const polishFallback = "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
+      const polishCases = [
+        { input: "", frontmatter: "", body: polishFallback, block: "" },
+        { input: " \r\n\t ", frontmatter: "", body: polishFallback, block: "" },
+        { input: "---\r\ntitle: only\r\n---\r\n\r\n", frontmatter: "---\ntitle: only\n---", body: polishFallback, block: "" },
+        { input: "\uFEFF---\r\ntitle: literal\r\n---\r\n\r\n  " + polishLiteralBody + " \r\n\r\n" + polishFolded + "\n", frontmatter: "---\ntitle: literal\n---", body: polishLiteralBody, block: polishFolded },
+        { input: polishFolded, frontmatter: "", body: polishFallback, block: polishFolded },
+        { input: polishLiteralBody + "\n\n" + polishLegacy, frontmatter: "", body: polishLiteralBody, block: polishLegacy },
+        { input: "prefix\n---\ntitle: not-leading\n---\nbody", frontmatter: "", body: "prefix\n---\ntitle: not-leading\n---\nbody", block: "" },
+        { input: polishLiteralBody + "\n<!--QNALOG_SEDIMENT_BEGIN\nincomplete", frontmatter: "", body: polishLiteralBody + "\n<!--QNALOG_SEDIMENT_BEGIN\nincomplete", block: "" },
+      ];
+      const polishSession = {
+        id: "literal-retry",
+        sessionStamp: "literal-retry",
+        startedAt: "2026-09-14T12:00:00.000Z",
+        mdPath: literalRetryPath,
+        mode: "meeting",
+        source: "recording",
+        segments: [retrySegment],
+        finalized: true,
+        multiSourceAudio: true,
+      };
+      const polishOriginal = [
+        "---\ntitle: old\n---",
+        "# Existing note",
+        serializeTranscriptSegment(retrySegment),
+      ].join("\n\n");
+      const polishRewriteResults = [];
+      const polishAppendResults = [];
+      for (const entry of polishCases) {
+        retryFile._content = polishOriginal;
+        await plugin.noteWriter.rewriteConsolidated(polishSession, entry.input);
+        const rewritten = retryFile._content;
+        const rewriteFrontmatter = rewritten.match(/^---\n[\s\S]*?\n---/)?.[0] || "";
+        const originalHeading = "\n\n---\n\n## ";
+        if (rewriteFrontmatter !== entry.frontmatter
+          || !rewritten.includes(entry.body)
+          || rewritten.indexOf(entry.body) > rewritten.indexOf(originalHeading)
+          || (entry.block && rewritten.split(entry.block).length - 1 !== 1)) {
+          throw new Error("rewrite polish body, frontmatter, or sediment boundary changed");
+        }
+        if (entry === polishCases[3]) {
+          await plugin.noteWriter.rewriteConsolidated(polishSession, entry.input);
+          if (retryFile._content !== rewritten) throw new Error("repeated polish rewrite changed output");
+        }
+        polishRewriteResults.push(rewritten);
+
+        retryFile._content = polishOriginal;
+        await plugin.noteWriter.appendPolishBlock(polishSession, entry.input, null, false, "", polishOriginal);
+        const appended = retryFile._content;
+        const appendFrontmatter = appended.match(/^---\n[\s\S]*?\n---/)?.[0] || "";
+        if (appendFrontmatter !== (entry.frontmatter || "---\ntitle: old\n---")
+          || !appended.includes(entry.body)
+          || appended.indexOf(entry.body) < appended.indexOf("\n## ")
+          || (entry.block && appended.split(entry.block).length - 1 !== 1)) {
+          throw new Error("append polish body, frontmatter, or sediment boundary changed");
+        }
+        polishAppendResults.push(appended);
+      }
+      retryFile._content = polishOriginal;
+      await plugin.noteWriter.appendPolishBlock(polishSession, polishCases[3].input, new Error("temporary failure"), false, "", polishOriginal);
+      const failedPolishAppend = retryFile._content;
+      if (!failedPolishAppend.startsWith("---\ntitle: old\n---")
+        || !failedPolishAppend.includes("temporary failure")
+        || failedPolishAppend.includes(polishLiteralBody)
+        || failedPolishAppend.split(polishFolded).length - 1 !== 1) {
+        throw new Error("failed append changed old frontmatter or lost fallback, transcript, or sediment");
+      }
+      polishAppendResults.push(failedPolishAppend);
+      const polishMaterialsDigest = createHash("sha256")
+        .update(JSON.stringify([...polishRewriteResults, ...polishAppendResults]))
+        .digest("hex");
+      console.log(`[polish-materials] rewrite/append digest: ${polishMaterialsDigest}`);
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);

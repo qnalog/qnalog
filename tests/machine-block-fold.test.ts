@@ -10,10 +10,12 @@ import {
   appendSedimentPreExtractionBlock,
   extractSedimentPreExtractionBlock,
   formatSedimentPreExtractionBlock,
+} from "../src/sediment";
+import {
   getSedimentPreExtractionBlockPatterns,
   splitOutSedimentBlock,
   stripSedimentPreExtractionBlocks,
-} from "../src/sediment";
+} from "../src/sediment/text-blocks";
 import { foldRawTranscriptSection } from "../src/versions/version-content";
 import { stripImportAppendices } from "../src/notes/note-markdown";
 import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
@@ -30,6 +32,38 @@ const OBJECTS = {
 function legacyBlock(objects = OBJECTS) {
   return ["<!--QNALOG_SEDIMENT_BEGIN", JSON.stringify(objects), "QNALOG_SEDIMENT_END-->"].join("\n");
 }
+const FOLDED_FIXTURE = [
+  "<!--QNALOG_SEDIMENT_BEGIN-->",
+  "<details>",
+  "<summary>Fixture data</summary>",
+  "",
+  "```json",
+  '{"people":[],"todos":[],"hotwords":{}}',
+  "```",
+  "",
+  "</details>",
+  "<!--QNALOG_SEDIMENT_END-->",
+].join("\n");
+const LEGACY_FIXTURE = "<!--QNALOG_SEDIMENT_BEGIN\n{\"people\":[]}\nQNALOG_SEDIMENT_END-->";
+const CARDS_FIXTURE = "<!--QNALOG_CARDS_BEGIN-->\n{}\n<!--QNALOG_CARDS_END-->";
+
+describe("沉淀文本边界", () => {
+  it("按原模式优先级分离完整块并保留残缺块及无匹配原文", () => {
+    const foldedAndLegacy = `body\n${FOLDED_FIXTURE}\n${LEGACY_FIXTURE}`;
+    expect(splitOutSedimentBlock(foldedAndLegacy)).toEqual({ body: "body", block: FOLDED_FIXTURE });
+    expect(splitOutSedimentBlock(`body\n${LEGACY_FIXTURE}\n${LEGACY_FIXTURE}`))
+      .toEqual({ body: "body", block: LEGACY_FIXTURE });
+    expect(splitOutSedimentBlock(`body\n${CARDS_FIXTURE}\n${LEGACY_FIXTURE}`).block).toBe(LEGACY_FIXTURE);
+    const incomplete = "body\n<!--QNALOG_SEDIMENT_BEGIN\nincomplete";
+    expect(splitOutSedimentBlock(`body\n${FOLDED_FIXTURE}\n<!--QNALOG_SEDIMENT_BEGIN\nincomplete`))
+      .toEqual({ body: `body\n\n<!--QNALOG_SEDIMENT_BEGIN\nincomplete`, block: FOLDED_FIXTURE });
+    expect(splitOutSedimentBlock("  body  ")).toEqual({ body: "  body  ", block: "" });
+    expect(stripSedimentPreExtractionBlocks(`${LEGACY_FIXTURE}\n${LEGACY_FIXTURE}`)).toBe("");
+    expect(splitOutSedimentBlock(foldedAndLegacy)).toEqual({ body: "body", block: FOLDED_FIXTURE });
+    expect(splitOutSedimentBlock(foldedAndLegacy)).toEqual({ body: "body", block: FOLDED_FIXTURE });
+  });
+});
+
 
 describe("尾部机器块：折叠壳新格式", () => {
   it("沉淀块序列化为「标记在外、details+json 围栏在内」，读回等价", () => {

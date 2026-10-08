@@ -3,7 +3,6 @@
 
 import * as obsidian from "obsidian";
 import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
-import { splitOutSedimentBlock } from "../sediment";
 import type { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
@@ -25,7 +24,7 @@ import { labelText } from "../shared/note-labels";
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
 import { buildRewriteSegmentBlock, serializeContinuationSegmentBlock } from "./note-transcript-materials";
-import { appendPolishNoteContent, buildConsolidatedNoteContent, buildPolishAppendBlock } from "./note-write-content";
+import { appendPolishNoteContent, buildConsolidatedNoteContent, buildPolishAppendBlock, prepareNotePolishParts } from "./note-write-content";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
 import {
   appendNoteText,
@@ -205,10 +204,7 @@ export class NoteWriter {
       getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment)),
     )).join("\n");
     const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polishedParts = splitLeadingFrontmatter(polished || emptyBriefingFallback);
-    const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    const sediment = splitOutSedimentBlock(polishedParts.body);
-    const polishedBody = sediment.body.trim() || emptyBriefingFallback;
+    const polish = prepareNotePolishParts(polished, emptyBriefingFallback);
     const content = buildConsolidatedNoteContent({
       currentMarkdown,
       title: `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
@@ -223,7 +219,7 @@ export class NoteWriter {
       audioRow,
       priorAudioAppendix: priorBlocks.audioAppendix,
       rawBlocks,
-      polish: { frontmatter: polishedFrontmatter, body: polishedBody, sedimentBlock: sediment.block },
+      polish,
       materials: {
         recordingInfo: recordingInfoWithPrior,
         externalAudioSource: externalAudioSourceBlock,
@@ -248,10 +244,7 @@ export class NoteWriter {
     const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
     const meta = getModeMeta(this.host.settings, session.mode);
     const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polishedParts = splitLeadingFrontmatter(polished || emptyBriefingFallback);
-    const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    const sediment = splitOutSedimentBlock(polishedParts.body);
-    const polishedBody = sediment.body.trim() || emptyBriefingFallback;
+    const polish = prepareNotePolishParts(polished, emptyBriefingFallback);
     const textImport = isTextImportSession(session);
     const externalAudioImport = !!session.externalAudioSource;
     const retainAudio = !textImport && !externalAudioImport;
@@ -283,7 +276,7 @@ export class NoteWriter {
       masterAudioBlock,
       hasMergeError,
       failureText,
-      polish: { frontmatter: polishedFrontmatter, body: polishedBody, sedimentBlock: sediment.block },
+      polish,
       materials: {
         recordingInfo: recordingInfoBlock,
         externalAudioSource: externalAudioSourceBlock,
@@ -297,7 +290,7 @@ export class NoteWriter {
     const next = appendPolishNoteContent({
       currentMarkdown: cur,
       block,
-      polishedFrontmatter,
+      polishedFrontmatter: polish.frontmatter,
       hasMergeError,
       textImport,
       totalMs,
