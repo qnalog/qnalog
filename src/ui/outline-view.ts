@@ -53,7 +53,8 @@ import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../pro
 
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 
-import { isImageMeetingMaterial, MEETING_METADATA_KINDS, normalizeMeetingWorkbench } from "../notes/meeting-workbench";
+import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
+import { isImageMeetingMaterial, normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 
 import { extractNotePanelData } from "../notes/detail-blocks";
 

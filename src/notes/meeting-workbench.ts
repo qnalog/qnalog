@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：会中补充材料与交互
 
-import * as obsidian from "obsidian";
 import { formatElapsed, primitiveText } from "../shared/util-common";
+import { hasMeetingWorkbenchContent, normalizeMeetingWorkbench } from "./meeting-workbench-state";
+import type { MeetingInteraction } from "./meeting-workbench-state";
 
 export const MEETING_INTERACTION_OUTLINE_MAX_CHARS = 1200;
 
@@ -22,97 +23,6 @@ export const MEETING_INTERACTION_CONCEPT_MAX_TOKENS = 700;
 
 export const MEETING_INTERACTION_IMPORTANT_MAX_TOKENS = 500;
 
-export type MeetingMaterial = {
-  path: string;
-  name: string;
-  kind: string;
-  addedAt: string;
-};
-
-export type MeetingInteraction = {
-  kind: string;
-  query: string;
-  status: string;
-  response: string;
-  error: string;
-  updatedAt: string;
-  assignee?: string;
-  task?: string;
-};
-
-export type MeetingWorkbenchEntry = {
-  id: string;
-  atMs: number;
-  createdAt: string;
-  source: string;
-  text: string;
-  materials: MeetingMaterial[];
-  interaction: MeetingInteraction | null;
-};
-
-export type MeetingWorkbenchState = {
-  notes: string;
-  draft: string;
-  materials: MeetingMaterial[];
-  entries: MeetingWorkbenchEntry[];
-};
-
-export function normalizeMeetingMaterials(materials: unknown, limit = 30): MeetingMaterial[] {
-  const normalized = [];
-  const seen = new Set();
-  for (const item of (Array.isArray(materials) ? materials : [])) {
-    if (!item || typeof item !== "object") continue;
-    const path = obsidian.normalizePath(item.path || "");
-    if (!path || seen.has(path)) continue;
-    seen.add(path);
-    normalized.push({
-      path,
-      name: String(item.name || path.split("/").pop() || "").trim(),
-      kind: String(item.kind || item.type || "").trim(),
-      addedAt: String(item.addedAt || ""),
-    });
-  }
-  return normalized.slice(-limit);
-}
-
-export function normalizeMeetingWorkbench(value: unknown): MeetingWorkbenchState {
-  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const entries = [];
-  for (const item of (Array.isArray(raw.entries) ? raw.entries : [])) {
-    if (!item || typeof item !== "object") continue;
-    const text = String(item.text || "").trim();
-    const materials = normalizeMeetingMaterials(item.materials, 12);
-    if (!text && !materials.length) continue;
-    const createdAt = String(item.createdAt || item.addedAt || "");
-    const atMs = Math.max(0, Number(item.atMs ?? item.offsetMs ?? 0) || 0);
-    const rawInteraction = item.interaction && typeof item.interaction === "object" ? item.interaction : null;
-    const interaction = rawInteraction ? {
-      kind: String(rawInteraction.kind || "").trim(),
-      query: String(rawInteraction.query || "").trim(),
-      status: String(rawInteraction.status || "").trim(),
-      response: String(rawInteraction.response || "").trim(),
-      error: String(rawInteraction.error || "").trim(),
-      updatedAt: String(rawInteraction.updatedAt || ""),
-      assignee: String(rawInteraction.assignee || "").trim(),
-      task: String(rawInteraction.task || "").trim(),
-    } : null;
-    entries.push({
-      id: String(item.id || `meeting-entry-${entries.length}-${atMs}-${createdAt || "time"}`),
-      atMs,
-      createdAt,
-      source: String(item.source || (materials.length && !text ? "material" : "manual")),
-      text,
-      materials,
-      interaction,
-    });
-  }
-  return {
-    notes: primitiveText(raw.notes).trim(),
-    draft: primitiveText(raw.draft),
-    materials: normalizeMeetingMaterials(raw.materials, 30),
-    entries: entries.slice(-100),
-  };
-}
 
 // 元数据型符号（不触发 AI 即时助理，只用于结构化标注 + 传给 merge prompt）
 export const MEETING_METADATA_KINDS = new Set(["assignee", "todo"]);
@@ -170,16 +80,6 @@ export function getMeetingInteractionMaxTokens(kind) {
   return MEETING_INTERACTION_MAX_TOKENS;
 }
 
-export function hasMeetingWorkbenchContent(value) {
-  const workbench = normalizeMeetingWorkbench(value);
-  return !!(workbench.notes || workbench.materials.length || workbench.entries.length);
-}
-
-export function isImageMeetingMaterial(item) {
-  const path = String((item && item.path) || "").toLowerCase();
-  const kind = String((item && item.kind) || "").toLowerCase();
-  return kind === "image" || /\.(png|jpe?g|webp|gif|bmp|svg)$/.test(path);
-}
 
 export function buildMeetingWorkbenchPrompt(value) {
   const workbench = normalizeMeetingWorkbench(value);

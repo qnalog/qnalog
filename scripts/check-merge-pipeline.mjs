@@ -1820,6 +1820,204 @@ async function main() {
         }
         const audioDigest = createHash("sha256").update(JSON.stringify(audioResults)).digest("hex");
         console.log(`[audio-source-materials] rewrite/append digest: ${audioDigest}`);
+      const meetingRawText = "MEETING RAW $& $` $' $$";
+      const meetingModelOutput = "---\ntitle: new\n---\n\nMEETING BODY $& $` $' $$";
+      const meetingOriginal = "---\ntitle: old\n---\n\n# Existing note\n";
+      const meetingSegment = transcriptSegment(2, meetingRawText, 61000, 65000, "literal-meeting-materials");
+      meetingSegment.audioName = "meeting-segment.webm";
+      meetingSegment.audioPath = "QnALog/Audio/meeting-segment.webm";
+      meetingSegment.audioStartOffsetMs = 7000;
+      meetingSegment.audioEndOffsetMs = 11000;
+      const meetingLedger = serializeTranscriptSegment(meetingSegment);
+      const meetingRecordingOriginal = `${meetingOriginal}\n${meetingLedger}`;
+      const meetingWorkbenchFixture = {
+        notes: "  NOTES $& $` $' $$\r\nSECOND NOTE  ",
+        draft: "DO_NOT_RENDER_DRAFT",
+        entries: [
+          {
+            id: "entry-one", atMs: 61999, text: "  ENTRY $& $` $' $$  ",
+            interaction: {
+              kind: "question", query: "DO_NOT_RENDER_QUERY", status: "done",
+              response: "  FIRST AI $& $` $' $$\r\nSECOND AI\nTHIRD AI  ", error: "DO_NOT_RENDER_ERROR",
+            },
+            materials: [
+              { path: "QnALog\\Materials\\entry.PNG", name: "  图 $& $` $' $$  ", kind: " IMAGE " },
+              { path: "QnALog/Materials/entry.pdf", name: "  ", type: " pdf " },
+            ],
+          },
+          {
+            id: "entry-two", offsetMs: 3661999, text: " ",
+            materials: [{ path: "QnALog/Materials/poster.bin", name: "poster", kind: "image" }],
+          },
+          { text: " ", interaction: { response: "DO_NOT_RENDER_ORPHAN_RESPONSE" } },
+        ],
+        materials: [
+          { path: "QnALog/Materials/diagram.SVG" },
+          { path: "QnALog/Materials/report.pdf", name: "报告 $& $` $' $$", kind: "document" },
+          { path: "QnALog/Materials/report.pdf", name: "DO_NOT_RENDER_DUPLICATE" },
+        ],
+      };
+      const expectedMeetingDetails = (language) => [
+        "<details>",
+        `<summary>${language === "zh" ? "会中补充材料" : "Material added during the meeting"}</summary>`,
+        "",
+        "#### 会中零散记录",
+        "",
+        "NOTES $& $` $' $$\r\nSECOND NOTE",
+        "",
+        "#### 用户补充",
+        "",
+        "- 01:01 ENTRY $& $` $' $$",
+        "  - AI：FIRST AI $& $` $' $$\n    SECOND AI\n    THIRD AI",
+        "  - [[QnALog/Materials/entry.PNG|图 $& $` $' $$]] · IMAGE",
+        "  ![[QnALog/Materials/entry.PNG]]",
+        "  - [[QnALog/Materials/entry.pdf|entry.pdf]] · pdf",
+        "- 1:01:01",
+        "  - [[QnALog/Materials/poster.bin|poster]] · image",
+        "  ![[QnALog/Materials/poster.bin]]",
+        "",
+        "#### 补充材料",
+        "",
+        "- [[QnALog/Materials/diagram.SVG|diagram.SVG]]",
+        "![[QnALog/Materials/diagram.SVG]]",
+        "",
+        "- [[QnALog/Materials/report.pdf|报告 $& $` $' $$]] · document",
+        "",
+        "</details>",
+      ].join("\n");
+      const meetingStates = [
+        { name: "empty-recording", source: "recording" },
+        { name: "draft-recording", source: "recording", workbench: { draft: "DO_NOT_RENDER_DRAFT" } },
+        { name: "full-recording", source: "recording", workbench: meetingWorkbenchFixture },
+        { name: "full-text-import", source: "text-import", workbench: meetingWorkbenchFixture },
+      ];
+      const meetingResults = [];
+      const meetingInputSegment = JSON.parse(JSON.stringify(meetingSegment));
+      for (const state of meetingStates) {
+        for (const operation of ["rewrite", "append", "failedAppend"]) {
+          const inputMarkdown = state.source === "recording" ? meetingRecordingOriginal : meetingOriginal;
+          const workbench = state.workbench ? JSON.parse(JSON.stringify(state.workbench)) : undefined;
+          const workbenchBefore = workbench === undefined ? undefined : JSON.parse(JSON.stringify(workbench));
+          const session = {
+            id: "literal-meeting-materials",
+            sessionStamp: "literal-meeting-materials",
+            startedAt: "2026-09-14T12:00:00.000Z",
+            mdPath: literalRetryPath,
+            mode: "meeting",
+            source: state.source,
+            segments: [meetingSegment],
+            finalized: true,
+            ...(workbench === undefined ? {} : { meetingWorkbench: workbench }),
+          };
+          retryFile._content = inputMarkdown;
+          if (operation === "rewrite") {
+            await plugin.noteWriter.rewriteConsolidated(session, meetingModelOutput);
+          } else {
+            await plugin.noteWriter.appendPolishBlock(
+              session,
+              meetingModelOutput,
+              operation === "failedAppend" ? new Error("meeting failure") : null,
+              false,
+              "",
+              inputMarkdown,
+            );
+          }
+          const result = retryFile._content;
+          const isEnglish = result.includes("<summary>Recording info</summary>")
+            || result.includes("<summary>Text import info</summary>");
+          const language = isEnglish ? "en" : "zh";
+          const summary = language === "en"
+            ? "<summary>Material added during the meeting</summary>"
+            : "<summary>会中补充材料</summary>";
+          const detailCount = result.split(summary).length - 1;
+          const fullState = state.name === "full-recording" || state.name === "full-text-import";
+          if (detailCount !== (fullState ? 1 : 0)) {
+            throw new Error(`${state.name} ${operation} meeting details count changed`);
+          }
+          const detailAt = fullState ? result.lastIndexOf("<details>", result.indexOf(summary)) : -1;
+          const detailEnd = fullState ? result.indexOf("</details>", result.indexOf(summary)) + "</details>".length : -1;
+          if (fullState && (detailAt < 0
+            || detailEnd < detailAt
+            || result.slice(detailAt, detailEnd) !== expectedMeetingDetails(language))) {
+            throw new Error(`${state.name} ${operation} meeting details differed from the frozen text`);
+          }
+          const infoSummary = language === "en"
+            ? (state.source === "text-import" ? "<summary>Text import info</summary>" : "<summary>Recording info</summary>")
+            : (state.source === "text-import" ? "<summary>导入文本信息</summary>" : "<summary>录音信息</summary>");
+          if (fullState) {
+            const infoAt = result.indexOf(infoSummary);
+            const rawLedgerAt = result.indexOf(`<!-- qnalog-transcript-start:seg:literal-meeting-materials:2 -->`);
+            if (infoAt < 0 || infoAt >= detailAt) {
+              throw new Error(`${state.name} ${operation} placed meeting details before recording/import info`);
+            }
+            if (operation === "rewrite" && (rawLedgerAt < 0 || detailAt >= rawLedgerAt)) {
+              throw new Error(`${state.name} rewrite moved meeting details after original transcript material`);
+            }
+            if (operation !== "rewrite" && state.source === "recording" && (rawLedgerAt < 0 || detailAt <= rawLedgerAt)) {
+              throw new Error(`${state.name} append moved meeting details before original transcript material`);
+            }
+            const detailBeforeContent = operation === "failedAppend"
+              ? result.indexOf("meeting failure")
+              : result.indexOf("MEETING BODY $& $` $' $$");
+            if (detailBeforeContent < 0 || detailBeforeContent >= detailAt) {
+              throw new Error(`${state.name} ${operation} moved details before success/failure content`);
+            }
+          }
+          if (operation === "failedAppend") {
+            if (!result.startsWith("---\ntitle: old\n---")
+              || !result.includes(language === "zh"
+                ? "_[合并润色失败（已加入重试队列）：meeting failure]_"
+                : "_[Merge failed (queued for retry): meeting failure]_")
+              || result.includes("MEETING BODY $& $` $' $$")) {
+              throw new Error(`${state.name} failed append changed frontmatter or retry failure output`);
+            }
+          } else if (!result.startsWith("---\ntitle: new\n---") || !result.includes("MEETING BODY $& $` $' $$")) {
+            throw new Error(`${state.name} ${operation} lost successful model output`);
+          }
+          for (const forbidden of [
+            "DO_NOT_RENDER_DRAFT", "DO_NOT_RENDER_QUERY", "DO_NOT_RENDER_ERROR",
+            "DO_NOT_RENDER_ORPHAN_RESPONSE", "DO_NOT_RENDER_DUPLICATE",
+          ]) {
+            if (result.includes(forbidden)) throw new Error(`${state.name} ${operation} exposed ${forbidden}`);
+          }
+          if (state.source === "recording") {
+            const ledger = readTextMaterialLedger(result, "seg:literal-meeting-materials:2");
+            if (JSON.stringify(ledger.transcript) !== JSON.stringify(meetingInputSegment.transcript)
+              || ledger.visible !== meetingRawText
+              || ledger.rawText !== meetingRawText
+              || ledger.transcript.revisions[0]?.displayText !== meetingRawText) {
+              throw new Error(`${state.name} ${operation} changed transcript ledger content`);
+            }
+            const markers = [
+              `<!-- qnalog-transcript-start:seg:literal-meeting-materials:2 -->`,
+              `<!-- qnalog-transcript-text-start:seg:literal-meeting-materials:2 -->`,
+              `<!-- qnalog-transcript-text-end:seg:literal-meeting-materials:2 -->`,
+              `<!-- qnalog-transcript-data `,
+              `<!-- qnalog-transcript-end:seg:literal-meeting-materials:2 -->`,
+            ];
+            if (markers.some((marker) => result.split(marker).length - 1 !== 1)) {
+              throw new Error(`${state.name} ${operation} changed transcript ledger markers`);
+            }
+            const textEndAt = result.indexOf(markers[2]);
+            const dataAt = result.indexOf(markers[3]);
+            const parentEndAt = result.indexOf(markers[4]);
+            if (dataAt <= textEndAt || dataAt >= parentEndAt) {
+              throw new Error(`${state.name} ${operation} moved transcript data outside parent markers`);
+            }
+          }
+          if (JSON.stringify(session.segments[0]) !== JSON.stringify(meetingInputSegment)
+            || (workbench !== undefined && JSON.stringify(workbench) !== JSON.stringify(workbenchBefore))) {
+            throw new Error(`${state.name} ${operation} mutated original session material`);
+          }
+          if (operation === "rewrite") {
+            await plugin.noteWriter.rewriteConsolidated(session, meetingModelOutput);
+            if (retryFile._content !== result) throw new Error(`${state.name} rewrite was not byte-stable`);
+          }
+          meetingResults.push(result);
+        }
+      }
+      const meetingDigest = createHash("sha256").update(JSON.stringify(meetingResults)).digest("hex");
+      console.log(`[meeting-workbench-materials] rewrite/append digest: ${meetingDigest}`);
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);
