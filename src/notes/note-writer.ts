@@ -6,10 +6,8 @@ import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode }
 import type { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
-import { genId, formatElapsed } from "../shared/util-common";
 import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
-import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { getFrontmatterTags } from "../shared/util-note";
@@ -28,6 +26,11 @@ import {
   type NoteMergeSource,
   type NoteMergeSourceFlowHost,
 } from "./note-merge-source-flow";
+import {
+  mergeMarkdownFilesAsNewFlow,
+  type NoteMergeFlowHost,
+  type NoteMergeMoment,
+} from "./note-merge-flow";
 import {
   appendNoteText,
   insertBeforeSessionSegmentsEnd,
@@ -74,6 +77,7 @@ export class NoteWriter {
   private readonly continuationCommitHost: ContinuationCommitFlowHost;
   private readonly outlineNoteStoreHost: OutlineNoteStoreHost;
   private readonly noteMergeSourceFlowHost: NoteMergeSourceFlowHost;
+  private readonly noteMergeFlowHost: NoteMergeFlowHost;
   private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
@@ -99,6 +103,30 @@ export class NoteWriter {
         normalizeSegmentsForMergedNote(segments, offsetMs, startIndex, file),
       detectModeFromMarkdown: (file) => this.detectModeFromMarkdown(file),
       inferNoteStartedAtIso: (file, frontmatter) => inferNoteStartedAtIso(file, frontmatter),
+    };
+    this.noteMergeFlowHost = {
+      readSource: (file, offsetMs, startIndex) => this.readMergeSourceFromMarkdown(file, offsetMs, startIndex),
+      getFallbackMode: () => getEffectivePolishMode(this.host.settings, this.host.settings.polishMode),
+      getMarkdownFolder: () => this.host.settings.mdFolder,
+      getNoteFileNameFormat: () => this.host.settings.noteFileNameFormatNew,
+      getMoment: () => (window as unknown as { moment?: NoteMergeMoment | null }).moment,
+      ensureFolder: (path) => this.host.ensureFolder(path),
+      findAvailableMarkdownPath: (path) => this.host.findAvailableMarkdownPath(path),
+      getVault: () => this.host.vault,
+      mergeAndPolish: (segments, mode, meta) => this.host.mergeAndPolish(segments, mode, meta),
+      rewrite: (session, polished) => this.rewriteConsolidated(session, polished),
+      clearCheckpoint: (meta) => this.host.clearCommittedBriefingCheckpoint(meta),
+      rename: async (path, polished, mode) => {
+        const renamed = await this.renameMarkdownWithGeneratedTitle(path, polished, mode);
+        return renamed instanceof obsidian.TFile ? renamed : null;
+      },
+      appendMetadata: (file, metadata) => this.appendMergeMetadataBlock(file, metadata),
+      refreshIndex: async (file, meetingDate) => {
+        await this.host.noteIndex.refreshNoteIndexSafely(file, { meetingDate, reason: "merge-notes" });
+      },
+      openFile: (file) => this.host.openFile(file),
+      getFallbackPrefix: () => getModeMeta({}, "synthesis").prefix,
+      getFallbackFilename: () => "合并纪要",
     };
     this.outlineNoteStoreHost = { getVault: () => this.host.vault };
     this.noteSegmentStoreHost = {
@@ -338,80 +366,8 @@ export class NoteWriter {
       new obsidian.Notice(`${t("Merging minutes failed: ")}${(e && e.message) || e}`, 8000);
     }
   }
-  async mergeMarkdownFilesAsNew(files) {
-    const sources: NoteMergeSource[] = [];
-    let offsetMs = 0;
-    let startIndex = 0;
-    for (const file of files || []) {
-      const source = await this.readMergeSourceFromMarkdown(file, offsetMs, startIndex);
-      sources.push(source);
-      offsetMs += Math.max(0, Number(source.rawDurationMs) || 0);
-      startIndex += source.segments.length;
-    }
-    if (sources.length < 2) {
-      new obsidian.Notice(t("At least two summaries are required to merge."));
-      return;
-    }
-    const segments = sources.flatMap((source) => source.segments);
-    if (!segments.length) {
-      new obsidian.Notice(t("No original transcriptions found to merge."), 8000);
-      return;
-    }
-    const mode = sources[sources.length - 1].mode || sources[0].mode || getEffectivePolishMode(this.host.settings, this.host.settings.polishMode);
-    await this.host.ensureFolder(this.host.settings.mdFolder);
-    const moment = window.moment;
-    const startedAtIso = sources[0].startedAt || new Date().toISOString();
-    const startedAt = moment ? moment(startedAtIso) : null;
-    const stamp = startedAt && startedAt.isValid && startedAt.isValid()
-      ? startedAt.format(this.host.settings.noteFileNameFormatNew)
-      : (moment ? moment().format(this.host.settings.noteFileNameFormatNew) : "合并纪要");
-    const targetPath = this.host.findAvailableMarkdownPath(obsidian.normalizePath(`${this.host.settings.mdFolder}/${stamp} · ${t("Merge")}.md`));
-    if (!targetPath) throw new Error(t("Failed to generate a path for the merged minutes file"));
-
-    new obsidian.Notice(`${t("QnALog: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
-    await this.host.vault.create(targetPath, "");
-    const session = {
-      id: genId(),
-      sessionStamp: moment ? moment().format("YYYYMMDD-HHmmss") : String(Date.now()),
-      mdPath: targetPath,
-      mode,
-      startedAt: startedAtIso,
-      finalized: true,
-      source: "merged-notes",
-      segments,
-      multiSourceAudio: true,
-      meetingWorkbench: { notes: "", draft: "", materials: [], entries: [] },
-      mergedSources: sources.map((source) => ({
-        path: source.file.path,
-        title: source.file.basename,
-        durationMs: source.rawDurationMs,
-      })),
-    };
-    const lastSeg = segments[segments.length - 1];
-    const sessionMeta = {
-      startedAt: session.startedAt,
-      duration: lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : "",
-      source: "merged-notes",
-      meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-    };
-    const polished = await this.host.mergeAndPolish(segments.map((segment) => ({ ...segment })), mode, sessionMeta);
-    await this.rewriteConsolidated(session, polished);
-    await this.host.clearCommittedBriefingCheckpoint(sessionMeta);
-    let finalFile = this.host.vault.getAbstractFileByPath(session.mdPath);
-    const renamed = await this.renameMarkdownWithGeneratedTitle(session.mdPath, polished, mode);
-    if (renamed instanceof obsidian.TFile) {
-      session.mdPath = renamed.path;
-      finalFile = renamed;
-    }
-    if (finalFile instanceof obsidian.TFile) {
-      await this.appendMergeMetadataBlock(finalFile, session.mergedSources);
-      await this.host.noteIndex.refreshNoteIndexSafely(finalFile, {
-        meetingDate: session.startedAt,
-        reason: "merge-notes",
-      });
-      try { await this.host.openFile(finalFile); } catch { /* intentionally empty */ }
-    }
-    new obsidian.Notice(`${t("Generated merged minutes: ")}${finalFile instanceof obsidian.TFile ? finalFile.basename : getModeMeta({}, "synthesis").prefix}`);
+  mergeMarkdownFilesAsNew(files: Iterable<unknown> | null | undefined): Promise<void> {
+    return mergeMarkdownFilesAsNewFlow(this.noteMergeFlowHost, files);
   }
   async appendMergeMetadataBlock(file, sources) {
     if (!(file instanceof obsidian.TFile)) return;

@@ -2041,6 +2041,283 @@ describe("NoteWriter merge metadata literal preservation", () => {
   };
   const expectedBlock = (payload: unknown) =>
     `${startMarker}\n${JSON.stringify(payload, null, 2)}\nqnalog-merge-end -->`;
+  type MergeFixture = {
+    writer: NoteWriter;
+    host: NoteWriterHost;
+    vault: ReturnType<typeof memoryVault>;
+    settings: NoteWriterSettings;
+    sourceFiles: Array<{ file: File; content: string }>;
+    targetPath: string;
+    refreshed: File[];
+    opened: File[];
+  };
+  async function withMergeFixture(run: (fixture: MergeFixture) => Promise<void>): Promise<void> {
+    const originalLanguage = getActiveUiLanguage();
+    const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    const moment = (value: string | Date) => {
+      const date = new Date(value);
+      return {
+        isValid: () => Number.isFinite(date.getTime()),
+        toDate: () => date,
+        format: (pattern: string) => pattern === "YYYY-MM-DD HHmm"
+          ? "2026-10-08 1100"
+          : pattern === "YYYYMMDD-HHmmss" ? "20261008-110000" : "2026-10-08 11:00:00",
+      };
+    };
+    vi.stubGlobal("window", { moment });
+    try {
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      const sourceFiles = sources.map((source, index) => {
+        const file = new obsidian.TFile(source.path);
+        const text = index === 0 ? "Transcript A" : "Transcript B";
+        const segment = attachTextTranscript({
+          index: 0, startOffsetMs: 0, endOffsetMs: 1000, text, rawText: text, isFinal: true,
+        }, index === 0 ? "metadata-source-a" : "metadata-source-b", "text-import");
+        return {
+          file,
+          content: `---\nqnalog_mode: monologue\n---\n\n<!-- qnalog-segments-start:${segment.transcript!.sourceId} -->\n${serializeTranscriptBlock(segment, "### Text source 1", text)}\n<!-- qnalog-segments-end:${segment.transcript!.sourceId} -->`,
+        };
+      });
+      const targetPath = "QnALog/Minutes/metadata-merged.md";
+      const vault = memoryVault(sourceFiles.map(source => ({ file: source.file, markdown: source.content })));
+      const refreshed: File[] = [];
+      const opened: File[] = [];
+      const settings: NoteWriterSettings = {
+        ...DEFAULT_SETTINGS, autoRenameWithTitle: false, mdFolder: "QnALog/Minutes",
+        llmModel: "metadata-test-model",
+      };
+      const host = unexpectedHost(vault.vault, settings, {
+        ensureFolder: async () => undefined,
+        findAvailableMarkdownPath: () => targetPath,
+        getFileFrontmatter: (file) => ({
+          qnalog_mode: "monologue",
+          qnalog_time: file.path === sourceFiles[0].file.path
+            ? "2026-10-08T11:00:00.000Z" : "2026-10-08T11:01:00.000Z",
+        }),
+        mergeAndPolish: async () => "---\ntitle: Metadata merge\n---\n\nMERGED BODY",
+        clearCommittedBriefingCheckpoint: async () => undefined,
+        noteIndex: { refreshNoteIndexSafely: async (file) => { refreshed.push(file); } },
+        openFile: async (file) => { opened.push(file); },
+      });
+      const writer = new NoteWriter(host);
+      await run({ writer, host, vault, settings, sourceFiles, targetPath, refreshed, opened });
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      if (previousWindow === undefined) vi.unstubAllGlobals();
+      else vi.stubGlobal("window", previousWindow);
+      vi.useRealTimers();
+    }
+  }
+
+  it("keeps merge side effects ordered and observes target content at each committed stage", async () => {
+    await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
+      const events: string[] = [];
+      let modelMeta: unknown;
+      const baseRead = vault.vault.read.bind(vault.vault);
+      const baseCreate = vault.vault.create.bind(vault.vault);
+      const baseModify = vault.vault.modify.bind(vault.vault);
+      vault.vault.read = async (file) => {
+        events.push(`read:${file.path}`);
+        return baseRead(file);
+      };
+      vault.vault.create = async (path, content) => {
+        events.push(`create:${path}:${content}`);
+        return baseCreate(path, content);
+      };
+      vault.vault.modify = async (file, content) => {
+        events.push(`modify:${file.path}`);
+        return baseModify(file, content);
+      };
+      host.ensureFolder = async (path) => { events.push(`folder:${path}`); };
+      host.findAvailableMarkdownPath = (path) => { events.push(`allocate:${path}`); return targetPath; };
+      host.mergeAndPolish = async (_segments, _mode, meta) => {
+        expect(vault.files.get(targetPath)?.markdown).toBe("");
+        modelMeta = meta;
+        events.push("model");
+        return "MERGED BODY";
+      };
+      host.clearCommittedBriefingCheckpoint = async (meta) => {
+        expect(meta).toBe(modelMeta);
+        const content = vault.files.get(targetPath)?.markdown ?? "";
+        expect(content).toContain("MERGED BODY");
+        expect(content).not.toContain(startMarker);
+        expect(readTranscriptBlocks(content).map(block => ({
+          index: block.segment.index,
+          sourceId: block.segment.transcript?.sourceId,
+          rawText: getCurrentTranscript(block.segment.transcript!).rawText,
+        }))).toEqual([
+          { index: 0, sourceId: "metadata-source-a", rawText: "Transcript A" },
+          { index: 1, sourceId: "metadata-source-b", rawText: "Transcript B" },
+        ]);
+        events.push("clear");
+      };
+      host.noteIndex = { refreshNoteIndexSafely: async (file) => {
+        expect(await baseRead(file)).toContain(startMarker);
+        events.push(`index:${file.path}`);
+        refreshed.push(file);
+      } };
+      host.openFile = async (file) => { events.push(`open:${file.path}`); opened.push(file); };
+      await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
+      expect(events.slice(0, 2)).toEqual(sourceFiles.map(source => `read:${source.file.path}`));
+      expect(events.indexOf("model")).toBeLessThan(events.indexOf("clear"));
+      expect(events.indexOf("clear")).toBeLessThan(events.findIndex(event => event.startsWith("index:")));
+      expect(events.findIndex(event => event.startsWith("index:"))).toBeLessThan(events.findIndex(event => event.startsWith("open:")));
+      expect(events).toContain(`create:${targetPath}:`);
+      expect(refreshed[0]).toBe(opened[0]);
+    });
+  });
+  it("reads naming settings after folder creation finishes", async () => {
+    await withMergeFixture(async ({ writer, host, settings, sourceFiles }) => {
+      let releaseFolder: (() => void) | undefined;
+      let enteredFolder: (() => void) | undefined;
+      const folderEntered = new Promise<void>((resolve) => { enteredFolder = resolve; });
+      const folderGate = new Promise<void>((resolve) => { releaseFolder = resolve; });
+      const ensureCalls: string[] = [];
+      let allocated = "";
+      host.ensureFolder = async (path) => {
+        ensureCalls.push(path);
+        enteredFolder?.();
+        await folderGate;
+      };
+      host.findAvailableMarkdownPath = (path) => { allocated = path; return path; };
+      const mergeGate = Promise.resolve("---\ntitle: Changed settings\n---\n\nMERGED BODY");
+      host.mergeAndPolish = async () => mergeGate;
+      const merge = writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
+      await folderEntered;
+      const changedSettings = { ...settings, mdFolder: "QnALog/ChangedMinutes", noteFileNameFormatNew: "CHANGED-FORMAT" };
+      Object.defineProperty(host, "settings", { configurable: true, get: () => changedSettings });
+      vi.stubGlobal("window", {
+        moment: () => ({
+          isValid: () => true,
+          toDate: () => new Date("2026-10-08T11:00:00.000Z"),
+          format: (pattern: string) => pattern === "CHANGED-FORMAT" ? "changed-stamp" : "20261008-110000",
+        }),
+      });
+      releaseFolder?.();
+      await merge;
+      expect(ensureCalls).toEqual(["QnALog/Minutes"]);
+      expect(allocated).toBe("QnALog/ChangedMinutes/changed-stamp · Merge.md");
+    });
+  });
+
+  it("uses the current host after the model request is in flight", async () => {
+    await withMergeFixture(async ({ writer, host, vault, settings, sourceFiles, targetPath }) => {
+      let releaseModel: (() => void) | undefined;
+      let enteredModel: (() => void) | undefined;
+      const modelEntered = new Promise<void>((resolve) => { enteredModel = resolve; });
+      const modelGate = new Promise<void>((resolve) => { releaseModel = resolve; });
+      host.mergeAndPolish = async () => {
+        enteredModel?.();
+        await modelGate;
+        return "MERGED BODY";
+      };
+      const merge = writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
+      await modelEntered;
+      const vaultB = memoryVault([
+        ...sourceFiles.map(source => ({ file: source.file, markdown: source.content })),
+        { file: new obsidian.TFile(targetPath), markdown: "" },
+      ]);
+      const refreshedB: File[] = [];
+      const openedB: File[] = [];
+      const hostB = unexpectedHost(vaultB.vault, settings, {
+        clearCommittedBriefingCheckpoint: async () => undefined,
+        noteIndex: { refreshNoteIndexSafely: async (file) => { refreshedB.push(file); } },
+        openFile: async (file) => { openedB.push(file); },
+      });
+      writer.host = hostB;
+      releaseModel?.();
+      await merge;
+      expect(vault.files.get(targetPath)?.markdown).toBe("");
+      const resultB = vaultB.files.get(targetPath)?.markdown ?? "";
+      expect(resultB).toContain("MERGED BODY");
+      expect(resultB).toContain(startMarker);
+      expect(refreshedB.map(file => file.path)).toEqual([targetPath]);
+      expect(openedB.map(file => file.path)).toEqual([targetPath]);
+    });
+  });
+  it.each(["second-source-read", "path-allocation", "empty-path", "create", "model", "body-write", "checkpoint-clear", "metadata-write", "index"] as const)(
+    "preserves merge state and propagates the original error at %s",
+    async (failurePoint) => {
+      await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath }) => {
+        const failure = new Error(`failure at ${failurePoint}`);
+        let modifies = 0;
+        let laterStage = false;
+        const baseRead = vault.vault.read.bind(vault.vault);
+        const baseCreate = vault.vault.create.bind(vault.vault);
+        const baseModify = vault.vault.modify.bind(vault.vault);
+        vault.vault.read = async (file) => {
+          if (failurePoint === "second-source-read" && file.path === sourceFiles[1].file.path) throw failure;
+          return baseRead(file);
+        };
+        host.findAvailableMarkdownPath = () => {
+          if (failurePoint === "path-allocation") throw failure;
+          return targetPath;
+        };
+        if (failurePoint === "empty-path") host.findAvailableMarkdownPath = () => "";
+        vault.vault.create = async (path, markdown) => {
+          if (failurePoint === "create") throw failure;
+          return baseCreate(path, markdown);
+        };
+        host.mergeAndPolish = async () => {
+          if (failurePoint === "model") throw failure;
+          return "MERGED BODY";
+        };
+        host.clearCommittedBriefingCheckpoint = async () => {
+          if (failurePoint === "checkpoint-clear") throw failure;
+        };
+        vault.vault.modify = async (file, markdown) => {
+          modifies += 1;
+          if (failurePoint === "body-write" && modifies === 1) throw failure;
+          if (failurePoint === "metadata-write" && modifies === 2) throw failure;
+          return baseModify(file, markdown);
+        };
+        host.noteIndex = { refreshNoteIndexSafely: async () => {
+          laterStage = true;
+          if (failurePoint === "index") throw failure;
+        } };
+        if (failurePoint === "empty-path") {
+          await expect(writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file)))
+            .rejects.toThrow("Failed to generate a path for the merged minutes file");
+        } else {
+          await expect(writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file))).rejects.toBe(failure);
+        }
+        expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown))
+          .toEqual(sourceFiles.map(source => source.content));
+        const target = vault.files.get(targetPath)?.markdown;
+        if (["second-source-read", "path-allocation", "empty-path", "create"].includes(failurePoint)) {
+          expect(target).toBeUndefined();
+        } else if (["model", "body-write"].includes(failurePoint)) {
+          expect(target).toBe("");
+        } else if (["checkpoint-clear", "metadata-write"].includes(failurePoint)) {
+          expect(target).toContain("MERGED BODY");
+          expect(target).not.toContain(startMarker);
+        } else if (failurePoint === "index") {
+          expect(target).toContain("MERGED BODY");
+          expect(target).toContain(startMarker);
+        }
+        expect(laterStage).toBe(failurePoint === "index");
+      });
+    },
+  );
+
+  it("keeps open failure non-fatal and rejects insufficient inputs without model work", async () => {
+    await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath }) => {
+      const originalNoticeCount = notices.length;
+      host.openFile = async () => { throw new Error("open failed"); };
+      await expect(writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file))).resolves.toBeUndefined();
+      expect(vault.files.get(targetPath)?.markdown).toContain(startMarker);
+      expect(notices.length).toBeGreaterThan(originalNoticeCount);
+      let modelCalls = 0;
+      host.mergeAndPolish = async () => { modelCalls += 1; return "UNEXPECTED"; };
+      for (const input of [[], null, undefined, [sourceFiles[0].file]]) {
+        await expect(writer.mergeMarkdownFilesAsNew(input)).resolves.toBeUndefined();
+      }
+      expect(modelCalls).toBe(0);
+      expect(vault.files.get(targetPath)?.markdown).toContain("MERGED BODY");
+    });
+  });
 
   it("preserves source JSON and transcript bytes when appending and replacing metadata", async () => {
     vi.useFakeTimers();
@@ -2101,59 +2378,14 @@ describe("NoteWriter merge metadata literal preservation", () => {
   });
 
   it.each(["direct", "confirmed"] as const)("writes literal source metadata through the complete %s merge consumer", async (route) => {
-    const originalLanguage = getActiveUiLanguage();
-    const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
-    const moment = (value: string | Date) => {
-      const date = new Date(value);
-      return {
-        isValid: () => Number.isFinite(date.getTime()),
-        toDate: () => date,
-        format: (pattern: string) => pattern === "YYYY-MM-DD HHmm"
-          ? "2026-10-08 1100"
-          : pattern === "YYYYMMDD-HHmmss" ? "20261008-110000" : "2026-10-08 11:00:00",
-      };
-    };
-    vi.stubGlobal("window", { moment });
-    try {
-      setActiveUiLanguage(matchUiLanguage("en")!);
-      const sourceFiles = sources.map((source, index) => {
-        const file = new obsidian.TFile(source.path);
-        const text = index === 0 ? "Transcript A" : "Transcript B";
-        const segment = attachTextTranscript({
-          index: 0, startOffsetMs: 0, endOffsetMs: 1000, text, rawText: text, isFinal: true,
-        }, index === 0 ? "metadata-source-a" : "metadata-source-b", "text-import");
-        return { file, content: `---\nqnalog_mode: monologue\n---\n\n<!-- qnalog-segments-start:${segment.transcript!.sourceId} -->\n${serializeTranscriptBlock(segment, "### Text source 1", text)}\n<!-- qnalog-segments-end:${segment.transcript!.sourceId} -->` };
-      });
+    await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
       expect(sourceFiles.map(source => readTranscriptBlocks(source.content).length)).toEqual([1, 1]);
-      const targetPath = "QnALog/Minutes/metadata-merged.md";
-      const vault = memoryVault(sourceFiles.map(source => ({ file: source.file, markdown: source.content })));
-      const refreshed: File[] = [];
-      const opened: File[] = [];
-      const settings = {
-        ...DEFAULT_SETTINGS, autoRenameWithTitle: false, mdFolder: "QnALog/Minutes",
-        llmModel: "metadata-test-model",
-      };
-      const overrides: Partial<NoteWriterHost> = {
-        ensureFolder: async () => undefined,
-        findAvailableMarkdownPath: () => targetPath,
-        getFileFrontmatter: (file) => ({
-          qnalog_mode: "monologue",
-          qnalog_time: file.path === sourceFiles[0].file.path
-            ? "2026-10-08T11:00:00.000Z" : "2026-10-08T11:01:00.000Z",
-        }),
-        mergeAndPolish: async () => "---\ntitle: Metadata merge\n---\n\nMERGED BODY",
-        clearCommittedBriefingCheckpoint: async () => undefined,
-        noteIndex: { refreshNoteIndexSafely: async (file) => { refreshed.push(file); } },
-        openFile: async (file) => { opened.push(file); },
-      };
       if (route === "confirmed") {
-        overrides.getRecentNotes = () => [
+        host.getRecentNotes = () => [
           { file: sourceFiles[1].file, timestamp: 2 },
           { file: sourceFiles[0].file, timestamp: 1 },
         ];
-        overrides.confirm = async (title, body, ctaText) => {
+        host.confirm = async (title, body, ctaText) => {
           expect({ title, body, ctaText }).toEqual({
             title: "Merge minutes",
             body: "A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. "
@@ -2162,10 +2394,6 @@ describe("NoteWriter merge metadata literal preservation", () => {
           });
           return true;
         };
-      }
-      const host = unexpectedHost(vault.vault, settings, overrides);
-      const writer = new NoteWriter(host);
-      if (route === "confirmed") {
         await writer.mergeMarkdownFileWithPrevious(sourceFiles[1].file);
       } else {
         await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
@@ -2175,7 +2403,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
       const actual = await vault.vault.read(merged!.file);
       expect(payloadFrom(actual)).toEqual({
         mergedAt: "2026-10-08T12:00:00.000Z",
-        sources: sourceFiles.map(({ file }, index) => ({
+        sources: sourceFiles.map(({ file }) => ({
           path: file.path, title: file.basename, durationMs: 1000,
         })),
       });
@@ -2193,11 +2421,6 @@ describe("NoteWriter merge metadata literal preservation", () => {
       expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
       expect(refreshed).toEqual([merged!.file]);
       expect(opened).toEqual([merged!.file]);
-    } finally {
-      setActiveUiLanguage(originalLanguage);
-      if (previousWindow === undefined) vi.unstubAllGlobals();
-      else vi.stubGlobal("window", previousWindow);
-      vi.useRealTimers();
-    }
+    });
   });
 });
