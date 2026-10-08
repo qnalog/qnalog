@@ -3,7 +3,8 @@
 
 import { legacyPromptFieldForMode } from "../notes/recording-issues";
 
-import { getAudioTimeLink, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
+import { getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
+import { getAudioTimeLink } from "../notes/audio-reference-text";
 
 import { getCustomPromptModeTemplate } from "../shared/mode-meta";
 

@@ -1717,6 +1717,109 @@ async function main() {
         if (infoSourcesBefore === undefined) delete textMaterialSession.textImportSources;
         else textMaterialSession.textImportSources = infoSourcesBefore;
       }
+        const audioSegment = transcriptSegment(2, "AUDIO RAW $& $` $' $$", 61000, 65000, "literal-audio-materials");
+        audioSegment.audioName = "分段 $& $` $' $$.webm";
+        audioSegment.audioPath = "QnALog/Audio/segment.webm";
+        audioSegment.audioStartOffsetMs = 7000;
+        audioSegment.audioEndOffsetMs = 11000;
+        const audioModelOutput = "---\ntitle: new\n---\n\nAUDIO BODY $& $` $' $$";
+        const audioModelBody = "AUDIO BODY $& $` $' $$";
+        const audioOriginal = "---\ntitle: old\n---\n\n# Existing note\n";
+        const audioLedgerOriginal = `${audioOriginal}\n${serializeTranscriptSegment(audioSegment)}`;
+        const audioNamedMaster = "母带 $& $` $' $$.webm";
+        const audioExternalName = "外部 $& $` $' $$.wav";
+        const audioStates = [
+          { name: "named-master", source: "recording", fields: { masterAudioName: `  ${audioNamedMaster}  `, masterAudioPath: "QnALog/Audio/ignored.webm" }, kind: "master" },
+          { name: "path-master", source: "recording", fields: { masterAudioName: "  ", masterAudioPath: " QnALog/Audio/fallback.webm " }, kind: "master" },
+          { name: "no-master", source: "recording", fields: {}, kind: "segment" },
+          { name: "multi-source", source: "recording", fields: { masterAudioName: audioNamedMaster, multiSourceAudio: true }, kind: "segment" },
+          { name: "external-named", source: "import", fields: { masterAudioName: audioNamedMaster, externalAudioSource: { name: `  ${audioExternalName}  `, path: "/private/DO_NOT_RENDER/source.wav", fingerprint: "DO_NOT_RENDER_FINGERPRINT" } }, kind: "external" },
+          { name: "external-blank", source: "import", fields: { masterAudioName: audioNamedMaster, externalAudioSource: { name: "  " } }, kind: "none" },
+          { name: "text-import", source: "text-import", fields: { masterAudioName: audioNamedMaster }, kind: "text" },
+          { name: "combined", source: "text-import", fields: { masterAudioName: audioNamedMaster, externalAudioSource: { name: audioExternalName } }, kind: "combined" },
+        ];
+        const audioResults = [];
+        for (const state of audioStates) {
+          const session = {
+            id: "literal-audio-materials",
+            sessionStamp: "literal-audio-materials",
+            startedAt: "2026-09-14T12:00:00.000Z",
+            mdPath: literalRetryPath,
+            mode: "meeting",
+            source: state.source,
+            segments: [audioSegment],
+            finalized: true,
+            ...state.fields,
+          };
+          const originalContent = state.source === "text-import" ? audioOriginal : audioLedgerOriginal;
+          for (const layout of ["rewrite", "append", "failed"]) {
+            retryFile._content = originalContent;
+            if (layout === "rewrite") await plugin.noteWriter.rewriteConsolidated(session, audioModelOutput);
+            else await plugin.noteWriter.appendPolishBlock(
+              session, audioModelOutput, layout === "failed" ? new Error("audio failure") : null, false, "", originalContent,
+            );
+            const result = retryFile._content;
+            const infoSummary = result.includes("<summary>录音信息</summary>") || result.includes("<summary>导入文本信息</summary>")
+              ? "zh" : "en";
+            const sourceTextSummary = infoSummary === "zh" ? "<summary>导入文本原文（1 个来源）</summary>" : "<summary>Imported text (1 sources)</summary>";
+            const masterName = state.name === "path-master" ? "fallback.webm" : audioNamedMaster;
+            if (state.kind === "master" && (!result.includes(`![[${masterName}]]`) || !result.includes(`[[${masterName}|00:00]]`))) {
+              throw new Error(`${state.name} ${layout} lost master audio material`);
+            }
+            if (state.kind === "external" || state.kind === "combined") {
+              const summary = infoSummary === "zh" ? "<summary>导入来源</summary>" : "<summary>Import source</summary>";
+              const fileLine = `${infoSummary === "zh" ? "文件：" : "File: "}${audioExternalName}`;
+              if (result.split(summary).length - 1 !== 1 || !result.includes(fileLine)
+                || !result.includes("源音频保留在同步文件夹中，未复制到当前知识库。")
+                || result.includes("DO_NOT_RENDER") || result.includes("DO_NOT_RENDER_FINGERPRINT")
+                || result.includes(`![[${audioSegment.audioName}]]`)) {
+                throw new Error(`${state.name} ${layout} changed external audio source materials`);
+              }
+            }
+            if (state.kind === "segment" && layout === "rewrite") {
+              const summary = infoSummary === "zh" ? "<summary>原始音频（1 段，01:05）</summary>" : "<summary>Original audio (1 segments, 01:05)</summary>";
+              if (result.split(summary).length - 1 !== 1
+                || !result.includes(`#### ${infoSummary === "zh" ? "段落 3（01:01–01:05）" : "Segment 3 (01:01–01:05)"}`)
+                || !result.includes(`![[${audioSegment.audioName}]]`) || !result.includes(`[[${audioSegment.audioName}|00:07]]`)) {
+                throw new Error(`${state.name} rewrite changed segment audio material`);
+              }
+            }
+            if ((state.kind === "none" || state.kind === "external" || state.kind === "combined" || state.kind === "text")
+              && result.includes(`![[${audioSegment.audioName}]]`)) {
+              throw new Error(`${state.name} ${layout} exposed segment audio`);
+            }
+            if (state.kind === "text" || state.kind === "combined") {
+              if (result.split(sourceTextSummary).length - 1 !== (state.kind === "text" ? 1 : 1)
+                || !result.includes("AUDIO RAW $& $` $' $$") || !result.includes("AUDIO RAW $& $` $' $$")) {
+                throw new Error(`${state.name} ${layout} lost text-import source materials`);
+              }
+            }
+            if (layout === "failed") {
+              if (!result.includes(infoSummary === "zh"
+                ? "_[合并润色失败（已加入重试队列）：audio failure]_"
+                : "_[Merge failed (queued for retry): audio failure]_")
+                || !result.startsWith("---\ntitle: old\n---") || result.includes(audioModelBody)) {
+                throw new Error(`${state.name} failed append changed failure or frontmatter precedence`);
+              }
+            } else if (!result.includes(audioModelBody)) {
+              throw new Error(`${state.name} ${layout} lost successful model body`);
+            }
+            if (state.source !== "text-import") {
+              const ledger = readTextMaterialLedger(result, "seg:literal-audio-materials:2");
+              if (ledger.rawText !== "AUDIO RAW $& $` $' $$" || ledger.transcript.sourceId !== "literal-audio-materials") {
+                throw new Error(`${state.name} ${layout} changed transcript ledger identity or source`);
+              }
+            }
+            if (layout === "rewrite") {
+              const rewrite = result;
+              await plugin.noteWriter.rewriteConsolidated(session, audioModelOutput);
+              if (retryFile._content !== rewrite) throw new Error(`${state.name} rewrite was not byte-stable`);
+            }
+            audioResults.push(result);
+          }
+        }
+        const audioDigest = createHash("sha256").update(JSON.stringify(audioResults)).digest("hex");
+        console.log(`[audio-source-materials] rewrite/append digest: ${audioDigest}`);
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);

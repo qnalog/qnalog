@@ -24,7 +24,8 @@ import { isTextImportSession, shouldRewriteConsolidatedNote } from "../briefing/
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { getAudioTimeLink, getSegmentsDurationMs } from "../notes/audio-refs";
+import { getSegmentsDurationMs } from "../notes/audio-refs";
+import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { buildTitleSourceFromSegments, normalizeSegmentsForMergedNote } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";

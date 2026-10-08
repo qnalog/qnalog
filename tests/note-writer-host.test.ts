@@ -204,6 +204,91 @@ describe("NoteWriter polish materials", () => {
     }
   });
 });
+describe("NoteWriter audio source materials", () => {
+  it.each(["zh", "en"])("preserves audio source selection in rewrite, append, and failure (%s)", async (language) => {
+    const path = "QnALog/Minutes/audio-materials.md";
+    const file = new obsidian.TFile(path);
+    const originalLanguage = getActiveUiLanguage();
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const named = "母带 $& $` $' $$.webm";
+    const externalName = "外部 $& $` $' $$.wav";
+    const audioName = "分段 $& $` $' $$.webm";
+    const segment = attachTextTranscript({
+      index: 2, startOffsetMs: 61_000, endOffsetMs: 65_000, audioStartOffsetMs: 7_000,
+      audioEndOffsetMs: 11_000, audioName, audioPath: "QnALog/Audio/segment.webm",
+      rawText: "AUDIO RAW $& $` $' $$", text: "AUDIO RAW $& $` $' $$", isFinal: true,
+    }, "audio-materials", "text-import");
+    const ledger = serializeTranscriptBlock(segment, "### Segment 3", segment.text);
+    const output = "---\ntitle: new\n---\n\nAUDIO BODY $& $` $' $$";
+    const states: Array<{
+      name: string; source: RecordingSession["source"]; fields?: Partial<RecordingSession>;
+      section: "master" | "segment" | "external" | "none";
+    }> = [
+      { name: "named-master", source: "recording", fields: { masterAudioName: `  ${named}  `, masterAudioPath: "QnALog/Audio/ignored.webm" }, section: "master" },
+      { name: "path-master", source: "recording", fields: { masterAudioName: "  ", masterAudioPath: " QnALog/Audio/fallback.webm " }, section: "master" },
+      { name: "no-master", source: "recording", section: "segment" },
+      { name: "multi-source", source: "recording", fields: { masterAudioName: named, multiSourceAudio: true }, section: "segment" },
+      { name: "external-named", source: "import", fields: { masterAudioName: named, externalAudioSource: { name: `  ${externalName}  `, path: "/private/DO_NOT_RENDER/source.wav", fingerprint: "DO_NOT_RENDER_FINGERPRINT" } }, section: "external" },
+      { name: "external-blank", source: "import", fields: { masterAudioName: named, externalAudioSource: { name: "  " } }, section: "none" },
+      { name: "text-import", source: "text-import", fields: { masterAudioName: named }, section: "none" },
+      { name: "combined", source: "text-import", fields: { masterAudioName: named, externalAudioSource: { name: externalName } }, section: "external" },
+    ];
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      for (const state of states) {
+        const inputNote = state.source === "text-import" ? original : `${original}\n${ledger}`;
+        const vault = memoryVault([{ file, markdown: inputNote }]);
+        const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "consumer-audio-model" }));
+        const session: RecordingSession = {
+          id: "audio-materials", sessionStamp: "audio-materials", startedAt: "2026-09-14T12:00:00.000Z",
+          mdPath: path, mode: "meeting", source: state.source, segments: [segment], finalized: true, ...state.fields,
+        };
+        for (const method of ["rewrite", "append", "failed"] as const) {
+          await vault.vault.modify(file, inputNote);
+          if (method === "rewrite") await writer.rewriteConsolidated(session, output);
+          else await writer.appendPolishBlock(session, output, method === "failed" ? new Error("audio failure") : null, false, "", inputNote);
+          const result = await vault.vault.read(file);
+          const master = state.section === "master" ? (state.name === "path-master" ? "fallback.webm" : named) : "";
+          const external = state.section === "external" ? externalName : "";
+          if (master) {
+            expect(result).toContain(`![[${master}]]`);
+            expect(result).toContain(`[[${master}|00:00]]`);
+          }
+          if (external) {
+            expect(result).toContain(`${language === "zh" ? "文件：" : "File: "}${external}`);
+            expect(result).not.toContain("DO_NOT_RENDER");
+            expect(result).not.toContain(`![[${audioName}]]`);
+          }
+          if (state.section === "segment" && method === "rewrite") {
+            expect(result).toContain(`<summary>${language === "zh" ? "原始音频（1 段，01:05）" : "Original audio (1 segments, 01:05)"}</summary>`);
+            expect(result).toContain(`![[${audioName}]]`);
+            expect(result).toContain(`[[${audioName}|00:07]]`);
+          }
+          if (state.section === "none" || state.section === "external") {
+            expect(result).not.toContain("![[");
+          }
+          if (method === "failed") {
+            expect(result).toContain(language === "zh"
+              ? "_[合并润色失败（已加入重试队列）：audio failure]_"
+              : "_[Merge failed (queued for retry): audio failure]_");
+            expect(result).toContain("title: old");
+            expect(result).not.toContain("AUDIO BODY");
+          } else {
+            expect(result).toContain("title: new");
+            expect(result).toContain("AUDIO BODY $& $` $' $$");
+          }
+          if (state.source !== "text-import") {
+            expect(readTranscriptBlocks(result).map((block) => block.visibleBlock)).toEqual(["AUDIO RAW $& $` $' $$"]);
+          }
+        }
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+    }
+  });
+});
 describe("NoteWriter text-import source materials", () => {
   it("preserves ordered source labels, raw text, and ledgers through rewrite, append, and failure", async () => {
     const path = "QnALog/Minutes/text-materials.md";
@@ -1135,6 +1220,77 @@ describe("NoteWriter info time capability", () => {
       setActiveUiLanguage(originalLanguage);
       vi.unstubAllGlobals();
       if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+});
+describe("NoteWriter audio source read timing", () => {
+  it("preserves the original read points and propagates source getter failures", async () => {
+    const path = "QnALog/Minutes/audio-read-timing.md";
+    const file = new obsidian.TFile(path);
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const output = "---\ntitle: new\n---\n\nAUDIO BODY";
+    const originalLanguage = getActiveUiLanguage();
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      setActiveUiLanguage(matchUiLanguage("zh")!);
+      for (const layout of ["rewrite", "append"] as const) {
+        const vault = memoryVault([{ file, markdown: original }]);
+        const session: RecordingSession = {
+          id: "audio-read-timing", sessionStamp: "audio-read-timing", startedAt: "2026-09-14T12:00:00.000Z",
+          mdPath: path, mode: "meeting", source: "recording", segments: [], finalized: true,
+          masterAudioName: "FIRST MASTER.webm",
+        };
+        const settings = { ...DEFAULT_SETTINGS } as NoteWriterSettings;
+        Object.defineProperty(settings, "llmModel", {
+          get() { session.masterAudioName = "LATE MASTER.webm"; return "consumer-audio-model"; },
+        });
+        const writer = new NoteWriter(unexpectedHost(vault.vault, settings));
+        if (layout === "rewrite") await writer.rewriteConsolidated(session, output);
+        else await writer.appendPolishBlock(session, output, null, false, "", original);
+        const result = await vault.vault.read(file);
+        expect(result).toContain(`![[${layout === "rewrite" ? "FIRST" : "LATE"} MASTER.webm]]`);
+
+        const externalVault = memoryVault([{ file, markdown: original }]);
+        const externalSession: RecordingSession = {
+          id: "audio-read-timing", sessionStamp: "audio-read-timing", startedAt: "2026-09-14T12:00:00.000Z",
+          mdPath: path, mode: "meeting", source: "import", segments: [], finalized: true,
+          externalAudioSource: { name: "FIRST SOURCE.wav" },
+        };
+        const externalSettings = { ...DEFAULT_SETTINGS } as NoteWriterSettings;
+        Object.defineProperty(externalSettings, "llmModel", {
+          get() {
+            (externalSession.externalAudioSource as { name: string }).name = "LATE SOURCE.wav";
+            return "consumer-audio-model";
+          },
+        });
+        const externalWriter = new NoteWriter(unexpectedHost(externalVault.vault, externalSettings));
+        if (layout === "rewrite") await externalWriter.rewriteConsolidated(externalSession, output);
+        else await externalWriter.appendPolishBlock(externalSession, output, null, false, "", original);
+        expect(await externalVault.vault.read(file)).toContain("LATE SOURCE.wav");
+
+        const failure = new Error("audio material failed");
+        for (const kind of ["master", "external"] as const) {
+          const errorSession: RecordingSession = {
+            id: "audio-read-timing", sessionStamp: "audio-read-timing", startedAt: "2026-09-14T12:00:00.000Z",
+            mdPath: path, mode: "meeting", source: kind === "master" ? "recording" : "import",
+            segments: [], finalized: true,
+          };
+          if (kind === "master") Object.defineProperty(errorSession, "masterAudioName", { get: () => { throw failure; } });
+          else Object.defineProperty(errorSession, "externalAudioSource", { value: { get name() { throw failure; } } });
+          const errorVault = memoryVault([{ file, markdown: original }]);
+          const errorWriter = new NoteWriter(unexpectedHost(errorVault.vault, {
+            ...DEFAULT_SETTINGS, llmModel: "consumer-audio-model",
+          }));
+          const run = layout === "rewrite"
+            ? errorWriter.rewriteConsolidated(errorSession, output)
+            : errorWriter.appendPolishBlock(errorSession, output, null, false, "", original);
+          await expect(run).rejects.toBe(failure);
+          expect(await errorVault.vault.read(file)).toBe(original);
+        }
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
     }
   });
 });

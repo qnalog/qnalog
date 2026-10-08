@@ -21,7 +21,8 @@ import { renderMultichannelAudioBufferSliceToWav, transcribeAudioByChannels } fr
 import { transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
-import { collectAudioRefs, getAudioTimeLink, getSegmentsDurationMs } from "../notes/audio-refs";
+import { collectAudioRefs, getSegmentsDurationMs } from "../notes/audio-refs";
+import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { extractDetailsBody } from "../notes/detail-blocks";
 import { readCurrentOutlineBlock } from "../notes/outline-storage";
 import { validateRealtimeOutlineSourceCoverage, createRealtimeOutlineSourceCoverage } from "../notes/outline-coverage";

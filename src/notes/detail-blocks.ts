@@ -3,7 +3,8 @@
 
 import { hasMeetingWorkbenchContent, isImageMeetingMaterial, normalizeMeetingWorkbench } from "./meeting-workbench";
 
-import { collectAudioRefs, getAudioTimeLink, getSessionMasterAudioName } from "./audio-refs";
+import { collectAudioRefs } from "./audio-refs";
+import { getAudioTimeLink } from "./audio-reference-text";
 
 import { detectRecentNoteMode } from "../recent/recent-notes";
 
@@ -174,20 +175,7 @@ export function extractNotePanelData(plugin, file, markdown) {
 }
 
 
-export function buildMasterAudioDetails(session, totalMs) {
-  const audioName = getSessionMasterAudioName(session);
-  if (!audioName) return "";
-  return [
-    "<details>",
-    `<summary>${labelText("originalAudioFull", formatElapsed(totalMs || 0))}</summary>`,
-    "",
-    `![[${audioName}]]`,
-    "",
-    `${labelText("listenBack")}${getAudioTimeLink(audioName, 0)}`,
-    "",
-    "</details>",
-  ].join("\n");
-}
+
 
 
 
@@ -215,21 +203,6 @@ export function buildMasterAudioDetails(session, totalMs) {
 //       output_audio.delta 直接丢弃
 // ============================================================
 
-export function buildExternalAudioSourceDetails(session) {
-  const source = session && session.externalAudioSource;
-  const name = String(source && source.name || "").trim();
-  if (!name) return "";
-  return [
-    "<details>",
-    `<summary>${labelText("importSource")}</summary>`,
-    "",
-    `${labelText("fileLabel")}${name}`,
-    "",
-    "源音频保留在同步文件夹中，未复制到当前知识库。",
-    "",
-    "</details>",
-  ].join("\n");
-}
 
 export function renderLongSessionRawFallbackGroup(group, partIndex) {
   const list = Array.isArray(group) ? group : [];
