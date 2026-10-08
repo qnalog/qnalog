@@ -886,6 +886,7 @@ async function main() {
         const valid = Number.isFinite(parsed.getTime());
         return {
           isValid: () => valid,
+          toDate: () => parsed,
           year: () => parsed.getUTCFullYear(),
           day: () => parsed.getUTCDay(),
           valueOf: () => parsed.getTime(),
@@ -901,6 +902,43 @@ async function main() {
         };
       };
       sandbox.moment = writerMoment;
+      const sourceAResult = await plugin.noteWriter.readMergeSourceFromMarkdown(sourceA.file, 7000, 5);
+      const sourceBResult = await plugin.noteWriter.readMergeSourceFromMarkdown(sourceB.file, 8000, 6);
+      const sourceResults = [sourceAResult, sourceBResult];
+      const expectedSourceResults = [
+        { file: sourceA.file, time: "2026-09-14T11:00:00.000Z", id: "writer-source-a", sourceText: "Writer source A transcript remains intact.", index: 5, offset: 7000 },
+        { file: sourceB.file, time: "2026-09-14T11:01:00.000Z", id: "writer-source-b", sourceText: "Writer source B transcript remains intact.", index: 6, offset: 8000 },
+      ];
+      for (let index = 0; index < sourceResults.length; index += 1) {
+        const source = sourceResults[index];
+        const expected = expectedSourceResults[index];
+        const segment = source.segments[0];
+        if (source.file !== expected.file || source.content !== expected.file._content
+          || source.frontmatter?.qnalog_mode !== "monologue" || source.mode !== "monologue"
+          || source.startedAt !== expected.time || source.rawDurationMs !== 1000
+          || segment.index !== expected.index || segment.startOffsetMs !== expected.offset
+          || segment.endOffsetMs !== expected.offset + 1000
+          || segment.audioStartOffsetMs !== 0 || segment.audioEndOffsetMs !== 1000
+          || segment.sourceName !== expected.file.basename || segment.sourcePath !== expected.file.path
+          || segment.text !== `【来源纪要：${expected.file.basename}】\n${expected.sourceText}`
+          || segment.transcript?.sourceId !== expected.id
+          || segment.transcript?.revisions?.[0]?.rawText !== expected.sourceText) {
+          failures.push(`来源读取结果不符合预期：${expected.id}`);
+        }
+      }
+      const mergeSourceDigest = createHash("sha256").update(JSON.stringify(sourceResults.map((source) => ({
+        path: source.file.path,
+        content: source.content,
+        frontmatter: source.frontmatter,
+        mode: source.mode,
+        startedAt: source.startedAt,
+        rawDurationMs: source.rawDurationMs,
+        segments: source.segments,
+      })))).digest("hex");
+      console.log(`[note-merge-source] read digest: ${mergeSourceDigest}`);
+      if (sourceA.file._content !== sourceA.content || sourceB.file._content !== sourceB.content) {
+        failures.push("合并来源准备修改了已包含转写账本的源文件");
+      }
       const previousSource = plugin.noteWriter.findPreviousRecentNoteFile(sourceB.file);
       sandbox.moment = momentBeforeWriterSmoke;
       if (previousSource !== sourceA.file) failures.push("真实 recent 查询没有把 source A 识别为 source B 的上一篇纪要");
@@ -915,6 +953,25 @@ async function main() {
         || !merged._content.includes("Writer source B transcript remains intact.")) {
         failures.push("合并成稿没有保留两篇来源账本及其可见转写");
       }
+      const mergedRecords = [...String(merged._content || "").matchAll(/<!-- qnalog-transcript-data ([\s\S]*?) -->/g)]
+        .map((match) => JSON.parse(match[1]));
+      const mergedSegments = mergedRecords.map((record) => ({ ...record.segment, transcript: record.transcript }));
+      const mergedSources = [
+        { id: "writer-source-a", sourceName: sourceA.file.basename, sourcePath: sourceA.file.path, rawText: "Writer source A transcript remains intact.", textPrefix: `【来源纪要：${sourceA.file.basename}】\n` },
+        { id: "writer-source-b", sourceName: sourceB.file.basename, sourcePath: sourceB.file.path, rawText: "Writer source B transcript remains intact.", textPrefix: `【来源纪要：${sourceB.file.basename}】\n` },
+      ];
+      if (mergedSegments.length !== 2 || mergedSources.some((expected, index) => {
+        const segment = mergedSegments[index];
+        const record = segment?.transcript;
+        const revision = record?.revisions?.find((item) => item.revision === record.currentRevision);
+        return !segment || segment.index !== index || segment.startOffsetMs !== index * 1000
+          || segment.endOffsetMs !== (index + 1) * 1000
+          || segment.audioStartOffsetMs !== 0 || segment.audioEndOffsetMs !== 1000
+          || segment.sourceName !== expected.sourceName || segment.sourcePath !== expected.sourcePath
+          || record.sourceId !== expected.id || revision?.rawText !== expected.rawText
+          || (segment.text.match(new RegExp(expected.textPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length !== 1;
+      })) failures.push("合并后的转写账本未保留来源顺序、时间、来源归属与原文");
+ 
       if (!merged._content.includes("qnalog-merge") || !merged._content.includes("qnalog-merge-end")
         || !merged._content.includes("qnalog-note-index")) {
         failures.push("合并成稿缺少来源元数据或真实索引");
