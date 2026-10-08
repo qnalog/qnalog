@@ -147,7 +147,7 @@ function createMemoryVault(initialMarkdown: string, configDir = ".obsidian") {
   };
 }
 
-function makeWriterAndService(initialMarkdown: string, generation: "success" | "incomplete" | "failure" | "cancel" = "success", busy = false, configDir = ".obsidian") {
+function makeWriterAndService(initialMarkdown: string, generation: "success" | "incomplete" | "failure" | "cancel" | "whitespace" = "success", busy = false, configDir = ".obsidian") {
   const memory = createMemoryVault(initialMarkdown, configDir);
   let writerVault: NoteWriterHost["vault"] = memory.vault as never;
   const writerHost: NoteWriterHost = {
@@ -188,7 +188,7 @@ function makeWriterAndService(initialMarkdown: string, generation: "success" | "
       throw error;
     }
     if (generation === "incomplete") return;
-    const outline = "- [[recording.webm|00:00]] Rebuilt topic";
+    const outline = generation === "whitespace" ? " \r\n " : "- [[recording.webm|00:00]] Rebuilt topic";
     session.realtimeOutline = outline;
     session.realtimeOutlineSegmentCount = session.segments.length;
     session.realtimeOutlineSourceCoverage = createRealtimeOutlineSourceCoverage(outline, session.segments, session.segments.length);
@@ -223,6 +223,11 @@ describe("manual note outline rebuild", () => {
     expect(updated.slice(updatedBlock!.range.end)).toBe(original.slice(currentBlock!.range.end));
     expect(updatedBlock!.outline).toContain("Rebuilt topic");
     expect(updated).toContain("- Archived outline");
+    expect(updatedBlock!.sourceCoverage).toEqual(expect.objectContaining({
+      committedSegmentCount: 2,
+      totalSegmentCount: 2,
+    }));
+    expect(updatedBlock!.body).not.toMatch(/>.*\b\d+\/\d+\b/);
     expect(updated).toContain("The first source transcript stays untouched.");
     expect(updated).toContain("The later source transcript stays untouched too.");
   });
@@ -239,6 +244,19 @@ describe("manual note outline rebuild", () => {
 
     expect(result.status).toBe("stopped");
     expect(result.stopReason).toBe(stopReason);
+    expect(memory.markdown).toBe(original);
+    expect(memory.processCount).toBe(0);
+    expect(result.backupPath).toBeNull();
+  });
+
+  it("rejects a whitespace-only rebuilt outline before backup or write", async () => {
+    const original = createOriginalNote();
+    const { memory, service } = makeWriterAndService(original, "whitespace");
+
+    const result = await service.rebuildNoteOutline(memory.target);
+
+    expect(result.status).toBe("stopped");
+    expect(result.stopReason).toBe("write-failed");
     expect(memory.markdown).toBe(original);
     expect(memory.processCount).toBe(0);
     expect(result.backupPath).toBeNull();

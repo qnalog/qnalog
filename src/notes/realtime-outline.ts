@@ -14,11 +14,9 @@ import { normalizeAudioInputMode } from "../audio/audio-input";
 
 
 import { formatElapsed } from "../shared/util-common";
-import { labelText } from "../shared/note-labels";
 import { NS_VIEW_OUTLINE } from "../shared/namespace";
 
 
-import { buildOutlineCoverageMetadata } from "./outline-storage";
 
 // 实时大纲：归并到共同上层概念，层级由内容涌现，不强加结构
 export const REALTIME_OUTLINE_MAX_SEGMENTS = 10;
@@ -403,40 +401,6 @@ ${transcript}`;
 }
 
 
-export function buildRealtimeOutlineDetails(session) {
-  const outline = String(session && session.realtimeOutline ? session.realtimeOutline : "").trim();
-  if (!outline) return "";
-  const coverage = session && session.realtimeOutlineCoverage;
-  const rawSourceCoverage = session && session.realtimeOutlineSourceCoverage;
-  const segments = session && Array.isArray(session.segments) ? session.segments : [];
-  const sourceCoverage = rawSourceCoverage
-    && validateRealtimeOutlineSourceCoverage(rawSourceCoverage, outline, segments)
-    ? rawSourceCoverage
-    : null;
-  const totalSegmentCount = Math.max(0, Number(coverage && coverage.totalSegmentCount) || 0);
-  const committedSegmentCount = Math.min(
-    totalSegmentCount,
-    Math.max(0, Number(sourceCoverage && sourceCoverage.committedSegmentCount) || 0)
-  );
-  const coverageLabel = session && session.realtimeOutlineCoverageScope === "whole-note"
-    ? "outlineCoverageWholeNote"
-    : "outlineCoverageCurrentRecording";
-  const coverageNotice = totalSegmentCount > 0 && committedSegmentCount < totalSegmentCount
-    ? `> ${labelText(coverageLabel, committedSegmentCount, totalSegmentCount)}`
-    : "";
-  return [
-    "<details>",
-    `<summary>${labelText("liveOutlineDraft")}</summary>`,
-    "",
-    `> ${labelText("outlineIntro")}`,
-    ...(coverageNotice ? ["", coverageNotice] : []),
-    "",
-    outline,
-    "",
-    ...(sourceCoverage ? [buildOutlineCoverageMetadata(sourceCoverage), ""] : []),
-    "</details>",
-  ].join("\n");
-}
 
 export function isRealtimeOutlineCurrent(session) {
   if (!session || !session.realtimeOutline || !Array.isArray(session.segments)) return false;

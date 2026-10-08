@@ -9,10 +9,10 @@ import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } f
 import { genId, formatElapsed } from "../shared/util-common";
 import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
-import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
 import {
   assembleRealtimeOutlineDetails,
   buildMeetingWorkbenchDetails,
+  buildRealtimeOutlineDetails,
   buildPriorSessionBlocks,
   buildRecordingInfoDetails,
   buildTextImportInfoDetails,
