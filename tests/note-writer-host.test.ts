@@ -30,6 +30,7 @@ import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcrip
 import { iterateNoteDetailsBlocks } from "../src/notes/note-document";
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
 import type { RecordingSession, Segment } from "../src/shared/types";
+import type { NoteMergeSourceMetadata } from "../src/notes/note-merge-flow";
 import { buildEmptyLlmOutputFallback } from "../src/prompts/briefing-prompts";
 import { createRealtimeOutlineSourceCoverage } from "../src/notes/outline-coverage";
 import { readCurrentOutlineBlock } from "../src/notes/outline-storage";
@@ -2666,6 +2667,241 @@ describe("NoteWriter merge metadata literal preservation", () => {
       })));
       await writer.appendMergeMetadataBlock(file, sources);
       expect(await vault.vault.read(file)).toBe(replaced);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("guards invalid targets before reading sources and writes an exact empty-source block", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    try {
+      const file = new obsidian.TFile("Notes/target.bin");
+      const initial = "# Body\n \t\r\n";
+      const vault = memoryVault([{ file, markdown: initial }]);
+      const read = vi.spyOn(vault.vault, "read");
+      const modify = vi.spyOn(vault.vault, "modify");
+      const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS));
+      const sourceWithThrowingPath = Object.defineProperty({}, "path", {
+        get: () => { throw new Error("sources must not be read for an invalid target"); },
+      }) as NoteMergeSourceMetadata;
+
+      for (const target of [null, undefined, { path: file.path }]) {
+        await expect(writer.appendMergeMetadataBlock(target, [sourceWithThrowingPath])).resolves.toBeUndefined();
+      }
+      expect(read).not.toHaveBeenCalled();
+      expect(modify).not.toHaveBeenCalled();
+
+      const payload = { mergedAt: "2026-10-08T12:00:00.000Z", sources: [] };
+      const expected = `# Body\n\n${expectedBlock(payload)}\n`;
+      for (const emptySources of [null, undefined, []] as const) {
+        const targetFile = new obsidian.TFile(`Notes/target-${String(emptySources)}.bin`);
+        const targetVault = memoryVault([{ file: targetFile, markdown: initial }]);
+        const targetWriter = new NoteWriter(unexpectedHost(targetVault.vault, DEFAULT_SETTINGS));
+        await targetWriter.appendMergeMetadataBlock(targetFile, emptySources);
+        expect(await targetVault.vault.read(targetFile)).toBe(expected);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves source order, raw strings, and JavaScript number serialization", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    try {
+      const file = new obsidian.TFile("Notes/source-conversion.md");
+      const vault = memoryVault([{ file, markdown: "BODY" }]);
+      const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS));
+      const inputs = [
+        { path: "", title: "", durationMs: 0 },
+        {},
+        { path: " A ", title: "Title $& $` $' $$", durationMs: "1250" },
+        { path: "negative", title: "negative", durationMs: -20 },
+        { path: "invalid", title: "invalid", durationMs: "not-a-number" },
+        { path: "infinite", title: "infinite", durationMs: Infinity },
+      ];
+      const before = structuredClone(inputs);
+      await writer.appendMergeMetadataBlock(file, inputs as unknown as NoteMergeSourceMetadata[]);
+      expect(payloadFrom(await vault.vault.read(file))).toEqual({
+        mergedAt: "2026-10-08T12:00:00.000Z",
+        sources: [
+          { path: "", title: "", durationMs: 0 },
+          { path: "", title: "", durationMs: 0 },
+          { path: " A ", title: "Title $& $` $' $$", durationMs: 1250 },
+          { path: "negative", title: "negative", durationMs: -20 },
+          { path: "invalid", title: "invalid", durationMs: 0 },
+          { path: "infinite", title: "infinite", durationMs: null },
+        ],
+      });
+      expect(inputs).toEqual(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces only the first complete case-sensitive metadata block", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    try {
+      const payload = { mergedAt: "2026-10-08T12:00:00.000Z", sources: [] };
+      const replacement = expectedBlock(payload);
+      const old = expectedBlock({ mergedAt: "2000-01-01T00:00:00.000Z", sources: [] });
+      const cases = [
+        {
+          original: `LEFT\r\n${old}\r\nMID $&\r\n${old}\r\nRIGHT`,
+          expected: `LEFT\r\n${replacement}\r\nMID $&\r\n${old}\r\nRIGHT`,
+        },
+        {
+          original: `LEFT\n<!-- qnalog-merge -->\nunfinished $&`,
+          expected: `LEFT\n<!-- qnalog-merge -->\nunfinished $&\n\n${replacement}\n`,
+        },
+        {
+          original: `LEFT\n<!-- QNALOG-MERGE -->\nold\n<!-- QNALOG-MERGE-END -->\nRIGHT`,
+          expected: `LEFT\n<!-- QNALOG-MERGE -->\nold\n<!-- QNALOG-MERGE-END -->\nRIGHT\n\n${replacement}\n`,
+        },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const file = new obsidian.TFile(`Notes/match-${index}.md`);
+        const vault = memoryVault([{ file, markdown: testCase.original }]);
+        const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS));
+        await writer.appendMergeMetadataBlock(file, []);
+        expect(await vault.vault.read(file)).toBe(testCase.expected);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["vault getter", "replace"],
+    ["vault getter", "append"],
+    ["host replacement", "replace"],
+    ["host replacement", "append"],
+  ] as const)("uses execution-time host/vault with the read snapshot and frozen payload (%s, %s)", async (switchKind, layout) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    const file = new obsidian.TFile(`Notes/dynamic-${switchKind}-${layout}.md`);
+    const oldBlock = expectedBlock({ mergedAt: "2000-01-01T00:00:00.000Z", sources: [] });
+    const snapshot = layout === "replace" ? `A BODY\n\n${oldBlock}\n` : "A BODY";
+    const vaultA = memoryVault([{ file, markdown: snapshot }]);
+    const vaultB = memoryVault([{ file, markdown: "B BODY" }]);
+    let activeVault = vaultA.vault;
+    let enteredRead!: () => void;
+    let releaseRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => { enteredRead = resolve; });
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    const baseReadA = vaultA.vault.read.bind(vaultA.vault);
+    const baseModifyA = vaultA.vault.modify.bind(vaultA.vault);
+    const baseModifyB = vaultB.vault.modify.bind(vaultB.vault);
+    let modifiesA = 0;
+    let modifiesB = 0;
+    vaultA.vault.read = async (target) => {
+      enteredRead();
+      await readGate;
+      return baseReadA(target);
+    };
+    vaultA.vault.modify = async (...args) => {
+      modifiesA += 1;
+      throw new Error("Vault A modify must not be used");
+    };
+    vaultB.vault.read = async () => { throw new Error("Vault B read must not be used"); };
+    vaultB.vault.modify = async function (target, content) {
+      expect(this).toBe(vaultB.vault);
+      modifiesB += 1;
+      return baseModifyB(target, content);
+    };
+    const hostA = unexpectedHost(vaultA.vault, DEFAULT_SETTINGS);
+    if (switchKind === "vault getter") {
+      Object.defineProperty(hostA, "vault", { get: () => activeVault });
+    }
+    const writer = new NoteWriter(hostA);
+    const source = { path: "Notes/early.md", title: "Early", durationMs: 1250 };
+    const input: NoteMergeSourceMetadata[] = [source];
+    const operation = writer.appendMergeMetadataBlock(file, input);
+    await readEntered;
+    source.path = "Notes/late.md";
+    source.title = "Late";
+    source.durationMs = 2500;
+    vi.setSystemTime(new Date("2026-10-09T12:00:00.000Z"));
+    if (switchKind === "vault getter") {
+      activeVault = vaultB.vault;
+    } else {
+      writer.host = unexpectedHost(vaultB.vault, DEFAULT_SETTINGS);
+    }
+    releaseRead();
+    try {
+      await operation;
+      const expectedPayload = {
+        mergedAt: "2026-10-08T12:00:00.000Z",
+        sources: [{ path: "Notes/early.md", title: "Early", durationMs: 1250 }],
+      };
+      expect(modifiesA).toBe(0);
+      expect(modifiesB).toBe(1);
+      expect(vaultA.files.get(file.path)?.markdown).toBe(snapshot);
+      const expectedContent = layout === "replace"
+        ? `A BODY\n\n${expectedBlock(expectedPayload)}\n`
+        : `A BODY\n\n${expectedBlock(expectedPayload)}\n`;
+      expect(vaultB.files.get(file.path)?.markdown).toBe(expectedContent);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("propagates payload and storage failures without additional writes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    try {
+      const payloadCases: Array<{ sources: NoteMergeSourceMetadata[]; error: Error; typeError?: boolean }> = [];
+      const pathFailure = new Error("path getter failed");
+      payloadCases.push({
+        sources: [Object.defineProperty({}, "path", { get: () => { throw pathFailure; } }) as NoteMergeSourceMetadata],
+        error: pathFailure,
+      });
+      const valueFailure = new Error("duration conversion failed");
+      payloadCases.push({
+        sources: [{ path: "path", title: "title", durationMs: { valueOf: () => { throw valueFailure; } } as unknown as number }],
+        error: valueFailure,
+      });
+      const circular: { self?: unknown } = {};
+      circular.self = circular;
+      payloadCases.push({
+        sources: [{ path: circular as unknown as string, title: "title", durationMs: 1 }],
+        error: new TypeError(),
+        typeError: true,
+      });
+      for (const [index, testCase] of payloadCases.entries()) {
+        const file = new obsidian.TFile(`Notes/payload-failure-${index}.md`);
+        const vault = memoryVault([{ file, markdown: "UNCHANGED" }]);
+        const read = vi.spyOn(vault.vault, "read");
+        const modify = vi.spyOn(vault.vault, "modify");
+        const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS));
+        if (testCase.typeError) {
+          await expect(writer.appendMergeMetadataBlock(file, testCase.sources)).rejects.toBeInstanceOf(TypeError);
+        } else {
+          await expect(writer.appendMergeMetadataBlock(file, testCase.sources)).rejects.toBe(testCase.error);
+        }
+        expect(read).not.toHaveBeenCalled();
+        expect(modify).not.toHaveBeenCalled();
+        expect(await vault.vault.read(file)).toBe("UNCHANGED");
+      }
+
+      const readFailure = new Error("read failed");
+      const readFile = new obsidian.TFile("Notes/read-failure.md");
+      const readVault = memoryVault([{ file: readFile, markdown: "UNCHANGED" }]);
+      readVault.vault.read = async () => { throw readFailure; };
+      const readWriter = new NoteWriter(unexpectedHost(readVault.vault, DEFAULT_SETTINGS));
+      await expect(readWriter.appendMergeMetadataBlock(readFile, [])).rejects.toBe(readFailure);
+      expect(readVault.files.get(readFile.path)?.markdown).toBe("UNCHANGED");
+
+      for (const [index, existing] of ["BODY", `BODY\n\n${expectedBlock({ mergedAt: "2000-01-01T00:00:00.000Z", sources: [] })}`].entries()) {
+        const writeFailure = new Error(`modify failed ${index}`);
+        const file = new obsidian.TFile(`Notes/write-failure-${index}.md`);
+        const vault = memoryVault([{ file, markdown: existing }]);
+        vault.vault.modify = async () => { throw writeFailure; };
+        const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS));
+        await expect(writer.appendMergeMetadataBlock(file, [])).rejects.toBe(writeFailure);
+        expect(vault.files.get(file.path)?.markdown).toBe(existing);
+      }
     } finally {
       vi.useRealTimers();
     }

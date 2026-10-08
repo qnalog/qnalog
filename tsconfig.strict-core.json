@@ -83,6 +83,7 @@
     "src/notes/note-polish-flow.ts",
     "src/notes/note-merge-source-flow.ts",
     "src/notes/note-merge-flow.ts",
+    "src/notes/note-merge-metadata-store.ts",
     "src/notes/note-title-rename-flow.ts",
     "src/notes/note-segment-store.ts",
     "src/notes/note-session-materials.ts",
