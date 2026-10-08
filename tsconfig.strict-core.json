@@ -53,6 +53,7 @@
     "src/shared/build-info.ts",
     "src/shared/catalog-import.ts",
     "src/shared/catalog-modes.ts",
+    "src/shared/mode-meta.ts",
     "src/shared/catalog-sediment.ts",
     "src/shared/desktop-runtime.ts",
     "src/shared/i18n/locales/en.ts",

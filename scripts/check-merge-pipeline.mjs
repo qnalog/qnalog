@@ -2510,6 +2510,80 @@ async function main() {
       const polishExecutionDigest = createHash("sha256").update(JSON.stringify(polishExecutionResults)).digest("hex");
       console.log(`[note-polish-flow] execution digest: ${polishExecutionDigest}`);
       {
+        const savedHost = polishWriter.host;
+        const savedLanguage = plugin.settings.uiLanguage;
+        const callsBefore = llmCalls.length;
+        const retryContentBefore = retryFile._content;
+        const customTemplate = {
+          id: "custom-mode-meta-probe",
+          mode: "custom-mode-meta-probe",
+          customMode: true,
+          name: "模式 $& $` $' $$",
+          prompt: "fixture",
+          baseMode: "meeting",
+        };
+        try {
+          for (const language of ["zh", "en"]) {
+            sandbox.module.exports.applyUiLanguage({ uiLanguage: language });
+            for (const mode of [customTemplate.mode, "mode-meta-unknown", "cleanscript"]) {
+              const expectedPrefix = mode === customTemplate.mode
+                ? language === "zh" ? customTemplate.name : `Custom prompt:${customTemplate.name}`
+                : mode === "cleanscript"
+                  ? language === "zh" ? "清稿" : "Clean transcript"
+                  : language === "zh" ? "工作纪要" : "Work notes";
+              for (const operation of ["rewrite", "append"]) {
+                let probeText = polishOriginal;
+                const probeVault = {
+                  getAbstractFileByPath: (path) => path === polishSession.mdPath ? retryFile : null,
+                  read: async (file) => {
+                    if (file !== retryFile) throw new Error("mode metadata probe read an unexpected file");
+                    return probeText;
+                  },
+                  modify: async (file, markdown) => {
+                    if (file !== retryFile) throw new Error("mode metadata probe wrote an unexpected file");
+                    probeText = markdown;
+                  },
+                };
+                const probeSettings = {
+                  ...plugin.settings,
+                  llmModel: "MODE PROBE MODEL",
+                  promptTemplates: { [customTemplate.mode]: customTemplate },
+                };
+                const probeHost = Object.create(savedHost);
+                Object.defineProperties(probeHost, {
+                  settings: { value: probeSettings, configurable: true },
+                  vault: { value: probeVault, configurable: true },
+                });
+                polishWriter.host = probeHost;
+                const session = { ...polishSession, mode };
+                if (operation === "rewrite") {
+                  await polishWriter.rewriteConsolidated(session, polishLiteralBody);
+                } else {
+                  await polishWriter.appendPolishBlock(session, polishLiteralBody, null, false);
+                }
+                const expectedHeader = operation === "rewrite"
+                  ? ` · ${expectedPrefix}`
+                  : `MODE PROBE MODEL · ${expectedPrefix}`;
+                const ledger = readTextMaterialLedger(probeText, "seg:literal-retry:0");
+                if (!probeText.includes(expectedHeader) || !probeText.includes(polishLiteralBody)
+                  || JSON.stringify(ledger.transcript) !== JSON.stringify(retrySegment.transcript)
+                  || ledger.visible !== "Retry smoke transcript ledger."
+                  || ledger.rawText !== "Retry smoke transcript ledger.") {
+                  throw new Error(`${language}/${mode}/${operation} changed mode metadata, body, or transcript ledger`);
+                }
+              }
+            }
+          }
+          if (llmCalls.length !== callsBefore || retryFile._content !== retryContentBefore) {
+            throw new Error("mode metadata probe changed model calls or the real retry file");
+          }
+        } finally {
+          polishWriter.host = savedHost;
+          sandbox.module.exports.applyUiLanguage({ uiLanguage: savedLanguage });
+        }
+      }
+      console.log("[mode-meta-boundary] OK: custom, unknown, and clean metadata preserved in both UI languages");
+      {
         let probeText = polishOriginal;
         const probeVault = {
           getAbstractFileByPath: (path) => path === polishSession.mdPath ? retryFile : null,
