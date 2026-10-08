@@ -1057,6 +1057,8 @@ async function main() {
         || merged._content !== originalMergedBody) {
         failures.push("模型生成标题后没有按当前文件状态完成同文件改名并保留正文");
       }
+      const polishCommand = plugin.commands.find((command) => command.id === "polish-selection-or-note");
+      if (typeof polishCommand?.editorCallback !== "function") throw new Error("Missing polish editor command");
       const originalEditorText = "The complete editor document must remain unchanged.";
       let selectedResult = "";
       const editor = {
@@ -1065,9 +1067,56 @@ async function main() {
         replaceSelection: (value) => { selectedResult = value; },
         setValue: () => { failures.push("选区整理错误地替换了整篇编辑器文本"); },
       };
-      await plugin.noteWriter.polishEditor(editor);
+      await polishCommand.editorCallback(editor);
       if (!selectedResult.includes("上线范围已确定") || originalEditorText !== editor.getValue()) {
         failures.push("编辑器整理未仅把模型结果写入原选区");
+      }
+      const savedWriterHost = plugin.noteWriter.host;
+      const realRequestsBeforeProbe = llmCalls.length;
+      let probeCalls = 0;
+      const probeHost = Object.create(savedWriterHost);
+      Object.defineProperties(probeHost, {
+        settings: {
+          configurable: true,
+          value: { ...savedWriterHost.settings, polishMode: "off" },
+        },
+        polishTranscript: {
+          configurable: true,
+          value: async (raw, mode) => {
+            if (raw !== "Full editor input" || mode !== "meeting") {
+              throw new Error(`unexpected editor probe input: ${raw} / ${mode}`);
+            }
+            probeCalls++;
+            return "EDITOR PROBE OUTPUT $& $' $$";
+          },
+        },
+      });
+      try {
+        plugin.noteWriter.host = probeHost;
+        let fullDocument = "Full editor input";
+        await polishCommand.editorCallback({
+          getSelection: () => "",
+          getValue: () => fullDocument,
+          replaceSelection: () => { throw new Error("empty selection must not replace a range"); },
+          setValue: (value) => { fullDocument = value; },
+        });
+        if (fullDocument !== "EDITOR PROBE OUTPUT $& $' $$" || probeCalls !== 1) {
+          throw new Error("empty editor selection did not replace the full document literally");
+        }
+        await polishCommand.editorCallback({
+          getSelection: () => " ",
+          getValue: () => { throw new Error("blank selection must not read the full document"); },
+          replaceSelection: () => { throw new Error("blank selection must not write a range"); },
+          setValue: () => { throw new Error("blank selection must not write the document"); },
+        });
+        if (probeCalls !== 1 || llmCalls.length !== realRequestsBeforeProbe) {
+          throw new Error("blank editor input sent a model request or ran the local model capability");
+        }
+      } finally {
+        plugin.noteWriter.host = savedWriterHost;
+      }
+      if (failures.length === failuresBeforeWriterSmoke) {
+        console.log("[note-editor-polish] OK: registered command preserves selection, full-note, and blank-input behavior");
       }
       if (sourceA.file._content !== sourceA.content || sourceB.file._content !== sourceB.content) {
         failures.push("Writer smoke 后来源笔记内容发生变化");

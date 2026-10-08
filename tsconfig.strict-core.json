@@ -87,6 +87,7 @@
     "src/notes/note-merge-metadata-store.ts",
     "src/notes/note-title-rename-flow.ts",
     "src/notes/note-mode-inference.ts",
+    "src/notes/note-editor-polish-flow.ts",
     "src/notes/note-segment-store.ts",
     "src/notes/note-session-materials.ts",
     "src/notes/meeting-workbench-state.ts",
