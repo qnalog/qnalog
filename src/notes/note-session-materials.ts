@@ -1,4 +1,6 @@
+import type { SessionMasterAudioInput } from "./audio-reference-text";
 import type { RecordingSession } from "../shared/types";
+import { getAudioTimeLink, getSessionMasterAudioName } from "./audio-reference-text";
 import { labelText } from "../shared/note-labels";
 import { isTextImportSession } from "../briefing/note-layout-policy";
 import { formatElapsed } from "../shared/util-common";
@@ -167,6 +169,45 @@ export function buildTextImportInfoDetails(
     `<summary>${labelText("importedTextInfo")}</summary>`,
     "",
     lines.join("\n"),
+    "",
+    "</details>",
+  ].join("\n");
+}
+export type MasterAudioDetailsInput = SessionMasterAudioInput;
+
+export type ExternalAudioSourceDetailsInput = Pick<RecordingSession, "externalAudioSource">;
+
+export function buildMasterAudioDetails(
+  session: MasterAudioDetailsInput | null | undefined,
+  totalMs?: number | null,
+): string {
+  const audioName = getSessionMasterAudioName(session);
+  if (!audioName) return "";
+  return [
+    "<details>",
+    `<summary>${labelText("originalAudioFull", formatElapsed(totalMs || 0))}</summary>`,
+    "",
+    `![[${audioName}]]`,
+    "",
+    `${labelText("listenBack")}${getAudioTimeLink(audioName, 0)}`,
+    "",
+    "</details>",
+  ].join("\n");
+}
+
+export function buildExternalAudioSourceDetails(
+  session: ExternalAudioSourceDetailsInput | null | undefined,
+): string {
+  const source = (session && session.externalAudioSource) as { name?: string } | null | undefined;
+  const name = String(source && source.name || "").trim();
+  if (!name) return "";
+  return [
+    "<details>",
+    `<summary>${labelText("importSource")}</summary>`,
+    "",
+    `${labelText("fileLabel")}${name}`,
+    "",
+    "源音频保留在同步文件夹中，未复制到当前知识库。",
     "",
     "</details>",
   ].join("\n");

@@ -15,10 +15,13 @@ import {
   buildPriorSessionBlocks,
   buildRecordingInfoDetails,
   buildTextImportInfoDetails,
+  buildExternalAudioSourceDetails,
+  buildMasterAudioDetails,
 } from "./note-session-materials";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails } from "../notes/detail-blocks";
-import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
+import { buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails } from "../notes/detail-blocks";
+import { getAudioTimeLink } from "../notes/audio-reference-text";
+import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";

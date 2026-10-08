@@ -4,7 +4,8 @@
 import { validateRealtimeOutlineSourceCoverage } from "./outline-coverage";
 import { cleanRealtimeLlmText } from "./recording-issues";
 
-import { getAudioTimeLink, getSegmentAudioLinkOffsetMs } from "./audio-refs";
+import { getSegmentAudioLinkOffsetMs } from "./audio-refs";
+import { getAudioTimeLink } from "./audio-reference-text";
 
 import { cleanRealtimeOutlineItemText, makeRealtimeOutlineNode, normalizeRealtimeOutlineList, parseRealtimeOutlineStateFromMarkdown } from "./outline-text";
 

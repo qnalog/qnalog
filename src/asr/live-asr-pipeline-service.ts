@@ -13,7 +13,7 @@ import { AUDIO_EXT } from "../shared/catalog-import";
 import { SEGMENT_CACHE_RETENTION_MS } from "../shared/limits";
 import { getRealtimeOutlineAnchorTime } from "../notes/outline-text";
 import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
-import { getSessionMasterAudioName } from "../notes/audio-refs";
+import { getSessionMasterAudioName } from "../notes/audio-reference-text";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 import { findSessionNoteBlock } from "../notes/note-document";
 import { NS_AUDIO_PREFIX } from "../shared/namespace";

@@ -83,6 +83,7 @@
     "src/notes/note-segment-store.ts",
     "src/notes/note-session-materials.ts",
     "src/notes/note-transcript-materials.ts",
+    "src/notes/audio-reference-text.ts",
     "src/sediment/text-blocks.ts"
   ]
 }

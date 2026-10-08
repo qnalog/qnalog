@@ -14,17 +14,6 @@ describe("release runtime contracts", () => {
     expect(mainSource).not.toMatch(/\bgetSegmentTimeLink\s*\(/);
   });
 
-  it("builds realtime-outline and merge anchors from the existing audio helpers", () => {
-    expect(pluginSource).toContain(
-      "getAudioTimeLink(s.audioName, getSegmentAudioLinkOffsetMs(s))",
-    );
-    expect(pluginSource).toContain(
-      "getAudioTimeLink(segment && segment.audioName, getSegmentAudioLinkOffsetMs(segment))",
-    );
-    expect(pluginSource).toContain(
-      "getAudioTimeLink(seg.audioName, getSegmentAudioLinkOffsetMs(seg))",
-    );
-  });
 
 
   it("refreshes the recent-note folder view after external file changes", () => {

@@ -13,13 +13,9 @@ import { AUDIO_EXT } from "../shared/catalog-import";
 import { formatElapsed, normalizeAudioLinkTarget, safeDecodeUriText } from "../shared/util-common";
 
 import { labelText } from "../shared/note-labels";
+import { getAudioTimeLink } from "./audio-reference-text";
 
 
-export function getAudioTimeLink(audioName, ms) {
-  const name = String(audioName || "").trim();
-  if (!name) return "";
-  return `[[${name}|${formatElapsed(ms || 0)}]]`;
-}
 
 export function getSegmentAudioLinkOffsetMs(segment) {
   const local = Number(segment && segment.audioStartOffsetMs);
@@ -42,12 +38,6 @@ export function getAudioSegmentListItem(segment, index) {
   ].join("\n");
 }
 
-export function getSessionMasterAudioName(session) {
-  const name = String(session && session.masterAudioName ? session.masterAudioName : "").trim();
-  if (name) return name;
-  const path = String(session && session.masterAudioPath ? session.masterAudioPath : "").trim();
-  return path ? (path.split("/").pop() || path) : "";
-}
 
 export function getAudioLinkCandidates(linkPath) {
   const target = normalizeAudioLinkTarget(linkPath);
