@@ -4,9 +4,8 @@
 import * as obsidian from "obsidian";
 import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import type { NoteIndexService } from "./note-index-service";
-import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
+import { formatLlmFailureIssue } from "../llm/core";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
-import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
@@ -14,7 +13,6 @@ import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
 import { readNamespaceFrontmatter } from "../shared/namespace";
-import { labelText } from "../shared/note-labels";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
@@ -180,56 +178,6 @@ export class NoteWriter {
   }
 
 
-  async appendRepolishBlock(file, polished, mode, segments) {
-    const meta = getModeMeta(this.host.settings, mode);
-    const stamp = window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString();
-    const cur = await this.host.vault.read(file);
-
-    // 关键：从全文里把所有原始 / 元数据块（任意深度）抽出来，避免再次嵌套。
-    // 旧实现只识别 "## 📁 原始材料"，对 appendPolishBlock 产出的
-    // "## ✨ 整合版 + ‹details›录音信息/原始音频/录音中实时大纲/回听时间轴" 结构识别不到，
-    // 导致每次重新整理都把整个旧文件包进新的 ‹details›上一版纪要›，重复存放段落和元数据。
-    const { tail: rawTail, withoutRaw } = extractAllRawBlocksFromText(cur);
-    const beforeParts = splitLeadingFrontmatter(withoutRaw);
-    const beforeBody = beforeParts.body.replace(/^\n+/, "");
-    const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polishedParts = splitLeadingFrontmatter(stripModeSuggestionBlocks(polished || emptyBriefingFallback).trim());
-    const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
-    const polishedBody = polishedParts.body.trim() || emptyBriefingFallback;
-
-    const titleMatch = beforeBody.match(/^#\s+[^\n]+\n*/);
-    const titleBlock = titleMatch ? titleMatch[0].replace(/\n*$/, "\n") : "";
-    let previousBody = titleMatch ? beforeBody.slice(titleMatch[0].length) : beforeBody;
-    previousBody = previousBody
-      .replace(/\s*---\s*$/m, "")
-      .replace(/\s+$/, "")
-      .trim();
-
-    const currentBlock = [
-      polishedFrontmatter || beforeParts.frontmatter.trimEnd() || null,
-      titleBlock ? titleBlock.trimEnd() : null,
-      titleBlock ? "" : null,
-      `## ${labelText("currentMinutesAt", `${getModePrefix(meta)} · ${stamp}`)}`,
-      "",
-      `> [!info] 基于本文底部的原始转写重新生成 · 段数：${segments.length} · 模型：${this.host.settings.llmModel}`,
-      "",
-      polishedBody,
-      "",
-      "---",
-      "",
-      "<details>",
-      `<summary>${labelText("previousVersion", stamp)}</summary>`,
-      "",
-      previousBody || `_${labelText("previousVersionEmpty")}_`,
-      "",
-      "</details>",
-      "",
-      rawTail ? rawTail.trimEnd() : "",
-      "",
-    ].filter(v => v !== null).join("\n");
-
-    await this.host.vault.modify(file, currentBlock.replace(/\n{4,}/g, "\n\n\n"));
-  }
   rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = ""): Promise<void> {
     return rewriteConsolidatedFlow(this.notePolishFlowHost, session, polished, continuationSessionId);
   }
