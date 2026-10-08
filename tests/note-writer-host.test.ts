@@ -1,6 +1,6 @@
 import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { labelText } from "../src/shared/note-labels";
-import { nsMarker } from "../src/shared/namespace";
+import { nsMarker, nsRe } from "../src/shared/namespace";
 import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
 import { describe, expect, it, vi } from "vitest";
 
@@ -19,7 +19,7 @@ vi.mock("obsidian", () => ({
     }
   },
   Notice: class Notice { constructor(message: string) { notices.push(String(message)); } },
-  normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, ""),
+  normalizePath: vi.fn((path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, "")),
 }));
 import * as obsidian from "obsidian";
 import { NoteWriter } from "../src/notes/note-writer";
@@ -1292,5 +1292,194 @@ describe("NoteWriter audio source read timing", () => {
       setActiveUiLanguage(originalLanguage);
       vi.unstubAllGlobals();
     }
+  });
+});
+describe("NoteWriter meeting workbench materials", () => {
+  it.each(["zh", "en"])("preserves meeting materials through rewrite, append, and failure (%s)", async (language) => {
+    const path = "QnALog/Minutes/meeting-materials.md";
+    const file = new obsidian.TFile(path);
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const output = "---\ntitle: new\n---\n\nMEETING BODY $& $` $' $$";
+    const rawText = "MEETING RAW $& $` $' $$";
+    const segment = attachTextTranscript({
+      index: 2, startOffsetMs: 61_000, endOffsetMs: 65_000, audioStartOffsetMs: 7_000,
+      audioEndOffsetMs: 11_000, audioName: "meeting-segment.webm", audioPath: "QnALog/Audio/meeting-segment.webm",
+      text: rawText, rawText, isFinal: true,
+    }, "meeting-materials", "text-import");
+    const ledger = serializeTranscriptBlock(segment, "### Segment 3", rawText);
+    const sourceWorkbench = {
+      notes: "  NOTES $& $` $' $$\r\nSECOND NOTE  ", draft: "DO_NOT_RENDER_DRAFT",
+      entries: [
+        { id:"entry-one",atMs:61999,text:"  ENTRY $& $` $' $$  ",interaction:{kind:"question",query:"DO_NOT_RENDER_QUERY",status:"done",response:"  FIRST AI $& $` $' $$\r\nSECOND AI\nTHIRD AI  ",error:"DO_NOT_RENDER_ERROR"},materials:[{path:"QnALog\\Materials\\entry.PNG",name:"  图 $& $` $' $$  ",kind:" IMAGE "},{path:"QnALog/Materials/entry.pdf",name:"  ",type:" pdf "}] },
+        {id:"entry-two",offsetMs:3661999,text:" ",materials:[{path:"QnALog/Materials/poster.bin",name:"poster",kind:"image"}]},
+        {text:" ",interaction:{response:"DO_NOT_RENDER_ORPHAN_RESPONSE"}},
+      ],
+      materials:[{path:"QnALog/Materials/diagram.SVG"},{path:"QnALog/Materials/report.pdf",name:"报告 $& $` $' $$",kind:"document"},{path:"QnALog/Materials/report.pdf",name:"DO_NOT_RENDER_DUPLICATE"}],
+    };
+    const expectedDetails = [
+      "<details>", `<summary>${language === "en" ? "Material added during the meeting" : "会中补充材料"}</summary>`, "",
+      "#### 会中零散记录", "", "NOTES $& $` $' $$\r\nSECOND NOTE", "", "#### 用户补充", "",
+      "- 01:01 ENTRY $& $` $' $$", "  - AI：FIRST AI $& $` $' $$\n    SECOND AI\n    THIRD AI",
+      "  - [[QnALog/Materials/entry.PNG|图 $& $` $' $$]] · IMAGE", "  ![[QnALog/Materials/entry.PNG]]",
+      "  - [[QnALog/Materials/entry.pdf|entry.pdf]] · pdf", "- 1:01:01",
+      "  - [[QnALog/Materials/poster.bin|poster]] · image", "  ![[QnALog/Materials/poster.bin]]",
+      "", "#### 补充材料", "", "- [[QnALog/Materials/diagram.SVG|diagram.SVG]]", "![[QnALog/Materials/diagram.SVG]]", "",
+      "- [[QnALog/Materials/report.pdf|报告 $& $` $' $$]] · document", "", "</details>",
+    ].join("\n");
+    const originalLanguage = getActiveUiLanguage();
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      for (const state of [
+        {name:"empty-recording", source:"recording" as const, workbench:undefined},
+        {name:"draft-recording", source:"recording" as const, workbench:{draft:"DO_NOT_RENDER_DRAFT"}},
+        {name:"full-recording", source:"recording" as const, workbench:sourceWorkbench},
+        {name:"full-text-import", source:"text-import" as const, workbench:sourceWorkbench},
+      ]) for (const operation of ["rewrite","append","failedAppend"] as const) {
+        const recordingMarkdown = state.source === "recording" ? `${original}\n${ledger}` : original;
+        const vault = memoryVault([{file, markdown:recordingMarkdown}]);
+        const writer = new NoteWriter(unexpectedHost(vault.vault,{...DEFAULT_SETTINGS,llmModel:"consumer-meeting-model"}));
+        const workbench = state.workbench ? structuredClone(state.workbench) : undefined;
+        const session: RecordingSession = {
+          id:"meeting-materials",sessionStamp:"meeting-materials",startedAt:"2026-09-14T12:00:00.000Z",
+          mdPath:path,mode:"meeting",source:state.source,segments:[segment],finalized:true,
+          ...(workbench ? {meetingWorkbench:workbench} : {}),
+        };
+        const frozenSegment = structuredClone(segment);
+        const run = async () => operation === "rewrite"
+          ? writer.rewriteConsolidated(session,output)
+          : writer.appendPolishBlock(session,output,operation === "failedAppend" ? new Error("meeting failure") : null,false,"",recordingMarkdown);
+        await run();
+        const result = await vault.vault.read(file);
+        const details = result.match(/<details>\n<summary>(?:会中补充材料|Material added during the meeting)<\/summary>[\s\S]*?<\/details>/g) || [];
+        expect(details).toHaveLength(state.workbench === sourceWorkbench ? 1 : 0);
+        if (details.length) expect(details[0]).toBe(expectedDetails);
+        if (details.length) {
+          const detailAt = result.indexOf(details[0]);
+          const infoAt = result.indexOf("<summary>");
+          expect(detailAt).toBeGreaterThanOrEqual(infoAt);
+          if (operation === "rewrite") {
+            const originalAt = result.indexOf(rawText);
+            expect(detailAt).toBeLessThan(originalAt);
+            expect(result.indexOf("MEETING BODY")).toBeLessThan(detailAt);
+          } else {
+            const originalAt = result.indexOf(rawText);
+            expect(detailAt).toBeGreaterThan(originalAt);
+            if (operation === "failedAppend") expect(result.indexOf("meeting failure")).toBeLessThan(detailAt);
+            else expect(result.indexOf("MEETING BODY")).toBeLessThan(detailAt);
+          }
+        }
+        if (operation === "failedAppend") {
+          expect(result).toContain("title: old");
+          expect(result).toContain(language === "en" ? "_[Merge failed (queued for retry): meeting failure]_" : "_[合并润色失败（已加入重试队列）：meeting failure]_");
+          expect(result).not.toContain("MEETING BODY");
+        } else {
+          expect(result).toContain("title: new");
+          expect(result).toContain("MEETING BODY $& $` $' $$");
+        }
+        for (const forbidden of ["DO_NOT_RENDER_DRAFT","DO_NOT_RENDER_QUERY","DO_NOT_RENDER_ERROR","DO_NOT_RENDER_ORPHAN_RESPONSE","DO_NOT_RENDER_DUPLICATE"]) expect(result).not.toContain(forbidden);
+        if (state.source === "recording") {
+          const blocks = readTranscriptBlocks(result);
+          expect(blocks).toHaveLength(1);
+          expect(blocks[0].visibleBlock).toBe(rawText);
+          expect(blocks[0].segment.transcript).toEqual(frozenSegment.transcript);
+          expect(result).toContain(rawText);
+          expect(blocks[0].segment).toEqual(frozenSegment);
+          expect(blocks[0].segment.rawText).toBe(rawText);
+          expect(blocks[0].segment.text).toBe(rawText);
+          expect(blocks[0].start).toBeLessThan(blocks[0].end);
+          const startMarker = `<!-- ${nsRe("transcript-start")}:`;
+          const textStartMarker = `<!-- ${nsRe("transcript-text-start")}:`;
+          const textEndMarker = `<!-- ${nsRe("transcript-text-end")}:`;
+          const dataMarker = `<!-- ${nsRe("transcript-data")} `;
+          const parentEndMarker = `<!-- ${nsRe("transcript-end")}:`;
+          expect(result.split(startMarker).length - 1).toBe(1);
+          expect(result.split(textStartMarker).length - 1).toBe(1);
+          expect(result.split(textEndMarker).length - 1).toBe(1);
+          expect(result.split(dataMarker).length - 1).toBe(1);
+          expect(result.split(parentEndMarker).length - 1).toBe(1);
+          expect(result.indexOf(dataMarker)).toBeGreaterThan(result.indexOf(textEndMarker));
+          expect(result.indexOf(dataMarker)).toBeLessThan(result.indexOf(parentEndMarker));
+        }
+        expect(session.meetingWorkbench).toEqual(workbench);
+        expect(segment).toEqual(frozenSegment);
+        if (operation === "rewrite") {
+          await run();
+          expect(await vault.vault.read(file)).toBe(result);
+        }
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+    }
+  });
+});
+describe("NoteWriter meeting workbench read timing and failures", () => {
+  it("observes workbench mutations at legacy settings and vault-read boundaries", async () => {
+    const path = "QnALog/Minutes/meeting-timing.md";
+    const file = new obsidian.TFile(path);
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const run = async (operation: "rewrite" | "append", mutateOnRead: boolean) => {
+      let notes = "FIRST WORKBENCH";
+      const vault = memoryVault([{file,markdown:original}]);
+      const baseRead = vault.vault.read.bind(vault.vault);
+      if (mutateOnRead) vault.vault.read = async target => { notes = "READ WORKBENCH"; return baseRead(target); };
+      const settings = {...DEFAULT_SETTINGS};
+      Object.defineProperty(settings,"llmModel",{get() { if (!mutateOnRead) notes = "LATE WORKBENCH"; return "consumer-meeting-model"; }});
+      const writer = new NoteWriter(unexpectedHost(vault.vault,settings));
+      const session: RecordingSession = {id:"meeting-timing",sessionStamp:"meeting-timing",startedAt:"2026-09-14T12:00:00.000Z",mdPath:path,mode:"meeting",source:"recording",segments:[],finalized:true,meetingWorkbench:{notes}};
+      Object.defineProperty(session,"meetingWorkbench",{get:() => ({notes})});
+      if (operation === "rewrite") await writer.rewriteConsolidated(session,"BODY");
+      else await writer.appendPolishBlock(session,"BODY",null,false,"");
+      return vault.vault.read(file);
+    };
+    expect(await run("rewrite",false)).toContain("FIRST WORKBENCH");
+    expect(await run("append",false)).toContain("LATE WORKBENCH");
+    expect(await run("rewrite",true)).toContain("READ WORKBENCH");
+    expect(await run("append",true)).toContain("FIRST WORKBENCH");
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it("rejects identical workbench, entry conversion, and path failures without writing", async () => {
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+    const path = "QnALog/Minutes/meeting-errors.md";
+    const file = new obsidian.TFile(path);
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const resetNormalize = (value: string) => String(value || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    const failure = new Error("meeting failure");
+    const cases: Array<(session: RecordingSession) => void> = [
+      session => Object.defineProperty(session,"meetingWorkbench",{get() { throw failure; }}),
+      session => { session.meetingWorkbench = {entries:[{text:{toString() { throw failure; }}}]}; },
+    ];
+    for (const inject of cases) for (const operation of ["rewrite","append"] as const) {
+      const vault = memoryVault([{file,markdown:original}]);
+      const writer = new NoteWriter(unexpectedHost(vault.vault,{...DEFAULT_SETTINGS,llmModel:"consumer-meeting-model"}));
+      const session: RecordingSession = {id:"meeting-errors",sessionStamp:"meeting-errors",startedAt:"2026-09-14T12:00:00.000Z",mdPath:path,mode:"meeting",source:"recording",segments:[],finalized:true};
+      inject(session);
+      const run = operation === "rewrite" ? writer.rewriteConsolidated(session,"BODY") : writer.appendPolishBlock(session,"BODY",null,false,"",original);
+      await expect(run).rejects.toBe(failure);
+      expect(await vault.vault.read(file)).toBe(original);
+    }
+    for (const operation of ["rewrite","append"] as const) {
+      const vault = memoryVault([{file,markdown:original}]);
+      const writer = new NoteWriter(unexpectedHost(vault.vault,{...DEFAULT_SETTINGS,llmModel:"consumer-meeting-model"}));
+      const session: RecordingSession = {id:"meeting-errors",sessionStamp:"meeting-errors",startedAt:"2026-09-14T12:00:00.000Z",mdPath:path,mode:"meeting",source:"recording",segments:[],finalized:true,meetingWorkbench:{materials:[{path:"bad"}]}};
+      let calls = 0;
+      vi.mocked(obsidian.normalizePath).mockImplementation(value => {
+        calls += 1;
+        if (calls === 2) throw failure;
+        return resetNormalize(value);
+      });
+      try {
+        const run = operation === "rewrite" ? writer.rewriteConsolidated(session,"BODY") : writer.appendPolishBlock(session,"BODY",null,false,"",original);
+        await expect(run).rejects.toBe(failure);
+        expect(await vault.vault.read(file)).toBe(original);
+      } finally {
+        vi.mocked(obsidian.normalizePath).mockImplementation(resetNormalize);
+      }
+    }
+    } finally { vi.unstubAllGlobals(); }
   });
 });

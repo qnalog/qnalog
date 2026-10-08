@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：笔记内的 details 区块构造与面板数据提取
 
-import { hasMeetingWorkbenchContent, isImageMeetingMaterial, normalizeMeetingWorkbench } from "./meeting-workbench";
 
 import { collectAudioRefs } from "./audio-refs";
 import { getAudioTimeLink } from "./audio-reference-text";
@@ -26,55 +25,6 @@ import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMap
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
 
-export function buildMeetingWorkbenchDetails(session) {
-  const workbench = normalizeMeetingWorkbench(session && session.meetingWorkbench);
-  if (!hasMeetingWorkbenchContent(workbench)) return "";
-  const lines = [];
-  if (workbench.notes) {
-    lines.push("#### 会中零散记录", "", workbench.notes, "");
-  }
-  if (workbench.entries.length) {
-    lines.push("#### 用户补充", "");
-    for (const entry of workbench.entries) {
-      const text = entry.text ? ` ${entry.text}` : "";
-      lines.push(`- ${formatElapsed(entry.atMs || 0)}${text}`);
-      if (entry.interaction && entry.interaction.response) {
-        lines.push(`  - AI：${String(entry.interaction.response).replace(/\r?\n/g, "\n    ")}`);
-      }
-      for (const item of entry.materials || []) {
-        const name = item.name || item.path.split("/").pop() || item.path;
-        const kind = item.kind ? ` · ${item.kind}` : "";
-        if (isImageMeetingMaterial(item)) {
-          lines.push(`  - [[${item.path}|${name}]]${kind}`, `  ![[${item.path}]]`);
-        } else {
-          lines.push(`  - [[${item.path}|${name}]]${kind}`);
-        }
-      }
-    }
-    lines.push("");
-  }
-  if (workbench.materials.length) {
-    lines.push("#### 补充材料", "");
-    for (const item of workbench.materials) {
-      const name = item.name || item.path.split("/").pop() || item.path;
-      const kind = item.kind ? ` · ${item.kind}` : "";
-      if (isImageMeetingMaterial(item)) {
-        lines.push(`- [[${item.path}|${name}]]${kind}`, `![[${item.path}]]`, "");
-      } else {
-        lines.push(`- [[${item.path}|${name}]]${kind}`);
-      }
-    }
-    lines.push("");
-  }
-  return [
-    "<details>",
-    `<summary>${labelText("meetingMaterial")}</summary>`,
-    "",
-    lines.join("\n").trim(),
-    "",
-    "</details>",
-  ].join("\n");
-}
 
 // 回听时间轴模块（保留函数与样式做向后兼容；新纪要不再注入）。
 // 大纲一级条目本身已挂回听锚点 [[file|HH:MM]]，逐段时间戳列表对用户冗余 —— 关闭。

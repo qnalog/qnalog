@@ -5,6 +5,7 @@ import { labelText } from "../shared/note-labels";
 import { isTextImportSession } from "../briefing/note-layout-policy";
 import { formatElapsed } from "../shared/util-common";
 import { stripArchivedOutlineSections } from "./outline-text";
+import { hasMeetingWorkbenchContent, isImageMeetingMaterial, normalizeMeetingWorkbench } from "./meeting-workbench-state";
 
 /** rewriteConsolidated 组装实时大纲 details 的输入；对象参数便于逐项注入。 */
 export interface RealtimeOutlineAssemblyInput {
@@ -208,6 +209,60 @@ export function buildExternalAudioSourceDetails(
     `${labelText("fileLabel")}${name}`,
     "",
     "源音频保留在同步文件夹中，未复制到当前知识库。",
+    "",
+    "</details>",
+  ].join("\n");
+}
+
+export type MeetingWorkbenchDetailsInput = Pick<RecordingSession, "meetingWorkbench">;
+
+export function buildMeetingWorkbenchDetails(
+  session: MeetingWorkbenchDetailsInput | null | undefined,
+): string {
+  const workbench = normalizeMeetingWorkbench(session && session.meetingWorkbench);
+  if (!hasMeetingWorkbenchContent(workbench)) return "";
+  const lines: string[] = [];
+  if (workbench.notes) {
+    lines.push("#### 会中零散记录", "", workbench.notes, "");
+  }
+  if (workbench.entries.length) {
+    lines.push("#### 用户补充", "");
+    for (const entry of workbench.entries) {
+      const text = entry.text ? ` ${entry.text}` : "";
+      lines.push(`- ${formatElapsed(entry.atMs || 0)}${text}`);
+      if (entry.interaction && entry.interaction.response) {
+        lines.push(`  - AI：${String(entry.interaction.response).replace(/\r?\n/g, "\n    ")}`);
+      }
+      for (const item of entry.materials || []) {
+        const name = item.name || item.path.split("/").pop() || item.path;
+        const kind = item.kind ? ` · ${item.kind}` : "";
+        if (isImageMeetingMaterial(item)) {
+          lines.push(`  - [[${item.path}|${name}]]${kind}`, `  ![[${item.path}]]`);
+        } else {
+          lines.push(`  - [[${item.path}|${name}]]${kind}`);
+        }
+      }
+    }
+    lines.push("");
+  }
+  if (workbench.materials.length) {
+    lines.push("#### 补充材料", "");
+    for (const item of workbench.materials) {
+      const name = item.name || item.path.split("/").pop() || item.path;
+      const kind = item.kind ? ` · ${item.kind}` : "";
+      if (isImageMeetingMaterial(item)) {
+        lines.push(`- [[${item.path}|${name}]]${kind}`, `![[${item.path}]]`, "");
+      } else {
+        lines.push(`- [[${item.path}|${name}]]${kind}`);
+      }
+    }
+    lines.push("");
+  }
+  return [
+    "<details>",
+    `<summary>${labelText("meetingMaterial")}</summary>`,
+    "",
+    lines.join("\n").trim(),
     "",
     "</details>",
   ].join("\n");

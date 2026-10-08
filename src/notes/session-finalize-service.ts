@@ -23,7 +23,7 @@ import { BriefingPipelineIncompleteError } from "../briefing/pipeline";
 import { isTextImportSession, shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
-import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
+import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 import { getSegmentsDurationMs } from "../notes/audio-refs";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { buildTitleSourceFromSegments, normalizeSegmentsForMergedNote } from "../notes/note-markdown";

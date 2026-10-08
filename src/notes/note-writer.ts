@@ -12,14 +12,15 @@ import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
 import {
   assembleRealtimeOutlineDetails,
+  buildMeetingWorkbenchDetails,
   buildPriorSessionBlocks,
   buildRecordingInfoDetails,
   buildTextImportInfoDetails,
   buildExternalAudioSourceDetails,
   buildMasterAudioDetails,
 } from "./note-session-materials";
-import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails } from "../notes/detail-blocks";
+import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
+import { buildPlaybackTimelineDetails } from "../notes/detail-blocks";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
