@@ -30,6 +30,8 @@ import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcrip
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
 import type { RecordingSession, Segment } from "../src/shared/types";
 import { buildEmptyLlmOutputFallback } from "../src/prompts/briefing-prompts";
+import { createRealtimeOutlineSourceCoverage } from "../src/notes/outline-coverage";
+import { readCurrentOutlineBlock } from "../src/notes/outline-storage";
 
 type File = InstanceType<typeof obsidian.TFile>;
 
@@ -1481,5 +1483,110 @@ describe("NoteWriter meeting workbench read timing and failures", () => {
       }
     }
     } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+describe("NoteWriter realtime outline details", () => {
+  it.each(["zh", "en"])("preserves current and stale outline proof in all write paths (%s)", async (language) => {
+    const originalLanguage = getActiveUiLanguage();
+    const path = `QnALog/Minutes/realtime-materials-${language}.md`;
+    const file = new obsidian.TFile(path);
+    const rawText = "First transcript $& $` $' $$";
+    const segments = [0, 1].map((index) => attachTextTranscript({
+      index, startOffsetMs: index * 1_000, endOffsetMs: (index + 1) * 1_000,
+      text: `${rawText} ${index}`,
+    }, `realtime-materials-${language}`, "text-import"));
+    const ledger = segments.map((segment) => serializeTranscriptBlock(segment, `### Segment ${segment.index + 1}`, segment.text)).join("\n\n");
+    const original = `---\ntitle: old\n---\n\n# Existing note\n\n${ledger}`;
+    const outline = "- [[recording.webm|00:00]] Topic $& $` $' $$";
+    vi.stubGlobal("window", { moment: (value: string) => ({ format: () => value }) });
+    try {
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      for (const stale of [false, true]) for (const operation of ["rewrite", "append", "failedAppend"] as const) {
+        const proof = createRealtimeOutlineSourceCoverage(stale ? `${outline} stale` : outline, segments, 1);
+        const session = Object.assign({
+          id: `realtime-materials-${language}`,
+          sessionStamp: `realtime-materials-${language}`,
+          startedAt: "2026-09-14T12:00:00.000Z",
+          mdPath: path,
+          mode: "meeting",
+          source: "recording" as const,
+          segments,
+          finalized: true,
+          realtimeOutline: outline,
+          realtimeOutlineCoverageScope: "current-recording",
+          realtimeOutlineCoverage: { totalSegmentCount: 2 },
+          realtimeOutlineSourceCoverage: proof,
+        }) as RecordingSession;
+        const vault = memoryVault([{ file, markdown: original }]);
+        const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "outline-materials-model" }));
+        const run = async () => {
+          if (operation === "rewrite") await writer.rewriteConsolidated(session, "BODY");
+          else await writer.appendPolishBlock(session, "BODY", operation === "failedAppend" ? new Error("outline failure") : null, false, "", original);
+        };
+        await run();
+        const result = await vault.vault.read(file);
+        const current = readCurrentOutlineBlock(result);
+        expect(current?.outline).toBe(outline);
+        expect(result).toContain("Topic $& $` $' $$");
+        expect(result).toContain(stale ? "0/2" : "1/2");
+        expect(current?.sourceCoverage).toEqual(stale ? null : proof);
+        expect(result).toContain(rawText);
+        expect(readTranscriptBlocks(result).map((block) => block.visibleBlock)).toEqual(segments.map((segment) => segment.text));
+        if (operation === "failedAppend") {
+          expect(result).toContain("outline failure");
+          expect(result).not.toContain("\nBODY\n");
+        } else {
+          expect(result).toContain("\nBODY\n");
+        }
+        if (operation === "rewrite") {
+          await run();
+          expect(await vault.vault.read(file)).toBe(result);
+        }
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("propagates outline material getter and conversion failures before writing", async () => {
+    const path = "QnALog/Minutes/realtime-material-errors.md";
+    const file = new obsidian.TFile(path);
+    const original = "---\ntitle: old\n---\n\n# Existing note";
+    const failure = new Error("realtime outline material failed");
+    const injections: Array<(session: RecordingSession) => void> = [
+      (session) => Object.defineProperty(session, "realtimeOutline", { get() { throw failure; } }),
+      (session) => Object.defineProperty(session, "realtimeOutlineCoverage", {
+        get() { return { get totalSegmentCount() { throw failure; } }; },
+      }),
+      (session) => { session.realtimeOutline = { toString() { throw failure; } } as unknown as string; },
+    ];
+    vi.stubGlobal("window", { moment: (value: string) => ({ format: () => value }) });
+    try {
+      for (const inject of injections) for (const operation of ["rewrite", "append"] as const) {
+        const vault = memoryVault([{ file, markdown: original }]);
+        const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "outline-material-errors" }));
+        const session: RecordingSession = {
+          id: "outline-material-errors",
+          sessionStamp: "outline-material-errors",
+          startedAt: "2026-09-14T12:00:00.000Z",
+          mdPath: path,
+          mode: "meeting",
+          source: "recording",
+          segments: [],
+          finalized: true,
+          realtimeOutline: "- failing material",
+        };
+        inject(session);
+        const run = operation === "rewrite"
+          ? writer.rewriteConsolidated(session, "BODY")
+          : writer.appendPolishBlock(session, "BODY", null, false, "", original);
+        await expect(run).rejects.toBe(failure);
+        expect(await vault.vault.read(file)).toBe(original);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

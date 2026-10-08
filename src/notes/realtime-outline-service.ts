@@ -19,7 +19,7 @@ import { createRealtimeOutlineSourceCoverage, getValidatedOutlineCommittedCount,
 import type { RealtimeOutlineSourceCoverage, RecordingSession, Segment } from "../shared/types";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
-import { buildRealtimeOutlineDetails } from "./realtime-outline";
+import { buildRealtimeOutlineDetails } from "./note-session-materials";
 import { extractTranscriptSegments } from "./note-markdown";
 import type { ContinuationService } from "../session/continuation-service";
 import type { NoteWriter } from "./note-writer";

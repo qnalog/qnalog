@@ -7,6 +7,54 @@ import { formatElapsed } from "../shared/util-common";
 import { stripArchivedOutlineSections } from "./outline-text";
 import { hasMeetingWorkbenchContent, isImageMeetingMaterial, normalizeMeetingWorkbench } from "./meeting-workbench-state";
 
+import { validateRealtimeOutlineSourceCoverage } from "./outline-coverage";
+import { buildOutlineCoverageMetadata } from "./outline-storage";
+
+export type RealtimeOutlineDetailsInput = Partial<Pick<RecordingSession,
+  | "realtimeOutline"
+  | "realtimeOutlineSourceCoverage"
+  | "realtimeOutlineCoverageScope"
+  | "segments"
+>> & { realtimeOutlineCoverage?: unknown };
+
+/** Builds the persisted current-recording outline block and its source proof. */
+export function buildRealtimeOutlineDetails(
+  session: RealtimeOutlineDetailsInput | null | undefined,
+): string {
+  const outline = String(session && session.realtimeOutline ? session.realtimeOutline : "").trim();
+  if (!outline) return "";
+  const coverage = session && session.realtimeOutlineCoverage as { totalSegmentCount?: unknown } | null | undefined;
+  const rawSourceCoverage = session && session.realtimeOutlineSourceCoverage;
+  const segments = session && Array.isArray(session.segments) ? session.segments : [];
+  const sourceCoverage = rawSourceCoverage
+    && validateRealtimeOutlineSourceCoverage(rawSourceCoverage, outline, segments)
+    ? rawSourceCoverage
+    : null;
+  const totalSegmentCount = Math.max(0, Number(coverage && coverage.totalSegmentCount) || 0);
+  const committedSegmentCount = Math.min(
+    totalSegmentCount,
+    Math.max(0, Number(sourceCoverage && sourceCoverage.committedSegmentCount) || 0)
+  );
+  const coverageLabel = session && session.realtimeOutlineCoverageScope === "whole-note"
+    ? "outlineCoverageWholeNote"
+    : "outlineCoverageCurrentRecording";
+  const coverageNotice = totalSegmentCount > 0 && committedSegmentCount < totalSegmentCount
+    ? `> ${labelText(coverageLabel, committedSegmentCount, totalSegmentCount)}`
+    : "";
+  return [
+    "<details>",
+    `<summary>${labelText("liveOutlineDraft")}</summary>`,
+    "",
+    `> ${labelText("outlineIntro")}`,
+    ...(coverageNotice ? ["", coverageNotice] : []),
+    "",
+    outline,
+    "",
+    ...(sourceCoverage ? [buildOutlineCoverageMetadata(sourceCoverage), ""] : []),
+    "</details>",
+  ].join("\n");
+}
+
 /** rewriteConsolidated 组装实时大纲 details 的输入；对象参数便于逐项注入。 */
 export interface RealtimeOutlineAssemblyInput {
   /** buildRealtimeOutlineDetails 产出的完整 details 块；空串表示本场次没有实时大纲。 */

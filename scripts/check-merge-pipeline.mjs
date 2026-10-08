@@ -2018,6 +2018,92 @@ async function main() {
       }
       const meetingDigest = createHash("sha256").update(JSON.stringify(meetingResults)).digest("hex");
       console.log(`[meeting-workbench-materials] rewrite/append digest: ${meetingDigest}`);
+      const realtimeOutlineResults = [];
+      const outlinePartialProof = { version: 1, outlineHash: "aa64367a", sourceHash: "abf3ba5c", committedSegmentCount: 1, totalSegmentCount: 2 };
+      const outlineCompleteProof = { version: 1, outlineHash: "aa64367a", sourceHash: "5fc98f40", committedSegmentCount: 2, totalSegmentCount: 2 };
+      const realtimeOutlineCases = [
+        { name: "empty", outline: " \r\n ", sourceCoverage: undefined, total: 2, scope: "current-recording" },
+        { name: "special", outline: "- [[recording.webm|00:00]] Topic $& $` $' $$", sourceCoverage: undefined, total: 2, scope: "current-recording" },
+        { name: "partial-current", outline: "- [[recording.webm|00:00]] Topic $& $` $' $$", sourceCoverage: outlinePartialProof, total: 2, scope: "current-recording" },
+        { name: "partial-whole-note", outline: "- [[recording.webm|00:00]] Topic $& $` $' $$", sourceCoverage: outlinePartialProof, total: 2, scope: "whole-note" },
+        { name: "complete", outline: "- [[recording.webm|00:00]] Topic $& $` $' $$", sourceCoverage: outlineCompleteProof, total: 2, scope: "current-recording" },
+        { name: "stale", outline: "- [[recording.webm|00:00]] Stale topic", sourceCoverage: outlinePartialProof, total: 2, scope: "whole-note" },
+        { name: "proof-total-one", outline: "- [[recording.webm|00:00]] Topic $& $` $' $$", sourceCoverage: outlineCompleteProof, total: 1, scope: "current-recording" },
+      ];
+      const outlineSegments = [
+        transcriptSegment(0, "Realtime outline source one.", 0, 1000, "literal-outline"),
+        transcriptSegment(1, "Realtime outline source two.", 1000, 2000, "literal-outline"),
+      ];
+      const outlineOriginal = [
+        "---\ntitle: old\n---",
+        "# Existing realtime outline note",
+        serializeTranscriptSegment(outlineSegments[0]),
+        serializeTranscriptSegment(outlineSegments[1]),
+      ].join("\n\n");
+      for (const fixture of realtimeOutlineCases) {
+        for (const operation of ["rewrite", "append", "failedAppend"]) {
+          const session = {
+            id: `realtime-outline-${fixture.name}`,
+            sessionStamp: `realtime-outline-${fixture.name}`,
+            startedAt: "2026-09-14T12:00:00.000Z",
+            mdPath: literalRetryPath,
+            mode: "meeting",
+            source: "recording",
+            segments: outlineSegments,
+            finalized: true,
+            realtimeOutline: fixture.outline,
+            realtimeOutlineCoverage: { totalSegmentCount: fixture.total },
+            realtimeOutlineCoverageScope: fixture.scope,
+            realtimeOutlineSourceCoverage: fixture.sourceCoverage,
+          };
+          retryFile._content = outlineOriginal;
+          if (operation === "rewrite") await plugin.noteWriter.rewriteConsolidated(session, "Realtime outline smoke body");
+          else await plugin.noteWriter.appendPolishBlock(
+            session,
+            "Realtime outline smoke body",
+            operation === "failedAppend" ? new Error("realtime outline failure") : null,
+            false,
+            "",
+            outlineOriginal,
+          );
+          const result = retryFile._content;
+          if (!fixture.outline.trim()) {
+            if (result.includes("Live outline while recording (draft)") || result.includes("录音期间实时整理的大纲（草稿）")) {
+              throw new Error(`${fixture.name} ${operation} rendered an empty outline block`);
+            }
+          } else {
+            const outlineAt = result.indexOf(fixture.outline.trim());
+            const detailsStart = result.lastIndexOf("<details>", outlineAt);
+            const detailsEnd = result.indexOf("</details>", outlineAt);
+            if (outlineAt < 0 || detailsStart < 0 || detailsEnd < outlineAt) {
+              throw new Error(`${fixture.name} ${operation} omitted realtime outline details`);
+            }
+            if (fixture.name === "special" && !result.includes("0/2")) {
+              throw new Error(`${fixture.name} ${operation} did not show zero coverage without a proof`);
+            }
+            if (fixture.name.startsWith("partial-")) {
+              if (!result.includes("1/2") || !result.includes(JSON.stringify(fixture.sourceCoverage))) {
+                throw new Error(`${fixture.name} ${operation} omitted its valid partial proof or coverage notice`);
+              }
+            }
+            if (fixture.name === "complete" || fixture.name === "proof-total-one") {
+              if (result.includes("1/2") || result.includes("1/1") || !result.includes(JSON.stringify(fixture.sourceCoverage))) {
+                throw new Error(`${fixture.name} ${operation} changed complete proof metadata or emitted an incomplete notice`);
+              }
+            }
+            if (fixture.name === "stale" && (!result.includes("0/2") || result.includes("qnalog-realtime-outline-source-coverage"))) {
+              throw new Error(`${fixture.name} ${operation} retained stale proof metadata or omitted zero coverage`);
+            }
+          }
+          if (operation === "rewrite") {
+            await plugin.noteWriter.rewriteConsolidated(session, "Realtime outline smoke body");
+            if (retryFile._content !== result) throw new Error(`${fixture.name} realtime outline rewrite was not byte-stable`);
+          }
+          realtimeOutlineResults.push(result);
+        }
+      }
+      const realtimeOutlineDigest = createHash("sha256").update(JSON.stringify(realtimeOutlineResults)).digest("hex");
+      console.log(`[realtime-outline-materials] rewrite/append/failedAppend digest: ${realtimeOutlineDigest}`);
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);
