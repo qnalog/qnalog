@@ -426,9 +426,9 @@ export class NoteWriter {
     const block = `${nsMarker("merge")}\n${JSON.stringify(payload, null, 2)}\n${NS_TAG}-merge-end -->`;
     const cur = await this.host.vault.read(file);
     if (NS_MERGE_BLOCK_RE.test(cur)) {
-      await this.host.vault.modify(file, cur.replace(NS_MERGE_BLOCK_RE, block));
+      await this.host.vault.modify(file, cur.replace(NS_MERGE_BLOCK_RE, () => block));
     } else {
-      await this.host.vault.modify(file, cur.replace(/\s*$/, "\n\n" + block + "\n"));
+      await this.host.vault.modify(file, cur.replace(/\s*$/, () => "\n\n" + block + "\n"));
     }
   }
 }

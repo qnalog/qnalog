@@ -1968,3 +1968,159 @@ describe("NoteWriter merge source execution boundaries", () => {
     }
   });
 });
+
+describe("NoteWriter merge metadata literal preservation", () => {
+  const sources = [
+    { path: "Notes/Source $& $` $' $$.md", title: "Source $& $` $' $$", durationMs: 1000 },
+    { path: "Notes/plain.md", title: "plain", durationMs: 2000 },
+  ];
+  const startMarker = "<!-- qnalog-merge -->";
+  const endMarker = "\nqnalog-merge-end -->";
+  const payloadFrom = (markdown: string) => {
+    const start = markdown.indexOf(startMarker);
+    const end = markdown.indexOf(endMarker, start + startMarker.length);
+    if (start < 0 || end < 0) throw new Error("Missing merge metadata markers");
+    return JSON.parse(markdown.slice(start + startMarker.length + 1, end));
+  };
+  const expectedBlock = (payload: unknown) =>
+    `${startMarker}\n${JSON.stringify(payload, null, 2)}\nqnalog-merge-end -->`;
+
+  it("preserves source JSON and transcript bytes when appending and replacing metadata", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    try {
+      const segment = attachTextTranscript({
+        index: 0, startOffsetMs: 0, endOffsetMs: 1000,
+        text: "TRANSCRIPT $& $` $' $$", rawText: "TRANSCRIPT $& $` $' $$", isFinal: true,
+      }, "metadata-preserve", "text-import");
+      const ledger = serializeTranscriptBlock(segment, "### Transcript", segment.text);
+      const prefix = `---\ntitle: metadata-literal\n---\n\n# KEEP BEFORE $&\n\n${ledger}`;
+      const tail = "\n \t\r\n";
+      const file = new obsidian.TFile("QnALog/Minutes/metadata-literal.md");
+      const vault = memoryVault([{ file, markdown: prefix + tail }]);
+      const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS));
+      const expectedPayload = { mergedAt: "2026-10-08T12:00:00.000Z", sources };
+      const oldPayload = {
+        mergedAt: "2000-01-01T00:00:00.000Z",
+        sources: [{ path: "Notes/old.md", title: "old", durationMs: 5 }],
+      };
+      const originalLedgerBlocks = readTranscriptBlocks(prefix);
+      await writer.appendMergeMetadataBlock(file, sources);
+      const appended = await vault.vault.read(file);
+      expect(payloadFrom(appended)).toEqual(expectedPayload);
+      const appendedExpected = `${prefix}\n\n${expectedBlock(expectedPayload)}\n`;
+      expect(appended).toBe(appendedExpected);
+      expect(readTranscriptBlocks(appended).map(block => ({
+        visibleBlock: block.visibleBlock,
+        sourceId: block.segment.transcript?.sourceId,
+        rawText: getCurrentTranscript(block.segment.transcript!).rawText,
+      }))).toEqual(originalLedgerBlocks.map(block => ({
+        visibleBlock: block.visibleBlock,
+        sourceId: block.segment.transcript?.sourceId,
+        rawText: getCurrentTranscript(block.segment.transcript!).rawText,
+      })));
+
+      const oldBlock = expectedBlock(oldPayload);
+      const suffix = "\n\nKEEP AFTER $' $$\r\n";
+      await vault.vault.modify(file, `${prefix}\n\n${oldBlock}${suffix}`);
+      await writer.appendMergeMetadataBlock(file, sources);
+      const replaced = await vault.vault.read(file);
+      expect(payloadFrom(replaced)).toEqual(expectedPayload);
+      expect(replaced).toBe(`${prefix}\n\n${expectedBlock(expectedPayload)}${suffix}`);
+      expect(readTranscriptBlocks(replaced).map(block => ({
+        visibleBlock: block.visibleBlock,
+        sourceId: block.segment.transcript?.sourceId,
+        rawText: getCurrentTranscript(block.segment.transcript!).rawText,
+      }))).toEqual(originalLedgerBlocks.map(block => ({
+        visibleBlock: block.visibleBlock,
+        sourceId: block.segment.transcript?.sourceId,
+        rawText: getCurrentTranscript(block.segment.transcript!).rawText,
+      })));
+      await writer.appendMergeMetadataBlock(file, sources);
+      expect(await vault.vault.read(file)).toBe(replaced);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("writes literal source metadata through the complete merge consumer", async () => {
+    const originalLanguage = getActiveUiLanguage();
+    const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-08T12:00:00.000Z"));
+    const moment = (value: string | Date) => {
+      const date = new Date(value);
+      return {
+        isValid: () => Number.isFinite(date.getTime()),
+        toDate: () => date,
+        format: (pattern: string) => pattern === "YYYY-MM-DD HHmm"
+          ? "2026-10-08 1100"
+          : pattern === "YYYYMMDD-HHmmss" ? "20261008-110000" : "2026-10-08 11:00:00",
+      };
+    };
+    vi.stubGlobal("window", { moment });
+    try {
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      const sourceFiles = sources.map((source, index) => {
+        const file = new obsidian.TFile(source.path);
+        const text = index === 0 ? "Transcript A" : "Transcript B";
+        const segment = attachTextTranscript({
+          index: 0, startOffsetMs: 0, endOffsetMs: 1000, text, rawText: text, isFinal: true,
+        }, index === 0 ? "metadata-source-a" : "metadata-source-b", "text-import");
+        return { file, content: `---\nqnalog_mode: monologue\n---\n\n<!-- qnalog-segments-start:${segment.transcript!.sourceId} -->\n${serializeTranscriptBlock(segment, "### Text source 1", text)}\n<!-- qnalog-segments-end:${segment.transcript!.sourceId} -->` };
+      });
+      expect(sourceFiles.map(source => readTranscriptBlocks(source.content).length)).toEqual([1, 1]);
+      const targetPath = "QnALog/Minutes/metadata-merged.md";
+      const vault = memoryVault(sourceFiles.map(source => ({ file: source.file, markdown: source.content })));
+      const refreshed: File[] = [];
+      const opened: File[] = [];
+      const settings = {
+        ...DEFAULT_SETTINGS, autoRenameWithTitle: false, mdFolder: "QnALog/Minutes",
+        llmModel: "metadata-test-model",
+      };
+      const host = unexpectedHost(vault.vault, settings, {
+        ensureFolder: async () => undefined,
+        findAvailableMarkdownPath: () => targetPath,
+        getFileFrontmatter: (file) => ({
+          qnalog_mode: "monologue",
+          qnalog_time: file.path === sourceFiles[0].file.path
+            ? "2026-10-08T11:00:00.000Z" : "2026-10-08T11:01:00.000Z",
+        }),
+        mergeAndPolish: async () => "---\ntitle: Metadata merge\n---\n\nMERGED BODY",
+        clearCommittedBriefingCheckpoint: async () => undefined,
+        noteIndex: { refreshNoteIndexSafely: async (file) => { refreshed.push(file); } },
+        openFile: async (file) => { opened.push(file); },
+      });
+      const writer = new NoteWriter(host);
+      await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
+      const merged = vault.files.get(targetPath);
+      expect(merged).toBeDefined();
+      const actual = await vault.vault.read(merged!.file);
+      expect(payloadFrom(actual)).toEqual({
+        mergedAt: "2026-10-08T12:00:00.000Z",
+        sources: sourceFiles.map(({ file }, index) => ({
+          path: file.path, title: file.basename, durationMs: 1000,
+        })),
+      });
+      expect(actual).toContain("MERGED BODY");
+      expect(readTranscriptBlocks(actual).map(block => ({
+        index: block.segment.index,
+        startOffsetMs: block.segment.startOffsetMs,
+        endOffsetMs: block.segment.endOffsetMs,
+        sourceId: block.segment.transcript?.sourceId,
+        rawText: getCurrentTranscript(block.segment.transcript!).rawText,
+      }))).toEqual([
+        { index: 0, startOffsetMs: 0, endOffsetMs: 1000, sourceId: "metadata-source-a", rawText: "Transcript A" },
+        { index: 1, startOffsetMs: 1000, endOffsetMs: 2000, sourceId: "metadata-source-b", rawText: "Transcript B" },
+      ]);
+      expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
+      expect(refreshed).toEqual([merged!.file]);
+      expect(opened).toEqual([merged!.file]);
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      if (previousWindow === undefined) vi.unstubAllGlobals();
+      else vi.stubGlobal("window", previousWindow);
+      vi.useRealTimers();
+    }
+  });
+});
