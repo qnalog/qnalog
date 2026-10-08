@@ -30,6 +30,11 @@ import {
   type NoteMergeMoment,
   type NoteMergeSourceMetadata,
 } from "./note-merge-flow";
+import {
+  findPreviousRecentNoteFileFlow,
+  mergeMarkdownFileWithPreviousFlow,
+  type NoteMergePreviousFlowHost,
+} from "./note-merge-previous-flow";
 import { writeMergeMetadataBlock, type NoteMergeMetadataStoreHost } from "./note-merge-metadata-store";
 import {
   renameMarkdownWithGeneratedTitleFlow,
@@ -85,8 +90,15 @@ export class NoteWriter {
   private readonly noteTitleRenameFlowHost: NoteTitleRenameFlowHost;
   private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
   private readonly noteMergeMetadataStoreHost: NoteMergeMetadataStoreHost;
+  private readonly noteMergePreviousFlowHost: NoteMergePreviousFlowHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
+    this.noteMergePreviousFlowHost = {
+      getRecentNotes: (limit) => this.host.getRecentNotes(limit),
+      findPrevious: (file) => this.findPreviousRecentNoteFile(file),
+      confirm: (title, body, ctaText) => this.host.confirm(title, body, ctaText),
+      mergeFiles: (files) => this.mergeMarkdownFilesAsNew(files),
+    };
     this.noteTitleRenameFlowHost = {
       getAutoRenameWithTitle: () => this.host.settings.autoRenameWithTitle,
       getVault: () => this.host.vault,
@@ -288,35 +300,14 @@ export class NoteWriter {
     const fallbackMode = detectRecentModeFromFilename(this.host.settings, file.basename);
     return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
   }
-  findPreviousRecentNoteFile(file) {
-    if (!(file instanceof obsidian.TFile)) return null;
-    const currentPath = obsidian.normalizePath(file.path);
-    const recents = this.host.getRecentNotes(240);
-    const current = recents.find((item) => item && item.file && obsidian.normalizePath(item.file.path) === currentPath);
-    if (!current) return null;
-    const older = recents
-      .filter((item) => item && item.file && obsidian.normalizePath(item.file.path) !== currentPath && item.timestamp < current.timestamp)
-      .sort((a, b) => b.timestamp - a.timestamp)[0];
-    return older && older.file instanceof obsidian.TFile ? older.file : null;
+  findPreviousRecentNoteFile(file: unknown): obsidian.TFile | null {
+    return findPreviousRecentNoteFileFlow(this.noteMergePreviousFlowHost, file);
   }
   readMergeSourceFromMarkdown(file: unknown, offsetMs: number, startIndex: number): Promise<NoteMergeSource> {
     return readMergeSourceFlow(this.noteMergeSourceFlowHost, file, offsetMs, startIndex);
   }
-  async mergeMarkdownFileWithPrevious(file) {
-    if (!(file instanceof obsidian.TFile)) return;
-    const previous = this.findPreviousRecentNoteFile(file);
-    if (!(previous instanceof obsidian.TFile)) {
-      new obsidian.Notice(t("No most recent QnALog summary before this one was found."), 6000);
-      return;
-    }
-    const ok = await this.host.confirm(t("Merge minutes"), t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace(/\{[01]\}/g, (placeholder) => placeholder === "{0}" ? previous.basename : file.basename), t("Merge"));
-    if (!ok) return;
-    try {
-      await this.mergeMarkdownFilesAsNew([previous, file]);
-    } catch (e) {
-      console.error("[QnALog] merge notes failed", e);
-      new obsidian.Notice(`${t("Merging minutes failed: ")}${(e && e.message) || e}`, 8000);
-    }
+  mergeMarkdownFileWithPrevious(file: unknown): Promise<void> {
+    return mergeMarkdownFileWithPreviousFlow(this.noteMergePreviousFlowHost, file);
   }
   mergeMarkdownFilesAsNew(files: Iterable<unknown> | null | undefined): Promise<void> {
     return mergeMarkdownFilesAsNewFlow(this.noteMergeFlowHost, files);

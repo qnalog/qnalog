@@ -2953,4 +2953,200 @@ describe("NoteWriter merge metadata literal preservation", () => {
       expect(opened).toEqual([merged!.file]);
     });
   });
+  it("selects the nearest strictly older recent note without mutating recents", () => {
+    const currentFile = new obsidian.TFile("Notes\\current.md");
+    const olderFile = new obsidian.TFile("Notes/older.md");
+    const nearestFile = new obsidian.TFile("Notes/nearest.md");
+    const equalFile = new obsidian.TFile("Notes/equal.md");
+    const futureFile = new obsidian.TFile("Notes/future.md");
+    const recents = [
+      { file: futureFile, timestamp: 21 },
+      { file: olderFile, timestamp: 10 },
+      { file: new obsidian.TFile("Notes/current.md"), timestamp: 20 },
+      { file: equalFile, timestamp: 20 },
+      { file: nearestFile, timestamp: 19 },
+    ];
+    const originalOrder = [...recents];
+    const writer = new NoteWriter(unexpectedHost(memoryVault().vault, DEFAULT_SETTINGS, {
+      getRecentNotes: (limit) => {
+        expect(limit).toBe(240);
+        return recents;
+      },
+    }));
+    expect(writer.findPreviousRecentNoteFile(currentFile)).toBe(nearestFile);
+    expect(recents).toEqual(originalOrder);
+
+    const noOlderWriter = new NoteWriter(unexpectedHost(memoryVault().vault, DEFAULT_SETTINGS, {
+      getRecentNotes: () => [
+        { file: currentFile, timestamp: 20 },
+        { file: equalFile, timestamp: 20 },
+        { file: futureFile, timestamp: 21 },
+      ],
+    }));
+    expect(noOlderWriter.findPreviousRecentNoteFile(currentFile)).toBeNull();
+    const absentWriter = new NoteWriter(unexpectedHost(memoryVault().vault, DEFAULT_SETTINGS, {
+      getRecentNotes: () => [{ file: nearestFile, timestamp: 19 }],
+    }));
+    expect(absentWriter.findPreviousRecentNoteFile(currentFile)).toBeNull();
+    const tiedWriter = new NoteWriter(unexpectedHost(memoryVault().vault, DEFAULT_SETTINGS, {
+      getRecentNotes: () => [
+        { file: currentFile, timestamp: 20 },
+        { file: olderFile, timestamp: 19 },
+        { file: nearestFile, timestamp: 19 },
+      ],
+    }));
+    expect(tiedWriter.findPreviousRecentNoteFile(currentFile)).toBe(olderFile);
+  });
+
+  it("guards lookup, preserves winner validation order, and propagates lookup and confirmation failures", async () => {
+    const currentFile = new obsidian.TFile("Notes/current.md");
+    const previousFile = new obsidian.TFile("Notes/previous.md");
+    const vault = memoryVault([
+      { file: currentFile, markdown: "CURRENT BYTES" },
+      { file: previousFile, markdown: "PREVIOUS BYTES" },
+    ]);
+    const getRecentNotes = vi.fn(() => [
+      { file: currentFile, timestamp: 2 },
+      { file: previousFile, timestamp: 1 },
+    ]);
+    const host = unexpectedHost(vault.vault, DEFAULT_SETTINGS, { getRecentNotes });
+    const writer = new NoteWriter(host);
+    expect(writer.findPreviousRecentNoteFile("not a file")).toBeNull();
+    expect(getRecentNotes).not.toHaveBeenCalled();
+
+    const invalidWinner = { path: "Notes/invalid.md" } as unknown as File;
+    host.getRecentNotes = () => [
+      { file: currentFile, timestamp: 3 },
+      { file: previousFile, timestamp: 1 },
+      { file: invalidWinner, timestamp: 2 },
+    ];
+    expect(writer.findPreviousRecentNoteFile(currentFile)).toBeNull();
+
+    const lookupFailure = new Error("recent lookup failed");
+    host.getRecentNotes = () => { throw lookupFailure; };
+    expect(() => writer.findPreviousRecentNoteFile(currentFile)).toThrow(lookupFailure);
+    await expect(writer.mergeMarkdownFileWithPrevious(currentFile)).rejects.toBe(lookupFailure);
+
+    const confirmFailure = new Error("confirmation failed");
+    host.getRecentNotes = () => [
+      { file: currentFile, timestamp: 2 },
+      { file: previousFile, timestamp: 1 },
+    ];
+    host.confirm = async () => { throw confirmFailure; };
+    const oldNoticeCount = notices.length;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(writer.mergeMarkdownFileWithPrevious(currentFile)).rejects.toBe(confirmFailure);
+      expect(notices.slice(oldNoticeCount)).toEqual([]);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect([...vault.files.keys()]).toEqual([currentFile.path, previousFile.path]);
+      expect(await vault.vault.read(currentFile)).toBe("CURRENT BYTES");
+      expect(await vault.vault.read(previousFile)).toBe("PREVIOUS BYTES");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("does no merge work when there is no previous note", async () => {
+    const currentFile = new obsidian.TFile("Notes/current.md");
+    const vault = memoryVault([{ file: currentFile, markdown: "CURRENT BYTES" }]);
+    const confirm = vi.fn(async () => true);
+    const mergeAndPolish = vi.fn(async () => "UNEXPECTED MERGE");
+    const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS, {
+      getRecentNotes: () => [{ file: currentFile, timestamp: 2 }],
+      confirm,
+      mergeAndPolish,
+    }));
+    const oldNoticeCount = notices.length;
+    await writer.mergeMarkdownFileWithPrevious(currentFile);
+    expect(notices.slice(oldNoticeCount)).toEqual(["No most recent QnALog summary before this one was found."]);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(mergeAndPolish).not.toHaveBeenCalled();
+    expect([...vault.files.keys()]).toEqual([currentFile.path]);
+    expect(await vault.vault.read(currentFile)).toBe("CURRENT BYTES");
+  });
+
+  it("uses the host selected after confirmation and treats any truthy confirmation as accepted", async () => {
+    await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
+      const otherVault = memoryVault(sourceFiles.map(source => ({ file: source.file, markdown: source.content })));
+      let enterConfirm!: () => void;
+      let releaseConfirm!: (value: unknown) => void;
+      const entered = new Promise<void>(resolve => { enterConfirm = resolve; });
+      const confirmation = new Promise<unknown>(resolve => { releaseConfirm = resolve; });
+      const hostA = unexpectedHost(otherVault.vault, DEFAULT_SETTINGS, {
+        getRecentNotes: () => [
+          { file: sourceFiles[1].file, timestamp: 2 },
+          { file: sourceFiles[0].file, timestamp: 1 },
+        ],
+        confirm: async () => {
+          enterConfirm();
+          return confirmation;
+        },
+      });
+      writer.host = hostA;
+      const mergePromise = writer.mergeMarkdownFileWithPrevious(sourceFiles[1].file);
+      await entered;
+      writer.host = host;
+      releaseConfirm("accepted");
+      await mergePromise;
+      const merged = vault.files.get(targetPath);
+      expect(merged).toBeDefined();
+      expect(await vault.vault.read(merged!.file)).toContain("MERGED BODY");
+      expect(payloadFrom(await vault.vault.read(merged!.file)).sources).toEqual(sourceFiles.map(({ file }) => ({
+        path: file.path, title: file.basename, durationMs: 1000,
+      })));
+      expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
+      expect(sourceFiles.map(({ file }) => otherVault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
+      expect(refreshed).toEqual([merged!.file]);
+      expect(opened).toEqual([merged!.file]);
+    });
+    await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
+      let releaseConfirm!: (value: unknown) => void;
+      let enterConfirm!: () => void;
+      const entered = new Promise<void>(resolve => { enterConfirm = resolve; });
+      const confirmation = new Promise<unknown>(resolve => { releaseConfirm = resolve; });
+      const originalConfirm = host.confirm;
+      host.getRecentNotes = () => [
+        { file: sourceFiles[1].file, timestamp: 2 },
+        { file: sourceFiles[0].file, timestamp: 1 },
+      ];
+      host.confirm = async () => {
+        enterConfirm();
+        return confirmation;
+      };
+      const mergePromise = writer.mergeMarkdownFileWithPrevious(sourceFiles[1].file);
+      await entered;
+      releaseConfirm(false);
+      await mergePromise;
+      expect(vault.files.has(targetPath)).toBe(false);
+      expect(refreshed).toEqual([]);
+      expect(opened).toEqual([]);
+      host.confirm = originalConfirm;
+    });
+  });
+
+  it("keeps source notes and reports a post-confirmation merge failure", async () => {
+    await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
+      host.getRecentNotes = () => [
+        { file: sourceFiles[1].file, timestamp: 2 },
+        { file: sourceFiles[0].file, timestamp: 1 },
+      ];
+      host.confirm = async () => true;
+      const failure = new Error("model unavailable");
+      host.mergeAndPolish = async () => { throw failure; };
+      const oldNoticeCount = notices.length;
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        await expect(writer.mergeMarkdownFileWithPrevious(sourceFiles[1].file)).resolves.toBeUndefined();
+        expect(notices.slice(oldNoticeCount).at(-1)).toBe("Merging minutes failed: model unavailable");
+        expect(errorSpy).toHaveBeenCalledWith("[QnALog] merge notes failed", failure);
+        expect(vault.files.get(targetPath)?.markdown).toBe("");
+        expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
+        expect(refreshed).toEqual([]);
+        expect(opened).toEqual([]);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+  });
 });
