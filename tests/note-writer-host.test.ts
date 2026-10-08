@@ -1044,45 +1044,359 @@ describe("NoteWriter narrow host capabilities", () => {
     }
   });
 
-  it("polishes only the selected editor range and reports a rejected request without changing text", async () => {
+  it("preserves editor polish behavior across selection, modes, language, timing, and failures", async () => {
+    const originalLanguage = getActiveUiLanguage();
     const vault = memoryVault();
     const settings: NoteWriterSettings = { ...DEFAULT_SETTINGS, polishMode: "meeting" };
+    let calls: Array<{ raw: string; mode: string }> = [];
+    let response = "POLISHED OUTPUT";
     const host = unexpectedHost(vault.vault, settings, {
-      polishTranscript: async (raw) => {
-        if (raw === "reject me") throw new Error("service unavailable");
-        return `organized ${raw}`;
+      polishTranscript: async (raw, mode) => {
+        calls.push({ raw, mode });
+        return response;
       },
     });
     const writer = new NoteWriter(host);
-    let replacement = "";
-    const editor = {
-      getSelection: () => "selected text",
-      getValue: () => "whole document",
-      replaceSelection: (value: string) => { replacement = value; },
-      setValue: () => { throw new Error("unexpected full-document replacement"); },
-    };
-    await writer.polishEditor(editor as never);
-    expect(replacement).toBe("organized selected text");
-    let fullText = "";
-    const emptySelectionEditor = {
-      getSelection: () => "",
-      getValue: () => "standalone transcript",
-      replaceSelection: () => { throw new Error("empty selection must use full-document replacement"); },
-      setValue: (value: string) => { fullText = value; },
-    };
-    await writer.polishEditor(emptySelectionEditor as never);
-    expect(fullText).toBe("organized standalone transcript");
+    try {
+      for (const language of ["en", "zh"]) {
+        setActiveUiLanguage(matchUiLanguage(language)!);
+        calls = [];
+        response = "POLISHED OUTPUT";
+        const noticeStart = notices.length;
+        let documentReads = 0;
+        let selected = "";
+        const selectedEditor = {
+          getSelection: () => "selected text",
+          getValue: () => { documentReads++; return "whole document"; },
+          replaceSelection: (value: string) => { selected = value; },
+          setValue: () => { throw new Error("selected text must not replace the document"); },
+        };
+        await writer.polishEditor(selectedEditor as never);
+        expect(selected).toBe(response);
+        expect(documentReads).toBe(0);
+        expect(calls).toEqual([{ raw: "selected text", mode: "meeting" }]);
+        expect(notices.slice(noticeStart)).toEqual(language === "en"
+          ? ["AI polishing...", "Polishing complete"]
+          : ["AI 润色中…", "润色完成"]);
+        let fullText = "";
+        await writer.polishEditor({
+          getSelection: () => "",
+          getValue: () => "whole document",
+          replaceSelection: () => { throw new Error("empty selection must use setValue"); },
+          setValue: (value: string) => { fullText = value; },
+        } as never);
+        expect(fullText).toBe(response);
+        const beforeWhitespace = calls.length;
+        await writer.polishEditor({
+          getSelection: () => "  selected text  ",
+          getValue: () => { throw new Error("selected input must not read the document"); },
+          replaceSelection: (value: string) => { selected = value; },
+          setValue: () => { throw new Error("selected input must use replaceSelection"); },
+        } as never);
+        expect(calls[beforeWhitespace]?.raw).toBe("  selected text  ");
+        response = "";
+        fullText = "prior";
+        await writer.polishEditor({
+          getSelection: () => "",
+          getValue: () => "whole document",
+          replaceSelection: () => { throw new Error("empty selection must use setValue"); },
+          setValue: (value: string) => { fullText = value; },
+        } as never);
+        expect(fullText).toBe("");
+      }
 
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      calls = [];
+      let forbiddenSettingsReads = 0;
+      const blankHost = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS }, {
+        polishTranscript: async () => { throw new Error("blank input must not call the model"); },
+      });
+      Object.defineProperty(blankHost, "settings", {
+        configurable: true,
+        get: () => { forbiddenSettingsReads++; throw new Error("blank input must not read settings"); },
+      });
+      writer.host = blankHost;
+      for (const [selection, document] of [["", ""], ["", " \r\n\t "], [" ", "document"]]) {
+        let getValueCalls = 0;
+        const start = notices.length;
+        await writer.polishEditor({
+          getSelection: () => selection,
+          getValue: () => { getValueCalls++; return document; },
+          replaceSelection: () => { throw new Error("blank input must not write a selection"); },
+          setValue: () => { throw new Error("blank input must not write a document"); },
+        } as never);
+        expect(notices.slice(start)).toEqual(["Nothing to polish"]);
+        expect(getValueCalls).toBe(selection ? 0 : 1);
+      }
+      setActiveUiLanguage(matchUiLanguage("zh")!);
+      const chineseBlankNoticeStart = notices.length;
+      await writer.polishEditor({
+        getSelection: () => " ",
+        getValue: () => { throw new Error("blank selection must not read the document"); },
+        replaceSelection: () => { throw new Error("blank selection must not write"); },
+        setValue: () => { throw new Error("blank selection must not write"); },
+      } as never);
+      expect(notices.slice(chineseBlankNoticeStart)).toEqual(["没有可润色的内容"]);
+      expect(forbiddenSettingsReads).toBe(0);
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      expect(forbiddenSettingsReads).toBe(0);
+      expect(calls).toEqual([]);
+      writer.host = host;
 
-    const before = notices.length;
-    const rejectedEditor = {
-      getSelection: () => "reject me",
-      getValue: () => "whole document",
-      replaceSelection: () => { throw new Error("rejected result must not be written"); },
-      setValue: () => { throw new Error("rejected result must not be written"); },
-    };
-    await writer.polishEditor(rejectedEditor as never);
-    expect(notices.slice(before)).toContain("Polish failed: service unavailable");
+      for (const [mode, expected] of [
+        ["off", "meeting"],
+        ["unknown-mode", "meeting"],
+        ["seminar", "seminar"],
+        ["custom-editor-probe", "custom-editor-probe"],
+      ]) {
+        const custom = mode === "custom-editor-probe";
+        writer.host.settings = {
+          ...DEFAULT_SETTINGS,
+          polishMode: mode,
+          ...(custom ? {
+            promptTemplates: {
+              "custom-editor-probe": {
+                id: "custom-editor-probe",
+                mode: "custom-editor-probe",
+                customMode: true,
+                name: "Editor probe",
+                prompt: "Fixed prompt",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            },
+          } : {}),
+        };
+        response = `RESULT ${expected}`;
+        let written = "";
+        await writer.polishEditor({
+          getSelection: () => "input",
+          getValue: () => "",
+          replaceSelection: (value: string) => { written = value; },
+          setValue: (value: string) => { written = value; },
+        } as never);
+        expect(calls.at(-1)?.mode).toBe(expected);
+        expect(written).toBe(response);
+      }
+
+      const originalHost = writer.host;
+      const hostA = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+        polishTranscript: async () => { throw new Error("host A model must not run"); },
+      });
+      const hostB = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "seminar" }, {
+        polishTranscript: async (raw, mode) => {
+          expect(["switch host", "switch during selection"]).toContain(raw);
+          expect(mode).toBe("seminar");
+          return "HOST B OUTPUT";
+        },
+      });
+      Object.defineProperty(hostA, "settings", {
+        configurable: true,
+        get: () => { writer.host = hostB; return { ...DEFAULT_SETTINGS, polishMode: "meeting" }; },
+      });
+      writer.host = hostA;
+      let hostOutput = "";
+      await writer.polishEditor({
+        getSelection: () => "switch host",
+        getValue: () => "",
+        replaceSelection: (value: string) => { hostOutput = value; },
+        setValue: (value: string) => { hostOutput = value; },
+      } as never);
+      expect(hostOutput).toBe("HOST B OUTPUT");
+      const selectionHostA = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+        polishTranscript: async () => { throw new Error("selection host A model must not run"); },
+      });
+      writer.host = selectionHostA;
+      hostOutput = "";
+      await writer.polishEditor({
+        getSelection: () => {
+          writer.host = hostB;
+          return "switch during selection";
+        },
+        getValue: () => "",
+        replaceSelection: (value: string) => { hostOutput = value; },
+        setValue: (value: string) => { hostOutput = value; },
+      } as never);
+      expect(hostOutput).toBe("HOST B OUTPUT");
+      writer.host = originalHost;
+
+      let resolveModel!: (value: string) => void;
+      const pendingHost = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+        polishTranscript: () => new Promise<string>((resolve) => { resolveModel = resolve; }),
+      });
+      writer.host = pendingHost;
+      let currentSelection = "initial selection";
+      let replacement = "";
+      const pending = writer.polishEditor({
+        getSelection: () => currentSelection,
+        getValue: () => "whole document",
+        replaceSelection: (value: string) => { replacement = value; },
+        setValue: () => { throw new Error("initial selection must remain the write target"); },
+      } as never);
+      setActiveUiLanguage(matchUiLanguage("zh")!);
+      currentSelection = "changed while waiting";
+      resolveModel("ASYNC OUTPUT");
+      await pending;
+      expect(replacement).toBe("ASYNC OUTPUT");
+      expect(notices.slice(-2)).toEqual(["AI polishing...", "润色完成"]);
+      writer.host = originalHost;
+      let resolveFullNote!: (value: string) => void;
+      writer.host = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+        polishTranscript: () => new Promise<string>((resolve) => { resolveFullNote = resolve; }),
+      });
+      let liveSelection = "";
+      let fullDocument = "initial full document";
+      const pendingFullNote = writer.polishEditor({
+        getSelection: () => liveSelection,
+        getValue: () => fullDocument,
+        replaceSelection: () => { throw new Error("initially empty selection must keep full-document write mode"); },
+        setValue: (value: string) => { fullDocument = value; },
+      } as never);
+      liveSelection = "selection changed while waiting";
+      resolveFullNote("FULL NOTE OUTPUT");
+      await pendingFullNote;
+      expect(fullDocument).toBe("FULL NOTE OUTPUT");
+      writer.host = originalHost;
+
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      const failureCases: Array<{ value: unknown; expected: string }> = [
+        { value: new Error("service unavailable"), expected: "Polish failed: service unavailable" },
+        { value: "service string", expected: "Polish failed: service string" },
+        { value: null, expected: "Polish failed: null" },
+        { value: { message: "object failure" }, expected: "Polish failed: object failure" },
+        { value: { message: 0 }, expected: "Polish failed: [object Object]" },
+      ];
+      for (const item of failureCases) {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        try {
+          writer.host = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+            polishTranscript: async () => { throw item.value; },
+          });
+          let text = "unchanged";
+          const start = notices.length;
+          await writer.polishEditor({
+            getSelection: () => "failure input",
+            getValue: () => "whole document",
+            replaceSelection: (value: string) => { text = value; },
+            setValue: (value: string) => { text = value; },
+          } as never);
+          expect(text).toBe("unchanged");
+          expect(notices.slice(start)).toEqual(["AI polishing...", item.expected]);
+          expect(logged).toHaveBeenCalledWith(item.value);
+        } finally {
+          logged.mockRestore();
+        }
+      }
+      writer.host = originalHost;
+
+      for (const key of ["getSelection", "getValue"] as const) {
+        const failure = new Error(`${key} failure`);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        const before = notices.length;
+        try {
+          const badEditor = key === "getSelection"
+            ? { getSelection: () => { throw failure; }, getValue: () => "", replaceSelection: () => undefined, setValue: () => undefined }
+            : { getSelection: () => "", getValue: () => { throw failure; }, replaceSelection: () => undefined, setValue: () => undefined };
+          await expect(writer.polishEditor(badEditor as never)).rejects.toBe(failure);
+          expect(notices).toHaveLength(before);
+          expect(logged).not.toHaveBeenCalled();
+        } finally {
+          logged.mockRestore();
+        }
+      }
+
+      const syncFailures = [
+        new Error("mode lookup failure"),
+        new Error("synchronous model failure"),
+      ];
+      for (const [index, failure] of syncFailures.entries()) {
+        const loggedSync = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        try {
+          const failingHost = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+            polishTranscript: () => { throw failure; },
+          });
+          if (index === 0) {
+            Object.defineProperty(failingHost, "settings", {
+              configurable: true,
+              get: () => { throw failure; },
+            });
+          }
+          writer.host = failingHost;
+          let text = "original";
+          const start = notices.length;
+          await writer.polishEditor({
+            getSelection: () => "input",
+            getValue: () => "document",
+            replaceSelection: (value: string) => { text = value; },
+            setValue: (value: string) => { text = value; },
+          } as never);
+          expect(text).toBe("original");
+          expect(notices.slice(start)).toEqual(["AI polishing...", index === 0
+            ? "Polish failed: mode lookup failure"
+            : "Polish failed: synchronous model failure"]);
+          expect(loggedSync.mock.calls[0]?.[0]).toBe(failure);
+        } finally {
+          loggedSync.mockRestore();
+        }
+      }
+
+      for (const useSelection of [true, false]) {
+        for (const partialWrite of [false, true]) {
+          const writeFailure = new Error("write failure");
+          const loggedWrite = vi.spyOn(console, "error").mockImplementation(() => undefined);
+          try {
+            writer.host = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+              polishTranscript: async () => "written before failure",
+            });
+            let text = "original";
+            const start = notices.length;
+            await writer.polishEditor({
+              getSelection: () => useSelection ? "input" : "",
+              getValue: () => "document",
+              replaceSelection: (value: string) => {
+                if (useSelection) {
+                  if (partialWrite) text = value;
+                  throw writeFailure;
+                }
+              },
+              setValue: (value: string) => {
+                if (!useSelection) {
+                  if (partialWrite) text = value;
+                  throw writeFailure;
+                }
+              },
+            } as never);
+            expect(text).toBe(partialWrite ? "written before failure" : "original");
+            expect(notices.slice(start)).toEqual(["AI polishing...", "Polish failed: write failure"]);
+            expect(loggedWrite.mock.calls[0]?.[0]).toBe(writeFailure);
+          } finally {
+            loggedWrite.mockRestore();
+          }
+        }
+      }
+      writer.host = originalHost;
+
+      const getterFailure = new Error("message getter failure");
+      const failureObject = Object.defineProperty({}, "message", { get: () => { throw getterFailure; } });
+      const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        writer.host = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, polishMode: "meeting" }, {
+          polishTranscript: async () => { throw failureObject; },
+        });
+        await expect(writer.polishEditor({
+          getSelection: () => "input",
+          getValue: () => "",
+          replaceSelection: () => undefined,
+          setValue: () => undefined,
+        } as never)).rejects.toBe(getterFailure);
+        expect(logged.mock.calls[0]?.[0]).toBe(failureObject);
+      } finally {
+        logged.mockRestore();
+        writer.host = originalHost;
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
   });
   it("leaves both sources untouched when confirmation is canceled or merging fails", async () => {
     const oldFile = new obsidian.TFile("QnALog/Minutes/older.txt");
