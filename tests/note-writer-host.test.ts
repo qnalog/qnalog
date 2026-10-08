@@ -1,4 +1,4 @@
-import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage, t } from "../src/shared/i18n";
 import { labelPattern, labelText } from "../src/shared/note-labels";
 import { nsMarker, nsRe } from "../src/shared/namespace";
 import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
@@ -25,7 +25,7 @@ import * as obsidian from "obsidian";
 import { NoteWriter } from "../src/notes/note-writer";
 import type { NoteWriterHost, NoteWriterSettings, NoteWriterVault } from "../src/notes/note-writer";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
-import { attachTextTranscript } from "../src/transcript/session-transcript";
+import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { iterateNoteDetailsBlocks } from "../src/notes/note-document";
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
@@ -1760,6 +1760,211 @@ describe("NoteWriter polish execution boundaries", () => {
     } finally {
       vi.unstubAllGlobals();
       if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+});
+describe("NoteWriter merge source execution boundaries", () => {
+  it("normalizes v2 source offsets without writing and persists a legacy ledger before returning", async () => {
+    const originalLanguage = getActiveUiLanguage();
+    const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+    const moment = (value: string | Date) => {
+      const date = new Date(value);
+      return { isValid: () => Number.isFinite(date.getTime()), toDate: () => date };
+    };
+    vi.stubGlobal("window", { moment });
+    try {
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      const file = new obsidian.TFile("QnALog/Minutes/merge-source.md");
+      const firstText = "FIRST $& $` $' $$";
+      const secondText = "SECOND $& $` $' $$";
+      const first = attachTextTranscript({
+        index: 2, startOffsetMs: 1_000, endOffsetMs: 3_000,
+        audioStartOffsetMs: 100, audioEndOffsetMs: 2_100,
+        sourceName: "Original source", sourcePath: "Notes/original.md",
+        text: firstText, rawText: firstText, isFinal: true,
+      }, "merge-source", "text-import");
+      const second = attachTextTranscript({
+        index: 7, startOffsetMs: 4_000, endOffsetMs: 6_000,
+        text: secondText, rawText: secondText, isFinal: true,
+      }, "merge-source", "text-import");
+      const original = `# Source\n\n${serializeTranscriptBlock(first, "### Segment 3", firstText)}\n\n${serializeTranscriptBlock(second, "### Segment 8", secondText)}`;
+      const fm = { qnalog_mode: "meeting", qnalog_time: "2026-09-14T11:00:00.000Z" };
+      const vault = memoryVault([{ file, markdown: original }]);
+      const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS, {
+        getFileFrontmatter: () => fm,
+      }));
+      const modify = vault.vault.modify;
+      vault.vault.modify = async () => { throw new Error("unexpected v2 write"); };
+      const source = await writer.readMergeSourceFromMarkdown(file, 10_000, 5);
+      expect(source).toMatchObject({
+        file, content: original, frontmatter: fm, mode: "meeting",
+        startedAt: "2026-09-14T11:00:00.000Z", rawDurationMs: 6_000,
+      });
+      expect(source.segments.map(segment => ({
+        index: segment.index, startOffsetMs: segment.startOffsetMs, endOffsetMs: segment.endOffsetMs,
+        audioStartOffsetMs: segment.audioStartOffsetMs, audioEndOffsetMs: segment.audioEndOffsetMs,
+        sourceName: segment.sourceName, sourcePath: segment.sourcePath, text: segment.text,
+      }))).toEqual([
+        { index: 5, startOffsetMs: 11_000, endOffsetMs: 13_000, audioStartOffsetMs: 100, audioEndOffsetMs: 2_100,
+          sourceName: "Original source", sourcePath: "Notes/original.md", text: `【来源纪要：${file.basename}】\n${firstText}` },
+        { index: 6, startOffsetMs: 14_000, endOffsetMs: 16_000, audioStartOffsetMs: 4_000, audioEndOffsetMs: 6_000,
+          sourceName: file.basename, sourcePath: file.path, text: secondText },
+      ]);
+      vault.vault.modify = modify;
+      expect(readTranscriptBlocks(await vault.vault.read(file)).map(block => block.visibleBlock)).toEqual([firstText, secondText]);
+      const editedFile = new obsidian.TFile("QnALog/Minutes/edited-source.md");
+      const editedMarkdown = original.replace(firstText, "EDITED visible text");
+      const editedVault = memoryVault([{ file: editedFile, markdown: editedMarkdown }]);
+      const editedWriter = new NoteWriter(unexpectedHost(editedVault.vault, DEFAULT_SETTINGS, { getFileFrontmatter: () => fm }));
+      const edited = await editedWriter.readMergeSourceFromMarkdown(editedFile, 0, 0);
+      const editedBlock = readTranscriptBlocks(await editedVault.vault.read(editedFile))[0];
+      expect(editedBlock.segment.transcript?.sourceId).toBe("merge-source");
+      expect(editedBlock.segment.transcript?.revisions.map(revision => revision.source)).toEqual(["text-import", "edited-transcript"]);
+      expect(getCurrentTranscript(editedBlock.segment.transcript!).rawText).toBeNull();
+      expect(edited.segments[0].text).toBe(`【来源纪要：${editedFile.basename}】\nEDITED visible text`);
+
+      const zeroFile = new obsidian.TFile("QnALog/Minutes/zero-duration.md");
+      const zeroSegment = attachTextTranscript({
+        index: 0, startOffsetMs: 0, endOffsetMs: 0, text: "时长：00:12", isFinal: true,
+      }, "zero-duration", "text-import");
+      const zeroMarkdown = `# Zero\n\n${serializeTranscriptBlock(zeroSegment, "### Segment 1", zeroSegment.text)}`;
+      const zeroVault = memoryVault([{ file: zeroFile, markdown: zeroMarkdown }]);
+      const zeroWriter = new NoteWriter(unexpectedHost(zeroVault.vault, DEFAULT_SETTINGS, { getFileFrontmatter: () => ({}) }));
+      const zero = await zeroWriter.readMergeSourceFromMarkdown(zeroFile, 0, 0);
+      expect(zero.rawDurationMs).toBe(12_000);
+      expect(zero.segments[0]).toMatchObject({ startOffsetMs: 0, endOffsetMs: 0, audioStartOffsetMs: 0, audioEndOffsetMs: 0 });
+
+      const legacyFile = new obsidian.TFile("QnALog/Minutes/merge-legacy.md");
+      const legacyText = "FIRST $& $` $' $$";
+      const legacy = "# Legacy\n\n<!-- qnalog-session:merge-legacy -->\n<!-- qnalog-segments-start:merge-legacy -->\n### Segment 1 (00:00–00:10) [[old.wav|00:00]]\n\n<!-- qnalog-transcribe-task:task-legacy -->\n" +
+        `${legacyText}\n<!-- qnalog-segments-end:merge-legacy -->`;
+      const legacyVault = memoryVault([{ file: legacyFile, markdown: legacy }]);
+      const legacyWriter = new NoteWriter(unexpectedHost(legacyVault.vault, DEFAULT_SETTINGS, { getFileFrontmatter: () => ({}) }));
+      const migrated = await legacyWriter.readMergeSourceFromMarkdown(legacyFile, 0, 0);
+      const migratedBytes = await legacyVault.vault.read(legacyFile);
+      expect(migrated.content).toBe(migratedBytes);
+      expect(migrated.rawDurationMs).toBe(10_000);
+      expect(migrated.segments[0].text).toBe(`【来源纪要：${legacyFile.basename}】\n${legacyText}`);
+      const block = readTranscriptBlocks(migratedBytes)[0];
+      expect(block.segment.transcript?.sourceId).toBe("merge-legacy");
+      const revision = getCurrentTranscript(block.segment.transcript!);
+      expect(revision.source).toBe("legacy-transcript");
+      expect(revision.rawText).toBeNull();
+      expect(block.visibleBlock).toContain(`<!-- qnalog-transcribe-task:task-legacy -->`);
+      expect(block.visibleBlock).toContain(legacyText);
+      const noSecondWrite = legacyVault.vault.modify;
+      legacyVault.vault.modify = async () => { throw new Error("unexpected repeated ledger write"); };
+      const again = await legacyWriter.readMergeSourceFromMarkdown(legacyFile, 0, 0);
+      expect(again.content).toBe(migratedBytes);
+      legacyVault.vault.modify = noSecondWrite;
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      if (previousWindow === undefined) vi.unstubAllGlobals();
+      else vi.stubGlobal("window", previousWindow);
+    }
+  });
+
+  it("rejects invalid sources before reading and preserves read/modify failures", async () => {
+    const originalLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      const file = new obsidian.TFile("QnALog/Minutes/no-transcript.md");
+      const vault = memoryVault([{ file, markdown: "# No transcript" }]);
+      let metadataReads = 0;
+      const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS, {
+        getFileFrontmatter: () => { metadataReads += 1; return {}; },
+      }));
+      for (const invalid of [null, { path: "folder", children: [] }, new obsidian.TFile("source.txt")]) {
+        await expect(writer.readMergeSourceFromMarkdown(invalid, 0, 0))
+          .rejects.toThrow(t("Only QnALog Markdown minutes notes can be merged"));
+      }
+      expect(metadataReads).toBe(0);
+      const readFailure = new Error("source read failed");
+      vault.vault.read = async () => { throw readFailure; };
+      await expect(writer.readMergeSourceFromMarkdown(file, 0, 0)).rejects.toBe(readFailure);
+      expect(metadataReads).toBe(0);
+      const emptyVault = memoryVault([{ file, markdown: "# No transcript" }]);
+      const emptyWriter = new NoteWriter(unexpectedHost(emptyVault.vault, DEFAULT_SETTINGS, {
+        getFileFrontmatter: () => { metadataReads += 1; return {}; },
+      }));
+      await expect(emptyWriter.readMergeSourceFromMarkdown(file, 0, 0))
+        .rejects.toThrow(t("No original transcription segments found in \"{0}\"").replace("{0}", file.basename));
+      setActiveUiLanguage(matchUiLanguage("zh")!);
+      const chineseFile = new obsidian.TFile("QnALog/Minutes/no-transcript-zh.md");
+      const chineseVault = memoryVault([{ file: chineseFile, markdown: "# No transcript" }]);
+      const chineseWriter = new NoteWriter(unexpectedHost(chineseVault.vault, DEFAULT_SETTINGS, {
+        getFileFrontmatter: () => { metadataReads += 1; return {}; },
+      }));
+      await expect(chineseWriter.readMergeSourceFromMarkdown(chineseFile, 0, 0))
+        .rejects.toThrow(t("No original transcription segments found in \"{0}\"").replace("{0}", chineseFile.basename));
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      const damagedFile = new obsidian.TFile("QnALog/Minutes/damaged.md");
+      const damaged = "# Damaged\n<!-- qnalog-transcript-start:bad -->\n<!-- qnalog-transcript-data {bad} -->\n";
+      const damagedVault = memoryVault([{ file: damagedFile, markdown: damaged }]);
+      const damagedWriter = new NoteWriter(unexpectedHost(damagedVault.vault, DEFAULT_SETTINGS, {
+        getFileFrontmatter: () => { metadataReads += 1; return {}; },
+      }));
+      await expect(damagedWriter.readMergeSourceFromMarkdown(damagedFile, 0, 0)).rejects.toThrow();
+      expect(await damagedVault.vault.read(damagedFile)).toBe(damaged);
+      expect(metadataReads).toBe(0);
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
+  });
+  it("uses the current vault on modification and reads frontmatter before mode but time after mode", async () => {
+    const originalLanguage = getActiveUiLanguage();
+    const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+    const moment = (value: string | Date) => {
+      const date = new Date(value);
+      return { isValid: () => Number.isFinite(date.getTime()), toDate: () => date };
+    };
+    vi.stubGlobal("window", { moment });
+    try {
+      setActiveUiLanguage(matchUiLanguage("en")!);
+      const file = new obsidian.TFile("QnALog/Minutes/dynamic-source.md");
+      const sourceText = "Legacy source text";
+      const legacy = `<!-- qnalog-session:dynamic-source -->\n<!-- qnalog-segments-start:dynamic-source -->\n### Segment 1 (00:00–00:10) [[old.wav|00:00]]\n\n<!-- qnalog-transcribe-task:task-dynamic -->\n${sourceText}\n\n<!-- qnalog-segments-end:dynamic-source -->`;
+      const vaultA = memoryVault([{ file, markdown: legacy }]);
+      const vaultB = memoryVault([{ file, markdown: "# Target B\n\nTARGET B" }]);
+      let activeVault = vaultA.vault;
+      const host = unexpectedHost(vaultA.vault, DEFAULT_SETTINGS, {
+        getFileFrontmatter: () => ({ qnalog_mode: "meeting", qnalog_time: "2026-09-14T11:00:00.000Z" }),
+      });
+      Object.defineProperty(host, "vault", { get: () => activeVault });
+      const writer = new NoteWriter(host);
+      let firstMetadata: { qnalog_mode: string; qnalog_time: string } | undefined;
+      let reads = 0;
+      host.getFileFrontmatter = () => {
+        reads += 1;
+        if (reads === 1) {
+          firstMetadata = { qnalog_mode: "meeting", qnalog_time: "2026-09-14T11:00:00.000Z" };
+          return firstMetadata;
+        }
+        firstMetadata!.qnalog_time = "2026-09-14T11:30:00.000Z";
+        return { qnalog_mode: "seminar" };
+      };
+      const originalModify = vaultB.vault.modify;
+      const originalRead = vaultA.vault.read;
+      vaultA.vault.read = async () => {
+        const content = await originalRead(file);
+        activeVault = vaultB.vault;
+        vaultB.vault.modify = async (target, contentToWrite) => {
+          await originalModify(target, contentToWrite);
+        };
+        return content;
+      };
+      const result = await writer.readMergeSourceFromMarkdown(file, 0, 0);
+      expect(await vaultA.vault.read(file)).toBe(legacy);
+      expect(await vaultB.vault.read(file)).toContain("qnalog-transcript-data");
+      expect(await vaultB.vault.read(file)).not.toContain("TARGET B");
+      expect(result.frontmatter).toBe(firstMetadata);
+      expect(result.mode).toBe("seminar");
+      expect(result.startedAt).toBe("2026-09-14T11:30:00.000Z");
+      expect(reads).toBe(2);
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      if (previousWindow === undefined) vi.unstubAllGlobals();
+      else vi.stubGlobal("window", previousWindow);
     }
   });
 });

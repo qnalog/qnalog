@@ -24,6 +24,11 @@ import { serializeContinuationSegmentBlock } from "./note-transcript-materials";
 import { rewriteConsolidatedFlow, appendPolishBlockFlow, type NotePolishFlowHost } from "./note-polish-flow";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
 import {
+  readMergeSourceFlow,
+  type NoteMergeSource,
+  type NoteMergeSourceFlowHost,
+} from "./note-merge-source-flow";
+import {
   appendNoteText,
   insertBeforeSessionSegmentsEnd,
   insertBeforeSessionSegmentsStart,
@@ -68,6 +73,7 @@ export class NoteWriter {
   private readonly notePolishFlowHost: NotePolishFlowHost;
   private readonly continuationCommitHost: ContinuationCommitFlowHost;
   private readonly outlineNoteStoreHost: OutlineNoteStoreHost;
+  private readonly noteMergeSourceFlowHost: NoteMergeSourceFlowHost;
   private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
@@ -80,6 +86,19 @@ export class NoteWriter {
       getSegmentAudioLinkOffsetMs: (segment) => getSegmentAudioLinkOffsetMs(segment),
       buildEmptyBody: () => buildEmptyLlmOutputFallback(),
       formatFailureIssue: (issue) => formatLlmFailureIssue(issue),
+    };
+    this.noteMergeSourceFlowHost = {
+      getVault: () => this.host.vault,
+      getSourceIdFromMarkdown: (markdown, file) => getSourceIdFromMarkdown(markdown, file),
+      ensureTranscriptBlocks: (markdown, sourceId) => ensureTranscriptBlocks(markdown, sourceId),
+      extractTranscriptSegments: (markdown) => extractTranscriptSegments(markdown),
+      getFileFrontmatter: (file) => this.host.getFileFrontmatter(file),
+      getSegmentsDurationMs: (segments) => getSegmentsDurationMs(segments),
+      getDurationMs: (markdown) => getDurationMs(markdown),
+      normalizeSegmentsForMergedNote: (segments, offsetMs, startIndex, file) =>
+        normalizeSegmentsForMergedNote(segments, offsetMs, startIndex, file),
+      detectModeFromMarkdown: (file) => this.detectModeFromMarkdown(file),
+      inferNoteStartedAtIso: (file, frontmatter) => inferNoteStartedAtIso(file, frontmatter),
     };
     this.outlineNoteStoreHost = { getVault: () => this.host.vault };
     this.noteSegmentStoreHost = {
@@ -300,38 +319,8 @@ export class NoteWriter {
       .sort((a, b) => b.timestamp - a.timestamp)[0];
     return older && older.file instanceof obsidian.TFile ? older.file : null;
   }
-  async readMergeSourceFromMarkdown(file, offsetMs, startIndex) {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-      throw new Error(t("Only QnALog Markdown minutes notes can be merged"));
-    }
-    let content = await this.host.vault.read(file);
-    const sourceId = getSourceIdFromMarkdown(content, file);
-    const transcriptReady = ensureTranscriptBlocks(content, sourceId);
-    if (transcriptReady !== content) {
-      await this.host.vault.modify(file, transcriptReady);
-      content = transcriptReady;
-    }
-    const rawSegments = extractTranscriptSegments(content);
-    if (!rawSegments.length) {
-      throw new Error(t("No original transcription segments found in \"{0}\"").replace("{0}", file.basename));
-    }
-    const frontmatter = this.host.getFileFrontmatter(file) || {};
-    const rawDurationMs = getSegmentsDurationMs(rawSegments) || getDurationMs(content);
-    const segments = normalizeSegmentsForMergedNote(rawSegments, offsetMs, startIndex, file);
-    if (segments.length) {
-      segments[0] = Object.assign({}, segments[0], {
-        text: `【来源纪要：${file.basename}】\n${segments[0].text || ""}`.trim(),
-      });
-    }
-    return {
-      file,
-      content,
-      frontmatter,
-      mode: this.detectModeFromMarkdown(file),
-      startedAt: inferNoteStartedAtIso(file, frontmatter),
-      rawDurationMs,
-      segments,
-    };
+  readMergeSourceFromMarkdown(file: unknown, offsetMs: number, startIndex: number): Promise<NoteMergeSource> {
+    return readMergeSourceFlow(this.noteMergeSourceFlowHost, file, offsetMs, startIndex);
   }
   async mergeMarkdownFileWithPrevious(file) {
     if (!(file instanceof obsidian.TFile)) return;
@@ -350,7 +339,7 @@ export class NoteWriter {
     }
   }
   async mergeMarkdownFilesAsNew(files) {
-    const sources = [];
+    const sources: NoteMergeSource[] = [];
     let offsetMs = 0;
     let startIndex = 0;
     for (const file of files || []) {
