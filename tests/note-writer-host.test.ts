@@ -1969,6 +1969,63 @@ describe("NoteWriter merge source execution boundaries", () => {
   });
 });
 
+describe("NoteWriter merge confirmation literal preservation", () => {
+  it.each(["en", "zh"] as const)("preserves source basenames literally in %s confirmation", async (language) => {
+    const originalLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      const titlePairs = [
+        ["Source $& $` $' $$", "plain"],
+        ["source", "Current $& $` $' $$"],
+        ["Source {1}", "Current {0}"],
+        ["source", "plain"],
+      ] as const;
+      const confirmations: Array<{ title: string; body: string; ctaText: string } | undefined> = [];
+      const expectedConfirmations: Array<{ title: string; body: string; ctaText: string }> = [];
+      for (const [previousTitle, currentTitle] of titlePairs) {
+        const previousFile = new obsidian.TFile(`QnALog/Minutes/${previousTitle}.md`);
+        const currentFile = new obsidian.TFile(`QnALog/Minutes/${currentTitle}.md`);
+        const previousMarkdown = "PREVIOUS SOURCE BYTES";
+        const currentMarkdown = "CURRENT SOURCE BYTES";
+        const vault = memoryVault([
+          { file: previousFile, markdown: previousMarkdown },
+          { file: currentFile, markdown: currentMarkdown },
+        ]);
+        let confirmed: { title: string; body: string; ctaText: string } | undefined;
+        const host = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS }, {
+          getRecentNotes: () => [
+            { file: currentFile, timestamp: 2 },
+            { file: previousFile, timestamp: 1 },
+          ],
+          confirm: async (title, body, ctaText) => {
+            confirmed = { title, body, ctaText };
+            return false;
+          },
+        });
+        const writer = new NoteWriter(host);
+        await writer.mergeMarkdownFileWithPrevious(currentFile);
+        const expectedBody = language === "en"
+          ? "A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. "
+            + previousFile.basename + "\n2. " + currentFile.basename + "\n\nContinue?"
+          : "将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. "
+            + previousFile.basename + "\n2. " + currentFile.basename + "\n\n继续合并？";
+        confirmations.push(confirmed);
+        expectedConfirmations.push({
+          title: language === "en" ? "Merge minutes" : "合并纪要",
+          body: expectedBody,
+          ctaText: language === "en" ? "Merge" : "合并",
+        });
+        expect([...vault.files.keys()]).toEqual([previousFile.path, currentFile.path]);
+        expect(await vault.vault.read(previousFile)).toBe(previousMarkdown);
+        expect(await vault.vault.read(currentFile)).toBe(currentMarkdown);
+      }
+      expect(confirmations).toEqual(expectedConfirmations);
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
+  });
+});
+
 describe("NoteWriter merge metadata literal preservation", () => {
   const sources = [
     { path: "Notes/Source $& $` $' $$.md", title: "Source $& $` $' $$", durationMs: 1000 },
@@ -2043,7 +2100,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
     }
   });
 
-  it("writes literal source metadata through the complete merge consumer", async () => {
+  it.each(["direct", "confirmed"] as const)("writes literal source metadata through the complete %s merge consumer", async (route) => {
     const originalLanguage = getActiveUiLanguage();
     const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
     vi.useFakeTimers();
@@ -2078,7 +2135,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
         ...DEFAULT_SETTINGS, autoRenameWithTitle: false, mdFolder: "QnALog/Minutes",
         llmModel: "metadata-test-model",
       };
-      const host = unexpectedHost(vault.vault, settings, {
+      const overrides: Partial<NoteWriterHost> = {
         ensureFolder: async () => undefined,
         findAvailableMarkdownPath: () => targetPath,
         getFileFrontmatter: (file) => ({
@@ -2090,9 +2147,29 @@ describe("NoteWriter merge metadata literal preservation", () => {
         clearCommittedBriefingCheckpoint: async () => undefined,
         noteIndex: { refreshNoteIndexSafely: async (file) => { refreshed.push(file); } },
         openFile: async (file) => { opened.push(file); },
-      });
+      };
+      if (route === "confirmed") {
+        overrides.getRecentNotes = () => [
+          { file: sourceFiles[1].file, timestamp: 2 },
+          { file: sourceFiles[0].file, timestamp: 1 },
+        ];
+        overrides.confirm = async (title, body, ctaText) => {
+          expect({ title, body, ctaText }).toEqual({
+            title: "Merge minutes",
+            body: "A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. "
+              + sourceFiles[0].file.basename + "\n2. " + sourceFiles[1].file.basename + "\n\nContinue?",
+            ctaText: "Merge",
+          });
+          return true;
+        };
+      }
+      const host = unexpectedHost(vault.vault, settings, overrides);
       const writer = new NoteWriter(host);
-      await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
+      if (route === "confirmed") {
+        await writer.mergeMarkdownFileWithPrevious(sourceFiles[1].file);
+      } else {
+        await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
+      }
       const merged = vault.files.get(targetPath);
       expect(merged).toBeDefined();
       const actual = await vault.vault.read(merged!.file);

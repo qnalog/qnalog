@@ -1076,6 +1076,62 @@ async function main() {
       files.delete(metadataSmokePath);
     }
 
+    const confirmationOriginalHost = plugin.noteWriter.host;
+    const confirmationResults = [];
+    const confirmationLlmCallsBefore = llmCalls.length;
+    try {
+      const titles = [
+        ["Source $& $` $' $$", "plain"],
+        ["source", "Current $& $` $' $$"],
+        ["Source {1}", "Current {0}"],
+        ["source", "plain"],
+      ];
+      for (const [previousTitle, currentTitle] of titles) {
+        const previousFile = new TFile(`QnALog/ConfirmationSmoke/${previousTitle}.md`);
+        const currentFile = new TFile(`QnALog/ConfirmationSmoke/${currentTitle}.md`);
+        let confirmed = null;
+        const blockedVault = Object.create(confirmationOriginalHost.vault);
+        Object.defineProperties(blockedVault, {
+          read: { value: async () => { throw new Error("cancel confirmation unexpectedly read a source note"); } },
+          modify: { value: async () => { throw new Error("cancel confirmation unexpectedly modified a source note"); } },
+          create: { value: async () => { throw new Error("cancel confirmation unexpectedly created a note"); } },
+        });
+        const confirmationHost = Object.create(confirmationOriginalHost);
+        Object.defineProperties(confirmationHost, {
+          vault: { value: blockedVault },
+          getRecentNotes: { value: () => [
+            { file: currentFile, timestamp: 2 },
+            { file: previousFile, timestamp: 1 },
+          ] },
+          confirm: { value: async (title, body, ctaText) => {
+            confirmed = { title, body, ctaText };
+            return false;
+          } },
+        });
+        plugin.noteWriter.host = confirmationHost;
+        await plugin.noteWriter.mergeMarkdownFileWithPrevious(currentFile);
+        const expectedBody = "将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. "
+          + previousFile.basename + "\n2. " + currentFile.basename + "\n\n继续合并？";
+        const expected = {
+          title: "合并纪要",
+          body: expectedBody,
+          ctaText: "合并",
+        };
+        if (JSON.stringify(confirmed) !== JSON.stringify(expected)) {
+          throw new Error(`confirmation did not preserve source basenames: ${JSON.stringify(confirmed)}`);
+        }
+        confirmationResults.push(confirmed);
+      }
+      if (llmCalls.length !== confirmationLlmCallsBefore) {
+        throw new Error("cancel confirmation sent an LLM request");
+      }
+      console.log(`[merge-confirmation-literal] cancel digest: ${createHash("sha256").update(JSON.stringify(confirmationResults)).digest("hex")}`);
+    } catch (error) {
+      failures.push(`合并确认来源标题字面保全冒烟失败：${(error && error.message) || error}`);
+    } finally {
+      plugin.noteWriter.host = confirmationOriginalHost;
+    }
+
     let recorderBeforeLifecycleSmoke = null;
     let momentBeforeLifecycleSmoke = null;
     let lifecycleSettingsBefore = null;
