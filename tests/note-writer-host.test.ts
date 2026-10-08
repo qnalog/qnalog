@@ -1,3 +1,7 @@
+import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { labelText } from "../src/shared/note-labels";
+import { nsMarker } from "../src/shared/namespace";
+import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
 import { describe, expect, it, vi } from "vitest";
 
 const notices: string[] = [];
@@ -160,6 +164,117 @@ describe("NoteWriter narrow host capabilities", () => {
       expect(readTranscriptBlocks(appended).map(block => block.visibleBlock)).toEqual([sourceText]);
       expect(appended.endsWith("<!-- qnalog-continuation-committed:append-session -->\n")).toBe(true);
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("preserves raw segment materials and ledger across rewrite in both UI languages", async () => {
+    const path = "QnALog/Minutes/raw-materials.md";
+    const file = new obsidian.TFile(path);
+    const audioName = "原音-$&-$`-$'-$$.webm";
+    const sourceText = "中文原文\n$& $` $' $$";
+    const segment0 = attachTextTranscript({
+      index: 0, startOffsetMs: 2_000, endOffsetMs: 5_000,
+      audioStartOffsetMs: 18_000, audioEndOffsetMs: 21_000, audioName, text: sourceText,
+    }, "raw-materials", "text-import");
+    const segment2 = attachTextTranscript({
+      index: 2, startOffsetMs: 5_000, endOffsetMs: 6_000,
+      audioStartOffsetMs: 0, audioEndOffsetMs: 1_000, audioName: "retry.webm",
+      text: "不得显示的错误旧文本", error: "temporary failure", queueTaskId: "raw-retry",
+    }, "raw-materials", "text-import");
+    const segment5 = attachTextTranscript({
+      index: 5, startOffsetMs: 6_000, endOffsetMs: 7_000,
+      text: "不得显示的失败旧文本", error: "permanent failure",
+    }, "raw-materials", "text-import");
+    const segment7: Segment = {
+      index: 7, startOffsetMs: 7_000, endOffsetMs: 8_000,
+      text: "", queueTaskId: "legacy-retry", error: "temporary failure",
+    };
+    const segment9: Segment = {
+      index: 9, startOffsetMs: 8_000, endOffsetMs: 9_000,
+      text: "", isFinal: true,
+    };
+    const segments = [segment0, segment2, segment5, segment7, segment9];
+    const segmentSnapshot = structuredClone(segments);
+    const vault = memoryVault([{ file, markdown: "# Existing note\n" }]);
+    const writer = new NoteWriter(unexpectedHost(vault.vault, {
+      ...DEFAULT_SETTINGS, llmModel: "consumer-test-model",
+    }));
+    const originalLanguage = getActiveUiLanguage();
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-10-08 08:00" }) });
+    try {
+      for (const language of ["zh", "en"]) {
+        setActiveUiLanguage(matchUiLanguage(language)!);
+        const session: RecordingSession = {
+          id: "raw-materials",
+          sessionStamp: "raw-materials",
+          startedAt: "2026-10-08T08:00:00.000Z",
+          mdPath: path,
+          mode: "meeting",
+          source: "recording",
+          multiSourceAudio: true,
+          segments,
+          finalized: true,
+        };
+        const marker = nsMarker("segments-start", session.id);
+        const endMarker = nsMarker("segments-end", session.id);
+        const expected0 = serializeTranscriptBlock(
+          segment0,
+          `### ${labelText("segment", 1)} (00:02–00:05) [[${audioName}|00:18]]`,
+          sourceText,
+        );
+        const expected2 = serializeTranscriptBlock(
+          segment2,
+          `### ${labelText("segment", 3)} (00:05–00:06) [[retry.webm|00:00]]\n\n${nsMarker("transcribe-task", "raw-retry")}`,
+          getTranscribeSegmentPlaceholder(segment2.error, { retryable: true }),
+        );
+        const expected5 = serializeTranscriptBlock(
+          segment5,
+          `### ${labelText("segment", 6)} (00:06–00:07) `,
+          getTranscribeSegmentPlaceholder(segment5.error, { retryable: false }),
+        );
+        const expectedRaw = [
+          expected0,
+          expected2,
+          expected5,
+          `### ${labelText("segment", 8)} (00:07–00:08) \n\n${nsMarker("transcribe-task", "legacy-retry")}\n${getTranscribeSegmentPlaceholder(segment7.error, { retryable: true })}\n`,
+          `### ${labelText("segment", 10)} (00:08–00:09)  · 结束\n\n${labelText("noContentSegment")}\n`,
+        ].join("\n");
+        await writer.rewriteConsolidated(session, "Rewrite body");
+        const first = await vault.vault.read(file);
+        const start = first.indexOf(marker);
+        const end = first.indexOf(endMarker);
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(end).toBeGreaterThan(start);
+        expect(first.slice(start, end)).toBe(`${marker}\n\n${expectedRaw}\n`);
+        const blocks = readTranscriptBlocks(first);
+        expect(blocks.map(block => block.visibleBlock)).toEqual([
+          sourceText,
+          getTranscribeSegmentPlaceholder(segment2.error, { retryable: true }),
+          getTranscribeSegmentPlaceholder(segment5.error, { retryable: false }),
+        ]);
+        expect(blocks.map(block => block.segment.transcript?.sourceId)).toEqual(["raw-materials", "raw-materials", "raw-materials"]);
+        expect(blocks.map(block => block.segment.transcript?.currentRevision)).toEqual([
+          segment0.transcript!.currentRevision,
+          segment2.transcript!.currentRevision,
+          segment5.transcript!.currentRevision,
+        ]);
+        expect(blocks.map(block => {
+          const transcript = block.segment.transcript!;
+          return transcript.revisions.find(revision => revision.revision === transcript.currentRevision)?.rawText;
+        })).toEqual([sourceText, "不得显示的错误旧文本", "不得显示的失败旧文本"]);
+        await writer.rewriteConsolidated(session, "Rewrite body");
+        expect(await vault.vault.read(file)).toBe(first);
+        expect(segments).toEqual(segmentSnapshot);
+
+        await writer.rewriteConsolidated({ ...session, source: "text-import" }, "Rewrite body");
+        const imported = await vault.vault.read(file);
+        expect(imported).not.toContain(marker);
+        expect(imported).not.toContain(endMarker);
+        expect(imported).not.toContain(nsMarker("transcribe-task", "raw-retry"));
+        expect(imported).not.toContain(nsMarker("transcribe-task", "legacy-retry"));
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
       vi.unstubAllGlobals();
     }
   });
