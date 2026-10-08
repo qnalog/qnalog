@@ -903,6 +903,53 @@ async function main() {
         };
       };
       sandbox.moment = writerMoment;
+      const originalInferenceHost = plugin.noteWriter.host;
+      try {
+        plugin.settings.polishMode = "off";
+        const modeCases = [
+          ["Untitled.md", { qnalog_mode: "off", qnalog_type: "会议" }, "off"],
+          ["Untitled.md", { qnalog_mode: "cleanscript", tags: ["off", "unknown", "qnalog/seminar", "meeting"] }, "seminar"],
+          ["Synthesis minutes - Probe.md", undefined, "synthesis"],
+          ["Recording - Probe.md", undefined, null],
+          ["Untitled.md", { qnalog_type: "学习视频" }, "learning"],
+          ["Untitled.md", { 类型: "讨论" }, "huddle"],
+          ["Untitled.md", { qnalog_mode: "unknown", tags: ["meeting"] }, null],
+          ["Untitled.md", { qnalog_type: "unknown", template: "会议" }, null],
+          ["Untitled.md", { qnalog_type: "", template: "会议" }, "meeting"],
+          ["Untitled.md", { qnalog_mode: "cleanscript" }, "meeting"],
+        ];
+        for (const [basename, frontmatter, expected] of modeCases) {
+          const probeFile = new TFile(`QnALog/WriterSmoke/${basename}`);
+          probeFile.basename = String(basename).replace(/\.md$/i, "");
+          const probeHost = Object.create(originalInferenceHost);
+          Object.defineProperties(probeHost, {
+            settings: { value: { ...plugin.settings, polishMode: "off" } },
+            getFileFrontmatter: { value: () => frontmatter },
+          });
+          plugin.noteWriter.host = probeHost;
+          const actual = plugin.noteWriter.detectModeFromMarkdown(probeFile);
+          if (actual !== expected) throw new Error(`mode inference mismatch for ${basename}: expected ${expected}, got ${actual}`);
+        }
+        const sourceProbeHost = Object.create(originalInferenceHost);
+        Object.defineProperty(sourceProbeHost, "getFileFrontmatter", {
+          value: (file) => ({
+            ...originalInferenceHost.getFileFrontmatter(file),
+            qnalog_mode: "cleanscript",
+            tags: ["unknown", "monologue"],
+          }),
+        });
+        plugin.noteWriter.host = sourceProbeHost;
+        const sourceProbe = await plugin.noteWriter.readMergeSourceFromMarkdown(sourceA.file, 7000, 5);
+        if (sourceProbe.mode !== "monologue" || sourceProbe.content !== sourceA.content
+          || sourceProbe.segments[0]?.transcript?.sourceId !== "writer-source-a"
+          || sourceA.file._content !== sourceA.content) {
+          throw new Error("live merge-source inference did not preserve selected mode, transcript ownership, and source bytes");
+        }
+      } finally {
+        plugin.noteWriter.host = originalInferenceHost;
+      }
+      console.log("[note-mode-inference] OK: mode precedence and clean-state source reading preserved");
+      plugin.settings.polishMode = "monologue";
       const sourceAResult = await plugin.noteWriter.readMergeSourceFromMarkdown(sourceA.file, 7000, 5);
       const sourceBResult = await plugin.noteWriter.readMergeSourceFromMarkdown(sourceB.file, 8000, 6);
       const sourceResults = [sourceAResult, sourceBResult];

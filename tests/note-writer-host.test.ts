@@ -2953,6 +2953,66 @@ describe("NoteWriter merge metadata literal preservation", () => {
       expect(opened).toEqual([merged!.file]);
     });
   });
+  it("uses inferred source modes through the complete merge consumer and preserves source notes", async () => {
+    await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
+      const sourceIds = ["writer-source-a", "writer-source-b"];
+      const rawTexts = ["Writer source A transcript remains intact.", "Writer source B transcript remains intact."];
+      const sourceBytes = sourceFiles.map((source, index) => {
+        const time = index === 0 ? "2026-10-08T11:00:00.000Z" : "2026-10-08T11:01:00.000Z";
+        const segment = attachTextTranscript({
+          index: 0, startOffsetMs: 0, endOffsetMs: 1000,
+          text: rawTexts[index], rawText: rawTexts[index], isFinal: true,
+        }, sourceIds[index], "text-import");
+        const content = [
+          "---", `qnalog_time: ${time}`, "---", "",
+          `<!-- qnalog-segments-start:${sourceIds[index]} -->`,
+          serializeTranscriptBlock(segment, "### Text source 1", rawTexts[index]),
+          `<!-- qnalog-segments-end:${sourceIds[index]} -->`,
+        ].join("\n");
+        source.content = content;
+        vault.files.get(source.file.path)!.markdown = content;
+        return content;
+      });
+      const sourceCaches = new Map([
+        [sourceFiles[0].file.path, {
+          qnalog_mode: "cleanscript", tags: ["unknown", "qnalog/meeting"],
+          qnalog_time: "2026-10-08T11:00:00.000Z",
+        }],
+        [sourceFiles[1].file.path, {
+          qnalog_mode: "unknown", qnalog_type: "学习视频",
+          qnalog_time: "2026-10-08T11:01:00.000Z",
+        }],
+      ]);
+      host.getFileFrontmatter = file => sourceCaches.get(file.path);
+      const first = await writer.readMergeSourceFromMarkdown(sourceFiles[0].file, 0, 0);
+      const second = await writer.readMergeSourceFromMarkdown(sourceFiles[1].file, 1000, 1);
+      expect([first.mode, second.mode]).toEqual(["meeting", "learning"]);
+      await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
+
+      const mergedEntry = vault.files.get(targetPath);
+      expect(mergedEntry).toBeDefined();
+      const merged = await vault.vault.read(mergedEntry!.file);
+      expect(merged).toContain("MERGED BODY");
+      expect(merged.match(/^# .+ · Study notes$/m)?.[0]).toBeDefined();
+      expect(payloadFrom(merged).sources).toEqual(sourceFiles.map(({ file }) => ({
+        path: file.path, title: file.basename, durationMs: 1000,
+      })));
+      expect(readTranscriptBlocks(merged)
+        .filter(block => sourceIds.includes(block.segment.transcript?.sourceId ?? ""))
+        .map(block => ({
+          sourceId: block.segment.transcript?.sourceId,
+          rawText: getCurrentTranscript(block.segment.transcript!).rawText,
+          startOffsetMs: block.segment.startOffsetMs,
+          endOffsetMs: block.segment.endOffsetMs,
+        }))).toEqual([
+        { sourceId: "writer-source-a", rawText: rawTexts[0], startOffsetMs: 0, endOffsetMs: 1000 },
+        { sourceId: "writer-source-b", rawText: rawTexts[1], startOffsetMs: 1000, endOffsetMs: 2000 },
+      ]);
+      expect(sourceFiles.map(source => vault.files.get(source.file.path)?.markdown)).toEqual(sourceBytes);
+      expect(refreshed).toEqual([mergedEntry!.file]);
+      expect(opened).toEqual([mergedEntry!.file]);
+    });
+  });
   it("selects the nearest strictly older recent note without mutating recents", () => {
     const currentFile = new obsidian.TFile("Notes\\current.md");
     const olderFile = new obsidian.TFile("Notes/older.md");

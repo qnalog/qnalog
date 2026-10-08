@@ -12,7 +12,7 @@ import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegme
 import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
-import { readNamespaceFrontmatter } from "../shared/namespace";
+import { detectModeFromMarkdownFlow, type NoteModeInferenceHost } from "./note-mode-inference";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
@@ -82,6 +82,7 @@ export interface NoteWriterHost {
 
 export class NoteWriter {
   declare host: NoteWriterHost;
+  private readonly noteModeInferenceHost: NoteModeInferenceHost;
   private readonly notePolishFlowHost: NotePolishFlowHost;
   private readonly continuationCommitHost: ContinuationCommitFlowHost;
   private readonly outlineNoteStoreHost: OutlineNoteStoreHost;
@@ -93,6 +94,17 @@ export class NoteWriter {
   private readonly noteMergePreviousFlowHost: NoteMergePreviousFlowHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
+    this.noteModeInferenceHost = {
+      getFileFrontmatter: (file) => this.host.getFileFrontmatter(file),
+      getTags: (frontmatter) => getFrontmatterTags(frontmatter),
+      normalizeLabel: (label) => normalizeModeFromLabel(this.host.settings, label),
+      isKnownMode: (mode) => isKnownPolishMode(this.host.settings, mode),
+      inferFilename: (basename) => detectRecentModeFromFilename(this.host.settings, basename),
+      getCleanFallbackMode: () => getEffectivePolishMode(
+        this.host.settings,
+        this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode,
+      ),
+    };
     this.noteMergePreviousFlowHost = {
       getRecentNotes: (limit) => this.host.getRecentNotes(limit),
       findPrevious: (file) => this.findPreviousRecentNoteFile(file),
@@ -252,53 +264,8 @@ export class NoteWriter {
       new obsidian.Notice(`${t("Polish failed: ")}${(e && e.message) || e}`);
     }
   }
-  // 从 .md 文件的 frontmatter 推断模式（mode 字段；找不到时尝试 类型 字段中文映射）
-  detectModeFromMarkdown(file) {
-    if (!(file instanceof obsidian.TFile)) return null;
-    const cache = this.host.getFileFrontmatter(file);
-    if (!cache) {
-      const fallbackMode = detectRecentModeFromFilename(this.host.settings, file.basename);
-      return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
-    }
-    const m = readNamespaceFrontmatter(cache, "mode");
-    if (m === "cleanscript") {
-      for (const tag of getFrontmatterTags(cache)) {
-        const tagMode = normalizeModeFromLabel(this.host.settings, tag);
-        if (tagMode && tagMode !== "off" && isKnownPolishMode(this.host.settings, tagMode)) return tagMode;
-      }
-      const filenameMode = detectRecentModeFromFilename(this.host.settings, file.basename);
-      if (filenameMode && filenameMode !== "off") return filenameMode;
-      return getEffectivePolishMode(this.host.settings, this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode);
-    }
-    if (typeof m === "string" && isKnownPolishMode(this.host.settings, m)) return m;
-    const typeStr = String(readNamespaceFrontmatter(cache, "type") || cache["模板"] || cache.template || "").trim();
-    const typeToMode = {
-      "学习": "learning",
-      "学习记录": "learning",
-      "学习视频": "learning",
-      "视频学习": "learning",
-      "课程笔记": "learning",
-      "访谈": "interview",
-      "访谈调研": "interview",
-      "研讨": "seminar",
-      "研讨会": "seminar",
-      "学术研讨": "seminar",
-      "主题沙龙": "seminar",
-      "会议": "meeting",
-      "工作纪要": "meeting",
-      "小会": "huddle",
-      "讨论": "huddle",
-      "圆桌讨论": "huddle",
-      "独白": "monologue",
-      "手记": "monologue",
-      "个人笔记": "monologue",
-    };
-    if (typeToMode[typeStr]) {
-      const mode = typeToMode[typeStr];
-      return isKnownPolishMode(this.host.settings, mode) ? mode : null;
-    }
-    const fallbackMode = detectRecentModeFromFilename(this.host.settings, file.basename);
-    return fallbackMode && fallbackMode !== "off" ? fallbackMode : null;
+  detectModeFromMarkdown(file: unknown): string | null {
+    return detectModeFromMarkdownFlow(this.noteModeInferenceHost, file);
   }
   findPreviousRecentNoteFile(file: unknown): obsidian.TFile | null {
     return findPreviousRecentNoteFileFlow(this.noteMergePreviousFlowHost, file);
