@@ -8,7 +8,6 @@ import { collectAudioRefs, getAudioTimeLink, getSessionMasterAudioName } from ".
 import { detectRecentNoteMode } from "../recent/recent-notes";
 
 import { extractTranscriptSegments } from "./note-markdown";
-import { isTextImportSession } from "../briefing/note-layout-policy";
 import { buildNoteAudioTimeline } from "./note-audio-timeline";
 import { stripArchivedOutlineSections } from "./outline-text";
 
@@ -174,26 +173,6 @@ export function extractNotePanelData(plugin, file, markdown) {
   };
 }
 
-export function buildRecordingInfoDetails(info) {
-  const lines = [];
-  if (info && info.startedAt && window.moment) {
-    lines.push(`- ${labelText("timeLabel")}${window.moment(info.startedAt).format("YYYY-MM-DD HH:mm:ss")}`);
-  }
-  if (info && info.totalMs != null) lines.push(`- ${labelText("durationLabel")}${formatElapsed(info.totalMs)}`);
-  if (info && info.modeLabel) lines.push(`- ${labelText("modeLabel")}${info.modeLabel}`);
-  if (info && info.segmentText) lines.push(`- ${labelText("segmentsLabel")}${info.segmentText}`);
-  else if (info && info.segmentCount != null) lines.push(`- ${labelText("segmentsLabel")}${info.segmentCount}`);
-  if (info && info.model) lines.push(`- ${labelText("modelLabel")}${info.model}`);
-  if (!lines.length) return "";
-  return [
-    "<details>",
-    `<summary>${labelText("recordingInfo")}</summary>`,
-    "",
-    lines.join("\n"),
-    "",
-    "</details>",
-  ].join("\n");
-}
 
 export function buildMasterAudioDetails(session, totalMs) {
   const audioName = getSessionMasterAudioName(session);
@@ -210,30 +189,6 @@ export function buildMasterAudioDetails(session, totalMs) {
   ].join("\n");
 }
 
-export function buildTextImportInfoDetails(session, modeLabel, model) {
-  if (!isTextImportSession(session)) return "";
-  const lines = [];
-  if (session.startedAt && window.moment) lines.push(`- ${labelText("timeLabel")}${window.moment(session.startedAt).format("YYYY-MM-DD HH:mm:ss")}`);
-  if (modeLabel) lines.push(`- ${labelText("modeLabel")}${modeLabel}`);
-  const sources = Array.isArray(session.textImportSources) ? session.textImportSources : [];
-  lines.push(`- ${labelText("sourceFilesLabel")}${sources.length || (session.segments || []).length || 1}`);
-  if (model) lines.push(`- ${labelText("modelLabel")}${model}`);
-  if (sources.length) {
-    lines.push("", labelText("sourceLabel"));
-    for (const item of sources) {
-      const name = item.name || (item.path ? item.path.split("/").pop() : "") || "未命名文本";
-      lines.push(`- ${item.path ? `[[${item.path}|${name}]]` : name}`);
-    }
-  }
-  return [
-    "<details>",
-    `<summary>${labelText("importedTextInfo")}</summary>`,
-    "",
-    lines.join("\n"),
-    "",
-    "</details>",
-  ].join("\n");
-}
 
 
 // ============================================================
