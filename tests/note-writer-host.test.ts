@@ -207,6 +207,80 @@ describe("NoteWriter polish materials", () => {
       vi.unstubAllGlobals();
     }
   });
+  it.each(["zh", "en"])("formats actual failed-polish output without writing the model body (%s)", async (language) => {
+    const originalLanguage = getActiveUiLanguage();
+    const path = `QnALog/Minutes/polish-failure-${language}.md`;
+    const file = new obsidian.TFile(path);
+    const source = "源稿原文与转写账本";
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1_000, text: source, isFinal: true,
+    }, `polish-failure-${language}`, "asr");
+    const ledger = serializeTranscriptBlock(segment, "### Source transcript", source);
+    const original = `---\ntitle: failure source\n---\n\n# Existing note\n\n${ledger}`;
+    const vault = memoryVault([{ file, markdown: original }]);
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00" }) });
+    const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "consumer-test-model" }));
+    const session: RecordingSession = {
+      id: `polish-failure-${language}`,
+      sessionStamp: `polish-failure-${language}`,
+      startedAt: "2026-09-14T12:00:00.000Z",
+      mdPath: path,
+      mode: "meeting",
+      source: "recording",
+      segments: [segment],
+      finalized: true,
+    };
+    const configMessage = "LLM model name is not configured";
+    const serviceMessage = "no available account";
+    const cases = [
+      {
+        message: configMessage,
+        nonRetryable: true,
+        guidance: language === "en"
+          ? `${configMessage}. Please complete it under Settings → API → AI organizing service, then test the connection.`
+          : `${configMessage}。请到「设置 → API → AI 整理服务」补齐后先测试连接。`,
+      },
+      {
+        message: serviceMessage,
+        nonRetryable: true,
+        guidance: language === "en"
+          ? `${serviceMessage}. This is a problem returned by the LLM service or account pool, not caused by text length, ASR, or the text-import path; switch the model/endpoint, or retry manually later.`
+          : `${serviceMessage}。这是大模型服务端或账号池返回的问题，不是文本长度、ASR 或文本导入路径导致的；请切换模型/端点，或稍后手动重试。`,
+      },
+      { message: serviceMessage, nonRetryable: false, guidance: "" },
+    ] as const;
+    try {
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      for (const entry of cases) {
+        await vault.vault.modify(file, original);
+        await writer.appendPolishBlock(
+          session,
+          "BODY MUST NOT BE WRITTEN",
+          new Error(entry.message),
+          entry.nonRetryable,
+          "",
+          original,
+        );
+        const result = await vault.vault.read(file);
+        expect(result.startsWith(original.slice(0, original.indexOf(ledger)))).toBe(true);
+        expect(splitLeadingFrontmatter(result).frontmatter).toBe("---\ntitle: failure source\n---\n");
+        expect(result).not.toContain("BODY MUST NOT BE WRITTEN");
+        const failureLine = entry.nonRetryable
+          ? `_[${labelText("aiOrganizingFailed", entry.guidance)}]_`
+          : `_[${labelText("mergeFailedQueued", entry.message)}]_`;
+        expect(result).toContain(`\n${failureLine}\n`);
+        expect(readTranscriptBlocks(result).map(block => block.visibleBlock)).toEqual([source]);
+        const transcript = readTranscriptBlocks(result)[0].segment.transcript!;
+        expect(transcript.id).toBe(segment.transcript!.id);
+        expect(transcript.currentRevision).toBe(segment.transcript!.currentRevision);
+        expect(transcript.revisions.find(revision => revision.revision === transcript.currentRevision)?.rawText)
+          .toBe(segment.transcript!.revisions.find(revision => revision.revision === segment.transcript!.currentRevision)?.rawText);
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+    }
+  });
 });
 describe("NoteWriter audio source materials", () => {
   it.each(["zh", "en"])("preserves audio source selection in rewrite, append, and failure (%s)", async (language) => {

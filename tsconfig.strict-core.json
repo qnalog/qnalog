@@ -40,6 +40,7 @@
     "src/imports/transcript-checkpoint.ts",
     "src/llm/output-budget.ts",
     "src/llm/failure-policy.ts",
+    "src/llm/failure-presentation.ts",
     "src/llm/request-queue.ts",
     "src/notes/text-correction.ts",
     "src/notes/outline-finalizer.ts",

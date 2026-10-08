@@ -4,7 +4,8 @@
 import * as obsidian from "obsidian";
 import { AudioImportOptionsModal } from "../ui/modals";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode, getModePrefix} from "../shared/mode-meta";
-import { getLlmConfigIssue, formatLlmConfigIssue } from "../llm/core";
+import { getLlmConfigIssue } from "../llm/core";
+import { formatLlmConfigIssue } from "../llm/failure-presentation";
 import { TEXT_IMPORT_EXT } from "../shared/catalog-import";
 import { genId } from "../shared/util-common";
 import { mimeFromExt, getTranscribeSegmentPlaceholder } from "../shared/util-audio";
