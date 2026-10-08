@@ -329,7 +329,7 @@ export class NoteWriter {
       new obsidian.Notice(t("No most recent QnALog summary before this one was found."), 6000);
       return;
     }
-    const ok = await this.host.confirm(t("Merge minutes"), t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace("{0}", previous.basename).replace("{1}", file.basename), t("Merge"));
+    const ok = await this.host.confirm(t("Merge minutes"), t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace(/\{[01]\}/g, (placeholder) => placeholder === "{0}" ? previous.basename : file.basename), t("Merge"));
     if (!ok) return;
     try {
       await this.mergeMarkdownFilesAsNew([previous, file]);
