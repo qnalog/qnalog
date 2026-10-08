@@ -9,30 +9,19 @@ import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } f
 import { genId, formatElapsed } from "../shared/util-common";
 import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
-import {
-  assembleRealtimeOutlineDetails,
-  buildMeetingWorkbenchDetails,
-  buildRealtimeOutlineDetails,
-  buildPriorSessionBlocks,
-  buildRecordingInfoDetails,
-  buildTextImportInfoDetails,
-  buildExternalAudioSourceDetails,
-  buildMasterAudioDetails,
-} from "./note-session-materials";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
-import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
 import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, readNamespaceFrontmatter } from "../shared/namespace";
 import { labelText } from "../shared/note-labels";
 
-import { isTextImportSession, shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
+import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
-import { buildRewriteSegmentBlock, buildTextImportSourceDetails, serializeContinuationSegmentBlock } from "./note-transcript-materials";
-import { appendPolishNoteContent, buildConsolidatedNoteContent, buildPolishAppendBlock, prepareNotePolishParts } from "./note-write-content";
+import { serializeContinuationSegmentBlock } from "./note-transcript-materials";
+import { rewriteConsolidatedFlow, appendPolishBlockFlow, type NotePolishFlowHost } from "./note-polish-flow";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
 import {
   appendNoteText,
@@ -76,11 +65,22 @@ export interface NoteWriterHost {
 
 export class NoteWriter {
   declare host: NoteWriterHost;
+  private readonly notePolishFlowHost: NotePolishFlowHost;
   private readonly continuationCommitHost: ContinuationCommitFlowHost;
   private readonly outlineNoteStoreHost: OutlineNoteStoreHost;
   private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
+    this.notePolishFlowHost = {
+      getVault: () => this.host.vault,
+      getModeMeta: (session) => getModeMeta(this.host.settings, session.mode),
+      getModePrefix: (meta) => getModePrefix(meta),
+      getModel: () => this.host.settings.llmModel,
+      getAudioSegmentListItem: (segment, index) => getAudioSegmentListItem(segment, index),
+      getSegmentAudioLinkOffsetMs: (segment) => getSegmentAudioLinkOffsetMs(segment),
+      buildEmptyBody: () => buildEmptyLlmOutputFallback(),
+      formatFailureIssue: (issue) => formatLlmFailureIssue(issue),
+    };
     this.outlineNoteStoreHost = { getVault: () => this.host.vault };
     this.noteSegmentStoreHost = {
       getVault: () => this.host.vault,
@@ -166,87 +166,10 @@ export class NoteWriter {
 
     await this.host.vault.modify(file, currentBlock.replace(/\n{4,}/g, "\n\n\n"));
   }
-  async rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = ""): Promise<void> {
-    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return;
-    const currentMarkdown = await this.host.vault.read(file);
-    readTranscriptBlocks(currentMarkdown);
-    const meta = getModeMeta(this.host.settings, session.mode);
-    const moment = window.moment;
-    const startedAt = moment(session.startedAt);
-    const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
-    const textImport = isTextImportSession(session);
-    const externalAudioImport = !!session.externalAudioSource;
-    const retainAudio = !textImport && !externalAudioImport;
-    const momentFn = typeof window !== "undefined" ? window.moment : null;
-    const formatRecordedAt = momentFn
-      ? (recordedAt: string) => momentFn(recordedAt).format("YYYY-MM-DD HH:mm:ss")
-      : undefined;
-    const priorBlocks = buildPriorSessionBlocks(session, formatRecordedAt);
-    const isContinuation = !!priorBlocks.recordingInfoAppendix || !!priorBlocks.outlineAppendix || !!priorBlocks.audioAppendix;
-    const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
-    const audioRow = masterAudioBlock || session.segments.map((s, i) => getAudioSegmentListItem(s, i)).filter(Boolean).join("\n");
-    const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
-    const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
-    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(
-      session,
-      meta.prefix,
-      this.host.settings.llmModel,
-      (readStartedAt) => window.moment
-        ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
-        : undefined,
-    ) : buildRecordingInfoDetails({
-      startedAt: session.startedAt,
-      totalMs,
-      modeLabel: getModePrefix(meta),
-      segmentCount: session.segments.length,
-      model: this.host.settings.llmModel,
-    }, (readStartedAt) => window.moment
-      ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
-      : undefined);
-    const recordingInfoWithPrior = recordingInfoBlock && priorBlocks.recordingInfoAppendix
-      ? recordingInfoBlock.replace(/<\/details>\s*$/, () => `${priorBlocks.recordingInfoAppendix}</details>`)
-      : recordingInfoBlock;
-    const realtimeOutlineWithPrior = assembleRealtimeOutlineDetails({
-      liveBlock: realtimeOutlineBlock,
-      liveText: session.realtimeOutline || "",
-      priorText: session.continuationPriorOutline || "",
-      appendix: priorBlocks.outlineAppendix,
-    });
-    const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
-    const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
-    const rawBlocks = textImport ? "" : session.segments.map((segment) => buildRewriteSegmentBlock(
-      segment,
-      getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment)),
-    )).join("\n");
-    const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polish = prepareNotePolishParts(polished, emptyBriefingFallback);
-    const content = buildConsolidatedNoteContent({
-      currentMarkdown,
-      title: `# ${startedAt.format("YYYY-MM-DD HH:mm")} · ${getModePrefix(meta)}`,
-      sessionId: session.id,
-      continuationSessionId,
-      totalMs,
-      segmentCount: session.segments.length,
-      textImport,
-      retainAudio,
-      isContinuation,
-      masterAudioBlock,
-      audioRow,
-      priorAudioAppendix: priorBlocks.audioAppendix,
-      rawBlocks,
-      polish,
-      materials: {
-        recordingInfo: recordingInfoWithPrior,
-        externalAudioSource: externalAudioSourceBlock,
-        meetingWorkbench: meetingWorkbenchBlock,
-        realtimeOutline: realtimeOutlineWithPrior,
-        textImportSource: textImportSourceBlock,
-      },
-    });
-    await this.host.vault.modify(file, content);
+  rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = ""): Promise<void> {
+    return rewriteConsolidatedFlow(this.notePolishFlowHost, session, polished, continuationSessionId);
   }
-  async appendPolishBlock(
+  appendPolishBlock(
     session: RecordingSession,
     polished: string,
     mergeError: unknown,
@@ -254,71 +177,15 @@ export class NoteWriter {
     continuationSessionId = "",
     initialMarkdown: string | null = null,
   ): Promise<void> {
-    const file = this.host.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return;
-    const totalMs = session.segments.length ? session.segments[session.segments.length - 1].endOffsetMs : 0;
-    const meta = getModeMeta(this.host.settings, session.mode);
-    const emptyBriefingFallback = buildEmptyLlmOutputFallback();
-    const polish = prepareNotePolishParts(polished, emptyBriefingFallback);
-    const textImport = isTextImportSession(session);
-    const externalAudioImport = !!session.externalAudioSource;
-    const retainAudio = !textImport && !externalAudioImport;
-    const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
-    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(
+    return appendPolishBlockFlow(
+      this.notePolishFlowHost,
       session,
-      meta.prefix,
-      this.host.settings.llmModel,
-      (readStartedAt) => window.moment
-        ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
-        : undefined,
-    ) : buildRecordingInfoDetails({
-      startedAt: session.startedAt,
-      totalMs,
-      modeLabel: getModePrefix(meta),
-      segmentCount: session.segments.length,
-      model: this.host.settings.llmModel,
-    }, (readStartedAt) => window.moment
-      ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
-      : undefined);
-    const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
-    const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
-    const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
-    const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
-    const hasMergeError = !!mergeError;
-    const mergeErrorMessage = mergeError && (typeof mergeError === "object" || typeof mergeError === "function") && "message" in mergeError
-      ? mergeError.message || mergeError
-      : mergeError;
-    const failureText = mergeError
-      ? (nonRetryableMergeError
-        ? `_[${labelText("aiOrganizingFailed", formatLlmFailureIssue(mergeErrorMessage))}]_`
-        : `_[${labelText("mergeFailedQueued", mergeErrorMessage as string | number)}]_`)
-      : "";
-    const block = buildPolishAppendBlock({
-      modelAndModeLabel: `${this.host.settings.llmModel} · ${getModePrefix(meta)}`,
-      textImport,
-      masterAudioBlock,
-      hasMergeError,
-      failureText,
-      polish,
-      materials: {
-        recordingInfo: recordingInfoBlock,
-        externalAudioSource: externalAudioSourceBlock,
-        meetingWorkbench: meetingWorkbenchBlock,
-        realtimeOutline: realtimeOutlineBlock,
-        textImportSource: textImportSourceBlock,
-      },
-    });
-    const cur = initialMarkdown ?? await this.host.vault.read(file);
-    const next = appendPolishNoteContent({
-      currentMarkdown: cur,
-      block,
-      polishedFrontmatter: polish.frontmatter,
-      hasMergeError,
-      textImport,
-      totalMs,
+      polished,
+      mergeError,
+      nonRetryableMergeError,
       continuationSessionId,
-    });
-    await this.host.vault.modify(file, next);
+      initialMarkdown,
+    );
   }
 
   async commitContinuation(session: RecordingSession, polished: string, committedSessionIds: readonly string[]): Promise<void> {
