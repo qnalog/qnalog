@@ -20,7 +20,8 @@ import { TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS, parseElapsedMsToken, splitLongText
 
 import { mergeUniqueStrings, normalizePersonLookupText, normalizePersonNameForEmail, parsePeopleFromOutput, splitPersonFieldValue } from "../people";
 
-import { extractSedimentPreExtractionBlock, stripSedimentPreExtractionBlocks } from "../sediment";
+import { extractSedimentPreExtractionBlock } from "../sediment";
+import { stripSedimentPreExtractionBlocks } from "../sediment/text-blocks";
 import { removeNoteIndex } from "../indexing/note-index";
 
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
