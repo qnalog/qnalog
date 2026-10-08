@@ -10,9 +10,14 @@ import { genId, formatElapsed } from "../shared/util-common";
 import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
-import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "./note-session-materials";
+import {
+  assembleRealtimeOutlineDetails,
+  buildPriorSessionBlocks,
+  buildRecordingInfoDetails,
+  buildTextImportInfoDetails,
+} from "./note-session-materials";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails } from "../notes/detail-blocks";
+import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { getFrontmatterTags } from "../shared/util-note";
@@ -181,13 +186,22 @@ export class NoteWriter {
     const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
     const playbackTimelineBlock = retainAudio ? buildPlaybackTimelineDetails(session) : "";
     const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
-    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.host.settings.llmModel) : buildRecordingInfoDetails({
+    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(
+      session,
+      meta.prefix,
+      this.host.settings.llmModel,
+      (readStartedAt) => window.moment
+        ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
+        : undefined,
+    ) : buildRecordingInfoDetails({
       startedAt: session.startedAt,
       totalMs,
       modeLabel: getModePrefix(meta),
       segmentCount: session.segments.length,
       model: this.host.settings.llmModel,
-    });
+    }, (readStartedAt) => window.moment
+      ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
+      : undefined);
     const recordingInfoWithPrior = recordingInfoBlock && priorBlocks.recordingInfoAppendix
       ? recordingInfoBlock.replace(/<\/details>\s*$/, () => `${priorBlocks.recordingInfoAppendix}</details>`)
       : recordingInfoBlock;
@@ -250,13 +264,22 @@ export class NoteWriter {
     const retainAudio = !textImport && !externalAudioImport;
     const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
     const playbackTimelineBlock = retainAudio ? buildPlaybackTimelineDetails(session) : "";
-    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(session, meta.prefix, this.host.settings.llmModel) : buildRecordingInfoDetails({
+    const recordingInfoBlock = textImport ? buildTextImportInfoDetails(
+      session,
+      meta.prefix,
+      this.host.settings.llmModel,
+      (readStartedAt) => window.moment
+        ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
+        : undefined,
+    ) : buildRecordingInfoDetails({
       startedAt: session.startedAt,
       totalMs,
       modeLabel: getModePrefix(meta),
       segmentCount: session.segments.length,
       model: this.host.settings.llmModel,
-    });
+    }, (readStartedAt) => window.moment
+      ? window.moment(readStartedAt()).format("YYYY-MM-DD HH:mm:ss")
+      : undefined);
     const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
     const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
     const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";

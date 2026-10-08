@@ -1221,6 +1221,7 @@ async function main() {
       literalSmokeSettingsBefore = {
         consolidatedLayout: plugin.settings.consolidatedLayout,
         autoRenameWithTitle: plugin.settings.autoRenameWithTitle,
+        llmModel: plugin.settings.llmModel,
       };
       literalSmokeFilesBefore = [literalOutlinePath, literalRetryPath].map((path) => [path, files.get(path), files.get(path)?._content]);
       literalSmokeAdapterBefore = new Map(adapterData);
@@ -1483,11 +1484,17 @@ async function main() {
       ];
       const readTextMaterialLedger = (markdown, id) => {
         const marker = `<!-- qnalog-transcript-data `;
-        const start = markdown.indexOf(`<!-- qnalog-transcript-text-start:${id} -->`);
-        const end = markdown.indexOf(`<!-- qnalog-transcript-text-end:${id} -->`, start);
+        const startMarker = `<!-- qnalog-transcript-text-start:${id} -->`;
+        const endMarker = `<!-- qnalog-transcript-text-end:${id} -->`;
+        const blockEndMarker = `<!-- qnalog-transcript-end:${id} -->`;
+        const start = markdown.indexOf(startMarker);
+        const end = markdown.indexOf(endMarker, start);
+        const blockEnd = markdown.indexOf(blockEndMarker, end);
         const dataAt = markdown.indexOf(marker, end);
-        if (start < 0 || end < 0 || dataAt < 0) throw new Error(`missing text-import transcript block ${id}`);
-        const visible = markdown.slice(start + `<!-- qnalog-transcript-text-start:${id} -->`.length + 1, end).replace(/\n$/, "");
+        if (start < 0 || end < 0 || blockEnd < 0 || dataAt < end || dataAt >= blockEnd) {
+          throw new Error(`missing text-import transcript block ${id}`);
+        }
+        const visible = markdown.slice(start + startMarker.length + 1, end).replace(/\n$/, "");
         const jsonStart = dataAt + marker.length;
         const jsonEnd = markdown.indexOf(" -->", jsonStart);
         const data = JSON.parse(markdown.slice(jsonStart, jsonEnd));
@@ -1507,6 +1514,23 @@ async function main() {
             && (index === 0 || markdown.indexOf(textMaterialHeadings[index - 1]) < markdown.indexOf(heading)))) {
           throw new Error("text-import source summary or heading order changed");
         }
+        const allIds = [4, 9, 12, 20].map((segmentIndex) => `seg:literal-text-materials:${segmentIndex}`);
+        const detailsAt = markdown.lastIndexOf("<details>", markdown.indexOf(summary));
+        const contentAt = allowFailure ? markdown.indexOf("temporary failure") : markdown.indexOf(textMaterialModelBody);
+        if (detailsAt < 0 || contentAt < 0 || contentAt >= detailsAt) {
+          throw new Error("text-import materials were placed before their success or failure content");
+        }
+        if (markdown.split("<!-- qnalog-transcript-data ").length - 1 !== 4) {
+          throw new Error("text-import transcript-data marker count changed");
+        }
+        for (const id of allIds) {
+          if (markdown.split(`<!-- qnalog-transcript-start:${id} -->`).length - 1 !== 1
+            || markdown.split(`<!-- qnalog-transcript-end:${id} -->`).length - 1 !== 1
+            || markdown.split(`<!-- qnalog-transcript-text-start:${id} -->`).length - 1 !== 1
+            || markdown.split(`<!-- qnalog-transcript-text-end:${id} -->`).length - 1 !== 1) {
+            throw new Error(`text-import transcript markers changed for ${id}`);
+          }
+        }
         for (const [index, segmentIndex] of [4, 9, 12, 20].entries()) {
           const id = `seg:literal-text-materials:${segmentIndex}`;
           const block = readTextMaterialLedger(markdown, id);
@@ -1523,9 +1547,10 @@ async function main() {
           throw new Error("text-import success output lost model body");
         }
         if (allowFailure && (!markdown.startsWith("---\ntitle: old\n---")
-          || !markdown.includes("temporary failure")
+          || (!markdown.includes("合并润色失败（已加入重试队列）：temporary failure")
+            && !markdown.includes("Merge failed (queued for retry): temporary failure"))
           || markdown.includes(textMaterialModelBody))) {
-          throw new Error("text-import failed append lost old frontmatter or failure placeholder");
+          throw new Error("text-import failed append lost old frontmatter or queued failure placeholder");
         }
         if (markdown.includes("![[qnalog-literal-text-materials-")
           || markdown.includes("qnalog-transcribe-task:")
@@ -1556,6 +1581,142 @@ async function main() {
         .update(JSON.stringify([...textMaterialRewriteResults, ...textMaterialAppendResults]))
         .digest("hex");
       console.log(`[text-import-materials] rewrite/append digest: ${textImportMaterialsDigest}`);
+      const infoMomentBefore = sandbox.moment;
+      const infoSourcesBefore = textMaterialSession.textImportSources;
+      const infoSegmentsBefore = textMaterialSession.segments;
+      const infoModelOutput = "---\ntitle: info\n---\n\nINFO BODY $& $` $' $$";
+      const infoBody = "INFO BODY $& $` $' $$";
+      const infoSources = [
+        { name: "来源一 $& $` $' $$", path: "Notes/one.md", chars: 11 },
+        { path: "Notes/two.md" },
+        { name: "无路径来源 $& $` $' $$" },
+        {},
+      ];
+      const infoFixtures = [
+        {
+          kind: "recording", session: polishSession, original: polishOriginal,
+          expected: [
+            "<details>", "<summary>录音信息</summary>", "", "- 时间：2026-09-14", "- 时长：00:01",
+            "- 模式：工作纪要", "- 分段：1", "- 模型：stub-model", "", "</details>",
+          ].join("\n"),
+        },
+        {
+          kind: "sources", session: textMaterialSession, original: textMaterialOriginal, sourceFiles: infoSources,
+          expected: [
+            "<details>", "<summary>导入文本信息</summary>", "", "- 时间：2026-09-14", "- 模式：工作纪要",
+            "- 来源文件：4", "- 模型：stub-model", "", "来源：",
+            "- [[Notes/one.md|来源一 $& $` $' $$]]", "- [[Notes/two.md|two.md]]",
+            "- 无路径来源 $& $` $' $$", "- 未命名文本", "", "</details>",
+          ].join("\n"),
+        },
+        {
+          kind: "no-sources", session: textMaterialSession, original: textMaterialOriginal, sourceFiles: undefined,
+          expected: [
+            "<details>", "<summary>导入文本信息</summary>", "", "- 时间：2026-09-14", "- 模式：工作纪要",
+            "- 来源文件：4", "- 模型：stub-model", "", "</details>",
+          ].join("\n"),
+        },
+        {
+          kind: "empty", session: textMaterialSession, original: textMaterialOriginal, sourceFiles: [], segments: [],
+          expected: [
+            "<details>", "<summary>导入文本信息</summary>", "", "- 时间：2026-09-14", "- 模式：工作纪要",
+            "- 来源文件：1", "- 模型：stub-model", "", "</details>",
+          ].join("\n"),
+        },
+      ];
+      const infoResults = [];
+      const infoEnglish = sandbox.moment.locale() !== "zh-cn" && sandbox.moment.locale() !== "zh";
+      const localizedInfoFixtures = infoEnglish ? infoFixtures.map((fixture) => ({
+        ...fixture,
+        expected: fixture.expected
+          .replace("<summary>录音信息</summary>", "<summary>Recording info</summary>")
+          .replace("<summary>导入文本信息</summary>", "<summary>Imported text info</summary>")
+          .replace("- 时间：", "- Time: ").replace("- 时长：", "- Duration: ")
+          .replace("- 模式：", "- Mode: ").replace("- 分段：", "- Segments: ")
+          .replace("- 模型：", "- Model: ").replace("- 来源文件：", "- Source files: ")
+          .replace("\n来源：\n", "\nSource: \n"),
+      })) : infoFixtures;
+      try {
+        plugin.settings.llmModel = "stub-model";
+        for (const fixture of localizedInfoFixtures) {
+          if (fixture.sourceFiles !== undefined) textMaterialSession.textImportSources = fixture.sourceFiles;
+          else if (fixture.kind === "no-sources") delete textMaterialSession.textImportSources;
+          if (fixture.segments) textMaterialSession.segments = fixture.segments;
+          const summary = fixture.expected.split("\n")[1];
+          const run = async (layout, failed) => {
+            retryFile._content = fixture.original;
+            if (layout === "rewrite") await plugin.noteWriter.rewriteConsolidated(fixture.session, infoModelOutput);
+            else await plugin.noteWriter.appendPolishBlock(
+              fixture.session, infoModelOutput, failed ? new Error("info failure") : null, false, "", fixture.original,
+            );
+            const result = retryFile._content;
+            const summaryAt = result.indexOf(summary);
+            const detailsAt = result.lastIndexOf("<details>", summaryAt);
+            const closeAt = result.indexOf("</details>", summaryAt);
+            if (summaryAt < 0 || detailsAt < 0 || closeAt < summaryAt
+              || result.split(summary).length - 1 !== 1
+              || result.slice(detailsAt, closeAt + "</details>".length) !== fixture.expected) {
+              throw new Error(`${fixture.kind} ${layout} info block differed from its explicit expected text`);
+            }
+            const contentAt = failed ? result.indexOf("info failure") : result.indexOf(infoBody);
+            if (contentAt < 0 || contentAt >= detailsAt
+              || (failed && (result.includes(infoBody) || !result.startsWith("---\ntitle: old\n---")))) {
+              throw new Error(`${fixture.kind} ${layout} moved info materials before its success or failure content`);
+            }
+            if (fixture.kind === "recording"
+              && readTextMaterialLedger(result, "seg:literal-retry:0").rawText !== "Retry smoke transcript ledger.") {
+              throw new Error("recording info fixture lost its existing transcript ledger");
+            }
+            if (fixture.kind === "sources") {
+              for (const id of ["seg:literal-text-materials:4", "seg:literal-text-materials:9", "seg:literal-text-materials:12", "seg:literal-text-materials:20"]) {
+                if (result.split(`<!-- qnalog-transcript-start:${id} -->`).length - 1 !== 1
+                  || !result.includes(`<!-- qnalog-transcript-data `)) {
+                  throw new Error(`text-import info fixture lost transcript ledger ${id}`);
+                }
+              }
+              if (!result.includes("原文一") || !result.includes("第二份原文")) {
+                throw new Error("text-import info fixture changed source transcript text");
+              }
+            }
+            return result;
+          };
+          const rewritten = await run("rewrite", false);
+          if (await run("rewrite", false) !== rewritten) throw new Error(`${fixture.kind} rewrite was not byte-stable`);
+          infoResults.push(rewritten);
+          infoResults.push(await run("append", false));
+          infoResults.push(await run("failed append", true));
+        }
+        const infoDigest = createHash("sha256").update(JSON.stringify(infoResults)).digest("hex");
+        console.log(`[note-info-materials] rewrite/append digest: ${infoDigest}`);
+        for (const session of [polishSession, textMaterialSession]) {
+          retryFile._content = session === polishSession ? polishOriginal : textMaterialOriginal;
+          const originalContent = retryFile._content;
+          if (session === textMaterialSession) textMaterialSession.textImportSources = infoSources;
+          sandbox.moment = undefined;
+          await plugin.noteWriter.appendPolishBlock(session, infoModelOutput, null, false, "", originalContent);
+          const missingMomentResult = retryFile._content;
+          const missingSummary = session === polishSession ? "<summary>录音信息</summary>" : "<summary>导入文本信息</summary>";
+          const missingInfoAt = missingMomentResult.indexOf(missingSummary);
+          const missingInfo = missingMomentResult.slice(missingMomentResult.lastIndexOf("<details>", missingInfoAt));
+          if (!missingInfo.includes("stub-model") || /(?:Time: |时间：)/.test(missingInfo)) {
+            throw new Error("missing moment did not omit only the info timestamp");
+          }
+          sandbox.moment = () => ({ format: () => { throw new Error("info format failed"); } });
+          retryFile._content = originalContent;
+          let formatFailure;
+          try {
+            await plugin.noteWriter.appendPolishBlock(session, infoModelOutput, null, false, "", originalContent);
+          } catch (error) { formatFailure = error; }
+          if (formatFailure?.message !== "info format failed" || retryFile._content !== originalContent) {
+            throw new Error("info timestamp formatting failure did not preserve the original note");
+          }
+        }
+      } finally {
+        sandbox.moment = infoMomentBefore;
+        textMaterialSession.segments = infoSegmentsBefore;
+        if (infoSourcesBefore === undefined) delete textMaterialSession.textImportSources;
+        else textMaterialSession.textImportSources = infoSourcesBefore;
+      }
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);

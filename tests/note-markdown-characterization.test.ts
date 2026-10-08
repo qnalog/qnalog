@@ -627,7 +627,9 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
   it.each(["recording", "import", "merged-notes", " text-import "])(
     "does not build imported-source details for source %s",
     (source) => {
-      expect(buildTextImportSourceDetails({ id: "empty", source, segments: [] })).toBe("");
+      expect(buildTextImportSourceDetails({
+        id: "empty", source, segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1, text: "guard fixture" }],
+      })).toBe("");
     },
   );
 

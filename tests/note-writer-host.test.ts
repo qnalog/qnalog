@@ -257,6 +257,69 @@ describe("NoteWriter text-import source materials", () => {
       "### 4. 空白来源",
     ];
     const rawTexts = ["  原文一\r\n$& $` $' $$  ", "第二份原文 $& $` $' $$", "", " \r\n\t "];
+    const assertTranscriptState = (markdown: string) => {
+      const blocks = readTranscriptBlocks(markdown);
+      expect(blocks).toHaveLength(4);
+      expect(blocks.map((block) => block.segment.transcript?.id)).toEqual([
+        firstWithHistory.transcript!.id, "seg:text-materials:9", "seg:text-materials:12", "seg:text-materials:20",
+      ]);
+      expect(blocks.map((block) => block.segment.transcript?.sourceId)).toEqual(Array(4).fill("text-materials"));
+      expect(blocks.map((block) => block.visibleBlock)).toEqual([
+        rawTexts[0], rawTexts[1], labelText("emptyTextSource"), rawTexts[3],
+      ]);
+      for (const [index, block] of blocks.entries()) {
+        const transcript = block.segment.transcript!;
+        const id = transcript.id;
+        expect(markdown.split(`<!-- qnalog-transcript-start:${id} -->`).length - 1).toBe(1);
+        expect(markdown.split(`<!-- qnalog-transcript-end:${id} -->`).length - 1).toBe(1);
+        expect(markdown.split(`<!-- qnalog-transcript-text-start:${id} -->`).length - 1).toBe(1);
+        expect(markdown.split(`<!-- qnalog-transcript-text-end:${id} -->`).length - 1).toBe(1);
+        const current = transcript.revisions.find((revision) => revision.revision === transcript.currentRevision)!;
+        expect(current.rawText).toBe(rawTexts[index]);
+        expect(current.displayText).toBe(block.visibleBlock);
+        const expectedUnits = [
+          ["  原文一\r\n", "$& $` $' $$  "],
+          ["第二份原文 $& $` $' $$"],
+          [],
+          [],
+        ][index];
+        expect(current.normalizationRevision).toBe(1);
+        expect(current.corrections).toEqual([]);
+        expect(current.utterances).toEqual(expectedUnits.map((text, unitIndex) => ({
+          id: `${id}:r${transcript.currentRevision}:u${unitIndex + 1}`,
+          parentSegmentId: id,
+          rawText: text,
+          normalizedText: text,
+          speakerId: null,
+          speakerName: null,
+          startMs: null,
+          endMs: null,
+          timing: "unknown",
+          audioRef: null,
+          source: "text-import",
+        })));
+      }
+      const expectedHistory = firstWithHistory.transcript!;
+      const actualHistory = blocks[0].segment.transcript!;
+      expect(actualHistory.currentRevision).toBe(expectedHistory.currentRevision);
+      expect(actualHistory.revisions).toHaveLength(2);
+      expect(actualHistory.revisions.map((revision) => ({
+        revision: revision.revision,
+        normalizationRevision: revision.normalizationRevision,
+        rawText: revision.rawText,
+        corrections: revision.corrections,
+        utterances: revision.utterances,
+      }))).toEqual(expectedHistory.revisions.map((revision) => ({
+        revision: revision.revision,
+        normalizationRevision: revision.normalizationRevision,
+        rawText: revision.rawText,
+        corrections: revision.corrections,
+        utterances: revision.utterances,
+      })));
+      expect(actualHistory.revisions[0].displayText).toBe(expectedHistory.revisions[0].displayText);
+      expect(actualHistory.revisions[1].displayText).toBe(blocks[0].visibleBlock);
+      expect(segments.slice(1).every((segment) => segment.transcript === undefined)).toBe(true);
+    };
     try {
       for (const language of ["zh", "en"]) {
         setActiveUiLanguage(matchUiLanguage(language)!);
@@ -266,6 +329,7 @@ describe("NoteWriter text-import source materials", () => {
         await writer.rewriteConsolidated(session, output);
         expect(await vault.vault.read(file)).toBe(rewritten);
         const rewrittenBlocks = readTranscriptBlocks(rewritten);
+        assertTranscriptState(rewritten);
         expect(rewritten).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
         expect(rewritten.indexOf(modelBody)).toBeLessThan(rewritten.indexOf(sourceHeadings[0]));
         expect(sourceHeadings.map((heading) => rewritten.indexOf(heading))).toEqual(
@@ -298,6 +362,10 @@ describe("NoteWriter text-import source materials", () => {
         await vault.vault.modify(file, original);
         await writer.appendPolishBlock(session, output, null, false, "", original);
         const appended = await vault.vault.read(file);
+        assertTranscriptState(appended);
+        const appendedSourceSummary = `<summary>${labelText("importedTextSources", 4)}</summary>`;
+        expect(appended.indexOf(modelBody))
+          .toBeLessThan(appended.lastIndexOf("<details>", appended.indexOf(appendedSourceSummary)));
         expect(readTranscriptBlocks(appended)).toHaveLength(4);
         expect(appended.indexOf(modelBody)).toBeLessThan(appended.indexOf(sourceHeadings[0]));
         expect(appended).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
@@ -305,6 +373,10 @@ describe("NoteWriter text-import source materials", () => {
         await vault.vault.modify(file, original);
         await writer.appendPolishBlock(session, output, new Error("temporary failure"), false, "", original);
         const failed = await vault.vault.read(file);
+        assertTranscriptState(failed);
+        const failedSourceSummary = `<summary>${labelText("importedTextSources", 4)}</summary>`;
+        expect(failed.indexOf(labelText("mergeFailedQueued", "temporary failure")))
+          .toBeLessThan(failed.lastIndexOf("<details>", failed.indexOf(failedSourceSummary)));
         expect(failed).toContain("title: old");
         expect(failed).toContain(labelText("mergeFailedQueued", "temporary failure"));
         expect(failed).not.toContain(modelBody);
@@ -901,6 +973,168 @@ describe("NoteWriter literal preservation", () => {
       expect(readTranscriptBlocks(await vault.vault.read(file)).map(block => block.visibleBlock)).toEqual(["不可丢失的转写"]);
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+});
+describe("NoteWriter current info materials", () => {
+  it("keeps info blocks after output and failures for recording and text imports", async () => {
+    const path = "QnALog/Minutes/note-info-materials.md";
+    const file = new obsidian.TFile(path);
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const recordingSegment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1_000,
+      text: "RECORDING RAW $& $` $' $$", isFinal: true,
+    }, "note-info-materials", "legacy-transcript");
+    const recordingLedger = serializeTranscriptBlock(recordingSegment, "### Recording transcript", recordingSegment.text);
+    const textSegments: Segment[] = [
+      { index: 0, startOffsetMs: 0, endOffsetMs: 1_000, rawText: "TEXT ONE $& $` $' $$", text: "TEXT ONE $& $` $' $$", isFinal: true },
+      { index: 1, startOffsetMs: 1_000, endOffsetMs: 2_000, rawText: "TEXT TWO $& $` $' $$", text: "TEXT TWO $& $` $' $$", isFinal: true },
+    ];
+    const sessions: Array<{ name: string; session: RecordingSession; sourceNote: string }> = [
+      {
+        name: "recording",
+        session: {
+          id: "note-info-materials", sessionStamp: "note-info-materials",
+          startedAt: "2026-09-14T12:00:00.000Z", mdPath: path,
+          mode: "meeting", source: "recording", segments: [recordingSegment], finalized: true,
+        },
+        sourceNote: `${original}\n${recordingLedger}`,
+      },
+      {
+        name: "text-import",
+        session: {
+          id: "note-info-materials", sessionStamp: "note-info-materials",
+          startedAt: "2026-09-14T12:00:00.000Z", mdPath: path,
+          mode: "meeting", source: "text-import", segments: textSegments, finalized: true,
+          textImportSources: [
+            { name: "来源一 $& $` $' $$", path: "Notes/one.md", chars: 11 },
+            { path: "Notes/two.md" },
+            { name: "无路径来源 $& $` $' $$" },
+            {},
+          ],
+        },
+        sourceNote: original,
+      },
+    ];
+    const output = "---\ntitle: new\n---\n\nINFO BODY $& $` $' $$";
+    const body = "INFO BODY $& $` $' $$";
+    const originalLanguage = getActiveUiLanguage();
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      const vault = memoryVault([{ file, markdown: original }]);
+      const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "consumer-info-model" }));
+      for (const language of ["zh", "en"]) {
+        setActiveUiLanguage(matchUiLanguage(language)!);
+        for (const { name, session, sourceNote } of sessions) {
+          const infoSummary = name === "recording"
+            ? (language === "zh" ? "<summary>录音信息</summary>" : "<summary>Recording info</summary>")
+            : (language === "zh" ? "<summary>导入文本信息</summary>" : "<summary>Imported text info</summary>");
+          for (const [kind, action] of [
+            ["rewrite", () => writer.rewriteConsolidated(session, output)],
+            ["append", () => writer.appendPolishBlock(session, output, null, false, "", sourceNote)],
+            ["failed append", () => writer.appendPolishBlock(session, output, new Error("info failure"), false, "", sourceNote)],
+          ] as const) {
+            await vault.vault.modify(file, sourceNote);
+            await action();
+            const markdown = await vault.vault.read(file);
+            const infoAt = markdown.lastIndexOf(infoSummary);
+            const finish = markdown.indexOf("</details>", infoAt);
+            expect(infoAt, `${name} ${language} ${kind} info missing`).toBeGreaterThanOrEqual(0);
+            expect(finish).toBeGreaterThan(infoAt);
+            if (kind === "failed append") {
+              expect(markdown).toContain(labelText("mergeFailedQueued", "info failure"));
+              expect(markdown).not.toContain(body);
+              expect(markdown.indexOf(labelText("mergeFailedQueued", "info failure"))).toBeLessThan(infoAt);
+            } else {
+              expect(markdown).toContain(body);
+              expect(markdown.indexOf(body)).toBeLessThan(infoAt);
+            }
+            expect(markdown.slice(infoAt, finish)).toContain(language === "zh" ? "2026-09-14 12:00:00" : "2026-09-14 12:00:00");
+            expect(markdown.slice(infoAt, finish)).toContain(name === "recording"
+              ? "00:01"
+              : (language === "zh" ? "来源文件：4" : "Source files: 4"));
+          }
+        }
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+});
+describe("NoteWriter info time capability", () => {
+  it("reads moment after the model setting and rejects formatting failures before writing", async () => {
+    const path = "QnALog/Minutes/info-time-capability.md";
+    const file = new obsidian.TFile(path);
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1_000, text: "recording raw", isFinal: true,
+    }, "info-time-capability", "legacy-transcript");
+    const sessions: RecordingSession[] = [
+      {
+        id: "info-time-capability", sessionStamp: "info-time-capability", startedAt: "2026-09-14T12:00:00.000Z",
+        mdPath: path, mode: "meeting", source: "recording", segments: [segment], finalized: true,
+      },
+      {
+        id: "info-time-capability", sessionStamp: "info-time-capability", startedAt: "2026-09-14T12:00:00.000Z",
+        mdPath: path, mode: "meeting", source: "text-import", segments: [], textImportSources: [{ name: "source" }], finalized: true,
+      },
+    ];
+    const originalLanguage = getActiveUiLanguage();
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    setActiveUiLanguage(matchUiLanguage("zh")!);
+    try {
+      const vault = memoryVault([{ file, markdown: original }]);
+      for (const session of sessions) {
+        const settings = { ...DEFAULT_SETTINGS };
+        let mutateMoment = true;
+        Object.defineProperty(settings, "llmModel", {
+          get: () => {
+            if (mutateMoment) {
+              const host = (globalThis as { window: { moment: () => { format: () => string } } }).window;
+              host.moment = () => ({ format: () => "LATE TIME" });
+            }
+            return "consumer-info-model";
+          },
+        });
+        const writer = new NoteWriter(unexpectedHost(vault.vault, settings));
+        for (const layout of ["rewrite", "append"] as const) {
+          vi.stubGlobal("window", { moment: () => ({ format: () => "FIRST TIME" }) });
+          await vault.vault.modify(file, original);
+          if (layout === "rewrite") await writer.rewriteConsolidated(session, "---\ntitle: new\n---\n\nbody");
+          else await writer.appendPolishBlock(session, "---\ntitle: new\n---\n\nbody", null, false, "", original);
+          const output = await vault.vault.read(file);
+          const infoSummary = session.source === "text-import" ? "<summary>导入文本信息</summary>" : "<summary>录音信息</summary>";
+          const infoAt = output.indexOf(infoSummary);
+          expect(output.slice(infoAt)).toContain("- 时间：LATE TIME");
+          expect(output.slice(infoAt)).not.toContain("FIRST TIME");
+        }
+
+        mutateMoment = false;
+        const failure = new Error("info format failed");
+        vi.stubGlobal("window", {
+          moment: () => ({
+            format: (pattern: string) => {
+              if (pattern === "YYYY-MM-DD HH:mm:ss") throw failure;
+              return "2026-09-14 12:00";
+            },
+          }),
+        });
+        for (const layout of ["rewrite", "append"] as const) {
+          await vault.vault.modify(file, original);
+          const operation = layout === "rewrite"
+            ? writer.rewriteConsolidated(session, "body")
+            : writer.appendPolishBlock(session, "body", null, false, "", original);
+          await expect(operation).rejects.toBe(failure);
+          expect(await vault.vault.read(file)).toBe(original);
+        }
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
     }
   });
 });

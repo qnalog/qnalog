@@ -1,5 +1,7 @@
 import type { RecordingSession } from "../shared/types";
 import { labelText } from "../shared/note-labels";
+import { isTextImportSession } from "../briefing/note-layout-policy";
+import { formatElapsed } from "../shared/util-common";
 import { stripArchivedOutlineSections } from "./outline-text";
 
 /** rewriteConsolidated 组装实时大纲 details 的输入；对象参数便于逐项注入。 */
@@ -93,4 +95,79 @@ export function buildPriorSessionBlocks(
     ? `\n> 以下为追加录音前场次（${sourceTitle || "原纪要"}）的实时大纲草稿。\n\n${priorOutline}\n`
     : "";
   return { recordingInfoAppendix, outlineAppendix, audioAppendix };
+}
+export interface RecordingInfoDetailsInput {
+  startedAt?: string;
+  totalMs?: number | null;
+  modeLabel?: string;
+  segmentText?: string;
+  segmentCount?: number | null;
+  model?: string;
+}
+
+export type NoteInfoTimeFormatter = (readStartedAt: () => string) => string | undefined;
+
+export type TextImportInfoDetailsInput = Pick<RecordingSession, "source"> & {
+  startedAt?: string;
+  segments?: readonly unknown[] | null;
+  textImportSources?: unknown;
+};
+
+export function buildRecordingInfoDetails(
+  info: RecordingInfoDetailsInput | null | undefined,
+  formatStartedAt?: NoteInfoTimeFormatter,
+): string {
+  const lines: string[] = [];
+  if (info && info.startedAt && formatStartedAt) {
+    const startedAt = formatStartedAt(() => (info as RecordingInfoDetailsInput & { startedAt: string }).startedAt);
+    if (startedAt !== undefined) lines.push(`- ${labelText("timeLabel")}${startedAt}`);
+  }
+  if (info && info.totalMs != null) lines.push(`- ${labelText("durationLabel")}${formatElapsed(info.totalMs)}`);
+  if (info && info.modeLabel) lines.push(`- ${labelText("modeLabel")}${info.modeLabel}`);
+  if (info && info.segmentText) lines.push(`- ${labelText("segmentsLabel")}${info.segmentText}`);
+  else if (info && info.segmentCount != null) lines.push(`- ${labelText("segmentsLabel")}${info.segmentCount}`);
+  if (info && info.model) lines.push(`- ${labelText("modelLabel")}${info.model}`);
+  if (!lines.length) return "";
+  return [
+    "<details>",
+    `<summary>${labelText("recordingInfo")}</summary>`,
+    "",
+    lines.join("\n"),
+    "",
+    "</details>",
+  ].join("\n");
+}
+
+export function buildTextImportInfoDetails(
+  session: TextImportInfoDetailsInput | null | undefined,
+  modeLabel: string,
+  model: string,
+  formatStartedAt?: NoteInfoTimeFormatter,
+): string {
+  if (!session || !isTextImportSession(session)) return "";
+  const lines: string[] = [];
+  if (session.startedAt && formatStartedAt) {
+    const startedAt = formatStartedAt(() => (session as TextImportInfoDetailsInput & { startedAt: string }).startedAt);
+    if (startedAt !== undefined) lines.push(`- ${labelText("timeLabel")}${startedAt}`);
+  }
+  if (modeLabel) lines.push(`- ${labelText("modeLabel")}${modeLabel}`);
+  const sources: readonly unknown[] = Array.isArray(session.textImportSources) ? session.textImportSources : [];
+  lines.push(`- ${labelText("sourceFilesLabel")}${sources.length || (session.segments || []).length || 1}`);
+  if (model) lines.push(`- ${labelText("modelLabel")}${model}`);
+  if (sources.length) {
+    lines.push("", labelText("sourceLabel"));
+    for (const source of sources) {
+      const item = source as { name?: unknown; path?: string };
+      const name = item.name || (item.path ? item.path.split("/").pop() : "") || "未命名文本";
+      lines.push(`- ${item.path ? `[[${item.path}|${name as string}]]` : name as string}`);
+    }
+  }
+  return [
+    "<details>",
+    `<summary>${labelText("importedTextInfo")}</summary>`,
+    "",
+    lines.join("\n"),
+    "",
+    "</details>",
+  ].join("\n");
 }
