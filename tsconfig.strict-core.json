@@ -80,7 +80,7 @@
     "src/notes/session-finalize-flow.ts",
     "src/notes/continuation-commit-flow.ts",
     "src/notes/note-write-content.ts",
-    "src/notes/outline-note-store.ts",
-    "src/notes/note-segment-store.ts"
+    "src/notes/note-segment-store.ts",
+    "src/notes/note-session-materials.ts"
   ]
 }

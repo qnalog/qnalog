@@ -14,6 +14,23 @@ export const REALTIME_OUTLINE_ANCHOR_GLOBAL_RE = /\[\[[^\]\n]+\|\d{1,2}:\d{2}(?:
 // 要求两侧有空格，避开中文 "——"（破折号通常无空格）误伤。
 export const REALTIME_OUTLINE_INLINE_SEP_RE = /\s[\p{Pd}−]\s/u;
 export const REALTIME_OUTLINE_INLINE_SEP_SPLIT_RE = /\s[\p{Pd}−]\s/gu;
+/** 续录场次归档横幅（由 note-session-materials 产出）：其后是历史副本。 */
+export const REALTIME_OUTLINE_ARCHIVE_BANNER_RE = /^>\s*以下为追加录音前场次[^\n]*$/m;
+
+/**
+ * 从第一条归档横幅起截断，只保留实时部分。
+ *
+ * 横幅之后是「追加前场次」的历史副本，属于按场次保留的档案，不属于当前实时大纲。
+ * 种子、面板展示与重写合并都只需要实时部分：把归档整段带进这些路径，重写就会
+ * 执行「新体 = 旧体 + 横幅 + 旧体」的自引用——实测每次追加精确翻倍
+ * （备份链 1→2→4→8 份、横幅 0→1→3→7 条），再重写一次就再翻一倍（不幂等）。
+ */
+export function stripArchivedOutlineSections(text: unknown): string {
+  const source = String(text || ""); // eslint-disable-line @typescript-eslint/no-base-to-string -- keep the existing coercion contract for unknown input
+  const match = source.match(REALTIME_OUTLINE_ARCHIVE_BANNER_RE);
+  if (!match || match.index == null) return source;
+  return source.slice(0, match.index).replace(/\s+$/, "");
+}
 
 export interface RealtimeOutlineNode {
   id: string;

@@ -1225,6 +1225,7 @@ async function main() {
       literalSmokeAdapterBefore = new Map(adapterData);
       literalSmokeFrontmatterBefore = new Map(frontmatterByPath);
       const special = "$&\n$` 与反引号\n$'\n$$";
+      const priorAudioNames = ["旧录音-$&-$`-$'-$$.m4a", "qnalog-prior-second.webm"];
       const source = transcriptSegment(0, "Literal smoke transcript ledger.", 0, 1000, "literal-continuation");
       const outlineFile = new TFile(literalOutlinePath);
       outlineFile._content = [
@@ -1243,8 +1244,11 @@ async function main() {
         segments: [source],
         continuationSourcePath: "QnALog/LiteralSmoke/previous.md",
         continuationSourceTitle: "旧纪要",
+        continuationRecordedAt: "2026-09-17T03:56:35.000Z",
         continuationPriorRecordingInfo: `- 旧录音信息\n${special}`,
         continuationPriorOutline: `- 旧大纲\n  - ${special.replace(/\n/g, "\n  - ")}`,
+        continuationPriorAudioNames: priorAudioNames,
+        multiSourceAudio: true,
         realtimeOutline: "- 本场实时大纲",
       };
       const polished = "---\ntitle: literal smoke\n---\n\nLiteral rewrite body.";
@@ -1253,9 +1257,12 @@ async function main() {
       await plugin.noteWriter.rewriteConsolidated(continuation, polished);
       const secondRewrite = outlineFile._content;
       if (!firstRewrite.includes(`- 旧录音信息\n${special}`)
+        || !firstRewrite.includes("- 追加录音：2026-09-14")
         || !firstRewrite.includes("- 本场实时大纲")
         || !firstRewrite.includes(special)
         || !firstRewrite.includes("Literal smoke transcript ledger.")
+        || !priorAudioNames.every((name) => firstRewrite.includes(`![[${name}]]`) && firstRewrite.includes(`[[${name}|00:00]]`))
+        || firstRewrite.indexOf(`![[${priorAudioNames[0]}]]`) > firstRewrite.indexOf(`![[${priorAudioNames[1]}]]`)
         || firstRewrite !== secondRewrite) {
         throw new Error("continuation materials or transcript changed during repeated rewrite");
       }
