@@ -200,6 +200,7 @@ let continuationStageReadObserved = false;
 
 // 桩 LLM：从实际请求中的来源标题读取允许的证据 ID，只返回一个分部回复。
 const llmCalls = [];
+let literalMergeSmokeBody = "";
 function requestPrompt(request) {
   try {
     const body = JSON.parse(request?.body || "{}");
@@ -250,7 +251,7 @@ function makeLlmReply(request) {
     choices: [{
       message: {
         role: "assistant",
-        content: `## 议题\n\n上线范围已确定，先做内部灰度。\n\n## 结论\n\n内部灰度后按反馈扩大。\n\n<!-- qnalog-session-knowledge ${protocol} -->`,
+        content: `## 议题\n\n上线范围已确定，先做内部灰度。\n\n## 结论\n\n内部灰度后按反馈扩大。${literalMergeSmokeBody}\n\n<!-- qnalog-session-knowledge ${protocol} -->`,
       },
       finish_reason: "stop",
     }],
@@ -1207,6 +1208,117 @@ async function main() {
     }
     if (outlineSmokePassed) {
       console.log("[outline-note-store] OK: exact backup, last-outline replacement, and concurrent edit preservation");
+    }
+    let literalSmokeSettingsBefore = null;
+    let literalSmokeFilesBefore = null;
+    let literalSmokeAdapterBefore = null;
+    let literalSmokeFrontmatterBefore = null;
+    let literalSmokePassed = false;
+    const literalOutlinePath = "QnALog/LiteralSmoke/continuation.md";
+    const literalRetryPath = "QnALog/LiteralSmoke/retry.md";
+    try {
+      literalSmokeSettingsBefore = {
+        consolidatedLayout: plugin.settings.consolidatedLayout,
+        autoRenameWithTitle: plugin.settings.autoRenameWithTitle,
+      };
+      literalSmokeFilesBefore = [literalOutlinePath, literalRetryPath].map((path) => [path, files.get(path), files.get(path)?._content]);
+      literalSmokeAdapterBefore = new Map(adapterData);
+      literalSmokeFrontmatterBefore = new Map(frontmatterByPath);
+      const special = "$&\n$` 与反引号\n$'\n$$";
+      const source = transcriptSegment(0, "Literal smoke transcript ledger.", 0, 1000, "literal-continuation");
+      const outlineFile = new TFile(literalOutlinePath);
+      outlineFile._content = [
+        "---\nqnalog_mode: meeting\n---",
+        "# Previous note",
+        serializeTranscriptSegment(source),
+      ].join("\n\n");
+      files.set(literalOutlinePath, outlineFile);
+      const continuation = {
+        id: "literal-continuation",
+        sessionStamp: "literal-continuation",
+        startedAt: "2026-09-14T11:59:00.000Z",
+        mdPath: literalOutlinePath,
+        mode: "meeting",
+        finalized: true,
+        segments: [source],
+        continuationSourcePath: "QnALog/LiteralSmoke/previous.md",
+        continuationSourceTitle: "旧纪要",
+        continuationPriorRecordingInfo: `- 旧录音信息\n${special}`,
+        continuationPriorOutline: `- 旧大纲\n  - ${special.replace(/\n/g, "\n  - ")}`,
+        realtimeOutline: "- 本场实时大纲",
+      };
+      const polished = "---\ntitle: literal smoke\n---\n\nLiteral rewrite body.";
+      await plugin.noteWriter.rewriteConsolidated(continuation, polished);
+      const firstRewrite = outlineFile._content;
+      await plugin.noteWriter.rewriteConsolidated(continuation, polished);
+      const secondRewrite = outlineFile._content;
+      if (!firstRewrite.includes(`- 旧录音信息\n${special}`)
+        || !firstRewrite.includes("- 本场实时大纲")
+        || !firstRewrite.includes(special)
+        || !firstRewrite.includes("Literal smoke transcript ledger.")
+        || firstRewrite !== secondRewrite) {
+        throw new Error("continuation materials or transcript changed during repeated rewrite");
+      }
+
+      const retryFile = new TFile(literalRetryPath);
+      const retrySegment = transcriptSegment(0, "Retry smoke transcript ledger.", 0, 1000, "literal-retry");
+      const failMark = "_[Merge failed (queued for retry): temporary]_";
+      retryFile._content = [
+        "---\nqnalog_mode: meeting\n---",
+        "# Retry smoke note",
+        "KEEP BEFORE",
+        failMark,
+        "KEEP AFTER",
+        serializeTranscriptSegment(retrySegment),
+      ].join("\n\n");
+      files.set(literalRetryPath, retryFile);
+      plugin.settings.consolidatedLayout = false;
+      plugin.settings.autoRenameWithTitle = false;
+      literalMergeSmokeBody = `\n\nRETRY LITERAL ${special}\nUnicode：保留原文`;
+      await plugin.queueRetry.retryMergeTask({
+        id: "literal-merge-retry",
+        mdPath: literalRetryPath,
+        mode: "meeting",
+        source: "recording",
+        createdAt: "2026-09-14T12:00:00.000Z",
+        segments: [retrySegment],
+        sessionMeta: { startedAt: "2026-09-14T12:00:00.000Z" },
+      });
+      const retryResult = retryFile._content;
+      if (retryResult.includes(failMark)
+        || !retryResult.includes(`RETRY LITERAL ${special}\nUnicode：保留原文`)
+        || !retryResult.includes("KEEP BEFORE")
+        || !retryResult.includes("KEEP AFTER")
+        || !retryResult.includes("Retry smoke transcript ledger.")) {
+        throw new Error("merge retry did not preserve model text, surrounding content, and transcript");
+      }
+      literalSmokePassed = true;
+    } catch (error) {
+      failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);
+    } finally {
+      literalMergeSmokeBody = "";
+      if (literalSmokeSettingsBefore) Object.assign(plugin.settings, literalSmokeSettingsBefore);
+      if (literalSmokeFilesBefore) {
+        for (const [path, file, content] of literalSmokeFilesBefore) {
+          if (file) {
+            file._content = content;
+            files.set(path, file);
+          } else {
+            files.delete(path);
+          }
+        }
+      }
+      if (literalSmokeAdapterBefore) {
+        adapterData.clear();
+        for (const [path, content] of literalSmokeAdapterBefore) adapterData.set(path, content);
+      }
+      if (literalSmokeFrontmatterBefore) {
+        frontmatterByPath.clear();
+        for (const [path, metadata] of literalSmokeFrontmatterBefore) frontmatterByPath.set(path, metadata);
+      }
+    }
+    if (literalSmokePassed) {
+      console.log("[literal-note-content] OK: continuation materials and merge retry preserve literal text and transcript");
     }
     for (const id of plugin.intervals) clearInterval(id);
   } finally {

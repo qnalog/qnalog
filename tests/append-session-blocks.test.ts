@@ -325,3 +325,14 @@ describe("实时大纲归档去重（防追加翻倍）", () => {
     expect(data!.outline).not.toContain(BANNER);
   });
 });
+describe("实时大纲归档逐字写入", () => {
+  it("把美元字符和 Unicode 附录当作原文追加", () => {
+    const appendix = "\n> 旧稿：多行中文\n$&\n$` 与下划线\n$'\n$$\n";
+    expect(assembleRealtimeOutlineDetails({
+      liveBlock: "<details>\nLIVE\n</details>",
+      liveText: "LIVE",
+      priorText: "PRIOR",
+      appendix,
+    })).toBe(`<details>\nLIVE\n${appendix}</details>`);
+  });
+});

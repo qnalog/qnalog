@@ -67,7 +67,7 @@ export function assembleRealtimeOutlineDetails(input: RealtimeOutlineAssemblyInp
     const live = squash(stripArchivedOutlineSections(String(input.liveText || "")));
     const prior = squash(stripArchivedOutlineSections(String(input.priorText || "")));
     if (live && prior && live.includes(prior)) return liveBlock;
-    return liveBlock.replace(/<\/details>\s*$/, `${appendix}</details>`);
+    return liveBlock.replace(/<\/details>\s*$/, () => `${appendix}</details>`);
   }
   if (liveBlock) return liveBlock;
   if (appendix) {
@@ -263,7 +263,7 @@ export class NoteWriter {
       model: this.host.settings.llmModel,
     });
     const recordingInfoWithPrior = recordingInfoBlock && priorBlocks.recordingInfoAppendix
-      ? recordingInfoBlock.replace(/<\/details>\s*$/, `${priorBlocks.recordingInfoAppendix}</details>`)
+      ? recordingInfoBlock.replace(/<\/details>\s*$/, () => `${priorBlocks.recordingInfoAppendix}</details>`)
       : recordingInfoBlock;
     const realtimeOutlineWithPrior = assembleRealtimeOutlineDetails({
       liveBlock: realtimeOutlineBlock,
