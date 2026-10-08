@@ -6659,9 +6659,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .modal.qnalog-progress-modal .qnalog-progress-section-title {
-  display: block;
   margin: 0;
   padding: var(--size-4-3) var(--size-4-6) var(--size-2-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal);
 }
 
 .modal.qnalog-progress-modal .qnalog-progress-row.qnalog-progress-legacy-current {
@@ -10867,6 +10869,44 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   overflow-y: auto;
 }
 
+.modal.qnalog-progress-modal .qnalog-progress-recovery-guidance {
+  margin: 0;
+  padding: 0 var(--size-4-6) var(--size-4-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.modal.qnalog-progress-modal .qnalog-progress-row.qnalog-progress-recovery-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: var(--size-4-3) var(--size-4-6);
+}
+
+.modal.qnalog-progress-modal .qnalog-progress-recovery-row > .qnalog-progress-ico:empty {
+  display: none;
+}
+
+.modal.qnalog-progress-modal .qnalog-progress-recovery-row .qnalog-progress-name {
+  font-size: var(--font-ui-small);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.modal.qnalog-progress-modal .qnalog-progress-recovery-row .qnalog-progress-sub {
+  margin-top: var(--size-2-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-normal);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .modal.qnalog-progress-modal .qnalog-progress-row.qnalog-progress-queue-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;
@@ -10926,6 +10966,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   .modal.qnalog-progress-modal .qnalog-progress-head,
   .modal.qnalog-progress-modal .qnalog-progress-queue-head,
   .modal.qnalog-progress-modal .qnalog-progress-row.qnalog-progress-queue-row,
+  .modal.qnalog-progress-modal .qnalog-progress-section-title,
+  .modal.qnalog-progress-modal .qnalog-progress-recovery-guidance,
+  .modal.qnalog-progress-modal .qnalog-progress-row.qnalog-progress-recovery-row,
   .modal.qnalog-progress-modal .qnalog-progress-foot {
     padding-left: var(--size-4-3);
     padding-right: var(--size-4-3);
