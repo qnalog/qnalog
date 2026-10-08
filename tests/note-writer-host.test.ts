@@ -204,6 +204,120 @@ describe("NoteWriter polish materials", () => {
     }
   });
 });
+describe("NoteWriter text-import source materials", () => {
+  it("preserves ordered source labels, raw text, and ledgers through rewrite, append, and failure", async () => {
+    const path = "QnALog/Minutes/text-materials.md";
+    const file = new obsidian.TFile(path);
+    const original = "---\ntitle: old\n---\n\n# Existing note\n";
+    const vault = memoryVault([{ file, markdown: original }]);
+    const writer = new NoteWriter(unexpectedHost(vault.vault, {
+      ...DEFAULT_SETTINGS,
+      llmModel: "consumer-test-model",
+    }));
+    const originalLanguage = getActiveUiLanguage();
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    const first = attachTextTranscript({
+      index: 4, startOffsetMs: 0, endOffsetMs: 1_000, isFinal: true,
+      sourceName: "来源一 $& $` $' $$", sourcePath: "Notes/source-one.md",
+      rawText: "旧原文", text: "来源标签：不可作为原文",
+      audioName: "SHOULD_NOT_EMBED.webm", queueTaskId: "SHOULD_NOT_QUEUE",
+    }, "text-materials", "text-import");
+    first.rawText = "  原文一\r\n$& $` $' $$  ";
+    const firstWithHistory = attachTextTranscript(first, "text-materials", "text-import");
+    const segments: Segment[] = [
+      firstWithHistory,
+      {
+        index: 9, startOffsetMs: 1_000, endOffsetMs: 2_000, isFinal: true,
+        sourcePath: "Notes/source-two.md", text: "第二份原文 $& $` $' $$",
+        audioName: "SHOULD_NOT_EMBED.webm", queueTaskId: "SHOULD_NOT_QUEUE",
+      },
+      {
+        index: 12, startOffsetMs: 2_000, endOffsetMs: 3_000, isFinal: true,
+        rawText: "", text: "EMPTY RAW MUST NOT DISPLAY",
+        audioName: "SHOULD_NOT_EMBED.webm", queueTaskId: "SHOULD_NOT_QUEUE",
+      },
+      {
+        index: 20, startOffsetMs: 3_000, endOffsetMs: 4_000, isFinal: true,
+        sourceName: "空白来源", rawText: " \r\n\t ", text: "WHITESPACE RAW MUST NOT DISPLAY",
+        audioName: "SHOULD_NOT_EMBED.webm", queueTaskId: "SHOULD_NOT_QUEUE",
+      },
+    ];
+    const session: RecordingSession = {
+      id: "text-materials", sessionStamp: "text-materials",
+      startedAt: "2026-09-14T12:00:00.000Z", mdPath: path,
+      mode: "meeting", source: "text-import", segments, finalized: true,
+    };
+    const output = "---\ntitle: new\n---\n\n模型正文 $& $` $' $$";
+    const modelBody = "模型正文 $& $` $' $$";
+    const sourceHeadings = [
+      "### 1. [[Notes/source-one.md|来源一 $& $` $' $$]]",
+      "### 2. [[Notes/source-two.md|文本 2]]",
+      "### 3. 文本 3",
+      "### 4. 空白来源",
+    ];
+    const rawTexts = ["  原文一\r\n$& $` $' $$  ", "第二份原文 $& $` $' $$", "", " \r\n\t "];
+    try {
+      for (const language of ["zh", "en"]) {
+        setActiveUiLanguage(matchUiLanguage(language)!);
+        await vault.vault.modify(file, original);
+        await writer.rewriteConsolidated(session, output);
+        const rewritten = await vault.vault.read(file);
+        await writer.rewriteConsolidated(session, output);
+        expect(await vault.vault.read(file)).toBe(rewritten);
+        const rewrittenBlocks = readTranscriptBlocks(rewritten);
+        expect(rewritten).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
+        expect(rewritten.indexOf(modelBody)).toBeLessThan(rewritten.indexOf(sourceHeadings[0]));
+        expect(sourceHeadings.map((heading) => rewritten.indexOf(heading))).toEqual(
+          [...sourceHeadings].map((_, index) => rewritten.indexOf(sourceHeadings[index])).sort((a, b) => a - b),
+        );
+        expect(rewrittenBlocks).toHaveLength(4);
+        expect(rewrittenBlocks.map((block) => block.segment.transcript?.sourceId)).toEqual([
+          "text-materials", "text-materials", "text-materials", "text-materials",
+        ]);
+        expect(rewrittenBlocks.map((block) => block.segment.transcript?.id)).toEqual([
+          firstWithHistory.transcript?.id,
+          "seg:text-materials:9",
+          "seg:text-materials:12",
+          "seg:text-materials:20",
+        ]);
+        expect(rewrittenBlocks.map((block) => block.visibleBlock)).toEqual([
+          rawTexts[0], rawTexts[1], labelText("emptyTextSource"), rawTexts[3],
+        ]);
+        expect(rewrittenBlocks.map((block) => {
+          const transcript = block.segment.transcript!;
+          return transcript.revisions.find((revision) => revision.revision === transcript.currentRevision)?.rawText;
+        })).toEqual(rawTexts);
+        expect(firstWithHistory.transcript?.revisions).toHaveLength(2);
+        expect(segments[1].transcript).toBeUndefined();
+        expect(rewritten).not.toContain("![[SHOULD_NOT_EMBED.webm]]");
+        expect(rewritten).not.toContain(nsMarker("transcribe-task", "SHOULD_NOT_QUEUE"));
+        expect(rewritten).not.toContain(nsMarker("segments-start", session.id));
+        expect(rewritten).not.toContain("transcribe-task");
+
+        await vault.vault.modify(file, original);
+        await writer.appendPolishBlock(session, output, null, false, "", original);
+        const appended = await vault.vault.read(file);
+        expect(readTranscriptBlocks(appended)).toHaveLength(4);
+        expect(appended.indexOf(modelBody)).toBeLessThan(appended.indexOf(sourceHeadings[0]));
+        expect(appended).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
+
+        await vault.vault.modify(file, original);
+        await writer.appendPolishBlock(session, output, new Error("temporary failure"), false, "", original);
+        const failed = await vault.vault.read(file);
+        expect(failed).toContain("title: old");
+        expect(failed).toContain(labelText("mergeFailedQueued", "temporary failure"));
+        expect(failed).not.toContain(modelBody);
+        expect(readTranscriptBlocks(failed)).toHaveLength(4);
+        expect(failed).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+});
 
 describe("NoteWriter narrow host capabilities", () => {
   it("preserves the transcript ledger and frontmatter ordering across rewrite and append", async () => {
