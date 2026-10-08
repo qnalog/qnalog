@@ -1013,6 +1013,69 @@ async function main() {
       frontmatterByPath.delete("QnALog/WriterSmoke/2026-09-14 1100.md");
       frontmatterByPath.delete("QnALog/WriterSmoke/2026-09-14 1101.md");
     }
+    const metadataSmokePath = "QnALog/MetadataSmoke/target.md";
+    try {
+      const sources = [
+        { path: "Notes/Source $& $` $' $$.md", title: "Source $& $` $' $$", durationMs: 1000 },
+        { path: "Notes/plain.md", title: "plain", durationMs: 2000 },
+      ];
+      const expectedPayload = { mergedAt: "2026-09-14T12:00:00.000Z", sources };
+      const ledger = serializeTranscriptSegment(transcriptSegment(
+        0, "METADATA LEDGER $& $` $' $$", 0, 1000, "metadata-smoke",
+      ));
+      const prefix = `# Metadata smoke\n\n${ledger}`;
+      const target = new TFile(metadataSmokePath);
+      const outputs = [];
+      const markerStart = "<!-- qnalog-merge -->";
+      const markerEnd = "\nqnalog-merge-end -->";
+      const expectedBlock = `<!-- qnalog-merge -->\n${JSON.stringify(expectedPayload, null, 2)}\nqnalog-merge-end -->`;
+      const assertPayload = (content) => {
+        const start = content.indexOf(markerStart);
+        const end = content.indexOf(markerEnd, start + markerStart.length);
+        if (start < 0 || end < 0) throw new Error("metadata block markers are missing");
+        const payload = JSON.parse(content.slice(start + markerStart.length + 1, end));
+        if (JSON.stringify(payload) !== JSON.stringify(expectedPayload)) {
+          throw new Error("metadata JSON differs from the expected source path/title");
+        }
+      };
+      target._content = `${prefix}\n \t\r\n`;
+      files.set(metadataSmokePath, target);
+      await plugin.noteWriter.appendMergeMetadataBlock(target, sources);
+      const appended = target._content;
+      outputs.push(appended);
+      assertPayload(appended);
+      if (appended !== `${prefix}\n\n${expectedBlock}\n` || !appended.includes(ledger)
+        || appended.includes("BEFORE") || appended.includes("AFTER")) {
+        throw new Error("append changed bytes outside the literal metadata insertion");
+      }
+
+      const oldPayload = {
+        mergedAt: "2000-01-01T00:00:00.000Z",
+        sources: [{ path: "Notes/old.md", title: "old", durationMs: 5 }],
+      };
+      const oldBlock = `<!-- qnalog-merge -->\n${JSON.stringify(oldPayload, null, 2)}\nqnalog-merge-end -->`;
+      const suffix = "\n\nKEEP AFTER $' $$\r\n";
+      target._content = `${prefix}\n\n${oldBlock}${suffix}`;
+      await plugin.noteWriter.appendMergeMetadataBlock(target, sources);
+      const updated = target._content;
+      outputs.push(updated);
+      assertPayload(updated);
+      if (updated !== `${prefix}\n\n${expectedBlock}${suffix}` || !updated.includes(ledger)
+        || updated.includes("2000-01-01") || updated.includes("KEEP BEFORE")) {
+        throw new Error("update changed prefix/suffix bytes or retained the old block");
+      }
+      await plugin.noteWriter.appendMergeMetadataBlock(target, sources);
+      const repeated = target._content;
+      outputs.push(repeated);
+      assertPayload(repeated);
+      if (repeated !== updated) throw new Error("repeated update changed metadata bytes");
+      console.log(`[merge-metadata-literal] append/update digest: ${createHash("sha256").update(JSON.stringify(outputs)).digest("hex")}`);
+    } catch (error) {
+      failures.push(`合并来源元数据字面写入冒烟失败：${(error && error.message) || error}`);
+    } finally {
+      files.delete(metadataSmokePath);
+    }
+
     let recorderBeforeLifecycleSmoke = null;
     let momentBeforeLifecycleSmoke = null;
     let lifecycleSettingsBefore = null;
