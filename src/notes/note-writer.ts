@@ -13,7 +13,7 @@ import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegme
 import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
-import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, readNamespaceFrontmatter } from "../shared/namespace";
+import { readNamespaceFrontmatter } from "../shared/namespace";
 import { labelText } from "../shared/note-labels";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
@@ -30,7 +30,9 @@ import {
   mergeMarkdownFilesAsNewFlow,
   type NoteMergeFlowHost,
   type NoteMergeMoment,
+  type NoteMergeSourceMetadata,
 } from "./note-merge-flow";
+import { writeMergeMetadataBlock, type NoteMergeMetadataStoreHost } from "./note-merge-metadata-store";
 import {
   renameMarkdownWithGeneratedTitleFlow,
   type NoteTitleRenameFlowHost,
@@ -84,6 +86,7 @@ export class NoteWriter {
   private readonly noteMergeFlowHost: NoteMergeFlowHost;
   private readonly noteTitleRenameFlowHost: NoteTitleRenameFlowHost;
   private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
+  private readonly noteMergeMetadataStoreHost: NoteMergeMetadataStoreHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
     this.noteTitleRenameFlowHost = {
@@ -142,6 +145,7 @@ export class NoteWriter {
       getFallbackFilename: () => "合并纪要",
     };
     this.outlineNoteStoreHost = { getVault: () => this.host.vault };
+    this.noteMergeMetadataStoreHost = { getVault: () => this.host.vault };
     this.noteSegmentStoreHost = {
       getVault: () => this.host.vault,
       appendToNote: (path, content) => this.appendToNote(path, content),
@@ -369,23 +373,11 @@ export class NoteWriter {
   mergeMarkdownFilesAsNew(files: Iterable<unknown> | null | undefined): Promise<void> {
     return mergeMarkdownFilesAsNewFlow(this.noteMergeFlowHost, files);
   }
-  async appendMergeMetadataBlock(file, sources) {
-    if (!(file instanceof obsidian.TFile)) return;
-    const payload = {
-      mergedAt: new Date().toISOString(),
-      sources: (sources || []).map((source) => ({
-        path: source.path || "",
-        title: source.title || "",
-        durationMs: Number(source.durationMs) || 0,
-      })),
-    };
-    const block = `${nsMarker("merge")}\n${JSON.stringify(payload, null, 2)}\n${NS_TAG}-merge-end -->`;
-    const cur = await this.host.vault.read(file);
-    if (NS_MERGE_BLOCK_RE.test(cur)) {
-      await this.host.vault.modify(file, cur.replace(NS_MERGE_BLOCK_RE, () => block));
-    } else {
-      await this.host.vault.modify(file, cur.replace(/\s*$/, () => "\n\n" + block + "\n"));
-    }
+  appendMergeMetadataBlock(
+    file: unknown,
+    sources: readonly NoteMergeSourceMetadata[] | null | undefined,
+  ): Promise<void> {
+    return writeMergeMetadataBlock(this.noteMergeMetadataStoreHost, file, sources);
   }
 }
 
