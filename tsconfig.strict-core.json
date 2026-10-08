@@ -63,6 +63,7 @@
     "src/shared/settings-schema.ts",
     "src/shared/task-activity.ts",
     "src/shared/util-platform.ts",
+    "src/shared/util-text.ts",
     "src/shared/util-vault.ts",
     "src/shared/util-audio.ts",
     "src/shared/util-key-diag.ts",
@@ -94,6 +95,7 @@
     "src/notes/meeting-workbench-state.ts",
     "src/notes/note-transcript-materials.ts",
     "src/notes/audio-reference-text.ts",
+    "src/notes/audio-refs.ts",
     "src/sediment/text-blocks.ts"
   ]
 }

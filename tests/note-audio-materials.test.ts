@@ -5,12 +5,12 @@ vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"),
 }));
 import { describe, expect, it } from "vitest";
+import { getAudioSegmentListItem, getDurationMs, getSegmentAudioLinkOffsetMs } from "../src/notes/audio-refs";
 import { getAudioTimeLink, getSessionMasterAudioName } from "../src/notes/audio-reference-text";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails } from "../src/notes/note-session-materials";
 import { buildRealtimeOutlineAnchorSources, buildRealtimeOutlineTranscript } from "../src/notes/realtime-outline";
 import { formatMergeSegmentForPrompt } from "../src/prompts/briefing-prompts";
 import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-
 function withLanguage<T>(language: string, run: () => T): T {
   const previous = getActiveUiLanguage();
   setActiveUiLanguage(matchUiLanguage(language)!);
@@ -108,5 +108,33 @@ describe("audio link consumers", () => {
     expect(buildRealtimeOutlineTranscript([withoutAudio])).toBe("【段落 3｜01:01-01:05】\nANCHOR RAW");
     expect(buildRealtimeOutlineAnchorSources([withoutAudio])).toEqual([]);
     expect(formatMergeSegmentForPrompt(withoutAudio, 0)).toBe("===SEG 3 (01:01-01:05)===\nANCHOR RAW");
+  });
+  it("preserves segment offsets, localized audio blocks, and duration-heading priority", () => {
+    const global = 61_000;
+    for (const [local, expected] of [[7_000, 7_000], [0, 0], [null, 0], ["", 0], [-1, global], [Number.NaN, global], [Infinity, global], [undefined, global]]) {
+      expect(getSegmentAudioLinkOffsetMs({ startOffsetMs: global, audioStartOffsetMs: local })).toBe(expected);
+    }
+    for (const segment of [undefined, null, { startOffsetMs: -1 }]) expect(getSegmentAudioLinkOffsetMs(segment)).toBe(0);
+    const failure = new Error("offset conversion failed");
+    expect(() => getSegmentAudioLinkOffsetMs({ audioStartOffsetMs: { valueOf: () => { throw failure; } } })).toThrow(failure);
+
+    const segment = { index: 2, startOffsetMs: 61_000, endOffsetMs: 65_000, audioStartOffsetMs: 7_000, audioName: specialAudioName };
+    expect(withLanguage("zh", () => getAudioSegmentListItem(segment, 0))).toBe([
+      "#### 段落 3（01:01–01:05）", "", `![[${specialAudioName}]]`, "",
+      `回听：[[${specialAudioName}|00:07]]`,
+    ].join("\n"));
+    expect(withLanguage("en", () => getAudioSegmentListItem(segment, 0))).toBe([
+      "#### Segment 3 (01:01–01:05)", "", `![[${specialAudioName}]]`, "",
+      `Listen back: [[${specialAudioName}|00:07]]`,
+    ].join("\n"));
+    expect(getAudioSegmentListItem({ audioName: "" }, 0)).toBe("");
+    expect(getAudioSegmentListItem(null, 0)).toBe("");
+    expect(withLanguage("en", () => getAudioSegmentListItem({ audioName: "clip.webm" }, 4))).toMatch(/^#### Segment 5 \(/);
+
+    expect(getDurationMs("### Segment 1 (00:00–00:10)\n时长：01:00")).toBe(10_000);
+    expect(getDurationMs("### Segment 1 (00:00–00:10)\n### 段落 2 (00:00–00:20)")).toBe(20_000);
+    expect(getDurationMs("### Segment 1 (00:00–bad)\n时长：01:00")).toBe(0);
+    expect(getDurationMs("时长：1.5分钟\n共：3秒")).toBe(90_000);
+    for (const markdown of ["", "   ", "不可识别"]) expect(getDurationMs(markdown)).toBe(0);
   });
 });
