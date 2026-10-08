@@ -2,15 +2,38 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 
 import { readNamespaceFrontmatter } from "./namespace";
-export const BRIEFING_LANGUAGE_LABELS = {
+
+interface SegmentTimeInput {
+  startOffsetMs?: unknown;
+  endOffsetMs?: unknown;
+}
+
+interface SessionDurationInput {
+  durationMs?: unknown;
+  elapsedMs?: unknown;
+  totalMs?: unknown;
+  duration?: unknown;
+}
+
+interface BriefingLanguageSettings {
+  briefingTargetLanguage?: string;
+  briefingCustomLanguage?: string;
+  briefingTranslationMode?: string;
+  briefingKeepOriginalTerms?: boolean;
+  briefingLanguageInstruction?: string;
+}
+
+const stringifyTextValue = String as (value: unknown) => string;
+
+export const BRIEFING_LANGUAGE_LABELS: Record<string, string> = {
   "zh-CN": "中文",
   en: "English",
   ja: "日本語",
   ko: "한국어",
 };
 
-export function parseElapsedMsToken(raw) {
-  const token = (String(raw || "").match(/(?:\d{1,2}:)?\d{1,2}:\d{2}/) || [""])[0];
+export function parseElapsedMsToken(raw: unknown): number {
+  const token = (stringifyTextValue(raw || "").match(/(?:\d{1,2}:)?\d{1,2}:\d{2}/) || [""])[0];
   const parts = token.trim().split(":").map((p) => Number(p));
   if (parts.some((p) => !Number.isFinite(p))) return 0;
   if (parts.length === 3) return Math.max(0, ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 1000);
@@ -19,8 +42,8 @@ export function parseElapsedMsToken(raw) {
   return 0;
 }
 
-export function parseDurationLabel(raw) {
-  const text = String(raw || "").trim();
+export function parseDurationLabel(raw: unknown): number {
+  const text = stringifyTextValue(raw || "").trim();
   if (!text) return 0;
   const seconds = text.match(/^(\d+(?:\.\d+)?)\s*秒$/);
   if (seconds) return Math.round(Number(seconds[1]) * 1000);
@@ -31,13 +54,13 @@ export function parseDurationLabel(raw) {
 
 export const TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS = 30000;
 
-export function getBriefingTargetLanguage(settings) {
+export function getBriefingTargetLanguage(settings: BriefingLanguageSettings): string {
   const id = settings.briefingTargetLanguage || "zh-CN";
   if (id === "custom") return (settings.briefingCustomLanguage || "").trim() || "用户指定语言";
   return BRIEFING_LANGUAGE_LABELS[id] || id;
 }
 
-export function buildBriefingLanguageInstruction(settings) {
+export function buildBriefingLanguageInstruction(settings: BriefingLanguageSettings): string {
   const mode = settings.briefingTranslationMode || "off";
   if (mode === "off") return "";
   const target = getBriefingTargetLanguage(settings);
@@ -61,12 +84,12 @@ export function buildBriefingLanguageInstruction(settings) {
   return parts.join("\n");
 }
 
-export function applyBriefingLanguageInstruction(prompt, settings) {
+export function applyBriefingLanguageInstruction(prompt: string, settings: BriefingLanguageSettings | null | undefined): string {
   const instruction = buildBriefingLanguageInstruction(settings || {});
   return instruction ? prompt + "\n\n---\n\n" + instruction : prompt;
 }
 
-export function getSessionMetaDurationMs(meta) {
+export function getSessionMetaDurationMs(meta: SessionDurationInput | null | undefined): number {
   if (!meta) return 0;
   const direct = Number(meta.durationMs || meta.elapsedMs || meta.totalMs || 0);
   if (Number.isFinite(direct) && direct > 0) return direct;
@@ -74,11 +97,11 @@ export function getSessionMetaDurationMs(meta) {
   return parseDurationLabel(raw);
 }
 
-export function getSegmentsDurationMs(segments) {
+export function getSegmentsDurationMs(segments: readonly (SegmentTimeInput | null | undefined)[] | null | undefined): number {
   if (!Array.isArray(segments) || !segments.length) return 0;
   let minStart = Infinity;
   let maxEnd = 0;
-  for (const seg of segments) {
+  for (const seg of segments as readonly (SegmentTimeInput | null | undefined)[]) {
     const start = Number(seg && seg.startOffsetMs);
     const end = Number(seg && seg.endOffsetMs);
     if (Number.isFinite(start) && start >= 0) minStart = Math.min(minStart, start);
@@ -88,19 +111,19 @@ export function getSegmentsDurationMs(segments) {
   return Number.isFinite(minStart) && minStart > 0 ? Math.max(0, maxEnd - minStart) : maxEnd;
 }
 
-export function truncateForLlmPrompt(text, maxChars) {
-  const raw = String(text || "");
+export function truncateForLlmPrompt(text: unknown, maxChars: unknown): string {
+  const raw = stringifyTextValue(text || "");
   const limit = Math.max(0, Number(maxChars) || 0);
   if (!limit || raw.length <= limit) return raw;
   return raw.slice(0, limit) + "\n\n_[QnALog：此处为长文本预处理截断，仅用于分段摘要；完整原文仍保留在笔记折叠区。]_";
 }
 
-export function splitLongTextForLlm(text, maxChars) {
-  const raw = String(text || "").trim();
+export function splitLongTextForLlm(text: unknown, maxChars: unknown): string[] {
+  const raw = stringifyTextValue(text || "").trim();
   const limit = Math.max(2000, Number(maxChars) || TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS);
   if (!raw) return [];
   if (raw.length <= limit) return [raw];
-  const chunks = [];
+  const chunks: string[] = [];
   const blocks = raw.split(/\n{2,}/);
   let current = "";
   const pushCurrent = () => {

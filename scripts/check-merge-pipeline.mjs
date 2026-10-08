@@ -2118,6 +2118,35 @@ async function main() {
         }
         const audioDigest = createHash("sha256").update(JSON.stringify(audioResults)).digest("hex");
         console.log(`[audio-source-materials] rewrite/append digest: ${audioDigest}`);
+        const audioDurationOriginalHost = plugin.noteWriter.host;
+        const audioDurationFileContent = retryFile._content;
+        const audioDurationLlmCalls = llmCalls.length;
+        const audioDurationHost = Object.create(audioDurationOriginalHost);
+        Object.defineProperty(audioDurationHost, "vault", { value: Object.create(audioDurationOriginalHost.vault) });
+        audioDurationHost.vault.read = async (file) => {
+          if (file !== retryFile) throw new Error("audio duration probe read an unexpected file");
+          return audioLedgerOriginal;
+        };
+        audioDurationHost.vault.modify = async () => { throw new Error("audio duration probe unexpectedly wrote the source"); };
+        audioDurationHost.getFileFrontmatter = () => ({});
+        try {
+          plugin.noteWriter.host = audioDurationHost;
+          const source = await plugin.noteWriter.readMergeSourceFromMarkdown(retryFile, 10_000, 5);
+          const normalized = source.segments[0];
+          const ledger = readTextMaterialLedger(source.content, "seg:literal-audio-materials:2");
+          if (source.content !== audioLedgerOriginal || source.rawDurationMs !== 65_000
+            || source.segments.length !== 1 || normalized.index !== 5
+            || normalized.startOffsetMs !== 71_000 || normalized.endOffsetMs !== 75_000
+            || normalized.audioStartOffsetMs !== 7_000 || normalized.audioEndOffsetMs !== 11_000
+            || JSON.stringify(ledger.transcript) !== JSON.stringify(audioSegment.transcript)
+            || ledger.visible !== "AUDIO RAW $& $` $' $$" || ledger.rawText !== "AUDIO RAW $& $` $' $$"
+            || llmCalls.length !== audioDurationLlmCalls || retryFile._content !== audioDurationFileContent) {
+            throw new Error("audio duration probe changed absolute duration, normalized offsets, transcript identity, or source bytes");
+          }
+        } finally {
+          plugin.noteWriter.host = audioDurationOriginalHost;
+        }
+        console.log("[audio-duration-boundary] OK: absolute source duration and local audio offsets preserved");
       const meetingRawText = "MEETING RAW $& $` $' $$";
       const meetingModelOutput = "---\ntitle: new\n---\n\nMEETING BODY $& $` $' $$";
       const meetingOriginal = "---\ntitle: old\n---\n\n# Existing note\n";

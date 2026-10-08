@@ -14,18 +14,32 @@ import { formatElapsed, normalizeAudioLinkTarget, safeDecodeUriText } from "../s
 
 import { labelText } from "../shared/note-labels";
 import { getAudioTimeLink } from "./audio-reference-text";
+import type { Segment } from "../shared/types";
+
+interface SegmentOffsetInput {
+  startOffsetMs?: unknown;
+  endOffsetMs?: unknown;
+  audioStartOffsetMs?: unknown;
+  text?: unknown;
+}
+
+type AudioSegmentListInput = Partial<Pick<Segment,
+  "audioName" | "index" | "startOffsetMs" | "endOffsetMs" | "audioStartOffsetMs"
+>>;
+
+const stringifyAudioValue = String as (value: unknown) => string;
 
 
 
-export function getSegmentAudioLinkOffsetMs(segment) {
+export function getSegmentAudioLinkOffsetMs(segment: SegmentOffsetInput | null | undefined): number {
   const local = Number(segment && segment.audioStartOffsetMs);
   if (Number.isFinite(local) && local >= 0) return local;
   return Math.max(0, Number(segment && segment.startOffsetMs) || 0);
 }
 
-export function getAudioSegmentListItem(segment, index) {
+export function getAudioSegmentListItem(segment: AudioSegmentListInput | null | undefined, index: number): string {
   if (!segment || !segment.audioName) return "";
-  const n = Number.isFinite(segment.index) ? segment.index + 1 : index + 1;
+  const n = Number.isFinite(segment.index) ? Number(segment.index) + 1 : index + 1;
   const start = formatElapsed(segment.startOffsetMs || 0);
   const end = formatElapsed(segment.endOffsetMs || 0);
   const link = getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment));
@@ -39,10 +53,10 @@ export function getAudioSegmentListItem(segment, index) {
 }
 
 
-export function getAudioLinkCandidates(linkPath) {
+export function getAudioLinkCandidates(linkPath: unknown): string[] {
   const target = normalizeAudioLinkTarget(linkPath);
-  const out = [];
-  const add = (value) => {
+  const out: string[] = [];
+  const add = (value: string) => {
     const v = obsidian.normalizePath(String(value || "").trim());
     if (v && !out.includes(v)) out.push(v);
   };
@@ -54,14 +68,14 @@ export function getAudioLinkCandidates(linkPath) {
   return out;
 }
 
-export function getAudioExtFromLinkPath(linkPath) {
+export function getAudioExtFromLinkPath(linkPath: unknown): string {
   const target = normalizeAudioLinkTarget(linkPath);
   const base = target.split("/").pop() || target;
   const ext = (base.split(".").pop() || "").toLowerCase();
   return AUDIO_EXT.has(ext) ? ext : "";
 }
 
-export function getAudioLinkTarget(linkPath) {
+export function getAudioLinkTarget(linkPath: unknown): string {
   return normalizeAudioLinkTarget(linkPath);
 }
 
@@ -74,16 +88,16 @@ export function getAudioLinkTarget(linkPath) {
 // 新哲学是"插件不替用户猜设备"——acquireStream 直接透传用户在设置里选的设备（没选则系统默认/明确提示），
 // 不再用名字启发式自动挑选。名字启发式（isVirtualCableLabel）仅保留给 UI 软提示，不参与任何选择。
 
-export function getSegmentsHash(segments) {
+export function getSegmentsHash(segments: readonly (SegmentOffsetInput | null | undefined)[] | null | undefined): string {
   const text = (segments || []).map((seg) => [
     Number(seg && seg.startOffsetMs) || 0,
     Number(seg && seg.endOffsetMs) || 0,
-    String(seg && seg.text || "").trim(),
+    stringifyAudioValue(seg && seg.text || "").trim(),
   ].join("|")).join("\n");
   return hashRealtimeOutlineText(text);
 }
 
-export function isSameVaultPath(a, b) {
+export function isSameVaultPath(a: string | null | undefined, b: string | null | undefined): boolean {
   return !!a && !!b && obsidian.normalizePath(a) === obsidian.normalizePath(b);
 }
 
@@ -158,8 +172,8 @@ export function probeAudioDurationMs(audio: HTMLAudioElement, timeoutMs = 4000):
 // 重试同样必败，还会对大文件反复解码卡 UI、对服务端反复发必拒请求。队列对这类失败直接吃满重试退出自动重试。
 // 旗标 nonRetryable 由抛错处设置（chatInputAudioPermanentError / HTTP 4xx 分支）；正则兜底匹配已落盘任务的 lastError。
 
-export function getDurationMs(markdown) {
-  const text = String(markdown || "");
+export function getDurationMs(markdown: unknown): number {
+  const text = stringifyAudioValue(markdown || "");
   let maxMs = 0;
   let sawDuration = false;
   const segmentHeadingRe = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)/gm;
@@ -181,7 +195,7 @@ export function getDurationMs(markdown) {
   return sawDuration ? maxMs : 0;
 }
 
-export function getSegmentsDurationMs(segments) {
+export function getSegmentsDurationMs(segments: Iterable<SegmentOffsetInput | null | undefined> | null | undefined): number {
   let maxMs = 0;
   for (const seg of segments || []) {
     const end = Number(seg && seg.endOffsetMs) || 0;
@@ -190,12 +204,12 @@ export function getSegmentsDurationMs(segments) {
   return maxMs;
 }
 
-export function collectAudioRefs(markdown) {
-  const refs = [];
-  const seen = new Set();
+export function collectAudioRefs(markdown: unknown): string[] {
+  const refs: string[] = [];
+  const seen = new Set<string>();
   const re = /!\[\[([^\]]+)\]\]/g;
   let match;
-  while ((match = re.exec(String(markdown || "")))) {
+  while ((match = re.exec(stringifyAudioValue(markdown || "")))) {
     const ref = String(match[1] || "").split("|")[0].split("#")[0].trim();
     const fileName = ref.split("/").pop() || ref;
     const ext = (fileName.split(".").pop() || "").toLowerCase();
@@ -209,8 +223,12 @@ export function collectAudioRefs(markdown) {
   return refs;
 }
 
-export function resolveAudioFileRef(app, settings, ref) {
-  const normalizedRef = obsidian.normalizePath(String(ref || ""));
+export function resolveAudioFileRef(
+  app: { vault: Pick<obsidian.Vault, "getAbstractFileByPath"> },
+  settings: { audioFolder?: string } | null | undefined,
+  ref: unknown,
+): obsidian.TFile | null {
+  const normalizedRef = obsidian.normalizePath(stringifyAudioValue(ref || ""));
   const direct = app.vault.getAbstractFileByPath(normalizedRef);
   if (direct instanceof obsidian.TFile && AUDIO_EXT.has((direct.extension || "").toLowerCase())) return direct;
 
@@ -234,8 +252,10 @@ export function resolveAudioFileRef(app, settings, ref) {
   return null;
 }
 
-export function getSessionLatestSegmentEndMs(session) {
-  const segments = session && Array.isArray(session.segments) ? session.segments : [];
+export function getSessionLatestSegmentEndMs(session: {
+  segments?: readonly (SegmentOffsetInput | null | undefined)[];
+} | null | undefined): number {
+  const segments: readonly (SegmentOffsetInput | null | undefined)[] = session && Array.isArray(session.segments) ? session.segments : [];
   let latest = 0;
   for (const s of segments) {
     const end = Number(s && (s.endOffsetMs ?? s.startOffsetMs)) || 0;
