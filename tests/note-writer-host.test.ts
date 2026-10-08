@@ -748,6 +748,300 @@ describe("NoteWriter narrow host capabilities", () => {
     expect(newVault.files.get(file.path)?.markdown).toBe("current title source");
     expect(oldVault.files.get("QnALog/Minutes/original.md")?.markdown).toBe("old title source");
   });
+  it("keeps title rename guards, lookup boundaries, and no-op results", async () => {
+    const file = new obsidian.TFile("QnALog/Minutes/unchanged.md");
+    const original = "unchanged body";
+    const vault = memoryVault([{ file, markdown: original }]);
+    let titleCalls = 0;
+    let renameCalls = 0;
+    const host = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+      generateTitleTag: async () => { titleCalls += 1; return "topic"; },
+      findAvailableMarkdownPath: (target) => target,
+      renameFile: async () => { renameCalls += 1; },
+    });
+    const writer = new NoteWriter(host);
+
+    expect(await writer.renameMarkdownWithGeneratedTitle("missing.md", "body", "meeting")).toBeNull();
+    expect(await writer.renameMarkdownWithGeneratedTitle(null, "body", "meeting")).toBeNull();
+    expect(await writer.renameMarkdownWithGeneratedTitle(undefined, "body", "meeting")).toBeNull();
+    expect(await writer.renameMarkdownWithGeneratedTitle({ path: file.path }, "body", "meeting")).toBeNull();
+    expect(await writer.renameMarkdownWithGeneratedTitle(file, "", "meeting")).toBeNull();
+    expect(await writer.renameMarkdownWithGeneratedTitle(file, "body", "off")).toBeNull();
+    expect(titleCalls).toBe(0);
+    const disabledVault = { ...vault.vault, getAbstractFileByPath: () => { throw new Error("disabled rename must skip lookup"); } } as NoteWriterVault;
+    const disabledWriter = new NoteWriter(unexpectedHost(disabledVault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: false }));
+    expect(await disabledWriter.renameMarkdownWithGeneratedTitle("missing.md", "body", "meeting")).toBeNull();
+    expect(titleCalls).toBe(0);
+
+    const nonFileVault = {
+      ...vault.vault,
+      getAbstractFileByPath: () => ({ path: file.path }),
+    } as unknown as NoteWriterVault;
+    const nonFileWriter = new NoteWriter(unexpectedHost(nonFileVault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+      generateTitleTag: async () => { titleCalls += 1; return "unexpected"; },
+    }));
+    expect(await nonFileWriter.renameMarkdownWithGeneratedTitle("present.md", "body", "meeting")).toBeNull();
+    expect(titleCalls).toBe(0);
+    const activeHost = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+      generateTitleTag: async () => "",
+      findAvailableMarkdownPath: () => { throw new Error("empty title must skip allocation"); },
+      renameFile: async () => { renameCalls += 1; },
+    });
+    const activeWriter = new NoteWriter(activeHost);
+    expect(await activeWriter.renameMarkdownWithGeneratedTitle(file, "body", "meeting")).toBe(file);
+    expect(renameCalls).toBe(0);
+
+    for (const allocatorResult of ["", "QnALog/Minutes/unchanged.md"]) {
+      const noOpWriter = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+        generateTitleTag: async () => "topic",
+        findAvailableMarkdownPath: () => allocatorResult,
+        renameFile: async () => { renameCalls += 1; },
+      }));
+      expect(await noOpWriter.renameMarkdownWithGeneratedTitle(file, "body", "meeting")).toBe(file);
+    }
+    const backslashWriter = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+      generateTitleTag: async () => "topic",
+      findAvailableMarkdownPath: () => "QnALog\\Minutes\\unchanged.md",
+      renameFile: async () => { renameCalls += 1; },
+    }));
+    expect(await backslashWriter.renameMarkdownWithGeneratedTitle(file, "body", "meeting")).toBe(file);
+    expect(renameCalls).toBe(0);
+    expect(file.path).toBe("QnALog/Minutes/unchanged.md");
+    expect(await vault.vault.read(file)).toBe(original);
+  });
+
+  it("renames a string path using the live localized custom template and allocator result", async () => {
+    const originalLanguage = getActiveUiLanguage();
+    const file = new obsidian.TFile("QnALog/Minutes/original.md");
+    const conflict = new obsidian.TFile("QnALog/Minutes/original · 工作纪要-topic.md");
+    const original = "# Original\n\nBody.";
+    const vault = memoryVault([
+      { file, markdown: original },
+      { file: conflict, markdown: "conflict body" },
+    ]);
+    setActiveUiLanguage(matchUiLanguage("zh")!);
+    try {
+      let titleCalls = 0;
+      let allocated = "";
+      const writer = new NoteWriter(unexpectedHost(vault.vault, {
+        ...DEFAULT_SETTINGS,
+        autoRenameWithTitle: true,
+        promptTemplates: {
+          "custom-title": { id: "custom-title", mode: "custom-title", customMode: true, name: "工作纪要", prompt: "fixture" },
+        },
+      }, {
+        generateTitleTag: async () => { titleCalls += 1; return "topic"; },
+        findAvailableMarkdownPath: (target, current) => {
+          expect(target).toBe("QnALog/Minutes/original · 工作纪要-topic.md");
+          expect(current).toBe("QnALog/Minutes/original.md");
+          allocated = "QnALog/Minutes/original · 工作纪要-topic (2).md";
+          return allocated;
+        },
+        renameFile: async (targetFile, path) => {
+          const entry = vault.files.get(targetFile.path);
+          if (!entry) throw new Error("missing rename source");
+          vault.files.delete(targetFile.path);
+          targetFile.path = path;
+          targetFile.name = path.split("/").pop() || path;
+          targetFile.basename = targetFile.name.replace(/\.[^.]+$/, "");
+          vault.files.set(path, { file: targetFile, markdown: entry.markdown });
+        },
+      }));
+      expect(await writer.renameMarkdownWithGeneratedTitle(file.path, "polished body", "custom-title")).toBe(file);
+      expect(titleCalls).toBe(1);
+      expect(vault.files.has("QnALog/Minutes/original.md")).toBe(false);
+      expect(vault.files.get(allocated)?.markdown).toBe(original);
+      expect(vault.files.get(conflict.path)?.markdown).toBe("conflict body");
+      expect(file.path).toBe(allocated);
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
+  });
+
+  it("uses current host capabilities after title and rename waits and preserves partial moves", async () => {
+    const originalLanguage = getActiveUiLanguage();
+    const file = new obsidian.TFile("QnALog/Minutes/original.md");
+    const oldVault = memoryVault([{ file, markdown: "A bytes" }]);
+    const newVault = memoryVault([{ file, markdown: "B bytes" }]);
+    const titleGate = Promise.withResolvers<string>();
+    const titleEntered = Promise.withResolvers<void>();
+    const renameGate = Promise.withResolvers<void>();
+    const renameEntered = Promise.withResolvers<void>();
+    let activeHost: NoteWriterHost;
+    const initialHost = unexpectedHost(oldVault.vault, {
+      ...DEFAULT_SETTINGS,
+      autoRenameWithTitle: true,
+      promptTemplates: {
+        "custom-title": { id: "custom-title", mode: "custom-title", customMode: true, name: "EarlyTemplate", prompt: "fixture" },
+      },
+    }, {
+      generateTitleTag: async () => { titleEntered.resolve(); return titleGate.promise; },
+      findAvailableMarkdownPath: () => { throw new Error("old allocator used"); },
+      renameFile: async () => { throw new Error("old rename used"); },
+    });
+    activeHost = initialHost;
+    const writer = new NoteWriter(initialHost);
+    const originalLanguageValue = originalLanguage;
+    setActiveUiLanguage(matchUiLanguage("zh")!);
+    try {
+      const pending = writer.renameMarkdownWithGeneratedTitle(file.path, "polished", "custom-title");
+      await titleEntered.promise;
+      oldVault.files.delete(file.path);
+      file.path = "QnALog/Minutes/moved.md";
+      file.name = "moved.md";
+      file.basename = "moved";
+      oldVault.files.set(file.path, { file, markdown: "A bytes" });
+    newVault.files.delete("QnALog/Minutes/original.md");
+    newVault.files.set(file.path, { file, markdown: "B bytes" });
+      activeHost = unexpectedHost(newVault.vault, {
+        ...DEFAULT_SETTINGS,
+        autoRenameWithTitle: false,
+        promptTemplates: {
+          "custom-title": { id: "custom-title", mode: "custom-title", customMode: true, name: "LateTemplate", prompt: "fixture" },
+        },
+      }, {
+        generateTitleTag: async () => { throw new Error("unexpected title retry"); },
+        findAvailableMarkdownPath: (target, current) => {
+          expect(target).toBe("QnALog/Minutes/moved · LateTemplate-topic.md");
+          expect(current).toBe("QnALog/Minutes/moved.md");
+          return target;
+        },
+        renameFile: async (targetFile, path) => {
+          expect(targetFile).toBe(file);
+          const entry = newVault.files.get(targetFile.path);
+          if (!entry) throw new Error("missing live rename source");
+          newVault.files.delete(targetFile.path);
+          targetFile.path = path;
+          targetFile.name = path.split("/").pop() || path;
+          targetFile.basename = targetFile.name.replace(/\.[^.]+$/, "");
+          newVault.files.set(path, { file: targetFile, markdown: entry.markdown });
+          renameEntered.resolve();
+          await renameGate.promise;
+        },
+      });
+      writer.host = activeHost;
+      titleGate.resolve("topic");
+      await renameEntered.promise;
+      const lookupFile = new obsidian.TFile(file.path);
+      const lookupVault = memoryVault([{ file: lookupFile, markdown: "B bytes" }]);
+      activeHost = unexpectedHost(lookupVault.vault, {
+        ...DEFAULT_SETTINGS,
+        autoRenameWithTitle: false,
+      });
+      writer.host = activeHost;
+      renameGate.resolve();
+      expect(await pending).toBe(lookupFile);
+      expect(await lookupVault.vault.read(lookupFile)).toBe("B bytes");
+      expect([...oldVault.files.values()].map((entry) => entry.markdown)).toContain("A bytes");
+    } finally {
+      setActiveUiLanguage(originalLanguageValue);
+    }
+  });
+
+  it("keeps pre-try rejections distinct from caught post-title failures", async () => {
+    const file = new obsidian.TFile("QnALog/Minutes/unchanged.md");
+    const vault = memoryVault([{ file, markdown: "original body" }]);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const initialFailure = new Error("initial settings failed");
+      const initialHost = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true });
+      Object.defineProperty(initialHost, "settings", { get: () => { throw initialFailure; } });
+      await expect(new NoteWriter(initialHost).renameMarkdownWithGeneratedTitle(file, "body", "meeting")).rejects.toBe(initialFailure);
+      expect(logged).not.toHaveBeenCalled();
+
+      const lookupFailure = new Error("initial lookup failed");
+      const rejectingLookupVault = { ...vault.vault, getAbstractFileByPath: () => { throw lookupFailure; } } as NoteWriterVault;
+      const lookupHost = unexpectedHost(rejectingLookupVault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true });
+      await expect(new NoteWriter(lookupHost).renameMarkdownWithGeneratedTitle(file.path, "body", "meeting")).rejects.toBe(lookupFailure);
+      expect(logged).not.toHaveBeenCalled();
+
+      const settingsFailure = new Error("path settings failed");
+      let settingsReads = 0;
+      const pathHost = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+        generateTitleTag: async () => "topic",
+      });
+      Object.defineProperty(pathHost, "settings", {
+        get: () => {
+          settingsReads += 1;
+          if (settingsReads > 1) throw settingsFailure;
+          return { ...DEFAULT_SETTINGS, autoRenameWithTitle: true };
+        },
+      });
+      expect(await new NoteWriter(pathHost).renameMarkdownWithGeneratedTitle(file, "body", "meeting")).toBe(file);
+      expect(logged).toHaveBeenLastCalledWith("[QnALog] rename failed", settingsFailure);
+      expect(file.path).toBe("QnALog/Minutes/unchanged.md");
+      expect(await vault.vault.read(file)).toBe("original body");
+
+      const allocationFailure = new Error("allocation failed");
+      const allocationHost = unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+        generateTitleTag: async () => "topic",
+        findAvailableMarkdownPath: () => { throw allocationFailure; },
+      });
+      expect(await new NoteWriter(allocationHost).renameMarkdownWithGeneratedTitle(file, "body", "meeting")).toBe(file);
+      expect(logged).toHaveBeenLastCalledWith("[QnALog] rename failed", allocationFailure);
+      expect(file.path).toBe("QnALog/Minutes/unchanged.md");
+      expect(await vault.vault.read(file)).toBe("original body");
+    } finally {
+      logged.mockRestore();
+    }
+  });
+  it("returns the original object when post-rename lookup is missing or fails without rollback", async () => {
+    for (const lookupResult of [null, { path: "QnALog/Minutes/target.md" }]) {
+      const file = new obsidian.TFile("QnALog/Minutes/source.md");
+      const original = "kept bytes";
+      const vault = memoryVault([{ file, markdown: original }]);
+      const destination = "QnALog/Minutes/target.md";
+      const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+        generateTitleTag: async () => "topic",
+        findAvailableMarkdownPath: () => destination,
+        renameFile: async (targetFile, path) => {
+          const entry = vault.files.get(targetFile.path)!;
+          vault.files.delete(targetFile.path);
+          targetFile.path = path;
+          targetFile.name = "target.md";
+          targetFile.basename = "target";
+          vault.files.set(path, { file: targetFile, markdown: entry.markdown });
+        },
+      }));
+      writer.host.vault.getAbstractFileByPath = (path) => {
+        expect(path).toBe(destination);
+        return lookupResult as File | null;
+      };
+      expect(await writer.renameMarkdownWithGeneratedTitle(file, "body", "meeting")).toBe(file);
+      expect(file.path).toBe(destination);
+      expect(vault.files.get(destination)?.markdown).toBe(original);
+    }
+
+    const file = new obsidian.TFile("QnALog/Minutes/source.md");
+    const vault = memoryVault([{ file, markdown: "kept after lookup error" }]);
+    const lookupFailure = new Error("post-rename lookup failed");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, autoRenameWithTitle: true }, {
+        generateTitleTag: async () => "topic",
+        findAvailableMarkdownPath: () => "QnALog/Minutes/target.md",
+        renameFile: async (targetFile, path) => {
+          const entry = vault.files.get(targetFile.path)!;
+          vault.files.delete(targetFile.path);
+          targetFile.path = path;
+          targetFile.name = "target.md";
+          targetFile.basename = "target";
+          vault.files.set(path, { file: targetFile, markdown: entry.markdown });
+        },
+      }));
+      writer.host.vault.getAbstractFileByPath = (path) => {
+        expect(path).toBe("QnALog/Minutes/target.md");
+        throw lookupFailure;
+      };
+      expect(await writer.renameMarkdownWithGeneratedTitle(file, "body", "meeting")).toBe(file);
+      expect(file.path).toBe("QnALog/Minutes/target.md");
+      expect(vault.files.get(file.path)?.markdown).toBe("kept after lookup error");
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged).toHaveBeenCalledWith("[QnALog] rename failed", lookupFailure);
+    } finally {
+      logged.mockRestore();
+    }
+  });
 
   it("polishes only the selected editor range and reports a rejected request without changing text", async () => {
     const vault = memoryVault();

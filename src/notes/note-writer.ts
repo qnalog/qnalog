@@ -32,6 +32,10 @@ import {
   type NoteMergeMoment,
 } from "./note-merge-flow";
 import {
+  renameMarkdownWithGeneratedTitleFlow,
+  type NoteTitleRenameFlowHost,
+} from "./note-title-rename-flow";
+import {
   appendNoteText,
   insertBeforeSessionSegmentsEnd,
   insertBeforeSessionSegmentsStart,
@@ -78,9 +82,18 @@ export class NoteWriter {
   private readonly outlineNoteStoreHost: OutlineNoteStoreHost;
   private readonly noteMergeSourceFlowHost: NoteMergeSourceFlowHost;
   private readonly noteMergeFlowHost: NoteMergeFlowHost;
+  private readonly noteTitleRenameFlowHost: NoteTitleRenameFlowHost;
   private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
+    this.noteTitleRenameFlowHost = {
+      getAutoRenameWithTitle: () => this.host.settings.autoRenameWithTitle,
+      getVault: () => this.host.vault,
+      generateTitleTag: (polished, mode) => this.host.generateTitleTag(polished, mode),
+      buildTargetPath: (path, mode, tag) => buildRenamedMarkdownPath(path, mode, tag, this.host.settings),
+      findAvailableMarkdownPath: (target, current) => this.host.findAvailableMarkdownPath(target, current),
+      renameFile: (file, path) => this.host.renameFile(file, path),
+    };
     this.notePolishFlowHost = {
       getVault: () => this.host.vault,
       getModeMeta: (session) => getModeMeta(this.host.settings, session.mode),
@@ -253,25 +266,12 @@ export class NoteWriter {
     return removeSessionNoteBlock(this.noteSegmentStoreHost, session);
   }
 
-  async renameMarkdownWithGeneratedTitle(fileOrPath, polished, mode) {
-    if (!this.host.settings.autoRenameWithTitle || !polished || mode === "off") return null;
-    const file = typeof fileOrPath === "string"
-      ? this.host.vault.getAbstractFileByPath(fileOrPath)
-      : fileOrPath;
-    if (!(file instanceof obsidian.TFile)) return null;
-    try {
-      const tag = await this.host.generateTitleTag(polished, mode);
-      if (!tag) return file;
-      const target = buildRenamedMarkdownPath(file.path, mode, tag, this.host.settings);
-      const newPath = this.host.findAvailableMarkdownPath(target, file.path);
-      if (!newPath || obsidian.normalizePath(newPath) === obsidian.normalizePath(file.path)) return file;
-      await this.host.renameFile(file, newPath);
-      const renamed = this.host.vault.getAbstractFileByPath(newPath);
-      return renamed instanceof obsidian.TFile ? renamed : file;
-    } catch (e) {
-      console.error("[QnALog] rename failed", e);
-      return file;
-    }
+  renameMarkdownWithGeneratedTitle(
+    fileOrPath: unknown,
+    polished: string,
+    mode: string,
+  ): Promise<obsidian.TFile | null> {
+    return renameMarkdownWithGeneratedTitleFlow(this.noteTitleRenameFlowHost, fileOrPath, polished, mode);
   }
   async polishEditor(editor) {
     const sel = editor.getSelection();
