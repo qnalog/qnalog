@@ -4,6 +4,33 @@ import * as obsidian from "obsidian";
 import { MODE_META } from './catalog-modes';
 
 import { getActiveUiLanguage, t } from "../shared/i18n";
+import type { PromptTemplate } from "./types";
+
+interface ModeSettings {
+  promptTemplates?: Record<string, unknown> | null;
+  polishMode?: string;
+}
+interface ModeMetadata {
+  prefix: string;
+  label: string;
+  emoji?: string;
+  icon?: string;
+  goal?: string;
+  baseMode?: string;
+  custom?: boolean;
+  legacy?: boolean;
+}
+type ModePrefixInput = Partial<Pick<ModeMetadata, "prefix" | "label">>;
+type ModePillInput = ModePrefixInput & Pick<ModeMetadata, "icon">;
+type PromptTemplateInput = Omit<Partial<PromptTemplate>, "id" | "mode" | "name" | "description" | "prompt"> & {
+  id?: unknown;
+  mode?: unknown;
+  name?: unknown;
+  description?: unknown;
+  prompt?: unknown;
+};
+const modeMetaByKey = MODE_META as Record<string, ModeMetadata>;
+const stringifyModeValue = String as (value: unknown) => string;
 export const STANDARD_POLISH_MODES = ["synthesis", "meeting", "seminar", "interview", "monologue", "learning"];
 
 // 曾用于"必须先解锁才可见"的模式（招聘评估 / 招聘需求挖掘 / 晋升评审），随 HR 场景一并移除；
@@ -20,9 +47,9 @@ type CustomPromptModeTemplate = {
   customMode?: boolean;
 };
 
-export function isKnownPolishMode(settings, mode) {
+export function isKnownPolishMode(settings: ModeSettings | null | undefined, mode: string): boolean {
   if (mode === "off") return true;
-  return !!(MODE_META[mode] || getCustomPromptModeTemplate(settings, mode));
+  return !!(modeMetaByKey[mode] || getCustomPromptModeTemplate(settings, mode));
 }
 
 export function isCustomPromptModeTemplate(t: unknown): t is CustomPromptModeTemplate {
@@ -31,8 +58,8 @@ export function isCustomPromptModeTemplate(t: unknown): t is CustomPromptModeTem
   return !!(item.customMode === true && typeof item.id === "string" && typeof item.mode === "string" && item.id === item.mode);
 }
 
-export function makeCustomPromptModeId(seed) {
-  const slug = String(seed || "")
+export function makeCustomPromptModeId(seed: unknown): string {
+  const slug = stringifyModeValue(seed || "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
@@ -41,32 +68,32 @@ export function makeCustomPromptModeId(seed) {
   return "custom-" + (slug || Date.now().toString(36)) + "-" + Math.random().toString(36).slice(2, 6);
 }
 
-export function getCustomPromptModeTemplate(settings, mode) {
+export function getCustomPromptModeTemplate(settings: ModeSettings | null | undefined, mode: string): CustomPromptModeTemplate | null {
   const tpls = settings && settings.promptTemplates && typeof settings.promptTemplates === "object" ? settings.promptTemplates : {};
   const t = tpls[mode];
   return isCustomPromptModeTemplate(t) ? t : null;
 }
 
-export function getCustomPromptModeTemplates(settings) {
+export function getCustomPromptModeTemplates(settings: ModeSettings | null | undefined): CustomPromptModeTemplate[] {
   const tpls = settings && settings.promptTemplates && typeof settings.promptTemplates === "object" ? settings.promptTemplates : {};
   return Object.values(tpls)
     .filter(isCustomPromptModeTemplate)
     .sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh"));
 }
 
-export function getBuiltInVisiblePolishModeKeys(settings) {
+export function getBuiltInVisiblePolishModeKeys(settings: ModeSettings | null | undefined): string[] {
   void settings;
   return STANDARD_POLISH_MODES.slice();
 }
 
-export function getVisiblePolishModeKeys(settings) {
+export function getVisiblePolishModeKeys(settings: ModeSettings | null | undefined): string[] {
   const custom = getCustomPromptModeTemplates(settings).map((t) => t.id);
   return [...getBuiltInVisiblePolishModeKeys(settings), ...custom];
 }
 
-export function getModeMeta(settings, mode) {
+export function getModeMeta(settings: ModeSettings | null | undefined, mode: string): ModeMetadata {
   if (mode === "cleanscript") return { prefix: t("Clean transcript"), label: "Clean transcript", icon: "file-text" };
-  if (MODE_META[mode]) return MODE_META[mode];
+  if (modeMetaByKey[mode]) return modeMetaByKey[mode];
   const custom = getCustomPromptModeTemplate(settings, mode);
   if (custom) {
     const name = custom.name || t("Custom prompt");
@@ -76,7 +103,7 @@ export function getModeMeta(settings, mode) {
 }
 
 /** 解析生效的纪要模式：requested 优先，其次设置里的 polishMode，最后用 fallback（默认 meeting）。 */
-export function getEffectivePolishMode(settings, requested, fallback = null) {
+export function getEffectivePolishMode(settings: ModeSettings | null | undefined, requested: string | null | undefined, fallback: string | null = null): string {
   const fb = fallback == null ? "meeting" : fallback;
   const mode = requested || (settings && settings.polishMode) || fb;
   if (mode === "off") return mode;
@@ -91,15 +118,15 @@ export function getEffectivePolishMode(settings, requested, fallback = null) {
  * 新笔记的标题与文件名应使用英文前缀，否则英文用户看到的是中文标题。
  * 两种前缀在读取时都能解析回同一个 mode（见 normalizeModeFromLabel）。
  */
-export function getModePrefix(meta) {
+export function getModePrefix(meta: ModePrefixInput | null | undefined): string {
   if (!meta) return "";
   return meta.label && getActiveUiLanguage().id === "en"
     ? meta.label
     : (meta.prefix || meta.label || "");
 }
 
-export function getVisibleModeEntries(settings, includeOff) {
-  const entries = getVisiblePolishModeKeys(settings).map((key) => [key, getModeMeta(settings, key).prefix]);
+export function getVisibleModeEntries(settings: ModeSettings | null | undefined, includeOff: boolean): [string, string][] {
+  const entries = getVisiblePolishModeKeys(settings).map((key): [string, string] => [key, getModeMeta(settings, key).prefix]);
   // 第二个元素是**前缀**（写进笔记文件名、供读取侧解析），不是界面显示名：
   // 需要显示的地方用 getModeDisplayName()，不要直接 setTitle(这个值)。
   return includeOff ? [["off", t("Off (transcription only)")], ...entries] : entries;
@@ -113,12 +140,12 @@ export function getVisibleModeEntries(settings, includeOff) {
  * 侧栏模板下拉直接显示 label（中文界面下仍是英文），菜单与导入弹窗显示 prefix
  * （英文界面下仍是中文）。显示一律走这里，两种语言才对得上。
  */
-export function getModeDisplayName(settings, mode) {
+export function getModeDisplayName(settings: ModeSettings | null | undefined, mode: string): string {
   const meta = getModeMeta(settings, mode);
   return t(meta.label || meta.prefix || mode);
 }
 
-export function setModePillIcon(el, meta, fallbackMeta) {
+export function setModePillIcon(el: HTMLElement, meta: ModePillInput | null | undefined, fallbackMeta?: ModePillInput | null): void {
   const source = meta || fallbackMeta || {};
   const fallback = fallbackMeta || {};
   const icon = source.icon || fallback.icon || "file-text";
@@ -131,18 +158,19 @@ export function setModePillIcon(el, meta, fallbackMeta) {
     el.setText(label ? label.trim().slice(0, 1) : "L");
   }
 }
-
-export function sanitizePromptTemplate(tpl, fallbackBaseMode) {
+export function sanitizePromptTemplate(tpl: PromptTemplateInput | null | undefined, fallbackBaseMode: string | null | undefined): PromptTemplate {
   const now = new Date().toISOString();
-  const clean = Object.assign({}, tpl || {});
-  const rawId = String(clean.id || "").trim();
+  const clean = Object.assign({}, tpl || {}) as PromptTemplate;
+  const rawId = stringifyModeValue(clean.id || "").trim();
   clean.id = rawId || makeCustomPromptModeId(clean.name || "scene");
   clean.mode = clean.id;
-  clean.name = String(clean.name || t("Custom prompt")).trim().slice(0, 80) || t("Custom prompt");
-  clean.description = String(clean.description || "").trim().slice(0, 240);
-  const fallback = MODE_META[fallbackBaseMode] ? fallbackBaseMode : "learning";
-  clean.baseMode = MODE_META[clean.baseMode] ? clean.baseMode : fallback;
-  clean.prompt = String(clean.prompt || "").trim();
+  clean.name = stringifyModeValue(clean.name || t("Custom prompt")).trim().slice(0, 80) || t("Custom prompt");
+  clean.description = stringifyModeValue(clean.description || "").trim().slice(0, 240);
+  const fallback = modeMetaByKey[fallbackBaseMode as keyof typeof MODE_META]
+    ? fallbackBaseMode as keyof typeof MODE_META : "learning";
+  clean.baseMode = modeMetaByKey[clean.baseMode as keyof typeof MODE_META]
+    ? clean.baseMode : fallback;
+  clean.prompt = stringifyModeValue(clean.prompt || "").trim();
   clean.isBuiltin = false;
   clean.customMode = true;
   clean.createdAt = clean.createdAt || now;
