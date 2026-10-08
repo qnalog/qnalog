@@ -1595,3 +1595,171 @@ describe("NoteWriter realtime outline details", () => {
     }
   });
 });
+describe("NoteWriter polish execution boundaries", () => {
+  const path = "QnALog/Minutes/polish-flow.md";
+  const sessionId = "polish-flow";
+  const modelBody = "BODY $& $` $' $$";
+  const rawText = "SOURCE A $& $` $' $$";
+  const makeSession = (): RecordingSession => {
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1_000, text: rawText, rawText, isFinal: true,
+    }, sessionId, "text-import");
+    return {
+      id: sessionId, sessionStamp: sessionId, startedAt: "2026-09-14T12:00:00.000Z",
+      mdPath: path, mode: "meeting", source: "recording", segments: [segment], finalized: true,
+    };
+  };
+  const originalLanguage = getActiveUiLanguage();
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  it("keeps the different vault and settings read boundaries for rewrite and append", async () => {
+    setActiveUiLanguage(matchUiLanguage("en")!);
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      for (const operation of ["rewrite", "append"] as const) {
+        const file = new obsidian.TFile(path);
+        const ledger = serializeTranscriptBlock(makeSession().segments[0], "### Segment 1", rawText);
+        const source = `# Source A\n\n${ledger}`;
+        const target = "# Target B\n\nTARGET B";
+        const vaultA = memoryVault([{ file, markdown: source }]);
+        const vaultB = memoryVault([{ file, markdown: target }]);
+        let activeVault = vaultA;
+        let model = "FIRST MODEL";
+        const settings = { ...DEFAULT_SETTINGS, llmModel: "FIRST MODEL" } as NoteWriterSettings;
+        const host = unexpectedHost(vaultA.vault, settings);
+        Object.defineProperty(host, "vault", { get: () => activeVault.vault });
+        Object.defineProperty(host, "settings", { get: () => ({ ...settings, llmModel: model }) });
+        const originalRead = vaultA.vault.read.bind(vaultA.vault);
+        vaultA.vault.read = async targetFile => {
+          const markdown = await originalRead(targetFile);
+          activeVault = vaultB;
+          model = "LATE MODEL";
+          return markdown;
+        };
+        const writer = new NoteWriter(host);
+        if (operation === "rewrite") await writer.rewriteConsolidated(makeSession(), modelBody);
+        else await writer.appendPolishBlock(makeSession(), modelBody, null, false);
+        const result = vaultB.files.get(path)?.markdown ?? "";
+        expect(vaultA.files.get(path)?.markdown).toBe(source);
+        expect(result).not.toContain("TARGET B");
+        expect(result).toContain(modelBody);
+        expect(result).toContain(rawText);
+        expect(result).toContain(operation === "rewrite" ? "LATE MODEL" : "FIRST MODEL");
+        if (operation === "rewrite") expect(result).toContain("LATE MODEL");
+        else expect(result).not.toContain("LATE MODEL");
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+
+  it("distinguishes supplied, empty, null, and omitted initial markdown", async () => {
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      const cases: Array<{ label: string; initial?: string | null; expectedSource: string; reads: number }> = [
+        { label: "supplied", initial: "SUPPLIED BYTES", expectedSource: "SUPPLIED BYTES", reads: 0 },
+        { label: "empty", initial: "", expectedSource: "", reads: 0 },
+        { label: "null", initial: null, expectedSource: "LIVE VAULT BYTES", reads: 1 },
+        { label: "omitted", expectedSource: "LIVE VAULT BYTES", reads: 1 },
+      ];
+      for (const entry of cases) {
+        const file = new obsidian.TFile(path);
+        const vault = memoryVault([{ file, markdown: "LIVE VAULT BYTES" }]);
+        let reads = 0;
+        const read = vault.vault.read.bind(vault.vault);
+        vault.vault.read = async target => { reads += 1; return read(target); };
+        const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "initial-markdown-model" }));
+        await writer.appendPolishBlock(
+          { ...makeSession(), id: "polish-flow-commit" },
+          modelBody,
+          null,
+          false,
+          "polish-flow-commit",
+          entry.initial,
+        );
+        const result = vault.files.get(path)?.markdown ?? "";
+        expect(reads, entry.label).toBe(entry.reads);
+        expect(result).toContain(modelBody);
+        if (entry.expectedSource) expect(result).toContain(entry.expectedSource);
+        else expect(result).not.toContain("LIVE VAULT BYTES");
+        expect(result.endsWith("<!-- qnalog-continuation-committed:polish-flow-commit -->\n")).toBe(true);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+
+  it("returns before reading settings, materials, or content for absent and non-file targets", async () => {
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    const noticesBefore = notices.length;
+    try {
+      for (const target of [null, { path: "QnALog/Minutes", children: [] }]) {
+        const file = new obsidian.TFile("QnALog/Minutes/sentinel.md");
+        const vault = memoryVault([{ file, markdown: "SENTINEL" }]);
+        let reads = 0;
+        let writes = 0;
+        let lookups = 0;
+        const host = unexpectedHost(vault.vault, DEFAULT_SETTINGS as NoteWriterSettings);
+        host.vault.getAbstractFileByPath = () => { lookups += 1; return target as never; };
+        host.vault.read = async () => { reads += 1; throw new Error("unexpected read"); };
+        host.vault.modify = async () => { writes += 1; throw new Error("unexpected write"); };
+        Object.defineProperty(host, "settings", { get: () => { throw new Error("unexpected settings"); } });
+        const writer = new NoteWriter(host);
+        await writer.rewriteConsolidated(makeSession(), modelBody);
+        await writer.appendPolishBlock(makeSession(), modelBody, null);
+        expect(lookups).toBe(2);
+        expect(reads).toBe(0);
+        expect(writes).toBe(0);
+        expect(vault.files.get(file.path)?.markdown).toBe("SENTINEL");
+      }
+      expect(notices).toHaveLength(noticesBefore);
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+
+  it("propagates read and write failures without modifying the source", async () => {
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      for (const operation of ["rewrite", "append"] as const) for (const stage of ["read", "modify"] as const) {
+        const file = new obsidian.TFile(path);
+        const original = "# Original";
+        const vault = memoryVault([{ file, markdown: original }]);
+        const failure = new Error(`${operation} ${stage} failed`);
+        if (stage === "read") vault.vault.read = async () => { throw failure; };
+        else vault.vault.modify = async () => { throw failure; };
+        const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS as NoteWriterSettings));
+        const run = operation === "rewrite"
+          ? writer.rewriteConsolidated(makeSession(), modelBody)
+          : writer.appendPolishBlock(makeSession(), modelBody, null, false, "", null);
+        await expect(run).rejects.toBe(failure);
+        expect(vault.files.get(path)?.markdown).toBe(original);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+
+  it("rejects a damaged transcript ledger before reading settings or writing", async () => {
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-14 12:00:00" }) });
+    try {
+      const file = new obsidian.TFile(path);
+      const damaged = "# Damaged\n<!-- qnalog-transcript-start:bad -->\n<!-- qnalog-transcript-data {bad} -->\n";
+      const vault = memoryVault([{ file, markdown: damaged }]);
+      const host = unexpectedHost(vault.vault, DEFAULT_SETTINGS as NoteWriterSettings);
+      Object.defineProperty(host, "settings", { get: () => { throw new Error("settings read before ledger validation"); } });
+      const writer = new NoteWriter(host);
+      await expect(writer.rewriteConsolidated(makeSession(), modelBody))
+        .rejects.toThrow("Transcript block bad has no matching end marker");
+      expect(vault.files.get(path)?.markdown).toBe(damaged);
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) vi.stubGlobal("window", originalWindow);
+    }
+  });
+});

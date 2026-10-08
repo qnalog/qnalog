@@ -2107,6 +2107,84 @@ async function main() {
       }
       const realtimeOutlineDigest = createHash("sha256").update(JSON.stringify(realtimeOutlineResults)).digest("hex");
       console.log(`[realtime-outline-materials] rewrite/append/failedAppend digest: ${realtimeOutlineDigest}`);
+      const polishExecutionResults = [];
+      const polishWriter = plugin.noteWriter;
+      const polishOriginalHost = polishWriter.host;
+      const runPolishVaultSwitch = async (operation) => {
+        let activeVault = "A";
+        let activeSettings = { ...plugin.settings, llmModel: "FIRST MODEL" };
+        const vaultText = { A: polishOriginal, B: "TARGET B" };
+        const vault = {
+          getAbstractFileByPath: (path) => path === polishSession.mdPath ? retryFile : null,
+          read: async (file) => {
+            if (file !== retryFile || activeVault !== "A") throw new Error("unexpected polish vault read");
+            const captured = vaultText.A;
+            activeVault = "B";
+            activeSettings = { ...plugin.settings, llmModel: "LATE MODEL" };
+            return captured;
+          },
+          modify: async (file, markdown) => {
+            if (file !== retryFile) throw new Error("unexpected polish vault write");
+            vaultText[activeVault] = markdown;
+          },
+        };
+        const dynamicHost = Object.create(polishOriginalHost);
+        Object.defineProperties(dynamicHost, {
+          vault: { get: () => vault },
+          settings: { get: () => activeSettings },
+        });
+        polishWriter.host = dynamicHost;
+        try {
+          if (operation === "rewrite") await polishWriter.rewriteConsolidated(polishSession, polishLiteralBody);
+          else await polishWriter.appendPolishBlock(polishSession, polishLiteralBody, null, false);
+          const result = vaultText.B;
+          const ledger = readTextMaterialLedger(result, "seg:literal-retry:0");
+          if (vaultText.A !== polishOriginal || result.includes("TARGET B") || !result.includes(polishLiteralBody)
+            || !result.includes(operation === "rewrite" ? "LATE MODEL" : "FIRST MODEL")
+            || ledger.visible !== "Retry smoke transcript ledger."
+            || ledger.rawText !== "Retry smoke transcript ledger."
+            || JSON.stringify(ledger.transcript) !== JSON.stringify(retrySegment.transcript)) {
+            throw new Error(`${operation} did not preserve the dynamic vault/settings boundary and ledger`);
+          }
+          return result;
+        } finally {
+          polishWriter.host = polishOriginalHost;
+        }
+      };
+      polishExecutionResults.push(await runPolishVaultSwitch("rewrite"));
+      polishExecutionResults.push(await runPolishVaultSwitch("append"));
+      {
+        const liveFile = retryFile;
+        const liveText = "LIVE VAULT BYTES";
+        const emptyVault = {
+          getAbstractFileByPath: (path) => path === polishSession.mdPath ? liveFile : null,
+          read: async () => { throw new Error("explicit empty initialMarkdown must not read the vault"); },
+          modify: async (file, markdown) => {
+            if (file !== liveFile) throw new Error("unexpected empty-initial write target");
+            emptyVaultText = markdown;
+          },
+        };
+        let emptyVaultText = liveText;
+        const dynamicHost = Object.create(polishOriginalHost);
+        Object.defineProperties(dynamicHost, {
+          vault: { get: () => emptyVault },
+          settings: { get: () => ({ ...plugin.settings, llmModel: "FIRST MODEL" }) },
+        });
+        polishWriter.host = dynamicHost;
+        try {
+          await polishWriter.appendPolishBlock(polishSession, polishLiteralBody, null, false, "polish-flow-commit", "");
+          const result = emptyVaultText;
+          if (result.includes(liveText) || !result.includes(polishLiteralBody)
+            || !result.endsWith("<!-- qnalog-continuation-committed:polish-flow-commit -->\n")) {
+            throw new Error("empty initialMarkdown did not bypass vault read or preserve the commit marker");
+          }
+          polishExecutionResults.push(result);
+        } finally {
+          polishWriter.host = polishOriginalHost;
+        }
+      }
+      const polishExecutionDigest = createHash("sha256").update(JSON.stringify(polishExecutionResults)).digest("hex");
+      console.log(`[note-polish-flow] execution digest: ${polishExecutionDigest}`);
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);

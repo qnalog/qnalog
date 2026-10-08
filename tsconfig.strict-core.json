@@ -80,6 +80,7 @@
     "src/notes/session-finalize-flow.ts",
     "src/notes/continuation-commit-flow.ts",
     "src/notes/note-write-content.ts",
+    "src/notes/note-polish-flow.ts",
     "src/notes/note-segment-store.ts",
     "src/notes/note-session-materials.ts",
     "src/notes/meeting-workbench-state.ts",
