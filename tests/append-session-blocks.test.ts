@@ -174,6 +174,29 @@ describe("extractNotePanelData 面板可见的大纲与时间轴", () => {
       expect(extractPriorOutline(markdown)).toBe("- Live outline");
     }
   });
+  it("reads bilingual timeline-only notes without session markers and ignores empty blocks", () => {
+    const body = "00:00–00:05 [[audio.webm#t=0,5]]\r\nSECOND $& $` $' $$";
+    const fixtures = ["回听时间轴", "Playback timeline"];
+    for (const summary of fixtures) {
+      const markdown = [
+        "# Timeline note",
+        "",
+        `<details><summary>${summary}</summary>`,
+        "",
+        body,
+        "",
+        "</details>",
+      ].join("\n");
+      const data = extractNotePanelData(null, null, markdown);
+      expect(data).not.toBeNull();
+      expect(data?.timeline).toBe(body);
+      expect(data?.hasMarker).toBe(false);
+      expect(data?.outline).toBe("");
+
+      const empty = `<details><summary>${summary}</summary> \n \t </details>`;
+      expect(extractNotePanelData(null, null, `# Empty timeline\n\n${empty}`)).toBeNull();
+    }
+  });
 });
   it("reads the last current outline in append layout and never falls back through an empty latest block", () => {
     const block = (text: string) => [

@@ -24,7 +24,6 @@ export interface NoteMaterialBlocks {
   meetingWorkbench: string;
   realtimeOutline: string;
   textImportSource: string;
-  playbackTimeline: string;
 }
 
 export interface ConsolidatedNoteContentInput {
@@ -84,8 +83,8 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
     input.materials.meetingWorkbench ? "" : null,
     input.materials.realtimeOutline || null,
     input.materials.realtimeOutline ? "" : null,
-    input.textImport ? input.materials.textImportSource || null : input.materials.playbackTimeline || null,
-    input.textImport ? (input.materials.textImportSource ? "" : null) : (input.materials.playbackTimeline ? "" : null),
+    input.textImport ? input.materials.textImportSource || null : null,
+    input.textImport ? (input.materials.textImportSource ? "" : null) : null,
     input.retainAudio ? (input.masterAudioBlock ? null : "<details>") : null,
     input.retainAudio ? (input.masterAudioBlock ? null : `<summary>${input.isContinuation ? labelText("originalAudioSegmentsContinuation", input.segmentCount, formatElapsed(input.totalMs)) : labelText("originalAudioSegments", input.segmentCount, formatElapsed(input.totalMs))}</summary>`) : null,
     input.retainAudio ? "" : null,
@@ -132,8 +131,6 @@ export function buildPolishAppendBlock(input: PolishAppendBlockInput): string {
     input.materials.meetingWorkbench ? "" : null,
     input.materials.realtimeOutline || null,
     input.materials.realtimeOutline ? "" : null,
-    input.textImport ? null : input.materials.playbackTimeline || null,
-    input.textImport ? null : (input.materials.playbackTimeline ? "" : null),
     "---",
     "",
     input.polish.sedimentBlock || null,

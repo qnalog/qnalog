@@ -1,5 +1,5 @@
 import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-import { labelText } from "../src/shared/note-labels";
+import { labelPattern, labelText } from "../src/shared/note-labels";
 import { nsMarker, nsRe } from "../src/shared/namespace";
 import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
 import { describe, expect, it, vi } from "vitest";
@@ -27,6 +27,7 @@ import type { NoteWriterHost, NoteWriterSettings, NoteWriterVault } from "../src
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import { iterateNoteDetailsBlocks } from "../src/notes/note-document";
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
 import type { RecordingSession, Segment } from "../src/shared/types";
 import { buildEmptyLlmOutputFallback } from "../src/prompts/briefing-prompts";
@@ -283,6 +284,10 @@ describe("NoteWriter audio source materials", () => {
           if (state.source !== "text-import") {
             expect(readTranscriptBlocks(result).map((block) => block.visibleBlock)).toEqual(["AUDIO RAW $& $` $' $$"]);
           }
+          const timelineDetails = [...iterateNoteDetailsBlocks(result)].filter((range) =>
+            labelPattern("playbackTimeline").test(result.slice(range.summaryStart, range.summaryEnd))
+          );
+          expect(timelineDetails).toEqual([]);
         }
       }
     } finally {

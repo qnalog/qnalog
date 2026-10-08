@@ -16,7 +16,6 @@ import { readCurrentOutlineBlock } from "./outline-storage";
 
 import { formatElapsed, stripHtmlText } from "../shared/util-common";
 
-import { escapeHtmlText } from "../shared/util-markdown";
 import { t } from "../shared/i18n";
 import { iterateNoteDetailsBlocks } from "./note-document";
 
@@ -26,48 +25,6 @@ import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
 
 
-// 回听时间轴模块（保留函数与样式做向后兼容；新纪要不再注入）。
-// 大纲一级条目本身已挂回听锚点 [[file|HH:MM]]，逐段时间戳列表对用户冗余 —— 关闭。
-// 不删函数体里的 session-segments 处理与 details 渲染：老笔记里已存在的回听时间轴
-// 由侧边栏 panel 渲染（renderRecentDetail 等），仍能正常显示；
-// 这里只关闭"新写入"的注入点。
-export function buildPlaybackTimelineDetails(session) {
-  // 显式关闭：返回空串 → 后续 lines 拼接里 `|| null` 自动跳过这一块
-  // 若以后想恢复，把下一行删掉即可；底层渲染逻辑完整保留
-  return "";
-  // eslint-disable-next-line no-unreachable -- intentionally disabled feature; unreachable code retained for easy restore
-  const segments = (session && Array.isArray(session.segments)) ? session.segments : [];
-  if (!segments.length) return "";
-  const lines = [];
-  for (const s of segments) {
-    if (!s || !s.audioName) continue;
-    const audioName = String(s.audioName || "").trim();
-    const start = formatElapsed(s.startOffsetMs || 0);
-    const end = formatElapsed(s.endOffsetMs || 0);
-    const label = `${start}–${end}`;
-    const n = Number.isFinite(s.index) ? s.index + 1 : lines.length + 1;
-    const pillCls = s.error ? "qnalog-playback-timeline-pill is-error" : "qnalog-playback-timeline-pill";
-    const metaCls = s.error ? "qnalog-playback-timeline-index is-error" : "qnalog-playback-timeline-index";
-    const state = s.error ? "重试" : `段 ${n}`;
-    lines.push(
-      `<span class="${pillCls}">` +
-      `<a class="internal-link qnalog-time-link" data-href="${escapeHtmlText(audioName)}" href="${escapeHtmlText(audioName)}">${escapeHtmlText(label)}</a>` +
-      `<span class="${metaCls}">${escapeHtmlText(state)}</span>` +
-      `</span>`
-    );
-  }
-  if (!lines.length) return "";
-  return [
-    "<details>",
-    `<summary>${labelText("playbackTimeline")}（${lines.length} 个节点）</summary>`,
-    "",
-    '<div class="qnalog-playback-timeline">',
-    lines.join(""),
-    "</div>",
-    "",
-    "</details>",
-  ].join("\n");
-}
 
 
 export function extractDetailsBody(markdown, summaryPattern) {

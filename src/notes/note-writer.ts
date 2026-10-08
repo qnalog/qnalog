@@ -20,7 +20,6 @@ import {
   buildMasterAudioDetails,
 } from "./note-session-materials";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
-import { buildPlaybackTimelineDetails } from "../notes/detail-blocks";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
@@ -188,7 +187,6 @@ export class NoteWriter {
     const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
     const audioRow = masterAudioBlock || session.segments.map((s, i) => getAudioSegmentListItem(s, i)).filter(Boolean).join("\n");
     const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
-    const playbackTimelineBlock = retainAudio ? buildPlaybackTimelineDetails(session) : "";
     const meetingWorkbenchBlock = buildMeetingWorkbenchDetails(session);
     const recordingInfoBlock = textImport ? buildTextImportInfoDetails(
       session,
@@ -244,7 +242,6 @@ export class NoteWriter {
         meetingWorkbench: meetingWorkbenchBlock,
         realtimeOutline: realtimeOutlineWithPrior,
         textImportSource: textImportSourceBlock,
-        playbackTimeline: playbackTimelineBlock,
       },
     });
     await this.host.vault.modify(file, content);
@@ -267,7 +264,6 @@ export class NoteWriter {
     const externalAudioImport = !!session.externalAudioSource;
     const retainAudio = !textImport && !externalAudioImport;
     const realtimeOutlineBlock = buildRealtimeOutlineDetails(session);
-    const playbackTimelineBlock = retainAudio ? buildPlaybackTimelineDetails(session) : "";
     const recordingInfoBlock = textImport ? buildTextImportInfoDetails(
       session,
       meta.prefix,
@@ -310,7 +306,6 @@ export class NoteWriter {
         meetingWorkbench: meetingWorkbenchBlock,
         realtimeOutline: realtimeOutlineBlock,
         textImportSource: textImportSourceBlock,
-        playbackTimeline: playbackTimelineBlock,
       },
     });
     const cur = initialMarkdown ?? await this.host.vault.read(file);
