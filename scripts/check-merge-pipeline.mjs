@@ -854,6 +854,7 @@ async function main() {
         noteFileNameFormatNew: plugin.settings.noteFileNameFormatNew,
       };
       momentBeforeWriterSmoke = sandbox.moment;
+      const failuresBeforeWriterSmoke = failures.length;
       const openedBeforeWriterSmoke = openedFiles.length;
       const sourceAPath = "QnALog/WriterSmoke/2026-09-14 1100.md";
       const sourceBPath = "QnALog/WriterSmoke/2026-09-14 1101.md";
@@ -940,9 +941,28 @@ async function main() {
         failures.push("合并来源准备修改了已包含转写账本的源文件");
       }
       const previousSource = plugin.noteWriter.findPreviousRecentNoteFile(sourceB.file);
-      sandbox.moment = momentBeforeWriterSmoke;
       if (previousSource !== sourceA.file) failures.push("真实 recent 查询没有把 source A 识别为 source B 的上一篇纪要");
-      await plugin.noteWriter.mergeMarkdownFilesAsNew([sourceA.file, sourceB.file]);
+      const originalWriterHost = plugin.noteWriter.host;
+      let confirmationCount = 0;
+      const confirmationHost = Object.create(originalWriterHost);
+      confirmationHost.confirm = async (title, body, ctaText) => {
+        const expectedBody = "将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. "
+          + sourceA.file.basename + "\n2. " + sourceB.file.basename + "\n\n继续合并？";
+        if (title !== "合并纪要" || body !== expectedBody || ctaText !== "合并") {
+          failures.push("上一篇合并确认没有传入预期的完整中文提示");
+        }
+        confirmationCount += 1;
+        sandbox.moment = momentBeforeWriterSmoke;
+        return true;
+      };
+      try {
+        plugin.noteWriter.host = confirmationHost;
+        await plugin.noteWriter.mergeMarkdownFileWithPrevious(sourceB.file);
+        if (confirmationCount !== 1) failures.push(`上一篇合并确认次数应为 1，实际为 ${confirmationCount}`);
+      } finally {
+        plugin.noteWriter.host = originalWriterHost;
+        sandbox.moment = momentBeforeWriterSmoke;
+      }
       const merged = [...files.values()].find((file) =>
         file.path.startsWith("QnALog/WriterSmoke/")
         && file.path !== sourceAPath && file.path !== sourceBPath
@@ -1004,6 +1024,9 @@ async function main() {
       }
       if (sourceA.file._content !== sourceA.content || sourceB.file._content !== sourceB.content) {
         failures.push("Writer smoke 后来源笔记内容发生变化");
+      }
+      if (failures.length === failuresBeforeWriterSmoke) {
+        console.log("[previous-merge-flow] OK: accepted confirmation created merged minutes and preserved sources");
       }
     } catch (error) {
       failures.push(`NoteWriter 能力边界冒烟失败：${(error && error.message) || error}`);
