@@ -10,7 +10,7 @@ import type {
 } from "../shared/types";
 import { readCurrentOutlineBlock } from "../notes/outline-storage";
 import { extractTranscriptSegments, getSourceIdFromMarkdown } from "../notes/note-markdown";
-import { stripArchivedOutlineSections } from "../notes/realtime-outline";
+import { stripArchivedOutlineSections } from "../notes/outline-text";
 import { getEffectivePolishMode } from "../shared/mode-meta";
 import { labelText } from "../shared/note-labels";
 import { nsMarker } from "../shared/namespace";

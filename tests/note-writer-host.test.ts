@@ -485,6 +485,7 @@ describe("NoteWriter literal preservation", () => {
     try {
       const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "consumer-test-model" }));
       const priorInfo = "- 旧录音信息：多行中文\n$&\n$` 和反引号\n$'\n$$";
+      const priorAudioNames = ["旧录音-$&-$`-$'-$$.m4a", "qnalog-prior-second.webm"];
       const priorOutline = "- 旧大纲：多行中文\n  - $&\n  - $` 与反引号\n  - $'\n  - $$";
       const session: RecordingSession = {
         id: "literal-session",
@@ -498,6 +499,9 @@ describe("NoteWriter literal preservation", () => {
         continuationSourceTitle: "旧纪要",
         continuationPriorRecordingInfo: priorInfo,
         continuationPriorOutline: priorOutline,
+        continuationRecordedAt: "2026-09-17T03:56:35.000Z",
+        continuationPriorAudioNames: priorAudioNames,
+        multiSourceAudio: true,
         realtimeOutline: "- 本场实时新主题",
       };
       await writer.rewriteConsolidated(session, "---\ntitle: literal\n---\n\n重写正文");
@@ -506,6 +510,12 @@ describe("NoteWriter literal preservation", () => {
       expect(first).toContain("- 本场实时新主题");
       expect(first).toContain("> 以下为追加录音前场次（旧纪要）的实时大纲草稿。");
       expect(first).toContain(priorOutline);
+      expect(first).toContain("- 追加录音：2026-10-07 12:00:00");
+      for (const name of priorAudioNames) {
+        expect(first).toContain(`![[${name}]]`);
+        expect(first).toContain(`[[${name}|00:00]]`);
+      }
+      expect(first.indexOf(`![[${priorAudioNames[0]}]]`)).toBeLessThan(first.indexOf(`![[${priorAudioNames[1]}]]`));
       expect(first).toContain("重写正文");
       expect(readTranscriptBlocks(first).map(block => block.visibleBlock)).toEqual([sourceText]);
 
@@ -513,6 +523,47 @@ describe("NoteWriter literal preservation", () => {
       const second = await vault.vault.read(file);
       expect(second).toBe(first);
       expect(readTranscriptBlocks(second).map(block => block.visibleBlock)).toEqual([sourceText]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("续录时间格式化失败时拒绝重写且保留笔记与账本", async () => {
+    const path = "QnALog/Minutes/continuation-format-failure.md";
+    const file = new obsidian.TFile(path);
+    const segment: Segment = attachTextTranscript({
+      index: 0,
+      startOffsetMs: 0,
+      endOffsetMs: 12_000,
+      text: "不可丢失的转写",
+      isFinal: true,
+    }, "format-failure-session", "text-import");
+    const original = `# Original note\n\n${serializeTranscriptBlock(segment, "### Source transcript", "不可丢失的转写")}`;
+    const vault = memoryVault([{ file, markdown: original }]);
+    const failure = new Error("continuation time format failed");
+    const recordedAt = "2026-09-17T03:56:35.000Z";
+    vi.stubGlobal("window", {
+      moment: (value: string) => {
+        if (value === recordedAt) throw failure;
+        return { format: () => "2026-10-07 12:00:00" };
+      },
+    });
+    try {
+      const writer = new NoteWriter(unexpectedHost(vault.vault, { ...DEFAULT_SETTINGS, llmModel: "consumer-test-model" }));
+      const session: RecordingSession = {
+        id: "format-failure-session",
+        sessionStamp: "format-failure-session",
+        startedAt: "2026-10-07T12:00:00.000Z",
+        mdPath: path,
+        mode: "meeting",
+        segments: [segment],
+        finalized: true,
+        continuationSourcePath: "QnALog/Minutes/prior.md",
+        continuationRecordedAt: recordedAt,
+        continuationPriorRecordingInfo: "- 旧场次信息",
+      };
+      await expect(writer.rewriteConsolidated(session, "---\ntitle: replacement\n---\n\nreplacement body")).rejects.toBe(failure);
+      expect(await vault.vault.read(file)).toBe(original);
+      expect(readTranscriptBlocks(await vault.vault.read(file)).map(block => block.visibleBlock)).toEqual(["不可丢失的转写"]);
     } finally {
       vi.unstubAllGlobals();
     }

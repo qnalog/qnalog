@@ -4,10 +4,10 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
   TFile: class {}, TFolder: class {},
 }));
-import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "../src/notes/note-writer";
+import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "../src/notes/note-session-materials";
 import { extractPriorOutline } from "../src/session/continuation-service";
 import { extractDetailsBody, extractNotePanelData } from "../src/notes/detail-blocks";
-import { stripArchivedOutlineSections } from "../src/notes/realtime-outline";
+import { stripArchivedOutlineSections } from "../src/notes/outline-text";
 import { buildOutlineCoverageMetadata, readCurrentOutlineBlock } from "../src/notes/outline-storage";
 
 // 测试环境没有 Obsidian 注入的 window.moment；format 只用到 YYYY-MM-DD HH:mm:ss。
@@ -35,27 +35,27 @@ describe("buildPriorSessionBlocks 续录旧场次材料", () => {
   };
 
   it("普通会话（无 continuationSourcePath）三段全部为空", () => {
-    const blocks = buildPriorSessionBlocks({ segments: [] });
+    const blocks = buildPriorSessionBlocks({});
     expect(blocks.recordingInfoAppendix).toBe("");
     expect(blocks.outlineAppendix).toBe("");
     expect(blocks.audioAppendix).toBe("");
   });
 
   it("续录会话：录音信息含追加时间与旧场次信息", () => {
-    const blocks = buildPriorSessionBlocks(baseSession);
+    const blocks = buildPriorSessionBlocks(baseSession, (recordedAt) => window.moment(recordedAt).format("YYYY-MM-DD HH:mm:ss"));
     expect(blocks.recordingInfoAppendix).toContain("追加录音");
     expect(blocks.recordingInfoAppendix).toContain("旧笔记");
     expect(blocks.recordingInfoAppendix).toContain("- 时长：03:56");
   });
 
   it("续录会话：大纲附录保留旧大纲原文", () => {
-    const blocks = buildPriorSessionBlocks(baseSession);
+    const blocks = buildPriorSessionBlocks(baseSession, (recordedAt) => window.moment(recordedAt).format("YYYY-MM-DD HH:mm:ss"));
     expect(blocks.outlineAppendix).toContain("- AI视频工作流的标准化规范");
     expect(blocks.outlineAppendix).toContain("旧笔记");
   });
 
   it("续录会话：音频附录为每个旧音频产出嵌入与回听链接", () => {
-    const blocks = buildPriorSessionBlocks(baseSession);
+    const blocks = buildPriorSessionBlocks(baseSession, (recordedAt) => window.moment(recordedAt).format("YYYY-MM-DD HH:mm:ss"));
     expect(blocks.audioAppendix).toContain("![[qnalog-20260917-115635.m4a]]");
     expect(blocks.audioAppendix).toContain("[[qnalog-20260917-115635.m4a|00:00]]");
   });
@@ -68,6 +68,38 @@ describe("buildPriorSessionBlocks 续录旧场次材料", () => {
     expect(blocks.audioAppendix).toBe("");
     expect(blocks.outlineAppendix).toBe("");
     expect(blocks.recordingInfoAppendix).toBe(""); // 无 recordedAt 且无 priorInfo
+  });
+
+  it("没有时间格式能力时保留旧信息但不生成追加时间", () => {
+    const blocks = buildPriorSessionBlocks({
+      ...baseSession,
+      continuationPriorRecordingInfo: "- 时长：03:56",
+    });
+    expect(blocks.recordingInfoAppendix).toContain("- 时长：03:56");
+    expect(blocks.recordingInfoAppendix).not.toContain("追加录音：");
+  });
+
+  it("无来源路径时不调用格式器并返回空材料", () => {
+    const blocks = buildPriorSessionBlocks({}, () => {
+      throw new Error("formatter must not run");
+    });
+    expect(blocks).toEqual({ recordingInfoAppendix: "", outlineAppendix: "", audioAppendix: "" });
+  });
+
+  it("没有 recordedAt 时不调用格式器并保留旧材料", () => {
+    const blocks = buildPriorSessionBlocks({
+      continuationSourcePath: "QnALog/转写纪要/旧笔记.md",
+      continuationPriorRecordingInfo: "- 旧录音信息",
+    }, () => {
+      throw new Error("formatter must not run");
+    });
+    expect(blocks.recordingInfoAppendix).toContain("- 旧录音信息");
+    expect(blocks.recordingInfoAppendix).not.toContain("追加录音：");
+  });
+
+  it("格式器错误原样传播", () => {
+    const failure = new Error("moment format failed");
+    expect(() => buildPriorSessionBlocks(baseSession, () => { throw failure; })).toThrow(failure);
   });
 });
 

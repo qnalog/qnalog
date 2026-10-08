@@ -29,6 +29,7 @@ const CONTENT_FILES: Record<string, string> = {
   "src/notes/outline-text.ts": "大纲正文文本工具（笔记内容）",
   "src/notes/note-markdown.ts": "笔记解析/生成的正文模板与标题匹配（note/match）",
   "src/notes/note-writer.ts": "笔记写入的正文结构与占位标题（决策 A）",
+  "src/notes/note-session-materials.ts": "续录旧场次材料与归档横幅（从 note-writer 迁入的笔记内容）",
   "src/notes/detail-blocks.ts": "笔记明细块正文（决策 A）",
   "src/notes/realtime-outline.ts": "实时大纲草稿写入笔记的模板（决策 A）",
   "src/notes/meeting-workbench-service.ts": "会中记录写入笔记的正文",

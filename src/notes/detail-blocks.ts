@@ -9,7 +9,7 @@ import { detectRecentNoteMode } from "../recent/recent-notes";
 
 import { extractTranscriptSegments, isTextImportSession } from "./note-markdown";
 import { buildNoteAudioTimeline } from "./note-audio-timeline";
-import { stripArchivedOutlineSections } from "./realtime-outline";
+import { stripArchivedOutlineSections } from "./outline-text";
 
 import { extractSedimentPreExtractionBlock } from "../sediment";
 import { readCurrentOutlineBlock } from "./outline-storage";

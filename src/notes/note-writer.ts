@@ -11,7 +11,8 @@ import { genId, formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
-import { buildRealtimeOutlineDetails, stripArchivedOutlineSections } from "../notes/realtime-outline";
+import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
+import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "./note-session-materials";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
@@ -37,87 +38,6 @@ import {
 import { t } from "../shared/i18n";
 
 
-/** rewriteConsolidated 组装实时大纲 details 的输入；对象参数便于测试逐项注入。 */
-export interface RealtimeOutlineAssemblyInput {
-  /** buildRealtimeOutlineDetails 产出的完整 details 块；空串表示本场次没有实时大纲。 */
-  liveBlock: string;
-  /** 本场次实时大纲文本（session.realtimeOutline）。 */
-  liveText: string;
-  /** 续录来源的旧大纲全文（continuationPriorOutline，可能含历史归档）。 */
-  priorText: string;
-  /** buildPriorSessionBlocks 产出的归档 appendix（横幅 + 旧大纲）。 */
-  appendix: string;
-}
-
-/**
- * 把续录前大纲并进实时大纲 details，带一道去重闸门。
- *
- * 历史 bug：种子与 appendix 都来自旧笔记整个大纲 details 正文，重写于是执行
- * 「新体 = 旧体 + 横幅 + 旧体」——每次追加精确翻倍（实测备份链 1→2→4→8 份、
- * 横幅 0→1→3→7 条 = 2^k−1），且同一重写再执行一次就再翻一倍（不幂等）。
- * 闸门：实时大纲里已包含（空白折叠后）旧大纲的实时部分时跳过 appendix——
- * 种子场景必然成立，直接得到单份；只有大纲真的分叉（重新生成丢了旧话题、
- * 或本场次没有实时大纲）才挂归档，历史仍按场次可查。
- */
-export function assembleRealtimeOutlineDetails(input: RealtimeOutlineAssemblyInput): string {
-  const liveBlock = String(input.liveBlock || "");
-  const appendix = String(input.appendix || "");
-  if (liveBlock && appendix) {
-    const squash = (value: string) => value.replace(/\s+/g, " ").trim();
-    const live = squash(stripArchivedOutlineSections(String(input.liveText || "")));
-    const prior = squash(stripArchivedOutlineSections(String(input.priorText || "")));
-    if (live && prior && live.includes(prior)) return liveBlock;
-    return liveBlock.replace(/<\/details>\s*$/, () => `${appendix}</details>`);
-  }
-  if (liveBlock) return liveBlock;
-  if (appendix) {
-    return [
-      "<details>",
-      `<summary>${labelText("liveOutlineDraft")}</summary>`,
-      "",
-      `> ${labelText("outlineIntro")}`,
-      appendix,
-      "</details>",
-    ].join("\n");
-  }
-  return "";
-}
-
-/**
- * 续录会话（continuationSourcePath 非空）重写笔记时的旧场次原始材料块。
- * 三个 appendix 都是纯文本拼接，空串表示该项没有旧材料：
- *   recordingInfoAppendix —— 并进「录音信息」details 的旧场次行（时间/时长/模式/分段/模型 + 音频名）；
- *   outlineAppendix       —— 旧场次的「录音中实时大纲（草稿）」正文，重写时并进大纲 details；
- *   audioAppendix         —— 旧场次的音频嵌入与回听链接行，重写时并进原始音频 details。
- * 依据只有 session 上的 continuationPrior* 字段，输出与宿主无关，可单测。
- */
-export function buildPriorSessionBlocks(session) {
-  const path = String((session && session.continuationSourcePath) || "");
-  if (!path) return { recordingInfoAppendix: "", outlineAppendix: "", audioAppendix: "" };
-  const priorInfo = String(session.continuationPriorRecordingInfo || "").trim();
-  const priorOutline = String(session.continuationPriorOutline || "").trim();
-  const priorAudios = Array.isArray(session.continuationPriorAudioNames) ? session.continuationPriorAudioNames : [];
-  const sourceTitle = String(session.continuationSourceTitle || "").trim();
-  const recordedAt = String(session.continuationRecordedAt || "").trim();
-
-  const infoLines = [];
-  const momentFn = typeof window !== "undefined" ? window.moment : null;
-  if (recordedAt && momentFn) infoLines.push(`- 追加录音：${momentFn(recordedAt).format("YYYY-MM-DD HH:mm:ss")}`);
-  const recordingInfoAppendix = infoLines.length
-    ? `\n> 本次纪要由「追加录音」合并整理：来源《${sourceTitle || path}》。\n${infoLines.join("\n")}\n${priorInfo ? `\n${priorInfo}\n` : ""}`
-    : (priorInfo ? `\n${priorInfo}\n` : "");
-
-  const audioLines = (priorAudios || [])
-    .map((name) => String(name || "").trim())
-    .filter(Boolean)
-    .map((name) => `![[${name}]]\n\n${labelText("listenBack")}[[${name}|00:00]]`);
-  const audioAppendix = audioLines.length ? `\n${audioLines.join("\n\n")}\n` : "";
-
-  const outlineAppendix = priorOutline
-    ? `\n> 以下为追加录音前场次（${sourceTitle || "原纪要"}）的实时大纲草稿。\n\n${priorOutline}\n`
-    : "";
-  return { recordingInfoAppendix, outlineAppendix, audioAppendix };
-}
 
 export type NoteWriterSettings = Pick<PluginSettings,
   | "promptTemplates" | "polishMode" | "llmModel" | "consolidatedLayout"
@@ -248,7 +168,11 @@ export class NoteWriter {
     const textImport = isTextImportSession(session);
     const externalAudioImport = !!session.externalAudioSource;
     const retainAudio = !textImport && !externalAudioImport;
-    const priorBlocks = buildPriorSessionBlocks(session);
+    const momentFn = typeof window !== "undefined" ? window.moment : null;
+    const formatRecordedAt = momentFn
+      ? (recordedAt: string) => momentFn(recordedAt).format("YYYY-MM-DD HH:mm:ss")
+      : undefined;
+    const priorBlocks = buildPriorSessionBlocks(session, formatRecordedAt);
     const isContinuation = !!priorBlocks.recordingInfoAppendix || !!priorBlocks.outlineAppendix || !!priorBlocks.audioAppendix;
     const masterAudioBlock = retainAudio && !session.multiSourceAudio ? buildMasterAudioDetails(session, totalMs) : "";
     const audioRow = masterAudioBlock || session.segments.map((s, i) => getAudioSegmentListItem(s, i)).filter(Boolean).join("\n");
