@@ -12,18 +12,18 @@ import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
 import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "./note-session-materials";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
-import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
+import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { getFrontmatterTags } from "../shared/util-note";
-import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
+import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
 import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, readNamespaceFrontmatter } from "../shared/namespace";
 import { labelText } from "../shared/note-labels";
 
-import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
+import { isTextImportSession, shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
-import { buildRewriteSegmentBlock, serializeContinuationSegmentBlock } from "./note-transcript-materials";
+import { buildRewriteSegmentBlock, buildTextImportSourceDetails, serializeContinuationSegmentBlock } from "./note-transcript-materials";
 import { appendPolishNoteContent, buildConsolidatedNoteContent, buildPolishAppendBlock, prepareNotePolishParts } from "./note-write-content";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
 import {

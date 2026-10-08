@@ -30,7 +30,7 @@ import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../
 import { hashRealtimeOutlineText } from "../src/notes/outline-text";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
-import { buildTextImportSourceDetails } from "../src/notes/detail-blocks";
+import { buildTextImportSourceDetails } from "../src/notes/note-transcript-materials";
 
 // note-markdown 的回归覆盖：机器字段名固定、旧中英字段安全读取、内容字段按模式白名单保留，
 // 以及版本块原位更新时不丢正文与原始材料。
@@ -623,6 +623,18 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(transcript.utterances.map((unit) => unit.rawText).join("")).toBe(segments[0].rawText);
     expect(block.segment.text).toContain("source.md");
   });
+
+  it.each(["recording", "import", "merged-notes", " text-import "])(
+    "does not build imported-source details for source %s",
+    (source) => {
+      expect(buildTextImportSourceDetails({ id: "empty", source, segments: [] })).toBe("");
+    },
+  );
+
+  it.each([undefined, [], null])("does not build imported-source details without segments: %s", (segments) => {
+    expect(buildTextImportSourceDetails({ id: "empty", source: "text-import", segments })).toBe("");
+  });
+
 
   it("migrates numbered text source details without putting the source label in raw text", () => {
     const legacy = [

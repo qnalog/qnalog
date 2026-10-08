@@ -17,6 +17,10 @@ export function isCanonicalImportSource(source: unknown): boolean {
     && CANONICAL_IMPORT_SOURCES.has(source.trim());
 }
 
+export function isTextImportSession(session: NoteLayoutSession | null | undefined): boolean {
+  return !!(session && session.source === "text-import");
+}
+
 /**
  * Imported material starts as a temporary raw-transcript shell. Once AI
  * organization succeeds it must be rebuilt into the canonical note layout,

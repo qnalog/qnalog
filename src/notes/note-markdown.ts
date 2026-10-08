@@ -338,9 +338,6 @@ export function splitImportedTextIntoNormalSegments(sources) {
   return result;
 }
 
-export function isTextImportSession(session) {
-  return !!(session && session.source === "text-import");
-}
 
 // canonical 属性与历史中文/英文属性都接受，写入只输出 canonical 形式。
 export const EMAIL_ATTENDEE_FIELDS = [

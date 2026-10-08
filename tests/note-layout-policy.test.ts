@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+
 import {
   isCanonicalImportSource,
+  isTextImportSession,
   shouldRewriteConsolidatedNote,
 } from "../src/briefing/note-layout-policy";
 
@@ -23,4 +25,22 @@ describe("briefing note layout policy", () => {
       expect(shouldRewriteConsolidatedNote({ consolidatedLayout: false }, { source })).toBe(true);
     },
   );
+
+  it.each([
+    null,
+    undefined,
+    {},
+    { source: 1 },
+    { source: "recording" },
+    { source: "import" },
+    { source: "merged-notes" },
+    { source: " text-import " },
+  ])("requires an exact text-import source: %o", (session) => {
+    expect(isTextImportSession(session)).toBe(false);
+  });
+
+  it("accepts only the exact text-import source", () => {
+    expect(isTextImportSession({ source: "text-import" })).toBe(true);
+    expect(isCanonicalImportSource(" text-import ")).toBe(true);
+  });
 });

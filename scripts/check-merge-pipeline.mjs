@@ -1437,6 +1437,125 @@ async function main() {
         .update(JSON.stringify([...polishRewriteResults, ...polishAppendResults]))
         .digest("hex");
       console.log(`[polish-materials] rewrite/append digest: ${polishMaterialsDigest}`);
+      const textMaterialsPath = literalRetryPath;
+      const textMaterialOriginal = "---\ntitle: old\n---\n\n# Existing note\n";
+      const textMaterialModelOutput = "---\ntitle: new\n---\n\n模型正文 $& $` $' $$";
+      const textMaterialModelBody = "模型正文 $& $` $' $$";
+      const firstTextMaterial = transcriptSegment(4, "来源标签：不可作为原文", 0, 1000, "literal-text-materials");
+      firstTextMaterial.sourceName = "来源一 $& $` $' $$";
+      firstTextMaterial.sourcePath = "Notes/source-one.md";
+      firstTextMaterial.rawText = "  原文一\r\n$& $` $' $$  ";
+      firstTextMaterial.transcript.revisions[0].rawText = firstTextMaterial.rawText;
+      firstTextMaterial.transcript.revisions[0].displayText = firstTextMaterial.rawText;
+      firstTextMaterial.transcript.revisions[0].utterances[0].rawText = firstTextMaterial.rawText;
+      firstTextMaterial.transcript.revisions[0].utterances[0].normalizedText = firstTextMaterial.rawText;
+      const textMaterialSegments = [
+        firstTextMaterial,
+        {
+          ...transcriptSegment(9, "第二份原文 $& $` $' $$", 1000, 2000, "literal-text-materials"),
+          sourcePath: "Notes/source-two.md",
+        },
+        { ...transcriptSegment(12, "EMPTY RAW MUST NOT DISPLAY", 2000, 3000, "literal-text-materials"), rawText: "" },
+        { ...transcriptSegment(20, "WHITESPACE RAW MUST NOT DISPLAY", 3000, 4000, "literal-text-materials"), sourceName: "空白来源", rawText: " \r\n\t " },
+      ];
+      for (const segment of textMaterialSegments.slice(1)) delete segment.transcript;
+      const textMaterialSession = {
+        id: "literal-text-materials",
+        sessionStamp: "literal-text-materials",
+        startedAt: "2026-09-14T12:00:00.000Z",
+        mdPath: textMaterialsPath,
+        mode: "meeting",
+        source: "text-import",
+        segments: textMaterialSegments,
+        finalized: true,
+      };
+      const textMaterialHeadings = [
+        "### 1. [[Notes/source-one.md|来源一 $& $` $' $$]]",
+        "### 2. [[Notes/source-two.md|文本 2]]",
+        "### 3. 文本 3",
+        "### 4. 空白来源",
+      ];
+      const expectedTextMaterial = [
+        "  原文一\r\n$& $` $' $$  ",
+        "第二份原文 $& $` $' $$",
+        "",
+        " \r\n\t ",
+      ];
+      const readTextMaterialLedger = (markdown, id) => {
+        const marker = `<!-- qnalog-transcript-data `;
+        const start = markdown.indexOf(`<!-- qnalog-transcript-text-start:${id} -->`);
+        const end = markdown.indexOf(`<!-- qnalog-transcript-text-end:${id} -->`, start);
+        const dataAt = markdown.indexOf(marker, end);
+        if (start < 0 || end < 0 || dataAt < 0) throw new Error(`missing text-import transcript block ${id}`);
+        const visible = markdown.slice(start + `<!-- qnalog-transcript-text-start:${id} -->`.length + 1, end).replace(/\n$/, "");
+        const jsonStart = dataAt + marker.length;
+        const jsonEnd = markdown.indexOf(" -->", jsonStart);
+        const data = JSON.parse(markdown.slice(jsonStart, jsonEnd));
+        const transcript = data.transcript;
+        const revision = transcript.revisions.find((item) => item.revision === transcript.currentRevision);
+        return { visible, transcript, rawText: revision?.rawText };
+      };
+      const checkTextMaterials = (markdown, allowFailure) => {
+        const summaries = [
+          "<summary>导入文本原文（4 个来源）</summary>",
+          "<summary>Imported text (4 sources)</summary>",
+        ];
+        const summary = summaries.find((candidate) => markdown.includes(candidate));
+        if (!summary
+          || markdown.indexOf(textMaterialModelBody) >= markdown.indexOf(textMaterialHeadings[0])
+          || !textMaterialHeadings.every((heading, index) => markdown.indexOf(heading) >= 0
+            && (index === 0 || markdown.indexOf(textMaterialHeadings[index - 1]) < markdown.indexOf(heading)))) {
+          throw new Error("text-import source summary or heading order changed");
+        }
+        for (const [index, segmentIndex] of [4, 9, 12, 20].entries()) {
+          const id = `seg:literal-text-materials:${segmentIndex}`;
+          const block = readTextMaterialLedger(markdown, id);
+          const emptyText = summary === summaries[0] ? "_[此文本来源为空]_" : "_[This text source is empty]_";
+          if (block.transcript.id !== id
+            || block.transcript.sourceId !== "literal-text-materials"
+            || block.transcript.currentRevision !== 1
+            || block.rawText !== expectedTextMaterial[index]
+            || block.visible !== (index === 2 ? emptyText : expectedTextMaterial[index])) {
+            throw new Error(`text-import source ledger changed at index ${index + 1}`);
+          }
+        }
+        if (!markdown.includes(textMaterialModelBody) && !allowFailure) {
+          throw new Error("text-import success output lost model body");
+        }
+        if (allowFailure && (!markdown.startsWith("---\ntitle: old\n---")
+          || !markdown.includes("temporary failure")
+          || markdown.includes(textMaterialModelBody))) {
+          throw new Error("text-import failed append lost old frontmatter or failure placeholder");
+        }
+        if (markdown.includes("![[qnalog-literal-text-materials-")
+          || markdown.includes("qnalog-transcribe-task:")
+          || markdown.includes("qnalog-segments-start:literal-text-materials")) {
+          throw new Error("text-import source details acquired recording-only material");
+        }
+      };
+      const textMaterialRewriteResults = [];
+      const textMaterialAppendResults = [];
+      retryFile._content = textMaterialOriginal;
+      await plugin.noteWriter.rewriteConsolidated(textMaterialSession, textMaterialModelOutput);
+      const textMaterialRewrite = retryFile._content;
+      checkTextMaterials(textMaterialRewrite, false);
+      await plugin.noteWriter.rewriteConsolidated(textMaterialSession, textMaterialModelOutput);
+      if (retryFile._content !== textMaterialRewrite) throw new Error("text-import rewrite was not byte-stable");
+      textMaterialRewriteResults.push(textMaterialRewrite);
+      retryFile._content = textMaterialOriginal;
+      await plugin.noteWriter.appendPolishBlock(textMaterialSession, textMaterialModelOutput, null, false, "", textMaterialOriginal);
+      const textMaterialAppend = retryFile._content;
+      checkTextMaterials(textMaterialAppend, false);
+      textMaterialAppendResults.push(textMaterialAppend);
+      retryFile._content = textMaterialOriginal;
+      await plugin.noteWriter.appendPolishBlock(textMaterialSession, textMaterialModelOutput, new Error("temporary failure"), false, "", textMaterialOriginal);
+      const textMaterialFailedAppend = retryFile._content;
+      checkTextMaterials(textMaterialFailedAppend, true);
+      textMaterialAppendResults.push(textMaterialFailedAppend);
+      const textImportMaterialsDigest = createHash("sha256")
+        .update(JSON.stringify([...textMaterialRewriteResults, ...textMaterialAppendResults]))
+        .digest("hex");
+      console.log(`[text-import-materials] rewrite/append digest: ${textImportMaterialsDigest}`);
       literalSmokePassed = true;
     } catch (error) {
       failures.push(`字面量材料保全冒烟失败：${(error && error.message) || error}`);
