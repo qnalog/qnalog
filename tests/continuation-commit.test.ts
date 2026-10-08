@@ -1,3 +1,5 @@
+import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
+import { nsMarker } from "../src/shared/namespace";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", () => ({
@@ -158,6 +160,47 @@ describe("staged continuation commit", () => {
     }
   });
 
+  it("inserts continuation error materials without a task marker and retries idempotently", async () => {
+    const targetSessionId = "target-session";
+    const initial = [
+      "# Existing minutes",
+      "",
+      nsMarker("session", targetSessionId),
+      nsMarker("segments-start", targetSessionId),
+      nsMarker("segments-end", targetSessionId),
+      "",
+    ].join("\n");
+    const memory = createMemoryWriter(initial, false);
+    const segment = attachTextTranscript({
+      index: 2,
+      startOffsetMs: 5_000,
+      endOffsetMs: 6_000,
+      audioStartOffsetMs: 0,
+      audioEndOffsetMs: 1_000,
+      audioName: "retry.webm",
+      queueTaskId: "raw-retry",
+      error: "temporary failure",
+      text: "不得显示的错误旧文本",
+    }, "continuation-a", "text-import");
+    const session = makeSession(memory.path, [segment]);
+    vi.stubGlobal("window", { moment: (value: string) => ({ format: () => value }) });
+    try {
+      await memory.writer.commitContinuation(session, "Organized continuation body", []);
+      const committed = memory.markdown;
+      const blocks = readTranscriptBlocks(committed);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].visibleBlock).toBe(getTranscribeSegmentPlaceholder(segment.error, { retryable: true }));
+      expect(blocks[0].segment.transcript?.sourceId).toBe("continuation-a");
+      expect(committed).toContain("### Segment 3 (00:05–00:06) [[retry.webm|00:00]]");
+      expect(committed).not.toContain(nsMarker("transcribe-task", "raw-retry"));
+      const writes = memory.writes;
+      await memory.writer.commitContinuation(session, "Organized continuation body", []);
+      expect(memory.writes).toBe(writes);
+      expect(memory.markdown).toBe(committed);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("rejects a continuation target with no transcript insertion boundary without changing it", async () => {
     const initial = "# Existing minutes\n\nTarget body without transcript markers";
     const memory = createMemoryWriter(initial, false);

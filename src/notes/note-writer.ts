@@ -8,7 +8,6 @@ import type { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue, stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
 import { genId, formatElapsed } from "../shared/util-common";
-import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { extractAllRawBlocksFromText, splitLeadingFrontmatter } from "./note-document";
 import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { buildRealtimeOutlineDetails } from "../notes/realtime-outline";
@@ -16,7 +15,7 @@ import { assembleRealtimeOutlineDetails, buildPriorSessionBlocks } from "./note-
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench";
 import { buildExternalAudioSourceDetails, buildMasterAudioDetails, buildMeetingWorkbenchDetails, buildPlaybackTimelineDetails, buildRecordingInfoDetails, buildTextImportInfoDetails, buildTextImportSourceDetails } from "../notes/detail-blocks";
 import { getAudioSegmentListItem, getAudioTimeLink, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
-import { readTranscriptBlocks, serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { getFrontmatterTags } from "../shared/util-note";
 import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, isTextImportSession, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
 import { detectRecentModeFromFilename } from "../recent/recent-notes";
@@ -24,7 +23,8 @@ import { NS_MERGE_BLOCK_RE, NS_TAG, nsMarker, readNamespaceFrontmatter } from ".
 import { labelText } from "../shared/note-labels";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
-import { commitContinuationFlow, type ContinuationCommitFlowHost, type ContinuationTranscriptSegment } from "./continuation-commit-flow";
+import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
+import { buildRewriteSegmentBlock, serializeContinuationSegmentBlock } from "./note-transcript-materials";
 import { appendPolishNoteContent, buildConsolidatedNoteContent, buildPolishAppendBlock } from "./note-write-content";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
 import {
@@ -86,7 +86,10 @@ export class NoteWriter {
         return this.host.vault.read(file);
       },
       shouldRewrite: (session) => shouldRewriteConsolidatedNote(this.host.settings, session),
-      serializeIncomingSegment: (segment) => this.serializeContinuationSegment(segment),
+      serializeIncomingSegment: (segment) => serializeContinuationSegmentBlock(
+        segment,
+        getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment)),
+      ),
       rewrite: (session, polished, continuationSessionId) => this.rewriteConsolidated(session, polished, continuationSessionId),
       append: (session, polished, continuationSessionId, initialMarkdown) => this.appendPolishBlock(
         session, polished, null, false, continuationSessionId, initialMarkdown,
@@ -197,18 +200,10 @@ export class NoteWriter {
     });
     const textImportSourceBlock = textImport ? buildTextImportSourceDetails(session) : "";
     const externalAudioSourceBlock = externalAudioImport ? buildExternalAudioSourceDetails(session) : "";
-    const rawBlocks = textImport ? "" : session.segments.map((segment) => {
-      const number = segment.index + 1;
-      const heading = `### ${labelText("segment", number)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment))}${segment.isFinal ? " · 结束" : ""}`;
-      const taskMarker = segment.queueTaskId ? nsMarker("transcribe-task", segment.queueTaskId) : "";
-      const body = segment.error
-        ? getTranscribeSegmentPlaceholder(segment.error, { retryable: !!segment.queueTaskId })
-        : (segment.text || labelText("noContentSegment"));
-      const blockHeading = taskMarker ? `${heading}\n\n${taskMarker}` : heading;
-      return segment.transcript
-        ? serializeTranscriptBlock(segment, blockHeading, body)
-        : `${heading}\n\n${taskMarker ? `${taskMarker}\n` : ""}${body}\n`;
-    }).join("\n");
+    const rawBlocks = textImport ? "" : session.segments.map((segment) => buildRewriteSegmentBlock(
+      segment,
+      getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment)),
+    )).join("\n");
     const emptyBriefingFallback = buildEmptyLlmOutputFallback();
     const polishedParts = splitLeadingFrontmatter(polished || emptyBriefingFallback);
     const polishedFrontmatter = polishedParts.frontmatter ? polishedParts.frontmatter.trimEnd() : "";
@@ -315,14 +310,6 @@ export class NoteWriter {
     return commitContinuationFlow(this.continuationCommitHost, session, polished, committedSessionIds);
   }
 
-  private serializeContinuationSegment(segment: ContinuationTranscriptSegment): string {
-    const number = segment.index + 1;
-    const heading = `### ${labelText("segment", number)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment))}${segment.isFinal ? " · 结束" : ""}`;
-    const body = segment.error
-      ? getTranscribeSegmentPlaceholder(segment.error, { retryable: !!segment.queueTaskId })
-      : (segment.text || labelText("noContentSegment"));
-    return serializeTranscriptBlock(segment, heading, body);
-  }
   appendToNote(path: string, content: string): Promise<void> {
     return appendNoteText(this.noteSegmentStoreHost, path, content);
   }

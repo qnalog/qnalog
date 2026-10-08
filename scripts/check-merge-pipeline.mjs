@@ -359,6 +359,7 @@ function makeSandbox() {
 const failures = [];
 const errorLog = [];
 let smokeDigest = "";
+let rawSegmentMaterialsDigest = "";
 
 async function main() {
   const realDateNow = Date.now;
@@ -1227,6 +1228,22 @@ async function main() {
       const special = "$&\n$` 与反引号\n$'\n$$";
       const priorAudioNames = ["旧录音-$&-$`-$'-$$.m4a", "qnalog-prior-second.webm"];
       const source = transcriptSegment(0, "Literal smoke transcript ledger.", 0, 1000, "literal-continuation");
+      source.audioStartOffsetMs = 18000;
+      source.audioEndOffsetMs = 19000;
+      const errorSegment = {
+        ...transcriptSegment(2, "RAW ERROR MUST NOT DISPLAY", 1000, 2000, "literal-continuation"),
+        audioStartOffsetMs: 0,
+        queueTaskId: "literal-raw-retry",
+        error: "temporary failure",
+      };
+      const legacySegment = {
+        index: 7,
+        startOffsetMs: 2000,
+        endOffsetMs: 3000,
+        text: "旧纯文本 $& $` $' $$",
+        queueTaskId: "literal-legacy-task",
+        isFinal: true,
+      };
       const outlineFile = new TFile(literalOutlinePath);
       outlineFile._content = [
         "---\nqnalog_mode: meeting\n---",
@@ -1241,7 +1258,7 @@ async function main() {
         mdPath: literalOutlinePath,
         mode: "meeting",
         finalized: true,
-        segments: [source],
+        segments: [source, errorSegment, legacySegment],
         continuationSourcePath: "QnALog/LiteralSmoke/previous.md",
         continuationSourceTitle: "旧纪要",
         continuationRecordedAt: "2026-09-17T03:56:35.000Z",
@@ -1256,6 +1273,40 @@ async function main() {
       const firstRewrite = outlineFile._content;
       await plugin.noteWriter.rewriteConsolidated(continuation, polished);
       const secondRewrite = outlineFile._content;
+      const rawStart = "<!-- qnalog-segments-start:literal-continuation -->";
+      const rawEnd = "<!-- qnalog-segments-end:literal-continuation -->";
+      const rawSectionStart = firstRewrite.indexOf(rawStart);
+      const rawSectionEnd = firstRewrite.indexOf(rawEnd);
+      const rawSection = rawSectionStart >= 0 && rawSectionEnd > rawSectionStart
+        ? firstRewrite.slice(rawSectionStart, rawSectionEnd)
+        : "";
+      const errorTextStart = "<!-- qnalog-transcript-text-start:seg:literal-continuation:2 -->";
+      const errorTextEnd = "<!-- qnalog-transcript-text-end:seg:literal-continuation:2 -->";
+      const visibleErrorStart = firstRewrite.indexOf(errorTextStart);
+      const visibleErrorEnd = firstRewrite.indexOf(errorTextEnd);
+      const visibleError = visibleErrorStart >= 0 && visibleErrorEnd > visibleErrorStart
+        ? firstRewrite.slice(visibleErrorStart + errorTextStart.length, visibleErrorEnd)
+        : "";
+      const legacyTask = "<!-- qnalog-transcribe-task:literal-legacy-task -->";
+      const legacyText = "旧纯文本 $& $` $' $$";
+      if (!/(?:### Segment 1|### 段落 1) \(00:00–00:01\) \[\[qnalog-literal-continuation-0\.webm\|00:18\]\]/.test(rawSection)
+        || !/(?:### Segment 3|### 段落 3) \(00:01–00:02\) \[\[qnalog-literal-continuation-2\.webm\|00:00\]\]/.test(rawSection)
+        || !rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->")
+        || rawSection.indexOf("<!-- qnalog-transcribe-task:literal-raw-retry -->") > rawSection.indexOf(errorTextStart)
+        || visibleError.includes("RAW ERROR MUST NOT DISPLAY")
+        || !rawSection.includes(legacyTask)
+        || !rawSection.includes(legacyText)
+        || !/(?:### Segment 8|### 段落 8) \(00:02–00:03\)/.test(rawSection)
+        || !rawSection.endsWith(`${legacyText}\n\n`)) {
+        throw new Error("raw segment headings, retry markers, or visible transcript text changed");
+      }
+      rawSegmentMaterialsDigest = createHash("sha256").update(rawSection).digest("hex");
+      const secondRawStart = secondRewrite.indexOf(rawStart);
+      const secondRawEnd = secondRewrite.indexOf(rawEnd);
+      if (secondRawStart < 0 || secondRawEnd <= secondRawStart
+        || secondRewrite.slice(secondRawStart, secondRawEnd) !== rawSection) {
+        throw new Error("raw segment materials changed during repeated rewrite");
+      }
       if (!firstRewrite.includes(`- 旧录音信息\n${special}`)
         || !firstRewrite.includes("- 追加录音：2026-09-14")
         || !firstRewrite.includes("- 本场实时大纲")
@@ -1346,6 +1397,9 @@ async function main() {
   }
   console.log(`[merge-pipeline] OK: 会话收尾到合并整理跑通，模型调用 ${llmCalls.length} 次（知识随 ${llmCalls.filter((request) => requestPrompt(request).includes("机器证据协议")).length} 个既有请求返回），笔记保留正文、证据与原始转写`);
   console.log(`[merge-pipeline] ${appendLayout ? "append" : "rewrite"} digest: ${smokeDigest}`);
+  if (rawSegmentMaterialsDigest) {
+    console.log(`[raw-segment-materials] rewrite digest: ${rawSegmentMaterialsDigest}`);
+  }
   return 0;
 }
 
