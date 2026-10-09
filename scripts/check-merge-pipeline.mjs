@@ -2096,6 +2096,97 @@ async function main() {
         files.delete(appendProbeStagePath);
         retryFile._content = appendProbeOriginal;
       }
+      const promptProbeStart = noticeMessages.length;
+      const originalPromptGenerator = plugin.vocabulary.generateAndApplyIndustryPrompt;
+      let missingPromptError = "";
+      try {
+        plugin.vocabulary.generateAndApplyIndustryPrompt = async () => ({ name: "Probe" });
+        try { await plugin.queueRetry.runGeneratePromptTask({ mode: "" }); }
+        catch (error) { missingPromptError = String(error?.message || error); }
+        await plugin.queueRetry.runGeneratePromptTask({ mode: "meeting", activate: true });
+        await plugin.queueRetry.runGeneratePromptTask({ mode: "meeting", activate: false });
+        const promptDigest = createHash("sha256").update(JSON.stringify({
+          missingPromptError,
+          notices: noticeMessages.slice(promptProbeStart),
+        })).digest("hex");
+        console.log(`[queue-prompt-task-flow] digest: ${promptDigest}`);
+      } finally {
+        plugin.vocabulary.generateAndApplyIndustryPrompt = originalPromptGenerator;
+        noticeMessages.length = promptProbeStart;
+      }
+      const transcribeProbeStart = noticeMessages.length;
+      const originalTranscribeRetryPort = plugin.queueRetry.transcribeRetryPort;
+      const transcribeProbePath = "QnALog/queue-transcribe-probe.md";
+      const transcribeProbeFile = new TFile(transcribeProbePath);
+      transcribeProbeFile._content = `<!-- qnalog-transcribe-task:transcribe-probe -->\n_[Waiting for background transcription; the audio has been kept]_`;
+      files.set(transcribeProbePath, transcribeProbeFile);
+      const transcribeProbeCleanups = [];
+      const transcribeProbeReasons = [];
+      const transcribeProbeErrors = [];
+      let transcribeProbeEmpty = false;
+      let transcribeProbeStreaming = false;
+      const transcribeProbePort = {
+        getVault: () => ({
+          getAbstractFileByPath: (path) => files.get(path) || null,
+          read: async (file) => file._content || "",
+          process: async (file, update) => { file._content = update(file._content || ""); return file._content; },
+        }),
+        runOnTarget: async (_target, operation) => operation(),
+        readTaskAudio: async () => ({ blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }), sourcePath: "probe.wav", sourceName: "probe.wav", recovered: false }),
+        describeSegmentRetryUnavailable: () => transcribeProbeStreaming ? "streaming unavailable" : "",
+        getAudioChannelMode: () => "mono",
+        transcribeSegment: async () => transcribeProbeEmpty
+          ? { text: "", rawText: "", providerId: "probe", units: [] }
+          : { text: "Probe transcript $& $` $' $$", rawText: "Probe transcript $& $` $' $$", providerId: "probe", units: [] },
+        transcribeChannels: async () => null,
+        transcribeWhole: async () => ({ text: "Probe import", rawText: "Probe import", providerId: "probe", units: [] }),
+        logDiagnostic: async (_level, code) => { transcribeProbeErrors.push(code); },
+        refreshNoteIndex: async (_file, options) => { transcribeProbeReasons.push(options.reason); },
+        deleteSegmentCache: async (...args) => { transcribeProbeCleanups.push(args); },
+        insertBeforeSegmentsEnd: async (...args) => { transcribeProbeErrors.push(JSON.stringify(args)); },
+        confirmSpeakerNames: async () => undefined,
+        getQueueTasks: () => [],
+        detectMode: () => "meeting",
+        getDefaultPolishMode: () => "meeting",
+        repolish: async () => undefined,
+      };
+      try {
+        plugin.queueRetry.transcribeRetryPort = () => transcribeProbePort;
+        const transcribeProbeTask = {
+          id: "transcribe-probe", type: "transcribe", sessionId: "transcribe-probe-session",
+          mdPath: transcribeProbePath, audioPath: "probe.wav", audioName: "probe.wav",
+          segmentIndex: 0, startOffsetMs: 0, endOffsetMs: 1000,
+        };
+        await plugin.queueRetry.retryTranscribeTask(transcribeProbeTask);
+        const committedProbeContent = transcribeProbeFile._content;
+        await plugin.queueRetry.retryTranscribeTask(transcribeProbeTask);
+        transcribeProbeEmpty = true;
+        const emptyProbePath = "QnALog/queue-transcribe-empty-probe.md";
+        const emptyProbeFile = new TFile(emptyProbePath);
+        emptyProbeFile._content = "empty probe";
+        files.set(emptyProbePath, emptyProbeFile);
+        try {
+          await plugin.queueRetry.retryTranscribeTask({ ...transcribeProbeTask, id: "empty-probe", mdPath: emptyProbePath });
+        } catch (error) { transcribeProbeErrors.push(String(error?.message || error)); }
+        transcribeProbeStreaming = true;
+        try {
+          await plugin.queueRetry.retryTranscribeTask({ ...transcribeProbeTask, id: "streaming-probe", mdPath: emptyProbePath });
+        } catch (error) { transcribeProbeErrors.push(String(error?.message || error)); }
+        transcribeProbeStreaming = false;
+        const transcribeProbeDigest = createHash("sha256").update(JSON.stringify({
+          notices: noticeMessages.slice(transcribeProbeStart),
+          content: committedProbeContent,
+          cleanups: transcribeProbeCleanups,
+          refreshReasons: transcribeProbeReasons,
+          errors: transcribeProbeErrors,
+        })).digest("hex");
+        console.log(`[queue-transcribe-retry-flow] digest: ${transcribeProbeDigest}`);
+      } finally {
+        plugin.queueRetry.transcribeRetryPort = originalTranscribeRetryPort;
+        noticeMessages.length = transcribeProbeStart;
+        files.delete(transcribeProbePath);
+        files.delete("QnALog/queue-transcribe-empty-probe.md");
+      }
       
       
       const polishLiteralBody = "模型正文\n$& $` $' $$";

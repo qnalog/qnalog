@@ -2,6 +2,37 @@ import * as obsidian from "obsidian";
 import type { QueueTask } from "../shared/types";
 import { t } from "../shared/i18n";
 
+export interface QueueTaskPathPort {
+  getQueue(): { tasks: unknown } | null;
+  save(): unknown;
+  requestOutlineRefresh(): void;
+}
+
+export function migrateQueueTasksAfterRename(port: QueueTaskPathPort, oldPath: string, newPath: string): void {
+  const queue = port.getQueue();
+  if (!queue || !Array.isArray(queue.tasks)) return;
+  const migrated = migrateTaskPaths(queue.tasks as (QueueTask | null | undefined)[], oldPath, newPath);
+  if (migrated > 0) {
+    try { void port.save(); } catch (e) {
+      console.warn("[QnALog] queue migrate save failed", e);
+    }
+  }
+}
+
+export function removeQueueTasksForDeletedMarkdown(port: QueueTaskPathPort, path: string): void {
+  const queue = port.getQueue();
+  if (!queue || !Array.isArray(queue.tasks)) return;
+  const result = removeTasksForDeletedPath(queue.tasks as (QueueTask | null | undefined)[], path);
+  if (!result) return;
+  queue.tasks = result.tasks;
+  if (result.removed > 0 || result.preservedContinuation) {
+    try { void port.save(); } catch (e) {
+      console.warn("[QnALog] queue delete cleanup save failed", e);
+    }
+    try { port.requestOutlineRefresh(); } catch { /* intentionally empty */ }
+  }
+}
+
 function coercePath(value: unknown): string {
   // Retain the coercion used by the previous dynamic queue implementation.
   // eslint-disable-next-line @typescript-eslint/no-base-to-string -- preserve legacy String coercion for unknown queue paths
