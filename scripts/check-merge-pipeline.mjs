@@ -1615,7 +1615,52 @@ async function main() {
         || noteFile._content !== targetBodyBefore) {
         throw new Error("short recording created requests, tasks, cache files, or modified the existing note");
       }
+      const failedStartPath = "QnALog/RecordingSmoke/fixed-start-failure.md";
+      const targetBodyBeforeFailure = noteFile._content;
+      const requestCountBeforeFailure = llmCalls.length;
+      const taskIdsBeforeFailure = plugin.queue.tasks.map((task) => task.id);
+      const cachePathsBeforeFailure = [...files.keys()].filter((path) => path.startsWith(`${cacheFolder}/`)).sort();
+      let failedStartSession = null;
+      const cancelFailedStartSubscription = plugin.sessionStore.subscribe((current) => {
+        if (current?.mdPath === failedStartPath) failedStartSession = current;
+      });
+      const errorsBeforeFailure = errorLog.length;
+      try {
+        plugin.settings.noteFileNameFormatNew = "fixed-start-failure";
+        sandbox.moment = () => ({
+          format: (pattern) => pattern === "YYYYMMDD-HHmmss"
+            ? "20260914-120001"
+            : pattern === "fixed-start-failure"
+              ? "fixed-start-failure"
+              : "2026-09-14 12:00",
+          toDate: () => new Date("2026-09-14T12:00:01.000Z"),
+        });
+        smokeRecorder.start = async () => { throw new Error("fixed lifecycle startup failure"); };
+        await plugin.recording.startRecording();
+        const failedStartNote = files.get(failedStartPath);
+        if (!failedStartSession
+          || plugin.sessionStore.get() !== null
+          || plugin.recording.starting
+          || plugin.continuations.isSessionTracked(failedStartSession.id)
+          || !failedStartNote
+          || failedStartNote._content !== ""
+          || noteFile._content !== targetBodyBeforeFailure
+          || llmCalls.length !== requestCountBeforeFailure
+          || JSON.stringify(plugin.queue.tasks.map((task) => task.id)) !== JSON.stringify(taskIdsBeforeFailure)
+          || JSON.stringify([...files.keys()].filter((path) => path.startsWith(`${cacheFolder}/`)).sort()) !== JSON.stringify(cachePathsBeforeFailure)) {
+          throw new Error("failed recording start did not release only its own session while retaining the empty production note");
+        }
+        const expectedFailureLog = "Error: fixed lifecycle startup failure";
+        if (errorLog.length !== errorsBeforeFailure + 1 || errorLog[errorsBeforeFailure] !== expectedFailureLog) {
+          throw new Error(`failed recording start emitted unexpected errors: ${JSON.stringify(errorLog.slice(errorsBeforeFailure))}`);
+        }
+        errorLog.splice(errorsBeforeFailure, 1);
+      } finally {
+        cancelFailedStartSubscription();
+      }
+      console.log("[recording-lifecycle-failure] OK: failed startup retained the empty note and released session tracking");
       console.log("[recording-lifecycle] OK: start created placeholder; final discard removed it and released session tracking");
+      
     } catch (error) {
       failures.push(`录音启停生命周期冒烟失败：${(error && error.message) || error}`);
     } finally {
