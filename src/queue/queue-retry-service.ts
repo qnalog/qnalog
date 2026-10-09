@@ -7,7 +7,7 @@ import { QnALogSettingTab } from "../ui/settings-tab";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue } from "../llm/core";
-import type { MergeQueueTaskPayload, PluginSettings, QueueTaskDeferred, RecordingSession, RealtimeOutlineSourceCoverage, Segment } from "../shared/types";
+import type { PluginSettings, Segment } from "../shared/types";
 import type { SessionStore } from "../session/session-store";
 import { genId, formatElapsed, escapeRegExp } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -17,14 +17,20 @@ import { transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { collectAudioRefs, getSegmentsDurationMs } from "../notes/audio-refs";
-import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { extractDetailsBody } from "../notes/detail-blocks";
 import { readCurrentOutlineBlock } from "../notes/outline-storage";
-import { validateRealtimeOutlineSourceCoverage, createRealtimeOutlineSourceCoverage } from "../notes/outline-coverage";
-import { stableHash } from "../shared/stable-hash";
+import { createRealtimeOutlineSourceCoverage, validateRealtimeOutlineSourceCoverage } from "../notes/outline-coverage";
+import { extractTranscriptSegments } from "../notes/note-transcript-ledger";
+import { inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-source-metadata";
+import { getCurrentTranscript } from "../transcript/session-transcript";
+import { extractPriorOutline, getContinuationTargetIdentity } from "../session/continuation-service";
+import type { ContinuationService } from "../session/continuation-service";
+import { readSessionKnowledge } from "../briefing/session-knowledge";
+  
+import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
-import { ensureTranscriptBlocks, extractTranscriptSegments } from "../notes/note-transcript-ledger";
-import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../notes/note-source-metadata";
+import { ensureTranscriptBlocks } from "../notes/note-transcript-ledger";
+import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -34,15 +40,13 @@ import { NoteIndexService } from "../notes/note-index-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { NoteWriter } from "../notes/note-writer";
 import { findNoteMarkerOffset } from "../notes/note-document";
-import { NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/namespace";
+import { nsMarker, nsRe } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
-import { readSessionKnowledge } from "../briefing/session-knowledge";
 import type { AsrTranscriptResult } from "../asr/transcript-result";
-import { attachTranscriptResult, getCurrentTranscript } from "../transcript/session-transcript";
+import { attachTranscriptResult } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelPattern, labelText } from "../shared/note-labels";
-import { extractPriorOutline, getContinuationTargetIdentity, type ContinuationService } from "../session/continuation-service";
 import type { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { VersionStore } from "../versions/version-store";
 import type { TaskActivityService } from "../tasks/task-activity-service";
@@ -54,6 +58,7 @@ import {
 import { migrateTaskPaths, removeTasksForDeletedPath } from "./queue-task-paths";
 import { retryMergeTask as retryMergeTaskFlow, type QueueMergeRetryPort } from "./queue-merge-retry-flow";
 import { QueueRetryControl } from "./queue-retry-control";
+import { runAppendTask as runAppendTaskFlow, type AppendTask, type QueueAppendTaskPort } from "./queue-append-task-flow";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
@@ -415,293 +420,50 @@ export class QueueRetryService {
       try { this.host.requestOutlineRefresh(); } catch { /* intentionally empty */ }
     }
   }
-  async runAppendTask(task: MergeQueueTaskPayload & { id: string; status: string; dependsOnSessionIds?: string[]; temporarySourcePath?: string }) {
-    const context = task.continuation;
-    if (!context || typeof context.targetPath !== "string" || typeof context.targetSourceId !== "string" || !context.targetSourceId) {
-      return { deferred: true, status: "blocked", reason: t("Continuation recovery information is invalid; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
-    }
-    const cleanupBlocked = () => ({
-      deferred: true,
-      status: "blocked",
-      reason: t("Continuation cleanup information is invalid; the target was not changed."),
-    } satisfies QueueTaskDeferred);
-    if (task.continuationDisposition !== undefined && task.continuationDisposition !== "discard") {
-      return cleanupBlocked();
-    }
-    if (task.continuationDisposition === "discard") {
-      if (this.host.continuations.isSessionTracked(task.sessionId)) {
-        return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
-      }
-      const stagePath = String(task.temporarySourcePath || task.mdPath || "");
-      const normalizedStagePath = obsidian.normalizePath(stagePath);
-      if (!normalizedStagePath || normalizedStagePath === obsidian.normalizePath(context.targetPath)) return cleanupBlocked();
-      const stageFile = this.host.app.vault.getAbstractFileByPath(stagePath);
-      if (stageFile instanceof obsidian.TFolder) return cleanupBlocked();
-      if (stageFile instanceof obsidian.TFile) {
-        await this.host.asrPipeline.discardShortRecordingNote({ id: task.sessionId, mdPath: stageFile.path });
-      }
-      return;
-    }
-    const target = this.host.app.vault.getAbstractFileByPath(context.targetPath);
-    if (!(target instanceof obsidian.TFile)) {
-      return { deferred: true, status: "missing", reason: t("The target note is missing; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
-    }
-    if (this.host.continuations.isSessionTracked(task.sessionId)) {
-      return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
-    }
-    const retained = this.host.queue?.recoveryEntries() || [];
-    const activeDependencies = (task.dependsOnSessionIds || []).filter(id =>
-      this.host.continuations.isSessionTracked(id)
-      || this.host.queue?.tasks.some(candidate => candidate.type !== "generate-prompt" && candidate.sessionId === id)
-      || retained.some(entry => entry.taskType !== "generate-prompt" && entry.sessionId === id),
-    );
-    if (activeDependencies.length) {
-      return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
-    }
-    if (this.host.queue?.tasks.some(candidate => candidate.type === "transcribe" && candidate.sessionId === task.sessionId)
-      || retained.some(entry => entry.taskType !== "generate-prompt" && entry.sessionId === task.sessionId)) {
-      return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
-    }
-    return this.host.continuations.runOnTarget(target, async () => {
-      const reloadedTarget = this.host.app.vault.getAbstractFileByPath(target.path);
-      if (!(reloadedTarget instanceof obsidian.TFile)) {
-        return { deferred: true, status: "missing", reason: t("The target note is missing; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
-      }
-      if (this.host.continuations.hasActiveSessions(target)) {
-        return { deferred: true, reason: t("Recording saved; waiting to merge into the target note.") } satisfies QueueTaskDeferred;
-      }
-      const targetMarkdown = await this.host.app.vault.read(reloadedTarget);
-      if (getContinuationTargetIdentity(targetMarkdown, reloadedTarget) !== context.targetSourceId) {
-        return { deferred: true, status: "blocked", reason: t("The target note identity changed; the separately recorded audio was kept.") } satisfies QueueTaskDeferred;
-      }
-      const committedMarker = nsMarker(NS_CONTINUATION_COMMITTED_MARKER, task.sessionId);
-      if (targetMarkdown.includes(committedMarker)) {
-        const committedSegments = Array.isArray(task.segments) ? task.segments : [];
-        if (!committedSegments.length) {
-          return { deferred: true, status: "blocked", reason: t("A committed continuation has no saved transcript ledger; recovery material was kept.") } satisfies QueueTaskDeferred;
-        }
-        this.host.tasks.patchTaskActivity(this.host.tasks.queueTaskActivityId(task), {
-          status: "running",
-          stage: "write-note",
-          stageLabel: t("Write to Minutes"),
-          progress: 88,
-          detail: t("Writing the organized result to Obsidian"),
-          error: "",
-          completedAt: 0,
-        });
-        await this.host.noteWriter.commitContinuation({
-          id: task.sessionId,
-          sessionStamp: window.moment(context.recordedAt).format("YYYYMMDD-HHmmss"),
-          mdPath: reloadedTarget.path,
-          mode: task.mode,
-          startedAt: context.recordedAt,
-          segments: committedSegments,
-          finalized: false,
-          continuation: context,
-        }, "", []);
-        const recoveryMeta = task.sessionMeta && typeof task.sessionMeta === "object" && !Array.isArray(task.sessionMeta)
-          ? task.sessionMeta as Record<string, unknown>
-          : null;
-        if (recoveryMeta && recoveryMeta._briefingCheckpointId) {
-          await clearCommittedBriefingCheckpoint(this.host, recoveryMeta);
-        }
-        await this.host.noteIndex.refreshNoteIndexSafely(reloadedTarget, {
-          meetingDate: context.recordedAt,
-          reason: "continuation-merge-recovery",
-        });
-        await this.host.asrPipeline.cleanupSuccessfulSegmentAudio({
-          id: task.sessionId,
-          segments: committedSegments,
-          masterAudioPath: context.masterAudioPath || "",
-          masterAudioName: context.masterAudioName || "",
-        });
-        const committedStage = this.host.app.vault.getAbstractFileByPath(String(task.temporarySourcePath || task.mdPath || ""));
-        if (committedStage instanceof obsidian.TFile) await this.host.app.fileManager.trashFile(committedStage);
-        return;
-      }
-      const stagePath = String(task.temporarySourcePath || task.mdPath || "");
-      const stageFile = this.host.app.vault.getAbstractFileByPath(stagePath);
-      if (!(stageFile instanceof obsidian.TFile)) {
-        return { deferred: true, status: "missing", reason: t("The separate recording file is missing; the target was not changed.") } satisfies QueueTaskDeferred;
-      }
-      const stageMarkdown = await this.host.app.vault.read(stageFile);
-      const fresh = extractTranscriptSegments(stageMarkdown);
-      if (!fresh.length) {
-        return { deferred: true, status: "missing", reason: t("The separate recording has no complete transcript yet; its audio was kept.") } satisfies QueueTaskDeferred;
-      }
-      if (fresh.some(segment => !segment.transcript || segment.transcript.sourceId !== task.sessionId)) {
-        return { deferred: true, status: "blocked", reason: t("The separate recording transcript identity is invalid; its audio was kept.") } satisfies QueueTaskDeferred;
-      }
-      const targetSegments = extractTranscriptSegments(targetMarkdown);
-      const freshIds = new Set(fresh.map(segment => segment.transcript?.sourceId).filter(Boolean));
-      const freshBlockIds = new Set(fresh.map(segment => segment.transcript?.id).filter(Boolean));
-      const existingFresh = targetSegments.filter(segment => freshBlockIds.has(segment.transcript?.id || ""));
-      for (const segment of fresh) {
-        const existing = existingFresh.filter(candidate => candidate.transcript?.id === segment.transcript?.id);
-        const incomingRevision = segment.transcript ? getCurrentTranscript(segment.transcript) : null;
-        const existingRevision = existing[0]?.transcript ? getCurrentTranscript(existing[0].transcript) : null;
-        if (existing.length > 1 || (existing.length === 1
-          && (!incomingRevision || !existingRevision
-            || existing[0].transcript?.sourceId !== segment.transcript?.sourceId
-            || existingRevision.revision !== incomingRevision.revision
-            || existingRevision.normalizationRevision !== incomingRevision.normalizationRevision))) {
-          return { deferred: true, status: "blocked", reason: t("A transcript source conflicts with the target note; the separate recording was kept.") } satisfies QueueTaskDeferred;
-        }
-      }
-      const base = targetSegments.filter(segment => !freshIds.has(segment.transcript?.sourceId || ""));
-      const durationMs = getSegmentsDurationMs(base);
-      const normalizedBatch = normalizeSegmentsForMergedNote(fresh, durationMs, base.length, stageFile);
-      const normalizedFresh = fresh.map((segment, index) => {
-        const existing = existingFresh.find(candidate => candidate.transcript?.id === segment.transcript?.id);
-        const normalized = existing || normalizedBatch[index];
-        return { ...normalized, index: base.length + index };
-      });
-      const mergedSegments = [...base, ...normalizedFresh];
-      let outlineText = "";
-      let outlineCoverage: RealtimeOutlineSourceCoverage | undefined;
-      let outlineCommittedCount = 0;
-      if (validateRealtimeOutlineSourceCoverage(context.realtimeOutlineSourceCoverage, context.realtimeOutline || "", mergedSegments)) {
-        outlineText = context.realtimeOutline || "";
-        outlineCoverage = context.realtimeOutlineSourceCoverage;
-        outlineCommittedCount = context.realtimeOutlineSegmentCount || 0;
-      } else {
-        const currentOutline = readCurrentOutlineBlock(targetMarkdown);
-        const targetOutline = extractPriorOutline(targetMarkdown);
-        const targetProof = currentOutline?.sourceCoverage;
-        if (targetProof && validateRealtimeOutlineSourceCoverage(targetProof, targetOutline, base)) {
-          const baseCommittedCount = targetProof.committedSegmentCount;
-          const freshProofValid = validateRealtimeOutlineSourceCoverage(
-            context.realtimeOutlineSourceCoverage,
-            context.realtimeOutline || "",
-            fresh,
-          );
-          const freshIsComplete = freshProofValid
-            && context.realtimeOutlineSegmentCount === fresh.length
-            && stableHash(targetOutline) === context.priorOutlineHash;
-          if (baseCommittedCount === base.length && freshIsComplete && context.realtimeOutline) {
-            outlineText = this.host.outline.mergeContinuationOutlineText(targetOutline, context.realtimeOutline);
-            outlineCommittedCount = mergedSegments.length;
-            outlineCoverage = createRealtimeOutlineSourceCoverage(outlineText, mergedSegments, outlineCommittedCount);
-          } else {
-            outlineText = targetOutline;
-            outlineCommittedCount = baseCommittedCount;
-            outlineCoverage = createRealtimeOutlineSourceCoverage(outlineText, mergedSegments, outlineCommittedCount);
-          }
-        }
-      }
-      const outlineEnabled = !!this.host.settings.enableRealtimeOutline;
-      if (outlineEnabled && this.host.queue) {
-        context.realtimeOutline = outlineText;
-        context.realtimeOutlineSegmentCount = outlineCommittedCount;
-        context.realtimeOutlineSourceCoverage = outlineCoverage;
-        await this.host.queue.update(task.id, { continuation: context, segments: normalizedFresh });
-      }
-      const completedOutline = await this.host.outline.completeRealtimeOutlineForMergedSegments(
-        mergedSegments,
-        { outline: outlineText, sourceCoverage: outlineCoverage },
-        task.mode,
-        async progress => {
-          outlineText = progress.outline;
-          outlineCommittedCount = progress.committedSegmentCount;
-          outlineCoverage = progress.sourceCoverage;
-          context.realtimeOutline = outlineText;
-          context.realtimeOutlineSegmentCount = outlineCommittedCount;
-          context.realtimeOutlineSourceCoverage = outlineCoverage;
-          if (this.host.queue) await this.host.queue.update(task.id, { continuation: context, segments: normalizedFresh });
-        },
-      );
-      if (completedOutline) {
-        outlineText = completedOutline.outline;
-        outlineCoverage = completedOutline.sourceCoverage;
-        outlineCommittedCount = outlineCoverage.committedSegmentCount;
-        context.realtimeOutline = outlineText;
-        context.realtimeOutlineSegmentCount = outlineCommittedCount;
-        context.realtimeOutlineSourceCoverage = outlineCoverage;
-        if (this.host.queue) await this.host.queue.update(task.id, { continuation: context, segments: normalizedFresh });
-      }
-      task.segments = normalizedFresh;
-      if (this.host.queue) await this.host.queue.update(task.id, { segments: normalizedFresh });
-      const metadata = this.host.app.metadataCache.getFileCache(reloadedTarget);
-      const startedAt = inferNoteStartedAtIso(reloadedTarget, metadata?.frontmatter || {});
-      const savedSessionMeta = task.sessionMeta && typeof task.sessionMeta === "object" && !Array.isArray(task.sessionMeta)
-        ? task.sessionMeta as Record<string, unknown>
-        : {};
-      const sessionMeta: Record<string, unknown> = Object.assign({}, savedSessionMeta, {
-        startedAt,
-        duration: formatElapsed(getSegmentsDurationMs(mergedSegments)),
-        _previousKnowledge: readSessionKnowledge(targetMarkdown),
-      });
-      const writeSession: RecordingSession = {
-        id: task.sessionId,
-        sessionStamp: window.moment(context.recordedAt).format("YYYYMMDD-HHmmss"),
-        mdPath: reloadedTarget.path,
-        mode: task.mode,
-        startedAt,
-        source: task.source || "",
-        sourceMeta: task.sourceMeta || null,
-        externalAudioSource: task.externalAudioSource || null,
-        textImportSources: task.textImportSources || [],
-        meetingWorkbench: sessionMeta.meetingWorkbench || null,
-        segments: mergedSegments,
-        realtimeOutline: outlineText,
-        realtimeOutlineSegmentCount: outlineCommittedCount,
-        realtimeOutlineSourceCoverage: outlineCoverage,
-        realtimeOutlineCoverageScope: "whole-note",
-        continuationSourcePath: reloadedTarget.path,
-        continuationSourceTitle: reloadedTarget.basename,
-        continuationRecordedAt: context.recordedAt,
-        continuationPriorOutline: extractPriorOutline(targetMarkdown),
-        continuationPriorAudioNames: collectAudioRefs(targetMarkdown),
-        continuationPriorRecordingInfo: extractDetailsBody(targetMarkdown, labelPattern("recordingInfo")),
-        continuationBaseSegments: base,
-        continuationOffsetMs: durationMs,
-        continuation: context,
-        masterAudioPath: context.masterAudioPath || "",
-        masterAudioName: context.masterAudioName || "",
-        multiSourceAudio: true,
-        finalized: false,
-      };
-      const persistedSessionMeta = () => Object.fromEntries(
-        Object.entries(sessionMeta).filter(([key, value]) =>
-          key !== "_taskActivityId" && key !== "_taskMeter" && typeof value !== "function"),
-      );
-      sessionMeta._taskActivityId = this.host.tasks.queueTaskActivityId(task);
-      let polished: string;
-      try {
-        polished = await mergeAndPolish(this.host, mergedSegments, task.mode, sessionMeta, task.speakerFrontmatter || null);
-      } catch (error) {
-        task.sessionMeta = persistedSessionMeta();
-        if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta: task.sessionMeta });
-        throw error;
-      }
-      if (!polished) throw new Error(t("Merge returned an empty result"));
-      task.sessionMeta = persistedSessionMeta();
-      if (this.host.queue) await this.host.queue.update(task.id, { sessionMeta: task.sessionMeta });
-      try {
-        await this.host.versions.saveVersion(reloadedTarget, targetMarkdown, base, {
-          kind: "pre-append", label: t("Before append") + " " + window.moment().format("YYYY-MM-DD HH:mm"),
-          mode: task.mode, idLabel: `pre-append-${window.moment().format("YYYYMMDD-HHmmss")}`,
-          body: targetMarkdown, activate: false,
-        });
-      } catch (error) {
-        console.warn("[QnALog] pre-append version archive failed", error);
-      }
-      this.host.tasks.patchTaskActivity(this.host.tasks.queueTaskActivityId(task), {
-        status: "running",
-        stage: "write-note",
-        stageLabel: t("Write to Minutes"),
-        progress: 88,
-        detail: t("Writing the organized result to Obsidian"),
-        error: "",
-        completedAt: 0,
-      });
-      await this.host.noteWriter.commitContinuation(writeSession, polished, []);
-      if (sessionMeta._briefingCheckpointId) await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
-      await this.host.noteIndex.refreshNoteIndexSafely(reloadedTarget, { meetingDate: startedAt, reason: "continuation-merge" });
-      await this.host.asrPipeline.cleanupSuccessfulSegmentAudio(writeSession);
-      await this.host.app.fileManager.trashFile(stageFile);
-      return;
-    });
+  async runAppendTask(task: AppendTask) {
+    return runAppendTaskFlow(this.appendTaskPort(), task);
+  }
+  private appendTaskPort(): QueueAppendTaskPort {
+    return {
+      getVault: () => this.host.app.vault,
+      trashFile: (file) => this.host.app.fileManager.trashFile(file),
+      getFileCache: (file) => this.host.app.metadataCache.getFileCache(file),
+      getQueue: () => this.host.queue,
+      isRealtimeOutlineEnabled: () => !!this.host.settings.enableRealtimeOutline,
+      isSessionTracked: (id) => this.host.continuations.isSessionTracked(id),
+      hasActiveSessions: (target) => this.host.continuations.hasActiveSessions(target),
+      runOnTarget: (target, operation) => this.host.continuations.runOnTarget(target, operation),
+      discardShortRecordingNote: (session) => this.host.asrPipeline.discardShortRecordingNote(session),
+      cleanupSuccessfulSegmentAudio: (session) => this.host.asrPipeline.cleanupSuccessfulSegmentAudio(session),
+      patchTaskActivity: (id, patch) => this.host.tasks.patchTaskActivity(id, patch),
+      queueTaskActivityId: (appendTask) => this.host.tasks.queueTaskActivityId(appendTask),
+      commitContinuation: (session, polished, ids) => this.host.noteWriter.commitContinuation(session, polished, ids),
+      mergeAndPolish: (segments, mode, sessionMeta, speakerFrontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, speakerFrontmatter),
+      clearCommittedBriefingCheckpoint: (meta) => clearCommittedBriefingCheckpoint(this.host, meta),
+      refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, {
+        meetingDate: options.meetingDate as string,
+        reason: options.reason,
+      }),
+      completeRealtimeOutline: (segments, resume, mode, onProgress) =>
+        this.host.outline.completeRealtimeOutlineForMergedSegments(segments, resume, mode, onProgress),
+      mergeContinuationOutlineText: (base, fresh) => this.host.outline.mergeContinuationOutlineText(base, fresh),
+      extractPriorOutline,
+      getContinuationTargetIdentity,
+      getTranscriptSegments: extractTranscriptSegments,
+      getTranscriptRevision: getCurrentTranscript,
+      getOutlineBlock: readCurrentOutlineBlock,
+      isOutlineCoverageValid: validateRealtimeOutlineSourceCoverage,
+      createOutlineCoverage: createRealtimeOutlineSourceCoverage,
+      normalizeMergedSegments: normalizeSegmentsForMergedNote,
+      inferStartedAt: inferNoteStartedAtIso,
+      getAudioReferences: collectAudioRefs,
+      getDurationMs: getSegmentsDurationMs,
+      getDetailsBody: extractDetailsBody,
+      getSessionKnowledge: readSessionKnowledge,
+      saveVersion: (file, content, base, input) =>
+        this.host.versions.saveVersion(file, content, base, input as Parameters<VersionStore["saveVersion"]>[3]),
+      formatMoment: (format, input) => input === undefined ? window.moment().format(format) : window.moment(input).format(format),
+    };
   }
   private mergeRetryPort(): QueueMergeRetryPort {
     return {
