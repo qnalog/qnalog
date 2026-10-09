@@ -9,7 +9,6 @@
 - 已完成项与历史说明不是任务来源；历史细节从 Git、PR 与对应测试追溯。
 - `AGENTS.md` 规定代理执行约束，本文件记录项目维护事实，不重复维护另一套代理流程。
 
-
 > English summary: QnALog is MIT-licensed software derived from LexVoice's last MIT-licensed release (2.1.2). LexVoice 2.2.0+ is proprietary; its terms do not reach this repository. Never copy code, text, or assets out of a 2.2.0+ build — implement equivalent functionality independently. Keep the plugin id `qnalog` and keep every update source pointing at this repository.
 
 ---
@@ -256,7 +255,6 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 检查器的分工：legacy-prefix 拦截品牌漏改；plugin-onload 拦截服务漏装；merge-pipeline 运行收尾到笔记写入链；domain-boundaries 校验成员归属。构建对装配检查与 merge-pipeline 各执行一次。
 
-
 ### 4.5 设置结构版本政策
 
 分界线是 **1.0.0 的发布时刻**。这条线两侧的规则相反，改代码前先确认你在哪一侧。
@@ -303,7 +301,6 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 ### 6.1 当前推进
 
-
 1. **无感开始｜未开始**。用户无需在录音前选择整理类型；默认输出为开篇概要和梳理后的详情。原有类型通过“重新整理为……”生成派生稿；保留已有用户保存的默认模式，新装用户默认使用中性模式。
 2. **检索底座与全库问答｜未开始**。问一问从当前笔记扩展到默认的 `QnALog/` 目录；整个知识库仅在用户于设置中明确开启后读取。第一步采用分块、关键词、中文字符二元切分和笔记索引卡检索，检索层保留后续接入云端 embedding 的接口；索引缓存可由源文件重建，来源去重沿用现有来源与版本关系。
 3. **纪要总览｜未开始**。基于笔记索引卡展示新增内容、疑似同一主题的笔记和未完成行动；用户无需逐篇打开。
@@ -324,15 +321,14 @@ git tag X.Y.Z && git push origin X.Y.Z
 - 服务推荐需在具体需求出现时重新核实能力、地区与费用；历史流式任务恢复仅在实际恢复需求出现时调查。
 - `modals.ts` 按域拆包、更新检查薄转发、专属服务展示、整体 `OutlineView` 拆分均暂停或可选，不排入当前执行队列。
 - 剩余正则漏检或 CSS 输出问题只在审计证据或真实输出问题出现时启动。三个 `@ts-nocheck` 文件的处理条件见 §8。
-- 2026-10-08 修复暂停恢复任务弹窗排版：说明和条目正文使用主题文字颜色与字号，长文字换行；桌面/窄屏留白一致，完成历史标题继续隐藏。真实 Obsidian DOM 验证使用测试库现有 4 条暂停记录及内存显示数据，覆盖 1440、768、390px 视口、浅/深主题 token、长路径、空状态、完成标题隐藏与列表滚动；队列快照前后逐字一致，未触发重试、取消或网络请求。`tests/progress-modal-contract.test.ts`、`tests/queue-recovery.test.ts` 共 11 项通过，`npm run verify` 1300 项通过。未新增依赖边；维护者仍需确认实际界面。
-
+- 暂停恢复任务弹窗的排版已调整（主题文字颜色、长文字换行、窄屏留白）；实际界面仍待维护者确认。
 
 ### 6.3 已完成与验收范围
 
 | 事项 | 已完成结果与证据入口 | 人工确认范围 |
 |---|---|---|
 | 设置迁移与恢复工具 | 正式用户四态迁移见 §4.5；恢复脚本路径边界由 CLI 测试及临时目录冒烟覆盖 | 未进行真实 Obsidian 验证 |
-| 短续录丢弃 | 失败时保留可恢复任务，重试只清理暂存；`tests/short-recording-flow.test.ts` 覆盖队列重载与失败恢复 | fresh 库确认 2 秒丢弃、4/8 秒追加 |
+| 短续录丢弃 | 失败时保留可恢复任务，重试只清理暂存；`tests/short-recording-flow.test.ts` 覆盖队列重载与失败恢复 | 维护者已确认 2 秒丢弃、4/8 秒追加 |
 | 初稿/派生稿及重新整理文案 | 有效快照时显示本地化 Original/初稿；任务状态和通知使用界面模式名称；见 `tests/outline-recent-variants.test.ts`、`tests/recent-note-variants.test.ts`、`tests/clean-transcript-storage.test.ts` | 英文新写入、列表观察仍待 §6.4 |
 | 负向装配隔离 | 独立临时 bundle 检查漏装，不改写共享源码；见 `tests/plugin-onload.test.ts` | 不适用 |
 | 笔记正文保全 | 实时转写按结束标记长度清理；转写内容按字面量插入；见 `tests/live-asr-pipeline-service.test.ts`、`tests/transcript-queue-retry.test.ts` | 未进行真实 Obsidian 验证 |
@@ -606,7 +602,6 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 以上四条都有用例，且逐条做过反向验证（故意破坏实现后对应用例失败）。
 
-
 ---
 
 ## 11. 首次配置服务事实
@@ -622,7 +617,6 @@ git tag X.Y.Z && git push origin X.Y.Z
 | AI 整理 | 服务预设 `dashscope` | `qwen3.8-flash` | OpenAI 兼容 `/compatible-mode/v1` |
 
 录音转写与整文件导入共用一把百炼密钥。只对新建配置和用户主动应用的方案使用上述默认值；设置加载不会改写已保存模型、地址、密钥、活动服务、语言或完整方案快照。旧 `dashscope-chat` 仍单独使用 `qwen3-asr-flash` 与 Chat Completions 协议；不能把 `qwen-audio-3.1-asr-flash` 填入旧 endpoint。`qwen3-asr-flash` 仍在百炼官方模型列表中，本项目不声明它已下线。
-
 
 录音模型目录可以返回录音转写、导入整文件和实时模型。只识别为百炼模型且命中 `src/asr/bailian-asr-registry.ts` 登记项的模型，才会由选择器写入对应 endpoint 与协议；转换保留当前服务 host、区域和代理前缀，不猜测默认 host。分页目录必须完整读取，每页请求100条以减少请求次数；按平台实际返回的页大小继续分页。页码、总数或结果不一致，或任一页请求失败时，报告目录失败，不返回部分结果、不拼接静态模型清单。未登记的模型可手动输入，但不会自动改用百炼协议。
 
