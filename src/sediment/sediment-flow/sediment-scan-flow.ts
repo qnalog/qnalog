@@ -163,6 +163,10 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
       ],
     });
   } catch (error) {
+    if (token !== port.currentToken()) {
+      port.tasks.cancelTaskActivity(taskId, t("This scan was cancelled; the note content was not changed"));
+      return;
+    }
     port.patchBucket(file, { scanning: false, scanStartedAt: "" });
     port.render();
     port.logFailure(error);
