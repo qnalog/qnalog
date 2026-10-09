@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import moment from "moment";
 vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
   TFile: class {}, TFolder: class {},
@@ -21,15 +22,15 @@ import {
   stripEmptyPlaceholders,
   stripImportAppendices,
   stripMarkdownForEmailBrief,
-  getSourceIdFromMarkdown,
 } from "../src/notes/note-markdown";
+import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../src/notes/note-source-metadata";
 import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-import { hashRealtimeOutlineText } from "../src/notes/outline-text";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
+import type { Segment } from "../src/shared/types";
 import { buildTextImportSourceDetails } from "../src/notes/note-transcript-materials";
 
 // note-markdown 的回归覆盖：机器字段名固定、旧中英字段安全读取、内容字段按模式白名单保留，
@@ -813,7 +814,7 @@ describe("笔记外层结构", () => {
   it("来源身份使用首个会话 ID，否则按路径与创建时间稳定回退", () => {
     expect(getSourceIdFromMarkdown("<!-- qnalog-session: source/id -->", { path: "note.md", stat: { ctime: 1 } })).toBe("sourceid");
     const file = { path: "note.md", stat: { ctime: 1 } };
-    const expected = `note-${hashRealtimeOutlineText("note.md:1")}`;
+    const expected = "note-aq6lpx";
     expect(getSourceIdFromMarkdown("", file)).toBe(expected);
     expect(getSourceIdFromMarkdown("changed body", file)).toBe(expected);
     expect(getSourceIdFromMarkdown("", { path: "other.md", stat: { ctime: 1 } })).not.toBe(expected);
@@ -896,5 +897,88 @@ describe("共享笔记结构范围定位", () => {
     const range = [...iterateNoteDetailsBlocks(text)][0];
     expect(text.slice(range.bodyStart, range.bodyEnd)).toBe("outer<details><summary>Inner</summary>inner");
     expect(stripUtilityDetailsBlocks("<details><summary><b>Raw transcript</b></summary>keep</details>")).toContain("keep");
+  });
+});
+describe("source metadata and merged segment normalization", () => {
+  it("selects start time candidates in order and preserves file/date fallbacks", () => {
+    const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+    const strictUtc = Object.assign(
+      (value: string, formats: readonly unknown[] | string, strict: boolean) =>
+        moment.utc(value, formats as never, strict),
+      { ISO_8601: moment.ISO_8601 },
+    );
+    vi.stubGlobal("window", { moment: strictUtc });
+    try {
+      const file = { basename: "undated", stat: { ctime: 1 } };
+      const cases: Array<[Record<string, unknown>, typeof file, string]> = [
+        [{ qnalog_time: "2026-10-09T09:30:00+08:00", 日期: "2026-10-07", 时间: "12:00" }, file, "2026-10-09T01:30:00.000Z"],
+        [{ qnalog_time: "invalid", 日期: "2026-10-09", 时间: "09:30" }, file, "2026-10-09T09:30:00.000Z"],
+        [{ date: "2026-10-09" }, file, "2026-10-09T00:00:00.000Z"],
+        [{}, { basename: "2026-10-09 0930 Topic", stat: { ctime: 1 } }, "2026-10-09T09:30:00.000Z"],
+        [{}, { basename: "2026-10-09 Topic", stat: { ctime: 1 } }, "2026-10-09T00:00:00.000Z"],
+        [{ qnalog_time: "invalid" }, file, "1970-01-01T00:00:00.001Z"],
+      ];
+      for (const [frontmatter, sourceFile, expected] of cases) {
+        expect(inferNoteStartedAtIso(sourceFile, frontmatter)).toBe(expected);
+      }
+      vi.stubGlobal("window", {});
+      expect(inferNoteStartedAtIso(file, { qnalog_time: "2026-10-09T09:30:00+08:00" }))
+        .toBe("1970-01-01T00:00:00.001Z");
+      const now = vi.spyOn(Date, "now").mockReturnValue(1_791_504_000_000);
+      expect(inferNoteStartedAtIso({ basename: "undated", stat: { ctime: 0 } }, {}))
+        .toBe("2026-10-09T00:00:00.000Z");
+      now.mockRestore();
+    } finally {
+      vi.restoreAllMocks();
+      if (previousWindow === undefined) vi.unstubAllGlobals();
+      else vi.stubGlobal("window", previousWindow);
+    }
+  });
+
+  it("adjusts global segment time while retaining local audio offsets and shallow fields", () => {
+    const nested = { retained: true };
+    const transcriptSegment = attachTextTranscript({
+      index: 20, startOffsetMs: 100, endOffsetMs: 50, text: "coerce",
+    }, "segment-source", "text-import");
+    const segments = [
+      { index: 9, startOffsetMs: -2, endOffsetMs: -5, audioStartOffsetMs: -1, audioEndOffsetMs: Number.NaN,
+        text: "negative", sourceName: "", sourcePath: "" },
+      { ...transcriptSegment, index: 20, startOffsetMs: "100", endOffsetMs: "50",
+        audioStartOffsetMs: null, audioEndOffsetMs: "", sourceName: "Prior", sourcePath: "Prior.md", extra: nested },
+    ] as unknown as Segment[];
+    const normalized = normalizeSegmentsForMergedNote(segments, "500", "3", { basename: "Source", path: "A.md" });
+    expect(normalized.map(({ index, startOffsetMs, endOffsetMs, audioStartOffsetMs, audioEndOffsetMs, sourceName, sourcePath }) =>
+      ({ index, startOffsetMs, endOffsetMs, audioStartOffsetMs, audioEndOffsetMs, sourceName, sourcePath }))).toEqual([
+      { index: 3, startOffsetMs: 500, endOffsetMs: 500, audioStartOffsetMs: 0, audioEndOffsetMs: 0, sourceName: "Source", sourcePath: "A.md" },
+      { index: 4, startOffsetMs: 600, endOffsetMs: 600, audioStartOffsetMs: 0, audioEndOffsetMs: 0, sourceName: "Prior", sourcePath: "Prior.md" },
+    ]);
+    expect(normalized[1].text).toBe("coerce");
+    expect(normalized[1].transcript).toBe(transcriptSegment.transcript);
+    expect((normalized[1] as Segment & { extra: unknown }).extra).toBe(nested);
+    expect(normalized[1]).not.toBe(segments[1]);
+    expect(segments[1].index).toBe(20);
+    const offsets = normalizeSegmentsForMergedNote([
+      { index: 0, startOffsetMs: 500, endOffsetMs: 600, audioStartOffsetMs: 7, audioEndOffsetMs: 11, text: "audio" },
+    ], 100, 0, null)[0];
+    expect(offsets).toMatchObject({ startOffsetMs: 600, endOffsetMs: 700, audioStartOffsetMs: 7, audioEndOffsetMs: 11 });
+    expect(normalizeSegmentsForMergedNote(null, 0, 0, null)).toEqual([]);
+    expect(normalizeSegmentsForMergedNote([], 0, 0, null)).toEqual([]);
+    expect(normalizeSegmentsForMergedNote([{ index: 0, startOffsetMs: 0, endOffsetMs: 0, text: "" }], -5, -2, null)[0])
+      .toMatchObject({ index: 0, startOffsetMs: 0, endOffsetMs: 0 });
+  });
+
+  it("propagates the original conversion failures", () => {
+    const failure = new Error("conversion failed");
+    const throws = { toString: () => { throw failure; } };
+    const cases: Array<() => unknown> = [
+      () => getSourceIdFromMarkdown(throws, { path: "note.md" }),
+      () => inferNoteStartedAtIso({ basename: "undated", stat: { ctime: 1 } }, { qnalog_time: throws }),
+      () => normalizeSegmentsForMergedNote([], { valueOf: () => { throw failure; } }, 0, null),
+    ];
+    for (const call of cases) {
+      let caught: unknown;
+      try { call(); } catch (error) { caught = error; }
+      expect(caught).toBe(failure);
+    }
   });
 });
