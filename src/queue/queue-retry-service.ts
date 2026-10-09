@@ -52,6 +52,7 @@ import {
   type TranscribeAudioSourcePort,
 } from "./transcribe-audio-source";
 import { migrateTaskPaths, removeTasksForDeletedPath } from "./queue-task-paths";
+import { retryMergeTask as retryMergeTaskFlow, type QueueMergeRetryPort } from "./queue-merge-retry-flow";
 import { QueueRetryControl } from "./queue-retry-control";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
@@ -702,67 +703,29 @@ export class QueueRetryService {
       return;
     });
   }
-  async retryMergeTask(task) {
-    if (task.continuation) return this.runAppendTask(task);
-    const target = this.host.app.vault.getAbstractFileByPath(task.mdPath);
-    if (!(target instanceof obsidian.TFile)) throw new Error(t("Note not found: {0}").replace("{0}", String(task.mdPath)));
-    return this.host.continuations.runOnTarget(target, () => this.retryMergeTaskImpl(task));
-  }
-  private async retryMergeTaskImpl(task) {
-    const file = this.host.app.vault.getAbstractFileByPath(task.mdPath);
-    if (!(file instanceof obsidian.TFile)) throw new Error(t("Note not found: {0}").replace("{0}", String(task.mdPath)));
-    const currentMarkdown = await this.host.app.vault.read(file);
-    const sessionMeta = Object.assign({}, task.sessionMeta || {}, {
-      _previousKnowledge: readSessionKnowledge(currentMarkdown),
-    });
-    const polished = await mergeAndPolish(
-      this.host,
-      task.segments || [],
-      task.mode,
-      sessionMeta,
-      task.speakerFrontmatter || null,
-    );
-    if (!polished) throw new Error(t("Merge returned an empty result"));
-    const retryStartedAt = (sessionMeta && sessionMeta.startedAt) || task.createdAt || new Date().toISOString();
-    const retrySession = {
-      id: task.sessionId || genId(),
-      sessionStamp: window.moment(retryStartedAt).format("YYYYMMDD-HHmmss"),
-      mdPath: file.path,
-      mode: task.mode,
-      startedAt: retryStartedAt,
-      finalized: true,
-      source: task.source || "",
-      sourceMeta: task.sourceMeta || null,
-      externalAudioSource: task.externalAudioSource || null,
-      textImportSources: task.textImportSources || [],
-      meetingWorkbench: sessionMeta && sessionMeta.meetingWorkbench || null,
-      segments: Array.isArray(task.segments) ? task.segments : [],
-      multiSourceAudio: task.source === "merged-notes",
+  private mergeRetryPort(): QueueMergeRetryPort {
+    return {
+      getVault: () => this.host.app.vault,
+      runOnTarget: (target, operation) => this.host.continuations.runOnTarget(target, operation),
+      runContinuationAppend: (task) => this.runAppendTask(task as Parameters<QueueRetryService["runAppendTask"]>[0]),
+      mergeAndPolish: (segments, mode, sessionMeta, speakerFrontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, speakerFrontmatter),
+      shouldRewriteConsolidated: (session) => shouldRewriteConsolidatedNote(this.host.settings, session),
+      rewriteConsolidated: (session, polished) => this.host.noteWriter.rewriteConsolidated(session, polished),
+      mergeLeadingFrontmatter: mergeLeadingFrontmatterIntoDocument,
+      getModePrefix: (mode) => getModeMeta(this.host.settings, mode).prefix,
+      clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
+      renameWithGeneratedTitle: (file, polished, mode) => this.host.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, mode),
+      refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, {
+        // Value remains unchanged, matching the pre-migration call.
+        meetingDate: options.meetingDate as string,
+        reason: options.reason,
+      }),
+      formatSessionStamp: (startedAt) => window.moment(startedAt).format("YYYYMMDD-HHmmss"),
+      createSessionId: () => genId(),
     };
-    if (shouldRewriteConsolidatedNote(this.host.settings, retrySession)) {
-      await this.host.noteWriter.rewriteConsolidated(retrySession, polished);
-    } else {
-      const cur = await this.host.app.vault.read(file);
-      const failMark = new RegExp(`_\\[(?:${labelPattern("mergeFailedQueued").source})[^\\]]*\\]_`);
-      const merged = mergeLeadingFrontmatterIntoDocument(cur, polished);
-      let next;
-      if (failMark.test(cur)) {
-        next = merged.content.replace(failMark, () => merged.body);
-      } else {
-        const meta = getModeMeta(this.host.settings, task.mode);
-        const block = `\n\n## ${labelText("mergedVersionAt", `${labelText("supplementaryRecording")} · ${meta.prefix}`)}\n\n${merged.body}\n\n---\n`;
-        next = merged.content + block;
-      }
-      await this.host.app.vault.modify(file, next);
-    }
-    await clearCommittedBriefingCheckpoint(this.host, task.sessionMeta);
-    let targetFile = file;
-    const renamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, task.mode);
-    if (renamed instanceof obsidian.TFile) targetFile = renamed;
-    await this.host.noteIndex.refreshNoteIndexSafely(targetFile, {
-      meetingDate: (task.sessionMeta && task.sessionMeta.startedAt) || task.createdAt || "",
-      reason: "merge-retry",
-    });
+  }
+  retryMergeTask(task) {
+    return retryMergeTaskFlow(this.mergeRetryPort(), task);
   }
   async runGeneratePromptTask(task) {
     const mode = task.mode;

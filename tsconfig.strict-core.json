@@ -75,6 +75,7 @@
     "src/queue/queue-recovery.ts",
     "src/queue/queue-task-paths.ts",
     "src/queue/queue-retry-control.ts",
+    "src/queue/queue-merge-retry-flow.ts",
     "src/queue/transcribe-audio-source.ts",
     "src/notes/note-document.ts",
     "src/versions/version-content.ts",
