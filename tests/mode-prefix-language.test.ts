@@ -16,8 +16,13 @@ describe("模板前缀随语言", () => {
     setActiveUiLanguage(resolveUiLanguage("en", "en"));
     expect(getModePrefix(meta)).toBe("Synthesis minutes");
 
+    const generalMeta = getModeMeta(settings, "general");
+    expect(getModePrefix(generalMeta)).toBe("General");
+    expect(normalizeModeFromLabel(settings, "General")).toBe("general");
     setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     expect(getModePrefix(meta)).toBe("综合纪要");
+    expect(getModePrefix(generalMeta)).toBe("通用");
+    expect(normalizeModeFromLabel(settings, "通用")).toBe("general");
 
     // 两种前缀都要认回 synthesis，否则既有笔记与英文新笔记会被判成未知模式
     expect(normalizeModeFromLabel(settings, "综合纪要")).toBe("synthesis");

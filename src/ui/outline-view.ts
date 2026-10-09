@@ -4420,9 +4420,9 @@ export class OutlineView extends obsidian.ItemView {
       return trigger;
     };
 
-    // 模板（常驻显示——最常切换的"录音整理成什么"）
+    // 整理类型（常驻显示；通用模式可直接录音，无需预先选择）
     const modeRow = primaryControls.createDiv({ cls: "qnalog-outline-control-row is-template-control" });
-    modeRow.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Template") });
+    modeRow.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Organizing type") });
     const currentMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode);
     const modeSelect = mkSelect(modeRow, {
       current: currentMode,

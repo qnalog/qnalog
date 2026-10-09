@@ -31,7 +31,7 @@ type PromptTemplateInput = Omit<Partial<PromptTemplate>, "id" | "mode" | "name" 
 };
 const modeMetaByKey = MODE_META as Record<string, ModeMetadata>;
 const stringifyModeValue = String as (value: unknown) => string;
-export const STANDARD_POLISH_MODES = ["synthesis", "meeting", "seminar", "interview", "monologue", "learning"];
+export const STANDARD_POLISH_MODES = ["general", "synthesis", "meeting", "seminar", "interview", "monologue", "learning"];
 
 // 曾用于"必须先解锁才可见"的模式（招聘评估 / 招聘需求挖掘 / 晋升评审），随 HR 场景一并移除；
 // 现在所有可用模式都是标准模式，不再需要第二份清单与门控。

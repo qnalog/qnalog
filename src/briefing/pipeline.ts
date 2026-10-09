@@ -325,6 +325,18 @@ export function getBriefingFidelityPolicy(input: {
 } = {}): BriefingFidelityPolicy {
   const detailLevel = cleanText(input.detailLevel).toLowerCase();
   const isSynthesis = cleanText(input.mode).toLowerCase() === "synthesis";
+  if (cleanText(input.mode).toLowerCase() === "general") {
+    const structureLevel = cleanText(input.structureLevel).toLowerCase();
+    const profile = detailLevel === "detailed" || detailLevel === "concise" ? detailLevel : "balanced";
+    return {
+      profile,
+      sourceTargetChars: profile === "concise" ? 28_000 : (profile === "detailed" ? 16_000 : (structureLevel === "strict" ? 18_000 : 22_000)),
+      minimumOutputRatio: 0,
+      targetOutputRatio: profile === "concise" ? 0.18 : (profile === "detailed" ? 0.42 : 0.30),
+      absoluteMinimumChars: 0,
+      enforceLengthFloor: false,
+    };
+  }
   if (isSynthesis) {
     if (detailLevel === "detailed") {
       return {

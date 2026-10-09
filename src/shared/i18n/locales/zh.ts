@@ -1352,6 +1352,8 @@ export const ZH: MessageTable = {
   "Concept explanation": "概念解释",
   "Mode": "模式",
   "Template": "模板",
+  "General": "通用",
+  "Organizing type": "整理类型",
   "Uploading audio": "正在上传音频",
   "Preparing to process": "正在准备处理",
   "Scanning for importable text…": "正在扫描可导入文本…",

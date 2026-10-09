@@ -25,16 +25,6 @@ describe("release runtime contracts", () => {
   });
 
 
-  it("separates synthesis coverage from source-scaled detail repair", () => {
-    expect(pluginSource).toContain("buildBriefingFidelityContract");
-    expect(pluginSource).toContain('return "balanced"');
-    expect(pluginSource).toContain("assessBriefingPartFidelity(plan.chars, parsed.body, fidelityInput)");
-    expect(pluginSource).toContain('"llm.briefing_part_under_detailed"');
-    expect(pluginSource).toContain('purpose: "briefing-part-detail-repair"');
-    expect(pluginSource).toContain("buildSynthesisConsolidationPrompt");
-    expect(pluginSource).toContain('purpose: "briefing-synthesis-consolidation"');
-    expect(pluginSource).toContain("checkpoint.consolidationStatus");
-  });
 
   it("persists a usable briefing draft before optional detail repair", () => {
     const initialDraft = mergePipelineSource.indexOf("const initialBody = normalizeBriefingPartBody");

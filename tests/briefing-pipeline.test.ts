@@ -71,6 +71,21 @@ describe("纪要整理流水线", () => {
     expect(structuredDraft.needsExpansion).toBe(false);
   });
 
+  it("通用纪要按原文信息量控制篇幅，不对短输入设置正文下限", () => {
+    const policy = getBriefingFidelityPolicy({ mode: "general", detailLevel: "balanced" });
+    expect(policy).toMatchObject({
+      profile: "balanced",
+      sourceTargetChars: 22_000,
+      minimumOutputRatio: 0,
+      targetOutputRatio: 0.30,
+      absoluteMinimumChars: 0,
+      enforceLengthFloor: false,
+    });
+    const shortDraft = assessBriefingPartFidelity(32, "概要与详情".repeat(4), { mode: "general" });
+    expect(shortDraft.minimumOutputChars).toBe(0);
+    expect(shortDraft.needsExpansion).toBe(false);
+  });
+
   it("分部计划按总体量均衡，避免最后只剩很小一段", () => {
     const parts = planBriefingParts([
       segment(0, 4_000), segment(1, 4_000), segment(2, 4_000),

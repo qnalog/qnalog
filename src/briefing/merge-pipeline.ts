@@ -30,7 +30,7 @@ import { buildSynthesisConsolidationPrompt } from "./synthesis-policy";
 
 import { mergeBriefingSedimentObjects, resolveKnownSpeakerLabels } from "../notes/recording-issues";
 
-import { BRIEFING_PRESUMMARY_NOTICE, BRIEFING_TRUNCATION_WARNING, applyRepolishPreferenceInstruction, applyStructureLevelInstruction, buildAdaptiveBriefingLengthInstruction, buildBriefingFidelityContract, buildBriefingPartExpansionPrompt, buildBriefingPipelineOptionsKey, buildChunkMergePrompt, buildSessionMetaPrefix, createBriefingLlmActivityOptions, formatMergeSegmentForPrompt, getBriefingCheckpointStore, getBriefingEffectiveDetailLevel, getBriefingPipelineTargetChars, mergeBriefingUsage, reportBriefingPartProgress, resolveTemplatePromptForMode, splitSegmentsIntoGroups } from "../prompts/briefing-prompts";
+import { BRIEFING_PRESUMMARY_NOTICE, BRIEFING_TRUNCATION_WARNING, applyRepolishPreferenceInstruction, applyStructureLevelInstruction, buildAdaptiveBriefingLengthInstruction, buildBriefingFidelityContract, buildBriefingPartExpansionPrompt, buildBriefingPipelineOptionsKey, buildChunkMergePrompt, buildGeneralConsolidationPrompt, buildSessionMetaPrefix, createBriefingLlmActivityOptions, formatMergeSegmentForPrompt, getBriefingCheckpointStore, getBriefingEffectiveDetailLevel, getBriefingPipelineTargetChars, mergeBriefingUsage, reportBriefingPartProgress, resolveTemplatePromptForMode, splitSegmentsIntoGroups } from "../prompts/briefing-prompts";
 import { buildEmptyLlmOutputFallback } from "../notes/note-write-content";
 
 import { buildMeetingWorkbenchPrompt } from "../notes/meeting-workbench";
@@ -227,7 +227,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     : preferredTargetChars;
   const partPlans = planBriefingParts(list, targetChars);
   if (!partPlans.length) return null;
-  const requiresGlobalConsolidation = mode === "synthesis" && partPlans.length > 1;
+  const requiresGlobalConsolidation = (mode === "synthesis" || mode === "general") && partPlans.length > 1;
 
   const identity = createBriefingJobId({
     segments: list,
@@ -282,7 +282,9 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   const meetingWorkbenchPrompt = buildMeetingWorkbenchPrompt(computedMeta && computedMeta.meetingWorkbench);
   const system = mode === "synthesis" && partPlans.length > 1
     ? "你是综合纪要的议题证据编辑。请从当前内部窗口提取并归并可核验的议题材料，供下一阶段统一成文；不要把窗口写成独立会议。"
-    : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
+    : mode === "general" && partPlans.length > 1
+      ? "You organize neutral notes. Prepare a complete note with an overview first and details second; do not impose a meeting or interview template."
+      : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
   for (const plan of partPlans) {
     const part = checkpoint.parts[plan.index];
     if (part && part.status === "complete" && String(part.text || "").trim()) continue;
@@ -396,8 +398,8 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             plugin,
             "你是纪要保真编辑。你的任务是对照原始转写补回被摘要掉的信息，并返回完整替换稿；不得用空话凑长度，也不得编造原文没有的内容。",
             knowledgeContext
-              ? `${buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract)}\n\n${buildKnowledgeProtocolInstruction()}`
-              : buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract),
+              ? `${buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract, mode)}\n\n${buildKnowledgeProtocolInstruction()}`
+              : buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract, mode),
             Object.assign(
               { stream: true, thinkingMode: "fast", payload: { max_tokens: partMaxTokens } },
               createBriefingLlmActivityOptions(plugin, computedMeta, {
@@ -556,17 +558,27 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         segmentCount: list.length,
       }, plugin.settings, Number(ceiling) || 0);
       try {
-        const consolidationPrompt = buildSynthesisConsolidationPrompt({
-          topicMap: checkpoint.topicMap,
-          parts: synthesisParts,
-          modeGuidance,
-          detailLevel: fidelityInput.detailLevel,
-          duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
-          transcriptChars: fullJoined.length,
-        });
+        const consolidationPrompt = mode === "general"
+          ? buildGeneralConsolidationPrompt({
+            topicMap: checkpoint.topicMap,
+            parts: synthesisParts,
+            modeGuidance,
+            duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
+            transcriptChars: fullJoined.length,
+          })
+          : buildSynthesisConsolidationPrompt({
+            topicMap: checkpoint.topicMap,
+            parts: synthesisParts,
+            modeGuidance,
+            detailLevel: fidelityInput.detailLevel,
+            duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
+            transcriptChars: fullJoined.length,
+          });
         const consolidation = await callBriefingMergeLlm(
           plugin,
-          "你是综合纪要的总编辑。请把同一场会议的内部议题材料归并为一篇结构清晰、证据充分、以事情为中心的最终纪要。",
+          mode === "general"
+            ? "You organize neutral notes. Combine the recording's segments into a complete note with an overview first and details second; do not impose a meeting or interview template."
+            : "你是综合纪要的总编辑。请把同一场会议的内部议题材料归并为一篇结构清晰、证据充分、以事情为中心的最终纪要。",
           consolidationPrompt,
           Object.assign(
             { stream: true, thinkingMode: "fast", payload: { max_tokens: consolidationMaxTokens } },
@@ -577,7 +589,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
               progress: 88,
             }),
           ),
-          { purpose: "briefing-synthesis-consolidation", mode, jobId: identity.id, partTotal: partPlans.length, transcriptChars: fullJoined.length },
+          { purpose: mode === "general" ? "briefing-general-consolidation" : "briefing-synthesis-consolidation", mode, jobId: identity.id, partTotal: partPlans.length, transcriptChars: fullJoined.length },
         );
         const parsed = parseBriefingPartResponse(consolidation.text);
         const body = normalizeBriefingPartBody(parsed.body, { fragmentMode: false });

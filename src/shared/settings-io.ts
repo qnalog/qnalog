@@ -41,7 +41,7 @@ export const SETTINGS_SCHEMA_VERSION = 2;
 
 type UnknownRecord = Record<string, unknown>;
 
-const PROMPT_MODES = ["learning", "interview", "meeting", "seminar", "huddle", "monologue"] as const;
+const PROMPT_MODES = ["general", "learning", "interview", "meeting", "seminar", "huddle", "monologue"] as const;
 const STRUCTURE_LEVELS = ["loose", "balanced", "strict"] as const;
 const THINKING_MODES = ["auto", "reasoning", "fast"] as const;
 const AUDIO_CHANNEL_MODES = ["auto", "mono", "multichannel"] as const;
