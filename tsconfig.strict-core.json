@@ -128,6 +128,10 @@
     "src/sediment/text-blocks.ts",
     "src/people/person-text.ts",
     "src/notes/note-briefing-output.ts",
-    "src/notes/callout-normalize.ts"
+    "src/notes/callout-normalize.ts",
+    "src/shared/util-knowledge.ts",
+    "src/transcript/audio-binding.ts",
+    "src/ui/helpers.ts",
+    "src/vault/cleanup-service.ts"
   ]
 }
