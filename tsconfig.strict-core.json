@@ -92,6 +92,7 @@
     "src/audio/recording-segment-flow.ts",
     "src/audio/recording-service.ts",
     "src/session/continuation-service.ts",
+    "src/versions/version-store.ts",
     "src/versions/version-identity.ts",
     "src/versions/active-version-block.ts",
     "src/notes/session-finalize-flow.ts",
@@ -119,6 +120,9 @@
     "src/notes/note-transcript-materials.ts",
     "src/notes/audio-reference-text.ts",
     "src/notes/audio-refs.ts",
+    "src/notes/role-mapping.ts",
+    "src/notes/repolish-flow.ts",
+    "src/notes/clean-script-flow.ts",
     "src/sediment/text-blocks.ts"
   ]
 }

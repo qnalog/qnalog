@@ -224,15 +224,22 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["你是结构化思考助手。任务不是复述，而是把零散的发言归并到共同的上一级概念之下。层级深度由材料决定，不预设。克制——不堆砌符号、不强加分析维度、不过度抽象。", "prompt"],
     ["必须保留 <qnalog-memory> 与 <qnalog-outline> 两个完整标签。", "prompt"],
   ],
-  "src/notes/repolish-service.ts": [
-    ["# [清稿] ", "note"],
+  "src/notes/clean-script-flow.ts": [
     ["> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\\n\\n", "note"],
-    ["\\n\\n> [!note] 从母本逐字稿忠实清理的可读稿（非纪要、不摘要）。母本（事实源 / 逐字稿）：[[", "note"],
+  ],
+  "src/notes/repolish-flow.ts": [
     ["日期", "data"],
-    ["时长", "data"],
     ["时间", "data"],
-    ["清稿", "note"],
-    ["类型", "data"],
+  ],
+  "src/notes/role-mapping.ts": [
+    ["参会人", "data"], ["与会人", "data"], ["参与者", "data"], ["出席人", "data"], ["参谋", "data"],
+    ["受访者", "data"], ["访问者", "data"], ["面试官", "data"], ["候选人", "data"], ["当事人", "data"],
+    ["说话人 ", "data"],
+  ],
+  "src/versions/derived-note-store.ts": [
+    ["# [清稿] ", "note"],
+    ["\\n\\n> [!note] 从母本逐字稿忠实清理的可读稿（非纪要、不摘要）。母本（事实源 / 逐字稿）：[[", "note"],
+    ["时长", "data"], ["清稿", "note"], ["类型", "data"],
   ],
   "src/notes/session-finalize-service.ts": [
     [" · 结束", "note"],

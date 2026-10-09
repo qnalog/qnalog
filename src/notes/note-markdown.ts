@@ -32,7 +32,7 @@ import { NS_FM, NS_FM_SPEAKERS, NS_TAG, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SH
 import type { NamespaceFrontmatterField } from "../shared/namespace";
 
 
-import { formatElapsed, primitiveText, sanitizeFilename } from "../shared/util-common";
+import { formatElapsed, sanitizeFilename } from "../shared/util-common";
 
 import { diagnosticError } from "../shared/util-key-diag";
 
@@ -40,7 +40,6 @@ import { splitLeadingFrontmatter, stripFrontmatterSimple } from "./note-document
 import { inferNoteStartedAtIso } from "./note-source-metadata";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 
-import { readSpeakerMappings, speakerLabelForChannel } from "../audio/channel-speakers";
 
 import { extractBriefingPartEnvelope } from "../briefing/pipeline";
 
@@ -555,86 +554,6 @@ export function analyzeEmptyShortNote(file, markdown, settings) {
   return { file, durationMs, audioRefs, audioFiles: [] };
 }
 
-// 解析 frontmatter 角色字段中的"代号 → 真名"映射
-// 用户在 yaml 里把 `参会人:` 数组的某项改成 `业务需求方 → 某候选人`，
-// 重新整理时这条会被解析成 { from: "业务需求方", to: "某候选人" }
-export const ROLE_MAPPING_FIELDS = [
-  NS_FM.participants, NS_FM.advisors, NS_FM.interviewee, NS_FM.interviewer,
-  NS_FM.decisionMaker, "参会人", "与会人", "参与者", "出席人", "参谋",
-  "受访者", "访问者", "面试官", "候选人", "当事人",
-];
-
-export function parseRoleMapItem(item) {
-  const text = String(item == null ? "" : item).trim();
-  if (!text) return null;
-  // 支持 "代号 → 真名" / "代号 -> 真名" / "代号 => 真名" 三种箭头
-  const m = text.match(/^(.+?)\s*(?:→|=>|->)\s*(.+)$/);
-  if (!m) return null;
-  const from = m[1].trim();
-  const to = m[2].trim();
-  if (!from || !to || from === to) return null;
-  return { from, to };
-}
-
-export function extractRoleMappingFromFrontmatter(frontmatter) {
-  if (!frontmatter || typeof frontmatter !== "object") return [];
-  const mapping = [];
-  const seen = new Set();
-  for (const field of ROLE_MAPPING_FIELDS) {
-    const v = frontmatter[field];
-    if (Array.isArray(v)) {
-      for (const item of v) {
-        const m = parseRoleMapItem(item);
-        if (m && !seen.has(m.from)) {
-          mapping.push(m);
-          seen.add(m.from);
-        }
-      }
-    } else if (typeof v === "string") {
-      const m = parseRoleMapItem(v);
-      if (m && !seen.has(m.from)) {
-        mapping.push(m);
-        seen.add(m.from);
-      }
-    }
-  }
-  // 多声道说话人改名：把「说话人N」→ 已确认的真实姓名一并纳入，
-  // 否则「重新整理（使用说话人姓名）」拿不到改名结果，正文里仍是说话人N。
-  const speakers = readSpeakerMappings(frontmatter);
-  if (speakers && typeof speakers === "object") {
-    for (const [speakerId, item] of Object.entries(speakers)) {
-      const channel = Number(String(speakerId).replace(/^spk-/, "")) || 0;
-      if (!channel) continue;
-      const personName = item && typeof item === "object"
-        ? String((item as { personName?: string; name?: string }).personName || (item as { personName?: string; name?: string }).name || "").trim()
-        : primitiveText(item).trim();
-      if (!personName) continue;
-      // 历史笔记可能写成「说话人 N」（带空格），两种写法都要能替换。
-      for (const from of [speakerLabelForChannel(channel), `说话人 ${channel}`]) {
-        if (from && from !== personName && !seen.has(from)) {
-          mapping.push({ from, to: personName });
-          seen.add(from);
-        }
-      }
-    }
-  }
-  return mapping;
-}
-
-// 把映射应用到 segments 的 text（按 from 长度降序，避免短代号在长代号内部被错替换）
-export function applyRoleMappingToSegments(segments, mapping) {
-  if (!mapping || !mapping.length) return segments;
-  const sorted = [...mapping].sort((a, b) => b.from.length - a.from.length);
-  return segments.map(s => {
-    let text = s.text || "";
-    for (const m of sorted) {
-      if (!m.from) continue;
-      // 全局替换；用字符串而非正则，避免代号含正则元字符出错
-      text = text.split(m.from).join(m.to);
-    }
-    return Object.assign({}, s, { text });
-  });
-}
 
 
 export function cleanInlineMarkdown(text) {
