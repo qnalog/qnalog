@@ -10,9 +10,10 @@ import { extractJsonObject } from '../shared/util-json';
 import { getFrontmatterTags } from "../shared/frontmatter-tags";
 import { readFileFrontmatter, isLocalServiceEndpoint } from '../shared/util-note';
 import { callLlm } from '../llm/core';
-import { NS_FM, NS_PEOPLE_RE, hasNamespaceFrontmatter, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
+import { NS_FM, hasNamespaceFrontmatter, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 import type { NamespaceFrontmatterField } from "../shared/namespace";
 
+import { mergeUniqueStrings, normalizePeopleArray, normalizePersonLookupText, splitPersonFieldValue } from "./person-text";
 export const PEOPLE_SUGGESTION_CACHE_LIMIT = 500;
 
 type PeopleDirectoryLoadOptions = {
@@ -48,27 +49,6 @@ export function normalizePeopleContextMode(value) {
   return ["privacy", "hotwords", "localFull"].includes(value) ? value : "privacy";
 }
 
-export function splitPersonFieldValue(value) {
-  if (Array.isArray(value)) return value.flatMap(splitPersonFieldValue);
-  if (value && typeof value === "object") {
-    return Object.values(value).flatMap(splitPersonFieldValue);
-  }
-  const text = String(value || "").trim();
-  if (/^\[\[[\s\S]+?\]\]$/.test(text)) return [text];
-  return text
-    .split(/[，,、;；|]/)
-    .map(s => s.trim())
-    .filter(Boolean);
-}
-
-export function normalizePersonLookupText(text) {
-  return String(text || "")
-    .replace(/\[\[|\]\]/g, "")
-    .replace(/#\S+/g, "")
-    .replace(/\s+/g, "")
-    .trim()
-    .toLowerCase();
-}
 
 export function firstPersonField(frontmatter: unknown, field: NamespaceFrontmatterField): string {
   const value = readNamespaceFrontmatter(frontmatter, field);
@@ -374,24 +354,6 @@ ${formatPersonRelatedBriefingsBase(mdFolder).trim()}
 `;
 }
 
-export function normalizePeopleArray(value) {
-  return splitPersonFieldValue(value)
-    .map(s => s.replace(/^["'「『]|["'」』]$/g, "").trim())
-    .filter(Boolean);
-}
-
-export function mergeUniqueStrings(base, extra) {
-  const out = [];
-  const add = (value) => {
-    const text = String(value || "").trim();
-    if (!text) return;
-    const key = normalizePersonLookupText(text);
-    if (!out.some(x => normalizePersonLookupText(x) === key)) out.push(text);
-  };
-  for (const item of normalizePeopleArray(base)) add(item);
-  for (const item of normalizePeopleArray(extra)) add(item);
-  return out;
-}
 
 export function normalizePeopleSuggestion(item) {
   if (!item || typeof item !== "object") return null;
@@ -921,20 +883,4 @@ export function normalizePersonNameForEmail(value) {
   return text;
 }
 
-export function parsePeopleFromOutput(text) {
-  if (!text) return { people: [], cleaned: text || "" };
-  const re = NS_PEOPLE_RE;
-  const m = text.match(re);
-  if (!m) return { people: [], cleaned: text };
-  const raw = m[1]
-    .split(/[,，;；、\n]+/)
-    .map(s => s.replace(/^#+/, "").replace(/^人物\//, "").trim())
-    .filter(Boolean)
-    .filter(s => s.length <= 24);
-  const seen = new Set();
-  const people = [];
-  for (const p of raw) { const k = normalizePersonLookupText(p); if (k && !seen.has(k)) { seen.add(k); people.push(p); } }
-  const cleaned = text.replace(re, "").replace(/\n{3,}$/, "\n\n").trimEnd() + "\n";
-  return { people, cleaned };
-}
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

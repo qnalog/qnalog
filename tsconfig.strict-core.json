@@ -125,6 +125,9 @@
     "src/vault/empty-short-cleanup-flow.ts",
     "src/notes/repolish-flow.ts",
     "src/notes/clean-script-flow.ts",
-    "src/sediment/text-blocks.ts"
+    "src/sediment/text-blocks.ts",
+    "src/people/person-text.ts",
+    "src/notes/note-briefing-output.ts",
+    "src/notes/callout-normalize.ts"
   ]
 }

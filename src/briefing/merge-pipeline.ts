@@ -5,7 +5,8 @@ import { applyBriefingLanguageInstruction, getSegmentsDurationMs, getSessionMeta
 
 
 
-import { buildPeopleContextForLlm, mergeUniqueStrings } from "../people";
+import { buildPeopleContextForLlm } from "../people";
+import { mergeUniqueStrings } from "../people/person-text";
 
 import { appendSedimentPreExtractionBlock, extractSedimentPreExtractionBlock } from "../sediment";
 
@@ -36,7 +37,8 @@ import { buildMeetingWorkbenchPrompt } from "../notes/meeting-workbench";
 
 import { renderLongSessionRawFallbackGroup } from "../notes/detail-blocks";
 
-import { appendEntityEvidenceWarning, frontmatterBaseModeKey, maybePreSummarizeTextImportForMerge, parseBriefingPartResponse, postProcessBriefingOutput } from "../notes/note-markdown";
+import { appendEntityEvidenceWarning, maybePreSummarizeTextImportForMerge, parseBriefingPartResponse } from "../notes/note-markdown";
+import { frontmatterBaseModeKey, postProcessBriefingOutput } from "../notes/note-briefing-output";
 import { NS_SESSION_KNOWLEDGE, NS_TAG, isNamespaceTag } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
@@ -165,7 +167,7 @@ export async function polishTranscript(plugin, transcript, mode, sessionMeta, or
   // 客户端总超时 abort，避免"扣了钱却因超时拿不到结果"的浪费（符合总纲：不因工程缺陷浪费）。
   const raw = await callLlm(plugin, sys, userPrompt, { stream: true, payload: { max_tokens: briefingMergeMaxTokens } });
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(raw);
-  const polished = postProcessBriefingOutput(sedimentPreExtraction.cleaned, mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin, mode));
+  const polished = postProcessBriefingOutput(sedimentPreExtraction.cleaned, mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode));
   return sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
 }
 
@@ -685,7 +687,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     auditFinishReason: checkpoint.auditFinishReason,
     auditUsage: checkpoint.auditUsage,
   });
-  const polished = postProcessBriefingOutput(checkpoint.assembledBody, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin, mode), "");
+  const polished = postProcessBriefingOutput(checkpoint.assembledBody, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "");
   const sedimentObjects = mergeBriefingSedimentObjects(checkpoint.parts);
   const bodyWithSediment = sedimentObjects ? appendSedimentPreExtractionBlock(polished, sedimentObjects) : polished;
   return appendKnowledgeSnapshot(bodyWithSediment, checkpoint.assembledKnowledge);
@@ -797,7 +799,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
       segmentCount: segments.length,
       transcriptChars: joined.length,
     });
-    const fallbackOutput = postProcessBriefingOutput(fallback, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin, mode), warning);
+    const fallbackOutput = postProcessBriefingOutput(fallback, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), warning);
     return appendKnowledgeSnapshot(fallbackOutput, createUnavailableSessionKnowledge(sourceSegments, preSummarized ? "source-presummarized" : "missing-block"));
   }
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(raw);
@@ -806,7 +808,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
   const topNotices = [];
   if (truncated) topNotices.push(BRIEFING_TRUNCATION_WARNING);
   if (preSummarized) topNotices.push(BRIEFING_PRESUMMARY_NOTICE);
-  const polished = postProcessBriefingOutput(auditedOutput, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin, mode), topNotices.join("\n\n"));
+  const polished = postProcessBriefingOutput(auditedOutput, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), topNotices.join("\n\n"));
   const bodyWithSediment = sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
   return appendKnowledgeSnapshot(bodyWithSediment, createUnavailableSessionKnowledge(sourceSegments, preSummarized ? "source-presummarized" : "missing-block"));
 }

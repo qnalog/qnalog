@@ -201,14 +201,20 @@ let continuationStageReadObserved = false;
 // 桩 LLM：从实际请求中的来源标题读取允许的证据 ID，只返回一个分部回复。
 const llmCalls = [];
 let literalMergeSmokeBody = "";
-function requestPrompt(request) {
+let briefingOutputOverride = "";
+function requestMessages(request) {
   try {
     const body = JSON.parse(request?.body || "{}");
-    return (body.messages || []).map((message) => String(message.content || "")).join("\n");
-  } catch { return ""; }
+    return Array.isArray(body.messages) ? body.messages : [];
+  } catch { return []; }
+}
+function requestPrompt(request) {
+  return requestMessages(request).map((message) => String(message.content || "")).join("\n");
 }
 function makeLlmReply(request) {
-  const prompt = requestPrompt(request);
+  const messages = requestMessages(request);
+  const prompt = messages.map((message) => String(message.content || "")).join("\n");
+  const system = messages.find((message) => message.role === "system")?.content || "";
   if (prompt.includes("You name files and extract short topic tags from meeting notes.")
     || prompt.includes("你是文件命名助手，擅长从中文内容中提取简洁的主题标签。")) {
     return JSON.stringify({
@@ -216,7 +222,7 @@ function makeLlmReply(request) {
       usage: { prompt_tokens: 20, completion_tokens: 3, total_tokens: 23 },
     });
   }
-  if (prompt.includes("<qnalog-outline>")) {
+  if (String(system).includes("你是结构化思考助手。")) {
     return JSON.stringify({
       choices: [{
         message: {
@@ -239,8 +245,18 @@ function makeLlmReply(request) {
       usage: { prompt_tokens: 100, completion_tokens: 60, total_tokens: 160 },
     });
   }
-  const evidenceIds = [...new Set(Array.from(prompt.matchAll(/^===UTTERANCE ("(?:[^"\\]|\\.)*")/gm), (match) => JSON.parse(match[1])))];
-  const evidence = evidenceIds.slice(0, 1);
+  if (briefingOutputOverride !== "") {
+    return JSON.stringify({
+      choices: [{ message: { role: "assistant", content: briefingOutputOverride }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 100, completion_tokens: 60, total_tokens: 160 },
+    });
+  }
+  const evidence = [...prompt.matchAll(/^===UTTERANCE ("(?:\\.|[^"\\])*")(?: .*?)?===$/gm)]
+    .map((match) => {
+      try { return JSON.parse(match[1]); } catch { return ""; }
+    })
+    .filter(Boolean)
+    .slice(0, 1);
   const protocol = JSON.stringify({
     schemaVersion: 2,
     topics: [{ key: "release", title: "灰度发布", summary: "先进行内部灰度", evidence }],
@@ -381,6 +397,104 @@ async function main() {
     plugin.settings.briefingStructureLevel = "balanced";
     plugin.settings.sedimentAutoExtract = false;
 
+      {
+        const probePath = "QnALog/BriefingOutputProbe/源.md";
+        const source = new TFile(probePath);
+        const sourceBody = NOTE_BODY.replaceAll("s1", "briefing-output-probe");
+        source._content = sourceBody;
+        files.set(probePath, source);
+        frontmatterByPath.set(probePath, { qnalog_mode: "meeting" });
+        const noticeStart = noticeMessages.length;
+        const callStart = llmCalls.length;
+        const probeTasksBefore = new Set(plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true }).map((item) => item.id));
+        const digestItems = [];
+        const capture = async (label, action) => {
+          const beforeFiles = new Set(files.keys());
+          const beforeNotices = noticeMessages.length;
+          const beforeCalls = llmCalls.length;
+          const result = await action();
+          const created = [...files.entries()].filter(([path]) => !beforeFiles.has(path))
+            .map(([path, file]) => ({ path, content: file._content }));
+          const activities = plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true })
+            .filter((item) => !probeTasksBefore.has(item.id))
+            .map(({ id, stage, detail, status }) => ({ id, stage, detail, status }));
+          digestItems.push({
+            label,
+            created,
+            notices: noticeMessages.slice(beforeNotices),
+            llmCalls: llmCalls.length - beforeCalls,
+            sourceUnchanged: source._content === sourceBody,
+            result: label === "empty" ? result : undefined,
+            activities,
+          });
+        };
+        const llmFrontmatter = "---\nqnalog_topic: 议题X\ndate: 2026-01-01\nqnalog_participants: [甲, 乙]\n幻想字段: 剔除\n---\n# 模型自加标题\n[!abstract] 摘要 这是一段被折叠成一行并且超过十二个字的长正文内容\n\n- [ ] 责任人：待定 事项：写报告 截止：无 优先级：tbd\n- [ ] 责任人：张三、 事项：发版 截止：周五 优先级：高\n\n<!-- qnalog-tags: #主题/带 空格, 人物/张三, 项目/X, 主题/带空格 -->\n<!-- qnalog-people: 李四, 张三, 发言人1 -->\n";
+        const run = async (label, mode, output, frontmatter = { qnalog_mode: "meeting" }, custom = false) => {
+          frontmatterByPath.set(probePath, frontmatter);
+          source._content = sourceBody;
+          briefingOutputOverride = output;
+          try {
+            await capture(label, () => plugin.repolish.repolishMarkdownFile(
+              source,
+              mode,
+              custom ? { label: "简洁" } : undefined,
+            ));
+          } finally {
+            briefingOutputOverride = "";
+          }
+        };
+        const savedSettings = plugin.settings;
+        const customTemplate = {
+          id: "briefing-output-custom",
+          mode: "briefing-output-custom",
+          customMode: true,
+          name: "briefing-output-custom",
+          prompt: "fixture",
+          baseMode: "meeting",
+        };
+        try {
+          await run("llm-frontmatter", "meeting", llmFrontmatter);
+          await run("plain", "meeting", "只有正文，没有 frontmatter 与机器块。");
+          briefingOutputOverride = "   ";
+          try {
+            await capture("empty", async () => {
+              const result = await plugin.noteWriter.host.polishTranscript("briefing-output empty probe", "meeting");
+              if (result !== "") throw new Error(`empty briefing output returned ${JSON.stringify(result)}`);
+              return result;
+            });
+          } finally {
+            briefingOutputOverride = "";
+          }
+          await run("original-fm", "meeting", llmFrontmatter, {
+            qnalog_mode: "meeting", tags: ["旧标签", "人物/王五"], qnalog_people: ["赵六"],
+            qnalog_speakers: { "说话人1": "赵六" }, qnalog_topic: "原主题", 幻想: "x",
+          });
+          await run("learning", "learning", "只有正文，没有 frontmatter 与机器块。", {
+            qnalog_mode: "learning", qnalog_source: "课程", qnalog_language: "中文", qnalog_participants: "不应保留",
+          });
+          plugin.settings = {
+            ...savedSettings,
+            promptTemplates: { ...(savedSettings.promptTemplates || {}), [customTemplate.mode]: customTemplate },
+          };
+          await run("custom-base", customTemplate.mode, llmFrontmatter, { qnalog_mode: customTemplate.mode }, true);
+          const digest = createHash("sha256").update(JSON.stringify(digestItems)).digest("hex");
+          console.log(`[briefing-output] digest: ${digest}`);
+        } finally {
+          plugin.settings = savedSettings;
+          briefingOutputOverride = "";
+          for (const path of [...files.keys()]) {
+            if (path.startsWith("QnALog/BriefingOutputProbe/")) files.delete(path);
+          }
+          for (const path of [...frontmatterByPath.keys()]) {
+            if (path.startsWith("QnALog/BriefingOutputProbe/")) frontmatterByPath.delete(path);
+          }
+          for (const id of plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true }).map((item) => item.id)) {
+            if (!probeTasksBefore.has(id)) plugin.tasks.taskActivityStore?.remove?.(id);
+          }
+          noticeMessages.length = noticeStart;
+          llmCalls.splice(callStart);
+        }
+      }
     const session = {
       id: "s1", mode: "monologue", mdPath: NOTE_PATH,
       startedAt: Date.now() - 600_000, workProgress: {}, segmentMeta: [],

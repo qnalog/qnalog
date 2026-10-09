@@ -7,7 +7,7 @@ vi.mock("obsidian", () => ({
     Object.entries(obj || {}).map(([k, v]) => `${k}: ${Array.isArray(v) ? "" : String(v)}`).join("\n") + "\n",
   parseYaml: () => ({}),
 }));
-import { mergeLeadingFrontmatterIntoDocument } from "../src/notes/note-markdown";
+import { mergeLeadingFrontmatterIntoDocument } from "../src/notes/note-briefing-output";
 import { upsertFrontmatterInMarkdown } from "../src/shared/util-note";
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
 import { applyVersionTitle } from "../src/versions/version-content";

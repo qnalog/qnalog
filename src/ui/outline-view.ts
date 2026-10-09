@@ -17,7 +17,8 @@ import { isMobileRuntime } from "../shared/util-platform";
 
 import { getSegmentsDurationMs, parseElapsedMsToken } from "../shared/util-text";
 
-import { generatePeopleDirectorySuggestions, getPeopleSuggestionCacheKey, loadPeopleDirectory, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores, normalizePersonLookupText, peopleSuggestionIgnoreRecordToSuggestion, peopleSuggestionRecordToSuggestion, splitPersonFieldValue } from "../people";
+import { generatePeopleDirectorySuggestions, getPeopleSuggestionCacheKey, loadPeopleDirectory, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores, peopleSuggestionIgnoreRecordToSuggestion, peopleSuggestionRecordToSuggestion } from "../people";
+import { normalizePersonLookupText, splitPersonFieldValue } from "../people/person-text";
 
 import { generateSedimentObjects, getSedimentHotwordId, getSedimentPersonId, getSedimentTodoId, normalizeSedimentExtractionModel, normalizeSedimentTodoSubtasks, removeSedimentGroupDone, sanitizeSedimentText, upsertSedimentPreExtractionBlockInFile, withSedimentCandidateIds, writeSedimentObjectCards } from "../sediment";
 

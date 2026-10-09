@@ -61,6 +61,19 @@ const CONTENT_FILES: Record<string, string> = {
 
 /** 逐条例外：文件 → [字面量前缀或全文, 类别]。类别见下方 legend。 */
 const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
+  "src/notes/note-briefing-output.ts": [
+    ["、", "data"],
+    ["责任人：", "data"],
+    ["截止：", "data"],
+    ["优先级：", "data"],
+    ["模式", "data"],
+    ["模板", "data"],
+    ["日期", "data"],
+    ["时间", "data"],
+    ["时长", "data"],
+    ["人物", "data"],
+    ["状态", "data"],
+  ],
   "src/notes/note-source-metadata.ts": [
     ["日期", "data"],
     ["时间", "data"],
