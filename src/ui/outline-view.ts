@@ -35,7 +35,7 @@ import { getThinkingControl } from "../llm/thinking";
 
 import { MODE_META } from "../shared/catalog-modes";
 
-import { SEDIMENT_GROUP_CONFIG, SEDIMENT_GROUP_ORDER, VOCABULARY_SECTIONS } from "../shared/catalog-sediment";
+import { SEDIMENT_GROUP_CONFIG, SEDIMENT_GROUP_ORDER } from "../shared/catalog-sediment";
 
 import { AUDIO_EXT } from "../shared/catalog-import";
 
@@ -71,6 +71,36 @@ import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendA
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
 import { NS_FM_SPEAKERS, QNALOG_PLUGIN_ICON_ID, readSemanticMeta } from "../shared/namespace";
 import { mapAudioTimeToNote, type NoteAudioInterval } from "../notes/note-audio-timeline";
+import {
+  appendSedimentDecisionItems as appendSedimentDecisionItemsFlow,
+  buildSedimentDecisionLog as buildSedimentDecisionLogFlow,
+  cloneSedimentBucket as cloneSedimentBucketValue,
+  countSedimentHotwordCandidates as countSedimentHotwordCandidatesFlow,
+  createEmptySedimentBucket,
+  findSedimentNextPendingGroup as findSedimentNextPendingGroupFlow,
+  getActiveSedimentGroup as getActiveSedimentGroupFlow,
+  getSedimentCandidateSignature as getSedimentCandidateSignatureFlow,
+  getSedimentDisplayItems as getSedimentDisplayItemsFlow,
+  getSedimentGroupRawItems as getSedimentGroupRawItemsFlow,
+  getSedimentGroupReview as getSedimentGroupReviewFlow,
+  getSedimentHotwordItems as getSedimentHotwordItemsFlow,
+  getSedimentNodeState as getSedimentNodeStateFlow,
+  getSedimentSelectedIds as getSedimentSelectedIdsFlow,
+  mergeSedimentPeopleCandidates as mergeSedimentPeopleCandidatesFlow,
+  setSedimentDecisionLog as setSedimentDecisionLogFlow,
+  setSedimentSelectedIds as setSedimentSelectedIdsFlow,
+  type SedimentBucketPort,
+  type SedimentCandidateBucket,
+  type SedimentIdPort,
+  type SedimentGroup,
+  type SedimentGroupReview,
+  type SedimentItem,
+  type SedimentPanelState,
+} from "../sediment/sediment-flow/sediment-panel-state";
+import { scanSedimentFile, cancelSedimentScan, type SedimentScanNormalized } from "../sediment/sediment-flow/sediment-scan-flow";
+import { scheduleSedimentAutoAdvance as scheduleSedimentAutoAdvanceFlow } from "../sediment/sediment-flow/sediment-advance";
+import { commitSedimentGroupFlow } from "../sediment/sediment-flow/sediment-commit-flow";
+import { restoreSedimentCommitFlow } from "../sediment/sediment-flow/sediment-undo-flow";
 import { OutlinePlaybackController } from "./outline-playback-controller";
 import type { QnALogSemanticDocumentMeta } from "../canvas/semantic-outline-canvas";
 
@@ -102,56 +132,7 @@ type NoteAskState = {
   multiSelect?: boolean;
 };
 
-/**
- * 沉淀候选桶的空值。
- * 用函数返回而不是共享常量：调用方会就地改写返回对象，共享常量会跨纪要串数据。
- */
-function createEmptySedimentBucket(): SedimentCandidateBucket {
-  return {
-    people: [],
-    todos: [],
-    cards: [],
-    hotwords: createVocabularyGroups(),
-    scannedAt: "",
-    scanStartedAt: "",
-    initialCounts: {},
-    doneGroups: [],
-    selectedByGroup: {},
-    decisionLogByGroup: {},
-    transitionGroup: "",
-    scanning: false,
-  };
-}
-
-/** 沉淀候选桶：某篇纪要的人员/待办/热词候选项与扫描进度。 */
-type SedimentCandidateBucket = {
-  people: unknown[];
-  todos: unknown[];
-  cards: unknown[];
-  hotwords: unknown;
-  scannedAt: string;
-  scanStartedAt?: string;
-  initialCounts: Record<string, number>;
-  doneGroups: string[];
-  selectedByGroup: Record<string, string[]> & { todo?: string[]; hotword?: string[]; person?: string[] };
-  decisionLogByGroup: Record<string, unknown>;
-  transitionGroup: string;
-  scanning: boolean;
-  peopleNameOverrides?: Record<string, string>;
-  hotwordTermRenames?: Record<string, string>;
-  peopleScanned?: boolean;
-  vocabScanned?: boolean;
-  ignoredPeople?: unknown[];
-  currentPeople?: unknown[];
-  otherPeopleCount?: number;
-  hasPipelineStarted?: boolean;
-  error?: string;
-  kind?: string;
-  label?: string;
-  detail?: string;
-  percent?: number;
-  title?: string;
-};
+type SedimentBucketPatch = Partial<SedimentCandidateBucket>;
 
 /** 沉淀提示条的选项。 */
 type SedimentToastOptions = {
@@ -168,100 +149,7 @@ type SedimentToastOptions = {
   duration?: number;
 };
 
-/** 沉淀分组决策的撤销数据：按分组保存被覆盖前的候选。 */
-type SedimentDecisionRestore = {
-  people?: unknown[];
-  todos?: unknown[];
-  hotwords?: unknown;
-};
 
-/** 沉淀候选项的显示形状；不同分组只用到其中一部分字段。 */
-type SedimentItem = {
-  id?: string;
-  /** 分组内的展示文案与副标题。 */
-  title?: string;
-  sub?: string;
-  meta?: string;
-  label?: string;
-  /** 决策记录的状态与时间。 */
-  status?: string;
-  statusText?: string;
-  completedAt?: string;
-  /** 原始候选项，写回笔记时使用。 */
-  raw?: unknown;
-  type?: string;
-  icon?: string;
-};
-
-/** 一次沉淀分组决策的日志记录（可撤销）。 */
-type SedimentGroupReview = {
-  groupKey: string;
-  completedAt: string;
-  restore?: SedimentDecisionRestore;
-  selectedIds?: string[];
-  items?: SedimentItem[];
-};
-
-/** 沉淀面板的渲染状态。 */
-type SedimentPanelState = {
-  bucket: SedimentCandidateBucket;
-  groups: SedimentGroup[];
-  /** 当前纪要的人员候选（已合并缓存与既有桶）。 */
-  currentPeople: unknown[];
-  /** 是否已跑过整理流水线（用于空态文案）。 */
-  hasPipelineStarted?: boolean;
-  otherPeopleCount?: number;
-  ignoredPeople?: unknown[];
-  vocabScanned?: boolean;
-  peopleScanned?: boolean;
-  scanning?: boolean;
-  percent?: number;
-  label?: string;
-  detail?: string;
-  error?: string;
-};
-
-/** 沉淀分组的显示单元。 */
-type SedimentGroup = {
-  key: string;
-  /** 侧边栏显示的文案与单位。 */
-  label: string;
-  unit: string;
-  /** 分组用途说明与目标位置、使用的模型。 */
-  lead?: string;
-  dest?: string;
-  model?: string;
-  /** 候选计数：待处理、总数、已处理。 */
-  pending: number;
-  total: number;
-  done: number;
-  emptyDone?: boolean;
-  status?: string;
-  /** 下一个分组键；null 表示已到最后一组。 */
-  next?: string | null;
-  items?: SedimentItem[];
-};
-
-/** 沉淀分组决策的补丁（只写候选桶的对应字段）。 */
-type SedimentBucketPatch = {
-  people?: unknown[];
-  todos?: unknown[];
-  hotwords?: unknown;
-  hotwordTermRenames?: Record<string, string>;
-  peopleOriginalNames?: Record<string, string>;
-  scanning?: boolean;
-  scannedAt?: string;
-  scanStartedAt?: string;
-  transitionGroup?: string;
-  /** 候选项来源标记（预提取 / 扫描）。 */
-  source?: string;
-  peopleNameOverrides?: Record<string, string>;
-  initialCounts?: Record<string, number>;
-  doneGroups?: string[];
-  selectedByGroup?: Record<string, string[]>;
-  decisionLogByGroup?: Record<string, unknown>;
-  error?: string;
-};
 
 /** 纪要列表行的渲染参数。 */
 type RecentRowOptions = {
@@ -290,9 +178,19 @@ type RecentFolderNode = {
 type SedimentCommitUndo = {
   filePath: string;
   bucketBefore: SedimentCandidateBucket;
-  entries: unknown[];
+  entries: Array<{
+    path?: string;
+    file?: unknown;
+    created?: boolean;
+    previousContent?: string;
+  }>;
   sourceSnapshot?: { path: string; content: string };
-  vocabulary?: unknown;
+  vocabulary?: {
+    path?: string;
+    existed?: boolean;
+    previousContent?: string;
+    previousCustomVocabulary?: string;
+  };
 };
 
 /** 内联提示浮层：除 DOM 元素外挂一个关闭回调。 */
@@ -300,6 +198,12 @@ type InlinePopover = HTMLElement & { _qnalogClose?: () => void };
 
 /** 人员候选项：取 id 与来源路径时用到的最小形状。 */
 type PeopleSuggestionLike = { cacheKey?: string; key?: string; sourcePath?: string };
+
+function sedimentNoticeErrorSuffix(error: unknown): string {
+  const suffix = (error && Reflect.get(Object(error), "message")) || error;
+  return `${suffix}`;
+}
+
 
 export class OutlineView extends obsidian.ItemView {
   declare plugin: QnALogPlugin;
@@ -1286,8 +1190,10 @@ export class OutlineView extends obsidian.ItemView {
     const currentPeople = this.mergeSedimentPeopleCandidates(currentPath, bucket.people || [], cachedPeople);
     // 应用用户在侧边栏手动改的人名（override 按原始 id，不改 id 本身）
     const nameOverrides = bucket.peopleNameOverrides || {};
-    for (const p of currentPeople) {
-      const pid = getSedimentPersonId(p.sourcePath || currentPath, p);
+    for (const candidate of currentPeople) {
+      const p = candidate as Record<string, unknown>;
+      const sourcePath = typeof p.sourcePath === "string" ? p.sourcePath : currentPath;
+      const pid = getSedimentPersonId(sourcePath, p);
       if (pid && Object.prototype.hasOwnProperty.call(nameOverrides, pid)) p.name = nameOverrides[pid];
     }
     const otherPeopleCount = Math.max(0, allPeople.length - cachedPeople.length);
@@ -1377,142 +1283,64 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   getSedimentCandidateSignature() {
-    const buckets = this.sedimentCandidatesByPath || {};
-    return Object.keys(buckets).sort().map((path) => {
-      const bucket: SedimentCandidateBucket = buckets[path] || createEmptySedimentBucket();
-      return [
-        path,
-        bucket.scannedAt || "",
-        (bucket.people || []).length,
-        (bucket.todos || []).length,
-        this.countSedimentHotwordCandidates(bucket.hotwords),
-        JSON.stringify(bucket.initialCounts || {}),
-        (bucket.doneGroups || []).join(","),
-        bucket.transitionGroup || "",
-        bucket.scanning ? 1 : 0,
-        JSON.stringify(bucket.selectedByGroup || {}),
-        JSON.stringify(bucket.decisionLogByGroup || {}),
-      ].join(":");
-    }).join(";");
+    return getSedimentCandidateSignatureFlow(this.sedimentCandidatesByPath || {});
   }
 
   mergeSedimentPeopleCandidates(currentPath, memoryPeople, cachedPeople) {
-    const byKey = new Map();
-    for (const item of (cachedPeople || [])) {
-      const key = item && (item.cacheKey || item.key || getPeopleSuggestionCacheKey(item.sourcePath || currentPath, item));
-      if (key) byKey.set(key, item);
-    }
-    for (const raw of (memoryPeople || [])) {
-      const item = Object.assign({}, raw || {}, {
-        sourcePath: raw && raw.sourcePath ? raw.sourcePath : currentPath,
-      });
-      const key = item.cacheKey || item.key || getPeopleSuggestionCacheKey(item.sourcePath || currentPath, item);
-      if (key && !byKey.has(key)) byKey.set(key, item);
-    }
-    return Array.from(byKey.values());
+    return mergeSedimentPeopleCandidatesFlow(
+      currentPath,
+      memoryPeople || [],
+      cachedPeople || [],
+      getPeopleSuggestionCacheKey,
+    );
   }
 
   countSedimentHotwordCandidates(groups) {
-    let count = 0;
-    const source = groups || {};
-    for (const def of VOCABULARY_SECTIONS) count += Array.isArray(source[def.key]) ? source[def.key].length : 0;
-    return count;
+    return countSedimentHotwordCandidatesFlow(groups);
   }
 
   getSedimentHotwordItems(groups) {
-    const items = [];
-    const source = groups || {};
-    for (const def of VOCABULARY_SECTIONS) {
-      for (const term of (Array.isArray(source[def.key]) ? source[def.key] : [])) {
-        items.push({ id: getSedimentHotwordId(def.key, term), title: term, sub: i18nT(def.label || def.title), sectionKey: def.key, term });
-      }
-    }
-    return items;
+    return getSedimentHotwordItemsFlow(groups, this.sedimentIdPort());
   }
 
   getSedimentGroupRawItems(state, groupKey) {
-    const bucket = state && state.bucket || {};
-    if (groupKey === "person") return state && state.currentPeople || [];
-    if (groupKey === "todo") return bucket.todos || [];
-    if (groupKey === "hotword") return this.getSedimentHotwordItems(bucket.hotwords);
-    return [];
+    return getSedimentGroupRawItemsFlow(state, groupKey, this.sedimentIdPort());
   }
 
   getSedimentDisplayItems(state: SedimentPanelState, groupKey: string): SedimentItem[] {
-    const iconName = groupKey === "todo" ? "check-square" : (groupKey === "hotword" ? "badge-check" : "user-round");
-    if (groupKey === "todo") {
-      return (this.getSedimentGroupRawItems(state, groupKey) || []).map(item => ({
-        id: getSedimentTodoId(item),
-        raw: item,
-        iconName,
-        title: item.task || item.title || i18nT("Unnamed to-do"),
-        // sub 仅在没有详细字段渲染时作为兜底；owner/due 空时不污染显示
-        sub: [item.owner, item.due].filter(Boolean).join(" · "),
-        meta: "",
-      }));
-    }
-    if (groupKey === "hotword") {
-      return (this.getSedimentGroupRawItems(state, groupKey) || []).map(item => Object.assign({}, item, {
-        raw: item,
-        iconName,
-        meta: "",
-      }));
-    }
-    return (this.getSedimentGroupRawItems(state, groupKey) || []).map(item => ({
-      id: getSedimentPersonId(item.sourcePath || "", item),
-      raw: item,
-      iconName,
-      title: item.name || i18nT("Unnamed person"),
-      sub: item.role || i18nT("Role to be filled in"),
-      meta: item.org || item.organization || i18nT("Organization to be filled in"),
-    }));
+    return getSedimentDisplayItemsFlow(state, groupKey, this.sedimentIdPort());
+  }
+
+  private sedimentIdPort(): SedimentIdPort {
+    return {
+      getHotwordId: getSedimentHotwordId,
+      getPersonId: getSedimentPersonId,
+      getTodoId: getSedimentTodoId,
+    };
+  }
+
+  private sedimentBucketPort(file): SedimentBucketPort {
+    return {
+      get: () => this.getSedimentCandidateBucket(file),
+      set: patch => this.setSedimentCandidateBucket(file, patch),
+      ids: this.sedimentIdPort(),
+    };
   }
 
   getSedimentSelectedIds(file, groupKey: string, items: SedimentItem[]) {
-    const bucket = this.getSedimentCandidateBucket(file);
-    const selectedByGroup: Record<string, string[]> = { ...(bucket.selectedByGroup || {}) };
-    const allIds = (items || []).map(item => item.id).filter(Boolean);
-    const current = Array.isArray(selectedByGroup[groupKey]) ? selectedByGroup[groupKey].filter(id => allIds.includes(id)) : null;
-    if (current) return new Set(current);
-    if (SEDIMENT_GROUP_CONFIG[groupKey] && SEDIMENT_GROUP_CONFIG[groupKey].defaultAllSelected) {
-      selectedByGroup[groupKey] = allIds;
-      this.setSedimentCandidateBucket(file, { selectedByGroup });
-      return new Set(allIds);
-    }
-    return new Set();
+    return getSedimentSelectedIdsFlow(this.sedimentBucketPort(file), groupKey, items);
   }
 
   setSedimentSelectedIds(file, groupKey: string, ids: string[]) {
-    const bucket = this.getSedimentCandidateBucket(file);
-    const selectedByGroup: Record<string, string[]> = { ...(bucket.selectedByGroup || {}) };
-    selectedByGroup[groupKey] = Array.from(new Set(ids || [])).filter(Boolean);
-    this.setSedimentCandidateBucket(file, { selectedByGroup });
+    setSedimentSelectedIdsFlow(this.sedimentBucketPort(file), groupKey, ids);
   }
 
   getSedimentGroupReview(file, groupKey): SedimentGroupReview | null {
-    const bucket = this.getSedimentCandidateBucket(file);
-    const logs = bucket.decisionLogByGroup && typeof bucket.decisionLogByGroup === "object" ? bucket.decisionLogByGroup : {};
-    return (logs as Record<string, SedimentGroupReview>)[groupKey] || null;
+    return getSedimentGroupReviewFlow(this.sedimentBucketPort(file), groupKey);
   }
 
   getActiveSedimentGroup(groups: SedimentGroup[]) {
-    const keys = new Set((groups || []).map(group => group.key));
-    let key = this.sedimentGroup || "person";
-    if (!keys.has(key)) key = "person";
-    const active = (groups || []).find(group => group.key === key);
-    if (active && active.total > 0) {
-      this.sedimentGroup = key;
-      return key;
-    }
-    const firstPending = this.findSedimentNextPendingGroup(groups);
-    if (firstPending) key = firstPending.key;
-    else {
-      const firstDone = (groups || []).find(group => group.total > 0);
-      if (firstDone) key = firstDone.key;
-    }
-    if (!keys.has(key) && groups && groups.length) key = groups[0].key;
-    this.sedimentGroup = key;
-    return key;
+    return getActiveSedimentGroupFlow(groups, this.sedimentGroup, key => { this.sedimentGroup = key; });
   }
 
   setSedimentGroup(key) {
@@ -1524,35 +1352,31 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   getSedimentNodeState(group: SedimentGroup | null | undefined, currentKey: string) {
-    if (!group || !group.total) return "empty";
-    if (group.done >= group.total) return "done";
-    if (group.key === currentKey) return "current";
-    return "pending";
+    return getSedimentNodeStateFlow(group, currentKey);
   }
 
   findSedimentNextPendingGroup(groups: SedimentGroup[], afterKey = "") {
-    const list = (groups || []).filter(Boolean);
-    if (!list.length) return null;
-    const start = afterKey ? Math.max(0, list.findIndex(group => group.key === afterKey) + 1) : 0;
-    const ordered = list.slice(start).concat(list.slice(0, start));
-    return ordered.find(group => group.total > 0 && group.done < group.total) || null;
+    return findSedimentNextPendingGroupFlow(groups, afterKey);
   }
 
   scheduleSedimentAutoAdvance(file, completedKey) {
-    if (!(file instanceof obsidian.TFile)) return;
-    if (this.sedimentAdvanceTimer) window.clearTimeout(this.sedimentAdvanceTimer);
-    const path = obsidian.normalizePath(file.path || "");
-    this.sedimentAdvanceTimer = window.setTimeout(() => {
-      this.sedimentAdvanceTimer = 0;
-      const active = this.getActiveNoteFile();
-      const activePath = active && active.path ? obsidian.normalizePath(active.path) : "";
-      if (activePath && path && activePath !== path) return;
-      const state = this.getSedimentPanelState(file);
-      const next = this.findSedimentNextPendingGroup(state.groups, completedKey);
-      this.setSedimentCandidateBucket(file, { transitionGroup: "" });
-      if (next) this.setSedimentGroup(next.key);
-      else this.render();
-    }, 1000);
+    scheduleSedimentAutoAdvanceFlow({
+      isFile: target => target instanceof obsidian.TFile,
+      normalizePath: path => obsidian.normalizePath(path),
+      getTimer: () => this.sedimentAdvanceTimer,
+      setTimer: timer => { this.sedimentAdvanceTimer = timer; },
+      clearTimer: timer => window.clearTimeout(timer),
+      scheduleTimer: (callback, delay) => window.setTimeout(callback, delay),
+      getActiveNotePath: () => {
+        const active = this.getActiveNoteFile();
+        return active && active.path ? active.path : "";
+      },
+      getGroups: target => this.getSedimentPanelState(target).groups,
+      findNextPendingGroup: (groups, key) => this.findSedimentNextPendingGroup(groups as SedimentGroup[], key),
+      clearTransitionGroup: target => this.setSedimentCandidateBucket(target, { transitionGroup: "" }),
+      selectGroup: key => this.setSedimentGroup(key),
+      render: () => this.render(),
+    }, file, completedKey);
   }
 
   renderSedimentBaton(parent, state, groupKey, file) {
@@ -1914,7 +1738,7 @@ export class OutlineView extends obsidian.ItemView {
       const selected = this.getSedimentSelectedIds(file, groupKey, items);
       if (selected.has(item.id)) selected.delete(item.id);
       else selected.add(item.id);
-      this.setSedimentSelectedIds(file, groupKey, Array.from(selected) as string[]);
+      this.setSedimentSelectedIds(file, groupKey, Array.from(selected));
       this.render();
     };
     const content = row.createDiv({ cls: "qnalog-sediment-item-content" });
@@ -3300,181 +3124,74 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   async extractSedimentForFile(file) {
-    const token = ++this.sedimentScanToken;
-    const taskId = `sediment:${file.path}`;
-    try {
-      this.plugin.tasks.startTaskActivity({
-        id: taskId,
-        kind: "sediment",
-        title: i18nT("Scan minutes objects"),
-        subject: file.path,
-        status: "running",
-        stage: "reading",
-        stageLabel: i18nT("Read the minutes content"),
-        detail: file.basename,
-        progress: 5,
-        actions: [],
-      });
-      this.setSedimentCandidateBucket(file, { scanning: true, scanStartedAt: new Date().toISOString() });
-      this.render();
-      const markdown = await this.app.vault.cachedRead(file);
-      this.plugin.tasks.patchTaskActivity(taskId, {
-        stage: "extracting",
-        stageLabel: i18nT("AI is identifying people, to-dos and hot words"),
-        detail: i18nT("This task's state is kept until the service returns"),
-        progress: 25,
-        deadlineAt: Date.now() + 180_000,
-      });
-      // 扫描中状态已经由全屏 prompt（带 scan-line 图标 + 进度条 + 实时计数）表达，
-      // 不再额外弹底部 toast，避免与上方主面板视觉重复
-      const objects = await generateSedimentObjects(this.plugin, file, markdown);
-      if (token !== this.sedimentScanToken) {
-        this.plugin.tasks.cancelTaskActivity(taskId, i18nT("This scan was cancelled; the note content was not changed"));
-        return;
-      }
-      const path = obsidian.normalizePath(file.path || "");
-      const normalized = withSedimentCandidateIds(objects, path, file.basename);
-      this.setSedimentCandidateBucket(file, {
-        people: normalized.people || [],
-        todos: normalized.todos || [],
-          hotwords: normalized.hotwords || createVocabularyGroups(),
-        scannedAt: new Date().toISOString(),
-        initialCounts: this.getSedimentInitialCountsFromObjects(normalized),
-        doneGroups: [],
-        selectedByGroup: {},
-        decisionLogByGroup: {},
-        transitionGroup: "",
-        scanning: false,
-        scanStartedAt: "",
-      });
-      this.plugin.tasks.patchTaskActivity(taskId, {
-        stage: "persisting",
-        stageLabel: i18nT("Saving candidates"),
-        detail: `${i18nT("people ")}${(objects.people || []).length}${i18nT(" · to-dos ")}${(objects.todos || []).length}${i18nT(" · hotwords ")}${countVocabularyGroups(objects.hotwords)}`,
-        progress: 85,
-        deadlineAt: 0,
-      });
-      const persisted = await this.persistSedimentCandidateBucket(file);
-      if (!persisted) throw new Error(i18nT("Candidates were generated, but writing back to the note failed"));
-      const nextState = this.getSedimentPanelState(file);
-      const firstPending = this.findSedimentNextPendingGroup(nextState.groups);
-      this.sedimentGroup = firstPending ? firstPending.key : "person";
-      this.sedimentSwitcherOpen = false;
-      this.render();
-      this.showSedimentToast(`${i18nT("Scan complete: people ")}${(objects.people || []).length}${i18nT(", to-dos ")}${(objects.todos || []).length}${i18nT(", hot words ")}${countVocabularyGroups(objects.hotwords)}`, {
-        icon: "check",
-      });
-      this.plugin.tasks.completeTaskActivity(taskId, {
-        stage: "done",
-        stageLabel: i18nT("Target scan complete"),
-        detail: `${i18nT("people ")}${(objects.people || []).length}${i18nT(" · to-dos ")}${(objects.todos || []).length}${i18nT(" · hotwords ")}${countVocabularyGroups(objects.hotwords)}`,
-        progress: 100,
-        actions: [
-          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
-          { id: "dismiss-task", label: i18nT("Dismiss") },
-        ],
-      });
-    } catch (e) {
-      this.setSedimentCandidateBucket(file, { scanning: false, scanStartedAt: "" });
-      this.render();
-      console.error("[QnALog] extract sediment from current note failed", e);
-      this.plugin.tasks.failTaskActivity(taskId, e, {
-        stage: "failed",
-        stageLabel: i18nT("Target scan incomplete"),
-        detail: getTaskErrorMessage(e),
-        subject: file.path,
-        actions: [
-          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
-          { id: "dismiss-task", label: i18nT("Dismiss") },
-        ],
-      });
-      new obsidian.Notice(`${i18nT("Failed to scan this note:")}${(e && e.message) || e}`, 8000);
-    }
+    await scanSedimentFile({
+      currentToken: () => this.sedimentScanToken,
+      incrementToken: () => ++this.sedimentScanToken,
+      patchBucket: (_target, patch) => this.setSedimentCandidateBucket(file, patch),
+      persistBucket: () => this.persistSedimentCandidateBucket(file),
+      readMarkdown: () => this.app.vault.cachedRead(file),
+      generate: (_target, markdown) => generateSedimentObjects(this.plugin, file, markdown),
+      normalizeAndAddIds: (objects, path, basename) => withSedimentCandidateIds(objects, path, basename),
+      normalizePath: path => obsidian.normalizePath(path),
+      createVocabularyGroups,
+      initialCounts: objects => this.getSedimentInitialCountsFromObjects(objects),
+      countRawPeople: objects => ((objects as SedimentScanNormalized | null)?.people || []).length,
+      countRawTodos: objects => ((objects as SedimentScanNormalized | null)?.todos || []).length,
+      countRawHotwords: objects => countVocabularyGroups((objects as SedimentScanNormalized | null)?.hotwords),
+      selectGroupState: () => this.getSedimentPanelState(file),
+      findNextPendingGroup: groups => this.findSedimentNextPendingGroup(groups as SedimentGroup[]),
+      setSelectedGroup: group => { this.sedimentGroup = group; },
+      setSwitcherOpen: open => { this.sedimentSwitcherOpen = open; },
+      render: () => this.render(),
+      showToast: (message, options) => this.showSedimentToast(message, options),
+      showFailureNotice: (error, duration) => { new obsidian.Notice(`${i18nT("Failed to scan this note:")}${sedimentNoticeErrorSuffix(error)}`, duration); },
+      errorMessage: error => getTaskErrorMessage(error),
+      logFailure: error => console.error("[QnALog] extract sediment from current note failed", error),
+      tasks: {
+        startTaskActivity: input => this.plugin.tasks.startTaskActivity(input),
+        patchTaskActivity: (id, patch) => this.plugin.tasks.patchTaskActivity(id, patch),
+        cancelTaskActivity: (id, reason) => this.plugin.tasks.cancelTaskActivity(id, reason),
+        completeTaskActivity: (id, result) => this.plugin.tasks.completeTaskActivity(id, result),
+        failTaskActivity: (id, error, result) => this.plugin.tasks.failTaskActivity(id, error, result),
+      },
+    }, file);
   }
 
   cancelSedimentExtraction(file) {
-    this.sedimentScanToken++;
-    this.setSedimentCandidateBucket(file, { scanning: false, scanStartedAt: "" });
-    this.plugin.tasks.cancelTaskActivity(`sediment:${file.path}`, i18nT("This scan was cancelled; the note content was not changed"));
-    this.render();
-    this.showSedimentToast(i18nT("This scan was cancelled"), { icon: "circle-minus", variant: "muted" });
+    cancelSedimentScan({
+      incrementToken: () => ++this.sedimentScanToken,
+      patchBucket: (_target, patch) => this.setSedimentCandidateBucket(file, patch),
+      tasks: {
+        cancelTaskActivity: (id, reason) => this.plugin.tasks.cancelTaskActivity(id, reason),
+      },
+      render: () => this.render(),
+      showToast: (message, options) => this.showSedimentToast(message, options),
+    }, file);
   }
 
   cloneSedimentBucket(file) {
-    try {
-      return JSON.parse(JSON.stringify(this.getSedimentCandidateBucket(file) || {}));
-    } catch {
-      return Object.assign({}, this.getSedimentCandidateBucket(file) || {});
-    }
+    return cloneSedimentBucketValue(this.getSedimentCandidateBucket(file));
   }
 
   setSedimentDecisionLog(file, groupKey, log) {
-    const bucket = this.getSedimentCandidateBucket(file);
-    const decisionLogByGroup: Record<string, SedimentGroupReview> = { ...(bucket.decisionLogByGroup || {}) } as Record<string, SedimentGroupReview>;
-    if (log) decisionLogByGroup[groupKey] = log;
-    else delete decisionLogByGroup[groupKey];
-    this.setSedimentCandidateBucket(file, { decisionLogByGroup });
+    setSedimentDecisionLogFlow(this.sedimentBucketPort(file), groupKey, log);
   }
 
   appendSedimentDecisionItems(file, groupKey, rawItems, status, statusText, state) {
-    const bucket = this.getSedimentCandidateBucket(file);
-    const logs: Record<string, SedimentGroupReview> = { ...(bucket.decisionLogByGroup || {}) } as Record<string, SedimentGroupReview>;
-    const current: SedimentGroupReview = logs[groupKey] || {
+    appendSedimentDecisionItemsFlow(
+      this.sedimentBucketPort(file),
       groupKey,
-      completedAt: "",
-      restore: {},
-      selectedIds: [],
-      items: [],
-    };
-    if (!current.restore || !Object.keys(current.restore).length) {
-      const snapshotState = state || this.getSedimentPanelState(file);
-      if (groupKey === "person") current.restore = { people: JSON.parse(JSON.stringify(snapshotState.currentPeople || [])) };
-      else current.restore = ((this.buildSedimentDecisionLog(snapshotState, groupKey, new Set()) as { restore?: Record<string, unknown> }).restore || {});
-    }
-    const sourcePath = file instanceof obsidian.TFile ? obsidian.normalizePath(file.path || "") : "";
-    for (const raw of rawItems || []) {
-      if (!raw) continue;
-      const id = groupKey === "person" ? getSedimentPersonId(raw.sourcePath || sourcePath, raw) : String(raw.id || "");
-      current.items = (current.items || []).filter(item => item.id !== id);
-      current.items.push({
-        id,
-        title: raw.name || raw.title || raw.task || "",
-        sub: raw.role || raw.type || "",
-        meta: raw.org || raw.organization || raw.note || raw.summary || "",
-        status,
-        statusText,
-      });
-      if (status === "kept" && !current.selectedIds.includes(id)) current.selectedIds.push(id);
-    }
-    current.completedAt = current.completedAt || new Date().toISOString();
-    logs[groupKey] = current;
-    this.setSedimentCandidateBucket(file, { decisionLogByGroup: logs });
+      rawItems || [],
+      status,
+      statusText,
+      state || this.getSedimentPanelState(file),
+      this.sedimentIdPort(),
+      file instanceof obsidian.TFile ? obsidian.normalizePath(file.path || "") : "",
+    );
   }
 
   buildSedimentDecisionLog(state: SedimentPanelState, groupKey: string, selectedIds: Set<string>, actionLabel = "") {
-    const selected = new Set<string>(selectedIds || []);
-    const displayItems = this.getSedimentDisplayItems(state, groupKey);
-    const restore: SedimentDecisionRestore = {};
-    if (groupKey === "person") restore.people = JSON.parse(JSON.stringify(state.currentPeople || []));
-    else if (groupKey === "todo") restore.todos = JSON.parse(JSON.stringify((state.bucket && state.bucket.todos) || []));
-    else if (groupKey === "hotword") restore.hotwords = JSON.parse(JSON.stringify((state.bucket && state.bucket.hotwords) || createVocabularyGroups()));
-    return {
-      groupKey,
-      completedAt: new Date().toISOString(),
-      restore,
-      selectedIds: Array.from(selected),
-      items: displayItems.map(item => {
-        const kept = selected.has(item.id);
-        return {
-          id: item.id,
-          title: item.title || "",
-          sub: item.sub || "",
-          meta: item.meta || "",
-          status: kept ? "kept" : "ignored",
-          statusText: kept ? (actionLabel || i18nT("Added")) : i18nT("Ignored"),
-        };
-      }),
-    };
+    return buildSedimentDecisionLogFlow(state, groupKey, selectedIds, this.sedimentIdPort(), actionLabel);
   }
 
   buildVocabularyGroupsFromHotwordItems(items) {
@@ -3488,42 +3205,50 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   async restoreSedimentUndo(undo) {
-    if (!undo) return;
-    try {
-      for (const entry of undo.entries || []) {
-        const file = entry && entry.path ? this.app.vault.getAbstractFileByPath(entry.path) : entry.file;
-        if (!(file instanceof obsidian.TFile)) continue;
-        if (entry.created) await trashVaultFileRef(this.app, file);
-        else await this.app.vault.modify(file, entry.previousContent || "");
-      }
-      if (undo.vocabulary) {
-        const v = undo.vocabulary;
-        if (v.path) {
-          const file = this.app.vault.getAbstractFileByPath(v.path);
-          if (v.existed && file instanceof obsidian.TFile) await this.app.vault.modify(file, v.previousContent || "");
-          else if (!v.existed && file instanceof obsidian.TFile) await trashVaultFileRef(this.app, file);
+    await restoreSedimentCommitFlow({
+      restoreEntries: async record => {
+        const value = record as SedimentCommitUndo;
+        for (const entry of value.entries || []) {
+          const target = entry && entry.path ? this.app.vault.getAbstractFileByPath(entry.path) : entry.file;
+          if (!(target instanceof obsidian.TFile)) continue;
+          if (entry.created) await trashVaultFileRef(this.app, target);
+          else await this.app.vault.modify(target, entry.previousContent || "");
+        }
+      },
+      restoreVocabulary: async record => {
+        const value = record as SedimentCommitUndo;
+        if (!value.vocabulary) return;
+        const vocabulary = value.vocabulary;
+        if (vocabulary.path) {
+          const target = this.app.vault.getAbstractFileByPath(vocabulary.path);
+          if (vocabulary.existed && target instanceof obsidian.TFile) await this.app.vault.modify(target, vocabulary.previousContent || "");
+          else if (!vocabulary.existed && target instanceof obsidian.TFile) await trashVaultFileRef(this.app, target);
         } else {
-          this.plugin.settings.customVocabulary = v.previousCustomVocabulary || "";
+          this.plugin.settings.customVocabulary = vocabulary.previousCustomVocabulary || "";
           await this.plugin.saveSettings();
         }
-      }
-      if (undo.sourceSnapshot && undo.sourceSnapshot.path) {
-        const source = this.app.vault.getAbstractFileByPath(undo.sourceSnapshot.path);
-        if (source instanceof obsidian.TFile) await this.app.vault.modify(source, undo.sourceSnapshot.content || "");
-      }
-      if (undo.bucketBefore && undo.filePath) {
-        const file = this.app.vault.getAbstractFileByPath(undo.filePath);
-        if (file instanceof obsidian.TFile) {
-          this.sedimentCandidatesByPath[undo.filePath] = undo.bucketBefore;
-          await this.persistSedimentCandidateBucket(file);
-        }
-      }
-      this.render();
-      this.showSedimentToast(i18nT("This library import was undone"), { icon: "rotate-ccw", variant: "muted" });
-    } catch (e) {
-      console.error("[QnALog] undo sediment commit failed", e);
-      new obsidian.Notice(`${i18nT("Undo failed:")}${(e && e.message) || e}`, 8000);
-    }
+      },
+      restoreSourceSnapshot: async record => {
+        const snapshot = (record as SedimentCommitUndo).sourceSnapshot;
+        if (!snapshot || !snapshot.path) return;
+        const source = this.app.vault.getAbstractFileByPath(snapshot.path);
+        if (source instanceof obsidian.TFile) await this.app.vault.modify(source, snapshot.content || "");
+      },
+      restoreBucket: async record => {
+        const value = record as SedimentCommitUndo;
+        if (!value.bucketBefore || !value.filePath) return;
+        const target = this.app.vault.getAbstractFileByPath(value.filePath);
+        if (!(target instanceof obsidian.TFile)) return;
+        this.sedimentCandidatesByPath[value.filePath] = value.bucketBefore;
+        await this.persistSedimentCandidateBucket(target);
+      },
+      render: () => this.render(),
+      showUndoToast: () => this.showSedimentToast(i18nT("This library import was undone"), { icon: "rotate-ccw", variant: "muted" }),
+      presentError: error => {
+        console.error("[QnALog] undo sediment commit failed", error);
+        new obsidian.Notice(`${i18nT("Undo failed:")}${sedimentNoticeErrorSuffix(error)}`, 8000);
+      },
+    }, undo);
   }
 
   async openSedimentCommitTarget(undo) {
@@ -3580,8 +3305,6 @@ export class OutlineView extends obsidian.ItemView {
 
   async commitSedimentGroup(file, groupKey) {
     try {
-      let successText = "";
-      let completed = false;
       const state = this.getSedimentPanelState(file);
       const displayItems = this.getSedimentDisplayItems(state, groupKey);
       const selected = groupKey === "person"
@@ -3589,69 +3312,74 @@ export class OutlineView extends obsidian.ItemView {
         : this.getSedimentSelectedIds(file, groupKey, displayItems);
       const selectedItems = displayItems.filter(item => selected.has(item.id));
       if (SEDIMENT_GROUP_CONFIG[groupKey] && SEDIMENT_GROUP_CONFIG[groupKey].decisionModel === "checkbox" && !selectedItems.length) return;
-      const filePath = obsidian.normalizePath(file.path || "");
-      const undo: SedimentCommitUndo = {
-        filePath,
-        bucketBefore: this.cloneSedimentBucket(file),
-        entries: [],
-      };
-      if (groupKey === "todo") {
-        const count = selectedItems.length;
-        if (!count) return;
-        const result = await writeSedimentObjectCards(this.plugin, file, { todos: selectedItems.map(item => item.raw) });
-        undo.entries = result.entries || [];
-        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected as Set<string>, i18nT("Added")));
-        this.setSedimentCandidateBucket(file, { todos: [] });
-        completed = this.markSedimentGroupDone(file, groupKey, displayItems.length || count);
-        successText = `${i18nT("Added to to-dos:")}${count}${i18nT(" line items")}`;
-      } else if (groupKey === "hotword") {
-        const hotwordCount = selectedItems.length;
-        if (!hotwordCount) return;
-        // 热词改名回写会动笔记正文，先抓整篇快照供撤销（恢复时先整篇还原，再回写沉淀块）。
-        try { undo.sourceSnapshot = { path: filePath, content: await this.app.vault.read(file) }; } catch { /* intentionally empty */ }
-        const vocabPath = this.plugin.settings.vocabularyFile;
-        if (vocabPath) {
-          const norm = obsidian.normalizePath(vocabPath);
-          const vocabFile = this.app.vault.getAbstractFileByPath(norm);
-          undo.vocabulary = {
-            path: norm,
-            existed: vocabFile instanceof obsidian.TFile,
-            previousContent: vocabFile instanceof obsidian.TFile ? await this.app.vault.read(vocabFile) : "",
-          };
-        } else {
-          undo.vocabulary = {
-            path: "",
-            existed: false,
-            previousCustomVocabulary: this.plugin.settings.customVocabulary || "",
-          };
-        }
-        const existing = await loadVocabularyGroups(this.plugin);
-        const selectedGroups = this.buildVocabularyGroupsFromHotwordItems(selectedItems);
-        await this.plugin.vocabulary.writeVocabularyFile(mergeVocabularyGroups(existing, selectedGroups));
-        // 用户在侧边栏改对的热词，自动把笔记里的原词替换成更正后的词（撤销由上面的 sourceSnapshot 兜底）。
-        let hotwordRenames = [];
-        try { hotwordRenames = await this.applyHotwordRenamesToNote(file, selectedItems); } catch (e) { console.error("[QnALog] rename hotwords in note failed", e); }
-        this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
-        await this.plugin.saveSettings();
-        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected as Set<string>, i18nT("Added")));
-        // 候选全清，未消费的改名映射一并清掉（宿主候选已不存在，留着会在下次提交误回写）
-        this.setSedimentCandidateBucket(file, { hotwords: createVocabularyGroups(), hotwordTermRenames: {} });
-        completed = this.markSedimentGroupDone(file, groupKey, displayItems.length || hotwordCount);
-        const hotwordRenameNote = (hotwordRenames && hotwordRenames.length)
-          ? `${i18nT(", and correct those in the body: ")}${hotwordRenames.map(r => `${r.from}→${r.to}`).join(", ")}${i18nT(" corrected as well")}`
-          : "";
-        successText = `${i18nT("Added to hotword library:")}${hotwordCount}${i18nT(" file items")}${hotwordRenameNote}`;
-      } else {
+      if (groupKey !== "todo" && groupKey !== "hotword") {
         await this.keepPeopleSuggestions(file, state.currentPeople);
         return;
       }
-      const selectedByGroup: Record<string, string[]> = { ...(this.getSedimentCandidateBucket(file).selectedByGroup || {}) };
-      selectedByGroup[groupKey] = [];
-      this.setSedimentCandidateBucket(file, { selectedByGroup });
-      const persisted = await this.persistSedimentCandidateBucket(file);
-      this.render();
-      if (persisted && successText) this.showSedimentCommitToast(successText, undo);
-      if (completed) this.scheduleSedimentAutoAdvance(file, groupKey);
+      const filePath = obsidian.normalizePath(file.path || "");
+      const count = selectedItems.length;
+      if (!count) return;
+      let undo: SedimentCommitUndo;
+      let successText = "";
+      let hotwordRenames = [];
+      await commitSedimentGroupFlow({
+        snapshotBucket: () => {
+          undo = { filePath, bucketBefore: this.cloneSedimentBucket(file), entries: [] };
+          return undo;
+        },
+        write: async () => {
+          if (groupKey === "todo") {
+            const result = await writeSedimentObjectCards(this.plugin, file, { todos: selectedItems.map(item => item.raw) });
+            undo.entries = result.entries || [];
+            successText = `${i18nT("Added to to-dos:")}${count}${i18nT(" line items")}`;
+            return;
+          }
+          try { undo.sourceSnapshot = { path: filePath, content: await this.app.vault.read(file) }; } catch { /* intentionally empty */ }
+          const vocabPath = this.plugin.settings.vocabularyFile;
+          if (vocabPath) {
+            const norm = obsidian.normalizePath(vocabPath);
+            const vocabFile = this.app.vault.getAbstractFileByPath(norm);
+            undo.vocabulary = {
+              path: norm,
+              existed: vocabFile instanceof obsidian.TFile,
+              previousContent: vocabFile instanceof obsidian.TFile ? await this.app.vault.read(vocabFile) : "",
+            };
+          } else {
+            undo.vocabulary = {
+              path: "",
+              existed: false,
+              previousCustomVocabulary: this.plugin.settings.customVocabulary || "",
+            };
+          }
+          const existing = await loadVocabularyGroups(this.plugin);
+          const selectedGroups = this.buildVocabularyGroupsFromHotwordItems(selectedItems);
+          await this.plugin.vocabulary.writeVocabularyFile(mergeVocabularyGroups(existing, selectedGroups));
+          try { hotwordRenames = await this.applyHotwordRenamesToNote(file, selectedItems); } catch (e) { console.error("[QnALog] rename hotwords in note failed", e); }
+          this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("vocabulary", file);
+          await this.plugin.saveSettings();
+          const renameNote = hotwordRenames.length
+            ? `${i18nT(", and correct those in the body: ")}${hotwordRenames.map(r => `${r.from}→${r.to}`).join(", ")}${i18nT(" corrected as well")}`
+            : "";
+          successText = `${i18nT("Added to hotword library:")}${count}${i18nT(" file items")}${renameNote}`;
+        },
+        recordDecisionLog: () => {
+          this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, selected, i18nT("Added")));
+        },
+        markDone: () => {
+          if (groupKey === "todo") this.setSedimentCandidateBucket(file, { todos: [] });
+          else this.setSedimentCandidateBucket(file, { hotwords: createVocabularyGroups(), hotwordTermRenames: {} });
+          return this.markSedimentGroupDone(file, groupKey, displayItems.length || count);
+        },
+        persistBucket: async () => {
+          const selectedByGroup: Record<string, string[]> = { ...(this.getSedimentCandidateBucket(file).selectedByGroup || {}) };
+          selectedByGroup[groupKey] = [];
+          this.setSedimentCandidateBucket(file, { selectedByGroup });
+          return this.persistSedimentCandidateBucket(file);
+        },
+        render: () => this.render(),
+        showCommitToast: record => this.showSedimentCommitToast(successText, record),
+        scheduleAutoAdvance: () => this.scheduleSedimentAutoAdvance(file, groupKey),
+      });
     } catch (e) {
       console.error("[QnALog] commit sediment group failed", groupKey, e);
       new obsidian.Notice(`${i18nT("Failed to add: ")}${(e && e.message) || e}`, 8000);
@@ -3662,16 +3390,23 @@ export class OutlineView extends obsidian.ItemView {
     const state = this.getSedimentPanelState(file);
     const displayItems = this.getSedimentDisplayItems(state, groupKey);
     const count = displayItems.length;
-    this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, new Set(), i18nT("Added")));
-    if (groupKey === "todo") this.setSedimentCandidateBucket(file, { todos: [] });
-    // 忽略热词组时连改名映射一起清：过期映射可能在下次提交时错误回写正文
-    else if (groupKey === "hotword") this.setSedimentCandidateBucket(file, { hotwords: createVocabularyGroups(), hotwordTermRenames: {} });
-    else return;
-    const completed = count > 0 && this.markSedimentGroupDone(file, groupKey, count);
-    const persisted = await this.persistSedimentCandidateBucket(file);
-    this.render();
-    if (persisted) this.showSedimentToast(i18nT("Unselected items ignored"), { icon: "circle-minus", variant: "muted" });
-    if (completed) this.scheduleSedimentAutoAdvance(file, groupKey);
+    if (groupKey !== "todo" && groupKey !== "hotword") {
+      this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, new Set(), i18nT("Added")));
+      return;
+    }
+    await commitSedimentGroupFlow({
+      snapshotBucket: () => null,
+      recordDecisionLog: () => {
+        this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, new Set(), i18nT("Added")));
+        if (groupKey === "todo") this.setSedimentCandidateBucket(file, { todos: [] });
+        else this.setSedimentCandidateBucket(file, { hotwords: createVocabularyGroups(), hotwordTermRenames: {} });
+      },
+      markDone: () => count > 0 && this.markSedimentGroupDone(file, groupKey, count),
+      persistBucket: () => this.persistSedimentCandidateBucket(file),
+      render: () => this.render(),
+      showCommitToast: () => this.showSedimentToast(i18nT("Unselected items ignored"), { icon: "circle-minus", variant: "muted" }),
+      scheduleAutoAdvance: () => this.scheduleSedimentAutoAdvance(file, groupKey),
+    });
   }
 
   async reprocessSedimentGroup(file, groupKey) {
@@ -3724,32 +3459,49 @@ export class OutlineView extends obsidian.ItemView {
     const items = (suggestions || []).filter(Boolean);
     if (!items.length) return;
     try {
-      const sourceSnapshot = file instanceof obsidian.TFile ? { path: file.path, content: await this.app.vault.read(file) } : null;
-      const undo = file instanceof obsidian.TFile ? {
-        filePath: obsidian.normalizePath(file.path || ""),
-        bucketBefore: this.cloneSedimentBucket(file),
-        entries: [],
-        sourceSnapshot,
-      } : null;
-      const stateBefore = file instanceof obsidian.TFile ? this.getSedimentPanelState(file) : null;
-      const result = await this.plugin.people.applyPeopleDirectorySuggestions(file, items);
-      if (undo) undo.entries = result.entries || [];
-      // 用户在侧边栏改对的人名，自动替换回笔记正文 + YAML 人员字段（撤销由上面的 sourceSnapshot 兜底）
+      let undo: SedimentCommitUndo | null = null;
+      let stateBefore: SedimentPanelState | null = null;
+      let result;
       let renames = [];
-      try { renames = await this.applyPeopleRenamesToNote(file, items); } catch (e) { console.error("[QnALog] rename people in note failed", e); }
-      this.plugin.people.removeCachedPeopleSuggestions(items);
-      this.removeSedimentPeopleCandidates(file, items);
-      if (file instanceof obsidian.TFile) this.appendSedimentDecisionItems(file, "person", items, "kept", i18nT("Added"), stateBefore);
-      this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
-      await this.plugin.saveSettings();
-      const completed = this.markSedimentGroupDoneIfEmpty(file, "person", items.length);
-      await this.persistSedimentCandidateBucket(file);
-      this.render();
-      const renameNote = (renames && renames.length)
-        ? `${i18nT(", and correct those in the body/properties: ")}${renames.map(r => `${r.from}→${r.to}`).join(", ")}${i18nT(" corrected as well")}`
-        : "";
-      this.showSedimentCommitToast(`${i18nT("Added to person library: created ")}${result.created || 0}${i18nT(", updated ")}${result.updated || 0}${renameNote}`, undo);
-      if (completed) this.scheduleSedimentAutoAdvance(file, "person");
+      await commitSedimentGroupFlow({
+        snapshotBucket: async () => {
+          if (file instanceof obsidian.TFile) {
+            const sourceSnapshot = { path: file.path, content: await this.app.vault.read(file) };
+            undo = {
+              filePath: obsidian.normalizePath(file.path || ""),
+              bucketBefore: this.cloneSedimentBucket(file),
+              entries: [],
+              sourceSnapshot,
+            };
+            stateBefore = this.getSedimentPanelState(file);
+          }
+          return undo;
+        },
+        write: async record => {
+          result = await this.plugin.people.applyPeopleDirectorySuggestions(file, items);
+          if (record) record.entries = result.entries || [];
+          try { renames = await this.applyPeopleRenamesToNote(file, items); } catch (e) { console.error("[QnALog] rename people in note failed", e); }
+          this.plugin.people.removeCachedPeopleSuggestions(items);
+          this.removeSedimentPeopleCandidates(file, items);
+        },
+        recordDecisionLog: async () => {
+          if (file instanceof obsidian.TFile) this.appendSedimentDecisionItems(file, "person", items, "kept", i18nT("Added"), stateBefore);
+          this.plugin.knowledgeExtraction.markKnowledgeExtractionSource("people", file);
+          await this.plugin.saveSettings();
+        },
+        markDone: () => this.markSedimentGroupDoneIfEmpty(file, "person", items.length),
+        persistBucket: async () => file instanceof obsidian.TFile ? this.persistSedimentCandidateBucket(file) : false,
+        render: () => this.render(),
+        showToastWhenPersistenceFails: true,
+        showCommitToast: record => {
+          const renameNote = renames.length
+            ? `${i18nT(", and correct those in the body/properties: ")}${renames.map(r => `${r.from}→${r.to}`).join(", ")}${i18nT(" corrected as well")}`
+            : "";
+          const message = `${i18nT("Added to person library: created ")}${result.created || 0}${i18nT(", updated ")}${result.updated || 0}${renameNote}`;
+          this.showSedimentCommitToast(message, record);
+        },
+        scheduleAutoAdvance: () => this.scheduleSedimentAutoAdvance(file, "person"),
+      });
     } catch (e) {
       console.error("[QnALog] keep people suggestions failed", e);
       new obsidian.Notice(`${i18nT("Failed to save person suggestions: ")}${(e && e.message) || e}`, 8000);
@@ -3761,15 +3513,26 @@ export class OutlineView extends obsidian.ItemView {
     if (!items.length) return;
     try {
       let count = 0;
-      const stateBefore = file instanceof obsidian.TFile ? this.getSedimentPanelState(file) : null;
-      for (const item of items) if (await this.plugin.people.ignorePeopleDirectorySuggestion(item)) count++;
-      if (file instanceof obsidian.TFile) this.removeSedimentPeopleCandidates(file, items);
-      if (file instanceof obsidian.TFile) this.appendSedimentDecisionItems(file, "person", items, "ignored", i18nT("Ignored"), stateBefore);
-      const completed = file instanceof obsidian.TFile ? this.markSedimentGroupDoneIfEmpty(file, "person", items.length) : false;
-      if (file instanceof obsidian.TFile) await this.persistSedimentCandidateBucket(file);
-      this.render();
-      this.showSedimentToast(`${i18nT("Ignored ")}${count}${i18nT(" people")}`, { icon: "circle-minus", variant: "muted" });
-      if (completed) this.scheduleSedimentAutoAdvance(file, "person");
+      let stateBefore: SedimentPanelState | null = null;
+      await commitSedimentGroupFlow({
+        snapshotBucket: () => {
+          stateBefore = file instanceof obsidian.TFile ? this.getSedimentPanelState(file) : null;
+          return null;
+        },
+        write: async () => {
+          for (const item of items) if (await this.plugin.people.ignorePeopleDirectorySuggestion(item)) count++;
+          if (file instanceof obsidian.TFile) this.removeSedimentPeopleCandidates(file, items);
+        },
+        recordDecisionLog: () => {
+          if (file instanceof obsidian.TFile) this.appendSedimentDecisionItems(file, "person", items, "ignored", i18nT("Ignored"), stateBefore);
+        },
+        markDone: () => file instanceof obsidian.TFile ? this.markSedimentGroupDoneIfEmpty(file, "person", items.length) : false,
+        persistBucket: async () => file instanceof obsidian.TFile ? this.persistSedimentCandidateBucket(file) : false,
+        render: () => this.render(),
+        showToastWhenPersistenceFails: true,
+        showCommitToast: () => this.showSedimentToast(`${i18nT("Ignored ")}${count}${i18nT(" people")}`, { icon: "circle-minus", variant: "muted" }),
+        scheduleAutoAdvance: () => this.scheduleSedimentAutoAdvance(file, "person"),
+      });
     } catch (e) {
       console.error("[QnALog] ignore people suggestions failed", e);
       new obsidian.Notice(`${i18nT("Ignore failed:")}${(e && e.message) || e}`, 8000);
