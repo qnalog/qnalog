@@ -103,6 +103,7 @@ function makeView(groupKey: string, items = [{ id: "candidate-1", raw: { id: "ca
   };
   Object.assign(view, {
     app, plugin,
+    sedimentScanToken: 0,
     getSedimentPanelState: vi.fn(() => state),
     getSedimentDisplayItems: vi.fn(() => items),
     getSedimentSelectedIds: vi.fn(() => new Set(items.map(item => item.id))),
