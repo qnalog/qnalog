@@ -181,4 +181,24 @@ describe("recent note variant rows", () => {
     setActiveUiLanguage(resolveUiLanguage("en", "en"));
     expect(view.formatAskNoteTitle(null)).toBe("Current summary");
   });
+  it.each(["zh", "en"] as const)("formats sediment labels with title-prefix rules in %s", (language) => {
+    setActiveUiLanguage(resolveUiLanguage(language, language));
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    const templates = {
+      "custom-a": { id: "custom-a", mode: "custom-a", customMode: true, name: "Alpha", prompt: "fixture" },
+      "custom-long": { id: "custom-long", mode: "custom-long", customMode: true, name: "Alpha Extended", prompt: "fixture" },
+      "custom-special": { id: "custom-special", mode: "custom-special", customMode: true, name: "A.+(B)", prompt: "fixture" },
+    };
+    Object.assign(view, { plugin: { settings: { ...DEFAULT_SETTINGS, promptTemplates: templates } } });
+    expect(view.formatSedimentNoteLabel({ path: "Notes/a.md", basename: "2026-10-09 0930 · Work notes-Topic" }))
+      .toBe("10-09 09:30 · Topic");
+    expect(view.formatSedimentNoteLabel({ path: "Notes/a.md", basename: "2026-10-09 0930 · Alpha Extended-Topic" }))
+      .toBe("10-09 09:30 · Topic");
+    expect(view.formatSedimentNoteLabel({ path: "Notes/a.md", basename: "2026-10-09 0930 · A.+(B)-Topic" }))
+      .toBe("10-09 09:30 · Topic");
+    expect(view.formatSedimentNoteLabel({ path: "Notes/a.md", basename: "Work notes" })).toBe("Work notes");
+    expect(view.formatSedimentNoteLabel({ path: "Notes/a.md", basename: "2026-10-09 0930 · Work notesExtra" }))
+      .toBe("10-09 09:30 · Extra");
+    expect(view.formatSedimentNoteLabel(null)).toBe("");
+  });
 });

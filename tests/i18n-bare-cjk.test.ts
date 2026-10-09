@@ -179,6 +179,9 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["[QnALog] 设置结构版本高于当前版本（", "match"],
     ["），本次不写盘", "match"],
   ],
+  "src/notes/note-title-path.ts": [
+    ["自定义", "data"], // Existing fallback written into generated filenames, not localized interface text.
+  ],
   "src/notes/note-mode-inference.ts": [
     ["模板", "data"],
     ["学习", "data"],

@@ -1070,6 +1070,59 @@ async function main() {
         || merged._content !== originalMergedBody) {
         failures.push("模型生成标题后没有按当前文件状态完成同文件改名并保留正文");
       }
+      {
+        const writer = plugin.noteWriter;
+        const savedHost = writer.host;
+        const savedLanguage = plugin.settings.uiLanguage;
+        const callsBefore = llmCalls.length;
+        const templates = {
+          "custom-long": { id: "custom-long", mode: "custom-long", name: "Alpha Extended", customMode: true, prompt: "fixture" },
+          "custom-special": { id: "custom-special", mode: "custom-special", name: "A.+(B)", customMode: true, prompt: "fixture" },
+        };
+        const cases = [
+          ["Notes/date · Work notes-Old.MD", "meeting", "New", "Notes/date · 工作纪要-New.md", "Notes/date · Work notes-New.md"],
+          ["Notes/date.md", "custom-long", "New", "Notes/date · Alpha Extended-New.md", "Notes/date · Custom promptAlpha Extended-New.md"],
+          ["Notes/date.md", "custom-special", "New", "Notes/date · A.+(B)-New.md", "Notes/date · Custom promptA.+(B)-New.md"],
+          ["Notes/date.md", "missing", "New", "Notes/date · 工作纪要-New.md", "Notes/date · Work notes-New.md"],
+          ["Notes/date.md", "meeting", "///", "Notes/date.md", "Notes/date.md"],
+        ];
+        try {
+          for (const language of ["zh", "en"]) {
+            sandbox.module.exports.applyUiLanguage({ uiLanguage: language });
+            for (const [path, mode, tag, expectedZh, expectedEn] of cases) {
+              const probeFile = new TFile(path);
+              probeFile._content = "# Exact source bytes $& $' $$";
+              let renameCalls = 0;
+              const probeHost = Object.create(savedHost);
+              Object.defineProperties(probeHost, {
+                settings: { value: { ...plugin.settings, autoRenameWithTitle: true, promptTemplates: templates }, configurable: true },
+                vault: { value: { getAbstractFileByPath: (candidate) => candidate === probeFile.path ? probeFile : null }, configurable: true },
+                generateTitleTag: { value: () => tag, configurable: true },
+                findAvailableMarkdownPath: { value: (target) => target, configurable: true },
+                renameFile: { value: async (file, target) => {
+                  if (file !== probeFile) throw new Error("title path probe renamed an unexpected file");
+                  renameCalls += 1;
+                  file.path = target;
+                  file.name = target.slice(target.lastIndexOf("/") + 1);
+                  file.basename = file.name.replace(/\.md$/i, "");
+                }, configurable: true },
+              });
+              writer.host = probeHost;
+              const renamedProbe = await writer.renameMarkdownWithGeneratedTitle(probeFile, "fixture body", mode);
+              const expectedPath = language === "zh" ? expectedZh : expectedEn;
+              const expectedRenames = tag === "///" ? 0 : 1;
+              if (renamedProbe !== probeFile || probeFile.path !== expectedPath
+                || probeFile._content !== "# Exact source bytes $& $' $$" || renameCalls !== expectedRenames) {
+                throw new Error(`${language}/${mode}/${tag} changed title path, rename count, identity, or source bytes`);
+              }
+            }
+          }
+          if (llmCalls.length !== callsBefore) throw new Error("title path probe sent a model request");
+        } finally {
+          writer.host = savedHost;
+          sandbox.module.exports.applyUiLanguage({ uiLanguage: savedLanguage });
+        }
+      }
       const polishCommand = plugin.commands.find((command) => command.id === "polish-selection-or-note");
       if (typeof polishCommand?.editorCallback !== "function") throw new Error("Missing polish editor command");
       const originalEditorText = "The complete editor document must remain unchanged.";
