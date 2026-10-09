@@ -1988,6 +1988,62 @@ async function main() {
         || !retryResult.includes("Retry smoke transcript ledger.")) {
         throw new Error("merge retry did not preserve model text, surrounding content, and transcript");
       }
+      const mergeRetryOriginal = retryFile._content;
+      const mergeRetrySuccess = [];
+      const mergeRetryRefresh = plugin.noteIndex.refreshNoteIndexSafely;
+      const mergeRetryRename = plugin.noteWriter.renameMarkdownWithGeneratedTitle;
+      const mergeRetryTargets = [];
+      try {
+        plugin.noteWriter.renameMarkdownWithGeneratedTitle = async () => new TFile(`${literalRetryPath}.renamed`);
+        plugin.noteIndex.refreshNoteIndexSafely = async (file, options) => {
+          mergeRetryTargets.push({ path: file.path, reason: options.reason });
+          return mergeRetryRefresh.call(plugin.noteIndex, file, options);
+        };
+        for (const consolidatedLayout of [false, true]) {
+          plugin.settings.consolidatedLayout = consolidatedLayout;
+          retryFile._content = mergeRetryOriginal;
+          await plugin.queueRetry.retryMergeTask({
+            id: `merge-retry-flow-${consolidatedLayout ? "rewrite" : "append"}`,
+            mdPath: literalRetryPath,
+            mode: "meeting",
+            source: "recording",
+            createdAt: "2026-09-14T12:00:00.000Z",
+            segments: [retrySegment],
+            sessionMeta: { startedAt: "2026-09-14T12:00:00.000Z" },
+          });
+          if (mergeRetryTargets.at(-1)?.path !== `${literalRetryPath}.renamed`
+            || mergeRetryTargets.at(-1)?.reason !== "merge-retry") {
+            throw new Error("merge retry index refresh did not use the renamed target");
+          }
+          mergeRetrySuccess.push(createHash("sha256").update(retryFile._content).digest("hex"));
+        }
+      } finally {
+        plugin.noteIndex.refreshNoteIndexSafely = mergeRetryRefresh;
+        plugin.noteWriter.renameMarkdownWithGeneratedTitle = mergeRetryRename;
+        plugin.settings.consolidatedLayout = false;
+      }
+      const mergeRetrySuccessDigest = createHash("sha256").update(JSON.stringify(mergeRetrySuccess)).digest("hex");
+      console.log(`[merge-retry-flow] success digest: ${mergeRetrySuccessDigest}`);
+      retryFile._content = mergeRetryOriginal;
+      const mergeRetryEmptyDigest = createHash("sha256").update(retryFile._content).digest("hex");
+      try {
+        await plugin.queueRetry.retryMergeTask({
+          id: "merge-retry-flow-empty",
+          mdPath: literalRetryPath,
+          mode: "meeting",
+          source: "recording",
+          segments: [],
+          sessionMeta: { startedAt: "2026-09-14T12:00:00.000Z" },
+        });
+        throw new Error("empty merge output was accepted");
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (!message.includes("Merge returned an empty result") && !message.includes("合并返回为空")) throw error;
+      }
+      if (retryFile._content !== mergeRetryOriginal) throw new Error("empty merge output changed the source note");
+      console.log(`[merge-retry-flow] empty digest: ${mergeRetryEmptyDigest}`);
+      retryFile._content = mergeRetryOriginal;
+      
       const polishLiteralBody = "模型正文\n$& $` $' $$";
       const polishFolded = [
         "<!--QNALOG_SEDIMENT_BEGIN-->",
