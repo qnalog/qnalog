@@ -1195,7 +1195,7 @@ ${i}`}function Jx(i){let e=i.parts.map(t=>[`### 内部材料 ${t.index+1} · ${t
 【输出协议】
 - 不要 YAML frontmatter、代码围栏、前言或解释。
 - 可见正文必须放在 \`<!-- qnalog-part-body-start -->\` 与 \`<!-- qnalog-part-body-end -->\` 之间。
-- 正文结束后追加三条完整 HTML 注释：\`qnalog-people\`、\`qnalog-tags\`、\`qnalog-part-summary\`；没有对应内容时人员与标签留空。
+- 正文结束后追加三条完整 HTML 注释：\`<!-- qnalog-people: 张三, 李四 -->\`（人名以逗号分隔，不加引号或方括号）、\`qnalog-tags\`、\`qnalog-part-summary\`；没有对应内容时人员与标签留空。
 
 【材料规模】
 - 录音时长：${i.duration||"未知"}
