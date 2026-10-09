@@ -655,7 +655,7 @@ async function main() {
           kind: "minutes",
           label: "Outer document smoke",
           mode: "synthesis",
-          body: "---\nqnalog_time: 2026-09-14T11:43:00\nqnalog_mode: synthesis\n---\n# Smoke minutes\n\nVersioned minutes body.",
+          body: "---\nqnalog_time: 2026-09-14T11:43:00\nqnalog_mode: synthesis\n---\n# Smoke minutes\n\nVersioned minutes body.\n\n公式 $$E=mc^2$$ 与 $&",
           activate: false,
         });
         const manifestAfterSave = JSON.parse(await app.vault.adapter.read(originalManifestPath));
@@ -669,6 +669,7 @@ async function main() {
         }
         await plugin.versions.switchVersion(cachePath, NOTE_PATH);
         const switched = noteFile._content || "";
+        if (!switched.includes("公式 $$E=mc^2$$ 与 $&")) failures.push("切换版本改写了公式或字面替换符");
         if (!switched.includes("Versioned minutes body.")) failures.push("切换版本后母本没有显示缓存正文");
         if ((switched.match(/qnalog-active-version-start/g) || []).length !== 1) failures.push("切换版本后活动版本块数量不是一");
         if ((switched.match(/qnalog-active-version-end/g) || []).length !== 1) failures.push("切换版本后活动版本结束标记数量不是一");
