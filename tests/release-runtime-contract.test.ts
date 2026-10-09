@@ -1,6 +1,38 @@
 import { readFileSync } from "node:fs";
 import { pluginSourceText } from "./plugin-source";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mergeAndPolishLongSession } from "../src/briefing/merge-pipeline";
+import { assessBriefingPartFidelity, getBriefingFidelityPolicy, planBriefingParts } from "../src/briefing/pipeline";
+import { buildBriefingFidelityContract } from "../src/prompts/briefing-prompts";
+const briefingContractState = vi.hoisted(() => ({
+  calls: [] as Array<{ mode: string; purpose: string; system: string; prompt: string }>,
+  diagnostics: [] as string[],
+}));
+vi.mock("../src/llm/core", () => ({
+  callBriefingMergeLlm: vi.fn(async (_plugin: unknown, system: string, prompt: string, _options: unknown, context: { mode: string; purpose: string }) => {
+    briefingContractState.calls.push({ mode: context.mode, purpose: context.purpose, system, prompt });
+    const body = context.purpose === "briefing-part-detail-repair"
+      ? `## 事实\n${"原文细节".repeat(1800)}`
+      : context.purpose === "briefing-part" && context.mode === "meeting"
+        ? "短稿"
+        : `## 事实\n${"讨论内容".repeat(1600)}`;
+    return { text: body, finishReason: "stop", truncated: false, usage: {} };
+  }),
+  stripModeSuggestionBlocks: (text: string) => text,
+  callLlm: vi.fn(),
+  logLlmRequestDiagnostic: vi.fn(async (_plugin: unknown, _level: string, key: string) => {
+    briefingContractState.diagnostics.push(key);
+  }),
+}));
+vi.mock("../src/people", () => ({
+  buildPeopleContextForLlm: vi.fn(async () => ""),
+}));
+vi.mock("obsidian", () => ({
+  normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"),
+  TFile: class {},
+  TFolder: class {},
+}));
+
 
 const mainSource = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
 // 实现已拆分到多个模块；只断言"字符串存在于插件源码中"的用例改用全文，
@@ -10,6 +42,91 @@ const pluginSource = pluginSourceText();
 const mergePipelineSource = readFileSync(new URL("../src/briefing/merge-pipeline.ts", import.meta.url), "utf8");
 
 describe("release runtime contracts", () => {
+  it("separates synthesis coverage from source-scaled detail repair", async () => {
+    const originalObsidian = (globalThis as typeof globalThis & { obsidian?: unknown }).obsidian;
+    const originalWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+    vi.stubGlobal("obsidian", {
+      parseYaml: () => ({}),
+      stringifyYaml: (value: Record<string, unknown>) => Object.entries(value).map(([key, item]) => `${key}: ${String(item)}`).join("\n"),
+    });
+    vi.stubGlobal("window", { moment: undefined });
+
+    const segments = Array.from({ length: 3 }, (_, index) => ({
+      index,
+      startOffsetMs: index * 60_000,
+      endOffsetMs: (index + 1) * 60_000,
+      text: "讨论内容".repeat(1750),
+    }));
+    const run = async (mode: string) => {
+      const files = new Map<string, string>();
+      const folders = new Set<string>();
+      const adapter = {
+        exists: async (path: string) => files.has(path) || folders.has(path),
+        mkdir: async (path: string) => { folders.add(path); },
+        write: async (path: string, value: string) => { files.set(path, value); },
+        read: async (path: string) => {
+          const value = files.get(path);
+          if (value === undefined) throw new Error("missing");
+          return value;
+        },
+        remove: async (path: string) => { files.delete(path); },
+        rename: async (from: string, to: string) => {
+          const value = files.get(from);
+          if (value === undefined) throw new Error("missing");
+          files.set(to, value);
+          files.delete(from);
+        },
+      };
+      const plugin = {
+        settings: {
+          llmModel: "contract-test",
+          briefingStructureLevel: "balanced",
+          briefingTranslationMode: "off",
+          activeTemplateByMode: {},
+          promptTemplates: {},
+        },
+        manifest: { id: "qnalog" },
+        app: { vault: { adapter, configDir: ".obsidian" } },
+        getCurrentSession: () => null,
+      };
+      briefingContractState.calls.length = 0;
+      briefingContractState.diagnostics.length = 0;
+      const result = await mergeAndPolishLongSession(plugin, segments, mode, null, null, null, 4000);
+      return { result, calls: [...briefingContractState.calls], diagnostics: [...briefingContractState.diagnostics], files };
+    };
+
+    try {
+      const general = await run("general");
+      const generalParts = general.calls.filter(call => call.purpose === "briefing-part");
+      const generalConsolidation = general.calls.find(call => call.purpose === "briefing-general-consolidation");
+      expect(generalParts.length).toBeGreaterThan(1);
+      expect(generalConsolidation).toBeDefined();
+      expect(generalConsolidation?.prompt).toContain("开头先写 `> [!abstract] 概要`");
+      expect(generalConsolidation?.prompt).toContain("## 详情");
+      expect([...general.files.values()].map(value => JSON.parse(value)).some(checkpoint => checkpoint.consolidationStatus === "complete")).toBe(true);
+
+      const synthesis = await run("synthesis");
+      const synthesisConsolidation = synthesis.calls.find(call => call.purpose === "briefing-synthesis-consolidation");
+      expect(synthesisConsolidation).toBeDefined();
+      expect(synthesisConsolidation?.prompt).toContain("会议梗概");
+      expect([...synthesis.files.values()].map(value => JSON.parse(value)).some(checkpoint => checkpoint.consolidationStatus === "complete")).toBe(true);
+
+      const meeting = await run("meeting");
+      const firstMeetingPart = meeting.calls.find(call => call.purpose === "briefing-part");
+      const repair = meeting.calls.find(call => call.purpose === "briefing-part-detail-repair");
+      const parts = planBriefingParts(segments, 6000);
+      const assessment = assessBriefingPartFidelity(parts[0].chars, "", { mode: "meeting", detailLevel: "balanced" });
+      const policy = getBriefingFidelityPolicy({ mode: "meeting", detailLevel: "balanced" });
+      const fidelityContract = buildBriefingFidelityContract(assessment, policy.profile, parts[0].segments.length, "meeting");
+      expect(firstMeetingPart?.prompt).toContain(fidelityContract);
+      expect(repair).toBeDefined();
+      expect(meeting.diagnostics).toContain("llm.briefing_part_under_detailed");
+    } finally {
+      vi.stubGlobal("window", originalWindow);
+      vi.stubGlobal("obsidian", originalObsidian);
+    }
+  });
+
   it("does not retain calls to the excluded video time-link helper", () => {
     expect(mainSource).not.toMatch(/\bgetSegmentTimeLink\s*\(/);
   });

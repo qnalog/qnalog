@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出的 prompt 常量（审核友好：缩小 main.ts 单文件 AST）。纯数据、零运行时依赖、零行为改动。
+export const GENERAL_BRIEFING_SYSTEM_PROMPTS = {
+  part: "你是通用笔记整理助手。请将原始材料整理成完整笔记，先写概要，再写详情；不要套用会议或访谈的固定栏目。",
+  consolidation: "你是通用笔记整理助手。请把录音分段归并成一篇完整笔记，先写概要，再写详情；不要套用会议或访谈的固定栏目。",
+} as const;
+
 export const MODE_BODIES = {
   general: `## §0 适用范围
 本模式不预设录音属于会议、访谈、课程或个人独白。把原始转写整理成先易读、再查细节的笔记，不套用特定场景的固定栏目。

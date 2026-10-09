@@ -22,6 +22,7 @@ import { formatElapsed, getErrorMessage } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 
 import { CLEAN_TRANSCRIPT_SYSTEM, buildCleanTranscriptChunkPrompt, buildKnownSpeakerClause } from "../prompts/clean-transcript";
+import { GENERAL_BRIEFING_SYSTEM_PROMPTS } from "../prompts/mode-bodies";
 
 import { BriefingPipelineIncompleteError, assembleBriefingParts, assessBriefingPartFidelity, assessBriefingPartGrounding, buildBriefingPartSummaryMap, buildProgrammaticTopicMap, createBriefingJobId, getBriefingFidelityPolicy, normalizeBriefingPartBody, planBriefingParts, reconcileBriefingCheckpoint, shouldAutoRepairBriefingPart } from "./pipeline";
 
@@ -283,7 +284,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   const system = mode === "synthesis" && partPlans.length > 1
     ? "你是综合纪要的议题证据编辑。请从当前内部窗口提取并归并可核验的议题材料，供下一阶段统一成文；不要把窗口写成独立会议。"
     : mode === "general" && partPlans.length > 1
-      ? "You organize neutral notes. Prepare a complete note with an overview first and details second; do not impose a meeting or interview template."
+      ? GENERAL_BRIEFING_SYSTEM_PROMPTS.part
       : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
   for (const plan of partPlans) {
     const part = checkpoint.parts[plan.index];
@@ -577,7 +578,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         const consolidation = await callBriefingMergeLlm(
           plugin,
           mode === "general"
-            ? "You organize neutral notes. Combine the recording's segments into a complete note with an overview first and details second; do not impose a meeting or interview template."
+            ? GENERAL_BRIEFING_SYSTEM_PROMPTS.consolidation
             : "你是综合纪要的总编辑。请把同一场会议的内部议题材料归并为一篇结构清晰、证据充分、以事情为中心的最终纪要。",
           consolidationPrompt,
           Object.assign(
