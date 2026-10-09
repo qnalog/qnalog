@@ -7,13 +7,9 @@ import { QnALogSettingTab } from "../ui/settings-tab";
 import { isKnownPolishMode, getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue } from "../llm/core";
-import { formatLlmConfigIssue } from "../llm/failure-presentation";
-import { isLlmServiceBlockedError } from "../llm/failure-policy";
 import type { MergeQueueTaskPayload, PluginSettings, QueueTaskDeferred, RecordingSession, RealtimeOutlineSourceCoverage, Segment } from "../shared/types";
 import type { SessionStore } from "../session/session-store";
 import { genId, formatElapsed, escapeRegExp } from "../shared/util-common";
-import { isAsrTransportError } from "../shared/util-audio";
-import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
 import { MAX_SPEAKER_CHANNELS, initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { renderMultichannelAudioBufferSliceToWav, transcribeAudioByChannels } from "../asr/channel-transcription";
@@ -56,6 +52,7 @@ import {
   type TranscribeAudioSourcePort,
 } from "./transcribe-audio-source";
 import { migrateTaskPaths, removeTasksForDeletedPath } from "./queue-task-paths";
+import { QueueRetryControl } from "./queue-retry-control";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
@@ -99,157 +96,39 @@ export interface QueueRetryHost {
 
 export class QueueRetryService {
   declare host: QueueRetryHost;
-  declare _taskQueueRetryTimer;
-  declare _taskQueueRetryAt;
+  declare control: QueueRetryControl;
 
   constructor(host: QueueRetryHost) {
     this.host = host;
-    this._taskQueueRetryTimer = null;
-    this._taskQueueRetryAt = 0;
+    this.control = new QueueRetryControl({
+      getQueue: () => this.host.queue,
+      getRecorderState: () => this.host.recorder ? this.host.recorder.state : null,
+      getSession: () => this.host.sessionStore.get(),
+      getMaxRetries: () => this.host.settings.maxRetries,
+      getLlmConfigIssue: () => getLlmConfigIssue(this.host.settings),
+      getTranscribeTasksForMarkdown: (file) => getQueueTasksForMarkdown(this.host, file, { types: ["transcribe"] }),
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
+      saveAll: () => this.host.saveAll(),
+      requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
+      notifyTaskBusyChanged: () => this.host.notifyTaskBusyChanged(),
+      asr: {
+        getCircuitState: () => this.host.asrPipeline.getAsrServiceCircuitState(),
+        isCircuitOpen: () => this.host.asrPipeline.isAsrServiceCircuitOpen(),
+        getRetryDelayMs: () => this.host.asrPipeline.getAsrServiceRetryDelayMs(),
+        resetForManualRetry: (source) => this.host.asrPipeline.resetAsrServiceCircuitForManualRetry(source),
+      },
+    });
   }
 
-  /** 卸载时取消已排定的队列重试；由插件在 onunload 中调用。 */
-  dispose() {
-    try { if (this._taskQueueRetryTimer) window.clearTimeout(this._taskQueueRetryTimer); } catch { /* intentionally empty */ }
-    this._taskQueueRetryTimer = null;
-    this._taskQueueRetryAt = 0;
-  }
+  dispose() { this.control.dispose(); }
 
-  scheduleTaskQueueRetry(delayMs = 1500, reason = "scheduled") {
-    const delay = Math.max(1000, Number(delayMs) || 0);
-    const runAt = Date.now() + delay;
-    if (this._taskQueueRetryTimer && Number(this._taskQueueRetryAt) <= runAt) return;
-    if (this._taskQueueRetryTimer) window.clearTimeout(this._taskQueueRetryTimer);
-    this._taskQueueRetryAt = runAt;
-    this._taskQueueRetryTimer = window.setTimeout(() => {
-      this._taskQueueRetryTimer = null;
-      this._taskQueueRetryAt = 0;
-      const session = this.host.sessionStore.get();
-      const recorderBusy = this.host.recorder && this.host.recorder.state !== "idle";
-      const segmentBusy = session && Number(session.activeSegmentJobs || 0) > 0;
-      const queueBusy = this.host.queue && this.host.queue.running;
-      if (recorderBusy || segmentBusy || queueBusy) {
-        this.scheduleTaskQueueRetry(30 * 1000, "activity-still-busy");
-        return;
-      }
-      void this.host.diagnostics.logDiagnostic("info", "queue.scheduled_retry_started", t("Starting the scheduled background retry"), {
-        reason,
-        taskCount: this.host.queue && Array.isArray(this.host.queue.tasks) ? this.host.queue.tasks.length : 0,
-      });
-      void this.host.queue.processAll().catch((e) => console.error("[QnALog] scheduled queue retry failed", e));
-    }, delay);
-  }
-  scheduleDeferredAsrRetry(session) {
-    if (!session || !session.hasDeferredAsrJobs) return;
-    const serviceCircuit = this.host.asrPipeline.getAsrServiceCircuitState();
-    const openUntilMs = Math.max(
-      0,
-      Number(session.asrCircuitState && session.asrCircuitState.openUntilMs) || 0,
-      Number(serviceCircuit && serviceCircuit.openUntilMs) || 0,
-    );
-    const delayMs = Math.max(1500, openUntilMs > Date.now() ? openUntilMs - Date.now() + 1000 : 0);
-    this.scheduleTaskQueueRetry(delayMs, "session-deferred-asr");
-  }
-  async retryQueue() {
-    if (!this.host.queue.tasks.length) {
-      new obsidian.Notice(this.host.queue.recoveryEntries().length
-        ? t("Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired.")
-        : t("Queue is empty"));
-      return;
-    }
-    const blockedMergeTasks = this.host.queue.tasks.filter((task) => task && task.type === "merge" && task.status === "blocked");
-    if (blockedMergeTasks.length) {
-      const llmIssue = getLlmConfigIssue(this.host.settings);
-      if (llmIssue) {
-        new obsidian.Notice(`${t("There are ")}${blockedMergeTasks.length}${t(" organizing tasks need configuration: ")}${formatLlmConfigIssue(llmIssue)}`, 9000);
-      } else {
-        const serviceBlocked = blockedMergeTasks.find((task) => isLlmServiceBlockedError(task.lastError || ""));
-        for (const task of blockedMergeTasks) {
-          task.status = "pending";
-          task.lastError = "";
-          task.updatedAt = new Date().toISOString();
-        }
-        await this.host.saveAll();
-        new obsidian.Notice(serviceBlocked
-          ? t("Restored {0} paused organizing tasks; retrying the LLM service").replace("{0}", String(blockedMergeTasks.length))
-          : t("Restored {0} organizing tasks that need configuration").replace("{0}", String(blockedMergeTasks.length)));
-      }
-    }
-    // 与 processAll 的实际可处理集对齐（排除 running/missing/blocked 和已达重试上限），避免"重试 N…剩余 N"误导。
-    // missing 任务(临时切片丢失)不在自动批量里，仍可在队列面板逐条重试触发切片恢复。
-    const maxR = this.host.settings.maxRetries || 3;
-    const runnable = this.host.queue.tasks.filter((task) => task
-      && task.status !== "blocked" && task.status !== "missing" && task.status !== "running" && task.status !== LIVE_ASR_TASK_STATUS
-      && ((Number(task.retries) || 0) < maxR || (task.type === "transcribe" && isAsrTransportError(task.lastError || ""))));
-    if (!runnable.length) {
-      const missingN = this.host.queue.tasks.filter((t) => t && t.status === "missing").length;
-      const exhaustedN = this.host.queue.tasks.filter((t) => t && t.status === "failed" && (Number(t.retries) || 0) >= maxR).length;
-      const hints = [];
-      if (missingN) hints.push(t("{0} temporary clips missing").replace("{0}", String(missingN)));
-      if (exhaustedN) hints.push(t("{0} have reached the retry limit — if the configuration is fixed (e.g. API key added or transcription service switched), right-click the note and choose \"Retry failed transcription\", or retry them one by one in the queue panel").replace("{0}", String(exhaustedN)));
-      new obsidian.Notice(hints.length ? t("No tasks can be retried automatically ({0})").replace("{0}", hints.join(t(";"))) : t("No tasks can be retried automatically"), hints.length ? 9000 : 4000);
-      return;
-    }
-    if (runnable.some((task) => task.type === "transcribe")) {
-      this.host.asrPipeline.resetAsrServiceCircuitForManualRetry("retry-all");
-      for (const task of runnable) {
-        if (task.type === "transcribe") task.nextRetryAt = undefined;
-      }
-      await this.host.saveAll();
-    }
-    new obsidian.Notice(`${t("Retry ")}${runnable.length}${t(" tasks...")}`);
-    await this.host.queue.processAll();
-    new obsidian.Notice(`${t("Remaining ")}${this.host.queue.tasks.length}${t(" tasks")}`);
-  }
-  async retryTranscribeTasksForMarkdown(file) {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
-    const tasks = getQueueTasksForMarkdown(this.host, file, { types: ["transcribe"] })
-      .filter((task) => ["failed", "missing", "pending"].includes(task.status || "pending") && !!task.lastError);
-    if (!tasks.length) {
-      new obsidian.Notice(t("This note currently has no transcription tasks to retry."), 5000);
-      return;
-    }
-    new obsidian.Notice(`${t("QnALog: retrying ")}${tasks.length}${t(" transcript segments...")}`);
-    let ok = 0;
-    let failed = 0;
-    let paused = false;
-    const batch = tasks.slice();
-    // 批量游标喂状态栏：重新转写逐段 done/total 实时可见（之前直接 for 循环没设游标 → 状态栏黑盒）。
-    this.host.queue._batchTotal = batch.length;
-    this.host.queue._batchDone = 0;
-    this.host.notifyTaskBusyChanged();
-    this.host.asrPipeline.resetAsrServiceCircuitForManualRetry("note-retry");
-    try {
-      for (const task of batch) {
-        if (this.host.asrPipeline.isAsrServiceCircuitOpen()) break;
-        try {
-          await this.host.queue.processOne(task);
-          ok++;
-        } catch (e) {
-          failed++;
-          console.error("[QnALog] retry transcribe task from note list failed", e);
-          if (isAsrTransportError(e)) {
-            this.scheduleTaskQueueRetry(this.host.asrPipeline.getAsrServiceRetryDelayMs(), "note-retry-transport-failure");
-            paused = true;
-          }
-        }
-        this.host.queue._batchDone++;
-        this.host.notifyTaskBusyChanged();
-        if (paused) break;
-      }
-    } finally {
-      this.host.queue._batchTotal = 0;
-      this.host.queue._batchDone = 0;
-      this.host.notifyTaskBusyChanged();
-    }
-    await this.host.saveAll();
-    this.host.requestOutlineRefresh();
-    new obsidian.Notice(paused
-      ? t("Transcription service is still unavailable: {0} succeeded and {1} failed this round; the remaining segments are kept and will continue later").replace("{0}", String(ok)).replace("{1}", String(failed))
-      : failed
-        ? t("Transcription retry finished: {0} succeeded, {1} failed").replace("{0}", String(ok)).replace("{1}", String(failed))
-        : t("Transcription retry finished: {0} succeeded").replace("{0}", String(ok)), 8000);
-  }
+  scheduleTaskQueueRetry(delayMs = 1500, reason = "scheduled") { this.control.schedule(delayMs, reason); }
+
+  scheduleDeferredAsrRetry(session) { this.control.scheduleDeferredAsr(session); }
+
+  retryQueue() { return this.control.retryAll(); }
+
+  retryTranscribeTasksForMarkdown(file) { return this.control.retryTranscribeForMarkdown(file); }
   private audioSourcePort(): TranscribeAudioSourcePort {
     return {
       getVault: () => this.host.app.vault,
