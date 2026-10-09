@@ -42,6 +42,14 @@ describe("笔记头部：frontmatter 与正文单换行紧贴", () => {
     expect(out).toContain("---\n# 2026-01-02 03:04 · 个人笔记");
     expect(out).not.toContain("---\n\n# 2026");
   });
+  it("applyVersionTitle：版本名中的替换模板字符按原文写入", () => {
+    const out = applyVersionTitle(
+      "---\nmode: x\n---\n\n# 2026-01-02 03:04 · 旧后缀\n\n正文",
+      "A$&B$$",
+    );
+    expect(out).toContain("# 2026-01-02 03:04 · A$&B$$");
+  });
+
 
   it("applyVersionTitle：无标题时插入的新标题也紧贴", () => {
     const out = applyVersionTitle("---\nmode: x\n---\n\n正文没有标题", "个人笔记", "2026-01-02 03:05");

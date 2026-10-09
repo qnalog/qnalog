@@ -7,18 +7,17 @@ vi.mock("obsidian", () => ({
 // vitest 跑在 Node 环境，没有 window；formatYamlDateTime 等读 window.moment（无 moment 时走内置 Date 分支）。
 vi.stubGlobal("window", {});
 import {
-  buildActiveVersionBlock,
   buildImportedTextSegment,
   extractIntegratedBriefing,
   splitImportedTextIntoNormalSegments,
   normalizeBriefingFrontmatterFields,
   parseSuggestedTagsFromOutput,
   postProcessBriefingOutput,
-  replaceActiveVersionBlock,
   stripEmptyPlaceholders,
   stripImportAppendices,
   stripMarkdownForEmailBrief,
 } from "../src/notes/note-markdown";
+import { buildActiveVersionBlock, replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { cleanTranscriptBlock, ensureTranscriptBlocks, extractTranscriptSegments, splitTranscriptSections } from "../src/notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../src/notes/note-source-metadata";
 import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
@@ -433,7 +432,7 @@ describe("活动版本范围读取", () => {
     expect(empty.bodyStart).toBe(empty.bodyEnd);
   });
 
-  it("prefers the first full block, rejects an incomplete block, and leaves String.replace semantics intact", () => {
+  it("prefers the first full block and rejects an incomplete block", () => {
     const first = "<!-- qnalog-active-version-start -->one<!-- qnalog-active-version-end -->";
     const second = "<!-- qnalog-active-version-start -->two<!-- qnalog-active-version-end -->";
     const text = `prefix${first}middle${second}suffix`;
@@ -441,10 +440,29 @@ describe("活动版本范围读取", () => {
     expect(text.slice(range.bodyStart, range.bodyEnd)).toBe("one");
     const replacement = replaceExistingActiveVersionBlock(text, "changed");
     expect(replacement).toBe(`prefixchangedmiddle${second}suffix`);
-    expect(replaceExistingActiveVersionBlock(first, "$&")).toBe(first);
     expect(findActiveVersionBlock("<!-- qnalog-active-version-start -->unfinished")).toBeNull();
     expect(findActiveVersionBlock(text)).toEqual(range);
     expect(findActiveVersionBlock(text)).toEqual(range);
+  });
+
+  it("writes replacement blocks literally", () => {
+    const first = "<!-- qnalog-active-version-start -->old<!-- qnalog-active-version-end -->";
+    const cases = ["$$E=mc^2$$", "$&", "$`", "$'", "$1"];
+    for (const body of cases) {
+      const block = `<!-- qnalog-active-version-start -->${body}<!-- qnalog-active-version-end -->`;
+      expect(replaceExistingActiveVersionBlock(`prefix${first}suffix`, block))
+        .toBe(`prefix${block}suffix`);
+    }
+  });
+
+  it("preserves literal version text through active-block rendering", () => {
+    const original = buildNote(true);
+    const literalBody = "公式 $$E=mc^2$$ 与 $&";
+    const once = replaceActiveVersionBlock(original, META, literalBody);
+    expect(count(once, START)).toBe(1);
+    expect(count(once, END)).toBe(1);
+    expect(once).toContain(literalBody);
+    expect(replaceActiveVersionBlock(once, META, literalBody)).toBe(once);
   });
 });
 describe("工具 details 壳读取", () => {

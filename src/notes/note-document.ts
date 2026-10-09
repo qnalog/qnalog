@@ -232,7 +232,7 @@ export function replaceLeadingFrontmatter(markdown: string, frontmatter: string,
 export function replaceExistingActiveVersionBlock(markdown: string, block: string): string | null {
   const text = String(markdown || "");
   if (!findActiveVersionBlock(text)) return null;
-  return text.replace(NS_ACTIVE_VERSION_BODY_RE, String(block || ""));
+  return text.replace(NS_ACTIVE_VERSION_BODY_RE, () => String(block || ""));
 }
 
 

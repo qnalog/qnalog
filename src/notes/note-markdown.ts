@@ -3,7 +3,7 @@
 
 import { collectAudioRefs, getDurationMs } from "./audio-refs";
 
-import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START, QNALOG_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS } from "../shared/limits";
+import { QNALOG_EMPTY_SHORT_LIMIT_MS, TEXT_IMPORT_PRE_SUMMARY_MAX_CHUNKS, TEXT_IMPORT_PRE_SUMMARY_THRESHOLD_CHARS } from "../shared/limits";
 
 import { normalizeCallouts } from "./callout-normalize";
 
@@ -11,7 +11,7 @@ import { formatMergeSegmentForPrompt } from "../prompts/briefing-prompts";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
 
 import * as obsidian from "obsidian";
-import { findLowEvidenceEntities, hashRealtimeOutlineText } from "./outline-text";
+import { findLowEvidenceEntities } from "./outline-text";
 
 
 import { getCustomPromptModeTemplate, getModeMeta, getModePrefix } from "../shared/mode-meta";
@@ -27,7 +27,6 @@ import { removeNoteIndex } from "../indexing/note-index";
 
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
 
-import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { labelText, labelPattern } from "../shared/note-labels";
 import { NS_FM, NS_FM_SPEAKERS, NS_TAG, NS_SEDIMENT_LINE_BEGIN_RE, NS_MACHINE_SHELL_RE, NS_SEGMENTS_START_RE, NS_SESSION_RE, NS_TAGS_RE, NS_TAG_PREFIX, hasNamespaceFrontmatter, readNamespaceFrontmatter } from "../shared/namespace";
 import type { NamespaceFrontmatterField } from "../shared/namespace";
@@ -37,8 +36,7 @@ import { formatElapsed, primitiveText, sanitizeFilename } from "../shared/util-c
 
 import { diagnosticError } from "../shared/util-key-diag";
 
-import { sanitizeActiveVersionBody } from "../versions/version-content";
-import { extractAllRawBlocksFromText, replaceExistingActiveVersionBlock, splitLeadingFrontmatter, stripFrontmatterSimple } from "./note-document";
+import { splitLeadingFrontmatter, stripFrontmatterSimple } from "./note-document";
 import { inferNoteStartedAtIso } from "./note-source-metadata";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 
@@ -56,81 +54,6 @@ export function isTimeLabel(text) {
 
 
 
-export function buildSegmentStatusList(segments) {
-  return (segments || []).map((seg, i) => {
-    const text = String(seg && seg.text || "").trim();
-    const start = Number(seg && seg.startOffsetMs) || 0;
-    const end = Number(seg && seg.endOffsetMs) || start;
-    return {
-      id: `seg-${String(i + 1).padStart(4, "0")}`,
-      index: i,
-      startOffsetMs: start,
-      endOffsetMs: end,
-      status: text ? "done" : "pending",
-      textHash: text ? hashRealtimeOutlineText(text) : "",
-    };
-  });
-}
-
-export function getVersionStoreFolder(settings, sourceId) {
-  const base = obsidian.normalizePath(String(settings && settings.mdFolder || DEFAULT_SETTINGS.mdFolder || "QnALog"));
-  const safeId = sanitizeFilename(sourceId) || "unknown-session";
-  return obsidian.normalizePath(`${base}/.versions/${safeId}`);
-}
-
-export function normalizeVersionId(label) {
-  const stamp = window.moment ? window.moment().format("YYYYMMDD-HHmmss") : new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
-  const safe = sanitizeFilename(label) || "version";
-  return `${stamp}-${safe}`;
-}
-
-export function buildActiveVersionBlock(versionMeta, body) {
-  const label = String(versionMeta && versionMeta.label || versionMeta && versionMeta.kind || labelText("currentVersion"));
-  const created = String(versionMeta && versionMeta.createdAt || "");
-  const sourceHash = String(versionMeta && versionMeta.sourceHash || "");
-  // label 已含模式前缀与整理偏好，不再拼内部 mode 键（monologue 这类键直接见了用户）。
-  // 折叠默认收起：版本卡是元数据，正文摘要应当先被看到。
-  const metaLines = [
-    `> [!info]- ${labelText("currentDisplayedVersionLabel")}${label}`,
-    created ? `> ${labelText("versionGeneratedAtLabel")}${created}` : "",
-    sourceHash ? `> ${labelText("sourceTranscriptFingerprintLabel")}${sourceHash}` : "",
-  ].filter(Boolean).join("\n");
-  return [
-    QNALOG_ACTIVE_VERSION_START,
-    metaLines,
-    "",
-    sanitizeActiveVersionBody(body),
-    QNALOG_ACTIVE_VERSION_END,
-  ].join("\n").replace(/\n{4,}/g, "\n\n\n");
-}
-
-export function replaceActiveVersionBlock(markdown, versionMeta, body) {
-  const text = String(markdown || "");
-  const block = buildActiveVersionBlock(versionMeta, body);
-  const replaced = replaceExistingActiveVersionBlock(text, block);
-  if (replaced !== null) return replaced;
-  // First adoption of the version model compacts the mother note:
-  // keep only frontmatter, H1, active display block, and raw/source metadata.
-  // The previous rendered minutes/clean text is already persisted in the version store.
-  const extracted = extractAllRawBlocksFromText(text);
-  const parts = splitLeadingFrontmatter(extracted.withoutRaw);
-  const bodyText = parts.body || "";
-  const titleMatch = bodyText.match(/^#\s+[^\n]+\n*/);
-  const rawTail = extracted.tail ? `\n\n---\n\n${extracted.tail.trimEnd()}\n` : "\n";
-  if (titleMatch) {
-    const titleBlock = titleMatch[0].trimEnd();
-    return [
-      parts.frontmatter ? parts.frontmatter.trimEnd() : "",
-      titleBlock,
-      "",
-      block,
-    ].filter(Boolean).join("\n") + rawTail;
-  }
-  return [
-    parts.frontmatter ? parts.frontmatter.trimEnd() : "",
-    block,
-  ].filter(Boolean).join("\n") + rawTail;
-}
 
 
 

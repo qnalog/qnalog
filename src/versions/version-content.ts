@@ -118,7 +118,7 @@ export function applyVersionTitle(markdown: string, titleSuffix: string, fallbac
     if (!datetime || !suffix) return text;
     const rebuilt = `# ${datetime} · ${suffix}`;
     if (rebuilt === headingMatch[0]) return text;
-    const nextBody = body.replace(/^#\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?[^\n]*/, rebuilt);
+    const nextBody = body.replace(/^#\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?[^\n]*/, () => rebuilt);
     return head + nextBody;
   }
   // 正文首行已是非日期格式的一级标题（用户自定义标题）：不改写也不再插入，避免叠出第二条。
