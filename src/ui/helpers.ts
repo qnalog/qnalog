@@ -21,8 +21,8 @@ import { stripFrontmatterSimple } from "../notes/note-document";
 import { INFO_LINE_WORDS_RE } from "../shared/note-labels";
 
 
-export function stripArchivedDetailsBlocks(text) {
-  let s = String(text || "");
+export function stripArchivedDetailsBlocks(text: unknown): string {
+  let s = String((text as string) || "");
   // \u53CD\u590D\u6D88\u6700\u5185\u5C42 details\uFF0C\u907F\u514D\u5D4C\u5957\uFF08"\u4E0A\u4E00\u7248\u7EAA\u8981" \u91CC\u5D4C\u53E6\u4E00\u4E2A "\u4E0A\u4E00\u7248\u7EAA\u8981"\uFF09\u6F0F\u5265
   for (let i = 0; i < 16; i++) {
     const next = s.replace(/<details\b[^>]*>(?:(?!<details\b)[\s\S])*?<\/details>/gi, "");
@@ -38,8 +38,8 @@ export function stripArchivedDetailsBlocks(text) {
 const META_INFO_LINE_START_RE = /^开始[:：]/;
 const META_INFO_LINE_RE = new RegExp(`^\\s*(?:${META_INFO_LINE_START_RE.source}|${INFO_LINE_WORDS_RE.source}).*$`, "gm");
 
-export function normalizeRecentNoteMeaningfulText(text) {
-  return String(text || "")
+export function normalizeRecentNoteMeaningfulText(text: unknown): string {
+  return String((text as string) || "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/!\[\[[^\]]+\]\]/g, "")
     .replace(/^#\s+.*$/gm, "")
@@ -49,8 +49,8 @@ export function normalizeRecentNoteMeaningfulText(text) {
     .trim();
 }
 
-export function noteHasSuccessfulLlmBriefing(content) {
-  const fullText = String(content || "");
+export function noteHasSuccessfulLlmBriefing(content: unknown): boolean {
+  const fullText = String((content as string) || "");
   // 关键：先剥掉历史归档 <details>，只看当前可见正文。
   // 否则"重新整理"成功后，旧版本里的失败标记会让本函数永远 false → 警告永远不消。
   const text = stripArchivedDetailsBlocks(fullText);
@@ -87,19 +87,25 @@ export function noteHasSuccessfulLlmBriefing(content) {
     && !/合并润色失败（已加入重试队列）|Merge failed \(queued for retry\)|AI 整理失败|AI organizing failed/.test(text);
 }
 
-export function noteHasUsableRawTranscriptDespiteFailures(content) {
-  const cleaned = String(content || "")
+export function noteHasUsableRawTranscriptDespiteFailures(content: unknown): boolean {
+  const cleaned = String((content as string) || "")
     .replace(/_\[(?:转写失败(?:（已进入重试队列）)?|Transcription failed(?: \(queued for retry\))?)[:：][^\]]*\]_/g, "")
     .replace(/_\[(?:等待后台转写，音频已保留|此段尚未完成转写，音频已保留|Waiting for background transcription; the audio has been kept|This segment is not fully transcribed yet; the audio has been kept)\]_/g, "")
     .replace(/_\[(?:合并润色失败（已加入重试队列）|Merge failed \(queued for retry\))[:：][^\]]*\]_/g, "")
     .replace(/_\[(?:AI 整理失败|AI organizing failed)[:：][^\]]*\]_/g, "")
     .replace(/_\[(?:此段暂无有效转写|此段无内容|无输出|No content in this segment|No output)\]_/g, "");
   const meaningful = normalizeRecentNoteMeaningfulText(stripFrontmatterSimple(cleaned));
-  return meaningful.length > 160 && (NS_SEGMENTS_START_RE.test(content) || /^###\s+(?:段落|Segment)\s+\d+/m.test(content));
+  return meaningful.length > 160 && (NS_SEGMENTS_START_RE.test(String(content)) || /^###\s+(?:段落|Segment)\s+\d+/m.test(String(content)));
 }
 
-export function getRecentNoteProcessingState(content) {
-  const fullText = String(content || "");
+export interface RecentNoteProcessingState {
+  kind: "raw" | "failed";
+  label: string;
+  title: string;
+}
+
+export function getRecentNoteProcessingState(content: unknown): RecentNoteProcessingState | null {
+  const fullText = String((content as string) || "");
   if (noteHasSuccessfulLlmBriefing(fullText)) return null;
   // 关键：失败标记的匹配同样要先剥掉 <details> 历史归档，
   // 避免旧版本里的 "_[合并润色失败...]_" 永久把当前纪要标成警告态。
@@ -131,8 +137,8 @@ export function getRecentNoteProcessingState(content) {
   return null;
 }
 
-export function getImportMarkerState(content) {
-  const text = String(content || "");
+export function getImportMarkerState(content: unknown) {
+  const text = String((content as string) || "");
   return {
     hasSession: NS_SESSION_RE.test(text),
     hasSegments: NS_SEGMENTS_START_RE.test(text) || /^###\s+(?:段落|Segment)\s+\d+/m.test(text),
@@ -141,11 +147,11 @@ export function getImportMarkerState(content) {
   };
 }
 
-export function qnalogConfirm(app, title, body, ctaText = t("Confirm")) {
-  return new Promise((resolve) => {
+export function qnalogConfirm(app: obsidian.App, title: string, body: string, ctaText: string = t("Confirm")): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
     const modal = new obsidian.Modal(app);
     let decided = false;
-    const decide = (val) => { if (!decided) { decided = true; resolve(val); } modal.close(); };
+    const decide = (val: boolean) => { if (!decided) { decided = true; resolve(val); } modal.close(); };
     modal.onOpen = () => {
       modal.modalEl.addClass("qnalog-utility-modal");
       const { contentEl } = modal;
@@ -201,11 +207,11 @@ export function chooseExistingCleanCopy(app: obsidian.App, basename: string): Pr
   return promise;
 }
 
-export function qnalogPromptText(app, title, placeholder, initialValue) {
-  return new Promise((resolve) => {
+export function qnalogPromptText(app: obsidian.App, title: string, placeholder?: string, initialValue?: string): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
     const modal = new obsidian.Modal(app);
     let settled = false;
-    const done = (value) => { if (settled) return; settled = true; resolve(value); modal.close(); };
+    const done = (value: string | null) => { if (settled) return; settled = true; resolve(value); modal.close(); };
     modal.onOpen = () => {
       modal.modalEl.addClass("qnalog-utility-modal");
       const { contentEl } = modal;
@@ -230,7 +236,7 @@ export function qnalogPromptText(app, title, placeholder, initialValue) {
   });
 }
 
-export function openPickListModal(app, title, items, onPick, itemDescription?) {
+export function openPickListModal(app: obsidian.App, title: string, items: string[], onPick: (id: string) => unknown, itemDescription?: (id: string) => string): void {
   const modal = new obsidian.Modal(app);
   modal.onOpen = () => {
     const { contentEl } = modal;
@@ -239,7 +245,7 @@ export function openPickListModal(app, title, items, onPick, itemDescription?) {
     const search = contentEl.createEl("input", { cls: "qnalog-pick-search", attr: { type: "text", placeholder: t("AI answer") } });
     const listEl = contentEl.createDiv({ cls: "qnalog-pick-list" });
     let limit = 300;
-    const render = (filter) => {
+    const render = (filter: string) => {
       listEl.empty();
       const f = String(filter || "").toLowerCase();
       const matches = items.filter(x => !f || x.toLowerCase().includes(f));
@@ -263,7 +269,7 @@ export function openPickListModal(app, title, items, onPick, itemDescription?) {
   modal.open();
 }
 
-export function openExternalUrl(url) {
+export function openExternalUrl(url: string): void {
   // 桌面端优先走 Electron shell.openExternal —— 强制用系统默认浏览器，
   // 避免在 Obsidian 内嵌 webview 打开外部链接。
   try {
@@ -321,7 +327,7 @@ export async function enumerateAudioDevices(options?: { requestPermission?: bool
 }
 
 
-export async function trashVaultFileRef(app, file) {
+export async function trashVaultFileRef(app: obsidian.App, file: obsidian.TAbstractFile): Promise<void> {
   if (app.vault && typeof app.vault.trash === "function") {
     await app.vault.trash(file, true);
   } else {
@@ -330,14 +336,21 @@ export async function trashVaultFileRef(app, file) {
 }
 
 
-export function classifyImportTextFileForModal(file, content) {
-  const text = String(content || "");
+export interface ImportTextFileClassification {
+  category: "external" | "qnalog-normal" | "qnalog-repair";
+  badge: string;
+  reason: string;
+  statusTitle: string;
+}
+
+export function classifyImportTextFileForModal(file: { extension?: unknown } | null | undefined, content: unknown): ImportTextFileClassification {
+  const text = String((content as string) || "");
   const marker = getImportMarkerState(text);
   const hasSignal = marker.hasSession || marker.hasSegments || marker.hasGeneratedBlock || marker.hasImportBlock;
   if (!hasSignal) {
     return {
       category: "external",
-      badge: file && String(file.extension || "").toLowerCase() === "txt" ? "TXT" : t("External transcript"),
+      badge: file && String((file.extension as string) || "").toLowerCase() === "txt" ? "TXT" : t("External transcript"),
       reason: t("Plain text"),
       statusTitle: t("Not a QnALog transcript; can be organized directly as a dictation draft"),
     };
@@ -365,8 +378,8 @@ export function classifyImportTextFileForModal(file, content) {
   };
 }
 
-export function makeImportTextCheckboxId(path, index) {
-  const source = String(path || "");
+export function makeImportTextCheckboxId(path: unknown, index: unknown): string {
+  const source = String((path as string) || "");
   let hash = 2166136261;
   for (let i = 0; i < source.length; i++) {
     hash ^= source.charCodeAt(i);
@@ -375,7 +388,10 @@ export function makeImportTextCheckboxId(path, index) {
   return `qnalog-import-text-${Math.max(0, Number(index) || 0)}-${(hash >>> 0).toString(36)}`;
 }
 
-export function countKnowledgeExtractionHistory(settings, kind) {
+export function countKnowledgeExtractionHistory(
+  settings: { knowledgeExtractionHistory?: Partial<Record<"vocabulary" | "people", unknown>> | null } | null | undefined,
+  kind: "vocabulary" | "people",
+): number {
   const history = normalizeKnowledgeExtractionHistory(settings && settings.knowledgeExtractionHistory);
   return Object.keys((history && history[kind]) || {}).length;
 }

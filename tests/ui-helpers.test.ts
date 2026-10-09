@@ -40,10 +40,15 @@ vi.mock("obsidian", () => {
 
 import {
   chooseExistingCleanCopy,
+  classifyImportTextFileForModal,
+  countKnowledgeExtractionHistory,
   getImportMarkerState,
+  getRecentNoteProcessingState,
+  makeImportTextCheckboxId,
   normalizeRecentNoteMeaningfulText,
   noteHasSuccessfulLlmBriefing,
   noteHasUsableRawTranscriptDespiteFailures,
+  trashVaultFileRef,
 } from "../src/ui/helpers";
 import { NS_FM } from "../src/shared/namespace";
 
@@ -156,6 +161,82 @@ describe("noteHasUsableRawTranscriptDespiteFailures：失败占位双语剥离",
     const en = `${transcript}\n${enMarkers.join("\n")}\n<!-- qnalog-segments-start -->\n<!-- qnalog-segments-end -->`;
     expect(noteHasUsableRawTranscriptDespiteFailures(zh)).toBe(true);
     expect(noteHasUsableRawTranscriptDespiteFailures(en)).toBe(true);
+  });
+});
+
+describe("classifyImportTextFileForModal", () => {
+  it("classifies external, organized, and repair notes", () => {
+    expect(classifyImportTextFileForModal({ extension: "TXT" }, "hello")).toMatchObject({
+      category: "external",
+      badge: "TXT",
+    });
+    expect(classifyImportTextFileForModal({ extension: "md" }, "hello")).toMatchObject({
+      category: "external",
+      badge: "External transcript",
+    });
+    expect(classifyImportTextFileForModal({ extension: "md" }, enNote)).toMatchObject({
+      category: "qnalog-normal",
+      badge: "Organized",
+    });
+    expect(classifyImportTextFileForModal({ extension: "md" }, "## ✨ Current minutes\n\n_[Transcription failed: x]_")).toMatchObject({
+      category: "qnalog-repair",
+      badge: "Transcription failed",
+    });
+    expect(classifyImportTextFileForModal(null, "hello").category).toBe("external");
+  });
+});
+
+describe("makeImportTextCheckboxId", () => {
+  it("creates a stable, path-sensitive id and normalizes invalid indexes", () => {
+    const first = makeImportTextCheckboxId("a.md", 2);
+    expect(first).toMatch(/^qnalog-import-text-2-[0-9a-z]+$/);
+    expect(makeImportTextCheckboxId("a.md", 2)).toBe(first);
+    expect(makeImportTextCheckboxId("b.md", 2)).not.toBe(first);
+    expect(makeImportTextCheckboxId("a.md", -3)).toMatch(/^qnalog-import-text-0-/);
+    expect(makeImportTextCheckboxId("a.md", "x")).toMatch(/^qnalog-import-text-0-/);
+  });
+});
+
+describe("countKnowledgeExtractionHistory", () => {
+  it("counts normalized per-kind records and handles missing settings", () => {
+    const settings = {
+      knowledgeExtractionHistory: {
+        vocabulary: { "a\\b.md": 1, "c.md": { mtime: 2 } },
+        people: {},
+      },
+    };
+    expect(countKnowledgeExtractionHistory(settings, "vocabulary")).toBe(2);
+    expect(countKnowledgeExtractionHistory(settings, "people")).toBe(0);
+    expect(countKnowledgeExtractionHistory(undefined, "people")).toBe(0);
+  });
+});
+
+describe("trashVaultFileRef", () => {
+  it("uses vault trash when available, otherwise file manager", async () => {
+    const file = {};
+    const fallbackTrash = vi.fn();
+    const vaultTrash = vi.fn();
+    const app = { vault: { trash: vaultTrash }, fileManager: { trashFile: fallbackTrash } };
+    await trashVaultFileRef(app as never, file as never);
+    expect(vaultTrash).toHaveBeenCalledOnce();
+    expect(vaultTrash).toHaveBeenCalledWith(file, true);
+    expect(fallbackTrash).not.toHaveBeenCalled();
+
+    const fallbackApp = { vault: {}, fileManager: { trashFile: fallbackTrash } };
+    await trashVaultFileRef(fallbackApp as never, file as never);
+    expect(fallbackTrash).toHaveBeenCalledOnce();
+    expect(fallbackTrash).toHaveBeenCalledWith(file);
+  });
+});
+
+describe("getRecentNoteProcessingState", () => {
+  it("returns null for empty content and classifies failed and raw transcripts", () => {
+    expect(getRecentNoteProcessingState("")).toBeNull();
+    expect(getRecentNoteProcessingState("_[Transcription failed: x]_")?.kind).toBe("failed");
+    expect(getRecentNoteProcessingState(`### Segment 1\n${"x".repeat(200)}`)).toMatchObject({
+      kind: "raw",
+      label: "To organize",
+    });
   });
 });
 

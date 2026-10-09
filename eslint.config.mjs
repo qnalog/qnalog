@@ -38,6 +38,7 @@ export default defineConfig([
       "src/notes/note-transcript-ledger.ts", "src/audio/recording-service.ts",
       "src/notes/role-mapping.ts", "src/notes/empty-short-note.ts", "src/notes/repolish-flow.ts", "src/notes/clean-script-flow.ts", "src/vault/empty-short-cleanup-flow.ts",
       "src/people/person-text.ts", "src/notes/note-briefing-output.ts", "src/notes/callout-normalize.ts",
+      "src/shared/util-knowledge.ts", "src/transcript/audio-binding.ts", "src/ui/helpers.ts", "src/vault/cleanup-service.ts",
     ],
     languageOptions: {
       parserOptions: {
