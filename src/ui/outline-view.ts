@@ -2873,47 +2873,6 @@ export class OutlineView extends obsidian.ItemView {
     }
   }
 
-  renderDepositGroup(parent, opts) {
-    const group = parent.createDiv({ cls: `qnalog-deposit-group ${opts.cls || ""}` });
-    const head = group.createDiv({ cls: "qnalog-deposit-group-head" });
-    const title = head.createDiv({ cls: "qnalog-deposit-group-title" });
-    title.createSpan({ text: opts.label || "" });
-    title.createSpan({ cls: "qnalog-deposit-count", text: `${opts.count || 0} ${opts.status || ""}`.trim() });
-    const actions = head.createDiv({ cls: "qnalog-deposit-group-actions" });
-    if (opts.primaryText && opts.onPrimary) actions.createEl("button", { text: opts.primaryText }).onclick = opts.onPrimary;
-    if (opts.secondaryText && opts.onSecondary) actions.createEl("button", { text: opts.secondaryText }).onclick = opts.onSecondary;
-    if (opts.moreActions && opts.moreActions.length) {
-      actions.createEl("button", { text: "..." }).onclick = (evt) => {
-        const menu = new obsidian.Menu();
-        for (const item of opts.moreActions) menu.addItem(mi => mi.setTitle(item.text).onClick(item.action));
-        this.showMenuAtMouse(menu, evt);
-      };
-    }
-    if (opts.desc) group.createDiv({ cls: "qnalog-deposit-group-desc", text: opts.desc });
-    const body = group.createDiv({ cls: "qnalog-deposit-group-body" });
-    if (opts.renderBody) opts.renderBody(body);
-  }
-
-  renderPeopleSuggestionCard(parent, file, item) {
-    const card = parent.createDiv({ cls: "qnalog-deposit-candidate-card is-person" });
-    const top = card.createDiv({ cls: "qnalog-deposit-candidate-top" });
-    top.createDiv({ cls: "qnalog-deposit-candidate-title", text: item.name || i18nT("Unnamed person") });
-    if (item.matchPath) top.createDiv({ cls: "qnalog-deposit-badge", text: i18nT("Can merge") });
-    const meta = card.createDiv({ cls: "qnalog-deposit-candidate-meta" });
-    meta.createDiv({ text: `${i18nT("Role:")}${item.role || i18nT("To be filled in")}` });
-    meta.createDiv({ text: `${i18nT("Organization:")}${item.org || item.organization || i18nT("To be filled in")}` });
-    if (item.aliases && item.aliases.length) meta.createDiv({ text: `${i18nT("Common aliases:")}${item.aliases.join(i18nT(", "))}` });
-    card.createDiv({ cls: "qnalog-deposit-candidate-source", text: `${i18nT("Source:")}${item.sourceBasename || file.basename}` });
-    const evidence = item.evidence || item.reason || item.note || "";
-    if (evidence) card.createDiv({ cls: "qnalog-deposit-candidate-evidence", text: `${i18nT("Basis:")}${evidence}` });
-    const actions = card.createDiv({ cls: "qnalog-deposit-candidate-actions" });
-    actions.createEl("button", { text: i18nT("Keep") }).onclick = () => this.keepPeopleSuggestions(file, [item]);
-    actions.createEl("button", { text: i18nT("Merge into existing person") }).onclick = () => {
-      new PeopleDirectorySuggestionModal(this.app, this.plugin, file, [item], { fromCache: true, cachedCount: 1 }).open();
-    };
-    actions.createEl("button", { text: i18nT("Ignore") }).onclick = () => this.ignorePeopleSuggestions([item], file);
-  }
-
   requestSedimentExtraction(file, needsConfirm) {
     if (needsConfirm) {
       this.confirmSedimentRescan(file);
