@@ -987,6 +987,100 @@ async function main() {
           failures.push(`来源读取结果不符合预期：${expected.id}`);
         }
       }
+      {
+        const savedHost = plugin.noteWriter.host;
+        const savedMoment = sandbox.moment;
+        const llmCallsBeforeMetadataProbe = llmCalls.length;
+        try {
+          const timeCases = [
+            ["undated", { qnalog_time: "2026-10-09T09:30:00+08:00", 日期: "2026-10-07", 时间: "12:00:00Z" }, true, "2026-10-09T01:30:00.000Z"],
+            ["undated", { qnalog_time: "invalid", 日期: "2026-10-09", 时间: "09:30:00Z" }, true, "2026-10-09T09:30:00.000Z"],
+            ["undated", { date: "2026-10-09" }, true, "2026-10-09T00:00:00.000Z"],
+            ["2026-10-09 0930 Topic", {}, true, "2026-10-09T09:30:00.000Z"],
+            ["undated", { qnalog_time: "invalid" }, true, "1970-01-01T00:00:00.001Z"],
+            ["undated", { qnalog_time: "2026-10-09T00:00:00Z" }, false, "1970-01-01T00:00:00.001Z"],
+          ];
+          for (const [basename, metadata, hasMoment, expectedStartedAt] of timeCases) {
+            const probeFile = new TFile(`Notes/${basename}.md`);
+            probeFile.basename = basename;
+            probeFile.stat.ctime = 1;
+            probeFile._content = sourceA.content;
+            const probeHost = Object.create(savedHost);
+            Object.defineProperties(probeHost, {
+              vault: {
+                value: {
+                  read: async (file) => {
+                    if (file !== probeFile) throw new Error("metadata probe read the wrong file");
+                    return file._content;
+                  },
+                  modify: async () => { throw new Error("valid transcript ledger should not be modified"); },
+                },
+              },
+              getFileFrontmatter: { value: (file) => {
+                if (file !== probeFile) throw new Error("metadata probe read metadata for the wrong file");
+                return { qnalog_mode: "meeting", ...metadata };
+              } },
+            });
+            plugin.noteWriter.host = probeHost;
+            sandbox.moment = hasMoment ? writerMoment : undefined;
+            const result = await plugin.noteWriter.readMergeSourceFromMarkdown(probeFile, 7000, 5);
+            const segment = result.segments[0];
+            if (result.startedAt !== expectedStartedAt || result.content !== sourceA.content
+              || probeFile._content !== sourceA.content || result.rawDurationMs !== 1000
+              || segment?.index !== 5 || segment.startOffsetMs !== 7000 || segment.endOffsetMs !== 8000
+              || segment.audioStartOffsetMs !== 0 || segment.audioEndOffsetMs !== 1000
+              || segment.sourceName !== basename || segment.sourcePath !== probeFile.path
+              || segment.transcript?.sourceId !== "writer-source-a") {
+              throw new Error(`merge-source metadata/time probe failed for ${basename}: ${result.startedAt}`);
+            }
+          }
+          sandbox.moment = savedMoment;
+          const legacyFile = new TFile("note.md");
+          legacyFile.basename = "note";
+          legacyFile.stat.ctime = 1;
+          legacyFile._content = "<details><summary>Segmented raw transcript</summary>\n### Segment 1 (00:00–00:01)\n\nLegacy source $& $' $$\n</details>";
+          let legacyWrites = 0;
+          const legacyHost = Object.create(savedHost);
+          Object.defineProperties(legacyHost, {
+            vault: {
+              value: {
+                read: async (file) => {
+                  if (file !== legacyFile) throw new Error("legacy metadata probe read the wrong file");
+                  return file._content;
+                },
+                modify: async (file, content) => {
+                  if (file !== legacyFile) throw new Error("legacy metadata probe modified the wrong file");
+                  legacyWrites += 1;
+                  file._content = content;
+                },
+              },
+            },
+            getFileFrontmatter: { value: (file) => {
+              if (file !== legacyFile) throw new Error("legacy metadata probe read metadata for the wrong file");
+              return { qnalog_mode: "meeting" };
+            } },
+          });
+          plugin.noteWriter.host = legacyHost;
+          const legacy = await plugin.noteWriter.readMergeSourceFromMarkdown(legacyFile, 7000, 5);
+          const firstLegacyContent = legacyFile._content;
+          if (legacy.segments[0]?.transcript?.sourceId !== "note-aq6lpx" || legacyWrites !== 1
+            || legacy.segments[0]?.startOffsetMs !== 7000 || legacy.segments[0]?.audioStartOffsetMs !== 0
+            || !legacy.segments[0]?.text.includes("Legacy source $& $' $$")) {
+            throw new Error("legacy merge-source identity and segment normalization probe failed");
+          }
+          const repeated = await plugin.noteWriter.readMergeSourceFromMarkdown(legacyFile, 7000, 5);
+          if (legacyWrites !== 1 || legacyFile._content !== firstLegacyContent
+            || repeated.content !== firstLegacyContent) {
+            throw new Error("legacy merge-source identity probe was not idempotent");
+          }
+        } finally {
+          plugin.noteWriter.host = savedHost;
+          sandbox.moment = savedMoment;
+        }
+        if (llmCalls.length !== llmCallsBeforeMetadataProbe) {
+          throw new Error("merge-source metadata probes unexpectedly called the model");
+        }
+      }
       const mergeSourceDigest = createHash("sha256").update(JSON.stringify(sourceResults.map((source) => ({
         path: source.file.path,
         content: source.content,

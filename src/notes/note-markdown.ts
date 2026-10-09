@@ -37,7 +37,8 @@ import { formatElapsed, primitiveText, sanitizeFilename } from "../shared/util-c
 import { diagnosticError } from "../shared/util-key-diag";
 
 import { sanitizeActiveVersionBody } from "../versions/version-content";
-import { extractAllRawBlocksFromText, extractSessionId, findNoteDelimitedBlock, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, splitLeadingFrontmatter, stripFrontmatterSimple } from "./note-document";
+import { extractAllRawBlocksFromText, findNoteDelimitedBlock, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, splitLeadingFrontmatter, stripFrontmatterSimple } from "./note-document";
+import { inferNoteStartedAtIso } from "./note-source-metadata";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
@@ -55,13 +56,6 @@ export function isTimeLabel(text) {
 }
 
 
-export function getSourceIdFromMarkdown(markdown, file) {
-  const text = String(markdown || "");
-  const sessionId = extractSessionId(text, "");
-  if (sessionId) return sanitizeFilename(sessionId) || sessionId;
-  const basis = `${file && file.path || "note"}:${file && file.stat && file.stat.ctime || ""}`;
-  return `note-${hashRealtimeOutlineText(basis)}`;
-}
 
 export function buildSegmentStatusList(segments) {
   return (segments || []).map((seg, i) => {
@@ -708,35 +702,6 @@ export function extractTranscriptSegments(markdown) {
   return entries.map((entry, index) => ({ ...entry.segment, index }));
 }
 
-export function inferNoteStartedAtIso(file, frontmatter) {
-  const moment = window.moment;
-  const fm = frontmatter || {};
-  const candidates = [
-    readNamespaceFrontmatter(fm, "time"),
-    fm["日期"] && fm["时间"] ? `${fm["日期"]}T${fm["时间"]}` : "",
-    fm["日期"] || fm.date || "",
-  ].map(v => String(v || "").trim()).filter(Boolean);
-  if (moment) {
-    for (const value of candidates) {
-      const parsed = moment(value, [
-        moment.ISO_8601,
-
-        "YYYY-MM-DDTHH:mm:ss",
-        "YYYY-MM-DD HH:mm:ss",
-        "YYYY-MM-DDTHH:mm",
-        "YYYY-MM-DD HH:mm",
-        "YYYY-MM-DD",
-      ], true);
-      if (parsed && parsed.isValid && parsed.isValid()) return parsed.toDate().toISOString();
-    }
-    const m = String(file && file.basename || "").match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{4}))?/);
-    if (m) {
-      const parsed = moment(m[2] ? `${m[1]} ${m[2]}` : m[1], m[2] ? "YYYY-MM-DD HHmm" : "YYYY-MM-DD", true);
-      if (parsed && parsed.isValid && parsed.isValid()) return parsed.toDate().toISOString();
-    }
-  }
-  return new Date(file && file.stat && file.stat.ctime ? file.stat.ctime : Date.now()).toISOString();
-}
 /** Persist source records before an active reorganization pays for a model response. */
 export function ensureTranscriptBlocks(
   markdown: string,
@@ -894,29 +859,6 @@ export function ensureTranscriptBlocks(
   return next;
 }
 
-export function normalizeSegmentsForMergedNote(segments, offsetMs, startIndex, sourceFile) {
-  const offset = Math.max(0, Number(offsetMs) || 0);
-  const baseIndex = Math.max(0, Number(startIndex) || 0);
-  const sourceName = sourceFile && sourceFile.basename ? sourceFile.basename : "";
-  const sourcePath = sourceFile && sourceFile.path ? sourceFile.path : "";
-  return (segments || []).map((seg, i) => {
-    const rawStart = Math.max(0, Number(seg && seg.startOffsetMs) || 0);
-    const rawEnd = Math.max(rawStart, Number(seg && seg.endOffsetMs) || 0);
-    const start = rawStart + offset;
-    const end = Math.max(start, rawEnd + offset);
-    const localStart = Number(seg && seg.audioStartOffsetMs);
-    const localEnd = Number(seg && seg.audioEndOffsetMs);
-    return Object.assign({}, seg || {}, {
-      index: baseIndex + i,
-      startOffsetMs: start,
-      endOffsetMs: end,
-      audioStartOffsetMs: Number.isFinite(localStart) && localStart >= 0 ? localStart : rawStart,
-      audioEndOffsetMs: Number.isFinite(localEnd) && localEnd >= 0 ? localEnd : rawEnd,
-      sourceName: (seg && seg.sourceName) || sourceName,
-      sourcePath: (seg && seg.sourcePath) || sourcePath,
-    });
-  });
-}
 
 export function stripEmptyPlaceholders(text) {
   return String(text || "")

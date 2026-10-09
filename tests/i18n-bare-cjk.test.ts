@@ -60,6 +60,10 @@ const CONTENT_FILES: Record<string, string> = {
 
 /** 逐条例外：文件 → [字面量前缀或全文, 类别]。类别见下方 legend。 */
 const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
+  "src/notes/note-source-metadata.ts": [
+    ["日期", "data"],
+    ["时间", "data"],
+  ],
   "src/asr/channel-transcription.ts": [
     ["：** ", "note"],
   ],

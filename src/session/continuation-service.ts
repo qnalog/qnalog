@@ -9,7 +9,8 @@ import type {
   RecordingSession,
 } from "../shared/types";
 import { readCurrentOutlineBlock } from "../notes/outline-storage";
-import { extractTranscriptSegments, getSourceIdFromMarkdown } from "../notes/note-markdown";
+import { extractTranscriptSegments } from "../notes/note-markdown";
+import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { stripArchivedOutlineSections } from "../notes/outline-text";
 import { getEffectivePolishMode } from "../shared/mode-meta";
 import { labelText } from "../shared/note-labels";
