@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：Obsidian callout 归一化
 
-// 标准 Obsidian callout 类型全集 + QnALog 自定义类型。
+const stringifyCalloutValue = String as (value: unknown) => string;
 // 用全集而非小白名单：DeepSeek 等模型常丢 `>` 前缀，规整器要能认出任意标准 callout 补回前缀。
 // 风险：正文里出现字面 [!xxx] 才会误判，而中文纪要正文几乎不会写这种 Obsidian 专有语法，安全。
 export const QNALOG_CALLOUT_NORMALIZE_TYPES = new Set([
@@ -17,8 +17,8 @@ export const QNALOG_CALLOUT_NORMALIZE_TYPES = new Set([
 // 顶部摘要 / 一句话定调这类 callout 的"短标题"识别：
 // 模型有时把 `> [!abstract] 摘要\n> 长正文...` 折叠成一行 `[!abstract] 摘要 长正文...`，
 // 渲染出来标题超长。这里把"短标题 + 空格 + 长正文"拆开，正文挪到续行。
-export function splitCalloutInlineBody(title) {
-  const t = String(title || "").trim();
+export function splitCalloutInlineBody(title: unknown): { label: string; body: string } {
+  const t = stringifyCalloutValue(title || "").trim();
   if (!t) return { label: "", body: "" };
   // 找第一个空白分隔；只有当分隔后的"正文"足够长（≥12 字）才认为是被折叠的正文，
   // 否则像 "AI 评价" / "核心 摘要" 这种两词标题不拆。
@@ -29,7 +29,7 @@ export function splitCalloutInlineBody(title) {
   return { label: t, body: "" };
 }
 
-export function getCalloutHeader(line) {
+export function getCalloutHeader(line: string) {
   const m = String(line || "").match(/^\s*(?:>\s*)?(?:[-*+•]\s+)?\[!([a-z][a-z0-9_-]*)([+-]?)\]\s*(.*)$/i);
   if (!m) return null;
   const type = String(m[1] || "").toLowerCase();
@@ -44,7 +44,7 @@ export function getCalloutHeader(line) {
   };
 }
 
-export function isCalloutBoundary(line) {
+export function isCalloutBoundary(line: string): boolean {
   const text = String(line || "");
   const trimmed = text.trim();
   if (!trimmed) return false;
@@ -58,7 +58,7 @@ export function isCalloutBoundary(line) {
     || /^####\s+/.test(trimmed);
 }
 
-export function ensureCalloutGapBeforeHeader(out) {
+export function ensureCalloutGapBeforeHeader(out: string[]): void {
   if (!Array.isArray(out) || !out.length) return;
   // 删除上一块尾部的空行与「>」空引用行——它们是 blockquote 续行，会让 Obsidian 把相邻 callout 合并成一个块
   while (out.length) {
@@ -70,10 +70,10 @@ export function ensureCalloutGapBeforeHeader(out) {
   if (out.length) out.push("");
 }
 
-export function normalizeCallouts(markdown) {
+export function normalizeCallouts(markdown: unknown): string {
   if (!markdown) return "";
-  const lines = String(markdown).replace(/\r\n/g, "\n").split("\n");
-  const out = [];
+  const lines = stringifyCalloutValue(markdown).replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
   let inFence = false;
   let inFixedCallout = false;
 

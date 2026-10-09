@@ -10,12 +10,10 @@ import {
   buildImportedTextSegment,
   extractIntegratedBriefing,
   splitImportedTextIntoNormalSegments,
-  normalizeBriefingFrontmatterFields,
-  parseSuggestedTagsFromOutput,
-  postProcessBriefingOutput,
   stripImportAppendices,
   stripMarkdownForEmailBrief,
 } from "../src/notes/note-markdown";
+import { normalizeBriefingFrontmatterFields, parseSuggestedTagsFromOutput, postProcessBriefingOutput } from "../src/notes/note-briefing-output";
 import { stripEmptyPlaceholders } from "../src/notes/empty-short-note";
 import { buildActiveVersionBlock, replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { cleanTranscriptBlock, ensureTranscriptBlocks, extractTranscriptSegments, splitTranscriptSections } from "../src/notes/note-transcript-ledger";

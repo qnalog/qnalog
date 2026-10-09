@@ -6,6 +6,7 @@ vi.mock("obsidian", () => ({
   TFolder: class TFolder {},
 }));
 
+import { normalizePersonLookupText } from "../src/people/person-text";
 import {
   arePeopleSuggestionsRelated,
   formatPeopleNoteMarkdown,
@@ -13,7 +14,6 @@ import {
   mergePersonFrontmatter,
   mergeSourceNoteRelatedPeopleFrontmatter,
   normalizePeopleRelation,
-  normalizePersonLookupText,
 } from "../src/people";
 import { NS_FM } from "../src/shared/namespace";
 

@@ -25,7 +25,7 @@ import { extractPriorOutline, getContinuationTargetIdentity } from "../session/c
 import type { ContinuationService } from "../session/continuation-service";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
   
-import { mergeLeadingFrontmatterIntoDocument } from "../notes/note-markdown";
+import { mergeLeadingFrontmatterIntoDocument } from "../notes/note-briefing-output";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
