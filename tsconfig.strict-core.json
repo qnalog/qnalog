@@ -94,6 +94,8 @@
     "src/session/continuation-service.ts",
     "src/versions/version-store.ts",
     "src/notes/session-finalize-flow.ts",
+    "src/notes/session-finalize-sources.ts",
+    "src/notes/session-finalize-run-flow.ts",
     "src/notes/continuation-commit-flow.ts",
     "src/notes/note-write-content.ts",
     "src/notes/note-polish-flow.ts",
