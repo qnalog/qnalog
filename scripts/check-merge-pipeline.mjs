@@ -2361,6 +2361,117 @@ async function main() {
         files.delete(speakerProbePath);
         speakerProbeFile._content = speakerProbeOriginalContent;
       }
+      const emptyCleanupStart = noticeMessages.length;
+      const emptyCleanupOriginalSettings = plugin.settings.mdFolder;
+      const emptyCleanupOriginalQueue = plugin.queue.tasks.slice();
+      const emptyCleanupOriginalFiles = new Map(files);
+      const emptyCleanupOriginalModal = obsidian.Modal;
+      const emptyCleanupOriginalTrash = app.fileManager.trashFile;
+      const emptyCleanupPaths = [
+        "QnALog/cleanup-probe",
+        "QnALog/cleanup-probe/first.md",
+        "QnALog/cleanup-probe/second.md",
+        "QnALog/cleanup-probe/has-text.md",
+        "QnALog/cleanup-probe/probe-a.webm",
+        "QnALog/cleanup-probe/probe-b.webm",
+      ];
+      const emptyCleanupTrashedPaths = [];
+      const emptyCleanupDialogTexts = [];
+      const emptyCleanupButtons = [];
+      try {
+        plugin.settings.mdFolder = "QnALog/cleanup-probe";
+        const probeFolder = new TFolder("QnALog/cleanup-probe");
+        const makeCleanupNote = (path, audioRefs, text = "") => {
+          const file = new TFile(path);
+          const audioLink = (ref) => `![[${ref}]]`;
+          const end = "00:04";
+          file._content = [
+            "# 个人笔记 2026-09-14 11:33 · 个人笔记",
+            "",
+            "",
+            "## 原始材料",
+            "",
+            "<details>",
+            "<summary>分段原始转写</summary>",
+            "<!-- qnalog-segments-start:s1 -->",
+            `### 段落 1 (00:00–${end}) ${audioRefs.map(audioLink).join(" ")}`,
+            "",
+            text || "_[转写失败：探针]_",
+            "<!-- qnalog-segments-end:s1 -->",
+            "</details>",
+            "<!-- qnalog-session:s1 -->",
+          ].join("\n");
+          probeFolder.children.push(file);
+          files.set(path, file);
+          return file;
+        };
+        makeCleanupNote("QnALog/cleanup-probe/first.md", ["QnALog/cleanup-probe/probe-a.webm"]);
+        makeCleanupNote("QnALog/cleanup-probe/second.md", ["QnALog/cleanup-probe/probe-a.webm", "QnALog/cleanup-probe/probe-b.webm"]);
+        makeCleanupNote("QnALog/cleanup-probe/has-text.md", ["QnALog/cleanup-probe/probe-b.webm"], "真实转写文本。");
+        for (const path of emptyCleanupPaths.slice(4)) {
+          const audio = new TFile(path);
+          audio.extension = "webm";
+          files.set(path, audio);
+        }
+        files.set("QnALog/cleanup-probe", probeFolder);
+        const ProbeModal = class {
+          constructor() {
+            this.modalEl = makeEl();
+            this.contentEl = {
+              empty: noop,
+              createEl: (tag, options = {}) => {
+                const element = { tag, text: String(options.text || ""), onclick: null };
+                if (tag === "h3" || tag === "p") emptyCleanupDialogTexts.push(element);
+                if (tag === "button") emptyCleanupButtons.push(element);
+                return element;
+              },
+              createDiv: () => ({
+                createEl: (tag, options = {}) => {
+                  const element = { tag, text: String(options.text || ""), onclick: null };
+                  if (tag === "button") emptyCleanupButtons.push(element);
+                  return element;
+                },
+              }),
+            };
+          }
+          open() {
+            this.onOpen();
+            const confirmButton = emptyCleanupButtons[1];
+            if (!confirmButton?.onclick) throw new Error("cleanup confirmation button was not rendered");
+            confirmButton.onclick();
+          }
+          close() {}
+        };
+        obsidian.Modal = ProbeModal;
+        app.fileManager.trashFile = async (file) => {
+          emptyCleanupTrashedPaths.push(file.path);
+          await emptyCleanupOriginalTrash(file);
+        };
+        plugin.queue.tasks = [
+          { type: "transcribe", id: "cleanup-probe-audio", mdPath: "unrelated.md", audioPath: "QnALog/cleanup-probe/probe-a.webm" },
+          { type: "merge", id: "cleanup-probe-note", mdPath: "QnALog/cleanup-probe/first.md" },
+          { type: "generate-prompt", id: "cleanup-probe-unrelated", mode: "meeting" },
+        ];
+        await plugin.cleanup.cleanupEmptyShortRecordings();
+        const digest = createHash("sha256").update(JSON.stringify({
+          confirmTitle: emptyCleanupDialogTexts.find((element) => element.tag === "h3")?.text || "",
+          confirmBody: emptyCleanupDialogTexts.find((element) => element.tag === "p")?.text || "",
+          trashedPaths: emptyCleanupTrashedPaths,
+          remainingProbeFiles: emptyCleanupPaths.slice(1).filter((path) => files.has(path)),
+          queueIds: plugin.queue.tasks.map((task) => task.id),
+          notices: noticeMessages.slice(emptyCleanupStart),
+        })).digest("hex");
+        console.log(`[empty-short-cleanup] digest: ${digest}`);
+      } finally {
+        obsidian.Modal = emptyCleanupOriginalModal;
+        app.fileManager.trashFile = emptyCleanupOriginalTrash;
+        plugin.settings.mdFolder = emptyCleanupOriginalSettings;
+        plugin.queue.tasks = emptyCleanupOriginalQueue;
+        files.clear();
+        for (const [path, file] of emptyCleanupOriginalFiles) files.set(path, file);
+        noticeMessages.length = emptyCleanupStart;
+      }
+      
       
       
       const polishLiteralBody = "模型正文\n$& $` $' $$";

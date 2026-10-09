@@ -121,6 +121,8 @@
     "src/notes/audio-reference-text.ts",
     "src/notes/audio-refs.ts",
     "src/notes/role-mapping.ts",
+    "src/notes/empty-short-note.ts",
+    "src/vault/empty-short-cleanup-flow.ts",
     "src/notes/repolish-flow.ts",
     "src/notes/clean-script-flow.ts",
     "src/sediment/text-blocks.ts"

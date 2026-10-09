@@ -28,6 +28,7 @@ const CONTENT_FILES: Record<string, string> = {
   "src/versions/version-save-store.ts": "版本缓存的保存元数据字段（写入笔记的数据）",
   "src/notes/outline-text.ts": "大纲正文文本工具（笔记内容）",
   "src/notes/note-markdown.ts": "笔记解析/生成的正文模板与标题匹配（note/match）",
+  "src/notes/empty-short-note.ts": "空短笔记判定的占位文本与笔记标记匹配（match）",
   "src/notes/note-writer.ts": "笔记写入的正文结构与占位标题（决策 A）",
   "src/notes/note-merge-source-flow.ts": "合并笔记账本的来源前缀（固定写入笔记正文，沿用既有语义）",
   "src/notes/note-session-materials.ts": "续录旧场次材料与归档横幅（从 note-writer 迁入的笔记内容）",

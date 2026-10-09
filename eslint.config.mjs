@@ -36,7 +36,7 @@ export default defineConfig([
   {
     files: [
       "src/notes/note-transcript-ledger.ts", "src/audio/recording-service.ts",
-      "src/notes/role-mapping.ts", "src/notes/repolish-flow.ts", "src/notes/clean-script-flow.ts",
+      "src/notes/role-mapping.ts", "src/notes/empty-short-note.ts", "src/notes/repolish-flow.ts", "src/notes/clean-script-flow.ts", "src/vault/empty-short-cleanup-flow.ts",
     ],
     languageOptions: {
       parserOptions: {
