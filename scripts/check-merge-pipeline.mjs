@@ -2187,6 +2187,39 @@ async function main() {
         files.delete(transcribeProbePath);
         files.delete("QnALog/queue-transcribe-empty-probe.md");
       }
+      const finalizeProbeStart = noticeMessages.length;
+      const finalizeProbePath = "QnALog/session-finalize-empty-probe.md";
+      const finalizeProbeFile = new TFile(finalizeProbePath);
+      finalizeProbeFile._content = "<!-- qnalog-session:session-finalize-empty -->\n";
+      files.set(finalizeProbePath, finalizeProbeFile);
+      const finalizeProbeQueue = plugin.queue.tasks.slice();
+      const finalizeProbeStages = [];
+      const originalFinalizeProgress = plugin.asrPipeline.setSessionWorkProgress;
+      const finalizeProbeSession = {
+        id: "session-finalize-empty", mode: "monologue", mdPath: finalizeProbePath,
+        startedAt: "2026-09-14T12:00:00.000Z", sessionStamp: "20260914-120000", segments: [], finalized: false,
+      };
+      try {
+        plugin.asrPipeline.setSessionWorkProgress = (session, patch) => {
+          finalizeProbeStages.push(patch.stage);
+          return originalFinalizeProgress.call(plugin.asrPipeline, session, patch);
+        };
+        await plugin.sessionFinalize.finalizeSession(finalizeProbeSession);
+        const finalizeProbeDigest = createHash("sha256").update(JSON.stringify({
+          notices: noticeMessages.slice(finalizeProbeStart),
+          content: finalizeProbeFile._content,
+          queued: plugin.queue.tasks.slice(finalizeProbeQueue.length).map(({ type, status, lastError, sessionId }) => ({ type, status, lastError, sessionId })),
+          stages: finalizeProbeStages,
+          mdPath: finalizeProbeSession.mdPath,
+          ended: !plugin.sessionStore.get(),
+        })).digest("hex");
+        console.log(`[session-finalize-run-flow] digest: ${finalizeProbeDigest}`);
+      } finally {
+        plugin.asrPipeline.setSessionWorkProgress = originalFinalizeProgress;
+        noticeMessages.length = finalizeProbeStart;
+        plugin.queue.tasks = finalizeProbeQueue;
+        files.delete(finalizeProbePath);
+      }
       
       
       const polishLiteralBody = "模型正文\n$& $` $' $$";

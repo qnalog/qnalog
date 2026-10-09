@@ -7,9 +7,7 @@ import { transcribeAudio } from "../asr/transcribe";
 import { readFileFrontmatter } from "../shared/util-note";
 import { loadVocabularyGroups, applyVocabularyCorrections } from "../vocabulary";
 import { getLlmConfigIssue } from "../llm/core";
-import { formatLlmFailureIssue } from "../llm/failure-presentation";
-import { isLlmNonRetryableError } from "../llm/failure-policy";
-import type { PluginSettings, RecordingSession, PreparedLiveSegment, SessionMetaForMerge, Segment } from "../shared/types";
+import type { PluginSettings, RecordingSession, PreparedLiveSegment, Segment } from "../shared/types";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { getErrorMessage, pad, formatElapsed } from "../shared/util-common";
 import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } from "../shared/util-audio";
@@ -20,15 +18,12 @@ import type { SpeakerId } from "../audio/channel-speakers";
 import { transcribeAudioByChannels } from "../asr/channel-transcription";
 import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
-import { BriefingPipelineIncompleteError } from "../briefing/pipeline";
-import { isTextImportSession, shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 import { getSegmentsDurationMs } from "../notes/audio-refs";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { buildTitleSourceFromSegments } from "../notes/note-markdown";
-import { normalizeSegmentsForMergedNote } from "../notes/note-source-metadata";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
 import { mergeAndPolish } from "../briefing/merge-pipeline";
@@ -40,21 +35,22 @@ import type { MeetingWorkbenchRunOptions } from "../notes/meeting-workbench-serv
 import { NoteIndexService } from "../notes/note-index-service";
 import { VersionStore } from "../versions/version-store";
 import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
-import { SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
 
 import { t } from "../shared/i18n";
 import type { AsrTranscriptResult, AsrTranscriptUnit } from "../asr/transcript-result";
 import { attachTranscriptResult, getCurrentTranscript, splitTranscriptTextUnits } from "../transcript/session-transcript";
-import { readSessionKnowledge } from "../briefing/session-knowledge";
 import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
-import { bindTranscriptSegmentToAudio } from "../transcript/audio-binding";
-import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
 import { labelText } from "../shared/note-labels";
 import type { ContinuationService } from "../session/continuation-service";
 import type { SessionStore } from "../session/session-store";
 import type { SessionFinalizeFlowHost } from "./session-finalize-flow";
 import { finalizeSessionFlow } from "./session-finalize-flow";
-/** SessionFinalizeService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
+import { bindTranscriptSegmentToAudio } from "../transcript/audio-binding";
+import { syncTranscriptAudioSource } from "./session-finalize-sources";
+import type { SessionTranscriptSourcePort } from "./session-finalize-sources";
+import { finishShortRecordingFlow } from "./session-finalize-run-flow";
+import { runSessionFinalization } from "./session-finalize-run-flow";
+import type { SessionFinalizeRunPort, SessionShortRecordingPort } from "./session-finalize-run-flow";
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
@@ -520,37 +516,12 @@ export class SessionFinalizeService {
     }
   }
 
-  async syncTranscriptAudioSource(session: RecordingSession): Promise<void> {
-    const masterPath = String(session && session.masterAudioPath || "");
-    if (!masterPath) return;
-    const segments = Array.isArray(session.segments) ? session.segments : [];
-    const updated = segments.map((segment) => bindTranscriptSegmentToAudio(segment, masterPath, String(session.masterAudioName || masterPath.split("/").pop() || "")));
-    const changed = updated.filter((segment, index) => segment !== segments[index] && segment.transcript);
-    if (!changed.length) return;
-    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) throw new Error("Cannot bind transcript sources without the session note");
-    const markdown = await this.host.app.vault.read(file);
-    const blocks = readTranscriptBlocks(markdown);
-    const replacements = changed.map((segment) => {
-      const id = segment.transcript.id;
-      const matches = blocks.filter((block) => block.segment.transcript?.id === id);
-      if (matches.length !== 1) throw new Error(`Expected one transcript block for source ${id}; found ${matches.length}`);
-      if (matches[0].drifted) throw new Error(`Transcript block ${id} was edited before final audio binding`);
-      return { block: matches[0], segment };
-    }).sort((left, right) => right.block.start - left.block.start);
-    let next = markdown;
-    for (const replacement of replacements) {
-      next = replaceTranscriptBlock(next, replacement.block, replacement.segment, replacement.block.visibleBlock);
-    }
-    if (next !== markdown) await this.host.app.vault.modify(file, next);
-    session.segments = updated;
-  }
 
-  getSegmentsForFinalSession(session) {
-    const base = Array.isArray(session && session.continuationBaseSegments) ? session.continuationBaseSegments : [];
-    const fresh = Array.isArray(session && session.segments) ? session.segments : [];
-    if (!base.length) return fresh;
-    return normalizeSegmentsForMergedNote([...base, ...fresh], 0, 0, null);
+  private transcriptSourcePort(): SessionTranscriptSourcePort {
+    return {
+      getVault: () => this.host.app.vault,
+      bindSegmentToAudio: (segment, path, name) => bindTranscriptSegmentToAudio(segment, path, name),
+    };
   }
 
   finalizeSession(session: RecordingSession): Promise<void> {
@@ -774,420 +745,61 @@ export class SessionFinalizeService {
    * `discard` 级别在 `handleSegment` 里就没保存音频；`keep-audio` 级别的音频已经写进
    * 录音目录，用户之后可以用「导入已有音频文件」手动转写。
    */
-  async finishShortRecording(session) {
-    const tier = session.shortRecordingTier;
-    const limitSeconds = Math.round(SHORT_RECORDING_SKIP_NOTE_MS / 1000);
-    const durationMs = Math.max(0, Number(session.shortRecordingDurationMs) || 0);
-    const discardedContinuation = tier === "discard"
-      && !!session.continuation
-      && !!session.continuationTaskId
-      && this.host.queue;
-    if (discardedContinuation) {
-      await this.host.queue.update(session.continuationTaskId, {
-        status: "live",
-        mdPath: session.mdPath,
-        temporarySourcePath: session.mdPath,
-        continuation: session.continuation,
-        segments: [],
-        continuationDisposition: "discard",
-        lastError: "",
-      });
-    }
-    await this.host.asrPipeline.discardShortRecordingNote(session);
-    if (discardedContinuation) await this.host.queue.remove(session.continuationTaskId);
-    const audioName = session.masterAudioName || "";
-    if (tier === "discard") {
-      new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
-    } else if (audioName) {
-      new obsidian.Notice(t("Recording under {0} seconds: audio kept in the recording folder, no minutes created and no transcript kept. Import it manually if needed. ({1})").replace("{0}", String(limitSeconds)).replace("{1}", audioName), 8000);
-    } else {
-      // 母带录音器没产出音频（设备被收回等）→ 没有可留的文件，如实说明。
-      new obsidian.Notice(t("Recording under {0} seconds and its audio could not be saved; skipped.").replace("{0}", String(limitSeconds)), 8000);
-    }
-    try {
-      await this.host.diagnostics.logDiagnostic("info", "recording.short_recording_skipped", t("Short recording was not transcribed automatically"), {
-        tier,
-        durationMs,
-        audioName,
-        mdPath: session.mdPath,
-      });
-    } catch { /* diagnostics must not change finalization behavior */ }
-    this.host.sessionStore.end(session);
-    this.host.requestOutlineRefresh();
+  async finishShortRecording(session: RecordingSession): Promise<void> {
+    return finishShortRecordingFlow(this.shortRecordingPort(), session);
   }
 
-  async _finalizeSessionImpl(session) {
+  private shortRecordingPort(): SessionShortRecordingPort {
+    return {
+      hasQueue: () => !!this.host.queue,
+      updateQueueTask: (id, patch) => this.host.queue.update(id, patch),
+      removeQueueTask: (id) => this.host.queue.remove(id),
+      discardShortRecordingNote: (session) => this.host.asrPipeline.discardShortRecordingNote(session),
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
+      endSession: (session) => this.host.sessionStore.end(session),
+      requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
+    };
+  }
 
-    // 静音统计快照：此刻录音刚结束、recorder 计数尚未被下一场 start() 重置，同步读取避免异步窗口被污染。
-    const _silVoiced = this.host.recorder ? (this.host.recorder._voicedTicks || 0) : 0;
-    const _silSilent = this.host.recorder ? (this.host.recorder._silentTicks || 0) : 0;
+  async _finalizeSessionImpl(session: RecordingSession): Promise<void> {
+    return runSessionFinalization(this.finalizeRunPort(), session);
+  }
 
-    if (session.shortRecordingTier) {
-      await this.finishShortRecording(session);
-      return;
-    }
-
-    if (!session.segments || session.segments.length === 0) {
-      await this.host.noteWriter.removeEmptySessionBlock(session);
-      new obsidian.Notice(t("⏭ This recording was too short or had no valid audio; skipped"));
-      this.host.sessionStore.end(session);
-      this.host.requestOutlineRefresh();
-      return;
-    }
-
-    // 兜底：整场电平几乎为零（≥5s≈30 帧有效采样中，有声占比 < 2%）→ 明确提示用户去查设备。
-    // 插件不替用户猜设备，只在"采到的几乎全是静音"这种失败点明确提示。逐场只弹一次。
-    const _silTotal = _silVoiced + _silSilent;
-    // 仅对真实录音会话判静音：导入/文本导入不经 recorder，会读到上一场录音遗留的计数残值 → 误报。
-    if (!session.source && _silTotal >= 30 && (_silVoiced / _silTotal) < 0.02 && !session._silenceNotified) {
-      session._silenceNotified = true;
-      new obsidian.Notice(t("Almost no sound was detected in the whole session; please check the selected microphone / computer audio device (Settings → Advanced → Audio device check)."), 9000);
-    }
-
-    const textImportSession = isTextImportSession(session);
-    await this.syncTranscriptAudioSource(session);
-    const segmentsForFinal = this.getSegmentsForFinalSession(session);
-    let writeSession = segmentsForFinal === session.segments
-      ? session
-      : Object.assign({}, session, { segments: segmentsForFinal, multiSourceAudio: true });
-    const usableTranscriptSegments = segmentsForFinal.filter(s => s && String(s.text || "").trim());
-    if (!usableTranscriptSegments.length) {
-      const noTranscriptError = new Error(t("No usable transcript text for organizing; the recording and failed slices were kept"));
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: "transcript-empty",
-        label: t("No valid transcript obtained"),
-        percent: null,
-        detail: t("The recording was kept; check the transcription service and retry from the pending queue"),
-      });
-      try {
-        await this.host.diagnostics.logDiagnostic("error", "session.no_transcript", t("No valid transcript for the whole session; AI organizing was skipped to avoid wasted charges"), {
-          mode: session.mode,
-          segmentCount: segmentsForFinal.length,
-          failedSegments: segmentsForFinal.filter(s => s && s.error).length,
-          mdPath: session.mdPath,
-        });
-      } catch { /* intentionally empty */ }
-      await this.host.noteWriter.appendPolishBlock(writeSession, "", noTranscriptError, true);
-      new obsidian.Notice(t("No valid transcript obtained; the recording and failed slices have been kept. Please check the transcription service and retry from the pending queue."), 10000);
-      if (this.host.settings.autoOpenNoteAfterFinish) {
-        const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
-        if (file instanceof obsidian.TFile) {
-          try { await this.host.app.workspace.getLeaf(false).openFile(file); } catch { /* intentionally empty */ }
-        }
-      }
-      this.host.requestDeferredAsrRetry(session);
-      this.host.sessionStore.end(session);
-      this.host.requestOutlineRefresh();
-      return;
-    }
-    let speakerPreparation: {
-      segments: Segment[];
-      frontmatter: Record<string, unknown> | null;
-      utteranceProjections?: Array<{ utteranceId: string; normalizedText: string; speakerName: string | null }>;
-    } = { segments: segmentsForFinal, frontmatter: null, utteranceProjections: [] };
-    try {
-      speakerPreparation = await this.confirmSpeakerNamesBeforeFinal(session, segmentsForFinal);
-    } catch (error) {
-      console.warn("[QnALog] speaker confirmation failed; continuing with generic labels", error);
-      try {
-        await this.host.diagnostics.logDiagnostic("warn", "speaker.confirmation_failed", t("Speaker name confirmation did not finish; numbers were kept and organizing continued"), {
-          mdPath: session.mdPath,
-          error: diagnosticError(error),
-        });
-      } catch { /* intentionally empty */ }
-    }
-    const segmentsForLlm = speakerPreparation.segments || segmentsForFinal;
-    const speakerFrontmatter = speakerPreparation.frontmatter || null;
-    if (segmentsForLlm !== segmentsForFinal) {
-      writeSession = Object.assign({}, writeSession, { segments: segmentsForLlm });
-    }
-    this.host.asrPipeline.setSessionWorkProgress(session, {
-      stage: "finalize-start",
-      label: textImportSession ? t("Text read complete") : t("Preparing AI organizing"),
-      percent: 12,
-      detail: textImportSession ? t("ASR skipped; preparing structured organizing") : t("Transcription finished; organizing the context"),
-    });
-    this.host.requestOutlineRefresh();
-    new obsidian.Notice(textImportSession ? t("Text read; AI structuring in progress…") : t("All segments processed; AI merging and polishing in progress…"));
-
-    let polished = ""; let mergeError = null; let nonRetryableMergeError = false; let commitError = false;
-    let taskMeter = null;
-    let finalSessionMeta = null;
-    try {
-      const llmConfigIssue = getLlmConfigIssue(this.host.settings);
-      if (llmConfigIssue) {
-        const configurationError = new Error(llmConfigIssue);
-        (configurationError as Error & { nonRetryable?: boolean }).nonRetryable = true;
-        throw configurationError;
-      }
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: "workbench",
-        label: t("Organize context"),
-        percent: 22,
-        detail: t("Merging meeting entries, attachments, and context"),
-      });
-      await this.host.meetingWorkbench.processPendingMeetingWorkbenchInteractions(session, { force: true });
-      if (!textImportSession) {
-        this.host.asrPipeline.setSessionWorkProgress(session, {
-          stage: "outline",
-          label: t("Generate outline"),
-          percent: 36,
-          detail: t("Completing the live outline for reference by the final minutes"),
-        });
-        await this.host.outline.ensureRealtimeOutlineForFinalNote(session);
-      }
-      const lastSeg = segmentsForFinal[segmentsForFinal.length - 1];
-      const textImport = textImportSession;
-      const sessionMeta: SessionMetaForMerge = {
-        startedAt: session.startedAt,
-        duration: textImport ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
-        source: session.source || "",
-        sourceMeta: session.sourceMeta || null,
-        meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-        _utteranceProjections: speakerPreparation.utteranceProjections || [],
-      };
-      const noteFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
-      if (noteFile instanceof obsidian.TFile) {
-        sessionMeta._previousKnowledge = readSessionKnowledge(await this.host.app.vault.read(noteFile));
-      }
-      finalSessionMeta = sessionMeta;
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: "llm-merge",
-        label: t("AI organizing"),
-        percent: 62,
-        detail: textImport ? t("Sending the imported text to the AI model for structured organizing") : t("Merging the segmented transcriptions into the final minutes"),
-      });
-      taskMeter = this.host.taskMeters.beginTaskMeter();
-      sessionMeta._taskMeter = taskMeter;
-      session._finalizeTaskMeter = taskMeter;
-      polished = session.continuation
-        ? ""
-        : await mergeAndPolish(this.host, segmentsForLlm.map((segment) => ({ ...segment })), session.mode, sessionMeta, speakerFrontmatter);
-      session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: "write-note",
-        label: t("Write to Minutes"),
-        percent: 88,
-        detail: t("AI output received; writing to the Obsidian note"),
-      });
-    } catch (e) { mergeError = e; console.error(e); }
-    session.finalizing = false;
-
-    if (mergeError) {
-      if (taskMeter) {
-        this.host.taskMeters.endTaskMeter(taskMeter);
-        taskMeter = null;
-        session._finalizeTaskMeter = null;
-      }
-      nonRetryableMergeError = isLlmNonRetryableError(mergeError);
-      await this.host.diagnostics.logDiagnostic("error", "llm.merge_failed", t("LLM merging and organizing failed"), {
-        mode: session.mode,
-        segmentCount: segmentsForFinal.length,
-        duration: isTextImportSession(session) ? "" : (segmentsForFinal.length ? formatElapsed(segmentsForFinal[segmentsForFinal.length - 1].endOffsetMs || 0) : ""),
-        llmEndpoint: this.host.settings.llmEndpoint,
-        llmModel: this.host.settings.llmModel,
-        nonRetryable: nonRetryableMergeError,
-        error: diagnosticError(mergeError),
-      });
-      const lastSeg = segmentsForFinal[segmentsForFinal.length - 1];
-      const retrySessionMeta = Object.assign({}, finalSessionMeta || {
-        startedAt: session.startedAt,
-        duration: isTextImportSession(session) ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
-        source: session.source || "",
-        sourceMeta: session.sourceMeta || null,
-        meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
-      });
-      delete retrySessionMeta._previousKnowledge;
-      await this.host.queue.add({
-        type: "merge",
-        sessionId: session.id,
-        mdPath: session.mdPath,
-        mode: session.mode,
-        status: nonRetryableMergeError ? "blocked" : "pending",
-        segments: segmentsForLlm.map((segment) => ({ ...segment })),
-        source: session.source || "",
-        sourceMeta: session.sourceMeta || null,
-        externalAudioSource: session.externalAudioSource || null,
-        textImportSources: session.textImportSources || [],
-        speakerFrontmatter,
-        sessionMeta: retrySessionMeta,
-        lastError: mergeError.message || String(mergeError),
-      });
-      if (!nonRetryableMergeError) {
-        this.host.requestTaskQueueRetry(1500, mergeError instanceof BriefingPipelineIncompleteError
-          ? "briefing-partial"
-          : "briefing-finalization-failure");
-      }
-      session.finalizationError = getErrorMessage(mergeError);
-      const partialBriefing = mergeError instanceof BriefingPipelineIncompleteError;
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: nonRetryableMergeError ? "merge-failed" : "merge-retrying",
-        label: nonRetryableMergeError ? t("AI organizing failed") : partialBriefing ? t("Minutes partially completed") : t("AI organizing waiting to retry"),
-        percent: null,
-        detail: nonRetryableMergeError
-          ? t("The original transcript has been kept; fix the model configuration and re-organize.")
-          : partialBriefing
-            ? t("{0}; the completed portion and the original transcript have both been saved").replace("{0}", mergeError.message)
-            : t("The original transcript has been kept; the background queue will retry with backoff"),
-      });
-    }
-
-    if (!mergeError) {
-      // 续录覆盖前留档：把当前笔记（旧场次的整理稿）存进版本缓存。
-      // 版本条目不切换当前显示（activate:false），需要回看旧稿时用版本切换恢复。
-      // 失败不阻断续录收尾——留档是保险，不是闸门，诊断里记一条即可。
-      if (session.continuationSourcePath && !session.continuation) {
-        try {
-          const targetFile = this.host.app.vault.getAbstractFileByPath(session.mdPath);
-          if (targetFile instanceof obsidian.TFile) {
-            const priorContent = await this.host.app.vault.read(targetFile);
-            await this.host.versions.saveVersion(targetFile, priorContent, session.continuationBaseSegments || segmentsForFinal, {
-              kind: "pre-append",
-              label: t("Before append") + " " + window.moment().format("YYYY-MM-DD HH:mm"),
-              mode: session.mode,
-              idLabel: "pre-append-" + window.moment().format("YYYYMMDD-HHmmss"),
-              body: priorContent,
-              activate: false,
-            });
-          }
-        } catch (archiveError) {
-          console.warn("[QnALog] pre-append version archive failed", archiveError);
-          try {
-            await this.host.diagnostics.logDiagnostic("warn", "session.pre_append_archive_failed", t("Archiving the previous draft before the append failed; the append itself is unaffected"), {
-              mdPath: session.mdPath,
-              error: diagnosticError(archiveError),
-            });
-          } catch { /* intentionally empty */ }
-        }
-      }
-      try {
-        if (shouldRewriteConsolidatedNote(this.host.settings, writeSession)) {
-          await this.host.noteWriter.rewriteConsolidated(writeSession, polished);
-        } else {
-          await this.host.noteWriter.appendPolishBlock(writeSession, polished, null, false);
-        }
-      } catch (writeError) {
-        commitError = true;
-        mergeError = writeError;
-        session.finalizationError = getErrorMessage(writeError);
-        await this.host.diagnostics.logDiagnostic("error", "briefing.commit_failed", t("The minutes body was generated, but writing the Markdown failed"), {
-          mode: session.mode,
-          mdPath: session.mdPath,
-          checkpointId: finalSessionMeta && finalSessionMeta._briefingCheckpointId || "",
-          error: diagnosticError(writeError),
-        });
-        await this.host.queue.add({
-          type: "merge",
-          sessionId: session.id,
-          mdPath: session.mdPath,
-          mode: session.mode,
-          segments: segmentsForLlm.map((segment) => ({ ...segment })),
-          source: session.source || "",
-          sourceMeta: session.sourceMeta || null,
-          externalAudioSource: session.externalAudioSource || null,
-          textImportSources: session.textImportSources || [],
-          speakerFrontmatter,
-          sessionMeta: finalSessionMeta,
-          lastError: t("Failed to write the minutes: {0}").replace("{0}", getErrorMessage(writeError)),
-        });
-        this.host.requestTaskQueueRetry(1500, "briefing-write-failure");
-        this.host.asrPipeline.setSessionWorkProgress(session, {
-          stage: "write-retrying",
-          label: t("Minutes write waiting to retry"),
-          percent: null,
-          detail: t("The AI result was saved; the model will not be called again and only the write will be retried later"),
-        });
-      }
-    } else {
-      await this.host.noteWriter.appendPolishBlock(writeSession, polished, mergeError, nonRetryableMergeError);
-    }
-    if (!mergeError && finalSessionMeta && finalSessionMeta._briefingCheckpointId) {
-      await clearCommittedBriefingCheckpoint(this.host, finalSessionMeta);
-      session._briefingCheckpointId = "";
-    }
-
-    if (!mergeError) {
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: "done",
-        label: t("Processing complete"),
-        percent: 100,
-        detail: t("Minutes written; finishing up"),
-      });
-    }
-
-    if (!mergeError && polished) {
-      // 续录会话跳过自动改名：用户心智是「同一篇笔记持续完善」，
-      // 文件名随新内容跳变会破坏指向这篇笔记的链接与习惯。
-      if (!session.continuationSourcePath) {
-        const beforeRenamePath = session.mdPath;
-        const renamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, polished, session.mode);
-        if (renamed instanceof obsidian.TFile) {
-          session.mdPath = renamed.path;
-          writeSession.mdPath = renamed.path;
-        }
-        const renamedByPolished = renamed instanceof obsidian.TFile
-          && obsidian.normalizePath(renamed.path) !== obsidian.normalizePath(beforeRenamePath);
-        if ((session.source === "import" || session.source === "text-import") && !renamedByPolished) {
-          const rawTitleSource = buildTitleSourceFromSegments(segmentsForFinal);
-          if (rawTitleSource) {
-            const fallbackRenamed = await this.host.noteWriter.renameMarkdownWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
-            if (fallbackRenamed instanceof obsidian.TFile) {
-              session.mdPath = fallbackRenamed.path;
-              writeSession.mdPath = fallbackRenamed.path;
-            }
-          }
-        }
-      }
-    }
-
-    if (!mergeError && polished) {
-      await this.host.noteIndex.refreshNoteIndexSafely(writeSession.mdPath, {
-        meetingDate: session.startedAt,
-        reason: "finalize",
-      });
-    }
-
-    if (!mergeError) {
-      if (!session.continuation) await this.host.asrPipeline.cleanupSuccessfulSegmentAudio(session);
-      const completedTaskMeter = taskMeter ? this.host.taskMeters.endTaskMeter(taskMeter) : null;
-      taskMeter = null;
-      session._finalizeTaskMeter = null;
-      if (!session.continuation) {
-        try {
-          const doneLabel = isTextImportSession(session) ? t("Text organization completed")
-            : session.source === "import" ? t("Imported audio organization completed") : t("Recording minutes completed");
-          this.host.taskMeters.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
-        } catch { /* intentionally empty */ }
-        if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize(session.mdPath);
-      }
-    }
-
-    new obsidian.Notice(mergeError
-      ? (nonRetryableMergeError
-        ? t("AI organizing failed: {0}").replace("{0}", formatLlmFailureIssue(mergeError.message || mergeError))
-        : commitError
-          ? t("The minutes body has been generated but writing failed; queued for retry.")
-          : mergeError instanceof BriefingPipelineIncompleteError
-          ? t("{0}, queued for precise retry").replace("{0}", mergeError.message)
-          : t("AI organizing did not finish; queued for retry."))
-      : (session.continuation
-        ? t("Continuation recording saved separately; it will be merged into \"{0}\" after its current processing finishes.")
-          .replace("{0}", session.continuation.targetPath.split("/").pop()?.replace(/\.md$/i, "") || session.continuation.targetPath)
-        : session.continuationSourcePath
-          ? t("Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).")
-            .replace("{0}", String(session.segments.length))
-            .replace("{1}", String(segmentsForFinal.length))
-          : t("QnALog processing completed")));
-
-    if (this.host.settings.autoOpenNoteAfterFinish) {
-      const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
-      if (file instanceof obsidian.TFile) {
-        try { await this.host.app.workspace.getLeaf(false).openFile(file); } catch { /* intentionally empty */ }
-      }
-    }
-    this.host.requestDeferredAsrRetry(session);
-    this.host.sessionStore.end(session);
-    this.host.requestOutlineRefresh();
+  private finalizeRunPort(): SessionFinalizeRunPort {
+    return {
+      ...this.shortRecordingPort(),
+      getSettings: () => this.host.settings,
+      getLlmConfigIssue: () => getLlmConfigIssue(this.host.settings),
+      getVault: () => this.host.app.vault,
+      openFile: (file) => this.host.app.workspace.getLeaf(false).openFile(file),
+      readSilenceTicks: () => ({
+        voiced: this.host.recorder ? (this.host.recorder._voicedTicks || 0) : 0,
+        silent: this.host.recorder ? (this.host.recorder._silentTicks || 0) : 0,
+      }),
+      setProgress: (target, patch) => this.host.asrPipeline.setSessionWorkProgress(target, patch),
+      cleanupSuccessfulSegmentAudio: (target) => this.host.asrPipeline.cleanupSuccessfulSegmentAudio(target),
+      removeEmptySessionBlock: (target) => this.host.noteWriter.removeEmptySessionBlock(target),
+      appendPolishBlock: (target, polished, error, nonRetryable) => this.host.noteWriter.appendPolishBlock(target, polished, error, nonRetryable),
+      rewriteConsolidated: (target, polished) => this.host.noteWriter.rewriteConsolidated(target, polished),
+      renameWithGeneratedTitle: (path, polished, mode) => this.host.noteWriter.renameMarkdownWithGeneratedTitle(path, polished, mode),
+      refreshNoteIndex: (path, options) => this.host.noteIndex.refreshNoteIndexSafely(path, options),
+      autoExtractSediment: (path) => this.host.noteIndex.autoExtractSedimentAfterFinalize(path),
+      syncTranscriptAudioSource: (target) => syncTranscriptAudioSource(this.transcriptSourcePort(), target),
+      confirmSpeakerNames: (target, segments) => this.confirmSpeakerNamesBeforeFinal(target, segments),
+      processMeetingWorkbench: (target, options) => this.host.meetingWorkbench.processPendingMeetingWorkbenchInteractions(target, options),
+      ensureRealtimeOutline: (target) => this.host.outline.ensureRealtimeOutlineForFinalNote(target),
+      mergeAndPolish: (segments, mode, meta, frontmatter) => mergeAndPolish(this.host, segments, mode, meta, frontmatter),
+      clearCommittedBriefingCheckpoint: (meta) => clearCommittedBriefingCheckpoint(this.host, meta),
+      addQueueTask: (task) => this.host.queue.add(task),
+      requestDeferredAsrRetry: (target) => this.host.requestDeferredAsrRetry(target),
+      requestTaskQueueRetry: (delay, reason) => this.host.requestTaskQueueRetry(delay, reason),
+      beginTaskMeter: () => this.host.taskMeters.beginTaskMeter(),
+      endTaskMeter: (meter) => this.host.taskMeters.endTaskMeter(meter),
+      logCompletedWork: (title, detail, meter) => this.host.taskMeters.logCompletedWork(title, detail, meter),
+      saveVersion: (file, content, segments, input) => this.host.versions.saveVersion(file, content, segments, input),
+      formatNow: (format) => window.moment().format(format),
+      buildTitleSource: (segments) => buildTitleSourceFromSegments(segments),
+    };
   }
 }
 

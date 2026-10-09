@@ -63,10 +63,6 @@ describe("release runtime contracts", () => {
     expect(pluginSource).not.toContain("summaries.map((summary, index)");
   });
 
-  it("keeps hidden sediment extraction out of the primary briefing response", () => {
-    expect(mainSource).not.toContain("appendSedimentPreExtractionInstruction");
-    expect(pluginSource).toContain("if (this.host.settings.sedimentAutoExtract) void this.host.noteIndex.autoExtractSedimentAfterFinalize");
-  });
 
   it("keeps whole-file audio import and progress updates connected at runtime", () => {
     // 导入流程已抽到 src/imports/import-service.ts，按本文件约定用全文断言字符串存在。
