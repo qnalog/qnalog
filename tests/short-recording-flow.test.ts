@@ -42,6 +42,10 @@ import { LiveAsrPipelineService } from "../src/asr/live-asr-pipeline-service";
 import { NoteWriter } from "../src/notes/note-writer";
 import type { NoteWriterHost } from "../src/notes/note-writer";
 import type { ContinuationPreparation } from "../src/session/continuation-service";
+import * as recordingIssues from "../src/notes/recording-issues";
+import { normalizeRealtimeOutlineState } from "../src/notes/realtime-outline";
+ 
+import { PcmStreamEncoder } from "../src/asr/clients";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
@@ -183,6 +187,11 @@ function makeHost() {
     finalizeRecordedSession: (session) => host.finalizeRecordedSession(session),
     requestOutlineRefresh: () => host.requestOutlineRefresh(),
     requestOpenOutlineView: () => host.requestOpenOutlineView(),
+    resolveRuntimeAudioInputMode: recordingIssues.resolveRuntimeAudioInputMode,
+    normalizeRealtimeOutlineState,
+    classifyRecordingIssue: recordingIssues.classifyRecordingIssue,
+    createStreamingTranscriptionClient: recordingIssues.createStreamingTranscriptionClient,
+    createPcmEncoder: (stream, options) => new PcmStreamEncoder(stream, options),
   };
   let recordingService: RecordingService;
   recordingService = new RecordingService(recordingHost);
@@ -876,6 +885,211 @@ describe("短录音整条路径", () => {
     await recordingService.stopRecording();
     expect(recordingService.getRecordingIssue()).not.toBeNull();
   });
+  it("does not start a second recording while the recorder is recording or paused", async () => {
+    const { host, files, recordingService } = makeHost();
+    const path = "QnALog/转写纪要/existing-during-recording.md";
+    files.set(path, { content: "KEEP EXISTING NOTE" });
+    host.recorder!.state = "recording";
+    host.asrPipeline.setRecordingIssue("service", { message: "existing issue" });
+    const start = vi.spyOn(host.recorder!, "start");
+    for (const state of ["recording", "paused"]) {
+      host.recorder!.state = state;
+      await recordingService.startRecording();
+      expect(start).not.toHaveBeenCalled();
+      expect(host.sessionStore.get()).toBeNull();
+      expect(files.get(path)?.content).toBe("KEEP EXISTING NOTE");
+      expect(recordingService.getRecordingIssue()).toMatchObject({ message: "existing issue" });
+      expect(recordingService.starting).toBe(false);
+    }
+    expect(notices.join("\n")).toContain("already in progress");
+  });
+
+  it("reads recording settings and recorder at their original post-await access points", async () => {
+    const { host, files, recordingService } = makeHost();
+    const { promise: folderGate, resolve: releaseFolder } = Promise.withResolvers<void>();
+    const ensured: string[] = [];
+    vi.spyOn(recordingService.host, "ensureFolder").mockImplementation(async (path) => {
+      ensured.push(path);
+      if (ensured.length === 1) await folderGate;
+    });
+    const oldRecorder = host.recorder!;
+    const replacementRecorder = {
+      state: "idle",
+      _voicedTicks: 0,
+      _silentTicks: 0,
+      getInfo: () => ({ elapsed: 0, issue: null }),
+      start: vi.fn(async () => { replacementRecorder.state = "recording"; }),
+      stop: async () => undefined,
+      releaseStream: () => undefined,
+    };
+    const oldStart = vi.spyOn(oldRecorder, "start");
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260918-120700" : format === "fixed-new" ? "fixed-new" : "2026-09-18 12:07",
+        toDate: () => new Date("2026-09-18T12:07:00.000Z"),
+      }),
+    });
+    try {
+      const starting = recordingService.startRecording();
+      await Promise.resolve();
+      host.settings = {
+        ...host.settings,
+        audioFolder: "QnALog/New Audio",
+        mdFolder: "QnALog/New Notes",
+        noteFileNameFormatNew: "fixed-new",
+        captureMode: "virtualCable",
+      };
+      host.recorder = replacementRecorder as never;
+      releaseFolder();
+      await starting;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(ensured).toEqual(["QnALog/录音", "QnALog/New Notes"]);
+    expect(host.sessionStore.get()).toMatchObject({
+      mdPath: "QnALog/New Notes/fixed-new.md",
+      mode: "synthesis",
+      captureMode: "virtualCable",
+    });
+    expect(files.has("QnALog/New Notes/fixed-new.md")).toBe(true);
+    expect(replacementRecorder.start).toHaveBeenCalledOnce();
+    expect(replacementRecorder.state).toBe("recording");
+    expect(oldStart).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original continuation note and releases starting after preparation rejects", async () => {
+    notices.length = 0;
+    const { host, files, recordingService } = makeHost();
+    const target = new (obsidian.TFile as never)("QnALog/转写纪要/prepare-failure.md");
+    files.set(target.path, { content: "ORIGINAL NOTE BYTES" });
+    vi.spyOn(host.continuations, "prepare").mockRejectedValueOnce(new Error("fixed preparation failure"));
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-18", toDate: () => new Date() }) });
+    try {
+      await recordingService.startRecording({ appendToFile: target });
+      expect(files.get(target.path)?.content).toBe("ORIGINAL NOTE BYTES");
+      expect(host.sessionStore.get()).toBeNull();
+      expect(recordingService.starting).toBe(false);
+      expect(notices.join("\n")).toContain("fixed preparation failure");
+      vi.spyOn(host.recorder!, "start").mockImplementation(async () => { host.recorder!.state = "recording"; });
+      await recordingService.startRecording();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(host.sessionStore.get()).not.toBeNull();
+    expect(recordingService.starting).toBe(false);
+  });
+
+  it("clears the dynamically current pipeline issue only after stop resolves", async () => {
+    const first = makeHost();
+    const second = makeHost();
+    first.host.recorder!.state = "recording";
+    first.host.asrPipeline.setRecordingIssue("service", { message: "first pipeline issue" });
+    second.host.asrPipeline.setRecordingIssue("service", { message: "replacement pipeline issue" });
+    const { promise: stopping, resolve: releaseStop } = Promise.withResolvers<void>();
+    vi.spyOn(first.host.recorder!, "stop").mockReturnValue(stopping);
+    const startStop = first.recordingService.stopRecording();
+    first.recordingService.host = second.recordingService.host;
+    releaseStop();
+    await startStop;
+    expect(first.host.asrPipeline.getRecordingIssue()).toMatchObject({ message: "first pipeline issue" });
+    expect(second.host.asrPipeline.getRecordingIssue()).toBeNull();
+  });
+
+  it("retains a streaming session and classifies a rejected connection as a network issue", async () => {
+    notices.length = 0;
+    const connectError = new Error("Failed to fetch: fixed streaming connection failure");
+    const createClient = vi.spyOn(recordingIssues, "createStreamingTranscriptionClient").mockReturnValue({
+      connect: async () => { throw connectError; },
+      sendAudioFrame: () => undefined,
+      finish: async () => undefined,
+      getFullText: () => "",
+    } as never);
+    const { host, recordingService } = makeHost();
+    host.profiles.getActiveTranscribeProfile = () => ({
+      transcribeMode: "streaming",
+      sampleRate: 16000,
+      title: "Streaming test",
+    });
+    let streamOptions: { onStreamReady?: (stream: MediaStream) => Promise<void> } | undefined;
+    vi.spyOn(host.recorder!, "start").mockImplementation(async (options: never) => {
+      streamOptions = options;
+      host.recorder!.state = "recording";
+      await streamOptions?.onStreamReady?.({} as MediaStream);
+    });
+    const trackSession = vi.spyOn(host.continuations, "trackSession");
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-18", toDate: () => new Date() }) });
+    try {
+      await recordingService.startRecording();
+    } finally {
+      createClient.mockRestore();
+      vi.unstubAllGlobals();
+    }
+    const session = host.sessionStore.get();
+    expect(session).not.toBeNull();
+    expect(session?.streamingClient).toBeNull();
+    expect(session?.pcmEncoder).toBeUndefined();
+    expect(trackSession).toHaveBeenCalledWith(session, expect.anything());
+    expect(recordingService.getRecordingIssue()).toMatchObject({
+      kind: "network",
+      message: expect.stringContaining("fixed streaming connection failure"),
+    });
+    expect(recordingService.starting).toBe(false);
+  });
+
+  it("preserves caught-error interpolation and conversion failures", async () => {
+    const runPreparationFailure = async (reason: unknown) => {
+      notices.length = 0;
+      const { host, files, recordingService } = makeHost();
+      const target = new (obsidian.TFile as never)("QnALog/转写纪要/error-interpolation.md");
+      files.set(target.path, { content: "ORIGINAL" });
+      vi.spyOn(host.continuations, "prepare").mockRejectedValueOnce(reason);
+      vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-18", toDate: () => new Date() }) });
+      try {
+        await recordingService.startRecording({ appendToFile: target });
+        return { files, recordingService, notice: notices.join("\n") };
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    };
+    const raw = await runPreparationFailure("raw preparation failure");
+    expect(raw.notice).toContain("raw preparation failure");
+    expect(raw.files.get("QnALog/转写纪要/error-interpolation.md")?.content).toBe("ORIGINAL");
+    expect(raw.recordingService.starting).toBe(false);
+    const custom = await runPreparationFailure({ message: "custom message", toString: () => "wrong fallback" });
+    expect(custom.notice).toContain("custom message");
+    expect(custom.files.get("QnALog/转写纪要/error-interpolation.md")?.content).toBe("ORIGINAL");
+    expect(custom.recordingService.starting).toBe(false);
+    const primitive = await runPreparationFailure({ message: "", [Symbol.toPrimitive]: () => "custom primitive" });
+    expect(primitive.notice).toContain("custom primitive");
+    expect(primitive.files.get("QnALog/转写纪要/error-interpolation.md")?.content).toBe("ORIGINAL");
+    expect(primitive.recordingService.starting).toBe(false);
+    const symbolFailure = { message: "", [Symbol.toPrimitive]: () => Symbol("invalid interpolation") };
+    notices.length = 0;
+    const symbolFixture = makeHost();
+    const symbolTarget = new (obsidian.TFile as never)("QnALog/转写纪要/symbol-error.md");
+    vi.spyOn(symbolFixture.host.continuations, "prepare").mockRejectedValueOnce(symbolFailure);
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-18", toDate: () => new Date() }) });
+    try {
+      await expect(symbolFixture.recordingService.startRecording({ appendToFile: symbolTarget })).rejects.toThrow(TypeError);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(symbolFixture.recordingService.starting).toBe(false);
+    expect(notices).toHaveLength(0);
+    const getterFailure = new Error("message getter failure");
+    const badGetter = Object.defineProperty({}, "message", { get() { throw getterFailure; } });
+    const getterFixture = makeHost();
+    const getterTarget = new (obsidian.TFile as never)("QnALog/转写纪要/getter-error.md");
+    vi.spyOn(getterFixture.host.continuations, "prepare").mockRejectedValueOnce(badGetter);
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-09-18", toDate: () => new Date() }) });
+    try {
+      await expect(getterFixture.recordingService.startRecording({ appendToFile: getterTarget })).rejects.toBe(getterFailure);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(getterFixture.recordingService.starting).toBe(false);
+  });
+
   it("a failed recording start removes its placeholder and ends only its own session", async () => {
     notices.length = 0;
     const { host, files, recordingService } = makeHost();

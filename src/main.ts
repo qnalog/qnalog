@@ -47,12 +47,13 @@ import {EXTERNAL_INBOX_SCAN_INTERVAL_MS } from "./shared/limits";
 import {transformApiKeyFieldsDeep } from "./notes/recording-issues";
 
 // 以下 39 个声明已抽到 ./notes/realtime-outline（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {VIEW_TYPE_OUTLINE } from "./notes/realtime-outline";
+import { VIEW_TYPE_OUTLINE, normalizeRealtimeOutlineState } from "./notes/realtime-outline";
 
 import { isChatInputAudioProvider, makeRecordingIssue, resolveTranscribeProvider } from "./asr/transcribe";
-import { resolveRuntimeAudioInputMode } from "./notes/recording-issues";
+import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "./notes/recording-issues";
 // 以下 1 个声明已抽到 ./audio/recorder-service（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { RecorderService } from "./audio/recorder-service";
+import { PcmStreamEncoder } from "./asr/clients";
 
 // 以下 1 个声明已抽到 ./queue/task-queue（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { TaskQueue } from "./queue/task-queue";
@@ -267,6 +268,11 @@ class QnALogPlugin extends obsidian.Plugin {
       finalizeRecordedSession: (session) => getRecordingOwner().finalizeRecordedSession(session),
       requestOutlineRefresh: () => getRecordingOwner().requestOutlineRefresh(),
       requestOpenOutlineView: () => getRecordingOwner().requestOpenOutlineView(),
+      resolveRuntimeAudioInputMode,
+      normalizeRealtimeOutlineState,
+      classifyRecordingIssue,
+      createStreamingTranscriptionClient,
+      createPcmEncoder: (stream, options) => new PcmStreamEncoder(stream, options),
     });
     this.asrPipeline = new LiveAsrPipelineService({
       getSettings: () => this.settings,

@@ -1,30 +1,71 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
 // 录音采集服务：开始/停止、录音状态与分段写入顺序。
 
 import * as obsidian from "obsidian";
 import { audioInputModeLabel, normalizeAudioInputMode } from "./audio-input";
 import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
-import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload, AudioInputMode } from "../shared/types";
-import { PcmStreamEncoder } from "../asr/clients";
+import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload, AudioInputMode, ContinuationContext, TranscribeProviderSettings } from "../shared/types";
 import { getErrorMessage, genId } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
-import { classifyRecordingIssue, createStreamingTranscriptionClient, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
-import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
 import { nsMarker } from "../shared/namespace";
 import type { RecorderChannelInfo, RecorderService } from "../audio/recorder-service";
-import type { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import type { NoteWriter } from "../notes/note-writer";
-import type { TranscribeProfileService } from "../asr/transcribe-profile-service";
-import type { ContinuationPreparation, ContinuationService } from "../session/continuation-service";
 import { handleRecordedSegment, type RecordingSegmentHost } from "./recording-segment-flow";
 import { t } from "../shared/i18n";
 import type { SessionStore } from "../session/session-store";
-import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
-import type { MeetingWorkbenchService } from "../notes/meeting-workbench-service";
+
+interface RecordingContinuationPreparation {
+  stageFile: obsidian.TFile;
+  taskId: string;
+  continuation: ContinuationContext;
+  mode: string;
+  priorOutline: string;
+}
+
+interface RecordingProfile {
+  title?: string;
+  transcribeMode?: string;
+  requiresWholeSession?: boolean;
+  sampleRate?: number;
+  streamProtocol?: string;
+}
+
+interface RecordingStreamingCallbacks {
+  onPartial(fullText: string, isFinal: boolean): void;
+  onError(error: Error): void;
+  onClosed(info: { translatedText?: string; sourceText?: string } | null): void;
+}
+
+interface RecordingStreamingClient {
+  connect(): Promise<unknown>;
+  sendAudioFrame(frame: ArrayBuffer): void;
+  finish(): Promise<unknown>;
+  getFullText(): string;
+  _safeClose?(): void;
+}
+
+type RecordingPipelineHost = Pick<RecordingSegmentHost,
+  | "startMasterAudioSave"
+  | "beginSessionSegmentWork"
+  | "prepareLiveSegmentDescriptor"
+  | "queueLiveSegmentPersistence"
+  | "getQueueTask"
+  | "keepLiveSegmentQueueTaskForRetry"
+  | "markSessionAsrJobsDeferred"
+  | "finishSessionSegmentWork"
+> & {
+  clearRecordingIssue(kind?: string): void;
+  initializeSession(session: RecordingSession): void;
+  setSessionWorkProgress(session: RecordingSession, patch: unknown): void;
+  setRecordingIssue(kind: string, patch?: unknown): void;
+  getRecordingIssue(): unknown;
+};
+function formatRecordingCaughtError(error: unknown): string {
+  return `${((error && (error as { message?: unknown }).message) || error) as string}`;
+}
 
 /** 开始录音时的选项：不带参数即新建纪要，带 appendToFile 即续录到该篇。 */
 export interface StartRecordingOptions {
@@ -36,35 +77,42 @@ export interface RecordingHost {
   /** 知识库能力。 */
   ensureFolder(path: string): Promise<void>;
   getFileByPath(path: string): obsidian.TAbstractFile | null;
-  diagnostics: Pick<DiagnosticsService, "logDiagnostic">;
-  meetingWorkbench: Pick<MeetingWorkbenchService, "makeStreamingNoteUpdater" | "scheduleMeetingWorkbenchInteraction">;
+  diagnostics: { logDiagnostic: RecordingSegmentHost["logDiagnostic"] };
+  meetingWorkbench: {
+    makeStreamingNoteUpdater(session: RecordingSession): () => void;
+    scheduleMeetingWorkbenchInteraction: RecordingSegmentHost["scheduleMeetingWorkbenchInteraction"];
+  };
   noteWriter: Pick<NoteWriter, "appendToNote" | "removeEmptySessionBlock">;
-  profiles: Pick<TranscribeProfileService, "getActiveTranscribeProfile">;
-  continuations: Pick<ContinuationService, "resolveTarget" | "prepare" | "trackSession" | "releaseSession" | "cancelPrepared">;
+  profiles: { getActiveTranscribeProfile(): RecordingProfile };
+  continuations: {
+    resolveTarget(file: obsidian.TFile): obsidian.TFile | null;
+    prepare(file: obsidian.TFile, sessionId: string, sessionStamp: string, recordedAt: string): Promise<RecordingContinuationPreparation>;
+    trackSession(session: RecordingSession, file: obsidian.TFile): void;
+    releaseSession(sessionId: string): void;
+    cancelPrepared(taskId: string, stageFile: obsidian.TFile): Promise<void>;
+  };
   recorder: Pick<RecorderService, "state" | "start" | "stop" | "releaseStream" | "getInfo" | "masterChunks" | "chunks"> | null;
   saveSettings(): Promise<void>;
   sessionStore: Pick<SessionStore, "begin" | "end">;
-  asrPipeline: Pick<LiveAsrPipelineService,
-    | "startMasterAudioSave"
-    | "beginSessionSegmentWork"
-    | "prepareLiveSegmentDescriptor"
-    | "queueLiveSegmentPersistence"
-    | "getQueueTask"
-    | "keepLiveSegmentQueueTaskForRetry"
-    | "markSessionAsrJobsDeferred"
-    | "finishSessionSegmentWork"
-    | "clearRecordingIssue"
-    | "initializeSession"
-    | "setSessionWorkProgress"
-    | "setRecordingIssue"
-    | "getRecordingIssue"
-  >;
+  asrPipeline: RecordingPipelineHost;
   processRecordedSegment(session: RecordingSession, seg: PreparedLiveSegment): Promise<void>;
   finalizeRecordedSession(session: RecordingSession): Promise<void>;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: Pick<PluginSettings, "polishMode" | "promptTemplates" | "audioFolder" | "mdFolder" | "noteFileNameFormatNew" | "captureMode" | "audioChannelMode" | "activeTranscribeProvider" | "transcribeProviders" | "enableInterimOutput" | "segmentIntervalMinutes" | "autoOpenOutlineOnRecord" | "filterShortRecordings">;
   requestOutlineRefresh(): void;
   requestOpenOutlineView(): Promise<void>;
+  resolveRuntimeAudioInputMode(mode: unknown): AudioInputMode;
+  normalizeRealtimeOutlineState(value: unknown, fallbackMarkdown?: unknown, fallbackMemory?: unknown): unknown;
+  classifyRecordingIssue(error: unknown): "network" | "service";
+  createStreamingTranscriptionClient(
+    profile: RecordingProfile,
+    provider: TranscribeProviderSettings,
+    callbacks: RecordingStreamingCallbacks,
+  ): RecordingStreamingClient;
+  createPcmEncoder(
+    stream: MediaStream,
+    options: { sampleRate: number; onFrame(frame: ArrayBuffer): void },
+  ): { start(): void; stop(): void };
 }
 
 export class RecordingService {
@@ -97,14 +145,14 @@ export class RecordingService {
 
   async toggleRecording(): Promise<void> {
     // The host assembles the recorder before registering these public recording operations.
-    if (this.host.recorder.state === "idle") await this.startRecording();
+    if (this.host.recorder!.state === "idle") await this.startRecording();
     else await this.stopRecording();
   }
 
 
   async startRecording(options: StartRecordingOptions = {}): Promise<void> {
     if (this.starting) return;
-    if (this.host.recorder.state !== "idle") {
+    if (this.host.recorder!.state !== "idle") {
       new obsidian.Notice(t("A recording is already in progress. Please stop it before continuing to record."), 5000);
       return;
     }
@@ -112,7 +160,7 @@ export class RecordingService {
     try {
       const requestedTarget = options && options.appendToFile instanceof obsidian.TFile ? options.appendToFile : null;
       let appendTargetFile = requestedTarget;
-      let preparation: ContinuationPreparation | null = null;
+      let preparation: RecordingContinuationPreparation | null = null;
       const moment = window.moment;
       const startedAt = moment();
       const sessionStamp = startedAt.format("YYYYMMDD-HHmmss");
@@ -122,9 +170,9 @@ export class RecordingService {
         try {
           appendTargetFile = this.host.continuations.resolveTarget(requestedTarget) || requestedTarget;
           preparation = await this.host.continuations.prepare(appendTargetFile, sessionId, sessionStamp, recordedAt);
-        } catch (e) {
+        } catch (e: unknown) {
           console.error("[QnALog] prepare continuation target failed", e);
-          new obsidian.Notice(`${t("Cannot continue recording into this minutes note: ")}${(e && e.message) || e}`, 8000);
+          new obsidian.Notice(`${t("Cannot continue recording into this minutes note: ")}${formatRecordingCaughtError(e)}`, 8000);
           return;
         }
       }
@@ -145,7 +193,7 @@ export class RecordingService {
         const meta = getModeMeta(this.host.settings, mode);
         const oneShotMode = this._oneShotCaptureMode;
         const requestedCaptureMode = oneShotMode || this.host.settings.captureMode || "mic";
-        const captureMode = resolveRuntimeAudioInputMode(requestedCaptureMode);
+        const captureMode = this.host.resolveRuntimeAudioInputMode(requestedCaptureMode);
         const forcedMobileMic = isMobileRuntime() && normalizeAudioInputMode(requestedCaptureMode) !== "mic";
         createdSession = {
           id: sessionId,
@@ -169,7 +217,7 @@ export class RecordingService {
           // 旧场次大纲作为实时大纲种子；目标笔记本身只读，实时更新仅写入暂存文件。
           realtimeOutline: continuationInfo ? (continuationInfo.priorOutline || "") : "",
           realtimeOutlineState: continuationInfo && continuationInfo.priorOutline
-            ? normalizeRealtimeOutlineState(undefined, continuationInfo.priorOutline, "")
+            ? this.host.normalizeRealtimeOutlineState(undefined, continuationInfo.priorOutline, "")
             : { version: 1, nodes: [], memory: "" },
           realtimeOutlineMemory: "",
           realtimeOutlineSegmentCount: 0,
@@ -249,7 +297,7 @@ export class RecordingService {
       } else if (isStreaming) {
         onStreamReady = async (mediaStream) => {
           const sampleRate = Number(activeProfile.sampleRate) || (activeProfile.streamProtocol && activeProfile.streamProtocol.startsWith("openai-realtime") ? 24000 : 16000);
-          const client = createStreamingTranscriptionClient(activeProfile, activeProvider, {
+          const client = this.host.createStreamingTranscriptionClient(activeProfile, activeProvider, {
             onPartial: (fullText: string, isFinal: boolean) => {
               this.host.asrPipeline.clearRecordingIssue("network");
               this.host.asrPipeline.clearRecordingIssue("service");
@@ -258,11 +306,11 @@ export class RecordingService {
             },
             onError: (e: Error) => {
               console.error("[QnALog] streaming error", e);
-              this.host.asrPipeline.setRecordingIssue(classifyRecordingIssue(e), {
+              this.host.asrPipeline.setRecordingIssue(this.host.classifyRecordingIssue(e), {
                 source: "streaming-asr",
                 message: getErrorMessage(e),
               });
-              new obsidian.Notice(`${t("Streaming transcription error: ")}${(e && e.message) || e}`);
+              new obsidian.Notice(`${t("Streaming transcription error: ")}${formatRecordingCaughtError(e)}`);
             },
             onClosed: (info: { translatedText?: string; sourceText?: string } | null) => {
               if (info && info.translatedText) sessionRef.streamingTranslatedText = info.translatedText;
@@ -273,17 +321,17 @@ export class RecordingService {
           sessionRef.scheduleStreamingNoteUpdate = this.host.meetingWorkbench.makeStreamingNoteUpdater(sessionRef);
           try {
             await client.connect();
-          } catch (e) {
+          } catch (e: unknown) {
             console.error("[QnALog] streaming connect failed", e);
-            this.host.asrPipeline.setRecordingIssue(classifyRecordingIssue(e), {
+            this.host.asrPipeline.setRecordingIssue(this.host.classifyRecordingIssue(e), {
               source: "streaming-asr",
               message: getErrorMessage(e),
             });
-            new obsidian.Notice(`${t("Streaming transcription connection failed: ")}${(e && e.message) || e}`);
+            new obsidian.Notice(`${t("Streaming transcription connection failed: ")}${formatRecordingCaughtError(e)}`);
             sessionRef.streamingClient = null;
             return;
           }
-          const encoder = new PcmStreamEncoder(mediaStream, {
+          const encoder = this.host.createPcmEncoder(mediaStream, {
             sampleRate,
             onFrame: (ab: ArrayBuffer) => client.sendAudioFrame(ab),
           });
@@ -314,7 +362,7 @@ export class RecordingService {
         if (providerStreamReady) await providerStreamReady(mediaStream);
       };
 
-      await this.host.recorder.start({
+      await this.host.recorder!.start({
         segmentDurationMs,
         quickCutMarksMs: segmentDurationMs > 0 ? QUICK_INTERIM_CUTS_MS : [],
         captureMode,
@@ -322,7 +370,7 @@ export class RecordingService {
         onStreamReady,
       });
       if (this.host.settings.autoOpenOutlineOnRecord) {
-        try { await this.host.requestOpenOutlineView(); } catch (e) { console.error("[QnALog] auto-open outline failed", e); }
+        try { await this.host.requestOpenOutlineView(); } catch (e: unknown) { console.error("[QnALog] auto-open outline failed", e); }
       }
       const modeLabel = audioInputModeLabel(captureMode);
       const noticeText = isStreaming
@@ -336,7 +384,7 @@ export class RecordingService {
       if (continuationInfo) {
         new obsidian.Notice(
           t('Continuation recording saved separately; it will be merged into "{0}" after its current processing finishes.')
-            .replace("{0}", appendTargetFile.basename),
+            .replace("{0}", appendTargetFile!.basename),
           8000,
         );
       }
@@ -346,7 +394,7 @@ export class RecordingService {
       if (isMobileRuntime()) {
         new obsidian.Notice(t("On mobile, keep Obsidian in the foreground while recording; locking the screen or switching to the background may interrupt the recording."), 8000);
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error(e);
       try {
         await this.host.diagnostics.logDiagnostic("error", "recording.start_failed", t("Failed to start recording"), {
@@ -357,7 +405,7 @@ export class RecordingService {
       } catch (diagnosticFailure) {
         console.error("[QnALog] failed to log recording startup failure", diagnosticFailure);
       }
-      new obsidian.Notice(`${t("Cannot start recording: ")}${(e && e.message) || e}`);
+      new obsidian.Notice(`${t("Cannot start recording: ")}${formatRecordingCaughtError(e)}`);
       // 清理半初始化状态：启动异常后只结束本次创建的会话，避免清除随后开始的新会话。
       try { if (this.host.recorder && this.host.recorder.state !== "idle") await this.host.recorder.stop(); } catch { /* intentionally empty */ }
       try { if (this.host.recorder && typeof this.host.recorder.releaseStream === "function") this.host.recorder.releaseStream(); } catch { /* intentionally empty */ }
@@ -381,9 +429,9 @@ export class RecordingService {
 
   async stopRecording(): Promise<void> {
     // The host assembles the recorder before registering these public recording operations.
-    if (this.host.recorder.state === "idle") return;
+    if (this.host.recorder!.state === "idle") return;
     new obsidian.Notice(t("⏹ Stop requested, processing the final segment..."));
-    await this.host.recorder.stop();
+    await this.host.recorder!.stop();
     this.host.asrPipeline.clearRecordingIssue();
   }
 
@@ -416,4 +464,3 @@ export class RecordingService {
 
 }
 
-/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

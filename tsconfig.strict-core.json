@@ -83,6 +83,7 @@
     "src/versions/derived-note-store.ts",
     "src/audio/recorder-service.ts",
     "src/audio/recording-segment-flow.ts",
+    "src/audio/recording-service.ts",
     "src/notes/session-finalize-flow.ts",
     "src/notes/continuation-commit-flow.ts",
     "src/notes/note-write-content.ts",
