@@ -7,7 +7,7 @@ import { getAudioTimeLink } from "./audio-reference-text";
 
 import { detectRecentNoteMode } from "../recent/recent-notes";
 
-import { extractTranscriptSegments } from "./note-markdown";
+import { extractTranscriptSegments } from "./note-transcript-ledger";
 import { buildNoteAudioTimeline } from "./note-audio-timeline";
 import { stripArchivedOutlineSections } from "./outline-text";
 

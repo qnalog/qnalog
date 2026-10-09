@@ -1081,6 +1081,85 @@ async function main() {
           throw new Error("merge-source metadata probes unexpectedly called the model");
         }
       }
+      {
+        const savedHost = plugin.noteWriter.host;
+        const savedMoment = sandbox.moment;
+        const llmCallsBeforeLedgerProbe = llmCalls.length;
+        try {
+          const probeFile = new TFile("Notes/ledger-probe.md");
+          probeFile.basename = "ledger-probe";
+          probeFile.stat.ctime = 1;
+          const originalSegment = transcriptSegment(0, "alpha beta", 1000, 2000, "ledger-fixture");
+          const originalBlock = serializeTranscriptSegment(originalSegment, "### Segment 1 (00:01–00:02)", "alpha beta");
+          const driftedBlock = originalBlock.replace("\nalpha beta\n", "\nalpha corrected beta\n");
+          probeFile._content = [
+            "<!-- qnalog-session:ledger-fixture -->",
+            "<details><summary>Segmented raw transcript</summary>",
+            driftedBlock,
+            "### Segment 2 (00:02–00:03) [[Audio/old.wav|00:02]]",
+            "",
+            "<!-- qnalog-transcribe-task:task-ledger -->",
+            "Legacy $& $' $$",
+            "</details>",
+            "AFTER",
+          ].join("\n");
+          let modifyCalls = 0;
+          const probeHost = Object.create(savedHost);
+          Object.defineProperties(probeHost, {
+            vault: {
+              value: {
+                read: async (file) => {
+                  if (file !== probeFile) throw new Error("transcript ledger probe read the wrong file");
+                  return file._content;
+                },
+                modify: async (file, content) => {
+                  if (file !== probeFile) throw new Error("transcript ledger probe modified the wrong file");
+                  modifyCalls += 1;
+                  file._content = content;
+                },
+              },
+            },
+            getFileFrontmatter: { value: (file) => {
+              if (file !== probeFile || modifyCalls !== 1) {
+                throw new Error("transcript ledger probe read frontmatter before its single ledger upgrade");
+              }
+              return { qnalog_mode: "meeting" };
+            } },
+          });
+          plugin.noteWriter.host = probeHost;
+          sandbox.moment = writerMoment;
+          const result = await plugin.noteWriter.readMergeSourceFromMarkdown(probeFile, 7000, 5);
+          const [first, second] = result.segments;
+          const firstLedger = first?.transcript;
+          const secondLedger = second?.transcript;
+          if (modifyCalls !== 1 || result.content !== probeFile._content
+            || !result.content.endsWith("</details>\nAFTER") || result.rawDurationMs !== 3000
+            || first?.index !== 5 || first.startOffsetMs !== 8000 || first.endOffsetMs !== 9000
+            || first.audioStartOffsetMs !== 0 || first.audioEndOffsetMs !== 1000
+            || !first.text.endsWith("alpha corrected beta")
+            || firstLedger?.id !== "seg:ledger-fixture:0" || firstLedger.currentRevision !== 2
+            || firstLedger.revisions[0]?.rawText !== "alpha beta"
+            || firstLedger.revisions[1]?.source !== "edited-transcript"
+            || second?.index !== 6 || second.startOffsetMs !== 9000 || second.endOffsetMs !== 10000
+            || second.audioStartOffsetMs !== 2000 || second.audioEndOffsetMs !== 3000
+            || second.text !== "Legacy $& $' $$"
+            || secondLedger?.id !== "seg:ledger-fixture:1" || secondLedger.currentRevision !== 0
+            || secondLedger.revisions[0]?.source !== "legacy-transcript"
+            || second.queueTaskId !== "task-ledger") {
+            throw new Error("transcript ledger revision and legacy-upgrade probe failed");
+          }
+          const firstContent = probeFile._content;
+          const repeated = await plugin.noteWriter.readMergeSourceFromMarkdown(probeFile, 7000, 5);
+          if (modifyCalls !== 1 || probeFile._content !== firstContent
+            || repeated.content !== firstContent || JSON.stringify(repeated.segments) !== JSON.stringify(result.segments)
+            || llmCalls.length !== llmCallsBeforeLedgerProbe) {
+            throw new Error("transcript ledger revision probe was not idempotent");
+          }
+        } finally {
+          plugin.noteWriter.host = savedHost;
+          sandbox.moment = savedMoment;
+        }
+      }
       const mergeSourceDigest = createHash("sha256").update(JSON.stringify(sourceResults.map((source) => ({
         path: source.file.path,
         content: source.content,

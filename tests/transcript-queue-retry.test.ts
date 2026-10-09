@@ -5,14 +5,15 @@ vi.mock("obsidian", () => ({
   TFile: class TFile {},
   TFolder: class TFolder {},
   Notice: class Notice {},
-  requestUrl: async () => ({ status: 200, text: "{}" }),
+  requestUrl: vi.fn(async () => ({ status: 200, text: "{}" })),
 }));
 const { mergeAndPolishMock } = vi.hoisted(() => ({ mergeAndPolishMock: vi.fn() }));
 vi.mock("../src/briefing/merge-pipeline", () => ({ mergeAndPolish: mergeAndPolishMock }));
 
 import { QueueRetryService } from "../src/queue/queue-retry-service";
-import { attachTranscriptResult } from "../src/transcript/session-transcript";
+import { attachTextTranscript, attachTranscriptResult } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock, readTranscriptBlocks } from "../src/transcript/transcript-markdown";
+import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
 import { getTranscribeSegmentPlaceholder } from "../src/shared/util-audio";
 import { SessionStore } from "../src/session/session-store";
 
@@ -22,6 +23,79 @@ import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 function makeFile(TFile: new () => object, path: string, name: string, extension: string): Record<string, unknown> {
   return Object.assign(new TFile(), { path, name, basename: name.replace(/\.[^.]+$/, ""), extension });
 }
+
+describe("transcript queue retry persistence", () => {
+  it("upgrades a successful legacy transcript without issuing another ASR request", async () => {
+    const obsidian = await import("obsidian") as unknown as { TFile: new () => object; requestUrl: ReturnType<typeof vi.fn> };
+    obsidian.requestUrl.mockRejectedValueOnce(new Error("unexpected ASR request"));
+    const note = makeFile(obsidian.TFile, "Notes/ledger-retry.md", "ledger-retry.md", "md");
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 1000, endOffsetMs: 2000,
+      text: "PREFIX alpha beta SUFFIX", rawText: "alpha beta",
+    }, "ledger-fixture", "text-import");
+    const originalBlock = serializeTranscriptBlock(segment, "### Segment 1 (00:01–00:02)", "alpha beta");
+    const driftedBlock = originalBlock.replace("\nalpha beta\n", "\nalpha corrected beta\n");
+    const fixture = "<details><summary>Segmented raw transcript</summary>\n" + driftedBlock
+      + "\n### Segment 2 (00:02–00:03) [[Audio/old.wav|00:02]]\n\n"
+      + "<!-- qnalog-transcribe-task:task-ledger -->\nLegacy $& $` $' $$\n</details>\nAFTER";
+    let content = fixture;
+    let processCalls = 0;
+    const reasons: string[] = [];
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const vault = {
+      getAbstractFileByPath: (path: string) => path === note.path ? note : null,
+      read: async (file: { path: string }) => file.path === note.path ? content : "",
+      readBinary: async () => { throw new Error("unexpected ASR"); },
+      process: async (file: { path: string }, transform: (current: string) => string) => {
+        if (file.path !== note.path) throw new Error("unexpected note target");
+        processCalls += 1;
+        content = transform(content);
+        return content;
+      },
+    };
+    const task = {
+      id: "task-ledger",
+      type: "transcribe",
+      sessionId: "ledger-fixture",
+      mdPath: String(note.path),
+      audioPath: "Audio/old.wav",
+      audioName: "old.wav",
+      segmentIndex: 1,
+      startOffsetMs: 2000,
+      endOffsetMs: 3000,
+    };
+    const service = new QueueRetryService({
+      app: { vault },
+      settings: {},
+      continuations: { runOnTarget: (_target: unknown, operation: () => Promise<unknown>) => operation() },
+      asrPipeline: { maybeDeleteSegmentCacheFile: cleanup },
+      noteIndex: { refreshNoteIndexSafely: async (_file: unknown, options: { reason: string }) => { reasons.push(options.reason); } },
+      diagnostics: { logDiagnostic: vi.fn().mockResolvedValue(undefined) },
+    } as never);
+
+    await service.retryTranscribeTask(task as never);
+    const firstContent = content;
+    expect(processCalls).toBe(1);
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(reasons).toEqual(["transcript-retry-legacy-upgrade"]);
+    const blocks = readTranscriptBlocks(content);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].segment.transcript?.currentRevision).toBe(1);
+    expect(blocks[0].visibleBlock).toBe("alpha corrected beta");
+    expect(blocks[0].drifted).toBe(true);
+    expect(blocks[1].segment.transcript?.id).toBe("seg:ledger-fixture:1");
+    expect(blocks[1].segment.queueTaskId).toBe("task-ledger");
+    expect(blocks[1].segment.transcript?.revisions[0].source).toBe("legacy-transcript");
+
+    await service.retryTranscribeTask(task as never);
+    expect(content).toBe(firstContent);
+    expect(processCalls).toBe(1);
+    expect(cleanup).toHaveBeenCalledTimes(2);
+    expect(reasons).toEqual(["transcript-retry-legacy-upgrade", "transcript-retry-idempotent"]);
+    expect(obsidian.requestUrl).not.toHaveBeenCalled();
+  });
+
+});
 
 describe("transcript queue retry persistence", () => {
   it("commits source text before cleanup and skips ASR after a write-before-delete interruption", async () => {

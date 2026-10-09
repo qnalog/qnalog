@@ -3,7 +3,7 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || "").replace(/\\/g, "/"),
   TFile: class {}, TFolder: class {},
 }));
-import { extractTranscriptSegments } from "../src/notes/note-markdown";
+import { extractTranscriptSegments } from "../src/notes/note-transcript-ledger";
 
 // 整合版布局的段标题行带回听链接 `[[audio|mm:ss]]`、正文只有纯文本；
 // 旧布局的段正文带嵌入 `![[audio]]`。读回分段时两种来源都要还原 audioName，

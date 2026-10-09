@@ -33,4 +33,13 @@ export default defineConfig([
       "obsidianmd/ui/sentence-case": "off",
     },
   },
+  {
+    files: ["src/notes/note-transcript-ledger.ts"],
+    languageOptions: {
+      parserOptions: {
+        project: "./tsconfig.strict-core.json",
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
 ]);

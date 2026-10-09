@@ -93,6 +93,7 @@
     "src/notes/note-title-rename-flow.ts",
     "src/notes/note-title-path.ts",
     "src/notes/note-source-metadata.ts",
+    "src/notes/note-transcript-ledger.ts",
     "src/notes/note-mode-inference.ts",
     "src/notes/note-editor-polish-flow.ts",
     "src/notes/note-segment-store.ts",

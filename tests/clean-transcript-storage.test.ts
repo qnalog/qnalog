@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-import { ensureTranscriptBlocks, getVersionStoreFolder } from "../src/notes/note-markdown";
+import { getVersionStoreFolder } from "../src/notes/note-markdown";
+import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown } from "../src/notes/note-source-metadata";
 import { getSegmentsHash } from "../src/notes/audio-refs";
 
