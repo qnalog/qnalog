@@ -13,10 +13,10 @@ import {
   normalizeBriefingFrontmatterFields,
   parseSuggestedTagsFromOutput,
   postProcessBriefingOutput,
-  stripEmptyPlaceholders,
   stripImportAppendices,
   stripMarkdownForEmailBrief,
 } from "../src/notes/note-markdown";
+import { stripEmptyPlaceholders } from "../src/notes/empty-short-note";
 import { buildActiveVersionBlock, replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { cleanTranscriptBlock, ensureTranscriptBlocks, extractTranscriptSegments, splitTranscriptSections } from "../src/notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../src/notes/note-source-metadata";

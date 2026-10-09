@@ -2,17 +2,14 @@
 // 知识库清理：删除符合条件的历史文件（空白短录音及其音频）。
 // 由 main.ts 抽出（模块化拆解，纯搬迁）。
 
-import * as obsidian from "obsidian";
+import type * as obsidian from "obsidian";
 import { qnalogConfirm, trashVaultFileRef } from "../ui/helpers";
-import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { PluginSettings } from "../shared/types";
 import type { SessionStore } from "../session/session-store";
-import { formatElapsed } from "../shared/util-common";
 import { resolveAudioFileRef } from "../notes/audio-refs";
-import { analyzeEmptyShortNote } from "../notes/note-markdown";
+import { runEmptyShortRecordingCleanup } from "./empty-short-cleanup-flow";
 import { TaskQueue } from "../queue/task-queue";
 
-import { t } from "../shared/i18n";
 /** CleanupService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface CleanupHost {
   /** 知识库与工作区访问。 */
@@ -30,127 +27,20 @@ export class CleanupService {
     this.host = host;
   }
 
-  async cleanupEmptyShortRecordings() {
-    const folderPath = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    const folder = this.host.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof obsidian.TFolder)) {
-      new obsidian.Notice(`${t("Transcript minutes folder not found: ")}${folderPath}`, 8000);
-      return;
-    }
-
-    const files = [];
-    const walk = (item) => {
-      if (item instanceof obsidian.TFolder) {
-        for (const child of item.children) walk(child);
-      } else if (item instanceof obsidian.TFile && item.extension === "md") {
-        files.push(item);
-      }
-    };
-    walk(folder);
-
-    const session = this.host.sessionStore.get();
-    const currentPath = session && session.mdPath ? obsidian.normalizePath(session.mdPath) : "";
-    const candidates = [];
-    for (const file of files) {
-      if (currentPath && obsidian.normalizePath(file.path) === currentPath) continue;
-      try {
-        const content = await this.host.app.vault.read(file);
-        const candidate = analyzeEmptyShortNote(file, content, this.host.settings);
-        if (!candidate) continue;
-        const audioFiles = [];
-        const seenAudio = new Set();
-        for (const ref of candidate.audioRefs) {
-          const audioFile = resolveAudioFileRef(this.host.app, this.host.settings, ref);
-          if (audioFile && !seenAudio.has(audioFile.path)) {
-            seenAudio.add(audioFile.path);
-            audioFiles.push(audioFile);
-          }
-        }
-        candidate.audioFiles = audioFiles;
-        candidates.push(candidate);
-      } catch (e) {
-        console.error("[QnALog] cleanup scan failed:", file.path, e);
-      }
-    }
-
-    if (!candidates.length) {
-      new obsidian.Notice(t("No blank short recordings matching the criteria were found"));
-      return;
-    }
-
-    const uniqueAudioFiles = [];
-    const audioPaths = new Set();
-    for (const candidate of candidates) {
-      for (const audioFile of candidate.audioFiles) {
-        if (!audioPaths.has(audioFile.path)) {
-          audioPaths.add(audioFile.path);
-          uniqueAudioFiles.push(audioFile);
-        }
-      }
-    }
-
-    const preview = candidates
-      .slice(0, 10)
-      .map((c) => t("- {0} ({1}, {2} audio files)").replace("{0}", c.file.path).replace("{1}", formatElapsed(c.durationMs)).replace("{2}", String(c.audioFiles.length)))
-      .join("\n");
-    const more = candidates.length > 10 ? t("\n...and {0} more").replace("{0}", String(candidates.length - 10)) : "";
-    const ok = await qnalogConfirm(
-      this.host.app,
-      t("Clean up blank short recordings"),
-      t("Found {0} blank short recordings.\n\nCriteria: no longer than 10 seconds and no valid transcript text.\nThe following will be moved to the system trash: {0} notes and {1} audio files.\n\n{2}{3}\n\nContinue cleanup?")
-        .replace("{0}", String(candidates.length))
-        .replace("{0}", String(candidates.length))
-        .replace("{1}", String(uniqueAudioFiles.length))
-        .replace("{2}", preview)
-        .replace("{3}", more),
-      t("Clean up")
-    );
-    if (!ok) return;
-
-    let noteDeleted = 0;
-    let audioDeleted = 0;
-    let failed = 0;
-    const deletedNotePaths = new Set();
-    const deletedAudioPaths = new Set();
-
-    for (const candidate of candidates) {
-      try {
-        await trashVaultFileRef(this.host.app, candidate.file);
-        noteDeleted++;
-        deletedNotePaths.add(obsidian.normalizePath(candidate.file.path));
-      } catch (e) {
-        failed++;
-        console.error("[QnALog] cleanup note delete failed:", candidate.file.path, e);
-      }
-    }
-
-    for (const audioFile of uniqueAudioFiles) {
-      const current = this.host.app.vault.getAbstractFileByPath(audioFile.path);
-      if (!(current instanceof obsidian.TFile)) continue;
-      try {
-        await trashVaultFileRef(this.host.app, current);
-        audioDeleted++;
-        deletedAudioPaths.add(obsidian.normalizePath(audioFile.path));
-      } catch (e) {
-        failed++;
-        console.error("[QnALog] cleanup audio delete failed:", audioFile.path, e);
-      }
-    }
-
-    const beforeQueue = this.host.queue.tasks.length;
-    this.host.queue.tasks = this.host.queue.tasks.filter((task) => {
-      const mdPath = task.mdPath ? obsidian.normalizePath(task.mdPath) : "";
-      // audioPath 只存在于 transcribe 任务；其余任务没有音频可删，按空串处理（与原先读 undefined 的结果一致）。
-      const audioPath = "audioPath" in task && task.audioPath ? obsidian.normalizePath(task.audioPath) : "";
-      return !deletedNotePaths.has(mdPath) && !deletedAudioPaths.has(audioPath);
+  cleanupEmptyShortRecordings(): Promise<void> {
+    return runEmptyShortRecordingCleanup({
+      getMdFolder: () => this.host.settings.mdFolder,
+      getVault: () => this.host.app.vault,
+      getCurrentSessionPath: () => {
+        const session = this.host.sessionStore.get();
+        return session && session.mdPath ? session.mdPath : null;
+      },
+      resolveAudio: (ref) => resolveAudioFileRef(this.host.app, this.host.settings, ref),
+      confirm: (title, body, cta) => qnalogConfirm(this.host.app, title, body, cta),
+      trash: (file) => trashVaultFileRef(this.host.app, file),
+      getQueue: () => this.host.queue,
+      save: () => this.host.saveAll(),
     });
-    const queueRemoved = beforeQueue - this.host.queue.tasks.length;
-    if (queueRemoved > 0) await this.host.saveAll();
-
-    new obsidian.Notice(
-      `${t("Cleanup complete: minutes ")}${noteDeleted}${t(" notes, recording ")}${audioDeleted}${t(", removed from the queue ")}${queueRemoved}${failed ? t(", failed {0}").replace("{0}", String(failed)) : ""}`,
-      10000,
-    );
   }
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
