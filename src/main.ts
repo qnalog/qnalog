@@ -84,7 +84,7 @@ import { RecordingService } from "./audio/recording-service";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "./shared/util-vault";
 import { LiveAsrPipelineService } from "./asr/live-asr-pipeline-service";
 import { SessionFinalizeService } from "./notes/session-finalize-service";
-import { generateTitleTag } from "./notes/note-markdown";
+import { buildSegmentStatusList, generateTitleTag, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "./notes/note-markdown";
 import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getRecentNotes } from "./recent/recent-notes";
@@ -242,6 +242,7 @@ class QnALogPlugin extends obsidian.Plugin {
       getFileFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
       refreshNoteIndexSafely: (file, options) => this.noteIndex.refreshNoteIndexSafely(file, options),
       openSourceFile: async (file) => { await this.app.workspace.getLeaf(false).openFile(file); },
+      getVersionStoreFolder, normalizeVersionId, buildSegmentStatusList, replaceActiveVersionBlock,
     });
     this.people = new PeopleDirectoryService(this);
     this.knowledgeExtraction = new KnowledgeExtractionService(this);
