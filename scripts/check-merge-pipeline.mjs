@@ -3227,6 +3227,75 @@ async function main() {
       const polishExecutionDigest = createHash("sha256").update(JSON.stringify(polishExecutionResults)).digest("hex");
       console.log(`[note-polish-flow] execution digest: ${polishExecutionDigest}`);
       {
+        const probePath = "QnALog/RepolishProbe/源.md";
+        const source = new TFile(probePath);
+        const sourceBody = NOTE_BODY.replaceAll("s1", "repolish-probe-source")
+          .replace("qnalog_status: draft", "qnalog_status: draft\n参会人: [\"甲 → 张三\"]");
+        source._content = sourceBody;
+        files.set(probePath, source);
+        frontmatterByPath.set(probePath, { qnalog_mode: "meeting", "参会人": ["甲 → 张三"] });
+        const noticeStart = noticeMessages.length;
+        const callStart = llmCalls.length;
+        const probeTasksBefore = new Set(plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true }).map((item) => item.id));
+        const digestItems = [];
+        const capture = async (label, action) => {
+          const beforeFiles = new Set(files.keys());
+          const beforeNotices = noticeMessages.length;
+          const beforeCalls = llmCalls.length;
+          await action();
+          const created = [...files.entries()].filter(([path]) => !beforeFiles.has(path))
+            .map(([path, file]) => ({ path, content: file._content }));
+          const activities = plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true })
+            .filter((item) => !probeTasksBefore.has(item.id))
+            .map(({ id, stage, detail, status }) => ({ id, stage, detail, status }));
+          digestItems.push({
+            label,
+            created,
+            notices: noticeMessages.slice(beforeNotices),
+            llmCalls: llmCalls.length - beforeCalls,
+            sourceUnchanged: source._content === sourceBody,
+            activities,
+          });
+        };
+        try {
+          await capture("repolish", () => plugin.repolish.repolishMarkdownFile(source, "meeting", { label: "简洁" }));
+          const noTranscript = new TFile("QnALog/RepolishProbe/无转写.md");
+          noTranscript._content = "---\nqnalog_time: 2026-09-14T11:33:00\n---\n# empty\n";
+          files.set(noTranscript.path, noTranscript);
+          frontmatterByPath.set(noTranscript.path, {});
+          await capture("no-transcript", () => plugin.repolish.repolishMarkdownFile(noTranscript, "meeting"));
+          const callCountBeforeClean = llmCalls.length;
+          const cleanProbePath = "QnALog/RepolishProbe/清稿.md";
+          const cleanSource = new TFile(cleanProbePath);
+          cleanSource._content = NOTE_BODY.replaceAll("s1", "repolish-clean-probe");
+          files.set(cleanProbePath, cleanSource);
+          frontmatterByPath.set(cleanProbePath, { qnalog_mode: "meeting" });
+          const originalSwitchVersion = plugin.versions.switchVersion;
+          plugin.versions.switchVersion = async () => undefined;
+          try {
+            await capture("clean-first", () => plugin.repolish.generateCleanScript(cleanSource));
+            await capture("clean-reuse", () => plugin.repolish.generateCleanScript(cleanSource));
+          } finally {
+            plugin.versions.switchVersion = originalSwitchVersion;
+          }
+          if (llmCalls.length < callCountBeforeClean) throw new Error("repolish probe model call count regressed");
+          const digest = createHash("sha256").update(JSON.stringify(digestItems)).digest("hex");
+          console.log(`[repolish-flow] digest: ${digest}`);
+        } finally {
+          for (const path of [...files.keys()]) {
+            if (path.startsWith("QnALog/RepolishProbe/")) files.delete(path);
+          }
+          for (const path of [...frontmatterByPath.keys()]) {
+            if (path.startsWith("QnALog/RepolishProbe/")) frontmatterByPath.delete(path);
+          }
+          for (const id of plugin.tasks.getTaskActivities({ includeDone: true, includeCancelled: true }).map((item) => item.id)) {
+            if (!probeTasksBefore.has(id)) plugin.tasks.taskActivityStore?.remove?.(id);
+          }
+          noticeMessages.length = noticeStart;
+          llmCalls.splice(callStart);
+        }
+      }
+      {
         const savedHost = polishWriter.host;
         const savedLanguage = plugin.settings.uiLanguage;
         const callsBefore = llmCalls.length;
