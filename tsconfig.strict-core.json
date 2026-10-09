@@ -92,6 +92,7 @@
     "src/audio/recording-segment-flow.ts",
     "src/audio/recording-service.ts",
     "src/session/continuation-service.ts",
+    "src/versions/version-store.ts",
     "src/versions/version-identity.ts",
     "src/versions/active-version-block.ts",
     "src/notes/session-finalize-flow.ts",
