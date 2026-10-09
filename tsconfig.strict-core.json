@@ -77,6 +77,8 @@
     "src/queue/queue-retry-control.ts",
     "src/queue/queue-merge-retry-flow.ts",
     "src/queue/queue-append-task-flow.ts",
+    "src/queue/queue-transcribe-retry-flow.ts",
+    "src/queue/queue-prompt-task-flow.ts",
     "src/queue/transcribe-audio-source.ts",
     "src/notes/note-document.ts",
     "src/versions/version-content.ts",

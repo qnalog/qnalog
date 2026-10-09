@@ -254,9 +254,8 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["角色", "note"],
     ["邮箱", "note"],
   ],
-  "src/queue/queue-retry-service.ts": [
+  "src/queue/queue-transcribe-retry-flow.ts": [
     ["((?:^|\\n)###\\s+(?:段落|Segment)", "match"],
-    ["未知的 mode：", "uncertain"],
   ],
   "src/ui/modals.ts": [
     ["万", "uncertain"],
