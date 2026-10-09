@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
 vi.mock("obsidian", () => {
@@ -13,10 +14,14 @@ vi.mock("obsidian", () => {
     setIcon: () => undefined,
   };
 });
-vi.mock("../src/recent/recent-notes", () => ({
-  getQueueTasksForMarkdown: () => [],
-  getRecentQueueProcessingState: () => null,
-}));
+vi.mock("../src/recent/recent-notes", async () => {
+  const actual = await vi.importActual<typeof import("../src/recent/recent-notes")>("../src/recent/recent-notes");
+  return {
+    ...actual,
+    getQueueTasksForMarkdown: () => [],
+    getRecentQueueProcessingState: () => null,
+  };
+});
 
 import { OutlineView } from "../src/ui/outline-view";
 
@@ -158,5 +163,22 @@ describe("recent note variant rows", () => {
     await flushSnapshotLookup();
     expect(getVariantRows(parent)).toHaveLength(0);
     expect(findOriginalVersionForSource).not.toHaveBeenCalled();
+  });
+  it("formats ask titles by stripping date and custom prefixes with localized fallback", () => {
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    const templates = {
+      "custom-a": { id: "custom-a", mode: "custom-a", customMode: true, name: "Alpha", prompt: "fixture" },
+      "custom-long": { id: "custom-long", mode: "custom-long", customMode: true, name: "Alpha Extended", prompt: "fixture" },
+      "custom-special": { id: "custom-special", mode: "custom-special", customMode: true, name: "A.+(B)", prompt: "fixture" },
+    };
+    Object.assign(view, { plugin: { settings: { ...DEFAULT_SETTINGS, promptTemplates: templates } } });
+    expect(view.formatAskNoteTitle({ basename: "2026-10-09 0930 · Work notes - Topic" })).toBe("Topic");
+    expect(view.formatAskNoteTitle({ basename: "2026-10-09 0930 · Alpha Extended - Topic" })).toBe("Topic");
+    expect(view.formatAskNoteTitle({ basename: "Work notes" })).toBe("Work notes");
+    expect(view.formatAskNoteTitle({ basename: "2026-10-09" })).toBe("2026-10-09");
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    expect(view.formatAskNoteTitle(null)).toBe("当前纪要");
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    expect(view.formatAskNoteTitle(null)).toBe("Current summary");
   });
 });

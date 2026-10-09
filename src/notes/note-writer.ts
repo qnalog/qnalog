@@ -10,8 +10,9 @@ import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { getFrontmatterTags } from "../shared/util-note";
-import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeModeFromLabel, normalizeSegmentsForMergedNote } from "./note-markdown";
-import { detectRecentModeFromFilename } from "../recent/recent-notes";
+import { buildRenamedMarkdownPath, ensureTranscriptBlocks, extractTranscriptSegments, getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "./note-markdown";
+import { normalizeModeFromLabel } from "../shared/mode-label";
+import { detectRecentModeFromFilename } from "../recent/recent-note-mode";
 import { detectModeFromMarkdownFlow, type NoteModeInferenceHost } from "./note-mode-inference";
 
 import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";

@@ -905,6 +905,11 @@ async function main() {
       sandbox.moment = writerMoment;
       const originalInferenceHost = plugin.noteWriter.host;
       try {
+        const probeTemplates = {
+          "custom-a": { id: "custom-a", mode: "custom-a", customMode: true, name: "Alpha", prompt: "fixture" },
+          "custom-long": { id: "custom-long", mode: "custom-long", customMode: true, name: "Alpha Extended", prompt: "fixture" },
+          "custom-special": { id: "custom-special", mode: "custom-special", customMode: true, name: "A.+(B)", prompt: "fixture" },
+        };
         plugin.settings.polishMode = "off";
         const modeCases = [
           ["Untitled.md", { qnalog_mode: "off", qnalog_type: "会议" }, "off"],
@@ -917,13 +922,21 @@ async function main() {
           ["Untitled.md", { qnalog_type: "unknown", template: "会议" }, null],
           ["Untitled.md", { qnalog_type: "", template: "会议" }, "meeting"],
           ["Untitled.md", { qnalog_mode: "cleanscript" }, "meeting"],
+          ["2026-10-09 0930 · Work notes - Topic.md", {}, "meeting"],
+          ["2026-10-09 09:30 · Work notes - Topic.md", {}, null],
+          ["Work notesExtra.md", {}, null],
+          ["Alpha Extended - Topic.md", {}, "custom-long"],
+          ["A.+(B) - Topic.md", {}, "custom-special"],
+          ["AzzzB - Topic.md", {}, null],
+          ["Alpha · 学习记录 - Topic.md", {}, "learning"],
+          ["Untitled.md", { qnalog_mode: "cleanscript", tags: ["QnALog/ Work notes"] }, "meeting"],
         ];
         for (const [basename, frontmatter, expected] of modeCases) {
           const probeFile = new TFile(`QnALog/WriterSmoke/${basename}`);
           probeFile.basename = String(basename).replace(/\.md$/i, "");
           const probeHost = Object.create(originalInferenceHost);
           Object.defineProperties(probeHost, {
-            settings: { value: { ...plugin.settings, polishMode: "off" } },
+            settings: { value: { ...plugin.settings, polishMode: "off", promptTemplates: probeTemplates } },
             getFileFrontmatter: { value: () => frontmatter },
           });
           plugin.noteWriter.host = probeHost;

@@ -63,7 +63,8 @@ import { getSessionLatestSegmentEndMs, isSameVaultPath, probeAudioDurationMs, re
 
 import { clampProgress } from "../notes/note-markdown";
 
-import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACKS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentModePrefixEntries, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath, normalizeRecentTopicToken, stripRecentDatePrefix } from "../recent/recent-notes";
+import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACKS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath, normalizeRecentTopicToken } from "../recent/recent-notes";
+import { getRecentModePrefixEntries, stripRecentDatePrefix } from "../recent/recent-note-mode";
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendAskEntry, buildAskContext } from "../notes/ask-panel";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";

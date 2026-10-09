@@ -13,7 +13,7 @@ import * as obsidian from "obsidian";
 import { findLowEvidenceEntities, hashRealtimeOutlineText } from "./outline-text";
 
 
-import { getCustomPromptModeTemplate, getCustomPromptModeTemplates, getModeMeta, getModePrefix, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
+import { getCustomPromptModeTemplate, getCustomPromptModeTemplates, getModeMeta, getModePrefix } from "../shared/mode-meta";
 
 import { TEXT_IMPORT_PRE_SUMMARY_CHUNK_CHARS, parseElapsedMsToken, splitLongTextForLlm } from "../shared/util-text";
 
@@ -192,22 +192,6 @@ export function replaceActiveVersionBlock(markdown, versionMeta, body) {
 }
 
 
-export function normalizeModeFromLabel(settings, label) {
-  const text = String(label || "").trim();
-  if (!text) return "";
-  if (isKnownPolishMode(settings, text)) return text;
-  if (MODE_PREFIX_TO_KEY[text]) return MODE_PREFIX_TO_KEY[text];
-  const normalized = text.replace(new RegExp(`^${NS_TAG}/`, "i"), "").trim();
-  if (isKnownPolishMode(settings, normalized)) return normalized;
-  if (MODE_PREFIX_TO_KEY[normalized]) return MODE_PREFIX_TO_KEY[normalized];
-  // 界面语言为英文时写出的笔记标题用英文前缀，同样要能认回。
-  if (MODE_PREFIX_EN_TO_KEY[text]) return MODE_PREFIX_EN_TO_KEY[text];
-  if (MODE_PREFIX_EN_TO_KEY[normalized]) return MODE_PREFIX_EN_TO_KEY[normalized];
-  for (const [mode, name] of getVisibleModeEntries(settings, false)) {
-    if (text === name || normalized === name) return mode;
-  }
-  return "";
-}
 
 export function clampProgress(value) {
   const n = Number(value);

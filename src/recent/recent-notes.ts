@@ -1,14 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：最近纪要列表、过滤与状态
 
-import { normalizeModeFromLabel } from "../notes/note-markdown";
+import { normalizeModeFromLabel } from "../shared/mode-label";
+import { stripRecentDatePrefix, detectRecentModeFromFilename } from "./recent-note-mode";
 
 import { isSameVaultPath } from "../notes/audio-refs";
 
 import { getActiveSessionProcessingState } from "../notes/session-progress";
 
 import * as obsidian from "obsidian";
-import { getModeMeta, getVisibleModeEntries, isKnownPolishMode } from "../shared/mode-meta";
+import { getModeMeta } from "../shared/mode-meta";
 
 import { parseDurationLabel } from "../shared/util-text";
 
@@ -20,7 +21,7 @@ import { isLlmConfigError, isLlmServiceBlockedError } from "../llm/failure-polic
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 
-import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
+import { MODE_META, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
 import { escapeRegExp, formatElapsed } from "../shared/util-common";
 
@@ -47,35 +48,6 @@ export function detectRecentModeFromFrontmatter(settings, frontmatter) {
   return "";
 }
 
-export function stripRecentDatePrefix(basename) {
-  return String(basename || "")
-    .replace(/^\d{4}-\d{2}-\d{2}(?:\s+\d{4})?\s*/, "")
-    .replace(/^[-·\s]+/, "")
-    .trim();
-}
-
-export function getRecentModePrefixEntries(settings) {
-  // 中英两种前缀都要认：同一篇笔记可能是在另一种界面语言下命名的，
-  // 只认当前语言会让另一种前缀留在标题里，或让模式判定落空。
-  const entries = Object.entries(MODE_PREFIX_TO_KEY).map(([prefix, mode]) => [prefix, mode]);
-  for (const [prefix, mode] of Object.entries(MODE_PREFIX_EN_TO_KEY)) entries.push([prefix, mode]);
-  for (const [mode, label] of getVisibleModeEntries(settings, false)) entries.push([label, mode]);
-  return entries
-    .filter(([prefix, mode]) => prefix && mode && isKnownPolishMode(settings, mode))
-    .sort((a, b) => String(b[0]).length - String(a[0]).length);
-}
-
-export function detectRecentModeFromFilename(settings, basename) {
-  const stem = stripRecentDatePrefix(basename);
-  if (!stem) return "off";
-  const inlineTag = stem.match(/(?:^|·\s*)(访谈|会议|研讨会|研讨|沙龙|小会|手记|学习记录|学习|个人笔记|工作纪要|学术研讨|主题沙龙|访谈调研|圆桌讨论)(?=$|[-·\s])/);
-  if (inlineTag) return normalizeModeFromLabel(settings, inlineTag[1]) || "off";
-  for (const [prefix, mode] of getRecentModePrefixEntries(settings)) {
-    const re = new RegExp("^" + escapeRegExp(prefix) + "(?:[-·\\s]|$)");
-    if (re.test(stem)) return mode;
-  }
-  return "off";
-}
 
 export function detectRecentNoteMode(plugin, file, frontmatter) {
   const settings = plugin && plugin.settings ? plugin.settings : DEFAULT_SETTINGS;

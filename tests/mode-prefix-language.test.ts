@@ -5,7 +5,7 @@ vi.mock("obsidian", () => ({
 }));
 import { setActiveUiLanguage, resolveUiLanguage } from "../src/shared/i18n";
 import { getModeMeta, getModePrefix, getModeDisplayName, isKnownPolishMode } from "../src/shared/mode-meta";
-import { normalizeModeFromLabel } from "../src/notes/note-markdown";
+import { normalizeModeFromLabel } from "../src/shared/mode-label";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 
 describe("模板前缀随语言", () => {
