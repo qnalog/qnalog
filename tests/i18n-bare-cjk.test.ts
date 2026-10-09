@@ -127,6 +127,9 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["没有明确证据的类别输出空数组；没有明确承诺不要写成行动，没有明确选择不要写成决定；不要将推测写为事实。", "prompt"],
     ["不要在正文显示对象 ID；不要输出代码围栏或第二条协议注释。", "prompt"],
   ],
+  "src/notes/note-write-content.ts": [
+    ["> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。", "note"],
+  ],
   "src/transcript/session-transcript.ts": [
     ["。", "data"],
     ["！", "data"],

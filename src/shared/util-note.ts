@@ -7,15 +7,6 @@ import { ensureVaultFolder, findAvailableVaultPath } from "./util-vault";
 import { NS_TAG_PREFIX } from "./namespace";
 import { t } from "./i18n";
 
-export function getFrontmatterTags(frontmatter) {
-  if (!frontmatter || typeof frontmatter !== "object") return [];
-  const raw = frontmatter.tags || frontmatter.tag;
-  if (Array.isArray(raw)) return raw.map(t => String(t).trim()).filter(Boolean);
-  return String(raw || "")
-    .split(/[,\s]+/)
-    .map(t => t.trim())
-    .filter(Boolean);
-}
 
 export async function readFileFrontmatter(plugin, file) {
   try {

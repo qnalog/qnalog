@@ -1,15 +1,13 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记正文写入：整合版重写与追加、分段标记插入、重新整理、合并历史笔记
 
 import * as obsidian from "obsidian";
 import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
-import type { NoteIndexService } from "./note-index-service";
 import { formatLlmFailureIssue } from "../llm/failure-presentation";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
-import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
+import { buildEmptyLlmOutputFallback } from "./note-write-content";
 import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
-import { getFrontmatterTags } from "../shared/util-note";
+import { getFrontmatterTags } from "../shared/frontmatter-tags";
 import { ensureTranscriptBlocks, extractTranscriptSegments } from "./note-transcript-ledger";
 import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "./note-source-metadata";
 import { buildRenamedMarkdownPath } from "./note-title-path";
@@ -69,7 +67,12 @@ export type NoteWriterVault = Pick<obsidian.Vault,
 export interface NoteWriterHost {
   readonly vault: NoteWriterVault;
   readonly settings: NoteWriterSettings;
-  readonly noteIndex: Pick<NoteIndexService, "refreshNoteIndexSafely">;
+  readonly noteIndex: {
+    refreshNoteIndexSafely(
+      file: obsidian.TFile,
+      options?: { meetingDate?: string; reason?: string },
+    ): Promise<unknown>;
+  };
   getFileFrontmatter(file: obsidian.TFile): obsidian.CachedMetadata["frontmatter"];
   ensureFolder(path: string): Promise<void>;
   findAvailableMarkdownPath(targetPath: string, currentPath?: string): string;
@@ -286,4 +289,3 @@ export class NoteWriter {
   }
 }
 
-/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
