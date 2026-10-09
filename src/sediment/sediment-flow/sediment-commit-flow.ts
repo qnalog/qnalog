@@ -12,11 +12,18 @@ export interface SedimentCommitFlowPort<TUndo> {
   showToastWhenPersistenceFails?: boolean;
 }
 
+function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) return false;
+  return "then" in value && typeof value.then === "function";
+}
+
 /** Commit order shared by to-do, hotword, and people decisions. */
 export async function commitSedimentGroupFlow<TUndo>(port: SedimentCommitFlowPort<TUndo>): Promise<void> {
-  const undo = await port.snapshotBucket();
+  const snapshot = port.snapshotBucket();
+  const undo = isPromiseLike(snapshot) ? await snapshot : snapshot;
   if (port.write) await port.write(undo);
-  await port.recordDecisionLog();
+  const decisionLog = port.recordDecisionLog();
+  if (isPromiseLike(decisionLog)) await decisionLog;
   const completed = port.markDone();
   const persisted = await port.persistBucket();
   port.render();

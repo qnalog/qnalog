@@ -199,6 +199,12 @@ type InlinePopover = HTMLElement & { _qnalogClose?: () => void };
 /** 人员候选项：取 id 与来源路径时用到的最小形状。 */
 type PeopleSuggestionLike = { cacheKey?: string; key?: string; sourcePath?: string };
 
+function sedimentNoticeErrorSuffix(error: unknown): string {
+  const suffix = (error && Reflect.get(Object(error), "message")) || error;
+  return `${suffix}`;
+}
+
+
 export class OutlineView extends obsidian.ItemView {
   declare plugin: QnALogPlugin;
   // 视图实例字段。TypeScript 不推断「仅在构造函数或方法里赋值」的属性，
@@ -3138,7 +3144,7 @@ export class OutlineView extends obsidian.ItemView {
       setSwitcherOpen: open => { this.sedimentSwitcherOpen = open; },
       render: () => this.render(),
       showToast: (message, options) => this.showSedimentToast(message, options),
-      showFailureNotice: (message, duration) => { new obsidian.Notice(message, duration); },
+      showFailureNotice: (error, duration) => { new obsidian.Notice(`${i18nT("Failed to scan this note:")}${sedimentNoticeErrorSuffix(error)}`, duration); },
       errorMessage: error => getTaskErrorMessage(error),
       logFailure: error => console.error("[QnALog] extract sediment from current note failed", error),
       tasks: {
@@ -3180,7 +3186,7 @@ export class OutlineView extends obsidian.ItemView {
       statusText,
       state || this.getSedimentPanelState(file),
       this.sedimentIdPort(),
-      obsidian.normalizePath(file && file.path || ""),
+      file instanceof obsidian.TFile ? obsidian.normalizePath(file.path || "") : "",
     );
   }
 
@@ -3240,7 +3246,7 @@ export class OutlineView extends obsidian.ItemView {
       showUndoToast: () => this.showSedimentToast(i18nT("This library import was undone"), { icon: "rotate-ccw", variant: "muted" }),
       presentError: error => {
         console.error("[QnALog] undo sediment commit failed", error);
-        new obsidian.Notice(`${i18nT("Undo failed:")}${getTaskErrorMessage(error)}`, 8000);
+        new obsidian.Notice(`${i18nT("Undo failed:")}${sedimentNoticeErrorSuffix(error)}`, 8000);
       },
     }, undo);
   }
@@ -3307,7 +3313,7 @@ export class OutlineView extends obsidian.ItemView {
       const selectedItems = displayItems.filter(item => selected.has(item.id));
       if (SEDIMENT_GROUP_CONFIG[groupKey] && SEDIMENT_GROUP_CONFIG[groupKey].decisionModel === "checkbox" && !selectedItems.length) return;
       if (groupKey !== "todo" && groupKey !== "hotword") {
-        if (groupKey === "person") await this.keepPeopleSuggestions(file, state.currentPeople);
+        await this.keepPeopleSuggestions(file, state.currentPeople);
         return;
       }
       const filePath = obsidian.normalizePath(file.path || "");
@@ -3384,7 +3390,10 @@ export class OutlineView extends obsidian.ItemView {
     const state = this.getSedimentPanelState(file);
     const displayItems = this.getSedimentDisplayItems(state, groupKey);
     const count = displayItems.length;
-    if (groupKey !== "todo" && groupKey !== "hotword") return;
+    if (groupKey !== "todo" && groupKey !== "hotword") {
+      this.setSedimentDecisionLog(file, groupKey, this.buildSedimentDecisionLog(state, groupKey, new Set(), i18nT("Added")));
+      return;
+    }
     await commitSedimentGroupFlow({
       snapshotBucket: () => null,
       recordDecisionLog: () => {

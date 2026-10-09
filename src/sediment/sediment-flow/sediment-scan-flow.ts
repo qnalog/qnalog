@@ -79,7 +79,7 @@ export interface SedimentScanFlowPort {
   setSwitcherOpen(open: boolean): void;
   render(): void;
   showToast(message: string, options: { icon: string; variant?: string }): void;
-  showFailureNotice(message: string, duration: number): void;
+  showFailureNotice(error: unknown, duration: number): void;
   errorMessage(error: unknown): string;
   logFailure(error: unknown): void;
   tasks: SedimentScanTaskPort;
@@ -176,7 +176,7 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
         { id: "dismiss-task", label: t("Dismiss") },
       ],
     });
-    port.showFailureNotice(`${t("Failed to scan this note:")}${port.errorMessage(error)}`, 8000);
+    port.showFailureNotice(error, 8000);
   }
 }
 
