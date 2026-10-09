@@ -11,7 +11,7 @@ import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, Queu
 import { chooseExistingCleanCopy, getRecentNoteProcessingState, qnalogConfirm, trashVaultFileRef } from "./helpers";
 
 import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries, getVisiblePolishModeKeys } from "../shared/mode-meta";
-import { stripModePrefixFromTitle } from "../notes/note-markdown";
+import { stripModePrefixFromTitle } from "../notes/note-title-path";
 
 import { isMobileRuntime } from "../shared/util-platform";
 
