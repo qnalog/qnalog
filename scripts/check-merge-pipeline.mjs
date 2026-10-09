@@ -259,6 +259,7 @@ function makeLlmReply(request) {
   });
 }
 
+const noticeMessages = [];
 const obsidian = {
   apiVersion: "1.13.7",
   Plugin: class {
@@ -289,7 +290,7 @@ const obsidian = {
   Platform: { isMacOS: true, isWin: false, isLinux: false, isIosApp: false, isAndroidApp: false, isDesktop: true, isMobile: false },
   getLanguage: () => "zh",
   MarkdownRenderer: { render: async () => undefined },
-  Notice: class {},
+  Notice: class { constructor(message) { noticeMessages.push(String(message)); } },
   debounce: (fn) => { const wrapped = (...a) => fn(...a); wrapped.cancel = noop; return wrapped; },
   normalizePath: (v) => String(v || "").replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, ""),
   parseYaml: (text) => { try { return yamlLoad(text) || {}; } catch { return {}; } },
@@ -1930,6 +1931,45 @@ async function main() {
       const queueDeleteDigest = createHash("sha256").update(JSON.stringify(plugin.queue.tasks)).digest("hex");
       console.log(`[queue-paths] rename digest: ${queueRenameDigest}`);
       console.log(`[queue-paths] delete digest: ${queueDeleteDigest}`);
+      const retryNoticeStart = noticeMessages.length;
+      const retrySnapshots = [];
+      const priorRetryProcessAll = plugin.queue.processAll;
+      const priorRetryApiKey = plugin.settings.llmApiKey;
+      const priorRetryEndpoint = plugin.settings.llmEndpoint;
+      const priorRetryModel = plugin.settings.llmModel;
+      plugin.queue.tasks = [];
+      await plugin.queueRetry.retryQueue();
+      retrySnapshots.push(JSON.stringify(plugin.queue.tasks));
+
+      plugin.queue.tasks = [{ id: "retry-maxed", type: "merge", status: "failed", retries: 3, lastError: "exhausted" }];
+      const exhaustedBefore = JSON.stringify(plugin.queue.tasks);
+      await plugin.queueRetry.retryQueue();
+      retrySnapshots.push(exhaustedBefore === JSON.stringify(plugin.queue.tasks) ? exhaustedBefore : "changed");
+
+      plugin.queue.tasks = [{ id: "retry-blocked", type: "merge", status: "blocked", retries: 0, lastError: "LLM API key is not configured", updatedAt: "2026-09-14T12:00:00.000Z" }];
+      plugin.settings.llmEndpoint = "";
+      plugin.settings.llmApiKey = "";
+      await plugin.queueRetry.retryQueue();
+      retrySnapshots.push(JSON.stringify(plugin.queue.tasks));
+
+      plugin.settings.llmEndpoint = priorRetryEndpoint || "https://api.example.com/v1/chat/completions";
+      plugin.settings.llmModel = priorRetryModel || "probe-model";
+      plugin.settings.llmApiKey = priorRetryApiKey || "queue-retry-control-probe-key";
+      plugin.queue.processAll = async () => undefined;
+      await plugin.queueRetry.retryQueue();
+      retrySnapshots.push(JSON.stringify(plugin.queue.tasks, (key, value) => key === "updatedAt" ? "<timestamp>" : value));
+      plugin.queue.processAll = priorRetryProcessAll;
+      plugin.settings.llmEndpoint = priorRetryEndpoint;
+      plugin.settings.llmModel = priorRetryModel;
+      plugin.settings.llmApiKey = priorRetryApiKey;
+      const queueRetryDigest = createHash("sha256").update(JSON.stringify({
+        notices: noticeMessages.slice(retryNoticeStart),
+        tasks: retrySnapshots,
+      })).digest("hex");
+      console.log(`[queue-retry-control] digest: ${queueRetryDigest}`);
+      plugin.queueRetry.dispose();
+      plugin.queue.tasks = [];
+      noticeMessages.length = retryNoticeStart;
       await plugin.queueRetry.retryMergeTask({
 
         id: "literal-merge-retry",
