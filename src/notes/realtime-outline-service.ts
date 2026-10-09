@@ -20,7 +20,7 @@ import type { RealtimeOutlineSourceCoverage, RecordingSession, Segment } from ".
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
 import { buildRealtimeOutlineDetails } from "./note-session-materials";
-import { extractTranscriptSegments } from "./note-markdown";
+import { extractTranscriptSegments } from "./note-transcript-ledger";
 import type { ContinuationService } from "../session/continuation-service";
 import type { NoteWriter } from "./note-writer";
 import type { RealtimeOutlineReplacementResult } from "./outline-note-store";

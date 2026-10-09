@@ -64,6 +64,12 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["日期", "data"],
     ["时间", "data"],
   ],
+  "src/notes/note-transcript-ledger.ts": [
+    ["分段原始转写", "match"],
+    ["导入文本来源", "match"],
+    ["导入文本原文", "match"],
+    ["原始转写：", "match"],
+  ],
   "src/asr/channel-transcription.ts": [
     ["：** ", "note"],
   ],

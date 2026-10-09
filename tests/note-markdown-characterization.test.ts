@@ -9,20 +9,17 @@ vi.stubGlobal("window", {});
 import {
   buildActiveVersionBlock,
   buildImportedTextSegment,
-  cleanTranscriptBlock,
   extractIntegratedBriefing,
-  ensureTranscriptBlocks,
-  extractTranscriptSegments,
   splitImportedTextIntoNormalSegments,
   normalizeBriefingFrontmatterFields,
   parseSuggestedTagsFromOutput,
   postProcessBriefingOutput,
   replaceActiveVersionBlock,
-  splitTranscriptSections,
   stripEmptyPlaceholders,
   stripImportAppendices,
   stripMarkdownForEmailBrief,
 } from "../src/notes/note-markdown";
+import { cleanTranscriptBlock, ensureTranscriptBlocks, extractTranscriptSegments, splitTranscriptSections } from "../src/notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../src/notes/note-source-metadata";
 import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
@@ -41,6 +38,83 @@ const END = QNALOG_ACTIVE_VERSION_END;
 const SESSION_LINE = "<!-- " + NS_TAG + "-session:" + NS_TAG + "-test1234-abcdef -->";
 const EMBED = "![]" + "[[qnalog-20260924-100138.webm]]";
 const count = (text: string, needle: string) => text.split(needle).length - 1;
+const transcriptLedgerFixture = () => {
+  const segment = attachTextTranscript({
+    index: 0, startOffsetMs: 1000, endOffsetMs: 2000,
+    text: "PREFIX alpha beta SUFFIX", rawText: "alpha beta",
+  }, "ledger-fixture", "text-import");
+  const originalBlock = serializeTranscriptBlock(segment, "### Segment 1 (00:01–00:02)", "alpha beta");
+  const driftedBlock = originalBlock.replace("\nalpha beta\n", "\nalpha corrected beta\n");
+  const legacyTail = "\n### Segment 2 (00:02–00:03) [[Audio/old.wav|00:02]]\n\n<!-- qnalog-transcribe-task:task-ledger -->\nLegacy $& $` $' $$\n";
+  return {
+    originalBlock,
+    driftedBlock,
+    fixture: "<details><summary>Segmented raw transcript</summary>\n"
+      + driftedBlock + legacyTail + "</details>\nAFTER",
+  };
+};
+
+describe("transcript ledger helper contracts", () => {
+  it("preserves edited visible text when reconciliation is disabled and upgrades only legacy sections", () => {
+    const { driftedBlock, fixture } = transcriptLedgerFixture();
+    const upgraded = ensureTranscriptBlocks(fixture, "ledger-fixture", { reconcileEditedText: false });
+    const [first, second] = readTranscriptBlocks(upgraded);
+    expect(upgraded).toContain(driftedBlock);
+    expect(first.segment.transcript?.currentRevision).toBe(1);
+    expect(first.visibleBlock).toBe("alpha corrected beta");
+    expect(first.drifted).toBe(true);
+    expect(second.segment.transcript?.id).toBe("seg:ledger-fixture:1");
+    expect(second.segment.transcript?.currentRevision).toBe(0);
+    expect(second.segment.transcript?.revisions[0].source).toBe("legacy-transcript");
+    expect(second.segment.text).toBe("Legacy $& $` $' $$");
+    expect(second.segment.queueTaskId).toBe("task-ledger");
+    expect(second.segment.audioStartOffsetMs).toBe(2000);
+    expect(second.segment.audioEndOffsetMs).toBe(3000);
+    expect(ensureTranscriptBlocks(upgraded, "ledger-fixture", { reconcileEditedText: false })).toBe(upgraded);
+  });
+
+  it("reconciles edits as a new revision and is idempotent", () => {
+    const { fixture } = transcriptLedgerFixture();
+    const upgraded = ensureTranscriptBlocks(fixture, "ledger-fixture");
+    const [first, second] = readTranscriptBlocks(upgraded);
+    expect(first.segment.transcript?.id).toBe("seg:ledger-fixture:0");
+    expect(first.segment.transcript?.currentRevision).toBe(2);
+    expect(first.segment.transcript?.revisions).toMatchObject([
+      { revision: 1, rawText: "alpha beta" },
+      { revision: 2, source: "edited-transcript", rawText: null },
+    ]);
+    expect(first.segment.text).toBe("PREFIX alpha corrected beta SUFFIX");
+    expect(first.visibleBlock).toBe("alpha corrected beta");
+    expect(first.drifted).toBe(false);
+    expect(second.segment.transcript?.id).toBe("seg:ledger-fixture:1");
+    expect(second.segment.transcript?.currentRevision).toBe(0);
+    expect(second.segment.transcript?.revisions[0].source).toBe("legacy-transcript");
+    expect(second.segment.text).toBe("Legacy $& $` $' $$");
+    expect(second.segment.queueTaskId).toBe("task-ledger");
+    expect(second.segment.audioStartOffsetMs).toBe(2000);
+    expect(second.segment.audioEndOffsetMs).toBe(3000);
+    expect(upgraded.endsWith("</details>\nAFTER")).toBe(true);
+    expect(ensureTranscriptBlocks(upgraded, "ledger-fixture")).toBe(upgraded);
+  });
+
+  it("propagates the same conversion error instance from unknown string inputs", () => {
+    const failure = new Error("conversion");
+    const input = { toString() { throw failure; } };
+    for (const helper of [
+      () => cleanTranscriptBlock(input),
+      () => splitTranscriptSections(input),
+      () => extractTranscriptSegments(input),
+    ]) {
+      let caught: unknown;
+      try {
+        helper();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBe(failure);
+    }
+  });
+});
 
 describe("iterateNoteHeadingBlocks", () => {
   it("returns original heading captures and exact ranges for adjacent and final headings", () => {
