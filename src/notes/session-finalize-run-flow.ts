@@ -12,7 +12,7 @@ import { normalizeMeetingWorkbench } from "./meeting-workbench-state";
 import { getErrorMessage, formatElapsed } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 import { getSegmentsForFinalSession } from "./session-finalize-sources";
-type FinalizeProgress = Omit<SessionWorkProgress, "percent"> & { percent?: number | null };
+export type FinalizeProgress = Omit<SessionWorkProgress, "percent"> & { percent?: number | null };
 
 export interface SessionShortRecordingPort {
   hasQueue(): boolean;

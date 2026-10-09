@@ -2220,6 +2220,84 @@ async function main() {
         plugin.queue.tasks = finalizeProbeQueue;
         files.delete(finalizeProbePath);
       }
+      const liveProbeStart = noticeMessages.length;
+      const liveProbePath = "QnALog/live-segment-probe.md";
+      const liveProbeFile = new TFile(liveProbePath);
+      liveProbeFile._content = "# probe\n";
+      files.set(liveProbePath, liveProbeFile);
+      const liveProbeQueue = plugin.queue.tasks.slice();
+      const liveProbeStages = [];
+      const liveProbeDiagnostics = [];
+      const originalLiveProgress = plugin.asrPipeline.setSessionWorkProgress;
+      const originalLiveDiagnostic = plugin.diagnostics.logDiagnostic;
+      const originalLiveProfile = plugin.profiles.getActiveTranscribeProfile;
+      const originalLiveConsoleError = console.error;
+      const liveProbeResults = [];
+      const runLiveProbe = async (id, segment, options = {}) => {
+        plugin.queue.tasks = liveProbeQueue.slice();
+        liveProbeFile._content = "# probe\n";
+        const stagesBefore = liveProbeStages.length;
+        const diagnosticsBefore = liveProbeDiagnostics.length;
+        const session = {
+          id, mode: "monologue", mdPath: liveProbePath, sessionStamp: "20260914-120000",
+          startedAt: "2026-09-14T12:00:00.000Z", segments: [], finalized: false, captureMode: "mic",
+          workProgress: {}, ...options.session,
+        };
+        if (options.profile) plugin.profiles.getActiveTranscribeProfile = () => options.profile;
+        else plugin.profiles.getActiveTranscribeProfile = originalLiveProfile;
+        await plugin.sessionFinalize.processSegment(session, {
+          startOffsetMs: 0, endOffsetMs: 5000, ext: "webm", isFinal: false,
+          segmentIndex: liveProbeResults.length, ...segment,
+        });
+        liveProbeResults.push({
+          notices: noticeMessages.slice(liveProbeStart),
+          content: liveProbeFile._content,
+          segments: JSON.stringify(session.segments),
+          queued: plugin.queue.tasks.slice(liveProbeQueue.length).map(({ type, status, lastError, sessionId }) => ({ type, status, lastError, sessionId })),
+          stages: liveProbeStages.slice(stagesBefore),
+          diagCodes: liveProbeDiagnostics.slice(diagnosticsBefore).map(({ code }) => code),
+          issue: plugin.asrPipeline.getRecordingIssue()?.kind ?? null,
+          streamingCleared: session.streamingClient === null || session.streamingClient === undefined,
+        });
+        noticeMessages.length = liveProbeStart;
+      };
+      try {
+        console.error = () => undefined;
+        plugin.asrPipeline.setSessionWorkProgress = (session, patch) => {
+          liveProbeStages.push(patch.stage);
+          return originalLiveProgress.call(plugin.asrPipeline, session, patch);
+        };
+        plugin.diagnostics.logDiagnostic = async (...args) => {
+          liveProbeDiagnostics.push({ code: args[1], level: args[0], data: args[3] });
+          return originalLiveDiagnostic.apply(plugin.diagnostics, args);
+        };
+        await runLiveProbe("live-master-only", { isFinal: true, masterOnly: true, masterAudioSavePromise: Promise.resolve() });
+        await runLiveProbe("live-short-discard", {}, { session: { shortRecordingTier: "discard" } });
+        await runLiveProbe("live-stream-success", {}, {
+          profile: { id: "probe", transcribeMode: "streaming", model: "m" },
+          session: { streamingClient: { finish: async () => undefined, getFullText: () => "探针转写。第二句。" } },
+        });
+        await runLiveProbe("live-stream-missing", {}, { profile: { id: "probe", transcribeMode: "streaming", model: "m" } });
+        await runLiveProbe("live-deferred", {}, { session: { asrDeferredMode: true } });
+        await runLiveProbe("live-stream-long-empty", { endOffsetMs: 40000 }, {
+          profile: { id: "probe", transcribeMode: "streaming", model: "m" },
+          session: { streamingClient: { finish: async () => undefined, getFullText: () => "" } },
+        });
+        await runLiveProbe("live-stream-short-empty", { endOffsetMs: 5000 }, {
+          profile: { id: "probe", transcribeMode: "streaming", model: "m" },
+          session: { streamingClient: { finish: async () => undefined, getFullText: () => "" } },
+        });
+        const liveProbeDigest = createHash("sha256").update(JSON.stringify(liveProbeResults)).digest("hex");
+        console.log(`[live-segment-flow] digest: ${liveProbeDigest}`);
+      } finally {
+        plugin.asrPipeline.setSessionWorkProgress = originalLiveProgress;
+        plugin.diagnostics.logDiagnostic = originalLiveDiagnostic;
+        console.error = originalLiveConsoleError;
+        plugin.profiles.getActiveTranscribeProfile = originalLiveProfile;
+        noticeMessages.length = liveProbeStart;
+        plugin.queue.tasks = liveProbeQueue;
+        files.delete(liveProbePath);
+      }
       
       
       const polishLiteralBody = "模型正文\n$& $` $' $$";

@@ -7,13 +7,11 @@ import { transcribeAudio } from "../asr/transcribe";
 import { readFileFrontmatter } from "../shared/util-note";
 import { loadVocabularyGroups, applyVocabularyCorrections } from "../vocabulary";
 import { getLlmConfigIssue } from "../llm/core";
-import type { PluginSettings, RecordingSession, PreparedLiveSegment, Segment } from "../shared/types";
+import type { PluginSettings, RecordingSession, PreparedLiveSegment } from "../shared/types";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
-import { getErrorMessage, pad, formatElapsed } from "../shared/util-common";
-import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } from "../shared/util-audio";
-import { createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "../asr/live-segment-policy";
+import { formatElapsed } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
-import { DEFAULT_SPEAKER_CHANNELS, MAX_SPEAKER_CHANNELS, buildSpeakerMappings, initialAudioChannelRuntimeMode, normalizeAudioChannelMode, normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName, resolveAudioChannelRuntimeMode } from "../audio/channel-speakers";
+import { normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName } from "../audio/channel-speakers";
 import type { SpeakerId } from "../audio/channel-speakers";
 import { transcribeAudioByChannels } from "../asr/channel-transcription";
 import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
@@ -22,7 +20,6 @@ import { classifyRecordingIssue } from "../notes/recording-issues";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 import { getSegmentsDurationMs } from "../notes/audio-refs";
-import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { buildTitleSourceFromSegments } from "../notes/note-markdown";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -34,13 +31,10 @@ import { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import type { MeetingWorkbenchRunOptions } from "../notes/meeting-workbench-service";
 import { NoteIndexService } from "../notes/note-index-service";
 import { VersionStore } from "../versions/version-store";
-import { NS_AUDIO_PREFIX, NS_FM_SPEAKERS, nsMarker } from "../shared/namespace";
+import { NS_FM_SPEAKERS } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
-import type { AsrTranscriptResult, AsrTranscriptUnit } from "../asr/transcript-result";
-import { attachTranscriptResult, getCurrentTranscript, splitTranscriptTextUnits } from "../transcript/session-transcript";
-import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
-import { labelText } from "../shared/note-labels";
+import { getCurrentTranscript } from "../transcript/session-transcript";
 import type { ContinuationService } from "../session/continuation-service";
 import type { SessionStore } from "../session/session-store";
 import type { SessionFinalizeFlowHost } from "./session-finalize-flow";
@@ -51,6 +45,8 @@ import type { SessionTranscriptSourcePort } from "./session-finalize-sources";
 import { finishShortRecordingFlow } from "./session-finalize-run-flow";
 import { runSessionFinalization } from "./session-finalize-run-flow";
 import type { SessionFinalizeRunPort, SessionShortRecordingPort } from "./session-finalize-run-flow";
+import { processLiveSegment } from "./live-segment-flow";
+import type { LiveSegmentPort } from "./live-segment-flow";
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
@@ -112,408 +108,47 @@ export class SessionFinalizeService {
     this.notePanelLoading = null;
   }
 
-  async processSegment(session: RecordingSession, seg: PreparedLiveSegment) {
-    if (!session) return;
-    if (seg && seg.isFinal && seg.masterOnly && !session.shortRecordingTier) {
-      // 分段 recorder 已失效但独立 masterRecorder 仍拿到了完整录音。
-      // 这里只保存母带并推进最终整理，不能把整场母带再次当作最后一段转写，
-      // 否则前面已转写的内容会重复、并额外产生一次整场 ASR 费用。
-      if (seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
-      else await this.host.asrPipeline.saveMasterAudio(session, seg);
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: "transcribe-finalized",
-        label: t("Finalizing transcription"),
-        percent: null,
-        detail: t("Segmented recording has stopped; the full recording has been kept; organizing the transcription collected so far"),
-      });
-      try {
-        await this.host.diagnostics.logDiagnostic("warn", "recording.master_only_finalize", t("The last segment was unavailable; the full recording was saved and the transcription collected so far is being organized"), {
-          mode: session.mode,
-          segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
-          endOffsetMs: Number(seg.endOffsetMs) || 0,
-        });
-      } catch { /* intentionally empty */ }
-      this.host.requestOutlineRefresh();
-      return;
-    }
-    if (session.shortRecordingTier) {
-      // 短录音：音频（只留音频级别）已由 handleSegment 交给 saveMasterAudio 落盘，
-      // 这里只等它结束，后续收尾会按 shortRecordingTier 删掉结尾创建的纪要。
-      if (seg && seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
-      await this.host.asrPipeline.closeStreamingForDiscard(session);
-      return;
-    }
-    const continuationOffsetMs = Math.max(0, Number(session.continuationOffsetMs) || 0);
-    const baseSegmentCount = Array.isArray(session.continuationBaseSegments) ? session.continuationBaseSegments.length : 0;
-    const segmentIndex = Number.isFinite(Number(seg.segmentIndex))
-      ? Number(seg.segmentIndex)
-      : baseSegmentCount + (Array.isArray(session.segments) ? session.segments.length : 0);
-    const segNumber = Number.isFinite(Number(seg.segNumber)) ? Number(seg.segNumber) : segmentIndex + 1;
-    const displayStartOffsetMs = Number.isFinite(Number(seg.displayStartOffsetMs))
-      ? Number(seg.displayStartOffsetMs)
-      : Math.max(0, Number(seg.startOffsetMs) || 0) + continuationOffsetMs;
-    const displayEndOffsetMs = Number.isFinite(Number(seg.displayEndOffsetMs))
-      ? Number(seg.displayEndOffsetMs)
-      : Math.max(displayStartOffsetMs, (Number(seg.endOffsetMs) || 0) + continuationOffsetMs);
-    const segmentAudioName = seg.segmentAudioName || `${NS_AUDIO_PREFIX}-${session.sessionStamp}-seg${pad(segNumber)}.${seg.ext}`;
-    const segmentAudioPath = seg.segmentAudioPath || obsidian.normalizePath(`${this.host.asrPipeline.getSegmentCacheFolder()}/${segmentAudioName}`);
-    const segmentDurationMs = Math.max(0, displayEndOffsetMs - displayStartOffsetMs);
+  processSegment(session: RecordingSession, seg: PreparedLiveSegment): Promise<void> {
+    return processLiveSegment(this.liveSegmentPort(), session, seg);
+  }
 
-    let spoolResult = null;
-    if (seg.spoolPromise != null) {
-      spoolResult = await seg.spoolPromise;
-    } else if (seg.blob) {
-      try {
-        await this.host.asrPipeline.ensureSegmentCacheFolder();
-        await this.host.app.vault.adapter.writeBinary(segmentAudioPath, await seg.blob.arrayBuffer());
-        spoolResult = { persisted: true, fallbackBlob: null, error: null };
-      } catch (e) {
-        spoolResult = { persisted: false, fallbackBlob: seg.blob, error: e };
-        console.error(e);
-        new obsidian.Notice(`${t(" segments")}${segNumber}${t(" audio write failed: ")}${(e && e.message) || e}`);
-      }
-    }
-    if (spoolResult && spoolResult.queueTaskId) seg.queueTaskId = spoolResult.queueTaskId;
-    await this.host.asrPipeline.markLiveSegmentQueueTaskRunning(seg);
-    const liveJob = seg.jobId ? this.host.asrPipeline.getLiveAsrJobs(session).get(seg.jobId) : null;
-    if (liveJob) liveJob.state = "transcribing";
-    this.host.asrPipeline.updateLiveAsrBacklogPolicy(session, "transcribing");
-    if (seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
-    else if (seg.isFinal) await this.host.asrPipeline.saveMasterAudio(session, seg);
-
-    let text = ""; let err = null;
-    let transcribeBlob = null;
-    let channelTranscription = null;
-    let asrResult: AsrTranscriptResult | null = null;
-    let streamingRawText = "";
-    let batchAsrAttempted = false;
-    let batchAsrFailureRecorded = false;
-    const activeProfile = this.host.profiles.getActiveTranscribeProfile();
-    const isStreamingProvider = activeProfile && activeProfile.transcribeMode === "streaming";
-    this.host.asrPipeline.setSessionWorkProgress(session, {
-      stage: "transcribing",
-      label: `${t("Transcript segment ")}${segNumber}${t(" segments")}`,
-      percent: null,
-      detail: t("Audio is being sent to the transcription service"),
-    });
-    if (session.streamingClient) {
-      // 流式转写：跳过 HTTP 切片转写，等流式客户端 finish 后取累计文本
-      try {
-        if (session.pcmEncoder) { try { session.pcmEncoder.stop(); } catch { /* intentionally empty */ } session.pcmEncoder = null; }
-        await session.streamingClient.finish();
-        streamingRawText = session.streamingClient.getFullText() || session.streamingFullText || "";
-        text = streamingRawText;
-      } catch (e) {
-        err = e;
-        console.error("[QnALog] streaming finish failed", e);
-        streamingRawText = session.streamingFullText || "";
-        text = streamingRawText;
-      }
-      let vocabularyGroups = null;
-      try {
-        vocabularyGroups = await loadVocabularyGroups(this.host);
-        text = applyVocabularyCorrections(text, vocabularyGroups);
-      } catch { /* keep the service text when vocabulary storage is unavailable */ }
-      if (!err) {
-        const rawStreamText = streamingRawText;
-        const units: AsrTranscriptUnit[] = splitTranscriptTextUnits(rawStreamText).map((rawText) => ({
-          rawText,
-          normalizedText: vocabularyGroups ? applyVocabularyCorrections(rawText, vocabularyGroups) : rawText,
-          speakerId: null,
-          speakerName: null,
-          startMs: null,
-          endMs: null,
-          timing: "unknown",
-        }));
-        asrResult = {
-          text,
-          rawText: rawStreamText,
-          providerId: String(activeProfile && activeProfile.id || session.importTranscribeProviderId || this.host.settings.activeTranscribeProvider || ""),
-          units,
-        };
-      }
-      try { await this.host.meetingWorkbench.removeLiveTranscriptBlock(session.mdPath, session.id); } catch { /* intentionally empty */ }
-      session.streamingClient = null;
-    } else if (isStreamingProvider) {
-      // 流式服务但客户端连接失败：保留音频但不做 HTTP 切片转写（端点是 wss://，HTTP 必失败）
-      err = new Error(t("The streaming transcription connection could not be established. Check your API key and network, then record again."));
-      console.error("[QnALog]", err.message);
-    } else {
-      const circuitOpen = isLiveAsrCircuitOpen(session.asrCircuitState || createLiveAsrCircuitState())
-        || this.host.asrPipeline.isAsrServiceCircuitOpen();
-      if (session.asrDeferredMode || circuitOpen) {
-        err = new Error(session.asrDeferredMode
-          ? t("Realtime transcription backlog exceeded the safety threshold and has moved to the background queue")
-          : t("The transcription service is in a brief cooldown; work has moved to the background queue"));
-        err.asrDeferred = true;
-        err.deferReason = session.asrDeferredMode ? "backlog-critical" : "circuit-open";
-      } else {
-        transcribeBlob = spoolResult && spoolResult.fallbackBlob ? spoolResult.fallbackBlob : null;
-        if (!transcribeBlob && spoolResult && spoolResult.persisted) {
-          const cachedAudio = await this.host.readVaultAudioBlob(segmentAudioPath, segmentAudioName);
-          transcribeBlob = cachedAudio && cachedAudio.blob;
-        }
-        if (!transcribeBlob && seg.blob) transcribeBlob = seg.blob;
-        if (!transcribeBlob) {
-          err = new Error(t("The recorded segment cache could not be read; the background retry task has been kept"));
-        } else {
-          batchAsrAttempted = true;
-          try {
-            const transcribeMime = transcribeBlob.type || seg.blobType || mimeFromExt(seg.ext);
-            const reportedChannelCount = session.captureMode === "mic"
-              ? Math.max(1, Number(session.audioChannelCount) || 1)
-              : 1;
-            const channelMode = normalizeAudioChannelMode(session.audioChannelMode || this.host.settings.audioChannelMode);
-            const runtimeChannelMode = session.audioChannelRuntimeMode
-              || initialAudioChannelRuntimeMode(channelMode, reportedChannelCount);
-            const inspectRecordedChannels = session.captureMode === "mic"
-              && runtimeChannelMode !== "mono"
-              && activeProfile?.transcribeMode !== "whole-file";
-            // Only probe an auto-mode device until independent channel content is
-            // confirmed. Once resolved, the session stays on one stable path.
-            const expectedChannels = inspectRecordedChannels ? MAX_SPEAKER_CHANNELS : 1;
-            if (inspectRecordedChannels) {
-              channelTranscription = await transcribeAudioByChannels(
-                this.host,
-                transcribeBlob,
-                transcribeMime,
-                expectedChannels,
-                { requireSeparatedChannels: channelMode === "auto" && runtimeChannelMode === "probing" },
-              );
-              text = channelTranscription.text;
-              asrResult = channelTranscription;
-              session.audioChannelCount = channelTranscription.actualChannelCount;
-              session.audioChannelRuntimeMode = resolveAudioChannelRuntimeMode({
-                channelMode,
-                current: runtimeChannelMode,
-                separation: channelTranscription.separation,
-                usedMultichannel: channelTranscription.usedMultichannel,
-              });
-              session.channelSeparationMode = channelTranscription.usedMultichannel
-                ? "device-channels"
-                : session.audioChannelRuntimeMode === "probing"
-                  ? "pending"
-                  : channelTranscription.separation === "duplicated"
-                    ? "duplicated-input"
-                    : channelTranscription.actualChannelCount <= 1
-                      ? "single"
-                      : "encoder-downmix";
-              session.speakerChannels = channelTranscription.usedMultichannel
-                ? buildSpeakerMappings(channelTranscription.processedChannelCount, session.speakerChannels)
-                : {};
-              // 说话人确认要在转写完成时就让用户看见，否则改名入口只是静静挂在纪要页上没人发现。
-              if (channelTranscription.usedMultichannel && !session._channelSpeakersNotified) {
-                session._channelSpeakersNotified = true;
-                new obsidian.Notice(
-                  t("Separated {0} speakers by channel. You can enter their names at the top of the note.").replace("{0}", String(channelTranscription.processedChannelCount)),
-                  9000,
-                );
-              }
-              if (channelTranscription.deduplicatedParts > 0) {
-                session.channelCrosstalkDeduplicated = Math.max(0, Number(session.channelCrosstalkDeduplicated) || 0)
-                  + channelTranscription.deduplicatedParts;
-                await this.host.diagnostics.logDiagnostic("info", "asr.channel_crosstalk_deduplicated", t("Cross-channel duplicate transcription removed"), {
-                  segmentIndex,
-                  removedParts: channelTranscription.deduplicatedParts,
-                  totalRemovedParts: session.channelCrosstalkDeduplicated,
-                });
-              }
-              if (channelMode === "multichannel"
-                && channelTranscription.separation === "duplicated"
-                && !session._channelDuplicatedNotified) {
-                session._channelDuplicatedNotified = true;
-                new obsidian.Notice(t("All channels have identical content; transcribed as mono. Please change the receiver output to \"Stereo\" and try again."), 10000);
-                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_content_duplicated", t("Recording channels had duplicate content; fell back to mono transcription"), {
-                  actualChannelCount: channelTranscription.actualChannelCount,
-                  inputLabel: session.audioChannelLabel || "",
-                });
-              }
-              // 降混告警的「应有声道数」取设备实际协商值；用户选了多声道时至少期望 2，
-              // 避免用处理上限（4）去比对双发设备而误报。
-              const expectedHardwareChannels = channelMode === "multichannel"
-                ? Math.max(reportedChannelCount, DEFAULT_SPEAKER_CHANNELS)
-                : reportedChannelCount;
-              if (channelMode === "multichannel"
-                && expectedHardwareChannels > 1
-                && channelTranscription.actualChannelCount < expectedHardwareChannels
-                && !session._channelDownmixNotified) {
-                session._channelDownmixNotified = true;
-                const actual = channelTranscription.actualChannelCount;
-                new obsidian.Notice(actual > 1
-                  ? t("Detected {0} available channel(s); speakers will be separated by channel.").replace("{0}", String(actual))
-                  : t("The input device has multiple channels, but the recording file is mono; transcription will proceed in mono."), 9000);
-                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_encoder_downmix", t("The recording encoding kept fewer channels than the device input"), {
-                  expectedChannelCount: expectedHardwareChannels,
-                  actualChannelCount: actual,
-                  inputLabel: session.audioChannelLabel || "",
-                });
-              }
-              if (channelTranscription.errors.length) {
-                await this.host.diagnostics.logDiagnostic("warn", "asr.channel_partial_failure", t("Some channels failed to transcribe; content from the other channels was kept"), {
-                  segmentIndex,
-                  channelCount: channelTranscription.actualChannelCount,
-                  errors: channelTranscription.errors,
-                });
-              }
-            } else {
-              asrResult = await transcribeAudio(this.host, transcribeBlob, transcribeMime);
-              text = asrResult.text;
-            }
-          } catch (e) {
-            err = e;
-            batchAsrFailureRecorded = true;
-            this.host.asrPipeline.recordLiveAsrAttemptFailure(session, e, seg);
-            console.error(e);
-          }
-        }
-      }
-    }
-    if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000) {
-      // HTTP 200 + 空正文并不等于成功。对长段按可重试软失败处理并保留切片，
-      // 与导入音频路径保持一致，避免服务偶发空结果被静默写成“无内容”。
-      err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
-      asrResult = null;
-      if (batchAsrAttempted && !batchAsrFailureRecorded) {
-        batchAsrFailureRecorded = true;
-        this.host.asrPipeline.recordLiveAsrAttemptFailure(session, err, seg);
-      }
-      try {
-        await this.host.diagnostics.logDiagnostic("warn", "asr.segment_empty", t("A recorded segment returned an empty transcription; it was kept as a soft failure and queued"), {
-          segmentIndex,
-          startOffsetMs: displayStartOffsetMs,
-          endOffsetMs: displayEndOffsetMs,
-          durationMs: segmentDurationMs,
-          mode: session.mode,
-        });
-      } catch { /* intentionally empty */ }
-    }
-    if (!err && batchAsrAttempted) this.host.asrPipeline.recordLiveAsrAttemptSuccess(session);
-    if (err) {
-      if (err.asrDeferred) {
-        await this.host.diagnostics.logDiagnostic("warn", "asr.segment_deferred", t("The recorded segment skipped the realtime request and moved to the background queue"), {
-          segmentIndex,
-          startOffsetMs: displayStartOffsetMs,
-          endOffsetMs: displayEndOffsetMs,
-          durationMs: segmentDurationMs,
-          reason: err.deferReason || "deferred",
-          pendingDurationMs: this.host.asrPipeline.getLiveAsrBacklogSummary(session).totalDurationMs,
-        });
-      } else {
-        const issueKind = classifyRecordingIssue(err);
-        this.host.asrPipeline.setRecordingIssue(issueKind, {
-          source: "asr",
-          message: getErrorMessage(err),
-          startedAtMs: displayStartOffsetMs,
-        });
-        await this.host.diagnostics.logDiagnostic("error", "asr.segment_failed", t("Transcription failed for a recorded segment"), {
-          provider: this.host.settings.activeTranscribeProvider,
-          model: this.host.profiles.getActiveTranscribeProfile() && this.host.profiles.getActiveTranscribeProfile().model,
-          mime: (transcribeBlob && transcribeBlob.type) || seg.blobType || "",
-          size: (transcribeBlob && transcribeBlob.size) || seg.blobSize || 0,
-          segmentIndex,
-          startOffsetMs: displayStartOffsetMs,
-          endOffsetMs: displayEndOffsetMs,
-          mode: session.mode,
-          error: diagnosticError(err),
-        });
-        new obsidian.Notice(isStreamingProvider
-          ? t("Segment {0} failed to transcribe in streaming mode and cannot be retried offline; recording continues locally. Use \"Re-organize\" when the whole recording finishes, or record that segment again.").replace("{0}", String(segNumber))
-          : (!String(text || "").trim()
-            ? t("Segment {0} returned no text; the audio slice has been kept and queued for retry.").replace("{0}", String(segNumber))
-            : t("Segment {0} failed to transcribe; recording continues locally and it has been queued for retry.").replace("{0}", String(segNumber))), 7000);
-      }
-    } else if (!text || !String(text).trim()) {
-      // 转写成功返回，但内容为空 → 可能音频设备没选对 / 没有声音。
-      // 请求既然成功返回，网络/服务是通的，清掉遗留横幅。
-      this.host.asrPipeline.clearRecordingIssue("network");
-      this.host.asrPipeline.clearRecordingIssue("service");
-      // 防误报：只在"本场此前从未产生过任何非空转写"时提示。
-      // 否则会议中途的合理静默段（开头/中场没人说话）会骚扰正在正常录音的用户。
-      const hadAnyText = Array.isArray(session.segments) && session.segments.some((s) => s && s.text && String(s.text).trim());
-      await this.host.diagnostics.logDiagnostic("warn", "asr.empty_result", t("This segment has no transcription"), {
-        segmentIndex, mode: session.mode, hadAnyText,
-      });
-      if (!hadAnyText && !session._emptyAsrNotified) {
-        session._emptyAsrNotified = true;
-        new obsidian.Notice(t("No speech detected in this segment. Go to \"Settings → General → Audio input\" to test the selected device."), 9000);
-      }
-    } else {
-      this.host.asrPipeline.clearRecordingIssue("network");
-      this.host.asrPipeline.clearRecordingIssue("service");
-    }
-
-    const playbackAudioName = session.masterAudioName || segmentAudioName;
-    const playbackAudioPath = session.masterAudioPath || segmentAudioPath;
-    let segmentRecord: Segment = {
-      index: segmentIndex,
-      startOffsetMs: displayStartOffsetMs,
-      endOffsetMs: displayEndOffsetMs,
-      audioStartOffsetMs: Math.max(0, Number(seg.startOffsetMs) || 0),
-      audioEndOffsetMs: Math.max(0, Number(seg.endOffsetMs) || 0),
-      audioName: playbackAudioName,
-      audioPath: playbackAudioPath,
-      segmentAudioName,
-      segmentAudioPath,
-      text,
-      error: err ? (err.message || String(err)) : null,
-      isFinal: !!seg.isFinal,
-      // 音源标记（HR 模式 / 角色识别基础）：
-      //   mic           = 麦克风端
-      //   virtualCable  = 电脑音频端（线上面试场景下通常是对面候选人）
-      //   mix-virtual   = 当前是混合录音，分不清；后续提交里会改成双 stream 分别打标
-      // seg.source 优先（来自 RecordSession 未来的双流路径），fallback 到 session.captureMode
-      source: (seg && seg.source) || session.captureMode || "mic",
+  private liveSegmentPort(): LiveSegmentPort {
+    return {
+      getSettings: () => this.host.settings,
+      getActiveProfile: () => this.host.profiles.getActiveTranscribeProfile(),
+      getSegmentCacheFolder: () => this.host.asrPipeline.getSegmentCacheFolder(),
+      ensureSegmentCacheFolder: () => this.host.asrPipeline.ensureSegmentCacheFolder(),
+      writeSegmentAudio: (path, data) => this.host.app.vault.adapter.writeBinary(path, data),
+      saveMasterAudio: (session, seg) => this.host.asrPipeline.saveMasterAudio(session, seg),
+      closeStreamingForDiscard: (session) => this.host.asrPipeline.closeStreamingForDiscard(session),
+      markSegmentTaskRunning: (seg) => this.host.asrPipeline.markLiveSegmentQueueTaskRunning(seg),
+      getLiveAsrJob: (session, jobId) => this.host.asrPipeline.getLiveAsrJobs(session).get(jobId),
+      updateBacklogPolicy: (session, reason) => this.host.asrPipeline.updateLiveAsrBacklogPolicy(session, reason),
+      isServiceCircuitOpen: () => this.host.asrPipeline.isAsrServiceCircuitOpen(),
+      readVaultAudio: async (path, fallbackName) => {
+        const audio = await this.host.readVaultAudioBlob(path, fallbackName);
+        return audio ? { blob: audio.blob } : null;
+      },
+      loadVocabulary: () => loadVocabularyGroups(this.host),
+      applyVocabulary: (text, groups) => applyVocabularyCorrections(text, groups),
+      removeLiveTranscriptBlock: (mdPath, sessionId) => this.host.meetingWorkbench.removeLiveTranscriptBlock(mdPath, sessionId),
+      transcribeAudio: (blob, mime) => transcribeAudio(this.host, blob, mime),
+      transcribeChannels: (blob, mime, count, options) => transcribeAudioByChannels(this.host, blob, mime, count, options),
+      recordAttemptFailure: (session, error, seg) => this.host.asrPipeline.recordLiveAsrAttemptFailure(session, error, seg),
+      recordAttemptSuccess: (session) => this.host.asrPipeline.recordLiveAsrAttemptSuccess(session),
+      getBacklogDurationMs: (session) => this.host.asrPipeline.getLiveAsrBacklogSummary(session).totalDurationMs,
+      classifyIssue: (error) => classifyRecordingIssue(error),
+      setRecordingIssue: (kind, patch) => this.host.asrPipeline.setRecordingIssue(kind, patch),
+      clearRecordingIssue: (kind) => this.host.asrPipeline.clearRecordingIssue(kind),
+      markSessionAsrJobsDeferred: (session) => this.host.asrPipeline.markSessionAsrJobsDeferred(session),
+      keepSegmentTaskForRetry: (session, descriptor, error) => this.host.asrPipeline.keepLiveSegmentQueueTaskForRetry(session, descriptor, error),
+      removeLiveSegmentTask: (seg) => this.host.asrPipeline.removeLiveSegmentQueueTask(seg),
+      insertBeforeSegmentsEnd: (mdPath, block, sessionId) => this.host.noteWriter.insertBeforeSegmentsEnd(mdPath, block, sessionId),
+      setProgress: (session, patch) => this.host.asrPipeline.setSessionWorkProgress(session, patch),
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
+      requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
+      scheduleRealtimeOutline: () => this.host.outline.scheduleRealtimeOutline(),
     };
-    const segmentArrayIndex = session.segments.length;
-    session.segments.push(segmentRecord);
-
-    if (err && !isStreamingProvider) {
-      // 流式 provider(endpoint 是 wss://)的失败段不入 transcribe 重试队列——重试走 HTTP 必然再失败、
-      // 把任务卡在 failed 永远清不掉。流式无法离线重切重传，留在笔记里标失败即可。
-      if (err.asrDeferred || isTransientAsrError(err)) this.host.asrPipeline.markSessionAsrJobsDeferred(session);
-      const retryTask = await this.host.asrPipeline.keepLiveSegmentQueueTaskForRetry(session, Object.assign({}, seg, {
-        segmentAudioPath,
-        segmentAudioName,
-        segmentIndex,
-        displayStartOffsetMs,
-        displayEndOffsetMs,
-      }), err);
-      segmentRecord.queueTaskId = retryTask.id;
-    }
-    const visibleText = err ? getTranscribeSegmentPlaceholder(err, {
-      streaming: isStreamingProvider,
-      deferred: !!err.asrDeferred,
-      retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)),
-    }) : (text ? text : labelText("noContentSegment"));
-    segmentRecord = attachTranscriptResult(
-      segmentRecord,
-      session.id,
-      err ? null : asrResult,
-      isStreamingProvider ? "streaming-transcript" : "asr",
-    );
-    session.segments[segmentArrayIndex] = segmentRecord;
-
-    const segTitle = `### ${labelText("segment", segNumber)} (${formatElapsed(displayStartOffsetMs)}–${formatElapsed(displayEndOffsetMs)}) ${getAudioTimeLink(playbackAudioName, Math.max(0, Number(seg.startOffsetMs) || 0))}${seg.isFinal ? " · 结束" : ""}`;
-    const heading = [segTitle, segmentRecord.queueTaskId ? nsMarker("transcribe-task", segmentRecord.queueTaskId) : ""]
-      .filter(Boolean)
-      .join("\n\n");
-    const block = `\n${serializeTranscriptBlock(segmentRecord, heading, visibleText)}\n`;
-    await this.host.noteWriter.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
-    if (!err || isStreamingProvider) await this.host.asrPipeline.removeLiveSegmentQueueTask(seg);
-
-    this.host.requestOutlineRefresh();
-    this.host.asrPipeline.setSessionWorkProgress(session, {
-      stage: seg.isFinal ? "transcribe-finalized" : "transcribed",
-      label: seg.isFinal ? t("Finalizing transcription") : (err && err.asrDeferred ? t("Cached {0} segments").replace("{0}", String(session.segments.length)) : t("Transcribed {0} segments").replace("{0}", String(session.segments.length))),
-      percent: null,
-      detail: seg.isFinal ? t("Starting AI organizing") : (err && err.asrDeferred ? t("Audio saved to disk; waiting for background transcription retry") : t("Segment transcriptions have been written to the note")),
-    });
-
-    if (!seg.isFinal && text && String(text).trim()) new obsidian.Notice(`${t(" segments ")}${segNumber}${t(" transcribed")}`);
-
-    if (this.host.settings.enableRealtimeOutline && text && !err) {
-      this.host.outline.scheduleRealtimeOutline();
-    }
   }
 
 
