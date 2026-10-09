@@ -3,45 +3,21 @@
 
 import * as obsidian from "obsidian";
 import { getModeDisplayName, getModeMeta, getModePrefix } from "../shared/mode-meta";
-import { getSessionMetaDurationMs } from "../shared/util-text";
-import { stripModeSuggestionBlocks } from "../llm/core";
 import type { PluginSettings } from "../shared/types";
 import { getLearnedLlmOutputCeiling } from "../llm/output-budget";
-import { splitVersionPayload } from "../versions/version-content";
-import { getTaskErrorMessage } from "../shared/task-activity";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
-import { buildEmptyLlmOutputFallback } from "./note-write-content";
-import { getSegmentsDurationMs } from "../notes/audio-refs";
-import { ROLE_MAPPING_FIELDS, applyRoleMappingToSegments, extractRoleMappingFromFrontmatter, parseRoleMapItem } from "../notes/note-markdown";
-import { ensureTranscriptBlocks, extractTranscriptSegments } from "../notes/note-transcript-ledger";
-import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { detectRecentNoteMode } from "../recent/recent-notes";
 import { cleanTranscript, mergeAndPolish } from "../briefing/merge-pipeline";
 import { TaskActivityService } from "../tasks/task-activity-service";
 import { VersionStore } from "../versions/version-store";
 import { NoteIndexService } from "../notes/note-index-service";
-import { isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
+import { stripModeSuggestionBlocks } from "../llm/core";
+import type { RepolishOptions, RepolishFlowBasePort, RepolishFlowPort } from "./repolish-flow";
+import { repolishMarkdownFile as repolishMarkdownFileFlow } from "./repolish-flow";
+import type { CleanScriptFlowPort } from "./clean-script-flow";
+import { generateCleanScript as generateCleanScriptFlow, findCleanCopy as findCleanCopyFlow } from "./clean-script-flow";
+import type { Segment } from "../shared/types";
 
-import { t } from "../shared/i18n";
-import { getCurrentTranscript } from "../transcript/session-transcript";
-import { readSessionKnowledge } from "../briefing/session-knowledge";
-
-function buildUtteranceProjections(segments, mapping) {
-  const orderedMapping = [...(mapping || [])].sort((left, right) => right.from.length - left.from.length);
-  return (segments || []).flatMap((segment) => {
-    if (!segment.transcript) return [];
-    return getCurrentTranscript(segment.transcript).utterances.flatMap((utterance) => {
-      let normalizedText = utterance.normalizedText;
-      for (const item of orderedMapping) {
-        if (item.from) normalizedText = normalizedText.split(item.from).join(item.to);
-      }
-      const speakerName = orderedMapping.find((item) => item.from === utterance.speakerName)?.to ?? utterance.speakerName;
-      return normalizedText !== utterance.normalizedText || speakerName !== utterance.speakerName
-        ? [{ utteranceId: utterance.id, normalizedText, speakerName: speakerName || null }]
-        : [];
-    });
-  });
-}
 /** RepolishService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RepolishHost {
   /** 知识库与工作区访问。 */
@@ -67,382 +43,70 @@ export class RepolishService {
     this._cleanInFlight = new Set();
   }
 
-  async repolishMarkdownFile(file, mode, repolishOptions = null) {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
-    const meta = getModeMeta(this.host.settings, mode);
-    const modeDisplayName = getModeDisplayName(this.host.settings, mode);
-    let taskMeter = null;
-    // 重新整理必须按来源纪要单飞。否则用户连续切换模式/重复点击时，两个
-    // LLM 任务会同时写同一个版本缓存文件，Obsidian 会把后到的 create 请求
-    // 拒绝为 "File already exists."，并留下一个看起来仍在运行的重复任务。
-    let taskId = `repolish:${file.path}`;
-    let taskStarted = false;
-    let repolishLockAcquired = false;
-    try {
-      let content = await this.host.app.vault.read(file);
-      const sourceId = getSourceIdFromMarkdown(content, file);
-      taskId = `repolish:${sourceId || file.path}`;
-      const reconciled = ensureTranscriptBlocks(content, sourceId);
-      if (reconciled !== content) {
-        await this.host.app.vault.modify(file, reconciled);
-        content = reconciled;
-      }
-      let segments = extractTranscriptSegments(content);
-      if (!segments.length) {
-        new obsidian.Notice(t("No QnALog original transcript found. Use this on a minutes Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
-        return;
-      }
-
-      // 从 frontmatter 解析角色映射（"代号 → 真名" 形式的条目）
-      const fmCache = (this.host.app.metadataCache.getFileCache(file) || {}).frontmatter || null;
-      const roleMapping = extractRoleMappingFromFrontmatter(fmCache);
-      if (roleMapping.length) {
-        segments = applyRoleMappingToSegments(segments, roleMapping);
-      }
-
-      // 从 Frontmatter 读取 qnalog_time，作为 sessionMeta，避免 LLM 重新推断并改变原时间。
-      let sessionMeta = null;
-      if (fmCache) {
-        const fullTimeStr = readNamespaceFrontmatter(fmCache, "time") || "";
-        const durationValue = readNamespaceFrontmatter(fmCache, "duration");
-        const durationStr = typeof durationValue === "string" ? durationValue : "";
-        if (fullTimeStr) {
-          const m = window.moment ? window.moment(fullTimeStr, [window.moment.ISO_8601, "YYYY-MM-DDTHH:mm:ss", "YYYY-MM-DD HH:mm:ss"], true) : null;
-          if (m && m.isValid && m.isValid()) {
-            sessionMeta = { startedAt: m.toDate().toISOString(), duration: durationStr.trim() };
-          }
-        } else {
-          // 兼容旧笔记里的日期/时间拆分字段；重整后统一写 qnalog_time。
-          const dateStr = fmCache["日期"] || fmCache.date || "";
-          const timeStr = fmCache["时间"] || "";
-          if (dateStr) {
-            const composed = String(dateStr).trim() + (timeStr ? "T" + String(timeStr).trim() : "");
-            const m = window.moment ? window.moment(composed, ["YYYY-MM-DDTHH:mm", "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss"], true) : null;
-            if (m && m.isValid && m.isValid()) {
-              sessionMeta = { startedAt: m.toDate().toISOString(), duration: durationStr.trim() };
-            }
-          }
-        }
-      }
-      sessionMeta = Object.assign({}, sessionMeta || {}, {
-        _previousKnowledge: readSessionKnowledge(content),
-        _utteranceProjections: buildUtteranceProjections(segments, roleMapping),
-      });
-
-      if (!this._repolishInFlight) this._repolishInFlight = new Set();
-      if (this._repolishInFlight.has(taskId)) {
-        new obsidian.Notice(t("This minutes note is being reorganized; please wait for the current task to finish."), 5000);
-        return;
-      }
-      this._repolishInFlight.add(taskId);
-      repolishLockAcquired = true;
-
-      const preferenceLabel = repolishOptions && repolishOptions.label ? ` · ${repolishOptions.label}` : "";
-      const mapNotice = roleMapping.length
-        ? t("QnALog: re-organizing via {1} mode{2}… after applying {0} role mappings…")
-          .replace("{0}", String(roleMapping.length))
-          .replace("{1}", modeDisplayName)
-          .replace("{2}", preferenceLabel)
-        : t("QnALog: re-organizing via {0} mode{1}…")
-          .replace("{0}", modeDisplayName)
-          .replace("{1}", preferenceLabel);
-      new obsidian.Notice(mapNotice);
-      // 把笔记原 frontmatter 传给 mergeAndPolish，post-process 阶段会作为 base 保留用户改动
-      // （包括用户已应用的角色映射变更，仅 system 字段被覆盖、tags 被 merge）
-      const originalFmForRegen = fmCache ? Object.assign({}, fmCache) : null;
-      // 在 originalFm 里应用角色映射的"压平"，避免 base 里仍然带 → 形式
-      if (originalFmForRegen && roleMapping.length) {
-        for (const f of ROLE_MAPPING_FIELDS) {
-          const v = originalFmForRegen[f];
-          if (Array.isArray(v)) {
-            originalFmForRegen[f] = v.map(item => {
-              const m = parseRoleMapItem(item);
-              return m ? m.to : item;
-            });
-          } else if (typeof v === "string") {
-            const m = parseRoleMapItem(v);
-            if (m) originalFmForRegen[f] = m.to;
-          }
-        }
-      }
-      this.host.tasks._busyLabel = t("Re-organizing ({0})…").replace("{0}", modeDisplayName);
-      const sourceMode = detectRecentNoteMode(this.host, file, fmCache);
-      const sourceModeLabel = sourceMode && sourceMode !== "off"
-        ? getModeDisplayName(this.host.settings, sourceMode)
-        : t("Unlabeled");
-      this.host.tasks._busyContext = {
-        kind: t("Re-organize"),
-        sourceFile: file.basename,
-        sourceFolder: file.parent && file.parent.path ? file.parent.path : t("Vault root"),
-        durationMs: getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta),
-        sourceModeLabel,
-        targetModeLabel: [modeDisplayName, repolishOptions && repolishOptions.label]
-          .filter(Boolean)
-          .join(" · "),
-      };
-      taskStarted = true;
-      this.host.tasks.startTaskActivity({
-        id: taskId,
-        kind: "repolish",
-        title: `${t("Re-organize · ")}${modeDisplayName}`,
-        subject: file.path,
-        status: "running",
-        stage: "llm",
-        stageLabel: t("AI reorganizing"),
-        detail: preferenceLabel ? t("Preparing the original transcript · {0}").replace("{0}", preferenceLabel.replace(/^\s*·\s*/, "")) : t("Preparing the original transcript"),
-        progress: 3,
-        actions: [],
-      });
-      this.host.tasks.updateBusyStatus();
-      taskMeter = this.host.tasks.beginTaskMeter();
-      sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter });
-      const polished = await mergeAndPolish(this.host, segments, mode, sessionMeta, originalFmForRegen, repolishOptions);
-      this.host.tasks.patchTaskActivity(taskId, {
-        stage: "writing",
-        stageLabel: t("Generating new version"),
-        detail: t("The AI draft is complete; writing the Markdown"),
-        progress: 94,
-        deadlineAt: 0,
-      });
-
-      // 重新整理只生成派生纪要，不重命名、不修改母本。角色映射只作为本次
-      // LLM 输入使用，原始转写和用户已经保存的 YAML 必须保持可追溯。
-      const dailyTargetFile = file;
-      const latestSourceContent = await this.host.app.vault.read(dailyTargetFile);
-      const outputPrefix = meta.custom ? meta.prefix : getModePrefix(meta);
-      const versionLabel = `${outputPrefix}${preferenceLabel}`;
-      const versionStyle = repolishOptions && repolishOptions.label ? repolishOptions.label : "";
-      const versionBody = stripModeSuggestionBlocks(polished || buildEmptyLlmOutputFallback()).trim();
-      const versionParts = splitVersionPayload(versionBody);
-      const fallbackVersion = {
-        body: versionParts.body.trim() || buildEmptyLlmOutputFallback(),
-        frontmatter: versionParts.frontmatter || "",
-        meta: {
-          sourceId: getSourceIdFromMarkdown(latestSourceContent, dailyTargetFile),
-          createdAt: window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString(),
-        },
-      };
-
-      // 原稿快照与派生文件同属保全前提；索引不可安全写入时，不创建派生稿。
-      await this.host.versions.ensureOriginalVersionForSource(dailyTargetFile);
-      const derivedFile = await this.host.versions.createDerivedNote(
-        dailyTargetFile,
-        latestSourceContent,
-        fallbackVersion,
-        versionLabel,
-        mode,
-        versionStyle,
-      );
-      this.host.tasks.patchTaskActivity(taskId, {
-        stage: "postprocess",
-        stageLabel: t("Finishing file processing"),
-        detail: derivedFile instanceof obsidian.TFile ? derivedFile.path : t("The new version has been written"),
-        progress: 98,
-        deadlineAt: 0,
-      });
-      await clearCommittedBriefingCheckpoint(this.host, sessionMeta);
-      let versionCacheError = "";
-      try {
-        await this.host.versions.saveVersion(dailyTargetFile, latestSourceContent, segments, {
-          kind: "minutes",
-          label: versionLabel,
-          mode,
-          style: versionStyle,
-          idLabel: `${outputPrefix}${versionStyle ? "-" + versionStyle : ""}`,
-          body: versionBody,
-          activate: false,
-        });
-      } catch (cacheError) {
-        versionCacheError = getTaskErrorMessage(cacheError);
-        console.warn("[QnALog] derived note created but version cache update failed", cacheError);
-      }
-      try { this.host.requestOutlineRefresh(); } catch { /* generation must not fail because the sidebar is unavailable */ }
-      const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
-      new obsidian.Notice(`${t("QnALog: generated ")}${modeDisplayName}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
-      const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
-      taskMeter = null;
-      try { this.host.tasks.logCompletedWork(t("Re-organize completed · {0}").replace("{0}", modeDisplayName), (file && file.path) || "", completedTaskMeter); } catch { /* intentionally empty */ }
-      this.host.tasks.completeTaskActivity(taskId, {
-        stage: "done",
-        stageLabel: t("New version generated"),
-        detail: versionCacheError ? `${outputPath} · ${t("Version index not synced: {0}").replace("{0}", versionCacheError)}` : outputPath,
-        subject: outputPath,
-        progress: 100,
-        actions: [
-          { id: "open-task-note", label: t("Open minutes"), primary: true },
-          { id: "dismiss-task", label: t("Close Recording") },
-        ],
-      });
-    } catch (e) {
-      console.error("[QnALog] repolish markdown failed", e);
-      if (taskStarted) {
-        this.host.tasks.failTaskActivity(taskId, e, {
-          stage: "failed",
-          stageLabel: t("Reorganize not completed"),
-          detail: getTaskErrorMessage(e),
-          subject: file.path,
-          actions: [
-            { id: "open-task-note", label: t("Open original material"), primary: true },
-            { id: "dismiss-task", label: t("Close Recording") },
-          ],
-        });
-      }
-      new obsidian.Notice(`${t("Re-organize failed: ")}${(e && e.message) || e}`, 8000);
-    } finally {
-      if (repolishLockAcquired && this._repolishInFlight) this._repolishInFlight.delete(taskId);
-      if (taskMeter) this.host.tasks.endTaskMeter(taskMeter);
-      this.host.tasks._busyLabel = null;
-      this.host.tasks._busyContext = null;
-      this.host.tasks.updateBusyStatus();
-    }
+  async repolishMarkdownFile(file: unknown, mode: string, repolishOptions: RepolishOptions = null): Promise<void> {
+    return repolishMarkdownFileFlow(this.repolishPort(), file, mode, repolishOptions);
   }
+
   async findCleanCopy(sourceFile: obsidian.TFile): Promise<obsidian.TFile | null> {
-    if (!(sourceFile instanceof obsidian.TFile) || sourceFile.extension !== "md") return null;
-    const content = await this.host.app.vault.read(sourceFile);
-    const sourceId = getSourceIdFromMarkdown(content, sourceFile);
-    return this.host.versions.findDerivedNoteForSource(sourceFile, sourceId, "clean");
+    return findCleanCopyFlow(this.cleanScriptPort(), sourceFile);
   }
 
-  // 生成清稿（派生版本·只读快照）：从母本逐字稿忠实清理成可读稿，写成独立文件、双链回指母本。
-  // 永远从母本 raw 读（在派生上触发会先跳回母本）；清稿不含 raw、不参与「重新整理」回写。
-  async generateCleanScript(file: obsidian.TFile, options: { regenerateExisting?: boolean } = {}): Promise<void> {
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
-    let taskMeter = null;
-    let taskId = `clean:${file.path}`;
-    let taskStarted = false;
-    let cleanLockKey = "";
-    let cleanLockAcquired = false;
-    try {
-      // 在派生文件上触发 → 先跳回母本（派生 contains_raw:false，本身没有 raw 可读）。
-      let sourceFile = file;
-      let content = await this.host.app.vault.read(file);
-      const fm = ((this.host.app.metadataCache.getFileCache(file) || {}).frontmatter) || {};
-      if (isDerivedVersionType(readNamespaceFrontmatter(fm, "type"))
-        || readNamespaceFrontmatter(fm, "containsRaw") === false) {
-        const sourcePath = readNamespaceFrontmatter(fm, "sourcePath");
-        const srcPath = typeof sourcePath === "string" && sourcePath ? obsidian.normalizePath(sourcePath) : "";
-        const resolved = srcPath ? this.host.app.vault.getAbstractFileByPath(srcPath) : null;
-        if (resolved instanceof obsidian.TFile) {
-          sourceFile = resolved;
-          content = await this.host.app.vault.read(resolved);
-        } else {
-          new obsidian.Notice(t("This is a derived version, but the source note has been renamed or moved. Generate the clean transcript in the original recording note."), 8000);
-          return;
-        }
-      }
-      const sourceId = getSourceIdFromMarkdown(content, sourceFile);
-      cleanLockKey = `clean:${sourceId || sourceFile.path}`;
-      if (this._cleanInFlight.has(cleanLockKey)) {
-        new obsidian.Notice(t("A clean transcript is already being generated."), 5000);
-        return;
-      }
-      this._cleanInFlight.add(cleanLockKey);
-      cleanLockAcquired = true;
-      taskId = cleanLockKey;
-      if (sourceFile.path === file.path && !options.regenerateExisting) {
-        const existingClean = this.host.versions.findDerivedNoteForSource(sourceFile, sourceId, "clean");
-        if (existingClean instanceof obsidian.TFile) {
-          await this.host.versions.switchVersion(existingClean, sourceFile.path);
-          return;
-        }
-      }
-      await this.host.versions.ensureOriginalVersionForSource(sourceFile);
-      const segments = extractTranscriptSegments(content);
-      if (!segments.length) {
-        new obsidian.Notice(t("No original transcript (verbatim transcript) found. Generate the clean transcript on a recording source note that contains \"Segmented raw transcript\"."), 8000);
-        return;
-      }
-      this.host.tasks._busyLabel = t("Generating the clean transcript…");
-      const sourceFm = ((this.host.app.metadataCache.getFileCache(sourceFile) || {}).frontmatter) || {};
-      const sourceMode = detectRecentNoteMode(this.host, sourceFile, sourceFm);
-      this.host.tasks._busyContext = {
-        kind: t("Generate clean transcript"),
-        sourceFile: sourceFile.basename,
-        sourceFolder: sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : t("Vault root"),
-        durationMs: getSegmentsDurationMs(segments),
-        sourceModeLabel: sourceMode && sourceMode !== "off"
-          ? ((getModeMeta(this.host.settings, sourceMode) || {}).label || sourceMode)
-          : t("Unlabeled"),
-        targetModeLabel: t("Clean transcript"),
-      };
-      taskStarted = true;
-      this.host.tasks.startTaskActivity({
-        id: taskId,
-        kind: "clean-transcript",
-        title: t("Generate clean transcript"),
-        subject: sourceFile.path,
-        status: "running",
-        stage: "llm",
-        stageLabel: t("Organize verbatim transcript"),
-        detail: t("The clean transcript is shown in the source note; generation does not replace the source transcript"),
-        progress: null,
-        actions: [],
-      });
-      this.host.tasks.updateBusyStatus();
-      new obsidian.Notice(t("QnALog: Generating the clean transcript from the source transcript..."));
-      taskMeter = this.host.tasks.beginTaskMeter();
-      const { text: cleaned, truncated } = await cleanTranscript(this.host, segments, getLearnedLlmOutputCeiling(this.host.settings));
-      if (!cleaned) throw new Error(t("The model did not return a usable clean transcript"));
-      const warn = truncated
-        ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"
-        : "";
-      const noteBody = `> [!note] ${t("A readable transcript cleaned from the source transcript; not minutes or a summary.")}\n\n${warn}${cleaned}`;
-      // 清稿历史由目标 Markdown 文件的 Obsidian Version History 保存；不额外写隐藏 .versions 快照。
-      const version = {
-        meta: {
-          sourceId,
-          kind: "clean",
-          createdAt: new Date().toISOString(),
-        },
-        frontmatter: "",
-        body: noteBody,
-      };
-      const cleanFile = await this.host.versions.createDerivedNote(
-        sourceFile,
-        content,
-        version,
-        t("Clean transcript"),
-        "cleanscript",
-      );
-      if (!(cleanFile instanceof obsidian.TFile)) throw new Error(t("Failed to create the clean transcript note"));
-      await this.host.versions.switchVersion(cleanFile, sourceFile.path);
-      new obsidian.Notice(t("QnALog: Clean transcript generated and set as the current displayed version"), 6000);
-      const completedTaskMeter = taskMeter ? this.host.tasks.endTaskMeter(taskMeter) : null;
-      taskMeter = null;
-      try { this.host.tasks.logCompletedWork(t("Generate clean transcript"), cleanFile.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
-      this.host.tasks.completeTaskActivity(taskId, {
-        stage: "done",
-        stageLabel: t("Clean transcript generated"),
-        detail: cleanFile.path,
-        subject: sourceFile.path,
-        actions: [
-          { id: "open-task-note", label: t("Open minutes"), primary: true },
-          { id: "dismiss-task", label: t("Close Recording") },
-        ],
-      });
-    } catch (e) {
-      console.error("[QnALog] generate clean script failed", e);
-      if (taskStarted) {
-        this.host.tasks.failTaskActivity(taskId, e, {
-          stage: "failed",
-          stageLabel: t("Clean transcript not generated"),
-          detail: getTaskErrorMessage(e),
-          actions: [
-            { id: "open-task-note", label: t("Open source note"), primary: true },
-            { id: "dismiss-task", label: t("Close Recording") },
-          ],
-        });
-      }
-      new obsidian.Notice(`${t("Clean copy generation failed: ")}${(e && e.message) || e}`, 8000);
-    } finally {
-      if (taskMeter) this.host.tasks.endTaskMeter(taskMeter);
-      if (cleanLockAcquired) {
-        this._cleanInFlight.delete(cleanLockKey);
-        this.host.tasks._busyLabel = null;
-        this.host.tasks._busyContext = null;
-        this.host.tasks.updateBusyStatus();
-      }
-    }
+  async generateCleanScript(
+    file: obsidian.TFile, options: { regenerateExisting?: boolean } = {},
+  ): Promise<void> {
+    return generateCleanScriptFlow(this.cleanScriptPort(), file, options);
+  }
+
+  private repolishBasePort(): RepolishFlowBasePort {
+    return {
+      getVault: () => this.host.app.vault,
+      getCachedFrontmatter: (file) => this.host.app.metadataCache.getFileCache(file)?.frontmatter,
+      getModeMeta: (mode) => getModeMeta(this.host.settings, mode),
+      detectNoteMode: (file, fm) => detectRecentNoteMode(this.host, file, fm),
+      tasks: {
+        setBusyLabel: (label) => { this.host.tasks._busyLabel = label; },
+        setBusyContext: (context) => { this.host.tasks._busyContext = context; },
+        updateBusyStatus: () => this.host.tasks.updateBusyStatus(),
+        startTaskActivity: (input) => this.host.tasks.startTaskActivity(input),
+        patchTaskActivity: (id, patch) => this.host.tasks.patchTaskActivity(id, patch),
+        completeTaskActivity: (id, patch) => this.host.tasks.completeTaskActivity(id, patch),
+        failTaskActivity: (id, error, patch) => this.host.tasks.failTaskActivity(id, error, patch),
+        beginTaskMeter: () => this.host.tasks.beginTaskMeter(),
+        endTaskMeter: (meter) => this.host.tasks.endTaskMeter(meter),
+        logCompletedWork: (label, path, meter) => this.host.tasks.logCompletedWork(label, path, meter),
+      },
+      ensureOriginalVersionForSource: (file) => this.host.versions.ensureOriginalVersionForSource(file),
+      createDerivedNote: (file, content, version, label, mode, style) => this.host.versions.createDerivedNote(file, content, version, label, mode, style),
+    };
+  }
+
+  private repolishPort(): RepolishFlowPort {
+    return {
+      ...this.repolishBasePort(),
+      getModeDisplayName: (mode) => getModeDisplayName(this.host.settings, mode),
+      getModePrefix: (meta) => getModePrefix(meta),
+      getInFlight: () => {
+        if (!this._repolishInFlight) this._repolishInFlight = new Set();
+        return this._repolishInFlight;
+      },
+      mergeAndPolish: (segments, mode, sessionMeta, fm, options) => mergeAndPolish(this.host, segments, mode, sessionMeta, fm, options),
+      stripModeSuggestionBlocks: (text) => stripModeSuggestionBlocks(text),
+      clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
+      saveVersion: (file, content, segments, input) => this.host.versions.saveVersion(file, content, segments, input),
+      requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
+    };
+  }
+
+  private cleanScriptPort(): CleanScriptFlowPort {
+    return {
+      ...this.repolishBasePort(),
+      getVault: () => this.host.app.vault,
+      getCleanInFlight: () => this._cleanInFlight,
+      findDerivedNoteForSource: (file, sourceId, kind) => this.host.versions.findDerivedNoteForSource(file, sourceId, kind),
+      switchVersion: (file, fallbackSourcePath) => this.host.versions.switchVersion(file, fallbackSourcePath),
+      getLearnedOutputCeiling: () => getLearnedLlmOutputCeiling(this.host.settings),
+      cleanTranscript: (segments: Segment[], ceiling: number) => cleanTranscript(this.host, segments, ceiling),
+    };
   }
 }
 

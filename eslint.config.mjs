@@ -34,7 +34,10 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/notes/note-transcript-ledger.ts", "src/audio/recording-service.ts"],
+    files: [
+      "src/notes/note-transcript-ledger.ts", "src/audio/recording-service.ts",
+      "src/notes/role-mapping.ts", "src/notes/repolish-flow.ts", "src/notes/clean-script-flow.ts",
+    ],
     languageOptions: {
       parserOptions: {
         project: "./tsconfig.strict-core.json",

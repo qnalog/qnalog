@@ -120,6 +120,9 @@
     "src/notes/note-transcript-materials.ts",
     "src/notes/audio-reference-text.ts",
     "src/notes/audio-refs.ts",
+    "src/notes/role-mapping.ts",
+    "src/notes/repolish-flow.ts",
+    "src/notes/clean-script-flow.ts",
     "src/sediment/text-blocks.ts"
   ]
 }
