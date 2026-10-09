@@ -2043,6 +2043,60 @@ async function main() {
       if (retryFile._content !== mergeRetryOriginal) throw new Error("empty merge output changed the source note");
       console.log(`[merge-retry-flow] empty digest: ${mergeRetryEmptyDigest}`);
       retryFile._content = mergeRetryOriginal;
+      const appendProbeOriginal = retryFile._content;
+      const appendProbeDiscard = plugin.asrPipeline.discardShortRecordingNote;
+      const appendProbeTracked = plugin.continuations.isSessionTracked;
+      const appendProbeResults = [];
+      const appendProbeStagePath = "QnALog/append-task-probe-stage.md";
+      const appendProbeStage = new TFile(appendProbeStagePath);
+      appendProbeStage._content = serializeTranscriptSegment(transcriptSegment(0, "Append probe transcript.", 0, 1000, "append-probe"));
+      files.set(appendProbeStagePath, appendProbeStage);
+      plugin.asrPipeline.discardShortRecordingNote = async ({ mdPath }) => { files.delete(mdPath); };
+      const appendProbeTask = (id, continuation, extra = {}) => ({
+        id, sessionId: id, type: "merge", mdPath: appendProbeStagePath, temporarySourcePath: appendProbeStagePath,
+        mode: "meeting", status: "pending", segments: [transcriptSegment(0, "Append probe transcript.", 0, 1000, id)],
+        continuation, ...extra,
+      });
+      try {
+        const cases = [
+          ["invalid-context", appendProbeTask("append-invalid", null)],
+          ["unknown-disposition", appendProbeTask("append-disposition", { targetPath: literalRetryPath, targetSourceId: "literal-retry" }, { continuationDisposition: "keep" })],
+          ["discard-file", appendProbeTask("append-discard", { targetPath: literalRetryPath, targetSourceId: "literal-retry" }, { continuationDisposition: "discard" })],
+          ["missing-target", appendProbeTask("append-missing", { targetPath: "QnALog/missing-append-target.md", targetSourceId: "missing" })],
+          ["tracked-dependency", appendProbeTask("append-dependent", { targetPath: literalRetryPath, targetSourceId: "literal-retry" }, { dependsOnSessionIds: ["tracked-probe"] })],
+          ["identity-mismatch", appendProbeTask("append-identity", { targetPath: literalRetryPath, targetSourceId: "not-literal-retry" })],
+        ];
+        for (const [name, task] of cases) {
+          plugin.queue.tasks = name === "tracked-dependency" ? [{ id: "tracked-probe-task", type: "transcribe", sessionId: "tracked-probe" }] : [];
+          plugin.continuations.isSessionTracked = (id) => id === "tracked-probe";
+          appendProbeStage._content = serializeTranscriptSegment(transcriptSegment(0, "Append probe transcript.", 0, 1000, task.sessionId));
+          const result = await plugin.queueRetry.runAppendTask(task);
+          appendProbeResults.push({ name, result: result ?? null, target: retryFile._content, stageExists: files.has(appendProbeStagePath) });
+          if (name === "discard-file") files.set(appendProbeStagePath, appendProbeStage);
+        }
+        plugin.queue.tasks = [];
+        plugin.continuations.isSessionTracked = () => false;
+        const appendMatrixDigest = createHash("sha256").update(JSON.stringify(appendProbeResults)).digest("hex");
+        console.log(`[append-task-flow] result matrix digest: ${appendMatrixDigest}`);
+        const committedId = "append-committed-probe";
+        const committedMarker = `<!-- qnalog-continuation-committed:${committedId} -->`;
+        retryFile._content = `${appendProbeOriginal}\n${committedMarker}`;
+        files.set(appendProbeStagePath, appendProbeStage);
+        const committedTask = appendProbeTask(committedId, { targetPath: literalRetryPath, targetSourceId: "literal-retry", recordedAt: "2026-09-14T12:00:00.000Z" });
+        committedTask.segments = addedSegments;
+        await plugin.queueRetry.runAppendTask(committedTask);
+        const committedCount = (retryFile._content.match(new RegExp(committedMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length;
+        if (committedCount !== 1 || files.has(appendProbeStagePath)) throw new Error("append committed-recovery probe failed to preserve one marker and remove stage file");
+        const committedRecoveryDigest = createHash("sha256").update(retryFile._content).digest("hex");
+        console.log(`[append-task-flow] committed-recovery digest: ${committedRecoveryDigest}`);
+      } finally {
+        plugin.asrPipeline.discardShortRecordingNote = appendProbeDiscard;
+        plugin.continuations.isSessionTracked = appendProbeTracked;
+        plugin.queue.tasks = [];
+        files.delete(appendProbeStagePath);
+        retryFile._content = appendProbeOriginal;
+      }
+      
       
       const polishLiteralBody = "模型正文\n$& $` $' $$";
       const polishFolded = [
