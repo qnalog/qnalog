@@ -1916,7 +1916,22 @@ async function main() {
       plugin.settings.consolidatedLayout = false;
       plugin.settings.autoRenameWithTitle = false;
       literalMergeSmokeBody = `\n\nRETRY LITERAL ${special}\nUnicode：保留原文`;
+      const queuePathProbeTasks = () => [
+        { id: "path-transcribe", type: "transcribe", mdPath: "Probe/old.md", audioPath: "Audio/one.wav" },
+        { id: "path-merge", type: "merge", mdPath: "Probe/old.md", temporarySourcePath: "Probe/old.md" },
+        { id: "path-continuation", type: "merge", mdPath: "Probe/old.md", status: "failed", continuation: { targetPath: "Probe/old.md" } },
+        { id: "path-prompt", type: "generate-prompt", mdPath: "Probe/old.md" },
+      ];
+      plugin.queue.tasks = queuePathProbeTasks();
+      plugin.queueRetry.migrateQueueTasksAfterRename("Probe/old.md", "Probe/new.md");
+      const queueRenameDigest = createHash("sha256").update(JSON.stringify(plugin.queue.tasks)).digest("hex");
+      plugin.queue.tasks = queuePathProbeTasks();
+      plugin.queueRetry.removeQueueTasksForDeletedMarkdown("Probe/old.md");
+      const queueDeleteDigest = createHash("sha256").update(JSON.stringify(plugin.queue.tasks)).digest("hex");
+      console.log(`[queue-paths] rename digest: ${queueRenameDigest}`);
+      console.log(`[queue-paths] delete digest: ${queueDeleteDigest}`);
       await plugin.queueRetry.retryMergeTask({
+
         id: "literal-merge-retry",
         mdPath: literalRetryPath,
         mode: "meeting",

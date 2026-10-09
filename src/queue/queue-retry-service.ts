@@ -11,10 +11,8 @@ import { formatLlmConfigIssue } from "../llm/failure-presentation";
 import { isLlmServiceBlockedError } from "../llm/failure-policy";
 import type { MergeQueueTaskPayload, PluginSettings, QueueTaskDeferred, RecordingSession, RealtimeOutlineSourceCoverage, Segment } from "../shared/types";
 import type { SessionStore } from "../session/session-store";
-import { AUDIO_EXT } from "../shared/catalog-import";
-import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { genId, formatElapsed, escapeRegExp } from "../shared/util-common";
-import { mimeFromExt, isAsrTransportError } from "../shared/util-audio";
+import { isAsrTransportError } from "../shared/util-audio";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 import { diagnosticError } from "../shared/util-key-diag";
 import { MAX_SPEAKER_CHANNELS, initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
@@ -40,7 +38,7 @@ import { NoteIndexService } from "../notes/note-index-service";
 import { VocabularyService } from "../vocabulary/vocabulary-service";
 import { NoteWriter } from "../notes/note-writer";
 import { findNoteMarkerOffset } from "../notes/note-document";
-import { NS_AUDIO_ALT, NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/namespace";
+import { NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
@@ -52,6 +50,12 @@ import { extractPriorOutline, getContinuationTargetIdentity, type ContinuationSe
 import type { RealtimeOutlineService } from "../notes/realtime-outline-service";
 import { VersionStore } from "../versions/version-store";
 import type { TaskActivityService } from "../tasks/task-activity-service";
+import {
+  readTaskAudioBlob,
+  readVaultAudioBlob as readVaultAudioBlobFromPort,
+  type TranscribeAudioSourcePort,
+} from "./transcribe-audio-source";
+import { migrateTaskPaths, removeTasksForDeletedPath } from "./queue-task-paths";
 /** QueueRetryService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface QueueRetryHost {
   /** 知识库与工作区访问。 */
@@ -246,117 +250,20 @@ export class QueueRetryService {
         ? t("Transcription retry finished: {0} succeeded, {1} failed").replace("{0}", String(ok)).replace("{1}", String(failed))
         : t("Transcription retry finished: {0} succeeded").replace("{0}", String(ok)), 8000);
   }
-  async readTranscribeTaskAudioBlob(task) {
-    const direct = await this.readVaultAudioBlob(task.audioPath, task.audioName);
-    if (direct) return direct;
-
-    const recovered = await this.recoverTranscribeTaskAudioBlob(task);
-    if (recovered) {
-      await this.host.diagnostics.logDiagnostic("warn", "queue.transcribe_audio_recovered", t("Transcription retry recovered a temporary clip from the full recording"), {
-        audioName: task.audioName || "",
-        sourceAudioName: recovered.sourceName || "",
-        startOffsetMs: task.startOffsetMs,
-        endOffsetMs: task.endOffsetMs,
-      });
-      return recovered;
-    }
-
-    throw new Error(t("Audio missing: {0}").replace("{0}", String(task.audioPath || task.audioName || t("Unknown audio"))));
-  }
-  async readVaultAudioBlob(path, fallbackName) {
-    const norm = obsidian.normalizePath(String(path || ""));
-    if (!norm) return null;
-    const file = this.host.app.vault.getAbstractFileByPath(norm);
-    let ab = null;
-    let sourceName = String(fallbackName || norm.split("/").pop() || "");
-    let sourcePath = norm;
-    let ext = String(sourceName.split(".").pop() || "").toLowerCase();
-    if (file instanceof obsidian.TFile) {
-      ab = await this.host.app.vault.readBinary(file);
-      sourceName = file.name;
-      sourcePath = file.path;
-      ext = (file.extension || ext).toLowerCase();
-    } else {
-      // .cache 等点目录可能不会进入 Vault 的 TFile 索引，但 adapter 仍可稳定读写。
-      const adapter = this.host.app.vault.adapter;
-      if (!adapter || !(await adapter.exists(norm))) return null;
-      ab = await adapter.readBinary(norm);
-    }
+  private audioSourcePort(): TranscribeAudioSourcePort {
     return {
-      blob: new Blob([ab], { type: mimeFromExt(ext) }),
-      sourcePath,
-      sourceName,
-      recovered: false,
+      getVault: () => this.host.app.vault,
+      getAudioFolder: () => this.host.settings.audioFolder,
+      getAudioChannelMode: () => this.host.settings.audioChannelMode,
+      decodeAudioBlob,
+      renderMonoSlice: renderAudioBufferSliceToWav,
+      renderMultichannelSlice: renderMultichannelAudioBufferSliceToWav,
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
     };
   }
-  resolveTranscribeRetrySourceFile(task) {
-    const candidates = [];
-    const push = (path) => {
-      const norm = obsidian.normalizePath(String(path || "").trim());
-      if (norm && !candidates.includes(norm)) candidates.push(norm);
-    };
 
-    push(task.sourceAudioPath);
-    push(task.masterAudioPath);
-
-    const audioName = String(task.audioName || (task.audioPath || "").split("/").pop() || "");
-    const match = audioName.match(new RegExp(`^(${NS_AUDIO_ALT}-\\d{8}-\\d{6})-seg\\d+\\.(\\w+)$`, "i"));
-    if (match) {
-      const folder = obsidian.normalizePath(this.host.settings.audioFolder || DEFAULT_SETTINGS.audioFolder || "");
-      const stem = match[1];
-      const ext = match[2] || "m4a";
-      for (const candidateExt of Array.from(new Set([ext, "m4a", "mp4", "webm", "wav"]))) {
-        push(folder ? `${folder}/${stem}.${candidateExt}` : `${stem}.${candidateExt}`);
-      }
-    }
-
-    for (const path of candidates) {
-      const file = this.host.app.vault.getAbstractFileByPath(path);
-      if (file instanceof obsidian.TFile && AUDIO_EXT.has(String(file.extension || "").toLowerCase())) return file;
-    }
-
-    if (match) {
-      const stem = match[1];
-      const folder = obsidian.normalizePath(this.host.settings.audioFolder || DEFAULT_SETTINGS.audioFolder || "");
-      const files = this.host.app.vault.getFiles ? this.host.app.vault.getFiles() : [];
-      return files.find(file => file instanceof obsidian.TFile
-        && AUDIO_EXT.has(String(file.extension || "").toLowerCase())
-        && file.basename === stem
-        && (!folder || obsidian.normalizePath(file.path).startsWith(folder + "/"))) || null;
-    }
-
-    return null;
-  }
-  async recoverTranscribeTaskAudioBlob(task) {
-    const start = Number.isFinite(Number(task.audioStartOffsetMs)) ? Number(task.audioStartOffsetMs) : Number(task.startOffsetMs);
-    const end = Number.isFinite(Number(task.audioEndOffsetMs)) ? Number(task.audioEndOffsetMs) : Number(task.endOffsetMs);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-
-    const sourceFile = this.resolveTranscribeRetrySourceFile(task);
-    if (!(sourceFile instanceof obsidian.TFile)) return null;
-
-    const source = await this.readVaultAudioBlob(sourceFile.path, sourceFile.name);
-    if (!source || !source.blob) return null;
-    try {
-      const audioBuffer = await decodeAudioBlob(source.blob);
-      const reportedChannelCount = Math.max(1, Number(task.audioChannelCount) || 1);
-      const channelMode = normalizeAudioChannelMode(task.audioChannelMode || this.host.settings.audioChannelMode);
-      const runtimeChannelMode = task.audioChannelRuntimeMode
-        || initialAudioChannelRuntimeMode(channelMode, reportedChannelCount);
-      const inspectRecordedChannels = task.captureMode === "mic" && runtimeChannelMode !== "mono";
-      const requestedChannelCount = inspectRecordedChannels ? MAX_SPEAKER_CHANNELS : 1;
-      const sliceBlob = requestedChannelCount > 1
-        ? renderMultichannelAudioBufferSliceToWav(audioBuffer, start, end, requestedChannelCount)
-        : await renderAudioBufferSliceToWav(audioBuffer, start, end);
-      return {
-        blob: sliceBlob,
-        sourcePath: sourceFile.path,
-        sourceName: sourceFile.name,
-        recovered: true,
-      };
-    } catch (e) {
-      throw new Error(t("Temporary clip missing; the full recording was found but cannot be re-sliced: {0}").replace("{0}", String((e && e.message) || e)));
-    }
+  async readVaultAudioBlob(path, fallbackName) {
+    return readVaultAudioBlobFromPort(this.audioSourcePort(), path, fallbackName);
   }
   async retryTranscribeTask(task) {
     const target = this.host.app.vault.getAbstractFileByPath(task.mdPath);
@@ -402,7 +309,7 @@ export class QueueRetryService {
       await this.host.asrPipeline.maybeDeleteSegmentCacheFile(task.audioPath, task.id);
       return;
     }
-    const audio = await this.readTranscribeTaskAudioBlob(task);
+    const audio = await readTaskAudioBlob(this.audioSourcePort(), task);
     let text = "";
     let transcriptionResult: AsrTranscriptResult | null = null;
     if (!task.wholeFileImport) {
@@ -608,31 +515,7 @@ export class QueueRetryService {
   // transcribe / merge 等待重试的任务还指向旧路径会失败报"笔记不存在"。
   migrateQueueTasksAfterRename(oldPath, newPath) {
     if (!this.host.queue || !Array.isArray(this.host.queue.tasks)) return;
-    const oldNorm = obsidian.normalizePath(String(oldPath || ""));
-    const newNorm = obsidian.normalizePath(String(newPath || ""));
-    if (!oldNorm || !newNorm || oldNorm === newNorm) return;
-    let migrated = 0;
-    for (const task of this.host.queue.tasks) {
-      if (!task) continue;
-      if (task.mdPath && obsidian.normalizePath(task.mdPath) === oldNorm) {
-        task.mdPath = newNorm;
-        migrated++;
-      }
-      const temporarySourcePath = task.type === "generate-prompt" ? "" : task.temporarySourcePath;
-      if ((task.type === "merge" || task.type === "transcribe")
-        && temporarySourcePath && obsidian.normalizePath(temporarySourcePath) === oldNorm) {
-        task.temporarySourcePath = newNorm;
-        migrated++;
-      }
-      if (task.type === "merge" && task.continuation
-        && obsidian.normalizePath(task.continuation.targetPath) === oldNorm) {
-        task.continuation.targetPath = newNorm;
-        migrated++;
-      }
-      if ("sourceMdPath" in task && typeof task.sourceMdPath === "string" && obsidian.normalizePath(task.sourceMdPath) === oldNorm) {
-        task.sourceMdPath = newNorm;
-      }
-    }
+    const migrated = migrateTaskPaths(this.host.queue.tasks, oldPath, newPath);
     if (migrated > 0) {
       try { void (this.host.saveAll || this.host.saveSettings).call(this.host); } catch (e) {
         console.warn("[QnALog] queue migrate save failed", e);
@@ -642,28 +525,10 @@ export class QueueRetryService {
   // 笔记被删时，从队列移除所有指向它的任务，避免孤儿 merge 任务反复白烧 LLM 再失败、永久卡 failed。
   removeQueueTasksForDeletedMarkdown(path) {
     if (!this.host.queue || !Array.isArray(this.host.queue.tasks)) return;
-    const norm = obsidian.normalizePath(String(path || ""));
-    if (!norm) return;
-    const before = this.host.queue.tasks.length;
-    let preservedContinuation = false;
-    this.host.queue.tasks = this.host.queue.tasks.filter((task) => {
-      if (!task) return false;
-      const continuation = task.type === "merge" ? task.continuation : undefined;
-      const temporarySourcePath = task.type === "generate-prompt" ? "" : task.temporarySourcePath;
-      const referencesPath = (task.mdPath && obsidian.normalizePath(task.mdPath) === norm)
-        || (temporarySourcePath && obsidian.normalizePath(temporarySourcePath) === norm)
-        || (continuation && obsidian.normalizePath(continuation.targetPath) === norm);
-      const continuationTask = task.type === "merge" && !!continuation;
-      if (continuationTask && referencesPath) {
-        task.status = "missing";
-        task.lastError = t("The target or separate recording file was deleted; the remaining recovery material was kept.");
-        preservedContinuation = true;
-        return true;
-      }
-      return !referencesPath;
-    });
-    const removed = before - this.host.queue.tasks.length;
-    if (removed > 0 || preservedContinuation) {
+    const result = removeTasksForDeletedPath(this.host.queue.tasks, path);
+    if (!result) return;
+    this.host.queue.tasks = result.tasks;
+    if (result.removed > 0 || result.preservedContinuation) {
       try { void (this.host.saveAll || this.host.saveSettings).call(this.host); } catch (e) {
         console.warn("[QnALog] queue delete cleanup save failed", e);
       }
