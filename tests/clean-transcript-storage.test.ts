@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-import { getVersionStoreFolder } from "../src/notes/note-markdown";
+import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "../src/notes/note-markdown";
 import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown } from "../src/notes/note-source-metadata";
 import { getSegmentsHash } from "../src/notes/audio-refs";
@@ -112,6 +112,7 @@ function makeVersionHost(
       if (!app.workspace) throw new Error("Unexpected source open in version fixture");
       await app.workspace.getLeaf(false).openFile(file);
     },
+    getVersionStoreFolder, normalizeVersionId, buildSegmentStatusList, replaceActiveVersionBlock,
   };
 }
 

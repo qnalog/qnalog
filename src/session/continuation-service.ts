@@ -102,7 +102,7 @@ export class ContinuationService {
   runOnTarget<T>(target: obsidian.TFile, operation: () => Promise<T>): Promise<T> {
     const predecessor: Promise<void> = this.tails.get(target) ?? Promise.resolve();
     const result = predecessor.catch(() => undefined).then(() => operation());
-    const neutralTail = result.then<void>(() => undefined, () => undefined);
+    const neutralTail = result.then<void, void>(() => undefined, () => undefined);
     this.tails.set(target, neutralTail);
     void neutralTail.then(() => {
       if (this.tails.get(target) === neutralTail) this.tails.delete(target);

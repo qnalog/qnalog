@@ -1,20 +1,18 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记版本块：清单读写、版本文件落盘、派生笔记、版本切换
 
 import * as obsidian from "obsidian";
 import type { PluginSettings, Segment } from "../shared/types";
-import { VersionActivationStore } from "./version-activation-store";
+import { VersionActivationStore, type VersionActivationHost } from "./version-activation-store";
 import { getModeDisplayName, getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
 import { buildEmptyLlmOutputFallback } from "../notes/note-write-content";
 import { getSegmentsHash } from "../notes/audio-refs";
-import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
+import { VersionSaveStore, type VersionSaveHost, type SavedVersion, type VersionSaveInput } from "./version-save-store";
 import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { normalizeModeFromLabel } from "../shared/mode-label";
 import { findAvailableMarkdownPath } from "../shared/util-vault";
 import { readNamespaceFrontmatter } from "../shared/namespace";
 import { VersionManifestStore } from "./version-manifest-store";
 import { OriginalSnapshotStore, type OriginalSnapshot } from "./original-snapshot-store";
-import { VersionSaveStore, type SavedVersion, type VersionSaveInput } from "./version-save-store";
 import { DerivedNoteStore, type DerivedNoteVersion } from "./derived-note-store";
 
 /** VersionStore 需要的最小宿主能力；由 src/main.ts 在调用时绑定动态成员。 */
@@ -35,6 +33,10 @@ export interface VersionStoreHost {
   getSettings(): Pick<PluginSettings, "mdFolder" | "promptTemplates">;
   getFileFrontmatter(file: obsidian.TFile): Record<string, unknown> | null | undefined;
   refreshNoteIndexSafely(file: obsidian.TFile, options: { meetingDate?: string; reason?: string }): Promise<unknown>;
+  getVersionStoreFolder(settings: Pick<PluginSettings, "mdFolder">, sourceId: string): string;
+  normalizeVersionId: VersionSaveHost["normalizeId"];
+  buildSegmentStatusList: VersionSaveHost["buildSegmentStatusList"];
+  replaceActiveVersionBlock: VersionActivationHost["replaceActiveVersionBlock"];
   openSourceFile(file: obsidian.TFile): Promise<void>;
 }
 
@@ -74,18 +76,18 @@ export class VersionStore {
       createCache: (path, content) => this.host.vault.create(path, content),
       getSourceId: (content, file) => getSourceIdFromMarkdown(content, file),
       getSourceHash: (segments) => getSegmentsHash(segments),
-      getFolder: (sourceId) => getVersionStoreFolder(this.host.getSettings(), sourceId),
+      getFolder: (sourceId) => this.host.getVersionStoreFolder(this.host.getSettings(), sourceId),
       getCreatedAt: () => window.moment
         ? window.moment().format("YYYY-MM-DD HH:mm:ss")
         : new Date().toISOString(),
-      normalizeId: (label) => normalizeVersionId(label),
-      buildSegmentStatusList: (segments) => buildSegmentStatusList(segments),
+      normalizeId: (label) => this.host.normalizeVersionId(label),
+      buildSegmentStatusList: (segments) => this.host.buildSegmentStatusList(segments),
       buildEmptyBody: () => buildEmptyLlmOutputFallback(),
     }, this.manifests);
     this.originals = new OriginalSnapshotStore({
       readSource: (file) => this.host.vault.read(file),
       getSourceId: (content, file) => getSourceIdFromMarkdown(content, file),
-      getFolder: (sourceId) => getVersionStoreFolder(this.host.getSettings(), sourceId),
+      getFolder: (sourceId) => this.host.getVersionStoreFolder(this.host.getSettings(), sourceId),
       exists: (path) => this.host.vault.adapter.exists(path),
       readCache: (path) => this.host.vault.adapter.read(path),
       readManifest: (folder, sourceId) => this.manifests.read(folder, sourceId),
@@ -100,7 +102,7 @@ export class VersionStore {
       getAbstractFileByPath: (path) => this.host.vault.getAbstractFileByPath(path),
       getFileFrontmatter: (file) => this.host.getFileFrontmatter(file),
       getSourceId: (content, file) => getSourceIdFromMarkdown(content, file),
-      getFolder: (sourceId) => getVersionStoreFolder(this.host.getSettings(), sourceId),
+      getFolder: (sourceId) => this.host.getVersionStoreFolder(this.host.getSettings(), sourceId),
       ensureOriginalVersionForSource: (file) => this.ensureOriginalVersionForSource(file),
       getTitleSuffix: (modeKey, labelFallback) => {
         const settings = this.host.getSettings();
@@ -109,7 +111,7 @@ export class VersionStore {
           : labelFallback;
       },
       replaceActiveVersionBlock: (markdown, meta, body) =>
-        replaceActiveVersionBlock(markdown, meta, body),
+        this.host.replaceActiveVersionBlock(markdown, meta, body),
       modifySource: (file, content) => this.host.vault.modify(file, content),
       refreshNoteIndexSafely: (file, options) =>
         this.host.refreshNoteIndexSafely(file, options),
@@ -161,4 +163,3 @@ export class VersionStore {
   }
 }
 
-/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
