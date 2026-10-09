@@ -16,12 +16,17 @@ function fixture(overrides: Partial<SedimentScanFlowPort> = {}) {
   const cancellationCalls: Array<{ id: string; reason: string }> = [];
   const failures: Array<{ id: string; error: unknown; result: unknown }> = [];
   const notices: Array<{ error: unknown; duration: number }> = [];
+  const activities = new Map<string, { status: string }>();
+  const setActivityStatus = (id: string, status: string) => {
+    const activity = activities.get(id);
+    if (activity) activity.status = status;
+  };
   const tasks = {
-    startTaskActivity: () => { order.push("task:start"); },
+    startTaskActivity: (input: Parameters<SedimentScanFlowPort["tasks"]["startTaskActivity"]>[0]) => { activities.set(input.id, { status: input.status }); order.push("task:start"); },
     patchTaskActivity: (_id: string, patch: { stage: string }) => { order.push(`task:${patch.stage}`); },
-    cancelTaskActivity: (id: string, reason: string) => { cancellationCalls.push({ id, reason }); order.push("task:cancel"); },
-    completeTaskActivity: () => { order.push("task:complete"); },
-    failTaskActivity: (id: string, error: unknown, result: unknown) => { failures.push({ id, error, result }); order.push("task:fail"); },
+    cancelTaskActivity: (id: string, reason: string) => { cancellationCalls.push({ id, reason }); setActivityStatus(id, "cancelled"); order.push("task:cancel"); },
+    completeTaskActivity: (id: string) => { setActivityStatus(id, "done"); order.push("task:complete"); },
+    failTaskActivity: (id: string, error: unknown, result: unknown) => { failures.push({ id, error, result }); setActivityStatus(id, "failed"); order.push("task:fail"); },
   };
   const port: SedimentScanFlowPort = {
     currentToken: () => token,
@@ -49,7 +54,7 @@ function fixture(overrides: Partial<SedimentScanFlowPort> = {}) {
     tasks,
     ...overrides,
   };
-  return { port, order, patches, cancellationCalls, failures, notices, advanceToken: () => { token += 1; } };
+  return { port, order, patches, cancellationCalls, failures, notices, activities, advanceToken: () => { token += 1; } };
 }
 
 describe("sediment scan flow contract", () => {
@@ -79,21 +84,28 @@ describe("sediment scan flow contract", () => {
     expect(order.at(-1)).toBe("notice");
   });
 
-  it("cancels through the shared token and discards a generated result once it returns", async () => {
+  it("discards a generated result after the token changes without touching scan state or task activity", async () => {
     let resolveGeneration!: (value: unknown) => void;
     const generation = new Promise<unknown>(resolve => { resolveGeneration = resolve; });
-    const { port, order, patches, advanceToken } = fixture({ generate: async () => generation });
+    const { port, order, patches, cancellationCalls, failures, notices, activities, advanceToken } = fixture({ generate: async () => generation });
     const scanning = scanSedimentFile(port, file);
     await Promise.resolve();
     await Promise.resolve();
     advanceToken();
+    const eventsBeforeStaleResult = order.length;
     resolveGeneration(generated);
     await scanning;
 
-    expect(order).toContain("task:cancel");
+    expect(order.slice(eventsBeforeStaleResult)).toEqual([]);
+    expect(cancellationCalls).toEqual([]);
+    expect(patches).toHaveLength(1);
+    expect(order.filter(event => event === "render")).toHaveLength(1);
     expect(order).not.toContain("normalize");
     expect(order).not.toContain("persist");
-    expect(patches).toHaveLength(1);
+    expect(order).not.toContain("toast");
+    expect(notices).toEqual([]);
+    expect(failures).toEqual([]);
+    expect(activities.get(`sediment:${file.path}`)?.status).toBe("running");
   });
 
   it("does not reset or report a cancelled scan's later failure", async () => {
@@ -101,7 +113,7 @@ describe("sediment scan flow contract", () => {
     let resolveStarted!: () => void;
     const started = new Promise<void>(resolve => { resolveStarted = resolve; });
     const generation = new Promise<unknown>((_resolve, reject) => { rejectGeneration = reject; });
-    const { port, order, patches, cancellationCalls, failures, notices } = fixture({
+    const { port, order, patches, cancellationCalls, failures, notices, activities } = fixture({
       generate: async () => {
         resolveStarted();
         return generation;
@@ -117,24 +129,25 @@ describe("sediment scan flow contract", () => {
     await scanning;
 
     expect(patches).toHaveLength(patchesAfterCancel);
-    expect(order.slice(eventsAfterCancel)).toEqual(["task:cancel"]);
-    expect(cancellationCalls).toHaveLength(2);
-    expect(cancellationCalls[1]).toEqual(cancellationCalls[0]);
+    expect(order.slice(eventsAfterCancel)).toEqual([]);
+    expect(cancellationCalls).toHaveLength(1);
     expect(failures).toHaveLength(0);
     expect(notices).toHaveLength(0);
+    expect(activities.get(`sediment:${file.path}`)?.status).toBe("cancelled");
   });
 
-  it("does not let a cancelled scan failure reset a replacement scan", async () => {
+  it.each(["result", "failure"] as const)("does not cancel a replacement task activity when stale scan A returns a %s", async staleOutcome => {
     let rejectFirst!: (error: unknown) => void;
+    let resolveFirst!: (value: unknown) => void;
     let resolveSecond!: (value: unknown) => void;
     let resolveFirstStarted!: () => void;
     let resolveSecondStarted!: () => void;
     const firstStarted = new Promise<void>(resolve => { resolveFirstStarted = resolve; });
     const secondStarted = new Promise<void>(resolve => { resolveSecondStarted = resolve; });
-    const firstGeneration = new Promise<unknown>((_resolve, reject) => { rejectFirst = reject; });
+    const firstGeneration = new Promise<unknown>((resolve, reject) => { resolveFirst = resolve; rejectFirst = reject; });
     const secondGeneration = new Promise<unknown>(resolve => { resolveSecond = resolve; });
     let generationCount = 0;
-    const { port, order, patches, failures, notices } = fixture({
+    const { port, order, patches, cancellationCalls, failures, notices, activities } = fixture({
       generate: async () => {
         generationCount += 1;
         if (generationCount === 1) {
@@ -145,28 +158,35 @@ describe("sediment scan flow contract", () => {
         return secondGeneration;
       },
     });
+    const taskId = `sediment:${file.path}`;
     const firstScan = scanSedimentFile(port, file);
     await firstStarted;
     cancelSedimentScan(port, file);
     const secondScan = scanSedimentFile(port, file);
     await secondStarted;
     expect(patches.at(-1)).toMatchObject({ scanning: true });
-    const patchesBeforeFirstFailure = patches.length;
-    const eventsBeforeFirstFailure = order.length;
+    expect(activities.get(taskId)?.status).toBe("running");
+    const patchesBeforeFirstOutcome = patches.length;
+    const eventsBeforeFirstOutcome = order.length;
 
-    rejectFirst(new Error("stale failure"));
+    if (staleOutcome === "failure") rejectFirst(new Error("stale failure"));
+    else resolveFirst(generated);
     await firstScan;
 
-    expect(patches).toHaveLength(patchesBeforeFirstFailure);
+    expect(patches).toHaveLength(patchesBeforeFirstOutcome);
     expect(patches.at(-1)).toMatchObject({ scanning: true });
-    expect(order.slice(eventsBeforeFirstFailure)).toEqual(["task:cancel"]);
-    expect(failures).toHaveLength(0);
-    expect(notices).toHaveLength(0);
+    expect(order.slice(eventsBeforeFirstOutcome)).toEqual([]);
+    expect(cancellationCalls).toHaveLength(1);
+    expect(activities.get(taskId)?.status).toBe("running");
+    expect(failures).toEqual([]);
+    expect(notices).toEqual([]);
 
     resolveSecond(generated);
     await secondScan;
     expect(patches.at(-1)).toMatchObject({ scanning: false, scannedAt: expect.any(String) });
+    expect(activities.get(taskId)?.status).toBe("done");
   });
+
 
   it("preserves current-scan failure reset, logging, task failure, and notice order", async () => {
     const error = new Error("current scan failure");
@@ -186,10 +206,12 @@ describe("sediment scan flow contract", () => {
   });
 
   it("increments the shared token and orders explicit cancellation updates", () => {
-    const { port, order, patches } = fixture();
+    const { port, order, patches, cancellationCalls } = fixture();
     cancelSedimentScan(port, file);
     expect(port.currentToken()).toBe(1);
     expect(order).toEqual(["bucket:stopped", "task:cancel", "render", "toast"]);
     expect(patches[0]).toEqual({ scanning: false, scanStartedAt: "" });
+    expect(cancellationCalls).toHaveLength(1);
+    expect(cancellationCalls[0].id).toBe(`sediment:${file.path}`);
   });
 });

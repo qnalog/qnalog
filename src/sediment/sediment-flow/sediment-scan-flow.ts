@@ -120,7 +120,6 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
     });
     const objects = await port.generate(file, markdown);
     if (token !== port.currentToken()) {
-      port.tasks.cancelTaskActivity(taskId, t("This scan was cancelled; the note content was not changed"));
       return;
     }
     const normalized = port.normalizeAndAddIds(objects, port.normalizePath(file.path || ""), file.basename);
@@ -164,7 +163,6 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
     });
   } catch (error) {
     if (token !== port.currentToken()) {
-      port.tasks.cancelTaskActivity(taskId, t("This scan was cancelled; the note content was not changed"));
       return;
     }
     port.patchBucket(file, { scanning: false, scanStartedAt: "" });
