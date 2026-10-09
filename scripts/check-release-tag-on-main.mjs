@@ -31,8 +31,8 @@ export function checkTagOnMain({ cwd, target = "HEAD", branch = "refs/remotes/or
   let targetSha = "";
   let branchSha = "";
   try {
-    targetSha = git(["rev-parse", "--short", target], at);
-    branchSha = git(["rev-parse", "--short", branch], at);
+    targetSha = git(["rev-parse", "--verify", "--quiet", "--short", target], at);
+    branchSha = git(["rev-parse", "--verify", "--quiet", "--short", branch], at);
   } catch {
     return { ok: false, target, branch, reason: `无法解析 ${target} 或 ${branch}（浅克隆会缺 main 的引用，需要 fetch-depth: 0）` };
   }
