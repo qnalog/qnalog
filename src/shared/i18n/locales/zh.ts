@@ -1582,6 +1582,7 @@ export const ZH: MessageTable = {
   "Unselected items ignored": "已忽略未选内容",
   "Ignored items will not appear again": "已忽略的不会再次出现",
   "People-name hotword consent revoked: future transcription and organizing requests will no longer include names or forms of address, and the policy has automatically switched back to \"Privacy first\".": "已撤销人名热词授权：后续转写与整理请求不再附带人员姓名和称呼，使用策略已自动切回「隐私优先」。",
+  "Undo": "撤销",
   "This library import was undone": "已撤销本次入库",
   "Organized": "已整理",
   "Organized into a sectioned hotword table": "已整理为分区热词表",

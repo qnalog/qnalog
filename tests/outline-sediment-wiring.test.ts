@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as SedimentModule from "../src/sediment";
 import { getTaskErrorMessage } from "../src/shared/task-activity";
 import type * as VocabularyModule from "../src/vocabulary";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
 vi.mock("obsidian", () => {
   class ItemView {}
@@ -252,5 +253,30 @@ describe("OutlineView sediment wiring", () => {
     await view.ignorePeopleSuggestions(state.currentPeople, targetFile);
     expect(view.showSedimentToast).toHaveBeenCalledTimes(1);
     expect(plugin.people.ignorePeopleDirectorySuggestion).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OutlineView sediment undo toast", () => {
+  it("uses the Undo label in Chinese and English", () => {
+    const { view } = makeView("todo");
+    const originalLanguage = getActiveUiLanguage();
+    let toastOptions: { actions: Array<{ text: string }> } | undefined;
+    Object.assign(view, {
+      showSedimentToast: (_message: string, options: { actions: Array<{ text: string }> }) => {
+        toastOptions = options;
+      },
+      restoreSedimentUndo: vi.fn(),
+    });
+    try {
+      for (const [language, expected] of [["zh", "撤销"], ["en", "Undo"]] as const) {
+        setActiveUiLanguage(resolveUiLanguage(language, null));
+        OutlineView.prototype.showSedimentCommitToast.call(view, "Saved", {});
+        const buttonText = toastOptions?.actions[0]?.text;
+        expect(buttonText).toBe(expected);
+        expect(buttonText).not.toContain("AI service");
+      }
+    } finally {
+      setActiveUiLanguage(originalLanguage);
+    }
   });
 });

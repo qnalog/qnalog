@@ -3271,7 +3271,7 @@ export class OutlineView extends obsidian.ItemView {
     this.showSedimentToast(message, {
       icon: "check",
       actions: [
-        { text: i18nT("AI service is temporarily unavailable; local recording continues."), action: () => { void this.restoreSedimentUndo(this.sedimentLastUndo); } },
+        { text: i18nT("Undo"), action: () => { void this.restoreSedimentUndo(this.sedimentLastUndo); } },
         { text: i18nT("View"), action: () => { void this.openSedimentCommitTarget(this.sedimentLastUndo); } },
       ],
       duration: 5000,
