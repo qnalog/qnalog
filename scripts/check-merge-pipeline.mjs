@@ -2298,6 +2298,68 @@ async function main() {
         plugin.queue.tasks = liveProbeQueue;
         files.delete(liveProbePath);
       }
+      const speakerProbeStart = noticeMessages.length;
+      const speakerProbePath = "QnALog/speaker-confirmation-probe.md";
+      const speakerProbeFile = new TFile(speakerProbePath);
+      const speakerProbeOriginalContent = speakerProbeFile._content;
+      const speakerProbeQueue = plugin.queue.tasks.slice();
+      const speakerProbeStages = [];
+      const speakerProbeDiagnostics = [];
+      const speakerProbeResults = [];
+      const originalSpeakerProgress = plugin.asrPipeline.setSessionWorkProgress;
+      const originalSpeakerDiagnostic = plugin.diagnostics.logDiagnostic;
+      const originalSpeakerCache = plugin.app.metadataCache.getFileCache;
+      const originalSpeakerFrontmatter = plugin.app.fileManager.processFrontMatter;
+      const speakerMappings = {
+        "spk-1": { id: "spk-1", channel: 1, label: "说话人1", personName: "张三" },
+        "spk-2": { id: "spk-2", channel: 2, label: "说话人2", personName: "李四" },
+      };
+      const runSpeakerProbe = async (id, texts, extra = {}) => {
+        speakerProbeFile._content = "<!-- qnalog-session:speaker-probe -->\n" + texts.join("\n");
+        files.set(speakerProbePath, speakerProbeFile);
+        const stagesBefore = speakerProbeStages.length;
+        const diagnosticsBefore = speakerProbeDiagnostics.length;
+        const session = {
+          id, mode: "monologue", mdPath: speakerProbePath, segments: texts.map((text, index) => ({ index, text })),
+          ...extra,
+        };
+        const result = await plugin.sessionFinalize.confirmSpeakerNamesBeforeFinal(session, session.segments);
+        speakerProbeResults.push({
+          result: JSON.stringify(result),
+          content: speakerProbeFile._content,
+          diagCodes: speakerProbeDiagnostics.slice(diagnosticsBefore).map(({ code }) => code),
+          stages: speakerProbeStages.slice(stagesBefore),
+          notices: noticeMessages.slice(speakerProbeStart),
+        });
+        noticeMessages.length = speakerProbeStart;
+      };
+      try {
+        plugin.asrPipeline.setSessionWorkProgress = (session, patch) => {
+          speakerProbeStages.push(patch.stage);
+          return originalSpeakerProgress.call(plugin.asrPipeline, session, patch);
+        };
+        plugin.diagnostics.logDiagnostic = async (...args) => {
+          speakerProbeDiagnostics.push({ code: args[1], level: args[0], data: args[3] });
+          return originalSpeakerDiagnostic.apply(plugin.diagnostics, args);
+        };
+        await runSpeakerProbe("speaker-single", ["[说话人1] 单人发言。"]);
+        await runSpeakerProbe("speaker-skipped", ["[说话人1] 讨论产品。", "[说话人2] 确认预算。"], { _speakerNameConfirmationSkipped: true });
+        const confirmedFrontmatter = { qnalog_speakers: speakerMappings };
+        plugin.app.metadataCache.getFileCache = () => ({ frontmatter: confirmedFrontmatter });
+        plugin.app.fileManager.processFrontMatter = async (_file, callback) => callback(confirmedFrontmatter);
+        await runSpeakerProbe("speaker-confirmed", ["[说话人1] 讨论产品。", "[说话人2] 确认预算。"], { speakerChannels: speakerMappings });
+        const speakerProbeDigest = createHash("sha256").update(JSON.stringify(speakerProbeResults)).digest("hex");
+        console.log(`[speaker-confirmation-flow] digest: ${speakerProbeDigest}`);
+      } finally {
+        plugin.asrPipeline.setSessionWorkProgress = originalSpeakerProgress;
+        plugin.diagnostics.logDiagnostic = originalSpeakerDiagnostic;
+        plugin.app.metadataCache.getFileCache = originalSpeakerCache;
+        plugin.app.fileManager.processFrontMatter = originalSpeakerFrontmatter;
+        noticeMessages.length = speakerProbeStart;
+        plugin.queue.tasks = speakerProbeQueue;
+        files.delete(speakerProbePath);
+        speakerProbeFile._content = speakerProbeOriginalContent;
+      }
       
       
       const polishLiteralBody = "模型正文\n$& $` $' $$";

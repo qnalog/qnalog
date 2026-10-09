@@ -562,6 +562,7 @@ export interface RecordingSession {
   _asrCircuitOpenNotified?: boolean;
   _segmentCacheWriteFailureNotified?: boolean;
   _segmentTaskPersistFailureNotified?: boolean;
+  _speakerNameConfirmationSkipped?: boolean;
   _emptyAsrNotified?: boolean;
   _silenceNotified?: boolean;
   _finalizeTaskMeter?: unknown;

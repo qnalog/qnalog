@@ -293,6 +293,9 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["/场景/全部纪要总览.base", "data"],
     ["/按模式", "data"],
   ],
+  "src/notes/live-segment-flow.ts": [
+    [" · 结束", "note"],
+  ],
 };
 
 type Offender = string;

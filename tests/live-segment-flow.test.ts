@@ -229,9 +229,83 @@ describe("live segment consumer contract", () => {
     expect(host.asrPipeline.removeLiveSegmentQueueTask).toHaveBeenCalledOnce();
     expect(diagnostics.flat().join(" ")).toContain("asr.segment_failed");
   });
+  it("saves a master-only final segment when no save promise was supplied", async () => {
+    const { service, host } = makeHost();
+    host.diagnostics.logDiagnostic.mockRejectedValueOnce(new Error("diagnostics offline"));
+    await service.processSegment(makeSession(), makeSegment({ isFinal: true, masterOnly: true }));
+    expect(host.asrPipeline.saveMasterAudio).toHaveBeenCalledOnce();
+    expect(host.requestOutlineRefresh).toHaveBeenCalledOnce();
+    expect(host.noteWriter.insertBeforeSegmentsEnd).not.toHaveBeenCalled();
+  });
+
+  it("preserves explicit segment identity, offsets and cache path", async () => {
+    const { service } = makeHost();
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({
+      segmentIndex: 8, segNumber: 11, displayStartOffsetMs: 12345, displayEndOffsetMs: 23456,
+      segmentAudioName: "explicit.webm", segmentAudioPath: "Custom/explicit.webm",
+    }));
+    expect(session.segments[0]).toMatchObject({
+      index: 8, startOffsetMs: 12345, endOffsetMs: 23456,
+      segmentAudioName: "explicit.webm", segmentAudioPath: "Custom/explicit.webm",
+    });
+  });
+
+  it("uses a spooled fallback blob and carries the persisted queue id into the note record", async () => {
+    const { service, host } = makeHost();
+    const blob = new Blob(["spooled"], { type: "audio/spooled" });
+    const session = makeSession();
+    const seg = makeSegment({ blob: undefined, spoolPromise: Promise.resolve({ persisted: false, fallbackBlob: blob, queueTaskId: "spool-task" }) });
+    await service.processSegment(session, seg);
+    expect(transcribeMock).toHaveBeenCalledWith(host, blob, "audio/spooled");
+    expect(seg.queueTaskId).toBe("spool-task");
+    expect(host.app.vault.adapter.writeBinary).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original blob as fallback when cache writing fails", async () => {
+    const { service, host } = makeHost();
+    host.app.vault.adapter.writeBinary.mockRejectedValueOnce(new Error("disk full"));
+    const blob = new Blob(["audio"], { type: "audio/webm" });
+    await service.processSegment(makeSession(), makeSegment({ blob }));
+    expect(transcribeMock).toHaveBeenCalledWith(host, blob, "audio/webm");
+    expect(notices).toContainEqual([`${t(" segments")}1${t(" audio write failed: ")}disk full`, undefined]);
+  });
+
+  it("keeps missing audio as a queued failure without making an ASR request", async () => {
+    const { service, host } = makeHost();
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({ blob: undefined }));
+    expect(transcribeMock).not.toHaveBeenCalled();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(session.segments[0].error).toBe(t("The recorded segment cache could not be read; the background retry task has been kept"));
+  });
+
+  it("reads settings, writer, progress and outline capabilities when work reaches each call", async () => {
+    const { service, host, blocks } = makeHost();
+    const replacementBlocks: string[] = [];
+    const replacementProgress = vi.fn();
+    transcribeMock.mockImplementationOnce(async () => {
+      host.settings = { ...DEFAULT_SETTINGS, enableRealtimeOutline: true };
+      host.noteWriter = { insertBeforeSegmentsEnd: vi.fn(async (_path, block) => { replacementBlocks.push(block); }) };
+      host.asrPipeline.setSessionWorkProgress = replacementProgress;
+      return { text: "late-bound", rawText: "late-bound", providerId: "p", units: [] };
+    });
+    await service.processSegment(makeSession(), makeSegment());
+    expect(host.noteWriter.insertBeforeSegmentsEnd).toHaveBeenCalledOnce();
+    expect(replacementBlocks[0]).toContain("late-bound");
+    expect(replacementProgress).toHaveBeenCalledOnce();
+    expect(host.outline.scheduleRealtimeOutline).toHaveBeenCalledOnce();
+    expect(blocks).toHaveLength(0);
+  });
+
+  it("propagates the original error when note insertion fails after the segment was pushed", async () => {
+    const { service, host } = makeHost();
+    const failure = new Error("note insert rejected");
+    host.noteWriter.insertBeforeSegmentsEnd.mockRejectedValueOnce(failure);
+    const session = makeSession();
+    await expect(service.processSegment(session, makeSegment())).rejects.toBe(failure);
+    expect(session.segments).toHaveLength(1);
+    expect(host.asrPipeline.removeLiveSegmentQueueTask).not.toHaveBeenCalled();
+  });
 });
 
-function sessionError(host: ReturnType<typeof makeHost>["host"]): string {
-  const calls = host.noteWriter.insertBeforeSegmentsEnd.mock.calls;
-  return calls.length ? String(calls.at(-1)?.[1]) : "";
-}

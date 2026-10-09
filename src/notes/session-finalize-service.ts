@@ -11,11 +11,7 @@ import type { PluginSettings, RecordingSession, PreparedLiveSegment } from "../s
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { formatElapsed } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
-import { normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName } from "../audio/channel-speakers";
-import type { SpeakerId } from "../audio/channel-speakers";
 import { transcribeAudioByChannels } from "../asr/channel-transcription";
-import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
-import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { classifyRecordingIssue } from "../notes/recording-issues";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
@@ -34,7 +30,6 @@ import { VersionStore } from "../versions/version-store";
 import { NS_FM_SPEAKERS } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
-import { getCurrentTranscript } from "../transcript/session-transcript";
 import type { ContinuationService } from "../session/continuation-service";
 import type { SessionStore } from "../session/session-store";
 import type { SessionFinalizeFlowHost } from "./session-finalize-flow";
@@ -47,6 +42,8 @@ import { runSessionFinalization } from "./session-finalize-run-flow";
 import type { SessionFinalizeRunPort, SessionShortRecordingPort } from "./session-finalize-run-flow";
 import { processLiveSegment } from "./live-segment-flow";
 import type { LiveSegmentPort } from "./live-segment-flow";
+import { confirmSpeakerNames } from "./speaker-confirmation-flow";
+import type { SpeakerConfirmationPort } from "./speaker-confirmation-flow";
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
@@ -255,121 +252,33 @@ export class SessionFinalizeService {
     })();
   }
 
-  async confirmSpeakerNamesBeforeFinal(session, segments) {
-    const joined = (segments || []).map(segment => String(segment && segment.text || "")).join("\n");
-    const candidates = collectSpeakerCandidates(joined);
-    if (candidates.length < 2) return { segments, frontmatter: null };
+  confirmSpeakerNamesBeforeFinal(session, segments) {
+    return confirmSpeakerNames(this.speakerConfirmationPort(), session, segments);
+  }
 
-    const file = this.host.app.vault.getAbstractFileByPath(session.mdPath);
-    if (!(file instanceof obsidian.TFile)) return { segments, frontmatter: null };
-    const frontmatter = await readFileFrontmatter(this.host, file) || {};
-    const ids = candidates.map(candidate => candidate.id);
-    const initialMappings = normalizeSpeakerMappings(
-      Object.assign({}, session.speakerChannels || {}, readSpeakerMappings(frontmatter) || {}),
-      ids,
-    );
-    const alreadyConfirmed = candidates.every(candidate => String(initialMappings[candidate.id] && initialMappings[candidate.id].personName || "").trim());
-    let mappings = initialMappings;
-
-    if (!alreadyConfirmed && !session._speakerNameConfirmationSkipped) {
-      this.host.asrPipeline.setSessionWorkProgress(session, {
-        stage: "speaker-confirm",
-        label: t("Confirm speakers"),
-        percent: 52,
-        detail: t("Detected {0} speakers; waiting for name confirmation before continuing").replace("{0}", String(candidates.length)),
-      });
-      this.host.requestOutlineRefresh();
-      const providerId = session.importTranscribeProviderId
-        || this.host.settings.activeTranscribeProvider
-        || "siliconflow";
-      const activeProvider = (this.host.settings.transcribeProviders || {})[providerId] || {};
-      const profile = this.host.profiles.getTranscribeProviderProfile(providerId, activeProvider);
-      const hardwareSeparated = Object.keys(session.speakerChannels || {}).length >= 2;
-      const stableAcrossSession = hardwareSeparated
-        || !!(profile && profile.speakerLabelScope === "session" && profile.requiresWholeSession)
-        || isSpeakerDiarizationProvider(activeProvider);
-      // resolve 收到的确认结果是「说话人标签到姓名」的映射表；用户取消时 resolve(null)。
-      const names = await new Promise<Record<string, string> | null>((resolve) => {
-        const modal = new SpeakerNameConfirmModal(
-          this.host.app,
-          this.host,
-          candidates,
-          initialMappings,
-          { unstableAcrossSegments: !stableAcrossSession },
-          resolve,
-        );
-        modal.open();
-      });
-      if (names) {
-        mappings = buildConfirmedSpeakerMappings(candidates, names, initialMappings);
-      } else {
-        session._speakerNameConfirmationSkipped = true;
-      }
-    }
-
-    const hasConfirmedName = Object.values(mappings).some(mapping => String(mapping && mapping.personName || "").trim());
-    if (hasConfirmedName) {
-      await this.host.app.fileManager.processFrontMatter(file, (nextFrontmatter) => {
-        nextFrontmatter[NS_FM_SPEAKERS] = mappings;
-      });
-      session.speakerChannels = mappings;
-      let persistedReplacements = 0;
-      let namesPersisted = false;
-      try {
-        let markdown = await this.host.app.vault.read(file);
-        for (const [speakerId, mapping] of Object.entries(mappings) as [SpeakerId, { personName?: string }][]) {
-          const personName = String(mapping && mapping.personName || "").trim();
-          if (!personName) continue;
-          const updated = replaceSpeakerDisplayName(markdown, speakerId, personName);
-          markdown = updated.markdown;
-          persistedReplacements += updated.replacements;
-        }
-        if (persistedReplacements > 0) {
-          await this.host.app.vault.modify(file, markdown);
-          this.notePanelCacheKey = "";
-          this.notePanelCacheData = undefined;
-          this.notePanelLoading = false;
-        }
-        namesPersisted = true;
-      } catch (error) {
-        try {
-          await this.host.diagnostics.logDiagnostic("warn", "speaker.names_persist_failed", t("Speaker names were saved to properties, but updating the note body failed"), {
-            mdPath: file.path,
-            error: diagnosticError(error),
-          });
-        } catch { /* diagnostics must not change finalization behavior */ }
-        new obsidian.Notice(t("Speaker names were saved, but the display names in the original transcript could not be updated; you can save again from the outline."), 8000);
-      }
-      if (namesPersisted) {
-        try {
-          await this.host.diagnostics.logDiagnostic("info", "speaker.names_persisted", t("Speaker names have been written into the original transcript"), {
-            mdPath: file.path,
-            confirmedCount: Object.values(mappings).filter(mapping => String(mapping && mapping.personName || "").trim()).length,
-            replacements: persistedReplacements,
-          });
-        } catch { /* diagnostics must not change finalization behavior */ }
-      }
-    }
-    const llmSegments = hasConfirmedName
-      ? segments.map((segment) => ({ ...segment, text: applySpeakerNamesForLlm(segment.text, mappings) }))
-      : segments;
-    const utteranceProjections = hasConfirmedName
-      ? segments.flatMap((segment) => {
-        if (!segment.transcript) return [];
-        return getCurrentTranscript(segment.transcript).utterances.flatMap((utterance) => {
-          const normalizedText = applySpeakerNamesForLlm(utterance.normalizedText, mappings);
-          const channel = Number(utterance.speakerId?.match(/(?:channel|speaker|spk)[:-]?(\d+)$/)?.[1]) || 0;
-          const speakerName = String(mappings[`spk-${channel}`]?.personName || utterance.speakerName || "").trim() || null;
-          return normalizedText !== utterance.normalizedText || speakerName !== utterance.speakerName
-            ? [{ utteranceId: utterance.id, normalizedText, speakerName }]
-            : [];
-        });
-      })
-      : [];
+  private speakerConfirmationPort(): SpeakerConfirmationPort {
     return {
-      segments: llmSegments,
-      frontmatter: hasConfirmedName ? Object.assign({}, frontmatter, { [NS_FM_SPEAKERS]: mappings }) : null,
-      utteranceProjections,
+      getVault: () => this.host.app.vault,
+      readFrontmatter: (file) => readFileFrontmatter(this.host, file),
+      setProgress: (session, patch) => this.host.asrPipeline.setSessionWorkProgress(session, patch),
+      requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
+      getSettings: () => this.host.settings,
+      getProviderProfile: (id, provider) => this.host.profiles.getTranscribeProviderProfile(id, provider),
+      promptSpeakerNames: (candidates, initialMappings, options) => {
+        const { promise, resolve } = Promise.withResolvers<Record<string, string> | null>();
+        const modal = new SpeakerNameConfirmModal(this.host.app, this.host, candidates, initialMappings, options, resolve);
+        modal.open();
+        return promise;
+      },
+      writeSpeakerFrontmatter: (file, mappings) => this.host.app.fileManager.processFrontMatter(file, (nextFrontmatter) => {
+        nextFrontmatter[NS_FM_SPEAKERS] = mappings;
+      }),
+      resetNotePanelCache: () => {
+        this.notePanelCacheKey = "";
+        this.notePanelCacheData = undefined;
+        this.notePanelLoading = false;
+      },
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
     };
   }
 
