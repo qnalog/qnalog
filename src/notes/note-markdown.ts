@@ -7,7 +7,8 @@ import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START, QNALOG_EMPTY_SH
 
 import { normalizeCallouts } from "./callout-normalize";
 
-import { buildEmptyLlmOutputFallback, formatMergeSegmentForPrompt } from "../prompts/briefing-prompts";
+import { formatMergeSegmentForPrompt } from "../prompts/briefing-prompts";
+import { buildEmptyLlmOutputFallback } from "./note-write-content";
 
 import * as obsidian from "obsidian";
 import { findLowEvidenceEntities, hashRealtimeOutlineText } from "./outline-text";

@@ -31,7 +31,7 @@ import { iterateNoteDetailsBlocks } from "../src/notes/note-document";
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
 import type { RecordingSession, Segment } from "../src/shared/types";
 import type { NoteMergeSourceMetadata } from "../src/notes/note-merge-flow";
-import { buildEmptyLlmOutputFallback } from "../src/prompts/briefing-prompts";
+import { buildEmptyLlmOutputFallback } from "../src/notes/note-write-content";
 import { createRealtimeOutlineSourceCoverage } from "../src/notes/outline-coverage";
 import { readCurrentOutlineBlock } from "../src/notes/outline-storage";
 

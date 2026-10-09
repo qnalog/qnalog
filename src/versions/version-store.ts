@@ -5,7 +5,7 @@ import * as obsidian from "obsidian";
 import type { PluginSettings, Segment } from "../shared/types";
 import { VersionActivationStore } from "./version-activation-store";
 import { getModeDisplayName, getModeMeta, getModePrefix, isKnownPolishMode } from "../shared/mode-meta";
-import { buildEmptyLlmOutputFallback } from "../prompts/briefing-prompts";
+import { buildEmptyLlmOutputFallback } from "../notes/note-write-content";
 import { getSegmentsHash } from "../notes/audio-refs";
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId, replaceActiveVersionBlock } from "../notes/note-markdown";
 import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";

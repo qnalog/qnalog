@@ -4,6 +4,10 @@ import { labelText } from "../shared/note-labels";
 import { splitLeadingFrontmatter } from "./note-document";
 import { splitOutSedimentBlock } from "../sediment/text-blocks";
 
+export function buildEmptyLlmOutputFallback(): string {
+  return "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
+}
+
 export interface NotePolishParts {
   frontmatter: string;
   body: string;

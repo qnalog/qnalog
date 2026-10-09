@@ -13,7 +13,7 @@ import { getModeMeta } from "../shared/mode-meta";
 
 import { parseDurationLabel } from "../shared/util-text";
 
-import { getFrontmatterTags } from "../shared/util-note";
+import { getFrontmatterTags } from "../shared/frontmatter-tags";
 
 import { normalizePeopleSuggestionCache } from "../people";
 

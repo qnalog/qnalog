@@ -114,6 +114,14 @@ describe("NoteWriter mode detection for clean transcript display state", () => {
     expect(detect("Untitled.md", { qnalog_mode: "cleanscript" }, "off")).toBe("meeting");
     expect(detect("Untitled.md", { qnalog_mode: "cleanscript" }, "unknown")).toBe("meeting");
   });
+  
+  it.each([
+    [{ tags: [], tag: "seminar" }, "meeting"],
+    [{ tags: "", tag: " qnalog/seminar,\tunknown " }, "seminar"],
+    [{ tags: ["off,meeting", " seminar ", "seminar"] }, "seminar"],
+  ])("preserves legacy tag precedence for %o", (tags, expected) => {
+    expect(detect("Untitled.md", { qnalog_mode: "cleanscript", ...tags }, "off")).toBe(expected);
+  });
 
   it("recognizes only registered custom modes across mode, tag, and filename sources", () => {
     const settings = { "custom-mode-probe": template };

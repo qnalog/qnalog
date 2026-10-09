@@ -7,7 +7,8 @@ import { isLocalLlmEndpoint } from '../shared/util-llm-endpoint';
 import { DEFAULT_SETTINGS } from '../shared/defaults';
 
 import { extractJsonObject } from '../shared/util-json';
-import { getFrontmatterTags, readFileFrontmatter, isLocalServiceEndpoint } from '../shared/util-note';
+import { getFrontmatterTags } from "../shared/frontmatter-tags";
+import { readFileFrontmatter, isLocalServiceEndpoint } from '../shared/util-note';
 import { callLlm } from '../llm/core';
 import { NS_FM, NS_PEOPLE_RE, hasNamespaceFrontmatter, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 import type { NamespaceFrontmatterField } from "../shared/namespace";

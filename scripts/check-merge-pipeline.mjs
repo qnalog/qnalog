@@ -930,6 +930,9 @@ async function main() {
           ["AzzzB - Topic.md", {}, null],
           ["Alpha · 学习记录 - Topic.md", {}, "learning"],
           ["Untitled.md", { qnalog_mode: "cleanscript", tags: ["QnALog/ Work notes"] }, "meeting"],
+          ["Untitled.md", { qnalog_mode: "cleanscript", tags: [], tag: "seminar" }, "meeting"],
+          ["Untitled.md", { qnalog_mode: "cleanscript", tags: "", tag: " qnalog/seminar,\tunknown " }, "seminar"],
+          ["Untitled.md", { qnalog_mode: "cleanscript", tags: ["off,meeting", " seminar ", "seminar"] }, "seminar"],
         ];
         for (const [basename, frontmatter, expected] of modeCases) {
           const probeFile = new TFile(`QnALog/WriterSmoke/${basename}`);

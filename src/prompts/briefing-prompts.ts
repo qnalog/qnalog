@@ -642,8 +642,5 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
   try { plugin.shell.refreshOutlineView(); } catch { /* progress rendering must not block briefing */ }
 }
 
-export function buildEmptyLlmOutputFallback() {
-  return "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
-}
 
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
