@@ -33,6 +33,15 @@ describe("topic integration", () => {
     expect(result.completedBatches).toBe(1);
     expect(progress).toEqual([[1, 1]]);
   });
+  it("aborts an in-flight topic batch when cancellation is requested", async () => {
+    const controller = new AbortController();
+    const port: TopicIntegrationPort = { request: async (_messages, signal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }) };
+    const pending = generateTopicOperations(port, { basis: "overview", members: [member("one")], signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow("aborted");
+  });
   it("builds constrained prompts with only basis-appropriate source inputs", () => {
     const source = member("note-1", "The project is described in this English overview, and its decisions are clearly summarized.", "The complete body describes the project and explains its decisions.");
     const overviewMessages = buildTopicIntegrationMessages({ basis: "overview", members: [source], currentPage: "Current page" }, [source]);
