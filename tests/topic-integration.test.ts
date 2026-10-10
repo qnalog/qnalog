@@ -20,7 +20,8 @@ function fakePort(responses: unknown[], signals?: AbortSignal[]): TopicIntegrati
 describe("topic integration", () => {
   it("requires resolved items to go to status or timeline instead of the open-items section", () => {
     const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
-    expect(system).toContain("Only put genuinely unresolved questions and unfinished actions");
+    expect(system).toContain("A question belongs in 未决问题与未完成行动 only while no answer is confirmed");
+    expect(system).toContain("An action belongs there only while its completion remains open");
     expect(system).toContain("resolved or already handled matters in 当前状态 or 时间线");
   });
   it("uses fast thinking and reports completed batch progress", async () => {
