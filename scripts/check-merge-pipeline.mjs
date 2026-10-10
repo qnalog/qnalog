@@ -2366,7 +2366,7 @@ async function main() {
         const content = generalFinalizeFile._content || "";
         const generalCalls = llmCalls.slice(generalLlmCallStart);
         const promptSelected = generalCalls.some((request) => requestPrompt(request).includes("本模式不预设录音属于会议"));
-        const hasNeutralStructure = content.includes("概要") && content.includes("详情");
+        const hasNeutralStructure = content.includes("> [!abstract] 概要") && content.includes("\n## 详情\n");
         const preservedTranscript = content.includes(generalFinalizeText);
         if (!promptSelected) failures.push("general session finalization did not send the general prompt");
         if (!hasNeutralStructure) failures.push("general session finalization did not write the overview/details structure");
@@ -2384,6 +2384,61 @@ async function main() {
         frontmatterByPath.delete(generalFinalizePath);
         llmCalls.splice(generalLlmCallStart);
         files.delete(generalFinalizePath);
+      }
+      const generalShortPath = "QnALog/general-mode-short-finalize-probe.md";
+      const generalShortText = "下次演示前检查投影转接头。";
+      const generalShortSegment = transcriptSegment(0, generalShortText, 0, 10_000, "general-mode-short-finalize");
+      const generalShortFile = new TFile(generalShortPath);
+      generalShortFile._content = [
+        "---", "qnalog_mode: general", "qnalog_time: 2026-09-14T12:01:00", "qnalog_status: draft", "---", "",
+        "# 2026-09-14 12:01 · 通用", "",
+        "<details><summary>分段原始转写</summary>",
+        "<!-- qnalog-segments-start:general-mode-short-finalize -->",
+        serializeTranscriptSegment(generalShortSegment),
+        "<!-- qnalog-segments-end:general-mode-short-finalize -->",
+        "</details>", "",
+        "<!-- qnalog-session:general-mode-short-finalize -->",
+      ].join("\n");
+      files.set(generalShortPath, generalShortFile);
+      const generalShortSession = {
+        id: "general-mode-short-finalize", mode: "general", mdPath: generalShortPath,
+        startedAt: "2026-09-14T12:01:00.000Z", sessionStamp: "20260914-120100",
+        segments: [generalShortSegment],
+        finalized: false, segmentMeta: [], workProgress: {},
+      };
+      const shortOutput = "> [!abstract] 概要\n> 下次演示前检查投影转接头。";
+      const generalShortCallStart = llmCalls.length;
+      try {
+        plugin.settings = { ...originalGeneralSettings, polishMode: "general" };
+        briefingOutputOverride = shortOutput;
+        await plugin.sessionFinalize.finalizeSession(generalShortSession);
+        const content = generalShortFile._content || "";
+        const calls = llmCalls.slice(generalShortCallStart);
+        const hasSummaryOnly = content.includes(shortOutput) && !/^## 详情\s*$/m.test(content);
+        const hasIndex = content.includes("<!-- qnalog-note-index -->");
+        const hasKnowledgeBlock = content.includes("<!-- qnalog-session-knowledge ");
+        const preservedTranscript = content.includes(generalShortText);
+        if (!hasSummaryOnly) failures.push("general short session finalization changed the summary-only body");
+        if (!hasIndex) failures.push("general short session finalization did not refresh the note index");
+        if (!hasKnowledgeBlock) failures.push("general short session finalization did not write the session-knowledge block");
+        if (!preservedTranscript) failures.push("general short session finalization did not preserve the original transcript");
+        if (!calls.some((request) => requestPrompt(request).includes("本模式不预设录音属于会议"))) {
+          failures.push("general short session finalization did not send the general prompt");
+        }
+        console.log(`[general-short-session-finalize] ${JSON.stringify({
+          hasSummaryOnly,
+          hasIndex,
+          hasKnowledgeBlock,
+          preservedTranscript,
+          finalized: !!generalShortSession.finalized,
+        })}`);
+      } finally {
+        plugin.settings = originalGeneralSettings;
+        briefingOutputOverride = "";
+        noticeMessages.length = generalFinalizeStart;
+        frontmatterByPath.delete(generalShortPath);
+        llmCalls.splice(generalShortCallStart);
+        files.delete(generalShortPath);
       }
       const liveProbeStart = noticeMessages.length;
       const liveProbePath = "QnALog/live-segment-probe.md";
