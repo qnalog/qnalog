@@ -10,7 +10,7 @@ export interface OverviewCardCachePort extends RelatedNotesCorpusPort {
   getMtime(path: string): number | null;
 }
 export interface OverviewRefreshResult { added: number; updated: number; removed: number; unchanged: number; readCount: number; elapsedMs: number }
-export interface OverviewRefreshOptions { windowDays?: number }
+export interface OverviewRefreshOptions { windowDays?: number; signal?: AbortSignal }
 
 export class OverviewCardCache {
   private readonly cards = new Map<string, OverviewCard>();
@@ -22,6 +22,7 @@ export class OverviewCardCache {
   constructor(port: OverviewCardCachePort, roots: string[]) { this.port = port; this.roots = roots; }
 
   async refresh(options: OverviewRefreshOptions = {}): Promise<OverviewRefreshResult> {
+    options.signal?.throwIfAborted();
     const start = Date.now();
     const files = this.port.listNoteFiles().filter((file) => file.path.toLowerCase().endsWith(".md")
       && readNamespaceFrontmatter((this.port.getFrontmatter(file.path) || {}) as Record<string, unknown>, "type") !== NS_TYPE_TOPIC);
@@ -43,10 +44,12 @@ export class OverviewCardCache {
       ...this.port,
       listNoteFiles: () => eligible,
       readText: async (path) => {
+        options.signal?.throwIfAborted();
         const file = files.find((entry) => entry.path === path);
         const mtime = this.port.getMtime(path) ?? file?.mtime ?? -1;
         if (this.mtimes.get(path) === mtime && this.markdownByPath.has(path)) return this.markdownByPath.get(path) || "";
         const text = await this.port.readText(path);
+        options.signal?.throwIfAborted();
         this.markdownByPath.set(path, text);
         this.mtimes.set(path, mtime);
         readCount++;
@@ -54,6 +57,7 @@ export class OverviewCardCache {
         return text;
       },
     }, { roots: this.roots, bodyExcerptChars: 0, minimumBodyChars: 0 });
+    options.signal?.throwIfAborted();
     const documents = new Map<string, RelatedNoteDocument>(corpus.documents.map((doc) => [doc.path, doc]));
     for (const file of eligible) {
       const mtime = this.port.getMtime(file.path) ?? file.mtime;

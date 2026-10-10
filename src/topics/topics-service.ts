@@ -32,8 +32,8 @@ export interface TopicsSuggestionsResult {
   suggestions: TopicSuggestion[];
   stats: { noteCount: number; windowedCount: number; overviewMissing: number; readCount: number; elapsedMs: number };
 }
-export interface TopicCandidatesOptions { windowDays?: number; excluded?: string[]; minScore?: number; relativeCutoff?: number }
-export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal }
+export interface TopicCandidatesOptions { windowDays?: number; excluded?: string[]; minScore?: number; relativeCutoff?: number; signal?: AbortSignal }
+export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (completed: number, total: number) => void }
 export interface TopicEstimateInput { memberPaths: string[]; basis: TopicBasis }
 export interface TopicPrompt extends TopicTagMatch { path: string }
 interface PendingPreview { preview: TopicChangePreview }
@@ -87,7 +87,7 @@ export class TopicsService {
   private async refresh(options: { windowDays?: number; signal?: AbortSignal } = {}): Promise<{ cache: OverviewCardCache; cards: OverviewCard[] }> {
     options.signal?.throwIfAborted();
     const cache = this.cacheForCurrentRoots();
-    await cache.refresh({ windowDays: options.windowDays });
+    await cache.refresh({ windowDays: options.windowDays, signal: options.signal });
     options.signal?.throwIfAborted();
     return { cache, cards: cache.getCards({ windowDays: options.windowDays }) };
   }
@@ -120,7 +120,7 @@ export class TopicsService {
   }
 
   async getCandidates(startPath: string, options: TopicCandidatesOptions = {}): Promise<TopicCandidates> {
-    const { cards } = await this.refresh({ windowDays: options.windowDays });
+    const { cards } = await this.refresh({ windowDays: options.windowDays, signal: options.signal });
     const start = cards.find((card) => card.path === startPath);
     if (!start) throw new Error(`Starting note is outside the configured note scope: ${startPath}`);
     const topics = await this.storeForCurrentFolder().list();
@@ -158,7 +158,11 @@ export class TopicsService {
       const members = await this.loadMembers(selectedPaths, cards, input.basis);
       const currentPage = existing ? await this.host.topicStore.read(existing.path) : "";
       const generated = await generateTopicOperations(this.host.integration, { members, basis: input.basis, currentPage, signal: controller.signal,
-        onBatchProgress: (completed, total) => this.host.updateActivity?.(activityId, { stage: "processing", progress: Math.round(completed / total * 100), stageLabel: t("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total)) }),
+        onBatchProgress: (completed, total) => {
+          const stageLabel = t("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
+          this.host.updateActivity?.(activityId, { stage: "processing", progress: Math.round(completed / total * 100), stageLabel });
+          input.onProgress?.(completed, total);
+        },
       });
       if (generated.partialFailure && generated.completedBatches === 0) throw new Error(`Topic integration failed before any batch completed: ${generated.partialFailure}`);
       const memberRecords: TopicMember[] = members.map(({ card }) => ({ path: card.path, title: card.title, sourceId: card.sourceId }));
@@ -256,11 +260,11 @@ export class TopicsService {
   async ignoreNote(topicId: string, path: string): Promise<void> { return this.storeForCurrentFolder().addExcluded(topicId, path); }
   async restoreIgnoredNote(topicId: string, path: string): Promise<void> { return this.storeForCurrentFolder().removeExcluded(topicId, path); }
 
-  async scanUnintegrated(topicId: string): Promise<TopicCandidates> {
+  async scanUnintegrated(topicId: string, signal?: AbortSignal): Promise<TopicCandidates> {
     const topics = await this.storeForCurrentFolder().list();
     const topic = topics.find((item) => item.page.id === topicId);
     if (!topic) throw new Error(`Topic not found: ${topicId}`);
-    const { cards } = await this.refresh();
+    const { cards } = await this.refresh({ signal });
     if (!cards.length) return { project: [], topic: [], content: [], byTag: [], byContent: [] };
     const anchor = {
       ...cards[0],
@@ -292,4 +296,14 @@ export class TopicsService {
   }
 
   async listTopics() { return this.storeForCurrentFolder().list(); }
+
+  async countPending(topicId: string): Promise<number> {
+    const topics = await this.storeForCurrentFolder().list();
+    const topic = topics.find((entry) => entry.page.id === topicId);
+    if (!topic) return 0;
+    const { cards } = await this.refresh();
+    const updatedAt = Date.parse(topic.page.updated) || 0;
+    return cards.filter((card) => overviewCardTimestamp(card) > updatedAt
+      && matchNoteToTopics(card, [topic.page], cards).length > 0).length;
+  }
 }

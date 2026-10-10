@@ -80,6 +80,7 @@ function sourceCitation(sourceId: string): string {
 }
 function parseArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function sectionHeading(section: TopicSection, english = false): string { return `## ${section} / ${ENGLISH_SECTION[section]}`; }
+export function topicSectionEnglishLabel(section: TopicSection): string { return ENGLISH_SECTION[section]; }
 function sectionRange(lines: string[], section: TopicSection): { start: number; end: number } | null {
   const heading = sectionHeading(section);
   let start = lines.findIndex((line) => line.trim() === heading || line.trim() === `## ${section}` || line.trim() === `## ${ENGLISH_SECTION[section]}`);

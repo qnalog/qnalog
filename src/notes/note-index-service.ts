@@ -17,6 +17,8 @@ export interface NoteIndexHost {
   diagnostics: DiagnosticsService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
+  /** Composition-root callback used to refresh in-memory suggestions after a note index is written. */
+  onNoteIndexed?(path: string): void | Promise<void>;
 }
 
 /** 刷新纪要索引时可选的补充信息；调用方在少数场景才提供，两者都缺省为空串。 */
@@ -49,11 +51,16 @@ export class NoteIndexService {
     if (next !== current) await this.host.app.vault.modify(file, next);
     const expectedCanvasPath = obsidian.normalizePath(getSemanticCanvasPath(file.path));
     const canvasFile = this.host.app.vault.getAbstractFileByPath(expectedCanvasPath);
-    return resolveNoteIndex(
+    const resolved = resolveNoteIndex(
       index,
       file.path,
       canvasFile instanceof obsidian.TFile ? canvasFile.path : null,
     );
+    if (this.host.onNoteIndexed) {
+      void Promise.resolve().then(() => this.host.onNoteIndexed?.(file.path))
+        .catch((error) => console.warn("[QnALog] post-index topic prompt refresh failed", error));
+    }
+    return resolved;
   }
 
   async refreshNoteIndexSafely(fileOrPath, options: RefreshNoteIndexOptions = {}) {

@@ -148,6 +148,13 @@
     "src/topics/topic-integration.ts",
     "src/topics/topic-store.ts",
     "src/topics/topic-suggestions.ts",
-    "src/topics/topics-service.ts"
+    "src/topics/topics-service.ts",
+    "src/topics/topic-prompt-store.ts",
+    "src/ui/topics-ui-port.ts",
+    "src/ui/topic-create-modal.ts",
+    "src/ui/topic-preview-modal.ts",
+    "src/ui/topic-ui-actions.ts",
+    "src/ui/topics-panel.ts",
+    "src/ui/topic-prompt-row.ts"
   ]
 }
