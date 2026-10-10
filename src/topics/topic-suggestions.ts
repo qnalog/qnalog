@@ -291,6 +291,12 @@ export function suggestTopics(
 }
 
 /** Async variant shares the same algorithm while yielding between bounded work batches. */
+/** Lets the host paint between batches; falls back to a microtask outside a window (tests). */
+function yieldToEventLoop(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  return new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+}
+
 export async function suggestTopicsAsync(
   cards: readonly OverviewCard[],
   existingMembers: ReadonlyMap<string, readonly string[]> = new Map(),
@@ -300,7 +306,7 @@ export async function suggestTopicsAsync(
   let result = work.next();
   while (!result.done) {
     options.signal?.throwIfAborted();
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await yieldToEventLoop();
     options.signal?.throwIfAborted();
     result = work.next();
   }
