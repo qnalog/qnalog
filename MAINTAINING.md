@@ -276,6 +276,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 3. 在 `tests/settings-schema-policy.test.ts` 加一条「旧版 data.json → 用户配置仍在」的用例。
 
 本次 1 → 2 迁移新增 `security.apiKeyStorageNamespace`，用于区分不同知识库的 SecretStorage 条目。`loadAll` 先恢复或导入 API Key；只有 SecretStorage 写入成功后，`saveAll` 才清空设置快照中的密钥字段。Obsidian SecretStorage 没有删除方法，清除密钥时写入空值；设置版本高于当前版本时不改动 SecretStorage，也不写 `data.json`。
+本次 2 → 3 迁移登记 `storage.topicsFolder`；旧版没有该字段时按界面语言补用 `QnALog/主题` 或 `QnALog/Topics`，已有路径保留。
 
 缺链时 `migrateSettingsForward` 返回 `null` 而不是半成品，调用方据此不写盘——
 宁可让用户停在可读状态，也不要用一半的迁移结果覆盖他的配置。
@@ -302,10 +303,11 @@ git tag X.Y.Z && git push origin X.Y.Z
 ### 6.1 当前推进
 
 1. **主题库与「主题」标签页**。
-   主题处理用户遇到的多篇笔记反复记录同一主题、信息不对称甚至矛盾；用户通常不会回到旧纪要追加，而是新建语音笔记。
-   用户手动触发，程序基于概要卡片提出建议，用户确认后建立主题；主题页位于 `QnALog/主题/`，含综述、追踪项和笔记反向链接。纪要列表不变，原笔记不改。
-   只向模型提供概要，成员由用户确认；一篇笔记可属于多个主题。更新前预览、以块 ID 定位、快照撤销；整篇页面属于用户。
-   阶段：P0 概要卡片与建议（进行中）；P1 主题页读写与手动建立/更新；P2 标签页与笔记菜单入口；P3 接续更新与冲突呈现。
+   用户需要对照多篇笔记中重复、变化或矛盾的内容；纪要列表仍是一篇笔记一条纪要，原笔记不改。
+   从笔记右键「创建成为主题」→按标签（默认勾选）与内容相近（默认不勾选）列候选→用户选择→模型整合；默认只读概要，可选成稿正文并先显示额度估算。
+   新纪要整理后按主题标签集被动匹配并提示；主题页可补扫尚未融入且未排除的笔记。
+   主题身份由 `qnalog_topic_id` 和成员决定，不由文件名决定；页面整篇属于用户。更新为增量编辑，先预览、按块 ID 定位并保存快照供撤销；不改原笔记，删除只删主题页。
+   阶段：P0 概要卡片与增量缓存（已完成）；P1 主题页读写与手动创建/整合（进行中）；P2 笔记菜单入口与「主题」标签页与提示；P3 冲突呈现与细化。已合并的聚类建议暂不使用。
 
 ### 已完成
 
@@ -381,12 +383,13 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 | 阶段 | 可交付的用户能力 | 验收重点 |
 |---|---|---|
-| P0. 概要卡片与建议 | 按概要卡片生成可解释的主题建议 | 不全量重算；建议可解释；原笔记不改 |
-| P1. 主题页读写与手动建立/更新 | 用户确认后在 `QnALog/主题/` 建立或更新主题页 | 人工内容不被覆盖；来源可回溯；更新前预览与快照撤销 |
-| P2. 标签页与笔记菜单入口 | 从主题标签页和笔记菜单查看、建立或加入主题 | 成员由用户确认；一篇笔记可属多个主题；原笔记不改 |
-| P3. 接续更新与冲突呈现 | 发现后续相关笔记并提出追加或冲突候选 | 更新可追踪；分歧不被静默覆盖；来源可回溯 |
+| P0. 概要卡片与增量缓存 | 生成概要卡片并支持按变更重算 | 不全量重算；主题页不进入候选语料；原笔记不改 |
+| P1. 主题页读写与手动创建/整合 | 用户选定候选后建立或增量更新主题页 | 来源可回溯；原笔记不改；用户编辑不被覆盖；预览和撤销可用；额度估算可见 |
+| P2. 笔记菜单与「主题」标签页 | 从笔记菜单创建主题，在标签页查看、补扫或忽略提示 | 成员由用户确认；一篇笔记可属于多个主题；提示不打扰 |
+| P3. 冲突呈现与细化 | 查看后续说法、分歧和待核实内容 | 不静默覆盖；来源可回溯；用户编辑不被覆盖 |
 
-范围、来源去重及只读规则沿用 §7.4；主题建议只读卡片，窗口外文件不读取，不因缓存建立或改写笔记。
+范围、来源去重及只读规则沿用 §7.4；建议与候选仅读取允许范围内的概要卡片，不因缓存建立或改写原笔记。
+### 7.4 数据、实现与隐私边界
 
 第二阶段约束：融合稿正文以 `[[来源笔记#标题|标签]]` 引用来源，锚点取自索引卡 `topics[].heading`；融合稿属性用来源链接列表，使原笔记反链面板与图谱自动出现融合稿，不改写原笔记；“· Merge”笔记仍需属性标记，另行决定。
 
@@ -429,7 +432,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 - 新文件不得使用 `@ts-nocheck`；`@ts-nocheck` 退出、常规类型检查与 strict-core 覆盖是三个不同目标。
 ## 9. 设置映射表
 
-本节包含 `PluginSettings` 全部 86 个顶层键与 `SETTINGS_SCHEMA_VERSION = 2` 的当前映射。
+本节包含 `PluginSettings` 全部 87 个顶层键与 `SETTINGS_SCHEMA_VERSION = 3` 的当前映射。
 
 `scripts/check-settings-map.mjs` 只校验键集合与落盘路径。表格“拟归属”列是原分层设计注记，不是未批准的页面迁移任务。新增设置键必须同步登记 `normalizePluginSettings` 与 `serializePluginSettings` 白名单，否则读写会丢失该键。
 
@@ -442,7 +445,8 @@ git tag X.Y.Z && git push origin X.Y.Z
 | `uiLanguage` | `""` | `ui.language` | — | 界面语言；空串表示跟随 Obsidian | 关于 | 基本设置 |
 | `audioFolder` | `${NS_ROOT}/录音` | `storage.recordingLibraryPath` | — | 录音文件落盘目录 | 录音 | 基本设置 |
 | `mdFolder` | `${NS_ROOT}/转写纪要` | `storage.briefingNotePath` | — | 纪要 Markdown 落盘目录 | 录音 | 基本设置 |
-| `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会中补充材料（图片/PPT/PDF）的复制目标 | 录音 | 高级 · 输出 |
+| `meetingMaterialsFolder` | `${NS_ROOT}/会议资料` | `storage.meetingMaterialPath` | — | 会议材料导入目录 | 导入 | 高级 · 输出 |
+| `topicsFolder` | `${NS_ROOT}/主题` 或 `${NS_ROOT}/Topics` | `storage.topicsFolder` | — | 主题页文件夹，默认路径按界面语言选择 | 无 | 高级 · 输出 |
 | `htmlReportFolder` | `${NS_ROOT}/HTML报告` | `storage.htmlReportPath` | — | HTML 报告保存目录 | AI 整理 | 高级 · 输出 |
 | `reportBrandName` | `""` | `presentation.reportBrandName` | — | 「研讨」报告页脚公司名；留空则取纪要里的公司标签 | AI 整理 | 高级 · 输出 |
 | `noteFileNameFormatNew` | `"YYYY-MM-DD HHmm"` | `noteNaming.sessionPattern` | — | 纪要文件名日期格式 | 录音 | 高级 · 输出 |
@@ -560,7 +564,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 | 写入 | 键 |
 |---|---|
 | 是 | `transcribeProviders`、`activeTranscribeProvider`、`importTranscribeProvider`、`importSpeakerDiarization`、`llmServicePreset`、`llmEndpoint`、`llmModel`、`llmApiKey`、`llmProfiles`、`activeLlmProfile` |
-| 否 | 其余 76 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、自动导入 |
+| 否 | 其余 77 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、自动导入 |
 
 `tests/setup.test.ts` 会拿一份「用户已经改过很多项」的设置逐键核对：清单之外的键必须逐项不变。
 反向验证过——一旦让预设顺手写 `audioFolder`，该用例立刻失败。
