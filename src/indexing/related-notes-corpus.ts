@@ -15,7 +15,7 @@ export interface RelatedNotesCorpusPort {
   now(): number;
 }
 
-export interface RelatedNotesCorpusOptions { roots: string[]; bodyExcerptChars?: number }
+export interface RelatedNotesCorpusOptions { roots: string[]; bodyExcerptChars?: number; minimumBodyChars?: number }
 export interface RelatedNotesCorpusStats { excludedDerived: number; excludedDerivedLegacyAliases: number; excludedMerge: number; tooShort: number; noiseLinks: number; noOutgoingLinks: number }
 export interface RelatedNotesCorpusResult { documents: RelatedNoteDocument[]; stats: RelatedNotesCorpusStats; excludedTooShortPaths: string[] }
 
@@ -127,7 +127,7 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
     if (isMergeNote(file.basename, markdown)) { excludedMerge++; excludedMergePaths.add(path); continue; }
     const index = readNoteIndex(markdown);
     const effectiveBody = extractIndexSource(stripTranscriptLedger(markdown));
-    if (!index && effectiveBody.length < RELATED_NOTE_MIN_BODY_CHARS) {
+    if (!index && effectiveBody.length < (options.minimumBodyChars ?? RELATED_NOTE_MIN_BODY_CHARS)) {
       tooShort++;
       excludedTooShortSet.add(path);
       excludedTooShortPaths.push(path);
