@@ -948,7 +948,7 @@ describe("短录音整条路径", () => {
     expect(ensured).toEqual(["QnALog/录音", "QnALog/New Notes"]);
     expect(host.sessionStore.get()).toMatchObject({
       mdPath: "QnALog/New Notes/fixed-new.md",
-      mode: "synthesis",
+      mode: "general",
       captureMode: "virtualCable",
     });
     expect(files.has("QnALog/New Notes/fixed-new.md")).toBe(true);

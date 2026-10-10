@@ -6,6 +6,7 @@ import { mergeUniqueStrings, parsePeopleFromOutput, splitPersonFieldValue } from
 import { splitLeadingFrontmatter } from "./note-document";
 import { inferNoteStartedAtIso } from "./note-source-metadata";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
+import { detectGeneralSourceLanguage, type GeneralSourceLanguage } from "../shared/util-text";
 import { normalizeCallouts } from "./callout-normalize";
 
 export type FrontmatterFields = Record<string, unknown>;
@@ -150,6 +151,93 @@ export function parseSuggestedTagsFromOutput(text: string | null | undefined): {
 // 解析 LLM 输出末尾的人员机器块 <!-- qnalog-people: 张三, 李四 -->（纯人名，不带前缀）。
 // 与 tags 物理分离：人物单列成独立 frontmatter 属性，不再挤进 tags。
 
+const GENERAL_TODO_ZH_LABELS = {
+  task: String.fromCharCode(0x4e8b, 0x9879),
+  owner: String.fromCharCode(0x8d23, 0x4efb, 0x4eba),
+  due: String.fromCharCode(0x622a, 0x6b62),
+  colon: String.fromCharCode(0xff1a),
+};
+const GENERAL_TODO_LABELS: Record<"zh" | "en", Record<string, string>> = {
+  zh: {
+    task: `${GENERAL_TODO_ZH_LABELS.task}${GENERAL_TODO_ZH_LABELS.colon}`,
+    owner: `${GENERAL_TODO_ZH_LABELS.owner}${GENERAL_TODO_ZH_LABELS.colon}`,
+    due: `${GENERAL_TODO_ZH_LABELS.due}${GENERAL_TODO_ZH_LABELS.colon}`,
+    deadline: `${GENERAL_TODO_ZH_LABELS.due}${GENERAL_TODO_ZH_LABELS.colon}`,
+    [GENERAL_TODO_ZH_LABELS.task]: `${GENERAL_TODO_ZH_LABELS.task}${GENERAL_TODO_ZH_LABELS.colon}`,
+    [GENERAL_TODO_ZH_LABELS.owner]: `${GENERAL_TODO_ZH_LABELS.owner}${GENERAL_TODO_ZH_LABELS.colon}`,
+    [GENERAL_TODO_ZH_LABELS.due]: `${GENERAL_TODO_ZH_LABELS.due}${GENERAL_TODO_ZH_LABELS.colon}`,
+  },
+  en: {
+    task: "Task:",
+    owner: "Owner:",
+    due: "Due:",
+    deadline: "Due:",
+    [GENERAL_TODO_ZH_LABELS.task]: "Task:",
+    [GENERAL_TODO_ZH_LABELS.owner]: "Owner:",
+    [GENERAL_TODO_ZH_LABELS.due]: "Due:",
+  },
+};
+const GENERAL_TODO_LABEL_PATTERN = new RegExp(
+  `^(Task|Owner|Due|Deadline|${GENERAL_TODO_ZH_LABELS.task}|${GENERAL_TODO_ZH_LABELS.owner}|${GENERAL_TODO_ZH_LABELS.due})(\\s*[:${GENERAL_TODO_ZH_LABELS.colon}])`,
+  "i",
+);
+const GENERAL_TODO_CONTINUATION_PATTERN = new RegExp(
+  `^(?:Task|Owner|Due|Deadline|${GENERAL_TODO_ZH_LABELS.task}|${GENERAL_TODO_ZH_LABELS.owner}|${GENERAL_TODO_ZH_LABELS.due})\\s*[:${GENERAL_TODO_ZH_LABELS.colon}]`,
+  "i",
+);
+
+function normalizeGeneralTodoLabel(value: string, language: "zh" | "en"): string {
+  return value.replace(GENERAL_TODO_LABEL_PATTERN, (match, label: string) => {
+    const labels = GENERAL_TODO_LABELS[language];
+    return labels[label.toLowerCase()] || labels[label] || match;
+  });
+}
+
+function normalizeGeneralTodoLabels(markdown: string, language: GeneralSourceLanguage): string {
+  if (language === "other") return markdown;
+  const lines = markdown.split(/\r?\n/);
+  let fence = "";
+  let inTodo = false;
+  let inQuoteCallout = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const quote = line.match(/^(\s*>\s?)(.*)$/);
+    const prefix = quote?.[1] || "";
+    const content = quote ? quote[2] : line;
+    const fenceMatch = content.match(/^\s*(```+|~~~+)/);
+    if (fenceMatch) {
+      if (!fence) fence = fenceMatch[1][0];
+      else if (fenceMatch[1][0] === fence) fence = "";
+      inTodo = false;
+      continue;
+    }
+    if (fence) continue;
+    if (quote) {
+      const callout = content.match(/^\s*\[!([a-z][a-z0-9_-]*)/i);
+      if (callout) inQuoteCallout = callout[1].toLowerCase() === "quote";
+      if (inQuoteCallout) {
+        inTodo = false;
+        continue;
+      }
+    } else {
+      inQuoteCallout = false;
+    }
+    const todo = content.match(/^(\s*[-*+]\s+\[[ xX]\]\s+)(.*)$/);
+    if (todo) {
+      lines[index] = `${prefix}${todo[1]}${normalizeGeneralTodoLabel(todo[2], language)}`;
+      inTodo = true;
+      continue;
+    }
+    const continuation = content.match(/^(\s{2,}(?:[-*+]\s+)?|[-*+]\s+)?(.*)$/);
+    if (inTodo && continuation && GENERAL_TODO_CONTINUATION_PATTERN.test(continuation[2])) {
+      lines[index] = `${prefix}${continuation[1] || ""}${normalizeGeneralTodoLabel(continuation[2], language)}`;
+      continue;
+    }
+    inTodo = false;
+  }
+  return lines.join("\n");
+}
+
 // 把 LLM 输出（含 frontmatter + 正文 + 末尾 tags 注释）规整成最终笔记内容：
 //   - 强制覆盖 qnalog_mode / qnalog_time / qnalog_duration / qnalog_status
 //   - 合并标签：[qnalog/<mode>] + LLM 标签建议 + (可选) 已有 tags
@@ -162,6 +250,7 @@ export function postProcessBriefingOutput(
   originalFrontmatter: unknown,
   baseKey: string,
   topNotice = "",
+  sourceTranscript: unknown = "",
 ): string {
   if (!rawOutput) return rawOutput || "";
   // 先剥人员机器块、再剥标签机器块（cleaned 串联，保证注释不残留在正文末尾）。
@@ -176,7 +265,10 @@ export function postProcessBriefingOutput(
     try { llmFm = obsidian.parseYaml(fmMatch[1]) as unknown; } catch { llmFm = null; }
     body = stripped.slice(fmMatch[0].length).replace(/^\n+/, "");
   }
-  body = scrubBriefingTodoPlaceholders(normalizeCallouts(body));
+  const normalizedBody = normalizeCallouts(body);
+  body = scrubBriefingTodoPlaceholders(mode === "general"
+    ? normalizeGeneralTodoLabels(normalizedBody, detectGeneralSourceLanguage(sourceTranscript))
+    : normalizedBody);
   // 一级标题由插件按会话时间统一写入；模型自作主张输出的 # 标题（含连续多条）会在母本里叠成重复标题，剥掉。
   body = body.replace(/^(?:\s*#\s+[^\n]*(?:\n|$))+/, "");
 

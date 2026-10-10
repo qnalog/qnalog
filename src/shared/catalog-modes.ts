@@ -5,6 +5,7 @@ import { NS_FM } from "./namespace";
 
 export const MODE_META = {
   synthesis: { prefix: "综合纪要", emoji: "", icon: "layers", label: "Synthesis minutes", goal: "Best for most meetings. First distill the through-line of the whole session, then organize it in three layers: overview, body, and reference material." },
+  general:   { prefix: "通用", emoji: "", icon: "file-text", label: "General", goal: "A neutral structure for spontaneous ideas and conversations: a concise overview followed by organized details, without a fixed meeting or interview format." },
   meeting:   { prefix: "工作纪要", emoji: "📝", icon: "briefcase", label: "Work notes", goal: "Best for work meetings of any size: decisions, todos, risks, and aligning on colleagues' progress." },
   interview: { prefix: "访谈", emoji: "🎙", icon: "message-square", label: "Interview", goal: "Best for external interviews, user research, and expert interviews, turning Q&A into insight." },
   monologue: { prefix: "个人笔记", emoji: "💭", icon: "notebook", label: "Personal notes", goal: "Best for personal dictation, ideas, and retrospectives, turning scattered expression into usable notes." },
@@ -54,6 +55,7 @@ export const MODE_PREFIX_TO_KEY = {
   "讨论": "huddle",
   // 新 prefix
   "综合纪要": "synthesis",
+  "通用": "general",
   "综合": "synthesis",
   "工作纪要": "meeting",
   "学术研讨": "seminar",
@@ -69,6 +71,7 @@ export const MODE_PREFIX_TO_KEY = {
 // 用英文前缀，读回时也要能认出，否则英文用户的笔记会被判成未知模式。
 export const MODE_PREFIX_EN_TO_KEY = {
   "Synthesis minutes": "synthesis",
+  "General": "general",
   "Work notes": "meeting",
   "Interview": "interview",
   "Personal notes": "monologue",

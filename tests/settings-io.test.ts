@@ -88,6 +88,19 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(persisted.updates).not.toHaveProperty("autoCheck");
   });
 
+  it("uses general only when the saved default mode is absent", () => {
+    expect(DEFAULT_SETTINGS.polishMode).toBe("general");
+    expect(normalizePluginSettings({}).polishMode).toBe("general");
+    for (const savedMode of ["meeting", "interview"]) {
+      expect(normalizePluginSettings({
+        settings: { schemaVersion: SETTINGS_SCHEMA_VERSION, composer: { defaultMode: savedMode } },
+      }).polishMode).toBe(savedMode);
+      expect(normalizePluginSettings({
+        settings: { schemaVersion: SETTINGS_SCHEMA_VERSION, polishMode: savedMode },
+      }).polishMode).toBe(savedMode);
+    }
+  });
+
   it("默认设置：DEFAULT_SETTINGS 的每个顶层键都必须在 normalize→serialize→normalize 后原样存活", () => {
     const a = normalizePluginSettings({});
     const b = roundTrip(a);
