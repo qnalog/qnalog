@@ -61,6 +61,9 @@ const CONTENT_FILES: Record<string, string> = {
 
 /** 逐条例外：文件 → [字面量前缀或全文, 类别]。类别见下方 legend。 */
 const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
+  "src/indexing/related-notes.ts": [
+    ["然后 因为 所以 但是 如果 这个 那个 我们 你们 他们 一个 一些 进行 可以 需要 没有 不是 还是 就是 什么 怎么 如何 以及 或者 时候 现在 今天 明天 昨天 觉得 知道 问题 事情 工作 公司 大家 比较 非常 可能 应该 已经 目前 其实 其中 通过 关于 对于 个人 人笔 笔记 摘要 录音 会议 项目 进展 整理", "match"], // Internal token-matching vocabulary; not interface copy.
+  ],
   "src/notes/note-briefing-output.ts": [
     ["、", "data"],
     ["责任人：", "data"],
