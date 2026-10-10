@@ -122,6 +122,19 @@ describe("topic pages", () => {
     expect(result.markdown).toContain("2026-04-07 — Inserted event");
   });
 
+  it("adds a timeline date once when the model includes the same prefix", () => {
+    const page = createTopicPage({ id: "dated", title: "Dated", tags: [], members: [], basis: "overview", created: "", updated: "" });
+    const result = applyTopicOps(serializeTopicPage(page), [{ type: "add_timeline", text: "2026-10-01 — Event happened", date: "2026-10-01", sourceId: "note" }]);
+    expect(result.markdown.match(/2026-10-01/g)).toHaveLength(1);
+    expect(result.markdown).toContain("2026-10-01 — Event happened");
+  });
+
+  it("round-trips topic tag aliases in frontmatter", () => {
+    const page = createTopicPage({ id: "alias", title: "Aliases", tags: ["项目/QALog"], members: [], basis: "overview", created: "", updated: "" });
+    page.tagAliases = { "项目/QALog": ["项目/QALog", "项目/QnALog"] };
+    expect(parseTopicPage(serializeTopicPage(page))?.tagAliases).toEqual(page.tagAliases);
+  });
+
   it("preserves original page lines as an ordered subsequence for generated pages and operations", () => {
     for (let seed = 0; seed < 32; seed++) {
       let state = seed + 1;

@@ -7,6 +7,7 @@ export interface TopicPage {
   id: string;
   title: string;
   tags: string[];
+  tagAliases?: Record<string, string[]>;
   members: string[];
   memberLinks: string[];
   excluded: string[];
@@ -113,6 +114,7 @@ export function serializeTopicPage(page: TopicPage): string {
     `${NS_FM.type}: ${yamlString(NS_TYPE_TOPIC)}`,
     `${NS_FM.topicId}: ${yamlString(page.id)}`,
     `${NS_FM.topicTags}: ${yamlStrings(page.tags)}`,
+    `${NS_FM.topicTagAliases}: ${yamlString(JSON.stringify(page.tagAliases || {}))}`,
     `${NS_FM.topicMembers}: ${yamlStrings(page.memberLinks)}`,
     `${NS_FM.topicExcluded}: ${yamlStrings(page.excluded)}`,
     `${NS_FM.topicBasis}: ${yamlString(page.basis)}`,
@@ -143,7 +145,9 @@ export function parseTopicPage(markdown: string, path = ""): TopicPage | null {
   return {
     id: topicId,
     title: split.body.match(/^#\s+(.+)$/m)?.[1]?.trim() || path.split("/").pop()?.replace(/\.md$/i, "") || topicId,
-    tags: parseArray(fields[NS_FM.topicTags]), members, memberLinks,
+    tags: parseArray(fields[NS_FM.topicTags]),
+    tagAliases: (() => { const value = fields[NS_FM.topicTagAliases]; if (typeof value !== "string") return {}; try { const parsed: unknown = JSON.parse(value); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, string[]> : {}; } catch { return {}; } })(),
+    members, memberLinks,
     excluded: parseArray(fields[NS_FM.topicExcluded]),
     basis: fields[NS_FM.topicBasis] === "body" ? "body" : "overview",
     created: typeof created === "string" ? created : "",
@@ -218,7 +222,8 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[]):
       const insertion = sectionRange(lines, destination);
       const content = "text" in operation ? operation.text : "";
       const sourceId = operation.sourceId;
-      const bodyText = `${(operation.type === "add_timeline" || operation.type === "add_conflict") && operation.date ? `${operation.date} — ` : ""}${content} — 来源：${sourceCitation(sourceId)}`;
+      const timelineText = operation.type === "add_timeline" ? content.replace(new RegExp(`^${operation.date.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(?:[—–-]\\s*)?`), "") : content;
+      const bodyText = `${(operation.type === "add_timeline" || operation.type === "add_conflict") && operation.date ? `${operation.date} — ` : ""}${timelineText} — 来源：${sourceCitation(sourceId)}`;
       const blockId = stableTopicBlockId(operation.type, sourceId, bodyText, existing);
       const row = `- ${bodyText} ^${blockId}`;
       const at = insertion ? insertion.end : lines.length;

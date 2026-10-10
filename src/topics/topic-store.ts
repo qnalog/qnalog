@@ -104,6 +104,7 @@ export class TopicStore {
         };
         if (preview.memberLinks) updates[NS_FM.topicMembers] = memberLinks;
         if (preview.tags) updates[NS_FM.topicTags] = tags;
+        if (preview.tagAliases) updates[NS_FM.topicTagAliases] = JSON.stringify(preview.tagAliases);
         next = updateTopicFrontmatter(next, updates);
         next = updateTopicFrontmatter(next, { [NS_FM.topicHash]: hashTopicPage(next) });
         appliedMarkdown = next;

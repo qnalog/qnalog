@@ -51,6 +51,7 @@ describe("topics service", () => {
     const preview = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/b.md", "Notes/a.md", "Notes/b.md"], basis: "overview", title: "Climate" });
     expect(preview.create?.members.map((member) => member.path)).toEqual(["Notes/a.md", "Notes/b.md"]);
     expect(setup.requests).toHaveLength(1);
+    expect(setup.activities.progress).toContainEqual(expect.objectContaining({ progress: 100, stageLabel: "Completed 1/1 batches" }));
     expect(setup.writes).toEqual([]);
     expect(setup.activities.started).toEqual([["topics:create:topic-1", "Create topic"]]);
     expect(setup.activities.completed).toEqual([]);
@@ -174,6 +175,18 @@ describe("topics service", () => {
     expect(paths).toContain("Notes/c.md");
     await expect(setup.service.scanUnintegrated("missing")).rejects.toThrow("Topic not found");
   });
+
+  it("integrates only notes that are not yet members and does not call the model for an empty update", async () => {
+    const setup = harness();
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("climate-topic", "Climate", [], ["Notes/a.md"]));
+    const preview = await setup.service.preview({ topicId: "climate-topic", startPath: "Notes/a.md", memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "overview" });
+    const payload = JSON.parse(setup.requests[0][1].content) as { members: Array<{ path: string }> };
+    expect(payload.members.map((member) => member.path)).toEqual(["Notes/b.md"]);
+    expect(preview.memberLinks).toEqual(["[[Notes/a|Notes/a.md]]", "[[Notes/b|b]]"]);
+    await expect(setup.service.preview({ topicId: "climate-topic", startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview" }))
+      .rejects.toThrow("all selected notes are already topic members");
+    expect(setup.requests).toHaveLength(1);
+  });
 });
 
 function file(path: string) { return { path, basename: path.split("/").pop()!.replace(/\.md$/, ""), mtime: Date.UTC(2026, 0, 2), ctime: Date.UTC(2026, 0, 2) }; }
@@ -226,10 +239,10 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
     const original = integration.request;
     integration.request = async (messages, signal) => { requests.push(messages); return original(messages, signal); };
   }
-  const activities = { started: [] as Array<[string, string]>, completed: [] as Array<[string]>, failed: [] as Array<[string, unknown]>, cancelled: [] as Array<[string, string]> };
+  const activities = { started: [] as Array<[string, string]>, completed: [] as Array<[string]>, failed: [] as Array<[string, unknown]>, cancelled: [] as Array<[string, string]>, progress: [] as Array<{ progress: number; stageLabel: string }> };
   let ids = 0;
   const service = new TopicsService({ overviewCards, topicStore: storePort, getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
-    createId: () => `topic-${++ids}`, startActivity: (id, title) => activities.started.push([id, title]), completeActivity: (id) => activities.completed.push([id]), failActivity: (id, error) => activities.failed.push([id, error]), cancelActivity: (id, reason) => activities.cancelled.push([id, reason]) });
+    createId: () => `topic-${++ids}`, startActivity: (id, title) => activities.started.push([id, title]), updateActivity: (_id, patch) => activities.progress.push(patch), completeActivity: (id) => activities.completed.push([id]), failActivity: (id, error) => activities.failed.push([id, error]), cancelActivity: (id, reason) => activities.cancelled.push([id, reason]) });
   return { service, files, writes, readPaths, storePort, requests, activities };
 }
 

@@ -5,12 +5,13 @@ import { NS_MACHINE_SHELL_RE } from "../shared/namespace";
 import type { OverviewCardCachePort } from "./overview-card-cache";
 import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
-import { findTopicCandidates, type TopicCandidates } from "./topic-candidates";
+import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
 import { generateTopicOperations, estimateIntegrationCost, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
 import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, serializeTopicPage, type TopicBasis, type TopicMember } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
+import { t } from "../shared/i18n";
 
 export interface TopicsServiceHost {
   overviewCards: OverviewCardCachePort;
@@ -22,6 +23,7 @@ export interface TopicsServiceHost {
   startActivity(id: string, title: string): void;
   completeActivity(id: string): void;
   failActivity(id: string, error: unknown): void;
+  updateActivity?(id: string, patch: { progress: number; stageLabel: string; stage: string }): void;
   cancelActivity?(id: string, reason: string): void;
 }
 export type TopicsServicePort = OverviewCardCachePort;
@@ -145,12 +147,19 @@ export class TopicsService {
     this.host.startActivity(activityId, input.topicId ? "Update topic" : "Create topic");
     try {
       const { cards } = await this.refresh({ signal: controller.signal });
-      const selectedPaths = [input.startPath, ...new Set(input.memberPaths.filter((path) => path !== input.startPath))];
-      const members = await this.loadMembers(selectedPaths, cards, input.basis);
       const existing = input.topicId ? (await this.storeForCurrentFolder().list()).find((item) => item.page.id === input.topicId) : undefined;
       if (input.topicId && !existing) throw new Error(`Topic not found: ${input.topicId}`);
+      const existingMembers = new Set(existing?.page.members || []);
+      const requestedPaths = [...new Set(input.memberPaths)];
+      const selectedPaths = input.topicId
+        ? requestedPaths.filter((path) => !existingMembers.has(path))
+        : [input.startPath, ...requestedPaths.filter((path) => path !== input.startPath)];
+      if (!selectedPaths.length) throw new Error("No new notes to integrate; all selected notes are already topic members");
+      const members = await this.loadMembers(selectedPaths, cards, input.basis);
       const currentPage = existing ? await this.host.topicStore.read(existing.path) : "";
-      const generated = await generateTopicOperations(this.host.integration, { members, basis: input.basis, currentPage, signal: controller.signal });
+      const generated = await generateTopicOperations(this.host.integration, { members, basis: input.basis, currentPage, signal: controller.signal,
+        onBatchProgress: (completed, total) => this.host.updateActivity?.(activityId, { stage: "processing", progress: Math.round(completed / total * 100), stageLabel: t("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total)) }),
+      });
       if (generated.partialFailure && generated.completedBatches === 0) throw new Error(`Topic integration failed before any batch completed: ${generated.partialFailure}`);
       const memberRecords: TopicMember[] = members.map(({ card }) => ({ path: card.path, title: card.title, sourceId: card.sourceId }));
       const learned = learnTopicTagSet(members.map(({ card }) => card), cards);
@@ -176,8 +185,9 @@ export class TopicsService {
         ...(existing ? {
           memberLinks: [...new Set([...existing.page.memberLinks, ...memberRecords.map((member) => `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`)])],
           tags: [...new Set([...existing.page.tags, ...learned.tags])],
+          tagAliases: { ...(existing.page.tagAliases || {}), ...learned.aliases },
         } : {
-          create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, members: memberRecords },
+          create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords },
         }),
       };
       this.previews.set(activityId, { preview });
@@ -212,6 +222,7 @@ export class TopicsService {
     try {
       if (preview.create) {
         const page = createTopicPage({ id: preview.topicId, title: preview.create.title, tags: preview.create.tags, members: preview.create.members, basis: preview.create.basis });
+        page.tagAliases = preview.create.tagAliases || {};
         const selected = new Set(selection);
         const operations = preview.items.filter((item) => selected.has(item.id))
           .map(({ operation }) => ({ ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId }));
@@ -250,7 +261,7 @@ export class TopicsService {
     const topic = topics.find((item) => item.page.id === topicId);
     if (!topic) throw new Error(`Topic not found: ${topicId}`);
     const { cards } = await this.refresh();
-    if (!cards.length) return { byTag: [], byContent: [] };
+    if (!cards.length) return { project: [], topic: [], content: [], byTag: [], byContent: [] };
     const anchor = {
       ...cards[0],
       path: `__qnalog_topic__/${topicId}.md`,
@@ -264,8 +275,9 @@ export class TopicsService {
     const index = createRelatedNotesIndex(cards.map(cardDocument), { includeTagsInQuery: false });
     const initial = findTopicCandidates({ start: anchor, cards, index, members: memberships, windowDays: -1 });
     const excluded = new Set([...topic.page.members, ...topic.page.excluded]);
-    const candidates = [...initial.byTag, ...initial.byContent].filter((candidate) => candidate.path !== anchor.path && !excluded.has(candidate.path));
-    return { byTag: candidates.filter((item) => item.matchedTags.length > 0), byContent: candidates.filter((item) => item.matchedTags.length === 0) };
+    const available = (items: TopicCandidate[]) => items.filter((candidate) => candidate.path !== anchor.path && !excluded.has(candidate.path));
+    const project = available(initial.project), topicCandidates = available(initial.topic), content = available(initial.content);
+    return { project, topic: topicCandidates, content, byTag: [...project, ...topicCandidates], byContent: content };
   }
 
   async noteArrived(path: string): Promise<TopicPrompt[]> {

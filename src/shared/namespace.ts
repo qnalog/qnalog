@@ -174,6 +174,7 @@ export const NS_FM = {
   mergedAt: "qnalog_merged_at",
   topicId: "qnalog_topic_id",
   topicTags: "qnalog_topic_tags",
+  topicTagAliases: "qnalog_topic_tag_aliases",
   topicMembers: "qnalog_topic_members",
   topicExcluded: "qnalog_topic_excluded",
   topicBasis: "qnalog_topic_basis",

@@ -18,6 +18,21 @@ function fakePort(responses: unknown[], signals?: AbortSignal[]): TopicIntegrati
 }
 
 describe("topic integration", () => {
+  it("requires resolved items to go to status or timeline instead of the open-items section", () => {
+    const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
+    expect(system).toContain("Only put genuinely unresolved questions and unfinished actions");
+    expect(system).toContain("resolved or already handled matters in 当前状态 or 时间线");
+  });
+  it("uses fast thinking and reports completed batch progress", async () => {
+    const progress: Array<[number, number]> = [];
+    const port: TopicIntegrationPort = { request: async (_messages, _signal, thinkingMode) => {
+      expect(thinkingMode).toBe("fast");
+      return response([]);
+    } };
+    const result = await generateTopicOperations(port, { basis: "overview", members: [member("one")], onBatchProgress: (done, total) => progress.push([done, total]) });
+    expect(result.completedBatches).toBe(1);
+    expect(progress).toEqual([[1, 1]]);
+  });
   it("builds constrained prompts with only basis-appropriate source inputs", () => {
     const source = member("note-1", "The project is described in this English overview, and its decisions are clearly summarized.", "The complete body describes the project and explains its decisions.");
     const overviewMessages = buildTopicIntegrationMessages({ basis: "overview", members: [source], currentPage: "Current page" }, [source]);

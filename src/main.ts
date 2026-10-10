@@ -366,11 +366,12 @@ class QnALogPlugin extends obsidian.Plugin {
       getRoots: () => getRecentNoteRoots(this),
       getFolder: () => this.settings.topicsFolder,
       integration: {
-        request: (messages, signal) => requestLlmChatCompletion(this, messages, { signal, stream: false }),
+        request: (messages, signal, thinkingMode) => requestLlmChatCompletion(this, messages, { signal, stream: false, thinkingMode }),
       },
       createId: () => crypto.randomUUID(),
       startActivity: (id, title) => this.tasks.startTaskActivity({ id, kind: "topic", title, status: "running", stage: "preparing", stageLabel: title, detail: "Preparing a topic change" }),
       completeActivity: (id) => this.tasks.completeTaskActivity(id, { stage: "done", stageLabel: "Topic change complete", progress: 100 }),
+      updateActivity: (id, patch) => this.tasks.patchTaskActivity(id, patch),
       failActivity: (id, error) => this.tasks.failTaskActivity(id, error, { stage: "failed", stageLabel: "Topic change failed", detail: "The topic page was not changed. Retry by starting the topic operation again." }),
       cancelActivity: (id, reason) => this.tasks.cancelTaskActivity(id, reason),
     });
