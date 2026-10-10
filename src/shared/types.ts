@@ -113,6 +113,7 @@ export interface PluginSettings {
   uiLanguage: string;
   audioFolder: string;
   mdFolder: string;
+  topicsFolder: string;
   meetingMaterialsFolder: string;
   htmlReportFolder: string;
   reportBrandName: string;

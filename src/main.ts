@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
-import { QNALOG_PLUGIN_ICON_ID } from "./shared/namespace";
+import { NS_ROOT, QNALOG_PLUGIN_ICON_ID } from "./shared/namespace";
 import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
@@ -89,6 +89,7 @@ import { generateTitleTag } from "./notes/note-markdown";
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } from "./versions/version-identity";
 import { replaceActiveVersionBlock } from "./versions/active-version-block";
 import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
+import { requestLlmChatCompletion } from "./llm/core";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
 import { qnalogConfirm } from "./ui/helpers";
@@ -298,6 +299,11 @@ class QnALogPlugin extends obsidian.Plugin {
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
     this.noteIndex = new NoteIndexService(this);
+    const topicHistoryRoot = `${NS_ROOT}/.cache/topic-history`;
+    const isTopicHistoryPath = (path: string): boolean => {
+      const normalized = obsidian.normalizePath(path);
+      return normalized === topicHistoryRoot || normalized.startsWith(`${topicHistoryRoot}/`);
+    };
     const topicsPort: TopicsServicePort = {
       listNoteFiles: () => getMarkdownFilesUnderRecentRoots(this).map((file) => ({ path: file.path, basename: file.basename, mtime: file.stat.mtime, ctime: file.stat.ctime })),
       getMtime: (path) => {
@@ -313,7 +319,61 @@ class QnALogPlugin extends obsidian.Plugin {
       getUnresolvedLinks: () => this.app.metadataCache.unresolvedLinks,
       now: () => Date.now(),
     };
-    this.topics = new TopicsService({ overviewCards: topicsPort, getRoots: () => getRecentNoteRoots(this) });
+    const topicStorePort = {
+      read: async (path) => {
+        const normalized = obsidian.normalizePath(path);
+        if (isTopicHistoryPath(normalized)) return this.app.vault.adapter.read(normalized);
+        const file = this.app.vault.getAbstractFileByPath(normalized);
+        if (!(file instanceof obsidian.TFile)) throw new Error(`Topic file not found: ${path}`);
+        return this.app.vault.read(file);
+      },
+      create: async (path, content) => {
+        const normalized = obsidian.normalizePath(path);
+        if (isTopicHistoryPath(normalized)) await this.app.vault.adapter.write(normalized, content);
+        else await this.app.vault.create(normalized, content);
+      },
+      process: async (path, transform) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(file instanceof obsidian.TFile)) throw new Error(`Topic file not found: ${path}`);
+        await this.app.vault.process(file, transform);
+      },
+      listMarkdown: async (folder) => {
+        const normalized = obsidian.normalizePath(folder);
+        if (isTopicHistoryPath(normalized)) {
+          const listing = await this.app.vault.adapter.list(normalized);
+          return listing.files.filter((path) => path.toLowerCase().endsWith(".md"))
+            .map((path) => ({ path, name: path.split("/").pop() || "" }));
+        }
+        return this.app.vault.getMarkdownFiles()
+          .filter((file) => file.parent?.path === normalized)
+          .map((file) => ({ path: file.path, name: file.name }));
+      },
+      ensureFolder: async (path) => ensureVaultFolder(this.app, path),
+      deleteHistory: async (path) => {
+        const normalized = obsidian.normalizePath(path);
+        if (isTopicHistoryPath(normalized) && await this.app.vault.adapter.exists(normalized)) await this.app.vault.adapter.remove(normalized);
+      },
+      trashFile: async (path) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(file instanceof obsidian.TFile)) throw new Error(`Topic file not found: ${path}`);
+        await this.app.fileManager.trashFile(file);
+      },
+      now: () => Date.now(),
+    };
+    this.topics = new TopicsService({
+      overviewCards: topicsPort,
+      topicStore: topicStorePort,
+      getRoots: () => getRecentNoteRoots(this),
+      getFolder: () => this.settings.topicsFolder,
+      integration: {
+        request: (messages, signal) => requestLlmChatCompletion(this, messages, { signal, stream: false }),
+      },
+      createId: () => crypto.randomUUID(),
+      startActivity: (id, title) => this.tasks.startTaskActivity({ id, kind: "topic", title, status: "running", stage: "preparing", stageLabel: title, detail: "Preparing a topic change" }),
+      completeActivity: (id) => this.tasks.completeTaskActivity(id, { stage: "done", stageLabel: "Topic change complete", progress: 100 }),
+      failActivity: (id, error) => this.tasks.failTaskActivity(id, error, { stage: "failed", stageLabel: "Topic change failed", detail: "The topic page was not changed. Retry by starting the topic operation again." }),
+      cancelActivity: (id, reason) => this.tasks.cancelTaskActivity(id, reason),
+    });
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
     const outlineHost = Object.assign(Object.create(null) as RealtimeOutlineHost, {

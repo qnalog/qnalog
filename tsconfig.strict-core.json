@@ -142,6 +142,11 @@
     "src/vault/cleanup-service.ts",
     "src/topics/overview-card.ts",
     "src/topics/overview-card-cache.ts",
+    "src/topics/topic-tags.ts",
+    "src/topics/topic-candidates.ts",
+    "src/topics/topic-page.ts",
+    "src/topics/topic-integration.ts",
+    "src/topics/topic-store.ts",
     "src/topics/topic-suggestions.ts",
     "src/topics/topics-service.ts"
   ]

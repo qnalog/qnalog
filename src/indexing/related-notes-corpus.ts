@@ -1,7 +1,7 @@
 import { extractIndexSource, readNoteIndex, type QnALogNoteIndexCard } from "./note-index";
 import { extractSessionId } from "../notes/note-document";
 import { readSelectedSessionKnowledge } from "../briefing/session-knowledge";
-import { NS_FM, NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_VERSION_CACHE, hasNamespaceFrontmatter, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_FM, NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_TOPIC, NS_TYPE_VERSION_CACHE, hasNamespaceFrontmatter, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import { isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent/recent-note-paths";
 import { AUDIO_EXT as AUDIO_FILE_EXTENSIONS } from "../shared/catalog-import";
 import { RELATED_NOTE_MIN_BODY_CHARS, type RelatedNoteDocument } from "./related-notes";
@@ -100,9 +100,14 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
   const resolved = port.getResolvedLinks();
   const unresolved = port.getUnresolvedLinks();
   const excludedDerivedPaths = new Set<string>();
+  const excludedTopicPaths = new Set<string>();
   let excludedDerivedLegacyAliases = 0;
   for (const file of candidates) {
     const fm = (port.getFrontmatter(file.path) || {}) as Record<string, unknown>;
+    if (readNamespaceFrontmatter(fm, "type") === NS_TYPE_TOPIC) {
+      excludedTopicPaths.add(normPath(file.path));
+      continue;
+    }
     if (!isDerivedNoteFrontmatter(fm)) continue;
     excludedDerivedPaths.add(normPath(file.path));
     if (hasLegacyDerivedAlias(fm)) excludedDerivedLegacyAliases++;
@@ -120,7 +125,7 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
   const rawLinks = new Map<string, string[]>();
   for (const file of candidates) {
     const path = normPath(file.path);
-    if (excludedDerivedPaths.has(path) || isNoisePath(path)) continue;
+    if (excludedDerivedPaths.has(path) || excludedTopicPaths.has(path) || isNoisePath(path)) continue;
     const fm = ((port.getFrontmatter(file.path) || {}) as Record<string, unknown>);
     if (roots.length && !isPathUnderRecentNoteRoots(file.path, roots)) continue;
     const markdown = await port.readText(file.path);

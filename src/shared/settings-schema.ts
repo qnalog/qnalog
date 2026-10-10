@@ -74,7 +74,8 @@ export function classifySettingsSchema(savedData: unknown): SettingsSchemaState 
  *
  * **不要**在这里处理 pre-1.0 / LexVoice 的数据：那些版本走 foreign 分支。
  */
-// 1 → 2：为 SecretStorage 条目增加每个知识库独立的命名空间。
+// 1 → 2: 为 SecretStorage 条目增加每个知识库独立的命名空间。
+// 2 → 3: 增加主题页目录设置；默认值由 settings normalization 按界面语言生成。
 export const SETTINGS_MIGRATIONS: Record<number, (settings: Record<string, unknown>) => Record<string, unknown>> = {
   1: (settings) => ({
     ...settings,
@@ -85,6 +86,7 @@ export const SETTINGS_MIGRATIONS: Record<number, (settings: Record<string, unkno
       apiKeyStorageNamespace: "",
     },
   }),
+  2: (settings) => ({ ...settings }),
 };
 
 export interface SettingsMigrationOutcome {
