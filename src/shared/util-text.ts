@@ -89,6 +89,21 @@ export function applyBriefingLanguageInstruction(prompt: string, settings: Brief
   return instruction ? prompt + "\n\n---\n\n" + instruction : prompt;
 }
 
+// No source-language detector exists in the shared text helpers; count Han and Latin letters only.
+// Treat Chinese as primary at a one-third Han share so short Chinese text with English terms remains Chinese.
+const GENERAL_CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
+const GENERAL_LATIN_RE = /[A-Za-z]/g;
+
+export function buildGeneralSourceLanguageInstruction(source: unknown): string {
+  const text = stringifyTextValue(source || "");
+  const cjkChars = text.match(GENERAL_CJK_RE)?.length || 0;
+  const latinChars = text.match(GENERAL_LATIN_RE)?.length || 0;
+  const isChinesePrimary = cjkChars > 0 && cjkChars * 3 >= cjkChars + latinChars;
+  return isChinesePrimary
+    ? "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。"
+    : 'Output language: English. Use the labels "Task:", "Owner:", "Due:" for action items.';
+}
+
 export function getSessionMetaDurationMs(meta: SessionDurationInput | null | undefined): number {
   if (!meta) return 0;
   const direct = Number(meta.durationMs || meta.elapsedMs || meta.totalMs || 0);

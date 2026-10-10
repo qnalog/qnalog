@@ -7,15 +7,16 @@ import { buildBriefingFidelityContract } from "../src/prompts/briefing-prompts";
 const briefingContractState = vi.hoisted(() => ({
   calls: [] as Array<{ mode: string; purpose: string; system: string; prompt: string }>,
   diagnostics: [] as string[],
+  responseOverride: null as string | null,
 }));
 vi.mock("../src/llm/core", () => ({
   callBriefingMergeLlm: vi.fn(async (_plugin: unknown, system: string, prompt: string, _options: unknown, context: { mode: string; purpose: string }) => {
     briefingContractState.calls.push({ mode: context.mode, purpose: context.purpose, system, prompt });
-    const body = context.purpose === "briefing-part-detail-repair"
+    const body = briefingContractState.responseOverride ?? (context.purpose === "briefing-part-detail-repair"
       ? `## 事实\n${"原文细节".repeat(1800)}`
       : context.purpose === "briefing-part" && context.mode === "meeting"
         ? "短稿"
-        : `## 事实\n${"讨论内容".repeat(1600)}`;
+        : `## 事实\n${"讨论内容".repeat(1600)}`);
     return { text: body, finishReason: "stop", truncated: false, usage: {} };
   }),
   stripModeSuggestionBlocks: (text: string) => text,
@@ -57,7 +58,7 @@ describe("release runtime contracts", () => {
       endOffsetMs: (index + 1) * 60_000,
       text: "讨论内容".repeat(1750),
     }));
-    const run = async (mode: string) => {
+    const run = async (mode: string, runSegments = segments, responseOverride: string | null = null) => {
       const files = new Map<string, string>();
       const folders = new Set<string>();
       const adapter = {
@@ -91,7 +92,9 @@ describe("release runtime contracts", () => {
       };
       briefingContractState.calls.length = 0;
       briefingContractState.diagnostics.length = 0;
-      const result = await mergeAndPolishLongSession(plugin, segments, mode, null, null, null, 4000);
+      briefingContractState.responseOverride = responseOverride;
+      const result = await mergeAndPolishLongSession(plugin, runSegments, mode, null, null, null, 4000);
+      briefingContractState.responseOverride = null;
       return { result, calls: [...briefingContractState.calls], diagnostics: [...briefingContractState.diagnostics], files };
     };
 
@@ -104,6 +107,11 @@ describe("release runtime contracts", () => {
       expect(generalConsolidation?.prompt).toContain("开头先写 `> [!abstract] 概要`");
       expect(generalConsolidation?.prompt).toContain("## 详情");
       expect([...general.files.values()].map(value => JSON.parse(value)).some(checkpoint => checkpoint.consolidationStatus === "complete")).toBe(true);
+      const chineseInstruction = "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。";
+      expect(generalParts[0]?.prompt).toContain(chineseInstruction);
+      expect(generalConsolidation?.prompt).toContain(chineseInstruction);
+      expect(generalParts[0]?.prompt.match(/输出语言：中文/g)).toHaveLength(1);
+
 
       const synthesis = await run("synthesis");
       const synthesisConsolidation = synthesis.calls.find(call => call.purpose === "briefing-synthesis-consolidation");
@@ -121,6 +129,40 @@ describe("release runtime contracts", () => {
       expect(firstMeetingPart?.prompt).toContain(fidelityContract);
       expect(repair).toBeDefined();
       expect(meeting.diagnostics).toContain("llm.briefing_part_under_detailed");
+      const languageProbe = async (text: string, expected: string, unexpected: string) => {
+        const runResult = await run("general", [{ index: 0, startOffsetMs: 0, endOffsetMs: 15_000, text }]);
+        const part = runResult.calls.find(call => call.purpose === "briefing-part");
+        expect(part?.prompt).toContain(expected);
+        expect(part?.prompt).not.toContain(unexpected);
+        expect(part?.prompt.match(new RegExp(expected.startsWith("输出语言") ? "输出语言：中文" : "Output language: English", "g"))).toHaveLength(1);
+        expect(part?.system).not.toContain("SYSTEM LANGUAGE REQUIREMENT");
+        return runResult;
+      };
+      await languageProbe(
+        "提醒一下，周五之前要把季度报告初稿发给李明评审。",
+        "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。",
+        "Output language: English.",
+      );
+      await languageProbe(
+        "I suggest replacing the case in next week's presentation with last month's refund flow.",
+        'Output language: English. Use the labels "Task:", "Owner:", "Due:" for action items.',
+        "输出语言：中文",
+      );
+      await languageProbe(
+        "这个 sprint 要把 onboarding 的转化漏斗再看一遍。",
+        "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。",
+        "Output language: English.",
+      );
+
+      const chineseTaskReply = "> [!abstract] 概要\n> 周五前把季度报告初稿发给李明评审。\n\n- [ ] 事项：把初稿发给李明评审";
+      const chineseTask = await run("general", [{
+        index: 0,
+        startOffsetMs: 0,
+        endOffsetMs: 15_000,
+        text: "提醒一下，周五之前要把季度报告初稿发给李明评审。",
+      }], chineseTaskReply);
+      expect(chineseTask.result).toContain("- [ ] 事项：把初稿发给李明评审");
+      expect(chineseTask.result).not.toContain("- [ ] Task:");
     } finally {
       vi.stubGlobal("window", originalWindow);
       vi.stubGlobal("obsidian", originalObsidian);

@@ -86,6 +86,21 @@ describe("纪要整理流水线", () => {
     expect(shortDraft.needsExpansion).toBe(false);
   });
 
+  it("does not auto-repair a General reply that drops Chinese topics when lexical anchors cannot detect them", () => {
+    const source = "登录页改版上线，转化率从百分之三点二涨到三点八，注册流程从五步减到三步，王芳两周内出方案。上个月四成投诉和退款有关，李明周五前出一页纸统一话术。物流报价涨了百分之八，赵强先去谈判，谈不拢再换供应商。";
+    const stubReply = "> [!abstract] 概要\n> 登录页改版上线，转化率由百分之三点二涨到三点八，注册流程减至三步；王芳两周内出方案。";
+    const fidelity = assessBriefingPartFidelity(source.length, stubReply, { mode: "general" });
+    const grounding = assessBriefingPartGrounding(source, stubReply);
+
+    // Grounding extracts ASCII terms, Arabic numeric forms, and quoted phrases. Chinese number words and names
+    // are not semantic topic markers, so this detector cannot safely decide that the other topics were omitted.
+    expect(fidelity.minimumOutputChars).toBe(0);
+    expect(fidelity.needsExpansion).toBe(false);
+    expect(grounding.anchors).toHaveLength(0);
+    expect(grounding.needsRepair).toBe(false);
+    expect(shouldAutoRepairBriefingPart(fidelity)).toBe(false);
+  });
+
   it("分部计划按总体量均衡，避免最后只剩很小一段", () => {
     const parts = planBriefingParts([
       segment(0, 4_000), segment(1, 4_000), segment(2, 4_000),

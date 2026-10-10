@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：纪要合并入口：预压缩、分部整理、截断续写与失败回退
 
-import { applyBriefingLanguageInstruction, getSegmentsDurationMs, getSessionMetaDurationMs, truncateForLlmPrompt } from "../shared/util-text";
+import { applyBriefingLanguageInstruction, buildGeneralSourceLanguageInstruction, getSegmentsDurationMs, getSessionMetaDurationMs, truncateForLlmPrompt } from "../shared/util-text";
 
 
 
@@ -261,6 +261,10 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     segmentCount: list.length,
   });
   if (adaptiveLength) modeGuidance = `${adaptiveLength}\n\n---\n\n${modeGuidance}`;
+  if (mode === "general") {
+    const sourceText = list.map((segment) => String(segment.text || "")).join("\n");
+    modeGuidance = `${buildGeneralSourceLanguageInstruction(sourceText)}\n\n${modeGuidance}`;
+  }
   modeGuidance = truncateForLlmPrompt(modeGuidance, 12000);
   const fidelityInput = {
     mode,
@@ -760,6 +764,10 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
     segmentCount: segments.length,
   });
   if (adaptiveLength) userPrompt = adaptiveLength + "\n\n---\n\n" + userPrompt;
+  if (mode === "general") {
+    const sourceText = sourceSegments.map((segment) => String(segment && segment.text || "")).join("\n");
+    userPrompt = `${buildGeneralSourceLanguageInstruction(sourceText)}\n\n${userPrompt}`;
+  }
   // 多声道分离出的说话人是既定事实：注入硬约束，覆盖各模式里「弱化/不强制标注说话人」的规则。
   const knownSpeakerClause = buildKnownSpeakerClause(
     resolveKnownSpeakerLabels(joined, originalFrontmatter),
