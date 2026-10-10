@@ -233,7 +233,7 @@ describe("release runtime contracts", () => {
     expect(pluginSource).toContain('this.app.vault.on("rename"');
     expect(pluginSource).toContain('this.app.vault.on("delete"');
     expect(pluginSource).toContain('this.app.metadataCache.on("changed"');
-    expect(pluginSource).toContain("queueRecentVaultRefresh(delayMs = 180)");
+    expect(pluginSource).toContain('queueRecentVaultRefresh(delayMs = 180, changedPath = "")');
   });
 
 
