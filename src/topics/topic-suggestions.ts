@@ -300,7 +300,7 @@ export async function suggestTopicsAsync(
   let result = work.next();
   while (!result.done) {
     options.signal?.throwIfAborted();
-    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     options.signal?.throwIfAborted();
     result = work.next();
   }
