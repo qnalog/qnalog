@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { findTopicCandidates } from "../src/topics/topic-candidates";
+import { t } from "../src/shared/i18n";
 import type { OverviewCard } from "../src/topics/overview-card";
 
 const card = (path: string, options: Partial<OverviewCard> = {}): OverviewCard => ({
@@ -10,17 +11,17 @@ const card = (path: string, options: Partial<OverviewCard> = {}): OverviewCard =
 
 describe("topic candidates", () => {
   it("groups by shared tags with the start first and stable relevance ordering", () => {
-    const start = card("start.md", { tags: ["AI", "Policy"] });
+    const start = card("start.md", { tags: ["主题/AI", "主题/Policy"] });
     const cards = [
-      card("same-date-z.md", { tags: ["ai"] }),
-      card("two-tags.md", { tags: ["policy", "ai"] }),
-      card("same-date-a.md", { tags: ["AI"] }),
+      card("same-date-z.md", { tags: ["主题/ai"] }),
+      card("two-tags.md", { tags: ["主题/policy", "主题/ai"] }),
+      card("same-date-a.md", { tags: ["主题/AI"] }),
       card("unrelated.md", { tags: ["other"] }),
       start,
     ];
     const result = findTopicCandidates({ start, cards }).byTag;
     expect(result.map((candidate) => candidate.path)).toEqual(["start.md", "two-tags.md", "same-date-a.md", "same-date-z.md"]);
-    expect(result.map((candidate) => candidate.matchedTags)).toEqual([["ai", "policy"], ["ai", "policy"], ["ai"], ["ai"]]);
+    expect(result.map((candidate) => candidate.matchedTags)).toEqual([[], ["主题/policy", "主题/ai"], ["主题/AI"], ["主题/ai"]]);
   });
 
   it("annotates candidate membership in sorted topic IDs", () => {
@@ -54,11 +55,23 @@ describe("topic candidates", () => {
   it("keeps the unremovable start selected and excludes generic-tag-only matches", () => {
     const corpus = Array.from({ length: 10 }, (_, index) =>
       card(`note-${index}.md`, { tags: ["common"], overview: `Unrelated evidence ${index}` }));
-    const start = card("start.md", { tags: ["common", "specific"], overview: "Unique opening summary" });
-    const genericOnly = card("generic.md", { tags: ["common"], overview: "Other subject entirely" });
+    const start = card("start.md", { tags: ["行业/common", "主题/specific"], overview: "Unique opening summary" });
+    const genericOnly = card("generic.md", { tags: ["行业/common"], overview: "Other subject entirely" });
     const result = findTopicCandidates({ start, cards: [...corpus, start, genericOnly] });
     expect(result.byTag.map((item) => item.path)).toEqual(["start.md"]);
     expect(result.byTag[0]).toMatchObject({ defaultSelected: true, cancellable: false });
     expect(result.byContent.some((item) => item.path === "generic.md")).toBe(false);
+  });
+
+  it("groups similar project spellings and gives generic labels no tag tier", () => {
+    const start = card("start.md", { tags: ["项目/QnALog", "行业/软件开发", "主题/AI工作流"] });
+    const similar = card("similar.md", { tags: ["项目/QALog", "行业/软件开发"] });
+    const onlyIndustry = card("holiday.md", { tags: ["行业/软件开发"] });
+    const onlyTheme = card("video.md", { tags: ["主题/AI工作流"] });
+    const result = findTopicCandidates({ start, cards: [start, similar, onlyIndustry, onlyTheme] });
+    expect(result.project.map((item) => item.path)).toEqual(["start.md", "similar.md"]);
+    expect(result.project[1].reasons[1]).toContain(t("Similar tag spelling: "));
+    expect(result.topic.map((item) => item.path)).toContain("video.md");
+    expect(result.project.map((item) => item.path)).not.toContain("holiday.md");
   });
 });

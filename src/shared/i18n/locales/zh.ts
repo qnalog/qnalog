@@ -2885,4 +2885,10 @@ export const ZH: MessageTable = {
   "{0} → Model list pagination did not make progress or changed total count": "{0} → 模型列表分页未继续前进，或总数发生变化",
   "{0} → Model list exceeded the maximum page count": "{0} → 模型列表超过最大分页数",
   "{0} → No complete model list returned": "{0} → 未能获取完整模型列表",
+  "Similar tag spelling: ": "标签写法相近：",
+  "Shared project identifier tag": "共享项目标识标签",
+  "Shared topic tags": "共享主题类标签",
+  "Starting note": "起点笔记",
+  "Similar content": "内容相近",
+  "Completed {0}/{1} batches": "已完成 {0}/{1} 批",
 };

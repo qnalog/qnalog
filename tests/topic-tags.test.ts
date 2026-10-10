@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeTagKey, type OverviewCard } from "../src/topics/overview-card";
-import { isGenericTag, learnTopicTagSet, matchNoteToTopics } from "../src/topics/topic-tags";
+import { areTagKeysSimilar, isGenericTag, learnTopicTagSet, matchNoteToTopics } from "../src/topics/topic-tags";
 import type { TopicPage } from "../src/topics/topic-page";
 
 const card = (path: string, tags: string[]): OverviewCard => ({
@@ -18,21 +18,25 @@ describe("topic tags", () => {
     expect(normalizeTagKey("  #主题/ＡＩ & ML  ")).toBe("aiandml");
     expect(normalizeTagKey("云计算")).toBe("云计算");
     expect(normalizeTagKey("ml n ai")).toBe("aiandml");
+    expect(normalizeTagKey("项目/Q&ALog")).toBe("qalog");
     expect(normalizeTagKey("ai and ml")).not.toBe(normalizeTagKey("aiml"));
     expect(normalizeTagKey("cloud platform")).not.toBe(normalizeTagKey("cloud platforms"));
   });
 
-  it("learns the normalized tag union and counts corpus document frequencies once per note", () => {
-    const selected = [card("a.md", ["#主题/ＡＩ", "ai", "Cloud & Data"]), card("b.md", ["cloud n data", "Research"])];
-    const corpus = [
-      card("a.md", ["#主题/ＡＩ", "ai", "Cloud & Data"]),
-      card("b.md", ["cloud n data", "Research"]),
-      card("c.md", ["AI", "unselected"]),
-    ];
-    expect(learnTopicTagSet(selected, corpus)).toEqual({
-      tags: ["ai", "cloudanddata", "research"],
-      documentFrequency: { ai: 2, cloudanddata: 2, research: 1 },
-    });
+  it("learns identifying tags only and keeps similar spellings as aliases", () => {
+    const selected = [card("a.md", ["项目/QALog", "亲子教育", "主题/AI工作流"]), card("b.md", ["项目/QnALog", "儿童教育", "主题/AI工作流"])];
+    const corpus = [...selected, card("c.md", ["AI", "unselected"])];
+    const learned = learnTopicTagSet(selected, corpus);
+    expect(learned.tags).toContain("项目/QALog");
+    expect(learned.tags).toContain("主题/AI工作流");
+    expect(learned.tags).not.toContain("亲子教育");
+    expect(learned.tags).not.toContain("儿童教育");
+    expect(learned.aliases["项目/QALog"]).toEqual(["项目/QALog", "项目/QnALog"]);
+    expect(areTagKeysSimilar("QALog", "QnALog")).toBe(true);
+  });
+
+  it("keeps short dissimilar keys separate", () => {
+    expect(areTagKeysSimilar("ai", "api")).toBe(false);
   });
 
   it("applies both generic-tag thresholds", () => {
