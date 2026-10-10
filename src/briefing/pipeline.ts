@@ -10,7 +10,7 @@ import {
   NS_PART_SUMMARY_STRIP_RE,
 } from "../shared/namespace";
 
-export const BRIEFING_PIPELINE_VERSION = 7;
+export const BRIEFING_PIPELINE_VERSION = 11;
 
 export type BriefingSegment = {
   index?: number;
@@ -82,6 +82,7 @@ export type BriefingCheckpoint = {
   consolidationUsage: BriefingUsage;
   consolidationAttempts: number;
   consolidationError: string;
+  coverageRepairAttempted: boolean;
   auditStatus: "pending" | "complete" | "failed";
   auditText: string;
   auditFinishReason: string;
@@ -121,13 +122,29 @@ export type BriefingFidelityAssessment = {
   targetOutputChars: number;
   needsExpansion: boolean;
 };
-
 export type BriefingGroundingAssessment = {
   anchors: string[];
   missingAnchors: string[];
   matchedAnchors: number;
   ratio: number;
   needsRepair: boolean;
+};
+
+
+export type BriefingSegmentCoverageResult = {
+  segmentNumber: number;
+  bigramOverlap: number;
+  bigramCount: number;
+  matchedNameAnchors: number;
+  nameAnchorCount: number;
+  numericAnchorCount: number;
+  eligible: boolean;
+  missing: boolean;
+};
+
+export type BriefingSegmentCoverageAssessment = {
+  missingSegments: number[];
+  segments: BriefingSegmentCoverageResult[];
 };
 
 export const EMPTY_BRIEFING_USAGE: BriefingUsage = {
@@ -325,6 +342,18 @@ export function getBriefingFidelityPolicy(input: {
 } = {}): BriefingFidelityPolicy {
   const detailLevel = cleanText(input.detailLevel).toLowerCase();
   const isSynthesis = cleanText(input.mode).toLowerCase() === "synthesis";
+  if (cleanText(input.mode).toLowerCase() === "general") {
+    const structureLevel = cleanText(input.structureLevel).toLowerCase();
+    const profile = detailLevel === "detailed" || detailLevel === "concise" ? detailLevel : "balanced";
+    return {
+      profile,
+      sourceTargetChars: profile === "concise" ? 28_000 : (profile === "detailed" ? 16_000 : (structureLevel === "strict" ? 18_000 : 22_000)),
+      minimumOutputRatio: 0,
+      targetOutputRatio: profile === "concise" ? 0.18 : (profile === "detailed" ? 0.42 : 0.30),
+      absoluteMinimumChars: 0,
+      enforceLengthFloor: false,
+    };
+  }
   if (isSynthesis) {
     if (detailLevel === "detailed") {
       return {
@@ -474,6 +503,115 @@ export function shouldAutoRepairBriefingPart(
   return fidelity?.needsExpansion === true;
 }
 
+function briefingCoverageBigrams(value: unknown): Set<string> {
+  const runs = cleanText(value).normalize("NFKC").toLowerCase().match(/[\p{Script=Han}\p{Script=Latin}]+/gu) || [];
+  const bigrams = new Set<string>();
+  for (const run of runs) {
+    const chars = Array.from(run);
+    for (let index = 0; index + 1 < chars.length; index += 1) {
+      bigrams.add(chars[index] + chars[index + 1]);
+    }
+  }
+  return bigrams;
+}
+
+const BRIEFING_COVERAGE_CHINESE_NUMERALS = String.fromCharCode(
+  0x96f6, 0x3007, 0x4e00, 0x4e8c, 0x4e24, 0x4e09, 0x56db, 0x4e94, 0x516d, 0x4e03,
+  0x516b, 0x4e5d, 0x5341, 0x767e, 0x5343, 0x4e07, 0x4ebf,
+);
+const BRIEFING_COVERAGE_CHINESE_NUMBER = `[${BRIEFING_COVERAGE_CHINESE_NUMERALS}]+(?:${String.fromCharCode(0x70b9)}[${BRIEFING_COVERAGE_CHINESE_NUMERALS}]+)?`;
+const BRIEFING_COVERAGE_CHINESE_UNITS = [
+  [0x6210], [0x5468], [0x661f, 0x671f], [0x5929], [0x65e5], [0x4e2a, 0x6708], [0x6708],
+  [0x5e74], [0x6b65], [0x4eba], [0x4e2a], [0x6b21], [0x4efd], [0x9875], [0x5143], [0x5bb6],
+  [0x5c0f, 0x65f6], [0x5206, 0x949f],
+].map((unit) => String.fromCharCode(...unit)).join("|");
+const BRIEFING_COVERAGE_CHINESE_PERCENT = String.fromCharCode(0x767e, 0x5206, 0x4e4b);
+const BRIEFING_COVERAGE_CHINESE_WEEK = String.fromCharCode(0x5468);
+const BRIEFING_COVERAGE_CHINESE_WEEKDAY = String.fromCharCode(0x661f, 0x671f);
+const BRIEFING_COVERAGE_FULLWIDTH_PERCENT = String.fromCharCode(0xff05);
+const BRIEFING_COVERAGE_CHINESE_NUMERIC_PATTERNS = [
+  /\d+(?:[.,]\d+)*(?:\s*[%％])?/g,
+  new RegExp(`${BRIEFING_COVERAGE_CHINESE_PERCENT}${BRIEFING_COVERAGE_CHINESE_NUMBER}`, "g"),
+  new RegExp(`${BRIEFING_COVERAGE_CHINESE_NUMBER}(?:${BRIEFING_COVERAGE_CHINESE_UNITS}|%|${BRIEFING_COVERAGE_FULLWIDTH_PERCENT})`, "g"),
+  new RegExp(`(?:${BRIEFING_COVERAGE_CHINESE_WEEK}|${BRIEFING_COVERAGE_CHINESE_WEEKDAY})[${BRIEFING_COVERAGE_CHINESE_NUMERALS}]`, "g"),
+];
+
+function extractBriefingCoverageNumericAnchors(value: string): string[] {
+  const matches: string[] = [];
+  for (const pattern of BRIEFING_COVERAGE_CHINESE_NUMERIC_PATTERNS) {
+    for (const match of value.matchAll(pattern)) matches.push(match[0]);
+  }
+  return [...new Set(matches)];
+}
+
+const BRIEFING_COVERAGE_CAPITALIZED_STOP_WORDS = new Set([
+  "After", "Also", "And", "Before", "Because", "But", "First", "For", "Friday", "From", "How", "Into", "It",
+  "Monday", "Next", "Our", "Please", "Saturday", "Second", "Sunday", "That", "The", "Then", "These",
+  "This", "Those", "Thursday", "Today", "Tomorrow", "Tuesday", "Wednesday", "When", "Where", "Which",
+  "Who", "Why", "We", "With",
+]);
+
+function extractBriefingCoverageNameAnchors(source: string, knownPeople: readonly string[]): string[] {
+  const sourceLower = source.toLowerCase();
+  const anchors = knownPeople.filter((name) => name.length >= 2 && sourceLower.includes(name.toLowerCase()));
+  for (const match of source.matchAll(/\b(?:[A-Z]{2,}(?:[-_][A-Z0-9]+)*|[A-Z][a-z]{2,}[A-Za-z0-9]*)\b/g)) {
+    if (BRIEFING_COVERAGE_CAPITALIZED_STOP_WORDS.has(match[0])) continue;
+    if (anchors.some((name) => name.toLowerCase().includes(match[0].toLowerCase()))) continue;
+    anchors.push(match[0]);
+  }
+  return [...new Set(anchors)];
+}
+
+export function assessBriefingSegmentCoverage(
+  sourceSegments: readonly BriefingSegment[],
+  output: unknown,
+  knownPeople: readonly string[] = [],
+): BriefingSegmentCoverageAssessment {
+  const outputText = cleanText(output).normalize("NFKC").toLowerCase();
+  const outputBigrams = briefingCoverageBigrams(outputText);
+  const rows = sourceSegments.map((segment, index) => {
+    const source = cleanText(segment?.text);
+    const sourceBigrams = briefingCoverageBigrams(source);
+    const namedAnchors = extractBriefingCoverageNameAnchors(source, [
+      ...knownPeople,
+      cleanText(segment?.speakerName),
+    ]);
+    const matchedNameAnchors = namedAnchors.filter((anchor) => outputText.includes(anchor.normalize("NFKC").toLowerCase())).length;
+    let matchedBigrams = 0;
+    for (const bigram of sourceBigrams) if (outputBigrams.has(bigram)) matchedBigrams += 1;
+    return {
+      segmentNumber: index + 1,
+      bigramOverlap: sourceBigrams.size ? matchedBigrams / sourceBigrams.size : 0,
+      bigramCount: sourceBigrams.size,
+      matchedNameAnchors,
+      nameAnchorCount: namedAnchors.length,
+      numericAnchorCount: extractBriefingCoverageNumericAnchors(source).length,
+      eligible: sourceBigrams.size >= 8 || namedAnchors.length > 0,
+      missing: false,
+    };
+  });
+  const eligible = rows.filter((row) => row.eligible);
+  const missingSegments: number[] = [];
+  for (const row of eligible) {
+    const peerScores = eligible
+      .filter((peer) => peer.segmentNumber !== row.segmentNumber)
+      .map((peer) => peer.bigramOverlap)
+      .sort((left, right) => left - right);
+    const peerMedian = peerScores.length
+      ? peerScores[Math.floor(peerScores.length / 2)]
+      : 0;
+    const absoluteGap = row.bigramCount >= 8 && row.bigramOverlap < 0.12;
+    const relativeGap = row.bigramCount >= 8
+      && peerMedian >= 0.18
+      && row.bigramOverlap <= peerMedian * 0.35
+      && peerMedian - row.bigramOverlap >= 0.12;
+    const allNamesMissing = row.nameAnchorCount > 0 && row.matchedNameAnchors === 0;
+    row.missing = absoluteGap || relativeGap || allNamesMissing;
+    if (row.missing) missingSegments.push(row.segmentNumber);
+  }
+  return { missingSegments, segments: rows };
+}
+
 function createPartCheckpoint(plan: BriefingPartPlan): BriefingPartCheckpoint {
   return {
     index: plan.index,
@@ -532,6 +670,7 @@ export function createBriefingCheckpoint(input: {
     consolidationUsage: { ...EMPTY_BRIEFING_USAGE },
     consolidationAttempts: 0,
     consolidationError: "",
+    coverageRepairAttempted: false,
     auditStatus: "pending",
     auditText: "",
     auditFinishReason: "",

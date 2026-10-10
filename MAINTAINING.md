@@ -301,7 +301,8 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 ### 6.1 当前推进
 
-1. **无感开始｜未开始**。用户无需在录音前选择整理类型；默认输出为开篇概要和梳理后的详情。原有类型通过“重新整理为……”生成派生稿；保留已有用户保存的默认模式，新装用户默认使用中性模式。
+1. **无感开始｜已实现，待维护者确认**。
+   未完成：维护者确认提示词质量与真实模型输出。
 2. **检索底座与全库问答｜未开始**。问一问从当前笔记扩展到默认的 `QnALog/` 目录；整个知识库仅在用户于设置中明确开启后读取。第一步采用分块、关键词、中文字符二元切分和笔记索引卡检索，检索层保留后续接入云端 embedding 的接口；索引缓存可由源文件重建，来源去重沿用现有来源与版本关系。
 3. **纪要总览｜未开始**。基于笔记索引卡展示新增内容、疑似同一主题的笔记和未完成行动；用户无需逐篇打开。
 4. **重复识别与整合｜未开始**。依赖检索底座识别同一主题的多篇纪要；用户确认后生成带来源标注的专题整合笔记，补齐各篇缺失细节。原笔记不修改、不删除。
@@ -457,7 +458,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 | `llmServicePreset` | `"siliconflow"` | `composer.servicePreset` | — | 服务预设 id，用于填地址与请求头适配 | API | 高级 · 服务 |
 | `llmProfiles` | `[]` | `composer.profiles` | — | 已保存的 API 方案（转写+AI 整理为一套） | API + 侧边栏 | 基本设置 |
 | `activeLlmProfile` | `""` | `composer.activeProfile` | — | 当前启用的 API 方案 id | API + 侧边栏 | 基本设置 |
-| `polishMode` | `"synthesis"` | `composer.defaultMode` | — | 默认纪要模板（整理方式） | AI 整理 + 侧边栏 + 模板库 | 基本设置 |
+| `polishMode` | `"general"` | `composer.defaultMode` | — | 默认整理方式 | AI 整理 + 侧边栏 + 模板库 | 基本设置 |
 | `polishPromptInterview` | `""` | `composer.modePromptOverrides.interview` | `promptOverrides.interview` | 该模式的提示词回退来源：模板为空时使用（`briefing-prompts.ts:364` 读 `legacyPromptFieldForMode`） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptMeeting` | `""` | `composer.modePromptOverrides.meeting` | `promptOverrides.meeting` | 同上（Meeting 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |
 | `polishPromptHuddle` | `""` | `composer.modePromptOverrides.huddle` | `promptOverrides.huddle` | 同上（Huddle 模式的回退提示词） | 无 | 内部（保留存储，不进设置界面） |

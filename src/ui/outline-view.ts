@@ -4420,9 +4420,9 @@ export class OutlineView extends obsidian.ItemView {
       return trigger;
     };
 
-    // 模板（常驻显示——最常切换的"录音整理成什么"）
+    // 整理类型（常驻显示；通用模式可直接录音，无需预先选择）
     const modeRow = primaryControls.createDiv({ cls: "qnalog-outline-control-row is-template-control" });
-    modeRow.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Template") });
+    modeRow.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Organizing type") });
     const currentMode = getEffectivePolishMode(this.plugin.settings, this.plugin.settings.polishMode);
     const modeSelect = mkSelect(modeRow, {
       current: currentMode,
@@ -4561,7 +4561,7 @@ export class OutlineView extends obsidian.ItemView {
     const actions = controls.createDiv({ cls: "qnalog-outline-actions" });
     const startBtn = actions.createEl("button", { cls: "mod-cta qnalog-outline-action-button is-record", attr: { type: "button" } });
     try { obsidian.setIcon(startBtn.createSpan({ cls: "qnalog-outline-action-icon" }), "mic"); } catch { /* intentionally empty */ }
-    startBtn.createSpan({ text: isMobile ? i18nT("New recording") : i18nT("New recording") });
+    startBtn.createSpan({ text: i18nT("New voice note") });
     startBtn.onclick = () => { void this.plugin.recording.startRecording(); };
     const actionCluster = actions.createDiv({ cls: "qnalog-outline-action-cluster" });
     const importBtn = actionCluster.createEl("button", { cls: "qnalog-outline-action-button", attr: { type: "button", title: i18nT("Import audio"), "aria-label": i18nT("Import audio") } });

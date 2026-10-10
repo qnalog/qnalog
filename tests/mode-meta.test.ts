@@ -10,6 +10,7 @@ import {
   getCustomPromptModeTemplate,
   getCustomPromptModeTemplates,
   getEffectivePolishMode,
+  getModeDisplayName,
   getModeMeta,
   getModePrefix,
   getVisibleModeEntries,
@@ -59,22 +60,26 @@ describe("mode metadata boundaries", () => {
     expect(getCustomPromptModeTemplates(unknownSettings({ promptTemplates: "not a map" }))).toEqual([]);
   });
 
-  it("keeps visible mode order, language-specific prefixes, and off visibility", () => {
+  it("keeps general first in the visible mode list and localizes its labels", () => {
     expect(getBuiltInVisiblePolishModeKeys(customSettings)).toEqual([
-      "synthesis", "meeting", "seminar", "interview", "monologue", "learning",
+      "general", "synthesis", "meeting", "seminar", "interview", "monologue", "learning",
     ]);
     expect(getVisiblePolishModeKeys(customSettings)).toEqual([
-      "synthesis", "meeting", "seminar", "interview", "monologue", "learning", "custom-a", "custom-z",
+      "general", "synthesis", "meeting", "seminar", "interview", "monologue", "learning", "custom-a", "custom-z",
     ]);
-    expect(isKnownPolishMode(customSettings, "huddle")).toBe(true);
-    expect(getVisiblePolishModeKeys(customSettings)).not.toContain("huddle");
+    expect(isKnownPolishMode(customSettings, "general")).toBe(true);
+    language("zh");
+    expect(getModeDisplayName(customSettings, "general")).toBe("通用");
+    expect(getVisibleModeEntries(customSettings, false)[0]).toEqual(["general", "通用"]);
+    language("en");
+    expect(getModeDisplayName(customSettings, "general")).toBe("General");
+    expect(getEffectivePolishMode({ polishMode: "general" }, undefined)).toBe("general");
+    expect(getEffectivePolishMode({}, undefined)).toBe("meeting");
+    expect(getEffectivePolishMode({ polishMode: "unrecognized" }, undefined)).toBe("meeting");
     language("zh");
     expect(getVisibleModeEntries(customSettings, true)[0]).toEqual(["off", "关闭（仅转写）"]);
-    expect(getVisibleModeEntries(customSettings, false)[0]).toEqual(["synthesis", "综合纪要"]);
-    expect(getVisibleModeEntries(customSettings, false).slice(-2)).toEqual([["custom-a", "Alpha"], ["custom-z", "Zulu"]]);
     language("en");
     expect(getVisibleModeEntries(customSettings, true)[0]).toEqual(["off", "Off (transcription only)"]);
-    expect(getVisibleModeEntries(customSettings, false).slice(-2)).toEqual([["custom-a", "Alpha"], ["custom-z", "Zulu"]]);
   });
 
   it("preserves requested, configured, fallback, and display-only mode distinctions", () => {

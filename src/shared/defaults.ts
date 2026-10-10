@@ -307,7 +307,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   llmProfiles: [],           // [{ id, name, endpoint, apiKey, model }]
   activeLlmProfile: "",      // 当前选中的配置 id；空 = 未保存为配置（临时）
 
-  polishMode: "synthesis",
+  polishMode: "general",
   polishPromptInterview: "",
   polishPromptMeeting: "",
   polishPromptHuddle: "",

@@ -41,6 +41,46 @@ describe("briefing output contracts", () => {
       .toBe("- [ ] 事项：报告\n- [ ] 责任人：张三 事项：发布 截止：周五 优先级：高\n普通行");
   });
 
+  it("normalizes action labels only on checklist rows and their immediate continuations", () => {
+    const chineseSource = "提醒一下，周五之前要把季度报告初稿发给李明评审。";
+    const chineseOutput = postProcessBriefingOutput([
+      "> [!abstract] 概要",
+      "> 引用 Task: 不应改写。",
+      "- [ ] Task: 发送季度报告初稿",
+      "  Owner: 李明",
+      "- Deadline: 周五前",
+      "",
+      "普通正文里的 Task: 不应改写。",
+      "```text",
+      "- [ ] Task: 代码块内容不应改写。",
+      "```",
+      "> [!quote] 引用",
+      "> - [ ] Task: 引用内容不应改写。",
+    ].join("\n"), "general", null, null, "general", "", chineseSource);
+    expect(chineseOutput).toContain("> - [ ] 事项： 发送季度报告初稿");
+    expect(chineseOutput).toContain("> 责任人： 李明");
+    expect(chineseOutput).toContain("> - 截止： 周五前");
+    expect(chineseOutput).toContain("普通正文里的 Task: 不应改写。");
+    expect(chineseOutput).toContain("- [ ] Task: 代码块内容不应改写。");
+    expect(chineseOutput).toContain("> - [ ] Task: 引用内容不应改写。");
+
+    const englishSource = "I will send the report with the review team before Friday.";
+    const englishOutput = postProcessBriefingOutput(
+      "- [ ] 事项：send the report\n  责任人：Lee\n- 截止：Friday",
+      "general",
+      null,
+      null,
+      "general",
+      "",
+      englishSource,
+    );
+    expect(englishOutput).toContain("- [ ] Task:send the report\n  Owner:Lee\n- Due:Friday");
+
+    const spanishOutput = postProcessBriefingOutput("- [ ] 事项：revisar el informe", "general", null, null, "general", "", "La próxima semana revisaré el informe.");
+    expect(spanishOutput).toContain("- [ ] 事项：revisar el informe");
+    const japaneseOutput = postProcessBriefingOutput("- [ ] 事项：返金の流れを見直す", "general", null, null, "general", "", "来週の共有会で返金の流れを見直します。");
+    expect(japaneseOutput).toContain("- [ ] 事项：返金の流れを見直す");
+  });
   it("formats dates via moment and falls back to Date for absent or invalid moment", () => {
     expect(formatYamlDateTime(null)).toBe("");
     expect(formatYamlDateTime("invalid date value")).toBe("");

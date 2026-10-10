@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）：纪要合并入口：预压缩、分部整理、截断续写与失败回退
 
-import { applyBriefingLanguageInstruction, getSegmentsDurationMs, getSessionMetaDurationMs, truncateForLlmPrompt } from "../shared/util-text";
+import { applyBriefingLanguageInstruction, buildGeneralSegmentCoverageInstruction, buildGeneralSourceLanguageInstruction, detectGeneralSourceLanguage, getSegmentsDurationMs, getSessionMetaDurationMs, truncateForLlmPrompt } from "../shared/util-text";
 
 
 
-import { buildPeopleContextForLlm } from "../people";
+import { buildPeopleContextForLlm, getPeopleNameHotwordTerms, loadPeopleDirectory } from "../people";
 import { mergeUniqueStrings } from "../people/person-text";
 
 import { appendSedimentPreExtractionBlock, extractSedimentPreExtractionBlock } from "../sediment";
@@ -22,15 +22,16 @@ import { formatElapsed, getErrorMessage } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 
 import { CLEAN_TRANSCRIPT_SYSTEM, buildCleanTranscriptChunkPrompt, buildKnownSpeakerClause } from "../prompts/clean-transcript";
+import { GENERAL_BRIEFING_SYSTEM_PROMPTS, GENERAL_OTHER_LANGUAGE_PROMPTS } from "../prompts/mode-bodies";
 
-import { BriefingPipelineIncompleteError, assembleBriefingParts, assessBriefingPartFidelity, assessBriefingPartGrounding, buildBriefingPartSummaryMap, buildProgrammaticTopicMap, createBriefingJobId, getBriefingFidelityPolicy, normalizeBriefingPartBody, planBriefingParts, reconcileBriefingCheckpoint, shouldAutoRepairBriefingPart } from "./pipeline";
+import { BriefingPipelineIncompleteError, assembleBriefingParts, assessBriefingPartFidelity, assessBriefingPartGrounding, assessBriefingSegmentCoverage, buildBriefingPartSummaryMap, buildProgrammaticTopicMap, createBriefingJobId, getBriefingFidelityPolicy, normalizeBriefingPartBody, planBriefingParts, reconcileBriefingCheckpoint, shouldAutoRepairBriefingPart } from "./pipeline";
 
 import { buildSynthesisConsolidationPrompt } from "./synthesis-policy";
 
 
 import { mergeBriefingSedimentObjects, resolveKnownSpeakerLabels } from "../notes/recording-issues";
 
-import { BRIEFING_PRESUMMARY_NOTICE, BRIEFING_TRUNCATION_WARNING, applyRepolishPreferenceInstruction, applyStructureLevelInstruction, buildAdaptiveBriefingLengthInstruction, buildBriefingFidelityContract, buildBriefingPartExpansionPrompt, buildBriefingPipelineOptionsKey, buildChunkMergePrompt, buildSessionMetaPrefix, createBriefingLlmActivityOptions, formatMergeSegmentForPrompt, getBriefingCheckpointStore, getBriefingEffectiveDetailLevel, getBriefingPipelineTargetChars, mergeBriefingUsage, reportBriefingPartProgress, resolveTemplatePromptForMode, splitSegmentsIntoGroups } from "../prompts/briefing-prompts";
+import { BRIEFING_PRESUMMARY_NOTICE, BRIEFING_TRUNCATION_WARNING, applyRepolishPreferenceInstruction, applyStructureLevelInstruction, buildAdaptiveBriefingLengthInstruction, buildBriefingFidelityContract, buildBriefingPartExpansionPrompt, buildBriefingPipelineOptionsKey, buildChunkMergePrompt, buildGeneralConsolidationPrompt, buildGeneralCoverageRepairPrompt, buildSessionMetaPrefix, createBriefingLlmActivityOptions, formatMergeSegmentForPrompt, getBriefingCheckpointStore, getBriefingEffectiveDetailLevel, getBriefingPipelineTargetChars, mergeBriefingUsage, reportBriefingPartProgress, resolveTemplatePromptForMode, splitSegmentsIntoGroups } from "../prompts/briefing-prompts";
 import { buildEmptyLlmOutputFallback } from "../notes/note-write-content";
 
 import { buildMeetingWorkbenchPrompt } from "../notes/meeting-workbench";
@@ -139,17 +140,20 @@ async function logKnowledgeProtocolIssues(plugin, knowledge, part, allowedCount)
 export async function polishTranscript(plugin, transcript, mode, sessionMeta, originalFrontmatter, repolishOptions) {
   if (!transcript || !transcript.trim()) return "";
   if (mode === "off") return transcript;
-  const tpl = resolveTemplatePromptForMode(plugin, mode, false);
-  const sys = "你是一位专业的文字编辑助手，擅长整理访谈、会议与口述的录音转写。";
+  const sourceLanguage = mode === "general" ? detectGeneralSourceLanguage(transcript) : "other";
+  const tpl = resolveTemplatePromptForMode(plugin, mode, false, sourceLanguage);
+  const sys = mode === "general" && sourceLanguage !== "zh"
+    ? GENERAL_OTHER_LANGUAGE_PROMPTS.part
+    : "你是一位专业的文字编辑助手，擅长整理访谈、会议与口述的录音转写。";
   let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", transcript);
   userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
-  userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
+  if (mode !== "general") userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
   userPrompt = userPrompt.replace("{{STRUCTURE_INSTRUCTION}}", "");
   const adaptiveLength = buildAdaptiveBriefingLengthInstruction(mode, {
     durationMs: getSessionMetaDurationMs(sessionMeta),
     transcriptChars: transcript.length,
     segmentCount: 1,
-  });
+  }, sourceLanguage);
   if (adaptiveLength) userPrompt = adaptiveLength + "\n\n---\n\n" + userPrompt;
   // 自适应 max_tokens：长材料能产出更长纪要，不被 API 默认上限（~4096）一刀切。
   const briefingMergeMaxTokens = getBriefingMergeMaxTokens({
@@ -163,11 +167,12 @@ export async function polishTranscript(plugin, transcript, mode, sessionMeta, or
   if (meetingWorkbenchPrompt) userPrompt = meetingWorkbenchPrompt + "\n\n---\n\n" + userPrompt;
   const peopleContext = await buildPeopleContextForLlm(plugin);
   if (peopleContext) userPrompt = peopleContext + "\n\n---\n\n" + userPrompt;
+  if (mode === "general") userPrompt = `${userPrompt}\n\n${buildGeneralSourceLanguageInstruction(transcript)}`;
   // 流式：merge 是最长、最贵、跑一次的调用。流式 + 空闲超时确保服务端只要在持续输出就不会被
   // 客户端总超时 abort，避免"扣了钱却因超时拿不到结果"的浪费（符合总纲：不因工程缺陷浪费）。
   const raw = await callLlm(plugin, sys, userPrompt, { stream: true, payload: { max_tokens: briefingMergeMaxTokens } });
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(raw);
-  const polished = postProcessBriefingOutput(sedimentPreExtraction.cleaned, mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode));
+  const polished = postProcessBriefingOutput(sedimentPreExtraction.cleaned, mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", transcript);
   return sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
 }
 
@@ -210,6 +215,108 @@ export async function cleanTranscript(plugin, segments, ceiling) {
   return { text: parts.join("\n\n"), truncated: anyTruncated };
 }
 
+async function repairGeneralSegmentCoverage(plugin, input: {
+  sourceSegments: Array<{ text?: string; speakerName?: string | null }>;
+  initialBody: string;
+  missingSegments: number[];
+  knownPeople: string[];
+  languageInstruction: string;
+  sourceLanguage: "zh" | "en" | "other";
+  jobId: string;
+  partTotal: number;
+  durationMs: number;
+  computedMeta: unknown;
+  outputCeiling: number;
+}): Promise<{ body: string; people: string[]; tags: string[]; usage: unknown; repaired: boolean }> {
+  const missingMaterial = input.missingSegments.map((segmentNumber) => {
+    const segment = input.sourceSegments[segmentNumber - 1];
+    return segment ? `===SEG ${segmentNumber}===\n${String(segment.text || "")}` : "";
+  }).filter(Boolean).join("\n\n");
+  const prompt = `${buildGeneralCoverageRepairPrompt({
+    segments: input.sourceSegments.map((segment, index) => ({ segmentNumber: index + 1, text: String(segment.text || "") })),
+    missingSegments: input.missingSegments,
+    initialBody: input.initialBody,
+    sourceLanguage: input.sourceLanguage,
+  })}\n\n${input.languageInstruction}`;
+  const diagnosticDetails = {
+    mode: "general",
+    jobId: input.jobId,
+    segmentCount: input.sourceSegments.length,
+    missingSegments: input.missingSegments,
+    coverage: assessBriefingSegmentCoverage(input.sourceSegments, input.initialBody, input.knownPeople).segments.map((segment) => ({
+      segment: segment.segmentNumber,
+      bigramOverlap: Number(segment.bigramOverlap.toFixed(3)),
+      bigramCount: segment.bigramCount,
+      matchedNameAnchors: segment.matchedNameAnchors,
+      nameAnchorCount: segment.nameAnchorCount,
+      numericAnchorCount: segment.numericAnchorCount,
+    })),
+  };
+  await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_segment_coverage_repair_started", t("The General note may omit source segments; checking the marked transcript text"), diagnosticDetails);
+  const initial = { body: input.initialBody, people: [], tags: [], usage: null, repaired: false };
+  try {
+    const system = input.sourceLanguage !== "zh"
+      ? GENERAL_OTHER_LANGUAGE_PROMPTS.consolidation
+      : GENERAL_BRIEFING_SYSTEM_PROMPTS.consolidation;
+    const repair = await callBriefingMergeLlm(
+      plugin,
+      system,
+      prompt,
+      Object.assign(
+        {
+          stream: true,
+          thinkingMode: "fast",
+          payload: {
+            max_tokens: getBriefingMergeMaxTokens({
+              durationMs: input.durationMs,
+              transcriptChars: missingMaterial.length,
+              segmentCount: input.missingSegments.length,
+            }, plugin.settings, input.outputCeiling),
+          },
+        },
+        createBriefingLlmActivityOptions(plugin, input.computedMeta, {
+          stage: "llm-detail-repair",
+          stageLabel: t("Adding missing details"),
+          detail: t("The current body text is {0} characters; completing it against the original transcript").replace("{0}", String(input.initialBody.length)),
+          progress: 93,
+        }),
+      ),
+      {
+        purpose: "briefing-part-detail-repair",
+        mode: "general",
+        jobId: input.jobId,
+        part: 0,
+        partTotal: input.partTotal,
+        transcriptChars: missingMaterial.length,
+        segmentCoverageRepair: true,
+      },
+    );
+    const parsed = parseBriefingPartResponse(repair.text);
+    const repairedBody = normalizeBriefingPartBody(parsed.body, { fragmentMode: false });
+    const repairedCoverage = assessBriefingSegmentCoverage(input.sourceSegments, repairedBody, input.knownPeople);
+    if (repairedBody && !repair.truncated && repairedCoverage.missingSegments.length === 0) {
+      await logLlmRequestDiagnostic(plugin, "info", "llm.briefing_segment_coverage_repaired", t("The General note was supplemented with material from omitted segments"), {
+        ...diagnosticDetails,
+        usage: repair.usage,
+      });
+      return { body: repairedBody, people: parsed.people, tags: parsed.tags, usage: repair.usage, repaired: true };
+    }
+    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_segment_coverage_repair_failed_preserved", t("General note segment coverage remained incomplete; the first usable draft was preserved"), {
+      ...diagnosticDetails,
+      remainingSegments: repairedCoverage.missingSegments,
+      truncated: !!repair.truncated,
+      usage: repair.usage,
+    });
+    return { ...initial, usage: repair.usage };
+  } catch (error) {
+    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_segment_coverage_repair_failed_preserved", t("General note segment coverage remained incomplete; the first usable draft was preserved"), {
+      ...diagnosticDetails,
+      error: diagnosticError(error),
+    });
+    return initial;
+  }
+}
+
 // 普通纪要统一走同一条可恢复流水线：短会是一部分，长会是多部分。每个部分完成后立即持久化，
 // 后续失败只重试未完成部分；最终正文由程序按时间顺序拼装，不再让模型重写整篇并再次引入截断风险。
 export async function mergeAndPolishLongSession(plugin, segments, mode, computedMeta, originalFrontmatter, repolishOptions, ceiling, forceChunk = false) {
@@ -227,7 +334,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     : preferredTargetChars;
   const partPlans = planBriefingParts(list, targetChars);
   if (!partPlans.length) return null;
-  const requiresGlobalConsolidation = mode === "synthesis" && partPlans.length > 1;
+  const requiresGlobalConsolidation = (mode === "synthesis" || mode === "general") && partPlans.length > 1;
 
   const identity = createBriefingJobId({
     segments: list,
@@ -248,17 +355,26 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   if (computedMeta && typeof computedMeta === "object") computedMeta._briefingCheckpointId = identity.id;
   await store.save(checkpoint);
 
-  const tpl = resolveTemplatePromptForMode(plugin, mode, true);
+  let generalSourceLanguage: ReturnType<typeof detectGeneralSourceLanguage> = "other";
+  let generalSourceLanguageInstruction = "";
+  let generalCoverageInstruction = "";
+  if (mode === "general") {
+    const sourceText = list.map((segment) => String(segment.text || "")).join("\n");
+    generalSourceLanguage = detectGeneralSourceLanguage(sourceText);
+    generalSourceLanguageInstruction = buildGeneralSourceLanguageInstruction(sourceText);
+    generalCoverageInstruction = buildGeneralSegmentCoverageInstruction(list.length, generalSourceLanguage);
+  }
+  const tpl = resolveTemplatePromptForMode(plugin, mode, true, generalSourceLanguage);
   let modeGuidance = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel)
     .replace("{{TRANSCRIPT}}", "（原始转写会按时间分部提供，请只执行模板规则，不要补写占位内容。）")
     .replace("{{STRUCTURE_INSTRUCTION}}", "");
   modeGuidance = applyRepolishPreferenceInstruction(modeGuidance, repolishOptions, plugin.settings);
-  modeGuidance = applyBriefingLanguageInstruction(modeGuidance, plugin.settings);
+  if (mode !== "general") modeGuidance = applyBriefingLanguageInstruction(modeGuidance, plugin.settings);
   const adaptiveLength = buildAdaptiveBriefingLengthInstruction(mode, {
     durationMs: getSegmentsDurationMs(list) || getSessionMetaDurationMs(computedMeta),
     transcriptChars: fullJoined.length,
     segmentCount: list.length,
-  });
+  }, generalSourceLanguage);
   if (adaptiveLength) modeGuidance = `${adaptiveLength}\n\n---\n\n${modeGuidance}`;
   modeGuidance = truncateForLlmPrompt(modeGuidance, 12000);
   const fidelityInput = {
@@ -278,11 +394,17 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   }
 
   const peopleContext = await buildPeopleContextForLlm(plugin);
+  const coveragePeopleNames = mode === "general" && list.length >= 2
+    ? getPeopleNameHotwordTerms(await loadPeopleDirectory(plugin))
+    : [];
   const metaPrefix = buildSessionMetaPrefix(computedMeta, mode);
   const meetingWorkbenchPrompt = buildMeetingWorkbenchPrompt(computedMeta && computedMeta.meetingWorkbench);
-  const system = mode === "synthesis" && partPlans.length > 1
+  const baseSystem = mode === "synthesis" && partPlans.length > 1
     ? "你是综合纪要的议题证据编辑。请从当前内部窗口提取并归并可核验的议题材料，供下一阶段统一成文；不要把窗口写成独立会议。"
-    : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
+    : mode === "general"
+      ? generalSourceLanguage !== "zh" ? GENERAL_OTHER_LANGUAGE_PROMPTS.part : GENERAL_BRIEFING_SYSTEM_PROMPTS.part
+      : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
+  const system = baseSystem;
   for (const plan of partPlans) {
     const part = checkpoint.parts[plan.index];
     if (part && part.status === "complete" && String(part.text || "").trim()) continue;
@@ -296,8 +418,10 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     const start = formatElapsed(plan.startOffsetMs);
     const end = formatElapsed(plan.endOffsetMs);
     let fidelity = assessBriefingPartFidelity(plan.chars, "", fidelityInput);
-    const fidelityContract = buildBriefingFidelityContract(fidelity, fidelityPolicy.profile, plan.segments.length, mode);
-    const currentPartGuidance = partModeGuidance;
+    const fidelityContract = buildBriefingFidelityContract(fidelity, fidelityPolicy.profile, plan.segments.length, mode, generalSourceLanguage);
+    const currentPartGuidance = mode === "general"
+      ? [partModeGuidance, buildGeneralSegmentCoverageInstruction(plan.segments.length, generalSourceLanguage)].filter(Boolean).join("\n\n")
+      : partModeGuidance;
     const allowedIds = new Set(plan.segments.map((segment) => segment.utteranceId).filter(Boolean));
     const allowed = [...allowedIds].map((id) => knowledgeInput.allowedById.get(id)).filter(Boolean);
     const knowledgeContext = allowed.length
@@ -311,11 +435,12 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
       }
       : undefined;
     const groundingSource = stripUtterancePromptMarkers(joinedChunk);
-    let prompt = buildChunkMergePrompt(joinedChunk, plan.index + 1, partPlans.length, `${start}–${end}`, checkpoint.topicMap, currentPartGuidance, fidelityContract, mode, fidelityInput.detailLevel);
+    let prompt = buildChunkMergePrompt(joinedChunk, plan.index + 1, partPlans.length, `${start}–${end}`, checkpoint.topicMap, currentPartGuidance, fidelityContract, mode, fidelityInput.detailLevel, generalSourceLanguage);
     const speakerClause = buildKnownSpeakerClause(resolveKnownSpeakerLabels(joinedChunk, originalFrontmatter));
     const sharedContext = [peopleContext, metaPrefix, meetingWorkbenchPrompt, speakerClause].filter(Boolean).join("\n\n---\n\n");
     if (sharedContext) prompt = sharedContext + "\n\n---\n\n" + prompt;
     if (knowledgeContext) prompt = `${prompt}\n\n${buildKnowledgeProtocolInstruction()}`;
+    if (mode === "general") prompt = `${prompt}\n\n${generalSourceLanguageInstruction}`;
     const requestedPartTokens = Math.max(8192, Math.ceil(plan.chars * 1.2), Math.ceil(fidelity.targetOutputChars * 1.5));
     const partMaxTokens = Number(ceiling) > 0 ? Math.min(Math.max(2048, Number(ceiling)), requestedPartTokens) : requestedPartTokens;
 
@@ -396,8 +521,8 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             plugin,
             "你是纪要保真编辑。你的任务是对照原始转写补回被摘要掉的信息，并返回完整替换稿；不得用空话凑长度，也不得编造原文没有的内容。",
             knowledgeContext
-              ? `${buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract)}\n\n${buildKnowledgeProtocolInstruction()}`
-              : buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract),
+              ? `${buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract, mode)}\n\n${buildKnowledgeProtocolInstruction()}`
+              : buildBriefingPartExpansionPrompt(joinedChunk, parsed.body, `${start}–${end}`, fidelityContract, groundingContract, mode),
             Object.assign(
               { stream: true, thinkingMode: "fast", payload: { max_tokens: partMaxTokens } },
               createBriefingLlmActivityOptions(plugin, computedMeta, {
@@ -556,18 +681,29 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
         segmentCount: list.length,
       }, plugin.settings, Number(ceiling) || 0);
       try {
-        const consolidationPrompt = buildSynthesisConsolidationPrompt({
-          topicMap: checkpoint.topicMap,
-          parts: synthesisParts,
-          modeGuidance,
-          detailLevel: fidelityInput.detailLevel,
-          duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
-          transcriptChars: fullJoined.length,
-        });
+        const consolidationPrompt = mode === "general"
+          ? buildGeneralConsolidationPrompt({
+            topicMap: checkpoint.topicMap,
+            parts: synthesisParts,
+            modeGuidance: [modeGuidance, generalCoverageInstruction].filter(Boolean).join("\n\n"),
+            duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
+            transcriptChars: fullJoined.length,
+            sourceLanguage: generalSourceLanguage,
+          })
+          : buildSynthesisConsolidationPrompt({
+            topicMap: checkpoint.topicMap,
+            parts: synthesisParts,
+            modeGuidance,
+            detailLevel: fidelityInput.detailLevel,
+            duration: computedMeta && computedMeta.duration || formatElapsed(durationMs),
+            transcriptChars: fullJoined.length,
+          });
         const consolidation = await callBriefingMergeLlm(
           plugin,
-          "你是综合纪要的总编辑。请把同一场会议的内部议题材料归并为一篇结构清晰、证据充分、以事情为中心的最终纪要。",
-          consolidationPrompt,
+          mode === "general"
+            ? generalSourceLanguage !== "zh" ? GENERAL_OTHER_LANGUAGE_PROMPTS.consolidation : GENERAL_BRIEFING_SYSTEM_PROMPTS.consolidation
+            : "你是综合纪要的总编辑。请把同一场会议的内部议题材料归并为一篇结构清晰、证据充分、以事情为中心的最终纪要。",
+          mode === "general" ? `${consolidationPrompt}\n\n${generalSourceLanguageInstruction}` : consolidationPrompt,
           Object.assign(
             { stream: true, thinkingMode: "fast", payload: { max_tokens: consolidationMaxTokens } },
             createBriefingLlmActivityOptions(plugin, computedMeta, {
@@ -577,7 +713,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
               progress: 88,
             }),
           ),
-          { purpose: "briefing-synthesis-consolidation", mode, jobId: identity.id, partTotal: partPlans.length, transcriptChars: fullJoined.length },
+          { purpose: mode === "general" ? "briefing-general-consolidation" : "briefing-synthesis-consolidation", mode, jobId: identity.id, partTotal: partPlans.length, transcriptChars: fullJoined.length },
         );
         const parsed = parseBriefingPartResponse(consolidation.text);
         const body = normalizeBriefingPartBody(parsed.body, { fragmentMode: false });
@@ -622,6 +758,37 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     checkpoint.consolidationStatus = "complete";
     checkpoint.consolidationBody = finalVisibleBody;
     checkpoint.consolidationFinishReason = "not-needed";
+  }
+  if (mode === "general" && list.length >= 2 && !checkpoint.coverageRepairAttempted) {
+    const sourceText = list.map((segment) => String(segment.text || "")).join("\n");
+    const sourceLanguageInstruction = buildGeneralSourceLanguageInstruction(sourceText);
+    const coverage = assessBriefingSegmentCoverage(list, finalVisibleBody, coveragePeopleNames);
+    if (coverage.missingSegments.length) {
+      checkpoint.coverageRepairAttempted = true;
+      checkpoint.consolidationBody = finalVisibleBody;
+      await store.save(checkpoint);
+      const repair = await repairGeneralSegmentCoverage(plugin, {
+        sourceSegments: list,
+        initialBody: finalVisibleBody,
+        missingSegments: coverage.missingSegments,
+        knownPeople: coveragePeopleNames,
+        languageInstruction: sourceLanguageInstruction,
+        sourceLanguage: generalSourceLanguage,
+        jobId: identity.id,
+        partTotal: partPlans.length,
+        durationMs: getSegmentsDurationMs(list) || getSessionMetaDurationMs(computedMeta),
+        computedMeta,
+        outputCeiling: Number(ceiling) || 0,
+      });
+      checkpoint.consolidationUsage = mergeBriefingUsage(checkpoint.consolidationUsage, repair.usage);
+      if (repair.repaired) {
+        finalVisibleBody = repair.body;
+        consolidatedPeople = mergeUniqueStrings(consolidatedPeople, repair.people);
+        consolidatedTags = mergeUniqueStrings(consolidatedTags, repair.tags);
+      }
+      checkpoint.consolidationBody = finalVisibleBody;
+      await store.save(checkpoint);
+    }
   }
   let people = mergeUniqueStrings([], checkpoint.parts.flatMap(part => part.people || []).concat(consolidatedPeople));
   let tags = mergeUniqueStrings([], checkpoint.parts.flatMap(part => part.tags || []).concat(consolidatedTags)).filter(tag => tag && !isNamespaceTag(tag)).slice(0, 9);
@@ -687,7 +854,8 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     auditFinishReason: checkpoint.auditFinishReason,
     auditUsage: checkpoint.auditUsage,
   });
-  const polished = postProcessBriefingOutput(checkpoint.assembledBody, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "");
+  const sourceText = list.map((segment) => String(segment.text || "")).join("\n");
+  const polished = postProcessBriefingOutput(checkpoint.assembledBody, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", sourceText);
   const sedimentObjects = mergeBriefingSedimentObjects(checkpoint.parts);
   const bodyWithSediment = sedimentObjects ? appendSedimentPreExtractionBlock(polished, sedimentObjects) : polished;
   return appendKnowledgeSnapshot(bodyWithSediment, checkpoint.assembledKnowledge);
@@ -733,20 +901,23 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
     );
     if (pipelined != null) return pipelined;
   }
-  const tpl = resolveTemplatePromptForMode(plugin, mode, true);
-  const sys = "你是一位专业的文字编辑助手，擅长把分段录音转写合并为连续、干净、忠实原意、结构清晰的 Markdown 文档。";
+  const sourceText = sourceSegments.map((segment) => String(segment && segment.text || "")).join("\n");
+  const sourceLanguage = mode === "general" ? detectGeneralSourceLanguage(sourceText) : "other";
+  const generalSourceLanguageInstruction = mode === "general" ? buildGeneralSourceLanguageInstruction(sourceText) : "";
+  const tpl = resolveTemplatePromptForMode(plugin, mode, true, sourceLanguage);
+  let sys = mode === "general" && sourceLanguage !== "zh"
+    ? GENERAL_OTHER_LANGUAGE_PROMPTS.consolidation
+    : "你是一位专业的文字编辑助手，擅长把分段录音转写合并为连续、干净、忠实原意、结构清晰的 Markdown 文档。";
   let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", joined);
   userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
-  userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
+  if (mode !== "general") userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
   userPrompt = userPrompt.replace("{{STRUCTURE_INSTRUCTION}}", "");
-  const adaptiveLength = buildAdaptiveBriefingLengthInstruction(mode, {
-    durationMs: sessionMeta && sessionMeta.source === "text-import"
-      ? getSessionMetaDurationMs(sessionMeta)
-      : (getSegmentsDurationMs(segments) || getSessionMetaDurationMs(sessionMeta)),
-    transcriptChars: joined.length,
-    segmentCount: segments.length,
-  });
-  if (adaptiveLength) userPrompt = adaptiveLength + "\n\n---\n\n" + userPrompt;
+  if (mode === "general") {
+    userPrompt = [
+      buildGeneralSegmentCoverageInstruction(sourceSegments.filter((segment) => String(segment && segment.text || "").trim()).length, sourceLanguage),
+      userPrompt,
+    ].filter(Boolean).join("\n\n");
+  }
   // 多声道分离出的说话人是既定事实：注入硬约束，覆盖各模式里「弱化/不强制标注说话人」的规则。
   const knownSpeakerClause = buildKnownSpeakerClause(
     resolveKnownSpeakerLabels(joined, originalFrontmatter),
@@ -757,7 +928,12 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
   const meetingWorkbenchPrompt = buildMeetingWorkbenchPrompt(computedMeta && computedMeta.meetingWorkbench);
   if (meetingWorkbenchPrompt) userPrompt = meetingWorkbenchPrompt + "\n\n---\n\n" + userPrompt;
   const peopleContext = await buildPeopleContextForLlm(plugin);
+  const coverageSegments = sourceSegments.filter((segment) => segment && String(segment.text || "").trim());
+  const coveragePeopleNames = mode === "general" && coverageSegments.length >= 2
+    ? getPeopleNameHotwordTerms(await loadPeopleDirectory(plugin))
+    : [];
   if (peopleContext) userPrompt = peopleContext + "\n\n---\n\n" + userPrompt;
+  if (mode === "general") userPrompt = `${userPrompt}\n\n${generalSourceLanguageInstruction}`;
   // 流式：merge 是最长、最贵、跑一次的调用。流式 + 空闲超时确保服务端只要在持续输出就不会被
   // 客户端总超时 abort，避免"扣了钱却因超时拿不到结果"的浪费（符合总纲：不因工程缺陷浪费）。
   let mergeResult;
@@ -799,16 +975,54 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
       segmentCount: segments.length,
       transcriptChars: joined.length,
     });
-    const fallbackOutput = postProcessBriefingOutput(fallback, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), warning);
+    const sourceText = sourceSegments.map((segment) => String(segment && segment.text || "")).join("\n");
+    const fallbackOutput = postProcessBriefingOutput(fallback, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), warning, sourceText);
     return appendKnowledgeSnapshot(fallbackOutput, createUnavailableSessionKnowledge(sourceSegments, preSummarized ? "source-presummarized" : "missing-block"));
   }
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(raw);
-  const auditedOutput = appendEntityEvidenceWarning(sedimentPreExtraction.cleaned, joined);
+  let outputForPostProcess = sedimentPreExtraction.cleaned;
+  if (mode === "general" && coverageSegments.length >= 2) {
+    const parsedInitial = parseBriefingPartResponse(outputForPostProcess);
+    const initialBody = parsedInitial.body || outputForPostProcess;
+    const coverageSourceText = coverageSegments.map((segment) => String(segment.text || "")).join("\n");
+    const coverage = assessBriefingSegmentCoverage(coverageSegments, initialBody, coveragePeopleNames);
+    if (coverage.missingSegments.length) {
+      const coverageIdentity = createBriefingJobId({
+        segments: coverageSegments,
+        mode,
+        model: String(plugin.settings.llmModel || ""),
+        optionsKey: buildBriefingPipelineOptionsKey(plugin, mode, repolishOptions),
+      });
+      const repair = await repairGeneralSegmentCoverage(plugin, {
+        sourceSegments: coverageSegments,
+        initialBody,
+        missingSegments: coverage.missingSegments,
+        knownPeople: coveragePeopleNames,
+        languageInstruction: buildGeneralSourceLanguageInstruction(coverageSourceText),
+        sourceLanguage: detectGeneralSourceLanguage(coverageSourceText),
+        jobId: coverageIdentity.id,
+        partTotal: coverageSegments.length,
+        durationMs: getSegmentsDurationMs(coverageSegments) || getSessionMetaDurationMs(computedMeta),
+        computedMeta,
+        outputCeiling: runtimeCeiling,
+      });
+      if (repair.repaired) {
+        const people = mergeUniqueStrings([], (parsedInitial.people || []).concat(repair.people));
+        const tags = mergeUniqueStrings([], (parsedInitial.tags || []).concat(repair.tags));
+        outputForPostProcess = [
+          repair.body,
+          people.length ? `<!-- ${NS_TAG}-people: ${people.join(", ")} -->` : "",
+          tags.length ? `<!-- ${NS_TAG}-tags: ${tags.join(", ")} -->` : "",
+        ].filter(Boolean).join("\n\n");
+      }
+    }
+  }
+  const auditedOutput = appendEntityEvidenceWarning(outputForPostProcess, joined);
   // 截断告警 + 文本导入预压缩告警合并成顶部 notice（都属"纪要可能不完整/有损"，一起提示）。
   const topNotices = [];
   if (truncated) topNotices.push(BRIEFING_TRUNCATION_WARNING);
   if (preSummarized) topNotices.push(BRIEFING_PRESUMMARY_NOTICE);
-  const polished = postProcessBriefingOutput(auditedOutput, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), topNotices.join("\n\n"));
+  const polished = postProcessBriefingOutput(auditedOutput, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), topNotices.join("\n\n"), sourceText);
   const bodyWithSediment = sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
   return appendKnowledgeSnapshot(bodyWithSediment, createUnavailableSessionKnowledge(sourceSegments, preSummarized ? "source-presummarized" : "missing-block"));
 }
