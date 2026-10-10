@@ -35,7 +35,9 @@ export interface RelatedNoteMatch {
   score: number;
   matchedTerms: string[];
   reasons: RelatedNoteReason[];
-  direction: "forward" | "reverse";
+  direction: "mutual" | "forward-only-link" | "reverse-only-link";
+  forwardScore: number;
+  reverseScore: number;
 }
 
 export interface RelatedNoteCommonTerm {
@@ -44,9 +46,9 @@ export interface RelatedNoteCommonTerm {
 }
 
 export const RELATED_NOTES_DEFAULT_LIMIT = 8;
-// The 25-document read-only corpus retained reciprocal candidates at 0.05; the relative cutoff removes weaker tails.
 export const RELATED_NOTES_DEFAULT_MIN_SCORE = 0.05;
-export const RELATED_NOTES_DEFAULT_RELATIVE_CUTOFF = 0.4;
+export const MIN_DIRECTIONAL_SCORE = 0.05;
+export const RELATED_NOTES_DEFAULT_RELATIVE_CUTOFF = 0.45;
 export const RELATED_NOTES_COMMON_TERM_RATIO = 0.35;
 export const RELATED_NOTES_COMMON_TERM_MIN_CORPUS = 20;
 export const RELATED_NOTE_MIN_BODY_CHARS = 80;
@@ -235,7 +237,8 @@ function indexRelatedNote(
 ): IndexedRelatedNote {
   const frequencies = fieldFrequencies(fields);
   const terms = new Set(FIELD_NAMES.flatMap((field) => fields[field]));
-  const queryTerms = unique(tokenize(buildQueryFromDocument(doc)));
+  const bodyQueryFallback = doc.precision === "body-only" ? doc.bodyExcerpt.slice(0, 320) : "";
+  const queryTerms = unique(tokenize(`${buildQueryFromDocument(doc)} ${bodyQueryFallback}`));
   const scoredQueryTerms = queryTerms.filter((term) => !common.has(term));
   const queryScale = doc.precision === "full" ? 1 : 0.65;
   const selfScore = scoreTerms(scoredQueryTerms, fields, frequencies, documentFrequencies, documentCount, averageLengths) * queryScale;
@@ -317,7 +320,7 @@ function linkFeatures(current: RelatedNoteDocument, candidate: RelatedNoteDocume
   return { score, reasons };
 }
 
-/** Rank corpus notes using the stronger normalized score from either direction. */
+/** Rank corpus notes by symmetric reciprocal relevance, with explicit direct-link exceptions. */
 export function findRelatedNotes(
   corpus: RelatedNoteDocument[],
   current: RelatedNoteDocument,
@@ -371,16 +374,27 @@ export function findRelatedNotes(
     const reverseScore = candidateProfile.selfScore > 0
       ? Math.min(1, (reverseLexicalScore + links.score) / candidateProfile.selfScore)
       : 0;
-    const direction = reverseScore > forwardScore ? "reverse" : "forward";
-    const score = direction === "reverse" ? reverseScore : forwardScore;
+    const hasLinkException = links.reasons.includes("direct-link") || links.reasons.includes("shared-unresolved");
+    const mutuallyRelevant = forwardScore >= MIN_DIRECTIONAL_SCORE && reverseScore >= MIN_DIRECTIONAL_SCORE;
+    if (!mutuallyRelevant && !hasLinkException) continue;
+    let score: number;
+    if (forwardScore > 0 && reverseScore > 0) score = Math.sqrt(forwardScore * reverseScore);
+    else if (hasLinkException) {
+      const positiveSelfScores = [currentProfile.selfScore, candidateProfile.selfScore].filter((value) => value > 0);
+      const denominator = positiveSelfScores.length ? Math.min(...positiveSelfScores) : links.score;
+      const linkFallback = links.score > 0 ? Math.min(1, links.score / denominator) : 0;
+      score = Math.max(forwardScore, reverseScore, linkFallback);
+    } else continue;
     if (!(score > 0)) continue;
-    const matchedTermsForDirection = direction === "reverse" ? reverseMatchedTerms : forwardMatchedTerms;
-    const scoredTermsForDirection = direction === "reverse" ? reverseScoredTerms : forwardScoredTerms;
-    const matchedTerms = matchedTermsForDirection.map((term) => common.has(term) ? `common:${term}` : term);
+    const direction = mutuallyRelevant
+      ? "mutual"
+      : forwardScore >= reverseScore ? "forward-only-link" : "reverse-only-link";
+    const matchedTerms = unique([...forwardMatchedTerms, ...reverseMatchedTerms])
+      .map((term) => common.has(term) ? `common:${term}` : term);
     const reasons = [...links.reasons];
-    if (scoredTermsForDirection.length) reasons.push("lexical-overlap");
+    if (forwardScoredTerms.length || reverseScoredTerms.length) reasons.push("lexical-overlap");
     else if (links.reasons.length) reasons.push("link-only");
-    results.push({ path: candidate.path, score, matchedTerms, reasons, direction });
+    results.push({ path: candidate.path, score, forwardScore, reverseScore, matchedTerms, reasons: unique(reasons), direction });
   }
   if (!results.length) return [];
   const topScore = Math.max(...results.map(({ score }) => score));

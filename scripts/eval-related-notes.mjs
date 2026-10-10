@@ -232,10 +232,10 @@ async function evaluateVault(vault) {
   if (!tooShortPaths.length) process.stdout.write("- (none)\n");
   writeCommonTermsTable(core, corpus);
   for (const { current, results } of candidateResults) {
-    process.stdout.write(`\n### ${current.title} (${current.path})\n| Candidate | Score | Direction | Matched terms | Reasons |\n|---|---:|---|---|---|\n`);
+    process.stdout.write(`\n### ${current.title} (${current.path})\n| Candidate | Score | Forward | Reverse | Direction | Matched terms | Reasons |\n|---|---:|---:|---:|---|---|---|\n`);
     for (const result of results) {
       const title = corpus.find((note) => note.path === result.path)?.title || result.path;
-      process.stdout.write(`| ${title.replace(/\|/g, "\\|")} | ${result.score.toFixed(3)} | ${result.direction} | ${result.matchedTerms.join(", ")} | ${result.reasons.join(", ")} |\n`);
+      process.stdout.write(`| ${title.replace(/\|/g, "\\|")} | ${result.score.toFixed(3)} | ${result.forwardScore.toFixed(3)} | ${result.reverseScore.toFixed(3)} | ${result.direction} | ${result.matchedTerms.join(", ")} | ${result.reasons.join(", ")} |\n`);
     }
   }
   } finally { await cleanup(); }

@@ -34,10 +34,10 @@ describe("related note ranking core", () => {
   });
 
   it("uses direct, shared, unresolved, and co-linked graph evidence", () => {
-    const current = doc("current.md", { title: "current subject", outLinks: ["target.md", "shared.md"], inLinks: ["index.md"], inLinkOutDegrees: { "index.md": 2 }, unresolvedTargets: ["Missing topic"] });
+    const current = doc("current.md", { title: "topic current", outLinks: ["target.md", "shared.md"], inLinks: ["index.md"], inLinkOutDegrees: { "index.md": 2 }, unresolvedTargets: ["Missing topic"] });
     const direct = doc("direct.md", { outLinks: ["current.md"] });
     const shared = doc("shared-note.md", { outLinks: ["shared.md"], unresolvedTargets: ["Missing topic"] });
-    const co = doc("co.md", { inLinks: ["index.md"], inLinkOutDegrees: { "index.md": 2 } });
+    const co = doc("co.md", { title: "topic co", inLinks: ["index.md"], inLinkOutDegrees: { "index.md": 2 } });
     const results = findRelatedNotes([direct, shared, co], current, { minScore: 0, relativeCutoff: 0 });
     expect(results.find((item) => item.path === "direct.md")?.reasons).toContain("direct-link");
     expect(results.find((item) => item.path === "shared-note.md")?.reasons).toContain("shared-target");
@@ -46,15 +46,15 @@ describe("related note ranking core", () => {
   });
   it("counts duplicate links between a pair once", () => {
     const current = doc("current.md", { title: "topic query", outLinks: ["target.md", "target.md"] });
-    const duplicated = doc("duplicated.md", { outLinks: ["target.md", "target.md"] });
-    const single = doc("single.md", { outLinks: ["target.md"] });
+    const duplicated = doc("duplicated.md", { title: "topic query", outLinks: ["target.md", "target.md"] });
+    const single = doc("single.md", { title: "topic query", outLinks: ["target.md"] });
     const results = findRelatedNotes([current, duplicated, single], current, { minScore: 0, relativeCutoff: 0 });
     expect(results.find((item) => item.path === "duplicated.md")?.score).toBe(results.find((item) => item.path === "single.md")?.score);
   });
   it("downweights known generated person and todo-card targets versus user links", () => {
     const current = doc("current.md", { title: "topic query", outLinks: ["QnALog/People/Ada.md", "topic.md"], generatedOutLinks: ["QnALog/People/Ada.md"] });
-    const generated = doc("generated.md", { outLinks: ["QnALog/People/Ada.md"], generatedOutLinks: ["QnALog/People/Ada.md"] });
-    const handwritten = doc("handwritten.md", { outLinks: ["topic.md"] });
+    const generated = doc("generated.md", { title: "topic", outLinks: ["QnALog/People/Ada.md"], generatedOutLinks: ["QnALog/People/Ada.md"] });
+    const handwritten = doc("handwritten.md", { title: "topic", outLinks: ["topic.md"] });
     const results = findRelatedNotes([generated, handwritten], current, { minScore: 0, relativeCutoff: 0 });
     expect(results.find((item) => item.path === "generated.md")?.score).toBeLessThan(results.find((item) => item.path === "handwritten.md")?.score ?? 0);
   });
@@ -98,7 +98,7 @@ describe("related note ranking core", () => {
     expect(results.map(({ path }) => path)).toEqual(["strong.md"]);
     expect(findRelatedNotes([current, weak], current, { minScore: 0.9 })).toEqual([]);
   });
-  it("keeps a short note's long-note pair reciprocal by using the stronger direction", () => {
+  it("uses symmetric geometric relevance for short and long notes", () => {
     const short = doc("short.md", { title: "orchid bloom" });
     const long = doc("long.md", {
       title: "orchid bloom technical analysis",
@@ -109,17 +109,43 @@ describe("related note ranking core", () => {
     const longMatch = findRelatedNotes(corpus, long).find(({ path }) => path === short.path);
     expect(Boolean(shortMatch)).toBe(Boolean(longMatch));
     expect(shortMatch?.score).toBe(longMatch?.score);
-    expect(shortMatch?.direction).toBe("forward");
-    expect(longMatch?.direction).toBe("reverse");
+    expect(shortMatch?.direction).toBe("mutual");
+    expect(longMatch?.direction).toBe("mutual");
+    expect(shortMatch?.forwardScore).toBe(longMatch?.reverseScore);
+    expect(shortMatch?.reverseScore).toBe(longMatch?.forwardScore);
     expect(findRelatedNotes(corpus, short, { minScore: shortMatch?.score || 0, relativeCutoff: 0 })).toContainEqual(shortMatch);
     expect(findRelatedNotes(corpus, long, { minScore: (longMatch?.score || 0) + 0.0001, relativeCutoff: 0 })).toEqual([]);
   });
+  it("filters broad hub notes beneath a precise matching candidate", () => {
+    const hub = doc("hub.md", {
+      title: "field notes",
+      summary: "orchid meteorology taxation botany music astronomy chemistry geology linguistics economics robotics architecture agriculture philosophy statistics biology",
+    });
+    const shortNotes = ["orchid", "meteorology", "taxation", "botany", "music"].map((term, index) =>
+      doc(`short-${index}.md`, { title: term }));
+    const exactMatches = shortNotes.map((short, index) => doc(`match-${index}.md`, { title: short.title }));
+    const corpus = [hub, ...shortNotes, ...exactMatches];
+    for (const short of shortNotes) {
+      expect(findRelatedNotes(corpus, short, { relativeCutoff: 0 }).some(({ path }) => path === hub.path)).toBe(true);
+      expect(findRelatedNotes(corpus, short).some(({ path }) => path === hub.path)).toBe(false);
+    }
+  });
+  it("allows a one-direction direct link when the source has no lexical query", () => {
+    const source = doc("source.md", { title: "", outLinks: ["target.md"] });
+    const target = doc("target.md", { title: "legal training" });
+    const match = findRelatedNotes([source, target], source).find(({ path }) => path === target.path);
+    expect(match?.reasons).toEqual(expect.arrayContaining(["direct-link", "link-only"]));
+    expect(match?.direction).toBe("reverse-only-link");
+    expect(match?.forwardScore).toBe(0);
+    expect(match?.reverseScore).toBeGreaterThan(0);
+  });
   it("allows the relative-cutoff boundary to drop a reciprocal edge against a much stronger neighbor", () => {
     const short = doc("weather-topic.md", { title: "meteorology" });
-    const long = doc("long-weather.md", { title: "weather metrics", bodyExcerpt: "meteorology" });
-    const strongest = doc("strongest.md", { title: "weather metrics" });
+    const long = doc("long-weather.md", { title: "meteorology weather metrics", bodyExcerpt: "meteorology" });
+    const strongest = doc("strongest.md", { title: "meteorology weather metrics" });
     const corpus = [short, long, strongest];
     expect(findRelatedNotes(corpus, short).some(({ path }) => path === long.path)).toBe(true);
+    // The mutual score is symmetric; this query-local relative cutoff can still suppress one edge near the boundary.
     expect(findRelatedNotes(corpus, long).some(({ path }) => path === short.path)).toBe(false);
   });
 
