@@ -64,4 +64,3 @@ export function isTopicSourceEligible(input: { type: unknown; mergedInto: unknow
   return input.underMinutesRoot && !isDerivedVersionType(input.type) && input.type !== NS_TYPE_TOPIC
     && !input.mergedInto && !input.hasMergeMarker;
 }
-
