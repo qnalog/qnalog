@@ -155,6 +155,8 @@ export const NS_FM = {
   decisionMaker: "qnalog_decision_maker",
   advisors: "qnalog_advisors",
   type: "qnalog_type",
+  sourceId: "qnalog_source_id",
+  variantKind: "qnalog_variant_kind",
   sourcePath: "qnalog_source_path",
   containsRaw: "qnalog_contains_raw",
   name: "qnalog_name",
@@ -191,6 +193,8 @@ const NS_FM_LEGACY_KEYS: Partial<Record<NamespaceFrontmatterField, readonly stri
   decisionMaker: ["decision_maker", "当事人"],
   advisors: ["advisors", "参谋"],
   type: ["type", "类型"],
+  sourceId: ["source_id"],
+  variantKind: ["variant_kind"],
   sourcePath: ["source_path"],
   containsRaw: ["contains_raw"],
   name: ["name", "姓名", "人员", "person"],
@@ -262,6 +266,11 @@ export function setNamespaceFrontmatter(
 /** frontmatter 类型值。 */
 export const NS_TYPE_DERIVED = "QnALog派生版本";
 export const NS_TYPE_VERSION_CACHE = "QnALog版本缓存";
+
+/** Frontmatter type values for generated link targets. */
+export const NS_TYPE_PERSON = "qnalog-person";
+export const NS_TYPE_PERSON_MERGED = "qnalog-person-merged";
+export const NS_TYPE_TODO_CARD = "qnalog-todo-card";
 
 /** `qnalog_type`（历史别名 `类型`）是否表示派生版本。 */
 export function isDerivedVersionType(value: unknown): boolean {
