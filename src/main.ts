@@ -90,7 +90,7 @@ import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } fro
 import { replaceActiveVersionBlock } from "./versions/active-version-block";
 import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
-import { getRecentNotes } from "./recent/recent-notes";
+import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
 import { qnalogConfirm } from "./ui/helpers";
 import { ImportService } from "./imports/import-service";
 import { ExternalInboxService } from "./audio/external-inbox-service";
@@ -299,7 +299,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.library = new LibraryViewService(this);
     this.noteIndex = new NoteIndexService(this);
     const topicsPort: TopicsServicePort = {
-      listNoteFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path, basename: file.basename, mtime: file.stat.mtime, ctime: file.stat.ctime })),
+      listNoteFiles: () => getMarkdownFilesUnderRecentRoots(this).map((file) => ({ path: file.path, basename: file.basename, mtime: file.stat.mtime, ctime: file.stat.ctime })),
       getMtime: (path) => {
         const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
         return file instanceof obsidian.TFile ? file.stat.mtime : null;
@@ -313,7 +313,7 @@ class QnALogPlugin extends obsidian.Plugin {
       getUnresolvedLinks: () => this.app.metadataCache.unresolvedLinks,
       now: () => Date.now(),
     };
-    this.topics = new TopicsService({ overviewCards: topicsPort }, ["QnALog"]);
+    this.topics = new TopicsService({ overviewCards: topicsPort, getRoots: () => getRecentNoteRoots(this) });
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
     const outlineHost = Object.assign(Object.create(null) as RealtimeOutlineHost, {

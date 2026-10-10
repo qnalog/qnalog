@@ -3,8 +3,8 @@ import { MODE_META, MODE_PREFIX_EN_TO_KEY, MODE_PREFIX_TO_KEY } from "../shared/
 import type { OverviewCard } from "./overview-card";
 import { normalizeTagKey } from "./overview-card";
 
-// Reviewer examples include related pairs scoring near 0.07; cohesion prevents weak chains from joining.
-export const TOPIC_SUGGESTION_EDGE_THRESHOLD = 0.07;
+// Reviewed pairs score around 0.07; the lower edge cutoff admits card-only score variation, while cohesion blocks chains.
+export const TOPIC_SUGGESTION_EDGE_THRESHOLD = 0.05;
 export const TOPIC_SUGGESTION_MIN_COHESION = 0.07;
 export const TOPIC_SUGGESTION_MAX_MEMBERS = 24;
 // The evaluation fixture's largest valid topic has 40 notes; a one-sided top-15 cut discarded reciprocal edges.
@@ -128,7 +128,7 @@ function makeBuildContext(cardsInput: readonly OverviewCard[]): TopicBuildContex
   return {
     cards,
     docs,
-    index: createRelatedNotesIndex(docs),
+    index: createRelatedNotesIndex(docs, { includeTagsInQuery: true }),
     byPath: new Map(cards.map((card) => [card.path, card])),
     edges: [],
     edgeScores: new Map(),
@@ -300,7 +300,7 @@ export async function suggestTopicsAsync(
   let result = work.next();
   while (!result.done) {
     options.signal?.throwIfAborted();
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
     options.signal?.throwIfAborted();
     result = work.next();
   }

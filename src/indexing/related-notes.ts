@@ -30,6 +30,10 @@ export interface RelatedNotesOptions {
   relativeCutoff?: number;
 }
 
+export interface RelatedNotesIndexOptions extends RelatedNotesOptions {
+  includeTagsInQuery?: boolean;
+}
+
 export interface RelatedNoteMatch {
   path: string;
   score: number;
@@ -121,9 +125,9 @@ export function tokenize(text: string): string[] {
 }
 
 /** Query fields follow the index card and frontmatter, not the source-body excerpt. */
-export function buildQueryFromDocument(doc: RelatedNoteDocument): string {
+export function buildQueryFromDocument(doc: RelatedNoteDocument, includeTags = false): string {
   const title = doc.title.replace(/\b\d{4}-\d{1,2}-\d{1,2}(?:\s+\d{3,4})?\b/g, " ");
-  return [title, ...doc.topics, ...doc.people, ...doc.decisions, doc.summary].filter(Boolean).join(" ").trim();
+  return [title, ...(includeTags ? doc.tags : []), ...doc.topics, ...doc.people, ...doc.decisions, doc.summary].filter(Boolean).join(" ").trim();
 }
 
 type FieldName = keyof typeof FIELD_BOOSTS;
@@ -234,11 +238,12 @@ function indexRelatedNote(
   documentFrequencies: Map<string, number>,
   documentCount: number,
   averageLengths: Record<FieldName, number>,
+  includeTagsInQuery: boolean,
 ): IndexedRelatedNote {
   const frequencies = fieldFrequencies(fields);
   const terms = new Set(FIELD_NAMES.flatMap((field) => fields[field]));
   const bodyQueryFallback = doc.precision === "body-only" ? doc.bodyExcerpt.slice(0, 320) : "";
-  const queryTerms = unique(tokenize(`${buildQueryFromDocument(doc)} ${bodyQueryFallback}`));
+  const queryTerms = unique(tokenize(`${buildQueryFromDocument(doc, includeTagsInQuery)} ${bodyQueryFallback}`));
   const scoredQueryTerms = queryTerms.filter((term) => !common.has(term));
   const queryScale = doc.precision === "full" ? 1 : 0.65;
   const selfScore = scoreTerms(scoredQueryTerms, fields, frequencies, documentFrequencies, documentCount, averageLengths) * queryScale;
@@ -350,14 +355,14 @@ function addToTermIndex(index: Map<string, Set<IndexedRelatedNote>>, term: strin
 }
 
 /** Build reusable lexical and graph indexes for repeated related-note queries. */
-export function createRelatedNotesIndex(corpus: RelatedNoteDocument[], defaultOptions: RelatedNotesOptions = {}): RelatedNotesIndex {
+export function createRelatedNotesIndex(corpus: RelatedNoteDocument[], defaultOptions: RelatedNotesIndexOptions = {}): RelatedNotesIndex {
   const docs = eligibleDocuments(corpus);
   const fieldsByDocument = docs.map(fieldTokens);
   const documentFrequenciesByTerm = documentFrequencies(fieldsByDocument);
   const common = new Set(commonTerms(fieldsByDocument, documentFrequenciesByTerm).map(({ term }) => term));
   const averageLengths = averageFieldLengths(fieldsByDocument);
   const indexedDocs = docs.map((doc, index) => indexRelatedNote(
-    doc, fieldsByDocument[index], common, documentFrequenciesByTerm, docs.length, averageLengths,
+    doc, fieldsByDocument[index], common, documentFrequenciesByTerm, docs.length, averageLengths, defaultOptions.includeTagsInQuery === true,
   ));
   const indexedByPath = new Map(indexedDocs.map((profile) => [profile.doc.path, profile]));
   const indexedByCanonicalPath = new Map(indexedDocs.map((profile) => [canonicalTarget(profile.doc.path), profile]));
@@ -384,7 +389,7 @@ export function createRelatedNotesIndex(corpus: RelatedNoteDocument[], defaultOp
       if (!current.hasIndexCard && current.bodyExcerpt.length < RELATED_NOTE_MIN_BODY_CHARS) return [];
 
       const currentProfile = indexedByPath.get(current.path) || indexRelatedNote(
-        current, fieldTokens(current), common, documentFrequenciesByTerm, docs.length, averageLengths,
+        current, fieldTokens(current), common, documentFrequenciesByTerm, docs.length, averageLengths, defaultOptions.includeTagsInQuery === true,
       );
       const candidateProfiles = new Set<IndexedRelatedNote>();
       for (const term of currentProfile.terms) {

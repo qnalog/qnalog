@@ -221,4 +221,14 @@ describe("related note ranking core", () => {
     expect(result[0].reasons).toEqual(expect.arrayContaining(["direct-link", "link-only"]));
     expect(result[0].direction).toBe("mutual");
   });
+  it("can include tag terms in topic queries without changing the default index behavior", () => {
+    const current = doc("current.md", { title: "orchid maintenance", tags: ["shared planning"] });
+    const candidate = doc("candidate.md", { title: "climate report", tags: ["shared planning"] });
+    const corpus = [candidate];
+    const defaults = createRelatedNotesIndex(corpus, { minScore: 0, relativeCutoff: 0 });
+    const topicIndex = createRelatedNotesIndex(corpus, { minScore: 0, relativeCutoff: 0, includeTagsInQuery: true });
+    expect(defaults.query(current)).toEqual([]);
+    expect(topicIndex.query(current).map((match) => match.path)).toEqual(["candidate.md"]);
+  });
+
 });
