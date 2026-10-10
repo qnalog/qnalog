@@ -263,6 +263,11 @@ export function setNamespaceFrontmatter(
 export const NS_TYPE_DERIVED = "QnALog派生版本";
 export const NS_TYPE_VERSION_CACHE = "QnALog版本缓存";
 
+/** Frontmatter type values for generated link targets. */
+export const NS_TYPE_PERSON = "qnalog-person";
+export const NS_TYPE_PERSON_MERGED = "qnalog-person-merged";
+export const NS_TYPE_TODO_CARD = "qnalog-todo-card";
+
 /** `qnalog_type`（历史别名 `类型`）是否表示派生版本。 */
 export function isDerivedVersionType(value: unknown): boolean {
   const text = typeof value === "string" ? value.trim() : "";
