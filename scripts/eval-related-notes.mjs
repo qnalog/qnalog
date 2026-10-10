@@ -13,13 +13,26 @@ function parseFrontmatter(markdown) {
   const block = /^---\s*\n([\s\S]*?)\n---/m.exec(markdown)?.[1] || "";
   const fields = {};
   for (const line of block.split("\n")) {
-    const match = /^([\w-]+):\s*(.*?)\s*$/.exec(line);
-    if (match) fields[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
+    const match = /^([^:\n]+):\s*(.*?)\s*$/.exec(line);
+    if (!match) continue;
+    const value = match[2].replace(/^['"]|['"]$/g, "");
+    fields[match[1]] = value === "false" ? false : value === "true" ? true : value;
   }
   return fields;
 }
-function parseDocument(notePath, markdown, mtime, minBodyChars) {
+function parseDocument(notePath, markdown, mtime, minBodyChars, namespace) {
   const frontmatter = parseFrontmatter(markdown);
+  const readFrontmatter = (field) => namespace.readNamespaceFrontmatter(frontmatter, field);
+  const type = readFrontmatter("type");
+  const sourcePath = readFrontmatter("sourcePath");
+  const sourceId = readFrontmatter("sourceId");
+  const containsRaw = readFrontmatter("containsRaw");
+  const variantKind = readFrontmatter("variantKind");
+  const derived = containsRaw === false || type === "QnALog派生版本" || /派生版本|版本缓存/.test(String(type || ""))
+    || (typeof sourcePath === "string" && Boolean(sourcePath.trim()))
+    || (typeof variantKind === "string" && Boolean(variantKind.trim()));
+  const legacyAliasDerived = derived && ["type", "sourcePath", "sourceId", "containsRaw", "variantKind"].some((field) =>
+    namespace.hasNamespaceFrontmatter(frontmatter, field) && !Object.hasOwn(frontmatter, namespace.NS_FM[field]));
   const indexBlock = /<!--\s*qnalog-note-index\s*-->\s*<details>[\s\S]*?```json\s*\n([\s\S]*?)\n```[\s\S]*?<!--\s*qnalog-note-index-end\s*-->/i.exec(markdown);
   let index = null;
   try { index = indexBlock ? JSON.parse(indexBlock[1]) : null; } catch { index = null; }
@@ -40,7 +53,7 @@ function parseDocument(notePath, markdown, mtime, minBodyChars) {
   const sessionId = /<!--\s*qnalog-session:\s*([^>\s]+)\s*-->/i.exec(markdown)?.[1];
   return {
     path: notePath,
-    sourceId: frontmatter.qnalog_source_id || frontmatter.source_id || sessionId || frontmatter.qnalog_source_path || notePath,
+    sourceId: typeof sourceId === "string" && sourceId.trim() ? sourceId.trim() : sessionId || sourcePath || notePath,
     title,
     timestamp: Number.isFinite(timeValue) ? timeValue : mtime,
     tags: list(frontmatter.tags), people: list(frontmatter.qnalog_people),
@@ -55,7 +68,8 @@ function parseDocument(notePath, markdown, mtime, minBodyChars) {
     hasIndexCard: Boolean(index),
     tooShort: !index && readableBody.length < minBodyChars,
     merge: /(?:·|\s)Merge\s*$/i.test(title) || /<!--\s*qnalog-merge[\s\S]*?qnalog-merge-end\s*-->/i.test(markdown),
-    derived: frontmatter.qnalog_contains_raw === "false" || /派生版本|版本缓存/.test(frontmatter.qnalog_type || "") || Boolean(frontmatter.qnalog_source_path?.trim()),
+    derived,
+    legacyAliasDerived,
   };
 }
 async function walk(root) {
@@ -81,8 +95,10 @@ async function readDefaultNotesRoot(vault) {
 async function loadCore() {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "qnalog-related-eval-"));
   const bundle = path.join(directory, "related-notes.mjs");
+  const namespaceBundle = path.join(directory, "namespace.mjs");
   await build({ entryPoints: [new URL("../src/indexing/related-notes.ts", import.meta.url).pathname], outfile: bundle, bundle: true, platform: "node", format: "esm", target: "node22" });
-  return { core: await import(bundle), cleanup: () => fs.rm(directory, { recursive: true, force: true }) };
+  await build({ entryPoints: [new URL("../src/shared/namespace.ts", import.meta.url).pathname], outfile: namespaceBundle, bundle: true, platform: "node", format: "esm", target: "node22" });
+  return { core: await import(bundle), namespace: await import(namespaceBundle), cleanup: () => fs.rm(directory, { recursive: true, force: true }) };
 }
 function metrics(core, source, groups, mode) {
   const corpus = source.map((note) => {
@@ -148,19 +164,19 @@ async function evaluateSynthetic(core) {
 }
 async function evaluateVault(vault) {
   if (path.resolve(vault) !== ALLOWED_VAULT) throw new Error(`Only the explicitly authorized read-only vault is allowed: ${ALLOWED_VAULT}`);
-  const { core, cleanup } = await loadCore();
+  const { core, namespace, cleanup } = await loadCore();
   try {
   const notesRoot = await readDefaultNotesRoot(vault);
   const startedAt = performance.now();
   const files = await walk(notesRoot);
   const corpus = [], excludedDerivedPaths = new Set(), excludedNoiseBasenames = new Set(), tooShortPaths = [];
-  let excludedDerived = 0, excludedMerge = 0, tooShort = 0, bodyOnly = 0, noiseLinks = 0, noOutgoing = 0;
+  let excludedDerived = 0, excludedDerivedLegacyAliases = 0, excludedMerge = 0, tooShort = 0, bodyOnly = 0, noiseLinks = 0, noOutgoing = 0;
   let audioNoiseLinks = 0, internalPathNoiseLinks = 0, selfLinks = 0, excludedNoteLinks = 0;
   for (const file of files) {
     const notePath = path.relative(vault, file).split(path.sep).join("/");
     const markdown = await fs.readFile(file, "utf8");
-    const note = parseDocument(notePath, markdown, (await fs.stat(file)).mtimeMs, core.RELATED_NOTE_MIN_BODY_CHARS);
-    if (note.derived) { excludedDerived++; excludedDerivedPaths.add(notePath); excludedNoiseBasenames.add(path.basename(notePath, ".md").toLocaleLowerCase()); continue; }
+    const note = parseDocument(notePath, markdown, (await fs.stat(file)).mtimeMs, core.RELATED_NOTE_MIN_BODY_CHARS, namespace);
+    if (note.derived) { excludedDerived++; if (note.legacyAliasDerived) excludedDerivedLegacyAliases++; excludedDerivedPaths.add(notePath); excludedNoiseBasenames.add(path.basename(notePath, ".md").toLocaleLowerCase()); continue; }
     if (note.merge) { excludedMerge++; excludedNoiseBasenames.add(path.basename(notePath, ".md").toLocaleLowerCase()); continue; }
     if (note.tooShort) { tooShort++; tooShortPaths.push(notePath); excludedNoiseBasenames.add(path.basename(notePath, ".md").toLocaleLowerCase()); continue; }
     if (note.precision === "body-only") bodyOnly++;
@@ -201,12 +217,14 @@ async function evaluateVault(vault) {
   const indexBuildMs = performance.now() - startedAt;
   const sharedUnresolvedTargets = new Set(corpus.flatMap((note) => note.unresolvedTargets).filter((target) => corpus.filter((note) => note.unresolvedTargets.includes(target)).length > 1)).size;
   const candidateCounts = Array.from({ length: 6 }, () => 0);
+  const queryStartedAt = performance.now();
   const candidateResults = corpus.map((current) => {
     const results = core.findRelatedNotes(corpus, current, { limit: 5 });
     candidateCounts[results.length]++;
     return { current, results };
   });
-  process.stdout.write(`Vault root: ${path.relative(vault, notesRoot)}\nCorpus: ${corpus.length}; body-only: ${bodyOnly}; derived excluded: ${excludedDerived}; merge excluded: ${excludedMerge}; too-short: ${tooShort}; parsed noisy wiki-link occurrences: ${noiseLinks} (audio: ${audioNoiseLinks}, internal path: ${internalPathNoiseLinks}, self: ${selfLinks}, excluded derived/merge/short: ${excludedNoteLinks}); no outgoing links: ${noOutgoing}; shared unresolved targets: ${sharedUnresolvedTargets}; index build: ${indexBuildMs.toFixed(1)} ms\n`);
+  const queryMs = performance.now() - queryStartedAt;
+  process.stdout.write(`Vault root: ${path.relative(vault, notesRoot)}\nCorpus: ${corpus.length}; body-only: ${bodyOnly}; derived excluded: ${excludedDerived} (legacy aliases: ${excludedDerivedLegacyAliases}); merge excluded: ${excludedMerge}; too-short: ${tooShort}; parsed noisy wiki-link occurrences: ${noiseLinks} (audio: ${audioNoiseLinks}, internal path: ${internalPathNoiseLinks}, self: ${selfLinks}, excluded derived/merge/short: ${excludedNoteLinks}); no outgoing links: ${noOutgoing}; shared unresolved targets: ${sharedUnresolvedTargets}; index build: ${indexBuildMs.toFixed(1)} ms; all-note query: ${queryMs.toFixed(1)} ms\n`);
   process.stdout.write("\n### Candidate count distribution\n| Candidates retained | Notes |\n|---:|---:|\n");
   for (let count = 0; count <= 5; count++) process.stdout.write(`| ${count} | ${candidateCounts[count]} |\n`);
   process.stdout.write("\n### Excluded too-short notes\n");
@@ -214,10 +232,10 @@ async function evaluateVault(vault) {
   if (!tooShortPaths.length) process.stdout.write("- (none)\n");
   writeCommonTermsTable(core, corpus);
   for (const { current, results } of candidateResults) {
-    process.stdout.write(`\n### ${current.title} (${current.path})\n| Candidate | Score | Matched terms | Reasons |\n|---|---:|---|---|\n`);
+    process.stdout.write(`\n### ${current.title} (${current.path})\n| Candidate | Score | Direction | Matched terms | Reasons |\n|---|---:|---|---|---|\n`);
     for (const result of results) {
       const title = corpus.find((note) => note.path === result.path)?.title || result.path;
-      process.stdout.write(`| ${title.replace(/\|/g, "\\|")} | ${result.score.toFixed(3)} | ${result.matchedTerms.join(", ")} | ${result.reasons.join(", ")} |\n`);
+      process.stdout.write(`| ${title.replace(/\|/g, "\\|")} | ${result.score.toFixed(3)} | ${result.direction} | ${result.matchedTerms.join(", ")} | ${result.reasons.join(", ")} |\n`);
     }
   }
   } finally { await cleanup(); }

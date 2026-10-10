@@ -98,6 +98,30 @@ describe("related note ranking core", () => {
     expect(results.map(({ path }) => path)).toEqual(["strong.md"]);
     expect(findRelatedNotes([current, weak], current, { minScore: 0.9 })).toEqual([]);
   });
+  it("keeps a short note's long-note pair reciprocal by using the stronger direction", () => {
+    const short = doc("short.md", { title: "orchid bloom" });
+    const long = doc("long.md", {
+      title: "orchid bloom technical analysis",
+      summary: "spectral estimation compares leaf geometry under seasonal lighting and documents uncertainty bounds for future botanical measurements",
+    });
+    const corpus = [short, long];
+    const shortMatch = findRelatedNotes(corpus, short).find(({ path }) => path === long.path);
+    const longMatch = findRelatedNotes(corpus, long).find(({ path }) => path === short.path);
+    expect(Boolean(shortMatch)).toBe(Boolean(longMatch));
+    expect(shortMatch?.score).toBe(longMatch?.score);
+    expect(shortMatch?.direction).toBe("forward");
+    expect(longMatch?.direction).toBe("reverse");
+    expect(findRelatedNotes(corpus, short, { minScore: shortMatch?.score || 0, relativeCutoff: 0 })).toContainEqual(shortMatch);
+    expect(findRelatedNotes(corpus, long, { minScore: (longMatch?.score || 0) + 0.0001, relativeCutoff: 0 })).toEqual([]);
+  });
+  it("allows the relative-cutoff boundary to drop a reciprocal edge against a much stronger neighbor", () => {
+    const short = doc("weather-topic.md", { title: "meteorology" });
+    const long = doc("long-weather.md", { title: "weather metrics", bodyExcerpt: "meteorology" });
+    const strongest = doc("strongest.md", { title: "weather metrics" });
+    const corpus = [short, long, strongest];
+    expect(findRelatedNotes(corpus, short).some(({ path }) => path === long.path)).toBe(true);
+    expect(findRelatedNotes(corpus, long).some(({ path }) => path === short.path)).toBe(false);
+  });
 
   it("applies limits and minimum score, excludes current/source duplicates/merge notes and collapses duplicate IDs", () => {
     const current = doc("current.md", { sourceId: "current", title: "planning roadmap" });
@@ -106,6 +130,7 @@ describe("related note ranking core", () => {
       doc("same-source.md", { sourceId: "current", title: "planning roadmap" }),
       doc("old.md", { sourceId: "duplicate", title: "planning roadmap", timestamp: 1 }),
       doc("new.md", { sourceId: "duplicate", title: "planning roadmap", timestamp: 2 }),
+      doc("derived-newer.md", { sourceId: "duplicate", sourcePath: "new.md", title: "planning roadmap", timestamp: 3 }),
       doc("merge.md", { title: "planning roadmap", isMergeNote: true }),
       doc("unrelated.md", { title: "flowers" }),
     ];

@@ -35,6 +35,7 @@ export interface RelatedNoteMatch {
   score: number;
   matchedTerms: string[];
   reasons: RelatedNoteReason[];
+  direction: "forward" | "reverse";
 }
 
 export interface RelatedNoteCommonTerm {
@@ -43,7 +44,7 @@ export interface RelatedNoteCommonTerm {
 }
 
 export const RELATED_NOTES_DEFAULT_LIMIT = 8;
-// The 26-document read-only corpus retained candidates from 0.05 upward; the relative cutoff removes weaker tails.
+// The 25-document read-only corpus retained reciprocal candidates at 0.05; the relative cutoff removes weaker tails.
 export const RELATED_NOTES_DEFAULT_MIN_SCORE = 0.05;
 export const RELATED_NOTES_DEFAULT_RELATIVE_CUTOFF = 0.4;
 export const RELATED_NOTES_COMMON_TERM_RATIO = 0.35;
@@ -132,29 +133,43 @@ function getFieldValues(doc: RelatedNoteDocument): FieldValues {
     questions: doc.questions, bodyExcerpt: [doc.bodyExcerpt],
   };
 }
-function fieldTokens(doc: RelatedNoteDocument): Record<FieldName, string[]> {
+type FieldTokens = Record<FieldName, string[]>;
+type FieldFrequencies = Record<FieldName, Map<string, number>>;
+function fieldTokens(doc: RelatedNoteDocument): FieldTokens {
   const values = getFieldValues(doc);
-  return Object.fromEntries(FIELD_NAMES.map((field) => [field, values[field].flatMap(tokenize)])) as Record<FieldName, string[]>;
+  return Object.fromEntries(FIELD_NAMES.map((field) => [field, values[field].flatMap(tokenize)])) as FieldTokens;
 }
-
-function eligibleDocuments(corpus: RelatedNoteDocument[]): RelatedNoteDocument[] {
-  const collapsed = new Map<string, RelatedNoteDocument>();
-  for (const doc of corpus) {
-    if (doc.isMergeNote || (!doc.hasIndexCard && doc.bodyExcerpt.length < RELATED_NOTE_MIN_BODY_CHARS)) continue;
-    const previous = collapsed.get(doc.sourceId);
-    if (!previous || doc.timestamp > previous.timestamp) collapsed.set(doc.sourceId, doc);
-  }
-  return [...collapsed.values()];
+function fieldFrequencies(fields: FieldTokens): FieldFrequencies {
+  return Object.fromEntries(FIELD_NAMES.map((field) => {
+    const frequencies = new Map<string, number>();
+    for (const term of fields[field]) frequencies.set(term, (frequencies.get(term) || 0) + 1);
+    return [field, frequencies];
+  })) as FieldFrequencies;
 }
-
-function commonTerms(fieldsByDocument: Array<Record<FieldName, string[]>>): RelatedNoteCommonTerm[] {
-  if (fieldsByDocument.length < RELATED_NOTES_COMMON_TERM_MIN_CORPUS) return [];
+function documentFrequencies(fieldsByDocument: FieldTokens[]): Map<string, number> {
   const frequencies = new Map<string, number>();
   for (const fields of fieldsByDocument) {
     for (const term of new Set(FIELD_NAMES.flatMap((field) => fields[field]))) {
       frequencies.set(term, (frequencies.get(term) || 0) + 1);
     }
   }
+  return frequencies;
+}
+function eligibleDocuments(corpus: RelatedNoteDocument[]): RelatedNoteDocument[] {
+  const collapsed = new Map<string, RelatedNoteDocument>();
+  for (const doc of corpus) {
+    if (doc.isMergeNote || (!doc.hasIndexCard && doc.bodyExcerpt.length < RELATED_NOTE_MIN_BODY_CHARS)) continue;
+    const previous = collapsed.get(doc.sourceId);
+    const preferCurrent = previous && Boolean(previous.sourcePath) && !doc.sourcePath;
+    const sameOrigin = previous && Boolean(previous.sourcePath) === Boolean(doc.sourcePath);
+    if (!previous || preferCurrent || (sameOrigin && doc.timestamp > previous.timestamp)) collapsed.set(doc.sourceId, doc);
+  }
+  return [...collapsed.values()];
+}
+
+function commonTerms(fieldsByDocument: FieldTokens[], knownFrequencies?: Map<string, number>): RelatedNoteCommonTerm[] {
+  if (fieldsByDocument.length < RELATED_NOTES_COMMON_TERM_MIN_CORPUS) return [];
+  const frequencies = knownFrequencies || documentFrequencies(fieldsByDocument);
   return [...frequencies].filter(([, frequency]) => frequency / fieldsByDocument.length > RELATED_NOTES_COMMON_TERM_RATIO)
     .map(([term, documentFrequency]) => ({ term, documentFrequency }))
     .sort((left, right) => right.documentFrequency - left.documentFrequency || left.term.localeCompare(right.term));
@@ -164,42 +179,67 @@ export function getCommonRelatedNoteTerms(corpus: RelatedNoteDocument[]): Relate
   return commonTerms(eligibleDocuments(corpus).map(fieldTokens));
 }
 
-function mappedOutDegree(doc: RelatedNoteDocument, source: string): number | undefined {
-  for (const [path, degree] of Object.entries(doc.inLinkOutDegrees || {})) {
-    if (canonicalTarget(path) === source) return degree;
-  }
-  return undefined;
-}
 
-function coLinkedWeight(source: string, current: RelatedNoteDocument, candidate: RelatedNoteDocument, corpus: RelatedNoteDocument[]): number {
-  const outDegree = mappedOutDegree(current, source) ?? mappedOutDegree(candidate, source)
-    ?? corpus.find((doc) => canonicalTarget(doc.path) === source)?.outLinks.length;
-  if (outDegree === undefined || outDegree > RELATED_NOTES_MAX_CO_LINK_OUT_DEGREE) return 0;
-  const population = Math.max(1, corpus.length);
-  const frequencyFactor = Math.max(0, Math.log((population + 1) / (outDegree + 1)) / Math.log(population + 1));
-  return LINK_WEIGHTS.coLinked * frequencyFactor;
-}
-function idf(term: string, fieldsByDocument: Array<Record<FieldName, string[]>>): number {
-  const df = fieldsByDocument.reduce((count, fields) => count + (FIELD_NAMES.some((field) => fields[field].includes(term)) ? 1 : 0), 0);
-  return Math.log(1 + (fieldsByDocument.length - df + 0.5) / (df + 0.5));
-}
-function averageFieldLengths(fieldsByDocument: Array<Record<FieldName, string[]>>): Record<FieldName, number> {
+function averageFieldLengths(fieldsByDocument: FieldTokens[]): Record<FieldName, number> {
   return Object.fromEntries(FIELD_NAMES.map((field) => [
     field,
     Math.max(1, fieldsByDocument.reduce((sum, fields) => sum + fields[field].length, 0) / Math.max(1, fieldsByDocument.length)),
   ])) as Record<FieldName, number>;
 }
-
-function bm25FieldScore(term: string, fields: Record<FieldName, string[]>, averageLengths: Record<FieldName, number>): number {
+function idfWeight(term: string, documentFrequencies: Map<string, number>, documentCount: number): number {
+  const frequency = documentFrequencies.get(term) || 0;
+  return Math.log(1 + (documentCount - frequency + 0.5) / (frequency + 0.5));
+}
+function bm25FieldScore(term: string, fields: FieldTokens, frequencies: FieldFrequencies, averageLengths: Record<FieldName, number>): number {
   let total = 0;
   for (const field of FIELD_NAMES) {
-    const tokens = fields[field];
-    const frequency = tokens.filter((token) => token === term).length;
+    const frequency = frequencies[field].get(term) || 0;
     if (!frequency) continue;
-    const lengthNorm = (1 - RELATED_NOTES_B) + RELATED_NOTES_B * (tokens.length / averageLengths[field]);
+    const lengthNorm = (1 - RELATED_NOTES_B) + RELATED_NOTES_B * (fields[field].length / averageLengths[field]);
     total += FIELD_BOOSTS[field] * (frequency * (RELATED_NOTES_K1 + 1)) / (frequency + RELATED_NOTES_K1 * lengthNorm);
   }
   return total;
+}
+function scoreTerms(
+  terms: string[],
+  fields: FieldTokens,
+  frequencies: FieldFrequencies,
+  documentFrequencies: Map<string, number>,
+  documentCount: number,
+  averageLengths: Record<FieldName, number>,
+): number {
+  let total = 0;
+  for (const term of terms) total += idfWeight(term, documentFrequencies, documentCount) * bm25FieldScore(term, fields, frequencies, averageLengths);
+  return total;
+}
+interface IndexedRelatedNote {
+  doc: RelatedNoteDocument;
+  fields: FieldTokens;
+  frequencies: FieldFrequencies;
+  terms: Set<string>;
+  queryTerms: string[];
+  scoredQueryTerms: string[];
+  queryScale: number;
+  selfScore: number;
+}
+function canonicalDegrees(doc: RelatedNoteDocument): Map<string, number> {
+  return new Map(Object.entries(doc.inLinkOutDegrees || {}).map(([source, degree]) => [canonicalTarget(source), degree]));
+}
+function indexRelatedNote(
+  doc: RelatedNoteDocument,
+  fields: FieldTokens,
+  common: Set<string>,
+  documentFrequencies: Map<string, number>,
+  documentCount: number,
+  averageLengths: Record<FieldName, number>,
+): IndexedRelatedNote {
+  const frequencies = fieldFrequencies(fields);
+  const terms = new Set(FIELD_NAMES.flatMap((field) => fields[field]));
+  const queryTerms = unique(tokenize(buildQueryFromDocument(doc)));
+  const scoredQueryTerms = queryTerms.filter((term) => !common.has(term));
+  const queryScale = doc.precision === "full" ? 1 : 0.65;
+  const selfScore = scoreTerms(scoredQueryTerms, fields, frequencies, documentFrequencies, documentCount, averageLengths) * queryScale;
+  return { doc, fields, frequencies, terms, queryTerms, scoredQueryTerms, queryScale, selfScore };
 }
 const LINK_WEIGHTS = {
   directLink: 2.4,
@@ -208,14 +248,49 @@ const LINK_WEIGHTS = {
   sharedUnresolved: 12,
   coLinked: 0.65,
 } as const;
-function graphTargetIdf(target: string, current: RelatedNoteDocument, corpus: RelatedNoteDocument[], field: "outLinks" | "unresolvedTargets"): number {
-  const hasCurrent = corpus.some((doc) => doc.path === current.path);
-  const population = corpus.length + (hasCurrent ? 0 : 1);
-  const documentFrequency = corpus.filter((doc) => doc[field].some((link) => canonicalTarget(link) === target)).length
-    + (!hasCurrent && current[field].some((link) => canonicalTarget(link) === target) ? 1 : 0);
-  return Math.log((population + 1) / (documentFrequency + 1));
+interface LinkScoringContext {
+  population: number;
+  outgoingFrequency: Map<string, number>;
+  unresolvedFrequency: Map<string, number>;
+  outDegreeByPath: Map<string, number>;
+  degreeByDocPath: Map<string, Map<string, number>>;
 }
-function linkFeatures(current: RelatedNoteDocument, candidate: RelatedNoteDocument, corpus: RelatedNoteDocument[]): { score: number; reasons: RelatedNoteReason[] } {
+function targetFrequencies(docs: RelatedNoteDocument[], field: "outLinks" | "unresolvedTargets"): Map<string, number> {
+  const frequencies = new Map<string, number>();
+  for (const doc of docs) {
+    for (const target of new Set(doc[field].map(canonicalTarget).filter(Boolean))) {
+      frequencies.set(target, (frequencies.get(target) || 0) + 1);
+    }
+  }
+  return frequencies;
+}
+function createLinkScoringContext(corpus: RelatedNoteDocument[], current: RelatedNoteDocument): LinkScoringContext {
+  const includesCurrent = corpus.some((doc) => doc.path === current.path);
+  const documents = includesCurrent ? corpus : [...corpus, current];
+  return {
+    population: documents.length,
+    outgoingFrequency: targetFrequencies(documents, "outLinks"),
+    unresolvedFrequency: targetFrequencies(documents, "unresolvedTargets"),
+    outDegreeByPath: new Map(documents.map((doc) => [
+      canonicalTarget(doc.path),
+      unique(doc.outLinks.map(canonicalTarget).filter(Boolean)).length,
+    ])),
+    degreeByDocPath: new Map(documents.map((doc) => [canonicalTarget(doc.path), canonicalDegrees(doc)])),
+  };
+}
+function graphTargetIdf(target: string, context: LinkScoringContext, field: "outLinks" | "unresolvedTargets"): number {
+  const frequencies = field === "outLinks" ? context.outgoingFrequency : context.unresolvedFrequency;
+  return Math.log((context.population + 1) / ((frequencies.get(target) || 0) + 1));
+}
+function coLinkedWeight(source: string, current: RelatedNoteDocument, candidate: RelatedNoteDocument, context: LinkScoringContext): number {
+  const currentDegrees = context.degreeByDocPath.get(canonicalTarget(current.path));
+  const candidateDegrees = context.degreeByDocPath.get(canonicalTarget(candidate.path));
+  const outDegree = currentDegrees?.get(source) ?? candidateDegrees?.get(source) ?? context.outDegreeByPath.get(source);
+  if (outDegree === undefined || outDegree > RELATED_NOTES_MAX_CO_LINK_OUT_DEGREE) return 0;
+  const frequencyFactor = Math.max(0, Math.log((context.population + 1) / (outDegree + 1)) / Math.log(context.population + 1));
+  return LINK_WEIGHTS.coLinked * frequencyFactor;
+}
+function linkFeatures(current: RelatedNoteDocument, candidate: RelatedNoteDocument, context: LinkScoringContext): { score: number; reasons: RelatedNoteReason[] } {
   let score = 0;
   const reasons: RelatedNoteReason[] = [];
   const direct = current.outLinks.some((link) => canonicalTarget(link) === canonicalTarget(candidate.path))
@@ -227,22 +302,22 @@ function linkFeatures(current: RelatedNoteDocument, candidate: RelatedNoteDocume
       const generated = current.generatedOutLinks?.some((link) => canonicalTarget(link) === target)
         || candidate.generatedOutLinks?.some((link) => canonicalTarget(link) === target);
       const weight = generated ? LINK_WEIGHTS.generatedSharedTarget : LINK_WEIGHTS.sharedTarget;
-      return total + weight * graphTargetIdf(target, current, corpus, "outLinks");
+      return total + weight * graphTargetIdf(target, context, "outLinks");
     }, 0);
     reasons.push("shared-target");
   }
   const unresolved = overlap(current.unresolvedTargets, candidate.unresolvedTargets);
   if (unresolved.length) {
-    score += unresolved.reduce((total, target) => total + LINK_WEIGHTS.sharedUnresolved * graphTargetIdf(target, current, corpus, "unresolvedTargets"), 0);
+    score += unresolved.reduce((total, target) => total + LINK_WEIGHTS.sharedUnresolved * graphTargetIdf(target, context, "unresolvedTargets"), 0);
     reasons.push("shared-unresolved");
   }
   const coLinked = overlap(current.inLinks, candidate.inLinks);
-  const coLinkedScore = coLinked.reduce((total, source) => total + coLinkedWeight(source, current, candidate, corpus), 0);
+  const coLinkedScore = coLinked.reduce((total, source) => total + coLinkedWeight(source, current, candidate, context), 0);
   if (coLinkedScore > 0) { score += coLinkedScore; reasons.push("co-linked"); }
   return { score, reasons };
 }
 
-/** Rank corpus notes by lexical similarity and explicit graph evidence. */
+/** Rank corpus notes using the stronger normalized score from either direction. */
 export function findRelatedNotes(
   corpus: RelatedNoteDocument[],
   current: RelatedNoteDocument,
@@ -254,35 +329,58 @@ export function findRelatedNotes(
   if (!limit || !Number.isFinite(minScore) || !Number.isFinite(relativeCutoff)) return [];
   const docs = eligibleDocuments(corpus);
   if (!current.hasIndexCard && current.bodyExcerpt.length < RELATED_NOTE_MIN_BODY_CHARS) return [];
-  const queryTerms = unique(tokenize(buildQueryFromDocument(current)));
-  if (!queryTerms.length) return [];
-  const indexedDocs = docs.map((doc) => ({ doc, fields: fieldTokens(doc) }));
-  const fieldsByDocument = indexedDocs.map(({ fields }) => fields);
-  const common = new Set(commonTerms(fieldsByDocument).map(({ term }) => term));
-  const scoredQueryTerms = queryTerms.filter((term) => !common.has(term));
+  const fieldsByDocument = docs.map(fieldTokens);
+  const documentFrequenciesByTerm = documentFrequencies(fieldsByDocument);
+  const common = new Set(commonTerms(fieldsByDocument, documentFrequenciesByTerm).map(({ term }) => term));
   const averageLengths = averageFieldLengths(fieldsByDocument);
-  const currentFields = fieldTokens(current);
-  const queryScale = current.precision === "full" ? 1 : 0.65;
-  const selfScore = scoredQueryTerms.reduce((sum, term) => sum + idf(term, fieldsByDocument) * bm25FieldScore(term, currentFields, averageLengths), 0) * queryScale;
-  if (!(selfScore > 0)) return [];
+  const indexedDocs = docs.map((doc, index) => indexRelatedNote(
+    doc, fieldsByDocument[index], common, documentFrequenciesByTerm, docs.length, averageLengths,
+  ));
+  const indexedByPath = new Map(indexedDocs.map((profile) => [profile.doc.path, profile]));
+  const currentProfile = indexedByPath.get(current.path) || indexRelatedNote(
+    current, fieldTokens(current), common, documentFrequenciesByTerm, docs.length, averageLengths,
+  );
+  const linkContext = createLinkScoringContext(docs, current);
   const timestampByPath = new Map(docs.map((doc) => [doc.path, doc.timestamp]));
   const results: RelatedNoteMatch[] = [];
-  for (const { doc: candidate, fields: candidateFields } of indexedDocs) {
+
+  for (const candidateProfile of indexedDocs) {
+    const candidate = candidateProfile.doc;
     if (candidate.path === current.path || candidate.sourceId === current.sourceId
       || candidate.sourcePath === current.path || current.sourcePath === candidate.path) continue;
-    const allMatchedTerms = queryTerms.filter((term) => FIELD_NAMES.some((field) => candidateFields[field].includes(term)));
-    const scoredTerms = allMatchedTerms.filter((term) => !common.has(term));
-    const lexicalScore = scoredTerms.reduce((sum, term) => sum + idf(term, fieldsByDocument) * bm25FieldScore(term, candidateFields, averageLengths), 0)
-      * queryScale;
-    const links = linkFeatures(current, candidate, docs);
-    const rawScore = lexicalScore + links.score;
-    if (!(rawScore > 0)) continue;
-    const score = Math.min(1, rawScore / selfScore);
-    const matchedTerms = allMatchedTerms.map((term) => common.has(term) ? `common:${term}` : term);
+    const links = linkFeatures(current, candidate, linkContext);
+    const screenedByLexicalOverlap = [...currentProfile.terms].some((term) => candidateProfile.terms.has(term));
+    if (!screenedByLexicalOverlap && links.score <= 0) continue;
+    const forwardMatchedTerms = currentProfile.queryTerms.filter((term) => candidateProfile.terms.has(term));
+
+    const forwardScoredTerms = currentProfile.scoredQueryTerms.filter((term) => candidateProfile.terms.has(term));
+    const forwardLexicalScore = scoreTerms(
+      forwardScoredTerms, candidateProfile.fields, candidateProfile.frequencies,
+      documentFrequenciesByTerm, docs.length, averageLengths,
+    ) * currentProfile.queryScale;
+    const forwardScore = currentProfile.selfScore > 0
+      ? Math.min(1, (forwardLexicalScore + links.score) / currentProfile.selfScore)
+      : 0;
+
+    const reverseMatchedTerms = candidateProfile.queryTerms.filter((term) => currentProfile.terms.has(term));
+    const reverseScoredTerms = candidateProfile.scoredQueryTerms.filter((term) => currentProfile.terms.has(term));
+    const reverseLexicalScore = scoreTerms(
+      reverseScoredTerms, currentProfile.fields, currentProfile.frequencies,
+      documentFrequenciesByTerm, docs.length, averageLengths,
+    ) * candidateProfile.queryScale;
+    const reverseScore = candidateProfile.selfScore > 0
+      ? Math.min(1, (reverseLexicalScore + links.score) / candidateProfile.selfScore)
+      : 0;
+    const direction = reverseScore > forwardScore ? "reverse" : "forward";
+    const score = direction === "reverse" ? reverseScore : forwardScore;
+    if (!(score > 0)) continue;
+    const matchedTermsForDirection = direction === "reverse" ? reverseMatchedTerms : forwardMatchedTerms;
+    const scoredTermsForDirection = direction === "reverse" ? reverseScoredTerms : forwardScoredTerms;
+    const matchedTerms = matchedTermsForDirection.map((term) => common.has(term) ? `common:${term}` : term);
     const reasons = [...links.reasons];
-    if (scoredTerms.length) reasons.push("lexical-overlap");
+    if (scoredTermsForDirection.length) reasons.push("lexical-overlap");
     else if (links.reasons.length) reasons.push("link-only");
-    results.push({ path: candidate.path, score, matchedTerms, reasons });
+    results.push({ path: candidate.path, score, matchedTerms, reasons, direction });
   }
   if (!results.length) return [];
   const topScore = Math.max(...results.map(({ score }) => score));

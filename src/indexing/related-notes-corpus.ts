@@ -1,7 +1,7 @@
 import { extractIndexSource, readNoteIndex, type QnALogNoteIndexCard } from "./note-index";
 import { extractSessionId } from "../notes/note-document";
 import { readSelectedSessionKnowledge } from "../briefing/session-knowledge";
-import { NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_VERSION_CACHE, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_FM, NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_VERSION_CACHE, hasNamespaceFrontmatter, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import { isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent/recent-note-paths";
 import { AUDIO_EXT as AUDIO_FILE_EXTENSIONS } from "../shared/catalog-import";
 import { RELATED_NOTE_MIN_BODY_CHARS, type RelatedNoteDocument } from "./related-notes";
@@ -16,7 +16,7 @@ export interface RelatedNotesCorpusPort {
 }
 
 export interface RelatedNotesCorpusOptions { roots: string[]; bodyExcerptChars?: number }
-export interface RelatedNotesCorpusStats { excludedDerived: number; excludedMerge: number; tooShort: number; noiseLinks: number; noOutgoingLinks: number }
+export interface RelatedNotesCorpusStats { excludedDerived: number; excludedDerivedLegacyAliases: number; excludedMerge: number; tooShort: number; noiseLinks: number; noOutgoingLinks: number }
 export interface RelatedNotesCorpusResult { documents: RelatedNoteDocument[]; stats: RelatedNotesCorpusStats; excludedTooShortPaths: string[] }
 
 export const RELATED_NOTE_AUDIO_EXTENSIONS: ReadonlySet<string> = AUDIO_FILE_EXTENSIONS;
@@ -42,18 +42,28 @@ function isNoisePath(value: string): boolean {
   return normalized.split("/").some((part) => RELATED_NOTE_NOISE_PATH_SEGMENTS.includes(part as typeof RELATED_NOTE_NOISE_PATH_SEGMENTS[number]))
     || normalized.startsWith(`${NS_ROOT.toLowerCase()}/.versions/`);
 }
+type DerivedFrontmatterField = "type" | "sourcePath" | "sourceId" | "containsRaw" | "variantKind";
+function hasLegacyDerivedAlias(frontmatter: Record<string, unknown>): boolean {
+  const fields: DerivedFrontmatterField[] = ["type", "sourcePath", "sourceId", "containsRaw", "variantKind"];
+  return fields.some((field) => hasNamespaceFrontmatter(frontmatter, field)
+    && !Object.prototype.hasOwnProperty.call(frontmatter, NS_FM[field]));
+}
+function isDerivedNoteFrontmatter(frontmatter: Record<string, unknown>): boolean {
+  const type = readNamespaceFrontmatter(frontmatter, "type");
+  const sourcePath = readNamespaceFrontmatter(frontmatter, "sourcePath");
+  const variantKind = readNamespaceFrontmatter(frontmatter, "variantKind");
+  return type === NS_TYPE_VERSION_CACHE || isDerivedVersionType(type)
+    || readNamespaceFrontmatter(frontmatter, "containsRaw") === false
+    || (typeof sourcePath === "string" && sourcePath.trim().length > 0)
+    || (typeof variantKind === "string" && variantKind.trim().length > 0);
+}
 function isGeneratedLinkTarget(port: RelatedNotesCorpusPort, path: string): boolean {
-  const fm = (port.getFrontmatter(path) || {}) as Record<string, unknown>;
-  const type = readNamespaceFrontmatter(fm, "type");
+  const frontmatter = (port.getFrontmatter(path) || {}) as Record<string, unknown>;
+  const type = readNamespaceFrontmatter(frontmatter, "type");
   return type === NS_TYPE_PERSON || type === NS_TYPE_PERSON_MERGED || type === NS_TYPE_TODO_CARD;
 }
 function isDerivedLinkTarget(port: RelatedNotesCorpusPort, path: string): boolean {
-  const fm = (port.getFrontmatter(path) || {}) as Record<string, unknown>;
-  const type = readNamespaceFrontmatter(fm, "type");
-  const sourcePath = readNamespaceFrontmatter(fm, "sourcePath");
-  return type === NS_TYPE_VERSION_CACHE || isDerivedVersionType(type)
-    || readNamespaceFrontmatter(fm, "containsRaw") === false
-    || (typeof sourcePath === "string" && sourcePath.trim().length > 0);
+  return isDerivedNoteFrontmatter(((port.getFrontmatter(path) || {}) as Record<string, unknown>));
 }
 function linkTargetName(value: string): string { return value.split("#")[0].split("|")[0].trim().toLocaleLowerCase(); }
 function isAudioPath(value: string): boolean { return RELATED_NOTE_AUDIO_EXTENSIONS.has((value.split("#")[0].split(".").pop() || "").toLowerCase()); }
@@ -61,7 +71,7 @@ function isMergeNote(title: string, markdown: string): boolean {
   return /(?:·|\s)merge\s*$/i.test(title) || NS_MERGE_BLOCK_RE.test(markdown);
 }
 function sourceId(fm: Record<string, unknown>, path: string, markdown: string): string {
-  const source = fm.source_id ?? fm.qnalog_source_id;
+  const source = readNamespaceFrontmatter(fm, "sourceId");
   if (typeof source === "string" && source.trim()) return source.trim();
   const sessionId = extractSessionId(markdown, "");
   if (sessionId) return sessionId;
@@ -90,14 +100,12 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
   const resolved = port.getResolvedLinks();
   const unresolved = port.getUnresolvedLinks();
   const excludedDerivedPaths = new Set<string>();
+  let excludedDerivedLegacyAliases = 0;
   for (const file of candidates) {
     const fm = (port.getFrontmatter(file.path) || {}) as Record<string, unknown>;
-    const type = readNamespaceFrontmatter(fm, "type");
-    const sourcePath = readNamespaceFrontmatter(fm, "sourcePath");
-    if (type === NS_TYPE_VERSION_CACHE || isDerivedVersionType(type) || readNamespaceFrontmatter(fm, "containsRaw") === false
-      || (typeof sourcePath === "string" && sourcePath.trim().length > 0)) {
-      excludedDerivedPaths.add(normPath(file.path));
-    }
+    if (!isDerivedNoteFrontmatter(fm)) continue;
+    excludedDerivedPaths.add(normPath(file.path));
+    if (hasLegacyDerivedAlias(fm)) excludedDerivedLegacyAliases++;
   }
   const documents: RelatedNoteDocument[] = [];
   const notePaths = new Set(candidates.map(({ path }) => normPath(path)));
@@ -187,7 +195,7 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
     doc.inLinkOutDegrees = Object.fromEntries(doc.inLinks.map((source) => [source, Object.keys(resolved[source] || {}).length]));
   }
   // Derived outgoing links are omitted so they cannot change source backlink or co-link evidence.
-  return { documents, stats: { excludedDerived, excludedMerge, tooShort, noiseLinks, noOutgoingLinks }, excludedTooShortPaths };
+  return { documents, stats: { excludedDerived, excludedDerivedLegacyAliases, excludedMerge, tooShort, noiseLinks, noOutgoingLinks }, excludedTooShortPaths };
 }
 
 export class RelatedNotesCorpusCache {

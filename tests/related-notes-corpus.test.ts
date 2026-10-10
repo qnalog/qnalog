@@ -9,6 +9,8 @@ function makePort(): RelatedNotesCorpusPort {
     { path: "QnALog/Notes/· Merge.md", basename: "· Merge.md", mtime: 3 },
     { path: "QnALog/Notes/derived.md", basename: "derived.md", mtime: 4 },
     { path: "QnALog/Notes/old.md", basename: "old.md", mtime: 7 },
+    { path: "QnALog/Notes/legacy-host.md", basename: "legacy-host.md", mtime: 9 },
+    { path: "QnALog/Notes/legacy-derived.md", basename: "legacy-derived.md", mtime: 10 },
     { path: "QnALog/Notes/AI视频制作-分镜坐标系规范.md", basename: "AI视频制作-分镜坐标系规范.md", mtime: 8 },
     { path: "QnALog/Notes/.versions/cache.md", basename: "cache.md", mtime: 6 },
   ];
@@ -18,6 +20,8 @@ function makePort(): RelatedNotesCorpusPort {
     "QnALog/Notes/· Merge.md": "# Merge\n<!-- qnalog-merge {\"sources\":[]} qnalog-merge-end -->",
     "QnALog/Notes/derived.md": "---\nqnalog_contains_raw: false\nqnalog_source_path: QnALog/Notes/one.md\n---\n[[one]]",
     "QnALog/Notes/old.md": "# Older note\nA body-only content source with enough text for the retrieval fallback. It contains an older observation and remains available without a structured note-index card.",
+    "QnALog/Notes/legacy-host.md": "# Legacy host\nThis original note provides enough authored context for indexing and must remain the representative source when a newer derived copy has the same source identity.",
+    "QnALog/Notes/legacy-derived.md": "# Legacy derived copy\nThis content belongs to a derived copy and should not be read into the source corpus.",
     "QnALog/Notes/AI视频制作-分镜坐标系规范.md": "# AI video production coordinate system\n<!-- qnalog-transcript-start:old -->\nTranscript content is intentionally long but belongs to a transcript ledger rather than the authored note body, so it must not rescue this short orphan note.\n<!-- qnalog-transcript-end:old -->",
   };
   return {
@@ -25,9 +29,17 @@ function makePort(): RelatedNotesCorpusPort {
     getFrontmatter: (notePath) => {
       if (notePath.includes("/.versions/")) throw new Error("Excluded folder metadata was read");
       if (notePath === "QnALog/People/Mira.md") return { qnalog_type: "qnalog-person" };
+      if (notePath.endsWith("legacy-host.md")) return { qnalog_source_id: "legacy-session" };
+      if (notePath.endsWith("legacy-derived.md")) return {
+        "类型": "QnALog派生版本",
+        variant_kind: "minutes",
+        source_path: "QnALog/Notes/legacy-host.md",
+        source_id: "legacy-session",
+        contains_raw: false,
+      };
       return notePath.endsWith("derived.md") ? { qnalog_source_path: "QnALog/Notes/one.md" } : {};
     },
-    getResolvedLinks: () => ({ "QnALog/Notes/one.md": { "QnALog/Notes/two.md": 2, "QnALog/People/Mira.md": 1, "QnALog/Notes/derived.md": 1, "QnALog/Notes/· Merge.md": 1, "QnALog/Audio/voice.m4a": 1, "QnALog/Notes/.versions/cache.md": 1, "QnALog/Notes/one.md": 1 }, "QnALog/Notes/two.md": { "QnALog/Notes/one.md": 1 } }),
+    getResolvedLinks: () => ({ "QnALog/Notes/one.md": { "QnALog/Notes/two.md": 2, "QnALog/People/Mira.md": 1, "QnALog/Notes/derived.md": 1, "QnALog/Notes/legacy-derived.md": 1, "QnALog/Notes/· Merge.md": 1, "QnALog/Audio/voice.m4a": 1, "QnALog/Notes/.versions/cache.md": 1, "QnALog/Notes/one.md": 1 }, "QnALog/Notes/two.md": { "QnALog/Notes/one.md": 1 } }),
     readText: async (notePath) => contents[notePath] || "",
     getUnresolvedLinks: () => ({ "QnALog/Notes/one.md": { "Topic missing": 1 } }),
     now: () => 10,
@@ -37,18 +49,21 @@ function makePort(): RelatedNotesCorpusPort {
 describe("related note corpus", () => {
   it("uses configured note roots, filters merge/derived notes, excludes link noise and builds reverse links", async () => {
     const result = await buildRelatedNotesCorpus(makePort(), { roots: ["QnALog/Notes"] });
-    expect(result.documents.map((doc) => doc.path)).toEqual(["QnALog/Notes/one.md", "QnALog/Notes/two.md", "QnALog/Notes/old.md"]);
+    expect(result.documents.map((doc) => doc.path)).toEqual(["QnALog/Notes/one.md", "QnALog/Notes/two.md", "QnALog/Notes/old.md", "QnALog/Notes/legacy-host.md"]);
     expect(result.documents.find((doc) => doc.path.endsWith("old.md"))?.precision).toBe("body-only");
+    expect(result.documents.find((doc) => doc.path.endsWith("legacy-host.md"))?.sourceId).toBe("legacy-session");
     expect(result.documents[0].unresolvedTargets).toEqual(["topic missing"]);
     expect(result.documents[0].inLinks).toContain("QnALog/Notes/two.md");
     expect(result.documents[0].generatedOutLinks).toEqual(["QnALog/People/Mira.md"]);
     expect(result.documents[0].outLinks).not.toContain("QnALog/Notes/derived.md");
+    expect(result.documents[0].outLinks).not.toContain("QnALog/Notes/legacy-derived.md");
     expect(result.documents[0].outLinks).not.toContain("QnALog/Notes/· Merge.md");
-    expect(result.stats.excludedDerived).toBe(1);
+    expect(result.stats.excludedDerived).toBe(2);
+    expect(result.stats.excludedDerivedLegacyAliases).toBe(1);
     expect(result.stats.excludedMerge).toBe(1);
     expect(result.stats.tooShort).toBe(1);
     expect(result.excludedTooShortPaths).toEqual(["QnALog/Notes/AI视频制作-分镜坐标系规范.md"]);
-    expect(result.stats.noOutgoingLinks).toBe(1);
+    expect(result.stats.noOutgoingLinks).toBe(2);
     expect(RELATED_NOTE_AUDIO_EXTENSIONS.has("m4a")).toBe(true);
   });
 
