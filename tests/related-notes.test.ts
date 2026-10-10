@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildQueryFromDocument, findRelatedNotes, getCommonRelatedNoteTerms, tokenize, type RelatedNoteDocument } from "../src/indexing/related-notes";
+import { buildQueryFromDocument, createRelatedNotesIndex, findRelatedNotes, getCommonRelatedNoteTerms, tokenize, type RelatedNoteDocument } from "../src/indexing/related-notes";
 import { createRelatedNoteEvalFixture } from "../scripts/related-notes-fixture.mjs";
 
 function doc(path: string, overrides: Partial<RelatedNoteDocument> = {}): RelatedNoteDocument {
@@ -211,5 +211,14 @@ describe("related note ranking core", () => {
     expect(findRelatedNotes(corpus, noteC).some((item) => item.path === pathD)).toBe(false);
     expect(findRelatedNotes(corpus, noteE).find((item) => item.path === pathF)?.reasons).toContain("direct-link");
     expect(noteE.inLinks).not.toContain("derived.md");
+  });
+  it("reuses one corpus index for external queries and retains direct-link exceptions", () => {
+    const target = doc("target.md", { title: "training plan" });
+    const current = doc("current.md", { title: "orchid maintenance", outLinks: ["target.md"] });
+    const index = createRelatedNotesIndex([target], { minScore: 0, relativeCutoff: 0 });
+    const result = index.query(current);
+    expect(result.map((match) => match.path)).toEqual(["target.md"]);
+    expect(result[0].reasons).toEqual(expect.arrayContaining(["direct-link", "link-only"]));
+    expect(result[0].direction).toBe("mutual");
   });
 });
