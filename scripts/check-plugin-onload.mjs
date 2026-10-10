@@ -33,9 +33,10 @@ try {
 const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
-  "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
+  "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
 ];
 const PORT_HOST_FIELDS = {
+  topics: true,
   noteWriter: true,
   asrPipeline: true,
   continuations: true,
@@ -45,7 +46,6 @@ const PORT_HOST_FIELDS = {
   recorder: true,
   recording: true,
 };
-
 const noop = () => undefined;
 
 function makeEl() {
@@ -283,6 +283,17 @@ async function main() {
     if (!("host" in service)) continue;
     if (Object.hasOwn(PORT_HOST_FIELDS, field)) {
       if (service.host === plugin) failures.push(`this.${field}.host 应使用窄能力对象，不得接收完整插件实例`);
+      if (field === "topics") {
+        const port = service.host?.overviewCards;
+        const methods = ["listNoteFiles", "getMtime", "getFrontmatter", "readText", "getResolvedLinks", "getUnresolvedLinks"];
+        if (service.host === plugin
+          || typeof service.host?.getRoots !== "function"
+          || !Array.isArray(service.host.getRoots())
+          || methods.some((method) => typeof port?.[method] !== "function")) {
+          failures.push("this.topics.host 未绑定配置根目录与概要卡片读取能力");
+        }
+        continue;
+      }
       if (field === "noteWriter") {
         const methods = [
           "getFileFrontmatter", "ensureFolder", "findAvailableMarkdownPath", "renameFile", "openFile",
