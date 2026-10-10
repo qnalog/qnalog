@@ -1,0 +1,83 @@
+import { describe, expect, it, vi } from "vitest";
+
+const menuState = vi.hoisted(() => ({ titles: [] as string[] }));
+vi.mock("obsidian", () => {
+  class FakeElement {
+    children: FakeElement[] = [];
+    text = "";
+    cls = "";
+    listeners = new Map<string, (event?: MouseEvent | KeyboardEvent) => void>();
+    constructor(text = "", cls = "") { this.text = text; this.cls = cls; }
+    createDiv(options: { cls?: string; text?: string } = {}) { return this.add(new FakeElement(options.text || "", options.cls || "")); }
+    createEl(_tag: string, options: { cls?: string; text?: string; attr?: Record<string, string> } = {}) { return this.add(new FakeElement(options.text || "", options.cls || "")); }
+    createSpan(options: { cls?: string; text?: string } = {}) { return this.add(new FakeElement(options.text || "", options.cls || "")); }
+    add(child: FakeElement) { this.children.push(child); return child; }
+    addEventListener(name: string, fn: (event?: MouseEvent | KeyboardEvent) => void) { this.listeners.set(name, fn); }
+    setText(text: string) { this.text = text; }
+    addClass(cls: string) { this.cls += ` ${cls}`; }
+    remove() { this.text = ""; }
+  }
+  class Menu {
+    items: Array<{ title: string; onClick?: () => void }> = [];
+    addItem(build: (item: { setTitle(text: string): this; setIcon(icon: string): this; onClick(fn: () => void): this }) => void) {
+      const item = { title: "", onClick: undefined as (() => void) | undefined, setTitle(text: string) { this.title = text; menuState.titles.push(text); return this; }, setIcon() { return this; }, onClick(fn: () => void) { this.onClick = fn; return this; } };
+      build(item);
+      this.items.push(item);
+    }
+    addSeparator() {}
+    showAtMouseEvent() {}
+  }
+  class Modal { contentEl = new FakeElement(); constructor(public app: unknown) {} }
+  class Notice {}
+  return { Menu, Modal, Notice, setIcon: () => undefined };
+});
+vi.mock("../src/ui/helpers", () => ({ qnalogConfirm: vi.fn(async () => true) }));
+
+import { TopicsPanel } from "../src/ui/topics-panel";
+
+interface FakeTree { text: string; cls: string; children: FakeTree[]; listeners: Map<string, (event?: MouseEvent | KeyboardEvent) => void> }
+function allText(node: FakeTree): string { return `${node.text} ${node.children.map(allText).join(" ")}`; }
+function descendants(node: FakeTree): FakeTree[] { return node.children.flatMap((child) => [child, ...descendants(child)]); }
+
+describe("topics panel", () => {
+  it("renders topic members, recency, pending badge, and contextual actions", async () => {
+    const port = {
+      isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
+      listTopics: vi.fn(async () => [{ path: "Topics/Planning.md", page: { id: "one", title: "Planning", updated: "2026-10-10T00:00:00Z", members: ["a.md", "b.md"] } }]),
+      countPending: vi.fn(async () => 3),
+      scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(),
+      deleteTopic: vi.fn(), mergeTopics: vi.fn(), ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),
+    };
+    const root = new FakePanelEl() as unknown as HTMLElement;
+    const panel = new TopicsPanel({} as never, port as never, () => undefined);
+    await panel.render(root);
+    await vi.waitFor(() => expect(allText((root as unknown as { children: FakeTree[] }).children[0])).toContain("3 pending"));
+    const row = descendants((root as unknown as { children: FakeTree[] }).children[0]).find((item) => item.cls === "qnalog-topics-row");
+    expect(row).toBeDefined();
+    row?.listeners.get("contextmenu")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
+    expect(menuState.titles).toEqual(expect.arrayContaining(["Scan for notes to integrate", "Undo last update", "Merge into…", "Delete topic"]));
+  });
+
+  it("renders a guided empty state when no topic folder exists", async () => {
+    const port = { isConfigured: () => false, text: (key: string) => key };
+    const root = new FakePanelEl() as unknown as HTMLElement;
+    await new TopicsPanel({} as never, port as never, () => undefined).render(root);
+    expect(allText((root as unknown as { children: FakeTree[] }).children[0])).toContain("Right-click a minutes note and choose Create topic.");
+  });
+});
+
+class FakePanelEl {
+  children: FakePanelEl[] = [];
+  text = "";
+  cls = "";
+  listeners = new Map<string, (event?: MouseEvent | KeyboardEvent) => void>();
+  constructor(text = "", cls = "") { this.text = text; this.cls = cls; }
+  createDiv(options: { cls?: string; text?: string } = {}) { return this.add(new FakePanelEl(options.text || "", options.cls || "")); }
+  createEl(_tag: string, options: { cls?: string; text?: string } = {}) { return this.add(new FakePanelEl(options.text || "", options.cls || "")); }
+  createSpan(options: { cls?: string; text?: string } = {}) { return this.add(new FakePanelEl(options.text || "", options.cls || "")); }
+  add(child: FakePanelEl) { this.children.push(child); return child; }
+  addEventListener(name: string, fn: (event?: MouseEvent | KeyboardEvent) => void) { this.listeners.set(name, fn); }
+  setText(text: string) { this.text = text; }
+  addClass(cls: string) { this.cls += ` ${cls}`; }
+  remove() { this.text = ""; }
+}
