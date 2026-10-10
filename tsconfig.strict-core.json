@@ -142,6 +142,7 @@
     "src/vault/cleanup-service.ts",
     "src/topics/overview-card.ts",
     "src/topics/overview-card-cache.ts",
-    "src/topics/topic-suggestions.ts"
+    "src/topics/topic-suggestions.ts",
+    "src/topics/topics-service.ts"
   ]
 }

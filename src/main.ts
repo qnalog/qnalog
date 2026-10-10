@@ -78,6 +78,7 @@ import { RealtimeOutlineService, type RealtimeOutlineHost } from "./notes/realti
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
+import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
@@ -134,6 +135,7 @@ class QnALogPlugin extends obsidian.Plugin {
   declare asrPipeline: LiveAsrPipelineService;
   declare shell: ViewShellService;
   declare library: LibraryViewService;
+  declare topics: TopicsService;
   declare noteIndex: NoteIndexService;
   declare audioLinks: AudioTimeLinkService;
   declare meetingWorkbench: MeetingWorkbenchService;
@@ -296,6 +298,22 @@ class QnALogPlugin extends obsidian.Plugin {
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
     this.noteIndex = new NoteIndexService(this);
+    const topicsPort: TopicsServicePort = {
+      listNoteFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path, basename: file.basename, mtime: file.stat.mtime, ctime: file.stat.ctime })),
+      getMtime: (path) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        return file instanceof obsidian.TFile ? file.stat.mtime : null;
+      },
+      getFrontmatter: (path) => this.app.metadataCache.getCache(path)?.frontmatter || {},
+      readText: async (path) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        return file instanceof obsidian.TFile ? this.app.vault.cachedRead(file) : "";
+      },
+      getResolvedLinks: () => this.app.metadataCache.resolvedLinks,
+      getUnresolvedLinks: () => this.app.metadataCache.unresolvedLinks,
+      now: () => Date.now(),
+    };
+    this.topics = new TopicsService({ overviewCards: topicsPort }, ["QnALog"]);
     this.audioLinks = new AudioTimeLinkService(this);
     this.meetingWorkbench = new MeetingWorkbenchService(this);
     const outlineHost = Object.assign(Object.create(null) as RealtimeOutlineHost, {
