@@ -1389,7 +1389,7 @@ export const ZH: MessageTable = {
   "New person": "新建人员",
   "New person profile": "新建人员档案",
   "New group": "新建分组",
-  "New recording": "新建录音",
+  "New voice note": "新语音笔记",
   "Preset": "方案",
   "None": "无",
   "No candidates": "无候选",
