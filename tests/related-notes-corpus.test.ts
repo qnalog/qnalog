@@ -9,14 +9,16 @@ function makePort(): RelatedNotesCorpusPort {
     { path: "QnALog/Notes/· Merge.md", basename: "· Merge.md", mtime: 3 },
     { path: "QnALog/Notes/derived.md", basename: "derived.md", mtime: 4 },
     { path: "QnALog/Notes/old.md", basename: "old.md", mtime: 7 },
+    { path: "QnALog/Notes/AI视频制作-分镜坐标系规范.md", basename: "AI视频制作-分镜坐标系规范.md", mtime: 8 },
     { path: "QnALog/Notes/.versions/cache.md", basename: "cache.md", mtime: 6 },
   ];
   const contents: Record<string, string> = {
-    "QnALog/Notes/one.md": "# One\n[[two]] [[Mira]] [[voice.m4a]] [[.versions/cache]] [[One]] [[Topic missing]]",
-    "QnALog/Notes/two.md": "# Two\n[[one]]",
+    "QnALog/Notes/one.md": "# One\n[[two]] [[Mira]] [[voice.m4a]] [[.versions/cache]] [[One]] [[Topic missing]]\nThe primary note records the linked subject, decisions, participants, and why the work changed. This body has enough authored context to be included in related-note searches.",
+    "QnALog/Notes/two.md": "# Two\n[[one]]\nThis separate note contains enough authored context to remain available for retrieval alongside another note. It gives a clear explanation of its subject and conclusions.",
     "QnALog/Notes/· Merge.md": "# Merge\n<!-- qnalog-merge {\"sources\":[]} qnalog-merge-end -->",
     "QnALog/Notes/derived.md": "---\nqnalog_contains_raw: false\nqnalog_source_path: QnALog/Notes/one.md\n---\n[[one]]",
-    "QnALog/Notes/old.md": "# Older note\nA body-only content source.",
+    "QnALog/Notes/old.md": "# Older note\nA body-only content source with enough text for the retrieval fallback. It contains an older observation and remains available without a structured note-index card.",
+    "QnALog/Notes/AI视频制作-分镜坐标系规范.md": "# AI video production coordinate system\n<!-- qnalog-transcript-start:old -->\nTranscript content is intentionally long but belongs to a transcript ledger rather than the authored note body, so it must not rescue this short orphan note.\n<!-- qnalog-transcript-end:old -->",
   };
   return {
     listNoteFiles: () => files,
@@ -44,6 +46,8 @@ describe("related note corpus", () => {
     expect(result.documents[0].outLinks).not.toContain("QnALog/Notes/· Merge.md");
     expect(result.stats.excludedDerived).toBe(1);
     expect(result.stats.excludedMerge).toBe(1);
+    expect(result.stats.tooShort).toBe(1);
+    expect(result.excludedTooShortPaths).toEqual(["QnALog/Notes/AI视频制作-分镜坐标系规范.md"]);
     expect(result.stats.noOutgoingLinks).toBe(1);
     expect(RELATED_NOTE_AUDIO_EXTENSIONS.has("m4a")).toBe(true);
   });
@@ -52,7 +56,7 @@ describe("related note corpus", () => {
     let mtime = 1;
     let builds = 0;
     const paths = ["a.md"];
-    const cache = new RelatedNotesCorpusCache(async () => { builds++; return [{ path: "a.md", sourceId: "a", title: "a", timestamp: 1, tags: [], people: [], topics: [], summary: "", decisions: [], actions: [], questions: [], bodyExcerpt: "", outLinks: [], inLinks: [], unresolvedTargets: [], precision: "body-only" }]; }, (path) => path === "a.md" ? mtime : null, () => paths);
+    const cache = new RelatedNotesCorpusCache(async () => { builds++; return [{ path: "a.md", sourceId: "a", title: "a", timestamp: 1, tags: [], people: [], topics: [], summary: "", decisions: [], actions: [], questions: [], bodyExcerpt: "", outLinks: [], inLinks: [], inLinkOutDegrees: {}, unresolvedTargets: [], precision: "body-only", hasIndexCard: true }]; }, (path) => path === "a.md" ? mtime : null, () => paths);
     await cache.get(); await cache.get();
     expect(builds).toBe(1);
     mtime++;

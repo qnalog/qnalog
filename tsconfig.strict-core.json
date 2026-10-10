@@ -17,6 +17,7 @@
     "src/ui/outline-playback-controller.ts",
     "src/canvas/semantic-outline-canvas.ts",
     "src/canvas/source-note.ts",
+    "src/indexing/note-index.ts",
     "src/indexing/related-notes.ts",
     "src/indexing/related-notes-corpus.ts",
     "src/ui/minutes-kanban-view.ts",

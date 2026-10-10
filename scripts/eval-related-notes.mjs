@@ -9,18 +9,6 @@ import { fileURLToPath } from "node:url";
 const ALLOWED_VAULT = "/Users/herald/Documents/obsidian/fresh";
 const NOISE_DIRS = { ".versions": true, diagnostics: true, queue: true, cache: true };
 const AUDIO_EXTENSIONS = { m4a: true, mp3: true, mp4: true, aac: true, wav: true, ogg: true, oga: true, flac: true, webm: true };
-const STOP_BIGRAMS = { "的是": true, "我们": true, "他们": true, "可以": true, "因为": true, "所以": true, "进行": true };
-function tokenize(text) {
-  const result = [];
-  for (const match of String(text || "").normalize("NFKC").toLocaleLowerCase().matchAll(/[\p{Script=Han}]+|[a-z0-9]+/giu)) {
-    const part = match[0];
-    if (/^[\p{Script=Han}]+$/u.test(part)) {
-      const chars = [...part];
-      for (let i = 0; i + 1 < chars.length; i++) if (STOP_BIGRAMS[chars[i] + chars[i + 1]] !== true) result.push(chars[i] + chars[i + 1]);
-    } else result.push(part);
-  }
-  return result;
-}
 function parseFrontmatter(markdown) {
   const block = /^---\s*\n([\s\S]*?)\n---/m.exec(markdown)?.[1] || "";
   const fields = {};
@@ -30,7 +18,7 @@ function parseFrontmatter(markdown) {
   }
   return fields;
 }
-function parseDocument(notePath, markdown, mtime) {
+function parseDocument(notePath, markdown, mtime, minBodyChars) {
   const frontmatter = parseFrontmatter(markdown);
   const indexBlock = /<!--\s*qnalog-note-index\s*-->\s*<details>[\s\S]*?```json\s*\n([\s\S]*?)\n```[\s\S]*?<!--\s*qnalog-note-index-end\s*-->/i.exec(markdown);
   let index = null;
@@ -44,6 +32,7 @@ function parseDocument(notePath, markdown, mtime) {
     .replace(/^---\s*\n[\s\S]*?\n---\s*\n/, "")
     .replace(/<!--\s*qnalog-note-index\s*-->[\s\S]*?<!--\s*qnalog-note-index-end\s*-->/gi, "")
     .replace(/<!--\s*qnalog-session-knowledge[\s\S]*?-->/gi, "")
+    .replace(/<!--\s*[a-z0-9-]+-transcript-start:[^>]*-->[\s\S]*?<!--\s*[a-z0-9-]+-transcript-end:[^>]*-->/gi, "")
     .replace(/<!--\s*qnalog-segments-start[\s\S]*?qnalog-segments-end\s*-->/gi, "")
     .replace(/^(?:##\s+)(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|Raw transcript|Original material)[^\n]*[\s\S]*$/im, "")
     .replace(/<!--[^>]*-->/g, "")
@@ -61,8 +50,10 @@ function parseDocument(notePath, markdown, mtime) {
     actions: values(index?.knowledge?.actions),
     questions: values(index?.knowledge?.questions),
     bodyExcerpt: readableBody,
-    outLinks: [], inLinks: [], unresolvedTargets: [], rawLinks: links,
+    outLinks: [], inLinks: [], inLinkOutDegrees: {}, unresolvedTargets: [], rawLinks: links,
     precision: index ? "full" : "body-only",
+    hasIndexCard: Boolean(index),
+    tooShort: !index && readableBody.length < minBodyChars,
     merge: /(?:·|\s)Merge\s*$/i.test(title) || /<!--\s*qnalog-merge[\s\S]*?qnalog-merge-end\s*-->/i.test(markdown),
     derived: frontmatter.qnalog_contains_raw === "false" || /派生版本|版本缓存/.test(frontmatter.qnalog_type || "") || Boolean(frontmatter.qnalog_source_path?.trim()),
   };
@@ -107,8 +98,9 @@ function metrics(core, source, groups, mode) {
     let recall3 = 0, recall5 = 0, precision5 = 0, noiseErrors = 0;
     for (const queryPath of group) {
       const current = corpus.find((note) => note.path === queryPath);
-      const top3 = core.findRelatedNotes(corpus, current, { limit: 3 });
-      const top5 = core.findRelatedNotes(corpus, current, { limit: 5 });
+      const queryCurrent = mode === "links" ? source.find((note) => note.path === queryPath) : current;
+      const top3 = core.findRelatedNotes(corpus, queryCurrent, { limit: 3 });
+      const top5 = core.findRelatedNotes(corpus, queryCurrent, { limit: 5 });
       const gold = new Set(group.filter((item) => item !== queryPath));
       recall3 += top3.filter((item) => gold.has(item.path)).length / gold.size;
       recall5 += top5.filter((item) => gold.has(item.path)).length / gold.size;
@@ -124,9 +116,22 @@ function metrics(core, source, groups, mode) {
     noiseErrors: groupResults.reduce((sum, item) => sum + item.noiseErrors, 0),
   } };
 }
+
+function writeCommonTermsTable(core, corpus) {
+  const terms = core.getCommonRelatedNoteTerms(corpus).slice(0, 20);
+  process.stdout.write("\n### Filtered common terms (top 20)\n| Term | Documents |\n|---|---:|\n");
+  if (!terms.length) process.stdout.write("| (none) | 0 |\n");
+  for (const { term, documentFrequency } of terms) process.stdout.write(`| ${term} | ${documentFrequency} |\n`);
+}
 async function evaluateSynthetic(core) {
-  const { corpus, goldGroups, linkPaths } = createRelatedNoteEvalFixture();
+  const fixture = createRelatedNoteEvalFixture();
+  const { corpus, goldGroups, linkPaths } = fixture;
   const [linkA, linkB, linkC, linkD, linkE, linkF] = linkPaths.map((notePath) => corpus.find((note) => note.path === notePath));
+  if (core.findRelatedNotes(corpus, fixture.shortNoteQuery).some((item) => item.path === fixture.shortNotePath)) throw new Error("Short title-only note entered synthetic results.");
+  if (core.findRelatedNotes(fixture.sparseCorpus, fixture.sparseQuery).length !== 0) throw new Error("Weak synthetic overlap was not removed by the score floor.");
+  const [boilerplateA, boilerplateB] = fixture.boilerplatePaths.map((notePath) => corpus.find((item) => item.path === notePath));
+  if (core.findRelatedNotes(corpus, boilerplateA).some((item) => item.path === boilerplateB.path)) throw new Error("Summary boilerplate caused a synthetic false match.");
+  writeCommonTermsTable(core, corpus);
   const linkOnly = core.findRelatedNotes(corpus, linkA).find((item) => item.path === linkB.path);
   if (!linkOnly?.reasons.includes("shared-unresolved") || !linkOnly.reasons.includes("link-only")) throw new Error("Synthetic shared-unresolved retrieval did not pass.");
   if (core.findRelatedNotes(corpus, linkC).some((item) => item.path === linkD.path)) throw new Error("Ubiquitous index link caused a synthetic false match.");
@@ -143,18 +148,21 @@ async function evaluateSynthetic(core) {
 }
 async function evaluateVault(vault) {
   if (path.resolve(vault) !== ALLOWED_VAULT) throw new Error(`Only the explicitly authorized read-only vault is allowed: ${ALLOWED_VAULT}`);
+  const { core, cleanup } = await loadCore();
+  try {
   const notesRoot = await readDefaultNotesRoot(vault);
   const startedAt = performance.now();
   const files = await walk(notesRoot);
-  const corpus = [], excludedDerivedPaths = new Set(), excludedNoiseBasenames = new Set();
-  let excludedDerived = 0, excludedMerge = 0, bodyOnly = 0, noiseLinks = 0, noOutgoing = 0;
+  const corpus = [], excludedDerivedPaths = new Set(), excludedNoiseBasenames = new Set(), tooShortPaths = [];
+  let excludedDerived = 0, excludedMerge = 0, tooShort = 0, bodyOnly = 0, noiseLinks = 0, noOutgoing = 0;
   let audioNoiseLinks = 0, internalPathNoiseLinks = 0, selfLinks = 0, excludedNoteLinks = 0;
   for (const file of files) {
     const notePath = path.relative(vault, file).split(path.sep).join("/");
     const markdown = await fs.readFile(file, "utf8");
-    const note = parseDocument(notePath, markdown, (await fs.stat(file)).mtimeMs);
+    const note = parseDocument(notePath, markdown, (await fs.stat(file)).mtimeMs, core.RELATED_NOTE_MIN_BODY_CHARS);
     if (note.derived) { excludedDerived++; excludedDerivedPaths.add(notePath); excludedNoiseBasenames.add(path.basename(notePath, ".md").toLocaleLowerCase()); continue; }
     if (note.merge) { excludedMerge++; excludedNoiseBasenames.add(path.basename(notePath, ".md").toLocaleLowerCase()); continue; }
+    if (note.tooShort) { tooShort++; tooShortPaths.push(notePath); excludedNoiseBasenames.add(path.basename(notePath, ".md").toLocaleLowerCase()); continue; }
     if (note.precision === "body-only") bodyOnly++;
     corpus.push(note);
   }
@@ -186,20 +194,32 @@ async function evaluateVault(vault) {
   }
   const reverse = new Map();
   for (const note of corpus) for (const target of note.outLinks) reverse.set(target, [...(reverse.get(target) || []), note.path]);
-  for (const note of corpus) note.inLinks = reverse.get(note.path) || [];
+  for (const note of corpus) {
+    note.inLinks = reverse.get(note.path) || [];
+    note.inLinkOutDegrees = Object.fromEntries(note.inLinks.map((source) => [source, corpus.find((candidate) => candidate.path === source)?.outLinks.length || 0]));
+  }
   const indexBuildMs = performance.now() - startedAt;
   const sharedUnresolvedTargets = new Set(corpus.flatMap((note) => note.unresolvedTargets).filter((target) => corpus.filter((note) => note.unresolvedTargets.includes(target)).length > 1)).size;
-  const { core, cleanup } = await loadCore();
-  try {
-    process.stdout.write(`Vault root: ${path.relative(vault, notesRoot)}\nCorpus: ${corpus.length}; body-only: ${bodyOnly}; derived excluded: ${excludedDerived}; merge excluded: ${excludedMerge}; parsed noisy wiki-link occurrences: ${noiseLinks} (audio: ${audioNoiseLinks}, internal path: ${internalPathNoiseLinks}, self: ${selfLinks}, excluded derived/merge: ${excludedNoteLinks}); no outgoing links: ${noOutgoing}; shared unresolved targets: ${sharedUnresolvedTargets}; index build: ${indexBuildMs.toFixed(1)} ms\n`);
-    for (const current of corpus) {
-      const results = core.findRelatedNotes(corpus, current, { limit: 5 });
-      process.stdout.write(`\n### ${current.title} (${current.path})\n| Candidate | Score | Matched terms | Reasons |\n|---|---:|---|---|\n`);
-      for (const result of results) {
-        const title = corpus.find((note) => note.path === result.path)?.title || result.path;
-        process.stdout.write(`| ${title.replace(/\|/g, "\\|")} | ${result.score.toFixed(3)} | ${result.matchedTerms.join(", ")} | ${result.reasons.join(", ")} |\n`);
-      }
+  const candidateCounts = Array.from({ length: 6 }, () => 0);
+  const candidateResults = corpus.map((current) => {
+    const results = core.findRelatedNotes(corpus, current, { limit: 5 });
+    candidateCounts[results.length]++;
+    return { current, results };
+  });
+  process.stdout.write(`Vault root: ${path.relative(vault, notesRoot)}\nCorpus: ${corpus.length}; body-only: ${bodyOnly}; derived excluded: ${excludedDerived}; merge excluded: ${excludedMerge}; too-short: ${tooShort}; parsed noisy wiki-link occurrences: ${noiseLinks} (audio: ${audioNoiseLinks}, internal path: ${internalPathNoiseLinks}, self: ${selfLinks}, excluded derived/merge/short: ${excludedNoteLinks}); no outgoing links: ${noOutgoing}; shared unresolved targets: ${sharedUnresolvedTargets}; index build: ${indexBuildMs.toFixed(1)} ms\n`);
+  process.stdout.write("\n### Candidate count distribution\n| Candidates retained | Notes |\n|---:|---:|\n");
+  for (let count = 0; count <= 5; count++) process.stdout.write(`| ${count} | ${candidateCounts[count]} |\n`);
+  process.stdout.write("\n### Excluded too-short notes\n");
+  for (const notePath of tooShortPaths) process.stdout.write(`- ${notePath}\n`);
+  if (!tooShortPaths.length) process.stdout.write("- (none)\n");
+  writeCommonTermsTable(core, corpus);
+  for (const { current, results } of candidateResults) {
+    process.stdout.write(`\n### ${current.title} (${current.path})\n| Candidate | Score | Matched terms | Reasons |\n|---|---:|---|---|\n`);
+    for (const result of results) {
+      const title = corpus.find((note) => note.path === result.path)?.title || result.path;
+      process.stdout.write(`| ${title.replace(/\|/g, "\\|")} | ${result.score.toFixed(3)} | ${result.matchedTerms.join(", ")} | ${result.reasons.join(", ")} |\n`);
     }
+  }
   } finally { await cleanup(); }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

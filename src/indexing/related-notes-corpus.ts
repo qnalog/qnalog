@@ -1,10 +1,10 @@
 import { extractIndexSource, readNoteIndex, type QnALogNoteIndexCard } from "./note-index";
 import { extractSessionId } from "../notes/note-document";
 import { readSelectedSessionKnowledge } from "../briefing/session-knowledge";
-import { NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_VERSION_CACHE, isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_VERSION_CACHE, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import { isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent/recent-note-paths";
 import { AUDIO_EXT as AUDIO_FILE_EXTENSIONS } from "../shared/catalog-import";
-import type { RelatedNoteDocument } from "./related-notes";
+import { RELATED_NOTE_MIN_BODY_CHARS, type RelatedNoteDocument } from "./related-notes";
 export interface RelatedNotesCorpusPort {
   /** Adapter supplies getMarkdownFilesUnderRecentRoots() results; no vault enumeration here. */
   listNoteFiles(): Array<{ path: string; basename: string; mtime: number }>;
@@ -16,8 +16,8 @@ export interface RelatedNotesCorpusPort {
 }
 
 export interface RelatedNotesCorpusOptions { roots: string[]; bodyExcerptChars?: number }
-export interface RelatedNotesCorpusStats { excludedDerived: number; excludedMerge: number; noiseLinks: number; noOutgoingLinks: number }
-export interface RelatedNotesCorpusResult { documents: RelatedNoteDocument[]; stats: RelatedNotesCorpusStats }
+export interface RelatedNotesCorpusStats { excludedDerived: number; excludedMerge: number; tooShort: number; noiseLinks: number; noOutgoingLinks: number }
+export interface RelatedNotesCorpusResult { documents: RelatedNoteDocument[]; stats: RelatedNotesCorpusStats; excludedTooShortPaths: string[] }
 
 export const RELATED_NOTE_AUDIO_EXTENSIONS: ReadonlySet<string> = AUDIO_FILE_EXTENSIONS;
 export const RELATED_NOTE_NOISE_PATH_SEGMENTS = [".versions", "diagnostics", "queue", "cache"] as const;
@@ -78,6 +78,11 @@ function topicStrings(index: QnALogNoteIndexCard | null): string[] {
   return index ? index.topics.map((topic) => topic.title) : [];
 }
 
+function stripTranscriptLedger(markdown: string): string {
+  const pattern = new RegExp(`<!--\\s*${nsRe("transcript-start")}:[^>]*-->[\\s\\S]*?<!--\\s*${nsRe("transcript-end")}:[^>]*-->`, "gi");
+  return markdown.replace(pattern, "");
+}
+
 export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, options: RelatedNotesCorpusOptions): Promise<RelatedNotesCorpusResult> {
   const roots = normalizeRecentNoteRoots(options.roots);
   const candidates = port.listNoteFiles().filter((file) => file.path.toLowerCase().endsWith(".md")
@@ -97,8 +102,11 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
   const documents: RelatedNoteDocument[] = [];
   const notePaths = new Set(candidates.map(({ path }) => normPath(path)));
   const excludedMergePaths = new Set<string>();
+  const excludedTooShortSet = new Set<string>();
+  const excludedTooShortPaths: string[] = [];
   let excludedDerived = excludedDerivedPaths.size;
   let excludedMerge = 0;
+  let tooShort = 0;
   let noiseLinks = 0;
   let noOutgoingLinks = 0;
   const rawLinks = new Map<string, string[]>();
@@ -110,6 +118,13 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
     const markdown = await port.readText(file.path);
     if (isMergeNote(file.basename, markdown)) { excludedMerge++; excludedMergePaths.add(path); continue; }
     const index = readNoteIndex(markdown);
+    const effectiveBody = extractIndexSource(stripTranscriptLedger(markdown));
+    if (!index && effectiveBody.length < RELATED_NOTE_MIN_BODY_CHARS) {
+      tooShort++;
+      excludedTooShortSet.add(path);
+      excludedTooShortPaths.push(path);
+      continue;
+    }
     const knowledge = readSelectedSessionKnowledge(markdown);
     const frontmatterTags = stringValues(fm.tags ?? fm.tag);
     const people = [
@@ -137,7 +152,7 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
     rawLinks.set(path, outgoing);
     const title = index?.core.title || file.basename.replace(/\.md$/i, "");
     const summary = index?.core.summary || knowledge?.topics.map((topic) => topic.summary).join(" ") || "";
-    const bodyExcerpt = extractIndexSource(markdown).slice(0, options.bodyExcerptChars ?? DEFAULT_BODY_EXCERPT_CHARS);
+    const bodyExcerpt = effectiveBody.slice(0, options.bodyExcerptChars ?? DEFAULT_BODY_EXCERPT_CHARS);
     documents.push({
       path, sourceId: sourceIdValue, sourcePath: sourcePathValue,
       title, timestamp: timestamp(fm, file.mtime || port.now()), tags: frontmatterTags,
@@ -147,28 +162,32 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
       questions: knowledge?.questions.map((item) => item.text) || index?.knowledge.questions || [],
       bodyExcerpt, outLinks: outgoing, generatedOutLinks, inLinks: [], unresolvedTargets,
       precision: index || knowledge ? "full" : "body-only",
+      hasIndexCard: index !== null,
     });
   }
   for (const doc of documents) {
     const outgoing = doc.outLinks.filter((target) => {
-      const exclude = excludedMergePaths.has(target);
+      const exclude = excludedMergePaths.has(target) || excludedTooShortSet.has(target);
       if (exclude) noiseLinks++;
       return !exclude;
     });
     doc.outLinks = outgoing;
-    doc.generatedOutLinks = doc.generatedOutLinks?.filter((target) => !excludedMergePaths.has(target));
+    doc.generatedOutLinks = doc.generatedOutLinks?.filter((target) => !excludedMergePaths.has(target) && !excludedTooShortSet.has(target));
     rawLinks.set(doc.path, outgoing);
     if (!outgoing.length) noOutgoingLinks++;
   }
   const reverseLinks = new Map<string, string[]>();
   for (const [source, targets] of rawLinks) for (const target of targets) {
-    if (!notePaths.has(target) || excludedDerivedPaths.has(target)) continue;
+    if (!notePaths.has(target) || excludedDerivedPaths.has(target) || excludedTooShortSet.has(target) || excludedMergePaths.has(target)) continue;
     const sources = reverseLinks.get(target) || [];
     sources.push(source); reverseLinks.set(target, sources);
   }
-  for (const doc of documents) doc.inLinks = reverseLinks.get(doc.path) || [];
-  // Derived outgoing links are deliberately omitted; generated source and people links cannot distort co-link counts.
-  return { documents, stats: { excludedDerived, excludedMerge, noiseLinks, noOutgoingLinks } };
+  for (const doc of documents) {
+    doc.inLinks = reverseLinks.get(doc.path) || [];
+    doc.inLinkOutDegrees = Object.fromEntries(doc.inLinks.map((source) => [source, Object.keys(resolved[source] || {}).length]));
+  }
+  // Derived outgoing links are omitted so they cannot change source backlink or co-link evidence.
+  return { documents, stats: { excludedDerived, excludedMerge, tooShort, noiseLinks, noOutgoingLinks }, excludedTooShortPaths };
 }
 
 export class RelatedNotesCorpusCache {
