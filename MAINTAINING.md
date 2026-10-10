@@ -276,7 +276,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 3. 在 `tests/settings-schema-policy.test.ts` 加一条「旧版 data.json → 用户配置仍在」的用例。
 
 本次 1 → 2 迁移新增 `security.apiKeyStorageNamespace`，用于区分不同知识库的 SecretStorage 条目。`loadAll` 先恢复或导入 API Key；只有 SecretStorage 写入成功后，`saveAll` 才清空设置快照中的密钥字段。Obsidian SecretStorage 没有删除方法，清除密钥时写入空值；设置版本高于当前版本时不改动 SecretStorage，也不写 `data.json`。
-本次 2 → 3 迁移登记 `storage.topicsFolder`；旧版没有该字段时按界面语言补用 `QnALog/主题` 或 `QnALog/Topics`，已有路径保留。
+新增 `topicsFolder` 是可由规范化逻辑补齐的设置字段，现有 schema 无须升级。升级会使 schema 2 用户被判定为旧版本；若没有对应迁移链，设置读回会被拒绝，旧版插件随后也会因未来版本保护而停止写盘。
 
 缺链时 `migrateSettingsForward` 返回 `null` 而不是半成品，调用方据此不写盘——
 宁可让用户停在可读状态，也不要用一半的迁移结果覆盖他的配置。
@@ -432,7 +432,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 - 新文件不得使用 `@ts-nocheck`；`@ts-nocheck` 退出、常规类型检查与 strict-core 覆盖是三个不同目标。
 ## 9. 设置映射表
 
-本节包含 `PluginSettings` 全部 87 个顶层键与 `SETTINGS_SCHEMA_VERSION = 3` 的当前映射。
+本节包含 `PluginSettings` 全部 87 个顶层键与 `SETTINGS_SCHEMA_VERSION = 2` 的当前映射。
 
 `scripts/check-settings-map.mjs` 只校验键集合与落盘路径。表格“拟归属”列是原分层设计注记，不是未批准的页面迁移任务。新增设置键必须同步登记 `normalizePluginSettings` 与 `serializePluginSettings` 白名单，否则读写会丢失该键。
 

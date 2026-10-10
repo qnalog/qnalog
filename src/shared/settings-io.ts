@@ -37,7 +37,7 @@ import type {
 //   saved > current → 不写盘（用户回退了插件版本）；
 //   无版本号/无法识别 → 丢弃重建，但先留档。
 // 这个常量因此只再作为「这份 data.json 是不是本版本写的」的标记存在。
-export const SETTINGS_SCHEMA_VERSION = 3;
+export const SETTINGS_SCHEMA_VERSION = 2;
 
 type UnknownRecord = Record<string, unknown>;
 

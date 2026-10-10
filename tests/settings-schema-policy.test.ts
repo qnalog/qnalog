@@ -85,7 +85,7 @@ describe("向前迁移", () => {
     }
   });
 
-  it("1 → 3 迁移增加 SecretStorage 命名空间并保留现有用户配置", () => {
+  it("1 → 2 迁移增加 SecretStorage 命名空间并保留现有用户配置", () => {
     const out = migrateSettingsForward({
       settings: {
         schemaVersion: 1,
@@ -102,7 +102,7 @@ describe("向前迁移", () => {
     expect(out.settings?.prompts).toEqual({ custom: "keep" });
     expect(out.settings?.storage).toEqual({ topicsFolder: "My Topics" });
     expect(out.settings?.schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
-    expect(out.path).toEqual([2, 3]);
+    expect(out.path).toEqual([2]);
   });
 
   it("迁移保留用户既有字段（不是重建默认值）", () => {

@@ -72,12 +72,26 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(DEFAULT_LIBRARY_PATHS.duplicatePeopleArchiveFolder).toBe("QnALog/资料库/归档/重复人员");
     expect(DEFAULT_SETTINGS.topicsFolder).toBe("QnALog/主题");
     expect(serializePluginSettings(normalizePluginSettings({})).storage.topicsFolder).toBe("QnALog/主题");
-    expect(SETTINGS_SCHEMA_VERSION).toBe(3);
+    expect(SETTINGS_SCHEMA_VERSION).toBe(2);
   });
 
   it("serialize 输出携带 schemaVersion", () => {
     const a = normalizePluginSettings({});
     expect(serializePluginSettings(a).schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
+  });
+
+  it("schema 2 data.json without topicsFolder receives default and preserves other settings", () => {
+    setActiveUiLanguage(ZH_LANG);
+    const oldData = { settings: { schemaVersion: 2, composer: { model: "saved-model" }, storage: { recordingLibraryPath: "my audio" } } };
+    const loaded = normalizePluginSettings(oldData);
+    expect(loaded.topicsFolder).toBe("QnALog/主题");
+    expect(loaded.llmModel).toBe("saved-model");
+    expect(loaded.audioFolder).toBe("my audio");
+    const saved = serializePluginSettings(loaded);
+    const reread = normalizePluginSettings(saved);
+    expect(reread.topicsFolder).toBe("QnALog/主题");
+    expect(reread.llmModel).toBe(loaded.llmModel);
+    expect(reread.audioFolder).toBe(loaded.audioFolder);
   });
 
   it("drops the retired automatic update setting when saving", () => {
