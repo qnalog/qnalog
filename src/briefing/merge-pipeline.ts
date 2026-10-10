@@ -283,7 +283,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   const meetingWorkbenchPrompt = buildMeetingWorkbenchPrompt(computedMeta && computedMeta.meetingWorkbench);
   const system = mode === "synthesis" && partPlans.length > 1
     ? "你是综合纪要的议题证据编辑。请从当前内部窗口提取并归并可核验的议题材料，供下一阶段统一成文；不要把窗口写成独立会议。"
-    : mode === "general" && partPlans.length > 1
+    : mode === "general"
       ? GENERAL_BRIEFING_SYSTEM_PROMPTS.part
       : "你是一位专业的文字编辑助手。请把当前时段原始转写忠实整理为完整、可读的 Markdown 正文。第一职责是还原信息，不得为了精炼而遗漏事实。";
   for (const plan of partPlans) {

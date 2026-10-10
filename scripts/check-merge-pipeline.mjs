@@ -2418,6 +2418,8 @@ async function main() {
         const hasIndex = content.includes("<!-- qnalog-note-index -->");
         const hasKnowledgeBlock = content.includes("<!-- qnalog-session-knowledge ");
         const preservedTranscript = content.includes(generalShortText);
+        const languageSystemSelected = calls.some((request) => requestMessages(request).some((message) =>
+          message.role === "system" && String(message.content || "").includes("输出语言与原始转写的主要语言一致")));
         if (!hasSummaryOnly) failures.push("general short session finalization changed the summary-only body");
         if (!hasIndex) failures.push("general short session finalization did not refresh the note index");
         if (!hasKnowledgeBlock) failures.push("general short session finalization did not write the session-knowledge block");
@@ -2425,12 +2427,14 @@ async function main() {
         if (!calls.some((request) => requestPrompt(request).includes("本模式不预设录音属于会议"))) {
           failures.push("general short session finalization did not send the general prompt");
         }
+        if (!languageSystemSelected) failures.push("general short session finalization did not set the source-language system instruction");
         console.log(`[general-short-session-finalize] ${JSON.stringify({
           hasSummaryOnly,
           hasIndex,
           hasKnowledgeBlock,
           preservedTranscript,
           finalized: !!generalShortSession.finalized,
+          languageSystemSelected,
         })}`);
       } finally {
         plugin.settings = originalGeneralSettings;

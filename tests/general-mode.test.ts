@@ -15,9 +15,42 @@ import {
   POLISH_PROMPTS,
 } from "../src/prompts/briefing-prompts";
 
-import { MODE_BODIES } from "../src/prompts/mode-bodies";
+import { GENERAL_BRIEFING_SYSTEM_PROMPTS, MODE_BODIES } from "../src/prompts/mode-bodies";
 
 describe("general mode prompt contract", () => {
+  it("preserves the primary source language across every General prompt path", () => {
+    const fidelity = buildBriefingFidelityContract({ sourceChars: 30 }, "balanced", 1, "general");
+    const adaptive = buildAdaptiveBriefingLengthInstruction("general", {
+      durationMs: 30_000,
+      transcriptChars: 30,
+      segmentCount: 1,
+    });
+    const consolidation = buildGeneralConsolidationPrompt({
+      parts: [{ index: 0, timeRange: "00:00–00:30", body: "An English source sentence." }],
+      modeGuidance: "General mode",
+    });
+    const prompts = [
+      GENERAL_BRIEFING_SYSTEM_PROMPTS.part,
+      GENERAL_BRIEFING_SYSTEM_PROMPTS.consolidation,
+      MODE_BODIES.general,
+      fidelity,
+      adaptive,
+      consolidation,
+      POLISH_PROMPTS.general,
+      MERGE_PROMPTS.general,
+    ];
+    for (const prompt of prompts) {
+      expect(prompt).toContain("输出语言与原始转写的主要语言一致");
+      expect(GENERAL_BRIEFING_SYSTEM_PROMPTS.part).toContain("最高优先级");
+      expect(GENERAL_BRIEFING_SYSTEM_PROMPTS.part).toContain("英文转写不得翻成中文");
+      expect(GENERAL_BRIEFING_SYSTEM_PROMPTS.part).toContain("SYSTEM LANGUAGE REQUIREMENT");
+      expect(GENERAL_BRIEFING_SYSTEM_PROMPTS.part).toContain("For an English transcript");
+      expect(MODE_BODIES.general).toContain("LANGUAGE RULE");
+      expect(GENERAL_BRIEFING_SYSTEM_PROMPTS.part).toContain("Task:");
+    }
+    expect(consolidation).toContain("Task:");
+  });
+
   it("allows omitting details when the overview preserves every source fact", () => {
     const prompts = [
       MODE_BODIES.general,
