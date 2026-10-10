@@ -2647,6 +2647,10 @@ export const ZH: MessageTable = {
   "The minute part still needs review after supplementation; the more complete version has been kept": "纪要分部补充后仍需复核，已保留信息更完整的版本",
   "The minute part has been supplemented with details from the original transcript": "纪要分部已对照原文补回细节",
   "Detail supplementation did not finish; the first usable version of this part has been kept": "补充细节未完成，已保留本部分首版可用正文",
+  "The General note may omit source segments; checking the marked transcript text": "通用笔记可能遗漏转写分段，正在核对标记的原文",
+  "The General note was supplemented with material from omitted segments": "通用笔记已补入遗漏分段的内容",
+  "General note segment coverage remained incomplete; the first usable draft was preserved": "通用笔记仍未覆盖全部分段，已保留首版可用稿",
+
   "The minute part was not fully generated; the checkpoint has been saved for a precise retry": "纪要分部未完整生成，已保存检查点等待精确重试",
   "The minute part failed to generate; previous results have been saved for a precise retry": "纪要分部生成失败，已保存此前结果等待精确重试",
   "Consolidating the materials from all segments into one set of minutes": "正在把各时段材料整理成一篇综合纪要",

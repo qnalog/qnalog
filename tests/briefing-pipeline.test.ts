@@ -6,6 +6,7 @@ import {
   createBriefingJobId,
   assessBriefingPartFidelity,
   assessBriefingPartGrounding,
+  assessBriefingSegmentCoverage,
   buildBriefingPartSummaryMap,
   expandOversizedBriefingSegments,
   extractBriefingPartEnvelope,
@@ -86,19 +87,31 @@ describe("纪要整理流水线", () => {
     expect(shortDraft.needsExpansion).toBe(false);
   });
 
-  it("does not auto-repair a General reply that drops Chinese topics when lexical anchors cannot detect them", () => {
-    const source = "登录页改版上线，转化率从百分之三点二涨到三点八，注册流程从五步减到三步，王芳两周内出方案。上个月四成投诉和退款有关，李明周五前出一页纸统一话术。物流报价涨了百分之八，赵强先去谈判，谈不拢再换供应商。";
+  it("uses segment coverage to detect omitted General topics without a length floor", () => {
+    const segments = [
+      { text: "登录页改版上线，转化率从百分之三点二涨到三点八，注册流程从五步减到三步，王芳两周内出方案。" },
+      { text: "上个月四成投诉和退款有关，李明周五前出一页纸统一话术。" },
+      { text: "物流报价涨了百分之八，赵强先去谈判，谈不拢再换供应商。" },
+    ];
+    const source = segments.map((item) => item.text).join("");
     const stubReply = "> [!abstract] 概要\n> 登录页改版上线，转化率由百分之三点二涨到三点八，注册流程减至三步；王芳两周内出方案。";
     const fidelity = assessBriefingPartFidelity(source.length, stubReply, { mode: "general" });
     const grounding = assessBriefingPartGrounding(source, stubReply);
+    const coverage = assessBriefingSegmentCoverage(segments, stubReply);
 
-    // Grounding extracts ASCII terms, Arabic numeric forms, and quoted phrases. Chinese number words and names
-    // are not semantic topic markers, so this detector cannot safely decide that the other topics were omitted.
     expect(fidelity.minimumOutputChars).toBe(0);
     expect(fidelity.needsExpansion).toBe(false);
     expect(grounding.anchors).toHaveLength(0);
     expect(grounding.needsRepair).toBe(false);
     expect(shouldAutoRepairBriefingPart(fidelity)).toBe(false);
+    expect(coverage.missingSegments).toEqual([2, 3]);
+    expect(coverage.segments.map((item) => item.numericAnchorCount)).toEqual([4, 3, 1]);
+    expect(assessBriefingSegmentCoverage(segments, `${stubReply}\n> 上个月四成投诉和退款有关，李明周五前整理统一话术。\n> 物流报价上涨百分之八，赵强先谈判，谈不拢再换供应商。`).missingSegments).toEqual([]);
+    expect(assessBriefingSegmentCoverage(
+      [{ text: "Li Ming asked to send the invoice before Friday." }],
+      "Send the invoice before Friday.",
+      ["Li Ming"],
+    ).missingSegments).toEqual([1]);
   });
 
   it("分部计划按总体量均衡，避免最后只剩很小一段", () => {

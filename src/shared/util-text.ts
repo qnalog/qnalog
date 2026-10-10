@@ -89,19 +89,51 @@ export function applyBriefingLanguageInstruction(prompt: string, settings: Brief
   return instruction ? prompt + "\n\n---\n\n" + instruction : prompt;
 }
 
-// No source-language detector exists in the shared text helpers; count Han and Latin letters only.
-// Treat Chinese as primary at a one-third Han share so short Chinese text with English terms remains Chinese.
+// No source-language detector exists in the shared text helpers. Use script and common-word evidence conservatively:
+// Japanese kana and non-Han/non-Latin scripts are other; uncertain Latin text is not forced into English.
 const GENERAL_CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
-const GENERAL_LATIN_RE = /[A-Za-z]/g;
+const GENERAL_KANA_RE = /[\u3040-\u30ff\u31f0-\u31ff]/g;
+const GENERAL_LATIN_RE = /\p{Script=Latin}/gu;
+const GENERAL_LETTER_RE = /\p{L}/gu;
+const GENERAL_ENGLISH_CUES = new Set([
+  "and", "are", "before", "because", "but", "can", "change", "could", "from", "have", "how", "is", "it",
+  "next", "need", "not", "of", "our", "please", "replace", "send", "should", "that", "the", "this", "to",
+  "update", "use", "we", "week", "with", "will", "would", "you",
+]);
+
+export type GeneralSourceLanguage = "zh" | "en" | "other";
+
+export function detectGeneralSourceLanguage(source: unknown): GeneralSourceLanguage {
+  const text = stringifyTextValue(source || "").normalize("NFKC");
+  const cjkChars = text.match(GENERAL_CJK_RE)?.length || 0;
+  const kanaChars = text.match(GENERAL_KANA_RE)?.length || 0;
+  const latinChars = text.match(GENERAL_LATIN_RE)?.length || 0;
+  const letterCount = text.match(GENERAL_LETTER_RE)?.length || 0;
+  if (!letterCount || kanaChars || letterCount > cjkChars + latinChars) return "other";
+  if (cjkChars > 0 && cjkChars * 3 >= cjkChars + latinChars) return "zh";
+  const words = text.toLowerCase().match(/\p{Script=Latin}+/gu) || [];
+  const englishCueCount = new Set(words.filter((word) => GENERAL_ENGLISH_CUES.has(word))).size;
+  return englishCueCount >= 2 ? "en" : "other";
+}
 
 export function buildGeneralSourceLanguageInstruction(source: unknown): string {
-  const text = stringifyTextValue(source || "");
-  const cjkChars = text.match(GENERAL_CJK_RE)?.length || 0;
-  const latinChars = text.match(GENERAL_LATIN_RE)?.length || 0;
-  const isChinesePrimary = cjkChars > 0 && cjkChars * 3 >= cjkChars + latinChars;
-  return isChinesePrimary
-    ? "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。"
-    : 'Output language: English. Use the labels "Task:", "Owner:", "Due:" for action items.';
+  const language = detectGeneralSourceLanguage(source);
+  if (language === "zh") {
+    return "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。";
+  }
+  if (language === "en") {
+    return 'Output language: English. Use the labels "Task:", "Owner:", "Due:" for action items.';
+  }
+  return "Output language: the same language as the transcript. Keep action-item labels short and in that language.";
+}
+
+export function buildGeneralSegmentCoverageInstruction(segmentCount: unknown, language: GeneralSourceLanguage): string {
+  const count = Math.floor(Number(segmentCount) || 0);
+  if (count < 2) return "";
+  if (language === "zh") {
+    return `输入共 ${count} 个分段（SEG 1…SEG ${count}），概要列表必须逐个覆盖每个分段，不得遗漏；每个分段至少写一条。`;
+  }
+  return `The input contains ${count} transcript segments (SEG 1 through SEG ${count}). The overview list must cover every segment without omission; include at least one item for each segment.`;
 }
 
 export function getSessionMetaDurationMs(meta: SessionDurationInput | null | undefined): number {

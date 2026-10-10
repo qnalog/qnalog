@@ -8,11 +8,12 @@ const briefingContractState = vi.hoisted(() => ({
   calls: [] as Array<{ mode: string; purpose: string; system: string; prompt: string }>,
   diagnostics: [] as string[],
   responseOverride: null as string | null,
+  responseSequence: [] as string[],
 }));
 vi.mock("../src/llm/core", () => ({
   callBriefingMergeLlm: vi.fn(async (_plugin: unknown, system: string, prompt: string, _options: unknown, context: { mode: string; purpose: string }) => {
     briefingContractState.calls.push({ mode: context.mode, purpose: context.purpose, system, prompt });
-    const body = briefingContractState.responseOverride ?? (context.purpose === "briefing-part-detail-repair"
+    const body = briefingContractState.responseSequence.shift() ?? briefingContractState.responseOverride ?? (context.purpose === "briefing-part-detail-repair"
       ? `## 事实\n${"原文细节".repeat(1800)}`
       : context.purpose === "briefing-part" && context.mode === "meeting"
         ? "短稿"
@@ -27,6 +28,8 @@ vi.mock("../src/llm/core", () => ({
 }));
 vi.mock("../src/people", () => ({
   buildPeopleContextForLlm: vi.fn(async () => ""),
+  getPeopleNameHotwordTerms: vi.fn(() => []),
+  loadPeopleDirectory: vi.fn(async () => []),
 }));
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"),
@@ -58,7 +61,7 @@ describe("release runtime contracts", () => {
       endOffsetMs: (index + 1) * 60_000,
       text: "讨论内容".repeat(1750),
     }));
-    const run = async (mode: string, runSegments = segments, responseOverride: string | null = null) => {
+    const run = async (mode: string, runSegments = segments, responseOverride: string | null = null, responses: string[] = []) => {
       const files = new Map<string, string>();
       const folders = new Set<string>();
       const adapter = {
@@ -93,8 +96,14 @@ describe("release runtime contracts", () => {
       briefingContractState.calls.length = 0;
       briefingContractState.diagnostics.length = 0;
       briefingContractState.responseOverride = responseOverride;
-      const result = await mergeAndPolishLongSession(plugin, runSegments, mode, null, null, null, 4000);
-      briefingContractState.responseOverride = null;
+      briefingContractState.responseSequence.splice(0, briefingContractState.responseSequence.length, ...responses);
+      let result: string;
+      try {
+        result = await mergeAndPolishLongSession(plugin, runSegments, mode, null, null, null, 4000);
+      } finally {
+        briefingContractState.responseOverride = null;
+        briefingContractState.responseSequence.length = 0;
+      }
       return { result, calls: [...briefingContractState.calls], diagnostics: [...briefingContractState.diagnostics], files };
     };
 
@@ -111,6 +120,7 @@ describe("release runtime contracts", () => {
       expect(generalParts[0]?.prompt).toContain(chineseInstruction);
       expect(generalConsolidation?.prompt).toContain(chineseInstruction);
       expect(generalParts[0]?.prompt.match(/输出语言：中文/g)).toHaveLength(1);
+      expect(generalConsolidation?.prompt).toContain("输入共 3 个分段（SEG 1…SEG 3）");
 
 
       const synthesis = await run("synthesis");
@@ -132,9 +142,12 @@ describe("release runtime contracts", () => {
       const languageProbe = async (text: string, expected: string, unexpected: string) => {
         const runResult = await run("general", [{ index: 0, startOffsetMs: 0, endOffsetMs: 15_000, text }]);
         const part = runResult.calls.find(call => call.purpose === "briefing-part");
+        const messages = `${part?.system}\n${part?.prompt}`;
         expect(part?.prompt).toContain(expected);
-        expect(part?.prompt).not.toContain(unexpected);
-        expect(part?.prompt.match(new RegExp(expected.startsWith("输出语言") ? "输出语言：中文" : "Output language: English", "g"))).toHaveLength(1);
+        expect(messages).not.toContain(unexpected);
+        const marker = expected.startsWith("输出语言") ? "输出语言：中文" : expected.includes("same language") ? "Output language: the same language" : "Output language: English";
+        if (!expected.startsWith("输出语言")) expect(part?.system).not.toMatch(/[\u3400-\u9fff]/);
+        expect(part?.prompt).toContain(expected);
         expect(part?.system).not.toContain("SYSTEM LANGUAGE REQUIREMENT");
         return runResult;
       };
@@ -153,6 +166,17 @@ describe("release runtime contracts", () => {
         "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。",
         "Output language: English.",
       );
+      const sameLanguageInstruction = "Output language: the same language as the transcript. Keep action-item labels short and in that language.";
+      await languageProbe(
+        "La próxima semana revisaré el flujo de devoluciones del mes pasado.",
+        sameLanguageInstruction,
+        "Output language: English.",
+      );
+      await languageProbe(
+        "来週の共有会では、返金の流れを見直します。",
+        sameLanguageInstruction,
+        "Output language: English.",
+      );
 
       const chineseTaskReply = "> [!abstract] 概要\n> 周五前把季度报告初稿发给李明评审。\n\n- [ ] 事项：把初稿发给李明评审";
       const chineseTask = await run("general", [{
@@ -163,6 +187,35 @@ describe("release runtime contracts", () => {
       }], chineseTaskReply);
       expect(chineseTask.result).toContain("- [ ] 事项：把初稿发给李明评审");
       expect(chineseTask.result).not.toContain("- [ ] Task:");
+      const coverageSegments = [
+        { index: 0, startOffsetMs: 0, endOffsetMs: 10_000, text: "登录页改版上线，转化率从百分之三点二涨到三点八，注册流程从五步减到三步，王芳两周内出方案。" },
+        { index: 1, startOffsetMs: 10_000, endOffsetMs: 20_000, text: "上个月四成投诉和退款有关，李明周五前出一页纸统一话术。" },
+        { index: 2, startOffsetMs: 20_000, endOffsetMs: 30_000, text: "物流报价涨了百分之八，赵强先去谈判，谈不拢再换供应商。" },
+      ];
+      const missingThirdTopic = "> [!abstract] 概要\n> - 登录页改版上线，转化率升至百分之三点八，注册流程减至三步；王芳两周内出方案。\n> - 上个月四成投诉和退款有关；李明周五前整理一页纸统一话术。";
+      const completeTopics = `${missingThirdTopic}\n> - 物流报价上涨百分之八；赵强先谈判，谈不拢再换供应商。`;
+      const repaired = await run("general", coverageSegments, null, [missingThirdTopic, completeTopics]);
+      expect(repaired.calls.find(call => call.purpose === "briefing-part")?.prompt).toContain("输入共 3 个分段（SEG 1…SEG 3）");
+      expect(repaired.calls.filter(call => call.purpose === "briefing-part-detail-repair")).toHaveLength(1);
+      const coverageRepair = repaired.calls.find(call => call.purpose === "briefing-part-detail-repair");
+      expect(coverageRepair?.prompt).toContain(`===SEG 3===\n${coverageSegments[2].text}`);
+      expect(coverageRepair?.prompt).toContain("返回完整替换版，不得只输出补充内容：保留初稿已覆盖的全部事实");
+      expect(repaired.result).toContain("物流报价上涨百分之八");
+      expect(coverageRepair?.prompt).toContain("逐一核对所有原始分段，每个话题都要有落点");
+      expect(repaired.diagnostics).toContain("llm.briefing_segment_coverage_repair_started");
+      expect(repaired.diagnostics).toContain("llm.briefing_segment_coverage_repaired");
+
+      const alreadyComplete = await run("general", coverageSegments, null, [completeTopics]);
+      expect(alreadyComplete.calls.filter(call => call.purpose === "briefing-part-detail-repair")).toHaveLength(0);
+
+      const stillMissing = await run("general", coverageSegments, null, [
+        missingThirdTopic,
+        "> [!abstract] 概要\n> 修复候选改写仍只涉及登录页和退款投诉。",
+      ]);
+      expect(stillMissing.calls.filter(call => call.purpose === "briefing-part-detail-repair")).toHaveLength(1);
+      expect(stillMissing.result).toContain("王芳两周内出方案");
+      expect(stillMissing.result).not.toContain("修复候选改写");
+      expect(stillMissing.diagnostics).toContain("llm.briefing_segment_coverage_repair_failed_preserved");
     } finally {
       vi.stubGlobal("window", originalWindow);
       vi.stubGlobal("obsidian", originalObsidian);

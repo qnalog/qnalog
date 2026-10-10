@@ -11,20 +11,38 @@ import {
   buildBriefingFidelityContract,
   buildChunkMergePrompt,
   buildGeneralConsolidationPrompt,
+  resolveTemplatePromptForMode,
   MERGE_PROMPTS,
   POLISH_PROMPTS,
 } from "../src/prompts/briefing-prompts";
-import { buildGeneralSourceLanguageInstruction } from "../src/shared/util-text";
-import { GENERAL_BRIEFING_SYSTEM_PROMPTS, MODE_BODIES } from "../src/prompts/mode-bodies";
+import { buildGeneralSegmentCoverageInstruction, buildGeneralSourceLanguageInstruction, detectGeneralSourceLanguage } from "../src/shared/util-text";
+import { GENERAL_BRIEFING_SYSTEM_PROMPTS, GENERAL_OTHER_LANGUAGE_PROMPTS, MODE_BODIES } from "../src/prompts/mode-bodies";
 
 describe("general mode prompt contract", () => {
-  it("uses one source-language instruction for Chinese, English, and mixed transcripts", () => {
-    const chineseInstruction = buildGeneralSourceLanguageInstruction("提醒一下，周五前把季度报告发给李明评审。");
-    const englishInstruction = buildGeneralSourceLanguageInstruction("Next week, replace the case in the presentation with last month's refund flow.");
-    const mixedInstruction = buildGeneralSourceLanguageInstruction("这个 sprint 要把 onboarding 的转化漏斗再看一遍。");
+  it("uses a conservative three-way source-language instruction", () => {
+    const chinese = "提醒一下，周五前把季度报告发给李明评审。";
+    const english = "Next week, replace the case in the presentation with last month's refund flow.";
+    const mixed = "这个 sprint 要把 onboarding 的转化漏斗再看一遍。";
+    const japanese = "来週の共有会では、返金の流れを見直します。";
+    const spanish = "La próxima semana revisaré el flujo de devoluciones.";
+    expect(detectGeneralSourceLanguage(chinese)).toBe("zh");
+    expect(detectGeneralSourceLanguage(english)).toBe("en");
+    expect(detectGeneralSourceLanguage(mixed)).toBe("zh");
+    expect(detectGeneralSourceLanguage(japanese)).toBe("other");
+    expect(detectGeneralSourceLanguage(spanish)).toBe("other");
+
+    const chineseInstruction = buildGeneralSourceLanguageInstruction(chinese);
+    const englishInstruction = buildGeneralSourceLanguageInstruction(english);
+    const mixedInstruction = buildGeneralSourceLanguageInstruction(mixed);
+    const otherInstruction = "Output language: the same language as the transcript. Keep action-item labels short and in that language.";
     expect(chineseInstruction).toBe("输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。");
     expect(englishInstruction).toBe('Output language: English. Use the labels "Task:", "Owner:", "Due:" for action items.');
     expect(mixedInstruction).toBe(chineseInstruction);
+    expect(buildGeneralSourceLanguageInstruction(japanese)).toBe(otherInstruction);
+    expect(buildGeneralSourceLanguageInstruction(spanish)).toBe(otherInstruction);
+    expect(buildGeneralSegmentCoverageInstruction(1, "zh")).toBe("");
+    expect(buildGeneralSegmentCoverageInstruction(3, "zh")).toContain("输入共 3 个分段（SEG 1…SEG 3）");
+    expect(buildGeneralSegmentCoverageInstruction(3, "en")).toContain("3 transcript segments (SEG 1 through SEG 3)");
 
     const staticPrompts = [
       GENERAL_BRIEFING_SYSTEM_PROMPTS.part,
@@ -48,11 +66,31 @@ describe("general mode prompt contract", () => {
     const englishPrompt = buildGeneralConsolidationPrompt({
       parts: [{ index: 0, timeRange: "00:00–00:30", body: "An English source sentence." }],
       modeGuidance: englishInstruction,
+      sourceLanguage: "en",
     });
     expect(chinesePrompt).toContain(chineseInstruction);
     expect(chinesePrompt).not.toContain("Output language:");
     expect(englishPrompt).toContain(englishInstruction);
     expect(englishPrompt).not.toContain("输出语言：中文");
+    const otherSystem = [GENERAL_OTHER_LANGUAGE_PROMPTS.part, GENERAL_OTHER_LANGUAGE_PROMPTS.consolidation, GENERAL_OTHER_LANGUAGE_PROMPTS.modeBody].join("\n");
+    const otherGuidance = resolveTemplatePromptForMode({ settings: {} }, "general", true, "other");
+    const otherFidelity = buildBriefingFidelityContract({ sourceChars: 30 }, "balanced", 1, "general", "other");
+    const otherAdaptive = buildAdaptiveBriefingLengthInstruction("general", {
+      durationMs: 30_000,
+      transcriptChars: 30,
+      segmentCount: 1,
+    }, "other");
+    const otherChunk = buildChunkMergePrompt("La próxima semana revisaré el flujo de devoluciones.", 1, 1, "00:00–00:30", "", otherGuidance, otherFidelity, "general", "balanced", "other");
+    const otherConsolidation = buildGeneralConsolidationPrompt({
+      parts: [{ index: 0, timeRange: "00:00–00:30", body: "La próxima semana revisaré el flujo de devoluciones." }],
+      modeGuidance: otherGuidance,
+      sourceLanguage: "other",
+    });
+    for (const prompt of [otherSystem, otherGuidance, otherFidelity, otherAdaptive, otherChunk, otherConsolidation]) {
+      expect(prompt).not.toMatch(/[\u3400-\u9fff]/);
+    }
+    expect(otherChunk).toContain("La próxima semana");
+    expect(otherConsolidation).toContain("Internal materials:");
   });
 
   it("allows omitting details only when the overview preserves every source fact", () => {
