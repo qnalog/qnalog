@@ -23,4 +23,13 @@ describe("overview card cache", () => {
     expect((await cache.refresh({ windowDays: 1 })).readCount).toBe(0);
     expect(p.reads).toEqual([]);
   });
+  it("does not load topic pages into the source-note overview cache", async () => {
+    const p = port();
+    p.files.push({ path: "QnALog/Topics/topic.md", basename: "topic", mtime: Date.now() });
+    p.getFrontmatter = (path) => path.endsWith("topic.md") ? { qnalog_type: "qnalog-topic" } : { qnalog_time: "2001-01-01" };
+    const cache = new OverviewCardCache(p, ["QnALog"]);
+    await cache.refresh({ windowDays: 3650 });
+    expect(p.reads).toEqual(["QnALog/a.md"]);
+    expect(cache.getCards({ windowDays: 3650 }).map((card) => card.path)).toEqual(["QnALog/a.md"]);
+  });
 });

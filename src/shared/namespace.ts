@@ -172,6 +172,16 @@ export const NS_FM = {
   todoOwners: "qnalog_todo_owners",
   mergedInto: "qnalog_merged_into",
   mergedAt: "qnalog_merged_at",
+  topicId: "qnalog_topic_id",
+  topicTags: "qnalog_topic_tags",
+  topicTagAliases: "qnalog_topic_tag_aliases",
+  topicMembers: "qnalog_topic_members",
+  topicExcluded: "qnalog_topic_excluded",
+  topicBasis: "qnalog_topic_basis",
+  topicCreated: "qnalog_topic_created",
+  topicUpdated: "qnalog_topic_updated",
+  topicHash: "qnalog_topic_hash",
+  topicUndoSnapshot: "qnalog_topic_undo_snapshot",
 } as const;
 
 export type NamespaceFrontmatterField = keyof typeof NS_FM;
@@ -271,6 +281,8 @@ export const NS_TYPE_VERSION_CACHE = "QnALog版本缓存";
 export const NS_TYPE_PERSON = "qnalog-person";
 export const NS_TYPE_PERSON_MERGED = "qnalog-person-merged";
 export const NS_TYPE_TODO_CARD = "qnalog-todo-card";
+/** Frontmatter type value for a user-owned topic page. */
+export const NS_TYPE_TOPIC = "qnalog-topic";
 
 /** `qnalog_type`（历史别名 `类型`）是否表示派生版本。 */
 export function isDerivedVersionType(value: unknown): boolean {

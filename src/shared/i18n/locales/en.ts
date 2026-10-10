@@ -19,4 +19,10 @@ export const EN: MessageTable = {
   "Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired.": "Recovery is paused. The original queue data and its material references are kept. Update QnALog for an unsupported task type; for damaged task data, keep a backup and use View log to share a diagnostic report with the maintainer. Related tasks stay paused until recovery data is repaired.",
   "QnALog: {0} queue entries could not be restored; their original data was kept. Open Pending Queue for details.": "QnALog: {0} queue entries could not be restored; their original data was kept. Open Pending Queue for details.",
   "Queue recovery entries were paused": "Queue recovery entries were paused",
+  "Similar tag spelling: ": "Similar tag spelling: ",
+  "Shared project identifier tag": "Shared project identifier tag",
+  "Shared topic tags": "Shared topic tags",
+  "Starting note": "Starting note",
+  "Similar content": "Similar content",
+  "Completed {0}/{1} batches": "Completed {0}/{1} batches",
 };

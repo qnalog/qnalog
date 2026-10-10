@@ -18,6 +18,7 @@ import { getActiveUiLanguage } from "./i18n";
 export interface DefaultFolderNames {
   audio: string;
   notes: string;
+  topics: string;
   meetingMaterials: string;
   htmlReports: string;
   library: string;
@@ -38,6 +39,7 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
   zh: {
     audio: "录音",
     notes: "转写纪要",
+    topics: "主题",
     meetingMaterials: "会议资料",
     htmlReports: "HTML报告",
     library: "资料库",
@@ -56,6 +58,7 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
   en: {
     audio: "Recordings",
     notes: "Transcribed notes",
+    topics: "Topics",
     meetingMaterials: "Meeting materials",
     htmlReports: "HTML reports",
     library: "Library",
@@ -77,6 +80,7 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
 export interface DefaultFolderPaths {
   audioFolder: string;
   mdFolder: string;
+  topicsFolder: string;
   meetingMaterialsFolder: string;
   htmlReportFolder: string;
   vocabularyFile: string;
@@ -102,6 +106,7 @@ export function defaultFolderPaths(): DefaultFolderPaths {
   const paths: DefaultFolderPaths = {
     audioFolder: `${NS_ROOT}/${n.audio}`,
     mdFolder: `${NS_ROOT}/${n.notes}`,
+    topicsFolder: `${NS_ROOT}/${n.topics}`,
     meetingMaterialsFolder: `${NS_ROOT}/${n.meetingMaterials}`,
     htmlReportFolder: `${NS_ROOT}/${n.htmlReports}`,
     vocabularyFile: `${NS_ROOT}/${n.library}/${n.glossary}`,
@@ -143,6 +148,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   // 目录默认值按界面语言取，读取时求值，原因见文件头注释
   get audioFolder() { return defaultFolderPaths().audioFolder; },
   get mdFolder() { return defaultFolderPaths().mdFolder; },
+  get topicsFolder() { return defaultFolderPaths().topicsFolder; },
   get meetingMaterialsFolder() { return defaultFolderPaths().meetingMaterialsFolder; },
   get htmlReportFolder() { return defaultFolderPaths().htmlReportFolder; },
   reportBrandName: "",  // seminar 报告页脚公司名；留空则用纪要里的「公司/」标签。报告不含 logo。

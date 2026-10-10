@@ -227,6 +227,7 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   const storage = asRecord(raw.storage);
   s.audioFolder = firstString(defaults.audioFolder, storage.recordingLibraryPath, raw.audioFolder);
   s.mdFolder = firstString(defaults.mdFolder, storage.briefingNotePath, raw.mdFolder);
+  s.topicsFolder = obsidian.normalizePath(firstString(defaults.topicsFolder, storage.topicsFolder, raw.topicsFolder));
   s.meetingMaterialsFolder = obsidian.normalizePath(firstString(defaults.meetingMaterialsFolder, storage.meetingMaterialPath, raw.meetingMaterialsFolder));
   s.htmlReportFolder = firstString(defaults.htmlReportFolder, storage.htmlReportPath, raw.htmlReportFolder);
   s.inboxFolder = firstString(defaults.inboxFolder, storage.inboxPath, raw.inboxFolder);
@@ -447,6 +448,7 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       autoImportInbox: s.inboxAutoImport,
       archiveSubfolder: s.inboxArchiveSubfolder,
       syncQuietMs: s.inboxStabilizeDelayMs,
+      topicsFolder: s.topicsFolder,
       segmentCachePath: s.segmentCacheFolder,
     },
     noteNaming: {

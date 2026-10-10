@@ -12,6 +12,7 @@ function makePort(): RelatedNotesCorpusPort {
     { path: "QnALog/Notes/legacy-host.md", basename: "legacy-host.md", mtime: 9 },
     { path: "QnALog/Notes/legacy-derived.md", basename: "legacy-derived.md", mtime: 10 },
     { path: "QnALog/Notes/AI视频制作-分镜坐标系规范.md", basename: "AI视频制作-分镜坐标系规范.md", mtime: 8 },
+    { path: "QnALog/Notes/topic-page.md", basename: "topic-page.md", mtime: 11 },
     { path: "QnALog/Notes/.versions/cache.md", basename: "cache.md", mtime: 6 },
   ];
   const contents: Record<string, string> = {
@@ -23,12 +24,14 @@ function makePort(): RelatedNotesCorpusPort {
     "QnALog/Notes/legacy-host.md": "# Legacy host\nThis original note provides enough authored context for indexing and must remain the representative source when a newer derived copy has the same source identity.",
     "QnALog/Notes/legacy-derived.md": "# Legacy derived copy\nThis content belongs to a derived copy and should not be read into the source corpus.",
     "QnALog/Notes/AI视频制作-分镜坐标系规范.md": "# AI video production coordinate system\n<!-- qnalog-transcript-start:old -->\nTranscript content is intentionally long but belongs to a transcript ledger rather than the authored note body, so it must not rescue this short orphan note.\n<!-- qnalog-transcript-end:old -->",
+    "QnALog/Notes/topic-page.md": "---\nqnalog_type: qnalog-topic\n---\n# Topic\nA topic page is not an original-note corpus member.",
   };
   return {
     listNoteFiles: () => files,
     getFrontmatter: (notePath) => {
       if (notePath.includes("/.versions/")) throw new Error("Excluded folder metadata was read");
       if (notePath === "QnALog/People/Mira.md") return { qnalog_type: "qnalog-person" };
+      if (notePath.endsWith("topic-page.md")) return { qnalog_type: "qnalog-topic" };
       if (notePath.endsWith("legacy-host.md")) return { qnalog_source_id: "legacy-session" };
       if (notePath.endsWith("legacy-derived.md")) return {
         "类型": "QnALog派生版本",

@@ -1,6 +1,7 @@
 import { buildRelatedNotesCorpus, type RelatedNotesCorpusPort } from "../indexing/related-notes-corpus";
 import type { RelatedNoteDocument } from "../indexing/related-notes";
 import { buildOverviewCard, type OverviewCard } from "./overview-card";
+import { NS_TYPE_TOPIC, readNamespaceFrontmatter } from "../shared/namespace";
 
 export const OVERVIEW_DEFAULT_WINDOW_DAYS = 90;
 export interface OverviewCardStore { load(): Promise<OverviewCard[]>; save(cards: readonly OverviewCard[]): Promise<void> }
@@ -22,7 +23,8 @@ export class OverviewCardCache {
 
   async refresh(options: OverviewRefreshOptions = {}): Promise<OverviewRefreshResult> {
     const start = Date.now();
-    const files = this.port.listNoteFiles().filter((file) => file.path.toLowerCase().endsWith(".md"));
+    const files = this.port.listNoteFiles().filter((file) => file.path.toLowerCase().endsWith(".md")
+      && readNamespaceFrontmatter((this.port.getFrontmatter(file.path) || {}) as Record<string, unknown>, "type") !== NS_TYPE_TOPIC);
     const paths = new Set(files.map((file) => file.path));
     let removed = 0;
     for (const path of [...this.mtimes.keys()]) if (!paths.has(path)) { this.cards.delete(path); this.mtimes.delete(path); this.markdownByPath.delete(path); removed++; }
@@ -81,6 +83,11 @@ export class OverviewCardCache {
     const days = options.windowDays ?? OVERVIEW_DEFAULT_WINDOW_DAYS;
     const cutoff = this.port.now() - days * 86400000;
     return [...this.cards.values()].filter((card) => card.mtime >= cutoff).sort((a, b) => a.path.localeCompare(b.path));
+  }
+  invalidate(path: string): void {
+    this.cards.delete(path);
+    this.mtimes.delete(path);
+    this.markdownByPath.delete(path);
   }
   getNoteCount(): number { return this.cards.size; }
   getReadCount(): number { return this.readCount; }

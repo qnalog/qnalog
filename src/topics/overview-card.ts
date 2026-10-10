@@ -29,15 +29,15 @@ export interface OverviewCardInput {
 }
 
 export function normalizeTagKey(value: string): string {
-  let normalized = value.trim().replace(/^#+/, "").replace(/^(?:主题|项目|行业|公司)\//i, "").normalize("NFKC").toLocaleLowerCase();
-  normalized = normalized.replace(/\s*&\s*/g, " and ").replace(/\s+n\s+/g, " and ").replace(/\s+and\s+/g, " and ");
+  let normalized = value.trim().replace(/^#+/, "").replace(/^(?:主题|项目|行业|公司|概念|工具|品牌)\//i, "").normalize("NFKC").toLocaleLowerCase();
+  normalized = normalized.replace(/(\p{L})&(\p{L})/gu, "$1$2").replace(/\s*&\s*/g, " and ").replace(/\s+n\s+/g, " and ").replace(/\s+and\s+/g, " and ");
   const parts = normalized.split(" and ").sort();
   return parts.join("and").replace(/[\p{P}\p{S}\s_]+/gu, "");
 }
 
 function tagValues(value: unknown): string[] {
   const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\s,]+/) : [];
-  return [...new Set(values.filter((item): item is string => typeof item === "string").map(normalizeTagKey).filter(Boolean))].sort();
+  return [...new Set(values.filter((item): item is string => typeof item === "string").map((item) => item.trim().replace(/^#+/, "")).filter((item) => !!normalizeTagKey(item)))].sort();
 }
 
 function dateValue(value: unknown): string {

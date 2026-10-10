@@ -85,13 +85,14 @@ describe("向前迁移", () => {
     }
   });
 
-  it("1 → 2 为 SecretStorage 增加命名空间且保留现有 API Key 与配置", () => {
+  it("1 → 2 迁移增加 SecretStorage 命名空间并保留现有用户配置", () => {
     const out = migrateSettingsForward({
       settings: {
         schemaVersion: 1,
         speech: { compatApiKey: "transcribe-key", providers: { openai: { apiKey: "provider-key" } } },
         composer: { apiKey: "llm-key", profiles: [{ id: "p1", apiKey: "profile-key" }] },
         prompts: { custom: "keep" },
+        storage: { topicsFolder: "My Topics" },
       },
     });
     expect(out.state).toBe("migrate");
@@ -99,7 +100,8 @@ describe("向前迁移", () => {
     expect(out.settings?.speech).toEqual({ compatApiKey: "transcribe-key", providers: { openai: { apiKey: "provider-key" } } });
     expect(out.settings?.composer).toEqual({ apiKey: "llm-key", profiles: [{ id: "p1", apiKey: "profile-key" }] });
     expect(out.settings?.prompts).toEqual({ custom: "keep" });
-    expect(out.settings?.schemaVersion).toBe(2);
+    expect(out.settings?.storage).toEqual({ topicsFolder: "My Topics" });
+    expect(out.settings?.schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
     expect(out.path).toEqual([2]);
   });
 
@@ -108,12 +110,12 @@ describe("向前迁移", () => {
     const original = SETTINGS_MIGRATIONS[1];
     SETTINGS_MIGRATIONS[1] = (s) => ({ ...s, 新字段: "新默认值" });
     try {
-      if (SETTINGS_SCHEMA_VERSION === 2) {
+      if (SETTINGS_SCHEMA_VERSION >= 2) {
         const out = migrateSettingsForward({ settings: { schemaVersion: 1, composer: { apiKey: "用户填的密钥" } } });
         expect(out.settings?.composer).toEqual({ apiKey: "用户填的密钥" });
         expect(out.settings?.新字段).toBe("新默认值");
-        expect(out.settings?.schemaVersion).toBe(2);
-        expect(out.path).toEqual([2]);
+        expect(out.settings?.schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
+        expect(out.path).toEqual(SETTINGS_SCHEMA_VERSION === 2 ? [2] : [2, 3]);
       }
     } finally {
       if (original === undefined) delete SETTINGS_MIGRATIONS[1];
