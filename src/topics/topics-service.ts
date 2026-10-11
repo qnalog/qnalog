@@ -186,6 +186,7 @@ export class TopicsService {
         completedBatches: generated.completedBatches, totalBatches: generated.totalBatches,
         ...(generated.partialFailure ? { partialFailure: generated.partialFailure } : {}),
         sourceLinks: Object.fromEntries(memberRecords.map((member) => [member.sourceId, `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`])),
+        sourceDates: Object.fromEntries(members.map(({ card }) => [card.sourceId, card.date])),
         ...(existing ? {
           memberLinks: [...new Set([...existing.page.memberLinks, ...memberRecords.map((member) => `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`)])],
           tags: [...new Set([...existing.page.tags, ...learned.tags])],

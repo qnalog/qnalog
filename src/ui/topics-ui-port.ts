@@ -42,6 +42,16 @@ export function topicCandidateGroups(candidates: TopicCandidates): Array<{ tier:
   ];
 }
 
+export function formatTopicCandidateReasons(candidate: TopicCandidate, text: (key: string) => string): string[] {
+  const reason = candidate.reasonDetails[0];
+  if (!reason) return candidate.reasons.slice(0, 1).map((key) => text(key));
+  if (reason.kind === "content") return [text("Similar content")];
+  const label = reason.kind === "project-tags" ? text("Project tags: ") : text("Topic tags: ");
+  const names = [...new Set(reason.labels.map((tag) => tag.replace(/^#+/, "").replace(/^[^/]+\//, "")))];
+  const displayed = names.slice(0, 3).join(String.fromCharCode(0x3001)) + (names.length > 3 ? "…" : "");
+  return [`${label}${displayed}${reason.similar ? text(" (similar spelling)") : ""}`];
+}
+
 export function defaultTopicMemberPaths(candidates: TopicCandidates): string[] {
   return topicCandidateGroups(candidates).flatMap(({ items }) => items.filter((item) => item.defaultSelected).map((item) => item.path));
 }

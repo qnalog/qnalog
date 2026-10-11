@@ -1,5 +1,6 @@
 import { normalizeTagKey, type OverviewCard } from "./overview-card";
 import type { TopicPage } from "./topic-page";
+import { NS_TAG } from "../shared/namespace";
 
 export const GENERIC_TAG_MIN_DOCUMENTS = 8;
 export const GENERIC_TAG_SHARE = 0.2;
@@ -17,12 +18,18 @@ export interface TopicTagMatch {
   matchedTags: string[];
 }
 
+export function isSystemTopicTag(label: string): boolean {
+  const normalized = label.trim().replace(/^#+/, "").toLocaleLowerCase();
+  return normalized.startsWith(`${NS_TAG.toLocaleLowerCase()}/`);
+}
+
 export function learnTopicTagSet(selectedCards: readonly OverviewCard[], cards: readonly OverviewCard[]): LearnedTopicTagSet {
   const labelsByKey = new Map<string, Set<string>>();
   const pathsByKey = new Map<string, Set<string>>();
   const representativeKeys: string[] = [];
   const representativeLabels = new Map<string, string>();
   for (const card of selectedCards) for (const label of card.tags) {
+    if (isSystemTopicTag(label)) continue;
     const rawKey = normalizeTagKey(label);
     if (!rawKey) continue;
     const key = representativeKeys.find((known) => sameTagClass(representativeLabels.get(known) || known, label) && areTagKeysSimilar(known, rawKey)) || rawKey;
@@ -33,6 +40,7 @@ export function learnTopicTagSet(selectedCards: readonly OverviewCard[], cards: 
   const allLabels = new Map<string, Set<string>>();
   const allPaths = new Map<string, Set<string>>();
   for (const card of cards) for (const label of new Set(card.tags)) {
+    if (isSystemTopicTag(label)) continue;
     const rawKey = normalizeTagKey(label); if (!rawKey) continue;
     const key = representativeKeys.find((known) => sameTagClass(representativeLabels.get(known) || known, label) && areTagKeysSimilar(known, rawKey)) || rawKey;
     const labels = allLabels.get(key) || new Set<string>(); labels.add(label.replace(/^#/, "")); allLabels.set(key, labels);
@@ -43,7 +51,7 @@ export function learnTopicTagSet(selectedCards: readonly OverviewCard[], cards: 
     return isProjectTag(label) || (!isGenericTag(key, allPaths.get(key)?.size || 0, cards.length) && (pathsByKey.get(key)?.size || 0) >= TOPIC_TAG_MIN_SHARED_MEMBERS);
   }).sort();
   const pathsByTag = new Map<string, Set<string>>();
-  for (const card of cards) for (const tag of new Set(card.tags.map(normalizeTagKey).filter(Boolean))) {
+  for (const card of cards) for (const tag of new Set(card.tags.filter((label) => !isSystemTopicTag(label)).map(normalizeTagKey).filter(Boolean))) {
     const paths = pathsByTag.get(tag) || new Set<string>();
     paths.add(card.path);
     pathsByTag.set(tag, paths);
@@ -58,7 +66,7 @@ function sameTagClass(key: string, label: string): boolean {
 }
 
 export function isProjectTag(label: string): boolean { return /^#?项目\//i.test(label.trim()); }
-export function isTopicTag(label: string): boolean { return !/^#?(?:项目|行业|公司)\//i.test(label.trim()); }
+export function isTopicTag(label: string): boolean { return !isSystemTopicTag(label) && !/^#?(?:项目|行业|公司)\//i.test(label.trim()); }
 export function areTagKeysSimilar(a: string, b: string): boolean {
   const left = normalizeTagKey(a).replace(/[^\p{L}\p{N}]/gu, "");
   const right = normalizeTagKey(b).replace(/[^\p{L}\p{N}]/gu, "");
@@ -81,11 +89,11 @@ export function matchNoteToTopics(
   topics: readonly TopicPage[],
   cards: readonly OverviewCard[],
 ): TopicTagMatch[] {
-  const noteTags = new Set(card.tags.map(normalizeTagKey).filter(Boolean));
+  const noteTags = new Set(card.tags.filter((label) => !isSystemTopicTag(label)).map(normalizeTagKey).filter(Boolean));
   const totalDocs = new Set(cards.map((item) => item.path)).size;
   const docFrequency = new Map<string, number>();
   const pathsByTag = new Map<string, Set<string>>();
-  for (const item of cards) for (const tag of new Set(item.tags.map(normalizeTagKey).filter(Boolean))) {
+  for (const item of cards) for (const tag of new Set(item.tags.filter((label) => !isSystemTopicTag(label)).map(normalizeTagKey).filter(Boolean))) {
     const paths = pathsByTag.get(tag) || new Set<string>();
     paths.add(item.path);
     pathsByTag.set(tag, paths);
@@ -97,7 +105,7 @@ export function matchNoteToTopics(
   const matches: TopicTagMatch[] = [];
   for (const topic of topics) {
     if (topic.members.includes(card.path) || topic.excluded.includes(card.path)) continue;
-    const expanded = topic.tags.flatMap((tag) => [tag, ...(topic.tagAliases?.[tag] || [])]);
+    const expanded = topic.tags.flatMap((tag) => [tag, ...(topic.tagAliases?.[tag] || [])]).filter((tag) => !isSystemTopicTag(tag));
     const matchedTags = [...new Set(expanded.map(normalizeTagKey).filter((tag) => noteTags.has(tag)))];
     const specific = matchedTags.some((tag) => !isGenericTag(tag, docFrequency.get(tag) || 0, totalDocs));
     if (specific || matchedTags.length >= 2) matches.push({ topicId: topic.id, title: topic.title, matchedTags: [...new Set(matchedTags)].sort() });

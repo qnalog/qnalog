@@ -29,6 +29,7 @@ export interface TopicChangePreview {
   memberLinks?: string[];
   tags?: string[];
   sourceLinks?: Record<string, string>;
+  sourceDates?: Record<string, string>;
 }
 export interface TopicIntegrationPort {
   request(messages: Array<{ role: "system" | "user"; content: string }>, signal?: AbortSignal, thinkingMode?: "fast"): Promise<unknown>;

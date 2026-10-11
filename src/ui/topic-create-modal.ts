@@ -2,7 +2,8 @@ import { Modal, Notice, type App } from "obsidian";
 import type { TopicCandidate, TopicCandidates } from "../topics/topic-candidates";
 import type { TopicBasis } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
-import { defaultTopicMemberPaths, suggestTopicTitle, topicCandidateGroups } from "./topics-ui-port";
+import { defaultTopicMemberPaths, formatTopicCandidateReasons, suggestTopicTitle, topicCandidateGroups } from "./topics-ui-port";
+import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
 import { TopicPreviewModal } from "./topic-preview-modal";
 
 const TOPIC_CANDIDATE_WINDOWS = [90, 180, 365] as const;
@@ -84,11 +85,12 @@ export class TopicCreateModal extends Modal {
     content.empty();
     content.addClass("qnalog-topics-create");
     content.createEl("h2", { text: this.port.text("Create topic") });
-    const titleInput = content.createEl("input", { cls: "qnalog-topics-title", attr: { type: "text", placeholder: this.port.text("Topic title"), "aria-label": this.port.text("Topic title") } });
+    const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
+    const titleInput = scroll.createEl("input", { cls: "qnalog-topics-title", attr: { type: "text", placeholder: this.port.text("Topic title"), "aria-label": this.port.text("Topic title") } });
     titleInput.value = this.title;
     titleInput.addEventListener("input", () => { this.title = titleInput.value; });
 
-    const basis = content.createDiv({ cls: "qnalog-topics-basis" });
+    const basis = scroll.createDiv({ cls: "qnalog-topics-basis" });
     for (const [value, label] of [["overview", "Overview"], ["body", "Finalized body"]] as const) {
       const option = basis.createEl("label", { cls: "qnalog-topics-radio" });
       const radio = option.createEl("input", { attr: { type: "radio", name: "qnalog-topic-basis", value } });
@@ -102,25 +104,26 @@ export class TopicCreateModal extends Modal {
       option.createSpan({ text: this.port.text(label) });
     }
     if (this.basis === "body") {
-      content.createDiv({ cls: "qnalog-topics-cost-warning", text: this.port.text("Finalized body content is sent to the configured model and may use more credits.") });
-      if (this.estimateText) content.createDiv({ cls: "qnalog-topics-estimate", text: this.estimateText });
+      scroll.createDiv({ cls: "qnalog-topics-cost-warning", text: this.port.text("Finalized body content is sent to the configured model and may use more credits.") });
+      if (this.estimateText) scroll.createDiv({ cls: "qnalog-topics-estimate", text: this.estimateText });
     }
 
-    if (this.loading) content.createDiv({ cls: "qnalog-topics-loading", text: this.previewController
+    if (this.loading) scroll.createDiv({ cls: "qnalog-topics-loading", text: this.previewController
       ? `${this.port.text("Generating preview…")} ${this.previewProgress}`
       : this.port.text("Loading candidates…") });
     if (this.candidates) {
       for (const group of topicCandidateGroups(this.candidates)) {
-        const section = content.createDiv({ cls: `qnalog-topics-candidate-group is-${group.tier}` });
+        const section = scroll.createDiv({ cls: `qnalog-topics-candidate-group is-${group.tier}` });
         section.createEl("h3", { text: `${this.port.text(GROUP_LABELS[group.tier])} (${group.items.length})` });
         for (const candidate of group.items) this.renderCandidate(section, candidate);
       }
-      if (this.windowIndex < TOPIC_CANDIDATE_WINDOWS.length - 1) {
-        const widen = content.createEl("button", { cls: "qnalog-topics-expand", text: this.port.text("Expand range"), attr: { type: "button" } });
-        widen.addEventListener("click", () => { this.windowIndex++; void this.loadCandidates(); });
-      }
     }
-    const actions = content.createDiv({ cls: "qnalog-topics-modal-actions" });
+    const footer = content.createDiv({ cls: "qnalog-topics-modal-footer" });
+    if (this.candidates && this.windowIndex < TOPIC_CANDIDATE_WINDOWS.length - 1) {
+      const widen = footer.createEl("button", { cls: "qnalog-topics-expand", text: this.port.text("Expand range"), attr: { type: "button" } });
+      widen.addEventListener("click", () => { this.windowIndex++; void this.loadCandidates(); });
+    }
+    const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
     const cancel = actions.createEl("button", { text: this.port.text("Cancel"), attr: { type: "button" } });
     cancel.addEventListener("click", () => {
       this.previewController?.abort();
@@ -145,16 +148,16 @@ export class TopicCreateModal extends Modal {
     });
     const details = row.createDiv({ cls: "qnalog-topics-candidate-details" });
     details.createDiv({ cls: "qnalog-topics-candidate-title", text: `${candidate.date ? `${candidate.date} · ` : ""}${candidate.title}` });
-    const summary = details.createDiv({ cls: "qnalog-topics-candidate-summary", text: candidate.overview.slice(0, TOPIC_EXCERPT_LIMIT) });
+    const cleanOverview = cleanTopicOverviewExcerpt(candidate.overview);
+    const summary = details.createDiv({ cls: "qnalog-topics-candidate-summary", text: cleanOverview.slice(0, TOPIC_EXCERPT_LIMIT) });
     if (candidate.overview.length > TOPIC_EXCERPT_LIMIT) {
       const more = details.createEl("button", { text: this.port.text("Show more"), attr: { type: "button" } });
       more.addEventListener("click", () => {
-        summary.setText(candidate.overview);
+        summary.setText(cleanOverview);
         more.remove();
       });
     }
-    for (const reason of candidate.reasons) details.createSpan({ cls: "qnalog-topics-reason", text: reason });
-    for (const tag of candidate.matchedTags) details.createSpan({ cls: "qnalog-topics-reason", text: `${this.port.text("Shared tag")}: ${tag}` });
+    for (const reason of formatTopicCandidateReasons(candidate, (key) => this.port.text(key))) details.createSpan({ cls: "qnalog-topics-reason", text: reason });
     for (const topicId of candidate.alreadyInTopics) details.createSpan({ cls: "qnalog-topics-membership", text: `${this.port.text("Already in topic")} “${this.topicTitles.get(topicId) || topicId}”` });
     if (candidate.missingOverview) details.createSpan({ cls: "qnalog-topics-missing", text: this.port.text("Overview missing") });
   }
@@ -182,6 +185,7 @@ export class TopicCreateModal extends Modal {
       this.close();
       new TopicPreviewModal(this.app, this.port, preview, () => this.onApplied()).open();
     } catch (error) {
+      if (this.previewController?.signal.aborted) { this.loading = false; this.previewController = null; return; }
       this.loading = false;
       this.previewController = null;
       this.render();
