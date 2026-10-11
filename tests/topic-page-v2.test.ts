@@ -41,6 +41,8 @@ describe("topic page v2", () => {
     page.body = renderTopicPage(model, members);
     const markdown = serializeTopicPage(page);
     expect(parseTopicPage(markdown)?.layout).toBe(2);
+    expect(markdown).toContain("cssclasses: qnalog-topic");
+    expect(markdown).not.toContain("[qnalog-");
     for (const heading of ["## 概要 / Overview", "## 当前状态 / Current status", "## 分歧与待核实 / Disagreements and verification", "## 未决问题与未完成行动 / Open questions and actions", "## 待整理 / Unsorted"]) {
       expect(markdown).not.toContain(heading);
     }

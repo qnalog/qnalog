@@ -153,7 +153,7 @@ export function serializeTopicPage(page: TopicPage): string {
     `${NS_FM.topicBasis}: ${yamlString(page.basis)}`,
     `${NS_FM.topicCreated}: ${yamlString(page.created)}`,
     `${NS_FM.topicUpdated}: ${yamlString(page.updated)}`,
-    ...(page.layout === 2 ? [`${NS_FM_TOPIC_LAYOUT}: 2`, `cssclasses: [qnalog-topic]`] : []),
+    ...(page.layout === 2 ? [`${NS_FM_TOPIC_LAYOUT}: 2`, `cssclasses: qnalog-topic`] : []),
     ...(page.layout === 2 ? [`qnalog_topic_blocks: ${yamlString(JSON.stringify(buildTopicBlockIndex(`# ${page.title}\n\n${indexedBody}`)))}`] : []),
     ...(page.appliedHash ? [`${NS_FM.topicHash}: ${yamlString(page.appliedHash)}`] : []),
     ...(page.undoSnapshot ? [`${NS_FM.topicUndoSnapshot}: ${yamlString(page.undoSnapshot)}`] : []),
