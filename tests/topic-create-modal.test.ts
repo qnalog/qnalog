@@ -44,8 +44,8 @@ import { NS_TYPE_DERIVED, NS_TYPE_TOPIC } from "../src/shared/namespace";
 
 function fixture(): TopicCandidates {
   const candidate = (path: string, tier: "project" | "topic" | "content", selected: boolean, cancellable: boolean) => ({
-    path, title: path.split("/").pop() || path, date: "2026-10-10", overview: "A short overview.", matchedTags: ["项目/QALog"],
-    matchedTerms: [], reasons: ["Shared project identifier tag"], alreadyInTopics: ["existing-id"], missingOverview: false,
+    path, title: path.split("/").pop() || path, date: "2026-10-10", overview: "**Overview** with __details__.", matchedTags: ["项目/QALog"],
+    matchedTerms: [], reasons: ["Shared project identifier tag"], reasonDetails: [{ kind: "project-tags", labels: ["项目/QALog"], similar: false }], alreadyInTopics: ["existing-id"], missingOverview: false,
     score: 1, defaultSelected: selected, cancellable, tier,
   });
   return {
@@ -79,6 +79,10 @@ describe("topic create dialog", () => {
     const modal = new TopicCreateModal({} as never, port as never, "Notes/start.md");
     modal.open();
     await vi.waitFor(() => expect(port.getCandidates).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain("Overview with details."));
+    const renderedSummary = allText(modal.contentEl as never);
+    expect(renderedSummary).toContain("Overview with details.");
+    expect(renderedSummary).not.toContain("**");
     await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain("Already in topic “Existing project”"));
     const startCheckbox = descendants(modal.contentEl as never).find((item) => item.disabled === true && item.checked === true);
     expect(startCheckbox?.disabled).toBe(true);
