@@ -110,17 +110,32 @@ describe("topics service", () => {
     expect(setup.activities.failed).toHaveLength(1);
   });
 
-  it("refreshes the arrived note's metadata before matching without requesting model integration", async () => {
+  it("refreshes the arrived note's metadata while excluding system namespace tags", async () => {
     const setup = harness();
-    setup.storePort.seed("Topics/Climate.md", topicMarkdown("climate-topic", "Climate", ["qnalog"]));
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("climate-topic", "Climate", ["qnalog/general"]));
     await setup.service.getCandidates("Notes/a.md");
     const mtime = setup.files[0].mtime;
-    setup.files[0].tags.push("qnalog");
+    setup.files[0].tags.push("qnalog/general");
     const prompts = await setup.service.noteArrived("Notes/a.md");
     expect(setup.files[0].mtime).toBe(mtime);
-    expect(prompts).toContainEqual({ topicId: "climate-topic", title: "Climate", matchedTags: ["qnalog"], path: "Notes/a.md" });
+    expect(prompts).toEqual([]);
     expect(setup.requests).toHaveLength(0);
     expect(setup.writes).toEqual([]);
+  });
+
+  it("discards a generated preview once when the dialog closes and does not cancel after apply", async () => {
+    const setup = harness();
+    const preview = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview" });
+    setup.service.cancel(preview.topicId);
+    expect(setup.activities.cancelled).toEqual([["topics:create:topic-1", "Topic operation cancelled; the topic page was not changed"]]);
+    await expect(setup.service.apply(preview, preview.items.map(({ id }) => id))).rejects.toThrow("no longer available");
+    expect(setup.writes).toEqual([]);
+
+    const applied = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview" });
+    await setup.service.apply(applied, applied.items.map(({ id }) => id));
+    setup.service.cancel(applied.topicId);
+    expect(setup.activities.cancelled).toHaveLength(1);
+    expect(setup.activities.completed).toEqual([["topics:create:topic-2"]]);
   });
 
   it("excludes topic-page files and notes outside configured roots from note scope", async () => {

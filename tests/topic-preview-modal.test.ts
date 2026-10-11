@@ -64,7 +64,7 @@ describe("topic preview dialog", () => {
     expect(text).toContain("Current status");
     expect(text).toContain("Disagreements and verification");
     expect(text).toContain("Unverified");
-    expect(descendants(modal.contentEl as unknown as FakeTree).filter((item) => item.cls.includes("is-conflict"))).toHaveLength(1);
+    expect(descendants(modal.contentEl as unknown as FakeTree).filter((item) => item.cls.includes("qnalog-topics-preview-item") && item.cls.includes("is-conflict"))).toHaveLength(1);
   });
 
   it("applies only checked operations and opens the resulting topic page", async () => {
@@ -86,7 +86,35 @@ describe("topic preview dialog", () => {
     await vi.waitFor(() => expect(port.apply).toHaveBeenCalledOnce());
     expect(port.apply.mock.calls[0][1]).toEqual(["item-1"]);
     await vi.waitFor(() => expect(port.openTopic).toHaveBeenCalledWith("Topics/Topic.md"));
+    expect(port.cancel).not.toHaveBeenCalled();
     expect(notices.messages).toContain("The topic page changed during generation. Changes were positioned on the latest version.");
     void boxes;
+  });
+
+  it.each(["close icon", "Escape", "Cancel button"]) ("cancels and discards an unapplied preview through %s once", (path) => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const modal = new TopicPreviewModal({} as never, port as never, fixture(), () => undefined);
+    modal.onOpen();
+    if (path === "Cancel button") {
+      descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Cancel")?.listeners.get("click")?.();
+    } else {
+      modal.close();
+    }
+    modal.onClose();
+    expect(port.cancel).toHaveBeenCalledOnce();
+    expect(port.cancel).toHaveBeenCalledWith("topic-1");
+  });
+
+  it("shows only the linked source title and date in the metadata row", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.sourceDates = { "note-1": "2026-10-01", "note-2": "2026-10-02" };
+    preview.sourceLinks = { "note-1": "[[QnALog/Very/Long/Path/Note.md|Readable title]]", "note-2": "[[Other/Claim.md|Claim title]]" };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const texts = descendants(modal.contentEl as unknown as FakeTree).map((item) => item.text);
+    expect(texts).toContain("Readable title");
+    expect(texts).toContain("2026-10-01");
+    expect(texts).not.toContain("QnALog/Very/Long/Path/Note.md");
   });
 });
