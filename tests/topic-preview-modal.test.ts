@@ -76,6 +76,20 @@ describe("topic preview dialog", () => {
     expect(allText(modal.contentEl as unknown as FakeTree)).toContain("Unknown topic values were normalized to safe defaults.");
   });
 
+  it("explains an empty update, offers member-and-timeline-only apply, and shows degradations", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.items = [];
+    preview.degraded = 2;
+    preview.updateDiagnostics = { requests: 2, rawResponseChars: [14, 14], jsonParsable: [true, true], rawOperations: 0, acceptedOperations: 0, discarded: {}, retried: true, duplicateOperations: 0 };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const tree = modal.contentEl as unknown as FakeTree;
+    expect(allText(tree)).toContain("No page changes were proposed");
+    expect(allText(tree)).toContain("2 changes were adjusted");
+    expect(descendants(tree).some((item) => item.text === "Add member and timeline only")).toBe(true);
+  });
+
   it("applies only checked operations and opens the resulting topic page", async () => {
     const port = {
       text: (key: string) => key,

@@ -42,6 +42,14 @@ export class TopicPreviewModal extends Modal {
     const model = this.preview.create?.model || this.preview.replacement?.model;
     const validationWarnings = [...new Set([...(this.preview.validationWarnings || []), ...(model?.validationWarnings || [])])];
     if (validationWarnings.length) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Unknown topic values were normalized to safe defaults.") });
+    if ((this.preview.degraded || 0) > 0) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("{0} changes were adjusted to fit the current page; review the affected entries.").replace("{0}", String(this.preview.degraded)) });
+    const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0;
+    if (emptyUpdate) {
+      const diagnostics = this.preview.updateDiagnostics;
+      const checked = diagnostics?.rawOperations || 0;
+      const duplicates = diagnostics?.duplicateOperations || 0;
+      scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("No page changes were proposed (received {0} candidate operations; {1} duplicates).").replace("{0}", String(checked)).replace("{1}", String(duplicates)) });
+    }
     if (model) {
       const group = (title: string) => {
         const section = scroll.createDiv({ cls: "qnalog-topics-preview-section" });
@@ -149,7 +157,7 @@ export class TopicPreviewModal extends Modal {
     const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
     const cancel = actions.createEl("button", { text: this.port.text("Cancel"), attr: { type: "button" } });
     cancel.addEventListener("click", () => this.close());
-    const apply = actions.createEl("button", { cls: "mod-cta", text: this.port.text("Apply selected"), attr: { type: "button" } });
+    const apply = actions.createEl("button", { cls: "mod-cta", text: this.port.text(emptyUpdate ? "Add member and timeline only" : "Apply selected"), attr: { type: "button" } });
     apply.addEventListener("click", () => {
       apply.disabled = true;
       void this.port.apply(this.preview, [...selected]).then(async (result) => {
