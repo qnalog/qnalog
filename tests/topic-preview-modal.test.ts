@@ -154,6 +154,31 @@ describe("topic preview dialog", () => {
     expect(texts).not.toContain("QnALog/Very/Long/Path/Note.md");
   });
 
+  it("shows each disagreement stance with its own source, date, and verification state", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.items = [{
+      id: "disagreement", type: "add_disagreement",
+      operation: { type: "add_disagreement", subject: "Property names", sourceId: "old", positions: [
+        { text: "Names stay stable", sourceId: "old", date: "2026-09-29", sourceTitle: "Audit note" },
+        { text: "Names follow language", sourceId: "fresh", date: "2026-10-11", sourceTitle: "New note" },
+        { text: "Unsupported statement", sourceId: "fresh", date: "2026-10-11", provenance: "unverified" },
+        { text: "Unattributed statement", sourceId: "", provenance: "source-pending" },
+      ] }, target: "Property names", text: "", sourceId: "old", cancellable: true,
+    }];
+    preview.validationWarnings = ["A conflict assessment had no related page block; only the new claim was added for review."];
+    preview.sourceLinks = { old: "[[Notes/a.md|Audit note]]", fresh: "[[Notes/b.md|New note]]" };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const tree = modal.contentEl as unknown as FakeTree;
+    expect(allText(tree)).toContain("2026-09-29: Names stay stable");
+    expect(allText(tree)).toContain("2026-10-11: Names follow language");
+    expect(allText(tree)).toContain("Unsupported statement (Unverified)");
+    expect(allText(tree)).toContain("Unattributed statement (Source pending verification)");
+    expect(allText(tree)).toContain("Some disagreement details need verification. Review the marked positions.");
+    expect(descendants(tree).filter((item) => item.cls === "qnalog-topics-source-link").map((item) => item.text)).toContain("Audit note");
+  });
+
   it("shows old and new summary text and reports block edits skipped during apply", async () => {
     const port = {
       text: (key: string) => key,
