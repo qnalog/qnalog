@@ -115,6 +115,10 @@ function cleanTopicBlockClaim(text: string): string {
   return text.replace(/\[\^[\w-]+\]/g, "").replace(/^[-*]\s*(?:\[[ xX]\]\s*)?/, "").replace(/\s+\^tpc-[\da-f]{6}$/i, "").trim();
 }
 function originalMemberClaim(evidence: string, claim: string): string {
+  // Keep the assessed claim verbatim when the member card contains it. A
+  // sentence may contain several independent claims, so returning that whole
+  // sentence would attach unrelated material to this disagreement position.
+  if (claim.trim() && evidence.includes(claim.trim())) return claim.trim();
   const sentences: string[] = [];
   let start = 0;
   for (let index = 0; index < evidence.length; index++) {
