@@ -87,6 +87,33 @@ describe("topic integration", () => {
     expect(result.operations[0]).toMatchObject({ type: "revise_block", blockId: overview.id, expectedText: overview.text });
   });
 
+  it("accepts revisions, disagreements, new actions, and resolved items from a focused update", async () => {
+    const source = member("new-evidence", "The chosen setting key is now language-dependent. Add a mobile reload check. The old settings migration issue is resolved.", "The chosen setting key is now language-dependent. Add a mobile reload check. The old settings migration issue is resolved.");
+    const existingModel = {
+      overview: "The setting key remains fixed across interface languages.", status: "active" as const, threads: [], disagreements: [],
+      open: [{ id: "migration", kind: "action" as const, text: "Preserve service settings during migration.", sources: ["new-evidence"], done: false }], unsorted: [],
+    };
+    const currentPage = renderTopicPage(existingModel, []);
+    const overview = parseTopicPageBlocks(currentPage).find((block) => block.type === "overview")!;
+    const open = parseTopicPageBlocks(currentPage).find((block) => block.type === "open")!;
+    const port = fakePort([response([
+      { type: "revise_block", blockId: overview.id, newText: "The chosen setting key is language-dependent.", reason: "The new note changes the current decision.", sourceId: "new-evidence" },
+      { type: "add_disagreement", subject: "How the setting key is chosen", positions: [
+        { text: "The key remains fixed across interface languages.", sourceId: "new-evidence", date: "2026-10-01" },
+        { text: "The key changes with the Obsidian language.", sourceId: "new-evidence", date: "2026-10-11" },
+      ] },
+      { type: "add_open", kind: "action", text: "Verify topic-page reload on mobile.", sources: ["new-evidence"] },
+      { type: "resolve_open", blockId: open.id, note: "Settings migration preserved the existing service values.", sourceId: "new-evidence" },
+    ])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "body", members: [source], currentPage });
+    expect(result.operations.map((operation) => operation.type)).toEqual(["revise_block", "add_disagreement", "add_open", "resolve_open"]);
+    expect(result.operations[0]).toMatchObject({ blockId: overview.id, expectedText: overview.text });
+    expect(result.operations[3]).toMatchObject({ blockId: open.id, expectedText: open.text });
+    expect(port.calls[0][0].content).toContain("revise the relevant summary and add_disagreement");
+    expect(port.calls[0][0].content).toContain("Put new incomplete tasks in add_open");
+    expect(port.calls[0][1].content).toContain(source.content);
+  });
+
   it("requires resolved items to go to status or timeline instead of the open-items section", () => {
     const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
     expect(system).toContain("A question belongs in 未决问题与未完成行动 only while no answer is confirmed");
