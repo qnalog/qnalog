@@ -200,4 +200,18 @@ describe("topic preview dialog", () => {
     descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Apply selected")?.listeners.get("click")?.();
     await vi.waitFor(() => expect(notices.messages).toContain("Some revisions were skipped because their blocks changed: tpc-a1b2c3"));
   });
+  it("shows the exact open item that a grounded resolve operation will mark complete", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.items = [{
+      id: "resolve", type: "resolve_open",
+      operation: { type: "resolve_open", blockId: "tpc-a1b2c3", expectedText: "Outline generation is broken for multi-part recordings.", note: "The outline bug is fixed and recordings now combine correctly.", sourceId: "note-1" },
+      target: "Outline generation is broken for multi-part recordings.", expectedText: "Outline generation is broken for multi-part recordings.", text: "The outline bug is fixed and recordings now combine correctly.", sourceId: "note-1", cancellable: true,
+    }];
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const tree = modal.contentEl as unknown as FakeTree;
+    expect(allText(tree)).toContain("Will mark this item as resolved: Outline generation is broken for multi-part recordings.");
+    expect(descendants(tree).find((item) => item.listeners.has("change"))?.checked).toBe(true);
+  });
 });

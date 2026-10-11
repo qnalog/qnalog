@@ -5,6 +5,8 @@ import { isTopicOpenKind, isTopicStatus, parseTopicPageBlocks, type TopicBasis, 
 
 export const TOPIC_INTEGRATION_BATCH_SIZE = 6;
 export const TOPIC_BODY_BATCH_CHARS = 24000;
+export const TOPIC_RESOLVE_GROUNDING_THRESHOLD = 0.28;
+export const TOPIC_DISAGREEMENT_SIMILARITY_THRESHOLD = 0.72;
 export interface TopicIntegrationMember { card: OverviewCard; content?: string }
 export interface TopicIntegrationCost { chars: number; requests: number }
 export interface TopicChangePreviewItem {
@@ -79,7 +81,21 @@ function hasTopicTextGrounding(source: string, claim: string): boolean {
   const sourcePairs = topicBigrams(source);
   let matched = 0;
   for (const pair of claimPairs) if (sourcePairs.has(pair)) matched++;
-  return matched / claimPairs.size >= 0.28;
+  return matched / claimPairs.size >= TOPIC_RESOLVE_GROUNDING_THRESHOLD;
+}
+function topicTextSimilarity(left: string, right: string): number {
+  const a = topicBigrams(left);
+  const b = topicBigrams(right);
+  if (!a.size || !b.size) return 0;
+  let overlap = 0;
+  for (const pair of a) if (b.has(pair)) overlap++;
+  return overlap / Math.min(a.size, b.size);
+}
+function disagreementCallout(markdown: string, subject: string): string | undefined {
+  const lines = markdown.split("\n");
+  const match = lines.findIndex((line) => /^\s*>\s*\[!warning\]\s*/i.test(line) && topicTextSimilarity(line.replace(/^\s*>\s*\[!warning\]\s*/i, ""), subject) >= TOPIC_DISAGREEMENT_SIMILARITY_THRESHOLD);
+  if (match < 0) return undefined;
+  return lines[match].replace(/^\s*>\s*\[!warning\]\s*/i, "").trim();
 }
 function sourceForPageBlock(markdown: string, block: ReturnType<typeof parseTopicPageBlocks>[number], members: readonly TopicIntegrationMember[]): TopicIntegrationMember | undefined {
   const raw = markdown.slice(block.start, block.end);
@@ -398,7 +414,7 @@ function structuredUpdatePrompt(input: TopicIntegrationInput, members: readonly 
   return [{ role: "system", content: system }, { role: "user", content: JSON.stringify({ currentPage: input.currentPage || "", members: members.map(({ card, content }) => ({ sourceId: card.sourceId, memberId: card.sourceId, path: card.path, title: card.title, date: card.date, content: input.basis === "body" ? content || "" : card.overview })) }) }];
 }
 
-function validateStructuredOperation(value: unknown, members: readonly TopicIntegrationMember[], currentPage: string): { operation: TopicOperation | null; reason?: string; degraded?: boolean } {
+function validateStructuredOperation(value: unknown, members: readonly TopicIntegrationMember[], currentPage: string, assessments: readonly TopicAssessment[] = []): { operation: TopicOperation | null; reason?: string; degraded?: boolean } {
   if (!value || typeof value !== "object") return { operation: null, reason: "invalid-operation" };
   const row = value as Record<string, unknown>;
   const sourceIds = new Set(members.map(({ card }) => card.sourceId));
@@ -479,9 +495,15 @@ function validateStructuredOperation(value: unknown, members: readonly TopicInte
       const blockId = typeof row.blockId === "string" ? row.blockId.replace(/^\^/, "") : "";
       const block = blocks.find((item) => item.id === blockId && item.type === "open");
       if (typeof row.note !== "string" || !row.note.trim()) return { operation: null, reason: "empty-text" };
-      return block
-        ? { operation: { type: "resolve_open", blockId, expectedText: block.text, note: row.note.trim(), sourceId }, ...(sourceWasReplaced ? { reason: "source-not-member", degraded: true } : {}) }
-        : { operation: { type: "add_point", thread: typeof row.thread === "string" && row.thread.trim() ? row.thread.trim() : "已解决事项", text: row.note.trim(), sources: [sourceId], sourceId }, reason: "block-id-not-found", degraded: true };
+      const resolutionClaim = row.note.trim();
+      if (!block) return { operation: { type: "add_point", thread: typeof row.thread === "string" && row.thread.trim() ? row.thread.trim() : "已解决事项", text: resolutionClaim, sources: [sourceId], sourceId }, reason: "block-id-not-found", degraded: true };
+      const sourceMember = members.find((member) => member.card.sourceId === sourceId);
+      const claimAssessment = assessments.find((assessment) => assessment.memberId === sourceId && hasTopicTextGrounding(resolutionClaim, assessment.claim));
+      const relatedBlockMismatch = !!claimAssessment?.relatedBlockId && claimAssessment.relatedBlockId !== blockId;
+      if (!sourceMember || !hasTopicTextGrounding(sourceMember.content || sourceMember.card.overview, resolutionClaim) || !hasTopicTextGrounding(resolutionClaim, block.text) || relatedBlockMismatch) {
+        return { operation: { type: "add_point", thread: typeof row.thread === "string" && row.thread.trim() ? row.thread.trim() : "已解决事项", text: resolutionClaim, sources: [sourceId], sourceId }, reason: "resolve-grounding-failed", degraded: true };
+      }
+      return { operation: { type: "resolve_open", blockId, expectedText: block.text, note: resolutionClaim, sourceId }, ...(sourceWasReplaced ? { reason: "source-not-member", degraded: true } : {}) };
     }
     default: return { operation: null, reason: "unsupported-type" };
   }
@@ -531,11 +553,16 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
           }
         }
           const validationMembers = [...(input.existingMembers || []), ...batch];
-          const validated = validateStructuredOperation(value, validationMembers, input.currentPage || "");
+          const validated = validateStructuredOperation(value, validationMembers, input.currentPage || "", batchAssessments);
           if (validated.operation) {
             const key = JSON.stringify(validated.operation);
             const currentNormalized = (input.currentPage || "").toLocaleLowerCase().replace(/\s+/g, " ");
-            const repeatsPage = operationTexts(validated.operation).some((text) => {
+            const repeatsPage = validated.operation.type === "add_disagreement"
+              ? validated.operation.positions.length > 0 && validated.operation.positions.every(({ text }) => {
+                const normalized = text.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+                return normalized.length >= 12 && currentNormalized.includes(normalized);
+              })
+              : operationTexts(validated.operation).some((text) => {
               const normalized = text.toLocaleLowerCase().replace(/\s+/g, " ").trim();
               return normalized.length >= 12 && currentNormalized.includes(normalized);
             });
@@ -554,6 +581,7 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
               if (reason === "same-member-opposition") validationWarnings.add("A disagreement stance from the same member was omitted; review its source attribution.");
               if (reason === "source-not-member") validationWarnings.add("A disagreement stance has no verified member source; its date and footnote were omitted.");
               if (reason === "unsupported-position") validationWarnings.add("A disagreement stance could not be grounded in its source member card.");
+              if (reason === "resolve-grounding-failed") validationWarnings.add("An open item was not matched to the supporting claim and was added as a point instead.");
             }
           } else { const reason = validated.reason || "invalid-operation"; updateDiagnostics.discarded[reason] = (updateDiagnostics.discarded[reason] || 0) + 1; }
         }

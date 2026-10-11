@@ -2919,6 +2919,8 @@ export const ZH: MessageTable = {
   "Apply selected": "应用所选",
   "Add member and timeline only": "仍然只加入成员与时间线",
   "No page changes were proposed (received {0} candidate operations; {1} duplicates).": "本次没有提出需要写入页面的变更（收到 {0} 条候选操作，其中 {1} 条重复）。",
+  "No matching open item was found; the claim was added as a point.": "未匹配到对应的未决项，已作为要点添加。",
+  "Will mark this item as resolved": "将把此项标为已解决",
   "{0} changes were adjusted to fit the current page; review the affected entries.": "有 {0} 项变更已按当前页面调整，请检查对应条目。",
   "The topic page changed during generation. Changes were positioned on the latest version.": "生成期间主题页发生变化，已在最新内容上重新定位变更。",
   "Topic updated. Undo is available.": "主题已更新，可撤销。",

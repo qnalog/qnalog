@@ -44,6 +44,9 @@ export class TopicPreviewModal extends Modal {
     if (validationWarnings.length) {
       const normalizedValues = validationWarnings.some((warning) => warning.startsWith("Unknown topic "));
       scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text(normalizedValues ? "Unknown topic values were normalized to safe defaults." : "Some disagreement details need verification. Review the marked positions.") });
+      if (validationWarnings.includes("An open item was not matched to the supporting claim and was added as a point instead.")) {
+        scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("No matching open item was found; the claim was added as a point.") });
+      }
     }
     if ((this.preview.degraded || 0) > 0) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("{0} changes were adjusted to fit the current page; review the affected entries.").replace("{0}", String(this.preview.degraded)) });
     if (this.preview.programGeneratedOperations) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("{0} conflict changes were completed from conflict assessments by the program.").replace("{0}", String(this.preview.programGeneratedOperations)) });
@@ -162,6 +165,9 @@ export class TopicPreviewModal extends Modal {
             if (position.date) source.createSpan({ cls: "qnalog-topics-preview-date", text: position.date });
           }
         }
+      } else if (item.operation.type === "resolve_open") {
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: `${this.port.text("Will mark this item as resolved")}: ${item.expectedText || item.operation.expectedText || item.target}` });
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: verification.text });
       } else {
         let changeText = verification.text;
         if (item.operation.type === "add_open") {
