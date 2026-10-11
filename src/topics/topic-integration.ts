@@ -1,6 +1,7 @@
 import type { OverviewCard } from "./overview-card";
 import { extractBriefingGroundingAnchors } from "../briefing/pipeline";
 import { detectGeneralSourceLanguage } from "../shared/util-text";
+import { redactDiagnosticText } from "../shared/util-key-diag";
 import { stripBlockMarkers } from "./topic-block-markers";
 import { isTopicOpenKind, isTopicStatus, parseTopicPageBlocks, type ParsedTopicBlock, type TopicBasis, type TopicDisagreementPosition, type TopicMember, type TopicOperation, type TopicPageV2Model, type TopicSection } from "./topic-page";
 
@@ -31,12 +32,14 @@ export interface TopicChangePreview {
   totalBatches: number;
   partialFailure?: string;
   validationWarnings?: string[];
+  createDiagnostics?: TopicCreateDiagnostics;
   updateDiagnostics?: TopicUpdateDiagnostics;
+  duplicateDetails?: TopicDuplicateDecision[];
   degraded?: number;
   programGeneratedOperations?: number;
   programGeneratedOperationKeys?: string[];
   assessments?: TopicAssessment[];
-  create?: { title: string; basis: TopicBasis; tags: string[]; tagAliases?: Record<string, string[]>; members: TopicMember[]; model?: TopicPageV2Model };
+  create?: { title: string; basis: TopicBasis; tags: string[]; tagAliases?: Record<string, string[]>; members: TopicMember[]; model?: TopicPageV2Model; overviewGeneratedFromThreads?: boolean };
   tagAliases?: Record<string, string[]>;
   memberLinks?: string[];
   tags?: string[];
@@ -49,15 +52,33 @@ export interface TopicUpdateDiagnostics {
   requests: number;
   rawResponseChars: number[];
   jsonParsable: boolean[];
+  missingFields?: string[][];
   rawOperations: number;
   acceptedOperations: number;
   discarded: Record<string, number>;
   retried: boolean;
   duplicateOperations: number;
+  degraded?: boolean;
+  errorMessages?: string[];
+}
+export interface TopicCreateDiagnostics {
+  requests: number;
+  rawResponseChars: number[];
+  jsonParsable: boolean[];
+  missingFields: string[][];
+  retried: boolean;
+  degraded: boolean;
+  errorMessages: string[];
+}
+export interface TopicDuplicateDecision {
+  thread: string;
+  discardedText: string;
+  keptText: string;
+  reason: "existing-page" | "same-update";
 }
 export interface TopicIntegrationPort {
   request(messages: Array<{ role: "system" | "user"; content: string }>, signal?: AbortSignal, thinkingMode?: "fast"): Promise<unknown>;
-  diagnostic?(details: TopicUpdateDiagnostics): Promise<void> | void;
+  diagnostic?(details: TopicUpdateDiagnostics | TopicCreateDiagnostics, kind?: "create" | "update"): Promise<void> | void;
 }
 export interface TopicIntegrationInput {
   members: readonly TopicIntegrationMember[];
@@ -177,8 +198,8 @@ function originalMemberClaim(evidence: string, claim: string): string {
     .filter(({ similarity }) => similarity >= TOPIC_RESOLVE_GROUNDING_THRESHOLD)
     .sort((left, right) => right.similarity - left.similarity || left.candidate.length - right.candidate.length)[0]?.candidate || claim;
 }
-export interface TopicIntegrationResult { operations: TopicOperation[]; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string; validationWarnings?: string[]; updateDiagnostics?: TopicUpdateDiagnostics; degraded?: number; assessments?: TopicAssessment[]; programGeneratedOperationKeys?: string[] }
-export interface TopicStructuredResult { model: TopicPageV2Model; operations: TopicOperation[]; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string; validationWarnings?: string[] }
+export interface TopicIntegrationResult { operations: TopicOperation[]; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string; validationWarnings?: string[]; createDiagnostics?: TopicCreateDiagnostics; updateDiagnostics?: TopicUpdateDiagnostics; duplicateDetails?: TopicDuplicateDecision[]; degraded?: number; assessments?: TopicAssessment[]; programGeneratedOperationKeys?: string[] }
+export interface TopicStructuredResult { model: TopicPageV2Model; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string; validationWarnings?: string[]; createDiagnostics: TopicCreateDiagnostics; overviewGeneratedFromThreads: boolean }
 
 const TOPIC_UNVERIFIED_MARKER = String.fromCharCode(0xff08, 0x672a, 0x6838, 0x5b9e, 0xff09);
 export function stripTopicUnverifiedMarker(text: string): { text: string; unverified: boolean } {
@@ -239,14 +260,11 @@ function responseText(response: unknown): string {
   }
   throw new Error("Topic integration returned no text content");
 }
-function parseOperations(response: unknown): unknown[] {
-  const text = responseText(response).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const parsed: unknown = JSON.parse(text) as unknown;
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as Record<string, unknown>).operations)) throw new Error("Topic integration response must contain an operations array");
-  return (parsed as Record<string, unknown>).operations as unknown[];
+function operationsFromJson(parsed: unknown): TopicJsonValidation<unknown[]> {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray((parsed as Record<string, unknown>).operations)) return { missingFields: ["operations"] };
+  return { value: (parsed as Record<string, unknown>).operations as unknown[], missingFields: [] };
 }
-function parseAssessments(raw: string, members: readonly TopicIntegrationMember[]): TopicAssessment[] {
-  const parsed: unknown = JSON.parse(raw);
+function parseAssessments(parsed: unknown, members: readonly TopicIntegrationMember[]): TopicAssessment[] {
   if (!parsed || typeof parsed !== "object") return [];
   const root = parsed as Record<string, unknown>;
   const allowed = new Set(members.map(({ card }) => card.sourceId));
@@ -259,6 +277,115 @@ function parseAssessments(raw: string, members: readonly TopicIntegrationMember[
     return allowed.has(memberId) && claim && (relation === "same" || relation === "supplement" || relation === "conflict" || relation === "unrelated")
       ? [{ memberId, claim, relation, ...(typeof row.relatedBlockId === "string" ? { relatedBlockId: row.relatedBlockId.replace(/^\^/, "") } : {}) }] : [];
   });
+}
+
+export class TopicGenerationError extends Error {
+  constructor(message: string) { super(message); this.name = "TopicGenerationError"; }
+}
+
+interface TopicRequestDiagnostics {
+  requests: number;
+  rawResponseChars: number[];
+  jsonParsable: boolean[];
+  missingFields?: string[][];
+  retried: boolean;
+  degraded?: boolean;
+  errorMessages?: string[];
+}
+interface TopicJsonValidation<T> { value?: T; missingFields: string[] }
+interface TopicJsonRequestOptions<T> {
+  port: TopicIntegrationPort;
+  messages: Array<{ role: "system" | "user"; content: string }>;
+  input: TopicIntegrationInput;
+  diagnostics: TopicRequestDiagnostics;
+  validate(parsed: unknown): TopicJsonValidation<T>;
+  shouldRetry(validation: TopicJsonValidation<T>): boolean;
+  repairPrompt(missingFields: readonly string[]): string;
+  fallback?(validation: TopicJsonValidation<T>): T | undefined;
+}
+
+function safeTopicError(error: unknown, input: TopicIntegrationInput): string {
+  let message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (!message) {
+    try { message = JSON.stringify(error) || "Unknown topic request failure"; }
+    catch { message = "Unknown topic request failure"; }
+  }
+  if (input.currentPage && input.currentPage.length >= 24) message = message.split(input.currentPage).join("[topic page content redacted]");
+  for (const member of [...(input.existingMembers || []), ...input.members]) {
+    for (const sourceText of [member.content, member.card.overview]) {
+      if (sourceText && sourceText.length >= 24) message = message.split(sourceText).join("[note content redacted]");
+    }
+  }
+  return redactDiagnosticText(message);
+}
+
+function parseTopicResponseJson(response: unknown): { raw: string; parsed: unknown } {
+  const raw = responseText(response).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  return { raw, parsed: JSON.parse(raw) as unknown };
+}
+
+/** Shared JSON parsing, schema validation, one repair request, and optional safe fallback. */
+async function requestValidatedTopicJson<T>(options: TopicJsonRequestOptions<T>): Promise<{ value: T; degraded: boolean }> {
+  let messages = options.messages;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    options.input.signal?.throwIfAborted();
+    options.diagnostics.requests++;
+    let response: unknown;
+    try {
+      response = await options.port.request(messages, options.input.signal, "fast");
+    } catch (error) {
+      options.diagnostics.rawResponseChars.push(0);
+      options.diagnostics.jsonParsable.push(false);
+      options.diagnostics.missingFields?.push(["response"]);
+      options.diagnostics.errorMessages?.push(safeTopicError(error, options.input));
+      throw error;
+    }
+    let raw = "";
+    let validation: TopicJsonValidation<T> = { missingFields: ["json"] };
+    let parsed: unknown;
+    try {
+      const parsedResponse = parseTopicResponseJson(response);
+      raw = parsedResponse.raw;
+      parsed = parsedResponse.parsed;
+      options.diagnostics.rawResponseChars.push(raw.length);
+      options.diagnostics.jsonParsable.push(true);
+    } catch (error) {
+      raw = (() => { try { return responseText(response).trim(); } catch { return ""; } })();
+      if (options.diagnostics.rawResponseChars.length < options.diagnostics.requests) options.diagnostics.rawResponseChars.push(raw.length);
+      if (options.diagnostics.jsonParsable.length < options.diagnostics.requests) options.diagnostics.jsonParsable.push(false);
+      validation = { missingFields: ["json"] };
+      options.diagnostics.errorMessages?.push(safeTopicError(error, options.input));
+    }
+    if (options.diagnostics.jsonParsable.length === options.diagnostics.requests && options.diagnostics.jsonParsable.at(-1)) {
+      try { validation = options.validate(parsed); }
+      catch (error) {
+        validation = { missingFields: ["response-shape"] };
+        options.diagnostics.errorMessages?.push(safeTopicError(error, options.input));
+      }
+    }
+    options.diagnostics.missingFields?.push([...validation.missingFields]);
+    const invalid = validation.missingFields.length > 0 || validation.value === undefined;
+    if (attempt === 0 && (invalid || options.shouldRetry(validation))) {
+      options.diagnostics.retried = true;
+      messages = [
+        { ...messages[0], content: `${messages[0].content} ${options.repairPrompt(validation.missingFields)}` },
+        messages[1],
+      ];
+      continue;
+    }
+    if (!invalid && validation.value !== undefined) return { value: validation.value, degraded: false };
+    const fallback = options.fallback?.(validation);
+    if (fallback !== undefined) {
+      options.diagnostics.degraded = true;
+      return { value: fallback, degraded: true };
+    }
+    const failure = new TopicGenerationError("Topic response remained incomplete after one repair request");
+    options.diagnostics.errorMessages?.push(safeTopicError(failure, options.input));
+    throw failure;
+  }
+  const failure = new TopicGenerationError("Topic response could not be validated");
+  options.diagnostics.errorMessages?.push(safeTopicError(failure, options.input));
+  throw failure;
 }
 function validatedOperation(value: unknown, members: readonly TopicIntegrationMember[], basis: TopicBasis): TopicOperation | null {
   if (!value || typeof value !== "object") return null;
@@ -326,10 +453,8 @@ function buildStructuredMessages(input: TopicIntegrationInput, members: readonly
   return [{ role: "system", content: system }, { role: "user", content: JSON.stringify(payload) }];
 }
 
-function parseStructuredModel(response: unknown, allowed: ReadonlySet<string>): TopicPageV2Model {
-  const raw = responseText(response).trim();
-  const value: unknown = JSON.parse(raw);
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Topic response must be a JSON object");
+function validateStructuredModel(value: unknown, allowed: ReadonlySet<string>): TopicJsonValidation<TopicPageV2Model> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { missingFields: ["response-object"] };
   const row = value as Record<string, unknown>;
   const textOf = (entry: unknown): string => typeof entry === "string" ? stripBlockMarkers(entry) : "";
   const validationWarnings: string[] = [];
@@ -338,7 +463,6 @@ function parseStructuredModel(response: unknown, allowed: ReadonlySet<string>): 
   if (statusValue && !isTopicStatus(statusValue)) validationWarnings.push("Unknown topic status was mapped to unknown.");
   const refsOf = (entry: unknown): string[] => Array.isArray(entry) ? entry.filter((source): source is string => typeof source === "string" && allowed.has(source)) : [];
   const overview = textOf(row.overview);
-  if (!overview) throw new Error("Topic response must contain an overview");
   const threads = (Array.isArray(row.threads) ? row.threads : []).slice(0, 6).flatMap((entry, index) => {
     if (!entry || typeof entry !== "object") return [];
     const thread = entry as Record<string, unknown>;
@@ -371,7 +495,30 @@ function parseStructuredModel(response: unknown, allowed: ReadonlySet<string>): 
     if (!isTopicOpenKind(kindValue)) validationWarnings.push("Unknown topic open-item kind was mapped to action.");
     return textOf(item.text) && sources.length ? [{ id: textOf(item.id) || "open-" + index, kind, text: textOf(item.text), sources, done: item.done === true }] : [];
   });
-  return { overview, status, threads, disagreements, open, unsorted: Array.isArray(row.unsorted) ? row.unsorted.filter((item): item is string => typeof item === "string") : [], ...(validationWarnings.length ? { validationWarnings } : {}) };
+  const model: TopicPageV2Model = { overview, status, threads, disagreements, open, unsorted: Array.isArray(row.unsorted) ? row.unsorted.filter((item): item is string => typeof item === "string") : [], ...(validationWarnings.length ? { validationWarnings } : {}) };
+  const missingFields = [
+    ...(!overview ? ["overview"] : []),
+    ...(!threads.length ? ["threads"] : []),
+  ];
+  return { value: model, missingFields };
+}
+
+function firstTopicSentence(summary: string): string {
+  const text = summary.trim();
+  const end = text.search(/[。！？.!?]/);
+  return (end >= 0 ? text.slice(0, end + 1) : text.split(/\r?\n/, 1)[0]).trim();
+}
+
+function overviewFromThreadSummaries(model: TopicPageV2Model): string {
+  return model.threads.map((thread) => firstTopicSentence(thread.summary)).filter(Boolean).slice(0, 5).join(" ");
+}
+
+function structuredRepairPrompt(missingFields: readonly string[]): string {
+  const messages: string[] = [];
+  if (missingFields.includes("overview")) messages.push("上次响应缺少 `overview` 字段：请返回完整 JSON，`overview` 为 2–5 句的概述。");
+  if (missingFields.includes("threads")) messages.push("上次响应的 `threads` 字段为空或没有有效对象：请返回至少一个包含 `title` 与 `summary` 的子线索对象。");
+  if (missingFields.includes("json") || missingFields.includes("response-object")) messages.push("上次响应不是可解析的 JSON 对象：请返回完整 JSON，并包含 `overview` 与至少一个有效的 `threads` 对象。");
+  return messages.join(" ") || "请返回完整、可解析的 JSON，并保留所有必需字段。";
 }
 
 export async function generateTopicOperations(port: TopicIntegrationPort, input: TopicIntegrationInput): Promise<TopicIntegrationResult> {
@@ -381,16 +528,28 @@ export async function generateTopicOperations(port: TopicIntegrationPort, input:
   let inputChars = 0;
   let completedBatches = 0;
   let partialFailure: string | undefined;
+  const updateDiagnostics: TopicUpdateDiagnostics = { requests: 0, rawResponseChars: [], jsonParsable: [], missingFields: [], rawOperations: 0, acceptedOperations: 0, discarded: {}, retried: false, duplicateOperations: 0, degraded: false, errorMessages: [] };
   for (const batch of batches) {
     input.signal?.throwIfAborted();
     const source = batch.map(({ card, content }) => input.basis === "body" ? content || "" : card.overview).join("\n");
     inputChars += source.length;
     try {
-      const response = await port.request(buildTopicIntegrationMessages(input, batch), input.signal, "fast");
-      const values = parseOperations(response);
+      const result = await requestValidatedTopicJson({
+        port, messages: buildTopicIntegrationMessages(input, batch), input, diagnostics: updateDiagnostics,
+        validate: (parsed) => {
+          const validation = operationsFromJson(parsed);
+          if (validation.value) updateDiagnostics.rawOperations += validation.value.length;
+          return validation;
+        },
+        shouldRetry: (validation) => validation.value?.length === 0,
+        repairPrompt: (missingFields) => missingFields.includes("operations")
+          ? "Your previous response did not contain an operations array. Return a complete JSON object with an operations array."
+          : "Your previous response contained no applicable operation. Re-check every supplied member and return supported changes, or an empty operations array if none apply.",
+      });
+      const values = result.value;
       for (const value of values) {
         const operation = validatedOperation(value, batch, input.basis);
-        if (operation) operations.push(operation);
+        if (operation) { operations.push(operation); updateDiagnostics.acceptedOperations++; }
       }
       completedBatches++;
       input.onBatchProgress?.(completedBatches, batches.length);
@@ -400,55 +559,92 @@ export async function generateTopicOperations(port: TopicIntegrationPort, input:
       break;
     }
   }
-  return { operations, completedBatches, totalBatches: batches.length, inputChars, ...(partialFailure ? { partialFailure } : {}) };
+  await port.diagnostic?.(updateDiagnostics, "update");
+  return { operations, completedBatches, totalBatches: batches.length, inputChars, updateDiagnostics, ...(partialFailure ? { partialFailure } : {}) };
 }
 
-export async function generateTopicPageContent(port: TopicIntegrationPort, input: TopicIntegrationInput): Promise<{ model: TopicPageV2Model; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string; validationWarnings?: string[] }> {
+export async function generateTopicPageContent(port: TopicIntegrationPort, input: TopicIntegrationInput): Promise<TopicStructuredResult> {
   const batches = memberBatches(input.members, input.basis);
   const totalBatches = batches.length + (batches.length > 1 ? 1 : 0);
   input.onPlanned?.(totalBatches);
-  const fragments: Array<{ card: OverviewCard; content: string }> = [];
+  const fragments: Array<{ card: OverviewCard; content: string; model: TopicPageV2Model }> = [];
   const validationWarnings = new Set<string>();
   let inputChars = 0;
   let completedBatches = 0;
   let partialFailure: string | undefined;
-  for (const batch of batches) {
-    input.signal?.throwIfAborted();
-    inputChars += batch.reduce((sum, member) => sum + (input.basis === "body" ? member.content || "" : member.card.overview).length, 0);
-    try {
-      const result = await port.request(buildStructuredMessages(input, batch, false), input.signal, "fast");
-      const model = parseStructuredModel(result, new Set(batch.map(({ card }) => card.sourceId)));
-      model.validationWarnings?.forEach((warning) => validationWarnings.add(warning));
-      fragments.push({ card: batch[0].card, content: JSON.stringify(model) });
-      completedBatches++;
-      input.onBatchProgress?.(completedBatches, totalBatches);
-    } catch (error) {
-      if (input.signal?.aborted) throw error;
-      partialFailure = error instanceof Error ? error.message : String(error);
-      break;
+  const createDiagnostics: TopicCreateDiagnostics = { requests: 0, rawResponseChars: [], jsonParsable: [], missingFields: [], retried: false, degraded: false, errorMessages: [] };
+  let overviewGeneratedFromThreads = false;
+  try {
+    for (const batch of batches) {
+      input.signal?.throwIfAborted();
+      inputChars += batch.reduce((sum, member) => sum + (input.basis === "body" ? member.content || "" : member.card.overview).length, 0);
+      try {
+        const allowed = new Set(batch.map(({ card }) => card.sourceId));
+        const result = await requestValidatedTopicJson({
+          port, messages: buildStructuredMessages(input, batch, false), input, diagnostics: createDiagnostics,
+          validate: (parsed) => validateStructuredModel(parsed, allowed),
+          shouldRetry: () => false,
+          repairPrompt: structuredRepairPrompt,
+          fallback: (validation) => {
+            const model = validation.value;
+            if (!model || !validation.missingFields.includes("overview") || validation.missingFields.some((field) => field !== "overview") || !model.threads.length) return undefined;
+            const overview = overviewFromThreadSummaries(model);
+            return overview ? { ...model, overview } : undefined;
+          },
+        });
+        const model = result.value;
+        overviewGeneratedFromThreads ||= result.degraded;
+        model.validationWarnings?.forEach((warning) => validationWarnings.add(warning));
+        fragments.push({ card: batch[0].card, content: JSON.stringify(model), model });
+        completedBatches++;
+        input.onBatchProgress?.(completedBatches, totalBatches);
+      } catch (error) {
+        if (input.signal?.aborted) throw error;
+        partialFailure = error instanceof Error ? error.message : String(error);
+        break;
+      }
     }
-  }
-  if (!fragments.length) throw new Error(partialFailure || "Topic integration returned no usable result");
-  let model: TopicPageV2Model;
-  if (fragments.length === 1) {
-    model = parseStructuredModel(fragments[0].content, new Set(input.members.map(({ card }) => card.sourceId)));
-  } else {
-    input.signal?.throwIfAborted();
-    try {
-      const mergeMembers = fragments.map((fragment) => ({ card: fragment.card, content: fragment.content }));
-      const result = await port.request(buildStructuredMessages(input, mergeMembers, true), input.signal, "fast");
-      model = parseStructuredModel(result, new Set(input.members.map(({ card }) => card.sourceId)));
-      completedBatches++;
-      input.onBatchProgress?.(completedBatches, totalBatches);
-    } catch (error) {
-      if (input.signal?.aborted) throw error;
-      partialFailure = error instanceof Error ? error.message : String(error);
-      model = parseStructuredModel(fragments[0].content, new Set(input.members.map(({ card }) => card.sourceId)));
+    if (!fragments.length) throw new TopicGenerationError(partialFailure || "Topic integration returned no usable result");
+    let model: TopicPageV2Model;
+    if (fragments.length === 1) {
+      model = fragments[0].model;
+    } else {
+      input.signal?.throwIfAborted();
+      try {
+        const mergeMembers = fragments.map((fragment) => ({ card: fragment.card, content: fragment.content }));
+        const allowed = new Set(input.members.map(({ card }) => card.sourceId));
+        const result = await requestValidatedTopicJson({
+          port, messages: buildStructuredMessages(input, mergeMembers, true), input, diagnostics: createDiagnostics,
+          validate: (parsed) => validateStructuredModel(parsed, allowed),
+          shouldRetry: () => false,
+          repairPrompt: structuredRepairPrompt,
+          fallback: (validation) => {
+            const candidate = validation.value;
+            if (!candidate || !validation.missingFields.includes("overview") || validation.missingFields.some((field) => field !== "overview") || !candidate.threads.length) return undefined;
+            const overview = overviewFromThreadSummaries(candidate);
+            return overview ? { ...candidate, overview } : undefined;
+          },
+        });
+        model = result.value;
+        overviewGeneratedFromThreads ||= result.degraded;
+        completedBatches++;
+        input.onBatchProgress?.(completedBatches, totalBatches);
+      } catch (error) {
+        if (input.signal?.aborted) throw error;
+        partialFailure = error instanceof Error ? error.message : String(error);
+        model = fragments[0].model;
+      }
     }
+    model.validationWarnings?.forEach((warning) => validationWarnings.add(warning));
+    if (validationWarnings.size) model.validationWarnings = [...validationWarnings];
+    return { model, completedBatches, totalBatches, inputChars, createDiagnostics, overviewGeneratedFromThreads, ...(validationWarnings.size ? { validationWarnings: [...validationWarnings] } : {}), ...(partialFailure ? { partialFailure } : {}) };
+  } catch (error) {
+    if (input.signal?.aborted) throw error;
+    if (!createDiagnostics.errorMessages.some((message) => message === safeTopicError(error, input))) createDiagnostics.errorMessages.push(safeTopicError(error, input));
+    throw error;
+  } finally {
+    try { await port.diagnostic?.(createDiagnostics, "create"); } catch { /* diagnostics must not change topic generation */ }
   }
-  model.validationWarnings?.forEach((warning) => validationWarnings.add(warning));
-  if (validationWarnings.size) model.validationWarnings = [...validationWarnings];
-  return { model, completedBatches, totalBatches, inputChars, ...(validationWarnings.size ? { validationWarnings: [...validationWarnings] } : {}), ...(partialFailure ? { partialFailure } : {}) };
 }
 
 function structuredUpdatePrompt(input: TopicIntegrationInput, members: readonly TopicIntegrationMember[]): Array<{ role: "system" | "user"; content: string }> {
@@ -631,7 +827,7 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
   let partialFailure: string | undefined;
   const validationWarnings = new Set<string>();
   let degraded = 0;
-  const updateDiagnostics: TopicUpdateDiagnostics = { requests: 0, rawResponseChars: [], jsonParsable: [], rawOperations: 0, acceptedOperations: 0, discarded: {}, retried: false, duplicateOperations: 0 };
+  const updateDiagnostics: TopicUpdateDiagnostics = { requests: 0, rawResponseChars: [], jsonParsable: [], missingFields: [], rawOperations: 0, acceptedOperations: 0, discarded: {}, retried: false, duplicateOperations: 0, degraded: false, errorMessages: [] };
   const allAssessments: TopicAssessment[] = [];
   const programGenerated: TopicOperation[] = [];
   for (const batch of batches) {
@@ -643,18 +839,12 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
       const acceptedKeys = new Set<string>();
       let batchAssessments: TopicAssessment[] = [];
       const hasConflictWithoutOperation = (): boolean => batchAssessments.some((assessment) => assessment.relation === "conflict" && !accepted.some((operation) => operation.type === "add_disagreement" && operation.positions.some((position) => position.text === assessment.claim)));
-      const collectOperations = (response: unknown): void => {
-        const raw = responseText(response).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-        updateDiagnostics.requests++;
-        updateDiagnostics.rawResponseChars.push(raw.length);
-        let values: unknown[];
-        try {
-          values = parseOperations(raw);
-          for (const assessment of parseAssessments(raw, batch)) if (!batchAssessments.some((item) => item.memberId === assessment.memberId && item.claim === assessment.claim)) batchAssessments.push(assessment);
-          updateDiagnostics.jsonParsable.push(true);
-          updateDiagnostics.rawOperations += values.length;
-        }
-        catch (error) { updateDiagnostics.jsonParsable.push(false); throw error; }
+      const collectOperations = (parsed: unknown): TopicJsonValidation<unknown[]> => {
+        const validation = operationsFromJson(parsed);
+        if (!validation.value) return validation;
+        const values = validation.value;
+        for (const assessment of parseAssessments(parsed, batch)) if (!batchAssessments.some((item) => item.memberId === assessment.memberId && item.claim === assessment.claim)) batchAssessments.push(assessment);
+        updateDiagnostics.rawOperations += values.length;
         for (const value of values) {
         if (value && typeof value === "object") {
           const row = value as Record<string, unknown>;
@@ -696,17 +886,18 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
             }
           } else { const reason = validated.reason || "invalid-operation"; updateDiagnostics.discarded[reason] = (updateDiagnostics.discarded[reason] || 0) + 1; }
         }
+        return validation;
       };
-      collectOperations(await port.request(messages, input.signal, "fast"));
-      if (!accepted.length || hasConflictWithoutOperation()) {
-        updateDiagnostics.retried = true;
-        input.signal?.throwIfAborted();
-        const retryMessages = [
-          { ...messages[0], content: messages[0].content + (hasConflictWithoutOperation() ? " Your previous assessments marked these claims as conflict but omitted add_disagreement. Add an add_disagreement for each conflict assessment now: " + batchAssessments.filter((item) => item.relation === "conflict").map((item) => item.claim).join("; ") : " Your previous response contained no applicable operation. Re-check every supplied member against the current page. If evidence contradicts a claim, adds an unfinished task, resolves an open item, or adds a meaningful fact, return each applicable operation. Use an empty operations array only if none apply.") },
-          messages[1],
-        ];
-        collectOperations(await port.request(retryMessages, input.signal, "fast"));
-      }
+      await requestValidatedTopicJson({
+        port, messages, input, diagnostics: updateDiagnostics,
+        validate: collectOperations,
+        shouldRetry: () => !accepted.length || hasConflictWithoutOperation(),
+        repairPrompt: (missingFields) => missingFields.includes("operations")
+          ? "Your previous JSON response omitted an operations array. Return a complete JSON object with an operations array."
+          : hasConflictWithoutOperation()
+            ? "Your previous assessments marked these claims as conflict but omitted add_disagreement. Add an add_disagreement for each conflict assessment now: " + batchAssessments.filter((item) => item.relation === "conflict").map((item) => item.claim).join("; ")
+            : "Your previous response contained no applicable operation. Re-check every supplied member against the current page. If evidence contradicts a claim, adds an unfinished task, resolves an open item, or adds a meaningful fact, return each applicable operation. Use an empty operations array only if none apply.",
+      });
       for (const assessment of batchAssessments) if (!allAssessments.some((item) => item.memberId === assessment.memberId && item.claim === assessment.claim)) allAssessments.push(assessment);
       for (const assessment of batchAssessments.filter((item) => item.relation === "conflict")) {
         const member = batch.find((item) => item.card.sourceId === assessment.memberId);

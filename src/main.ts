@@ -376,7 +376,7 @@ class QnALogPlugin extends obsidian.Plugin {
       getFolder: () => this.settings.topicsFolder,
       integration: {
         request: (messages, signal, thinkingMode) => requestLlmChatCompletion(this, messages, { signal, stream: false, thinkingMode }),
-        diagnostic: (details) => logLlmRequestDiagnostic(this, "debug", "llm.topic_update_response", "Topic update response counts and validation outcomes", details),
+        diagnostic: (details, kind = "update") => logLlmRequestDiagnostic(this, "debug", kind === "create" ? "llm.topic_create_response" : "llm.topic_update_response", kind === "create" ? "Topic create response counts and validation outcomes" : "Topic update response counts and validation outcomes", details),
       },
       createId: () => crypto.randomUUID(),
       startActivity: (id, title) => this.tasks.startTaskActivity({ id, kind: "topic", title, status: "running", stage: "preparing", stageLabel: title, detail: "Preparing a topic change" }),

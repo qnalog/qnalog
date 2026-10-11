@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildTopicIntegrationMessages, estimateIntegrationCost, generateTopicOperations,
   generateTopicPageContent, generateTopicPageUpdateOperations,
@@ -36,10 +36,48 @@ describe("topic integration", () => {
     expect(port.calls[0][1].content).toContain("valid");
   });
 
+  it("repairs a missing overview once using the same member input", async () => {
+    const source = member("repair", "主题依据内容。");
+    const thread = { title: "主题进展", summary: "项目已完成第一阶段。项目开始第二阶段。", points: [] };
+    const port = fakePort([
+      JSON.stringify({ status: "active", threads: [thread], disagreements: [], open: [] }),
+      JSON.stringify({ overview: "项目已完成第一阶段。", status: "active", threads: [thread], disagreements: [], open: [] }),
+    ]);
+    const result = await generateTopicPageContent(port, { basis: "overview", members: [source] });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[0][1].content).toBe(port.calls[1][1].content);
+    expect(port.calls[1][0].content).toContain("上次响应缺少 `overview` 字段：请返回完整 JSON，`overview` 为 2–5 句的概述");
+    expect(result.createDiagnostics).toMatchObject({ requests: 2, jsonParsable: [true, true], missingFields: [["overview"], []], retried: true, degraded: false });
+  });
+
+  it("builds an overview from thread summaries after one failed repair", async () => {
+    const source = member("fallback", "主题依据内容。");
+    const model = { status: "active", threads: [
+      { title: "第一条", summary: "首条子线索摘要。后续句子。", points: [] },
+      { title: "第二条", summary: "第二条子线索摘要。后续句子。", points: [] },
+    ], disagreements: [], open: [] };
+    const port = fakePort([JSON.stringify(model), JSON.stringify(model)]);
+    const result = await generateTopicPageContent(port, { basis: "overview", members: [source] });
+    expect(result.model.overview).toBe("首条子线索摘要。 第二条子线索摘要。");
+    expect(result.overviewGeneratedFromThreads).toBe(true);
+    expect(result.createDiagnostics).toMatchObject({ requests: 2, missingFields: [["overview"], ["overview"]], retried: true, degraded: true });
+  });
+
+  it("fails after retry when no valid thread object is returned", async () => {
+    const source = member("threadless", "PRIVATE NOTE CONTENT THAT MUST NOT BE LOGGED");
+    const port = fakePort([JSON.stringify({ overview: "概述。", threads: ["bad"], disagreements: [], open: [] }), JSON.stringify({ overview: "概述。", threads: [], disagreements: [], open: [] })]);
+    const diagnostic = vi.fn();
+    port.diagnostic = diagnostic;
+    await expect(generateTopicPageContent(port, { basis: "overview", members: [source] })).rejects.toMatchObject({ name: "TopicGenerationError" });
+    expect(port.calls).toHaveLength(2);
+    expect(diagnostic).toHaveBeenCalledWith(expect.objectContaining({ requests: 2, missingFields: [["threads"], ["threads"]] }), "create");
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("PRIVATE NOTE CONTENT THAT MUST NOT BE LOGGED");
+  });
+
   it("normalizes unknown status and open-item kinds and records the fallback", async () => {
     const source = member("valid", "The team is considering a new migration step.");
     const createPort = fakePort([JSON.stringify({
-      overview: "The project is active.", status: "in progress", threads: [], disagreements: [],
+      overview: "The project is active.", status: "in progress", threads: [{ title: "Migration", summary: "The migration is under review.", points: [] }], disagreements: [],
       open: [{ kind: "task", text: "Review the migration.", sources: ["valid"] }], unsorted: [],
     })]);
     const created = await generateTopicPageContent(createPort, { basis: "overview", members: [source] });
@@ -60,7 +98,7 @@ describe("topic integration", () => {
 
   it("merges multi-batch body fragments without sending source bodies to the merge request", async () => {
     const members = Array.from({ length: TOPIC_INTEGRATION_BATCH_SIZE + 1 }, (_, index) => member(String(index), "brief", "PRIVATE BODY " + index));
-    const model = { overview: "The project is progressing.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] };
+    const model = { overview: "The project is progressing.", status: "active", threads: [{ title: "Progress", summary: "The project is progressing.", points: [] }], disagreements: [], open: [], unsorted: [] };
     const port = fakePort([JSON.stringify(model), JSON.stringify(model), JSON.stringify(model)]);
     const result = await generateTopicPageContent(port, { basis: "body", members });
     expect(result).toMatchObject({ completedBatches: 3, totalBatches: 3 });
@@ -69,6 +107,24 @@ describe("topic integration", () => {
     expect(port.calls[2][0].content).toContain("structured evidence fragments");
     expect(port.calls[2][1].content).not.toContain("PRIVATE BODY 0");
     expect(port.calls[2][1].content).toContain("The project is progressing.");
+  });
+
+  it("retries only the failed body batch before merging successful fragments", async () => {
+    const members = Array.from({ length: TOPIC_INTEGRATION_BATCH_SIZE + 1 }, (_, index) => member(String(index), "brief", `Body evidence ${index}.`));
+    const good = { overview: "The project is progressing.", status: "active", threads: [{ title: "Progress", summary: "A project step is complete.", points: [] }], disagreements: [], open: [] };
+    const missingOverview = { status: "active", threads: [{ title: "Progress", summary: "The last project step is complete.", points: [] }], disagreements: [], open: [] };
+    const port = fakePort([JSON.stringify(good), JSON.stringify(missingOverview), JSON.stringify(good), JSON.stringify(good)]);
+    const result = await generateTopicPageContent(port, { basis: "body", members });
+    expect(port.calls).toHaveLength(4);
+    const firstBatch = JSON.parse(port.calls[0][1].content) as { members: Array<{ path: string }> };
+    const failedBatch = JSON.parse(port.calls[1][1].content) as { members: Array<{ path: string }> };
+    const retriedBatch = JSON.parse(port.calls[2][1].content) as { members: Array<{ path: string }> };
+    expect(firstBatch.members).toHaveLength(TOPIC_INTEGRATION_BATCH_SIZE);
+    expect(failedBatch.members.map(({ path }) => path)).toEqual(["Notes/6.md"]);
+    expect(retriedBatch.members.map(({ path }) => path)).toEqual(["Notes/6.md"]);
+    expect(port.calls[2][0].content).toContain("overview");
+    expect(port.calls[3][0].content).toContain("Merge these structured evidence fragments");
+    expect(result).toMatchObject({ completedBatches: 3, totalBatches: 3, createDiagnostics: { requests: 4, retried: true } });
   });
 
   it("revises overview blocks and degrades unsupported target blocks into a progress point", async () => {
@@ -202,6 +258,7 @@ describe("topic integration", () => {
     expect(result.operations.map(({ type }) => type)).toEqual(["add_point"]);
     expect(result.programGeneratedOperationKeys).toHaveLength(0);
   });
+
   it("does not reassign an invalid disagreement source and ignores model dates", async () => {
     const source = member("fresh", "属性名称仍按 Obsidian 语言动态切换。", "属性名称仍按 Obsidian 语言动态切换。");
     const port = fakePort([response([{ type: "add_disagreement", subject: "属性名", positions: [
@@ -325,7 +382,7 @@ describe("topic integration", () => {
     const events: string[] = [];
     const port: TopicIntegrationPort = { request: async () => {
       events.push("request");
-      return response([]);
+      return response([{ type: "add_item", section: "当前状态", text: "Evidence from one supports careful planning.", sourceId: "one" }]);
     } };
     await generateTopicOperations(port, { basis: "overview", members: [member("one")], onPlanned: (total) => events.push(`planned:${total}`), onBatchProgress: (done, total) => events.push(`done:${done}/${total}`) });
     expect(events).toEqual(["planned:1", "request", "done:1/1"]);

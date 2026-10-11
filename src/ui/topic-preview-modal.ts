@@ -38,6 +38,7 @@ export class TopicPreviewModal extends Modal {
     const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
     if (this.preview.pageWasManuallyEdited) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("The page was manually edited since the last update. Changes will use the current version.") });
     if (this.preview.partialFailure) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Some batches failed; {0}/{1} completed batches were kept.").replace("{0}", String(this.preview.completedBatches)).replace("{1}", String(this.preview.totalBatches)) });
+    if (this.preview.create?.overviewGeneratedFromThreads) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("The overview was generated from the thread summaries by the program. You can edit it on the page.") });
 
     const model = this.preview.create?.model || this.preview.replacement?.model;
     const validationWarnings = [...new Set([...(this.preview.validationWarnings || []), ...(model?.validationWarnings || [])])];

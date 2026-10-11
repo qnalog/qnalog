@@ -104,7 +104,7 @@ describe("topics service", () => {
     const setup = harness({ request: async () => { throw new Error("offline"); } });
     const initial = topicMarkdown("climate-topic", "Climate", ["climate"]);
     setup.storePort.seed("Topics/Climate.md", initial);
-    await expect(setup.service.preview({ topicId: "climate-topic", startPath: "Notes/b.md", memberPaths: ["Notes/b.md"], basis: "overview" })).rejects.toThrow("before any batch completed");
+    await expect(setup.service.preview({ topicId: "climate-topic", startPath: "Notes/b.md", memberPaths: ["Notes/b.md"], basis: "overview" })).rejects.toThrow("could not be generated");
     expect(await setup.storePort.read("Topics/Climate.md")).toBe(initial);
     expect(setup.writes).toEqual([]);
     expect(setup.activities.failed).toHaveLength(1);
@@ -167,6 +167,26 @@ describe("topics service", () => {
     expect(setup.activities.completed).toEqual([["topics:create:topic-1"]]);
     expect(setup.activities.failed).toEqual([]);
     await expect(setup.service.apply(preview, [])).rejects.toThrow("no longer available");
+  });
+
+  it("returns create diagnostics and marks a program-generated overview in the preview", async () => {
+    const model = JSON.stringify({ status: "active", threads: [{ title: "Progress", summary: "First sentence. Second sentence.", points: [] }], disagreements: [], open: [] });
+    const setup = harness({ request: async () => ({ choices: [{ message: { content: model } }] }) });
+    const preview = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview", title: "Climate" });
+    expect(preview.createDiagnostics).toMatchObject({ requests: 2, missingFields: [["overview"], ["overview"]], retried: true, degraded: true });
+    expect(preview.create?.overviewGeneratedFromThreads).toBe(true);
+    expect(preview.create?.model?.overview).toBe("First sentence.");
+    expect(setup.writes).toEqual([]);
+  });
+
+  it("keeps the page unchanged and maps empty-thread responses to a localized error", async () => {
+    const response = JSON.stringify({ overview: "Present overview.", status: "active", threads: [], disagreements: [], open: [] });
+    const setup = harness({ request: async () => ({ choices: [{ message: { content: response } }] }) });
+    await expect(setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview" }))
+      .rejects.toThrow("The topic page could not be generated");
+    expect(setup.requests).toHaveLength(2);
+    expect(setup.writes).toEqual([]);
+    expect(setup.activities.failed[0]?.[1]).toMatchObject({ message: expect.not.stringContaining("Topic response must contain an overview") });
   });
 
   it("previews a legacy page rebuild and replaces the page with an undo snapshot", async () => {

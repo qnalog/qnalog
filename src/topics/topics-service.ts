@@ -6,7 +6,7 @@ import type { OverviewCardCachePort } from "./overview-card-cache";
 import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
-import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, estimateIntegrationCost, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
+import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
 import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, renderTopicPage, serializeTopicPage, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
@@ -177,7 +177,10 @@ export class TopicsService {
       let totalBatches = 0;
       let partialFailure: string | undefined;
       let validationWarnings: string[] | undefined;
+      let createDiagnostics: TopicChangePreview["createDiagnostics"];
       let updateDiagnostics: TopicChangePreview["updateDiagnostics"];
+      let duplicateDetails: TopicChangePreview["duplicateDetails"];
+      let overviewGeneratedFromThreads = false;
       let degraded: number | undefined;
       let assessments: TopicChangePreview["assessments"];
       let programGeneratedOperations: number | undefined;
@@ -200,12 +203,14 @@ export class TopicsService {
       } else {
         const generated = await generateTopicPageContent(this.host.integration, generationInput);
         generatedModel = generated.model;
+        createDiagnostics = generated.createDiagnostics;
+        overviewGeneratedFromThreads = generated.overviewGeneratedFromThreads;
         completedBatches = generated.completedBatches;
         totalBatches = generated.totalBatches;
         partialFailure = generated.partialFailure;
         validationWarnings = generated.validationWarnings;
       }
-      if (partialFailure && completedBatches === 0) throw new Error("Topic integration failed before any batch completed: " + partialFailure);
+      if (partialFailure && completedBatches === 0) throw new TopicGenerationError("Topic integration failed before any batch completed: " + partialFailure);
       const memberRecords: TopicMember[] = members.map(({ card }) => ({ path: card.path, title: card.title, sourceId: card.sourceId, date: card.date, summary: card.overview }));
       let replacement: TopicChangePreview["replacement"];
       if (input.rebuild && existing && generatedModel) {
@@ -252,7 +257,9 @@ export class TopicsService {
         completedBatches, totalBatches,
         ...(partialFailure ? { partialFailure } : {}),
         ...(validationWarnings?.length ? { validationWarnings } : {}),
+        ...(createDiagnostics ? { createDiagnostics } : {}),
         ...(updateDiagnostics ? { updateDiagnostics } : {}),
+        ...(duplicateDetails?.length ? { duplicateDetails } : {}),
         ...(degraded ? { degraded } : {}),
         ...(assessments?.length ? { assessments } : {}),
         ...(programGeneratedOperations ? { programGeneratedOperations } : {}),
@@ -263,16 +270,26 @@ export class TopicsService {
           tags: [...new Set([...existing.page.tags, ...(verifiedTagUpdate?.tags || [])])],
           tagAliases: verifiedTagUpdate?.aliases || existing.page.tagAliases || {},
         } : input.rebuild ? { ...(replacement ? { replacement } : {}) } : {
-          create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords, ...(generatedModel ? { model: generatedModel } : {}) },
+          create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords, ...(generatedModel ? { model: generatedModel } : {}), ...(overviewGeneratedFromThreads ? { overviewGeneratedFromThreads: true } : {}) },
         }),
       };
       this.previews.set(activityId, { preview });
       return preview;
     } catch (error) {
       this.controllers.delete(activityId);
-      if (controller.signal.aborted) this.host.cancelActivity?.(activityId, "Topic operation cancelled; the topic page was not changed");
-      else this.host.failActivity(activityId, error);
-      throw error;
+      if (controller.signal.aborted) {
+        this.host.cancelActivity?.(activityId, "Topic operation cancelled; the topic page was not changed");
+        throw error;
+      }
+      else if (error instanceof TopicGenerationError) {
+        const message = t("The topic page could not be generated. You can retry. The page was not modified.");
+        const userError = new Error(message);
+        this.host.failActivity(activityId, userError);
+        throw userError;
+      } else {
+        this.host.failActivity(activityId, error);
+        throw error;
+      }
     } finally {
       input.signal?.removeEventListener("abort", cancel);
     }
