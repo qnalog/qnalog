@@ -6,6 +6,7 @@ declare global {
     createEl(tag: string, options?: ElementOptions): HTMLElement;
     createSpan(options?: ElementOptions): HTMLSpanElement;
     addClass(value: string): void;
+    removeClass(value: string): void;
     empty(): void;
     setText(value: string): void;
     setCssProps(props: Record<string, string>): void;
@@ -18,6 +19,7 @@ declare global {
 }
 
 HTMLElement.prototype.addClass = function (value: string): void { this.classList.add(...value.split(/\s+/).filter(Boolean)); };
+HTMLElement.prototype.removeClass = function (value: string): void { this.classList.remove(...value.split(/\s+/).filter(Boolean)); };
 HTMLElement.prototype.empty = function (): void { this.replaceChildren(); };
 HTMLElement.prototype.setText = function (value: string): void { this.textContent = value; };
 HTMLElement.prototype.setCssProps = function (props: Record<string, string>): void { for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value); };
@@ -36,6 +38,7 @@ HTMLElement.prototype.createSpan = function (options: ElementOptions = {}): HTML
 export class Modal {
   readonly modalEl: HTMLDivElement;
   readonly contentEl: HTMLDivElement;
+  readonly titleEl: HTMLDivElement;
   private readonly closeButton: HTMLDivElement;
   private readonly onEscape = (event: KeyboardEvent): void => { if (event.key === "Escape") this.close(); };
 
@@ -44,13 +47,15 @@ export class Modal {
     container.className = "modal-container";
     this.modalEl = document.createElement("div");
     this.modalEl.className = "modal";
+    this.titleEl = document.createElement("div");
+    this.titleEl.className = "modal-title";
     this.closeButton = document.createElement("div");
     this.closeButton.className = "modal-header-button mod-raised clickable-icon";
     this.closeButton.textContent = "×";
     this.closeButton.addEventListener("click", () => this.close());
     this.contentEl = document.createElement("div");
     this.contentEl.className = "modal-content";
-    this.modalEl.append(this.closeButton, this.contentEl);
+    this.modalEl.append(this.titleEl, this.closeButton, this.contentEl);
     container.append(this.modalEl);
     document.body.append(container);
     document.addEventListener("keydown", this.onEscape);

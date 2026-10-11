@@ -32,7 +32,7 @@ const cancelledTopics: string[] = [];
 (window as unknown as { cancelledTopics: string[] }).cancelledTopics = cancelledTopics;
 
 const port = {
-  text: (key: string) => key,
+  text: (key: string) => key === "QnALog · Topics" ? "QnALog · Topics" : key,
   isConfigured: () => true,
   getVersion: () => "fixture",
   getCandidates: async () => candidates,
@@ -56,7 +56,10 @@ const unbrokenText = `https://example.test/${"a".repeat(160)}`;
 const preview: TopicChangePreview = {
   topicId: "fixture-topic", expectedHash: "fixture-hash", pageWasManuallyEdited: false,
   completedBatches: 1, totalBatches: 1,
-  items: [{ id: "long-item", type: "add_conflict", operation: { type: "add_conflict", text: longText, sourceId: "source-id" }, target: "conflict", text: `${longText} ${unbrokenText}（未核实）`, sourceId: "source-id", cancellable: true }],
+  items: [
+    { id: "long-item", type: "add_conflict", operation: { type: "add_conflict", text: longText, sourceId: "source-id" }, target: "conflict", text: `${longText} ${unbrokenText}（未核实）`, sourceId: "source-id", cancellable: true },
+    { id: "second-item", type: "add_timeline", operation: { type: "add_timeline", date: "2026-10-10", text: "A second timeline entry.", sourceId: "source-id" }, target: "timeline", text: "A second timeline entry.", sourceId: "source-id", cancellable: true },
+  ],
   sourceLinks: { "source-id": `[[${"QnALog/转写纪要/2026-09-29 2149 · ".repeat(2)}综合纪要-问答日志-数据结构优化.md|问答日志-数据结构优化]]` },
   sourceDates: { "source-id": "2026-09-29" },
 };

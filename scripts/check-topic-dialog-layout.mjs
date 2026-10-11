@@ -37,7 +37,7 @@ try {
     } }],
   });
   await writeFile(html, `<!doctype html><html><head><meta charset="utf-8"><style>
-    :root { color-scheme: light; --background-primary:#fff; --background-secondary:#f1f3f5; --background-modifier-border:#d7dbe0; --text-normal:#25282c; --text-muted:#656b73; --text-faint:#8b9098; --text-accent:#6750a4; --interactive-accent:#6750a4; --interactive-accent-hover:#58428e; --text-warning:#a96900; --modal-background:#fff; --font-ui-small:12px; --font-ui-smaller:11px; --radius-s:4px; --radius-m:8px; }
+    :root { color-scheme: light; --background-primary:#fff; --background-secondary:#f1f3f5; --background-modifier-border:#d7dbe0; --text-normal:#25282c; --text-muted:#656b73; --text-faint:#8b9098; --text-accent:#6750a4; --interactive-accent:#6750a4; --interactive-accent-hover:#58428e; --text-warning:#a96900; --modal-background:#fff; --font-ui-small:12px; --font-ui-smaller:11px; --font-ui-medium:15px; --background-modifier-hover:#eceef1; --radius-s:4px; --radius-m:8px; }
     .theme-dark { color-scheme:dark; --background-primary:#191a1c; --background-secondary:#24262a; --background-modifier-border:#3a3d42; --text-normal:#e7e9ec; --text-muted:#b1b5bc; --text-faint:#858b94; --text-accent:#b4a1fa; --interactive-accent:#a88df4; --interactive-accent-hover:#c0adff; --text-warning:#e2b75f; --modal-background:#1d1e20; }
     body { min-height:100vh; margin:0; background:var(--background-primary); color:var(--text-normal); font:14px/1.4 system-ui,sans-serif; }
     .modal-container { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
@@ -160,9 +160,11 @@ try {
       const content=document.querySelector('.modal-content.qnalog-topics-create'); const scroll=content?.querySelector('.qnalog-topics-scroll'); const footer=content?.querySelector('.qnalog-topics-modal-footer');
       const summaries=[...(content?.querySelectorAll('.qnalog-topics-candidate-summary') || [])].map((item) => item.textContent || '');
       const headings=[...(content?.querySelectorAll('.qnalog-topics-preview-heading') || [])]; const first=content?.querySelector('.qnalog-topics-candidate');
-      return {height:content?.clientHeight, scrollHeight:scroll?.scrollHeight, scrollClientHeight:scroll?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, bodyScrollWidth:document.body.scrollWidth, summaries, headingTags:headings.map((item)=>item.tagName), candidateOutline:first?getComputedStyle(first).outlineStyle:null};
+      return {title:content?.closest('.modal')?.querySelector('.modal-title')?.textContent, actionHeading:content?.querySelector('.qnalog-topics-dialog-heading')?.textContent, height:content?.clientHeight, scrollHeight:scroll?.scrollHeight, scrollClientHeight:scroll?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, bodyScrollWidth:document.body.scrollWidth, summaries, headingTags:headings.map((item)=>item.tagName), candidateOutline:first?getComputedStyle(first).outlineStyle:null};
     })()`);
     assert(create.height > 0, `create dialog missing at ${width}px/${theme}`);
+    assert.equal(create.title, "QnALog · Topics", `create title bar must be localized at ${width}px/${theme}`);
+    assert.equal(create.actionHeading, "Create topic", `create action heading must be present at ${width}px/${theme}`);
     assert(create.scrollHeight > create.scrollClientHeight, `candidate list did not scroll at ${width}px/${theme}`);
     assert(create.footerBottom <= create.viewport, `create footer below viewport at ${width}px/${theme}`);
     assert(create.scrollWidth <= create.clientWidth && create.bodyScrollWidth <= width, `create dialog has horizontal overflow at ${width}px/${theme}`);
@@ -208,11 +210,17 @@ try {
 
     await evaluate("window.renderTopicPreview()");
     const preview = await evaluate(`(() => {
-      const content=document.querySelector('.modal-content.qnalog-topics-preview'); const scroll=content?.querySelector('.qnalog-topics-scroll'); const footer=content?.querySelector('.qnalog-topics-modal-footer'); const row=content?.querySelector('.qnalog-topics-preview-item'); const text=row?.querySelector('.qnalog-topics-preview-text');
+      const content=document.querySelector('.modal-content.qnalog-topics-preview'); const scroll=content?.querySelector('.qnalog-topics-scroll'); const footer=content?.querySelector('.qnalog-topics-modal-footer'); const row=content?.querySelector('.qnalog-topics-preview-item'); const text=row?.querySelector('.qnalog-topics-preview-text'); const source=row?.querySelector('.qnalog-topics-source-link'); const checkbox=content?.querySelector('input[type=checkbox]'); const rows=[...content.querySelectorAll('.qnalog-topics-preview-item')];
       const style=row?getComputedStyle(row):null; const headings=[...content.querySelectorAll('.qnalog-topics-preview-heading')];
-      return {height:content?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, scrollAreaWidth:scroll?.scrollWidth, scrollAreaClientWidth:scroll?.clientWidth, textWidth:text?.getBoundingClientRect().width, contentWidth:content?.clientWidth, source:row?.querySelector('.qnalog-topics-source-link')?.textContent, badgeWhiteSpace:getComputedStyle(row?.querySelector('.qnalog-topics-unverified')).whiteSpace, headingTags:headings.map((heading)=>heading.tagName), rowOutline:style?.outlineStyle, rowTopBorder:style?.borderTopStyle, buttonCount:content?.querySelectorAll('button').length, bodyScrollWidth:document.body.scrollWidth};
+      return {title:content?.closest('.modal')?.querySelector('.modal-title')?.textContent, actionHeading:content?.querySelector('.qnalog-topics-dialog-heading')?.textContent, metaJustify:getComputedStyle(row?.querySelector('.qnalog-topics-preview-meta')).justifyContent, sourceRadius:parseFloat(getComputedStyle(source).borderRadius), checkboxWidth:checkbox?.getBoundingClientRect().width, checkboxHeight:checkbox?.getBoundingClientRect().height, itemPadding:parseFloat(getComputedStyle(row).paddingTop), rowGap:rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().bottom : null, height:content?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, scrollAreaWidth:scroll?.scrollWidth, scrollAreaClientWidth:scroll?.clientWidth, textWidth:text?.getBoundingClientRect().width, contentWidth:content?.clientWidth, source:row?.querySelector('.qnalog-topics-source-link')?.textContent, badgeWhiteSpace:getComputedStyle(row?.querySelector('.qnalog-topics-unverified')).whiteSpace, headingTags:headings.map((heading)=>heading.tagName), rowOutline:style?.outlineStyle, rowTopBorder:style?.borderTopStyle, buttonCount:content?.querySelectorAll('button').length, bodyScrollWidth:document.body.scrollWidth};
     })()`);
     assert(preview.height > 0, `preview dialog missing at ${width}px/${theme}`);
+    assert.equal(preview.title, "QnALog · Topics", `preview title bar must be localized at ${width}px/${theme}`);
+    assert.equal(preview.actionHeading, "Preview topic changes", `preview action heading must be present at ${width}px/${theme}`);
+    assert.equal(preview.metaJustify, "flex-end", `preview metadata must be right aligned at ${width}px/${theme}`);
+    assert(preview.sourceRadius <= 6, `source label radius exceeds 6px at ${width}px/${theme}`);
+    assert(preview.itemPadding >= 10 && (preview.rowGap === null || preview.rowGap >= 10), `preview item spacing is too tight at ${width}px/${theme}`);
+    assert(preview.checkboxWidth >= 14 && preview.checkboxHeight >= 14, `preview checkbox is too small at ${width}px/${theme}`);
     assert(preview.textWidth >= preview.contentWidth * 0.6, `preview text is too narrow (${preview.textWidth}/${preview.contentWidth}) at ${width}px/${theme}`);
     assert(preview.footerBottom <= preview.viewport, `preview footer below viewport at ${width}px/${theme}`);
     assert(preview.scrollWidth <= preview.clientWidth && preview.scrollAreaWidth <= preview.scrollAreaClientWidth && preview.bodyScrollWidth <= width, `preview dialog has horizontal overflow at ${width}px/${theme}`);
@@ -314,6 +322,10 @@ try {
   await driver("progress(2, 3)");
   await waitFor("document.querySelector('.qnalog-topics-progress').getAttribute('aria-valuenow') === '2'");
   assert.match(await evaluate("document.querySelector('.qnalog-topics-progress-text').textContent"), /2\/3/, "batch text must show completed/total");
+  const generationMetrics = await evaluate(`(() => { const content=document.querySelector('.modal-content.qnalog-topics-create'); const modal=content?.closest('.modal'); const title=modal?.querySelector('.modal-title')?.textContent; const heading=content?.querySelector('.qnalog-topics-dialog-heading')?.textContent; return {title, heading, modalHeight:modal?.getBoundingClientRect().height, contentHeight:content?.getBoundingClientRect().height}; })()`);
+  assert.equal(generationMetrics.title, "QnALog · Topics", "generation title bar must be present");
+  assert.equal(generationMetrics.heading, "Generating preview", "generation action heading must be present");
+  assert(generationMetrics.modalHeight <= generationMetrics.contentHeight + 120, `generation dialog has excess height (${generationMetrics.modalHeight}/${generationMetrics.contentHeight})`);
   const fillRatio = await evaluate("(() => { const bar = document.querySelector('.qnalog-topics-progress').getBoundingClientRect().width; return document.querySelector('.qnalog-topics-progress-fill').getBoundingClientRect().width / bar; })()");
   assert(Math.abs(fillRatio - 2 / 3) < 0.02, `bar fill must follow completed batches (ratio ${fillRatio})`);
   const elapsedFirst = await evaluate("document.querySelector('.qnalog-topics-progress-elapsed').textContent");
