@@ -57,6 +57,7 @@ import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import { getJoinableTopics, type TopicsUiPort } from "./topics-ui-port";
 import { TopicsPanel } from "./topics-panel";
 import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
+import { isBrowseTab, nextSidebarTab, scrollTopAfterRender } from "./sidebar-tab-policy";
 import { renderTopicPromptRow } from "./topic-prompt-row";
 
 import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
@@ -233,6 +234,9 @@ export class OutlineView extends obsidian.ItemView {
   declare _recentVaultRefreshTimer: number;
   /** 下一次渲染是否保留滚动位置（筛选/分组切换时用）。 */
   declare _preserveScrollOnNextRender: boolean;
+  declare browseScrollTop: Partial<Record<"recent" | "topics", number>>;
+  declare lastRenderedTab: string;
+  declare topicsScrollRestore: number | null;
   /** 上一次渲染的结构签名；未变化时只刷新计时等高频文本。 */
   declare _lastSig: string;
   /** 上一次渲染到 DOM 的大纲正文；避免无变化时替换节点。 */
@@ -311,6 +315,9 @@ export class OutlineView extends obsidian.ItemView {
     this._renderRaf = 0;
     this._recentVaultRefreshTimer = 0;
     this._preserveScrollOnNextRender = false;
+    this.browseScrollTop = {};
+    this.lastRenderedTab = "";
+    this.topicsScrollRestore = null;
     this._lastSig = "";
     this._lastRenderedOutline = "";
     this.showRecentHome = true;
@@ -354,8 +361,7 @@ export class OutlineView extends obsidian.ItemView {
     // 节流：recorder 每 500ms 滴答一次。只更新计时文本，结构不变时不重建 DOM。
     this.unsubscribeRecorder = this.plugin.recorder.on(() => this.scheduleUpdate());
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
-      this.showRecentHome = true;
-      this.idlePanelTab = "";
+      this.handleActiveLeafChange();
       void this.plugin.semanticCanvas.syncActiveCanvasSourceNote({
       throttled: () => this.scheduleUpdate(),
       forced: () => { this._lastSig = ""; this.scheduleUpdate(); },
@@ -402,6 +408,11 @@ export class OutlineView extends obsidian.ItemView {
     if (this.sedimentAdvanceTimer) { window.clearTimeout(this.sedimentAdvanceTimer); this.sedimentAdvanceTimer = 0; }
     this.disposeInlineAudio();
   }
+  // A note or topic page was opened or focused. A browse tab stays; the other tabs reset to the default as before.
+  handleActiveLeafChange() {
+    if (!isBrowseTab(this.idlePanelTab)) this.showRecentHome = true;
+    this.idlePanelTab = nextSidebarTab(this.idlePanelTab, "leaf-change");
+  }
   syncSessionOutline(session) {
     const id = session && session.id ? session.id : "";
     const previousId = this.outlineSessionId || "";
@@ -412,12 +423,11 @@ export class OutlineView extends obsidian.ItemView {
       return;
     }
     this.outlineSessionId = id;
-    if (id) {
-      this.showRecentHome = false;
-      this.idlePanelTab = "outline";
-    } else if (previousId) {
-      this.showRecentHome = false;
-      this.idlePanelTab = "outline";
+    if (id || previousId) {
+      const event = !previousId ? "session-start" : !id ? "session-end" : "session-switch";
+      const next = nextSidebarTab(this.idlePanelTab, event);
+      if (!isBrowseTab(next)) this.showRecentHome = false;
+      this.idlePanelTab = next;
     }
     this.aiOutline = session && session.realtimeOutline ? session.realtimeOutline : "";
     this.lastOutlineSegmentCount = session && session.realtimeOutlineSegmentCount ? session.realtimeOutlineSegmentCount : 0;
@@ -530,13 +540,18 @@ export class OutlineView extends obsidian.ItemView {
     const root = this.containerEl.children[1];
     if (!root) return;
     const preserveScroll = this._preserveScrollOnNextRender === true;
-    const previousScrollTop = preserveScroll ? root.scrollTop : 0;
+    const scrollBeforeRender = root.scrollTop;
+    // The list being replaced keeps its position, so the next visit to that tab starts where the user left it.
+    if (isBrowseTab(this.lastRenderedTab)) this.browseScrollTop[this.lastRenderedTab] = scrollBeforeRender;
     this._preserveScrollOnNextRender = false;
+    const scrollTab = this.idlePanelTab || "outline";
+    const restoreTop = scrollTopAfterRender({ preserve: preserveScroll, previousTop: scrollBeforeRender, tab: scrollTab, saved: this.browseScrollTop });
+    this.topicsScrollRestore = scrollTab === "topics" ? restoreTop : null;
     const restoreScroll = () => {
-      if (!preserveScroll) return;
-      root.scrollTop = previousScrollTop;
+      if (restoreTop === null) return;
+      root.scrollTop = restoreTop;
       window.requestAnimationFrame(() => {
-        if (this.containerEl.children[1] === root) root.scrollTop = previousScrollTop;
+        if (this.containerEl.children[1] === root) root.scrollTop = restoreTop;
       });
     };
     this.disposeInlineAudio();
@@ -633,6 +648,7 @@ export class OutlineView extends obsidian.ItemView {
         }
       }
     }
+    this.lastRenderedTab = scrollTab;
     this._lastSig = this.computeSignature();
     restoreScroll();
   }
@@ -747,7 +763,12 @@ export class OutlineView extends obsidian.ItemView {
     if (!this.topicsUi) { this.renderPanelEmpty(root, i18nT("No topics yet")); return; }
     const recent = getRecentNotes(this.plugin, 20);
     for (const note of recent) this.refreshTopicPromptOnce(note.file.path);
-    void new TopicsPanel(this.app, this.topicsUi, () => this.render()).render(root);
+    const active = this.getActiveNoteFile();
+    const restoreTop = this.topicsScrollRestore;
+    // The rows are added after an async read, so the saved position is applied again once they exist.
+    void new TopicsPanel(this.app, this.topicsUi, () => this.render(), active && active.path ? active.path : "").render(root).then(() => {
+      if (restoreTop !== null && this.containerEl.children[1] === root) root.scrollTop = restoreTop;
+    });
   }
 
   refreshTopicPromptOnce(path) {

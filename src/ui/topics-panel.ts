@@ -12,11 +12,13 @@ export class TopicsPanel {
   private readonly app: App;
   private readonly port: TopicsUiPort;
   private readonly refresh: () => void;
+  private readonly activePath: string;
 
-  constructor(app: App, port: TopicsUiPort, refresh: () => void) {
+  constructor(app: App, port: TopicsUiPort, refresh: () => void, activePath = "") {
     this.app = app;
     this.port = port;
     this.refresh = refresh;
+    this.activePath = activePath;
   }
 
   async render(root: HTMLElement): Promise<void> {
@@ -32,7 +34,9 @@ export class TopicsPanel {
         return;
       }
       for (const topic of topics) {
-        const row = box.createDiv({ cls: "qnalog-topics-row", attr: { tabindex: "0", role: "button" } });
+        // The row of the note open in the editor is highlighted; the highlight does not move the list.
+        const isActive = !!this.activePath && topic.path === this.activePath;
+        const row = box.createDiv({ cls: `qnalog-topics-row${isActive ? " is-active" : ""}`, attr: { tabindex: "0", role: "button" } });
         row.addEventListener("click", () => void this.port.openTopic(topic.path));
         row.addEventListener("keydown", (event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void this.port.openTopic(topic.path); }
