@@ -12880,3 +12880,26 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-size: var(--font-ui-smaller);
   margin-top: 0.4em;
 }
+
+/* Narrative topic pages use Obsidian theme colors and typography. */
+.qnalog-topic .callout[data-callout="abstract"] p:last-child {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-topic h3 {
+  margin-top: 1.25em;
+  margin-bottom: 0.35em;
+}
+
+.qnalog-topic .footnotes,
+.qnalog-topic section.footnotes {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-topics-revision { display: grid; gap: 6px; min-width: 0; flex: 1 1 auto; }
+.qnalog-topics-revision-old,
+.qnalog-topics-revision-new { min-width: 0; padding: 5px 7px; border-radius: 4px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.qnalog-topics-revision-old { color: var(--text-muted); background: var(--background-secondary); text-decoration: line-through; }
+.qnalog-topics-revision-new { color: var(--text-success); background: var(--background-modifier-success); }
