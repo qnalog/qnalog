@@ -10364,7 +10364,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-create, .qnalog-topics-preview { color: var(--text-normal); }
 .qnalog-topics-create h2, .qnalog-topics-preview h2 { font-size: 16px; }
 .qnalog-topics-create h3, .qnalog-topics-preview h3 { margin: 12px 0 6px; color: var(--text-muted); font-size: 12px; }
-.qnalog-topics-title { width: 100%; margin: 0 0 10px; }
+.qnalog-topics-title { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0 0 10px; }
 .qnalog-topics-basis { display: flex; gap: 14px; margin: 10px 0; }
 .qnalog-topics-radio { display: inline-flex; align-items: center; gap: 6px; color: var(--text-normal); font-size: var(--font-ui-small); }
 .qnalog-topics-cost-warning, .qnalog-topics-notice { margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-small); }
@@ -10392,23 +10392,26 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-prompt-text { min-width: 0; }
 .qnalog-topics-prompt-more { color: var(--text-faint); }
 
-/* Topic dialogs keep their heading and actions visible while the evidence list scrolls. */
+/* Topic dialogs keep their heading and actions visible while the evidence list scrolls.
+   Width comes from Obsidian's .modal (560px, max-width min(720px, 92vw)); this content box fills it and sets no fixed width of its own. */
 .modal-content.qnalog-topics-create,
 .modal-content.qnalog-topics-preview {
   display: flex;
   flex-direction: column;
-  width: min(680px, calc(100vw - 24px));
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
   height: min(70vh, 640px);
   max-height: min(70vh, 640px);
   min-height: 0;
   overflow: hidden;
-  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 .modal-content.qnalog-topics-create > h2,
 .modal-content.qnalog-topics-preview > h2 { flex: 0 0 auto; }
-.qnalog-topics-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
-.qnalog-topics-modal-footer { position: sticky; bottom: 0; flex: 0 0 auto; padding-top: 8px; background: var(--modal-background, var(--background-primary)); border-top: 1px solid var(--background-modifier-border); }
-.qnalog-topics-modal-actions { flex: 0 0 auto; }
+.qnalog-topics-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; max-width: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.qnalog-topics-modal-footer { position: sticky; bottom: 0; flex: 0 0 auto; min-width: 0; padding-top: 8px; background: var(--modal-background, var(--background-primary)); border-top: 1px solid var(--background-modifier-border); }
+.qnalog-topics-modal-actions { flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
 .qnalog-topics-preview-item { display: block; min-width: 0; }
 .qnalog-topics-preview-main { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .qnalog-topics-preview-main > input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--interactive-accent); }
@@ -10422,7 +10425,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-panel { padding: 14px 16px 18px; }
 .qnalog-topics-row { padding-inline: 0; }
 @media (max-width: 420px) {
-  .modal-content.qnalog-topics-create, .modal-content.qnalog-topics-preview { width: calc(100vw - 24px); }
   .qnalog-topics-prompt-row { padding-inline-start: 24px; }
 }
 @media (prefers-reduced-motion: reduce) {
