@@ -44,7 +44,7 @@ export type TopicOperation =
   | { type: "add_point"; thread: string; text: string; sources: string[]; sourceId: string }
   | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
   | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
-  | { type: "add_disagreement"; subject: string; positions: Array<{ text: string; sourceId: string; date?: string; provenance?: "source-pending" | "unverified"; sourceTitle?: string }>; sourceId: string }
+  | { type: "add_disagreement"; subject: string; relatedBlockId?: string; positions: Array<{ text: string; sourceId: string; date?: string; provenance?: "source-pending" | "unverified"; sourceTitle?: string }>; sourceId: string }
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
@@ -498,7 +498,19 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
             const marker = position.provenance === "source-pending" ? "（来源待核实）" : position.provenance === "unverified" ? "（未核实）" : "";
             return `> - ${sourceDate ? `**${sourceDate}**：` : ""}${position.text}${marker}${sourceFootnote} ^${id}`;
           });
-          row = [``, `> [!warning] ${operation.subject}`, ...positions].join("\n");
+          const heading = `> [!warning] ${operation.subject}`;
+          const existingHeading = lines.findIndex((line) => line.trim() === heading);
+          if (existingHeading >= 0) {
+            let end = existingHeading + 1;
+            while (end < lines.length && /^\s*>/.test(lines[end])) end++;
+            const existingText = lines.slice(existingHeading + 1, end).join("\n");
+            const additions = positions.filter((position) => !existingText.includes(position.replace(/\s+\^tpc-[\da-f]{6}$/, "")));
+            if (additions.length) lines.splice(end, 0, ...additions);
+            current = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${lines.join("\n")}`;
+            applied.push({ operation, blockId: null, location: "分歧与待核实" });
+            continue;
+          }
+          row = [``, heading, ...positions].join("\n");
           location = "分歧与待核实";
         } else if (operation.type === "add_open") {
           const id = stableTopicBlockId("open", operation.sourceId, operation.text, new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value)));
