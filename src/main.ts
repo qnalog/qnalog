@@ -60,6 +60,7 @@ import { TaskQueue } from "./queue/task-queue";
 
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
+import { openOrRevealFile } from "./ui/open-note";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
@@ -815,13 +816,13 @@ class QnALogPlugin extends obsidian.Plugin {
       },
       openTopic: async (path) => {
         const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
-        if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(true).openFile(file);
+        if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
       },
       openSource: async (source) => {
         const target = String(source).match(/^\[\[([^\]|#]+)/)?.[1] || String(source);
         const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(target))
           || this.app.metadataCache.getFirstLinkpathDest(target, "");
-        if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(true).openFile(file);
+        if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
       },
     };
   }
