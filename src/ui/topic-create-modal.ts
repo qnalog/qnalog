@@ -250,11 +250,11 @@ export class TopicCreateModal extends Modal {
       this.stopTimer();
       this.close();
       new TopicPreviewModal(this.app, this.port, preview, () => this.onApplied()).open();
-    } catch (error) {
+    } catch {
       if (this.previewController !== controller) return;
       this.previewController = null;
       this.stopTimer();
-      this.failure = error instanceof Error ? error.message : String(error);
+      this.failure = this.port.text("The topic page could not be generated. You can retry. The page was not modified.");
       this.mode = "failed";
       this.render();
     }

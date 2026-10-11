@@ -8,6 +8,7 @@ vi.mock("obsidian", () => {
     value = "";
     checked = false;
     disabled = false;
+    classList = { toggle: () => undefined };
     listeners = new Map<string, (event?: { key?: string }) => void>();
     constructor(text = "", cls = "") { this.text = text; this.cls = cls; }
     empty() { this.children = []; }
@@ -22,6 +23,9 @@ vi.mock("obsidian", () => {
     add(child: FakeElement) { this.children.push(child); return child; }
     addEventListener(name: string, callback: (event?: { key?: string }) => void) { this.listeners.set(name, callback); }
     setText(text: string) { this.text = text; }
+    setAttribute() {}
+    removeAttribute() {}
+    setCssProps() {}
     remove() { this.text = ""; }
   }
   class Modal {
@@ -135,5 +139,40 @@ describe("topic create dialog", () => {
     await vi.waitFor(() => expect(port.estimate).toHaveBeenCalled());
     await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain("Estimated: 420 characters, 2 requests"));
     expect(allText(modal.contentEl as never)).toContain("may use more credits");
+  });
+
+  it.each([
+    ["en", "The topic page could not be generated. You can retry. The page was not modified."],
+    ["zh", "未能生成主题页。可以重试，页面未被修改。"],
+  ])("shows a localized error and retry button in the %s interface", async (language, expected) => {
+    vi.stubGlobal("window", { setInterval: () => 1, clearInterval: () => undefined });
+    try {
+    const sourceMessage = "The topic page could not be generated. You can retry. The page was not modified.";
+    const translations: Record<string, string> = language === "zh" ? { [sourceMessage]: expected, Retry: "重试" } : {};
+    const candidates = fixture();
+    const port = {
+      isConfigured: () => true, getVersion: () => "v1", text: (key: string) => translations[key] || key,
+      getCandidates: vi.fn(async () => candidates), listTopics: vi.fn(async () => []), estimate: vi.fn(async () => ({ chars: 1, requests: 1 })),
+      preview: vi.fn(async () => { throw new Error("Topic response must contain an overview"); }),
+      apply: vi.fn(), cancel: vi.fn(), scanUnintegrated: vi.fn(), undoLastUpdate: vi.fn(), deleteTopic: vi.fn(), mergeTopics: vi.fn(),
+      ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(), countPending: vi.fn(),
+    };
+    const modal = new TopicCreateModal({} as never, port as never, "Notes/start.md");
+    modal.open();
+    await vi.waitFor(() => expect(port.getCandidates).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(descendants(modal.contentEl as never).some((item) => item.text === "Create" && item.listeners?.has("click"))).toBe(true));
+    const createButton = descendants(modal.contentEl as never).find((item) => item.text === "Create" && item.listeners?.has("click"));
+    createButton?.listeners?.get("click")?.();
+    await vi.waitFor(() => expect(port.preview).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain(expected));
+    const content = allText(modal.contentEl as never);
+    expect(content).not.toContain("Topic response must contain an overview");
+    expect(content).toContain(language === "zh" ? "重试" : "Retry");
+    const retryButton = descendants(modal.contentEl as never).find((item) => item.text === (language === "zh" ? "重试" : "Retry") && item.listeners?.has("click"));
+    retryButton?.listeners?.get("click")?.();
+    await vi.waitFor(() => expect(port.preview).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
