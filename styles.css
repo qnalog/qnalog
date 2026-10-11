@@ -12881,12 +12881,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: 0.4em;
 }
 
-/* Narrative topic pages use Obsidian theme colors and typography. */
-.qnalog-topic .callout[data-callout="abstract"] p:last-child {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
+/* Narrative topic pages inherit Obsidian theme typography and color. */
 .qnalog-topic h3 {
   margin-top: 1.25em;
   margin-bottom: 0.35em;
