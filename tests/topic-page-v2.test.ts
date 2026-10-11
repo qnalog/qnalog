@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, summarizeForTimeline, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
+import { createTopicPage, isLegacyTopicStatusLine, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, summarizeForTimeline, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
 
 const model: TopicPageV2Model = {
   overview: "项目围绕数据结构优化展开。团队已确定先调整存储接口，再补充迁移验证。",
-  status: "active",
   threads: [{ id: "storage", title: "存储接口", summary: "讨论从读取边界开始，当前方案已确定。", points: [{ id: "p1", text: "接口先支持增量读取。", sources: ["a"] }] }],
   disagreements: [{ id: "d1", subject: "迁移窗口", positions: [{ text: "需要两周。", sourceId: "a", date: "2026-09-27" }, { text: "一周可以完成。", sourceId: "b", date: "2026-10-02" }] }],
   open: [{ id: "o1", kind: "action", text: "补充回滚验证。", sources: ["b"], done: false }], unsorted: [],
@@ -33,6 +32,14 @@ describe("topic page v2", () => {
     const edited = `${rendered}\n## 我的补充\n\n用户新增段落。\n`;
     expect(parseTopicPageBlocks(edited).some((block) => block.type === "point")).toBe(true);
     expect(edited).toContain("用户新增段落。");
+  });
+
+  it("matches only the complete renderer-generated legacy status row", () => {
+    const prefixes = ["**状态**：", "**Status**: "];
+    expect(isLegacyTopicStatusLine("**状态**：进行中 · **最近更新** 2026-10-08 · 4篇笔记", prefixes)).toBe(true);
+    expect(isLegacyTopicStatusLine("**Status**: Active · **Updated** 2026-10-08 · 4 notes", prefixes)).toBe(true);
+    expect(isLegacyTopicStatusLine("**状态**：用户自己写的说明", prefixes)).toBe(false);
+    expect(isLegacyTopicStatusLine("**状态**：进行中 · **最近更新** 2026-10-08 · 4篇笔记 用户补充", prefixes)).toBe(false);
   });
 
   it("does not append the legacy empty skeleton when serializing a v2 page", () => {
@@ -76,28 +83,27 @@ describe("topic page v2", () => {
     expect(serializeTopicPage(page)).toContain("— 会议 A");
   });
 
-  it("renders status and open-item enums in Chinese and English", () => {
+  it("omits status data and renders open-item kinds in Chinese and English", () => {
     const localizedModel: TopicPageV2Model = {
       ...model,
-      status: "active",
-      open: [
+          open: [
         { id: "q", kind: "question", text: "是否完成迁移？", sources: ["a"], done: false },
         { id: "a", kind: "action", text: "补测试。", sources: ["a"], done: false },
         { id: "b", kind: "bug", text: "修正路径。", sources: ["b"], done: false },
       ],
     };
     const chinese = renderTopicPage(localizedModel, members);
-    expect(chinese).toContain("**状态**：进行中");
+    expect(chinese).not.toContain("**状态**");
+    expect(chinese).toContain("## 进展脉络");
     expect(chinese).toContain("问题：是否完成迁移？");
     expect(chinese).toContain("行动：补测试。");
     expect(chinese).toContain("缺陷：修正路径。");
     const english = renderTopicPage(localizedModel, members, {
-      overview: "Overview", status: "Status", progress: "Progress", disagreements: "Disagreements", open: "Open items",
-      timeline: "Timeline", sources: "Source notes", inProgress: "Active", updated: "Last updated", notes: " notes", conflict: "Conflicting accounts",
-      statusActive: "Active", statusDone: "Done", statusPaused: "Paused", statusUnknown: "Unknown",
+      overview: "Overview", progress: "Progress", disagreements: "Disagreements", open: "Open items",
+      timeline: "Timeline", sources: "Source notes", conflict: "Conflicting accounts",
       openQuestion: "Question", openAction: "Action", openBug: "Bug",
     });
-    expect(english).toContain("**Status**: Active");
+    expect(english).not.toContain("**Status**");
     expect(english).toContain("Question: 是否完成迁移？");
     expect(english).toContain("Action: 补测试。");
     expect(english).toContain("Bug: 修正路径。");

@@ -66,7 +66,7 @@ export class TopicPreviewModal extends Modal {
         details.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text(key).replace("{0}", duplicate.discardedText).replace("{1}", duplicate.keptText) });
       }
     }
-    const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0 && !this.preview.legacyAnchorCleanup && !this.preview.legacyPropertyCleanup;
+    const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0 && !this.preview.legacyAnchorCleanup && !this.preview.legacyPropertyCleanup && !this.preview.legacyStatusCleanup;
     if (emptyUpdate) {
       const diagnostics = this.preview.updateDiagnostics;
       const checked = diagnostics?.rawOperations || 0;
@@ -76,7 +76,7 @@ export class TopicPreviewModal extends Modal {
     if (model) {
       const group = (title: string) => {
         const section = scroll.createDiv({ cls: "qnalog-topics-preview-section" });
-        section.createEl("h3", { text: this.port.text(title) });
+        section.createDiv({ cls: "qnalog-topics-preview-heading is-section", text: this.port.text(title) });
         return section;
       };
       const addReferences = (parent: HTMLDivElement, sourceIds: readonly string[]) => {
@@ -94,7 +94,7 @@ export class TopicPreviewModal extends Modal {
       overview.createDiv({ cls: "qnalog-topics-preview-text", text: model.overview });
       const threads = group("Progress thread");
       for (const thread of model.threads) {
-        threads.createEl("h4", { text: thread.title });
+        threads.createDiv({ cls: "qnalog-topics-preview-heading is-thread", text: thread.title });
         threads.createDiv({ cls: "qnalog-topics-preview-text", text: thread.summary });
         for (const point of thread.points) {
           const row = threads.createDiv({ cls: "qnalog-topics-preview-item" });
@@ -105,7 +105,7 @@ export class TopicPreviewModal extends Modal {
       if (model.disagreements.length) {
         const disagreements = group("Disagreements and verification");
         for (const item of model.disagreements) {
-          disagreements.createEl("h4", { text: item.subject });
+          disagreements.createDiv({ cls: "qnalog-topics-preview-heading is-thread", text: item.subject });
           for (const position of item.positions) {
             const row = disagreements.createDiv({ cls: "qnalog-topics-preview-item is-conflict" });
             row.createDiv({ cls: "qnalog-topics-preview-text", text: position.text });
@@ -141,17 +141,25 @@ export class TopicPreviewModal extends Modal {
       row.createSpan({ text: this.port.text("Clean old topic properties") });
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add("__clean-legacy-properties__") : selected.delete("__clean-legacy-properties__"));
     }
+    if (this.preview.legacyStatusCleanup) {
+      const row = scroll.createEl("label", { cls: "qnalog-topics-preview-item" });
+      const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Clean old status line") } });
+      checkbox.checked = true;
+      selected.add("__clean-legacy-status__");
+      row.createSpan({ text: this.port.text("Clean old status line") });
+      checkbox.addEventListener("change", () => checkbox.checked ? selected.add("__clean-legacy-status__") : selected.delete("__clean-legacy-status__"));
+    }
     const sections = new Map<string, HTMLDivElement>();
     for (const item of this.preview.items) {
       const section = item.operation.type === "add_timeline" ? "Timeline"
         : item.operation.type === "add_conflict" || item.operation.type === "add_disagreement" ? "Disagreements and verification"
           : item.operation.type === "add_open" || item.operation.type === "resolve_open" ? "Open questions and actions"
             : item.operation.type === "add_point" || item.operation.type === "add_thread" || item.operation.type === "revise_block" ? "Progress thread"
-              : item.operation.type === "add_item" ? topicSectionEnglishLabel(item.operation.section) : "Current status";
+              : item.operation.type === "add_item" ? topicSectionEnglishLabel(item.operation.section) : "Progress thread";
       let group = sections.get(section);
       if (!group) {
         group = scroll.createDiv({ cls: "qnalog-topics-preview-section" });
-        group.createEl("h3", { text: this.port.text(section) });
+        group.createDiv({ cls: "qnalog-topics-preview-heading is-section", text: this.port.text(section) });
         sections.set(section, group);
       }
       // Same whole-row toggle as the create dialog: the row is a <label> around the checkbox.
@@ -172,8 +180,12 @@ export class TopicPreviewModal extends Modal {
       const verification = stripTopicUnverifiedMarker(item.text);
       if (item.operation.type === "revise_block") {
         const diff = main.createDiv({ cls: "qnalog-topics-revision" });
-        diff.createDiv({ cls: "qnalog-topics-revision-old", text: item.expectedText || "" });
-        diff.createDiv({ cls: "qnalog-topics-revision-new", text: verification.text });
+        const old = diff.createDiv({ cls: "qnalog-topics-revision-old" });
+        old.createSpan({ cls: "qnalog-topics-revision-label", text: this.port.text("Old") });
+        old.createSpan({ text: item.expectedText || "" });
+        const fresh = diff.createDiv({ cls: "qnalog-topics-revision-new" });
+        fresh.createSpan({ cls: "qnalog-topics-revision-label", text: this.port.text("New") });
+        fresh.createSpan({ text: verification.text });
       } else if (item.operation.type === "add_disagreement") {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: item.operation.subject });
         for (const position of item.operation.positions) {

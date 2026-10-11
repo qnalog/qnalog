@@ -47,7 +47,7 @@ function fixture(): TopicChangePreview {
     legacyPropertyCleanup: false,
     completedBatches: 1, totalBatches: 2, partialFailure: "request failed",
     items: [
-      { id: "item-1", type: "add_item", operation: { type: "add_item", section: "当前状态", text: "Current fact", sourceId: "note-1" }, target: "Current status", text: "Current fact", sourceId: "note-1", cancellable: true },
+      { id: "item-1", type: "add_item", operation: { type: "add_item", section: "进展脉络", text: "Current fact", sourceId: "note-1" }, target: "Progress thread", text: "Current fact", sourceId: "note-1", cancellable: true },
       { id: "item-2", type: "add_conflict", operation: { type: "add_conflict", text: "Claim (unverified)", sourceId: "note-2" }, target: "conflict", text: "Claim（未核实）", sourceId: "note-2", cancellable: true },
     ],
     sourceLinks: { "note-1": "[[Notes/one.md|One]]", "note-2": "[[Notes/two.md|Two]]" },
@@ -65,7 +65,7 @@ describe("topic preview dialog", () => {
     expect(text).toContain("The page may have been modified.");
     expect(text).toContain("Clean old topic properties");
     expect(text).toContain("1/2 completed batches");
-    expect(text).toContain("Current status");
+    expect(text).toContain("Progress thread");
     expect(text).toContain("Disagreements and verification");
     expect(text).toContain("Unverified");
     expect(descendants(modal.contentEl as unknown as FakeTree).filter((item) => item.cls.includes("qnalog-topics-preview-item") && item.cls.includes("is-conflict"))).toHaveLength(1);
@@ -101,6 +101,16 @@ describe("topic preview dialog", () => {
     modal.onOpen();
     const text = allText(modal.contentEl as unknown as FakeTree);
     expect(text).toContain("The overview was generated from the thread summaries by the program. You can edit it on the page.");
+  });
+
+  it("shows legacy status cleanup as a checked preview item", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.legacyStatusCleanup = true;
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    expect(allText(modal.contentEl as unknown as FakeTree)).toContain("Clean old status line");
+    expect(descendants(modal.contentEl as unknown as FakeTree).some((item) => item.checked)).toBe(true);
   });
 
   it("shows duplicate decisions in assessment details", () => {

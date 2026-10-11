@@ -1,5 +1,5 @@
 import { NS_FM, NS_ROOT } from "../shared/namespace";
-import { appendTopicMemberLinks, appendTopicMemberMetadata, buildTopicBlockIndex, hashTopicPage, parseTopicPage, readLegacyTopicMachineProperties, removeTopicMachineProperties, withTopicBlockIndex, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, type TopicBlockIndexEntry, type TopicPage } from "./topic-page";
+import { appendTopicMemberLinks, appendTopicMemberMetadata, buildTopicBlockIndex, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, readLegacyTopicMachineProperties, removeTopicMachineProperties, withTopicBlockIndex, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, type TopicBlockIndexEntry, type TopicPage } from "./topic-page";
 import type { TopicChangePreview } from "./topic-integration";
 import { rebuildTopicTagAliases } from "./topic-tags";
 
@@ -204,7 +204,7 @@ export class TopicStore {
     let appliedCount = 0;
     let skipped: TopicApplyResult["skipped"] = [];
     let updatedBlocks: TopicBlockIndexEntry[] | undefined;
-    const hasChanges = operations.length > 0 || !!preview.memberLinks || !!preview.tags || !!preview.newMembers?.length || (preview.legacyAnchorCleanup === true && selected.has("__clean-legacy-markers__")) || (preview.legacyPropertyCleanup === true && selected.has("__clean-legacy-properties__"));
+    const hasChanges = operations.length > 0 || !!preview.memberLinks || !!preview.tags || !!preview.newMembers?.length || (preview.legacyAnchorCleanup === true && selected.has("__clean-legacy-markers__")) || (preview.legacyPropertyCleanup === true && selected.has("__clean-legacy-properties__")) || (preview.legacyStatusCleanup === true && selected.has("__clean-legacy-status__"));
     if (!hasChanges) {
       appliedMarkdown = await this.port.read(path);
       pageChangedDuringGeneration = hashTopicPage(appliedMarkdown) !== preview.expectedHash;
@@ -232,6 +232,10 @@ export class TopicStore {
         const memberLinks = [...new Set([...currentPage.memberLinks, ...(preview.memberLinks || [])])];
         const tags = [...new Set([...currentPage.tags, ...(preview.tags || [])])];
         let next = currentPage.layout === 2 ? result.markdown : appendTopicMemberLinks(result.markdown, memberLinks);
+        if (preview.legacyStatusCleanup && selected.has("__clean-legacy-status__")) {
+          const prefixes = preview.legacyStatusPrefixes || [];
+          next = next.split("\n").filter((line) => !isLegacyTopicStatusLine(line, prefixes)).join("\n");
+        }
         next = appendTopicMemberMetadata(next, preview.newMembers || []);
         const updates: Record<string, string | string[]> = {
           [NS_FM.topicUpdated]: new Date(this.port.now()).toISOString(),

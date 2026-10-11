@@ -311,8 +311,8 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
       disagreements: [], open: [], unsorted: [],
     }) } }] };
     return { choices: [{ message: { content: JSON.stringify({ operations: [
-      { type: "add_item", section: "当前状态", text: "accepted update", sourceId },
-      { type: "add_item", section: "当前状态", text: "unselected update", sourceId },
+      { type: "add_item", section: "进展脉络", text: "accepted update", sourceId },
+      { type: "add_item", section: "进展脉络", text: "unselected update", sourceId },
     ] }) } }] };
   }) };
   if (options.request) {

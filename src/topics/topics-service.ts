@@ -7,7 +7,7 @@ import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
 import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
-import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
+import { applyTopicOps, createTopicPage, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
@@ -221,11 +221,9 @@ export class TopicsService {
         rebuilt.excluded = existing.page.excluded;
         rebuilt.tagAliases = existing.page.tagAliases;
         rebuilt.body = renderTopicPage(generatedModel, memberRecords, {
-          overview: t("Overview"), status: t("Topic status"), progress: t("Topic progress"),
+          overview: t("Overview"), progress: t("Topic progress"),
           disagreements: t("Disagreements and verification"), open: t("Topic open items"),
-          timeline: t("Timeline"), sources: t("Source notes"), inProgress: t("Topic in progress"),
-          updated: t("Topic last updated"), notes: t("notes"), conflict: t("Conflicting accounts"),
-          statusActive: t("Topic status active"), statusDone: t("Topic status done"), statusPaused: t("Topic status paused"), statusUnknown: t("Topic status unknown"),
+          timeline: t("Timeline"), sources: t("Source notes"), conflict: t("Conflicting accounts"),
           openQuestion: t("Topic open question"), openAction: t("Topic open action"), openBug: t("Topic open bug"),
         });
         replacement = { path: existing.path, markdown: serializeTopicPage(rebuilt), model: generatedModel };
@@ -251,6 +249,8 @@ export class TopicsService {
       const preview: TopicChangePreview = {
         topicId, expectedHash: currentHash, pageWasManuallyEdited,
         ...(existing && /\s\^tpc-[\da-f]{6}\b/i.test(currentPage) ? { legacyAnchorCleanup: true } : {}),
+        ...(existing && [t("Legacy topic status prefix zh"), t("Legacy topic status prefix en")].some((prefix) => currentPage.split("\n").some((line) => isLegacyTopicStatusLine(line, [prefix])))
+          ? { legacyStatusCleanup: true, legacyStatusPrefixes: [t("Legacy topic status prefix zh"), t("Legacy topic status prefix en")] } : {}),
         ...(existing?.page.legacyMachineProperties ? { legacyPropertyCleanup: true } : {}),
         newMembers: memberRecords,
         items: generatedOperations.map((operation, index) => ({
@@ -325,11 +325,9 @@ export class TopicsService {
         if (preview.create.model) {
           page.layout = 2;
           page.body = renderTopicPage(preview.create.model, preview.create.members, {
-            overview: t("Overview"), status: t("Topic status"), progress: t("Topic progress"),
+            overview: t("Overview"), progress: t("Topic progress"),
             disagreements: t("Disagreements and verification"), open: t("Topic open items"),
-            timeline: t("Timeline"), sources: t("Source notes"), inProgress: t("Topic in progress"),
-            updated: t("Topic last updated"), notes: t("notes"), conflict: t("Conflicting accounts"),
-            statusActive: t("Topic status active"), statusDone: t("Topic status done"), statusPaused: t("Topic status paused"), statusUnknown: t("Topic status unknown"),
+            timeline: t("Timeline"), sources: t("Source notes"), conflict: t("Conflicting accounts"),
             openQuestion: t("Topic open question"), openAction: t("Topic open action"), openBug: t("Topic open bug"),
           });
         }

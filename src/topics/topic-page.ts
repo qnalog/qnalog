@@ -2,9 +2,8 @@ import { NS_FM, NS_FM_TOPIC_LAYOUT, NS_TYPE_TOPIC } from "../shared/namespace";
 import { stripBlockMarkers } from "./topic-block-markers";
 
 export type TopicBasis = "overview" | "body";
-export type TopicStatus = "active" | "done" | "paused" | "unknown";
 export type TopicOpenKind = "question" | "action" | "bug";
-export type TopicSection = "概要" | "当前状态" | "进展脉络" | "分歧与待核实" | "未决问题与未完成行动" | "未决问题与行动" | "时间线" | "来源笔记" | "待整理";
+export type TopicSection = "概要" | "进展脉络" | "分歧与待核实" | "未决问题与未完成行动" | "未决问题与行动" | "时间线" | "来源笔记" | "待整理";
 export interface TopicMember { path: string; title: string; sourceId: string; date?: string; summary?: string }
 export interface TopicThread { id: string; title: string; summary: string; points: Array<{ id: string; text: string; sources: string[] }> }
 /** Why a stance has no verified member source or date: pending verification, text not grounded in its member, or taken from page narrative. */
@@ -14,16 +13,19 @@ export interface TopicDisagreementPosition { text: string; sourceId: string; dat
 export interface TopicDisagreement { id: string; subject: string; positions: TopicDisagreementPosition[] }
 export interface TopicOpenItem { id: string; kind: TopicOpenKind; text: string; sources: string[]; done: boolean }
 export interface TopicPageV2Model {
-  overview: string; status: TopicStatus; threads: TopicThread[]; disagreements: TopicDisagreement[];
+  overview: string; threads: TopicThread[]; disagreements: TopicDisagreement[];
   open: TopicOpenItem[]; unsorted: string[]; validationWarnings?: string[];
 }
 export interface TopicPageLabels {
-  overview: string; status: string; progress: string; disagreements: string; open: string;
-  timeline: string; sources: string; inProgress: string; updated: string; notes: string;
-  conflict: string; statusActive: string; statusDone: string; statusPaused: string; statusUnknown: string;
+  overview: string; progress: string; disagreements: string; open: string;
+  timeline: string; sources: string; conflict: string;
   openQuestion: string; openAction: string; openBug: string;
 }
 export interface TopicBlockIndexEntry { id: string; kind: ParsedTopicBlock["type"]; headingPath: string[]; ordinal: number; textHash: string; normalizedPreview: string }
+export function isLegacyTopicStatusLine(line: string, prefixes: readonly string[]): boolean {
+  if (!prefixes.some((prefix) => line.startsWith(prefix))) return false;
+  return /^(?:\*\*状态\*\*：(?:进行中|已完成|搁置|待定)|\*\*Status\*\*: (?:Active|Done|Paused|Unknown)) · \*\*(?:最近更新|Updated)\*\* (?:\d{4}-\d{2}-\d{2}|—) · \d+(?:篇笔记| notes)$/u.test(line);
+}
 export const TOPIC_MACHINE_PROPERTY_KEYS = [NS_FM.topicTagAliases, NS_FM.topicBlocks, NS_FM.topicHash, NS_FM.topicUndoSnapshot] as const;
 export interface ParsedTopicBlock { id: string; type: "overview" | "thread-summary" | "point" | "disagreement" | "open" | "other"; text: string; start: number; end: number; headingPath?: string[]; ordinal?: number }
 export interface TopicPage {
@@ -59,9 +61,9 @@ export type TopicOperation =
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
 export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[]; skipped: Array<{ id: string; reason: "block-modified" }>; duplicateBlockIds?: string[]; blockIndex?: TopicBlockIndexEntry[] }
 
-export const TOPIC_SECTIONS: readonly TopicSection[] = ["概要", "当前状态", "分歧与待核实", "未决问题与未完成行动", "时间线", "来源笔记", "待整理"];
+export const TOPIC_SECTIONS: readonly TopicSection[] = ["概要", "进展脉络", "分歧与待核实", "未决问题与未完成行动", "时间线", "来源笔记", "待整理"];
 const ENGLISH_SECTION: Record<TopicSection, string> = {
-  "概要": "Overview", "当前状态": "Current status", "进展脉络": "Progress thread", "分歧与待核实": "Disagreements and verification", "未决问题与未完成行动": "Open questions and actions", "未决问题与行动": "Open questions and actions", "时间线": "Timeline", "来源笔记": "Source notes", "待整理": "Unsorted",
+  "概要": "Overview", "进展脉络": "Progress thread", "分歧与待核实": "Disagreements and verification", "未决问题与未完成行动": "Open questions and actions", "未决问题与行动": "Open questions and actions", "时间线": "Timeline", "来源笔记": "Source notes", "待整理": "Unsorted",
 };
 
 function withoutBlockId(text: string, _id: string): string { return stripBlockMarkers(text); }
@@ -194,16 +196,10 @@ export function parseTopicPage(markdown: string, path = ""): TopicPage | null {
 }
 
 const DEFAULT_V2_LABELS: TopicPageLabels = {
-  overview: "概要", status: "状态", progress: "进展脉络", disagreements: "分歧与待核实",
-  open: "未决问题与行动", timeline: "时间线", sources: "来源笔记", inProgress: "进行中",
-  updated: "最近更新", notes: "篇笔记", conflict: "关于这个问题的不同说法",
-  statusActive: "进行中", statusDone: "已完成", statusPaused: "搁置", statusUnknown: "待定",
+  overview: "概要", progress: "进展脉络", disagreements: "分歧与待核实",
+  open: "未决问题与行动", timeline: "时间线", sources: "来源笔记", conflict: "关于这个问题的不同说法",
   openQuestion: "问题", openAction: "行动", openBug: "缺陷",
 };
-
-export function isTopicStatus(value: string): value is TopicStatus {
-  return value === "active" || value === "done" || value === "paused" || value === "unknown";
-}
 
 export function isTopicOpenKind(value: string): value is TopicOpenKind {
   return value === "question" || value === "action" || value === "bug";
@@ -264,8 +260,7 @@ function quote(text: string): string { return text.split("\n").map((line) => `> 
 export function renderTopicPage(model: TopicPageV2Model, members: readonly TopicMember[], labels: Partial<TopicPageLabels> = {}): string {
   const label = { ...DEFAULT_V2_LABELS, ...labels };
   const allSourceIds = new Set(members.map((member) => member.sourceId));
-  const statusLabel = model.status === "done" ? label.statusDone : model.status === "paused" ? label.statusPaused : model.status === "unknown" ? label.statusUnknown : label.statusActive;
-  const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), "", `**${label.status}**${topicLabelSeparator(label.status)}${statusLabel} · **${label.updated}** ${members.map((member) => member.date || "").filter(Boolean).sort().at(-1) || "—"} · ${members.length}${label.notes}`, "", `## ${label.progress}`];
+  const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), "", `## ${label.progress}`];
   for (const thread of model.threads.slice(0, 6)) {
     sections.push("", `### ${thread.title}`, thread.summary.trim());
     for (const point of thread.points.slice(0, 6)) sections.push(`- ${ensureSentencePunctuation(point.text)}${inlineFootnotes(point.sources.filter((source) => allSourceIds.has(source)))}`);

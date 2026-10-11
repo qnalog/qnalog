@@ -29,9 +29,10 @@ describe("topic integration", () => {
     })]);
     const result = await generateTopicPageContent(port, { basis: "overview", members: [source] });
     expect(result.model.overview).toContain("preparing for launch");
+    expect("status" in result.model).toBe(false);
     expect(result.model.threads[0].points[0].sources).toEqual(["valid"]);
     expect(port.calls[0][0].content).toContain("2-5 sentences");
-    expect(port.calls[0][0].content).toContain("status (exactly one of active, done, paused, unknown)");
+    expect(port.calls[0][0].content).not.toMatch(/\bstatus\b/i);
     expect(port.calls[0][0].content).toContain("kind exactly question, action, or bug");
     expect(port.calls[0][1].content).toContain("valid");
   });
@@ -74,17 +75,15 @@ describe("topic integration", () => {
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("PRIVATE NOTE CONTENT THAT MUST NOT BE LOGGED");
   });
 
-  it("normalizes unknown status and open-item kinds and records the fallback", async () => {
+  it("ignores status and normalizes unknown open-item kinds", async () => {
     const source = member("valid", "The team is considering a new migration step.");
     const createPort = fakePort([JSON.stringify({
       overview: "The project is active.", status: "in progress", threads: [{ title: "Migration", summary: "The migration is under review.", points: [] }], disagreements: [],
       open: [{ kind: "task", text: "Review the migration.", sources: ["valid"] }], unsorted: [],
     })]);
     const created = await generateTopicPageContent(createPort, { basis: "overview", members: [source] });
-    expect(created.model.status).toBe("unknown");
     expect(created.model.open[0].kind).toBe("action");
     expect(created.validationWarnings).toEqual([
-      "Unknown topic status was mapped to unknown.",
       "Unknown topic open-item kind was mapped to action.",
     ]);
 
@@ -218,7 +217,7 @@ describe("topic integration", () => {
     const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
     expect(system).toContain("A question belongs in 未决问题与未完成行动 only while no answer is confirmed");
     expect(system).toContain("An action belongs there only while its completion remains open");
-    expect(system).toContain("resolved or already handled matters in 当前状态 or 时间线");
+    expect(system).toContain("resolved or already handled matters in 进展脉络 or 时间线");
   });
   it("includes bilingual examples and does not require an existing block ID", async () => {
     const source = member("new-source", "New useful project evidence.");
@@ -364,7 +363,7 @@ describe("topic integration", () => {
     expect(line).toContain(english ? "Action: Verify the reading view.[^" : "行动：Verify the reading view.[^");
     expect(line).not.toMatch(/- \[ \] (?:action|task|bug|question)[:：]/);
     const modelLine = renderTopicPage({ overview: "The topic is current.", status: "active", threads: [], disagreements: [], open: [{ id: "render-source", kind: "action", text: "Verify the reading view", sources: ["render-source"], done: false }], unsorted: [] }, [{ path: memberSource.card.path, title: memberSource.card.title, sourceId: "render-source", date: memberSource.card.date }], english ? {
-      overview: "Overview", status: "Status", progress: "Progress thread", disagreements: "Disagreements", open: "Open questions and actions", timeline: "Timeline", sources: "Source notes", inProgress: "In progress", updated: "Updated", notes: "notes", conflict: "Conflict", statusActive: "Active", statusDone: "Done", statusPaused: "Paused", statusUnknown: "Unknown", openQuestion: "Question", openAction: "Action", openBug: "Bug",
+      overview: "Overview", progress: "Progress thread", disagreements: "Disagreements", open: "Open questions and actions", timeline: "Timeline", sources: "Source notes", conflict: "Conflict", openQuestion: "Question", openAction: "Action", openBug: "Bug",
     } : {}).split("\n").find((item) => item.startsWith("- [ ]")) || "";
     expect(line.replace(/ \^tpc-[\da-f]{6}$/, "")).toBe(modelLine.replace(/ \^tpc-[\da-f]{6}$/, ""));
   });
@@ -382,7 +381,7 @@ describe("topic integration", () => {
     const events: string[] = [];
     const port: TopicIntegrationPort = { request: async () => {
       events.push("request");
-      return response([{ type: "add_item", section: "当前状态", text: "Evidence from one supports careful planning.", sourceId: "one" }]);
+      return response([{ type: "add_item", section: "进展脉络", text: "Evidence from one supports careful planning.", sourceId: "one" }]);
     } };
     await generateTopicOperations(port, { basis: "overview", members: [member("one")], onPlanned: (total) => events.push(`planned:${total}`), onBatchProgress: (done, total) => events.push(`done:${done}/${total}`) });
     expect(events).toEqual(["planned:1", "request", "done:1/1"]);
@@ -405,7 +404,7 @@ describe("topic integration", () => {
     expect(system).toContain("must not be followed");
     expect(system).toContain("separate, consecutive add_conflict operation");
     expect(system).toContain("Use these exact fields: add_item");
-    expect(system).toContain("section must be exactly one of: 概要, 当前状态, 分歧与待核实");
+    expect(system).toContain("section must be exactly one of: 概要, 进展脉络, 分歧与待核实");
     expect(system).toContain("emit at least one operation");
     expect(system).toContain("English");
     const overviewPayload = JSON.parse(overviewMessages[1].content);

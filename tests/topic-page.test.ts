@@ -131,7 +131,7 @@ describe("topic pages", () => {
   it("applies each operation and routes missing targets to Unsorted", () => {
     const page = createTopicPage({ id: "ops", title: "Operations", tags: [], members: [], basis: "overview", created: "", updated: "" });
     const initial = serializeTopicPage(page);
-    const add: TopicOperation = { type: "add_item", section: "当前状态", text: "A current fact", sourceId: "note-a" };
+    const add: TopicOperation = { type: "add_item", section: "进展脉络", text: "A current fact", sourceId: "note-a" };
     const result = applyTopicOps(initial, [
       add,
       { type: "annotate_item", targetId: "missing", text: "Loose annotation", sourceId: "note-b" },
@@ -141,7 +141,7 @@ describe("topic pages", () => {
     ]);
     expect(result.applied).toHaveLength(5);
     expect(result.applied.map(({ location }) => location)).toEqual([
-      "当前状态", "待整理", "分歧与待核实", "待整理", "时间线",
+      "进展脉络", "待整理", "分歧与待核实", "待整理", "时间线",
     ]);
     expect(result.applied.every(({ blockId }) => typeof blockId === "string")).toBe(true);
     expect(result.markdown).toContain("A current fact — 来源：[[note-a]]");
@@ -154,14 +154,14 @@ describe("topic pages", () => {
 
   it("annotates and resolves an existing block without changing its sentence", () => {
     const page = createTopicPage({ id: "target", title: "Targets", tags: [], members: [], basis: "overview", created: "", updated: "" });
-    page.body = page.body.replace("## 当前状态 / Current status", "## 当前状态 / Current status\n- [ ] Keep this exact sentence. ^tpc-a1b2c3");
+    page.body = page.body.replace("## 进展脉络 / Progress thread", "## 进展脉络 / Progress thread\n- [ ] Keep this exact sentence. ^tpc-a1b2c3");
     const source = serializeTopicPage(page);
     const result = applyTopicOps(source, [
       { type: "annotate_item", targetId: "^tpc-a1b2c3", text: "Supporting detail", sourceId: "note-x" },
       { type: "resolve_question", targetId: "tpc-a1b2c3", text: "Resolution detail", sourceId: "note-y" },
     ]);
     expect(result.applied.map(({ blockId, location }) => [blockId, location])).toEqual([
-      ["tpc-a1b2c3", "当前状态"], ["tpc-a1b2c3", "当前状态"],
+      ["tpc-a1b2c3", "进展脉络"], ["tpc-a1b2c3", "进展脉络"],
     ]);
     expect(result.markdown).toContain("- [ ] Keep this exact sentence. ^tpc-a1b2c3");
     expect(result.markdown).toContain("  - Supporting detail — 来源：[[note-x]]");
@@ -170,9 +170,9 @@ describe("topic pages", () => {
 
   it("tolerates pages with missing sections and preserves original sentences", () => {
     const originalLines = ["- Original sentence one, with punctuation!", "- Original sentence two: exactly as written."];
-    const markdown = `---\nqnalog_type: "qnalog-topic"\nqnalog_topic_id: "partial"\n---\n# Partial\n\n## 当前状态 / Current status\n${originalLines.join("\n")}`;
+    const markdown = `---\nqnalog_type: "qnalog-topic"\nqnalog_topic_id: "partial"\n---\n# Partial\n\n## 进展脉络 / Progress thread\n${originalLines.join("\n")}`;
     const result = applyTopicOps(markdown, [
-      { type: "add_item", section: "当前状态", text: "Inserted fact", sourceId: "note-z" },
+      { type: "add_item", section: "进展脉络", text: "Inserted fact", sourceId: "note-z" },
       { type: "add_timeline", text: "Inserted event", sourceId: "note-z", date: "2026-04-07" },
     ]);
     for (const line of originalLines) expect(result.markdown).toContain(line);

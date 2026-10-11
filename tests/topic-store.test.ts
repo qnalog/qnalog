@@ -90,7 +90,7 @@ describe("topic store", () => {
   it("skips a changed summary block while applying other changes and updates generated sources and timeline", async () => {
     const port = new MemoryPort();
     const store = new TopicStore({ folder: "Topics", port });
-    const model: TopicPageV2Model = { overview: "The project is testing the new storage path.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] };
+    const model: TopicPageV2Model = { overview: "The project is testing the new storage path.", threads: [], disagreements: [], open: [], unsorted: [] };
     const page = createTopicPage({ id: "v2", title: "V2", tags: [], basis: "overview", members: [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }] });
     page.layout = 2;
     page.body = renderTopicPage(model, [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }]);
@@ -119,6 +119,21 @@ describe("topic store", () => {
     expect(await store.undoLastUpdate("v2")).toEqual({ restored: true });
     expect(port.files.get(path)).toBe(changed);
     expectNoLegacyV2Headings(port.files.get(path) || "");
+  });
+
+  it("cleans an exact legacy status line after snapshot and restores it on undo", async () => {
+    const { port, store, path, markdown } = setup("legacy-status");
+    const legacy = `${markdown.replace("# legacy-status", "# legacy-status")}\n**状态**：进行中 · **最近更新** 2026-10-08 · 4篇笔记\n`;
+    port.files.set(path, legacy);
+    const result = await store.apply(path, {
+      topicId: "legacy-status", expectedHash: hashTopicPage(legacy), pageWasManuallyEdited: false,
+      legacyStatusCleanup: true, legacyStatusPrefixes: ["**状态**：", "**Status**: "],
+      completedBatches: 1, totalBatches: 1, items: [],
+    }, ["__clean-legacy-status__"]);
+    expect(result.markdown).not.toContain("**状态**");
+    expect(port.creates.some((item) => item.includes("topic-history"))).toBe(true);
+    expect(await store.undoLastUpdate("legacy-status")).toEqual({ restored: true });
+    expect(port.files.get(path)).toBe(legacy);
   });
 
   it("snapshots, clears, indexes, and undoes legacy v2 inline anchors", async () => {
@@ -199,7 +214,7 @@ describe("topic store", () => {
     const topic = page("property-set", "Properties", ["项目/QnALog"]);
     topic.layout = 2;
     topic.tagAliases = { "项目/QnALog": ["项目/QnALog", "项目/Q&ALog"] };
-    topic.body = renderTopicPage({ overview: "Overview.", status: "active", threads: [{ id: "thread", title: "Progress", summary: "A useful summary.", points: [{ id: "point", text: "A useful point.", sources: [] }] }], disagreements: [], open: [], unsorted: [] }, []);
+    topic.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Progress", summary: "A useful summary.", points: [{ id: "point", text: "A useful point.", sources: [] }] }], disagreements: [], open: [], unsorted: [] }, []);
     const createdPath = await store.create(topic);
     const markdown = port.files.get(createdPath)!;
     const propertyKeys = markdown.match(/^([\w-]+):/gm)?.map((line) => line.slice(0, line.indexOf(":"))).sort();
