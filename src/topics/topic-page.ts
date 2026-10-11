@@ -192,10 +192,33 @@ function sourceFootnoteId(sourceId: string): string { return `s${stableHash(sour
 function inlineFootnotes(sources: readonly string[]): string {
   return [...new Set(sources)].map((source) => `[^${sourceFootnoteId(source)}]`).join("");
 }
-function firstSentence(text: string): string {
-  const clean = text.replace(/\s+/g, " ").trim();
-  const sentence = clean.match(/^.{1,60}?(?:[。.!?！？](?=\s|$)|$)/u)?.[0] || clean.slice(0, 60);
-  return [...sentence].slice(0, 60).join("");
+export function summarizeForTimeline(overview: string, options: { maxChars?: number; title?: string } = {}): string {
+  const maxChars = Math.max(1, Math.floor(options.maxChars ?? 60));
+  const clean = String(overview || "")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_match: string, target: string, label?: string) => label || target)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\[\^[^\]]+\]/g, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)/gm, "")
+    .replace(/[*`~]/g, "")
+    .replace(/(^|[^\p{L}\p{N}])_+|_+(?=$|[^\p{L}\p{N}])/gu, "$1")
+    .replace(/^\s*\[(?:说话人\s*\d*|speaker\s*\d+|s\d+)\]\s*/i, "")
+    .replace(/^\s*(?:说话人\s*\d*|speaker\s*\d+|s\d+)\s*[：:]\s*/i, "")
+    .replace(/\r/g, "")
+    .trim();
+  const sentence = clean.match(/^[\s\S]*?[。！？.!?\n]/u)?.[0].trim() || clean;
+  const content = sentence || options.title?.trim() || "";
+  const characters = [...content];
+  if (characters.length <= maxChars) return content;
+  const limit = maxChars - 1;
+  let boundary = -1;
+  for (let index = 0; index < limit; index++) {
+    if (/[。！？.!?]/u.test(characters[index]) || /\s/u.test(characters[index])) boundary = index;
+  }
+  const end = boundary >= 0 ? (/[。！？.!?]/u.test(characters[boundary]) ? boundary + 1 : boundary) : limit;
+  return `${characters.slice(0, end).join("").trimEnd()}…`;
 }
 function uniqueBlockId(kind: string, value: string, used: Set<string>): string {
   const id = stableTopicBlockId(kind, value, value, new Set([...used].map((item) => item.replace(/-\d+$/, ""))));
@@ -241,7 +264,7 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
   }
   sections.push("", `## ${label.timeline}`);
   const timeline = members.filter((member) => member.date).slice().sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.sourceId.localeCompare(b.sourceId));
-  for (const member of timeline) sections.push(`- ${member.date} · [[${member.path.replace(/\.md$/i, "")}|${member.title}]] — ${firstSentence(member.summary || member.title)}`);
+  for (const member of timeline) sections.push(`- ${member.date} · [[${member.path.replace(/\.md$/i, "")}|${member.title}]] — ${summarizeForTimeline(member.summary || "", { title: member.title })}`);
   sections.push("", `## ${label.sources}`);
   const sorted = [...members].sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.sourceId.localeCompare(b.sourceId));
   for (const member of sorted) sections.push(`[^${sourceFootnoteId(member.sourceId)}]: [[${member.path.replace(/\.md$/i, "")}|${member.title}]]${member.date ? ` · ${member.date}` : ""}`);
@@ -329,7 +352,7 @@ export function appendTopicMemberMetadata(markdown: string, members: readonly To
     }
     if (timeline >= 0 && member.date) {
       const link = "[[" + member.path.replace(/\.md$/i, "") + "|" + member.title + "]]";
-      if (!lines.some((line) => line.includes(link))) timelineRows.push({ date: member.date, row: "- " + member.date + " · " + link + " — " + firstSentence(member.summary || member.title) });
+      if (!lines.some((line) => line.includes(link))) timelineRows.push({ date: member.date, row: "- " + member.date + " · " + link + " — " + summarizeForTimeline(member.summary || "", { title: member.title }) });
     }
   }
   if (timeline >= 0 && timelineRows.length) {

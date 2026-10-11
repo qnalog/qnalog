@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
+import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, summarizeForTimeline, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
 
 const model: TopicPageV2Model = {
   overview: "项目围绕数据结构优化展开。团队已确定先调整存储接口，再补充迁移验证。",
@@ -53,5 +53,24 @@ describe("topic page v2", () => {
     const markdown = serializeTopicPage(page);
     expect(markdown).toContain("## 待整理\n\n用户自己补充的内容。");
     expect(markdown).not.toContain("## 待整理 / Unsorted");
+  });
+
+  it("cleans Markdown and speaker labels before taking a bounded timeline sentence", () => {
+    expect(summarizeForTimeline("**说话人**：我现在正在对 Q&A-Log 这个项目的设置页面进行优化和整理。因为原始菜单结构比较乱。", { maxChars: 60 }))
+      .toBe("我现在正在对 Q&A-Log 这个项目的设置页面进行优化和整理。");
+    expect(summarizeForTimeline("Speaker 1: We changed [[Notes/settings|the settings panel]] after [review](https://example.test). Next step.", { maxChars: 60 }))
+      .toBe("We changed the settings panel after review.");
+    expect(summarizeForTimeline("- **结论**：采用 `[[属性名|qnalog_topic_layout]]`。[^s1234] 后续补测试。", { maxChars: 60 }))
+      .toBe("结论：采用 qnalog_topic_layout。");
+    expect(summarizeForTimeline("> # \n> - \n**__` `__**", { title: "Fallback title" })).toBe("Fallback title");
+    expect(summarizeForTimeline("S1: " + "abcdefghij".repeat(10), { maxChars: 20 })).toBe("abcdefghijabcdefghi…");
+    expect(summarizeForTimeline("A long sentence with several words and no ending", { maxChars: 22 })).toBe("A long sentence with…");
+  });
+
+  it("uses the note title when a member overview contains only markup", () => {
+    const page = createTopicPage({ id: "topic", title: "Topic", tags: [], members: [{ ...members[0], summary: "**__` `__**" }], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ ...model, disagreements: [], open: [] }, [{ ...members[0], summary: "**__` `__**" }]);
+    expect(serializeTopicPage(page)).toContain("— 会议 A");
   });
 });
