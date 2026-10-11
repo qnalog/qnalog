@@ -302,6 +302,56 @@ try {
   await evaluate("document.querySelector('.modal-header-button').click()");
   await evaluate("window.setInterval = window.__nativeSetInterval; window.clearInterval = window.__nativeClearInterval");
   console.log("[topic-dialog-layout] preview generation: determinate bar, elapsed timer, cancel keeps selection, failure and retry, timers cleared");
+  // Active-row highlight follows the clicked row and never rebuilds the list (topics panel and a minutes-style list).
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 827, deviceScaleFactor: 1, mobile: false });
+  await evaluate("document.body.className = 'theme-light'; window.renderTopicsPanel()");
+  await waitFor("document.querySelectorAll('#topics-panel-root .qnalog-topics-row').length === 8");
+  const highlighted = (selector) => evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map((row, index) => row.classList.contains('is-active') ? index : -1).filter((index) => index >= 0)`);
+  await evaluate(`(() => { const root = document.querySelector('#topics-panel-root'); root.style.maxHeight = '260px'; root.style.overflowY = 'auto'; window.__topicNodes = [...document.querySelectorAll('#topics-panel-root .qnalog-topics-row')]; })()`);
+  await evaluate("document.querySelector('#topics-panel-root').scrollTop = 200");
+  await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+  const topicScroll = await evaluate("document.querySelector('#topics-panel-root').scrollTop");
+  assert(topicScroll > 0, "topics list must scroll for the highlight check");
+  const clickInList = async (listSelector, rowIndex) => {
+    await evaluate(`document.querySelectorAll('${listSelector} .qnalog-topics-row, ${listSelector} .qnalog-outline-recent-row')[${rowIndex}].scrollIntoView({ block: 'nearest' })`);
+    const before = await evaluate(`document.querySelector('${listSelector}').scrollTop`);
+    await mouse(`document.querySelectorAll('${listSelector} .qnalog-topics-row, ${listSelector} .qnalog-outline-recent-row')[${rowIndex}]`);
+    return before;
+  };
+  let listScroll = await clickInList('#topics-panel-root', 2);
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [2], "clicking topic 2 highlights only topic 2");
+  listScroll = await clickInList('#topics-panel-root', 5);
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [5], "clicking topic 5 moves the highlight off topic 2");
+  assert.equal(await evaluate("document.querySelector('#topics-panel-root').scrollTop"), listScroll, "highlight changes must not move the topic list");
+  listScroll = await clickInList('#topics-panel-root', 5);
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [5], "clicking the same topic again keeps one highlight");
+  assert.equal(await evaluate("[...document.querySelectorAll('#topics-panel-root .qnalog-topics-row')].every((row, index) => row === window.__topicNodes[index])"), true, "highlight changes must not rebuild topic rows");
+  await evaluate("window.syncActiveRow(document.querySelector('#topics-panel-root'), [])");
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [], "a path that matches no row clears the highlight");
+  await evaluate("document.querySelector('#topics-panel-root').remove()");
+
+  await evaluate(`(() => {
+    const list = document.createElement('div'); list.id = 'minutes-fixture';
+    list.style.maxHeight = '300px'; list.style.overflowY = 'auto';
+    for (let index = 0; index < 60; index++) {
+      const row = document.createElement('div'); row.className = 'qnalog-outline-recent-row'; row.dataset.path = 'QnALog/转写纪要/' + index + '.md'; row.style.height = '34px';
+      row.addEventListener('click', () => window.syncActiveRow(list, [row.dataset.path]));
+      list.append(row);
+    }
+    document.body.append(list);
+    window.__minutesNodes = [...list.children];
+  })()`);
+  await evaluate("document.querySelector('#minutes-fixture').scrollTop = 400");
+  await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+  const minutesScroll = await evaluate("document.querySelector('#minutes-fixture').scrollTop");
+  assert.equal(minutesScroll, 400, "the 60-row list must reach the middle");
+  await clickInList('#minutes-fixture', 20);
+  const minutesScrollBefore = await clickInList('#minutes-fixture', 40);
+  assert.deepEqual(await highlighted("#minutes-fixture .qnalog-outline-recent-row"), [40], "clicking row 40 after row 20 leaves only row 40 highlighted");
+  assert.equal(await evaluate("[...document.querySelectorAll('#minutes-fixture .qnalog-outline-recent-row')].every((row, index) => row === window.__minutesNodes[index])"), true, "minutes rows must keep their nodes");
+  assert.equal(await evaluate("document.querySelector('#minutes-fixture').scrollTop"), minutesScrollBefore, "the minutes list must keep its scroll position");
+  console.log("[topic-dialog-layout] active row follows the clicked row in the topics panel and a 60-row minutes-style list; nodes and scroll unchanged");
+  await evaluate("document.querySelector('#minutes-fixture').remove()");
 } finally {
   socket?.close();
   if (browser && browser.exitCode === null) {

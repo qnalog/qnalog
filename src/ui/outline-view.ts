@@ -58,6 +58,7 @@ import { getJoinableTopics, type TopicsUiPort } from "./topics-ui-port";
 import { TopicsPanel } from "./topics-panel";
 import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
 import { isBrowseTab, nextSidebarTab, scrollTopAfterRender } from "./sidebar-tab-policy";
+import { syncActiveRow } from "./row-active";
 import { renderTopicPromptRow } from "./topic-prompt-row";
 
 import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
@@ -360,8 +361,10 @@ export class OutlineView extends obsidian.ItemView {
     });
     // 节流：recorder 每 500ms 滴答一次。只更新计时文本，结构不变时不重建 DOM。
     this.unsubscribeRecorder = this.plugin.recorder.on(() => this.scheduleUpdate());
+    this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveRows()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
       this.handleActiveLeafChange();
+      this.syncActiveRows();
       void this.plugin.semanticCanvas.syncActiveCanvasSourceNote({
       throttled: () => this.scheduleUpdate(),
       forced: () => { this._lastSig = ""; this.scheduleUpdate(); },
@@ -407,6 +410,15 @@ export class OutlineView extends obsidian.ItemView {
     if (this.sedimentToastTimer) { window.clearTimeout(this.sedimentToastTimer); this.sedimentToastTimer = 0; }
     if (this.sedimentAdvanceTimer) { window.clearTimeout(this.sedimentAdvanceTimer); this.sedimentAdvanceTimer = 0; }
     this.disposeInlineAudio();
+  }
+  // Moves the highlight to the rows of the open file. The minutes list also follows the source note of an open canvas.
+  syncActiveRows() {
+    const root = this.containerEl.children[1];
+    if (!root) return;
+    const file = this.app.workspace.getActiveFile();
+    const minutes = this.getActiveNoteFile();
+    const paths = [file ? obsidian.normalizePath(file.path) : "", minutes && minutes.path ? obsidian.normalizePath(minutes.path) : ""];
+    syncActiveRow(root, paths);
   }
   // A note or topic page was opened or focused. A browse tab stays; the other tabs reset to the default as before.
   handleActiveLeafChange() {
@@ -5463,9 +5475,13 @@ export class OutlineView extends obsidian.ItemView {
 
   renderRecentNoteRow(parent, r, activePath, options: RecentRowOptions = {}) {
     const isActive = activePath && obsidian.normalizePath(r.file.path) === activePath;
-    const row = parent.createDiv({ cls: `qnalog-outline-recent-row ${isActive ? "is-active" : ""}` });
+    const rowPath = obsidian.normalizePath(r.file.path);
+    const row = parent.createDiv({ cls: `qnalog-outline-recent-row ${isActive ? "is-active" : ""}`, attr: { "data-path": rowPath, ...(isActive ? { "aria-current": "true" } : {}) } });
     if (options.indent) row.style.setProperty("--qnalog-recent-indent", `${Math.min(4, Math.max(0, Number(options.indent) || 0))}`);
     row.addEventListener("click", async () => {
+      // Highlight the clicked row now; the workspace event would only follow after the file opens.
+      const root = this.containerEl.children[1];
+      if (root) syncActiveRow(root, [rowPath]);
       try { await this.app.workspace.getLeaf(false).openFile(r.file); } catch (e) { console.error(e); }
     });
     let nameEl;

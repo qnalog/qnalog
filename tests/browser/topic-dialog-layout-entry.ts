@@ -1,6 +1,9 @@
 import { TopicPreviewModal } from "../../src/ui/topic-preview-modal";
 import { TopicCreateModal } from "../../src/ui/topic-create-modal";
 import { TopicsPanel } from "../../src/ui/topics-panel";
+import { syncActiveRow } from "../../src/ui/row-active";
+
+(window as unknown as { syncActiveRow: typeof syncActiveRow }).syncActiveRow = syncActiveRow;
 import type { TopicCandidates } from "../../src/topics/topic-candidates";
 import type { TopicChangePreview } from "../../src/topics/topic-integration";
 
@@ -33,7 +36,7 @@ const port = {
   isConfigured: () => true,
   getVersion: () => "fixture",
   getCandidates: async () => candidates,
-  listTopics: async () => [{ path: "QnALog/主题/Topic.md", page: { id: "fixture-topic", title: "Project topic", tags: [], members: [], memberLinks: [], excluded: [], basis: "overview" as const, created: "2026-10-01", updated: "2026-10-11", body: "" } }],
+  listTopics: async () => Array.from({ length: 8 }, (_, index) => ({ path: `QnALog/主题/Topic-${index}.md`, page: { id: `fixture-topic-${index}`, title: `Project topic ${index}`, tags: [], members: [], memberLinks: [], excluded: [], basis: "overview" as const, created: "2026-10-01", updated: "2026-10-11", body: "" } })),
   countPending: async () => 0,
   estimate: async () => ({ chars: 400, requests: 1 }),
   // Stays pending until the check drives it, so progress, cancel, failure and retry can be exercised.

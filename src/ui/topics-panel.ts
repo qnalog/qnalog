@@ -7,6 +7,7 @@ import { formatTopicCandidateReasons } from "./topics-ui-port";
 import { qnalogConfirm } from "./helpers";
 import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
 import { suppressRowActivation } from "./topic-row-activation";
+import { syncActiveRow } from "./row-active";
 
 export class TopicsPanel {
   private readonly app: App;
@@ -36,10 +37,17 @@ export class TopicsPanel {
       for (const topic of topics) {
         // The row of the note open in the editor is highlighted; the highlight does not move the list.
         const isActive = !!this.activePath && topic.path === this.activePath;
-        const row = box.createDiv({ cls: `qnalog-topics-row${isActive ? " is-active" : ""}`, attr: { tabindex: "0", role: "button" } });
-        row.addEventListener("click", () => void this.port.openTopic(topic.path));
+        const row = box.createDiv({ cls: `qnalog-topics-row${isActive ? " is-active" : ""}`, attr: { tabindex: "0", role: "button", "data-path": topic.path, ...(isActive ? { "aria-current": "true" } : {}) } });
+        row.addEventListener("click", () => {
+          syncActiveRow(box, [topic.path]);
+          void this.port.openTopic(topic.path);
+        });
         row.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void this.port.openTopic(topic.path); }
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            syncActiveRow(box, [topic.path]);
+            void this.port.openTopic(topic.path);
+          }
         });
         row.addEventListener("contextmenu", (event) => {
           event.preventDefault();
