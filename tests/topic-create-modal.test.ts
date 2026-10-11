@@ -85,6 +85,7 @@ describe("topic create dialog", () => {
     const modal = new TopicCreateModal({} as never, port as never, "Notes/start.md");
     modal.open();
     expect(modal.titleEl.text).toBe("QnALog · Topics");
+    expect(descendants(modal.contentEl as never).some((item) => item.text === "Create topic")).toBe(true);
     await vi.waitFor(() => expect(port.getCandidates).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain("Overview with details."));
     const renderedSummary = allText(modal.contentEl as never);
@@ -170,6 +171,7 @@ describe("topic create dialog", () => {
     createButton?.listeners?.get("click")?.();
     await vi.waitFor(() => expect(port.preview).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain(expected));
+    expect(descendants(modal.contentEl as never).some((item) => item.text === "Generation failed")).toBe(true);
     const content = allText(modal.contentEl as never);
     expect(content).not.toContain("Topic response must contain an overview");
     expect(content).toContain(language === "zh" ? "重试" : "Retry");

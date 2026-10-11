@@ -32,7 +32,7 @@ try {
     entryPoints: [entry], bundle: true, platform: "browser", format: "iife", outfile: bundle,
     alias: { obsidian: shim }, logLevel: "silent",
     plugins: [{ name: "topic-panel-helper-shim", setup(buildApi) {
-      buildApi.onResolve({ filter: /^\.\/helpers$/ }, (args) => args.importer.endsWith("/topics-panel.ts")
+      buildApi.onResolve({ filter: /helpers$/ }, (args) => args.importer.endsWith("/topics-panel.ts") || args.importer.endsWith("/topic-dialog-layout-entry.ts")
         ? { path: join(repoRoot, "tests/browser/topic-helper-shim.ts") } : undefined);
     } }],
   });
@@ -102,13 +102,10 @@ try {
     const content = document.querySelector('.modal-content.qnalog-topics-${kind}');
     const edge = modal.getBoundingClientRect();
     const rightOf = (element) => {
-      if (element.matches('input')) return element.getBoundingClientRect().right;
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      return Math.max(element.getBoundingClientRect().right, range.getBoundingClientRect().right);
+      return element.getBoundingClientRect().right;
     };
     const textEdges = [...content.querySelectorAll('h2, h3, label, input[type="text"], .qnalog-topics-candidate-title, .qnalog-topics-candidate-summary, .qnalog-topics-preview-text, .qnalog-topics-reason, .qnalog-topics-membership, .qnalog-topics-missing, .qnalog-topics-preview-meta > *, .qnalog-topics-notice, .qnalog-topics-cost-warning, .qnalog-topics-estimate')]
-      .map((element) => ({ text: (element.textContent || element.value || '').slice(0, 24), right: rightOf(element) }));
+      .map((element) => ({ text: (element.textContent || element.value || '').slice(0, 24), right: rightOf(element), rectRight: element.getBoundingClientRect().right, width: element.getBoundingClientRect().width, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
     const buttons = [...modal.querySelectorAll('button')].map((button) => { const rect = button.getBoundingClientRect(); return { text: button.textContent, left: rect.left, right: rect.right }; });
     return { modal: { left: edge.left, right: edge.right, scrollWidth: modal.scrollWidth, clientWidth: modal.clientWidth }, content: { scrollWidth: content.scrollWidth, clientWidth: content.clientWidth }, textEdges, buttons };
   })()`;
@@ -117,7 +114,7 @@ try {
     assert(facts.modal.scrollWidth <= facts.modal.clientWidth, `${label}: .modal has horizontal overflow (${facts.modal.scrollWidth}/${facts.modal.clientWidth})`);
     assert(facts.content.scrollWidth <= facts.content.clientWidth, `${label}: .modal-content has horizontal overflow (${facts.content.scrollWidth}/${facts.content.clientWidth})`);
     for (const button of facts.buttons) assert(button.left >= facts.modal.left - 0.5 && button.right <= facts.modal.right + 0.5, `${label}: button "${button.text}" is outside the dialog (${Math.round(button.left)}-${Math.round(button.right)} vs ${Math.round(facts.modal.left)}-${Math.round(facts.modal.right)})`);
-    for (const item of facts.textEdges) assert(item.right <= facts.modal.right + 0.5, `${label}: text is clipped at the dialog edge: "${item.text}" (${Math.round(item.right)} > ${Math.round(facts.modal.right)})`);
+    for (const item of facts.textEdges) assert(item.right <= facts.modal.right + 0.5, `${label}: text is clipped at the dialog edge: "${item.text}" (${Math.round(item.right)} > ${Math.round(facts.modal.right)}, rect ${Math.round(item.rectRight)}, width ${Math.round(item.width)}, scroll ${item.scrollWidth}/${item.clientWidth})`);
   };
   // Closes the open dialog as a user would (× button, Escape, or the Cancel button) and returns how many port.cancel calls that caused.
   const closeDialog = async (how, kind) => {
@@ -152,7 +149,7 @@ try {
     }
     throw new Error(`timed out waiting for ${expression}`);
   };
-  for (const width of [320, 390, 768, 1440]) for (const theme of ["light", "dark"]) {
+  for (const width of [320, 360, 390, 540, 720, 768, 1440]) for (const theme of ["light", "dark"]) {
     await cdp("Emulation.setDeviceMetricsOverride", { width, height: 827, deviceScaleFactor: 1, mobile: false });
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
     await evaluate(`document.body.className = ${JSON.stringify(theme === "dark" ? "theme-dark" : "theme-light")}; window.renderTopicCreate()`);
@@ -212,7 +209,10 @@ try {
     const preview = await evaluate(`(() => {
       const content=document.querySelector('.modal-content.qnalog-topics-preview'); const scroll=content?.querySelector('.qnalog-topics-scroll'); const footer=content?.querySelector('.qnalog-topics-modal-footer'); const row=content?.querySelector('.qnalog-topics-preview-item'); const text=row?.querySelector('.qnalog-topics-preview-text'); const source=row?.querySelector('.qnalog-topics-source-link'); const checkbox=content?.querySelector('input[type=checkbox]'); const rows=[...content.querySelectorAll('.qnalog-topics-preview-item')];
       const style=row?getComputedStyle(row):null; const headings=[...content.querySelectorAll('.qnalog-topics-preview-heading')];
-      return {title:content?.closest('.modal')?.querySelector('.modal-title')?.textContent, actionHeading:content?.querySelector('.qnalog-topics-dialog-heading')?.textContent, metaJustify:getComputedStyle(row?.querySelector('.qnalog-topics-preview-meta')).justifyContent, sourceRadius:parseFloat(getComputedStyle(source).borderRadius), checkboxWidth:checkbox?.getBoundingClientRect().width, checkboxHeight:checkbox?.getBoundingClientRect().height, itemPadding:parseFloat(getComputedStyle(row).paddingTop), rowGap:rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().bottom : null, height:content?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, scrollAreaWidth:scroll?.scrollWidth, scrollAreaClientWidth:scroll?.clientWidth, textWidth:text?.getBoundingClientRect().width, contentWidth:content?.clientWidth, source:row?.querySelector('.qnalog-topics-source-link')?.textContent, badgeWhiteSpace:getComputedStyle(row?.querySelector('.qnalog-topics-unverified')).whiteSpace, headingTags:headings.map((heading)=>heading.tagName), rowOutline:style?.outlineStyle, rowTopBorder:style?.borderTopStyle, buttonCount:content?.querySelectorAll('button').length, bodyScrollWidth:document.body.scrollWidth};
+      const stanceBlocks=[...(row?.querySelectorAll('.qnalog-topics-preview-stance') || [])]; const stanceTops=stanceBlocks.map((item)=>item.getBoundingClientRect().top);
+      const conflictTitle=row?.querySelector('.qnalog-topics-preview-conflict-heading .qnalog-topics-preview-text');
+      const metaRows=[...(row?.querySelectorAll('.qnalog-topics-preview-meta') || [])]; const sourceBounds=[...row.querySelectorAll('.qnalog-topics-source-link')].map((item)=>({right:item.getBoundingClientRect().right, metaRight:item.closest('.qnalog-topics-preview-meta').getBoundingClientRect().right}));
+      return {title:content?.closest('.modal')?.querySelector('.modal-title')?.textContent, actionHeading:content?.querySelector('.qnalog-topics-dialog-heading')?.textContent, metaJustify:getComputedStyle(row?.querySelector('.qnalog-topics-preview-meta')).justifyContent, sourceRadius:parseFloat(getComputedStyle(source).borderRadius), checkboxWidth:checkbox?.getBoundingClientRect().width, checkboxHeight:checkbox?.getBoundingClientRect().height, itemPadding:parseFloat(getComputedStyle(row).paddingTop), rowGap:rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().bottom : null, height:content?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, scrollAreaWidth:scroll?.scrollWidth, scrollAreaClientWidth:scroll?.clientWidth, textWidth:text?.getBoundingClientRect().width, contentWidth:content?.clientWidth, source:row?.querySelector('.qnalog-topics-source-link')?.textContent, badgeWhiteSpace:getComputedStyle(row?.querySelector('.qnalog-topics-unverified')).whiteSpace, headingTags:headings.map((heading)=>heading.tagName), rowOutline:style?.outlineStyle, rowTopBorder:style?.borderTopStyle, buttonCount:content?.querySelectorAll('button').length, bodyScrollWidth:document.body.scrollWidth, conflictTitleWidth:conflictTitle?.getBoundingClientRect().width, stanceTops, stanceCount:stanceBlocks.length, operationCodeVisible:/(?:add_|revise_|resolve_)[a-z_]+/.test(content?.textContent || ''), sourceBounds};
     })()`);
     assert(preview.height > 0, `preview dialog missing at ${width}px/${theme}`);
     assert.equal(preview.title, "QnALog · Topics", `preview title bar must be localized at ${width}px/${theme}`);
@@ -223,18 +223,76 @@ try {
     assert(preview.checkboxWidth >= 14 && preview.checkboxHeight >= 14, `preview checkbox is too small at ${width}px/${theme}`);
     assert(preview.textWidth >= preview.contentWidth * 0.6, `preview text is too narrow (${preview.textWidth}/${preview.contentWidth}) at ${width}px/${theme}`);
     assert(preview.footerBottom <= preview.viewport, `preview footer below viewport at ${width}px/${theme}`);
-    assert(preview.scrollWidth <= preview.clientWidth && preview.scrollAreaWidth <= preview.scrollAreaClientWidth && preview.bodyScrollWidth <= width, `preview dialog has horizontal overflow at ${width}px/${theme}`);
+    const overflowing = preview.scrollAreaWidth > preview.scrollAreaClientWidth ? await evaluate(`(() => { const root=document.querySelector('.qnalog-topics-scroll'); const edge=root.getBoundingClientRect().right; return [...root.querySelectorAll('*')].map((el)=>({tag:el.tagName,cls:el.className?.toString(),text:(el.textContent||'').slice(0,50),width:Math.round(el.getBoundingClientRect().width),right:Math.round(el.getBoundingClientRect().right),scroll:el.scrollWidth,client:el.clientWidth})).filter((item)=>item.right>edge+1||item.scroll>item.client+1).slice(0,12); })()`):[];
+    assert(preview.scrollWidth <= preview.clientWidth && preview.scrollAreaWidth <= preview.scrollAreaClientWidth && preview.bodyScrollWidth <= width, `preview dialog has horizontal overflow at ${width}px/${theme}: content ${preview.scrollWidth}/${preview.clientWidth}, scroll ${preview.scrollAreaWidth}/${preview.scrollAreaClientWidth}, body ${preview.bodyScrollWidth}/${width}, ${JSON.stringify(overflowing)}`);
     assert.equal(preview.source, "问答日志-数据结构优化", `source should display title only at ${width}px/${theme}`);
     assert.equal(preview.badgeWhiteSpace, "nowrap", `unverified badge can wrap vertically at ${width}px/${theme}`);
     assert(preview.headingTags.length > 0 && preview.headingTags.every((tag) => tag === "DIV"), `preview headings must not use h3/h4 at ${width}px/${theme}`);
     assert.equal(preview.rowOutline, "none", `preview rows must not keep an outline without keyboard focus at ${width}px/${theme}`);
     assert.equal(preview.rowTopBorder, "none", `preview rows must not keep a border around the whole item at ${width}px/${theme}`);
     assert(preview.buttonCount > 0, `preview actions must stay inside the dialog at ${width}px/${theme}`);
+    assert(preview.conflictTitleWidth >= preview.contentWidth * 0.6, `disagreement heading is too narrow at ${width}px/${theme}`);
+    assert.equal(preview.stanceCount, 2, `disagreement fixture must show two stances at ${width}px/${theme}`);
+    assert(preview.stanceTops[0] < preview.stanceTops[1], `disagreement stances must stack vertically at ${width}px/${theme}`);
+    assert.equal(preview.operationCodeVisible, false, `raw operation code is visible at ${width}px/${theme}`);
+    for (const bounds of preview.sourceBounds) assert(bounds.right <= bounds.metaRight + 0.5, `source label overlaps its metadata row at ${width}px/${theme}`);
     assertHorizontal(await evaluate(horizontalFacts("preview")), `preview dialog at ${width}px/${theme}`);
     console.log(`[topic-dialog-layout] ${width}px ${theme}: body ${preview.textWidth}/${preview.contentWidth}px; footer ${Math.round(preview.footerBottom)}/${preview.viewport}px; no horizontal overflow`);
     for (const how of ["x", "esc", "cancel"]) {
       if (how !== "x") await evaluate("window.renderTopicPreview()");
       assert.equal(await closeDialog(how, "preview"), 1, `preview dialog closed by ${how} must cancel the preview exactly once at ${width}px/${theme}`);
+    }
+  }
+  for (const width of [360, 540, 720]) for (const theme of ["light", "dark"]) {
+    await cdp("Emulation.setDeviceMetricsOverride", { width, height: 827, deviceScaleFactor: 1, mobile: false });
+    await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
+    await evaluate(`document.body.className = ${JSON.stringify(theme === "dark" ? "theme-dark" : "theme-light")}; window.renderTopicScan()`);
+    await waitUntil("document.querySelectorAll('.modal-content.qnalog-topics-create .qnalog-topics-candidate').length === 5");
+    const scan = await evaluate(`(() => {
+      const content=document.querySelector('.modal-content.qnalog-topics-create'); const title=content?.closest('.modal')?.querySelector('.modal-title')?.textContent;
+      const action=content?.querySelector('.qnalog-topics-dialog-heading')?.textContent;
+      const headings=[...content.querySelectorAll('.qnalog-topics-candidate-group > .qnalog-topics-preview-heading')];
+      const textRows=[...content.querySelectorAll('.qnalog-topics-candidate-title, .qnalog-topics-candidate-summary, .qnalog-topics-candidate-meta')];
+      const widths=textRows.map((item)=>item.getBoundingClientRect().width);
+      const labels=[...content.querySelectorAll('.qnalog-topics-candidate-meta')].map((item)=>item.textContent || '').join(' ');
+      return {title, action, rows:content.querySelectorAll('.qnalog-topics-candidate').length, headings:headings.map((item)=>item.tagName), minTextWidth:Math.min(...widths), labels, scrollWidth:content.scrollWidth, clientWidth:content.clientWidth, bodyScrollWidth:document.body.scrollWidth};
+    })()`);
+    assert.equal(scan.title, "QnALog · Topics", `scan title bar at ${width}px/${theme}`);
+    assert.equal(scan.action, "Scan for notes to integrate", `scan action heading at ${width}px/${theme}`);
+    assert.equal(scan.rows, 5, `scan candidate count at ${width}px/${theme}`);
+    assert(scan.headings.length > 0 && scan.headings.every((tag) => tag === "DIV"), `scan group titles must be styled divs at ${width}px/${theme}`);
+    assert(scan.minTextWidth >= 48, `scan candidate text is too narrow and may stack vertically at ${width}px/${theme}`);
+    assert(scan.labels.includes("Q&ALog") && scan.labels.includes("VeryLongProjectTagLabelForLayout"), `scan metadata labels are missing at ${width}px/${theme}`);
+    assert(scan.scrollWidth <= scan.clientWidth && scan.bodyScrollWidth <= width, `scan dialog has horizontal overflow at ${width}px/${theme}`);
+    const generating = await evaluate(`(() => { document.querySelector('.modal-content.qnalog-topics-create .mod-cta').click(); const content=document.querySelector('.modal-content.qnalog-topics-create'); return {title:content?.closest('.modal')?.querySelector('.modal-title')?.textContent, action:content?.querySelector('.qnalog-topics-dialog-heading')?.textContent, generating:content?.classList.contains('is-generating'), candidates:content?.querySelectorAll('.qnalog-topics-candidate').length, height:content?.getBoundingClientRect().height}; })()`);
+    assert.equal(generating.title, "QnALog · Topics", `scan generation title bar at ${width}px/${theme}`);
+    assert.equal(generating.action, "Generating preview", `scan generation action heading at ${width}px/${theme}`);
+    assert.equal(generating.generating, true, `scan generation style state at ${width}px/${theme}`);
+    assert.equal(generating.candidates, 0, `scan candidates remain visible during generation at ${width}px/${theme}`);
+    assert(generating.height < 300, `scan generation dialog is not compact at ${width}px/${theme}`);
+    if (width === 360 && theme === "light") {
+      await evaluate("window.topicPreviewDriver.fail('fixture failure')");
+      await waitUntil("document.querySelector('.modal-content.qnalog-topics-create .qnalog-topics-dialog-heading')?.textContent === 'Generation failed'");
+      const failed = await evaluate(`(() => { const content=document.querySelector('.modal-content.qnalog-topics-create'); return {retry:[...content.querySelectorAll('button')].some((button)=>button.textContent==='Retry'),back:[...content.querySelectorAll('button')].some((button)=>button.textContent==='Back to candidates'),candidateCount:content.querySelectorAll('.qnalog-topics-candidate').length}; })()`);
+      assert.equal(failed.retry, true, "scan preview failure must offer retry");
+      assert.equal(failed.back, true, "scan preview failure must offer return to candidates");
+      assert.equal(failed.candidateCount, 0, "scan candidate rows must stay hidden in the failure state");
+      await evaluate("[...document.querySelectorAll('.modal-content.qnalog-topics-create button')].find((button)=>button.textContent==='Retry').click()");
+      await waitUntil("document.querySelector('.modal-content.qnalog-topics-create.is-generating')");
+    }
+    assert.equal(await closeDialog("cancel", "create"), 1, `scan cancel did not close cleanly at ${width}px/${theme}`);
+    console.log(`[topic-dialog-layout] scan ${width}px ${theme}: five candidates, tags stay horizontal, generation list hidden`);
+    for (const kind of ["Delete topic", "Merge topics", "Generic confirmation"]) {
+      await evaluate(`window.renderTopicConfirm(${JSON.stringify(kind)})`);
+      const confirmation = await evaluate(`(() => { const modal=document.querySelector('.modal'); const content=modal?.querySelector('.modal-content'); const buttons=[...modal.querySelectorAll('button')].map((button)=>({text:button.textContent,cls:button.className,left:button.getBoundingClientRect().left,right:button.getBoundingClientRect().right})); const edge=modal?.getBoundingClientRect(); return {title:modal?.querySelector('.modal-title')?.textContent, heading:content?.firstElementChild?.textContent, headingTag:content?.firstElementChild?.tagName, width:edge?.width, left:edge?.left,right:edge?.right,scrollWidth:modal?.scrollWidth,clientWidth:modal?.clientWidth,buttons}; })()`);
+      const expectedTitle = kind === "Generic confirmation" ? "" : "QnALog · Topics";
+      assert.equal(confirmation.title, expectedTitle, `${kind} title bar at ${width}px/${theme}`);
+      assert.equal(confirmation.heading, kind === "Generic confirmation" ? "Clear queue" : kind, `${kind} action heading at ${width}px/${theme}`);
+      assert.equal(confirmation.headingTag, kind === "Generic confirmation" ? "H3" : "DIV", `${kind} heading style at ${width}px/${theme}`);
+      assert(confirmation.scrollWidth <= confirmation.clientWidth, `${kind} confirmation has horizontal overflow at ${width}px/${theme}`);
+      for (const button of confirmation.buttons) assert(button.left >= confirmation.left - 0.5 && button.right <= confirmation.right + 0.5, `${kind} button ${button.text} overflows at ${width}px/${theme}`);
+      if (kind === "Delete topic") assert(confirmation.buttons.some((button) => button.text === "Delete" && button.cls.includes("mod-warning")), `delete confirmation lost its warning button style at ${width}px/${theme}`);
+      await evaluate("document.querySelector('.modal-header-button').click()");
     }
   }
   // Whole-row toggling and list stability: 60 candidates, scrolled to the middle, real mouse and keyboard input.

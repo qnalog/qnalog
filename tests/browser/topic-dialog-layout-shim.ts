@@ -14,7 +14,9 @@ declare global {
   interface Window {
     renderTopicCreate(): Promise<void>;
     renderTopicPreview(): void;
+    renderTopicScan(): Promise<void>;
     renderTopicsPanel(): Promise<void>;
+    renderTopicConfirm(kind: "Delete topic" | "Merge topics" | "Generic confirmation"): void;
   }
 }
 
