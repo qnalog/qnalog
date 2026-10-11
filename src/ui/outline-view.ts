@@ -763,10 +763,11 @@ export class OutlineView extends obsidian.ItemView {
     if (!this.topicsUi) { this.renderPanelEmpty(root, i18nT("No topics yet")); return; }
     const recent = getRecentNotes(this.plugin, 20);
     for (const note of recent) this.refreshTopicPromptOnce(note.file.path);
-    const active = this.getActiveNoteFile();
+    // The open file itself, not the minutes-only active note: a topic page is highlighted as well.
+    const activeFile = this.app.workspace.getActiveFile();
     const restoreTop = this.topicsScrollRestore;
     // The rows are added after an async read, so the saved position is applied again once they exist.
-    void new TopicsPanel(this.app, this.topicsUi, () => this.render(), active && active.path ? active.path : "").render(root).then(() => {
+    void new TopicsPanel(this.app, this.topicsUi, () => this.render(), activeFile ? activeFile.path : "").render(root).then(() => {
       if (restoreTop !== null && this.containerEl.children[1] === root) root.scrollTop = restoreTop;
     });
   }
