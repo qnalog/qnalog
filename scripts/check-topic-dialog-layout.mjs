@@ -43,7 +43,7 @@ try {
     .modal-container { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
     .modal { position:relative; box-sizing:border-box; width:560px; max-width:min(720px, 92vw); max-height:100vh; overflow-x:auto; }
     @media (max-width: 480px) { .modal { max-width:95vw; } }
-    .modal-close-button { position:absolute; top:8px; right:8px; z-index:2; }
+    .modal-header-button { position:absolute; top:8px; right:8px; z-index:2; }
     .modal-content { padding:20px; background:var(--modal-background); }
     button,input { font:inherit; }
     ${stylesheet.replace(/<\/style/gi, "<\\/style")}
@@ -119,6 +119,16 @@ try {
     for (const button of facts.buttons) assert(button.left >= facts.modal.left - 0.5 && button.right <= facts.modal.right + 0.5, `${label}: button "${button.text}" is outside the dialog (${Math.round(button.left)}-${Math.round(button.right)} vs ${Math.round(facts.modal.left)}-${Math.round(facts.modal.right)})`);
     for (const item of facts.textEdges) assert(item.right <= facts.modal.right + 0.5, `${label}: text is clipped at the dialog edge: "${item.text}" (${Math.round(item.right)} > ${Math.round(facts.modal.right)})`);
   };
+  // Closes the open dialog as a user would (× button, Escape, or the Cancel button) and returns how many port.cancel calls that caused.
+  const closeDialog = async (how, kind) => {
+    const cancelsBefore = await evaluate("window.cancelledTopics.length");
+    const action = how === "x" ? "document.querySelector('.modal-header-button').click()"
+      : how === "esc" ? "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))"
+        : `[...document.querySelectorAll('.modal-content.qnalog-topics-${kind} button')].find((button) => button.textContent === 'Cancel').click()`;
+    await evaluate(action);
+    assert.equal(await evaluate("document.querySelectorAll('.modal').length"), 0, `${kind} dialog did not close by ${how}`);
+    return (await evaluate("window.cancelledTopics.length")) - cancelsBefore;
+  };
   await cdp("Page.enable");
   await cdp("Runtime.enable");
   const pageLoaded = new Promise((resolveLoad) => socket.addEventListener("message", function loaded(event) {
@@ -150,8 +160,10 @@ try {
     assert(create.scrollWidth <= create.clientWidth && create.bodyScrollWidth <= width, `create dialog has horizontal overflow at ${width}px/${theme}`);
     assert(create.summaries.some((summary) => summary.includes("底层数据结构的优化")) && create.summaries.every((summary) => !/[*_`]/.test(summary)), `candidate excerpt contains Markdown markers at ${width}px/${theme}`);
     assertHorizontal(await evaluate(horizontalFacts("create")), `create dialog at ${width}px/${theme}`);
-    await evaluate("document.querySelector('.modal-close-button').click()");
-    assert.equal(await evaluate("document.querySelectorAll('.modal').length"), 0, `create dialog did not close at ${width}px/${theme}`);
+    for (const how of ["x", "esc", "cancel"]) {
+      if (how !== "x") await evaluate("window.renderTopicCreate()");
+      assert.equal(await closeDialog(how, "create"), 0, `create dialog closed by ${how} must not cancel a preview at ${width}px/${theme}`);
+    }
 
     await evaluate("window.renderTopicsPanel()");
     const panel = await evaluate(`(() => { const panel=document.querySelector('#topics-panel-root .qnalog-topics-panel'); const row=panel?.querySelector('.qnalog-topics-row'); return {padding:getComputedStyle(panel).paddingInlineStart, rowLeft:row?.getBoundingClientRect().left, panelLeft:panel?.getBoundingClientRect().left, overflow:panel?.scrollWidth > panel?.clientWidth}; })()`);
@@ -172,8 +184,10 @@ try {
     assert.equal(preview.badgeWhiteSpace, "nowrap", `unverified badge can wrap vertically at ${width}px/${theme}`);
     assertHorizontal(await evaluate(horizontalFacts("preview")), `preview dialog at ${width}px/${theme}`);
     console.log(`[topic-dialog-layout] ${width}px ${theme}: body ${preview.textWidth}/${preview.contentWidth}px; footer ${Math.round(preview.footerBottom)}/${preview.viewport}px; no horizontal overflow`);
-    await evaluate("document.querySelector('.modal-close-button').click()");
-    assert.equal(await evaluate("document.querySelectorAll('.modal').length"), 0, `preview dialog did not close at ${width}px/${theme}`);
+    for (const how of ["x", "esc", "cancel"]) {
+      if (how !== "x") await evaluate("window.renderTopicPreview()");
+      assert.equal(await closeDialog(how, "preview"), 1, `preview dialog closed by ${how} must cancel the preview exactly once at ${width}px/${theme}`);
+    }
   }
 } finally {
   socket?.close();

@@ -30,18 +30,20 @@ HTMLElement.prototype.createEl = function (tag: string, options: ElementOptions 
 HTMLElement.prototype.createDiv = function (options: ElementOptions = {}): HTMLDivElement { return this.createEl("div", options) as HTMLDivElement; };
 HTMLElement.prototype.createSpan = function (options: ElementOptions = {}): HTMLSpanElement { return this.createEl("span", options) as HTMLSpanElement; };
 
+// Mirrors Obsidian 1.11 modal DOM: the × is a div.modal-header-button, and Escape closes the modal.
 export class Modal {
   readonly modalEl: HTMLDivElement;
   readonly contentEl: HTMLDivElement;
-  private readonly closeButton: HTMLButtonElement;
+  private readonly closeButton: HTMLDivElement;
+  private readonly onEscape = (event: KeyboardEvent): void => { if (event.key === "Escape") this.close(); };
 
   constructor(_app: unknown) {
     const container = document.createElement("div");
     container.className = "modal-container";
     this.modalEl = document.createElement("div");
     this.modalEl.className = "modal";
-    this.closeButton = document.createElement("button");
-    this.closeButton.className = "modal-close-button";
+    this.closeButton = document.createElement("div");
+    this.closeButton.className = "modal-header-button mod-raised clickable-icon";
     this.closeButton.textContent = "×";
     this.closeButton.addEventListener("click", () => this.close());
     this.contentEl = document.createElement("div");
@@ -49,10 +51,15 @@ export class Modal {
     this.modalEl.append(this.closeButton, this.contentEl);
     container.append(this.modalEl);
     document.body.append(container);
+    document.addEventListener("keydown", this.onEscape);
   }
 
   open(): void { this.onOpen(); }
-  close(): void { this.onClose(); this.modalEl.parentElement?.remove(); }
+  close(): void {
+    document.removeEventListener("keydown", this.onEscape);
+    this.onClose();
+    this.modalEl.parentElement?.remove();
+  }
   onOpen(): void { /* Obsidian lifecycle hook */ }
   onClose(): void { /* Obsidian lifecycle hook */ }
 }

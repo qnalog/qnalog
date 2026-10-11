@@ -15,6 +15,10 @@ const candidates: TopicCandidates = {
   topic: [], content: [], byTag: [], byContent: [],
 };
 
+// Every port.cancel call is recorded so the check can assert which close paths cancel a preview.
+const cancelledTopics: string[] = [];
+(window as unknown as { cancelledTopics: string[] }).cancelledTopics = cancelledTopics;
+
 const port = {
   text: (key: string) => key,
   isConfigured: () => true,
@@ -25,7 +29,7 @@ const port = {
   estimate: async () => ({ chars: 400, requests: 1 }),
   preview: async () => preview,
   apply: async () => ({ path: "QnALog/主题/Topic.md", markdown: "", pageChangedDuringGeneration: false }),
-  cancel: () => undefined,
+  cancel: (id: string) => { cancelledTopics.push(id); },
   openTopic: async () => undefined,
   openSource: async () => undefined,
   undoLastUpdate: async () => ({ restored: true as const }),
