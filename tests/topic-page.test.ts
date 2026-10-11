@@ -5,6 +5,7 @@ import {
   parseTopicPage,
   serializeTopicPage,
   hashTopicPage,
+  buildTopicBlockIndex,
   stableTopicBlockId,
   parseTopicPageBlocks,
   renderTopicPage,
@@ -69,7 +70,8 @@ describe("topic pages", () => {
     expect(rendered).not.toMatch(/\^tpc-/);
     expect(rendered).not.toContain("<!--");
     expect(rendered).not.toContain("%%");
-    expect(rendered).toContain("qnalog_topic_blocks:");
+    expect(rendered).not.toContain("qnalog_topic_blocks:");
+    expect(buildTopicBlockIndex(rendered).length).toBeGreaterThan(0);
     expect(parseTopicPageBlocks(rendered).map((block) => block.type)).toContain("point");
   });
 
@@ -78,25 +80,25 @@ describe("topic pages", () => {
     page.layout = 2;
     page.body = renderTopicPage({ overview: "Overview.", status: "active", threads: [{ id: "t1", title: "Progress", summary: "Summary.", points: [{ id: "p1", text: "A sufficiently descriptive original point.", sources: [] }] }], disagreements: [], open: [], unsorted: [] }, []);
     const original = serializeTopicPage(page);
-    const index = parseTopicPageBlocks(original).find((block) => block.type === "point");
+    const index = buildTopicBlockIndex(original).find((block) => block.kind === "point");
     expect(index).toBeDefined();
     const bodyAt = original.indexOf("\n#");
     const edited = original.slice(0, bodyAt) + original.slice(bodyAt).replace("A sufficiently descriptive original point.", "A sufficiently descriptive original poinx.");
-    expect(parseTopicPageBlocks(edited).some((block) => block.id === index?.id)).toBe(true);
+    expect(parseTopicPageBlocks(updateTopicFrontmatter(edited, { qnalog_topic_blocks: JSON.stringify([index]) })).some((block) => block.id === index?.id)).toBe(true);
     const moved = original.replace("### Progress", "### Another thread");
-    expect(parseTopicPageBlocks(moved).some((block) => block.id === index?.id)).toBe(true);
+    expect(parseTopicPageBlocks(updateTopicFrontmatter(moved, { qnalog_topic_blocks: JSON.stringify([index]) })).some((block) => block.id === index?.id)).toBe(true);
     const deleted = original.replace("A sufficiently descriptive original point.", "");
-    expect(parseTopicPageBlocks(deleted).filter((block) => block.id === index?.id)).toEqual([]);
+    expect(parseTopicPageBlocks(updateTopicFrontmatter(deleted, { qnalog_topic_blocks: JSON.stringify([index]) })).filter((block) => block.id === index?.id)).toEqual([]);
   });
 
   it("cleans legacy v2 anchors and stores the refreshed index", () => {
     const page = createTopicPage({ id: "legacy-v2", title: "Legacy v2", tags: [], members: [], basis: "overview" });
     page.layout = 2;
     page.body = `## 进展脉络 / Progress thread\n\n### Progress\nA useful summary. ^tpc-a1b2c3\n- A useful point. ^tpc-b2c3d4\n`;
-    const legacy = serializeTopicPage(page).replace("qnalog_topic_blocks:", "qnalog_topic_blocks:");
+    const legacy = updateTopicFrontmatter(serializeTopicPage(page), { qnalog_topic_blocks: JSON.stringify(buildTopicBlockIndex(page.body)) });
     const cleaned = applyTopicOps(legacy, []).markdown;
     expect(cleaned).not.toMatch(/\^tpc-/);
-    expect(cleaned).toContain("qnalog_topic_blocks:");
+    expect(cleaned).not.toContain("qnalog_topic_blocks:");
     expect(parseTopicPageBlocks(cleaned).map((block) => block.type)).toContain("point");
   });
 
@@ -186,10 +188,11 @@ describe("topic pages", () => {
     expect(result.markdown).toContain("2026-10-01 — Event happened");
   });
 
-  it("round-trips topic tag aliases in frontmatter", () => {
+  it("keeps topic tag aliases out of page properties", () => {
     const page = createTopicPage({ id: "alias", title: "Aliases", tags: ["项目/QALog"], members: [], basis: "overview", created: "", updated: "" });
     page.tagAliases = { "项目/QALog": ["项目/QALog", "项目/QnALog"] };
-    expect(parseTopicPage(serializeTopicPage(page))?.tagAliases).toEqual(page.tagAliases);
+    expect(serializeTopicPage(page)).not.toContain("qnalog_topic_tag_aliases:");
+    expect(parseTopicPage(serializeTopicPage(page))?.tagAliases).toEqual({});
   });
 
   it("preserves original page lines as an ordered subsequence for generated pages and operations", () => {

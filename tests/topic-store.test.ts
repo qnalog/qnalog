@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TopicStore, type TopicStorePort } from "../src/topics/topic-store";
-import { createTopicPage, hashTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
+import { buildTopicBlockIndex, createTopicPage, hashTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
 import type { TopicChangePreview } from "../src/topics/topic-integration";
 
 class MemoryPort implements TopicStorePort {
@@ -13,6 +13,10 @@ class MemoryPort implements TopicStorePort {
   onProcess?: (path: string) => void;
   read(path: string): Promise<string> { const value = this.files.get(path); if (value === undefined) throw new Error(`missing ${path}`); return Promise.resolve(value); }
   async create(path: string, content: string): Promise<void> { this.files.set(path, content); this.creates.push(path); }
+  async readCache(path: string): Promise<string | null> { return this.files.get(path) ?? null; }
+  async writeCache(path: string, content: string): Promise<void> { this.files.set(path, content); }
+  async deleteCache(path: string): Promise<void> { this.files.delete(path); }
+  async readMemberTags(_paths: readonly string[]): Promise<string[]> { return []; }
   async process(path: string, transform: (content: string) => string): Promise<void> {
     this.processCalls.push(path);
     this.onProcess?.(path);
@@ -79,6 +83,7 @@ describe("topic store", () => {
     const historyBefore = [...port.files.keys()].filter((item) => item.includes("topic-history/"));
     await reloadedStore.deleteTopic("topic");
     expect(port.trashed).toEqual([path]);
+    expect([...port.files.keys()].some((item) => item.includes("topic-index/topic.json"))).toBe(false);
     expect(historyBefore.every((item) => port.files.has(item))).toBe(true);
   });
 
@@ -130,7 +135,8 @@ describe("topic store", () => {
       completedBatches: 1, totalBatches: 1, items: [], legacyAnchorCleanup: true,
     }, ["__clean-legacy-markers__"]);
     expect(result.markdown).not.toMatch(/\^tpc-/);
-    expect(result.markdown).toContain("qnalog_topic_blocks:");
+    expect(result.markdown).not.toContain("qnalog_topic_blocks:");
+    expect(JSON.parse(port.files.get("QnALog/.cache/topic-index/legacy-anchor.json") || "{}").blocks.length).toBeGreaterThan(0);
     expect(port.creates.some((item) => item.includes("topic-history"))).toBe(true);
     expect(await store.undoLastUpdate(topic.id)).toEqual({ restored: true });
     expect(port.files.get(path)).toBe(original);
@@ -154,11 +160,75 @@ describe("topic store", () => {
     expect(port.files.get(targetPath)).toContain("- [[Notes/c|Notes/c.md]]");
     expect(port.processCalls).toEqual([targetPath]);
     expect(port.trashed).toEqual([sourcePath]);
+    expect(port.files.has("QnALog/.cache/topic-index/source.json")).toBe(false);
+    expect(port.files.has("QnALog/.cache/topic-index/target.json")).toBe(true);
     expect(port.files.get("Notes/a.md")).toBe(sourceNote);
     expect(port.files.get("Notes/b.md")).toBe("Other note");
     expect(port.files.get("Notes/c.md")).toBe("Another note");
     expect(target?.appliedHash).toBeDefined();
     expect(target?.undoSnapshot).toContain("topic-history/target/");
     expect(port.files.has(target?.undoSnapshot || "")).toBe(true);
+  });
+
+  it("rebuilds missing, corrupt, and stale machine caches without changing the page", async () => {
+    const { port, store, path } = setup("cache-rebuild");
+    const original = port.files.get(path)!;
+    const cachePath = "QnALog/.cache/topic-index/cache-rebuild.json";
+    const keys = (value: string) => Object.keys(JSON.parse(value) as Record<string, unknown>).sort();
+    expect(await store.read(path)).toMatchObject({ cacheStatus: "missing" });
+    let cacheText = port.files.get(cachePath)!;
+    expect(keys(cacheText)).toEqual(["blocks", "lastSnapshot", "pageHash", "tagAliases", "topicId", "updatedAt", "version"]);
+    expect(JSON.parse(cacheText).blocks.length).toBe(0);
+    expect(port.files.get(path)).toBe(original);
+
+    port.files.set(cachePath, "not-json");
+    expect(await store.read(path)).toMatchObject({ cacheStatus: "corrupt" });
+    cacheText = port.files.get(cachePath)!;
+    expect(JSON.parse(cacheText).topicId).toBe("cache-rebuild");
+
+    port.files.set(path, original.replace("# cache-rebuild", "# Renamed by user"));
+    const stalePage = port.files.get(path)!;
+    expect(await store.read(path)).toMatchObject({ cacheStatus: "stale" });
+    expect(port.files.get(path)).toBe(stalePage);
+    expect(JSON.parse(port.files.get(cachePath)!).pageHash).not.toBe(hashTopicPage(stalePage));
+  });
+
+  it("writes only user-facing properties and moves index and aliases to cache", async () => {
+    const port = new MemoryPort();
+    const store = new TopicStore({ folder: "Topics", port });
+    const topic = page("property-set", "Properties", ["项目/QnALog"]);
+    topic.layout = 2;
+    topic.tagAliases = { "项目/QnALog": ["项目/QnALog", "项目/Q&ALog"] };
+    topic.body = renderTopicPage({ overview: "Overview.", status: "active", threads: [{ id: "thread", title: "Progress", summary: "A useful summary.", points: [{ id: "point", text: "A useful point.", sources: [] }] }], disagreements: [], open: [], unsorted: [] }, []);
+    const createdPath = await store.create(topic);
+    const markdown = port.files.get(createdPath)!;
+    const propertyKeys = markdown.match(/^([\w-]+):/gm)?.map((line) => line.slice(0, line.indexOf(":"))).sort();
+    expect(propertyKeys).toEqual(["cssclasses", "qnalog_topic_basis", "qnalog_topic_created", "qnalog_topic_excluded", "qnalog_topic_id", "qnalog_topic_layout", "qnalog_topic_members", "qnalog_topic_tags", "qnalog_topic_updated", "qnalog_type"].sort());
+    for (const key of ["qnalog_topic_tag_aliases", "qnalog_topic_blocks", "qnalog_topic_hash", "qnalog_topic_undo_snapshot"]) expect(markdown).not.toContain(`${key}:`);
+    const cache = JSON.parse(port.files.get("QnALog/.cache/topic-index/property-set.json") || "{}") as { blocks: Array<{ normalizedPreview: string }>; tagAliases: Record<string, string[]> };
+    expect(cache.blocks.length).toBeGreaterThan(0);
+    expect(cache.blocks.every((block) => [...block.normalizedPreview].length <= 40)).toBe(true);
+    expect(cache.tagAliases).toEqual(topic.tagAliases);
+    expect(createdPath).toBe("Topics/Properties.md");
+  });
+
+  it("migrates legacy machine properties with a snapshot and undo while preserving the body", async () => {
+    const { port, store, path } = setup("legacy-properties");
+    const original = port.files.get(path)!;
+    const legacy = original.replace("---\n", `---\nqnalog_topic_tag_aliases: ${JSON.stringify(JSON.stringify({ topic: ["topic"] }))}
+qnalog_topic_blocks: ${JSON.stringify(JSON.stringify(buildTopicBlockIndex(original)))}
+qnalog_topic_hash: "legacy-hash"
+qnalog_topic_undo_snapshot: "QnALog/.cache/topic-history/legacy-properties/old.md"
+`);
+    port.files.set(path, legacy);
+    const cachedPage = await store.read(path);
+    expect(cachedPage?.legacyMachineProperties).toBe(true);
+    const beforeBody = legacy.slice(legacy.indexOf("\n---\n") + 5);
+    const result = await store.apply(path, { topicId: "legacy-properties", expectedHash: hashTopicPage(legacy), pageWasManuallyEdited: false, completedBatches: 0, totalBatches: 0, items: [], legacyPropertyCleanup: true }, ["__clean-legacy-properties__"]);
+    expect(result.markdown.slice(result.markdown.indexOf("\n---\n") + 5)).toBe(beforeBody);
+    for (const key of ["qnalog_topic_tag_aliases", "qnalog_topic_blocks", "qnalog_topic_hash", "qnalog_topic_undo_snapshot"]) expect(result.markdown).not.toContain(`${key}:`);
+    expect(port.creates.some((item) => item.includes("topic-history/legacy-properties/"))).toBe(true);
+    expect(await store.undoLastUpdate("legacy-properties")).toEqual({ restored: true });
+    expect(port.files.get(path)).toBe(legacy);
   });
 });

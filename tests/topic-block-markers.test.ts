@@ -36,7 +36,7 @@ describe("dedupeBlockIds", () => {
   });
 });
 
-describe("v2 pages keep block addresses in page properties", () => {
+describe("v2 pages keep block addresses in the topic cache", () => {
   const page = "---\nqnalog_topic_layout: 2\n---\n## 进展脉络\n### 属性名\n线索摘要 ^tpc-0a0a0a\n- 旧要点[^sa8f6] ^tpc-0b0b0b\n## 时间线\n";
 
   it("revise_block removes model markers and leaves no inline IDs", () => {
@@ -48,7 +48,8 @@ describe("v2 pages keep block addresses in page properties", () => {
     const revised = result.markdown.slice(result.markdown.indexOf("\n##")).split("\n").find((line) => line.includes("关于 Front Matter"))!;
     expect(revised).toBe("关于 Front Matter 元信息标准化存在争议：新的做法。");
     expect(count(result.markdown, /\^tpc-/g)).toBe(0);
-    expect(result.markdown).toContain("qnalog_topic_blocks:");
+    expect(result.markdown).not.toContain("qnalog_topic_blocks:");
+    expect(result.blockIndex?.length).toBeGreaterThan(0);
     expect(result.duplicateBlockIds).toBeUndefined();
   });
 
@@ -58,13 +59,14 @@ describe("v2 pages keep block addresses in page properties", () => {
     expect(result.duplicateBlockIds).toBeUndefined();
     expect(count(result.markdown, /\^tpc-/g)).toBe(0);
     expect(result.markdown).toContain("- 第一条");
-    expect(result.markdown).toContain("qnalog_topic_blocks:");
+    expect(result.markdown).not.toContain("qnalog_topic_blocks:");
+    expect(result.blockIndex).toHaveLength(2);
     expect(parseTopicPageBlocks(result.markdown)).toHaveLength(2);
   });
 });
 
 describe("model text is cleaned before rendering", () => {
-  it("a point with model markers keeps its footnote and stores its address outside the body", async () => {
+  it("a point with model markers keeps its footnote and returns its address outside the page", async () => {
     const page = "---\nqnalog_topic_layout: 2\n---\n## 进展脉络\n### 线索\n线索摘要。 ^tpc-0a0a0a\n## 时间线\n";
     const member = { card: { sourceId: "fresh", path: "Notes/fresh.md", title: "Fresh", date: "2026-10-11", tags: [], overview: "补充阅读视图的截图验证。" } as never, content: "补充阅读视图的截图验证。" };
     const payload = { operations: [{ type: "add_point", thread: "线索", text: "- [ ] 补充阅读视图的截图验证。[^s8c08] ^tpc-bf65c5", sources: ["fresh"], sourceId: "fresh" }] };
@@ -75,6 +77,6 @@ describe("model text is cleaned before rendering", () => {
     expect(line).toMatch(/^- 补充阅读视图的截图验证。\[\^s[\da-f]{4}\]$/);
     expect(applied).not.toContain("s8c08");
     expect(applied).not.toMatch(/\^tpc-/);
-    expect(applied).toContain("qnalog_topic_blocks:");
+    expect(applied).not.toContain("qnalog_topic_blocks:");
   });
 });

@@ -207,6 +207,7 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["阿里百炼", "data"],
   ],
   "src/main.ts": [
+    ["主题", "frontmatter tag alias key read from existing notes"],
     ["[QnALog] 磁盘设置来自更新的版本，已跳过本次保存以免覆盖较新字段", "match"],
     ["[QnALog] 设置无法识别来源，已丢弃并改用默认值", "match"],
     ["[QnALog] 设置结构版本高于当前版本（", "match"],

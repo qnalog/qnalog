@@ -293,6 +293,10 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
     read: async (path) => contents.get(path) ?? "",
     create: async (path, content) => { writes.push({ kind: "create", path }); storePort.created.push({ path, content }); contents.set(path, content); },
     process: async (path, transform) => { writes.push({ kind: "process", path }); contents.set(path, transform(contents.get(path) ?? "")); },
+    readCache: async (path) => contents.get(path) ?? null,
+    writeCache: async (path, content) => { contents.set(path, content); },
+    deleteCache: async (path) => { contents.delete(path); },
+    readMemberTags: async (paths) => [...new Set(paths.flatMap((path) => files.find((file) => file.path === path)?.tags || []))],
     listMarkdown: async (folder) => [...contents.keys()].filter((path) => path.startsWith(`${folder}/`) && path.endsWith(".md")).map((path) => ({ path, name: path.split("/").pop()! })),
     ensureFolder: async () => {}, deleteHistory: async (path) => { contents.delete(path); }, trashFile: async (path) => { contents.delete(path); }, now: () => now,
   };
@@ -325,7 +329,7 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
 function emptyHost(overviewCards: TopicsServicePort) {
   const noopStore: TopicStorePort = {
     read: async () => "", create: async () => {}, process: async () => {}, listMarkdown: async () => [],
-    ensureFolder: async () => {}, deleteHistory: async () => {}, trashFile: async () => {}, now: () => Date.now(),
+    ensureFolder: async () => {}, deleteHistory: async () => {}, readCache: async () => null, writeCache: async () => {}, deleteCache: async () => {}, readMemberTags: async () => [], trashFile: async () => {}, now: () => Date.now(),
   };
   return { overviewCards, topicStore: noopStore, getRoots: () => [], getFolder: () => "Topics",
     integration: { request: async () => ({ operations: [] }) }, createId: () => "unused",

@@ -44,6 +44,7 @@ function descendants(node: FakeTree): FakeTree[] { return node.children.flatMap(
 function fixture(): TopicChangePreview {
   return {
     topicId: "topic-1", expectedHash: "hash", pageWasManuallyEdited: true,
+    legacyPropertyCleanup: false,
     completedBatches: 1, totalBatches: 2, partialFailure: "request failed",
     items: [
       { id: "item-1", type: "add_item", operation: { type: "add_item", section: "当前状态", text: "Current fact", sourceId: "note-1" }, target: "Current status", text: "Current fact", sourceId: "note-1", cancellable: true },
@@ -56,10 +57,13 @@ function fixture(): TopicChangePreview {
 describe("topic preview dialog", () => {
   it("groups changes and shows the manual-edit, partial-batch, and unverified states", () => {
     const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn() };
-    const modal = new TopicPreviewModal({} as never, port as never, fixture(), () => undefined);
+    const preview = fixture();
+    preview.legacyPropertyCleanup = true;
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
     modal.onOpen();
     const text = allText(modal.contentEl as unknown as FakeTree);
-    expect(text).toContain("The page was manually edited since the last update.");
+    expect(text).toContain("The page may have been modified.");
+    expect(text).toContain("Clean old topic properties");
     expect(text).toContain("1/2 completed batches");
     expect(text).toContain("Current status");
     expect(text).toContain("Disagreements and verification");
