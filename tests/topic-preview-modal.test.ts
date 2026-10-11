@@ -12,6 +12,7 @@ vi.mock("obsidian", () => {
     constructor(text = "", cls = "") { this.text = text; this.cls = cls; }
     empty() { this.children = []; }
     addClass(cls: string) { this.cls += ` ${cls}`; }
+    removeClass(cls: string) { this.cls = this.cls.replace(cls, ""); }
     createEl(_tag: string, options: { cls?: string; text?: string } = {}) { return this.add(new FakeElement(options.text || "", options.cls || "")); }
     createDiv(options: { cls?: string; text?: string } = {}) { return this.add(new FakeElement(options.text || "", options.cls || "")); }
     createSpan(options: { cls?: string; text?: string } = {}) { return this.add(new FakeElement(options.text || "", options.cls || "")); }
@@ -22,6 +23,7 @@ vi.mock("obsidian", () => {
   }
   class Modal {
     contentEl = new FakeElement();
+    titleEl = new FakeElement();
     constructor(public app: unknown) {}
     close() { this.onClose(); }
     onOpen() {}
@@ -61,6 +63,7 @@ describe("topic preview dialog", () => {
     preview.legacyPropertyCleanup = true;
     const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
     modal.onOpen();
+    expect(modal.titleEl.text).toBe("QnALog · Topics");
     const text = allText(modal.contentEl as unknown as FakeTree);
     expect(text).toContain("The page may have been modified.");
     expect(text).toContain("Clean old topic properties");
@@ -207,10 +210,14 @@ describe("topic preview dialog", () => {
     const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
     modal.onOpen();
     const tree = modal.contentEl as unknown as FakeTree;
-    expect(allText(tree)).toContain("2026-09-29: Names stay stable");
-    expect(allText(tree)).toContain("2026-10-11: Names follow language");
-    expect(allText(tree)).toContain("Unsupported statement (Unverified)");
-    expect(allText(tree)).toContain("Unattributed statement (Source pending verification)");
+    expect(allText(tree)).toContain("2026-09-29");
+    expect(allText(tree)).toContain("2026-10-11");
+    expect(allText(tree)).toContain("Names stay stable");
+    expect(allText(tree)).toContain("Names follow language");
+    expect(allText(tree)).toContain("Unsupported statement");
+    expect(allText(tree)).toContain("Unverified");
+    expect(allText(tree)).toContain("Unattributed statement");
+    expect(allText(tree)).toContain("Source pending verification");
     expect(allText(tree)).toContain("Some disagreement details need verification. Review the marked positions.");
     expect(descendants(tree).filter((item) => item.cls === "qnalog-topics-source-link").map((item) => item.text)).toContain("Audit note");
   });

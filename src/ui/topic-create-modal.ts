@@ -50,7 +50,10 @@ export class TopicCreateModal extends Modal {
     this.onApplied = onApplied;
   }
 
-  onOpen(): void { void this.loadCandidates(); }
+  onOpen(): void {
+    this.titleEl.setText(this.port.text("QnALog · Topics"));
+    void this.loadCandidates();
+  }
 
   onClose(): void {
     this.stopTimer();
@@ -104,11 +107,12 @@ export class TopicCreateModal extends Modal {
     if (this.mode === "generating") { this.renderGenerating(); return; }
     if (this.mode === "failed") { this.renderFailed(); return; }
     const content = this.contentEl;
+    content.removeClass("is-generating");
     // Full redraws (candidate expansion, loading, basis change) keep the list position.
     const previousScroll = this.scrollEl?.scrollTop ?? 0;
     content.empty();
     content.addClass("qnalog-topics-create");
-    content.createEl("h2", { text: this.port.text("Create topic") });
+    content.createDiv({ cls: "qnalog-topics-dialog-heading", text: this.port.text("Create topic") });
     const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
     this.scrollEl = scroll;
     const titleInput = scroll.createEl("input", { cls: "qnalog-topics-title", attr: { type: "text", placeholder: this.port.text("Topic title"), "aria-label": this.port.text("Topic title") } });
@@ -285,7 +289,8 @@ export class TopicCreateModal extends Modal {
     const content = this.contentEl;
     content.empty();
     content.addClass("qnalog-topics-create");
-    content.createEl("h2", { text: this.port.text("Generating preview") });
+    content.addClass("is-generating");
+    content.createDiv({ cls: "qnalog-topics-dialog-heading", text: this.port.text("Generating preview") });
     const box = content.createDiv({ cls: "qnalog-topics-generating", attr: { "aria-busy": "true" } });
     const basisLabel = this.port.text(this.basis === "body" ? "Finalized body" : "Overview");
     const notes = this.port.text("{0} notes").replace("{0}", String(this.selected.size));
@@ -325,8 +330,9 @@ export class TopicCreateModal extends Modal {
   private renderFailed(): void {
     const content = this.contentEl;
     content.empty();
+    content.removeClass("is-generating");
     content.addClass("qnalog-topics-create");
-    content.createEl("h2", { text: this.port.text("Generation failed") });
+    content.createDiv({ cls: "qnalog-topics-dialog-heading", text: this.port.text("Generation failed") });
     content.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.failure.slice(0, 240) });
     content.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("Your selection and title are kept. Retry, or go back to change the selection.") });
     const footer = content.createDiv({ cls: "qnalog-topics-modal-footer" });

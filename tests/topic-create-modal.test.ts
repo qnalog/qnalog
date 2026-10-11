@@ -13,6 +13,7 @@ vi.mock("obsidian", () => {
     constructor(text = "", cls = "") { this.text = text; this.cls = cls; }
     empty() { this.children = []; }
     addClass(cls: string) { this.cls += ` ${cls}`; }
+    removeClass(cls: string) { this.cls = this.cls.replace(cls, ""); }
     createEl(_tag: string, options: { cls?: string; text?: string; attr?: Record<string, string> } = {}) {
       const element = this.add(new FakeElement(options.text || "", options.cls || ""));
       element.value = options.attr?.value || "";
@@ -30,6 +31,7 @@ vi.mock("obsidian", () => {
   }
   class Modal {
     contentEl = new FakeElement();
+    titleEl = new FakeElement();
     app: unknown;
     constructor(app: unknown) { this.app = app; }
     open() { this.onOpen(); }
@@ -82,6 +84,7 @@ describe("topic create dialog", () => {
     };
     const modal = new TopicCreateModal({} as never, port as never, "Notes/start.md");
     modal.open();
+    expect(modal.titleEl.text).toBe("QnALog · Topics");
     await vi.waitFor(() => expect(port.getCandidates).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain("Overview with details."));
     const renderedSummary = allText(modal.contentEl as never);

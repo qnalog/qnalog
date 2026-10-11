@@ -2911,6 +2911,7 @@ export const ZH: MessageTable = {
   "The topic page could not be generated. You can retry. The page was not modified.": "未能生成主题页。可以重试，页面未被修改。",
   "Back to candidates": "返回候选列表",
   "Topics": "主题",
+  "QnALog · Topics": "QnALog · 主题",
   "Create topic": "创建成为主题",
   "Join topic…": "加入主题…",
   "Preview topic changes": "预览主题变更",

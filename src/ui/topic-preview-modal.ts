@@ -20,6 +20,7 @@ export class TopicPreviewModal extends Modal {
   }
 
   onOpen(): void {
+    this.titleEl.setText(this.port.text("QnALog · Topics"));
     this.render();
   }
 
@@ -34,7 +35,7 @@ export class TopicPreviewModal extends Modal {
     const content = this.contentEl;
     content.empty();
     content.addClass("qnalog-topics-preview");
-    content.createEl("h2", { text: this.port.text("Preview topic changes") });
+    content.createDiv({ cls: "qnalog-topics-dialog-heading", text: this.port.text("Preview topic changes") });
     const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
     if (this.preview.pageWasManuallyEdited) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("The page may have been modified. Changes will use the current version.") });
     if (this.preview.partialFailure) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Some batches failed; {0}/{1} completed batches were kept.").replace("{0}", String(this.preview.completedBatches)).replace("{1}", String(this.preview.totalBatches)) });
@@ -81,13 +82,15 @@ export class TopicPreviewModal extends Modal {
       };
       const addReferences = (parent: HTMLDivElement, sourceIds: readonly string[]) => {
         const metadata = parent.createDiv({ cls: "qnalog-topics-preview-meta" });
+        metadata.createDiv({ cls: "qnalog-topics-preview-meta-left" });
+        const right = metadata.createDiv({ cls: "qnalog-topics-preview-meta-right" });
         for (const sourceId of [...new Set(sourceIds)]) {
           const source = this.preview.sourceLinks?.[sourceId] || sourceId;
           const title = /\|([^|\]]+)\]\]$/.exec(source)?.[1] || source.replace(/^\[\[|\]\]$/g, "").split("/").pop() || source;
-          const link = metadata.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
+          const link = right.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
           link.addEventListener("click", () => void this.port.openSource(source));
           const date = this.preview.sourceDates?.[sourceId];
-          if (date) metadata.createSpan({ cls: "qnalog-topics-preview-date", text: date });
+          if (date) right.createSpan({ cls: "qnalog-topics-preview-date", text: date });
         }
       };
       const overview = group("Overview");
@@ -95,7 +98,7 @@ export class TopicPreviewModal extends Modal {
       const threads = group("Progress thread");
       for (const thread of model.threads) {
         threads.createDiv({ cls: "qnalog-topics-preview-heading is-thread", text: thread.title });
-        threads.createDiv({ cls: "qnalog-topics-preview-text", text: thread.summary });
+        threads.createDiv({ cls: "qnalog-topics-preview-text qnalog-topics-thread-summary", text: thread.summary });
         for (const point of thread.points) {
           const row = threads.createDiv({ cls: "qnalog-topics-preview-item" });
           row.createDiv({ cls: "qnalog-topics-preview-text", text: point.text });
@@ -191,16 +194,19 @@ export class TopicPreviewModal extends Modal {
         for (const position of item.operation.positions) {
           const stance = main.createDiv({ cls: `qnalog-topics-preview-item${position.provenance ? " is-unverified" : ""}` });
           const provenance = position.provenance === "source-pending" ? this.port.text("Source pending verification") : position.provenance === "unverified" ? this.port.text("Unverified") : position.provenance === "page-narrative" ? this.port.text("Page narrative") : "";
-          stance.createDiv({ cls: "qnalog-topics-preview-text", text: `${position.date ? `${position.date}: ` : ""}${position.text}${provenance ? ` (${provenance})` : ""}` });
+          stance.createDiv({ cls: "qnalog-topics-preview-text", text: position.text });
           const source = stance.createDiv({ cls: "qnalog-topics-preview-meta" });
-          if (position.fromPage) source.createSpan({ cls: "qnalog-topics-preview-date", text: this.port.text("Existing page block") });
+          const left = source.createDiv({ cls: "qnalog-topics-preview-meta-left" });
+          const right = source.createDiv({ cls: "qnalog-topics-preview-meta-right" });
+          if (provenance) left.createSpan({ cls: "qnalog-topics-unverified", text: provenance });
+          if (position.fromPage) left.createSpan({ cls: "qnalog-topics-preview-badge", text: this.port.text("Existing page block") });
           if (position.sourceId) {
             const linkTarget = this.preview.sourceLinks?.[position.sourceId] || position.sourceId;
             const title = position.sourceTitle || /\|([^|\]]+)\]\]$/.exec(linkTarget)?.[1] || linkTarget;
-            const link = source.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
+            const link = right.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
             link.addEventListener("click", () => void this.port.openSource(linkTarget));
-            if (position.date) source.createSpan({ cls: "qnalog-topics-preview-date", text: position.date });
           }
+          if (position.date) right.createSpan({ cls: "qnalog-topics-preview-date", text: position.date });
         }
       } else if (item.operation.type === "resolve_open") {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: `${this.port.text("Will mark this item as resolved")}: ${item.expectedText || item.operation.expectedText || item.target}` });
@@ -213,16 +219,18 @@ export class TopicPreviewModal extends Modal {
         }
         main.createDiv({ cls: "qnalog-topics-preview-text", text: changeText });
       }
-      if ("blockId" in item.operation || "relatedBlockId" in item.operation) row.createDiv({ cls: "qnalog-topics-preview-meta", text: item.target });
       const metadata = row.createDiv({ cls: "qnalog-topics-preview-meta" });
+      const left = metadata.createDiv({ cls: "qnalog-topics-preview-meta-left" });
+      const right = metadata.createDiv({ cls: "qnalog-topics-preview-meta-right" });
+      if ("blockId" in item.operation || "relatedBlockId" in item.operation) left.createSpan({ cls: "qnalog-topics-preview-badge", text: item.target });
       const source = this.preview.sourceLinks?.[item.sourceId] || item.sourceId;
       const title = /\|([^|\]]+)\]\]$/.exec(source)?.[1] || source.replace(/^\[\[|\]\]$/g, "").split("/").pop() || source;
-      const link = metadata.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
+      const link = right.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
       link.addEventListener("click", () => void this.port.openSource(source));
       const date = this.preview.sourceDates?.[item.sourceId];
-      if (date) metadata.createSpan({ cls: "qnalog-topics-preview-date", text: date });
-      if (item.type === "add_conflict" || item.type === "add_disagreement") metadata.createSpan({ cls: "qnalog-topics-preview-badge is-conflict", text: this.port.text("Disagreement") });
-      if (verification.unverified) metadata.createSpan({ cls: "qnalog-topics-unverified", text: this.port.text("Unverified") });
+      if (date) right.createSpan({ cls: "qnalog-topics-preview-date", text: date });
+      if (item.type === "add_conflict" || item.type === "add_disagreement") left.createSpan({ cls: "qnalog-topics-preview-badge is-conflict", text: this.port.text("Disagreement") });
+      if (verification.unverified) left.createSpan({ cls: "qnalog-topics-unverified", text: this.port.text("Unverified") });
     }
 
     const footer = content.createDiv({ cls: "qnalog-topics-modal-footer" });
