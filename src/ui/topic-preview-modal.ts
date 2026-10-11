@@ -36,7 +36,7 @@ export class TopicPreviewModal extends Modal {
     content.addClass("qnalog-topics-preview");
     content.createEl("h2", { text: this.port.text("Preview topic changes") });
     const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
-    if (this.preview.pageWasManuallyEdited) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("The page was manually edited since the last update. Changes will use the current version.") });
+    if (this.preview.pageWasManuallyEdited) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("The page may have been modified. Changes will use the current version.") });
     if (this.preview.partialFailure) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Some batches failed; {0}/{1} completed batches were kept.").replace("{0}", String(this.preview.completedBatches)).replace("{1}", String(this.preview.totalBatches)) });
     if (this.preview.create?.overviewGeneratedFromThreads) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("The overview was generated from the thread summaries by the program. You can edit it on the page.") });
 
@@ -66,7 +66,7 @@ export class TopicPreviewModal extends Modal {
         details.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text(key).replace("{0}", duplicate.discardedText).replace("{1}", duplicate.keptText) });
       }
     }
-    const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0 && !this.preview.legacyAnchorCleanup;
+    const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0 && !this.preview.legacyAnchorCleanup && !this.preview.legacyPropertyCleanup;
     if (emptyUpdate) {
       const diagnostics = this.preview.updateDiagnostics;
       const checked = diagnostics?.rawOperations || 0;
@@ -132,6 +132,14 @@ export class TopicPreviewModal extends Modal {
       selected.add("__clean-legacy-markers__");
       row.createSpan({ text: this.port.text("Clean old block markers") });
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add("__clean-legacy-markers__") : selected.delete("__clean-legacy-markers__"));
+    }
+    if (this.preview.legacyPropertyCleanup) {
+      const row = scroll.createEl("label", { cls: "qnalog-topics-preview-item" });
+      const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Clean old topic properties") } });
+      checkbox.checked = true;
+      selected.add("__clean-legacy-properties__");
+      row.createSpan({ text: this.port.text("Clean old topic properties") });
+      checkbox.addEventListener("change", () => checkbox.checked ? selected.add("__clean-legacy-properties__") : selected.delete("__clean-legacy-properties__"));
     }
     const sections = new Map<string, HTMLDivElement>();
     for (const item of this.preview.items) {
