@@ -24,6 +24,7 @@ export interface TopicPageLabels {
   openQuestion: string; openAction: string; openBug: string;
 }
 export interface TopicBlockIndexEntry { id: string; kind: ParsedTopicBlock["type"]; headingPath: string[]; ordinal: number; textHash: string; normalizedPreview: string }
+export const TOPIC_MACHINE_PROPERTY_KEYS = [NS_FM.topicTagAliases, NS_FM.topicBlocks, NS_FM.topicHash, NS_FM.topicUndoSnapshot] as const;
 export interface ParsedTopicBlock { id: string; type: "overview" | "thread-summary" | "point" | "disagreement" | "open" | "other"; text: string; start: number; end: number; headingPath?: string[]; ordinal?: number }
 export interface TopicPage {
   id: string;
@@ -38,6 +39,8 @@ export interface TopicPage {
   updated: string;
   appliedHash?: string;
   undoSnapshot?: string;
+  cacheStatus?: "valid" | "missing" | "corrupt" | "stale";
+  legacyMachineProperties?: boolean;
   body: string;
   layout?: number;
 }
@@ -54,7 +57,7 @@ export type TopicOperation =
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
-export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[]; skipped: Array<{ id: string; reason: "block-modified" }>; duplicateBlockIds?: string[] }
+export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[]; skipped: Array<{ id: string; reason: "block-modified" }>; duplicateBlockIds?: string[]; blockIndex?: TopicBlockIndexEntry[] }
 
 export const TOPIC_SECTIONS: readonly TopicSection[] = ["概要", "当前状态", "分歧与待核实", "未决问题与未完成行动", "时间线", "来源笔记", "待整理"];
 const ENGLISH_SECTION: Record<TopicSection, string> = {
@@ -70,7 +73,7 @@ function stableHash(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0").slice(0, 6);
 }
 export function hashTopicPage(markdown: string): string {
-  const content = String(markdown).replace(new RegExp(`^${NS_FM.topicHash}:.*(?:\\r?\\n|$)`, "m"), "");
+  const content = removeTopicMachineProperties(String(markdown));
   let hash = 2166136261;
   for (let index = 0; index < content.length; index++) hash = Math.imul(hash ^ content.charCodeAt(index), 16777619);
   return (hash >>> 0).toString(16).padStart(8, "0");
@@ -142,23 +145,18 @@ export function createTopicPage(input: { id: string; title: string; tags: string
 }
 
 export function serializeTopicPage(page: TopicPage): string {
-  const indexedBody = page.body;
   const fm = [
     `${NS_FM.type}: ${yamlString(NS_TYPE_TOPIC)}`,
     `${NS_FM.topicId}: ${yamlString(page.id)}`,
     `${NS_FM.topicTags}: ${yamlStrings(page.tags)}`,
-    `${NS_FM.topicTagAliases}: ${yamlString(JSON.stringify(page.tagAliases || {}))}`,
     `${NS_FM.topicMembers}: ${yamlStrings(page.memberLinks)}`,
     `${NS_FM.topicExcluded}: ${yamlStrings(page.excluded)}`,
     `${NS_FM.topicBasis}: ${yamlString(page.basis)}`,
     `${NS_FM.topicCreated}: ${yamlString(page.created)}`,
     `${NS_FM.topicUpdated}: ${yamlString(page.updated)}`,
     ...(page.layout === 2 ? [`${NS_FM_TOPIC_LAYOUT}: 2`, `cssclasses: qnalog-topic`] : []),
-    ...(page.layout === 2 ? [`qnalog_topic_blocks: ${yamlString(JSON.stringify(buildTopicBlockIndex(`# ${page.title}\n\n${indexedBody}`)))}`] : []),
-    ...(page.appliedHash ? [`${NS_FM.topicHash}: ${yamlString(page.appliedHash)}`] : []),
-    ...(page.undoSnapshot ? [`${NS_FM.topicUndoSnapshot}: ${yamlString(page.undoSnapshot)}`] : []),
   ].join("\n");
-  const body = (page.layout === 2 ? indexedBody : ensureSections(page.body)).replace(/^---\n[\s\S]*?\n---\n/, "");
+  const body = (page.layout === 2 ? page.body : ensureSections(page.body)).replace(/^---\n[\s\S]*?\n---\n/, "");
   return `---\n${fm}\n---\n\n# ${page.title}\n\n${body.trimStart()}`;
 }
 
@@ -190,6 +188,7 @@ export function parseTopicPage(markdown: string, path = ""): TopicPage | null {
     layout: fields[NS_FM_TOPIC_LAYOUT] === 2 ? 2 : undefined,
     appliedHash: typeof appliedHash === "string" ? appliedHash : undefined,
     undoSnapshot: typeof undoSnapshot === "string" ? undoSnapshot : undefined,
+    legacyMachineProperties: TOPIC_MACHINE_PROPERTY_KEYS.some((key) => Object.prototype.hasOwnProperty.call(fields, key)),
     body: split.body,
   };
 }
@@ -296,7 +295,7 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
   return sections.join("\n").trimEnd() + "\n";
 }
 
-const TOPIC_BLOCK_INDEX_KEY = "qnalog_topic_blocks";
+const TOPIC_BLOCK_INDEX_KEY = NS_FM.topicBlocks;
 export const TOPIC_BLOCK_SIMILARITY_THRESHOLD = 0.6;
 function normalizeTopicBlockText(text: string): string {
   return text.replace(/\s+\^tpc-[\da-f]{6}\s*$/gim, "").replace(/\[\^[^\]]+\]/g, "")
@@ -386,10 +385,10 @@ export function locateBlock(page: string, entry: TopicBlockIndexEntry, candidate
   if (similar && similar.score >= TOPIC_BLOCK_SIMILARITY_THRESHOLD) return similar.block;
   return sameHeading.find((block) => block.ordinal === entry.ordinal);
 }
-export function buildTopicBlockIndex(markdown: string): TopicBlockIndexEntry[] {
+export function buildTopicBlockIndex(markdown: string, previousIndex?: readonly TopicBlockIndexEntry[]): TopicBlockIndexEntry[] {
   const split = frontmatter(markdown);
   const candidates = collectTopicBlocks(split.body, markdown.length - split.body.length);
-  const old = readTopicBlockIndex(markdown);
+  const old = previousIndex || readTopicBlockIndex(markdown);
   const used = new Set<string>();
   return candidates.map((block) => {
     const previous = old.find((entry) => !used.has(entry.id) && locateBlock(markdown, entry, candidates) === block);
@@ -402,6 +401,50 @@ export function buildTopicBlockIndex(markdown: string): TopicBlockIndexEntry[] {
 export function updateTopicBlockIndex(markdown: string): string {
   const entries = buildTopicBlockIndex(markdown);
   return updateTopicFrontmatter(markdown, { [TOPIC_BLOCK_INDEX_KEY]: JSON.stringify(entries) });
+}
+
+/** Removes legacy machine-only page properties while preserving the complete body. */
+export function removeTopicMachineProperties(markdown: string): string {
+  const match = markdown.match(/^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n?)/);
+  if (!match) return markdown;
+  const lines = match[2].split(/\r?\n/);
+  const kept: string[] = [];
+  let skippingList = false;
+  for (const line of lines) {
+    const key = line.match(/^([\w-]+):/)?.[1];
+    if (key && (TOPIC_MACHINE_PROPERTY_KEYS as readonly string[]).includes(key)) {
+      skippingList = !/^([\w-]+):\s*\S/.test(line);
+      continue;
+    }
+    if (skippingList && /^\s+-\s+/.test(line)) continue;
+    skippingList = false;
+    kept.push(line);
+  }
+  return `${match[1]}${kept.join("\n")}${match[3]}${markdown.slice(match[0].length)}`;
+}
+
+export function readLegacyTopicMachineProperties(markdown: string): {
+  tagAliases: Record<string, string[]>; blocks: TopicBlockIndexEntry[]; pageHash?: string; lastSnapshot?: string;
+} {
+  const fields = parseTopicFrontmatter(frontmatter(markdown).text);
+  const parseObject = (value: unknown): Record<string, string[]> => {
+    if (typeof value !== "string") return {};
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string[]] => Array.isArray(entry[1]) && entry[1].every((item) => typeof item === "string")));
+    } catch { return {}; }
+  };
+  return {
+    tagAliases: parseObject(fields[NS_FM.topicTagAliases]),
+    blocks: readTopicBlockIndex(markdown),
+    ...(typeof fields[NS_FM.topicHash] === "string" ? { pageHash: fields[NS_FM.topicHash] as string } : {}),
+    ...(typeof fields[NS_FM.topicUndoSnapshot] === "string" ? { lastSnapshot: fields[NS_FM.topicUndoSnapshot] as string } : {}),
+  };
+}
+
+export function withTopicBlockIndex(markdown: string, blocks: readonly TopicBlockIndexEntry[]): string {
+  return updateTopicFrontmatter(markdown, { [TOPIC_BLOCK_INDEX_KEY]: JSON.stringify(blocks) });
 }
 
 /** Extracts blocks using the page property index; legacy inline anchors are accepted for migration only. */
@@ -668,5 +711,6 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
   const isV2Page = parseTopicFrontmatter(frontmatter(normalized).text)[NS_FM_TOPIC_LAYOUT] === 2;
   const cleaned = isV2Page ? normalized.replace(/[ \t]+\^tpc-[\da-f]{6}\b/gi, "") : normalized;
   const indexed = isV2Page ? updateTopicBlockIndex(cleaned) : cleaned;
-  return { markdown: indexed, applied, skipped };
+  const blockIndex = isV2Page ? readTopicBlockIndex(indexed) : undefined;
+  return { markdown: isV2Page ? removeTopicMachineProperties(indexed) : indexed, applied, skipped, ...(blockIndex ? { blockIndex } : {}) };
 }

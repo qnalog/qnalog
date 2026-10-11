@@ -306,9 +306,14 @@ class QnALogPlugin extends obsidian.Plugin {
     this.topicPromptStore = new TopicPromptStore();
     this.noteIndex = new NoteIndexService(this);
     const topicHistoryRoot = `${NS_ROOT}/.cache/topic-history`;
+    const topicIndexRoot = `${NS_ROOT}/.cache/topic-index`;
     const isTopicHistoryPath = (path: string): boolean => {
       const normalized = obsidian.normalizePath(path);
       return normalized === topicHistoryRoot || normalized.startsWith(`${topicHistoryRoot}/`);
+    };
+    const isTopicIndexPath = (path: string): boolean => {
+      const normalized = obsidian.normalizePath(path);
+      return normalized === topicIndexRoot || normalized.startsWith(`${topicIndexRoot}/`);
     };
     const topicsPort: TopicsServicePort = {
       listNoteFiles: () => getMarkdownFilesUnderRecentRoots(this).map((file) => ({ path: file.path, basename: file.basename, mtime: file.stat.mtime, ctime: file.stat.ctime })),
@@ -327,18 +332,19 @@ class QnALogPlugin extends obsidian.Plugin {
     };
     const topicStorePort = {
       logDiagnostic: (code: string, data: Record<string, unknown>) => {
-        void this.diagnostics.logDiagnostic("warn", code, t("Topic page had duplicate block IDs; the first occurrence was kept"), data);
+        const message = code === "topic.duplicate_block_id" ? t("Topic page had duplicate block IDs; the first occurrence was kept") : t("Topic machine cache could not be updated; it will be rebuilt when needed");
+        void this.diagnostics.logDiagnostic("warn", code, message, data);
       },
       read: async (path) => {
         const normalized = obsidian.normalizePath(path);
-        if (isTopicHistoryPath(normalized)) return this.app.vault.adapter.read(normalized);
+        if (isTopicHistoryPath(normalized) || isTopicIndexPath(normalized)) return this.app.vault.adapter.read(normalized);
         const file = this.app.vault.getAbstractFileByPath(normalized);
         if (!(file instanceof obsidian.TFile)) throw new Error(`Topic file not found: ${path}`);
         return this.app.vault.read(file);
       },
       create: async (path, content) => {
         const normalized = obsidian.normalizePath(path);
-        if (isTopicHistoryPath(normalized)) await this.app.vault.adapter.write(normalized, content);
+        if (isTopicHistoryPath(normalized) || isTopicIndexPath(normalized)) await this.app.vault.adapter.write(normalized, content);
         else await this.app.vault.create(normalized, content);
       },
       process: async (path, transform) => {
@@ -361,6 +367,33 @@ class QnALogPlugin extends obsidian.Plugin {
       deleteHistory: async (path) => {
         const normalized = obsidian.normalizePath(path);
         if (isTopicHistoryPath(normalized) && await this.app.vault.adapter.exists(normalized)) await this.app.vault.adapter.remove(normalized);
+      },
+      readCache: async (path) => {
+        const normalized = obsidian.normalizePath(path);
+        if (!isTopicIndexPath(normalized) || !(await this.app.vault.adapter.exists(normalized))) return null;
+        return this.app.vault.adapter.read(normalized);
+      },
+      writeCache: async (path, content) => {
+        const normalized = obsidian.normalizePath(path);
+        if (!isTopicIndexPath(normalized)) throw new Error("Invalid topic cache path");
+        await this.app.vault.adapter.write(normalized, content);
+      },
+      deleteCache: async (path) => {
+        const normalized = obsidian.normalizePath(path);
+        if (isTopicIndexPath(normalized) && await this.app.vault.adapter.exists(normalized)) await this.app.vault.adapter.remove(normalized);
+      },
+      readMemberTags: async (paths) => {
+        const labels: string[] = [];
+        for (const path of paths) {
+          const frontmatter = this.app.metadataCache.getCache(path)?.frontmatter;
+          if (!frontmatter) continue;
+          for (const key of ["tags", "tag", "topic", "topics", "主题"]) {
+            const value: unknown = frontmatter[key];
+            if (typeof value === "string") labels.push(value);
+            else if (Array.isArray(value)) labels.push(...value.filter((item): item is string => typeof item === "string"));
+          }
+        }
+        return [...new Set(labels)];
       },
       trashFile: async (path) => {
         const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));

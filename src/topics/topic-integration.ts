@@ -40,6 +40,7 @@ export interface TopicChangePreview {
   duplicateDetails?: TopicDuplicateDecision[];
   degraded?: number;
   legacyAnchorCleanup?: boolean;
+  legacyPropertyCleanup?: boolean;
   programGeneratedOperations?: number;
   programGeneratedOperationKeys?: string[];
   assessments?: TopicAssessment[];

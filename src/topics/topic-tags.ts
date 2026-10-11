@@ -23,6 +23,15 @@ export interface TopicTagMatch {
   matchedTags: string[];
 }
 
+/** Rebuilds spelling aliases from topic tags and the current tags on member notes. */
+export function rebuildTopicTagAliases(tags: readonly string[], memberTagLabels: readonly string[]): Record<string, string[]> {
+  const labels = [...new Set([...tags, ...memberTagLabels].map((label) => label.trim().replace(/^#/, "")).filter(Boolean))];
+  return Object.fromEntries(tags.map((canonical) => {
+    const aliases = labels.filter((label) => sameTagClass(canonical, label) && areTagKeysSimilar(canonical, label));
+    return [canonical, [...new Set([canonical, ...aliases])].sort((a, b) => a.localeCompare(b))];
+  }));
+}
+
 export function isSystemTopicTag(label: string): boolean {
   const normalized = label.trim().replace(/^#+/, "").toLocaleLowerCase();
   return normalized.startsWith(`${NS_TAG.toLocaleLowerCase()}/`);

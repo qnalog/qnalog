@@ -162,7 +162,8 @@ export class TopicsService {
       const existingEvidenceMembers = existing && !input.rebuild
         ? await this.loadMembers(existing.page.members.filter((path) => cards.some((card) => card.path === path)), cards, input.basis)
         : [];
-      const currentPage = existing ? await this.host.topicStore.read(existing.path) : "";
+      const topicStore = this.storeForCurrentFolder();
+      const currentPage = existing ? await topicStore.readIndexedMarkdown(existing.path) : "";
       const generationInput = { members, existingMembers: existingEvidenceMembers, basis: input.basis, currentPage: input.rebuild ? "" : currentPage, signal: controller.signal,
         onPlanned: (total: number) => input.onProgress?.({ completed: 0, total }),
         onBatchProgress: (completed: number, total: number) => {
@@ -240,14 +241,17 @@ export class TopicsService {
       const currentModel = currentPage ? parseTopicPage(currentPage, existing?.path) : null;
       const latestTopic = existing ? (await this.storeForCurrentFolder().list()).find((item) => item.page.id === topicId) : undefined;
       if (existing && !latestTopic) throw new Error(`Topic not found: ${topicId}`);
-      const latestPage = latestTopic ? await this.host.topicStore.read(latestTopic.path) : "";
+      const latestPage = latestTopic ? await topicStore.readIndexedMarkdown(latestTopic.path) : "";
       const pageWasManuallyEdited = !!existing && (
+        existing.page.cacheStatus !== "valid"
+        ||
         (!!currentModel?.appliedHash && currentModel.appliedHash !== currentHash)
         || currentHash !== hashTopicPage(latestPage)
       );
       const preview: TopicChangePreview = {
         topicId, expectedHash: currentHash, pageWasManuallyEdited,
         ...(existing && /\s\^tpc-[\da-f]{6}\b/i.test(currentPage) ? { legacyAnchorCleanup: true } : {}),
+        ...(existing?.page.legacyMachineProperties ? { legacyPropertyCleanup: true } : {}),
         newMembers: memberRecords,
         items: generatedOperations.map((operation, index) => ({
           id: `${index}-${hashText(JSON.stringify(operation))}`, operation, type: operation.type,
@@ -345,7 +349,7 @@ export class TopicsService {
         return { path, markdown: stored, pageChangedDuringGeneration: false, skipped: [] };
       }
       if (preview.replacement) {
-        const result = await store.replaceWithV2Preview(preview);
+        const result = await store.replaceWithV2Preview(preview, selection);
         this.previews.delete(activityId);
         this.controllers.delete(activityId);
         this.host.completeActivity(activityId);
