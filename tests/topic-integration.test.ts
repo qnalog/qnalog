@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTopicIntegrationMessages, estimateIntegrationCost, generateTopicOperations,
+  generateTopicPageContent, generateTopicPageUpdateOperations,
   TOPIC_BODY_BATCH_CHARS, TOPIC_INTEGRATION_BATCH_SIZE, type TopicIntegrationMember,
   type TopicIntegrationPort,
 } from "../src/topics/topic-integration";
 import type { OverviewCard } from "../src/topics/overview-card";
+import { parseTopicPageBlocks, renderTopicPage } from "../src/topics/topic-page";
 
 function member(id: string, overview = `Evidence from ${id} supports careful planning.`, content = overview): TopicIntegrationMember {
   const card = { sourceId: id, path: `Notes/${id}.md`, title: `Title ${id}`, date: "2025-03-04", tags: ["tag"], overview } as OverviewCard;
@@ -18,6 +20,49 @@ function fakePort(responses: unknown[], signals?: AbortSignal[]): TopicIntegrati
 }
 
 describe("topic integration", () => {
+  it("generates a structured model and limits references to supplied source IDs", async () => {
+    const source = member("valid", "The project will ship in October.");
+    const port = fakePort([JSON.stringify({
+      overview: "The project is preparing for launch. The release is planned for October.", status: "In progress",
+      threads: [{ title: "Release", summary: "The team has set a release window.", points: [{ text: "Release is planned for October.", sources: ["valid", "outside"] }] }],
+      disagreements: [], open: [], unsorted: [],
+    })]);
+    const result = await generateTopicPageContent(port, { basis: "overview", members: [source] });
+    expect(result.model.overview).toContain("preparing for launch");
+    expect(result.model.threads[0].points[0].sources).toEqual(["valid"]);
+    expect(port.calls[0][0].content).toContain("2-5 sentences");
+    expect(port.calls[0][1].content).toContain("valid");
+  });
+
+  it("merges multi-batch body fragments without sending source bodies to the merge request", async () => {
+    const members = Array.from({ length: TOPIC_INTEGRATION_BATCH_SIZE + 1 }, (_, index) => member(String(index), "brief", "PRIVATE BODY " + index));
+    const model = { overview: "The project is progressing.", status: "In progress", threads: [], disagreements: [], open: [], unsorted: [] };
+    const port = fakePort([JSON.stringify(model), JSON.stringify(model), JSON.stringify(model)]);
+    const result = await generateTopicPageContent(port, { basis: "body", members });
+    expect(result).toMatchObject({ completedBatches: 3, totalBatches: 3 });
+    expect(port.calls).toHaveLength(3);
+    expect(port.calls[0][1].content).toContain("PRIVATE BODY 0");
+    expect(port.calls[2][0].content).toContain("structured evidence fragments");
+    expect(port.calls[2][1].content).not.toContain("PRIVATE BODY 0");
+    expect(port.calls[2][1].content).toContain("The project is progressing.");
+  });
+
+  it("sends the current page and accepts revisions only for overview or thread summary blocks", async () => {
+    const source = member("valid", "New evidence changes the release date to October.");
+    const markdown = renderTopicPage({ overview: "The release date is September.", status: "Open", threads: [{ id: "release", title: "Release", summary: "The team planned a September release.", points: [{ id: "p", text: "The test is incomplete.", sources: ["valid"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: source.card.path, title: source.card.title, sourceId: source.card.sourceId, date: source.card.date }]);
+    const blocks = parseTopicPageBlocks(markdown);
+    const overview = blocks.find((block) => block.type === "overview")!;
+    const point = blocks.find((block) => block.type === "point")!;
+    const port = fakePort([response([
+      { type: "revise_block", blockId: overview.id, newText: "The release date is October.", reason: "new evidence", sourceId: "valid" },
+      { type: "revise_block", blockId: point.id, newText: "Changed point", reason: "not allowed", sourceId: "valid" },
+    ])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: markdown });
+    expect(port.calls[0][1].content).toContain("The release date is September.");
+    expect(result.operations).toHaveLength(1);
+    expect(result.operations[0]).toMatchObject({ type: "revise_block", blockId: overview.id, expectedText: overview.text });
+  });
+
   it("requires resolved items to go to status or timeline instead of the open-items section", () => {
     const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
     expect(system).toContain("A question belongs in 未决问题与未完成行动 only while no answer is confirmed");
