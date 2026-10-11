@@ -772,6 +772,7 @@ class QnALogPlugin extends obsidian.Plugin {
       getCandidates: (path, options) => this.topics.getCandidates(path, options),
       estimate: (input) => this.topics.estimate(input),
       preview: (input) => this.topics.preview(input),
+      previewRebuild: (topicId, onProgress) => this.topics.previewRebuild(topicId, onProgress),
       apply: (preview, selection) => this.topics.apply(preview, selection),
       cancel: (id) => this.topics.cancel(id),
       listTopics: () => this.topics.listTopics(),

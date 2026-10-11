@@ -75,7 +75,7 @@ export class TopicsPanel {
     row.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.showTopicMenu(event, topic.page.id, topic.page.title);
+      this.showTopicMenu(event, topic.page.id, topic.page.title, topic.page.layout !== 2);
     });
     const chip = row.createDiv({ cls: "qnalog-outline-recent-chip", attr: { title: this.port.text("Topics") } });
     try { setIcon(chip, "layers"); } catch { /* the icon is decorative */ }
@@ -97,7 +97,7 @@ export class TopicsPanel {
     more.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.showTopicMenu(event, topic.page.id, topic.page.title);
+      this.showTopicMenu(event, topic.page.id, topic.page.title, topic.page.layout !== 2);
     });
     void this.port.countPending(topic.page.id).then((count) => {
       if (count > 0) { badge.setText(this.port.text("{0} pending").replace("{0}", String(count))); badge.addClass("is-visible"); }
@@ -113,8 +113,12 @@ export class TopicsPanel {
     empty.createDiv({ cls: "qnalog-empty-state-desc", text: this.port.text("Right-click a minutes note and choose Create topic.") });
   }
 
-  private showTopicMenu(event: MouseEvent, topicId: string, title: string): void {
+  private showTopicMenu(event: MouseEvent, topicId: string, title: string, legacy: boolean): void {
     const menu = new Menu();
+    if (legacy) menu.addItem((item) => item.setTitle(this.port.text("Rebuild topic page in new layout")).setIcon("layout-dashboard").onClick(() => {
+      void this.port.previewRebuild(topicId).then((preview) => new TopicPreviewModal(this.app, this.port, preview, () => this.refresh()).open())
+        .catch((error: unknown) => new Notice(error instanceof Error ? error.message : "Topic rebuild failed.", 8000));
+    }));
     menu.addItem((item) => item.setTitle(this.port.text("Scan for notes to integrate")).setIcon("scan-search").onClick(() => void this.scan(topicId)));
     menu.addItem((item) => item.setTitle(this.port.text("Undo last update")).setIcon("undo-2").onClick(() => {
       void this.port.undoLastUpdate(topicId).then((result) => {

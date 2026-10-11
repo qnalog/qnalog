@@ -117,4 +117,26 @@ describe("topic preview dialog", () => {
     expect(texts).toContain("2026-10-01");
     expect(texts).not.toContain("QnALog/Very/Long/Path/Note.md");
   });
+
+  it("shows old and new summary text and reports block edits skipped during apply", async () => {
+    const port = {
+      text: (key: string) => key,
+      openSource: vi.fn(), openTopic: vi.fn(async () => undefined), cancel: vi.fn(),
+      apply: vi.fn(async () => ({ path: "Topics/Topic.md", markdown: "", pageChangedDuringGeneration: false, skipped: [{ id: "tpc-a1b2c3", reason: "block-modified" as const }] })),
+      undoLastUpdate: vi.fn(async () => ({ restored: true as const })),
+    };
+    const preview = fixture();
+    preview.items = [{
+      id: "revision", type: "revise_block", operation: { type: "revise_block", blockId: "tpc-a1b2c3", expectedText: "Old summary.", newText: "Updated summary.", reason: "new evidence", sourceId: "note-1" },
+      target: "tpc-a1b2c3", text: "Updated summary.", expectedText: "Old summary.", sourceId: "note-1", cancellable: true,
+    }];
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const items = descendants(modal.contentEl as unknown as FakeTree);
+    expect(allText(modal.contentEl as unknown as FakeTree)).toContain("Old summary.");
+    expect(allText(modal.contentEl as unknown as FakeTree)).toContain("Updated summary.");
+    expect(items.some((item) => item.cls.includes("qnalog-topics-revision-old"))).toBe(true);
+    descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Apply selected")?.listeners.get("click")?.();
+    await vi.waitFor(() => expect(notices.messages).toContain("Some revisions were skipped because their blocks changed: tpc-a1b2c3"));
+  });
 });

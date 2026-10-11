@@ -15,7 +15,8 @@ export interface TopicsUiPort {
   getCandidates(path: string, options?: { windowDays?: number; signal?: AbortSignal }): Promise<TopicCandidates>;
   estimate(input: { memberPaths: string[]; basis: TopicBasis }): Promise<{ chars: number; requests: number }>;
   preview(input: { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }): Promise<TopicChangePreview>;
-  apply(preview: TopicChangePreview, selectedIds: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean }>;
+  previewRebuild(topicId: string, onProgress?: (progress: TopicPreviewProgress) => void): Promise<TopicChangePreview>;
+  apply(preview: TopicChangePreview, selectedIds: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean; skipped?: Array<{ id: string; reason: "block-modified" }> }>;
   cancel(id: string): void;
   listTopics(): Promise<TopicListEntry[]>;
   countPending(topicId: string): Promise<number>;
