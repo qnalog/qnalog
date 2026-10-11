@@ -109,8 +109,10 @@ describe("topic integration", () => {
     expect(result.operations.map((operation) => operation.type)).toEqual(["revise_block", "add_disagreement", "add_open", "resolve_open"]);
     expect(result.operations[0]).toMatchObject({ blockId: overview.id, expectedText: overview.text });
     expect(result.operations[3]).toMatchObject({ blockId: open.id, expectedText: open.text });
-    expect(port.calls[0][0].content).toContain("revise the relevant summary and add_disagreement");
-    expect(port.calls[0][0].content).toContain("Put new incomplete tasks in add_open");
+    expect(port.calls[0][0].content).toContain("output both revise_block for the affected summary and add_disagreement");
+    expect(port.calls[0][0].content).toContain("When evidence adds an unfinished task, output add_open");
+    expect(port.calls[0][0].content).toContain("When evidence explicitly says an existing open item is finished, output resolve_open for that exact block");
+    expect(port.calls[0][0].content).toContain("positions:[{text,sourceId,date?},{text,sourceId,date?}]");
     expect(port.calls[0][1].content).toContain(source.content);
   });
 
