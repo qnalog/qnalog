@@ -6,7 +6,7 @@ import {
   type TopicIntegrationPort,
 } from "../src/topics/topic-integration";
 import type { OverviewCard } from "../src/topics/overview-card";
-import { parseTopicPageBlocks, renderTopicPage } from "../src/topics/topic-page";
+import { applyTopicOps, parseTopicPageBlocks, renderTopicPage } from "../src/topics/topic-page";
 
 function member(id: string, overview = `Evidence from ${id} supports careful planning.`, content = overview): TopicIntegrationMember {
   const card = { sourceId: id, path: `Notes/${id}.md`, title: `Title ${id}`, date: "2025-03-04", tags: ["tag"], overview } as OverviewCard;
@@ -111,9 +111,9 @@ describe("topic integration", () => {
     expect(result.operations.map((operation) => operation.type)).toEqual(["revise_block", "add_disagreement", "add_open", "resolve_open"]);
     expect(result.operations[0]).toMatchObject({ blockId: overview.id, expectedText: overview.text });
     expect(result.operations[3]).toMatchObject({ blockId: open.id, expectedText: open.text });
-    expect(port.calls[0][0].content).toContain("output add_disagreement with one position for the current-page claim");
-    expect(port.calls[0][0].content).toContain("When evidence adds an unfinished task, output add_open");
-    expect(port.calls[0][0].content).toContain("For an explicitly resolved item, use resolve_open when the matching block is known");
+    expect(port.calls[0][0].content).toContain("For a contradiction, output add_disagreement first");
+    expect(port.calls[0][0].content).toContain("For a new unfinished task, output add_open");
+    expect(port.calls[0][0].content).toContain("For an explicitly resolved item, use resolve_open when known");
     expect(port.calls[0][0].content).toContain("positions:[{text,sourceId,date?},{text,sourceId,date?}]");
     expect(port.calls[0][1].content).toContain(source.content);
   });
@@ -174,7 +174,44 @@ describe("topic integration", () => {
     expect(prompt.match(/add_open/g)?.length).toBeGreaterThan(0);
     expect(prompt.match(/add_point/g)?.length).toBeGreaterThan(0);
     expect(prompt).toContain("Existing block IDs are optional");
-    expect(prompt).toContain("Distinguish evidence that is identical or redundant");
+    expect(prompt).toContain("Distinguish same/redundant from supplement and conflict");
+    expect(prompt).toContain("assessments:[{memberId,claim,relation,relatedBlockId?}]");
+    expect(prompt).toContain("A conflict assessment must have a corresponding add_disagreement");
+    expect(prompt).toContain("Same setting, opposite decision");
+  });
+  it("retries a conflict assessment missing add_disagreement, then synthesizes the disagreement", async () => {
+    const source = member("new-source", "属性名最终仍按界面语言切换。", "属性名最终仍按界面语言切换。");
+    const page = renderTopicPage({ overview: "属性名应保持稳定。", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
+    const overview = parseTopicPageBlocks(page).find((block) => block.type === "overview")!;
+    const payload = { assessments: [{ memberId: "new-source", claim: "属性名最终仍按界面语言切换。", relation: "conflict", relatedBlockId: overview.id }], operations: [] };
+    const port = fakePort([JSON.stringify(payload), JSON.stringify(payload)]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: page });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[1][0].content).toContain("marked these claims as conflict but omitted add_disagreement");
+    expect(result.assessments).toEqual(payload.assessments);
+    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [{ text: overview.text }, { text: "属性名最终仍按界面语言切换。", sourceId: "new-source", date: "2025-03-04" }] }]);
+    expect(result.programGeneratedOperationKeys).toHaveLength(1);
+  });
+  it("does not synthesize a disagreement when assessments contain no conflict", async () => {
+    const source = member("new-source", "项目补充一条实现记录。");
+    const port = fakePort([JSON.stringify({ assessments: [{ memberId: "new-source", claim: "项目补充一条实现记录。", relation: "supplement" }], operations: [{ type: "add_point", thread: "实现记录", text: "项目补充一条实现记录。", sources: ["new-source"] }] })]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    expect(result.operations.map(({ type }) => type)).toEqual(["add_point"]);
+    expect(result.programGeneratedOperationKeys).toHaveLength(0);
+  });
+  it.each(["zh", "en"] as const)("renders update add_open in %s with localized type and punctuation before citation", (language) => {
+    const memberSource = member("render-source", "Verify the reading view");
+    const page = renderTopicPage({ overview: "The topic is current.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
+    const english = language === "en";
+    const inputPage = `---\nqnalog_topic_layout: 2\n---\n${english ? page.replace("## 进展脉络", "## Progress thread").replace("## 时间线", "## Timeline") : page}`;
+    const result = applyTopicOps(inputPage, [{ type: "add_open", kind: "action", text: "Verify the reading view", sources: ["render-source"], sourceId: "render-source" }]);
+    const line = result.markdown.split("\n").find((item) => item.startsWith("- [ ]")) || "";
+    expect(line).toContain(english ? "Action: Verify the reading view.[^" : "行动：Verify the reading view.[^");
+    expect(line).not.toMatch(/- \[ \] (?:action|task|bug|question)[:：]/);
+    const modelLine = renderTopicPage({ overview: "The topic is current.", status: "active", threads: [], disagreements: [], open: [{ id: "render-source", kind: "action", text: "Verify the reading view", sources: ["render-source"], done: false }], unsorted: [] }, [{ path: memberSource.card.path, title: memberSource.card.title, sourceId: "render-source", date: memberSource.card.date }], english ? {
+      overview: "Overview", status: "Status", progress: "Progress thread", disagreements: "Disagreements", open: "Open questions and actions", timeline: "Timeline", sources: "Source notes", inProgress: "In progress", updated: "Updated", notes: "notes", conflict: "Conflict", statusActive: "Active", statusDone: "Done", statusPaused: "Paused", statusUnknown: "Unknown", openQuestion: "Question", openAction: "Action", openBug: "Bug",
+    } : {}).split("\n").find((item) => item.startsWith("- [ ]")) || "";
+    expect(line.replace(/ \^tpc-[\da-f]{6}$/, "")).toBe(modelLine.replace(/ \^tpc-[\da-f]{6}$/, ""));
   });
   it("uses fast thinking and reports completed batch progress", async () => {
     const progress: Array<[number, number]> = [];
