@@ -7,7 +7,7 @@ import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
 import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
-import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, renderTopicPage, serializeTopicPage, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
+import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
@@ -247,10 +247,11 @@ export class TopicsService {
       );
       const preview: TopicChangePreview = {
         topicId, expectedHash: currentHash, pageWasManuallyEdited,
+        ...(existing && /\s\^tpc-[\da-f]{6}\b/i.test(currentPage) ? { legacyAnchorCleanup: true } : {}),
         newMembers: memberRecords,
         items: generatedOperations.map((operation, index) => ({
           id: `${index}-${hashText(JSON.stringify(operation))}`, operation, type: operation.type,
-          target: "targetId" in operation ? operation.targetId : "blockId" in operation ? operation.blockId : "thread" in operation ? operation.thread : "title" in operation ? operation.title : "section" in operation ? operation.section : operation.type,
+          target: "targetId" in operation ? operation.targetId : "blockId" in operation ? (topicBlockHeadingLabel(currentPage, operation.blockId) || t("Corresponding section")) : "thread" in operation ? operation.thread : "title" in operation ? operation.title : "section" in operation ? operation.section : operation.type,
           text: "text" in operation ? operation.text : "newText" in operation ? operation.newText : "summary" in operation ? operation.summary : "note" in operation ? operation.note : "", sourceId: operation.sourceId, cancellable: true,
           ...( "expectedText" in operation && operation.expectedText ? { expectedText: operation.expectedText } : {}),
           ...(programGeneratedOperationKeys?.includes(JSON.stringify(operation)) ? { programGenerated: true } : {}),

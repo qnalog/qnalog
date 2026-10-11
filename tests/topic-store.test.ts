@@ -116,6 +116,26 @@ describe("topic store", () => {
     expectNoLegacyV2Headings(port.files.get(path) || "");
   });
 
+  it("snapshots, clears, indexes, and undoes legacy v2 inline anchors", async () => {
+    const port = new MemoryPort();
+    const store = new TopicStore({ folder: "Topics", port });
+    const topic = page("legacy-anchor", "Legacy anchor");
+    topic.layout = 2;
+    topic.body = "## 进展脉络\n\n### 线索\n一段摘要。 ^tpc-a1b2c3\n- 一条要点。 ^tpc-b2c3d4\n## 时间线\n";
+    const original = serializeTopicPage(topic);
+    const path = "Topics/Legacy anchor.md";
+    port.files.set(path, original);
+    const result = await store.apply(path, {
+      topicId: topic.id, expectedHash: hashTopicPage(original), pageWasManuallyEdited: false,
+      completedBatches: 1, totalBatches: 1, items: [], legacyAnchorCleanup: true,
+    }, ["__clean-legacy-markers__"]);
+    expect(result.markdown).not.toMatch(/\^tpc-/);
+    expect(result.markdown).toContain("qnalog_topic_blocks:");
+    expect(port.creates.some((item) => item.includes("topic-history"))).toBe(true);
+    expect(await store.undoLastUpdate(topic.id)).toEqual({ restored: true });
+    expect(port.files.get(path)).toBe(original);
+  });
+
   it("merges unique members and tags, records provenance, trashes source, and never writes source notes", async () => {
     const port = new MemoryPort();
     const store = new TopicStore({ folder: "Topics", port });

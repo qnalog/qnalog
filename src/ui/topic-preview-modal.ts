@@ -49,7 +49,10 @@ export class TopicPreviewModal extends Modal {
         scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("No matching open item was found; the claim was added as a point.") });
       }
     }
-    if ((this.preview.degraded || 0) > 0) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("{0} changes were adjusted to fit the current page; review the affected entries.").replace("{0}", String(this.preview.degraded)) });
+    if ((this.preview.degraded || 0) > 0) {
+      scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("{0} changes were adjusted to fit the current page; review the affected entries.").replace("{0}", String(this.preview.degraded)) });
+      scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("The original block could not be located. This change will be appended to the end of its section.") });
+    }
     if (this.preview.programGeneratedOperations) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("{0} conflict changes were completed from conflict assessments by the program.").replace("{0}", String(this.preview.programGeneratedOperations)) });
     if (this.preview.assessments?.length || this.preview.duplicateDetails?.length) {
       const details = scroll.createEl("details", { cls: "qnalog-topics-preview-assessments" });
@@ -63,7 +66,7 @@ export class TopicPreviewModal extends Modal {
         details.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text(key).replace("{0}", duplicate.discardedText).replace("{1}", duplicate.keptText) });
       }
     }
-    const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0;
+    const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0 && !this.preview.legacyAnchorCleanup;
     if (emptyUpdate) {
       const diagnostics = this.preview.updateDiagnostics;
       const checked = diagnostics?.rawOperations || 0;
@@ -122,6 +125,14 @@ export class TopicPreviewModal extends Modal {
     }
 
     const selected = new Set(this.preview.items.map((item) => item.id));
+    if (this.preview.legacyAnchorCleanup) {
+      const row = scroll.createEl("label", { cls: "qnalog-topics-preview-item" });
+      const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Clean old block markers") } });
+      checkbox.checked = true;
+      selected.add("__clean-legacy-markers__");
+      row.createSpan({ text: this.port.text("Clean old block markers") });
+      checkbox.addEventListener("change", () => checkbox.checked ? selected.add("__clean-legacy-markers__") : selected.delete("__clean-legacy-markers__"));
+    }
     const sections = new Map<string, HTMLDivElement>();
     for (const item of this.preview.items) {
       const section = item.operation.type === "add_timeline" ? "Timeline"
@@ -182,6 +193,7 @@ export class TopicPreviewModal extends Modal {
         }
         main.createDiv({ cls: "qnalog-topics-preview-text", text: changeText });
       }
+      if ("blockId" in item.operation || "relatedBlockId" in item.operation) row.createDiv({ cls: "qnalog-topics-preview-meta", text: item.target });
       const metadata = row.createDiv({ cls: "qnalog-topics-preview-meta" });
       const source = this.preview.sourceLinks?.[item.sourceId] || item.sourceId;
       const title = /\|([^|\]]+)\]\]$/.exec(source)?.[1] || source.replace(/^\[\[|\]\]$/g, "").split("/").pop() || source;

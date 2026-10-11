@@ -1,5 +1,5 @@
 import { NS_FM, NS_ROOT } from "../shared/namespace";
-import { appendTopicMemberLinks, appendTopicMemberMetadata, hashTopicPage, parseTopicPage, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, type TopicPage } from "./topic-page";
+import { appendTopicMemberLinks, appendTopicMemberMetadata, hashTopicPage, parseTopicPage, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, updateTopicBlockIndex, type TopicPage } from "./topic-page";
 import type { TopicChangePreview } from "./topic-integration";
 
 export const TOPIC_HISTORY_LIMIT = 5;
@@ -78,7 +78,7 @@ export class TopicStore {
     let pageChangedDuringGeneration = false;
     let appliedCount = 0;
     let skipped: TopicApplyResult["skipped"] = [];
-    const hasChanges = operations.length > 0 || !!preview.memberLinks || !!preview.tags || !!preview.newMembers?.length;
+    const hasChanges = operations.length > 0 || !!preview.memberLinks || !!preview.tags || !!preview.newMembers?.length || (preview.legacyAnchorCleanup === true && selected.has("__clean-legacy-markers__"));
     if (!hasChanges) {
       appliedMarkdown = await this.port.read(path);
       pageChangedDuringGeneration = hashTopicPage(appliedMarkdown) !== preview.expectedHash;
@@ -104,6 +104,7 @@ export class TopicStore {
         const tags = [...new Set([...currentPage.tags, ...(preview.tags || [])])];
         let next = currentPage.layout === 2 ? result.markdown : appendTopicMemberLinks(result.markdown, memberLinks);
         next = appendTopicMemberMetadata(next, preview.newMembers || []);
+        if (currentPage.layout === 2) next = updateTopicBlockIndex(next);
         const updates: Record<string, string | string[]> = {
           [NS_FM.topicUpdated]: new Date(this.port.now()).toISOString(),
           [NS_FM.topicUndoSnapshot]: snapshotPath,
@@ -223,6 +224,7 @@ export class TopicStore {
           [NS_FM.topicUpdated]: new Date(this.port.now()).toISOString(),
           [NS_FM.topicUndoSnapshot]: snapshotPath,
         });
+        if (current.layout === 2) next = updateTopicBlockIndex(next);
         next = updateTopicFrontmatter(next, { [NS_FM.topicHash]: hashTopicPage(next) });
         return next;
       });
