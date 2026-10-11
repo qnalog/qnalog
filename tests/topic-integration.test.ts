@@ -116,6 +116,19 @@ describe("topic integration", () => {
     expect(port.calls[0][1].content).toContain(source.content);
   });
 
+  it("rechecks an empty model response once and keeps valid operations from the retry", async () => {
+    const source = member("retry-source", "Add a mobile reload check.");
+    const currentPage = renderTopicPage({ overview: "The topic covers the plugin.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
+    const port = fakePort([response([]), response([
+      { type: "add_open", kind: "action", text: "Verify mobile topic-page reload.", sources: ["retry-source"] },
+    ])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[1][0].content).toContain("Your previous response contained no applicable operation");
+    expect(result.operations).toMatchObject([{ type: "add_open", text: "Verify mobile topic-page reload." }]);
+    expect(result).toMatchObject({ completedBatches: 1, totalBatches: 1 });
+  });
+
   it("requires resolved items to go to status or timeline instead of the open-items section", () => {
     const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
     expect(system).toContain("A question belongs in 未决问题与未完成行动 only while no answer is confirmed");

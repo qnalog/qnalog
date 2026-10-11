@@ -387,8 +387,10 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
     input.signal?.throwIfAborted();
     inputChars += batch.reduce((sum, item) => sum + (input.basis === "body" ? item.content || "" : item.card.overview).length, 0);
     try {
-      const response = await port.request(structuredUpdatePrompt(input, batch), input.signal, "fast");
-      for (const value of parseOperations(response)) {
+      const messages = structuredUpdatePrompt(input, batch);
+      const accepted: TopicOperation[] = [];
+      const collectOperations = (response: unknown): void => {
+        for (const value of parseOperations(response)) {
         if (value && typeof value === "object") {
           const row = value as Record<string, unknown>;
           if (row.type === "add_open" && (typeof row.kind !== "string" || !isTopicOpenKind(row.kind.trim().toLowerCase()))) {
@@ -396,8 +398,19 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
           }
         }
         const operation = validateStructuredOperation(value, batch, input.currentPage || "");
-        if (operation) operations.push(operation);
+          if (operation) accepted.push(operation);
+        }
+      };
+      collectOperations(await port.request(messages, input.signal, "fast"));
+      if (!accepted.length) {
+        input.signal?.throwIfAborted();
+        const retryMessages = [
+          { ...messages[0], content: messages[0].content + " Your previous response contained no applicable operation. Re-check every supplied member against the current page. If any evidence changes an overview or thread summary, contradicts a claim, adds an unfinished task, or resolves an open item, return each applicable operation with valid block and source IDs. Use an empty array only if none of those conditions apply." },
+          messages[1],
+        ];
+        collectOperations(await port.request(retryMessages, input.signal, "fast"));
       }
+      operations.push(...accepted);
       completedBatches++;
       input.onBatchProgress?.(completedBatches, batches.length);
     } catch (error) {
