@@ -326,6 +326,9 @@ class QnALogPlugin extends obsidian.Plugin {
       now: () => Date.now(),
     };
     const topicStorePort = {
+      logDiagnostic: (code: string, data: Record<string, unknown>) => {
+        void this.diagnostics.logDiagnostic("warn", code, t("Topic page had duplicate block IDs; the first occurrence was kept"), data);
+      },
       read: async (path) => {
         const normalized = obsidian.normalizePath(path);
         if (isTopicHistoryPath(normalized)) return this.app.vault.adapter.read(normalized);

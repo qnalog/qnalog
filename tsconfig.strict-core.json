@@ -146,6 +146,7 @@
     "src/topics/topic-candidates.ts",
     "src/topics/topic-page.ts",
     "src/topics/topic-integration.ts",
+    "src/topics/topic-block-markers.ts",
     "src/topics/topic-store.ts",
     "src/topics/topic-suggestions.ts",
     "src/topics/topics-service.ts",

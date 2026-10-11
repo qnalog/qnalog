@@ -12,6 +12,8 @@ export interface TopicStorePort {
   deleteHistory(path: string): Promise<void>;
   trashFile(path: string): Promise<void>;
   now(): number;
+  /** Optional diagnostic sink; receives identifiers only, never page text. */
+  logDiagnostic?(code: string, data: Record<string, unknown>): void;
 }
 export interface TopicStoreOptions { folder: string; port: TopicStorePort }
 export interface TopicApplyResult { markdown: string; appliedCount: number; pageChangedDuringGeneration: boolean; resultingHash: string; skipped: Array<{ id: string; reason: "block-modified" }> }
@@ -95,6 +97,7 @@ export class TopicStore {
           return current;
         }
         const result = applyTopicOps(current, operations);
+        if (result.duplicateBlockIds?.length) this.port.logDiagnostic?.("topic.duplicate_block_id", { ids: result.duplicateBlockIds });
         const currentPage = parseTopicPage(result.markdown, path);
         if (!currentPage) throw new Error(`Topic page is invalid: ${path}`);
         const memberLinks = [...new Set([...currentPage.memberLinks, ...(preview.memberLinks || [])])];

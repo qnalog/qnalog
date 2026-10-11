@@ -1,6 +1,7 @@
 import type { OverviewCard } from "./overview-card";
 import { extractBriefingGroundingAnchors } from "../briefing/pipeline";
 import { detectGeneralSourceLanguage } from "../shared/util-text";
+import { stripBlockMarkers } from "./topic-block-markers";
 import { isTopicOpenKind, isTopicStatus, parseTopicPageBlocks, type TopicBasis, type TopicMember, type TopicOperation, type TopicPageV2Model, type TopicSection } from "./topic-page";
 
 export const TOPIC_INTEGRATION_BATCH_SIZE = 6;
@@ -295,7 +296,7 @@ function parseStructuredModel(response: unknown, allowed: ReadonlySet<string>): 
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Topic response must be a JSON object");
   const row = value as Record<string, unknown>;
-  const textOf = (entry: unknown): string => typeof entry === "string" ? entry.trim() : "";
+  const textOf = (entry: unknown): string => typeof entry === "string" ? stripBlockMarkers(entry) : "";
   const validationWarnings: string[] = [];
   const statusValue = textOf(row.status).toLowerCase();
   const status = isTopicStatus(statusValue) ? statusValue : "unknown";
@@ -435,7 +436,7 @@ function validateStructuredOperation(value: unknown, members: readonly TopicInte
   const fallbackSourceId = members[0]?.card.sourceId || "";
   const sourceId = typeof row.sourceId === "string" && sourceIds.has(row.sourceId) ? row.sourceId : fallbackSourceId;
   const sourceWasReplaced = typeof row.sourceId !== "string" || !sourceIds.has(row.sourceId);
-  const text = typeof row.text === "string" ? row.text.trim() : "";
+  const text = typeof row.text === "string" ? stripBlockMarkers(row.text) : "";
   const validSources = (value: unknown): string[] => {
     const valid = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && sourceIds.has(item)) : [];
     return valid.length ? [...new Set(valid)] : fallbackSourceId ? [fallbackSourceId] : [];
@@ -450,14 +451,15 @@ function validateStructuredOperation(value: unknown, members: readonly TopicInte
       return { operation: { type: "add_point", thread, text, sources, sourceId: sources[0] }, ...(supplied.length ? {} : { reason: "source-not-member", degraded: true }) };
     }
     case "add_thread": {
-      const title = typeof row.title === "string" ? row.title.trim() : "";
-      const summary = typeof row.summary === "string" ? row.summary.trim() : "";
+      const title = typeof row.title === "string" ? stripBlockMarkers(row.title) : "";
+      const summary = typeof row.summary === "string" ? stripBlockMarkers(row.summary) : "";
       if (!title || !summary) return { operation: null, reason: "missing-fields" };
       const points = (Array.isArray(row.points) ? row.points : []).slice(0, 6).flatMap((value) => {
         if (!value || typeof value !== "object") return [];
         const point = value as Record<string, unknown>;
         const sources = validSources(point.sources);
-        return typeof point.text === "string" && point.text.trim() && sources.length ? [{ text: point.text.trim(), sources }] : [];
+        const pointText = typeof point.text === "string" ? stripBlockMarkers(point.text) : "";
+        return pointText && sources.length ? [{ text: pointText, sources }] : [];
       });
       const firstSource = points[0]?.sources[0];
       return firstSource ? { operation: { type: "add_thread", title, summary, points, sourceId: firstSource } } : { operation: null, reason: "source-not-member" };
@@ -465,9 +467,10 @@ function validateStructuredOperation(value: unknown, members: readonly TopicInte
     case "revise_block": {
       const blockId = typeof row.blockId === "string" ? row.blockId.replace(/^\^/, "") : "";
       const block = blocks.find((item) => item.id === blockId && (item.type === "overview" || item.type === "thread-summary"));
-      if (typeof row.newText !== "string" || !row.newText.trim()) return { operation: null, reason: "empty-text" };
-      if (!block) return { operation: { type: "add_point", thread: typeof row.thread === "string" && row.thread.trim() ? row.thread.trim() : "补充进展", text: row.newText.trim(), sources: [sourceId], sourceId }, reason: "block-id-not-found", degraded: true };
-      return { operation: { type: "revise_block", blockId, expectedText: block.text, newText: row.newText.trim(), reason: typeof row.reason === "string" ? row.reason.trim() : "", sourceId }, ...(sourceWasReplaced ? { reason: "source-not-member", degraded: true } : {}) };
+      const newText = typeof row.newText === "string" ? stripBlockMarkers(row.newText) : "";
+      if (!newText) return { operation: null, reason: "empty-text" };
+      if (!block) return { operation: { type: "add_point", thread: typeof row.thread === "string" && row.thread.trim() ? row.thread.trim() : "补充进展", text: newText, sources: [sourceId], sourceId }, reason: "block-id-not-found", degraded: true };
+      return { operation: { type: "revise_block", blockId, expectedText: block.text, newText, reason: typeof row.reason === "string" ? row.reason.trim() : "", sourceId }, ...(sourceWasReplaced ? { reason: "source-not-member", degraded: true } : {}) };
     }
     case "add_disagreement": {
       const subject = typeof row.subject === "string" ? row.subject.trim() : "";
@@ -509,8 +512,8 @@ function validateStructuredOperation(value: unknown, members: readonly TopicInte
     case "resolve_open": {
       const blockId = typeof row.blockId === "string" ? row.blockId.replace(/^\^/, "") : "";
       const block = blocks.find((item) => item.id === blockId && item.type === "open");
-      if (typeof row.note !== "string" || !row.note.trim()) return { operation: null, reason: "empty-text" };
-      const resolutionClaim = row.note.trim();
+      if (typeof row.note !== "string" || !stripBlockMarkers(row.note)) return { operation: null, reason: "empty-text" };
+      const resolutionClaim = stripBlockMarkers(row.note);
       if (!block) return { operation: { type: "add_point", thread: typeof row.thread === "string" && row.thread.trim() ? row.thread.trim() : "已解决事项", text: resolutionClaim, sources: [sourceId], sourceId }, reason: "block-id-not-found", degraded: true };
       const sourceMember = members.find((member) => member.card.sourceId === sourceId);
       const claimAssessment = assessments.find((assessment) => assessment.memberId === sourceId && hasTopicTextGrounding(resolutionClaim, assessment.claim));

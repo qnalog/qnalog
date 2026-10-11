@@ -1,4 +1,5 @@
 import { NS_FM, NS_FM_TOPIC_LAYOUT, NS_TYPE_TOPIC } from "../shared/namespace";
+import { dedupeBlockIds, stripBlockMarkers, withBlockId } from "./topic-block-markers";
 
 export type TopicBasis = "overview" | "body";
 export type TopicStatus = "active" | "done" | "paused" | "unknown";
@@ -48,7 +49,7 @@ export type TopicOperation =
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
-export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[]; skipped: Array<{ id: string; reason: "block-modified" }> }
+export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[]; skipped: Array<{ id: string; reason: "block-modified" }>; duplicateBlockIds?: string[] }
 
 export const TOPIC_SECTIONS: readonly TopicSection[] = ["概要", "当前状态", "分歧与待核实", "未决问题与未完成行动", "时间线", "来源笔记", "待整理"];
 const ENGLISH_SECTION: Record<TopicSection, string> = {
@@ -219,7 +220,8 @@ function ensureSentencePunctuation(text: string): string {
 }
 export function renderTopicOpenMarkdown(item: Pick<TopicOpenItem, "kind" | "text" | "sources" | "done">, labels: Pick<TopicPageLabels, "openQuestion" | "openAction" | "openBug"> = DEFAULT_V2_LABELS, blockId?: string): string {
   const kind = topicOpenKindLabel(item.kind, labels);
-  return `- [${item.done ? "x" : " "}] ${kind}${topicLabelSeparator(kind)}${ensureSentencePunctuation(item.text)}${inlineFootnotes(item.sources)}${blockId ? ` ^${blockId}` : ""}`;
+  const line = `- [${item.done ? "x" : " "}] ${kind}${topicLabelSeparator(kind)}${ensureSentencePunctuation(item.text)}${inlineFootnotes(item.sources)}`;
+  return blockId ? withBlockId(line, blockId) : line;
 }
 export function summarizeForTimeline(overview: string, options: { maxChars?: number; title?: string } = {}): string {
   const maxChars = Math.max(1, Math.floor(options.maxChars ?? 60));
@@ -268,10 +270,10 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
   const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), `> **${label.status}**${topicLabelSeparator(label.status)}${statusLabel} · **${label.updated}** ${members.map((member) => member.date || "").filter(Boolean).sort().at(-1) || "—"} · ${members.length}${label.notes}`, `> ^${overviewId}`, "", `## ${label.progress}`];
   for (const thread of model.threads.slice(0, 6)) {
     const threadId = uniqueBlockId("thread", thread.id || thread.title, used);
-    sections.push("", `### ${thread.title}`, `${thread.summary.trim()} ^${threadId}`);
+    sections.push("", `### ${thread.title}`, withBlockId(thread.summary.trim(), threadId));
     for (const point of thread.points.slice(0, 6)) {
       const id = uniqueBlockId("point", point.id || `${thread.id}:${point.text}`, used);
-      sections.push(`- ${ensureSentencePunctuation(point.text)}${inlineFootnotes(point.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
+      sections.push(withBlockId(`- ${ensureSentencePunctuation(point.text)}${inlineFootnotes(point.sources.filter((source) => allSourceIds.has(source)))}`, id));
     }
   }
   if (model.disagreements.length) {
@@ -455,7 +457,7 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
               lines.splice(header + 1, end - header - 1, ...operation.newText.split("\n").map((line) => `> ${line}`));
             } else {
               const prefix = lines[at].match(/^\s*[-*]?\s*/)?.[0] || "";
-              lines[at] = `${prefix}${operation.newText} ^${id}`;
+              lines[at] = `${prefix}${withBlockId(stripBlockMarkers(operation.newText), id)}`;
             }
           } else {
             lines[at] = lines[at].replace(/^(\s*[-*]\s*\[)\s(\])/, "$1x$2");
@@ -574,5 +576,6 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
     }
     current = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${lines.join("\n")}`;
   }
-  return { markdown: ensureSections(current), applied, skipped };
+  const checked = dedupeBlockIds(ensureSections(current));
+  return { markdown: checked.markdown, applied, skipped, ...(checked.duplicates.length ? { duplicateBlockIds: checked.duplicates } : {}) };
 }
