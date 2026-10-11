@@ -483,7 +483,8 @@ function validateStructuredOperation(value: unknown, members: readonly TopicInte
         const grounded = !!source && hasTopicTextGrounding(evidence, rawText);
         return [{ text: rawText, sourceId: id, ...(id && source?.card.date ? { date: source.card.date } : {}), ...(id && source ? { sourceTitle: source.card.title } : {}), ...(!id ? { provenance: "source-pending" as const } : !grounded ? { provenance: "unverified" as const } : {}) }];
       }));
-      return subject && positions.length ? { operation: { type: "add_disagreement", subject, positions, sourceId: positions.find((position) => position.sourceId)?.sourceId || "" }, ...(repeatedMemberPosition ? { reason: "same-member-opposition", degraded: true } : replacedPositionSource ? { reason: "source-not-member", degraded: true } : positions.some((position) => position.provenance === "unverified") ? { reason: "unsupported-position", degraded: true } : {}) } : { operation: null, reason: "missing-fields-or-source" };
+      const mergedSubject = subject ? disagreementCallout(currentPage, subject) || subject : "";
+      return mergedSubject && positions.length ? { operation: { type: "add_disagreement", subject: mergedSubject, ...(relatedBlock ? { relatedBlockId: relatedBlock.id } : {}), positions, sourceId: positions.find((position) => position.sourceId)?.sourceId || "" }, ...(repeatedMemberPosition ? { reason: "same-member-opposition", degraded: true } : replacedPositionSource ? { reason: "source-not-member", degraded: true } : positions.some((position) => position.provenance === "unverified") ? { reason: "unsupported-position", degraded: true } : {}) } : { operation: null, reason: "missing-fields-or-source" };
     }
     case "add_open": {
       const sources = validSources(row.sources);
@@ -517,6 +518,51 @@ function operationTexts(operation: TopicOperation): string[] {
   return "text" in operation ? [operation.text] : [];
 }
 
+function assessedDisagreement(assessment: TopicAssessment, member: TopicIntegrationMember, existingMembers: readonly TopicIntegrationMember[], currentPage: string, subject: string): TopicOperation | undefined {
+  const related = assessment.relatedBlockId ? parseTopicPageBlocks(currentPage).find((block) => block.id === assessment.relatedBlockId && (block.type === "point" || block.type === "overview" || block.type === "thread-summary")) : undefined;
+  const evidence = member.content || member.card.overview;
+  const claim = originalMemberClaim(evidence, assessment.claim);
+  const supported = hasTopicTextGrounding(evidence, claim);
+  const oldMember = related ? sourceForPageBlock(currentPage, related, existingMembers) : undefined;
+  const oldClaim = related ? cleanTopicBlockClaim(related.text) : "";
+  const existingSubject = disagreementCallout(currentPage, subject);
+  const positions: Extract<TopicOperation, { type: "add_disagreement" }>['positions'] = [];
+  if (oldClaim) positions.push({ text: oldClaim, sourceId: oldMember?.card.sourceId || "", ...(oldMember?.card.date ? { date: oldMember.card.date } : {}), ...(oldMember ? { sourceTitle: oldMember.card.title } : {}), ...(!oldMember ? { provenance: "source-pending" } : !hasTopicTextGrounding(oldMember.content || oldMember.card.overview, oldClaim) ? { provenance: "unverified" } : {}) });
+  positions.push({ text: claim, sourceId: member.card.sourceId, ...(member.card.date ? { date: member.card.date } : {}), sourceTitle: member.card.title, ...(!supported ? { provenance: "unverified" } : {}) });
+  positions.sort((left, right) => (left.date || "9999-99-99").localeCompare(right.date || "9999-99-99"));
+  return { type: "add_disagreement", subject: existingSubject || subject, ...(related ? { relatedBlockId: related.id } : {}), positions, sourceId: member.card.sourceId };
+}
+
+function disagreementMatchesAssessment(operation: TopicOperation, assessment: TopicAssessment): boolean {
+  if (operation.type !== "add_disagreement") return false;
+  return (!!assessment.relatedBlockId && operation.relatedBlockId === assessment.relatedBlockId)
+    || operation.positions.some((position) => topicTextSimilarity(position.text, assessment.claim) >= TOPIC_DISAGREEMENT_SIMILARITY_THRESHOLD);
+}
+
+function mergeDisagreements(values: readonly TopicOperation[]): { operations: TopicOperation[]; duplicates: number } {
+  const operations: TopicOperation[] = [];
+  let duplicates = 0;
+  for (const value of values) {
+    if (value.type !== "add_disagreement") { operations.push(value); continue; }
+    const index = operations.findIndex((item) => item.type === "add_disagreement"
+      && ((!!value.relatedBlockId && item.relatedBlockId === value.relatedBlockId)
+        || topicTextSimilarity(item.subject, value.subject) >= TOPIC_DISAGREEMENT_SIMILARITY_THRESHOLD));
+    if (index < 0) { operations.push(value); continue; }
+    const existing = operations[index];
+    if (existing.type !== "add_disagreement") continue;
+    const positions = [...existing.positions];
+    for (const position of value.positions) {
+      const duplicate = positions.some((candidate) => candidate.sourceId === position.sourceId
+        && topicTextSimilarity(candidate.text, position.text) >= TOPIC_DISAGREEMENT_SIMILARITY_THRESHOLD);
+      if (duplicate) { duplicates++; continue; }
+      positions.push(position);
+    }
+    positions.sort((left, right) => (left.date || "9999-99-99").localeCompare(right.date || "9999-99-99"));
+    operations[index] = { ...existing, positions, ...(existing.relatedBlockId || !value.relatedBlockId ? {} : { relatedBlockId: value.relatedBlockId }) };
+  }
+  return { operations, duplicates };
+}
+
 export async function generateTopicPageUpdateOperations(port: TopicIntegrationPort, input: TopicIntegrationInput): Promise<TopicIntegrationResult> {
   const batches = memberBatches(input.members, input.basis);
   input.onPlanned?.(batches.length);
@@ -543,7 +589,12 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
         updateDiagnostics.requests++;
         updateDiagnostics.rawResponseChars.push(raw.length);
         let values: unknown[];
-        try { values = parseOperations(raw); for (const assessment of parseAssessments(raw, batch)) if (!batchAssessments.some((item) => item.memberId === assessment.memberId && item.claim === assessment.claim)) batchAssessments.push(assessment); updateDiagnostics.jsonParsable.push(true); updateDiagnostics.rawOperations += values.length; }
+        try {
+          values = parseOperations(raw);
+          for (const assessment of parseAssessments(raw, batch)) if (!batchAssessments.some((item) => item.memberId === assessment.memberId && item.claim === assessment.claim)) batchAssessments.push(assessment);
+          updateDiagnostics.jsonParsable.push(true);
+          updateDiagnostics.rawOperations += values.length;
+        }
         catch (error) { updateDiagnostics.jsonParsable.push(false); throw error; }
         for (const value of values) {
         if (value && typeof value === "object") {
@@ -598,25 +649,32 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
       }
       for (const assessment of batchAssessments) if (!allAssessments.some((item) => item.memberId === assessment.memberId && item.claim === assessment.claim)) allAssessments.push(assessment);
       for (const assessment of batchAssessments.filter((item) => item.relation === "conflict")) {
-        if (accepted.some((operation) => operation.type === "add_disagreement" && operation.positions.some((position) => position.text === assessment.claim))) continue;
         const member = batch.find((item) => item.card.sourceId === assessment.memberId);
         if (!member) continue;
-        const related = parseTopicPageBlocks(input.currentPage || "").find((block) => block.id === assessment.relatedBlockId);
-        const evidence = input.basis === "body" ? member.content || "" : member.card.overview;
-        const claim = originalMemberClaim(evidence, assessment.claim);
-        const supported = hasTopicTextGrounding(evidence, claim);
-        const existingMember = related ? sourceForPageBlock(input.currentPage || "", related, input.existingMembers || []) : undefined;
-        const oldClaim = related ? cleanTopicBlockClaim(related.text) : "";
-        const positions: Extract<TopicOperation, { type: "add_disagreement" }>["positions"] = [];
-        if (oldClaim) positions.push({ text: oldClaim, sourceId: existingMember?.card.sourceId || "", ...(existingMember?.card.date ? { date: existingMember.card.date } : {}), ...(existingMember ? { sourceTitle: existingMember.card.title } : {}), ...(!existingMember ? { provenance: "source-pending" } : !hasTopicTextGrounding(existingMember.content || existingMember.card.overview, oldClaim) ? { provenance: "unverified" } : {}) });
-        positions.push({ text: claim, sourceId: member.card.sourceId, ...(member.card.date ? { date: member.card.date } : {}), sourceTitle: member.card.title, ...(!supported ? { provenance: "unverified" } : {}) });
-        if (!oldClaim) validationWarnings.add("A conflict assessment had no related page block; only the new claim was added for review.");
-        if (!supported) validationWarnings.add("A generated disagreement claim could not be grounded in its member card.");
-        const generated: TopicOperation = { type: "add_disagreement", subject: assessment.claim.slice(0, 72) || "新旧说法冲突", positions, sourceId: member.card.sourceId };
-        const key = JSON.stringify(generated);
-        if (!acceptedKeys.has(key)) { acceptedKeys.add(key); accepted.push(generated); programGenerated.push(generated); updateDiagnostics.acceptedOperations++; }
+        const matchingIndices = accepted.flatMap((operation, index) => disagreementMatchesAssessment(operation, assessment) ? [index] : []);
+        const matching = matchingIndices.length ? accepted[matchingIndices[0]] : undefined;
+        const subject = matching?.type === "add_disagreement" ? matching.subject : assessment.claim.slice(0, 72) || "新旧说法冲突";
+        const assembled = assessedDisagreement(assessment, member, input.existingMembers || [], input.currentPage || "", subject);
+        if (!assembled || assembled.type !== "add_disagreement") continue;
+        if (matchingIndices.length) {
+          const first = matchingIndices[0];
+          accepted.splice(first, 1, assembled);
+          for (const index of matchingIndices.slice(1).reverse()) accepted.splice(index, 1);
+        } else {
+          accepted.push(assembled);
+          updateDiagnostics.acceptedOperations++;
+        }
+        acceptedKeys.add(JSON.stringify(assembled));
+        if (!matching || JSON.stringify(matching) !== JSON.stringify(assembled)) programGenerated.push(assembled);
+        if (!assembled.relatedBlockId) validationWarnings.add("A conflict assessment had no related page block; only the new claim was added for review.");
+        if (assembled.positions.some((position) => position.provenance === "unverified")) validationWarnings.add("A generated disagreement claim could not be grounded in its member card.");
       }
-      operations.push(...accepted);
+      const mergedBatch = mergeDisagreements(accepted);
+      if (mergedBatch.duplicates) {
+        updateDiagnostics.duplicateOperations += mergedBatch.duplicates;
+        updateDiagnostics.discarded.duplicate = (updateDiagnostics.discarded.duplicate || 0) + mergedBatch.duplicates;
+      }
+      operations.push(...mergedBatch.operations);
       completedBatches++;
       input.onBatchProgress?.(completedBatches, batches.length);
     } catch (error) {
@@ -625,6 +683,11 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
       break;
     }
   }
+  const mergedOperations = mergeDisagreements(operations);
+  if (mergedOperations.duplicates) {
+    updateDiagnostics.duplicateOperations += mergedOperations.duplicates;
+    updateDiagnostics.discarded.duplicate = (updateDiagnostics.discarded.duplicate || 0) + mergedOperations.duplicates;
+  }
   await port.diagnostic?.(updateDiagnostics);
-  return { operations, completedBatches, totalBatches: batches.length, inputChars, updateDiagnostics, degraded, assessments: allAssessments, programGeneratedOperationKeys: programGenerated.map((operation) => JSON.stringify(operation)), ...(validationWarnings.size ? { validationWarnings: [...validationWarnings] } : {}), ...(partialFailure ? { partialFailure } : {}) };
+  return { operations: mergedOperations.operations, completedBatches, totalBatches: batches.length, inputChars, updateDiagnostics, degraded, assessments: allAssessments, programGeneratedOperationKeys: programGenerated.map((operation) => JSON.stringify(operation)), ...(validationWarnings.size ? { validationWarnings: [...validationWarnings] } : {}), ...(partialFailure ? { partialFailure } : {}) };
 }

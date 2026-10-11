@@ -242,6 +242,40 @@ describe("topic integration", () => {
     ] }]);
     expect(result.operations[0].type === "add_disagreement" && result.operations[0].positions).toHaveLength(2);
   });
+  it("downgrades a resolve_open claim that does not match its target and keeps a grounded resolution", async () => {
+    const open = "大纲生成逻辑存在 Bug，多段录音的大纲未能整合显示。";
+    const source = member("fresh", "纪要列表字体变小的问题已确认修复。", "纪要列表字体变小的问题已确认修复。");
+    const page = `---\nqnalog_topic_layout: 2\n---\n## 未决问题与行动\n- [ ] 缺陷：${open} ^tpc-a1b2c3\n`;
+    const block = parseTopicPageBlocks(page).find((item) => item.type === "open")!;
+    const payload = { assessments: [{ memberId: "fresh", claim: source.card.overview, relation: "supplement", relatedBlockId: block.id }], operations: [{ type: "resolve_open", blockId: block.id, note: source.card.overview, sourceId: "fresh" }] };
+    const downgraded = await generateTopicPageUpdateOperations(fakePort([JSON.stringify(payload)]), { basis: "overview", members: [source], currentPage: page });
+    expect(downgraded.operations).toMatchObject([{ type: "add_point", text: source.card.overview }]);
+    expect(downgraded.validationWarnings).toContain("An open item was not matched to the supporting claim and was added as a point instead.");
+
+    const matchingSource = member("fresh", "大纲生成逻辑 Bug 已修复，多段录音的大纲现在可以整合显示。", "大纲生成逻辑 Bug 已修复，多段录音的大纲现在可以整合显示。");
+    const matchingPayload = { assessments: [{ memberId: "fresh", claim: matchingSource.card.overview, relation: "supplement", relatedBlockId: block.id }], operations: [{ type: "resolve_open", blockId: block.id, note: matchingSource.card.overview, sourceId: "fresh" }] };
+    const matched = await generateTopicPageUpdateOperations(fakePort([JSON.stringify(matchingPayload)]), { basis: "overview", members: [matchingSource], currentPage: page });
+    expect(matched.operations).toMatchObject([{ type: "resolve_open", expectedText: expect.stringContaining(open) }]);
+  });
+  it("rebuilds both conflict sides from an assessment and merges into the matching existing callout", async () => {
+    const old = member("old", "属性名称应保持稳定。", "属性名称应保持稳定。");
+    old.card.date = "2026-09-29";
+    const fresh = member("fresh", "front matter 属性名称最终决定仍然按 Obsidian 语言动态切换，不再强制保持稳定，因为用户体验优先。", "front matter 属性名称最终决定仍然按 Obsidian 语言动态切换，不再强制保持稳定，因为用户体验优先。");
+    fresh.card.date = "2026-10-11";
+    const model = { overview: "属性名策略。", status: "active" as const, threads: [{ id: "keys", title: "属性名", summary: "记录属性名。", points: [{ id: "p", text: "属性名称应保持稳定。", sources: ["old"] }] }], disagreements: [{ id: "d", subject: "Front Matter 属性名称稳定性策略", positions: [{ text: "稳定命名是已有决定。", sourceId: "old" }] }], open: [], unsorted: [] };
+    const page = `---\nqnalog_topic_layout: 2\n---\n${renderTopicPage(model, [{ path: old.card.path, title: old.card.title, sourceId: "old", date: old.card.date }])}`;
+    const block = parseTopicPageBlocks(page).find((item) => item.type === "point")!;
+    const payload = { assessments: [{ memberId: "fresh", claim: fresh.card.overview, relation: "conflict", relatedBlockId: block.id }], operations: [{ type: "add_disagreement", subject: "Front Matter 属性名称稳定性策略", relatedBlockId: block.id, positions: [{ text: "model rewrote the old claim", sourceId: "old" }, { text: fresh.card.overview, sourceId: "fresh" }] }] };
+    const result = await generateTopicPageUpdateOperations(fakePort([JSON.stringify(payload)]), { basis: "overview", members: [fresh], existingMembers: [old], currentPage: page });
+    const disagreement = result.operations.filter((item) => item.type === "add_disagreement");
+    expect(disagreement).toHaveLength(1);
+    expect(disagreement[0]).toMatchObject({ positions: [{ text: "属性名称应保持稳定。", sourceId: "old", date: "2026-09-29" }, { text: fresh.card.overview, sourceId: "fresh", date: "2026-10-11" }] });
+    expect(disagreement[0]?.type === "add_disagreement" ? disagreement[0].subject : "").toBe("Front Matter 属性名称稳定性策略");
+    const updated = applyTopicOps(page, result.operations).markdown;
+    expect(updated.match(/\[!warning\] Front Matter 属性名称稳定性策略/g)).toHaveLength(1);
+    expect(updated).toContain("**2026-09-29**：属性名称应保持稳定。");
+    expect(updated).toContain("**2026-10-11**：front matter 属性名称最终决定仍然按 Obsidian 语言动态切换");
+  });
   it.each(["zh", "en"] as const)("renders verified disagreement provenance in %s", (language) => {
     const operation = { type: "add_disagreement" as const, subject: "Property names", sourceId: "old", positions: [
       { text: "Stable property names", sourceId: "old", date: "2026-09-29" },
