@@ -43,6 +43,15 @@ export class TopicPreviewModal extends Modal {
     const validationWarnings = [...new Set([...(this.preview.validationWarnings || []), ...(model?.validationWarnings || [])])];
     if (validationWarnings.length) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Unknown topic values were normalized to safe defaults.") });
     if ((this.preview.degraded || 0) > 0) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("{0} changes were adjusted to fit the current page; review the affected entries.").replace("{0}", String(this.preview.degraded)) });
+    if (this.preview.programGeneratedOperations) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("{0} conflict changes were completed from conflict assessments by the program.").replace("{0}", String(this.preview.programGeneratedOperations)) });
+    if (this.preview.assessments?.length) {
+      const details = scroll.createEl("details", { cls: "qnalog-topics-preview-assessments" });
+      details.createEl("summary", { text: this.port.text("Assessment details") });
+      for (const assessment of this.preview.assessments) {
+        const relation = assessment.relation === "same" ? "Same or duplicate" : assessment.relation === "supplement" ? "Supplement" : assessment.relation === "conflict" ? "Conflict" : "Unrelated";
+        details.createDiv({ cls: "qnalog-topics-preview-text", text: `${relation}: ${assessment.claim}` });
+      }
+    }
     const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0;
     if (emptyUpdate) {
       const diagnostics = this.preview.updateDiagnostics;
@@ -118,6 +127,7 @@ export class TopicPreviewModal extends Modal {
       // Same whole-row toggle as the create dialog: the row is a <label> around the checkbox.
       const isRevision = item.operation.type === "revise_block";
       const row = group.createEl("label", { cls: `qnalog-topics-preview-item${item.type === "add_conflict" || item.type === "add_disagreement" ? " is-conflict" : ""}${isRevision ? " is-revision" : ""}` });
+      if (item.programGenerated) row.createSpan({ cls: "qnalog-topics-notice", text: this.port.text("Completed by program from conflict assessment") });
       const main = row.createDiv({ cls: "qnalog-topics-preview-main" });
       const checkbox = main.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Include this change") } });
       row.addEventListener("click", (event) => {

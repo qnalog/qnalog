@@ -213,6 +213,14 @@ function sourceFootnoteId(sourceId: string): string { return `s${stableHash(sour
 function inlineFootnotes(sources: readonly string[]): string {
   return [...new Set(sources)].map((source) => `[^${sourceFootnoteId(source)}]`).join("");
 }
+function ensureSentencePunctuation(text: string): string {
+  const value = text.trim();
+  return /[。！？.!?]$/u.test(value) ? value : `${value}${/\p{Script=Han}/u.test(value) ? "。" : "."}`;
+}
+export function renderTopicOpenMarkdown(item: Pick<TopicOpenItem, "kind" | "text" | "sources" | "done">, labels: Pick<TopicPageLabels, "openQuestion" | "openAction" | "openBug"> = DEFAULT_V2_LABELS, blockId?: string): string {
+  const kind = topicOpenKindLabel(item.kind, labels);
+  return `- [${item.done ? "x" : " "}] ${kind}${topicLabelSeparator(kind)}${ensureSentencePunctuation(item.text)}${inlineFootnotes(item.sources)}${blockId ? ` ^${blockId}` : ""}`;
+}
 export function summarizeForTimeline(overview: string, options: { maxChars?: number; title?: string } = {}): string {
   const maxChars = Math.max(1, Math.floor(options.maxChars ?? 60));
   const clean = String(overview || "")
@@ -263,7 +271,7 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
     sections.push("", `### ${thread.title}`, `${thread.summary.trim()} ^${threadId}`);
     for (const point of thread.points.slice(0, 6)) {
       const id = uniqueBlockId("point", point.id || `${thread.id}:${point.text}`, used);
-      sections.push(`- ${point.text.trim()}${inlineFootnotes(point.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
+      sections.push(`- ${ensureSentencePunctuation(point.text)}${inlineFootnotes(point.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
     }
   }
   if (model.disagreements.length) {
@@ -280,8 +288,7 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
     sections.push("", `## ${label.open}`);
     for (const item of model.open) {
       const id = uniqueBlockId("open", item.id || item.text, used);
-      const kind = topicOpenKindLabel(item.kind, label);
-      sections.push(`- [${item.done ? "x" : " "}] ${kind}${topicLabelSeparator(kind)}${item.text}${inlineFootnotes(item.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
+      sections.push(renderTopicOpenMarkdown({ ...item, sources: item.sources.filter((source) => allSourceIds.has(source)) }, label, id));
     }
   }
   if (model.unsorted.length) {
@@ -411,8 +418,12 @@ export function stableTopicBlockId(kind: string, sourceId: string, text: string,
   return candidate;
 }
 
-export function applyTopicOps(markdown: string, ops: readonly TopicOperation[]): ApplyTopicOpsResult {
+export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], labels: Partial<TopicPageLabels> = {}): ApplyTopicOpsResult {
   let current = ensureSections(markdown);
+  const openLabels = Object.keys(labels).length ? { ...DEFAULT_V2_LABELS, ...labels }
+    : /##\s+(?:Overview|Progress thread|Timeline)\b/.test(markdown)
+      ? { ...DEFAULT_V2_LABELS, openQuestion: "Question", openAction: "Action", openBug: "Bug" }
+      : DEFAULT_V2_LABELS;
   const applied: AppliedTopicOperation[] = [];
   const skipped: ApplyTopicOpsResult["skipped"] = [];
   for (const operation of ops) {
@@ -451,7 +462,6 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[]):
         }
       } else {
         let row: string;
-        const kind = operation.type;
         if (operation.type === "add_thread") {
           const used = new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value));
           const summaryId = stableTopicBlockId("thread", operation.title, operation.summary, used);
@@ -459,7 +469,7 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[]):
           const pointRows = operation.points.map((point) => {
             const id = stableTopicBlockId("point", operation.title, point.text, used);
             used.add(id);
-            return `- ${point.text}${inlineFootnotes(point.sources)} ^${id}`;
+            return `- ${ensureSentencePunctuation(point.text)}${inlineFootnotes(point.sources)} ^${id}`;
           });
           row = [``, `### ${operation.title}`, ``, `${operation.summary} ^${summaryId}`, ...pointRows].join("\n");
         } else if (operation.type === "add_point") {
@@ -467,27 +477,27 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[]):
           if (thread >= 0) {
             let end = thread + 1;
             while (end < lines.length && !/^#{1,2}\s/.test(lines[end])) end++;
-            const id = stableTopicBlockId(kind, operation.sourceId, operation.text, new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value)));
-            lines.splice(end, 0, `- ${operation.text}${inlineFootnotes(operation.sources)} ^${id}`);
+            const id = stableTopicBlockId("add_point", operation.sourceId, operation.text, new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value)));
+            lines.splice(end, 0, `- ${ensureSentencePunctuation(operation.text)}${inlineFootnotes(operation.sources)} ^${id}`);
             blockId = id;
             current = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${lines.join("\n")}`;
             applied.push({ operation, blockId, location });
             continue;
           }
-          row = `- ${operation.text}${inlineFootnotes(operation.sources)}`;
+          row = `- ${ensureSentencePunctuation(operation.text)}${inlineFootnotes(operation.sources)}`;
           location = "进展脉络";
         } else if (operation.type === "add_disagreement") {
           const used = new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value));
           const positions = operation.positions.map((position) => {
             const id = stableTopicBlockId("disagreement", position.sourceId, position.text, used);
             used.add(id);
-            return `> - **${position.date || ""}**：${position.text}${source(position.sourceId)} ^${id}`;
+            return `> - **${position.date || ""}**：${position.text}${position.sourceId === "__current_page__" ? "" : source(position.sourceId)} ^${id}`;
           });
           row = [``, `> [!warning] ${operation.subject}`, ...positions].join("\n");
           location = "分歧与待核实";
         } else if (operation.type === "add_open") {
           const id = stableTopicBlockId("open", operation.sourceId, operation.text, new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value)));
-          row = `- [ ] ${operation.kind ? `${operation.kind}：` : ""}${operation.text}${inlineFootnotes(operation.sources)} ^${id}`;
+          row = renderTopicOpenMarkdown({ kind: operation.kind, text: operation.text, sources: operation.sources, done: false }, openLabels, id);
           blockId = id;
           location = "未决问题与未完成行动";
         } else { row = ""; location = "待整理"; }

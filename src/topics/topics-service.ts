@@ -176,6 +176,9 @@ export class TopicsService {
       let validationWarnings: string[] | undefined;
       let updateDiagnostics: TopicChangePreview["updateDiagnostics"];
       let degraded: number | undefined;
+      let assessments: TopicChangePreview["assessments"];
+      let programGeneratedOperations: number | undefined;
+      let programGeneratedOperationKeys: string[] | undefined;
       if (input.topicId && !input.rebuild) {
         const isV2 = parseTopicPage(currentPage, existing?.path)?.layout === 2;
         const generated = isV2
@@ -188,6 +191,9 @@ export class TopicsService {
         validationWarnings = generated.validationWarnings;
         updateDiagnostics = generated.updateDiagnostics;
         degraded = generated.degraded;
+        assessments = generated.assessments;
+        programGeneratedOperationKeys = generated.programGeneratedOperationKeys;
+        programGeneratedOperations = generated.programGeneratedOperationKeys?.length;
       } else {
         const generated = await generateTopicPageContent(this.host.integration, generationInput);
         generatedModel = generated.model;
@@ -238,12 +244,15 @@ export class TopicsService {
           target: "targetId" in operation ? operation.targetId : "blockId" in operation ? operation.blockId : "thread" in operation ? operation.thread : "title" in operation ? operation.title : "section" in operation ? operation.section : operation.type,
           text: "text" in operation ? operation.text : "newText" in operation ? operation.newText : "summary" in operation ? operation.summary : "note" in operation ? operation.note : "", sourceId: operation.sourceId, cancellable: true,
           ...( "expectedText" in operation && operation.expectedText ? { expectedText: operation.expectedText } : {}),
+          ...(programGeneratedOperationKeys?.includes(JSON.stringify(operation)) ? { programGenerated: true } : {}),
         })),
         completedBatches, totalBatches,
         ...(partialFailure ? { partialFailure } : {}),
         ...(validationWarnings?.length ? { validationWarnings } : {}),
         ...(updateDiagnostics ? { updateDiagnostics } : {}),
         ...(degraded ? { degraded } : {}),
+        ...(assessments?.length ? { assessments } : {}),
+        ...(programGeneratedOperations ? { programGeneratedOperations } : {}),
         sourceLinks: Object.fromEntries(memberRecords.map((member) => [member.sourceId, `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`])),
         sourceDates: Object.fromEntries(members.map(({ card }) => [card.sourceId, card.date])),
         ...(existing && !input.rebuild ? {
@@ -301,7 +310,9 @@ export class TopicsService {
         const selected = new Set(selection);
         const operations = preview.items.filter((item) => selected.has(item.id))
           .map(({ operation }) => ({ ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId }));
-        const initial = applyTopicOps(serializeTopicPage(page), operations).markdown;
+        const initial = applyTopicOps(serializeTopicPage(page), operations, {
+          openQuestion: t("Topic open question"), openAction: t("Topic open action"), openBug: t("Topic open bug"),
+        }).markdown;
         const parsed = parseTopicPage(initial);
         if (!parsed) throw new Error("Generated topic page could not be parsed");
         const path = await store.create(parsed, initial);
