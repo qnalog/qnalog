@@ -41,7 +41,10 @@ export class TopicPreviewModal extends Modal {
 
     const model = this.preview.create?.model || this.preview.replacement?.model;
     const validationWarnings = [...new Set([...(this.preview.validationWarnings || []), ...(model?.validationWarnings || [])])];
-    if (validationWarnings.length) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Unknown topic values were normalized to safe defaults.") });
+    if (validationWarnings.length) {
+      const normalizedValues = validationWarnings.some((warning) => warning.startsWith("Unknown topic "));
+      scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text(normalizedValues ? "Unknown topic values were normalized to safe defaults." : "Some disagreement details need verification. Review the marked positions.") });
+    }
     if ((this.preview.degraded || 0) > 0) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("{0} changes were adjusted to fit the current page; review the affected entries.").replace("{0}", String(this.preview.degraded)) });
     if (this.preview.programGeneratedOperations) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("{0} conflict changes were completed from conflict assessments by the program.").replace("{0}", String(this.preview.programGeneratedOperations)) });
     if (this.preview.assessments?.length) {
@@ -144,6 +147,21 @@ export class TopicPreviewModal extends Modal {
         const diff = main.createDiv({ cls: "qnalog-topics-revision" });
         diff.createDiv({ cls: "qnalog-topics-revision-old", text: item.expectedText || "" });
         diff.createDiv({ cls: "qnalog-topics-revision-new", text: verification.text });
+      } else if (item.operation.type === "add_disagreement") {
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: item.operation.subject });
+        for (const position of item.operation.positions) {
+          const stance = main.createDiv({ cls: `qnalog-topics-preview-item${position.provenance ? " is-unverified" : ""}` });
+          const provenance = position.provenance === "source-pending" ? this.port.text("Source pending verification") : position.provenance === "unverified" ? this.port.text("Unverified") : "";
+          stance.createDiv({ cls: "qnalog-topics-preview-text", text: `${position.date ? `${position.date}: ` : ""}${position.text}${provenance ? ` (${provenance})` : ""}` });
+          const source = stance.createDiv({ cls: "qnalog-topics-preview-meta" });
+          if (position.sourceId) {
+            const linkTarget = this.preview.sourceLinks?.[position.sourceId] || position.sourceId;
+            const title = position.sourceTitle || /\|([^|\]]+)\]\]$/.exec(linkTarget)?.[1] || linkTarget;
+            const link = source.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
+            link.addEventListener("click", () => void this.port.openSource(linkTarget));
+            if (position.date) source.createSpan({ cls: "qnalog-topics-preview-date", text: position.date });
+          }
+        }
       } else {
         let changeText = verification.text;
         if (item.operation.type === "add_open") {

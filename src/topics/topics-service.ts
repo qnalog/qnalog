@@ -159,8 +159,11 @@ export class TopicsService {
         : [input.startPath, ...requestedPaths.filter((path) => path !== input.startPath)];
       if (!selectedPaths.length && !input.rebuild) throw new Error("No new notes to integrate; all selected notes are already topic members");
       const members = await this.loadMembers(selectedPaths, cards, input.basis);
+      const existingEvidenceMembers = existing && !input.rebuild
+        ? await this.loadMembers(existing.page.members.filter((path) => cards.some((card) => card.path === path)), cards, input.basis)
+        : [];
       const currentPage = existing ? await this.host.topicStore.read(existing.path) : "";
-      const generationInput = { members, basis: input.basis, currentPage: input.rebuild ? "" : currentPage, signal: controller.signal,
+      const generationInput = { members, existingMembers: existingEvidenceMembers, basis: input.basis, currentPage: input.rebuild ? "" : currentPage, signal: controller.signal,
         onPlanned: (total: number) => input.onProgress?.({ completed: 0, total }),
         onBatchProgress: (completed: number, total: number) => {
           const stageLabel = t("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
@@ -253,8 +256,8 @@ export class TopicsService {
         ...(degraded ? { degraded } : {}),
         ...(assessments?.length ? { assessments } : {}),
         ...(programGeneratedOperations ? { programGeneratedOperations } : {}),
-        sourceLinks: Object.fromEntries(memberRecords.map((member) => [member.sourceId, `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`])),
-        sourceDates: Object.fromEntries(members.map(({ card }) => [card.sourceId, card.date])),
+        sourceLinks: Object.fromEntries([...existingEvidenceMembers.map(({ card }) => card), ...members.map(({ card }) => card)].map((member) => [member.sourceId, `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`])),
+        sourceDates: Object.fromEntries([...existingEvidenceMembers, ...members].map(({ card }) => [card.sourceId, card.date])),
         ...(existing && !input.rebuild ? {
           memberLinks: [...new Set([...existing.page.memberLinks, ...memberRecords.map((member) => `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`)])],
           tags: [...new Set([...existing.page.tags, ...(verifiedTagUpdate?.tags || [])])],

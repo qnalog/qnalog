@@ -6,7 +6,7 @@ export type TopicOpenKind = "question" | "action" | "bug";
 export type TopicSection = "概要" | "当前状态" | "进展脉络" | "分歧与待核实" | "未决问题与未完成行动" | "未决问题与行动" | "时间线" | "来源笔记" | "待整理";
 export interface TopicMember { path: string; title: string; sourceId: string; date?: string; summary?: string }
 export interface TopicThread { id: string; title: string; summary: string; points: Array<{ id: string; text: string; sources: string[] }> }
-export interface TopicDisagreement { id: string; subject: string; positions: Array<{ text: string; sourceId: string; date?: string }> }
+export interface TopicDisagreement { id: string; subject: string; positions: Array<{ text: string; sourceId: string; date?: string; provenance?: "source-pending" | "unverified"; sourceTitle?: string }> }
 export interface TopicOpenItem { id: string; kind: TopicOpenKind; text: string; sources: string[]; done: boolean }
 export interface TopicPageV2Model {
   overview: string; status: TopicStatus; threads: TopicThread[]; disagreements: TopicDisagreement[];
@@ -44,7 +44,7 @@ export type TopicOperation =
   | { type: "add_point"; thread: string; text: string; sources: string[]; sourceId: string }
   | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
   | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
-  | { type: "add_disagreement"; subject: string; positions: Array<{ text: string; sourceId: string; date?: string }>; sourceId: string }
+  | { type: "add_disagreement"; subject: string; positions: Array<{ text: string; sourceId: string; date?: string; provenance?: "source-pending" | "unverified"; sourceTitle?: string }>; sourceId: string }
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
@@ -276,11 +276,13 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
   }
   if (model.disagreements.length) {
     sections.push("", `## ${label.disagreements}`);
+    const memberBySource = new Map(members.map((member) => [member.sourceId, member]));
     for (const disagreement of model.disagreements) {
       sections.push("", `> [!warning] ${disagreement.subject || label.conflict}`);
       for (const position of disagreement.positions) {
-        if (!allSourceIds.has(position.sourceId)) continue;
-        sections.push(`> - **${position.date || ""}**：${position.text}${inlineFootnotes([position.sourceId])}`);
+        const sourceMember = memberBySource.get(position.sourceId);
+        if (!sourceMember) continue;
+        sections.push(`> - ${sourceMember.date ? `**${sourceMember.date}**：` : ""}${position.text}${inlineFootnotes([sourceMember.sourceId])}`);
       }
     }
   }
@@ -491,7 +493,10 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
           const positions = operation.positions.map((position) => {
             const id = stableTopicBlockId("disagreement", position.sourceId, position.text, used);
             used.add(id);
-            return `> - **${position.date || ""}**：${position.text}${position.sourceId === "__current_page__" ? "" : source(position.sourceId)} ^${id}`;
+            const sourceDate = position.provenance === "source-pending" ? "" : position.date || "";
+            const sourceFootnote = position.provenance === "source-pending" || !position.sourceId ? "" : source(position.sourceId);
+            const marker = position.provenance === "source-pending" ? "（来源待核实）" : position.provenance === "unverified" ? "（未核实）" : "";
+            return `> - ${sourceDate ? `**${sourceDate}**：` : ""}${position.text}${marker}${sourceFootnote} ^${id}`;
           });
           row = [``, `> [!warning] ${operation.subject}`, ...positions].join("\n");
           location = "分歧与待核实";

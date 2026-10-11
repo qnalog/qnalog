@@ -2957,6 +2957,8 @@ export const ZH: MessageTable = {
   "The topic page changed after the update. Undo was not applied.": "主题页在更新后又发生修改，未执行撤销。",
   "No topic update is available to undo.": "没有可撤销的主题更新。",
   "Unverified": "未核实",
+  "Source pending verification": "来源待核实",
+  "Some disagreement details need verification. Review the marked positions.": "部分分歧信息需要核实。请检查已标记的立场。",
   "Include this change": "包含此项变更",
   "Confirm and create": "确认并创建",
   "Topic title": "主题名称",
