@@ -51,7 +51,9 @@ describe("disagreement existing side comes from the page block", () => {
 
     const rendered = applyTopicOps(PAGE, result.operations).markdown;
     const callout = rendered.slice(rendered.indexOf("> [!warning] Front Matter 属性命名策略"));
-    expect(callout).toMatch(new RegExp(`^> \\[!warning\\] Front Matter 属性命名策略\\n> - \\*\\*2026-09-29\\*\\*：${OLD_CLAIM}\\[\\^sa8f6\\] \\^tpc-[\\da-f]{6}\\n> - \\*\\*2026-10-11\\*\\*：${NEW_CLAIM}\\[\\^s[\\da-f]{4}\\] \\^tpc-[\\da-f]{6}`));
+    expect(callout).toContain(`> - **2026-09-29**：${OLD_CLAIM}[^sa8f6]`);
+    expect(callout).toContain(`> - **2026-10-11**：${NEW_CLAIM}`);
+    expect(callout).not.toMatch(/\^tpc-/);
     expect(rendered).not.toContain("来源待核实");
     expect(rendered).not.toContain("为解决检索稳定性问题");
   });
@@ -112,13 +114,13 @@ describe("disagreement existing side comes from the page block", () => {
 });
 
 describe("page edits around generated text", () => {
-  it("a revise_block whose newText carries block IDs and footnotes writes exactly one ID at the end", async () => {
+  it("a revise_block removes model block IDs and footnote references from narrative text", async () => {
     const page = "---\nqnalog_topic_layout: 2\n---\n## 进展脉络\n### 线索\n原摘要内容。 ^tpc-0a0a0a\n## 时间线\n";
     const payload = { operations: [{ type: "revise_block", blockId: "tpc-0a0a0a", newText: "关于 Front Matter 元信息标准化存在争议：修订后的做法。 ^tpc-bf65c5 ^tpc-bf65c5[^sc0c0c]", reason: "update", sourceId: "fresh" }] };
     const result = await generateTopicPageUpdateOperations(fakePort([JSON.stringify(payload)]), { basis: "overview", members: [newMember], existingMembers: [oldMember], currentPage: page });
     const applied = applyTopicOps(page, result.operations).markdown;
-    expect(applied.split("\n").find((line) => line.includes("修订后的做法"))).toBe("关于 Front Matter 元信息标准化存在争议：修订后的做法。 ^tpc-0a0a0a");
-    expect(applied.match(/\^tpc-/g)).toHaveLength(1);
+    expect(applied.slice(applied.indexOf("\n##")).split("\n").find((line) => line.includes("修订后的做法"))).toBe("关于 Front Matter 元信息标准化存在争议：修订后的做法。");
+    expect(applied).not.toMatch(/\^tpc-/);
   });
 
   it("skips a revision whose target block was edited after the preview and keeps user paragraphs verbatim", () => {
@@ -126,6 +128,7 @@ describe("page edits around generated text", () => {
     const result = applyTopicOps(page, [{ type: "revise_block", blockId: "tpc-0a0a0a", expectedText: "原摘要内容。", newText: "模型修订。", reason: "update", sourceId: "fresh" }]);
     expect(result.skipped).toEqual([{ id: "tpc-0a0a0a", reason: "block-modified" }]);
     expect(result.markdown).toContain("用户新增的段落，逐字保留。");
-    expect(result.markdown).toContain("用户手改后的摘要。 ^tpc-0a0a0a");
+    expect(result.markdown).toContain("用户手改后的摘要。");
+    expect(result.markdown).not.toMatch(/\^tpc-/);
   });
 });

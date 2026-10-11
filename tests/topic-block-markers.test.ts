@@ -36,42 +36,45 @@ describe("dedupeBlockIds", () => {
   });
 });
 
-describe("rendering writes one block ID per block", () => {
+describe("v2 pages keep block addresses in page properties", () => {
   const page = "---\nqnalog_topic_layout: 2\n---\n## 进展脉络\n### 属性名\n线索摘要 ^tpc-0a0a0a\n- 旧要点[^sa8f6] ^tpc-0b0b0b\n## 时间线\n";
 
-  it("revise_block drops IDs and footnotes that the model supplied", () => {
+  it("revise_block removes model markers and leaves no inline IDs", () => {
     const result = applyTopicOps(page, [{
       type: "revise_block", blockId: "tpc-0a0a0a", expectedText: "线索摘要", sourceId: "new",
       newText: "关于 Front Matter 元信息标准化存在争议：新的做法。 ^tpc-bf65c5 ^tpc-bf65c5",
       reason: "update",
     }]);
-    const revised = result.markdown.split("\n").find((line) => line.includes("关于 Front Matter"))!;
-    expect(revised).toBe("关于 Front Matter 元信息标准化存在争议：新的做法。 ^tpc-0a0a0a");
-    expect(count(result.markdown, /\^tpc-/g)).toBe(2);
+    const revised = result.markdown.slice(result.markdown.indexOf("\n##")).split("\n").find((line) => line.includes("关于 Front Matter"))!;
+    expect(revised).toBe("关于 Front Matter 元信息标准化存在争议：新的做法。");
+    expect(count(result.markdown, /\^tpc-/g)).toBe(0);
+    expect(result.markdown).toContain("qnalog_topic_blocks:");
     expect(result.duplicateBlockIds).toBeUndefined();
   });
 
-  it("the page-wide check keeps the first ID when a block ID is repeated across lines", () => {
+  it("cleans repeated legacy IDs across the full v2 page", () => {
     const repeated = "---\nqnalog_topic_layout: 2\n---\n## 进展脉络\n- 第一条 ^tpc-0c0c0c\n- 第二条 ^tpc-0c0c0c\n## 时间线\n";
     const result = applyTopicOps(repeated, []);
-    expect(result.duplicateBlockIds).toEqual(["tpc-0c0c0c"]);
-    expect(count(result.markdown, /\^tpc-0c0c0c/g)).toBe(1);
-    expect(result.markdown).toContain("- 第一条 ^tpc-0c0c0c");
-    expect(parseTopicPageBlocks(result.markdown).map((block) => block.id)).toEqual(["tpc-0c0c0c"]);
+    expect(result.duplicateBlockIds).toBeUndefined();
+    expect(count(result.markdown, /\^tpc-/g)).toBe(0);
+    expect(result.markdown).toContain("- 第一条");
+    expect(result.markdown).toContain("qnalog_topic_blocks:");
+    expect(parseTopicPageBlocks(result.markdown)).toHaveLength(2);
   });
 });
 
 describe("model text is cleaned before rendering", () => {
-  it("a point with a checkbox prefix, footnote and block ID gets one renderer footnote and one block ID", async () => {
+  it("a point with model markers keeps its footnote and stores its address outside the body", async () => {
     const page = "---\nqnalog_topic_layout: 2\n---\n## 进展脉络\n### 线索\n线索摘要。 ^tpc-0a0a0a\n## 时间线\n";
     const member = { card: { sourceId: "fresh", path: "Notes/fresh.md", title: "Fresh", date: "2026-10-11", tags: [], overview: "补充阅读视图的截图验证。" } as never, content: "补充阅读视图的截图验证。" };
     const payload = { operations: [{ type: "add_point", thread: "线索", text: "- [ ] 补充阅读视图的截图验证。[^s8c08] ^tpc-bf65c5", sources: ["fresh"], sourceId: "fresh" }] };
     const port = { request: async () => JSON.stringify(payload) };
     const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [member], currentPage: page });
     const applied = applyTopicOps(page, result.operations).markdown;
-    const line = applied.split("\n").find((item) => item.includes("补充阅读视图"))!;
-    expect(line).toMatch(/^- 补充阅读视图的截图验证。\[\^s[\da-f]{4}\] \^tpc-[\da-f]{6}$/);
+    const line = applied.slice(applied.indexOf("\n##")).split("\n").find((item) => item.includes("补充阅读视图"))!;
+    expect(line).toMatch(/^- 补充阅读视图的截图验证。\[\^s[\da-f]{4}\]$/);
     expect(applied).not.toContain("s8c08");
-    expect(applied.match(/\^tpc-/g)).toHaveLength(2);
+    expect(applied).not.toMatch(/\^tpc-/);
+    expect(applied).toContain("qnalog_topic_blocks:");
   });
 });
