@@ -1,6 +1,6 @@
 import { Menu, Modal, Notice, setIcon, type App } from "obsidian";
 import type { TopicCandidate, TopicCandidates } from "../topics/topic-candidates";
-import type { TopicsUiPort } from "./topics-ui-port";
+import type { TopicListEntry, TopicsUiPort } from "./topics-ui-port";
 import { TopicPreviewModal } from "./topic-preview-modal";
 import { topicCandidateGroups } from "./topics-ui-port";
 import { formatTopicCandidateReasons } from "./topics-ui-port";
@@ -8,6 +8,14 @@ import { qnalogConfirm } from "./helpers";
 import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
 import { suppressRowActivation } from "./topic-row-activation";
 import { syncActiveRow } from "./row-active";
+
+/** "MM-DD" in local time, or "" when the date cannot be read. */
+function formatMonthDay(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 export class TopicsPanel {
   private readonly app: App;
@@ -23,7 +31,8 @@ export class TopicsPanel {
   }
 
   async render(root: HTMLElement): Promise<void> {
-    const box = root.createDiv({ cls: "qnalog-topics-panel" });
+    // Same section, group title and row structure as the minutes list, so both lists share one look.
+    const box = root.createDiv({ cls: "qnalog-topics-panel qnalog-outline-section" });
     if (!this.port.isConfigured()) {
       this.renderEmpty(box);
       return;
@@ -34,39 +43,66 @@ export class TopicsPanel {
         this.renderEmpty(box);
         return;
       }
-      for (const topic of topics) {
-        // The row of the note open in the editor is highlighted; the highlight does not move the list.
-        const isActive = !!this.activePath && topic.path === this.activePath;
-        const row = box.createDiv({ cls: `qnalog-topics-row${isActive ? " is-active" : ""}`, attr: { tabindex: "0", role: "button", "data-path": topic.path, ...(isActive ? { "aria-current": "true" } : {}) } });
-        row.addEventListener("click", () => {
-          syncActiveRow(box, [topic.path]);
-          void this.port.openTopic(topic.path);
-        });
-        row.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            syncActiveRow(box, [topic.path]);
-            void this.port.openTopic(topic.path);
-          }
-        });
-        row.addEventListener("contextmenu", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          this.showTopicMenu(event, topic.page.id, topic.page.title);
-        });
-        const heading = row.createDiv({ cls: "qnalog-topics-row-heading" });
-        heading.createDiv({ cls: "qnalog-topics-row-title", text: topic.page.title });
-        heading.createDiv({ cls: "qnalog-topics-row-members", text: this.port.text("{0} members").replace("{0}", String(topic.page.members.length)) });
-        row.createDiv({ cls: "qnalog-topics-row-date", text: new Date(topic.page.updated).toLocaleDateString() });
-        const badge = row.createSpan({ cls: "qnalog-topics-pending" });
-        void this.port.countPending(topic.page.id).then((count) => {
-          if (count > 0) { badge.setText(this.port.text("{0} pending").replace("{0}", String(count))); badge.addClass("is-visible"); }
-          else badge.remove();
-        }).catch(() => badge.remove());
-      }
+      const groupTitle = box.createDiv({ cls: "qnalog-outline-recent-group-title" });
+      groupTitle.createSpan({ cls: "qnalog-outline-recent-group-weekday", text: this.port.text("Topics") });
+      groupTitle.createSpan({ cls: "qnalog-outline-recent-group-count", text: this.port.text("{0} topics").replace("{0}", String(topics.length)) });
+      for (const topic of topics) this.renderRow(box, topic);
     } catch {
       this.renderEmpty(box);
     }
+  }
+
+  private renderRow(box: HTMLElement, topic: TopicListEntry): void {
+    // The row of the open file is highlighted; syncActiveRow keeps it current without rebuilding the list.
+    const isActive = !!this.activePath && topic.path === this.activePath;
+    const row = box.createDiv({
+      cls: `qnalog-outline-recent-row${isActive ? " is-active" : ""}`,
+      attr: { tabindex: "0", role: "button", "data-path": topic.path, ...(isActive ? { "aria-current": "true" } : {}) },
+    });
+    row.addEventListener("click", () => {
+      syncActiveRow(box, [topic.path]);
+      void this.port.openTopic(topic.path);
+    });
+    row.addEventListener("keydown", (event) => {
+      // Keys pressed on the ⋯ button must not open the topic.
+      if (event.target !== row) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        syncActiveRow(box, [topic.path]);
+        void this.port.openTopic(topic.path);
+      }
+    });
+    row.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.showTopicMenu(event, topic.page.id, topic.page.title);
+    });
+    const chip = row.createDiv({ cls: "qnalog-outline-recent-chip", attr: { title: this.port.text("Topics") } });
+    try { setIcon(chip, "layers"); } catch { /* the icon is decorative */ }
+    const body = row.createDiv({ cls: "qnalog-outline-recent-body" });
+    body.createDiv({ cls: "qnalog-outline-recent-title-line" }).createDiv({ cls: "qnalog-outline-recent-name", text: topic.page.title });
+    const updated = formatMonthDay(topic.page.updated);
+    const metaParts = [
+      this.port.text("{0} member notes").replace("{0}", String(topic.page.members.length)),
+      updated ? this.port.text("Updated {0}").replace("{0}", updated) : "",
+    ].filter(Boolean);
+    body.createDiv({ cls: "qnalog-outline-recent-meta", text: metaParts.join(" · ") });
+    const actions = body.createDiv({ cls: "qnalog-outline-recent-actions" });
+    const badge = actions.createSpan({ cls: "qnalog-topics-pending" });
+    const more = actions.createEl("button", {
+      cls: "qnalog-outline-recent-action qnalog-topics-more",
+      attr: { type: "button", "aria-label": this.port.text("More actions"), title: this.port.text("More actions") },
+    });
+    try { setIcon(more, "more-horizontal"); } catch { /* the icon is decorative */ }
+    more.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.showTopicMenu(event, topic.page.id, topic.page.title);
+    });
+    void this.port.countPending(topic.page.id).then((count) => {
+      if (count > 0) { badge.setText(this.port.text("{0} pending").replace("{0}", String(count))); badge.addClass("is-visible"); }
+      else badge.remove();
+    }).catch(() => badge.remove());
   }
 
   private renderEmpty(root: HTMLElement): void {

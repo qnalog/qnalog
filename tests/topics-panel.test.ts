@@ -52,7 +52,7 @@ describe("topics panel", () => {
     const panel = new TopicsPanel({} as never, port as never, () => undefined);
     await panel.render(root);
     await vi.waitFor(() => expect(allText((root as unknown as { children: FakeTree[] }).children[0])).toContain("3 pending"));
-    const row = descendants((root as unknown as { children: FakeTree[] }).children[0]).find((item) => item.cls === "qnalog-topics-row");
+    const row = descendants((root as unknown as { children: FakeTree[] }).children[0]).find((item) => item.cls.includes("qnalog-outline-recent-row"));
     expect(row).toBeDefined();
     row?.listeners.get("contextmenu")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
     expect(menuState.titles).toEqual(expect.arrayContaining(["Scan for notes to integrate", "Undo last update", "Merge into…", "Delete topic"]));

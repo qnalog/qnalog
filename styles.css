@@ -10352,13 +10352,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding-bottom: 8px;
 }
 
-.qnalog-topics-panel { padding: 4px 0 20px; }
-.qnalog-topics-row { padding: 10px 2px; border-bottom: 1px solid var(--background-modifier-border); cursor: pointer; }
-.qnalog-topics-row:focus-visible, .qnalog-topics-create button:focus-visible, .qnalog-topics-preview button:focus-visible, .qnalog-topics-prompt-row button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
-.qnalog-topics-row-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.qnalog-topics-row-title { color: var(--text-normal); font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qnalog-topics-row-members, .qnalog-topics-row-date { color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 3px; }
-.qnalog-topics-pending { display: none; width: fit-content; margin-top: 5px; padding: 2px 6px; border-radius: 10px; color: var(--text-accent); background: color-mix(in srgb, var(--interactive-accent) 12%, transparent); font-size: var(--font-ui-smaller); }
+.qnalog-topics-create button:focus-visible, .qnalog-topics-preview button:focus-visible, .qnalog-topics-prompt-row button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qnalog-topics-panel .qnalog-outline-recent-row:focus-visible, .qnalog-topics-panel .qnalog-outline-recent-action:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qnalog-topics-pending { display: none; width: fit-content; margin: 0 4px 0 0; padding: 2px 6px; border-radius: 10px; color: var(--text-accent); background: color-mix(in srgb, var(--interactive-accent) 12%, transparent); font-size: var(--font-ui-smaller); }
 .qnalog-topics-pending.is-visible { display: inline-block; }
 .qnalog-topics-empty { margin: 24px 0; }
 .qnalog-topics-create, .qnalog-topics-preview { color: var(--text-normal); }
@@ -10435,10 +10431,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-preview-badge,
 .qnalog-topics-unverified { display: inline-flex; align-items: center; flex: 0 0 auto; width: fit-content; padding: 1px 5px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; }
 .qnalog-topics-preview-badge.is-conflict { color: var(--text-warning, var(--text-accent)); }
-.qnalog-topics-panel { padding: 14px 16px 18px; }
-.qnalog-topics-row { padding-inline: 0; }
-.qnalog-topics-row.is-active { background: var(--background-secondary); box-shadow: inset 2px 0 0 var(--interactive-accent); }
-.qnalog-topics-row.is-active .qnalog-topics-row-title { color: var(--text-accent); }
 @media (max-width: 420px) {
   .qnalog-topics-prompt-row { padding-inline-start: 24px; }
 }

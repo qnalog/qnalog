@@ -145,6 +145,13 @@ try {
   }
   if (!entryReady) throw new Error(`Topic modal browser entry did not load: ${JSON.stringify(await evaluate("({href: location.href, scripts: [...document.scripts].map((item) => item.src), ready: document.readyState})"))}`);
 
+  const waitUntil = async (expression) => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (await evaluate(expression)) return;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
+    throw new Error(`timed out waiting for ${expression}`);
+  };
   for (const width of [320, 390, 768, 1440]) for (const theme of ["light", "dark"]) {
     await cdp("Emulation.setDeviceMetricsOverride", { width, height: 827, deviceScaleFactor: 1, mobile: false });
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
@@ -166,9 +173,34 @@ try {
     }
 
     await evaluate("window.renderTopicsPanel()");
-    const panel = await evaluate(`(() => { const panel=document.querySelector('#topics-panel-root .qnalog-topics-panel'); const row=panel?.querySelector('.qnalog-topics-row'); return {padding:getComputedStyle(panel).paddingInlineStart, rowLeft:row?.getBoundingClientRect().left, panelLeft:panel?.getBoundingClientRect().left, overflow:panel?.scrollWidth > panel?.clientWidth}; })()`);
-    assert.equal(panel.padding, "16px", `topic panel horizontal inset differs from outline at ${width}px/${theme}`);
-    assert.equal(panel.overflow, false, `topic panel has horizontal overflow at ${width}px/${theme}`);
+    await waitUntil("document.querySelectorAll('#topics-panel-root .qnalog-outline-recent-row').length === 8");
+    const rowMetrics = await evaluate(`(() => {
+      const metricsOf = (row) => {
+        const style = (element) => getComputedStyle(element);
+        const chip = row.querySelector('.qnalog-outline-recent-chip').getBoundingClientRect();
+        return { padding: style(row).padding, rowHeight: row.getBoundingClientRect().height, chipWidth: chip.width, chipHeight: chip.height,
+          nameFont: style(row.querySelector('.qnalog-outline-recent-name')).fontSize, metaFont: style(row.querySelector('.qnalog-outline-recent-meta')).fontSize };
+      };
+      const panel = document.querySelector('#topics-panel-root .qnalog-topics-panel');
+      const minutesHost = document.createElement('div');
+      minutesHost.id = 'minutes-metrics';
+      minutesHost.style.width = '300px';
+      minutesHost.innerHTML = '<div class="qnalog-outline-recent-row"><div class="qnalog-outline-recent-chip">m</div><div class="qnalog-outline-recent-body"><div class="qnalog-outline-recent-title-line"><div class="qnalog-outline-recent-name">2026-10-04 1543 · 个人笔记</div></div><div class="qnalog-outline-recent-meta">2026-10-04 15:43 · 个人笔记 · 00:38</div><div class="qnalog-outline-recent-actions"></div></div></div>';
+      document.body.append(minutesHost);
+      const minutesRow = minutesHost.querySelector('.qnalog-outline-recent-row');
+      const topic = metricsOf(panel.querySelector('.qnalog-outline-recent-row'));
+      const minutes = metricsOf(minutesRow);
+      minutesHost.remove();
+      return { topic, minutes, overflow: panel.scrollWidth > panel.clientWidth, bodyOverflow: document.body.scrollWidth > ${width} };
+    })()`);
+    assert.equal(rowMetrics.overflow, false, `topic panel has horizontal overflow at ${width}px/${theme}`);
+    assert.equal(rowMetrics.bodyOverflow, false, `topic panel widens the page at ${width}px/${theme}`);
+    assert.equal(rowMetrics.topic.padding, rowMetrics.minutes.padding, `topic row padding must match the minutes row at ${width}px/${theme}`);
+    assert.equal(rowMetrics.topic.nameFont, rowMetrics.minutes.nameFont, `topic title font must match the minutes title at ${width}px/${theme}`);
+    assert.equal(rowMetrics.topic.metaFont, rowMetrics.minutes.metaFont, `topic meta font must match the minutes meta at ${width}px/${theme}`);
+    for (const key of ["rowHeight", "chipWidth", "chipHeight"]) {
+      assert(Math.abs(rowMetrics.topic[key] - rowMetrics.minutes[key]) <= 1, `topic row ${key} ${rowMetrics.topic[key]} differs from minutes ${rowMetrics.minutes[key]} at ${width}px/${theme}`);
+    }
     await evaluate("document.querySelector('#topics-panel-root').remove()");
 
     await evaluate("window.renderTopicPreview()");
@@ -305,29 +337,29 @@ try {
   // Active-row highlight follows the clicked row and never rebuilds the list (topics panel and a minutes-style list).
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 827, deviceScaleFactor: 1, mobile: false });
   await evaluate("document.body.className = 'theme-light'; window.renderTopicsPanel()");
-  await waitFor("document.querySelectorAll('#topics-panel-root .qnalog-topics-row').length === 8");
+  await waitFor("document.querySelectorAll('#topics-panel-root .qnalog-outline-recent-row').length === 8");
   const highlighted = (selector) => evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map((row, index) => row.classList.contains('is-active') ? index : -1).filter((index) => index >= 0)`);
-  await evaluate(`(() => { const root = document.querySelector('#topics-panel-root'); root.style.maxHeight = '260px'; root.style.overflowY = 'auto'; window.__topicNodes = [...document.querySelectorAll('#topics-panel-root .qnalog-topics-row')]; })()`);
+  await evaluate(`(() => { const root = document.querySelector('#topics-panel-root'); root.style.maxHeight = '260px'; root.style.overflowY = 'auto'; window.__topicNodes = [...document.querySelectorAll('#topics-panel-root .qnalog-outline-recent-row')]; })()`);
   await evaluate("document.querySelector('#topics-panel-root').scrollTop = 200");
   await new Promise((resolveWait) => setTimeout(resolveWait, 50));
   const topicScroll = await evaluate("document.querySelector('#topics-panel-root').scrollTop");
   assert(topicScroll > 0, "topics list must scroll for the highlight check");
   const clickInList = async (listSelector, rowIndex) => {
-    await evaluate(`document.querySelectorAll('${listSelector} .qnalog-topics-row, ${listSelector} .qnalog-outline-recent-row')[${rowIndex}].scrollIntoView({ block: 'nearest' })`);
+    await evaluate(`document.querySelectorAll('${listSelector} .qnalog-outline-recent-row')[${rowIndex}].scrollIntoView({ block: 'nearest' })`);
     const before = await evaluate(`document.querySelector('${listSelector}').scrollTop`);
-    await mouse(`document.querySelectorAll('${listSelector} .qnalog-topics-row, ${listSelector} .qnalog-outline-recent-row')[${rowIndex}]`);
+    await mouse(`document.querySelectorAll('${listSelector} .qnalog-outline-recent-row')[${rowIndex}]`);
     return before;
   };
   let listScroll = await clickInList('#topics-panel-root', 2);
-  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [2], "clicking topic 2 highlights only topic 2");
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-outline-recent-row"), [2], "clicking topic 2 highlights only topic 2");
   listScroll = await clickInList('#topics-panel-root', 5);
-  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [5], "clicking topic 5 moves the highlight off topic 2");
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-outline-recent-row"), [5], "clicking topic 5 moves the highlight off topic 2");
   assert.equal(await evaluate("document.querySelector('#topics-panel-root').scrollTop"), listScroll, "highlight changes must not move the topic list");
   listScroll = await clickInList('#topics-panel-root', 5);
-  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [5], "clicking the same topic again keeps one highlight");
-  assert.equal(await evaluate("[...document.querySelectorAll('#topics-panel-root .qnalog-topics-row')].every((row, index) => row === window.__topicNodes[index])"), true, "highlight changes must not rebuild topic rows");
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-outline-recent-row"), [5], "clicking the same topic again keeps one highlight");
+  assert.equal(await evaluate("[...document.querySelectorAll('#topics-panel-root .qnalog-outline-recent-row')].every((row, index) => row === window.__topicNodes[index])"), true, "highlight changes must not rebuild topic rows");
   await evaluate("window.syncActiveRow(document.querySelector('#topics-panel-root'), [])");
-  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-topics-row"), [], "a path that matches no row clears the highlight");
+  assert.deepEqual(await highlighted("#topics-panel-root .qnalog-outline-recent-row"), [], "a path that matches no row clears the highlight");
   await evaluate("document.querySelector('#topics-panel-root').remove()");
 
   await evaluate(`(() => {
