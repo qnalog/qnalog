@@ -174,6 +174,8 @@ export class TopicsService {
       let totalBatches = 0;
       let partialFailure: string | undefined;
       let validationWarnings: string[] | undefined;
+      let updateDiagnostics: TopicChangePreview["updateDiagnostics"];
+      let degraded: number | undefined;
       if (input.topicId && !input.rebuild) {
         const isV2 = parseTopicPage(currentPage, existing?.path)?.layout === 2;
         const generated = isV2
@@ -184,6 +186,8 @@ export class TopicsService {
         totalBatches = generated.totalBatches;
         partialFailure = generated.partialFailure;
         validationWarnings = generated.validationWarnings;
+        updateDiagnostics = generated.updateDiagnostics;
+        degraded = generated.degraded;
       } else {
         const generated = await generateTopicPageContent(this.host.integration, generationInput);
         generatedModel = generated.model;
@@ -238,6 +242,8 @@ export class TopicsService {
         completedBatches, totalBatches,
         ...(partialFailure ? { partialFailure } : {}),
         ...(validationWarnings?.length ? { validationWarnings } : {}),
+        ...(updateDiagnostics ? { updateDiagnostics } : {}),
+        ...(degraded ? { degraded } : {}),
         sourceLinks: Object.fromEntries(memberRecords.map((member) => [member.sourceId, `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`])),
         sourceDates: Object.fromEntries(members.map(({ card }) => [card.sourceId, card.date])),
         ...(existing && !input.rebuild ? {

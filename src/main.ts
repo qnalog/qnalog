@@ -92,7 +92,7 @@ import { generateTitleTag } from "./notes/note-markdown";
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } from "./versions/version-identity";
 import { replaceActiveVersionBlock } from "./versions/active-version-block";
 import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
-import { requestLlmChatCompletion } from "./llm/core";
+import { logLlmRequestDiagnostic, requestLlmChatCompletion } from "./llm/core";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
 import { isPathUnderRecentNoteRoots } from "./recent/recent-note-paths";
@@ -373,6 +373,7 @@ class QnALogPlugin extends obsidian.Plugin {
       getFolder: () => this.settings.topicsFolder,
       integration: {
         request: (messages, signal, thinkingMode) => requestLlmChatCompletion(this, messages, { signal, stream: false, thinkingMode }),
+        diagnostic: (details) => logLlmRequestDiagnostic(this, "debug", "llm.topic_update_response", "Topic update response counts and validation outcomes", details),
       },
       createId: () => crypto.randomUUID(),
       startActivity: (id, title) => this.tasks.startTaskActivity({ id, kind: "topic", title, status: "running", stage: "preparing", stageLabel: title, detail: "Preparing a topic change" }),

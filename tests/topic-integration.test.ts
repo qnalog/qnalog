@@ -71,7 +71,7 @@ describe("topic integration", () => {
     expect(port.calls[2][1].content).toContain("The project is progressing.");
   });
 
-  it("sends the current page and accepts revisions only for overview or thread summary blocks", async () => {
+  it("revises overview blocks and degrades unsupported target blocks into a progress point", async () => {
     const source = member("valid", "New evidence changes the release date to October.");
     const markdown = renderTopicPage({ overview: "The release date is September.", status: "active", threads: [{ id: "release", title: "Release", summary: "The team planned a September release.", points: [{ id: "p", text: "The test is incomplete.", sources: ["valid"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: source.card.path, title: source.card.title, sourceId: source.card.sourceId, date: source.card.date }]);
     const blocks = parseTopicPageBlocks(markdown);
@@ -83,8 +83,10 @@ describe("topic integration", () => {
     ])]);
     const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: markdown });
     expect(port.calls[0][1].content).toContain("The release date is September.");
-    expect(result.operations).toHaveLength(1);
+    expect(result.operations).toHaveLength(2);
     expect(result.operations[0]).toMatchObject({ type: "revise_block", blockId: overview.id, expectedText: overview.text });
+    expect(result.operations[1]).toMatchObject({ type: "add_point", text: "Changed point" });
+    expect(result.degraded).toBe(1);
   });
 
   it("accepts revisions, disagreements, new actions, and resolved items from a focused update", async () => {
@@ -109,9 +111,9 @@ describe("topic integration", () => {
     expect(result.operations.map((operation) => operation.type)).toEqual(["revise_block", "add_disagreement", "add_open", "resolve_open"]);
     expect(result.operations[0]).toMatchObject({ blockId: overview.id, expectedText: overview.text });
     expect(result.operations[3]).toMatchObject({ blockId: open.id, expectedText: open.text });
-    expect(port.calls[0][0].content).toContain("output both revise_block for the affected summary and add_disagreement");
+    expect(port.calls[0][0].content).toContain("output add_disagreement with one position for the current-page claim");
     expect(port.calls[0][0].content).toContain("When evidence adds an unfinished task, output add_open");
-    expect(port.calls[0][0].content).toContain("When evidence explicitly says an existing open item is finished, output resolve_open for that exact block");
+    expect(port.calls[0][0].content).toContain("For an explicitly resolved item, use resolve_open when the matching block is known");
     expect(port.calls[0][0].content).toContain("positions:[{text,sourceId,date?},{text,sourceId,date?}]");
     expect(port.calls[0][1].content).toContain(source.content);
   });
@@ -129,11 +131,50 @@ describe("topic integration", () => {
     expect(result).toMatchObject({ completedBatches: 1, totalBatches: 1 });
   });
 
+  it("explains an empty update response after its single retry", async () => {
+    const source = member("empty", "Only repeated project context.");
+    const port = fakePort([response([]), response([])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "existing page" });
+    expect(result.operations).toEqual([]);
+    expect(result.updateDiagnostics).toMatchObject({ requests: 2, rawOperations: 0, acceptedOperations: 0, retried: true, jsonParsable: [true, true] });
+  });
+
+  it("degrades a missing block ID into a point and counts the adjustment", async () => {
+    const source = member("new-source", "A new project stage is starting.");
+    const port = fakePort([response([{ type: "revise_block", blockId: "missing", newText: "The project entered a new stage.", reason: "new evidence", sourceId: "new-source" }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "existing page" });
+    expect(result.operations).toMatchObject([{ type: "add_point", text: "The project entered a new stage.", sources: ["new-source"] }]);
+    expect(result.degraded).toBe(1);
+    expect(result.updateDiagnostics?.discarded).toMatchObject({ "block-id-not-found": 1 });
+  });
+
+  it("replaces an out-of-batch source ID with the supplied member source", async () => {
+    const source = member("new-source", "Verify the reading view.");
+    const port = fakePort([response([{ type: "add_open", kind: "action", text: "Verify the reading view.", sources: ["not-a-member"] }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "existing page" });
+    expect(result.operations).toMatchObject([{ type: "add_open", sources: ["new-source"], sourceId: "new-source" }]);
+    expect(result.degraded).toBe(1);
+    expect(result.updateDiagnostics?.discarded).toMatchObject({ "source-not-member": 1 });
+  });
+
   it("requires resolved items to go to status or timeline instead of the open-items section", () => {
     const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
     expect(system).toContain("A question belongs in 未决问题与未完成行动 only while no answer is confirmed");
     expect(system).toContain("An action belongs there only while its completion remains open");
     expect(system).toContain("resolved or already handled matters in 当前状态 or 时间线");
+  });
+  it("includes bilingual examples and does not require an existing block ID", async () => {
+    const source = member("new-source", "New useful project evidence.");
+    const port = fakePort([response([]), response([])]);
+    await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    const prompt = port.calls[0][0].content;
+    expect(prompt).toContain("Chinese examples");
+    expect(prompt).toContain("English examples");
+    expect(prompt.match(/add_disagreement/g)?.length).toBeGreaterThan(0);
+    expect(prompt.match(/add_open/g)?.length).toBeGreaterThan(0);
+    expect(prompt.match(/add_point/g)?.length).toBeGreaterThan(0);
+    expect(prompt).toContain("Existing block IDs are optional");
+    expect(prompt).toContain("Distinguish evidence that is identical or redundant");
   });
   it("uses fast thinking and reports completed batch progress", async () => {
     const progress: Array<[number, number]> = [];
