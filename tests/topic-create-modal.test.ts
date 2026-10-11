@@ -43,7 +43,7 @@ vi.mock("obsidian", () => {
 
 import type { TopicCandidates } from "../src/topics/topic-candidates";
 import { TopicCreateModal } from "../src/ui/topic-create-modal";
-import { defaultTopicMemberPaths, getJoinableTopics, isTopicSourceEligible, suggestTopicTitle, topicCandidateGroups } from "../src/ui/topics-ui-port";
+import { defaultTopicMemberPaths, getJoinableTopics, topicJoinMenuEntries, isTopicSourceEligible, suggestTopicTitle, topicCandidateGroups } from "../src/ui/topics-ui-port";
 import { NS_TYPE_DERIVED, NS_TYPE_TOPIC } from "../src/shared/namespace";
 
 function fixture(): TopicCandidates {
@@ -92,16 +92,18 @@ describe("topic create dialog", () => {
     expect(startCheckbox?.disabled).toBe(true);
   });
 
-  it("derives a short title and lists at most eight recent joinable topics", () => {
+  it("derives a short title and sorts eligible topics for the context menu", () => {
     expect(suggestTopicTitle({ title: "2026-10-10 · 综合纪要-数据结构优化", matchedTags: ["项目/QALog"] } as never)).toBe("QALog");
     expect(suggestTopicTitle({ title: "2026-10-10-纪要-数据结构优化", matchedTags: [] } as never)).toBe("数据结构优化");
     const topics = Array.from({ length: 12 }, (_, index) => ({
-      path: `Topics/${index}.md`, page: { id: String(index), title: String(index), updated: new Date(2026, 0, index + 1).toISOString(), members: index === 11 ? ["note.md"] : [], excluded: index === 10 ? ["note.md"] : [] },
+      id: String(index), title: String(index), updated: new Date(2026, 0, index + 1).toISOString(), members: index === 11 ? ["note.md"] : [], excluded: index === 10 ? ["note.md"] : [],
     }));
     const result = getJoinableTopics(topics as never, "note.md");
-    expect(result).toHaveLength(8);
-    expect(result[0].page.id).toBe("9");
-    expect(result.some(({ page }) => page.id === "10" || page.id === "11")).toBe(false);
+    expect(result).toHaveLength(10);
+    expect(result[0].id).toBe("9");
+    expect(result.some(({ id }) => id === "10" || id === "11")).toBe(false);
+    expect(topicJoinMenuEntries(topics, "note.md")).toMatchObject({ topics: result.slice(0, 8), more: true });
+    expect(topicJoinMenuEntries([], "note.md")).toEqual({ topics: [], more: false });
   });
 
   it("keeps derived, merged, and topic pages out of the source-note entry", () => {

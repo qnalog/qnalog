@@ -81,7 +81,7 @@ import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { TopicPromptStore } from "./topics/topic-prompt-store";
-import { isTopicSourceEligible, type TopicsUiPort } from "./ui/topics-ui-port";
+import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
@@ -794,6 +794,12 @@ class QnALogPlugin extends obsidian.Plugin {
 
   createTopicsUiPort(): TopicsUiPort {
     const sourceNoteChecks = new Map<string, boolean>();
+    const topicsSnapshot = new TopicSummarySnapshot();
+    const refreshTopicsSnapshot = async () => {
+      const topics = await this.topics.listTopics();
+      topicsSnapshot.replace(topics);
+      return topics;
+    };
     return {
       isConfigured: () => {
         const folder = obsidian.normalizePath(this.settings.topicsFolder || "");
@@ -810,15 +816,16 @@ class QnALogPlugin extends obsidian.Plugin {
       estimate: (input) => this.topics.estimate(input),
       preview: (input) => this.topics.preview(input),
       previewRebuild: (topicId, onProgress) => this.topics.previewRebuild(topicId, onProgress),
-      apply: (preview, selection) => this.topics.apply(preview, selection),
+      apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot(); return result; },
       cancel: (id) => this.topics.cancel(id),
-      listTopics: () => this.topics.listTopics(),
+      listTopics: () => refreshTopicsSnapshot(),
+      getTopicsSnapshot: () => topicsSnapshot.get(),
       countPending: (topicId) => this.topics.countPending(topicId),
       scanUnintegrated: (topicId, signal) => this.topics.scanUnintegrated(topicId, signal),
       undoLastUpdate: (topicId) => this.topics.undoLastUpdate(topicId),
-      deleteTopic: (topicId) => this.topics.deleteTopic(topicId),
-      mergeTopics: (sourceId, targetId) => this.topics.mergeTopics(sourceId, targetId),
-      ignoreNote: (topicId, path) => this.topics.ignoreNote(topicId, path),
+      deleteTopic: async (topicId) => { await this.topics.deleteTopic(topicId); await refreshTopicsSnapshot(); },
+      mergeTopics: async (sourceId, targetId) => { await this.topics.mergeTopics(sourceId, targetId); await refreshTopicsSnapshot(); },
+      ignoreNote: async (topicId, path) => { await this.topics.ignoreNote(topicId, path); await refreshTopicsSnapshot(); },
       noteArrived: (path) => this.topics.noteArrived(path),
       refreshPrompt: async (path) => {
         this.topicPromptStore.set(path, await this.topics.noteArrived(path));

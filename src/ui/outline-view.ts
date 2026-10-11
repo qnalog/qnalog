@@ -54,7 +54,8 @@ import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from ".
 import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../prompts/briefing-prompts";
 
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
-import { getJoinableTopics, type TopicsUiPort } from "./topics-ui-port";
+import type { TopicsUiPort } from "./topics-ui-port";
+import { addTopicJoinSubmenu } from "./topic-join-menu";
 import { TopicsPanel } from "./topics-panel";
 import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
 import { isBrowseTab, nextSidebarTab, scrollTopAfterRender } from "./sidebar-tab-policy";
@@ -214,6 +215,8 @@ function sedimentNoticeErrorSuffix(error: unknown): string {
 export class OutlineView extends obsidian.ItemView {
   declare plugin: QnALogPlugin;
   declare topicsUi: TopicsUiPort | null;
+  topicsSnapshotRefreshAt = 0;
+  topicsSnapshotRefreshPending = false;
   declare topicPromptRefreshPaths: Set<string>;
   declare topicSourceCheckPaths: Set<string>;
   // 视图实例字段。TypeScript 不推断「仅在构造函数或方法里赋值」的属性，
@@ -5729,6 +5732,7 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   renderRecent(root) {
+    this.refreshTopicsSnapshotIfNeeded();
     const allRecents = getRecentNotes(this.plugin, 120);
     for (const note of allRecents.slice(0, 20)) this.refreshTopicPromptOnce(note.file.path);
     const recents = this.applyRecentFilters(allRecents).slice(0, 48);
@@ -5949,7 +5953,7 @@ export class OutlineView extends obsidian.ItemView {
     if (topicsUi?.isSourceNote(file.path)) {
       menu.addItem((item) => item.setTitle(i18nT("Create topic")).setIcon("layers-3")
         .onClick(() => openCreateTopic(this.app, topicsUi, file.path, () => this.forceRecentRender())));
-      void this.addTopicJoinMenu(menu, file.path);
+      this.addTopicJoinMenu(menu, file.path);
     }
     menu.addItem((item) => {
       item.setTitle(detectedMode ? i18nT("Reorganize as") : i18nT("Organize as"))
@@ -6018,16 +6022,24 @@ export class OutlineView extends obsidian.ItemView {
     this.showMenuAtMouse(menu, evt);
   }
 
-  async addTopicJoinMenu(menu, path) {
+  addTopicJoinMenu(menu, path) {
     if (!this.topicsUi) return;
-    const topics = getJoinableTopics(await this.topicsUi.listTopics(), path);
-    if (!topics.length) return;
-    menu.addItem((item) => {
-      item.setTitle(i18nT("Join topic…")).setIcon("layers");
-      const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
-      for (const topic of topics) sub.addItem((entry) => entry.setTitle(topic.page.title)
-        .onClick(() => { if (this.topicsUi) void openTopicJoin(this.app, this.topicsUi, path, topic.page.id, () => this.forceRecentRender()); }));
+    addTopicJoinSubmenu(menu, this.topicsUi.getTopicsSnapshot(), path, { join: i18nT("Join topic…"), more: i18nT("More topics…") }, (topicId) => {
+      if (this.topicsUi) void openTopicJoin(this.app, this.topicsUi, path, topicId, () => this.forceRecentRender());
+    }, () => {
+        this.showRecentHome = false;
+        this.idlePanelTab = "topics";
+        this.render();
     });
+  }
+
+  refreshTopicsSnapshotIfNeeded() {
+    if (!this.topicsUi || this.topicsSnapshotRefreshPending || (this.topicsSnapshotRefreshAt > 0 && Date.now() - this.topicsSnapshotRefreshAt < 30_000)) return;
+    this.topicsSnapshotRefreshPending = true;
+    void this.topicsUi.listTopics().then(() => {
+      this.topicsSnapshotRefreshAt = Date.now();
+      this.forceRecentRender();
+    }).catch((error) => console.warn("[QnALog] topic snapshot refresh failed", error)).finally(() => { this.topicsSnapshotRefreshPending = false; });
   }
 
   renderTopicPromptRows(parent, path) {

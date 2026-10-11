@@ -6,6 +6,15 @@ import { NS_TYPE_TOPIC, isDerivedVersionType } from "../shared/namespace";
 import { isProjectTag } from "../topics/topic-tags";
 
 export interface TopicListEntry { path: string; page: TopicPage }
+export interface TopicSummary { id: string; title: string; members: string[]; excluded: string[]; updated: string }
+
+export class TopicSummarySnapshot {
+  private topics: TopicSummary[] = [];
+  replace(entries: readonly TopicListEntry[]): void {
+    this.topics = entries.map(({ page }) => ({ id: page.id, title: page.title, members: [...page.members], excluded: [...page.excluded], updated: page.updated }));
+  }
+  get(): TopicSummary[] { return this.topics.map((topic) => ({ ...topic, members: [...topic.members], excluded: [...topic.excluded] })); }
+}
 
 /** Narrow UI capabilities for topic actions; it does not expose the plugin or settings object. */
 export interface TopicsUiPort {
@@ -19,6 +28,7 @@ export interface TopicsUiPort {
   apply(preview: TopicChangePreview, selectedIds: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean; skipped?: Array<{ id: string; reason: "block-modified" }> }>;
   cancel(id: string): void;
   listTopics(): Promise<TopicListEntry[]>;
+  getTopicsSnapshot(): TopicSummary[];
   countPending(topicId: string): Promise<number>;
   scanUnintegrated(topicId: string, signal?: AbortSignal): Promise<TopicCandidates>;
   undoLastUpdate(topicId: string): Promise<{ restored: true } | { restored: false; reason: "no-history" | "page-modified" }>;
@@ -57,10 +67,14 @@ export function defaultTopicMemberPaths(candidates: TopicCandidates): string[] {
   return topicCandidateGroups(candidates).flatMap(({ items }) => items.filter((item) => item.defaultSelected).map((item) => item.path));
 }
 
-export function getJoinableTopics(topics: readonly TopicListEntry[], path: string): TopicListEntry[] {
-  return topics.filter(({ page }) => !page.members.includes(path) && !page.excluded.includes(path))
-    .sort((a, b) => Date.parse(b.page.updated) - Date.parse(a.page.updated))
-    .slice(0, 8);
+export function getJoinableTopics(topics: readonly TopicSummary[], path: string): TopicSummary[] {
+  return topics.filter((topic) => !topic.members.includes(path) && !topic.excluded.includes(path))
+    .sort((a, b) => Date.parse(b.updated) - Date.parse(a.updated));
+}
+
+export function topicJoinMenuEntries(topics: readonly TopicSummary[], path: string): { topics: TopicSummary[]; more: boolean } {
+  const eligible = getJoinableTopics(topics, path);
+  return { topics: eligible.slice(0, 8), more: eligible.length > 8 };
 }
 
 export function suggestTopicTitle(start?: TopicCandidate): string {

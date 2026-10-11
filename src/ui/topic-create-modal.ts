@@ -139,7 +139,7 @@ export class TopicCreateModal extends Modal {
     if (this.candidates) {
       for (const group of topicCandidateGroups(this.candidates)) {
         const section = scroll.createDiv({ cls: `qnalog-topics-candidate-group is-${group.tier}` });
-        this.groupHeadings.set(group.tier, section.createEl("h3"));
+        this.groupHeadings.set(group.tier, section.createDiv({ cls: "qnalog-topics-preview-heading is-section" }));
         for (const candidate of group.items) this.renderCandidate(section, candidate);
       }
     }
