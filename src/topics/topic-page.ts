@@ -1,8 +1,21 @@
-import { NS_FM, NS_TYPE_TOPIC } from "../shared/namespace";
+import { NS_FM, NS_FM_TOPIC_LAYOUT, NS_TYPE_TOPIC } from "../shared/namespace";
 
 export type TopicBasis = "overview" | "body";
 export type TopicSection = "概要" | "当前状态" | "分歧与待核实" | "未决问题与未完成行动" | "时间线" | "来源笔记" | "待整理";
-export interface TopicMember { path: string; title: string; sourceId: string }
+export interface TopicMember { path: string; title: string; sourceId: string; date?: string; summary?: string }
+export interface TopicThread { id: string; title: string; summary: string; points: Array<{ id: string; text: string; sources: string[] }> }
+export interface TopicDisagreement { id: string; subject: string; positions: Array<{ text: string; sourceId: string; date?: string }> }
+export interface TopicOpenItem { id: string; kind: string; text: string; sources: string[]; done: boolean }
+export interface TopicPageV2Model {
+  overview: string; status: string; threads: TopicThread[]; disagreements: TopicDisagreement[];
+  open: TopicOpenItem[]; unsorted: string[];
+}
+export interface TopicPageLabels {
+  overview: string; status: string; progress: string; disagreements: string; open: string;
+  timeline: string; sources: string; inProgress: string; updated: string; notes: string;
+  conflict: string;
+}
+export interface ParsedTopicBlock { id: string; type: "overview" | "thread-summary" | "point" | "disagreement" | "open" | "other"; text: string; start: number; end: number }
 export interface TopicPage {
   id: string;
   title: string;
@@ -17,6 +30,7 @@ export interface TopicPage {
   appliedHash?: string;
   undoSnapshot?: string;
   body: string;
+  layout?: number;
 }
 export type TopicOperation =
   | { type: "add_item"; section: TopicSection; text: string; sourceId: string; date?: string }
@@ -121,6 +135,7 @@ export function serializeTopicPage(page: TopicPage): string {
     `${NS_FM.topicBasis}: ${yamlString(page.basis)}`,
     `${NS_FM.topicCreated}: ${yamlString(page.created)}`,
     `${NS_FM.topicUpdated}: ${yamlString(page.updated)}`,
+    ...(page.layout === 2 ? [`${NS_FM_TOPIC_LAYOUT}: 2`, `cssclasses: [qnalog-topic]`] : []),
     ...(page.appliedHash ? [`${NS_FM.topicHash}: ${yamlString(page.appliedHash)}`] : []),
     ...(page.undoSnapshot ? [`${NS_FM.topicUndoSnapshot}: ${yamlString(page.undoSnapshot)}`] : []),
   ].join("\n");
@@ -153,10 +168,94 @@ export function parseTopicPage(markdown: string, path = ""): TopicPage | null {
     basis: fields[NS_FM.topicBasis] === "body" ? "body" : "overview",
     created: typeof created === "string" ? created : "",
     updated: typeof updated === "string" ? updated : "",
+    layout: fields[NS_FM_TOPIC_LAYOUT] === 2 ? 2 : undefined,
     appliedHash: typeof appliedHash === "string" ? appliedHash : undefined,
     undoSnapshot: typeof undoSnapshot === "string" ? undoSnapshot : undefined,
     body: split.body,
   };
+}
+
+const DEFAULT_V2_LABELS: TopicPageLabels = {
+  overview: "概要", status: "状态", progress: "进展脉络", disagreements: "分歧与待核实",
+  open: "未决问题与行动", timeline: "时间线", sources: "来源笔记", inProgress: "进行中",
+  updated: "最近更新", notes: "篇笔记", conflict: "关于这个问题的不同说法",
+};
+
+function sourceFootnoteId(sourceId: string): string { return `s${stableHash(sourceId).slice(0, 4)}`; }
+function inlineFootnotes(sources: readonly string[]): string {
+  return [...new Set(sources)].map((source) => `[^${sourceFootnoteId(source)}]`).join("");
+}
+function firstSentence(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const sentence = clean.match(/^.{1,60}?(?:[。.!?！？](?=\s|$)|$)/u)?.[0] || clean.slice(0, 60);
+  return [...sentence].slice(0, 60).join("");
+}
+function uniqueBlockId(kind: string, value: string, used: Set<string>): string {
+  const id = stableTopicBlockId(kind, value, value, new Set([...used].map((item) => item.replace(/-\d+$/, ""))));
+  used.add(id);
+  return id;
+}
+function quote(text: string): string { return text.split("\n").map((line) => `> ${line}`).join("\n"); }
+
+/** Deterministically renders a v2 page. The same model and members produce identical Markdown. */
+export function renderTopicPage(model: TopicPageV2Model, members: readonly TopicMember[], labels: Partial<TopicPageLabels> = {}): string {
+  const label = { ...DEFAULT_V2_LABELS, ...labels };
+  const used = new Set<string>();
+  const allSourceIds = new Set(members.map((member) => member.sourceId));
+  const overviewId = uniqueBlockId("overview", "overview", used);
+  const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), `> ${model.status ? `**${label.status}**：${model.status} · ` : ""}**${label.updated}** ${members.map((member) => member.date || "").filter(Boolean).sort().at(-1) || "—"} · ${label.notes.replace("篇笔记", String(members.length))}`, `> ^${overviewId}`, "", `## ${label.progress}`];
+  for (const thread of model.threads.slice(0, 6)) {
+    const threadId = uniqueBlockId("thread", thread.id || thread.title, used);
+    sections.push("", `### ${thread.title}`, `${thread.summary.trim()} ^${threadId}`);
+    for (const point of thread.points.slice(0, 6)) {
+      const id = uniqueBlockId("point", point.id || `${thread.id}:${point.text}`, used);
+      sections.push(`- ${point.text.trim()}${inlineFootnotes(point.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
+    }
+  }
+  if (model.disagreements.length) {
+    sections.push("", `## ${label.disagreements}`);
+    for (const disagreement of model.disagreements) {
+      sections.push("", `> [!warning] ${disagreement.subject || label.conflict}`);
+      for (const position of disagreement.positions) {
+        if (!allSourceIds.has(position.sourceId)) continue;
+        sections.push(`> - **${position.date || ""}**：${position.text}${inlineFootnotes([position.sourceId])}`);
+      }
+    }
+  }
+  if (model.open.length) {
+    sections.push("", `## ${label.open}`);
+    for (const item of model.open) {
+      const id = uniqueBlockId("open", item.id || item.text, used);
+      sections.push(`- [${item.done ? "x" : " "}] ${item.kind ? `${item.kind}：` : ""}${item.text}${inlineFootnotes(item.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
+    }
+  }
+  if (model.unsorted.length) {
+    sections.push("", `## 待整理`, ...model.unsorted.map((item) => `- ${item}`));
+  }
+  sections.push("", `## ${label.timeline}`);
+  const timeline = members.filter((member) => member.date).slice().sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.sourceId.localeCompare(b.sourceId));
+  for (const member of timeline) sections.push(`- ${member.date} · [[${member.path.replace(/\.md$/i, "")}|${member.title}]] — ${firstSentence(member.summary || member.title)}`);
+  sections.push("", `## ${label.sources}`);
+  const sorted = [...members].sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.sourceId.localeCompare(b.sourceId));
+  for (const member of sorted) sections.push(`[^${sourceFootnoteId(member.sourceId)}]: [[${member.path.replace(/\.md$/i, "")}|${member.title}]]${member.date ? ` · ${member.date}` : ""}`);
+  return sections.join("\n").trimEnd() + "\n";
+}
+
+/** Extracts block-addressable text while tolerating malformed and user-authored Markdown. */
+export function parseTopicPageBlocks(markdown: string): ParsedTopicBlock[] {
+  const split = frontmatter(markdown);
+  const bodyOffset = markdown.length - split.body.length;
+  const blocks: ParsedTopicBlock[] = [];
+  const re = /([^\n]*(?:\n[^\n]*){0,4}?)\s+\^(tpc-[\da-f]{6})\s*(?=\n|$)/gim;
+  for (const match of split.body.matchAll(re)) {
+    const raw = match[1] || "";
+    const text = raw.replace(/^\s*>?\s*(?:[-*]\s*)?/, "").replace(/\n\s*>\s?/g, "\n").trim();
+    const before = split.body.slice(0, match.index).split("\n").filter((line) => /^#{1,6}\s/.test(line)).at(-1) || "";
+    const type: ParsedTopicBlock["type"] = /\[!abstract\]/i.test(raw) ? "overview" : /^###/.test(before) && !/^[-*]/.test(raw.trim()) ? "thread-summary" : /^[-*]\s*\[[ xX]\]/.test(raw.trim()) ? "open" : /^[-*]/.test(raw.trim()) ? "point" : /^>\s*\[!warning\]/.test(raw.trim()) ? "disagreement" : "other";
+    const start = bodyOffset + (match.index || 0);
+    blocks.push({ id: match[2], type, text, start, end: start + match[0].length });
+  }
+  return blocks;
 }
 export function updateTopicFrontmatter(markdown: string, updates: Record<string, string | string[]>): string {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);

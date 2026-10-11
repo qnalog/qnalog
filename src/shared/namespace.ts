@@ -137,6 +137,8 @@ export function isNamespaceTag(tag: unknown): boolean {
 
 /** frontmatter 键：说话人映射。 */
 export const NS_FM_SPEAKERS = "qnalog_speakers";
+/** Topic page layout generation. */
+export const NS_FM_TOPIC_LAYOUT = "qnalog_topic_layout";
 /** QnALog 管理的稳定 Frontmatter 字段；`tags` 保留为 Obsidian 标准属性。 */
 export const NS_FM = {
   mode: "qnalog_mode",
