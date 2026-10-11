@@ -282,10 +282,10 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
   }
   if (model.unsorted.length) sections.push("", `## 待整理`, ...model.unsorted.map((item) => `- ${item}`));
   sections.push("", `## ${label.timeline}`);
-  const timeline = members.filter((member) => member.date).slice().sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.sourceId.localeCompare(b.sourceId));
-  for (const member of timeline) sections.push(`- ${member.date} · [[${member.path.replace(/\.md$/i, "")}|${member.title}]] — ${summarizeForTimeline(member.summary || "", { title: member.title })}`);
+  const timeline = [...members].sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || a.title.localeCompare(b.title));
+  for (const member of timeline) sections.push(`- ${member.date || "—"} · [[${member.path.replace(/\.md$/i, "")}|${member.title}]] — ${summarizeForTimeline(member.summary || "", { title: member.title })}`);
   sections.push("", `## ${label.sources}`);
-  const sorted = [...members].sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.sourceId.localeCompare(b.sourceId));
+  const sorted = [...members].sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.title.localeCompare(b.title));
   for (const member of sorted) sections.push(`[^${sourceFootnoteId(member.sourceId)}]: [[${member.path.replace(/\.md$/i, "")}|${member.title}]]${member.date ? ` · ${member.date}` : ""}`);
   return sections.join("\n").trimEnd() + "\n";
 }
@@ -495,43 +495,87 @@ export function appendTopicMemberMetadata(markdown: string, members: readonly To
   const parsed = frontmatter(markdown);
   if (parseTopicFrontmatter(parsed.text)[NS_FM_TOPIC_LAYOUT] !== 2 || !members.length) return markdown;
   const lines = parsed.body.split("\n");
-  const timeline = lines.findIndex((line) => /^##\s+(?:Timeline|时间线)\s*$/.test(line.trim()));
-  const sources = lines.findIndex((line) => /^##\s+(?:Source notes|来源笔记)\s*$/.test(line.trim()));
-  const existingIds = new Set(lines.map((line) => line.match(/^\[\^(s[\da-f]{4})\]:/)?.[1]).filter((id): id is string => !!id));
-  const sourceRows: string[] = [];
-  const timelineRows: Array<{ date: string; row: string }> = [];
-  for (const member of members) {
-    const footnoteId = sourceFootnoteId(member.sourceId);
-    if (!existingIds.has(footnoteId)) {
-      existingIds.add(footnoteId);
-      const link = "[[" + member.path.replace(/\.md$/i, "") + "|" + member.title + "]]";
-      sourceRows.push("[^" + footnoteId + "]: " + link + (member.date ? " · " + member.date : ""));
-    }
-    if (timeline >= 0 && member.date) {
-      const link = "[[" + member.path.replace(/\.md$/i, "") + "|" + member.title + "]]";
-      if (!lines.some((line) => line.includes(link))) timelineRows.push({ date: member.date, row: "- " + member.date + " · " + link + " — " + summarizeForTimeline(member.summary || "", { title: member.title }) });
+  for (const section of ["时间线", "来源笔记"] as const) {
+    if (!sectionRange(lines, section)) {
+      while (lines.length && !lines.at(-1)?.trim()) lines.pop();
+      lines.push("", sectionHeading(section));
     }
   }
-  if (timeline >= 0 && timelineRows.length) {
-    let end = timeline + 1;
-    while (end < lines.length && !/^##\s/.test(lines[end])) end++;
-    for (const entry of timelineRows.sort((a, b) => a.date.localeCompare(b.date))) {
-      let at = timeline + 1;
-      while (at < end) {
-        const date = lines[at].match(/^\s*-\s*(\d{4}-\d{2}-\d{2})\s*[·—-]/)?.[1];
-        if (date && date > entry.date) break;
-        at++;
-      }
-      lines.splice(at, 0, entry.row);
-      end++;
+  const linkOf = (member: TopicMember): string => `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`;
+  const timelineRows = members.map((member) => ({
+    date: member.date || "9999-99-99", title: member.title, link: linkOf(member),
+    row: `- ${member.date || "—"} · ${linkOf(member)} — ${summarizeForTimeline(member.summary || "", { title: member.title })}`,
+  }));
+  for (const entry of timelineRows.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title))) {
+    const range = sectionRange(lines, "时间线");
+    if (!range || lines.slice(range.start + 1, range.end).some((line) => line.includes(entry.link))) continue;
+    const rows = lines.slice(range.start + 1, range.end).map((line, offset) => ({ index: range.start + 1 + offset, match: line.match(/^\s*-\s*(\d{4}-\d{2}-\d{2}|—)\s*[·—-]\s*\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/) }));
+    const timelineEntries = rows.filter((row) => row.match);
+    const target = timelineEntries.find(({ match }) => {
+      const date = match?.[1] === "—" ? "9999-99-99" : match?.[1] || "";
+      const title = match?.[3] || match?.[2].split("/").at(-1) || "";
+      return date.localeCompare(entry.date) > 0 || (date === entry.date && title.localeCompare(entry.title) > 0);
+    });
+    const lastTimelineIndex = timelineEntries.at(-1)?.index;
+    let at = target?.index ?? (lastTimelineIndex !== undefined ? lastTimelineIndex + 1 : range.start + 1);
+    while (at > range.start + 1 && !lines[at - 1]?.trim()) at--;
+    lines.splice(at, 0, entry.row);
+  }
+  const timelineRange = sectionRange(lines, "时间线");
+  if (timelineRange) {
+    const timelineIndexes = lines.slice(timelineRange.start + 1, timelineRange.end).map((line, offset) => /^\s*-\s*(?:\d{4}-\d{2}-\d{2}|—)\s*[·—-]\s*\[\[/.test(line) ? timelineRange.start + 1 + offset : -1).filter((index) => index >= 0);
+    for (let index = timelineIndexes.length - 1; index > 0; index--) {
+      const left = timelineIndexes[index - 1];
+      const right = timelineIndexes[index];
+      if (lines.slice(left + 1, right).every((line) => !line.trim())) lines.splice(left + 1, right - left - 1);
     }
   }
-  if (sources >= 0 && sourceRows.length) {
-    let at = sources + 1;
-    while (at < lines.length && !/^##\s/.test(lines[at])) at++;
-    lines.splice(at, 0, ...sourceRows.sort((a, b) => a.localeCompare(b)));
+  if (sectionRange(lines, "来源笔记")) {
+    const entries = members.map((member) => ({
+      sourceId: member.sourceId,
+      date: member.date || "9999-99-99",
+      title: member.title,
+      row: `[^${sourceFootnoteId(member.sourceId)}]: ${linkOf(member)}${member.date ? ` · ${member.date}` : ""}`,
+    })).sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+    for (const entry of entries) {
+      const id = sourceFootnoteId(entry.sourceId);
+      const range = sectionRange(lines, "来源笔记");
+      if (!range) continue;
+      if (lines.slice(range.start + 1, range.end).some((line) => line.startsWith(`[^${id}]:`))) continue;
+      const list = lines.slice(range.start + 1, range.end).map((line, offset) => ({ index: range.start + 1 + offset, match: line.match(/^\[\^s[\da-f]{4}\]:\s+\[\[([^\]|]+)(?:\|([^\]]+))?\]\](?:\s+·\s+(\d{4}-\d{2}-\d{2}))?$/) }));
+      const rows = list.filter((row) => row.match);
+      const target = rows.find(({ match }) => {
+        const date = match?.[3] || "9999-99-99";
+        const title = match?.[2] || match?.[1].split("/").at(-1) || "";
+        return date.localeCompare(entry.date) > 0 || (date === entry.date && title.localeCompare(entry.title) > 0);
+      });
+      const lastSourceIndex = rows.at(-1)?.index;
+      lines.splice(target?.index ?? (lastSourceIndex !== undefined ? lastSourceIndex + 1 : range.start + 1), 0, entry.row);
+    }
   }
-  return (parsed.text ? "---\n" + parsed.text + "\n---\n" : "") + lines.join("\n");
+  let result = (parsed.text ? "---\n" + parsed.text + "\n---\n" : "") + lines.join("\n");
+  const current = parseTopicPage(markdown);
+  if (current) {
+    const memberLinks = [...new Set([...current.memberLinks, ...members.map(linkOf)])];
+    result = updateTopicFrontmatter(result, { [NS_FM.topicMembers]: memberLinks });
+  }
+  return result;
+}
+
+export interface TopicMemberMetadataCounts { members: number; timeline: number; sources: number }
+export function topicMemberMetadataCounts(markdown: string): TopicMemberMetadataCounts {
+  const split = frontmatter(markdown);
+  const members = parseTopicPage(markdown)?.members.length || 0;
+  const lines = split.body.split("\n");
+  const count = (section: TopicSection, pattern: RegExp): number => {
+    const range = sectionRange(lines, section);
+    return range ? lines.slice(range.start + 1, range.end).filter((line) => pattern.test(line)).length : 0;
+  };
+  return {
+    members,
+    timeline: count("时间线", /^\s*-\s*(?:\d{4}-\d{2}-\d{2}|—)\s*[·—-]\s*\[\[/),
+    sources: count("来源笔记", /^\[\^s[\da-f]{4}\]:\s+\[\[/),
+  };
 }
 
 

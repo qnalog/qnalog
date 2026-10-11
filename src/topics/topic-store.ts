@@ -1,5 +1,5 @@
 import { NS_FM, NS_ROOT } from "../shared/namespace";
-import { appendTopicMemberLinks, appendTopicMemberMetadata, buildTopicBlockIndex, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, readLegacyTopicMachineProperties, removeTopicMachineProperties, withTopicBlockIndex, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, type TopicBlockIndexEntry, type TopicPage } from "./topic-page";
+import { appendTopicMemberLinks, appendTopicMemberMetadata, buildTopicBlockIndex, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, readLegacyTopicMachineProperties, removeTopicMachineProperties, withTopicBlockIndex, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, topicMemberMetadataCounts, type TopicBlockIndexEntry, type TopicPage } from "./topic-page";
 import type { TopicChangePreview } from "./topic-integration";
 import { rebuildTopicTagAliases } from "./topic-tags";
 
@@ -217,6 +217,10 @@ export class TopicStore {
       const machineState = await this.ensureMachineCache(path, before, parsed);
       const snapshotPath = await this.makeSnapshot(parsed.id, before);
       const beforeHash = hashTopicPage(before);
+      const beforeMetadataCounts = topicMemberMetadataCounts(before);
+      if (beforeMetadataCounts.members !== beforeMetadataCounts.timeline || beforeMetadataCounts.members !== beforeMetadataCounts.sources) {
+        this.port.logDiagnostic?.("topic.member_metadata_before_mismatch", { ...beforeMetadataCounts });
+      }
       let changed = false;
       await this.port.process(path, (current) => {
         if (hashTopicPage(current) !== beforeHash) {
@@ -236,7 +240,7 @@ export class TopicStore {
           const prefixes = preview.legacyStatusPrefixes || [];
           next = next.split("\n").filter((line) => !isLegacyTopicStatusLine(line, prefixes)).join("\n");
         }
-        next = appendTopicMemberMetadata(next, preview.newMembers || []);
+        next = appendTopicMemberMetadata(next, preview.metadataMembers || preview.newMembers || []);
         const updates: Record<string, string | string[]> = {
           [NS_FM.topicUpdated]: new Date(this.port.now()).toISOString(),
         };
@@ -250,6 +254,10 @@ export class TopicStore {
           [NS_FM.topicHash]: hashTopicPage(next),
           [NS_FM.topicUndoSnapshot]: snapshotPath,
         });
+        const afterMetadataCounts = topicMemberMetadataCounts(next);
+        if (afterMetadataCounts.members !== afterMetadataCounts.timeline || afterMetadataCounts.members !== afterMetadataCounts.sources) {
+          this.port.logDiagnostic?.("topic.member_metadata_after_mismatch", { ...afterMetadataCounts });
+        }
         appliedMarkdown = next;
         appliedCount = result.applied.length;
         skipped = result.skipped;

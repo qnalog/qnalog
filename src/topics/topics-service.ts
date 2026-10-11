@@ -253,6 +253,10 @@ export class TopicsService {
           ? { legacyStatusCleanup: true, legacyStatusPrefixes: [t("Legacy topic status prefix zh"), t("Legacy topic status prefix en")] } : {}),
         ...(existing?.page.legacyMachineProperties ? { legacyPropertyCleanup: true } : {}),
         newMembers: memberRecords,
+        ...(existing && !input.rebuild ? { metadataMembers: [
+          ...existingEvidenceMembers.map(({ card }) => ({ path: card.path, title: card.title, sourceId: card.sourceId, date: card.date, summary: card.overview })),
+          ...memberRecords,
+        ] } : {}),
         items: generatedOperations.map((operation, index) => ({
           id: `${index}-${hashText(JSON.stringify(operation))}`, operation, type: operation.type,
           target: "targetId" in operation ? operation.targetId : "blockId" in operation ? (topicBlockHeadingLabel(currentPage, operation.blockId) || t("Corresponding section")) : "thread" in operation ? operation.thread : "title" in operation ? operation.title : "section" in operation ? operation.section : operation.type,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TopicStore, type TopicStorePort } from "../src/topics/topic-store";
-import { buildTopicBlockIndex, createTopicPage, hashTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
+import { buildTopicBlockIndex, createTopicPage, hashTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, topicMemberMetadataCounts, type TopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
 import type { TopicChangePreview } from "../src/topics/topic-integration";
 
 class MemoryPort implements TopicStorePort {
@@ -114,6 +114,7 @@ describe("topic store", () => {
     expect(result.markdown).toContain("Run rollback checks.");
     expect(result.markdown).toContain("2026-10-03 · [[Notes/new|New]]");
     expect(result.markdown).toMatch(/\[\^s[\da-f]{4}\]: \[\[Notes\/new\|New\]\]/);
+    expect(topicMemberMetadataCounts(result.markdown)).toEqual({ members: 2, timeline: 2, sources: 2 });
     expectNoLegacyV2Headings(result.markdown);
     expect(result.markdown).toContain("## 待整理\n\n用户自己补充的内容。");
     expect(await store.undoLastUpdate("v2")).toEqual({ restored: true });

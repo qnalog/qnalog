@@ -53,6 +53,7 @@ export interface TopicChangePreview {
   sourceLinks?: Record<string, string>;
   sourceDates?: Record<string, string>;
   newMembers?: TopicMember[];
+  metadataMembers?: TopicMember[];
   replacement?: { path: string; markdown: string; model: TopicPageV2Model };
 }
 export interface TopicUpdateDiagnostics {

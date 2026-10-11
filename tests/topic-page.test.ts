@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTopicOps,
+  appendTopicMemberMetadata,
   createTopicPage,
   parseTopicPage,
   serializeTopicPage,
@@ -11,10 +12,84 @@ import {
   renderTopicPage,
   TOPIC_SECTIONS,
   updateTopicFrontmatter,
+  topicMemberMetadataCounts,
   type TopicOperation,
 } from "../src/topics/topic-page";
 
 describe("topic pages", () => {
+  const source = (title: string, day: string, id = title.toLowerCase().replace(/\W+/g, "-")) => ({
+    path: `QnALog/${title}.md`, title, sourceId: id, date: day, summary: `${title} provides project context.`,
+  });
+  const memberFixture = () => {
+    const members = [source("Middle note", "2026-09-30"), source("Last note", "2026-10-03")];
+    const page = createTopicPage({ id: "metadata-location", title: "Metadata location", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [], disagreements: [], open: [], unsorted: [] }, members);
+    return { members, markdown: serializeTopicPage(page) };
+  };
+  const sectionLines = (markdown: string, heading: string) => {
+    const lines = markdown.split("\n");
+    const start = lines.findIndex((line) => line === `## ${heading}` || line.startsWith(`## ${heading} /`));
+    const end = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
+    return lines.slice(start + 1, end < 0 ? lines.length : end).filter(Boolean);
+  };
+
+  it.each([
+    { name: "earliest", member: source("First note", "2026-09-20"), expected: ["First note", "Middle note", "Last note"] },
+    { name: "middle", member: source("Between note", "2026-10-01"), expected: ["Middle note", "Between note", "Last note"] },
+    { name: "latest", member: source("Final note", "2026-10-08"), expected: ["Middle note", "Last note", "Final note"] },
+  ])("inserts a new member in date order when the date is $name", ({ member, expected }) => {
+    const { members, markdown } = memberFixture();
+    const updated = appendTopicMemberMetadata(markdown, [...members, member]);
+    expect(sectionLines(updated, "时间线").map((line) => line.match(/\|([^\]]+)\]\]/)?.[1])).toEqual(expected);
+    expect(sectionLines(updated, "来源笔记").map((line) => line.match(/\|([^\]]+)\]\]/)?.[1])).toEqual(["Middle note", "Last note", member.title].sort((a, b) => {
+      const dates = new Map([["Middle note", "2026-09-30"], ["Last note", "2026-10-03"], [member.title, member.date]]);
+      return dates.get(a)!.localeCompare(dates.get(b)!) || a.localeCompare(b);
+    }));
+    expect(topicMemberMetadataCounts(updated)).toEqual({ members: 3, timeline: 3, sources: 3 });
+  });
+
+  it("puts timeline rows before user prose and removes blank gaps between adjacent rows", () => {
+    const { markdown } = memberFixture();
+    const withUserText = markdown.replace("## 来源笔记", "A user note after the timeline.\n\n## 来源笔记").replace("- 2026-10-03", "\n\n- 2026-10-03");
+    const updated = appendTopicMemberMetadata(withUserText, [source("Early note", "2026-09-15")]);
+    const timeline = sectionLines(updated, "时间线");
+    expect(timeline.slice(0, 3).every((line) => line.startsWith("- "))).toBe(true);
+    expect(timeline.at(-1)).toBe("A user note after the timeline.");
+    expect(timeline).not.toContain("");
+  });
+
+  it("repairs a missing source section and keeps two new members in both lists", () => {
+    const { markdown } = memberFixture();
+    const withoutSources = markdown.replace(/\n## 来源笔记[\s\S]*$/, "\nUser text at page end.\n\n");
+    const members = [source("Newer note", "2026-10-05"), source("Earlier note", "2026-09-18")];
+    const { members: existing } = memberFixture();
+    const updated = appendTopicMemberMetadata(withoutSources, [...existing, ...members]);
+    expect(updated).toContain("## 来源笔记");
+    expect(sectionLines(updated, "来源笔记").map((line) => line.match(/\|([^\]]+)\]\]/)?.[1])).toEqual(["Earlier note", "Middle note", "Last note", "Newer note"]);
+    expect(topicMemberMetadataCounts(updated)).toEqual({ members: 4, timeline: 4, sources: 4 });
+    const timeline = sectionLines(updated, "时间线");
+    expect(timeline.filter((line) => line.startsWith("- ")).slice(-2).map((line) => line.match(/\|([^\]]+)\]\]/)?.[1])).toEqual(["Last note", "Newer note"]);
+  });
+
+  it("repairs a missing timeline section at the page end without moving user text", () => {
+    const { members, markdown } = memberFixture();
+    const withoutTimeline = markdown.replace(/\n## 时间线[\s\S]*?(?=\n## 来源笔记)/, "\nUser-owned timeline note.");
+    const updated = appendTopicMemberMetadata(withoutTimeline, [...members, source("Added note", "2026-10-04")]);
+    expect(updated).toContain("User-owned timeline note.");
+    expect(updated.indexOf("## 时间线 / Timeline")).toBeGreaterThan(updated.indexOf("## 来源笔记"));
+    expect(sectionLines(updated, "时间线").filter((line) => line.startsWith("- "))).toHaveLength(3);
+    expect(sectionLines(updated, "来源笔记").filter((line) => line.startsWith("[^s"))).toHaveLength(3);
+    expect(topicMemberMetadataCounts(updated)).toEqual({ members: 3, timeline: 3, sources: 3 });
+  });
+
+  it("sorts same-day additions by title regardless of input order", () => {
+    const { members, markdown } = memberFixture();
+    const sameDay = [source("Zebra note", "2026-09-30"), source("Apple note", "2026-09-30")];
+    const updated = appendTopicMemberMetadata(markdown, [...members, ...sameDay]);
+    expect(sectionLines(updated, "时间线").slice(0, 3).map((line) => line.match(/\|([^\]]+)\]\]/)?.[1])).toEqual(["Apple note", "Middle note", "Zebra note"]);
+  });
+
   it("round-trips page metadata and sections through serialization", () => {
     const page = createTopicPage({
       id: "topic-42",
