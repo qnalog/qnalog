@@ -2,7 +2,7 @@ import type { OverviewCard } from "./overview-card";
 import { extractBriefingGroundingAnchors } from "../briefing/pipeline";
 import { detectGeneralSourceLanguage } from "../shared/util-text";
 import { stripBlockMarkers } from "./topic-block-markers";
-import { isTopicOpenKind, isTopicStatus, parseTopicPageBlocks, type TopicBasis, type TopicMember, type TopicOperation, type TopicPageV2Model, type TopicSection } from "./topic-page";
+import { isTopicOpenKind, isTopicStatus, parseTopicPageBlocks, type ParsedTopicBlock, type TopicBasis, type TopicDisagreementPosition, type TopicMember, type TopicOperation, type TopicPageV2Model, type TopicSection } from "./topic-page";
 
 export const TOPIC_INTEGRATION_BATCH_SIZE = 6;
 export const TOPIC_BODY_BATCH_CHARS = 24000;
@@ -76,13 +76,17 @@ function topicBigrams(value: string): Set<string> {
   for (let index = 0; index + 1 < chars.length; index++) pairs.add(chars[index] + chars[index + 1]);
   return pairs;
 }
-function hasTopicTextGrounding(source: string, claim: string): boolean {
+/** Share of the claim's character pairs found in the source; short claims must appear verbatim. */
+function topicGroundingRatio(source: string, claim: string): number {
   const claimPairs = topicBigrams(claim);
-  if (claimPairs.size < 2) return source.toLocaleLowerCase().includes(claim.toLocaleLowerCase());
+  if (claimPairs.size < 2) return source.toLocaleLowerCase().includes(claim.toLocaleLowerCase()) ? 1 : 0;
   const sourcePairs = topicBigrams(source);
   let matched = 0;
   for (const pair of claimPairs) if (sourcePairs.has(pair)) matched++;
-  return matched / claimPairs.size >= TOPIC_RESOLVE_GROUNDING_THRESHOLD;
+  return matched / claimPairs.size;
+}
+function hasTopicTextGrounding(source: string, claim: string): boolean {
+  return topicGroundingRatio(source, claim) >= (topicBigrams(claim).size < 2 ? 1 : TOPIC_RESOLVE_GROUNDING_THRESHOLD);
 }
 function topicTextSimilarity(left: string, right: string): number {
   const a = topicBigrams(left);
@@ -98,19 +102,50 @@ function disagreementCallout(markdown: string, subject: string): string | undefi
   if (match < 0) return undefined;
   return lines[match].replace(/^\s*>\s*\[!warning\]\s*/i, "").trim();
 }
-function sourceForPageBlock(markdown: string, block: ReturnType<typeof parseTopicPageBlocks>[number], members: readonly TopicIntegrationMember[]): TopicIntegrationMember | undefined {
-  const raw = markdown.slice(block.start, block.end);
-  const refs = [...raw.matchAll(/\[\^([\w-]+)\]/g)].map((match) => match[1]);
-  for (const ref of refs) {
-    const definition = markdown.match(new RegExp(`^\\[\\^${ref}\\]:\\s*\\[\\[([^|\\]]+)`, "m"));
-    const path = definition?.[1];
-    if (path) {
-      const normalized = /\.md$/i.test(path) ? path : `${path}.md`;
-      const member = members.find((item) => item.card.path === normalized || item.card.path.endsWith(`/${normalized}`));
-      if (member) return member;
-    }
+function memberForFootnote(markdown: string, ref: string, members: readonly TopicIntegrationMember[]): TopicIntegrationMember | undefined {
+  const definition = markdown.match(new RegExp(`^\\[\\^${ref}\\]:\\s*\\[\\[([^|\\]]+)`, "m"));
+  const path = definition?.[1];
+  if (!path) return undefined;
+  const normalized = /\.md$/i.test(path) ? path : `${path}.md`;
+  return members.find((item) => item.card.path === normalized || item.card.path.endsWith(`/${normalized}`));
+}
+const DISAGREEMENT_BLOCK_TYPES: ReadonlySet<ParsedTopicBlock["type"]> = new Set(["point", "overview", "thread-summary", "open"]);
+/** Finds the page block that holds the existing side: by ID first, then by character-pair match against point blocks. */
+function resolveDisagreementBlock(markdown: string, relatedBlockId: string | undefined, claim: string): ParsedTopicBlock | undefined {
+  const blocks = parseTopicPageBlocks(markdown);
+  const byId = relatedBlockId ? blocks.find((block) => block.id === relatedBlockId && DISAGREEMENT_BLOCK_TYPES.has(block.type)) : undefined;
+  if (byId || !claim.trim()) return byId;
+  let best: { block: ParsedTopicBlock; ratio: number } | undefined;
+  for (const block of blocks) {
+    if (block.type !== "point") continue;
+    const ratio = topicGroundingRatio(claim, cleanTopicBlockClaim(block.text));
+    if (ratio >= TOPIC_RESOLVE_GROUNDING_THRESHOLD && (!best || ratio > best.ratio)) best = { block, ratio };
   }
-  return undefined;
+  return best?.block;
+}
+/**
+ * Builds the existing side of a disagreement from a page block: its own text,
+ * every footnote's member, and the earliest member's date. A block without any
+ * footnote is page narrative and gets no date or source.
+ */
+function pageDisagreementPosition(markdown: string, block: ParsedTopicBlock, members: readonly TopicIntegrationMember[]): TopicDisagreementPosition | undefined {
+  const text = cleanTopicBlockClaim(block.text);
+  if (!text) return undefined;
+  const refs = [...new Set([...markdown.slice(block.start, block.end).matchAll(/\[\^([\w-]+)\]/g)].map((match) => match[1]))];
+  if (!refs.length) return { text, sourceId: "", provenance: "page-narrative", fromPage: true };
+  const resolved = refs.flatMap((ref) => { const member = memberForFootnote(markdown, ref, members); return member ? [{ ref, member }] : []; });
+  if (!resolved.length) return { text, sourceId: "", provenance: "source-pending", fromPage: true };
+  const sources = resolved.map(({ member }) => member);
+  const earliest = [...sources].sort((left, right) => (left.card.date || "9999-99-99").localeCompare(right.card.date || "9999-99-99"))[0];
+  const grounded = sources.some((member) => hasTopicTextGrounding(member.content || member.card.overview, text));
+  return {
+    text, sourceId: earliest.card.sourceId, sourceIds: sources.map((member) => member.card.sourceId), footnotes: resolved.map(({ ref }) => ref),
+    ...(earliest.card.date ? { date: earliest.card.date } : {}), sourceTitle: earliest.card.title,
+    ...(grounded ? {} : { provenance: "unverified" as const }), fromPage: true,
+  };
+}
+function byDisagreementDate(left: TopicDisagreementPosition, right: TopicDisagreementPosition): number {
+  return (left.date || "9999-99-99").localeCompare(right.date || "9999-99-99");
 }
 function cleanTopicBlockClaim(text: string): string {
   return text.replace(/\[\^[\w-]+\]/g, "").replace(/^[-*]\s*(?:\[[ xX]\]\s*)?/, "").replace(/\s+\^tpc-[\da-f]{6}$/i, "").trim();
@@ -474,34 +509,44 @@ function validateStructuredOperation(value: unknown, members: readonly TopicInte
     }
     case "add_disagreement": {
       const subject = typeof row.subject === "string" ? row.subject.trim() : "";
+      const relatedBlockId = typeof row.relatedBlockId === "string" ? row.relatedBlockId.replace(/^\^/, "") : "";
+      const supplied = Array.isArray(row.positions) ? row.positions : [];
+      const claimText = supplied.flatMap((value) => value && typeof value === "object" && typeof (value as Record<string, unknown>).text === "string" ? [stripBlockMarkers((value as Record<string, string>).text)] : []).find(Boolean) || "";
+      // The existing side is always rebuilt from the page block; model text for it is dropped.
+      const relatedBlock = resolveDisagreementBlock(currentPage, relatedBlockId, claimText);
+      const pageSide = relatedBlock ? pageDisagreementPosition(currentPage, relatedBlock, members) : undefined;
+      const pageSourceIds = new Set(pageSide?.sourceIds || []);
       let replacedPositionSource = false;
       let repeatedMemberPosition = false;
       const seenSources = new Set<string>();
-      const positions: Extract<TopicOperation, { type: "add_disagreement" }>["positions"] = [];
-      const relatedBlockId = typeof row.relatedBlockId === "string" ? row.relatedBlockId.replace(/^\^/, "") : "";
-      const relatedBlock = blocks.find((block) => block.id === relatedBlockId && (block.type === "point" || block.type === "overview" || block.type === "thread-summary"));
-      if (relatedBlock) {
-        const oldText = cleanTopicBlockClaim(relatedBlock.text);
-        const oldMember = sourceForPageBlock(currentPage, relatedBlock, members);
-        if (oldText) positions.push({ text: oldText, sourceId: oldMember?.card.sourceId || "", ...(oldMember?.card.date ? { date: oldMember.card.date } : {}), ...(oldMember ? { sourceTitle: oldMember.card.title } : {}), ...(!oldMember ? { provenance: "source-pending" as const } : !hasTopicTextGrounding(oldMember.content || oldMember.card.overview, oldText) ? { provenance: "unverified" as const } : {}) });
-        if (oldMember) seenSources.add(oldMember.card.sourceId);
-      }
-      positions.push(...(Array.isArray(row.positions) ? row.positions : []).flatMap((value) => {
-        if (!value || typeof value !== "object") return [];
+      const positions: TopicDisagreementPosition[] = [];
+      for (const value of supplied) {
+        if (!value || typeof value !== "object") continue;
         const position = value as Record<string, unknown>;
         const id = typeof position.sourceId === "string" && sourceIds.has(position.sourceId) ? position.sourceId : "";
+        const rawText = typeof position.text === "string" ? stripBlockMarkers(position.text) : "";
+        if (!rawText) continue;
+        if (id && pageSourceIds.has(id)) { repeatedMemberPosition = true; continue; }
+        if (!id && pageSide) continue;
+        if (id && seenSources.has(id)) { repeatedMemberPosition = true; continue; }
         replacedPositionSource ||= !id;
-        const rawText = typeof position.text === "string" ? position.text.trim() : "";
-        if (!rawText) return [];
-        if (id && seenSources.has(id)) { repeatedMemberPosition = true; return []; }
         if (id) seenSources.add(id);
         const source = members.find((item) => item.card.sourceId === id);
         const evidence = source ? (source.content || source.card.overview) : "";
         const grounded = !!source && hasTopicTextGrounding(evidence, rawText);
-        return [{ text: rawText, sourceId: id, ...(id && source?.card.date ? { date: source.card.date } : {}), ...(id && source ? { sourceTitle: source.card.title } : {}), ...(!id ? { provenance: "source-pending" as const } : !grounded ? { provenance: "unverified" as const } : {}) }];
-      }));
+        positions.push({ text: rawText, sourceId: id, ...(id && source?.card.date ? { date: source.card.date } : {}), ...(id && source ? { sourceTitle: source.card.title } : {}), ...(!id ? { provenance: "source-pending" as const } : !grounded ? { provenance: "unverified" as const } : {}) });
+      }
       const mergedSubject = subject ? disagreementCallout(currentPage, subject) || subject : "";
-      return mergedSubject && positions.length ? { operation: { type: "add_disagreement", subject: mergedSubject, ...(relatedBlock ? { relatedBlockId: relatedBlock.id } : {}), positions, sourceId: positions.find((position) => position.sourceId)?.sourceId || "" }, ...(repeatedMemberPosition ? { reason: "same-member-opposition", degraded: true } : replacedPositionSource ? { reason: "source-not-member", degraded: true } : positions.some((position) => position.provenance === "unverified") ? { reason: "unsupported-position", degraded: true } : {}) } : { operation: null, reason: "missing-fields-or-source" };
+      if (!mergedSubject || !positions.length) return { operation: null, reason: "missing-fields-or-source" };
+      const allPositions = [...(pageSide ? [pageSide] : []), ...positions];
+      const reason = repeatedMemberPosition ? "same-member-opposition"
+        : replacedPositionSource ? "source-not-member"
+          : !relatedBlock ? "no-page-block"
+            : positions.some((position) => position.provenance === "unverified") ? "unsupported-position" : undefined;
+      return {
+        operation: { type: "add_disagreement", subject: mergedSubject, ...(relatedBlock ? { relatedBlockId: relatedBlock.id } : {}), positions: allPositions, sourceId: positions.find((position) => position.sourceId)?.sourceId || pageSide?.sourceId || "" },
+        ...(reason ? { reason, degraded: true } : {}),
+      };
     }
     case "add_open": {
       const sources = validSources(row.sources);
@@ -536,18 +581,15 @@ function operationTexts(operation: TopicOperation): string[] {
 }
 
 function assessedDisagreement(assessment: TopicAssessment, member: TopicIntegrationMember, existingMembers: readonly TopicIntegrationMember[], currentPage: string, subject: string): TopicOperation | undefined {
-  const related = assessment.relatedBlockId ? parseTopicPageBlocks(currentPage).find((block) => block.id === assessment.relatedBlockId && (block.type === "point" || block.type === "overview" || block.type === "thread-summary")) : undefined;
   const evidence = member.content || member.card.overview;
-  const claim = originalMemberClaim(evidence, assessment.claim);
+  const claim = stripBlockMarkers(originalMemberClaim(evidence, assessment.claim));
   const supported = hasTopicTextGrounding(evidence, claim);
-  const oldMember = related ? sourceForPageBlock(currentPage, related, existingMembers) : undefined;
-  const oldClaim = related ? cleanTopicBlockClaim(related.text) : "";
+  const relatedBlock = resolveDisagreementBlock(currentPage, assessment.relatedBlockId, claim);
+  const pageSide = relatedBlock ? pageDisagreementPosition(currentPage, relatedBlock, existingMembers) : undefined;
   const existingSubject = disagreementCallout(currentPage, subject);
-  const positions: Extract<TopicOperation, { type: "add_disagreement" }>['positions'] = [];
-  if (oldClaim) positions.push({ text: oldClaim, sourceId: oldMember?.card.sourceId || "", ...(oldMember?.card.date ? { date: oldMember.card.date } : {}), ...(oldMember ? { sourceTitle: oldMember.card.title } : {}), ...(!oldMember ? { provenance: "source-pending" } : !hasTopicTextGrounding(oldMember.content || oldMember.card.overview, oldClaim) ? { provenance: "unverified" } : {}) });
-  positions.push({ text: claim, sourceId: member.card.sourceId, ...(member.card.date ? { date: member.card.date } : {}), sourceTitle: member.card.title, ...(!supported ? { provenance: "unverified" } : {}) });
-  positions.sort((left, right) => (left.date || "9999-99-99").localeCompare(right.date || "9999-99-99"));
-  return { type: "add_disagreement", subject: existingSubject || subject, ...(related ? { relatedBlockId: related.id } : {}), positions, sourceId: member.card.sourceId };
+  const newSide: TopicDisagreementPosition = { text: claim, sourceId: member.card.sourceId, ...(member.card.date ? { date: member.card.date } : {}), sourceTitle: member.card.title, ...(!supported ? { provenance: "unverified" as const } : {}) };
+  const positions = [...(pageSide ? [pageSide] : []), newSide].sort(byDisagreementDate);
+  return { type: "add_disagreement", subject: existingSubject || subject, ...(relatedBlock ? { relatedBlockId: relatedBlock.id } : {}), positions, sourceId: member.card.sourceId };
 }
 
 function disagreementMatchesAssessment(operation: TopicOperation, assessment: TopicAssessment): boolean {
@@ -649,6 +691,7 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
               if (reason === "same-member-opposition") validationWarnings.add("A disagreement stance from the same member was omitted; review its source attribution.");
               if (reason === "source-not-member") validationWarnings.add("A disagreement stance has no verified member source; its date and footnote were omitted.");
               if (reason === "unsupported-position") validationWarnings.add("A disagreement stance could not be grounded in its source member card.");
+              if (reason === "no-page-block") validationWarnings.add("A disagreement had no related page block; check the page for a conflicting claim.");
               if (reason === "resolve-grounding-failed") validationWarnings.add("An open item was not matched to the supporting claim and was added as a point instead.");
             }
           } else { const reason = validated.reason || "invalid-operation"; updateDiagnostics.discarded[reason] = (updateDiagnostics.discarded[reason] || 0) + 1; }

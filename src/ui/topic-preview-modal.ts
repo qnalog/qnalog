@@ -154,9 +154,10 @@ export class TopicPreviewModal extends Modal {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: item.operation.subject });
         for (const position of item.operation.positions) {
           const stance = main.createDiv({ cls: `qnalog-topics-preview-item${position.provenance ? " is-unverified" : ""}` });
-          const provenance = position.provenance === "source-pending" ? this.port.text("Source pending verification") : position.provenance === "unverified" ? this.port.text("Unverified") : "";
+          const provenance = position.provenance === "source-pending" ? this.port.text("Source pending verification") : position.provenance === "unverified" ? this.port.text("Unverified") : position.provenance === "page-narrative" ? this.port.text("Page narrative") : "";
           stance.createDiv({ cls: "qnalog-topics-preview-text", text: `${position.date ? `${position.date}: ` : ""}${position.text}${provenance ? ` (${provenance})` : ""}` });
           const source = stance.createDiv({ cls: "qnalog-topics-preview-meta" });
+          if (position.fromPage) source.createSpan({ cls: "qnalog-topics-preview-date", text: this.port.text("Existing page block") });
           if (position.sourceId) {
             const linkTarget = this.preview.sourceLinks?.[position.sourceId] || position.sourceId;
             const title = position.sourceTitle || /\|([^|\]]+)\]\]$/.exec(linkTarget)?.[1] || linkTarget;

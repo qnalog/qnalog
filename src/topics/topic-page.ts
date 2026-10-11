@@ -7,7 +7,11 @@ export type TopicOpenKind = "question" | "action" | "bug";
 export type TopicSection = "概要" | "当前状态" | "进展脉络" | "分歧与待核实" | "未决问题与未完成行动" | "未决问题与行动" | "时间线" | "来源笔记" | "待整理";
 export interface TopicMember { path: string; title: string; sourceId: string; date?: string; summary?: string }
 export interface TopicThread { id: string; title: string; summary: string; points: Array<{ id: string; text: string; sources: string[] }> }
-export interface TopicDisagreement { id: string; subject: string; positions: Array<{ text: string; sourceId: string; date?: string; provenance?: "source-pending" | "unverified"; sourceTitle?: string }> }
+/** Why a stance has no verified member source or date: pending verification, text not grounded in its member, or taken from page narrative. */
+export type TopicPositionProvenance = "source-pending" | "unverified" | "page-narrative";
+/** One side of a disagreement. `fromPage` marks the existing-page side; `footnotes` keeps that block's own footnote IDs; `sourceIds` lists every member it cites. */
+export interface TopicDisagreementPosition { text: string; sourceId: string; date?: string; provenance?: TopicPositionProvenance; sourceTitle?: string; sourceIds?: string[]; footnotes?: string[]; fromPage?: boolean }
+export interface TopicDisagreement { id: string; subject: string; positions: TopicDisagreementPosition[] }
 export interface TopicOpenItem { id: string; kind: TopicOpenKind; text: string; sources: string[]; done: boolean }
 export interface TopicPageV2Model {
   overview: string; status: TopicStatus; threads: TopicThread[]; disagreements: TopicDisagreement[];
@@ -45,7 +49,7 @@ export type TopicOperation =
   | { type: "add_point"; thread: string; text: string; sources: string[]; sourceId: string }
   | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
   | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
-  | { type: "add_disagreement"; subject: string; relatedBlockId?: string; positions: Array<{ text: string; sourceId: string; date?: string; provenance?: "source-pending" | "unverified"; sourceTitle?: string }>; sourceId: string }
+  | { type: "add_disagreement"; subject: string; relatedBlockId?: string; positions: TopicDisagreementPosition[]; sourceId: string }
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
@@ -284,7 +288,7 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
       for (const position of disagreement.positions) {
         const sourceMember = memberBySource.get(position.sourceId);
         if (!sourceMember) continue;
-        sections.push(`> - ${sourceMember.date ? `**${sourceMember.date}**：` : ""}${position.text}${inlineFootnotes([sourceMember.sourceId])}`);
+        sections.push(`> - ${sourceMember.date ? `**${sourceMember.date}**：` : ""}${position.text}${inlineFootnotes(position.sourceIds?.length ? position.sourceIds : [sourceMember.sourceId])}`);
       }
     }
   }
@@ -492,13 +496,16 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
           location = "进展脉络";
         } else if (operation.type === "add_disagreement") {
           const used = new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value));
-          const positions = operation.positions.map((position) => {
+          // Stances render in date order; a stance without a date goes last.
+          const ordered = [...operation.positions].sort((left, right) => (left.date || "9999-99-99").localeCompare(right.date || "9999-99-99"));
+          const positions = ordered.map((position) => {
             const id = stableTopicBlockId("disagreement", position.sourceId, position.text, used);
             used.add(id);
-            const sourceDate = position.provenance === "source-pending" ? "" : position.date || "";
-            const sourceFootnote = position.provenance === "source-pending" || !position.sourceId ? "" : source(position.sourceId);
-            const marker = position.provenance === "source-pending" ? "（来源待核实）" : position.provenance === "unverified" ? "（未核实）" : "";
-            return `> - ${sourceDate ? `**${sourceDate}**：` : ""}${position.text}${marker}${sourceFootnote} ^${id}`;
+            const hasSource = position.provenance !== "source-pending" && position.provenance !== "page-narrative" && !!position.sourceId;
+            const sourceDate = hasSource ? position.date || "" : "";
+            const sourceFootnote = !hasSource ? "" : position.footnotes?.length ? position.footnotes.map((ref) => `[^${ref}]`).join("") : inlineFootnotes(position.sourceIds?.length ? position.sourceIds : [position.sourceId]);
+            const marker = position.provenance === "source-pending" ? "（来源待核实）" : position.provenance === "unverified" ? "（未核实）" : position.provenance === "page-narrative" ? "（来自页面叙述）" : "";
+            return withBlockId(`> - ${sourceDate ? `**${sourceDate}**：` : ""}${position.text}${marker}${sourceFootnote}`, id);
           });
           const heading = `> [!warning] ${operation.subject}`;
           const existingHeading = lines.findIndex((line) => line.trim() === heading);
