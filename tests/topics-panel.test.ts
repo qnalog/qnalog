@@ -52,10 +52,56 @@ describe("topics panel", () => {
     const panel = new TopicsPanel({} as never, port as never, () => undefined);
     await panel.render(root);
     await vi.waitFor(() => expect(allText((root as unknown as { children: FakeTree[] }).children[0])).toContain("3 pending"));
-    const row = descendants((root as unknown as { children: FakeTree[] }).children[0]).find((item) => item.cls.includes("qnalog-outline-recent-row"));
+    const section = (root as unknown as { children: FakeTree[] }).children[0];
+    const row = descendants(section).find((item) => item.cls.includes("qnalog-outline-recent-row"));
     expect(row).toBeDefined();
     row?.listeners.get("contextmenu")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
     expect(menuState.titles).toEqual(expect.arrayContaining(["Scan for notes to integrate", "Undo last update", "Merge into…", "Delete topic"]));
+  });
+
+  it("uses the minutes row structure: chip, body with name and meta, and actions with the badge and ⋯", async () => {
+    const port = {
+      isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
+      listTopics: vi.fn(async () => [{ path: "Topics/Planning.md", page: { id: "one", title: "Planning", updated: "2026-10-10T00:00:00Z", members: ["a.md", "b.md"] } }]),
+      countPending: vi.fn(async () => 3),
+      scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(),
+      deleteTopic: vi.fn(), mergeTopics: vi.fn(), ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),
+    };
+    const root = new FakePanelEl() as unknown as HTMLElement;
+    await new TopicsPanel({} as never, port as never, () => undefined, "Topics/Planning.md").render(root);
+    await vi.waitFor(() => expect(allText((root as unknown as { children: FakeTree[] }).children[0])).toContain("3 pending"));
+    const section = (root as unknown as { children: FakeTree[] }).children[0];
+    const row = descendants(section).find((item) => item.cls.includes("qnalog-outline-recent-row")) as unknown as FakePanelEl;
+    expect(row.cls).toContain("is-active");
+    expect(row.children.map((child) => child.cls)).toEqual(["qnalog-outline-recent-chip", "qnalog-outline-recent-body"]);
+    const body = row.children[1];
+    expect(body.children.map((child) => child.cls)).toEqual(["qnalog-outline-recent-title-line", "qnalog-outline-recent-meta", "qnalog-outline-recent-actions"]);
+    expect(body.children[0].children[0].text).toBe("Planning");
+    const local = new Date("2026-10-10T00:00:00Z");
+    const monthDay = `${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
+    expect(body.children[1].text).toBe(`2 member notes · Updated ${monthDay}`);
+    const actions = body.children[2];
+    expect(actions.children.map((child) => child.cls)).toEqual(expect.arrayContaining(["qnalog-topics-pending is-visible", "qnalog-outline-recent-action qnalog-topics-more"]));
+    const more = actions.children.find((child) => child.cls.includes("qnalog-topics-more")) as unknown as FakePanelEl;
+    more.listeners.get("click")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
+    expect(menuState.titles).toEqual(expect.arrayContaining(["Scan for notes to integrate", "Delete topic"]));
+  });
+
+  it("shows the pending badge only when notes are waiting", async () => {
+    const port = {
+      isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
+      listTopics: vi.fn(async () => [{ path: "Topics/Quiet.md", page: { id: "quiet", title: "Quiet", updated: "2026-10-10T00:00:00Z", members: [] } }]),
+      countPending: vi.fn(async () => 0),
+      scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(),
+      deleteTopic: vi.fn(), mergeTopics: vi.fn(), ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),
+    };
+    const root = new FakePanelEl() as unknown as HTMLElement;
+    await new TopicsPanel({} as never, port as never, () => undefined).render(root);
+    await vi.waitFor(() => expect(port.countPending).toHaveBeenCalled());
+    const section = (root as unknown as { children: FakeTree[] }).children[0];
+    const badges = descendants(section).filter((item) => item.cls.includes("qnalog-topics-pending"));
+    expect(badges.some((badge) => badge.cls.includes("is-visible"))).toBe(false);
+    expect(descendants(section).find((item) => item.cls.includes("qnalog-outline-recent-row") && !item.cls.includes("is-active"))).toBeDefined();
   });
 
   it("renders a guided empty state when no topic folder exists", async () => {
