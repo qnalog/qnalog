@@ -119,6 +119,21 @@ function topicTextSimilarity(left: string, right: string): number {
   for (const pair of a) if (b.has(pair)) overlap++;
   return overlap / Math.min(a.size, b.size);
 }
+/** Point matching removes punctuation and common Chinese grammatical particles before counting bigrams. */
+function topicPointBigrams(value: string): Set<string> {
+  const chars = Array.from(value.normalize("NFKC").toLocaleLowerCase().replace(/[\p{P}\p{S}\s]+/gu, "").replace(/[的了在于经后时]/g, ""));
+  const pairs = new Set<string>();
+  for (let index = 0; index + 1 < chars.length; index++) pairs.add(chars[index] + chars[index + 1]);
+  return pairs;
+}
+function topicPointSimilarity(left: string, right: string): number {
+  const a = topicPointBigrams(left);
+  const b = topicPointBigrams(right);
+  if (!a.size || !b.size) return 0;
+  let overlap = 0;
+  for (const pair of a) if (b.has(pair)) overlap++;
+  return overlap / Math.min(a.size, b.size);
+}
 function disagreementCallout(markdown: string, subject: string): string | undefined {
   const lines = markdown.split("\n");
   const match = lines.findIndex((line) => /^\s*>\s*\[!warning\]\s*/i.test(line) && topicTextSimilarity(line.replace(/^\s*>\s*\[!warning\]\s*/i, ""), subject) >= TOPIC_DISAGREEMENT_SIMILARITY_THRESHOLD);
@@ -847,7 +862,7 @@ function deduplicateAddPoints(values: readonly TopicOperation[], currentPage: st
   for (const value of values) {
     if (value.type !== "add_point") { operations.push(value); continue; }
     const pageDuplicate = pagePoints.find((point) => sameTopicThread(point.heading, value.thread)
-      && topicTextSimilarity(point.text, value.text) >= TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD);
+      && topicPointSimilarity(point.text, value.text) >= TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD);
     if (pageDuplicate) {
       duplicates++;
       details.push({ thread: value.thread, discardedText: value.text, keptText: pageDuplicate.text, reason: "existing-page" });
@@ -855,7 +870,7 @@ function deduplicateAddPoints(values: readonly TopicOperation[], currentPage: st
     }
     const existingIndex = operations.findIndex((operation) => operation.type === "add_point"
       && sameTopicThread(operation.thread, value.thread)
-      && topicTextSimilarity(operation.text, value.text) >= TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD);
+      && topicPointSimilarity(operation.text, value.text) >= TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD);
     if (existingIndex < 0) { operations.push(value); continue; }
     const existing = operations[existingIndex];
     if (existing.type !== "add_point") continue;

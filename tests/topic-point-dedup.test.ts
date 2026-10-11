@@ -37,6 +37,19 @@ describe("topic point deduplication", () => {
     expect(result.updateDiagnostics?.duplicateOperations).toBe(0);
   });
 
+  it("deduplicates model paraphrases after punctuation and particle normalization", async () => {
+    const first = "修复了纪要列表在录制过程中字体变小的样式异常问题，经 Codex/OMP 修正后追加录音功能恢复正常。";
+    const second = "发现纪要列表样式在录制过程中存在异常（字体变小），经 Codex/OMP 修正后，追加录音时恢复正常。";
+    const fresh = member("fresh-paraphrases", `${first} ${second}`);
+    const result = await generateTopicPageUpdateOperations(portFor([
+      { type: "add_point", thread: "功能开发", text: first, sources: ["fresh-paraphrases"] },
+      { type: "add_point", thread: "功能开发", text: second, sources: ["fresh-paraphrases"] },
+    ]), { basis: "overview", members: [fresh], currentPage: "" });
+    expect(result.operations).toHaveLength(1);
+    expect(result.updateDiagnostics?.duplicateOperations).toBe(1);
+    expect(result.duplicateDetails).toEqual([{ thread: "功能开发", discardedText: second, keptText: first, reason: "same-update" }]);
+  });
+
   it("drops a paraphrased point that repeats an existing page point in the same thread", async () => {
     const existing = "确认纪要列表字体变小的问题已彻底修复。";
     const paraphrase = "纪要列表字体变小的问题已确认彻底修复。";
