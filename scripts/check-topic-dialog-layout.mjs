@@ -159,13 +159,16 @@ try {
     const create = await evaluate(`(() => {
       const content=document.querySelector('.modal-content.qnalog-topics-create'); const scroll=content?.querySelector('.qnalog-topics-scroll'); const footer=content?.querySelector('.qnalog-topics-modal-footer');
       const summaries=[...(content?.querySelectorAll('.qnalog-topics-candidate-summary') || [])].map((item) => item.textContent || '');
-      return {height:content?.clientHeight, scrollHeight:scroll?.scrollHeight, scrollClientHeight:scroll?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, bodyScrollWidth:document.body.scrollWidth, summaries};
+      const headings=[...(content?.querySelectorAll('.qnalog-topics-preview-heading') || [])]; const first=content?.querySelector('.qnalog-topics-candidate');
+      return {height:content?.clientHeight, scrollHeight:scroll?.scrollHeight, scrollClientHeight:scroll?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, bodyScrollWidth:document.body.scrollWidth, summaries, headingTags:headings.map((item)=>item.tagName), candidateOutline:first?getComputedStyle(first).outlineStyle:null};
     })()`);
     assert(create.height > 0, `create dialog missing at ${width}px/${theme}`);
     assert(create.scrollHeight > create.scrollClientHeight, `candidate list did not scroll at ${width}px/${theme}`);
     assert(create.footerBottom <= create.viewport, `create footer below viewport at ${width}px/${theme}`);
     assert(create.scrollWidth <= create.clientWidth && create.bodyScrollWidth <= width, `create dialog has horizontal overflow at ${width}px/${theme}`);
     assert(create.summaries.some((summary) => summary.includes("底层数据结构的优化")) && create.summaries.every((summary) => !/[*_`]/.test(summary)), `candidate excerpt contains Markdown markers at ${width}px/${theme}`);
+    assert(create.headingTags.length > 0 && create.headingTags.every((tag) => tag === "DIV"), `candidate headings must not use h3/h4 at ${width}px/${theme}`);
+    assert.equal(create.candidateOutline, "none", `candidate rows must not keep an outline without keyboard focus at ${width}px/${theme}`);
     assertHorizontal(await evaluate(horizontalFacts("create")), `create dialog at ${width}px/${theme}`);
     for (const how of ["x", "esc", "cancel"]) {
       if (how !== "x") await evaluate("window.renderTopicCreate()");
@@ -206,7 +209,8 @@ try {
     await evaluate("window.renderTopicPreview()");
     const preview = await evaluate(`(() => {
       const content=document.querySelector('.modal-content.qnalog-topics-preview'); const scroll=content?.querySelector('.qnalog-topics-scroll'); const footer=content?.querySelector('.qnalog-topics-modal-footer'); const row=content?.querySelector('.qnalog-topics-preview-item'); const text=row?.querySelector('.qnalog-topics-preview-text');
-      return {height:content?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, scrollAreaWidth:scroll?.scrollWidth, scrollAreaClientWidth:scroll?.clientWidth, textWidth:text?.getBoundingClientRect().width, contentWidth:content?.clientWidth, source:row?.querySelector('.qnalog-topics-source-link')?.textContent, badgeWhiteSpace:getComputedStyle(row?.querySelector('.qnalog-topics-unverified')).whiteSpace, bodyScrollWidth:document.body.scrollWidth};
+      const style=row?getComputedStyle(row):null; const headings=[...content.querySelectorAll('.qnalog-topics-preview-heading')];
+      return {height:content?.clientHeight, footerBottom:footer?.getBoundingClientRect().bottom, viewport:innerHeight, scrollWidth:content?.scrollWidth, clientWidth:content?.clientWidth, scrollAreaWidth:scroll?.scrollWidth, scrollAreaClientWidth:scroll?.clientWidth, textWidth:text?.getBoundingClientRect().width, contentWidth:content?.clientWidth, source:row?.querySelector('.qnalog-topics-source-link')?.textContent, badgeWhiteSpace:getComputedStyle(row?.querySelector('.qnalog-topics-unverified')).whiteSpace, headingTags:headings.map((heading)=>heading.tagName), rowOutline:style?.outlineStyle, rowTopBorder:style?.borderTopStyle, buttonCount:content?.querySelectorAll('button').length, bodyScrollWidth:document.body.scrollWidth};
     })()`);
     assert(preview.height > 0, `preview dialog missing at ${width}px/${theme}`);
     assert(preview.textWidth >= preview.contentWidth * 0.6, `preview text is too narrow (${preview.textWidth}/${preview.contentWidth}) at ${width}px/${theme}`);
@@ -214,6 +218,10 @@ try {
     assert(preview.scrollWidth <= preview.clientWidth && preview.scrollAreaWidth <= preview.scrollAreaClientWidth && preview.bodyScrollWidth <= width, `preview dialog has horizontal overflow at ${width}px/${theme}`);
     assert.equal(preview.source, "问答日志-数据结构优化", `source should display title only at ${width}px/${theme}`);
     assert.equal(preview.badgeWhiteSpace, "nowrap", `unverified badge can wrap vertically at ${width}px/${theme}`);
+    assert(preview.headingTags.length > 0 && preview.headingTags.every((tag) => tag === "DIV"), `preview headings must not use h3/h4 at ${width}px/${theme}`);
+    assert.equal(preview.rowOutline, "none", `preview rows must not keep an outline without keyboard focus at ${width}px/${theme}`);
+    assert.equal(preview.rowTopBorder, "none", `preview rows must not keep a border around the whole item at ${width}px/${theme}`);
+    assert(preview.buttonCount > 0, `preview actions must stay inside the dialog at ${width}px/${theme}`);
     assertHorizontal(await evaluate(horizontalFacts("preview")), `preview dialog at ${width}px/${theme}`);
     console.log(`[topic-dialog-layout] ${width}px ${theme}: body ${preview.textWidth}/${preview.contentWidth}px; footer ${Math.round(preview.footerBottom)}/${preview.viewport}px; no horizontal overflow`);
     for (const how of ["x", "esc", "cancel"]) {
@@ -323,7 +331,9 @@ try {
   await waitFor("window.topicPreviewDriver.pending()");
   await driver("fail('boom')");
   await waitFor("!!document.querySelector('.qnalog-topics-retry')");
-  assert.match(await evaluate("document.querySelector('.modal-content.qnalog-topics-create').textContent"), /boom/, "failure view must show the error summary");
+  const failureText = await evaluate("document.querySelector('.modal-content.qnalog-topics-create').textContent");
+  assert.match(failureText, /The topic page could not be generated/, "failure view must show the localized error");
+  assert.doesNotMatch(failureText, /boom/, "failure view must not show the raw exception");
   assert.equal(await evaluate("window.__liveIntervals.size"), 0, "failure must clear the elapsed timer");
   await clickFirst(".qnalog-topics-retry");
   await waitFor("!!document.querySelector('.qnalog-topics-generating')");

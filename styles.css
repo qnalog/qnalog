@@ -10359,7 +10359,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-empty { margin: 24px 0; }
 .qnalog-topics-create, .qnalog-topics-preview { color: var(--text-normal); }
 .qnalog-topics-create h2, .qnalog-topics-preview h2 { font-size: 16px; }
-.qnalog-topics-create h3, .qnalog-topics-preview h3 { margin: 12px 0 6px; color: var(--text-muted); font-size: 12px; }
 .qnalog-topics-title { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0 0 10px; }
 .qnalog-topics-basis { display: flex; gap: 14px; margin: 10px 0; }
 .qnalog-topics-radio { display: inline-flex; align-items: center; gap: 6px; color: var(--text-normal); font-size: var(--font-ui-small); }
@@ -10371,7 +10370,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-candidate input, .qnalog-topics-preview-item input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--interactive-accent); }
 .qnalog-topics-candidate, .qnalog-topics-preview-item { cursor: pointer; border-radius: 5px; }
 .qnalog-topics-candidate:hover, .qnalog-topics-preview-item:hover { background: var(--background-secondary); }
-.qnalog-topics-candidate:focus-within, .qnalog-topics-preview-item:focus-within { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qnalog-topics-candidate:has(input:focus-visible), .qnalog-topics-preview-item:has(input:focus-visible) { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 .qnalog-topics-candidate.is-disabled { cursor: default; opacity: 0.55; }
 .qnalog-topics-candidate.is-disabled:hover { background: transparent; }
 .qnalog-topics-estimate:empty { display: none; }
@@ -10390,11 +10389,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-missing { color: var(--text-error); }
 .qnalog-topics-modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; }
 .qnalog-topics-preview-section { margin: 12px 0; }
+.qnalog-topics-preview-heading { margin: 12px 0 6px; }
+.qnalog-topics-preview-heading.is-section { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 600; }
+.qnalog-topics-preview-heading.is-thread { color: var(--text-normal); font-size: var(--font-ui-medium); font-weight: 600; }
 .qnalog-topics-preview-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px; border-radius: 5px; }
 .qnalog-topics-operation-icon, .qnalog-topics-operation-icon svg { width: 14px; height: 14px; flex: 0 0 14px; color: var(--text-muted); }
 .qnalog-topics-preview-item.is-conflict { background: var(--background-secondary); border-inline-start: 2px solid var(--text-warning, var(--interactive-accent)); }
-.qnalog-topics-preview-text { flex: 1; white-space: pre-wrap; font-size: var(--font-ui-small); line-height: 1.55; }
-.qnalog-topics-source-link { border: 0; padding: 0; background: transparent; color: var(--text-accent); font-size: var(--font-ui-smaller); }
+.qnalog-topics-preview-text { flex: 1; min-width: 0; white-space: pre-wrap; line-height: 1.55; }
+.qnalog-topics-source-link { border: 0; padding: 2px 6px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); }
 .qnalog-topics-undo { margin-inline-start: 8px; }
 .qnalog-topics-prompt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 3px 8px 7px 34px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
 .qnalog-topics-prompt-row button { border: 0; padding: 2px 5px; background: transparent; color: var(--text-accent); font-size: inherit; }
@@ -10421,7 +10423,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; max-width: 100%; overflow-y: auto; overscroll-behavior: contain; }
 .qnalog-topics-modal-footer { position: sticky; bottom: 0; flex: 0 0 auto; min-width: 0; padding-top: 8px; background: var(--modal-background, var(--background-primary)); border-top: 1px solid var(--background-modifier-border); }
 .qnalog-topics-modal-actions { flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
-.qnalog-topics-preview-item { display: block; min-width: 0; }
+.qnalog-topics-preview-item { display: block; min-width: 0; border: 0; border-bottom: 1px solid var(--background-modifier-border); border-radius: 0; }
 .qnalog-topics-preview-main { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .qnalog-topics-preview-main > input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--interactive-accent); }
 .qnalog-topics-preview-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
@@ -10431,6 +10433,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-preview-badge,
 .qnalog-topics-unverified { display: inline-flex; align-items: center; flex: 0 0 auto; width: fit-content; padding: 1px 5px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; }
 .qnalog-topics-preview-badge.is-conflict { color: var(--text-warning, var(--text-accent)); }
+.qnalog-topics-preview button:focus-visible, .qnalog-topics-create button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
 @media (max-width: 420px) {
   .qnalog-topics-prompt-row { padding-inline-start: 24px; }
 }
@@ -12895,6 +12901,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-topics-revision { display: grid; gap: 6px; min-width: 0; flex: 1 1 auto; }
 .qnalog-topics-revision-old,
-.qnalog-topics-revision-new { min-width: 0; padding: 5px 7px; border-radius: 4px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.qnalog-topics-revision-new { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; padding: 5px 7px; border-radius: 4px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.qnalog-topics-revision-label { align-self: flex-start; padding: 1px 5px; border-radius: 999px; background: var(--background-primary); color: var(--text-muted); font-size: var(--font-ui-smaller); text-decoration: none; }
 .qnalog-topics-revision-old { color: var(--text-muted); background: var(--background-secondary); text-decoration: line-through; }
 .qnalog-topics-revision-new { color: var(--text-success); background: var(--background-modifier-success); }
