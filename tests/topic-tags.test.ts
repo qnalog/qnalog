@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeTagKey, type OverviewCard } from "../src/topics/overview-card";
-import { areTagKeysSimilar, isGenericTag, learnTopicTagSet, matchNoteToTopics } from "../src/topics/topic-tags";
+import { areTagKeysSimilar, isGenericTag, learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics } from "../src/topics/topic-tags";
 import type { TopicPage } from "../src/topics/topic-page";
 
 const card = (path: string, tags: string[]): OverviewCard => ({
@@ -39,6 +39,24 @@ describe("topic tags", () => {
 
   it("keeps short dissimilar keys separate", () => {
     expect(areTagKeysSimilar("ai", "api")).toBe(false);
+  });
+
+  it("does not learn a one-note unrelated project tag during an update", () => {
+    const existing = card("Notes/a.md", ["项目/QnALog"]);
+    const added = card("Notes/new.md", ["项目/original-material"]);
+    const update = learnVerifiedTopicTagUpdates({ existingTags: ["项目/QnALog"], existingMembers: [existing], newMembers: [added] });
+    expect(update.tags).toEqual([]);
+    expect(update.aliases).toEqual({ "项目/QnALog": ["项目/QnALog"] });
+  });
+
+  it("adds a close spelling as an alias and adds an unrelated tag only after two member notes use it", () => {
+    const existing = card("Notes/a.md", ["项目/QnALog"]);
+    const first = card("Notes/b.md", ["项目/QnALogging", "项目/original-material"]);
+    const second = card("Notes/c.md", ["项目/original-material"]);
+    const update = learnVerifiedTopicTagUpdates({ existingTags: ["项目/QnALog"], existingAliases: { "项目/QnALog": ["项目/QALog"] }, existingMembers: [existing], newMembers: [first, second] });
+    expect(update.tags).toEqual(["项目/original-material"]);
+    expect(update.aliases["项目/QnALog"]).toEqual(["项目/QALog", "项目/QnALog", "项目/QnALogging"]);
+    expect(update.aliases["项目/original-material"]).toEqual(["项目/original-material"]);
   });
 
   it("applies both generic-tag thresholds", () => {

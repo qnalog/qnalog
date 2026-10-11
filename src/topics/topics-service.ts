@@ -9,7 +9,7 @@ import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "
 import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, estimateIntegrationCost, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
 import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, renderTopicPage, serializeTopicPage, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
-import { learnTopicTagSet, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
+import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
 import { t } from "../shared/i18n";
 
@@ -211,6 +211,12 @@ export class TopicsService {
         replacement = { path: existing.path, markdown: serializeTopicPage(rebuilt), model: generatedModel };
       }
       const learned = learnTopicTagSet(members.map(({ card }) => card), cards);
+      const verifiedTagUpdate = existing && !input.rebuild ? learnVerifiedTopicTagUpdates({
+        existingTags: existing.page.tags,
+        existingAliases: existing.page.tagAliases,
+        existingMembers: cards.filter((card) => existing.page.members.includes(card.path)),
+        newMembers: members.map(({ card }) => card),
+      }) : undefined;
       const currentHash = hashTopicPage(currentPage);
       const currentModel = currentPage ? parseTopicPage(currentPage, existing?.path) : null;
       const latestTopic = existing ? (await this.storeForCurrentFolder().list()).find((item) => item.page.id === topicId) : undefined;
@@ -236,8 +242,8 @@ export class TopicsService {
         sourceDates: Object.fromEntries(members.map(({ card }) => [card.sourceId, card.date])),
         ...(existing && !input.rebuild ? {
           memberLinks: [...new Set([...existing.page.memberLinks, ...memberRecords.map((member) => `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`)])],
-          tags: [...new Set([...existing.page.tags, ...learned.tags])],
-          tagAliases: { ...(existing.page.tagAliases || {}), ...learned.aliases },
+          tags: [...new Set([...existing.page.tags, ...(verifiedTagUpdate?.tags || [])])],
+          tagAliases: verifiedTagUpdate?.aliases || existing.page.tagAliases || {},
         } : input.rebuild ? { ...(replacement ? { replacement } : {}) } : {
           create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords, ...(generatedModel ? { model: generatedModel } : {}) },
         }),

@@ -201,6 +201,19 @@ describe("topics service", () => {
     expect(setup.activities.completed).toEqual([["topics:update:climate-topic"]]);
   });
 
+  it("filters update tags and adds close spellings only to the existing tag aliases", async () => {
+    const setup = harness();
+    setup.files[1].tags = ["项目/original-material", "项目/QnALogging"];
+    const page = createTopicPage({ id: "tag-topic", title: "Tag topic", tags: ["项目/QnALog"], basis: "overview", members: [{ path: "Notes/a.md", title: "a", sourceId: "Notes/a.md" }] });
+    page.tagAliases = { "项目/QnALog": ["项目/QnALog"] };
+    setup.storePort.seed("Topics/Tag topic.md", serializeTopicPage(page));
+    const preview = await setup.service.preview({ topicId: "tag-topic", startPath: "Notes/b.md", memberPaths: ["Notes/b.md"], basis: "overview" });
+    expect(preview.tags).toEqual(["项目/QnALog"]);
+    expect(preview.tagAliases).toEqual({ "项目/QnALog": ["项目/QnALog", "项目/QnALogging"] });
+    expect(preview.tags).not.toContain("项目/original-material");
+    expect(preview.tagAliases?.["项目/original-material"]).toBeUndefined();
+  });
+
   it("scans unintegrated notes excluding existing members and explicit exclusions", async () => {
     const setup = harness();
     setup.files.push(noteFile("Notes/c.md", "budget overview", ["climate"]), noteFile("Notes/d.md", "climate project overview", ["climate"]));

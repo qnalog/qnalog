@@ -12,6 +12,11 @@ export interface LearnedTopicTagSet {
   documentFrequency: Record<string, number>;
 }
 
+export interface VerifiedTopicTagUpdate {
+  tags: string[];
+  aliases: Record<string, string[]>;
+}
+
 export interface TopicTagMatch {
   topicId: string;
   title: string;
@@ -59,6 +64,49 @@ export function learnTopicTagSet(selectedCards: readonly OverviewCard[], cards: 
   const tags = learned.map((key) => [...(labelsByKey.get(key) || [])].sort((a, b) => a.localeCompare(b))[0] || key);
   const aliases = Object.fromEntries(learned.map((key, index) => [tags[index], [...(labelsByKey.get(key) || [])].sort()]));
   return { tags, aliases, documentFrequency: Object.fromEntries(learned.map((key, index) => [tags[index], allPaths.get(key)?.size || pathsByTag.get(key)?.size || 0])) };
+}
+
+/** Learns update tags only from corroborated new-member labels or known spelling variants. */
+export function learnVerifiedTopicTagUpdates(input: {
+  existingTags: readonly string[];
+  existingAliases?: Record<string, string[]>;
+  existingMembers: readonly OverviewCard[];
+  newMembers: readonly OverviewCard[];
+}): VerifiedTopicTagUpdate {
+  const aliases = Object.fromEntries(input.existingTags.map((tag) => [tag, [...new Set([tag, ...(input.existingAliases?.[tag] || [])])]]));
+  const known = input.existingTags.flatMap((canonical) => [canonical, ...(input.existingAliases?.[canonical] || [])].map((label) => ({ canonical, label })));
+  const membersByPath = new Map([...input.existingMembers, ...input.newMembers].map((card) => [card.path, card]));
+  const pathsByKey = new Map<string, Set<string>>();
+  for (const card of membersByPath.values()) for (const label of new Set(card.tags)) {
+    if (isSystemTopicTag(label)) continue;
+    const key = normalizeTagKey(label);
+    if (!key) continue;
+    const paths = pathsByKey.get(key) || new Set<string>();
+    paths.add(card.path);
+    pathsByKey.set(key, paths);
+  }
+  const newLabels = new Map<string, Set<string>>();
+  for (const card of input.newMembers) for (const label of new Set(card.tags)) {
+    if (isSystemTopicTag(label)) continue;
+    const rawLabel = label.replace(/^#/, "");
+    const similar = known.find(({ label: knownLabel }) => sameTagClass(knownLabel, rawLabel) && areTagKeysSimilar(knownLabel, rawLabel));
+    if (similar) {
+      const values = aliases[similar.canonical] || [similar.canonical];
+      if (!values.some((value) => normalizeTagKey(value) === normalizeTagKey(rawLabel))) aliases[similar.canonical] = [...values, rawLabel].sort((a, b) => a.localeCompare(b));
+      continue;
+    }
+    const key = normalizeTagKey(rawLabel);
+    if ((pathsByKey.get(key)?.size || 0) < TOPIC_TAG_MIN_SHARED_MEMBERS) continue;
+    const values = newLabels.get(key) || new Set<string>();
+    values.add(rawLabel);
+    newLabels.set(key, values);
+  }
+  const tags = [...newLabels.values()].map((labels) => [...labels].sort((a, b) => a.localeCompare(b))[0]).sort((a, b) => a.localeCompare(b));
+  for (const labels of newLabels.values()) {
+    const values = [...labels].sort((a, b) => a.localeCompare(b));
+    aliases[values[0]] = values;
+  }
+  return { tags, aliases };
 }
 
 function sameTagClass(key: string, label: string): boolean {
