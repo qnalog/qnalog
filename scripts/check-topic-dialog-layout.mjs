@@ -246,6 +246,62 @@ try {
   assert.equal(await checkedAt(0), disabledBefore, "the starting note row must not toggle");
   console.log(`[topic-dialog-layout] 60-candidate list: title, checkbox, drag and keyboard toggles behave; row nodes and scroll stable`);
   await evaluate("document.querySelector('.modal-header-button').click()");
+  // Preview generation: progress, elapsed time, cancel, failure with retry, and timer cleanup.
+  const waitFor = async (expression) => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (await evaluate(expression)) return;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
+    throw new Error(`timed out waiting for ${expression}`);
+  };
+  const driver = (call) => evaluate(`window.topicPreviewDriver.${call}`);
+  const clickFirst = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const checkedCount = () => evaluate("document.querySelectorAll('.qnalog-topics-candidate input:checked').length");
+  await evaluate(`window.__liveIntervals = new Set(); window.__nativeSetInterval = window.setInterval; window.__nativeClearInterval = window.clearInterval;
+    window.setInterval = (...args) => { const id = window.__nativeSetInterval(...args); window.__liveIntervals.add(id); return id; };
+    window.clearInterval = (id) => { window.__liveIntervals.delete(id); window.__nativeClearInterval(id); };`);
+  await evaluate("window.renderTopicCreate()");
+  await waitFor("document.querySelectorAll('.qnalog-topics-candidate').length === 60");
+  const selectedBeforeGeneration = await checkedCount();
+  await clickFirst(".modal-content.qnalog-topics-create .mod-cta");
+  await waitFor("!!document.querySelector('.qnalog-topics-generating')");
+  assert.equal(await evaluate("document.querySelector('.qnalog-topics-generating').getAttribute('aria-busy')"), "true", "generating view must set aria-busy");
+  assert.equal(await evaluate("document.querySelectorAll('.qnalog-topics-candidate').length"), 0, "generating view must hide the candidate list");
+  assert.equal(await evaluate("document.querySelector('.qnalog-topics-progress').classList.contains('is-indeterminate')"), true, "unknown batch count must show the indeterminate bar");
+  await driver("progress(0, 3)");
+  await waitFor("document.querySelector('.qnalog-topics-progress').getAttribute('aria-valuemax') === '3'");
+  assert.equal(await evaluate("document.querySelector('.qnalog-topics-progress').getAttribute('aria-valuenow')"), "0", "planned batches must give a determinate bar");
+  await driver("progress(2, 3)");
+  await waitFor("document.querySelector('.qnalog-topics-progress').getAttribute('aria-valuenow') === '2'");
+  assert.match(await evaluate("document.querySelector('.qnalog-topics-progress-text').textContent"), /2\/3/, "batch text must show completed/total");
+  const fillRatio = await evaluate("(() => { const bar = document.querySelector('.qnalog-topics-progress').getBoundingClientRect().width; return document.querySelector('.qnalog-topics-progress-fill').getBoundingClientRect().width / bar; })()");
+  assert(Math.abs(fillRatio - 2 / 3) < 0.02, `bar fill must follow completed batches (ratio ${fillRatio})`);
+  const elapsedFirst = await evaluate("document.querySelector('.qnalog-topics-progress-elapsed').textContent");
+  await new Promise((resolveWait) => setTimeout(resolveWait, 2200));
+  assert.notEqual(await evaluate("document.querySelector('.qnalog-topics-progress-elapsed').textContent"), elapsedFirst, "elapsed time must keep updating");
+  assert.equal(await evaluate("window.__liveIntervals.size"), 1, "one tick timer runs while generating");
+  await clickFirst(".modal-content.qnalog-topics-create .qnalog-topics-modal-actions button");
+  await waitFor("document.querySelectorAll('.qnalog-topics-candidate').length === 60");
+  assert.equal(await checkedCount(), selectedBeforeGeneration, "cancel must keep the selection");
+  assert.equal(await driver("pending()"), false, "cancel must abort the pending request");
+  assert.equal(await evaluate("window.__liveIntervals.size"), 0, "cancel must clear the elapsed timer");
+
+  await clickFirst(".modal-content.qnalog-topics-create .mod-cta");
+  await waitFor("!!document.querySelector('.qnalog-topics-generating')");
+  await waitFor("window.topicPreviewDriver.pending()");
+  await driver("fail('boom')");
+  await waitFor("!!document.querySelector('.qnalog-topics-retry')");
+  assert.match(await evaluate("document.querySelector('.modal-content.qnalog-topics-create').textContent"), /boom/, "failure view must show the error summary");
+  assert.equal(await evaluate("window.__liveIntervals.size"), 0, "failure must clear the elapsed timer");
+  await clickFirst(".qnalog-topics-retry");
+  await waitFor("!!document.querySelector('.qnalog-topics-generating')");
+  await waitFor("window.topicPreviewDriver.pending()");
+  await driver("finish()");
+  await waitFor("!!document.querySelector('.modal-content.qnalog-topics-preview')");
+  assert.equal(await evaluate("window.__liveIntervals.size"), 0, "opening the preview must clear the elapsed timer");
+  await evaluate("document.querySelector('.modal-header-button').click()");
+  await evaluate("window.setInterval = window.__nativeSetInterval; window.clearInterval = window.__nativeClearInterval");
+  console.log("[topic-dialog-layout] preview generation: determinate bar, elapsed timer, cancel keeps selection, failure and retry, timers cleared");
 } finally {
   socket?.close();
   if (browser && browser.exitCode === null) {

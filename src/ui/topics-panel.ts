@@ -231,7 +231,7 @@ class TopicScanModal extends Modal {
         basis: "overview",
         topicId: this.topicId,
         signal: this.previewController.signal,
-        onProgress: (completed, total) => {
+        onProgress: ({ completed, total }) => {
           this.progress = this.port.text("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
           this.render();
         },

@@ -6,6 +6,8 @@ import { defaultTopicMemberPaths, formatTopicCandidateReasons, suggestTopicTitle
 import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
 import { TopicPreviewModal } from "./topic-preview-modal";
 import { suppressRowActivation } from "./topic-row-activation";
+import { elapsedSeconds, previewProgressView } from "./topic-preview-progress";
+import type { TopicPreviewProgress } from "../topics/topics-service";
 
 const TOPIC_CANDIDATE_WINDOWS = [90, 180, 365] as const;
 const TOPIC_EXCERPT_LIMIT = 120;
@@ -24,7 +26,15 @@ export class TopicCreateModal extends Modal {
   private onApplied: () => void;
   private previewController: AbortController | null = null;
   private candidateController: AbortController | null = null;
-  private previewProgress = "";
+  private mode: "list" | "generating" | "failed" = "list";
+  private failure = "";
+  private progress: TopicPreviewProgress | null = null;
+  private startedAt = 0;
+  private timer: number | null = null;
+  private progressBar: HTMLElement | null = null;
+  private progressFill: HTMLElement | null = null;
+  private progressText: HTMLElement | null = null;
+  private elapsedEl: HTMLElement | null = null;
   private topicTitles = new Map<string, string>();
   private estimateReady = false;
   // Elements kept between selection changes so a toggle updates them without rebuilding the list.
@@ -42,7 +52,12 @@ export class TopicCreateModal extends Modal {
 
   onOpen(): void { void this.loadCandidates(); }
 
-  onClose(): void { this.previewController?.abort(); this.candidateController?.abort(); this.contentEl.empty(); }
+  onClose(): void {
+    this.stopTimer();
+    this.previewController?.abort();
+    this.candidateController?.abort();
+    this.contentEl.empty();
+  }
 
   private async loadCandidates(): Promise<void> {
     this.candidateController?.abort();
@@ -86,6 +101,8 @@ export class TopicCreateModal extends Modal {
   }
 
   private render(): void {
+    if (this.mode === "generating") { this.renderGenerating(); return; }
+    if (this.mode === "failed") { this.renderFailed(); return; }
     const content = this.contentEl;
     // Full redraws (candidate expansion, loading, basis change) keep the list position.
     const previousScroll = this.scrollEl?.scrollTop ?? 0;
@@ -117,9 +134,7 @@ export class TopicCreateModal extends Modal {
       this.estimateEl = scroll.createDiv({ cls: "qnalog-topics-estimate", text: this.estimateText });
     }
 
-    if (this.loading) scroll.createDiv({ cls: "qnalog-topics-loading", text: this.previewController
-      ? `${this.port.text("Generating preview…")} ${this.previewProgress}`
-      : this.port.text("Loading candidates…") });
+    if (this.loading) scroll.createDiv({ cls: "qnalog-topics-loading", text: this.port.text("Loading candidates…") });
     this.groupHeadings.clear();
     if (this.candidates) {
       for (const group of topicCandidateGroups(this.candidates)) {
@@ -136,13 +151,12 @@ export class TopicCreateModal extends Modal {
     const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
     const cancel = actions.createEl("button", { text: this.port.text("Cancel"), attr: { type: "button" } });
     cancel.addEventListener("click", () => {
-      this.previewController?.abort();
       this.candidateController?.abort();
       this.close();
     });
     const create = actions.createEl("button", { cls: "mod-cta", text: this.port.text(this.basis === "body" ? "Confirm and create" : "Create"), attr: { type: "button" } });
     this.createButton = create;
-    create.addEventListener("click", () => void this.create(create));
+    create.addEventListener("click", () => void this.create());
     this.updateSelectionUi();
     scroll.scrollTop = previousScroll;
   }
@@ -207,11 +221,14 @@ export class TopicCreateModal extends Modal {
     if (candidate.missingOverview) details.createSpan({ cls: "qnalog-topics-missing", text: this.port.text("Overview missing") });
   }
 
-  private async create(button: HTMLButtonElement): Promise<void> {
-    if (this.loading || !this.selected.size) return;
-    this.loading = true;
-    this.previewController = new AbortController();
-    button.disabled = true;
+  private async create(): Promise<void> {
+    if (this.mode === "generating" || this.loading || !this.selected.size) return;
+    const controller = new AbortController();
+    this.previewController = controller;
+    this.progress = null;
+    this.startedAt = Date.now();
+    this.mode = "generating";
+    this.startTimer();
     this.render();
     try {
       const preview = await this.port.preview({
@@ -220,21 +237,103 @@ export class TopicCreateModal extends Modal {
         basis: this.basis,
         title: this.title.trim(),
         bodyConfirmed: this.basis === "body",
-        signal: this.previewController.signal,
-        onProgress: (completed, total) => {
-          this.previewProgress = this.port.text("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
-          this.render();
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (this.previewController !== controller) return;
+          this.progress = progress;
+          this.updateProgressUi();
         },
       });
+      // Cancelled or closed while the request was running: the result is dropped.
+      if (this.previewController !== controller) return;
       this.previewController = null;
+      this.stopTimer();
       this.close();
       new TopicPreviewModal(this.app, this.port, preview, () => this.onApplied()).open();
     } catch (error) {
-      if (this.previewController?.signal.aborted) { this.loading = false; this.previewController = null; return; }
-      this.loading = false;
+      if (this.previewController !== controller) return;
       this.previewController = null;
+      this.stopTimer();
+      this.failure = error instanceof Error ? error.message : String(error);
+      this.mode = "failed";
       this.render();
-      new Notice(error instanceof Error ? error.message : String(error), 8000);
     }
+  }
+
+  /** Stops the request, returns to the candidate list, and keeps the selection and title. */
+  private cancelGeneration(): void {
+    const controller = this.previewController;
+    this.previewController = null;
+    controller?.abort();
+    this.stopTimer();
+    this.mode = "list";
+    this.render();
+  }
+
+  private startTimer(): void {
+    this.stopTimer();
+    this.timer = window.setInterval(() => this.updateProgressUi(), 1000);
+  }
+
+  private stopTimer(): void {
+    if (this.timer === null) return;
+    window.clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  private renderGenerating(): void {
+    const content = this.contentEl;
+    content.empty();
+    content.addClass("qnalog-topics-create");
+    content.createEl("h2", { text: this.port.text("Generating preview") });
+    const box = content.createDiv({ cls: "qnalog-topics-generating", attr: { "aria-busy": "true" } });
+    const basisLabel = this.port.text(this.basis === "body" ? "Finalized body" : "Overview");
+    const notes = this.port.text("{0} notes").replace("{0}", String(this.selected.size));
+    box.createDiv({ cls: "qnalog-topics-generating-basis", text: this.port.text("Basis: {0} · {1}").replace("{0}", basisLabel).replace("{1}", notes) });
+    this.progressBar = box.createDiv({ cls: "qnalog-topics-progress", attr: { role: "progressbar", "aria-label": this.port.text("Generating preview"), "aria-valuemin": "0" } });
+    this.progressFill = this.progressBar.createDiv({ cls: "qnalog-topics-progress-fill" });
+    this.progressText = box.createDiv({ cls: "qnalog-topics-progress-text", attr: { "aria-live": "polite" } });
+    this.elapsedEl = box.createDiv({ cls: "qnalog-topics-progress-elapsed" });
+    if (this.basis === "body") box.createDiv({ cls: "qnalog-topics-cost-warning", text: this.port.text("Finalized body is long and may take several minutes.") });
+    const footer = content.createDiv({ cls: "qnalog-topics-modal-footer" });
+    const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
+    const cancel = actions.createEl("button", { text: this.port.text("Cancel"), attr: { type: "button" } });
+    cancel.addEventListener("click", () => this.cancelGeneration());
+    this.updateProgressUi();
+  }
+
+  /** Updates the bar, batch text and elapsed time in place; called on each progress report and once a second. */
+  private updateProgressUi(): void {
+    if (!this.progressBar || !this.progressFill || !this.progressText || !this.elapsedEl) return;
+    const view = previewProgressView(this.progress);
+    this.progressBar.classList.toggle("is-indeterminate", !view.determinate);
+    if (view.determinate) {
+      this.progressBar.setAttribute("aria-valuenow", String(view.completed));
+      this.progressBar.setAttribute("aria-valuemax", String(view.total));
+      this.progressFill.setCssProps({ "--qnalog-topics-progress": `${Math.round(view.fraction * 100)}%` });
+      this.progressText.setText(this.port.text("Batch {0}/{1}").replace("{0}", String(view.completed)).replace("{1}", String(view.total)));
+    } else {
+      this.progressBar.removeAttribute("aria-valuenow");
+      this.progressBar.removeAttribute("aria-valuemax");
+      this.progressFill.setCssProps({ "--qnalog-topics-progress": "" });
+      this.progressText.setText(this.port.text("Processing…"));
+    }
+    const seconds = elapsedSeconds(this.startedAt, Date.now());
+    this.elapsedEl.setText(this.port.text("Elapsed {0} s").replace("{0}", String(seconds)));
+  }
+
+  private renderFailed(): void {
+    const content = this.contentEl;
+    content.empty();
+    content.addClass("qnalog-topics-create");
+    content.createEl("h2", { text: this.port.text("Generation failed") });
+    content.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.failure.slice(0, 240) });
+    content.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("Your selection and title are kept. Retry, or go back to change the selection.") });
+    const footer = content.createDiv({ cls: "qnalog-topics-modal-footer" });
+    const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
+    const back = actions.createEl("button", { text: this.port.text("Back to candidates"), attr: { type: "button" } });
+    back.addEventListener("click", () => { this.mode = "list"; this.render(); });
+    const retry = actions.createEl("button", { cls: "mod-cta qnalog-topics-retry", text: this.port.text("Retry"), attr: { type: "button" } });
+    retry.addEventListener("click", () => void this.create());
   }
 }

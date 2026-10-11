@@ -40,6 +40,8 @@ export interface TopicIntegrationInput {
   currentPage?: string;
   signal?: AbortSignal;
   onBatchProgress?: (completed: number, total: number) => void;
+  /** Called once before the first batch starts, with the number of batches that will run. */
+  onPlanned?: (total: number) => void;
 }
 export interface TopicIntegrationResult { operations: TopicOperation[]; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string }
 
@@ -163,6 +165,7 @@ function memberBatches(members: readonly TopicIntegrationMember[], basis: TopicB
 
 export async function generateTopicOperations(port: TopicIntegrationPort, input: TopicIntegrationInput): Promise<TopicIntegrationResult> {
   const batches = memberBatches(input.members, input.basis);
+  input.onPlanned?.(batches.length);
   const operations: TopicOperation[] = [];
   let inputChars = 0;
   let completedBatches = 0;

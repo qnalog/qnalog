@@ -15,6 +15,15 @@ const candidates: TopicCandidates = {
   topic: [], content: [], byTag: [], byContent: [],
 };
 
+type PendingPreview = { resolve(): void; reject(error: Error): void; onProgress?: (progress: { completed: number; total: number }) => void };
+let pendingPreview: PendingPreview | null = null;
+(window as unknown as { topicPreviewDriver: unknown }).topicPreviewDriver = {
+  pending: () => pendingPreview !== null,
+  progress: (completed: number, total: number) => pendingPreview?.onProgress?.({ completed, total }),
+  finish: () => { const current = pendingPreview; pendingPreview = null; current?.resolve(); },
+  fail: (message: string) => { const current = pendingPreview; pendingPreview = null; current?.reject(new Error(message)); },
+};
+
 // Every port.cancel call is recorded so the check can assert which close paths cancel a preview.
 const cancelledTopics: string[] = [];
 (window as unknown as { cancelledTopics: string[] }).cancelledTopics = cancelledTopics;
@@ -27,7 +36,11 @@ const port = {
   listTopics: async () => [{ path: "QnALog/主题/Topic.md", page: { id: "fixture-topic", title: "Project topic", tags: [], members: [], memberLinks: [], excluded: [], basis: "overview" as const, created: "2026-10-01", updated: "2026-10-11", body: "" } }],
   countPending: async () => 0,
   estimate: async () => ({ chars: 400, requests: 1 }),
-  preview: async () => preview,
+  // Stays pending until the check drives it, so progress, cancel, failure and retry can be exercised.
+  preview: (input: { onProgress?: (progress: { completed: number; total: number }) => void; signal?: AbortSignal }) => new Promise<TopicChangePreview>((resolve, reject) => {
+    pendingPreview = { resolve: () => resolve(preview), reject: (error) => reject(error), onProgress: input.onProgress };
+    input.signal?.addEventListener("abort", () => { pendingPreview = null; reject(new DOMException("aborted", "AbortError")); }, { once: true });
+  }),
   apply: async () => ({ path: "QnALog/主题/Topic.md", markdown: "", pageChangedDuringGeneration: false }),
   cancel: (id: string) => { cancelledTopics.push(id); },
   openTopic: async () => undefined,

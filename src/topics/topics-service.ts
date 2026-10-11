@@ -33,7 +33,8 @@ export interface TopicsSuggestionsResult {
   stats: { noteCount: number; windowedCount: number; overviewMissing: number; readCount: number; elapsedMs: number };
 }
 export interface TopicCandidatesOptions { windowDays?: number; excluded?: string[]; minScore?: number; relativeCutoff?: number; signal?: AbortSignal }
-export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (completed: number, total: number) => void }
+export interface TopicPreviewProgress { completed: number; total: number }
+export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }
 export interface TopicEstimateInput { memberPaths: string[]; basis: TopicBasis }
 export interface TopicPrompt extends TopicTagMatch { path: string }
 interface PendingPreview { preview: TopicChangePreview }
@@ -158,10 +159,11 @@ export class TopicsService {
       const members = await this.loadMembers(selectedPaths, cards, input.basis);
       const currentPage = existing ? await this.host.topicStore.read(existing.path) : "";
       const generated = await generateTopicOperations(this.host.integration, { members, basis: input.basis, currentPage, signal: controller.signal,
+        onPlanned: (total) => input.onProgress?.({ completed: 0, total }),
         onBatchProgress: (completed, total) => {
           const stageLabel = t("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
           this.host.updateActivity?.(activityId, { stage: "processing", progress: Math.round(completed / total * 100), stageLabel });
-          input.onProgress?.(completed, total);
+          input.onProgress?.({ completed, total });
         },
       });
       if (generated.partialFailure && generated.completedBatches === 0) throw new Error(`Topic integration failed before any batch completed: ${generated.partialFailure}`);

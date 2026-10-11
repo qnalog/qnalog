@@ -1,7 +1,7 @@
 import type { TopicCandidate, TopicCandidates } from "../topics/topic-candidates";
 import type { TopicChangePreview } from "../topics/topic-integration";
 import type { TopicBasis, TopicPage } from "../topics/topic-page";
-import type { TopicPrompt } from "../topics/topics-service";
+import type { TopicPreviewProgress, TopicPrompt } from "../topics/topics-service";
 import { NS_TYPE_TOPIC, isDerivedVersionType } from "../shared/namespace";
 import { isProjectTag } from "../topics/topic-tags";
 
@@ -14,7 +14,7 @@ export interface TopicsUiPort {
   text(key: string): string;
   getCandidates(path: string, options?: { windowDays?: number; signal?: AbortSignal }): Promise<TopicCandidates>;
   estimate(input: { memberPaths: string[]; basis: TopicBasis }): Promise<{ chars: number; requests: number }>;
-  preview(input: { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (completed: number, total: number) => void }): Promise<TopicChangePreview>;
+  preview(input: { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }): Promise<TopicChangePreview>;
   apply(preview: TopicChangePreview, selectedIds: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean }>;
   cancel(id: string): void;
   listTopics(): Promise<TopicListEntry[]>;

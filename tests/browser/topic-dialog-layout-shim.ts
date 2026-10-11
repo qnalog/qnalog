@@ -8,6 +8,7 @@ declare global {
     addClass(value: string): void;
     empty(): void;
     setText(value: string): void;
+    setCssProps(props: Record<string, string>): void;
   }
   interface Window {
     renderTopicCreate(): Promise<void>;
@@ -19,6 +20,7 @@ declare global {
 HTMLElement.prototype.addClass = function (value: string): void { this.classList.add(...value.split(/\s+/).filter(Boolean)); };
 HTMLElement.prototype.empty = function (): void { this.replaceChildren(); };
 HTMLElement.prototype.setText = function (value: string): void { this.textContent = value; };
+HTMLElement.prototype.setCssProps = function (props: Record<string, string>): void { for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value); };
 HTMLElement.prototype.createEl = function (tag: string, options: ElementOptions = {}): HTMLElement {
   const element = document.createElement(tag);
   if (options.cls) element.className = options.cls;
