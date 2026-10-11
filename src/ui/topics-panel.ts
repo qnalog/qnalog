@@ -3,11 +3,9 @@ import type { TopicCandidate, TopicCandidates } from "../topics/topic-candidates
 import type { TopicListEntry, TopicsUiPort } from "./topics-ui-port";
 import { TopicPreviewModal } from "./topic-preview-modal";
 import { topicCandidateGroups } from "./topics-ui-port";
-import { formatTopicCandidateReasons } from "./topics-ui-port";
 import { qnalogConfirm } from "./helpers";
-import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
-import { suppressRowActivation } from "./topic-row-activation";
 import { syncActiveRow } from "./row-active";
+import { renderTopicCandidateGroupHeading, renderTopicCandidateRow } from "./topic-candidate-rows";
 
 /** "MM-DD" in local time, or "" when the date cannot be read. */
 function formatMonthDay(iso: string): string {
@@ -156,7 +154,7 @@ export class TopicsPanel {
   }
 }
 
-class TopicScanModal extends Modal {
+export class TopicScanModal extends Modal {
   private readonly port: TopicsUiPort;
   private readonly topicId: string;
   private readonly refresh: () => void;
@@ -165,11 +163,14 @@ class TopicScanModal extends Modal {
   private startPath = "";
   private loading = true;
   private previewing = false;
+  private previewFailed = false;
+  private failure = "";
   private progress = "";
   private scanController: AbortController | null = null;
   private previewController: AbortController | null = null;
   private topicTitles = new Map<string, string>();
   private previewButton: HTMLButtonElement | null = null;
+  private progressEl: HTMLDivElement | null = null;
 
   constructor(app: App, port: TopicsUiPort, topicId: string, refresh: () => void) {
     super(app);
@@ -178,7 +179,10 @@ class TopicScanModal extends Modal {
     this.refresh = refresh;
   }
 
-  onOpen(): void { void this.load(); }
+  onOpen(): void {
+    this.titleEl.setText(this.port.text("QnALog · Topics"));
+    void this.load();
+  }
 
   onClose(): void {
     this.scanController?.abort();
@@ -216,15 +220,36 @@ class TopicScanModal extends Modal {
   private render(): void {
     this.contentEl.empty();
     this.contentEl.addClass("qnalog-topics-create");
-    this.contentEl.createEl("h2", { text: this.port.text("Scan for notes to integrate") });
-    const scroll = this.contentEl.createDiv({ cls: "qnalog-topics-scroll" });
-    if (this.loading || this.previewing) {
-      const label = this.loading ? this.port.text("Loading candidates…") : `${this.port.text("Generating preview…")} ${this.progress}`;
-      scroll.createDiv({ cls: "qnalog-topics-loading", text: label });
+    this.contentEl.removeClass("is-generating");
+    const actionTitle = this.previewing ? "Generating preview" : this.previewFailed ? "Generation failed" : "Scan for notes to integrate";
+    this.contentEl.createDiv({ cls: "qnalog-topics-dialog-heading", text: this.port.text(actionTitle) });
+    if (this.previewing) {
+      this.contentEl.addClass("is-generating");
+      this.progressEl = this.contentEl.createDiv({ cls: "qnalog-topics-generating", attr: { "aria-busy": "true" } })
+        .createDiv({ cls: "qnalog-topics-progress-text", text: `${this.port.text("Generating preview…")} ${this.progress}` });
+      const footer = this.contentEl.createDiv({ cls: "qnalog-topics-modal-footer" });
+      const cancel = footer.createDiv({ cls: "qnalog-topics-modal-actions" }).createEl("button", { text: this.port.text("Cancel"), attr: { type: "button" } });
+      cancel.addEventListener("click", () => {
+        this.previewController?.abort();
+        this.close();
+      });
+      return;
     }
+    if (this.previewFailed) {
+      this.contentEl.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.failure });
+      const footer = this.contentEl.createDiv({ cls: "qnalog-topics-modal-footer" });
+      const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
+      const back = actions.createEl("button", { text: this.port.text("Back to candidates"), attr: { type: "button" } });
+      back.addEventListener("click", () => { this.previewFailed = false; this.render(); });
+      const retry = actions.createEl("button", { cls: "mod-cta", text: this.port.text("Retry"), attr: { type: "button" } });
+      retry.addEventListener("click", () => { this.previewFailed = false; void this.generatePreview(); });
+      return;
+    }
+    const scroll = this.contentEl.createDiv({ cls: "qnalog-topics-scroll" });
+    if (this.loading) scroll.createDiv({ cls: "qnalog-topics-loading", text: this.port.text("Loading candidates…") });
     for (const group of topicCandidateGroups(this.candidates)) {
       const section = scroll.createDiv({ cls: `qnalog-topics-candidate-group is-${group.tier}` });
-      section.createEl("h3", { text: `${this.port.text(group.tier === "project" ? "Project tags" : group.tier === "topic" ? "Topic tags" : "Similar content")} (${group.items.length})` });
+      renderTopicCandidateGroupHeading(section, `${this.port.text(group.tier === "project" ? "Project tags" : group.tier === "topic" ? "Topic tags" : "Similar content")} (${group.items.length})`);
       for (const candidate of group.items) this.renderCandidate(section, candidate);
     }
     const footer = this.contentEl.createDiv({ cls: "qnalog-topics-modal-footer" });
@@ -246,35 +271,18 @@ class TopicScanModal extends Modal {
   }
 
   private renderCandidate(parent: HTMLElement, candidate: TopicCandidate): void {
-    // Whole-row toggle, as in the create dialog: the row is a <label> around the checkbox.
-    const row = parent.createEl("label", { cls: "qnalog-topics-candidate" });
-    const input = row.createEl("input", { attr: { type: "checkbox", "aria-label": candidate.title } });
-    input.checked = this.selected.has(candidate.path);
-    row.addEventListener("click", (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (suppressRowActivation({ onCheckbox: target === input, onInteractive: !!target?.closest("button, a"), selectedText: window.getSelection()?.toString() ?? "", disabled: false })) event.preventDefault();
-    });
-    input.addEventListener("change", () => {
-      if (input.checked) { this.selected.add(candidate.path); if (!this.startPath) this.startPath = candidate.path; }
+    renderTopicCandidateRow(parent, candidate, this.selected.has(candidate.path), this.topicTitles, this.port, (checked) => {
+      if (checked) { this.selected.add(candidate.path); if (!this.startPath) this.startPath = candidate.path; }
       else this.selected.delete(candidate.path);
       this.updatePreviewButton();
     });
-    row.createDiv({ cls: "qnalog-topics-candidate-title", text: `${candidate.date ? `${candidate.date} · ` : ""}${candidate.title}` });
-    const cleanOverview = cleanTopicOverviewExcerpt(candidate.overview);
-    const summary = row.createDiv({ cls: "qnalog-topics-candidate-summary", text: cleanOverview.slice(0, 120) });
-    if (candidate.overview.length > 120) {
-      const more = row.createEl("button", { text: this.port.text("Show more"), attr: { type: "button" } });
-      more.addEventListener("click", () => { summary.setText(cleanOverview); more.remove(); });
-    }
-    for (const reason of formatTopicCandidateReasons(candidate, (key) => this.port.text(key))) row.createSpan({ cls: "qnalog-topics-reason", text: reason });
-    for (const topicId of candidate.alreadyInTopics) row.createSpan({ cls: "qnalog-topics-membership", text: `${this.port.text("Already in topic")} “${this.topicTitles.get(topicId) || topicId}”` });
-    if (candidate.missingOverview) row.createSpan({ cls: "qnalog-topics-missing", text: this.port.text("Overview missing") });
   }
 
   private async generatePreview(): Promise<void> {
     if (!this.startPath || !this.selected.size) return;
     this.previewing = true;
-    this.previewController = new AbortController();
+    const controller = new AbortController();
+    this.previewController = controller;
     this.render();
     try {
       const preview = await this.port.preview({
@@ -282,21 +290,23 @@ class TopicScanModal extends Modal {
         memberPaths: [...this.selected],
         basis: "overview",
         topicId: this.topicId,
-        signal: this.previewController.signal,
+        signal: controller.signal,
         onProgress: ({ completed, total }) => {
           this.progress = this.port.text("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
-          this.render();
+          this.progressEl?.setText(`${this.port.text("Generating preview…")} ${this.progress}`);
         },
       });
+      if (this.previewController !== controller) return;
       this.previewController = null;
       this.close();
       new TopicPreviewModal(this.app, this.port, preview, () => this.refresh()).open();
-    } catch (error) {
-      if (this.previewController?.signal.aborted) return;
+    } catch {
+      if (this.previewController !== controller || controller.signal.aborted) return;
       this.previewController = null;
       this.previewing = false;
+      this.previewFailed = true;
+      this.failure = this.port.text("The topic page could not be generated. You can retry. The page was not modified.");
       this.render();
-      new Notice(error instanceof Error ? error.message : String(error), 8000);
     }
   }
 }

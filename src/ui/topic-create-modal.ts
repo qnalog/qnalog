@@ -2,15 +2,13 @@ import { Modal, Notice, type App } from "obsidian";
 import type { TopicCandidate, TopicCandidates } from "../topics/topic-candidates";
 import type { TopicBasis } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
-import { defaultTopicMemberPaths, formatTopicCandidateReasons, suggestTopicTitle, topicCandidateGroups } from "./topics-ui-port";
-import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
+import { defaultTopicMemberPaths, suggestTopicTitle, topicCandidateGroups } from "./topics-ui-port";
 import { TopicPreviewModal } from "./topic-preview-modal";
-import { suppressRowActivation } from "./topic-row-activation";
 import { elapsedSeconds, previewProgressView } from "./topic-preview-progress";
 import type { TopicPreviewProgress } from "../topics/topics-service";
+import { renderTopicCandidateGroupHeading, renderTopicCandidateRow } from "./topic-candidate-rows";
 
 const TOPIC_CANDIDATE_WINDOWS = [90, 180, 365] as const;
-const TOPIC_EXCERPT_LIMIT = 120;
 const GROUP_LABELS = { project: "Project tags", topic: "Topic tags", content: "Similar content" } as const;
 
 export class TopicCreateModal extends Modal {
@@ -143,7 +141,7 @@ export class TopicCreateModal extends Modal {
     if (this.candidates) {
       for (const group of topicCandidateGroups(this.candidates)) {
         const section = scroll.createDiv({ cls: `qnalog-topics-candidate-group is-${group.tier}` });
-        this.groupHeadings.set(group.tier, section.createDiv({ cls: "qnalog-topics-preview-heading is-section" }));
+        this.groupHeadings.set(group.tier, renderTopicCandidateGroupHeading(section, ""));
         for (const candidate of group.items) this.renderCandidate(section, candidate);
       }
     }
@@ -185,44 +183,12 @@ export class TopicCreateModal extends Modal {
   }
 
   private renderCandidate(parent: HTMLElement, candidate: TopicCandidate): void {
-    // The whole row is a <label>: a click on any text toggles the checkbox once, and Space works on the focused checkbox.
-    const row = parent.createEl("label", {
-      cls: candidate.cancellable ? "qnalog-topics-candidate" : "qnalog-topics-candidate is-disabled",
-      attr: candidate.cancellable ? {} : { "aria-disabled": "true" },
-    });
-    const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": candidate.title } });
-    checkbox.checked = this.selected.has(candidate.path);
-    checkbox.disabled = !candidate.cancellable;
-    row.addEventListener("click", (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const cancel = suppressRowActivation({
-        onCheckbox: target === checkbox,
-        onInteractive: !!target?.closest("button, a"),
-        selectedText: window.getSelection()?.toString() ?? "",
-        disabled: checkbox.disabled,
-      });
-      if (cancel) event.preventDefault();
-    });
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) this.selected.add(candidate.path);
+    renderTopicCandidateRow(parent, candidate, this.selected.has(candidate.path), this.topicTitles, this.port, (checked) => {
+      if (checked) this.selected.add(candidate.path);
       else this.selected.delete(candidate.path);
       if (this.basis === "body") void this.refreshEstimate();
       else this.updateSelectionUi();
     });
-    const details = row.createDiv({ cls: "qnalog-topics-candidate-details" });
-    details.createDiv({ cls: "qnalog-topics-candidate-title", text: `${candidate.date ? `${candidate.date} · ` : ""}${candidate.title}` });
-    const cleanOverview = cleanTopicOverviewExcerpt(candidate.overview);
-    const summary = details.createDiv({ cls: "qnalog-topics-candidate-summary", text: cleanOverview.slice(0, TOPIC_EXCERPT_LIMIT) });
-    if (candidate.overview.length > TOPIC_EXCERPT_LIMIT) {
-      const more = details.createEl("button", { text: this.port.text("Show more"), attr: { type: "button" } });
-      more.addEventListener("click", () => {
-        summary.setText(cleanOverview);
-        more.remove();
-      });
-    }
-    for (const reason of formatTopicCandidateReasons(candidate, (key) => this.port.text(key))) details.createSpan({ cls: "qnalog-topics-reason", text: reason });
-    for (const topicId of candidate.alreadyInTopics) details.createSpan({ cls: "qnalog-topics-membership", text: `${this.port.text("Already in topic")} “${this.topicTitles.get(topicId) || topicId}”` });
-    if (candidate.missingOverview) details.createSpan({ cls: "qnalog-topics-missing", text: this.port.text("Overview missing") });
   }
 
   private async create(): Promise<void> {
