@@ -10384,6 +10384,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-candidate-details { flex: 1 1 auto; min-width: 0; }
 .qnalog-topics-candidate-title { color: var(--text-normal); font-size: 12px; line-height: 1.4; }
 .qnalog-topics-candidate-summary { max-height: 2.8em; overflow: hidden; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.qnalog-topics-candidate-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 8px; min-width: 0; }
 .qnalog-topics-reason, .qnalog-topics-membership, .qnalog-topics-missing, .qnalog-topics-unverified { display: inline-block; margin: 3px 4px 0 0; color: var(--text-faint); font-size: 10px; }
 .qnalog-topics-membership { color: var(--text-accent); }
 .qnalog-topics-missing { color: var(--text-error); }
@@ -10437,15 +10438,24 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-preview-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .qnalog-topics-thread-summary { margin-bottom: var(--qnalog-topic-space-md); }
 .qnalog-topics-preview-meta { display: flex; justify-content: flex-end; align-items: center; gap: var(--qnalog-topic-space-sm); min-width: 0; padding: var(--qnalog-topic-space-sm) 0 0; }
+.qnalog-topics-preview-meta { flex-wrap: wrap; }
 .qnalog-topics-preview-meta-left,
 .qnalog-topics-preview-meta-right { display: flex; align-items: center; gap: var(--qnalog-topic-space-sm); min-width: 0; }
 .qnalog-topics-preview-meta-left { flex: 1 1 auto; flex-wrap: wrap; margin-right: auto; }
-.qnalog-topics-preview-meta-right { flex: 0 1 auto; justify-content: flex-end; max-width: 70%; }
-.qnalog-topics-source-link { flex: 0 1 auto; min-width: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--radius-s, 4px); background: var(--background-modifier-hover); font-size: var(--font-ui-smaller); }
+.qnalog-topics-preview-meta-right { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
+.qnalog-topics-source-link { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--radius-s, 4px); background: var(--background-modifier-hover); font-size: var(--font-ui-smaller); }
 .qnalog-topics-preview-date { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; }
 .qnalog-topics-preview-badge,
 .qnalog-topics-unverified { display: inline-flex; align-items: center; flex: 0 0 auto; width: fit-content; padding: 1px 5px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; }
 .qnalog-topics-preview-badge.is-conflict { color: var(--text-warning, var(--text-accent)); }
+.qnalog-topics-preview-target { display: inline-flex; align-items: center; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.qnalog-topics-preview-conflict-heading { display: flex; align-items: flex-start; gap: var(--qnalog-topic-space-sm); min-width: 0; margin-bottom: var(--qnalog-topic-space-sm); }
+.qnalog-topics-preview-conflict-heading > input { flex: 0 0 16px; margin-top: 3px; }
+.qnalog-topics-preview-conflict-heading .qnalog-topics-operation-icon { flex: 0 0 16px; margin-top: 3px; }
+.qnalog-topics-preview-conflict-heading .qnalog-topics-preview-text { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.qnalog-topics-preview-main.is-disagreement { display: flex; flex-direction: column; align-items: stretch; }
+.qnalog-topics-preview-stance { min-width: 0; margin-top: var(--qnalog-topic-space-md); padding-inline-start: var(--qnalog-topic-space-sm); border-inline-start: 2px solid var(--text-muted); }
+.qnalog-topics-preview-stance .qnalog-topics-preview-meta { padding-top: var(--qnalog-topic-space-xs); }
 .qnalog-topics-preview-section { margin-top: var(--qnalog-topic-space-lg); }
 .qnalog-topics-preview-section > .qnalog-topics-preview-heading { margin-bottom: var(--qnalog-topic-space-sm); }
 .qnalog-topics-preview-section > .qnalog-topics-preview-heading.is-thread + .qnalog-topics-thread-summary { margin-top: 0; }

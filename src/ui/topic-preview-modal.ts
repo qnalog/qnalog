@@ -1,9 +1,15 @@
 import { Modal, Notice, setIcon, type App } from "obsidian";
-import type { TopicChangePreview } from "../topics/topic-integration";
+import type { TopicChangePreview, TopicChangePreviewItem } from "../topics/topic-integration";
 import { stripTopicUnverifiedMarker } from "../topics/topic-integration";
 import { topicLabelSeparator, topicOpenKindLabel, topicSectionEnglishLabel } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
 import { suppressRowActivation } from "./topic-row-activation";
+
+export function topicPreviewTargetLabel(item: TopicChangePreviewItem): string {
+  const target = item.target.trim();
+  if (!target || target === item.operation.type || /^tpc-[\da-f]{6}$/i.test(target) || /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/i.test(target)) return "";
+  return target;
+}
 
 export class TopicPreviewModal extends Modal {
   private readonly port: TopicsUiPort;
@@ -169,15 +175,17 @@ export class TopicPreviewModal extends Modal {
       const isRevision = item.operation.type === "revise_block";
       const row = group.createEl("label", { cls: `qnalog-topics-preview-item${item.type === "add_conflict" || item.type === "add_disagreement" ? " is-conflict" : ""}${isRevision ? " is-revision" : ""}` });
       if (item.programGenerated) row.createSpan({ cls: "qnalog-topics-notice", text: this.port.text("Completed by program from conflict assessment") });
-      const main = row.createDiv({ cls: "qnalog-topics-preview-main" });
-      const checkbox = main.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Include this change") } });
+      const isDisagreement = item.operation.type === "add_disagreement";
+      const main = row.createDiv({ cls: `qnalog-topics-preview-main${isDisagreement ? " is-disagreement" : ""}` });
+      const heading = isDisagreement ? main.createDiv({ cls: "qnalog-topics-preview-conflict-heading" }) : main;
+      const checkbox = heading.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Include this change") } });
       row.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (suppressRowActivation({ onCheckbox: target === checkbox, onInteractive: !!target?.closest("button, a"), selectedText: window.getSelection()?.toString() ?? "", disabled: false })) event.preventDefault();
       });
       checkbox.checked = true;
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add(item.id) : selected.delete(item.id));
-      const icon = main.createSpan({ cls: "qnalog-topics-operation-icon" });
+      const icon = heading.createSpan({ cls: "qnalog-topics-operation-icon" });
       const iconName = item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
       try { setIcon(icon, iconName); } catch { /* icon fallback is decorative */ }
       const verification = stripTopicUnverifiedMarker(item.text);
@@ -190,9 +198,9 @@ export class TopicPreviewModal extends Modal {
         fresh.createSpan({ cls: "qnalog-topics-revision-label", text: this.port.text("New") });
         fresh.createSpan({ text: verification.text });
       } else if (item.operation.type === "add_disagreement") {
-        main.createDiv({ cls: "qnalog-topics-preview-text", text: item.operation.subject });
+        heading.createDiv({ cls: "qnalog-topics-preview-text", text: item.operation.subject });
         for (const position of item.operation.positions) {
-          const stance = main.createDiv({ cls: `qnalog-topics-preview-item${position.provenance ? " is-unverified" : ""}` });
+          const stance = main.createDiv({ cls: `qnalog-topics-preview-stance${position.provenance ? " is-unverified" : ""}` });
           const provenance = position.provenance === "source-pending" ? this.port.text("Source pending verification") : position.provenance === "unverified" ? this.port.text("Unverified") : position.provenance === "page-narrative" ? this.port.text("Page narrative") : "";
           stance.createDiv({ cls: "qnalog-topics-preview-text", text: position.text });
           const source = stance.createDiv({ cls: "qnalog-topics-preview-meta" });
@@ -209,7 +217,7 @@ export class TopicPreviewModal extends Modal {
           if (position.date) right.createSpan({ cls: "qnalog-topics-preview-date", text: position.date });
         }
       } else if (item.operation.type === "resolve_open") {
-        main.createDiv({ cls: "qnalog-topics-preview-text", text: `${this.port.text("Will mark this item as resolved")}: ${item.expectedText || item.operation.expectedText || item.target}` });
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: `${this.port.text("Will mark this item as resolved")}: ${item.expectedText || item.operation.expectedText || topicPreviewTargetLabel(item) || this.port.text("Open item")}` });
         main.createDiv({ cls: "qnalog-topics-preview-text", text: verification.text });
       } else {
         let changeText = verification.text;
@@ -219,18 +227,21 @@ export class TopicPreviewModal extends Modal {
         }
         main.createDiv({ cls: "qnalog-topics-preview-text", text: changeText });
       }
-      const metadata = row.createDiv({ cls: "qnalog-topics-preview-meta" });
-      const left = metadata.createDiv({ cls: "qnalog-topics-preview-meta-left" });
-      const right = metadata.createDiv({ cls: "qnalog-topics-preview-meta-right" });
-      if ("blockId" in item.operation || "relatedBlockId" in item.operation) left.createSpan({ cls: "qnalog-topics-preview-badge", text: item.target });
-      const source = this.preview.sourceLinks?.[item.sourceId] || item.sourceId;
-      const title = /\|([^|\]]+)\]\]$/.exec(source)?.[1] || source.replace(/^\[\[|\]\]$/g, "").split("/").pop() || source;
-      const link = right.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
-      link.addEventListener("click", () => void this.port.openSource(source));
-      const date = this.preview.sourceDates?.[item.sourceId];
-      if (date) right.createSpan({ cls: "qnalog-topics-preview-date", text: date });
-      if (item.type === "add_conflict" || item.type === "add_disagreement") left.createSpan({ cls: "qnalog-topics-preview-badge is-conflict", text: this.port.text("Disagreement") });
-      if (verification.unverified) left.createSpan({ cls: "qnalog-topics-unverified", text: this.port.text("Unverified") });
+      if (item.operation.type !== "add_disagreement") {
+        const metadata = row.createDiv({ cls: "qnalog-topics-preview-meta" });
+        const left = metadata.createDiv({ cls: "qnalog-topics-preview-meta-left" });
+        const right = metadata.createDiv({ cls: "qnalog-topics-preview-meta-right" });
+        const targetLabel = topicPreviewTargetLabel(item);
+        if (targetLabel) left.createSpan({ cls: "qnalog-topics-preview-target", text: targetLabel });
+        const source = this.preview.sourceLinks?.[item.sourceId] || item.sourceId;
+        const title = /\|([^|\]]+)\]\]$/.exec(source)?.[1] || source.replace(/^\[\[|\]\]$/g, "").split("/").pop() || source;
+        const link = right.createEl("button", { cls: "qnalog-topics-source-link", text: title, attr: { type: "button" } });
+        link.addEventListener("click", () => void this.port.openSource(source));
+        const date = this.preview.sourceDates?.[item.sourceId];
+        if (date) right.createSpan({ cls: "qnalog-topics-preview-date", text: date });
+        if (item.type === "add_conflict") left.createSpan({ cls: "qnalog-topics-preview-badge is-conflict", text: this.port.text("Disagreement") });
+        if (verification.unverified) left.createSpan({ cls: "qnalog-topics-unverified", text: this.port.text("Unverified") });
+      }
     }
 
     const footer = content.createDiv({ cls: "qnalog-topics-modal-footer" });

@@ -37,7 +37,7 @@ vi.mock("obsidian", () => {
 });
 
 import type { TopicChangePreview } from "../src/topics/topic-integration";
-import { TopicPreviewModal } from "../src/ui/topic-preview-modal";
+import { TopicPreviewModal, topicPreviewTargetLabel } from "../src/ui/topic-preview-modal";
 
 interface FakeTree { text: string; cls: string; checked: boolean; children: FakeTree[]; listeners: Map<string, (event?: { stopPropagation(): void }) => void> }
 function allText(node: FakeTree): string { return `${node.text} ${node.children.map(allText).join(" ")}`; }
@@ -220,6 +220,34 @@ describe("topic preview dialog", () => {
     expect(allText(tree)).toContain("Source pending verification");
     expect(allText(tree)).toContain("Some disagreement details need verification. Review the marked positions.");
     expect(descendants(tree).filter((item) => item.cls === "qnalog-topics-source-link").map((item) => item.text)).toContain("Audit note");
+    expect(descendants(tree).filter((item) => item.cls.includes("qnalog-topics-preview-stance"))).toHaveLength(4);
+  });
+
+  it("keeps disagreement, resolved action, revision, and progress in one readable layout without operation codes", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.items = [
+      { id: "disagreement", type: "add_disagreement", operation: { type: "add_disagreement", subject: "Front Matter property naming", positions: [
+        { text: "Keep the existing names.", sourceId: "note-1", sourceTitle: "A very long source title that can wrap", date: "2026-10-01" },
+        { text: "Use localized names.", sourceId: "note-2", sourceTitle: "Page data", date: "2026-10-02", fromPage: true },
+      ], sourceId: "note-1" }, target: "add_disagreement", text: "", sourceId: "note-1", cancellable: true },
+      { id: "resolved", type: "resolve_open", operation: { type: "resolve_open", blockId: "tpc-a1b2c3", note: "The issue is resolved.", expectedText: "The issue remains open.", sourceId: "note-1" }, target: "resolve_open", text: "The issue is resolved.", expectedText: "The issue remains open.", sourceId: "note-1", cancellable: true },
+      { id: "revision", type: "revise_block", operation: { type: "revise_block", blockId: "tpc-a1b2c3", newText: "Revised summary.", expectedText: "Old summary.", reason: "new evidence", sourceId: "note-2" }, target: "tpc-a1b2c3", text: "Revised summary.", expectedText: "Old summary.", sourceId: "note-2", cancellable: true },
+      { id: "progress", type: "add_item", operation: { type: "add_item", section: "进展脉络", text: "A new progress item.", sourceId: "note-1" }, target: "Progress thread", text: "A new progress item.", sourceId: "note-1", cancellable: true },
+    ];
+    preview.sourceLinks = { "note-1": "[[Notes/one.md|A very long source title that can wrap]]", "note-2": "[[Notes/two.md|Page data]]" };
+    preview.sourceDates = { "note-1": "2026-10-01", "note-2": "2026-10-02" };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const tree = modal.contentEl as unknown as FakeTree;
+    const text = allText(tree);
+    expect(text).not.toMatch(/(?:add_|revise_|resolve_)[a-z_]+/);
+    const disagreement = descendants(tree).find((item) => item.cls.includes("qnalog-topics-preview-main is-disagreement"));
+    expect(disagreement).toBeDefined();
+    expect(descendants(disagreement as FakeTree).filter((item) => item.cls === "qnalog-topics-preview-stance")).toHaveLength(2);
+    expect(topicPreviewTargetLabel(preview.items[0])).toBe("");
+    expect(topicPreviewTargetLabel(preview.items[2])).toBe("");
+    expect(topicPreviewTargetLabel(preview.items[3])).toBe("Progress thread");
   });
 
   it("shows old and new summary text and reports block edits skipped during apply", async () => {
