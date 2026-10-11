@@ -128,7 +128,7 @@ export class TopicsPanel {
     menu.addItem((item) => item.setTitle(this.port.text("Merge into…")).setIcon("git-merge").onClick(() => void this.chooseMergeTarget(topicId, event)));
     menu.addSeparator();
     menu.addItem((item) => item.setTitle(this.port.text("Delete topic")).setIcon("trash").onClick(async () => {
-      const confirmed = await qnalogConfirm(this.app, this.port.text("Delete topic"), this.port.text("Delete only the topic page “{0}”? No minutes notes will be deleted.").replace("{0}", title), this.port.text("Delete"));
+      const confirmed = await qnalogConfirm(this.app, this.port.text("Delete topic"), this.port.text("Delete only the topic page “{0}”? No minutes notes will be deleted.").replace("{0}", title), this.port.text("Delete"), this.port.text("QnALog · Topics"));
       if (!confirmed) return;
       await this.port.deleteTopic(topicId);
       this.refresh();
@@ -141,7 +141,7 @@ export class TopicsPanel {
     if (!topics.length) { new Notice(this.port.text("No other topic is available.")); return; }
     const menu = new Menu();
     for (const topic of topics) menu.addItem((item) => item.setTitle(topic.page.title).onClick(async () => {
-      const confirmed = await qnalogConfirm(this.app, this.port.text("Merge topics"), this.port.text("Add these members to “{0}” and move the source topic page to the trash?").replace("{0}", topic.page.title), this.port.text("Merge"));
+      const confirmed = await qnalogConfirm(this.app, this.port.text("Merge topics"), this.port.text("Add these members to “{0}” and move the source topic page to the trash?").replace("{0}", topic.page.title), this.port.text("Merge"), this.port.text("QnALog · Topics"));
       if (!confirmed) return;
       await this.port.mergeTopics(sourceId, topic.page.id);
       this.refresh();
