@@ -41,7 +41,8 @@ try {
     .theme-dark { color-scheme:dark; --background-primary:#191a1c; --background-secondary:#24262a; --background-modifier-border:#3a3d42; --text-normal:#e7e9ec; --text-muted:#b1b5bc; --text-faint:#858b94; --text-accent:#b4a1fa; --interactive-accent:#a88df4; --interactive-accent-hover:#c0adff; --text-warning:#e2b75f; --modal-background:#1d1e20; }
     body { min-height:100vh; margin:0; background:var(--background-primary); color:var(--text-normal); font:14px/1.4 system-ui,sans-serif; }
     .modal-container { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
-    .modal { position:relative; max-width:100vw; max-height:100vh; }
+    .modal { position:relative; box-sizing:border-box; width:560px; max-width:min(720px, 92vw); max-height:100vh; overflow-x:auto; }
+    @media (max-width: 480px) { .modal { max-width:95vw; } }
     .modal-close-button { position:absolute; top:8px; right:8px; z-index:2; }
     .modal-content { padding:20px; background:var(--modal-background); }
     button,input { font:inherit; }
@@ -95,6 +96,29 @@ try {
     if (result.exceptionDetails) throw new Error(`${result.exceptionDetails.text}: ${result.exceptionDetails.exception?.description || ""}`);
     return result.result.value;
   };
+  // Horizontal geometry of an open topic dialog. Text edges use Range rects so glyphs that overflow a clipped box still count.
+  const horizontalFacts = (kind) => `(() => {
+    const modal = document.querySelector('.modal');
+    const content = document.querySelector('.modal-content.qnalog-topics-${kind}');
+    const edge = modal.getBoundingClientRect();
+    const rightOf = (element) => {
+      if (element.matches('input')) return element.getBoundingClientRect().right;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return Math.max(element.getBoundingClientRect().right, range.getBoundingClientRect().right);
+    };
+    const textEdges = [...content.querySelectorAll('h2, h3, label, input[type="text"], .qnalog-topics-candidate-title, .qnalog-topics-candidate-summary, .qnalog-topics-preview-text, .qnalog-topics-reason, .qnalog-topics-membership, .qnalog-topics-missing, .qnalog-topics-preview-meta > *, .qnalog-topics-notice, .qnalog-topics-cost-warning, .qnalog-topics-estimate')]
+      .map((element) => ({ text: (element.textContent || element.value || '').slice(0, 24), right: rightOf(element) }));
+    const buttons = [...modal.querySelectorAll('button')].map((button) => { const rect = button.getBoundingClientRect(); return { text: button.textContent, left: rect.left, right: rect.right }; });
+    return { modal: { left: edge.left, right: edge.right, scrollWidth: modal.scrollWidth, clientWidth: modal.clientWidth }, content: { scrollWidth: content.scrollWidth, clientWidth: content.clientWidth }, textEdges, buttons };
+  })()`;
+  const assertHorizontal = (facts, label) => {
+    assert(facts.textEdges.length > 0 && facts.buttons.length > 0, `${label}: no content measured`);
+    assert(facts.modal.scrollWidth <= facts.modal.clientWidth, `${label}: .modal has horizontal overflow (${facts.modal.scrollWidth}/${facts.modal.clientWidth})`);
+    assert(facts.content.scrollWidth <= facts.content.clientWidth, `${label}: .modal-content has horizontal overflow (${facts.content.scrollWidth}/${facts.content.clientWidth})`);
+    for (const button of facts.buttons) assert(button.left >= facts.modal.left - 0.5 && button.right <= facts.modal.right + 0.5, `${label}: button "${button.text}" is outside the dialog (${Math.round(button.left)}-${Math.round(button.right)} vs ${Math.round(facts.modal.left)}-${Math.round(facts.modal.right)})`);
+    for (const item of facts.textEdges) assert(item.right <= facts.modal.right + 0.5, `${label}: text is clipped at the dialog edge: "${item.text}" (${Math.round(item.right)} > ${Math.round(facts.modal.right)})`);
+  };
   await cdp("Page.enable");
   await cdp("Runtime.enable");
   const pageLoaded = new Promise((resolveLoad) => socket.addEventListener("message", function loaded(event) {
@@ -125,6 +149,7 @@ try {
     assert(create.footerBottom <= create.viewport, `create footer below viewport at ${width}px/${theme}`);
     assert(create.scrollWidth <= create.clientWidth && create.bodyScrollWidth <= width, `create dialog has horizontal overflow at ${width}px/${theme}`);
     assert(create.summaries.some((summary) => summary.includes("底层数据结构的优化")) && create.summaries.every((summary) => !/[*_`]/.test(summary)), `candidate excerpt contains Markdown markers at ${width}px/${theme}`);
+    assertHorizontal(await evaluate(horizontalFacts("create")), `create dialog at ${width}px/${theme}`);
     await evaluate("document.querySelector('.modal-close-button').click()");
     assert.equal(await evaluate("document.querySelectorAll('.modal').length"), 0, `create dialog did not close at ${width}px/${theme}`);
 
@@ -145,6 +170,7 @@ try {
     assert(preview.scrollWidth <= preview.clientWidth && preview.scrollAreaWidth <= preview.scrollAreaClientWidth && preview.bodyScrollWidth <= width, `preview dialog has horizontal overflow at ${width}px/${theme}`);
     assert.equal(preview.source, "问答日志-数据结构优化", `source should display title only at ${width}px/${theme}`);
     assert.equal(preview.badgeWhiteSpace, "nowrap", `unverified badge can wrap vertically at ${width}px/${theme}`);
+    assertHorizontal(await evaluate(horizontalFacts("preview")), `preview dialog at ${width}px/${theme}`);
     console.log(`[topic-dialog-layout] ${width}px ${theme}: body ${preview.textWidth}/${preview.contentWidth}px; footer ${Math.round(preview.footerBottom)}/${preview.viewport}px; no horizontal overflow`);
     await evaluate("document.querySelector('.modal-close-button').click()");
     assert.equal(await evaluate("document.querySelectorAll('.modal').length"), 0, `preview dialog did not close at ${width}px/${theme}`);

@@ -6,7 +6,7 @@ import type { TopicChangePreview } from "../../src/topics/topic-integration";
 
 const candidates: TopicCandidates = {
   project: Array.from({ length: 12 }, (_, index) => ({
-    tier: "project" as const, path: `QnALog/Notes/${index}.md`, title: `Long candidate title ${index}`, date: "2026-10-11",
+    tier: "project" as const, path: `QnALog/Notes/${index}.md`, title: `Long candidate title ${index} ${"Unbrokenwordsegment".repeat(6)}`, date: "2026-10-11",
     overview: "# **底层数据结构的优化**\n> - __说话人__：昨晚睡前 `回顾` [[Notes/source.md|结构优化]] [文档](https://example.test)",
     matchedTags: ["项目/Q&ALog", "项目/QnALog"], matchedTerms: [], reasons: ["Shared project identifier tag"],
     reasonDetails: [{ kind: "project-tags" as const, labels: ["项目/Q&ALog", "项目/QnALog"], similar: true }],
@@ -32,10 +32,11 @@ const port = {
 };
 
 const longText = "A long claim about the underlying data structures and how the project preserves every user edit while combining notes. ".repeat(3);
+const unbrokenText = `https://example.test/${"a".repeat(160)}`;
 const preview: TopicChangePreview = {
   topicId: "fixture-topic", expectedHash: "fixture-hash", pageWasManuallyEdited: false,
   completedBatches: 1, totalBatches: 1,
-  items: [{ id: "long-item", type: "add_conflict", operation: { type: "add_conflict", text: longText, sourceId: "source-id" }, target: "conflict", text: `${longText}（未核实）`, sourceId: "source-id", cancellable: true }],
+  items: [{ id: "long-item", type: "add_conflict", operation: { type: "add_conflict", text: longText, sourceId: "source-id" }, target: "conflict", text: `${longText} ${unbrokenText}（未核实）`, sourceId: "source-id", cancellable: true }],
   sourceLinks: { "source-id": `[[${"QnALog/转写纪要/2026-09-29 2149 · ".repeat(2)}综合纪要-问答日志-数据结构优化.md|问答日志-数据结构优化]]` },
   sourceDates: { "source-id": "2026-09-29" },
 };
