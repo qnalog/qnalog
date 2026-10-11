@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
-import { NS_ROOT, QNALOG_PLUGIN_ICON_ID } from "./shared/namespace";
+import { NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, readNamespaceFrontmatter } from "./shared/namespace";
 import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
@@ -60,6 +60,7 @@ import { TaskQueue } from "./queue/task-queue";
 
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
+import { openOrRevealFile } from "./ui/open-note";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
@@ -79,6 +80,8 @@ import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
+import { TopicPromptStore } from "./topics/topic-prompt-store";
+import { isTopicSourceEligible, type TopicsUiPort } from "./ui/topics-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
@@ -92,6 +95,7 @@ import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
 import { requestLlmChatCompletion } from "./llm/core";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
+import { isPathUnderRecentNoteRoots } from "./recent/recent-note-paths";
 import { qnalogConfirm } from "./ui/helpers";
 import { ImportService } from "./imports/import-service";
 import { ExternalInboxService } from "./audio/external-inbox-service";
@@ -137,6 +141,7 @@ class QnALogPlugin extends obsidian.Plugin {
   declare shell: ViewShellService;
   declare library: LibraryViewService;
   declare topics: TopicsService;
+  declare topicPromptStore: TopicPromptStore;
   declare noteIndex: NoteIndexService;
   declare audioLinks: AudioTimeLinkService;
   declare meetingWorkbench: MeetingWorkbenchService;
@@ -298,6 +303,7 @@ class QnALogPlugin extends obsidian.Plugin {
     });
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
+    this.topicPromptStore = new TopicPromptStore();
     this.noteIndex = new NoteIndexService(this);
     const topicHistoryRoot = `${NS_ROOT}/.cache/topic-history`;
     const isTopicHistoryPath = (path: string): boolean => {
@@ -494,7 +500,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.ribbonEl = this.addRibbonIcon("mic", t("QnALog: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
-    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this));
+    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort()));
     this.registerView(VIEW_TYPE_MINUTES_KANBAN, (leaf) => new MinutesKanbanView(leaf, {
       getRootPath: () => obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
       listItems: () => this.shell.getMinutesKanbanItems(),
@@ -747,6 +753,98 @@ class QnALogPlugin extends obsidian.Plugin {
       }, 6000);
       this.register(() => window.clearTimeout(cleanupTimer));
     });
+  }
+
+  createTopicsUiPort(): TopicsUiPort {
+    const sourceNoteChecks = new Map<string, boolean>();
+    return {
+      isConfigured: () => {
+        const folder = obsidian.normalizePath(this.settings.topicsFolder || "");
+        return !!folder && this.app.vault.getAbstractFileByPath(folder) instanceof obsidian.TFolder;
+      },
+      getVersion: () => {
+        const folder = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(this.settings.topicsFolder || ""));
+        if (!(folder instanceof obsidian.TFolder)) return "missing";
+        return folder.children.flatMap((file) => file instanceof obsidian.TFile && file.extension === "md"
+          ? [`${file.path}:${file.stat.mtime}`] : []).sort().join("|");
+      },
+      text: (key) => t(key),
+      getCandidates: (path, options) => this.topics.getCandidates(path, options),
+      estimate: (input) => this.topics.estimate(input),
+      preview: (input) => this.topics.preview(input),
+      apply: (preview, selection) => this.topics.apply(preview, selection),
+      cancel: (id) => this.topics.cancel(id),
+      listTopics: () => this.topics.listTopics(),
+      countPending: (topicId) => this.topics.countPending(topicId),
+      scanUnintegrated: (topicId, signal) => this.topics.scanUnintegrated(topicId, signal),
+      undoLastUpdate: (topicId) => this.topics.undoLastUpdate(topicId),
+      deleteTopic: (topicId) => this.topics.deleteTopic(topicId),
+      mergeTopics: (sourceId, targetId) => this.topics.mergeTopics(sourceId, targetId),
+      ignoreNote: (topicId, path) => this.topics.ignoreNote(topicId, path),
+      noteArrived: (path) => this.topics.noteArrived(path),
+      refreshPrompt: async (path) => {
+        this.topicPromptStore.set(path, await this.topics.noteArrived(path));
+        this.shell.refreshOutlineView();
+      },
+      getPrompts: (path) => this.topicPromptStore.get(path),
+      removePrompt: (path, topicId) => this.topicPromptStore.remove(path, topicId),
+      isSourceNote: (path) => {
+        if (sourceNoteChecks.has(path)) return sourceNoteChecks.get(path) === true;
+        return false;
+      },
+      prepareSourceNote: async (path) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md") { sourceNoteChecks.set(path, false); return false; }
+        const fm = this.app.metadataCache.getCache(file.path)?.frontmatter || {};
+        const kind = readNamespaceFrontmatter(fm, "type");
+        const eligible = isTopicSourceEligible({
+          type: kind,
+          mergedInto: readNamespaceFrontmatter(fm, "mergedInto"),
+          underMinutesRoot: isPathUnderRecentNoteRoots(file.path, getRecentNoteRoots(this)),
+          hasMergeMarker: false,
+        });
+        if (!eligible) { sourceNoteChecks.set(path, false); return false; }
+        const markdown = await this.app.vault.cachedRead(file);
+        const isSource = isTopicSourceEligible({
+          type: kind,
+          mergedInto: readNamespaceFrontmatter(fm, "mergedInto"),
+          underMinutesRoot: true,
+          hasMergeMarker: NS_MERGE_BLOCK_RE.test(markdown),
+        });
+        sourceNoteChecks.set(path, isSource);
+        return isSource;
+      },
+      openTopic: async (path) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
+      },
+      openSource: async (source) => {
+        const target = String(source).match(/^\[\[([^\]|#]+)/)?.[1] || String(source);
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(target))
+          || this.app.metadataCache.getFirstLinkpathDest(target, "");
+        if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
+      },
+    };
+  }
+
+  async onNoteIndexed(path: string): Promise<void> {
+    if (!this.topics || typeof this.app.metadataCache.getCache !== "function") return;
+    const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
+    const frontmatter = this.app.metadataCache.getCache(file.path)?.frontmatter || {};
+    const kind = readNamespaceFrontmatter(frontmatter, "type");
+    if (!isTopicSourceEligible({
+      type: kind,
+      mergedInto: readNamespaceFrontmatter(frontmatter, "mergedInto"),
+      underMinutesRoot: isPathUnderRecentNoteRoots(file.path, getRecentNoteRoots(this)),
+      hasMergeMarker: false,
+    })) return;
+    let markdown: string;
+    try { markdown = await this.app.vault.cachedRead(file); }
+    catch { return; }
+    if (NS_MERGE_BLOCK_RE.test(markdown)) return;
+    this.topicPromptStore.set(path, await this.topics.noteArrived(path));
+    this.shell?.refreshOutlineView();
   }
 
   onunload() {

@@ -1,6 +1,6 @@
 import { createRelatedNotesIndex, RELATED_NOTES_DEFAULT_MIN_SCORE, type RelatedNoteDocument, type RelatedNotesIndex } from "../indexing/related-notes";
 import { normalizeTagKey, overviewCardTimestamp, type OverviewCard } from "./overview-card";
-import { areTagKeysSimilar, GENERIC_TAG_MIN_DOCUMENTS, isGenericTag, isProjectTag, isTopicTag } from "./topic-tags";
+import { areTagKeysSimilar, GENERIC_TAG_MIN_DOCUMENTS, isGenericTag, isProjectTag, isSystemTopicTag, isTopicTag } from "./topic-tags";
 import { t } from "../shared/i18n";
 
 export interface TopicCandidate {
@@ -12,12 +12,16 @@ export interface TopicCandidate {
   matchedTags: string[];
   matchedTerms: string[];
   reasons: string[];
+  reasonDetails: TopicCandidateReason[];
   alreadyInTopics: string[];
   missingOverview: boolean;
   score: number;
   defaultSelected: boolean;
   cancellable: boolean;
 }
+export type TopicCandidateReason =
+  | { kind: "project-tags" | "topic-tags"; labels: string[]; similar: boolean }
+  | { kind: "content"; terms: string[] };
 export interface FindTopicCandidatesInput {
   start: OverviewCard;
   cards: readonly OverviewCard[];
@@ -35,7 +39,7 @@ const OVERVIEW_EXCERPT_CHARS = 120;
 /** A topic tag used by fewer than three notes stays useful as a one-tag match. */
 export const TOPIC_TAG_RARE_MAX_DOCUMENTS = GENERIC_TAG_MIN_DOCUMENTS;
 
-function candidate(card: OverviewCard, now: number, tier: TopicCandidate["tier"], matchedTags: string[], matchedTerms: string[], reasons: string[], score: number, memberships: Readonly<Record<string, readonly string[]>>, selected: boolean, cancellable: boolean): TopicCandidate {
+function candidate(card: OverviewCard, now: number, tier: TopicCandidate["tier"], matchedTags: string[], matchedTerms: string[], reasons: string[], reasonDetails: TopicCandidateReason[], score: number, memberships: Readonly<Record<string, readonly string[]>>, selected: boolean, cancellable: boolean): TopicCandidate {
   const date = card.date || (card.mtime ? new Date(card.mtime).toISOString().slice(0, 10) : "");
   const daysOld = Math.max(0, now - overviewCardTimestamp(card));
   return {
@@ -47,6 +51,7 @@ function candidate(card: OverviewCard, now: number, tier: TopicCandidate["tier"]
     matchedTags,
     matchedTerms,
     reasons,
+    reasonDetails,
     alreadyInTopics: Object.entries(memberships).filter(([, paths]) => paths.includes(card.path)).map(([id]) => id).sort(),
     missingOverview: card.overviewSource === "none",
     score: score + (daysOld <= RECENCY_WINDOW_MS ? 0.0001 : 0),
@@ -72,27 +77,28 @@ export function findTopicCandidates(input: FindTopicCandidatesInput): TopicCandi
   const cutoff = input.windowDays === undefined || input.windowDays < 0 ? Number.NEGATIVE_INFINITY : now - input.windowDays * 86400000;
   const eligible = cards.filter((card) => card.path === start.path || (!excluded.has(card.path) && overviewCardTimestamp(card) >= cutoff));
   const tagPaths = new Map<string, Set<string>>();
-  for (const card of cards) for (const tag of new Set(card.tags.map(normalizeTagKey).filter(Boolean))) {
+  for (const card of cards) for (const tag of new Set(card.tags.filter((label) => !isSystemTopicTag(label)).map(normalizeTagKey).filter(Boolean))) {
     const paths = tagPaths.get(tag) || new Set<string>();
     paths.add(card.path);
     tagPaths.set(tag, paths);
   }
   const documentFrequency = new Map([...tagPaths].map(([tag, paths]) => [tag, paths.size] as const));
   const totalDocs = new Set(cards.map((card) => card.path)).size;
-  const startLabels = start.tags;
+  const startLabels = start.tags.filter((label) => !isSystemTopicTag(label));
   const startProject = startLabels.filter(isProjectTag);
   const hasProjectTags = startProject.length > 0;
   const project: TopicCandidate[] = [];
   const topic: TopicCandidate[] = [];
   const labeledPaths = new Set<string>();
   for (const card of eligible) {
-    const matches: Array<{ label: string; key: string; tier: "project" | "topic" }> = [];
+    const matches: Array<{ label: string; origin: string; key: string; tier: "project" | "topic" }> = [];
     for (const label of card.tags) for (const origin of startLabels) {
+      if (isSystemTopicTag(label)) continue;
       const key = normalizeTagKey(label), originKey = normalizeTagKey(origin);
       if (!key || !originKey || !areTagKeysSimilar(key, originKey)) continue;
       const projectMatch = isProjectTag(origin) && isProjectTag(label);
       const topicMatch = isTopicTag(origin) && isTopicTag(label);
-      if (projectMatch || (topicMatch && (key === originKey || !isGenericTag(key, documentFrequency.get(key) || 0, totalDocs)))) matches.push({ label, key, tier: projectMatch ? "project" : "topic" });
+      if (projectMatch || (topicMatch && (key === originKey || !isGenericTag(key, documentFrequency.get(key) || 0, totalDocs)))) matches.push({ label, origin, key, tier: projectMatch ? "project" : "topic" });
     }
     const projectMatches = [...new Set(matches.filter((m) => m.tier === "project").map((m) => m.label))];
     const topicMatches = [...new Set(matches.filter((m) => m.tier === "topic").map((m) => m.label))];
@@ -101,15 +107,19 @@ export function findTopicCandidates(input: FindTopicCandidatesInput): TopicCandi
     if (projectMatches.length) {
       const similarReason = projectMatches.some((tag) => !startProject.some((original) => normalizeTagKey(original) === normalizeTagKey(tag)))
         ? [t("Similar tag spelling: ") + `${projectMatches[0]} ≈ ${startProject.find((original) => areTagKeysSimilar(original, projectMatches[0])) || projectMatches[0]}`] : [];
-      project.push(candidate(card, now, "project", projectMatches, [], [t("Shared project identifier tag"), ...similarReason], projectMatches.length, input.members || {}, true, card.path !== start.path));
+      const projectPairs = matches.filter((match) => match.tier === "project");
+      const reasonDetails: TopicCandidateReason[] = [{ kind: "project-tags", labels: [...new Set(projectPairs.flatMap((match) => [match.label, match.origin]))], similar: projectPairs.some((match) => normalizeTagKey(match.label) !== normalizeTagKey(match.origin)) }];
+      project.push(candidate(card, now, "project", projectMatches, [], [t("Shared project identifier tag"), ...similarReason], reasonDetails, projectMatches.length, input.members || {}, true, card.path !== start.path));
       labeledPaths.add(card.path);
     } else if (includeTopic && card.path !== start.path) {
-      topic.push(candidate(card, now, "topic", topicMatches, [], [t("Shared topic tags")], topicMatches.length, input.members || {}, !hasProjectTags && sharedCount >= 2, card.path !== start.path));
+      const topicPairs = matches.filter((match) => match.tier === "topic");
+      const reasonDetails: TopicCandidateReason[] = [{ kind: "topic-tags", labels: [...new Set(topicPairs.flatMap((match) => [match.label, match.origin]))], similar: topicPairs.some((match) => normalizeTagKey(match.label) !== normalizeTagKey(match.origin)) }];
+      topic.push(candidate(card, now, "topic", topicMatches, [], [t("Shared topic tags")], reasonDetails, topicMatches.length, input.members || {}, !hasProjectTags && sharedCount >= 2, card.path !== start.path));
       labeledPaths.add(card.path);
     }
   }
   if (!labeledPaths.has(start.path)) {
-    project.unshift(candidate(start, now, "project", [], [], [t("Starting note")], 0, input.members || {}, true, false));
+    project.unshift(candidate(start, now, "project", [], [], [t("Starting note")], [], 0, input.members || {}, true, false));
     if (!hasProjectTags) project[0].tier = "project";
   } else {
     const origin = project.findIndex((item) => item.path === start.path);
@@ -131,7 +141,7 @@ export function findTopicCandidates(input: FindTopicCandidatesInput): TopicCandi
   const content = contentMatches.filter((match) => eligiblePaths.has(match.path) && !labeledPaths.has(match.path) && match.path !== start.path && !excluded.has(match.path))
     .map((match) => {
       const card = cardByPath.get(match.path);
-      return card ? candidate(card, now, "content", [], match.matchedTerms, [t("Similar content")], match.score, input.members || {}, false, true) : null;
+      return card ? candidate(card, now, "content", [], match.matchedTerms, [t("Similar content")], [{ kind: "content", terms: match.matchedTerms }], match.score, input.members || {}, false, true) : null;
     }).filter((value): value is TopicCandidate => value !== null);
   return { project, topic, content, byTag: [...project, ...topic], byContent: content };
 }

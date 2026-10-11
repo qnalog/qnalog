@@ -3079,13 +3079,13 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-panel-tabs {
   display: flex;
   align-items: flex-end;
-  gap: 18px;
+  gap: 12px;
   min-height: 30px;
   padding: 0;
   margin: 2px 0 10px;
   border-bottom: 1px solid var(--background-modifier-border);
   background: transparent;
-  overflow-x: auto;
+  overflow: hidden;
   flex: 0 0 auto;
 }
 
@@ -3104,6 +3104,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-shadow: none;
   cursor: pointer;
   white-space: nowrap;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .qnalog-outline-panel-tabs button:hover {
@@ -10343,9 +10347,97 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline.is-mobile .qnalog-outline-panel-tabs {
-  gap: 22px;
+  gap: 6px;
   margin-top: 8px;
   padding-bottom: 8px;
+}
+
+.qnalog-topics-create button:focus-visible, .qnalog-topics-preview button:focus-visible, .qnalog-topics-prompt-row button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qnalog-topics-panel .qnalog-outline-recent-row:focus-visible, .qnalog-topics-panel .qnalog-outline-recent-action:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qnalog-topics-pending { display: none; width: fit-content; margin: 0 4px 0 0; padding: 2px 6px; border-radius: 10px; color: var(--text-accent); background: color-mix(in srgb, var(--interactive-accent) 12%, transparent); font-size: var(--font-ui-smaller); }
+.qnalog-topics-pending.is-visible { display: inline-block; }
+.qnalog-topics-empty { margin: 24px 0; }
+.qnalog-topics-create, .qnalog-topics-preview { color: var(--text-normal); }
+.qnalog-topics-create h2, .qnalog-topics-preview h2 { font-size: 16px; }
+.qnalog-topics-create h3, .qnalog-topics-preview h3 { margin: 12px 0 6px; color: var(--text-muted); font-size: 12px; }
+.qnalog-topics-title { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0 0 10px; }
+.qnalog-topics-basis { display: flex; gap: 14px; margin: 10px 0; }
+.qnalog-topics-radio { display: inline-flex; align-items: center; gap: 6px; color: var(--text-normal); font-size: var(--font-ui-small); }
+.qnalog-topics-cost-warning, .qnalog-topics-notice { margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-small); }
+.qnalog-topics-notice.is-warning { color: var(--text-error); }
+.qnalog-topics-estimate, .qnalog-topics-loading { margin: 6px 0; color: var(--text-muted); font-size: var(--font-ui-small); }
+.qnalog-topics-candidate-group { margin: 10px 0; }
+.qnalog-topics-candidate { display: flex; gap: 8px; align-items: flex-start; padding: 7px 5px; border-bottom: 1px solid var(--background-modifier-border); }
+.qnalog-topics-candidate input, .qnalog-topics-preview-item input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--interactive-accent); }
+.qnalog-topics-candidate, .qnalog-topics-preview-item { cursor: pointer; border-radius: 5px; }
+.qnalog-topics-candidate:hover, .qnalog-topics-preview-item:hover { background: var(--background-secondary); }
+.qnalog-topics-candidate:focus-within, .qnalog-topics-preview-item:focus-within { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qnalog-topics-candidate.is-disabled { cursor: default; opacity: 0.55; }
+.qnalog-topics-candidate.is-disabled:hover { background: transparent; }
+.qnalog-topics-estimate:empty { display: none; }
+.qnalog-topics-generating { display: flex; flex-direction: column; gap: 10px; padding: 8px 0; }
+.qnalog-topics-generating-basis, .qnalog-topics-progress-elapsed { color: var(--text-muted); font-size: var(--font-ui-small); }
+.qnalog-topics-progress { position: relative; height: 6px; overflow: hidden; border-radius: 3px; background: var(--background-modifier-border); }
+.qnalog-topics-progress-fill { height: 100%; width: var(--qnalog-topics-progress, 0%); border-radius: 3px; background: var(--interactive-accent); transition: width 0.3s ease; }
+.qnalog-topics-progress.is-indeterminate .qnalog-topics-progress-fill { width: 40%; animation: qnalog-topics-indeterminate 1.4s ease-in-out infinite; }
+.qnalog-topics-progress-text { color: var(--text-normal); font-size: var(--font-ui-small); }
+@keyframes qnalog-topics-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.qnalog-topics-candidate-details { flex: 1 1 auto; min-width: 0; }
+.qnalog-topics-candidate-title { color: var(--text-normal); font-size: 12px; line-height: 1.4; }
+.qnalog-topics-candidate-summary { max-height: 2.8em; overflow: hidden; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.qnalog-topics-reason, .qnalog-topics-membership, .qnalog-topics-missing, .qnalog-topics-unverified { display: inline-block; margin: 3px 4px 0 0; color: var(--text-faint); font-size: 10px; }
+.qnalog-topics-membership { color: var(--text-accent); }
+.qnalog-topics-missing { color: var(--text-error); }
+.qnalog-topics-modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; }
+.qnalog-topics-preview-section { margin: 12px 0; }
+.qnalog-topics-preview-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px; border-radius: 5px; }
+.qnalog-topics-operation-icon, .qnalog-topics-operation-icon svg { width: 14px; height: 14px; flex: 0 0 14px; color: var(--text-muted); }
+.qnalog-topics-preview-item.is-conflict { background: var(--background-secondary); border-inline-start: 2px solid var(--text-warning, var(--interactive-accent)); }
+.qnalog-topics-preview-text { flex: 1; white-space: pre-wrap; font-size: var(--font-ui-small); line-height: 1.55; }
+.qnalog-topics-source-link { border: 0; padding: 0; background: transparent; color: var(--text-accent); font-size: var(--font-ui-smaller); }
+.qnalog-topics-undo { margin-inline-start: 8px; }
+.qnalog-topics-prompt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 3px 8px 7px 34px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.qnalog-topics-prompt-row button { border: 0; padding: 2px 5px; background: transparent; color: var(--text-accent); font-size: inherit; }
+.qnalog-topics-prompt-text { min-width: 0; }
+.qnalog-topics-prompt-more { color: var(--text-faint); }
+
+/* Topic dialogs keep their heading and actions visible while the evidence list scrolls.
+   Width comes from Obsidian's .modal (560px, max-width min(720px, 92vw)); this content box fills it and sets no fixed width of its own. */
+.modal-content.qnalog-topics-create,
+.modal-content.qnalog-topics-preview {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: min(70vh, 640px);
+  max-height: min(70vh, 640px);
+  min-height: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.modal-content.qnalog-topics-create > h2,
+.modal-content.qnalog-topics-preview > h2 { flex: 0 0 auto; }
+.qnalog-topics-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; max-width: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.qnalog-topics-modal-footer { position: sticky; bottom: 0; flex: 0 0 auto; min-width: 0; padding-top: 8px; background: var(--modal-background, var(--background-primary)); border-top: 1px solid var(--background-modifier-border); }
+.qnalog-topics-modal-actions { flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+.qnalog-topics-preview-item { display: block; min-width: 0; }
+.qnalog-topics-preview-main { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.qnalog-topics-preview-main > input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--interactive-accent); }
+.qnalog-topics-preview-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.qnalog-topics-preview-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; padding: 4px 0 0 40px; }
+.qnalog-topics-source-link { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qnalog-topics-preview-date { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; }
+.qnalog-topics-preview-badge,
+.qnalog-topics-unverified { display: inline-flex; align-items: center; flex: 0 0 auto; width: fit-content; padding: 1px 5px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; }
+.qnalog-topics-preview-badge.is-conflict { color: var(--text-warning, var(--text-accent)); }
+@media (max-width: 420px) {
+  .qnalog-topics-prompt-row { padding-inline-start: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qnalog-topics-progress-fill { transition: none; }
+  .qnalog-topics-progress.is-indeterminate .qnalog-topics-progress-fill { width: 100%; opacity: 0.35; animation: none; }
+  .qnalog-topics-panel *, .qnalog-topics-create *, .qnalog-topics-preview * { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
 .qnalog-outline.is-mobile .qnalog-inline-player,

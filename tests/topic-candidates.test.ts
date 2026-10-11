@@ -74,4 +74,13 @@ describe("topic candidates", () => {
     expect(result.topic.map((item) => item.path)).toContain("video.md");
     expect(result.project.map((item) => item.path)).not.toContain("holiday.md");
   });
+
+  it("does not use QnALog system namespace tags as topic candidates or reasons", () => {
+    const start = card("start.md", { tags: ["qnalog/general", "qnalog/synthesis"] });
+    const onlySystemTag = card("system-only.md", { tags: ["qnalog/general", "qnalog/synthesis"] });
+    const result = findTopicCandidates({ start, cards: [start, onlySystemTag] });
+    expect(result.topic.map(({ path }) => path)).not.toContain("system-only.md");
+    expect(result.project.map(({ path }) => path)).not.toContain("system-only.md");
+    expect(result.topic.flatMap(({ matchedTags, reasons }) => [...matchedTags, ...reasons])).not.toContain("qnalog/general");
+  });
 });

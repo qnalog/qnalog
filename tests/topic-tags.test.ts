@@ -24,7 +24,7 @@ describe("topic tags", () => {
   });
 
   it("learns identifying tags only and keeps similar spellings as aliases", () => {
-    const selected = [card("a.md", ["项目/QALog", "亲子教育", "主题/AI工作流"]), card("b.md", ["项目/QnALog", "儿童教育", "主题/AI工作流"])];
+    const selected = [card("a.md", ["项目/QALog", "亲子教育", "主题/AI工作流", "qnalog/general"]), card("b.md", ["项目/QnALog", "儿童教育", "主题/AI工作流", "qnalog/synthesis"])];
     const corpus = [...selected, card("c.md", ["AI", "unselected"])];
     const learned = learnTopicTagSet(selected, corpus);
     expect(learned.tags).toContain("项目/QALog");
@@ -32,6 +32,8 @@ describe("topic tags", () => {
     expect(learned.tags).not.toContain("亲子教育");
     expect(learned.tags).not.toContain("儿童教育");
     expect(learned.aliases["项目/QALog"]).toEqual(["项目/QALog", "项目/QnALog"]);
+    expect(learned.tags.some((tag) => tag.startsWith("qnalog/"))).toBe(false);
+    expect(Object.keys(learned.aliases).some((tag) => tag.startsWith("qnalog/"))).toBe(false);
     expect(areTagKeysSimilar("QALog", "QnALog")).toBe(true);
   });
 
@@ -62,5 +64,11 @@ describe("topic tags", () => {
       { topicId: "b-niche", title: "Specific", matchedTags: ["niche"] },
     ]);
     expect(matchNoteToTopics(doubleGeneric, topics, [...docs, candidate, doubleGeneric]).map((match) => match.topicId)).toContain("c-double");
+  });
+
+  it("never matches legacy system namespace tags through topic tags or aliases", () => {
+    const note = card("note.md", ["qnalog/general"]);
+    const page = topic({ tags: ["qnalog/general"], tagAliases: { "qnalog/general": ["#qnalog/general"] } });
+    expect(matchNoteToTopics(note, [page], [note])).toEqual([]);
   });
 });

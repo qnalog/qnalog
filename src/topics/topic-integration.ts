@@ -29,6 +29,7 @@ export interface TopicChangePreview {
   memberLinks?: string[];
   tags?: string[];
   sourceLinks?: Record<string, string>;
+  sourceDates?: Record<string, string>;
 }
 export interface TopicIntegrationPort {
   request(messages: Array<{ role: "system" | "user"; content: string }>, signal?: AbortSignal, thinkingMode?: "fast"): Promise<unknown>;
@@ -39,8 +40,18 @@ export interface TopicIntegrationInput {
   currentPage?: string;
   signal?: AbortSignal;
   onBatchProgress?: (completed: number, total: number) => void;
+  /** Called once before the first batch starts, with the number of batches that will run. */
+  onPlanned?: (total: number) => void;
 }
 export interface TopicIntegrationResult { operations: TopicOperation[]; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string }
+
+const TOPIC_UNVERIFIED_MARKER = String.fromCharCode(0xff08, 0x672a, 0x6838, 0x5b9e, 0xff09);
+export function stripTopicUnverifiedMarker(text: string): { text: string; unverified: boolean } {
+  const trimmed = text.trimEnd();
+  return trimmed.endsWith(TOPIC_UNVERIFIED_MARKER)
+    ? { text: trimmed.slice(0, -TOPIC_UNVERIFIED_MARKER.length).trimEnd(), unverified: true }
+    : { text, unverified: false };
+}
 
 export function estimateIntegrationCost(input: { basis: TopicBasis; members: readonly TopicIntegrationMember[] }): TopicIntegrationCost {
   const chars = input.members.reduce((sum, member) => sum + (input.basis === "body" ? member.content || "" : member.card.overview).length, 0)
@@ -154,6 +165,7 @@ function memberBatches(members: readonly TopicIntegrationMember[], basis: TopicB
 
 export async function generateTopicOperations(port: TopicIntegrationPort, input: TopicIntegrationInput): Promise<TopicIntegrationResult> {
   const batches = memberBatches(input.members, input.basis);
+  input.onPlanned?.(batches.length);
   const operations: TopicOperation[] = [];
   let inputChars = 0;
   let completedBatches = 0;

@@ -54,6 +54,12 @@ import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from ".
 import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../prompts/briefing-prompts";
 
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
+import { getJoinableTopics, type TopicsUiPort } from "./topics-ui-port";
+import { TopicsPanel } from "./topics-panel";
+import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
+import { isBrowseTab, nextSidebarTab, scrollTopAfterRender } from "./sidebar-tab-policy";
+import { syncActiveRow } from "./row-active";
+import { renderTopicPromptRow } from "./topic-prompt-row";
 
 import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
 import { isImageMeetingMaterial, normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
@@ -207,6 +213,9 @@ function sedimentNoticeErrorSuffix(error: unknown): string {
 
 export class OutlineView extends obsidian.ItemView {
   declare plugin: QnALogPlugin;
+  declare topicsUi: TopicsUiPort | null;
+  declare topicPromptRefreshPaths: Set<string>;
+  declare topicSourceCheckPaths: Set<string>;
   // 视图实例字段。TypeScript 不推断「仅在构造函数或方法里赋值」的属性，
   // 未声明时本文件内所有 this.<字段> 都会报「属性不存在」，其它模块读也一样。
   // 字段含义见构造函数与各自赋值处的注释。
@@ -226,6 +235,9 @@ export class OutlineView extends obsidian.ItemView {
   declare _recentVaultRefreshTimer: number;
   /** 下一次渲染是否保留滚动位置（筛选/分组切换时用）。 */
   declare _preserveScrollOnNextRender: boolean;
+  declare browseScrollTop: Partial<Record<"recent" | "topics", number>>;
+  declare lastRenderedTab: string;
+  declare topicsScrollRestore: number | null;
   /** 上一次渲染的结构签名；未变化时只刷新计时等高频文本。 */
   declare _lastSig: string;
   /** 上一次渲染到 DOM 的大纲正文；避免无变化时替换节点。 */
@@ -290,9 +302,12 @@ export class OutlineView extends obsidian.ItemView {
   declare _sidebarMoreExpanded: boolean;
   /** 纪要列表的搜索关键词。 */
   declare _recentSearch: string;
-  constructor(leaf, plugin) {
+  constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null) {
     super(leaf);
     this.plugin = plugin;
+    this.topicsUi = topicsUi;
+    this.topicPromptRefreshPaths = new Set();
+    this.topicSourceCheckPaths = new Set();
     this.aiOutline = "";
     this.lastOutlineSegmentCount = 0;
     this.lastOutlineWorkbenchSignature = "";
@@ -301,6 +316,9 @@ export class OutlineView extends obsidian.ItemView {
     this._renderRaf = 0;
     this._recentVaultRefreshTimer = 0;
     this._preserveScrollOnNextRender = false;
+    this.browseScrollTop = {};
+    this.lastRenderedTab = "";
+    this.topicsScrollRestore = null;
     this._lastSig = "";
     this._lastRenderedOutline = "";
     this.showRecentHome = true;
@@ -343,9 +361,10 @@ export class OutlineView extends obsidian.ItemView {
     });
     // 节流：recorder 每 500ms 滴答一次。只更新计时文本，结构不变时不重建 DOM。
     this.unsubscribeRecorder = this.plugin.recorder.on(() => this.scheduleUpdate());
+    this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveRows()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
-      this.showRecentHome = true;
-      this.idlePanelTab = "";
+      this.handleActiveLeafChange();
+      this.syncActiveRows();
       void this.plugin.semanticCanvas.syncActiveCanvasSourceNote({
       throttled: () => this.scheduleUpdate(),
       forced: () => { this._lastSig = ""; this.scheduleUpdate(); },
@@ -355,12 +374,12 @@ export class OutlineView extends obsidian.ItemView {
     // 因此统一进入短延迟合并刷新；metadata changed 负责补上 frontmatter 尚未解析完成的情况。
     this.registerEvent(this.app.vault.on("create", (file) => {
       if (file instanceof obsidian.TFile && this.isRecentNotePath(file.path)) {
-        this.queueRecentVaultRefresh();
+        this.queueRecentVaultRefresh(180, file.path);
       }
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (file instanceof obsidian.TFile && (this.isRecentNotePath(file.path) || this.isRecentNotePath(oldPath))) {
-        this.queueRecentVaultRefresh();
+        this.queueRecentVaultRefresh(180, file.path);
       }
     }));
     this.registerEvent(this.app.vault.on("delete", (file) => {
@@ -370,7 +389,7 @@ export class OutlineView extends obsidian.ItemView {
     }));
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
       if (file instanceof obsidian.TFile && this.isRecentNotePath(file.path)) {
-        this.queueRecentVaultRefresh(260);
+        this.queueRecentVaultRefresh(260, file.path);
       }
     }));
     const session = this.plugin.getCurrentSession();
@@ -392,6 +411,20 @@ export class OutlineView extends obsidian.ItemView {
     if (this.sedimentAdvanceTimer) { window.clearTimeout(this.sedimentAdvanceTimer); this.sedimentAdvanceTimer = 0; }
     this.disposeInlineAudio();
   }
+  // Moves the highlight to the rows of the open file. The minutes list also follows the source note of an open canvas.
+  syncActiveRows() {
+    const root = this.containerEl.children[1];
+    if (!root) return;
+    const file = this.app.workspace.getActiveFile();
+    const minutes = this.getActiveNoteFile();
+    const paths = [file ? obsidian.normalizePath(file.path) : "", minutes && minutes.path ? obsidian.normalizePath(minutes.path) : ""];
+    syncActiveRow(root, paths);
+  }
+  // A note or topic page was opened or focused. A browse tab stays; the other tabs reset to the default as before.
+  handleActiveLeafChange() {
+    if (!isBrowseTab(this.idlePanelTab)) this.showRecentHome = true;
+    this.idlePanelTab = nextSidebarTab(this.idlePanelTab, "leaf-change");
+  }
   syncSessionOutline(session) {
     const id = session && session.id ? session.id : "";
     const previousId = this.outlineSessionId || "";
@@ -402,12 +435,11 @@ export class OutlineView extends obsidian.ItemView {
       return;
     }
     this.outlineSessionId = id;
-    if (id) {
-      this.showRecentHome = false;
-      this.idlePanelTab = "outline";
-    } else if (previousId) {
-      this.showRecentHome = false;
-      this.idlePanelTab = "outline";
+    if (id || previousId) {
+      const event = !previousId ? "session-start" : !id ? "session-end" : "session-switch";
+      const next = nextSidebarTab(this.idlePanelTab, event);
+      if (!isBrowseTab(next)) this.showRecentHome = false;
+      this.idlePanelTab = next;
     }
     this.aiOutline = session && session.realtimeOutline ? session.realtimeOutline : "";
     this.lastOutlineSegmentCount = session && session.realtimeOutlineSegmentCount ? session.realtimeOutlineSegmentCount : 0;
@@ -478,6 +510,7 @@ export class OutlineView extends obsidian.ItemView {
       activeNote ? activeNote.path : "",
       activeNote ? activeNote.stat.mtime : 0,
       this.plugin.semanticCanvas.getActiveCanvasSourceSignature(),
+      this.topicsUi ? this.topicsUi.getVersion() : "topics-unavailable",
     ].join("|");
   }
   // 仅刷新计时和"x 段"等高频文本，避免重建按钮和重绘 Markdown
@@ -519,13 +552,18 @@ export class OutlineView extends obsidian.ItemView {
     const root = this.containerEl.children[1];
     if (!root) return;
     const preserveScroll = this._preserveScrollOnNextRender === true;
-    const previousScrollTop = preserveScroll ? root.scrollTop : 0;
+    const scrollBeforeRender = root.scrollTop;
+    // The list being replaced keeps its position, so the next visit to that tab starts where the user left it.
+    if (isBrowseTab(this.lastRenderedTab)) this.browseScrollTop[this.lastRenderedTab] = scrollBeforeRender;
     this._preserveScrollOnNextRender = false;
+    const scrollTab = this.idlePanelTab || "outline";
+    const restoreTop = scrollTopAfterRender({ preserve: preserveScroll, previousTop: scrollBeforeRender, tab: scrollTab, saved: this.browseScrollTop });
+    this.topicsScrollRestore = scrollTab === "topics" ? restoreTop : null;
     const restoreScroll = () => {
-      if (!preserveScroll) return;
-      root.scrollTop = previousScrollTop;
+      if (restoreTop === null) return;
+      root.scrollTop = restoreTop;
       window.requestAnimationFrame(() => {
-        if (this.containerEl.children[1] === root) root.scrollTop = previousScrollTop;
+        if (this.containerEl.children[1] === root) root.scrollTop = restoreTop;
       });
     };
     this.disposeInlineAudio();
@@ -559,6 +597,8 @@ export class OutlineView extends obsidian.ItemView {
       this.renderIdleTabs(stickyChrome, activeTab);
       if (activeTab === "recent") {
         this.renderRecent(root);
+      } else if (activeTab === "topics") {
+        this.renderTopics(root);
       } else if (activeTab === "extract") {
         if (sessionNote) this.renderExtractionPanel(root, sessionNote);
         else this.renderPanelEmpty(root, i18nT("The recording note has not been generated yet. You can distill once the recording starts writing to the summary."));
@@ -593,6 +633,8 @@ export class OutlineView extends obsidian.ItemView {
           else this.renderPanelEmpty(root, i18nT("The recording note has not been generated yet. You can ask questions once the recording starts writing to the summary."));
         } else if (activeTab === "recent") {
           this.renderRecent(root);
+        } else if (activeTab === "topics") {
+          this.renderTopics(root);
         } else {
           const panelData = sessionNote ? this.getCompletedNotePanelData(sessionNote) : null;
           if (sessionNote && panelData && panelData.speakerIds && panelData.speakerIds.length) {
@@ -611,11 +653,14 @@ export class OutlineView extends obsidian.ItemView {
         } else if (activeTab === "ask") {
           if (activeNote) this.renderAskPanel(root, activeNote);
           else this.renderNoOpenNoteEmpty(root, "ask");
+        } else if (activeTab === "topics") {
+          this.renderTopics(root);
         } else {
           this.renderRecent(root);
         }
       }
     }
+    this.lastRenderedTab = scrollTab;
     this._lastSig = this.computeSignature();
     restoreScroll();
   }
@@ -710,8 +755,39 @@ export class OutlineView extends obsidian.ItemView {
     recentBtn.onclick = () => {
       this.showRecentHome = true;
       this.idlePanelTab = "recent";
+      this.topicPromptRefreshPaths.clear();
       this.render();
     };
+    const topicsBtn = tabs.createEl("button", {
+      text: i18nT("Topics"),
+      cls: activeTab === "topics" ? "is-active" : "",
+      attr: { type: "button" },
+    });
+    topicsBtn.onclick = () => {
+      this.showRecentHome = false;
+      this.idlePanelTab = "topics";
+      this.topicPromptRefreshPaths.clear();
+      this.render();
+    };
+  }
+
+  renderTopics(root) {
+    if (!this.topicsUi) { this.renderPanelEmpty(root, i18nT("No topics yet")); return; }
+    const recent = getRecentNotes(this.plugin, 20);
+    for (const note of recent) this.refreshTopicPromptOnce(note.file.path);
+    // The open file itself, not the minutes-only active note: a topic page is highlighted as well.
+    const activeFile = this.app.workspace.getActiveFile();
+    const restoreTop = this.topicsScrollRestore;
+    // The rows are added after an async read, so the saved position is applied again once they exist.
+    void new TopicsPanel(this.app, this.topicsUi, () => this.render(), activeFile ? activeFile.path : "").render(root).then(() => {
+      if (restoreTop !== null && this.containerEl.children[1] === root) root.scrollTop = restoreTop;
+    });
+  }
+
+  refreshTopicPromptOnce(path) {
+    if (!this.topicsUi || this.topicPromptRefreshPaths.has(path)) return;
+    this.topicPromptRefreshPaths.add(path);
+    void this.topicsUi.refreshPrompt(path);
   }
 
   renderPanelEmpty(root, text) {
@@ -5399,9 +5475,13 @@ export class OutlineView extends obsidian.ItemView {
 
   renderRecentNoteRow(parent, r, activePath, options: RecentRowOptions = {}) {
     const isActive = activePath && obsidian.normalizePath(r.file.path) === activePath;
-    const row = parent.createDiv({ cls: `qnalog-outline-recent-row ${isActive ? "is-active" : ""}` });
+    const rowPath = obsidian.normalizePath(r.file.path);
+    const row = parent.createDiv({ cls: `qnalog-outline-recent-row ${isActive ? "is-active" : ""}`, attr: { "data-path": rowPath, ...(isActive ? { "aria-current": "true" } : {}) } });
     if (options.indent) row.style.setProperty("--qnalog-recent-indent", `${Math.min(4, Math.max(0, Number(options.indent) || 0))}`);
     row.addEventListener("click", async () => {
+      // Highlight the clicked row now; the workspace event would only follow after the file opens.
+      const root = this.containerEl.children[1];
+      if (root) syncActiveRow(root, [rowPath]);
       try { await this.app.workspace.getLeaf(false).openFile(r.file); } catch (e) { console.error(e); }
     });
     let nameEl;
@@ -5427,6 +5507,15 @@ export class OutlineView extends obsidian.ItemView {
       cls: "is-rename",
       onClick: () => this.beginRecentNoteRename(nameEl, r.file, r.title),
     });
+    const topicsUi = this.topicsUi;
+    if (topicsUi?.isSourceNote(r.file.path)) {
+      this.createRecentActionButton(actions, {
+        icon: "layers-3",
+        title: i18nT("Create topic"),
+        cls: "is-topic",
+        onClick: () => openCreateTopic(this.app, topicsUi, r.file.path, () => this.forceRecentRender()),
+      });
+    }
     const queueState = getRecentQueueProcessingState(this.plugin, r.file);
     if (queueState) this.setRecentProcessingStatus(row, actions, queueState);
     if (failedTasks.length) {
@@ -5439,6 +5528,7 @@ export class OutlineView extends obsidian.ItemView {
       });
     }
     this.syncRecentNoteProcessingState(r.file, row, actions, failedTasks.length);
+    this.renderTopicPromptRows(parent, r.file.path);
     if (r.variants && r.variants.length) {
       const anchor = document.createComment("qnalog-original-version");
       parent.appendChild(anchor);
@@ -5640,6 +5730,7 @@ export class OutlineView extends obsidian.ItemView {
 
   renderRecent(root) {
     const allRecents = getRecentNotes(this.plugin, 120);
+    for (const note of allRecents.slice(0, 20)) this.refreshTopicPromptOnce(note.file.path);
     const recents = this.applyRecentFilters(allRecents).slice(0, 48);
     const sec = root.createDiv({ cls: "qnalog-outline-section" });
     if (allRecents.length === 0) {
@@ -5854,6 +5945,12 @@ export class OutlineView extends obsidian.ItemView {
         .setIcon("file-text")
         .onClick(() => { void this.handleGenerateCleanCopy(file); });
     });
+    const topicsUi = this.topicsUi;
+    if (topicsUi?.isSourceNote(file.path)) {
+      menu.addItem((item) => item.setTitle(i18nT("Create topic")).setIcon("layers-3")
+        .onClick(() => openCreateTopic(this.app, topicsUi, file.path, () => this.forceRecentRender())));
+      void this.addTopicJoinMenu(menu, file.path);
+    }
     menu.addItem((item) => {
       item.setTitle(detectedMode ? i18nT("Reorganize as") : i18nT("Organize as"))
         .setIcon("refresh-cw");
@@ -5921,6 +6018,33 @@ export class OutlineView extends obsidian.ItemView {
     this.showMenuAtMouse(menu, evt);
   }
 
+  async addTopicJoinMenu(menu, path) {
+    if (!this.topicsUi) return;
+    const topics = getJoinableTopics(await this.topicsUi.listTopics(), path);
+    if (!topics.length) return;
+    menu.addItem((item) => {
+      item.setTitle(i18nT("Join topic…")).setIcon("layers");
+      const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
+      for (const topic of topics) sub.addItem((entry) => entry.setTitle(topic.page.title)
+        .onClick(() => { if (this.topicsUi) void openTopicJoin(this.app, this.topicsUi, path, topic.page.id, () => this.forceRecentRender()); }));
+    });
+  }
+
+  renderTopicPromptRows(parent, path) {
+    if (!this.topicsUi) return;
+    if (!this.topicsUi.isSourceNote(path)) {
+      if (!this.topicSourceCheckPaths.has(path)) {
+        this.topicSourceCheckPaths.add(path);
+        void this.topicsUi.prepareSourceNote(path).then((isSource) => { if (isSource) this.forceRecentRender(); });
+      }
+      return;
+    }
+    this.refreshTopicPromptOnce(path);
+    renderTopicPromptRow(parent, path, this.topicsUi, (topicId) => {
+      if (this.topicsUi) void openTopicJoin(this.app, this.topicsUi, path, topicId, () => this.forceRecentRender());
+    }, () => this.forceRecentRender());
+  }
+
   async retryRecentTranscription(file) {
     await this.plugin.queueRetry.retryTranscribeTasksForMarkdown(file);
     this.render();
@@ -5934,10 +6058,11 @@ export class OutlineView extends obsidian.ItemView {
     return isPathUnderRecentNoteRoots(p, getRecentNoteRoots(this.plugin));
   }
 
-  queueRecentVaultRefresh(delayMs = 180) {
+  queueRecentVaultRefresh(delayMs = 180, changedPath = "") {
     if (this._recentVaultRefreshTimer) window.clearTimeout(this._recentVaultRefreshTimer);
     this._recentVaultRefreshTimer = window.setTimeout(() => {
       this._recentVaultRefreshTimer = 0;
+      if (changedPath) void this.topicsUi?.refreshPrompt(changedPath);
       this.forceRecentRender();
     }, Math.max(60, Number(delayMs) || 180));
   }

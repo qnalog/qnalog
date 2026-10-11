@@ -2153,6 +2153,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }
       });
 
+    createPathSetting(advancedBody, t("Topic pages folder"), t("Folder for topic pages created by topic integration."), this.plugin.settings.topicsFolder || DEFAULT_SETTINGS.topicsFolder, DEFAULT_SETTINGS.topicsFolder,
+      async v => { this.plugin.settings.topicsFolder = v || DEFAULT_SETTINGS.topicsFolder; });
+
     createPathSetting(advancedBody, t("To-do folder"), t("Used to store action items confirmed from the meeting notes."), this.plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder, DEFAULT_SETTINGS.todoCardsFolder,
       async v => { this.plugin.settings.todoCardsFolder = v || DEFAULT_SETTINGS.todoCardsFolder; },
       async setting => {

@@ -170,7 +170,7 @@ const app = {
     getLeaf: () => ({ openFile: async () => undefined, view: null }),
     iterateAllLeaves: noop,
   },
-  metadataCache: { getFirstLinkpathDest: () => null, on: () => ({}) },
+  metadataCache: { getFirstLinkpathDest: () => null, getCache: () => null, on: () => ({}) },
   fileManager: { renameFile: async () => undefined },
   internalPlugins: { getPluginById: () => null, plugins: {} },
 };

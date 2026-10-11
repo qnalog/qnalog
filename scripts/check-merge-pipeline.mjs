@@ -173,6 +173,7 @@ const app = {
   },
   metadataCache: {
     getFirstLinkpathDest: () => null,
+    getCache: () => null,
     getFileCache: (file) => frontmatterByPath.has(file.path) ? { frontmatter: frontmatterByPath.get(file.path) } : null,
     on: () => ({}),
   },

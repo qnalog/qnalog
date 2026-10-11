@@ -87,6 +87,10 @@ Knowledge extraction is user-initiated by default. Optional automatic extraction
 
 People can be kept, merged, or ignored. Confirmed todos become standalone cards; terms can be maintained in the glossary. The sidebar can assemble confirmed todos into a todo wall, and knowledge items retain source links. Candidate todos support inline edits to owner, due date, and subtasks.
 
+### Topic pages
+
+Right-click an original minutes note and choose **Create topic** to select related notes by project tags, topic tags, or similar content. Topic pages use note overviews by default; choosing finalized note bodies shows a request estimate and a credit-use notice first. Updates open a change preview and can be undone when the page has not changed afterward. Topic integration does not modify source notes.
+
 ### Notes, board, and deliverables
 
 The note list can group recent notes by folder or time, with search and template filters. **Minutes Board** is a separate view for saved meeting materials.

@@ -34,6 +34,15 @@ describe("topic integration", () => {
     expect(result.completedBatches).toBe(1);
     expect(progress).toEqual([[1, 1]]);
   });
+  it("reports the planned batch count once, before the first batch runs", async () => {
+    const events: string[] = [];
+    const port: TopicIntegrationPort = { request: async () => {
+      events.push("request");
+      return response([]);
+    } };
+    await generateTopicOperations(port, { basis: "overview", members: [member("one")], onPlanned: (total) => events.push(`planned:${total}`), onBatchProgress: (done, total) => events.push(`done:${done}/${total}`) });
+    expect(events).toEqual(["planned:1", "request", "done:1/1"]);
+  });
   it("aborts an in-flight topic batch when cancellation is requested", async () => {
     const controller = new AbortController();
     const port: TopicIntegrationPort = { request: async (_messages, signal) => new Promise((_resolve, reject) => {
