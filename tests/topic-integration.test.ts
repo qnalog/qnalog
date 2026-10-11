@@ -23,7 +23,7 @@ describe("topic integration", () => {
   it("generates a structured model and limits references to supplied source IDs", async () => {
     const source = member("valid", "The project will ship in October.");
     const port = fakePort([JSON.stringify({
-      overview: "The project is preparing for launch. The release is planned for October.", status: "In progress",
+      overview: "The project is preparing for launch. The release is planned for October.", status: "active",
       threads: [{ title: "Release", summary: "The team has set a release window.", points: [{ text: "Release is planned for October.", sources: ["valid", "outside"] }] }],
       disagreements: [], open: [], unsorted: [],
     })]);
@@ -31,12 +31,36 @@ describe("topic integration", () => {
     expect(result.model.overview).toContain("preparing for launch");
     expect(result.model.threads[0].points[0].sources).toEqual(["valid"]);
     expect(port.calls[0][0].content).toContain("2-5 sentences");
+    expect(port.calls[0][0].content).toContain("status (exactly one of active, done, paused, unknown)");
+    expect(port.calls[0][0].content).toContain("kind exactly question, action, or bug");
     expect(port.calls[0][1].content).toContain("valid");
+  });
+
+  it("normalizes unknown status and open-item kinds and records the fallback", async () => {
+    const source = member("valid", "The team is considering a new migration step.");
+    const createPort = fakePort([JSON.stringify({
+      overview: "The project is active.", status: "in progress", threads: [], disagreements: [],
+      open: [{ kind: "task", text: "Review the migration.", sources: ["valid"] }], unsorted: [],
+    })]);
+    const created = await generateTopicPageContent(createPort, { basis: "overview", members: [source] });
+    expect(created.model.status).toBe("unknown");
+    expect(created.model.open[0].kind).toBe("action");
+    expect(created.validationWarnings).toEqual([
+      "Unknown topic status was mapped to unknown.",
+      "Unknown topic open-item kind was mapped to action.",
+    ]);
+
+    const currentPage = renderTopicPage({ overview: "The topic covers migration.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
+    const updatePort = fakePort([response([{ type: "add_open", kind: "task", text: "Review migration.", sources: ["valid"] }])]);
+    const updated = await generateTopicPageUpdateOperations(updatePort, { basis: "overview", members: [source], currentPage });
+    expect(updated.operations).toMatchObject([{ type: "add_open", kind: "action" }]);
+    expect(updated.validationWarnings).toEqual(["Unknown topic open-item kind was mapped to action."]);
+    expect(updatePort.calls[0][0].content).toContain("kind must be exactly question, action, or bug");
   });
 
   it("merges multi-batch body fragments without sending source bodies to the merge request", async () => {
     const members = Array.from({ length: TOPIC_INTEGRATION_BATCH_SIZE + 1 }, (_, index) => member(String(index), "brief", "PRIVATE BODY " + index));
-    const model = { overview: "The project is progressing.", status: "In progress", threads: [], disagreements: [], open: [], unsorted: [] };
+    const model = { overview: "The project is progressing.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] };
     const port = fakePort([JSON.stringify(model), JSON.stringify(model), JSON.stringify(model)]);
     const result = await generateTopicPageContent(port, { basis: "body", members });
     expect(result).toMatchObject({ completedBatches: 3, totalBatches: 3 });
@@ -49,7 +73,7 @@ describe("topic integration", () => {
 
   it("sends the current page and accepts revisions only for overview or thread summary blocks", async () => {
     const source = member("valid", "New evidence changes the release date to October.");
-    const markdown = renderTopicPage({ overview: "The release date is September.", status: "Open", threads: [{ id: "release", title: "Release", summary: "The team planned a September release.", points: [{ id: "p", text: "The test is incomplete.", sources: ["valid"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: source.card.path, title: source.card.title, sourceId: source.card.sourceId, date: source.card.date }]);
+    const markdown = renderTopicPage({ overview: "The release date is September.", status: "active", threads: [{ id: "release", title: "Release", summary: "The team planned a September release.", points: [{ id: "p", text: "The test is incomplete.", sources: ["valid"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: source.card.path, title: source.card.title, sourceId: source.card.sourceId, date: source.card.date }]);
     const blocks = parseTopicPageBlocks(markdown);
     const overview = blocks.find((block) => block.type === "overview")!;
     const point = blocks.find((block) => block.type === "point")!;

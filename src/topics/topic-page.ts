@@ -1,19 +1,22 @@
 import { NS_FM, NS_FM_TOPIC_LAYOUT, NS_TYPE_TOPIC } from "../shared/namespace";
 
 export type TopicBasis = "overview" | "body";
+export type TopicStatus = "active" | "done" | "paused" | "unknown";
+export type TopicOpenKind = "question" | "action" | "bug";
 export type TopicSection = "概要" | "当前状态" | "进展脉络" | "分歧与待核实" | "未决问题与未完成行动" | "未决问题与行动" | "时间线" | "来源笔记" | "待整理";
 export interface TopicMember { path: string; title: string; sourceId: string; date?: string; summary?: string }
 export interface TopicThread { id: string; title: string; summary: string; points: Array<{ id: string; text: string; sources: string[] }> }
 export interface TopicDisagreement { id: string; subject: string; positions: Array<{ text: string; sourceId: string; date?: string }> }
-export interface TopicOpenItem { id: string; kind: string; text: string; sources: string[]; done: boolean }
+export interface TopicOpenItem { id: string; kind: TopicOpenKind; text: string; sources: string[]; done: boolean }
 export interface TopicPageV2Model {
-  overview: string; status: string; threads: TopicThread[]; disagreements: TopicDisagreement[];
-  open: TopicOpenItem[]; unsorted: string[];
+  overview: string; status: TopicStatus; threads: TopicThread[]; disagreements: TopicDisagreement[];
+  open: TopicOpenItem[]; unsorted: string[]; validationWarnings?: string[];
 }
 export interface TopicPageLabels {
   overview: string; status: string; progress: string; disagreements: string; open: string;
   timeline: string; sources: string; inProgress: string; updated: string; notes: string;
-  conflict: string;
+  conflict: string; statusActive: string; statusDone: string; statusPaused: string; statusUnknown: string;
+  openQuestion: string; openAction: string; openBug: string;
 }
 export interface ParsedTopicBlock { id: string; type: "overview" | "thread-summary" | "point" | "disagreement" | "open" | "other"; text: string; start: number; end: number }
 export interface TopicPage {
@@ -42,7 +45,7 @@ export type TopicOperation =
   | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
   | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
   | { type: "add_disagreement"; subject: string; positions: Array<{ text: string; sourceId: string; date?: string }>; sourceId: string }
-  | { type: "add_open"; kind: string; text: string; sources: string[]; sourceId: string }
+  | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
 export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[]; skipped: Array<{ id: string; reason: "block-modified" }> }
@@ -186,7 +189,25 @@ const DEFAULT_V2_LABELS: TopicPageLabels = {
   overview: "概要", status: "状态", progress: "进展脉络", disagreements: "分歧与待核实",
   open: "未决问题与行动", timeline: "时间线", sources: "来源笔记", inProgress: "进行中",
   updated: "最近更新", notes: "篇笔记", conflict: "关于这个问题的不同说法",
+  statusActive: "进行中", statusDone: "已完成", statusPaused: "搁置", statusUnknown: "待定",
+  openQuestion: "问题", openAction: "行动", openBug: "缺陷",
 };
+
+export function isTopicStatus(value: string): value is TopicStatus {
+  return value === "active" || value === "done" || value === "paused" || value === "unknown";
+}
+
+export function isTopicOpenKind(value: string): value is TopicOpenKind {
+  return value === "question" || value === "action" || value === "bug";
+}
+
+export function topicOpenKindLabel(kind: TopicOpenKind, labels: Pick<TopicPageLabels, "openQuestion" | "openAction" | "openBug"> = DEFAULT_V2_LABELS): string {
+  return kind === "question" ? labels.openQuestion : kind === "bug" ? labels.openBug : labels.openAction;
+}
+
+export function topicLabelSeparator(label: string): string {
+  return /\p{Script=Han}/u.test(label) ? "：" : ": ";
+}
 
 function sourceFootnoteId(sourceId: string): string { return `s${stableHash(sourceId).slice(0, 4)}`; }
 function inlineFootnotes(sources: readonly string[]): string {
@@ -233,7 +254,10 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
   const used = new Set<string>();
   const allSourceIds = new Set(members.map((member) => member.sourceId));
   const overviewId = uniqueBlockId("overview", "overview", used);
-  const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), `> **${label.status}**：${model.status || label.inProgress} · **${label.updated}** ${members.map((member) => member.date || "").filter(Boolean).sort().at(-1) || "—"} · ${members.length}${label.notes}`, `> ^${overviewId}`, "", `## ${label.progress}`];
+  const statusLabel = model.status === "done" ? label.statusDone
+    : model.status === "paused" ? label.statusPaused
+      : model.status === "unknown" ? label.statusUnknown : label.statusActive;
+  const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), `> **${label.status}**${topicLabelSeparator(label.status)}${statusLabel} · **${label.updated}** ${members.map((member) => member.date || "").filter(Boolean).sort().at(-1) || "—"} · ${members.length}${label.notes}`, `> ^${overviewId}`, "", `## ${label.progress}`];
   for (const thread of model.threads.slice(0, 6)) {
     const threadId = uniqueBlockId("thread", thread.id || thread.title, used);
     sections.push("", `### ${thread.title}`, `${thread.summary.trim()} ^${threadId}`);
@@ -256,7 +280,8 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
     sections.push("", `## ${label.open}`);
     for (const item of model.open) {
       const id = uniqueBlockId("open", item.id || item.text, used);
-      sections.push(`- [${item.done ? "x" : " "}] ${item.kind ? `${item.kind}：` : ""}${item.text}${inlineFootnotes(item.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
+      const kind = topicOpenKindLabel(item.kind, label);
+      sections.push(`- [${item.done ? "x" : " "}] ${kind}${topicLabelSeparator(kind)}${item.text}${inlineFootnotes(item.sources.filter((source) => allSourceIds.has(source)))} ^${id}`);
     }
   }
   if (model.unsorted.length) {

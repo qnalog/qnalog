@@ -173,6 +173,7 @@ export class TopicsService {
       let completedBatches = 0;
       let totalBatches = 0;
       let partialFailure: string | undefined;
+      let validationWarnings: string[] | undefined;
       if (input.topicId && !input.rebuild) {
         const isV2 = parseTopicPage(currentPage, existing?.path)?.layout === 2;
         const generated = isV2
@@ -182,12 +183,14 @@ export class TopicsService {
         completedBatches = generated.completedBatches;
         totalBatches = generated.totalBatches;
         partialFailure = generated.partialFailure;
+        validationWarnings = generated.validationWarnings;
       } else {
         const generated = await generateTopicPageContent(this.host.integration, generationInput);
         generatedModel = generated.model;
         completedBatches = generated.completedBatches;
         totalBatches = generated.totalBatches;
         partialFailure = generated.partialFailure;
+        validationWarnings = generated.validationWarnings;
       }
       if (partialFailure && completedBatches === 0) throw new Error("Topic integration failed before any batch completed: " + partialFailure);
       const memberRecords: TopicMember[] = members.map(({ card }) => ({ path: card.path, title: card.title, sourceId: card.sourceId, date: card.date, summary: card.overview }));
@@ -202,6 +205,8 @@ export class TopicsService {
           disagreements: t("Disagreements and verification"), open: t("Topic open items"),
           timeline: t("Timeline"), sources: t("Source notes"), inProgress: t("Topic in progress"),
           updated: t("Topic last updated"), notes: t("notes"), conflict: t("Conflicting accounts"),
+          statusActive: t("Topic status active"), statusDone: t("Topic status done"), statusPaused: t("Topic status paused"), statusUnknown: t("Topic status unknown"),
+          openQuestion: t("Topic open question"), openAction: t("Topic open action"), openBug: t("Topic open bug"),
         });
         replacement = { path: existing.path, markdown: serializeTopicPage(rebuilt), model: generatedModel };
       }
@@ -226,6 +231,7 @@ export class TopicsService {
         })),
         completedBatches, totalBatches,
         ...(partialFailure ? { partialFailure } : {}),
+        ...(validationWarnings?.length ? { validationWarnings } : {}),
         sourceLinks: Object.fromEntries(memberRecords.map((member) => [member.sourceId, `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`])),
         sourceDates: Object.fromEntries(members.map(({ card }) => [card.sourceId, card.date])),
         ...(existing && !input.rebuild ? {
@@ -276,6 +282,8 @@ export class TopicsService {
             disagreements: t("Disagreements and verification"), open: t("Topic open items"),
             timeline: t("Timeline"), sources: t("Source notes"), inProgress: t("Topic in progress"),
             updated: t("Topic last updated"), notes: t("notes"), conflict: t("Conflicting accounts"),
+            statusActive: t("Topic status active"), statusDone: t("Topic status done"), statusPaused: t("Topic status paused"), statusUnknown: t("Topic status unknown"),
+            openQuestion: t("Topic open question"), openAction: t("Topic open action"), openBug: t("Topic open bug"),
           });
         }
         const selected = new Set(selection);

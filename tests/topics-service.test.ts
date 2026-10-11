@@ -270,7 +270,7 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
     const sourceId = payload.members[0]?.sourceId || "";
     if (messages[0].content.startsWith("Create a readable topic page model")) return { choices: [{ message: { content: JSON.stringify({
       overview: "Climate policy reform changes public investment and emissions strategy. The notes describe clean energy funding as the current direction.",
-      status: "In progress", threads: [{ title: "Funding direction", summary: "The notes connect policy changes to public investment.", points: [{ text: "Funding shifts toward clean energy.", sources: [sourceId] }] }],
+      status: "active", threads: [{ title: "Funding direction", summary: "The notes connect policy changes to public investment.", points: [{ text: "Funding shifts toward clean energy.", sources: [sourceId] }] }],
       disagreements: [], open: [], unsorted: [],
     }) } }] };
     return { choices: [{ message: { content: JSON.stringify({ operations: [

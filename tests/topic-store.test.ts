@@ -85,7 +85,7 @@ describe("topic store", () => {
   it("skips a changed summary block while applying other changes and updates generated sources and timeline", async () => {
     const port = new MemoryPort();
     const store = new TopicStore({ folder: "Topics", port });
-    const model: TopicPageV2Model = { overview: "The project is testing the new storage path.", status: "In progress", threads: [], disagreements: [], open: [], unsorted: [] };
+    const model: TopicPageV2Model = { overview: "The project is testing the new storage path.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] };
     const page = createTopicPage({ id: "v2", title: "V2", tags: [], basis: "overview", members: [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }] });
     page.layout = 2;
     page.body = renderTopicPage(model, [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }]);
@@ -101,7 +101,7 @@ describe("topic store", () => {
       newMembers: [member], memberLinks: ["[[Notes/old|Old]]", "[[Notes/new|New]]"],
       items: [
         { id: "revise", type: "revise_block", operation: { type: "revise_block", blockId: overviewBlock.id, expectedText: overviewBlock.text, newText: "A revised overview.", reason: "new evidence", sourceId: "new" }, target: overviewBlock.id, text: "A revised overview.", expectedText: overviewBlock.text, sourceId: "new", cancellable: true },
-        { id: "open", type: "add_open", operation: { type: "add_open", kind: "Action", text: "Run rollback checks.", sources: ["new"], sourceId: "new" }, target: "open", text: "Run rollback checks.", sourceId: "new", cancellable: true },
+        { id: "open", type: "add_open", operation: { type: "add_open", kind: "action", text: "Run rollback checks.", sources: ["new"], sourceId: "new" }, target: "open", text: "Run rollback checks.", sourceId: "new", cancellable: true },
       ], sourceLinks: { new: "[[Notes/new|New]]" },
     }, ["revise", "open"]);
     expect(result.skipped).toEqual([{ id: overviewBlock.id, reason: "block-modified" }]);

@@ -67,6 +67,15 @@ describe("topic preview dialog", () => {
     expect(descendants(modal.contentEl as unknown as FakeTree).filter((item) => item.cls.includes("qnalog-topics-preview-item") && item.cls.includes("is-conflict"))).toHaveLength(1);
   });
 
+  it("shows when unknown model enums were normalized", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.validationWarnings = ["Unknown topic open-item kind was mapped to action."];
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    expect(allText(modal.contentEl as unknown as FakeTree)).toContain("Unknown topic values were normalized to safe defaults.");
+  });
+
   it("applies only checked operations and opens the resulting topic page", async () => {
     const port = {
       text: (key: string) => key,

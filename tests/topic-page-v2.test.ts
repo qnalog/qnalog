@@ -3,10 +3,10 @@ import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage,
 
 const model: TopicPageV2Model = {
   overview: "项目围绕数据结构优化展开。团队已确定先调整存储接口，再补充迁移验证。",
-  status: "进行中",
+  status: "active",
   threads: [{ id: "storage", title: "存储接口", summary: "讨论从读取边界开始，当前方案已确定。", points: [{ id: "p1", text: "接口先支持增量读取。", sources: ["a"] }] }],
   disagreements: [{ id: "d1", subject: "迁移窗口", positions: [{ text: "需要两周。", sourceId: "a", date: "2026-09-27" }, { text: "一周可以完成。", sourceId: "b", date: "2026-10-02" }] }],
-  open: [{ id: "o1", kind: "行动", text: "补充回滚验证。", sources: ["b"], done: false }], unsorted: [],
+  open: [{ id: "o1", kind: "action", text: "补充回滚验证。", sources: ["b"], done: false }], unsorted: [],
 };
 const members: TopicMember[] = [
   { path: "Notes/a.md", title: "会议 A", sourceId: "a", date: "2026-09-27", summary: "提出增量读取方案。后续补充测试。" },
@@ -72,5 +72,33 @@ describe("topic page v2", () => {
     page.layout = 2;
     page.body = renderTopicPage({ ...model, disagreements: [], open: [] }, [{ ...members[0], summary: "**__` `__**" }]);
     expect(serializeTopicPage(page)).toContain("— 会议 A");
+  });
+
+  it("renders status and open-item enums in Chinese and English", () => {
+    const localizedModel: TopicPageV2Model = {
+      ...model,
+      status: "active",
+      open: [
+        { id: "q", kind: "question", text: "是否完成迁移？", sources: ["a"], done: false },
+        { id: "a", kind: "action", text: "补测试。", sources: ["a"], done: false },
+        { id: "b", kind: "bug", text: "修正路径。", sources: ["b"], done: false },
+      ],
+    };
+    const chinese = renderTopicPage(localizedModel, members);
+    expect(chinese).toContain("**状态**：进行中");
+    expect(chinese).toContain("问题：是否完成迁移？");
+    expect(chinese).toContain("行动：补测试。");
+    expect(chinese).toContain("缺陷：修正路径。");
+    const english = renderTopicPage(localizedModel, members, {
+      overview: "Overview", status: "Status", progress: "Progress", disagreements: "Disagreements", open: "Open items",
+      timeline: "Timeline", sources: "Source notes", inProgress: "Active", updated: "Last updated", notes: " notes", conflict: "Conflicting accounts",
+      statusActive: "Active", statusDone: "Done", statusPaused: "Paused", statusUnknown: "Unknown",
+      openQuestion: "Question", openAction: "Action", openBug: "Bug",
+    });
+    expect(english).toContain("**Status**: Active");
+    expect(english).toContain("Question: 是否完成迁移？");
+    expect(english).toContain("Action: 补测试。");
+    expect(english).toContain("Bug: 修正路径。");
+    expect(english).not.toContain("进行中");
   });
 });

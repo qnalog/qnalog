@@ -1,7 +1,7 @@
 import { Modal, Notice, setIcon, type App } from "obsidian";
 import type { TopicChangePreview } from "../topics/topic-integration";
 import { stripTopicUnverifiedMarker } from "../topics/topic-integration";
-import { topicSectionEnglishLabel } from "../topics/topic-page";
+import { topicLabelSeparator, topicOpenKindLabel, topicSectionEnglishLabel } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
 import { suppressRowActivation } from "./topic-row-activation";
 
@@ -40,6 +40,8 @@ export class TopicPreviewModal extends Modal {
     if (this.preview.partialFailure) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Some batches failed; {0}/{1} completed batches were kept.").replace("{0}", String(this.preview.completedBatches)).replace("{1}", String(this.preview.totalBatches)) });
 
     const model = this.preview.create?.model || this.preview.replacement?.model;
+    const validationWarnings = [...new Set([...(this.preview.validationWarnings || []), ...(model?.validationWarnings || [])])];
+    if (validationWarnings.length) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Unknown topic values were normalized to safe defaults.") });
     if (model) {
       const group = (title: string) => {
         const section = scroll.createDiv({ cls: "qnalog-topics-preview-section" });
@@ -84,7 +86,8 @@ export class TopicPreviewModal extends Modal {
         const open = group("Open questions and actions");
         for (const item of model.open) {
           const row = open.createDiv({ cls: "qnalog-topics-preview-item" });
-          row.createDiv({ cls: "qnalog-topics-preview-text", text: (item.kind ? item.kind + ": " : "") + item.text });
+          const kind = topicOpenKindLabel(item.kind, { openQuestion: this.port.text("Topic open question"), openAction: this.port.text("Topic open action"), openBug: this.port.text("Topic open bug") });
+          row.createDiv({ cls: "qnalog-topics-preview-text", text: `${kind}${topicLabelSeparator(kind)}${item.text}` });
           addReferences(row, item.sources);
         }
       }
@@ -123,7 +126,14 @@ export class TopicPreviewModal extends Modal {
         const diff = main.createDiv({ cls: "qnalog-topics-revision" });
         diff.createDiv({ cls: "qnalog-topics-revision-old", text: item.expectedText || "" });
         diff.createDiv({ cls: "qnalog-topics-revision-new", text: verification.text });
-      } else main.createDiv({ cls: "qnalog-topics-preview-text", text: verification.text });
+      } else {
+        let changeText = verification.text;
+        if (item.operation.type === "add_open") {
+          const kind = topicOpenKindLabel(item.operation.kind, { openQuestion: this.port.text("Topic open question"), openAction: this.port.text("Topic open action"), openBug: this.port.text("Topic open bug") });
+          changeText = `${kind}${topicLabelSeparator(kind)}${verification.text}`;
+        }
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: changeText });
+      }
       const metadata = row.createDiv({ cls: "qnalog-topics-preview-meta" });
       const source = this.preview.sourceLinks?.[item.sourceId] || item.sourceId;
       const title = /\|([^|\]]+)\]\]$/.exec(source)?.[1] || source.replace(/^\[\[|\]\]$/g, "").split("/").pop() || source;
