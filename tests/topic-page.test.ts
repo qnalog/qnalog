@@ -6,6 +6,8 @@ import {
   serializeTopicPage,
   hashTopicPage,
   stableTopicBlockId,
+  parseTopicPageBlocks,
+  renderTopicPage,
   TOPIC_SECTIONS,
   updateTopicFrontmatter,
   type TopicOperation,
@@ -56,6 +58,61 @@ describe("topic pages", () => {
     expect(parseTopicPage(updated)?.tags).toEqual(["replacement"]);
     expect(updated).not.toContain('  - "one"');
     expect(updated).toContain('qnalog_topic_members:\n  - "[[Notes/a|A]]"');
+  });
+
+  it("stores v2 block addresses in the page property without inline anchors", () => {
+    const body = renderTopicPage({ overview: "A useful overview.", status: "active", threads: [{ id: "t1", title: "Progress", summary: "A thread summary.", points: [{ id: "p1", text: "A point.", sources: [] }] }], disagreements: [], open: [], unsorted: [] }, []);
+    const page = createTopicPage({ id: "indexed", title: "Indexed", tags: [], members: [], basis: "overview" });
+    page.layout = 2;
+    page.body = body;
+    const rendered = serializeTopicPage(page);
+    expect(rendered).not.toMatch(/\^tpc-/);
+    expect(rendered).not.toContain("<!--");
+    expect(rendered).not.toContain("%%");
+    expect(rendered).toContain("qnalog_topic_blocks:");
+    expect(parseTopicPageBlocks(rendered).map((block) => block.type)).toContain("point");
+  });
+
+  it("locates edited and moved blocks by content and degrades after deletion", () => {
+    const page = createTopicPage({ id: "locate", title: "Locate", tags: [], members: [], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", status: "active", threads: [{ id: "t1", title: "Progress", summary: "Summary.", points: [{ id: "p1", text: "A sufficiently descriptive original point.", sources: [] }] }], disagreements: [], open: [], unsorted: [] }, []);
+    const original = serializeTopicPage(page);
+    const index = parseTopicPageBlocks(original).find((block) => block.type === "point");
+    expect(index).toBeDefined();
+    const bodyAt = original.indexOf("\n#");
+    const edited = original.slice(0, bodyAt) + original.slice(bodyAt).replace("A sufficiently descriptive original point.", "A sufficiently descriptive original poinx.");
+    expect(parseTopicPageBlocks(edited).some((block) => block.id === index?.id)).toBe(true);
+    const moved = original.replace("### Progress", "### Another thread");
+    expect(parseTopicPageBlocks(moved).some((block) => block.id === index?.id)).toBe(true);
+    const deleted = original.replace("A sufficiently descriptive original point.", "");
+    expect(parseTopicPageBlocks(deleted).filter((block) => block.id === index?.id)).toEqual([]);
+  });
+
+  it("cleans legacy v2 anchors and stores the refreshed index", () => {
+    const page = createTopicPage({ id: "legacy-v2", title: "Legacy v2", tags: [], members: [], basis: "overview" });
+    page.layout = 2;
+    page.body = `## 进展脉络 / Progress thread\n\n### Progress\nA useful summary. ^tpc-a1b2c3\n- A useful point. ^tpc-b2c3d4\n`;
+    const legacy = serializeTopicPage(page).replace("qnalog_topic_blocks:", "qnalog_topic_blocks:");
+    const cleaned = applyTopicOps(legacy, []).markdown;
+    expect(cleaned).not.toMatch(/\^tpc-/);
+    expect(cleaned).toContain("qnalog_topic_blocks:");
+    expect(parseTopicPageBlocks(cleaned).map((block) => block.type)).toContain("point");
+  });
+
+  it("validates v2 revisions against indexed content without visible block IDs", () => {
+    const page = createTopicPage({ id: "revise", title: "Revise", tags: [], members: [], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", status: "active", threads: [{ id: "t1", title: "Progress", summary: "A sufficiently long summary sentence.", points: [] }], disagreements: [], open: [], unsorted: [] }, []);
+    const initial = serializeTopicPage(page);
+    const block = parseTopicPageBlocks(initial).find((item) => item.type === "thread-summary");
+    expect(block).toBeDefined();
+    const result = applyTopicOps(initial, [{ type: "revise_block", blockId: block!.id, newText: "A sufficiently long revised sentence.", reason: "update", expectedText: block!.text, sourceId: "source" }]);
+    expect(result.skipped).toEqual([]);
+    expect(result.markdown).toContain("A sufficiently long revised sentence.");
+    expect(result.markdown).not.toMatch(/\^tpc-/);
+    const changed = applyTopicOps(initial.replace("A sufficiently long summary sentence.", "A user edit."), [{ type: "revise_block", blockId: block!.id, newText: "A sufficiently long revised sentence.", reason: "update", expectedText: block!.text, sourceId: "source" }]);
+    expect(changed.skipped).toHaveLength(1);
   });
 
   it("creates stable block IDs and avoids existing-ID collisions", () => {

@@ -89,7 +89,7 @@ People can be kept, merged, or ignored. Confirmed todos become standalone cards;
 
 ### Topic pages
 
-Right-click an original minutes note and choose **Create topic** to select related notes by project tags, topic tags, or similar content. Topic pages use note overviews by default; choosing finalized note bodies shows a request estimate and a credit-use notice first. The page opens with a narrative overview, groups progress into threads, cites source notes with footnotes, and shows a program-generated timeline. Updates open a change preview and can be undone when the page has not changed afterward. Topic integration does not modify source notes.
+Right-click an original minutes note and choose **Create topic** to select related notes by project tags, topic tags, or similar content. Topic pages use note overviews by default; choosing finalized note bodies shows a request estimate and a credit-use notice first. The page opens with a narrative overview, groups progress into threads, cites source notes with footnotes, and shows a program-generated timeline. Updates open a change preview and can be undone when the page has not changed afterward. The page stores its block index in page properties and keeps block anchors out of the body. Topic integration does not modify source notes.
 
 ### Notes, board, and deliverables
 
