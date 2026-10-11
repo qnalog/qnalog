@@ -122,14 +122,24 @@ function originalMemberClaim(evidence: string, claim: string): string {
   const sentences: string[] = [];
   let start = 0;
   for (let index = 0; index < evidence.length; index++) {
-    if (!"。！？.!?\n".includes(evidence[index])) continue;
-    const sentence = evidence.slice(start, index + 1).trim();
+    if (!"。！？.!?\n；;".includes(evidence[index])) continue;
+    const end = "；;".includes(evidence[index]) ? index : index + 1;
+    const sentence = evidence.slice(start, end).trim();
     if (sentence) sentences.push(sentence);
     start = index + 1;
   }
   const final = evidence.slice(start).trim();
   if (final) sentences.push(final);
-  return sentences.find((sentence) => sentence.includes(claim) || claim.includes(sentence)) || claim;
+  const candidates = sentences.flatMap((sentence) => {
+    const plain = sentence.replace(/^\s*>\s*(?:\[![^\]]+\]\s*)?/, "").trim();
+    const colon = Math.max(plain.lastIndexOf("："), plain.lastIndexOf(":"));
+    const afterLabel = colon >= 0 ? plain.slice(colon + 1).trim() : "";
+    return [plain, ...(afterLabel ? [afterLabel] : [])].filter(Boolean);
+  });
+  return candidates
+    .map((candidate) => ({ candidate, similarity: topicTextSimilarity(candidate, claim) }))
+    .filter(({ similarity }) => similarity >= TOPIC_RESOLVE_GROUNDING_THRESHOLD)
+    .sort((left, right) => right.similarity - left.similarity || left.candidate.length - right.candidate.length)[0]?.candidate || claim;
 }
 export interface TopicIntegrationResult { operations: TopicOperation[]; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string; validationWarnings?: string[]; updateDiagnostics?: TopicUpdateDiagnostics; degraded?: number; assessments?: TopicAssessment[]; programGeneratedOperationKeys?: string[] }
 export interface TopicStructuredResult { model: TopicPageV2Model; operations: TopicOperation[]; completedBatches: number; totalBatches: number; inputChars: number; partialFailure?: string; validationWarnings?: string[] }
