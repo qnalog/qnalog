@@ -148,21 +148,37 @@ describe("topics service", () => {
     await expect(setup.service.estimate({ memberPaths: ["Topics/Climate.md"], basis: "overview" })).rejects.toThrow("not in the current note scope");
   });
 
-  it("applies only the selected operations to a newly created topic and completes activity", async () => {
+  it("renders the structured model into a v2 page and completes activity", async () => {
     const setup = harness();
     const preview = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview", title: "Climate" });
-    const selected = preview.items[0];
-    expect(selected).toBeDefined();
-    const result = await setup.service.apply(preview, [selected.id]);
+    expect(preview.items).toEqual([]);
+    const result = await setup.service.apply(preview, []);
     expect(result.path).toBe("Topics/Climate.md");
     const page = parseTopicPage(result.markdown);
-    expect(page?.id).toBe(preview.topicId);
-    expect(result.markdown).toContain("accepted update");
-    expect(result.markdown).not.toContain("unselected update");
+    expect(page).toMatchObject({ id: preview.topicId, layout: 2 });
+    expect(result.markdown).toContain("> [!abstract] Overview");
+    expect(result.markdown).toContain("Climate policy reform");
+    expect(result.markdown).toContain("## Timeline");
+    expect(result.markdown).toContain("## Source notes");
     expect(setup.storePort.created).toHaveLength(1);
     expect(setup.activities.completed).toEqual([["topics:create:topic-1"]]);
     expect(setup.activities.failed).toEqual([]);
     await expect(setup.service.apply(preview, [])).rejects.toThrow("no longer available");
+  });
+
+  it("previews a legacy page rebuild and replaces the page with an undo snapshot", async () => {
+    const setup = harness();
+    const legacy = topicMarkdown("legacy-topic", "Legacy", ["climate"], ["Notes/a.md"]);
+    setup.storePort.seed("Topics/Legacy.md", legacy);
+    const preview = await setup.service.previewRebuild("legacy-topic");
+    expect(preview.replacement?.path).toBe("Topics/Legacy.md");
+    expect(preview.replacement?.markdown).toContain("qnalog_topic_layout: 2");
+    expect(setup.writes).toEqual([]);
+    const applied = await setup.service.apply(preview, []);
+    expect(parseTopicPage(applied.markdown)?.layout).toBe(2);
+    expect(setup.storePort.created.some(({ path }) => path.includes("topic-history"))).toBe(true);
+    expect(await setup.service.undoLastUpdate("legacy-topic")).toEqual({ restored: true });
+    expect(await setup.storePort.read("Topics/Legacy.md")).toBe(legacy);
   });
 
   it("updates an existing topic and persists selected member and tag changes", async () => {
@@ -245,6 +261,11 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
     requests.push(messages);
     const payload = JSON.parse(messages[1].content) as { members: Array<{ sourceId: string }> };
     const sourceId = payload.members[0]?.sourceId || "";
+    if (messages[0].content.startsWith("Create a readable topic page model")) return { choices: [{ message: { content: JSON.stringify({
+      overview: "Climate policy reform changes public investment and emissions strategy. The notes describe clean energy funding as the current direction.",
+      status: "In progress", threads: [{ title: "Funding direction", summary: "The notes connect policy changes to public investment.", points: [{ text: "Funding shifts toward clean energy.", sources: [sourceId] }] }],
+      disagreements: [], open: [], unsorted: [],
+    }) } }] };
     return { choices: [{ message: { content: JSON.stringify({ operations: [
       { type: "add_item", section: "当前状态", text: "accepted update", sourceId },
       { type: "add_item", section: "当前状态", text: "unselected update", sourceId },

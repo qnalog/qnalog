@@ -1,5 +1,5 @@
 import { NS_FM, NS_ROOT } from "../shared/namespace";
-import { appendTopicMemberLinks, hashTopicPage, parseTopicPage, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, type TopicPage } from "./topic-page";
+import { appendTopicMemberLinks, appendTopicMemberMetadata, hashTopicPage, parseTopicPage, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, type TopicPage } from "./topic-page";
 import type { TopicChangePreview } from "./topic-integration";
 
 export const TOPIC_HISTORY_LIMIT = 5;
@@ -14,7 +14,7 @@ export interface TopicStorePort {
   now(): number;
 }
 export interface TopicStoreOptions { folder: string; port: TopicStorePort }
-export interface TopicApplyResult { markdown: string; appliedCount: number; pageChangedDuringGeneration: boolean; resultingHash: string }
+export interface TopicApplyResult { markdown: string; appliedCount: number; pageChangedDuringGeneration: boolean; resultingHash: string; skipped: Array<{ id: string; reason: "block-modified" }> }
 export type TopicUndoResult = { restored: true } | { restored: false; reason: "no-history" | "page-modified" };
 
 function safeName(title: string): string {
@@ -70,15 +70,17 @@ export class TopicStore {
   async apply(path: string, preview: TopicChangePreview, selectedIds: readonly string[]): Promise<TopicApplyResult> {
     const selected = new Set(selectedIds);
     const operations = preview.items.filter((item) => selected.has(item.id))
-      .map(({ operation }) => ({ ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId }));
+      .map(({ operation }) => ["add_item", "annotate_item", "add_conflict", "resolve_question", "add_timeline"].includes(operation.type)
+        ? { ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId } : operation);
     let appliedMarkdown = "";
     let pageChangedDuringGeneration = false;
     let appliedCount = 0;
-    const hasChanges = operations.length > 0 || !!preview.memberLinks || !!preview.tags;
+    let skipped: TopicApplyResult["skipped"] = [];
+    const hasChanges = operations.length > 0 || !!preview.memberLinks || !!preview.tags || !!preview.newMembers?.length;
     if (!hasChanges) {
       appliedMarkdown = await this.port.read(path);
       pageChangedDuringGeneration = hashTopicPage(appliedMarkdown) !== preview.expectedHash;
-      return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown) };
+      return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown), skipped: [] };
     }
     for (;;) {
       const before = await this.port.read(path);
@@ -97,7 +99,8 @@ export class TopicStore {
         if (!currentPage) throw new Error(`Topic page is invalid: ${path}`);
         const memberLinks = [...new Set([...currentPage.memberLinks, ...(preview.memberLinks || [])])];
         const tags = [...new Set([...currentPage.tags, ...(preview.tags || [])])];
-        let next = appendTopicMemberLinks(result.markdown, memberLinks);
+        let next = currentPage.layout === 2 ? result.markdown : appendTopicMemberLinks(result.markdown, memberLinks);
+        next = appendTopicMemberMetadata(next, preview.newMembers || []);
         const updates: Record<string, string | string[]> = {
           [NS_FM.topicUpdated]: new Date(this.port.now()).toISOString(),
           [NS_FM.topicUndoSnapshot]: snapshotPath,
@@ -109,13 +112,37 @@ export class TopicStore {
         next = updateTopicFrontmatter(next, { [NS_FM.topicHash]: hashTopicPage(next) });
         appliedMarkdown = next;
         appliedCount = result.applied.length;
+        skipped = result.skipped;
         return next;
       });
       pageChangedDuringGeneration ||= changed || beforeHash !== preview.expectedHash;
       if (changed) continue;
       break;
     }
-    return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown) };
+    return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown), skipped };
+  }
+
+  async replaceWithV2Preview(preview: TopicChangePreview): Promise<TopicApplyResult> {
+    const replacement = preview.replacement;
+    if (!replacement) throw new Error("Topic rebuild preview is missing replacement content");
+    const before = await this.port.read(replacement.path);
+    if (hashTopicPage(before) !== preview.expectedHash) throw new Error("The topic page changed after the rebuild preview. Generate a new preview before applying it.");
+    const current = parseTopicPage(before, replacement.path);
+    if (!current) throw new Error("Topic page is invalid: " + replacement.path);
+    const snapshotPath = await this.makeSnapshot(current.id, before);
+    let markdown = updateTopicFrontmatter(replacement.markdown, {
+      [NS_FM.topicUpdated]: new Date(this.port.now()).toISOString(),
+      [NS_FM.topicUndoSnapshot]: snapshotPath,
+    });
+    markdown = updateTopicFrontmatter(markdown, { [NS_FM.topicHash]: hashTopicPage(markdown) });
+    let changed = false;
+    await this.port.process(replacement.path, (latest) => {
+      if (hashTopicPage(latest) !== preview.expectedHash) { changed = true; return latest; }
+      return markdown;
+    });
+    if (changed) throw new Error("The topic page changed after the rebuild preview. Generate a new preview before applying it.");
+    const result = await this.port.read(replacement.path);
+    return { markdown: result, appliedCount: 1, pageChangedDuringGeneration: false, resultingHash: hashTopicPage(result), skipped: [] };
   }
 
   async addExcluded(topicId: string, path: string): Promise<void> {

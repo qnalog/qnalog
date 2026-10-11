@@ -6,8 +6,8 @@ import type { OverviewCardCachePort } from "./overview-card-cache";
 import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
-import { generateTopicOperations, estimateIntegrationCost, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
-import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, serializeTopicPage, type TopicBasis, type TopicMember } from "./topic-page";
+import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, estimateIntegrationCost, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
+import { applyTopicOps, createTopicPage, hashTopicPage, parseTopicPage, renderTopicPage, serializeTopicPage, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
@@ -34,7 +34,7 @@ export interface TopicsSuggestionsResult {
 }
 export interface TopicCandidatesOptions { windowDays?: number; excluded?: string[]; minScore?: number; relativeCutoff?: number; signal?: AbortSignal }
 export interface TopicPreviewProgress { completed: number; total: number }
-export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }
+export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; rebuild?: boolean; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }
 export interface TopicEstimateInput { memberPaths: string[]; basis: TopicBasis }
 export interface TopicPrompt extends TopicTagMatch { path: string }
 interface PendingPreview { preview: TopicChangePreview }
@@ -152,22 +152,59 @@ export class TopicsService {
       if (input.topicId && !existing) throw new Error(`Topic not found: ${input.topicId}`);
       const existingMembers = new Set(existing?.page.members || []);
       const requestedPaths = [...new Set(input.memberPaths)];
-      const selectedPaths = input.topicId
+      const selectedPaths = input.rebuild && existing
+        ? existing.page.members
+        : input.topicId
         ? requestedPaths.filter((path) => !existingMembers.has(path))
         : [input.startPath, ...requestedPaths.filter((path) => path !== input.startPath)];
-      if (!selectedPaths.length) throw new Error("No new notes to integrate; all selected notes are already topic members");
+      if (!selectedPaths.length && !input.rebuild) throw new Error("No new notes to integrate; all selected notes are already topic members");
       const members = await this.loadMembers(selectedPaths, cards, input.basis);
       const currentPage = existing ? await this.host.topicStore.read(existing.path) : "";
-      const generated = await generateTopicOperations(this.host.integration, { members, basis: input.basis, currentPage, signal: controller.signal,
-        onPlanned: (total) => input.onProgress?.({ completed: 0, total }),
-        onBatchProgress: (completed, total) => {
+      const generationInput = { members, basis: input.basis, currentPage: input.rebuild ? "" : currentPage, signal: controller.signal,
+        onPlanned: (total: number) => input.onProgress?.({ completed: 0, total }),
+        onBatchProgress: (completed: number, total: number) => {
           const stageLabel = t("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
           this.host.updateActivity?.(activityId, { stage: "processing", progress: Math.round(completed / total * 100), stageLabel });
           input.onProgress?.({ completed, total });
         },
-      });
-      if (generated.partialFailure && generated.completedBatches === 0) throw new Error(`Topic integration failed before any batch completed: ${generated.partialFailure}`);
-      const memberRecords: TopicMember[] = members.map(({ card }) => ({ path: card.path, title: card.title, sourceId: card.sourceId }));
+      };
+      let generatedOperations: Awaited<ReturnType<typeof generateTopicOperations>>["operations"] = [];
+      let generatedModel: TopicPageV2Model | undefined;
+      let completedBatches = 0;
+      let totalBatches = 0;
+      let partialFailure: string | undefined;
+      if (input.topicId && !input.rebuild) {
+        const isV2 = parseTopicPage(currentPage, existing?.path)?.layout === 2;
+        const generated = isV2
+          ? await generateTopicPageUpdateOperations(this.host.integration, generationInput)
+          : await generateTopicOperations(this.host.integration, generationInput);
+        generatedOperations = generated.operations;
+        completedBatches = generated.completedBatches;
+        totalBatches = generated.totalBatches;
+        partialFailure = generated.partialFailure;
+      } else {
+        const generated = await generateTopicPageContent(this.host.integration, generationInput);
+        generatedModel = generated.model;
+        completedBatches = generated.completedBatches;
+        totalBatches = generated.totalBatches;
+        partialFailure = generated.partialFailure;
+      }
+      if (partialFailure && completedBatches === 0) throw new Error("Topic integration failed before any batch completed: " + partialFailure);
+      const memberRecords: TopicMember[] = members.map(({ card }) => ({ path: card.path, title: card.title, sourceId: card.sourceId, date: card.date, summary: card.overview }));
+      let replacement: TopicChangePreview["replacement"];
+      if (input.rebuild && existing && generatedModel) {
+        const rebuilt = createTopicPage({ id: existing.page.id, title: existing.page.title, tags: existing.page.tags, members: memberRecords, basis: input.basis, created: existing.page.created });
+        rebuilt.layout = 2;
+        rebuilt.excluded = existing.page.excluded;
+        rebuilt.tagAliases = existing.page.tagAliases;
+        rebuilt.body = renderTopicPage(generatedModel, memberRecords, {
+          overview: t("Overview"), status: t("Topic status"), progress: t("Topic progress"),
+          disagreements: t("Disagreements and verification"), open: t("Topic open items"),
+          timeline: t("Timeline"), sources: t("Source notes"), inProgress: t("Topic in progress"),
+          updated: t("Topic last updated"), notes: t("notes"), conflict: t("Conflicting accounts"),
+        });
+        replacement = { path: existing.path, markdown: serializeTopicPage(rebuilt), model: generatedModel };
+      }
       const learned = learnTopicTagSet(members.map(({ card }) => card), cards);
       const currentHash = hashTopicPage(currentPage);
       const currentModel = currentPage ? parseTopicPage(currentPage, existing?.path) : null;
@@ -180,21 +217,23 @@ export class TopicsService {
       );
       const preview: TopicChangePreview = {
         topicId, expectedHash: currentHash, pageWasManuallyEdited,
-        items: generated.operations.map((operation, index) => ({
+        newMembers: memberRecords,
+        items: generatedOperations.map((operation, index) => ({
           id: `${index}-${hashText(JSON.stringify(operation))}`, operation, type: operation.type,
-          target: "targetId" in operation ? operation.targetId : "section" in operation ? operation.section : operation.type,
-          text: "text" in operation ? operation.text : "", sourceId: operation.sourceId, cancellable: true,
+          target: "targetId" in operation ? operation.targetId : "blockId" in operation ? operation.blockId : "thread" in operation ? operation.thread : "title" in operation ? operation.title : "section" in operation ? operation.section : operation.type,
+          text: "text" in operation ? operation.text : "newText" in operation ? operation.newText : "summary" in operation ? operation.summary : "note" in operation ? operation.note : "", sourceId: operation.sourceId, cancellable: true,
+          ...( "expectedText" in operation && operation.expectedText ? { expectedText: operation.expectedText } : {}),
         })),
-        completedBatches: generated.completedBatches, totalBatches: generated.totalBatches,
-        ...(generated.partialFailure ? { partialFailure: generated.partialFailure } : {}),
+        completedBatches, totalBatches,
+        ...(partialFailure ? { partialFailure } : {}),
         sourceLinks: Object.fromEntries(memberRecords.map((member) => [member.sourceId, `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`])),
         sourceDates: Object.fromEntries(members.map(({ card }) => [card.sourceId, card.date])),
-        ...(existing ? {
+        ...(existing && !input.rebuild ? {
           memberLinks: [...new Set([...existing.page.memberLinks, ...memberRecords.map((member) => `[[${member.path.replace(/\.md$/i, "")}|${member.title}]]`)])],
           tags: [...new Set([...existing.page.tags, ...learned.tags])],
           tagAliases: { ...(existing.page.tagAliases || {}), ...learned.aliases },
-        } : {
-          create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords },
+        } : input.rebuild ? { ...(replacement ? { replacement } : {}) } : {
+          create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords, ...(generatedModel ? { model: generatedModel } : {}) },
         }),
       };
       this.previews.set(activityId, { preview });
@@ -221,7 +260,7 @@ export class TopicsService {
     if (hadPreview) this.host.cancelActivity?.(activityId, "Topic operation cancelled; the topic page was not changed");
   }
 
-  async apply(preview: TopicChangePreview, selection: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean }> {
+  async apply(preview: TopicChangePreview, selection: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean; skipped?: Array<{ id: string; reason: "block-modified" }> }> {
     const pendingEntry = [...this.previews.entries()].find(([, pending]) => pending.preview === preview);
     if (!pendingEntry) throw new Error("Topic preview is no longer available");
     const [activityId] = pendingEntry;
@@ -230,6 +269,15 @@ export class TopicsService {
       if (preview.create) {
         const page = createTopicPage({ id: preview.topicId, title: preview.create.title, tags: preview.create.tags, members: preview.create.members, basis: preview.create.basis });
         page.tagAliases = preview.create.tagAliases || {};
+        if (preview.create.model) {
+          page.layout = 2;
+          page.body = renderTopicPage(preview.create.model, preview.create.members, {
+            overview: t("Overview"), status: t("Topic status"), progress: t("Topic progress"),
+            disagreements: t("Disagreements and verification"), open: t("Topic open items"),
+            timeline: t("Timeline"), sources: t("Source notes"), inProgress: t("Topic in progress"),
+            updated: t("Topic last updated"), notes: t("notes"), conflict: t("Conflicting accounts"),
+          });
+        }
         const selected = new Set(selection);
         const operations = preview.items.filter((item) => selected.has(item.id))
           .map(({ operation }) => ({ ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId }));
@@ -241,7 +289,14 @@ export class TopicsService {
         this.previews.delete(activityId);
         this.controllers.delete(activityId);
         this.host.completeActivity(activityId);
-        return { path, markdown: stored, pageChangedDuringGeneration: false };
+        return { path, markdown: stored, pageChangedDuringGeneration: false, skipped: [] };
+      }
+      if (preview.replacement) {
+        const result = await store.replaceWithV2Preview(preview);
+        this.previews.delete(activityId);
+        this.controllers.delete(activityId);
+        this.host.completeActivity(activityId);
+        return { path: preview.replacement.path, markdown: result.markdown, pageChangedDuringGeneration: false, skipped: [] };
       }
       const current = (await store.list()).find((entry) => entry.page.id === preview.topicId);
       if (!current) throw new Error(`Topic not found: ${preview.topicId}`);
@@ -249,7 +304,7 @@ export class TopicsService {
       this.previews.delete(activityId);
       this.controllers.delete(activityId);
       this.host.completeActivity(activityId);
-      return { path: current.path, markdown: result.markdown, pageChangedDuringGeneration: result.pageChangedDuringGeneration };
+      return { path: current.path, markdown: result.markdown, pageChangedDuringGeneration: result.pageChangedDuringGeneration, skipped: result.skipped };
     } catch (error) {
       this.controllers.delete(activityId);
       this.host.failActivity(activityId, error);
@@ -258,6 +313,13 @@ export class TopicsService {
   }
 
   async undoLastUpdate(topicId: string) { return this.storeForCurrentFolder().undoLastUpdate(topicId); }
+  async previewRebuild(topicId: string, onProgress?: TopicPreviewInput["onProgress"]): Promise<TopicChangePreview> {
+    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    if (topic.page.layout === 2) throw new Error("This topic page already uses the new layout");
+    if (!topic.page.members.length) throw new Error("This topic has no member notes to rebuild from");
+    return this.preview({ topicId, startPath: topic.page.members[0], memberPaths: topic.page.members, basis: "overview", rebuild: true, onProgress });
+  }
   async deleteTopic(topicId: string): Promise<void> { return this.storeForCurrentFolder().deleteTopic(topicId); }
   async mergeTopics(sourceId: string, targetId: string): Promise<void> { return this.storeForCurrentFolder().mergeTopics(sourceId, targetId); }
   async ignoreNote(topicId: string, path: string): Promise<void> { return this.storeForCurrentFolder().addExcluded(topicId, path); }

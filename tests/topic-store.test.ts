@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TopicStore, type TopicStorePort } from "../src/topics/topic-store";
-import { createTopicPage, serializeTopicPage, type TopicPage } from "../src/topics/topic-page";
+import { createTopicPage, hashTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
 import type { TopicChangePreview } from "../src/topics/topic-integration";
 
 class MemoryPort implements TopicStorePort {
@@ -75,6 +75,35 @@ describe("topic store", () => {
     await reloadedStore.deleteTopic("topic");
     expect(port.trashed).toEqual([path]);
     expect(historyBefore.every((item) => port.files.has(item))).toBe(true);
+  });
+
+  it("skips a changed summary block while applying other changes and updates generated sources and timeline", async () => {
+    const port = new MemoryPort();
+    const store = new TopicStore({ folder: "Topics", port });
+    const model: TopicPageV2Model = { overview: "The project is testing the new storage path.", status: "In progress", threads: [], disagreements: [], open: [], unsorted: [] };
+    const page = createTopicPage({ id: "v2", title: "V2", tags: [], basis: "overview", members: [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }] });
+    page.layout = 2;
+    page.body = renderTopicPage(model, [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }]);
+    const original = serializeTopicPage(page);
+    const path = "Topics/V2.md";
+    port.files.set(path, original);
+    const overviewBlock = parseTopicPageBlocks(original).find((block) => block.type === "overview")!;
+    const changed = original.replace("The project is testing the new storage path.", "A user changed this summary.");
+    port.files.set(path, changed);
+    const member = { path: "Notes/new.md", title: "New", sourceId: "new", date: "2026-10-03", summary: "The team added rollback checks." };
+    const result = await store.apply(path, {
+      topicId: "v2", expectedHash: hashTopicPage(original), pageWasManuallyEdited: false, completedBatches: 1, totalBatches: 1,
+      newMembers: [member], memberLinks: ["[[Notes/old|Old]]", "[[Notes/new|New]]"],
+      items: [
+        { id: "revise", type: "revise_block", operation: { type: "revise_block", blockId: overviewBlock.id, expectedText: overviewBlock.text, newText: "A revised overview.", reason: "new evidence", sourceId: "new" }, target: overviewBlock.id, text: "A revised overview.", expectedText: overviewBlock.text, sourceId: "new", cancellable: true },
+        { id: "open", type: "add_open", operation: { type: "add_open", kind: "Action", text: "Run rollback checks.", sources: ["new"], sourceId: "new" }, target: "open", text: "Run rollback checks.", sourceId: "new", cancellable: true },
+      ], sourceLinks: { new: "[[Notes/new|New]]" },
+    }, ["revise", "open"]);
+    expect(result.skipped).toEqual([{ id: overviewBlock.id, reason: "block-modified" }]);
+    expect(result.markdown).toContain("A user changed this summary.");
+    expect(result.markdown).toContain("Run rollback checks.");
+    expect(result.markdown).toContain("2026-10-03 · [[Notes/new|New]]");
+    expect(result.markdown).toMatch(/\[\^s[\da-f]{4}\]: \[\[Notes\/new\|New\]\]/);
   });
 
   it("merges unique members and tags, records provenance, trashes source, and never writes source notes", async () => {

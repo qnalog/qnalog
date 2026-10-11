@@ -1,7 +1,7 @@
 import { NS_FM, NS_FM_TOPIC_LAYOUT, NS_TYPE_TOPIC } from "../shared/namespace";
 
 export type TopicBasis = "overview" | "body";
-export type TopicSection = "概要" | "当前状态" | "分歧与待核实" | "未决问题与未完成行动" | "时间线" | "来源笔记" | "待整理";
+export type TopicSection = "概要" | "当前状态" | "进展脉络" | "分歧与待核实" | "未决问题与未完成行动" | "未决问题与行动" | "时间线" | "来源笔记" | "待整理";
 export interface TopicMember { path: string; title: string; sourceId: string; date?: string; summary?: string }
 export interface TopicThread { id: string; title: string; summary: string; points: Array<{ id: string; text: string; sources: string[] }> }
 export interface TopicDisagreement { id: string; subject: string; positions: Array<{ text: string; sourceId: string; date?: string }> }
@@ -37,13 +37,19 @@ export type TopicOperation =
   | { type: "annotate_item"; targetId: string; text: string; sourceId: string }
   | { type: "add_conflict"; text: string; sourceId: string; date?: string }
   | { type: "resolve_question"; targetId: string; text: string; sourceId: string }
-  | { type: "add_timeline"; text: string; sourceId: string; date: string };
+  | { type: "add_timeline"; text: string; sourceId: string; date: string }
+  | { type: "add_point"; thread: string; text: string; sources: string[]; sourceId: string }
+  | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
+  | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
+  | { type: "add_disagreement"; subject: string; positions: Array<{ text: string; sourceId: string; date?: string }>; sourceId: string }
+  | { type: "add_open"; kind: string; text: string; sources: string[]; sourceId: string }
+  | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
 export interface AppliedTopicOperation { operation: TopicOperation; blockId: string | null; location: TopicSection }
-export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[] }
+export interface ApplyTopicOpsResult { markdown: string; applied: AppliedTopicOperation[]; skipped: Array<{ id: string; reason: "block-modified" }> }
 
 export const TOPIC_SECTIONS: readonly TopicSection[] = ["概要", "当前状态", "分歧与待核实", "未决问题与未完成行动", "时间线", "来源笔记", "待整理"];
 const ENGLISH_SECTION: Record<TopicSection, string> = {
-  "概要": "Overview", "当前状态": "Current status", "分歧与待核实": "Disagreements and verification", "未决问题与未完成行动": "Open questions and actions", "时间线": "Timeline", "来源笔记": "Source notes", "待整理": "Unsorted",
+  "概要": "Overview", "当前状态": "Current status", "进展脉络": "Progress thread", "分歧与待核实": "Disagreements and verification", "未决问题与未完成行动": "Open questions and actions", "未决问题与行动": "Open questions and actions", "时间线": "Timeline", "来源笔记": "Source notes", "待整理": "Unsorted",
 };
 
 function yamlString(value: string): string { return JSON.stringify(value); }
@@ -111,6 +117,7 @@ function sectionForLine(lines: readonly string[], lineIndex: number): TopicSecti
 }
 function ensureSections(markdown: string): string {
   const text = frontmatter(markdown);
+  if (parseTopicFrontmatter(text.text)[NS_FM_TOPIC_LAYOUT] === 2) return markdown;
   const lines = text.body.split("\n");
   for (const section of TOPIC_SECTIONS) if (!sectionRange(lines, section)) lines.push("", sectionHeading(section));
   return `${text.text ? `---\n${text.text}\n---\n` : ""}${lines.join("\n")}`;
@@ -203,7 +210,7 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
   const used = new Set<string>();
   const allSourceIds = new Set(members.map((member) => member.sourceId));
   const overviewId = uniqueBlockId("overview", "overview", used);
-  const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), `> ${model.status ? `**${label.status}**：${model.status} · ` : ""}**${label.updated}** ${members.map((member) => member.date || "").filter(Boolean).sort().at(-1) || "—"} · ${label.notes.replace("篇笔记", String(members.length))}`, `> ^${overviewId}`, "", `## ${label.progress}`];
+  const sections: string[] = [`> [!abstract] ${label.overview}`, ...quote(model.overview.trim()).split("\n"), `> **${label.status}**：${model.status || label.inProgress} · **${label.updated}** ${members.map((member) => member.date || "").filter(Boolean).sort().at(-1) || "—"} · ${members.length}${label.notes}`, `> ^${overviewId}`, "", `## ${label.progress}`];
   for (const thread of model.threads.slice(0, 6)) {
     const threadId = uniqueBlockId("thread", thread.id || thread.title, used);
     sections.push("", `### ${thread.title}`, `${thread.summary.trim()} ^${threadId}`);
@@ -245,15 +252,33 @@ export function renderTopicPage(model: TopicPageV2Model, members: readonly Topic
 export function parseTopicPageBlocks(markdown: string): ParsedTopicBlock[] {
   const split = frontmatter(markdown);
   const bodyOffset = markdown.length - split.body.length;
+  const lines = split.body.split("\n");
+  const offsets: number[] = [];
+  let cursor = 0;
+  for (const line of lines) { offsets.push(cursor); cursor += line.length + 1; }
   const blocks: ParsedTopicBlock[] = [];
-  const re = /([^\n]*(?:\n[^\n]*){0,4}?)\s+\^(tpc-[\da-f]{6})\s*(?=\n|$)/gim;
-  for (const match of split.body.matchAll(re)) {
-    const raw = match[1] || "";
-    const text = raw.replace(/^\s*>?\s*(?:[-*]\s*)?/, "").replace(/\n\s*>\s?/g, "\n").trim();
-    const before = split.body.slice(0, match.index).split("\n").filter((line) => /^#{1,6}\s/.test(line)).at(-1) || "";
-    const type: ParsedTopicBlock["type"] = /\[!abstract\]/i.test(raw) ? "overview" : /^###/.test(before) && !/^[-*]/.test(raw.trim()) ? "thread-summary" : /^[-*]\s*\[[ xX]\]/.test(raw.trim()) ? "open" : /^[-*]/.test(raw.trim()) ? "point" : /^>\s*\[!warning\]/.test(raw.trim()) ? "disagreement" : "other";
-    const start = bodyOffset + (match.index || 0);
-    blocks.push({ id: match[2], type, text, start, end: start + match[0].length });
+  for (let index = 0; index < lines.length; index++) {
+    const marker = lines[index].match(/\^(tpc-[\da-f]{6})\s*$/i);
+    if (!marker) continue;
+    let startLine = index;
+    if (/^\s*>\s*\^tpc-/i.test(lines[index])) {
+      while (startLine > 0 && /^\s*>/.test(lines[startLine - 1])) startLine--;
+    }
+    const raw = lines.slice(startLine, index + 1);
+    const isOverview = raw.some((line) => /\[!abstract\]/i.test(line));
+    const nearestHeading = lines.slice(0, startLine).filter((line) => /^#{1,6}\s/.test(line)).at(-1) || "";
+    let type: ParsedTopicBlock["type"] = isOverview ? "overview"
+      : /^###/.test(nearestHeading) && !/^[-*]/.test(lines[startLine].trim()) ? "thread-summary"
+        : /^[-*]\s*\[[ xX]\]/.test(lines[startLine].trim()) ? "open"
+          : /^[-*]/.test(lines[startLine].trim()) ? "point" : "other";
+    const cleaned = raw.map((line) => line.replace(/\s+\^tpc-[\da-f]{6}\s*$/i, "").replace(/^\s*>\s?/, "").trim());
+    let text = "";
+    if (isOverview) text = cleaned.filter((line) => line && !/\[!abstract\]/i.test(line) && !/^\*\*.*\*\*[:：]/.test(line)).join("\n");
+    else text = cleaned.at(-1) || "";
+    if (type === "other" && /!\[warning\]/i.test(text)) type = "disagreement";
+    const start = bodyOffset + offsets[startLine];
+    const end = bodyOffset + offsets[index] + lines[index].length;
+    blocks.push({ id: marker[1], type, text, start, end });
   }
   return blocks;
 }
@@ -286,6 +311,49 @@ export function appendTopicMemberLinks(markdown: string, memberLinks: readonly s
   return `${split.text ? `---\n${split.text}\n---\n` : ""}${lines.join("\n")}`;
 }
 
+export function appendTopicMemberMetadata(markdown: string, members: readonly TopicMember[]): string {
+  const parsed = frontmatter(markdown);
+  if (parseTopicFrontmatter(parsed.text)[NS_FM_TOPIC_LAYOUT] !== 2 || !members.length) return markdown;
+  const lines = parsed.body.split("\n");
+  const timeline = lines.findIndex((line) => /^##\s+(?:Timeline|时间线)\s*$/.test(line.trim()));
+  const sources = lines.findIndex((line) => /^##\s+(?:Source notes|来源笔记)\s*$/.test(line.trim()));
+  const existingIds = new Set(lines.map((line) => line.match(/^\[\^(s[\da-f]{4})\]:/)?.[1]).filter((id): id is string => !!id));
+  const sourceRows: string[] = [];
+  const timelineRows: Array<{ date: string; row: string }> = [];
+  for (const member of members) {
+    const footnoteId = sourceFootnoteId(member.sourceId);
+    if (!existingIds.has(footnoteId)) {
+      existingIds.add(footnoteId);
+      const link = "[[" + member.path.replace(/\.md$/i, "") + "|" + member.title + "]]";
+      sourceRows.push("[^" + footnoteId + "]: " + link + (member.date ? " · " + member.date : ""));
+    }
+    if (timeline >= 0 && member.date) {
+      const link = "[[" + member.path.replace(/\.md$/i, "") + "|" + member.title + "]]";
+      if (!lines.some((line) => line.includes(link))) timelineRows.push({ date: member.date, row: "- " + member.date + " · " + link + " — " + firstSentence(member.summary || member.title) });
+    }
+  }
+  if (timeline >= 0 && timelineRows.length) {
+    let end = timeline + 1;
+    while (end < lines.length && !/^##\s/.test(lines[end])) end++;
+    for (const entry of timelineRows.sort((a, b) => a.date.localeCompare(b.date))) {
+      let at = timeline + 1;
+      while (at < end) {
+        const date = lines[at].match(/^\s*-\s*(\d{4}-\d{2}-\d{2})\s*[·—-]/)?.[1];
+        if (date && date > entry.date) break;
+        at++;
+      }
+      lines.splice(at, 0, entry.row);
+      end++;
+    }
+  }
+  if (sources >= 0 && sourceRows.length) {
+    let at = sources + 1;
+    while (at < lines.length && !/^##\s/.test(lines[at])) at++;
+    lines.splice(at, 0, ...sourceRows.sort((a, b) => a.localeCompare(b)));
+  }
+  return (parsed.text ? "---\n" + parsed.text + "\n---\n" : "") + lines.join("\n");
+}
+
 
 export function stableTopicBlockId(kind: string, sourceId: string, text: string, existing: ReadonlySet<string>): string {
   const base = `tpc-${stableHash(`${kind}\0${sourceId}\0${text}`)}`;
@@ -298,14 +366,113 @@ export function stableTopicBlockId(kind: string, sourceId: string, text: string,
 export function applyTopicOps(markdown: string, ops: readonly TopicOperation[]): ApplyTopicOpsResult {
   let current = ensureSections(markdown);
   const applied: AppliedTopicOperation[] = [];
+  const skipped: ApplyTopicOpsResult["skipped"] = [];
   for (const operation of ops) {
+    const isV2 = parseTopicFrontmatter(frontmatter(current).text)[NS_FM_TOPIC_LAYOUT] === 2;
+    if (isV2 && ["add_point", "add_thread", "revise_block", "add_disagreement", "add_open", "resolve_open"].includes(operation.type)) {
+      const parsed = frontmatter(current);
+      const lines = parsed.body.split("\n");
+      const source = (id: string) => `[^${sourceFootnoteId(id)}]`;
+      let blockId: string | null = null;
+      let location: TopicSection = "进展脉络";
+      if (operation.type === "revise_block" || operation.type === "resolve_open") {
+        const id = operation.blockId.replace(/^\^/, "");
+        const block = parseTopicPageBlocks(current).find((item) => item.id === id);
+        if (operation.expectedText !== undefined && block?.text !== operation.expectedText) {
+          skipped.push({ id, reason: "block-modified" });
+          continue;
+        }
+        const at = lines.findIndex((line) => line.trimEnd().endsWith(`^${id}`));
+        if (at >= 0 && block) {
+          blockId = id;
+          if (operation.type === "revise_block") {
+            if (block.type === "overview") {
+              let header = at;
+              while (header > 0 && !/\[!abstract\]/i.test(lines[header])) header--;
+              let end = at;
+              while (end > header + 1 && /^\s*>\s*\*\*/.test(lines[end - 1])) end--;
+              lines.splice(header + 1, end - header - 1, ...operation.newText.split("\n").map((line) => `> ${line}`));
+            } else {
+              const prefix = lines[at].match(/^\s*[-*]?\s*/)?.[0] || "";
+              lines[at] = `${prefix}${operation.newText} ^${id}`;
+            }
+          } else {
+            lines[at] = lines[at].replace(/^(\s*[-*]\s*\[)\s(\])/, "$1x$2");
+            lines.splice(at + 1, 0, `  - ${operation.note}${source(operation.sourceId)}`);
+          }
+        }
+      } else {
+        let row: string;
+        const kind = operation.type;
+        if (operation.type === "add_thread") {
+          const used = new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value));
+          const summaryId = stableTopicBlockId("thread", operation.title, operation.summary, used);
+          used.add(summaryId);
+          const pointRows = operation.points.map((point) => {
+            const id = stableTopicBlockId("point", operation.title, point.text, used);
+            used.add(id);
+            return `- ${point.text}${inlineFootnotes(point.sources)} ^${id}`;
+          });
+          row = [``, `### ${operation.title}`, ``, `${operation.summary} ^${summaryId}`, ...pointRows].join("\n");
+        } else if (operation.type === "add_point") {
+          const thread = lines.findIndex((line) => line.trim() === `### ${operation.thread}`);
+          if (thread >= 0) {
+            let end = thread + 1;
+            while (end < lines.length && !/^#{1,2}\s/.test(lines[end])) end++;
+            const id = stableTopicBlockId(kind, operation.sourceId, operation.text, new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value)));
+            lines.splice(end, 0, `- ${operation.text}${inlineFootnotes(operation.sources)} ^${id}`);
+            blockId = id;
+            current = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${lines.join("\n")}`;
+            applied.push({ operation, blockId, location });
+            continue;
+          }
+          row = `- ${operation.text}${inlineFootnotes(operation.sources)}`;
+          location = "进展脉络";
+        } else if (operation.type === "add_disagreement") {
+          const used = new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value));
+          const positions = operation.positions.map((position) => {
+            const id = stableTopicBlockId("disagreement", position.sourceId, position.text, used);
+            used.add(id);
+            return `> - **${position.date || ""}**：${position.text}${source(position.sourceId)} ^${id}`;
+          });
+          row = [``, `> [!warning] ${operation.subject}`, ...positions].join("\n");
+          location = "分歧与待核实";
+        } else if (operation.type === "add_open") {
+          const id = stableTopicBlockId("open", operation.sourceId, operation.text, new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value)));
+          row = `- [ ] ${operation.kind ? `${operation.kind}：` : ""}${operation.text}${inlineFootnotes(operation.sources)} ^${id}`;
+          blockId = id;
+          location = "未决问题与未完成行动";
+        } else { row = ""; location = "待整理"; }
+        if (row) {
+          const headingNames = operation.type === "add_thread" || operation.type === "add_point" ? ["进展脉络", "Progress thread"]
+            : operation.type === "add_disagreement" ? ["分歧与待核实", "Disagreements and verification"]
+              : operation.type === "add_open" ? ["未决问题与行动", "Open questions and actions"] : ["待整理", "Unsorted"];
+          const headingIndex = lines.findIndex((line) => headingNames.some((name) => line.trim() === `## ${name}`));
+          const english = lines.some((line) => /^##\s+(?:Overview|Progress thread|Timeline|Source notes)\s*$/.test(line));
+          const chosenHeading = headingIndex >= 0 ? lines[headingIndex] : `## ${english ? headingNames[1] : headingNames[0]}`;
+          if (headingIndex < 0) {
+            const insertBefore = ["时间线", "Timeline", "来源笔记", "Source notes"].map((name) => lines.findIndex((line) => line.trim() === `## ${name}`)).filter((index) => index >= 0).sort((a, b) => a - b)[0];
+            if ((operation.type === "add_open" || operation.type === "add_disagreement") && insertBefore !== undefined) lines.splice(insertBefore, 0, "", chosenHeading, row);
+            else lines.push("", chosenHeading, row);
+          }
+          else {
+            let end = headingIndex + 1;
+            while (end < lines.length && !/^#{1,2}\s/.test(lines[end])) end++;
+            lines.splice(end, 0, row);
+          }
+        }
+      }
+      current = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${lines.join("\n")}`;
+      applied.push({ operation, blockId, location });
+      continue;
+    }
     const parsed = frontmatter(current);
     const lines = parsed.body.split("\n");
     const existing = new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/i)?.[1]).filter((id): id is string => !!id));
     let destination: TopicSection = operation.type === "add_conflict" ? "分歧与待核实"
       : operation.type === "add_timeline" ? "时间线"
         : operation.type === "resolve_question" ? "未决问题与未完成行动"
-          : operation.type === "annotate_item" ? "待整理" : operation.section;
+      : operation.type === "annotate_item" ? "待整理" : operation.type === "add_item" ? operation.section : "待整理";
     const target = "targetId" in operation ? operation.targetId.replace(/^\^/, "") : "";
     const targetLine = target ? lines.findIndex((line) => line.trimEnd().endsWith(`^${target}`)) : -1;
     const targetSection = targetLine >= 0 ? sectionForLine(lines, targetLine) : null;
@@ -332,5 +499,5 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[]):
     }
     current = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${lines.join("\n")}`;
   }
-  return { markdown: ensureSections(current), applied };
+  return { markdown: ensureSections(current), applied, skipped };
 }
