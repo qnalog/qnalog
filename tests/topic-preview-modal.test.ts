@@ -75,6 +75,19 @@ describe("topic preview dialog", () => {
     modal.onOpen();
     expect(allText(modal.contentEl as unknown as FakeTree)).toContain("Unknown topic values were normalized to safe defaults.");
   });
+  it("shows assessment details and identifies program-completed conflict changes", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.assessments = [{ memberId: "note-1", claim: "The property decision changed.", relation: "conflict" }];
+    preview.programGeneratedOperations = 1;
+    preview.items = [{ ...preview.items[0], programGenerated: true }];
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const tree = modal.contentEl as unknown as FakeTree;
+    expect(allText(tree)).toContain("Assessment details");
+    expect(allText(tree)).toContain("Conflict: The property decision changed.");
+    expect(allText(tree)).toContain("Completed by program from conflict assessment");
+  });
 
   it("explains an empty update, offers member-and-timeline-only apply, and shows degradations", () => {
     const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn() };
