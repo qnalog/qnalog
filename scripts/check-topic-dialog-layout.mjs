@@ -189,6 +189,63 @@ try {
       assert.equal(await closeDialog(how, "preview"), 1, `preview dialog closed by ${how} must cancel the preview exactly once at ${width}px/${theme}`);
     }
   }
+  // Whole-row toggling and list stability: 60 candidates, scrolled to the middle, real mouse and keyboard input.
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 827, deviceScaleFactor: 1, mobile: false });
+  await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+  await evaluate("document.body.className = 'theme-light'; window.renderTopicCreate()");
+  const mouse = async (expression, { button = "left" } = {}) => {
+    const point = await evaluate(`(() => { const el = ${expression}; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+    await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button, clickCount: 1 });
+    await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount: 1 });
+  };
+  const rowAt = (index) => `document.querySelectorAll('.qnalog-topics-candidate')[${index}]`;
+  const checkedAt = (index) => evaluate(`document.querySelectorAll('.qnalog-topics-candidate input')[${index}].checked`);
+  const scrollTop = () => evaluate("document.querySelector('.qnalog-topics-scroll').scrollTop");
+  assert.equal(await evaluate("document.querySelectorAll('.qnalog-topics-candidate').length"), 60, "fixture should render 60 candidates");
+  await evaluate(`${rowAt(25)}.scrollIntoView({ block: "center" })`);
+  await evaluate("window.__rowsBefore = [...document.querySelectorAll('.qnalog-topics-candidate')]");
+  const middle = await scrollTop();
+  assert(middle > 0, "candidate list must be scrollable for the stability check");
+
+  const beforeTitle = await checkedAt(25);
+  await mouse(`${rowAt(25)}.querySelector('.qnalog-topics-candidate-title')`);
+  assert.notEqual(await checkedAt(25), beforeTitle, "a click on the title must toggle the row");
+  assert.equal(await evaluate("window.__rowsBefore[25] === document.querySelectorAll('.qnalog-topics-candidate')[25]"), true, "toggling must not rebuild the row");
+  assert.equal(await scrollTop(), middle, "toggling must not change the list scroll position");
+
+  await mouse(`${rowAt(25)}.querySelector('input')`);
+  assert.equal(await checkedAt(25), beforeTitle, "a click on the checkbox must toggle the row exactly once");
+  assert.equal(await scrollTop(), middle, "checkbox toggle must not change the list scroll position");
+
+  const showMoreVisible = await evaluate(`!!${rowAt(25)}.querySelector('.qnalog-topics-candidate-details > button')`);
+  assert(showMoreVisible, "fixture rows must offer a Show more control");
+  await mouse(`${rowAt(25)}.querySelector('.qnalog-topics-candidate-details > button')`);
+  assert.equal(await checkedAt(25), beforeTitle, "the Show more control must not toggle the row");
+
+  await evaluate(`${rowAt(26)}.querySelector('.qnalog-topics-candidate-title').scrollIntoView({ block: "center" })`);
+  const dragStart = await evaluate(`(() => { const r = document.querySelectorAll('.qnalog-topics-candidate-title')[26].getBoundingClientRect(); return { x: r.left + 2, y: r.top + r.height / 2, endX: r.right - 2 }; })()`);
+  const beforeDrag = await checkedAt(26);
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: dragStart.x, y: dragStart.y });
+  await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: dragStart.x, y: dragStart.y, button: "left", clickCount: 1 });
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: dragStart.endX, y: dragStart.y, button: "left", buttons: 1 });
+  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: dragStart.endX, y: dragStart.y, button: "left", clickCount: 1 });
+  assert.notEqual(await evaluate("String(window.getSelection())"), "", "the drag should select text");
+  assert.equal(await checkedAt(26), beforeDrag, "drag-selecting text must not toggle the row");
+  await evaluate("window.getSelection().removeAllRanges()");
+
+  const spaceBefore = await checkedAt(27);
+  await evaluate("document.querySelectorAll('.qnalog-topics-candidate input')[27].focus()");
+  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", text: " ", windowsVirtualKeyCode: 32 });
+  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32 });
+  assert.equal(await checkedAt(27), !spaceBefore, "Space must toggle the focused row exactly once");
+
+  assert.equal(await evaluate("document.querySelectorAll('.qnalog-topics-candidate')[0].getAttribute('aria-disabled')"), "true", "the starting note row must be aria-disabled");
+  const disabledBefore = await checkedAt(0);
+  await mouse(`${rowAt(0)}.querySelector('.qnalog-topics-candidate-title')`);
+  assert.equal(await checkedAt(0), disabledBefore, "the starting note row must not toggle");
+  console.log(`[topic-dialog-layout] 60-candidate list: title, checkbox, drag and keyboard toggles behave; row nodes and scroll stable`);
+  await evaluate("document.querySelector('.modal-header-button').click()");
 } finally {
   socket?.close();
   if (browser && browser.exitCode === null) {

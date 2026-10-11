@@ -5,6 +5,7 @@ import type { TopicsUiPort } from "./topics-ui-port";
 import { defaultTopicMemberPaths, formatTopicCandidateReasons, suggestTopicTitle, topicCandidateGroups } from "./topics-ui-port";
 import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
 import { TopicPreviewModal } from "./topic-preview-modal";
+import { suppressRowActivation } from "./topic-row-activation";
 
 const TOPIC_CANDIDATE_WINDOWS = [90, 180, 365] as const;
 const TOPIC_EXCERPT_LIMIT = 120;
@@ -26,6 +27,11 @@ export class TopicCreateModal extends Modal {
   private previewProgress = "";
   private topicTitles = new Map<string, string>();
   private estimateReady = false;
+  // Elements kept between selection changes so a toggle updates them without rebuilding the list.
+  private scrollEl: HTMLElement | null = null;
+  private groupHeadings = new Map<TopicCandidate["tier"], HTMLElement>();
+  private estimateEl: HTMLElement | null = null;
+  private createButton: HTMLButtonElement | null = null;
 
   constructor(app: App, port: TopicsUiPort, startPath: string, onApplied: () => void = () => undefined) {
     super(app);
@@ -67,28 +73,30 @@ export class TopicCreateModal extends Modal {
   private async refreshEstimate(): Promise<void> {
     if (!this.candidates) return;
     this.estimateReady = false;
-    this.render();
+    this.updateSelectionUi();
     try {
       const estimate = await this.port.estimate({ memberPaths: [...this.selected], basis: "body" });
       this.estimateText = this.port.text("Estimated: {0} characters, {1} requests").replace("{0}", estimate.chars.toLocaleString()).replace("{1}", String(estimate.requests));
       this.estimateReady = true;
-      this.render();
     } catch (error) {
       this.estimateText = error instanceof Error ? error.message : String(error);
       this.estimateReady = false;
-      this.render();
     }
+    this.updateSelectionUi();
   }
 
   private render(): void {
     const content = this.contentEl;
+    // Full redraws (candidate expansion, loading, basis change) keep the list position.
+    const previousScroll = this.scrollEl?.scrollTop ?? 0;
     content.empty();
     content.addClass("qnalog-topics-create");
     content.createEl("h2", { text: this.port.text("Create topic") });
     const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
+    this.scrollEl = scroll;
     const titleInput = scroll.createEl("input", { cls: "qnalog-topics-title", attr: { type: "text", placeholder: this.port.text("Topic title"), "aria-label": this.port.text("Topic title") } });
     titleInput.value = this.title;
-    titleInput.addEventListener("input", () => { this.title = titleInput.value; });
+    titleInput.addEventListener("input", () => { this.title = titleInput.value; this.updateSelectionUi(); });
 
     const basis = scroll.createDiv({ cls: "qnalog-topics-basis" });
     for (const [value, label] of [["overview", "Overview"], ["body", "Finalized body"]] as const) {
@@ -103,18 +111,20 @@ export class TopicCreateModal extends Modal {
       });
       option.createSpan({ text: this.port.text(label) });
     }
+    this.estimateEl = null;
     if (this.basis === "body") {
       scroll.createDiv({ cls: "qnalog-topics-cost-warning", text: this.port.text("Finalized body content is sent to the configured model and may use more credits.") });
-      if (this.estimateText) scroll.createDiv({ cls: "qnalog-topics-estimate", text: this.estimateText });
+      this.estimateEl = scroll.createDiv({ cls: "qnalog-topics-estimate", text: this.estimateText });
     }
 
     if (this.loading) scroll.createDiv({ cls: "qnalog-topics-loading", text: this.previewController
       ? `${this.port.text("Generating preview…")} ${this.previewProgress}`
       : this.port.text("Loading candidates…") });
+    this.groupHeadings.clear();
     if (this.candidates) {
       for (const group of topicCandidateGroups(this.candidates)) {
         const section = scroll.createDiv({ cls: `qnalog-topics-candidate-group is-${group.tier}` });
-        section.createEl("h3", { text: `${this.port.text(GROUP_LABELS[group.tier])} (${group.items.length})` });
+        this.groupHeadings.set(group.tier, section.createEl("h3"));
         for (const candidate of group.items) this.renderCandidate(section, candidate);
       }
     }
@@ -131,20 +141,55 @@ export class TopicCreateModal extends Modal {
       this.close();
     });
     const create = actions.createEl("button", { cls: "mod-cta", text: this.port.text(this.basis === "body" ? "Confirm and create" : "Create"), attr: { type: "button" } });
-    create.disabled = this.loading || !this.candidates || this.selected.size === 0 || !this.title.trim()
-      || (this.basis === "body" && !this.estimateReady);
+    this.createButton = create;
     create.addEventListener("click", () => void this.create(create));
+    this.updateSelectionUi();
+    scroll.scrollTop = previousScroll;
+  }
+
+  /** Updates headings, estimate and the create button in place; never rebuilds candidate rows. */
+  private updateSelectionUi(): void {
+    if (this.candidates) {
+      for (const group of topicCandidateGroups(this.candidates)) {
+        const heading = this.groupHeadings.get(group.tier);
+        if (!heading) continue;
+        const picked = group.items.filter((item) => this.selected.has(item.path)).length;
+        const label = this.port.text(GROUP_LABELS[group.tier]);
+        const count = this.port.text("Selected {0} of {1}").replace("{0}", String(picked)).replace("{1}", String(group.items.length));
+        heading.setText(`${label} · ${count}`);
+      }
+    }
+    if (this.estimateEl) this.estimateEl.setText(this.estimateText);
+    if (this.createButton) {
+      this.createButton.disabled = this.loading || !this.candidates || this.selected.size === 0 || !this.title.trim()
+        || (this.basis === "body" && !this.estimateReady);
+    }
   }
 
   private renderCandidate(parent: HTMLElement, candidate: TopicCandidate): void {
-    const row = parent.createDiv({ cls: "qnalog-topics-candidate" });
+    // The whole row is a <label>: a click on any text toggles the checkbox once, and Space works on the focused checkbox.
+    const row = parent.createEl("label", {
+      cls: candidate.cancellable ? "qnalog-topics-candidate" : "qnalog-topics-candidate is-disabled",
+      attr: candidate.cancellable ? {} : { "aria-disabled": "true" },
+    });
     const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": candidate.title } });
     checkbox.checked = this.selected.has(candidate.path);
     checkbox.disabled = !candidate.cancellable;
+    row.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const cancel = suppressRowActivation({
+        onCheckbox: target === checkbox,
+        onInteractive: !!target?.closest("button, a"),
+        selectedText: window.getSelection()?.toString() ?? "",
+        disabled: checkbox.disabled,
+      });
+      if (cancel) event.preventDefault();
+    });
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) this.selected.add(candidate.path); else this.selected.delete(candidate.path);
+      if (checkbox.checked) this.selected.add(candidate.path);
+      else this.selected.delete(candidate.path);
       if (this.basis === "body") void this.refreshEstimate();
-      else this.render();
+      else this.updateSelectionUi();
     });
     const details = row.createDiv({ cls: "qnalog-topics-candidate-details" });
     details.createDiv({ cls: "qnalog-topics-candidate-title", text: `${candidate.date ? `${candidate.date} · ` : ""}${candidate.title}` });

@@ -5,9 +5,9 @@ import type { TopicCandidates } from "../../src/topics/topic-candidates";
 import type { TopicChangePreview } from "../../src/topics/topic-integration";
 
 const candidates: TopicCandidates = {
-  project: Array.from({ length: 12 }, (_, index) => ({
+  project: Array.from({ length: 60 }, (_, index) => ({
     tier: "project" as const, path: `QnALog/Notes/${index}.md`, title: `Long candidate title ${index} ${"Unbrokenwordsegment".repeat(6)}`, date: "2026-10-11",
-    overview: "# **底层数据结构的优化**\n> - __说话人__：昨晚睡前 `回顾` [[Notes/source.md|结构优化]] [文档](https://example.test)",
+    overview: "# **底层数据结构的优化**\n> - __说话人__：昨晚睡前 `回顾` [[Notes/source.md|结构优化]] [文档](https://example.test)" + " 展开以查看完整概要".repeat(8),
     matchedTags: ["项目/Q&ALog", "项目/QnALog"], matchedTerms: [], reasons: ["Shared project identifier tag"],
     reasonDetails: [{ kind: "project-tags" as const, labels: ["项目/Q&ALog", "项目/QnALog"], similar: true }],
     alreadyInTopics: [], missingOverview: false, score: 1, defaultSelected: true, cancellable: index !== 0,

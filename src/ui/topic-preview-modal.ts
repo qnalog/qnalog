@@ -3,6 +3,7 @@ import type { TopicChangePreview } from "../topics/topic-integration";
 import { stripTopicUnverifiedMarker } from "../topics/topic-integration";
 import { topicSectionEnglishLabel } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
+import { suppressRowActivation } from "./topic-row-activation";
 
 export class TopicPreviewModal extends Modal {
   private readonly port: TopicsUiPort;
@@ -48,9 +49,14 @@ export class TopicPreviewModal extends Modal {
         group.createEl("h3", { text: this.port.text(section) });
         sections.set(section, group);
       }
-      const row = group.createDiv({ cls: `qnalog-topics-preview-item${item.type === "add_conflict" ? " is-conflict" : ""}` });
+      // Same whole-row toggle as the create dialog: the row is a <label> around the checkbox.
+      const row = group.createEl("label", { cls: `qnalog-topics-preview-item${item.type === "add_conflict" ? " is-conflict" : ""}` });
       const main = row.createDiv({ cls: "qnalog-topics-preview-main" });
       const checkbox = main.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Include this change") } });
+      row.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (suppressRowActivation({ onCheckbox: target === checkbox, onInteractive: !!target?.closest("button, a"), selectedText: window.getSelection()?.toString() ?? "", disabled: false })) event.preventDefault();
+      });
       checkbox.checked = true;
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add(item.id) : selected.delete(item.id));
       const icon = main.createSpan({ cls: "qnalog-topics-operation-icon" });

@@ -6,6 +6,7 @@ import { topicCandidateGroups } from "./topics-ui-port";
 import { formatTopicCandidateReasons } from "./topics-ui-port";
 import { qnalogConfirm } from "./helpers";
 import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
+import { suppressRowActivation } from "./topic-row-activation";
 
 export class TopicsPanel {
   private readonly app: App;
@@ -116,6 +117,7 @@ class TopicScanModal extends Modal {
   private scanController: AbortController | null = null;
   private previewController: AbortController | null = null;
   private topicTitles = new Map<string, string>();
+  private previewButton: HTMLButtonElement | null = null;
 
   constructor(app: App, port: TopicsUiPort, topicId: string, refresh: () => void) {
     super(app);
@@ -181,19 +183,29 @@ class TopicScanModal extends Modal {
       this.previewController?.abort();
       this.close();
     });
-    const preview = actions.createEl("button", { cls: "mod-cta", text: this.port.text("Preview changes"), attr: { type: "button" } });
-    preview.disabled = this.loading || this.previewing || !this.selected.size;
-    preview.addEventListener("click", () => void this.generatePreview());
+    this.previewButton = actions.createEl("button", { cls: "mod-cta", text: this.port.text("Preview changes"), attr: { type: "button" } });
+    this.updatePreviewButton();
+    this.previewButton.addEventListener("click", () => void this.generatePreview());
+  }
+
+  /** Keeps the list in place on toggle: only the preview button state changes. */
+  private updatePreviewButton(): void {
+    if (this.previewButton) this.previewButton.disabled = this.loading || this.previewing || !this.selected.size;
   }
 
   private renderCandidate(parent: HTMLElement, candidate: TopicCandidate): void {
-    const row = parent.createDiv({ cls: "qnalog-topics-candidate" });
+    // Whole-row toggle, as in the create dialog: the row is a <label> around the checkbox.
+    const row = parent.createEl("label", { cls: "qnalog-topics-candidate" });
     const input = row.createEl("input", { attr: { type: "checkbox", "aria-label": candidate.title } });
     input.checked = this.selected.has(candidate.path);
+    row.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (suppressRowActivation({ onCheckbox: target === input, onInteractive: !!target?.closest("button, a"), selectedText: window.getSelection()?.toString() ?? "", disabled: false })) event.preventDefault();
+    });
     input.addEventListener("change", () => {
       if (input.checked) { this.selected.add(candidate.path); if (!this.startPath) this.startPath = candidate.path; }
       else this.selected.delete(candidate.path);
-      this.render();
+      this.updatePreviewButton();
     });
     row.createDiv({ cls: "qnalog-topics-candidate-title", text: `${candidate.date ? `${candidate.date} · ` : ""}${candidate.title}` });
     const cleanOverview = cleanTopicOverviewExcerpt(candidate.overview);

@@ -25,4 +25,5 @@ export const EN: MessageTable = {
   "Starting note": "Starting note",
   "Similar content": "Similar content",
   "Completed {0}/{1} batches": "Completed {0}/{1} batches",
+  "Selected {0} of {1}": "Selected {0} of {1}",
 };

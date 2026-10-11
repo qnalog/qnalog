@@ -2895,6 +2895,7 @@ export const ZH: MessageTable = {
   "Starting note": "起点笔记",
   "Similar content": "内容相近",
   "Completed {0}/{1} batches": "已完成 {0}/{1} 批",
+  "Selected {0} of {1}": "已选 {0} / 共 {1}",
   "Topics": "主题",
   "Create topic": "创建成为主题",
   "Join topic…": "加入主题…",
