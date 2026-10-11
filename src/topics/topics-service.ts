@@ -196,6 +196,7 @@ export class TopicsService {
         partialFailure = generated.partialFailure;
         validationWarnings = generated.validationWarnings;
         updateDiagnostics = generated.updateDiagnostics;
+        duplicateDetails = generated.duplicateDetails;
         degraded = generated.degraded;
         assessments = generated.assessments;
         programGeneratedOperationKeys = generated.programGeneratedOperationKeys;

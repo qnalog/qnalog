@@ -89,6 +89,28 @@ describe("topic preview dialog", () => {
     expect(allText(tree)).toContain("Completed by program from conflict assessment");
   });
 
+  it("shows the generated-overview notice", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.create = { title: "Topic", basis: "overview", tags: [], members: [], overviewGeneratedFromThreads: true };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const text = allText(modal.contentEl as unknown as FakeTree);
+    expect(text).toContain("The overview was generated from the thread summaries by the program. You can edit it on the page.");
+  });
+
+  it("shows duplicate decisions in assessment details", () => {
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const preview = fixture();
+    preview.duplicateDetails = [{ thread: "Font issue", discardedText: "A repeated claim.", keptText: "The existing claim.", reason: "existing-page" }];
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const text = allText(modal.contentEl as unknown as FakeTree);
+    expect(text).toContain("Assessment details");
+    expect(text).toContain("Duplicate point omitted because it matches an existing page point");
+    expect(text).toContain("The existing claim.");
+  });
+
   it("explains an empty update, offers member-and-timeline-only apply, and shows degradations", () => {
     const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn() };
     const preview = fixture();

@@ -9,6 +9,8 @@ export const TOPIC_INTEGRATION_BATCH_SIZE = 6;
 export const TOPIC_BODY_BATCH_CHARS = 24000;
 export const TOPIC_RESOLVE_GROUNDING_THRESHOLD = 0.28;
 export const TOPIC_DISAGREEMENT_SIMILARITY_THRESHOLD = 0.72;
+/** 75% bigram overlap treats short wording changes as duplicates while keeping broader claims distinct. */
+export const TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD = 0.75;
 export interface TopicIntegrationMember { card: OverviewCard; content?: string }
 export interface TopicIntegrationCost { chars: number; requests: number }
 export interface TopicChangePreviewItem {
@@ -818,6 +820,55 @@ function mergeDisagreements(values: readonly TopicOperation[]): { operations: To
   return { operations, duplicates };
 }
 
+function sameTopicThread(left: string, right: string): boolean {
+  const a = left.normalize("NFKC").toLocaleLowerCase().trim();
+  const b = right.normalize("NFKC").toLocaleLowerCase().trim();
+  return !!a && !!b && (a === b || topicTextSimilarity(a, b) >= TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD);
+}
+
+function pointOperationQuality(operation: Extract<TopicOperation, { type: "add_point" }>): [number, number] {
+  return [new Set(operation.sources).size, operation.text.length];
+}
+
+function shouldKeepPoint(candidate: Extract<TopicOperation, { type: "add_point" }>, current: Extract<TopicOperation, { type: "add_point" }>): boolean {
+  const [candidateSources, candidateLength] = pointOperationQuality(candidate);
+  const [currentSources, currentLength] = pointOperationQuality(current);
+  return candidateSources > currentSources || (candidateSources === currentSources && candidateLength > currentLength);
+}
+
+function deduplicateAddPoints(values: readonly TopicOperation[], currentPage: string): { operations: TopicOperation[]; duplicates: number; details: TopicDuplicateDecision[] } {
+  const operations: TopicOperation[] = [];
+  const details: TopicDuplicateDecision[] = [];
+  let duplicates = 0;
+  const pagePoints = parseTopicPageBlocks(currentPage).filter((block) => block.type === "point").map((block) => {
+    const heading = currentPage.slice(0, block.start).match(/^###\s+(.+?)\s*$/gm)?.at(-1)?.replace(/^###\s+/, "").trim() || "";
+    return { heading, text: cleanTopicBlockClaim(block.text) };
+  });
+  for (const value of values) {
+    if (value.type !== "add_point") { operations.push(value); continue; }
+    const pageDuplicate = pagePoints.find((point) => sameTopicThread(point.heading, value.thread)
+      && topicTextSimilarity(point.text, value.text) >= TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD);
+    if (pageDuplicate) {
+      duplicates++;
+      details.push({ thread: value.thread, discardedText: value.text, keptText: pageDuplicate.text, reason: "existing-page" });
+      continue;
+    }
+    const existingIndex = operations.findIndex((operation) => operation.type === "add_point"
+      && sameTopicThread(operation.thread, value.thread)
+      && topicTextSimilarity(operation.text, value.text) >= TOPIC_POINT_DUPLICATE_SIMILARITY_THRESHOLD);
+    if (existingIndex < 0) { operations.push(value); continue; }
+    const existing = operations[existingIndex];
+    if (existing.type !== "add_point") continue;
+    const keepCandidate = shouldKeepPoint(value, existing);
+    const kept = keepCandidate ? value : existing;
+    const discarded = keepCandidate ? existing : value;
+    operations[existingIndex] = kept;
+    duplicates++;
+    details.push({ thread: value.thread, discardedText: discarded.text, keptText: kept.text, reason: "same-update" });
+  }
+  return { operations, duplicates, details };
+}
+
 export async function generateTopicPageUpdateOperations(port: TopicIntegrationPort, input: TopicIntegrationInput): Promise<TopicIntegrationResult> {
   const batches = memberBatches(input.members, input.basis);
   input.onPlanned?.(batches.length);
@@ -866,7 +917,8 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
               const normalized = text.toLocaleLowerCase().replace(/\s+/g, " ").trim();
               return normalized.length >= 12 && currentNormalized.includes(normalized);
             });
-            if (acceptedKeys.has(key) || repeatsPage) {
+            const isPoint = validated.operation.type === "add_point";
+            if ((!isPoint && acceptedKeys.has(key)) || (!isPoint && repeatsPage)) {
               updateDiagnostics.duplicateOperations++;
               updateDiagnostics.discarded.duplicate = (updateDiagnostics.discarded.duplicate || 0) + 1;
             } else {
@@ -934,11 +986,19 @@ export async function generateTopicPageUpdateOperations(port: TopicIntegrationPo
       break;
     }
   }
-  const mergedOperations = mergeDisagreements(operations);
+  const deduplicatedPoints = deduplicateAddPoints(operations, input.currentPage || "");
+  const mergedOperations = mergeDisagreements(deduplicatedPoints.operations);
+  const pointDuplicates = deduplicatedPoints.duplicates;
+  if (pointDuplicates) {
+    updateDiagnostics.acceptedOperations = Math.max(0, updateDiagnostics.acceptedOperations - pointDuplicates);
+    updateDiagnostics.duplicateOperations += pointDuplicates;
+    updateDiagnostics.discarded.duplicate = (updateDiagnostics.discarded.duplicate || 0) + pointDuplicates;
+  }
   if (mergedOperations.duplicates) {
     updateDiagnostics.duplicateOperations += mergedOperations.duplicates;
     updateDiagnostics.discarded.duplicate = (updateDiagnostics.discarded.duplicate || 0) + mergedOperations.duplicates;
   }
-  await port.diagnostic?.(updateDiagnostics);
-  return { operations: mergedOperations.operations, completedBatches, totalBatches: batches.length, inputChars, updateDiagnostics, degraded, assessments: allAssessments, programGeneratedOperationKeys: programGenerated.map((operation) => JSON.stringify(operation)), ...(validationWarnings.size ? { validationWarnings: [...validationWarnings] } : {}), ...(partialFailure ? { partialFailure } : {}) };
+  updateDiagnostics.degraded = degraded > 0;
+  await port.diagnostic?.(updateDiagnostics, "update");
+  return { operations: mergedOperations.operations, completedBatches, totalBatches: batches.length, inputChars, updateDiagnostics, degraded, assessments: allAssessments, programGeneratedOperationKeys: programGenerated.map((operation) => JSON.stringify(operation)), ...(deduplicatedPoints.details.length ? { duplicateDetails: deduplicatedPoints.details } : {}), ...(validationWarnings.size ? { validationWarnings: [...validationWarnings] } : {}), ...(partialFailure ? { partialFailure } : {}) };
 }

@@ -51,12 +51,16 @@ export class TopicPreviewModal extends Modal {
     }
     if ((this.preview.degraded || 0) > 0) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("{0} changes were adjusted to fit the current page; review the affected entries.").replace("{0}", String(this.preview.degraded)) });
     if (this.preview.programGeneratedOperations) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("{0} conflict changes were completed from conflict assessments by the program.").replace("{0}", String(this.preview.programGeneratedOperations)) });
-    if (this.preview.assessments?.length) {
+    if (this.preview.assessments?.length || this.preview.duplicateDetails?.length) {
       const details = scroll.createEl("details", { cls: "qnalog-topics-preview-assessments" });
       details.createEl("summary", { text: this.port.text("Assessment details") });
-      for (const assessment of this.preview.assessments) {
+      for (const assessment of this.preview.assessments || []) {
         const relation = assessment.relation === "same" ? "Same or duplicate" : assessment.relation === "supplement" ? "Supplement" : assessment.relation === "conflict" ? "Conflict" : "Unrelated";
         details.createDiv({ cls: "qnalog-topics-preview-text", text: `${relation}: ${assessment.claim}` });
+      }
+      for (const duplicate of this.preview.duplicateDetails || []) {
+        const key = duplicate.reason === "existing-page" ? "Duplicate point omitted because it matches an existing page point: {0}. Existing point: {1}" : "Duplicate point omitted from this update: {0}. Retained point: {1}";
+        details.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text(key).replace("{0}", duplicate.discardedText).replace("{1}", duplicate.keptText) });
       }
     }
     const emptyUpdate = !this.preview.create && !this.preview.replacement && this.preview.items.length === 0;
