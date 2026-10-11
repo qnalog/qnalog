@@ -6,6 +6,7 @@ import { topicCandidateGroups } from "./topics-ui-port";
 import { qnalogConfirm } from "./helpers";
 import { syncActiveRow } from "./row-active";
 import { renderTopicCandidateGroupHeading, renderTopicCandidateRow } from "./topic-candidate-rows";
+import { runTopicPreviewRequest } from "./topic-ui-actions";
 
 /** "MM-DD" in local time, or "" when the date cannot be read. */
 function formatMonthDay(iso: string): string {
@@ -114,8 +115,7 @@ export class TopicsPanel {
   private showTopicMenu(event: MouseEvent, topicId: string, title: string, legacy: boolean): void {
     const menu = new Menu();
     if (legacy) menu.addItem((item) => item.setTitle(this.port.text("Rebuild topic page in new layout")).setIcon("layout-dashboard").onClick(() => {
-      void this.port.previewRebuild(topicId).then((preview) => new TopicPreviewModal(this.app, this.port, preview, () => this.refresh()).open())
-        .catch((error: unknown) => new Notice(error instanceof Error ? error.message : "Topic rebuild failed.", 8000));
+      void runTopicPreviewRequest(this.app, this.port, () => this.port.previewRebuild(topicId), () => this.refresh());
     }));
     menu.addItem((item) => item.setTitle(this.port.text("Scan for notes to integrate")).setIcon("scan-search").onClick(() => void this.scan(topicId)));
     menu.addItem((item) => item.setTitle(this.port.text("Undo last update")).setIcon("undo-2").onClick(() => {

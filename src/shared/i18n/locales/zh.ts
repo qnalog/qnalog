@@ -3003,4 +3003,5 @@ export const ZH: MessageTable = {
   "Integrate": "整合",
   "Topic pages folder": "主题页面文件夹",
   "Folder for topic pages created by topic integration.": "用于保存主题整合生成的主题页。",
+  "Reading the topic and note overviews. This usually takes a few dozen seconds.": "正在读取主题与新笔记的概要，通常需要几十秒。",
 };
