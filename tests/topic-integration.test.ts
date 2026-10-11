@@ -114,7 +114,8 @@ describe("topic integration", () => {
     expect(port.calls[0][0].content).toContain("For a contradiction, output add_disagreement first");
     expect(port.calls[0][0].content).toContain("For a new unfinished task, output add_open");
     expect(port.calls[0][0].content).toContain("For an explicitly resolved item, use resolve_open when known");
-    expect(port.calls[0][0].content).toContain("positions:[{text,sourceId,date?},{text,sourceId,date?}]");
+    expect(port.calls[0][0].content).toContain("do not supply dates");
+    expect(port.calls[0][0].content).toContain("relatedBlockId identifies the existing claim");
     expect(port.calls[0][1].content).toContain(source.content);
   });
 
@@ -181,15 +182,17 @@ describe("topic integration", () => {
   });
   it("retries a conflict assessment missing add_disagreement, then synthesizes the disagreement", async () => {
     const source = member("new-source", "属性名最终仍按界面语言切换。", "属性名最终仍按界面语言切换。");
-    const page = renderTopicPage({ overview: "属性名应保持稳定。", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
-    const overview = parseTopicPageBlocks(page).find((block) => block.type === "overview")!;
+    const oldSource = member("old-source", "属性名应保持稳定。", "属性名应保持稳定。");
+    oldSource.card.date = "2025-02-12";
+    const page = renderTopicPage({ overview: "属性名策略需要记录。", status: "active", threads: [{ id: "thread", title: "属性名", summary: "属性名策略需要记录。", points: [{ id: "p", text: "属性名应保持稳定。", sources: ["old-source"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: oldSource.card.path, title: oldSource.card.title, sourceId: oldSource.card.sourceId, date: "2025-02-12" }]);
+    const overview = parseTopicPageBlocks(page).find((block) => block.type === "point")!;
     const payload = { assessments: [{ memberId: "new-source", claim: "属性名最终仍按界面语言切换。", relation: "conflict", relatedBlockId: overview.id }], operations: [] };
     const port = fakePort([JSON.stringify(payload), JSON.stringify(payload)]);
-    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: page });
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], existingMembers: [oldSource], currentPage: page });
     expect(port.calls).toHaveLength(2);
     expect(port.calls[1][0].content).toContain("marked these claims as conflict but omitted add_disagreement");
     expect(result.assessments).toEqual(payload.assessments);
-    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [{ text: overview.text }, { text: "属性名最终仍按界面语言切换。", sourceId: "new-source", date: "2025-03-04" }] }]);
+    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [{ text: "属性名应保持稳定。", sourceId: "old-source", date: "2025-02-12" }, { text: "属性名最终仍按界面语言切换。", sourceId: "new-source", date: "2025-03-04" }] }]);
     expect(result.programGeneratedOperationKeys).toHaveLength(1);
   });
   it("does not synthesize a disagreement when assessments contain no conflict", async () => {
@@ -198,6 +201,61 @@ describe("topic integration", () => {
     const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
     expect(result.operations.map(({ type }) => type)).toEqual(["add_point"]);
     expect(result.programGeneratedOperationKeys).toHaveLength(0);
+  });
+  it("does not reassign an invalid disagreement source and ignores model dates", async () => {
+    const source = member("fresh", "属性名称仍按 Obsidian 语言动态切换。", "属性名称仍按 Obsidian 语言动态切换。");
+    const port = fakePort([response([{ type: "add_disagreement", subject: "属性名", positions: [
+      { text: "属性名称仍按 Obsidian 语言动态切换。", sourceId: "outside", date: "1999-01-01" },
+    ] }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [{ sourceId: "", provenance: "source-pending" }] }]);
+    expect(result.operations[0].type === "add_disagreement" && result.operations[0].positions[0]).not.toHaveProperty("date");
+    const page = applyTopicOps("---\nqnalog_topic_layout: 2\n---\n## 分歧与待核实\n", result.operations).markdown;
+    expect(page).toContain("属性名称仍按 Obsidian 语言动态切换。（来源待核实）");
+    expect(page).not.toContain("1999-01-01");
+    expect(page).not.toContain("[^s");
+  });
+  it("marks unsupported disagreement wording and synthesizes only the new side without a related block", async () => {
+    const source = member("fresh", "属性名称仍按语言动态切换。", "属性名称仍按语言动态切换。");
+    const port = fakePort([JSON.stringify({ assessments: [{ memberId: "fresh", claim: "这是完全无关的模型补写内容。", relation: "conflict" }], operations: [] }), JSON.stringify({ assessments: [{ memberId: "fresh", claim: "这是完全无关的模型补写内容。", relation: "conflict" }], operations: [] })]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    const disagreement = result.operations.find((item) => item.type === "add_disagreement");
+    expect(disagreement).toMatchObject({ positions: [{ sourceId: "fresh", provenance: "unverified" }] });
+    expect(disagreement?.type === "add_disagreement" ? disagreement.positions : []).toHaveLength(1);
+    expect(result.validationWarnings).toContain("A conflict assessment had no related page block; only the new claim was added for review.");
+  });
+  it("uses a related block's member date and exact text and drops a second stance from that member", async () => {
+    const old = member("old", "属性名称应保持稳定。", "属性名称应保持稳定。");
+    old.card.date = "2026-09-29";
+    const fresh = member("fresh", "属性名称仍按 Obsidian 语言动态切换。", "属性名称仍按 Obsidian 语言动态切换。");
+    const page = renderTopicPage({ overview: "属性名策略。", status: "active", threads: [{ id: "keys", title: "属性名", summary: "记录属性名。", points: [{ id: "p", text: "属性名称应保持稳定。", sources: ["old"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: old.card.path, title: old.card.title, sourceId: old.card.sourceId, date: old.card.date }]);
+    const block = parseTopicPageBlocks(page).find((item) => item.type === "point")!;
+    const port = fakePort([response([{ type: "add_disagreement", subject: "属性名称", relatedBlockId: block.id, positions: [
+      { text: "model paraphrase of existing claim", sourceId: "old", date: "1999-01-01" },
+      { text: "属性名称仍按 Obsidian 语言动态切换。", sourceId: "fresh", date: "1999-01-01" },
+      { text: "another old-side claim", sourceId: "old" },
+    ] }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [fresh], existingMembers: [old], currentPage: page });
+    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [
+      { text: "属性名称应保持稳定。", sourceId: "old", date: "2026-09-29" },
+      { text: "属性名称仍按 Obsidian 语言动态切换。", sourceId: "fresh", date: "2025-03-04" },
+    ] }]);
+    expect(result.operations[0].type === "add_disagreement" && result.operations[0].positions).toHaveLength(2);
+  });
+  it.each(["zh", "en"] as const)("renders verified disagreement provenance in %s", (language) => {
+    const operation = { type: "add_disagreement" as const, subject: "Property names", sourceId: "old", positions: [
+      { text: "Stable property names", sourceId: "old", date: "2026-09-29" },
+      { text: "Language-dependent property names", sourceId: "fresh", date: "2026-10-11" },
+      { text: "Unsupported claim", sourceId: "fresh", date: "2026-10-11", provenance: "unverified" as const },
+      { text: "Unknown source claim", sourceId: "", provenance: "source-pending" as const },
+    ] };
+    const page = `---\nqnalog_topic_layout: 2\n---\n## ${language === "en" ? "Disagreements and verification" : "分歧与待核实"}\n`;
+    const rendered = applyTopicOps(page, [operation]).markdown;
+    expect(rendered).toContain("2026-09-29");
+    expect(rendered).toContain("2026-10-11");
+    expect(rendered).toContain("Unsupported claim（未核实）");
+    expect(rendered).toContain("Unknown source claim（来源待核实）");
+    expect(rendered).not.toContain("**2026-10-11**：Unknown source claim");
   });
   it.each(["zh", "en"] as const)("renders update add_open in %s with localized type and punctuation before citation", (language) => {
     const memberSource = member("render-source", "Verify the reading view");
