@@ -146,7 +146,7 @@ export function serializeTopicPage(page: TopicPage): string {
     ...(page.appliedHash ? [`${NS_FM.topicHash}: ${yamlString(page.appliedHash)}`] : []),
     ...(page.undoSnapshot ? [`${NS_FM.topicUndoSnapshot}: ${yamlString(page.undoSnapshot)}`] : []),
   ].join("\n");
-  const body = ensureSections(page.body).replace(/^---\n[\s\S]*?\n---\n/, "");
+  const body = (page.layout === 2 ? page.body : ensureSections(page.body)).replace(/^---\n[\s\S]*?\n---\n/, "");
   return `---\n${fm}\n---\n\n# ${page.title}\n\n${body.trimStart()}`;
 }
 

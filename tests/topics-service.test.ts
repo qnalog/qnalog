@@ -160,6 +160,9 @@ describe("topics service", () => {
     expect(result.markdown).toContain("Climate policy reform");
     expect(result.markdown).toContain("## Timeline");
     expect(result.markdown).toContain("## Source notes");
+    for (const heading of ["## 概要 / Overview", "## 当前状态 / Current status", "## 分歧与待核实 / Disagreements and verification", "## 未决问题与未完成行动 / Open questions and actions", "## 待整理 / Unsorted"]) {
+      expect(result.markdown).not.toContain(heading);
+    }
     expect(setup.storePort.created).toHaveLength(1);
     expect(setup.activities.completed).toEqual([["topics:create:topic-1"]]);
     expect(setup.activities.failed).toEqual([]);
@@ -173,6 +176,9 @@ describe("topics service", () => {
     const preview = await setup.service.previewRebuild("legacy-topic");
     expect(preview.replacement?.path).toBe("Topics/Legacy.md");
     expect(preview.replacement?.markdown).toContain("qnalog_topic_layout: 2");
+    for (const heading of ["## 概要 / Overview", "## 当前状态 / Current status", "## 分歧与待核实 / Disagreements and verification", "## 未决问题与未完成行动 / Open questions and actions", "## 待整理 / Unsorted"]) {
+      expect(preview.replacement?.markdown).not.toContain(heading);
+    }
     expect(setup.writes).toEqual([]);
     const applied = await setup.service.apply(preview, []);
     expect(parseTopicPage(applied.markdown)?.layout).toBe(2);
@@ -189,6 +195,7 @@ describe("topics service", () => {
     const result = await setup.service.apply(preview, [preview.items[0].id]);
     expect(result.path).toBe("Topics/Climate.md");
     expect(result.markdown).toContain("accepted update");
+    expect(result.markdown).toContain("## 待整理 / Unsorted");
     expect(parseTopicPage(result.markdown)?.members).toEqual(["Notes/a.md", "Notes/b.md"]);
     expect(setup.storePort.created.some(({ path }) => path.includes("topic-history"))).toBe(true);
     expect(setup.activities.completed).toEqual([["topics:update:climate-topic"]]);

@@ -1330,7 +1330,7 @@ ${e.text}
 `)}`}function Rb(i){let e=new Date().toISOString(),t=i.members.map(o=>o.path),n=i.members.map(o=>`[[${o.path.replace(/\.md$/i,"")}|${o.title}]]`),r=zp(Pb.map(o=>`${Cb(o)}
 `).join(`
 `),n);return{id:i.id,title:i.title,tags:[...new Set(i.tags)],members:t,memberLinks:n,excluded:[],basis:i.basis,created:i.created||e,updated:i.updated||e,body:r}}function Mc(i){let e=[`${E.type}: ${br(Tr)}`,`${E.topicId}: ${br(i.id)}`,`${E.topicTags}: ${Fp(i.tags)}`,`${E.topicTagAliases}: ${br(JSON.stringify(i.tagAliases||{}))}`,`${E.topicMembers}: ${Fp(i.memberLinks)}`,`${E.topicExcluded}: ${Fp(i.excluded)}`,`${E.topicBasis}: ${br(i.basis)}`,`${E.topicCreated}: ${br(i.created)}`,`${E.topicUpdated}: ${br(i.updated)}`,...i.layout===2?[`${zs}: 2`,"cssclasses: [qnalog-topic]"]:[],...i.appliedHash?[`${E.topicHash}: ${br(i.appliedHash)}`]:[],...i.undoSnapshot?[`${E.topicUndoSnapshot}: ${br(i.undoSnapshot)}`]:[]].join(`
-`),t=Dp(i.body).replace(/^---\n[\s\S]*?\n---\n/,"");return`---
+`),t=(i.layout===2?i.body:Dp(i.body)).replace(/^---\n[\s\S]*?\n---\n/,"");return`---
 ${e}
 ---
 

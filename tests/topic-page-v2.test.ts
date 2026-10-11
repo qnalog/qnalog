@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTopicPageBlocks, renderTopicPage, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
+import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
 
 const model: TopicPageV2Model = {
   overview: "项目围绕数据结构优化展开。团队已确定先调整存储接口，再补充迁移验证。",
@@ -33,5 +33,25 @@ describe("topic page v2", () => {
     const edited = `${rendered}\n## 我的补充\n\n用户新增段落。\n`;
     expect(parseTopicPageBlocks(edited).some((block) => block.type === "point")).toBe(true);
     expect(edited).toContain("用户新增段落。");
+  });
+
+  it("does not append the legacy empty skeleton when serializing a v2 page", () => {
+    const page = createTopicPage({ id: "topic", title: "Topic", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage(model, members);
+    const markdown = serializeTopicPage(page);
+    expect(parseTopicPage(markdown)?.layout).toBe(2);
+    for (const heading of ["## 概要 / Overview", "## 当前状态 / Current status", "## 分歧与待核实 / Disagreements and verification", "## 未决问题与未完成行动 / Open questions and actions", "## 待整理 / Unsorted"]) {
+      expect(markdown).not.toContain(heading);
+    }
+  });
+
+  it("keeps a user-authored v2 section with a legacy heading", () => {
+    const page = createTopicPage({ id: "topic", title: "Topic", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = `${renderTopicPage(model, members)}\n## 待整理\n\n用户自己补充的内容。`;
+    const markdown = serializeTopicPage(page);
+    expect(markdown).toContain("## 待整理\n\n用户自己补充的内容。");
+    expect(markdown).not.toContain("## 待整理 / Unsorted");
   });
 });

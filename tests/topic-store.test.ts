@@ -39,6 +39,11 @@ const setup = (id = "topic") => {
   port.files.set(`Topics/${id}.md`, markdown);
   return { port, store, path: `Topics/${id}.md`, markdown };
 };
+const expectNoLegacyV2Headings = (markdown: string) => {
+  for (const heading of ["## 概要 / Overview", "## 当前状态 / Current status", "## 分歧与待核实 / Disagreements and verification", "## 未决问题与未完成行动 / Open questions and actions", "## 待整理 / Unsorted"]) {
+    expect(markdown).not.toContain(heading);
+  }
+};
 
 describe("topic store", () => {
   it("snapshots and applies via process read-modify-write, reapplying after an in-flight change", async () => {
@@ -84,7 +89,7 @@ describe("topic store", () => {
     const page = createTopicPage({ id: "v2", title: "V2", tags: [], basis: "overview", members: [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }] });
     page.layout = 2;
     page.body = renderTopicPage(model, [{ path: "Notes/old.md", title: "Old", sourceId: "old", date: "2026-09-27", summary: "The project began storage testing." }]);
-    const original = serializeTopicPage(page);
+    const original = `${serializeTopicPage(page)}\n## 待整理\n\n用户自己补充的内容。`;
     const path = "Topics/V2.md";
     port.files.set(path, original);
     const overviewBlock = parseTopicPageBlocks(original).find((block) => block.type === "overview")!;
@@ -104,6 +109,11 @@ describe("topic store", () => {
     expect(result.markdown).toContain("Run rollback checks.");
     expect(result.markdown).toContain("2026-10-03 · [[Notes/new|New]]");
     expect(result.markdown).toMatch(/\[\^s[\da-f]{4}\]: \[\[Notes\/new\|New\]\]/);
+    expectNoLegacyV2Headings(result.markdown);
+    expect(result.markdown).toContain("## 待整理\n\n用户自己补充的内容。");
+    expect(await store.undoLastUpdate("v2")).toEqual({ restored: true });
+    expect(port.files.get(path)).toBe(changed);
+    expectNoLegacyV2Headings(port.files.get(path) || "");
   });
 
   it("merges unique members and tags, records provenance, trashes source, and never writes source notes", async () => {
