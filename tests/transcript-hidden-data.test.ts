@@ -11,7 +11,7 @@ import {
   replaceTranscriptBlock,
   serializeTranscriptBlock,
 } from "../src/transcript/transcript-markdown";
-import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
+import { ensureTranscriptBlocks, extractTranscriptSegments } from "../src/notes/note-transcript-ledger";
 import { insertBeforeSessionSegmentsEnd } from "../src/notes/note-segment-store";
 import { buildOutlineCoverageMetadata, readCurrentOutlineBlock } from "../src/notes/outline-storage";
 
@@ -246,6 +246,86 @@ describe("transcript hidden-data storage", () => {
       .toEqual(["00:000", "00:010", "00:020"].map((time) => [`[[audio.m4a|${time}]]`]));
   });
 
+  it("keeps a segment with no audio source free of timestamp links", () => {
+    const segment = makeSegment(0, "text-only source");
+    const oldBlock = legacyBlock(segment, "### 段落 1 (00:00–00:01)", segment.text)
+      .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, "").replace(/\n<\/details>$/, "");
+    const input = [
+      "<details>", "<summary>分段原始转写（1 段）</summary>",
+      "### 段落 1 (00:00–00:01)", oldBlock, "</details>",
+    ].join("\n");
+    const normalized = normalizeTranscriptLayout(input);
+    const transcriptDetail = [...normalized.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)]
+      .find((match) => /qnalog-transcript-start/.test(match[1]));
+    expect(transcriptDetail?.[1].match(/\[\[[^\]]+\]\]/g) || []).toHaveLength(0);
+  });
+
+  it.each([1, 3, 6, 30])("keeps one group range around %i transcript segments and reads the full group", (count) => {
+    const segments = Array.from({ length: count }, (_, index) => makeSegment(
+      index,
+      count === 3 && index === 2 ? `${"长段落。".repeat(1100)}收尾。` : `第 ${index + 1} 段。`,
+    ));
+    for (const [index, segment] of segments.entries()) {
+      const record = segment.transcript!;
+      const current = record.revisions.find((revision) => revision.revision === record.currentRevision)!;
+      const utterance = current.utterances[0];
+      if (utterance) {
+        utterance.speakerId = `speaker-${index + 1}`;
+        utterance.speakerName = `发言人${index + 1}`;
+        current.corrections.push({ revision: current.revision, kind: "speaker", from: "说话人", to: utterance.speakerName, utteranceIds: [utterance.id] });
+      }
+    }
+    const parts = segments.map((segment, index) => {
+      const block = legacyBlock(segment, `### 段落 ${index + 1} (00:00–00:10)`, segment.text)
+        .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, "").replace(/\n<\/details>$/, "");
+      return `### 段落 ${index + 1} (00:0${index}0–00:0${index + 1}0) [[audio.m4a|00:0${index}0]]\n${block}`;
+    });
+    const input = [
+      "<details>", `<summary>分段原始转写（${count} 段）</summary>`,
+      "<!-- qnalog-segments-start:group-range -->", "", ...parts.flatMap((part) => [part, ""]),
+      "<!-- qnalog-segments-end:group-range -->", "</details>",
+    ].join("\n");
+
+    const normalized = normalizeTranscriptLayout(input);
+    const blocks = readTranscriptBlocks(normalized);
+    const restoredFromNote = extractTranscriptSegments(normalized);
+    const endMarker = normalized.indexOf("<!-- qnalog-segments-end:group-range -->");
+    const lastTranscriptEnd = normalized.lastIndexOf("<!-- qnalog-transcript-end:");
+    const groupRange = normalized.match(/<!-- qnalog-segments-start:group-range -->([\s\S]*?)<!-- qnalog-segments-end:group-range -->/);
+    expect(blocks).toHaveLength(count);
+    expect(restoredFromNote.map((segment) => segment.text)).toEqual(segments.map((segment) => segment.text));
+    expect(blocks.map((block) => block.visibleBlock)).toEqual(segments.map((segment) => segment.text));
+    expect(blocks.map((block) => block.segment.transcript)).toEqual(segments.map((segment) => segment.transcript));
+    expect(endMarker).toBeGreaterThan(lastTranscriptEnd);
+    expect(groupRange?.[1].match(/qnalog-transcript-start:/g)?.length).toBeGreaterThanOrEqual(count);
+    expect(groupRange?.[1].match(/qnalog-transcript-end:/g)?.length).toBeGreaterThanOrEqual(count);
+    expect(blocks.map((block) => [...block.heading.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link)))
+      .toEqual(segments.map((_, index) => [`[[audio.m4a|00:0${index}0]]`]));
+    expect(normalizeTranscriptLayout(normalized)).toBe(normalized);
+  });
+
+  it("normalizes legacy comments, URI spans and the current layout to the same result", () => {
+    const segments = [makeSegment(0, "第一段。"), makeSegment(1, "第二段。")];
+    const legacyParts = segments.map((segment, index) => {
+      const block = legacyBlock(segment, `### 段落 ${index + 1} (00:00–00:10)`, segment.text)
+        .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, "").replace(/\n<\/details>$/, "");
+      return `### 段落 ${index + 1} (00:00–00:10) [[audio-${index + 1}.m4a|00:00]]\n${block}`;
+    });
+    const legacy = [
+      "<details>", "<summary>分段原始转写（2 段）</summary>", "<!-- qnalog-segments-start:parity -->",
+      "", ...legacyParts.flatMap((part) => [part, ""]), "<!-- qnalog-segments-end:parity -->", "</details>",
+    ].join("\n");
+    const intermediate = legacy.replace(/<!-- qnalog-transcript-data ([\s\S]*?) -->/g, (_whole, payload: string) => {
+      const parsed = JSON.parse(payload) as { transcript: { id: string } };
+      return `<span hidden data-qnalog-transcript-data="${encodeURIComponent(payload)}" data-qnalog-segment="${encodeURIComponent(parsed.transcript.id)}"></span>`;
+    });
+    const canonical = normalizeTranscriptLayout(legacy);
+    const upgradedIntermediate = normalizeTranscriptLayout(intermediate);
+
+    expect(upgradedIntermediate).toBe(canonical);
+    expect(normalizeTranscriptLayout(canonical)).toBe(canonical);
+  });
+
   it("splits the six-segment Herald text scale while keeping every details block bounded", () => {
     const lengths = [274, 871, 1806, 3306, 3463, 2145];
     const segments = lengths.map((length, index) => makeSegment(index, `${"转写。".repeat(Math.floor(length / 3))}${"尾".repeat(length % 3)}`));
@@ -284,6 +364,9 @@ describe("transcript hidden-data storage", () => {
     expect(readTranscriptBlocks(content).map((block) => block.visibleBlock)).toEqual([first.text, next.text]);
     expect(content).toMatch(/\*\*(?:分段原始转写（2 段）|Segmented raw transcript \(2 segments\))\*\*/);
     expect(content).not.toMatch(/<summary>(?:分段原始转写|Segmented raw transcript)/);
+    expect(content.match(/<details\b/g)).toHaveLength(2);
+    expect(content.indexOf("<!-- qnalog-segments-end:append-fixture -->"))
+      .toBeGreaterThan(content.lastIndexOf("<!-- qnalog-transcript-end:"));
     assertDetailsBounded(content);
   });
 

@@ -169,16 +169,21 @@ function splitLegacyTranscriptDetails(markdown: string): string {
     .map((match) => match[0]);
   const startMarker = segmentMarkers.find((marker) => new RegExp(nsRe("segments-start"), "i").test(marker));
   const endMarker = segmentMarkers.find((marker) => new RegExp(nsRe("segments-end"), "i").test(marker));
-  const serialized = blocks.map((block, index) => {
-    const markers = [
-      ...(index === 0 && startMarker ? [startMarker] : []),
-      ...(index === blocks.length - 1 && endMarker ? [endMarker] : []),
-    ];
-    const heading = [block.heading, ...markers].join("\n");
-    return serializeTranscriptBlock(block.segment, heading, block.visibleBlock);
-  });
+  const serialized = blocks.map((block) => serializeTranscriptBlock(block.segment, block.heading, block.visibleBlock));
+  let serializedGroup = serialized.join("\n");
+  if (startMarker) {
+    const summaryEnd = serializedGroup.indexOf("</summary>");
+    if (summaryEnd >= 0) {
+      const insertion = summaryEnd + "</summary>".length;
+      serializedGroup = serializedGroup.slice(0, insertion) + `\n${startMarker}` + serializedGroup.slice(insertion);
+    }
+  }
+  if (endMarker) {
+    const lastDetailsEnd = serializedGroup.lastIndexOf("</details>");
+    if (lastDetailsEnd >= 0) serializedGroup = serializedGroup.slice(0, lastDetailsEnd) + `${endMarker}\n` + serializedGroup.slice(lastDetailsEnd);
+  }
   const title = `**${labelText("segmentedRawTranscript", blocks.length)}**`;
-  const replacement = `${title}\n${serialized.join("\n")}`;
+  const replacement = `${title}\n${serializedGroup}`;
   return text.slice(0, start) + replacement + text.slice(end);
 }
 
