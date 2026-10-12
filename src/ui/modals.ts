@@ -2824,7 +2824,10 @@ export class TextCorrectionModal extends obsidian.Modal {
         text: `${i18nT("Will replace ")}${this.result.replacements}${i18nT(" occurrence(s)")}`,
       });
       const list = this.previewEl.createEl("ul", { cls: "qnalog-correction-lines" });
-      for (const line of this.result.lines.slice(0, 8)) list.createEl("li", { text: `${i18nT("Line ")}${line}` });
+      const displayedLines = this.result.lines.slice(0, 8);
+      const displayedCount = displayedLines.length + (this.result.lines.length > 8 ? 1 : 0);
+      list.style.gridTemplateRows = `repeat(${Math.ceil(displayedCount / 2)}, auto)`;
+      for (const line of displayedLines) list.createEl("li", { text: `${i18nT("Line ")}${line}` });
       if (this.result.lines.length > 8) {
         list.createEl("li", { text: `…${i18nT("and more")}` });
       }
