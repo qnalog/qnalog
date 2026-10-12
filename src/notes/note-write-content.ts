@@ -4,6 +4,7 @@ import { labelText } from "../shared/note-labels";
 import { splitLeadingFrontmatter } from "./note-document";
 import { splitOutSedimentBlock } from "../sediment/text-blocks";
 import { normalizeTranscriptDataPlacement } from "../transcript/transcript-markdown";
+import { wrapSessionTranscriptBlocks } from "./note-transcript-materials";
 
 export function buildEmptyLlmOutputFallback(): string {
   return "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
@@ -99,12 +100,8 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
     input.retainAudio ? "" : null,
     input.retainAudio ? (input.masterAudioBlock ? null : "</details>") : null,
     input.retainAudio ? "" : null,
-    input.textImport ? null : "<details>",
-    input.textImport ? null : `<summary>${labelText("segmentedRawTranscript", input.segmentCount)}</summary>`,
-    input.textImport ? null : nsMarker("segments-start", input.sessionId),
-    input.textImport ? null : input.rawBlocks,
-    input.textImport ? null : nsMarker("segments-end", input.sessionId),
-    input.textImport ? null : "</details>",
+    input.textImport ? null : `**${labelText("segmentedRawTranscript", input.segmentCount)}**`,
+    input.textImport ? null : wrapSessionTranscriptBlocks(input.rawBlocks, input.sessionId),
     input.textImport ? null : "",
     `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", input.sessionId)}</details>`,
     "",

@@ -176,7 +176,7 @@ export function getDurationMs(markdown: unknown): number {
   const text = stringifyAudioValue(markdown || "");
   let maxMs = 0;
   let sawDuration = false;
-  const segmentHeadingRe = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)/gm;
+  const segmentHeadingRe = /(?:^###\s+|<summary>)(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)/gm;
   let match;
   while ((match = segmentHeadingRe.exec(text))) {
     sawDuration = true;

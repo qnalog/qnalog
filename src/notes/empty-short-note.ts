@@ -2,6 +2,7 @@ import { collectAudioRefs, getDurationMs } from "./audio-refs";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 import { QNALOG_EMPTY_SHORT_LIMIT_MS } from "../shared/limits";
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
+import { labelPattern } from "../shared/note-labels";
 
 export interface EmptyShortNoteCandidate<F> {
   file: F;
@@ -47,6 +48,7 @@ export function getMeaningfulRemainder(markdown: unknown): string {
     .replace(/^>\s*(?:开始|时间|合并自|Time)[：:].*$/gm, "")
     .replace(/^>\s*.*(?:时长|模式|分段|模型|Duration|Mode|Segments|Model).*$/gm, "")
     .replace(/^\s*---\s*$/gm, "");
+  text = text.replace(new RegExp(`^\\*\\*(?:${labelPattern("segmentedRawTranscript").source})\\*\\*$`, "gm"), "");
   text = stripEmptyPlaceholders(text);
   return text.replace(/^\s*$/gm, "").trim();
 }
