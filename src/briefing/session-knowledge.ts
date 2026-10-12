@@ -80,6 +80,26 @@ export function readSelectedSessionKnowledge(markdown: string): SessionKnowledge
   return active ? readSessionKnowledge(active.body) : readSessionKnowledge(markdown);
 }
 
+/** Keep the snapshot selected by the established reader and remove older protocol copies. */
+export function normalizeSessionKnowledgeMarkers(markdown: string): string {
+  const text = String(markdown || "");
+  const pattern = knowledgeCommentPattern(true);
+  const matches = [...text.matchAll(pattern)];
+  if (matches.length <= 1) return text;
+  const selected = readSelectedSessionKnowledge(text);
+  const selectedIndex = selected
+    ? matches.findIndex((match) => readSessionKnowledge(match[0])?.id === selected.id)
+    : 0;
+  const keep = selectedIndex >= 0 ? selectedIndex : 0;
+  let result = text;
+  for (const [index, match] of [...matches.entries()].reverse()) {
+    if (index === keep) continue;
+    const start = match.index || 0;
+    result = result.slice(0, start) + result.slice(start + match[0].length);
+  }
+  return result;
+}
+
 /** Replace the snapshot for the selected display version without moving raw source blocks. */
 export function upsertSelectedSessionKnowledge(markdown: string, knowledge: SessionKnowledge): string {
   const text = String(markdown || "");

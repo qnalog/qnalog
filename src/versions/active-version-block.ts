@@ -8,6 +8,7 @@ import {
   splitLeadingFrontmatter,
 } from "../notes/note-document";
 import { sanitizeActiveVersionBody } from "./version-content";
+import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
 
 export interface ActiveVersionMeta {
   label?: unknown;
@@ -50,7 +51,7 @@ export function replaceActiveVersionBlock(
   const replaced = activeRange
     ? replaceLegacyRangePreservingRawTail(text, activeRange, block)
     : replaceExistingActiveVersionBlock(text, block);
-  if (replaced !== null) return normalizeRawMaterialScaffold(preserveSessionMetadata(text, replaced));
+  if (replaced !== null) return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold(preserveSessionMetadata(text, replaced)));
   // First adoption of the version model compacts the mother note:
   // keep only frontmatter, H1, active display block, and raw/source metadata.
   // The previous rendered minutes/clean text is already persisted in the version store.
@@ -61,17 +62,17 @@ export function replaceActiveVersionBlock(
   const rawTail = extracted.tail ? `\n\n---\n\n${extracted.tail.trimEnd()}\n` : "\n";
   if (titleMatch) {
     const titleBlock = titleMatch[0].trimEnd();
-    return normalizeRawMaterialScaffold([
+    return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold([
       parts.frontmatter ? parts.frontmatter.trimEnd() : "",
       titleBlock,
       "",
       block,
-    ].filter(Boolean).join("\n") + rawTail);
+    ].filter(Boolean).join("\n") + rawTail));
   }
-  return normalizeRawMaterialScaffold([
+  return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold([
     parts.frontmatter ? parts.frontmatter.trimEnd() : "",
     block,
-  ].filter(Boolean).join("\n") + rawTail);
+  ].filter(Boolean).join("\n") + rawTail));
 }
 
 /** Collapse repeated raw-material scaffolds left by older active-version boundaries. */
