@@ -51,7 +51,10 @@ export function replaceActiveVersionBlock(
   const replaced = activeRange
     ? replaceLegacyRangePreservingRawTail(text, activeRange, block)
     : replaceExistingActiveVersionBlock(text, block);
-  if (replaced !== null) return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold(preserveSessionMetadata(text, replaced)));
+  if (replaced !== null) {
+    const preserved = preserveSessionMetadata(text, replaced);
+    return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold(preserved));
+  }
   // First adoption of the version model compacts the mother note:
   // keep only frontmatter, H1, active display block, and raw/source metadata.
   // The previous rendered minutes/clean text is already persisted in the version store.
@@ -62,17 +65,19 @@ export function replaceActiveVersionBlock(
   const rawTail = extracted.tail ? `\n\n---\n\n${extracted.tail.trimEnd()}\n` : "\n";
   if (titleMatch) {
     const titleBlock = titleMatch[0].trimEnd();
-    return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold([
+    const adopted = normalizeRawMaterialScaffold([
       parts.frontmatter ? parts.frontmatter.trimEnd() : "",
       titleBlock,
       "",
       block,
-    ].filter(Boolean).join("\n") + rawTail));
+    ].filter(Boolean).join("\n") + rawTail);
+    return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold(preserveSessionMetadata(text, adopted)));
   }
-  return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold([
+  const adopted = normalizeRawMaterialScaffold([
     parts.frontmatter ? parts.frontmatter.trimEnd() : "",
     block,
-  ].filter(Boolean).join("\n") + rawTail));
+  ].filter(Boolean).join("\n") + rawTail);
+  return normalizeSessionKnowledgeMarkers(normalizeRawMaterialScaffold(preserveSessionMetadata(text, adopted)));
 }
 
 /** Collapse repeated raw-material scaffolds left by older active-version boundaries. */
@@ -102,8 +107,21 @@ function normalizeRawMaterialScaffold(markdown: string): string {
   const firstHeading = /^##\s+(?:原始材料|Original material)\s*$/m.exec(text);
   const activeEnd = endPattern.exec(text);
   if (firstHeading && activeEnd && activeEnd.index < firstHeading.index) {
-    const body = text.slice(0, activeEnd.index + activeEnd[0].length).replace(/\s+$/, "");
-    text = `${body}\n\n---\n\n${text.slice(firstHeading.index)}`;
+    const betweenRaw = text.slice(activeEnd.index + activeEnd[0].length, firstHeading.index);
+    const between = betweenRaw
+      .replace(/^\s*---\s*(?:\r?\n|$)/, "")
+      .replace(/(?:\r?\n)\s*---\s*$/, "")
+      .trim();
+    const hasRawMaterial = /<details\b|<!--|<span\s+hidden\b/i.test(between);
+    if (between && hasRawMaterial) {
+      const body = text.slice(0, activeEnd.index + activeEnd[0].length).replace(/\s+$/, "");
+      const rawAfterHeading = text.slice(firstHeading.index + firstHeading[0].length)
+        .replace(/^\s*---\s*(?:\r?\n|$)/, "")
+        .trim();
+      const rawContent = [between, rawAfterHeading].filter(Boolean).join("\n\n");
+      const headingText = firstHeading[0];
+      text = `${body}\n\n---\n\n${headingText}${rawContent ? `\n\n${rawContent}` : ""}`;
+    }
   }
   return text.replace(/\n{4,}/g, "\n\n\n");
 }

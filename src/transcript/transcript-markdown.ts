@@ -145,7 +145,7 @@ function matchingDetailsEnd(text: string, start: number): number {
 
 /** Convert the historical single transcript details wrapper to one short details per segment. */
 function splitLegacyTranscriptDetails(markdown: string): string {
-  let text = String(markdown || "");
+  const text = String(markdown || "");
   const wrapperPattern = /<details\b[^>]*>\s*<summary>([^<]*(?:分段原始转写|Segmented raw transcript)[^<]*)<\/summary>/gi;
   const wrapper = wrapperPattern.exec(text);
   if (!wrapper) return text;
@@ -155,24 +155,31 @@ function splitLegacyTranscriptDetails(markdown: string): string {
   const blocks = readTranscriptBlocks(text).filter((block) => block.start >= start && block.end <= end);
   if (!blocks.length) return text;
   const wrapperText = text.slice(start, end);
-  const nestedSummaries = [...wrapperText.matchAll(/<summary>/gi)].length - 1;
-  const legacyHeadings = [...wrapperText.matchAll(/^###\s+(?:段落|Segment)\s+\d+/gim)].length;
-  if (nestedSummaries + legacyHeadings !== blocks.length) return text;
-  for (const block of blocks.slice().reverse()) {
-    const segment = block.segment;
-    text = text.slice(0, block.start) + serializeTranscriptBlock(segment, block.heading, block.visibleBlock) + text.slice(block.end);
-  }
-  const updatedStart = text.indexOf("<details", start);
-  const updatedEnd = matchingDetailsEnd(text, updatedStart);
-  if (updatedStart < 0 || updatedEnd < 0) return text;
-  const updatedWrapperPattern = /<details\b[^>]*>\s*<summary>([^<]*(?:分段原始转写|Segmented raw transcript)[^<]*)<\/summary>/i;
-  const updatedHeader = updatedWrapperPattern.exec(text.slice(updatedStart, updatedEnd));
-  if (!updatedHeader) return text;
-  const headerEnd = updatedStart + updatedHeader.index + updatedHeader[0].length;
-  const innerEnd = updatedEnd - "</details>".length;
-  const inner = text.slice(headerEnd, innerEnd).replace(/^\s*\n/, "").replace(/\s*$/, "");
+  const legacyHeadingNumbers = [...wrapperText.matchAll(/^###\s+(?:段落|Segment)\s+(\d+)/gim)]
+    .map((match) => Number(match[1]));
+  const readableSegmentNumbers = new Set(blocks.map((block) => block.segment.index + 1));
+  // A wrapper can contain both upgraded ledger blocks and their stale heading lines.
+  // Keep untracked legacy segments intact when a heading does not match a readable ledger.
+  if (legacyHeadingNumbers.some((number) => !readableSegmentNumbers.has(number))) return text;
+
+  // Replace the whole historical wrapper. Replacing only transcript marker ranges leaves
+  // old headings and separators behind. Accept partially rewritten wrappers too: a previous
+  // edit may already have replaced one segment while leaving the outer legacy shell intact.
+  const segmentMarkers = [...wrapperText.matchAll(new RegExp(`<!--\\s*(${nsRe("segments-start")}|${nsRe("segments-end")})(?::[^>]*)?\\s*-->`, "gi"))]
+    .map((match) => match[0]);
+  const startMarker = segmentMarkers.find((marker) => new RegExp(nsRe("segments-start"), "i").test(marker));
+  const endMarker = segmentMarkers.find((marker) => new RegExp(nsRe("segments-end"), "i").test(marker));
+  const serialized = blocks.map((block, index) => {
+    const markers = [
+      ...(index === 0 && startMarker ? [startMarker] : []),
+      ...(index === blocks.length - 1 && endMarker ? [endMarker] : []),
+    ];
+    const heading = [block.heading, ...markers].join("\n");
+    return serializeTranscriptBlock(block.segment, heading, block.visibleBlock);
+  });
   const title = `**${labelText("segmentedRawTranscript", blocks.length)}**`;
-  return text.slice(0, updatedStart) + `${title}\n${inner ? `\n${inner}\n` : "\n"}` + text.slice(updatedEnd);
+  const replacement = `${title}\n${serialized.join("\n")}`;
+  return text.slice(0, start) + replacement + text.slice(end);
 }
 
 function normalizeRealtimeOutlineDetails(markdown: string): string {
@@ -187,6 +194,52 @@ function normalizeRealtimeOutlineDetails(markdown: string): string {
     const payload = encodeData(coverage[1].trim());
     return `${details}\n<span hidden data-${NS_TAG}-realtime-outline-source-coverage="${payload}"></span>`;
   });
+}
+
+function normalizeIndexDataDetails(markdown: string): string {
+  const source = String(markdown || "");
+  const indexDetails = /<details>\s*<summary>[^<]*(?:索引数据|Index data|会话数据|QnALog session data)[^<]*<\/summary>([\s\S]*?)<\/details>/gi;
+  const detailsMatches = [...source.matchAll(indexDetails)];
+  const startMarker = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i").exec(source);
+  const endMarkerRe = new RegExp(`<!--\\s*${nsRe("note-index-end")}\\s*-->`, "ig");
+  if (startMarker) endMarkerRe.lastIndex = startMarker.index + startMarker[0].length;
+  const endMarker = startMarker ? endMarkerRe.exec(source) : null;
+  const markerBody = startMarker && endMarker
+    ? source.slice(startMarker.index + startMarker[0].length, endMarker.index)
+    : "";
+  const detailsBodies = detailsMatches.map((match) => match[1]
+    .replace(new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->|<!--\\s*${nsRe("note-index-end")}\\s*-->`, "gi"), "")
+    .replace(new RegExp(`<!--\\s*(?:${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`, "gi"), "")
+    .trim());
+  const markerPayload = markerBody && !/<details\b/i.test(markerBody)
+    ? markerBody.replace(new RegExp(`<!--\\s*(?:${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`, "gi"), "").trim()
+    : "";
+  const indexBody = detailsBodies.find(Boolean) || markerPayload;
+  if (!detailsMatches.length && !startMarker && !endMarker) return source;
+  const machineCommentPattern = new RegExp(
+    `<!--\\s*(?:${nsRe("note-index")}\\s*|${nsRe("note-index-end")}\\s*|${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`,
+    "gi",
+  );
+  const comments = [...source.matchAll(machineCommentPattern)].map(([comment]) => comment);
+  const commentSet = [...new Set(comments)];
+  const hasIndexDetails = detailsMatches.length > 0;
+  if (!hasIndexDetails && !commentSet.length) return source;
+
+  let text = source;
+  text = text.replace(indexDetails, "");
+  text = text.replace(machineCommentPattern, "");
+  if (!indexBody && !commentSet.length) return text.replace(/\n{3,}/g, "\n\n").trimEnd();
+
+  const bodyLines = indexBody.split(/\r?\n/).filter((line) => line.trim());
+  const noteIndexStart = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i");
+  const noteIndexEnd = new RegExp(`<!--\\s*${nsRe("note-index-end")}\\s*-->`, "i");
+  const outputLines = [...bodyLines];
+  if (bodyLines.length && !noteIndexStart.test(indexBody)) outputLines.unshift(`<!-- ${NS_TAG}-note-index -->`);
+  if (bodyLines.length && !noteIndexEnd.test(indexBody)) outputLines.push(`<!-- ${NS_TAG}-note-index-end -->`);
+  outputLines.push(...commentSet.filter((comment) => !new RegExp(`<!--\\s*${nsRe("note-index")}(?:-end)?\\s*-->`, "i").test(comment)));
+  const rawHeading = /^##\s+(?:原始材料|Original material)\s*$/m;
+  if (!rawHeading.test(text)) text = `${text.trimEnd()}\n\n---\n\n## ${labelText("originalMaterial")}`;
+  return `${text.replace(/\s+$/, "")}\n\n<details>\n<summary>${labelText("indexData")}</summary>\n${outputLines.join("\n")}\n</details>\n`;
 }
 
 function splitFragmentId(value: string): { id: string; fragment: number } {
@@ -423,7 +476,7 @@ export function normalizeTranscriptDataPlacement(markdown: string): string {
 
 /** Normalize legacy grouped transcript markup and place its data outside the details blocks. */
 export function normalizeTranscriptLayout(markdown: string): string {
-  return normalizeRealtimeOutlineDetails(normalizeTranscriptDataPlacement(splitLegacyTranscriptDetails(String(markdown || ""))));
+  return normalizeIndexDataDetails(normalizeRealtimeOutlineDetails(normalizeTranscriptDataPlacement(splitLegacyTranscriptDetails(String(markdown || "")))));
 }
 
 function validSegment(value: unknown): value is Omit<Segment, "transcript"> {
