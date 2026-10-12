@@ -773,6 +773,7 @@ async function main() {
       if (!sourceYaml.qnalog_time || !sourceYaml.qnalog_mode) {
         throw new Error("source note outer content properties are missing");
       }
+      let versionStep = "ensure original snapshot";
       try {
         const originalPath = await plugin.versions.ensureOriginalVersionForSource(noteFile);
         if (!originalPath || !(await app.vault.adapter.exists(originalPath))) {
@@ -786,6 +787,7 @@ async function main() {
         const originalManifestPath = `${originalPath.slice(0, originalPath.lastIndexOf("/"))}/manifest.json`;
         const manifestBeforeSave = JSON.parse(await app.vault.adapter.read(originalManifestPath));
         const activeVersionBeforeSave = manifestBeforeSave.activeVersionId ?? null;
+        versionStep = "save inactive version";
         const savedVersion = await plugin.versions.saveVersion(noteFile, postContinuation, [], {
           kind: "minutes",
           label: "Outer document smoke",
@@ -802,12 +804,16 @@ async function main() {
         if (!cachedContent.includes("Versioned minutes body.") || !cachedContent.includes("qnalog_mode: synthesis")) {
           throw new Error("saved version cache did not retain its body and content properties");
         }
+        versionStep = "activate cached version";
         await plugin.versions.switchVersion(cachePath, NOTE_PATH);
         const switched = noteFile._content || "";
+        const originalSessionMarkers = postContinuation.match(/<!--\s*qnalog-session:[^>]*-->/g) || [];
+        const switchedSessionMarkers = switched.match(/<!--\s*qnalog-session:[^>]*-->/g) || [];
+        if (JSON.stringify(switchedSessionMarkers) !== JSON.stringify(originalSessionMarkers)) failures.push("切换版本未保留会话标记");
         if (!switched.includes("公式 $$E=mc^2$$ 与 $&")) failures.push("切换版本改写了公式或字面替换符");
         if (!switched.includes("Versioned minutes body.")) failures.push("切换版本后母本没有显示缓存正文");
-        if ((switched.match(/qnalog-active-version-start/g) || []).length !== 1) failures.push("切换版本后活动版本块数量不是一");
-        if ((switched.match(/qnalog-active-version-end/g) || []).length !== 1) failures.push("切换版本后活动版本结束标记数量不是一");
+        if ((switched.match(/data-qnalog=["']active-version-start["']|<!-- qnalog-active-version-start/g) || []).length !== 1) failures.push("切换版本后活动版本块数量不是一");
+        if ((switched.match(/data-qnalog=["']active-version-end["']|<!-- qnalog-active-version-end/g) || []).length !== 1) failures.push("切换版本后活动版本结束标记数量不是一");
         const outerYaml = parseOuterYaml(switched);
         if (outerYaml.qnalog_mode !== "synthesis" || !outerYaml.qnalog_time) {
           failures.push("切换版本未更新母本内容属性");
@@ -825,10 +831,11 @@ async function main() {
         const activeManifest = JSON.parse(await app.vault.adapter.read(`${savedVersion.folder}/manifest.json`));
         if (activeManifest.activeVersionId !== savedVersion.meta.id) failures.push("切换版本后清单活动 ID 不匹配");
 
+        versionStep = "restore original snapshot";
         await plugin.versions.switchVersion(originalPath, NOTE_PATH);
         const restored = noteFile._content || "";
         const restoredYaml = parseOuterYaml(restored);
-        const restoredActiveBlock = restored.match(/<!-- qnalog-active-version-start -->([\s\S]*?)<!-- qnalog-active-version-end -->/)?.[1] || "";
+        const restoredActiveBlock = restored.match(/(?:<span\s+data-qnalog=["']active-version-start["']\s*><\/span>|<!-- qnalog-active-version-start -->)([\s\S]*?)(?:<span\s+data-qnalog=["']active-version-end["']\s*><\/span>|<!-- qnalog-active-version-end -->)/i)?.[1] || "";
         if (!restored.includes("Original snapshot smoke body.") || !/议题[\s\S]*结论/.test(restored)
           || restoredActiveBlock.includes("Versioned minutes body.")) {
           failures.push("恢复原稿未还原固定正文、模型正文或原稿活动块");
@@ -850,7 +857,7 @@ async function main() {
         const originalMeta = restoredManifest.versions.find((record) => record.fileName === originalFileName && record.kind === "source-original");
         if (!originalMeta || restoredManifest.activeVersionId !== originalMeta.id) failures.push("恢复原稿后清单活动 ID 不匹配");
       } catch (error) {
-        failures.push(`版本缓存切换与原稿恢复失败：${(error && error.message) || error}`);
+        failures.push(`版本缓存切换与原稿恢复失败（${versionStep}）：${(error && error.message) || error}`);
       }
     } catch (error) {
       failures.push(`续录收尾到目标笔记合并失败：${(error && error.message) || error}`);

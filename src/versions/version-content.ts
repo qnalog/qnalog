@@ -1,6 +1,5 @@
 import { NS_FM, NS_TAG, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
-import { findRawMaterialInsertionOffset, splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
-import { QNALOG_ACTIVE_VERSION_END } from "../shared/limits";
+import { findActiveVersionBlock, findRawMaterialInsertionOffset, splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
 import { labelText } from "../shared/note-labels";
 
 export function parseVersionFrontmatter(
@@ -139,10 +138,10 @@ export function foldRawTranscriptSection(markdown: string): string {
   const text = String(markdown || "");
   // 守卫与计数都必须中英双语命中：英文笔记缺守卫会重复折叠插入。
   if (!text.trim() || /^##\s+(?:📁\s*)?(?:原始材料|Original material)\s*$/m.test(text)) return text;
-  const endIdx = text.indexOf(QNALOG_ACTIVE_VERSION_END);
-  if (endIdx < 0) return text;
-  const head = text.slice(0, endIdx + QNALOG_ACTIVE_VERSION_END.length);
-  let tail = text.slice(endIdx + QNALOG_ACTIVE_VERSION_END.length);
+  const activeBlock = findActiveVersionBlock(text);
+  if (!activeBlock) return text;
+  const head = text.slice(0, activeBlock.end);
+  let tail = text.slice(activeBlock.end);
   if (!tail.trim()) return text;
   if (!/<summary>[^<]*(?:分段原始转写|Segmented raw transcript)/.test(tail)) {
     tail = tail.replace(NS_SEGMENTS_BLOCK_RE, (block) => {

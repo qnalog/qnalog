@@ -174,14 +174,12 @@ export function findActiveVersionBlock(markdown: string): ActiveVersionBlockRang
   const match = NS_ACTIVE_VERSION_BODY_RE.exec(text);
   if (!match) return null;
   const start = match.index;
-  const relativeBodyStart = match[0].indexOf(match[1], match[0].indexOf("-->") + 3);
-  const bodyStart = start + relativeBodyStart;
   return {
     start,
     end: start + match[0].length,
-    bodyStart,
-    bodyEnd: bodyStart + match[1].length,
-    body: match[1],
+    bodyStart: start + match[1].length,
+    bodyEnd: start + match[1].length + match[2].length,
+    body: match[2],
   };
 }
 
@@ -257,6 +255,7 @@ export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts 
   };
 
   const detailsPatterns: RegExp[] = [
+    /<details>\s*\n?<summary>[^<\n]*(?:索引数据|Index data)[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*QnALog session data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*QnALog merge data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:录音信息|Recording info)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,

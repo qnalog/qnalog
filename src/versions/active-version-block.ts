@@ -1,7 +1,9 @@
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../shared/limits";
 import { labelText } from "../shared/note-labels";
+import { NS_TAG, nsRe } from "../shared/namespace";
 import {
   extractAllRawBlocksFromText,
+  findActiveVersionBlock,
   replaceExistingActiveVersionBlock,
   splitLeadingFrontmatter,
 } from "../notes/note-document";
@@ -25,12 +27,11 @@ export function buildActiveVersionBlock(versionMeta: ActiveVersionMeta | null | 
   // label 已含模式前缀与整理偏好，不再拼内部 mode 键（monologue 这类键直接见了用户）。
   // 折叠默认收起：版本卡是元数据，正文摘要应当先被看到。
   const metaLines = [
-    `> [!info]- ${labelText("currentDisplayedVersionLabel")}${label}`,
+    `> [!info]- ${labelText("currentDisplayedVersionLabel")}${label} ${QNALOG_ACTIVE_VERSION_START}`,
     created ? `> ${labelText("versionGeneratedAtLabel")}${created}` : "",
     sourceHash ? `> ${labelText("sourceTranscriptFingerprintLabel")}${sourceHash}` : "",
   ].filter(Boolean).join("\n");
   return [
-    QNALOG_ACTIVE_VERSION_START,
     metaLines,
     "",
     sanitizeActiveVersionBody(body),
@@ -45,8 +46,11 @@ export function replaceActiveVersionBlock(
 ): string {
   const text = String(markdown || "");
   const block = buildActiveVersionBlock(versionMeta, body);
-  const replaced = replaceExistingActiveVersionBlock(text, block);
-  if (replaced !== null) return replaced;
+  const activeRange = findActiveVersionBlock(text);
+  const replaced = activeRange
+    ? replaceLegacyRangePreservingRawTail(text, activeRange, block)
+    : replaceExistingActiveVersionBlock(text, block);
+  if (replaced !== null) return preserveSessionMetadata(text, replaced);
   // First adoption of the version model compacts the mother note:
   // keep only frontmatter, H1, active display block, and raw/source metadata.
   // The previous rendered minutes/clean text is already persisted in the version store.
@@ -68,4 +72,53 @@ export function replaceActiveVersionBlock(
     parts.frontmatter ? parts.frontmatter.trimEnd() : "",
     block,
   ].filter(Boolean).join("\n") + rawTail;
+}
+
+function preserveSessionMetadata(previous: string, next: string): string {
+  const markerRe = new RegExp(
+    `<!--\\s*(?:${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`, "gi",
+  );
+  const missing = [...previous.matchAll(markerRe)].map((match) => match[0]).filter((marker) => !next.includes(marker));
+  if (!missing.length) return next;
+  const indexBlockRe = /<details>\s*<summary>[^<]*(?:索引数据|Index data)[^<]*<\/summary>([\s\S]*?)<\/details>/i;
+  const indexBlock = indexBlockRe.exec(next);
+  if (indexBlock) {
+    const additions = missing.filter((marker) => !indexBlock[1].includes(marker));
+    if (!additions.length) return next;
+    const body = `${indexBlock[1].trimEnd()}\n${additions.join("\n")}`;
+    return next.slice(0, indexBlock.index) + indexBlock[0].replace(indexBlock[1], body) + next.slice(indexBlock.index + indexBlock[0].length);
+  }
+  const rawHeadingRe = /^##\s+(?:原始材料|Original material)\s*$/m;
+  const tail = `<details>\n<summary>${labelText("indexData")}</summary>\n${missing.join("\n")}\n</details>`;
+  return rawHeadingRe.test(next)
+    ? `${next.trimEnd()}\n\n${tail}\n`
+    : `${next.trimEnd()}\n\n---\n\n## ${labelText("originalMaterial")}\n\n${tail}\n`;
+}
+
+function replaceLegacyRangePreservingRawTail(
+  text: string,
+  activeRange: NonNullable<ReturnType<typeof findActiveVersionBlock>>,
+  block: string,
+): string {
+  const oldRange = text.slice(activeRange.start, activeRange.end);
+  const rawStart = oldRange.search(/\n---\s*\n+##\s+(?:原始材料|Original material)\s*\n/i);
+  if (rawStart < 0) {
+    const extracted = extractAllRawBlocksFromText(oldRange);
+    const sessionMetadata = oldRange.match(new RegExp(
+      `<!--\\s*(?:${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`, "gi",
+    )) || [];
+    const retained = [...new Set([...extracted.tail.matchAll(/<!--[\\s\\S]*?-->/g)].map((match) => match[0]))];
+    const looseMetadata = sessionMetadata.filter((marker) => !retained.some((item) => item.includes(marker)));
+    const metadataBlock = looseMetadata.length
+      ? `<details>\n<summary>${labelText("indexData")}</summary>\n${looseMetadata.join("\n")}\n</details>`
+      : "";
+    const contents = [extracted.tail, metadataBlock].filter(Boolean).join("\n");
+    if (!contents) return replaceExistingActiveVersionBlock(text, block) || text;
+    const rawTail = `\n\n---\n\n## ${labelText("originalMaterial")}\n\n${contents}\n`;
+    return `${text.slice(0, activeRange.start)}${block}${rawTail}${text.slice(activeRange.end)}`;
+  }
+  const rawTail = oldRange.slice(rawStart)
+    .replace(new RegExp(`(?:<span\\s+data-${NS_TAG}=["']active-version-end["']\\s*><\\/span>|<!--\\s*${nsRe("active-version-end")}\\s*-->)[\\s\\S]*$`, "i"), "")
+    .replace(/\s+$/, "\n");
+  return `${text.slice(0, activeRange.start)}${block}${rawTail}${text.slice(activeRange.end)}`;
 }

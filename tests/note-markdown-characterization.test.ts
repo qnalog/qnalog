@@ -347,6 +347,8 @@ describe("版本块构建与替换", () => {
       expect(english).toContain("中文正文 stays unchanged.");
       expect(count(english, START)).toBe(1);
       expect(count(english, END)).toBe(1);
+      expect(english).toContain(`> [!info]- Currently displayed version: Synthesis minutes ${START}`);
+      expect(english).not.toContain("<!-- qnalog-active-version-");
       expect(buildActiveVersionBlock({ label: "旧中文版本" }, "正文")).toContain(
         "> [!info]- Currently displayed version: 旧中文版本",
       );
@@ -414,6 +416,46 @@ describe("版本块构建与替换", () => {
       setActiveUiLanguage(originalLanguage);
     }
   });
+
+  it("moves raw materials out of a legacy active-version range without losing markers", () => {
+    const legacy = [
+      "# Synthetic note",
+      "<!-- qnalog-active-version-start -->",
+      "> [!info]- 当前显示版本：旧版本",
+      "",
+      "旧正文。",
+      "",
+      "---",
+      "",
+      "## 原始材料",
+      "<details><summary>索引数据</summary>",
+      "<!-- qnalog-session:safe-fixture -->",
+      "</details>",
+      "<!-- qnalog-active-version-end -->",
+      "",
+    ].join("\n");
+    const rewritten = replaceActiveVersionBlock(legacy, { label: "新版本" }, "新正文。");
+    const range = findActiveVersionBlock(rewritten)!;
+    expect(rewritten.slice(range.start, range.end)).not.toContain("## 原始材料");
+    expect(rewritten.slice(range.end)).toContain("## 原始材料");
+    expect(rewritten.slice(range.end)).toContain("qnalog-session:safe-fixture");
+    expect(rewritten.match(/qnalog-active-version-end/g)).toBeNull();
+    expect(rewritten.match(/data-qnalog="active-version-end"/g)).toHaveLength(1);
+  });
+
+  it("retains inline session markers when a legacy active range has no raw-material heading", () => {
+    const legacy = [
+      "# Synthetic note",
+      "<!-- qnalog-active-version-start -->",
+      "Visible body.",
+      "<details><summary>QnALog session data</summary><!-- qnalog-session:safe-fixture --></details>",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    const rewritten = replaceActiveVersionBlock(legacy, { label: "New" }, "Updated body.");
+    expect(rewritten).toContain("qnalog-session:safe-fixture");
+    expect(rewritten.indexOf("qnalog-session:safe-fixture")).toBeGreaterThan(rewritten.indexOf("## 原始材料"));
+    expect(rewritten.match(/data-qnalog="active-version-end"/g)).toHaveLength(1);
+  });
 });
 
 describe("session details ranges", () => {
@@ -451,6 +493,15 @@ describe("活动版本范围读取", () => {
     expect(findActiveVersionBlock("<!-- qnalog-active-version-start -->unfinished")).toBeNull();
     expect(findActiveVersionBlock(text)).toEqual(range);
     expect(findActiveVersionBlock(text)).toEqual(range);
+  });
+
+  it("reads a new inline-element range and legacy comment range with exact boundaries", () => {
+    const current = buildActiveVersionBlock({ label: "Current" }, "body");
+    const range = findActiveVersionBlock(current)!;
+    expect(current.slice(range.start, range.end)).toBe(current);
+    expect(range.body.trim()).toBe("body");
+    const legacy = "<!-- qnalog-active-version-start -->old<!-- qnalog-active-version-end -->";
+    expect(findActiveVersionBlock(legacy)?.body).toBe("old");
   });
 
   it("writes replacement blocks literally", () => {
@@ -907,8 +958,8 @@ describe("笔记外层结构", () => {
     expect(second).toContain("newer body");
     expect(second).toContain("原始音频");
     expect(second).toContain("![[qnalog-audio.webm]]");
-    expect(second?.match(/qnalog-active-version-start/g)).toHaveLength(1);
-    expect(second?.match(/qnalog-active-version-end/g)).toHaveLength(1);
+    expect(second?.match(/data-qnalog="active-version-start"/g)).toHaveLength(1);
+    expect(second?.match(/data-qnalog="active-version-end"/g)).toHaveLength(1);
   });
 
   it("来源身份使用首个会话 ID，否则按路径与创建时间稳定回退", () => {

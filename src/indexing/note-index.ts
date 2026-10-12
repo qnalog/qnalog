@@ -482,7 +482,10 @@ function foldSessionMetadata(markdown: string): { markdown: string; comments: st
   let text = markdown;
   const comments: string[] = [];
   text = text.replace(SESSION_DATA_DETAILS_RE, (match, body: string) => {
-    if (new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i").test(body)) return match;
+    if (new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i").test(body)) {
+      comments.push(...(body.match(FOLDABLE_SESSION_COMMENT_RE) || []));
+      return match.replace(body, body.replace(FOLDABLE_SESSION_COMMENT_RE, ""));
+    }
     comments.push(...(body.match(FOLDABLE_SESSION_COMMENT_RE) || []));
     return "";
   });
