@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", () => ({ TFile: class TFile {}, normalizePath: (path: string) => path }));
 import type { Segment } from "../src/shared/types";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import {
   normalizeTranscriptDataPlacement,
+  normalizeTranscriptLayout,
   readTranscriptBlocks,
   replaceTranscriptBlock,
   serializeTranscriptBlock,
@@ -97,6 +99,32 @@ describe("transcript hidden-data storage", () => {
     expect(rewritten).not.toContain("<!-- qnalog-transcript-data ");
     expect(rewritten).toContain("data-qnalog-transcript-data=");
     expect(readTranscriptBlocks(ensureTranscriptBlocks(rewritten, "hidden-data-fixture"))).toHaveLength(1);
+  });
+
+  it("splits a legacy multi-segment details wrapper during in-place normalization", () => {
+    const previousLanguage = getActiveUiLanguage();
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    try {
+    const segments = [makeSegment(0, "第一段。"), makeSegment(1, "第二段。")];
+    const oldNote = [
+      "---", "## 原始材料", "<details>", "<summary>分段原始转写（2 段）</summary>", "",
+      legacyBlock(segments[0], "### 段落 1 (00:00–00:01)", segments[0].text), "",
+      legacyBlock(segments[1], "### 段落 2 (00:01–00:02)", segments[1].text), "",
+      "</details>",
+    ].join("\n");
+    const normalized = normalizeTranscriptLayout(oldNote);
+    const restored = readTranscriptBlocks(normalized);
+    expect(restored.map((block) => block.visibleBlock)).toEqual(["第一段。", "第二段。"]);
+    expect(restored.map((block) => block.segment.transcript)).toEqual(segments.map((segment) => segment.transcript));
+    expect(normalized).toContain("**分段原始转写（2 段）**");
+    expect(normalized.match(/<summary>/g)).toHaveLength(2);
+    expect(normalized).not.toContain("<!-- qnalog-transcript-data ");
+    expect(normalized).toMatch(/data-qnalog-transcript-data=.*data-qnalog-segment=/);
+    expect(normalizeTranscriptLayout(normalized)).toBe(normalized);
+    assertDetailsBounded(normalized);
+    } finally {
+      setActiveUiLanguage(previousLanguage);
+    }
   });
 
   it("reads the preceding URI-encoded hidden-span format", () => {

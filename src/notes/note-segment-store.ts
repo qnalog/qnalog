@@ -3,7 +3,7 @@ import type { Vault } from "obsidian";
 import type { RecordingSession } from "../shared/types";
 import { nsMarker } from "../shared/namespace";
 import { findNoteMarkerOffset, findSessionNoteBlock } from "./note-document";
-import { normalizeTranscriptDataPlacement } from "../transcript/transcript-markdown";
+import { normalizeTranscriptLayout } from "../transcript/transcript-markdown";
 
 export type NoteSegmentVault = Pick<Vault, "getAbstractFileByPath" | "read" | "modify" | "create">;
 
@@ -56,13 +56,13 @@ export async function insertBeforeSessionSegmentsEnd(
   const specificIndex = specific ? findNoteMarkerOffset(cur, specific, "first") : -1;
   if (specific && specificIndex >= 0) {
     const next = cur.slice(0, specificIndex) + `${content}\n${specific}` + cur.slice(specificIndex + specific.length);
-    await host.getVault().modify(file, normalizeTranscriptDataPlacement(next));
+    await host.getVault().modify(file, normalizeTranscriptLayout(next));
     return;
   }
   const lastIdx = findNoteMarkerOffset(cur, legacy, "last");
   if (lastIdx >= 0) {
     const next = cur.slice(0, lastIdx) + content + "\n" + cur.slice(lastIdx);
-    await host.getVault().modify(file, normalizeTranscriptDataPlacement(next));
+    await host.getVault().modify(file, normalizeTranscriptLayout(next));
     return;
   }
   await host.appendToNote(path, content);

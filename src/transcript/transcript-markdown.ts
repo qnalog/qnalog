@@ -130,6 +130,51 @@ function transcriptDataElement(id: string, payload: string): string {
   return `<span hidden data-${NS_TAG}-transcript-data="${encodeData(payload)}" data-${NS_TAG}-segment="${safeId}"></span>`;
 }
 
+function matchingDetailsEnd(text: string, start: number): number {
+  const tags = /<\/?details\b[^>]*>/gi;
+  tags.lastIndex = start;
+  let depth = 0;
+  let tag: RegExpExecArray | null;
+  while ((tag = tags.exec(text))) {
+    if (/^<\/details/i.test(tag[0])) depth--;
+    else depth++;
+    if (depth === 0) return tags.lastIndex;
+  }
+  return -1;
+}
+
+/** Convert the historical single transcript details wrapper to one short details per segment. */
+function splitLegacyTranscriptDetails(markdown: string): string {
+  let text = String(markdown || "");
+  const wrapperPattern = /<details\b[^>]*>\s*<summary>([^<]*(?:分段原始转写|Segmented raw transcript)[^<]*)<\/summary>/gi;
+  const wrapper = wrapperPattern.exec(text);
+  if (!wrapper) return text;
+  const start = wrapper.index;
+  const end = matchingDetailsEnd(text, start);
+  if (end < 0) return text;
+  const blocks = readTranscriptBlocks(text).filter((block) => block.start >= start && block.end <= end);
+  if (!blocks.length) return text;
+  const wrapperText = text.slice(start, end);
+  const nestedSummaries = [...wrapperText.matchAll(/<summary>/gi)].length - 1;
+  const legacyHeadings = [...wrapperText.matchAll(/^###\s+(?:段落|Segment)\s+\d+/gim)].length;
+  if (nestedSummaries + legacyHeadings !== blocks.length) return text;
+  for (const block of blocks.slice().reverse()) {
+    const segment = block.segment;
+    text = text.slice(0, block.start) + serializeTranscriptBlock(segment, block.heading, block.visibleBlock) + text.slice(block.end);
+  }
+  const updatedStart = text.indexOf("<details", start);
+  const updatedEnd = matchingDetailsEnd(text, updatedStart);
+  if (updatedStart < 0 || updatedEnd < 0) return text;
+  const updatedWrapperPattern = /<details\b[^>]*>\s*<summary>([^<]*(?:分段原始转写|Segmented raw transcript)[^<]*)<\/summary>/i;
+  const updatedHeader = updatedWrapperPattern.exec(text.slice(updatedStart, updatedEnd));
+  if (!updatedHeader) return text;
+  const headerEnd = updatedStart + updatedHeader.index + updatedHeader[0].length;
+  const innerEnd = updatedEnd - "</details>".length;
+  const inner = text.slice(headerEnd, innerEnd).replace(/^\s*\n/, "").replace(/\s*$/, "");
+  const title = `**${labelText("segmentedRawTranscript", blocks.length)}**`;
+  return text.slice(0, updatedStart) + `${title}\n${inner ? `\n${inner}\n` : "\n"}` + text.slice(updatedEnd);
+}
+
 function splitFragmentId(value: string): { id: string; fragment: number } {
   const match = value.match(/^(.*):fragment:(\d+)$/);
   return match ? { id: match[1], fragment: Number(match[2]) } : { id: value, fragment: 0 };
@@ -360,6 +405,11 @@ export function normalizeTranscriptDataPlacement(markdown: string): string {
     next = next.slice(0, insertion.position) + `${before}${insertion.row}${after}` + next.slice(insertion.position);
   }
   return next;
+}
+
+/** Normalize legacy grouped transcript markup and place its data outside the details blocks. */
+export function normalizeTranscriptLayout(markdown: string): string {
+  return normalizeTranscriptDataPlacement(splitLegacyTranscriptDetails(String(markdown || "")));
 }
 
 function validSegment(value: unknown): value is Omit<Segment, "transcript"> {
@@ -598,7 +648,7 @@ export function replaceTranscriptBlock(
     .filter((element) => element.id === parentId && element.start !== replacementSpanStart)
     .sort((left, right) => right.start - left.start);
   for (const span of staleSpans) next = next.slice(0, span.start) + next.slice(span.end);
-  return normalizeTranscriptDataPlacement(next);
+  return normalizeTranscriptLayout(next);
 }
 
 /** Rename speaker projections without replacing source speaker IDs or ASR text. */
