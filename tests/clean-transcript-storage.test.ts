@@ -3,6 +3,7 @@ import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } from "../src/versions/version-identity";
 import { replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 import { getSourceIdFromMarkdown } from "../src/notes/note-source-metadata";
 import { getSegmentsHash } from "../src/notes/audio-refs";
 
@@ -645,6 +646,8 @@ describe("clean transcript storage", () => {
       entry.label === "Work notes" && entry.kind === "minutes")).toHaveLength(2);
     expect(oldChineseDerived.data).toBe("legacy Chinese derived note");
     await versions.switchVersion(cache!, sourceFile.path);
+    const switchedSource = await vault.read(sourceFile);
+    expect(readTranscriptBlocks(switchedSource)).toHaveLength(1);
     expect(await vault.read(sourceFile)).toContain("> [!info]- Currently displayed version: Work notes · 简洁");
     expect(await vault.read(sourceFile)).toContain("Original ASR transcript.");
     expect(JSON.parse(await vault.adapter.read(manifestPath)).activeVersionId).toBe(record.id);

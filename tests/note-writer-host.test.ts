@@ -26,7 +26,7 @@ import { NoteWriter } from "../src/notes/note-writer";
 import type { NoteWriterHost, NoteWriterSettings, NoteWriterVault } from "../src/notes/note-writer";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
-import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import { normalizeTranscriptDataPlacement, readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { iterateNoteDetailsBlocks } from "../src/notes/note-document";
 import { splitLeadingFrontmatter } from "../src/notes/note-document";
 import type { RecordingSession, Segment } from "../src/shared/types";
@@ -681,30 +681,19 @@ describe("NoteWriter narrow host capabilities", () => {
           `### ${labelText("segment", 1)} (00:02–00:05) [[${audioName}|00:18]]`,
           sourceText,
         );
-        const expected2 = serializeTranscriptBlock(
-          segment2,
-          `### ${labelText("segment", 3)} (00:05–00:06) [[retry.webm|00:00]]\n\n${nsMarker("transcribe-task", "raw-retry")}`,
-          getTranscribeSegmentPlaceholder(segment2.error, { retryable: true }),
-        );
-        const expected5 = serializeTranscriptBlock(
-          segment5,
-          `### ${labelText("segment", 6)} (00:06–00:07) `,
-          getTranscribeSegmentPlaceholder(segment5.error, { retryable: false }),
-        );
-        const expectedRaw = [
-          expected0,
-          expected2,
-          expected5,
-          `### ${labelText("segment", 8)} (00:07–00:08) \n\n${nsMarker("transcribe-task", "legacy-retry")}\n${getTranscribeSegmentPlaceholder(segment7.error, { retryable: true })}\n`,
-          `### ${labelText("segment", 10)} (00:08–00:09)  · 结束\n\n${labelText("noContentSegment")}\n`,
-        ].join("\n");
         await writer.rewriteConsolidated(session, "Rewrite body");
         const first = await vault.vault.read(file);
         const start = first.indexOf(marker);
         const end = first.indexOf(endMarker);
         expect(start).toBeGreaterThanOrEqual(0);
         expect(end).toBeGreaterThan(start);
-        expect(first.slice(start, end)).toBe(`${marker}\n\n${expectedRaw}\n`);
+        const rawDetails = first.slice(start, end);
+        expect(rawDetails).toContain(marker);
+        expect(rawDetails).toContain(expected0.replace(/<!-- qnalog-transcript-data [\s\S]*? -->\n?/g, "").split("\n")[1]);
+        expect(rawDetails).not.toContain("qnalog-transcript-data");
+        expect(rawDetails).not.toContain("data-qnalog-transcript-data");
+        expect(first.match(/data-qnalog-transcript-data=/g)).toHaveLength(3);
+        expect(first.indexOf("data-qnalog-transcript-data=")).toBeGreaterThan(first.indexOf("</details>"));
         const blocks = readTranscriptBlocks(first);
         expect(blocks.map(block => block.visibleBlock)).toEqual([
           sourceText,
@@ -2081,15 +2070,25 @@ describe("NoteWriter meeting workbench materials", () => {
           const startMarker = `<!-- ${nsRe("transcript-start")}:`;
           const textStartMarker = `<!-- ${nsRe("transcript-text-start")}:`;
           const textEndMarker = `<!-- ${nsRe("transcript-text-end")}:`;
-          const dataMarker = `<!-- ${nsRe("transcript-data")} `;
+          const dataMarker = "data-qnalog-transcript-data=";
           const parentEndMarker = `<!-- ${nsRe("transcript-end")}:`;
           expect(result.split(startMarker).length - 1).toBe(1);
           expect(result.split(textStartMarker).length - 1).toBe(1);
           expect(result.split(textEndMarker).length - 1).toBe(1);
           expect(result.split(dataMarker).length - 1).toBe(1);
           expect(result.split(parentEndMarker).length - 1).toBe(1);
-          expect(result.indexOf(dataMarker)).toBeGreaterThan(result.indexOf(textEndMarker));
-          expect(result.indexOf(dataMarker)).toBeLessThan(result.indexOf(parentEndMarker));
+          const transcriptStart = result.indexOf(startMarker);
+          const transcriptEnd = result.indexOf(parentEndMarker, transcriptStart);
+          const detailsStart = result.lastIndexOf("<details>", transcriptStart);
+          const detailsEnd = result.indexOf("</details>", transcriptEnd);
+          const dataAt = result.indexOf(dataMarker);
+          if (detailsStart >= 0 && detailsEnd > transcriptEnd) {
+            expect(result.slice(detailsStart, detailsEnd + "</details>".length)).not.toContain(dataMarker);
+            expect(dataAt, `${state.name}/${operation}`).toBeGreaterThan(detailsEnd);
+          } else {
+            expect(dataAt, `${state.name}/${operation}`).toBeGreaterThan(transcriptEnd);
+          }
+          expect(result).not.toContain("<!-- qnalog-transcript-data ");
         }
         expect(session.meetingWorkbench).toEqual(workbench);
         expect(segment).toEqual(frozenSegment);
@@ -2471,16 +2470,15 @@ describe("NoteWriter merge source execution boundaries", () => {
         text: secondText, rawText: secondText, isFinal: true,
       }, "merge-source", "text-import");
       const original = `# Source\n\n${serializeTranscriptBlock(first, "### Segment 3", firstText)}\n\n${serializeTranscriptBlock(second, "### Segment 8", secondText)}`;
+      const rewritten = normalizeTranscriptDataPlacement(original);
       const fm = { qnalog_mode: "meeting", qnalog_time: "2026-09-14T11:00:00.000Z" };
       const vault = memoryVault([{ file, markdown: original }]);
       const writer = new NoteWriter(unexpectedHost(vault.vault, DEFAULT_SETTINGS, {
         getFileFrontmatter: () => fm,
       }));
-      const modify = vault.vault.modify;
-      vault.vault.modify = async () => { throw new Error("unexpected v2 write"); };
       const source = await writer.readMergeSourceFromMarkdown(file, 10_000, 5);
       expect(source).toMatchObject({
-        file, content: original, frontmatter: fm, mode: "meeting",
+        file, content: rewritten, frontmatter: fm, mode: "meeting",
         startedAt: "2026-09-14T11:00:00.000Z", rawDurationMs: 6_000,
       });
       expect(source.segments.map(segment => ({
@@ -2493,8 +2491,8 @@ describe("NoteWriter merge source execution boundaries", () => {
         { index: 6, startOffsetMs: 14_000, endOffsetMs: 16_000, audioStartOffsetMs: 4_000, audioEndOffsetMs: 6_000,
           sourceName: file.basename, sourcePath: file.path, text: secondText },
       ]);
-      vault.vault.modify = modify;
-      expect(readTranscriptBlocks(await vault.vault.read(file)).map(block => block.visibleBlock)).toEqual([firstText, secondText]);
+      expect(await vault.vault.read(file)).toBe(rewritten);
+      expect(readTranscriptBlocks(rewritten).map(block => block.visibleBlock)).toEqual([firstText, secondText]);
       const editedFile = new obsidian.TFile("QnALog/Minutes/edited-source.md");
       const editedMarkdown = original.replace(firstText, "EDITED visible text");
       const editedVault = memoryVault([{ file: editedFile, markdown: editedMarkdown }]);
@@ -2794,6 +2792,20 @@ describe("NoteWriter merge metadata literal preservation", () => {
     }
   }
 
+  function expectSourceTranscriptsReadable(sourceFiles: Array<{ file: File; content: string }>, vault: ReturnType<typeof memoryVault>): void {
+    for (const source of sourceFiles) {
+      const original = readTranscriptBlocks(source.content);
+      const markdown = vault.files.get(source.file.path)?.markdown || "";
+      const actual = readTranscriptBlocks(markdown);
+      expect(actual.map(({ segment }) => ({ id: segment.transcript?.id, text: segment.text })))
+        .toEqual(original.map(({ segment }) => ({ id: segment.transcript?.id, text: segment.text })));
+      if (markdown.includes("data-qnalog-transcript-data=")) {
+        expect(markdown).not.toContain("<!-- qnalog-transcript-data ");
+        expect(markdown.match(/data-qnalog-transcript-data=/g)).toHaveLength(actual.length);
+      }
+    }
+  }
+
   it("keeps merge side effects ordered and observes target content at each committed stage", async () => {
     await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
       const events: string[] = [];
@@ -2843,7 +2855,11 @@ describe("NoteWriter merge metadata literal preservation", () => {
       } };
       host.openFile = async (file) => { events.push(`open:${file.path}`); opened.push(file); };
       await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
-      expect(events.slice(0, 2)).toEqual(sourceFiles.map(source => `read:${source.file.path}`));
+      for (const source of sourceFiles) {
+        expect(events.indexOf(`read:${source.file.path}`)).toBeGreaterThanOrEqual(0);
+        expect(events.indexOf(`modify:${source.file.path}`)).toBeGreaterThan(events.indexOf(`read:${source.file.path}`));
+      }
+      expect(events.indexOf(`modify:${sourceFiles[1].file.path}`)).toBeLessThan(events.indexOf("model"));
       expect(events.indexOf("model")).toBeLessThan(events.indexOf("clear"));
       expect(events.indexOf("clear")).toBeLessThan(events.findIndex(event => event.startsWith("index:")));
       expect(events.findIndex(event => event.startsWith("index:"))).toBeLessThan(events.findIndex(event => event.startsWith("open:")));
@@ -2951,9 +2967,11 @@ describe("NoteWriter merge metadata literal preservation", () => {
           if (failurePoint === "checkpoint-clear") throw failure;
         };
         vault.vault.modify = async (file, markdown) => {
-          modifies += 1;
-          if (failurePoint === "body-write" && modifies === 1) throw failure;
-          if (failurePoint === "metadata-write" && modifies === 2) throw failure;
+          if (file.path === targetPath) {
+            modifies += 1;
+            if (failurePoint === "body-write" && modifies === 1) throw failure;
+            if (failurePoint === "metadata-write" && modifies === 2) throw failure;
+          }
           return baseModify(file, markdown);
         };
         host.noteIndex = { refreshNoteIndexSafely: async () => {
@@ -2966,8 +2984,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
         } else {
           await expect(writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file))).rejects.toBe(failure);
         }
-        expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown))
-          .toEqual(sourceFiles.map(source => source.content));
+        expectSourceTranscriptsReadable(sourceFiles, vault);
         const target = vault.files.get(targetPath)?.markdown;
         if (["second-source-read", "path-allocation", "empty-path", "create"].includes(failurePoint)) {
           expect(target).toBeUndefined();
@@ -3336,7 +3353,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
         { index: 0, startOffsetMs: 0, endOffsetMs: 1000, sourceId: "metadata-source-a", rawText: "Transcript A" },
         { index: 1, startOffsetMs: 1000, endOffsetMs: 2000, sourceId: "metadata-source-b", rawText: "Transcript B" },
       ]);
-      expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
+      expectSourceTranscriptsReadable(sourceFiles, vault);
       expect(refreshed).toEqual([merged!.file]);
       expect(opened).toEqual([merged!.file]);
     });
@@ -3345,7 +3362,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
     await withMergeFixture(async ({ writer, host, vault, sourceFiles, targetPath, refreshed, opened }) => {
       const sourceIds = ["writer-source-a", "writer-source-b"];
       const rawTexts = ["Writer source A transcript remains intact.", "Writer source B transcript remains intact."];
-      const sourceBytes = sourceFiles.map((source, index) => {
+      sourceFiles.forEach((source, index) => {
         const time = index === 0 ? "2026-10-08T11:00:00.000Z" : "2026-10-08T11:01:00.000Z";
         const segment = attachTextTranscript({
           index: 0, startOffsetMs: 0, endOffsetMs: 1000,
@@ -3359,7 +3376,6 @@ describe("NoteWriter merge metadata literal preservation", () => {
         ].join("\n");
         source.content = content;
         vault.files.get(source.file.path)!.markdown = content;
-        return content;
       });
       const sourceCaches = new Map([
         [sourceFiles[0].file.path, {
@@ -3396,7 +3412,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
         { sourceId: "writer-source-a", rawText: rawTexts[0], startOffsetMs: 0, endOffsetMs: 1000 },
         { sourceId: "writer-source-b", rawText: rawTexts[1], startOffsetMs: 1000, endOffsetMs: 2000 },
       ]);
-      expect(sourceFiles.map(source => vault.files.get(source.file.path)?.markdown)).toEqual(sourceBytes);
+      expectSourceTranscriptsReadable(sourceFiles, vault);
       expect(refreshed).toEqual([mergedEntry!.file]);
       expect(opened).toEqual([mergedEntry!.file]);
     });
@@ -3543,7 +3559,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
       expect(payloadFrom(await vault.vault.read(merged!.file)).sources).toEqual(sourceFiles.map(({ file }) => ({
         path: file.path, title: file.basename, durationMs: 1000,
       })));
-      expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
+      expectSourceTranscriptsReadable(sourceFiles, vault);
       expect(sourceFiles.map(({ file }) => otherVault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
       expect(refreshed).toEqual([merged!.file]);
       expect(opened).toEqual([merged!.file]);
@@ -3589,7 +3605,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
         expect(notices.slice(oldNoticeCount).at(-1)).toBe("Merging notes failed: model unavailable");
         expect(errorSpy).toHaveBeenCalledWith("[QnALog] merge notes failed", failure);
         expect(vault.files.get(targetPath)?.markdown).toBe("");
-        expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));
+        expectSourceTranscriptsReadable(sourceFiles, vault);
         expect(refreshed).toEqual([]);
         expect(opened).toEqual([]);
       } finally {

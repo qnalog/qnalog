@@ -21,6 +21,7 @@ import { mergeUniqueStrings, normalizePersonLookupText, parsePeopleFromOutput, s
 import { extractSedimentPreExtractionBlock } from "../sediment";
 import { stripSedimentPreExtractionBlocks } from "../sediment/text-blocks";
 import { removeNoteIndex } from "../indexing/note-index";
+import { stripTranscriptMetadata } from "../transcript/transcript-markdown";
 
 import { callLlm, logLlmRequestDiagnostic, stripModeSuggestionBlocks } from "../llm/core";
 
@@ -74,7 +75,7 @@ export function stripImportAppendices(text) {
   let out = removeNoteIndex(stripSedimentPreExtractionBlocks(String(text || "")))
     .replace(NS_MACHINE_SHELL_RE, "\n");
   for (const re of IMPORT_APPENDIX_DETAILS_RES) out = out.replace(re, "\n");
-  return out;
+  return stripTranscriptMetadata(out);
 }
 
 export function cleanImportedTextForPrompt(text) {

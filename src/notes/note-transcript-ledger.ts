@@ -5,7 +5,7 @@ import { nsMarkerGlobalRe, nsRe } from "../shared/namespace";
 import { findNoteDelimitedBlock, iterateNoteHeadingBlocks } from "./note-document";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
-import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { normalizeTranscriptDataPlacement, readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 const stringifyTranscriptValue = String as (value: unknown) => string;
 const LEGACY_TRANSCRIPT_HEADING_RE = /^###\s+(?:(?:段落|Segment|Audio(?: source)?|Text source|音频|文本来源)\s+(\d+)([^\n]*)|(\d+)[.、]\s*([^\n]*))$/gm;
@@ -246,7 +246,7 @@ export function ensureTranscriptBlocks(
       legacyEntries.push({ segment: { index: -1, startOffsetMs: 0, endOffsetMs: 0, text: body }, position: start, start, end, heading: "", visibleText: section });
     }
   }
-  if (!legacyEntries.length) return next;
+  if (!legacyEntries.length) return normalizeTranscriptDataPlacement(next);
 
   const orderedEntries: Array<{ position: number; id: string; legacy: (typeof legacyEntries)[number] | null }> = [
     ...currentBlocks.map((block) => ({ position: block.start, id: block.segment.transcript!.id, legacy: null })),
@@ -291,5 +291,5 @@ export function ensureTranscriptBlocks(
   for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
     next = next.slice(0, replacement.start) + replacement.block + next.slice(replacement.end);
   }
-  return next;
+  return normalizeTranscriptDataPlacement(next);
 }

@@ -53,10 +53,15 @@ const transcriptLedgerFixture = () => {
 
 describe("transcript ledger helper contracts", () => {
   it("preserves edited visible text when reconciliation is disabled and upgrades only legacy sections", () => {
-    const { driftedBlock, fixture } = transcriptLedgerFixture();
+    const { fixture } = transcriptLedgerFixture();
     const upgraded = ensureTranscriptBlocks(fixture, "ledger-fixture", { reconcileEditedText: false });
     const [first, second] = readTranscriptBlocks(upgraded);
-    expect(upgraded).toContain(driftedBlock);
+    expect(upgraded).toContain("### Segment 1 (00:01–00:02)");
+    expect(upgraded).toContain("alpha corrected beta");
+    expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
+    const detailsBody = upgraded.slice(upgraded.indexOf("<details>"), upgraded.indexOf("</details>") + "</details>".length);
+    expect(detailsBody).not.toContain("data-qnalog-transcript-data");
+    expect(upgraded.indexOf("</details>")).toBeLessThan(upgraded.indexOf("data-qnalog-transcript-data"));
     expect(first.segment.transcript?.currentRevision).toBe(1);
     expect(first.visibleBlock).toBe("alpha corrected beta");
     expect(first.drifted).toBe(true);
@@ -90,7 +95,9 @@ describe("transcript ledger helper contracts", () => {
     expect(second.segment.queueTaskId).toBe("task-ledger");
     expect(second.segment.audioStartOffsetMs).toBe(2000);
     expect(second.segment.audioEndOffsetMs).toBe(3000);
-    expect(upgraded.endsWith("</details>\nAFTER")).toBe(true);
+    expect(upgraded).toContain("<span hidden data-qnalog-transcript-data=");
+    expect(upgraded.match(/data-qnalog-transcript-data=/g)).toHaveLength(2);
+    expect(upgraded.lastIndexOf("data-qnalog-transcript-data=")).toBeLessThan(upgraded.lastIndexOf("AFTER"));
     expect(ensureTranscriptBlocks(upgraded, "ledger-fixture")).toBe(upgraded);
   });
 
@@ -657,7 +664,10 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(blocks.find((block) => block.segment.transcript?.id === "seg:fixture:1")?.segment).toEqual(
       readTranscriptBlocks(original)[0].segment,
     );
-    expect(upgraded).toContain(middleBlock);
+    expect(upgraded).toContain("### Segment 2 (00:10–00:20)");
+    expect(upgraded).toContain("\nB\n");
+    expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
+    expect(upgraded.indexOf("</details>")).toBeLessThan(upgraded.indexOf("data-qnalog-transcript-data="));
     expect(extractTranscriptSegments(upgraded).map((segment) => segment.text)).toEqual(["A", "B", "C"]);
     expect(blocks[0].segment.audioPath).toBe("Audio/a.wav");
     expect(blocks[0].segment.audioName).toBe("a.wav");
@@ -665,7 +675,7 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(blocks[2].segment.sourcePath).toBe("Notes/c.md");
     expect(blocks[2].segment.rawText).toBe("C");
     expect(getCurrentTranscript(blocks[2].segment.transcript!).rawText).toBe("C");
-    expect(upgraded.endsWith("</details>\nAFTER")).toBe(true);
+    expect(upgraded).toMatch(/<\/details>[\s\S]*AFTER$/);
     expect(ensureTranscriptBlocks(upgraded, "fixture")).toBe(upgraded);
   });
 
@@ -705,8 +715,9 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
       "seg:fixture:1",
       "seg:fixture:2",
     ]);
-    expect(upgraded).toContain(firstLedger.replace(/\n/g, "\r\n"));
-    expect(upgraded).toContain(secondLedger);
+    expect(upgraded).toContain("### Segment 2\r\n");
+    expect(upgraded).toContain("### Segment 3");
+    expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
     expect(blocks[0].segment.text).toContain("A-before");
     expect(blocks[0].segment.text).toContain("A-after");
     expect(blocks[0].segment.text.match(/A-before/g)).toHaveLength(1);

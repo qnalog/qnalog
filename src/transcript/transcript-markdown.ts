@@ -1,4 +1,4 @@
-import { nsRe } from "../shared/namespace";
+import { NS_TAG, nsRe } from "../shared/namespace";
 import type { Segment } from "../shared/types";
 import type { TranscriptSegmentRecord } from "./session-transcript";
 
@@ -19,6 +19,93 @@ function safeJson(value: unknown): string {
     .replace(/>/g, "\\u003e")
     .replace(/`/g, "\\u0060")
     .replace(/--/g, "\\u002d\\u002d");
+}
+
+function encodeData(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function decodeData(value: string): string {
+  const binary = atob(value);
+  return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+}
+
+function transcriptDataElement(id: string, payload: string): string {
+  const safeId = encodeURIComponent(id).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<span hidden data-${NS_TAG}-transcript-data="${encodeData(payload)}" data-${NS_TAG}-segment="${safeId}"></span>`;
+}
+
+interface TranscriptDataElement {
+  start: number;
+  end: number;
+  id: string;
+  payload: string;
+}
+
+function findTranscriptDataElements(markdown: string): TranscriptDataElement[] {
+  const elements: TranscriptDataElement[] = [];
+  const spans = new RegExp(`<span\\b(?=[^>]*\\bhidden(?:\\s|=|>))(?=[^>]*\\bdata-${NS_TAG}-transcript-data=["']([^"']*)["'])(?=[^>]*\\bdata-${NS_TAG}-segment=["']([^"']*)["'])[^>]*>\\s*<\\/span>`, "gi");
+  for (const match of markdown.matchAll(spans)) {
+    const encoded = match[1];
+    const encodedId = match[2];
+    if (!encoded || encodedId === undefined) continue;
+    try {
+      const id = decodeURIComponent(encodedId.replace(/&quot;/g, "\"").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+      elements.push({ start: match.index || 0, end: (match.index || 0) + match[0].length, id, payload: decodeData(encoded) });
+    } catch {
+      throw new Error("Transcript hidden data has invalid encoding");
+    }
+  }
+  return elements;
+}
+
+/** Move transcript payloads into a compact hidden row after their containing transcript details. */
+export function normalizeTranscriptDataPlacement(markdown: string): string {
+  const text = String(markdown || "");
+  const blocks = readTranscriptBlocks(text);
+  if (!blocks.length) return text;
+  const dataElements = findTranscriptDataElements(text);
+  const hasLegacyData = new RegExp(`<!--\\s*${nsRe("transcript-data")}\\s+`, "i").test(text);
+  const hasEmbeddedSpan = dataElements.some((element) => text.lastIndexOf("<details>", element.start) > text.lastIndexOf("</details>", element.start));
+  if (!hasLegacyData && !hasEmbeddedSpan) return text;
+  const blockIds = new Set(blocks.map((block) => block.segment.transcript?.id || ""));
+  for (const element of dataElements) {
+    if (!blockIds.has(element.id)) throw new Error(`Transcript hidden data has no matching block: ${element.id}`);
+  }
+  const groups = new Map<number, string[]>();
+  for (const block of blocks) {
+    const record = block.segment.transcript;
+    if (!record) continue;
+    const segment = { ...block.segment };
+    delete segment.transcript;
+    const payload = safeJson({ schemaVersion: 2, segment, transcript: record });
+    const lastOpen = text.lastIndexOf("<details>", block.start);
+    const priorClose = text.lastIndexOf("</details>", block.start);
+    const closeAt = lastOpen > priorClose ? text.indexOf("</details>", block.end) : -1;
+    const segmentsEndPattern = new RegExp(`<!--\\s*${nsRe("segments-end")}(?::[^>]*)?\\s*-->`, "g");
+    segmentsEndPattern.lastIndex = block.end;
+    const segmentsEnd = segmentsEndPattern.exec(text);
+    const anchorEnd = closeAt >= 0 ? closeAt + "</details>".length
+      : segmentsEnd ? segmentsEnd.index + segmentsEnd[0].length : block.end;
+    const elements = groups.get(anchorEnd) || [];
+    elements.push(transcriptDataElement(record.id, payload));
+    groups.set(anchorEnd, elements);
+  }
+  const removeRanges: Array<{ start: number; end: number }> = dataElements.map(({ start, end }) => ({ start, end }));
+  const legacyData = new RegExp(`<!--\\s*${nsRe("transcript-data")}\\s+[\\s\\S]*?\\s*-->`, "gi");
+  for (const match of text.matchAll(legacyData)) removeRanges.push({ start: match.index || 0, end: (match.index || 0) + match[0].length });
+  removeRanges.sort((left, right) => left.start - right.start);
+  const ranges = removeRanges.filter((range, index) => index === 0 || range.start >= removeRanges[index - 1].end);
+  let next = text;
+  for (const range of ranges.slice().reverse()) next = next.slice(0, range.start) + next.slice(range.end);
+  const adjusted = (position: number) => position - ranges.filter((range) => range.end <= position).reduce((sum, range) => sum + range.end - range.start, 0);
+  const insertions = [...groups.entries()].map(([anchor, elements]) => ({ position: adjusted(anchor), row: elements.join("") }))
+    .sort((left, right) => right.position - left.position);
+  for (const insertion of insertions) next = next.slice(0, insertion.position) + `\n${insertion.row}` + next.slice(insertion.position);
+  return next;
 }
 
 function validSegment(value: unknown): value is Omit<Segment, "transcript"> {
@@ -124,6 +211,7 @@ export function serializeTranscriptBlock(segment: Segment, heading: string, disp
 /** Read only complete v2 blocks. Damaged boundaries or unknown schemas throw to prevent overwrite. */
 export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
   const text = String(markdown || "");
+  const hiddenData = new Map(findTranscriptDataElements(text).map((element) => [element.id, element.payload]));
   const startPattern = new RegExp(`<!--\\s*${nsRe("transcript-start")}:([^>]+)\\s*-->`, "g");
   const blocks: ReadTranscriptBlock[] = [];
   let startMatch: RegExpExecArray | null;
@@ -155,17 +243,18 @@ export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
     const dataMatches = [...inner.matchAll(dataPattern)];
     const textStart = textStarts[0];
     const dataMatch = dataMatches[dataMatches.length - 1];
-    const textEnd = dataMatch ? [...textEnds].reverse().find((match) => match.index < dataMatch.index) : undefined;
+    const externalPayload = hiddenData.get(parentId);
+    const textEnd = dataMatch ? [...textEnds].reverse().find((match) => match.index < dataMatch.index) : textEnds[textEnds.length - 1];
     const dataAfterText = textEnd && dataMatch
       ? dataMatches.filter((match) => match.index > textEnd.index + textEnd[0].length)
       : [];
-    if (!textStart || !textEnd || !dataMatch || dataAfterText.length !== 1
+    if (!textStart || !textEnd || (!externalPayload && !dataMatch) || (dataMatch && dataAfterText.length !== 1)
       || textEnd.index < textStart.index + textStart[0].length) {
       throw new Error(`Transcript block ${parentId} has damaged metadata boundaries`);
     }
     let payload: unknown;
     try {
-      payload = JSON.parse(dataMatch[1]);
+      payload = JSON.parse(externalPayload ?? dataMatch?.[1] ?? "");
     } catch {
       throw new Error(`Transcript block ${parentId} contains invalid metadata JSON`);
     }
@@ -217,7 +306,10 @@ export function replaceTranscriptBlock(
   if (!textStart || startEnd < 0 || textStart.index < startEnd) throw new Error(`Transcript block ${parentId} has damaged heading boundaries`);
   const heading = sourceBlock.slice(startEnd + 3, textStart.index).replace(/^\r?\n/, "").replace(/\r?\n$/, "");
   const replacement = serializeTranscriptBlock(segment, heading, displayText);
-  return text.slice(0, block.start) + replacement + text.slice(block.end);
+  let next = text.slice(0, block.start) + replacement + text.slice(block.end);
+  const staleSpans = findTranscriptDataElements(next).filter((element) => element.id === parentId).sort((left, right) => right.start - left.start);
+  for (const span of staleSpans) next = next.slice(0, span.start) + next.slice(span.end);
+  return normalizeTranscriptDataPlacement(next);
 }
 
 /** Rename speaker projections without replacing source speaker IDs or ASR text. */
@@ -269,7 +361,7 @@ export function updateTranscriptSpeakerName(
 }
 
 /** Remove only transcript machine comments, retaining headings, visible text, and unrelated markers. */
-export function stripTranscriptMetadata(markdown: string): string {
+export function getTranscriptMetadataRanges(markdown: string): Array<{ start: number; end: number }> {
   const markerNames = [
     nsRe("transcript-start"),
     nsRe("transcript-text-start"),
@@ -278,5 +370,19 @@ export function stripTranscriptMetadata(markdown: string): string {
     nsRe("transcript-end"),
   ];
   const pattern = new RegExp(`<!--\\s*(?:${markerNames.map(escapeRegExp).join("|")})(?::[^>]*|\\s+[^>]*|\\s*)-->`, "g");
-  return String(markdown || "").replace(pattern, "");
+  const text = String(markdown || "");
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const match of text.matchAll(pattern)) ranges.push({ start: match.index || 0, end: (match.index || 0) + match[0].length });
+  const spans = new RegExp(`<span\\b(?=[^>]*\\bhidden)(?=[^>]*\\bdata-${NS_TAG}-transcript-data=["'][^"']*["'])[^>]*>\\s*<\\/span>`, "gi");
+  for (const match of text.matchAll(spans)) ranges.push({ start: match.index || 0, end: (match.index || 0) + match[0].length });
+  ranges.sort((left, right) => left.start - right.start);
+  return ranges.filter((range, index) => index === 0 || range.start >= ranges[index - 1].end);
+}
+
+export function stripTranscriptMetadata(markdown: string): string {
+  const text = String(markdown || "");
+  const ranges = getTranscriptMetadataRanges(text);
+  let next = text;
+  for (const range of ranges.slice().reverse()) next = next.slice(0, range.start) + next.slice(range.end);
+  return next;
 }

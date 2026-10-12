@@ -3,6 +3,7 @@ import { NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/name
 import { labelText } from "../shared/note-labels";
 import { splitLeadingFrontmatter } from "./note-document";
 import { splitOutSedimentBlock } from "../sediment/text-blocks";
+import { normalizeTranscriptDataPlacement } from "../transcript/transcript-markdown";
 
 export function buildEmptyLlmOutputFallback(): string {
   return "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
@@ -69,7 +70,7 @@ export interface PolishAppendContentInput {
 }
 
 export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput): string {
-  return [
+  const content = [
     input.polish.frontmatter || null,
     input.title,
     "",
@@ -100,9 +101,7 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
     input.retainAudio ? "" : null,
     input.textImport ? null : "<details>",
     input.textImport ? null : `<summary>${labelText("segmentedRawTranscript", input.segmentCount)}</summary>`,
-    input.textImport ? null : "",
     input.textImport ? null : nsMarker("segments-start", input.sessionId),
-    input.textImport ? null : "",
     input.textImport ? null : input.rawBlocks,
     input.textImport ? null : nsMarker("segments-end", input.sessionId),
     input.textImport ? null : "</details>",
@@ -116,6 +115,7 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
       ...(input.continuationSessionId ? [nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)] : []),
     ].map(marker => `<details><summary>${labelText("indexData")}</summary>${marker}</details>`)),
   ].filter(value => value !== null).join("\n");
+  return normalizeTranscriptDataPlacement(content);
 }
 
 export function buildPolishAppendBlock(input: PolishAppendBlockInput): string {
@@ -157,5 +157,5 @@ export function appendPolishNoteContent(input: PolishAppendContentInput): string
     });
   }
   if (input.continuationSessionId) next = `${next.replace(/\s*$/, "")}\n<details><summary>${labelText("indexData")}</summary>${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)}</details>\n`;
-  return next;
+  return normalizeTranscriptDataPlacement(next);
 }

@@ -1,6 +1,7 @@
 import {
   NS_ACTIVE_VERSION_BODY_RE,
   NS_MACHINE_SHELL_RE,
+  NS_TAG,
   NS_SEDIMENT_BLOCK_RE,
   NS_SEGMENTS_BLOCK_RE,
   NS_SESSION_LINE_RE,
@@ -255,6 +256,7 @@ export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts 
   };
 
   const detailsPatterns: RegExp[] = [
+    new RegExp(`<details>\\s*\\n?<summary>[^<\\n]*<\\/summary>[\\s\\S]*?<\\/details>(?:\\s*<span\\b[^>]*\\bdata-${NS_TAG}-transcript-data=["'][^"']+["'][^>]*>\\s*<\\/span>)+`, "gi"),
     /<details>\s*\n?<summary>[^<\n]*(?:索引数据|Index data)[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*QnALog session data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*QnALog merge data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,

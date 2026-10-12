@@ -6,7 +6,7 @@ import { formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { nsMarker } from "../shared/namespace";
 import type { TranscriptSegmentRecord } from "../transcript/session-transcript";
-import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { normalizeTranscriptDataPlacement, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 export type TextImportSourceDetailsInput = Pick<RecordingSession, "id" | "source"> & {
   segments?: Segment[] | null;
@@ -28,14 +28,12 @@ export function buildTextImportSourceDetails(session: TextImportSourceDetailsInp
       : attachTextTranscript(segment, session.id, "text-import");
     lines.push(serializeTranscriptBlock(storedSegment, heading, visibleText));
   });
-  return [
+  return normalizeTranscriptDataPlacement([
     "<details>",
     `<summary>${labelText("importedTextSources", segments.length)}</summary>`,
-    "",
-    lines.join("\n\n"),
-    "",
+    lines.join("\n"),
     "</details>",
-  ].join("\n");
+  ].join("\n"));
 }
 
 function buildSegmentHeading(segment: Segment, audioLink: string): string {

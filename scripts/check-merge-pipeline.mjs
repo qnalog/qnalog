@@ -108,6 +108,14 @@ function serializeTranscriptSegment(segment) {
   ].join("\n");
 }
 
+function transcriptDataPayloads(markdown) {
+  const text = String(markdown || "");
+  const payloads = [...text.matchAll(/<span hidden data-qnalog-transcript-data="([^"]+)" data-qnalog-segment="[^"]+"><\/span>/g)]
+    .map((match) => Buffer.from(match[1], "base64").toString("utf8"));
+  payloads.push(...[...text.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)].map((match) => match[1]));
+  return payloads;
+}
+
 function qnalogCommentsOutsideDetails(markdown) {
   const events = /<details\b[^>]*>|<\/details\s*>|<!--[\s\S]*?-->/gi;
   let depth = 0;
@@ -560,9 +568,9 @@ async function main() {
       } catch { failures.push("纪要知识快照不是有效 JSON"); }
     }
     const sourceUtteranceIds = new Set();
-    for (const match of content.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)) {
+    for (const payload of transcriptDataPayloads(content)) {
       try {
-        const data = JSON.parse(match[1]);
+        const data = JSON.parse(payload);
         const current = data.transcript.revisions.find((revision) => revision.revision === data.transcript.currentRevision);
         for (const unit of current?.utterances || []) sourceUtteranceIds.add(unit.id);
       } catch { failures.push("转写来源块的元数据不是有效 JSON"); }
@@ -727,8 +735,7 @@ async function main() {
       }
       if ((appended.match(/<!-- qnalog-continuation-committed:s2 -->/g) || []).length !== 1) failures.push("目标笔记没有恰好一个续录提交标记");
       if ((appended.match(/qnalog-transcript-start:/g) || []).length !== 5) failures.push("续录提交后目标笔记没有保留五段逐字稿");
-      const ledgerSegments = [...appended.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)]
-        .map((match) => JSON.parse(match[1]).segment);
+      const ledgerSegments = transcriptDataPayloads(appended).map((payload) => JSON.parse(payload).segment);
       if (JSON.stringify(ledgerSegments.map((segment) => segment.index)) !== JSON.stringify([0, 1, 2, 3, 4])) {
         failures.push(`续录账本分段编号不连续：${JSON.stringify(ledgerSegments.map((segment) => segment.index))}`);
       }
@@ -740,7 +747,7 @@ async function main() {
         }
       } catch { failures.push("续录大纲来源覆盖证明不是有效 JSON"); }
       if (files.has(continuationPreparation.stageFile.path)) failures.push("续录成功后暂存文件没有清理");
-      const transcriptData = (text) => [...text.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)].map((match) => match[1]);
+      const transcriptData = transcriptDataPayloads;
       const mediaReferences = (text) => text.match(/!?\[\[[^\]]+\]\]/g) || [];
       const sameMediaReferences = (left, right) =>
         JSON.stringify([...mediaReferences(left)].sort()) === JSON.stringify([...mediaReferences(right)].sort());
@@ -1019,6 +1026,12 @@ async function main() {
       };
       const sourceA = makeSource(sourceAPath, "writer-source-a", "Writer source A transcript remains intact.", "2026-09-14T11:00:00.000Z");
       const sourceB = makeSource(sourceBPath, "writer-source-b", "Writer source B transcript remains intact.", "2026-09-14T11:01:00.000Z");
+      // Convert the legacy fixtures through the ordinary source-read path before testing
+      // merge source preservation; these assertions cover already-current source notes.
+      await plugin.noteWriter.readMergeSourceFromMarkdown(sourceA.file, 0, 0);
+      sourceA.content = sourceA.file._content;
+      await plugin.noteWriter.readMergeSourceFromMarkdown(sourceB.file, 0, 0);
+      sourceB.content = sourceB.file._content;
       plugin.settings.mdFolder = "QnALog/WriterSmoke";
       plugin.settings.polishMode = "monologue";
       plugin.settings.autoRenameWithTitle = false;
@@ -1100,11 +1113,14 @@ async function main() {
         });
         plugin.noteWriter.host = sourceProbeHost;
         const sourceProbe = await plugin.noteWriter.readMergeSourceFromMarkdown(sourceA.file, 7000, 5);
-        if (sourceProbe.mode !== "monologue" || sourceProbe.content !== sourceA.content
+        if (sourceProbe.mode !== "monologue" || sourceProbe.content !== sourceA.file._content
           || sourceProbe.segments[0]?.transcript?.sourceId !== "writer-source-a"
-          || sourceA.file._content !== sourceA.content) {
-          throw new Error("live merge-source inference did not preserve selected mode, transcript ownership, and source bytes");
+          || !sourceA.file._content.includes("data-qnalog-transcript-data=")
+          || sourceA.file._content.includes("<!-- qnalog-transcript-data ")) {
+          throw new Error("live merge-source inference did not preserve selected mode, transcript ownership, and hidden ledger data");
         }
+        // Reading an old-layout note performs its normal in-memory rewrite to hidden spans.
+        sourceA.content = sourceA.file._content;
       } finally {
         plugin.noteWriter.host = originalInferenceHost;
       }
@@ -1151,7 +1167,7 @@ async function main() {
             const probeFile = new TFile(`Notes/${basename}.md`);
             probeFile.basename = basename;
             probeFile.stat.ctime = 1;
-            probeFile._content = sourceA.content;
+            probeFile._content = sourceA.file._content;
             const probeHost = Object.create(savedHost);
             Object.defineProperties(probeHost, {
               vault: {
@@ -1280,7 +1296,8 @@ async function main() {
           const firstLedger = first?.transcript;
           const secondLedger = second?.transcript;
           if (modifyCalls !== 1 || result.content !== probeFile._content
-            || !result.content.endsWith("</details>\nAFTER") || result.rawDurationMs !== 3000
+            || !result.content.includes("</details>\n<span hidden data-qnalog-transcript-data=")
+            || !result.content.endsWith("AFTER") || result.rawDurationMs !== 3000
             || first?.index !== 5 || first.startOffsetMs !== 8000 || first.endOffsetMs !== 9000
             || first.audioStartOffsetMs !== 0 || first.audioEndOffsetMs !== 1000
             || !first.text.endsWith("alpha corrected beta")
@@ -1353,8 +1370,7 @@ async function main() {
         || !merged._content.includes("Writer source B transcript remains intact.")) {
         failures.push("合并成稿没有保留两篇来源账本及其可见转写");
       }
-      const mergedRecords = [...String(merged._content || "").matchAll(/<!-- qnalog-transcript-data ([\s\S]*?) -->/g)]
-        .map((match) => JSON.parse(match[1]));
+      const mergedRecords = transcriptDataPayloads(merged._content || "").map((payload) => JSON.parse(payload));
       const mergedSegments = mergedRecords.map((record) => ({ ...record.segment, transcript: record.transcript }));
       const mergedSources = [
         { id: "writer-source-a", sourceName: sourceA.file.basename, sourcePath: sourceA.file.path, rawText: "Writer source A transcript remains intact.", textPrefix: `【来源纪要：${sourceA.file.basename}】\n` },
@@ -2858,21 +2874,23 @@ async function main() {
         " \r\n\t ",
       ];
       const readTextMaterialLedger = (markdown, id) => {
-        const marker = `<!-- qnalog-transcript-data `;
         const startMarker = `<!-- qnalog-transcript-text-start:${id} -->`;
         const endMarker = `<!-- qnalog-transcript-text-end:${id} -->`;
         const blockEndMarker = `<!-- qnalog-transcript-end:${id} -->`;
         const start = markdown.indexOf(startMarker);
         const end = markdown.indexOf(endMarker, start);
         const blockEnd = markdown.indexOf(blockEndMarker, end);
-        const dataAt = markdown.indexOf(marker, end);
-        if (start < 0 || end < 0 || blockEnd < 0 || dataAt < end || dataAt >= blockEnd) {
+        const detailsStart = markdown.lastIndexOf("<details>", start);
+        const detailsEnd = markdown.indexOf("</details>", blockEnd);
+        const payload = transcriptDataPayloads(markdown).find((item) => JSON.parse(item).transcript.id === id);
+        if (start < 0 || end < 0 || blockEnd < 0 || !payload) {
           throw new Error(`missing text-import transcript block ${id}`);
         }
         const visible = markdown.slice(start + startMarker.length + 1, end).replace(/\n$/, "");
-        const jsonStart = dataAt + marker.length;
-        const jsonEnd = markdown.indexOf(" -->", jsonStart);
-        const data = JSON.parse(markdown.slice(jsonStart, jsonEnd));
+        if (detailsStart >= 0 && detailsEnd > blockEnd && markdown.slice(detailsStart, detailsEnd).includes("data-qnalog-transcript-data=")) {
+          throw new Error(`transcript data for ${id} remains inside details`);
+        }
+        const data = JSON.parse(payload);
         const transcript = data.transcript;
         const revision = transcript.revisions.find((item) => item.revision === transcript.currentRevision);
         return { visible, transcript, rawText: revision?.rawText };
@@ -2895,7 +2913,7 @@ async function main() {
         if (detailsAt < 0 || contentAt < 0 || contentAt >= detailsAt) {
           throw new Error("text-import materials were placed before their success or failure content");
         }
-        if (markdown.split("<!-- qnalog-transcript-data ").length - 1 !== 4) {
+        if (transcriptDataPayloads(markdown).length !== 4) {
           throw new Error("text-import transcript-data marker count changed");
         }
         for (const id of allIds) {
@@ -3045,7 +3063,7 @@ async function main() {
             if (fixture.kind === "sources") {
               for (const id of ["seg:literal-text-materials:4", "seg:literal-text-materials:9", "seg:literal-text-materials:12", "seg:literal-text-materials:20"]) {
                 if (result.split(`<!-- qnalog-transcript-start:${id} -->`).length - 1 !== 1
-                  || !result.includes(`<!-- qnalog-transcript-data `)) {
+                  || !result.includes("data-qnalog-transcript-data=")) {
                   throw new Error(`text-import info fixture lost transcript ledger ${id}`);
                 }
               }
@@ -3100,7 +3118,18 @@ async function main() {
         const audioModelOutput = "---\ntitle: new\n---\n\nAUDIO BODY $& $` $' $$";
         const audioModelBody = "AUDIO BODY $& $` $' $$";
         const audioOriginal = "---\ntitle: old\n---\n\n# Existing note\n";
-        const audioLedgerOriginal = `${audioOriginal}\n${serializeTranscriptSegment(audioSegment)}`;
+        let audioLedgerOriginal = [
+          audioOriginal,
+          "<details><summary>分段原始转写</summary>",
+          `<!-- qnalog-segments-start:literal-audio-materials -->`,
+          serializeTranscriptSegment(audioSegment),
+          `<!-- qnalog-segments-end:literal-audio-materials -->`,
+          "</details>",
+        ].join("\n");
+        audioLedgerOriginal = plugin.noteWriter.noteMergeSourceFlowHost.ensureTranscriptBlocks(
+          audioLedgerOriginal,
+          "literal-audio-materials",
+        );
         const audioNamedMaster = "母带 $& $` $' $$.webm";
         const audioExternalName = "外部 $& $` $' $$.wav";
         const audioStates = [
@@ -3142,7 +3171,7 @@ async function main() {
             const sourceTextSummary = infoSummary === "zh" ? "<summary>导入文本原文（1 个来源）</summary>" : "<summary>Imported text (1 sources)</summary>";
             const masterName = state.name === "path-master" ? "fallback.webm" : audioNamedMaster;
             if (state.kind === "master" && (!result.includes(`![[${masterName}]]`) || !result.includes(`[[${masterName}|00:00]]`))) {
-              throw new Error(`${state.name} ${layout} lost master audio material`);
+              throw new Error(`${state.name} ${layout} lost master audio material (${result.includes(`![[${masterName}]]`)}, ${result.includes(`[[${masterName}|00:00]]`)})`);
             }
             if (state.kind === "external" || state.kind === "combined") {
               const summary = infoSummary === "zh" ? "<summary>导入来源</summary>" : "<summary>Import source</summary>";
@@ -3399,7 +3428,7 @@ async function main() {
               `<!-- qnalog-transcript-start:seg:literal-meeting-materials:2 -->`,
               `<!-- qnalog-transcript-text-start:seg:literal-meeting-materials:2 -->`,
               `<!-- qnalog-transcript-text-end:seg:literal-meeting-materials:2 -->`,
-              `<!-- qnalog-transcript-data `,
+              "data-qnalog-transcript-data=",
               `<!-- qnalog-transcript-end:seg:literal-meeting-materials:2 -->`,
             ];
             if (markers.some((marker) => result.split(marker).length - 1 !== 1)) {
@@ -3408,8 +3437,12 @@ async function main() {
             const textEndAt = result.indexOf(markers[2]);
             const dataAt = result.indexOf(markers[3]);
             const parentEndAt = result.indexOf(markers[4]);
-            if (dataAt <= textEndAt || dataAt >= parentEndAt) {
-              throw new Error(`${state.name} ${operation} moved transcript data outside parent markers`);
+            const detailsOpenAt = result.lastIndexOf("<details", parentEndAt);
+            const detailsCloseBeforeAt = result.lastIndexOf("</details>", parentEndAt);
+            const containingDetails = detailsOpenAt > detailsCloseBeforeAt;
+            const detailsCloseAt = containingDetails ? result.indexOf("</details>", parentEndAt) : -1;
+            if (dataAt <= parentEndAt || (containingDetails && dataAt <= detailsCloseAt)) {
+              throw new Error(`${state.name} ${operation} did not move transcript data after its details block`);
             }
           }
           if (JSON.stringify(session.segments[0]) !== JSON.stringify(meetingInputSegment)
@@ -3757,7 +3790,7 @@ async function main() {
           );
           const ledger = readTextMaterialLedger(probeText, "seg:literal-retry:0");
           const failureGuidance = /\n_\[(?:AI organizing failed: no available account\. This is a problem returned by the LLM service or account pool, not caused by text length, ASR, or the text-import path; switch the model\/endpoint, or retry manually later\.|AI 整理失败：no available account。这是大模型服务端或账号池返回的问题，不是文本长度、ASR 或文本导入路径导致的；请切换模型\/端点，或稍后手动重试。)\]_\n/;
-          if (!probeText.startsWith(polishOriginal) || probeText.includes("BODY MUST NOT BE WRITTEN")
+          if (!probeText.startsWith("---\ntitle: old\n---\n\n# Existing note") || probeText.includes("BODY MUST NOT BE WRITTEN")
             || !failureGuidance.test(probeText)
             || ledger.visible !== "Retry smoke transcript ledger."
             || ledger.rawText !== "Retry smoke transcript ledger."
