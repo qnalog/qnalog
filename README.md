@@ -41,7 +41,7 @@ Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native
 
 ## Basic usage
 
-1. Open the **QnALog live minutes panel** from the left ribbon. The Obsidian toolbar shows a monochrome Q icon that follows the theme.
+1. Open the **QnALog voice notes panel** from the left ribbon. The Obsidian toolbar shows a monochrome Q icon that follows the theme.
 
    <img src="https://raw.githubusercontent.com/qnalog/qnalog/main/docs/brand/qnalog-mark-readme.svg" alt="QnALog panel icon" width="32" height="32">
 

@@ -352,7 +352,7 @@ export class OutlineView extends obsidian.ItemView {
     this.noteAskByPath = {};
   }
   getViewType() { return VIEW_TYPE_OUTLINE; }
-  getDisplayText() { return i18nT("QnALog live notes"); }
+  getDisplayText() { return i18nT("QnALog voice notes"); }
   getIcon() { return QNALOG_PLUGIN_ICON_ID; }
   async onOpen() {
     this.containerEl.children[1].empty();

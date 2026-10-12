@@ -41,7 +41,7 @@
 
 ## 基本使用
 
-1. 点击左侧功能区的 **QnALog 实时纪要面板**打开侧栏。Obsidian 工具栏显示随主题变化的单色 Q 图标。
+1. 点击左侧功能区的 **QnALog 语音笔记面板**打开侧栏。Obsidian 工具栏显示随主题变化的单色 Q 图标。
 
    <img src="https://raw.githubusercontent.com/qnalog/qnalog/main/docs/brand/qnalog-mark-readme.svg" alt="QnALog 面板图标" width="32" height="32">
 
