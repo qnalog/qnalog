@@ -330,11 +330,7 @@ export async function enumerateAudioDevices(options?: { requestPermission?: bool
 
 
 export async function trashVaultFileRef(app: obsidian.App, file: obsidian.TAbstractFile): Promise<void> {
-  if (app.vault && typeof app.vault.trash === "function") {
-    await app.vault.trash(file, true);
-  } else {
-    await app.fileManager.trashFile(file);
-  }
+  await app.fileManager.trashFile(file);
 }
 
 

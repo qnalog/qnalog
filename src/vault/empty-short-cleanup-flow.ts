@@ -81,7 +81,7 @@ export async function runEmptyShortRecordingCleanup(port: EmptyShortCleanupPort)
   const more = candidates.length > 10 ? t("\n...and {0} more").replace("{0}", String(candidates.length - 10)) : "";
   const ok = await port.confirm(
     t("Clean up blank short recordings"),
-    t("Found {0} blank short recordings.\n\nCriteria: no longer than 10 seconds and no valid transcript text.\nThe following will be moved to the system trash: {0} notes and {1} audio files.\n\n{2}{3}\n\nContinue cleanup?")
+    t("Found {0} blank short recordings.\n\nCriteria: no longer than 10 seconds and no valid transcript text.\nThe following will be removed using Obsidian's deleted-file setting: {0} notes and {1} audio files. Files may be permanently deleted.\n\n{2}{3}\n\nContinue cleanup?")
       .replace("{0}", String(candidates.length))
       .replace("{0}", String(candidates.length))
       .replace("{1}", String(uniqueAudioFiles.length))

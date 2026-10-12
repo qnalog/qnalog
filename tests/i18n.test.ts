@@ -134,7 +134,7 @@ describe("词条表完整性", () => {
     "- Do not output pleasantries and do not generate a full set of minutes.": "C：作为问答模型约束发送。",
     "- When the notes provide no basis, state clearly “the notes do not provide sufficient basis”.": "C：作为问答模型约束发送。",
     "QnALog transcripts folder": "B：设置标签展示既有目录名‘转写纪要’。",
-    "Scan the transcripts folder and move QnALog entries that are 10 seconds or shorter and have no valid transcript text to the system trash, handling the recording files they reference at the same time. Accidental deletions can be restored from the system trash.": "B：设置说明明确指向既有‘转写纪要’目录。",
+    "Scan the transcripts folder and remove QnALog entries that are 10 seconds or shorter and have no valid transcript text, along with the recording files they reference. Obsidian's deleted-file setting determines whether removed files can be restored.": "B：设置说明明确指向既有‘转写纪要’目录。",
   };
 
   it("通用界面词条已使用‘笔记’，仅显式保留模式、目录和模型提示词", () => {
