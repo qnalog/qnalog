@@ -488,7 +488,9 @@ function foldSessionMetadata(markdown: string): { markdown: string; comments: st
   });
   const outside: string[] = [];
   let depth = 0;
-  text = text.split(/(?<=\n)/).map((line) => {
+  const lines = text.split("\n");
+  text = lines.map((rawLine, index) => {
+    const line = rawLine + (index < lines.length - 1 ? "\n" : "");
     const wasInside = depth > 0;
     const opens = (line.match(/<details\b/gi) || []).length;
     const closes = (line.match(/<\/details\s*>/gi) || []).length;
