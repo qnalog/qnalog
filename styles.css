@@ -12023,7 +12023,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
+  gap: 6px;
   min-width: 0;
   padding: 0;
   border: 0;
