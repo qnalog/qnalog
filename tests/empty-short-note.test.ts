@@ -35,7 +35,7 @@ function buildNote(options: {
     error: options.error ?? (options.text ? undefined : "transcription failed"),
   };
   let rawBlocks = buildRewriteSegmentBlock(segment, "![[rec.webm]]");
-  if (options.omitSegmentHeading) rawBlocks = rawBlocks.replace(/^### .*\r?\n/m, "");
+  if (options.omitSegmentHeading) rawBlocks = rawBlocks.replace(/<summary>[\s\S]*?<\/summary>\r?\n?/, "");
   const content = buildConsolidatedNoteContent({
     currentMarkdown: "",
     title: options.title ?? NOTE_TITLE,

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 
 const { transcribeMock, channelsMock, loadVocabMock, notices } = vi.hoisted(() => ({
   transcribeMock: vi.fn(),
@@ -224,7 +225,7 @@ describe("live segment consumer contract", () => {
     const session = makeSession({ streamingFullText: "residual", streamingClient: { finish: vi.fn().mockRejectedValue(new Error("ws closed")), getFullText: () => "" } });
     await service.processSegment(session, makeSegment());
     expect(session.segments[0].error).toBe("ws closed");
-    expect(blocks[0]).toContain("ws closed");
+    expect(readTranscriptBlocks(blocks[0])[0]?.segment.error).toBe("ws closed");
     expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
     expect(host.asrPipeline.removeLiveSegmentQueueTask).toHaveBeenCalledOnce();
     expect(diagnostics.flat().join(" ")).toContain("asr.segment_failed");

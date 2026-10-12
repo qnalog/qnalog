@@ -108,11 +108,31 @@ function serializeTranscriptSegment(segment) {
   ].join("\n");
 }
 
+function expandTranscriptPayloadForInspection(payload) {
+  const data = JSON.parse(payload);
+  const refs = data?.textReferences;
+  const current = data?.transcript?.revisions?.find((revision) => revision.revision === data.transcript.currentRevision);
+  if (!refs || !current) return payload;
+  if (refs.segmentText) data.segment.text = current.displayText;
+  if (refs.segmentRawText) data.segment.rawText = current.displayText;
+  if (refs.currentRawText) current.rawText = current.displayText;
+  if (Array.isArray(refs.utterances) && refs.utterances.length === current.utterances.length) {
+    current.utterances.forEach((utterance, index) => {
+      const ref = refs.utterances[index];
+      const text = current.displayText.slice(ref.start, ref.end);
+      utterance.normalizedText = text;
+      if (ref.rawMatchesNormalized) utterance.rawText = text;
+    });
+  }
+  delete data.textReferences;
+  return JSON.stringify(data);
+}
+
 function transcriptDataPayloads(markdown) {
   const text = String(markdown || "");
   const payloads = [...text.matchAll(/<span hidden data-qnalog-transcript-data="([^"]+)" data-qnalog-segment="[^"]+"><\/span>/g)]
-    .map((match) => Buffer.from(match[1], "base64").toString("utf8"));
-  payloads.push(...[...text.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)].map((match) => match[1]));
+    .map((match) => expandTranscriptPayloadForInspection(Buffer.from(match[1], "base64").toString("utf8")));
+  payloads.push(...[...text.matchAll(/<!--\s*qnalog-transcript-data\s+([\s\S]*?)\s*-->/g)].map((match) => expandTranscriptPayloadForInspection(match[1])));
   return payloads;
 }
 
@@ -737,7 +757,7 @@ async function main() {
       if ((appended.match(/qnalog-transcript-start:/g) || []).length !== 5) failures.push("续录提交后目标笔记没有保留五段逐字稿");
       const ledgerSegments = transcriptDataPayloads(appended).map((payload) => JSON.parse(payload).segment);
       if (JSON.stringify(ledgerSegments.map((segment) => segment.index)) !== JSON.stringify([0, 1, 2, 3, 4])) {
-        failures.push(`续录账本分段编号不连续：${JSON.stringify(ledgerSegments.map((segment) => segment.index))}`);
+        failures.push(`续录账本分段编号不连续：${JSON.stringify(ledgerSegments.map((segment) => ({index:segment.index,text:segment.text,id:segment.audioName||segment.sourceName})))}`);
       }
       const coverageBlocks = [...appended.matchAll(/<!--\s*qnalog-realtime-outline-source-coverage\s*:\s*([\s\S]*?)\s*-->/g)];
       try {
@@ -1296,7 +1316,7 @@ async function main() {
           const firstLedger = first?.transcript;
           const secondLedger = second?.transcript;
           if (modifyCalls !== 1 || result.content !== probeFile._content
-            || !result.content.includes("</details>\n<span hidden data-qnalog-transcript-data=")
+            || !/<\/details>\s*<span hidden data-qnalog-transcript-data=/.test(result.content)
             || !result.content.endsWith("AFTER") || result.rawDurationMs !== 3000
             || first?.index !== 5 || first.startOffsetMs !== 8000 || first.endOffsetMs !== 9000
             || first.audioStartOffsetMs !== 0 || first.audioEndOffsetMs !== 1000
@@ -1310,7 +1330,7 @@ async function main() {
             || secondLedger?.id !== "seg:ledger-fixture:1" || secondLedger.currentRevision !== 0
             || secondLedger.revisions[0]?.source !== "legacy-transcript"
             || second.queueTaskId !== "task-ledger") {
-            throw new Error("transcript ledger revision and legacy-upgrade probe failed");
+            throw new Error(`transcript ledger revision and legacy-upgrade probe failed: ${JSON.stringify({ modifyCalls, contentEqual: result.content === probeFile._content, contentEndsWithAfter: result.content.endsWith("AFTER"), rawDurationMs: result.rawDurationMs, first: first && { index:first.index, startOffsetMs:first.startOffsetMs, endOffsetMs:first.endOffsetMs, audioStartOffsetMs:first.audioStartOffsetMs, audioEndOffsetMs:first.audioEndOffsetMs, text:first.text, transcriptId:firstLedger?.id, revision:firstLedger?.currentRevision, raw:firstLedger?.revisions[0]?.rawText }, second: second && { index:second.index, startOffsetMs:second.startOffsetMs, endOffsetMs:second.endOffsetMs, audioStartOffsetMs:second.audioStartOffsetMs, audioEndOffsetMs:second.audioEndOffsetMs, text:second.text, transcriptId:secondLedger?.id, revision:secondLedger?.currentRevision, source:secondLedger?.revisions[0]?.source, queueTaskId:second.queueTaskId } })}`);
           }
           const firstContent = probeFile._content;
           const repeated = await plugin.noteWriter.readMergeSourceFromMarkdown(probeFile, 7000, 5);
@@ -2023,8 +2043,8 @@ async function main() {
       const rawSection = rawSectionStart >= 0 && rawSectionEnd > rawSectionStart
         ? firstRewrite.slice(rawSectionStart, rawSectionEnd)
         : "";
-      const errorTextStart = "<!-- qnalog-transcript-text-start:seg:literal-continuation:2 -->";
-      const errorTextEnd = "<!-- qnalog-transcript-text-end:seg:literal-continuation:2 -->";
+      const errorTextStart = "<!-- qnalog-transcript-text-start:seg:literal-continuation:2:fragment:1 -->";
+      const errorTextEnd = "<!-- qnalog-transcript-text-end:seg:literal-continuation:2:fragment:1 -->";
       const visibleErrorStart = firstRewrite.indexOf(errorTextStart);
       const visibleErrorEnd = firstRewrite.indexOf(errorTextEnd);
       const visibleError = visibleErrorStart >= 0 && visibleErrorEnd > visibleErrorStart
@@ -2032,16 +2052,16 @@ async function main() {
         : "";
       const legacyTask = "<!-- qnalog-transcribe-task:literal-legacy-task -->";
       const legacyText = "旧纯文本 $& $` $' $$";
-      if (!/(?:### Segment 1|### 段落 1) \(00:00–00:01\) \[\[qnalog-literal-continuation-0\.webm\|00:18\]\]/.test(rawSection)
-        || !/(?:### Segment 3|### 段落 3) \(00:01–00:02\) \[\[qnalog-literal-continuation-2\.webm\|00:00\]\]/.test(rawSection)
+      if (!/<summary>(?:Segment 1|段落 1) \(00:00–00:01\) \[\[qnalog-literal-continuation-0\.webm\|00:18\]\]<\/summary>/.test(firstRewrite)
+        || !/<summary>(?:Segment 3|段落 3) \(00:01–00:02\) \[\[qnalog-literal-continuation-2\.webm\|00:00\]\]<\/summary>/.test(firstRewrite)
         || !rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->")
         || rawSection.indexOf("<!-- qnalog-transcribe-task:literal-raw-retry -->") > rawSection.indexOf(errorTextStart)
         || visibleError.includes("RAW ERROR MUST NOT DISPLAY")
         || !rawSection.includes(legacyTask)
         || !rawSection.includes(legacyText)
-        || !/(?:### Segment 8|### 段落 8) \(00:02–00:03\)/.test(rawSection)
-        || !rawSection.endsWith(`${legacyText}\n\n`)) {
-        throw new Error("raw segment headings, retry markers, or visible transcript text changed");
+        || !/<summary>(?:Segment 8|段落 8) \(00:02–00:03\)[^<]*<\/summary>/.test(rawSection)
+        || !rawSection.endsWith(`${legacyText}\n`)) {
+        throw new Error(`raw segment headings, retry markers, or visible transcript text changed: ${JSON.stringify({ sectionFound:rawSectionStart >= 0 && rawSectionEnd > rawSectionStart, firstSummary:/(?:<summary>(?:Segment 1|段落 1) \(00:00–00:01\) \[\[qnalog-literal-continuation-0\.webm\|00:18\]\]<\/summary>)/.test(firstRewrite), thirdSummary:/(?:<summary>(?:Segment 3|段落 3) \(00:01–00:02\) \[\[qnalog-literal-continuation-2\.webm\|00:00\]\]<\/summary>)/.test(firstRewrite), retry:rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->"), legacyTask:rawSection.includes(legacyTask), legacyText:rawSection.includes(legacyText), eighthSummary:/(?:<summary>(?:Segment 8|段落 8) \(00:02–00:03\)[^<]*<\/summary>)/.test(rawSection), errorMarkers:visibleErrorStart >= 0 && visibleErrorEnd > visibleErrorStart, rawSectionTail:rawSection.slice(-120) })}`);
       }
       rawSegmentMaterialsDigest = createHash("sha256").update(rawSection).digest("hex");
       const secondRawStart = secondRewrite.indexOf(rawStart);
@@ -2862,10 +2882,10 @@ async function main() {
         finalized: true,
       };
       const textMaterialHeadings = [
-        "### 1. [[Notes/source-one.md|来源一 $& $` $' $$]]",
-        "### 2. [[Notes/source-two.md|文本 2]]",
-        "### 3. 文本 3",
-        "### 4. 空白来源",
+        "<summary>段落 1 (00:00–00:01) [[Notes/source-one.md|来源一 $& $` $' $$]]</summary>",
+        "<summary>段落 2 (00:01–00:02) [[Notes/source-two.md|文本 2]]</summary>",
+        "<summary>段落 3 (00:02–00:03) 文本 3</summary>",
+        "<summary>段落 4 (00:03–00:04) 空白来源</summary>",
       ];
       const expectedTextMaterial = [
         "  原文一\r\n$& $` $' $$  ",
@@ -2874,9 +2894,12 @@ async function main() {
         " \r\n\t ",
       ];
       const readTextMaterialLedger = (markdown, id) => {
-        const startMarker = `<!-- qnalog-transcript-text-start:${id} -->`;
-        const endMarker = `<!-- qnalog-transcript-text-end:${id} -->`;
-        const blockEndMarker = `<!-- qnalog-transcript-end:${id} -->`;
+        const markerId = markdown.includes(`qnalog-transcript-text-start:${id}:fragment:1 -->`)
+          ? `${id}:fragment:1`
+          : id;
+        const startMarker = `<!-- qnalog-transcript-text-start:${markerId} -->`;
+        const endMarker = `<!-- qnalog-transcript-text-end:${markerId} -->`;
+        const blockEndMarker = `<!-- qnalog-transcript-end:${markerId} -->`;
         const start = markdown.indexOf(startMarker);
         const end = markdown.indexOf(endMarker, start);
         const blockEnd = markdown.indexOf(blockEndMarker, end);
@@ -2884,9 +2907,15 @@ async function main() {
         const detailsEnd = markdown.indexOf("</details>", blockEnd);
         const payload = transcriptDataPayloads(markdown).find((item) => JSON.parse(item).transcript.id === id);
         if (start < 0 || end < 0 || blockEnd < 0 || !payload) {
-          throw new Error(`missing text-import transcript block ${id}`);
+          throw new Error(`missing transcript block ${id}`);
         }
-        const visible = markdown.slice(start + startMarker.length + 1, end).replace(/\n$/, "");
+        const visible = markdown.slice(start + startMarker.length + 1, end).replace(/\n$/, "")
+          .replace(/<br data-qnalog-newline="crlf">/g, "\r\n")
+          .replace(/<br data-qnalog-newline="cr">/g, "\r")
+          .replace(/<br data-qnalog-newline="lf">/g, "\n")
+          .replace(/&gt;/g, ">")
+          .replace(/&lt;/g, "<")
+          .replace(/&amp;/g, "&");
         if (detailsStart >= 0 && detailsEnd > blockEnd && markdown.slice(detailsStart, detailsEnd).includes("data-qnalog-transcript-data=")) {
           throw new Error(`transcript data for ${id} remains inside details`);
         }
@@ -2897,18 +2926,18 @@ async function main() {
       };
       const checkTextMaterials = (markdown, allowFailure) => {
         const summaries = [
-          "<summary>导入文本原文（4 个来源）</summary>",
-          "<summary>Imported text (4 sources)</summary>",
+          "**分段原始转写（4 段）**",
+          "**Segmented raw transcript (4 segments)**",
         ];
         const summary = summaries.find((candidate) => markdown.includes(candidate));
         if (!summary
-          || markdown.indexOf(textMaterialModelBody) >= markdown.indexOf(textMaterialHeadings[0])
+          || markdown.indexOf(textMaterialModelBody) >= markdown.indexOf(summary)
           || !textMaterialHeadings.every((heading, index) => markdown.indexOf(heading) >= 0
             && (index === 0 || markdown.indexOf(textMaterialHeadings[index - 1]) < markdown.indexOf(heading)))) {
-          throw new Error("text-import source summary or heading order changed");
+          throw new Error(`text-import source summary or heading order changed: ${JSON.stringify({summary,indexes:textMaterialHeadings.map((heading)=>markdown.indexOf(heading)),modelAt:markdown.indexOf(textMaterialModelBody)})}`);
         }
         const allIds = [4, 9, 12, 20].map((segmentIndex) => `seg:literal-text-materials:${segmentIndex}`);
-        const detailsAt = markdown.lastIndexOf("<details>", markdown.indexOf(summary));
+        const detailsAt = markdown.indexOf("<details>", markdown.indexOf(summary));
         const contentAt = allowFailure ? markdown.indexOf("temporary failure") : markdown.indexOf(textMaterialModelBody);
         if (detailsAt < 0 || contentAt < 0 || contentAt >= detailsAt) {
           throw new Error("text-import materials were placed before their success or failure content");
@@ -2917,10 +2946,11 @@ async function main() {
           throw new Error("text-import transcript-data marker count changed");
         }
         for (const id of allIds) {
-          if (markdown.split(`<!-- qnalog-transcript-start:${id} -->`).length - 1 !== 1
-            || markdown.split(`<!-- qnalog-transcript-end:${id} -->`).length - 1 !== 1
-            || markdown.split(`<!-- qnalog-transcript-text-start:${id} -->`).length - 1 !== 1
-            || markdown.split(`<!-- qnalog-transcript-text-end:${id} -->`).length - 1 !== 1) {
+          const markerId = `${id}:fragment:1`;
+          if (markdown.split(`<!-- qnalog-transcript-start:${markerId} -->`).length - 1 !== 1
+            || markdown.split(`<!-- qnalog-transcript-end:${markerId} -->`).length - 1 !== 1
+            || markdown.split(`<!-- qnalog-transcript-text-start:${markerId} -->`).length - 1 !== 1
+            || markdown.split(`<!-- qnalog-transcript-text-end:${markerId} -->`).length - 1 !== 1) {
             throw new Error(`text-import transcript markers changed for ${id}`);
           }
         }
@@ -3062,7 +3092,7 @@ async function main() {
             }
             if (fixture.kind === "sources") {
               for (const id of ["seg:literal-text-materials:4", "seg:literal-text-materials:9", "seg:literal-text-materials:12", "seg:literal-text-materials:20"]) {
-                if (result.split(`<!-- qnalog-transcript-start:${id} -->`).length - 1 !== 1
+                if (result.split(`<!-- qnalog-transcript-start:${id}:fragment:1 -->`).length - 1 !== 1
                   || !result.includes("data-qnalog-transcript-data=")) {
                   throw new Error(`text-import info fixture lost transcript ledger ${id}`);
                 }
@@ -3168,7 +3198,7 @@ async function main() {
             }
             const infoSummary = result.includes("<summary>录音信息</summary>") || result.includes("<summary>导入文本信息</summary>")
               ? "zh" : "en";
-            const sourceTextSummary = infoSummary === "zh" ? "<summary>导入文本原文（1 个来源）</summary>" : "<summary>Imported text (1 sources)</summary>";
+            const sourceTextSummary = infoSummary === "zh" ? "**分段原始转写（1 段）**" : "**Segmented raw transcript (1 segments)**";
             const masterName = state.name === "path-master" ? "fallback.webm" : audioNamedMaster;
             if (state.kind === "master" && (!result.includes(`![[${masterName}]]`) || !result.includes(`[[${masterName}|00:00]]`))) {
               throw new Error(`${state.name} ${layout} lost master audio material (${result.includes(`![[${masterName}]]`)}, ${result.includes(`[[${masterName}|00:00]]`)})`);
@@ -3380,9 +3410,12 @@ async function main() {
           const infoSummary = language === "en"
             ? (state.source === "text-import" ? "<summary>Text import info</summary>" : "<summary>Recording info</summary>")
             : (state.source === "text-import" ? "<summary>导入文本信息</summary>" : "<summary>录音信息</summary>");
+          const markerId = result.includes("qnalog-transcript-start:seg:literal-meeting-materials:2:fragment:1 -->")
+            ? "seg:literal-meeting-materials:2:fragment:1"
+            : "seg:literal-meeting-materials:2";
           if (fullState) {
             const infoAt = result.indexOf(infoSummary);
-            const rawLedgerAt = result.indexOf(`<!-- qnalog-transcript-start:seg:literal-meeting-materials:2 -->`);
+            const rawLedgerAt = result.indexOf(`<!-- qnalog-transcript-start:${markerId} -->`);
             if (infoAt < 0 || infoAt >= detailAt) {
               throw new Error(`${state.name} ${operation} placed meeting details before recording/import info`);
             }
@@ -3425,14 +3458,14 @@ async function main() {
               throw new Error(`${state.name} ${operation} changed transcript ledger content`);
             }
             const markers = [
-              `<!-- qnalog-transcript-start:seg:literal-meeting-materials:2 -->`,
-              `<!-- qnalog-transcript-text-start:seg:literal-meeting-materials:2 -->`,
-              `<!-- qnalog-transcript-text-end:seg:literal-meeting-materials:2 -->`,
+              `<!-- qnalog-transcript-start:${markerId} -->`,
+              `<!-- qnalog-transcript-text-start:${markerId} -->`,
+              `<!-- qnalog-transcript-text-end:${markerId} -->`,
               "data-qnalog-transcript-data=",
-              `<!-- qnalog-transcript-end:seg:literal-meeting-materials:2 -->`,
+              `<!-- qnalog-transcript-end:${markerId} -->`,
             ];
             if (markers.some((marker) => result.split(marker).length - 1 !== 1)) {
-              throw new Error(`${state.name} ${operation} changed transcript ledger markers`);
+              throw new Error(`${state.name} ${operation} changed transcript ledger markers: ${JSON.stringify(markers.map((marker) => [marker,result.split(marker).length-1]))}`);
             }
             const textEndAt = result.indexOf(markers[2]);
             const dataAt = result.indexOf(markers[3]);

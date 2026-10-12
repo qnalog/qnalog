@@ -418,10 +418,10 @@ describe("NoteWriter text-import source materials", () => {
     const output = "---\ntitle: new\n---\n\n模型正文 $& $` $' $$";
     const modelBody = "模型正文 $& $` $' $$";
     const sourceHeadings = [
-      "### 1. [[Notes/source-one.md|来源一 $& $` $' $$]]",
-      "### 2. [[Notes/source-two.md|文本 2]]",
-      "### 3. 文本 3",
-      "### 4. 空白来源",
+      `<summary>${labelText("segment", 1)} (00:00–00:01) [[Notes/source-one.md|`,
+      `<summary>${labelText("segment", 2)} (00:01–00:02) [[Notes/source-two.md|文本 2]]</summary>`,
+      `<summary>${labelText("segment", 3)} (00:02–00:03) 文本 3</summary>`,
+      `<summary>${labelText("segment", 4)} (00:03–00:04) 空白来源</summary>`,
     ];
     const rawTexts = ["  原文一\r\n$& $` $' $$  ", "第二份原文 $& $` $' $$", "", " \r\n\t "];
     const assertTranscriptState = (markdown: string) => {
@@ -437,10 +437,11 @@ describe("NoteWriter text-import source materials", () => {
       for (const [index, block] of blocks.entries()) {
         const transcript = block.segment.transcript!;
         const id = transcript.id;
-        expect(markdown.split(`<!-- qnalog-transcript-start:${id} -->`).length - 1).toBe(1);
-        expect(markdown.split(`<!-- qnalog-transcript-end:${id} -->`).length - 1).toBe(1);
-        expect(markdown.split(`<!-- qnalog-transcript-text-start:${id} -->`).length - 1).toBe(1);
-        expect(markdown.split(`<!-- qnalog-transcript-text-end:${id} -->`).length - 1).toBe(1);
+        const markerId = `${id}:fragment:1`;
+        expect(markdown.split(`<!-- qnalog-transcript-start:${markerId} -->`).length - 1).toBe(1);
+        expect(markdown.split(`<!-- qnalog-transcript-end:${markerId} -->`).length - 1).toBe(1);
+        expect(markdown.split(`<!-- qnalog-transcript-text-start:${markerId} -->`).length - 1).toBe(1);
+        expect(markdown.split(`<!-- qnalog-transcript-text-end:${markerId} -->`).length - 1).toBe(1);
         const current = transcript.revisions.find((revision) => revision.revision === transcript.currentRevision)!;
         expect(current.rawText).toBe(rawTexts[index]);
         expect(current.displayText).toBe(block.visibleBlock);
@@ -497,8 +498,8 @@ describe("NoteWriter text-import source materials", () => {
         expect(await vault.vault.read(file)).toBe(rewritten);
         const rewrittenBlocks = readTranscriptBlocks(rewritten);
         assertTranscriptState(rewritten);
-        expect(rewritten).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
-        expect(rewritten.indexOf(modelBody)).toBeLessThan(rewritten.indexOf(sourceHeadings[0]));
+        expect(rewritten).toContain(`**${labelText("segmentedRawTranscript", 4)}**`);
+        expect(rewritten.indexOf(modelBody)).toBeLessThan(rewrittenBlocks[0].start);
         expect(sourceHeadings.map((heading) => rewritten.indexOf(heading))).toEqual(
           [...sourceHeadings].map((_, index) => rewritten.indexOf(sourceHeadings[index])).sort((a, b) => a - b),
         );
@@ -524,31 +525,32 @@ describe("NoteWriter text-import source materials", () => {
         expect(rewritten).not.toContain("![[SHOULD_NOT_EMBED.webm]]");
         expect(rewritten).not.toContain(nsMarker("transcribe-task", "SHOULD_NOT_QUEUE"));
         expect(rewritten).not.toContain(nsMarker("segments-start", session.id));
+        expect(rewritten).not.toContain(nsMarker("segments-end", session.id));
         expect(rewritten).not.toContain("transcribe-task");
 
         await vault.vault.modify(file, original);
         await writer.appendPolishBlock(session, output, null, false, "", original);
         const appended = await vault.vault.read(file);
         assertTranscriptState(appended);
-        const appendedSourceSummary = `<summary>${labelText("importedTextSources", 4)}</summary>`;
+        const appendedSourceSummary = `**${labelText("segmentedRawTranscript", 4)}**`;
         expect(appended.indexOf(modelBody))
           .toBeLessThan(appended.lastIndexOf("<details>", appended.indexOf(appendedSourceSummary)));
         expect(readTranscriptBlocks(appended)).toHaveLength(4);
-        expect(appended.indexOf(modelBody)).toBeLessThan(appended.indexOf(sourceHeadings[0]));
-        expect(appended).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
+        expect(appended.indexOf(modelBody)).toBeLessThan(readTranscriptBlocks(appended)[0].start);
+        expect(appended).toContain(appendedSourceSummary);
 
         await vault.vault.modify(file, original);
         await writer.appendPolishBlock(session, output, new Error("temporary failure"), false, "", original);
         const failed = await vault.vault.read(file);
         assertTranscriptState(failed);
-        const failedSourceSummary = `<summary>${labelText("importedTextSources", 4)}</summary>`;
+        const failedSourceSummary = `**${labelText("segmentedRawTranscript", 4)}**`;
         expect(failed.indexOf(labelText("mergeFailedQueued", "temporary failure")))
           .toBeLessThan(failed.lastIndexOf("<details>", failed.indexOf(failedSourceSummary)));
         expect(failed).toContain("title: old");
         expect(failed).toContain(labelText("mergeFailedQueued", "temporary failure"));
         expect(failed).not.toContain(modelBody);
         expect(readTranscriptBlocks(failed)).toHaveLength(4);
-        expect(failed).toContain(`<summary>${labelText("importedTextSources", 4)}</summary>`);
+        expect(failed).toContain(failedSourceSummary);
       }
     } finally {
       setActiveUiLanguage(originalLanguage);
@@ -676,11 +678,6 @@ describe("NoteWriter narrow host capabilities", () => {
         };
         const marker = nsMarker("segments-start", session.id);
         const endMarker = nsMarker("segments-end", session.id);
-        const expected0 = serializeTranscriptBlock(
-          segment0,
-          `### ${labelText("segment", 1)} (00:02–00:05) [[${audioName}|00:18]]`,
-          sourceText,
-        );
         await writer.rewriteConsolidated(session, "Rewrite body");
         const first = await vault.vault.read(file);
         const start = first.indexOf(marker);
@@ -689,9 +686,11 @@ describe("NoteWriter narrow host capabilities", () => {
         expect(end).toBeGreaterThan(start);
         const rawDetails = first.slice(start, end);
         expect(rawDetails).toContain(marker);
-        expect(rawDetails).toContain(expected0.replace(/<!-- qnalog-transcript-data [\s\S]*? -->\n?/g, "").split("\n")[1]);
-        expect(rawDetails).not.toContain("qnalog-transcript-data");
-        expect(rawDetails).not.toContain("data-qnalog-transcript-data");
+        expect(first).toContain(`<summary>${labelText("segment", 1)} (00:02–00:05) [[${audioName}|00:18]]</summary>`);
+        expect(first).toContain(sourceText);
+        for (const [, detailsBody] of rawDetails.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)) {
+          expect(detailsBody).not.toContain("qnalog-transcript-data");
+        }
         expect(first.match(/data-qnalog-transcript-data=/g)).toHaveLength(3);
         expect(first.indexOf("data-qnalog-transcript-data=")).toBeGreaterThan(first.indexOf("</details>"));
         const blocks = readTranscriptBlocks(first);
@@ -2857,7 +2856,9 @@ describe("NoteWriter merge metadata literal preservation", () => {
       await writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file));
       for (const source of sourceFiles) {
         expect(events.indexOf(`read:${source.file.path}`)).toBeGreaterThanOrEqual(0);
-        expect(events.indexOf(`modify:${source.file.path}`)).toBeGreaterThan(events.indexOf(`read:${source.file.path}`));
+        if (source.content.includes("<!-- qnalog-transcript-data ")) {
+          expect(events.indexOf(`modify:${source.file.path}`)).toBeGreaterThan(events.indexOf(`read:${source.file.path}`));
+        }
       }
       expect(events.indexOf(`modify:${sourceFiles[1].file.path}`)).toBeLessThan(events.indexOf("model"));
       expect(events.indexOf("model")).toBeLessThan(events.indexOf("clear"));

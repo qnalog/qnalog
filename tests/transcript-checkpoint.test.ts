@@ -54,7 +54,7 @@ describe("verifyTranscriptCheckpoint", () => {
     }, "asr");
     const block = serializeTranscriptBlock(segment, "### Segment 1", segment.text);
     expect(verifyTranscriptCheckpoint(block, [segment]).ok).toBe(true);
-    expect(verifyTranscriptCheckpoint(block.replace(/<!-- qnalog-transcript-data[\s\S]*?-->/, ""), [segment]).ok).toBe(false);
+    expect(verifyTranscriptCheckpoint(block.replace(/<span hidden data-qnalog-transcript-data="[^"]+"[^>]*><\/span>/, ""), [segment]).ok).toBe(false);
     expect(verifyTranscriptCheckpoint(block.replace("Original phrase.", "Edited phrase."), [segment]).ok).toBe(false);
   });
 });
