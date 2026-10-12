@@ -3579,7 +3579,7 @@ async function main() {
           await polishWriter.appendPolishBlock(polishSession, polishLiteralBody, null, false, "polish-flow-commit", "");
           const result = emptyVaultText;
           if (result.includes(liveText) || !result.includes(polishLiteralBody)
-            || !result.endsWith("<details><summary>QnALog session data</summary><!-- qnalog-continuation-committed:polish-flow-commit --></details>\n")) {
+            || !/<details><summary>(?:索引数据|Index data)<\/summary><!-- qnalog-continuation-committed:polish-flow-commit --><\/details>\n$/.test(result)) {
             throw new Error("empty initialMarkdown did not bypass vault read or preserve the commit marker");
           }
           polishExecutionResults.push(result);

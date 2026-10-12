@@ -107,14 +107,14 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
     input.textImport ? null : nsMarker("segments-end", input.sessionId),
     input.textImport ? null : "</details>",
     input.textImport ? null : "",
-    `<details><summary>QnALog session data</summary>${nsMarker("session", input.sessionId)}</details>`,
+    `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", input.sessionId)}</details>`,
     "",
     input.polish.sedimentBlock || null,
     input.polish.sedimentBlock ? "" : null,
     ...new Set([
       ...[...input.currentMarkdown.matchAll(new RegExp(`<!--\\s*${nsRe(NS_CONTINUATION_COMMITTED_MARKER)}:[^>\\s]+\\s*-->`, "g"))].map(match => match[0]),
       ...(input.continuationSessionId ? [nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)] : []),
-    ].map(marker => `<details><summary>QnALog session data</summary>${marker}</details>`)),
+    ].map(marker => `<details><summary>${labelText("indexData")}</summary>${marker}</details>`)),
   ].filter(value => value !== null).join("\n");
 }
 
@@ -156,6 +156,6 @@ export function appendPolishNoteContent(input: PolishAppendContentInput): string
       return `${prefix}${formatElapsed(input.totalMs)}${open === "(" ? ")" : String.fromCharCode(0xff09)}`;
     });
   }
-  if (input.continuationSessionId) next = `${next.replace(/\s*$/, "")}\n<details><summary>QnALog session data</summary>${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)}</details>\n`;
+  if (input.continuationSessionId) next = `${next.replace(/\s*$/, "")}\n<details><summary>${labelText("indexData")}</summary>${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)}</details>\n`;
   return next;
 }

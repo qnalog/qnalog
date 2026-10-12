@@ -152,7 +152,7 @@ export class ContinuationService {
     const stageContent = [
       stageTitle,
       "",
-      `<details><summary>QnALog session data</summary>${nsMarker("session", sessionId)}${nsMarker("segments-start", sessionId)}${nsMarker("segments-end", sessionId)}</details>`,
+      `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", sessionId)}${nsMarker("segments-start", sessionId)}${nsMarker("segments-end", sessionId)}</details>`,
       "",
     ].join("\n");
     const taskId = genId();

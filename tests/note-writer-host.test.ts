@@ -621,7 +621,7 @@ describe("NoteWriter narrow host capabilities", () => {
       expect(splitLeadingFrontmatter(appended).frontmatter).toContain("title: appended");
       expect(appended.indexOf("# Existing note")).toBeLessThan(appended.indexOf("Append body"));
       expect(readTranscriptBlocks(appended).map(block => block.visibleBlock)).toEqual([sourceText]);
-      expect(appended.endsWith("<details><summary>QnALog session data</summary><!-- qnalog-continuation-committed:append-session --></details>\n")).toBe(true);
+      expect(appended).toMatch(/<details><summary>(?:索引数据|Index data)<\/summary><!-- qnalog-continuation-committed:append-session --><\/details>\n$/);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -2367,7 +2367,7 @@ describe("NoteWriter polish execution boundaries", () => {
         expect(result).toContain(modelBody);
         if (entry.expectedSource) expect(result).toContain(entry.expectedSource);
         else expect(result).not.toContain("LIVE VAULT BYTES");
-        expect(result.endsWith("<details><summary>QnALog session data</summary><!-- qnalog-continuation-committed:polish-flow-commit --></details>\n")).toBe(true);
+        expect(result).toMatch(/<details><summary>(?:索引数据|Index data)<\/summary><!-- qnalog-continuation-committed:polish-flow-commit --><\/details>\n$/);
       }
     } finally {
       vi.unstubAllGlobals();

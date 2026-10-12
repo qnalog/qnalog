@@ -168,7 +168,7 @@ export class ImportService {
       `> ${labelText("modelLabel")}${importProvider.model || importProvider.id} → ${this.host.settings.llmModel}`,
       externalSource && externalSource.name ? `> ${labelText("sourceLabel")}${t("Auto Import")} · ${externalSource.name}` : null,
       "",
-      `<details><summary>QnALog session data</summary>${nsMarker("session", session.id)}${nsMarker("segments-start", session.id)}${nsMarker("segments-end", session.id)}</details>`,
+      `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", session.id)}${nsMarker("segments-start", session.id)}${nsMarker("segments-end", session.id)}</details>`,
       "",
     ].filter((line) => line !== null).join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);
@@ -675,7 +675,7 @@ export class ImportService {
       `> [!info] ${labelText("textImportInfo")}`,
       `> ${labelText("sourceFilesLabel")}${sources.length} · ${labelText("modeLabel")}${meta.prefix} · ${labelText("modelLabel")}${this.host.settings.llmModel}`,
       "",
-      `<details><summary>QnALog session data</summary>${nsMarker("session", session.id)}${nsMarker("segments-start", session.id)}${nsMarker("segments-end", session.id)}</details>`,
+      `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", session.id)}${nsMarker("segments-start", session.id)}${nsMarker("segments-end", session.id)}</details>`,
       "",
     ].join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);

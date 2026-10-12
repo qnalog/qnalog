@@ -3,6 +3,7 @@
 import * as obsidian from "obsidian";
 import { audioInputModeLabel, normalizeAudioInputMode } from "./audio-input";
 import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
+import { labelText } from "../shared/note-labels";
 import { isMobileRuntime } from "../shared/util-platform";
 import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload, AudioInputMode, ContinuationContext, TranscribeProviderSettings } from "../shared/types";
 import { getErrorMessage, genId } from "../shared/util-common";
@@ -259,7 +260,7 @@ export class RecordingService {
       const header = [
         titleLine,
         "",
-        `<details><summary>QnALog session data</summary>${nsMarker("session", createdSession.id)}${nsMarker("segments-start", createdSession.id)}${nsMarker("segments-end", createdSession.id)}</details>`,
+        `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", createdSession.id)}${nsMarker("segments-start", createdSession.id)}${nsMarker("segments-end", createdSession.id)}</details>`,
         "",
       ].join("\n");
       if (!continuationInfo) await this.host.noteWriter.appendToNote(mdPath, header);
