@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const notes = new Map<string, string>();
+let importedAudioText = "Imported audio transcript";
 vi.mock("obsidian", () => {
   class TFile {
     path: string;
@@ -29,7 +30,7 @@ vi.mock("../src/asr/long-audio-transcription", async (importOriginal) => {
   return {
     ...actual,
     resolveImportTranscribeProvider: () => ({ id: "test-provider", endpoint: "https://asr.example.com/v1/transcriptions", apiKey: "test-key", model: "test-model" }),
-    transcribeImportedAudio: async () => ({ text: "Imported audio transcript", durationMs: 1200, rawText: "Imported audio transcript", units: [] }),
+    transcribeImportedAudio: async () => ({ text: importedAudioText, durationMs: 1200, rawText: importedAudioText, units: [] }),
   };
 });
 vi.mock("../src/notes/audio-refs", async (importOriginal) => {
@@ -42,6 +43,9 @@ import type { ImportHost } from "../src/imports/import-service";
 import { SessionStore } from "../src/session/session-store";
 import type { RecordingSession } from "../src/shared/types";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
+import { insertBeforeSessionSegmentsEnd } from "../src/notes/note-segment-store";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
+import { verifyTranscriptCheckpoint } from "../src/imports/transcript-checkpoint";
 
 function makeHost(): { host: ImportHost; sessionStore: SessionStore; sourcePath: string; audioPath: string } {
   const sourcePath = "QnALog/Import/source.txt";
@@ -68,7 +72,12 @@ function makeHost(): { host: ImportHost; sessionStore: SessionStore; sourcePath:
     diagnostics: { logDiagnostic: async () => undefined },
     noteWriter: {
       async appendToNote(path: string, content: string) { notes.set(path, (notes.get(path) || "") + content); },
-      async insertBeforeSegmentsEnd(path: string, content: string) { notes.set(path, (notes.get(path) || "") + content); },
+      async insertBeforeSegmentsEnd(path: string, content: string, sessionId?: string) {
+        await insertBeforeSessionSegmentsEnd({
+          getVault: () => app.vault as never,
+          appendToNote: async (target, value) => { notes.set(target, (notes.get(target) || "") + value); },
+        }, path, content, sessionId);
+      },
     },
     profiles: { getTranscribeProviderProfile: () => ({ title: "Test ASR" }) },
     queue: { add: async (task: unknown) => Object.assign({ id: "retry-task" }, task) },
@@ -138,5 +147,38 @@ describe("text import session ownership", () => {
 
     expect(sessionStore.get()).toBeNull();
     expect([...notes.values()].join("\n")).toContain("Imported audio transcript");
+  });
+
+  it("writes a long whole-file import into the real transcript area before index data", async () => {
+    notes.clear();
+    importedAudioText = "x".repeat(4329);
+    const { host, audioPath } = makeHost();
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260930-120200" : "2026-09-30",
+        toDate: () => new Date("2026-09-30T12:02:00.000Z"),
+      }),
+      setTimeout: () => 1,
+    });
+    try {
+      await new ImportService(host).importAudioFiles([audioPath], "synthesis");
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioText = "Imported audio transcript";
+    }
+
+    const markdown = [...notes.values()].join("\n");
+    const details = [...markdown.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)].map((match) => match[1]);
+    const transcriptBlocks = readTranscriptBlocks(markdown);
+    expect(verifyTranscriptCheckpoint(markdown, [{ text: "x".repeat(4329) }])).toMatchObject({
+      ok: true,
+      expectedSegments: 1,
+      persistedSegments: 1,
+    });
+    expect(transcriptBlocks).toHaveLength(1);
+    expect(transcriptBlocks[0].visibleBlock).toBe("x".repeat(4329));
+    expect(details.filter((body) => /qnalog-transcript-start/.test(body))).not.toHaveLength(0);
+    expect(details.filter((body) => /Index data|索引数据/.test(body))).toHaveLength(1);
+    expect(details.filter((body) => /Index data|索引数据/.test(body))[0]).not.toMatch(/qnalog-transcript-start/);
   });
 });
