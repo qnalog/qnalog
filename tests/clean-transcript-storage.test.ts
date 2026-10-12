@@ -335,6 +335,29 @@ describe("clean transcript storage", () => {
     }
   });
 
+  it("preserves raw blocks placed before the raw-material heading during scaffold repair", () => {
+    const input = [
+      "# 2026-10-12 09:18 · 综合纪要",
+      "> [!info]- 当前显示版本 <span data-qnalog=\"active-version-start\"></span>",
+      "Visible body.",
+      "<span data-qnalog=\"active-version-end\"></span>",
+      "<details><summary>录音信息</summary>recording metadata</details>",
+      "<details><summary>分段原始转写（1 段）</summary>transcript payload</details>",
+      "---",
+      "## 原始材料",
+      "<details><summary>索引数据</summary>index payload</details>",
+    ].join("\n");
+
+    const output = replaceActiveVersionBlock(input, { label: "综合纪要" }, "Rewritten body.");
+
+    expect(output.match(/^## 原始材料$/gm)).toHaveLength(1);
+    expect(output.match(/\n---\n+## 原始材料/g)).toHaveLength(1);
+    expect(output).toContain("<summary>录音信息</summary>recording metadata");
+    expect(output).toContain("<summary>分段原始转写（1 段）</summary>transcript payload");
+    expect(output).toContain("<summary>索引数据</summary>index payload");
+    expect(output.indexOf('data-qnalog="active-version-end"')).toBeLessThan(output.search(/\n---\n+## 原始材料/));
+  });
+
   it("uses current mode templates and storage folder for original snapshots", async () => {
     const { files, vault } = createMemoryVault();
     const originalContent = sourceContent
