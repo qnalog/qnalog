@@ -545,7 +545,7 @@ class QnALogPlugin extends obsidian.Plugin {
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
     }));
-    this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog live minutes panel"), () => this.shell.openOutlineView());
+    this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog live notes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
@@ -600,7 +600,7 @@ class QnALogPlugin extends obsidian.Plugin {
     });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Live Minutes Panel"), callback: () => this.shell.openOutlineView() });
-    this.addCommand({ id: "open-minutes-kanban", name: t("Open Minutes Board"), callback: () => this.shell.openMinutesKanban() });
+    this.addCommand({ id: "open-minutes-kanban", name: t("Open Notes Board"), callback: () => this.shell.openMinutesKanban() });
     this.addCommand({ id: "record-mic-only", name: t("Start Recording · Microphone only"), callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-mic-virtual", name: t("Start Recording · Microphone + Computer Audio"), callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-virtual-only", name: t("Start Recording · Computer Audio only"), callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });

@@ -352,7 +352,7 @@ export class OutlineView extends obsidian.ItemView {
     this.noteAskByPath = {};
   }
   getViewType() { return VIEW_TYPE_OUTLINE; }
-  getDisplayText() { return i18nT("QnALog live minutes"); }
+  getDisplayText() { return i18nT("QnALog live notes"); }
   getIcon() { return QNALOG_PLUGIN_ICON_ID; }
   async onOpen() {
     this.containerEl.children[1].empty();
@@ -4235,7 +4235,7 @@ export class OutlineView extends obsidian.ItemView {
     }
     const kanbanBtn = actions.createEl("button", {
       cls: "clickable-icon qnalog-outline-kanban-btn",
-      attr: { "aria-label": i18nT("Open minutes board"), title: i18nT("Open minutes board") },
+      attr: { "aria-label": i18nT("Open notes board"), title: i18nT("Open notes board") },
     });
     try { obsidian.setIcon(kanbanBtn, "layout-dashboard"); } catch { kanbanBtn.setText(i18nT("Board")); }
     kanbanBtn.onclick = () => { void this.plugin.shell.openMinutesKanban(); };
