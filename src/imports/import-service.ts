@@ -33,6 +33,7 @@ import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 import { t } from "../shared/i18n";
 import { labelText } from "../shared/note-labels";
+import { buildTranscriptSessionSkeleton } from "../notes/note-transcript-materials";
 import type { SessionStore } from "../session/session-store";
 import type { ContinuationService } from "../session/continuation-service";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
@@ -168,7 +169,7 @@ export class ImportService {
       `> ${labelText("modelLabel")}${importProvider.model || importProvider.id} → ${this.host.settings.llmModel}`,
       externalSource && externalSource.name ? `> ${labelText("sourceLabel")}${t("Auto Import")} · ${externalSource.name}` : null,
       "",
-      `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", session.id)}${nsMarker("segments-start", session.id)}${nsMarker("segments-end", session.id)}</details>`,
+      buildTranscriptSessionSkeleton(session.id),
       "",
     ].filter((line) => line !== null).join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);
@@ -675,7 +676,7 @@ export class ImportService {
       `> [!info] ${labelText("textImportInfo")}`,
       `> ${labelText("sourceFilesLabel")}${sources.length} · ${labelText("modeLabel")}${meta.prefix} · ${labelText("modelLabel")}${this.host.settings.llmModel}`,
       "",
-      `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", session.id)}${nsMarker("segments-start", session.id)}${nsMarker("segments-end", session.id)}</details>`,
+      buildTranscriptSessionSkeleton(session.id),
       "",
     ].join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);

@@ -14,7 +14,7 @@ import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { stripArchivedOutlineSections } from "../notes/outline-text";
 import { getEffectivePolishMode } from "../shared/mode-meta";
 import { labelText } from "../shared/note-labels";
-import { nsMarker } from "../shared/namespace";
+import { buildTranscriptSessionSkeleton } from "../notes/note-transcript-materials";
 import { stableHash } from "../shared/stable-hash";
 import { genId } from "../shared/util-common";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
@@ -152,7 +152,7 @@ export class ContinuationService {
     const stageContent = [
       stageTitle,
       "",
-      `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", sessionId)}${nsMarker("segments-start", sessionId)}${nsMarker("segments-end", sessionId)}</details>`,
+      buildTranscriptSessionSkeleton(sessionId),
       "",
     ].join("\n");
     const taskId = genId();

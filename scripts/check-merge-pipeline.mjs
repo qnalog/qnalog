@@ -1763,8 +1763,9 @@ async function main() {
       const placeholder = placeholderPath ? files.get(placeholderPath)?._content || "" : "";
       if (!placeholderPath?.startsWith("QnALog/RecordingSmoke/")
         || !placeholder.includes(`<!-- qnalog-session:${lifecycleSession?.id} -->`)
-        || !placeholder.includes(`<!-- qnalog-segments-start:${lifecycleSession?.id} -->`)
-        || !placeholder.includes(`<!-- qnalog-segments-end:${lifecycleSession?.id} -->`)
+        || !/\*\*Segmented raw transcript \(0 segments\)\*\*|\*\*分段原始转写（0 段）\*\*/.test(placeholder)
+        || !/<summary>(?:Index data|索引数据)<\/summary>/.test(placeholder)
+        || placeholder.includes(`<!-- qnalog-segments-start:${lifecycleSession?.id} -->`)
         || !lifecycleSession
         || !plugin.continuations.isSessionTracked(lifecycleSession.id)) {
         throw new Error("recording start did not create and track the expected placeholder session");
@@ -1787,7 +1788,7 @@ async function main() {
         || plugin.sessionStore.get() !== null
         || plugin.continuations.isSessionTracked(lifecycleSession.id)
         || plugin.recording.getRecordingIssue() !== null) {
-        throw new Error(`short-recording finalization did not discard the placeholder and release session state: ${JSON.stringify({ fileExists: files.has(placeholderPath), sessionExists: !!plugin.sessionStore.get(), tracked: plugin.continuations.isSessionTracked(lifecycleSession.id), recordingIssue: !!plugin.recording.getRecordingIssue() })}`);
+        throw new Error("short-recording finalization did not discard the placeholder and release session state");
       }
       if (llmCalls.length !== requestCountBefore
         || JSON.stringify(plugin.queue.tasks.map((task) => task.id)) !== JSON.stringify(taskIdsBefore)

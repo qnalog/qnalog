@@ -92,19 +92,30 @@ export function findSessionNoteBlock(
   const endMarker = nsMarker("segments-end", sessionId);
   const sessionIndex = text.indexOf(sessionMarker);
   const endIndex = text.indexOf(endMarker);
-  if (sessionIndex < 0 || endIndex < sessionIndex) return null;
-  const h2Index = text.lastIndexOf("\n## ", sessionIndex);
-  const h1Index = text.lastIndexOf("\n# ", sessionIndex);
-  const headingIndex = Math.max(h2Index, h1Index);
-  let end = endIndex + endMarker.length;
+  if (sessionIndex < 0) return null;
   const detailsStart = text.lastIndexOf("<details>", sessionIndex);
   const detailsCloseBefore = text.lastIndexOf("</details>", sessionIndex);
+  const sessionInInitialIndexShell = endIndex < 0
+    && detailsStart > detailsCloseBefore
+    && /<summary>(?:索引数据|Index data)<\/summary>/i.test(text.slice(detailsStart, sessionIndex))
+    && /^(?:## 原始材料|## Original material)\s*$/mi.test(text.slice(0, sessionIndex))
+    && !new RegExp(`<!--\\s*${nsRe("transcript-start")}:`, "i").test(text);
+  if (!sessionInInitialIndexShell && endIndex < sessionIndex) return null;
+  const h2Index = text.lastIndexOf("\n## ", sessionIndex);
+  const h1Index = text.lastIndexOf("\n# ", sessionIndex);
+  const initialHeading = sessionInInitialIndexShell
+    ? /^(?:#|##)\s+.+$/m.exec(text)?.index ?? -1
+    : -1;
+  const headingIndex = initialHeading >= 0 ? initialHeading : Math.max(h2Index, h1Index);
+  let end = sessionInInitialIndexShell
+    ? text.indexOf("</details>", sessionIndex) + "</details>".length
+    : endIndex + endMarker.length;
   if (detailsStart > detailsCloseBefore) {
     const detailsEnd = text.indexOf("</details>", endIndex);
     if (detailsEnd >= 0) end = detailsEnd + "</details>".length;
   }
   return {
-    start: headingIndex >= 0 ? headingIndex + 1 : 0,
+    start: headingIndex > 0 ? headingIndex + 1 : 0,
     end,
   };
 }

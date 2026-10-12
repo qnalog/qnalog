@@ -2,8 +2,45 @@ import * as obsidian from "obsidian";
 import type { Vault } from "obsidian";
 import type { RecordingSession } from "../shared/types";
 import { nsMarker } from "../shared/namespace";
+import { labelPattern, labelText } from "../shared/note-labels";
 import { findNoteMarkerOffset, findSessionNoteBlock } from "./note-document";
-import { normalizeTranscriptLayout } from "../transcript/transcript-markdown";
+import { normalizeTranscriptLayout, readTranscriptBlocks } from "../transcript/transcript-markdown";
+
+function insertBeforeIndexData(
+  markdown: string,
+  content: string,
+  sessionId: string | null | undefined,
+): string | null {
+  const indexDetails = new RegExp(
+    `<details\\b[^>]*>\\s*<summary>[^<]*(?:${labelPattern("indexData").source})[^<]*<\\/summary>[\\s\\S]*?<\\/details>`,
+    "i",
+  ).exec(markdown);
+  if (!indexDetails || !sessionId) return null;
+
+  const startMarker = nsMarker("segments-start", sessionId);
+  const endMarker = nsMarker("segments-end", sessionId);
+  const removals = [startMarker, endMarker]
+    .flatMap((marker) => {
+      const start = markdown.indexOf(marker);
+      return start >= 0 ? [{ start, end: start + marker.length }] : [];
+    })
+    .sort((left, right) => left.start - right.start);
+  let withoutMarkers = markdown;
+  for (const range of removals.slice().reverse()) {
+    withoutMarkers = withoutMarkers.slice(0, range.start) + withoutMarkers.slice(range.end);
+  }
+  const anchor = indexDetails.index - removals.filter((range) => range.end <= indexDetails.index)
+    .reduce((total, range) => total + range.end - range.start, 0);
+  const before = withoutMarkers.slice(0, anchor);
+  const after = withoutMarkers.slice(anchor);
+  const group = `${startMarker}\n${content.trim()}\n${endMarker}`;
+  const prefixBreak = before.endsWith("\n") ? "" : "\n";
+  const suffixBreak = after.startsWith("\n") ? "" : "\n";
+  const normalized = normalizeTranscriptLayout(`${before}${prefixBreak}${group}${suffixBreak}${after}`);
+  const count = readTranscriptBlocks(normalized).length;
+  const title = new RegExp(`^\\*\\*(?:${labelPattern("segmentedRawTranscript").source})\\*\\*$`, "m");
+  return normalized.replace(title, `**${labelText("segmentedRawTranscript", count)}**`);
+}
 
 export type NoteSegmentVault = Pick<Vault, "getAbstractFileByPath" | "read" | "modify" | "create">;
 
@@ -51,6 +88,11 @@ export async function insertBeforeSessionSegmentsEnd(
   const file = host.getVault().getAbstractFileByPath(path);
   if (!(file instanceof obsidian.TFile)) return host.appendToNote(path, content);
   const cur = await host.getVault().read(file);
+  const beforeIndex = insertBeforeIndexData(cur, content, sessionId);
+  if (beforeIndex !== null) {
+    await host.getVault().modify(file, beforeIndex);
+    return;
+  }
   const specific = sessionId ? nsMarker("segments-end", sessionId) : null;
   const legacy = nsMarker("segments-end");
   const specificIndex = specific ? findNoteMarkerOffset(cur, specific, "first") : -1;

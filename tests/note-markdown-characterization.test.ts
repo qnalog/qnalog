@@ -25,7 +25,7 @@ import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
 import type { Segment } from "../src/shared/types";
-import { buildTextImportSourceDetails } from "../src/notes/note-transcript-materials";
+import { buildTextImportSourceDetails, buildTranscriptSessionSkeleton } from "../src/notes/note-transcript-materials";
 
 // note-markdown 的回归覆盖：机器字段名固定、旧中英字段安全读取、内容字段按模式白名单保留，
 // 以及版本块原位更新时不丢正文与原始材料。
@@ -33,6 +33,20 @@ import { buildTextImportSourceDetails } from "../src/notes/note-transcript-mater
 const START = QNALOG_ACTIVE_VERSION_START;
 const END = QNALOG_ACTIVE_VERSION_END;
 const SESSION_LINE = "<!-- " + NS_TAG + "-session:" + NS_TAG + "-test1234-abcdef -->";
+
+describe("transcript session skeleton boundaries", () => {
+  it.each(["# 2026-10-12 18:44 · General", "## Append to general (2026-10-12 18:44)"])(
+    "lets short-session cleanup select the initial shell after a %s heading",
+    (heading) => {
+      const note = `${heading}\n${buildTranscriptSessionSkeleton("session-fixture")}`;
+      const range = findSessionNoteBlock(note, "session-fixture");
+      expect(range).not.toBeNull();
+      expect(range!.start).toBe(0);
+      expect(note.slice(range!.start, range!.end)).toBe(note.trimEnd());
+    },
+  );
+});
+
 const EMBED = "![]" + "[[qnalog-20260924-100138.webm]]";
 const count = (text: string, needle: string) => text.split(needle).length - 1;
 const transcriptLedgerFixture = () => {

@@ -12,6 +12,19 @@ export type TextImportSourceDetailsInput = Pick<RecordingSession, "id" | "source
   segments?: Segment[] | null;
 };
 
+/** Build the raw-material area used while a session is still receiving transcript blocks. */
+export function buildTranscriptSessionSkeleton(sessionId: string): string {
+  return [
+    "---",
+    "",
+    `## ${labelText("originalMaterial")}`,
+    "",
+    `**${labelText("segmentedRawTranscript", 0)}**`,
+    "",
+    `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", sessionId)}</details>`,
+  ].join("\n");
+}
+
 export function buildTextImportSourceDetails(session: TextImportSourceDetailsInput): string {
   if (!isTextImportSession(session)) return "";
   const segments = Array.isArray(session.segments) ? session.segments : [];

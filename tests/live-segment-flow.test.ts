@@ -9,6 +9,7 @@ const { transcribeMock, channelsMock, loadVocabMock, notices } = vi.hoisted(() =
 }));
 
 vi.mock("obsidian", () => ({
+  TFile: class TFile { constructor(public path: string) {} },
   Notice: class { constructor(message: string, timeout?: number) { notices.push([String(message), timeout]); } },
   normalizePath: (value: string) => String(value || "").replaceAll("\\", "/").replace(/\/+/g, "/").replace(/\/$/, ""),
 }));
@@ -28,6 +29,9 @@ import { NS_AUDIO_PREFIX, nsMarker } from "../src/shared/namespace";
 import { parseVocabularyGroups } from "../src/vocabulary";
 import { normalizePath } from "obsidian";
 import { getAudioTimeLink } from "../src/notes/audio-reference-text";
+import { buildTranscriptSessionSkeleton } from "../src/notes/note-transcript-materials";
+import { insertBeforeSessionSegmentsEnd } from "../src/notes/note-segment-store";
+import { verifyTranscriptCheckpoint } from "../src/imports/transcript-checkpoint";
 
 function makeHost() {
   const progress: unknown[] = [];
@@ -113,6 +117,40 @@ describe("live segment consumer contract", () => {
     expect(blocks[0]).toContain(getAudioTimeLink(record.audioName, 1000));
     expect(blocks[0]).toContain("recognized text");
     expect(progress.at(-1)).toMatchObject({ stage: "transcribed", label: t("Transcribed {0} segments").replace("{0}", "2") });
+  });
+
+  it("writes a long live transcript into the same independent segment area as imports", async () => {
+    const { service, host } = makeHost();
+    const text = "Live sentence. ".repeat(300);
+    let markdown = `# In progress\n\n${buildTranscriptSessionSkeleton("s1")}`;
+    const file = new (await import("obsidian")).TFile("Notes/s.md");
+    const vault = {
+      getAbstractFileByPath: () => file,
+      read: async () => markdown,
+      modify: async (_file: unknown, next: string) => { markdown = next; },
+      create: async () => file,
+    };
+    host.noteWriter.insertBeforeSegmentsEnd = async (path: string, block: string, sessionId?: string) => {
+      await insertBeforeSessionSegmentsEnd({ getVault: () => vault as never, appendToNote: async () => undefined }, path, block, sessionId);
+    };
+    transcribeMock.mockResolvedValueOnce({ text, rawText: text, providerId: "provider", units: [] });
+    await service.processSegment(makeSession(), makeSegment());
+
+    const blocks = readTranscriptBlocks(markdown);
+    const detailTags = [...markdown.matchAll(/<\/?details\b[^>]*>/gi)].map((match) => match[0]);
+    let depth = 0;
+    let maximumDepth = 0;
+    for (const tag of detailTags) {
+      depth += /^<\/details/i.test(tag) ? -1 : 1;
+      maximumDepth = Math.max(maximumDepth, depth);
+    }
+    expect(verifyTranscriptCheckpoint(markdown, [{ text }])).toMatchObject({ ok: true, expectedSegments: 1, persistedSegments: 1 });
+    expect(blocks.map((block) => block.visibleBlock)).toEqual([text]);
+    expect(depth).toBe(0);
+    expect(maximumDepth).toBe(1);
+    expect(markdown.match(/<summary>(?:Index data|索引数据)<\/summary>/g)).toHaveLength(1);
+    expect(markdown).not.toMatch(/<summary>(?:Index data|索引数据)<\/summary>[\s\S]*qnalog-transcript-start/);
+    expect([...markdown.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)].every((match) => match[1].length <= 3500)).toBe(true);
   });
 
   it("uses streaming text, vocabulary correction and source priority, then clears the client", async () => {

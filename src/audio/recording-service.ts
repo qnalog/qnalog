@@ -3,7 +3,6 @@
 import * as obsidian from "obsidian";
 import { audioInputModeLabel, normalizeAudioInputMode } from "./audio-input";
 import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
-import { labelText } from "../shared/note-labels";
 import { isMobileRuntime } from "../shared/util-platform";
 import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload, AudioInputMode, ContinuationContext, TranscribeProviderSettings } from "../shared/types";
 import { getErrorMessage, genId } from "../shared/util-common";
@@ -11,7 +10,7 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
-import { nsMarker } from "../shared/namespace";
+import { buildTranscriptSessionSkeleton } from "../notes/note-transcript-materials";
 import type { RecorderChannelInfo, RecorderService } from "../audio/recorder-service";
 import type { NoteWriter } from "../notes/note-writer";
 import { handleRecordedSegment, type RecordingSegmentHost } from "./recording-segment-flow";
@@ -260,7 +259,7 @@ export class RecordingService {
       const header = [
         titleLine,
         "",
-        `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", createdSession.id)}${nsMarker("segments-start", createdSession.id)}${nsMarker("segments-end", createdSession.id)}</details>`,
+        buildTranscriptSessionSkeleton(createdSession.id),
         "",
       ].join("\n");
       if (!continuationInfo) await this.host.noteWriter.appendToNote(mdPath, header);
