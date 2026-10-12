@@ -11,6 +11,7 @@ import {
   serializeTranscriptBlock,
 } from "../src/transcript/transcript-markdown";
 import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
+import { buildOutlineCoverageMetadata, readCurrentOutlineBlock } from "../src/notes/outline-storage";
 
 function makeSegment(index: number, text: string): Segment {
   return attachTextTranscript({ index, startOffsetMs: index * 1000, endOffsetMs: (index + 1) * 1000, text }, "hidden-data-fixture", "text-import");
@@ -125,6 +126,21 @@ describe("transcript hidden-data storage", () => {
     } finally {
       setActiveUiLanguage(previousLanguage);
     }
+  });
+
+  it("moves realtime outline coverage metadata out and removes blank lines", () => {
+    const coverage = { version: 1 as const, outlineHash: "outline-hash", sourceHash: "source-hash", committedSegmentCount: 5, totalSegmentCount: 6 };
+    const oldNote = [
+      "## 原始材料", "<details>", "<summary>录音中实时大纲（草稿）</summary>", "",
+      "> 当前覆盖 5/6 段", "", buildOutlineCoverageMetadata(coverage), "", "- 条目一", "", "</details>",
+    ].join("\n");
+    const normalized = normalizeTranscriptLayout(oldNote);
+    const detailsBody = normalized.match(/<details>\s*<summary>[\s\S]*?<\/summary>([\s\S]*?)<\/details>/)?.[1] || "";
+    expect(detailsBody).not.toMatch(/\n\s*\n/);
+    expect(detailsBody).not.toContain("realtime-outline-source-coverage");
+    expect(normalized).toMatch(/<\/details>\s*<span hidden data-qnalog-realtime-outline-source-coverage=/);
+    expect(readCurrentOutlineBlock(normalized)?.sourceCoverage).toEqual(coverage);
+    expect(normalizeTranscriptLayout(normalized)).toBe(normalized);
   });
 
   it("reads the preceding URI-encoded hidden-span format", () => {

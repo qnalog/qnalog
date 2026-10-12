@@ -175,6 +175,20 @@ function splitLegacyTranscriptDetails(markdown: string): string {
   return text.slice(0, updatedStart) + `${title}\n${inner ? `\n${inner}\n` : "\n"}` + text.slice(updatedEnd);
 }
 
+function normalizeRealtimeOutlineDetails(markdown: string): string {
+  const pattern = /(<details\b[^>]*>\s*<summary>[^<]*(?:录音中实时大纲|Live outline while recording)[^<]*<\/summary>)([\s\S]*?)(<\/details>)/gi;
+  return String(markdown || "").replace(pattern, (whole, header: string, body: string, close: string, offset: number, source: string) => {
+    const coverage = body.match(new RegExp(`<!--\\s*${nsRe("realtime-outline-source-coverage")}\\s*:\\s*([\\s\\S]*?)\\s*-->`, "i"));
+    const cleanBody = body.replace(new RegExp(`<!--\\s*${nsRe("realtime-outline-source-coverage")}\\s*:[\\s\\S]*?-->`, "i"), "")
+      .split(/\r?\n/).filter((line) => line.trim()).join("\n");
+    const alreadyHidden = new RegExp(`data-${NS_TAG}-realtime-outline-source-coverage=`, "i").test(source.slice(offset + whole.length, offset + whole.length + 512));
+    const details = `${header}${cleanBody ? `\n${cleanBody}\n` : "\n"}${close}`;
+    if (!coverage || alreadyHidden) return details;
+    const payload = encodeData(coverage[1].trim());
+    return `${details}\n<span hidden data-${NS_TAG}-realtime-outline-source-coverage="${payload}"></span>`;
+  });
+}
+
 function splitFragmentId(value: string): { id: string; fragment: number } {
   const match = value.match(/^(.*):fragment:(\d+)$/);
   return match ? { id: match[1], fragment: Number(match[2]) } : { id: value, fragment: 0 };
@@ -409,7 +423,7 @@ export function normalizeTranscriptDataPlacement(markdown: string): string {
 
 /** Normalize legacy grouped transcript markup and place its data outside the details blocks. */
 export function normalizeTranscriptLayout(markdown: string): string {
-  return normalizeTranscriptDataPlacement(splitLegacyTranscriptDetails(String(markdown || "")));
+  return normalizeRealtimeOutlineDetails(normalizeTranscriptDataPlacement(splitLegacyTranscriptDetails(String(markdown || ""))));
 }
 
 function validSegment(value: unknown): value is Omit<Segment, "transcript"> {
