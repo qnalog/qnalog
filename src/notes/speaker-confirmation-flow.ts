@@ -7,6 +7,7 @@ import type { SpeakerId } from "../audio/channel-speakers";
 import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { getCurrentTranscript } from "../transcript/session-transcript";
+import { normalizeTranscriptLayout } from "../transcript/transcript-markdown";
 import { diagnosticError } from "../shared/util-key-diag";
 import { t } from "../shared/i18n";
 
@@ -77,6 +78,7 @@ export async function confirmSpeakerNames(port: SpeakerConfirmationPort, session
         persistedReplacements += updated.replacements;
       }
       if (persistedReplacements > 0) {
+        markdown = normalizeTranscriptLayout(markdown);
         await port.getVault().modify(file, markdown);
         port.resetNotePanelCache();
       }

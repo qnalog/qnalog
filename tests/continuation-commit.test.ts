@@ -191,7 +191,7 @@ describe("staged continuation commit", () => {
       expect(blocks).toHaveLength(1);
       expect(blocks[0].visibleBlock).toBe(getTranscribeSegmentPlaceholder(segment.error, { retryable: true }));
       expect(blocks[0].segment.transcript?.sourceId).toBe("continuation-a");
-      expect(committed).toContain("### Segment 3 (00:05–00:06) [[retry.webm|00:00]]");
+      expect(committed).toContain("<summary>Raw transcript · Segment 3 (00:05–00:06)</summary>\n[[retry.webm|00:00]]");
       expect(committed).not.toContain(nsMarker("transcribe-task", "raw-retry"));
       const writes = memory.writes;
       await memory.writer.commitContinuation(session, "Organized continuation body", []);
@@ -252,7 +252,9 @@ describe("staged continuation commit", () => {
       expect(memory.markdown.match(/<!-- qnalog-continuation-committed:continuation-a -->/g)).toHaveLength(1);
       expect(memory.markdown).toContain("Organized continuation body");
       if (!consolidatedLayout) {
-        expect(memory.markdown.indexOf("continued transcript")).toBeLessThan(memory.markdown.indexOf("</details>"));
+        const continued = blocks.find((block) => block.segment.transcript?.sourceId === "continuation-a");
+        expect(continued?.visibleBlock).toBe("continued transcript");
+        expect(memory.markdown.indexOf("<summary>Original segment</summary>")).toBeLessThan(memory.markdown.indexOf("INDEX-LOCK"));
         expect(memory.markdown.indexOf("</details>")).toBeLessThan(memory.markdown.indexOf("INDEX-LOCK"));
         expect(memory.markdown.indexOf("INDEX-LOCK")).toBeLessThan(memory.markdown.indexOf("SEDIMENT-LOCK"));
       }

@@ -35,7 +35,7 @@ function buildNote(options: {
     error: options.error ?? (options.text ? undefined : "transcription failed"),
   };
   let rawBlocks = buildRewriteSegmentBlock(segment, "![[rec.webm]]");
-  if (options.omitSegmentHeading) rawBlocks = rawBlocks.replace(/^### .*\r?\n/m, "");
+  if (options.omitSegmentHeading) rawBlocks = rawBlocks.replace(/<summary>[\s\S]*?<\/summary>\r?\n?/, "");
   const content = buildConsolidatedNoteContent({
     currentMarkdown: "",
     title: options.title ?? NOTE_TITLE,
@@ -76,7 +76,7 @@ describe("empty short note deletion decision", () => {
   it("includes the 10-second boundary and rejects longer or unmeasurable notes", () => {
     expect(candidate(buildNote({ endOffsetMs: 10000 }))).not.toBeNull();
     expect(candidate(buildNote({ endOffsetMs: 11000 }))).toBeNull();
-    expect(candidate(buildNote({ omitSegmentHeading: true }))).toBeNull();
+    expect(candidate(buildNote({ omitSegmentHeading: true }))).toMatchObject({ durationMs: 4000 });
   });
 
   it("rejects valid transcript text and polished prose", () => {

@@ -10,7 +10,7 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
-import { nsMarker } from "../shared/namespace";
+import { buildTranscriptSessionSkeleton } from "../notes/note-transcript-materials";
 import type { RecorderChannelInfo, RecorderService } from "../audio/recorder-service";
 import type { NoteWriter } from "../notes/note-writer";
 import { handleRecordedSegment, type RecordingSegmentHost } from "./recording-segment-flow";
@@ -172,7 +172,7 @@ export class RecordingService {
           preparation = await this.host.continuations.prepare(appendTargetFile, sessionId, sessionStamp, recordedAt);
         } catch (e: unknown) {
           console.error("[QnALog] prepare continuation target failed", e);
-          new obsidian.Notice(`${t("Cannot continue recording into this minutes note: ")}${formatRecordingCaughtError(e)}`, 8000);
+          new obsidian.Notice(`${t("Cannot continue recording into this note: ")}${formatRecordingCaughtError(e)}`, 8000);
           return;
         }
       }
@@ -259,9 +259,7 @@ export class RecordingService {
       const header = [
         titleLine,
         "",
-        nsMarker("session", createdSession.id),
-        nsMarker("segments-start", createdSession.id),
-        nsMarker("segments-end", createdSession.id),
+        buildTranscriptSessionSkeleton(createdSession.id),
         "",
       ].join("\n");
       if (!continuationInfo) await this.host.noteWriter.appendToNote(mdPath, header);

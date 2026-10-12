@@ -99,11 +99,11 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
     port.tasks.startTaskActivity({
       id: taskId,
       kind: "sediment",
-      title: t("Scan minutes objects"),
+      title: t("Scan notes objects"),
       subject: file.path,
       status: "running",
       stage: "reading",
-      stageLabel: t("Read the minutes content"),
+      stageLabel: t("Read the note content"),
       detail: file.basename,
       progress: 5,
       actions: [],
@@ -157,7 +157,7 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
       detail: scanDetail(port, objects, " · "),
       progress: 100,
       actions: [
-        { id: "open-task-note", label: t("Open minutes"), primary: true },
+        { id: "open-task-note", label: t("Open note"), primary: true },
         { id: "dismiss-task", label: t("Dismiss") },
       ],
     });
@@ -174,7 +174,7 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
       detail: port.errorMessage(error),
       subject: file.path,
       actions: [
-        { id: "open-task-note", label: t("Open minutes"), primary: true },
+        { id: "open-task-note", label: t("Open note"), primary: true },
         { id: "dismiss-task", label: t("Dismiss") },
       ],
     });

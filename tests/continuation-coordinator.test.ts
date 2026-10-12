@@ -197,8 +197,8 @@ describe("continuation preparation and queue coordination consumers", () => {
     const prepared = await fixture.service.prepare(target, "session-b", "stamp", "recorded");
     expect(prepared.stageFile.path).toBe("QnALog/2026-09-21 · Pending continuation-session-b.md");
     expect(fixture.files.get(prepared.stageFile.path)).toContain("<!-- qnalog-session:session-b -->");
-    expect(fixture.files.get(prepared.stageFile.path)).toContain("<!-- qnalog-segments-start:session-b -->");
-    expect(fixture.files.get(prepared.stageFile.path)).toContain("<!-- qnalog-segments-end:session-b -->");
+    expect(fixture.files.get(prepared.stageFile.path)).not.toContain("<!-- qnalog-segments-start:session-b -->");
+    expect(fixture.files.get(prepared.stageFile.path)).not.toContain("<!-- qnalog-segments-end:session-b -->");
     expect(prepared.mode).toBe("meeting");
     expect(prepared.continuation.targetSourceId).toBe(prior.transcript.sourceId);
     expect(fixture.tasks[0]).toMatchObject({

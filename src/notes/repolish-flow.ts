@@ -115,7 +115,7 @@ export async function repolishMarkdownFile(
     }
     let segments = extractTranscriptSegments(content);
     if (!segments.length) {
-      new obsidian.Notice(t("No QnALog original transcript found. Use this on a minutes Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
+      new obsidian.Notice(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
       return;
     }
 
@@ -152,7 +152,7 @@ export async function repolishMarkdownFile(
 
     const inFlight = port.getInFlight();
     if (inFlight.has(taskId)) {
-      new obsidian.Notice(t("This minutes note is being reorganized; please wait for the current task to finish."), 5000);
+      new obsidian.Notice(t("This note is being reorganized; please wait for the current task to finish."), 5000);
       return;
     }
     inFlight.add(taskId);
@@ -230,7 +230,7 @@ export async function repolishMarkdownFile(
     }
     try { port.requestOutlineRefresh(); } catch { /* generation must not fail because the sidebar is unavailable */ }
     const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
-    new obsidian.Notice(`${t("QnALog: generated ")}${modeDisplayName}${t(" derived minutes")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
+    new obsidian.Notice(`${t("QnALog: generated ")}${modeDisplayName}${t(" derived note")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
     const completedTaskMeter = taskMeter ? port.tasks.endTaskMeter(taskMeter) : null;
     taskMeter = null;
     try { port.tasks.logCompletedWork(t("Re-organize completed · {0}").replace("{0}", modeDisplayName), file.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
@@ -239,7 +239,7 @@ export async function repolishMarkdownFile(
       detail: versionCacheError ? `${outputPath} · ${t("Version index not synced: {0}").replace("{0}", versionCacheError)}` : outputPath,
       subject: outputPath, progress: 100,
       actions: [
-        { id: "open-task-note", label: t("Open minutes"), primary: true },
+        { id: "open-task-note", label: t("Open note"), primary: true },
         { id: "dismiss-task", label: t("Close Recording") },
       ],
     });

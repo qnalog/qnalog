@@ -69,9 +69,9 @@ export async function mergeMarkdownFilesAsNewFlow(
     ? startedAt.format(host.getNoteFileNameFormat())
     : (moment ? moment().format(host.getNoteFileNameFormat()) : host.getFallbackFilename());
   const targetPath = host.findAvailableMarkdownPath(obsidian.normalizePath(`${host.getMarkdownFolder()}/${stamp} · ${t("Merge")}.md`));
-  if (!targetPath) throw new Error(t("Failed to generate a path for the merged minutes file"));
+  if (!targetPath) throw new Error(t("Failed to generate a path for the merged note file"));
 
-  new obsidian.Notice(`${t("QnALog: merging ")}${sources.length}${t(" minutes notes...")}`, 8000);
+  new obsidian.Notice(`${t("QnALog: merging ")}${sources.length}${t(" notes...")}`, 8000);
   await host.getVault().create(targetPath, "");
   const session: RecordingSession & { mergedSources: NoteMergeSourceMetadata[] } = {
     id: genId(),
@@ -112,5 +112,5 @@ export async function mergeMarkdownFilesAsNewFlow(
     const openFile: (file: obsidian.TFile) => Promise<void> = host.openFile;
     try { await openFile(finalFile); } catch { /* intentionally empty */ }
   }
-  new obsidian.Notice(`${t("Generated merged minutes: ")}${finalFile instanceof obsidian.TFile ? finalFile.basename : host.getFallbackPrefix()}`);
+  new obsidian.Notice(`${t("Generated merged note: ")}${finalFile instanceof obsidian.TFile ? finalFile.basename : host.getFallbackPrefix()}`);
 }

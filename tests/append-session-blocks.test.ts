@@ -320,7 +320,7 @@ describe("实时大纲归档去重（防追加翻倍）", () => {
         appendix: appendixOf(LIVE),
       });
       expect(out).toContain("<summary>录音中实时大纲（草稿）</summary>");
-      expect(out).toContain("> 基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。");
+      expect(out).toContain("> 基于录音过程中已完成的分段自动生成，正文笔记以最终整理为准。时间标记可用于快速回听对应片段。");
       expect(out).toContain(BANNER);
       expect(out).toContain(LIVE);
     } finally {
@@ -339,7 +339,7 @@ describe("实时大纲归档去重（防追加翻倍）", () => {
         appendix: appendixOf(LIVE),
       });
       expect(out).toContain("<summary>Live outline while recording (draft)</summary>");
-      expect(out).toContain("> Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts.");
+      expect(out).toContain("> Outline generated from the segments completed while recording; the final note takes precedence. The time markers let you jump back to the matching parts.");
       expect(out).not.toContain("录音中实时大纲");
       expect(out).toContain(BANNER);
       expect(out).toContain(LIVE);

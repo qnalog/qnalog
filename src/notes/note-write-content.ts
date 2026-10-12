@@ -3,6 +3,8 @@ import { NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsRe } from "../shared/name
 import { labelText } from "../shared/note-labels";
 import { splitLeadingFrontmatter } from "./note-document";
 import { splitOutSedimentBlock } from "../sediment/text-blocks";
+import { normalizeTranscriptDataPlacement } from "../transcript/transcript-markdown";
+import { wrapSessionTranscriptBlocks } from "./note-transcript-materials";
 
 export function buildEmptyLlmOutputFallback(): string {
   return "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
@@ -69,7 +71,7 @@ export interface PolishAppendContentInput {
 }
 
 export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput): string {
-  return [
+  const content = [
     input.polish.frontmatter || null,
     input.title,
     "",
@@ -98,24 +100,18 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
     input.retainAudio ? "" : null,
     input.retainAudio ? (input.masterAudioBlock ? null : "</details>") : null,
     input.retainAudio ? "" : null,
-    input.textImport ? null : "<details>",
-    input.textImport ? null : `<summary>${labelText("segmentedRawTranscript", input.segmentCount)}</summary>`,
+    input.textImport ? null : wrapSessionTranscriptBlocks(input.rawBlocks, input.sessionId),
     input.textImport ? null : "",
-    input.textImport ? null : nsMarker("segments-start", input.sessionId),
-    input.textImport ? null : "",
-    input.textImport ? null : input.rawBlocks,
-    input.textImport ? null : nsMarker("segments-end", input.sessionId),
-    input.textImport ? null : "</details>",
-    input.textImport ? null : "",
-    nsMarker("session", input.sessionId),
+    `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", input.sessionId)}</details>`,
     "",
     input.polish.sedimentBlock || null,
     input.polish.sedimentBlock ? "" : null,
     ...new Set([
       ...[...input.currentMarkdown.matchAll(new RegExp(`<!--\\s*${nsRe(NS_CONTINUATION_COMMITTED_MARKER)}:[^>\\s]+\\s*-->`, "g"))].map(match => match[0]),
       ...(input.continuationSessionId ? [nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)] : []),
-    ]),
+    ].map(marker => `<details><summary>${labelText("indexData")}</summary>${marker}</details>`)),
   ].filter(value => value !== null).join("\n");
+  return normalizeTranscriptDataPlacement(content);
 }
 
 export function buildPolishAppendBlock(input: PolishAppendBlockInput): string {
@@ -156,6 +152,6 @@ export function appendPolishNoteContent(input: PolishAppendContentInput): string
       return `${prefix}${formatElapsed(input.totalMs)}${open === "(" ? ")" : String.fromCharCode(0xff09)}`;
     });
   }
-  if (input.continuationSessionId) next = `${next.replace(/\s*$/, "")}\n${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)}\n`;
-  return next;
+  if (input.continuationSessionId) next = `${next.replace(/\s*$/, "")}\n<details><summary>${labelText("indexData")}</summary>${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)}</details>\n`;
+  return normalizeTranscriptDataPlacement(next);
 }

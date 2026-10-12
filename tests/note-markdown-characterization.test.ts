@@ -18,14 +18,14 @@ import { stripEmptyPlaceholders } from "../src/notes/empty-short-note";
 import { buildActiveVersionBlock, replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { cleanTranscriptBlock, ensureTranscriptBlocks, extractTranscriptSegments, splitTranscriptSections } from "../src/notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../src/notes/note-source-metadata";
-import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, findSessionNoteBlock, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import { attachTextTranscript, getCurrentTranscript } from "../src/transcript/session-transcript";
 import type { Segment } from "../src/shared/types";
-import { buildTextImportSourceDetails } from "../src/notes/note-transcript-materials";
+import { buildTextImportSourceDetails, buildTranscriptSessionSkeleton } from "../src/notes/note-transcript-materials";
 
 // note-markdown 的回归覆盖：机器字段名固定、旧中英字段安全读取、内容字段按模式白名单保留，
 // 以及版本块原位更新时不丢正文与原始材料。
@@ -33,6 +33,20 @@ import { buildTextImportSourceDetails } from "../src/notes/note-transcript-mater
 const START = QNALOG_ACTIVE_VERSION_START;
 const END = QNALOG_ACTIVE_VERSION_END;
 const SESSION_LINE = "<!-- " + NS_TAG + "-session:" + NS_TAG + "-test1234-abcdef -->";
+
+describe("transcript session skeleton boundaries", () => {
+  it.each(["# 2026-10-12 18:44 · General", "## Append to general (2026-10-12 18:44)"])(
+    "lets short-session cleanup select the initial shell after a %s heading",
+    (heading) => {
+      const note = `${heading}\n${buildTranscriptSessionSkeleton("session-fixture")}`;
+      const range = findSessionNoteBlock(note, "session-fixture");
+      expect(range).not.toBeNull();
+      expect(range!.start).toBe(0);
+      expect(note.slice(range!.start, range!.end)).toBe(note.trimEnd());
+    },
+  );
+});
+
 const EMBED = "![]" + "[[qnalog-20260924-100138.webm]]";
 const count = (text: string, needle: string) => text.split(needle).length - 1;
 const transcriptLedgerFixture = () => {
@@ -53,10 +67,15 @@ const transcriptLedgerFixture = () => {
 
 describe("transcript ledger helper contracts", () => {
   it("preserves edited visible text when reconciliation is disabled and upgrades only legacy sections", () => {
-    const { driftedBlock, fixture } = transcriptLedgerFixture();
+    const { fixture } = transcriptLedgerFixture();
     const upgraded = ensureTranscriptBlocks(fixture, "ledger-fixture", { reconcileEditedText: false });
     const [first, second] = readTranscriptBlocks(upgraded);
-    expect(upgraded).toContain(driftedBlock);
+    expect(upgraded).toContain("<summary>Raw transcript · Segment 1 (00:01–00:02)</summary>");
+    expect(upgraded).toContain("alpha corrected beta");
+    expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
+    const detailsBody = upgraded.slice(upgraded.indexOf("<details>"), upgraded.indexOf("</details>") + "</details>".length);
+    expect(detailsBody).not.toContain("data-qnalog-transcript-data");
+    expect(upgraded.indexOf("</details>")).toBeLessThan(upgraded.indexOf("data-qnalog-transcript-data"));
     expect(first.segment.transcript?.currentRevision).toBe(1);
     expect(first.visibleBlock).toBe("alpha corrected beta");
     expect(first.drifted).toBe(true);
@@ -90,7 +109,9 @@ describe("transcript ledger helper contracts", () => {
     expect(second.segment.queueTaskId).toBe("task-ledger");
     expect(second.segment.audioStartOffsetMs).toBe(2000);
     expect(second.segment.audioEndOffsetMs).toBe(3000);
-    expect(upgraded.endsWith("</details>\nAFTER")).toBe(true);
+    expect(upgraded).toContain("<span hidden data-qnalog-transcript-data=");
+    expect(upgraded.match(/data-qnalog-transcript-data=/g)).toHaveLength(2);
+    expect(upgraded.lastIndexOf("data-qnalog-transcript-data=")).toBeLessThan(upgraded.lastIndexOf("AFTER"));
     expect(ensureTranscriptBlocks(upgraded, "ledger-fixture")).toBe(upgraded);
   });
 
@@ -347,6 +368,8 @@ describe("版本块构建与替换", () => {
       expect(english).toContain("中文正文 stays unchanged.");
       expect(count(english, START)).toBe(1);
       expect(count(english, END)).toBe(1);
+      expect(english).toContain(`> [!info]- Currently displayed version: Synthesis minutes ${START}`);
+      expect(english).not.toContain("<!-- qnalog-active-version-");
       expect(buildActiveVersionBlock({ label: "旧中文版本" }, "正文")).toContain(
         "> [!info]- Currently displayed version: 旧中文版本",
       );
@@ -414,6 +437,80 @@ describe("版本块构建与替换", () => {
       setActiveUiLanguage(originalLanguage);
     }
   });
+
+  it("moves raw materials out of a legacy active-version range without losing markers", () => {
+    const legacy = [
+      "# Synthetic note",
+      "<!-- qnalog-active-version-start -->",
+      "> [!info]- 当前显示版本：旧版本",
+      "",
+      "旧正文。",
+      "",
+      "---",
+      "",
+      "## 原始材料",
+      "<details><summary>索引数据</summary>",
+      "<!-- qnalog-session:safe-fixture -->",
+      "</details>",
+      "<!-- qnalog-active-version-end -->",
+      "",
+    ].join("\n");
+    const rewritten = replaceActiveVersionBlock(legacy, { label: "新版本" }, "新正文。");
+    const range = findActiveVersionBlock(rewritten)!;
+    expect(rewritten.slice(range.start, range.end)).not.toContain("## 原始材料");
+    expect(rewritten.slice(range.end)).toContain("## 原始材料");
+    expect(rewritten.slice(range.end)).toContain("qnalog-session:safe-fixture");
+    expect(rewritten.match(/qnalog-active-version-end/g)).toBeNull();
+    expect(rewritten.match(/data-qnalog="active-version-end"/g)).toHaveLength(1);
+  });
+
+  it("retains inline session markers when a legacy active range has no raw-material heading", () => {
+    const legacy = [
+      "# Synthetic note",
+      "<!-- qnalog-active-version-start -->",
+      "Visible body.",
+      "<details><summary>QnALog session data</summary><!-- qnalog-session:safe-fixture --></details>",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n");
+    const rewritten = replaceActiveVersionBlock(legacy, { label: "New" }, "Updated body.");
+    expect(rewritten).toContain("qnalog-session:safe-fixture");
+    expect(rewritten.indexOf("qnalog-session:safe-fixture")).toBeGreaterThan(rewritten.indexOf("## 原始材料"));
+    expect(rewritten.match(/data-qnalog="active-version-end"/g)).toHaveLength(1);
+  });
+
+  it("self-heals duplicate raw-material regions across repeated version rewrites", () => {
+    let note = [
+      "# Synthetic note",
+      "> [!info]- Current version <span data-qnalog=\"active-version-start\"></span>",
+      "Visible body.",
+      "---",
+      "## 原始材料",
+      "<span data-qnalog=\"active-version-end\"></span>",
+      "---",
+      "## 原始材料",
+      "---",
+      "## 原始材料",
+      "<details><summary>录音信息</summary>fixture</details>",
+      "",
+    ].join("\n");
+    for (let index = 0; index < 5; index++) {
+      note = replaceActiveVersionBlock(note, META, `整理正文 ${index + 1}`);
+      expect(note.match(/^## 原始材料$/gm)).toHaveLength(1);
+      expect(note.match(/^---$/gm)).toHaveLength(1);
+      expect(note.indexOf('data-qnalog="active-version-end"')).toBeLessThan(note.indexOf("\n---\n"));
+      expect(note.slice(note.indexOf('data-qnalog="active-version-start"'), note.indexOf('data-qnalog="active-version-end"'))).not.toContain("## 原始材料");
+    }
+  });
+});
+
+describe("session details ranges", () => {
+  it("includes the closing details tag when locating a wrapped session marker", () => {
+    const note = "# Session\n<details><summary>QnALog session data</summary><!-- qnalog-session:s1 --><!-- qnalog-segments-end:s1 --></details>\n";
+    const range = findSessionNoteBlock(note, "s1");
+    expect(range).not.toBeNull();
+    expect(note.slice(range!.start, range!.end)).toContain("</details>");
+    expect(note.slice(range!.end).trim()).toBe("");
+  });
 });
 
 describe("活动版本范围读取", () => {
@@ -441,6 +538,15 @@ describe("活动版本范围读取", () => {
     expect(findActiveVersionBlock("<!-- qnalog-active-version-start -->unfinished")).toBeNull();
     expect(findActiveVersionBlock(text)).toEqual(range);
     expect(findActiveVersionBlock(text)).toEqual(range);
+  });
+
+  it("reads a new inline-element range and legacy comment range with exact boundaries", () => {
+    const current = buildActiveVersionBlock({ label: "Current" }, "body");
+    const range = findActiveVersionBlock(current)!;
+    expect(current.slice(range.start, range.end)).toBe(current);
+    expect(range.body.trim()).toBe("body");
+    const legacy = "<!-- qnalog-active-version-start -->old<!-- qnalog-active-version-end -->";
+    expect(findActiveVersionBlock(legacy)?.body).toBe("old");
   });
 
   it("writes replacement blocks literally", () => {
@@ -596,7 +702,10 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(blocks.find((block) => block.segment.transcript?.id === "seg:fixture:1")?.segment).toEqual(
       readTranscriptBlocks(original)[0].segment,
     );
-    expect(upgraded).toContain(middleBlock);
+    expect(upgraded).toContain("<summary>Raw transcript · Segment 2 (00:10–00:20)</summary>");
+    expect(upgraded).toContain("\nB\n");
+    expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
+    expect(upgraded.indexOf("</details>")).toBeLessThan(upgraded.indexOf("data-qnalog-transcript-data="));
     expect(extractTranscriptSegments(upgraded).map((segment) => segment.text)).toEqual(["A", "B", "C"]);
     expect(blocks[0].segment.audioPath).toBe("Audio/a.wav");
     expect(blocks[0].segment.audioName).toBe("a.wav");
@@ -604,7 +713,7 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(blocks[2].segment.sourcePath).toBe("Notes/c.md");
     expect(blocks[2].segment.rawText).toBe("C");
     expect(getCurrentTranscript(blocks[2].segment.transcript!).rawText).toBe("C");
-    expect(upgraded.endsWith("</details>\nAFTER")).toBe(true);
+    expect(upgraded).toMatch(/<\/details>[\s\S]*AFTER$/);
     expect(ensureTranscriptBlocks(upgraded, "fixture")).toBe(upgraded);
   });
 
@@ -644,8 +753,9 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
       "seg:fixture:1",
       "seg:fixture:2",
     ]);
-    expect(upgraded).toContain(firstLedger.replace(/\n/g, "\r\n"));
-    expect(upgraded).toContain(secondLedger);
+    expect(upgraded).toMatch(/<summary>Raw transcript · Segment 2 \(00:10–00:20\)<\/summary>/);
+    expect(upgraded).toContain("<summary>Raw transcript · Segment 3 (00:20–00:30)</summary>");
+    expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
     expect(blocks[0].segment.text).toContain("A-before");
     expect(blocks[0].segment.text).toContain("A-after");
     expect(blocks[0].segment.text.match(/A-before/g)).toHaveLength(1);
@@ -691,7 +801,10 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(() => extractTranscriptSegments(damagedSource)).toThrow(/damaged metadata boundaries/);
     expect(() => ensureTranscriptBlocks(damagedSource, "fixture")).toThrow(/damaged metadata boundaries/);
 
-    const future = middleBlock.replace('"schemaVersion":2', '"schemaVersion":3');
+    const encoded = middleBlock.match(/data-qnalog-transcript-data="([^"]+)"/)?.[1];
+    if (!encoded) throw new Error("Missing encoded transcript data");
+    const futureEncoded = Buffer.from(Buffer.from(encoded, "base64").toString("utf8").replace('"schemaVersion":2', '"schemaVersion":3')).toString("base64");
+    const future = middleBlock.replace(encoded, futureEncoded);
     const futureSource = source.replace(middleBlock, future);
     expect(() => extractTranscriptSegments(futureSource)).toThrow(/uses an unsupported schema/);
     expect(() => ensureTranscriptBlocks(futureSource, "fixture")).toThrow(/uses an unsupported schema/);
@@ -897,8 +1010,8 @@ describe("笔记外层结构", () => {
     expect(second).toContain("newer body");
     expect(second).toContain("原始音频");
     expect(second).toContain("![[qnalog-audio.webm]]");
-    expect(second?.match(/qnalog-active-version-start/g)).toHaveLength(1);
-    expect(second?.match(/qnalog-active-version-end/g)).toHaveLength(1);
+    expect(second?.match(/data-qnalog="active-version-start"/g)).toHaveLength(1);
+    expect(second?.match(/data-qnalog="active-version-end"/g)).toHaveLength(1);
   });
 
   it("来源身份使用首个会话 ID，否则按路径与创建时间稳定回退", () => {

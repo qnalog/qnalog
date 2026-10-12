@@ -246,12 +246,12 @@ export class PeopleDirectorySuggestionModal extends obsidian.Modal {
     contentEl.createDiv({
       cls: "setting-item-description",
       text: this.sourceFile
-        ? i18nT("QnALog only sends the content of the current note to the configured LLM to generate candidate person suggestions; existing person profiles are used only locally for matching and deduplication and are not sent with the request. Once confirmed, the speaker attributions for this meeting are written back to the minutes and the corresponding person pages are maintained.")
+        ? i18nT("QnALog only sends the content of the current note to the configured LLM to generate candidate person suggestions; existing person profiles are used only locally for matching and deduplication and are not sent with the request. Once confirmed, the speaker attributions for this meeting are written back to the notes and the corresponding person pages are maintained.")
         : this.options.fromIgnored
           ? `${i18nT("These are the ones already ignored: ")}${this.options.ignoredCount || this.suggestions.length}${i18nT(" people suggestions. Suggestions ignored by mistake can be restored to pending first, or edited and saved into the person profiles directly; once saved they are removed from the ignored list automatically.")}`
         : this.options.fromCache
           ? `${i18nT("These are the ones not yet processed since the last scan: ")}${this.options.cachedCount || this.suggestions.length}${i18nT(" people suggestions. They stay in the local settings until you save, ignore, or clear them, so you can continue later.")}`
-        : `${i18nT("QnALog scanned {0} notes in the minutes library; only person suggestions that need confirmation are shown. Existing person profiles are used only locally for matching and deduplication and are not sent with the request.").replace("{0}", String(this.options.scannedCount || 0))}${this.options.remainingCount ? i18nT("After this round, {0} notes still await scanning.").replace("{0}", String(this.options.remainingCount)) : ""}`,
+        : `${i18nT("QnALog scanned {0} notes in the notes library; only person suggestions that need confirmation are shown. Existing person profiles are used only locally for matching and deduplication and are not sent with the request.").replace("{0}", String(this.options.scannedCount || 0))}${this.options.remainingCount ? i18nT("After this round, {0} notes still await scanning.").replace("{0}", String(this.options.remainingCount)) : ""}`,
     });
     contentEl.createDiv({
       cls: "setting-item-description qnalog-people-suggestion-guide",
@@ -1336,7 +1336,7 @@ export class QueueModal extends obsidian.Modal {
       clearBtn.onclick = async () => {
         const n = this.plugin.queue.tasks.filter((t) => t && t.status !== "running" && t.status !== "live").length;
         const ok = await qnalogConfirm(this.app, i18nT("Cancel all automatic retries?"),
-          `${i18nT("After cancelling, these ")}${n}${i18nT(" tasks will no longer retry automatically, and the corresponding minutes will stay in their current state. Cached audio is kept for now; tasks already processing are unaffected.")}`,
+          `${i18nT("After cancelling, these ")}${n}${i18nT(" tasks will no longer retry automatically, and the corresponding notes will stay in their current state. Cached audio is kept for now; tasks already processing are unaffected.")}`,
           i18nT("Cancel retry"));
         if (!ok) return;
         const cancellable = this.plugin.queue.tasks.filter((t) => t && t.status !== "running" && t.status !== "live");
@@ -2146,7 +2146,7 @@ export class AudioImportOptionsModal extends obsidian.Modal {
     const mode = contentEl.createDiv({ cls: "qnalog-import-mode" });
     const modeCopy = mode.createDiv();
     modeCopy.createDiv({ cls: "qnalog-import-mode-title", text: i18nT("Organizing mode") });
-    modeCopy.createDiv({ cls: "qnalog-import-mode-hint", text: i18nT("After transcription is complete, generate minutes of the corresponding type.") });
+    modeCopy.createDiv({ cls: "qnalog-import-mode-hint", text: i18nT("After transcription is complete, generate notes of the corresponding type.") });
     const modeSelect = mode.createEl("select", { cls: "dropdown qnalog-import-mode-select" });
     for (const [key] of getVisibleModeEntries(this.plugin.settings, false)) {
       modeSelect.createEl("option", { value: key, text: getModeDisplayName(this.plugin.settings, key) });

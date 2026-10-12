@@ -741,7 +741,7 @@ export function assembleBriefingParts(parts: BriefingPartCheckpoint[]): string {
   const incomplete = ordered.filter((part) => part.status !== "complete" || !cleanText(part.text));
   if (incomplete.length) {
     throw new BriefingPipelineIncompleteError(
-      t("The minutes are partially complete: {0}/{1} parts completed").replace("{0}", String(ordered.length - incomplete.length)).replace("{1}", String(ordered.length)),
+      t("The notes are partially complete: {0}/{1} parts completed").replace("{0}", String(ordered.length - incomplete.length)).replace("{1}", String(ordered.length)),
       ordered.length - incomplete.length,
       ordered.length,
       incomplete.map((part) => part.index),

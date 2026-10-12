@@ -35,7 +35,7 @@ export async function readMergeSourceFlow(
   startIndex: number,
 ): Promise<NoteMergeSource> {
   if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
-    throw new Error(t("Only QnALog Markdown minutes notes can be merged"));
+    throw new Error(t("Only QnALog Markdown notes can be merged"));
   }
   let content = await host.getVault().read(file);
   const sourceId = host.getSourceIdFromMarkdown(content, file);

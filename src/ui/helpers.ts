@@ -124,14 +124,14 @@ export function getRecentNoteProcessingState(content: unknown): RecentNoteProces
     return {
       kind: "failed",
       label: t("Transcription failed"),
-      title: t("This minutes note still contains transcription or cleanup failure markers"),
+      title: t("This note still contains transcription or cleanup failure markers"),
     };
   }
   if (NS_SEGMENTS_START_RE.test(visibleText) || /^###\s+(?:段落|Segment)\s+\d+/m.test(visibleText)) {
     return {
       kind: "raw",
       label: t("To organize"),
-      title: t("This minutes note is currently mostly raw segment transcriptions and has no LLM-cleaned version yet"),
+      title: t("This note is currently mostly raw segment transcriptions and has no LLM-cleaned version yet"),
     };
   }
   return null;
@@ -365,7 +365,7 @@ export function classifyImportTextFileForModal(file: { extension?: unknown } | n
       category: "qnalog-normal",
       badge: t("Organized"),
       reason: t("Can merge / switch template"),
-      statusTitle: t("QnALog has organized minutes that can be used for merging several notes, re-organizing with another template, or converting to another mode"),
+      statusTitle: t("QnALog has organized notes that can be used for merging several notes, re-organizing with another template, or converting to another mode"),
     };
   }
 

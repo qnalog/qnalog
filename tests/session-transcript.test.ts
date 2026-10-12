@@ -50,9 +50,9 @@ describe("session transcript source ledger", () => {
     const text = "First --> `code` <details>\nSecond line";
     const segment = attachTextTranscript(importedSegment(text), "session:unsafe/id", "text-import");
     const markdown = serializeTranscriptBlock(segment, "### Audio source 4", text);
-    expect(markdown).toContain("\\u002d\\u002d\\u003e");
-    expect(markdown).toContain("\\u0060");
-    expect(markdown).toContain("\\u003cdetails\\u003e");
+    expect(markdown).toContain("--&gt;");
+    expect(markdown).toContain("&lt;details&gt;");
+    expect(markdown).toMatch(/data-qnalog-transcript-data="[A-Za-z0-9+/]+=*"/);
 
     const [block] = readTranscriptBlocks(markdown);
     expect(block.segment).toEqual(segment);
@@ -60,10 +60,10 @@ describe("session transcript source ledger", () => {
     expect(block.drifted).toBe(false);
     expect(block.segment.transcript?.revisions[0].rawText).toBe(text);
 
-    const edited = markdown.replace("First --> `code`", "Edited --> `code`");
+    const edited = markdown.replace("First --&gt; `code`", "Edited --&gt; `code`");
     expect(readTranscriptBlocks(edited)[0].drifted).toBe(true);
     const plain = stripTranscriptMetadata(markdown);
-    expect(plain).toContain(text);
+    expect(plain).toContain("First --&gt; `code` &lt;details&gt;");
     expect(plain).not.toContain("qnalog-transcript-");
   });
   it("ignores a marker-shaped literal that has no transcript block structure", () => {
@@ -76,7 +76,10 @@ describe("session transcript source ledger", () => {
     const markdown = serializeTranscriptBlock(segment, "### Segment 4", segment.text);
     expect(() => readTranscriptBlocks(markdown.replace(/<!-- qnalog-transcript-text-end:[^>]+ -->/, "")))
       .toThrow("damaged metadata boundaries");
-    expect(() => readTranscriptBlocks(markdown.replace('"schemaVersion":2', '"schemaVersion":3')))
+    const data = markdown.match(/data-qnalog-transcript-data="([^"]+)"/)?.[1];
+    if (!data) throw new Error("Missing encoded transcript data");
+    const futureData = Buffer.from(Buffer.from(data, "base64").toString("utf8").replace('"schemaVersion":2', '"schemaVersion":3')).toString("base64");
+    expect(() => readTranscriptBlocks(markdown.replace(data, futureData)))
       .toThrow("unsupported schema");
   });
   it("rejects a source block missing both its outer end and visible-text start markers", () => {

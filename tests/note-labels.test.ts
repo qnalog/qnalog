@@ -87,11 +87,15 @@ describe("labelText 按界面语言取词并填充占位符", () => {
       expect(labelText("originalMaterial")).toBe("原始材料");
       expect(labelText("segment", 3)).toBe("段落 3");
       expect(labelText("segmentRange", 3, "00:10", "00:20")).toBe("段落 3（00:10–00:20）");
+      expect(labelText("rawTranscriptSegmentRange", 3, "00:10", "00:20")).toBe("原始转写 · 段落 3 (00:10–00:20)");
+      expect(labelText("transcriptPartSuffix", 2, 3)).toBe(" · 第 2/3 部分");
       expect(labelText("mergedVersionAt", "MiMo")).toBe("整合版（MiMo）");
       setActiveUiLanguage(matchUiLanguage("en") as never);
       expect(labelText("originalMaterial")).toBe("Original material");
       expect(labelText("segment", 3)).toBe("Segment 3");
       expect(labelText("segmentRange", 3, "00:10", "00:20")).toBe("Segment 3 (00:10–00:20)");
+      expect(labelText("rawTranscriptSegmentRange", 3, "00:10", "00:20")).toBe("Raw transcript · Segment 3 (00:10–00:20)");
+      expect(labelText("transcriptPartSuffix", 2, 3)).toBe(" · Part 2/3");
       expect(labelText("mergedVersionAt", "MiMo")).toBe("Merged version (MiMo)");
     } finally {
       setActiveUiLanguage(original);

@@ -34,8 +34,8 @@ export async function mergeMarkdownFileWithPreviousFlow(
     return;
   }
   const ok = await host.confirm(
-    t("Merge minutes"),
-    t("A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace(/\{[01]\}/g, (placeholder) => placeholder === "{0}" ? previous.basename : file.basename),
+    t("Merge notes"),
+    t("A new merged note will be created; the source files will be kept.\n\nSources:\n1. {0}\n2. {1}\n\nContinue?").replace(/\{[01]\}/g, (placeholder) => placeholder === "{0}" ? previous.basename : file.basename),
     t("Merge"),
   );
   if (!ok) return;
@@ -44,6 +44,6 @@ export async function mergeMarkdownFileWithPreviousFlow(
   } catch (error: unknown) {
     console.error("[QnALog] merge notes failed", error);
     const failure = error as { message?: unknown } | null | undefined;
-    new obsidian.Notice(`${t("Merging minutes failed: ")}${((failure && failure.message) || error) as string}`, 8000);
+    new obsidian.Notice(`${t("Merging notes failed: ")}${((failure && failure.message) || error) as string}`, 8000);
   }
 }

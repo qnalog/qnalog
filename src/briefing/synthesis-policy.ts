@@ -94,6 +94,7 @@ export function buildSynthesisConsolidationPrompt(input: {
 - 不要 YAML frontmatter、代码围栏、前言或解释。
 - 可见正文必须放在 \`<!-- qnalog-part-body-start -->\` 与 \`<!-- qnalog-part-body-end -->\` 之间。
 - 正文结束后追加三条完整 HTML 注释：\`qnalog-people\`、\`qnalog-tags\`、\`qnalog-part-summary\`。摘要注释只写一句全场小结。
+- 标签只使用文字、数字、下划线、连字符和斜线，不得包含空格或 &。
 
 【材料规模】
 - 会议时长：${duration}

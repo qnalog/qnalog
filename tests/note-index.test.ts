@@ -132,6 +132,8 @@ describe("QnALog note index", () => {
     const marker = serializeNoteIndex(first);
     expect(marker).not.toContain("A --> B");
     expect(marker).toContain("<summary>索引数据</summary>");
+    expect(marker).toMatch(/^<details>[\s\S]*<!-- qnalog-note-index -->[\s\S]*<!-- qnalog-note-index-end -->[\s\S]*<\/details>$/);
+    expect(marker).not.toMatch(/\n\s*\n/);
     expect(marker).toContain("```json");
     expect(readNoteIndex(marker)?.core.title).toBe("A --> B");
 
@@ -182,6 +184,46 @@ describe("QnALog note index", () => {
     expect((inserted.match(/<!-- qnalog-note-index -->/g) || []).length).toBe(1);
     expect(removeNoteIndex(inserted)).not.toContain("Index data");
     expect(removeNoteIndex(inserted)).toContain("## 1. 从单次纪要走向项目记忆");
+  });
+
+  it("puts loose session comments and legacy session shells into the single index details block", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const knowledge = serializeSessionKnowledge({
+      schemaVersion: 2, id: "knowledge:fixture", sourceRevision: "rev", sources: [], status: "unavailable",
+      issues: [], topics: [], decisions: [], actions: [], questions: [], projections: [],
+    });
+    const input = [
+      minutes.replace("<!-- qnalog-segments-start -->", "<details><summary>分段原始转写</summary>\n<!-- qnalog-segments-start -->")
+        .replace("原始转写也不应进入索引。", "原始转写也不应进入索引。\n</details>"),
+      "",
+      knowledge,
+      "",
+      "<details><summary>QnALog session data</summary><!-- qnalog-session:fixture --></details>",
+    ].join("\n");
+    const index = buildNoteIndex(input, { noteTitle: "metadata fixture", generatedAt: "2026-08-25T12:00:00.000Z" })!;
+    const output = upsertNoteIndex(input, index);
+    const indexBlock = /<details>\s*<summary>索引数据<\/summary>([\s\S]*?)<\/details>/.exec(output)?.[1] || "";
+    expect(output.indexOf("## 原始材料")).toBeGreaterThanOrEqual(0);
+    expect(output.indexOf("<summary>索引数据</summary>")).toBeGreaterThan(output.indexOf("## 原始材料"));
+    expect(output).not.toContain("QnALog session data");
+    const outsideDetails = output.replace(/<details>[\s\S]*?<\/details>/gi, "");
+    expect(outsideDetails).not.toContain("<!-- qnalog-");
+    expect(indexBlock.match(/<!-- qnalog-session:/g)).toHaveLength(1);
+    expect(indexBlock.match(/<!-- qnalog-session-knowledge /g)).toHaveLength(1);
+    expect(output.match(/<summary>索引数据<\/summary>/g)).toHaveLength(1);
+    expect(indexBlock).not.toMatch(/\n\s*\n/);
+    expect(upsertNoteIndex(output, index)).toBe(output);
+  });
+
+  it("moves a legacy body index into raw materials and keeps exactly one block after rewrite", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const index = buildNoteIndex(minutes, { noteTitle: "legacy", generatedAt: "2026-08-25T12:00:00.000Z" })!;
+    const legacyBlock = serializeNoteIndex(index);
+    const legacy = minutes.replace("---\n\n## 原始材料", `${legacyBlock}\n\n---\n\n## 原始材料`);
+    const rewritten = upsertNoteIndex(legacy, index);
+    expect(rewritten.match(/<summary>索引数据<\/summary>/g)).toHaveLength(1);
+    expect(rewritten.indexOf("<summary>索引数据</summary>")).toBeGreaterThan(rewritten.indexOf("## 原始材料"));
+    expect(upsertNoteIndex(rewritten, index)).toBe(rewritten);
   });
 
   it("removes both folded and legacy index blocks without leftovers", () => {
@@ -437,6 +479,8 @@ describe("QnALog note index", () => {
       "<summary>Raw transcript</summary>",
       "Hidden raw text.",
       "</details>",
+      "<details><summary>QnALog session data</summary><!-- qnalog-session:legacy --></details>",
+      "<details><summary>QnALog merge data</summary><!-- qnalog-merge -->{}qnalog-merge-end --></details>",
       "<details>",
       "<summary>Custom</summary>",
       "Custom body remains.",
@@ -450,6 +494,8 @@ describe("QnALog note index", () => {
     const visible = extractIndexSource(markdown);
     expect(visible).toContain("Visible before.");
     expect(visible).not.toContain("Hidden raw text.");
+    expect(visible).not.toContain("qnalog-session:legacy");
+    expect(visible).not.toContain("qnalog-merge");
     expect(visible).toContain("Custom body remains.");
     expect(visible).toContain("Attributed shell remains.");
   });

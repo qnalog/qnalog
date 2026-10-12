@@ -1,6 +1,7 @@
 import {
   NS_ACTIVE_VERSION_BODY_RE,
   NS_MACHINE_SHELL_RE,
+  NS_TAG,
   NS_SEDIMENT_BLOCK_RE,
   NS_SEGMENTS_BLOCK_RE,
   NS_SESSION_LINE_RE,
@@ -91,13 +92,31 @@ export function findSessionNoteBlock(
   const endMarker = nsMarker("segments-end", sessionId);
   const sessionIndex = text.indexOf(sessionMarker);
   const endIndex = text.indexOf(endMarker);
-  if (sessionIndex < 0 || endIndex < sessionIndex) return null;
+  if (sessionIndex < 0) return null;
+  const detailsStart = text.lastIndexOf("<details>", sessionIndex);
+  const detailsCloseBefore = text.lastIndexOf("</details>", sessionIndex);
+  const sessionInInitialIndexShell = endIndex < 0
+    && detailsStart > detailsCloseBefore
+    && /<summary>(?:索引数据|Index data)<\/summary>/i.test(text.slice(detailsStart, sessionIndex))
+    && /^(?:## 原始材料|## Original material)\s*$/mi.test(text.slice(0, sessionIndex))
+    && !new RegExp(`<!--\\s*${nsRe("transcript-start")}:`, "i").test(text);
+  if (!sessionInInitialIndexShell && endIndex < sessionIndex) return null;
   const h2Index = text.lastIndexOf("\n## ", sessionIndex);
   const h1Index = text.lastIndexOf("\n# ", sessionIndex);
-  const headingIndex = Math.max(h2Index, h1Index);
+  const initialHeading = sessionInInitialIndexShell
+    ? /^(?:#|##)\s+.+$/m.exec(text)?.index ?? -1
+    : -1;
+  const headingIndex = initialHeading >= 0 ? initialHeading : Math.max(h2Index, h1Index);
+  let end = sessionInInitialIndexShell
+    ? text.indexOf("</details>", sessionIndex) + "</details>".length
+    : endIndex + endMarker.length;
+  if (detailsStart > detailsCloseBefore) {
+    const detailsEnd = text.indexOf("</details>", endIndex);
+    if (detailsEnd >= 0) end = detailsEnd + "</details>".length;
+  }
   return {
-    start: headingIndex >= 0 ? headingIndex + 1 : 0,
-    end: endIndex + endMarker.length,
+    start: headingIndex > 0 ? headingIndex + 1 : 0,
+    end,
   };
 }
 
@@ -167,14 +186,12 @@ export function findActiveVersionBlock(markdown: string): ActiveVersionBlockRang
   const match = NS_ACTIVE_VERSION_BODY_RE.exec(text);
   if (!match) return null;
   const start = match.index;
-  const relativeBodyStart = match[0].indexOf(match[1], match[0].indexOf("-->") + 3);
-  const bodyStart = start + relativeBodyStart;
   return {
     start,
     end: start + match[0].length,
-    bodyStart,
-    bodyEnd: bodyStart + match[1].length,
-    body: match[1],
+    bodyStart: start + match[1].length,
+    bodyEnd: start + match[1].length + match[2].length,
+    body: match[2],
   };
 }
 
@@ -250,11 +267,15 @@ export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts 
   };
 
   const detailsPatterns: RegExp[] = [
+    new RegExp(`<details>\\s*\\n?<summary>[^<\\n]*<\\/summary>[\\s\\S]*?<\\/details>(?:\\s*<span\\b[^>]*\\bdata-${NS_TAG}-transcript-data=["'][^"']+["'][^>]*>\\s*<\\/span>)+`, "gi"),
+    /<details>\s*\n?<summary>[^<\n]*(?:索引数据|Index data)[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*QnALog session data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*QnALog merge data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:录音信息|Recording info)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:原始音频|Original audio)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:录音中实时大纲|Live outline while recording)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:回听时间轴|Playback timeline)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:分段原始转写|Segmented raw transcript)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:分段原始转写|Segmented raw transcript|原始转写\s*·\s*段落|Raw transcript\s*·\s*Segment)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:文本导入来源|Text import source)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:会议工作台|Meeting workbench)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
   ];

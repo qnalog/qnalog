@@ -38,8 +38,8 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   // —— 标题类 ——
   originalMaterial: { key: "Original material", re: /原始材料|Original material/ },
   currentVersion: { key: "Current version", re: /当前版本|Current version/ },
-  currentMinutes: { key: "Current minutes", re: /当前纪要|Current minutes/ },
-  currentMinutesAt: { key: "Current minutes ({0})", params: 1, re: /当前纪要（[^）]*）|Current minutes \([^)]*\)/ },
+  currentMinutes: { key: "Current note", re: /当前笔记|当前纪要|Current note|Current minutes/ },
+  currentMinutesAt: { key: "Current note ({0})", params: 1, re: /当前笔记（[^）]*）|当前纪要（[^）]*）|Current note \([^)]*\)|Current minutes \([^)]*\)/ },
   mergedVersion: { key: "Merged version", re: /整合版|Merged version/ },
   mergedVersionAt: { key: "Merged version ({0})", params: 1, re: /整合版（[^）]*）|Merged version \([^)]*\)/ },
   appendTo: { key: "Append to {0}", params: 1, re: /续录\s*\d+|Append to\s+\d+/ },
@@ -56,36 +56,38 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   importedTextSources: { key: "Imported text ({0} sources)", params: 1, re: /导入文本原文（\d+ 个来源）|Imported text \(\d+ sources\)/ },
   importSource: { key: "Import source", re: /导入来源|Import source/ },
   importInfo: { key: "Import info", re: /导入信息|Import info/ },
-  previousVersion: { key: "Previous version (before reorganizing · {0})", params: 1, re: /上一版纪要（重新整理前 · [^）]*）|Previous version \(before reorganizing · [^)]*\)/ },
+  previousVersion: { key: "Previous version (before reorganizing · {0})", params: 1, re: /上一版(?:纪要|笔记)（重新整理前 · [^）]*）|Previous version \(before reorganizing · [^)]*\)/ },
   previousVersionEmpty: { key: "(previous version was empty)", re: /（上一版为空）|\(previous version was empty\)/ },
   liveOutlineDraft: { key: "Live outline while recording (draft)", re: /录音中实时大纲（草稿）|Live outline while recording \(draft\)/ },
   outlineIntro: {
-    key: "Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts.",
-    re: /基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。时间标记可用于快速回听对应片段。|Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts./,
+    key: "Outline generated from the segments completed while recording; the final note takes precedence. The time markers let you jump back to the matching parts.",
+    re: /基于录音过程中已完成的分段自动生成，正文(?:纪要|笔记)以最终整理为准。时间标记可用于快速回听对应片段。|Outline generated from the segments completed while recording; the final (?:minutes take|note takes) precedence. The time markers let you jump back to the matching parts./,
   },
   outlineIntroPrefix: {
-    key: "Outline generated from the segments completed while recording; the final minutes take precedence. The time markers let you jump back to the matching parts.",
-    re: /基于录音过程中已完成的分段自动生成，正文纪要以最终整理为准。|Outline generated from the segments completed while recording; the final minutes take precedence\./,
+    key: "Outline generated from the segments completed while recording; the final note takes precedence. The time markers let you jump back to the matching parts.",
+    re: /基于录音过程中已完成的分段自动生成，正文(?:纪要|笔记)以最终整理为准。|Outline generated from the segments completed while recording; the final (?:minutes take|note takes) precedence\./,
   },
   outlineCoverage: {
-    key: "The outline covers only {0}/{1} transcript segments; the rest still went into the minutes. Refresh the outline in the sidebar to fill the gaps.",
+    key: "The outline covers only {0}/{1} transcript segments; the rest still went into the notes. Refresh the outline in the sidebar to fill the gaps.",
     params: 2,
-    re: /大纲仅覆盖 \d+\/\d+ 个转写分段，未覆盖部分仍已用于正文纪要。可在侧边栏刷新大纲后补齐。|The outline covers only \d+\/\d+ transcript segments; the rest still went into the minutes. Refresh the outline in the sidebar to fill the gaps./,
+    re: /大纲仅覆盖 \d+\/\d+ 个转写分段，未覆盖部分仍已用于正文(?:纪要|笔记)。可在侧边栏刷新大纲后补齐。|The outline covers only \d+\/\d+ transcript segments; the rest still went into the (?:minutes|notes). Refresh the outline in the sidebar to fill the gaps./,
   },
   outlineCoverageCurrentRecording: {
-    key: "The outline covers only {0}/{1} segments of this recording; the rest still went into the minutes.",
+    key: "The outline covers only {0}/{1} segments of this recording; the rest still went into the notes.",
     params: 2,
-    re: /本次录音大纲仅覆盖 \d+\/\d+ 段，其余转写仍已用于正文纪要。|The outline covers only \d+\/\d+ segments of this recording; the rest still went into the minutes./,
+    re: /本次录音大纲仅覆盖 \d+\/\d+ 段，其余转写仍已用于正文(?:纪要|笔记)。|The outline covers only \d+\/\d+ segments of this recording; the rest still went into the (?:minutes|notes)./,
   },
   outlineCoverageWholeNote: {
-    key: "The outline covers only {0}/{1} segments of the whole note; the rest still went into the minutes.",
+    key: "The outline covers only {0}/{1} segments of the whole note; the rest still went into the notes.",
     params: 2,
-    re: /整篇笔记大纲仅覆盖 \d+\/\d+ 段，其余转写仍已用于正文纪要。|The outline covers only \d+\/\d+ segments of the whole note; the rest still went into the minutes./,
+    re: /整篇笔记大纲仅覆盖 \d+\/\d+ 段，其余转写仍已用于正文(?:纪要|笔记)。|The outline covers only \d+\/\d+ segments of the whole note; the rest still went into the (?:minutes|notes)./,
   },
 
   // —— 段落 / 分段 ——
   segment: { key: "Segment {0}", params: 1, re: /段落\s*\d+|Segment\s+\d+/ },
   segmentRange: { key: "Segment {0} ({1}–{2})", params: 3, re: /段落\s*\d+\s*（[^）]*）|Segment\s+\d+\s*\([^)]*\)/ },
+  rawTranscriptSegmentRange: { key: "Raw transcript · Segment {0} ({1}–{2})", params: 3, re: /原始转写\s*·\s*段落\s+\d+\s*\([^)]*\)|Raw transcript\s*·\s*Segment\s+\d+\s*\([^)]*\)/ },
+  transcriptPartSuffix: { key: " · Part {0}/{1}", params: 2, re: /·\s*第\s*\d+\/\d+\s*部分|·\s*Part\s+\d+\/\d+/ },
   audio: { key: "Audio {0}", params: 1, re: /音频\s*\d+|Audio\s+\d+/ },
   textSource: { key: "Text source {0}:", params: 1, re: /文本来源\s*\d+\s*：|Text source\s+\d+:/ },
   rawFallbackPart: { key: "Part {0} · {1}–{2} (raw transcript fallback)", params: 3, re: /第\s*\d+\s+部分\s*·[^（]*（原始转写保底）|Part\s+\d+\s+·[^)]*\(raw transcript fallback\)/ },
@@ -127,6 +129,7 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
 
   // —— 标题后缀与导入头 ——
   importing: { key: "(importing…)", re: /（导入处理中…）|\(importing…\)/ },
+  importFailedRetryable: { key: "(import failed; audio kept for retry)", re: /（导入失败，音频已保留，可重试）|\(import failed; audio kept for retry\)/ },
   textImporting: { key: "(text importing…)", re: /（文本导入处理中…）|\(text importing…\)/ },
 };
 
@@ -167,7 +170,7 @@ export const UTILITY_HEADING_RE =
 
 /** Summary 名称白名单与索引、语义图原先的工具 details 读取范围一致。 */
 export const UTILITY_DETAILS_SUMMARY_RE =
-  /(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data)/;
+  /(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data|QnALog session data|QnALog merge data)/;
 /**
  * 信息行词（时间/时长/模式/分段/模型/状态 + 英文对应词），供剥离
  * `- 时间：…` / `- Time: …` 这类元信息行（如 ui/helpers.ts 的归一化）。

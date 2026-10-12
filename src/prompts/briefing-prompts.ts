@@ -64,7 +64,7 @@ ${fmSchema}
 
 **qnalog-people**：本纪要中**确实出现或被点名**的关键人名（真实姓名或明确角色称呼），逗号分隔，0–6 个；只写转写里真实出现的，不带任何前缀，会写进独立的 \`${NS_FM.people}\` 属性。⚠️**上面示例里的"张三/李四"只是占位格式，绝对不要照抄进结果；转写里没有明确人名时，这条注释整行留空（\`<!-- qnalog-people: -->\`）或不输出——宁可没有，也不要编造或套用任何示例名。**
 
-**qnalog-tags**：多维度中文 nested 标签，每个用「中文前缀 + 斜杠 + 具体词」，让 Obsidian 标签面板按维度自动分组。维度只剩 4 个（**人物已单列到 qnalog-people，这里绝不要再写 \`人物/x\`**）：
+**qnalog-tags**：多维度中文 nested 标签，每个用「中文前缀 + 斜杠 + 具体词」，让 Obsidian 标签面板按维度自动分组。维度只剩 4 个（**人物已单列到 qnalog-people，这里绝不要再写 \`人物/x\`**）。标签只使用文字、数字、下划线、连字符和斜线，不得包含空格或 &。
 
 - **主题** ✅ 必填（3–5 个）：核心议题或讨论领域。例 \`主题/上线范围\`、\`主题/AI转型\`、\`主题/组织设计\`、\`主题/复盘机制\`
 - **项目**（按需，0–3 个）：转写中明确出现的专有项目名。例 \`项目/示例项目\`、\`项目/Q2交付\`
@@ -744,7 +744,7 @@ export async function clearCommittedBriefingCheckpoint(plugin, meta) {
     await getBriefingCheckpointStore(plugin).remove(id);
     delete meta._briefingCheckpointId;
   } catch (error) {
-    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_checkpoint_cleanup_failed", t("The minutes were written, but the organizing checkpoint could not be cleaned up"), {
+    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_checkpoint_cleanup_failed", t("The notes were written, but the organizing checkpoint could not be cleaned up"), {
       jobId: id,
       error: diagnosticError(error),
     });
@@ -824,7 +824,7 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
       status: "running",
       stage: finished ? "assembling" : "llm",
       stageLabel: finished
-        ? t("Assembling the minutes")
+        ? t("Assembling the notes")
         : total > 1 ? t("Organizing · Part {0}/{1}").replace("{0}", String(Math.min(total, Math.max(1, currentPart || completed + 1)))).replace("{1}", String(total)) : t("AI is organizing the body text"),
       detail: finished
         ? t("All {0} parts have been generated; merging in chronological order").replace("{0}", String(total))
@@ -842,7 +842,7 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
     percent: Math.min(86, 48 + Math.round((completed / total) * 38)),
     detail: total > 1
       ? t("Organizing part {0}/{1}; completed parts are saved immediately").replace("{0}", String(Math.min(total, Math.max(1, currentPart || completed + 1)))).replace("{1}", String(total))
-      : t("Generating the minutes body text"),
+      : t("Generating the note body text"),
   });
   try { plugin.shell.refreshOutlineView(); } catch { /* progress rendering must not block briefing */ }
 }

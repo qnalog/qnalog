@@ -3,8 +3,11 @@ import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } from "../src/versions/version-identity";
 import { replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
+import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { getSourceIdFromMarkdown } from "../src/notes/note-source-metadata";
 import { getSegmentsHash } from "../src/notes/audio-refs";
+import { buildNoteIndex, upsertNoteIndex } from "../src/indexing/note-index";
 
 const { cleanTranscriptMock, mergeAndPolishMock, notices } = vi.hoisted(() => ({
   cleanTranscriptMock: vi.fn(),
@@ -213,6 +216,155 @@ afterEach(() => {
 });
 
 describe("clean transcript storage", () => {
+  it("upgrades the actual 1.6.4 grouped layout during version activation", async () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const { files, vault } = createMemoryVault();
+    const sessionId = "qnalog-legacy-layout-fixture";
+    const segments = ["甲句。".repeat(90), "乙句。".repeat(290), "丙句。".repeat(600)].map((text, index) =>
+      attachTextTranscript({ index, startOffsetMs: index * 10_000, endOffsetMs: (index + 1) * 10_000, text }, sessionId, "text-import"),
+    );
+    const oldTranscript = segments.map((segment, index) => {
+      const record = segment.transcript!;
+      const { transcript: _transcript, ...storedSegment } = segment;
+      const id = record.id;
+      const text = segment.text;
+      return [
+        `<!-- qnalog-transcript-start:${id} -->`,
+        `### 段落 ${index + 1} (00:00–00:10) [[audio-${index}.m4a|00:00]]`,
+        `<!-- qnalog-transcript-text-start:${id} -->`, text,
+        `<!-- qnalog-transcript-text-end:${id} -->`,
+        `<!-- qnalog-transcript-data ${JSON.stringify({ schemaVersion: 2, segment: storedSegment, transcript: record })} -->`,
+        `<!-- qnalog-transcript-end:${id} -->`,
+      ].join("\n");
+    }).join("\n\n");
+    const oldLayout = [
+      "---", "qnalog_mode: meeting", `qnalog_session: ${sessionId}`, "---",
+      "# 2026-10-10 10:41 · 通用", "> [!info]- 当前显示版本 <span data-qnalog=\"active-version-start\"></span>",
+      "原始正文内容。", "<!-- qnalog-session-knowledge {\"schemaVersion\":2,\"id\":\"knowledge-fixture\"} -->",
+      "---", "## 原始材料", "<details><summary>录音中实时大纲（草稿）</summary>", "", "- 大纲内容", "",
+      "<!-- qnalog-realtime-outline-source-coverage:{\"version\":1} -->", "</details>",
+      "<details><summary>分段原始转写（3 段）</summary>", "", "<!-- qnalog-segments-start:fixture -->", "", oldTranscript, "",
+      "<!-- qnalog-segments-end:fixture -->", "</details>",
+      "<!-- qnalog-session:legacy-layout-fixture -->", "<!-- qnalog-note-index -->",
+      "<details><summary>索引数据</summary>", "```json", "{\"fixture\":true}", "```", "</details>", "<!-- qnalog-note-index-end -->",
+    ].join("\n");
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/legacy-layout-fixture.md", oldLayout);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要", promptTemplates: {} };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting", qnalog_session: sessionId } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const refreshIndex = async (file: MemoryFile) => {
+      const current = await vault.read(file);
+      const index = buildNoteIndex(current, { noteTitle: "legacy-layout-fixture", generatedAt: "2026-10-12T00:00:00.000Z" });
+      if (index) await vault.modify(file, upsertNoteIndex(current, index));
+    };
+    const versions = new VersionStore(makeVersionHost(app, () => settings, refreshIndex));
+    await versions.ensureOriginalVersionForSource(sourceFile);
+    const cached = await versions.saveVersion(sourceFile, oldLayout, [], {
+      kind: "minutes", idLabel: "legacy-layout-polished", label: "整理版本", mode: "meeting", body: "新整理正文。", activate: false,
+    });
+    const versionFile = files.get(`${cached.folder}/${cached.meta.fileName}`);
+    if (!versionFile) throw new Error("Legacy-layout version fixture was not saved");
+    await versions.switchVersion(versionFile, sourceFile.path);
+    const rewritten = await vault.read(sourceFile);
+    const restored = readTranscriptBlocks(rewritten);
+    expect(restored.map((block) => block.visibleBlock)).toEqual(segments.map((segment) => segment.text));
+    expect(restored.map((block) => block.segment.transcript)).toEqual(segments.map((segment) => segment.transcript));
+    expect(rewritten).not.toMatch(/^\*\*(?:分段原始转写（\d+ 段）|Segmented raw transcript \(\d+ segments\))\*\*$/m);
+    expect(rewritten).toContain("<summary>原始转写 · 段落 1 (00:00–00:10)</summary>");
+    expect(rewritten).not.toMatch(/<summary>(?:分段原始转写|Segmented raw transcript)/);
+    expect(rewritten).not.toContain("<!-- qnalog-transcript-data ");
+    expect(rewritten.match(/data-qnalog-transcript-data=/g)).toHaveLength(3);
+    expect(rewritten.match(/<summary>(?:索引数据|Index data)<\/summary>/g)).toHaveLength(1);
+    expect(rewritten.match(/qnalog-session-knowledge /g) || []).toHaveLength(1);
+    expect(rewritten.match(/<!-- qnalog-note-index -->/g)).toHaveLength(1);
+    expect(rewritten.match(/<!-- qnalog-note-index-end -->/g)).toHaveLength(1);
+    expect(rewritten.match(/<!-- qnalog-session:/g)).toHaveLength(1);
+    expect([...rewritten.matchAll(/<!-- qnalog-[^>]*-->/g)].every((match) => {
+      const prefix = rewritten.slice(0, match.index);
+      return (prefix.match(/<details\b/gi)?.length || 0) > (prefix.match(/<\/details>/gi)?.length || 0);
+    })).toBe(true);
+    const detailBodies = [...rewritten.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/g)].map((match) => match[1]);
+    expect(detailBodies.every((body) => body.length <= 3500 && !/\n\s*\n/.test(body))).toBe(true);
+  });
+
+  it("keeps raw-material scaffolding outside version bodies through five real activations", async () => {
+    const { files, vault } = createMemoryVault();
+    const malformed = [
+      "---", "qnalog_time: 2026-10-12T09:18:00", "qnalog_mode: meeting", "---",
+      "# 2026-10-12 0918 · 综合纪要",
+      "> [!info]- Current version <span data-qnalog=\"active-version-start\"></span>",
+      "Visible body.", "---", "## 原始材料",
+      "<span data-qnalog=\"active-version-end\"></span>",
+      "---", "## 原始材料", "---", "## 原始材料",
+      "<details><summary>录音信息</summary>safe fixture</details>",
+      "<!-- qnalog-session:activation-boundary-fixture -->",
+    ].join("\n");
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/activation-boundary.md", malformed);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要", promptTemplates: {} };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting", qnalog_time: "2026-10-12T09:18:00" } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const versions = new VersionStore(makeVersionHost(app, () => settings, async () => undefined));
+    sourceFile.data = malformed
+      .replace('<span data-qnalog="active-version-start"></span>', "")
+      .replace('<span data-qnalog="active-version-end"></span>', "");
+    await versions.ensureOriginalVersionForSource(sourceFile);
+    sourceFile.data = malformed;
+    const first = await versions.saveVersion(sourceFile, malformed, [], {
+      kind: "minutes", idLabel: "first-version", label: "First", mode: "meeting", body: "First body.", activate: false,
+    });
+    const second = await versions.saveVersion(sourceFile, malformed, [], {
+      kind: "minutes", idLabel: "second-version", label: "Second", mode: "meeting", body: "Second body.", activate: false,
+    });
+    const paths = [first.meta.fileName, second.meta.fileName].map((name) =>
+      files.get(`${getVersionStoreFolder(settings, getSourceIdFromMarkdown(malformed, sourceFile))}/${name}`),
+    );
+    if (!paths[0] || !paths[1]) throw new Error("Version cache fixture is missing");
+    for (let index = 0; index < 5; index++) {
+      const target = paths[index % paths.length]!;
+      await versions.switchVersion(target, sourceFile.path);
+      const current = await vault.read(sourceFile);
+      expect(current.match(/^## 原始材料$/gm)).toHaveLength(1);
+      expect(current.match(/\n---\n+## 原始材料/g)).toHaveLength(1);
+      const rawBoundary = current.search(/\n---\n+## 原始材料/);
+      expect(current.indexOf('data-qnalog="active-version-end"')).toBeLessThan(rawBoundary);
+      for (const cache of paths) {
+        expect(cache.data).not.toContain("## 原始材料");
+        expect(cache.data).not.toContain("safe fixture");
+      }
+    }
+  });
+
+  it("preserves raw blocks placed before the raw-material heading during scaffold repair", () => {
+    const input = [
+      "# 2026-10-12 09:18 · 综合纪要",
+      "> [!info]- 当前显示版本 <span data-qnalog=\"active-version-start\"></span>",
+      "Visible body.",
+      "<span data-qnalog=\"active-version-end\"></span>",
+      "<details><summary>录音信息</summary>recording metadata</details>",
+      "<details><summary>分段原始转写（1 段）</summary>transcript payload</details>",
+      "---",
+      "## 原始材料",
+      "<details><summary>索引数据</summary>index payload</details>",
+    ].join("\n");
+
+    const output = replaceActiveVersionBlock(input, { label: "综合纪要" }, "Rewritten body.");
+
+    expect(output.match(/^## 原始材料$/gm)).toHaveLength(1);
+    expect(output.match(/\n---\n+## 原始材料/g)).toHaveLength(1);
+    expect(output).toContain("<summary>录音信息</summary>recording metadata");
+    expect(output).toContain("<summary>分段原始转写（1 段）</summary>transcript payload");
+    expect(output).toContain("<summary>索引数据</summary>index payload");
+    expect(output.indexOf('data-qnalog="active-version-end"')).toBeLessThan(output.search(/\n---\n+## 原始材料/));
+  });
+
   it("uses current mode templates and storage folder for original snapshots", async () => {
     const { files, vault } = createMemoryVault();
     const originalContent = sourceContent
@@ -420,7 +572,7 @@ describe("clean transcript storage", () => {
     expect(await vault.read(sourceFile)).toContain('qnalog_custom: "keep-me"');
     expect(await vault.read(sourceFile)).toContain("Readable cleaned transcript.");
     expect(await vault.read(sourceFile)).toContain("Original ASR transcript.");
-    expect(await vault.read(sourceFile)).toContain("qnalog-active-version-start");
+    expect(await vault.read(sourceFile)).toContain('<span data-qnalog="active-version-start"></span>');
     expect(cleanTranscript).toHaveBeenCalledOnce();
     const derived = [...files.values()].find((file) => file.path !== sourceFile.path && file.path.startsWith(`${sourceFile.parent.path}/`) && !file.path.includes("/.versions/") && file.path.endsWith(`${sourceFile.basename}.md`));
     expect(derived).toBeDefined();
@@ -645,6 +797,8 @@ describe("clean transcript storage", () => {
       entry.label === "Work notes" && entry.kind === "minutes")).toHaveLength(2);
     expect(oldChineseDerived.data).toBe("legacy Chinese derived note");
     await versions.switchVersion(cache!, sourceFile.path);
+    const switchedSource = await vault.read(sourceFile);
+    expect(readTranscriptBlocks(switchedSource)).toHaveLength(1);
     expect(await vault.read(sourceFile)).toContain("> [!info]- Currently displayed version: Work notes · 简洁");
     expect(await vault.read(sourceFile)).toContain("Original ASR transcript.");
     expect(JSON.parse(await vault.adapter.read(manifestPath)).activeVersionId).toBe(record.id);
@@ -1717,7 +1871,7 @@ describe("clean transcript storage", () => {
     resolveModel("Custom derived body.");
     await pending;
     expect(tasks.completedWorkLog[0]?.title).toContain("Custom prompt:My template");
-    expect(notices.some((message) => message.includes("Custom prompt:My template") && message.includes("derived minutes"))).toBe(true);
+    expect(notices.some((message) => message.includes("Custom prompt:My template") && message.includes("derived note"))).toBe(true);
     expect(await vault.read(sourceFile)).toBe(sourceBefore);
     expect([...files.values()].some((candidate) => candidate.data.includes("Custom derived body."))).toBe(true);
   });
@@ -2203,7 +2357,7 @@ describe("clean transcript storage", () => {
       }
       const before = [...files.values()].map((file) => [file.path, file.data]);
       await expect(versions.createDerivedNote(sourceFile, sourceFile.data, version("No path."), "Clean", "cleanscript"))
-        .rejects.toThrow("Failed to generate a path for the derived minutes file");
+        .rejects.toThrow("Failed to generate a path for the derived note file");
       expect([...files.values()].map((file) => [file.path, file.data])).toEqual(before);
       expect(indexCalls).toBe(0);
     });

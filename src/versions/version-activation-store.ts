@@ -16,6 +16,7 @@ import {
 } from "../shared/namespace";
 import { t } from "../shared/i18n";
 import type { VersionManifestStore } from "./version-manifest-store";
+import { normalizeTranscriptLayout } from "../transcript/transcript-markdown";
 
 export interface VersionActivationMeta {
   id: string;
@@ -65,7 +66,9 @@ export class VersionActivationStore {
       .split(" · ")[0].trim() || "当前版本";
     const titleSuffix = this.io.getTitleSuffix(modeKey, labelFallback);
     const withTitle = applyVersionTitle(withFrontmatter, titleSuffix, fallbackDatetime);
-    const next = foldRawTranscriptSection(this.io.replaceActiveVersionBlock(withTitle, versionMeta, body));
+    const next = foldRawTranscriptSection(normalizeTranscriptLayout(
+      this.io.replaceActiveVersionBlock(withTitle, versionMeta, body),
+    ));
     if (next !== cur) await this.io.modifySource(sourceFile, next);
     await this.io.refreshNoteIndexSafely(sourceFile, { reason: "version-switch" });
   }

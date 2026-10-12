@@ -70,7 +70,7 @@ export class NoteIndexService {
       const filePath = typeof fileOrPath === "string" ? fileOrPath : (fileOrPath && fileOrPath.path) || "";
       console.warn("[QnALog] note index refresh failed", error);
       try {
-        await this.host.diagnostics.logDiagnostic("warn", "note.index_refresh_failed", t("Failed to update the minutes index; the note content is unaffected"), {
+        await this.host.diagnostics.logDiagnostic("warn", "note.index_refresh_failed", t("Failed to update the note index; the note content is unaffected"), {
           filePath,
           reason: options.reason || "",
           error: diagnosticError(error),

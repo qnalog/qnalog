@@ -136,7 +136,7 @@ export async function runEmptyShortRecordingCleanup(port: EmptyShortCleanupPort)
   }
 
   new obsidian.Notice(
-    `${t("Cleanup complete: minutes ")}${noteDeleted}${t(" notes, recording ")}${audioDeleted}${t(", removed from the queue ")}${queueRemoved}${failed ? t(", failed {0}").replace("{0}", String(failed)) : ""}`,
+    `${t("Cleanup complete: notes ")}${noteDeleted}${t(" notes, recording ")}${audioDeleted}${t(", removed from the queue ")}${queueRemoved}${failed ? t(", failed {0}").replace("{0}", String(failed)) : ""}`,
     10000,
   );
 }

@@ -108,7 +108,7 @@ describe("topics panel", () => {
     const port = { isConfigured: () => false, text: (key: string) => key };
     const root = new FakePanelEl() as unknown as HTMLElement;
     await new TopicsPanel({} as never, port as never, () => undefined).render(root);
-    expect(allText((root as unknown as { children: FakeTree[] }).children[0])).toContain("Right-click a minutes note and choose Create topic.");
+    expect(allText((root as unknown as { children: FakeTree[] }).children[0])).toContain("Right-click a note and choose Create topic.");
   });
 });
 

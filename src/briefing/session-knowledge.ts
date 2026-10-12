@@ -1,5 +1,6 @@
 import { NS_SESSION_KNOWLEDGE } from "../shared/namespace";
 import { findActiveVersionBlock } from "../notes/note-document";
+import { labelText } from "../shared/note-labels";
 import { genId, isRecord } from "../shared/util-common";
 import type { Segment } from "../shared/types";
 import { getCurrentTranscript, getTranscriptSourceRevision, type Utterance } from "../transcript/session-transcript";
@@ -53,9 +54,18 @@ function knowledgeCommentPattern(global = false): RegExp {
 
 function replaceKnowledgeInSection(section: string, serialized: string): string {
   const marker = knowledgeCommentPattern();
-  if (marker.test(section)) return section.replace(marker, serialized);
+  const replaced = marker.test(section) ? section.replace(marker, (prior, offset: number, whole: string) => {
+    const before = whole.slice(0, offset);
+    return before.lastIndexOf("<details>") > before.lastIndexOf("</details>")
+      ? serialized
+      : `<details><summary>${labelText("indexData")}</summary>${serialized}</details>`;
+  }) : null;
+  if (replaced !== null) return replaced.replace(
+    /<details>\s*<summary>[^<]*(?:QnALog session data|会话数据)[^<]*<\/summary>/gi,
+    `<details><summary>${labelText("indexData")}</summary>`,
+  );
   const body = section.trimEnd();
-  return `${body}${body ? "\n\n" : ""}${serialized}`;
+  return `${body}${body ? "\n\n" : ""}<details><summary>${labelText("indexData")}</summary>${serialized}</details>`;
 }
 
 /** Remove complete blocks and discard any malformed protocol tail. */
@@ -68,6 +78,26 @@ export function stripSessionKnowledgeBlocks(raw: string): string {
 export function readSelectedSessionKnowledge(markdown: string): SessionKnowledge | null {
   const active = findActiveVersionBlock(markdown);
   return active ? readSessionKnowledge(active.body) : readSessionKnowledge(markdown);
+}
+
+/** Keep the snapshot selected by the established reader and remove older protocol copies. */
+export function normalizeSessionKnowledgeMarkers(markdown: string): string {
+  const text = String(markdown || "");
+  const pattern = knowledgeCommentPattern(true);
+  const matches = [...text.matchAll(pattern)];
+  if (matches.length <= 1) return text;
+  const selected = readSelectedSessionKnowledge(text);
+  const selectedIndex = selected
+    ? matches.findIndex((match) => readSessionKnowledge(match[0])?.id === selected.id)
+    : 0;
+  const keep = selectedIndex >= 0 ? selectedIndex : 0;
+  let result = text;
+  for (const [index, match] of [...matches.entries()].reverse()) {
+    if (index === keep) continue;
+    const start = match.index || 0;
+    result = result.slice(0, start) + result.slice(start + match[0].length);
+  }
+  return result;
 }
 
 /** Replace the snapshot for the selected display version without moving raw source blocks. */

@@ -8,6 +8,7 @@ import { inferNoteStartedAtIso } from "./note-source-metadata";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
 import { detectGeneralSourceLanguage, type GeneralSourceLanguage } from "../shared/util-text";
 import { normalizeCallouts } from "./callout-normalize";
+import { cleanObsidianTag } from "../shared/obsidian-tag";
 
 export type FrontmatterFields = Record<string, unknown>;
 const stringifyBriefingValue = String as (value: unknown) => string;
@@ -123,11 +124,7 @@ export function parseSuggestedTagsFromOutput(text: string | null | undefined): {
   const peopleFromTags: string[] = [];
   const tags = m[1]
     .split(/[,，;；、\n]+/)
-    .map(s => s.trim())
-    // 防御 LLM 可能带 # 前缀
-    .map(s => s.replace(/^#+/, "").trim())
-    // 防御内部出现空格或非法 tag 字符（Obsidian tag 不允许空格）
-    .map(s => s.replace(/\s+/g, ""))
+    .map(cleanObsidianTag)
     .filter(Boolean)
     // 防御过长：nested tag 也很少超过 24 字
     .filter(s => s.length > 0 && s.length <= 24)

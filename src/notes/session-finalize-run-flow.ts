@@ -50,7 +50,7 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
   if (tier === "discard") {
     new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
   } else if (audioName) {
-    new obsidian.Notice(t("Recording under {0} seconds: audio kept in the recording folder, no minutes created and no transcript kept. Import it manually if needed. ({1})").replace("{0}", String(limitSeconds)).replace("{1}", audioName), 8000);
+    new obsidian.Notice(t("Recording under {0} seconds: audio kept in the recording folder, no notes created and no transcript kept. Import it manually if needed. ({1})").replace("{0}", String(limitSeconds)).replace("{1}", audioName), 8000);
   } else {
     // 母带录音器没产出音频（设备被收回等）→ 没有可留的文件，如实说明。
     new obsidian.Notice(t("Recording under {0} seconds and its audio could not be saved; skipped.").replace("{0}", String(limitSeconds)), 8000);
@@ -184,7 +184,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     port.setProgress(session, { stage: "workbench", label: t("Organize context"), percent: 22, detail: t("Merging meeting entries, attachments, and context") });
     await port.processMeetingWorkbench(session, { force: true });
     if (!textImportSession) {
-      port.setProgress(session, { stage: "outline", label: t("Generate outline"), percent: 36, detail: t("Completing the live outline for reference by the final minutes") });
+      port.setProgress(session, { stage: "outline", label: t("Generate outline"), percent: 36, detail: t("Completing the live outline for reference by the final note") });
       await port.ensureRealtimeOutline(session);
     }
     const lastSeg = segmentsForFinal[segmentsForFinal.length - 1];
@@ -200,13 +200,13 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     const noteFile = port.getVault().getAbstractFileByPath(session.mdPath);
     if (noteFile instanceof obsidian.TFile) sessionMeta._previousKnowledge = readSessionKnowledge(await port.getVault().read(noteFile));
     finalSessionMeta = sessionMeta;
-    port.setProgress(session, { stage: "llm-merge", label: t("AI organizing"), percent: 62, detail: textImport ? t("Sending the imported text to the AI model for structured organizing") : t("Merging the segmented transcriptions into the final minutes") });
+    port.setProgress(session, { stage: "llm-merge", label: t("AI organizing"), percent: 62, detail: textImport ? t("Sending the imported text to the AI model for structured organizing") : t("Merging the segmented transcriptions into the final note") });
     taskMeter = port.beginTaskMeter();
     sessionMeta._taskMeter = taskMeter;
     session._finalizeTaskMeter = taskMeter;
     polished = session.continuation ? "" : await port.mergeAndPolish(segmentsForLlm.map(segment => ({ ...segment })), session.mode, sessionMeta, speakerFrontmatter);
     session._briefingCheckpointId = sessionMeta._briefingCheckpointId || "";
-    port.setProgress(session, { stage: "write-note", label: t("Write to Minutes"), percent: 88, detail: t("AI output received; writing to the Obsidian note") });
+    port.setProgress(session, { stage: "write-note", label: t("write to note"), percent: 88, detail: t("AI output received; writing to the Obsidian note") });
   } catch (error) { mergeError = error; console.error(error); }
   session.finalizing = false;
   if (mergeError) {
@@ -240,7 +240,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     const partialBriefing = mergeError instanceof BriefingPipelineIncompleteError;
     port.setProgress(session, {
       stage: nonRetryableMergeError ? "merge-failed" : "merge-retrying",
-      label: nonRetryableMergeError ? t("AI organizing failed") : partialBriefing ? t("Minutes partially completed") : t("AI organizing waiting to retry"), percent: null,
+      label: nonRetryableMergeError ? t("AI organizing failed") : partialBriefing ? t("note partially completed") : t("AI organizing waiting to retry"), percent: null,
       detail: nonRetryableMergeError ? t("The original transcript has been kept; fix the model configuration and re-organize.")
         : partialBriefing ? t("{0}; the completed portion and the original transcript have both been saved").replace("{0}", (mergeError as { message?: string }).message || "")
           : t("The original transcript has been kept; the background queue will retry with backoff"),
@@ -270,17 +270,17 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
       commitError = true;
       mergeError = writeError;
       session.finalizationError = getErrorMessage(writeError);
-      await port.logDiagnostic("error", "briefing.commit_failed", t("The minutes body was generated, but writing the Markdown failed"), {
+      await port.logDiagnostic("error", "briefing.commit_failed", t("The note body was generated, but writing the Markdown failed"), {
         mode: session.mode, mdPath: session.mdPath, checkpointId: finalSessionMeta && finalSessionMeta._briefingCheckpointId || "", error: diagnosticError(writeError),
       });
       await port.addQueueTask({
         type: "merge", sessionId: session.id, mdPath: session.mdPath, mode: session.mode,
         segments: segmentsForLlm.map(segment => ({ ...segment })), source: session.source || "", sourceMeta: session.sourceMeta || null,
         externalAudioSource: session.externalAudioSource || null, textImportSources: session.textImportSources || [], speakerFrontmatter,
-        sessionMeta: finalSessionMeta, lastError: t("Failed to write the minutes: {0}").replace("{0}", getErrorMessage(writeError)),
+        sessionMeta: finalSessionMeta, lastError: t("Failed to write the notes: {0}").replace("{0}", getErrorMessage(writeError)),
       });
       port.requestTaskQueueRetry(1500, "briefing-write-failure");
-      port.setProgress(session, { stage: "write-retrying", label: t("Minutes write waiting to retry"), percent: null, detail: t("The AI result was saved; the model will not be called again and only the write will be retried later") });
+      port.setProgress(session, { stage: "write-retrying", label: t("note write waiting to retry"), percent: null, detail: t("The AI result was saved; the model will not be called again and only the write will be retried later") });
     }
   } else {
     await port.appendPolishBlock(writeSession, polished, mergeError, nonRetryableMergeError);
@@ -289,7 +289,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     await port.clearCommittedBriefingCheckpoint(finalSessionMeta);
     session._briefingCheckpointId = "";
   }
-  if (!mergeError) port.setProgress(session, { stage: "done", label: t("Processing complete"), percent: 100, detail: t("Minutes written; finishing up") });
+  if (!mergeError) port.setProgress(session, { stage: "done", label: t("Processing complete"), percent: 100, detail: t("Notes written; finishing up") });
   if (!mergeError && polished && !session.continuationSourcePath) {
     const beforeRenamePath = session.mdPath;
     const renamed = await port.renameWithGeneratedTitle(session.mdPath, polished, session.mode);
@@ -311,7 +311,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     session._finalizeTaskMeter = null;
     if (!session.continuation) {
       try {
-        const doneLabel = isTextImportSession(session) ? t("Text organization completed") : session.source === "import" ? t("Imported audio organization completed") : t("Recording minutes completed");
+        const doneLabel = isTextImportSession(session) ? t("Text organization completed") : session.source === "import" ? t("Imported audio organization completed") : t("recording note completed");
         port.logCompletedWork(doneLabel, session.mdPath || "", completedTaskMeter);
       } catch { /* intentionally empty */ }
       if (port.getSettings().sedimentAutoExtract) void port.autoExtractSediment(session.mdPath);
@@ -319,7 +319,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   }
   new obsidian.Notice(mergeError
     ? (nonRetryableMergeError ? t("AI organizing failed: {0}").replace("{0}", formatLlmFailureIssue((mergeError as { message?: string }).message || mergeError))
-      : commitError ? t("The minutes body has been generated but writing failed; queued for retry.")
+      : commitError ? t("The note body has been generated but writing failed; queued for retry.")
         : mergeError instanceof BriefingPipelineIncompleteError ? t("{0}, queued for precise retry").replace("{0}", (mergeError as { message?: string }).message || "")
           : t("AI organizing did not finish; queued for retry."))
     : (session.continuation ? t("Continuation recording saved separately; it will be merged into \"{0}\" after its current processing finishes.").replace("{0}", session.continuation.targetPath.split("/").pop()?.replace(/\\.md$/i, "") || session.continuation.targetPath)

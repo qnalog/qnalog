@@ -80,7 +80,7 @@ export class InboxWatcherService {
       if (this._inboxProcessing.has(file.path)) return;
       this._inboxProcessing.add(file.path);
       this._inboxLock = (this._inboxLock || Promise.resolve()).then(async () => {
-        new obsidian.Notice(`${t("New audio found: ")}${file.name}${t(", generating minutes...")}`);
+        new obsidian.Notice(`${t("New audio found: ")}${file.name}${t(", generating notes...")}`);
         try {
           await this.host.imports.importAudioFiles([file.path]);
           if (archiveSub) {

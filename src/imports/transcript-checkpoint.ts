@@ -22,8 +22,19 @@ function transcriptProbe(value: string): string {
   return `${text.slice(0, 120)}\n${text.slice(-120)}`;
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const row = value as Record<string, unknown>;
+    const entries = Object.keys(row).filter((key) => row[key] !== undefined).sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
 function sameTranscriptRecord(expected: TranscriptSegmentRecord, stored: TranscriptSegmentRecord): boolean {
-  return JSON.stringify(expected) === JSON.stringify(stored);
+  return stableJson(expected) === stableJson(stored);
 }
 
 export function verifyTranscriptCheckpoint(

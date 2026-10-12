@@ -51,9 +51,9 @@ export const NS_SEGMENTS_START_ONLY_RE = nsMarkerAnyRe("segments-start");
 
 /** 会话标记并捕获 id：`<!-- qnalog-session:VALUE -->`。 */
 export const NS_SESSION_VALUE_RE = new RegExp(`<!--\\s*${nsRe("session")}:\\s*([^>\\s]+)\\s*-->`, "i");
-/** 匹配版本块并捕获正文：`<!-- qnalog-active-version-start -->…<!-- qnalog-active-version-end -->`。 */
+/** 匹配新行内元素与旧注释格式的版本块，并分别捕获边界和正文。 */
 export const NS_ACTIVE_VERSION_BODY_RE = new RegExp(
-  `<!--\\s*${nsRe("active-version-start")}\\s*-->([\\s\\S]*?)<!--\\s*${nsRe("active-version-end")}\\s*-->`,
+  `(>\\s*\\[!info\\]-[^\\n]*?<span\\s+data-${NS_TAG}=["']active-version-start["']\\s*><\\/span>|<span\\s+data-${NS_TAG}=["']active-version-start["']\\s*><\\/span>|<!--\\s*${nsRe("active-version-start")}\\s*-->)([\\s\\S]*?)(<span\\s+data-${NS_TAG}=["']active-version-end["']\\s*><\\/span>|<!--\\s*${nsRe("active-version-end")}\\s*-->)`,
   "i",
 );
 /** 合并块：`<!-- qnalog-merge … qnalog-merge-end -->`。 */
@@ -77,7 +77,7 @@ export const NS_CARDS_BLOCK_RE = new RegExp(
 export const NS_SEDIMENT_LINE_BEGIN_RE = /<!--\s*QNALOG_SEDIMENT_BEGIN/i;
 /** 机器数据折叠壳（索引数据 / 沉淀数据）：喂给提示词或语义抽取前整块剔除。 */
 export const NS_MACHINE_SHELL_RE =
-  /<details>\s*<summary>[^<]*(?:索引数据|沉淀数据|Index data|Distilled data)[^<]*<\/summary>[\s\S]*?<\/details>/gi;
+  /<details>\s*<summary>[^<]*(?:索引数据|沉淀数据|Index data|Distilled data|QnALog session data|QnALog merge data)[^<]*<\/summary>[\s\S]*?<\/details>/gi;
 /** 分段逐字稿区块（开始到结束）。 */
 export const NS_SEGMENTS_BLOCK_RE = new RegExp(
   `<!--\\s*${nsRe("segments-start")}(?::[^>]*)?\\s*-->[\\s\\S]*?<!--\\s*${nsRe("segments-end")}(?::[^>]*)?\\s*-->`,

@@ -7,7 +7,7 @@ export const TEXT_IMPORT_EXT = new Set(["md", "txt"]);
 
 export const IMPORT_TEXT_CATEGORY_CONFIG = {
   "qnalog-normal": {
-    label: "Completed QnALog minutes",
+    label: "Completed QnALog notes",
     shortLabel: "Complete",
     desc: "Already organized by AI; can be merged, re-organized with another template, or converted to another mode.",
   },
@@ -19,7 +19,7 @@ export const IMPORT_TEXT_CATEGORY_CONFIG = {
   external: {
     label: "Other Markdown / TXT files",
     shortLabel: "External",
-    desc: "Hand-typed notes, third-party minutes, or plain Markdown; skips speech transcription and goes straight to the LLM.",
+    desc: "Hand-typed notes, third-party notes, or plain Markdown; skips speech transcription and goes straight to the LLM.",
   },
 };
 

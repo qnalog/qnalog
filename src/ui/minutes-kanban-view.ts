@@ -91,7 +91,7 @@ export class MinutesKanbanView extends ItemView {
   }
 
   getViewType(): string { return VIEW_TYPE_MINUTES_KANBAN; }
-  getDisplayText(): string { return t("Minutes board"); }
+  getDisplayText(): string { return t("notes board"); }
   getIcon(): string { return "columns-3"; }
 
   async onOpen(): Promise<void> {
@@ -172,7 +172,7 @@ export class MinutesKanbanView extends ItemView {
   private renderToolbar(root: HTMLElement, total: number, groupCount: number): void {
     const header = root.createDiv({ cls: "qnalog-kanban-header" });
     const title = header.createDiv({ cls: "qnalog-kanban-heading" });
-    title.createEl("h2", { text: t("Minutes board") });
+    title.createEl("h2", { text: t("notes board") });
     title.createSpan({ text: `${total}${t(" notes · ")}${groupCount}${t(" groups")}` });
     const actions = header.createDiv({ cls: "qnalog-kanban-header-actions" });
     const addFolder = actions.createEl("button", {
@@ -190,7 +190,7 @@ export class MinutesKanbanView extends ItemView {
     const filters = root.createDiv({ cls: "qnalog-kanban-filters" });
     const searchWrap = filters.createDiv({ cls: "qnalog-kanban-search" });
     setIcon(searchWrap.createSpan(), "search");
-    const search = searchWrap.createEl("input", { attr: { type: "search", placeholder: t("AI organization failed; the original transcript can still be reorganized to generate the final minutes") } });
+    const search = searchWrap.createEl("input", { attr: { type: "search", placeholder: t("AI organization failed; the original transcript can still be reorganized to generate the final note") } });
     search.value = this.query;
     search.addEventListener("input", () => {
       this.query = search.value;
@@ -334,7 +334,7 @@ export class MinutesKanbanView extends ItemView {
           this.renderBoard(container);
         };
       }
-      if (!visible.length) cards.createDiv({ cls: "qnalog-kanban-empty", text: t("Drag in minutes") });
+      if (!visible.length) cards.createDiv({ cls: "qnalog-kanban-empty", text: t("Drag in notes") });
       columnEl.addEventListener("dragover", (event) => {
         if (this.groupMode !== "folder") return;
         if (!event.dataTransfer?.types.includes("text/x-qnalog-note")) return;

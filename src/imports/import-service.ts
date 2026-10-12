@@ -32,7 +32,8 @@ import { attachTextTranscript, attachTranscriptResult } from "../transcript/sess
 import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 import { t } from "../shared/i18n";
-import { labelText } from "../shared/note-labels";
+import { labelPattern, labelText } from "../shared/note-labels";
+import { buildTranscriptSessionSkeleton } from "../notes/note-transcript-materials";
 import type { SessionStore } from "../session/session-store";
 import type { ContinuationService } from "../session/continuation-service";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
@@ -168,9 +169,7 @@ export class ImportService {
       `> ${labelText("modelLabel")}${importProvider.model || importProvider.id} → ${this.host.settings.llmModel}`,
       externalSource && externalSource.name ? `> ${labelText("sourceLabel")}${t("Auto Import")} · ${externalSource.name}` : null,
       "",
-      nsMarker("session", session.id),
-      nsMarker("segments-start", session.id),
-      nsMarker("segments-end", session.id),
+      buildTranscriptSessionSkeleton(session.id),
       "",
     ].filter((line) => line !== null).join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);
@@ -552,7 +551,7 @@ export class ImportService {
     this.host.tasks.updateImportActivity({
       phase: "organize",
       organizeLabel: t("Preparing AI organizing"),
-      organizeDetail: t("The original transcript has been fully written; generating the body from the current minutes template."),
+      organizeDetail: t("The original transcript has been fully written; generating the body from the current note template."),
     });
     await this.host.sessionFinalize.finalizeSession(session);
     const finalizationError = String(session.finalizationError || "").trim()
@@ -569,7 +568,7 @@ export class ImportService {
         phase: "write",
         completed: true,
         writeLabel: t("Processing complete"),
-        writeDetail: t("The minutes have been written to Obsidian."),
+        writeDetail: t("The notes have been written to Obsidian."),
       });
     }
     const completedImportId = session.id;
@@ -586,6 +585,30 @@ export class ImportService {
       segmentCount: session.segments.length,
       pendingTranscriptionCount,
     };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.host.tasks.updateImportActivity({
+        phase: "persist",
+        error: message,
+        label: t("Audio import failed."),
+      });
+      if (this.host.tasks._importBusy && String(this.host.tasks._importBusy.sessionId || "") === session.id) {
+        this.host.tasks._importBusy = null;
+        this.host.tasks.updateBusyStatus();
+      }
+      try {
+        const note = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+        if (note instanceof obsidian.TFile) {
+          const markdown = await this.host.app.vault.read(note);
+          const importing = labelPattern("importing");
+          const updated = markdown.replace(/^(# .+)$/m, (line) => line.replace(importing, labelText("importFailedRetryable")));
+          if (updated !== markdown) await this.host.app.vault.modify(note, updated);
+        }
+      } catch {
+        // Preserve the original import error if updating the retryable note title fails.
+      }
+      this.host.shell.refreshOutlineView();
+      throw error;
     } finally {
       this.host.continuations.releaseSession(session.id);
     }
@@ -677,9 +700,7 @@ export class ImportService {
       `> [!info] ${labelText("textImportInfo")}`,
       `> ${labelText("sourceFilesLabel")}${sources.length} · ${labelText("modeLabel")}${meta.prefix} · ${labelText("modelLabel")}${this.host.settings.llmModel}`,
       "",
-      nsMarker("session", session.id),
-      nsMarker("segments-start", session.id),
-      nsMarker("segments-end", session.id),
+      buildTranscriptSessionSkeleton(session.id),
       "",
     ].join("\n");
     await this.host.noteWriter.appendToNote(mdPath, header);

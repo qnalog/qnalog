@@ -1166,7 +1166,7 @@ describe("短录音整条路径", () => {
     expect(fixture.session.finalized).toBe(false);
     expect(fixture.session.finalizationError).toBe("final note write failed");
     expect(fixture.session.workProgress).toMatchObject({ stage: "finalize-failed", percent: null });
-    expect(notices.join("\n")).toContain("Failed to finalize minutes");
+    expect(notices.join("\n")).toContain("Failed to finalize notes");
 
     await fixture.finalizeService.finalizeSession(fixture.session as never);
 

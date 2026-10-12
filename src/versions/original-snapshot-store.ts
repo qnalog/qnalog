@@ -67,7 +67,7 @@ export class OriginalSnapshotStore {
       const mode = typeof record.mode === "string" ? record.mode : "";
       const label = mode && this.io.isKnownMode(mode)
         ? this.io.getModeDisplayName(mode)
-        : (typeof record.label === "string" && record.kind === "source-original" ? record.label : t("Original minutes"));
+        : (typeof record.label === "string" && record.kind === "source-original" ? record.label : t("Original note"));
       return { path, mode, label };
     }
     return null;
@@ -129,7 +129,7 @@ export class OriginalSnapshotStore {
     const rawMode = fm ? readNamespaceFrontmatter(fm, "mode") : "";
     const mode = typeof rawMode === "string" ? this.io.normalizeMode(rawMode) : "";
     const validMode = mode && mode !== "off" && this.io.isKnownMode(mode) ? mode : "";
-    const label = validMode ? this.io.getModeDisplayName(validMode) : t("Original minutes");
+    const label = validMode ? this.io.getModeDisplayName(validMode) : t("Original note");
     const saved = await this.io.saveVersion(sourceFile, content, {
       kind: "source-original",
       label,

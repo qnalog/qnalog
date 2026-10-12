@@ -495,7 +495,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
       }
       if (initialBody && !response.truncated && shouldAutoRepairBriefingPart(fidelity)) {
         repairAttempts = 1;
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_under_detailed", fidelity.needsExpansion ? t("The minute part is much shorter than the source material; adding details back against the original transcript") : t("The minute part is missing multiple verifiable facts; re-organizing against the original transcript"), {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_under_detailed", fidelity.needsExpansion ? t("The note section is much shorter than the source material; adding details back against the original transcript") : t("The note section is missing multiple verifiable facts; re-organizing against the original transcript"), {
           mode,
           jobId: identity.id,
           part: plan.index + 1,
@@ -561,7 +561,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             grounding = repairedGrounding;
           }
           const repairStillWeak = fidelity.needsExpansion || grounding.needsRepair;
-          await logLlmRequestDiagnostic(plugin, repairStillWeak ? "warn" : "info", "llm.briefing_part_detail_repaired", repairStillWeak ? t("The minute part still needs review after supplementation; the more complete version has been kept") : t("The minute part has been supplemented with details from the original transcript"), {
+          await logLlmRequestDiagnostic(plugin, repairStillWeak ? "warn" : "info", "llm.briefing_part_detail_repaired", repairStillWeak ? t("The note section still needs review after supplementation; the more complete version has been kept") : t("The note section has been supplemented with details from the original transcript"), {
             mode,
             jobId: identity.id,
             part: plan.index + 1,
@@ -616,12 +616,12 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
       if (partStatus !== "complete") {
         checkpoint.status = "partial";
         await store.save(checkpoint);
-        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_incomplete", t("The minute part was not fully generated; the checkpoint has been saved for a precise retry"), {
+        await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_incomplete", t("The note section was not fully generated; the checkpoint has been saved for a precise retry"), {
           mode, jobId: identity.id, part: plan.index + 1, partTotal: partPlans.length,
           finishReason: part.finishReason, outputChars: body.length, usage: part.usage,
         });
         throw new BriefingPipelineIncompleteError(
-          t("The minutes are partially complete: {0}/{1} parts completed; part {2} needs retry").replace("{0}", String(checkpoint.parts.filter(item => item.status === "complete").length)).replace("{1}", String(partPlans.length)).replace("{2}", String(plan.index + 1)),
+          t("The notes are partially complete: {0}/{1} parts completed; part {2} needs retry").replace("{0}", String(checkpoint.parts.filter(item => item.status === "complete").length)).replace("{1}", String(partPlans.length)).replace("{2}", String(plan.index + 1)),
           checkpoint.parts.filter(item => item.status === "complete").length,
           partPlans.length,
           [plan.index],
@@ -636,13 +636,13 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
       part.updatedAt = new Date().toISOString();
       checkpoint.status = "partial";
       await store.save(checkpoint);
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_failed", t("The minute part failed to generate; previous results have been saved for a precise retry"), {
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_part_failed", t("The note section failed to generate; previous results have been saved for a precise retry"), {
         mode, jobId: identity.id, part: plan.index + 1, partTotal: partPlans.length,
         completedParts: checkpoint.parts.filter(item => item.status === "complete").length,
         error: diagnosticError(error),
       });
       throw new BriefingPipelineIncompleteError(
-        t("The minutes are partially complete: {0}/{1} parts completed; part {2} failed: {3}").replace("{0}", String(checkpoint.parts.filter(item => item.status === "complete").length)).replace("{1}", String(partPlans.length)).replace("{2}", String(plan.index + 1)).replace("{3}", getErrorMessage(error)),
+        t("The notes are partially complete: {0}/{1} parts completed; part {2} failed: {3}").replace("{0}", String(checkpoint.parts.filter(item => item.status === "complete").length)).replace("{1}", String(partPlans.length)).replace("{2}", String(plan.index + 1)).replace("{3}", getErrorMessage(error)),
         checkpoint.parts.filter(item => item.status === "complete").length,
         partPlans.length,
         [plan.index],
@@ -709,7 +709,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
             createBriefingLlmActivityOptions(plugin, computedMeta, {
               stage: "consolidate",
               stageLabel: t("Merge all session topics"),
-              detail: t("Consolidating the materials from all segments into one set of minutes"),
+              detail: t("Consolidating the materials from all segments into one set of notes"),
               progress: 88,
             }),
           ),
@@ -747,7 +747,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
           error: diagnosticError(error),
         });
         throw new BriefingPipelineIncompleteError(
-          t("All {0}/{1} minute parts are complete; global consolidation needs retry: {2}").replace("{0}", String(partPlans.length)).replace("{1}", String(partPlans.length)).replace("{2}", getErrorMessage(error)),
+          t("All {0}/{1} note sections are complete; global consolidation needs retry: {2}").replace("{0}", String(partPlans.length)).replace("{1}", String(partPlans.length)).replace("{2}", getErrorMessage(error)),
           partPlans.length,
           partPlans.length,
           [],
@@ -831,7 +831,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     await store.save(checkpoint);
   }
 
-  await logLlmRequestDiagnostic(plugin, "info", "llm.briefing_pipeline_completed", t("The minutes pipeline completed and the checkpoint was saved"), {
+  await logLlmRequestDiagnostic(plugin, "info", "llm.briefing_pipeline_completed", t("The notes pipeline completed and the checkpoint was saved"), {
     mode,
     jobId: identity.id,
     partTotal: partPlans.length,
@@ -947,7 +947,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
       createBriefingLlmActivityOptions(plugin, computedMeta, {
         stage: "llm",
         stageLabel: t("AI is organizing the body text"),
-        detail: t("The model is generating the minutes from the original transcript"),
+        detail: t("The model is generating the notes from the original transcript"),
         progress: 18,
       }),
     ), { mode, segmentCount: segments.length, transcriptChars: joined.length });

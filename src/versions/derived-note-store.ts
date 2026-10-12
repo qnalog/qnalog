@@ -75,7 +75,7 @@ export class DerivedNoteStore {
     mode: string,
     style = "",
   ): Promise<obsidian.TFile | null> {
-    if (!(sourceFile instanceof obsidian.TFile)) throw new Error(t("Original minutes note not found"));
+    if (!(sourceFile instanceof obsidian.TFile)) throw new Error(t("Original note not found"));
     const sourceDir = sourceFile.parent && sourceFile.parent.path ? sourceFile.parent.path : "";
     const sourcePath = obsidian.normalizePath(sourceFile.path);
     const sourceId = String(version && version.meta && version.meta.sourceId || this.io.getSourceId(sourceContent, sourceFile));
@@ -98,7 +98,7 @@ export class DerivedNoteStore {
       || (stableExisting instanceof obsidian.TFile && (variantKind !== "clean" || stableIsOwnedClean)
         ? stableTarget
         : this.io.findAvailableMarkdownPath(stableTarget));
-    if (!target) throw new Error(t("Failed to generate a path for the derived minutes file"));
+    if (!target) throw new Error(t("Failed to generate a path for the derived note file"));
 
     const sourceFm = this.io.getFileFrontmatter(sourceFile) || {};
     let versionFm: unknown = {};
@@ -145,7 +145,7 @@ export class DerivedNoteStore {
     } else {
       if (existing) {
         target = this.io.findAvailableMarkdownPath(stableTarget);
-        if (!target) throw new Error(t("Failed to generate a path for the derived minutes file"));
+        if (!target) throw new Error(t("Failed to generate a path for the derived note file"));
         existing = this.io.getAbstractFileByPath(target);
       }
       if (!(existing instanceof obsidian.TFile)) {

@@ -177,9 +177,9 @@ describe("recent note variant rows", () => {
     expect(view.formatAskNoteTitle({ basename: "Work notes" })).toBe("Work notes");
     expect(view.formatAskNoteTitle({ basename: "2026-10-09" })).toBe("2026-10-09");
     setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
-    expect(view.formatAskNoteTitle(null)).toBe("当前纪要");
+    expect(view.formatAskNoteTitle(null)).toBe("当前笔记");
     setActiveUiLanguage(resolveUiLanguage("en", "en"));
-    expect(view.formatAskNoteTitle(null)).toBe("Current summary");
+    expect(view.formatAskNoteTitle(null)).toBe("Current note");
   });
   it.each(["zh", "en"] as const)("formats sediment labels with title-prefix rules in %s", (language) => {
     setActiveUiLanguage(resolveUiLanguage(language, language));

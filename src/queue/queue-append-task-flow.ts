@@ -119,7 +119,7 @@ export async function runAppendTask(port: QueueAppendTaskPort, task: AppendTask)
       port.patchTaskActivity(port.queueTaskActivityId(task), {
         status: "running",
         stage: "write-note",
-        stageLabel: t("Write to Minutes"),
+        stageLabel: t("write to note"),
         progress: 88,
         detail: t("Writing the organized result to Obsidian"),
         error: "",
@@ -325,7 +325,7 @@ export async function runAppendTask(port: QueueAppendTaskPort, task: AppendTask)
     port.patchTaskActivity(port.queueTaskActivityId(task), {
       status: "running",
       stage: "write-note",
-      stageLabel: t("Write to Minutes"),
+      stageLabel: t("write to note"),
       progress: 88,
       detail: t("Writing the organized result to Obsidian"),
       error: "",

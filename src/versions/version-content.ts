@@ -1,6 +1,5 @@
-import { NS_FM, NS_TAG, NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
-import { findRawMaterialInsertionOffset, splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
-import { QNALOG_ACTIVE_VERSION_END } from "../shared/limits";
+import { NS_FM, NS_SEGMENTS_BLOCK_RE, NS_TAG, nsRe } from "../shared/namespace";
+import { findActiveVersionBlock, findRawMaterialInsertionOffset, splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
 import { labelText } from "../shared/note-labels";
 
 export function parseVersionFrontmatter(
@@ -60,6 +59,8 @@ const SELF_BACKLINK_LINE_RE = /^>\s*\[!(?:info|note)\]\s*(?:基于原始转写�
 
 export function sanitizeActiveVersionBody(body: string): string {
   let text = splitVersionPayload(body).body;
+  const rawBoundary = text.search(/\n\s*---\s*\n+##\s+(?:原始材料|Original material)\s*\n/i);
+  if (rawBoundary >= 0) text = text.slice(0, rawBoundary);
   for (let guard = 0; guard < 8; guard++) {
     const before = text;
     text = text.replace(/^\s*#\s+[^\n]*(?:\n+|$)/, "").replace(SELF_BACKLINK_LINE_RE, "");
@@ -139,17 +140,32 @@ export function foldRawTranscriptSection(markdown: string): string {
   const text = String(markdown || "");
   // 守卫与计数都必须中英双语命中：英文笔记缺守卫会重复折叠插入。
   if (!text.trim() || /^##\s+(?:📁\s*)?(?:原始材料|Original material)\s*$/m.test(text)) return text;
-  const endIdx = text.indexOf(QNALOG_ACTIVE_VERSION_END);
-  if (endIdx < 0) return text;
-  const head = text.slice(0, endIdx + QNALOG_ACTIVE_VERSION_END.length);
-  let tail = text.slice(endIdx + QNALOG_ACTIVE_VERSION_END.length);
+  const activeBlock = findActiveVersionBlock(text);
+  if (!activeBlock) return text;
+  const head = text.slice(0, activeBlock.end);
+  let tail = text.slice(activeBlock.end);
   if (!tail.trim()) return text;
-  if (!/<summary>[^<]*(?:分段原始转写|Segmented raw transcript)/.test(tail)) {
-    tail = tail.replace(NS_SEGMENTS_BLOCK_RE, (block) => {
-      const count = (String(block).match(/^### (?:段落|Segment) /gm) || []).length;
-      return `<details>\n<summary>${labelText("segmentedRawTranscript", count)}</summary>\n\n${String(block).trim()}\n\n</details>`;
-    });
-  }
+  tail = tail.replace(NS_SEGMENTS_BLOCK_RE, (block) => {
+    const lines = String(block).split(/\r?\n/);
+    const headings = lines.map((line, index) => ({
+      index,
+      match: line.match(/^###\s+(?:段落|Segment)\s+(\d+)\s+\(([^–-]+)[–-]([^)]*)\)(?:\s+(.*))?$/),
+    })).filter((item) => item.match);
+    if (!headings.length) return block;
+    const startMarker = lines.find((line) => new RegExp(`<!--\\s*${nsRe("segments-start")}(?::[^>]*)?\\s*-->`).test(line));
+    const endMarker = lines.find((line) => new RegExp(`<!--\\s*${nsRe("segments-end")}(?::[^>]*)?\\s*-->`).test(line));
+    return headings.map((heading, index) => {
+      const nextHeading = headings[index + 1];
+      const bodyLines = lines.slice(heading.index + 1, nextHeading?.index ?? lines.length)
+        .filter((line) => line !== startMarker && line !== endMarker && line.trim());
+      const title = labelText("rawTranscriptSegmentRange", Number(heading.match?.[1]), heading.match?.[2] || "", heading.match?.[3] || "");
+      const titleLink = heading.match?.[4]?.match(/\[\[[^\]]+\]\]/)?.[0];
+      const material = [...new Set([titleLink, ...bodyLines.filter((line) => /^\[\[[^\]]+\]\]$/.test(line))].filter((line): line is string => !!line))];
+      const content = bodyLines.filter((line) => !material.includes(line));
+      const markers = [index === 0 ? startMarker : null, index === headings.length - 1 ? endMarker : null].filter((line): line is string => !!line);
+      return ["<details>", `<summary>${title}</summary>`, ...material, ...markers, ...content, "</details>"].join("\n");
+    }).join("\n");
+  });
   // Machine shells are not raw-material anchors; the document layer returns the original tail's line start.
   const rawOffset = findRawMaterialInsertionOffset(tail);
   if (rawOffset < 0) return head + tail;

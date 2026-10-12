@@ -374,7 +374,7 @@ export class PeopleDirectoryService {
       new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return;
     }
-    new obsidian.Notice(`${t("QnALog: scanning ")}${batch.length}${t(" minutes notes to extract people from...")}`);
+    new obsidian.Notice(`${t("QnALog: scanning ")}${batch.length}${t(" notes to extract people from...")}`);
     try {
       let cachedCount = 0;
       let processed = 0;

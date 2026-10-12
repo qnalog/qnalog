@@ -8,7 +8,7 @@
  * 因此除机器数据外全稿替换——摘要、正文、实时大纲、原始转写都改。
  */
 
-import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
+import { getTranscriptMetadataRanges, readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
 import { readSelectedSessionKnowledge, upsertSelectedSessionKnowledge } from "../briefing/session-knowledge";
 import type { Segment } from "../shared/types";
 /** 受保护、不参与替换的区域。 */
@@ -54,6 +54,7 @@ function findProtectedRanges(markdown: string): Range[] {
   while ((m = comment.exec(text)) !== null) {
     ranges.push({ start: m.index, end: m.index + m[0].length });
   }
+  ranges.push(...getTranscriptMetadataRanges(text));
 
   // 围栏代码块（``` 或 ~~~，允许 ```lang）
   const fence = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[^\n]*$/gm;

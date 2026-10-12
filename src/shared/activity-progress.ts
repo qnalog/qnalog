@@ -92,7 +92,7 @@ const AUDIO_IMPORT_STAGE_DEFINITIONS: ReadonlyArray<{
   { id: "transcribe", label: "Speech transcription" },
   { id: "persist", label: "Write source text" },
   { id: "organize", label: "AI Organize" },
-  { id: "write", label: "Write to Minutes" },
+  { id: "write", label: "write to note" },
 ];
 
 export function normalizeAudioImportStage(value: unknown): AudioImportStageId {

@@ -11,16 +11,29 @@ vi.mock("obsidian", () => ({ parseYaml, stringifyYaml }));
 vi.stubGlobal("window", {});
 import {
   formatYamlDateTime,
+  parseSuggestedTagsFromOutput,
   frontmatterBaseModeKey,
   mergeLeadingFrontmatterIntoDocument,
   normalizeBriefingFrontmatterFields,
   postProcessBriefingOutput,
   scrubBriefingTodoPlaceholders,
 } from "../src/notes/note-briefing-output";
+import { cleanObsidianTag } from "../src/shared/obsidian-tag";
 
 const settings = { promptTemplates: { custom: { id: "custom", mode: "custom", customMode: true, baseMode: "learning" }, unknown: { id: "unknown", mode: "unknown", customMode: true, baseMode: "missing" } } };
 
 describe("briefing output contracts", () => {
+  it.each([
+    ["Q&Alog", "QAlog"], ["Q&A Log", "QALog"], ["R&D/流程", "RD/流程"],
+    ["123", ""], ["", ""], ["##主题//AI/", "主题/AI"], ["主题／ＡＩ", "主题ＡＩ"],
+    ["😀标签", "标签"], ["A".repeat(30), "A".repeat(30)],
+  ])("cleans generated tags (%s)", (raw, expected) => {
+    expect(cleanObsidianTag(raw)).toBe(expected);
+  });
+  it("applies tag sanitation before deduplication and length filtering", () => {
+    const parsed = parseSuggestedTagsFromOutput("body\n<!-- qnalog-tags: Q&Alog, Q&A Log, R&D/流程, 123, 项目/" + "字".repeat(25) + " -->");
+    expect(parsed.tags).toEqual(["QAlog", "QALog", "RD/流程"]);
+  });
   beforeEach(() => {
     parseYaml.mockClear();
     stringifyYaml.mockClear();
