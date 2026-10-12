@@ -390,7 +390,8 @@ async function requestValidatedTopicJson<T>(options: TopicJsonRequestOptions<T>)
       validation = { missingFields: ["json"] };
       options.diagnostics.errorMessages?.push(safeTopicError(error, options.input));
     }
-    if (options.diagnostics.jsonParsable.length === options.diagnostics.requests && options.diagnostics.jsonParsable.at(-1)) {
+    if (options.diagnostics.jsonParsable.length === options.diagnostics.requests
+      && options.diagnostics.jsonParsable[options.diagnostics.jsonParsable.length - 1]) {
       try { validation = options.validate(parsed); }
       catch (error) {
         validation = { missingFields: ["response-shape"] };
@@ -872,7 +873,8 @@ function deduplicateAddPoints(values: readonly TopicOperation[], currentPage: st
   const details: TopicDuplicateDecision[] = [];
   let duplicates = 0;
   const pagePoints = parseTopicPageBlocks(currentPage).filter((block) => block.type === "point").map((block) => {
-    const heading = currentPage.slice(0, block.start).match(/^###\s+(.+?)\s*$/gm)?.at(-1)?.replace(/^###\s+/, "").trim() || "";
+    const headings = currentPage.slice(0, block.start).match(/^###\s+(.+?)\s*$/gm);
+    const heading = headings?.[headings.length - 1]?.replace(/^###\s+/, "").trim() || "";
     return { heading, text: cleanTopicBlockClaim(block.text) };
   });
   for (const value of values) {

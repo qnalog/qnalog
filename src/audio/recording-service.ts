@@ -143,16 +143,22 @@ export class RecordingService {
     this._oneShotPolishMode = null;
   }
 
+  private getRecorder(): NonNullable<RecordingHost["recorder"]> {
+    const recorder = this.host.recorder;
+    if (!recorder) throw new Error("Recorder service is unavailable.");
+    return recorder;
+  }
+
   async toggleRecording(): Promise<void> {
     // The host assembles the recorder before registering these public recording operations.
-    if (this.host.recorder!.state === "idle") await this.startRecording();
+    if (this.getRecorder().state === "idle") await this.startRecording();
     else await this.stopRecording();
   }
 
 
   async startRecording(options: StartRecordingOptions = {}): Promise<void> {
     if (this.starting) return;
-    if (this.host.recorder!.state !== "idle") {
+    if (this.getRecorder().state !== "idle") {
       new obsidian.Notice(t("A recording is already in progress. Please stop it before continuing to record."), 5000);
       return;
     }
@@ -360,7 +366,7 @@ export class RecordingService {
         if (providerStreamReady) await providerStreamReady(mediaStream);
       };
 
-      await this.host.recorder!.start({
+      await this.getRecorder().start({
         segmentDurationMs,
         quickCutMarksMs: segmentDurationMs > 0 ? QUICK_INTERIM_CUTS_MS : [],
         captureMode,
@@ -380,9 +386,10 @@ export class RecordingService {
           : t("Recording in progress ({0}); everything is processed when you stop.").replace("{0}", modeLabel));
       new obsidian.Notice(noticeText);
       if (continuationInfo) {
+        if (!appendTargetFile) throw new Error("Continuation target is missing.");
         new obsidian.Notice(
           t('Continuation recording saved separately; it will be merged into "{0}" after its current processing finishes.')
-            .replace("{0}", appendTargetFile!.basename),
+            .replace("{0}", appendTargetFile.basename),
           8000,
         );
       }
@@ -427,9 +434,9 @@ export class RecordingService {
 
   async stopRecording(): Promise<void> {
     // The host assembles the recorder before registering these public recording operations.
-    if (this.host.recorder!.state === "idle") return;
+    if (this.getRecorder().state === "idle") return;
     new obsidian.Notice(t("⏹ Stop requested, processing the final segment..."));
-    await this.host.recorder!.stop();
+    await this.getRecorder().stop();
     this.host.asrPipeline.clearRecordingIssue();
   }
 

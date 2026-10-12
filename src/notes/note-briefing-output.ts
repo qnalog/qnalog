@@ -136,8 +136,8 @@ export function parseSuggestedTagsFromOutput(text: string | null | undefined): {
       return true;
     });
   // 去重
-  const seen = new Set();
-  const unique = [];
+  const seen = new Set<string>();
+  const unique: string[] = [];
   for (const t of tags) {
     if (!seen.has(t)) { unique.push(t); seen.add(t); }
   }
