@@ -107,7 +107,7 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
     input.textImport ? null : nsMarker("segments-end", input.sessionId),
     input.textImport ? null : "</details>",
     input.textImport ? null : "",
-    nsMarker("session", input.sessionId),
+    `<details><summary>QnALog session data</summary>${nsMarker("session", input.sessionId)}</details>`,
     "",
     input.polish.sedimentBlock || null,
     input.polish.sedimentBlock ? "" : null,

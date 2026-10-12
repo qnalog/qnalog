@@ -7,12 +7,15 @@ import { stableHash } from "../shared/stable-hash";
 import { NS_FM, NS_TAG, nsRe } from "../shared/namespace";
 import { labelPattern, labelText, UTILITY_HEADING_RE } from "../shared/note-labels";
 import { findActiveVersionBlock, findFirstNoteBoundary, stripUtilityDetailsBlocks } from "../notes/note-document";
-// 写入用折叠壳新格式（标记在外、details+json 围栏在内，阅读视图折叠为一行）；
-// 读取同时接受旧的单注释格式，否则既有笔记里的索引块会被重复插入。
+// 写入时把索引标记和 JSON 放入折叠壳；读取仍兼容历史格式。
 export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index -->`;
 export const QNALOG_NOTE_INDEX_END = `<!-- ${NS_TAG}-note-index-end -->`;
 
 const NOTE_INDEX_FENCED_PATTERN = new RegExp(
+  `<details>\\s*<summary>[^<]*</summary>\\s*<!--\\s*${nsRe("note-index")}\\s*-->\\s*\`\`\`json\\s*\\n([\\s\\S]*?)\\n\`\`\`\\s*<!--\\s*${nsRe("note-index-end")}\\s*-->\\s*</details>`,
+  "i",
+);
+const NOTE_INDEX_PREVIOUS_FENCED_PATTERN = new RegExp(
   `<!--\\s*${nsRe("note-index")}\\s*-->\\s*<details>\\s*<summary>[^<]*</summary>\\s*\`\`\`json\\s*\\n([\\s\\S]*?)\\n\`\`\`\\s*</details>\\s*<!--\\s*${nsRe("note-index-end")}\\s*-->`,
   "i",
 );
@@ -138,6 +141,7 @@ function extractLastLegacyPolishBlock(markdown: string): string {
 export function removeNoteIndex(markdown: unknown): string {
   return textValue(markdown)
     .replace(NOTE_INDEX_FENCED_PATTERN, "")
+    .replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, "")
     .replace(NOTE_INDEX_LEGACY_PATTERN, "")
     .replace(/\n{3,}/g, "\n\n")
     .trimEnd();
@@ -417,7 +421,7 @@ export function readNoteIndex(
   options?: { includeFuture: true },
 ): NoteIndexReadResult | null {
   const text = textValue(markdown);
-  const match = NOTE_INDEX_FENCED_PATTERN.exec(text) || NOTE_INDEX_LEGACY_PATTERN.exec(text);
+  const match = NOTE_INDEX_FENCED_PATTERN.exec(text) || NOTE_INDEX_PREVIOUS_FENCED_PATTERN.exec(text) || NOTE_INDEX_LEGACY_PATTERN.exec(text);
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[1]) as Record<string, unknown>;
@@ -456,17 +460,14 @@ export function serializeNoteIndex(index: QnALogNoteIndexCard): string {
     .replace(/`/g, "\\u0060")
     .replace(/--/g, "\\u002d\\u002d");
   return [
-    QNALOG_NOTE_INDEX_START,
-    "",
     "<details>",
     `<summary>${labelText("indexData")}</summary>`,
-    "",
+    QNALOG_NOTE_INDEX_START,
     "```json",
     json,
     "```",
-    "",
-    "</details>",
     QNALOG_NOTE_INDEX_END,
+    "</details>",
   ].join("\n");
 }
 
@@ -480,6 +481,7 @@ export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): 
   // Contents unchanged and already fenced means no write; legacy blocks upgrade naturally.
   if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return text;
   if (hasFenced) return text.replace(NOTE_INDEX_FENCED_PATTERN, () => block);
+  if (NOTE_INDEX_PREVIOUS_FENCED_PATTERN.test(text)) return text.replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, () => block);
   if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block);
   return `${text.trimEnd()}\n\n${block}\n`;
 }

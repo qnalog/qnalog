@@ -120,5 +120,6 @@ describe("session knowledge protocol", () => {
 
     const unwrapped = upsertSelectedSessionKnowledge("Visible note", selected);
     expect(readSessionKnowledge(unwrapped)).toEqual(selected);
+    expect(unwrapped).toMatch(/<details><summary>QnALog session data<\/summary><!-- qnalog-session-knowledge [\s\S]*?--><\/details>/);
   });
 });

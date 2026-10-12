@@ -53,9 +53,14 @@ function knowledgeCommentPattern(global = false): RegExp {
 
 function replaceKnowledgeInSection(section: string, serialized: string): string {
   const marker = knowledgeCommentPattern();
-  if (marker.test(section)) return section.replace(marker, serialized);
+  if (marker.test(section)) return section.replace(marker, (prior, offset: number, whole: string) => {
+    const before = whole.slice(0, offset);
+    return before.lastIndexOf("<details>") > before.lastIndexOf("</details>")
+      ? serialized
+      : `<details><summary>QnALog session data</summary>${serialized}</details>`;
+  });
   const body = section.trimEnd();
-  return `${body}${body ? "\n\n" : ""}${serialized}`;
+  return `${body}${body ? "\n\n" : ""}<details><summary>QnALog session data</summary>${serialized}</details>`;
 }
 
 /** Remove complete blocks and discard any malformed protocol tail. */

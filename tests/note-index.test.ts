@@ -132,6 +132,8 @@ describe("QnALog note index", () => {
     const marker = serializeNoteIndex(first);
     expect(marker).not.toContain("A --> B");
     expect(marker).toContain("<summary>索引数据</summary>");
+    expect(marker).toMatch(/^<details>[\s\S]*<!-- qnalog-note-index -->[\s\S]*<!-- qnalog-note-index-end -->[\s\S]*<\/details>$/);
+    expect(marker).not.toMatch(/\n\s*\n/);
     expect(marker).toContain("```json");
     expect(readNoteIndex(marker)?.core.title).toBe("A --> B");
 
