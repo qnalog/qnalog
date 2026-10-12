@@ -104,7 +104,7 @@ describe("topics service", () => {
     const setup = harness({ request: async () => { throw new Error("offline"); } });
     const initial = topicMarkdown("climate-topic", "Climate", ["climate"]);
     setup.storePort.seed("Topics/Climate.md", initial);
-    await expect(setup.service.preview({ topicId: "climate-topic", startPath: "Notes/b.md", memberPaths: ["Notes/b.md"], basis: "overview" })).rejects.toThrow("before any batch completed");
+    await expect(setup.service.preview({ topicId: "climate-topic", startPath: "Notes/b.md", memberPaths: ["Notes/b.md"], basis: "overview" })).rejects.toThrow("could not be generated");
     expect(await setup.storePort.read("Topics/Climate.md")).toBe(initial);
     expect(setup.writes).toEqual([]);
     expect(setup.activities.failed).toHaveLength(1);
@@ -148,21 +148,63 @@ describe("topics service", () => {
     await expect(setup.service.estimate({ memberPaths: ["Topics/Climate.md"], basis: "overview" })).rejects.toThrow("not in the current note scope");
   });
 
-  it("applies only the selected operations to a newly created topic and completes activity", async () => {
+  it("renders the structured model into a v2 page and completes activity", async () => {
     const setup = harness();
     const preview = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview", title: "Climate" });
-    const selected = preview.items[0];
-    expect(selected).toBeDefined();
-    const result = await setup.service.apply(preview, [selected.id]);
+    expect(preview.items).toEqual([]);
+    const result = await setup.service.apply(preview, []);
     expect(result.path).toBe("Topics/Climate.md");
     const page = parseTopicPage(result.markdown);
-    expect(page?.id).toBe(preview.topicId);
-    expect(result.markdown).toContain("accepted update");
-    expect(result.markdown).not.toContain("unselected update");
+    expect(page).toMatchObject({ id: preview.topicId, layout: 2 });
+    expect(result.markdown).toContain("> [!abstract] Overview");
+    expect(result.markdown).toContain("Climate policy reform");
+    expect(result.markdown).toContain("## Timeline");
+    expect(result.markdown).toContain("## Source notes");
+    for (const heading of ["## 概要 / Overview", "## 当前状态 / Current status", "## 分歧与待核实 / Disagreements and verification", "## 未决问题与未完成行动 / Open questions and actions", "## 待整理 / Unsorted"]) {
+      expect(result.markdown).not.toContain(heading);
+    }
     expect(setup.storePort.created).toHaveLength(1);
     expect(setup.activities.completed).toEqual([["topics:create:topic-1"]]);
     expect(setup.activities.failed).toEqual([]);
     await expect(setup.service.apply(preview, [])).rejects.toThrow("no longer available");
+  });
+
+  it("returns create diagnostics and marks a program-generated overview in the preview", async () => {
+    const model = JSON.stringify({ status: "active", threads: [{ title: "Progress", summary: "First sentence. Second sentence.", points: [] }], disagreements: [], open: [] });
+    const setup = harness({ request: async () => ({ choices: [{ message: { content: model } }] }) });
+    const preview = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview", title: "Climate" });
+    expect(preview.createDiagnostics).toMatchObject({ requests: 2, missingFields: [["overview"], ["overview"]], retried: true, degraded: true });
+    expect(preview.create?.overviewGeneratedFromThreads).toBe(true);
+    expect(preview.create?.model?.overview).toBe("First sentence.");
+    expect(setup.writes).toEqual([]);
+  });
+
+  it("keeps the page unchanged and maps empty-thread responses to a localized error", async () => {
+    const response = JSON.stringify({ overview: "Present overview.", status: "active", threads: [], disagreements: [], open: [] });
+    const setup = harness({ request: async () => ({ choices: [{ message: { content: response } }] }) });
+    await expect(setup.service.preview({ startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview" }))
+      .rejects.toThrow("The topic page could not be generated");
+    expect(setup.requests).toHaveLength(2);
+    expect(setup.writes).toEqual([]);
+    expect(setup.activities.failed[0]?.[1]).toMatchObject({ message: expect.not.stringContaining("Topic response must contain an overview") });
+  });
+
+  it("previews a legacy page rebuild and replaces the page with an undo snapshot", async () => {
+    const setup = harness();
+    const legacy = topicMarkdown("legacy-topic", "Legacy", ["climate"], ["Notes/a.md"]);
+    setup.storePort.seed("Topics/Legacy.md", legacy);
+    const preview = await setup.service.previewRebuild("legacy-topic");
+    expect(preview.replacement?.path).toBe("Topics/Legacy.md");
+    expect(preview.replacement?.markdown).toContain("qnalog_topic_layout: 2");
+    for (const heading of ["## 概要 / Overview", "## 当前状态 / Current status", "## 分歧与待核实 / Disagreements and verification", "## 未决问题与未完成行动 / Open questions and actions", "## 待整理 / Unsorted"]) {
+      expect(preview.replacement?.markdown).not.toContain(heading);
+    }
+    expect(setup.writes).toEqual([]);
+    const applied = await setup.service.apply(preview, []);
+    expect(parseTopicPage(applied.markdown)?.layout).toBe(2);
+    expect(setup.storePort.created.some(({ path }) => path.includes("topic-history"))).toBe(true);
+    expect(await setup.service.undoLastUpdate("legacy-topic")).toEqual({ restored: true });
+    expect(await setup.storePort.read("Topics/Legacy.md")).toBe(legacy);
   });
 
   it("updates an existing topic and persists selected member and tag changes", async () => {
@@ -173,9 +215,23 @@ describe("topics service", () => {
     const result = await setup.service.apply(preview, [preview.items[0].id]);
     expect(result.path).toBe("Topics/Climate.md");
     expect(result.markdown).toContain("accepted update");
+    expect(result.markdown).toContain("## 待整理 / Unsorted");
     expect(parseTopicPage(result.markdown)?.members).toEqual(["Notes/a.md", "Notes/b.md"]);
     expect(setup.storePort.created.some(({ path }) => path.includes("topic-history"))).toBe(true);
     expect(setup.activities.completed).toEqual([["topics:update:climate-topic"]]);
+  });
+
+  it("filters update tags and adds close spellings only to the existing tag aliases", async () => {
+    const setup = harness();
+    setup.files[1].tags = ["项目/original-material", "项目/QnALogging"];
+    const page = createTopicPage({ id: "tag-topic", title: "Tag topic", tags: ["项目/QnALog"], basis: "overview", members: [{ path: "Notes/a.md", title: "a", sourceId: "Notes/a.md" }] });
+    page.tagAliases = { "项目/QnALog": ["项目/QnALog"] };
+    setup.storePort.seed("Topics/Tag topic.md", serializeTopicPage(page));
+    const preview = await setup.service.preview({ topicId: "tag-topic", startPath: "Notes/b.md", memberPaths: ["Notes/b.md"], basis: "overview" });
+    expect(preview.tags).toEqual(["项目/QnALog"]);
+    expect(preview.tagAliases).toEqual({ "项目/QnALog": ["项目/QnALog", "项目/QnALogging"] });
+    expect(preview.tags).not.toContain("项目/original-material");
+    expect(preview.tagAliases?.["项目/original-material"]).toBeUndefined();
   });
 
   it("scans unintegrated notes excluding existing members and explicit exclusions", async () => {
@@ -237,6 +293,10 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
     read: async (path) => contents.get(path) ?? "",
     create: async (path, content) => { writes.push({ kind: "create", path }); storePort.created.push({ path, content }); contents.set(path, content); },
     process: async (path, transform) => { writes.push({ kind: "process", path }); contents.set(path, transform(contents.get(path) ?? "")); },
+    readCache: async (path) => contents.get(path) ?? null,
+    writeCache: async (path, content) => { contents.set(path, content); },
+    deleteCache: async (path) => { contents.delete(path); },
+    readMemberTags: async (paths) => [...new Set(paths.flatMap((path) => files.find((file) => file.path === path)?.tags || []))],
     listMarkdown: async (folder) => [...contents.keys()].filter((path) => path.startsWith(`${folder}/`) && path.endsWith(".md")).map((path) => ({ path, name: path.split("/").pop()! })),
     ensureFolder: async () => {}, deleteHistory: async (path) => { contents.delete(path); }, trashFile: async (path) => { contents.delete(path); }, now: () => now,
   };
@@ -245,9 +305,14 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
     requests.push(messages);
     const payload = JSON.parse(messages[1].content) as { members: Array<{ sourceId: string }> };
     const sourceId = payload.members[0]?.sourceId || "";
+    if (messages[0].content.startsWith("Create a readable topic page model")) return { choices: [{ message: { content: JSON.stringify({
+      overview: "Climate policy reform changes public investment and emissions strategy. The notes describe clean energy funding as the current direction.",
+      status: "active", threads: [{ title: "Funding direction", summary: "The notes connect policy changes to public investment.", points: [{ text: "Funding shifts toward clean energy.", sources: [sourceId] }] }],
+      disagreements: [], open: [], unsorted: [],
+    }) } }] };
     return { choices: [{ message: { content: JSON.stringify({ operations: [
-      { type: "add_item", section: "当前状态", text: "accepted update", sourceId },
-      { type: "add_item", section: "当前状态", text: "unselected update", sourceId },
+      { type: "add_item", section: "进展脉络", text: "accepted update", sourceId },
+      { type: "add_item", section: "进展脉络", text: "unselected update", sourceId },
     ] }) } }] };
   }) };
   if (options.request) {
@@ -264,7 +329,7 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
 function emptyHost(overviewCards: TopicsServicePort) {
   const noopStore: TopicStorePort = {
     read: async () => "", create: async () => {}, process: async () => {}, listMarkdown: async () => [],
-    ensureFolder: async () => {}, deleteHistory: async () => {}, trashFile: async () => {}, now: () => Date.now(),
+    ensureFolder: async () => {}, deleteHistory: async () => {}, readCache: async () => null, writeCache: async () => {}, deleteCache: async () => {}, readMemberTags: async () => [], trashFile: async () => {}, now: () => Date.now(),
   };
   return { overviewCards, topicStore: noopStore, getRoots: () => [], getFolder: () => "Topics",
     integration: { request: async () => ({ operations: [] }) }, createId: () => "unused",

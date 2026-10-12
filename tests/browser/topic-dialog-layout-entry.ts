@@ -1,7 +1,8 @@
 import { TopicPreviewModal } from "../../src/ui/topic-preview-modal";
 import { TopicCreateModal } from "../../src/ui/topic-create-modal";
-import { TopicsPanel } from "../../src/ui/topics-panel";
+import { TopicScanModal, TopicsPanel } from "../../src/ui/topics-panel";
 import { syncActiveRow } from "../../src/ui/row-active";
+import { qnalogConfirm } from "../../src/ui/helpers";
 
 (window as unknown as { syncActiveRow: typeof syncActiveRow }).syncActiveRow = syncActiveRow;
 import type { TopicCandidates } from "../../src/topics/topic-candidates";
@@ -14,6 +15,15 @@ const candidates: TopicCandidates = {
     matchedTags: ["项目/Q&ALog", "项目/QnALog"], matchedTerms: [], reasons: ["Shared project identifier tag"],
     reasonDetails: [{ kind: "project-tags" as const, labels: ["项目/Q&ALog", "项目/QnALog"], similar: true }],
     alreadyInTopics: [], missingOverview: false, score: 1, defaultSelected: true, cancellable: index !== 0,
+  })),
+  topic: [], content: [], byTag: [], byContent: [],
+};
+const scanCandidates: TopicCandidates = {
+  project: candidates.project.slice(0, 5).map((candidate, index) => ({
+    ...candidate,
+    title: `Scan candidate ${index + 1}`,
+    matchedTags: ["项目/Q&ALog", "项目/VeryLongProjectTagLabelForLayout"],
+    reasonDetails: [{ kind: "project-tags", labels: ["项目/Q&ALog", "项目/VeryLongProjectTagLabelForLayout"], similar: true }],
   })),
   topic: [], content: [], byTag: [], byContent: [],
 };
@@ -32,10 +42,11 @@ const cancelledTopics: string[] = [];
 (window as unknown as { cancelledTopics: string[] }).cancelledTopics = cancelledTopics;
 
 const port = {
-  text: (key: string) => key,
+  text: (key: string) => key === "QnALog · Topics" ? "QnALog · Topics" : key,
   isConfigured: () => true,
   getVersion: () => "fixture",
   getCandidates: async () => candidates,
+  scanUnintegrated: async () => scanCandidates,
   listTopics: async () => Array.from({ length: 8 }, (_, index) => ({ path: `QnALog/主题/Topic-${index}.md`, page: { id: `fixture-topic-${index}`, title: `Project topic ${index}`, tags: [], members: [], memberLinks: [], excluded: [], basis: "overview" as const, created: "2026-10-01", updated: "2026-10-11", body: "" } })),
   countPending: async () => 0,
   estimate: async () => ({ chars: 400, requests: 1 }),
@@ -56,7 +67,16 @@ const unbrokenText = `https://example.test/${"a".repeat(160)}`;
 const preview: TopicChangePreview = {
   topicId: "fixture-topic", expectedHash: "fixture-hash", pageWasManuallyEdited: false,
   completedBatches: 1, totalBatches: 1,
-  items: [{ id: "long-item", type: "add_conflict", operation: { type: "add_conflict", text: longText, sourceId: "source-id" }, target: "conflict", text: `${longText} ${unbrokenText}（未核实）`, sourceId: "source-id", cancellable: true }],
+  items: [
+    { id: "disagreement", type: "add_disagreement", operation: { type: "add_disagreement", subject: "Front Matter property naming strategy", positions: [
+      { text: longText, sourceId: "source-id", sourceTitle: "问答日志-数据结构优化", date: "2026-09-29" },
+      { text: "The existing page uses a different property name.", sourceId: "source-id", sourceTitle: "A very long source title whose label must wrap without covering the date", date: "2026-09-30", fromPage: true, provenance: "unverified" },
+    ], sourceId: "source-id" }, target: "add_disagreement", text: "", sourceId: "source-id", cancellable: true },
+    { id: "resolved-item", type: "resolve_open", operation: { type: "resolve_open", blockId: "tpc-a1b2c3", note: "The issue was resolved.", expectedText: "The issue remains open.", sourceId: "source-id" }, target: "resolve_open", text: "The issue was resolved.", expectedText: "The issue remains open.", sourceId: "source-id", cancellable: true },
+    { id: "revision-item", type: "revise_block", operation: { type: "revise_block", blockId: "tpc-a1b2c3", newText: "A revised progress summary.", expectedText: "An old progress summary.", reason: "new evidence", sourceId: "source-id" }, target: "tpc-a1b2c3", text: "A revised progress summary.", expectedText: "An old progress summary.", sourceId: "source-id", cancellable: true },
+    { id: "long-item", type: "add_item", operation: { type: "add_item", section: "进展脉络", text: `${longText} ${unbrokenText}`, sourceId: "source-id" }, target: "Progress thread", text: `${longText} ${unbrokenText}（未核实）`, sourceId: "source-id", cancellable: true },
+    { id: "second-item", type: "add_timeline", operation: { type: "add_timeline", date: "2026-10-10", text: "A second timeline entry.", sourceId: "source-id" }, target: "add_timeline", text: "A second timeline entry.", sourceId: "source-id", cancellable: true },
+  ],
   sourceLinks: { "source-id": `[[${"QnALog/转写纪要/2026-09-29 2149 · ".repeat(2)}综合纪要-问答日志-数据结构优化.md|问答日志-数据结构优化]]` },
   sourceDates: { "source-id": "2026-09-29" },
 };
@@ -66,9 +86,18 @@ window.renderTopicCreate = async () => {
   await new Promise((resolve) => window.setTimeout(resolve, 20));
 };
 window.renderTopicPreview = () => new TopicPreviewModal({} as never, port as never, preview, () => undefined).open();
+window.renderTopicScan = async () => {
+  new TopicScanModal({} as never, port as never, "fixture-topic", () => undefined).open();
+  await new Promise((resolve) => window.setTimeout(resolve, 20));
+};
 window.renderTopicsPanel = async () => {
   const root = document.createElement("div");
   root.id = "topics-panel-root";
   document.body.append(root);
   await new TopicsPanel({} as never, port as never, () => undefined).render(root);
+};
+window.renderTopicConfirm = (kind) => {
+  const title = kind === "Generic confirmation" ? "Clear queue" : kind;
+  const cta = kind === "Delete topic" ? "Delete" : kind === "Merge topics" ? "Merge" : "Clear";
+  void qnalogConfirm({} as never, title, "Confirm this action?", cta, kind === "Generic confirmation" ? undefined : "QnALog · Topics");
 };

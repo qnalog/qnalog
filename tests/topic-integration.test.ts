@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildTopicIntegrationMessages, estimateIntegrationCost, generateTopicOperations,
+  generateTopicPageContent, generateTopicPageUpdateOperations,
   TOPIC_BODY_BATCH_CHARS, TOPIC_INTEGRATION_BATCH_SIZE, type TopicIntegrationMember,
   type TopicIntegrationPort,
 } from "../src/topics/topic-integration";
 import type { OverviewCard } from "../src/topics/overview-card";
+import { applyTopicOps, parseTopicPageBlocks, renderTopicPage } from "../src/topics/topic-page";
 
 function member(id: string, overview = `Evidence from ${id} supports careful planning.`, content = overview): TopicIntegrationMember {
   const card = { sourceId: id, path: `Notes/${id}.md`, title: `Title ${id}`, date: "2025-03-04", tags: ["tag"], overview } as OverviewCard;
@@ -18,11 +20,352 @@ function fakePort(responses: unknown[], signals?: AbortSignal[]): TopicIntegrati
 }
 
 describe("topic integration", () => {
+  it("generates a structured model and limits references to supplied source IDs", async () => {
+    const source = member("valid", "The project will ship in October.");
+    const port = fakePort([JSON.stringify({
+      overview: "The project is preparing for launch. The release is planned for October.", status: "active",
+      threads: [{ title: "Release", summary: "The team has set a release window.", points: [{ text: "Release is planned for October.", sources: ["valid", "outside"] }] }],
+      disagreements: [], open: [], unsorted: [],
+    })]);
+    const result = await generateTopicPageContent(port, { basis: "overview", members: [source] });
+    expect(result.model.overview).toContain("preparing for launch");
+    expect("status" in result.model).toBe(false);
+    expect(result.model.threads[0].points[0].sources).toEqual(["valid"]);
+    expect(port.calls[0][0].content).toContain("2-5 sentences");
+    expect(port.calls[0][0].content).not.toMatch(/\bstatus\b/i);
+    expect(port.calls[0][0].content).toContain("kind exactly question, action, or bug");
+    expect(port.calls[0][1].content).toContain("valid");
+  });
+
+  it("repairs a missing overview once using the same member input", async () => {
+    const source = member("repair", "主题依据内容。");
+    const thread = { title: "主题进展", summary: "项目已完成第一阶段。项目开始第二阶段。", points: [] };
+    const port = fakePort([
+      JSON.stringify({ status: "active", threads: [thread], disagreements: [], open: [] }),
+      JSON.stringify({ overview: "项目已完成第一阶段。", status: "active", threads: [thread], disagreements: [], open: [] }),
+    ]);
+    const result = await generateTopicPageContent(port, { basis: "overview", members: [source] });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[0][1].content).toBe(port.calls[1][1].content);
+    expect(port.calls[1][0].content).toContain("上次响应缺少 `overview` 字段：请返回完整 JSON，`overview` 为 2–5 句的概述");
+    expect(result.createDiagnostics).toMatchObject({ requests: 2, jsonParsable: [true, true], missingFields: [["overview"], []], retried: true, degraded: false });
+  });
+
+  it("builds an overview from thread summaries after one failed repair", async () => {
+    const source = member("fallback", "主题依据内容。");
+    const model = { status: "active", threads: [
+      { title: "第一条", summary: "首条子线索摘要。后续句子。", points: [] },
+      { title: "第二条", summary: "第二条子线索摘要。后续句子。", points: [] },
+    ], disagreements: [], open: [] };
+    const port = fakePort([JSON.stringify(model), JSON.stringify(model)]);
+    const result = await generateTopicPageContent(port, { basis: "overview", members: [source] });
+    expect(result.model.overview).toBe("首条子线索摘要。 第二条子线索摘要。");
+    expect(result.overviewGeneratedFromThreads).toBe(true);
+    expect(result.createDiagnostics).toMatchObject({ requests: 2, missingFields: [["overview"], ["overview"]], retried: true, degraded: true });
+  });
+
+  it("fails after retry when no valid thread object is returned", async () => {
+    const source = member("threadless", "PRIVATE NOTE CONTENT THAT MUST NOT BE LOGGED");
+    const port = fakePort([JSON.stringify({ overview: "概述。", threads: ["bad"], disagreements: [], open: [] }), JSON.stringify({ overview: "概述。", threads: [], disagreements: [], open: [] })]);
+    const diagnostic = vi.fn();
+    port.diagnostic = diagnostic;
+    await expect(generateTopicPageContent(port, { basis: "overview", members: [source] })).rejects.toMatchObject({ name: "TopicGenerationError" });
+    expect(port.calls).toHaveLength(2);
+    expect(diagnostic).toHaveBeenCalledWith(expect.objectContaining({ requests: 2, missingFields: [["threads"], ["threads"]] }), "create");
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("PRIVATE NOTE CONTENT THAT MUST NOT BE LOGGED");
+  });
+
+  it("ignores status and normalizes unknown open-item kinds", async () => {
+    const source = member("valid", "The team is considering a new migration step.");
+    const createPort = fakePort([JSON.stringify({
+      overview: "The project is active.", status: "in progress", threads: [{ title: "Migration", summary: "The migration is under review.", points: [] }], disagreements: [],
+      open: [{ kind: "task", text: "Review the migration.", sources: ["valid"] }], unsorted: [],
+    })]);
+    const created = await generateTopicPageContent(createPort, { basis: "overview", members: [source] });
+    expect(created.model.open[0].kind).toBe("action");
+    expect(created.validationWarnings).toEqual([
+      "Unknown topic open-item kind was mapped to action.",
+    ]);
+
+    const currentPage = renderTopicPage({ overview: "The topic covers migration.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
+    const updatePort = fakePort([response([{ type: "add_open", kind: "task", text: "Review migration.", sources: ["valid"] }])]);
+    const updated = await generateTopicPageUpdateOperations(updatePort, { basis: "overview", members: [source], currentPage });
+    expect(updated.operations).toMatchObject([{ type: "add_open", kind: "action" }]);
+    expect(updated.validationWarnings).toEqual(["Unknown topic open-item kind was mapped to action."]);
+    expect(updatePort.calls[0][0].content).toContain("kind must be exactly question, action, or bug");
+  });
+
+  it("merges multi-batch body fragments without sending source bodies to the merge request", async () => {
+    const members = Array.from({ length: TOPIC_INTEGRATION_BATCH_SIZE + 1 }, (_, index) => member(String(index), "brief", "PRIVATE BODY " + index));
+    const model = { overview: "The project is progressing.", status: "active", threads: [{ title: "Progress", summary: "The project is progressing.", points: [] }], disagreements: [], open: [], unsorted: [] };
+    const port = fakePort([JSON.stringify(model), JSON.stringify(model), JSON.stringify(model)]);
+    const result = await generateTopicPageContent(port, { basis: "body", members });
+    expect(result).toMatchObject({ completedBatches: 3, totalBatches: 3 });
+    expect(port.calls).toHaveLength(3);
+    expect(port.calls[0][1].content).toContain("PRIVATE BODY 0");
+    expect(port.calls[2][0].content).toContain("structured evidence fragments");
+    expect(port.calls[2][1].content).not.toContain("PRIVATE BODY 0");
+    expect(port.calls[2][1].content).toContain("The project is progressing.");
+  });
+
+  it("retries only the failed body batch before merging successful fragments", async () => {
+    const members = Array.from({ length: TOPIC_INTEGRATION_BATCH_SIZE + 1 }, (_, index) => member(String(index), "brief", `Body evidence ${index}.`));
+    const good = { overview: "The project is progressing.", status: "active", threads: [{ title: "Progress", summary: "A project step is complete.", points: [] }], disagreements: [], open: [] };
+    const missingOverview = { status: "active", threads: [{ title: "Progress", summary: "The last project step is complete.", points: [] }], disagreements: [], open: [] };
+    const port = fakePort([JSON.stringify(good), JSON.stringify(missingOverview), JSON.stringify(good), JSON.stringify(good)]);
+    const result = await generateTopicPageContent(port, { basis: "body", members });
+    expect(port.calls).toHaveLength(4);
+    const firstBatch = JSON.parse(port.calls[0][1].content) as { members: Array<{ path: string }> };
+    const failedBatch = JSON.parse(port.calls[1][1].content) as { members: Array<{ path: string }> };
+    const retriedBatch = JSON.parse(port.calls[2][1].content) as { members: Array<{ path: string }> };
+    expect(firstBatch.members).toHaveLength(TOPIC_INTEGRATION_BATCH_SIZE);
+    expect(failedBatch.members.map(({ path }) => path)).toEqual(["Notes/6.md"]);
+    expect(retriedBatch.members.map(({ path }) => path)).toEqual(["Notes/6.md"]);
+    expect(port.calls[2][0].content).toContain("overview");
+    expect(port.calls[3][0].content).toContain("Merge these structured evidence fragments");
+    expect(result).toMatchObject({ completedBatches: 3, totalBatches: 3, createDiagnostics: { requests: 4, retried: true } });
+  });
+
+  it("revises overview blocks and degrades unsupported target blocks into a progress point", async () => {
+    const source = member("valid", "New evidence changes the release date to October.");
+    const markdown = renderTopicPage({ overview: "The release date is September.", status: "active", threads: [{ id: "release", title: "Release", summary: "The team planned a September release.", points: [{ id: "p", text: "The test is incomplete.", sources: ["valid"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: source.card.path, title: source.card.title, sourceId: source.card.sourceId, date: source.card.date }]);
+    const blocks = parseTopicPageBlocks(markdown);
+    const overview = blocks.find((block) => block.type === "overview")!;
+    const point = blocks.find((block) => block.type === "point")!;
+    const port = fakePort([response([
+      { type: "revise_block", blockId: overview.id, newText: "The release date is October.", reason: "new evidence", sourceId: "valid" },
+      { type: "revise_block", blockId: point.id, newText: "Changed point", reason: "not allowed", sourceId: "valid" },
+    ])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: markdown });
+    expect(port.calls[0][1].content).toContain("The release date is September.");
+    expect(result.operations).toHaveLength(2);
+    expect(result.operations[0]).toMatchObject({ type: "revise_block", blockId: overview.id, expectedText: overview.text });
+    expect(result.operations[1]).toMatchObject({ type: "add_point", text: "Changed point" });
+    expect(result.degraded).toBe(1);
+  });
+
+  it("accepts revisions, disagreements, new actions, and resolved items from a focused update", async () => {
+    const source = member("new-evidence", "The chosen setting key is now language-dependent. Add a mobile reload check. The old settings migration issue is resolved.", "The chosen setting key is now language-dependent. Add a mobile reload check. The old settings migration issue is resolved.");
+    const existingModel = {
+      overview: "The setting key remains fixed across interface languages.", status: "active" as const, threads: [], disagreements: [],
+      open: [{ id: "migration", kind: "action" as const, text: "Preserve service settings during migration.", sources: ["new-evidence"], done: false }], unsorted: [],
+    };
+    const currentPage = renderTopicPage(existingModel, []);
+    const overview = parseTopicPageBlocks(currentPage).find((block) => block.type === "overview")!;
+    const open = parseTopicPageBlocks(currentPage).find((block) => block.type === "open")!;
+    const port = fakePort([response([
+      { type: "revise_block", blockId: overview.id, newText: "The chosen setting key is language-dependent.", reason: "The new note changes the current decision.", sourceId: "new-evidence" },
+      { type: "add_disagreement", subject: "How the setting key is chosen", positions: [
+        { text: "The key remains fixed across interface languages.", sourceId: "new-evidence", date: "2026-10-01" },
+        { text: "The key changes with the Obsidian language.", sourceId: "new-evidence", date: "2026-10-11" },
+      ] },
+      { type: "add_open", kind: "action", text: "Verify topic-page reload on mobile.", sources: ["new-evidence"] },
+      { type: "resolve_open", blockId: open.id, note: "Settings migration preserved the existing service values.", sourceId: "new-evidence" },
+    ])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "body", members: [source], currentPage });
+    expect(result.operations.map((operation) => operation.type)).toEqual(["revise_block", "add_disagreement", "add_open", "resolve_open"]);
+    expect(result.operations[0]).toMatchObject({ blockId: overview.id, expectedText: overview.text });
+    expect(result.operations[3]).toMatchObject({ blockId: open.id, expectedText: open.text });
+    expect(port.calls[0][0].content).toContain("For a contradiction, output add_disagreement first");
+    expect(port.calls[0][0].content).toContain("For a new unfinished task, output add_open");
+    expect(port.calls[0][0].content).toContain("For an explicitly resolved item, use resolve_open when known");
+    expect(port.calls[0][0].content).toContain("do not supply dates");
+    expect(port.calls[0][0].content).toContain("relatedBlockId identifies the existing claim");
+    expect(port.calls[0][1].content).toContain(source.content);
+  });
+
+  it("rechecks an empty model response once and keeps valid operations from the retry", async () => {
+    const source = member("retry-source", "Add a mobile reload check.");
+    const currentPage = renderTopicPage({ overview: "The topic covers the plugin.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
+    const port = fakePort([response([]), response([
+      { type: "add_open", kind: "action", text: "Verify mobile topic-page reload.", sources: ["retry-source"] },
+    ])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[1][0].content).toContain("Your previous response contained no applicable operation");
+    expect(result.operations).toMatchObject([{ type: "add_open", text: "Verify mobile topic-page reload." }]);
+    expect(result).toMatchObject({ completedBatches: 1, totalBatches: 1 });
+  });
+
+  it("explains an empty update response after its single retry", async () => {
+    const source = member("empty", "Only repeated project context.");
+    const port = fakePort([response([]), response([])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "existing page" });
+    expect(result.operations).toEqual([]);
+    expect(result.updateDiagnostics).toMatchObject({ requests: 2, rawOperations: 0, acceptedOperations: 0, retried: true, jsonParsable: [true, true] });
+  });
+
+  it("degrades a missing block ID into a point and counts the adjustment", async () => {
+    const source = member("new-source", "A new project stage is starting.");
+    const port = fakePort([response([{ type: "revise_block", blockId: "missing", newText: "The project entered a new stage.", reason: "new evidence", sourceId: "new-source" }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "existing page" });
+    expect(result.operations).toMatchObject([{ type: "add_point", text: "The project entered a new stage.", sources: ["new-source"] }]);
+    expect(result.degraded).toBe(1);
+    expect(result.updateDiagnostics?.discarded).toMatchObject({ "block-id-not-found": 1 });
+  });
+
+  it("replaces an out-of-batch source ID with the supplied member source", async () => {
+    const source = member("new-source", "Verify the reading view.");
+    const port = fakePort([response([{ type: "add_open", kind: "action", text: "Verify the reading view.", sources: ["not-a-member"] }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "existing page" });
+    expect(result.operations).toMatchObject([{ type: "add_open", sources: ["new-source"], sourceId: "new-source" }]);
+    expect(result.degraded).toBe(1);
+    expect(result.updateDiagnostics?.discarded).toMatchObject({ "source-not-member": 1 });
+  });
+
   it("requires resolved items to go to status or timeline instead of the open-items section", () => {
     const system = buildTopicIntegrationMessages({ members: [], basis: "overview" }, []).find((message) => message.role === "system")?.content || "";
     expect(system).toContain("A question belongs in 未决问题与未完成行动 only while no answer is confirmed");
     expect(system).toContain("An action belongs there only while its completion remains open");
-    expect(system).toContain("resolved or already handled matters in 当前状态 or 时间线");
+    expect(system).toContain("resolved or already handled matters in 进展脉络 or 时间线");
+  });
+  it("includes bilingual examples and does not require an existing block ID", async () => {
+    const source = member("new-source", "New useful project evidence.");
+    const port = fakePort([response([]), response([])]);
+    await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    const prompt = port.calls[0][0].content;
+    expect(prompt).toContain("Chinese examples");
+    expect(prompt).toContain("English examples");
+    expect(prompt.match(/add_disagreement/g)?.length).toBeGreaterThan(0);
+    expect(prompt.match(/add_open/g)?.length).toBeGreaterThan(0);
+    expect(prompt.match(/add_point/g)?.length).toBeGreaterThan(0);
+    expect(prompt).toContain("Existing block IDs are optional");
+    expect(prompt).toContain("Distinguish same/redundant from supplement and conflict");
+    expect(prompt).toContain("assessments:[{memberId,claim,relation,relatedBlockId?}]");
+    expect(prompt).toContain("A conflict assessment must have a corresponding add_disagreement");
+    expect(prompt).toContain("Same setting, opposite decision");
+  });
+  it("retries a conflict assessment missing add_disagreement, then synthesizes the disagreement", async () => {
+    const source = member("new-source", "属性名最终仍按界面语言切换。", "属性名最终仍按界面语言切换。");
+    const oldSource = member("old-source", "属性名应保持稳定。", "属性名应保持稳定。");
+    oldSource.card.date = "2025-02-12";
+    const page = renderTopicPage({ overview: "属性名策略需要记录。", status: "active", threads: [{ id: "thread", title: "属性名", summary: "属性名策略需要记录。", points: [{ id: "p", text: "属性名应保持稳定。", sources: ["old-source"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: oldSource.card.path, title: oldSource.card.title, sourceId: oldSource.card.sourceId, date: "2025-02-12" }]);
+    const overview = parseTopicPageBlocks(page).find((block) => block.type === "point")!;
+    const payload = { assessments: [{ memberId: "new-source", claim: "属性名最终仍按界面语言切换。", relation: "conflict", relatedBlockId: overview.id }], operations: [] };
+    const port = fakePort([JSON.stringify(payload), JSON.stringify(payload)]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], existingMembers: [oldSource], currentPage: page });
+    expect(port.calls).toHaveLength(2);
+    expect(port.calls[1][0].content).toContain("marked these claims as conflict but omitted add_disagreement");
+    expect(result.assessments).toEqual(payload.assessments);
+    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [{ text: "属性名应保持稳定。", sourceId: "old-source", date: "2025-02-12" }, { text: "属性名最终仍按界面语言切换。", sourceId: "new-source", date: "2025-03-04" }] }]);
+    expect(result.programGeneratedOperationKeys).toHaveLength(1);
+  });
+  it("does not synthesize a disagreement when assessments contain no conflict", async () => {
+    const source = member("new-source", "项目补充一条实现记录。");
+    const port = fakePort([JSON.stringify({ assessments: [{ memberId: "new-source", claim: "项目补充一条实现记录。", relation: "supplement" }], operations: [{ type: "add_point", thread: "实现记录", text: "项目补充一条实现记录。", sources: ["new-source"] }] })]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    expect(result.operations.map(({ type }) => type)).toEqual(["add_point"]);
+    expect(result.programGeneratedOperationKeys).toHaveLength(0);
+  });
+
+  it("does not reassign an invalid disagreement source and ignores model dates", async () => {
+    const source = member("fresh", "属性名称仍按 Obsidian 语言动态切换。", "属性名称仍按 Obsidian 语言动态切换。");
+    const port = fakePort([response([{ type: "add_disagreement", subject: "属性名", positions: [
+      { text: "属性名称仍按 Obsidian 语言动态切换。", sourceId: "outside", date: "1999-01-01" },
+    ] }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [{ sourceId: "", provenance: "source-pending" }] }]);
+    expect(result.operations[0].type === "add_disagreement" && result.operations[0].positions[0]).not.toHaveProperty("date");
+    const page = applyTopicOps("---\nqnalog_topic_layout: 2\n---\n## 分歧与待核实\n", result.operations).markdown;
+    expect(page).toContain("属性名称仍按 Obsidian 语言动态切换。（来源待核实）");
+    expect(page).not.toContain("1999-01-01");
+    expect(page).not.toContain("[^s");
+  });
+  it("marks unsupported disagreement wording and synthesizes only the new side without a related block", async () => {
+    const source = member("fresh", "属性名称仍按语言动态切换。", "属性名称仍按语言动态切换。");
+    const port = fakePort([JSON.stringify({ assessments: [{ memberId: "fresh", claim: "这是完全无关的模型补写内容。", relation: "conflict" }], operations: [] }), JSON.stringify({ assessments: [{ memberId: "fresh", claim: "这是完全无关的模型补写内容。", relation: "conflict" }], operations: [] })]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [source], currentPage: "page" });
+    const disagreement = result.operations.find((item) => item.type === "add_disagreement");
+    expect(disagreement).toMatchObject({ positions: [{ sourceId: "fresh", provenance: "unverified" }] });
+    expect(disagreement?.type === "add_disagreement" ? disagreement.positions : []).toHaveLength(1);
+    expect(result.validationWarnings).toContain("A conflict assessment had no related page block; only the new claim was added for review.");
+  });
+  it("uses a related block's member date and exact text and drops a second stance from that member", async () => {
+    const old = member("old", "属性名称应保持稳定。", "属性名称应保持稳定。");
+    old.card.date = "2026-09-29";
+    const fresh = member("fresh", "属性名称仍按 Obsidian 语言动态切换。", "属性名称仍按 Obsidian 语言动态切换。");
+    const page = renderTopicPage({ overview: "属性名策略。", status: "active", threads: [{ id: "keys", title: "属性名", summary: "记录属性名。", points: [{ id: "p", text: "属性名称应保持稳定。", sources: ["old"] }] }], disagreements: [], open: [], unsorted: [] }, [{ path: old.card.path, title: old.card.title, sourceId: old.card.sourceId, date: old.card.date }]);
+    const block = parseTopicPageBlocks(page).find((item) => item.type === "point")!;
+    const port = fakePort([response([{ type: "add_disagreement", subject: "属性名称", relatedBlockId: block.id, positions: [
+      { text: "model paraphrase of existing claim", sourceId: "old", date: "1999-01-01" },
+      { text: "属性名称仍按 Obsidian 语言动态切换。", sourceId: "fresh", date: "1999-01-01" },
+      { text: "another old-side claim", sourceId: "old" },
+    ] }])]);
+    const result = await generateTopicPageUpdateOperations(port, { basis: "overview", members: [fresh], existingMembers: [old], currentPage: page });
+    expect(result.operations).toMatchObject([{ type: "add_disagreement", positions: [
+      { text: "属性名称应保持稳定。", sourceId: "old", date: "2026-09-29" },
+      { text: "属性名称仍按 Obsidian 语言动态切换。", sourceId: "fresh", date: "2025-03-04" },
+    ] }]);
+    expect(result.operations[0].type === "add_disagreement" && result.operations[0].positions).toHaveLength(2);
+  });
+  it("downgrades a resolve_open claim that does not match its target and keeps a grounded resolution", async () => {
+    const open = "大纲生成逻辑存在 Bug，多段录音的大纲未能整合显示。";
+    const source = member("fresh", "纪要列表字体变小的问题已确认修复。", "纪要列表字体变小的问题已确认修复。");
+    const page = `---\nqnalog_topic_layout: 2\n---\n## 未决问题与行动\n- [ ] 缺陷：${open} ^tpc-a1b2c3\n`;
+    const block = parseTopicPageBlocks(page).find((item) => item.type === "open")!;
+    const payload = { assessments: [{ memberId: "fresh", claim: source.card.overview, relation: "supplement", relatedBlockId: block.id }], operations: [{ type: "resolve_open", blockId: block.id, note: source.card.overview, sourceId: "fresh" }] };
+    const downgraded = await generateTopicPageUpdateOperations(fakePort([JSON.stringify(payload)]), { basis: "overview", members: [source], currentPage: page });
+    expect(downgraded.operations).toMatchObject([{ type: "add_point", text: source.card.overview }]);
+    expect(downgraded.validationWarnings).toContain("An open item was not matched to the supporting claim and was added as a point instead.");
+
+    const matchingSource = member("fresh", "大纲生成逻辑 Bug 已修复，多段录音的大纲现在可以整合显示。", "大纲生成逻辑 Bug 已修复，多段录音的大纲现在可以整合显示。");
+    const matchingPayload = { assessments: [{ memberId: "fresh", claim: matchingSource.card.overview, relation: "supplement", relatedBlockId: block.id }], operations: [{ type: "resolve_open", blockId: block.id, note: matchingSource.card.overview, sourceId: "fresh" }] };
+    const matched = await generateTopicPageUpdateOperations(fakePort([JSON.stringify(matchingPayload)]), { basis: "overview", members: [matchingSource], currentPage: page });
+    expect(matched.operations).toMatchObject([{ type: "resolve_open", expectedText: expect.stringContaining(open) }]);
+  });
+  it("rebuilds both conflict sides from an assessment and merges into the matching existing callout", async () => {
+    const old = member("old", "属性名称应保持稳定。", "属性名称应保持稳定。");
+    old.card.date = "2026-09-29";
+    const freshClaim = "属性名称仍按 Obsidian 语言动态切换";
+    const originalFreshClaim = "front matter 属性名称最终决定仍然按 Obsidian 语言动态切换，不再强制保持稳定，因为用户体验优先";
+    const freshOverview = `对 QnALog 项目的进展做了确认：${originalFreshClaim}；之前纪要列表字体变小的问题已经彻底修复。接下来要做的事是为主题页补充阅读视图的截图验证。`;
+    const fresh = member("fresh", freshOverview, freshOverview);
+    fresh.card.date = "2026-10-11";
+    const model = { overview: "属性名策略。", status: "active" as const, threads: [{ id: "keys", title: "属性名", summary: "记录属性名。", points: [{ id: "p", text: "属性名称应保持稳定。", sources: ["old"] }] }], disagreements: [{ id: "d", subject: "Front Matter 属性名称稳定性策略", positions: [{ text: "稳定命名是已有决定。", sourceId: "old" }] }], open: [], unsorted: [] };
+    const page = `---\nqnalog_topic_layout: 2\n---\n${renderTopicPage(model, [{ path: old.card.path, title: old.card.title, sourceId: "old", date: old.card.date }])}`;
+    const block = parseTopicPageBlocks(page).find((item) => item.type === "point")!;
+    const payload = { assessments: [{ memberId: "fresh", claim: freshClaim, relation: "conflict", relatedBlockId: block.id }], operations: [{ type: "add_disagreement", subject: "Front Matter 属性名称稳定性策略", relatedBlockId: block.id, positions: [{ text: freshClaim, sourceId: "fresh" }] }] };
+    const result = await generateTopicPageUpdateOperations(fakePort([JSON.stringify(payload)]), { basis: "overview", members: [fresh], existingMembers: [old], currentPage: page });
+    const disagreement = result.operations.filter((item) => item.type === "add_disagreement");
+    expect(disagreement).toHaveLength(1);
+    expect(disagreement[0]).toMatchObject({ positions: [{ text: "属性名称应保持稳定。", sourceId: "old", date: "2026-09-29" }, { text: originalFreshClaim, sourceId: "fresh", date: "2026-10-11" }] });
+    expect(disagreement[0]?.type === "add_disagreement" ? disagreement[0].subject : "").toBe("Front Matter 属性名称稳定性策略");
+    const updated = applyTopicOps(page, result.operations).markdown;
+    expect(updated.match(/\[!warning\] Front Matter 属性名称稳定性策略/g)).toHaveLength(1);
+    expect(updated).toContain("**2026-09-29**：属性名称应保持稳定。");
+    expect(updated).toContain(`**2026-10-11**：${originalFreshClaim}`);
+    expect(updated).not.toContain(`**2026-10-11**：${freshClaim}`);
+    expect(updated).not.toContain("**2026-10-11**：对 QnALog 项目的进展做了确认");
+    expect(updated).not.toContain("纪要列表字体变小的问题已彻底修复。接下来");
+  });
+  it.each(["zh", "en"] as const)("renders verified disagreement provenance in %s", (language) => {
+    const operation = { type: "add_disagreement" as const, subject: "Property names", sourceId: "old", positions: [
+      { text: "Stable property names", sourceId: "old", date: "2026-09-29" },
+      { text: "Language-dependent property names", sourceId: "fresh", date: "2026-10-11" },
+      { text: "Unsupported claim", sourceId: "fresh", date: "2026-10-11", provenance: "unverified" as const },
+      { text: "Unknown source claim", sourceId: "", provenance: "source-pending" as const },
+    ] };
+    const page = `---\nqnalog_topic_layout: 2\n---\n## ${language === "en" ? "Disagreements and verification" : "分歧与待核实"}\n`;
+    const rendered = applyTopicOps(page, [operation]).markdown;
+    expect(rendered).toContain("2026-09-29");
+    expect(rendered).toContain("2026-10-11");
+    expect(rendered).toContain("Unsupported claim（未核实）");
+    expect(rendered).toContain("Unknown source claim（来源待核实）");
+    expect(rendered).not.toContain("**2026-10-11**：Unknown source claim");
+  });
+  it.each(["zh", "en"] as const)("renders update add_open in %s with localized type and punctuation before citation", (language) => {
+    const memberSource = member("render-source", "Verify the reading view");
+    const page = renderTopicPage({ overview: "The topic is current.", status: "active", threads: [], disagreements: [], open: [], unsorted: [] }, []);
+    const english = language === "en";
+    const inputPage = `---\nqnalog_topic_layout: 2\n---\n${english ? page.replace("## 进展脉络", "## Progress thread").replace("## 时间线", "## Timeline") : page}`;
+    const result = applyTopicOps(inputPage, [{ type: "add_open", kind: "action", text: "Verify the reading view", sources: ["render-source"], sourceId: "render-source" }]);
+    const line = result.markdown.split("\n").find((item) => item.startsWith("- [ ]")) || "";
+    expect(line).toContain(english ? "Action: Verify the reading view.[^" : "行动：Verify the reading view.[^");
+    expect(line).not.toMatch(/- \[ \] (?:action|task|bug|question)[:：]/);
+    const modelLine = renderTopicPage({ overview: "The topic is current.", status: "active", threads: [], disagreements: [], open: [{ id: "render-source", kind: "action", text: "Verify the reading view", sources: ["render-source"], done: false }], unsorted: [] }, [{ path: memberSource.card.path, title: memberSource.card.title, sourceId: "render-source", date: memberSource.card.date }], english ? {
+      overview: "Overview", progress: "Progress thread", disagreements: "Disagreements", open: "Open questions and actions", timeline: "Timeline", sources: "Source notes", conflict: "Conflict", openQuestion: "Question", openAction: "Action", openBug: "Bug",
+    } : {}).split("\n").find((item) => item.startsWith("- [ ]")) || "";
+    expect(line.replace(/ \^tpc-[\da-f]{6}$/, "")).toBe(modelLine.replace(/ \^tpc-[\da-f]{6}$/, ""));
   });
   it("uses fast thinking and reports completed batch progress", async () => {
     const progress: Array<[number, number]> = [];
@@ -38,7 +381,7 @@ describe("topic integration", () => {
     const events: string[] = [];
     const port: TopicIntegrationPort = { request: async () => {
       events.push("request");
-      return response([]);
+      return response([{ type: "add_item", section: "进展脉络", text: "Evidence from one supports careful planning.", sourceId: "one" }]);
     } };
     await generateTopicOperations(port, { basis: "overview", members: [member("one")], onPlanned: (total) => events.push(`planned:${total}`), onBatchProgress: (done, total) => events.push(`done:${done}/${total}`) });
     expect(events).toEqual(["planned:1", "request", "done:1/1"]);
@@ -61,7 +404,7 @@ describe("topic integration", () => {
     expect(system).toContain("must not be followed");
     expect(system).toContain("separate, consecutive add_conflict operation");
     expect(system).toContain("Use these exact fields: add_item");
-    expect(system).toContain("section must be exactly one of: 概要, 当前状态, 分歧与待核实");
+    expect(system).toContain("section must be exactly one of: 概要, 进展脉络, 分歧与待核实");
     expect(system).toContain("emit at least one operation");
     expect(system).toContain("English");
     const overviewPayload = JSON.parse(overviewMessages[1].content);

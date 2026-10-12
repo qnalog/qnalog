@@ -81,7 +81,7 @@ import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { TopicPromptStore } from "./topics/topic-prompt-store";
-import { isTopicSourceEligible, type TopicsUiPort } from "./ui/topics-ui-port";
+import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
@@ -92,7 +92,7 @@ import { generateTitleTag } from "./notes/note-markdown";
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } from "./versions/version-identity";
 import { replaceActiveVersionBlock } from "./versions/active-version-block";
 import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
-import { requestLlmChatCompletion } from "./llm/core";
+import { logLlmRequestDiagnostic, requestLlmChatCompletion } from "./llm/core";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
 import { isPathUnderRecentNoteRoots } from "./recent/recent-note-paths";
@@ -306,9 +306,14 @@ class QnALogPlugin extends obsidian.Plugin {
     this.topicPromptStore = new TopicPromptStore();
     this.noteIndex = new NoteIndexService(this);
     const topicHistoryRoot = `${NS_ROOT}/.cache/topic-history`;
+    const topicIndexRoot = `${NS_ROOT}/.cache/topic-index`;
     const isTopicHistoryPath = (path: string): boolean => {
       const normalized = obsidian.normalizePath(path);
       return normalized === topicHistoryRoot || normalized.startsWith(`${topicHistoryRoot}/`);
+    };
+    const isTopicIndexPath = (path: string): boolean => {
+      const normalized = obsidian.normalizePath(path);
+      return normalized === topicIndexRoot || normalized.startsWith(`${topicIndexRoot}/`);
     };
     const topicsPort: TopicsServicePort = {
       listNoteFiles: () => getMarkdownFilesUnderRecentRoots(this).map((file) => ({ path: file.path, basename: file.basename, mtime: file.stat.mtime, ctime: file.stat.ctime })),
@@ -326,16 +331,20 @@ class QnALogPlugin extends obsidian.Plugin {
       now: () => Date.now(),
     };
     const topicStorePort = {
+      logDiagnostic: (code: string, data: Record<string, unknown>) => {
+        const message = code === "topic.duplicate_block_id" ? t("Topic page had duplicate block IDs; the first occurrence was kept") : t("Topic machine cache could not be updated; it will be rebuilt when needed");
+        void this.diagnostics.logDiagnostic("warn", code, message, data);
+      },
       read: async (path) => {
         const normalized = obsidian.normalizePath(path);
-        if (isTopicHistoryPath(normalized)) return this.app.vault.adapter.read(normalized);
+        if (isTopicHistoryPath(normalized) || isTopicIndexPath(normalized)) return this.app.vault.adapter.read(normalized);
         const file = this.app.vault.getAbstractFileByPath(normalized);
         if (!(file instanceof obsidian.TFile)) throw new Error(`Topic file not found: ${path}`);
         return this.app.vault.read(file);
       },
       create: async (path, content) => {
         const normalized = obsidian.normalizePath(path);
-        if (isTopicHistoryPath(normalized)) await this.app.vault.adapter.write(normalized, content);
+        if (isTopicHistoryPath(normalized) || isTopicIndexPath(normalized)) await this.app.vault.adapter.write(normalized, content);
         else await this.app.vault.create(normalized, content);
       },
       process: async (path, transform) => {
@@ -359,6 +368,33 @@ class QnALogPlugin extends obsidian.Plugin {
         const normalized = obsidian.normalizePath(path);
         if (isTopicHistoryPath(normalized) && await this.app.vault.adapter.exists(normalized)) await this.app.vault.adapter.remove(normalized);
       },
+      readCache: async (path) => {
+        const normalized = obsidian.normalizePath(path);
+        if (!isTopicIndexPath(normalized) || !(await this.app.vault.adapter.exists(normalized))) return null;
+        return this.app.vault.adapter.read(normalized);
+      },
+      writeCache: async (path, content) => {
+        const normalized = obsidian.normalizePath(path);
+        if (!isTopicIndexPath(normalized)) throw new Error("Invalid topic cache path");
+        await this.app.vault.adapter.write(normalized, content);
+      },
+      deleteCache: async (path) => {
+        const normalized = obsidian.normalizePath(path);
+        if (isTopicIndexPath(normalized) && await this.app.vault.adapter.exists(normalized)) await this.app.vault.adapter.remove(normalized);
+      },
+      readMemberTags: async (paths) => {
+        const labels: string[] = [];
+        for (const path of paths) {
+          const frontmatter = this.app.metadataCache.getCache(path)?.frontmatter;
+          if (!frontmatter) continue;
+          for (const key of ["tags", "tag", "topic", "topics", "主题"]) {
+            const value: unknown = frontmatter[key];
+            if (typeof value === "string") labels.push(value);
+            else if (Array.isArray(value)) labels.push(...value.filter((item): item is string => typeof item === "string"));
+          }
+        }
+        return [...new Set(labels)];
+      },
       trashFile: async (path) => {
         const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
         if (!(file instanceof obsidian.TFile)) throw new Error(`Topic file not found: ${path}`);
@@ -373,6 +409,7 @@ class QnALogPlugin extends obsidian.Plugin {
       getFolder: () => this.settings.topicsFolder,
       integration: {
         request: (messages, signal, thinkingMode) => requestLlmChatCompletion(this, messages, { signal, stream: false, thinkingMode }),
+        diagnostic: (details, kind = "update") => logLlmRequestDiagnostic(this, "debug", kind === "create" ? "llm.topic_create_response" : "llm.topic_update_response", kind === "create" ? "Topic create response counts and validation outcomes" : "Topic update response counts and validation outcomes", details),
       },
       createId: () => crypto.randomUUID(),
       startActivity: (id, title) => this.tasks.startTaskActivity({ id, kind: "topic", title, status: "running", stage: "preparing", stageLabel: title, detail: "Preparing a topic change" }),
@@ -757,6 +794,12 @@ class QnALogPlugin extends obsidian.Plugin {
 
   createTopicsUiPort(): TopicsUiPort {
     const sourceNoteChecks = new Map<string, boolean>();
+    const topicsSnapshot = new TopicSummarySnapshot();
+    const refreshTopicsSnapshot = async () => {
+      const topics = await this.topics.listTopics();
+      topicsSnapshot.replace(topics);
+      return topics;
+    };
     return {
       isConfigured: () => {
         const folder = obsidian.normalizePath(this.settings.topicsFolder || "");
@@ -772,15 +815,17 @@ class QnALogPlugin extends obsidian.Plugin {
       getCandidates: (path, options) => this.topics.getCandidates(path, options),
       estimate: (input) => this.topics.estimate(input),
       preview: (input) => this.topics.preview(input),
-      apply: (preview, selection) => this.topics.apply(preview, selection),
+      previewRebuild: (topicId, onProgress) => this.topics.previewRebuild(topicId, onProgress),
+      apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot(); return result; },
       cancel: (id) => this.topics.cancel(id),
-      listTopics: () => this.topics.listTopics(),
+      listTopics: () => refreshTopicsSnapshot(),
+      getTopicsSnapshot: () => topicsSnapshot.get(),
       countPending: (topicId) => this.topics.countPending(topicId),
       scanUnintegrated: (topicId, signal) => this.topics.scanUnintegrated(topicId, signal),
       undoLastUpdate: (topicId) => this.topics.undoLastUpdate(topicId),
-      deleteTopic: (topicId) => this.topics.deleteTopic(topicId),
-      mergeTopics: (sourceId, targetId) => this.topics.mergeTopics(sourceId, targetId),
-      ignoreNote: (topicId, path) => this.topics.ignoreNote(topicId, path),
+      deleteTopic: async (topicId) => { await this.topics.deleteTopic(topicId); await refreshTopicsSnapshot(); },
+      mergeTopics: async (sourceId, targetId) => { await this.topics.mergeTopics(sourceId, targetId); await refreshTopicsSnapshot(); },
+      ignoreNote: async (topicId, path) => { await this.topics.ignoreNote(topicId, path); await refreshTopicsSnapshot(); },
       noteArrived: (path) => this.topics.noteArrived(path),
       refreshPrompt: async (path) => {
         this.topicPromptStore.set(path, await this.topics.noteArrived(path));

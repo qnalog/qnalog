@@ -40,4 +40,5 @@ export const EN: MessageTable = {
   "Generation failed": "Generation failed",
   "Your selection and title are kept. Retry, or go back to change the selection.": "Your selection and title are kept. Retry, or go back to change the selection.",
   "Back to candidates": "Back to candidates",
+  "Reading the topic and note overviews. This usually takes a few dozen seconds.": "Reading the topic and note overviews. This usually takes a few dozen seconds.",
 };

@@ -8,10 +8,12 @@ vi.mock("obsidian", () => {
     value = "";
     checked = false;
     disabled = false;
+    classList = { toggle: () => undefined };
     listeners = new Map<string, (event?: { key?: string }) => void>();
     constructor(text = "", cls = "") { this.text = text; this.cls = cls; }
     empty() { this.children = []; }
     addClass(cls: string) { this.cls += ` ${cls}`; }
+    removeClass(cls: string) { this.cls = this.cls.replace(cls, ""); }
     createEl(_tag: string, options: { cls?: string; text?: string; attr?: Record<string, string> } = {}) {
       const element = this.add(new FakeElement(options.text || "", options.cls || ""));
       element.value = options.attr?.value || "";
@@ -22,10 +24,14 @@ vi.mock("obsidian", () => {
     add(child: FakeElement) { this.children.push(child); return child; }
     addEventListener(name: string, callback: (event?: { key?: string }) => void) { this.listeners.set(name, callback); }
     setText(text: string) { this.text = text; }
+    setAttribute() {}
+    removeAttribute() {}
+    setCssProps() {}
     remove() { this.text = ""; }
   }
   class Modal {
     contentEl = new FakeElement();
+    titleEl = new FakeElement();
     app: unknown;
     constructor(app: unknown) { this.app = app; }
     open() { this.onOpen(); }
@@ -39,7 +45,7 @@ vi.mock("obsidian", () => {
 
 import type { TopicCandidates } from "../src/topics/topic-candidates";
 import { TopicCreateModal } from "../src/ui/topic-create-modal";
-import { defaultTopicMemberPaths, getJoinableTopics, isTopicSourceEligible, suggestTopicTitle, topicCandidateGroups } from "../src/ui/topics-ui-port";
+import { defaultTopicMemberPaths, getJoinableTopics, topicJoinMenuEntries, isTopicSourceEligible, suggestTopicTitle, topicCandidateGroups } from "../src/ui/topics-ui-port";
 import { NS_TYPE_DERIVED, NS_TYPE_TOPIC } from "../src/shared/namespace";
 
 function fixture(): TopicCandidates {
@@ -78,6 +84,8 @@ describe("topic create dialog", () => {
     };
     const modal = new TopicCreateModal({} as never, port as never, "Notes/start.md");
     modal.open();
+    expect(modal.titleEl.text).toBe("QnALog · Topics");
+    expect(descendants(modal.contentEl as never).some((item) => item.text === "Create topic")).toBe(true);
     await vi.waitFor(() => expect(port.getCandidates).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain("Overview with details."));
     const renderedSummary = allText(modal.contentEl as never);
@@ -88,16 +96,18 @@ describe("topic create dialog", () => {
     expect(startCheckbox?.disabled).toBe(true);
   });
 
-  it("derives a short title and lists at most eight recent joinable topics", () => {
+  it("derives a short title and sorts eligible topics for the context menu", () => {
     expect(suggestTopicTitle({ title: "2026-10-10 · 综合纪要-数据结构优化", matchedTags: ["项目/QALog"] } as never)).toBe("QALog");
     expect(suggestTopicTitle({ title: "2026-10-10-纪要-数据结构优化", matchedTags: [] } as never)).toBe("数据结构优化");
     const topics = Array.from({ length: 12 }, (_, index) => ({
-      path: `Topics/${index}.md`, page: { id: String(index), title: String(index), updated: new Date(2026, 0, index + 1).toISOString(), members: index === 11 ? ["note.md"] : [], excluded: index === 10 ? ["note.md"] : [] },
+      id: String(index), title: String(index), updated: new Date(2026, 0, index + 1).toISOString(), members: index === 11 ? ["note.md"] : [], excluded: index === 10 ? ["note.md"] : [],
     }));
     const result = getJoinableTopics(topics as never, "note.md");
-    expect(result).toHaveLength(8);
-    expect(result[0].page.id).toBe("9");
-    expect(result.some(({ page }) => page.id === "10" || page.id === "11")).toBe(false);
+    expect(result).toHaveLength(10);
+    expect(result[0].id).toBe("9");
+    expect(result.some(({ id }) => id === "10" || id === "11")).toBe(false);
+    expect(topicJoinMenuEntries(topics, "note.md")).toMatchObject({ topics: result.slice(0, 8), more: true });
+    expect(topicJoinMenuEntries([], "note.md")).toEqual({ topics: [], more: false });
   });
 
   it("keeps derived, merged, and topic pages out of the source-note entry", () => {
@@ -135,5 +145,41 @@ describe("topic create dialog", () => {
     await vi.waitFor(() => expect(port.estimate).toHaveBeenCalled());
     await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain("Estimated: 420 characters, 2 requests"));
     expect(allText(modal.contentEl as never)).toContain("may use more credits");
+  });
+
+  it.each([
+    ["en", "The topic page could not be generated. You can retry. The page was not modified."],
+    ["zh", "未能生成主题页。可以重试，页面未被修改。"],
+  ])("shows a localized error and retry button in the %s interface", async (language, expected) => {
+    vi.stubGlobal("window", { setInterval: () => 1, clearInterval: () => undefined });
+    try {
+    const sourceMessage = "The topic page could not be generated. You can retry. The page was not modified.";
+    const translations: Record<string, string> = language === "zh" ? { [sourceMessage]: expected, Retry: "重试" } : {};
+    const candidates = fixture();
+    const port = {
+      isConfigured: () => true, getVersion: () => "v1", text: (key: string) => translations[key] || key,
+      getCandidates: vi.fn(async () => candidates), listTopics: vi.fn(async () => []), estimate: vi.fn(async () => ({ chars: 1, requests: 1 })),
+      preview: vi.fn(async () => { throw new Error("Topic response must contain an overview"); }),
+      apply: vi.fn(), cancel: vi.fn(), scanUnintegrated: vi.fn(), undoLastUpdate: vi.fn(), deleteTopic: vi.fn(), mergeTopics: vi.fn(),
+      ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(), countPending: vi.fn(),
+    };
+    const modal = new TopicCreateModal({} as never, port as never, "Notes/start.md");
+    modal.open();
+    await vi.waitFor(() => expect(port.getCandidates).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(descendants(modal.contentEl as never).some((item) => item.text === "Create" && item.listeners?.has("click"))).toBe(true));
+    const createButton = descendants(modal.contentEl as never).find((item) => item.text === "Create" && item.listeners?.has("click"));
+    createButton?.listeners?.get("click")?.();
+    await vi.waitFor(() => expect(port.preview).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(allText(modal.contentEl as never)).toContain(expected));
+    expect(descendants(modal.contentEl as never).some((item) => item.text === "Generation failed")).toBe(true);
+    const content = allText(modal.contentEl as never);
+    expect(content).not.toContain("Topic response must contain an overview");
+    expect(content).toContain(language === "zh" ? "重试" : "Retry");
+    const retryButton = descendants(modal.contentEl as never).find((item) => item.text === (language === "zh" ? "重试" : "Retry") && item.listeners?.has("click"));
+    retryButton?.listeners?.get("click")?.();
+    await vi.waitFor(() => expect(port.preview).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

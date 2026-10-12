@@ -147,16 +147,18 @@ export function getImportMarkerState(content: unknown) {
   };
 }
 
-export function qnalogConfirm(app: obsidian.App, title: string, body: string, ctaText: string = t("Confirm")): Promise<boolean> {
+export function qnalogConfirm(app: obsidian.App, title: string, body: string, ctaText: string = t("Confirm"), windowTitle?: string): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const modal = new obsidian.Modal(app);
     let decided = false;
     const decide = (val: boolean) => { if (!decided) { decided = true; resolve(val); } modal.close(); };
     modal.onOpen = () => {
       modal.modalEl.addClass("qnalog-utility-modal");
+      if (windowTitle) modal.titleEl.setText(windowTitle);
       const { contentEl } = modal;
       contentEl.empty();
-      contentEl.createEl("h3", { text: title });
+      if (windowTitle) contentEl.createDiv({ cls: "qnalog-topics-dialog-heading", text: title });
+      else contentEl.createEl("h3", { text: title });
       contentEl.createEl("p", { text: body });
       const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-modal-actions" });
       const cancel = actions.createEl("button", { text: t("Cancel"), attr: { type: "button" } });

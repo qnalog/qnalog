@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const outline = readFileSync(new URL("../src/ui/outline-view.ts", import.meta.url), "utf8");
 const main = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
 const topicPort = readFileSync(new URL("../src/ui/topics-ui-port.ts", import.meta.url), "utf8");
+const joinMenu = readFileSync(new URL("../src/ui/topic-join-menu.ts", import.meta.url), "utf8");
 
 describe("outline topic UI wiring", () => {
   it("renders the Topics tab from recording, finalizing, and idle paths", () => {
@@ -22,6 +23,11 @@ describe("outline topic UI wiring", () => {
     expect(outline).toContain("topicsUi?.isSourceNote(file.path)");
     expect(outline).toContain('i18nT("Create topic")');
     expect(outline).toContain('i18nT("Join topic…")');
-    expect(topicPort).toContain("!page.members.includes(path) && !page.excluded.includes(path)");
+    expect(topicPort).toContain("!topic.members.includes(path) && !topic.excluded.includes(path)");
+    expect(topicPort).toContain("getTopicsSnapshot(): TopicSummary[]");
+    expect(main).toContain("apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot();");
+    expect(outline).toContain("this.addTopicJoinMenu(menu, file.path)");
+    expect(outline).not.toContain("void this.addTopicJoinMenu");
+    expect(joinMenu).toContain("topicJoinMenuEntries(topics, path)");
   });
 });
