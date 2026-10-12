@@ -805,7 +805,7 @@ export class OutlineView extends obsidian.ItemView {
     const box = sec.createDiv({ cls: "qnalog-empty-state" });
     const iconWrap = box.createDiv({ cls: "qnalog-empty-state-icon" });
     try { obsidian.setIcon(iconWrap, "file-text"); } catch { /* intentionally empty */ }
-    box.createDiv({ cls: "qnalog-empty-state-title", text: i18nT("No minutes opened yet") });
+    box.createDiv({ cls: "qnalog-empty-state-title", text: i18nT("No notes opened yet") });
     const desc = box.createDiv({ cls: "qnalog-empty-state-desc" });
     desc.createSpan({ text: i18nT("Open one from the notes list,") });
     desc.createEl("br");
@@ -815,7 +815,7 @@ export class OutlineView extends obsidian.ItemView {
       attr: { type: "button" },
     });
     try { obsidian.setIcon(btn.createSpan({ cls: "qnalog-empty-state-action-icon" }), "list"); } catch { /* intentionally empty */ }
-    btn.createSpan({ text: i18nT("Open minutes list") });
+    btn.createSpan({ text: i18nT("Open notes list") });
     btn.onclick = () => {
       this.showRecentHome = true;
       this.idlePanelTab = "recent";
@@ -1060,7 +1060,7 @@ export class OutlineView extends obsidian.ItemView {
         stageLabel: i18nT("Answer generated"),
         detail: question,
         actions: [
-          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
+          { id: "open-task-note", label: i18nT("Open note"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -1075,7 +1075,7 @@ export class OutlineView extends obsidian.ItemView {
         detail: state.error,
         subject: file.path,
         actions: [
-          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
+          { id: "open-task-note", label: i18nT("Open note"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -3062,7 +3062,7 @@ export class OutlineView extends obsidian.ItemView {
           detail: `${extracted.length}${i18nT(" candidate words")}`,
           progress: 100,
           actions: [
-            { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
+            { id: "open-task-note", label: i18nT("Open note"), primary: true },
             { id: "dismiss-task", label: i18nT("Dismiss") },
           ],
         });
@@ -3070,7 +3070,7 @@ export class OutlineView extends obsidian.ItemView {
       }, {
         failureLabel: i18nT("Transcription term extraction not complete"),
         failureActions: [
-          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
+          { id: "open-task-note", label: i18nT("Open note"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });
@@ -3120,7 +3120,7 @@ export class OutlineView extends obsidian.ItemView {
           detail: addedCount ? `${addedCount}${i18nT(" pending")}` : i18nT("No new person suggestions detected"),
           progress: 100,
           actions: [
-            { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
+            { id: "open-task-note", label: i18nT("Open note"), primary: true },
             { id: "dismiss-task", label: i18nT("Dismiss") },
           ],
         });
@@ -3128,7 +3128,7 @@ export class OutlineView extends obsidian.ItemView {
       }, {
         failureLabel: i18nT("Person suggestion extraction not finished"),
         failureActions: [
-          { id: "open-task-note", label: i18nT("Open minutes"), primary: true },
+          { id: "open-task-note", label: i18nT("Open note"), primary: true },
           { id: "dismiss-task", label: i18nT("Dismiss") },
         ],
       });

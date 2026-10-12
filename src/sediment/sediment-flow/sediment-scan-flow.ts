@@ -157,7 +157,7 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
       detail: scanDetail(port, objects, " · "),
       progress: 100,
       actions: [
-        { id: "open-task-note", label: t("Open minutes"), primary: true },
+        { id: "open-task-note", label: t("Open note"), primary: true },
         { id: "dismiss-task", label: t("Dismiss") },
       ],
     });
@@ -174,7 +174,7 @@ export async function scanSedimentFile(port: SedimentScanFlowPort, file: Sedimen
       detail: port.errorMessage(error),
       subject: file.path,
       actions: [
-        { id: "open-task-note", label: t("Open minutes"), primary: true },
+        { id: "open-task-note", label: t("Open note"), primary: true },
         { id: "dismiss-task", label: t("Dismiss") },
       ],
     });

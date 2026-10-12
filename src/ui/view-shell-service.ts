@@ -133,7 +133,7 @@ export class ViewShellService {
         file: item.file,
         title: item.title || item.file.basename,
         mode: item.mode,
-        modeLabel: getModePrefix(meta) || t("Minutes"),
+        modeLabel: getModePrefix(meta) || t("Notes"),
         icon: meta.icon || "file-text",
         folderPath: item.folderPath || obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
         timeLabel: item.displayTime || "",

@@ -239,7 +239,7 @@ export async function repolishMarkdownFile(
       detail: versionCacheError ? `${outputPath} · ${t("Version index not synced: {0}").replace("{0}", versionCacheError)}` : outputPath,
       subject: outputPath, progress: 100,
       actions: [
-        { id: "open-task-note", label: t("Open minutes"), primary: true },
+        { id: "open-task-note", label: t("Open note"), primary: true },
         { id: "dismiss-task", label: t("Close Recording") },
       ],
     });

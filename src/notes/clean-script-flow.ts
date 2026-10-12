@@ -116,7 +116,7 @@ export async function generateCleanScript(
     port.tasks.completeTaskActivity(taskId, {
       stage: "done", stageLabel: t("Clean transcript generated"), detail: cleanFile.path, subject: sourceFile.path,
       actions: [
-        { id: "open-task-note", label: t("Open minutes"), primary: true },
+        { id: "open-task-note", label: t("Open note"), primary: true },
         { id: "dismiss-task", label: t("Close Recording") },
       ],
     });

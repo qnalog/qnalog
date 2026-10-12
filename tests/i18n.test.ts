@@ -21,6 +21,13 @@ const root = path.resolve(__dirname, "..");
 // 不是某个函数怎么实现——语言认错最多显示不对，但不该让插件起不来。
 
 describe("界面语言解析", () => {
+  it("uses note wording for the sidebar note entry actions", () => {
+    const zh = resolveUiLanguage("zh", "zh");
+    expect(zh.table["Notes"]).toBe("笔记");
+    expect(zh.table["Open note"]).toBe("打开笔记");
+    expect(zh.table["Open notes list"]).toBe("打开笔记列表");
+    expect(zh.table["No notes opened yet"]).toBe("还没有打开笔记");
+  });
   it("认得出带地区的语言标识（Obsidian 会返回 zh-TW、en-GB 这类值）", () => {
     expect(matchUiLanguage("zh")?.id).toBe("zh");
     expect(matchUiLanguage("en")?.id).toBe("en");

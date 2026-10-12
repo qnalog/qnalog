@@ -511,7 +511,7 @@ export class TaskActivityService {
       return this.completeTaskActivity(id, Object.assign({}, patch, {
         stageLabel: wp.label || t("Minutes organization completed"),
         actions: session.mdPath
-          ? [{ id: "open-task-note", label: t("Open minutes"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
+          ? [{ id: "open-task-note", label: t("Open note"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
           : [{ id: "dismiss-task", label: t("Close Recording") }],
       }));
     }
@@ -562,7 +562,7 @@ export class TaskActivityService {
       actions: failure
         ? [{ id: "open-task-note", label: t("Open original material"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
         : completed
-          ? [{ id: "open-task-note", label: t("Open minutes"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
+          ? [{ id: "open-task-note", label: t("Open note"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
           : [],
     };
     let next = existing
