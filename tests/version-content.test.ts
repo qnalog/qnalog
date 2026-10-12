@@ -60,6 +60,16 @@ describe("QnALog version content", () => {
     expect(clean).not.toMatch(/^---/);
   });
 
+  it("removes a misplaced raw-material tail from an active version cache body", () => {
+    const body = [
+      "Visible body.",
+      "---",
+      "## 原始材料",
+      "<details><summary>Transcript</summary>raw fixture</details>",
+    ].join("\n");
+    expect(sanitizeActiveVersionBody(body)).toBe("Visible body.");
+  });
+
   it("strips derived-note titles and self backlinks before embedding into the mother", () => {
     const derived = [
       "# 个人笔记 · 2026-09-18 1107",

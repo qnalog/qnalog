@@ -59,6 +59,8 @@ const SELF_BACKLINK_LINE_RE = /^>\s*\[!(?:info|note)\]\s*(?:基于原始转写�
 
 export function sanitizeActiveVersionBody(body: string): string {
   let text = splitVersionPayload(body).body;
+  const rawBoundary = text.search(/\n\s*---\s*\n+##\s+(?:原始材料|Original material)\s*\n/i);
+  if (rawBoundary >= 0) text = text.slice(0, rawBoundary);
   for (let guard = 0; guard < 8; guard++) {
     const before = text;
     text = text.replace(/^\s*#\s+[^\n]*(?:\n+|$)/, "").replace(SELF_BACKLINK_LINE_RE, "");

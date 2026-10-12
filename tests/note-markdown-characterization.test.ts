@@ -463,6 +463,30 @@ describe("版本块构建与替换", () => {
     expect(rewritten.indexOf("qnalog-session:safe-fixture")).toBeGreaterThan(rewritten.indexOf("## 原始材料"));
     expect(rewritten.match(/data-qnalog="active-version-end"/g)).toHaveLength(1);
   });
+
+  it("self-heals duplicate raw-material regions across repeated version rewrites", () => {
+    let note = [
+      "# Synthetic note",
+      "> [!info]- Current version <span data-qnalog=\"active-version-start\"></span>",
+      "Visible body.",
+      "---",
+      "## 原始材料",
+      "<span data-qnalog=\"active-version-end\"></span>",
+      "---",
+      "## 原始材料",
+      "---",
+      "## 原始材料",
+      "<details><summary>录音信息</summary>fixture</details>",
+      "",
+    ].join("\n");
+    for (let index = 0; index < 5; index++) {
+      note = replaceActiveVersionBlock(note, META, `整理正文 ${index + 1}`);
+      expect(note.match(/^## 原始材料$/gm)).toHaveLength(1);
+      expect(note.match(/^---$/gm)).toHaveLength(1);
+      expect(note.indexOf('data-qnalog="active-version-end"')).toBeLessThan(note.indexOf("\n---\n"));
+      expect(note.slice(note.indexOf('data-qnalog="active-version-start"'), note.indexOf('data-qnalog="active-version-end"'))).not.toContain("## 原始材料");
+    }
+  });
 });
 
 describe("session details ranges", () => {

@@ -50,7 +50,7 @@ export function replaceActiveVersionBlock(
   const replaced = activeRange
     ? replaceLegacyRangePreservingRawTail(text, activeRange, block)
     : replaceExistingActiveVersionBlock(text, block);
-  if (replaced !== null) return preserveSessionMetadata(text, replaced);
+  if (replaced !== null) return normalizeRawMaterialScaffold(preserveSessionMetadata(text, replaced));
   // First adoption of the version model compacts the mother note:
   // keep only frontmatter, H1, active display block, and raw/source metadata.
   // The previous rendered minutes/clean text is already persisted in the version store.
@@ -61,17 +61,44 @@ export function replaceActiveVersionBlock(
   const rawTail = extracted.tail ? `\n\n---\n\n${extracted.tail.trimEnd()}\n` : "\n";
   if (titleMatch) {
     const titleBlock = titleMatch[0].trimEnd();
-    return [
+    return normalizeRawMaterialScaffold([
       parts.frontmatter ? parts.frontmatter.trimEnd() : "",
       titleBlock,
       "",
       block,
-    ].filter(Boolean).join("\n") + rawTail;
+    ].filter(Boolean).join("\n") + rawTail);
   }
-  return [
+  return normalizeRawMaterialScaffold([
     parts.frontmatter ? parts.frontmatter.trimEnd() : "",
     block,
-  ].filter(Boolean).join("\n") + rawTail;
+  ].filter(Boolean).join("\n") + rawTail);
+}
+
+/** Collapse repeated raw-material scaffolds left by older active-version boundaries. */
+function normalizeRawMaterialScaffold(markdown: string): string {
+  let text = String(markdown || "");
+  const headings = [...text.matchAll(/^##\s+(?:原始材料|Original material)\s*$/gm)];
+  for (const heading of headings.slice(1).reverse()) {
+    const start = heading.index || 0;
+    const prefix = text.slice(0, start);
+    const separator = prefix.match(/\n---\s*\n+$/);
+    const removeStart = separator ? start - separator[0].length + 1 : start;
+    text = text.slice(0, removeStart) + text.slice(start + heading[0].length).replace(/^\r?\n+/, "");
+  }
+  const heading = /^##\s+(?:原始材料|Original material)\s*$/m.exec(text);
+  const endPattern = new RegExp(`(?:<span\\s+data-${NS_TAG}=["']active-version-end["']\\s*><\\/span>|<!--\\s*${nsRe("active-version-end")}\\s*-->)`, "i");
+  if (heading) {
+    const beforeHeading = text.slice(0, heading.index);
+    const separator = beforeHeading.match(/\n---\s*\n+$/);
+    const marker = text.slice(heading.index).match(endPattern);
+    if (separator && marker) {
+      const markerText = marker[0];
+      const body = beforeHeading.slice(0, beforeHeading.length - separator[0].length).replace(endPattern, "").replace(/\s+$/, "");
+      const raw = text.slice(heading.index).replace(markerText, "");
+      text = `${body}\n${markerText}\n\n---\n\n${raw}`;
+    }
+  }
+  return text.replace(/\n{4,}/g, "\n\n\n");
 }
 
 function preserveSessionMetadata(previous: string, next: string): string {
