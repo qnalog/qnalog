@@ -167,7 +167,7 @@ export const UTILITY_HEADING_RE =
 
 /** Summary 名称白名单与索引、语义图原先的工具 details 读取范围一致。 */
 export const UTILITY_DETAILS_SUMMARY_RE =
-  /(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data)/;
+  /(?:原始转写|逐字稿|原始材料|回听时间轴|录音中实时大纲|索引数据|沉淀数据|Raw transcript|Verbatim transcript|Original material|Playback timeline|Live outline while recording|Index data|Distilled data|QnALog session data)/;
 /**
  * 信息行词（时间/时长/模式/分段/模型/状态 + 英文对应词），供剥离
  * `- 时间：…` / `- Time: …` 这类元信息行（如 ui/helpers.ts 的归一化）。

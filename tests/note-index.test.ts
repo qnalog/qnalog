@@ -439,6 +439,7 @@ describe("QnALog note index", () => {
       "<summary>Raw transcript</summary>",
       "Hidden raw text.",
       "</details>",
+      "<details><summary>QnALog session data</summary><!-- qnalog-session:legacy --></details>",
       "<details>",
       "<summary>Custom</summary>",
       "Custom body remains.",
@@ -452,6 +453,7 @@ describe("QnALog note index", () => {
     const visible = extractIndexSource(markdown);
     expect(visible).toContain("Visible before.");
     expect(visible).not.toContain("Hidden raw text.");
+    expect(visible).not.toContain("qnalog-session:legacy");
     expect(visible).toContain("Custom body remains.");
     expect(visible).toContain("Attributed shell remains.");
   });
