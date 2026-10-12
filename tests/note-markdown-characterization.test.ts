@@ -70,7 +70,7 @@ describe("transcript ledger helper contracts", () => {
     const { fixture } = transcriptLedgerFixture();
     const upgraded = ensureTranscriptBlocks(fixture, "ledger-fixture", { reconcileEditedText: false });
     const [first, second] = readTranscriptBlocks(upgraded);
-    expect(upgraded).toContain("<summary>Segment 1 (00:01–00:02)</summary>");
+    expect(upgraded).toContain("<summary>Raw transcript · Segment 1 (00:01–00:02)</summary>");
     expect(upgraded).toContain("alpha corrected beta");
     expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
     const detailsBody = upgraded.slice(upgraded.indexOf("<details>"), upgraded.indexOf("</details>") + "</details>".length);
@@ -702,7 +702,7 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(blocks.find((block) => block.segment.transcript?.id === "seg:fixture:1")?.segment).toEqual(
       readTranscriptBlocks(original)[0].segment,
     );
-    expect(upgraded).toContain("<summary>Segment 2 (00:10–00:20)</summary>");
+    expect(upgraded).toContain("<summary>Raw transcript · Segment 2 (00:10–00:20)</summary>");
     expect(upgraded).toContain("\nB\n");
     expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
     expect(upgraded.indexOf("</details>")).toBeLessThan(upgraded.indexOf("data-qnalog-transcript-data="));
@@ -753,8 +753,8 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
       "seg:fixture:1",
       "seg:fixture:2",
     ]);
-    expect(upgraded).toContain("<summary>Segment 2 (00:10–00:20)</summary>\r\n");
-    expect(upgraded).toContain("<summary>Segment 3 (00:20–00:30)</summary>");
+    expect(upgraded).toMatch(/<summary>Raw transcript · Segment 2 \(00:10–00:20\)<\/summary>/);
+    expect(upgraded).toContain("<summary>Raw transcript · Segment 3 (00:20–00:30)</summary>");
     expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
     expect(blocks[0].segment.text).toContain("A-before");
     expect(blocks[0].segment.text).toContain("A-after");

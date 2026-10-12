@@ -3,6 +3,7 @@ vi.mock("obsidian", () => ({ TFile: class TFile {}, normalizePath: (path: string
 import * as obsidian from "obsidian";
 import type { Segment } from "../src/shared/types";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { labelText } from "../src/shared/note-labels";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import {
   normalizeTranscriptDataPlacement,
@@ -45,8 +46,8 @@ function assertDetailsBounded(markdown: string): void {
   }
   for (const [, summary] of markdown.matchAll(/<summary>([\s\S]*?)<\/summary>/gi)) {
     expect(summary).not.toMatch(/\[\[|\]\]|<|>/);
-    if (/^(?:段落|Segment)\s+\d+/.test(summary)) {
-      expect(summary).toMatch(/^(?:段落|Segment) \d+ \(\d+:\d{2}(?::\d{2})?–\d+:\d{2}(?::\d{2})?\)$/);
+    if (/^(?:原始转写|Raw transcript) · /.test(summary)) {
+      expect(summary).toMatch(/^(?:原始转写 · 段落 \d+|Raw transcript · Segment \d+) \(\d+:\d{2}(?::\d{2})?–\d+:\d{2}(?::\d{2})?\)(?: · (?:第 \d+\/\d+ 部分|Part \d+\/\d+))?$/);
     }
   }
 }
@@ -95,6 +96,131 @@ describe("transcript hidden-data storage", () => {
     assertDetailsBounded(output);
     if (count) expect(output.match(/<span hidden data-qnalog-transcript-data=/g)?.length).toBe(count);
     expect(normalizeTranscriptDataPlacement(output)).toBe(output);
+  });
+
+  it.each([
+    { language: "zh", count: 1, expected: "原始转写 · 段落 1 (00:00–00:01)" },
+    { language: "en", count: 1, expected: "Raw transcript · Segment 1 (00:00–00:01)" },
+    { language: "zh", count: 6, expected: "原始转写 · 段落 1 (00:00–00:01)" },
+  ])("writes self-describing transcript summaries ($language, $count segment(s))", ({ language, count, expected }) => {
+    const previousLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage(language, language));
+      const segments = Array.from({ length: count }, (_, index) => makeSegment(index, `内容 ${index + 1}。`));
+      const output = normalizeTranscriptDataPlacement(segments
+        .map((segment) => serializeTranscriptBlock(segment, `### Segment ${segment.index + 1} (00:00–00:01)`, segment.text))
+        .join("\n"));
+      const summaries = [...output.matchAll(/<summary>(.*?)<\/summary>/g)].map((match) => match[1]);
+      expect(summaries).toHaveLength(count);
+      expect(summaries[0]).toBe(expected);
+      if (language === "zh") expect(summaries.every((summary) => summary.startsWith("原始转写 · 段落 "))).toBe(true);
+      else expect(summaries.every((summary) => summary.startsWith("Raw transcript · Segment "))).toBe(true);
+      expect(output).not.toMatch(/^\*\*(?:分段原始转写|Segmented raw transcript)/m);
+    } finally {
+      setActiveUiLanguage(previousLanguage);
+    }
+  });
+
+  it.each([
+    { language: "zh", groupTitle: "分段原始转写（1 段）", oldSummary: "段落 1 (00:00–00:01)", expected: "原始转写 · 段落 1 (00:00–00:01)" },
+    { language: "en", groupTitle: "Segmented raw transcript (1 segments)", oldSummary: "Segment 1 (00:00–00:01)", expected: "Raw transcript · Segment 1 (00:00–00:01)" },
+  ])("upgrades legacy group title and summary after index-tail rewrite ($language)", ({ language, groupTitle, oldSummary, expected }) => {
+    const previousLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage(language, language));
+      const segment = makeSegment(0, "保留的原始文本。");
+      const serialized = serializeTranscriptBlock(segment, `### ${oldSummary}`, segment.text)
+        .replace(/<summary>[^<]*<\/summary>/, `<summary>${oldSummary}</summary>`);
+      const input = [
+        "# Fixture",
+        "Visible body.",
+        "---",
+        "## 原始材料",
+        `**${groupTitle}**`,
+        serialized,
+        "<details>",
+        "<summary>索引数据</summary>",
+        "<!-- qnalog-note-index -->",
+        "{}",
+        "<!-- qnalog-note-index-end -->",
+        "</details>",
+      ].join("\n");
+
+      const normalized = normalizeTranscriptLayout(input);
+      expect(normalized).not.toContain(`**${groupTitle}**`);
+      expect(normalized).toContain(`<summary>${expected}</summary>`);
+      expect(normalized).toContain("保留的原始文本。");
+      expect(normalized.match(/<summary>(?:索引数据|Index data)<\/summary>/g)).toHaveLength(1);
+      expect(normalizeTranscriptLayout(normalized)).toBe(normalized);
+    } finally {
+      setActiveUiLanguage(previousLanguage);
+    }
+  });
+
+  it.each([
+    { language: "zh", old: "段落 2 (00:01–00:02)", expected: "原始转写 · 段落 2 (00:01–00:02)" },
+    { language: "en", old: "Segment 2 (00:01–00:02)", expected: "Raw transcript · Segment 2 (00:01–00:02)" },
+  ])("upgrades legacy bare segment summaries in $language", ({ language, old, expected }) => {
+    const previousLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage(language, language));
+      const normalized = normalizeTranscriptLayout(`<details><summary>${old}</summary>Legacy text.</details>`);
+      expect(normalized).toContain(`<summary>${expected}</summary>`);
+      expect(normalized).toContain("Legacy text.");
+      expect(normalizeTranscriptLayout(normalized)).toBe(normalized);
+    } finally {
+      setActiveUiLanguage(previousLanguage);
+    }
+  });
+
+  it.each([
+    { length: 5000, parts: 2 },
+    { length: 9000, parts: 3 },
+  ])("labels split segment fragments as part i/n ($parts parts)", ({ length, parts }) => {
+    const segment = makeSegment(0, "转写文本。".repeat(Math.ceil(length / 6)).slice(0, length));
+    const output = normalizeTranscriptDataPlacement(serializeTranscriptBlock(segment, "### Segment 1 (00:00–00:01)", segment.text));
+    const summaries = [...output.matchAll(/<summary>(.*?)<\/summary>/g)].map((match) => match[1]);
+    expect(summaries).toHaveLength(parts);
+    expect(summaries).toEqual(Array.from({ length: parts }, (_, index) =>
+      `Raw transcript · Segment 1 (00:00–00:01) · Part ${index + 1}/${parts}`));
+    assertDetailsBounded(output);
+  });
+
+  it("upgrades legacy grouped titles and summaries without changing transcript records", () => {
+    const previousLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+      const segments = [makeSegment(0, "第一段正文。"), makeSegment(1, "第二段正文。")];
+      const source = `**分段原始转写（2 段）**\n<details><summary>分段原始转写（2 段）</summary>\n${segments.map((segment, index) =>
+        legacyBlock(segment, `### 段落 ${index + 1} (00:0${index}0–00:0${index + 1}0)`, segment.text)
+          .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, `### 段落 ${index + 1} (00:0${index}0–00:0${index + 1}0)\n`)
+          .replace(/\n<\/details>$/, "")).join("\n\n")}\n</details>`;
+      const expectedData = readTranscriptBlocks(source).map((block) => ({
+        text: block.visibleBlock,
+        start: block.segment.startOffsetMs,
+        end: block.segment.endOffsetMs,
+        record: block.segment.transcript,
+      }));
+      const normalized = normalizeTranscriptLayout(source);
+      expect(normalized).not.toMatch(/^\*\*分段原始转写（\d+ 段）\*\*$/m);
+      expect(normalized).not.toContain("<summary>分段原始转写");
+      expect([...normalized.matchAll(/<summary>(.*?)<\/summary>/g)].map((match) => match[1])).toEqual([
+        "原始转写 · 段落 1 (00:00–00:01)",
+        "原始转写 · 段落 2 (00:01–00:02)",
+      ]);
+      const reread = readTranscriptBlocks(normalized).map((block) => ({
+        text: block.visibleBlock,
+        start: block.segment.startOffsetMs,
+        end: block.segment.endOffsetMs,
+        record: block.segment.transcript,
+      }));
+      expect(reread).toEqual(expectedData);
+      expect(normalizeTranscriptLayout(normalized)).toBe(normalized);
+      expect(normalized.match(/<details\b/g)).toHaveLength(2);
+      assertDetailsBounded(normalized);
+    } finally {
+      setActiveUiLanguage(previousLanguage);
+    }
   });
 
   it("splits long segments at sentence boundaries and reads the exact original text", () => {
@@ -181,7 +307,7 @@ describe("transcript hidden-data storage", () => {
     const restored = readTranscriptBlocks(normalized);
     expect(restored.map((block) => block.visibleBlock)).toEqual(["第一段。", "第二段。"]);
     expect(restored.map((block) => block.segment.transcript)).toEqual(segments.map((segment) => segment.transcript));
-    expect(normalized).toContain("**分段原始转写（2 段）**");
+    expect(normalized).not.toContain("**分段原始转写（2 段）**");
     expect(normalized.match(/<summary>/g)).toHaveLength(2);
     expect(normalized).not.toContain("<!-- qnalog-transcript-data ");
     expect(normalized).toMatch(/data-qnalog-transcript-data=.*data-qnalog-segment=/);
@@ -226,7 +352,7 @@ describe("transcript hidden-data storage", () => {
 
       const normalized = normalizeTranscriptLayout(oldNote);
       const restored = readTranscriptBlocks(normalized);
-      expect(normalized).toContain("**分段原始转写（3 段）**");
+      expect(normalized).not.toContain("**分段原始转写（3 段）**");
       expect(normalized).not.toMatch(/<summary>分段原始转写/);
       expect(restored.map((block) => block.visibleBlock)).toEqual(texts);
       expect(restored.map((block) => block.segment.transcript)).toEqual(segments.map((segment) => segment.transcript));
@@ -390,9 +516,13 @@ describe("transcript hidden-data storage", () => {
     await insertBeforeSessionSegmentsEnd({ getVault: () => vault, appendToNote: vi.fn(async () => undefined) }, path,
       serializeTranscriptBlock(next, "### 段落 2 (00:01–00:02)", next.text), "append-fixture");
     expect(readTranscriptBlocks(content).map((block) => block.visibleBlock)).toEqual([first.text, next.text]);
-    expect(content).toMatch(/\*\*(?:分段原始转写（2 段）|Segmented raw transcript \(2 segments\))\*\*/);
+    expect(content).not.toMatch(/^\*\*(?:分段原始转写（\d+ 段）|Segmented raw transcript \(\d+ segments\))\*\*$/m);
     expect(content).not.toMatch(/<summary>(?:分段原始转写|Segmented raw transcript)/);
     expect(content.match(/<details\b/g)).toHaveLength(2);
+    expect([...content.matchAll(/<summary>(.*?)<\/summary>/g)].map((match) => match[1])).toEqual([
+      "Raw transcript · Segment 1 (00:00–00:01)",
+      "Raw transcript · Segment 2 (00:01–00:02)",
+    ]);
     expect(content.indexOf("<!-- qnalog-segments-end:append-fixture -->"))
       .toBeGreaterThan(content.lastIndexOf("<!-- qnalog-transcript-end:"));
     assertDetailsBounded(content);
@@ -463,7 +593,7 @@ describe("transcript hidden-data storage", () => {
       sourcePath: "QnALog/source.md", sourceName: "source.md",
     }, "hidden-data-fixture", "text-import");
     const output = normalizeTranscriptDataPlacement(serializeTranscriptBlock(source, "### 段落 1 (00:00–00:01) [[QnALog/source.md|source.md]]", source.text));
-    expect(output).toMatch(/<summary>(?:段落|Segment) 1 \(00:00–00:01\)<\/summary>\n\[\[QnALog\/source\.md\|source\.md\]\]\n<!-- qnalog-transcript-start:/);
+    expect(output).toMatch(/<summary>Raw transcript · Segment 5 \(00:00–00:01\)<\/summary>\n\[\[QnALog\/source\.md\|source\.md\]\]\n<!-- qnalog-transcript-start:/);
     expect(readTranscriptBlocks(output)[0].heading).toContain("[[QnALog/source.md|source.md]]");
     assertDetailsBounded(output);
   });
@@ -474,7 +604,8 @@ describe("transcript hidden-data storage", () => {
       .replace(/<summary>[\s\S]*?<\/summary>/, "<summary>[[invalid]] <title></summary>");
     const [block] = readTranscriptBlocks(output);
     expect(block.visibleBlock).toBe(segment.text);
-    expect(block.heading).toMatch(/### (?:段落|Segment) 1 \(00:00–00:01\)/);
+    expect(block.heading).toMatch(/### Segment 1 \(00:00–00:01\)/);
+    expect(output).not.toContain("displaySummary");
   });
 
   it("reads legacy heading links from stored segment metadata instead of summary text", () => {
@@ -485,7 +616,7 @@ describe("transcript hidden-data storage", () => {
     const old = legacyBlock(source, "### Segment 1 (00:00–00:01) [[QnALog/legacy.md|legacy.md]]", source.text);
     const [block] = readTranscriptBlocks(old);
     const rewritten = replaceTranscriptBlock(old, block, block.segment, block.visibleBlock);
-    expect(rewritten).toContain("<summary>Segment 1 (00:00–00:01)</summary>\n[[QnALog/legacy.md|legacy.md]]");
+    expect(rewritten).toContain("<summary>Raw transcript · Segment 1 (00:00–00:01)</summary>\n[[QnALog/legacy.md|legacy.md]]");
     expect(readTranscriptBlocks(rewritten)[0].visibleBlock).toBe("legacy source");
   });
 

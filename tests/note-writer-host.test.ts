@@ -498,7 +498,8 @@ describe("NoteWriter text-import source materials", () => {
         expect(await vault.vault.read(file)).toBe(rewritten);
         const rewrittenBlocks = readTranscriptBlocks(rewritten);
         assertTranscriptState(rewritten);
-        expect(rewritten).toContain(`**${labelText("segmentedRawTranscript", 4)}**`);
+        expect(rewritten).not.toContain(`**${labelText("segmentedRawTranscript", 4)}**`);
+        expect(rewritten).toMatch(/<summary>(?:原始转写 · 段落|Raw transcript · Segment) \d+ /);
         expect(rewritten.indexOf(modelBody)).toBeLessThan(rewrittenBlocks[0].start);
         expect(sourceHeadings.map((heading) => rewritten.indexOf(heading))).toEqual(
           [...sourceHeadings].map((_, index) => rewritten.indexOf(sourceHeadings[index])).sort((a, b) => a - b),
@@ -532,7 +533,7 @@ describe("NoteWriter text-import source materials", () => {
         await writer.appendPolishBlock(session, output, null, false, "", original);
         const appended = await vault.vault.read(file);
         assertTranscriptState(appended);
-        const appendedSourceSummary = `**${labelText("segmentedRawTranscript", 4)}**`;
+        const appendedSourceSummary = `<summary>${labelText("rawTranscriptSegmentRange", 5, "00:00", "00:01")}</summary>`;
         expect(appended.indexOf(modelBody))
           .toBeLessThan(appended.lastIndexOf("<details>", appended.indexOf(appendedSourceSummary)));
         expect(readTranscriptBlocks(appended)).toHaveLength(4);
@@ -543,7 +544,7 @@ describe("NoteWriter text-import source materials", () => {
         await writer.appendPolishBlock(session, output, new Error("temporary failure"), false, "", original);
         const failed = await vault.vault.read(file);
         assertTranscriptState(failed);
-        const failedSourceSummary = `**${labelText("segmentedRawTranscript", 4)}**`;
+        const failedSourceSummary = `<summary>${labelText("rawTranscriptSegmentRange", 5, "00:00", "00:01")}</summary>`;
         expect(failed.indexOf(labelText("mergeFailedQueued", "temporary failure")))
           .toBeLessThan(failed.lastIndexOf("<details>", failed.indexOf(failedSourceSummary)));
         expect(failed).toContain("title: old");
@@ -686,7 +687,7 @@ describe("NoteWriter narrow host capabilities", () => {
         expect(end).toBeGreaterThan(start);
         const rawDetails = first.slice(start, end);
         expect(rawDetails).toContain(marker);
-        expect(first).toContain(`<summary>${labelText("segment", 1)} (00:02–00:05)</summary>\n[[${audioName}|00:18]]`);
+        expect(first).toContain(`<summary>${labelText("rawTranscriptSegmentRange", 1, "00:02", "00:05")}</summary>\n[[${audioName}|00:18]]`);
         expect(first).toContain(sourceText);
         for (const [, detailsBody] of rawDetails.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)) {
           expect(detailsBody).not.toContain("qnalog-transcript-data");

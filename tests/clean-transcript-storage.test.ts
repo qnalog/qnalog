@@ -273,7 +273,8 @@ describe("clean transcript storage", () => {
     const restored = readTranscriptBlocks(rewritten);
     expect(restored.map((block) => block.visibleBlock)).toEqual(segments.map((segment) => segment.text));
     expect(restored.map((block) => block.segment.transcript)).toEqual(segments.map((segment) => segment.transcript));
-    expect(rewritten).toMatch(/\*\*(?:分段原始转写（3 段）|Segmented raw transcript \(3 segments\))\*\*/);
+    expect(rewritten).not.toMatch(/^\*\*(?:分段原始转写（\d+ 段）|Segmented raw transcript \(\d+ segments\))\*\*$/m);
+    expect(rewritten).toContain("<summary>原始转写 · 段落 1 (00:00–00:10)</summary>");
     expect(rewritten).not.toMatch(/<summary>(?:分段原始转写|Segmented raw transcript)/);
     expect(rewritten).not.toContain("<!-- qnalog-transcript-data ");
     expect(rewritten.match(/data-qnalog-transcript-data=/g)).toHaveLength(3);

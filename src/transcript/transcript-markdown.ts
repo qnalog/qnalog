@@ -1,7 +1,7 @@
 import { NS_TAG, nsRe } from "../shared/namespace";
 import type { Segment } from "../shared/types";
 import type { TranscriptSegmentRecord } from "./session-transcript";
-import { labelText } from "../shared/note-labels";
+import { labelPattern, labelText } from "../shared/note-labels";
 import { formatElapsed } from "../shared/util-common";
 
 export interface ReadTranscriptBlock {
@@ -187,9 +187,32 @@ function splitLegacyTranscriptDetails(markdown: string): string {
   const blocks = readTranscriptBlocks(text).filter((block) => block.start >= start && block.end <= end);
   if (!blocks.length) return text;
   const wrapperText = text.slice(start, end);
-  const legacyHeadingNumbers = [...wrapperText.matchAll(/^###\s+(?:段落|Segment)\s+(\d+)/gim)]
+  const wrapperBodyStart = wrapperText.indexOf("</summary>") + "</summary>".length;
+  const wrapperBody = wrapperText.slice(wrapperBodyStart, -"</details>".length);
+  const innerDetails: Array<{ start: number; end: number }> = [];
+  const innerOpenings = /<details\b[^>]*>/gi;
+  let innerOpening: RegExpExecArray | null;
+  while ((innerOpening = innerOpenings.exec(wrapperBody))) {
+    const innerEnd = matchingDetailsEnd(wrapperBody, innerOpening.index);
+    if (innerEnd > 0) innerDetails.push({ start: innerOpening.index, end: innerEnd });
+  }
+  const allSegmentsAlreadyWrapped = blocks.every((block) => {
+    const localStart = block.start - start - wrapperBodyStart;
+    return innerDetails.some((detail) => localStart >= detail.start && localStart < detail.end);
+  });
+  const legacyHeadingNumbers = [...wrapperText.matchAll(/^###\s+.+?\s+(\d+)\b[^\n]*$/gim)]
     .map((match) => Number(match[1]));
+  const headingPositions = [...wrapperBody.matchAll(/^###\s+.+?\s+(\d+)\b[^\n]*$/gim)]
+    .map((match) => ({ number: Number(match[1]), position: match.index || 0 }));
   const readableSegmentNumbers = new Set(blocks.map((block) => block.segment.index + 1));
+  const hasUnwrappedLegacyHeading = legacyHeadingNumbers.some((number) => !readableSegmentNumbers.has(number)
+    || !innerDetails.some((detail) => {
+      const headingPosition = headingPositions.find((heading) => heading.number === number)?.position ?? -1;
+      return headingPosition >= detail.start && headingPosition < detail.end;
+    }));
+  if (allSegmentsAlreadyWrapped && innerDetails.length > 0 && !hasUnwrappedLegacyHeading) {
+    return text.slice(0, start) + wrapperBody + text.slice(end);
+  }
   // A wrapper can contain both upgraded ledger blocks and their stale heading lines.
   // Keep untracked legacy segments intact when a heading does not match a readable ledger.
   if (legacyHeadingNumbers.some((number) => !readableSegmentNumbers.has(number))) return text;
@@ -214,8 +237,7 @@ function splitLegacyTranscriptDetails(markdown: string): string {
     const lastDetailsEnd = serializedGroup.lastIndexOf("</details>");
     if (lastDetailsEnd >= 0) serializedGroup = serializedGroup.slice(0, lastDetailsEnd) + `${endMarker}\n` + serializedGroup.slice(lastDetailsEnd);
   }
-  const title = `**${labelText("segmentedRawTranscript", blocks.length)}**`;
-  const replacement = `${title}\n${serializedGroup}`;
+  const replacement = serializedGroup;
   return text.slice(0, start) + replacement + text.slice(end);
 }
 
@@ -318,6 +340,55 @@ function placeLooseSegmentsMarkersInDetails(markdown: string): string {
     text = text.slice(0, insertion.index) + insertion.value + text.slice(insertion.index);
   }
   return text.replace(/\n{3,}/g, "\n\n");
+}
+
+function removeLegacyTranscriptGroupTitles(markdown: string): string {
+  const title = new RegExp(`^\\*\\*(?:${labelPattern("segmentedRawTranscript").source})\\*\\*\\s*(?:\\r?\\n|$)`, "gm");
+  const source = String(markdown || "");
+  const clean = source.replace(title, "");
+  return clean === source ? source : clean.replace(/\n{3,}/g, "\n\n");
+}
+
+function normalizeTranscriptSummaryLabels(markdown: string): string {
+  const text = String(markdown || "");
+  const upgradeBareSummaries = (source: string) => source.replace(
+    /<summary>(?:段落|Segment)\s+(\d+)\s+\((\d+:\d{2}(?::\d{2})?)\s*[–-]\s*(\d+:\d{2}(?::\d{2})?)\)<\/summary>/gi,
+    (_summary, index: string, start: string, end: string) => `<summary>${labelText("rawTranscriptSegmentRange", Number(index), start, end)}</summary>`,
+  );
+  const blocks = readTranscriptBlocks(text);
+  if (!blocks.length) return upgradeBareSummaries(text);
+  const segments = new Map(blocks.map((block) => [block.segment.transcript?.id || "", block.segment]));
+  const fragmentsPerSegment = new Map<string, number>();
+  const starts = new RegExp(`<!--\\s*${nsRe("transcript-start")}:([^>]+)\\s*-->`, "gi");
+  for (const match of text.matchAll(starts)) {
+    const { id } = splitFragmentId(match[1].trim());
+    fragmentsPerSegment.set(id, (fragmentsPerSegment.get(id) || 0) + 1);
+  }
+  const fragmentIndex = new Map<string, number>();
+  const replacements: Array<{ start: number; end: number; value: string }> = [];
+  const markers = new RegExp(`<!--\\s*${nsRe("transcript-start")}:([^>]+)\\s*-->`, "gi");
+  for (const marker of text.matchAll(markers)) {
+    const markerPosition = marker.index || 0;
+    const open = text.lastIndexOf("<details", markerPosition);
+    if (open < 0 || open < text.lastIndexOf("</details>", markerPosition)) continue;
+    const end = matchingDetailsEnd(text, open);
+    if (end < 0) continue;
+    const summaryMatch = /<summary>[\s\S]*?<\/summary>/i.exec(text.slice(open, end));
+    if (!summaryMatch) continue;
+    const { id } = splitFragmentId(marker[1].trim());
+    const segment = segments.get(id);
+    if (!segment) continue;
+    const index = (fragmentIndex.get(id) || 0) + 1;
+    fragmentIndex.set(id, index);
+    const summary = transcriptSummary(segment, { index, count: fragmentsPerSegment.get(id) || 1 });
+    const summaryStart = open + (summaryMatch.index || 0);
+    replacements.push({ start: summaryStart, end: summaryStart + summaryMatch[0].length, value: `<summary>${summary}</summary>` });
+  }
+  let next = text;
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+    next = next.slice(0, replacement.start) + replacement.value + next.slice(replacement.end);
+  }
+  return upgradeBareSummaries(next);
 }
 
 function splitFragmentId(value: string): { id: string; fragment: number } {
@@ -426,18 +497,33 @@ function detailsFragment(segmentId: string, summary: string, text: string, fragm
   ].join("\n");
 }
 
-function transcriptDetails(segmentId: string, heading: string, displayText: string): string[] {
-  const { summary, material, markers: extraMarkers } = transcriptHeadingParts(heading);
-  const overhead = detailsFragment(segmentId, summary, "", 999999, extraMarkers, material)
+function transcriptDetails(segment: Segment, segmentId: string, heading: string, displayText: string): string[] {
+  const { material, markers: extraMarkers } = transcriptHeadingParts(heading);
+  const baseSummary = transcriptSummary(segment);
+  const largestPartSummary = `${baseSummary}${labelText("transcriptPartSuffix", 999, 999)}`;
+  const overhead = detailsFragment(segmentId, largestPartSummary, "", 999999, extraMarkers, material)
     .slice("<details>".length, -"</details>".length).trim().length;
-  const maxText = Math.max(1, 3500 - overhead - 256);
+  const maxText = Math.max(1, 3500 - overhead - 128);
   const chunks = splitTextAtSentenceBoundaries(displayText, maxText);
   return chunks.map((chunk, index) => {
+    const summary = `${baseSummary}${chunks.length > 1 ? labelText("transcriptPartSuffix", index + 1, chunks.length) : ""}`;
     const fragment = detailsFragment(segmentId, summary, chunk, index + 1, index === 0 ? extraMarkers : [], index === 0 ? material : []);
     const inner = fragment.slice("<details>".length, -"</details>".length).trim();
     if (inner.length > 3500) throw new Error(`Transcript details block exceeds 3500 characters: ${inner.length}`);
     return fragment;
   });
+}
+
+function transcriptSummary(segment: Segment, part?: { index: number; count: number }): string {
+  const base = labelText(
+    "rawTranscriptSegmentRange",
+    segment.index + 1,
+    formatElapsed(segment.startOffsetMs),
+    formatElapsed(segment.endOffsetMs),
+  );
+  return part && part.count > 1
+    ? `${base}${labelText("transcriptPartSuffix", part.index, part.count)}`
+    : base;
 }
 
 function headingForSerializedSegment(segment: Segment, heading: string): string {
@@ -452,7 +538,7 @@ function isTranscriptSummary(value: string): boolean {
   return /^(?:段落|Segment)\s+\d+\s+\(\d+:\d{2}(?::\d{2})?[–-]\d+:\d{2}(?::\d{2})?\)$/.test(value);
 }
 
-function headingForSegment(segment: Segment, inner: string, textStartIndex: number, markdown: string, markerIndex: number, storedSummary = ""): string {
+function headingForSegment(segment: Segment, inner: string, textStartIndex: number, markdown: string, markerIndex: number): string {
   const legacyPrefix = inner.slice(0, textStartIndex);
   const comments = [...legacyPrefix.matchAll(/<!--[^>]*-->/g)].map(([comment]) => comment);
   const legacyLinks = [...legacyPrefix.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
@@ -470,9 +556,7 @@ function headingForSegment(segment: Segment, inner: string, textStartIndex: numb
   // In the 1.6.4 grouped layout each transcript-start precedes its own heading.
   // Links in `legacyPrefix` belong to this segment; links before the marker belong to earlier segments.
   const links = legacyLinks.length ? legacyLinks : [...segmentMaterial.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
-  const label = isTranscriptSummary(storedSummary)
-    ? storedSummary
-    : `${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})`;
+  const label = `${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})`;
   const audioName = segment.audioName || segment.segmentAudioName || "";
   const audioAt = Number.isFinite(segment.audioStartOffsetMs) ? Number(segment.audioStartOffsetMs) : segment.startOffsetMs;
   const dataLink = segment.sourcePath
@@ -532,8 +616,7 @@ export function normalizeTranscriptDataPlacement(markdown: string): string {
   for (const block of blocks) {
     const record = block.segment.transcript;
     if (!record) continue;
-    const displaySummary = block.heading.split(/\r?\n/, 1)[0].replace(/^\s*#{1,6}\s*/, "");
-    const payload = safeJson({ ...compactTranscriptPayload(block.segment, record), displaySummary });
+    const payload = safeJson(compactTranscriptPayload(block.segment, record));
     const anchorEnd = finalBlock.end;
     const elements = groups.get(anchorEnd) || [];
     elements.push(transcriptDataElement(record.id, payload));
@@ -561,9 +644,19 @@ export function normalizeTranscriptDataPlacement(markdown: string): string {
 
 /** Normalize legacy grouped transcript markup and place its data outside the details blocks. */
 export function normalizeTranscriptLayout(markdown: string): string {
-  return normalizeIndexDataDetails(normalizeRealtimeOutlineDetails(
-    normalizeTranscriptDataPlacement(placeLooseSegmentsMarkersInDetails(splitLegacyTranscriptDetails(String(markdown || "")))),
-  ));
+  const placed = normalizeTranscriptDataPlacement(
+    placeLooseSegmentsMarkersInDetails(splitLegacyTranscriptDetails(String(markdown || ""))),
+  );
+  const cleanTitles = removeLegacyTranscriptGroupTitles(placed);
+  const labeled = normalizeTranscriptSummaryLabels(cleanTitles);
+  const details = normalizeRealtimeOutlineDetails(labeled).replace(
+    /(<details\b[^>]*>)([\s\S]*?)(<\/details>)/gi,
+    (_whole, open: string, body: string, close: string) => {
+      const lines = body.split(/\r?\n/).filter((line) => line.trim());
+      return `${open}${lines.length ? `\n${lines.join("\n")}\n` : ""}${close}`;
+    },
+  );
+  return normalizeIndexDataDetails(details);
 }
 
 function validSegment(value: unknown): value is Omit<Segment, "transcript"> {
@@ -655,10 +748,9 @@ export function serializeTranscriptBlock(segment: Segment, heading: string, disp
       : revision),
   };
   const normalizedHeading = headingForSerializedSegment(segment, heading);
-  const displaySummary = normalizedHeading.split(/\r?\n/, 1)[0];
-  const payload = safeJson({ ...compactTranscriptPayload(segment, storedTranscript), displaySummary });
+  const payload = safeJson(compactTranscriptPayload(segment, storedTranscript));
   return [
-    ...transcriptDetails(parentId, normalizedHeading, displayText),
+    ...transcriptDetails(segment, parentId, normalizedHeading, displayText),
     transcriptDataElement(parentId, payload),
   ].join("\n");
 }
@@ -743,15 +835,12 @@ export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
     }
     const transcript = row.transcript;
     if (transcript.id !== parentId) throw new Error(`Transcript block ${parentId} does not match its source record ID`);
-    const storedSummary = typeof row.displaySummary === "string" && isTranscriptSummary(row.displaySummary)
-      ? row.displaySummary
-      : "";
     const startBody = textStart.index + textStart[0].length;
     const endBody = textEnd.index;
     const framedText = inner.slice(startBody, endBody);
     if (framedText === " ") {
       const segment = { ...row.segment, transcript };
-      const heading = headingForSegment(segment, inner, textStart.index, text, startMatch.index, storedSummary);
+      const heading = headingForSegment(segment, inner, textStart.index, text, startMatch.index);
       const range = transcriptBlockRange(text, startMatch.index, endMatch.index, endMatch[0].length);
       const group = parentGroups[groupIndex];
       group.push({ segment, ...range, visibleBlock: "", heading, fragment, part });
@@ -765,7 +854,7 @@ export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
     const segment = { ...row.segment, transcript };
     const current = transcript.revisions.find((revision) => revision.revision === transcript.currentRevision);
     if (!current) throw new Error(`Transcript block ${parentId} has no current revision`);
-    const heading = headingForSegment(segment, inner, textStart.index, text, startMatch.index, storedSummary);
+    const heading = headingForSegment(segment, inner, textStart.index, text, startMatch.index);
     const range = transcriptBlockRange(text, startMatch.index, endMatch.index, endMatch[0].length);
     const group = parentGroups[groupIndex];
     group.push({ segment, ...range, visibleBlock, heading, fragment, part });

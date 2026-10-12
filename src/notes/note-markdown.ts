@@ -67,7 +67,7 @@ const IMPORT_APPENDIX_DETAILS_RES = [
   /<details>\s*<summary>\s*(?:导入文本原文|Imported text \()[\s\S]*?<\/details>/gi,
   /<details>\s*<summary>\s*(?:录音中实时大纲|Live outline while recording)[\s\S]*?<\/details>/gi,
   new RegExp(`<details>\\s*<summary>\\s*(?:${labelPattern("playbackTimeline").source})[\\s\\S]*?<\\/details>`, "gi"),
-  /<details>\s*<summary>\s*(?:分段原始转写|Segmented raw transcript)[\s\S]*?<\/details>/gi,
+  /<details>\s*<summary>\s*(?:分段原始转写|Segmented raw transcript|原始转写\s*·\s*段落|Raw transcript\s*·\s*Segment)[\s\S]*?<\/details>/gi,
 ];
 
 export function stripImportAppendices(text) {

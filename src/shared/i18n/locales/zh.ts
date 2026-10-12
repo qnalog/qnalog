@@ -2770,6 +2770,8 @@ export const ZH: MessageTable = {
   "Original material": "原始材料",
   "Segment {0}": "段落 {0}",
   "Segment {0} ({1}–{2})": "段落 {0}（{1}–{2}）",
+  "Raw transcript · Segment {0} ({1}–{2})": "原始转写 · 段落 {0} ({1}–{2})",
+  " · Part {0}/{1}": " · 第 {0}/{1} 部分",
   "Audio {0}": "音频 {0}",
   "Text source {0}:": "文本来源 {0}：",
   "Part {0} · {1}–{2} (raw transcript fallback)": "第 {0} 部分 · {1}–{2}（原始转写保底）",

@@ -275,7 +275,7 @@ export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts 
     /<details>\s*\n?<summary>[^<\n]*?(?:原始音频|Original audio)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:录音中实时大纲|Live outline while recording)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:回听时间轴|Playback timeline)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
-    /<details>\s*\n?<summary>[^<\n]*?(?:分段原始转写|Segmented raw transcript)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*?(?:分段原始转写|Segmented raw transcript|原始转写\s*·\s*段落|Raw transcript\s*·\s*Segment)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:文本导入来源|Text import source)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:会议工作台|Meeting workbench)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
   ];

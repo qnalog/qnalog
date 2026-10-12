@@ -86,6 +86,8 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   // —— 段落 / 分段 ——
   segment: { key: "Segment {0}", params: 1, re: /段落\s*\d+|Segment\s+\d+/ },
   segmentRange: { key: "Segment {0} ({1}–{2})", params: 3, re: /段落\s*\d+\s*（[^）]*）|Segment\s+\d+\s*\([^)]*\)/ },
+  rawTranscriptSegmentRange: { key: "Raw transcript · Segment {0} ({1}–{2})", params: 3, re: /原始转写\s*·\s*段落\s+\d+\s*\([^)]*\)|Raw transcript\s*·\s*Segment\s+\d+\s*\([^)]*\)/ },
+  transcriptPartSuffix: { key: " · Part {0}/{1}", params: 2, re: /·\s*第\s*\d+\/\d+\s*部分|·\s*Part\s+\d+\/\d+/ },
   audio: { key: "Audio {0}", params: 1, re: /音频\s*\d+|Audio\s+\d+/ },
   textSource: { key: "Text source {0}:", params: 1, re: /文本来源\s*\d+\s*：|Text source\s+\d+:/ },
   rawFallbackPart: { key: "Part {0} · {1}–{2} (raw transcript fallback)", params: 3, re: /第\s*\d+\s+部分\s*·[^（]*（原始转写保底）|Part\s+\d+\s+·[^)]*\(raw transcript fallback\)/ },

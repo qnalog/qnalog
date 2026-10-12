@@ -281,8 +281,8 @@ describe("原始转写区折叠", () => {
     setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const folded = foldRawTranscriptSection(bareMother);
     expect(folded).toContain("## 原始材料");
-    expect(folded).toContain("<summary>分段原始转写（1 段）</summary>");
-    expect(folded).toContain("### 段落 1 (00:00–00:10)");
+    expect(folded).toContain("<summary>原始转写 · 段落 1 (00:00–00:10)</summary>");
+    expect(folded).not.toMatch(/^\*\*分段原始转写（\d+ 段）\*\*$/m);
     expect(folded.indexOf("## 原始材料")).toBeLessThan(folded.indexOf("<details>"));
     expect(folded.indexOf("</details>")).toBeLessThan(folded.indexOf("<!-- qnalog-session:qnalog-s1 -->"));
     // 幂等：再跑一次原样返回
@@ -293,8 +293,8 @@ describe("原始转写区折叠", () => {
     setActiveUiLanguage(resolveUiLanguage("en", "en"));
     const folded = foldRawTranscriptSection(bareMother);
     expect(folded).toContain("## Original material");
-    expect(folded).toContain("<summary>Segmented raw transcript (1 segments)</summary>");
-    expect(folded).toContain("### 段落 1 (00:00–00:10)");
+    expect(folded).toContain("<summary>Raw transcript · Segment 1 (00:00–00:10)</summary>");
+    expect(folded).not.toMatch(/^\*\*Segmented raw transcript \(\d+ segments\)\*\*$/m);
     expect(folded.indexOf("## Original material")).toBeLessThan(folded.indexOf("<details>"));
     expect(folded.indexOf("</details>")).toBeLessThan(folded.indexOf("<!-- qnalog-session:qnalog-s1 -->"));
     // 幂等：en 守卫（## Original material / Segmented raw transcript）命中，原样返回
@@ -313,7 +313,7 @@ describe("原始转写区折叠", () => {
       "",
       "## 原始材料",
       "",
-      "<details>\n<summary>分段原始转写（1 段）</summary>\n\n### 段落 1 (00:00–00:10) x\n\n</details>",
+      "**分段原始转写（1 段）**\n<details>\n<summary>段落 1 (00:00–00:10)</summary>\n\n### 段落 1 (00:00–00:10) x\n\n</details>",
     ].join("\n");
     expect(foldRawTranscriptSection(healthy)).toBe(healthy);
     // 解析双语（与界面语言无关）：等价英文母本同样被守卫拦下、原样返回

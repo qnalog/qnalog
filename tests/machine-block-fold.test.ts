@@ -268,8 +268,8 @@ describe("foldRawTranscriptSection 锚点不落进机器壳", () => {
     const note = `${head}\n\n${segments}\n\n<!-- qnalog-session:qnalog-s2 -->\n\n${machineShell}\n`;
     const folded = foldRawTranscriptSection(note);
     expect(folded).toContain("## 原始材料");
-    expect(folded.indexOf("## 原始材料")).toBeLessThan(folded.indexOf("分段原始转写"));
-    expect(folded.indexOf("分段原始转写")).toBeLessThan(folded.indexOf("qnalog-segments-start"));
+    expect(folded.indexOf("## 原始材料")).toBeLessThan(folded.indexOf("原始转写 · 段落"));
+    expect(folded.indexOf("原始转写 · 段落")).toBeLessThan(folded.indexOf("qnalog-segments-start"));
     expect(folded.indexOf("</details>\n<!-- qnalog-note-index-end -->")).toBeGreaterThan(folded.indexOf("## 原始材料"));
     expect(folded).toContain('"schemaVersion":1');
     // 幂等：再跑一次原样返回。

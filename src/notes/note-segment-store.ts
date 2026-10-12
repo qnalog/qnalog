@@ -2,9 +2,9 @@ import * as obsidian from "obsidian";
 import type { Vault } from "obsidian";
 import type { RecordingSession } from "../shared/types";
 import { nsMarker } from "../shared/namespace";
-import { labelPattern, labelText } from "../shared/note-labels";
+import { labelPattern } from "../shared/note-labels";
 import { findNoteMarkerOffset, findSessionNoteBlock } from "./note-document";
-import { normalizeTranscriptLayout, readTranscriptBlocks } from "../transcript/transcript-markdown";
+import { normalizeTranscriptLayout } from "../transcript/transcript-markdown";
 
 function insertBeforeIndexData(
   markdown: string,
@@ -36,10 +36,7 @@ function insertBeforeIndexData(
   const group = `${startMarker}\n${content.trim()}\n${endMarker}`;
   const prefixBreak = before.endsWith("\n") ? "" : "\n";
   const suffixBreak = after.startsWith("\n") ? "" : "\n";
-  const normalized = normalizeTranscriptLayout(`${before}${prefixBreak}${group}${suffixBreak}${after}`);
-  const count = readTranscriptBlocks(normalized).length;
-  const title = new RegExp(`^\\*\\*(?:${labelPattern("segmentedRawTranscript").source})\\*\\*$`, "m");
-  return normalized.replace(title, `**${labelText("segmentedRawTranscript", count)}**`);
+  return normalizeTranscriptLayout(`${before}${prefixBreak}${group}${suffixBreak}${after}`);
 }
 
 export type NoteSegmentVault = Pick<Vault, "getAbstractFileByPath" | "read" | "modify" | "create">;

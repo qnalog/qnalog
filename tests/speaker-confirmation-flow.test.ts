@@ -118,8 +118,8 @@ describe("speaker confirmation consumer contract", () => {
     const f = makeFixture({ content: `[说话人1] 负责产品方案。\n${oldTranscript}` });
     await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
     const rewritten = f.getContent();
-    expect(rewritten).toMatch(/\*\*(?:分段原始转写（1 段）|Segmented raw transcript \(1 segments?\))\*\*/);
-    expect(rewritten).not.toMatch(/<summary>(?:分段原始转写|Segmented raw transcript)/);
+    expect(rewritten).not.toMatch(/^\*\*(?:分段原始转写（\d+ 段）|Segmented raw transcript \(\d+ segments?\))\*\*$/m);
+    expect(rewritten).toMatch(/<summary>(?:原始转写 · 段落|Raw transcript · Segment) 1 \(00:00–00:01\)<\/summary>/);
     expect(readTranscriptBlocks(rewritten).map((block) => block.visibleBlock)).toEqual(["原始转写文本。"]);
     expect(rewritten).not.toContain("<!-- qnalog-transcript-data ");
   });

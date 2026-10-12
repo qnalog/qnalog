@@ -100,7 +100,6 @@ export function buildConsolidatedNoteContent(input: ConsolidatedNoteContentInput
     input.retainAudio ? "" : null,
     input.retainAudio ? (input.masterAudioBlock ? null : "</details>") : null,
     input.retainAudio ? "" : null,
-    input.textImport ? null : `**${labelText("segmentedRawTranscript", input.segmentCount)}**`,
     input.textImport ? null : wrapSessionTranscriptBlocks(input.rawBlocks, input.sessionId),
     input.textImport ? null : "",
     `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", input.sessionId)}</details>`,

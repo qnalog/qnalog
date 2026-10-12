@@ -567,7 +567,7 @@ async function main() {
     } else if (!/议题[\s\S]*结论/.test(beforeRaw)) {
       failures.push("笔记正文里没有写入整合后的内容（原始材料之前）");
     }
-    if (!/分段原始转写/.test(content)) failures.push("笔记里没有保留原始转写");
+    if (!/<summary>(?:原始转写 · 段落|Raw transcript · Segment) \d+ /.test(content)) failures.push("笔记里没有保留原始转写");
     if (qnalogCommentsOutsideDetails(content).length) failures.push("finalized note left QnALog comments outside details");
     if (!hasSingleMachineDataDetails(content)) failures.push("finalized note did not use one localized machine-data details item");
     if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
@@ -1763,7 +1763,7 @@ async function main() {
       const placeholder = placeholderPath ? files.get(placeholderPath)?._content || "" : "";
       if (!placeholderPath?.startsWith("QnALog/RecordingSmoke/")
         || !placeholder.includes(`<!-- qnalog-session:${lifecycleSession?.id} -->`)
-        || !/\*\*Segmented raw transcript \(0 segments\)\*\*|\*\*分段原始转写（0 段）\*\*/.test(placeholder)
+        || /\*\*Segmented raw transcript \(0 segments\)\*\*|\*\*分段原始转写（0 段）\*\*/.test(placeholder)
         || !/<summary>(?:Index data|索引数据)<\/summary>/.test(placeholder)
         || placeholder.includes(`<!-- qnalog-segments-start:${lifecycleSession?.id} -->`)
         || !lifecycleSession
@@ -2053,16 +2053,16 @@ async function main() {
         : "";
       const legacyTask = "<!-- qnalog-transcribe-task:literal-legacy-task -->";
       const legacyText = "旧纯文本 $& $` $' $$";
-      if (!/<summary>(?:Segment 1|段落 1) \(00:00–00:01\)<\/summary>\s*\[\[qnalog-literal-continuation-0\.webm\|00:18\]\]/.test(firstRewrite)
-        || !/<summary>(?:Segment 3|段落 3) \(00:01–00:02\)<\/summary>\s*\[\[qnalog-literal-continuation-2\.webm\|00:00\]\]/.test(firstRewrite)
+      if (!/<summary>(?:Raw transcript · Segment 1|原始转写 · 段落 1) \(00:00–00:01\)<\/summary>\s*\[\[qnalog-literal-continuation-0\.webm\|00:18\]\]/.test(firstRewrite)
+        || !/<summary>(?:Raw transcript · Segment 3|原始转写 · 段落 3) \(00:01–00:02\)<\/summary>\s*\[\[qnalog-literal-continuation-2\.webm\|00:00\]\]/.test(firstRewrite)
         || !rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->")
         || rawSection.indexOf("<!-- qnalog-transcribe-task:literal-raw-retry -->") > rawSection.indexOf(errorTextStart)
         || visibleError.includes("RAW ERROR MUST NOT DISPLAY")
         || !rawSection.includes(legacyTask)
         || !rawSection.includes(legacyText)
-        || !/<summary>(?:Segment 8|段落 8) \(00:02–00:03\)[^<]*<\/summary>/.test(rawSection)
+        || !/<summary>(?:Raw transcript · Segment 8|原始转写 · 段落 8) \(00:02–00:03\)[^<]*<\/summary>/.test(rawSection)
         || !rawSection.endsWith(`${legacyText}\n`)) {
-        throw new Error(`raw segment headings, retry markers, or visible transcript text changed: ${JSON.stringify({ sectionFound:rawSectionStart >= 0 && rawSectionEnd > rawSectionStart, firstSummary:/(?:<summary>(?:Segment 1|段落 1) \(00:00–00:01\)<\/summary>\s*\[\[qnalog-literal-continuation-0\.webm\|00:18\]\])/.test(firstRewrite), thirdSummary:/(?:<summary>(?:Segment 3|段落 3) \(00:01–00:02\)<\/summary>\s*\[\[qnalog-literal-continuation-2\.webm\|00:00\]\])/.test(firstRewrite), retry:rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->"), legacyTask:rawSection.includes(legacyTask), legacyText:rawSection.includes(legacyText), eighthSummary:/(?:<summary>(?:Segment 8|段落 8) \(00:02–00:03\)[^<]*<\/summary>)/.test(rawSection), errorMarkers:visibleErrorStart >= 0 && visibleErrorEnd > visibleErrorStart, rawSectionTail:rawSection.slice(-120) })}`);
+        throw new Error(`raw segment headings, retry markers, or visible transcript text changed: ${JSON.stringify({ sectionFound:rawSectionStart >= 0 && rawSectionEnd > rawSectionStart, firstSummary:/(?:<summary>(?:Raw transcript · Segment 1|原始转写 · 段落 1) \(00:00–00:01\)<\/summary>\s*\[\[qnalog-literal-continuation-0\.webm\|00:18\]\])/.test(firstRewrite), thirdSummary:/(?:<summary>(?:Raw transcript · Segment 3|原始转写 · 段落 3) \(00:01–00:02\)<\/summary>\s*\[\[qnalog-literal-continuation-2\.webm\|00:00\]\])/.test(firstRewrite), retry:rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->"), legacyTask:rawSection.includes(legacyTask), legacyText:rawSection.includes(legacyText), summaries:[...rawSection.matchAll(/<summary>([^<]*)<\/summary>/g)].map((match)=>match[1]), errorMarkers:visibleErrorStart >= 0 && visibleErrorEnd > visibleErrorStart, rawSectionTail:rawSection.slice(-120) })}`);
       }
       rawSegmentMaterialsDigest = createHash("sha256").update(rawSection).digest("hex");
       const secondRawStart = secondRewrite.indexOf(rawStart);
@@ -2882,12 +2882,6 @@ async function main() {
         segments: textMaterialSegments,
         finalized: true,
       };
-      const textMaterialHeadings = [
-        "<summary>段落 1 (00:00–00:01)</summary>",
-        "<summary>段落 2 (00:01–00:02)</summary>",
-        "<summary>段落 3 (00:02–00:03)</summary>",
-        "<summary>段落 4 (00:03–00:04)</summary>",
-      ];
       const textMaterialLinks = [
         "[[Notes/source-one.md|来源一 $& $` $' $$]]",
         "[[Notes/source-two.md|文本 2]]",
@@ -2933,16 +2927,17 @@ async function main() {
       };
       const checkTextMaterials = (markdown, allowFailure) => {
         const summaries = [
-          "**分段原始转写（4 段）**",
-          "**Segmented raw transcript (4 segments)**",
+          "<summary>原始转写 · 段落 5 (00:00–00:01)</summary>",
+          "<summary>Raw transcript · Segment 5 (00:00–00:01)</summary>",
         ];
         const summary = summaries.find((candidate) => markdown.includes(candidate));
+        const headingNumbers = [...markdown.matchAll(/<summary>(?:原始转写 · 段落|Raw transcript · Segment) (\d+) \(\d{2}:\d{2}–\d{2}:\d{2}\)<\/summary>/g)]
+          .map((match) => Number(match[1]));
         if (!summary
           || markdown.indexOf(textMaterialModelBody) >= markdown.indexOf(summary)
-          || !textMaterialHeadings.every((heading, index) => markdown.indexOf(heading) >= 0
-            && (index === 0 || markdown.indexOf(textMaterialHeadings[index - 1]) < markdown.indexOf(heading)))
+          || headingNumbers.join(",") !== "5,10,13,21"
           || !textMaterialLinks.every((link) => markdown.includes(link))) {
-          throw new Error(`text-import source summary or heading order changed: ${JSON.stringify({summary,indexes:textMaterialHeadings.map((heading)=>markdown.indexOf(heading)),modelAt:markdown.indexOf(textMaterialModelBody)})}`);
+          throw new Error(`text-import source summary or heading order changed: ${JSON.stringify({summary,headingNumbers,modelAt:markdown.indexOf(textMaterialModelBody)})}`);
         }
         const allIds = [4, 9, 12, 20].map((segmentIndex) => `seg:literal-text-materials:${segmentIndex}`);
         const detailsAt = markdown.indexOf("<details>", markdown.indexOf(summary));
@@ -3206,7 +3201,7 @@ async function main() {
             }
             const infoSummary = result.includes("<summary>录音信息</summary>") || result.includes("<summary>导入文本信息</summary>")
               ? "zh" : "en";
-            const sourceTextSummary = infoSummary === "zh" ? "**分段原始转写（1 段）**" : "**Segmented raw transcript (1 segments)**";
+            const sourceTextSummary = infoSummary === "zh" ? "<summary>原始转写 · 段落 3 (01:01–01:05)</summary>" : "<summary>Raw transcript · Segment 3 (01:01–01:05)</summary>";
             const masterName = state.name === "path-master" ? "fallback.webm" : audioNamedMaster;
             if (state.kind === "master" && (!result.includes(`![[${masterName}]]`) || !result.includes(`[[${masterName}|00:00]]`))) {
               throw new Error(`${state.name} ${layout} lost master audio material (${result.includes(`![[${masterName}]]`)}, ${result.includes(`[[${masterName}|00:00]]`)})`);

@@ -359,7 +359,8 @@ describe("text import session ownership", () => {
     expect(verifyTranscriptCheckpoint(markdown, expectedTexts.map((text) => ({ text })))).toMatchObject({ ok: true, expectedSegments: 3, persistedSegments: 3 });
     expect(blocks.map((block) => block.visibleBlock)).toEqual(expectedTexts);
     expect(markdown.match(/<summary>(?:Index data|索引数据)<\/summary>/g)).toHaveLength(1);
-    expect(markdown).toMatch(/\*\*Segmented raw transcript \(3 segments\)\*\*/);
+    expect(markdown).not.toMatch(/^\*\*Segmented raw transcript \(\d+ segments\)\*\*$/m);
+    expect(markdown).toMatch(/<summary>Raw transcript · Segment 1 \([^)]*\)(?: · Part 1\/\d+)?<\/summary>/);
   });
 
   it("keeps every continuation fragment of a 9000-character imported segment in order", async () => {

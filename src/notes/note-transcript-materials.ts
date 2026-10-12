@@ -19,8 +19,6 @@ export function buildTranscriptSessionSkeleton(sessionId: string): string {
     "",
     `## ${labelText("originalMaterial")}`,
     "",
-    `**${labelText("segmentedRawTranscript", 0)}**`,
-    "",
     `<details><summary>${labelText("indexData")}</summary>${nsMarker("session", sessionId)}</details>`,
   ].join("\n");
 }
@@ -41,7 +39,7 @@ export function buildTextImportSourceDetails(session: TextImportSourceDetailsInp
       : attachTextTranscript(segment, session.id, "text-import");
     lines.push(serializeTranscriptBlock(storedSegment, heading, visibleText));
   });
-  return normalizeTranscriptDataPlacement(`**${labelText("segmentedRawTranscript", segments.length)}**\n\n${lines.join("\n")}`);
+  return normalizeTranscriptDataPlacement(lines.join("\n"));
 }
 
 function withSessionSegmentMarkers(value: string, sessionId: string): string {
@@ -76,7 +74,7 @@ export function buildRewriteSegmentBlock(segment: Segment, audioLink: string): s
     ? serializeTranscriptBlock(segment, blockHeading, body)
     : [
       "<details>",
-      `<summary>${heading.split(/\r?\n/, 1)[0].replace(/^###\s*/, "")}</summary>`,
+      `<summary>${labelText("rawTranscriptSegmentRange", segment.index + 1, formatElapsed(segment.startOffsetMs), formatElapsed(segment.endOffsetMs))}</summary>`,
       nsMarker("segment-time", `${segment.startOffsetMs}:${segment.endOffsetMs}`),
       audioLink,
       taskMarker,
