@@ -43,7 +43,9 @@ function assertDetailsBounded(markdown: string): void {
   }
   for (const [, summary] of markdown.matchAll(/<summary>([\s\S]*?)<\/summary>/gi)) {
     expect(summary).not.toMatch(/\[\[|\]\]|<|>/);
-    expect(summary).toMatch(/^(?:段落|Segment) \d+ \(\d+:\d{2}(?::\d{2})?–\d+:\d{2}(?::\d{2})?\)$/);
+    if (/^(?:段落|Segment)\s+\d+/.test(summary)) {
+      expect(summary).toMatch(/^(?:段落|Segment) \d+ \(\d+:\d{2}(?::\d{2})?–\d+:\d{2}(?::\d{2})?\)$/);
+    }
   }
 }
 
@@ -128,6 +130,76 @@ describe("transcript hidden-data storage", () => {
     }
   });
 
+  it("splits the 1.6.4 grouped details layout with blank lines and inline JSON comments", () => {
+    const previousLanguage = getActiveUiLanguage();
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    try {
+      const texts = ["甲句。".repeat(55), "乙句。".repeat(170), "丙句。".repeat(360)];
+      const segments = texts.map((text, index) => {
+        const segment = makeSegment(index, text);
+        const current = segment.transcript!.revisions.find((revision) => revision.revision === segment.transcript!.currentRevision)!;
+        const utterance = current.utterances[0];
+        if (utterance) {
+          utterance.speakerId = `speaker-${index + 1}`;
+          utterance.speakerName = `发言人${index + 1}`;
+          utterance.startMs = index * 10_000;
+          utterance.endMs = index * 10_000 + 500;
+          current.corrections.push({ revision: current.revision, kind: "speaker", from: "说话人", to: utterance.speakerName, utteranceIds: [utterance.id] });
+        }
+        return segment;
+      });
+      const oldParts = segments.map((segment, index) => {
+        const block = legacyBlock(segment, `### 段落 ${index + 1} (00:00–00:10)`, segment.text);
+        return block
+          .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, `### 段落 ${index + 1} (00:00–00:10) [[audio-${index}.m4a|00:00]]\n`)
+          .replace(/\n<\/details>$/, "");
+      });
+      const oldNote = [
+        "# 2026-10-10 10:41 · 通用", "正文内容。", "<!-- qnalog-session-knowledge {\"schemaVersion\":2,\"id\":\"fixture\"} -->",
+        "---", "## 原始材料", "<details><summary>分段原始转写（3 段）</summary>", "",
+        ...oldParts.flatMap((part) => [part, ""]),
+        "</details>", "<!-- qnalog-session:fixture -->", "<!-- qnalog-note-index -->",
+        "<details><summary>索引数据</summary>", "```json", "{\"fixture\":true}", "```", "</details>", "<!-- qnalog-note-index-end -->",
+      ].join("\n");
+
+      const normalized = normalizeTranscriptLayout(oldNote);
+      const restored = readTranscriptBlocks(normalized);
+      expect(normalized).toContain("**分段原始转写（3 段）**");
+      expect(normalized).not.toMatch(/<summary>分段原始转写/);
+      expect(restored.map((block) => block.visibleBlock)).toEqual(texts);
+      expect(restored.map((block) => block.segment.transcript)).toEqual(segments.map((segment) => segment.transcript));
+      expect((normalized.match(/data-qnalog-transcript-data=/g) || []).length).toBe(3);
+      expect(normalized.match(/<details>/g)).toHaveLength(4);
+      expect(normalized.match(/<summary>索引数据<\/summary>/g)).toHaveLength(1);
+      expect(normalized.trimEnd().endsWith("</details>")).toBe(true);
+      expect(normalized).toContain("{\"fixture\":true}");
+      expect(normalized.match(/qnalog-session-knowledge /g)).toHaveLength(1);
+      expect(normalized.match(/<!-- qnalog-note-index -->/g)).toHaveLength(1);
+      expect(normalized.match(/<!-- qnalog-note-index-end -->/g)).toHaveLength(1);
+      expect(normalizeTranscriptLayout(normalized)).toBe(normalized);
+      expect([...normalized.matchAll(/<!-- qnalog-[^>]*-->/g)].every((match) => {
+        const prefix = normalized.slice(0, match.index);
+        return (prefix.match(/<details\b/gi)?.length || 0) > (prefix.match(/<\/details>/gi)?.length || 0);
+      })).toBe(true);
+      assertDetailsBounded(normalized);
+    } finally {
+      setActiveUiLanguage(previousLanguage);
+    }
+  });
+
+  it("splits the six-segment Herald text scale while keeping every details block bounded", () => {
+    const lengths = [274, 871, 1806, 3306, 3463, 2145];
+    const segments = lengths.map((length, index) => makeSegment(index, `${"转写。".repeat(Math.floor(length / 3))}${"尾".repeat(length % 3)}`));
+    const original = segments.map((segment, index) => legacyBlock(segment, `### 段落 ${index + 1} (00:00–00:10)`, segment.text)
+      .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, `### 段落 ${index + 1} (00:00–00:10)\n`)
+      .replace(/\n<\/details>$/, "")).join("\n\n");
+    const oldLayout = `<details><summary>分段原始转写（6 段）</summary>\n${original}\n</details>`;
+    const normalized = normalizeTranscriptLayout(oldLayout);
+    expect(readTranscriptBlocks(normalized).map((block) => block.visibleBlock)).toEqual(segments.map((segment) => segment.text));
+    expect((normalized.match(/data-qnalog-transcript-data=/g) || []).length).toBe(6);
+    assertDetailsBounded(normalized);
+  });
+
   it("moves realtime outline coverage metadata out and removes blank lines", () => {
     const coverage = { version: 1 as const, outlineHash: "outline-hash", sourceHash: "source-hash", committedSegmentCount: 5, totalSegmentCount: 6 };
     const oldNote = [
@@ -152,6 +224,25 @@ describe("transcript hidden-data storage", () => {
     const uri = encodeURIComponent(json);
     const oldSpan = encoded.replace(base64, uri);
     expect(readTranscriptBlocks(oldSpan)[0].visibleBlock).toBe(segment.text);
+  });
+
+  it("converts the intermediate grouped URI-span layout into split base64 storage", () => {
+    const segments = [makeSegment(0, "中间格式甲。"), makeSegment(1, "中间格式乙。")];
+    const oldParts = segments.map((segment, index) => legacyBlock(segment, `### 段落 ${index + 1} (00:00–00:01)`, segment.text)
+      .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, `### 段落 ${index + 1} (00:00–00:01)\n`)
+      .replace(/<!-- qnalog-transcript-data ([\s\S]*?) -->/, (_whole, rawJson: string) => {
+        const data = JSON.parse(rawJson) as { transcript: { id: string } };
+        return `<span hidden data-qnalog-transcript-data="${encodeURIComponent(rawJson)}" data-qnalog-segment="${encodeURIComponent(data.transcript.id)}"></span>`;
+      })
+      .replace(/\n<\/details>$/, ""));
+    const intermediate = `<details><summary>分段原始转写（2 段）</summary>\n\n${oldParts.join("\n\n")}\n</details>`;
+    const normalized = normalizeTranscriptLayout(intermediate);
+    const spans = [...normalized.matchAll(/data-qnalog-transcript-data="([^"]+)"/g)].map((match) => match[1]);
+    expect(readTranscriptBlocks(normalized).map((block) => block.visibleBlock)).toEqual(segments.map((segment) => segment.text));
+    expect(spans).toHaveLength(2);
+    expect(spans.every((value) => !value.includes("%7B") && !!JSON.parse(Buffer.from(value, "base64").toString("utf8")))).toBe(true);
+    expect(normalized).not.toContain("<summary>分段原始转写");
+    assertDetailsBounded(normalized);
   });
 
   it("keeps summary text plain and moves source links into the details body", () => {
