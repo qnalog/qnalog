@@ -5,10 +5,15 @@ import { nsMarkerGlobalRe, nsRe } from "../shared/namespace";
 import { findNoteDelimitedBlock, iterateNoteHeadingBlocks } from "./note-document";
 import type { Segment } from "../shared/types";
 import { attachTextTranscript } from "../transcript/session-transcript";
-import { normalizeTranscriptDataPlacement, readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { getTranscriptPayloadRanges, normalizeTranscriptDataPlacement, readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock, stripTranscriptPayloadElements } from "../transcript/transcript-markdown";
 
 const stringifyTranscriptValue = String as (value: unknown) => string;
 const LEGACY_TRANSCRIPT_HEADING_RE = /^###\s+(?:(?:段落|Segment|Audio(?: source)?|Text source|音频|文本来源)\s+(\d+)([^\n]*)|(\d+)[.、]\s*([^\n]*))$/gm;
+
+function segmentBoundaryMarkers(value: string): string {
+  const markers = new RegExp(`<!--\\s*${nsRe("segments-(?:start|end)")}(?::[^>]*)?\\s*-->`, "g");
+  return [...value.matchAll(markers)].map((match) => match[0]).join("\n");
+}
 
 export function cleanTranscriptBlock(block: unknown): string {
   return stringifyTranscriptValue(block || "")
@@ -28,17 +33,39 @@ export function cleanTranscriptBlock(block: unknown): string {
 export function splitTranscriptSections(markdown: unknown): string[] {
   const text = stringifyTranscriptValue(markdown || "");
   const sections: string[] = [];
+  let foundDetailsLabel = false;
   let searchFrom = 0;
   while (true) {
     const sectionLabels = ["分段原始转写", "Segmented raw transcript", "导入文本来源", "导入文本原文", "Text import sources", "Text import source"];
     const labelIndexes = sectionLabels.map((label) => text.indexOf(label, searchFrom)).filter((index) => index >= 0);
     const labelIdx = labelIndexes.length ? Math.min(...labelIndexes) : -1;
     if (labelIdx < 0) break;
-    const range = findNoteDelimitedBlock(text, /<\/summary>/g, /<\/details>/g, labelIdx);
-    if (range) {
-      sections.push(text.slice(range.bodyStart, range.bodyEnd));
-      searchFrom = range.end;
+    const detailsStart = text.lastIndexOf("<details", labelIdx);
+    const summaryStart = text.lastIndexOf("<summary", labelIdx);
+    const summaryEndBeforeLabel = text.lastIndexOf("</summary>", labelIdx);
+    const summaryEnd = text.indexOf("</summary>", labelIdx);
+    if (detailsStart >= 0 && summaryStart > detailsStart && summaryStart > summaryEndBeforeLabel && summaryEnd >= 0) {
+      foundDetailsLabel = true;
+      const tags = /<details\b[^>]*>|<\/details\s*>/gi;
+      tags.lastIndex = detailsStart;
+      let depth = 0;
+      let detailsEnd = -1;
+      let match: RegExpExecArray | null;
+      while ((match = tags.exec(text))) {
+        if (/^<\/details/i.test(match[0])) depth -= 1;
+        else depth += 1;
+        if (depth === 0) { detailsEnd = tags.lastIndex; break; }
+      }
+      if (detailsEnd >= 0) {
+        sections.push(text.slice(summaryEnd + "</summary>".length, detailsEnd - "</details>".length));
+        searchFrom = detailsEnd;
+      } else searchFrom = labelIdx + 1;
     } else {
+      if (summaryStart > summaryEndBeforeLabel && summaryEnd >= 0) {
+        foundDetailsLabel = true;
+        const range = findNoteDelimitedBlock(text, /<\/summary>/g, /<\/details>/g, labelIdx);
+        if (range) sections.push(text.slice(range.bodyStart, range.bodyEnd));
+      }
       searchFrom = labelIdx + 1;
     }
   }
@@ -53,10 +80,10 @@ export function splitTranscriptSections(markdown: unknown): string[] {
     );
     if (!range) break;
     sections.push(text.slice(range.bodyStart, range.bodyEnd));
-    markerSearchFrom = range.bodyStart;
+    markerSearchFrom = range.end;
   }
 
-  if (!sections.length) {
+  if (!sections.length && !foundDetailsLabel) {
     // 兜底老格式「原始转写：…」/「Raw transcript: …」：取两者中靠后的一处。
     const zhRawIdx = text.lastIndexOf("原始转写：");
     const enRawIdx = text.lastIndexOf("Raw transcript:");
@@ -74,8 +101,9 @@ export function extractTranscriptSegments(markdown: unknown): Segment[] {
   const transcriptBlocks = readTranscriptBlocks(source);
   let legacyMarkdown = source;
   for (const block of [...transcriptBlocks].sort((left, right) => right.start - left.start)) {
-    legacyMarkdown = legacyMarkdown.slice(0, block.start) + legacyMarkdown.slice(block.end);
+    legacyMarkdown = legacyMarkdown.slice(0, block.start) + segmentBoundaryMarkers(legacyMarkdown.slice(block.start, block.end)) + legacyMarkdown.slice(block.end);
   }
+  legacyMarkdown = stripTranscriptPayloadElements(legacyMarkdown);
   const sortedBlocks = [...transcriptBlocks].sort((left, right) => left.start - right.start);
   const toSourceOffset = (offset: number): number => {
     let removedLength = 0;
@@ -163,8 +191,9 @@ export function ensureTranscriptBlocks(
   const currentBlocks = readTranscriptBlocks(next);
   let legacyMarkdown = next;
   for (const block of [...currentBlocks].sort((left, right) => right.start - left.start)) {
-    legacyMarkdown = legacyMarkdown.slice(0, block.start) + legacyMarkdown.slice(block.end);
+    legacyMarkdown = legacyMarkdown.slice(0, block.start) + segmentBoundaryMarkers(legacyMarkdown.slice(block.start, block.end)) + legacyMarkdown.slice(block.end);
   }
+  legacyMarkdown = stripTranscriptPayloadElements(legacyMarkdown);
   const orderedBlocks = [...currentBlocks].sort((left, right) => left.start - right.start);
   const toSourceOffset = (offset: number): number => {
     let removedLength = 0;
@@ -253,6 +282,10 @@ export function ensureTranscriptBlocks(
     ...legacyEntries.map((entry) => ({ position: entry.position, id: "", legacy: entry })),
   ].sort((left, right) => left.position - right.position);
   const usedIds = new Set(orderedEntries.map((entry) => entry.id).filter(Boolean));
+  const protectedRanges = [
+    ...orderedBlocks.map(({ start, end }) => ({ start, end })),
+    ...getTranscriptPayloadRanges(next),
+  ].sort((left, right) => left.start - right.start);
   const replacements: Array<{ start: number; end: number; block: string }> = [];
   for (let index = 0; index < orderedEntries.length; index += 1) {
     const entry = orderedEntries[index];
@@ -265,7 +298,7 @@ export function ensureTranscriptBlocks(
     const block = serializeTranscriptBlock(segment, entry.legacy.heading, entry.legacy.visibleText);
     let cursor = entry.legacy.start;
     let firstGap = true;
-    for (const protectedBlock of orderedBlocks) {
+    for (const protectedBlock of protectedRanges) {
       if (protectedBlock.end <= cursor) continue;
       if (protectedBlock.start >= entry.legacy.end) break;
       const gapEnd = Math.min(protectedBlock.start, entry.legacy.end);

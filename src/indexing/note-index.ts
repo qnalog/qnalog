@@ -277,8 +277,12 @@ export function buildNoteIndex(
     ? (firstSentence(summary) || extracted.topics[0]?.title || "会议纪要")
     : titleCandidate;
   const meetingDate = inferMeetingDate(fullMarkdown, options.meetingDate, options.noteTitle || h1);
-  const transcriptSegments = readTranscriptBlocks(fullMarkdown).map(({ segment }) => segment);
-  const knowledge = getKnowledgeSnapshot(fullMarkdown, transcriptSegments);
+  const transcriptBlocks = readTranscriptBlocks(fullMarkdown);
+  const transcriptSegments = transcriptBlocks.map(({ segment }) => segment);
+  const savedKnowledge = getKnowledgeSnapshot(fullMarkdown, transcriptSegments);
+  const knowledge = transcriptBlocks.some(({ drifted }) => drifted) && savedKnowledge.status === "complete"
+    ? { ...savedKnowledge, status: "stale" as const }
+    : savedKnowledge;
   const sourceRevision = `idx-${stableHash(JSON.stringify({
     title,
     meetingDate,
