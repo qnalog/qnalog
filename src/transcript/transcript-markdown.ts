@@ -242,6 +242,47 @@ function normalizeIndexDataDetails(markdown: string): string {
   return `${text.replace(/\s+$/, "")}\n\n<details>\n<summary>${labelText("indexData")}</summary>\n${outputLines.join("\n")}\n</details>\n`;
 }
 
+function placeLooseSegmentsMarkersInDetails(markdown: string): string {
+  const source = String(markdown || "");
+  const markerPattern = new RegExp("<!--\\s*(" + nsRe("segments-start") + "|" + nsRe("segments-end") + ")(?::[^>]*)?\\s*-->", "gi");
+  const looseMarkers: Array<{ marker: string; index: number }> = [];
+  for (const match of source.matchAll(markerPattern)) {
+    const index = match.index || 0;
+    const prefix = source.slice(0, index);
+    const depth = (prefix.match(/<details\b[^>]*>/gi) || []).length - (prefix.match(/<\/details\s*>/gi) || []).length;
+    if (depth <= 0) looseMarkers.push({ marker: match[0], index });
+  }
+  if (!looseMarkers.length) return source;
+
+  let text = source;
+  for (const item of looseMarkers.slice().sort((a, b) => b.index - a.index)) {
+    text = text.slice(0, item.index) + text.slice(item.index + item.marker.length);
+  }
+  const detailBlocks = [...text.matchAll(/<details\b[^>]*>[\s\S]*?<\/details>/gi)]
+    .filter((match) => new RegExp("<!--\\s*" + nsRe("transcript-start") + ":", "i").test(match[0]));
+  if (!detailBlocks.length) return source;
+  const starts = looseMarkers.filter(({ marker }) => new RegExp(nsRe("segments-start"), "i").test(marker));
+  const ends = looseMarkers.filter(({ marker }) => new RegExp(nsRe("segments-end"), "i").test(marker));
+  const insertions: Array<{ index: number; value: string }> = [];
+  if (starts.length) {
+    const first = detailBlocks[0];
+    const summaryEnd = first[0].search(/<\/summary>/i);
+    if (summaryEnd >= 0) {
+      const insertionIndex = (first.index || 0) + summaryEnd + "</summary>".length;
+      insertions.push({ index: insertionIndex, value: "\n" + starts.map(({ marker }) => marker).join("\n") });
+    }
+  }
+  if (ends.length) {
+    const last = detailBlocks[detailBlocks.length - 1];
+    const closeIndex = (last.index || 0) + last[0].lastIndexOf("</details>");
+    insertions.push({ index: closeIndex, value: ends.map(({ marker }) => marker).join("\n") + "\n" });
+  }
+  for (const insertion of insertions.sort((a, b) => b.index - a.index)) {
+    text = text.slice(0, insertion.index) + insertion.value + text.slice(insertion.index);
+  }
+  return text.replace(/\n{3,}/g, "\n\n");
+}
+
 function splitFragmentId(value: string): { id: string; fragment: number } {
   const match = value.match(/^(.*):fragment:(\d+)$/);
   return match ? { id: match[1], fragment: Number(match[2]) } : { id: value, fragment: 0 };
@@ -476,7 +517,9 @@ export function normalizeTranscriptDataPlacement(markdown: string): string {
 
 /** Normalize legacy grouped transcript markup and place its data outside the details blocks. */
 export function normalizeTranscriptLayout(markdown: string): string {
-  return normalizeIndexDataDetails(normalizeRealtimeOutlineDetails(normalizeTranscriptDataPlacement(splitLegacyTranscriptDetails(String(markdown || "")))));
+  return normalizeIndexDataDetails(normalizeRealtimeOutlineDetails(
+    normalizeTranscriptDataPlacement(placeLooseSegmentsMarkersInDetails(splitLegacyTranscriptDetails(String(markdown || "")))),
+  ));
 }
 
 function validSegment(value: unknown): value is Omit<Segment, "transcript"> {
