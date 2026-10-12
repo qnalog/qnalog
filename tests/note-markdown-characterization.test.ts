@@ -715,8 +715,8 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
       "seg:fixture:1",
       "seg:fixture:2",
     ]);
-    expect(upgraded).toContain("<summary>Segment 2</summary>\r\n");
-    expect(upgraded).toContain("<summary>Segment 3</summary>");
+    expect(upgraded).toContain("<summary>Segment 2 (00:10–00:20)</summary>\r\n");
+    expect(upgraded).toContain("<summary>Segment 3 (00:20–00:30)</summary>");
     expect(upgraded).not.toContain("<!-- qnalog-transcript-data ");
     expect(blocks[0].segment.text).toContain("A-before");
     expect(blocks[0].segment.text).toContain("A-after");

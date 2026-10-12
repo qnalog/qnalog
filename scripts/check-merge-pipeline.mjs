@@ -2052,8 +2052,8 @@ async function main() {
         : "";
       const legacyTask = "<!-- qnalog-transcribe-task:literal-legacy-task -->";
       const legacyText = "旧纯文本 $& $` $' $$";
-      if (!/<summary>(?:Segment 1|段落 1) \(00:00–00:01\) \[\[qnalog-literal-continuation-0\.webm\|00:18\]\]<\/summary>/.test(firstRewrite)
-        || !/<summary>(?:Segment 3|段落 3) \(00:01–00:02\) \[\[qnalog-literal-continuation-2\.webm\|00:00\]\]<\/summary>/.test(firstRewrite)
+      if (!/<summary>(?:Segment 1|段落 1) \(00:00–00:01\)<\/summary>\s*\[\[qnalog-literal-continuation-0\.webm\|00:18\]\]/.test(firstRewrite)
+        || !/<summary>(?:Segment 3|段落 3) \(00:01–00:02\)<\/summary>\s*\[\[qnalog-literal-continuation-2\.webm\|00:00\]\]/.test(firstRewrite)
         || !rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->")
         || rawSection.indexOf("<!-- qnalog-transcribe-task:literal-raw-retry -->") > rawSection.indexOf(errorTextStart)
         || visibleError.includes("RAW ERROR MUST NOT DISPLAY")
@@ -2061,7 +2061,7 @@ async function main() {
         || !rawSection.includes(legacyText)
         || !/<summary>(?:Segment 8|段落 8) \(00:02–00:03\)[^<]*<\/summary>/.test(rawSection)
         || !rawSection.endsWith(`${legacyText}\n`)) {
-        throw new Error(`raw segment headings, retry markers, or visible transcript text changed: ${JSON.stringify({ sectionFound:rawSectionStart >= 0 && rawSectionEnd > rawSectionStart, firstSummary:/(?:<summary>(?:Segment 1|段落 1) \(00:00–00:01\) \[\[qnalog-literal-continuation-0\.webm\|00:18\]\]<\/summary>)/.test(firstRewrite), thirdSummary:/(?:<summary>(?:Segment 3|段落 3) \(00:01–00:02\) \[\[qnalog-literal-continuation-2\.webm\|00:00\]\]<\/summary>)/.test(firstRewrite), retry:rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->"), legacyTask:rawSection.includes(legacyTask), legacyText:rawSection.includes(legacyText), eighthSummary:/(?:<summary>(?:Segment 8|段落 8) \(00:02–00:03\)[^<]*<\/summary>)/.test(rawSection), errorMarkers:visibleErrorStart >= 0 && visibleErrorEnd > visibleErrorStart, rawSectionTail:rawSection.slice(-120) })}`);
+        throw new Error(`raw segment headings, retry markers, or visible transcript text changed: ${JSON.stringify({ sectionFound:rawSectionStart >= 0 && rawSectionEnd > rawSectionStart, firstSummary:/(?:<summary>(?:Segment 1|段落 1) \(00:00–00:01\)<\/summary>\s*\[\[qnalog-literal-continuation-0\.webm\|00:18\]\])/.test(firstRewrite), thirdSummary:/(?:<summary>(?:Segment 3|段落 3) \(00:01–00:02\)<\/summary>\s*\[\[qnalog-literal-continuation-2\.webm\|00:00\]\])/.test(firstRewrite), retry:rawSection.includes("<!-- qnalog-transcribe-task:literal-raw-retry -->"), legacyTask:rawSection.includes(legacyTask), legacyText:rawSection.includes(legacyText), eighthSummary:/(?:<summary>(?:Segment 8|段落 8) \(00:02–00:03\)[^<]*<\/summary>)/.test(rawSection), errorMarkers:visibleErrorStart >= 0 && visibleErrorEnd > visibleErrorStart, rawSectionTail:rawSection.slice(-120) })}`);
       }
       rawSegmentMaterialsDigest = createHash("sha256").update(rawSection).digest("hex");
       const secondRawStart = secondRewrite.indexOf(rawStart);
@@ -2882,10 +2882,16 @@ async function main() {
         finalized: true,
       };
       const textMaterialHeadings = [
-        "<summary>段落 1 (00:00–00:01) [[Notes/source-one.md|来源一 $& $` $' $$]]</summary>",
-        "<summary>段落 2 (00:01–00:02) [[Notes/source-two.md|文本 2]]</summary>",
-        "<summary>段落 3 (00:02–00:03) 文本 3</summary>",
-        "<summary>段落 4 (00:03–00:04) 空白来源</summary>",
+        "<summary>段落 1 (00:00–00:01)</summary>",
+        "<summary>段落 2 (00:01–00:02)</summary>",
+        "<summary>段落 3 (00:02–00:03)</summary>",
+        "<summary>段落 4 (00:03–00:04)</summary>",
+      ];
+      const textMaterialLinks = [
+        "[[Notes/source-one.md|来源一 $& $` $' $$]]",
+        "[[Notes/source-two.md|文本 2]]",
+        "文本 3",
+        "空白来源",
       ];
       const expectedTextMaterial = [
         "  原文一\r\n$& $` $' $$  ",
@@ -2933,7 +2939,8 @@ async function main() {
         if (!summary
           || markdown.indexOf(textMaterialModelBody) >= markdown.indexOf(summary)
           || !textMaterialHeadings.every((heading, index) => markdown.indexOf(heading) >= 0
-            && (index === 0 || markdown.indexOf(textMaterialHeadings[index - 1]) < markdown.indexOf(heading)))) {
+            && (index === 0 || markdown.indexOf(textMaterialHeadings[index - 1]) < markdown.indexOf(heading)))
+          || !textMaterialLinks.every((link) => markdown.includes(link))) {
           throw new Error(`text-import source summary or heading order changed: ${JSON.stringify({summary,indexes:textMaterialHeadings.map((heading)=>markdown.indexOf(heading)),modelAt:markdown.indexOf(textMaterialModelBody)})}`);
         }
         const allIds = [4, 9, 12, 20].map((segmentIndex) => `seg:literal-text-materials:${segmentIndex}`);

@@ -21,7 +21,7 @@ export function buildTextImportSourceDetails(session: TextImportSourceDetailsInp
     const name = segment.sourceName || `文本 ${index + 1}`;
     const path = segment.sourcePath || "";
     const link = path ? `[[${path}|${name}]]` : name;
-    const heading = `### ${labelText("segment", index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${link}`;
+    const heading = `### ${labelText("segment", index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})\n${link}`;
     const visibleText = String(segment.rawText ?? segment.text ?? "") || labelText("emptyTextSource");
     const storedSegment = segment.transcript
       ? segment
@@ -45,7 +45,7 @@ function withSessionSegmentMarkers(value: string, sessionId: string): string {
 }
 
 function buildSegmentHeading(segment: Segment, audioLink: string): string {
-  return `### ${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)}) ${audioLink}${segment.isFinal ? " · 结束" : ""}`;
+  return `### ${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})\n${audioLink}`;
 }
 
 function buildSegmentBody(segment: Segment): string {
@@ -63,7 +63,9 @@ export function buildRewriteSegmentBlock(segment: Segment, audioLink: string): s
     ? serializeTranscriptBlock(segment, blockHeading, body)
     : [
       "<details>",
-      `<summary>${heading.replace(/^###\s*/, "")}</summary>`,
+      `<summary>${heading.split(/\r?\n/, 1)[0].replace(/^###\s*/, "")}</summary>`,
+      nsMarker("segment-time", `${segment.startOffsetMs}:${segment.endOffsetMs}`),
+      audioLink,
       taskMarker,
       body,
       "</details>",

@@ -133,6 +133,7 @@ describe("audio link consumers", () => {
 
     expect(getDurationMs("### Segment 1 (00:00–00:10)\n时长：01:00")).toBe(10_000);
     expect(getDurationMs("### Segment 1 (00:00–00:10)\n### 段落 2 (00:00–00:20)")).toBe(20_000);
+    expect(getDurationMs("<summary>Segment 1 (00:00–00:10)</summary>")).toBe(0);
     expect(getDurationMs("### Segment 1 (00:00–bad)\n时长：01:00")).toBe(0);
     expect(getDurationMs("时长：1.5分钟\n共：3秒")).toBe(90_000);
     for (const markdown of ["", "   ", "不可识别"]) expect(getDurationMs(markdown)).toBe(0);

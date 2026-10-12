@@ -1,6 +1,8 @@
 import { NS_TAG, nsRe } from "../shared/namespace";
 import type { Segment } from "../shared/types";
 import type { TranscriptSegmentRecord } from "./session-transcript";
+import { labelText } from "../shared/note-labels";
+import { formatElapsed } from "../shared/util-common";
 
 export interface ReadTranscriptBlock {
   segment: Segment;
@@ -148,11 +150,16 @@ function transcriptBlockRange(text: string, markerStart: number, markerEnd: numb
     : { start: markerStart, end: markerEnd + endMarkerLength };
 }
 
-function transcriptSummary(heading: string): string {
-  return String(heading || "Transcript")
-    .replace(/^\s*#{1,6}\s*/, "")
-    .replace(/<!--[^>]*-->/g, "")
-    .trim();
+function transcriptHeadingParts(heading: string): { summary: string; material: string[]; markers: string[] } {
+  const source = String(heading || "Transcript");
+  const markers = [...source.matchAll(/<!--[^>]*-->/g)].map(([marker]) => marker);
+  const withoutMarkers = source.replace(/<!--[^>]*-->/g, "");
+  const lines = withoutMarkers.split(/\r?\n/);
+  const first = (lines.shift() || "Transcript").replace(/^\s*#{1,6}\s*/, "").trim();
+  const links = [...first.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
+  const summary = first.replace(/\[\[[^\]]+\]\]/g, "").replace(/[<>]/g, "").trim() || "Transcript";
+  const material = [...links, ...lines.map((line) => line.trim()).filter(Boolean)];
+  return { summary, material, markers };
 }
 
 function escapeTranscriptText(value: string): string {
@@ -203,11 +210,12 @@ function splitTextAtSentenceBoundaries(text: string, maxLength: number): string[
   return chunks.length ? chunks : [text];
 }
 
-function detailsFragment(segmentId: string, summary: string, text: string, fragment: number, extraMarkers: readonly string[] = []): string {
+function detailsFragment(segmentId: string, summary: string, text: string, fragment: number, extraMarkers: readonly string[] = [], material: readonly string[] = []): string {
   const markerId = `${segmentId}:fragment:${fragment}`;
   if (!text) return [
     "<details>",
     `<summary>${summary}</summary>`,
+    ...material,
     ...extraMarkers,
     `<!-- ${nsRe("transcript-start")}:${markerId} -->`,
     `<!-- ${nsRe("transcript-text-start")}:${markerId} --> <!-- ${nsRe("transcript-text-end")}:${markerId} -->`,
@@ -217,6 +225,7 @@ function detailsFragment(segmentId: string, summary: string, text: string, fragm
   return [
     "<details>",
     `<summary>${summary}</summary>`,
+    ...material,
     ...extraMarkers,
     `<!-- ${nsRe("transcript-start")}:${markerId} -->`,
     `<!-- ${nsRe("transcript-text-start")}:${markerId} -->`,
@@ -228,20 +237,54 @@ function detailsFragment(segmentId: string, summary: string, text: string, fragm
 }
 
 function transcriptDetails(segmentId: string, heading: string, displayText: string): string[] {
-  const summary = transcriptSummary(heading);
-  const extraMarkers = [...String(heading || "").matchAll(/<!--[^>]*-->/g)].map(([marker]) => marker);
-  const continuationSummary = `${summary} (continued)`;
-  const overhead = detailsFragment(segmentId, continuationSummary, "", 999999, extraMarkers)
+  const { summary, material, markers: extraMarkers } = transcriptHeadingParts(heading);
+  const overhead = detailsFragment(segmentId, summary, "", 999999, extraMarkers, material)
     .slice("<details>".length, -"</details>".length).trim().length;
   const maxText = Math.max(1, 3500 - overhead - 256);
   const chunks = splitTextAtSentenceBoundaries(displayText, maxText);
   return chunks.map((chunk, index) => {
-    const continuation = index ? " (continued)" : "";
-    const fragment = detailsFragment(segmentId, `${summary}${continuation}`, chunk, index + 1, index === 0 ? extraMarkers : []);
+    const fragment = detailsFragment(segmentId, summary, chunk, index + 1, index === 0 ? extraMarkers : [], index === 0 ? material : []);
     const inner = fragment.slice("<details>".length, -"</details>".length).trim();
     if (inner.length > 3500) throw new Error(`Transcript details block exceeds 3500 characters: ${inner.length}`);
     return fragment;
   });
+}
+
+function headingForSerializedSegment(segment: Segment, heading: string): string {
+  const { summary: requestedSummary, material, markers } = transcriptHeadingParts(heading);
+  const summary = isTranscriptSummary(requestedSummary)
+    ? requestedSummary
+    : `${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})`;
+  return [summary, ...material, ...markers].join("\n");
+}
+
+function isTranscriptSummary(value: string): boolean {
+  return /^(?:段落|Segment)\s+\d+\s+\(\d+:\d{2}(?::\d{2})?[–-]\d+:\d{2}(?::\d{2})?\)$/.test(value);
+}
+
+function headingForSegment(segment: Segment, inner: string, textStartIndex: number, markdown: string, markerIndex: number, storedSummary = ""): string {
+  const legacyPrefix = inner.slice(0, textStartIndex);
+  const comments = [...legacyPrefix.matchAll(/<!--[^>]*-->/g)].map(([comment]) => comment);
+  const legacyLinks = [...legacyPrefix.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
+  const open = markdown.lastIndexOf("<details", markerIndex);
+  const priorClose = markdown.lastIndexOf("</details>", markerIndex);
+  const summaryEnd = open > priorClose ? markdown.indexOf("</summary>", open) : -1;
+  const between = summaryEnd >= 0 && summaryEnd < markerIndex
+    ? markdown.slice(summaryEnd + "</summary>".length, markerIndex)
+    : "";
+  const materialLinks = [...between.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
+  const label = isTranscriptSummary(storedSummary)
+    ? storedSummary
+    : `${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})`;
+  const audioName = segment.audioName || segment.segmentAudioName || "";
+  const audioAt = Number.isFinite(segment.audioStartOffsetMs) ? Number(segment.audioStartOffsetMs) : segment.startOffsetMs;
+  const dataLink = segment.sourcePath
+    ? `[[${segment.sourcePath}|${segment.sourceName || segment.sourcePath.split("/").pop() || segment.sourcePath}]]`
+    : audioName ? `[[${audioName}|${formatElapsed(audioAt)}]]` : "";
+  const material = [...new Set([...materialLinks, ...legacyLinks, ...(dataLink ? [dataLink] : [])])];
+  const nonHeadingLines = legacyPrefix.replace(/<!--[^>]*-->/g, "").split(/\r?\n/)
+    .map((line) => line.trim()).filter((line) => line && !/^#{1,6}\s+/.test(line));
+  return [`### ${label}`, ...material, ...nonHeadingLines, ...comments].join("\n");
 }
 
 interface TranscriptDataElement {
@@ -292,7 +335,8 @@ export function normalizeTranscriptDataPlacement(markdown: string): string {
   for (const block of blocks) {
     const record = block.segment.transcript;
     if (!record) continue;
-    const payload = safeJson(compactTranscriptPayload(block.segment, record));
+    const displaySummary = block.heading.split(/\r?\n/, 1)[0].replace(/^\s*#{1,6}\s*/, "");
+    const payload = safeJson({ ...compactTranscriptPayload(block.segment, record), displaySummary });
     const anchorEnd = finalBlock.end;
     const elements = groups.get(anchorEnd) || [];
     elements.push(transcriptDataElement(record.id, payload));
@@ -406,9 +450,11 @@ export function serializeTranscriptBlock(segment: Segment, heading: string, disp
       ? { ...revision, displayText }
       : revision),
   };
-  const payload = safeJson(compactTranscriptPayload(segment, storedTranscript));
+  const normalizedHeading = headingForSerializedSegment(segment, heading);
+  const displaySummary = normalizedHeading.split(/\r?\n/, 1)[0];
+  const payload = safeJson({ ...compactTranscriptPayload(segment, storedTranscript), displaySummary });
   return [
-    ...transcriptDetails(parentId, heading, displayText),
+    ...transcriptDetails(parentId, normalizedHeading, displayText),
     transcriptDataElement(parentId, payload),
   ].join("\n");
 }
@@ -493,13 +539,15 @@ export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
     }
     const transcript = row.transcript;
     if (transcript.id !== parentId) throw new Error(`Transcript block ${parentId} does not match its source record ID`);
+    const storedSummary = typeof row.displaySummary === "string" && isTranscriptSummary(row.displaySummary)
+      ? row.displaySummary
+      : "";
     const startBody = textStart.index + textStart[0].length;
     const endBody = textEnd.index;
     const framedText = inner.slice(startBody, endBody);
     if (framedText === " ") {
       const segment = { ...row.segment, transcript };
-      const summaryMatch = inner.match(/<summary>([\s\S]*?)<\/summary>/i);
-      const heading = summaryMatch ? summaryMatch[1].trim() : inner.slice(0, textStart.index).trim();
+      const heading = headingForSegment(segment, inner, textStart.index, text, startMatch.index, storedSummary);
       const range = transcriptBlockRange(text, startMatch.index, endMatch.index, endMatch[0].length);
       const group = parentGroups[groupIndex];
       group.push({ segment, ...range, visibleBlock: "", heading, fragment, part });
@@ -513,8 +561,7 @@ export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
     const segment = { ...row.segment, transcript };
     const current = transcript.revisions.find((revision) => revision.revision === transcript.currentRevision);
     if (!current) throw new Error(`Transcript block ${parentId} has no current revision`);
-    const summaryMatch = inner.match(/<summary>([\s\S]*?)<\/summary>/i);
-    const heading = summaryMatch ? summaryMatch[1].trim() : inner.slice(0, textStart.index).trim();
+    const heading = headingForSegment(segment, inner, textStart.index, text, startMatch.index, storedSummary);
     const range = transcriptBlockRange(text, startMatch.index, endMatch.index, endMatch[0].length);
     const group = parentGroups[groupIndex];
     group.push({ segment, ...range, visibleBlock, heading, fragment, part });

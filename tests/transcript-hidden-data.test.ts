@@ -38,6 +38,10 @@ function assertDetailsBounded(markdown: string): void {
     expect(match[1]).not.toContain("qnalog-transcript-data");
     expect(match[1]).not.toMatch(/\n[ \t]*\n/);
   }
+  for (const [, summary] of markdown.matchAll(/<summary>([\s\S]*?)<\/summary>/gi)) {
+    expect(summary).not.toMatch(/\[\[|\]\]|<|>/);
+    expect(summary).toMatch(/^(?:段落|Segment) \d+ \(\d+:\d{2}(?::\d{2})?–\d+:\d{2}(?::\d{2})?\)$/);
+  }
 }
 
 describe("transcript hidden-data storage", () => {
@@ -104,6 +108,38 @@ describe("transcript hidden-data storage", () => {
     const uri = encodeURIComponent(json);
     const oldSpan = encoded.replace(base64, uri);
     expect(readTranscriptBlocks(oldSpan)[0].visibleBlock).toBe(segment.text);
+  });
+
+  it("keeps summary text plain and moves source links into the details body", () => {
+    const source = attachTextTranscript({
+      index: 4, startOffsetMs: 0, endOffsetMs: 1000, text: "source text",
+      sourcePath: "QnALog/source.md", sourceName: "source.md",
+    }, "hidden-data-fixture", "text-import");
+    const output = normalizeTranscriptDataPlacement(serializeTranscriptBlock(source, "### 段落 1 (00:00–00:01) [[QnALog/source.md|source.md]]", source.text));
+    expect(output).toMatch(/<summary>(?:段落|Segment) 1 \(00:00–00:01\)<\/summary>\n\[\[QnALog\/source\.md\|source\.md\]\]\n<!-- qnalog-transcript-start:/);
+    expect(readTranscriptBlocks(output)[0].heading).toContain("[[QnALog/source.md|source.md]]");
+    assertDetailsBounded(output);
+  });
+
+  it("does not read summary text when restoring transcript metadata", () => {
+    const segment = makeSegment(0, "summary independent");
+    const output = serializeTranscriptBlock(segment, "### 段落 1 (00:00–00:01)", segment.text)
+      .replace(/<summary>[\s\S]*?<\/summary>/, "<summary>[[invalid]] <title></summary>");
+    const [block] = readTranscriptBlocks(output);
+    expect(block.visibleBlock).toBe(segment.text);
+    expect(block.heading).toMatch(/### (?:段落|Segment) 1 \(00:00–00:01\)/);
+  });
+
+  it("reads legacy heading links from stored segment metadata instead of summary text", () => {
+    const source = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "legacy source",
+      sourcePath: "QnALog/legacy.md", sourceName: "legacy.md",
+    }, "hidden-data-fixture", "text-import");
+    const old = legacyBlock(source, "### Segment 1 (00:00–00:01) [[QnALog/legacy.md|legacy.md]]", source.text);
+    const [block] = readTranscriptBlocks(old);
+    const rewritten = replaceTranscriptBlock(old, block, block.segment, block.visibleBlock);
+    expect(rewritten).toContain("<summary>Segment 1 (00:00–00:01)</summary>\n[[QnALog/legacy.md|legacy.md]]");
+    expect(readTranscriptBlocks(rewritten)[0].visibleBlock).toBe("legacy source");
   });
 
   it("prefers new hidden data over an old inline copy", () => {

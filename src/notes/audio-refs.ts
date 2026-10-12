@@ -15,6 +15,8 @@ import { formatElapsed, normalizeAudioLinkTarget, safeDecodeUriText } from "../s
 import { labelText } from "../shared/note-labels";
 import { getAudioTimeLink } from "./audio-reference-text";
 import type { Segment } from "../shared/types";
+import { readTranscriptBlocks } from "../transcript/transcript-markdown";
+import { nsRe } from "../shared/namespace";
 
 interface SegmentOffsetInput {
   startOffsetMs?: unknown;
@@ -176,8 +178,25 @@ export function getDurationMs(markdown: unknown): number {
   const text = stringifyAudioValue(markdown || "");
   let maxMs = 0;
   let sawDuration = false;
-  const segmentHeadingRe = /(?:^###\s+|<summary>)(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)/gm;
-  let match;
+  let match: RegExpExecArray | null;
+  try {
+    for (const block of readTranscriptBlocks(text)) {
+      const end = Number(block.segment.endOffsetMs) || 0;
+      if (end > maxMs) maxMs = end;
+      if (end > 0) sawDuration = true;
+    }
+  } catch { /* incomplete transcript metadata falls through to visible legacy headings */ }
+  if (sawDuration) return maxMs;
+  const segmentTimeRe = new RegExp(`<!--\\s*${nsRe("segment-time")}:(\\d+):(\\d+)\\s*-->`, "g");
+  while ((match = segmentTimeRe.exec(text))) {
+    const end = Number(match[2]);
+    if (end > 0) {
+      sawDuration = true;
+      maxMs = Math.max(maxMs, end);
+    }
+  }
+  if (sawDuration) return maxMs;
+  const segmentHeadingRe = /^###\s+(?:段落|Segment)\s+\d+\s*\(([^)\n]+?)[–-]([^)\n]+?)\)/gm;
   while ((match = segmentHeadingRe.exec(text))) {
     sawDuration = true;
     maxMs = Math.max(maxMs, parseDurationLabel(match[2]));

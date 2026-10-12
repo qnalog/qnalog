@@ -191,7 +191,7 @@ describe("staged continuation commit", () => {
       expect(blocks).toHaveLength(1);
       expect(blocks[0].visibleBlock).toBe(getTranscribeSegmentPlaceholder(segment.error, { retryable: true }));
       expect(blocks[0].segment.transcript?.sourceId).toBe("continuation-a");
-      expect(committed).toContain("<summary>Segment 3 (00:05–00:06) [[retry.webm|00:00]]</summary>");
+      expect(committed).toContain("<summary>Segment 3 (00:05–00:06)</summary>\n[[retry.webm|00:00]]");
       expect(committed).not.toContain(nsMarker("transcribe-task", "raw-retry"));
       const writes = memory.writes;
       await memory.writer.commitContinuation(session, "Organized continuation body", []);

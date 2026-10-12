@@ -418,10 +418,10 @@ describe("NoteWriter text-import source materials", () => {
     const output = "---\ntitle: new\n---\n\n模型正文 $& $` $' $$";
     const modelBody = "模型正文 $& $` $' $$";
     const sourceHeadings = [
-      `<summary>${labelText("segment", 1)} (00:00–00:01) [[Notes/source-one.md|`,
-      `<summary>${labelText("segment", 2)} (00:01–00:02) [[Notes/source-two.md|文本 2]]</summary>`,
-      `<summary>${labelText("segment", 3)} (00:02–00:03) 文本 3</summary>`,
-      `<summary>${labelText("segment", 4)} (00:03–00:04) 空白来源</summary>`,
+      `<summary>${labelText("segment", 1)} (00:00–00:01)</summary>`,
+      `<summary>${labelText("segment", 2)} (00:01–00:02)</summary>`,
+      `<summary>${labelText("segment", 3)} (00:02–00:03)</summary>`,
+      `<summary>${labelText("segment", 4)} (00:03–00:04)</summary>`,
     ];
     const rawTexts = ["  原文一\r\n$& $` $' $$  ", "第二份原文 $& $` $' $$", "", " \r\n\t "];
     const assertTranscriptState = (markdown: string) => {
@@ -686,7 +686,7 @@ describe("NoteWriter narrow host capabilities", () => {
         expect(end).toBeGreaterThan(start);
         const rawDetails = first.slice(start, end);
         expect(rawDetails).toContain(marker);
-        expect(first).toContain(`<summary>${labelText("segment", 1)} (00:02–00:05) [[${audioName}|00:18]]</summary>`);
+        expect(first).toContain(`<summary>${labelText("segment", 1)} (00:02–00:05)</summary>\n[[${audioName}|00:18]]`);
         expect(first).toContain(sourceText);
         for (const [, detailsBody] of rawDetails.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)) {
           expect(detailsBody).not.toContain("qnalog-transcript-data");
