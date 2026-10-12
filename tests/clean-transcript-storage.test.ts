@@ -214,6 +214,57 @@ afterEach(() => {
 });
 
 describe("clean transcript storage", () => {
+  it("keeps raw-material scaffolding outside version bodies through five real activations", async () => {
+    const { files, vault } = createMemoryVault();
+    const malformed = [
+      "---", "qnalog_time: 2026-10-12T09:18:00", "qnalog_mode: meeting", "---",
+      "# 2026-10-12 0918 · 综合纪要",
+      "> [!info]- Current version <span data-qnalog=\"active-version-start\"></span>",
+      "Visible body.", "---", "## 原始材料",
+      "<span data-qnalog=\"active-version-end\"></span>",
+      "---", "## 原始材料", "---", "## 原始材料",
+      "<details><summary>录音信息</summary>safe fixture</details>",
+      "<!-- qnalog-session:activation-boundary-fixture -->",
+    ].join("\n");
+    const sourceFile = new obsidian.TFile("QnALog/转写纪要/activation-boundary.md", malformed);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/转写纪要", promptTemplates: {} };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting", qnalog_time: "2026-10-12T09:18:00" } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const versions = new VersionStore(makeVersionHost(app, () => settings, async () => undefined));
+    sourceFile.data = malformed
+      .replace('<span data-qnalog="active-version-start"></span>', "")
+      .replace('<span data-qnalog="active-version-end"></span>', "");
+    await versions.ensureOriginalVersionForSource(sourceFile);
+    sourceFile.data = malformed;
+    const first = await versions.saveVersion(sourceFile, malformed, [], {
+      kind: "minutes", idLabel: "first-version", label: "First", mode: "meeting", body: "First body.", activate: false,
+    });
+    const second = await versions.saveVersion(sourceFile, malformed, [], {
+      kind: "minutes", idLabel: "second-version", label: "Second", mode: "meeting", body: "Second body.", activate: false,
+    });
+    const paths = [first.meta.fileName, second.meta.fileName].map((name) =>
+      files.get(`${getVersionStoreFolder(settings, getSourceIdFromMarkdown(malformed, sourceFile))}/${name}`),
+    );
+    if (!paths[0] || !paths[1]) throw new Error("Version cache fixture is missing");
+    for (let index = 0; index < 5; index++) {
+      const target = paths[index % paths.length]!;
+      await versions.switchVersion(target, sourceFile.path);
+      const current = await vault.read(sourceFile);
+      expect(current.match(/^## 原始材料$/gm)).toHaveLength(1);
+      expect(current.match(/\n---\n+## 原始材料/g)).toHaveLength(1);
+      const rawBoundary = current.search(/\n---\n+## 原始材料/);
+      expect(current.indexOf('data-qnalog="active-version-end"')).toBeLessThan(rawBoundary);
+      for (const cache of paths) {
+        expect(cache.data).not.toContain("## 原始材料");
+        expect(cache.data).not.toContain("safe fixture");
+      }
+    }
+  });
+
   it("uses current mode templates and storage folder for original snapshots", async () => {
     const { files, vault } = createMemoryVault();
     const originalContent = sourceContent

@@ -99,6 +99,12 @@ function normalizeRawMaterialScaffold(markdown: string): string {
       text = `${body}\n${markerText}\n\n---\n\n${raw}`;
     }
   }
+  const firstHeading = /^##\s+(?:原始材料|Original material)\s*$/m.exec(text);
+  const activeEnd = endPattern.exec(text);
+  if (firstHeading && activeEnd && activeEnd.index < firstHeading.index) {
+    const body = text.slice(0, activeEnd.index + activeEnd[0].length).replace(/\s+$/, "");
+    text = `${body}\n\n---\n\n${text.slice(firstHeading.index)}`;
+  }
   return text.replace(/\n{4,}/g, "\n\n\n");
 }
 

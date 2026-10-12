@@ -2792,12 +2792,16 @@ ${l.tail.trimEnd()}
 `:`
 `;if(u){let g=u[0].trimEnd();return Lu($w([c.frontmatter?c.frontmatter.trimEnd():"",g,"",r].filter(Boolean).join(`
 `)+m))}return Lu($w([c.frontmatter?c.frontmatter.trimEnd():"",r].filter(Boolean).join(`
-`)+m))}function $w(i){let e=String(i||""),t=[...e.matchAll(/^##\s+(?:原始材料|Original material)\s*$/gm)];for(let o of t.slice(1).reverse()){let s=o.index||0,c=e.slice(0,s).match(/\n---\s*\n+$/),d=c?s-c[0].length+1:s;e=e.slice(0,d)+e.slice(s+o[0].length).replace(/^\r?\n+/,"")}let n=/^##\s+(?:原始材料|Original material)\s*$/m.exec(e),r=new RegExp(`(?:<span\\s+data-${me}=["']active-version-end["']\\s*><\\/span>|<!--\\s*${Q("active-version-end")}\\s*-->)`,"i");if(n){let o=e.slice(0,n.index),s=o.match(/\n---\s*\n+$/),l=e.slice(n.index).match(r);if(s&&l){let c=l[0],d=o.slice(0,o.length-s[0].length).replace(r,"").replace(/\s+$/,""),u=e.slice(n.index).replace(c,"");e=`${d}
-${c}
+`)+m))}function $w(i){let e=String(i||""),t=[...e.matchAll(/^##\s+(?:原始材料|Original material)\s*$/gm)];for(let l of t.slice(1).reverse()){let c=l.index||0,u=e.slice(0,c).match(/\n---\s*\n+$/),m=u?c-u[0].length+1:c;e=e.slice(0,m)+e.slice(c+l[0].length).replace(/^\r?\n+/,"")}let n=/^##\s+(?:原始材料|Original material)\s*$/m.exec(e),r=new RegExp(`(?:<span\\s+data-${me}=["']active-version-end["']\\s*><\\/span>|<!--\\s*${Q("active-version-end")}\\s*-->)`,"i");if(n){let l=e.slice(0,n.index),c=l.match(/\n---\s*\n+$/),d=e.slice(n.index).match(r);if(c&&d){let u=d[0],m=l.slice(0,l.length-c[0].length).replace(r,"").replace(/\s+$/,""),g=e.slice(n.index).replace(u,"");e=`${m}
+${u}
 
 ---
 
-${u}`}}return e.replace(/\n{4,}/g,`
+${g}`}}let o=/^##\s+(?:原始材料|Original material)\s*$/m.exec(e),s=r.exec(e);return o&&s&&s.index<o.index&&(e=`${e.slice(0,s.index+s[0].length).replace(/\s+$/,"")}
+
+---
+
+${e.slice(o.index)}`),e.replace(/\n{4,}/g,`
 
 
 `)}function bq(i,e){let t=new RegExp(`<!--\\s*(?:${Q("session-knowledge")}\\s+[\\s\\S]*?|${Q("session")}(?::|\\s)[^>]*|${Q("continuation-committed")}:[^>]*)-->`,"gi"),n=[...i.matchAll(t)].map(c=>c[0]).filter(c=>!e.includes(c));if(!n.length)return e;let o=/<details>\s*<summary>[^<]*(?:索引数据|Index data)[^<]*<\/summary>([\s\S]*?)<\/details>/i.exec(e);if(o){let c=n.filter(u=>!o[1].includes(u));if(!c.length)return e;let d=`${o[1].trimEnd()}
