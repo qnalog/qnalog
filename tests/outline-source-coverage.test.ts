@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRealtimeOutlineSourceCoverage, getValidatedOutlineCommittedCount, rebaseRealtimeOutlineSourceCoverage, validateRealtimeOutlineSourceCoverage } from "../src/notes/outline-coverage";
+import { buildOutlineCoverageMetadata } from "../src/notes/outline-storage";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import type { Segment } from "../src/shared/types";
 
@@ -18,6 +19,12 @@ function material(index: number, text = `Transcript ${index}`): Segment {
 }
 
 describe("realtime outline source coverage", () => {
+  it("keeps the six-segment coverage record below the raw-block relocation threshold", () => {
+    const segments = Array.from({ length: 6 }, (_, index) => material(index));
+    const metadata = buildOutlineCoverageMetadata(createRealtimeOutlineSourceCoverage("- Six segment outline", segments, 6));
+    expect(metadata.length).toBeLessThan(5_000);
+  });
+
   it("does not promote a fresh 3/3 proof to an 11/11 whole-note proof", () => {
     const fresh = [material(0), material(1), material(2)];
     const wholeNote = Array.from({ length: 11 }, (_, index) => material(index));
