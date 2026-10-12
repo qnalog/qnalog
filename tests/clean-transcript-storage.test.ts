@@ -420,7 +420,7 @@ describe("clean transcript storage", () => {
     expect(await vault.read(sourceFile)).toContain('qnalog_custom: "keep-me"');
     expect(await vault.read(sourceFile)).toContain("Readable cleaned transcript.");
     expect(await vault.read(sourceFile)).toContain("Original ASR transcript.");
-    expect(await vault.read(sourceFile)).toContain("qnalog-active-version-start");
+    expect(await vault.read(sourceFile)).toContain('<span data-qnalog="active-version-start"></span>');
     expect(cleanTranscript).toHaveBeenCalledOnce();
     const derived = [...files.values()].find((file) => file.path !== sourceFile.path && file.path.startsWith(`${sourceFile.parent.path}/`) && !file.path.includes("/.versions/") && file.path.endsWith(`${sourceFile.basename}.md`));
     expect(derived).toBeDefined();
