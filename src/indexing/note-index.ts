@@ -514,26 +514,43 @@ function placeSessionMetadataInIndex(markdown: string, comments: readonly string
   const additions = comments.filter((comment) => !body.includes(comment));
   if (!additions.length) return markdown;
   const markerIndex = body.lastIndexOf(QNALOG_NOTE_INDEX_END);
+  const suffix = markerIndex < 0 ? "" : body.slice(markerIndex + QNALOG_NOTE_INDEX_END.length).replace(/^\n+/, "");
   const nextBody = markerIndex < 0
     ? `${body.trimEnd()}\n${additions.join("\n")}`
-    : `${body.slice(0, markerIndex + QNALOG_NOTE_INDEX_END.length)}\n${additions.join("\n")}${body.slice(markerIndex + QNALOG_NOTE_INDEX_END.length)}`;
+    : `${body.slice(0, markerIndex + QNALOG_NOTE_INDEX_END.length)}\n${additions.join("\n")}\n${suffix}`;
   return markdown.slice(0, match.index) + match[0].replace(body, nextBody) + markdown.slice(match.index + match[0].length);
+}
+
+function placeIndexInRawMaterials(markdown: string): string {
+  const indexBlockRe = /<details>\s*<summary>[^<]*(?:索引数据|Index data)[^<]*<\/summary>[\s\S]*?<\/details>/gi;
+  const blocks = [...markdown.matchAll(indexBlockRe)].map((match) => match[0]);
+  if (!blocks.length) return markdown.trimEnd();
+  const block = blocks[0];
+  if (blocks.length === 1 && markdown.trimEnd().endsWith(block)
+    && /^##\s+(?:原始材料|Original material)\s*$/m.test(markdown)) return markdown.trimEnd();
+  const withoutBlocks = markdown.replace(indexBlockRe, "").replace(/\n{3,}/g, "\n\n").trimEnd();
+  const rawHeadingRe = /^##\s+(?:原始材料|Original material)\s*$/m;
+  let base = withoutBlocks;
+  if (!rawHeadingRe.test(base)) {
+    base = `${base}\n\n---\n\n## ${labelText("originalMaterial")}`;
+  }
+  return `${base.trimEnd()}\n\n${block}`;
 }
 
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
   const folded = foldSessionMetadata(textValue(markdown));
   const text = folded.markdown;
   const existing = readNoteIndex(text, { includeFuture: true });
-  if (existing && "status" in existing) return placeSessionMetadataInIndex(text, folded.comments);
+  if (existing && "status" in existing) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text, folded.comments));
   const existingCard = existing && !("status" in existing) ? existing : null;
   const block = serializeNoteIndex(index);
   const hasFenced = NOTE_INDEX_FENCED_PATTERN.test(text);
   // Contents unchanged and already fenced means no write; legacy blocks upgrade naturally.
-  if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return placeSessionMetadataInIndex(text, folded.comments);
-  if (hasFenced) return placeSessionMetadataInIndex(text.replace(NOTE_INDEX_FENCED_PATTERN, () => block), folded.comments);
-  if (NOTE_INDEX_PREVIOUS_FENCED_PATTERN.test(text)) return placeSessionMetadataInIndex(text.replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, () => block), folded.comments);
-  if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return placeSessionMetadataInIndex(text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block), folded.comments);
-  return placeSessionMetadataInIndex(`${text.trimEnd()}\n\n${block}\n`, folded.comments);
+  if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text, folded.comments));
+  if (hasFenced) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_FENCED_PATTERN, () => block), folded.comments));
+  if (NOTE_INDEX_PREVIOUS_FENCED_PATTERN.test(text)) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, () => block), folded.comments));
+  if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block), folded.comments));
+  return placeIndexInRawMaterials(placeSessionMetadataInIndex(`${text.trimEnd()}\n\n${block}\n`, folded.comments));
 }
 
 export function resolveNoteIndex(

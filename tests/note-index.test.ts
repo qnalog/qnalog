@@ -203,6 +203,8 @@ describe("QnALog note index", () => {
     const index = buildNoteIndex(input, { noteTitle: "metadata fixture", generatedAt: "2026-08-25T12:00:00.000Z" })!;
     const output = upsertNoteIndex(input, index);
     const indexBlock = /<details>\s*<summary>索引数据<\/summary>([\s\S]*?)<\/details>/.exec(output)?.[1] || "";
+    expect(output.indexOf("## 原始材料")).toBeGreaterThanOrEqual(0);
+    expect(output.indexOf("<summary>索引数据</summary>")).toBeGreaterThan(output.indexOf("## 原始材料"));
     expect(output).not.toContain("QnALog session data");
     const outsideDetails = output.replace(/<details>[\s\S]*?<\/details>/gi, "");
     expect(outsideDetails).not.toContain("<!-- qnalog-");
@@ -211,6 +213,17 @@ describe("QnALog note index", () => {
     expect(output.match(/<summary>索引数据<\/summary>/g)).toHaveLength(1);
     expect(indexBlock).not.toMatch(/\n\s*\n/);
     expect(upsertNoteIndex(output, index)).toBe(output);
+  });
+
+  it("moves a legacy body index into raw materials and keeps exactly one block after rewrite", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const index = buildNoteIndex(minutes, { noteTitle: "legacy", generatedAt: "2026-08-25T12:00:00.000Z" })!;
+    const legacyBlock = serializeNoteIndex(index);
+    const legacy = minutes.replace("---\n\n## 原始材料", `${legacyBlock}\n\n---\n\n## 原始材料`);
+    const rewritten = upsertNoteIndex(legacy, index);
+    expect(rewritten.match(/<summary>索引数据<\/summary>/g)).toHaveLength(1);
+    expect(rewritten.indexOf("<summary>索引数据</summary>")).toBeGreaterThan(rewritten.indexOf("## 原始材料"));
+    expect(upsertNoteIndex(rewritten, index)).toBe(rewritten);
   });
 
   it("removes both folded and legacy index blocks without leftovers", () => {
