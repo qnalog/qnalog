@@ -226,11 +226,14 @@ describe("transcript hidden-data storage", () => {
 
   it("keeps each legacy segment's audio timestamp link with that segment", () => {
     const segments = [makeSegment(0, "first"), makeSegment(1, "second"), makeSegment(2, "third")];
+    const times = ["00:00", "00:10", "00:20"];
     const legacyParts = segments.map((segment, index) => {
-      const part = legacyBlock(segment, `### 段落 ${index + 1} (00:0${index}0–00:0${index + 1}0)`, segment.text)
+      segment.audioName = "audio.m4a";
+      segment.audioStartOffsetMs = index * 10_000;
+      return legacyBlock(segment, `### 段落 ${index + 1} (${times[index]}–00:${String((index + 1) * 10).padStart(2, "0")})`, segment.text)
         .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, "")
-        .replace(/\n<\/details>$/, "");
-      return `### 段落 ${index + 1} (00:0${index}0–00:0${index + 1}0) [[audio.m4a|00:0${index}0]]\n${part}`;
+        .replace(/\n<\/details>$/, "")
+        .replace(/(<!-- qnalog-transcript-start:[^>]+-->)/, `$1\n### 段落 ${index + 1} (${times[index]}–00:${String((index + 1) * 10).padStart(2, "0")}) [[audio.m4a|${times[index]}]]`);
     });
     const input = [
       "**分段原始转写（3 段）**", "<details>", "<summary>分段原始转写（3 段）</summary>",
@@ -243,7 +246,7 @@ describe("transcript hidden-data storage", () => {
       .filter((match) => /qnalog-transcript-start/.test(match[1]));
     expect(details).toHaveLength(3);
     expect(details.map(([_, body]) => [...body.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link)))
-      .toEqual(["00:000", "00:010", "00:020"].map((time) => [`[[audio.m4a|${time}]]`]));
+      .toEqual(times.map((time) => [`[[audio.m4a|${time}]]`]));
   });
 
   it("keeps a segment with no audio source free of timestamp links", () => {

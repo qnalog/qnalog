@@ -430,9 +430,14 @@ function headingForSegment(segment: Segment, inner: string, textStartIndex: numb
   const between = summaryEnd >= 0 && summaryEnd < markerIndex
     ? markdown.slice(summaryEnd + "</summary>".length, markerIndex)
     : "";
-  const legacyHeadings = [...between.matchAll(/^###\s+(?:段落|Segment)\s+\d+[^\n]*$/gm)];
-  const segmentMaterial = legacyHeadings.length ? between.slice(legacyHeadings[legacyHeadings.length - 1].index || 0) : between;
-  const materialLinks = [...segmentMaterial.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
+  const legacyHeadings = [...between.matchAll(/^###\s+(?:段落|Segment)\s+(\d+)[^\n]*$/gm)];
+  const currentHeading = legacyHeadings.find((heading) => Number(heading[1]) === segment.index + 1);
+  const segmentMaterial = legacyHeadings.length
+    ? (currentHeading ? between.slice(currentHeading.index || 0) : "")
+    : between;
+  // In the 1.6.4 grouped layout each transcript-start precedes its own heading.
+  // Links in `legacyPrefix` belong to this segment; links before the marker belong to earlier segments.
+  const links = legacyLinks.length ? legacyLinks : [...segmentMaterial.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
   const label = isTranscriptSummary(storedSummary)
     ? storedSummary
     : `${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})`;
@@ -441,7 +446,7 @@ function headingForSegment(segment: Segment, inner: string, textStartIndex: numb
   const dataLink = segment.sourcePath
     ? `[[${segment.sourcePath}|${segment.sourceName || segment.sourcePath.split("/").pop() || segment.sourcePath}]]`
     : audioName ? `[[${audioName}|${formatElapsed(audioAt)}]]` : "";
-  const material = [...new Set([...materialLinks, ...legacyLinks, ...(dataLink ? [dataLink] : [])])];
+  const material = [...new Set([...links, ...(dataLink ? [dataLink] : [])])];
   const nonHeadingLines = legacyPrefix.replace(/<!--[^>]*-->/g, "").split(/\r?\n/)
     .map((line) => line.trim()).filter((line) => line && !/^#{1,6}\s+/.test(line));
   return [`### ${label}`, ...material, ...nonHeadingLines, ...comments].join("\n");
