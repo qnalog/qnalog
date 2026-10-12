@@ -18,8 +18,8 @@ export function getSessionWorkProgressState(session, recorderState) {
     return {
       kind: "processing",
       label: label || t("AI organizing"),
-      title: detail || t("Calling the AI model to organize the minutes"),
-      detail: detail || t("Calling the AI model to organize the minutes"),
+      title: detail || t("Calling the AI model to organize the notes"),
+      detail: detail || t("Calling the AI model to organize the notes"),
       percent: pct == null ? 65 : pct,
     };
   }

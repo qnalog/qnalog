@@ -964,12 +964,12 @@ export class RealtimeOutlineService {
       stage: "outline",
       label: t("Outline not fully completed"),
       percent: 58,
-      detail: t("Covered {0}/{1} segments; the final minutes will still use the full transcript")
+      detail: t("Covered {0}/{1} segments; the final note will still use the full transcript")
         .replace("{0}", String(drainResult.committedSegmentCount))
         .replace("{1}", String(totalSegmentCount)),
     });
     new obsidian.Notice(
-      t("The outline covers only {0}/{1} segments; the final minutes will continue to be generated from the full transcript.")
+      t("The outline covers only {0}/{1} segments; the final note will continue to be generated from the full transcript.")
         .replace("{0}", String(drainResult.committedSegmentCount))
         .replace("{1}", String(totalSegmentCount))
     );

@@ -809,7 +809,7 @@ export class OutlineView extends obsidian.ItemView {
     const desc = box.createDiv({ cls: "qnalog-empty-state-desc" });
     desc.createSpan({ text: i18nT("Open one from the notes list,") });
     desc.createEl("br");
-    desc.createSpan({ text: isAsk ? i18nT("then you can ask questions about this minutes note") : (isExtract ? i18nT("then you can start building up people, events, knowledge and hotwords") : i18nT("then you can view the outline and replay the timeline")) });
+    desc.createSpan({ text: isAsk ? i18nT("then you can ask questions about this note") : (isExtract ? i18nT("then you can start building up people, events, knowledge and hotwords") : i18nT("then you can view the outline and replay the timeline")) });
     const btn = box.createEl("button", {
       cls: "qnalog-empty-state-action",
       attr: { type: "button" },
@@ -848,7 +848,7 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   formatAskNoteTitle(file) {
-    const fallback = i18nT("Current summary");
+    const fallback = i18nT("Current note");
     let title = stripRecentDatePrefix(file && file.basename ? file.basename : "");
     title = title.replace(/^[\s·•\-—–:：]+/g, "").trim();
     const settings = this.plugin && this.plugin.settings ? this.plugin.settings : DEFAULT_SETTINGS;
@@ -1005,7 +1005,7 @@ export class OutlineView extends obsidian.ItemView {
     this.plugin.tasks.startTaskActivity({
       id: taskId,
       kind: "note-ask",
-      title: i18nT("Minutes Q&A"),
+      title: i18nT("Note Q&A"),
       subject: file.path,
       status: "running",
       stage: "llm",
@@ -1043,7 +1043,7 @@ export class OutlineView extends obsidian.ItemView {
         priority: "user",
         noRetry: true,
       });
-      const answer = String(raw || "").trim() || i18nT("The minutes do not provide enough basis.");
+      const answer = String(raw || "").trim() || i18nT("The notes do not provide enough basis.");
       for (const en of state.entries) en.expanded = false; // 新回答展开，历史折叠（对齐设计：最新在前且展开）
       const newEntry = {
         id: `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1081,7 +1081,7 @@ export class OutlineView extends obsidian.ItemView {
       });
       new obsidian.Notice(`${i18nT("Ask failed:")}${state.error}`, 8000);
       try {
-        await this.plugin.diagnostics.logDiagnostic("warn", "note_ask.failed", i18nT("Minutes Q&A failed"), {
+        await this.plugin.diagnostics.logDiagnostic("warn", "note_ask.failed", i18nT("Note Q&A failed"), {
           file: file.path,
           question: question.slice(0, 160),
           error: diagnosticError(e),
@@ -1466,7 +1466,7 @@ export class OutlineView extends obsidian.ItemView {
     const top = wrap.createDiv({ cls: "qnalog-sediment-baton-top" });
     const status = top.createDiv({ cls: "qnalog-sediment-status" });
     status.createDiv({ cls: "qnalog-sediment-dot" });
-    const noteTitle = file && file.basename ? file.basename : i18nT("Current summary");
+    const noteTitle = file && file.basename ? file.basename : i18nT("Current note");
     const title = status.createSpan({ cls: "qnalog-sediment-status-title", text: allDone ? i18nT("This meeting has been fully sedimented") : noteTitle });
     title.setAttr("title", noteTitle);
     top.createSpan({ cls: "qnalog-sediment-progress-text", text: group && group.total ? `${group.done} / ${group.total}` : "0 / 0" });
@@ -3035,7 +3035,7 @@ export class OutlineView extends obsidian.ItemView {
         subject: file.path,
         status: "running",
         stage: "reading",
-        stageLabel: i18nT("Read the minutes content"),
+        stageLabel: i18nT("Read the note content"),
         detail: file.basename,
         progress: 5,
         actions: [],
@@ -3092,7 +3092,7 @@ export class OutlineView extends obsidian.ItemView {
         subject: file.path,
         status: "running",
         stage: "reading",
-        stageLabel: i18nT("Read the minutes content"),
+        stageLabel: i18nT("Read the note content"),
         detail: file.basename,
         progress: 5,
         actions: [],
@@ -3805,7 +3805,7 @@ export class OutlineView extends obsidian.ItemView {
         decorateCompletedOutline();
       });
     } else {
-      outlineBody.createDiv({ cls: "qnalog-outline-empty", text: i18nT("This minutes note did not save a live outline.") });
+      outlineBody.createDiv({ cls: "qnalog-outline-empty", text: i18nT("This note did not save a live outline.") });
     }
 
     if (data.timeline) {
@@ -4273,7 +4273,7 @@ export class OutlineView extends obsidian.ItemView {
     if (session.finalizing || stillTranscribing) {
       const banner = head.createDiv({ cls: "qnalog-finalizing-banner" });
       try { obsidian.setIcon(banner.createSpan({ cls: "qnalog-finalizing-banner-icon" }), "loader-2"); } catch { /* intentionally empty */ }
-      banner.createSpan({ cls: "qnalog-finalizing-banner-text", text: session.finalizing ? i18nT("AI is organizing the final minutes content") : i18nT("Waiting for transcription to complete…") });
+      banner.createSpan({ cls: "qnalog-finalizing-banner-text", text: session.finalizing ? i18nT("AI is organizing the final note content") : i18nT("Waiting for transcription to complete…") });
     }
   }
 
@@ -5429,7 +5429,7 @@ export class OutlineView extends obsidian.ItemView {
     searchInput.addEventListener("input", () => { this._recentSearch = searchInput.value; this.applyRecentSearchFilter(parent); });
     const groupChip = wrap.createEl("button", {
       cls: "qnalog-outline-recent-group-chip qnalog-outline-recent-filter-chip is-active",
-      attr: { type: "button", title: i18nT("Choose how to group minutes") },
+      attr: { type: "button", title: i18nT("Choose how to group notes") },
     });
     groupChip.createSpan({ text: (RECENT_GROUP_OPTIONS.find((item) => item.id === this.getRecentGroupBy()) || RECENT_GROUP_OPTIONS[0]).label });
     const groupChevron = groupChip.createSpan({ cls: "qnalog-outline-recent-filter-chevron" });
@@ -5441,14 +5441,14 @@ export class OutlineView extends obsidian.ItemView {
     const timeChip = wrap.createEl("button", {
       cls: `qnalog-outline-recent-filter-chip ${this.isRecentFilterActive("time", timeValue) ? "is-active" : ""}`,
       text: this.getRecentFilterLabel("time", timeValue, allRecents),
-      attr: { type: "button", title: i18nT("Filter minutes by time range") },
+      attr: { type: "button", title: i18nT("Filter notes by time range") },
     });
     timeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "time", RECENT_TIME_FILTER_OPTIONS, timeValue);
     const modeValue = filters.mode || "all";
     const modeChip = wrap.createEl("button", {
       cls: `qnalog-outline-recent-filter-chip ${this.isRecentFilterActive("mode", modeValue) ? "is-active" : ""}`,
       text: this.getRecentFilterLabel("mode", modeValue, allRecents),
-      attr: { type: "button", title: i18nT("Filter minutes by template") },
+      attr: { type: "button", title: i18nT("Filter notes by template") },
     });
     modeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "mode", this.getRecentModeFilterOptions(), modeValue);
     const clear = wrap.createEl("button", {
@@ -5525,7 +5525,7 @@ export class OutlineView extends obsidian.ItemView {
       this.createRecentActionButton(actions, {
         icon: "rotate-ccw",
         label: `${i18nT("Retry transcription")}${failedTasks.length > 1 ? ` ${failedTasks.length}` : ""}`,
-        title: `${i18nT("Retry this minutes note's ")}${failedTasks.length}${i18nT(" segments with transcription failures")}`,
+        title: `${i18nT("Retry this note's ")}${failedTasks.length}${i18nT(" segments with transcription failures")}`,
         cls: "is-retry",
         onClick: () => this.retryRecentTranscription(r.file),
       });

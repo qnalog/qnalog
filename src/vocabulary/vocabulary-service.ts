@@ -300,7 +300,7 @@ ${source}`;
       new obsidian.Notice(t("No new notes to scan. Modified notes will automatically re-enter the scan."));
       return { processed: 0, added: 0, failed: 0, remaining: 0 };
     }
-    new obsidian.Notice(`${t("QnALog: scanning ")}${batch.length}${t(" minutes notes to extract vocabulary from...")}`);
+    new obsidian.Notice(`${t("QnALog: scanning ")}${batch.length}${t(" notes to extract vocabulary from...")}`);
     let processed = 0;
     let added = 0;
     let failed = 0;

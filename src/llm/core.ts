@@ -1049,7 +1049,7 @@ export async function callBriefingMergeLlm(plugin, system, user, options, diagCt
   }
   if (truncated) {
     try {
-      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_truncated", t("The final minutes still appear truncated by the output length limit after multiple continuations"), Object.assign({
+      await logLlmRequestDiagnostic(plugin, "warn", "llm.merge_truncated", t("The final note still appear truncated by the output length limit after multiple continuations"), Object.assign({
         finishReason, outputChars: text.length, continuations, continuationAttempts,
       }, diagCtx || {}));
     } catch { /* intentionally empty */ }

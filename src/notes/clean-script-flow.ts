@@ -101,7 +101,7 @@ export async function generateCleanScript(
     const warn = truncated
       ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"
       : "";
-    const noteBody = `> [!note] ${t("A readable transcript cleaned from the source transcript; not minutes or a summary.")}\n\n${warn}${cleaned}`;
+    const noteBody = `> [!note] ${t("A readable transcript cleaned from the source transcript; not notes or a summary.")}\n\n${warn}${cleaned}`;
     const version: DerivedNoteVersion = {
       meta: { sourceId, kind: "clean", createdAt: new Date().toISOString() },
       frontmatter: "", body: noteBody,

@@ -1717,7 +1717,7 @@ describe("clean transcript storage", () => {
     resolveModel("Custom derived body.");
     await pending;
     expect(tasks.completedWorkLog[0]?.title).toContain("Custom prompt:My template");
-    expect(notices.some((message) => message.includes("Custom prompt:My template") && message.includes("derived minutes"))).toBe(true);
+    expect(notices.some((message) => message.includes("Custom prompt:My template") && message.includes("derived note"))).toBe(true);
     expect(await vault.read(sourceFile)).toBe(sourceBefore);
     expect([...files.values()].some((candidate) => candidate.data.includes("Custom derived body."))).toBe(true);
   });
@@ -2203,7 +2203,7 @@ describe("clean transcript storage", () => {
       }
       const before = [...files.values()].map((file) => [file.path, file.data]);
       await expect(versions.createDerivedNote(sourceFile, sourceFile.data, version("No path."), "Clean", "cleanscript"))
-        .rejects.toThrow("Failed to generate a path for the derived minutes file");
+        .rejects.toThrow("Failed to generate a path for the derived note file");
       expect([...files.values()].map((file) => [file.path, file.data])).toEqual(before);
       expect(indexCalls).toBe(0);
     });

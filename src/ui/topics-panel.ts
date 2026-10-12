@@ -109,7 +109,7 @@ export class TopicsPanel {
     const icon = empty.createDiv({ cls: "qnalog-empty-state-icon" });
     try { setIcon(icon, "layers-3"); } catch { /* optional icon */ }
     empty.createDiv({ cls: "qnalog-empty-state-title", text: this.port.text("No topics yet") });
-    empty.createDiv({ cls: "qnalog-empty-state-desc", text: this.port.text("Right-click a minutes note and choose Create topic.") });
+    empty.createDiv({ cls: "qnalog-empty-state-desc", text: this.port.text("Right-click a note and choose Create topic.") });
   }
 
   private showTopicMenu(event: MouseEvent, topicId: string, title: string, legacy: boolean): void {
@@ -128,7 +128,7 @@ export class TopicsPanel {
     menu.addItem((item) => item.setTitle(this.port.text("Merge into…")).setIcon("git-merge").onClick(() => void this.chooseMergeTarget(topicId, event)));
     menu.addSeparator();
     menu.addItem((item) => item.setTitle(this.port.text("Delete topic")).setIcon("trash").onClick(async () => {
-      const confirmed = await qnalogConfirm(this.app, this.port.text("Delete topic"), this.port.text("Delete only the topic page “{0}”? No minutes notes will be deleted.").replace("{0}", title), this.port.text("Delete"), this.port.text("QnALog · Topics"));
+      const confirmed = await qnalogConfirm(this.app, this.port.text("Delete topic"), this.port.text("Delete only the topic page “{0}”? No notes will be deleted.").replace("{0}", title), this.port.text("Delete"), this.port.text("QnALog · Topics"));
       if (!confirmed) return;
       await this.port.deleteTopic(topicId);
       this.refresh();

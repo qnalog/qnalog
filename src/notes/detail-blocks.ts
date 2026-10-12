@@ -66,7 +66,7 @@ export function extractNotePanelData(plugin, file, markdown) {
   const speakerMappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), speakerIds);
   return {
     file,
-    title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : t("QnALog minutes")),
+    title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : t("QnALog notes")),
     mode,
     outline,
     timeline,

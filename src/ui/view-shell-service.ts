@@ -156,10 +156,10 @@ export class ViewShellService {
 
   async moveMinutesKanbanItem(item, rawFolderPath) {
     const file = item && item.file;
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") throw new Error(t("Minutes note not found"));
+    if (!(file instanceof obsidian.TFile) || file.extension !== "md") throw new Error(t("note not found"));
     const root = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const folderPath = obsidian.normalizePath(rawFolderPath || root);
-    if (!(folderPath === root || folderPath.startsWith(`${root}/`))) throw new Error(t("The target group is outside the minutes folder"));
+    if (!(folderPath === root || folderPath.startsWith(`${root}/`))) throw new Error(t("The target group is outside the notes folder"));
     await ensureVaultFolder(this.host.app, folderPath);
     const currentFolder = file.parent ? obsidian.normalizePath(file.parent.path) : "";
     if (currentFolder === folderPath) return;

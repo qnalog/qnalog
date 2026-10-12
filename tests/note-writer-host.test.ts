@@ -1502,7 +1502,7 @@ describe("NoteWriter narrow host capabilities", () => {
     expect(vault.files.size).toBe(2);
     expect(await vault.vault.read(oldFile)).toBe(oldText);
     expect(await vault.vault.read(currentFile)).toBe(currentText);
-    expect(notices.slice(beforeFailure).some((notice) => notice.includes("Merging minutes failed:"))).toBe(true);
+    expect(notices.slice(beforeFailure).some((notice) => notice.includes("Merging notes failed:"))).toBe(true);
   });
   it("returns the original note when title generation or rename fails", async () => {
     const file = new obsidian.TFile("QnALog/Minutes/unchanged.md");
@@ -2559,7 +2559,7 @@ describe("NoteWriter merge source execution boundaries", () => {
       }));
       for (const invalid of [null, { path: "folder", children: [] }, new obsidian.TFile("source.txt")]) {
         await expect(writer.readMergeSourceFromMarkdown(invalid, 0, 0))
-          .rejects.toThrow(t("Only QnALog Markdown minutes notes can be merged"));
+          .rejects.toThrow(t("Only QnALog Markdown notes can be merged"));
       }
       expect(metadataReads).toBe(0);
       const readFailure = new Error("source read failed");
@@ -2688,13 +2688,13 @@ describe("NoteWriter merge confirmation literal preservation", () => {
         const writer = new NoteWriter(host);
         await writer.mergeMarkdownFileWithPrevious(currentFile);
         const expectedBody = language === "en"
-          ? "A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. "
+          ? "A new merged note will be created; the source files will be kept.\n\nSources:\n1. "
             + previousFile.basename + "\n2. " + currentFile.basename + "\n\nContinue?"
-          : "将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. "
+          : "将生成一篇新的合并笔记，源文件会保留。\n\n来源：\n1. "
             + previousFile.basename + "\n2. " + currentFile.basename + "\n\n继续合并？";
         confirmations.push(confirmed);
         expectedConfirmations.push({
-          title: language === "en" ? "Merge minutes" : "合并纪要",
+          title: language === "en" ? "Merge notes" : "合并笔记",
           body: expectedBody,
           ctaText: language === "en" ? "Merge" : "合并",
         });
@@ -2962,7 +2962,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
         } };
         if (failurePoint === "empty-path") {
           await expect(writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file)))
-            .rejects.toThrow("Failed to generate a path for the merged minutes file");
+            .rejects.toThrow("Failed to generate a path for the merged note file");
         } else {
           await expect(writer.mergeMarkdownFilesAsNew(sourceFiles.map(source => source.file))).rejects.toBe(failure);
         }
@@ -3305,8 +3305,8 @@ describe("NoteWriter merge metadata literal preservation", () => {
         ];
         host.confirm = async (title, body, ctaText) => {
           expect({ title, body, ctaText }).toEqual({
-            title: "Merge minutes",
-            body: "A new merged minutes note will be created; the source files will be kept.\n\nSources:\n1. "
+            title: "Merge notes",
+            body: "A new merged note will be created; the source files will be kept.\n\nSources:\n1. "
               + sourceFiles[0].file.basename + "\n2. " + sourceFiles[1].file.basename + "\n\nContinue?",
             ctaText: "Merge",
           });
@@ -3586,7 +3586,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       try {
         await expect(writer.mergeMarkdownFileWithPrevious(sourceFiles[1].file)).resolves.toBeUndefined();
-        expect(notices.slice(oldNoticeCount).at(-1)).toBe("Merging minutes failed: model unavailable");
+        expect(notices.slice(oldNoticeCount).at(-1)).toBe("Merging notes failed: model unavailable");
         expect(errorSpy).toHaveBeenCalledWith("[QnALog] merge notes failed", failure);
         expect(vault.files.get(targetPath)?.markdown).toBe("");
         expect(sourceFiles.map(({ file }) => vault.files.get(file.path)?.markdown)).toEqual(sourceFiles.map(source => source.content));

@@ -177,21 +177,21 @@ export class SessionFinalizeService {
     try {
       this.host.asrPipeline.setSessionWorkProgress(session, {
         stage: "finalize-failed",
-        label: t("Failed to finalize minutes"),
+        label: t("Failed to finalize notes"),
         percent: null,
         detail: t("The original transcript and recording were kept; open the note and re-organize"),
       });
     } catch { /* intentionally empty */ }
     console.error("[QnALog] finalize session failed", error);
     try {
-      await this.host.diagnostics.logDiagnostic("error", "session.finalize_failed", t("Finalizing the minutes failed unexpectedly; the original material was kept"), {
+      await this.host.diagnostics.logDiagnostic("error", "session.finalize_failed", t("Finalizing the notes failed unexpectedly; the original material was kept"), {
         mode: session.mode,
         mdPath: session.mdPath,
         segmentCount: Array.isArray(session.segments) ? session.segments.length : 0,
         error: diagnosticError(error),
       });
     } catch { /* intentionally empty */ }
-    new obsidian.Notice(t("Failed to finalize minutes; the original transcript and recording have been kept. You can use \"Reorganize\" in the note."), 10000);
+    new obsidian.Notice(t("Failed to finalize notes; the original transcript and recording have been kept. You can use \"Reorganize\" in the note."), 10000);
     this.host.sessionStore.end(session);
     this.host.requestOutlineRefresh();
   }

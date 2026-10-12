@@ -571,7 +571,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "open-queue", name: t("Open Pending Queue"), callback: () => new QueueModal(this.app, this).open() });
     this.addCommand({ id: "retry-queue-all", name: t("Retry All Failed Tasks"), callback: () => this.queueRetry.retryQueue() });
     this.addCommand({ id: "copy-diagnostic-report", name: t("Copy Diagnostic Report"), callback: () => this.diagnostics.copyDiagnosticReport() });
-    this.addCommand({ id: "suggest-people-directory-updates", name: t("AI: Scan Minutes Library for People Suggestions"), callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
+    this.addCommand({ id: "suggest-people-directory-updates", name: t("AI: Scan Notes Library for People Suggestions"), callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
     this.addCommand({ id: "open-todo-wall", name: t("Open To-do Wall"), callback: () => { void this.library.openTodoWall(); } });
     this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({
@@ -599,7 +599,7 @@ class QnALogPlugin extends obsidian.Plugin {
       },
     });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
-    this.addCommand({ id: "open-outline", name: t("Open Live Minutes Panel"), callback: () => this.shell.openOutlineView() });
+    this.addCommand({ id: "open-outline", name: t("Open Live Notes Panel"), callback: () => this.shell.openOutlineView() });
     this.addCommand({ id: "open-minutes-kanban", name: t("Open Notes Board"), callback: () => this.shell.openMinutesKanban() });
     this.addCommand({ id: "record-mic-only", name: t("Start Recording · Microphone only"), callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-mic-virtual", name: t("Start Recording · Microphone + Computer Audio"), callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });

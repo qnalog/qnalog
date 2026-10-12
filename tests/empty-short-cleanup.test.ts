@@ -135,7 +135,7 @@ describe("empty short recording cleanup consumer contract", () => {
     ]);
     expect(f.host.queue.tasks.map((task) => task.id)).toEqual(["unrelated"]);
     expect(f.host.saveAll).toHaveBeenCalledOnce();
-    expect(mocks.notices).toEqual([[`${t("Cleanup complete: minutes ")}2${t(" notes, recording ")}2${t(", removed from the queue ")}2`, 10000]]);
+    expect(mocks.notices).toEqual([[`${t("Cleanup complete: notes ")}2${t(" notes, recording ")}2${t(", removed from the queue ")}2`, 10000]]);
   });
 
   it("does nothing after cancellation", async () => {
@@ -165,7 +165,7 @@ describe("empty short recording cleanup consumer contract", () => {
 
     expect(mocks.trash.mock.calls.map(([, file]) => (file as obsidian.TFile).path)).toEqual([note.path, audio.path]);
     expect(f.host.saveAll).not.toHaveBeenCalled();
-    expect(mocks.notices).toEqual([[`${t("Cleanup complete: minutes ")}1${t(" notes, recording ")}1${t(", removed from the queue ")}0`, 10000]]);
+    expect(mocks.notices).toEqual([[`${t("Cleanup complete: notes ")}1${t(" notes, recording ")}1${t(", removed from the queue ")}0`, 10000]]);
   });
 
   it("skips the active session note", async () => {

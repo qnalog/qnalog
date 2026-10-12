@@ -744,7 +744,7 @@ export async function clearCommittedBriefingCheckpoint(plugin, meta) {
     await getBriefingCheckpointStore(plugin).remove(id);
     delete meta._briefingCheckpointId;
   } catch (error) {
-    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_checkpoint_cleanup_failed", t("The minutes were written, but the organizing checkpoint could not be cleaned up"), {
+    await logLlmRequestDiagnostic(plugin, "warn", "llm.briefing_checkpoint_cleanup_failed", t("The notes were written, but the organizing checkpoint could not be cleaned up"), {
       jobId: id,
       error: diagnosticError(error),
     });
@@ -824,7 +824,7 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
       status: "running",
       stage: finished ? "assembling" : "llm",
       stageLabel: finished
-        ? t("Assembling the minutes")
+        ? t("Assembling the notes")
         : total > 1 ? t("Organizing · Part {0}/{1}").replace("{0}", String(Math.min(total, Math.max(1, currentPart || completed + 1)))).replace("{1}", String(total)) : t("AI is organizing the body text"),
       detail: finished
         ? t("All {0} parts have been generated; merging in chronological order").replace("{0}", String(total))
@@ -842,7 +842,7 @@ export function reportBriefingPartProgress(plugin, computedMeta, checkpoint, cur
     percent: Math.min(86, 48 + Math.round((completed / total) * 38)),
     detail: total > 1
       ? t("Organizing part {0}/{1}; completed parts are saved immediately").replace("{0}", String(Math.min(total, Math.max(1, currentPart || completed + 1)))).replace("{1}", String(total))
-      : t("Generating the minutes body text"),
+      : t("Generating the note body text"),
   });
   try { plugin.shell.refreshOutlineView(); } catch { /* progress rendering must not block briefing */ }
 }

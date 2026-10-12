@@ -1505,7 +1505,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c)
       .setName(t("AI Organizing"))
-      .setDesc(t("Configure the model used for AI organizing: minutes generation, Ask, distillation, reorganization, and translation."))
+      .setDesc(t("Configure the model used for AI organizing: note generation, Ask, distillation, reorganization, and translation."))
       .setHeading();
     // 「已保存配置」已升级为顶部「API 方案」（同时含转写 + AI 整理），不再在此处单列 LLM-only 版本。
 
@@ -1812,8 +1812,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (!this.plugin.settings.industryProfile) this.plugin.settings.industryProfile = {};
 
     new obsidian.Setting(c)
-      .setName(t("Minutes Generation"))
-      .setDesc(t("Set the structure, level of detail, and reorganization preferences for minutes. Meeting information and to-do attribution are added separately before each recording."))
+      .setName(t("Note Generation"))
+      .setDesc(t("Set the structure, level of detail, and reorganization preferences for notes. Meeting information and to-do attribution are added separately before each recording."))
       .setHeading();
     const structHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
     structHint.setText(t("Only the refined result is adjusted by default; the raw transcript is left untouched. Repolish preference applies only to derived versions created from the context menu."));
@@ -1858,13 +1858,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c)
       .setName(t("Language & Translation"))
-      .setDesc(t("Set the language of the minutes after AI organizing. The raw transcript always keeps its original text."))
+      .setDesc(t("Set the language of the notes after AI organizing. The raw transcript always keeps its original text."))
       .setHeading();
     const langHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
     langHint.setText(t("Suitable for multilingual meetings: output one language throughout, or keep key original text in parentheses."));
 
     new obsidian.Setting(c).setName(t("Language Strategy"))
-      .setDesc(t("By default it follows the original text. When enabled, the LLM unifies the language while organizing the minutes."))
+      .setDesc(t("By default it follows the original text. When enabled, the LLM unifies the language while organizing the notes."))
       .addDropdown(d => d
         .addOption("off", t("Follow the original text (no translation)"))
         .addOption("translate", t("Unify to the target language"))
@@ -1908,7 +1908,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     new obsidian.Setting(c)
       .setName(t("HTML Report"))
-      .setDesc(t("Generate a standalone HTML report from the minutes that is suitable for reading, sharing, and printing."))
+      .setDesc(t("Generate a standalone HTML report from the notes that is suitable for reading, sharing, and printing."))
       .setHeading();
     const reportHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
     reportHint.setText(t("The report uses the same note content and does not modify the original note in Obsidian."));
@@ -2142,7 +2142,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       async v => { this.plugin.settings.vocabularyFile = v || DEFAULT_SETTINGS.vocabularyFile; },
       refreshVocabStatus);
 
-    createPathSetting(advancedBody, t("Person profile folder"), t("One Markdown page per person, for long-term maintenance of names, common forms of address, roles, organizations, and related minutes."), this.plugin.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder, DEFAULT_SETTINGS.peopleDirectoryFolder,
+    createPathSetting(advancedBody, t("Person profile folder"), t("One Markdown page per person, for long-term maintenance of names, common forms of address, roles, organizations, and related notes."), this.plugin.settings.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder, DEFAULT_SETTINGS.peopleDirectoryFolder,
       async v => { this.plugin.settings.peopleDirectoryFolder = v || DEFAULT_SETTINGS.peopleDirectoryFolder; },
       async setting => {
         try {
@@ -2172,7 +2172,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(advancedBody).setName(t("Note scan records"))
       .setDesc(`${t("Transcription glossary scanned ")}${vocabScanCount}${t(" notes; person suggestions scanned ")}${peopleScanCount}${t(" notes. After clearing the records, notes that have been modified or already exist can re-enter the scanning scope.")}`)
       .addButton(b => b.setButtonText(t("Clear term records")).setDisabled(!vocabScanCount).onClick(async () => {
-        const ok = await qnalogConfirm(this.app, t("Clear glossary scan history?"), `${vocabScanCount}${t(" minutes will re-enter the scanning scope; rescanning calls the LLM service again, and cloud usage is billed by volume.")}`, t("Clear"));
+        const ok = await qnalogConfirm(this.app, t("Clear glossary scan history?"), `${vocabScanCount}${t(" notes will re-enter the scanning scope; rescanning calls the LLM service again, and cloud usage is billed by volume.")}`, t("Clear"));
         if (!ok) return;
         this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("vocabulary");
         await this.plugin.saveSettings();
@@ -2180,7 +2180,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         this.renderSettings();
       }))
       .addButton(b => b.setButtonText(t("Clear people records")).setDisabled(!peopleScanCount).onClick(async () => {
-        const ok = await qnalogConfirm(this.app, t("Clear person suggestion scan history?"), `${peopleScanCount}${t(" minutes will re-enter the scanning scope; rescanning calls the LLM service again, and cloud usage is billed by volume.")}`, t("Clear"));
+        const ok = await qnalogConfirm(this.app, t("Clear person suggestion scan history?"), `${peopleScanCount}${t(" notes will re-enter the scanning scope; rescanning calls the LLM service again, and cloud usage is billed by volume.")}`, t("Clear"));
         if (!ok) return;
         this.plugin.knowledgeExtraction.clearKnowledgeExtractionHistory("people");
         await this.plugin.saveSettings();

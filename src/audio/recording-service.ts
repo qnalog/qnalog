@@ -172,7 +172,7 @@ export class RecordingService {
           preparation = await this.host.continuations.prepare(appendTargetFile, sessionId, sessionStamp, recordedAt);
         } catch (e: unknown) {
           console.error("[QnALog] prepare continuation target failed", e);
-          new obsidian.Notice(`${t("Cannot continue recording into this minutes note: ")}${formatRecordingCaughtError(e)}`, 8000);
+          new obsidian.Notice(`${t("Cannot continue recording into this note: ")}${formatRecordingCaughtError(e)}`, 8000);
           return;
         }
       }

@@ -550,7 +550,7 @@ export class ImportService {
     this.host.tasks.updateImportActivity({
       phase: "organize",
       organizeLabel: t("Preparing AI organizing"),
-      organizeDetail: t("The original transcript has been fully written; generating the body from the current minutes template."),
+      organizeDetail: t("The original transcript has been fully written; generating the body from the current note template."),
     });
     await this.host.sessionFinalize.finalizeSession(session);
     const finalizationError = String(session.finalizationError || "").trim()
@@ -567,7 +567,7 @@ export class ImportService {
         phase: "write",
         completed: true,
         writeLabel: t("Processing complete"),
-        writeDetail: t("The minutes have been written to Obsidian."),
+        writeDetail: t("The notes have been written to Obsidian."),
       });
     }
     const completedImportId = session.id;

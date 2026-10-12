@@ -1319,9 +1319,9 @@ async function main() {
       let confirmationCount = 0;
       const confirmationHost = Object.create(originalWriterHost);
       confirmationHost.confirm = async (title, body, ctaText) => {
-        const expectedBody = "将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. "
+        const expectedBody = "将生成一篇新的合并笔记，源文件会保留。\n\n来源：\n1. "
           + sourceA.file.basename + "\n2. " + sourceB.file.basename + "\n\n继续合并？";
-        if (title !== "合并纪要" || body !== expectedBody || ctaText !== "合并") {
+        if (title !== "合并笔记" || body !== expectedBody || ctaText !== "合并") {
           failures.push("上一篇合并确认没有传入预期的完整中文提示");
         }
         confirmationCount += 1;
@@ -1608,10 +1608,10 @@ async function main() {
         });
         plugin.noteWriter.host = confirmationHost;
         await plugin.noteWriter.mergeMarkdownFileWithPrevious(currentFile);
-        const expectedBody = "将生成一篇新的合并纪要，源文件会保留。\n\n来源：\n1. "
+        const expectedBody = "将生成一篇新的合并笔记，源文件会保留。\n\n来源：\n1. "
           + previousFile.basename + "\n2. " + currentFile.basename + "\n\n继续合并？";
         const expected = {
-          title: "合并纪要",
+          title: "合并笔记",
           body: expectedBody,
           ctaText: "合并",
         };

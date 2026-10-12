@@ -97,7 +97,7 @@ describe("session finalization flow consumer contract", () => {
     const fixture = setup();
     vi.mocked(fixture.port.rewriteConsolidated).mockRejectedValueOnce(new Error("disk is read-only"));
     await runSessionFinalization(fixture.port, fixture.session);
-    expect(fixture.queue[0]).toMatchObject({ type: "merge", lastError: t("Failed to write the minutes: {0}").replace("{0}", "disk is read-only") });
+    expect(fixture.queue[0]).toMatchObject({ type: "merge", lastError: t("Failed to write the notes: {0}").replace("{0}", "disk is read-only") });
     expect(fixture.queue[0]).not.toHaveProperty("status");
     expect(fixture.port.requestTaskQueueRetry).toHaveBeenCalledWith(1500, "briefing-write-failure");
     expect(fixture.port.refreshNoteIndex).not.toHaveBeenCalled();

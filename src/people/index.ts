@@ -5,6 +5,7 @@ import { PEOPLE_DIRECTORY_TAG } from '../shared/catalog-sediment';
 import { makeFileWikiLink, escapeYamlScalar, escapeBaseString } from '../shared/util-markdown';
 import { isLocalLlmEndpoint } from '../shared/util-llm-endpoint';
 import { DEFAULT_SETTINGS } from '../shared/defaults';
+import { t } from "../shared/i18n";
 
 import { extractJsonObject } from '../shared/util-json';
 import { getFrontmatterTags } from "../shared/frontmatter-tags";
@@ -207,9 +208,9 @@ export async function buildPeopleHotwordsForAsr(plugin, provider) {
 
 export function formatPersonRelatedBriefingsBase(mdFolder) {
   const folder = escapeBaseString(obsidian.normalizePath(mdFolder || DEFAULT_SETTINGS.mdFolder));
-  return `## 相关纪要
+  return `## ${t("Related notes")}
 
-> QnALog 会把已确认的人物归属写回纪要。这里聚合的是和此人相关的会议、被提及记录与待办责任。
+> ${t("QnALog adds confirmed person links to notes. This view groups related meetings, mentions, and to-do ownership.")}
 
 \`\`\`base
 filters:
@@ -218,7 +219,7 @@ filters:
     - file.hasLink(this.file)
 properties:
   file.name:
-    displayName: 纪要
+    displayName: ${t("Note object")}
   note.${NS_FM.time}:
     displayName: 时间
   note.${NS_FM.mode}:
@@ -229,7 +230,7 @@ properties:
     displayName: 状态
 views:
   - type: table
-    name: 相关纪要
+    name: ${t("Related notes")}
     order:
       - file.name
       - note.${NS_FM.time}
@@ -252,15 +253,15 @@ SORT file.mtime DESC
 
 ## 提及片段
 
-此处适合手动补充需要长期回看的原文片段。自动聚合以「相关纪要」为准，避免把每次会议里的偶发提及都硬写进人员页。
+${t("Add original excerpts here when they need long-term reference. Automatic aggregation uses Related notes, so occasional mentions are not copied into this person page.")}
 
-上方视图由 Obsidian Bases 根据纪要里的「相关人员 / ${NS_FM.participants} / ${NS_FM.mentionedPeople} / ${NS_FM.todoOwners}」链接自动聚合；QnALog 只在用户确认人员归属后维护这些本地链接。
+${t("Obsidian Bases builds the view from links in notes. QnALog updates these local links after the user confirms person attribution.")}
 `;
 }
 
 export function ensurePeopleNoteRelatedBaseSection(markdown, mdFolder) {
   const text = String(markdown || "");
-  if (/^##\s+相关纪要\s*$/m.test(text) || /file\.hasLink\(this\.file\)/.test(text)) return text;
+  if (/^##\s+(?:相关笔记|Related notes|相关纪要)\s*$/m.test(text) || /file\.hasLink\(this\.file\)/.test(text)) return text;
   const section = "\n\n" + formatPersonRelatedBriefingsBase(mdFolder).trim() + "\n";
   const noteHeading = text.match(/^##\s+备注\s*$/m);
   if (noteHeading) return text.slice(0, noteHeading.index).replace(/\s*$/, "") + section + "\n" + text.slice(noteHeading.index);
@@ -285,7 +286,7 @@ properties:
   note.${NS_FM.email}:
     displayName: 邮箱
   note.${NS_FM.sources}:
-    displayName: 相关纪要
+    displayName: ${t("Related notes")}
   note.${NS_FM.updatedAt}:
     displayName: 最近更新
   note.${NS_FM.note}:

@@ -110,7 +110,7 @@ export function formatObjectWallMarkdown(settings, options: QnALogObjectWallOpti
   const title = options.title || "待办墙";
   const initialFilter = options.initialFilter || "all";
   const showFilters = options.showFilters !== false;
-  const emptyText = options.emptyText || "还没有找到待办。会议纪要中的明确行动项可在确认后沉淀为待办。";
+  const emptyText = options.emptyText || t("No to-do cards were found. Confirmed action items from notes can be saved here.");
   const todoFolderQuery = JSON.stringify('"' + obsidian.normalizePath(settings && settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder || "") + '"');
   const todoTag = JSON.stringify("#" + TODO_CARD_TAG);
   return [
@@ -238,7 +238,7 @@ export function formatTodoWallMarkdown(settings) {
     title: t("To-do wall"),
     initialFilter: "todo",
     showFilters: false,
-    emptyText: "没有找到待办卡片。会议纪要中的明确行动项可在确认后沉淀为待办。"
+    emptyText: t("No to-do cards were found. Confirmed action items from notes can be saved here.")
   });
 }
 

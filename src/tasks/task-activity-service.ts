@@ -471,7 +471,7 @@ export class TaskActivityService {
       : `finalize:${session.id}`;
     const wp = session.workProgress || {};
     const sourceLabel = session.source === "text-import" ? t("Text organization")
-        : session.source === "import" ? t("Imported audio organization") : t("Recording minutes organization");
+        : session.source === "import" ? t("Imported audio organization") : t("Recording note organization");
     const failureStages = new Set(["finalize-failed", "transcript-empty", "merge-failed"]);
     const retryStages = new Set(["merge-retrying"]);
     const actions = failureStages.has(wp.stage)
@@ -492,7 +492,7 @@ export class TaskActivityService {
       progress: wp.percent == null ? null : Number(wp.percent),
       startedAt: session.processingStartedAt ? Date.parse(session.processingStartedAt) : Date.parse(session.startedAt || "") || Date.now(),
       updatedAt: wp.updatedAt ? Date.parse(wp.updatedAt) : Date.now(),
-      error: failureStages.has(wp.stage) ? String(session.finalizationError || wp.detail || wp.label || t("Minutes organization failed")) : "",
+      error: failureStages.has(wp.stage) ? String(session.finalizationError || wp.detail || wp.label || t("note organization failed")) : "",
       actions: retryStages.has(wp.stage)
         ? [{ id: "open-task-note", label: t("Open original material"), primary: true }]
         : actions,
@@ -509,7 +509,7 @@ export class TaskActivityService {
     }
     if (wp.stage === "done") {
       return this.completeTaskActivity(id, Object.assign({}, patch, {
-        stageLabel: wp.label || t("Minutes organization completed"),
+        stageLabel: wp.label || t("note organization completed"),
         actions: session.mdPath
           ? [{ id: "open-task-note", label: t("Open note"), primary: true }, { id: "dismiss-task", label: t("Close Recording") }]
           : [{ id: "dismiss-task", label: t("Close Recording") }],
@@ -530,7 +530,7 @@ export class TaskActivityService {
       transcribe: t("Speech transcription"),
       persist: t("Writing the original transcription"),
       organize: t("AI Organize"),
-      write: t("Write to Minutes"),
+      write: t("write to note"),
     };
     const total = Math.max(0, Number(activity.segmentTotal) || 0);
     const done = phase === "persist"
@@ -688,7 +688,7 @@ export class TaskActivityService {
         const phaseLabel = phase === "prepare" ? t("Preparing audio")
           : phase === "transcribe" ? t("Speech transcription")
             : phase === "persist" ? t("Writing the original transcription")
-              : phase === "organize" ? t("AI Organize") : t("Write to Minutes");
+              : phase === "organize" ? t("AI Organize") : t("write to note");
         const chunkLabel = phase === "transcribe" && total > 1 ? ` ${t("{0}/{1} segments").replace("{0}", String(completed)).replace("{1}", String(total))}` : "";
         show("loader-2", `${phaseLabel}${chunkLabel}`, true);
       } else {
@@ -844,7 +844,7 @@ export class TaskActivityService {
       organizeLabel: stage === "organize" ? String(progress.label || t("AI Organize")) : busy.organizeLabel,
       organizeDetail: stage === "organize" ? String(progress.detail || "") : busy.organizeDetail,
       organizePercent: stage === "organize" ? Number(progress.percent) || 0 : busy.organizePercent,
-      writeLabel: stage === "write" ? String(progress.label || t("Write to Minutes")) : busy.writeLabel,
+      writeLabel: stage === "write" ? String(progress.label || t("write to note")) : busy.writeLabel,
       writeDetail: stage === "write" ? String(progress.detail || "") : busy.writeDetail,
       writePercent: stage === "write" ? Number(progress.percent) || 0 : busy.writePercent,
     });
@@ -892,7 +892,7 @@ export class TaskActivityService {
           transcribe: t("Started speech transcription"),
           persist: t("Started writing the original transcription"),
           organize: t("Started AI organization"),
-          write: t("Started writing minutes"),
+          write: t("Started writing notes"),
         })[nextPhase],
       });
     }
@@ -984,10 +984,10 @@ export class TaskActivityService {
         }
       } else if (stage.id === "persist") {
         summary = segmentTotal > 0 ? t("{0}/{1} files written").replace("{0}", String(writtenSegments)).replace("{1}", String(segmentTotal)) : "";
-        detail = t("The original transcription is written to the note in chronological order; it does not wait for the final minutes to be saved all at once.");
+        detail = t("The original transcription is written to the note in chronological order; it does not wait for the final note to be saved all at once.");
       } else if (stage.id === "organize") {
         summary = String(ip.organizeLabel || "");
-        detail = String(ip.organizeDetail || t("Build the structured minutes from the original transcription that has already been written to disk."));
+        detail = String(ip.organizeDetail || t("Build the structured note from the original transcription that has already been written to disk."));
       } else if (stage.id === "write") {
         summary = String(ip.writeLabel || "");
         detail = String(ip.writeDetail || t("Write the organized result back to the note and finish updating the index."));
@@ -1064,11 +1064,11 @@ export class TaskActivityService {
           }
         } else if (phase === "organize") {
           step = String(ip.organizeLabel || t("AI Organize"));
-          stepDetail = String(ip.organizeDetail || t("The original transcription has been kept; generating the final minutes"));
+          stepDetail = String(ip.organizeDetail || t("The original transcription has been kept; generating the final note"));
           percent = Number.isFinite(Number(ip.organizePercent)) ? Number(ip.organizePercent) : null;
           count = segmentTotal > 0 ? t("Transcription complete: {0} / {1} segments").replace("{0}", String(segmentDone)).replace("{1}", String(segmentTotal)) : "";
         } else if (phase === "write") {
-          step = String(ip.writeLabel || t("Write to Minutes"));
+          step = String(ip.writeLabel || t("write to note"));
           stepDetail = String(ip.writeDetail || t("Writing the organized result to Obsidian"));
           percent = Number.isFinite(Number(ip.writePercent)) ? Number(ip.writePercent) : null;
           count = segmentTotal > 0 ? t("{0} / {1} segments transcribed").replace("{0}", String(segmentDone)).replace("{1}", String(segmentTotal)) : "";
