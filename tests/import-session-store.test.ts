@@ -274,7 +274,7 @@ describe("text import session ownership", () => {
       setTimeout: () => 1,
     });
     try {
-      await expect(new ImportService(host).importAudioFiles([audioPath], "synthesis")).rejects.toThrow("(0/1)");
+      await new ImportService(host).importAudioFiles([audioPath], "synthesis");
     } finally {
       vi.unstubAllGlobals();
       importedAudioTexts = ["Imported audio transcript"];

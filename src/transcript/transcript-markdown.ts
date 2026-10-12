@@ -29,6 +29,8 @@ interface CompactTranscriptTextReferences {
   segmentRawText?: true;
   currentRawText?: true;
   utterances?: Array<{ start: number; end: number; rawMatchesNormalized: boolean }>;
+  utteranceRawMatchesNormalized?: number[];
+  utteranceDefaults?: Record<string, unknown>;
 }
 
 function compactTranscriptPayload(segment: Segment, transcript: TranscriptSegmentRecord): Record<string, unknown> {
@@ -38,6 +40,19 @@ function compactTranscriptPayload(segment: Segment, transcript: TranscriptSegmen
   const references: CompactTranscriptTextReferences = {};
   const current = storedTranscript.revisions.find((revision) => revision.revision === storedTranscript.currentRevision);
   if (!current) return { schemaVersion: 2, segment: storedSegment, transcript: storedTranscript };
+  if (current.utterances.length > 1) {
+    const defaults: Record<string, unknown> = {};
+    const excluded = new Set(["id", "rawText", "normalizedText", "startMs", "endMs"]);
+    for (const key of Object.keys(current.utterances[0])) {
+      if (excluded.has(key)) continue;
+      const serialized = JSON.stringify(current.utterances[0][key as keyof typeof current.utterances[0]]);
+      if (current.utterances.every((utterance) => JSON.stringify(utterance[key as keyof typeof utterance]) === serialized)) {
+        defaults[key] = current.utterances[0][key as keyof typeof current.utterances[0]];
+        for (const utterance of current.utterances) delete (utterance as unknown as Record<string, unknown>)[key];
+      }
+    }
+    if (Object.keys(defaults).length) references.utteranceDefaults = defaults;
+  }
   const displayText = current.displayText;
   if (typeof displayText === "string") {
     if (storedSegment.text === displayText) {
@@ -74,6 +89,14 @@ function compactTranscriptPayload(segment: Segment, transcript: TranscriptSegmen
       references.utterances = utteranceReferences;
     }
   }
+  const rawMatchesNormalized: number[] = [];
+  current.utterances.forEach((utterance, index) => {
+    if (utterance.rawText !== null && utterance.rawText === utterance.normalizedText) {
+      utterance.rawText = null;
+      rawMatchesNormalized.push(index);
+    }
+  });
+  if (rawMatchesNormalized.length) references.utteranceRawMatchesNormalized = rawMatchesNormalized;
   return {
     schemaVersion: 2,
     segment: storedSegment,
@@ -91,6 +114,10 @@ function expandTranscriptTextReferences(payload: unknown): unknown {
   const transcript = row.transcript as TranscriptSegmentRecord;
   const current = transcript.revisions.find((revision) => revision.revision === transcript.currentRevision);
   if (!current) return payload;
+  const utteranceDefaults = references.utteranceDefaults;
+  if (utteranceDefaults && typeof utteranceDefaults === "object" && !Array.isArray(utteranceDefaults)) {
+    for (const utterance of current.utterances) Object.assign(utterance, utteranceDefaults);
+  }
   const displayText = current.displayText;
   if (references.segmentText) segment.text = displayText;
   if (references.segmentRawText) segment.rawText = displayText;
@@ -103,6 +130,11 @@ function expandTranscriptTextReferences(payload: unknown): unknown {
       utterance.normalizedText = normalized;
       if (reference.rawMatchesNormalized) utterance.rawText = normalized;
     });
+  }
+  for (const index of references.utteranceRawMatchesNormalized || []) {
+    if (Number.isInteger(index) && index >= 0 && index < current.utterances.length) {
+      current.utterances[index].rawText = current.utterances[index].normalizedText;
+    }
   }
   delete row.textReferences;
   return row;

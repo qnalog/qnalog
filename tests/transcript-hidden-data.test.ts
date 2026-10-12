@@ -122,6 +122,31 @@ describe("transcript hidden-data storage", () => {
     expect(output).toMatch(/<\/details>(?:\r?\n)?(?:<span hidden data-qnalog-transcript-data=.*><\/span>){6}/);
   });
 
+  it("compacts repeated utterance fields and restores the exact transcript record", () => {
+    const segment = makeSegment(0, "一句。另一句。第三句。".repeat(30));
+    const transcript = segment.transcript!;
+    const current = transcript.revisions.find((revision) => revision.revision === transcript.currentRevision)!;
+    current.displayText = `00:00 ${current.utterances.map((utterance) => utterance.normalizedText).join("")}`;
+    current.utterances.forEach((utterance, index) => {
+      utterance.parentSegmentId = transcript.id;
+      utterance.audioRef = { path: "QnALog/Audio/source.m4a", name: "source.m4a", startMs: index * 100, endMs: (index + 1) * 100, precision: "provider" };
+      utterance.rawText = utterance.normalizedText;
+      utterance.speakerId = "speaker-1";
+      utterance.speakerName = "Speaker 1";
+    });
+    current.corrections.push({ revision: current.revision, kind: "speaker", from: "Speaker", to: "Speaker 1", utteranceIds: [current.utterances[0].id] });
+    const expected = JSON.parse(JSON.stringify(segment));
+    const serialized = serializeTranscriptBlock(segment, "Segment 1 (00:00–00:01)", current.displayText);
+    const [readBack] = readTranscriptBlocks(serialized);
+    expect(readBack.segment).toEqual(expected);
+    const encodedData = serialized.match(/data-qnalog-transcript-data="([^"]+)"/)?.[1] || "";
+    const decodedJson = new TextDecoder().decode(Uint8Array.from(atob(encodedData), (character) => character.charCodeAt(0)));
+    const payload = JSON.parse(decodedJson);
+    expect(decodedJson.length).toBeLessThan(JSON.stringify(expected).length);
+    expect(payload.textReferences.utteranceDefaults.parentSegmentId).toBe(transcript.id);
+    expect(payload.transcript.revisions[0].utterances.every((utterance: { parentSegmentId?: string; rawText: string | null }) => !("parentSegmentId" in utterance) && utterance.rawText === null)).toBe(true);
+  });
+
   it("round-trips punctuation, markup characters, newlines, emoji and empty transcript text", () => {
     const texts = ['quote " < > & -->\r\n\n🙂', ""];
     const output = normalizeTranscriptDataPlacement(texts.map((text, index) => serializeTranscriptBlock(makeSegment(index, text), `### 段落 ${index + 1}`, text)).join("\n"));
