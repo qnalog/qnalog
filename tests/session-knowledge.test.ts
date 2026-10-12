@@ -120,6 +120,8 @@ describe("session knowledge protocol", () => {
 
     const unwrapped = upsertSelectedSessionKnowledge("Visible note", selected);
     expect(readSessionKnowledge(unwrapped)).toEqual(selected);
-    expect(unwrapped).toMatch(/<details><summary>QnALog session data<\/summary><!-- qnalog-session-knowledge [\s\S]*?--><\/details>/);
+    expect(unwrapped).toMatch(/<details><summary>(?:索引数据|Index data)<\/summary><!-- qnalog-session-knowledge [\s\S]*?--><\/details>/);
+    expect(unwrapped).not.toContain("QnALog session data");
+    expect(unwrapped).not.toMatch(/<details>[\s\S]*?\n\s*\n[\s\S]*?<\/details>/);
   });
 });

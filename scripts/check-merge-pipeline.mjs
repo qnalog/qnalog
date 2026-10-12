@@ -108,6 +108,24 @@ function serializeTranscriptSegment(segment) {
   ].join("\n");
 }
 
+function qnalogCommentsOutsideDetails(markdown) {
+  const events = /<details\b[^>]*>|<\/details\s*>|<!--[\s\S]*?-->/gi;
+  let depth = 0;
+  const outside = [];
+  for (const match of markdown.matchAll(events)) {
+    const token = match[0];
+    if (/^<\/details/i.test(token)) depth = Math.max(0, depth - 1);
+    else if (/^<details/i.test(token)) depth += 1;
+    else if (/^<!--[\s\S]*qnalog-/i.test(token) && depth === 0) outside.push(token);
+  }
+  return outside;
+}
+
+function hasSingleMachineDataDetails(markdown) {
+  return [...markdown.matchAll(/<summary>\s*(?:索引数据|Index data)\s*<\/summary>/gi)].length === 1
+    && !/QnALog session data/i.test(markdown);
+}
+
 const files = new Map();
 const frontmatterByPath = new Map();
 const openedFiles = [];
@@ -522,6 +540,8 @@ async function main() {
       failures.push("笔记正文里没有写入整合后的内容（原始材料之前）");
     }
     if (!/分段原始转写/.test(content)) failures.push("笔记里没有保留原始转写");
+    if (qnalogCommentsOutsideDetails(content).length) failures.push("finalized note left QnALog comments outside details");
+    if (!hasSingleMachineDataDetails(content)) failures.push("finalized note did not use one localized machine-data details item");
     if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
     if (!/^---\r?\n[\s\S]*?\r?\n---/.test(content)) failures.push("笔记没有 frontmatter");
     if (!/^qnalog_time:\s*\S/m.test(content)) failures.push("frontmatter 里没有 qnalog_time 字段（重新整理入口会因缺少时间属性不可用）");
@@ -556,7 +576,7 @@ async function main() {
     if (!citedIds.length || citedIds.some((id) => !sourceUtteranceIds.has(id))) {
       failures.push("知识快照证据未全部指向笔记中持久化的 utterance");
     }
-    const indexMatch = content.match(/<details>\s*<summary>[^<]*<\/summary>\s*<!--\s*qnalog-note-index\s*-->\s*```json\s*([\s\S]*?)\s*```\s*<!--\s*qnalog-note-index-end\s*-->\s*<\/details>/);
+    const indexMatch = content.match(/<details>\s*<summary>[^<]*<\/summary>\s*<!--\s*qnalog-note-index\s*-->\s*```json\s*([\s\S]*?)\s*```\s*<!--\s*qnalog-note-index-end\s*-->(?:\s*<!--\s*qnalog-(?:session-knowledge\s+[\s\S]*?|session(?::|\s)[^>]*|continuation-committed:[^>]*)-->)*\s*<\/details>/);
     if (!indexMatch) failures.push("收尾后没有生成 note-index 块");
     else {
       try {
@@ -2418,6 +2438,8 @@ async function main() {
         const hasSummaryOnly = content.includes(shortOutput) && !/^## 详情\s*$/m.test(content);
         const hasIndex = content.includes("<!-- qnalog-note-index -->");
         const hasKnowledgeBlock = content.includes("<!-- qnalog-session-knowledge ");
+        if (qnalogCommentsOutsideDetails(content).length) failures.push("general short finalization left QnALog comments outside details");
+        if (!hasSingleMachineDataDetails(content)) failures.push("general short finalization did not use one localized machine-data details item");
         const preservedTranscript = content.includes(generalShortText);
         const languageInstructionSelected = calls.some((request) => requestPrompt(request).includes("输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。"));
         if (!hasSummaryOnly) failures.push("general short session finalization changed the summary-only body");

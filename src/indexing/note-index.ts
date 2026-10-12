@@ -12,7 +12,7 @@ export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index -->`;
 export const QNALOG_NOTE_INDEX_END = `<!-- ${NS_TAG}-note-index-end -->`;
 
 const NOTE_INDEX_FENCED_PATTERN = new RegExp(
-  `<details>\\s*<summary>[^<]*</summary>\\s*<!--\\s*${nsRe("note-index")}\\s*-->\\s*\`\`\`json\\s*\\n([\\s\\S]*?)\\n\`\`\`\\s*<!--\\s*${nsRe("note-index-end")}\\s*-->\\s*</details>`,
+  `<details>\\s*<summary>[^<]*</summary>\\s*<!--\\s*${nsRe("note-index")}\\s*-->\\s*\`\`\`json\\s*\\n([\\s\\S]*?)\\n\`\`\`\\s*<!--\\s*${nsRe("note-index-end")}\\s*-->(?:\\s*<!--\\s*${nsRe("session-knowledge")}\\s+[\\s\\S]*?-->|\\s*<!--\\s*${nsRe("session")}(?::|\\s)[^>]*-->|\\s*<!--\\s*${nsRe("continuation-committed")}:[^>]*-->)*\\s*</details>`,
   "i",
 );
 const NOTE_INDEX_PREVIOUS_FENCED_PATTERN = new RegExp(
@@ -471,19 +471,64 @@ export function serializeNoteIndex(index: QnALogNoteIndexCard): string {
   ].join("\n");
 }
 
+const SESSION_DATA_DETAILS_RE = new RegExp(
+  `<details>\\s*<summary>[^<]*(?:QnALog session data|会话数据|索引数据|Index data)[^<]*</summary>([\\s\\S]*?)</details>`, "gi",
+);
+const FOLDABLE_SESSION_COMMENT_RE = new RegExp(
+  `<!--\\s*(?:${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`, "gi",
+);
+
+function foldSessionMetadata(markdown: string): { markdown: string; comments: string[] } {
+  let text = markdown;
+  const comments: string[] = [];
+  text = text.replace(SESSION_DATA_DETAILS_RE, (match, body: string) => {
+    if (new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i").test(body)) return match;
+    comments.push(...(body.match(FOLDABLE_SESSION_COMMENT_RE) || []));
+    return "";
+  });
+  const outside: string[] = [];
+  let depth = 0;
+  text = text.split(/(?<=\n)/).map((line) => {
+    const wasInside = depth > 0;
+    const opens = (line.match(/<details\b/gi) || []).length;
+    const closes = (line.match(/<\/details\s*>/gi) || []).length;
+    depth = Math.max(0, depth + opens - closes);
+    return wasInside || opens ? line : line.replace(FOLDABLE_SESSION_COMMENT_RE, (comment) => { outside.push(comment); return ""; });
+  }).join("");
+  comments.push(...outside);
+  if (!comments.length) return { markdown, comments: [] };
+  return { markdown: text.replace(/\n{3,}/g, "\n\n").trimEnd(), comments: [...new Set(comments)] };
+}
+
+function placeSessionMetadataInIndex(markdown: string, comments: readonly string[]): string {
+  if (!comments.length) return markdown;
+  const blockRe = /<details>\s*<summary>[^<]*(?:索引数据|Index data)[^<]*<\/summary>([\s\S]*?)<\/details>/i;
+  const match = blockRe.exec(markdown);
+  if (!match) return `${markdown.trimEnd()}\n\n<details>\n<summary>${labelText("indexData")}</summary>\n${comments.join("\n")}\n</details>\n`;
+  const body = match[1];
+  const additions = comments.filter((comment) => !body.includes(comment));
+  if (!additions.length) return markdown;
+  const markerIndex = body.lastIndexOf(QNALOG_NOTE_INDEX_END);
+  const nextBody = markerIndex < 0
+    ? `${body.trimEnd()}\n${additions.join("\n")}`
+    : `${body.slice(0, markerIndex + QNALOG_NOTE_INDEX_END.length)}\n${additions.join("\n")}${body.slice(markerIndex + QNALOG_NOTE_INDEX_END.length)}`;
+  return markdown.slice(0, match.index) + match[0].replace(body, nextBody) + markdown.slice(match.index + match[0].length);
+}
+
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
-  const text = textValue(markdown);
+  const folded = foldSessionMetadata(textValue(markdown));
+  const text = folded.markdown;
   const existing = readNoteIndex(text, { includeFuture: true });
-  if (existing && "status" in existing) return text;
+  if (existing && "status" in existing) return placeSessionMetadataInIndex(text, folded.comments);
   const existingCard = existing && !("status" in existing) ? existing : null;
   const block = serializeNoteIndex(index);
   const hasFenced = NOTE_INDEX_FENCED_PATTERN.test(text);
   // Contents unchanged and already fenced means no write; legacy blocks upgrade naturally.
-  if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return text;
-  if (hasFenced) return text.replace(NOTE_INDEX_FENCED_PATTERN, () => block);
-  if (NOTE_INDEX_PREVIOUS_FENCED_PATTERN.test(text)) return text.replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, () => block);
-  if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block);
-  return `${text.trimEnd()}\n\n${block}\n`;
+  if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return placeSessionMetadataInIndex(text, folded.comments);
+  if (hasFenced) return placeSessionMetadataInIndex(text.replace(NOTE_INDEX_FENCED_PATTERN, () => block), folded.comments);
+  if (NOTE_INDEX_PREVIOUS_FENCED_PATTERN.test(text)) return placeSessionMetadataInIndex(text.replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, () => block), folded.comments);
+  if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return placeSessionMetadataInIndex(text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block), folded.comments);
+  return placeSessionMetadataInIndex(`${text.trimEnd()}\n\n${block}\n`, folded.comments);
 }
 
 export function resolveNoteIndex(
