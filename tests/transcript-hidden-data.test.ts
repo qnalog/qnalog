@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", () => ({ TFile: class TFile {}, normalizePath: (path: string) => path }));
+import * as obsidian from "obsidian";
 import type { Segment } from "../src/shared/types";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
@@ -11,6 +12,7 @@ import {
   serializeTranscriptBlock,
 } from "../src/transcript/transcript-markdown";
 import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
+import { insertBeforeSessionSegmentsEnd } from "../src/notes/note-segment-store";
 import { buildOutlineCoverageMetadata, readCurrentOutlineBlock } from "../src/notes/outline-storage";
 
 function makeSegment(index: number, text: string): Segment {
@@ -198,6 +200,48 @@ describe("transcript hidden-data storage", () => {
     expect(readTranscriptBlocks(normalized).map((block) => block.visibleBlock)).toEqual(segments.map((segment) => segment.text));
     expect((normalized.match(/data-qnalog-transcript-data=/g) || []).length).toBe(6);
     assertDetailsBounded(normalized);
+  });
+
+  it("normalizes the legacy group when an appended recording adds a segment", async () => {
+    const first = makeSegment(0, "旧录音转写。");
+    const oldPart = legacyBlock(first, "### 段落 1 (00:00–00:01)", first.text)
+      .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, "### 段落 1 (00:00–00:01)\n")
+      .replace(/\n<\/details>$/, "");
+    const oldNote = [
+      "## 原始材料", "<details><summary>分段原始转写（1 段）</summary>",
+      "<!-- qnalog-segments-start:append-fixture -->", oldPart,
+      "<!-- qnalog-segments-end:append-fixture -->", "</details>",
+    ].join("\n");
+    const next = makeSegment(1, "追加录音转写。");
+    const path = "Notes/append-fixture.md";
+    const file = Object.assign(new obsidian.TFile(), { path });
+    let content = oldNote;
+    const vault = {
+      getAbstractFileByPath: (candidate: string) => candidate === path ? file : null,
+      read: async () => content,
+      modify: async (_file: unknown, value: string) => { content = value; },
+      create: vi.fn(async () => file),
+    };
+    await insertBeforeSessionSegmentsEnd({ getVault: () => vault, appendToNote: vi.fn(async () => undefined) }, path,
+      serializeTranscriptBlock(next, "### 段落 2 (00:01–00:02)", next.text), "append-fixture");
+    expect(readTranscriptBlocks(content).map((block) => block.visibleBlock)).toEqual([first.text, next.text]);
+    expect(content).toMatch(/\*\*(?:分段原始转写（2 段）|Segmented raw transcript \(2 segments\))\*\*/);
+    expect(content).not.toMatch(/<summary>(?:分段原始转写|Segmented raw transcript)/);
+    assertDetailsBounded(content);
+  });
+
+  it("normalizes the legacy group after text correction replaces a transcript block", () => {
+    const segments = [makeSegment(0, "第一段原文。"), makeSegment(1, "第二段原文。")];
+    const parts = segments.map((segment, index) => legacyBlock(segment, `### 段落 ${index + 1} (00:00–00:01)`, segment.text)
+      .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, `### 段落 ${index + 1} (00:00–00:01)\n`)
+      .replace(/\n<\/details>$/, ""));
+    const oldNote = `<details><summary>分段原始转写（2 段）</summary>\n${parts.join("\n\n")}\n</details>`;
+    const [block] = readTranscriptBlocks(oldNote);
+    const updated = { ...block.segment, text: "第一段订正文。" };
+    const corrected = replaceTranscriptBlock(oldNote, block, updated, updated.text);
+    expect(readTranscriptBlocks(corrected).map((entry) => entry.visibleBlock)).toEqual(["第一段订正文。", "第二段原文。"]);
+    expect(corrected).not.toMatch(/<summary>分段原始转写/);
+    assertDetailsBounded(corrected);
   });
 
   it("moves realtime outline coverage metadata out and removes blank lines", () => {

@@ -23,6 +23,8 @@ import * as obsidian from "obsidian";
 import { SessionFinalizeService } from "../src/notes/session-finalize-service";
 import { NS_FM_SPEAKERS } from "../src/shared/namespace";
 import { t } from "../src/shared/i18n";
+import { attachTextTranscript } from "../src/transcript/session-transcript";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 
 function makeFixture(options: { frontmatter?: Record<string, unknown> | null; file?: boolean; content?: string } = {}) {
   const file = options.file === false ? null : new obsidian.TFile("Notes/speakers.md");
@@ -98,6 +100,28 @@ describe("speaker confirmation consumer contract", () => {
     expect(result.segments[0].text).toContain("[张三]");
     expect(result.frontmatter).toEqual({ [NS_FM_SPEAKERS]: mappings });
     expect(f.diagnostics.some((call) => call[1] === "speaker.names_persisted" && (call[3] as { replacements: number }).replacements === 2)).toBe(true);
+  });
+
+  it("normalizes a legacy grouped transcript when confirmed speaker names rewrite the note", async () => {
+    const segment = attachTextTranscript({ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "原始转写文本。" }, "speaker-layout-fixture", "text-import");
+    const { transcript, ...storedSegment } = segment;
+    const id = transcript!.id;
+    const oldTranscript = [
+      "<details><summary>分段原始转写（1 段）</summary>",
+      "### 段落 1 (00:00–00:01)",
+      `<!-- qnalog-transcript-start:${id} -->`,
+      `<!-- qnalog-transcript-text-start:${id} -->`, "原始转写文本。",
+      `<!-- qnalog-transcript-text-end:${id} -->`,
+      `<!-- qnalog-transcript-data ${JSON.stringify({ schemaVersion: 2, segment: storedSegment, transcript })} -->`,
+      `<!-- qnalog-transcript-end:${id} -->`, "</details>",
+    ].join("\n");
+    const f = makeFixture({ content: `[说话人1] 负责产品方案。\n${oldTranscript}` });
+    await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
+    const rewritten = f.getContent();
+    expect(rewritten).toMatch(/\*\*(?:分段原始转写（1 段）|Segmented raw transcript \(1 segments?\))\*\*/);
+    expect(rewritten).not.toMatch(/<summary>(?:分段原始转写|Segmented raw transcript)/);
+    expect(readTranscriptBlocks(rewritten).map((block) => block.visibleBlock)).toEqual(["原始转写文本。"]);
+    expect(rewritten).not.toContain("<!-- qnalog-transcript-data ");
   });
   it("does not prompt when every candidate already has a saved name", async () => {
     const f = makeFixture();
