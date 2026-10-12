@@ -7,6 +7,7 @@ import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { getSourceIdFromMarkdown } from "../src/notes/note-source-metadata";
 import { getSegmentsHash } from "../src/notes/audio-refs";
+import { buildNoteIndex, upsertNoteIndex } from "../src/indexing/note-index";
 
 const { cleanTranscriptMock, mergeAndPolishMock, notices } = vi.hoisted(() => ({
   cleanTranscriptMock: vi.fn(),
@@ -255,7 +256,12 @@ describe("clean transcript storage", () => {
       metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting", qnalog_session: sessionId } }) },
       workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
     };
-    const versions = new VersionStore(makeVersionHost(app, () => settings, async () => undefined));
+    const refreshIndex = async (file: MemoryFile) => {
+      const current = await vault.read(file);
+      const index = buildNoteIndex(current, { noteTitle: "legacy-layout-fixture", generatedAt: "2026-10-12T00:00:00.000Z" });
+      if (index) await vault.modify(file, upsertNoteIndex(current, index));
+    };
+    const versions = new VersionStore(makeVersionHost(app, () => settings, refreshIndex));
     await versions.ensureOriginalVersionForSource(sourceFile);
     const cached = await versions.saveVersion(sourceFile, oldLayout, [], {
       kind: "minutes", idLabel: "legacy-layout-polished", label: "整理版本", mode: "meeting", body: "新整理正文。", activate: false,

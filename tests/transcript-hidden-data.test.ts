@@ -52,6 +52,41 @@ function assertDetailsBounded(markdown: string): void {
 }
 
 describe("transcript hidden-data storage", () => {
+  it("keeps loose segment-group and index markers inside raw-material details", () => {
+    const segments = [makeSegment(0, "alpha"), makeSegment(1, "beta")];
+    const transcript = segments.map((segment, index) => serializeTranscriptBlock(
+      segment,
+      `段落 ${index + 1} (00:00–00:01)`,
+      segment.text,
+    )).join("\n");
+    const input = [
+      "# Fixture",
+      "Visible body.",
+      "<!-- qnalog-note-index -->",
+      "<!-- qnalog-note-index-end -->",
+      '<span data-qnalog="active-version-end"></span>',
+      "---", "## 原始材料", "**分段原始转写（2 段）**",
+      "<!-- qnalog-segments-start:fixture -->",
+      transcript,
+      "<!-- qnalog-segments-end:fixture -->",
+      "<details>", "<summary>索引数据</summary>",
+      "<!-- qnalog-note-index -->", "```json", "{}", "```", "<!-- qnalog-note-index-end -->",
+      "</details>",
+    ].join("\n");
+
+    const output = normalizeTranscriptLayout(input);
+    const outsideComments = [...output.matchAll(/<!--\s*qnalog-[^>]*-->/g)].filter((match) => {
+      const before = output.slice(0, match.index);
+      return (before.match(/<details\b/gi) || []).length <= (before.match(/<\/details>/gi) || []).length;
+    });
+    expect(outsideComments.map(([comment]) => comment)).toEqual([]);
+    assertDetailsBounded(output);
+    const details = [...output.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)].map((match) => match[1]);
+    expect(details.some((body) => body.includes("qnalog-segments-start:fixture"))).toBe(true);
+    expect(details.some((body) => body.includes("qnalog-segments-end:fixture"))).toBe(true);
+    expect(output.match(/<summary>(?:索引数据|Index data)<\/summary>/g)).toHaveLength(1);
+    expect(normalizeTranscriptLayout(output)).toBe(output);
+  });
   it.each([0, 1, 6, 30])("writes %i independent bounded transcript details", (count) => {
     const segments = Array.from({ length: count }, (_, index) => makeSegment(index, `段落 ${index + 1}。`));
     const output = normalizeTranscriptDataPlacement(detailBlocks(segments.map((segment, index) => serializeTranscriptBlock(segment, `### 段落 ${index + 1} (00:00–00:10)`, segment.text))));
