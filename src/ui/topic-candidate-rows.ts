@@ -1,7 +1,7 @@
 import type { TopicCandidate } from "../topics/topic-candidates";
 import { cleanTopicOverviewExcerpt } from "../topics/topic-overview-display";
 import { formatTopicCandidateReasons } from "./topics-ui-port";
-import { suppressRowActivation } from "./topic-row-activation";
+import { bindKeyboardFocusOutline, suppressRowActivation } from "./topic-row-activation";
 
 export interface TopicCandidateRowPort {
   text(key: string): string;
@@ -23,6 +23,7 @@ export function renderTopicCandidateRow(
     cls: candidate.cancellable ? "qnalog-topics-candidate" : "qnalog-topics-candidate is-disabled",
     attr: candidate.cancellable ? {} : { "aria-disabled": "true" },
   });
+  bindKeyboardFocusOutline(row);
   const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": candidate.title } });
   checkbox.checked = selected;
   checkbox.disabled = !candidate.cancellable;

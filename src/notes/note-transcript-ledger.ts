@@ -174,8 +174,10 @@ export function ensureTranscriptBlocks(
   let next = stringifyTranscriptValue(markdown || "");
   const originalBlocks = readTranscriptBlocks(next);
   for (const block of [...originalBlocks].filter((item) => options.reconcileEditedText !== false && item.drifted).sort((left, right) => right.start - left.start)) {
-    const record = block.segment.transcript!;
-    const current = record.revisions.find((revision) => revision.revision === record.currentRevision)!;
+    const record = block.segment.transcript;
+    if (!record) throw new Error("Transcript metadata is missing from a drifted block");
+    const current = record.revisions.find((revision) => revision.revision === record.currentRevision);
+    if (!current) throw new Error("Current transcript revision is missing from a drifted block");
     const editedText = block.visibleBlock
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/!\[\[[^\]]+\]\]/g, "");
@@ -278,7 +280,11 @@ export function ensureTranscriptBlocks(
   if (!legacyEntries.length) return normalizeTranscriptDataPlacement(next);
 
   const orderedEntries: Array<{ position: number; id: string; legacy: (typeof legacyEntries)[number] | null }> = [
-    ...currentBlocks.map((block) => ({ position: block.start, id: block.segment.transcript!.id, legacy: null })),
+    ...currentBlocks.map((block) => {
+      const transcript = block.segment.transcript;
+      if (!transcript) throw new Error("Transcript metadata is missing from a current block");
+      return { position: block.start, id: transcript.id, legacy: null };
+    }),
     ...legacyEntries.map((entry) => ({ position: entry.position, id: "", legacy: entry })),
   ].sort((left, right) => left.position - right.position);
   const usedIds = new Set(orderedEntries.map((entry) => entry.id).filter(Boolean));
@@ -294,7 +300,9 @@ export function ensureTranscriptBlocks(
     while (usedIds.has(`seg:${encodeURIComponent(sourceId)}:${segmentIndex}`)) segmentIndex += 1;
     const origin = entry.legacy.segment.source === "text-import" ? "text-import" : "legacy-transcript";
     const segment = attachTextTranscript({ ...entry.legacy.segment, index: segmentIndex }, sourceId, origin);
-    usedIds.add(segment.transcript!.id);
+    const transcript = segment.transcript;
+    if (!transcript) throw new Error("Transcript metadata is missing from a newly attached block");
+    usedIds.add(transcript.id);
     const block = serializeTranscriptBlock(segment, entry.legacy.heading, entry.legacy.visibleText);
     let cursor = entry.legacy.start;
     let firstGap = true;

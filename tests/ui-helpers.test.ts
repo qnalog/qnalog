@@ -212,20 +212,15 @@ describe("countKnowledgeExtractionHistory", () => {
 });
 
 describe("trashVaultFileRef", () => {
-  it("uses vault trash when available, otherwise file manager", async () => {
+  it("uses Obsidian's configured deleted-file preference", async () => {
     const file = {};
-    const fallbackTrash = vi.fn();
+    const fileManagerTrash = vi.fn();
     const vaultTrash = vi.fn();
-    const app = { vault: { trash: vaultTrash }, fileManager: { trashFile: fallbackTrash } };
+    const app = { vault: { trash: vaultTrash }, fileManager: { trashFile: fileManagerTrash } };
     await trashVaultFileRef(app as never, file as never);
-    expect(vaultTrash).toHaveBeenCalledOnce();
-    expect(vaultTrash).toHaveBeenCalledWith(file, true);
-    expect(fallbackTrash).not.toHaveBeenCalled();
-
-    const fallbackApp = { vault: {}, fileManager: { trashFile: fallbackTrash } };
-    await trashVaultFileRef(fallbackApp as never, file as never);
-    expect(fallbackTrash).toHaveBeenCalledOnce();
-    expect(fallbackTrash).toHaveBeenCalledWith(file);
+    expect(fileManagerTrash).toHaveBeenCalledOnce();
+    expect(fileManagerTrash).toHaveBeenCalledWith(file);
+    expect(vaultTrash).not.toHaveBeenCalled();
   });
 });
 

@@ -21,3 +21,14 @@ export function suppressRowActivation(click: TopicRowClick): boolean {
   if (click.onCheckbox) return false;
   return click.disabled || click.onInteractive || click.selectedText.length > 0;
 }
+
+export function bindKeyboardFocusOutline(row: HTMLElement): void {
+  row.addEventListener("focusin", (event) => {
+    const target = event.target;
+    row.classList.toggle("is-keyboard-focus", target instanceof HTMLElement && target.matches(":focus-visible"));
+  });
+  row.addEventListener("focusout", (event) => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || !row.contains(next)) row.classList.remove("is-keyboard-focus");
+  });
+}

@@ -2466,7 +2466,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addButton(b => b.setButtonText(t("Scan")).onClick(() => this.plugin.inbox.scanInboxFolder()));
 
     new obsidian.Setting(c).setName(t("Clean up blank short recordings"))
-      .setDesc(t("Scan the transcripts folder and move QnALog entries that are 10 seconds or shorter and have no valid transcript text to the system trash, handling the recording files they reference at the same time. Accidental deletions can be restored from the system trash."))
+      .setDesc(t("Scan the transcripts folder and remove QnALog entries that are 10 seconds or shorter and have no valid transcript text, along with the recording files they reference. Obsidian's deleted-file setting determines whether removed files can be restored."))
       .addButton(b => b.setButtonText(t("Scan and clean")).onClick(() => this.plugin.cleanup.cleanupEmptyShortRecordings()));
 
     new obsidian.Setting(c)
@@ -2586,7 +2586,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Clear Diagnostic Logs"))
       .setDesc(t("Deletes all .jsonl log files in the diagnostic log folder to free up space. Does not affect notes or recordings."))
       .addButton(b => b.setButtonText(t("Clear")).onClick(async () => {
-        const ok = await qnalogConfirm(this.app, t("Clear diagnostic logs?"), t("This will delete all .jsonl log files in the diagnostic log folder; after deletion they can no longer be used to trace past issues (files go to the system trash and can be restored)."), t("Clear"));
+        const ok = await qnalogConfirm(this.app, t("Clear diagnostic logs?"), t("This will delete all .jsonl log files in the diagnostic log folder; after deletion they can no longer be used to trace past issues (Obsidian's deleted-file setting determines whether they can be restored)."), t("Clear"));
         if (!ok) return;
         const folder = this.app.vault.getAbstractFileByPath(this.plugin.diagnostics.getDiagnosticsFolder());
         let n = 0;
@@ -2596,7 +2596,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
             try { await trashVaultFileRef(this.app, f); n++; } catch (e) { console.error("[QnALog] clear diagnostics log failed", e); }
           }
         }
-        new obsidian.Notice(n ? t("Diagnostic log cleared: {0} files (can be restored from the system trash)").replace("{0}", String(n)) : t("The diagnostic log folder is empty"));
+        new obsidian.Notice(n ? t("Diagnostic log cleared: {0} files (restoration depends on Obsidian's deleted-file setting)").replace("{0}", String(n)) : t("The diagnostic log folder is empty"));
       }));
 
     new obsidian.Setting(c).setName(t("Copyright & License"))

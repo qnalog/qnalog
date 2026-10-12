@@ -207,7 +207,7 @@ npm run install:vault -- "<获授权的知识库>"
 git tag X.Y.Z && git push origin X.Y.Z
 ```
 
-**Release workflow 检查链**：检出 tag 的干净历史（`fetch-depth: 0`）；拒绝不在 `main` 上的 tag；`npm ci`；校验 tag 与 manifest 版本一致；运行 `npm run verify:push`；重建后逐字节比较 `main.js`、`manifest.json`、`styles.css`；要求 `.github/release-notes/<tag>.md`；上传 `main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE` 五项；回读上传资产并逐字节比对。
+**Release workflow 检查链**：检出 tag 的干净历史（`fetch-depth: 0`）；拒绝不在 `main` 上的 tag；`npm ci`；校验 tag 与 manifest 版本一致；运行 `npm run verify:push`；重建后逐字节比较 `main.js`、`manifest.json`、`styles.css`；要求 `.github/release-notes/<tag>.md`；上传 `main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE` 五项；为前三项生成构建来源证明；回读五项资产并逐字节比对。
 
 2026-09-15 曾因 tag 先于 `main` 更新导致发布状态不一致；因此 release workflow 要求 tag commit 已在 `main`。
 
@@ -308,6 +308,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 ### 已完成
 
+- **1.6.7 发布**。清理社区目录扫描的 53 条警告（`Array.prototype.at`、冗余类型断言、CSS 的 `:has`/`!important`/`display: contents`/`column-gap`）；清理空短录音与清空诊断日志的删除动作跟随 Obsidian「已删除文件」设置；release 工作流为三个资产生成构建证明。
 - **1.6.6 发布**。笔记中的插件元数据不再显示在正文：会话数据、索引数据与版本区标记移入折叠区或不可见元素，索引数据位于原始材料最后；原始转写按段拆分折叠，大体积转写数据改放隐藏元素，长笔记打开即折叠；重新整理与切换版本时升级旧笔记的原始材料区；生成标签去掉 Obsidian 不允许的字符；界面中「纪要」改为「笔记」，侧栏面板名为「QnALog 语音笔记」；修复单段转写超过约 3,500 字符时导入音频失败。
 - **主题库与「主题」标签页（1.6.5 发布）**。从笔记创建成为主题，按标签与内容相近选候选，默认只读概要；主题页为 `QnALog/主题/` 下的普通笔记（叙述概要、进展脉络、脚注来源、程序生成的时间线、分歧两侧各带来源与日期）；更新先预览、保留快照可撤销，不改原笔记，删除只删主题页。
 - **P2.3：关键持久化域类型与能力闭合**。队列恢复、录音与会话收尾、版本保全、笔记写入及空短录音清理已完成 strict-core 纳入和窄能力收敛；无用户可见变化。剩余 `SessionFinalizeService`、`QueueRetryService`、`RepolishService` 外壳可选，受传递依赖大量既有严格诊断阻塞，不在验收范围。

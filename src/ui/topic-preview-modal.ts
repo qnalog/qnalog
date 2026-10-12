@@ -3,7 +3,7 @@ import type { TopicChangePreview, TopicChangePreviewItem } from "../topics/topic
 import { stripTopicUnverifiedMarker } from "../topics/topic-integration";
 import { topicLabelSeparator, topicOpenKindLabel, topicSectionEnglishLabel } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
-import { suppressRowActivation } from "./topic-row-activation";
+import { bindKeyboardFocusOutline, suppressRowActivation } from "./topic-row-activation";
 
 export function topicPreviewTargetLabel(item: TopicChangePreviewItem): string {
   const target = item.target.trim();
@@ -136,6 +136,7 @@ export class TopicPreviewModal extends Modal {
     const selected = new Set(this.preview.items.map((item) => item.id));
     if (this.preview.legacyAnchorCleanup) {
       const row = scroll.createEl("label", { cls: "qnalog-topics-preview-item" });
+      bindKeyboardFocusOutline(row);
       const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Clean old block markers") } });
       checkbox.checked = true;
       selected.add("__clean-legacy-markers__");
@@ -144,6 +145,7 @@ export class TopicPreviewModal extends Modal {
     }
     if (this.preview.legacyPropertyCleanup) {
       const row = scroll.createEl("label", { cls: "qnalog-topics-preview-item" });
+      bindKeyboardFocusOutline(row);
       const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Clean old topic properties") } });
       checkbox.checked = true;
       selected.add("__clean-legacy-properties__");
@@ -152,6 +154,7 @@ export class TopicPreviewModal extends Modal {
     }
     if (this.preview.legacyStatusCleanup) {
       const row = scroll.createEl("label", { cls: "qnalog-topics-preview-item" });
+      bindKeyboardFocusOutline(row);
       const checkbox = row.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Clean old status line") } });
       checkbox.checked = true;
       selected.add("__clean-legacy-status__");
@@ -174,6 +177,7 @@ export class TopicPreviewModal extends Modal {
       // Same whole-row toggle as the create dialog: the row is a <label> around the checkbox.
       const isRevision = item.operation.type === "revise_block";
       const row = group.createEl("label", { cls: `qnalog-topics-preview-item${item.type === "add_conflict" || item.type === "add_disagreement" ? " is-conflict" : ""}${isRevision ? " is-revision" : ""}` });
+      bindKeyboardFocusOutline(row);
       if (item.programGenerated) row.createSpan({ cls: "qnalog-topics-notice", text: this.port.text("Completed by program from conflict assessment") });
       const isDisagreement = item.operation.type === "add_disagreement";
       const main = row.createDiv({ cls: `qnalog-topics-preview-main${isDisagreement ? " is-disagreement" : ""}` });

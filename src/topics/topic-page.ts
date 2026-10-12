@@ -497,7 +497,7 @@ export function appendTopicMemberMetadata(markdown: string, members: readonly To
   const lines = parsed.body.split("\n");
   for (const section of ["时间线", "来源笔记"] as const) {
     if (!sectionRange(lines, section)) {
-      while (lines.length && !lines.at(-1)?.trim()) lines.pop();
+      while (lines.length && !lines[lines.length - 1]?.trim()) lines.pop();
       lines.push("", sectionHeading(section));
     }
   }
@@ -513,10 +513,11 @@ export function appendTopicMemberMetadata(markdown: string, members: readonly To
     const timelineEntries = rows.filter((row) => row.match);
     const target = timelineEntries.find(({ match }) => {
       const date = match?.[1] === "—" ? "9999-99-99" : match?.[1] || "";
-      const title = match?.[3] || match?.[2].split("/").at(-1) || "";
+      const linkParts = match?.[2].split("/") || [];
+      const title = match?.[3] || linkParts[linkParts.length - 1] || "";
       return date.localeCompare(entry.date) > 0 || (date === entry.date && title.localeCompare(entry.title) > 0);
     });
-    const lastTimelineIndex = timelineEntries.at(-1)?.index;
+    const lastTimelineIndex = timelineEntries[timelineEntries.length - 1]?.index;
     let at = target?.index ?? (lastTimelineIndex !== undefined ? lastTimelineIndex + 1 : range.start + 1);
     while (at > range.start + 1 && !lines[at - 1]?.trim()) at--;
     lines.splice(at, 0, entry.row);
@@ -546,10 +547,11 @@ export function appendTopicMemberMetadata(markdown: string, members: readonly To
       const rows = list.filter((row) => row.match);
       const target = rows.find(({ match }) => {
         const date = match?.[3] || "9999-99-99";
-        const title = match?.[2] || match?.[1].split("/").at(-1) || "";
+        const linkParts = match?.[1].split("/") || [];
+        const title = match?.[2] || linkParts[linkParts.length - 1] || "";
         return date.localeCompare(entry.date) > 0 || (date === entry.date && title.localeCompare(entry.title) > 0);
       });
-      const lastSourceIndex = rows.at(-1)?.index;
+      const lastSourceIndex = rows[rows.length - 1]?.index;
       lines.splice(target?.index ?? (lastSourceIndex !== undefined ? lastSourceIndex + 1 : range.start + 1), 0, entry.row);
     }
   }

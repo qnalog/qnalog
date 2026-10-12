@@ -18,7 +18,8 @@ function getRecorderErrorName(error: unknown): string {
   if (typeof name === "string") return name;
   if (typeof name === "number" || typeof name === "boolean" || typeof name === "bigint" || typeof name === "symbol") return String(name);
   if (Array.isArray(name)) return name.join(",");
-  return Object.prototype.toString.call(name) as string;
+  const tag: unknown = Object.prototype.toString.call(name);
+  return typeof tag === "string" ? tag : "";
 }
 /** 录音过程中出现的问题（设备被回收、服务不可用等）。 */
 export type RecordingIssue = {
