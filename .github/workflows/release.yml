@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -111,6 +113,14 @@ jobs:
             --verify-tag \
             --notes-file ".github/release-notes/${GITHUB_REF_NAME}.md" \
             main.js manifest.json styles.css LICENSE NOTICE
+
+      - name: Attest release build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       # 上传后回读一次：确认用户下载到的就是 tag 里的内容。
       - name: Verify uploaded assets match the tag

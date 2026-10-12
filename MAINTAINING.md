@@ -207,7 +207,7 @@ npm run install:vault -- "<获授权的知识库>"
 git tag X.Y.Z && git push origin X.Y.Z
 ```
 
-**Release workflow 检查链**：检出 tag 的干净历史（`fetch-depth: 0`）；拒绝不在 `main` 上的 tag；`npm ci`；校验 tag 与 manifest 版本一致；运行 `npm run verify:push`；重建后逐字节比较 `main.js`、`manifest.json`、`styles.css`；要求 `.github/release-notes/<tag>.md`；上传 `main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE` 五项；回读上传资产并逐字节比对。
+**Release workflow 检查链**：检出 tag 的干净历史（`fetch-depth: 0`）；拒绝不在 `main` 上的 tag；`npm ci`；校验 tag 与 manifest 版本一致；运行 `npm run verify:push`；重建后逐字节比较 `main.js`、`manifest.json`、`styles.css`；要求 `.github/release-notes/<tag>.md`；上传 `main.js`、`manifest.json`、`styles.css`、`LICENSE`、`NOTICE` 五项；为前三项生成构建来源证明；回读五项资产并逐字节比对。
 
 2026-09-15 曾因 tag 先于 `main` 更新导致发布状态不一致；因此 release workflow 要求 tag commit 已在 `main`。
 
