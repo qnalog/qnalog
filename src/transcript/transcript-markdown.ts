@@ -425,7 +425,9 @@ function headingForSegment(segment: Segment, inner: string, textStartIndex: numb
   const between = summaryEnd >= 0 && summaryEnd < markerIndex
     ? markdown.slice(summaryEnd + "</summary>".length, markerIndex)
     : "";
-  const materialLinks = [...between.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
+  const legacyHeadings = [...between.matchAll(/^###\s+(?:段落|Segment)\s+\d+[^\n]*$/gm)];
+  const segmentMaterial = legacyHeadings.length ? between.slice(legacyHeadings[legacyHeadings.length - 1].index || 0) : between;
+  const materialLinks = [...segmentMaterial.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
   const label = isTranscriptSummary(storedSummary)
     ? storedSummary
     : `${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})`;

@@ -224,6 +224,28 @@ describe("transcript hidden-data storage", () => {
     }
   });
 
+  it("keeps each legacy segment's audio timestamp link with that segment", () => {
+    const segments = [makeSegment(0, "first"), makeSegment(1, "second"), makeSegment(2, "third")];
+    const legacyParts = segments.map((segment, index) => {
+      const part = legacyBlock(segment, `### 段落 ${index + 1} (00:0${index}0–00:0${index + 1}0)`, segment.text)
+        .replace(/^<details>\n<summary>[^\n]*<\/summary>\n/, "")
+        .replace(/\n<\/details>$/, "");
+      return `### 段落 ${index + 1} (00:0${index}0–00:0${index + 1}0) [[audio.m4a|00:0${index}0]]\n${part}`;
+    });
+    const input = [
+      "**分段原始转写（3 段）**", "<details>", "<summary>分段原始转写（3 段）</summary>",
+      "<!-- qnalog-segments-start:audio-links -->", "", ...legacyParts.flatMap((part) => [part, ""]),
+      "<!-- qnalog-segments-end:audio-links -->", "</details>",
+    ].join("\n");
+
+    const normalized = normalizeTranscriptLayout(input);
+    const details = [...normalized.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)]
+      .filter((match) => /qnalog-transcript-start/.test(match[1]));
+    expect(details).toHaveLength(3);
+    expect(details.map(([_, body]) => [...body.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link)))
+      .toEqual(["00:000", "00:010", "00:020"].map((time) => [`[[audio.m4a|${time}]]`]));
+  });
+
   it("splits the six-segment Herald text scale while keeping every details block bounded", () => {
     const lengths = [274, 871, 1806, 3306, 3463, 2145];
     const segments = lengths.map((length, index) => makeSegment(index, `${"转写。".repeat(Math.floor(length / 3))}${"尾".repeat(length % 3)}`));
