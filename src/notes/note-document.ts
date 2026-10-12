@@ -95,9 +95,16 @@ export function findSessionNoteBlock(
   const h2Index = text.lastIndexOf("\n## ", sessionIndex);
   const h1Index = text.lastIndexOf("\n# ", sessionIndex);
   const headingIndex = Math.max(h2Index, h1Index);
+  let end = endIndex + endMarker.length;
+  const detailsStart = text.lastIndexOf("<details>", sessionIndex);
+  const detailsCloseBefore = text.lastIndexOf("</details>", sessionIndex);
+  if (detailsStart > detailsCloseBefore) {
+    const detailsEnd = text.indexOf("</details>", endIndex);
+    if (detailsEnd >= 0) end = detailsEnd + "</details>".length;
+  }
   return {
     start: headingIndex >= 0 ? headingIndex + 1 : 0,
-    end: endIndex + endMarker.length,
+    end,
   };
 }
 
@@ -250,6 +257,8 @@ export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts 
   };
 
   const detailsPatterns: RegExp[] = [
+    /<details>\s*\n?<summary>[^<\n]*QnALog session data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
+    /<details>\s*\n?<summary>[^<\n]*QnALog merge data[^<\n]*<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:录音信息|Recording info)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:原始音频|Original audio)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,
     /<details>\s*\n?<summary>[^<\n]*?(?:录音中实时大纲|Live outline while recording)[^<\n]*?<\/summary>[\s\S]*?<\/details>/gi,

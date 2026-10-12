@@ -621,7 +621,7 @@ describe("NoteWriter narrow host capabilities", () => {
       expect(splitLeadingFrontmatter(appended).frontmatter).toContain("title: appended");
       expect(appended.indexOf("# Existing note")).toBeLessThan(appended.indexOf("Append body"));
       expect(readTranscriptBlocks(appended).map(block => block.visibleBlock)).toEqual([sourceText]);
-      expect(appended.endsWith("<!-- qnalog-continuation-committed:append-session -->\n")).toBe(true);
+      expect(appended.endsWith("<details><summary>QnALog session data</summary><!-- qnalog-continuation-committed:append-session --></details>\n")).toBe(true);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -2367,7 +2367,7 @@ describe("NoteWriter polish execution boundaries", () => {
         expect(result).toContain(modelBody);
         if (entry.expectedSource) expect(result).toContain(entry.expectedSource);
         else expect(result).not.toContain("LIVE VAULT BYTES");
-        expect(result.endsWith("<!-- qnalog-continuation-committed:polish-flow-commit -->\n")).toBe(true);
+        expect(result.endsWith("<details><summary>QnALog session data</summary><!-- qnalog-continuation-committed:polish-flow-commit --></details>\n")).toBe(true);
       }
     } finally {
       vi.unstubAllGlobals();
@@ -2723,7 +2723,7 @@ describe("NoteWriter merge metadata literal preservation", () => {
     return JSON.parse(markdown.slice(start + startMarker.length + 1, end));
   };
   const expectedBlock = (payload: unknown) =>
-    `${startMarker}\n${JSON.stringify(payload, null, 2)}\nqnalog-merge-end -->`;
+    `<details><summary>QnALog merge data</summary>${startMarker}\n${JSON.stringify(payload, null, 2)}\nqnalog-merge-end --></details>`;
   type MergeFixture = {
     writer: NoteWriter;
     host: NoteWriterHost;

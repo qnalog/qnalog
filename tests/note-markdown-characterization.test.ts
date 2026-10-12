@@ -18,7 +18,7 @@ import { stripEmptyPlaceholders } from "../src/notes/empty-short-note";
 import { buildActiveVersionBlock, replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { cleanTranscriptBlock, ensureTranscriptBlocks, extractTranscriptSegments, splitTranscriptSections } from "../src/notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown, inferNoteStartedAtIso, normalizeSegmentsForMergedNote } from "../src/notes/note-source-metadata";
-import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
+import { extractAllRawBlocksFromText, extractSessionId, findActiveVersionBlock, findFirstNoteBoundary, findNoteMarkerOffset, findNoteDelimitedBlock, findRawMaterialInsertionOffset, findSessionNoteBlock, iterateNoteDetailsBlocks, iterateNoteHeadingBlocks, replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter, stripUtilityDetailsBlocks } from "../src/notes/note-document";
 import { QNALOG_ACTIVE_VERSION_END, QNALOG_ACTIVE_VERSION_START } from "../src/shared/limits";
 import { NS_FM, NS_TAG } from "../src/shared/namespace";
 import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
@@ -413,6 +413,16 @@ describe("版本块构建与替换", () => {
     } finally {
       setActiveUiLanguage(originalLanguage);
     }
+  });
+});
+
+describe("session details ranges", () => {
+  it("includes the closing details tag when locating a wrapped session marker", () => {
+    const note = "# Session\n<details><summary>QnALog session data</summary><!-- qnalog-session:s1 --><!-- qnalog-segments-end:s1 --></details>\n";
+    const range = findSessionNoteBlock(note, "s1");
+    expect(range).not.toBeNull();
+    expect(note.slice(range!.start, range!.end)).toContain("</details>");
+    expect(note.slice(range!.end).trim()).toBe("");
   });
 });
 

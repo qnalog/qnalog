@@ -259,9 +259,7 @@ export class RecordingService {
       const header = [
         titleLine,
         "",
-        nsMarker("session", createdSession.id),
-        nsMarker("segments-start", createdSession.id),
-        nsMarker("segments-end", createdSession.id),
+        `<details><summary>QnALog session data</summary>${nsMarker("session", createdSession.id)}${nsMarker("segments-start", createdSession.id)}${nsMarker("segments-end", createdSession.id)}</details>`,
         "",
       ].join("\n");
       if (!continuationInfo) await this.host.noteWriter.appendToNote(mdPath, header);

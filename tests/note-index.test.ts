@@ -440,6 +440,7 @@ describe("QnALog note index", () => {
       "Hidden raw text.",
       "</details>",
       "<details><summary>QnALog session data</summary><!-- qnalog-session:legacy --></details>",
+      "<details><summary>QnALog merge data</summary><!-- qnalog-merge -->{}qnalog-merge-end --></details>",
       "<details>",
       "<summary>Custom</summary>",
       "Custom body remains.",
@@ -454,6 +455,7 @@ describe("QnALog note index", () => {
     expect(visible).toContain("Visible before.");
     expect(visible).not.toContain("Hidden raw text.");
     expect(visible).not.toContain("qnalog-session:legacy");
+    expect(visible).not.toContain("qnalog-merge");
     expect(visible).toContain("Custom body remains.");
     expect(visible).toContain("Attributed shell remains.");
   });

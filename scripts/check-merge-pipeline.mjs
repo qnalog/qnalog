@@ -556,7 +556,7 @@ async function main() {
     if (!citedIds.length || citedIds.some((id) => !sourceUtteranceIds.has(id))) {
       failures.push("知识快照证据未全部指向笔记中持久化的 utterance");
     }
-    const indexMatch = content.match(/<!--\s*qnalog-note-index\s*-->\s*<details>[\s\S]*?```json\s*([\s\S]*?)\s*```\s*<\/details>/);
+    const indexMatch = content.match(/<details>\s*<summary>[^<]*<\/summary>\s*<!--\s*qnalog-note-index\s*-->\s*```json\s*([\s\S]*?)\s*```\s*<!--\s*qnalog-note-index-end\s*-->\s*<\/details>/);
     if (!indexMatch) failures.push("收尾后没有生成 note-index 块");
     else {
       try {
@@ -1506,7 +1506,7 @@ async function main() {
       const outputs = [];
       const markerStart = "<!-- qnalog-merge -->";
       const markerEnd = "\nqnalog-merge-end -->";
-      const expectedBlock = `<!-- qnalog-merge -->\n${JSON.stringify(expectedPayload, null, 2)}\nqnalog-merge-end -->`;
+      const expectedBlock = `<details><summary>QnALog merge data</summary><!-- qnalog-merge -->\n${JSON.stringify(expectedPayload, null, 2)}\nqnalog-merge-end --></details>`;
       const assertPayload = (content) => {
         const start = content.indexOf(markerStart);
         const end = content.indexOf(markerEnd, start + markerStart.length);
@@ -1531,7 +1531,7 @@ async function main() {
         mergedAt: "2000-01-01T00:00:00.000Z",
         sources: [{ path: "Notes/old.md", title: "old", durationMs: 5 }],
       };
-      const oldBlock = `<!-- qnalog-merge -->\n${JSON.stringify(oldPayload, null, 2)}\nqnalog-merge-end -->`;
+      const oldBlock = `<details><summary>QnALog merge data</summary><!-- qnalog-merge -->\n${JSON.stringify(oldPayload, null, 2)}\nqnalog-merge-end --></details>`;
       const suffix = "\n\nKEEP AFTER $' $$\r\n";
       target._content = `${prefix}\n\n${oldBlock}${suffix}`;
       await plugin.noteWriter.appendMergeMetadataBlock(target, sources);
@@ -1724,7 +1724,7 @@ async function main() {
         || plugin.sessionStore.get() !== null
         || plugin.continuations.isSessionTracked(lifecycleSession.id)
         || plugin.recording.getRecordingIssue() !== null) {
-        throw new Error("short-recording finalization did not discard the placeholder and release session state");
+        throw new Error(`short-recording finalization did not discard the placeholder and release session state: ${JSON.stringify({ fileExists: files.has(placeholderPath), sessionExists: !!plugin.sessionStore.get(), tracked: plugin.continuations.isSessionTracked(lifecycleSession.id), recordingIssue: !!plugin.recording.getRecordingIssue() })}`);
       }
       if (llmCalls.length !== requestCountBefore
         || JSON.stringify(plugin.queue.tasks.map((task) => task.id)) !== JSON.stringify(taskIdsBefore)
@@ -3550,7 +3550,7 @@ async function main() {
           await polishWriter.appendPolishBlock(polishSession, polishLiteralBody, null, false, "polish-flow-commit", "");
           const result = emptyVaultText;
           if (result.includes(liveText) || !result.includes(polishLiteralBody)
-            || !result.endsWith("<!-- qnalog-continuation-committed:polish-flow-commit -->\n")) {
+            || !result.endsWith("<details><summary>QnALog session data</summary><!-- qnalog-continuation-committed:polish-flow-commit --></details>\n")) {
             throw new Error("empty initialMarkdown did not bypass vault read or preserve the commit marker");
           }
           polishExecutionResults.push(result);
