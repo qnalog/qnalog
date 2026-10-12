@@ -32,7 +32,7 @@ import { attachTextTranscript, attachTranscriptResult } from "../transcript/sess
 import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 import { t } from "../shared/i18n";
-import { labelText } from "../shared/note-labels";
+import { labelPattern, labelText } from "../shared/note-labels";
 import { buildTranscriptSessionSkeleton } from "../notes/note-transcript-materials";
 import type { SessionStore } from "../session/session-store";
 import type { ContinuationService } from "../session/continuation-service";
@@ -585,6 +585,30 @@ export class ImportService {
       segmentCount: session.segments.length,
       pendingTranscriptionCount,
     };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.host.tasks.updateImportActivity({
+        phase: "persist",
+        error: message,
+        label: t("Audio import failed."),
+      });
+      if (this.host.tasks._importBusy && String(this.host.tasks._importBusy.sessionId || "") === session.id) {
+        this.host.tasks._importBusy = null;
+        this.host.tasks.updateBusyStatus();
+      }
+      try {
+        const note = this.host.app.vault.getAbstractFileByPath(session.mdPath);
+        if (note instanceof obsidian.TFile) {
+          const markdown = await this.host.app.vault.read(note);
+          const importing = labelPattern("importing");
+          const updated = markdown.replace(/^(# .+)$/m, (line) => line.replace(importing, labelText("importFailedRetryable")));
+          if (updated !== markdown) await this.host.app.vault.modify(note, updated);
+        }
+      } catch {
+        // Preserve the original import error if updating the retryable note title fails.
+      }
+      this.host.shell.refreshOutlineView();
+      throw error;
     } finally {
       this.host.continuations.releaseSession(session.id);
     }

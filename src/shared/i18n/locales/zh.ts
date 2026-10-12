@@ -84,6 +84,8 @@ export const ZH: MessageTable = {
 "AI Briefing": "AI 整理",
 "Knowledge": "资料库",
   "(importing…)": "（导入处理中…）",
+  "(import failed; audio kept for retry)": "（导入失败，音频已保留，可重试）",
+  "Audio import failed.": "音频导入失败。",
   "Text import": "文本导入",
   "Import": "导入",
   "Append to {0}": "续录 {0}",

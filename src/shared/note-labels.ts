@@ -127,6 +127,7 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
 
   // —— 标题后缀与导入头 ——
   importing: { key: "(importing…)", re: /（导入处理中…）|\(importing…\)/ },
+  importFailedRetryable: { key: "(import failed; audio kept for retry)", re: /（导入失败，音频已保留，可重试）|\(import failed; audio kept for retry\)/ },
   textImporting: { key: "(text importing…)", re: /（文本导入处理中…）|\(text importing…\)/ },
 };
 
