@@ -92,6 +92,50 @@ describe("服务预设与 API 方案密钥隔离（回归期望）", () => {
     expect(update.llmApiKey).toBe("fake-key-siliconflow-asr");
     expect(settings.llmProfiles[0].apiKey).toBe("fake-key-service-a");
   });
+
+  it("选择 Custom service… 后保留密钥、活动方案和地址", () => {
+    const settings = settingsWithTwoProfiles();
+    const before = {
+      activeLlmProfile: settings.activeLlmProfile,
+      llmEndpoint: settings.llmEndpoint,
+      llmApiKey: settings.llmApiKey,
+    };
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, ""));
+
+    expect(settings.llmServicePreset).toBe("");
+    expect(settings.activeLlmProfile).toBe(before.activeLlmProfile);
+    expect(settings.llmEndpoint).toBe(before.llmEndpoint);
+    expect(settings.llmApiKey).toBe(before.llmApiKey);
+  });
+
+  it("Custom service… 后修改密钥仍同步到活动方案", () => {
+    const settings = settingsWithTwoProfiles();
+    const originalEndpoint = settings.llmProfiles[0].endpoint;
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, ""));
+    settings.llmApiKey = "fake-key-custom-service";
+    syncWorkingConfigToLlmProfile(settings, settings.activeLlmProfile);
+
+    expect(settings.llmProfiles[0].apiKey).toBe("fake-key-custom-service");
+    expect(settings.llmProfiles[0].endpoint).toBe(originalEndpoint);
+  });
+
+  it("未知预设只更新预设标识", () => {
+    const settings = settingsWithTwoProfiles();
+    const before = {
+      activeLlmProfile: settings.activeLlmProfile,
+      llmEndpoint: settings.llmEndpoint,
+      llmApiKey: settings.llmApiKey,
+    };
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, "unknown-preset"));
+
+    expect(settings.llmServicePreset).toBe("unknown-preset");
+    expect(settings.activeLlmProfile).toBe(before.activeLlmProfile);
+    expect(settings.llmEndpoint).toBe(before.llmEndpoint);
+    expect(settings.llmApiKey).toBe(before.llmApiKey);
+  });
 });
 
 describe("LLM 服务预设", () => {

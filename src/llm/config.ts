@@ -261,8 +261,8 @@ export function getLlmServicePreset(id) {
   return LLM_SERVICE_PRESETS.find(p => p.id === id) || null;
 }
 
-type LlmServicePresetWorkingConfigUpdate = Pick<PluginSettings, "llmServicePreset" | "activeLlmProfile" | "llmApiKey">
-  & Partial<Pick<PluginSettings, "llmEndpoint">>;
+type LlmServicePresetWorkingConfigUpdate = Pick<PluginSettings, "llmServicePreset">
+  & Partial<Pick<PluginSettings, "activeLlmProfile" | "llmApiKey" | "llmEndpoint">>;
 
 /** 计算服务预设写入工作配置的字段，不修改设置对象或已保存方案。 */
 export function applyLlmServicePresetToWorkingConfig(
@@ -270,13 +270,15 @@ export function applyLlmServicePresetToWorkingConfig(
   presetId: string,
 ): LlmServicePresetWorkingConfigUpdate {
   const preset = getLlmServicePreset(presetId);
+  if (!preset) return { llmServicePreset: presetId || "" };
+
   const update: LlmServicePresetWorkingConfigUpdate = {
     llmServicePreset: presetId || "",
     activeLlmProfile: "",
     llmApiKey: "",
   };
 
-  if (preset && preset.endpoint) update.llmEndpoint = preset.endpoint;
+  if (preset.endpoint) update.llmEndpoint = preset.endpoint;
   if (presetId === "siliconflow") {
     const savedTranscriptionKey = settings.transcribeProviders.siliconflow?.apiKey || "";
     if (savedTranscriptionKey) update.llmApiKey = savedTranscriptionKey;
