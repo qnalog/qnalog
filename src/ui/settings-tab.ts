@@ -1877,7 +1877,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         .addDropdown(d => d
           .addOption("zh-CN", t("Chinese"))
           .addOption("en", "English")
-          .addOption("ja", t("日本語"))
+          .addOption("ja", "日本語")
           .addOption("ko", "한국어")
           .addOption("custom", t("Custom"))
           .setValue(this.plugin.settings.briefingTargetLanguage || "zh-CN")

@@ -2729,7 +2729,8 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   gap: var(--size-2-1) var(--qnalog-outline-form-field-gap-x);
 }
 
-.qnalog-outline-control-label {
+.qnalog-outline-control-label,
+.qnalog-recent-filter-popover-label {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   white-space: nowrap;
@@ -5123,101 +5124,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 
-.qnalog-outline-recent-filter-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 5px 0 17px;
-}
-/* 纪要搜索框：和日期/模板筛选共用一行，窄窗格下再自然换行。 */
-.qnalog-outline-recent-search {
-  flex: 1 1 150px;
-  min-width: 128px;
-  box-sizing: border-box;
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
-  border-radius: 8px;
-  background: var(--background-primary);
-  color: var(--text-normal);
-  font-size: 13px;
-}
-.qnalog-outline-recent-search:focus {
-  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
-  outline: none;
-}
-.qnalog-outline-recent-search::placeholder { color: var(--text-muted); }
-
-/* 筛选 chip：软胶囊，不再用 Obsidian 默认 button 的白底硬框。
-   父链 .qnalog-outline-recent-filter-wrap 提特异性到 0,2,0，
-   稳压主题里 body button / .theme-light button 这种 0,1,1，不用 !important（插件审核合规）。 */
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-chip {
-  min-height: 26px;
-  max-width: 136px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-secondary) 60%, transparent);
-  color: var(--text-muted);
-  box-shadow: none;
-  font-size: var(--font-ui-smaller);
-  line-height: 1.2;
-  font-weight: 500;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  letter-spacing: 0;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-chip:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-  box-shadow: none;
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-chip.is-active {
-  color: var(--text-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-  box-shadow: none;
-  font-weight: 600;
-}
-
-/* 纪要分组方式：与筛选控件共用主题表面，但单独保留清晰的当前状态。 */
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-group-chip {
-  color: var(--text-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-group-chip:hover {
-  color: var(--text-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 19%, transparent);
-}
-
-/* 清除筛选：纯文字链，无框无底 */
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-clear {
-  flex: 0 0 auto;
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-clear:hover {
-  color: var(--text-accent);
-  background: transparent;
-  box-shadow: none;
-}
-
 .qnalog-outline-recent-filter-empty {
   min-height: 156px;
   display: flex;
@@ -5234,13 +5140,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-muted);
 }
 
-.qnalog-outline-recent-filter-empty-hint {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  line-height: 1.5;
+.qnalog-outline-recent-filter-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
-.qnalog-outline-recent-filter-empty-hint button {
+.qnalog-outline-recent-filter-empty-actions button {
   padding: 0;
   border: 0;
   background: transparent;
@@ -5250,7 +5157,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
 }
 
-.qnalog-outline-recent-filter-empty-hint button:hover {
+.qnalog-outline-recent-filter-empty-actions button:hover {
   text-decoration: underline;
   background: transparent;
 }
@@ -5638,21 +5545,23 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   stroke-width: 1.9;
 }
 
-/* 改名铅笔：桌面悬停整行才克制浮现（隐藏时不拦点击，避免误触）；移动端无悬停 → 常显、触屏可点。 */
-.qnalog-outline-recent-action.is-rename {
+/* 行内操作：桌面悬停或聚焦时显示，移动端常显且可点。 */
+.qnalog-outline-recent-action.is-hover-action {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
 }
-.qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-rename,
-.qnalog-outline-recent-action.is-rename:focus-visible {
+.qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline-recent-action.is-hover-action:focus-visible {
   opacity: 0.6;
   pointer-events: auto;
 }
-.qnalog-outline-recent-action.is-rename:hover {
+.qnalog-outline-recent-action.is-hover-action:hover {
   opacity: 1;
 }
-.qnalog-outline.is-mobile .qnalog-outline-recent-action.is-rename {
+.qnalog-outline.is-mobile .qnalog-outline-recent-action.is-hover-action {
   opacity: 0.6;
   pointer-events: auto;
 }
@@ -8520,7 +8429,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
    QnALog outline / recording interaction polish
    ============================================================ */
 
-.qnalog-outline {
+.qnalog-outline,
+.qnalog-recent-filter-popover {
   --qnalog-bg-base: var(--background-primary);
   --qnalog-bg-card: var(--background-primary-alt, var(--background-primary));
   --qnalog-bg-muted: var(--background-secondary);
@@ -8554,6 +8464,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-danger-bg: color-mix(in srgb, var(--qnalog-danger-text) 11%, var(--background-primary));
   --qnalog-danger-border: color-mix(in srgb, var(--qnalog-danger-text) 28%, var(--background-modifier-border));
   --qnalog-neutral-panel: color-mix(in srgb, var(--background-primary) 92%, var(--text-muted) 8%);
+}
+
+.qnalog-outline {
   position: relative;
   min-height: 100%;
   box-sizing: border-box;
@@ -9879,10 +9792,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 /* 沉淀首段：指挥棒 —— 已有 padding 14/16 + radius 12，对齐 */
 /* 纪要首段：筛选条 —— 去掉额外 top margin，让所有 Tab 顶端对齐 */
-.qnalog-outline-recent-filter-wrap {
-  margin: 0 0 12px;
-}
-
 /* 纪要：单条之间留点呼吸，避免比沉淀紧太多（沉淀 12，纪要 8） */
 .qnalog-outline-recent-items {
   gap: 8px;
@@ -11189,7 +11098,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     row-gap: 8px;
   }
 }
-.qnalog-kanban-view {
+.qnalog-kanban-view,
+.qnalog-recent-filter-popover {
   --qnalog-kanban-gap: 14px;
   --qnalog-kanban-column-width: 262px;
   --qnalog-kanban-column-min-width: 196px;
@@ -11204,6 +11114,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-text-primary: var(--text-normal);
   --qnalog-text-secondary: var(--text-muted);
   --qnalog-text-tertiary: var(--text-muted);
+}
+
+.qnalog-kanban-view {
   container-name: qnalog-kanban;
   container-type: inline-size;
   display: flex;
@@ -11343,7 +11256,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-color: var(--qnalog-primary);
 }
 
-.qnalog-kanban-grouping {
+.qnalog-kanban-grouping,
+.qnalog-segmented {
   display: inline-flex;
   align-items: stretch;
   flex: 0 0 auto;
@@ -11369,7 +11283,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-size: var(--font-ui-smaller, 12px);
 }
 
-.qnalog-kanban-grouping-option {
+.qnalog-kanban-grouping-option,
+.qnalog-segmented-option {
   padding: 0 11px;
   border: 0;
   border-left: 1px solid var(--qnalog-border-line);
@@ -11381,12 +11296,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-weight: 500;
 }
 
-.qnalog-kanban-grouping-option:hover {
+.qnalog-kanban-grouping-option:hover,
+.qnalog-segmented-option:hover {
   background: var(--qnalog-bg-hover);
   color: var(--qnalog-text-primary);
 }
 
-.qnalog-kanban-grouping-option.is-active {
+.qnalog-kanban-grouping-option.is-active,
+.qnalog-kanban-grouping-option[aria-pressed="true"],
+.qnalog-segmented-option.is-active,
+.qnalog-segmented-option[aria-pressed="true"] {
   background: var(--qnalog-bg-active);
   color: var(--qnalog-primary-soft);
   font-weight: 700;
@@ -12209,11 +12128,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 /* Recent-list styling is shared by idle, recording, and paused views. */
 .qnalog-outline .qnalog-outline-recent-filter-wrap {
-  container-name: qnalog-recent-filters;
-  container-type: inline-size;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
   min-width: 0;
   margin: 0;
@@ -12221,28 +12138,49 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 7px;
 }
 
+.qnalog-outline {
+  --qnalog-row-icon: 32px;
+  --qnalog-row-column-gap: 12px;
+  --qnalog-row-padding: 8px;
+  --qnalog-row-title-line: 20px;
+  --qnalog-row-meta-line: 16px;
+  --qnalog-row-action-size: 28px;
+}
+
+.qnalog-outline .qnalog-outline-recent-searchrow {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  height: 36px;
+  gap: 7px;
+}
+
 .qnalog-outline .qnalog-outline-recent-search-box {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  min-width: 70px;
-  height: 34px;
-  padding: 0 10px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 8px 0 10px;
   gap: 7px;
-  border: 0;
-  border-radius: 10px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 9px;
   background: color-mix(in srgb, var(--background-secondary) 76%, var(--background-primary));
 }
 
-.qnalog-outline .qnalog-outline-recent-search-icon {
+.qnalog-outline .qnalog-outline-recent-search-icon,
+.qnalog-outline .qnalog-outline-recent-search-clear {
   display: inline-flex;
   flex: 0 0 auto;
-  color: var(--qnalog-text-tertiary, var(--text-muted));
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
 }
 
 .qnalog-outline .qnalog-outline-recent-search-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .qnalog-outline .qnalog-outline-recent-search {
@@ -12254,59 +12192,437 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--qnalog-text-primary, var(--text-normal));
+  color: var(--text-normal);
   font-size: 12.5px;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-chip,
-.qnalog-outline .qnalog-outline-recent-filter-clear {
+.qnalog-outline .qnalog-outline-recent-search:focus {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear,
+.qnalog-outline .qnalog-outline-recent-filter-btn {
+  position: relative;
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 0 36px;
   align-items: center;
   justify-content: center;
-  min-width: 0;
-  height: 34px;
-  padding: 0 8px;
-  gap: 3px;
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   box-shadow: none;
-  color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: 12px;
-  white-space: nowrap;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
-.qnalog-outline .qnalog-outline-recent-group-chip {
-  padding-inline: 11px;
-  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-  color: var(--qnalog-text-active, var(--text-accent));
-  font-weight: 700;
+.qnalog-outline .qnalog-outline-recent-search-clear {
+  color: var(--text-faint);
+  background: transparent;
+  box-shadow: none;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-chip:hover {
+.qnalog-outline .qnalog-outline-recent-search-clear::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear:hover,
+.qnalog-outline .qnalog-outline-recent-filter-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear:hover {
+  color: var(--text-normal);
+  background: transparent;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear:hover::before {
   background: var(--background-modifier-hover);
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-chevron,
-.qnalog-outline .qnalog-outline-recent-filter-chevron svg {
-  width: 11px;
-  height: 11px;
+.qnalog-outline .qnalog-outline-recent-search-clear svg,
+.qnalog-outline .qnalog-outline-recent-filter-btn > svg {
+  width: 18px;
+  height: 18px;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-clear {
-  padding-inline: 3px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--qnalog-text-tertiary, var(--text-muted));
+.qnalog-outline .qnalog-outline-recent-search-clear svg {
+  z-index: 1;
+  width: 12px;
+  height: 12px;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-clear:hover,
-.qnalog-outline .qnalog-outline-recent-filter-clear:focus,
-.qnalog-outline .qnalog-outline-recent-filter-clear:active {
+.qnalog-outline .qnalog-outline-recent-filter-btn.is-active {
+  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
+  color: var(--text-accent);
+}
+
+.qnalog-outline .qnalog-outline-recent-filter-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 4px 0 10px;
+  gap: 6px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-secondary) 62%, transparent);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip-icon,
+.qnalog-outline .qnalog-outline-recent-active-chip-icon svg {
+  display: inline-flex;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip button {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
   background: transparent;
   box-shadow: none;
-  color: var(--qnalog-text-active, var(--text-accent));
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip button::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip button svg {
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-clear {
+  min-height: 32px;
+  padding: 0 5px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-clear:hover {
+  background: transparent;
+  color: var(--text-accent);
+}
+
+.qnalog-option-chip,
+.qnalog-outline .qnalog-outline-recent-active-chip {
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-option-chip.is-active,
+.qnalog-option-chip[aria-pressed="true"],
+.qnalog-outline .qnalog-outline-recent-active-chip.is-active {
+  border-color: var(--qnalog-border-active-soft, var(--background-modifier-border));
+  background: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  font-weight: 600;
+}
+
+.qnalog-recent-filter-popover {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(320px, calc(100vw - 32px));
+  min-width: 220px;
+  max-height: min(220px, 60vh);
+  padding: 12px;
+  gap: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: var(--radius-m);
+  background: var(--qnalog-bg-base, var(--background-primary));
+  box-shadow: var(--shadow-s);
+  color: var(--qnalog-text-primary, var(--text-normal));
+}
+
+.qnalog-recent-filter-popover[hidden] {
+  display: none;
+}
+
+.qnalog-recent-filter-popover-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+
+.qnalog-recent-filter-popover-label {
+  color: var(--qnalog-text-tertiary, var(--text-faint));
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.qnalog-recent-filter-popover .qnalog-segmented {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.qnalog-recent-filter-popover button.qnalog-segmented-option {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-left: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  background-image: none;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-family: inherit;
+  font-size: var(--font-ui-small, 13px);
+  font-weight: 500;
+}
+
+.qnalog-recent-filter-popover button.qnalog-segmented-option:hover,
+.qnalog-recent-filter-popover button.qnalog-segmented-option:active,
+.qnalog-recent-filter-popover button.qnalog-segmented-option:focus {
+  box-shadow: none;
+  background-image: none;
+}
+
+.qnalog-recent-filter-popover button.qnalog-segmented-option:hover {
+  background-color: var(--qnalog-bg-hover, var(--background-modifier-hover));
+  color: var(--qnalog-text-primary, var(--text-normal));
+}
+
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"] {
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  font-weight: 700;
+}
+
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"]:hover,
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"]:active,
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"]:focus {
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+}
+
+.qnalog-recent-filter-popover-templates {
+  display: flex;
+  flex-wrap: wrap;
+  max-height: 108px;
+  overflow-y: auto;
+  gap: 6px;
+  padding: 2px;
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  background-image: none;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-family: inherit;
+  font-size: var(--font-ui-smaller);
+  line-height: 26px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip:hover,
+.qnalog-recent-filter-popover button.qnalog-option-chip:active,
+.qnalog-recent-filter-popover button.qnalog-option-chip:focus {
+  box-shadow: none;
+  background-image: none;
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip:hover {
+  background-color: var(--qnalog-bg-hover, var(--background-modifier-hover));
+  color: var(--qnalog-text-primary, var(--text-normal));
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"] {
+  border-color: var(--qnalog-border-active-soft, var(--background-modifier-border));
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  font-weight: 600;
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"]:hover,
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"]:active,
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"]:focus {
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+@media (pointer: coarse) {
+  .qnalog-recent-filter-popover .qnalog-segmented {
+    height: 40px;
+  }
+
+  .qnalog-recent-filter-popover button.qnalog-segmented-option {
+    height: 100%;
+  }
+
+  .qnalog-recent-filter-popover button.qnalog-option-chip {
+    height: 36px;
+    line-height: 34px;
+  }
+
+  .qnalog-recent-filter-popover-templates {
+    max-height: 40vh;
+    gap: 8px;
+  }
+}
+
+body.is-mobile .qnalog-recent-filter-popover .qnalog-segmented {
+  height: 40px;
+}
+
+body.is-mobile .qnalog-recent-filter-popover button.qnalog-segmented-option {
+  height: 100%;
+}
+
+body.is-mobile .qnalog-recent-filter-popover button.qnalog-option-chip {
+  height: 36px;
+  line-height: 34px;
+}
+
+body.is-mobile .qnalog-recent-filter-popover-templates {
+  max-height: 40vh;
+  gap: 8px;
+}
+
+.qnalog-outline.is-mobile {
+  --qnalog-row-action-size: 36px;
+}
+
+.qnalog-outline.is-mobile .qnalog-outline-recent-actions {
+  margin-block: -10px;
+}
+
+.qnalog-outline.is-mobile .qnalog-topics-prompt-row {
+  padding-inline-start: 52px;
+}
+
+.qnalog-outline .qnalog-outline-recent.qnalog-outline-recent--flat-root {
+  padding-left: 0;
+}
+
+.qnalog-outline .qnalog-outline-recent.qnalog-outline-recent--flat-root::before {
+  display: none;
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-row {
+  padding-left: 0;
+}
+
+.qnalog-outline .qnalog-outline-recent-limit-note {
+  margin: 4px 0 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear.is-hidden {
+  display: none;
 }
 
 .qnalog-outline .qnalog-outline-recent {
@@ -12334,7 +12650,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-group:first-child {
-  padding-top: 10px;
+  padding-top: 0;
 }
 
 .qnalog-outline .qnalog-outline-recent-axis {
@@ -12440,7 +12756,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   min-width: 0;
   min-height: 22px;
-  margin: 0 0 5px 15px;
+  margin: 16px 0 4px 15px;
   padding: 0;
   gap: 6px;
   color: var(--qnalog-text-primary, var(--text-normal));
@@ -12498,13 +12814,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-row {
   position: relative;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: var(--qnalog-row-icon) minmax(0, 1fr);
   align-items: center;
   min-width: 0;
-  min-height: 48px;
+  height: 56px;
+  min-height: 56px;
   margin: 0;
-  padding: 7px 8px;
-  gap: 12px;
+  padding: var(--qnalog-row-padding);
+  gap: var(--qnalog-row-column-gap);
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -12527,9 +12844,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: var(--qnalog-row-icon);
+  min-width: var(--qnalog-row-icon);
+  height: var(--qnalog-row-icon);
   margin: 0;
   border: var(--border-width, 1px) solid color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
   border-radius: 50%;
@@ -12538,17 +12855,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-chip svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .qnalog-outline .qnalog-outline-recent-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0 8px;
+  row-gap: 4px;
+  column-gap: 8px;
   min-width: 0;
   padding-right: 0;
+  min-height: 40px;
 }
 
 .qnalog-outline .qnalog-outline-recent-title-line {
@@ -12561,7 +12880,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.4;
+  line-height: var(--qnalog-row-title-line);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12574,12 +12893,32 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   grid-column: 1;
   min-width: 0;
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: 0;
   color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 11px;
-  line-height: 1.35;
+  line-height: var(--qnalog-row-meta-line);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.qnalog-outline-recent-meta-separator,
+.qnalog-outline-recent-duration-label {
+  display: inline;
+}
+
+.qnalog-outline-recent-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.qnalog-outline-recent-duration-icon,
+.qnalog-outline-recent-duration-icon svg {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  color: var(--text-faint);
 }
 
 .qnalog-outline .qnalog-outline-recent-actions {
@@ -12590,17 +12929,23 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 3px;
-  margin-top: 3px;
+  gap: 4px;
+  margin-block: -6px;
+  margin-right: -4px;
   transform: none;
 }
 
 /* 动作与元数据同列排列，标题行跨满内容宽度；异常状态标记不再缩窄纪要标题。 */
 
 .qnalog-outline .qnalog-outline-recent-action {
-  min-width: 36px;
-  height: 36px;
-  padding: 0 7px;
+  display: inline-flex;
+  flex: 0 0 var(--qnalog-row-action-size);
+  align-items: center;
+  justify-content: center;
+  width: var(--qnalog-row-action-size);
+  min-width: var(--qnalog-row-action-size);
+  height: var(--qnalog-row-action-size);
+  padding: 0;
   border: 0;
   border-radius: var(--radius-s);
   background: transparent;
@@ -12608,27 +12953,86 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-secondary, var(--text-muted));
 }
 
+.qnalog-outline .qnalog-outline-recent-action-icon,
+.qnalog-outline .qnalog-outline-recent-action-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
 .qnalog-outline .qnalog-outline-recent-action:hover {
   background: var(--background-modifier-hover);
   color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
-.qnalog-outline .qnalog-outline-recent-action.is-rename {
+.qnalog-outline .qnalog-outline-recent-action.is-hover-action {
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
 }
 
-.qnalog-outline .qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-rename,
-.qnalog-outline .qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-rename,
-.qnalog-outline .qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-rename {
+.qnalog-outline .qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline .qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline .qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline .qnalog-outline-recent-action.is-hover-action:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .qnalog-outline .qnalog-outline-recent-variant {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
   min-height: 32px;
-  margin-left: 46px;
-  padding: 5px 8px;
+  margin: 0;
+  padding: 4px 8px 4px 52px;
+  gap: 8px;
   border-radius: 8px;
+}
+
+.qnalog-outline .qnalog-outline-recent-variant:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-outline .qnalog-outline-recent-variant.is-active {
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+}
+
+.qnalog-outline .qnalog-outline-recent-row.is-active + .qnalog-outline-recent-variant {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.qnalog-outline .qnalog-outline-recent-variant-chip svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qnalog-outline .qnalog-outline-recent-variant-name {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.qnalog-outline .qnalog-topics-prompt-row {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 8px 4px 52px;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.qnalog-outline .qnalog-topics-prompt-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-outline .qnalog-topics-prompt-row button {
+  min-height: 24px;
+  padding: 4px;
+  line-height: 16px;
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-content {
@@ -12640,7 +13044,20 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline .qnalog-outline-recent-folder-node {
   min-width: 0;
+  margin-top: 16px;
   margin-left: 17px;
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-folder-node {
+  margin-left: calc(max(0, var(--qnalog-folder-depth, 1) - var(--qnalog-folder-parent-depth, 1)) * 12px);
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-folder-content > .qnalog-outline-recent-row {
+  margin-left: 12px;
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root > .qnalog-outline-recent-row + .qnalog-outline-recent-row {
+  margin-top: 2px;
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-node-title {
@@ -12648,6 +13065,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   min-width: 0;
   min-height: 28px;
+  margin-bottom: 4px;
   padding: 3px 8px 3px 0;
   gap: 6px;
   color: var(--qnalog-text-primary, var(--text-normal));
@@ -12699,22 +13117,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-group.is-collapsed .qnalog-outline-recent-variant {
   display: none;
 }
-@container qnalog-recent-filters (max-width: 360px) {
-
-  .qnalog-outline .qnalog-outline-recent-search-box {
-    flex: 1 0 100%;
-  }
-
-  .qnalog-outline .qnalog-outline-recent-filter-chip,
-  .qnalog-outline .qnalog-outline-recent-filter-clear {
-    max-width: none;
-    overflow: visible;
-    text-overflow: clip;
-  }
-}
-
 .qnalog-outline :is(button, summary, [role="button"]):focus-visible,
 .qnalog-kanban-view :is(button, summary, [role="button"]):focus-visible,
+.qnalog-recent-filter-popover :is(button, summary, [role="button"]):focus-visible,
 .qnalog-settings-root :is(button, summary, [role="button"]):focus-visible,
 .qnalog-utility-modal :is(button, summary, [role="button"]):focus-visible,
 .qnalog-wizard-modal :is(button, summary, [role="button"]):focus-visible {

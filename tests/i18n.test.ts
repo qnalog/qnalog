@@ -159,6 +159,33 @@ describe("词条表完整性", () => {
     const empties = [...raw.matchAll(/^  "((?:[^"\\]|\\.)*)":\s*"",/gm)].map((m) => m[1]);
     expect(empties, `空译文：${empties.slice(0, 3).join(" / ")}`).toEqual([]);
   });
+
+  it("源码中的字面量 t() 与 i18nT() 键都存在于中文词条表", () => {
+    const files: string[] = [];
+    const visit = (directory: string): void => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(fullPath);
+        else if (entry.isFile() && entry.name.endsWith(".ts")) files.push(fullPath);
+      }
+    };
+    visit(path.join(root, "src"));
+
+    const zhSource = fs.readFileSync(path.join(root, "src/shared/i18n/locales/zh.ts"), "utf8");
+    const decode = (value: string): string => value.replace(/\\(["'\\])/g, "$1");
+    const zhKeys = new Set([...zhSource.matchAll(/^  "((?:[^"\\]|\\.)*)":/gm)].map((match) => decode(match[1])));
+    const missing: string[] = [];
+    for (const file of files) {
+      const source = fs.readFileSync(file, "utf8");
+      for (const match of source.matchAll(/\b(?:t|i18nT)\s*\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/g)) {
+        const key = decode(match[1] ?? match[2] ?? "");
+        if (!zhKeys.has(key)) {
+          missing.push(`${path.relative(root, file)}: ${key}`);
+        }
+      }
+    }
+    expect(missing, `缺少中文词条：${missing.slice(0, 5).join(" / ")}`).toEqual([]);
+  });
 });
 
 describe("界面文案与路径的边界", () => {

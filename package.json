@@ -1,6 +1,6 @@
 {
   "name": "qnalog",
-  "version": "1.6.7",
+  "version": "1.6.8",
   "description": "Obsidian plugin: record and transcribe conversations, then turn them into structured Markdown notes.",
   "main": "main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "typecheck:core": "tsc -p tsconfig.strict-core.json",
     "lint": "eslint src",
     "check:versions": "node scripts/check-version-alignment.mjs",
+    "check:document-dom-creation": "node scripts/check-document-dom-creation.mjs",
     "check:undefined-symbols": "node scripts/check-undefined-symbols.mjs",
     "check:domain-boundaries": "node scripts/check-domain-boundaries.mjs",
     "check:architecture": "node scripts/check-architecture.mjs",
@@ -18,7 +19,7 @@
     "check:bundle-consistency": "node scripts/check-bundle-consistency.mjs",
     "check:plugin-onload": "node scripts/check-plugin-onload.mjs && node scripts/check-merge-pipeline.mjs",
     "check:merge-pipeline": "node scripts/check-merge-pipeline.mjs",
-    "build": "npm run check:versions && npm run check:undefined-symbols && npm run check:domain-boundaries && npm run check:architecture && npm run typecheck:core && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && node scripts/check-mobile-bundle-load.mjs && node scripts/check-plugin-onload.mjs && node scripts/check-merge-pipeline.mjs",
+    "build": "npm run check:document-dom-creation && npm run check:versions && npm run check:undefined-symbols && npm run check:domain-boundaries && npm run check:architecture && npm run typecheck:core && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && node scripts/check-mobile-bundle-load.mjs && node scripts/check-plugin-onload.mjs && node scripts/check-merge-pipeline.mjs",
     "install:vault": "node scripts/install-to-vault.mjs",
     "restore:vault": "node scripts/restore-from-backup.mjs",
     "test": "vitest run",

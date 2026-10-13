@@ -304,6 +304,7 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["？", "data"],
   ],
   "src/ui/settings-tab.ts": [
+    ["日本語", "data"],
     ["QnALog/HTML报告", "data"],
     ["QnALog/会议资料", "data"],
     ["QnALog/录音", "data"],

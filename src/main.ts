@@ -544,6 +544,29 @@ class QnALogPlugin extends obsidian.Plugin {
       getModeOptions: () => getVisibleModeEntries(this.settings, false).map(([value]) => ({ value, label: getModeDisplayName(this.settings, value) })),
       moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
       createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
+      inspectFolder: async (path) => {
+        const folder = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(folder instanceof obsidian.TFolder)) throw new Error("Folder not found");
+        const itemByPath = new Map(this.shell.getMinutesKanbanItems().map((item) => [obsidian.normalizePath(item.file.path), item]));
+        const notes = [];
+        let otherFileCount = 0;
+        let childFolderCount = 0;
+        for (const child of folder.children) {
+          if (child instanceof obsidian.TFolder) {
+            childFolderCount++;
+            continue;
+          }
+          const item = child instanceof obsidian.TFile ? itemByPath.get(obsidian.normalizePath(child.path)) : undefined;
+          if (item) notes.push(item);
+          else otherFileCount++;
+        }
+        return { notes, otherFileCount, childFolderCount };
+      },
+      deleteFolder: async (path) => {
+        const folder = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(folder instanceof obsidian.TFolder)) throw new Error("Folder not found");
+        await this.app.fileManager.trashFile(folder);
+      },
     }));
     this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog voice notes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
