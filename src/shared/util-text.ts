@@ -131,9 +131,9 @@ export function buildGeneralSegmentCoverageInstruction(segmentCount: unknown, la
   const count = Math.floor(Number(segmentCount) || 0);
   if (count < 2) return "";
   if (language === "zh") {
-    return `输入共 ${count} 个分段（SEG 1…SEG ${count}），概要列表必须逐个覆盖每个分段，不得遗漏；每个分段至少写一条。`;
+    return `输入共 ${count} 个分段，概要列表必须逐个覆盖每个分段，不得遗漏；每个分段至少写一条。不要在输出中写分段编号、SEG 或时间分段引用。`;
   }
-  return `The input contains ${count} transcript segments (SEG 1 through SEG ${count}). The overview list must cover every segment without omission; include at least one item for each segment.`;
+  return `The input contains ${count} transcript segments. The overview list must cover every segment without omission; include at least one item for each segment. Do not write segment numbers, SEG, or time segment references in the output.`;
 }
 
 export function getSessionMetaDurationMs(meta: SessionDurationInput | null | undefined): number {

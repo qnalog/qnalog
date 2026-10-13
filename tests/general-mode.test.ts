@@ -41,8 +41,12 @@ describe("general mode prompt contract", () => {
     expect(buildGeneralSourceLanguageInstruction(japanese)).toBe(otherInstruction);
     expect(buildGeneralSourceLanguageInstruction(spanish)).toBe(otherInstruction);
     expect(buildGeneralSegmentCoverageInstruction(1, "zh")).toBe("");
-    expect(buildGeneralSegmentCoverageInstruction(3, "zh")).toContain("输入共 3 个分段（SEG 1…SEG 3）");
-    expect(buildGeneralSegmentCoverageInstruction(3, "en")).toContain("3 transcript segments (SEG 1 through SEG 3)");
+    expect(buildGeneralSegmentCoverageInstruction(3, "zh")).toContain("输入共 3 个分段，概要列表必须逐个覆盖每个分段");
+    expect(buildGeneralSegmentCoverageInstruction(3, "zh")).toContain("不要在输出中写分段编号、SEG 或时间分段引用");
+    expect(buildGeneralSegmentCoverageInstruction(3, "zh")).not.toContain("SEG 1");
+    expect(buildGeneralSegmentCoverageInstruction(3, "en")).toContain("3 transcript segments. The overview list must cover every segment");
+    expect(buildGeneralSegmentCoverageInstruction(3, "en")).toContain("Do not write segment numbers, SEG, or time segment references");
+    expect(buildGeneralSegmentCoverageInstruction(3, "en")).not.toContain("SEG 1");
 
     const staticPrompts = [
       GENERAL_BRIEFING_SYSTEM_PROMPTS.part,
