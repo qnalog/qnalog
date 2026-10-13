@@ -14,6 +14,7 @@ type NoteSourceMoment = ((
   value: string, formats: readonly unknown[] | string, strict: boolean,
 ) => NoteSourceMomentResult | null | undefined) & { ISO_8601: unknown };
 type NoteSourceWindow = { moment?: NoteSourceMoment | null };
+export type RepolishSessionTiming = { startedAt: string; duration: string };
 const stringifyNoteSourceValue = String as (value: unknown) => string;
 
 export function getSourceIdFromMarkdown(
@@ -24,6 +25,35 @@ export function getSourceIdFromMarkdown(
   if (sessionId) return sanitizeFilename(sessionId) || sessionId;
   const basis = `${file && file.path || "note"}:${file && file.stat && file.stat.ctime || ""}`;
   return `note-${hashRealtimeOutlineText(basis)}`;
+}
+
+export function readRepolishSessionTiming(
+  frontmatter: Record<string, unknown> | null | undefined,
+): RepolishSessionTiming | null {
+  const moment = typeof window === "undefined" ? null : (window as unknown as NoteSourceWindow).moment;
+  const fm = frontmatter || {};
+  const fullTime = readNamespaceFrontmatter(fm, "time");
+  const durationValue = readNamespaceFrontmatter(fm, "duration");
+  const duration = typeof durationValue === "string" ? durationValue.trim() : "";
+  let dateTime = stringifyNoteSourceValue(fullTime || "").trim();
+  let formats: readonly unknown[] | string = [
+    moment?.ISO_8601,
+    "YYYY-MM-DDTHH:mm:ss",
+    "YYYY-MM-DD HH:mm:ss",
+  ];
+  if (!dateTime) {
+    const date = stringifyNoteSourceValue(fm["日期"] || fm.date || "").trim();
+    const time = stringifyNoteSourceValue(fm["时间"] || "").trim();
+    if (date) {
+      dateTime = date + (time ? `T${time}` : "");
+      formats = ["YYYY-MM-DDTHH:mm", "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss"];
+    }
+  }
+  if (!dateTime || !moment) return null;
+  const parsed = moment(dateTime, formats, true);
+  return parsed && parsed.isValid && parsed.isValid()
+    ? { startedAt: parsed.toDate().toISOString(), duration }
+    : null;
 }
 
 export function inferNoteStartedAtIso(

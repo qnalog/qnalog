@@ -328,7 +328,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   // 结构化程度：loose（散文为主）/ balanced（散文+列表，推荐）/ strict（多层嵌套列表）
   briefingStructureLevel: "balanced",
   repolishPreferencePromptAddendum: "",
-  // 右键"重新整理为"时记住的偏好修饰（detailed/concise/structured/natural/expanded 或 ""=不加偏好）。
+  // 右键"生成衍生版本"时记住的偏好修饰（detailed/concise/structured/natural/expanded 或 ""=不加偏好）。
   repolishPreference: "",
   // 思考档：auto=默认（不动请求）/ reasoning=显式开思维链 / fast=关思维链省 token（仅对可控服务生效，见 llm/thinking.ts）。
   thinkingMode: "auto",
