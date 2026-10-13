@@ -56,7 +56,7 @@ function makeEl() {
     setCssStyles: noop, setCssProps: noop, appendChild: noop, removeChild: noop,
     addEventListener: noop, removeEventListener: noop, querySelectorAll: () => [], querySelector: () => null,
     getBoundingClientRect: () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }),
-    style: {}, classList: { add: noop, remove: noop, toggle: noop }, children: [], textContent: "",
+    style: { setProperty: noop }, classList: { add: noop, remove: noop, toggle: noop }, children: [], textContent: "",
     offsetWidth: 0, offsetHeight: 0, clientWidth: 0, clientHeight: 0, isConnected: true, parentElement: null,
   };
   // 记录子元素与文本：渲染结果可以被断言（例如筛选条上必须出现时间范围按钮）。
@@ -408,14 +408,51 @@ async function main() {
         "纪要目录之外的笔记被判为在范围里（根目录过滤失效，列表会覆盖全库）");
 
       const bar = makeEl();
-      view.renderRecentFilterBar(bar, []);
-      const rendered = collectRenderedText(bar);
-      const timeLabel = view.getRecentFilterLabel("time", initial.time, []);
-      const cls = (item) => item.cls.split(/\s+/);
-      const hasChip = (label) => rendered.some((item) => cls(item).includes("qnalog-outline-recent-filter-chip") && item.text === label);
-      expect(hasChip(timeLabel), `筛选条上没有时间范围按钮（列表按它过滤，必须可见）：缺「${timeLabel}」`);
-      expect(hasChip("全部模板"), "筛选条上没有模板筛选按钮");
-      expect(rendered.some((item) => cls(item).includes("qnalog-outline-recent-group-chip")), "筛选条上没有分组按钮");
+      view.renderRecentFilterBar(bar, [], makeEl());
+      const row = bar.children[0] && bar.children[0].children[0];
+      expect(row && row.children.length === 2, "筛选栏第一行必须只有搜索框与筛选按钮");
+      expect(row && row.children[0].className.includes("qnalog-outline-recent-search-box"), "筛选栏第一行没有搜索框");
+      expect(row && row.children[1].className.includes("qnalog-outline-recent-filter-btn"), "筛选栏第一行没有筛选与视图按钮");
+      expect(!bar.children[0].children.some((child) => child.className.includes("qnalog-outline-recent-active-filters")),
+        "默认筛选状态不应渲染活动筛选标签行");
+
+      const recentRows = Array.from({ length: 50 }, (_, index) => ({
+        title: index === 49 ? "needle after the display limit" : `recent note ${index + 1}`,
+        file: { basename: `recent-note-${index + 1}` },
+        displayTime: "",
+        mode: "monologue",
+      }));
+      view._recentSearch = "needle";
+      const searchMatches = view.applyRecentFilters(recentRows);
+      expect(searchMatches.length === 1 && searchMatches[0].title === "needle after the display limit",
+        "搜索没有覆盖第 49 条之后的笔记");
+      view._recentSearch = "";
+
+      const originalRenderRecentNoteRow = view.renderRecentNoteRow;
+      const originalRecentFolder = plugin.settings.mdFolder;
+      view.renderRecentNoteRow = (parent) => parent.createDiv({ cls: "test-recent-row" });
+      try {
+        plugin.settings.mdFolder = "Recent A";
+        const singleRootEl = makeEl();
+        view.renderRecentFolderTree(singleRootEl, [{ folderPath: "Recent A", file: { path: "Recent A/one.md" } }], "");
+        const singleRootClasses = collectRenderedText(singleRootEl).map((item) => item.cls);
+        expect(singleRootClasses.some((value) => value.includes("qnalog-outline-recent--flat-root")),
+          "单根笔记目录没有使用扁平列表");
+        expect(!singleRootClasses.some((value) => value.includes("qnalog-outline-recent-folder-root")),
+          "单根笔记目录仍渲染了根标题容器");
+
+        const multipleRootsEl = makeEl();
+        view.renderRecentFolderTree(multipleRootsEl, [
+          { folderPath: "Recent A", file: { path: "Recent A/one.md" } },
+          { folderPath: "Elsewhere", file: { path: "Elsewhere/two.md" } },
+        ], "");
+        const multipleRootClasses = collectRenderedText(multipleRootsEl).map((item) => item.cls);
+        expect(multipleRootClasses.filter((value) => value.includes("qnalog-outline-recent-folder-root")).length === 2,
+          "多个笔记根目录没有分别渲染根标题");
+      } finally {
+        plugin.settings.mdFolder = originalRecentFolder;
+        view.renderRecentNoteRow = originalRenderRecentNoteRow;
+      }
     } catch (error) {
       failures.push(`纪要面板渲染检查抛错：${(error && error.message) || error}`);
     }

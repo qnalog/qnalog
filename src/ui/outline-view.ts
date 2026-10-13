@@ -71,7 +71,8 @@ import { getSessionLatestSegmentEndMs, isSameVaultPath, probeAudioDurationMs, re
 
 import { clampProgress } from "../notes/note-markdown";
 
-import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, RECENT_TOPIC_FALLBACKS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath, normalizeRecentTopicToken } from "../recent/recent-notes";
+import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath } from "../recent/recent-notes";
+import { countActiveRecentFilters, listActiveRecentFilterChips, matchesRecentSearch, RECENT_FILTER_ICONS, shouldShowFolderRootHeader } from "../recent/recent-filter-view";
 import { getRecentModePrefixEntries, stripRecentDatePrefix } from "../recent/recent-note-mode";
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendAskEntry, buildAskContext } from "../notes/ask-panel";
@@ -476,7 +477,7 @@ export class OutlineView extends obsidian.ItemView {
     const askPath = sessionNotePath || (activeNote ? obsidian.normalizePath(activeNote.path) : "");
     const askState = askPath && this.noteAskByPath ? this.noteAskByPath[askPath] : null;
     const recentFilters = this.getRecentFilters ? this.getRecentFilters() : (this.recentFilters || {});
-    const recentFilterSig = [recentFilters.time, recentFilters.mode].join(":");
+    const recentFilterSig = [recentFilters.time, recentFilters.mode, this._recentSearch || ""].join(":");
     const sedimentSig = this.getSedimentCandidateSignature ? this.getSedimentCandidateSignature() : "";
     const workbench = session ? normalizeMeetingWorkbench(session.meetingWorkbench) : null;
     const workbenchSig = workbench
@@ -5257,32 +5258,41 @@ export class OutlineView extends obsidian.ItemView {
     this.render();
   }
 
-  showRecentGroupMenu(evt) {
+  showRecentFilterMenu(evt) {
     evt.preventDefault();
     evt.stopPropagation();
     const menu = new obsidian.Menu();
-    const current = this.getRecentGroupBy();
-    for (const option of RECENT_GROUP_OPTIONS) {
-      menu.addItem((item) => {
-        item.setTitle(i18nT(option.label));
-        if (option.id === current) item.setIcon("check");
-        item.onClick(() => this.setRecentGroupBy(option.id));
-      });
-    }
-    const target = evt.currentTarget instanceof HTMLElement
-      ? evt.currentTarget
-      : evt.target instanceof HTMLElement
-        ? evt.target.closest(".qnalog-outline-recent-group-chip")
-        : null;
+    const filters = this.getRecentFilters();
+    const addSection = (title, iconName, options, current, select) => {
+      menu.addItem((item) => item.setTitle(i18nT(title)).setIcon(iconName).setDisabled(true));
+      for (const option of options) {
+        menu.addItem((item) => {
+          item.setTitle(i18nT(option.label));
+          if (option.id === current) item.setIcon(RECENT_FILTER_ICONS.selected);
+          item.onClick(() => select(option.id));
+        });
+      }
+    };
+    const timeOptions = [
+      ...RECENT_TIME_FILTER_OPTIONS.filter((option) => option.id === "all"),
+      ...RECENT_TIME_FILTER_OPTIONS.filter((option) => option.id !== "all"),
+    ];
+    addSection("Time range", RECENT_FILTER_ICONS.time, timeOptions, filters.time || "all", (value) => this.setRecentFilter("time", value));
+    menu.addSeparator();
+    addSection("Template", RECENT_FILTER_ICONS.template, this.getRecentModeFilterOptions(), filters.mode || "all", (value) => this.setRecentFilter("mode", value));
+    menu.addSeparator();
+    addSection("Group by", RECENT_FILTER_ICONS.folder, RECENT_GROUP_OPTIONS, this.getRecentGroupBy(), (value) => this.setRecentGroupBy(value));
+
+    const target = evt.currentTarget instanceof HTMLElement ? evt.currentTarget : null;
     if (target && typeof menu.showAtPosition === "function") {
       const rect = target.getBoundingClientRect();
-      const menuWidthHint = 160;
+      const menuWidthHint = 240;
       const x = Math.max(8, Math.min(Math.round(rect.left), Math.max(8, window.innerWidth - menuWidthHint - 8)));
       const y = Math.max(8, Math.min(Math.round(rect.bottom + 8), Math.max(8, window.innerHeight - 8)));
-      this.showMenuAtPosition(menu, { x, y }, "qnalog-recent-group-menu");
+      this.showMenuAtPosition(menu, { x, y }, "qnalog-recent-filter-menu");
       return;
     }
-    this.showMenuAtMouse(menu, evt, "qnalog-recent-group-menu");
+    this.showMenuAtMouse(menu, evt, "qnalog-recent-filter-menu");
   }
 
   getRecentModeFilterOptions() {
@@ -5294,27 +5304,10 @@ export class OutlineView extends obsidian.ItemView {
     return opts;
   }
 
-  getRecentTopicFilterOptions(recents) {
-    const seen = new Set();
-    const options = [{ id: "all", label: i18nT("All topics") }];
-    const add = (topic) => {
-      const token = normalizeRecentTopicToken(topic);
-      if (!token || seen.has(token)) return;
-      seen.add(token);
-      options.push({ id: token, label: `${token}${i18nT(" topic")}` });
-    };
-    for (const topic of RECENT_TOPIC_FALLBACKS) add(topic);
-    for (const item of recents || []) {
-      for (const topic of item.topics || []) add(topic);
-    }
-    return options.slice(0, 18);
-  }
-
-  getRecentFilterLabel(kind, value, recents) {
+  getRecentFilterLabel(kind, value) {
     const v = value || "all";
     if (kind === "time") return i18nT((RECENT_TIME_FILTER_OPTIONS.find(item => item.id === v) || RECENT_TIME_FILTER_OPTIONS[0]).label);
-    if (kind === "mode") return i18nT((this.getRecentModeFilterOptions().find(item => item.id === v) || { label: "All templates" }).label);
-    return i18nT("Filter");
+    return i18nT((this.getRecentModeFilterOptions().find(item => item.id === v) || { label: "All templates" }).label);
   }
 
   matchesRecentTimeFilter(item, timeFilter) {
@@ -5341,7 +5334,12 @@ export class OutlineView extends obsidian.ItemView {
     return (recents || []).filter((item) => {
       if (!this.matchesRecentTimeFilter(item, filters.time)) return false;
       if (filters.mode !== "all" && item.mode !== filters.mode) return false;
-      return true;
+      const modeLabel = getModeDisplayName(this.plugin.settings, item.mode) || "";
+      return matchesRecentSearch(this._recentSearch || "", {
+        title: item.title || item.file.basename || "",
+        displayTime: item.displayTime || "",
+        modeLabel,
+      });
     });
   }
 
@@ -5381,98 +5379,109 @@ export class OutlineView extends obsidian.ItemView {
     this.markMenuSpec(menu, extraClass);
   }
 
-  showRecentFilterMenu(evt, kind, options, currentValue) {
-    evt.preventDefault();
-    evt.stopPropagation();
-    const menu = new obsidian.Menu();
-    let currentGroup = "";
-    for (const opt of options) {
-      if (opt.group && opt.group !== currentGroup) {
-        if (currentGroup) menu.addSeparator();
-        currentGroup = opt.group;
-        menu.addItem((item) => item.setTitle(opt.group).setDisabled(true));
-      }
-      menu.addItem((item) => {
-        item.setTitle(i18nT(opt.label));
-        if (opt.id === currentValue) item.setIcon("check");
-        item.onClick(() => this.setRecentFilter(kind, opt.id));
-      });
-    }
-    const target = evt.currentTarget instanceof HTMLElement
-      ? evt.currentTarget
-      : evt.target instanceof HTMLElement
-        ? evt.target.closest(".qnalog-outline-recent-filter-chip")
-        : null;
-    if (target && typeof menu.showAtPosition === "function") {
-      const rect = target.getBoundingClientRect();
-      const menuWidthHint = 240;
-      const x = Math.max(8, Math.min(Math.round(rect.left), Math.max(8, window.innerWidth - menuWidthHint - 8)));
-      const y = Math.max(8, Math.min(Math.round(rect.bottom + 8), Math.max(8, window.innerHeight - 8)));
-      this.showMenuAtPosition(menu, { x, y });
-      return;
-    }
-    this.showMenuAtMouse(menu, evt);
-  }
-
-  renderRecentFilterBar(parent, allRecents) {
+  renderRecentFilterBar(parent, allRecents, resultsHost) {
     const filters = this.getRecentFilters();
     const wrap = parent.createDiv({ cls: "qnalog-outline-recent-filter-wrap" });
-    // 搜索框：实时按关键词过滤当前列表（标题 / 时间 / 模板文本），show/hide 不重渲染、保留输入焦点。
-    const searchBox = wrap.createDiv({ cls: "qnalog-outline-recent-search-box" });
+    const searchRow = wrap.createDiv({ cls: "qnalog-outline-recent-searchrow" });
+    const searchBox = searchRow.createDiv({ cls: "qnalog-outline-recent-search-box" });
     const searchIcon = searchBox.createSpan({ cls: "qnalog-outline-recent-search-icon" });
-    try { obsidian.setIcon(searchIcon, "search"); } catch { /* intentionally empty */ }
+    try { obsidian.setIcon(searchIcon, RECENT_FILTER_ICONS.search); } catch { /* intentionally empty */ }
     const searchInput = searchBox.createEl("input", {
       cls: "qnalog-outline-recent-search",
-      attr: { type: "text", placeholder: i18nT("AI service temporarily unavailable"), spellcheck: "false" },
+      attr: { type: "text", placeholder: i18nT("Search notes"), "aria-label": i18nT("Search notes"), spellcheck: "false" },
     });
     searchInput.value = this._recentSearch || "";
-    searchInput.addEventListener("input", () => { this._recentSearch = searchInput.value; this.applyRecentSearchFilter(parent); });
-    const groupChip = wrap.createEl("button", {
-      cls: "qnalog-outline-recent-group-chip qnalog-outline-recent-filter-chip is-active",
-      attr: { type: "button", title: i18nT("Choose how to group notes") },
+    const clearSearch = searchBox.createEl("button", {
+      cls: `qnalog-outline-recent-search-clear ${searchInput.value ? "" : "is-hidden"}`,
+      attr: { type: "button", "aria-label": i18nT("Clear search"), title: i18nT("Clear search") },
     });
-    groupChip.createSpan({ text: (RECENT_GROUP_OPTIONS.find((item) => item.id === this.getRecentGroupBy()) || RECENT_GROUP_OPTIONS[0]).label });
-    const groupChevron = groupChip.createSpan({ cls: "qnalog-outline-recent-filter-chevron" });
-    try { obsidian.setIcon(groupChevron, "chevron-down"); } catch { /* intentionally empty */ }
-    groupChip.onclick = (evt) => this.showRecentGroupMenu(evt);
-    // 时间范围筛选：默认"全部日期"。列表会按它过滤，因此必须像模板筛选一样显示出来，
-    // 否则用户只能看到被截短的列表、却找不到是哪个筛选在起作用。
-    const timeValue = filters.time || "all";
-    const timeChip = wrap.createEl("button", {
-      cls: `qnalog-outline-recent-filter-chip ${this.isRecentFilterActive("time", timeValue) ? "is-active" : ""}`,
-      text: this.getRecentFilterLabel("time", timeValue, allRecents),
-      attr: { type: "button", title: i18nT("Filter notes by time range") },
+    try { obsidian.setIcon(clearSearch, RECENT_FILTER_ICONS.clearSearch); } catch { /* intentionally empty */ }
+    const renderResults = () => this.renderRecentResults(resultsHost, allRecents);
+    searchInput.addEventListener("input", () => {
+      this._recentSearch = searchInput.value;
+      this._lastSig = this.computeSignature();
+      clearSearch.classList.toggle("is-hidden", !searchInput.value);
+      renderResults();
     });
-    timeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "time", RECENT_TIME_FILTER_OPTIONS, timeValue);
-    const modeValue = filters.mode || "all";
-    const modeChip = wrap.createEl("button", {
-      cls: `qnalog-outline-recent-filter-chip ${this.isRecentFilterActive("mode", modeValue) ? "is-active" : ""}`,
-      text: this.getRecentFilterLabel("mode", modeValue, allRecents),
-      attr: { type: "button", title: i18nT("Filter notes by template") },
+    const clearQuery = () => {
+      searchInput.value = "";
+      this._recentSearch = "";
+      this._lastSig = this.computeSignature();
+      clearSearch.classList.add("is-hidden");
+      renderResults();
+      searchInput.focus();
+    };
+    clearSearch.addEventListener("click", clearQuery);
+    searchInput.addEventListener("keydown", (evt) => {
+      if (evt.key === "Escape" && searchInput.value) {
+        evt.preventDefault();
+        clearQuery();
+      }
     });
-    modeChip.onclick = (evt) => this.showRecentFilterMenu(evt, "mode", this.getRecentModeFilterOptions(), modeValue);
-    const clear = wrap.createEl("button", {
-      cls: "qnalog-outline-recent-filter-clear",
-      text: i18nT("Clear filters"),
-      attr: { type: "button" },
+
+    const activeCount = countActiveRecentFilters(filters);
+    const filterButton = searchRow.createEl("button", {
+      cls: `qnalog-outline-recent-filter-btn ${activeCount ? "is-active" : ""}`,
+      attr: {
+        type: "button",
+        title: i18nT("Filter and view options"),
+        "aria-label": i18nT("Filter and view options"),
+        "aria-haspopup": "menu",
+      },
     });
-    clear.onclick = () => this.resetRecentFilters();
+    try { obsidian.setIcon(filterButton, RECENT_FILTER_ICONS.filterMenu); } catch { /* intentionally empty */ }
+    if (activeCount) filterButton.createSpan({ cls: "qnalog-outline-recent-filter-badge", text: String(activeCount) });
+    filterButton.addEventListener("click", (evt) => this.showRecentFilterMenu(evt));
+
+    const chips = listActiveRecentFilterChips(filters, (kind, id) => this.getRecentFilterLabel(kind, id));
+    if (chips.length) {
+      const activeRow = wrap.createDiv({ cls: "qnalog-outline-recent-active-filters" });
+      for (const chip of chips) {
+        const item = activeRow.createDiv({ cls: "qnalog-outline-recent-active-chip" });
+        const icon = item.createSpan({ cls: "qnalog-outline-recent-active-chip-icon" });
+        try { obsidian.setIcon(icon, RECENT_FILTER_ICONS[chip.kind === "time" ? "time" : "template"]); } catch { /* intentionally empty */ }
+        item.createSpan({ cls: "qnalog-outline-recent-active-chip-label", text: chip.label });
+        const remove = item.createEl("button", {
+          attr: { type: "button", "aria-label": `${i18nT("Remove filter: ")}${chip.label}`, title: `${i18nT("Remove filter: ")}${chip.label}` },
+        });
+        try { obsidian.setIcon(remove, RECENT_FILTER_ICONS.remove); } catch { /* intentionally empty */ }
+        remove.addEventListener("click", () => this.setRecentFilter(chip.kind, "all"));
+      }
+      if (chips.length >= 2) {
+        const clear = activeRow.createEl("button", {
+          cls: "qnalog-outline-recent-active-clear",
+          text: i18nT("Clear filters"),
+          attr: { type: "button" },
+        });
+        clear.addEventListener("click", () => this.resetRecentFilters());
+      }
+    }
   }
 
   renderRecentFilterEmpty(parent) {
     const box = parent.createDiv({ cls: "qnalog-outline-recent-filter-empty" });
-    box.createDiv({ cls: "qnalog-outline-recent-filter-empty-title", text: i18nT("No notes match the filter criteria") });
-    const hint = box.createDiv({ cls: "qnalog-outline-recent-filter-empty-hint" });
-    hint.createSpan({ text: i18nT("Try ") });
+    const query = String(this._recentSearch || "").trim();
+    box.createDiv({
+      cls: "qnalog-outline-recent-filter-empty-title",
+      text: i18nT(query ? "No notes match the search" : "No notes match the filter criteria"),
+    });
+    if (query) {
+      const clear = box.createEl("button", { text: i18nT("Clear search"), attr: { type: "button" } });
+      clear.addEventListener("click", () => {
+        this._recentSearch = "";
+        this.forceRecentRender();
+      });
+      return;
+    }
     const filters = this.getRecentFilters();
+    const actions = box.createDiv({ cls: "qnalog-outline-recent-filter-empty-actions" });
     if (filters.time === "today") {
-      const widen = hint.createEl("button", { text: i18nT("AI is identifying transcript terms"), attr: { type: "button" } });
-      widen.onclick = () => this.setRecentFilter("time", "week");
-      if (this.hasActiveRecentFilters()) hint.createSpan({ text: i18nT("or ") });
+      const widen = actions.createEl("button", { text: i18nT("Show this week"), attr: { type: "button" } });
+      widen.addEventListener("click", () => this.setRecentFilter("time", "week"));
     }
     if (this.hasActiveRecentFilters()) {
-      const clear = hint.createEl("button", { text: i18nT("Clear all filters"), attr: { type: "button" } });
-      clear.onclick = () => this.resetRecentFilters();
+      const clear = actions.createEl("button", { text: i18nT("Clear all filters"), attr: { type: "button" } });
+      clear.addEventListener("click", () => this.resetRecentFilters());
     }
   }
 
@@ -5571,7 +5580,9 @@ export class OutlineView extends obsidian.ItemView {
   }
 
   renderRecentFolderTree(sec, recents, activePath) {
-    const list = sec.createDiv({ cls: "qnalog-outline-recent qnalog-outline-recent--folder" });
+    const rootsCount = new Set(recents.map((item) => getRecentRootForPath(this.plugin, item.folderPath || item.file.path) || "__root__")).size;
+    const flatRoot = !shouldShowFolderRootHeader(rootsCount);
+    const list = sec.createDiv({ cls: `qnalog-outline-recent qnalog-outline-recent--folder ${flatRoot ? "qnalog-outline-recent--flat-root" : ""}` });
     const roots = new Map();
     const makeNode = (key, label, path, depth) => ({ key, label, path, depth, items: [], children: new Map(), total: 0 });
 
@@ -5613,7 +5624,7 @@ export class OutlineView extends obsidian.ItemView {
         title.setAttribute("aria-expanded", collapsed ? "false" : "true");
         try { obsidian.setIcon(toggle, collapsed ? "chevron-right" : "chevron-down"); } catch { /* intentionally empty */ }
         if (folderIcon) {
-          try { obsidian.setIcon(folderIcon, collapsed ? "folder" : "folder-open"); } catch { /* intentionally empty */ }
+          try { obsidian.setIcon(folderIcon, collapsed ? RECENT_FILTER_ICONS.folder : RECENT_FILTER_ICONS.folderOpen); } catch { /* intentionally empty */ }
         }
       };
       title.setAttribute("role", "button");
@@ -5632,7 +5643,7 @@ export class OutlineView extends obsidian.ItemView {
         evt.preventDefault();
         title.click();
       });
-      applyCollapsedState(this.recentCollapsedFolders.has(collapseKey));
+      applyCollapsedState(String(this._recentSearch || "").trim() ? false : this.recentCollapsedFolders.has(collapseKey));
     };
 
     const renderNestedFolder = (parent, node) => {
@@ -5641,7 +5652,7 @@ export class OutlineView extends obsidian.ItemView {
       const title = nodeEl.createDiv({ cls: "qnalog-outline-recent-folder-node-title" });
       const toggle = title.createSpan({ cls: "qnalog-outline-recent-folder-toggle" });
       const icon = title.createSpan({ cls: "qnalog-outline-recent-folder-node-icon" });
-      try { obsidian.setIcon(icon, "folder"); } catch { /* intentionally empty */ }
+      try { obsidian.setIcon(icon, RECENT_FILTER_ICONS.folder); } catch { /* intentionally empty */ }
       title.createSpan({ cls: "qnalog-outline-recent-group-weekday", text: node.label || i18nT("Unnamed folder") });
       title.createSpan({ cls: "qnalog-outline-recent-group-count", text: `${node.total}${i18nT(" notes")}` });
       const content = nodeEl.createDiv({ cls: "qnalog-outline-recent-folder-content" });
@@ -5652,10 +5663,15 @@ export class OutlineView extends obsidian.ItemView {
     };
 
     for (const root of sortNodes(roots)) {
+      if (flatRoot) {
+        for (const child of sortNodes(root.children)) renderNestedFolder(list, child);
+        for (const item of root.items) this.renderRecentNoteRow(list, item, activePath);
+        continue;
+      }
       const groupEl = list.createDiv({ cls: "qnalog-outline-recent-group qnalog-outline-recent-group--named qnalog-outline-recent-folder-root" });
       const axis = groupEl.createDiv({ cls: "qnalog-outline-recent-axis qnalog-outline-recent-axis--named" });
       const axisIcon = axis.createDiv({ cls: "qnalog-outline-recent-axis-icon", attr: { title: root.path || root.label } });
-      try { obsidian.setIcon(axisIcon, "folder"); } catch { /* intentionally empty */ }
+      try { obsidian.setIcon(axisIcon, RECENT_FILTER_ICONS.folder); } catch { /* intentionally empty */ }
       const itemsEl = groupEl.createDiv({ cls: "qnalog-outline-recent-items" });
       const groupTitle = itemsEl.createDiv({ cls: "qnalog-outline-recent-group-title" });
       const toggle = groupTitle.createSpan({ cls: "qnalog-outline-recent-folder-toggle" });
@@ -5666,7 +5682,6 @@ export class OutlineView extends obsidian.ItemView {
       for (const item of root.items) this.renderRecentNoteRow(content, item, activePath);
       bindFolderToggle(groupTitle, groupEl, root, toggle, axisIcon);
     }
-    this.applyRecentSearchFilter(sec);
   }
 
   renderRecentGrouped(sec, recents, activePath, groupBy) {
@@ -5691,7 +5706,7 @@ export class OutlineView extends obsidian.ItemView {
       const groupEl = list.createDiv({ cls: "qnalog-outline-recent-group qnalog-outline-recent-group--named" });
       const axis = groupEl.createDiv({ cls: "qnalog-outline-recent-axis qnalog-outline-recent-axis--named" });
       const axisIcon = axis.createDiv({ cls: "qnalog-outline-recent-axis-icon", attr: { title: group.path || group.label } });
-      try { obsidian.setIcon(axisIcon, "folder"); } catch { /* intentionally empty */ }
+      try { obsidian.setIcon(axisIcon, RECENT_FILTER_ICONS.folder); } catch { /* intentionally empty */ }
       const itemsEl = groupEl.createDiv({ cls: "qnalog-outline-recent-items" });
       const groupTitle = itemsEl.createDiv({ cls: "qnalog-outline-recent-group-title" });
       const collapseKey = groupBy === "folder" ? `folder:${group.key}` : "";
@@ -5728,32 +5743,41 @@ export class OutlineView extends obsidian.ItemView {
       for (const item of group.items) this.renderRecentNoteRow(itemsEl, item, activePath, { indent: group.depth });
       if (groupBy === "folder") applyCollapsedState(this.recentCollapsedFolders.has(collapseKey));
     }
-    this.applyRecentSearchFilter(sec);
   }
 
   renderRecent(root) {
     this.refreshTopicsSnapshotIfNeeded();
     const allRecents = getRecentNotes(this.plugin, 120);
     for (const note of allRecents.slice(0, 20)) this.refreshTopicPromptOnce(note.file.path);
-    const recents = this.applyRecentFilters(allRecents).slice(0, 48);
     const sec = root.createDiv({ cls: "qnalog-outline-section" });
     if (allRecents.length === 0) {
       sec.createDiv({ cls: "qnalog-outline-empty", text: i18nT("No recording notes yet") });
       return;
     }
-    this.renderRecentFilterBar(sec, allRecents);
-    if (recents.length === 0) {
-      this.renderRecentFilterEmpty(sec);
+    const resultsHost = sec.createDiv({ cls: "qnalog-outline-recent-results" });
+    this.renderRecentFilterBar(sec, allRecents, resultsHost);
+    sec.appendChild(resultsHost);
+    this.renderRecentResults(resultsHost, allRecents);
+  }
+
+  renderRecentResults(resultsHost, allRecents) {
+    resultsHost.empty();
+    const matchingRecents = this.applyRecentFilters(allRecents);
+    if (matchingRecents.length === 0) {
+      this.renderRecentFilterEmpty(resultsHost);
       return;
     }
+    const wasTruncated = matchingRecents.length > 48;
+    const recents = matchingRecents.slice(0, 48);
     const active = this.getActiveNoteFile();
     const activePath = active && active.path ? obsidian.normalizePath(active.path) : "";
     const groupBy = this.getRecentGroupBy();
     if (groupBy !== "time") {
-      this.renderRecentGrouped(sec, recents, activePath, groupBy);
+      this.renderRecentGrouped(resultsHost, recents, activePath, groupBy);
+      if (wasTruncated) resultsHost.createDiv({ cls: "qnalog-outline-recent-limit-note", text: i18nT("Showing the latest 48 notes; use search or filters to narrow down") });
       return;
     }
-    const list = sec.createDiv({ cls: "qnalog-outline-recent" });
+    const list = resultsHost.createDiv({ cls: "qnalog-outline-recent" });
     const groupCounts = new Map();
     for (const item of recents) groupCounts.set(item.dateKey, (groupCounts.get(item.dateKey) || 0) + 1);
     const moment = window.moment;
@@ -5782,23 +5806,7 @@ export class OutlineView extends obsidian.ItemView {
       }
       this.renderRecentNoteRow(itemsEl, r, activePath);
     }
-    this.applyRecentSearchFilter(sec);
-  }
-
-  // 实时按关键词过滤纪要列表（匹配标题/时间/模板等行内文本），show/hide 不重渲染、保留输入焦点。
-  applyRecentSearchFilter(scope) {
-    const root = scope || (this.containerEl && this.containerEl.children[1]);
-    if (!root || typeof root.querySelectorAll !== "function") return;
-    const q = String(this._recentSearch || "").trim().toLowerCase();
-    root.querySelectorAll(".qnalog-outline-recent-row, .qnalog-outline-recent-variant").forEach((rowEl: HTMLElement) => {
-      const hit = !q || (rowEl.textContent || "").toLowerCase().includes(q);
-      rowEl.style.display = hit ? "" : "none";
-    });
-    root.querySelectorAll(".qnalog-outline-recent-group").forEach((g: HTMLElement) => {
-      const rows: HTMLElement[] = Array.from(g.querySelectorAll(".qnalog-outline-recent-row, .qnalog-outline-recent-variant"));
-      const anyVisible = rows.some((r) => r.style.display !== "none");
-      g.style.display = anyVisible ? "" : "none";
-    });
+    if (wasTruncated) resultsHost.createDiv({ cls: "qnalog-outline-recent-limit-note", text: i18nT("Showing the latest 48 notes; use search or filters to narrow down") });
   }
 
   createRecentActionButton(parent, opt) {

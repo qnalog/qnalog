@@ -5123,101 +5123,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 
-.qnalog-outline-recent-filter-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 5px 0 17px;
-}
-/* 纪要搜索框：和日期/模板筛选共用一行，窄窗格下再自然换行。 */
-.qnalog-outline-recent-search {
-  flex: 1 1 150px;
-  min-width: 128px;
-  box-sizing: border-box;
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
-  border-radius: 8px;
-  background: var(--background-primary);
-  color: var(--text-normal);
-  font-size: 13px;
-}
-.qnalog-outline-recent-search:focus {
-  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
-  outline: none;
-}
-.qnalog-outline-recent-search::placeholder { color: var(--text-muted); }
-
-/* 筛选 chip：软胶囊，不再用 Obsidian 默认 button 的白底硬框。
-   父链 .qnalog-outline-recent-filter-wrap 提特异性到 0,2,0，
-   稳压主题里 body button / .theme-light button 这种 0,1,1，不用 !important（插件审核合规）。 */
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-chip {
-  min-height: 26px;
-  max-width: 136px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-secondary) 60%, transparent);
-  color: var(--text-muted);
-  box-shadow: none;
-  font-size: var(--font-ui-smaller);
-  line-height: 1.2;
-  font-weight: 500;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  letter-spacing: 0;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-chip:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-  box-shadow: none;
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-chip.is-active {
-  color: var(--text-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-  box-shadow: none;
-  font-weight: 600;
-}
-
-/* 纪要分组方式：与筛选控件共用主题表面，但单独保留清晰的当前状态。 */
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-group-chip {
-  color: var(--text-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-group-chip:hover {
-  color: var(--text-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 19%, transparent);
-}
-
-/* 清除筛选：纯文字链，无框无底 */
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-clear {
-  flex: 0 0 auto;
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.qnalog-outline-recent-filter-wrap .qnalog-outline-recent-filter-clear:hover {
-  color: var(--text-accent);
-  background: transparent;
-  box-shadow: none;
-}
-
 .qnalog-outline-recent-filter-empty {
   min-height: 156px;
   display: flex;
@@ -5234,13 +5139,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-muted);
 }
 
-.qnalog-outline-recent-filter-empty-hint {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  line-height: 1.5;
+.qnalog-outline-recent-filter-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
-.qnalog-outline-recent-filter-empty-hint button {
+.qnalog-outline-recent-filter-empty-actions button {
   padding: 0;
   border: 0;
   background: transparent;
@@ -5250,7 +5156,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
 }
 
-.qnalog-outline-recent-filter-empty-hint button:hover {
+.qnalog-outline-recent-filter-empty-actions button:hover {
   text-decoration: underline;
   background: transparent;
 }
@@ -9879,10 +9785,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 /* 沉淀首段：指挥棒 —— 已有 padding 14/16 + radius 12，对齐 */
 /* 纪要首段：筛选条 —— 去掉额外 top margin，让所有 Tab 顶端对齐 */
-.qnalog-outline-recent-filter-wrap {
-  margin: 0 0 12px;
-}
-
 /* 纪要：单条之间留点呼吸，避免比沉淀紧太多（沉淀 12，纪要 8） */
 .qnalog-outline-recent-items {
   gap: 8px;
@@ -12209,11 +12111,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 /* Recent-list styling is shared by idle, recording, and paused views. */
 .qnalog-outline .qnalog-outline-recent-filter-wrap {
-  container-name: qnalog-recent-filters;
-  container-type: inline-size;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
   min-width: 0;
   margin: 0;
@@ -12221,28 +12121,40 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 7px;
 }
 
+.qnalog-outline .qnalog-outline-recent-searchrow {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  height: 36px;
+  gap: 7px;
+}
+
 .qnalog-outline .qnalog-outline-recent-search-box {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  min-width: 70px;
-  height: 34px;
-  padding: 0 10px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 8px 0 10px;
   gap: 7px;
-  border: 0;
-  border-radius: 10px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 9px;
   background: color-mix(in srgb, var(--background-secondary) 76%, var(--background-primary));
 }
 
-.qnalog-outline .qnalog-outline-recent-search-icon {
+.qnalog-outline .qnalog-outline-recent-search-icon,
+.qnalog-outline .qnalog-outline-recent-search-clear {
   display: inline-flex;
   flex: 0 0 auto;
-  color: var(--qnalog-text-tertiary, var(--text-muted));
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
 }
 
 .qnalog-outline .qnalog-outline-recent-search-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .qnalog-outline .qnalog-outline-recent-search {
@@ -12254,59 +12166,164 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--qnalog-text-primary, var(--text-normal));
+  color: var(--text-normal);
   font-size: 12.5px;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-chip,
-.qnalog-outline .qnalog-outline-recent-filter-clear {
+.qnalog-outline .qnalog-outline-recent-search:focus {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear,
+.qnalog-outline .qnalog-outline-recent-filter-btn {
+  position: relative;
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 0 36px;
   align-items: center;
   justify-content: center;
-  min-width: 0;
-  height: 34px;
-  padding: 0 8px;
-  gap: 3px;
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   box-shadow: none;
-  color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear:hover,
+.qnalog-outline .qnalog-outline-recent-filter-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear svg,
+.qnalog-outline .qnalog-outline-recent-filter-btn > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.qnalog-outline .qnalog-outline-recent-filter-btn.is-active {
+  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
+  color: var(--text-accent);
+}
+
+.qnalog-outline .qnalog-outline-recent-filter-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 5px 0 8px;
+  gap: 5px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-secondary) 62%, transparent);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip-icon,
+.qnalog-outline .qnalog-outline-recent-active-chip-icon svg {
+  display: inline-flex;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.qnalog-outline .qnalog-outline-recent-group-chip {
-  padding-inline: 11px;
-  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
-  color: var(--qnalog-text-active, var(--text-accent));
-  font-weight: 700;
+.qnalog-outline .qnalog-outline-recent-active-chip button {
+  display: inline-flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-chip:hover {
+.qnalog-outline .qnalog-outline-recent-active-chip button:hover {
   background: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-chevron,
-.qnalog-outline .qnalog-outline-recent-filter-chevron svg {
-  width: 11px;
-  height: 11px;
+.qnalog-outline .qnalog-outline-recent-active-chip button svg {
+  width: 14px;
+  height: 14px;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-clear {
-  padding-inline: 3px;
+.qnalog-outline .qnalog-outline-recent-active-clear {
+  min-height: 32px;
+  padding: 0 5px;
+  border: 0;
   background: transparent;
-  box-shadow: none;
-  color: var(--qnalog-text-tertiary, var(--text-muted));
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
 }
 
-.qnalog-outline .qnalog-outline-recent-filter-clear:hover,
-.qnalog-outline .qnalog-outline-recent-filter-clear:focus,
-.qnalog-outline .qnalog-outline-recent-filter-clear:active {
+.qnalog-outline .qnalog-outline-recent-active-clear:hover {
   background: transparent;
-  box-shadow: none;
-  color: var(--qnalog-text-active, var(--text-accent));
+  color: var(--text-accent);
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root {
+  padding-left: 0;
+}
+
+.qnalog-outline .qnalog-outline-recent-limit-note {
+  margin: 4px 0 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear.is-hidden {
+  display: none;
 }
 
 .qnalog-outline .qnalog-outline-recent {
@@ -12699,20 +12716,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-group.is-collapsed .qnalog-outline-recent-variant {
   display: none;
 }
-@container qnalog-recent-filters (max-width: 360px) {
-
-  .qnalog-outline .qnalog-outline-recent-search-box {
-    flex: 1 0 100%;
-  }
-
-  .qnalog-outline .qnalog-outline-recent-filter-chip,
-  .qnalog-outline .qnalog-outline-recent-filter-clear {
-    max-width: none;
-    overflow: visible;
-    text-overflow: clip;
-  }
-}
-
 .qnalog-outline :is(button, summary, [role="button"]):focus-visible,
 .qnalog-kanban-view :is(button, summary, [role="button"]):focus-visible,
 .qnalog-settings-root :is(button, summary, [role="button"]):focus-visible,
