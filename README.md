@@ -52,7 +52,7 @@ Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native
 
 The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. **Minutes Board** is a separate view, opened with its command or the button in the panel. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
 
-In the note list context menu, **Reorganize** replaces the current note's organized body in place and saves a recoverable version first. After reorganization, the **Before reorganization** row opens the replaced content; **Generate derived version** creates a separate derived note and leaves the source note unchanged.
+In the note list context menu, **Reorganize** regenerates the organized body in place and replaces the current content. The plugin does not save the replaced body; use Obsidian's file recovery if you need to restore it. Reorganization updates an existing **Original** snapshot to the new draft. **Generate derived version** creates a separate derived note and leaves the source note unchanged.
 
 The 1.6.1 interface follows the active light or dark theme and supports narrow panels, visible keyboard focus, and reduced-motion preferences.
 
@@ -73,7 +73,7 @@ Transcribed notes preserve the original speech-to-text text and revision history
 <details>
 <summary>Original, derived, and clean-copy versions</summary>
 
-Before the first derived version, QnALog caches recoverable original text. If the snapshot or its index cannot be saved or verified, it does not replace the source. **Generate Clean Copy** creates a separate file and activates that version in the source note. Regular reorganization creates a derived Markdown file and a `minutes` cache but does not activate the derived version automatically. The `.versions` cache is not a substitute for Obsidian file history.
+Before the first derived version, QnALog caches the source text as an **Original** snapshot. Reorganization updates an existing snapshot to the new draft. When no snapshot exists, reorganization does not create one; the first later derived version uses the then-current source note as its original. **Generate Clean Copy** creates a separate file and activates that version in the source note. Regular reorganization creates a derived Markdown file and a `minutes` cache but does not activate the derived version automatically. Use Obsidian file recovery to restore an organized body replaced by reorganization.
 
 </details>
 

@@ -21,7 +21,6 @@ vi.mock("obsidian", () => ({
 
 import * as obsidian from "obsidian";
 import { reorganizeNoteInPlace, type ReorganizeInPlacePort } from "../src/notes/reorganize-in-place-flow";
-import { splitVersionPayload } from "../src/versions/version-content";
 
 afterEach(() => { notices.length = 0; vi.restoreAllMocks(); });
 
@@ -41,7 +40,7 @@ const generated = "---\ntitle: New title\ntags: new\nqnalog_topic: New topic\n--
 function fixture(overrides: Record<string, unknown> = {}) {
   const file = new obsidian.TFile("QnALog/Minutes/source.md");
   const contents = new Map([[file.path, original]]);
-  const calls: { order: string[]; saved: unknown[][]; refresh: unknown[][]; created: unknown[][]; snapshots: unknown[][]; switched: unknown[][] } = { order: [], saved: [], refresh: [], created: [], snapshots: [], switched: [] };
+  const calls: { order: string[]; refresh: unknown[][]; created: unknown[][]; snapshots: unknown[][]; switched: unknown[][] } = { order: [], refresh: [], created: [], snapshots: [], switched: [] };
   const create = vi.fn();
   const activities = new Map<string, { stage: string; detail?: string }>();
   const port = {
@@ -61,17 +60,13 @@ function fixture(overrides: Record<string, unknown> = {}) {
     mergeAndPolish: vi.fn(async () => { calls.order.push("merge"); return generated; }),
     stripModeSuggestionBlocks: (text: string) => text,
     validateOriginalVersionForReorganization: vi.fn(async () => { calls.order.push("validate-cache"); }),
-    ensureOriginalVersionForSource: vi.fn(async () => { calls.order.push("ensure-original"); return "QnALog/.versions/source/original.md"; }),
     replaceOriginalVersionBody: vi.fn(async (...args: unknown[]) => {
       calls.order.push("replace-original"); calls.snapshots.push(args);
       return { path: "QnALog/.versions/source/original.md", previousPayload: "old-payload" };
     }),
     restoreOriginalVersionBody: vi.fn(async (...args: unknown[]) => { calls.order.push("restore-original"); calls.snapshots.push(args); }),
     switchVersion: vi.fn(async (...args: unknown[]) => { calls.order.push("switch-version"); calls.switched.push(args); }),
-    saveVersion: vi.fn(async (...args: unknown[]) => {
-      calls.order.push("save-version"); calls.saved.push(args);
-      return { meta: { id: "test-pre-reorganize-id" } };
-    }),
+    saveVersion: vi.fn(),
     refreshNoteIndex: vi.fn(async (...args: unknown[]) => { calls.order.push("refresh-index"); calls.refresh.push(args); }),
     tasks: {
       startTaskActivity: vi.fn((input: { id: string; stage: string }) => { calls.order.push("start-task"); activities.set(input.id, { stage: input.stage }); }),
@@ -96,20 +91,10 @@ describe("in-place note reorganization", () => {
     expect(result).toContain("New organized body");
     expect(result).not.toContain("Old organized body");
     expect(result.slice(result.indexOf("## 原始材料"))).toBe(original.slice(original.indexOf("## 原始材料")));
-    expect(calls.order.indexOf("save-version")).toBeLessThan(calls.order.indexOf("write"));
-    expect(calls.order.indexOf("validate-cache")).toBeLessThan(calls.order.indexOf("save-version"));
-    expect(calls.order.indexOf("save-version")).toBeLessThan(calls.order.indexOf("write"));
-    expect(result).toContain("qnalog_pre_reorganize_version: test-pre-reorganize-id");
+    expect(calls.order.indexOf("validate-cache")).toBeLessThan(calls.order.indexOf("merge"));
     expect(calls.snapshots[0][1]).toContain("New organized body");
     expect(calls.order.indexOf("refresh-index")).toBeLessThan(calls.order.indexOf("done"));
-    expect(calls.saved[0][3]).toMatchObject({ kind: "pre-reorganize", label: "Before reorganization", activate: false });
-    expect(calls.saved[0][3]).toMatchObject({ body: expect.stringContaining("Old organized body") });
-    expect(calls.saved[0][3]).not.toMatchObject({ body: expect.stringContaining("New organized body") });
-    const savedPayload = splitVersionPayload(String((calls.saved[0][3] as { body: string }).body));
-    expect(savedPayload.frontmatter).toContain("title: Old title");
-    expect(savedPayload.frontmatter).toContain("tags: old");
-    expect(savedPayload.body).toContain("Old organized body");
-    expect(portRaw.saveVersion).toHaveBeenCalledTimes(1);
+    expect(portRaw.saveVersion).not.toHaveBeenCalled();
     expect(portRaw.refreshNoteIndex).toHaveBeenCalledWith(file, { reason: "reorganize" });
     expect(portRaw.mergeAndPolish).toHaveBeenCalledWith(expect.any(Array), "general", expect.any(Object), expect.any(Object));
     expect(activities.get(`reorganize-in-place:${file.path}`)?.stage).toBe("done");
@@ -121,7 +106,6 @@ describe("in-place note reorganization", () => {
     vi.mocked(port.mergeAndPolish).mockRejectedValueOnce(new Error("model unavailable"));
     await reorganizeNoteInPlace(port, file);
     expect(contents.get(file.path)).toBe(original);
-    expect(portRaw.saveVersion).not.toHaveBeenCalled();
     expect(portRaw.tasks.failTaskActivity).toHaveBeenCalledTimes(1);
     expect(activities.get(`reorganize-in-place:${file.path}`)?.stage).toBe("failed");
     expect(notices.some((message) => message.includes("model unavailable"))).toBe(true);
@@ -141,13 +125,10 @@ describe("in-place note reorganization", () => {
     expect(portRaw.tasks.failTaskActivity).toHaveBeenCalledTimes(1);
   });
 
-  it("does not overwrite the note when saving the recoverable version fails", async () => {
-    const { port, file, contents, portRaw } = fixture();
-    vi.mocked(port.saveVersion).mockRejectedValueOnce(new Error("version store unavailable"));
+  it("does not create a pre-reorganization version", async () => {
+    const { port, file, portRaw } = fixture();
     await reorganizeNoteInPlace(port, file);
-    expect(contents.get(file.path)).toBe(original);
-    expect(portRaw.refreshNoteIndex).not.toHaveBeenCalled();
-    expect(portRaw.tasks.failTaskActivity).toHaveBeenCalledTimes(1);
+    expect(portRaw.saveVersion).not.toHaveBeenCalled();
   });
 
   it("stops before model generation when cached version metadata cannot be read", async () => {
@@ -157,7 +138,6 @@ describe("in-place note reorganization", () => {
     await reorganizeNoteInPlace(port, file);
     expect(contents.get(file.path)).toBe(original);
     expect(portRaw.mergeAndPolish).not.toHaveBeenCalled();
-    expect(portRaw.saveVersion).not.toHaveBeenCalled();
     expect(portRaw.replaceOriginalVersionBody).not.toHaveBeenCalled();
   });
 
@@ -186,27 +166,34 @@ describe("in-place note reorganization", () => {
     expect(contents.get(file.path)).toContain("New organized body");
   });
 
-  it("points the prior-version key to the immediately previous content on each reorganization", async () => {
-    let versionNumber = 0;
-    const { port, file, contents, calls, portRaw } = fixture({
-      mergeAndPolish: vi.fn()
-        .mockResolvedValueOnce("First replacement body")
-        .mockResolvedValueOnce("Second replacement body"),
-      saveVersion: vi.fn(async (...args: unknown[]) => {
-        calls.order.push("save-version"); calls.saved.push(args);
-        versionNumber++;
-        return { meta: { id: `prior-${versionNumber}` } };
-      }),
+  it("preserves a legacy prior-version frontmatter field as an ordinary user field", async () => {
+    const noteWithLegacyKey = original.replace("user_custom: keep-me", "user_custom: keep-me\nqnalog_pre_reorganize_version: legacy-version-id");
+    const { port, file, contents, portRaw } = fixture();
+    contents.set(file.path, noteWithLegacyKey);
+    await reorganizeNoteInPlace(port, file);
+    expect(contents.get(file.path)).toContain("qnalog_pre_reorganize_version: legacy-version-id");
+    expect(contents.get(file.path)).toContain("New organized body");
+    expect(portRaw.saveVersion).not.toHaveBeenCalled();
+  });
+
+  it("does not create an original snapshot when none exists and no active version block is present", async () => {
+    const { port, file, portRaw } = fixture({
+      replaceOriginalVersionBody: vi.fn(async () => null),
     });
     await reorganizeNoteInPlace(port, file);
-    const afterFirst = contents.get(file.path) || "";
+    expect(portRaw.saveVersion).not.toHaveBeenCalled();
+    expect(portRaw.replaceOriginalVersionBody).toHaveBeenCalledOnce();
+  });
+
+  it("stops before model generation when an active version block has no readable snapshot", async () => {
+    const activeSource = original.replace("Old organized body", "<!-- qnalog-active-version-start -->\nOld active body\n<!-- qnalog-active-version-end -->");
+    const { port, file, contents, portRaw } = fixture({
+      validateOriginalVersionForReorganization: vi.fn(async () => { throw new Error("Could not read version metadata"); }),
+    });
+    contents.set(file.path, activeSource);
     await reorganizeNoteInPlace(port, file);
-    const afterSecond = contents.get(file.path) || "";
-    expect(afterFirst).toContain("qnalog_pre_reorganize_version: prior-1");
-    expect(afterSecond).toContain("qnalog_pre_reorganize_version: prior-2");
-    expect((calls.saved[1][3] as { body: string }).body).toContain("First replacement body");
-    expect(calls.snapshots[1][1]).toContain("Second replacement body");
-    expect(portRaw.saveVersion).toHaveBeenCalledTimes(2);
+    expect(contents.get(file.path)).toBe(activeSource);
+    expect(portRaw.mergeAndPolish).not.toHaveBeenCalled();
   });
 
   it("rejects a second invocation while the first model request is active", async () => {

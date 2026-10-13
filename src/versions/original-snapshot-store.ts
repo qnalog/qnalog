@@ -105,6 +105,9 @@ export class OriginalSnapshotStore {
     if (hasOriginalRecord && !(await this.resolveOriginalSnapshot(folder, sourceId, sourceFile.path, manifest))) {
       throw new Error(t("Could not read version metadata"));
     }
+    if (!hasOriginalRecord && findActiveVersionBlock(sourceContent)) {
+      throw new Error(t("Could not read version metadata"));
+    }
   }
 
   /** Replace only the cached payload and retain the cache file's metadata frontmatter. */
@@ -152,31 +155,6 @@ export class OriginalSnapshotStore {
       this.io.getFolder(sourceId), sourceId, sourceFile.path, await this.io.readManifest(this.io.getFolder(sourceId), sourceId),
     );
     if (!snapshot || snapshot.path !== update.path) throw new Error(t("Could not verify version metadata"));
-  }
-
-  async findVersionPathForSource(sourceFile: obsidian.TFile, versionId: string): Promise<string | null> {
-    if (!(sourceFile instanceof obsidian.TFile) || sourceFile.extension !== "md" || !versionId) return null;
-    try {
-      const sourceContent = await this.io.readSource(sourceFile);
-      const sourceId = this.io.getSourceId(sourceContent, sourceFile);
-      const folder = this.io.getFolder(sourceId);
-      const manifest = await this.io.readManifest(folder, sourceId);
-      const record = manifest.versions.find((item) => item.id === versionId && item.kind === "pre-reorganize");
-      if (!record || !record.fileName || obsidian.normalizePath(record.fileName) !== record.fileName
-        || record.fileName.includes("/") || record.fileName.includes("\\") || !record.fileName.endsWith(".md")) return null;
-      const path = obsidian.normalizePath(`${folder}/${record.fileName}`);
-      if (!(await this.io.exists(path))) return null;
-      const parts = splitLeadingFrontmatter(await this.io.readCache(path));
-      const fm = parseVersionFrontmatter(parts.frontmatter, obsidian.parseYaml);
-      const sourcePath = fm ? readNamespaceFrontmatter(fm, "sourcePath") : null;
-      if (!fm || fm.version_id !== record.id || fm.variant_kind !== record.kind || fm.source_id !== sourceId
-        || readNamespaceFrontmatter(fm, "type") !== NS_TYPE_VERSION_CACHE
-        || typeof sourcePath !== "string"
-        || obsidian.normalizePath(sourcePath) !== obsidian.normalizePath(sourceFile.path)) return null;
-      return path;
-    } catch {
-      return null;
-    }
   }
 
   async ensureForSource(sourceFile: obsidian.TFile): Promise<string | null> {
