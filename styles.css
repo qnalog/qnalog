@@ -5544,21 +5544,23 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   stroke-width: 1.9;
 }
 
-/* 改名铅笔：桌面悬停整行才克制浮现（隐藏时不拦点击，避免误触）；移动端无悬停 → 常显、触屏可点。 */
-.qnalog-outline-recent-action.is-rename {
+/* 行内操作：桌面悬停或聚焦时显示，移动端常显且可点。 */
+.qnalog-outline-recent-action.is-hover-action {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
 }
-.qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-rename,
-.qnalog-outline-recent-action.is-rename:focus-visible {
+.qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline-recent-action.is-hover-action:focus-visible {
   opacity: 0.6;
   pointer-events: auto;
 }
-.qnalog-outline-recent-action.is-rename:hover {
+.qnalog-outline-recent-action.is-hover-action:hover {
   opacity: 1;
 }
-.qnalog-outline.is-mobile .qnalog-outline-recent-action.is-rename {
+.qnalog-outline.is-mobile .qnalog-outline-recent-action.is-hover-action {
   opacity: 0.6;
   pointer-events: auto;
 }
@@ -12311,7 +12313,15 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-accent);
 }
 
-.qnalog-outline .qnalog-outline-recent--flat-root {
+.qnalog-outline .qnalog-outline-recent.qnalog-outline-recent--flat-root {
+  padding-left: 0;
+}
+
+.qnalog-outline .qnalog-outline-recent.qnalog-outline-recent--flat-root::before {
+  display: none;
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-row {
   padding-left: 0;
 }
 
@@ -12630,15 +12640,18 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-active, var(--interactive-accent));
 }
 
-.qnalog-outline .qnalog-outline-recent-action.is-rename {
+.qnalog-outline .qnalog-outline-recent-action.is-hover-action {
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
 }
 
-.qnalog-outline .qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-rename,
-.qnalog-outline .qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-rename,
-.qnalog-outline .qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-rename {
+.qnalog-outline .qnalog-outline-recent-row:hover .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline .qnalog-outline-recent-row:focus-within .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline .qnalog-outline-recent-row.is-active .qnalog-outline-recent-action.is-hover-action,
+.qnalog-outline .qnalog-outline-recent-action.is-hover-action:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .qnalog-outline .qnalog-outline-recent-variant {
@@ -12658,6 +12671,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-folder-node {
   min-width: 0;
   margin-left: 17px;
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-folder-node {
+  margin-left: calc((var(--qnalog-folder-depth, 1) - 1) * 12px);
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-folder-content > .qnalog-outline-recent-row {
+  margin-left: 12px;
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-node-title {
@@ -12705,6 +12726,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-group-count {
   order: 3;
+}
+
+.menu.qnalog-recent-filter-menu {
+  min-width: 220px;
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-node.is-collapsed > .qnalog-outline-recent-folder-content,

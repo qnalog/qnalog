@@ -5263,12 +5263,12 @@ export class OutlineView extends obsidian.ItemView {
     evt.stopPropagation();
     const menu = new obsidian.Menu();
     const filters = this.getRecentFilters();
-    const addSection = (title, iconName, options, current, select) => {
-      menu.addItem((item) => item.setTitle(i18nT(title)).setIcon(iconName).setDisabled(true));
+    const addSection = (title, options, current, select) => {
+      menu.addItem((item) => item.setTitle(i18nT(title)).setDisabled(true));
       for (const option of options) {
         menu.addItem((item) => {
           item.setTitle(i18nT(option.label));
-          if (option.id === current) item.setIcon(RECENT_FILTER_ICONS.selected);
+          if (option.id === current) item.setChecked(true);
           item.onClick(() => select(option.id));
         });
       }
@@ -5277,19 +5277,19 @@ export class OutlineView extends obsidian.ItemView {
       ...RECENT_TIME_FILTER_OPTIONS.filter((option) => option.id === "all"),
       ...RECENT_TIME_FILTER_OPTIONS.filter((option) => option.id !== "all"),
     ];
-    addSection("Time range", RECENT_FILTER_ICONS.time, timeOptions, filters.time || "all", (value) => this.setRecentFilter("time", value));
+    addSection("Time range", timeOptions, filters.time || "all", (value) => this.setRecentFilter("time", value));
     menu.addSeparator();
-    addSection("Template", RECENT_FILTER_ICONS.template, this.getRecentModeFilterOptions(), filters.mode || "all", (value) => this.setRecentFilter("mode", value));
+    addSection("Template", this.getRecentModeFilterOptions(), filters.mode || "all", (value) => this.setRecentFilter("mode", value));
     menu.addSeparator();
-    addSection("Group by", RECENT_FILTER_ICONS.folder, RECENT_GROUP_OPTIONS, this.getRecentGroupBy(), (value) => this.setRecentGroupBy(value));
+    addSection("Group by", RECENT_GROUP_OPTIONS, this.getRecentGroupBy(), (value) => this.setRecentGroupBy(value));
 
     const target = evt.currentTarget instanceof HTMLElement ? evt.currentTarget : null;
     if (target && typeof menu.showAtPosition === "function") {
       const rect = target.getBoundingClientRect();
-      const menuWidthHint = 240;
-      const x = Math.max(8, Math.min(Math.round(rect.left), Math.max(8, window.innerWidth - menuWidthHint - 8)));
-      const y = Math.max(8, Math.min(Math.round(rect.bottom + 8), Math.max(8, window.innerHeight - 8)));
-      this.showMenuAtPosition(menu, { x, y }, "qnalog-recent-filter-menu");
+      const position = { x: Math.round(rect.right), y: Math.round(rect.bottom + 4), left: true };
+      this.showMenuAtPosition(menu, position, "qnalog-recent-filter-menu");
+      // Menu DOM is created during showAtPosition; re-position after its width class has taken effect.
+      window.requestAnimationFrame(() => menu.showAtPosition(position));
       return;
     }
     this.showMenuAtMouse(menu, evt, "qnalog-recent-filter-menu");
@@ -5516,7 +5516,7 @@ export class OutlineView extends obsidian.ItemView {
     this.createRecentActionButton(actions, {
       icon: "pencil",
       title: i18nT("Rename"),
-      cls: "is-rename",
+      cls: "is-rename is-hover-action",
       onClick: () => this.beginRecentNoteRename(nameEl, r.file, r.title),
     });
     const topicsUi = this.topicsUi;
@@ -5524,7 +5524,7 @@ export class OutlineView extends obsidian.ItemView {
       this.createRecentActionButton(actions, {
         icon: "layers-3",
         title: i18nT("Create topic"),
-        cls: "is-topic",
+        cls: "is-topic is-hover-action",
         onClick: () => openCreateTopic(this.app, topicsUi, r.file.path, () => this.forceRecentRender()),
       });
     }
@@ -5648,7 +5648,8 @@ export class OutlineView extends obsidian.ItemView {
 
     const renderNestedFolder = (parent, node) => {
       const nodeEl = parent.createDiv({ cls: "qnalog-outline-recent-folder-node" });
-      nodeEl.style.setProperty("--qnalog-folder-depth", `${Math.min(6, Math.max(1, Number(node.depth) || 1))}`);
+      const maxDepth = flatRoot ? 3 : 6;
+      nodeEl.style.setProperty("--qnalog-folder-depth", `${Math.min(maxDepth, Math.max(1, Number(node.depth) || 1))}`);
       const title = nodeEl.createDiv({ cls: "qnalog-outline-recent-folder-node-title" });
       const toggle = title.createSpan({ cls: "qnalog-outline-recent-folder-toggle" });
       const icon = title.createSpan({ cls: "qnalog-outline-recent-folder-node-icon" });
