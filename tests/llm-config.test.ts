@@ -2,12 +2,142 @@ import { describe, expect, it } from "vitest";
 import {
   ONE_CARD_PROVIDERS,
   applyLlmProfileToWorkingConfig,
+  applyLlmServicePresetToWorkingConfig,
   getBriefingMergeDesiredTokens,
   getBriefingMergeMaxTokens,
+  getLlmServicePreset,
   getLlmOutputCeiling,
   inferLlmServicePresetId,
   isDashscopeCompatibleLlmEndpoint,
+  syncWorkingConfigToLlmProfile,
 } from "../src/llm/config";
+
+describe("服务预设与 API 方案密钥隔离（回归期望）", () => {
+  function settingsWithTwoProfiles() {
+    const settings = {
+      llmProfiles: [
+        { id: "profile-a", name: "方案 A", endpoint: "https://service-a.example/v1", apiKey: "fake-key-service-a", model: "model-a" },
+        { id: "profile-b", name: "方案 B", endpoint: "https://service-b.example/v1", apiKey: "fake-key-service-b", model: "model-b" },
+      ],
+      activeLlmProfile: "profile-a",
+      llmServicePreset: "custom",
+      llmEndpoint: "",
+      llmApiKey: "",
+      llmModel: "",
+      transcribeProviders: { siliconflow: { apiKey: "" } },
+    };
+    applyLlmProfileToWorkingConfig(settings, "profile-a");
+    return settings;
+  }
+
+  it("更换服务预设并输入新密钥时，不会覆盖原活动方案或把旧密钥配给新地址", () => {
+    const settings = settingsWithTwoProfiles();
+    const profileA = { ...settings.llmProfiles[0] };
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, "openrouter"));
+
+    // 模拟用户随后在设置页修改密钥；activeLlmProfile 为空时同步函数不会找到方案。
+    settings.llmApiKey = "fake-key-new-service";
+    syncWorkingConfigToLlmProfile(settings, settings.activeLlmProfile);
+
+    // 期望：编辑临时服务时不覆盖仍选中的方案 A。
+    expect(settings.llmProfiles[0]).toEqual(profileA);
+  });
+
+  it("只切换服务预设后，请求配置不会把原服务密钥与新地址组合", () => {
+    const settings = settingsWithTwoProfiles();
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, "openrouter"));
+
+    // 网络请求从这两个工作字段读取配置；这里断言其组合，不发起网络请求。
+    expect(settings.llmApiKey).not.toBe(settings.llmProfiles[0].apiKey);
+  });
+
+  it("切换预设时保留已保存方案，且工作配置进入临时服务状态", () => {
+    const settings = settingsWithTwoProfiles();
+    const savedProfiles = settings.llmProfiles.map(profile => ({ ...profile }));
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, "openrouter"));
+
+    expect(settings.llmProfiles).toEqual(savedProfiles);
+    expect(settings.activeLlmProfile).toBe("");
+    expect(settings.llmEndpoint).toBe(getLlmServicePreset("openrouter")?.endpoint);
+    expect(settings.llmApiKey).toBe("");
+  });
+
+  it("临时服务输入新密钥后再选方案 A，会恢复方案 A 的地址、密钥和模型", () => {
+    const settings = settingsWithTwoProfiles();
+    const profileA = { ...settings.llmProfiles[0] };
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, "openrouter"));
+    settings.llmApiKey = "fake-key-new-service";
+    syncWorkingConfigToLlmProfile(settings, settings.activeLlmProfile);
+    expect(settings.llmProfiles[0]).toEqual(profileA);
+
+    expect(applyLlmProfileToWorkingConfig(settings, "profile-a")).toBe(true);
+    expect(settings).toMatchObject({
+      activeLlmProfile: "profile-a",
+      llmEndpoint: profileA.endpoint,
+      llmApiKey: profileA.apiKey,
+      llmModel: profileA.model,
+    });
+  });
+
+  it("SiliconFlow 预设只复用已保存的硅基流动转写密钥", () => {
+    const settings = settingsWithTwoProfiles();
+    settings.transcribeProviders.siliconflow = { apiKey: "fake-key-siliconflow-asr" };
+
+    const update = applyLlmServicePresetToWorkingConfig(settings, "siliconflow");
+
+    expect(update.llmApiKey).toBe("fake-key-siliconflow-asr");
+    expect(settings.llmProfiles[0].apiKey).toBe("fake-key-service-a");
+  });
+
+  it("选择 Custom service… 后保留密钥、活动方案和地址", () => {
+    const settings = settingsWithTwoProfiles();
+    const before = {
+      activeLlmProfile: settings.activeLlmProfile,
+      llmEndpoint: settings.llmEndpoint,
+      llmApiKey: settings.llmApiKey,
+    };
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, ""));
+
+    expect(settings.llmServicePreset).toBe("");
+    expect(settings.activeLlmProfile).toBe(before.activeLlmProfile);
+    expect(settings.llmEndpoint).toBe(before.llmEndpoint);
+    expect(settings.llmApiKey).toBe(before.llmApiKey);
+  });
+
+  it("Custom service… 后修改密钥仍同步到活动方案", () => {
+    const settings = settingsWithTwoProfiles();
+    const originalEndpoint = settings.llmProfiles[0].endpoint;
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, ""));
+    settings.llmApiKey = "fake-key-custom-service";
+    syncWorkingConfigToLlmProfile(settings, settings.activeLlmProfile);
+
+    expect(settings.llmProfiles[0].apiKey).toBe("fake-key-custom-service");
+    expect(settings.llmProfiles[0].endpoint).toBe(originalEndpoint);
+  });
+
+  it("未知预设只更新预设标识", () => {
+    const settings = settingsWithTwoProfiles();
+    const before = {
+      activeLlmProfile: settings.activeLlmProfile,
+      llmEndpoint: settings.llmEndpoint,
+      llmApiKey: settings.llmApiKey,
+    };
+
+    Object.assign(settings, applyLlmServicePresetToWorkingConfig(settings, "unknown-preset"));
+
+    expect(settings.llmServicePreset).toBe("unknown-preset");
+    expect(settings.activeLlmProfile).toBe(before.activeLlmProfile);
+    expect(settings.llmEndpoint).toBe(before.llmEndpoint);
+    expect(settings.llmApiKey).toBe(before.llmApiKey);
+  });
+});
+
 describe("LLM 服务预设", () => {
   it("百炼一站式预设内置三段服务与全部模型", () => {
     // 首次配置的主路径：只填密钥。因此地址与三个模型必须都写在预设里，

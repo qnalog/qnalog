@@ -9,7 +9,7 @@ import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
 import { UI_LANGUAGES, getActiveUiLanguage, t } from '../shared/i18n';
-import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
+import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, applyLlmServicePresetToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
 import { fetchLlmModelList, testLlmConnection } from '../llm/core';
 import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
 import { isDashScopeFlashNoWordsError } from "../asr/dashscope-flash-asr";
@@ -1512,23 +1512,18 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const activeLlmPresetId = getActiveLlmServicePresetId(this.plugin.settings);
     const activeLlmPreset = getLlmServicePreset(activeLlmPresetId);
     new obsidian.Setting(c).setName(t("Service Preset"))
-      .setDesc(t("Quickly fills in the service URL and the required request header adaptation; it does not overwrite the access key. Enter the model ID as given in the console of the corresponding provider or relay service."))
+      .setDesc(t("Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console."))
       .addDropdown(d => {
         d.addOption("", t("Custom service…"));
         for (const preset of LLM_SERVICE_PRESETS) d.addOption(preset.id, preset.label);
         d.setValue(activeLlmPresetId || "");
         d.onChange(async id => {
           const preset = getLlmServicePreset(id);
-          this.plugin.settings.llmServicePreset = id || "";
+          Object.assign(this.plugin.settings, applyLlmServicePresetToWorkingConfig(this.plugin.settings, id));
           if (!preset) {
             await this.plugin.saveSettings();
             this.renderSettings();
             return;
-          }
-          if (preset.endpoint) this.plugin.settings.llmEndpoint = preset.endpoint;
-          if (id === "siliconflow" && !this.plugin.settings.llmApiKey) {
-            const sfKey = ((this.plugin.settings.transcribeProviders || {}).siliconflow || {}).apiKey || "";
-            if (sfKey) this.plugin.settings.llmApiKey = sfKey;
           }
           await this.plugin.saveSettings();
           new obsidian.Notice(`${t("Applied service preset:")}${preset.label}${t(". Confirm the access key and model ID, then test the connection.")}`, 6000);
@@ -2280,7 +2275,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addToggle(txt => txt.setValue(this.plugin.settings.enableInterimOutput).onChange(async v => { this.plugin.settings.enableInterimOutput = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Filter very short recordings"))
-      .setDesc(t("When enabled, accidental recordings shorter than 3 seconds are discarded outright: no recording file is saved, no note is created, and no transcription or AI organizing runs. Recordings between 3 and 10 seconds keep their audio file in the recording folder but get no note and no automatic transcription; import them manually if they turn out to matter."))
+      .setDesc(t("When enabled, recordings under 1 second are discarded without transcription. Recordings from 1 to under 10 seconds are transcribed once: blank results are discarded, complete text creates a note, and shorter text keeps the audio without creating a note. Transcription failures keep the audio and a retry task. Turn this off to process short recordings normally."))
       .addToggle(txt => txt.setValue(this.plugin.settings.filterShortRecordings !== false).onChange(async v => { this.plugin.settings.filterShortRecordings = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Segment interval"))

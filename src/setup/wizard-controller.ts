@@ -10,6 +10,7 @@
 // 都必须经装配层注入的 saveSettings，不直接触碰 saveData。
 
 import { t } from "../shared/i18n";
+import { ONE_CARD_PROVIDERS } from "../llm/config";
 import {
   applyPresetPlan,
   buildProbeHost,
@@ -19,7 +20,7 @@ import {
   setupServiceIssue,
 } from "./index";
 import type { DetectionReport, PresetPlan, PresetRequest, ProbePorts } from "./index";
-import { canOmitServiceApiKey } from "../shared/util-llm-endpoint";
+import { canOmitServiceApiKey, comparableLlmEndpoint } from "../shared/util-llm-endpoint";
 import type { PluginSettings, TranscribeProviderSettings } from "../shared/types";
 
 export type WizardStep = "pick-preset" | "enter-key" | "probe" | "done";
@@ -51,11 +52,20 @@ export class SetupWizardController<T extends { settings: PluginSettings }> {
     return this.deps.plugin.settings;
   }
 
-  /** 步骤 1 → 2：选定预设，之前的填写与计划作废。 */
+  /** 步骤 1 → 2：选定预设，之前的填写与计划作废；地址匹配时可预填已存密钥。 */
   selectPreset(providerId: string): void {
     this.providerId = providerId;
-    this.request = null;
-    this.plan = null;
+    const preset = (ONE_CARD_PROVIDERS as Record<string, { llmEndpoint?: string; tokenPlanEndpoint?: string }>)[providerId];
+    const savedApiKey = this.settings.llmApiKey || "";
+    const currentEndpoint = comparableLlmEndpoint(this.settings.llmEndpoint || "");
+    const presetEndpoints = [preset && preset.llmEndpoint, preset && preset.tokenPlanEndpoint]
+      .filter((endpoint): endpoint is string => !!endpoint)
+      .map(comparableLlmEndpoint);
+    const mayReuseSavedKey = !!savedApiKey && presetEndpoints.includes(currentEndpoint);
+    this.request = mayReuseSavedKey ? { providerId, apiKey: savedApiKey } : null;
+    this.plan = mayReuseSavedKey
+      ? planPresetApplication(this.settings, { providerId, apiKey: savedApiKey })
+      : null;
     this.report = null;
     this.step = "enter-key";
   }

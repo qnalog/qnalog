@@ -19,6 +19,7 @@ export interface LiveAsrPipeline {
   closeStreamingForDiscard(session: RecordingSession): Promise<void>;
   /** 丢弃过短录音的笔记与缓存。 */
   discardShortRecordingNote(session: RecordingSession): Promise<void>;
+  discardShortRecordingAudio(session: Pick<RecordingSession, "masterAudioPath">): Promise<void>;
   /** 写入会话进度（面板进度条按 stage 渲染）。 */
   setSessionWorkProgress(session: RecordingSession, patch: unknown): void;
   /** 分段音频缓存目录（绝对路径，知识库内）。 */

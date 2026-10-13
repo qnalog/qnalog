@@ -197,11 +197,9 @@ export class SessionFinalizeService {
   }
 
   private settleContinuationFinalization(session: RecordingSession): Promise<void> | undefined {
+    if (session.shortRecordingAnomalous) return undefined;
     if (!session.continuationTaskId || !this.host.queue) return undefined;
-    const isDiscardedContinuation = session.shortRecordingTier === "discard"
-      && !!session.continuation
-      && !!session.continuationTaskId;
-    if (isDiscardedContinuation) {
+    if (session.shortRecordingTier === "discard" && session.continuation && session.continuationTaskId) {
       if (!session.finalized) {
         return (async () => {
           try {
@@ -209,7 +207,11 @@ export class SessionFinalizeService {
               status: "failed",
               mdPath: session.mdPath,
               temporarySourcePath: session.mdPath,
-              continuation: session.continuation,
+              continuation: {
+                ...session.continuation,
+                masterAudioPath: String(session.masterAudioPath || ""),
+                masterAudioName: String(session.masterAudioName || ""),
+              },
               segments: [],
               continuationDisposition: "discard",
               lastError: session.finalizationError || "",
@@ -299,6 +301,7 @@ export class SessionFinalizeService {
       updateQueueTask: (id, patch) => this.host.queue.update(id, patch),
       removeQueueTask: (id) => this.host.queue.remove(id),
       discardShortRecordingNote: (session) => this.host.asrPipeline.discardShortRecordingNote(session),
+      discardShortRecordingAudio: (session) => this.host.asrPipeline.discardShortRecordingAudio(session),
       logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
       endSession: (session) => this.host.sessionStore.end(session),
       requestOutlineRefresh: () => this.host.requestOutlineRefresh(),

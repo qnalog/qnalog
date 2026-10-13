@@ -4,7 +4,7 @@
 // 必须得到同一套结论，各写一份判据迟早会不一致。判据只取「总时长」与会话的既有状态，
 // 与录音设备、转写服务、知识库无关，因此可以脱离宿主直接测。
 
-import { SHORT_RECORDING_FILTER_MS, SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
+import { SHORT_RECORDING_CONTENT_PROBE_MS, SHORT_RECORDING_MINIMUM_MS } from "../shared/limits";
 
 /** 一场录音按长度得到的处理级别。 */
 export type ShortRecordingTier =
@@ -12,6 +12,8 @@ export type ShortRecordingTier =
   | "discard"
   /** 只留音频：音频写入录音目录，不建纪要、不转写。 */
   | "keep-audio"
+  /** 按长度需要一次转写，再按文本判定。 */
+  | "probe"
   /** 正常整理。 */
   | "process";
 
@@ -33,21 +35,18 @@ export interface ShortRecordingFacts {
 /**
  * 按总时长给出处理级别。
  *
- * 两个阈值都在 `shared/limits.ts`：低于 `SHORT_RECORDING_FILTER_MS` 直接丢弃，
- * 低于 `SHORT_RECORDING_SKIP_NOTE_MS` 只保留音频。两者都以「整场长度不足」为前提，
+ * 两个阈值都在 `shared/limits.ts`：低于 `SHORT_RECORDING_MINIMUM_MS` 直接丢弃，
+ * 低于 `SHORT_RECORDING_CONTENT_PROBE_MS` 先转写再按内容判定。两者都以「整场长度不足」为前提，
  * 所以只对最后一个切片判定。
  *
- * 续录到既有纪要的录音只豁免「只留音频」这一级：3 秒以内的误触仍按原行为丢弃，
- * 更长一点但不足 10 秒的片段要并入原纪要——用户显式点了「续录到这篇」，
- * 目标笔记也已存在，丢掉追加内容会让他什么也没得到。
+ * 续录到既有纪要的录音沿用相同时长级别；探测得到内容后由收尾流程追加到目标笔记。
  */
 export function classifyShortRecording(facts: ShortRecordingFacts): ShortRecordingTier {
   if (!facts || !facts.isFinal) return "process";
   if (facts.isImported || facts.hasSegments) return "process";
   if (!facts.filterShortRecordings) return "process";
   const durationMs = Math.max(0, Number(facts.durationMs) || 0);
-  if (durationMs < SHORT_RECORDING_FILTER_MS) return "discard";
-  if (facts.isContinuation) return "process";
-  if (durationMs < SHORT_RECORDING_SKIP_NOTE_MS) return "keep-audio";
+  if (durationMs < SHORT_RECORDING_MINIMUM_MS) return "discard";
+  if (durationMs < SHORT_RECORDING_CONTENT_PROBE_MS) return "probe";
   return "process";
 }

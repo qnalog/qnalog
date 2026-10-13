@@ -30,7 +30,8 @@ function setup(options: { layout?: boolean; configIssue?: string; segments?: Seg
   const port: SessionFinalizeRunPort = {
     hasQueue: () => true,
     updateQueueTask: vi.fn(async () => undefined), removeQueueTask: vi.fn(async () => undefined),
-    discardShortRecordingNote: vi.fn(async () => undefined), logDiagnostic: vi.fn(async (_level, code) => { events.push(`diag:${code}`); }),
+    discardShortRecordingNote: vi.fn(async () => undefined), discardShortRecordingAudio: vi.fn(async () => undefined),
+    logDiagnostic: vi.fn(async (_level, code) => { events.push(`diag:${code}`); }),
     endSession: vi.fn(() => { events.push("end"); }), requestOutlineRefresh: vi.fn(() => { events.push("refresh-outline"); }),
     getSettings: () => settings,
     getLlmConfigIssue: () => options.configIssue ?? "",
@@ -58,6 +59,23 @@ describe("session finalization flow consumer contract", () => {
     expect(fixture.port.mergeAndPolish).not.toHaveBeenCalled();
     expect(fixture.port.endSession).toHaveBeenCalledWith(fixture.session);
     expect(notices).toEqual([[t("⏭ This recording was too short or had no valid audio; skipped"), undefined]]);
+  });
+
+  it("discards audio only after a successful blank classification", async () => {
+    const fixture = setup();
+    fixture.session.shortRecordingTier = "discard";
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.discardShortRecordingAudio).toHaveBeenCalledWith(fixture.session);
+    expect(fixture.port.discardShortRecordingNote).toHaveBeenCalledWith(fixture.session);
+  });
+
+  it("keeps audio for a short fragment that does not create a note", async () => {
+    const fixture = setup();
+    fixture.session.shortRecordingTier = "keep-audio";
+    fixture.session.shortRecordingText = "好的";
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.discardShortRecordingAudio).not.toHaveBeenCalled();
+    expect(notices.some(([message]) => message.includes("Recognized: 好的"))).toBe(true);
   });
 
   it("preserves non-retryable configuration failures as blocked tasks and writes the failure marker", async () => {

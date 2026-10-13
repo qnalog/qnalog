@@ -11,6 +11,13 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const usage = "[plugin-onload] Usage: node scripts/check-plugin-onload.mjs [--bundle <path>]";
+const saveAllFailureModes = new Set([
+  "--save-all-secret-failure",
+  "--save-all-secret-failure-missing-data",
+  "--save-all-secret-failure-future-data",
+]);
+const saveAllFailureMode = process.argv.length === 3 && saveAllFailureModes.has(process.argv[2]) ? process.argv[2] : null;
+const saveAllFailureCheck = saveAllFailureMode !== null;
 function parseBundleArgument(args) {
   if (args.length === 0) return fileURLToPath(new URL("../main.js", import.meta.url));
   if (args.length !== 2 || args[0] !== "--bundle" || !args[1]) {
@@ -21,7 +28,7 @@ function parseBundleArgument(args) {
 }
 
 let code;
-const bundlePath = parseBundleArgument(process.argv.slice(2));
+const bundlePath = parseBundleArgument(saveAllFailureCheck ? [] : process.argv.slice(2));
 try {
   code = readFileSync(bundlePath, "utf8");
 } catch (error) {
@@ -138,6 +145,7 @@ class PluginBase extends ObsidianBase {
 }
 
 const secrets = new Map();
+let rejectSecretWrites = false;
 
 const app = {
   secretStorage: {
@@ -145,6 +153,7 @@ const app = {
     listSecrets: () => [...secrets.keys()],
     setSecret: (id, secret) => {
       if (id.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error("invalid SecretStorage id");
+      if (rejectSecretWrites) throw new Error("SecretStorage unavailable");
       secrets.set(id, secret);
     },
   },
@@ -267,6 +276,68 @@ async function main() {
     failures.push(`onload 抛错：${error && error.stack ? error.stack.split("\n").slice(0, 4).join(" | ") : error}`);
     report(failures);
     return 1;
+  }
+
+  if (saveAllFailureCheck) {
+    const settingsSource = readFileSync(new URL("../src/shared/settings-io.ts", import.meta.url), "utf8");
+    const versionMatch = settingsSource.match(/SETTINGS_SCHEMA_VERSION\s*=\s*(\d+)/);
+    const currentSchemaVersion = versionMatch ? Number(versionMatch[1]) : NaN;
+    expect(Number.isFinite(currentSchemaVersion), "无法读取 SETTINGS_SCHEMA_VERSION");
+    const previousData = saveAllFailureMode === "--save-all-secret-failure-missing-data"
+      ? null
+      : {
+        settings: {
+          schemaVersion: saveAllFailureMode === "--save-all-secret-failure-future-data"
+            ? currentSchemaVersion + 1
+            : currentSchemaVersion,
+          composer: { apiKey: "preserved-test-key", model: "existing-model" },
+        },
+        backgroundJobs: { items: [] },
+      };
+    const previousDataJson = JSON.stringify(previousData);
+    const noticeCountBefore = notices.length;
+    plugin.storedData = previousData;
+    plugin.lastSaved = previousData;
+    plugin.savedCount = 0;
+    plugin.settings.llmApiKey = "replacement-test-key";
+    plugin.settings.llmModel = "existing-model";
+    plugin.queue.tasks.push({
+      id: "secret-failure-task",
+      type: "merge",
+      status: "pending",
+      mdPath: "QnALog/notes/example.md",
+      sessionId: "secret-failure-session",
+    });
+    rejectSecretWrites = true;
+    let saveAllRejected = false;
+    try {
+      await plugin.saveAll();
+    } catch {
+      saveAllRejected = true;
+    } finally {
+      rejectSecretWrites = false;
+    }
+    expect(saveAllRejected, "plugin.saveAll did not preserve its rejection after SecretStorage failed");
+    if (saveAllFailureMode === "--save-all-secret-failure") {
+      expect(plugin.savedCount === 1, `saveData was called ${plugin.savedCount} times; expected 1`);
+      expect(plugin.lastSaved?.backgroundJobs?.items?.some((task) => task.id === "secret-failure-task"),
+        "saved backgroundJobs.items did not include the newly queued task");
+      expect(plugin.lastSaved?.settings?.composer?.model === "existing-model",
+        "saved settings did not retain the existing model setting");
+      expect(Boolean(plugin.lastSaved?.settings?.composer?.apiKey),
+        "saved settings replaced the existing API key field with the key-cleared snapshot");
+    } else {
+      expect(plugin.savedCount === 0, `saveData was called ${plugin.savedCount} times; expected 0`);
+      expect(JSON.stringify(plugin.storedData) === previousDataJson,
+        "the existing data changed when queue-only persistence was not allowed");
+      expect(notices.length >= noticeCountBefore + 2,
+        "queue persistence refusal was not explained with a Notice");
+    }
+    await plugin.onunload();
+    for (const id of plugin.intervals) clearInterval(id);
+    if (failures.length) return report(failures);
+    console.log("[plugin-onload] OK: saveAll persisted queue after SecretStorage failure");
+    return 0;
   }
 
   for (const field of DOMAIN_FIELDS) {

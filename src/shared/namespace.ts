@@ -161,6 +161,7 @@ export const NS_FM = {
   variantKind: "qnalog_variant_kind",
   sourcePath: "qnalog_source_path",
   containsRaw: "qnalog_contains_raw",
+  promotedVariant: "qnalog_promoted_variant",
   name: "qnalog_name",
   role: "qnalog_role",
   aliases: "qnalog_aliases",
@@ -273,6 +274,15 @@ export function setNamespaceFrontmatter(
   value: unknown,
 ): void {
   frontmatter[NS_FM[field]] = value;
+  for (const legacyKey of NS_FM_LEGACY_KEYS[field] || []) delete frontmatter[legacyKey];
+}
+
+/** 删除 canonical key 及已登记的历史别名。 */
+export function deleteNamespaceFrontmatter(
+  frontmatter: Record<string, unknown>,
+  field: NamespaceFrontmatterField,
+): void {
+  delete frontmatter[NS_FM[field]];
   for (const legacyKey of NS_FM_LEGACY_KEYS[field] || []) delete frontmatter[legacyKey];
 }
 

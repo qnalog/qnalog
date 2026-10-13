@@ -1173,7 +1173,19 @@ class QnALogPlugin extends obsidian.Plugin {
       if (e instanceof ApiKeyStorageError && e.rollbackFailed) {
         console.error("[QnALog] SecretStorage rollback failed; some stored keys may have changed");
       }
-      new obsidian.Notice(t("QnALog could not save API keys to Obsidian SecretStorage. The settings file was left unchanged."), 10000);
+      new obsidian.Notice(t("QnALog could not save API keys to Obsidian SecretStorage. Existing settings were preserved."), 10000);
+      try {
+        const saved: unknown = await this.loadData();
+        if (!hasStoredSettings(saved)) {
+          new obsidian.Notice(t("QnALog could not save the background queue because no existing settings data is available."), 10000);
+        } else if (readSavedSchemaVersion(saved) > SETTINGS_SCHEMA_VERSION) {
+          new obsidian.Notice(t("QnALog did not save the background queue because the settings data belongs to a newer version."), 10000);
+        } else if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+          await this.saveData({ ...saved, backgroundJobs: payload.backgroundJobs });
+        }
+      } catch {
+        // Keep the SecretStorage error as the failure returned to the original caller.
+      }
       throw e instanceof ApiKeyStorageError ? e : new ApiKeyStorageError();
     }
     await this.saveData(safe);

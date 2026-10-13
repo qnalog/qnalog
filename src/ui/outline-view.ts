@@ -66,6 +66,7 @@ import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
 import { isImageMeetingMaterial, normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 
 import { extractNotePanelData } from "../notes/detail-blocks";
+import { deleteNoteWithVariants, getDirectNoteVariants, type NoteVariantSnapshot } from "../notes/delete-note-with-variants";
 
 import { getSessionLatestSegmentEndMs, isSameVaultPath, probeAudioDurationMs, resolveAudioFileRef } from "../notes/audio-refs";
 
@@ -6163,8 +6164,27 @@ export class OutlineView extends obsidian.ItemView {
     }
   }
 
-  confirmDeleteRecentNote(file) {
+  async confirmDeleteRecentNote(file) {
     if (!(file instanceof obsidian.TFile)) return;
+    const deletionPort = {
+      listMarkdownFiles: () => this.app.vault.getMarkdownFiles(),
+      readFrontmatter: (target: obsidian.TFile) => this.app.metadataCache.getFileCache(target)?.frontmatter || null,
+      readFile: (target: obsidian.TFile) => this.app.vault.cachedRead(target),
+      updateFrontmatter: (target: obsidian.TFile, update: (frontmatter: Record<string, unknown>) => void) => this.app.fileManager.processFrontMatter(target, update),
+      trashFile: (target: obsidian.TFile) => trashVaultFileRef(this.app, target),
+    };
+    let variants: NoteVariantSnapshot<obsidian.TFile>[];
+    try {
+      variants = await getDirectNoteVariants(deletionPort, file);
+    } catch (error) {
+      console.error("[QnALog] could not inspect derived notes before deletion", error);
+      new obsidian.Notice(i18nT("Could not inspect derived versions. The note was not deleted."), 8000);
+      return;
+    }
+    if (variants.length) {
+      this.confirmDeleteRecentNoteWithVariants(file, variants, deletionPort);
+      return;
+    }
     const modal = new obsidian.Modal(this.app);
     const { contentEl } = modal;
     contentEl.empty();
@@ -6210,6 +6230,51 @@ export class OutlineView extends obsidian.ItemView {
     modal.open();
   }
 
+  confirmDeleteRecentNoteWithVariants(file: obsidian.TFile, variants: NoteVariantSnapshot<obsidian.TFile>[], deletionPort: Parameters<typeof deleteNoteWithVariants<obsidian.TFile>>[0]["port"]) {
+    const modal = new obsidian.Modal(this.app);
+    const { contentEl } = modal;
+    contentEl.empty();
+    contentEl.addClass("qnalog-delete-note-modal");
+    contentEl.createEl("h3", { text: i18nT("Delete transcription record?") });
+    contentEl.createDiv({
+      cls: "setting-item-description",
+      text: i18nT("The note has derived versions: {0}").replace("{0}", variants.slice(0, 5).map((variant) => variant.label || variant.file.basename).join(i18nT(", "))
+        + (variants.length > 5 ? i18nT(" and {0} more").replace("{0}", String(variants.length - 5)) : "")),
+    });
+    const taskCount = getQueueTasksForMarkdown(this.plugin, file, { types: ["transcribe", "merge"] }).length;
+    if (taskCount) contentEl.createDiv({
+      cls: "setting-item-description",
+      text: i18nT("{0} related queue tasks will be removed as well.").replace("{0}", String(taskCount)),
+    });
+    const audioFiles = this.getAudioFilesForRecentNote(file);
+    let deleteAudio = false;
+    if (audioFiles.length) {
+      const option = contentEl.createDiv({ cls: "qnalog-delete-note-option" });
+      const id = `qnalog-delete-audio-${Date.now()}`;
+      const cb = option.createEl("input", { type: "checkbox", attr: { id } });
+      option.createEl("label", { text: i18nT("Also delete the corresponding recording files ({0})").replace("{0}", String(audioFiles.length)), attr: { for: id } });
+      cb.onchange = () => { deleteAudio = !!cb.checked; };
+    }
+    const actions = contentEl.createDiv({ cls: "qnalog-modal-actions" });
+    const cancel = actions.createEl("button", { text: i18nT("Cancel"), attr: { type: "button" } });
+    const handoff = actions.createEl("button", { text: i18nT("Delete source and keep the latest derived version"), cls: "mod-warning", attr: { type: "button" } });
+    const deleteAll = actions.createEl("button", { text: i18nT("Delete source and all derived versions"), attr: { type: "button" } });
+    cancel.onclick = () => modal.close();
+    const submit = async (action: "handoff" | "delete-all", button: HTMLButtonElement) => {
+      button.disabled = true;
+      try {
+        await this.deleteRecentNoteRecord(file, { deleteAudio, variants, variantAction: action, deletionPort });
+        modal.close();
+      } catch (error) {
+        button.disabled = false;
+        new obsidian.Notice(`${i18nT("Delete failed: ")}${(error && error.message) || error}`, 8000);
+      }
+    };
+    handoff.onclick = () => { void submit("handoff", handoff); };
+    deleteAll.onclick = () => { void submit("delete-all", deleteAll); };
+    modal.open();
+  }
+
   getAudioFilesForRecentNote(file) {
     if (!(file instanceof obsidian.TFile)) return [];
     const map = new Map();
@@ -6246,9 +6311,27 @@ export class OutlineView extends obsidian.ItemView {
     return Array.from(map.values());
   }
 
-  async deleteRecentNoteRecord(file, options: { deleteAudio?: boolean } = {}) {
+  async deleteRecentNoteRecord(file, options: {
+    deleteAudio?: boolean;
+    variants?: NoteVariantSnapshot<obsidian.TFile>[];
+    variantAction?: "handoff" | "delete-all";
+    deletionPort?: Parameters<typeof deleteNoteWithVariants<obsidian.TFile>>[0]["port"];
+  } = {}) {
     if (!(file instanceof obsidian.TFile)) return;
     const mdPath = obsidian.normalizePath(file.path);
+    let deletedWithVariants = false;
+    if (options.variants && options.variantAction && options.deletionPort) {
+      const result = await deleteNoteWithVariants({
+        port: options.deletionPort,
+        source: file,
+        expectedVariants: options.variants,
+        action: options.variantAction,
+      });
+      if (result === "stale") {
+        throw new Error(i18nT("Derived versions changed while the dialog was open. Nothing was deleted; reopen the dialog."));
+      }
+      deletedWithVariants = true;
+    }
     const audioFiles = options.deleteAudio ? this.getAudioFilesForRecentNote(file) : [];
     let removedTasks = 0;
     if (this.plugin.queue && Array.isArray(this.plugin.queue.tasks)) {
@@ -6266,7 +6349,7 @@ export class OutlineView extends obsidian.ItemView {
         console.warn("[QnALog] delete linked audio failed", audio && audio.path, e);
       }
     }
-    await trashVaultFileRef(this.app, file);
+    if (!deletedWithVariants) await trashVaultFileRef(this.app, file);
     this.notePanelCacheKey = "";
     this.notePanelCacheData = undefined;
     this.showRecentHome = true;

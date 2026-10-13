@@ -243,7 +243,7 @@ describe("recording segment delivery", () => {
     expect(fixture.processOrder).toEqual([1000]);
   });
 
-  it("reads short-recording protection at call time and ignores sessions that are absent", async () => {
+  it("uses the one-second floor and routes enabled short recordings to the probe", async () => {
     let protectShortRecordings = true;
     const fixture = makeHost({ filterShortRecordings: () => protectShortRecordings });
     const absentResult = handleRecordedSegment(fixture.host, undefined, payload(0, true));
@@ -253,15 +253,26 @@ describe("recording segment delivery", () => {
 
     const session = makeSession();
     session.segments = [];
-    const shortPayload = { ...payload(0, true), endOffsetMs: 2000 };
-    await handleRecordedSegment(fixture.host, session, shortPayload);
+    const accidental = { ...payload(0, true), endOffsetMs: 900 };
+    await handleRecordedSegment(fixture.host, session, accidental);
     expect(session.shortRecordingTier).toBe("discard");
-    expect(fixture.processOrder).toEqual([2000]);
+    expect(fixture.masters).toEqual([]);
+    expect(fixture.cached.size).toBe(0);
+    expect(fixture.processOrder).toEqual([900]);
+
+    const shortSession = makeSession();
+    shortSession.segments = [];
+    const shortPayload = { ...payload(0, true), endOffsetMs: 2000 };
+    await handleRecordedSegment(fixture.host, shortSession, shortPayload);
+    expect(shortSession.shortRecordingTier).toBe("probe");
+    expect(fixture.masters).toContain("master-0");
+    expect(fixture.cached.get("cache/segment-0.webm")).toBe("segment-0");
 
     protectShortRecordings = false;
     const processSession = makeSession();
     processSession.segments = [];
     await handleRecordedSegment(fixture.host, processSession, shortPayload);
-    expect(fixture.processOrder).toEqual([2000, 2000]);
+    expect(processSession.shortRecordingTier).toBeUndefined();
+    expect(fixture.processOrder).toEqual([900, 2000, 2000]);
   });
 });
