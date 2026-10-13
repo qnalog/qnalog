@@ -134,6 +134,16 @@ describe("recent note variant rows", () => {
     expect(findOriginalVersionForSource).toHaveBeenCalledWith(source);
   });
 
+  it("renders a note without a variants array and still shows the prior-version row", async () => {
+    // getRecentNotes leaves `variants` undefined for notes with no derived versions.
+    const { parent, source, switchVersion } = renderVariants("zh", undefined as never, null, "pre-version-id");
+    await flushSnapshotLookup();
+    const rows = getVariantRows(parent);
+    expect(rows.map(getVariantName)).toEqual(["重新整理前"]);
+    rows[0].handlers.get("click")?.();
+    expect(switchVersion).toHaveBeenCalledWith("Notes/.versions/source/pre-reorganize.md", source.path);
+  });
+
   it("hides the prior-version row when its cache file is missing", async () => {
     const { parent } = renderVariants("zh", [], null, "missing-pre-version", null);
     await flushSnapshotLookup();
