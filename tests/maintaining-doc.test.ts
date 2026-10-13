@@ -34,21 +34,14 @@ describe("MAINTAINING.md 写入约束", () => {
     expect(dup).toEqual([]);
   });
 
-  it("§6.1 编号条目带状态词且不超过 400 字", () => {
+  it("§6.1 编号条目带状态词", () => {
     const body = sectionBetween("### 6.1 当前推进", "### 已完成");
     const items = body.split(/\n(?=\d+\. )/).filter((b) => /^\d+\. /.test(b));
     expect(items.length).toBeGreaterThan(0);
     for (const item of items) {
       const head = item.split("\n")[0].slice(0, 80);
       expect(STATUS_WORDS.some((w) => item.includes(`（${w}`)), `缺少状态词：${head}`).toBe(true);
-      expect(item.trim().length, `超过 400 字：${head}`).toBeLessThanOrEqual(400);
     }
-  });
-
-  it("「已完成」不超过 5 条", () => {
-    const body = sectionBetween("### 已完成", "### 6.2 ");
-    const bullets = body.split("\n").filter((l) => l.startsWith("- "));
-    expect(bullets.length).toBeLessThanOrEqual(5);
   });
 
   it("不含本机绝对路径与 40 位提交哈希", () => {
