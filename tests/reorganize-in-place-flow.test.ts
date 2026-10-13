@@ -21,6 +21,7 @@ vi.mock("obsidian", () => ({
 
 import * as obsidian from "obsidian";
 import { reorganizeNoteInPlace, type ReorganizeInPlacePort } from "../src/notes/reorganize-in-place-flow";
+import { splitVersionPayload } from "../src/versions/version-content";
 
 afterEach(() => { notices.length = 0; vi.restoreAllMocks(); });
 
@@ -91,6 +92,10 @@ describe("in-place note reorganization", () => {
     expect(calls.saved[0][3]).toMatchObject({ kind: "pre-reorganize", label: "Before reorganization", activate: false });
     expect(calls.saved[0][3]).toMatchObject({ body: expect.stringContaining("Old organized body") });
     expect(calls.saved[0][3]).not.toMatchObject({ body: expect.stringContaining("New organized body") });
+    const savedPayload = splitVersionPayload(String((calls.saved[0][3] as { body: string }).body));
+    expect(savedPayload.frontmatter).toContain("title: Old title");
+    expect(savedPayload.frontmatter).toContain("tags: old");
+    expect(savedPayload.body).toContain("Old organized body");
     expect(portRaw.saveVersion).toHaveBeenCalledTimes(1);
     expect(portRaw.refreshNoteIndex).toHaveBeenCalledWith(file, { reason: "reorganize" });
     expect(portRaw.mergeAndPolish).toHaveBeenCalledWith(expect.any(Array), "general", expect.any(Object), expect.any(Object));

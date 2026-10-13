@@ -5997,10 +5997,14 @@ export class OutlineView extends obsidian.ItemView {
         .setIcon("file-text")
         .onClick(() => { void this.handleGenerateCleanCopy(file); });
     });
-    let reorganizeItem;
     menu.addItem((item) => {
-      reorganizeItem = item.setTitle(i18nT("Reorganize")).setIcon("refresh-cw").setDisabled(true)
+      item.setTitle(i18nT("Reorganize")).setIcon("refresh-cw")
         .onClick(async () => {
+          const markdown = await this.app.vault.cachedRead(file);
+          if (!extractTranscriptSegments(markdown).length) {
+            new obsidian.Notice(i18nT("No original transcript is available in this note"), 6000);
+            return;
+          }
           const confirmed = await qnalogConfirm(
             this.plugin.app,
             i18nT("Reorganize this note"),
@@ -6009,8 +6013,6 @@ export class OutlineView extends obsidian.ItemView {
           );
           if (confirmed) void this.plugin.repolish.reorganizeNoteInPlace(file);
         });
-      const dom = (item as unknown as { dom?: HTMLElement }).dom;
-      if (dom) dom.title = i18nT("No original transcript is available in this note");
     });
     const topicsUi = this.topicsUi;
     if (topicsUi?.isSourceNote(file.path)) {
@@ -6083,12 +6085,6 @@ export class OutlineView extends obsidian.ItemView {
         .onClick(() => this.confirmDeleteRecentNote(file));
     });
     this.showMenuAtMouse(menu, evt);
-    void Promise.resolve().then(() => this.app.vault.cachedRead(file)).then((markdown) => {
-      const hasTranscript = extractTranscriptSegments(markdown).length > 0;
-      reorganizeItem?.setDisabled(!hasTranscript);
-      const dom = (reorganizeItem as unknown as { dom?: HTMLElement })?.dom;
-      if (dom) dom.title = hasTranscript ? "" : i18nT("No original transcript is available in this note");
-    }).catch(() => reorganizeItem?.setDisabled(true));
   }
 
   async openRecentNoteInSidebar(file, tab) {

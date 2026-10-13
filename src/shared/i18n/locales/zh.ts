@@ -15,6 +15,8 @@ export const ZH: MessageTable = {
   "QnALog: Correct misrecognized text…": "QnALog：更正误识别词…",
   "QnALog: Transcribe and organize": "QnALog：转写并整理",
   "QnALog: Merge ": "QnALog：整合 ",
+  "Organize as ": "整理为",
+  "Organize as": "整理为",
   " audio files…": " 段音频…",
   " (": "（",
   " mode)": "模式）",

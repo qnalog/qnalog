@@ -7,6 +7,7 @@ import { t } from "../shared/i18n";
 import type { Segment } from "../shared/types";
 import type { TaskActivity, TaskActivityInput } from "../shared/task-activity";
 import type { VersionSaveInput } from "../versions/version-save-store";
+import { buildVersionPayload } from "../versions/version-content";
 import { NS_FM } from "../shared/namespace";
 import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
 
@@ -107,7 +108,8 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     port.tasks.patchTaskActivity(taskId, { stage: "llm", stageLabel: t("AI reorganizing"), detail: t("Generating a new note body"), progress: 10 });
     const generated = await port.mergeAndPolish(input.segments, mode, input.sessionMeta, input.originalFrontmatter);
     const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text));
-    const previousBody = extractOrganizedBody(snapshot);
+    const previousParts = splitLeadingFrontmatter(snapshot);
+    const previousBody = buildVersionPayload(previousParts.frontmatter, extractOrganizedBody(snapshot));
     port.tasks.patchTaskActivity(taskId, { stage: "writing", stageLabel: t("Writing"), detail: t("Saving a recoverable version before replacing the note body"), progress: 78 });
     await port.ensureOriginalVersionForSource(file);
     await port.saveVersion(file, snapshot, input.segments, {
