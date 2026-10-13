@@ -129,6 +129,19 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     }
   });
 
+  it("临时服务的空 activeLlmProfile 落盘读回后仍为空，已保存方案保留", () => {
+    const settings = normalizePluginSettings({});
+    settings.llmProfiles = [
+      { id: "saved-a", name: "方案 A", endpoint: "https://service-a.example/v1", apiKey: "fake-key-a", model: "model-a" },
+    ];
+    settings.activeLlmProfile = "";
+
+    const restored = roundTrip(settings);
+
+    expect(restored.activeLlmProfile).toBe("");
+    expect(restored.llmProfiles).toEqual(settings.llmProfiles);
+  });
+
   it("非默认值改动：跨分组抽样修改后 round-trip 必须逐项存活", () => {
     const a = normalizePluginSettings({});
 

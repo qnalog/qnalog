@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { comparableLlmEndpoint } from '../shared/util-llm-endpoint';
 import { t } from '../shared/i18n';
 import { resolveBailianAsrRoute, resolveBailianEndpoint } from "../asr/bailian-asr-registry";
+import type { PluginSettings } from "../shared/types";
 
 export const LLM_SERVICE_PRESETS = [
   {
@@ -258,6 +259,30 @@ export const ONE_CARD_PROVIDERS = {
 
 export function getLlmServicePreset(id) {
   return LLM_SERVICE_PRESETS.find(p => p.id === id) || null;
+}
+
+type LlmServicePresetWorkingConfigUpdate = Pick<PluginSettings, "llmServicePreset" | "activeLlmProfile" | "llmApiKey">
+  & Partial<Pick<PluginSettings, "llmEndpoint">>;
+
+/** 计算服务预设写入工作配置的字段，不修改设置对象或已保存方案。 */
+export function applyLlmServicePresetToWorkingConfig(
+  settings: Pick<PluginSettings, "transcribeProviders">,
+  presetId: string,
+): LlmServicePresetWorkingConfigUpdate {
+  const preset = getLlmServicePreset(presetId);
+  const update: LlmServicePresetWorkingConfigUpdate = {
+    llmServicePreset: presetId || "",
+    activeLlmProfile: "",
+    llmApiKey: "",
+  };
+
+  if (preset && preset.endpoint) update.llmEndpoint = preset.endpoint;
+  if (presetId === "siliconflow") {
+    const savedTranscriptionKey = settings.transcribeProviders.siliconflow?.apiKey || "";
+    if (savedTranscriptionKey) update.llmApiKey = savedTranscriptionKey;
+  }
+
+  return update;
 }
 
 export function normalizeLlmProfiles(input) {

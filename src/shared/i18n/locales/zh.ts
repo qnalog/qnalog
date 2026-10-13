@@ -1974,7 +1974,7 @@ export const ZH: MessageTable = {
   "QnALog transcripts folder": "QnALog 转写纪要文件夹",
   "Quick config": "快速配置",
   "Quick setup": "快速设置",
-  "Quickly fills in the service URL and the required request header adaptation; it does not overwrite the access key. Enter the model ID as given in the console of the corresponding provider or relay service.": "用于快速填入服务地址和必要的请求头适配，不会覆盖访问密钥。模型标识请按对应服务商或中转站控制台填写。",
+  "Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console.": "选择服务预设会清空当前 AI 整理密钥。选择 SiliconFlow 时，如果已保存硅基流动转写密钥，则会沿用该密钥。模型标识请按服务商或中转站控制台填写。",
   "Ready": "已准备好",
   "Real-time segmented transcription": "即时分段转写",
   "Recognition Language": "识别语言",

@@ -41,4 +41,5 @@ export const EN: MessageTable = {
   "Your selection and title are kept. Retry, or go back to change the selection.": "Your selection and title are kept. Retry, or go back to change the selection.",
   "Back to candidates": "Back to candidates",
   "Reading the topic and note overviews. This usually takes a few dozen seconds.": "Reading the topic and note overviews. This usually takes a few dozen seconds.",
+  "Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console.": "Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console.",
 };
