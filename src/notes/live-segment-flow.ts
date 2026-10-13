@@ -13,6 +13,7 @@ import { attachTranscriptResult, splitTranscriptTextUnits } from "../transcript/
 import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { getAudioTimeLink } from "./audio-reference-text";
 import type { FinalizeProgress } from "./session-finalize-run-flow";
+import { classifyShortRecordingContent } from "../audio/short-recording-content";
 
 const stringifyValue = String as (value: unknown) => string;
 
@@ -74,7 +75,7 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
     port.requestOutlineRefresh();
     return;
   }
-  if (session.shortRecordingTier) {
+  if (session.shortRecordingTier && session.shortRecordingTier !== "probe") {
     if (seg && seg.masterAudioSavePromise != null) await seg.masterAudioSavePromise;
     await port.closeStreamingForDiscard(session);
     return;
@@ -224,16 +225,21 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
         size: (transcribeBlob && transcribeBlob.size) || seg.blobSize || 0,
         segmentIndex, startOffsetMs: displayStartOffsetMs, endOffsetMs: displayEndOffsetMs, mode: session.mode, error: diagnosticError(err),
       });
-      new obsidian.Notice(isStreamingProvider
-        ? t("Segment {0} failed to transcribe in streaming mode and cannot be retried offline; recording continues locally. Use \"Re-organize\" when the whole recording finishes, or record that segment again.").replace("{0}", String(segNumber))
-        : (!String(text || "").trim() ? t("Segment {0} returned no text; the audio slice has been kept and queued for retry.").replace("{0}", String(segNumber)) : t("Segment {0} failed to transcribe; recording continues locally and it has been queued for retry.").replace("{0}", String(segNumber))), 7000);
+      const notice = session.shortRecordingTier === "probe"
+        ? t("Short recording transcription failed; audio and a retry task were kept: {0}").replace("{0}", getErrorMessage(err))
+        : isStreamingProvider
+          ? t("Segment {0} failed to transcribe in streaming mode and cannot be retried offline; recording continues locally. Use \"Re-organize\" when the whole recording finishes, or record that segment again.").replace("{0}", String(segNumber))
+          : !String(text || "").trim()
+            ? t("Segment {0} returned no text; the audio slice has been kept and queued for retry.").replace("{0}", String(segNumber))
+            : t("Segment {0} failed to transcribe; recording continues locally and it has been queued for retry.").replace("{0}", String(segNumber));
+      new obsidian.Notice(notice, 7000);
     }
   } else if (!text || !String(text).trim()) {
     port.clearRecordingIssue("network");
     port.clearRecordingIssue("service");
     const hadAnyText = Array.isArray(session.segments) && session.segments.some((s) => s && s.text && String(s.text).trim());
     await port.logDiagnostic("warn", "asr.empty_result", t("This segment has no transcription"), { segmentIndex, mode: session.mode, hadAnyText });
-    if (!hadAnyText && !session._emptyAsrNotified) {
+    if (!hadAnyText && !session._emptyAsrNotified && session.shortRecordingTier !== "probe") {
       session._emptyAsrNotified = true;
       new obsidian.Notice(t("No speech detected in this segment. Go to \"Settings → General → Audio input\" to test the selected device."), 9000);
     }
@@ -252,7 +258,7 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   };
   const segmentArrayIndex = session.segments.length;
   session.segments.push(segmentRecord);
-  if (err && !isStreamingProvider) {
+  if (err && (!isStreamingProvider || session.shortRecordingTier === "probe")) {
     if (err.asrDeferred || isTransientAsrError(err)) port.markSessionAsrJobsDeferred(session);
     const retryTask = await port.keepSegmentTaskForRetry(session, Object.assign({}, seg, { segmentAudioPath, segmentAudioName, segmentIndex, displayStartOffsetMs, displayEndOffsetMs }), err);
     segmentRecord.queueTaskId = retryTask.id;
@@ -260,6 +266,23 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   const visibleText = err ? getTranscribeSegmentPlaceholder(err, { streaming: !!isStreamingProvider, deferred: !!err.asrDeferred, retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)) }) : (text ? text : labelText("noContentSegment"));
   segmentRecord = attachTranscriptResult(segmentRecord, session.id, err ? null : asrResult, isStreamingProvider ? "streaming-transcript" : "asr");
   session.segments[segmentArrayIndex] = segmentRecord;
+  if (seg.isFinal && session.shortRecordingTier === "probe") {
+    if (err) {
+      // 失败状态交给现有队列重试和常规失败收尾；只有成功的空白结果可以丢弃。
+      session.shortRecordingTier = undefined;
+      session.shortRecordingText = undefined;
+    } else {
+      const content = classifyShortRecordingContent(text);
+      if (content === "blank") session.shortRecordingTier = "discard";
+      else if (content === "fragment" && !session.continuationSourcePath) {
+        session.shortRecordingTier = "keep-audio";
+        session.shortRecordingText = text;
+      } else {
+        session.shortRecordingTier = undefined;
+        session.shortRecordingText = undefined;
+      }
+    }
+  }
   const segTitle = `### ${labelText("segment", segNumber)} (${formatElapsed(displayStartOffsetMs)}–${formatElapsed(displayEndOffsetMs)}) ${getAudioTimeLink(playbackAudioName, Math.max(0, Number(seg.startOffsetMs) || 0))}${seg.isFinal ? " · 结束" : ""}`;
   const heading = [segTitle, segmentRecord.queueTaskId ? nsMarker("transcribe-task", segmentRecord.queueTaskId) : ""].filter(Boolean).join("\n\n");
   const block = `\n${serializeTranscriptBlock(segmentRecord, heading, visibleText)}\n`;

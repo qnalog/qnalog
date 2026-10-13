@@ -2,7 +2,7 @@ import * as obsidian from "obsidian";
 import type { MergeQueueTaskPayload, PluginSettings, QueueTask, QueueTaskLifecycle, RecordingSession, Segment, SessionMetaForMerge, SessionWorkProgress } from "../shared/types";
 import type { VersionSaveInput } from "../versions/version-save-store";
 import { t } from "../shared/i18n";
-import { SHORT_RECORDING_SKIP_NOTE_MS } from "../shared/limits";
+import { SHORT_RECORDING_CONTENT_PROBE_MS, SHORT_RECORDING_MINIMUM_MS } from "../shared/limits";
 import { isTextImportSession, shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { BriefingPipelineIncompleteError } from "../briefing/pipeline";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
@@ -19,6 +19,7 @@ export interface SessionShortRecordingPort {
   updateQueueTask(id: string, patch: Partial<QueueTask>): Promise<unknown>;
   removeQueueTask(id: string): Promise<unknown>;
   discardShortRecordingNote(session: RecordingSession): Promise<unknown>;
+  discardShortRecordingAudio(session: RecordingSession): Promise<unknown>;
   logDiagnostic(level: string, code: string, message: string, data: unknown): Promise<unknown>;
   endSession(session: RecordingSession): void;
   requestOutlineRefresh(): void;
@@ -26,29 +27,40 @@ export interface SessionShortRecordingPort {
 
 export async function finishShortRecordingFlow(port: SessionShortRecordingPort, session: RecordingSession): Promise<void> {
   const tier = session.shortRecordingTier;
-  const limitSeconds = Math.round(SHORT_RECORDING_SKIP_NOTE_MS / 1000);
+  const limitSeconds = Math.round(SHORT_RECORDING_CONTENT_PROBE_MS / 1000);
   const durationMs = Math.max(0, Number(session.shortRecordingDurationMs) || 0);
   const discardedContinuation = tier === "discard"
     && !!session.continuation
     && !!session.continuationTaskId
     && port.hasQueue();
   const continuationTaskId = session.continuationTaskId || "";
-  if (discardedContinuation) {
+  if (discardedContinuation && session.continuation) {
     await port.updateQueueTask(continuationTaskId, {
       status: "live",
       mdPath: session.mdPath,
       temporarySourcePath: session.mdPath,
-      continuation: session.continuation,
+      continuation: {
+        ...session.continuation,
+        masterAudioPath: String(session.masterAudioPath || ""),
+        masterAudioName: String(session.masterAudioName || ""),
+      },
       segments: [],
       continuationDisposition: "discard",
       lastError: "",
     });
   }
+  if (tier === "discard") await port.discardShortRecordingAudio(session);
   await port.discardShortRecordingNote(session);
   if (discardedContinuation) await port.removeQueueTask(continuationTaskId);
   const audioName = session.masterAudioName || "";
   if (tier === "discard") {
-    new obsidian.Notice(t("Filtered out recordings shorter than three seconds"));
+    const notice = durationMs < SHORT_RECORDING_MINIMUM_MS
+      ? t("Filtered out recordings shorter than one second")
+      : t("Short recording had no recognized content; its audio and note were discarded");
+    new obsidian.Notice(notice);
+  } else if (session.shortRecordingText) {
+    const text = session.shortRecordingText.length > 40 ? `${session.shortRecordingText.slice(0, 39)}…` : session.shortRecordingText;
+    new obsidian.Notice(t("Short recording was not made into a note; audio was kept. Recognized: {0}").replace("{0}", text), 8000);
   } else if (audioName) {
     new obsidian.Notice(t("Recording under {0} seconds: audio kept in the recording folder, no notes created and no transcript kept. Import it manually if needed. ({1})").replace("{0}", String(limitSeconds)).replace("{1}", audioName), 8000);
   } else {

@@ -37,8 +37,13 @@ export function handleRecordedSegment(
   });
 
   let preparedSeg: PreparedLiveSegment;
-  if (tier !== "process") {
-    // 短录音不转写。丢弃级别不落盘音频；只留音频级别把整场音频写进录音目录。
+  if (tier === "probe") {
+    session.shortRecordingTier = "probe";
+    session.shortRecordingDurationMs = Math.max(0, Number(seg && seg.endOffsetMs) || 0);
+    session.shortRecordingText = "";
+  }
+  if (tier === "discard" || tier === "keep-audio") {
+    // 极短录音跳过转写；只留音频级别把整场音频写进录音目录。
     // 分级函数只在最后一个切片上返回短录音级别，所以这里的 isFinal 必为真。
     session.shortRecordingTier = tier;
     session.shortRecordingDurationMs = Math.max(0, Number(seg && seg.endOffsetMs) || 0);

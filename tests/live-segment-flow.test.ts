@@ -105,6 +105,63 @@ describe("live segment consumer contract", () => {
     expect(host.asrPipeline.markLiveSegmentQueueTaskRunning).not.toHaveBeenCalled();
   });
 
+  it("transcribes a short probe once and routes the successful text by content", async () => {
+    const { service } = makeHost();
+    const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });
+    transcribeMock.mockResolvedValueOnce({ text: "明天下午三点", rawText: "明天下午三点", providerId: "provider", units: [] });
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(session.shortRecordingTier).toBeUndefined();
+  });
+
+  it("keeps short recognized fragments with audio and stores the text for the notice", async () => {
+    const { service } = makeHost();
+    const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });
+    transcribeMock.mockResolvedValueOnce({ text: "好的", rawText: "好的", providerId: "provider", units: [] });
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(session.shortRecordingTier).toBe("keep-audio");
+    expect(session.shortRecordingText).toBe("好的");
+  });
+
+  it("discards only a successful blank short transcription", async () => {
+    const { service } = makeHost();
+    const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });
+    transcribeMock.mockResolvedValueOnce({ text: " 嗯， um! ", rawText: " 嗯， um! ", providerId: "provider", units: [] });
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+    expect(session.shortRecordingTier).toBe("discard");
+    expect(transcribeMock).toHaveBeenCalledOnce();
+  });
+
+  it("preserves failed short probes for the existing retry queue", async () => {
+    const { service, host } = makeHost();
+    const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });
+    transcribeMock.mockRejectedValueOnce(new Error("network timeout"));
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+    expect(session.shortRecordingTier).toBeUndefined();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(session.segments[0]?.error).toContain("network timeout");
+  });
+
+  it("keeps a retry task when a streaming short probe cannot finish", async () => {
+    const { service, host } = makeHost();
+    host.profiles.getActiveTranscribeProfile.mockReturnValue({ id: "stream", model: "model", transcribeMode: "streaming" });
+    const session = makeSession({ shortRecordingTier: "probe", streamingClient: { finish: vi.fn(async () => { throw new Error("stream timed out"); }), getFullText: () => "" } });
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+    expect(session.shortRecordingTier).toBeUndefined();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(transcribeMock).not.toHaveBeenCalled();
+  });
+
+  it("appends any nonblank short continuation text without the sentence threshold", async () => {
+    const { service } = makeHost();
+    const session = makeSession({ shortRecordingTier: "probe", continuationSourcePath: "Notes/target.md" });
+    transcribeMock.mockResolvedValueOnce({ text: "好的", rawText: "好的", providerId: "provider", units: [] });
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+    expect(session.shortRecordingTier).toBeUndefined();
+    expect(session.segments[0]?.text).toBe("好的");
+  });
+
   it("computes continuation numbering, offsets, audio links and persisted note content", async () => {
     const { service, host, blocks, progress } = makeHost();
     const session = makeSession({ continuationOffsetMs: 5000, continuationBaseSegments: [{}, {}], segments: [{}] });

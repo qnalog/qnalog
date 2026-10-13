@@ -20,6 +20,7 @@ export interface QueueAppendTaskPort {
   hasActiveSessions(target: obsidian.TFile): boolean;
   runOnTarget<T>(target: obsidian.TFile, operation: () => Promise<T>): Promise<T>;
   discardShortRecordingNote(session: { id: string; mdPath: string }): Promise<void>;
+  discardShortRecordingAudio(session: { id: string; mdPath: string; masterAudioPath?: string }): Promise<void>;
   cleanupSuccessfulSegmentAudio(session: unknown): Promise<void>;
   patchTaskActivity(id: string, patch: Record<string, unknown>): void;
   queueTaskActivityId(task: AppendTask): string;
@@ -73,6 +74,7 @@ export async function runAppendTask(port: QueueAppendTaskPort, task: AppendTask)
     if (!normalizedStagePath || normalizedStagePath === obsidian.normalizePath(context.targetPath)) return cleanupBlocked();
     const stageFile = port.getVault().getAbstractFileByPath(stagePath);
     if (stageFile instanceof obsidian.TFolder) return cleanupBlocked();
+    await port.discardShortRecordingAudio({ id: task.sessionId, mdPath: stagePath, masterAudioPath: context.masterAudioPath });
     if (stageFile instanceof obsidian.TFile) {
       await port.discardShortRecordingNote({ id: task.sessionId, mdPath: stageFile.path });
     }

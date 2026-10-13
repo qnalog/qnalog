@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // 短录音整条路径的冒烟测试：真的调用 RecordingService.handleSegment 与 SessionFinalizeService，
 // 观察知识库里发生了什么。判据是用户能观察到的结果：录音文件在不在、纪要文件在不在、
@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const notices: string[] = [];
 const trashed: string[] = [];
+const { transcribeMock, routeTranscriptionMock } = vi.hoisted(() => ({ transcribeMock: vi.fn(), routeTranscriptionMock: { active: false } }));
 
 vi.mock("obsidian", () => {
   class TFile {
@@ -25,6 +26,15 @@ vi.mock("obsidian", () => {
     normalizePath: (p: string) => String(p || "").replace(/\\/g, "/").replace(/\/+$/, ""),
     requestUrl: async () => ({ status: 200, text: "{}", json: {} }),
     Platform: { isMobile: false, isMobileApp: false },
+  };
+});
+vi.mock("../src/asr/transcribe", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/asr/transcribe")>();
+  return {
+    ...original,
+    transcribeAudio: (...args: Parameters<typeof original.transcribeAudio>) => routeTranscriptionMock.active
+      ? transcribeMock(...args)
+      : original.transcribeAudio(...args),
   };
 });
 
@@ -49,6 +59,16 @@ import { PcmStreamEncoder } from "../src/asr/clients";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+
+beforeEach(() => {
+  transcribeMock.mockReset();
+  routeTranscriptionMock.active = false;
+});
+
+function stubTranscription(text: string): void {
+  routeTranscriptionMock.active = true;
+  transcribeMock.mockResolvedValueOnce({ text, rawText: text, providerId: "provider", units: [] });
+}
 
 /** 只实现短录音路径真正会碰到的部分；其余能力一旦被调用即抛出，避免测试掩盖真实依赖。 */
 function makeHost() {
@@ -100,6 +120,7 @@ function makeHost() {
   };
 
   const transcriptionCalls: string[] = [];
+  const queuedTasks: unknown[] = [];
   const diagnostics: Array<Record<string, unknown>> = [];
 
 
@@ -143,15 +164,24 @@ function makeHost() {
       getTranscribeProviderProfile: () => ({ transcribeMode: "segmented" }),
     },
     queue: {
-      tasks: [] as unknown[],
-      add: async (task: unknown) => { transcriptionCalls.push("queue"); return Object.assign({ id: "task" }, task); },
+      tasks: queuedTasks,
+      recoveryEntries: () => [],
+      add: async (task: unknown) => {
+        transcriptionCalls.push("queue");
+        const saved = Object.assign({ id: "task" }, task);
+        queuedTasks.push(saved);
+        return saved;
+      },
       update: async () => undefined,
       remove: async () => undefined,
       snapshot: () => [],
     },
     requestDeferredAsrRetry: () => undefined,
     requestTaskQueueRetry: () => undefined,
-    readVaultAudioBlob: async () => null,
+    readVaultAudioBlob: async (path: string) => {
+      const binary = files.get(path)?.binary;
+      return binary ? { blob: new Blob([binary], { type: "audio/webm" }) } : null;
+    },
     diagnostics: { logDiagnostic: async (_level: string, event: string, message: string, data: unknown) => { diagnostics.push({ event, message, data }); } },
     taskMeters: { beginTaskMeter: () => null, endTaskMeter: () => null, logCompletedWork: () => undefined },
     syncImportBusyFromSessionProgress: () => undefined,
@@ -241,9 +271,15 @@ async function makeContinuationDiscardFixture() {
   let queue: TaskQueue;
   let retryService: QueueRetryService;
   let nextSaveError = "";
+  let nextDispositionSaveError = "";
   const queueHost: TaskQueueHost = {
     getMaxRetries: () => fixture.host.settings.maxRetries,
     persistQueue: async () => {
+      if (nextDispositionSaveError && queue.tasks.some((task) => task.continuationDisposition === "discard")) {
+        const error = nextDispositionSaveError;
+        nextDispositionSaveError = "";
+        throw new Error(error);
+      }
       if (nextSaveError) {
         const error = nextSaveError;
         nextSaveError = "";
@@ -310,7 +346,12 @@ async function makeContinuationDiscardFixture() {
     queue.load(JSON.parse(persistedQueue));
     return queue;
   };
-  return { ...fixture, get queue() { return queue; }, reloadQueue, retryService, continuations, targetPath, oldBody, session, persistedQueue: () => persistedQueue, failNextSave: (message: string) => { nextSaveError = message; } };
+  return {
+    ...fixture, get queue() { return queue; }, reloadQueue, retryService, continuations, targetPath, oldBody, session,
+    persistedQueue: () => persistedQueue,
+    failNextSave: (message: string) => { nextSaveError = message; },
+    failNextDispositionSave: (message: string) => { nextDispositionSaveError = message; },
+  };
 }
 
 /** 与 startRecording 写入磁盘的纪要头一致：标题 + 会话标记 + 分段区标记。 */
@@ -402,10 +443,11 @@ describe("短录音整条路径", () => {
     }
   });
 
-  it("4 秒录音：音频写入录音目录，纪要文件被清除，不发出转写请求", async () => {
+  it("4 秒成文录音：调用一次转写，保留录音并进入普通整理", async () => {
     notices.length = 0;
     trashed.length = 0;
     const { host, files, transcriptionCalls, recordingService, finalizeService } = makeHost();
+    stubTranscription("明天下午三点");
     const mdPath = "QnALog/转写纪要/2026-09-18 1200.md";
     files.set(mdPath, { content: sessionHeader("2026-09-18 12:00") });
     const session = makeSession(mdPath);
@@ -418,16 +460,17 @@ describe("短录音整条路径", () => {
     const audioFiles = [...files.keys()].filter((p) => p.startsWith("QnALog/录音/"));
     expect(audioFiles).toHaveLength(1);
     expect(audioFiles[0]).toContain("qnalog-20260918-120000");
-    expect(trashed).toContain(mdPath);
-    expect(transcriptionCalls).toEqual([]);
+    expect(trashed).not.toContain(mdPath);
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(session.segments[0]?.text).toBe("明天下午三点");
     expect(host.sessionStore.get()).toBeNull();
-    expect(notices.join("\n")).toContain("audio kept in the recording folder");
   });
 
-  it("2 秒录音：不写音频文件，纪要文件被清除", async () => {
+  it("2 秒空白录音：调用一次转写后删除音频和结尾纪要", async () => {
     notices.length = 0;
     trashed.length = 0;
     const { host, files, recordingService, finalizeService } = makeHost();
+    stubTranscription("嗯。");
     const mdPath = "QnALog/转写纪要/2026-09-18 1201.md";
     files.set(mdPath, { content: sessionHeader("2026-09-18 12:01") });
     const session = makeSession(mdPath);
@@ -439,7 +482,90 @@ describe("短录音整条路径", () => {
 
     expect([...files.keys()].filter((p) => p.startsWith("QnALog/录音/"))).toEqual([]);
     expect(trashed).toContain(mdPath);
-    expect(notices.join("\n")).toContain("Filtered out recordings shorter than three seconds");
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(notices.join("\n")).toContain("Short recording had no recognized content");
+  });
+
+  it("不足 1 秒的误触不调用转写并清理结尾纪要", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { files, recordingService, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/2026-09-18 1204.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:04") });
+    const session = makeSession(mdPath);
+    session.segments = [];
+
+    await recordingService.handleSegment(session as never, finalPayload(900) as never);
+    await session.writeQueue;
+    await finalizeService.finalizeSession(session as never);
+
+    expect(transcribeMock).not.toHaveBeenCalled();
+    expect([...files.keys()].filter((path) => path.startsWith("QnALog/录音/"))).toEqual([]);
+    expect(trashed).toContain(mdPath);
+  });
+
+  it("2 秒短片段：保留录音、删除笔记并通知识别文本", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { files, recordingService, finalizeService } = makeHost();
+    stubTranscription("好的");
+    const mdPath = "QnALog/转写纪要/2026-09-18 1203.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:03") });
+    const session = makeSession(mdPath);
+    session.segments = [];
+
+    await recordingService.handleSegment(session as never, finalPayload(2000) as never);
+    await session.writeQueue;
+    await finalizeService.finalizeSession(session as never);
+
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect([...files.keys()].filter((path) => path.startsWith("QnALog/录音/"))).toHaveLength(1);
+    expect(trashed).toContain(mdPath);
+    expect([...files.keys()].filter((path) => path !== "QnALog/录音/qnalog-20260918-120000.webm")).toEqual([]);
+    expect(notices.join("\n")).toContain("Short recording was not made into a note; audio was kept. Recognized: 好的");
+  });
+
+  it("短录音转写失败时保留音频、笔记和待处理重试任务", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService, finalizeService } = makeHost();
+    routeTranscriptionMock.active = true;
+    transcribeMock.mockRejectedValueOnce(new Error("network timeout"));
+    const mdPath = "QnALog/转写纪要/2026-09-18 1205.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:05") });
+    const session = makeSession(mdPath);
+    session.segments = [];
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, finalPayload(3000) as never);
+    await session.writeQueue;
+    await finalizeService.finalizeSession(session as never);
+
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect([...files.keys()].filter((path) => path.startsWith("QnALog/录音/"))).toHaveLength(1);
+    expect(trashed).not.toContain(mdPath);
+    expect(host.queue.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ type: "transcribe", status: "pending", lastError: "network timeout" })]));
+    expect(notices.join("\n")).toContain("Short recording transcription failed");
+  });
+
+  it("关闭短录音过滤后，2 秒录音仍按普通流程建笔记", async () => {
+    notices.length = 0;
+    const { host, files, recordingService } = makeHost();
+    host.settings.filterShortRecordings = false;
+    stubTranscription("好的");
+    const mdPath = "QnALog/转写纪要/2026-09-18 1206.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:06") });
+    const session = makeSession(mdPath);
+    session.segments = [];
+
+    await recordingService.handleSegment(session as never, finalPayload(2000) as never);
+    await session.writeQueue;
+
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(session.shortRecordingTier).toBeUndefined();
+    expect(session.segments[0]?.text).toBe("好的");
+    expect(files.has(mdPath)).toBe(true);
+    expect(notices.join("\n")).not.toContain("Short recording");
   });
   it("starts a continuation in the prepared stage and seeds the prior outline without modifying the target", async () => {
     const fixture = makeHost();
@@ -493,6 +619,7 @@ describe("短录音整条路径", () => {
   });
   it("a two-second continuation leaves the target untouched and removes its persisted merge task", async () => {
     const fixture = await makeContinuationDiscardFixture();
+    stubTranscription("嗯");
     try {
       await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
       await fixture.session.writeQueue;
@@ -502,14 +629,34 @@ describe("短录音整条路径", () => {
       expect(fixture.host.sessionStore.get()).toBeNull();
       expect(fixture.queue.tasks).toEqual([]);
       expect(JSON.parse(fixture.persistedQueue())).toEqual([]);
-      expect(fixture.transcriptionCalls).toEqual([]);
+      expect(transcribeMock).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("adds nonblank short continuation text to the pending continuation task", async () => {
+    const fixture = await makeContinuationDiscardFixture();
+    stubTranscription("好的");
+    try {
+      await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
+      await fixture.session.writeQueue;
+
+      expect(transcribeMock).toHaveBeenCalledOnce();
+      expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
+      expect(fixture.session.shortRecordingTier).toBeUndefined();
+      const task = fixture.queue.tasks.find((item) => item.type === "merge");
+      expect(task).toMatchObject({
+        continuation: { targetPath: fixture.targetPath },
+        segments: [expect.objectContaining({ text: "好的" })],
+      });
     } finally {
       vi.unstubAllGlobals();
     }
   });
   it("does not remove the stage when saving discard intent fails and permits same-session finalization retry", async () => {
     const fixture = await makeContinuationDiscardFixture();
-    fixture.failNextSave("intent save failed");
+    stubTranscription("嗯");
+    fixture.failNextDispositionSave("intent save failed");
     try {
       await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
       await fixture.session.writeQueue;
@@ -532,6 +679,7 @@ describe("短录音整条路径", () => {
 
   it("persists discard intent across cleanup failure and retries only stage cleanup after reload", async () => {
     const fixture = await makeContinuationDiscardFixture();
+    stubTranscription("嗯");
     const trashFile = fixture.app.fileManager.trashFile;
     let trashFailures = 2;
     fixture.app.fileManager.trashFile = async (file: { path: string }) => {
@@ -566,17 +714,18 @@ describe("短录音整条路径", () => {
       expect(fixture.files.has(fixture.session.mdPath)).toBe(false);
       expect(restoredQueue.tasks).toEqual([]);
       expect(JSON.parse(fixture.persistedQueue())).toEqual([]);
-      expect(fixture.transcriptionCalls).toEqual([]);
+      expect(transcribeMock).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllGlobals();
     }
   });
   it("removes a discard task after reload when stage trash succeeded but queue removal was not saved", async () => {
     const fixture = await makeContinuationDiscardFixture();
+    stubTranscription("嗯");
     const trashFile = fixture.app.fileManager.trashFile;
     fixture.app.fileManager.trashFile = async (file: { path: string }) => {
       await trashFile(file);
-      fixture.failNextSave("remove save failed");
+      if (file.path === fixture.session.mdPath) fixture.failNextSave("remove save failed");
     };
     try {
       await fixture.recordingService.handleSegment(fixture.session as never, finalPayload(2000) as never);
@@ -595,7 +744,7 @@ describe("短录音整条路径", () => {
       expect(fixture.files.get(fixture.targetPath)?.content).toBe(fixture.oldBody);
       expect(restoredQueue.tasks).toEqual([]);
       expect(JSON.parse(fixture.persistedQueue())).toEqual([]);
-      expect(fixture.transcriptionCalls).toEqual([]);
+      expect(transcribeMock).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllGlobals();
     }

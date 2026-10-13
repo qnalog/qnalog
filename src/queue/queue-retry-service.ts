@@ -74,7 +74,7 @@ export interface QueueRetryHost {
   noteIndex: NoteIndexService;
   outline: Pick<RealtimeOutlineService, "completeRealtimeOutlineForMergedSegments" | "mergeContinuationOutlineText">;
   /** ASR 与录音 stage 清理。 */
-  asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile" | "cleanupSuccessfulSegmentAudio" | "discardShortRecordingNote">;
+  asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile" | "cleanupSuccessfulSegmentAudio" | "discardShortRecordingNote" | "discardShortRecordingAudio">;
   /** 装配层转发：补转写成功后请求说话人姓名确认（调用 SessionFinalizeService.confirmSpeakerNamesBeforeFinal），返回值在调用点不使用。 */
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
   /** 词汇表与行业提示词服务。 */
@@ -197,6 +197,7 @@ export class QueueRetryService {
       hasActiveSessions: (target) => this.host.continuations.hasActiveSessions(target),
       runOnTarget: (target, operation) => this.host.continuations.runOnTarget(target, operation),
       discardShortRecordingNote: (session) => this.host.asrPipeline.discardShortRecordingNote(session),
+      discardShortRecordingAudio: (session) => this.host.asrPipeline.discardShortRecordingAudio(session),
       cleanupSuccessfulSegmentAudio: (session) => this.host.asrPipeline.cleanupSuccessfulSegmentAudio(session),
       patchTaskActivity: (id, patch) => this.host.tasks.patchTaskActivity(id, patch),
       queueTaskActivityId: (appendTask) => this.host.tasks.queueTaskActivityId(appendTask),

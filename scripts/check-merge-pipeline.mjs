@@ -238,6 +238,7 @@ const app = {
 
 let failContinuationCommit = false;
 let gateNextLlmRequest = false;
+let returnBlankAsrResponse = false;
 let releaseGatedLlmRequest = null;
 let gateContinuationStageRead = false;
 let continuationStagePath = "";
@@ -361,6 +362,10 @@ const obsidian = {
   parseLinktext: (l) => ({ path: l, subpath: "" }), getLinkpath: (l) => l, htmlToMarkdown: (h) => String(h),
   prepareFuzzySearch: () => () => null, sanitizeHTMLToDom: () => makeEl(),
   requestUrl: async (request) => {
+    if (returnBlankAsrResponse && /audio\/transcriptions|multimodal-generation/.test(String(request?.url || ""))) {
+      const json = { text: "", output: { text: "" } };
+      return { status: 200, text: JSON.stringify(json), json, headers: {}, arrayBuffer: new ArrayBuffer(0) };
+    }
     llmCalls.push(request);
     if (gateNextLlmRequest) {
       gateNextLlmRequest = false;
@@ -407,9 +412,14 @@ function makeSandbox() {
     moment: obsidian.moment,
     // vm 的新上下文只有 ECMAScript 内建；URL 等 Web 全局需要显式注入，
     // 否则 util-llm-endpoint 里的 new URL() 会抛错，被当成"地址格式无效"。
-    URL, URLSearchParams, TextEncoder, TextDecoder, AbortController, AbortSignal,
+    URL, URLSearchParams, FormData, TextEncoder, TextDecoder, AbortController, AbortSignal,
     structuredClone, Blob, atob, btoa, performance: { now: () => Date.now() },
-    fetch: async () => { throw new Error("本检查不走 fetch，应经 obsidian.requestUrl"); },
+    fetch: async (url) => {
+      if (returnBlankAsrResponse && /audio\/transcriptions|multimodal-generation/.test(String(url || ""))) {
+        return { ok: true, status: 200, json: async () => ({ text: "", output: { text: "" } }), text: async () => JSON.stringify({ text: "", output: { text: "" } }) };
+      }
+      throw new Error("本检查不走 fetch，应经 obsidian.requestUrl");
+    },
   };
   sandbox.addEventListener = noop;
   sandbox.removeEventListener = noop;
@@ -900,7 +910,7 @@ async function main() {
         files.set(disposablePath, file);
         return file;
       };
-      const noteSession = () => ({ id: "smoke-session", mdPath: disposablePath });
+      const noteSession = () => ({ id: "smoke-session", mdPath: disposablePath, continuation: {} });
       const segmentStorePath = "qnalog-segment-store-smoke.md";
       const segmentStoreInput = [
         "# First",
@@ -1696,6 +1706,7 @@ async function main() {
         filterShortRecordings: plugin.settings.filterShortRecordings,
         captureMode: plugin.settings.captureMode,
         activeTranscribeProvider: plugin.settings.activeTranscribeProvider,
+        transcribeProviders: structuredClone(plugin.settings.transcribeProviders),
         enableInterimOutput: plugin.settings.enableInterimOutput,
       };
       lifecycleFilesBefore = [...files].map(([path, file]) => [path, file, file._content]);
@@ -1714,7 +1725,14 @@ async function main() {
       plugin.settings.filterShortRecordings = true;
       plugin.settings.captureMode = "mic";
       plugin.settings.activeTranscribeProvider = "siliconflow";
+      plugin.settings.transcribeProviders.siliconflow = {
+        ...plugin.settings.transcribeProviders.siliconflow,
+        endpoint: "https://api.siliconflow.cn/v1/audio/transcriptions",
+        apiKey: "smoke-transcription-key",
+        model: "FunAudioLLM/SenseVoiceSmall",
+      };
       plugin.settings.enableInterimOutput = false;
+      returnBlankAsrResponse = true;
       sandbox.moment = () => ({
         format: (pattern) => pattern === "YYYYMMDD-HHmmss"
           ? "20260914-120000"
@@ -1788,7 +1806,7 @@ async function main() {
         || plugin.sessionStore.get() !== null
         || plugin.continuations.isSessionTracked(lifecycleSession.id)
         || plugin.recording.getRecordingIssue() !== null) {
-        throw new Error("short-recording finalization did not discard the placeholder and release session state");
+        throw new Error(`short-recording finalization did not discard the placeholder and release session state: ${JSON.stringify({ placeholderExists: files.has(placeholderPath), placeholder: files.get(placeholderPath)?._content || "", sessionActive: plugin.sessionStore.get() !== null, continuationTracked: plugin.continuations.isSessionTracked(lifecycleSession.id), issue: plugin.recording.getRecordingIssue() })}`);
       }
       if (llmCalls.length !== requestCountBefore
         || JSON.stringify(plugin.queue.tasks.map((task) => task.id)) !== JSON.stringify(taskIdsBefore)
@@ -1796,6 +1814,7 @@ async function main() {
         || noteFile._content !== targetBodyBefore) {
         throw new Error("short recording created requests, tasks, cache files, or modified the existing note");
       }
+      returnBlankAsrResponse = false;
       const failedStartPath = "QnALog/RecordingSmoke/fixed-start-failure.md";
       const targetBodyBeforeFailure = noteFile._content;
       const requestCountBeforeFailure = llmCalls.length;
@@ -1861,6 +1880,7 @@ async function main() {
       if (recorderBeforeLifecycleSmoke) plugin.recorder = recorderBeforeLifecycleSmoke;
       if (momentBeforeLifecycleSmoke) sandbox.moment = momentBeforeLifecycleSmoke;
       if (lifecycleSettingsBefore) Object.assign(plugin.settings, lifecycleSettingsBefore);
+      returnBlankAsrResponse = false;
       if (lifecycleFilesBefore) {
         files.clear();
         for (const [path, file, content] of lifecycleFilesBefore) {

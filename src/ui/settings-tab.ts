@@ -2280,7 +2280,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .addToggle(txt => txt.setValue(this.plugin.settings.enableInterimOutput).onChange(async v => { this.plugin.settings.enableInterimOutput = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Filter very short recordings"))
-      .setDesc(t("When enabled, accidental recordings shorter than 3 seconds are discarded outright: no recording file is saved, no note is created, and no transcription or AI organizing runs. Recordings between 3 and 10 seconds keep their audio file in the recording folder but get no note and no automatic transcription; import them manually if they turn out to matter."))
+      .setDesc(t("When enabled, recordings under 1 second are discarded without transcription. Recordings from 1 to under 10 seconds are transcribed once: blank results are discarded, complete text creates a note, and shorter text keeps the audio without creating a note. Transcription failures keep the audio and a retry task. Turn this off to process short recordings normally."))
       .addToggle(txt => txt.setValue(this.plugin.settings.filterShortRecordings !== false).onChange(async v => { this.plugin.settings.filterShortRecordings = v; await this.plugin.saveSettings(); }));
 
     new obsidian.Setting(c).setName(t("Segment interval"))

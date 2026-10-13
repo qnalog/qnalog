@@ -16,7 +16,7 @@ import { normalizeRealtimeOutlineState } from "../notes/realtime-outline";
 import { getSessionMasterAudioName } from "../notes/audio-reference-text";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 import { findSessionNoteBlock } from "../notes/note-document";
-import { NS_AUDIO_PREFIX } from "../shared/namespace";
+import { NS_AUDIO_PREFIX, NS_MACHINE_SHELL_RE } from "../shared/namespace";
 import { t } from "../shared/i18n";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { DiagnosticsService } from "../diagnostics/diagnostics-service";
@@ -123,10 +123,10 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
       && obsidian.normalizePath(String(t.audioPath || "")) === norm);
   }
 
-  async maybeDeleteSegmentCacheFile(path, excludeTaskId = undefined, force = false) {
+  async maybeDeleteSegmentCacheFile(path, excludeTaskId = undefined, force = false, completedTranscription = false) {
     if (!force && this.host.getSettings().keepSegmentAudioFiles === true) return;
     if (!this.isSegmentCachePath(path)) return;
-    if (this.isQueuedTranscribeAudioReferenced(path, excludeTaskId)) return;
+    if (!completedTranscription && this.isQueuedTranscribeAudioReferenced(path, excludeTaskId)) return;
     const file = this.host.vault.getAbstractFileByPath(obsidian.normalizePath(path));
     if (file instanceof obsidian.TFile) {
       try { await this.host.fileManager.trashFile(file); }
@@ -633,21 +633,39 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
   /**
    * 删掉本次短录音在结尾创建的纪要（只保留它自己的段落块）。
    *
-   * 两种短录音级别共用：时长 < 3 秒丢弃音频，3–10 秒保留音频。纪要文件只有这一段内容时
+   * 两种短录音结果共用：空白结果会丢弃音频，短文本会保留音频。纪要文件只有这一段内容时
    * 移到废纸篓，否则只摘掉这一段（续录目标笔记本来就存在，不会走到这里）。
    */
   async discardShortRecordingNote(session) {
     await this.closeStreamingForDiscard(session);
+    for (const segment of session.segments || []) {
+      const path = String(segment && (segment.segmentAudioPath || segment.audioPath) || "").trim();
+      if (path) await this.maybeDeleteSegmentCacheFile(path, undefined, true, true);
+    }
     const file = this.host.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;
+    // A non-continuation short recording owns the note created for that session.
+    // Blank and fragment outcomes both leave no note behind.
+    if (session.shortRecordingTier && !session.continuationSourcePath) {
+      await this.host.fileManager.trashFile(file);
+      return;
+    }
     const cur = await this.host.vault.read(file);
     const range = findSessionNoteBlock(cur, session.id);
     if (!range) return;
     const before = cur.slice(0, range.start).replace(/\n+$/, "\n");
     const after = cur.slice(range.end).replace(/^\n+/, "");
     const next = before + (after ? "\n" + after : "");
-    if (!next.trim()) await this.host.fileManager.trashFile(file);
+    const visibleRemainder = next.replace(NS_MACHINE_SHELL_RE, "").trim();
+    if (!visibleRemainder) await this.host.fileManager.trashFile(file);
     else if (next !== cur) await this.host.vault.modify(file, next);
+  }
+
+  async discardShortRecordingAudio(session) {
+    const path = String(session && session.masterAudioPath || "").trim();
+    if (!path) return;
+    const file = this.host.vault.getAbstractFileByPath(path);
+    if (file instanceof obsidian.TFile) await this.host.fileManager.trashFile(file);
   }
 
   setSessionWorkProgress(session, patch) {
