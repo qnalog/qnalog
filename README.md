@@ -104,7 +104,7 @@ The note list's **Generate** menu can also create an `.eml` email draft. It can 
 - Level meters help check microphone and system audio input before and during recording. Device checks are available in settings.
 - Inputs remain user-selectable. Compatible independent multichannel inputs can be transcribed by channel; separation stays off when independent channels cannot be verified.
 - Deleting a transcript offers to delete its audio file too.
-- Short-recording filtering is on by default. Recordings under 1 second are discarded without transcription. Recordings from 1 to under 10 seconds are transcribed once: blank results are discarded, complete text creates a note, and shorter text keeps the audio without a note. A transcription failure keeps the audio and a retry task. Turn filtering off to process short recordings normally. Imported audio bypasses this filter.
+- Short-recording filtering is on by default. Recordings under 1 second are discarded without transcription. Recordings from 1 to under 10 seconds are transcribed once: blank results are discarded, complete text creates a note, and shorter text keeps the audio without a note. An anomalous result whose text volume far exceeds the recording duration keeps the audio and creates no note. A transcription failure keeps the audio and a retry task. Turn filtering off to process short recordings normally. Imported audio bypasses this filter.
 
 ## Files and folders
 

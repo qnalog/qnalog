@@ -43,6 +43,7 @@ function makeHost() {
     profiles: { getActiveTranscribeProfile: vi.fn(() => ({ id: "profile", model: "model", transcribeMode: "http" })) },
     asrPipeline: {
       saveMasterAudio: vi.fn(async () => undefined), setSessionWorkProgress: vi.fn((_s, p) => progress.push(p)),
+      discardShortRecordingNote: vi.fn(async () => undefined), discardShortRecordingAudio: vi.fn(async () => undefined),
       closeStreamingForDiscard: vi.fn(async () => undefined), getSegmentCacheFolder: vi.fn(() => "Cache/segs"),
       ensureSegmentCacheFolder: vi.fn(async () => undefined), markLiveSegmentQueueTaskRunning: vi.fn(async () => undefined),
       getLiveAsrJobs: vi.fn(() => new Map()), updateLiveAsrBacklogPolicy: vi.fn(), isAsrServiceCircuitOpen: vi.fn(() => false),
@@ -53,6 +54,7 @@ function makeHost() {
     readVaultAudioBlob: vi.fn(async () => null),
     meetingWorkbench: { removeLiveTranscriptBlock: vi.fn(async () => undefined) },
     diagnostics: { logDiagnostic: vi.fn(async (...args) => { diagnostics.push(args); }) },
+    sessionStore: { end: vi.fn() },
     noteWriter: { insertBeforeSegmentsEnd: vi.fn(async (_path, block) => { blocks.push(block); }) },
     requestOutlineRefresh: vi.fn(), outline: { scheduleRealtimeOutline: vi.fn() },
   };
@@ -122,6 +124,47 @@ describe("live segment consumer contract", () => {
     expect(transcribeMock).toHaveBeenCalledOnce();
     expect(session.shortRecordingTier).toBe("keep-audio");
     expect(session.shortRecordingText).toBe("好的");
+  });
+
+  it("keeps audio and skips note creation when a short transcription is anomalously long", async () => {
+    const { service, host, blocks } = makeHost();
+    const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });
+    const anomalousText = "<chinese>重复识别文本</chinese>".repeat(1600);
+    transcribeMock.mockResolvedValueOnce({ text: anomalousText, rawText: anomalousText, providerId: "provider", units: [] });
+
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+    expect(session.shortRecordingTier).toBe("keep-audio");
+    expect(session.shortRecordingText).toBeUndefined();
+    expect(session.shortRecordingAnomalous).toBe(true);
+    expect(host.asrPipeline.saveMasterAudio).toHaveBeenCalledOnce();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
+    expect(host.noteWriter.insertBeforeSegmentsEnd).not.toHaveBeenCalled();
+    expect(blocks).toHaveLength(0);
+
+    await service.finishShortRecording(session);
+    expect(host.asrPipeline.discardShortRecordingAudio).not.toHaveBeenCalled();
+    expect(host.asrPipeline.discardShortRecordingNote).toHaveBeenCalledOnce();
+    expect(notices).toContainEqual([t("Short recording transcription result was anomalous (text volume far exceeded recording duration); audio was kept and no note was created. You can manually import it later to retry."), 8000]);
+    expect(notices.some(([message]) => message.includes(anomalousText))).toBe(false);
+  });
+
+  it("does not write anomalous continuation text into the existing note", async () => {
+    const { service, host, blocks } = makeHost();
+    const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000, continuationSourcePath: "Notes/target.md" });
+    const anomalousText = "<chinese>重复识别文本</chinese>".repeat(1600);
+    transcribeMock.mockResolvedValueOnce({ text: anomalousText, rawText: anomalousText, providerId: "provider", units: [] });
+
+    await service.processSegment(session, makeSegment({ isFinal: true }));
+
+    expect(session.shortRecordingTier).toBe("keep-audio");
+    expect(session.shortRecordingText).toBeUndefined();
+    expect(session.shortRecordingAnomalous).toBe(true);
+    expect(host.noteWriter.insertBeforeSegmentsEnd).not.toHaveBeenCalled();
+    expect(blocks).toHaveLength(0);
+    expect(host.asrPipeline.saveMasterAudio).toHaveBeenCalledOnce();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
+    await service.finishShortRecording(session);
+    expect(host.asrPipeline.discardShortRecordingNote).not.toHaveBeenCalled();
   });
 
   it("discards only a successful blank short transcription", async () => {

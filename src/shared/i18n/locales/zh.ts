@@ -392,6 +392,7 @@ export const ZH: MessageTable = {
   "Filtered out recordings shorter than one second": "已过滤不足一秒的录音",
   "Short recording had no recognized content; its audio and note were discarded": "短录音没有识别到内容，已删除音频和笔记",
   "Short recording was not made into a note; audio was kept. Recognized: {0}": "录音较短，未建笔记，已保留音频。识别到：{0}",
+  "Short recording transcription result was anomalous (text volume far exceeded recording duration); audio was kept and no note was created. You can manually import it later to retry.": "短录音的识别结果异常（文字量远超录音时长），已保留音频，未建笔记。可稍后手动导入重试。",
   "Short recording transcription failed; audio and a retry task were kept: {0}": "短录音转写失败，已保留音频并加入待处理重试：{0}",
   "Recording under {0} seconds: audio kept in the recording folder, no notes created and no transcript kept. Import it manually if needed.": "录音不足 {0} 秒：音频已保存在录音目录，未创建笔记、也未保留转写结果。需要时手动导入即可。",
   "Recording under {0} seconds and its audio could not be saved; skipped.": "录音不足 {0} 秒，且音频未能保存，已跳过。",
