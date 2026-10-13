@@ -29,7 +29,7 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
   const tier = session.shortRecordingTier;
   const limitSeconds = Math.round(SHORT_RECORDING_CONTENT_PROBE_MS / 1000);
   const durationMs = Math.max(0, Number(session.shortRecordingDurationMs) || 0);
-  const discardedContinuation = tier === "discard"
+  const discardedContinuation = (tier === "discard" || !!session.shortRecordingAnomalous)
     && !!session.continuation
     && !!session.continuationTaskId
     && port.hasQueue();
@@ -50,7 +50,7 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
     });
   }
   if (tier === "discard") await port.discardShortRecordingAudio(session);
-  await port.discardShortRecordingNote(session);
+  if (!(session.shortRecordingAnomalous && session.continuationSourcePath)) await port.discardShortRecordingNote(session);
   if (discardedContinuation) await port.removeQueueTask(continuationTaskId);
   const audioName = session.masterAudioName || "";
   if (tier === "discard") {
@@ -61,6 +61,8 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
   } else if (session.shortRecordingText) {
     const text = session.shortRecordingText.length > 40 ? `${session.shortRecordingText.slice(0, 39)}…` : session.shortRecordingText;
     new obsidian.Notice(t("Short recording was not made into a note; audio was kept. Recognized: {0}").replace("{0}", text), 8000);
+  } else if (session.shortRecordingAnomalous) {
+    new obsidian.Notice(t("Short recording transcription result was anomalous (text volume far exceeded recording duration); audio was kept and no note was created. You can manually import it later to retry."), 8000);
   } else if (audioName) {
     new obsidian.Notice(t("Recording under {0} seconds: audio kept in the recording folder, no notes created and no transcript kept. Import it manually if needed. ({1})").replace("{0}", String(limitSeconds)).replace("{1}", audioName), 8000);
   } else {

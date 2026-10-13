@@ -272,9 +272,13 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       session.shortRecordingTier = undefined;
       session.shortRecordingText = undefined;
     } else {
-      const content = classifyShortRecordingContent(text);
+      const content = classifyShortRecordingContent(text, session.shortRecordingDurationMs || 0);
       if (content === "blank") session.shortRecordingTier = "discard";
-      else if (content === "fragment" && !session.continuationSourcePath) {
+      else if (content === "anomalous") {
+        session.shortRecordingTier = "keep-audio";
+        session.shortRecordingText = undefined;
+        session.shortRecordingAnomalous = true;
+      } else if (content === "fragment" && !session.continuationSourcePath) {
         session.shortRecordingTier = "keep-audio";
         session.shortRecordingText = text;
       } else {
@@ -286,7 +290,7 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   const segTitle = `### ${labelText("segment", segNumber)} (${formatElapsed(displayStartOffsetMs)}–${formatElapsed(displayEndOffsetMs)}) ${getAudioTimeLink(playbackAudioName, Math.max(0, Number(seg.startOffsetMs) || 0))}${seg.isFinal ? " · 结束" : ""}`;
   const heading = [segTitle, segmentRecord.queueTaskId ? nsMarker("transcribe-task", segmentRecord.queueTaskId) : ""].filter(Boolean).join("\n\n");
   const block = `\n${serializeTranscriptBlock(segmentRecord, heading, visibleText)}\n`;
-  await port.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
+  if (!session.shortRecordingAnomalous) await port.insertBeforeSegmentsEnd(session.mdPath, block, session.id);
   if (!err || isStreamingProvider) await port.removeLiveSegmentTask(seg);
   port.requestOutlineRefresh();
   port.setProgress(session, {

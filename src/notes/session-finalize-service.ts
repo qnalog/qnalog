@@ -197,6 +197,7 @@ export class SessionFinalizeService {
   }
 
   private settleContinuationFinalization(session: RecordingSession): Promise<void> | undefined {
+    if (session.shortRecordingAnomalous) return undefined;
     if (!session.continuationTaskId || !this.host.queue) return undefined;
     if (session.shortRecordingTier === "discard" && session.continuation && session.continuationTaskId) {
       if (!session.finalized) {
