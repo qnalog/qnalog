@@ -552,10 +552,12 @@ export interface RecordingSession {
   pcmEncoder?: { stop(): void } | null;
   finalizing?: boolean;
   finalizationError?: string;
-  /** 短录音的处理级别：discard（丢弃）/ keep-audio（只留音频）；正常录音不写该字段。 */
-  shortRecordingTier?: "discard" | "keep-audio";
+  /** 短录音的处理级别；正常录音不写该字段。 */
+  shortRecordingTier?: "discard" | "keep-audio" | "probe";
   /** 短录音的总时长（毫秒），用于提示文案与诊断日志。 */
   shortRecordingDurationMs?: number;
+  /** 短录音转写文本，仅用于短录音结果通知；进程内字段。 */
+  shortRecordingText?: string;
   _nextLiveSegmentIndex?: number;
   _interviewBriefBackgroundRunning?: boolean;
   _asrBacklogWarningNotified?: boolean;

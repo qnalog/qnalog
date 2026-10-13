@@ -47,7 +47,11 @@ function setup(options: { targetText?: string; stageText?: string; task?: Record
     tasks: { queueTaskActivityId: vi.fn(() => "activity"), patchTaskActivity: vi.fn(() => { log.push("activity"); }) },
     versions: { saveVersion: vi.fn(async () => { log.push("version"); }) },
     noteIndex: { refreshNoteIndexSafely: vi.fn(async () => { log.push("refresh"); }) },
-    asrPipeline: { cleanupSuccessfulSegmentAudio: vi.fn(async () => { log.push("cleanup"); }), discardShortRecordingNote: vi.fn(async () => { log.push("discard"); }) },
+    asrPipeline: {
+      cleanupSuccessfulSegmentAudio: vi.fn(async () => { log.push("cleanup"); }),
+      discardShortRecordingNote: vi.fn(async () => { log.push("discard"); }),
+      discardShortRecordingAudio: vi.fn(async (session: { masterAudioPath?: string }) => { log.push(`discard-audio:${session.masterAudioPath || ""}`); }),
+    },
   };
   mergeMock.mockImplementation(async () => { log.push("merge"); return "Organized transcript"; });
   vi.stubGlobal("window", { moment: (value?: unknown) => ({ format: (format: string) => `moment:${String(value ?? "now")}:${format}` }) });
@@ -76,7 +80,8 @@ describe("append task recovery consumer contract", () => {
     const ready = setup({ task: { continuationDisposition: "discard" } });
     await expect(ready.service.runAppendTask(validTask({ continuationDisposition: "discard" }) as never)).resolves.toBeUndefined();
     expect(ready.host.asrPipeline.discardShortRecordingNote).toHaveBeenCalledWith({ id: "session", mdPath: stagePath });
-    expect(ready.log).toEqual(["discard"]);
+    expect(ready.host.asrPipeline.discardShortRecordingAudio).toHaveBeenCalledWith({ id: "session", mdPath: stagePath, masterAudioPath: undefined });
+    expect(ready.log).toEqual(["discard-audio:", "discard"]);
   });
   it("blocks unsafe discard paths and folders, but permits a missing staged note", async () => {
     const same = setup({ task: { continuationDisposition: "discard", temporarySourcePath: targetPath } });
