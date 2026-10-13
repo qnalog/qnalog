@@ -50,7 +50,7 @@ Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native
 4. Stop recording and follow transcription, AI organization, and Markdown writing in **Task progress**. Retry from the failed step if processing stops.
 5. Use the **Distill** and **Q&A** tabs as needed, or generate a report from a completed note.
 
-The sidebar tabs are **Outline**, **Distill**, **Q&A**, and **Notes**. They show the live outline and markers, reviewable knowledge candidates, questions about a note, and the note list. **Minutes Board** is a separate view, opened with its command or the button in the panel; it is not a fifth tab.
+The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. **Minutes Board** is a separate view, opened with its command or the button in the panel. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
 
 The 1.6.1 interface follows the active light or dark theme and supports narrow panels, visible keyboard focus, and reduced-motion preferences.
 

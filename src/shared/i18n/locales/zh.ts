@@ -3045,4 +3045,7 @@ export const ZH: MessageTable = {
   "The group still contains other files; handle them in the file explorer": "该分组内还有其他文件，请在文件管理器中处理",
   "The group changed before deletion and was left in place": "分组内容在删除前发生变化，已保留分组",
   "Delete group failed: ": "删除分组失败：",
+  "Open outline": "打开大纲",
+  "Distill content": "沉淀内容",
+  "Invalid transcription glossary path": "转写词表路径无效",
 };

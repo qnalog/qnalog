@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
 vi.mock("obsidian", () => {
   class ItemView {}
@@ -6,8 +7,24 @@ vi.mock("obsidian", () => {
   class SuggestModal {}
   class FuzzySuggestModal {}
   class PluginSettingTab {}
+  class Menu {
+    items: Array<{ title?: string; icon?: string; onClick?: () => unknown }> = [];
+    addItem(callback: (item: Record<string, unknown>) => void) {
+      const item = {
+        setTitle(title: string) { this.title = title; return this; },
+        setIcon(icon: string) { this.icon = icon; return this; },
+        setChecked() { return this; },
+        setSubmenu() { return new Menu(); },
+        onClick(handler: () => unknown) { this.onClick = handler; return this; },
+      };
+      callback(item);
+      this.items.push(item);
+      return this;
+    }
+    addSeparator() { this.items.push({}); }
+  }
   return {
-    ItemView, Modal, SuggestModal, FuzzySuggestModal, PluginSettingTab,
+    ItemView, Modal, SuggestModal, FuzzySuggestModal, PluginSettingTab, Menu,
     normalizePath: (path: string) => path.replace(/\\/g, "/"),
     setIcon: () => undefined,
   };
@@ -63,5 +80,75 @@ describe("outline sidebar tab on note, session and recording events", () => {
     const view = viewWith("recent", "session-a");
     view.syncSessionOutline({ id: "session-a", segments: [] });
     expect(view.idlePanelTab).toBe("recent");
+  });
+});
+
+describe("idle sidebar tab order", () => {
+  it("renders notes, outline, distill, Q&A, and topics in that order", () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const labels: string[] = [];
+    const tabs = {
+      createEl: (_tag: string, options: { text: string }) => {
+        labels.push(options.text);
+        return { onclick: undefined as (() => void) | undefined };
+      },
+    };
+    const root = { createDiv: () => tabs };
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    Object.assign(view, { topicPromptRefreshPaths: new Set<string>() });
+    view.renderIdleTabs(root, "outline");
+    expect(labels).toEqual(["Notes", "Outline", "Distill", "Q&A", "Topics"]);
+  });
+});
+
+describe("recent note sidebar context actions", () => {
+  async function setup(hasPipelineStarted: boolean) {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    const file = { path: "Notes/example.md" };
+    const openFile = vi.fn(async () => undefined);
+    const requestSedimentExtraction = vi.fn();
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    const menuHolder: { menu?: { items: Array<{ title?: string; icon?: string; onClick?: () => unknown }> } } = {};
+    Object.assign(view, {
+      plugin: { noteWriter: { detectModeFromMarkdown: () => "" }, settings: {} },
+      app: { workspace: { getActiveFile: () => null, getLeaf: () => ({ openFile }) } },
+      getSedimentPanelState: () => ({ hasPipelineStarted, scanning: false }),
+      requestSedimentExtraction,
+      render: vi.fn(),
+      showMenuAtMouse: (menu: typeof menuHolder.menu) => { menuHolder.menu = menu; },
+    });
+    view.showRecentNoteContextMenu({}, file, () => undefined);
+    const menu = menuHolder.menu!;
+    const outline = menu.items.find((item) => item.title === "Open outline");
+    const extract = menu.items.find((item) => item.title === "Distill content");
+    return { file, openFile, requestSedimentExtraction, view, outline, extract };
+  }
+
+  it("opens the note before selecting the outline tab", async () => {
+    const h = await setup(false);
+    h.outline?.onClick?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.openFile).toHaveBeenCalledWith(h.file);
+    expect(h.view.idlePanelTab).toBe("outline");
+    expect(h.view.showRecentHome).toBe(false);
+    expect(h.requestSedimentExtraction).not.toHaveBeenCalled();
+  });
+
+  it("selects distill and requests a scan only when the note has no scan state", async () => {
+    const fresh = await setup(false);
+    fresh.extract?.onClick?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fresh.view.idlePanelTab).toBe("extract");
+    expect(fresh.view.showRecentHome).toBe(false);
+    expect(fresh.requestSedimentExtraction).toHaveBeenCalledWith(fresh.file, false);
+
+    const scanned = await setup(true);
+    scanned.extract?.onClick?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scanned.view.idlePanelTab).toBe("extract");
+    expect(scanned.requestSedimentExtraction).not.toHaveBeenCalled();
   });
 });
