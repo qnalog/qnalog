@@ -8,10 +8,39 @@ type VocabularyFileSettings = Pick<PluginSettings, "vocabularyFile" | "industryP
 
 export interface OpenVocabularyFileOptions {
   vault: Pick<obsidian.Vault, "getAbstractFileByPath" | "create" | "cachedRead" | "modify" | "createFolder">;
-  workspace: Pick<obsidian.Workspace, "getLeaf">;
+  workspace: Pick<obsidian.Workspace, "getLeaf" | "getLeavesOfType" | "setActiveLeaf" | "revealLeaf"> & {
+    iterateAllLeaves?: (callback: (leaf: obsidian.WorkspaceLeaf) => void) => void;
+  };
   getSettings: () => VocabularyFileSettings;
   notify: (message: string) => void;
   refreshStatus?: () => Promise<void> | void;
+}
+
+const openingByWorkspace = new WeakMap<object, Map<string, Promise<void>>>();
+
+function findOpenVocabularyLeaf(workspace: OpenVocabularyFileOptions["workspace"], path: string): obsidian.WorkspaceLeaf | null {
+  const leaves = workspace.getLeavesOfType("markdown");
+  const matchesPath = (leaf: obsidian.WorkspaceLeaf): boolean => {
+    const filePath = (leaf.view as { file?: { path?: string } | null }).file?.path;
+    return !!filePath && obsidian.normalizePath(filePath) === path;
+  };
+  let existing = leaves.find(matchesPath);
+  if (!existing && workspace.iterateAllLeaves) {
+    workspace.iterateAllLeaves((leaf) => {
+      if (!existing && matchesPath(leaf)) existing = leaf;
+    });
+  }
+  return existing ?? null;
+}
+
+async function openOrFocusVocabularyFile(workspace: OpenVocabularyFileOptions["workspace"], file: obsidian.TFile): Promise<void> {
+  const existing = findOpenVocabularyLeaf(workspace, file.path);
+  if (existing) {
+    await workspace.revealLeaf(existing);
+    workspace.setActiveLeaf(existing, { focus: true });
+    return;
+  }
+  await workspace.getLeaf(false).openFile(file);
 }
 
 export async function openVocabularyFile(options: OpenVocabularyFileOptions): Promise<void> {
@@ -34,6 +63,31 @@ export async function openVocabularyFile(options: OpenVocabularyFileOptions): Pr
     return;
   }
 
+  let workspaceTasks = openingByWorkspace.get(options.workspace);
+  if (!workspaceTasks) {
+    workspaceTasks = new Map();
+    openingByWorkspace.set(options.workspace, workspaceTasks);
+  }
+  const pending = workspaceTasks.get(path);
+  if (pending !== undefined) {
+    await pending;
+    return;
+  }
+
+  const operation = openVocabularyFileAtPath(options, path, settings);
+  workspaceTasks.set(path, operation);
+  try {
+    await operation;
+  } finally {
+    if (workspaceTasks.get(path) === operation) workspaceTasks.delete(path);
+  }
+}
+
+async function openVocabularyFileAtPath(
+  options: OpenVocabularyFileOptions,
+  path: string,
+  settings: VocabularyFileSettings,
+): Promise<void> {
   try {
     let file = options.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile)) {
@@ -52,7 +106,7 @@ export async function openVocabularyFile(options: OpenVocabularyFileOptions): Pr
       options.notify(t("Organized into a sectioned hotword table"));
     }
     await options.refreshStatus?.();
-    await options.workspace.getLeaf(false).openFile(file);
+    await openOrFocusVocabularyFile(options.workspace, file);
   } catch (error) {
     const message = error && typeof error === "object" && "message" in error
       ? String((error as { message?: unknown }).message || error)

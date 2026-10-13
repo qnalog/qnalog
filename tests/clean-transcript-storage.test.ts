@@ -73,7 +73,9 @@ import * as obsidian from "obsidian";
 import type { PluginSettings, Segment } from "../src/shared/types";
 import { cleanTranscript } from "../src/briefing/merge-pipeline";
 import { RepolishService } from "../src/notes/repolish-service";
+import { reorganizeNoteInPlace } from "../src/notes/reorganize-in-place-flow";
 import { VersionStore, type VersionStoreHost } from "../src/versions/version-store";
+import { buildVersionPayload, splitVersionPayload } from "../src/versions/version-content";
 import { TaskActivityService } from "../src/tasks/task-activity-service";
 import { TaskActivityStore } from "../src/shared/task-activity";
 
@@ -130,6 +132,7 @@ function createMemoryVault() {
     getMarkdownFiles: () => [...files.values()].filter((file) => !unindexedFiles.has(file.path)),
     read: async (file: MemoryFile) => file.data,
     cachedRead: async (file: MemoryFile) => file.data,
+    process: async (file: MemoryFile, transform: (content: string) => string) => { file.data = transform(file.data); },
     modify: async (file: MemoryFile, content: string): Promise<void> => { file.data = content; },
     createFolder: async (path: string) => { folders.add(path); return new obsidian.TFolder(path); },
     create: async (path: string, content: string) => {
@@ -216,6 +219,101 @@ afterEach(() => {
 });
 
 describe("clean transcript storage", () => {
+  it("creates a missing original snapshot from the reorganized source content", async () => {
+    const { files, vault } = createMemoryVault();
+    const currentSource = sourceContent.replace("First generated minutes must stay visible.", "New organized body.");
+    const sourceFile = new obsidian.TFile("QnALog/notes/new-original-after-reorganization.md", currentSource);
+    files.set(sourceFile.path, sourceFile);
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => ({ mdFolder: "QnALog/notes" }),
+    ));
+    const path = await versions.ensureOriginalVersionForSource(sourceFile);
+    if (!path) throw new Error("Original snapshot was not created");
+    const cache = files.get(path)?.data || "";
+    expect(splitVersionPayload(cache.slice(cache.indexOf("\n\n") + 2)).body).toContain("New organized body.");
+    expect(cache).not.toContain("First generated minutes must stay visible.");
+  });
+
+  it("reorganizes an active mother through the original and prior versions while retaining derived caches", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/notes/reorganize-active.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings: Pick<PluginSettings, "mdFolder" | "promptTemplates"> = { mdFolder: "QnALog/notes", promptTemplates: {} };
+    const openFile = vi.fn(async () => undefined);
+    const app = {
+      vault,
+      metadataCache: {
+        getFileCache: (file: MemoryFile) => {
+          const match = file.data.match(/^---\n([\s\S]*?)\n---/);
+          return { frontmatter: match ? obsidian.parseYaml(match[1] || "") as Record<string, unknown> : {} };
+        },
+      },
+      workspace: { getLeaf: () => ({ openFile }) },
+    };
+    const refresh = vi.fn(async () => undefined);
+    const versions = new VersionStore(makeVersionHost(app, () => settings, refresh));
+    const segments = [{ text: "Original ASR transcript.", startOffsetMs: 0, endOffsetMs: 5000 }] as Segment[];
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const originalPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    if (!originalPath) throw new Error("Original snapshot was not created");
+    const derived = await versions.saveVersion(sourceFile, sourceContent, segments, {
+      kind: "minutes", label: "Derived minutes", body: "Derived version body.", activate: false,
+    });
+    const derivedPath = `${derived.folder}/${derived.meta.fileName}`;
+    const derivedCacheBefore = files.get(derivedPath)?.data;
+    await versions.switchVersion(originalPath, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("qnalog_custom: keep-me");
+
+    const inFlight = new Set<string>();
+    const taskNoop = vi.fn();
+    const taskPort = {
+      startTaskActivity: taskNoop,
+      patchTaskActivity: taskNoop,
+      completeTaskActivity: taskNoop,
+      failTaskActivity: taskNoop,
+    };
+    await reorganizeNoteInPlace({
+      getVault: () => vault as unknown as Pick<obsidian.Vault, "read" | "process">,
+      getCachedFrontmatter: (file) => app.metadataCache.getFileCache(file)?.frontmatter,
+      getDefaultMode: () => "general",
+      getModeDisplayName: () => "General",
+      getInFlight: () => inFlight,
+      mergeAndPolish: async () => "---\ntitle: Updated title\n---\nNew organized body.",
+      stripModeSuggestionBlocks: (text) => text,
+      validateOriginalVersionForReorganization: (file) => versions.validateOriginalVersionForReorganization(file),
+      ensureOriginalVersionForSource: (file) => versions.ensureOriginalVersionForSource(file),
+      replaceOriginalVersionBody: (file, payload) => versions.replaceOriginalVersionBody(file, payload),
+      restoreOriginalVersionBody: (file, update) => versions.restoreOriginalVersionBody(file, update),
+      switchVersion: (path, fallback) => versions.switchVersion(path, fallback),
+      saveVersion: (file, content, inputSegments, input) => versions.saveVersion(file, content, inputSegments, input),
+      refreshNoteIndex: refresh,
+      tasks: taskPort,
+    }, sourceFile);
+
+    const current = await vault.read(sourceFile);
+    expect(current).toContain("New organized body.");
+    expect(current).toMatch(/qnalog_custom: ["']?keep-me/);
+    expect(current).toContain("qnalog_pre_reorganize_version:");
+    expect(current).toContain("data-qnalog=\"active-version-start\"");
+    expect((await versions.findOriginalVersionForSource(sourceFile))?.path).toBe(originalPath);
+    const originalCache = files.get(originalPath)?.data || "";
+    expect(splitVersionPayload(originalCache.slice(originalCache.indexOf("\n\n") + 2)).body).toContain("New organized body.");
+    const folder = getVersionStoreFolder(settings, sourceId);
+    const manifest = JSON.parse(await vault.adapter.read(`${folder}/manifest.json`)) as { activeVersionId: string; versions: Array<{ id: string; fileName: string; kind: string }> };
+    const originalRecord = manifest.versions.find((record) => record.kind === "source-original");
+    const priorRecord = manifest.versions.find((record) => record.kind === "pre-reorganize");
+    expect(manifest.activeVersionId).toBe(originalRecord?.id);
+    expect(current).toContain(`qnalog_pre_reorganize_version: "${priorRecord?.id}"`);
+    expect(files.get(derivedPath)?.data).toBe(derivedCacheBefore);
+
+    if (!priorRecord) throw new Error("Prior version record was not written");
+    await versions.switchVersion(`${folder}/${priorRecord.fileName}`, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("First generated minutes must stay visible.");
+    await versions.switchVersion(originalPath, sourceFile.path);
+    expect(await vault.read(sourceFile)).toContain("New organized body.");
+  });
+
   it("upgrades the actual 1.6.4 grouped layout during version activation", async () => {
     setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const { files, vault } = createMemoryVault();
@@ -363,6 +461,40 @@ describe("clean transcript storage", () => {
     expect(output).toContain("<summary>分段原始转写（1 段）</summary>transcript payload");
     expect(output).toContain("<summary>索引数据</summary>index payload");
     expect(output.indexOf('data-qnalog="active-version-end"')).toBeLessThan(output.search(/\n---\n+## 原始材料/));
+  });
+
+  it("replaces only an original snapshot payload and can restore it after a failed source write", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/notes/reorganize-snapshot.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/notes" };
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+    ));
+    const snapshotPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    if (!snapshotPath) throw new Error("Original snapshot was not created");
+    const originalCache = files.get(snapshotPath);
+    if (!originalCache) throw new Error("Original cache was not written");
+    const oldCache = originalCache.data;
+    const oldCacheFm = oldCache.match(/^---\n[\s\S]*?\n---\n/)?.[0] || "";
+    const manifestBefore = await vault.adapter.read(`${getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile))}/manifest.json`);
+    const update = await versions.replaceOriginalVersionBody(
+      sourceFile,
+      buildVersionPayload("---\nqnalog_custom: keep-me\n---\n", "Updated organized text."),
+    );
+    expect(update?.path).toBe(snapshotPath);
+    expect(oldCacheFm).not.toBe("");
+    const currentCacheFm = originalCache.data.match(/^---\n[\s\S]*?\n---\n/)?.[0] || "";
+    expect(currentCacheFm).toBe(oldCacheFm);
+    const payload = splitVersionPayload(originalCache.data.slice(currentCacheFm.length));
+    expect(payload.frontmatter).toContain("qnalog_custom: keep-me");
+    expect(payload.body).toBe("Updated organized text.");
+    expect(originalCache.data).toContain('version_id: "');
+    expect(await vault.adapter.read(`${getVersionStoreFolder(settings, getSourceIdFromMarkdown(sourceContent, sourceFile))}/manifest.json`)).toBe(manifestBefore);
+
+    await versions.restoreOriginalVersionBody(sourceFile, update!);
+    expect(originalCache.data).toBe(oldCache);
   });
 
   it("uses current mode templates and storage folder for original snapshots", async () => {

@@ -52,7 +52,7 @@ Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native
 
 The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. **Minutes Board** is a separate view, opened with its command or the button in the panel. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
 
-In the note list context menu, **Reorganize** replaces the current note's organized body in place and saves a recoverable version first; **Generate derived version** creates a separate derived note and leaves the source note unchanged.
+In the note list context menu, **Reorganize** replaces the current note's organized body in place and saves a recoverable version first. After reorganization, the **Before reorganization** row opens the replaced content; **Generate derived version** creates a separate derived note and leaves the source note unchanged.
 
 The 1.6.1 interface follows the active light or dark theme and supports narrow panels, visible keyboard focus, and reduced-motion preferences.
 
@@ -97,9 +97,9 @@ Right-click an original minutes note and choose **Create topic** to select relat
 
 The note list can group recent notes by folder or time, with search and template filters. **Minutes Board** is a separate view for saved meeting materials.
 
-HTML and PDF reports are generated from a note by calling the configured LLM; they do not modify the original note. HTML and PDF are available from commands and the note list's context menu under **Generate**. PDF generation requires desktop Obsidian and very tall single-page reports have a height limit; use HTML for complete reading.
+HTML and PDF reports are generated from a note by calling the configured LLM; they do not modify the original note. HTML and PDF are available from commands and the note list's context menu under **Export**. PDF generation requires desktop Obsidian and very tall single-page reports have a height limit; use HTML for complete reading.
 
-The note list's **Generate** menu can also create an `.eml` email draft. It can contain a summary and attachments including the original Markdown, a generated PDF, or existing exported files; recipients can be matched from the people library. Review and send the draft in your email client. QnALog does not send email automatically.
+The note list's **Export** menu can also create an `.eml` email draft. It can contain a summary and attachments including the original Markdown, a generated PDF, or existing exported files; recipients can be matched from the people library. Review and send the draft in your email client. QnALog does not send email automatically.
 
 ### Recording reliability
 

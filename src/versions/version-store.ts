@@ -12,7 +12,7 @@ import { normalizeModeFromLabel } from "../shared/mode-label";
 import { findAvailableMarkdownPath } from "../shared/util-vault";
 import { readNamespaceFrontmatter } from "../shared/namespace";
 import { VersionManifestStore } from "./version-manifest-store";
-import { OriginalSnapshotStore, type OriginalSnapshot } from "./original-snapshot-store";
+import { OriginalSnapshotStore, type OriginalSnapshot, type OriginalSnapshotBodyUpdate } from "./original-snapshot-store";
 import { DerivedNoteStore, type DerivedNoteVersion } from "./derived-note-store";
 
 /** VersionStore 需要的最小宿主能力；由 src/main.ts 在调用时绑定动态成员。 */
@@ -90,6 +90,7 @@ export class VersionStore {
       getFolder: (sourceId) => this.host.getVersionStoreFolder(this.host.getSettings(), sourceId),
       exists: (path) => this.host.vault.adapter.exists(path),
       readCache: (path) => this.host.vault.adapter.read(path),
+      writeCache: (path, content) => this.host.vault.adapter.write(path, content),
       readManifest: (folder, sourceId) => this.manifests.read(folder, sourceId),
       saveVersion: (file, content, input) => this.saveVersion(file, content, [], input),
       normalizeMode: (label) => normalizeModeFromLabel(this.host.getSettings(), label),
@@ -126,6 +127,18 @@ export class VersionStore {
   }
   async ensureOriginalVersionForSource(sourceFile: obsidian.TFile): Promise<string | null> {
     return this.originals.ensureForSource(sourceFile);
+  }
+  async validateOriginalVersionForReorganization(sourceFile: obsidian.TFile): Promise<void> {
+    return this.originals.validateForReorganization(sourceFile);
+  }
+  async replaceOriginalVersionBody(sourceFile: obsidian.TFile, payload: string): Promise<OriginalSnapshotBodyUpdate | null> {
+    return this.originals.replaceBody(sourceFile, payload);
+  }
+  async restoreOriginalVersionBody(sourceFile: obsidian.TFile, update: OriginalSnapshotBodyUpdate): Promise<void> {
+    return this.originals.restoreBody(sourceFile, update);
+  }
+  async findVersionPathForSource(sourceFile: obsidian.TFile, versionId: string): Promise<string | null> {
+    return this.originals.findVersionPathForSource(sourceFile, versionId);
   }
   findDerivedNoteForSource(
     sourceFile: obsidian.TFile,

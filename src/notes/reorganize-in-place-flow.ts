@@ -1,14 +1,15 @@
 import * as obsidian from "obsidian";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
-import { splitLeadingFrontmatter } from "./note-document";
+import { findActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
 import { readRepolishInput } from "./repolish-input";
 import { getTaskErrorMessage } from "../shared/task-activity";
 import { t } from "../shared/i18n";
 import type { Segment } from "../shared/types";
 import type { TaskActivity, TaskActivityInput } from "../shared/task-activity";
-import type { VersionSaveInput } from "../versions/version-save-store";
+import type { SavedVersion, VersionSaveInput } from "../versions/version-save-store";
+import type { OriginalSnapshotBodyUpdate } from "../versions/original-snapshot-store";
 import { buildVersionPayload } from "../versions/version-content";
-import { NS_FM } from "../shared/namespace";
+import { NS_FM, setNamespaceFrontmatter } from "../shared/namespace";
 import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
 
 export interface ReorganizeInPlacePort {
@@ -19,8 +20,12 @@ export interface ReorganizeInPlacePort {
   getInFlight(): Set<string>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, frontmatter: Record<string, unknown> | null): Promise<string>;
   stripModeSuggestionBlocks(text: string): string;
-  ensureOriginalVersionForSource(file: obsidian.TFile): Promise<unknown>;
-  saveVersion(file: obsidian.TFile, content: string, segments: Segment[], input: VersionSaveInput): Promise<unknown>;
+  validateOriginalVersionForReorganization(file: obsidian.TFile): Promise<void>;
+  ensureOriginalVersionForSource(file: obsidian.TFile): Promise<string | null>;
+  replaceOriginalVersionBody(file: obsidian.TFile, payload: string): Promise<OriginalSnapshotBodyUpdate | null>;
+  restoreOriginalVersionBody(file: obsidian.TFile, update: OriginalSnapshotBodyUpdate): Promise<void>;
+  switchVersion(versionPath: string, sourcePath: string): Promise<void>;
+  saveVersion(file: obsidian.TFile, content: string, segments: Segment[], input: VersionSaveInput): Promise<SavedVersion>;
   refreshNoteIndex(file: obsidian.TFile, options: { reason: string }): Promise<unknown>;
   tasks: {
     startTaskActivity(input: TaskActivityInput): unknown;
@@ -72,6 +77,14 @@ function extractOrganizedBody(snapshot: string): string {
   return current.body.slice(0, findOriginalMaterialBoundary(current.body).index).trim();
 }
 
+function addPreReorganizeVersion(note: string, versionId: string): string {
+  const parts = splitLeadingFrontmatter(note);
+  const fields = parseFrontmatter(parts.frontmatter);
+  setNamespaceFrontmatter(fields, "preReorganizeVersion", versionId);
+  const frontmatter = `---\n${obsidian.stringifyYaml(fields).trimEnd()}\n---\n`;
+  return `${frontmatter}${parts.body}`;
+}
+
 export function buildReorganizedNote(snapshot: string, generated: string, stripModeSuggestions: (text: string) => string): string {
   const current = splitLeadingFrontmatter(snapshot);
   const generatedParts = splitLeadingFrontmatter(stripModeSuggestions(generated || buildEmptyLlmOutputFallback()).trim());
@@ -96,6 +109,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
   let taskStarted = false;
   try {
     const snapshot = await port.getVault().read(file);
+    await port.validateOriginalVersionForReorganization(file);
     const input = readRepolishInput(snapshot, port.getCachedFrontmatter(file) || null);
     if (!input.segments.length) throw new Error(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."));
     const mode = port.getDefaultMode();
@@ -111,20 +125,40 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     const previousParts = splitLeadingFrontmatter(snapshot);
     const previousBody = buildVersionPayload(previousParts.frontmatter, extractOrganizedBody(snapshot));
     port.tasks.patchTaskActivity(taskId, { stage: "writing", stageLabel: t("Writing"), detail: t("Saving a recoverable version before replacing the note body"), progress: 78 });
-    await port.ensureOriginalVersionForSource(file);
-    await port.saveVersion(file, snapshot, input.segments, {
+    if (await port.getVault().read(file) !== snapshot) {
+      throw new Error(t("The note changed while reorganizing; the result was not written. Review the note and try again."));
+    }
+    const savedPrevious = await port.saveVersion(file, snapshot, input.segments, {
       kind: "pre-reorganize", label: t("Before reorganization"), mode,
       idLabel: "pre-reorganize", body: previousBody, activate: false,
     });
+    const nextWithPreviousId = addPreReorganizeVersion(next, savedPrevious.meta.id);
     let changed = false;
     await port.getVault().process(file, (latest) => {
       if (latest !== snapshot) {
         changed = true;
         return latest;
       }
-      return next;
+      return nextWithPreviousId;
     });
     if (changed) throw new Error(t("The note changed while reorganizing; the result was not written. Review the note and try again."));
+    let snapshotUpdate: OriginalSnapshotBodyUpdate | null = null;
+    try {
+      const updatedParts = splitLeadingFrontmatter(nextWithPreviousId);
+      const updatedBody = extractOrganizedBody(nextWithPreviousId).replace(/^#\s+[^\n]*(?:\n+|$)/, "").trim();
+      const originalPayload = buildVersionPayload(updatedParts.frontmatter, updatedBody);
+      snapshotUpdate = await port.replaceOriginalVersionBody(file, originalPayload);
+      const originalPath = snapshotUpdate?.path || await port.ensureOriginalVersionForSource(file);
+      if (findActiveVersionBlock(snapshot) && originalPath) {
+        await port.switchVersion(originalPath, file.path);
+      } else if (findActiveVersionBlock(snapshot)) {
+        throw new Error(t("Could not read version metadata"));
+      }
+    } catch (error) {
+      await port.getVault().process(file, (latest) => latest === nextWithPreviousId ? snapshot : latest);
+      if (snapshotUpdate) await port.restoreOriginalVersionBody(file, snapshotUpdate);
+      throw error;
+    }
     port.tasks.patchTaskActivity(taskId, { stage: "postprocess", stageLabel: t("Updating index"), detail: t("Refreshing the note index"), progress: 94 });
     await port.refreshNoteIndex(file, { reason: "reorganize" });
     new obsidian.Notice(t("Note reorganized in place; the previous body is available in note versions."), 7000);

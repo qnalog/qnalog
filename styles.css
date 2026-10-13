@@ -1707,6 +1707,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 
 .qnalog-outline-note-btn,
 .qnalog-outline-kanban-btn,
+.qnalog-outline-vocabulary-btn,
 .qnalog-outline-settings-btn {
   width: 28px;
   height: 28px;
@@ -1717,6 +1718,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 
 .qnalog-outline-note-btn:hover,
 .qnalog-outline-kanban-btn:hover,
+.qnalog-outline-vocabulary-btn:hover,
 .qnalog-outline-settings-btn:hover {
   color: var(--text-normal);
 }
@@ -2774,6 +2776,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   font-weight: 760;
 }
 
+.qnalog-outline-head.is-idle .qnalog-outline-vocabulary-btn,
 .qnalog-outline-head.is-idle .qnalog-outline-settings-btn {
   color: color-mix(in srgb, var(--text-muted) 72%, var(--text-accent) 28%);
   width: 28px;
@@ -8520,6 +8523,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   grid-column: 2;
 }
 
+.qnalog-outline-head.is-idle .qnalog-outline-vocabulary-btn,
 .qnalog-outline-head.is-idle .qnalog-outline-settings-btn {
   color: var(--qnalog-text-tertiary);
 }
@@ -8589,6 +8593,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline-head.is-active-session .qnalog-outline-note-btn,
 .qnalog-outline-head.is-active-session .qnalog-outline-kanban-btn,
+.qnalog-outline-head.is-active-session .qnalog-outline-vocabulary-btn,
 .qnalog-outline-head.is-active-session .qnalog-outline-settings-btn {
   color: var(--qnalog-text-secondary, var(--text-muted));
   width: 28px;
@@ -11715,6 +11720,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-kanban-btn,
+.qnalog-outline.is-idle-view .qnalog-outline-vocabulary-btn,
 .qnalog-outline.is-idle-view .qnalog-outline-settings-btn {
   display: inline-flex;
   align-items: center;
@@ -11732,12 +11738,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-kanban-btn:hover,
+.qnalog-outline.is-idle-view .qnalog-outline-vocabulary-btn:hover,
 .qnalog-outline.is-idle-view .qnalog-outline-settings-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--qnalog-text-primary, var(--text-normal));
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-kanban-btn svg,
+.qnalog-outline.is-idle-view .qnalog-outline-vocabulary-btn svg,
 .qnalog-outline.is-idle-view .qnalog-outline-settings-btn svg {
   width: 15px;
   height: 15px;

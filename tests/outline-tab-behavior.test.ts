@@ -54,6 +54,17 @@ function viewWith(tab: string, sessionId: string, showRecentHome = true): Outlin
 }
 
 describe("outline sidebar tab on note, session and recording events", () => {
+  it("starts on notes when there is no session and shows the outline when recording starts or ends", () => {
+    const view = new OutlineView({} as never, {} as never);
+    expect(view.idlePanelTab || "outline").toBe("recent");
+
+    view.syncSessionOutline({ id: "session-a", segments: [] });
+    expect(view.idlePanelTab || "outline").toBe("outline");
+
+    view.syncSessionOutline(null);
+    expect(view.idlePanelTab || "outline").toBe("outline");
+  });
+
   for (const tab of TABS) {
     const label = tab || "(default)";
     it(`${label}: opening or focusing a note keeps browse tabs and resets the others to the default`, () => {

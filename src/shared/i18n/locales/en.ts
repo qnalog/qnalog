@@ -10,6 +10,7 @@
 import type { MessageTable } from "../../i18n";
 
 export const EN: MessageTable = {
+  "Export": "Export",
   "Generating title": "Generating title",
   "Generating a title for the note": "Generating a title for the note",
   "Updating note index": "Updating note index",

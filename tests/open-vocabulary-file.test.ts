@@ -18,7 +18,12 @@ function createHarness(path: string, initial?: string) {
   const folders: string[] = [];
   let content = initial || "";
   const file = new TFile(path);
-  const openFile = vi.fn(async () => undefined);
+  const leaves: Array<{ view: { file: { path: string } | null } }> = [];
+  const openLeaf = { openFile: vi.fn(async (_openedFile: TFile) => undefined), view: { file: null as { path: string } | null } };
+  openLeaf.openFile = vi.fn(async (openedFile: TFile) => { openLeaf.view.file = openedFile; leaves.push(openLeaf); });
+  const openFile = openLeaf.openFile;
+  const revealLeaf = vi.fn(async () => undefined);
+  const setActiveLeaf = vi.fn();
   const notify = vi.fn();
   const vault = {
     getAbstractFileByPath: vi.fn((target: string) => files.get(target) || null),
@@ -29,11 +34,16 @@ function createHarness(path: string, initial?: string) {
   };
   const options = {
     vault,
-    workspace: { getLeaf: vi.fn(() => ({ openFile })) },
+    workspace: {
+      getLeaf: vi.fn(() => openLeaf),
+      getLeavesOfType: vi.fn(() => leaves),
+      revealLeaf,
+      setActiveLeaf,
+    },
     getSettings: () => ({ vocabularyFile: path, industryProfile: { industry: "教育" } }),
     notify,
   };
-  return { options, files, folders, file, openFile, notify, vault, getContent: () => content };
+  return { options, files, folders, file, openFile, openLeaf, leaves, revealLeaf, setActiveLeaf, notify, vault, getContent: () => content };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -46,6 +56,7 @@ describe("openVocabularyFile", () => {
     expect(h.folders).toEqual(["Glossary"]);
     expect(h.vault.create).toHaveBeenCalledWith("Glossary/Terms.md", expect.stringContaining("## 易错写法"));
     expect(h.openFile).toHaveBeenCalledWith(h.file);
+    expect(h.options.workspace.getLeaf).toHaveBeenCalledWith(false);
     expect(h.notify).toHaveBeenCalledWith(expect.stringContaining("Glossary/Terms.md"));
   });
 
@@ -56,6 +67,27 @@ describe("openVocabularyFile", () => {
     expect(h.vault.modify).not.toHaveBeenCalled();
     expect(h.openFile).toHaveBeenCalledWith(h.file);
     expect(h.getContent()).toBe(source);
+  });
+
+  it("focuses an existing Markdown leaf that already displays the glossary", async () => {
+    const h = createHarness("Terms.md", "# Terms\n\n## 易错写法\n- typo => term\n");
+    const existingLeaf = { view: { file: h.file } };
+    h.leaves.push(existingLeaf);
+    await openVocabularyFile(h.options);
+    expect(h.openFile).not.toHaveBeenCalled();
+    expect(h.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+    expect(h.setActiveLeaf).toHaveBeenCalledWith(existingLeaf, { focus: true });
+  });
+
+  it("keeps one glossary leaf after three consecutive clicks", async () => {
+    const h = createHarness("Terms.md", "# Terms\n\n## 易错写法\n- typo => term\n");
+    await openVocabularyFile(h.options);
+    await openVocabularyFile(h.options);
+    await openVocabularyFile(h.options);
+    expect(h.openFile).toHaveBeenCalledTimes(1);
+    expect(h.openFile).toHaveBeenCalledWith(h.file);
+    expect(h.leaves).toHaveLength(1);
+    expect(h.options.workspace.getLeaf).toHaveBeenCalledTimes(1);
   });
 
   it("organizes an unstructured file before opening it", async () => {

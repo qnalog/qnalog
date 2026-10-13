@@ -1914,6 +1914,7 @@ export const ZH: MessageTable = {
   "Floating button size": "悬浮按钮大小",
   "For checking and batch filtering; not the primary display entry point.": "用于核对和批量筛选，不作为主展示入口。",
   "For example: Traditional Chinese, Deutsch, Français.": "例如：繁体中文、Deutsch、Français。",
+  "Export": "导出",
   "Generate": "生成",
   "Generate Clean Copy": "生成清稿",
   "Generate a standalone HTML report from the notes that is suitable for reading, sharing, and printing.": "把笔记内容生成适合阅读、分享和打印的独立 HTML 报告。",
