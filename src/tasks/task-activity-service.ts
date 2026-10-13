@@ -676,7 +676,7 @@ export class TaskActivityService {
     const wp = s && s.workProgress ? s.workProgress : null;
     const wpLabel = wp && wp.label ? String(wp.label) : "";
     const pct = wp && wp.percent != null && Number.isFinite(Number(wp.percent)) ? ` ${Math.round(Number(wp.percent))}%` : "";
-    const postProcessing = !!(wp && (wp.stage === "write-note" || wp.stage === "done"));
+    const postProcessing = !!(wp && ["write-note", "naming", "indexing", "done"].includes(wp.stage));
 
     // 0) 导入多文件批量转写
     if (this._importBusy && Number(this._importBusy.total) > 0) {
@@ -825,7 +825,7 @@ export class TaskActivityService {
     if (queueDetail && ["running", "waiting", "slow", "stalled"].includes(queueDetail.liveness)) return queueDetail.step;
     const s = this.host.sessionStore.get();
     const wp = s && s.workProgress;
-    const postProcessing = !!(wp && (wp.stage === "write-note" || wp.stage === "done"));
+    const postProcessing = !!(wp && ["write-note", "naming", "indexing", "done"].includes(wp.stage));
     if (s && (s.finalizing || postProcessing)) return (wp && wp.label) || t("AI organizing");
     if (s && Number(s.activeSegmentJobs) > 0) return (s.workProgress && s.workProgress.label) || t("Transcription in progress");
     if (this.host.recorder && this.host.recorder.state === "recording") return t("Active recording");
@@ -1144,7 +1144,8 @@ export class TaskActivityService {
       const pct = pctOf(wp);
       const modeLabel = modeLabelOf(s.mode);
       const srcKind = s.source === "import" ? t("Import organization") : s.source === "text-import" ? t("Text organization") : t("Recording organization");
-      if (s.finalizing) {
+      const namingOrIndexing = !!(wp && (wp.stage === "naming" || wp.stage === "indexing"));
+      if (s.finalizing || namingOrIndexing) {
         return { kind: srcKind, modeLabel, step: (wp && wp.label) || t("AI organizing"), stepDetail: (wp && wp.detail) || "", percent: pct, count: "" };
       }
       const rec = this.host.recorder;
