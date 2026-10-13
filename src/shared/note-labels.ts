@@ -56,8 +56,6 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   importedTextSources: { key: "Imported text ({0} sources)", params: 1, re: /导入文本原文（\d+ 个来源）|Imported text \(\d+ sources\)/ },
   importSource: { key: "Import source", re: /导入来源|Import source/ },
   importInfo: { key: "Import info", re: /导入信息|Import info/ },
-  previousVersion: { key: "Previous version (before reorganizing · {0})", params: 1, re: /上一版(?:纪要|笔记)（重新整理前 · [^）]*）|Previous version \(before reorganizing · [^)]*\)/ },
-  previousVersionEmpty: { key: "(previous version was empty)", re: /（上一版为空）|\(previous version was empty\)/ },
   liveOutlineDraft: { key: "Live outline while recording (draft)", re: /录音中实时大纲（草稿）|Live outline while recording \(draft\)/ },
   outlineIntro: {
     key: "Outline generated from the segments completed while recording; the final note takes precedence. The time markers let you jump back to the matching parts.",

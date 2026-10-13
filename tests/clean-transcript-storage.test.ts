@@ -219,6 +219,31 @@ afterEach(() => {
 });
 
 describe("clean transcript storage", () => {
+  it("rejects reorganization before model generation when an active block has no snapshot record", async () => {
+    const { files, vault } = createMemoryVault();
+    const sourceFile = new obsidian.TFile("QnALog/notes/active-without-snapshot.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/notes" };
+    const versions = new VersionStore(makeVersionHost(
+      { vault, metadataCache: { getFileCache: () => ({ frontmatter: {} }) } },
+      () => settings,
+      async () => undefined,
+    ));
+    const originalPath = await versions.ensureOriginalVersionForSource(sourceFile);
+    if (!originalPath) throw new Error("Original snapshot was not created");
+    const source = files.get(sourceFile.path);
+    if (!source) throw new Error("Source note was not created");
+    source.data = sourceContent.replace("First generated minutes must stay visible.", "<!-- qnalog-active-version-start -->\nActive body\n<!-- qnalog-active-version-end -->");
+    const sourceId = getSourceIdFromMarkdown(sourceContent, sourceFile);
+    const folder = getVersionStoreFolder(settings, sourceId);
+    const manifestPath = `${folder}/manifest.json`;
+    const manifest = JSON.parse(await vault.adapter.read(manifestPath)) as { versions: Array<{ kind: string }> };
+    manifest.versions = manifest.versions.filter((record) => record.kind !== "source-original");
+    await vault.adapter.write(manifestPath, JSON.stringify(manifest));
+
+    await expect(versions.validateOriginalVersionForReorganization(sourceFile)).rejects.toThrow("Could not read version metadata");
+  });
+
   it("creates a missing original snapshot from the reorganized source content", async () => {
     const { files, vault } = createMemoryVault();
     const currentSource = sourceContent.replace("First generated minutes must stay visible.", "New organized body.");
@@ -282,11 +307,9 @@ describe("clean transcript storage", () => {
       mergeAndPolish: async () => "---\ntitle: Updated title\n---\nNew organized body.",
       stripModeSuggestionBlocks: (text) => text,
       validateOriginalVersionForReorganization: (file) => versions.validateOriginalVersionForReorganization(file),
-      ensureOriginalVersionForSource: (file) => versions.ensureOriginalVersionForSource(file),
       replaceOriginalVersionBody: (file, payload) => versions.replaceOriginalVersionBody(file, payload),
       restoreOriginalVersionBody: (file, update) => versions.restoreOriginalVersionBody(file, update),
       switchVersion: (path, fallback) => versions.switchVersion(path, fallback),
-      saveVersion: (file, content, inputSegments, input) => versions.saveVersion(file, content, inputSegments, input),
       refreshNoteIndex: refresh,
       tasks: taskPort,
     }, sourceFile);
@@ -294,7 +317,7 @@ describe("clean transcript storage", () => {
     const current = await vault.read(sourceFile);
     expect(current).toContain("New organized body.");
     expect(current).toMatch(/qnalog_custom: ["']?keep-me/);
-    expect(current).toContain("qnalog_pre_reorganize_version:");
+    expect(current).not.toContain("qnalog_pre_reorganize_version:");
     expect(current).toContain("data-qnalog=\"active-version-start\"");
     expect((await versions.findOriginalVersionForSource(sourceFile))?.path).toBe(originalPath);
     const originalCache = files.get(originalPath)?.data || "";
@@ -302,14 +325,10 @@ describe("clean transcript storage", () => {
     const folder = getVersionStoreFolder(settings, sourceId);
     const manifest = JSON.parse(await vault.adapter.read(`${folder}/manifest.json`)) as { activeVersionId: string; versions: Array<{ id: string; fileName: string; kind: string }> };
     const originalRecord = manifest.versions.find((record) => record.kind === "source-original");
-    const priorRecord = manifest.versions.find((record) => record.kind === "pre-reorganize");
     expect(manifest.activeVersionId).toBe(originalRecord?.id);
-    expect(current).toContain(`qnalog_pre_reorganize_version: "${priorRecord?.id}"`);
+    expect(manifest.versions.some((record) => record.kind === "pre-reorganize")).toBe(false);
     expect(files.get(derivedPath)?.data).toBe(derivedCacheBefore);
 
-    if (!priorRecord) throw new Error("Prior version record was not written");
-    await versions.switchVersion(`${folder}/${priorRecord.fileName}`, sourceFile.path);
-    expect(await vault.read(sourceFile)).toContain("First generated minutes must stay visible.");
     await versions.switchVersion(originalPath, sourceFile.path);
     expect(await vault.read(sourceFile)).toContain("New organized body.");
   });
