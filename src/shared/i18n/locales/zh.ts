@@ -2707,6 +2707,7 @@ export const ZH: MessageTable = {
   "Transcription retry returned an empty result (the service responded HTTP 200 with no text)": "转写重试返回空结果（服务 HTTP 200 但无文字）",
   "Automatic re-organization after backfilling transcription failed": "补转写后自动重新整理失败",
   "Merge returned an empty result": "合并返回为空",
+  "The note changed while the merge was running. The generated result was not written; review the note and retry.": "合并期间笔记内容发生变化，生成结果未写入。请检查笔记后重试。",
   "Note not found: {0}": "笔记不存在：{0}",
   "Missing mode": "缺少 mode",
   "The current transcription service is a streaming service ({0}), so segment-by-segment retry is unavailable — streaming services only push in real time while recording and cannot upload already-recorded segments for transcription. Switch to a segment-based or whole-file transcription service on the \"API\" page, or re-transcribe the whole recording from the session note.": "当前转写服务是流式服务（{0}），不能逐段重试——流式服务只支持录音时实时推送，无法把已录好的分段上传转写。请在「API」页改用分段或整文件转写服务，或在会话笔记里对整场录音重新转写。",

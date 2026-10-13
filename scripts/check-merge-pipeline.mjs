@@ -209,6 +209,10 @@ const app = {
       }
       f._content = c;
     },
+    process: async (f, transform) => {
+      f._content = transform(f._content || "");
+      return f._content;
+    },
     delete: async () => undefined,
     on: () => ({}),
   },

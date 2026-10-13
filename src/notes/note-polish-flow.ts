@@ -1,6 +1,7 @@
 import * as obsidian from "obsidian";
 import type { RecordingSession, Segment } from "../shared/types";
 import { labelText } from "../shared/note-labels";
+import { t } from "../shared/i18n";
 import { isTextImportSession } from "../briefing/note-layout-policy";
 import {
   assembleRealtimeOutlineDetails,
@@ -43,7 +44,7 @@ function formatCurrentMoment(readInput: () => string): string | undefined {
   return invokeMoment(moment, readInput()).format("YYYY-MM-DD HH:mm:ss");
 }
 
-export type NotePolishVault = Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "modify">;
+export type NotePolishVault = Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "modify" | "process">;
 
 export interface NotePolishFlowHost {
   getVault(): NotePolishVault;
@@ -61,10 +62,11 @@ export async function rewriteConsolidatedFlow(
   session: RecordingSession,
   polished: string,
   continuationSessionId = "",
+  expectedMarkdown?: string,
 ): Promise<void> {
   const file = host.getVault().getAbstractFileByPath(session.mdPath);
   if (!(file instanceof obsidian.TFile)) return;
-  const currentMarkdown = await host.getVault().read(file);
+  const currentMarkdown = expectedMarkdown ?? await host.getVault().read(file);
   readTranscriptBlocks(currentMarkdown);
   const meta = host.getModeMeta(session);
   const moment = (window as unknown as NotePolishWindow).moment;
@@ -135,7 +137,19 @@ export async function rewriteConsolidatedFlow(
       textImportSource: textImportSourceBlock,
     },
   });
-  await host.getVault().modify(file, content);
+  if (expectedMarkdown === undefined) {
+    await host.getVault().modify(file, content);
+    return;
+  }
+  let changed = false;
+  await host.getVault().process(file, (latest) => {
+    if (latest !== expectedMarkdown) {
+      changed = true;
+      return latest;
+    }
+    return content;
+  });
+  if (changed) throw new Error(t("The note changed while the merge was running. The generated result was not written; review the note and retry."));
 }
 
 export async function appendPolishBlockFlow(

@@ -13,7 +13,7 @@ export interface QueueMergeRetryPort {
   runContinuationAppend(task: MergeRetryTask): Promise<QueueTaskDeferred | void>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, speakerFrontmatter: Record<string, unknown> | null): Promise<string>;
   shouldRewriteConsolidated(session: MergeRetrySession): boolean;
-  rewriteConsolidated(session: MergeRetrySession, polished: string): Promise<void>;
+  rewriteConsolidated(session: MergeRetrySession, polished: string, expectedMarkdown: string): Promise<void>;
   mergeLeadingFrontmatter(documentText: string, generated: string): { content: string; body: string };
   getModePrefix(mode: string): string;
   clearCommittedBriefingCheckpoint(sessionMeta: unknown): Promise<void>;
@@ -58,7 +58,7 @@ async function retryMergeTaskImpl(port: QueueMergeRetryPort, task: MergeRetryTas
     multiSourceAudio: task.source === "merged-notes",
   };
   if (port.shouldRewriteConsolidated(retrySession)) {
-    await port.rewriteConsolidated(retrySession, polished);
+    await port.rewriteConsolidated(retrySession, polished, currentMarkdown);
   } else {
     const vault = port.getVault();
     const cur = await vault.read(file);
