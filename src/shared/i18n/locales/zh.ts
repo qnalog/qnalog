@@ -1081,7 +1081,6 @@ export const ZH: MessageTable = {
   "Writing": "写入中",
   "Updating index": "更新索引",
   "Saving a recoverable version before replacing the note body": "替换笔记正文前保存可恢复版本",
-  "Refreshing the note index": "正在刷新笔记索引",
   "Generating a new note body": "正在生成新的笔记正文",
   "Reading the original transcript": "正在读取原始转写",
   "Before reorganization": "重新整理前",
