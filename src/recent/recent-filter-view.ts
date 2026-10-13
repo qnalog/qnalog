@@ -9,6 +9,20 @@ export interface RecentFilterChip {
   label: string;
 }
 
+export type RecentFilterPopoverSectionId = "time" | "mode" | "group";
+
+export interface RecentFilterPopoverOption {
+  id: string;
+  label: string;
+}
+
+export interface RecentFilterPopoverSection {
+  id: RecentFilterPopoverSectionId;
+  label: string;
+  selected: string;
+  options: RecentFilterPopoverOption[];
+}
+
 export const RECENT_FILTER_ICONS = {
   search: "search",
   filterMenu: "sliders-horizontal",
@@ -43,6 +57,31 @@ export function listActiveRecentFilterChips(
 
 export function shouldShowFolderRootHeader(rootCount: number): boolean {
   return rootCount !== 1;
+}
+
+export function buildRecentFilterPopoverSections(
+  state: RecentFilterState & { group: string },
+  options: {
+    time: RecentFilterPopoverOption[];
+    mode: RecentFilterPopoverOption[];
+    group: RecentFilterPopoverOption[];
+  },
+): RecentFilterPopoverSection[] {
+  const timeOrder = ["all", "today", "week", "month"];
+  const timeOptions = [...options.time].sort((left, right) => {
+    const leftOrder = timeOrder.indexOf(left.id);
+    const rightOrder = timeOrder.indexOf(right.id);
+    return (leftOrder < 0 ? timeOrder.length : leftOrder) - (rightOrder < 0 ? timeOrder.length : rightOrder);
+  });
+  return [
+    { id: "time", label: "Time range", selected: state.time || "all", options: timeOptions },
+    { id: "mode", label: "Template", selected: state.mode || "all", options: [...options.mode] },
+    { id: "group", label: "Group by", selected: state.group || "folder", options: [...options.group] },
+  ];
+}
+
+export function shouldShowUncategorizedRootGroup(rootCount: number, childFolderCount: number, directNoteCount: number): boolean {
+  return rootCount === 1 && childFolderCount > 0 && directNoteCount > 0;
 }
 
 export function matchesRecentSearch(

@@ -12123,6 +12123,15 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 7px;
 }
 
+.qnalog-outline {
+  --qnalog-row-icon: 32px;
+  --qnalog-row-column-gap: 12px;
+  --qnalog-row-padding: 8px;
+  --qnalog-row-title-line: 20px;
+  --qnalog-row-meta-line: 16px;
+  --qnalog-row-action-size: 28px;
+}
+
 .qnalog-outline .qnalog-outline-recent-searchrow {
   display: flex;
   flex: 0 0 auto;
@@ -12198,16 +12207,46 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
 }
 
+.qnalog-outline .qnalog-outline-recent-search-clear {
+  color: var(--text-faint);
+  background: transparent;
+  box-shadow: none;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+}
+
 .qnalog-outline .qnalog-outline-recent-search-clear:hover,
 .qnalog-outline .qnalog-outline-recent-filter-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
+.qnalog-outline .qnalog-outline-recent-search-clear:hover {
+  color: var(--text-normal);
+  background: transparent;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear:hover::before {
+  background: var(--background-modifier-hover);
+}
+
 .qnalog-outline .qnalog-outline-recent-search-clear svg,
 .qnalog-outline .qnalog-outline-recent-filter-btn > svg {
   width: 18px;
   height: 18px;
+}
+
+.qnalog-outline .qnalog-outline-recent-search-clear svg {
+  z-index: 1;
+  width: 12px;
+  height: 12px;
 }
 
 .qnalog-outline .qnalog-outline-recent-filter-btn.is-active {
@@ -12245,9 +12284,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   min-width: 0;
   max-width: 100%;
-  min-height: 32px;
-  padding: 0 5px 0 8px;
-  gap: 5px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 4px 0 10px;
+  gap: 6px;
   border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--background-secondary) 62%, transparent);
@@ -12272,20 +12312,29 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-active-chip button {
+  position: relative;
   display: inline-flex;
-  flex: 0 0 32px;
+  flex: 0 0 20px;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  height: 32px;
+  width: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  height: 20px;
   padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: var(--text-muted);
+  box-shadow: none;
+  color: var(--text-faint);
   cursor: pointer;
+}
+
+.qnalog-outline .qnalog-outline-recent-active-chip button::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
 }
 
 .qnalog-outline .qnalog-outline-recent-active-chip button:hover {
@@ -12294,8 +12343,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-active-chip button svg {
-  width: 14px;
-  height: 14px;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
 }
 
 .qnalog-outline .qnalog-outline-recent-active-clear {
@@ -12311,6 +12361,160 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-active-clear:hover {
   background: transparent;
   color: var(--text-accent);
+}
+
+.qnalog-recent-filter-popover {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(220px, 60vh);
+  padding: 12px;
+  gap: 10px;
+  overflow: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  color: var(--text-normal);
+}
+
+.qnalog-recent-filter-popover[hidden] {
+  display: none;
+}
+
+.qnalog-recent-filter-popover-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.qnalog-recent-filter-popover-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+
+.qnalog-recent-filter-popover-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 16px;
+}
+
+.qnalog-recent-filter-popover-options {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.qnalog-recent-filter-popover-section.is-time .qnalog-recent-filter-popover-options {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.qnalog-recent-filter-popover-section.is-group .qnalog-recent-filter-popover-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-options {
+  display: flex;
+  flex-wrap: wrap;
+  max-height: 108px;
+  overflow-y: auto;
+  gap: 6px;
+  padding: 2px 1px;
+}
+
+.qnalog-recent-filter-popover-option {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option {
+  flex: 0 0 auto;
+  position: relative;
+  height: 32px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option::before {
+  position: absolute;
+  z-index: 0;
+  inset: 2px 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  content: "";
+  pointer-events: none;
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option > * {
+  position: relative;
+  z-index: 1;
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option:hover {
+  background: transparent;
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option:hover::before {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option[aria-pressed="true"] {
+  border-color: transparent;
+  background: transparent;
+}
+
+.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option[aria-pressed="true"]::before {
+  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
+}
+
+.qnalog-recent-filter-popover-option:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-recent-filter-popover-option[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
+  color: var(--text-normal);
+}
+
+.qnalog-outline.is-mobile {
+  --qnalog-row-action-size: 36px;
+}
+
+.qnalog-outline.is-mobile .qnalog-outline-recent-actions {
+  margin-block: -10px;
+}
+
+.qnalog-outline.is-mobile .qnalog-topics-prompt-row {
+  padding-inline-start: 52px;
+}
+
+@media (max-width: 479px) {
+  .qnalog-recent-filter-popover {
+    left: 16px !important;
+    width: calc(100vw - 32px) !important;
+    max-height: 60vh !important;
+  }
 }
 
 .qnalog-outline .qnalog-outline-recent.qnalog-outline-recent--flat-root {
@@ -12361,7 +12565,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-group:first-child {
-  padding-top: 10px;
+  padding-top: 0;
 }
 
 .qnalog-outline .qnalog-outline-recent-axis {
@@ -12467,7 +12671,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   min-width: 0;
   min-height: 22px;
-  margin: 0 0 5px 15px;
+  margin: 16px 0 4px 15px;
   padding: 0;
   gap: 6px;
   color: var(--qnalog-text-primary, var(--text-normal));
@@ -12525,13 +12729,14 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline .qnalog-outline-recent-row {
   position: relative;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: var(--qnalog-row-icon) minmax(0, 1fr);
   align-items: center;
   min-width: 0;
-  min-height: 48px;
+  height: 56px;
+  min-height: 56px;
   margin: 0;
-  padding: 7px 8px;
-  gap: 12px;
+  padding: var(--qnalog-row-padding);
+  gap: var(--qnalog-row-column-gap);
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -12554,9 +12759,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: var(--qnalog-row-icon);
+  min-width: var(--qnalog-row-icon);
+  height: var(--qnalog-row-icon);
   margin: 0;
   border: var(--border-width, 1px) solid color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
   border-radius: 50%;
@@ -12565,17 +12770,19 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-chip svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .qnalog-outline .qnalog-outline-recent-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0 8px;
+  row-gap: 4px;
+  column-gap: 8px;
   min-width: 0;
   padding-right: 0;
+  min-height: 40px;
 }
 
 .qnalog-outline .qnalog-outline-recent-title-line {
@@ -12588,7 +12795,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-primary, var(--text-normal));
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.4;
+  line-height: var(--qnalog-row-title-line);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12601,10 +12808,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   grid-column: 1;
   min-width: 0;
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: 0;
   color: var(--qnalog-text-secondary, var(--text-muted));
   font-size: 11px;
-  line-height: 1.35;
+  line-height: var(--qnalog-row-meta-line);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12617,22 +12824,34 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 3px;
-  margin-top: 3px;
+  gap: 4px;
+  margin-block: -6px;
+  margin-right: -4px;
   transform: none;
 }
 
 /* 动作与元数据同列排列，标题行跨满内容宽度；异常状态标记不再缩窄纪要标题。 */
 
 .qnalog-outline .qnalog-outline-recent-action {
-  min-width: 36px;
-  height: 36px;
-  padding: 0 7px;
+  display: inline-flex;
+  flex: 0 0 var(--qnalog-row-action-size);
+  align-items: center;
+  justify-content: center;
+  width: var(--qnalog-row-action-size);
+  min-width: var(--qnalog-row-action-size);
+  height: var(--qnalog-row-action-size);
+  padding: 0;
   border: 0;
   border-radius: var(--radius-s);
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-text-secondary, var(--text-muted));
+}
+
+.qnalog-outline .qnalog-outline-recent-action-icon,
+.qnalog-outline .qnalog-outline-recent-action-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .qnalog-outline .qnalog-outline-recent-action:hover {
@@ -12655,10 +12874,60 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline .qnalog-outline-recent-variant {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
   min-height: 32px;
-  margin-left: 46px;
-  padding: 5px 8px;
+  margin: 0;
+  padding: 4px 8px 4px 52px;
+  gap: 8px;
   border-radius: 8px;
+}
+
+.qnalog-outline .qnalog-outline-recent-variant:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-outline .qnalog-outline-recent-variant.is-active {
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+}
+
+.qnalog-outline .qnalog-outline-recent-row.is-active + .qnalog-outline-recent-variant {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.qnalog-outline .qnalog-outline-recent-variant-chip svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qnalog-outline .qnalog-outline-recent-variant-name {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.qnalog-outline .qnalog-topics-prompt-row {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 8px 4px 52px;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.qnalog-outline .qnalog-topics-prompt-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-outline .qnalog-topics-prompt-row button {
+  min-height: 24px;
+  padding: 4px;
+  line-height: 16px;
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-content {
@@ -12670,15 +12939,20 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline .qnalog-outline-recent-folder-node {
   min-width: 0;
+  margin-top: 16px;
   margin-left: 17px;
 }
 
 .qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-folder-node {
-  margin-left: calc((var(--qnalog-folder-depth, 1) - 1) * 12px);
+  margin-left: calc(max(0, var(--qnalog-folder-depth, 1) - var(--qnalog-folder-parent-depth, 1)) * 12px);
 }
 
 .qnalog-outline .qnalog-outline-recent--flat-root .qnalog-outline-recent-folder-content > .qnalog-outline-recent-row {
   margin-left: 12px;
+}
+
+.qnalog-outline .qnalog-outline-recent--flat-root > .qnalog-outline-recent-row + .qnalog-outline-recent-row {
+  margin-top: 2px;
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-node-title {
@@ -12686,6 +12960,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
   min-width: 0;
   min-height: 28px;
+  margin-bottom: 4px;
   padding: 3px 8px 3px 0;
   gap: 6px;
   color: var(--qnalog-text-primary, var(--text-normal));
@@ -12726,10 +13001,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-group-count {
   order: 3;
-}
-
-.menu.qnalog-recent-filter-menu {
-  min-width: 220px;
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-node.is-collapsed > .qnalog-outline-recent-folder-content,

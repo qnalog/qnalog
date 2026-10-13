@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRecentFilterPopoverSections,
   countActiveRecentFilters,
   listActiveRecentFilterChips,
   matchesRecentSearch,
   RECENT_FILTER_ICONS,
   shouldShowFolderRootHeader,
+  shouldShowUncategorizedRootGroup,
 } from "../src/recent/recent-filter-view";
 
 describe("recent filter view helpers", () => {
@@ -40,6 +42,28 @@ describe("recent filter view helpers", () => {
     expect(shouldShowFolderRootHeader(0)).toBe(true);
     expect(shouldShowFolderRootHeader(1)).toBe(false);
     expect(shouldShowFolderRootHeader(2)).toBe(true);
+  });
+
+  it("builds the filter popover sections with the active options selected", () => {
+    const sections = buildRecentFilterPopoverSections(
+      { time: "today", mode: "meeting", group: "folder" },
+      {
+        time: [{ id: "week", label: "This week" }, { id: "all", label: "All dates" }, { id: "today", label: "Today" }],
+        mode: [{ id: "all", label: "All templates" }, { id: "meeting", label: "Meeting" }],
+        group: [{ id: "time", label: "By time" }, { id: "folder", label: "By folder" }],
+      },
+    );
+    expect(sections.map(({ id, selected }) => [id, selected])).toEqual([
+      ["time", "today"], ["mode", "meeting"], ["group", "folder"],
+    ]);
+    expect(sections[0].options.map(({ id }) => id)).toEqual(["all", "today", "week"]);
+  });
+
+  it("shows an uncategorized group only for a single root with children and direct notes", () => {
+    expect(shouldShowUncategorizedRootGroup(1, 0, 2)).toBe(false);
+    expect(shouldShowUncategorizedRootGroup(1, 2, 3)).toBe(true);
+    expect(shouldShowUncategorizedRootGroup(1, 2, 0)).toBe(false);
+    expect(shouldShowUncategorizedRootGroup(2, 2, 3)).toBe(false);
   });
 
   it("matches title, display time, and template without case sensitivity", () => {

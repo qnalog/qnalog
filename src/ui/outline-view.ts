@@ -72,7 +72,8 @@ import { getSessionLatestSegmentEndMs, isSameVaultPath, probeAudioDurationMs, re
 import { clampProgress } from "../notes/note-markdown";
 
 import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath } from "../recent/recent-notes";
-import { countActiveRecentFilters, listActiveRecentFilterChips, matchesRecentSearch, RECENT_FILTER_ICONS, shouldShowFolderRootHeader } from "../recent/recent-filter-view";
+import { buildRecentFilterPopoverSections, countActiveRecentFilters, listActiveRecentFilterChips, matchesRecentSearch, RECENT_FILTER_ICONS, shouldShowFolderRootHeader, shouldShowUncategorizedRootGroup } from "../recent/recent-filter-view";
+import { RecentFilterPopover } from "./recent-filter-popover";
 import { getRecentModePrefixEntries, stripRecentDatePrefix } from "../recent/recent-note-mode";
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendAskEntry, buildAskContext } from "../notes/ask-panel";
@@ -256,6 +257,7 @@ export class OutlineView extends obsidian.ItemView {
   declare recentGroupBy: string;
   /** 纪要列表里被折叠的文件夹路径。 */
   declare recentCollapsedFolders: Set<string>;
+  declare recentFilterPopover: RecentFilterPopover | null;
   /** 沉淀面板当前选中的分组（person / todo / hotword）。 */
   declare sedimentGroup: string;
   /** 分组切换浮层是否展开。 */
@@ -331,6 +333,7 @@ export class OutlineView extends obsidian.ItemView {
     // 纪要列表默认按文件夹组织；时间线仍可从筛选条切换回来。
     this.recentGroupBy = "folder";
     this.recentCollapsedFolders = new Set();
+    this.recentFilterPopover = null;
     this.sedimentGroup = "person";
     this.sedimentSwitcherOpen = false;
     this.sedimentExpandedGroups = new Set(); // 哪些候选分组已t("Expand all")（默认只显示前 8 条）
@@ -407,6 +410,8 @@ export class OutlineView extends obsidian.ItemView {
     }
   }
   async onClose() {
+    this.recentFilterPopover?.dispose();
+    this.recentFilterPopover = null;
     if (this.unsubscribeRecorder) { this.unsubscribeRecorder(); this.unsubscribeRecorder = null; }
     if (this._renderRaf) { cancelAnimationFrame(this._renderRaf); this._renderRaf = 0; }
     if (this._recentVaultRefreshTimer) { window.clearTimeout(this._recentVaultRefreshTimer); this._recentVaultRefreshTimer = 0; }
@@ -426,6 +431,7 @@ export class OutlineView extends obsidian.ItemView {
   }
   // A note or topic page was opened or focused. A browse tab stays; the other tabs reset to the default as before.
   handleActiveLeafChange() {
+    this.recentFilterPopover?.close();
     if (!isBrowseTab(this.idlePanelTab)) this.showRecentHome = true;
     this.idlePanelTab = nextSidebarTab(this.idlePanelTab, "leaf-change");
   }
@@ -555,6 +561,7 @@ export class OutlineView extends obsidian.ItemView {
   render() {
     const root = this.containerEl.children[1];
     if (!root) return;
+    if (this.idlePanelTab !== "recent") this.recentFilterPopover?.close();
     const preserveScroll = this._preserveScrollOnNextRender === true;
     const scrollBeforeRender = root.scrollTop;
     // The list being replaced keeps its position, so the next visit to that tab starts where the user left it.
@@ -1673,7 +1680,7 @@ export class OutlineView extends obsidian.ItemView {
     this.renderSedimentPrompt(parent, {
       icon: "sparkles",
       subtitle: this.formatSedimentNoteLabel(file),
-      title: i18nT("AI has not read these notes yet"),
+      title: i18nT("AI has not read this note yet"),
       desc: i18nT("Scan once to organize people, tasks, knowledge, and hotwords together"),
       primaryText: i18nT("Scan this note"),
       onPrimary: () => this.requestSedimentExtraction(file, !!(state.peopleScanned || state.vocabScanned || (state.currentPeople && state.currentPeople.length) || (state.ignoredPeople && state.ignoredPeople.length) || state.otherPeopleCount)),
@@ -1709,7 +1716,7 @@ export class OutlineView extends obsidian.ItemView {
     const more = list.createDiv({
       cls: "qnalog-sediment-more is-clickable",
       text: i18nT(expanded ? "Collapse" : "") || `${i18nT("Another ")}${hiddenCount}${i18nT(" items · click to expand")}`,
-      attr: { role: "button", tabindex: "0", title: expanded ? i18nT("AI is identifying people and their relationships") : i18nT("Show all candidates") },
+      attr: { role: "button", tabindex: "0", title: expanded ? i18nT("Collapse") : i18nT("Show all candidates") },
     });
     const toggle = (evt) => {
       if (evt) evt.stopPropagation();
@@ -1974,7 +1981,7 @@ export class OutlineView extends obsidian.ItemView {
     const input = (activeWindow as Window & { createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K] }).createEl("input");
     input.type = "text";
     input.className = "qnalog-todo-inline-input is-owner";
-    input.placeholder = i18nT("AI will fill gaps during transcription...");
+    input.placeholder = i18nT("Enter name");
     input.value = raw.owner || "";
     fieldEl.replaceWith(input);
     const panel = content.createDiv({ cls: "qnalog-todo-inline-panel is-owner" });
@@ -5258,41 +5265,21 @@ export class OutlineView extends obsidian.ItemView {
     this.render();
   }
 
-  showRecentFilterMenu(evt) {
-    evt.preventDefault();
-    evt.stopPropagation();
-    const menu = new obsidian.Menu();
-    const filters = this.getRecentFilters();
-    const addSection = (title, options, current, select) => {
-      menu.addItem((item) => item.setTitle(i18nT(title)).setDisabled(true));
-      for (const option of options) {
-        menu.addItem((item) => {
-          item.setTitle(i18nT(option.label));
-          if (option.id === current) item.setChecked(true);
-          item.onClick(() => select(option.id));
-        });
-      }
-    };
-    const timeOptions = [
-      ...RECENT_TIME_FILTER_OPTIONS.filter((option) => option.id === "all"),
-      ...RECENT_TIME_FILTER_OPTIONS.filter((option) => option.id !== "all"),
-    ];
-    addSection("Time range", timeOptions, filters.time || "all", (value) => this.setRecentFilter("time", value));
-    menu.addSeparator();
-    addSection("Template", this.getRecentModeFilterOptions(), filters.mode || "all", (value) => this.setRecentFilter("mode", value));
-    menu.addSeparator();
-    addSection("Group by", RECENT_GROUP_OPTIONS, this.getRecentGroupBy(), (value) => this.setRecentGroupBy(value));
+  getRecentFilterPopoverSections() {
+    return buildRecentFilterPopoverSections(
+      { ...this.getRecentFilters(), group: this.getRecentGroupBy() },
+      { time: RECENT_TIME_FILTER_OPTIONS, mode: this.getRecentModeFilterOptions(), group: RECENT_GROUP_OPTIONS },
+    );
+  }
 
-    const target = evt.currentTarget instanceof HTMLElement ? evt.currentTarget : null;
-    if (target && typeof menu.showAtPosition === "function") {
-      const rect = target.getBoundingClientRect();
-      const position = { x: Math.round(rect.right), y: Math.round(rect.bottom + 4), left: true };
-      this.showMenuAtPosition(menu, position, "qnalog-recent-filter-menu");
-      // Menu DOM is created during showAtPosition; re-position after its width class has taken effect.
-      window.requestAnimationFrame(() => menu.showAtPosition(position));
-      return;
+  toggleRecentFilterPopover(button, searchRow) {
+    if (!this.recentFilterPopover) {
+      this.recentFilterPopover = new RecentFilterPopover((section, value) => {
+        if (section === "time" || section === "mode") this.setRecentFilter(section, value);
+        else this.setRecentGroupBy(value);
+      });
     }
-    this.showMenuAtMouse(menu, evt, "qnalog-recent-filter-menu");
+    this.recentFilterPopover.toggle(button, searchRow, this.getRecentFilterPopoverSections());
   }
 
   getRecentModeFilterOptions() {
@@ -5374,11 +5361,6 @@ export class OutlineView extends obsidian.ItemView {
     this.markMenuSpec(menu, extraClass);
   }
 
-  showMenuAtPosition(menu, position, extraClass = "") {
-    menu.showAtPosition(position);
-    this.markMenuSpec(menu, extraClass);
-  }
-
   renderRecentFilterBar(parent, allRecents, resultsHost) {
     const filters = this.getRecentFilters();
     const wrap = parent.createDiv({ cls: "qnalog-outline-recent-filter-wrap" });
@@ -5426,12 +5408,18 @@ export class OutlineView extends obsidian.ItemView {
         type: "button",
         title: i18nT("Filter and view options"),
         "aria-label": i18nT("Filter and view options"),
-        "aria-haspopup": "menu",
+        "aria-haspopup": "dialog",
+        "aria-expanded": "false",
       },
     });
     try { obsidian.setIcon(filterButton, RECENT_FILTER_ICONS.filterMenu); } catch { /* intentionally empty */ }
     if (activeCount) filterButton.createSpan({ cls: "qnalog-outline-recent-filter-badge", text: String(activeCount) });
-    filterButton.addEventListener("click", (evt) => this.showRecentFilterMenu(evt));
+    filterButton.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      this.toggleRecentFilterPopover(filterButton, searchRow);
+    });
+    this.recentFilterPopover?.setAnchor(filterButton, searchRow, this.getRecentFilterPopoverSections());
 
     const chips = listActiveRecentFilterChips(filters, (kind, id) => this.getRecentFilterLabel(kind, id));
     if (chips.length) {
@@ -5646,10 +5634,12 @@ export class OutlineView extends obsidian.ItemView {
       applyCollapsedState(String(this._recentSearch || "").trim() ? false : this.recentCollapsedFolders.has(collapseKey));
     };
 
-    const renderNestedFolder = (parent, node) => {
+    const renderNestedFolder = (parent, node, parentDepth = 1) => {
       const nodeEl = parent.createDiv({ cls: "qnalog-outline-recent-folder-node" });
       const maxDepth = flatRoot ? 3 : 6;
-      nodeEl.style.setProperty("--qnalog-folder-depth", `${Math.min(maxDepth, Math.max(1, Number(node.depth) || 1))}`);
+      const folderDepth = Math.min(maxDepth, Math.max(1, Number(node.depth) || 1));
+      nodeEl.style.setProperty("--qnalog-folder-depth", `${folderDepth}`);
+      nodeEl.style.setProperty("--qnalog-folder-parent-depth", `${Math.min(maxDepth, Math.max(1, parentDepth))}`);
       const title = nodeEl.createDiv({ cls: "qnalog-outline-recent-folder-node-title" });
       const toggle = title.createSpan({ cls: "qnalog-outline-recent-folder-toggle" });
       const icon = title.createSpan({ cls: "qnalog-outline-recent-folder-node-icon" });
@@ -5658,7 +5648,7 @@ export class OutlineView extends obsidian.ItemView {
       title.createSpan({ cls: "qnalog-outline-recent-group-count", text: `${node.total}${i18nT(" notes")}` });
       const content = nodeEl.createDiv({ cls: "qnalog-outline-recent-folder-content" });
       // 与常见文件管理器一致：同级先显示子文件夹，再显示当前文件夹直属纪要。
-      for (const child of sortNodes(node.children)) renderNestedFolder(content, child);
+      for (const child of sortNodes(node.children)) renderNestedFolder(content, child, folderDepth);
       for (const item of node.items) this.renderRecentNoteRow(content, item, activePath);
       bindFolderToggle(title, nodeEl, node, toggle, icon);
     };
@@ -5666,7 +5656,19 @@ export class OutlineView extends obsidian.ItemView {
     for (const root of sortNodes(roots)) {
       if (flatRoot) {
         for (const child of sortNodes(root.children)) renderNestedFolder(list, child);
-        for (const item of root.items) this.renderRecentNoteRow(list, item, activePath);
+        if (shouldShowUncategorizedRootGroup(rootsCount, root.children.size, root.items.length)) {
+          renderNestedFolder(list, {
+            key: "__uncategorized__",
+            label: i18nT("Uncategorized"),
+            path: "",
+            depth: 1,
+            items: root.items,
+            children: new Map(),
+            total: root.items.length,
+          });
+        } else {
+          for (const item of root.items) this.renderRecentNoteRow(list, item, activePath);
+        }
         continue;
       }
       const groupEl = list.createDiv({ cls: "qnalog-outline-recent-group qnalog-outline-recent-group--named qnalog-outline-recent-folder-root" });

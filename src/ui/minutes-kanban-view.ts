@@ -11,6 +11,11 @@ import {
 } from "obsidian";
 import { NS_VIEW_MINUTES_KANBAN } from "../shared/namespace";
 import { t } from '../shared/i18n';
+import {
+  deleteMinutesKanbanFolder,
+  planMinutesKanbanFolderDeletion,
+  type MinutesKanbanFolderContents,
+} from "../kanban/minutes-kanban-delete";
 
 export const VIEW_TYPE_MINUTES_KANBAN = NS_VIEW_MINUTES_KANBAN;
 
@@ -41,6 +46,8 @@ export type MinutesKanbanAdapter = {
   getModeOptions: () => Array<{ value: string; label: string }>;
   moveItem: (item: MinutesKanbanItem, folderPath: string) => Promise<void>;
   createFolder: (name: string) => Promise<string>;
+  inspectFolder: (path: string) => Promise<MinutesKanbanFolderContents<MinutesKanbanItem>>;
+  deleteFolder: (path: string) => Promise<void>;
 };
 
 class FolderNameModal extends Modal {
@@ -74,6 +81,32 @@ class FolderNameModal extends Modal {
       if (event.key === "Enter") commit();
     });
     window.setTimeout(() => input.focus(), 0);
+  }
+}
+
+class DeleteFolderModal extends Modal {
+  private readonly message: string;
+  private readonly onConfirm: () => void;
+
+  constructor(app: import("obsidian").App, message: string, onConfirm: () => void) {
+    super(app);
+    this.message = message;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen(): void {
+    this.contentEl.empty();
+    this.contentEl.addClass("qnalog-kanban-folder-modal");
+    this.contentEl.createEl("h3", { text: t("Delete group") });
+    this.contentEl.createEl("p", { text: this.message });
+    const actions = this.contentEl.createDiv({ cls: "qnalog-kanban-folder-actions" });
+    const cancel = actions.createEl("button", { text: t("Cancel") });
+    cancel.onclick = () => this.close();
+    const remove = actions.createEl("button", { cls: "mod-warning", text: t("Delete") });
+    remove.onclick = () => {
+      this.close();
+      this.onConfirm();
+    };
   }
 }
 
@@ -190,7 +223,7 @@ export class MinutesKanbanView extends ItemView {
     const filters = root.createDiv({ cls: "qnalog-kanban-filters" });
     const searchWrap = filters.createDiv({ cls: "qnalog-kanban-search" });
     setIcon(searchWrap.createSpan(), "search");
-    const search = searchWrap.createEl("input", { attr: { type: "search", placeholder: t("AI organization failed; the original transcript can still be reorganized to generate the final note") } });
+    const search = searchWrap.createEl("input", { attr: { type: "search", placeholder: t("Search notes") } });
     search.value = this.query;
     search.addEventListener("input", () => {
       this.query = search.value;
@@ -265,6 +298,42 @@ export class MinutesKanbanView extends ItemView {
     return root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
   }
 
+  private async requestFolderDeletion(column: MinutesKanbanColumn): Promise<void> {
+    const rootPath = normalizePath(this.adapter.getRootPath() || "");
+    if (!column.path || normalizePath(column.path) === rootPath) return;
+    let contents: MinutesKanbanFolderContents<MinutesKanbanItem>;
+    try {
+      contents = await this.adapter.inspectFolder(column.path);
+    } catch (error) {
+      new Notice(`${t("Delete group failed: ")}${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    const plan = planMinutesKanbanFolderDeletion(column.path, rootPath, contents);
+    if (plan.allowed === false) {
+      if (plan.reason === "other-content") new Notice(t("The group still contains other files; handle them in the file explorer"));
+      return;
+    }
+    const message = plan.kind === "empty"
+      ? t("Group “{0}” will be moved to the trash").replace("{0}", column.label)
+      : t("{0} notes will be moved to “Uncategorized”; group “{1}” will be moved to the trash")
+        .replace("{0}", String(plan.noteCount)).replace("{1}", column.label);
+    new DeleteFolderModal(this.app, message, () => {
+      void deleteMinutesKanbanFolder(column.path, rootPath, {
+        inspectFolder: (path) => this.adapter.inspectFolder(path),
+        moveItem: (item, folderPath) => this.adapter.moveItem(item, folderPath),
+        deleteFolder: (path) => this.adapter.deleteFolder(path),
+      }, plan.noteCount).then(() => this.render()).catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : typeof error === "string" ? error : t("Unknown error");
+        const message = reason === "other-content"
+          ? t("The group still contains other files; handle them in the file explorer")
+          : reason === "folder-not-empty" || reason === "folder-changed"
+            ? t("The group changed before deletion and was left in place")
+            : `${t("Delete group failed: ")}${reason}`;
+        new Notice(message, 8000);
+      });
+    }).open();
+  }
+
   private renderBoard(container: HTMLElement): void {
     const existing = container.querySelector(".qnalog-kanban-board");
     if (existing) existing.remove();
@@ -289,7 +358,7 @@ export class MinutesKanbanView extends ItemView {
         const contextMenu = new Menu();
         if (this.expandedGroups.has(column.key)) {
           contextMenu.addItem((item) => item
-            .setTitle(t("AI is identifying people, to-dos, and hotwords"))
+            .setTitle(t("Collapse"))
             .setIcon("list-collapse")
             .onClick(() => {
               this.expandedGroups.delete(column.key);
@@ -304,6 +373,13 @@ export class MinutesKanbanView extends ItemView {
               this.expandedGroups.add(column.key);
               this.renderBoard(container);
             }));
+        }
+        if (this.groupMode === "folder" && normalizePath(column.path) !== normalizePath(this.adapter.getRootPath() || "")) {
+          contextMenu.addSeparator();
+          contextMenu.addItem((item) => item
+            .setTitle(t("Delete group"))
+            .setIcon("trash-2")
+            .onClick(() => { void this.requestFolderDeletion(column); }));
         }
         contextMenu.showAtMouseEvent(event);
       };
@@ -327,7 +403,7 @@ export class MinutesKanbanView extends ItemView {
           cls: "qnalog-kanban-more",
           attr: { type: "button" },
         });
-        less.createSpan({ text: t("AI is filling in...") });
+        less.createSpan({ text: t("Collapse") });
         setIcon(less.createSpan(), "chevron-up");
         less.onclick = () => {
           this.expandedGroups.delete(column.key);
