@@ -10,6 +10,14 @@
 import type { MessageTable } from "../../i18n";
 
 export const EN: MessageTable = {
+  "The note has derived versions: {0}": "The note has derived versions: {0}",
+  " and {0} more": " and {0} more",
+  "{0} related queue tasks will be removed as well.": "{0} related queue tasks will be removed as well.",
+  "Also delete the corresponding recording files ({0})": "Also delete the corresponding recording files ({0})",
+  "Delete source and keep the latest derived version": "Delete source and keep the latest derived version",
+  "Delete source and all derived versions": "Delete source and all derived versions",
+  "Could not inspect derived versions. The note was not deleted.": "Could not inspect derived versions. The note was not deleted.",
+  "Derived versions changed while the dialog was open. Nothing was deleted; reopen the dialog.": "Derived versions changed while the dialog was open. Nothing was deleted; reopen the dialog.",
   "Paused recovery entries": "Paused recovery entries",
   "Queue entry {0}": "Queue entry {0}",
   "The note changed while the merge was running. The generated result was not written; review the note and retry.": "The note changed while the merge was running. The generated result was not written; review the note and retry.",
