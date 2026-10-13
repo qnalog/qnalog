@@ -70,21 +70,18 @@ function renderVariants(
   language: "en" | "zh",
   variants: Array<{ file: { path: string; basename: string }; sourcePath: string; kind: string; label: string }>,
   snapshot: { path: string; mode: string; label: string } | null,
-  preReorganizeVersionId?: string,
-  priorVersionPath: string | null = "Notes/.versions/source/pre-reorganize.md",
 ) {
   setActiveUiLanguage(resolveUiLanguage(language, language));
   vi.stubGlobal("document", { createComment: () => new FakeComment() });
   const source = { path: "Notes/source.md", basename: "source", parent: { path: "Notes" } };
   const switchVersion = vi.fn(async () => undefined);
   const findOriginalVersionForSource = vi.fn(async () => snapshot);
-  const findVersionPathForSource = vi.fn(async () => priorVersionPath);
   const view = Object.create(OutlineView.prototype) as OutlineView;
   Object.assign(view, {
-    plugin: { settings: {}, versions: { findOriginalVersionForSource, findVersionPathForSource, switchVersion } },
+    plugin: { settings: {}, versions: { findOriginalVersionForSource, switchVersion } },
     app: {
       workspace: { getLeaf: () => ({ openFile: vi.fn() }) },
-      metadataCache: { getFileCache: () => ({ frontmatter: preReorganizeVersionId ? { qnalog_pre_reorganize_version: preReorganizeVersionId } : {} }) },
+      metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
     },
     createRecentActionButton: () => undefined,
     syncRecentNoteProcessingState: () => undefined,
@@ -92,7 +89,7 @@ function renderVariants(
   });
   const parent = new FakeElement();
   view.renderRecentNoteRow(parent, { file: source, title: "source title", mode: "monologue", variants }, "");
-  return { parent, source, switchVersion, findOriginalVersionForSource, findVersionPathForSource };
+  return { parent, source, switchVersion, findOriginalVersionForSource };
 }
 
 async function flushSnapshotLookup(): Promise<void> {
@@ -134,9 +131,11 @@ describe("recent note variant rows", () => {
     expect(findOriginalVersionForSource).toHaveBeenCalledWith(source);
   });
 
-  it("hides the prior-version row when its cache file is missing", async () => {
-    const { parent } = renderVariants("zh", [], null, "missing-pre-version", null);
+  it("does not throw or render variant rows when variants is undefined", async () => {
+    // getRecentNotes leaves `variants` undefined for notes with no derived versions.
+    const { parent } = renderVariants("zh", undefined as never, null);
     await flushSnapshotLookup();
+    expect(() => getVariantRows(parent)).not.toThrow();
     expect(getVariantRows(parent)).toHaveLength(0);
   });
 
@@ -181,20 +180,6 @@ describe("recent note variant rows", () => {
     expect(findOriginalVersionForSource).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["zh", "重新整理前"],
-    ["en", "Before reorganization"],
-  ] as const)("renders the prior reorganization row without derived versions in %s", async (language, expected) => {
-    const { parent, source, switchVersion, findOriginalVersionForSource, findVersionPathForSource } =
-      renderVariants(language, [], null, "pre-reorganize-id");
-    await flushSnapshotLookup();
-    const rows = getVariantRows(parent);
-    expect(rows.map(getVariantName)).toEqual([expected]);
-    expect(findOriginalVersionForSource).not.toHaveBeenCalled();
-    expect(findVersionPathForSource).toHaveBeenCalledWith(source, "pre-reorganize-id");
-    rows[0].handlers.get("click")?.();
-    expect(switchVersion).toHaveBeenCalledWith("Notes/.versions/source/pre-reorganize.md", source.path);
-  });
   it("formats ask titles by stripping date and custom prefixes with localized fallback", () => {
     const view = Object.create(OutlineView.prototype) as OutlineView;
     const templates = {

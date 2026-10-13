@@ -137,9 +137,6 @@ export class VersionStore {
   async restoreOriginalVersionBody(sourceFile: obsidian.TFile, update: OriginalSnapshotBodyUpdate): Promise<void> {
     return this.originals.restoreBody(sourceFile, update);
   }
-  async findVersionPathForSource(sourceFile: obsidian.TFile, versionId: string): Promise<string | null> {
-    return this.originals.findVersionPathForSource(sourceFile, versionId);
-  }
   findDerivedNoteForSource(
     sourceFile: obsidian.TFile,
     sourceId: string,

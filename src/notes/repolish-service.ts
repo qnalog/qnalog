@@ -116,11 +116,9 @@ export class RepolishService {
       mergeAndPolish: (segments, mode, sessionMeta, frontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, frontmatter, null),
       stripModeSuggestionBlocks,
       validateOriginalVersionForReorganization: (file) => this.host.versions.validateOriginalVersionForReorganization(file),
-      ensureOriginalVersionForSource: (file) => this.host.versions.ensureOriginalVersionForSource(file),
       replaceOriginalVersionBody: (file, payload) => this.host.versions.replaceOriginalVersionBody(file, payload),
       restoreOriginalVersionBody: (file, update) => this.host.versions.restoreOriginalVersionBody(file, update),
       switchVersion: (path, sourcePath) => this.host.versions.switchVersion(path, sourcePath),
-      saveVersion: (file, content, segments, input) => this.host.versions.saveVersion(file, content, segments, input),
       refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, options),
       tasks: {
         startTaskActivity: (input) => this.host.tasks.startTaskActivity(input),

@@ -55,7 +55,6 @@ import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from ".
 import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../prompts/briefing-prompts";
 
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
-import { NS_FM } from "../shared/namespace";
 import type { TopicsUiPort } from "./topics-ui-port";
 import { addTopicJoinSubmenu } from "./topic-join-menu";
 import { TopicsPanel } from "./topics-panel";
@@ -5565,45 +5564,24 @@ export class OutlineView extends obsidian.ItemView {
     }
     this.syncRecentNoteProcessingState(r.file, row, actions, failedTasks.length);
     this.renderTopicPromptRows(parent, r.file.path);
-    const preReorganizeVersionId = this.app.metadataCache.getFileCache(r.file)?.frontmatter?.[NS_FM.preReorganizeVersion];
-    if ((r.variants && r.variants.length) || typeof preReorganizeVersionId === "string") {
+    if (r.variants && r.variants.length) {
       const anchor = document.createComment("qnalog-original-version");
       parent.appendChild(anchor);
-      if (r.variants && r.variants.length) {
-        void this.plugin.versions.findOriginalVersionForSource(r.file).then((snapshot) => {
-          if (!snapshot || !row.isConnected || !anchor.parentNode) return;
-          const snapshotRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
-          const chip = snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
-          try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
-          snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: i18nT("Original") });
-          snapshotRow.addEventListener("click", () => {
-            void this.plugin.versions.switchVersion(snapshot.path, r.file.path)
-              .catch((error) => console.error(error));
-          });
-          anchor.parentNode.insertBefore(snapshotRow, anchor);
-        }).catch((error) => {
-          console.error("[QnALog] original version lookup failed", error);
-        }).finally(() => anchor.remove());
-      } else {
-        anchor.remove();
-      }
-      if (typeof preReorganizeVersionId === "string" && preReorganizeVersionId) {
-        const preReorganizeAnchor = document.createComment("qnalog-pre-reorganize-version");
-        parent.appendChild(preReorganizeAnchor);
-        void this.plugin.versions.findVersionPathForSource(r.file, preReorganizeVersionId).then((versionPath) => {
-          if (!versionPath || !row.isConnected || !preReorganizeAnchor.parentNode) return;
-          const versionRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
-          const chip = versionRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
-          try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
-          versionRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: i18nT("Before reorganization") });
-          versionRow.addEventListener("click", () => {
-            void this.plugin.versions.switchVersion(versionPath, r.file.path)
-              .catch((error) => console.error(error));
-          });
-          preReorganizeAnchor.parentNode.insertBefore(versionRow, preReorganizeAnchor);
-        }).finally(() => preReorganizeAnchor.remove());
-      }
-      for (const v of r.variants) {
+      void this.plugin.versions.findOriginalVersionForSource(r.file).then((snapshot) => {
+        if (!snapshot || !row.isConnected || !anchor.parentNode) return;
+        const snapshotRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
+        const chip = snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
+        try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
+        snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: i18nT("Original") });
+        snapshotRow.addEventListener("click", () => {
+          void this.plugin.versions.switchVersion(snapshot.path, r.file.path)
+            .catch((error) => console.error(error));
+        });
+        anchor.parentNode.insertBefore(snapshotRow, anchor);
+      }).catch((error) => {
+        console.error("[QnALog] original version lookup failed", error);
+      }).finally(() => anchor.remove());
+      for (const v of r.variants || []) {
         const vrow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
         if (activePath && obsidian.normalizePath(v.file.path) === activePath) vrow.addClass("is-active");
         const vchip = vrow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
@@ -6032,7 +6010,7 @@ export class OutlineView extends obsidian.ItemView {
           const confirmed = await qnalogConfirm(
             this.plugin.app,
             i18nT("Reorganize this note"),
-            i18nT("This will regenerate this note's organized body using the default organizing mode and replace the current content. The original transcript will stay unchanged. A recoverable version of the current body will be saved first."),
+            i18nT("This will regenerate this note's organized body using the default organizing mode and replace the current content. The original transcript will stay unchanged. The plugin will not save the replaced body. Use Obsidian's file recovery if you need to restore it."),
             i18nT("Reorganize"),
           );
           if (confirmed) void this.plugin.repolish.reorganizeNoteInPlace(file);
