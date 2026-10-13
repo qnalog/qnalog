@@ -24,6 +24,7 @@ import { readSessionKnowledge } from "../src/briefing/session-knowledge";
 import { labelText } from "../src/shared/note-labels";
 import { matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { getModeMeta } from "../src/shared/mode-meta";
+import { NoteWriter } from "../src/notes/note-writer";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -46,6 +47,11 @@ function setup(options: { text?: string; layout?: boolean; task?: Record<string,
     getAbstractFileByPath: vi.fn((path: string) => files.get(path) ?? null),
     read: vi.fn(async (file: { path: string }) => { log.push("read"); return contents.get(file.path) ?? ""; }),
     modify: vi.fn(async (file: { path: string }, text: string) => { log.push("modify"); contents.set(file.path, text); }),
+    process: vi.fn(async (file: { path: string }, transform: (text: string) => string) => {
+      const next = transform(contents.get(file.path) ?? "");
+      contents.set(file.path, next);
+      return next;
+    }),
   };
   const rewritten = vi.fn(async () => { log.push("rewrite"); });
   const renamed = vi.fn(async () => { log.push("rename"); return note; });
@@ -56,7 +62,11 @@ function setup(options: { text?: string; layout?: boolean; task?: Record<string,
       log.push("runOnTarget");
       return options.onTarget ? options.onTarget(operation) : operation();
     }) },
-    noteWriter: { rewriteConsolidated: rewritten, renameMarkdownWithGeneratedTitle: renamed },
+    noteWriter: {
+      rewriteConsolidated: rewritten,
+      rewriteConsolidatedIfUnchanged: (session: unknown, polished: string) => rewritten(session, polished),
+      renameMarkdownWithGeneratedTitle: renamed,
+    },
     noteIndex: { refreshNoteIndexSafely: refresh },
   };
   mergeAndPolishMock.mockImplementation(async () => { log.push("merge"); return "---\ntitle: polished\n---\n\nPolished body."; });
@@ -134,6 +144,41 @@ describe("merge queue retry consumer contract", () => {
     });
     expect(vault.modify).not.toHaveBeenCalled();
   });
+
+  it("keeps a user edit made while the consolidated merge is running", async () => {
+    const { service, task, host, contents, note } = setup({ layout: true, text: "Original note." });
+    const userEdit = "Original note.\n\nUser edit during merge.";
+    mergeAndPolishMock.mockImplementationOnce(async () => {
+      contents.set(String(note.path), userEdit);
+      return "---\ntitle: polished\n---\n\nPolished body.";
+    });
+    const noteWriter = new NoteWriter({
+      vault: host.app.vault,
+      settings: host.settings,
+      noteIndex: host.noteIndex,
+    } as never);
+    host.noteWriter = noteWriter as never;
+
+    await expect(service.retryMergeTask(task as never)).rejects.toThrow(
+      "The note changed while the merge was running. The generated result was not written; review the note and retry.",
+    );
+    expect(contents.get(String(note.path))).toBe(userEdit);
+    expect(clearCheckpointMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a user edit made while an append merge is running", async () => {
+    const { service, task, contents, note } = setup({ text: "Original note." });
+    const userEdit = "Original note.\n\nUser edit during merge.";
+    mergeAndPolishMock.mockImplementationOnce(async () => {
+      contents.set(String(note.path), userEdit);
+      return "---\ntitle: polished\n---\n\nPolished body.";
+    });
+
+    await service.retryMergeTask(task as never);
+
+    expect(contents.get(String(note.path))).toContain("User edit during merge.");
+    expect(contents.get(String(note.path))).toContain("Polished body.");
+  });
   it.each([
     { createdAt: "2026-09-02T03:04:05.000Z", startedAt: "2026-09-02T03:04:05.000Z" },
     { createdAt: undefined, startedAt: "2026-10-09T12:30:00.000Z" },
@@ -210,6 +255,11 @@ describe("merge queue retry consumer contract", () => {
       getAbstractFileByPath: vi.fn((path: string) => path === secondNote.path ? secondNote : null),
       read: vi.fn(async (file: { path: string }) => secondContents.get(file.path) ?? ""),
       modify: vi.fn(async (file: { path: string }, text: string) => { secondContents.set(file.path, text); }),
+      process: vi.fn(async (file: { path: string }, transform: (text: string) => string) => {
+        const next = transform(secondContents.get(file.path) ?? "");
+        secondContents.set(file.path, next);
+        return next;
+      }),
     } as never;
     task.mdPath = String(secondNote.path);
     host.settings.consolidatedLayout = true;

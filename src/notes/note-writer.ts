@@ -216,8 +216,11 @@ export class NoteWriter {
   }
 
 
-  rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = ""): Promise<void> {
-    return rewriteConsolidatedFlow(this.notePolishFlowHost, session, polished, continuationSessionId);
+  rewriteConsolidated(session: RecordingSession, polished: string, continuationSessionId = "", expectedMarkdown?: string): Promise<void> {
+    return rewriteConsolidatedFlow(this.notePolishFlowHost, session, polished, continuationSessionId, expectedMarkdown);
+  }
+  rewriteConsolidatedIfUnchanged(session: RecordingSession, polished: string, expectedMarkdown: string): Promise<void> {
+    return rewriteConsolidatedFlow(this.notePolishFlowHost, session, polished, "", expectedMarkdown);
   }
   appendPolishBlock(
     session: RecordingSession,

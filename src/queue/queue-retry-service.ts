@@ -235,7 +235,7 @@ export class QueueRetryService {
       runContinuationAppend: (task) => this.runAppendTask(task as Parameters<QueueRetryService["runAppendTask"]>[0]),
       mergeAndPolish: (segments, mode, sessionMeta, speakerFrontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, speakerFrontmatter),
       shouldRewriteConsolidated: (session) => shouldRewriteConsolidatedNote(this.host.settings, session),
-      rewriteConsolidated: (session, polished) => this.host.noteWriter.rewriteConsolidated(session, polished),
+      rewriteConsolidated: (session, polished, expectedMarkdown) => this.host.noteWriter.rewriteConsolidatedIfUnchanged(session, polished, expectedMarkdown),
       mergeLeadingFrontmatter: mergeLeadingFrontmatterIntoDocument,
       getModePrefix: (mode) => getModeMeta(this.host.settings, mode).prefix,
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
