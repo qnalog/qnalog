@@ -13,6 +13,7 @@ vi.mock("obsidian", () => {
       const item = {
         setTitle(title: string) { this.title = title; return this; },
         setIcon(icon: string) { this.icon = icon; return this; },
+        setDisabled(disabled: boolean) { this.disabled = disabled; return this; },
         setChecked() { return this; },
         setSubmenu() { return new Menu(); },
         onClick(handler: () => unknown) { this.onClick = handler; return this; },
@@ -108,7 +109,7 @@ describe("recent note sidebar context actions", () => {
     const openFile = vi.fn(async () => undefined);
     const requestSedimentExtraction = vi.fn();
     const view = Object.create(OutlineView.prototype) as OutlineView;
-    const menuHolder: { menu?: { items: Array<{ title?: string; icon?: string; onClick?: () => unknown }> } } = {};
+    const menuHolder: { menu?: { items: Array<{ title?: string; icon?: string; disabled?: boolean; onClick?: () => unknown }> } } = {};
     Object.assign(view, {
       plugin: { noteWriter: { detectModeFromMarkdown: () => "" }, settings: {} },
       app: { workspace: { getActiveFile: () => null, getLeaf: () => ({ openFile }) } },
@@ -121,8 +122,14 @@ describe("recent note sidebar context actions", () => {
     const menu = menuHolder.menu!;
     const outline = menu.items.find((item) => item.title === "Open outline");
     const extract = menu.items.find((item) => item.title === "Distill content");
-    return { file, openFile, requestSedimentExtraction, view, outline, extract };
+    return { file, openFile, requestSedimentExtraction, view, outline, extract, menu };
   }
+
+  it("offers in-place reorganization and labels the existing submenu as derived versions", async () => {
+    const h = await setup(false);
+    expect(h.menu.items.find((item) => item.title === "Reorganize")).toMatchObject({ icon: "refresh-cw", disabled: true });
+    expect(h.menu.items.some((item) => item.title === "Generate derived version")).toBe(true);
+  });
 
   it("opens the note before selecting the outline tab", async () => {
     const h = await setup(false);

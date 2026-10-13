@@ -787,7 +787,7 @@ class QnALogPlugin extends obsidian.Plugin {
         const modes = getVisibleModeEntries(this.settings, false);
         for (const [m] of modes) {
           sub.addItem((sub_i) => {
-            sub_i.setTitle(`${t("Organize as ")}${getModeDisplayName(this.settings, m)}`)
+            sub_i.setTitle(`${t("Generate derived version")}: ${getModeDisplayName(this.settings, m)}`)
               .setIcon("mic")
               .onClick(() => this.imports.openAudioImportOptions(paths, m));
           });

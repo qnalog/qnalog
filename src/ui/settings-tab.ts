@@ -1826,7 +1826,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }));
 
     new obsidian.Setting(c).setName(t("Reorganization Preference Prompt"))
-      .setDesc(t("Affects only the preference items under \"Reorganize as\" in the right-click menu. Preferences adjust the level of detail, structure, tone, and whether AI may add a moderate amount of its own points. What you enter here is an additional rule and does not overwrite the built-in prompt."));
+      .setDesc(t("Affects only the preference items under \"Generate derived version\" in the right-click menu. Preferences adjust the level of detail, structure, tone, and whether AI may add a moderate amount of its own points. What you enter here is an additional rule and does not overwrite the built-in prompt."));
     const repolishPromptTa = c.createEl("textarea", { cls: "qnalog-textarea" });
     repolishPromptTa.value = this.plugin.settings.repolishPreferencePromptAddendum || "";
     repolishPromptTa.placeholder = t("For example: with moderate expansion, when the source raises a concept, question, or clear disagreement, add a short AI-supplement callout for perspective; use ==highlight== for key concepts and <u>underline</u> for core judgments. Do not fabricate facts, data, or owners.");

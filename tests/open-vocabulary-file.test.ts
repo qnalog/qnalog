@@ -75,4 +75,13 @@ describe("openVocabularyFile", () => {
     expect(h.openFile).not.toHaveBeenCalled();
     expect(h.notify).toHaveBeenCalledWith("Please fill in the file path first");
   });
+
+  it("reports a file creation error instead of marking the path invalid", async () => {
+    vi.stubGlobal("window", { moment: () => ({ format: () => "2026-10-13 12:00:00" }) });
+    const h = createHarness("Terms.md");
+    h.vault.create.mockRejectedValueOnce(new Error("disk is read-only"));
+    await openVocabularyFile(h.options);
+    expect(h.notify).toHaveBeenCalledWith("Open transcription glossary failed: disk is read-only");
+    expect(h.notify).not.toHaveBeenCalledWith("Invalid transcription glossary path");
+  });
 });

@@ -43,8 +43,7 @@ export async function openVocabularyFile(options: OpenVocabularyFileOptions): Pr
       options.notify(`${t("Created:")}${path}`);
     }
     if (!(file instanceof obsidian.TFile)) {
-      options.notify(t("Invalid transcription glossary path"));
-      return;
+      throw new Error("Vault did not return a Markdown file");
     }
 
     const content = await options.vault.cachedRead(file);
@@ -54,7 +53,10 @@ export async function openVocabularyFile(options: OpenVocabularyFileOptions): Pr
     }
     await options.refreshStatus?.();
     await options.workspace.getLeaf(false).openFile(file);
-  } catch {
-    options.notify(t("Invalid transcription glossary path"));
+  } catch (error) {
+    const message = error && typeof error === "object" && "message" in error
+      ? String((error as { message?: unknown }).message || error)
+      : String(error);
+    options.notify(t("Open transcription glossary failed: {0}").replace("{0}", message));
   }
 }
