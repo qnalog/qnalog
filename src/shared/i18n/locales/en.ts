@@ -10,6 +10,12 @@
 import type { MessageTable } from "../../i18n";
 
 export const EN: MessageTable = {
+  "Export": "Export",
+  "Generating title": "Generating title",
+  "Generating a title for the note": "Generating a title for the note",
+  "Updating note index": "Updating note index",
+  "Refreshing the note index": "Refreshing the note index",
+  "Failed to generate a note title; the original filename was kept": "Failed to generate a note title; the original filename was kept",
   "The note has derived versions: {0}": "The note has derived versions: {0}",
   " and {0} more": " and {0} more",
   "{0} related queue tasks will be removed as well.": "{0} related queue tasks will be removed as well.",

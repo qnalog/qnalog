@@ -159,6 +159,7 @@ export const NS_FM = {
   type: "qnalog_type",
   sourceId: "qnalog_source_id",
   variantKind: "qnalog_variant_kind",
+  preReorganizeVersion: "qnalog_pre_reorganize_version",
   sourcePath: "qnalog_source_path",
   containsRaw: "qnalog_contains_raw",
   promotedVariant: "qnalog_promoted_variant",

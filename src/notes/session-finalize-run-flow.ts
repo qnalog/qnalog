@@ -303,21 +303,49 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     await port.clearCommittedBriefingCheckpoint(finalSessionMeta);
     session._briefingCheckpointId = "";
   }
-  if (!mergeError) port.setProgress(session, { stage: "done", label: t("Processing complete"), percent: 100, detail: t("Notes written; finishing up") });
   if (!mergeError && polished && !session.continuationSourcePath) {
+    port.setProgress(session, { stage: "naming", label: t("Generating title"), percent: 94, detail: t("Generating a title for the note") });
     const beforeRenamePath = session.mdPath;
-    const renamed = await port.renameWithGeneratedTitle(session.mdPath, polished, session.mode);
+    let renamed: unknown = null;
+    try { renamed = await port.renameWithGeneratedTitle(session.mdPath, polished, session.mode); }
+    catch (error) {
+      try {
+        await port.logDiagnostic("warn", "note.title_rename_failed", t("Failed to generate a note title; the original filename was kept"), {
+          mdPath: session.mdPath, error: diagnosticError(error),
+        });
+      } catch { /* diagnostics must not prevent note finalization */ }
+    }
     if (renamed instanceof obsidian.TFile) { session.mdPath = renamed.path; writeSession.mdPath = renamed.path; }
     const renamedByPolished = renamed instanceof obsidian.TFile && obsidian.normalizePath(renamed.path) !== obsidian.normalizePath(beforeRenamePath);
     if ((session.source === "import" || session.source === "text-import") && !renamedByPolished) {
       const rawTitleSource = port.buildTitleSource(segmentsForFinal);
       if (rawTitleSource) {
-        const fallbackRenamed = await port.renameWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
-        if (fallbackRenamed instanceof obsidian.TFile) { session.mdPath = fallbackRenamed.path; writeSession.mdPath = fallbackRenamed.path; }
+        try {
+          const fallbackRenamed = await port.renameWithGeneratedTitle(session.mdPath, rawTitleSource, session.mode);
+          if (fallbackRenamed instanceof obsidian.TFile) { session.mdPath = fallbackRenamed.path; writeSession.mdPath = fallbackRenamed.path; }
+        } catch (error) {
+          try {
+            await port.logDiagnostic("warn", "note.title_rename_failed", t("Failed to generate a note title; the original filename was kept"), {
+              mdPath: session.mdPath, error: diagnosticError(error),
+            });
+          } catch { /* diagnostics must not prevent note finalization */ }
+        }
       }
     }
   }
-  if (!mergeError && polished) await port.refreshNoteIndex(writeSession.mdPath, { meetingDate: session.startedAt, reason: "finalize" });
+  if (!mergeError && polished) {
+    if (!session.continuationSourcePath) {
+      port.setProgress(session, { stage: "indexing", label: t("Updating note index"), percent: 97, detail: t("Refreshing the note index") });
+    }
+    try { await port.refreshNoteIndex(writeSession.mdPath, { meetingDate: session.startedAt, reason: "finalize" }); }
+    catch (error) {
+      try {
+        await port.logDiagnostic("warn", "note.index_refresh_failed", t("Failed to update the note index; the note content is unaffected"), {
+          mdPath: writeSession.mdPath, reason: "finalize", error: diagnosticError(error),
+        });
+      } catch { /* diagnostics must not prevent note finalization */ }
+    }
+  }
   if (!mergeError) {
     if (!session.continuation) await port.cleanupSuccessfulSegmentAudio(session);
     const completedTaskMeter = taskMeter ? port.endTaskMeter(taskMeter) : null;
@@ -346,6 +374,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     }
   }
   port.requestDeferredAsrRetry(session);
+  if (!mergeError) port.setProgress(session, { stage: "done", label: t("Processing complete"), percent: 100, detail: t("Notes written; finishing up") });
   port.endSession(session);
   port.requestOutlineRefresh();
 }

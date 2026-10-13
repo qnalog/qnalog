@@ -14,7 +14,8 @@ import { fetchLlmModelList, testLlmConnection } from '../llm/core';
 import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
 import { isDashScopeFlashNoWordsError } from "../asr/dashscope-flash-asr";
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
-import { countVocabularyGroups, formatVocabularyMarkdown, isStructuredVocabularyMarkdown, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
+import { countVocabularyGroups, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
+import { openVocabularyFile as openVocabularyFileAction } from "../vocabulary/open-vocabulary-file";
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
 import { QNALOG_UPDATE_REPO_URL, countKnowledgeExtractionHistory, enumerateAudioDevices, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, qnalogConfirm, qnalogPromptText, trashVaultFileRef } from './helpers';
 import { audioInputModeLabel, classifyAudioInputDevices, describeAudioDeviceAvailability, isVirtualCableLabel, normalizeAudioInputMode, pickComputerAudioDevices } from '../audio/audio-input';
@@ -44,7 +45,6 @@ import {
   setupServiceIssue,
   SETUP_STATE_LABELS,
 } from '../setup';
-import { ensureVaultFolder } from "../shared/util-vault";
 
 function pickChannelProbeMime() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
@@ -1826,7 +1826,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         }));
 
     new obsidian.Setting(c).setName(t("Reorganization Preference Prompt"))
-      .setDesc(t("Affects only the preference items under \"Reorganize as\" in the right-click menu. Preferences adjust the level of detail, structure, tone, and whether AI may add a moderate amount of its own points. What you enter here is an additional rule and does not overwrite the built-in prompt."));
+      .setDesc(t("Affects only the preference items under \"Generate derived version\" in the right-click menu. Preferences adjust the level of detail, structure, tone, and whether AI may add a moderate amount of its own points. What you enter here is an additional rule and does not overwrite the built-in prompt."));
     const repolishPromptTa = c.createEl("textarea", { cls: "qnalog-textarea" });
     repolishPromptTa.value = this.plugin.settings.repolishPreferencePromptAddendum || "";
     repolishPromptTa.placeholder = t("For example: with moderate expansion, when the source raises a concept, question, or clear disagreement, add a short AI-supplement callout for perspective; use ==highlight== for key concepts and <u>underline</u> for core judgments. Do not fabricate facts, data, or owners.");
@@ -2007,25 +2007,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
 
     let vocabPathSetting = null;
     const openVocabularyFile = async () => {
-        const path = this.plugin.settings.vocabularyFile;
-        if (!path) { new obsidian.Notice(t("Please fill in the file path first")); return; }
-        const norm = obsidian.normalizePath(path);
-        let file = this.plugin.app.vault.getAbstractFileByPath(norm);
-        if (!(file instanceof obsidian.TFile)) {
-          const folderPath = norm.includes("/") ? norm.slice(0, norm.lastIndexOf("/")) : "";
-          if (folderPath) await ensureVaultFolder(this.plugin.app, folderPath);
-          file = await this.plugin.app.vault.create(norm, formatVocabularyMarkdown([], this.plugin.settings.industryProfile));
-          new obsidian.Notice(`${t("Created:")}${norm}`);
-        }
-        if (file instanceof obsidian.TFile) {
-          const content = await this.plugin.app.vault.cachedRead(file);
-          if (!isStructuredVocabularyMarkdown(content)) {
-            await this.plugin.app.vault.modify(file, formatVocabularyMarkdown(parseVocabularyGroups(content), this.plugin.settings.industryProfile));
-            new obsidian.Notice(t("Organized into a sectioned hotword table"));
-          }
-          if (vocabPathSetting) await refreshVocabStatus(vocabPathSetting);
-          await this.plugin.app.workspace.getLeaf(false).openFile(file);
-        }
+      await openVocabularyFileAction({
+        vault: this.plugin.app.vault,
+        workspace: this.plugin.app.workspace,
+        getSettings: () => this.plugin.settings,
+        notify: (message) => new obsidian.Notice(message),
+        refreshStatus: () => vocabPathSetting ? refreshVocabStatus(vocabPathSetting) : undefined,
+      });
     };
 
     const pendingPeopleSuggestions = normalizePeopleSuggestionCache(this.plugin.settings.peopleSuggestionCache).pending;

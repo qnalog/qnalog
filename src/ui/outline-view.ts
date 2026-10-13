@@ -5,6 +5,7 @@ import type QnALogPlugin from "../main";
 import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
 import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../notes/outline-text";
+import { extractTranscriptSegments } from "../notes/note-transcript-ledger";
 
 import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal } from "./modals";
 
@@ -54,6 +55,7 @@ import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from ".
 import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../prompts/briefing-prompts";
 
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
+import { NS_FM } from "../shared/namespace";
 import type { TopicsUiPort } from "./topics-ui-port";
 import { addTopicJoinSubmenu } from "./topic-join-menu";
 import { TopicsPanel } from "./topics-panel";
@@ -61,6 +63,7 @@ import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
 import { isBrowseTab, nextSidebarTab, scrollTopAfterRender } from "./sidebar-tab-policy";
 import { syncActiveRow } from "./row-active";
 import { renderTopicPromptRow } from "./topic-prompt-row";
+import { openVocabularyFile } from "../vocabulary/open-vocabulary-file";
 
 import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
 import { isImageMeetingMaterial, normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
@@ -330,7 +333,7 @@ export class OutlineView extends obsidian.ItemView {
     this._lastSig = "";
     this._lastRenderedOutline = "";
     this.showRecentHome = true;
-    this.idlePanelTab = "";
+    this.idlePanelTab = "recent";
     this.recentFilters = { time: "all", mode: "all" };
     // 纪要列表默认按文件夹组织；时间线仍可从筛选条切换回来。
     this.recentGroupBy = "folder";
@@ -361,6 +364,8 @@ export class OutlineView extends obsidian.ItemView {
   getDisplayText() { return i18nT("QnALog voice notes"); }
   getIcon() { return QNALOG_PLUGIN_ICON_ID; }
   async onOpen() {
+    this.showRecentHome = true;
+    this.idlePanelTab = "recent";
     this.containerEl.children[1].empty();
     this._lastSig = "";
     this.render();
@@ -730,6 +735,17 @@ export class OutlineView extends obsidian.ItemView {
     // Keep the shared panel-tab hook for active-session/mobile rules, while the
     // idle-view hook owns the approved minutes-sidebar geometry.
     const tabs = root.createDiv({ cls: "qnalog-outline-panel-tabs qnalog-outline-tabs" });
+    const recentBtn = tabs.createEl("button", {
+      text: i18nT("Notes"),
+      cls: activeTab === "recent" ? "is-active" : "",
+      attr: { type: "button" },
+    });
+    recentBtn.onclick = () => {
+      this.showRecentHome = true;
+      this.idlePanelTab = "recent";
+      this.topicPromptRefreshPaths.clear();
+      this.render();
+    };
     const outlineBtn = tabs.createEl("button", {
       text: i18nT("Outline"),
       cls: activeTab === "outline" ? "is-active" : "",
@@ -758,17 +774,6 @@ export class OutlineView extends obsidian.ItemView {
     askBtn.onclick = () => {
       this.showRecentHome = false;
       this.idlePanelTab = "ask";
-      this.render();
-    };
-    const recentBtn = tabs.createEl("button", {
-      text: i18nT("Notes"),
-      cls: activeTab === "recent" ? "is-active" : "",
-      attr: { type: "button" },
-    });
-    recentBtn.onclick = () => {
-      this.showRecentHome = true;
-      this.idlePanelTab = "recent";
-      this.topicPromptRefreshPaths.clear();
       this.render();
     };
     const topicsBtn = tabs.createEl("button", {
@@ -4249,6 +4254,19 @@ export class OutlineView extends obsidian.ItemView {
     });
     try { obsidian.setIcon(kanbanBtn, "layout-dashboard"); } catch { kanbanBtn.setText(i18nT("Board")); }
     kanbanBtn.onclick = () => { void this.plugin.shell.openMinutesKanban(); };
+    const vocabularyBtn = actions.createEl("button", {
+      cls: "clickable-icon qnalog-outline-vocabulary-btn",
+      attr: { "aria-label": i18nT("Open transcription glossary"), title: i18nT("Open transcription glossary") },
+    });
+    try { obsidian.setIcon(vocabularyBtn, "notebook-tabs"); } catch { vocabularyBtn.setText(i18nT("Open transcription glossary")); }
+    vocabularyBtn.onclick = () => {
+      void openVocabularyFile({
+        vault: this.app.vault,
+        workspace: this.app.workspace,
+        getSettings: () => this.plugin.settings,
+        notify: (message) => new obsidian.Notice(message),
+      });
+    };
     const btn = actions.createEl("button", {
       cls: "clickable-icon qnalog-outline-settings-btn",
       attr: { "aria-label": i18nT("Open QnALog settings"), title: i18nT("Open QnALog settings") },
@@ -4611,7 +4629,7 @@ export class OutlineView extends obsidian.ItemView {
     // 偏好 + 思考 并排一行（紧凑双列），方案在上独占一行——压扁「更多设置」。
     const pairRow = moreBody.createDiv({ cls: "qnalog-outline-control-pair" });
 
-    // 整理偏好（左半）：复用右键「重新整理为」预设，读写同一个 repolishPreference。
+    // 整理偏好（左半）：复用右键「生成衍生版本」预设，读写同一个 repolishPreference。
     // 侧边栏只保留最小正交集合；其余预设留在右键高级菜单。主表 REPOLISH_PREFERENCE_PRESETS 不删 key，避免已存值变孤儿。
     const prefCell = pairRow.createDiv({ cls: "qnalog-outline-pair-cell" });
     prefCell.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Preference") });
@@ -5547,23 +5565,44 @@ export class OutlineView extends obsidian.ItemView {
     }
     this.syncRecentNoteProcessingState(r.file, row, actions, failedTasks.length);
     this.renderTopicPromptRows(parent, r.file.path);
-    if (r.variants && r.variants.length) {
+    const preReorganizeVersionId = this.app.metadataCache.getFileCache(r.file)?.frontmatter?.[NS_FM.preReorganizeVersion];
+    if ((r.variants && r.variants.length) || typeof preReorganizeVersionId === "string") {
       const anchor = document.createComment("qnalog-original-version");
       parent.appendChild(anchor);
-      void this.plugin.versions.findOriginalVersionForSource(r.file).then((snapshot) => {
-        if (!snapshot || !row.isConnected || !anchor.parentNode) return;
-        const snapshotRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
-        const chip = snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
-        try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
-        snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: i18nT("Original") });
-        snapshotRow.addEventListener("click", () => {
-          void this.plugin.versions.switchVersion(snapshot.path, r.file.path)
-            .catch((error) => console.error(error));
-        });
-        anchor.parentNode.insertBefore(snapshotRow, anchor);
-      }).catch((error) => {
-        console.error("[QnALog] original version lookup failed", error);
-      }).finally(() => anchor.remove());
+      if (r.variants && r.variants.length) {
+        void this.plugin.versions.findOriginalVersionForSource(r.file).then((snapshot) => {
+          if (!snapshot || !row.isConnected || !anchor.parentNode) return;
+          const snapshotRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
+          const chip = snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
+          try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
+          snapshotRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: i18nT("Original") });
+          snapshotRow.addEventListener("click", () => {
+            void this.plugin.versions.switchVersion(snapshot.path, r.file.path)
+              .catch((error) => console.error(error));
+          });
+          anchor.parentNode.insertBefore(snapshotRow, anchor);
+        }).catch((error) => {
+          console.error("[QnALog] original version lookup failed", error);
+        }).finally(() => anchor.remove());
+      } else {
+        anchor.remove();
+      }
+      if (typeof preReorganizeVersionId === "string" && preReorganizeVersionId) {
+        const preReorganizeAnchor = document.createComment("qnalog-pre-reorganize-version");
+        parent.appendChild(preReorganizeAnchor);
+        void this.plugin.versions.findVersionPathForSource(r.file, preReorganizeVersionId).then((versionPath) => {
+          if (!versionPath || !row.isConnected || !preReorganizeAnchor.parentNode) return;
+          const versionRow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
+          const chip = versionRow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
+          try { obsidian.setIcon(chip, "files"); } catch { /* intentionally empty */ }
+          versionRow.createDiv({ cls: "qnalog-outline-recent-variant-name", text: i18nT("Before reorganization") });
+          versionRow.addEventListener("click", () => {
+            void this.plugin.versions.switchVersion(versionPath, r.file.path)
+              .catch((error) => console.error(error));
+          });
+          preReorganizeAnchor.parentNode.insertBefore(versionRow, preReorganizeAnchor);
+        }).finally(() => preReorganizeAnchor.remove());
+      }
       for (const v of r.variants) {
         const vrow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
         if (activePath && obsidian.normalizePath(v.file.path) === activePath) vrow.addClass("is-active");
@@ -5952,7 +5991,11 @@ export class OutlineView extends obsidian.ItemView {
       });
       menu.addSeparator();
     }
-    const detectedMode = this.plugin.noteWriter.detectModeFromMarkdown(file);
+    menu.addItem((item) => item.setTitle(i18nT("Open outline")).setIcon("list-tree")
+      .onClick(() => { void this.openRecentNoteInSidebar(file, "outline"); }));
+    menu.addItem((item) => item.setTitle(i18nT("Distill content")).setIcon("sparkles")
+      .onClick(() => { void this.openRecentNoteInSidebar(file, "extract"); }));
+    menu.addSeparator();
     const retryTasks = getQueueTasksForMarkdown(this.plugin, file, { types: ["transcribe"], failedOnly: true });
     if (retryTasks.length) {
       menu.addItem((item) => {
@@ -5978,6 +6021,23 @@ export class OutlineView extends obsidian.ItemView {
         .setIcon("file-text")
         .onClick(() => { void this.handleGenerateCleanCopy(file); });
     });
+    menu.addItem((item) => {
+      item.setTitle(i18nT("Reorganize")).setIcon("refresh-cw")
+        .onClick(async () => {
+          const markdown = await this.app.vault.cachedRead(file);
+          if (!extractTranscriptSegments(markdown).length) {
+            new obsidian.Notice(i18nT("No original transcript is available in this note"), 6000);
+            return;
+          }
+          const confirmed = await qnalogConfirm(
+            this.plugin.app,
+            i18nT("Reorganize this note"),
+            i18nT("This will regenerate this note's organized body using the default organizing mode and replace the current content. The original transcript will stay unchanged. A recoverable version of the current body will be saved first."),
+            i18nT("Reorganize"),
+          );
+          if (confirmed) void this.plugin.repolish.reorganizeNoteInPlace(file);
+        });
+    });
     const topicsUi = this.topicsUi;
     if (topicsUi?.isSourceNote(file.path)) {
       menu.addItem((item) => item.setTitle(i18nT("Create topic")).setIcon("layers-3")
@@ -5985,7 +6045,7 @@ export class OutlineView extends obsidian.ItemView {
       this.addTopicJoinMenu(menu, file.path);
     }
     menu.addItem((item) => {
-      item.setTitle(detectedMode ? i18nT("Reorganize as") : i18nT("Organize as"))
+      item.setTitle(i18nT("Generate derived version"))
         .setIcon("refresh-cw");
       const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
       // 偏好（可选修饰）：点击只在前面打钩/取消，就地更新、菜单不关（捕获阶段拦掉点击，阻止 Obsidian 关菜单）。
@@ -6029,7 +6089,7 @@ export class OutlineView extends obsidian.ItemView {
     });
     menu.addSeparator();
     menu.addItem((item) => {
-      item.setTitle(i18nT("Generate"))
+      item.setTitle(i18nT("Export"))
         .setIcon("file-output");
       const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
       sub.addItem((subItem) => subItem
@@ -6049,6 +6109,21 @@ export class OutlineView extends obsidian.ItemView {
         .onClick(() => this.confirmDeleteRecentNote(file));
     });
     this.showMenuAtMouse(menu, evt);
+  }
+
+  async openRecentNoteInSidebar(file, tab) {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile || obsidian.normalizePath(activeFile.path) !== obsidian.normalizePath(file.path)) {
+      await this.app.workspace.getLeaf(false).openFile(file);
+    }
+    // Opening a note triggers leaf-change, which can reset idlePanelTab. Apply the target after openFile resolves.
+    this.showRecentHome = false;
+    this.idlePanelTab = tab;
+    this.render();
+    if (tab === "extract") {
+      const state = this.getSedimentPanelState(file);
+      if (!state.hasPipelineStarted && !state.scanning) this.requestSedimentExtraction(file, false);
+    }
   }
 
   addTopicJoinMenu(menu, path) {

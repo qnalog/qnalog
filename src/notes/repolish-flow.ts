@@ -1,26 +1,19 @@
 import * as obsidian from "obsidian";
-import { getCurrentTranscript } from "../transcript/session-transcript";
 import { getSegmentsDurationMs } from "./audio-refs";
 import { getSessionMetaDurationMs } from "../shared/util-text";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
 import { getTaskErrorMessage } from "../shared/task-activity";
 import { getSourceIdFromMarkdown } from "./note-source-metadata";
-import { ensureTranscriptBlocks, extractTranscriptSegments } from "./note-transcript-ledger";
+import { ensureTranscriptBlocks } from "./note-transcript-ledger";
 import { getModeMeta } from "../shared/mode-meta";
-import { readSessionKnowledge } from "../briefing/session-knowledge";
-import { readNamespaceFrontmatter } from "../shared/namespace";
 import { t } from "../shared/i18n";
 import type { Segment } from "../shared/types";
 import type { TaskActivity, TaskActivityInput } from "../shared/task-activity";
 import type { VersionSaveInput } from "../versions/version-save-store";
 import type { DerivedNoteVersion } from "../versions/derived-note-store";
 import { splitVersionPayload } from "../versions/version-content";
-import {
-  applyRoleMappingToSegments, extractRoleMappingFromFrontmatter, flattenRoleMappedFrontmatter,
-  type RoleMapping,
-} from "./role-mapping";
+import { readRepolishInput } from "./repolish-input";
 
-const stringifyRepolishValue = String as (value: unknown) => string;
 export type RepolishOptions = { label?: string } | null;
 export type RepolishBusyContext = {
   kind: string;
@@ -73,27 +66,6 @@ export interface RepolishFlowPort extends RepolishFlowBasePort {
   requestOutlineRefresh(): void;
 }
 
-function buildUtteranceProjections(segments: Segment[], mapping: RoleMapping[]): Array<{
-  utteranceId: string;
-  normalizedText: string;
-  speakerName: string | null;
-}> {
-  const orderedMapping = [...(mapping || [])].sort((left, right) => right.from.length - left.from.length);
-  return (segments || []).flatMap((segment) => {
-    if (!segment.transcript) return [];
-    return getCurrentTranscript(segment.transcript).utterances.flatMap((utterance) => {
-      let normalizedText = utterance.normalizedText;
-      for (const item of orderedMapping) {
-        if (item.from) normalizedText = normalizedText.split(item.from).join(item.to);
-      }
-      const speakerName = orderedMapping.find((item) => item.from === utterance.speakerName)?.to ?? utterance.speakerName;
-      return normalizedText !== utterance.normalizedText || speakerName !== utterance.speakerName
-        ? [{ utteranceId: utterance.id, normalizedText, speakerName: speakerName || null }]
-        : [];
-    });
-  });
-}
-
 export async function repolishMarkdownFile(
   port: RepolishFlowPort, file: unknown, mode: string, repolishOptions: RepolishOptions = null,
 ): Promise<void> {
@@ -102,8 +74,15 @@ export async function repolishMarkdownFile(
   const modeDisplayName = port.getModeDisplayName(mode);
   let taskMeter: unknown = null;
   let taskId = `repolish:${file.path}`;
+  const lockId = `repolish:${file.path}`;
   let taskStarted = false;
-  let repolishLockAcquired = false;
+  const inFlight = port.getInFlight();
+  if (inFlight.has(lockId)) {
+    new obsidian.Notice(t("This note is being reorganized; please wait for the current task to finish."), 5000);
+    return;
+  }
+  inFlight.add(lockId);
+  const repolishLockAcquired = true;
   try {
     let content = await port.getVault().read(file);
     const sourceId = getSourceIdFromMarkdown(content, file);
@@ -113,50 +92,15 @@ export async function repolishMarkdownFile(
       await port.getVault().modify(file, reconciled);
       content = reconciled;
     }
-    let segments = extractTranscriptSegments(content);
+    const fmCache = port.getCachedFrontmatter(file) || null;
+    const repolishInput = readRepolishInput(content, fmCache);
+    let segments = repolishInput.segments;
+    let sessionMeta = repolishInput.sessionMeta;
+    const { roleMapping, originalFrontmatter: originalFmForRegen } = repolishInput;
     if (!segments.length) {
       new obsidian.Notice(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
       return;
     }
-
-    const fmCache = port.getCachedFrontmatter(file) || null;
-    const roleMapping = extractRoleMappingFromFrontmatter(fmCache);
-    if (roleMapping.length) segments = applyRoleMappingToSegments(segments, roleMapping);
-
-    let sessionMeta: SessionMeta | null = null;
-    if (fmCache) {
-      const fullTimeStr = readNamespaceFrontmatter(fmCache, "time") || "";
-      const durationValue = readNamespaceFrontmatter(fmCache, "duration");
-      const durationStr = typeof durationValue === "string" ? durationValue : "";
-      if (fullTimeStr) {
-        const m = window.moment ? window.moment(fullTimeStr, [window.moment.ISO_8601, "YYYY-MM-DDTHH:mm:ss", "YYYY-MM-DD HH:mm:ss"], true) : null;
-        if (m && m.isValid && m.isValid()) {
-          sessionMeta = { startedAt: m.toDate().toISOString(), duration: durationStr.trim() };
-        }
-      } else {
-        const dateStr = fmCache["日期"] || fmCache.date || "";
-        const timeStr = fmCache["时间"] || "";
-        if (dateStr) {
-          const composed = stringifyRepolishValue(dateStr).trim() + (timeStr ? "T" + stringifyRepolishValue(timeStr).trim() : "");
-          const m = window.moment ? window.moment(composed, ["YYYY-MM-DDTHH:mm", "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss"], true) : null;
-          if (m && m.isValid && m.isValid()) {
-            sessionMeta = { startedAt: m.toDate().toISOString(), duration: durationStr.trim() };
-          }
-        }
-      }
-    }
-    sessionMeta = Object.assign({}, sessionMeta || {}, {
-      _previousKnowledge: readSessionKnowledge(content),
-      _utteranceProjections: buildUtteranceProjections(segments, roleMapping),
-    });
-
-    const inFlight = port.getInFlight();
-    if (inFlight.has(taskId)) {
-      new obsidian.Notice(t("This note is being reorganized; please wait for the current task to finish."), 5000);
-      return;
-    }
-    inFlight.add(taskId);
-    repolishLockAcquired = true;
 
     const preferenceLabel = repolishOptions && repolishOptions.label ? ` · ${repolishOptions.label}` : "";
     const mapNotice = roleMapping.length
@@ -164,7 +108,6 @@ export async function repolishMarkdownFile(
         .replace("{0}", String(roleMapping.length)).replace("{1}", modeDisplayName).replace("{2}", preferenceLabel)
       : t("QnALog: re-organizing via {0} mode{1}…").replace("{0}", modeDisplayName).replace("{1}", preferenceLabel);
     new obsidian.Notice(mapNotice);
-    const originalFmForRegen = fmCache ? flattenRoleMappedFrontmatter(fmCache, roleMapping) : null;
     port.tasks.setBusyLabel(t("Re-organizing ({0})…").replace("{0}", modeDisplayName));
     const sourceMode = port.detectNoteMode(file, fmCache);
     const sourceModeLabel = sourceMode && sourceMode !== "off" ? port.getModeDisplayName(sourceMode) : t("Unlabeled");
@@ -258,7 +201,7 @@ export async function repolishMarkdownFile(
     const message = (error && typeof error === "object" && "message" in error && error.message ? error.message : error) as string;
     new obsidian.Notice(`${t("Re-organize failed: ")}${message}`, 8000);
   } finally {
-    if (repolishLockAcquired) port.getInFlight().delete(taskId);
+    if (repolishLockAcquired) port.getInFlight().delete(lockId);
     if (taskMeter) port.tasks.endTaskMeter(taskMeter);
     port.tasks.setBusyLabel(null);
     port.tasks.setBusyContext(null);

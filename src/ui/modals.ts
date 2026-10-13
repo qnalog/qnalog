@@ -768,10 +768,12 @@ export class QueueModal extends obsidian.Modal {
     ].filter(Boolean).join(" ").toLowerCase();
     const queueDetail = detail && detail.queueTaskId ? detail : null;
     const phase = queueDetail
-      ? queueDetail.stage === "write-note" ? "complete"
+      ? ["write-note", "naming", "indexing", "done"].includes(String(queueDetail.stage || "")) ? "complete"
         : queueDetail.liveness === "failed" ? "organize" : "transcribe"
       : headActive || running.length
-        ? (/(transcrib|asr|转写|音频|分段)/i.test(phaseText) ? "transcribe" : "organize")
+        ? detail && ["write-note", "naming", "indexing", "done"].includes(String(detail.stage || ""))
+          ? "complete"
+          : (/(transcrib|asr|转写|音频|分段)/i.test(phaseText) ? "transcribe" : "organize")
         : "complete";
     let phaseIndex = { transcribe: 0, organize: 1, complete: 2 }[phase] || 0;
     let pipelineSteps = [

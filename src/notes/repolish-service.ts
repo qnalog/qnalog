@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：重新整理：按说话人姓名重排当前纪要、生成清稿
 
 import * as obsidian from "obsidian";
-import { getModeDisplayName, getModeMeta, getModePrefix } from "../shared/mode-meta";
+import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getModePrefix } from "../shared/mode-meta";
 import type { PluginSettings } from "../shared/types";
 import { getLearnedLlmOutputCeiling } from "../llm/output-budget";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
@@ -14,6 +14,8 @@ import { NoteIndexService } from "../notes/note-index-service";
 import { stripModeSuggestionBlocks } from "../llm/core";
 import type { RepolishOptions, RepolishFlowBasePort, RepolishFlowPort } from "./repolish-flow";
 import { repolishMarkdownFile as repolishMarkdownFileFlow } from "./repolish-flow";
+import { reorganizeNoteInPlace as reorganizeNoteInPlaceFlow } from "./reorganize-in-place-flow";
+import type { ReorganizeInPlacePort } from "./reorganize-in-place-flow";
 import type { CleanScriptFlowPort } from "./clean-script-flow";
 import { generateCleanScript as generateCleanScriptFlow, findCleanCopy as findCleanCopyFlow } from "./clean-script-flow";
 import type { Segment } from "../shared/types";
@@ -45,6 +47,10 @@ export class RepolishService {
 
   async repolishMarkdownFile(file: unknown, mode: string, repolishOptions: RepolishOptions = null): Promise<void> {
     return repolishMarkdownFileFlow(this.repolishPort(), file, mode, repolishOptions);
+  }
+
+  async reorganizeNoteInPlace(file: unknown): Promise<void> {
+    return reorganizeNoteInPlaceFlow(this.reorganizeInPlacePort(), file);
   }
 
   async findCleanCopy(sourceFile: obsidian.TFile): Promise<obsidian.TFile | null> {
@@ -94,6 +100,34 @@ export class RepolishService {
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
       saveVersion: (file, content, segments, input) => this.host.versions.saveVersion(file, content, segments, input),
       requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
+    };
+  }
+
+  private reorganizeInPlacePort(): ReorganizeInPlacePort {
+    return {
+      getVault: () => this.host.app.vault,
+      getCachedFrontmatter: (file) => this.host.app.metadataCache.getFileCache(file)?.frontmatter,
+      getDefaultMode: () => getEffectivePolishMode(this.host.settings, this.host.settings.polishMode, "general"),
+      getModeDisplayName: (mode) => getModeDisplayName(this.host.settings, mode),
+      getInFlight: () => {
+        if (!this._repolishInFlight) this._repolishInFlight = new Set();
+        return this._repolishInFlight;
+      },
+      mergeAndPolish: (segments, mode, sessionMeta, frontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, frontmatter, null),
+      stripModeSuggestionBlocks,
+      validateOriginalVersionForReorganization: (file) => this.host.versions.validateOriginalVersionForReorganization(file),
+      ensureOriginalVersionForSource: (file) => this.host.versions.ensureOriginalVersionForSource(file),
+      replaceOriginalVersionBody: (file, payload) => this.host.versions.replaceOriginalVersionBody(file, payload),
+      restoreOriginalVersionBody: (file, update) => this.host.versions.restoreOriginalVersionBody(file, update),
+      switchVersion: (path, sourcePath) => this.host.versions.switchVersion(path, sourcePath),
+      saveVersion: (file, content, segments, input) => this.host.versions.saveVersion(file, content, segments, input),
+      refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, options),
+      tasks: {
+        startTaskActivity: (input) => this.host.tasks.startTaskActivity(input),
+        patchTaskActivity: (id, patch) => this.host.tasks.patchTaskActivity(id, patch),
+        completeTaskActivity: (id, patch) => this.host.tasks.completeTaskActivity(id, patch),
+        failTaskActivity: (id, error, patch) => this.host.tasks.failTaskActivity(id, error, patch),
+      },
     };
   }
 
