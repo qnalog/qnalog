@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const usage = "[plugin-onload] Usage: node scripts/check-plugin-onload.mjs [--bundle <path>]";
+const saveAllFailureCheck = process.argv.length === 3 && process.argv[2] === "--save-all-secret-failure";
 function parseBundleArgument(args) {
   if (args.length === 0) return fileURLToPath(new URL("../main.js", import.meta.url));
   if (args.length !== 2 || args[0] !== "--bundle" || !args[1]) {
@@ -21,7 +22,7 @@ function parseBundleArgument(args) {
 }
 
 let code;
-const bundlePath = parseBundleArgument(process.argv.slice(2));
+const bundlePath = parseBundleArgument(saveAllFailureCheck ? [] : process.argv.slice(2));
 try {
   code = readFileSync(bundlePath, "utf8");
 } catch (error) {
@@ -138,6 +139,7 @@ class PluginBase extends ObsidianBase {
 }
 
 const secrets = new Map();
+let rejectSecretWrites = false;
 
 const app = {
   secretStorage: {
@@ -145,6 +147,7 @@ const app = {
     listSecrets: () => [...secrets.keys()],
     setSecret: (id, secret) => {
       if (id.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error("invalid SecretStorage id");
+      if (rejectSecretWrites) throw new Error("SecretStorage unavailable");
       secrets.set(id, secret);
     },
   },
@@ -267,6 +270,44 @@ async function main() {
     failures.push(`onload 抛错：${error && error.stack ? error.stack.split("\n").slice(0, 4).join(" | ") : error}`);
     report(failures);
     return 1;
+  }
+
+  if (saveAllFailureCheck) {
+    const previousData = {
+      settings: { composer: { apiKey: "preserved-test-key", model: "existing-model" } },
+      backgroundJobs: { items: [] },
+    };
+    plugin.lastSaved = previousData;
+    plugin.savedCount = 0;
+    plugin.settings.llmApiKey = "replacement-test-key";
+    plugin.settings.llmModel = "existing-model";
+    plugin.queue.tasks.push({
+      id: "secret-failure-task",
+      type: "merge",
+      status: "pending",
+      mdPath: "QnALog/notes/example.md",
+      sessionId: "secret-failure-session",
+    });
+    rejectSecretWrites = true;
+    try {
+      await plugin.saveAll();
+    } catch {
+      failures.push("plugin.saveAll rejected after SecretStorage.setSecret failed");
+    } finally {
+      rejectSecretWrites = false;
+    }
+    expect(plugin.savedCount === 1, `saveData was called ${plugin.savedCount} times; expected 1`);
+    expect(plugin.lastSaved?.backgroundJobs?.items?.some((task) => task.id === "secret-failure-task"),
+      "saved backgroundJobs.items did not include the newly queued task");
+    expect(plugin.lastSaved?.settings?.composer?.model === "existing-model",
+      "saved settings did not retain the existing model setting");
+    expect(Boolean(plugin.lastSaved?.settings?.composer?.apiKey),
+      "saved settings replaced the existing API key field with the key-cleared snapshot");
+    await plugin.onunload();
+    for (const id of plugin.intervals) clearInterval(id);
+    if (failures.length) return report(failures);
+    console.log("[plugin-onload] OK: saveAll persisted queue after SecretStorage failure");
+    return 0;
   }
 
   for (const field of DOMAIN_FIELDS) {
