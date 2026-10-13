@@ -4,10 +4,61 @@ import {
   applyLlmProfileToWorkingConfig,
   getBriefingMergeDesiredTokens,
   getBriefingMergeMaxTokens,
+  getLlmServicePreset,
   getLlmOutputCeiling,
   inferLlmServicePresetId,
   isDashscopeCompatibleLlmEndpoint,
+  syncWorkingConfigToLlmProfile,
 } from "../src/llm/config";
+
+describe("服务预设与 API 方案密钥隔离（回归期望）", () => {
+  function settingsWithTwoProfiles() {
+    const settings = {
+      llmProfiles: [
+        { id: "profile-a", name: "方案 A", endpoint: "https://service-a.example/v1", apiKey: "fake-key-service-a", model: "model-a" },
+        { id: "profile-b", name: "方案 B", endpoint: "https://service-b.example/v1", apiKey: "fake-key-service-b", model: "model-b" },
+      ],
+      activeLlmProfile: "profile-a",
+      llmServicePreset: "custom",
+      llmEndpoint: "",
+      llmApiKey: "",
+      llmModel: "",
+    };
+    applyLlmProfileToWorkingConfig(settings, "profile-a");
+    return settings;
+  }
+
+  it.fails("更换服务预设并输入新密钥时，不应覆盖原活动方案或把旧密钥配给新地址", () => {
+    const settings = settingsWithTwoProfiles();
+    const profileA = { ...settings.llmProfiles[0] };
+    const preset = getLlmServicePreset("openrouter");
+
+    // 对应 settings-tab.ts:1522、1528-1532：onChange 先写预设 ID，再写预设地址；
+    // 当前场景不是 siliconflow，故不会执行 1529-1532 的密钥回填。
+    settings.llmServicePreset = "openrouter";
+    if (preset && preset.endpoint) settings.llmEndpoint = preset.endpoint;
+
+    // 模拟用户随后在 settings-tab.ts:1560 修改密钥，回调会调用 sync。
+    settings.llmApiKey = "fake-key-new-service";
+    syncWorkingConfigToLlmProfile(settings, settings.activeLlmProfile);
+
+    // 期望：编辑临时服务时不覆盖仍选中的方案 A。
+    expect(settings.llmProfiles[0]).toEqual(profileA);
+  });
+
+  it.fails("只切换服务预设后，请求配置不应把原服务密钥与新地址组合", () => {
+    const settings = settingsWithTwoProfiles();
+    const preset = getLlmServicePreset("openrouter");
+
+    // 对应 settings-tab.ts:1522、1528-1532 的赋值顺序；回调不改 activeLlmProfile。
+    settings.llmServicePreset = "openrouter";
+    if (preset && preset.endpoint) settings.llmEndpoint = preset.endpoint;
+
+    // 网络请求从这两个工作字段读取配置；这里断言其组合，不发起网络请求。
+    expect(settings.llmApiKey).not.toBe(settings.llmProfiles[0].apiKey);
+  });
+});
+
 describe("LLM 服务预设", () => {
   it("百炼一站式预设内置三段服务与全部模型", () => {
     // 首次配置的主路径：只填密钥。因此地址与三个模型必须都写在预设里，

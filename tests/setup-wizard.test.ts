@@ -52,6 +52,19 @@ describe("步骤 2 的启用条件（计划完整性）", () => {
     expect(plan.reason).toBe("");
     expect(controller.canProceed).toBe(true);
   });
+
+  it.fails("重新选择已配置服务时，向导应回填该服务已保存的密钥", () => {
+    const settings = freshSettings();
+    settings.llmEndpoint = "https://api.mimo.example/v1";
+    settings.llmApiKey = "fake-key-already-configured";
+    const { controller } = makeWizard(settings);
+
+    controller.selectPreset("mimo");
+
+    // SetupWizardModal 仅从 controller.request.apiKey 设置输入值（src/ui/setup-wizard-modal.ts:127-134）；
+    // selectPreset 会清空 request（src/setup/wizard-controller.ts:56-61），没有从 settings 回填。
+    expect(controller.request?.apiKey).toBe("fake-key-already-configured");
+  });
 });
 
 describe("取消不写盘", () => {
