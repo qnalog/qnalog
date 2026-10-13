@@ -6168,6 +6168,7 @@ export class OutlineView extends obsidian.ItemView {
     if (!(file instanceof obsidian.TFile)) return;
     const deletionPort = {
       listMarkdownFiles: () => this.app.vault.getMarkdownFiles(),
+      readFrontmatter: (target: obsidian.TFile) => this.app.metadataCache.getFileCache(target)?.frontmatter || null,
       readFile: (target: obsidian.TFile) => this.app.vault.cachedRead(target),
       updateFrontmatter: (target: obsidian.TFile, update: (frontmatter: Record<string, unknown>) => void) => this.app.fileManager.processFrontMatter(target, update),
       trashFile: (target: obsidian.TFile) => trashVaultFileRef(this.app, target),

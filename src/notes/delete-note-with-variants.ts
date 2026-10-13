@@ -17,6 +17,7 @@ export interface NoteVariantSnapshot<TFile extends DeletableNoteFile = Deletable
 
 export interface DeleteNoteWithVariantsPort<TFile extends DeletableNoteFile> {
   listMarkdownFiles(): readonly TFile[];
+  readFrontmatter(file: TFile): Record<string, unknown> | null;
   readFile(file: TFile): Promise<string>;
   updateFrontmatter(file: TFile, update: (frontmatter: Record<string, unknown>) => void): Promise<void>;
   trashFile(file: TFile): Promise<void>;
@@ -46,12 +47,12 @@ async function findVariants<TFile extends DeletableNoteFile>(
   const variants: NoteVariantSnapshot<TFile>[] = [];
   for (const file of port.listMarkdownFiles()) {
     if (normalizePath(file.path) === sourcePath || !/\.md$/i.test(file.path)) continue;
+    const cachedFrontmatter = port.readFrontmatter(file);
+    if (!isLinkedDerivedNote(cachedFrontmatter, sourcePath)) continue;
     const content = await port.readFile(file);
     const frontmatter = parseFrontmatter(content);
-    const linkedSourcePath = readNamespaceFrontmatter(frontmatter, "sourcePath");
-    if (typeof linkedSourcePath !== "string" || normalizePath(linkedSourcePath) !== sourcePath) continue;
-    if (!isDerivedVersionType(readNamespaceFrontmatter(frontmatter, "type"))
-      && readNamespaceFrontmatter(frontmatter, "containsRaw") !== false) continue;
+    if (!isLinkedDerivedNote(frontmatter, sourcePath)) continue;
+    const linkedSourcePath = readNamespaceFrontmatter(frontmatter, "sourcePath") as string;
     variants.push({
       file,
       content,
@@ -61,6 +62,15 @@ async function findVariants<TFile extends DeletableNoteFile>(
     });
   }
   return variants.sort((a, b) => (a.file.stat?.mtime || 0) - (b.file.stat?.mtime || 0));
+}
+
+function isLinkedDerivedNote(frontmatter: Record<string, unknown> | null, sourcePath: string): boolean {
+  if (!frontmatter) return false;
+  const linkedSourcePath = readNamespaceFrontmatter(frontmatter, "sourcePath");
+  return typeof linkedSourcePath === "string"
+    && normalizePath(linkedSourcePath) === sourcePath
+    && (isDerivedVersionType(readNamespaceFrontmatter(frontmatter, "type"))
+      || readNamespaceFrontmatter(frontmatter, "containsRaw") === false);
 }
 
 export async function getDirectNoteVariants<TFile extends DeletableNoteFile>(
