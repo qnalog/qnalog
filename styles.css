@@ -2729,7 +2729,8 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   gap: var(--size-2-1) var(--qnalog-outline-form-field-gap-x);
 }
 
-.qnalog-outline-control-label {
+.qnalog-outline-control-label,
+.qnalog-recent-filter-popover-label {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   white-space: nowrap;
@@ -8428,7 +8429,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
    QnALog outline / recording interaction polish
    ============================================================ */
 
-.qnalog-outline {
+.qnalog-outline,
+.qnalog-recent-filter-popover {
   --qnalog-bg-base: var(--background-primary);
   --qnalog-bg-card: var(--background-primary-alt, var(--background-primary));
   --qnalog-bg-muted: var(--background-secondary);
@@ -8462,6 +8464,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-danger-bg: color-mix(in srgb, var(--qnalog-danger-text) 11%, var(--background-primary));
   --qnalog-danger-border: color-mix(in srgb, var(--qnalog-danger-text) 28%, var(--background-modifier-border));
   --qnalog-neutral-panel: color-mix(in srgb, var(--background-primary) 92%, var(--text-muted) 8%);
+}
+
+.qnalog-outline {
   position: relative;
   min-height: 100%;
   box-sizing: border-box;
@@ -11093,7 +11098,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     row-gap: 8px;
   }
 }
-.qnalog-kanban-view {
+.qnalog-kanban-view,
+.qnalog-recent-filter-popover {
   --qnalog-kanban-gap: 14px;
   --qnalog-kanban-column-width: 262px;
   --qnalog-kanban-column-min-width: 196px;
@@ -11108,6 +11114,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-text-primary: var(--text-normal);
   --qnalog-text-secondary: var(--text-muted);
   --qnalog-text-tertiary: var(--text-muted);
+}
+
+.qnalog-kanban-view {
   container-name: qnalog-kanban;
   container-type: inline-size;
   display: flex;
@@ -11247,7 +11256,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-color: var(--qnalog-primary);
 }
 
-.qnalog-kanban-grouping {
+.qnalog-kanban-grouping,
+.qnalog-segmented {
   display: inline-flex;
   align-items: stretch;
   flex: 0 0 auto;
@@ -11273,7 +11283,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-size: var(--font-ui-smaller, 12px);
 }
 
-.qnalog-kanban-grouping-option {
+.qnalog-kanban-grouping-option,
+.qnalog-segmented-option {
   padding: 0 11px;
   border: 0;
   border-left: 1px solid var(--qnalog-border-line);
@@ -11285,12 +11296,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-weight: 500;
 }
 
-.qnalog-kanban-grouping-option:hover {
+.qnalog-kanban-grouping-option:hover,
+.qnalog-segmented-option:hover {
   background: var(--qnalog-bg-hover);
   color: var(--qnalog-text-primary);
 }
 
-.qnalog-kanban-grouping-option.is-active {
+.qnalog-kanban-grouping-option.is-active,
+.qnalog-kanban-grouping-option[aria-pressed="true"],
+.qnalog-segmented-option.is-active,
+.qnalog-segmented-option[aria-pressed="true"] {
   background: var(--qnalog-bg-active);
   color: var(--qnalog-primary-soft);
   font-weight: 700;
@@ -12363,6 +12378,27 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-accent);
 }
 
+.qnalog-option-chip,
+.qnalog-outline .qnalog-outline-recent-active-chip {
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-option-chip.is-active,
+.qnalog-option-chip[aria-pressed="true"],
+.qnalog-outline .qnalog-outline-recent-active-chip.is-active {
+  border-color: var(--qnalog-border-active-soft, var(--background-modifier-border));
+  background: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  font-weight: 600;
+}
+
 .qnalog-recent-filter-popover {
   position: fixed;
   z-index: 1000;
@@ -12370,131 +12406,188 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex-direction: column;
   box-sizing: border-box;
   width: min(320px, calc(100vw - 32px));
+  min-width: 220px;
   max-height: min(220px, 60vh);
   padding: 12px;
-  gap: 10px;
-  overflow: auto;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 12px;
-  background: var(--background-primary);
+  gap: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: var(--radius-m);
+  background: var(--qnalog-bg-base, var(--background-primary));
   box-shadow: var(--shadow-s);
-  color: var(--text-normal);
+  color: var(--qnalog-text-primary, var(--text-normal));
 }
 
 .qnalog-recent-filter-popover[hidden] {
   display: none;
 }
 
-.qnalog-recent-filter-popover-title {
-  color: var(--text-normal);
-  font-size: var(--font-ui-small);
-  font-weight: 600;
-}
-
 .qnalog-recent-filter-popover-section {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 5px;
+  gap: 6px;
 }
 
 .qnalog-recent-filter-popover-label {
-  color: var(--text-muted);
+  color: var(--qnalog-text-tertiary, var(--text-faint));
   font-size: var(--font-ui-smaller);
+  font-weight: 500;
   line-height: 16px;
 }
 
-.qnalog-recent-filter-popover-options {
-  display: grid;
+.qnalog-recent-filter-popover .qnalog-segmented {
+  display: flex;
+  width: 100%;
   min-width: 0;
-  gap: 4px;
 }
 
-.qnalog-recent-filter-popover-section.is-time .qnalog-recent-filter-popover-options {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.qnalog-recent-filter-popover button.qnalog-segmented-option {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-left: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  background-image: none;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-family: inherit;
+  font-size: var(--font-ui-small, 13px);
+  font-weight: 500;
 }
 
-.qnalog-recent-filter-popover-section.is-group .qnalog-recent-filter-popover-options {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.qnalog-recent-filter-popover button.qnalog-segmented-option:hover,
+.qnalog-recent-filter-popover button.qnalog-segmented-option:active,
+.qnalog-recent-filter-popover button.qnalog-segmented-option:focus {
+  box-shadow: none;
+  background-image: none;
 }
 
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-options {
+.qnalog-recent-filter-popover button.qnalog-segmented-option:hover {
+  background-color: var(--qnalog-bg-hover, var(--background-modifier-hover));
+  color: var(--qnalog-text-primary, var(--text-normal));
+}
+
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"] {
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  font-weight: 700;
+}
+
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"]:hover,
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"]:active,
+.qnalog-recent-filter-popover button.qnalog-segmented-option[aria-pressed="true"]:focus {
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+}
+
+.qnalog-recent-filter-popover-templates {
   display: flex;
   flex-wrap: wrap;
   max-height: 108px;
   overflow-y: auto;
   gap: 6px;
-  padding: 2px 1px;
+  padding: 2px;
 }
 
-.qnalog-recent-filter-popover-option {
-  box-sizing: border-box;
+.qnalog-recent-filter-popover button.qnalog-option-chip {
+  position: relative;
+  flex: 0 0 auto;
   min-width: 0;
-  min-height: 32px;
-  padding: 4px 8px;
-  border: 1px solid transparent;
+  min-height: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
   border-radius: 8px;
   background: transparent;
   box-shadow: none;
-  color: var(--text-normal);
+  background-image: none;
+  color: var(--qnalog-text-secondary, var(--text-muted));
+  font-family: inherit;
   font-size: var(--font-ui-smaller);
-  line-height: 16px;
-  text-align: center;
+  line-height: 26px;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option {
-  flex: 0 0 auto;
-  position: relative;
-  height: 32px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border-color: transparent;
-  background: transparent;
+.qnalog-recent-filter-popover button.qnalog-option-chip:hover,
+.qnalog-recent-filter-popover button.qnalog-option-chip:active,
+.qnalog-recent-filter-popover button.qnalog-option-chip:focus {
+  box-shadow: none;
+  background-image: none;
 }
 
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option::before {
-  position: absolute;
-  z-index: 0;
-  inset: 2px 0;
-  border: 1px solid transparent;
-  border-radius: 999px;
+.qnalog-recent-filter-popover button.qnalog-option-chip:hover {
+  background-color: var(--qnalog-bg-hover, var(--background-modifier-hover));
+  color: var(--qnalog-text-primary, var(--text-normal));
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"] {
+  border-color: var(--qnalog-border-active-soft, var(--background-modifier-border));
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+  font-weight: 600;
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"]:hover,
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"]:active,
+.qnalog-recent-filter-popover button.qnalog-option-chip[aria-pressed="true"]:focus {
+  background-color: var(--qnalog-bg-active, var(--background-primary));
+  color: var(--qnalog-primary-soft, var(--text-accent));
+}
+
+.qnalog-recent-filter-popover button.qnalog-option-chip::after {
   content: "";
-  pointer-events: none;
-}
-
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option > * {
-  position: relative;
-  z-index: 1;
-}
-
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option:hover {
+  position: absolute;
+  inset: -2px;
+  border: 0;
   background: transparent;
+  pointer-events: auto;
 }
 
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option:hover::before {
-  background: var(--background-modifier-hover);
+@media (pointer: coarse) {
+  .qnalog-recent-filter-popover .qnalog-segmented {
+    height: 40px;
+  }
+
+  .qnalog-recent-filter-popover button.qnalog-segmented-option {
+    height: 100%;
+  }
+
+  .qnalog-recent-filter-popover button.qnalog-option-chip {
+    height: 36px;
+    line-height: 34px;
+  }
+
+  .qnalog-recent-filter-popover-templates {
+    max-height: 40vh;
+    gap: 8px;
+  }
 }
 
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option[aria-pressed="true"] {
-  border-color: transparent;
-  background: transparent;
+body.is-mobile .qnalog-recent-filter-popover .qnalog-segmented {
+  height: 40px;
 }
 
-.qnalog-recent-filter-popover-section.is-mode .qnalog-recent-filter-popover-option[aria-pressed="true"]::before {
-  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
-  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
+body.is-mobile .qnalog-recent-filter-popover button.qnalog-segmented-option {
+  height: 100%;
 }
 
-.qnalog-recent-filter-popover-option:hover {
-  background: var(--background-modifier-hover);
+body.is-mobile .qnalog-recent-filter-popover button.qnalog-option-chip {
+  height: 36px;
+  line-height: 34px;
 }
 
-.qnalog-recent-filter-popover-option[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
-  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
-  color: var(--text-normal);
+body.is-mobile .qnalog-recent-filter-popover-templates {
+  max-height: 40vh;
+  gap: 8px;
 }
 
 .qnalog-outline.is-mobile {
@@ -12507,14 +12600,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline.is-mobile .qnalog-topics-prompt-row {
   padding-inline-start: 52px;
-}
-
-@media (max-width: 479px) {
-  .qnalog-recent-filter-popover {
-    left: 16px !important;
-    width: calc(100vw - 32px) !important;
-    max-height: 60vh !important;
-  }
 }
 
 .qnalog-outline .qnalog-outline-recent.qnalog-outline-recent--flat-root {
@@ -12816,6 +12901,26 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
+.qnalog-outline-recent-meta-separator,
+.qnalog-outline-recent-duration-label {
+  display: inline;
+}
+
+.qnalog-outline-recent-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.qnalog-outline-recent-duration-icon,
+.qnalog-outline-recent-duration-icon svg {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  color: var(--text-faint);
+}
+
 .qnalog-outline .qnalog-outline-recent-actions {
   position: static;
   grid-column: 2;
@@ -13014,6 +13119,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 .qnalog-outline :is(button, summary, [role="button"]):focus-visible,
 .qnalog-kanban-view :is(button, summary, [role="button"]):focus-visible,
+.qnalog-recent-filter-popover :is(button, summary, [role="button"]):focus-visible,
 .qnalog-settings-root :is(button, summary, [role="button"]):focus-visible,
 .qnalog-utility-modal :is(button, summary, [role="button"]):focus-visible,
 .qnalog-wizard-modal :is(button, summary, [role="button"]):focus-visible {

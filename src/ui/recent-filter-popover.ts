@@ -1,5 +1,4 @@
 import type { RecentFilterPopoverSection, RecentFilterPopoverSectionId } from "../recent/recent-filter-view";
-import { t } from "../shared/i18n";
 
 export type RecentFilterPopoverSelect = (section: RecentFilterPopoverSectionId, value: string) => void;
 
@@ -10,13 +9,13 @@ export class RecentFilterPopover {
   private searchRow: HTMLElement | null = null;
   private sections: RecentFilterPopoverSection[] = [];
   private openState = false;
+  private readonly visualViewport: VisualViewport | null;
 
-  constructor(onSelect: RecentFilterPopoverSelect) {
+  constructor(onSelect: RecentFilterPopoverSelect, ariaLabel: string) {
     this.onSelect = onSelect;
-    this.element = document.createElement("div");
-    this.element.className = "qnalog-recent-filter-popover";
+    this.element = document.createDiv({ cls: "qnalog-recent-filter-popover" });
     this.element.setAttribute("role", "dialog");
-    this.element.setAttribute("aria-label", t("Filter and view options"));
+    this.element.setAttribute("aria-label", ariaLabel);
     this.element.hidden = true;
     document.body.appendChild(this.element);
     this.element.addEventListener("click", (event) => event.stopPropagation());
@@ -24,6 +23,9 @@ export class RecentFilterPopover {
     document.addEventListener("keydown", this.handleKeyDown, true);
     window.addEventListener("resize", this.reposition);
     window.addEventListener("scroll", this.reposition, true);
+    this.visualViewport = window.visualViewport || null;
+    this.visualViewport?.addEventListener("resize", this.reposition);
+    this.visualViewport?.addEventListener("scroll", this.reposition);
   }
 
   setAnchor(anchor: HTMLElement, searchRow: HTMLElement, sections: RecentFilterPopoverSection[]): void {
@@ -52,6 +54,10 @@ export class RecentFilterPopover {
       this.close();
       return;
     }
+    const focusedElement = document.activeElement as HTMLElement | null;
+    if (focusedElement && searchRow.contains(focusedElement) && typeof focusedElement.blur === "function") {
+      focusedElement.blur();
+    }
     this.openState = true;
     this.anchor?.setAttribute("aria-expanded", "true");
     this.element.hidden = false;
@@ -73,6 +79,8 @@ export class RecentFilterPopover {
     document.removeEventListener("keydown", this.handleKeyDown, true);
     window.removeEventListener("resize", this.reposition);
     window.removeEventListener("scroll", this.reposition, true);
+    this.visualViewport?.removeEventListener("resize", this.reposition);
+    this.visualViewport?.removeEventListener("scroll", this.reposition);
     this.element.remove();
     this.anchor = null;
     this.searchRow = null;
@@ -80,25 +88,19 @@ export class RecentFilterPopover {
 
   private renderSections(): void {
     this.element.replaceChildren();
-    const heading = document.createElement("div");
-    heading.className = "qnalog-recent-filter-popover-title";
-    heading.textContent = t("Filter and view options");
-    this.element.appendChild(heading);
     for (const section of this.sections) {
-      const group = document.createElement("section");
-      group.className = `qnalog-recent-filter-popover-section is-${section.id}`;
+      const group = document.createEl("section");
+      group.className = "qnalog-recent-filter-popover-section";
       group.setAttribute("role", "group");
-      group.setAttribute("aria-label", t(section.label));
-      const label = document.createElement("div");
-      label.className = "qnalog-recent-filter-popover-label";
-      label.textContent = t(section.label);
+      group.setAttribute("aria-label", section.label);
+      const label = document.createDiv({ cls: "qnalog-recent-filter-popover-label" });
+      label.textContent = section.label;
       group.appendChild(label);
-      const options = document.createElement("div");
-      options.className = "qnalog-recent-filter-popover-options";
+      const options = document.createDiv({ cls: section.id === "mode" ? "qnalog-recent-filter-popover-templates" : "qnalog-segmented" });
       for (const option of section.options) {
-        const button = document.createElement("button");
+        const button = document.createEl("button");
         button.type = "button";
-        button.className = "qnalog-recent-filter-popover-option";
+        button.className = section.id === "mode" ? "qnalog-option-chip" : "qnalog-segmented-option";
         button.textContent = option.label;
         button.dataset.section = section.id;
         button.dataset.option = option.id;
@@ -133,20 +135,25 @@ export class RecentFilterPopover {
   private reposition = (): void => {
     if (!this.openState || !this.anchor?.isConnected || !this.searchRow?.isConnected) return;
     const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const narrow = viewportWidth < 480;
-    const width = Math.max(0, Math.min(320, viewportWidth - 32));
+    const viewportHeight = this.visualViewport?.height || window.innerHeight;
+    const narrow = viewportWidth < 480 || document.body.classList.contains("is-mobile");
+    const width = Math.max(0, viewportWidth - 32);
     this.element.style.width = narrow ? `${width}px` : "min(320px, calc(100vw - 32px))";
-    this.element.style.maxHeight = narrow ? "60vh" : "min(220px, 60vh, calc(100vh - 32px))";
+    this.element.style.maxHeight = narrow ? "none" : "min(220px, 60vh, calc(100vh - 32px))";
     const anchorRect = this.anchor.getBoundingClientRect();
     const rowRect = this.searchRow.getBoundingClientRect();
     const measuredWidth = this.element.getBoundingClientRect().width || width;
     const left = narrow
-      ? 16
+      ? Math.max(0, (viewportWidth - width) / 2)
       : Math.max(16, Math.min(anchorRect.right - measuredWidth, viewportWidth - measuredWidth - 16));
-    const desiredTop = (narrow ? rowRect.bottom : anchorRect.bottom) + 6;
+    const desiredTop = (narrow ? rowRect.bottom : anchorRect.bottom) + (narrow ? 6 : 4);
+    const landscape = viewportHeight < 480;
+    const maxHeight = narrow ? Math.max(0, viewportHeight - (landscape ? 32 : desiredTop + 16)) : 0;
+    if (narrow) this.element.style.maxHeight = `${maxHeight}px`;
+    this.element.style.paddingBottom = narrow ? "calc(12px + env(safe-area-inset-bottom))" : "";
+    this.element.style.overflowY = narrow ? "auto" : "";
     const measuredHeight = this.element.getBoundingClientRect().height;
-    const top = Math.max(16, Math.min(desiredTop, viewportHeight - measuredHeight - 16));
+    const top = Math.max(16, Math.min(desiredTop, viewportHeight - Math.min(measuredHeight, maxHeight || measuredHeight) - 16));
     this.element.style.left = `${left}px`;
     this.element.style.top = `${top}px`;
   };

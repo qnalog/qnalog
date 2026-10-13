@@ -52,11 +52,16 @@ describe("recent filter view helpers", () => {
         mode: [{ id: "all", label: "All templates" }, { id: "meeting", label: "Meeting" }],
         group: [{ id: "time", label: "By time" }, { id: "folder", label: "By folder" }],
       },
+      (key) => `T:${key}`,
     );
     expect(sections.map(({ id, selected }) => [id, selected])).toEqual([
       ["time", "today"], ["mode", "meeting"], ["group", "folder"],
     ]);
     expect(sections[0].options.map(({ id }) => id)).toEqual(["all", "today", "week"]);
+    expect(sections[0].options.every(({ label }) => label.startsWith("T:"))).toBe(true);
+    expect(sections[2].options.every(({ label }) => label.startsWith("T:"))).toBe(true);
+    expect(sections[1].options[0].label).toBe("T:All");
+    expect(sections[1].options[1].label).toBe("Meeting");
   });
 
   it("shows an uncategorized group only for a single root with children and direct notes", () => {

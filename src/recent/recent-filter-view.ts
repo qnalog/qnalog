@@ -66,6 +66,7 @@ export function buildRecentFilterPopoverSections(
     mode: RecentFilterPopoverOption[];
     group: RecentFilterPopoverOption[];
   },
+  translate: (key: string) => string,
 ): RecentFilterPopoverSection[] {
   const timeOrder = ["all", "today", "week", "month"];
   const timeOptions = [...options.time].sort((left, right) => {
@@ -74,9 +75,9 @@ export function buildRecentFilterPopoverSections(
     return (leftOrder < 0 ? timeOrder.length : leftOrder) - (rightOrder < 0 ? timeOrder.length : rightOrder);
   });
   return [
-    { id: "time", label: "Time range", selected: state.time || "all", options: timeOptions },
-    { id: "mode", label: "Template", selected: state.mode || "all", options: [...options.mode] },
-    { id: "group", label: "Group by", selected: state.group || "folder", options: [...options.group] },
+    { id: "time", label: translate("Time range"), selected: state.time || "all", options: timeOptions.map((option) => ({ ...option, label: translate(option.id === "all" ? "All" : option.label) })) },
+    { id: "mode", label: translate("Template"), selected: state.mode || "all", options: options.mode.map((option) => ({ ...option, label: option.id === "all" ? translate("All") : option.label })) },
+    { id: "group", label: translate("Group by"), selected: state.group || "folder", options: options.group.map((option) => ({ ...option, label: translate(option.label) })) },
   ];
 }
 

@@ -12,6 +12,7 @@ import * as obsidian from "obsidian";
 import { getModeMeta } from "../shared/mode-meta";
 
 import { parseDurationLabel } from "../shared/util-text";
+import { formatRecentDurationText } from "./recent-meta-format";
 
 import { getFrontmatterTags } from "../shared/frontmatter-tags";
 
@@ -23,7 +24,7 @@ import { DEFAULT_SETTINGS } from "../shared/defaults";
 
 import { MODE_META, MODE_PREFIX_TO_KEY } from "../shared/catalog-modes";
 
-import { escapeRegExp, formatElapsed } from "../shared/util-common";
+import { escapeRegExp } from "../shared/util-common";
 
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
@@ -75,14 +76,15 @@ export const RECENT_GROUP_OPTIONS = [
 export const RECENT_TOPIC_FALLBACKS = ["Learning", "Meeting", "Interview", "PPT", "AI"];
 
 export function formatRecentDurationLabel(raw) {
-  if (raw == null) return "";
-  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
-    return formatElapsed(raw < 24 * 60 * 60 ? raw * 1000 : raw);
+  if (raw == null || raw === "") return "";
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || raw < 0) return "";
+    return formatRecentDurationText(raw < 24 * 60 * 60 ? raw * 1000 : raw, t);
   }
-  const text = String(raw || "").trim();
+  const text = String(raw).trim();
   if (!text) return "";
   const ms = parseDurationLabel(text);
-  return ms > 0 ? formatElapsed(ms) : text;
+  return ms > 0 || /^0+(?:\.0+)?$/.test(text) ? formatRecentDurationText(ms, t) : "";
 }
 
 export function normalizeRecentTopicToken(raw) {
@@ -271,6 +273,7 @@ export function getRecentNotes(plugin, limit) {
       axisPrimary: sameYear ? t.format("DD") : t.format("YYYY"),
       axisSecondary: sameYear ? t.format(i18nT("MMM")) : t.format(i18nT("MMM D")),
       displayTime: t.format(m && m[2] ? "HH:mm" : "MM-DD"),
+      hasTime: Boolean(m && m[2]),
       durationLabel,
       folderKey: folder.key,
       folderLabel: folder.label,

@@ -73,6 +73,7 @@ import { clampProgress } from "../notes/note-markdown";
 
 import { RECENT_GROUP_OPTIONS, RECENT_TIME_FILTER_OPTIONS, detectRecentNoteMode, getQueueTasksForMarkdown, getRecentNoteRoots, getRecentNotes, getRecentQueueProcessingState, getRecentRootForPath } from "../recent/recent-notes";
 import { buildRecentFilterPopoverSections, countActiveRecentFilters, listActiveRecentFilterChips, matchesRecentSearch, RECENT_FILTER_ICONS, shouldShowFolderRootHeader, shouldShowUncategorizedRootGroup } from "../recent/recent-filter-view";
+import { formatRecentMetaParts, formatRecentMetaTime } from "../recent/recent-meta-format";
 import { RecentFilterPopover } from "./recent-filter-popover";
 import { getRecentModePrefixEntries, stripRecentDatePrefix } from "../recent/recent-note-mode";
 
@@ -5269,6 +5270,7 @@ export class OutlineView extends obsidian.ItemView {
     return buildRecentFilterPopoverSections(
       { ...this.getRecentFilters(), group: this.getRecentGroupBy() },
       { time: RECENT_TIME_FILTER_OPTIONS, mode: this.getRecentModeFilterOptions(), group: RECENT_GROUP_OPTIONS },
+      i18nT,
     );
   }
 
@@ -5277,7 +5279,7 @@ export class OutlineView extends obsidian.ItemView {
       this.recentFilterPopover = new RecentFilterPopover((section, value) => {
         if (section === "time" || section === "mode") this.setRecentFilter(section, value);
         else this.setRecentGroupBy(value);
-      });
+      }, i18nT("Filter and view options"));
     }
     this.recentFilterPopover.toggle(button, searchRow, this.getRecentFilterPopoverSections());
   }
@@ -5425,7 +5427,7 @@ export class OutlineView extends obsidian.ItemView {
     if (chips.length) {
       const activeRow = wrap.createDiv({ cls: "qnalog-outline-recent-active-filters" });
       for (const chip of chips) {
-        const item = activeRow.createDiv({ cls: "qnalog-outline-recent-active-chip" });
+        const item = activeRow.createDiv({ cls: "qnalog-outline-recent-active-chip qnalog-option-chip is-active" });
         const icon = item.createSpan({ cls: "qnalog-outline-recent-active-chip-icon" });
         try { obsidian.setIcon(icon, RECENT_FILTER_ICONS[chip.kind === "time" ? "time" : "template"]); } catch { /* intentionally empty */ }
         item.createSpan({ cls: "qnalog-outline-recent-active-chip-label", text: chip.label });
@@ -5497,8 +5499,23 @@ export class OutlineView extends obsidian.ItemView {
     const titleLine = body.createDiv({ cls: "qnalog-outline-recent-title-line" });
     nameEl = titleLine.createDiv({ cls: "qnalog-outline-recent-name", text: r.title || r.file.basename });
     nameEl.addEventListener("click", (e) => { if (nameEl.isContentEditable) e.stopPropagation(); });
-    const metaText = [r.displayTime, getModeDisplayName(this.plugin.settings, r.mode), r.durationLabel].filter(Boolean).join(" · ");
-    body.createDiv({ cls: "qnalog-outline-recent-meta", text: metaText });
+    const timeText = formatRecentMetaTime(r.timestamp, Date.now(), {
+      includeDate: options.showDate === true,
+      hasTime: r.hasTime === true,
+      translate: i18nT,
+    });
+    const modeText = getModeDisplayName(this.plugin.settings, r.mode);
+    const metaParts = formatRecentMetaParts(timeText, modeText, r.durationLabel || "");
+    const metaText = metaParts.filter((part) => part.kind === "text").map((part) => part.value).join(" · ");
+    const durationPart = metaParts.find((part) => part.kind === "duration");
+    const metaEl = body.createDiv({ cls: "qnalog-outline-recent-meta", text: metaText });
+    if (durationPart) {
+      if (metaText) metaEl.createDiv({ cls: "qnalog-outline-recent-meta-separator", text: " · " });
+      const duration = metaEl.createDiv({ cls: "qnalog-outline-recent-duration" });
+      const timerIcon = duration.createDiv({ cls: "qnalog-outline-recent-duration-icon" });
+      try { obsidian.setIcon(timerIcon, "timer"); } catch { /* intentionally empty */ }
+      duration.createDiv({ cls: "qnalog-outline-recent-duration-label", text: durationPart.value });
+    }
     const failedTasks = getQueueTasksForMarkdown(this.plugin, r.file, { types: ["transcribe"], failedOnly: true });
     const actions = body.createDiv({ cls: "qnalog-outline-recent-actions" });
     this.createRecentActionButton(actions, {
@@ -5649,7 +5666,7 @@ export class OutlineView extends obsidian.ItemView {
       const content = nodeEl.createDiv({ cls: "qnalog-outline-recent-folder-content" });
       // 与常见文件管理器一致：同级先显示子文件夹，再显示当前文件夹直属纪要。
       for (const child of sortNodes(node.children)) renderNestedFolder(content, child, folderDepth);
-      for (const item of node.items) this.renderRecentNoteRow(content, item, activePath);
+      for (const item of node.items) this.renderRecentNoteRow(content, item, activePath, { showDate: true });
       bindFolderToggle(title, nodeEl, node, toggle, icon);
     };
 
@@ -5667,7 +5684,7 @@ export class OutlineView extends obsidian.ItemView {
             total: root.items.length,
           });
         } else {
-          for (const item of root.items) this.renderRecentNoteRow(list, item, activePath);
+          for (const item of root.items) this.renderRecentNoteRow(list, item, activePath, { showDate: true });
         }
         continue;
       }
@@ -5682,7 +5699,7 @@ export class OutlineView extends obsidian.ItemView {
       groupTitle.createSpan({ cls: "qnalog-outline-recent-group-count", text: `${root.total}${i18nT(" notes")}` });
       const content = itemsEl.createDiv({ cls: "qnalog-outline-recent-folder-content" });
       for (const child of sortNodes(root.children)) renderNestedFolder(content, child);
-      for (const item of root.items) this.renderRecentNoteRow(content, item, activePath);
+      for (const item of root.items) this.renderRecentNoteRow(content, item, activePath, { showDate: true });
       bindFolderToggle(groupTitle, groupEl, root, toggle, axisIcon);
     }
   }
