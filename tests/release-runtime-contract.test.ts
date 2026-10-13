@@ -120,7 +120,8 @@ describe("release runtime contracts", () => {
       expect(generalParts[0]?.prompt).toContain(chineseInstruction);
       expect(generalConsolidation?.prompt).toContain(chineseInstruction);
       expect(generalParts[0]?.prompt.match(/输出语言：中文/g)).toHaveLength(1);
-      expect(generalConsolidation?.prompt).toContain("输入共 3 个分段（SEG 1…SEG 3）");
+      expect(generalConsolidation?.prompt).toContain("输入共 3 个分段，概要列表必须逐个覆盖每个分段");
+      expect(generalConsolidation?.prompt).toContain("不要在输出中写分段编号、SEG 或时间分段引用");
 
 
       const synthesis = await run("synthesis");
@@ -187,6 +188,15 @@ describe("release runtime contracts", () => {
       }], chineseTaskReply);
       expect(chineseTask.result).toContain("- [ ] 事项：把初稿发给李明评审");
       expect(chineseTask.result).not.toContain("- [ ] Task:");
+      const modelBodyWithSegmentReference = `## 事实\n${"讨论内容".repeat(1600)}（SEG 1–2）`;
+      const sanitizedModelOutput = await run("general", [{
+        index: 0,
+        startOffsetMs: 0,
+        endOffsetMs: 15_000,
+        text: `原始转写（SEG 1–2）${"讨论内容".repeat(1600)}`,
+      }], modelBodyWithSegmentReference);
+      expect(sanitizedModelOutput.result).not.toContain("（SEG 1–2）");
+      expect(sanitizedModelOutput.calls[0]?.prompt).toContain("原始转写（SEG 1–2）");
       const coverageSegments = [
         { index: 0, startOffsetMs: 0, endOffsetMs: 10_000, text: "登录页改版上线，转化率从百分之三点二涨到三点八，注册流程从五步减到三步，王芳两周内出方案。" },
         { index: 1, startOffsetMs: 10_000, endOffsetMs: 20_000, text: "上个月四成投诉和退款有关，李明周五前出一页纸统一话术。" },
@@ -195,7 +205,7 @@ describe("release runtime contracts", () => {
       const missingThirdTopic = "> [!abstract] 概要\n> - 登录页改版上线，转化率升至百分之三点八，注册流程减至三步；王芳两周内出方案。\n> - 上个月四成投诉和退款有关；李明周五前整理一页纸统一话术。";
       const completeTopics = `${missingThirdTopic}\n> - 物流报价上涨百分之八；赵强先谈判，谈不拢再换供应商。`;
       const repaired = await run("general", coverageSegments, null, [missingThirdTopic, completeTopics]);
-      expect(repaired.calls.find(call => call.purpose === "briefing-part")?.prompt).toContain("输入共 3 个分段（SEG 1…SEG 3）");
+      expect(repaired.calls.find(call => call.purpose === "briefing-part")?.prompt).toContain("输入共 3 个分段，概要列表必须逐个覆盖每个分段");
       expect(repaired.calls.filter(call => call.purpose === "briefing-part-detail-repair")).toHaveLength(1);
       const coverageRepair = repaired.calls.find(call => call.purpose === "briefing-part-detail-repair");
       expect(coverageRepair?.prompt).toContain(`===SEG 3===\n${coverageSegments[2].text}`);

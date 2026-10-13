@@ -30,6 +30,7 @@ import { buildSynthesisConsolidationPrompt } from "./synthesis-policy";
 
 
 import { mergeBriefingSedimentObjects, resolveKnownSpeakerLabels } from "../notes/recording-issues";
+import { sanitizeBriefingModelOutput } from "./output-sanitize";
 
 import { BRIEFING_PRESUMMARY_NOTICE, BRIEFING_TRUNCATION_WARNING, applyRepolishPreferenceInstruction, applyStructureLevelInstruction, buildAdaptiveBriefingLengthInstruction, buildBriefingFidelityContract, buildBriefingPartExpansionPrompt, buildBriefingPipelineOptionsKey, buildChunkMergePrompt, buildGeneralConsolidationPrompt, buildGeneralCoverageRepairPrompt, buildSessionMetaPrefix, createBriefingLlmActivityOptions, formatMergeSegmentForPrompt, getBriefingCheckpointStore, getBriefingEffectiveDetailLevel, getBriefingPipelineTargetChars, mergeBriefingUsage, reportBriefingPartProgress, resolveTemplatePromptForMode, splitSegmentsIntoGroups } from "../prompts/briefing-prompts";
 import { buildEmptyLlmOutputFallback } from "../notes/note-write-content";
@@ -172,7 +173,7 @@ export async function polishTranscript(plugin, transcript, mode, sessionMeta, or
   // 客户端总超时 abort，避免"扣了钱却因超时拿不到结果"的浪费（符合总纲：不因工程缺陷浪费）。
   const raw = await callLlm(plugin, sys, userPrompt, { stream: true, payload: { max_tokens: briefingMergeMaxTokens } });
   const sedimentPreExtraction = extractSedimentPreExtractionBlock(raw);
-  const polished = postProcessBriefingOutput(sedimentPreExtraction.cleaned, mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", transcript);
+  const polished = postProcessBriefingOutput(sanitizeBriefingModelOutput(sedimentPreExtraction.cleaned), mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", transcript);
   return sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
 }
 
@@ -855,7 +856,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     auditUsage: checkpoint.auditUsage,
   });
   const sourceText = list.map((segment) => String(segment.text || "")).join("\n");
-  const polished = postProcessBriefingOutput(checkpoint.assembledBody, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", sourceText);
+  const polished = postProcessBriefingOutput(sanitizeBriefingModelOutput(checkpoint.assembledBody), mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", sourceText);
   const sedimentObjects = mergeBriefingSedimentObjects(checkpoint.parts);
   const bodyWithSediment = sedimentObjects ? appendSedimentPreExtractionBlock(polished, sedimentObjects) : polished;
   return appendKnowledgeSnapshot(bodyWithSediment, checkpoint.assembledKnowledge);
@@ -1017,7 +1018,7 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
       }
     }
   }
-  const auditedOutput = appendEntityEvidenceWarning(outputForPostProcess, joined);
+  const auditedOutput = appendEntityEvidenceWarning(sanitizeBriefingModelOutput(outputForPostProcess), joined);
   // 截断告警 + 文本导入预压缩告警合并成顶部 notice（都属"纪要可能不完整/有损"，一起提示）。
   const topNotices = [];
   if (truncated) topNotices.push(BRIEFING_TRUNCATION_WARNING);
