@@ -5603,7 +5603,7 @@ export class OutlineView extends obsidian.ItemView {
           preReorganizeAnchor.parentNode.insertBefore(versionRow, preReorganizeAnchor);
         }).finally(() => preReorganizeAnchor.remove());
       }
-      for (const v of r.variants) {
+      for (const v of r.variants || []) {
         const vrow = parent.createDiv({ cls: "qnalog-outline-recent-variant" });
         if (activePath && obsidian.normalizePath(v.file.path) === activePath) vrow.addClass("is-active");
         const vchip = vrow.createDiv({ cls: "qnalog-outline-recent-variant-chip" });
