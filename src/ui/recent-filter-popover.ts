@@ -13,17 +13,18 @@ export class RecentFilterPopover {
 
   constructor(onSelect: RecentFilterPopoverSelect, ariaLabel: string) {
     this.onSelect = onSelect;
-    this.element = document.createDiv({ cls: "qnalog-recent-filter-popover" });
+    this.element = activeDocument.createElement("div");
+    this.element.className = "qnalog-recent-filter-popover";
     this.element.setAttribute("role", "dialog");
     this.element.setAttribute("aria-label", ariaLabel);
     this.element.hidden = true;
-    document.body.appendChild(this.element);
+    activeDocument.body.appendChild(this.element);
     this.element.addEventListener("click", (event) => event.stopPropagation());
-    document.addEventListener("pointerdown", this.handleOutsidePointerDown, true);
-    document.addEventListener("keydown", this.handleKeyDown, true);
-    window.addEventListener("resize", this.reposition);
-    window.addEventListener("scroll", this.reposition, true);
-    this.visualViewport = window.visualViewport || null;
+    activeDocument.addEventListener("pointerdown", this.handleOutsidePointerDown, true);
+    activeDocument.addEventListener("keydown", this.handleKeyDown, true);
+    activeWindow.addEventListener("resize", this.reposition);
+    activeWindow.addEventListener("scroll", this.reposition, true);
+    this.visualViewport = activeWindow.visualViewport || null;
     this.visualViewport?.addEventListener("resize", this.reposition);
     this.visualViewport?.addEventListener("scroll", this.reposition);
   }
@@ -54,7 +55,7 @@ export class RecentFilterPopover {
       this.close();
       return;
     }
-    const focusedElement = document.activeElement as HTMLElement | null;
+    const focusedElement = activeDocument.activeElement as HTMLElement | null;
     if (focusedElement && searchRow.contains(focusedElement) && typeof focusedElement.blur === "function") {
       focusedElement.blur();
     }
@@ -75,10 +76,10 @@ export class RecentFilterPopover {
 
   dispose(): void {
     this.close();
-    document.removeEventListener("pointerdown", this.handleOutsidePointerDown, true);
-    document.removeEventListener("keydown", this.handleKeyDown, true);
-    window.removeEventListener("resize", this.reposition);
-    window.removeEventListener("scroll", this.reposition, true);
+    activeDocument.removeEventListener("pointerdown", this.handleOutsidePointerDown, true);
+    activeDocument.removeEventListener("keydown", this.handleKeyDown, true);
+    activeWindow.removeEventListener("resize", this.reposition);
+    activeWindow.removeEventListener("scroll", this.reposition, true);
     this.visualViewport?.removeEventListener("resize", this.reposition);
     this.visualViewport?.removeEventListener("scroll", this.reposition);
     this.element.remove();
@@ -89,16 +90,18 @@ export class RecentFilterPopover {
   private renderSections(): void {
     this.element.replaceChildren();
     for (const section of this.sections) {
-      const group = document.createEl("section");
+      const group = activeDocument.createElement("section");
       group.className = "qnalog-recent-filter-popover-section";
       group.setAttribute("role", "group");
       group.setAttribute("aria-label", section.label);
-      const label = document.createDiv({ cls: "qnalog-recent-filter-popover-label" });
+      const label = activeDocument.createElement("div");
+      label.className = "qnalog-recent-filter-popover-label";
       label.textContent = section.label;
       group.appendChild(label);
-      const options = document.createDiv({ cls: section.id === "mode" ? "qnalog-recent-filter-popover-templates" : "qnalog-segmented" });
+      const options = activeDocument.createElement("div");
+      options.className = section.id === "mode" ? "qnalog-recent-filter-popover-templates" : "qnalog-segmented";
       for (const option of section.options) {
-        const button = document.createEl("button");
+        const button = activeDocument.createElement("button");
         button.type = "button";
         button.className = section.id === "mode" ? "qnalog-option-chip" : "qnalog-segmented-option";
         button.textContent = option.label;
@@ -134,9 +137,9 @@ export class RecentFilterPopover {
 
   private reposition = (): void => {
     if (!this.openState || !this.anchor?.isConnected || !this.searchRow?.isConnected) return;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = this.visualViewport?.height || window.innerHeight;
-    const narrow = viewportWidth < 480 || document.body.classList.contains("is-mobile");
+    const viewportWidth = activeWindow.innerWidth;
+    const viewportHeight = this.visualViewport?.height || activeWindow.innerHeight;
+    const narrow = viewportWidth < 480 || activeDocument.body.classList.contains("is-mobile");
     const width = Math.max(0, viewportWidth - 32);
     this.element.style.width = narrow ? `${width}px` : "min(320px, calc(100vw - 32px))";
     this.element.style.maxHeight = narrow ? "none" : "min(220px, 60vh, calc(100vh - 32px))";
