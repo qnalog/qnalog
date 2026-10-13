@@ -188,6 +188,32 @@ afterEach(() => {
 });
 
 describe("QueueModal rendered recovery states", () => {
+  it.each([
+    ["naming", "Generating title", 94],
+    ["indexing", "Updating note index", 97],
+  ])("shows the %s stage as active in the write/done pipeline step", (stage, label, progress) => {
+    vi.stubGlobal("window", {
+      requestAnimationFrame: (callback: () => void) => { callback(); return 1; },
+      setInterval,
+      clearInterval,
+      moment: (value: number | string) => ({ format: () => new Date(value).toISOString().slice(11, 19) }),
+    });
+    const harness = makeProgressHarness();
+    harness.setRunning(stage, label, progress);
+    harness.plugin.tasks.getCurrentActivityDetail().queueTaskId = "";
+    harness.modal.onOpen();
+
+    const root = harness.modal.contentEl as never as MemoryElement;
+    const steps = root.querySelectorAll(".qnalog-progress-pipeline-step");
+    expect(root.textContent).toContain(label);
+    expect(root.querySelector(".qnalog-progress-state.is-active")?.textContent).toBe("In progress");
+    expect(steps[1].className).toContain("is-done");
+    expect(steps[2].className).toContain("is-active");
+    expect(steps[2].textContent).toContain("Done");
+    expect(root.querySelector(".qnalog-progress-pipeline-pulse")).not.toBeNull();
+    harness.modal.onClose();
+  });
+
   it("shows a failed queue task without an active pulse and redraws immediately on retry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-30T10:00:00.000Z"));

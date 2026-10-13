@@ -6,6 +6,16 @@ import {
   deriveTaskActivityStatus,
   getTaskErrorHint,
 } from "../src/shared/task-activity";
+import { TaskActivityService } from "../src/tasks/task-activity-service";
+import { t } from "../src/shared/i18n";
+
+vi.mock("obsidian", () => ({
+  Modal: class Modal {},
+  Notice: class Notice {},
+  TFile: class TFile { constructor(public path = "") {} },
+  normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, ""),
+  setIcon: vi.fn(),
+}));
 
 describe("task activity error classification", () => {
   it.each([
@@ -98,5 +108,69 @@ describe("TaskActivityStore", () => {
     expect(store.list({ includeDone: true })).toHaveLength(1);
     store.prune({ doneAfterMs: 1, now: Date.now() + 10 });
     expect(store.list({ includeDone: true })).toHaveLength(0);
+  });
+});
+
+describe("session task activity finalization stages", () => {
+  function createService(session: Record<string, unknown>) {
+    const service = new TaskActivityService({
+      sessionStore: { get: () => session },
+      settings: {},
+      queue: null,
+      recorder: { state: "idle" },
+    } as never);
+    service.taskActivityStore = new TaskActivityStore();
+    const statusText: string[] = [];
+    service.progressStatusEl = {
+      empty: () => { statusText.length = 0; },
+      removeClass: () => undefined,
+      toggleClass: () => undefined,
+      addClass: () => undefined,
+      setAttr: () => undefined,
+      createSpan: ({ text = "" }: { text?: string } = {}) => {
+        statusText.push(text);
+        return {};
+      },
+    } as never;
+    return { service, statusText };
+  }
+
+  it.each([
+    ["naming", "Generating title"],
+    ["indexing", "Updating note index"],
+  ])("keeps %s active in task activity and the status bar", (stage, label) => {
+    const session: Record<string, unknown> = {
+      id: "session-finalize", source: "recording", mdPath: "Notes/session.md",
+      startedAt: "2026-10-09T10:00:00.000Z",
+      workProgress: { stage, label: t(label), percent: stage === "naming" ? 94 : 97 },
+    };
+    const { service, statusText } = createService(session);
+
+    service.syncSessionTaskActivity(session as never);
+    service.updateBusyStatus();
+
+    expect(service.taskActivityStore.get("finalize:session-finalize")?.status).toBe("running");
+    expect(service.getCurrentActivityLabel()).toBe(t(label));
+    expect(statusText).toContain(t(label) + ` ${stage === "naming" ? 94 : 97}%`);
+  });
+
+  it("marks the session task done only after the done stage", () => {
+    const session: Record<string, unknown> = {
+      id: "session-finalize", source: "recording", mdPath: "Notes/session.md",
+      startedAt: "2026-10-09T10:00:00.000Z",
+      workProgress: { stage: "naming", label: t("Generating title"), percent: 94 },
+    };
+    const { service } = createService(session);
+
+    service.syncSessionTaskActivity(session as never);
+    expect(service.taskActivityStore.get("finalize:session-finalize")?.status).toBe("running");
+
+    session.workProgress = { stage: "indexing", label: t("Updating note index"), percent: 97 };
+    service.syncSessionTaskActivity(session as never);
+    expect(service.taskActivityStore.get("finalize:session-finalize")?.status).toBe("running");
+
+    session.workProgress = { stage: "done", label: t("Processing complete"), percent: 100 };
+    service.syncSessionTaskActivity(session as never);
+    expect(service.taskActivityStore.get("finalize:session-finalize")?.status).toBe("done");
   });
 });

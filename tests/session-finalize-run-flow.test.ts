@@ -4,6 +4,7 @@ const notices: Array<[string, number | undefined]> = [];
 vi.mock("obsidian", () => {
   class TFile { constructor(public path = "") {} }
   return {
+    Modal: class Modal {},
     TFile,
     Notice: class Notice { constructor(message: unknown, timeout?: number) { notices.push([String(message), timeout]); } },
     normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, ""),
@@ -14,8 +15,20 @@ import * as obsidian from "obsidian";
 import { runSessionFinalization, type SessionFinalizeRunPort } from "../src/notes/session-finalize-run-flow";
 import type { RecordingSession, Segment } from "../src/shared/types";
 import { t } from "../src/shared/i18n";
+import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { TaskActivityService } from "../src/tasks/task-activity-service";
+import { TaskActivityStore } from "../src/shared/task-activity";
 
-afterEach(() => { notices.length = 0; });
+afterEach(() => {
+  notices.length = 0;
+  setActiveUiLanguage(resolveUiLanguage("en", "en"));
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 function setup(options: { layout?: boolean; configIssue?: string; segments?: Segment[]; source?: string } = {}) {
   const file = new obsidian.TFile("Notes/session.md");
@@ -38,14 +51,14 @@ function setup(options: { layout?: boolean; configIssue?: string; segments?: Seg
     getVault: () => ({ getAbstractFileByPath: vi.fn(() => file), read: vi.fn(async () => "A note body") }),
     openFile: vi.fn(async () => undefined), readSilenceTicks: () => ({ voiced: 0, silent: 0 }),
     setProgress: vi.fn((_session, patch) => { events.push(`stage:${patch.stage}`); }),
-    cleanupSuccessfulSegmentAudio: vi.fn(async () => undefined), removeEmptySessionBlock: vi.fn(async () => { events.push("remove-empty"); }),
+    cleanupSuccessfulSegmentAudio: vi.fn(async () => { events.push("cleanup"); }), removeEmptySessionBlock: vi.fn(async () => { events.push("remove-empty"); }),
     appendPolishBlock: vi.fn(async () => { events.push("append"); }), rewriteConsolidated: vi.fn(async () => { events.push("rewrite"); }),
-    renameWithGeneratedTitle: vi.fn(async () => null), refreshNoteIndex: vi.fn(async () => undefined), autoExtractSediment: vi.fn(),
+    renameWithGeneratedTitle: vi.fn(async () => { events.push("rename"); return null; }), refreshNoteIndex: vi.fn(async () => { events.push("index"); }), autoExtractSediment: vi.fn(),
     syncTranscriptAudioSource: vi.fn(async () => undefined), confirmSpeakerNames: vi.fn(async (_session, segments) => ({ segments, frontmatter: null })),
     processMeetingWorkbench: vi.fn(async () => undefined), ensureRealtimeOutline: vi.fn(async () => undefined),
     mergeAndPolish: vi.fn(async () => { events.push("merge"); return "Polished note"; }), clearCommittedBriefingCheckpoint: vi.fn(async () => undefined),
     addQueueTask: vi.fn(async (task) => { queue.push(task); }), requestDeferredAsrRetry: vi.fn(), requestTaskQueueRetry: vi.fn(),
-    beginTaskMeter: vi.fn(() => null), endTaskMeter: vi.fn(() => null), logCompletedWork: vi.fn(),
+    beginTaskMeter: vi.fn(() => null), endTaskMeter: vi.fn(() => null), logCompletedWork: vi.fn(() => { events.push("completed-log"); }),
     saveVersion: vi.fn(async () => undefined), formatNow: (format) => `M:${format}`, buildTitleSource: () => "Fallback title",
   };
   return { port, session, events, queue, settings, file };
@@ -97,8 +110,77 @@ describe("session finalization flow consumer contract", () => {
     expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note");
     expect(fixture.port.cleanupSuccessfulSegmentAudio).toHaveBeenCalledWith(fixture.session);
     expect(fixture.events.indexOf("rewrite")).toBeLessThan(fixture.events.indexOf("end"));
+    expect(fixture.events.indexOf("stage:naming")).toBeLessThan(fixture.events.indexOf("rename"));
+    expect(fixture.events.indexOf("rename")).toBeLessThan(fixture.events.indexOf("stage:indexing"));
+    expect(fixture.events.indexOf("stage:indexing")).toBeLessThan(fixture.events.indexOf("index"));
+    expect(fixture.events.indexOf("index")).toBeLessThan(fixture.events.indexOf("cleanup"));
+    expect(fixture.events.indexOf("cleanup")).toBeLessThan(fixture.events.indexOf("completed-log"));
+    expect(fixture.events.indexOf("completed-log")).toBeLessThan(fixture.events.indexOf("stage:done"));
     expect(fixture.events.indexOf("stage:done")).toBeLessThan(fixture.events.indexOf("end"));
+    expect(fixture.events[fixture.events.indexOf("stage:done") + 1]).toBe("end");
     expect(notices.at(-1)?.[0]).toBe(t("QnALog processing completed"));
+  });
+
+  it("keeps task activity running with the title label while title generation is pending", async () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const fixture = setup();
+    const pendingTitle = deferred<unknown>();
+    vi.mocked(fixture.port.renameWithGeneratedTitle).mockReturnValue(pendingTitle.promise);
+    const tasks = new TaskActivityService({
+      sessionStore: { get: () => fixture.session }, settings: {}, queue: null, recorder: { state: "idle" },
+    } as never);
+    tasks.taskActivityStore = new TaskActivityStore();
+    vi.mocked(fixture.port.setProgress).mockImplementation((_session, patch) => {
+      fixture.session.workProgress = { ...patch, updatedAt: new Date().toISOString() } as never;
+      fixture.events.push(`stage:${patch.stage}`);
+      tasks.syncSessionTaskActivity(fixture.session);
+    });
+
+    const finalizing = runSessionFinalization(fixture.port, fixture.session);
+    await vi.waitFor(() => expect(fixture.session.workProgress?.stage).toBe("naming"));
+    expect(fixture.session.workProgress?.label).toBe("生成标题");
+    expect(tasks.taskActivityStore.get("finalize:session-1")?.status).toBe("running");
+    expect(tasks.getCurrentActivityLabel()).toBe("生成标题");
+
+    pendingTitle.resolve(null);
+    await finalizing;
+  });
+
+  it("shows indexing as active while index refresh is pending", async () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const fixture = setup();
+    const pendingIndex = deferred<unknown>();
+    vi.mocked(fixture.port.refreshNoteIndex).mockReturnValue(pendingIndex.promise);
+    const tasks = new TaskActivityService({
+      sessionStore: { get: () => fixture.session }, settings: {}, queue: null, recorder: { state: "idle" },
+    } as never);
+    tasks.taskActivityStore = new TaskActivityStore();
+    vi.mocked(fixture.port.setProgress).mockImplementation((_session, patch) => {
+      fixture.session.workProgress = { ...patch, updatedAt: new Date().toISOString() } as never;
+      fixture.events.push(`stage:${patch.stage}`);
+      tasks.syncSessionTaskActivity(fixture.session);
+    });
+
+    const finalizing = runSessionFinalization(fixture.port, fixture.session);
+    await vi.waitFor(() => expect(fixture.session.workProgress?.stage).toBe("indexing"));
+    expect(fixture.session.workProgress?.label).toBe("更新笔记索引");
+    expect(tasks.taskActivityStore.get("finalize:session-1")?.status).toBe("running");
+    expect(tasks.getCurrentActivityLabel()).toBe("更新笔记索引");
+
+    pendingIndex.resolve(undefined);
+    await finalizing;
+  });
+
+  it.each(["title", "index"])("still completes and ends once when %s processing fails", async (failure) => {
+    const fixture = setup();
+    if (failure === "title") vi.mocked(fixture.port.renameWithGeneratedTitle).mockRejectedValueOnce(new Error("title service unavailable"));
+    else vi.mocked(fixture.port.refreshNoteIndex).mockRejectedValueOnce(new Error("index write failed"));
+
+    await runSessionFinalization(fixture.port, fixture.session);
+
+    expect(fixture.events).toContain("stage:done");
+    expect(fixture.port.endSession).toHaveBeenCalledTimes(1);
+    expect(fixture.events[fixture.events.indexOf("stage:done") + 1]).toBe("end");
   });
 
   it("queues retryable merge failures and retains the retry reason", async () => {
@@ -170,6 +252,8 @@ describe("session finalization flow consumer contract", () => {
     expect(fixture.port.saveVersion).toHaveBeenCalledWith(fixture.file, "A note body", fixture.session.continuationBaseSegments, expect.objectContaining({ kind: "pre-append", activate: false }));
     expect(fixture.events.indexOf("archive")).toBeLessThan(fixture.events.indexOf("rewrite"));
     expect(fixture.port.renameWithGeneratedTitle).not.toHaveBeenCalled();
+    expect(fixture.events).not.toContain("stage:naming");
+    expect(fixture.events).not.toContain("stage:indexing");
   });
 
   it("uses the execution-time sediment setting changed during merge", async () => {
