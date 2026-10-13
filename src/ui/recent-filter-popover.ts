@@ -1,5 +1,19 @@
 import type { RecentFilterPopoverSection, RecentFilterPopoverSectionId } from "../recent/recent-filter-view";
 
+declare global {
+  interface Window {
+    createEl<K extends keyof HTMLElementTagNameMap>(
+      tag: K,
+      options?: DomElementInfo | string,
+      callback?: (element: HTMLElementTagNameMap[K]) => void,
+    ): HTMLElementTagNameMap[K];
+    createDiv(
+      options?: DomElementInfo | string,
+      callback?: (element: HTMLDivElement) => void,
+    ): HTMLDivElement;
+  }
+}
+
 export type RecentFilterPopoverSelect = (section: RecentFilterPopoverSectionId, value: string) => void;
 
 export class RecentFilterPopover {
@@ -13,8 +27,7 @@ export class RecentFilterPopover {
 
   constructor(onSelect: RecentFilterPopoverSelect, ariaLabel: string) {
     this.onSelect = onSelect;
-    this.element = activeDocument.createElement("div");
-    this.element.className = "qnalog-recent-filter-popover";
+    this.element = activeWindow.createDiv({ cls: "qnalog-recent-filter-popover" });
     this.element.setAttribute("role", "dialog");
     this.element.setAttribute("aria-label", ariaLabel);
     this.element.hidden = true;
@@ -90,18 +103,18 @@ export class RecentFilterPopover {
   private renderSections(): void {
     this.element.replaceChildren();
     for (const section of this.sections) {
-      const group = activeDocument.createElement("section");
+      const group = activeWindow.createEl("section");
       group.className = "qnalog-recent-filter-popover-section";
       group.setAttribute("role", "group");
       group.setAttribute("aria-label", section.label);
-      const label = activeDocument.createElement("div");
-      label.className = "qnalog-recent-filter-popover-label";
+      const label = activeWindow.createDiv({ cls: "qnalog-recent-filter-popover-label" });
       label.textContent = section.label;
       group.appendChild(label);
-      const options = activeDocument.createElement("div");
-      options.className = section.id === "mode" ? "qnalog-recent-filter-popover-templates" : "qnalog-segmented";
+      const options = activeWindow.createDiv({
+        cls: section.id === "mode" ? "qnalog-recent-filter-popover-templates" : "qnalog-segmented",
+      });
       for (const option of section.options) {
-        const button = activeDocument.createElement("button");
+        const button = activeWindow.createEl("button");
         button.type = "button";
         button.className = section.id === "mode" ? "qnalog-option-chip" : "qnalog-segmented-option";
         button.textContent = option.label;

@@ -163,6 +163,14 @@ class FakeWindow extends FakeEventTarget {
   innerWidth = 1024;
   innerHeight = 768;
   visualViewport: null = null;
+  constructor(private readonly ownerDocument: FakeDocument) { super(); }
+  createEl(tag: string, options: { cls?: string; text?: string } = {}): FakeElement {
+    const element = this.ownerDocument.createElement(tag);
+    element.className = options.cls || "";
+    element.textContent = options.text || "";
+    return element;
+  }
+  createDiv(options: { cls?: string; text?: string } = {}): FakeElement { return this.createEl("div", options); }
 }
 
 Object.defineProperty(FakeNode.prototype, "createEl", { value: FakeNode.prototype.createEl, configurable: true });
@@ -175,7 +183,7 @@ let testWindow: FakeWindow;
 
 beforeEach(() => {
   testDocument = new FakeDocument();
-  testWindow = new FakeWindow();
+  testWindow = new FakeWindow(testDocument);
   vi.stubGlobal("Node", FakeNode);
   vi.stubGlobal("document", testDocument);
   vi.stubGlobal("window", testWindow);
