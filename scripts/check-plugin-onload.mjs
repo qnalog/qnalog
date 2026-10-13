@@ -11,7 +11,13 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const usage = "[plugin-onload] Usage: node scripts/check-plugin-onload.mjs [--bundle <path>]";
-const saveAllFailureCheck = process.argv.length === 3 && process.argv[2] === "--save-all-secret-failure";
+const saveAllFailureModes = new Set([
+  "--save-all-secret-failure",
+  "--save-all-secret-failure-missing-data",
+  "--save-all-secret-failure-future-data",
+]);
+const saveAllFailureMode = process.argv.length === 3 && saveAllFailureModes.has(process.argv[2]) ? process.argv[2] : null;
+const saveAllFailureCheck = saveAllFailureMode !== null;
 function parseBundleArgument(args) {
   if (args.length === 0) return fileURLToPath(new URL("../main.js", import.meta.url));
   if (args.length !== 2 || args[0] !== "--bundle" || !args[1]) {
@@ -273,10 +279,24 @@ async function main() {
   }
 
   if (saveAllFailureCheck) {
-    const previousData = {
-      settings: { composer: { apiKey: "preserved-test-key", model: "existing-model" } },
-      backgroundJobs: { items: [] },
-    };
+    const settingsSource = readFileSync(new URL("../src/shared/settings-io.ts", import.meta.url), "utf8");
+    const versionMatch = settingsSource.match(/SETTINGS_SCHEMA_VERSION\s*=\s*(\d+)/);
+    const currentSchemaVersion = versionMatch ? Number(versionMatch[1]) : NaN;
+    expect(Number.isFinite(currentSchemaVersion), "无法读取 SETTINGS_SCHEMA_VERSION");
+    const previousData = saveAllFailureMode === "--save-all-secret-failure-missing-data"
+      ? null
+      : {
+        settings: {
+          schemaVersion: saveAllFailureMode === "--save-all-secret-failure-future-data"
+            ? currentSchemaVersion + 1
+            : currentSchemaVersion,
+          composer: { apiKey: "preserved-test-key", model: "existing-model" },
+        },
+        backgroundJobs: { items: [] },
+      };
+    const previousDataJson = JSON.stringify(previousData);
+    const noticeCountBefore = notices.length;
+    plugin.storedData = previousData;
     plugin.lastSaved = previousData;
     plugin.savedCount = 0;
     plugin.settings.llmApiKey = "replacement-test-key";
@@ -289,20 +309,30 @@ async function main() {
       sessionId: "secret-failure-session",
     });
     rejectSecretWrites = true;
+    let saveAllRejected = false;
     try {
       await plugin.saveAll();
     } catch {
-      failures.push("plugin.saveAll rejected after SecretStorage.setSecret failed");
+      saveAllRejected = true;
     } finally {
       rejectSecretWrites = false;
     }
-    expect(plugin.savedCount === 1, `saveData was called ${plugin.savedCount} times; expected 1`);
-    expect(plugin.lastSaved?.backgroundJobs?.items?.some((task) => task.id === "secret-failure-task"),
-      "saved backgroundJobs.items did not include the newly queued task");
-    expect(plugin.lastSaved?.settings?.composer?.model === "existing-model",
-      "saved settings did not retain the existing model setting");
-    expect(Boolean(plugin.lastSaved?.settings?.composer?.apiKey),
-      "saved settings replaced the existing API key field with the key-cleared snapshot");
+    expect(saveAllRejected, "plugin.saveAll did not preserve its rejection after SecretStorage failed");
+    if (saveAllFailureMode === "--save-all-secret-failure") {
+      expect(plugin.savedCount === 1, `saveData was called ${plugin.savedCount} times; expected 1`);
+      expect(plugin.lastSaved?.backgroundJobs?.items?.some((task) => task.id === "secret-failure-task"),
+        "saved backgroundJobs.items did not include the newly queued task");
+      expect(plugin.lastSaved?.settings?.composer?.model === "existing-model",
+        "saved settings did not retain the existing model setting");
+      expect(Boolean(plugin.lastSaved?.settings?.composer?.apiKey),
+        "saved settings replaced the existing API key field with the key-cleared snapshot");
+    } else {
+      expect(plugin.savedCount === 0, `saveData was called ${plugin.savedCount} times; expected 0`);
+      expect(JSON.stringify(plugin.storedData) === previousDataJson,
+        "the existing data changed when queue-only persistence was not allowed");
+      expect(notices.length >= noticeCountBefore + 2,
+        "queue persistence refusal was not explained with a Notice");
+    }
     await plugin.onunload();
     for (const id of plugin.intervals) clearInterval(id);
     if (failures.length) return report(failures);
