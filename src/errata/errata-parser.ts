@@ -1,4 +1,5 @@
 import { normalizeVocabularyCorrectionTerm } from "../vocabulary/correction-normalization";
+import { getErrataSectionKey, type ErrataSection } from "./errata-sections";
 
 export interface ErrataReplacement { from: string; to: string }
 export const MIN_ERRATA_TERM_LENGTH = 2;
@@ -9,8 +10,6 @@ export interface ParsedErrata {
   notes: string[];
   truncated: boolean;
 }
-
-type Section = "replacements" | "noise" | "notes" | null;
 
 function parseReplacement(line: string): ErrataReplacement | null {
   const cleaned = line.trim().replace(/^[-*+]\s+/, "").replace(/^\d+[.)、]\s+/, "");
@@ -32,15 +31,14 @@ function normalizeNoiseParagraph(paragraph: string): string {
 export function parseErrata(markdown: string): ParsedErrata {
   const source = String(markdown || "").replace(/^\uFEFF/, "");
   const lines = source.split(/\r?\n/);
-  const sectionLines: Record<Exclude<Section, null>, string[]> = {
+  const sectionLines: Record<ErrataSection, string[]> = {
     replacements: [], noise: [], notes: [],
   };
-  let section: Section = null;
+  let section: ErrataSection | null = null;
   for (const line of lines) {
     const heading = line.match(/^\s*##\s+(.+?)\s*#*\s*$/);
     if (heading) {
-      const title = heading[1].trim();
-      section = title === "替换" ? "replacements" : title === "噪音" ? "noise" : title === "说明" ? "notes" : null;
+      section = getErrataSectionKey(heading[1]);
       continue;
     }
     if (section) sectionLines[section].push(line);

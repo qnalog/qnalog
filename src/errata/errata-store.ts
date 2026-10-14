@@ -1,7 +1,9 @@
 import * as obsidian from "obsidian";
 import { NS_ERRATA_FOLDER } from "../shared/namespace";
+import { getActiveUiLanguage, t } from "../shared/i18n";
 import { parseErrata } from "./errata-parser";
 import { isErrataPath } from "./errata-path";
+import { getErrataFilenameSuffix, getErrataNoteLabel, getErrataSectionKey, getErrataSectionTitles, type ErrataSection } from "./errata-sections";
 
 export { isErrataPath } from "./errata-path";
 
@@ -79,20 +81,24 @@ export class ErrataStore {
 
   async create(notePath: string): Promise<obsidian.TFile> {
     const source = this.port.getByPath(normalizePath(notePath));
-    if (!(source instanceof obsidian.TFile)) throw new Error("The source note could not be found.");
+    if (!(source instanceof obsidian.TFile)) throw new Error(t("The source note could not be found."));
     const current = await this.find(source.path);
     if (current) return current;
     await this.port.ensureFolder(NS_ERRATA_FOLDER);
-    const targetPath = normalizePath(`${NS_ERRATA_FOLDER}/${source.basename} · 勘误.md`);
+    const language = getActiveUiLanguage().id === "zh" ? "zh" : "en";
+    const sectionTitles = getErrataSectionTitles(language);
+    const noteLabel = getErrataNoteLabel(language);
+    const suffix = getErrataFilenameSuffix(language);
+    const targetPath = normalizePath(`${NS_ERRATA_FOLDER}/${source.basename} · ${suffix}.md`);
     const existing = this.port.getByPath(targetPath);
     if (existing instanceof obsidian.TFile) {
       const first = this.port.getLinks(existing)[0];
       const linked = first && this.port.resolveLink(linkToPath(first.link), existing.path);
       if (linked instanceof obsidian.TFile && normalizePath(linked.path) === normalizePath(source.path)) return existing;
-      throw new Error("A different errata note already uses this file name.");
+      throw new Error(t("A different errata note already uses this file name."));
     }
     const sourceLink = normalizePath(source.path).replace(/\.md$/i, "");
-    const content = `笔记：[[${sourceLink}]]\n\n## 替换\n\n## 噪音\n\n## 说明\n`;
+    const content = `${noteLabel}[[${sourceLink}]]\n\n## ${sectionTitles.replacements}\n\n## ${sectionTitles.noise}\n\n## ${sectionTitles.notes}\n`;
     try {
       const created = await this.port.create(targetPath, content);
       this.rebuildIndex();
@@ -109,31 +115,50 @@ export class ErrataStore {
   }
 
   appendReplacement(notePath: string, from: string, to: string): Promise<obsidian.TFile> {
-    return this.append(notePath, "替换", `${from} => ${to}`);
+    return this.append(notePath, "replacements", `${from} => ${to}`);
   }
 
   appendNoise(notePath: string, text: string): Promise<obsidian.TFile> {
     const quoted = String(text || "").trim().split(/\r?\n/).map((line) => `> ${line}`).join("\n");
-    return this.append(notePath, "噪音", quoted);
+    return this.append(notePath, "noise", quoted);
   }
 
-  private async append(notePath: string, heading: "替换" | "噪音", entry: string): Promise<obsidian.TFile> {
+  private async append(notePath: string, section: ErrataSection, entry: string): Promise<obsidian.TFile> {
     const file = await this.find(notePath) || await this.create(notePath);
     await this.port.process(file, (current) => {
       const parsed = parseErrata(current);
-      if (heading === "替换") {
+      if (section === "replacements") {
         const [from, to] = entry.split(/\s*=>\s*/);
         if (parsed.replacements.some((rule) => rule.from === from && rule.to === to)) return current;
       } else if (parsed.noise.some((noise) => noise.replace(/\s+/g, " ").trim() === entry.replace(/^> /gm, "").replace(/\s+/g, " ").trim())) {
         return current;
       }
-      const headingPattern = new RegExp(`(^|\\n)## ${heading}\\s*(?:\\n|$)`);
-      const match = headingPattern.exec(current);
-      if (!match) return `${current.trimEnd()}\n\n## ${heading}\n${entry}\n`;
-      const insertAt = (match.index || 0) + match[0].length;
-      return `${current.slice(0, insertAt)}${entry}\n${current.slice(insertAt)}`;
+      const insertAt = findErrataSectionInsertionPoint(current, section);
+      if (insertAt === null) {
+        const language = getActiveUiLanguage().id === "zh" ? "zh" : "en";
+        const title = getErrataSectionTitles(language)[section];
+        return `${current.trimEnd()}\n\n## ${title}\n${entry}\n`;
+      }
+      const prefix = insertAt.needsLineBreak ? "\n" : "";
+      return `${current.slice(0, insertAt.index)}${prefix}${entry}\n${current.slice(insertAt.index)}`;
     });
     this.rebuildIndex();
     return file;
   }
+}
+
+function findErrataSectionInsertionPoint(markdown: string, section: ErrataSection): { index: number; needsLineBreak: boolean } | null {
+  const lines = markdown.split(/\r?\n/);
+  let lineStart = 0;
+  for (const line of lines) {
+    const heading = line.match(/^\s*##\s+(.+?)\s*#*\s*$/);
+    if (heading && getErrataSectionKey(heading[1]) === section) {
+      const lineEnd = lineStart + line.length;
+      const lineEndingLength = markdown.startsWith("\r\n", lineEnd) ? 2 : markdown.startsWith("\n", lineEnd) ? 1 : 0;
+      return { index: lineEnd + lineEndingLength, needsLineBreak: lineEndingLength === 0 };
+    }
+    const lineEnd = lineStart + line.length;
+    lineStart = lineEnd + (markdown.startsWith("\r\n", lineEnd) ? 2 : markdown.startsWith("\n", lineEnd) ? 1 : 0);
+  }
+  return null;
 }

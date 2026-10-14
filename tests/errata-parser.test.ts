@@ -34,6 +34,21 @@ describe("errata parser", () => {
     });
   });
 
+  it("recognizes English headings with case and surrounding whitespace", () => {
+    const expected = parseErrata("## 替换\nwrong => right\n## 噪音\nnoise text\n## 说明\na note");
+    const variants = [
+      "## Replace\nwrong => right\n## Noise\nnoise text\n## Notes\na note",
+      "  ##   rEpLaCe   \nwrong => right\n  ## nOiSe  \nnoise text\n ## NOTES   \na note",
+      "## Replace\nwrong => right\n## 噪音\nnoise text\n## Notes\na note",
+    ];
+    for (const markdown of variants) expect(parseErrata(markdown)).toEqual(expected);
+  });
+
+  it("continues to ignore unknown section headings", () => {
+    expect(parseErrata("## 替换\nknown => value\n## Other\nunknown => value").replacements)
+      .toEqual([{ from: "known", to: "value" }]);
+  });
+
   it("rejects short, identical and overlong replacement terms", () => {
     const parsed = parseErrata(`## 替换\na => b\nlonger => longer\n${"x".repeat(61)} => ok\nok => ${"x".repeat(61)}`);
     expect(parsed.replacements).toEqual([]);

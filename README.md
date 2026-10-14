@@ -79,7 +79,7 @@ Before the first derived version, QnALog caches the source text as an **Original
 
 ### Errata for note corrections
 
-Use **QnALog: Create or open errata for this note** to open the note's errata file. Select a short incorrect term and run **QnALog: Correct selected text** to save a replacement; QnALog also updates matching text in the current editor while leaving transcript blocks unchanged. Use **QnALog: Mark selected text as noise** to record text that should be excluded from future organization. Reorganize or regenerate the note to apply its errata to new output. Errata files are stored under `QnALog/勘误表`.
+Use **QnALog: Create or open errata for this note** to open the note's errata file. Select a short incorrect term and run **QnALog: Correct selected text** to save a replacement; QnALog also updates matching text in the current editor while leaving transcript blocks unchanged. Use **QnALog: Mark selected text as noise** to record text that should be excluded from future organization. Reorganize or regenerate the note to apply its errata to new output. Errata files are stored under `QnALog/勘误表`. Section headings may use Chinese or English (`替换/Replace`, `噪音/Noise`, `说明/Notes`); newly created files use the current interface language.
 
 ### Long content, task progress, and recovery
 

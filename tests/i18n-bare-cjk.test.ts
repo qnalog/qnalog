@@ -60,7 +60,8 @@ const CONTENT_FILES: Record<string, string> = {
   "src/topics/topic-page.ts": "主题页正文模板、章节名与引用标签（写入用户主题页的内容）",
   "src/topics/topic-integration.ts": "发送模型的结构标签与未核实标记（内部提示词/笔记内容）",
   "src/topics/topic-store.ts": "主题合并写入的说明文本（主题页内容，不是界面文案）",
-  "src/errata/": "勘误表文件结构与发给模型的指令文本，不是界面文案",
+  "src/errata/errata-sections.ts": "勘误表节标题与文件结构字面量",
+  "src/errata/errata-prompt.ts": "发给模型的勘误表指令文本",
 };
 
 /** 逐条例外：文件 → [字面量前缀或全文, 类别]。类别见下方 legend。 */

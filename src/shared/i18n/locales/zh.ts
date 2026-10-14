@@ -16,6 +16,8 @@ export const ZH: MessageTable = {
   "Open errata": "打开勘误表",
   "QnALog: Correct selected text": "QnALog：订正选中文字",
   "QnALog: Mark selected text as noise": "QnALog：将选中文字标为噪音",
+  "The source note could not be found.": "找不到来源笔记。",
+  "A different errata note already uses this file name.": "已有另一篇勘误表使用了此文件名。",
   "QnALog: Transcribe and organize": "QnALog：转写并整理",
   "QnALog: Merge ": "QnALog：整合 ",
   "Organize as ": "整理为",
