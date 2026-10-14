@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 const notes = new Map<string, string>();
 let importedAudioTexts = ["Imported audio transcript"];
 let importedAudioIndex = 0;
+let importedAudioDurationMs = 1200;
 let importedSourceText = "A decision and its owner";
 let lastInitializedSession: RecordingSession | null = null;
+const notices: string[] = [];
 let importedAudioUnits: Array<{
   rawText: string;
   normalizedText: string;
@@ -28,7 +30,7 @@ vi.mock("obsidian", () => {
     }
   }
   class TFolder { constructor(public path: string) {} }
-  class Notice { constructor() {} }
+  class Notice { constructor(message?: string) { if (message) notices.push(message); } }
   class Modal { open() {} close() {} }
   class Setting { constructor() {} }
   return {
@@ -44,13 +46,13 @@ vi.mock("../src/asr/long-audio-transcription", async (importOriginal) => {
     resolveImportTranscribeProvider: () => ({ id: "test-provider", endpoint: "https://asr.example.com/v1/transcriptions", apiKey: "test-key", model: "test-model" }),
     transcribeImportedAudio: async () => {
       const text = importedAudioTexts[importedAudioIndex++] || "";
-      return { text, durationMs: 1200, rawText: text, units: importedAudioUnits };
+      return { text, durationMs: importedAudioDurationMs, rawText: text, units: importedAudioUnits };
     },
   };
 });
 vi.mock("../src/notes/audio-refs", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, getAudioDurationMs: async () => 1200 };
+  return { ...actual, getAudioDurationMs: async () => importedAudioDurationMs };
 });
 import * as obsidian from "obsidian";
 import { ImportService } from "../src/imports/import-service";
@@ -62,7 +64,7 @@ import { insertBeforeSessionSegmentsEnd } from "../src/notes/note-segment-store"
 import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 import { verifyTranscriptCheckpoint } from "../src/imports/transcript-checkpoint";
 
-function makeHost(audioPaths = ["QnALog/Import/clip.wav"]): { host: ImportHost; sessionStore: SessionStore; sourcePath: string; audioPath: string } {
+function makeHost(audioPaths = ["QnALog/Import/clip.wav"]): { host: ImportHost; sessionStore: SessionStore; sourcePath: string; audioPath: string; queuedTasks: unknown[]; diagnostics: unknown[][] } {
   const sourcePath = "QnALog/Import/source.txt";
   const audioPath = audioPaths[0];
   const folders = new Set<string>();
@@ -81,10 +83,12 @@ function makeHost(audioPaths = ["QnALog/Import/clip.wav"]): { host: ImportHost; 
     },
   };
   const sessionStore = new SessionStore();
+  const queuedTasks: unknown[] = [];
+  const diagnostics: unknown[][] = [];
   const host = {
     continuations: { trackSession: () => undefined, releaseSession: () => undefined } as never,
     app,
-    diagnostics: { logDiagnostic: async () => undefined },
+    diagnostics: { logDiagnostic: async (...args: unknown[]) => { diagnostics.push(args); } },
     noteWriter: {
       async appendToNote(path: string, content: string) { notes.set(path, (notes.get(path) || "") + content); },
       async insertBeforeSegmentsEnd(path: string, content: string, sessionId?: string) {
@@ -95,15 +99,15 @@ function makeHost(audioPaths = ["QnALog/Import/clip.wav"]): { host: ImportHost; 
       },
     },
     profiles: { getTranscribeProviderProfile: () => ({ title: "Test ASR" }) },
-    queue: { add: async (task: unknown) => Object.assign({ id: "retry-task" }, task) },
+    queue: { add: async (task: unknown) => { queuedTasks.push(task); return Object.assign({ id: "retry-task" }, task); } },
     asrPipeline: { initializeSession: (session: RecordingSession) => { lastInitializedSession = session; }, setSessionWorkProgress: () => undefined, maybeDeleteSegmentCacheFile: async () => undefined, isSegmentCachePath: () => false },
     sessionStore,
     sessionFinalize: {
-      async finalizeSession(session: RecordingSession) {
+      finalizeSession: vi.fn(async (session: RecordingSession) => {
         expect(sessionStore.get()).toBe(session);
         expect(session.segments).toHaveLength(importedAudioTexts.length);
         sessionStore.end(session);
-      },
+      }),
     },
     settings: {
       ...DEFAULT_SETTINGS,
@@ -120,7 +124,7 @@ function makeHost(audioPaths = ["QnALog/Import/clip.wav"]): { host: ImportHost; 
       updateBusyStatus: () => undefined,
     },
   } as unknown as ImportHost;
-  return { host, sessionStore, sourcePath, audioPath };
+  return { host, sessionStore, sourcePath, audioPath, queuedTasks, diagnostics };
 }
 
 function differingRecordPaths(left: unknown, right: unknown, prefix = ""): string[] {
@@ -179,6 +183,67 @@ describe("text import session ownership", () => {
 
     expect(sessionStore.get()).toBeNull();
     expect([...notes.values()].join("\n")).toContain("Imported audio transcript");
+  });
+
+  it("keeps anomalous long imported audio retryable and excludes its text", async () => {
+    notes.clear();
+    notices.length = 0;
+    importedAudioTexts = ["<chinese>".repeat(4552)];
+    importedAudioIndex = 0;
+    importedAudioDurationMs = 4_000_000;
+    const { host, audioPath, queuedTasks, diagnostics } = makeHost();
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260930-120101" : "2026-09-30",
+        toDate: () => new Date("2026-09-30T12:01:01.000Z"),
+      }),
+      setTimeout: () => 1,
+    });
+    try {
+      const result = await new ImportService(host).importAudioFiles([audioPath], "synthesis");
+      expect(result?.pendingTranscriptionCount).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioTexts = ["Imported audio transcript"];
+      importedAudioIndex = 0;
+      importedAudioDurationMs = 1200;
+    }
+
+    const markdown = [...notes.values()].join("\n");
+    expect(markdown).not.toContain("<chinese>");
+    expect(markdown).toContain("transcription result does not match the recording duration");
+    expect(queuedTasks[0]).toMatchObject({ audioPath, sourceAudioPath: audioPath, lastError: expect.stringContaining("recording duration") });
+    expect(diagnostics).toContainEqual(expect.arrayContaining([
+      "warn",
+      "asr.long_recording_anomaly",
+      expect.any(String),
+      expect.objectContaining({ provider: "test-provider", model: "test-model", textLength: 40_968, durationMs: 4_000_000, signals: ["repetition"] }),
+    ]));
+    expect(notices).toContain("The transcription result does not match the recording duration. The recording has been kept and can be retried.");
+    expect(host.sessionFinalize.finalizeSession).not.toHaveBeenCalled();
+  });
+
+  it("organizes a normal long imported transcript", async () => {
+    notes.clear();
+    importedAudioTexts = ["Imported audio transcript"];
+    importedAudioIndex = 0;
+    importedAudioDurationMs = 600_000;
+    const { host, audioPath } = makeHost();
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260930-120102" : "2026-09-30",
+        toDate: () => new Date("2026-09-30T12:01:02.000Z"),
+      }),
+      setTimeout: () => 1,
+    });
+    try {
+      await new ImportService(host).importAudioFiles([audioPath], "synthesis");
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioDurationMs = 1200;
+    }
+    expect([...notes.values()].join("\n")).toContain("Imported audio transcript");
+    expect(host.sessionFinalize.finalizeSession).toHaveBeenCalledOnce();
   });
 
   it("writes a long whole-file import into the real transcript area before index data", async () => {

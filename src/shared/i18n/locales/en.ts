@@ -18,6 +18,8 @@ export const EN: MessageTable = {
   "Updating note index": "Updating note index",
   "Refreshing the note index": "Refreshing the note index",
   "Failed to generate a note title; the original filename was kept": "Failed to generate a note title; the original filename was kept",
+  "The transcription result does not match the recording duration. The recording has been kept and can be retried.": "The transcription result does not match the recording duration. The recording has been kept and can be retried.",
+  "Transcription result rejected because it did not match the recording duration.": "Transcription result rejected because it did not match the recording duration.",
   "The note has derived versions: {0}": "The note has derived versions: {0}",
   " and {0} more": " and {0} more",
   "{0} related queue tasks will be removed as well.": "{0} related queue tasks will be removed as well.",

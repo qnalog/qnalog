@@ -116,6 +116,26 @@ describe("live segment consumer contract", () => {
     expect(session.shortRecordingTier).toBeUndefined();
   });
 
+  it("rejects an anomalous long segment while retaining its audio and retry task", async () => {
+    const { service, host, diagnostics, blocks } = makeHost();
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    transcribeMock.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", units: [] });
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({ endOffsetMs: 11_000 }));
+
+    expect(session.segments[0]).toMatchObject({ text: "", queueTaskId: "task-1", error: expect.stringContaining("recording duration") });
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(host.app.vault.adapter.writeBinary).toHaveBeenCalledOnce();
+    expect(blocks.join("\n")).not.toContain("<chinese>");
+    expect(diagnostics).toContainEqual(expect.arrayContaining([
+      "warn",
+      "asr.long_recording_anomaly",
+      expect.any(String),
+      expect.objectContaining({ provider: "provider", model: "model", textLength: 40_968, durationMs: 10_000, signals: ["density", "repetition"] }),
+    ]));
+    expect(notices).toContainEqual(["The transcription result does not match the recording duration. The recording has been kept and can be retried.", 7000]);
+  });
+
   it("keeps short recognized fragments with audio and stores the text for the notice", async () => {
     const { service } = makeHost();
     const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });

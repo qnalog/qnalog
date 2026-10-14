@@ -35,6 +35,7 @@
     "src/asr/realtime-params.ts",
     "src/asr/speaker-mapping.ts",
     "src/audio/channel-speakers.ts",
+    "src/audio/long-recording-anomaly.ts",
     "src/audio/external-inbox.ts",
     "src/audio/short-recording-policy.ts",
     "src/briefing/note-layout-policy.ts",
