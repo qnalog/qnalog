@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/{2,}/g, "/"),
@@ -7,6 +7,11 @@ vi.mock("obsidian", () => ({
 
 import * as obsidian from "obsidian";
 import { ErrataStore, isErrataPath, type ErrataStorePort } from "../src/errata/errata-store";
+import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+
+const originalLanguage = getActiveUiLanguage();
+beforeEach(() => setActiveUiLanguage(matchUiLanguage("zh")!));
+afterEach(() => setActiveUiLanguage(originalLanguage));
 
 type File = InstanceType<typeof obsidian.TFile> & { path: string; basename: string; extension: string };
 
@@ -70,6 +75,91 @@ describe("errata store", () => {
       { from: "错词乙", to: "正词乙" },
     ]));
     expect(loaded?.parsed.replacements).toHaveLength(3);
+  });
+
+  it("creates localized Chinese and English structures and filenames", async () => {
+    const f = fixture();
+    setActiveUiLanguage(matchUiLanguage("zh")!);
+    const chinese = await f.store.create(f.source.path);
+    expect(chinese.path).toBe("QnALog/勘误表/2026-10-13 2321 · 原理 · 勘误.md");
+    expect(f.files.get(chinese.path)?.text).toBe("笔记：[[QnALog/纪要/2026-10-13 2321 · 原理]]\n\n## 替换\n\n## 噪音\n\n## 说明\n");
+
+    const englishFixture = fixture();
+    setActiveUiLanguage(matchUiLanguage("en")!);
+    const english = await englishFixture.store.create(englishFixture.source.path);
+    expect(english.path).toBe("QnALog/勘误表/2026-10-13 2321 · 原理 · Errata.md");
+    expect(englishFixture.files.get(english.path)?.text).toBe("Note: [[QnALog/纪要/2026-10-13 2321 · 原理]]\n\n## Replace\n\n## Noise\n\n## Notes\n");
+  });
+
+  it("appends to either heading language without adding the other language's section titles", async () => {
+    for (const language of ["en", "zh"] as const) {
+      const f = fixture();
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      const created = await f.store.create(f.source.path);
+      await f.store.appendReplacement(f.source.path, "wrong term", "right term");
+      await f.store.appendNoise(f.source.path, "noise phrase");
+      const markdown = f.files.get(created.path)?.text || "";
+      if (language === "en") {
+        expect(markdown).toContain("## Replace");
+        expect(markdown).toContain("## Noise");
+        expect(markdown).not.toMatch(/^## (替换|噪音|说明)$/m);
+      } else {
+        expect(markdown).toContain("## 替换");
+        expect(markdown).toContain("## 噪音");
+        expect(markdown).not.toMatch(/^## (Replace|Noise|Notes)$/m);
+      }
+      expect((await f.store.load(f.source.path))?.parsed).toMatchObject({
+        replacements: [{ from: "wrong term", to: "right term" }],
+        noise: ["noise phrase"],
+      });
+    }
+  });
+
+  it("uses the active language when appending a missing section", async () => {
+    for (const [language, noteLabel, missingTitle] of [
+      ["en", "Note", "Noise"],
+      ["zh", "笔记", "噪音"],
+    ] as const) {
+      const f = fixture();
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      const created = await f.store.create(f.source.path);
+      const record = f.files.get(created.path);
+      if (record) record.text = `${noteLabel}: [[QnALog/纪要/2026-10-13 2321 · 原理]]\n\n## ${language === "en" ? "Replace" : "替换"}\n`;
+      await f.store.appendNoise(f.source.path, "noise phrase");
+      const markdown = f.files.get(created.path)?.text || "";
+      expect(markdown).toContain(`## ${missingTitle}`);
+    }
+  });
+
+  it("reuses a Chinese errata file when the interface later switches to English", async () => {
+    const f = fixture();
+    setActiveUiLanguage(matchUiLanguage("zh")!);
+    const original = await f.store.create(f.source.path);
+    setActiveUiLanguage(matchUiLanguage("en")!);
+    const reopened = await f.store.create(f.source.path);
+    expect(reopened).toBe(original);
+    expect(f.files.size).toBe(2);
+  });
+
+  it("localizes a same-name collision error", async () => {
+    for (const [language, expectedMessage] of [
+      ["zh", "已有另一篇勘误表使用了此文件名。"],
+      ["en", "A different errata note already uses this file name."],
+    ] as const) {
+      const f = fixture();
+      setActiveUiLanguage(matchUiLanguage(language)!);
+      const other = Object.assign(new obsidian.TFile(), {
+        path: "QnALog/纪要/other.md", basename: "other", extension: "md",
+      }) as File;
+      f.files.set(other.path, { file: other, text: "source" });
+      const suffix = language === "en" ? "Errata" : "勘误";
+      const conflictPath = `QnALog/勘误表/${f.source.basename} · ${suffix}.md`;
+      const conflict = Object.assign(new obsidian.TFile(), {
+        path: conflictPath, basename: conflictPath.split("/").pop()?.replace(/\.md$/, "") || "", extension: "md",
+      }) as File;
+      f.files.set(conflictPath, { file: conflict, text: "笔记：[[other]]" });
+      await expect(f.store.create(f.source.path)).rejects.toThrow(expectedMessage);
+    }
   });
 
   it("quotes every noise line so heading-looking text and blank lines stay in the noise section", async () => {
