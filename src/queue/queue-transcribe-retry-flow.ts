@@ -116,7 +116,11 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
     throw new Error(t("Transcription retry returned an empty result (the service responded HTTP 200 with no text)"));
   }
   if (!transcriptionResult) throw new Error(t("Transcription retry returned no structured result"));
-  const retryDurationMs = Math.max(0, Number(task.endOffsetMs) - Number(task.startOffsetMs) || 0);
+  const taskDurationMs = Math.max(0, Number(task.endOffsetMs) - Number(task.startOffsetMs) || 0);
+  const resultDurationMs = Number((transcriptionResult as AsrTranscriptResult & { durationMs?: unknown }).durationMs);
+  const retryDurationMs = taskDurationMs > 0
+    ? taskDurationMs
+    : Number.isFinite(resultDurationMs) && resultDurationMs > 0 ? resultDurationMs : 0;
   const anomalySignals = classifyLongRecordingAnomaly(text, retryDurationMs);
   if (anomalySignals.length) {
     const message = t("The transcription result does not match the recording duration. The recording has been kept and can be retried.");
@@ -127,7 +131,6 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       durationMs: retryDurationMs,
       signals: anomalySignals,
     });
-    new obsidian.Notice(message, 9000);
     throw new Error(message);
   }
   const segmentIndex = sourceSegmentIndex;

@@ -1,3 +1,5 @@
+import { SHORT_RECORDING_ANOMALY_MIN_CHARS } from "./short-recording-content";
+
 /**
  * Chinese conversational speech commonly reaches about 6–8 characters per second.
  * The 15-character limit leaves room for faster speech and English token spacing while remaining above that range.
@@ -14,12 +16,15 @@ export type LongRecordingAnomalySignal = "density" | "repetition";
 export function classifyLongRecordingAnomaly(text: string, durationMs: number): LongRecordingAnomalySignal[] {
   const source = String(text || "");
   const duration = Number(durationMs);
-  if (!Number.isFinite(duration) || duration < 10_000) return [];
 
   const nonWhitespaceLength = Array.from(source.replace(/\s/gu, "")).length;
   const durationSeconds = duration / 1000;
   const signals: LongRecordingAnomalySignal[] = [];
-  if (nonWhitespaceLength / durationSeconds > LONG_RECORDING_MAX_CHARACTERS_PER_SECOND) {
+  const densityLimit = Math.max(
+    SHORT_RECORDING_ANOMALY_MIN_CHARS,
+    durationSeconds * LONG_RECORDING_MAX_CHARACTERS_PER_SECOND,
+  );
+  if (Number.isFinite(duration) && duration > 0 && nonWhitespaceLength > densityLimit) {
     signals.push("density");
   }
 

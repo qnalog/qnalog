@@ -208,7 +208,7 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       }
     }
   }
-  if (!err) {
+  if (!err && !session.shortRecordingTier) {
     const signals = classifyLongRecordingAnomaly(text, segmentDurationMs);
     if (signals.length) {
       anomalySignals = signals;

@@ -24,10 +24,27 @@ describe("classifyLongRecordingAnomaly", () => {
     expect(classifyLongRecordingAnomaly(transcript, 600_000)).toEqual([]);
   });
 
-  it("accepts empty, punctuation-only, and short audio results", () => {
+  it("accepts empty and punctuation-only results and applies density to short audio", () => {
     expect(classifyLongRecordingAnomaly("", 600_000)).toEqual([]);
     expect(classifyLongRecordingAnomaly("。，！？…—?!".repeat(100), 600_000)).toEqual([]);
-    expect(classifyLongRecordingAnomaly("字".repeat(500), 9_999)).toEqual([]);
+    expect(classifyLongRecordingAnomaly("字".repeat(500), 9_999)).toEqual(["density", "repetition"]);
+  });
+
+  it("detects repeated markup on five-second audio", () => {
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    expect(classifyLongRecordingAnomaly(repeatedMarkup, 5_000)).toEqual(["density", "repetition"]);
+  });
+
+  it("uses the 120-character floor for five-second density checks", () => {
+    const nonRepeating = Array.from({ length: 130 }, (_, index) => String.fromCodePoint(0x4e00 + index)).join("");
+    expect(classifyLongRecordingAnomaly(nonRepeating, 5_000)).toEqual(["density"]);
+    expect(classifyLongRecordingAnomaly(nonRepeating.slice(0, 40), 5_000)).toEqual([]);
+  });
+
+  it("checks repetition when duration is zero or non-finite", () => {
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    expect(classifyLongRecordingAnomaly(repeatedMarkup, 0)).toEqual(["repetition"]);
+    expect(classifyLongRecordingAnomaly(repeatedMarkup, Number.NaN)).toEqual(["repetition"]);
   });
 
   it("uses a strict density boundary of fifteen characters per second", () => {

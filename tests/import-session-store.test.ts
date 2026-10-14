@@ -4,6 +4,7 @@ const notes = new Map<string, string>();
 let importedAudioTexts = ["Imported audio transcript"];
 let importedAudioIndex = 0;
 let importedAudioDurationMs = 1200;
+let importedAudioResultDurationMs = 1200;
 let importedSourceText = "A decision and its owner";
 let lastInitializedSession: RecordingSession | null = null;
 const notices: string[] = [];
@@ -46,7 +47,7 @@ vi.mock("../src/asr/long-audio-transcription", async (importOriginal) => {
     resolveImportTranscribeProvider: () => ({ id: "test-provider", endpoint: "https://asr.example.com/v1/transcriptions", apiKey: "test-key", model: "test-model" }),
     transcribeImportedAudio: async () => {
       const text = importedAudioTexts[importedAudioIndex++] || "";
-      return { text, durationMs: importedAudioDurationMs, rawText: text, units: importedAudioUnits };
+      return { text, durationMs: importedAudioResultDurationMs, rawText: text, units: importedAudioUnits };
     },
   };
 });
@@ -63,6 +64,14 @@ import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { insertBeforeSessionSegmentsEnd } from "../src/notes/note-segment-store";
 import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 import { verifyTranscriptCheckpoint } from "../src/imports/transcript-checkpoint";
+
+function makeVariedTranscript(length: number): string {
+  let state = length;
+  return Array.from({ length }, () => {
+    state = (state * 48_271) % 2_147_483_647;
+    return String.fromCharCode(97 + state % 26);
+  }).join("");
+}
 
 function makeHost(audioPaths = ["QnALog/Import/clip.wav"]): { host: ImportHost; sessionStore: SessionStore; sourcePath: string; audioPath: string; queuedTasks: unknown[]; diagnostics: unknown[][] } {
   const sourcePath = "QnALog/Import/source.txt";
@@ -191,6 +200,7 @@ describe("text import session ownership", () => {
     importedAudioTexts = ["<chinese>".repeat(4552)];
     importedAudioIndex = 0;
     importedAudioDurationMs = 4_000_000;
+    importedAudioResultDurationMs = 4_000_000;
     const { host, audioPath, queuedTasks, diagnostics } = makeHost();
     vi.stubGlobal("window", {
       moment: () => ({
@@ -207,6 +217,7 @@ describe("text import session ownership", () => {
       importedAudioTexts = ["Imported audio transcript"];
       importedAudioIndex = 0;
       importedAudioDurationMs = 1200;
+      importedAudioResultDurationMs = 1200;
     }
 
     const markdown = [...notes.values()].join("\n");
@@ -248,7 +259,10 @@ describe("text import session ownership", () => {
 
   it("writes a long whole-file import into the real transcript area before index data", async () => {
     notes.clear();
-    importedAudioTexts = ["x".repeat(4329)];
+    const expected = makeVariedTranscript(4329);
+    importedAudioTexts = [expected];
+    importedAudioDurationMs = 300_000;
+    importedAudioResultDurationMs = 300_000;
     importedAudioIndex = 0;
     const { host, audioPath } = makeHost();
     vi.stubGlobal("window", {
@@ -264,6 +278,8 @@ describe("text import session ownership", () => {
       vi.unstubAllGlobals();
       importedAudioTexts = ["Imported audio transcript"];
       importedAudioIndex = 0;
+      importedAudioResultDurationMs = 1200;
+      importedAudioDurationMs = 1200;
     }
 
     const markdown = [...notes.values()].join("\n");
@@ -285,13 +301,13 @@ describe("text import session ownership", () => {
     const details = detailRanges.map(({ start, end }) => markdown.slice(start, end));
     const outsideDetails = detailRanges.reduceRight((text, { start, end }) => text.slice(0, start) + text.slice(end), markdown);
     const transcriptBlocks = readTranscriptBlocks(markdown);
-    expect(verifyTranscriptCheckpoint(markdown, [{ text: "x".repeat(4329) }])).toMatchObject({
+    expect(verifyTranscriptCheckpoint(markdown, [{ text: expected }])).toMatchObject({
       ok: true,
       expectedSegments: 1,
       persistedSegments: 1,
     });
     expect(transcriptBlocks).toHaveLength(1);
-    expect(transcriptBlocks[0].visibleBlock).toBe("x".repeat(4329));
+    expect(transcriptBlocks[0].visibleBlock).toBe(expected);
     expect(depth).toBe(0);
     expect(maximumDepth).toBe(1);
     expect(outsideDetails).not.toMatch(/<!--\s*qnalog-/i);
@@ -309,8 +325,10 @@ describe("text import session ownership", () => {
 
   it("persists a long imported transcript with provider utterances through the checkpoint", async () => {
     notes.clear();
-    const expected = "长音频转写文本。".repeat(310);
+    const expected = makeVariedTranscript(2480);
     importedAudioTexts = [expected];
+    importedAudioDurationMs = 300_000;
+    importedAudioResultDurationMs = 300_000;
     importedAudioIndex = 0;
     importedAudioUnits = Array.from({ length: Math.ceil(expected.length / 48) }, (_, index) => {
       const text = expected.slice(index * 48, (index + 1) * 48);
@@ -345,6 +363,8 @@ describe("text import session ownership", () => {
       importedAudioTexts = ["Imported audio transcript"];
       importedAudioIndex = 0;
       importedAudioUnits = [];
+      importedAudioResultDurationMs = 1200;
+      importedAudioDurationMs = 1200;
     }
 
     const markdown = [...notes.values()].join("\n");
@@ -366,7 +386,9 @@ describe("text import session ownership", () => {
 
   it("clears failed import activity and marks the retained audio note retryable", async () => {
     notes.clear();
-    importedAudioTexts = ["x".repeat(4329)];
+    importedAudioTexts = [makeVariedTranscript(4329)];
+    importedAudioDurationMs = 300_000;
+    importedAudioResultDurationMs = 300_000;
     importedAudioIndex = 0;
     const { host, audioPath } = makeHost();
     const activity = vi.fn();
@@ -388,6 +410,8 @@ describe("text import session ownership", () => {
       vi.unstubAllGlobals();
       importedAudioTexts = ["Imported audio transcript"];
       importedAudioIndex = 0;
+      importedAudioResultDurationMs = 1200;
+      importedAudioDurationMs = 1200;
     }
 
     expect(host.tasks._importBusy).toBeNull();
@@ -400,11 +424,18 @@ describe("text import session ownership", () => {
 
   it("keeps three imported audio transcripts in order when each splits into details fragments", async () => {
     notes.clear();
-    const expectedTexts = ["a".repeat(3000), "b".repeat(4000), "c".repeat(5000)];
+    const expectedTexts = [makeVariedTranscript(3000), makeVariedTranscript(4000), makeVariedTranscript(5000)];
     importedAudioTexts = expectedTexts;
+    importedAudioDurationMs = 400_000;
+    importedAudioResultDurationMs = 400_000;
     importedAudioIndex = 0;
     const paths = ["QnALog/Import/a.wav", "QnALog/Import/b.wav", "QnALog/Import/c.wav"];
     const { host } = makeHost(paths);
+    const originalBegin = host.sessionStore.begin.bind(host.sessionStore);
+    vi.spyOn(host.sessionStore, "begin").mockImplementation((session) => {
+      lastInitializedSession = session;
+      originalBegin(session);
+    });
     vi.stubGlobal("window", {
       moment: () => ({
         format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260930-120300" : "2026-09-30",
@@ -418,10 +449,12 @@ describe("text import session ownership", () => {
       vi.unstubAllGlobals();
       importedAudioTexts = ["Imported audio transcript"];
       importedAudioIndex = 0;
+      importedAudioResultDurationMs = 1200;
+      importedAudioDurationMs = 1200;
     }
     const markdown = [...notes.values()].join("\n");
     const blocks = readTranscriptBlocks(markdown);
-    expect(verifyTranscriptCheckpoint(markdown, expectedTexts.map((text) => ({ text })))).toMatchObject({ ok: true, expectedSegments: 3, persistedSegments: 3 });
+    expect(verifyTranscriptCheckpoint(markdown, lastInitializedSession!.segments)).toMatchObject({ ok: true, expectedSegments: 3, persistedSegments: 3 });
     expect(blocks.map((block) => block.visibleBlock)).toEqual(expectedTexts);
     expect(markdown.match(/<summary>(?:Index data|索引数据)<\/summary>/g)).toHaveLength(1);
     expect(markdown).not.toMatch(/^\*\*Segmented raw transcript \(\d+ segments\)\*\*$/m);
@@ -430,10 +463,17 @@ describe("text import session ownership", () => {
 
   it("keeps every continuation fragment of a 9000-character imported segment in order", async () => {
     notes.clear();
-    const expected = "z".repeat(9000);
+    const expected = makeVariedTranscript(9000);
     importedAudioTexts = [expected];
+    importedAudioDurationMs = 700_000;
+    importedAudioResultDurationMs = 700_000;
     importedAudioIndex = 0;
     const { host, audioPath } = makeHost();
+    const originalBegin = host.sessionStore.begin.bind(host.sessionStore);
+    vi.spyOn(host.sessionStore, "begin").mockImplementation((session) => {
+      lastInitializedSession = session;
+      originalBegin(session);
+    });
     vi.stubGlobal("window", {
       moment: () => ({
         format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20260930-120350" : "2026-09-30",
@@ -447,13 +487,15 @@ describe("text import session ownership", () => {
       vi.unstubAllGlobals();
       importedAudioTexts = ["Imported audio transcript"];
       importedAudioIndex = 0;
+      importedAudioResultDurationMs = 1200;
+      importedAudioDurationMs = 1200;
     }
     const markdown = [...notes.values()].join("\n");
     expect(readTranscriptBlocks(markdown).map((block) => block.visibleBlock)).toEqual([expected]);
     const fragmentNumbers = [...markdown.matchAll(/qnalog-transcript-start:[^\s>]+:fragment:(\d+)/g)].map((match) => Number(match[1]));
     expect(fragmentNumbers.length).toBeGreaterThanOrEqual(3);
     expect(fragmentNumbers).toEqual(fragmentNumbers.map((_number, index) => index + 1));
-    expect(verifyTranscriptCheckpoint(markdown, [{ text: expected }])).toMatchObject({ ok: true, expectedSegments: 1, persistedSegments: 1 });
+    expect(verifyTranscriptCheckpoint(markdown, lastInitializedSession!.segments)).toMatchObject({ ok: true, expectedSegments: 1, persistedSegments: 1 });
   });
 
   it("uses the same independent transcript area for long imported text", async () => {

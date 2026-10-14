@@ -68,7 +68,37 @@ describe("transcription retry consumer contract", () => {
     expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.objectContaining({
       provider: "provider", model: expect.any(String), textLength: 40_968, durationMs: 10_000, signals: ["density", "repetition"],
     }));
-    expect(asr.notices).toContain("The transcription result does not match the recording duration. The recording has been kept and can be retried.");
+    expect(asr.notices).toHaveLength(0);
+  });
+
+  it("rejects repeated retry output when task duration is zero", async () => {
+    const fixture = setup("Original note.");
+    fixture.task.wholeFileImport = true;
+    fixture.task.providerId = "provider";
+    fixture.task.endOffsetMs = 0;
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    asr.whole.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", units: [] });
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).rejects.toThrow("recording duration");
+
+    expect(fixture.contents.get(fixture.file.path)).toBe("Original note.");
+    expect(fixture.cleanup).not.toHaveBeenCalled();
+    expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.objectContaining({
+      durationMs: 0, signals: ["repetition"],
+    }));
+  });
+
+  it("uses the transcription result duration when task offsets have zero duration", async () => {
+    const fixture = setup("Original note.");
+    fixture.task.wholeFileImport = true;
+    fixture.task.endOffsetMs = 0;
+    const denseTranscript = Array.from({ length: 130 }, (_, index) => String.fromCodePoint(0x4e00 + index)).join("");
+    asr.whole.mockResolvedValueOnce({ text: denseTranscript, rawText: denseTranscript, providerId: "provider", durationMs: 5_000, units: [] });
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).rejects.toThrow("recording duration");
+    expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.objectContaining({
+      durationMs: 5_000, signals: ["density"],
+    }));
   });
 
   it("routes non-file targets through insertion and file targets through the serialized operation", async () => {
