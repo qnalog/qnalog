@@ -1,5 +1,6 @@
 import * as obsidian from "obsidian";
 import { t } from "../shared/i18n";
+import { MIN_ERRATA_TERM_LENGTH } from "./errata-parser";
 
 export class ErrataModal extends obsidian.Modal {
   private readonly initialWrongText: string;
@@ -52,6 +53,11 @@ export class ErrataModal extends obsidian.Modal {
     const correctText = this.correctInput.value.trim();
     if (!wrongText || !correctText) {
       new obsidian.Notice(t("Enter both the wrong word and the correct word."), 5000);
+      return;
+    }
+    if (wrongText.length < MIN_ERRATA_TERM_LENGTH) {
+      new obsidian.Notice(t("The wrong term must contain at least 2 characters."), 5000);
+      this.wrongInput.focus();
       return;
     }
     this.submitButton.disabled = true;

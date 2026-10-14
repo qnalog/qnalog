@@ -51,7 +51,7 @@ export interface RepolishFlowBasePort {
     file: obsidian.TFile, content: string, version: DerivedNoteVersion,
     label: string, mode: string, style: string,
   ): Promise<obsidian.TFile | null>;
-  loadErrata?(file: obsidian.TFile): Promise<ErrataRules | null>;
+  loadErrata(file: obsidian.TFile): Promise<ErrataRules | null>;
 }
 
 export interface RepolishFlowPort extends RepolishFlowBasePort {
@@ -95,7 +95,7 @@ export async function repolishMarkdownFile(
       content = reconciled;
     }
     const fmCache = port.getCachedFrontmatter(file) || null;
-    const errata = port.loadErrata ? await port.loadErrata(file) : null;
+    const errata = await port.loadErrata(file);
     const repolishInput = readRepolishInput(content, fmCache, errata);
     let segments = repolishInput.segments;
     let sessionMeta = repolishInput.sessionMeta;

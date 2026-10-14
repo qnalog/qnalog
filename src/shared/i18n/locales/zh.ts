@@ -59,6 +59,7 @@ export const ZH: MessageTable = {
   "Correct word": "正确词",
   "Add correction": "添加订正",
   "Enter both the wrong word and the correct word.": "请填写错误词和正确词。",
+  "The wrong term must contain at least 2 characters.": "错误词至少需要 2 个字符。",
   "Added to the errata. It will apply to newly generated notes after reorganization.": "已加入勘误表。重新整理后在新稿中生效。",
   "Could not save the errata: ": "无法保存勘误表：",
   "Could not create or open the errata: ": "无法创建或打开勘误表：",

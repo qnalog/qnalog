@@ -46,6 +46,8 @@ import { NS_SESSION_KNOWLEDGE, NS_TAG, isNamespaceTag } from "../shared/namespac
 
 import { t } from "../shared/i18n";
 import { getCurrentTranscript, getTranscriptSourceRevision } from "../transcript/session-transcript";
+import type { Utterance } from "../transcript/session-transcript";
+import type { Segment } from "../shared/types";
 import {
   createUnavailableSessionKnowledge,
   mergeSessionKnowledge,
@@ -54,7 +56,30 @@ import {
   type SessionKnowledge,
 } from "./session-knowledge";
 
-function buildTranscriptKnowledgeInput(segments, projections = []) {
+interface TranscriptKnowledgePromptSegment {
+  index: number;
+  text: string;
+  utteranceId: string;
+  transcriptSourceRevision: string;
+  startOffsetMs?: number;
+  endOffsetMs?: number;
+  speakerId: string | null;
+  speakerName: string | null;
+  timing: string;
+}
+
+interface TranscriptKnowledgeInput {
+  sourceRevision: string;
+  sources: KnowledgeSourceRevision[];
+  utterances: TranscriptKnowledgePromptSegment[];
+  promptSegments: Array<Segment | TranscriptKnowledgePromptSegment>;
+  allowedById: Map<string, Utterance & { normalizedText: string; speakerName: string | null }>;
+}
+
+export function buildTranscriptKnowledgeInput(
+  segments: readonly Segment[],
+  projections: readonly { utteranceId: string; normalizedText: string; speakerName: string | null }[] = [],
+): TranscriptKnowledgeInput {
   const sourceRevision = getTranscriptSourceRevision(segments);
   const projectionById = new Map((projections || []).map((projection) => [projection.utteranceId, projection]));
   const sourcesById = new Map<string, KnowledgeSourceRevision>();
@@ -79,6 +104,7 @@ function buildTranscriptKnowledgeInput(segments, projections = []) {
       const projection = projectionById.get(utterance.id);
       const normalizedText = projection ? projection.normalizedText : utterance.normalizedText;
       const speakerName = projection ? projection.speakerName : utterance.speakerName;
+      if (projection && String(utterance.normalizedText || "").trim() && !String(normalizedText || "").trim()) continue;
       const promptSegment = {
         index: fallbackIndex++,
         text: normalizedText,

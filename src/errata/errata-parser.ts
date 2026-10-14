@@ -1,6 +1,7 @@
 import { normalizeVocabularyCorrectionTerm } from "../vocabulary/correction-normalization";
 
 export interface ErrataReplacement { from: string; to: string }
+export const MIN_ERRATA_TERM_LENGTH = 2;
 
 export interface ParsedErrata {
   replacements: ErrataReplacement[];
@@ -18,7 +19,7 @@ function parseReplacement(line: string): ErrataReplacement | null {
   const normalized = normalizeVocabularyCorrectionTerm(`${match[1]} => ${match[2]}`);
   if (!normalized) return null;
   const pair = normalized.match(/^(.+?)\s*=>\s*(.+)$/);
-  if (!pair || pair[1].length < 2 || pair[1] === pair[2]) return null;
+  if (!pair || pair[1].length < MIN_ERRATA_TERM_LENGTH || pair[1] === pair[2]) return null;
   return { from: pair[1], to: pair[2] };
 }
 

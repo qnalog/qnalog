@@ -15,7 +15,7 @@ import type { ErrataRules } from "../errata/errata-apply";
 export interface ReorganizeInPlacePort {
   getVault(): Pick<obsidian.Vault, "read" | "process">;
   getCachedFrontmatter(file: obsidian.TFile): Record<string, unknown> | null | undefined;
-  loadErrata?(file: obsidian.TFile): Promise<ErrataRules | null>;
+  loadErrata(file: obsidian.TFile): Promise<ErrataRules | null>;
   getDefaultMode(): string;
   getModeDisplayName(mode: string): string;
   getInFlight(): Set<string>;
@@ -101,7 +101,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
   try {
     const snapshot = await port.getVault().read(file);
     await port.validateOriginalVersionForReorganization(file);
-    const errata = port.loadErrata ? await port.loadErrata(file) : null;
+    const errata = await port.loadErrata(file);
     const input = readRepolishInput(snapshot, port.getCachedFrontmatter(file) || null, errata);
     if (!input.segments.length) throw new Error(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."));
     const mode = port.getDefaultMode();

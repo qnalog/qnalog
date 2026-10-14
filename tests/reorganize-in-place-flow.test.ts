@@ -54,6 +54,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
       create,
     }),
     getCachedFrontmatter: () => ({ "qnalog_time": "2026-10-13T10:00:00", user_custom: "keep-me", tags: ["old"] }),
+    loadErrata: vi.fn(async () => null),
     getDefaultMode: () => "general",
     getModeDisplayName: () => "General",
     getInFlight: () => new Set<string>(),
@@ -212,14 +213,17 @@ describe("in-place note reorganization", () => {
 
   it("rejects a second invocation while the first model request is active", async () => {
     let resolveGate!: (value: string) => void;
+    let signalMerge!: () => void;
     const gate = new Promise<string>((resolve) => { resolveGate = resolve; });
+    const mergeStarted = new Promise<void>((resolve) => { signalMerge = resolve; });
     const inFlight = new Set<string>();
     const { port, file, portRaw } = fixture({
       getInFlight: () => inFlight,
-      mergeAndPolish: vi.fn(() => gate.promise),
+      mergeAndPolish: vi.fn(() => { signalMerge(); return gate; }),
     });
     const first = reorganizeNoteInPlace(port, file);
-    await Promise.resolve();
+    await mergeStarted;
+    expect(inFlight.size).toBe(1);
     await reorganizeNoteInPlace(port, file);
     expect(portRaw.tasks.startTaskActivity).toHaveBeenCalledTimes(1);
     expect(notices.some((message) => message.includes("wait for the current task"))).toBe(true);

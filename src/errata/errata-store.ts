@@ -113,7 +113,8 @@ export class ErrataStore {
   }
 
   appendNoise(notePath: string, text: string): Promise<obsidian.TFile> {
-    return this.append(notePath, "噪音", String(text || "").trim());
+    const quoted = String(text || "").trim().split(/\r?\n/).map((line) => `> ${line}`).join("\n");
+    return this.append(notePath, "噪音", quoted);
   }
 
   private async append(notePath: string, heading: "替换" | "噪音", entry: string): Promise<obsidian.TFile> {
@@ -123,7 +124,7 @@ export class ErrataStore {
       if (heading === "替换") {
         const [from, to] = entry.split(/\s*=>\s*/);
         if (parsed.replacements.some((rule) => rule.from === from && rule.to === to)) return current;
-      } else if (parsed.noise.some((noise) => noise.replace(/\s+/g, " ").trim() === entry.replace(/\s+/g, " ").trim())) {
+      } else if (parsed.noise.some((noise) => noise.replace(/\s+/g, " ").trim() === entry.replace(/^> /gm, "").replace(/\s+/g, " ").trim())) {
         return current;
       }
       const headingPattern = new RegExp(`(^|\\n)## ${heading}\\s*(?:\\n|$)`);

@@ -79,8 +79,7 @@ import { RealtimeOutlineService, type RealtimeOutlineHost } from "./notes/realti
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { ErrataService } from "./errata/errata-service";
 import { ErrataStore, isErrataPath } from "./errata/errata-store";
-import { ErrataModal } from "./errata/errata-modal";
-import { getCorrectionSelectionPrefill, saveErrataNoise, saveErrataReplacement } from "./errata/errata-editor-actions";
+import { openErrataCorrection, markSelectionAsErrataNoise } from "./errata/errata-editor-actions";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
@@ -630,10 +629,7 @@ class QnALogPlugin extends obsidian.Plugin {
       editorCallback: (editor, view) => {
         const file = view.file;
         if (!(file instanceof obsidian.TFile)) return;
-        const prefill = getCorrectionSelectionPrefill(editor.getSelection());
-        if (prefill.tooLong) new obsidian.Notice(t("Select a shorter word."), 5000);
-        new ErrataModal(this.app, prefill.wrongText, (wrongText, correctText) =>
-          saveErrataReplacement(this.errata, file, editor, wrongText, correctText)).open();
+        openErrataCorrection(this.app, this.errata, file, editor);
       },
     });
     this.addCommand({
@@ -642,21 +638,7 @@ class QnALogPlugin extends obsidian.Plugin {
       editorCallback: (editor, view) => {
         const file = view.file;
         if (!(file instanceof obsidian.TFile)) return;
-        const selection = editor.getSelection();
-        if (!selection.trim()) {
-          new obsidian.Notice(t("Select text first."), 5000);
-          return;
-        }
-        if (selection.trim().length > 2000) {
-          new obsidian.Notice(t("Selected text exceeds the 2000 character limit."), 6000);
-          return;
-        }
-        void saveErrataNoise(this.errata, file, selection).then(() => {
-          new obsidian.Notice(t("Added to the errata. It will apply to newly generated notes after reorganization."), 6000);
-        }).catch((error: unknown) => {
-          const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
-          new obsidian.Notice(`${t("Could not save the errata: ")}${detail}`, 8000);
-        });
+        void markSelectionAsErrataNoise(this.errata, file, editor.getSelection());
       },
     });
     this.addCommand({ id: "toggle-floating-ball", name: t("Show/Hide Floating Bubble (Master Switch)"), callback: () => {
@@ -823,26 +805,14 @@ class QnALogPlugin extends obsidian.Plugin {
         item.setTitle(t("QnALog: Correct selected text"))
           .setIcon("replace")
           .onClick(() => {
-            const prefill = getCorrectionSelectionPrefill(selection);
-            if (prefill.tooLong) new obsidian.Notice(t("Select a shorter word."), 5000);
-            new ErrataModal(this.app, prefill.wrongText, (wrongText, correctText) =>
-              saveErrataReplacement(this.errata, file, editor, wrongText, correctText)).open();
+            openErrataCorrection(this.app, this.errata, file, editor);
           });
       });
       menu.addItem((item) => {
         item.setTitle(t("QnALog: Mark selected text as noise"))
           .setIcon("ban")
           .onClick(() => {
-            if (selection.trim().length > 2000) {
-              new obsidian.Notice(t("Selected text exceeds the 2000 character limit."), 6000);
-              return;
-            }
-            void saveErrataNoise(this.errata, file, selection).then(() => {
-              new obsidian.Notice(t("Added to the errata. It will apply to newly generated notes after reorganization."), 6000);
-            }).catch((error: unknown) => {
-              const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
-              new obsidian.Notice(`${t("Could not save the errata: ")}${detail}`, 8000);
-            });
+            void markSelectionAsErrataNoise(this.errata, file, selection);
           });
       });
     }));

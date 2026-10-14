@@ -71,4 +71,18 @@ describe("errata store", () => {
     ]));
     expect(loaded?.parsed.replacements).toHaveLength(3);
   });
+
+  it("quotes every noise line so heading-looking text and blank lines stay in the noise section", async () => {
+    const f = fixture();
+    const errataFile = await f.store.create(f.source.path);
+    const existing = f.files.get(errataFile.path);
+    if (existing) existing.text = `${existing.text.trimEnd()}\n说明内容仍保留\n`;
+    await f.store.appendNoise(f.source.path, "line one\n## 小标题\n\nline after blank");
+    const loaded = await f.store.load(f.source.path);
+    expect(loaded?.parsed.noise).toEqual(["line one ## 小标题 line after blank"]);
+    expect(loaded?.parsed.notes).toEqual(["说明内容仍保留"]);
+    const markdown = loaded?.markdown || "";
+    expect(markdown).toContain("> ## 小标题\n> \n> line after blank");
+    expect(markdown.indexOf("## 说明")).toBeGreaterThan(markdown.indexOf("line after blank"));
+  });
 });

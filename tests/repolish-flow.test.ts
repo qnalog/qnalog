@@ -89,6 +89,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     stripModeSuggestionBlocks: (text: string) => text,
     clearCommittedBriefingCheckpoint: vi.fn(async () => { order.push("checkpoint"); }),
     ensureOriginalVersionForSource: vi.fn(async () => { order.push("original"); }),
+    loadErrata: vi.fn(async () => null),
     createDerivedNote: vi.fn(async (...args: unknown[]) => {
       order.push("derived"); calls.derived.push(args);
       const created = new obsidian.TFile("QnALog/Minutes/derived.md");

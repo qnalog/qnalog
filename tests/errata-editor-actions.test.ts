@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+vi.mock("obsidian", () => ({
+  Modal: class Modal { app: unknown; contentEl = { empty: vi.fn() }; constructor(app: unknown) { this.app = app; } open() {} close() {} },
+  Notice: class Notice { constructor() {} },
+}));
 import { getCorrectionSelectionPrefill, saveErrataNoise, saveErrataReplacement } from "../src/errata/errata-editor-actions";
 
 describe("errata editor actions", () => {
@@ -18,7 +22,14 @@ describe("errata editor actions", () => {
       "<!-- qnalog-transcript-end:session -->",
     ].join("\n");
     let value = source;
-    const editor = { getValue: () => value, setValue: (next: string) => { value = next; } };
+    const editor = {
+      getValue: () => value,
+      offsetToPos: (offset: number) => ({ line: value.slice(0, offset).split("\n").length - 1, ch: value.slice(0, offset).split("\n").pop()?.length || 0 }),
+      replaceRange: (replacement: string, from: { line: number; ch: number }, to: { line: number; ch: number }) => {
+        const offset = (position: { line: number; ch: number }) => value.split("\n").slice(0, position.line).join("\n").length + (position.line ? 1 : 0) + position.ch;
+        value = value.slice(0, offset(from)) + replacement + value.slice(offset(to));
+      },
+    };
     const appendReplacement = vi.fn(async () => ({ path: "QnALog/勘误表/example · 勘误.md" }));
     await saveErrataReplacement({ appendReplacement } as never, { path: "QnALog/Notes/example.md" } as never, editor as never, "wrong term", "right term");
     expect(appendReplacement).toHaveBeenCalledWith(expect.anything(), "wrong term", "right term");
@@ -32,6 +43,17 @@ describe("errata editor actions", () => {
     expect(appendNoise).toHaveBeenCalledWith(expect.anything(), "line one\nline two");
     await expect(saveErrataNoise({ appendNoise } as never, {} as never, " ")).rejects.toThrow();
     await expect(saveErrataNoise({ appendNoise } as never, {} as never, "x".repeat(2001))).rejects.toThrow();
+  });
+
+  it("rejects a one-character wrong term without changing the note or errata", async () => {
+    let value = "x in note body";
+    const appendReplacement = vi.fn(async () => ({ path: "errata.md" }));
+    const editor = { getValue: () => value, replaceRange: vi.fn(), offsetToPos: vi.fn() };
+    await expect(saveErrataReplacement({ appendReplacement } as never, {} as never, editor as never, "x", "y"))
+      .rejects.toThrow("at least 2 characters");
+    expect(value).toBe("x in note body");
+    expect(appendReplacement).not.toHaveBeenCalled();
+    expect(editor.replaceRange).not.toHaveBeenCalled();
   });
 
   it("preserves errors from errata creation so the modal can keep its entered values", async () => {

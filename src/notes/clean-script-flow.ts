@@ -18,7 +18,7 @@ export interface CleanScriptFlowPort extends RepolishFlowBasePort {
   switchVersion(file: obsidian.TFile, fallbackSourcePath: string): Promise<void>;
   getLearnedOutputCeiling(): number;
   cleanTranscript(segments: Segment[], ceiling: number, errataPrompt?: string): Promise<{ text: string; truncated: boolean }>;
-  loadErrata?(file: obsidian.TFile): Promise<ErrataRules | null>;
+  loadErrata(file: obsidian.TFile): Promise<ErrataRules | null>;
 }
 
 export async function findCleanCopy(port: CleanScriptFlowPort, sourceFile: unknown): Promise<obsidian.TFile | null> {
@@ -71,7 +71,7 @@ export async function generateCleanScript(
       }
     }
     await port.ensureOriginalVersionForSource(sourceFile);
-    const errata = port.loadErrata ? await port.loadErrata(sourceFile) : null;
+    const errata = await port.loadErrata(sourceFile);
     const originalSegments = extractTranscriptSegments(content);
     const segments = errata ? applyErrataToSegments(originalSegments, errata) : originalSegments;
     if (!segments.length) {

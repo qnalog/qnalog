@@ -2,7 +2,7 @@ import { getCurrentTranscript } from "../transcript/session-transcript";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
 import { readRepolishSessionTiming } from "./note-source-metadata";
 import type { Segment } from "../shared/types";
-import { applyErrataToSegments } from "../errata/errata-apply";
+import { applyErrataToSegments, applyErrataToText } from "../errata/errata-apply";
 import type { ErrataRules } from "../errata/errata-apply";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 import {
@@ -17,7 +17,7 @@ export interface RepolishInput {
   roleMapping: RoleMapping[];
 }
 
-function buildUtteranceProjections(segments: Segment[], mapping: RoleMapping[]): Array<{
+function buildUtteranceProjections(segments: Segment[], mapping: RoleMapping[], errata?: ErrataRules | null): Array<{
   utteranceId: string;
   normalizedText: string;
   speakerName: string | null;
@@ -30,6 +30,7 @@ function buildUtteranceProjections(segments: Segment[], mapping: RoleMapping[]):
       for (const item of orderedMapping) {
         if (item.from) normalizedText = normalizedText.split(item.from).join(item.to);
       }
+      if (errata) normalizedText = applyErrataToText(normalizedText, errata).text;
       const speakerName = orderedMapping.find((item) => item.from === utterance.speakerName)?.to ?? utterance.speakerName;
       return normalizedText !== utterance.normalizedText || speakerName !== utterance.speakerName
         ? [{ utteranceId: utterance.id, normalizedText, speakerName: speakerName || null }]
@@ -53,7 +54,7 @@ export function readRepolishInput(
     : {};
   sessionMeta = Object.assign({}, sessionMeta, {
     _previousKnowledge: readSessionKnowledge(content),
-    _utteranceProjections: buildUtteranceProjections(segments, roleMapping),
+    _utteranceProjections: buildUtteranceProjections(extractTranscriptSegments(content), roleMapping, errata),
   });
   if (errata) {
     // The prompt and output pass share the same user-confirmed rule set.
