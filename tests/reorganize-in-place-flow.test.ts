@@ -80,6 +80,19 @@ function fixture(overrides: Record<string, unknown> = {}) {
 }
 
 describe("in-place note reorganization", () => {
+  it("applies errata to the source transcript and forwards the prompt to merge", async () => {
+    const { port, file, portRaw } = fixture({
+      loadErrata: vi.fn(async () => ({
+        replacements: [{ from: "下周启动", to: "本周启动" }],
+        noise: [], prompt: "## 勘误表\n替换：下周启动 => 本周启动",
+      })),
+    });
+    await reorganizeNoteInPlace(port, file);
+    const [segments, , sessionMeta] = vi.mocked(portRaw.mergeAndPolish).mock.calls[0] as unknown as [Array<{ text: string }>, string, Record<string, unknown>];
+    expect(segments[0].text).toContain("本周启动");
+    expect(sessionMeta._errata).toContain("下周启动 => 本周启动");
+  });
+
   it("replaces the organized body while preserving source material and user fields", async () => {
     const { port, file, contents, calls, activities, portRaw, create } = fixture();
     await reorganizeNoteInPlace(port, file);
@@ -97,6 +110,7 @@ describe("in-place note reorganization", () => {
     expect(portRaw.saveVersion).not.toHaveBeenCalled();
     expect(portRaw.refreshNoteIndex).toHaveBeenCalledWith(file, { reason: "reorganize" });
     expect(portRaw.mergeAndPolish).toHaveBeenCalledWith(expect.any(Array), "general", expect.any(Object), expect.any(Object));
+    expect((vi.mocked(portRaw.mergeAndPolish).mock.calls[0][2] as Record<string, unknown>)).not.toHaveProperty("_errata");
     expect(activities.get(`reorganize-in-place:${file.path}`)?.stage).toBe("done");
     expect(create).not.toHaveBeenCalled();
   });

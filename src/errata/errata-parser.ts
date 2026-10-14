@@ -1,4 +1,4 @@
-import { normalizeVocabularyCorrectionTerm } from "../vocabulary/index";
+import { normalizeVocabularyCorrectionTerm } from "../vocabulary/correction-normalization";
 
 export interface ErrataReplacement { from: string; to: string }
 

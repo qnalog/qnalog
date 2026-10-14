@@ -6,6 +6,7 @@ import { normalizeKnowledgeExtractionHistory } from "../shared/util-knowledge";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { PluginSettings } from "../shared/types";
 import { isKnowledgeSourceAlreadyScanned, knowledgeExtractionRecordForFile } from "../notes/recording-issues";
+import { isErrataPath } from "../errata/errata-path";
 
 /** KnowledgeExtractionService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface KnowledgeExtractionHost {
@@ -28,6 +29,7 @@ export class KnowledgeExtractionService {
     return this.host.app.vault.getMarkdownFiles()
       .filter(file => {
         const path = obsidian.normalizePath(file.path || "");
+        if (isErrataPath(path)) return false;
         if (folder && path !== folder && !path.startsWith(prefix)) return false;
         if (path === obsidian.normalizePath(this.host.settings.vocabularyFile || "")) return false;
         if (this.host.settings.peopleDirectoryFolder) {

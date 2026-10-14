@@ -1,6 +1,9 @@
 import * as obsidian from "obsidian";
 import { NS_ERRATA_FOLDER } from "../shared/namespace";
 import { parseErrata } from "./errata-parser";
+import { isErrataPath } from "./errata-path";
+
+export { isErrataPath } from "./errata-path";
 
 export interface ErrataLink { link: string }
 
@@ -26,12 +29,6 @@ function normalizePath(path: string): string {
 }
 
 function linkToPath(link: string): string { return link.split("#")[0].split("|")[0].trim(); }
-
-export function isErrataPath(path: string): boolean {
-  const normalized = normalizePath(path).toLocaleLowerCase();
-  const root = normalizePath(NS_ERRATA_FOLDER).toLocaleLowerCase();
-  return normalized === root || normalized.startsWith(`${root}/`);
-}
 
 export class ErrataStore {
   private readonly port: ErrataStorePort;

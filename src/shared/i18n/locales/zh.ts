@@ -3070,4 +3070,7 @@ export const ZH: MessageTable = {
   "Open outline": "打开大纲",
   "Distill content": "沉淀内容",
   "Invalid transcription glossary path": "转写词表路径无效",
+  "The original note for this derived version could not be found; no errata were applied": "找不到此派生稿对应的原稿，本次未应用勘误。",
+  "The errata note is too long; only the first {0} entries were used.": "勘误表过长，只使用了前 {0} 条。",
+  "The original note for this derived version could not be found.": "找不到此派生稿对应的原稿。",
 };

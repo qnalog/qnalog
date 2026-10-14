@@ -2,6 +2,8 @@ import { getCurrentTranscript } from "../transcript/session-transcript";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
 import { readRepolishSessionTiming } from "./note-source-metadata";
 import type { Segment } from "../shared/types";
+import { applyErrataToSegments } from "../errata/errata-apply";
+import type { ErrataRules } from "../errata/errata-apply";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 import {
   applyRoleMappingToSegments, extractRoleMappingFromFrontmatter, flattenRoleMappedFrontmatter,
@@ -39,10 +41,12 @@ function buildUtteranceProjections(segments: Segment[], mapping: RoleMapping[]):
 export function readRepolishInput(
   content: string,
   frontmatter: Record<string, unknown> | null,
+  errata?: ErrataRules | null,
 ): RepolishInput {
   const roleMapping = extractRoleMappingFromFrontmatter(frontmatter);
   let segments = extractTranscriptSegments(content);
   if (roleMapping.length) segments = applyRoleMappingToSegments(segments, roleMapping);
+  if (errata) segments = applyErrataToSegments(segments, errata);
 
   let sessionMeta: Record<string, unknown> = frontmatter
     ? readRepolishSessionTiming(frontmatter) || {}
@@ -51,6 +55,11 @@ export function readRepolishInput(
     _previousKnowledge: readSessionKnowledge(content),
     _utteranceProjections: buildUtteranceProjections(segments, roleMapping),
   });
+  if (errata) {
+    // The prompt and output pass share the same user-confirmed rule set.
+    sessionMeta._errata = errata.prompt || "";
+    sessionMeta._errataReplacements = [...errata.replacements];
+  }
   return {
     segments,
     sessionMeta,

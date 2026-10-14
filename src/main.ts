@@ -77,6 +77,8 @@ import { VocabularyService } from "./vocabulary/vocabulary-service";
 import { CleanupService } from "./vault/cleanup-service";
 import { RealtimeOutlineService, type RealtimeOutlineHost } from "./notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
+import { ErrataService } from "./errata/errata-service";
+import { ErrataStore, isErrataPath } from "./errata/errata-store";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
@@ -145,6 +147,7 @@ class QnALogPlugin extends obsidian.Plugin {
   declare noteIndex: NoteIndexService;
   declare audioLinks: AudioTimeLinkService;
   declare meetingWorkbench: MeetingWorkbenchService;
+  declare errata: ErrataService;
   declare outline: RealtimeOutlineService;
   /** 装配别名：互动看板的实时大纲视图绑定到实时大纲服务（MeetingWorkbenchHost.realtimeOutline）。 */
   declare realtimeOutline: RealtimeOutlineService;
@@ -257,6 +260,21 @@ class QnALogPlugin extends obsidian.Plugin {
     this.people = new PeopleDirectoryService(this);
     this.knowledgeExtraction = new KnowledgeExtractionService(this);
     this.inbox = new InboxWatcherService(this);
+    this.errata = new ErrataService(new ErrataStore({
+      read: (file) => this.app.vault.read(file),
+      listErrataFiles: () => this.app.vault.getMarkdownFiles().filter((file) => isErrataPath(file.path)),
+      getByPath: (path) => this.app.vault.getAbstractFileByPath(path),
+      getLinks: (file) => this.app.metadataCache.getFileCache(file)?.links || [],
+      resolveLink: (link, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(link, sourcePath),
+      ensureFolder: async (path) => ensureVaultFolder(this.app, path),
+      create: (path, content) => this.app.vault.create(path, content),
+      process: async (file, transform) => { await this.app.vault.process(file, transform); },
+    }), {
+      getFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
+      getByPath: (path) => this.app.vault.getAbstractFileByPath(path),
+      logDiagnostic: (level, code, message, data) => this.diagnostics.logDiagnostic(level, code, message, data),
+      notify: (message) => { new obsidian.Notice(message); },
+    });
     this.repolish = new RepolishService(this);
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
@@ -639,17 +657,20 @@ class QnALogPlugin extends obsidian.Plugin {
     });
 
     this.registerEvent(this.app.vault.on("create", (file) => {
+      this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox handler error", e));
     }));
     // Nutstore Sync / Obsidian Sync may first create a placeholder and then fill it through modify events.
     // Listen to both so a zero-byte placeholder never becomes the only chance to auto-import the file.
     this.registerEvent(this.app.vault.on("modify", (file) => {
+      this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox modify handler error", e));
     }));
 
     // 文件重命名时同步迁移队列里所有指向旧路径的任务，
     // 防止 merge 任务跑完后文件被改名 → 重试时找不到旧路径报"笔记不存在"
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      this.errata.refreshForVaultEvent(file && file.path ? file.path : "", oldPath || "");
       if (file instanceof obsidian.TFile) {
         this.queueRetry.migrateQueueTasksAfterRename(oldPath, file.path);
         this.continuations.onRename(file, oldPath);
@@ -661,6 +682,7 @@ class QnALogPlugin extends obsidian.Plugin {
     // 否则 merge 任务每次重试都先白烧一次 LLM 再报"笔记不存在"，永久卡 failed 清不掉。
     this.registerEvent(this.app.vault.on("delete", (file) => {
       const path = file && file.path ? file.path : "";
+      this.errata.refreshForVaultEvent(path);
       if (path) this.queueRetry.removeQueueTasksForDeletedMarkdown(path);
     }));
 

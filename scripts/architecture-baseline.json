@@ -85,6 +85,7 @@
     ["RecordingService", "RecorderService"],
     ["RecordingService", "SessionStore"],
     ["RecordingService", "TranscribeProfileService"],
+    ["RepolishService", "ErrataService"],
     ["RepolishService", "NoteIndexService"],
     ["RepolishService", "TaskActivityService"],
     ["RepolishService", "VersionStore"],

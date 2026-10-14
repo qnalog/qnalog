@@ -7,6 +7,7 @@ import type { ErrataReplacement } from "./errata-parser";
 export interface ErrataRules {
   replacements: readonly ErrataReplacement[];
   noise: readonly string[];
+  prompt?: string;
 }
 
 interface Range { start: number; end: number }
@@ -89,4 +90,12 @@ export function applyErrataToText(text: string, rules: ErrataRules): { text: str
   const replaced = applyReplacements(text, rules.replacements);
   const cleaned = removeNoise(replaced, rules.noise);
   return { text: cleaned.text, removedNoise: cleaned.removed };
+}
+
+export function applyErrataToSegments<T extends { text?: string }>(segments: readonly T[], rules: ErrataRules): T[] {
+  if (!rules.replacements.length && !rules.noise.length) return segments as T[];
+  return segments.map((segment) => ({
+    ...segment,
+    text: removeNoise(applyReplacements(String(segment.text || ""), rules.replacements), rules.noise).text,
+  }));
 }

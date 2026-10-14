@@ -1,13 +1,15 @@
 import * as obsidian from "obsidian";
 import { getSegmentsDurationMs } from "./audio-refs";
 import { getTaskErrorMessage } from "../shared/task-activity";
-import { readNamespaceFrontmatter, isDerivedVersionType } from "../shared/namespace";
 import { t } from "../shared/i18n";
 import type { Segment } from "../shared/types";
 import type { DerivedNoteVersion } from "../versions/derived-note-store";
 import { getSourceIdFromMarkdown } from "./note-source-metadata";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 import type { RepolishFlowBasePort } from "./repolish-flow";
+import { applyErrataToSegments, applyReplacements } from "../errata/errata-apply";
+import type { ErrataRules } from "../errata/errata-apply";
+import { resolveErrataSource } from "../errata/errata-service";
 
 export interface CleanScriptFlowPort extends RepolishFlowBasePort {
   getVault(): Pick<obsidian.Vault, "read" | "modify" | "getAbstractFileByPath">;
@@ -15,7 +17,8 @@ export interface CleanScriptFlowPort extends RepolishFlowBasePort {
   findDerivedNoteForSource(file: obsidian.TFile, sourceId: string, kind: string): obsidian.TFile | null;
   switchVersion(file: obsidian.TFile, fallbackSourcePath: string): Promise<void>;
   getLearnedOutputCeiling(): number;
-  cleanTranscript(segments: Segment[], ceiling: number): Promise<{ text: string; truncated: boolean }>;
+  cleanTranscript(segments: Segment[], ceiling: number, errataPrompt?: string): Promise<{ text: string; truncated: boolean }>;
+  loadErrata?(file: obsidian.TFile): Promise<ErrataRules | null>;
 }
 
 export async function findCleanCopy(port: CleanScriptFlowPort, sourceFile: unknown): Promise<obsidian.TFile | null> {
@@ -37,15 +40,14 @@ export async function generateCleanScript(
   try {
     let sourceFile = file;
     let content = await port.getVault().read(file);
-    const fm = port.getCachedFrontmatter(file) || {};
-    if (isDerivedVersionType(readNamespaceFrontmatter(fm, "type"))
-      || readNamespaceFrontmatter(fm, "containsRaw") === false) {
-      const sourcePath = readNamespaceFrontmatter(fm, "sourcePath");
-      const srcPath = typeof sourcePath === "string" && sourcePath ? obsidian.normalizePath(sourcePath) : "";
-      const resolved = srcPath ? port.getVault().getAbstractFileByPath(srcPath) : null;
-      if (resolved instanceof obsidian.TFile) {
-        sourceFile = resolved;
-        content = await port.getVault().read(resolved);
+    const resolution = resolveErrataSource(file, {
+      getFrontmatter: (target) => port.getCachedFrontmatter(target),
+      getByPath: (path) => port.getVault().getAbstractFileByPath(path),
+    });
+    if (resolution.isDerived) {
+      if (resolution.sourceFile instanceof obsidian.TFile) {
+        sourceFile = resolution.sourceFile;
+        content = await port.getVault().read(sourceFile);
       } else {
         new obsidian.Notice(t("This is a derived version, but the source note has been renamed or moved. Generate the clean transcript in the original recording note."), 8000);
         return;
@@ -69,7 +71,9 @@ export async function generateCleanScript(
       }
     }
     await port.ensureOriginalVersionForSource(sourceFile);
-    const segments = extractTranscriptSegments(content);
+    const errata = port.loadErrata ? await port.loadErrata(sourceFile) : null;
+    const originalSegments = extractTranscriptSegments(content);
+    const segments = errata ? applyErrataToSegments(originalSegments, errata) : originalSegments;
     if (!segments.length) {
       new obsidian.Notice(t("No original transcript (verbatim transcript) found. Generate the clean transcript on a recording source note that contains \"Segmented raw transcript\"."), 8000);
       return;
@@ -96,7 +100,8 @@ export async function generateCleanScript(
     port.tasks.updateBusyStatus();
     new obsidian.Notice(t("QnALog: Generating the clean transcript from the source transcript..."));
     taskMeter = port.tasks.beginTaskMeter();
-    const { text: cleaned, truncated } = await port.cleanTranscript(segments, port.getLearnedOutputCeiling());
+    const { text: generated, truncated } = await port.cleanTranscript(segments, port.getLearnedOutputCeiling(), errata?.prompt || "");
+    const cleaned = errata ? applyReplacements(generated, errata.replacements) : generated;
     if (!cleaned) throw new Error(t("The model did not return a usable clean transcript"));
     const warn = truncated
       ? "> [!warning] 清稿可能被截断：部分内容或因模型输出上限未完整。建议换更大输出上限的模型后重新生成。\n\n"

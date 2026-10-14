@@ -36,6 +36,7 @@ import { BRIEFING_PRESUMMARY_NOTICE, BRIEFING_TRUNCATION_WARNING, applyRepolishP
 import { buildEmptyLlmOutputFallback } from "../notes/note-write-content";
 
 import { buildMeetingWorkbenchPrompt } from "../notes/meeting-workbench";
+import { applyReplacements } from "../errata/errata-apply";
 
 import { renderLongSessionRawFallbackGroup } from "../notes/detail-blocks";
 
@@ -179,7 +180,7 @@ export async function polishTranscript(plugin, transcript, mode, sessionMeta, or
 
 // 清稿：把母本 raw 分段转写整理成高保真可读稿（非纪要、不以缩短为目标）。
 // 清稿的输出体量接近有效原文，因此输入块必须给输出留足空间；块过大会在逐块整理时截断并真实丢失内容。
-export async function cleanTranscript(plugin, segments, ceiling) {
+export async function cleanTranscript(plugin, segments, ceiling, errataPrompt = "") {
   const list = Array.isArray(segments) ? segments.filter(s => s && String(s.text || "").trim()) : [];
   if (!list.length) return { text: "", truncated: false };
   const modelCeiling = Number(ceiling) || 0;
@@ -194,7 +195,7 @@ export async function cleanTranscript(plugin, segments, ceiling) {
     const joined = g.map((s, j) => formatMergeSegmentForPrompt(s, j)).join("\n\n");
     const start = formatElapsed(Number(g[0] && g[0].startOffsetMs) || 0);
     const end = formatElapsed(Number(g[g.length - 1] && g[g.length - 1].endOffsetMs) || 0);
-    let up = buildCleanTranscriptChunkPrompt(joined, partIndex, partTotal, `${start}–${end}`, resolveKnownSpeakerLabels(joined, null));
+    let up = buildCleanTranscriptChunkPrompt(joined, partIndex, partTotal, `${start}–${end}`, resolveKnownSpeakerLabels(joined, null), errataPrompt);
     up = applyBriefingLanguageInstruction(up, plugin.settings);
     const { text, truncated } = await callBriefingMergeLlm(
       plugin, CLEAN_TRANSCRIPT_SYSTEM, up,
@@ -336,12 +337,13 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   const partPlans = planBriefingParts(list, targetChars);
   if (!partPlans.length) return null;
   const requiresGlobalConsolidation = (mode === "synthesis" || mode === "general") && partPlans.length > 1;
+  const errataPrompt = String(computedMeta && computedMeta._errata || "");
 
   const identity = createBriefingJobId({
     segments: list,
     mode,
     model: String(plugin.settings.llmModel || ""),
-    optionsKey: buildBriefingPipelineOptionsKey(plugin, mode, repolishOptions),
+    optionsKey: `${buildBriefingPipelineOptionsKey(plugin, mode, repolishOptions)}\n${errataPrompt}`,
   });
   const store = getBriefingCheckpointStore(plugin);
   const checkpointInput = {
@@ -378,6 +380,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   }, generalSourceLanguage);
   if (adaptiveLength) modeGuidance = `${adaptiveLength}\n\n---\n\n${modeGuidance}`;
   modeGuidance = truncateForLlmPrompt(modeGuidance, 12000);
+  if (errataPrompt) modeGuidance = `${modeGuidance}\n\n---\n\n${errataPrompt}`;
   const fidelityInput = {
     mode,
     detailLevel: getBriefingEffectiveDetailLevel(mode, repolishOptions),
@@ -862,7 +865,7 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   return appendKnowledgeSnapshot(bodyWithSediment, checkpoint.assembledKnowledge);
 }
 
-export async function mergeAndPolish(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions = null) {
+async function mergeAndPolishInternal(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions = null) {
   if (!segments || segments.length === 0) return "";
   const sourceSegments = segments;
   if (mode === "off") {
@@ -919,6 +922,8 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
       userPrompt,
     ].filter(Boolean).join("\n\n");
   }
+  const errataPrompt = String(computedMeta && computedMeta._errata || "");
+  if (errataPrompt) userPrompt = `${userPrompt}\n\n---\n\n${errataPrompt}`;
   // 多声道分离出的说话人是既定事实：注入硬约束，覆盖各模式里「弱化/不强制标注说话人」的规则。
   const knownSpeakerClause = buildKnownSpeakerClause(
     resolveKnownSpeakerLabels(joined, originalFrontmatter),
@@ -1026,6 +1031,12 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
   const polished = postProcessBriefingOutput(auditedOutput, mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), topNotices.join("\n\n"), sourceText);
   const bodyWithSediment = sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
   return appendKnowledgeSnapshot(bodyWithSediment, createUnavailableSessionKnowledge(sourceSegments, preSummarized ? "source-presummarized" : "missing-block"));
+}
+
+export async function mergeAndPolish(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions = null) {
+  const result = await mergeAndPolishInternal(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions);
+  const rules = sessionMeta && Array.isArray(sessionMeta._errataReplacements) ? sessionMeta._errataReplacements : [];
+  return rules.length ? applyReplacements(result, rules) : result;
 }
 
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

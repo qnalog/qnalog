@@ -19,6 +19,7 @@ import type { ReorganizeInPlacePort } from "./reorganize-in-place-flow";
 import type { CleanScriptFlowPort } from "./clean-script-flow";
 import { generateCleanScript as generateCleanScriptFlow, findCleanCopy as findCleanCopyFlow } from "./clean-script-flow";
 import type { Segment } from "../shared/types";
+import type { ErrataService } from "../errata/errata-service";
 
 /** RepolishService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RepolishHost {
@@ -31,6 +32,7 @@ export interface RepolishHost {
   versions: VersionStore;
   /** 生成新派生纪要后刷新最近纪要列表。 */
   requestOutlineRefresh(): void;
+  errata?: Pick<ErrataService, "loadForFile">;
 }
 
 export class RepolishService {
@@ -83,6 +85,7 @@ export class RepolishService {
       },
       ensureOriginalVersionForSource: (file) => this.host.versions.ensureOriginalVersionForSource(file),
       createDerivedNote: (file, content, version, label, mode, style) => this.host.versions.createDerivedNote(file, content, version, label, mode, style),
+      loadErrata: (file) => this.host.errata ? this.host.errata.loadForFile(file) : Promise.resolve(null),
     };
   }
 
@@ -107,6 +110,7 @@ export class RepolishService {
     return {
       getVault: () => this.host.app.vault,
       getCachedFrontmatter: (file) => this.host.app.metadataCache.getFileCache(file)?.frontmatter,
+      loadErrata: (file) => this.host.errata ? this.host.errata.loadForFile(file) : Promise.resolve(null),
       getDefaultMode: () => getEffectivePolishMode(this.host.settings, this.host.settings.polishMode, "general"),
       getModeDisplayName: (mode) => getModeDisplayName(this.host.settings, mode),
       getInFlight: () => {
@@ -137,7 +141,8 @@ export class RepolishService {
       findDerivedNoteForSource: (file, sourceId, kind) => this.host.versions.findDerivedNoteForSource(file, sourceId, kind),
       switchVersion: (file, fallbackSourcePath) => this.host.versions.switchVersion(file, fallbackSourcePath),
       getLearnedOutputCeiling: () => getLearnedLlmOutputCeiling(this.host.settings),
-      cleanTranscript: (segments: Segment[], ceiling: number) => cleanTranscript(this.host, segments, ceiling),
+      cleanTranscript: (segments: Segment[], ceiling: number, errataPrompt?: string) => cleanTranscript(this.host, segments, ceiling, errataPrompt),
+      loadErrata: (file) => this.host.errata ? this.host.errata.loadForFile(file) : Promise.resolve(null),
     };
   }
 }

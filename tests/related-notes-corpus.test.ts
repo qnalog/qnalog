@@ -50,6 +50,18 @@ function makePort(): RelatedNotesCorpusPort {
 }
 
 describe("related note corpus", () => {
+  it("excludes dated errata files even when they are under the configured note root", async () => {
+    const port = makePort();
+    const errataPath = "QnALog/勘误表/2026-10-14 项目记录 · 勘误.md";
+    const withErrata: RelatedNotesCorpusPort = {
+      ...port,
+      listNoteFiles: () => [...port.listNoteFiles(), { path: errataPath, basename: "2026-10-14 项目记录 · 勘误.md", mtime: 12 }],
+      readText: async (path) => path === errataPath ? "# 错词 => 正词\n" : port.readText(path),
+    };
+    const result = await buildRelatedNotesCorpus(withErrata, { roots: ["QnALog"] });
+    expect(result.documents.some((document) => document.path === errataPath)).toBe(false);
+  });
+
   it("uses configured note roots, filters merge/derived notes, excludes link noise and builds reverse links", async () => {
     const result = await buildRelatedNotesCorpus(makePort(), { roots: ["QnALog/Notes"] });
     expect(result.documents.map((doc) => doc.path)).toEqual(["QnALog/Notes/one.md", "QnALog/Notes/two.md", "QnALog/Notes/old.md", "QnALog/Notes/legacy-host.md"]);

@@ -3,6 +3,8 @@
 import * as obsidian from "obsidian";
 import { VOCABULARY_SECTIONS } from '../shared/catalog-sediment';
 import { escapeRegExp } from '../shared/util-common';
+import { normalizeVocabularyCorrectionTerm } from './correction-normalization';
+export { normalizeVocabularyCorrectionSide, normalizeVocabularyCorrectionTerm } from './correction-normalization';
 
 export type VocabularyGroups = Record<string, string[]>;
 
@@ -26,32 +28,6 @@ export function detectVocabularySectionKey(text) {
   if (/易错|误写|错写|纠错|校正|替换|标准写法|正确写法/.test(title)) return "corrections";
   if (/其他|专有名词|专名|未分类/.test(title)) return "other";
   return "";
-}
-
-export function normalizeVocabularyCorrectionSide(text) {
-  return String(text || "")
-    .trim()
-    .replace(/^\*\*(.*?)\*\*$/, "$1")
-    .replace(/^__(.*?)__$/, "$1")
-    .replace(/^[`"'「『]+/, "")
-    .replace(/[`"'」』]+$/, "")
-    .trim();
-}
-
-export function normalizeVocabularyCorrectionTerm(line) {
-  let text = String(line || "").trim();
-  if (!text) return "";
-  if (text.startsWith("<!--") || text.startsWith("//") || text.startsWith(">")) return "";
-  if (text === "---" || /^\|?\s*-{3,}/.test(text)) return "";
-  text = text.replace(/^- \[[ x]\]\s+/i, "").replace(/^[-*+]\s+/, "").replace(/^\d+[.)、]\s+/, "").trim();
-  text = text.replace(/^\*\*(.*?)\*\*$/, "$1").replace(/^__(.*?)__$/, "$1");
-  const pair = text.match(/^(.+?)\s*(?:=>|->|→|=|：|:)\s*(.+)$/);
-  if (!pair) return "";
-  const from = normalizeVocabularyCorrectionSide(pair[1]);
-  const to = normalizeVocabularyCorrectionSide(pair[2]);
-  if (!from || !to || from === to) return "";
-  if (from.length > 60 || to.length > 60) return "";
-  return `${from} => ${to}`;
 }
 
 export function normalizeVocabularyTerm(line) {

@@ -30,6 +30,7 @@ import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "./recent-note-paths";
 import { NS_TAG, NS_TYPE_VERSION_CACHE, isDerivedVersionType, readNamespaceFrontmatter } from "../shared/namespace";
+import { isErrataPath } from "../errata/errata-path";
 
 import { t } from "../shared/i18n";
 import { t as i18nT } from "../shared/i18n";
@@ -164,6 +165,7 @@ export function getMarkdownFilesUnderRecentRoots(plugin) {
   const roots = getRecentNoteRoots(plugin);
   return plugin.app.vault.getMarkdownFiles()
     .filter((file) => file instanceof obsidian.TFile
+      && !isErrataPath(file.path)
       && isPathUnderRecentNoteRoots(file.path, roots));
 }
 
