@@ -44,6 +44,11 @@ describe("errata store", () => {
     const f = fixture();
     const created = await f.store.create(f.source.path);
     expect(created.path).toBe("QnALog/勘误表/2026-10-13 2321 · 原理 · 勘误.md");
+    const createdText = f.files.get(created.path)?.text || "";
+    expect(createdText).toContain("笔记：[[QnALog/纪要/2026-10-13 2321 · 原理]]");
+    expect(createdText).not.toMatch(/^qnalog_[\w-]+:/m);
+    expect(createdText).not.toMatch(/^tags?:/m);
+    expect(createdText).not.toMatch(/^#qnalog\//m);
     expect(await f.store.find(f.source.path)).toBe(created);
     expect(await f.store.load(f.source.path)).toMatchObject({ parsed: { replacements: [], noise: [], notes: [] } });
     expect(isErrataPath(created.path)).toBe(true);
