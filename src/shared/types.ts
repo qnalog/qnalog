@@ -300,6 +300,8 @@ export interface SessionMetaForMerge {
   _taskMeter?: unknown;
   /** 整理检查点 id；merge-pipeline 写入，提示词层读它。 */
   _briefingCheckpointId?: string;
+  /** 本次会话的完整录音路径；写入笔记 frontmatter，原始转写丢失时用于定位录音。 */
+  audioPath?: string;
   /** 用户主动重新整理时置 true：忽略已有检查点，全部分部重新调用模型。 */
   _freshBriefing?: boolean;
   /** Source-faithful speaker/text projection applied for a single organizing run. */

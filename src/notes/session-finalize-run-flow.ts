@@ -208,6 +208,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
       duration: textImport ? "" : (lastSeg ? formatElapsed(lastSeg.endOffsetMs || 0) : ""),
       source: session.source || "",
       sourceMeta: session.sourceMeta || null,
+      audioPath: session.masterAudioPath || "",
       meetingWorkbench: normalizeMeetingWorkbench(session.meetingWorkbench),
       _utteranceProjections: speakerPreparation.utteranceProjections || [],
     };

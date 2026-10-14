@@ -146,6 +146,7 @@ export const NS_FM = {
   mode: "qnalog_mode",
   time: "qnalog_time",
   duration: "qnalog_duration",
+  audio: "qnalog_audio",
   status: "qnalog_status",
   people: "qnalog_people",
   topic: "qnalog_topic",

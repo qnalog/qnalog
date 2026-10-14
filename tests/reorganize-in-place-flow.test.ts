@@ -60,6 +60,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     getInFlight: () => new Set<string>(),
     mergeAndPolish: vi.fn(async () => { calls.order.push("merge"); return generated; }),
     clearCommittedBriefingCheckpoint: vi.fn(async () => { calls.order.push("clear-checkpoint"); }),
+    recoverOriginalTranscript: vi.fn(async () => false),
     stripModeSuggestionBlocks: (text: string) => text,
     validateOriginalVersionForReorganization: vi.fn(async () => { calls.order.push("validate-cache"); }),
     replaceOriginalVersionBody: vi.fn(async (...args: unknown[]) => {
@@ -119,6 +120,30 @@ describe("in-place note reorganization", () => {
     expect(result).toContain("录音原文：今天确认项目下周启动。");
     expect(result).toContain("New organized body");
     expect(result).not.toContain("Old organized body");
+  });
+
+  it("offers transcript recovery when the note has no original transcript, then continues", async () => {
+    const noRaw = ["---", "qnalog_time: 2026-10-13T10:00:00", "---", "# 2026-10-13 10:00 · 工作纪要", "", "Old organized body", "", "---", "", "## 原始材料", ""].join("\n");
+    const { port, file, contents, portRaw } = fixture();
+    contents.set(file.path, noRaw);
+    vi.mocked(portRaw.recoverOriginalTranscript).mockImplementationOnce(async () => {
+      contents.set(file.path, `${noRaw}\n${transcriptBlock}\n`);
+      return true;
+    });
+    await reorganizeNoteInPlace(port, file);
+    expect(portRaw.recoverOriginalTranscript).toHaveBeenCalledTimes(1);
+    expect(portRaw.mergeAndPolish).toHaveBeenCalledTimes(1);
+    expect(contents.get(file.path)).toContain("New organized body");
+    expect(contents.get(file.path)).toContain("录音原文：今天确认项目下周启动。");
+  });
+
+  it("does not call the model when recovery is declined", async () => {
+    const noRaw = ["---", "qnalog_time: 2026-10-13T10:00:00", "---", "# T", "", "Old", "", "---", "", "## 原始材料", ""].join("\n");
+    const { port, file, contents, portRaw } = fixture();
+    contents.set(file.path, noRaw);
+    await reorganizeNoteInPlace(port, file);
+    expect(portRaw.mergeAndPolish).not.toHaveBeenCalled();
+    expect(contents.get(file.path)).toBe(noRaw);
   });
 
   it("replaces the organized body while preserving source material and user fields", async () => {

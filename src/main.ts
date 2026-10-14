@@ -100,7 +100,7 @@ import { logLlmRequestDiagnostic, requestLlmChatCompletion } from "./llm/core";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
 import { isPathUnderRecentNoteRoots } from "./recent/recent-note-paths";
-import { qnalogConfirm } from "./ui/helpers";
+import { pickAudioFile, qnalogConfirm } from "./ui/helpers";
 import { ImportService } from "./imports/import-service";
 import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
@@ -277,7 +277,10 @@ class QnALogPlugin extends obsidian.Plugin {
       logDiagnostic: (level, code, message, data) => this.diagnostics.logDiagnostic(level, code, message, data),
       notify: (message) => { new obsidian.Notice(message); },
     });
-    this.repolish = new RepolishService(this);
+    this.repolish = new RepolishService(this, {
+      confirm: (title, body, ctaText) => qnalogConfirm(this.app, title, body, ctaText),
+      pickAudioFile: (files) => pickAudioFile(this.app, files),
+    });
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);

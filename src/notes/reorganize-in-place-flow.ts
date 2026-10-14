@@ -22,6 +22,8 @@ export interface ReorganizeInPlacePort {
   getInFlight(): Set<string>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, frontmatter: Record<string, unknown> | null): Promise<string>;
   clearCommittedBriefingCheckpoint(sessionMeta: Record<string, unknown>): Promise<void>;
+  /** 笔记里没有原始转写时，询问并用对应录音重新转写写回；返回是否已写回。 */
+  recoverOriginalTranscript(file: obsidian.TFile): Promise<boolean>;
   stripModeSuggestionBlocks(text: string): string;
   validateOriginalVersionForReorganization(file: obsidian.TFile): Promise<void>;
   replaceOriginalVersionBody(file: obsidian.TFile, payload: string): Promise<OriginalSnapshotBodyUpdate | null>;
@@ -116,10 +118,14 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
   const taskId = `reorganize-in-place:${file.path}`;
   let taskStarted = false;
   try {
-    const snapshot = await port.getVault().read(file);
+    let snapshot = await port.getVault().read(file);
     await port.validateOriginalVersionForReorganization(file);
     const errata = await port.loadErrata(file);
-    const input = readRepolishInput(snapshot, port.getCachedFrontmatter(file) || null, errata);
+    let input = readRepolishInput(snapshot, port.getCachedFrontmatter(file) || null, errata);
+    if (!input.segments.length && await port.recoverOriginalTranscript(file)) {
+      snapshot = await port.getVault().read(file);
+      input = readRepolishInput(snapshot, port.getCachedFrontmatter(file) || null, errata);
+    }
     if (!input.segments.length) throw new Error(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."));
     const mode = port.getDefaultMode();
     port.tasks.startTaskActivity({

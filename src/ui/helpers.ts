@@ -395,3 +395,23 @@ export function countKnowledgeExtractionHistory(
 }
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */
 
+/** 让用户从给定的录音文件里选一个；直接关闭窗口返回 null。 */
+export function pickAudioFile(app: obsidian.App, files: obsidian.TFile[]): Promise<obsidian.TFile | null> {
+  // 类在调用时才创建，避免模块加载阶段就依赖 FuzzySuggestModal。
+  class AudioFileSuggestModal extends obsidian.FuzzySuggestModal<obsidian.TFile> {
+    chosen: obsidian.TFile | null = null;
+    constructor(private readonly onDone: (file: obsidian.TFile | null) => void) {
+      super(app);
+      this.setPlaceholder(t("Choose the recording to transcribe again"));
+    }
+    getItems(): obsidian.TFile[] { return files; }
+    getItemText(file: obsidian.TFile): string { return file.path; }
+    onChooseItem(file: obsidian.TFile): void { this.chosen = file; }
+    onClose(): void {
+      super.onClose();
+      // onChooseItem 在 onClose 之后触发，延迟一个任务再回报选择结果。
+      window.setTimeout(() => this.onDone(this.chosen), 0);
+    }
+  }
+  return new Promise((resolve) => new AudioFileSuggestModal(resolve).open());
+}
