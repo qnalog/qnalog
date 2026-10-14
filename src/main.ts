@@ -7,7 +7,7 @@ import { QnALogSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
-import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrectionModal } from "./ui/modals";
+import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
 
 import {getModeDisplayName, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -79,6 +79,8 @@ import { RealtimeOutlineService, type RealtimeOutlineHost } from "./notes/realti
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { ErrataService } from "./errata/errata-service";
 import { ErrataStore, isErrataPath } from "./errata/errata-store";
+import { ErrataModal } from "./errata/errata-modal";
+import { getCorrectionSelectionPrefill, saveErrataNoise, saveErrataReplacement } from "./errata/errata-editor-actions";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
@@ -603,6 +605,60 @@ class QnALogPlugin extends obsidian.Plugin {
       if (s === "recording") this.recorder.pause(); else if (s === "paused") this.recorder.resume();
     }});
     this.addCommand({ id: "polish-selection-or-note", name: t("AI: Polish Current Selection or Entire Note"), editorCallback: (editor) => this.noteWriter.polishEditor(editor) });
+
+    this.addCommand({
+      id: "errata-open-current-note",
+      name: t("QnALog: Create or open errata for this note"),
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
+          new obsidian.Notice(t("Open a Markdown note first."), 5000);
+          return;
+        }
+        try {
+          const errataFile = await this.errata.createForFile(file);
+          await openOrRevealFile(this.app, errataFile);
+        } catch (error: unknown) {
+          const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
+          new obsidian.Notice(`${t("Could not create or open the errata: ")}${detail}`, 8000);
+        }
+      },
+    });
+    this.addCommand({
+      id: "errata-correct-selection",
+      name: t("QnALog: Correct selected text"),
+      editorCallback: (editor, view) => {
+        const file = view.file;
+        if (!(file instanceof obsidian.TFile)) return;
+        const prefill = getCorrectionSelectionPrefill(editor.getSelection());
+        if (prefill.tooLong) new obsidian.Notice(t("Select a shorter word."), 5000);
+        new ErrataModal(this.app, prefill.wrongText, (wrongText, correctText) =>
+          saveErrataReplacement(this.errata, file, editor, wrongText, correctText)).open();
+      },
+    });
+    this.addCommand({
+      id: "errata-mark-selection-noise",
+      name: t("QnALog: Mark selected text as noise"),
+      editorCallback: (editor, view) => {
+        const file = view.file;
+        if (!(file instanceof obsidian.TFile)) return;
+        const selection = editor.getSelection();
+        if (!selection.trim()) {
+          new obsidian.Notice(t("Select text first."), 5000);
+          return;
+        }
+        if (selection.trim().length > 2000) {
+          new obsidian.Notice(t("Selected text exceeds the 2000 character limit."), 6000);
+          return;
+        }
+        void saveErrataNoise(this.errata, file, selection).then(() => {
+          new obsidian.Notice(t("Added to the errata. It will apply to newly generated notes after reorganization."), 6000);
+        }).catch((error: unknown) => {
+          const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
+          new obsidian.Notice(`${t("Could not save the errata: ")}${detail}`, 8000);
+        });
+      },
+    });
     this.addCommand({ id: "toggle-floating-ball", name: t("Show/Hide Floating Bubble (Master Switch)"), callback: () => {
       this.settings.showFloatingBall = !this.settings.showFloatingBall;
       void this.saveSettings();
@@ -735,9 +791,7 @@ class QnALogPlugin extends obsidian.Plugin {
       },
     });
 
-    // 选中文字 → 右键 → 更正误识别词。只改当前笔记，不写词表。
-    // 入口放在编辑器菜单而不是文件菜单：用户看到错词时正在正文里，
-    // 让「选中即更正」一步可达，不必开弹窗再手打一遍错词。
+    // 选中文字后可将词语或整段加入当前笔记的勘误表。
     //
     // 菜单标题用产品名 `QnALog`，名称里不要再引入 `&`：旧书面名 `Q&A Log` 的 `&`
     // 会被 macOS 原生菜单当快捷键标记吃掉。Obsidian 只在 `&` 两侧都是非单词字符时
@@ -748,12 +802,12 @@ class QnALogPlugin extends obsidian.Plugin {
       const file = info && info.file;
       if (!(file instanceof obsidian.TFile)) return;
       const isMinutes = this.noteWriter.detectModeFromMarkdown(file);
-      const selection = String(editor.getSelection() || "").trim();
-      const hasCorrection = !!selection && !selection.includes("\n") && selection.length <= 80;
+      const selection = String(editor.getSelection() || "");
+      const hasSelection = !!selection.trim();
       // 本插件的菜单项归入同一组：只在最前面加一条分隔线（与系统项隔开），
       // 「继续录音」与「更正误识别词」之间不再分割——两条中间夹分隔线会把
       // 同一插件的功能切成两组，视觉上像两家来源。
-      if (!isMinutes && !hasCorrection) return;
+      if (!isMinutes && !hasSelection) return;
       menu.addSeparator();
       if (isMinutes) {
         // 正文右键（无论是否选中文字）：当前笔记是自家纪要时给「继续录音到这篇纪要」，
@@ -764,12 +818,32 @@ class QnALogPlugin extends obsidian.Plugin {
             .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
         });
       }
-      if (!hasCorrection) return;
-      // 只处理单行内的短片段：多行或过长通常是整段，不是「误识别词」
+      if (!hasSelection) return;
       menu.addItem((item) => {
-        item.setTitle(t("QnALog: Correct misrecognized text…"))
+        item.setTitle(t("QnALog: Correct selected text"))
           .setIcon("replace")
-          .onClick(() => new TextCorrectionModal(this.app, file, selection, () => this.noteIndex.refreshNoteIndexSafely(file, { reason: "text-correction" })).open());
+          .onClick(() => {
+            const prefill = getCorrectionSelectionPrefill(selection);
+            if (prefill.tooLong) new obsidian.Notice(t("Select a shorter word."), 5000);
+            new ErrataModal(this.app, prefill.wrongText, (wrongText, correctText) =>
+              saveErrataReplacement(this.errata, file, editor, wrongText, correctText)).open();
+          });
+      });
+      menu.addItem((item) => {
+        item.setTitle(t("QnALog: Mark selected text as noise"))
+          .setIcon("ban")
+          .onClick(() => {
+            if (selection.trim().length > 2000) {
+              new obsidian.Notice(t("Selected text exceeds the 2000 character limit."), 6000);
+              return;
+            }
+            void saveErrataNoise(this.errata, file, selection).then(() => {
+              new obsidian.Notice(t("Added to the errata. It will apply to newly generated notes after reorganization."), 6000);
+            }).catch((error: unknown) => {
+              const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
+              new obsidian.Notice(`${t("Could not save the errata: ")}${detail}`, 8000);
+            });
+          });
       });
     }));
 
@@ -784,6 +858,19 @@ class QnALogPlugin extends obsidian.Plugin {
             .onClick(() => this.imports.openAudioImportOptions([file.path]));
         });
         return;
+      }
+      if (ext === "md") {
+        menu.addSeparator();
+        menu.addItem((item) => {
+          item.setTitle(t("QnALog: Create or open errata for this note"))
+            .setIcon("pencil")
+            .onClick(() => {
+              void this.errata.createForFile(file).then((errataFile) => openOrRevealFile(this.app, errataFile)).catch((error: unknown) => {
+                const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
+                new obsidian.Notice(`${t("Could not create or open the errata: ")}${detail}`, 8000);
+              });
+            });
+        });
       }
       // 纪要文件的续录入口：右键一篇已生成的转写纪要，追加一段录音。
       // 只对自家纪要显示：续录建纪要时统一写 mode frontmatter
