@@ -59,6 +59,8 @@ function fixture(overrides: Record<string, unknown> = {}) {
     getModeDisplayName: () => "General",
     getInFlight: () => new Set<string>(),
     mergeAndPolish: vi.fn(async () => { calls.order.push("merge"); return generated; }),
+    clearCommittedBriefingCheckpoint: vi.fn(async () => { calls.order.push("clear-checkpoint"); }),
+    recoverOriginalTranscript: vi.fn(async () => false),
     stripModeSuggestionBlocks: (text: string) => text,
     validateOriginalVersionForReorganization: vi.fn(async () => { calls.order.push("validate-cache"); }),
     replaceOriginalVersionBody: vi.fn(async (...args: unknown[]) => {
@@ -92,6 +94,56 @@ describe("in-place note reorganization", () => {
     const [segments, , sessionMeta] = vi.mocked(portRaw.mergeAndPolish).mock.calls[0] as unknown as [Array<{ text: string }>, string, Record<string, unknown>];
     expect(segments[0].text).toContain("本周启动");
     expect(sessionMeta._errata).toContain("下周启动 => 本周启动");
+  });
+
+  it("always asks the model afresh and clears the checkpoint after a successful write", async () => {
+    const { port, file, portRaw } = fixture();
+    await reorganizeNoteInPlace(port, file);
+    const sessionMeta = vi.mocked(portRaw.mergeAndPolish).mock.calls[0][2] as unknown as Record<string, unknown>;
+    expect(sessionMeta._freshBriefing).toBe(true);
+    expect(portRaw.clearCommittedBriefingCheckpoint).toHaveBeenCalledWith(sessionMeta);
+  });
+
+  it("keeps transcript blocks that sit before the original-material heading", async () => {
+    const layout = [
+      "---", "qnalog_time: 2026-10-13T10:00:00", "---",
+      "# 2026-10-13 10:00 · 通用", "",
+      "> [!info]- 当前显示版本：通用 <span data-qnalog=\"active-version-start\"></span>", "",
+      "Old organized body", "<span data-qnalog=\"active-version-end\"></span>", "",
+      "---", "", transcriptBlock, "", "---", "", "## 原始材料", "",
+      "<details>", "<summary>索引数据</summary>", "</details>",
+    ].join("\n");
+    const { port, file, contents } = fixture();
+    contents.set(file.path, layout);
+    await reorganizeNoteInPlace(port, file);
+    const result = contents.get(file.path) || "";
+    expect(result).toContain("录音原文：今天确认项目下周启动。");
+    expect(result).toContain("New organized body");
+    expect(result).not.toContain("Old organized body");
+  });
+
+  it("offers transcript recovery when the note has no original transcript, then continues", async () => {
+    const noRaw = ["---", "qnalog_time: 2026-10-13T10:00:00", "---", "# 2026-10-13 10:00 · 工作纪要", "", "Old organized body", "", "---", "", "## 原始材料", ""].join("\n");
+    const { port, file, contents, portRaw } = fixture();
+    contents.set(file.path, noRaw);
+    vi.mocked(portRaw.recoverOriginalTranscript).mockImplementationOnce(async () => {
+      contents.set(file.path, `${noRaw}\n${transcriptBlock}\n`);
+      return true;
+    });
+    await reorganizeNoteInPlace(port, file);
+    expect(portRaw.recoverOriginalTranscript).toHaveBeenCalledTimes(1);
+    expect(portRaw.mergeAndPolish).toHaveBeenCalledTimes(1);
+    expect(contents.get(file.path)).toContain("New organized body");
+    expect(contents.get(file.path)).toContain("录音原文：今天确认项目下周启动。");
+  });
+
+  it("does not call the model when recovery is declined", async () => {
+    const noRaw = ["---", "qnalog_time: 2026-10-13T10:00:00", "---", "# T", "", "Old", "", "---", "", "## 原始材料", ""].join("\n");
+    const { port, file, contents, portRaw } = fixture();
+    contents.set(file.path, noRaw);
+    await reorganizeNoteInPlace(port, file);
+    expect(portRaw.mergeAndPolish).not.toHaveBeenCalled();
+    expect(contents.get(file.path)).toBe(noRaw);
   });
 
   it("replaces the organized body while preserving source material and user fields", async () => {

@@ -380,7 +380,9 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
     model: String(plugin.settings.llmModel || ""),
     parts: partPlans,
   };
-  let checkpoint = reconcileBriefingCheckpoint(await store.load(identity.id), checkpointInput);
+  // 用户主动重新整理时不复用旧检查点，否则已完成的分部会被直接采用而不调用模型。
+  const freshRun = Boolean(computedMeta && computedMeta._freshBriefing);
+  let checkpoint = reconcileBriefingCheckpoint(freshRun ? null : await store.load(identity.id), checkpointInput);
   if (computedMeta && typeof computedMeta === "object") computedMeta._briefingCheckpointId = identity.id;
   await store.save(checkpoint);
 

@@ -88,6 +88,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     mergeAndPolish: vi.fn(async (...args: unknown[]) => { order.push("merge"); calls.merge.push(args); return "Polished"; }),
     stripModeSuggestionBlocks: (text: string) => text,
     clearCommittedBriefingCheckpoint: vi.fn(async () => { order.push("checkpoint"); }),
+    recoverOriginalTranscript: vi.fn(async () => false),
     ensureOriginalVersionForSource: vi.fn(async () => { order.push("original"); }),
     loadErrata: vi.fn(async () => null),
     createDerivedNote: vi.fn(async (...args: unknown[]) => {

@@ -20,6 +20,12 @@ import type { CleanScriptFlowPort } from "./clean-script-flow";
 import { generateCleanScript as generateCleanScriptFlow, findCleanCopy as findCleanCopyFlow } from "./clean-script-flow";
 import type { Segment } from "../shared/types";
 import type { ErrataService } from "../errata/errata-service";
+import { transcribeImportedAudio } from "../asr/long-audio-transcription";
+import { defaultFolderPaths } from "../shared/defaults";
+import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
+import { t } from "../shared/i18n";
+import { recoverOriginalTranscript } from "./transcript-recovery-flow";
+import type { TranscriptRecoveryPort } from "./transcript-recovery-flow";
 
 /** RepolishService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface RepolishHost {
@@ -35,14 +41,22 @@ export interface RepolishHost {
   errata: Pick<ErrataService, "loadForFile">;
 }
 
+/** 需要界面交互的能力，由装配入口注入，避免业务层依赖界面实现。 */
+export interface RepolishInteraction {
+  confirm(title: string, body: string, ctaText: string): Promise<boolean>;
+  pickAudioFile(files: obsidian.TFile[]): Promise<obsidian.TFile | null>;
+}
+
 export class RepolishService {
+  declare interaction: RepolishInteraction;
   declare host: RepolishHost;
   /** 同一篇笔记的重新整理串行化标记。 */
   declare _repolishInFlight: Set<string> | null;
   /** 同一来源的清稿任务单飞，避免重复请求同时写同一份版本文件。 */
   declare _cleanInFlight: Set<string>;
-  constructor(host: RepolishHost) {
+  constructor(host: RepolishHost, interaction: RepolishInteraction) {
     this.host = host;
+    this.interaction = interaction;
     this._repolishInFlight = null;
     this._cleanInFlight = new Set();
   }
@@ -89,6 +103,30 @@ export class RepolishService {
     };
   }
 
+  private transcriptRecoveryPort(): TranscriptRecoveryPort {
+    const app = this.host.app;
+    return {
+      getVault: () => app.vault,
+      getCachedFrontmatter: (file) => app.metadataCache.getFileCache(file)?.frontmatter,
+      getAudioFiles: () => app.vault.getFiles(),
+      pickAudioFile: (files) => this.interaction.pickAudioFile(files),
+      confirm: (title, body, ctaText) => this.interaction.confirm(title, body, ctaText),
+      readAudio: async (file) => new Blob([await app.vault.readBinary(file)]),
+      transcribeWhole: (blob, mime, options) => transcribeImportedAudio(this.host, blob, mime, options),
+      refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, options),
+      getBackupFolder: () => `${defaultFolderPaths().archiveFolder}/${t("Original transcript backups")}`,
+      createBackupFile: async (path, content) => {
+        const dir = path.slice(0, path.lastIndexOf("/"));
+        await ensureVaultFolder(app, dir);
+        return app.vault.create(findAvailableMarkdownPath(app, path), content);
+      },
+    };
+  }
+
+  private async recoverTranscript(file: obsidian.TFile): Promise<boolean> {
+    return recoverOriginalTranscript(this.transcriptRecoveryPort(), file);
+  }
+
   private repolishPort(): RepolishFlowPort {
     return {
       ...this.repolishBasePort(),
@@ -103,6 +141,7 @@ export class RepolishService {
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
       saveVersion: (file, content, segments, input) => this.host.versions.saveVersion(file, content, segments, input),
       requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
+      recoverOriginalTranscript: (file) => this.recoverTranscript(file),
     };
   }
 
@@ -118,6 +157,8 @@ export class RepolishService {
         return this._repolishInFlight;
       },
       mergeAndPolish: (segments, mode, sessionMeta, frontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, frontmatter, null),
+      clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
+      recoverOriginalTranscript: (file) => this.recoverTranscript(file),
       stripModeSuggestionBlocks,
       validateOriginalVersionForReorganization: (file) => this.host.versions.validateOriginalVersionForReorganization(file),
       replaceOriginalVersionBody: (file, payload) => this.host.versions.replaceOriginalVersionBody(file, payload),

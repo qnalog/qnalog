@@ -66,6 +66,8 @@ export interface RepolishFlowPort extends RepolishFlowBasePort {
   clearCommittedBriefingCheckpoint(sessionMeta: unknown): Promise<void>;
   saveVersion(file: obsidian.TFile, content: string, segments: Segment[], input: VersionSaveInput): Promise<unknown>;
   requestOutlineRefresh(): void;
+  /** 笔记里没有原始转写时，询问并用对应录音重新转写写回；返回是否已写回。 */
+  recoverOriginalTranscript(file: obsidian.TFile): Promise<boolean>;
 }
 
 export async function repolishMarkdownFile(
@@ -96,7 +98,11 @@ export async function repolishMarkdownFile(
     }
     const fmCache = port.getCachedFrontmatter(file) || null;
     const errata = await port.loadErrata(file);
-    const repolishInput = readRepolishInput(content, fmCache, errata);
+    let repolishInput = readRepolishInput(content, fmCache, errata);
+    if (!repolishInput.segments.length && await port.recoverOriginalTranscript(file)) {
+      content = await port.getVault().read(file);
+      repolishInput = readRepolishInput(content, fmCache, errata);
+    }
     let segments = repolishInput.segments;
     let sessionMeta = repolishInput.sessionMeta;
     const { roleMapping, originalFrontmatter: originalFmForRegen } = repolishInput;
@@ -132,7 +138,7 @@ export async function repolishMarkdownFile(
     });
     port.tasks.updateBusyStatus();
     taskMeter = port.tasks.beginTaskMeter();
-    sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter });
+    sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter, _freshBriefing: true });
     const polished = await port.mergeAndPolish(segments, mode, sessionMeta, originalFmForRegen, repolishOptions);
     port.tasks.patchTaskActivity(taskId, {
       stage: "writing", stageLabel: t("Generating new version"),

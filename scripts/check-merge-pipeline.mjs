@@ -3719,6 +3719,8 @@ async function main() {
           noTranscript._content = "---\nqnalog_time: 2026-09-14T11:33:00\n---\n# empty\n";
           files.set(noTranscript.path, noTranscript);
           frontmatterByPath.set(noTranscript.path, {});
+          // 笔记没有原始转写时流程会询问是否用录音重新转写；探针里一律拒绝，保持"无转写 → 提示并不改笔记"的断言。
+          plugin.repolish.interaction = { confirm: async () => false, pickAudioFile: async () => null };
           await capture("no-transcript", () => plugin.repolish.repolishMarkdownFile(noTranscript, "meeting"));
           const callCountBeforeClean = llmCalls.length;
           const cleanProbePath = "QnALog/RepolishProbe/清稿.md";

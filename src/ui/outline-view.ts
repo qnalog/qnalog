@@ -6005,7 +6005,8 @@ export class OutlineView extends obsidian.ItemView {
         .onClick(async () => {
           const markdown = await this.app.vault.cachedRead(file);
           if (!extractTranscriptSegments(markdown).length) {
-            new obsidian.Notice(i18nT("No original transcript is available in this note"), 6000);
+            // 原始转写已丢失：交给整理流程询问并用录音重新转写，不在菜单里拦截。
+            void this.plugin.repolish.reorganizeNoteInPlace(file);
             return;
           }
           const confirmed = await qnalogConfirm(

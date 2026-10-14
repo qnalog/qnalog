@@ -187,16 +187,16 @@ describe("recent note sidebar context actions", () => {
       && entries[index - 1]?.title && entries[index + 1]?.title))).toBe(true);
   });
 
-  it("shows a transcript hint without confirmation when the note has no original transcript", async () => {
+  it("hands off to the reorganize flow without its own prompt when the note has no original transcript", async () => {
     uiMocks.notices.length = 0;
     uiMocks.confirm.mockClear();
     const h = await setup(false, "# Note\n\nNo transcript here.");
-    setActiveUiLanguage(resolveUiLanguage("zh-CN", "en"));
     const reorganize = h.menu.items.find((item) => item.title === "Reorganize");
     await reorganize?.onClick?.();
-    expect(h.reorganizeNoteInPlace).not.toHaveBeenCalled();
+    // 转写恢复的询问由整理流程负责，菜单既不拦截也不先弹确认。
+    expect(h.reorganizeNoteInPlace).toHaveBeenCalledWith(h.file);
     expect(uiMocks.confirm).not.toHaveBeenCalled();
-    expect(uiMocks.notices).toContain("这篇笔记没有可用的原始转写");
+    expect(uiMocks.notices).toHaveLength(0);
   });
 
   it("asks for confirmation after finding original transcript segments", async () => {

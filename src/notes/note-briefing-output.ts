@@ -99,6 +99,9 @@ export function normalizeBriefingFrontmatterFields(raw: unknown, mode: string, b
   if (hasNamespaceFrontmatter(source, "people")) {
     cleaned[NS_FM.people] = readNamespaceFrontmatter(source, "people");
   }
+  if (typeof source[NS_FM.audio] === "string" && source[NS_FM.audio]) {
+    cleaned[NS_FM.audio] = source[NS_FM.audio];
+  }
   if (Object.prototype.hasOwnProperty.call(source, NS_FM_SPEAKERS)) {
     cleaned[NS_FM_SPEAKERS] = source[NS_FM_SPEAKERS];
   }
@@ -243,7 +246,7 @@ function normalizeGeneralTodoLabels(markdown: string, language: GeneralSourceLan
 export function postProcessBriefingOutput(
   rawOutput: string | null | undefined,
   mode: string,
-  sessionMeta: { startedAt?: unknown; duration?: unknown } | null | undefined,
+  sessionMeta: { startedAt?: unknown; duration?: unknown; audioPath?: unknown } | null | undefined,
   originalFrontmatter: unknown,
   baseKey: string,
   topNotice = "",
@@ -291,6 +294,8 @@ export function postProcessBriefingOutput(
     if (inferred) base[NS_FM.time] = inferred;
   }
   if (sessionMeta && sessionMeta.duration) base[NS_FM.duration] = sessionMeta.duration;
+  const audioPath = typeof sessionMeta?.audioPath === "string" ? sessionMeta.audioPath.trim() : "";
+  if (audioPath) base[NS_FM.audio] = audioPath;
   base[NS_FM.status] = "organized";
 
   // merge tags：[qnalog/<mode>] + 已有 + 建议；其中 人物/x 前缀一律剥出转入人物属性，不进 tags。
@@ -326,8 +331,9 @@ export function postProcessBriefingOutput(
   if (base[NS_FM.time]) ordered[NS_FM.time] = base[NS_FM.time];
   if (base[NS_FM.duration]) ordered[NS_FM.duration] = base[NS_FM.duration];
   if (people.length) ordered[NS_FM.people] = people;
+  if (base[NS_FM.audio]) ordered[NS_FM.audio] = base[NS_FM.audio];
   const seenKeys = new Set([
-    NS_FM.mode, NS_FM.time, NS_FM.duration, NS_FM.people, NS_FM.status,
+    NS_FM.mode, NS_FM.time, NS_FM.duration, NS_FM.people, NS_FM.status, NS_FM.audio,
     "mode", "模式", "模板", "time", "date", "日期", "时间", "时长", "duration",
     "人物", "people", "状态", "status", "tags",
   ]);
