@@ -36,11 +36,30 @@ try {
   process.exit(1);
 }
 
+const requiredErrataPorts = [
+  ["src/notes/repolish-flow.ts", "RepolishFlowBasePort"],
+  ["src/notes/reorganize-in-place-flow.ts", "ReorganizeInPlacePort"],
+  ["src/notes/clean-script-flow.ts", "CleanScriptFlowPort"],
+];
+for (const [relativePath, interfaceName] of requiredErrataPorts) {
+  const source = readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
+  const interfaceBody = source.match(new RegExp(`interface ${interfaceName}(?: extends [^{]+)? \\{([\\s\\S]*?)\\n\\}`))?.[1] || "";
+  if (!/\bloadErrata\s*\(file:\s*obsidian\.TFile\):\s*Promise<ErrataRules\s*\|\s*null>/.test(interfaceBody)) {
+    process.stderr.write(`[plugin-onload] ${relativePath} must require a loadErrata port\n`);
+    process.exit(1);
+  }
+}
+const repolishServiceSource = readFileSync(new URL("../src/notes/repolish-service.ts", import.meta.url), "utf8");
+if ((repolishServiceSource.match(/loadErrata:\s*\(file\)\s*=>\s*this\.host\.errata\.loadForFile\(file\)/g) || []).length !== 3) {
+  process.stderr.write("[plugin-onload] the repolish, in-place, and clean flow ports must forward loadErrata\n");
+  process.exit(1);
+}
+
 // onload 里应当装配好的域服务字段。新增域服务时在这里补一行。
 const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
-  "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations",
+  "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations", "errata",
 ];
 const PORT_HOST_FIELDS = {
   topics: true,

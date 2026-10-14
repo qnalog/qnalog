@@ -121,7 +121,7 @@ describe("idle sidebar tab order", () => {
 });
 
 describe("recent note sidebar context actions", () => {
-  async function setup(hasPipelineStarted: boolean, markdown = "") {
+  async function setup(hasPipelineStarted: boolean, markdown = "", withErrataUi = false, withRename = true) {
     setActiveUiLanguage(resolveUiLanguage("en", "en"));
     const file = { path: "Notes/example.md" };
     const openFile = vi.fn(async () => undefined);
@@ -135,10 +135,11 @@ describe("recent note sidebar context actions", () => {
       app: { vault: { cachedRead }, workspace: { getActiveFile: () => null, getLeaf: () => ({ openFile }) } },
       getSedimentPanelState: () => ({ hasPipelineStarted, scanning: false }),
       requestSedimentExtraction,
+      errataUi: withErrataUi ? { openForFile: vi.fn(async () => undefined) } : null,
       render: vi.fn(),
       showMenuAtMouse: (menu: typeof menuHolder.menu) => { menuHolder.menu = menu; },
     });
-    view.showRecentNoteContextMenu({}, file, () => undefined);
+    view.showRecentNoteContextMenu({}, file, withRename ? () => undefined : undefined);
     const menu = menuHolder.menu!;
     const outline = menu.items.find((item) => item.title === "Open outline");
     const extract = menu.items.find((item) => item.title === "Distill content");
@@ -151,6 +152,39 @@ describe("recent note sidebar context actions", () => {
     expect(h.menu.items.find((item) => item.title === "Reorganize")?.disabled).not.toBe(true);
     expect(h.cachedRead).not.toHaveBeenCalled();
     expect(h.menu.items.some((item) => item.title === "Generate derived version")).toBe(true);
+  });
+
+  it("shows Open errata only when the UI port is available", async () => {
+    const withoutPort = await setup(false);
+    expect(withoutPort.menu.items.some((item) => item.title === "Open errata")).toBe(false);
+
+    const withPort = await setup(false, "", true);
+    expect(withPort.menu.items.find((item) => item.title === "Open errata")).toMatchObject({ icon: "file-warning" });
+    const labels = withPort.menu.items.map((item) => item.title).filter(Boolean);
+    expect(labels.indexOf("Open errata")).toBe(labels.indexOf("Merge with Previous Recording") + 1);
+  });
+
+  it("orders recent-note menu groups and keeps separators between non-empty groups", async () => {
+    const h = await setup(false, "", true);
+    expect(h.menu.items.map((item) => item.title).filter(Boolean)).toEqual([
+      "Open outline",
+      "Distill content",
+      "Continue Recording into This Note",
+      "Merge with Previous Recording",
+      "Open errata",
+      "Reorganize",
+      "Generate Clean Copy",
+      "Generate derived version",
+      "Export",
+      "Rename",
+      "Delete Transcript Record",
+    ]);
+    const withoutRename = await setup(false, "", false, false);
+    const entries = withoutRename.menu.items;
+    expect(entries[0]?.title).toBe("Open outline");
+    expect(entries.at(-1)?.title).toBe("Delete Transcript Record");
+    expect(entries.every((entry, index) => entry.title || (index > 0 && index < entries.length - 1
+      && entries[index - 1]?.title && entries[index + 1]?.title))).toBe(true);
   });
 
   it("shows a transcript hint without confirmation when the note has no original transcript", async () => {

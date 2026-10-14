@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { pluginSourceText } from "./plugin-source";
 import { describe, expect, it, vi } from "vitest";
-import { mergeAndPolishLongSession } from "../src/briefing/merge-pipeline";
+import { mergeAndPolish, mergeAndPolishLongSession, buildTranscriptKnowledgeInput } from "../src/briefing/merge-pipeline";
+import { readRepolishInput } from "../src/notes/repolish-input";
+import { attachTranscriptResult } from "../src/transcript/session-transcript";
+import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import type { ErrataRules } from "../src/errata/errata-apply";
 import { assessBriefingPartFidelity, getBriefingFidelityPolicy, planBriefingParts } from "../src/briefing/pipeline";
 import { buildBriefingFidelityContract } from "../src/prompts/briefing-prompts";
 const briefingContractState = vi.hoisted(() => ({
@@ -21,7 +25,7 @@ vi.mock("../src/llm/core", () => ({
     return { text: body, finishReason: "stop", truncated: false, usage: {} };
   }),
   stripModeSuggestionBlocks: (text: string) => text,
-  callLlm: vi.fn(),
+  callLlm: vi.fn(async () => "预摘要：JuiceFS 是正确名称。"),
   logLlmRequestDiagnostic: vi.fn(async (_plugin: unknown, _level: string, key: string) => {
     briefingContractState.diagnostics.push(key);
   }),
@@ -46,6 +50,78 @@ const pluginSource = pluginSourceText();
 const mergePipelineSource = readFileSync(new URL("../src/briefing/merge-pipeline.ts", import.meta.url), "utf8");
 
 describe("release runtime contracts", () => {
+  it("applies errata to transcript utterances before the prompt and evidence map are built", () => {
+    const rawText = "朱子 FS 是正确名称。\n\n嗯嗯嗯这是一段口头噪音。";
+    const attached = attachTranscriptResult({
+      index: 0, startOffsetMs: 0, endOffsetMs: 2000, text: rawText,
+    }, "errata-r1", {
+      text: rawText, rawText: null, providerId: "test-asr", units: [
+        { rawText: "朱子 FS 是正确名称。", normalizedText: "朱子 FS 是正确名称。", speakerId: "spk-1", speakerName: "说话人1", startMs: 0, endMs: 1000, timing: "provider" },
+        { rawText: "嗯嗯嗯这是一段口头噪音。", normalizedText: "嗯嗯嗯这是一段口头噪音。", speakerId: "spk-1", speakerName: "说话人1", startMs: 1000, endMs: 2000, timing: "provider" },
+      ],
+    }, "asr");
+    const note = `# 测试\n\n${serializeTranscriptBlock(attached, "### Segment 1", rawText)}`;
+    const rules: ErrataRules = {
+      replacements: [{ from: "朱子 FS", to: "JuiceFS" }],
+      noise: ["嗯嗯嗯这是一段口头噪音。"],
+      prompt: "## 勘误表\n替换：朱子 FS => JuiceFS\n噪音：嗯嗯嗯这是一段口头噪音。",
+    };
+    const input = readRepolishInput(note, null, rules);
+    const knowledge = buildTranscriptKnowledgeInput(input.segments, input.sessionMeta._utteranceProjections as never[]);
+    const allowed = [...knowledge.allowedById.values()];
+    const promptText = knowledge.promptSegments.map((segment: { text: string }) => segment.text).join("\n");
+    expect(promptText).toContain("JuiceFS 是正确名称。");
+    expect(promptText).not.toContain("朱子 FS");
+    expect(promptText).not.toContain("口头噪音");
+    expect(allowed.map((item: { normalizedText: string }) => item.normalizedText)).toEqual(["JuiceFS 是正确名称。"]);
+  });
+
+  it("includes transcript errata in prompts sent through short and long merge paths", async () => {
+    vi.stubGlobal("window", { moment: null });
+    const rawText = "朱子 FS 是正确名称。\n\n嗯嗯嗯这是一段口头噪音。";
+    const attached = attachTranscriptResult({ index: 0, startOffsetMs: 0, endOffsetMs: 2000, text: rawText }, "errata-prompt", {
+      text: rawText, rawText: null, providerId: "test-asr", units: [
+        { rawText: "朱子 FS 是正确名称。", normalizedText: "朱子 FS 是正确名称。", speakerId: "spk-1", speakerName: "说话人1", startMs: 0, endMs: 1000, timing: "provider" },
+        { rawText: "嗯嗯嗯这是一段口头噪音。", normalizedText: "嗯嗯嗯这是一段口头噪音。", speakerId: "spk-1", speakerName: "说话人1", startMs: 1000, endMs: 2000, timing: "provider" },
+      ],
+    }, "asr");
+    const note = `# 测试\n\n${serializeTranscriptBlock(attached, "### Segment 1", rawText)}`;
+    const rules: ErrataRules = { replacements: [{ from: "朱子 FS", to: "JuiceFS" }], noise: ["嗯嗯嗯这是一段口头噪音。"], prompt: "勘误规则：朱子 FS => JuiceFS；删除口头噪音。" };
+    const input = readRepolishInput(note, null, rules);
+    const files = new Map<string, string>();
+    const folders = new Set<string>();
+    const adapter = {
+      exists: async (path: string) => files.has(path) || folders.has(path),
+      mkdir: async (path: string) => { folders.add(path); },
+      write: async (path: string, value: string) => { files.set(path, value); },
+      read: async (path: string) => { const value = files.get(path); if (value === undefined) throw new Error("missing"); return value; },
+      remove: async (path: string) => { files.delete(path); }, rename: async () => undefined,
+    };
+    const plugin = {
+      settings: { llmModel: "contract-test", briefingStructureLevel: "balanced", briefingTranslationMode: "off", activeTemplateByMode: {}, promptTemplates: {} },
+      manifest: { id: "qnalog" }, app: { vault: { adapter, configDir: ".obsidian" } }, getCurrentSession: () => null,
+    };
+    const prompts = async (invoke: () => Promise<unknown>) => {
+      briefingContractState.calls.length = 0;
+      briefingContractState.responseOverride = "## 已整理";
+      try { await invoke(); } finally { briefingContractState.responseOverride = null; }
+      return briefingContractState.calls.map((call) => call.prompt).join("\n");
+    };
+    const shortSegments = [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "朱子 FS 是正确名称。".repeat(12000) }];
+    const shortMeta = { ...input.sessionMeta, source: "text-import" };
+    const shortPrompt = await prompts(() => mergeAndPolish(plugin, shortSegments, "meeting", shortMeta, null));
+    files.clear();
+    folders.clear();
+    const longPrompt = await prompts(() => mergeAndPolishLongSession(plugin, input.segments, "meeting", input.sessionMeta, null, null, 4000, true));
+    vi.unstubAllGlobals();
+    for (const prompt of [shortPrompt, longPrompt]) {
+      expect(prompt).toContain("JuiceFS 是正确名称。");
+      expect(prompt).not.toContain("朱子 FS 是正确名称。");
+      expect(prompt).not.toContain("嗯嗯嗯这是一段口头噪音。");
+      expect(prompt).toContain(rules.prompt);
+    }
+  });
+
   it("separates synthesis coverage from source-scaled detail repair", async () => {
     const originalObsidian = (globalThis as typeof globalThis & { obsidian?: unknown }).obsidian;
     const originalWindow = (globalThis as typeof globalThis & { window?: unknown }).window;

@@ -301,6 +301,7 @@ describe("clean transcript storage", () => {
     await reorganizeNoteInPlace({
       getVault: () => vault as unknown as Pick<obsidian.Vault, "read" | "process">,
       getCachedFrontmatter: (file) => app.metadataCache.getFileCache(file)?.frontmatter,
+      loadErrata: async () => null,
       getDefaultMode: () => "general",
       getModeDisplayName: () => "General",
       getInFlight: () => inFlight,
@@ -626,7 +627,7 @@ describe("clean transcript storage", () => {
       completeTaskActivity: vi.fn(),
       failTaskActivity: vi.fn(),
     };
-    const service = new RepolishService({
+    const service = new RepolishService({ errata: { loadForFile: async () => null },
       app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn(),
     } as never);
     mergeAndPolishMock.mockResolvedValue("Generated minutes body.");
@@ -689,7 +690,7 @@ describe("clean transcript storage", () => {
       completeTaskActivity: vi.fn(),
     };
     app.workspace.getLeaf = () => ({ openFile });
-    const service = new RepolishService({ app, settings, tasks, versions, noteIndex: cleanNoteIndex } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings, tasks, versions, noteIndex: cleanNoteIndex } as never);
     await versions.saveVersion(sourceFile, sourceContent, [], {
       kind: "minutes",
       label: "综合纪要",
@@ -868,7 +869,7 @@ describe("clean transcript storage", () => {
       logCompletedWork: vi.fn(),
       completeTaskActivity: vi.fn(),
     };
-    const service = new RepolishService({ app, settings, tasks, versions, noteIndex } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings, tasks, versions, noteIndex } as never);
 
     await expect(versions.ensureOriginalVersionForSource(sourceFile)).resolves.toBeNull();
     await service.generateCleanScript(sourceFile);
@@ -915,7 +916,7 @@ describe("clean transcript storage", () => {
       beginTaskMeter: vi.fn(() => ({ id: "meter" })), endTaskMeter: vi.fn(() => ({ elapsedMs: 1 })),
       logCompletedWork: vi.fn(), completeTaskActivity: vi.fn(), failTaskActivity: vi.fn(),
     };
-    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
     mergeAndPolishMock.mockResolvedValue("Generated body fixture.");
 
     await service.repolishMarkdownFile(sourceFile, "meeting", { label: "简洁" });
@@ -996,7 +997,7 @@ describe("clean transcript storage", () => {
       logCompletedWork: vi.fn(),
       completeTaskActivity: vi.fn(),
     };
-    const service = new RepolishService({
+    const service = new RepolishService({ errata: { loadForFile: async () => null },
       app, settings, tasks, versions, noteIndex, requestOutlineRefresh,
     } as never);
     mergeAndPolishMock.mockResolvedValue("Synthesis body for the holiday plan.");
@@ -1037,7 +1038,7 @@ describe("clean transcript storage", () => {
       endTaskMeter: vi.fn(),
       failTaskActivity: vi.fn(),
     };
-    const service = new RepolishService({ app, settings: { mdFolder: "QnALog/转写纪要" }, tasks, versions } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings: { mdFolder: "QnALog/转写纪要" }, tasks, versions } as never);
     mergeAndPolishMock.mockResolvedValue("研讨会派生正文");
 
     await service.repolishMarkdownFile(sourceFile, "seminar");
@@ -1077,7 +1078,7 @@ describe("clean transcript storage", () => {
       endTaskMeter: vi.fn(),
       failTaskActivity: vi.fn(),
     };
-    const service = new RepolishService({ app, settings, tasks, versions } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings, tasks, versions } as never);
     mergeAndPolishMock.mockResolvedValue("研讨会派生正文");
 
     await service.repolishMarkdownFile(sourceFile, "seminar");
@@ -1946,7 +1947,7 @@ describe("clean transcript storage", () => {
     const tasks = new TaskActivityService({ settings } as never);
     tasks.taskActivityStore = new TaskActivityStore();
     tasks.completedWorkLog = [];
-    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
     let resolveModel: (body: string) => void = () => undefined;
     mergeAndPolishMock.mockReturnValue(new Promise<string>((resolve) => { resolveModel = resolve; }));
 
@@ -2009,7 +2010,7 @@ describe("clean transcript storage", () => {
     const tasks = new TaskActivityService({ settings } as never);
     tasks.taskActivityStore = new TaskActivityStore();
     tasks.completedWorkLog = [];
-    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
     let resolveModel: (body: string) => void = () => undefined;
     mergeAndPolishMock.mockReturnValue(new Promise<string>((resolve) => { resolveModel = resolve; }));
 
@@ -2048,7 +2049,7 @@ describe("clean transcript storage", () => {
     const tasks = new TaskActivityService({ settings } as never);
     tasks.taskActivityStore = new TaskActivityStore();
     tasks.completedWorkLog = [];
-    const service = new RepolishService({ app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
+    const service = new RepolishService({ errata: { loadForFile: async () => null }, app, settings, tasks, versions, noteIndex, requestOutlineRefresh: vi.fn() } as never);
     mergeAndPolishMock.mockRejectedValue(new Error("Model request failed"));
 
     await service.repolishMarkdownFile(sourceFile, "meeting");
@@ -2427,7 +2428,7 @@ describe("clean transcript storage", () => {
       const newest = makeCandidate("QnALog/notes/z-clean.md", 10);
       const tiedPathFirst = makeCandidate("QnALog/notes/a-clean.md", 10);
       makeCandidate("QnALog/other/unrelated.md", 999);
-      const service = new RepolishService({
+      const service = new RepolishService({ errata: { loadForFile: async () => null },
         app: { vault },
         versions,
         settings: {},

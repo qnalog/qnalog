@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { findOpenMarkdownLeaf, openOrRevealFile } from "../src/ui/open-note";
+import { findOpenMarkdownLeaf, openOrRevealFile } from "../src/shared/open-note";
 
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\.?\//, "").replace(/\/$/, ""),

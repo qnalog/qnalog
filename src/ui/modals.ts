@@ -16,7 +16,6 @@ import { getActivityStagePosition } from '../shared/activity-progress';
 import { getDesktopProcess } from '../shared/desktop-runtime';
 import { isSpeakerDiarizationProvider, normalizeRequestedSpeakerCount } from '../asr/diarization';
 import { isDashScopeFileTransProvider, resolveImportTranscribeProvider } from '../asr/long-audio-transcription';
-import { applyNoteTextCorrection } from '../notes/text-correction';
 
 function resolveImportSpeakerSelection(plugin) {
   const provider = resolveImportTranscribeProvider(plugin);
@@ -2753,109 +2752,6 @@ export class BubbleWidget {
     };
     wrapEl.addEventListener("pointerup", endDrag);
     wrapEl.addEventListener("pointercancel", endDrag);
-  }
-}
-
-/**
- * 就地更正误识别词。
- *
- * 只作用于当前笔记，不写入任何全局配置——用户明确不要维护词表：
- * 同一串词在不同语境下可能是对的（这次说 Hyperframes，下次可能真的说 Hugging Face），
- * 全局替换会污染后续转写。
- */
-export class TextCorrectionModal extends obsidian.Modal {
-  constructor(app, file, selection, onCommit = null) {
-    super(app);
-    this.file = file;
-    this.from = String(selection || "").trim();
-    this.to = "";
-    this.onCommit = onCommit;
-    this.result = null;
-    this.previewEl = null;
-    this.confirmBtn = null;
-  }
-
-  async onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("qnalog-text-correction-modal");
-    contentEl.createEl("h3", { text: i18nT("Correct misrecognized text") });
-    contentEl.createDiv({
-      cls: "setting-item-description",
-      text: i18nT("Applies to this note only. It does not change the transcription glossary, so later recordings are unaffected."),
-    });
-
-    const rows = contentEl.createDiv({ cls: "qnalog-correction-rows" });
-    const makeField = (label, value, onChange) => {
-      const wrap = rows.createDiv({ cls: "qnalog-correction-field" });
-      wrap.createDiv({ cls: "qnalog-correction-label", text: label });
-      const input = wrap.createEl("input", { cls: "qnalog-correction-input" });
-      input.value = value;
-      input.addEventListener("input", () => onChange(input.value));
-      return input;
-    };
-    makeField(i18nT("Wrong text"), this.from, (v) => { this.from = v; void this.refreshPreview(); });
-    makeField(i18nT("Correct text"), this.to, (v) => { this.to = v; void this.refreshPreview(); }).focus();
-
-    this.previewEl = contentEl.createDiv({ cls: "qnalog-correction-preview" });
-
-    const actions = contentEl.createDiv({ cls: "modal-button-container" });
-    const cancel = actions.createEl("button", { text: i18nT("Cancel") });
-    cancel.onclick = () => this.close();
-    this.confirmBtn = actions.createEl("button", { text: i18nT("Replace") });
-    this.confirmBtn.addClass("mod-cta");
-    this.confirmBtn.disabled = true;
-    this.confirmBtn.onclick = () => { void this.commit(); };
-
-    await this.refreshPreview();
-  }
-
-  /** 读当前文件内容算一次替换预览。只读，不写盘。 */
-  async refreshPreview() {
-    if (!this.previewEl) return;
-    const content = await this.app.vault.read(this.file);
-    this.result = applyNoteTextCorrection(content, this.from, this.to);
-    this.previewEl.empty();
-    if (!this.from.trim()) {
-      this.previewEl.setText(i18nT("Enter the text to replace."));
-    } else if (!this.result.replacements) {
-      this.previewEl.setText(i18nT("No matches in this note."));
-    } else {
-      this.previewEl.createDiv({
-        cls: "qnalog-correction-count",
-        text: `${i18nT("Will replace ")}${this.result.replacements}${i18nT(" occurrence(s)")}`,
-      });
-      const list = this.previewEl.createEl("ul", { cls: "qnalog-correction-lines" });
-      const displayedLines = this.result.lines.slice(0, 8);
-      const displayedCount = displayedLines.length + (this.result.lines.length > 8 ? 1 : 0);
-      list.style.gridTemplateRows = `repeat(${Math.ceil(displayedCount / 2)}, auto)`;
-      for (const line of displayedLines) list.createEl("li", { text: `${i18nT("Line ")}${line}` });
-      if (this.result.lines.length > 8) {
-        list.createEl("li", { text: `…${i18nT("and more")}` });
-      }
-    }
-    if (this.confirmBtn) this.confirmBtn.disabled = !(this.from.trim() && this.result.replacements > 0);
-  }
-
-  async commit() {
-    if (!this.result || !this.result.replacements) return;
-    let committedResult = null;
-    await this.app.vault.process(this.file, (latest) => {
-      committedResult = applyNoteTextCorrection(latest, this.from, this.to);
-      return committedResult.text;
-    });
-    if (committedResult.replacements && typeof this.onCommit === "function") await this.onCommit();
-    if (!committedResult.replacements) {
-      new obsidian.Notice(i18nT("No matches in this note."), 4000);
-      this.close();
-      return;
-    }
-    new obsidian.Notice(`${i18nT("Corrected ")}${committedResult.replacements}${i18nT(" occurrence(s)")}`, 4000);
-    this.close();
-  }
-
-  onClose() {
-    this.contentEl.empty();
   }
 }
 

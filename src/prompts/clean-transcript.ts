@@ -23,6 +23,7 @@ export function buildCleanTranscriptChunkPrompt(
   partTotal: number,
   timeRange: string,
   speakerLabels: string[] = [],
+  errataPrompt = "",
 ): string {
   const knownSpeakers = buildKnownSpeakerClause(speakerLabels);
   const partLine = partTotal > 1
@@ -30,6 +31,7 @@ export function buildCleanTranscriptChunkPrompt(
     : `请把下面这场录音的分段转写改写成一篇通顺、可读的书面文字稿（时间段约 ${timeRange}）。`;
   return `${partLine}
 ${knownSpeakers ? `\n${knownSpeakers}\n` : ""}
+${errataPrompt ? `${errataPrompt}\n\n---\n\n` : ""}
 【清理范围】
 - 把口语句法整理成通顺句子：补必要标点，理顺明显倒装，合并被打断后重新说完整的同一句话；不要为了文采改写说话人的观点和语气。
 - 按话题与发言**自然分段**：同一个人连续讲的整合成连贯段落，换人另起一段；不要堆成一大坨，也不要碎成一句一行。

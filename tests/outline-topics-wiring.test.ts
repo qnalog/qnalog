@@ -14,8 +14,8 @@ describe("outline topic UI wiring", () => {
   });
 
   it("injects a topic port through the view constructor without adding plugin service access", () => {
-    expect(main).toContain("new OutlineView(leaf, this, this.createTopicsUiPort())");
-    expect(outline).toContain("constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null)");
+    expect(main).toContain("new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort())");
+    expect(outline).toContain("constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null, errataUi: ErrataUiPort | null = null)");
     expect(outline).not.toMatch(/this\.plugin\.topics\b/);
   });
 
@@ -26,7 +26,7 @@ describe("outline topic UI wiring", () => {
     expect(topicPort).toContain("!topic.members.includes(path) && !topic.excluded.includes(path)");
     expect(topicPort).toContain("getTopicsSnapshot(): TopicSummary[]");
     expect(main).toContain("apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot();");
-    expect(outline).toContain("this.addTopicJoinMenu(menu, file.path)");
+    expect(outline).toContain("this.addTopicJoinMenu(target, file.path)");
     expect(outline).not.toContain("void this.addTopicJoinMenu");
     expect(joinMenu).toContain("topicJoinMenuEntries(topics, path)");
   });

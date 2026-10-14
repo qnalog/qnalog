@@ -89,6 +89,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     stripModeSuggestionBlocks: (text: string) => text,
     clearCommittedBriefingCheckpoint: vi.fn(async () => { order.push("checkpoint"); }),
     ensureOriginalVersionForSource: vi.fn(async () => { order.push("original"); }),
+    loadErrata: vi.fn(async () => null),
     createDerivedNote: vi.fn(async (...args: unknown[]) => {
       order.push("derived"); calls.derived.push(args);
       const created = new obsidian.TFile("QnALog/Minutes/derived.md");
@@ -128,6 +129,7 @@ describe("repolish execution flow", () => {
     expect(segments[0].text).toBe("张三和张三项目已确认。");
     expect(frontmatter["参会人"]).toEqual(["张三"]);
     expect(sessionMeta).toHaveProperty("_previousKnowledge");
+    expect(sessionMeta).not.toHaveProperty("_errata");
     expect(sessionMeta).toHaveProperty("_utteranceProjections");
     expect(sessionMeta._utteranceProjections).toEqual(expect.arrayContaining([
       expect.objectContaining({ normalizedText: "张三和张三项目已确认。" }),
@@ -138,6 +140,20 @@ describe("repolish execution flow", () => {
     expect(calls.save[0][3]).toMatchObject({ kind: "minutes", activate: false, idLabel: "工作纪要-简洁" });
     expect(taskRecords[0].stage).toBe("done");
     expect(contents.get(file.path)).toContain("甲方和甲方项目已确认。");
+  });
+
+  it("applies errata to repolish input and forwards the same rules to the merge pipeline", async () => {
+    const { port, file, calls } = fixture({
+      loadErrata: vi.fn(async () => ({
+        replacements: [{ from: "张三项目", to: "QnALog项目" }],
+        noise: [], prompt: "## 勘误表\n替换：张三项目 => QnALog项目",
+      })),
+    });
+    await repolishMarkdownFile(port as never, file, "meeting");
+    const [segments, , sessionMeta] = calls.merge[0] as [Segment[], string, Record<string, unknown>];
+    expect(segments[0].text).toContain("QnALog项目");
+    expect(sessionMeta._errata).toContain("张三项目 => QnALog项目");
+    expect(sessionMeta._errataReplacements).toEqual([{ from: "张三项目", to: "QnALog项目" }]);
   });
 
   it("does not start a task when no transcript is present", async () => {
@@ -224,6 +240,24 @@ describe("repolish execution flow", () => {
 });
 
 describe("clean transcript execution flow", () => {
+  it("applies errata to clean input, prompt, and output", async () => {
+    const { port, file, calls } = fixture({
+      loadErrata: vi.fn(async () => ({
+        replacements: [{ from: "甲方", to: "客户" }],
+        noise: [], prompt: "## 勘误表\n替换：甲方 => 客户",
+      })),
+    });
+    vi.mocked(port.cleanTranscript).mockImplementation(async (...args: unknown[]) => {
+      calls.clean.push(args);
+      return { text: "甲方确认项目下周启动。", truncated: false };
+    });
+    await generateCleanScript(port, file);
+    const [segments, , prompt] = calls.clean[0] as [Segment[], number, string];
+    expect(segments[0].text).toContain("客户和客户项目");
+    expect(prompt).toContain("甲方 => 客户");
+    expect((calls.derived[0][2] as { body: string }).body).toContain("客户确认项目下周启动。");
+  });
+
   it("writes the truncation warning and releases clean-task busy state", async () => {
     const { port, file, calls, cleanInFlight } = fixture();
     vi.mocked(port.cleanTranscript).mockResolvedValue({ text: "Readable transcript.", truncated: true });
@@ -232,6 +266,7 @@ describe("clean transcript execution flow", () => {
     expect(version.body).toContain("> [!warning] 清稿可能被截断");
     expect(port.tasks.completeTaskActivity).toHaveBeenCalledTimes(1);
     expect(cleanInFlight.size).toBe(0);
+    expect(vi.mocked(port.cleanTranscript).mock.calls[0][2]).toBe("");
     expect(port.tasks.setBusyLabel).toHaveBeenLastCalledWith(null);
     expect(port.tasks.setBusyContext).toHaveBeenLastCalledWith(null);
   });

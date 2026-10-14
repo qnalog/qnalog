@@ -7,7 +7,7 @@ import { QnALogSettingTab } from "./ui/settings-tab";
 
 import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
-import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, TextCorrectionModal } from "./ui/modals";
+import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
 
 import {getModeDisplayName, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -60,7 +60,7 @@ import { TaskQueue } from "./queue/task-queue";
 
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
-import { openOrRevealFile } from "./ui/open-note";
+import { openOrRevealFile } from "./shared/open-note";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
@@ -77,11 +77,15 @@ import { VocabularyService } from "./vocabulary/vocabulary-service";
 import { CleanupService } from "./vault/cleanup-service";
 import { RealtimeOutlineService, type RealtimeOutlineHost } from "./notes/realtime-outline-service";
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
+import { ErrataService } from "./errata/errata-service";
+import { ErrataStore, isErrataPath } from "./errata/errata-store";
+import { openErrataCorrection, markSelectionAsErrataNoise, openErrataForFile } from "./errata/errata-editor-actions";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { TopicPromptStore } from "./topics/topic-prompt-store";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
+import type { ErrataUiPort } from "./ui/errata-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
@@ -145,6 +149,7 @@ class QnALogPlugin extends obsidian.Plugin {
   declare noteIndex: NoteIndexService;
   declare audioLinks: AudioTimeLinkService;
   declare meetingWorkbench: MeetingWorkbenchService;
+  declare errata: ErrataService;
   declare outline: RealtimeOutlineService;
   /** 装配别名：互动看板的实时大纲视图绑定到实时大纲服务（MeetingWorkbenchHost.realtimeOutline）。 */
   declare realtimeOutline: RealtimeOutlineService;
@@ -257,6 +262,21 @@ class QnALogPlugin extends obsidian.Plugin {
     this.people = new PeopleDirectoryService(this);
     this.knowledgeExtraction = new KnowledgeExtractionService(this);
     this.inbox = new InboxWatcherService(this);
+    this.errata = new ErrataService(new ErrataStore({
+      read: (file) => this.app.vault.read(file),
+      listErrataFiles: () => this.app.vault.getMarkdownFiles().filter((file) => isErrataPath(file.path)),
+      getByPath: (path) => this.app.vault.getAbstractFileByPath(path),
+      getLinks: (file) => this.app.metadataCache.getFileCache(file)?.links || [],
+      resolveLink: (link, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(link, sourcePath),
+      ensureFolder: async (path) => ensureVaultFolder(this.app, path),
+      create: (path, content) => this.app.vault.create(path, content),
+      process: async (file, transform) => { await this.app.vault.process(file, transform); },
+    }), {
+      getFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
+      getByPath: (path) => this.app.vault.getAbstractFileByPath(path),
+      logDiagnostic: (level, code, message, data) => this.diagnostics.logDiagnostic(level, code, message, data),
+      notify: (message) => { new obsidian.Notice(message); },
+    });
     this.repolish = new RepolishService(this);
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
@@ -537,7 +557,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.ribbonEl = this.addRibbonIcon("mic", t("QnALog: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
-    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort()));
+    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort()));
     this.registerView(VIEW_TYPE_MINUTES_KANBAN, (leaf) => new MinutesKanbanView(leaf, {
       getRootPath: () => obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
       listItems: () => this.shell.getMinutesKanbanItems(),
@@ -585,6 +605,37 @@ class QnALogPlugin extends obsidian.Plugin {
       if (s === "recording") this.recorder.pause(); else if (s === "paused") this.recorder.resume();
     }});
     this.addCommand({ id: "polish-selection-or-note", name: t("AI: Polish Current Selection or Entire Note"), editorCallback: (editor) => this.noteWriter.polishEditor(editor) });
+
+    this.addCommand({
+      id: "errata-open-current-note",
+      name: t("QnALog: Create or open errata for this note"),
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md") {
+          new obsidian.Notice(t("Open a Markdown note first."), 5000);
+          return;
+        }
+        await openErrataForFile(this.app, this.errata, file);
+      },
+    });
+    this.addCommand({
+      id: "errata-correct-selection",
+      name: t("QnALog: Correct selected text"),
+      editorCallback: (editor, view) => {
+        const file = view.file;
+        if (!(file instanceof obsidian.TFile)) return;
+        openErrataCorrection(this.app, this.errata, file, editor);
+      },
+    });
+    this.addCommand({
+      id: "errata-mark-selection-noise",
+      name: t("QnALog: Mark selected text as noise"),
+      editorCallback: (editor, view) => {
+        const file = view.file;
+        if (!(file instanceof obsidian.TFile)) return;
+        void markSelectionAsErrataNoise(this.errata, file, editor.getSelection());
+      },
+    });
     this.addCommand({ id: "toggle-floating-ball", name: t("Show/Hide Floating Bubble (Master Switch)"), callback: () => {
       this.settings.showFloatingBall = !this.settings.showFloatingBall;
       void this.saveSettings();
@@ -639,17 +690,20 @@ class QnALogPlugin extends obsidian.Plugin {
     });
 
     this.registerEvent(this.app.vault.on("create", (file) => {
+      this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox handler error", e));
     }));
     // Nutstore Sync / Obsidian Sync may first create a placeholder and then fill it through modify events.
     // Listen to both so a zero-byte placeholder never becomes the only chance to auto-import the file.
     this.registerEvent(this.app.vault.on("modify", (file) => {
+      this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox modify handler error", e));
     }));
 
     // 文件重命名时同步迁移队列里所有指向旧路径的任务，
     // 防止 merge 任务跑完后文件被改名 → 重试时找不到旧路径报"笔记不存在"
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      this.errata.refreshForVaultEvent(file && file.path ? file.path : "", oldPath || "");
       if (file instanceof obsidian.TFile) {
         this.queueRetry.migrateQueueTasksAfterRename(oldPath, file.path);
         this.continuations.onRename(file, oldPath);
@@ -661,6 +715,7 @@ class QnALogPlugin extends obsidian.Plugin {
     // 否则 merge 任务每次重试都先白烧一次 LLM 再报"笔记不存在"，永久卡 failed 清不掉。
     this.registerEvent(this.app.vault.on("delete", (file) => {
       const path = file && file.path ? file.path : "";
+      this.errata.refreshForVaultEvent(path);
       if (path) this.queueRetry.removeQueueTasksForDeletedMarkdown(path);
     }));
 
@@ -713,9 +768,7 @@ class QnALogPlugin extends obsidian.Plugin {
       },
     });
 
-    // 选中文字 → 右键 → 更正误识别词。只改当前笔记，不写词表。
-    // 入口放在编辑器菜单而不是文件菜单：用户看到错词时正在正文里，
-    // 让「选中即更正」一步可达，不必开弹窗再手打一遍错词。
+    // 选中文字后可将词语或整段加入当前笔记的勘误表。
     //
     // 菜单标题用产品名 `QnALog`，名称里不要再引入 `&`：旧书面名 `Q&A Log` 的 `&`
     // 会被 macOS 原生菜单当快捷键标记吃掉。Obsidian 只在 `&` 两侧都是非单词字符时
@@ -726,12 +779,12 @@ class QnALogPlugin extends obsidian.Plugin {
       const file = info && info.file;
       if (!(file instanceof obsidian.TFile)) return;
       const isMinutes = this.noteWriter.detectModeFromMarkdown(file);
-      const selection = String(editor.getSelection() || "").trim();
-      const hasCorrection = !!selection && !selection.includes("\n") && selection.length <= 80;
+      const selection = String(editor.getSelection() || "");
+      const hasSelection = !!selection.trim();
       // 本插件的菜单项归入同一组：只在最前面加一条分隔线（与系统项隔开），
       // 「继续录音」与「更正误识别词」之间不再分割——两条中间夹分隔线会把
       // 同一插件的功能切成两组，视觉上像两家来源。
-      if (!isMinutes && !hasCorrection) return;
+      if (!isMinutes && !hasSelection) return;
       menu.addSeparator();
       if (isMinutes) {
         // 正文右键（无论是否选中文字）：当前笔记是自家纪要时给「继续录音到这篇纪要」，
@@ -742,12 +795,20 @@ class QnALogPlugin extends obsidian.Plugin {
             .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
         });
       }
-      if (!hasCorrection) return;
-      // 只处理单行内的短片段：多行或过长通常是整段，不是「误识别词」
+      if (!hasSelection) return;
       menu.addItem((item) => {
-        item.setTitle(t("QnALog: Correct misrecognized text…"))
+        item.setTitle(t("QnALog: Correct selected text"))
           .setIcon("replace")
-          .onClick(() => new TextCorrectionModal(this.app, file, selection, () => this.noteIndex.refreshNoteIndexSafely(file, { reason: "text-correction" })).open());
+          .onClick(() => {
+            openErrataCorrection(this.app, this.errata, file, editor);
+          });
+      });
+      menu.addItem((item) => {
+        item.setTitle(t("QnALog: Mark selected text as noise"))
+          .setIcon("ban")
+          .onClick(() => {
+            void markSelectionAsErrataNoise(this.errata, file, selection);
+          });
       });
     }));
 
@@ -762,6 +823,14 @@ class QnALogPlugin extends obsidian.Plugin {
             .onClick(() => this.imports.openAudioImportOptions([file.path]));
         });
         return;
+      }
+      if (ext === "md") {
+        menu.addSeparator();
+        menu.addItem((item) => {
+          item.setTitle(t("QnALog: Create or open errata for this note"))
+            .setIcon("pencil")
+            .onClick(() => { void openErrataForFile(this.app, this.errata, file); });
+        });
       }
       // 纪要文件的续录入口：右键一篇已生成的转写纪要，追加一段录音。
       // 只对自家纪要显示：续录建纪要时统一写 mode frontmatter
@@ -893,6 +962,10 @@ class QnALogPlugin extends obsidian.Plugin {
         if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
       },
     };
+  }
+
+  createErrataUiPort(): ErrataUiPort {
+    return { openForFile: (file) => openErrataForFile(this.app, this.errata, file) };
   }
 
   async onNoteIndexed(path: string): Promise<void> {

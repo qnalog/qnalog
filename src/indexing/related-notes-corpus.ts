@@ -5,6 +5,7 @@ import { NS_FM, NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGE
 import { isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent/recent-note-paths";
 import { AUDIO_EXT as AUDIO_FILE_EXTENSIONS } from "../shared/catalog-import";
 import { RELATED_NOTE_MIN_BODY_CHARS, type RelatedNoteDocument } from "./related-notes";
+import { isErrataPath } from "../errata/errata-path";
 export interface RelatedNotesCorpusPort {
   /** Adapter supplies getMarkdownFilesUnderRecentRoots() results; no vault enumeration here. */
   listNoteFiles(): Array<{ path: string; basename: string; mtime: number }>;
@@ -96,7 +97,7 @@ function stripTranscriptLedger(markdown: string): string {
 export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, options: RelatedNotesCorpusOptions): Promise<RelatedNotesCorpusResult> {
   const roots = normalizeRecentNoteRoots(options.roots);
   const candidates = port.listNoteFiles().filter((file) => file.path.toLowerCase().endsWith(".md")
-    && isPathUnderRecentNoteRoots(file.path, roots) && !isNoisePath(file.path));
+    && isPathUnderRecentNoteRoots(file.path, roots) && !isNoisePath(file.path) && !isErrataPath(file.path));
   const resolved = port.getResolvedLinks();
   const unresolved = port.getUnresolvedLinks();
   const excludedDerivedPaths = new Set<string>();

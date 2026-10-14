@@ -77,6 +77,10 @@ Before the first derived version, QnALog caches the source text as an **Original
 
 </details>
 
+### Errata for note corrections
+
+Use **QnALog: Create or open errata for this note** to open the note's errata file. Select a short incorrect term and run **QnALog: Correct selected text** to save a replacement; QnALog also updates matching text in the current editor while leaving transcript blocks unchanged. Use **QnALog: Mark selected text as noise** to record text that should be excluded from future organization. Reorganize or regenerate the note to apply its errata to new output. Errata files are stored under `QnALog/勘误表`.
+
 ### Long content, task progress, and recovery
 
 For standard meeting and learning-note modes, long recordings are organized in parts with local checkpoints, then assembled in time order. If a request is interrupted or the model reaches its output limit, completed parts are reused and unfinished parts can be retried. Incomplete work is shown as partially completed, not as an empty note.
@@ -121,6 +125,7 @@ These are default locations; folders and files are created as needed. The segmen
 | Todo cards | `QnALog/Library/Todos` |
 | Views | `QnALog/Library/Views` |
 | Glossary | `QnALog/Library/Glossary.md` |
+| Errata | `QnALog/勘误表` |
 | Diagnostics log | `QnALog/System/Diagnostics log` |
 | Archive | `QnALog/Library/Archive` |
 | HTML reports | `QnALog/HTML reports` |
