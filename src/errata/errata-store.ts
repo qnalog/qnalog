@@ -148,15 +148,17 @@ export class ErrataStore {
 }
 
 function findErrataSectionInsertionPoint(markdown: string, section: ErrataSection): { index: number; needsLineBreak: boolean } | null {
-  const headings = /(^|\r?\n)([^\r\n]*)/g;
-  let match: RegExpExecArray | null;
-  while ((match = headings.exec(markdown))) {
-    const line = match[2];
+  const lines = markdown.split(/\r?\n/);
+  let lineStart = 0;
+  for (const line of lines) {
     const heading = line.match(/^\s*##\s+(.+?)\s*#*\s*$/);
-    if (!heading || getErrataSectionKey(heading[1]) !== section) continue;
-    const lineEnd = match.index + match[0].length;
-    const newline = markdown.slice(lineEnd).match(/^\r?\n/);
-    return { index: lineEnd + (newline?.[0].length || 0), needsLineBreak: !newline };
+    if (heading && getErrataSectionKey(heading[1]) === section) {
+      const lineEnd = lineStart + line.length;
+      const lineEndingLength = markdown.startsWith("\r\n", lineEnd) ? 2 : markdown.startsWith("\n", lineEnd) ? 1 : 0;
+      return { index: lineEnd + lineEndingLength, needsLineBreak: lineEndingLength === 0 };
+    }
+    const lineEnd = lineStart + line.length;
+    lineStart = lineEnd + (markdown.startsWith("\r\n", lineEnd) ? 2 : markdown.startsWith("\n", lineEnd) ? 1 : 0);
   }
   return null;
 }

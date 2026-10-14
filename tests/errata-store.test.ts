@@ -7,6 +7,7 @@ vi.mock("obsidian", () => ({
 
 import * as obsidian from "obsidian";
 import { ErrataStore, isErrataPath, type ErrataStorePort } from "../src/errata/errata-store";
+import { parseErrata } from "../src/errata/errata-parser";
 import { getActiveUiLanguage, matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
 const originalLanguage = getActiveUiLanguage();
@@ -174,5 +175,70 @@ describe("errata store", () => {
     const markdown = loaded?.markdown || "";
     expect(markdown).toContain("> ## 小标题\n> \n> line after blank");
     expect(markdown.indexOf("## 说明")).toBeGreaterThan(markdown.indexOf("line after blank"));
+  });
+
+  it("appends replacement and noise entries to an empty errata file", async () => {
+    const replacementFixture = fixture();
+    const replacementFile = await replacementFixture.store.create(replacementFixture.source.path);
+    const replacementRecord = replacementFixture.files.get(replacementFile.path);
+    if (replacementRecord) replacementRecord.text = "";
+    await replacementFixture.store.appendReplacement(replacementFixture.source.path, "wrong", "right");
+    const replacementText = replacementFixture.files.get(replacementFile.path)?.text || "";
+    expect(replacementText).toContain("## 替换");
+    expect(parseErrata(replacementText).replacements).toEqual([{ from: "wrong", to: "right" }]);
+
+    const noiseFixture = fixture();
+    const noiseFile = await noiseFixture.store.create(noiseFixture.source.path);
+    const noiseRecord = noiseFixture.files.get(noiseFile.path);
+    if (noiseRecord) noiseRecord.text = "";
+    await noiseFixture.store.appendNoise(noiseFixture.source.path, "noise phrase");
+    const noiseText = noiseFixture.files.get(noiseFile.path)?.text || "";
+    expect(noiseText).toContain("## 噪音");
+    expect(parseErrata(noiseText).noise).toEqual(["noise phrase"]);
+  });
+
+  it("handles an empty first line and only creates a heading when the section is absent", async () => {
+    const existingSectionFixture = fixture();
+    const existingSectionFile = await existingSectionFixture.store.create(existingSectionFixture.source.path);
+    const existingSectionRecord = existingSectionFixture.files.get(existingSectionFile.path);
+    if (existingSectionRecord) existingSectionRecord.text = "\n## 替换\n";
+    await existingSectionFixture.store.appendReplacement(existingSectionFixture.source.path, "wrong", "right");
+    const existingSectionText = existingSectionFixture.files.get(existingSectionFile.path)?.text || "";
+    expect(existingSectionText.match(/^## 替换$/gm)).toHaveLength(1);
+    expect(parseErrata(existingSectionText).replacements).toEqual([{ from: "wrong", to: "right" }]);
+
+    const missingSectionFixture = fixture();
+    const missingSectionFile = await missingSectionFixture.store.create(missingSectionFixture.source.path);
+    const missingSectionRecord = missingSectionFixture.files.get(missingSectionFile.path);
+    if (missingSectionRecord) missingSectionRecord.text = "\n\n笔记：[[x]]\n";
+    await missingSectionFixture.store.appendNoise(missingSectionFixture.source.path, "noise phrase");
+    const missingSectionText = missingSectionFixture.files.get(missingSectionFile.path)?.text || "";
+    expect(missingSectionText).toContain("## 噪音");
+    expect(parseErrata(missingSectionText).noise).toEqual(["noise phrase"]);
+  });
+
+  it("puts entries on the next line when the final section heading has no line ending", async () => {
+    const f = fixture();
+    const file = await f.store.create(f.source.path);
+    const record = f.files.get(file.path);
+    if (record) record.text = "笔记：[[x]]\n## Replace";
+    await f.store.appendReplacement(f.source.path, "wrong", "right");
+    const markdown = f.files.get(file.path)?.text || "";
+    expect(markdown).toContain("## Replace\nwrong => right");
+    expect(parseErrata(markdown).replacements).toEqual([{ from: "wrong", to: "right" }]);
+  });
+
+  it("appends entries to the right section in a Windows-newline errata file", async () => {
+    const f = fixture();
+    const file = await f.store.create(f.source.path);
+    const record = f.files.get(file.path);
+    if (record) record.text = "Note: [[QnALog/纪要/2026-10-13 2321 · 原理]]\r\n\r\n## Replace\r\n\r\n## Noise\r\n";
+    await f.store.appendReplacement(f.source.path, "wrong", "right");
+    await f.store.appendNoise(f.source.path, "noise phrase");
+    const markdown = f.files.get(file.path)?.text || "";
+    expect(parseErrata(markdown)).toMatchObject({
+      replacements: [{ from: "wrong", to: "right" }],
+      noise: ["noise phrase"],
+    });
   });
 });
