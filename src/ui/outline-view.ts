@@ -56,6 +56,7 @@ import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../pro
 
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import type { TopicsUiPort } from "./topics-ui-port";
+import type { ErrataUiPort } from "./errata-ui-port";
 import { addTopicJoinSubmenu } from "./topic-join-menu";
 import { TopicsPanel } from "./topics-panel";
 import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
@@ -221,6 +222,7 @@ function sedimentNoticeErrorSuffix(error: unknown): string {
 export class OutlineView extends obsidian.ItemView {
   declare plugin: QnALogPlugin;
   declare topicsUi: TopicsUiPort | null;
+  declare errataUi: ErrataUiPort | null;
   topicsSnapshotRefreshAt = 0;
   topicsSnapshotRefreshPending = false;
   declare topicPromptRefreshPaths: Set<string>;
@@ -312,10 +314,11 @@ export class OutlineView extends obsidian.ItemView {
   declare _sidebarMoreExpanded: boolean;
   /** 纪要列表的搜索关键词。 */
   declare _recentSearch: string;
-  constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null) {
+  constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null, errataUi: ErrataUiPort | null = null) {
     super(leaf);
     this.plugin = plugin;
     this.topicsUi = topicsUi;
+    this.errataUi = errataUi;
     this.topicPromptRefreshPaths = new Set();
     this.topicSourceCheckPaths = new Set();
     this.aiOutline = "";
@@ -5993,6 +5996,10 @@ export class OutlineView extends obsidian.ItemView {
         .setIcon("git-merge")
         .onClick(() => { void this.plugin.noteWriter.mergeMarkdownFileWithPrevious(file); });
     });
+    if (this.errataUi) {
+      menu.addItem((item) => item.setTitle(i18nT("Open errata")).setIcon("file-warning")
+        .onClick(() => void this.errataUi?.openForFile(file)));
+    }
     menu.addSeparator();
     menu.addItem((item) => {
       item.setTitle(i18nT("Generate Clean Copy"))

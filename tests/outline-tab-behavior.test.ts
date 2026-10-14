@@ -121,7 +121,7 @@ describe("idle sidebar tab order", () => {
 });
 
 describe("recent note sidebar context actions", () => {
-  async function setup(hasPipelineStarted: boolean, markdown = "") {
+  async function setup(hasPipelineStarted: boolean, markdown = "", withErrataUi = false) {
     setActiveUiLanguage(resolveUiLanguage("en", "en"));
     const file = { path: "Notes/example.md" };
     const openFile = vi.fn(async () => undefined);
@@ -135,6 +135,7 @@ describe("recent note sidebar context actions", () => {
       app: { vault: { cachedRead }, workspace: { getActiveFile: () => null, getLeaf: () => ({ openFile }) } },
       getSedimentPanelState: () => ({ hasPipelineStarted, scanning: false }),
       requestSedimentExtraction,
+      errataUi: withErrataUi ? { openForFile: vi.fn(async () => undefined) } : null,
       render: vi.fn(),
       showMenuAtMouse: (menu: typeof menuHolder.menu) => { menuHolder.menu = menu; },
     });
@@ -151,6 +152,16 @@ describe("recent note sidebar context actions", () => {
     expect(h.menu.items.find((item) => item.title === "Reorganize")?.disabled).not.toBe(true);
     expect(h.cachedRead).not.toHaveBeenCalled();
     expect(h.menu.items.some((item) => item.title === "Generate derived version")).toBe(true);
+  });
+
+  it("shows Open errata only when the UI port is available", async () => {
+    const withoutPort = await setup(false);
+    expect(withoutPort.menu.items.some((item) => item.title === "Open errata")).toBe(false);
+
+    const withPort = await setup(false, "", true);
+    expect(withPort.menu.items.find((item) => item.title === "Open errata")).toMatchObject({ icon: "file-warning" });
+    const labels = withPort.menu.items.map((item) => item.title).filter(Boolean);
+    expect(labels.indexOf("Open errata")).toBe(labels.indexOf("Merge with Previous Recording") + 1);
   });
 
   it("shows a transcript hint without confirmation when the note has no original transcript", async () => {

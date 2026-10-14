@@ -5,6 +5,7 @@ import type { ErrataService } from "./errata-service";
 import { t } from "../shared/i18n";
 import { MIN_ERRATA_TERM_LENGTH } from "./errata-parser";
 import { ErrataModal } from "./errata-modal";
+import { openOrRevealFile } from "../shared/open-note";
 
 export interface SelectionPrefill {
   wrongText: string;
@@ -79,5 +80,19 @@ export async function markSelectionAsErrataNoise(
   } catch (error: unknown) {
     const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
     new obsidian.Notice(`${t("Could not save the errata: ")}${detail}`, 8000);
+  }
+}
+
+export async function openErrataForFile(
+  app: obsidian.App,
+  errata: Pick<ErrataService, "createForFile">,
+  file: TFile,
+): Promise<void> {
+  try {
+    const errataFile = await errata.createForFile(file);
+    await openOrRevealFile(app, errataFile);
+  } catch (error: unknown) {
+    const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
+    new obsidian.Notice(`${t("Could not create or open the errata: ")}${detail}`, 8000);
   }
 }

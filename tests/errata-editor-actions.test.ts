@@ -1,11 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
+const notices = vi.hoisted(() => ({ messages: [] as string[] }));
 vi.mock("obsidian", () => ({
   Modal: class Modal { app: unknown; contentEl = { empty: vi.fn() }; constructor(app: unknown) { this.app = app; } open() {} close() {} },
-  Notice: class Notice { constructor() {} },
+  Notice: class Notice { constructor(message: string) { notices.messages.push(message); } },
 }));
-import { getCorrectionSelectionPrefill, saveErrataNoise, saveErrataReplacement } from "../src/errata/errata-editor-actions";
+vi.mock("../src/shared/open-note", () => ({ openOrRevealFile: vi.fn(async () => undefined) }));
+import { getCorrectionSelectionPrefill, openErrataForFile, saveErrataNoise, saveErrataReplacement } from "../src/errata/errata-editor-actions";
+import { openOrRevealFile } from "../src/shared/open-note";
 
 describe("errata editor actions", () => {
+  it("creates the errata and then opens it", async () => {
+    const file = { path: "Notes/source.md" } as never;
+    const errataFile = { path: "QnALog/勘误表/source · 勘误.md" } as never;
+    const app = {} as never;
+    const createForFile = vi.fn(async () => errataFile);
+    vi.mocked(openOrRevealFile).mockClear();
+
+    await openErrataForFile(app, { createForFile }, file);
+
+    expect(createForFile).toHaveBeenCalledWith(file);
+    expect(openOrRevealFile).toHaveBeenCalledWith(app, errataFile);
+    expect(createForFile.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(openOrRevealFile).mock.invocationCallOrder[0]);
+  });
+
+  it("shows the creation error and does not open a file", async () => {
+    const app = {} as never;
+    const createForFile = vi.fn(async () => { throw new Error("folder unavailable"); });
+    vi.mocked(openOrRevealFile).mockClear();
+    notices.messages.length = 0;
+
+    await openErrataForFile(app, { createForFile }, { path: "Notes/source.md" } as never);
+
+    expect(openOrRevealFile).not.toHaveBeenCalled();
+    expect(notices.messages).toContain("Could not create or open the errata: folder unavailable");
+  });
+
   it("prefills only a single-line selection of at most 60 characters", () => {
     expect(getCorrectionSelectionPrefill("wrong term")).toEqual({ wrongText: "wrong term", tooLong: false });
     expect(getCorrectionSelectionPrefill("line one\nline two")).toEqual({ wrongText: "", tooLong: true });

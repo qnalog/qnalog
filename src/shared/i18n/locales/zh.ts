@@ -13,6 +13,7 @@ export const ZH: MessageTable = {
   "QnALog: click to start/stop; hover to expand the controls": "QnALog：点击开始/停止，悬停展开控件",
   "QnALog voice notes panel": "QnALog 语音笔记面板",
   "QnALog: Create or open errata for this note": "QnALog：创建/打开本篇勘误表",
+  "Open errata": "打开勘误表",
   "QnALog: Correct selected text": "QnALog：订正选中文字",
   "QnALog: Mark selected text as noise": "QnALog：将选中文字标为噪音",
   "QnALog: Transcribe and organize": "QnALog：转写并整理",

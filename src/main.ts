@@ -60,7 +60,7 @@ import { TaskQueue } from "./queue/task-queue";
 
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
-import { openOrRevealFile } from "./ui/open-note";
+import { openOrRevealFile } from "./shared/open-note";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
@@ -79,12 +79,13 @@ import { RealtimeOutlineService, type RealtimeOutlineHost } from "./notes/realti
 import { MeetingWorkbenchService } from "./notes/meeting-workbench-service";
 import { ErrataService } from "./errata/errata-service";
 import { ErrataStore, isErrataPath } from "./errata/errata-store";
-import { openErrataCorrection, markSelectionAsErrataNoise } from "./errata/errata-editor-actions";
+import { openErrataCorrection, markSelectionAsErrataNoise, openErrataForFile } from "./errata/errata-editor-actions";
 import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { TopicPromptStore } from "./topics/topic-prompt-store";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
+import type { ErrataUiPort } from "./ui/errata-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
@@ -556,7 +557,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.ribbonEl = this.addRibbonIcon("mic", t("QnALog: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
-    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort()));
+    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort()));
     this.registerView(VIEW_TYPE_MINUTES_KANBAN, (leaf) => new MinutesKanbanView(leaf, {
       getRootPath: () => obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
       listItems: () => this.shell.getMinutesKanbanItems(),
@@ -614,13 +615,7 @@ class QnALogPlugin extends obsidian.Plugin {
           new obsidian.Notice(t("Open a Markdown note first."), 5000);
           return;
         }
-        try {
-          const errataFile = await this.errata.createForFile(file);
-          await openOrRevealFile(this.app, errataFile);
-        } catch (error: unknown) {
-          const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
-          new obsidian.Notice(`${t("Could not create or open the errata: ")}${detail}`, 8000);
-        }
+        await openErrataForFile(this.app, this.errata, file);
       },
     });
     this.addCommand({
@@ -834,12 +829,7 @@ class QnALogPlugin extends obsidian.Plugin {
         menu.addItem((item) => {
           item.setTitle(t("QnALog: Create or open errata for this note"))
             .setIcon("pencil")
-            .onClick(() => {
-              void this.errata.createForFile(file).then((errataFile) => openOrRevealFile(this.app, errataFile)).catch((error: unknown) => {
-                const detail = error instanceof Error && error.message ? error.message : t("Unknown error");
-                new obsidian.Notice(`${t("Could not create or open the errata: ")}${detail}`, 8000);
-              });
-            });
+            .onClick(() => { void openErrataForFile(this.app, this.errata, file); });
         });
       }
       // 纪要文件的续录入口：右键一篇已生成的转写纪要，追加一段录音。
@@ -972,6 +962,10 @@ class QnALogPlugin extends obsidian.Plugin {
         if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
       },
     };
+  }
+
+  createErrataUiPort(): ErrataUiPort {
+    return { openForFile: (file) => openErrataForFile(this.app, this.errata, file) };
   }
 
   async onNoteIndexed(path: string): Promise<void> {
