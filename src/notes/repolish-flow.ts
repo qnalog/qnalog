@@ -132,7 +132,7 @@ export async function repolishMarkdownFile(
     });
     port.tasks.updateBusyStatus();
     taskMeter = port.tasks.beginTaskMeter();
-    sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter });
+    sessionMeta = Object.assign({}, sessionMeta || {}, { _taskActivityId: taskId, _taskMeter: taskMeter, _freshBriefing: true });
     const polished = await port.mergeAndPolish(segments, mode, sessionMeta, originalFmForRegen, repolishOptions);
     port.tasks.patchTaskActivity(taskId, {
       stage: "writing", stageLabel: t("Generating new version"),

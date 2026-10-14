@@ -59,6 +59,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     getModeDisplayName: () => "General",
     getInFlight: () => new Set<string>(),
     mergeAndPolish: vi.fn(async () => { calls.order.push("merge"); return generated; }),
+    clearCommittedBriefingCheckpoint: vi.fn(async () => { calls.order.push("clear-checkpoint"); }),
     stripModeSuggestionBlocks: (text: string) => text,
     validateOriginalVersionForReorganization: vi.fn(async () => { calls.order.push("validate-cache"); }),
     replaceOriginalVersionBody: vi.fn(async (...args: unknown[]) => {
@@ -92,6 +93,14 @@ describe("in-place note reorganization", () => {
     const [segments, , sessionMeta] = vi.mocked(portRaw.mergeAndPolish).mock.calls[0] as unknown as [Array<{ text: string }>, string, Record<string, unknown>];
     expect(segments[0].text).toContain("本周启动");
     expect(sessionMeta._errata).toContain("下周启动 => 本周启动");
+  });
+
+  it("always asks the model afresh and clears the checkpoint after a successful write", async () => {
+    const { port, file, portRaw } = fixture();
+    await reorganizeNoteInPlace(port, file);
+    const sessionMeta = vi.mocked(portRaw.mergeAndPolish).mock.calls[0][2] as unknown as Record<string, unknown>;
+    expect(sessionMeta._freshBriefing).toBe(true);
+    expect(portRaw.clearCommittedBriefingCheckpoint).toHaveBeenCalledWith(sessionMeta);
   });
 
   it("replaces the organized body while preserving source material and user fields", async () => {

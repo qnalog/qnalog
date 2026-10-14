@@ -20,6 +20,7 @@ export interface ReorganizeInPlacePort {
   getModeDisplayName(mode: string): string;
   getInFlight(): Set<string>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, frontmatter: Record<string, unknown> | null): Promise<string>;
+  clearCommittedBriefingCheckpoint(sessionMeta: Record<string, unknown>): Promise<void>;
   stripModeSuggestionBlocks(text: string): string;
   validateOriginalVersionForReorganization(file: obsidian.TFile): Promise<void>;
   replaceOriginalVersionBody(file: obsidian.TFile, payload: string): Promise<OriginalSnapshotBodyUpdate | null>;
@@ -112,7 +113,8 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     });
     taskStarted = true;
     port.tasks.patchTaskActivity(taskId, { stage: "llm", stageLabel: t("AI reorganizing"), detail: t("Generating a new note body"), progress: 10 });
-    const generated = await port.mergeAndPolish(input.segments, mode, input.sessionMeta, input.originalFrontmatter);
+    const sessionMeta = { ...input.sessionMeta, _freshBriefing: true };
+    const generated = await port.mergeAndPolish(input.segments, mode, sessionMeta, input.originalFrontmatter);
     const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text));
     port.tasks.patchTaskActivity(taskId, { stage: "writing", stageLabel: t("Writing"), detail: t("Replacing the organized note body"), progress: 78 });
     if (await port.getVault().read(file) !== snapshot) {
@@ -143,6 +145,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
       if (snapshotUpdate) await port.restoreOriginalVersionBody(file, snapshotUpdate);
       throw error;
     }
+    await port.clearCommittedBriefingCheckpoint(sessionMeta);
     port.tasks.patchTaskActivity(taskId, { stage: "postprocess", stageLabel: t("Updating index"), detail: t("Refreshing the note index"), progress: 94 });
     await port.refreshNoteIndex(file, { reason: "reorganize" });
     new obsidian.Notice(t("Note body reorganized"), 7000);

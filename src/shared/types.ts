@@ -300,6 +300,8 @@ export interface SessionMetaForMerge {
   _taskMeter?: unknown;
   /** 整理检查点 id；merge-pipeline 写入，提示词层读它。 */
   _briefingCheckpointId?: string;
+  /** 用户主动重新整理时置 true：忽略已有检查点，全部分部重新调用模型。 */
+  _freshBriefing?: boolean;
   /** Source-faithful speaker/text projection applied for a single organizing run. */
   _utteranceProjections?: Array<{ utteranceId: string; normalizedText: string; speakerName: string | null }>;
   /** Previous snapshot used only to retain identities whose source evidence is unchanged. */

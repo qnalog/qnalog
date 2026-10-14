@@ -118,6 +118,7 @@ export class RepolishService {
         return this._repolishInFlight;
       },
       mergeAndPolish: (segments, mode, sessionMeta, frontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, frontmatter, null),
+      clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
       stripModeSuggestionBlocks,
       validateOriginalVersionForReorganization: (file) => this.host.versions.validateOriginalVersionForReorganization(file),
       replaceOriginalVersionBody: (file, payload) => this.host.versions.replaceOriginalVersionBody(file, payload),
