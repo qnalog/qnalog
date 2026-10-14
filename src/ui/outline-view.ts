@@ -5966,47 +5966,41 @@ export class OutlineView extends obsidian.ItemView {
 
   showRecentNoteContextMenu(evt, file, beginRename) {
     const menu = new obsidian.Menu();
-    if (typeof beginRename === "function") {
-      menu.addItem((item) => {
-        item.setTitle(i18nT("Rename")).setIcon("pencil").onClick(() => beginRename());
-      });
-      menu.addSeparator();
-    }
-    menu.addItem((item) => item.setTitle(i18nT("Open outline")).setIcon("list-tree")
-      .onClick(() => { void this.openRecentNoteInSidebar(file, "outline"); }));
-    menu.addItem((item) => item.setTitle(i18nT("Distill content")).setIcon("sparkles")
-      .onClick(() => { void this.openRecentNoteInSidebar(file, "extract"); }));
-    menu.addSeparator();
+    type MenuItemBuilder = (target: obsidian.Menu) => void;
+    const groups: MenuItemBuilder[][] = [];
+    const retryGroup: MenuItemBuilder[] = [];
+    const notesGroup: MenuItemBuilder[] = [
+      (target) => target.addItem((item) => item.setTitle(i18nT("Open outline")).setIcon("list-tree")
+        .onClick(() => { void this.openRecentNoteInSidebar(file, "outline"); })),
+      (target) => target.addItem((item) => item.setTitle(i18nT("Distill content")).setIcon("sparkles")
+        .onClick(() => { void this.openRecentNoteInSidebar(file, "extract"); })),
+    ];
     const retryTasks = getQueueTasksForMarkdown(this.plugin, file, { types: ["transcribe"], failedOnly: true });
     if (retryTasks.length) {
-      menu.addItem((item) => {
+      retryGroup.push((target) => target.addItem((item) => {
         item.setTitle(i18nT("Retry failed transcription segments ({0})").replace("{0}", String(retryTasks.length)))
           .setIcon("rotate-ccw")
           .onClick(() => this.retryRecentTranscription(file));
-      });
-      menu.addSeparator();
+      }));
     }
-    menu.addItem((item) => {
-      item.setTitle(i18nT("Continue Recording into This Note"))
-        .setIcon("mic")
-        .onClick(() => { void this.plugin.recording.startRecording({ appendToFile: file }); });
-    });
-    menu.addItem((item) => {
-      item.setTitle(i18nT("Merge with Previous Recording"))
-        .setIcon("git-merge")
-        .onClick(() => { void this.plugin.noteWriter.mergeMarkdownFileWithPrevious(file); });
-    });
+    const recordingGroup: MenuItemBuilder[] = [
+      (target) => target.addItem((item) => {
+        item.setTitle(i18nT("Continue Recording into This Note"))
+          .setIcon("mic")
+          .onClick(() => { void this.plugin.recording.startRecording({ appendToFile: file }); });
+      }),
+      (target) => target.addItem((item) => {
+        item.setTitle(i18nT("Merge with Previous Recording"))
+          .setIcon("git-merge")
+          .onClick(() => { void this.plugin.noteWriter.mergeMarkdownFileWithPrevious(file); });
+      }),
+    ];
+    const actionsGroup: MenuItemBuilder[] = [];
     if (this.errataUi) {
-      menu.addItem((item) => item.setTitle(i18nT("Open errata")).setIcon("file-warning")
-        .onClick(() => void this.errataUi?.openForFile(file)));
+      actionsGroup.push((target) => target.addItem((item) => item.setTitle(i18nT("Open errata")).setIcon("file-warning")
+        .onClick(() => void this.errataUi?.openForFile(file))));
     }
-    menu.addSeparator();
-    menu.addItem((item) => {
-      item.setTitle(i18nT("Generate Clean Copy"))
-        .setIcon("file-text")
-        .onClick(() => { void this.handleGenerateCleanCopy(file); });
-    });
-    menu.addItem((item) => {
+    actionsGroup.push((target) => target.addItem((item) => {
       item.setTitle(i18nT("Reorganize")).setIcon("refresh-cw")
         .onClick(async () => {
           const markdown = await this.app.vault.cachedRead(file);
@@ -6022,14 +6016,13 @@ export class OutlineView extends obsidian.ItemView {
           );
           if (confirmed) void this.plugin.repolish.reorganizeNoteInPlace(file);
         });
-    });
-    const topicsUi = this.topicsUi;
-    if (topicsUi?.isSourceNote(file.path)) {
-      menu.addItem((item) => item.setTitle(i18nT("Create topic")).setIcon("layers-3")
-        .onClick(() => openCreateTopic(this.app, topicsUi, file.path, () => this.forceRecentRender())));
-      this.addTopicJoinMenu(menu, file.path);
-    }
-    menu.addItem((item) => {
+    }));
+    actionsGroup.push((target) => target.addItem((item) => {
+      item.setTitle(i18nT("Generate Clean Copy"))
+        .setIcon("file-text")
+        .onClick(() => { void this.handleGenerateCleanCopy(file); });
+    }));
+    actionsGroup.push((target) => target.addItem((item) => {
       item.setTitle(i18nT("Generate derived version"))
         .setIcon("refresh-cw");
       const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
@@ -6071,9 +6064,16 @@ export class OutlineView extends obsidian.ItemView {
             });
         });
       }
-    });
-    menu.addSeparator();
-    menu.addItem((item) => {
+    }));
+
+    const topicsUi = this.topicsUi;
+    const topicsAndExportGroup: MenuItemBuilder[] = [];
+    if (topicsUi?.isSourceNote(file.path)) {
+      topicsAndExportGroup.push((target) => target.addItem((item) => item.setTitle(i18nT("Create topic")).setIcon("layers-3")
+        .onClick(() => openCreateTopic(this.app, topicsUi, file.path, () => this.forceRecentRender()))));
+      topicsAndExportGroup.push((target) => this.addTopicJoinMenu(target, file.path));
+    }
+    topicsAndExportGroup.push((target) => target.addItem((item) => {
       item.setTitle(i18nT("Export"))
         .setIcon("file-output");
       const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
@@ -6086,13 +6086,28 @@ export class OutlineView extends obsidian.ItemView {
       sub.addItem((subItem) => subItem
       .setTitle(i18nT("PDF Report"))
         .onClick(() => this.plugin.delivery.generatePdfReportForMarkdownFile(file)));
-    });
-    menu.addSeparator();
-    menu.addItem((item) => {
+    }));
+
+    const finalGroup: MenuItemBuilder[] = [];
+    if (typeof beginRename === "function") {
+      finalGroup.push((target) => target.addItem((item) => {
+        item.setTitle(i18nT("Rename")).setIcon("pencil").onClick(() => beginRename());
+      }));
+    }
+    finalGroup.push((target) => target.addItem((item) => {
       item.setTitle(i18nT("Delete Transcript Record"))
         .setIcon("trash-2")
         .onClick(() => this.confirmDeleteRecentNote(file));
-    });
+    }));
+
+    groups.push(retryGroup, notesGroup, recordingGroup, actionsGroup, topicsAndExportGroup, finalGroup);
+    let hasItems = false;
+    for (const group of groups) {
+      if (group.length === 0) continue;
+      if (hasItems) menu.addSeparator();
+      for (const buildItem of group) buildItem(menu);
+      hasItems = true;
+    }
     this.showMenuAtMouse(menu, evt);
   }
 
