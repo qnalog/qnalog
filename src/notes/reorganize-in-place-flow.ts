@@ -2,6 +2,7 @@ import * as obsidian from "obsidian";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
 import { findActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
 import { readRepolishInput } from "./repolish-input";
+import { extractTranscriptSegments } from "./note-transcript-ledger";
 import { getTaskErrorMessage } from "../shared/task-activity";
 import { t } from "../shared/i18n";
 import type { Segment } from "../shared/types";
@@ -77,6 +78,19 @@ function extractOrganizedBody(snapshot: string): string {
   return current.body.slice(0, findOriginalMaterialBoundary(current.body).index).trim();
 }
 
+/**
+ * 标题「原始材料」之前、版本块之后可能还留有原始转写块（索引更新把标题挪到了转写之后）。
+ * 这段内容不属于整理正文，重写时原样保留在标题之前。
+ */
+function extractRawTailBeforeBoundary(preBoundary: string): string {
+  const active = findActiveVersionBlock(preBoundary);
+  const from = active ? active.end : (preBoundary.match(/^\s*#\s+[^\r\n]+(?:\r?\n|$)/)?.[0].length ?? 0);
+  const tail = preBoundary.slice(from);
+  const anchor = tail.search(/<details\b|<!--\s*qnalog-|<span\s+hidden\b/i);
+  if (anchor < 0) return "";
+  return tail.slice(anchor).replace(/(?:\r?\n)+\s*---\s*$/, "").trim();
+}
+
 export function buildReorganizedNote(snapshot: string, generated: string, stripModeSuggestions: (text: string) => string): string {
   const current = splitLeadingFrontmatter(snapshot);
   const generatedParts = splitLeadingFrontmatter(stripModeSuggestions(generated || buildEmptyLlmOutputFallback()).trim());
@@ -85,7 +99,9 @@ export function buildReorganizedNote(snapshot: string, generated: string, stripM
   const rewrittenBody = [retainedTitle, generatedParts.body.trim() || buildEmptyLlmOutputFallback()]
     .filter(Boolean).join("\n\n");
   const frontmatter = mergeFrontmatter(current.frontmatter, generatedParts.frontmatter);
-  return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${current.body.slice(boundary.index)}`);
+  const rawTail = extractRawTailBeforeBoundary(current.body.slice(0, boundary.index));
+  const preservedRaw = rawTail ? `---\n\n${rawTail}\n\n` : "";
+  return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${preservedRaw}${current.body.slice(boundary.index)}`);
 }
 
 export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: unknown): Promise<void> {
@@ -116,6 +132,9 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     const sessionMeta = { ...input.sessionMeta, _freshBriefing: true };
     const generated = await port.mergeAndPolish(input.segments, mode, sessionMeta, input.originalFrontmatter);
     const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text));
+    if (extractTranscriptSegments(next).length < input.segments.length) {
+      throw new Error(t("The reorganized note would lose original transcript segments; the note was not changed."));
+    }
     port.tasks.patchTaskActivity(taskId, { stage: "writing", stageLabel: t("Writing"), detail: t("Replacing the organized note body"), progress: 78 });
     if (await port.getVault().read(file) !== snapshot) {
       throw new Error(t("The note changed while reorganizing; the result was not written. Review the note and try again."));

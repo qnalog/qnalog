@@ -103,6 +103,24 @@ describe("in-place note reorganization", () => {
     expect(portRaw.clearCommittedBriefingCheckpoint).toHaveBeenCalledWith(sessionMeta);
   });
 
+  it("keeps transcript blocks that sit before the original-material heading", async () => {
+    const layout = [
+      "---", "qnalog_time: 2026-10-13T10:00:00", "---",
+      "# 2026-10-13 10:00 · 通用", "",
+      "> [!info]- 当前显示版本：通用 <span data-qnalog=\"active-version-start\"></span>", "",
+      "Old organized body", "<span data-qnalog=\"active-version-end\"></span>", "",
+      "---", "", transcriptBlock, "", "---", "", "## 原始材料", "",
+      "<details>", "<summary>索引数据</summary>", "</details>",
+    ].join("\n");
+    const { port, file, contents } = fixture();
+    contents.set(file.path, layout);
+    await reorganizeNoteInPlace(port, file);
+    const result = contents.get(file.path) || "";
+    expect(result).toContain("录音原文：今天确认项目下周启动。");
+    expect(result).toContain("New organized body");
+    expect(result).not.toContain("Old organized body");
+  });
+
   it("replaces the organized body while preserving source material and user fields", async () => {
     const { port, file, contents, calls, activities, portRaw, create } = fixture();
     await reorganizeNoteInPlace(port, file);

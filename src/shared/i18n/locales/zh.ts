@@ -1092,6 +1092,7 @@ export const ZH: MessageTable = {
   "Reading the original transcript": "正在读取原始转写",
   "Could not read the note frontmatter; the note was not changed.": "无法读取笔记 frontmatter，笔记未更改。",
   "Could not locate the original material section; the note was not changed.": "无法定位原始材料区域，笔记未更改。",
+  "The reorganized note would lose original transcript segments; the note was not changed.": "重新整理会丢失原始转写分段，笔记未更改。",
   "The note changed while reorganizing; the result was not written. Review the note and try again.": "笔记在整理期间被修改，结果未写入，请检查后重试。",
   "Note body reorganized": "笔记正文已重新整理",
   "Reorganize completed": "重新整理完成",
