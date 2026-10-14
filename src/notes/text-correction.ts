@@ -40,7 +40,7 @@ interface Range {
  *   索引都由 refreshNoteIndex 从正文重算，不必在这里改。
  * - 围栏代码块：示例代码里的词通常是刻意写的，新格式索引/沉淀 JSON 也在这里。
  */
-function findProtectedRanges(markdown: string): Range[] {
+export function findProtectedRanges(markdown: string): Range[] {
   const text = String(markdown || "");
   const ranges: Range[] = [];
 

@@ -12,6 +12,8 @@ export const NS_TAG = "qnalog";
 
 /** 知识库数据根目录。 */
 export const NS_ROOT = "QnALog";
+/** User-managed note corrections folder under the QnALog data root. */
+export const NS_ERRATA_FOLDER = `${NS_ROOT}/勘误表`;
 
 /** Obsidian SecretStorage key prefix. */
 export const NS_API_KEY_SECRET_PREFIX = nsRe("key");
