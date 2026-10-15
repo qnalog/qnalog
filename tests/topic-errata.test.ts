@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { parseTopicErrata } from "../src/topics/topic-errata-parser";
 import { buildTopicErrataPrompt } from "../src/topics/topic-errata-prompt";
 import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic-errata-store";
+import { isTopicErrataFrontmatter } from "../src/shared/namespace";
 
 describe("topic errata parser", () => {
   it("parses bilingual sections, global entries, member entries, and hand-edited list forms", () => {
@@ -47,6 +48,26 @@ describe("topic errata store", () => {
     expect(value).toContain("qnalog_topic_errata: true");
     expect(value.match(/设备维修/g)).toHaveLength(1);
     expect(value).toContain("## 不属于本主题\n- [[Notes/a]]：设备维修");
+  });
+
+  it("ensures a new empty marked document and leaves an existing document unchanged", async () => {
+    const f = fixture();
+    const topicPath = "QnALog/主题/研究.md";
+    const errataPath = "QnALog/主题/研究 勘误.md";
+    expect(await f.store.ensure(topicPath, "研究")).toBe(errataPath);
+    const created = f.files.get(errataPath) || "";
+    expect(created).toContain("qnalog_topic_errata: true");
+    expect(isTopicErrataFrontmatter({ qnalog_topic_errata: true })).toBe(true);
+    expect(created).toContain("## 不属于本主题");
+    expect(created).toContain("## 说明");
+    expect((await f.store.load(topicPath, [])).entries).toEqual([]);
+    expect((await f.store.load(topicPath, [])).notes).toEqual([]);
+    expect(await f.store.ensure(topicPath, "其他标题")).toBe(errataPath);
+    expect(f.files.get(errataPath)).toBe(created);
+
+    const existing = fixture({ [errataPath]: "## Off-topic\n- User-authored rule\n" });
+    expect(await existing.store.ensure(topicPath, "研究")).toBe(errataPath);
+    expect(existing.files.get(errataPath)).toBe("## Off-topic\n- User-authored rule\n");
   });
 
   it("ignores stale member links and records a diagnostic while retaining global entries", async () => {

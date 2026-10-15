@@ -60,6 +60,21 @@ describe("topics service", () => {
     expect(setup.requests).toHaveLength(0);
   });
 
+  it("ensures the current topic errata document and returns its store path", async () => {
+    const errataFiles = new Map<string, string>();
+    const topicErrata = new TopicErrataStore({
+      read: async (path) => errataFiles.get(path) ?? null,
+      create: async (path, content) => { errataFiles.set(path, content); },
+      process: async () => {},
+      uiLanguage: () => "zh",
+    });
+    const setup = harness({ topicErrata });
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("clean-topic", "Climate", [], ["Notes/a.md"]));
+    const path = await setup.service.ensureTopicErrata("clean-topic");
+    expect(path).toBe(topicErrata.pathForTopic("Topics/Climate.md"));
+    expect(errataFiles.get(path)).toContain("qnalog_topic_errata: true");
+  });
+
   it("only reads through its port when requested and returns statistics", async () => {
     let reads = 0;
     const now = Date.now();

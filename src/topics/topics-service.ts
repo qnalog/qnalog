@@ -421,6 +421,13 @@ export class TopicsService {
     return estimateTopicCleaningInput(markdown, topic.page.members, errata);
   }
 
+  async ensureTopicErrata(topicId: string): Promise<string> {
+    if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
+    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    return this.host.topicErrata.ensure(topic.path, topic.page.title);
+  }
+
   async previewContentCleaning(topicId: string): Promise<TopicChangePreview> {
     if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
     const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);

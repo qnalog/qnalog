@@ -50,6 +50,14 @@ export class TopicErrataStore {
     return `${parent}${name} ${suffix}.md`;
   }
 
+  async ensure(topicPath: string, title: string): Promise<string> {
+    const path = this.pathForTopic(topicPath);
+    if (await this.port.read(path) !== null) return path;
+    const language = this.port.uiLanguage() === "zh" ? "zh" : "en";
+    await this.port.create(path, renderDocument(title, getTopicErrataTitles(language)));
+    return path;
+  }
+
   async load(topicPath: string, memberPaths: readonly string[]): Promise<ScopedTopicErrata> {
     const markdown = await this.port.read(this.pathForTopic(topicPath));
     if (!markdown) return { entries: [], notes: [] };
@@ -71,8 +79,7 @@ export class TopicErrataStore {
     const language = this.port.uiLanguage() === "zh" ? "zh" : "en";
     const titles = getTopicErrataTitles(language);
     const content = entryLine(description, memberPath);
-    const current = await this.port.read(path);
-    if (current === null) await this.port.create(path, renderDocument(title, titles));
+    await this.ensure(topicPath, title);
     await this.port.process(path, (markdown) => {
       const parsed = parseTopicErrata(markdown);
       const equivalentLink = memberPath ? normalizePath(memberPath).replace(/\.md$/i, "").toLocaleLowerCase() : null;

@@ -118,6 +118,9 @@ export class TopicsPanel {
       void runTopicPreviewRequest(this.app, this.port, () => this.port.previewRebuild(topicId), () => this.refresh());
     }));
     menu.addItem((item) => item.setTitle(this.port.text("Scan for notes to integrate")).setIcon("scan-search").onClick(() => void this.scan(topicId)));
+    menu.addItem((item) => item.setTitle(this.port.text("Open errata")).setIcon("file-pen").onClick(() => {
+      void this.port.openTopicErrata(topicId).catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error), 8000));
+    }));
     menu.addItem((item) => item.setTitle(this.port.text("Content cleaning")).setIcon("list-filter").onClick(() => void this.cleanTopic(topicId)));
     menu.addItem((item) => item.setTitle(this.port.text("Undo last update")).setIcon("undo-2").onClick(() => {
       void this.port.undoLastUpdate(topicId).then((result) => {

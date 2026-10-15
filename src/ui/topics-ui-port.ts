@@ -45,6 +45,7 @@ export interface TopicsUiPort {
   isSourceNote(path: string): boolean;
   prepareSourceNote(path: string): Promise<boolean>;
   openTopic(path: string): Promise<void>;
+  openTopicErrata(topicId: string): Promise<void>;
   openSource(path: string): Promise<void>;
 }
 

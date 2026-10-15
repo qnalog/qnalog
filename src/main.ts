@@ -821,6 +821,14 @@ class QnALogPlugin extends obsidian.Plugin {
       }
       if (isTopic) {
         menu.addItem((item) => {
+          item.setTitle(t("Open errata"))
+            .setIcon("file-pen")
+            .onClick(async () => {
+              try { await this.createTopicsUiPort().openTopicErrata(topicPage.id); }
+              catch (error) { new obsidian.Notice(error instanceof Error ? error.message : String(error)); }
+            });
+        });
+        menu.addItem((item) => {
           item.setTitle(t("QnALog: Mark block as off-topic"))
             .setIcon("trash-2")
             .onClick(async () => {
@@ -1008,6 +1016,12 @@ class QnALogPlugin extends obsidian.Plugin {
       openTopic: async (path) => {
         const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
         if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
+      },
+      openTopicErrata: async (topicId) => {
+        const path = await this.topics.ensureTopicErrata(topicId);
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(file instanceof obsidian.TFile)) throw new Error(`Topic errata document could not be opened: ${path}`);
+        await openOrRevealFile(this.app, file);
       },
       openSource: async (source) => {
         const target = String(source).match(/^\[\[([^\]|#]+)/)?.[1] || String(source);
