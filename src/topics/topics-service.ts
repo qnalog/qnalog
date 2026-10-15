@@ -6,16 +6,18 @@ import type { OverviewCardCachePort } from "./overview-card-cache";
 import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
-import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
-import { applyTopicOps, createTopicPage, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
+import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, generateTopicCleaningOperations, estimateTopicCleaningInput, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
+import { applyTopicOps, createTopicPage, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, topicBlockSourcePaths, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
 import { t } from "../shared/i18n";
+import type { TopicErrataStore } from "./topic-errata-store";
 
 export interface TopicsServiceHost {
   overviewCards: OverviewCardCachePort;
   topicStore: TopicStorePort;
+  topicErrata?: TopicErrataStore;
   getRoots(): string[];
   getFolder(): string;
   integration: TopicIntegrationPort;
@@ -37,7 +39,7 @@ export interface TopicPreviewProgress { completed: number; total: number }
 export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; rebuild?: boolean; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }
 export interface TopicEstimateInput { memberPaths: string[]; basis: TopicBasis }
 export interface TopicPrompt extends TopicTagMatch { path: string }
-interface PendingPreview { preview: TopicChangePreview }
+interface PendingPreview { preview: TopicChangePreview; managesActivity: boolean }
 
 function cardDocument(card: OverviewCard): RelatedNoteDocument {
   return { path: card.path, sourceId: card.sourceId, title: card.title, timestamp: overviewCardTimestamp(card), tags: card.tags, people: card.people, topics: [], summary: card.overview, decisions: [], actions: [], questions: [], bodyExcerpt: "", outLinks: card.outLinks, inLinks: card.inLinks, unresolvedTargets: card.unresolvedTargets, precision: card.precision, hasIndexCard: true };
@@ -159,12 +161,13 @@ export class TopicsService {
         : [input.startPath, ...requestedPaths.filter((path) => path !== input.startPath)];
       if (!selectedPaths.length && !input.rebuild) throw new Error("No new notes to integrate; all selected notes are already topic members");
       const members = await this.loadMembers(selectedPaths, cards, input.basis);
+      const topicErrata = existing && this.host.topicErrata ? await this.host.topicErrata.load(existing.path, existing.page.members) : undefined;
       const existingEvidenceMembers = existing && !input.rebuild
         ? await this.loadMembers(existing.page.members.filter((path) => cards.some((card) => card.path === path)), cards, input.basis)
         : [];
       const topicStore = this.storeForCurrentFolder();
       const currentPage = existing ? await topicStore.readIndexedMarkdown(existing.path) : "";
-      const generationInput = { members, existingMembers: existingEvidenceMembers, basis: input.basis, currentPage: input.rebuild ? "" : currentPage, signal: controller.signal,
+      const generationInput = { members, existingMembers: existingEvidenceMembers, basis: input.basis, currentPage: input.rebuild ? "" : currentPage, topicErrata, signal: controller.signal,
         onPlanned: (total: number) => input.onProgress?.({ completed: 0, total }),
         onBatchProgress: (completed: number, total: number) => {
           const stageLabel = t("Completed {0}/{1} batches").replace("{0}", String(completed)).replace("{1}", String(total));
@@ -283,7 +286,7 @@ export class TopicsService {
           create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords, ...(generatedModel ? { model: generatedModel } : {}), ...(overviewGeneratedFromThreads ? { overviewGeneratedFromThreads: true } : {}) },
         }),
       };
-      this.previews.set(activityId, { preview });
+      this.previews.set(activityId, { preview, managesActivity: true });
       return preview;
     } catch (error) {
       this.controllers.delete(activityId);
@@ -306,21 +309,22 @@ export class TopicsService {
   }
 
   cancel(id: string): void {
-    const entry = [...this.controllers.entries()].find(([activityId]) =>
-      activityId === id || activityId.endsWith(`:${id}`) || this.previews.get(activityId)?.preview.topicId === id);
-    if (!entry) return;
-    const [activityId, controller] = entry;
-    const hadPreview = this.previews.has(activityId);
-    controller.abort();
+    const matches = (activityId: string, pending?: PendingPreview) => activityId === id || activityId.endsWith(`:${id}`) || pending?.preview.topicId === id;
+    const pendingEntry = [...this.previews.entries()].find(([activityId, pending]) => matches(activityId, pending));
+    const controllerEntry = [...this.controllers.entries()].find(([activityId]) => matches(activityId, this.previews.get(activityId)));
+    const activityId = pendingEntry?.[0] || controllerEntry?.[0];
+    if (!activityId) return;
+    controllerEntry?.[1].abort();
     this.controllers.delete(activityId);
     this.previews.delete(activityId);
-    if (hadPreview) this.host.cancelActivity?.(activityId, "Topic operation cancelled; the topic page was not changed");
+    if (pendingEntry?.[1].managesActivity) this.host.cancelActivity?.(activityId, "Topic operation cancelled; the topic page was not changed");
   }
 
   async apply(preview: TopicChangePreview, selection: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean; skipped?: Array<{ id: string; reason: "block-modified" }> }> {
     const pendingEntry = [...this.previews.entries()].find(([, pending]) => pending.preview === preview);
     if (!pendingEntry) throw new Error("Topic preview is no longer available");
     const [activityId] = pendingEntry;
+    const managesActivity = pendingEntry[1].managesActivity;
     const store = this.storeForCurrentFolder();
     try {
       if (preview.create) {
@@ -347,14 +351,14 @@ export class TopicsService {
         const stored = await this.host.topicStore.read(path);
         this.previews.delete(activityId);
         this.controllers.delete(activityId);
-        this.host.completeActivity(activityId);
+        if (managesActivity) this.host.completeActivity(activityId);
         return { path, markdown: stored, pageChangedDuringGeneration: false, skipped: [] };
       }
       if (preview.replacement) {
         const result = await store.replaceWithV2Preview(preview, selection);
         this.previews.delete(activityId);
         this.controllers.delete(activityId);
-        this.host.completeActivity(activityId);
+        if (managesActivity) this.host.completeActivity(activityId);
         return { path: preview.replacement.path, markdown: result.markdown, pageChangedDuringGeneration: false, skipped: [] };
       }
       const current = (await store.list()).find((entry) => entry.page.id === preview.topicId);
@@ -362,13 +366,80 @@ export class TopicsService {
       const result = await store.apply(current.path, preview, selection);
       this.previews.delete(activityId);
       this.controllers.delete(activityId);
-      this.host.completeActivity(activityId);
+      if (managesActivity) this.host.completeActivity(activityId);
       return { path: current.path, markdown: result.markdown, pageChangedDuringGeneration: result.pageChangedDuringGeneration, skipped: result.skipped };
     } catch (error) {
       this.controllers.delete(activityId);
-      this.host.failActivity(activityId, error);
+      if (managesActivity) this.host.failActivity(activityId, error);
       throw error;
     }
+  }
+
+  async previewExcludeBlock(topicPath: string, blockId: string): Promise<TopicChangePreview> {
+    if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
+    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.path === topicPath);
+    if (!topic) throw new Error("Topic not found: " + topicPath);
+    const store = this.storeForCurrentFolder();
+    const markdown = await store.readIndexedMarkdown(topic.path);
+    const block = parseTopicPageBlocks(markdown).find((item) => item.id === blockId);
+    if (!block) throw new Error("The selected topic block could not be found.");
+    const sources = topicBlockSourcePaths(markdown, block).filter((path) => topic.page.members.includes(path));
+    const scope = sources.length ? sources : [undefined];
+    for (const source of scope) await this.host.topicErrata.append(topic.path, topic.page.title, block.text, source);
+    const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: topic.page.members[0] || topic.page.id };
+    const preview: TopicChangePreview = {
+      topicId: topic.page.id,
+      expectedHash: hashTopicPage(markdown),
+      pageWasManuallyEdited: topic.page.cacheStatus !== "valid" || (!!topic.page.appliedHash && topic.page.appliedHash !== hashTopicPage(markdown)),
+      items: [{ id: `off-topic-${hashText(JSON.stringify(operation))}`, operation, type: operation.type, target: topicBlockHeadingLabel(markdown, block.id) || t("Corresponding section"), text: block.text, sourceId: operation.sourceId, expectedText: block.text, cancellable: true }],
+      completedBatches: 0,
+      totalBatches: 0,
+    };
+    this.previews.set(`topics:manual:${topic.page.id}`, { preview, managesActivity: false });
+    return preview;
+  }
+
+  async estimateContentCleaning(topicId: string): Promise<{ chars: number; tokens: number }> {
+    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    const markdown = await this.storeForCurrentFolder().readIndexedMarkdown(topic.path);
+    const errata = this.host.topicErrata ? await this.host.topicErrata.load(topic.path, topic.page.members) : { entries: [], notes: [] };
+    if (!errata.entries.length) return { chars: 0, tokens: 0 };
+    return estimateTopicCleaningInput(markdown, topic.page.members, errata);
+  }
+
+  async previewContentCleaning(topicId: string): Promise<TopicChangePreview> {
+    if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
+    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    const store = this.storeForCurrentFolder();
+    const markdown = await store.readIndexedMarkdown(topic.path);
+    const errata = await this.host.topicErrata.load(topic.path, topic.page.members);
+    if (!errata.entries.length) {
+      const preview: TopicChangePreview = {
+        topicId, expectedHash: hashTopicPage(markdown), pageWasManuallyEdited: topic.page.cacheStatus !== "valid",
+        items: [], completedBatches: 0, totalBatches: 0, inputChars: 0, estimatedTokens: 0,
+      };
+      this.previews.set(`topics:clean:${topicId}`, { preview, managesActivity: false });
+      return preview;
+    }
+    const generated = await generateTopicCleaningOperations(this.host.integration, { markdown, members: topic.page.members, errata });
+    const items = generated.operations.map((operation, index) => ({
+      id: `clean-${index}-${hashText(JSON.stringify(operation))}`,
+      operation, type: operation.type,
+      target: topicBlockHeadingLabel(markdown, operation.blockId) || t("Corresponding section"),
+      text: operation.type === "revise_block" ? operation.newText : operation.expectedText,
+      sourceId: operation.sourceId,
+      expectedText: operation.expectedText,
+      cancellable: true,
+    }));
+    const preview: TopicChangePreview = {
+      topicId, expectedHash: hashTopicPage(markdown), pageWasManuallyEdited: topic.page.cacheStatus !== "valid",
+      items, completedBatches: 1, totalBatches: 1, inputChars: generated.inputChars, estimatedTokens: Math.ceil(generated.inputChars / 4),
+      ...(Object.keys(generated.discarded).length ? { validationWarnings: [t("Some topic blocks could not be cleaned because their source or footnotes did not pass validation.")] } : {}),
+    };
+    this.previews.set(`topics:clean:${topicId}`, { preview, managesActivity: false });
+    return preview;
   }
 
   async undoLastUpdate(topicId: string) { return this.storeForCurrentFolder().undoLastUpdate(topicId); }

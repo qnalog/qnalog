@@ -118,6 +118,7 @@ export class TopicsPanel {
       void runTopicPreviewRequest(this.app, this.port, () => this.port.previewRebuild(topicId), () => this.refresh());
     }));
     menu.addItem((item) => item.setTitle(this.port.text("Scan for notes to integrate")).setIcon("scan-search").onClick(() => void this.scan(topicId)));
+    menu.addItem((item) => item.setTitle(this.port.text("Content cleaning")).setIcon("list-filter").onClick(() => void this.cleanTopic(topicId)));
     menu.addItem((item) => item.setTitle(this.port.text("Undo last update")).setIcon("undo-2").onClick(() => {
       void this.port.undoLastUpdate(topicId).then((result) => {
         if (result.restored === true) new Notice(this.port.text("Topic update undone."));
@@ -151,6 +152,20 @@ export class TopicsPanel {
 
   private async scan(topicId: string): Promise<void> {
     new TopicScanModal(this.app, this.port, topicId, this.refresh).open();
+  }
+
+  private async cleanTopic(topicId: string): Promise<void> {
+    try {
+      const estimate = await this.port.estimateContentCleaning(topicId);
+      if (estimate.chars === 0) { new Notice(this.port.text("No content needs cleaning.")); return; }
+      const confirmed = await qnalogConfirm(this.app, this.port.text("Content cleaning"), this.port.text("Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.").replace("{0}", String(estimate.chars)).replace("{1}", String(estimate.tokens)), this.port.text("Continue"), this.port.text("QnALog · Topics"));
+      if (!confirmed) return;
+      const preview = await this.port.previewContentCleaning(topicId);
+      if (!preview.items.length) { new Notice(this.port.text("No content needs cleaning.")); return; }
+      new TopicPreviewModal(this.app, this.port, preview, () => this.refresh()).open();
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : String(error), 8000);
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTopicPage, isLegacyTopicStatusLine, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, summarizeForTimeline, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
+import { applyTopicOps, createTopicPage, isLegacyTopicStatusLine, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, summarizeForTimeline, type TopicMember, type TopicPageV2Model } from "../src/topics/topic-page";
 
 const model: TopicPageV2Model = {
   overview: "项目围绕数据结构优化展开。团队已确定先调整存储接口，再补充迁移验证。",
@@ -32,6 +32,19 @@ describe("topic page v2", () => {
     const edited = `${rendered}\n## 我的补充\n\n用户新增段落。\n`;
     expect(parseTopicPageBlocks(edited).some((block) => block.type === "point")).toBe(true);
     expect(edited).toContain("用户新增段落。");
+  });
+
+  it("removes a block only when its expected text matches and keeps shared footnotes", () => {
+    const page = `---\nqnalog_topic_layout: 2\n---\n# Topic\n\n> [!abstract] Overview\n> Summary.\n\n## Progress thread\n### Work\n- Off-topic device repair note. [^source-a]\n- On-topic project schedule. [^source-a]\n\n## Source notes\n[^source-a]: [[Notes/a|A]]\n`;
+    const block = parseTopicPageBlocks(page).find((item) => item.text.includes("device repair"))!;
+    const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: "Notes/a.md" };
+    const applied = applyTopicOps(page, [operation]);
+    expect(applied.markdown).not.toContain("device repair");
+    expect(applied.markdown).toContain("On-topic project schedule.");
+    expect(applied.markdown).toContain("[^source-a]: [[Notes/a|A]]");
+    const edited = applyTopicOps(page.replace("Off-topic device repair note", "User-edited device repair note"), [operation]);
+    expect(edited.skipped).toEqual([{ id: block.id, reason: "block-modified" }]);
+    expect(edited.markdown).toContain("User-edited device repair note");
   });
 
   it("matches only the complete renderer-generated legacy status row", () => {

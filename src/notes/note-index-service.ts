@@ -9,6 +9,8 @@ import type { PluginSettings } from "../shared/types";
 import { diagnosticError } from "../shared/util-key-diag";
 import { t } from "../shared/i18n";
 import { DiagnosticsService } from "../diagnostics/diagnostics-service";
+import { isTopicErrataFrontmatter } from "../shared/namespace";
+import { isErrataPath } from "../errata/errata-path";
 
 /** NoteIndexService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
 export interface NoteIndexHost {
@@ -40,7 +42,8 @@ export class NoteIndexService {
     const file = typeof fileOrPath === "string"
       ? this.host.app.vault.getAbstractFileByPath(obsidian.normalizePath(fileOrPath))
       : fileOrPath;
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") return null;
+    if (!(file instanceof obsidian.TFile) || file.extension !== "md" || isErrataPath(file.path)
+      || isTopicErrataFrontmatter(this.host.app.metadataCache.getFileCache(file)?.frontmatter || {})) return null;
     const current = await this.host.app.vault.read(file);
     const index = buildNoteIndex(current, {
       noteTitle: file.basename,

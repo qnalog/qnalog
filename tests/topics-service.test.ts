@@ -2,9 +2,52 @@ import { describe, expect, it } from "vitest";
 import { TopicsService, type TopicsServicePort } from "../src/topics/topics-service";
 import type { TopicStorePort } from "../src/topics/topic-store";
 import type { TopicIntegrationPort } from "../src/topics/topic-integration";
-import { createTopicPage, parseTopicPage, serializeTopicPage } from "../src/topics/topic-page";
+import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
+import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic-errata-store";
 
 describe("topics service", () => {
+  it("adds scoped errata before preview removal and keeps the errata after undo; skips edited blocks", async () => {
+    const errataFiles = new Map<string, string>();
+    const topicErrata = new TopicErrataStore({
+      read: async (path) => errataFiles.get(path) ?? null,
+      create: async (path, content) => { errataFiles.set(path, content); },
+      process: async (path, transform) => { errataFiles.set(path, transform(errataFiles.get(path) || "")); },
+      uiLanguage: () => "zh",
+    });
+    const setup = harness({ topicErrata });
+    const model: TopicPageV2Model = { overview: "Climate planning continues.", threads: [{ id: "work", title: "Work", summary: "The topic has two details.", points: [{ id: "p1", text: "Off-topic device repair detail.", sources: ["Notes/a.md"] }] }], disagreements: [], open: [], unsorted: [] };
+    const topic = createTopicPage({ id: "clean-topic", title: "Climate", tags: [], basis: "overview", members: [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }] });
+    topic.layout = 2;
+    topic.body = renderTopicPage(model, [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }]);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(topic));
+    const block = parseTopicPageBlocks(serializeTopicPage(topic)).find((item) => item.text.includes("device repair"))!;
+    const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
+    expect(preview.items[0].operation.type).toBe("remove_block");
+    const errataPath = "Topics/Climate 勘误.md";
+    expect(errataFiles.get(errataPath)).toContain("[[Notes/a]]：");
+    await setup.service.apply(preview, [preview.items[0].id]);
+    expect(setup.storePort.read("Topics/Climate.md")).resolves.not.toContain("device repair");
+    expect(await setup.service.undoLastUpdate("clean-topic")).toMatchObject({ restored: true });
+    expect(errataFiles.get(errataPath)).toContain("device repair");
+
+    const fresh = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
+    await setup.storePort.process("Topics/Climate.md", (current) => current.replace("Off-topic device repair detail.", "User-edited device repair detail."));
+    const result = await setup.service.apply(fresh, [fresh.items[0].id]);
+    expect(result.skipped).toEqual([{ id: block.id, reason: "block-modified" }]);
+    expect(result.markdown).toContain("User-edited device repair detail.");
+  });
+
+  it("returns no cleaning work without errata and does not call the model", async () => {
+    const topicErrata = new TopicErrataStore({
+      read: async () => null, create: async () => {}, process: async () => {}, uiLanguage: () => "en",
+    });
+    const setup = harness({ topicErrata });
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("clean-topic", "Climate", [], ["Notes/a.md"]));
+    expect(await setup.service.estimateContentCleaning("clean-topic")).toEqual({ chars: 0, tokens: 0 });
+    expect((await setup.service.previewContentCleaning("clean-topic")).items).toEqual([]);
+    expect(setup.requests).toHaveLength(0);
+  });
+
   it("only reads through its port when requested and returns statistics", async () => {
     let reads = 0;
     const now = Date.now();
@@ -270,7 +313,7 @@ function topicMarkdown(id: string, title: string, tags: string[], members: strin
   page.excluded = excluded;
   return serializeTopicPage(page);
 }
-function harness(options: { roots?: string[]; request?: TopicIntegrationPort["request"] } = {}) {
+function harness(options: { roots?: string[]; request?: TopicIntegrationPort["request"]; topicErrata?: TopicErrataStore } = {}) {
   const now = Date.UTC(2026, 0, 2);
   const files = [noteFile("Notes/a.md", "Climate policy reform changes public investment and emissions strategy", ["climate"]), noteFile("Notes/b.md", "Climate policy shifts funding toward clean energy", ["climate"])];
   const writes: Array<{ kind: string; path: string }> = [];
@@ -321,7 +364,7 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
   }
   const activities = { started: [] as Array<[string, string]>, completed: [] as Array<[string]>, failed: [] as Array<[string, unknown]>, cancelled: [] as Array<[string, string]>, progress: [] as Array<{ progress: number; stageLabel: string }> };
   let ids = 0;
-  const service = new TopicsService({ overviewCards, topicStore: storePort, getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
+  const service = new TopicsService({ overviewCards, topicStore: storePort, ...(options.topicErrata ? { topicErrata: options.topicErrata } : {}), getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
     createId: () => `topic-${++ids}`, startActivity: (id, title) => activities.started.push([id, title]), updateActivity: (_id, patch) => activities.progress.push(patch), completeActivity: (id) => activities.completed.push([id]), failActivity: (id, error) => activities.failed.push([id, error]), cancelActivity: (id, reason) => activities.cancelled.push([id, reason]) });
   return { service, files, writes, readPaths, storePort, requests, activities };
 }

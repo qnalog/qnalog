@@ -44,6 +44,7 @@ export class TopicPreviewModal extends Modal {
     content.createDiv({ cls: "qnalog-topics-dialog-heading", text: this.port.text("Preview topic changes") });
     const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
     if (this.preview.pageWasManuallyEdited) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("The page may have been modified. Changes will use the current version.") });
+    if (typeof this.preview.estimatedTokens === "number") scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("Estimated input: {0} characters, about {1} tokens.").replace("{0}", String(this.preview.inputChars || 0)).replace("{1}", String(this.preview.estimatedTokens)) });
     if (this.preview.partialFailure) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Some batches failed; {0}/{1} completed batches were kept.").replace("{0}", String(this.preview.completedBatches)).replace("{1}", String(this.preview.totalBatches)) });
     if (this.preview.create?.overviewGeneratedFromThreads) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("The overview was generated from the thread summaries by the program. You can edit it on the page.") });
 
@@ -166,7 +167,7 @@ export class TopicPreviewModal extends Modal {
       const section = item.operation.type === "add_timeline" ? "Timeline"
         : item.operation.type === "add_conflict" || item.operation.type === "add_disagreement" ? "Disagreements and verification"
           : item.operation.type === "add_open" || item.operation.type === "resolve_open" ? "Open questions and actions"
-            : item.operation.type === "add_point" || item.operation.type === "add_thread" || item.operation.type === "revise_block" ? "Progress thread"
+        : item.operation.type === "add_point" || item.operation.type === "add_thread" || item.operation.type === "revise_block" || item.operation.type === "remove_block" ? "Progress thread"
               : item.operation.type === "add_item" ? topicSectionEnglishLabel(item.operation.section) : "Progress thread";
       let group = sections.get(section);
       if (!group) {
@@ -190,7 +191,7 @@ export class TopicPreviewModal extends Modal {
       checkbox.checked = true;
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add(item.id) : selected.delete(item.id));
       const icon = heading.createSpan({ cls: "qnalog-topics-operation-icon" });
-      const iconName = item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
+      const iconName = item.type === "remove_block" ? "trash-2" : item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
       try { setIcon(icon, iconName); } catch { /* icon fallback is decorative */ }
       const verification = stripTopicUnverifiedMarker(item.text);
       if (item.operation.type === "revise_block") {
@@ -223,6 +224,8 @@ export class TopicPreviewModal extends Modal {
       } else if (item.operation.type === "resolve_open") {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: `${this.port.text("Will mark this item as resolved")}: ${item.expectedText || item.operation.expectedText || topicPreviewTargetLabel(item) || this.port.text("Open item")}` });
         main.createDiv({ cls: "qnalog-topics-preview-text", text: verification.text });
+      } else if (item.operation.type === "remove_block") {
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Will remove this block: {0}").replace("{0}", item.text) });
       } else {
         let changeText = verification.text;
         if (item.operation.type === "add_open") {

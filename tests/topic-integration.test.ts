@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildTopicIntegrationMessages, estimateIntegrationCost, generateTopicOperations,
-  generateTopicPageContent, generateTopicPageUpdateOperations,
+  generateTopicPageContent, generateTopicPageUpdateOperations, generateTopicCleaningOperations,
   TOPIC_BODY_BATCH_CHARS, TOPIC_INTEGRATION_BATCH_SIZE, type TopicIntegrationMember,
-  type TopicIntegrationPort,
+  TOPIC_ERRATA_OVERLAP_THRESHOLD, estimateTopicCleaningInput, type TopicIntegrationPort,
 } from "../src/topics/topic-integration";
 import type { OverviewCard } from "../src/topics/overview-card";
 import { applyTopicOps, parseTopicPageBlocks, renderTopicPage } from "../src/topics/topic-page";
@@ -35,6 +35,55 @@ describe("topic integration", () => {
     expect(port.calls[0][0].content).not.toMatch(/\bstatus\b/i);
     expect(port.calls[0][0].content).toContain("kind exactly question, action, or bug");
     expect(port.calls[0][1].content).toContain("valid");
+  });
+
+  it("sends topic errata for create and update prompts and filters matching operations", async () => {
+    const source = member("new-source", "设备维修流程已进入审查，预算审批已经完成。");
+    const topicErrata = { entries: [{ memberLink: null, memberPath: null, description: "设备维修流程" }], notes: [] };
+    const createPort = fakePort([JSON.stringify({
+      overview: "设备维修流程需要审查。预算审批已经完成。",
+      threads: [{ title: "维修", summary: "设备维修流程需要审查。", points: [
+        { text: "设备维修流程需要审查。", sources: ["new-source"] },
+        { text: "预算审批已经完成。", sources: ["new-source"] },
+      ] }], disagreements: [], open: [], unsorted: [],
+    })]);
+    const created = await generateTopicPageContent(createPort, { basis: "overview", members: [source], topicErrata });
+    expect(createPort.calls[0][0].content).toContain("Do not generate add_point, add_thread, add_open, or add_disagreement");
+    expect(createPort.calls[0][1].content).toContain("设备维修流程");
+    expect(created.model.threads.flatMap((thread) => thread.points).map((point) => point.text)).toEqual(["预算审批已经完成。"]);
+    expect(created.createDiagnostics.discarded).toMatchObject({ "errata-excluded": 3 });
+
+    const updatePort = fakePort([response([
+      { type: "add_point", thread: "维修", text: "设备维修流程需要审查。", sources: ["new-source"] },
+      { type: "add_point", thread: "审批", text: "预算审批已经完成。", sources: ["new-source"] },
+    ])]);
+    const updated = await generateTopicPageUpdateOperations(updatePort, { basis: "overview", members: [source], currentPage: "", topicErrata });
+    expect(updatePort.calls[0][1].content).toContain("设备维修流程");
+    expect(updated.operations.map((operation) => operation.type === "add_point" ? operation.text : "")).toEqual(["预算审批已经完成。"]);
+    expect(updated.updateDiagnostics?.discarded).toMatchObject({ "errata-excluded": 1 });
+    expect(TOPIC_ERRATA_OVERLAP_THRESHOLD).toBeGreaterThan(0);
+  });
+
+  it("cleans page blocks with deletion and revision operations while preserving footnotes", async () => {
+    const markdown = `---\nqnalog_topic_layout: 2\n---\n# Topic\n\n> [!abstract] Overview\n> Current topic summary.\n\n## Progress thread\n### Research\n\nThe page includes device repair and project scheduling. [^source-a]\n- The project schedule was approved. [^source-a]\n\n## Source notes\n[^source-a]: [[Notes/a|Source A]]\n`;
+    const ids = new Map((await import("../src/topics/topic-page")).parseTopicPageBlocks(markdown).map((block, index) => [`B${index + 1}`, block]));
+    const repair = [...ids.entries()].find(([, block]) => block.text.includes("device repair"));
+    const schedule = [...ids.entries()].find(([, block]) => block.text.includes("schedule was approved"));
+    expect(repair).toBeDefined(); expect(schedule).toBeDefined();
+    const port = fakePort([JSON.stringify({ operations: [
+      { blockId: repair?.[0], action: "delete" },
+      { blockId: schedule?.[0], action: "revise", newText: "The project schedule was approved. [^source-a]" },
+    ] })]);
+    const result = await generateTopicCleaningOperations(port, {
+      markdown, members: ["Notes/a.md"], errata: { entries: [{ memberLink: null, memberPath: null, description: "device repair" }], notes: [] },
+    });
+    expect(result.operations.map((operation) => operation.type)).toEqual(["remove_block", "revise_block"]);
+    const revised = result.operations.find((operation) => operation.type === "revise_block");
+    expect(revised?.type === "revise_block" && revised.newText).toContain("[^source-a]");
+    expect(result.inputChars).toBeGreaterThan(0);
+    expect(result.inputChars).toBe(estimateTopicCleaningInput(markdown, ["Notes/a.md"], { entries: [{ memberLink: null, memberPath: null, description: "device repair" }], notes: [] }).chars);
+    expect(port.calls[0][0].content).toContain("Do not read or request member-note contents");
+    expect(port.calls[0][1].content).not.toContain("Full body for");
   });
 
   it("repairs a missing overview once using the same member input", async () => {

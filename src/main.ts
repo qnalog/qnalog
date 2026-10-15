@@ -21,7 +21,7 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
 import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
-import { resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
 import { classifySettingsSchema, hasStoredSettings, migrateSettingsForward, readSavedSchemaVersion, type SettingsSchemaState } from "./shared/settings-schema";
 import { ApiKeyStorageError, createApiKeyStorageNamespace, isValidApiKeyStorageNamespace, restoreApiKeySecrets, storeApiKeySecrets } from "./shared/api-key-storage";
 
@@ -84,6 +84,9 @@ import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { TopicPromptStore } from "./topics/topic-prompt-store";
+import { TopicErrataStore } from "./topics/topic-errata-store";
+import { parseTopicPage, parseTopicPageBlocks } from "./topics/topic-page";
+import { TopicPreviewModal } from "./ui/topic-preview-modal";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import type { ErrataUiPort } from "./ui/errata-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
@@ -425,9 +428,24 @@ class QnALogPlugin extends obsidian.Plugin {
       },
       now: () => Date.now(),
     };
+    const topicErrataStore = new TopicErrataStore({
+      read: async (path) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        return file instanceof obsidian.TFile ? this.app.vault.read(file) : null;
+      },
+      create: async (path, content) => { await this.app.vault.create(obsidian.normalizePath(path), content); },
+      process: async (path, transform) => {
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(file instanceof obsidian.TFile)) throw new Error(`Topic errata file not found: ${path}`);
+        await this.app.vault.process(file, transform);
+      },
+      uiLanguage: () => getActiveUiLanguage().id,
+      diagnostic: (code, data) => { void this.diagnostics.logDiagnostic("warn", code, t("Topic errata entry references a note that is no longer a topic member"), data); },
+    });
     this.topics = new TopicsService({
       overviewCards: topicsPort,
       topicStore: topicStorePort,
+      topicErrata: topicErrataStore,
       getRoots: () => getRecentNoteRoots(this),
       getFolder: () => this.settings.topicsFolder,
       integration: {
@@ -784,10 +802,13 @@ class QnALogPlugin extends obsidian.Plugin {
       const isMinutes = this.noteWriter.detectModeFromMarkdown(file);
       const selection = String(editor.getSelection() || "");
       const hasSelection = !!selection.trim();
+      const editorText = String(editor.getValue() || "");
+      const topicPage = parseTopicPage(editorText, file.path);
+      const isTopic = topicPage?.layout === 2;
       // 本插件的菜单项归入同一组：只在最前面加一条分隔线（与系统项隔开），
       // 「继续录音」与「更正误识别词」之间不再分割——两条中间夹分隔线会把
       // 同一插件的功能切成两组，视觉上像两家来源。
-      if (!isMinutes && !hasSelection) return;
+      if (!isMinutes && !hasSelection && !isTopic) return;
       menu.addSeparator();
       if (isMinutes) {
         // 正文右键（无论是否选中文字）：当前笔记是自家纪要时给「继续录音到这篇纪要」，
@@ -796,6 +817,31 @@ class QnALogPlugin extends obsidian.Plugin {
           item.setTitle(t("QnALog: Continue recording into this note"))
             .setIcon("mic")
             .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
+        });
+      }
+      if (isTopic) {
+        menu.addItem((item) => {
+          item.setTitle(t("QnALog: Mark block as off-topic"))
+            .setIcon("trash-2")
+            .onClick(async () => {
+              try {
+                const cursor = editor.getCursor();
+                const lines = editorText.split("\n");
+                let offset = 0;
+                for (let index = 0; index < cursor.line; index++) offset += (lines[index] || "").length + 1;
+                offset += cursor.ch;
+                if (hasSelection) {
+                  const selectionOffset = editorText.indexOf(selection, Math.max(0, offset - selection.length));
+                  if (selectionOffset >= 0 && selectionOffset <= offset) offset = selectionOffset;
+                }
+                const block = parseTopicPageBlocks(editorText).find((candidate) => candidate.start <= offset && offset <= candidate.end);
+                if (!block) { new obsidian.Notice(t("Place the cursor inside a topic block first.")); return; }
+                const preview = await this.topics.previewExcludeBlock(file.path, block.id);
+                new TopicPreviewModal(this.app, this.createTopicsUiPort(), preview, () => this.shell.refreshOutlineView()).open();
+              } catch (error) {
+                new obsidian.Notice(error instanceof Error ? error.message : String(error));
+              }
+            });
         });
       }
       if (!hasSelection) return;
@@ -911,6 +957,9 @@ class QnALogPlugin extends obsidian.Plugin {
       estimate: (input) => this.topics.estimate(input),
       preview: (input) => this.topics.preview(input),
       previewRebuild: (topicId, onProgress) => this.topics.previewRebuild(topicId, onProgress),
+      previewExcludeBlock: (path, blockId) => this.topics.previewExcludeBlock(path, blockId),
+      estimateContentCleaning: (topicId) => this.topics.estimateContentCleaning(topicId),
+      previewContentCleaning: (topicId) => this.topics.previewContentCleaning(topicId),
       apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot(); return result; },
       cancel: (id) => this.topics.cancel(id),
       listTopics: () => refreshTopicsSnapshot(),

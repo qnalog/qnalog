@@ -62,6 +62,19 @@ describe("related note corpus", () => {
     expect(result.documents.some((document) => document.path === errataPath)).toBe(false);
   });
 
+  it("excludes topic errata documents from the full note corpus by marker", async () => {
+    const port = makePort();
+    const errataPath = "QnALog/主题/研究 勘误.md";
+    const withErrata: RelatedNotesCorpusPort = {
+      ...port,
+      listNoteFiles: () => [...port.listNoteFiles(), { path: errataPath, basename: "研究 勘误.md", mtime: 12 }],
+      getFrontmatter: (path) => path === errataPath ? { qnalog_topic_errata: true } : port.getFrontmatter(path),
+      readText: async (path) => path === errataPath ? "## 不属于本主题\n- 私有的排除规则" : port.readText(path),
+    };
+    const result = await buildRelatedNotesCorpus(withErrata, { roots: ["QnALog"] });
+    expect(result.documents.some((document) => document.path === errataPath)).toBe(false);
+  });
+
   it("uses configured note roots, filters merge/derived notes, excludes link noise and builds reverse links", async () => {
     const result = await buildRelatedNotesCorpus(makePort(), { roots: ["QnALog/Notes"] });
     expect(result.documents.map((doc) => doc.path)).toEqual(["QnALog/Notes/one.md", "QnALog/Notes/two.md", "QnALog/Notes/old.md", "QnALog/Notes/legacy-host.md"]);

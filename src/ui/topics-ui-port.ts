@@ -25,6 +25,9 @@ export interface TopicsUiPort {
   estimate(input: { memberPaths: string[]; basis: TopicBasis }): Promise<{ chars: number; requests: number }>;
   preview(input: { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }): Promise<TopicChangePreview>;
   previewRebuild(topicId: string, onProgress?: (progress: TopicPreviewProgress) => void): Promise<TopicChangePreview>;
+  previewExcludeBlock(path: string, blockId: string): Promise<TopicChangePreview>;
+  estimateContentCleaning(topicId: string): Promise<{ chars: number; tokens: number }>;
+  previewContentCleaning(topicId: string): Promise<TopicChangePreview>;
   apply(preview: TopicChangePreview, selectedIds: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean; skipped?: Array<{ id: string; reason: "block-modified" }> }>;
   cancel(id: string): void;
   listTopics(): Promise<TopicListEntry[]>;
