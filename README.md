@@ -50,6 +50,8 @@ Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native
 4. Stop recording and follow transcription, AI organization, and Markdown writing in **Task progress**. Retry from the failed step if processing stops.
 5. Use the **Distill** and **Q&A** tabs as needed, or generate a report from a completed note.
 
+The default **General** template chooses paragraphs, lists, or topic sections from the content without requiring a recording type. Short notes stay direct; longer bodies can include an optional overview. Its organizing rules preserve personal voice, feelings, questions, uncertainty, and speaker attribution where it affects meaning. Only explicit requests, reminders, or committed future actions become tasks. Saved default templates and custom prompts continue to apply.
+
 The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. **Minutes Board** is a separate view, opened with its command or the button in the panel. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
 
 In the note list context menu, **Reorganize** regenerates the organized body in place and replaces the current content. The plugin does not save the replaced body; use Obsidian's file recovery if you need to restore it. Reorganization updates an existing **Original** snapshot to the new draft. **Generate derived version** creates a separate derived note and leaves the source note unchanged.

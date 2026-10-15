@@ -94,6 +94,18 @@ describe("briefing output contracts", () => {
     const japaneseOutput = postProcessBriefingOutput("- [ ] 事项：返金の流れを見直す", "general", null, null, "general", "", "来週の共有会で返金の流れを見直します。");
     expect(japaneseOutput).toContain("- [ ] 事项：返金の流れを見直す");
   });
+  it("preserves verified anonymous task owners in General notes and removes invented labels", () => {
+    const source = "[说话人1] 我明天补完测试。\n[说话人2] 我还没有决定。";
+    const raw = "我还没有决定。\n\n- [ ] 事项：补完测试。责任人：说话人1 截止：明天\n- [ ] 事项：检查。责任人：说话人9";
+    const result = postProcessBriefingOutput(raw, "general", null, null, "general", "", source);
+    expect(result).toContain("我还没有决定。");
+    expect(result).toContain("- [ ] 事项：补完测试。责任人：说话人1 截止：明天");
+    expect(result).not.toContain("说话人9");
+    expect(result).not.toContain("[!abstract]");
+    const otherMode = postProcessBriefingOutput(raw, "meeting", null, null, "meeting", "", source);
+    expect(otherMode).not.toContain("说话人1");
+  });
+
   it("formats dates via moment and falls back to Date for absent or invalid moment", () => {
     expect(formatYamlDateTime(null)).toBe("");
     expect(formatYamlDateTime("invalid date value")).toBe("");

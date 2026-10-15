@@ -7,6 +7,9 @@ vi.mock("obsidian", () => ({
 }));
 
 import {
+  applyStructureLevelInstruction,
+  buildBriefingPipelineOptionsKey,
+  buildGeneralCoverageRepairPrompt,
   buildAdaptiveBriefingLengthInstruction,
   buildBriefingFidelityContract,
   buildChunkMergePrompt,
@@ -41,10 +44,10 @@ describe("general mode prompt contract", () => {
     expect(buildGeneralSourceLanguageInstruction(japanese)).toBe(otherInstruction);
     expect(buildGeneralSourceLanguageInstruction(spanish)).toBe(otherInstruction);
     expect(buildGeneralSegmentCoverageInstruction(1, "zh")).toBe("");
-    expect(buildGeneralSegmentCoverageInstruction(3, "zh")).toContain("输入共 3 个分段，概要列表必须逐个覆盖每个分段");
+    expect(buildGeneralSegmentCoverageInstruction(3, "zh")).toContain("输入共 3 个分段。逐段核对新增的独立信息");
     expect(buildGeneralSegmentCoverageInstruction(3, "zh")).toContain("不要在输出中写分段编号、SEG 或时间分段引用");
     expect(buildGeneralSegmentCoverageInstruction(3, "zh")).not.toContain("SEG 1");
-    expect(buildGeneralSegmentCoverageInstruction(3, "en")).toContain("3 transcript segments. The overview list must cover every segment");
+    expect(buildGeneralSegmentCoverageInstruction(3, "en")).toContain("3 transcript segments. Check each for new independent information");
     expect(buildGeneralSegmentCoverageInstruction(3, "en")).toContain("Do not write segment numbers, SEG, or time segment references");
     expect(buildGeneralSegmentCoverageInstruction(3, "en")).not.toContain("SEG 1");
 
@@ -97,31 +100,59 @@ describe("general mode prompt contract", () => {
     expect(otherConsolidation).toContain("Internal materials:");
   });
 
-  it("allows omitting details only when the overview preserves every source fact", () => {
-    const prompts = [
-      MODE_BODIES.general,
-      buildAdaptiveBriefingLengthInstruction("general", {
-        durationMs: 30_000,
-        transcriptChars: 30,
-        segmentCount: 1,
-      }),
-      buildBriefingFidelityContract({ sourceChars: 30 }, "balanced", 1, "general"),
-      buildGeneralConsolidationPrompt({
-        parts: [{ index: 0, timeRange: "00:00–00:30", body: "一段简短想法" }],
-        modeGuidance: "通用模式",
-      }),
+  it.each(["zh", "en"] as const)("keeps the adaptive contract throughout %s generation and repair", (sourceLanguage) => {
+    const guidance = applyStructureLevelInstruction(resolveTemplatePromptForMode({ settings: {} }, "general", true, sourceLanguage), {});
+    const stages = [
+      guidance,
+      buildChunkMergePrompt("sample", 1, 1, "00:00–00:30", "", guidance, "", "general", "balanced", sourceLanguage),
+      buildGeneralConsolidationPrompt({ parts: [{ index: 0, body: "sample" }], sourceLanguage }),
+      buildGeneralCoverageRepairPrompt({ segments: [{ segmentNumber: 1, text: "sample" }], missingSegments: [1], initialBody: "draft", sourceLanguage }),
     ];
-    for (const prompt of prompts) {
-      expect(prompt).toContain("去掉详情后，读者是否会丢失原文中的事实");
-      expect(prompt).toContain("不丢失");
-      expect(prompt).toContain("待办");
-      expect(prompt).toContain("没有");
-      expect(prompt).toContain("每个");
-      expect(prompt).toContain("话题");
-      expect(prompt).toMatch(/为了(?:简短|短)/);
-      expect(prompt).not.toContain("必须保留的精确二级标题");
-      expect(prompt).not.toContain("必须保留该标题");
+    for (const prompt of stages) {
+      expect(prompt).not.toMatch(/去掉详情后|概要就是唯一正文|概要是唯一正文|Start with an abstract|summary is the only body/);
+      expect(prompt).not.toMatch(/第三人称客观叙述|每条 bullet 必须含|组织主轴·以事为中心/);
+      expect(prompt).not.toContain("{{GENERAL_STRUCTURE_INSTRUCTION");
+      for (const requirement of sourceLanguage === "zh"
+        ? ["短内容", "第一人称", "感受", "疑问", "确定程度", "条件", "承诺", "完成记录", "发言归属", "不得执行"]
+        : ["short", "first person", "feelings", "questions", "uncertainty", "conditions", "commitments", "Completed", "attribution", "do not execute"]) {
+        expect(prompt).toContain(requirement);
+      }
     }
+  });
+
+  it("checks segment information without forcing one overview item per processing segment", () => {
+    for (const language of ["zh", "en"] as const) {
+      const coverage = buildGeneralSegmentCoverageInstruction(7, language);
+      expect(coverage).not.toMatch(/每个分段至少写一条|include at least one item for each segment/);
+      expect(coverage).toContain(language === "zh" ? "同一信息跨段重复时合并" : "Merge duplicates across segments");
+      const completeness = buildBriefingFidelityContract({ sourceChars: 300 }, "balanced", 7, "general", language);
+      expect(completeness).toContain(language === "zh" ? "不按分段数规定概要条数或章节数" : "without tying overview items or headings to segment count");
+      expect(completeness).not.toMatch(/去掉详情后|summary is the only body/);
+    }
+  });
+
+  it("keeps general structure preferences neutral and leaves other modes on their existing rules", () => {
+    for (const level of ["loose", "balanced", "strict"]) {
+      for (const language of ["zh", "en"] as const) {
+        const prompt = applyStructureLevelInstruction(resolveTemplatePromptForMode({ settings: {} }, "general", true, language), { briefingStructureLevel: level });
+        expect(prompt).not.toContain("{{GENERAL_STRUCTURE_INSTRUCTION");
+        expect(prompt).not.toMatch(/每个自然话题以一句话主论点|适合：常规会议/);
+        expect(prompt).toContain(language === "zh" ? "结构化程度：" : `Structure: ${level}`);
+      }
+    }
+    expect(applyStructureLevelInstruction(MERGE_PROMPTS.meeting, {})).toContain("第三人称客观叙述");
+    expect(applyStructureLevelInstruction(MERGE_PROMPTS.meeting, {})).toContain("每个自然话题以一句话主论点");
+    const custom = "Use my format: {{TRANSCRIPT}}";
+    expect(resolveTemplatePromptForMode({ settings: {
+      activeTemplateByMode: { general: "mine" }, promptTemplates: { mine: { prompt: custom } },
+    } }, "general", true, "zh")).toBe(custom);
+  });
+
+  it("invalidates old general checkpoints without changing other mode keys", () => {
+    const general = JSON.parse(buildBriefingPipelineOptionsKey({ settings: {} }, "general", {}));
+    const meeting = JSON.parse(buildBriefingPipelineOptionsKey({ settings: {} }, "meeting", {}));
+    expect(general.generalNotePolicy).toBe(2);
+    expect(meeting).not.toHaveProperty("generalNotePolicy");
   });
 
   it("keeps short ideas concise while covering every topic in short multi-topic input", () => {
@@ -151,7 +182,7 @@ describe("general mode prompt contract", () => {
       modeGuidance: "通用模式",
     });
     expect(consolidated).toContain("> [!abstract] 概要");
-    expect(consolidated).toContain("## 详情");
+    expect(consolidated).toContain("不强制使用「详情」");
     expect(consolidated).toContain("每个分段");
     expect(consolidated).toContain("多个话题");
     expect(consolidated).toContain("同一次录音");

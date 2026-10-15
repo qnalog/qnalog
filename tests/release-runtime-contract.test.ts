@@ -189,14 +189,21 @@ describe("release runtime contracts", () => {
       const generalConsolidation = general.calls.find(call => call.purpose === "briefing-general-consolidation");
       expect(generalParts.length).toBeGreaterThan(1);
       expect(generalConsolidation).toBeDefined();
-      expect(generalConsolidation?.prompt).toContain("开头先写 `> [!abstract] 概要`");
-      expect(generalConsolidation?.prompt).toContain("## 详情");
+      expect(generalConsolidation?.prompt).toContain("短内容直接写成段落或清单");
+      expect(generalConsolidation?.prompt).toContain("正文较长且需要速览时，才在开头添加");
+      for (const call of [...generalParts, generalConsolidation!]) {
+        expect(call.prompt).toContain("保留第一人称");
+        expect(call.prompt).toContain("确定程度");
+        expect(call.prompt).not.toContain("第三人称客观叙述");
+        expect(call.prompt).not.toContain("开头先写");
+        expect(call.prompt).not.toContain("每个分段至少写一条");
+      }
       expect([...general.files.values()].map(value => JSON.parse(value)).some(checkpoint => checkpoint.consolidationStatus === "complete")).toBe(true);
       const chineseInstruction = "输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。";
       expect(generalParts[0]?.prompt).toContain(chineseInstruction);
       expect(generalConsolidation?.prompt).toContain(chineseInstruction);
       expect(generalParts[0]?.prompt.match(/输出语言：中文/g)).toHaveLength(1);
-      expect(generalConsolidation?.prompt).toContain("输入共 3 个分段，概要列表必须逐个覆盖每个分段");
+      expect(generalConsolidation?.prompt).toContain("输入共 3 个分段。逐段核对新增的独立信息");
       expect(generalConsolidation?.prompt).toContain("不要在输出中写分段编号、SEG 或时间分段引用");
 
 
@@ -255,7 +262,7 @@ describe("release runtime contracts", () => {
         "Output language: English.",
       );
 
-      const chineseTaskReply = "> [!abstract] 概要\n> 周五前把季度报告初稿发给李明评审。\n\n- [ ] 事项：把初稿发给李明评审";
+      const chineseTaskReply = "- [ ] 事项：把初稿发给李明评审。截止：周五前";
       const chineseTask = await run("general", [{
         index: 0,
         startOffsetMs: 0,
@@ -264,6 +271,7 @@ describe("release runtime contracts", () => {
       }], chineseTaskReply);
       expect(chineseTask.result).toContain("- [ ] 事项：把初稿发给李明评审");
       expect(chineseTask.result).not.toContain("- [ ] Task:");
+      expect(chineseTask.result).not.toContain("[!abstract]");
       const modelBodyWithSegmentReference = `## 事实\n${"讨论内容".repeat(1600)}（SEG 1–2）`;
       const sanitizedModelOutput = await run("general", [{
         index: 0,
@@ -278,15 +286,18 @@ describe("release runtime contracts", () => {
         { index: 1, startOffsetMs: 10_000, endOffsetMs: 20_000, text: "上个月四成投诉和退款有关，李明周五前出一页纸统一话术。" },
         { index: 2, startOffsetMs: 20_000, endOffsetMs: 30_000, text: "物流报价涨了百分之八，赵强先去谈判，谈不拢再换供应商。" },
       ];
-      const missingThirdTopic = "> [!abstract] 概要\n> - 登录页改版上线，转化率升至百分之三点八，注册流程减至三步；王芳两周内出方案。\n> - 上个月四成投诉和退款有关；李明周五前整理一页纸统一话术。";
-      const completeTopics = `${missingThirdTopic}\n> - 物流报价上涨百分之八；赵强先谈判，谈不拢再换供应商。`;
+      const missingThirdTopic = "## 登录页\n\n登录页改版上线，转化率升至百分之三点八，注册流程减至三步；王芳两周内出方案。\n\n## 退款投诉\n\n上个月四成投诉和退款有关；李明周五前整理一页纸统一话术。";
+      const completeTopics = `${missingThirdTopic}\n\n## 物流报价\n\n物流报价上涨百分之八；赵强先谈判，谈不拢再换供应商。`;
       const repaired = await run("general", coverageSegments, null, [missingThirdTopic, completeTopics]);
-      expect(repaired.calls.find(call => call.purpose === "briefing-part")?.prompt).toContain("输入共 3 个分段，概要列表必须逐个覆盖每个分段");
+      expect(repaired.calls.find(call => call.purpose === "briefing-part")?.prompt).toContain("输入共 3 个分段。逐段核对新增的独立信息");
       expect(repaired.calls.filter(call => call.purpose === "briefing-part-detail-repair")).toHaveLength(1);
       const coverageRepair = repaired.calls.find(call => call.purpose === "briefing-part-detail-repair");
       expect(coverageRepair?.prompt).toContain(`===SEG 3===\n${coverageSegments[2].text}`);
-      expect(coverageRepair?.prompt).toContain("返回完整替换版，不得只输出补充内容：保留初稿已覆盖的全部事实");
+      expect(coverageRepair?.prompt).toContain("返回完整替换版，不得只输出补充内容：保留初稿已覆盖的独立信息、表达意图和原有关系");
       expect(repaired.result).toContain("物流报价上涨百分之八");
+      expect(repaired.result).not.toContain("[!abstract]");
+      expect(coverageRepair?.prompt).toContain("第一人称");
+      expect(coverageRepair?.prompt).not.toContain("保留初稿的概要结构");
       expect(coverageRepair?.prompt).toContain("逐一核对所有原始分段，每个话题都要有落点");
       expect(repaired.diagnostics).toContain("llm.briefing_segment_coverage_repair_started");
       expect(repaired.diagnostics).toContain("llm.briefing_segment_coverage_repaired");

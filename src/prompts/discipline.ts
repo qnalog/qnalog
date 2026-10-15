@@ -47,6 +47,22 @@ pie title <名称>
 
 **不为美观硬塞**——对话里没有真实对比/流程/占比时，**不要编造图表**。`;
 
+// 通用笔记只调整排版深度，保留内容原有的人称与表达形式。
+export const GENERAL_STRUCTURE_LEVEL_INSTRUCTIONS = {
+  loose: {
+    zh: "结构化程度：宽松。优先连贯段落，并列事项可用一层列表，长文按需分节。",
+    en: "Structure: loose. Prefer connected paragraphs; parallel items may use a flat list. Add sections only when useful for a long note.",
+  },
+  balanced: {
+    zh: "结构化程度：均衡。根据内容选段落或列表，列表最多两层，多个复杂话题可分节。",
+    en: "Structure: balanced. Choose paragraphs or lists to fit the content, with at most two list levels. Use sections for complex topics when useful.",
+  },
+  strict: {
+    zh: "结构化程度：严谨。复杂内容使用话题标题和最多三层列表，保留原有关系；短内容仍直接成文，不为分层增加论点或证据。",
+    en: "Structure: strict. Use topic headings and at most three list levels for complex content while preserving source relationships. Short content stays direct; do not invent arguments or evidence to fill a hierarchy.",
+  },
+} as const;
+
 export const STRUCTURE_LEVEL_INSTRUCTIONS = {
   loose: `**结构化程度：宽松**
 - 以散文段落叙述为主，每个自然话题写成一段连贯的叙述

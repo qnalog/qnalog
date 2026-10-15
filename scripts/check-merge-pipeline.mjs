@@ -581,7 +581,13 @@ async function main() {
     } else if (!/议题[\s\S]*结论/.test(beforeRaw)) {
       failures.push("笔记正文里没有写入整合后的内容（原始材料之前）");
     }
-    if (!/<summary>(?:原始转写 · 段落|Raw transcript · Segment) \d+ /.test(content)) failures.push("笔记里没有保留原始转写");
+    // 追加布局保留输入的转写折叠区；重排布局生成逐段折叠区。
+    const rawLayout = appendLayout
+      ? /<summary>分段原始转写<\/summary>/.test(content)
+      : /<summary>(?:原始转写 · 段落|Raw transcript · Segment) \d+ /.test(content);
+    if (!rawLayout || !session.segments.every(segment => content.includes(segment.text))) {
+      failures.push("笔记里没有保留原始转写结构或完整分段文本");
+    }
     if (qnalogCommentsOutsideDetails(content).length) failures.push("finalized note left QnALog comments outside details");
     if (!hasSingleMachineDataDetails(content)) failures.push("finalized note did not use one localized machine-data details item");
     if (!/<!--\s*qnalog-session:s1\s*-->/.test(content)) failures.push("笔记里没有保留会话标记");
@@ -2424,115 +2430,64 @@ async function main() {
         plugin.queue.tasks = finalizeProbeQueue;
         files.delete(finalizeProbePath);
       }
-      const generalFinalizeStart = noticeMessages.length;
-      const generalFinalizePath = "QnALog/general-mode-finalize-probe.md";
-      const generalFinalizeText = "我想到每周发布前加一份回滚清单，遇到异常时先暂停扩量。";
-      const generalFinalizeSegment = transcriptSegment(0, generalFinalizeText, 0, 30_000, "general-mode-finalize");
-      const generalFinalizeFile = new TFile(generalFinalizePath);
-      generalFinalizeFile._content = [
-        "---", "qnalog_mode: general", "qnalog_time: 2026-09-14T12:00:00", "qnalog_status: draft", "---", "",
-        "# 2026-09-14 12:00 · 通用", "",
-        "<details><summary>分段原始转写</summary>",
-        "<!-- qnalog-segments-start:general-mode-finalize -->",
-        serializeTranscriptSegment(generalFinalizeSegment),
-        "<!-- qnalog-segments-end:general-mode-finalize -->",
-        "</details>", "",
-        "<!-- qnalog-session:general-mode-finalize -->",
-      ].join("\n");
-      files.set(generalFinalizePath, generalFinalizeFile);
-      const generalFinalizeSession = {
-        id: "general-mode-finalize", mode: "general", mdPath: generalFinalizePath,
-        startedAt: "2026-09-14T12:00:00.000Z", sessionStamp: "20260914-120000",
-        segments: [generalFinalizeSegment],
-        finalized: false, segmentMeta: [], workProgress: {},
-      };
+      // 固定模型回复只验证正文写入与来源保全；生成质量由真实模型样本另行验证。
+      const generalCases = JSON.parse(readFileSync(new URL("../tests/fixtures/general-note-cases.json", import.meta.url), "utf8"));
       const originalGeneralSettings = plugin.settings;
-      const generalLlmCallStart = llmCalls.length;
-      try {
-        plugin.settings = { ...originalGeneralSettings, polishMode: "general" };
-        briefingOutputOverride = "> [!abstract] 概要\n> 提出发布前加入回滚清单的想法。\n\n## 详情\n\n每周发布前增加回滚清单；遇到异常时先暂停扩量。";
-        await plugin.sessionFinalize.finalizeSession(generalFinalizeSession);
-        const content = generalFinalizeFile._content || "";
-        const generalCalls = llmCalls.slice(generalLlmCallStart);
-        const promptSelected = generalCalls.some((request) => requestPrompt(request).includes("本模式不预设录音属于会议"));
-        const hasNeutralStructure = content.includes("> [!abstract] 概要") && content.includes("\n## 详情\n");
-        const preservedTranscript = content.includes(generalFinalizeText);
-        if (!promptSelected) failures.push("general session finalization did not send the general prompt");
-        if (!hasNeutralStructure) failures.push("general session finalization did not write the overview/details structure");
-        if (!preservedTranscript) failures.push("general session finalization did not preserve the original transcript");
-        console.log(`[general-session-finalize] digest: ${createHash("sha256").update(JSON.stringify({
-          promptSelected,
-          hasNeutralStructure,
-          preservedTranscript,
-          content,
-        })).digest("hex")}`);
-      } finally {
-        plugin.settings = originalGeneralSettings;
-        briefingOutputOverride = "";
-        noticeMessages.length = generalFinalizeStart;
-        frontmatterByPath.delete(generalFinalizePath);
-        llmCalls.splice(generalLlmCallStart);
-        files.delete(generalFinalizePath);
-      }
-      const generalShortPath = "QnALog/general-mode-short-finalize-probe.md";
-      const generalShortText = "下次演示前检查投影转接头。";
-      const generalShortSegment = transcriptSegment(0, generalShortText, 0, 10_000, "general-mode-short-finalize");
-      const generalShortFile = new TFile(generalShortPath);
-      generalShortFile._content = [
-        "---", "qnalog_mode: general", "qnalog_time: 2026-09-14T12:01:00", "qnalog_status: draft", "---", "",
-        "# 2026-09-14 12:01 · 通用", "",
-        "<details><summary>分段原始转写</summary>",
-        "<!-- qnalog-segments-start:general-mode-short-finalize -->",
-        serializeTranscriptSegment(generalShortSegment),
-        "<!-- qnalog-segments-end:general-mode-short-finalize -->",
-        "</details>", "",
-        "<!-- qnalog-session:general-mode-short-finalize -->",
-      ].join("\n");
-      files.set(generalShortPath, generalShortFile);
-      const generalShortSession = {
-        id: "general-mode-short-finalize", mode: "general", mdPath: generalShortPath,
-        startedAt: "2026-09-14T12:01:00.000Z", sessionStamp: "20260914-120100",
-        segments: [generalShortSegment],
-        finalized: false, segmentMeta: [], workProgress: {},
-      };
-      const shortOutput = "> [!abstract] 概要\n> 下次演示前检查投影转接头。";
-      const generalShortCallStart = llmCalls.length;
-      try {
-        plugin.settings = { ...originalGeneralSettings, polishMode: "general" };
-        briefingOutputOverride = shortOutput;
-        await plugin.sessionFinalize.finalizeSession(generalShortSession);
-        const content = generalShortFile._content || "";
-        const calls = llmCalls.slice(generalShortCallStart);
-        const hasSummaryOnly = content.includes(shortOutput) && !/^## 详情\s*$/m.test(content);
-        const hasIndex = content.includes("<!-- qnalog-note-index -->");
-        const hasKnowledgeBlock = content.includes("<!-- qnalog-session-knowledge ");
-        if (qnalogCommentsOutsideDetails(content).length) failures.push("general short finalization left QnALog comments outside details");
-        if (!hasSingleMachineDataDetails(content)) failures.push("general short finalization did not use one localized machine-data details item");
-        const preservedTranscript = content.includes(generalShortText);
-        const languageInstructionSelected = calls.some((request) => requestPrompt(request).includes("输出语言：中文。待办勾选行使用「事项：」「责任人：」「截止：」。"));
-        if (!hasSummaryOnly) failures.push("general short session finalization changed the summary-only body");
-        if (!hasIndex) failures.push("general short session finalization did not refresh the note index");
-        if (!hasKnowledgeBlock) failures.push("general short session finalization did not write the session-knowledge block");
-        if (!preservedTranscript) failures.push("general short session finalization did not preserve the original transcript");
-        if (!calls.some((request) => requestPrompt(request).includes("本模式不预设录音属于会议"))) {
-          failures.push("general short session finalization did not send the general prompt");
+      for (const sample of generalCases) {
+        const sessionId = `general-adaptive-${sample.id}`;
+        const path = `QnALog/${sessionId}.md`;
+        const segment = transcriptSegment(0, sample.source, 0, 30_000, sessionId);
+        const file = new TFile(path);
+        file._content = [
+          "---", "qnalog_mode: general", "qnalog_time: 2026-09-14T12:00:00", "qnalog_status: draft", "---", "",
+          "# General note", "",
+          "<details><summary>分段原始转写</summary>",
+          `<!-- qnalog-segments-start:${sessionId} -->`,
+          serializeTranscriptSegment(segment),
+          `<!-- qnalog-segments-end:${sessionId} -->`,
+          "</details>", "",
+          `<!-- qnalog-session:${sessionId} -->`,
+        ].join("\n");
+        files.set(path, file);
+        const session = {
+          id: sessionId, mode: "general", mdPath: path,
+          startedAt: "2026-09-14T12:00:00.000Z", sessionStamp: "20260914-120000",
+          segments: [segment], finalized: false, segmentMeta: [], workProgress: {},
+          _speakerNameConfirmationSkipped: true,
+        };
+        const noticeStart = noticeMessages.length;
+        const callStart = llmCalls.length;
+        try {
+          plugin.settings = { ...originalGeneralSettings, polishMode: "general" };
+          briefingOutputOverride = sample.body;
+          await plugin.sessionFinalize.finalizeSession(session);
+          const content = file._content || "";
+          const visible = content.replace(/<details\b[^>]*>[\s\S]*?<\/details>/gi, "");
+          const calls = llmCalls.slice(callStart);
+          const expectedPolicy = sample.id === "english" ? "personal experiences, reminders" : "无需用户预选类型";
+          const checks = {
+            finalized: !!session.finalized,
+            bodyPreserved: visible.includes(sample.body),
+            optionalOverview: sample.id === "overview" || !visible.includes("[!abstract]"),
+            sourcePreserved: content.includes(sample.source),
+            indexed: content.includes("<!-- qnalog-note-index -->"),
+            knowledgePreserved: content.includes("<!-- qnalog-session-knowledge "),
+            machineDataHidden: !qnalogCommentsOutsideDetails(content).length && hasSingleMachineDataDetails(content),
+            policySelected: calls.some((request) => requestPrompt(request).includes(expectedPolicy)),
+            languageSelected: calls.some((request) => requestPrompt(request).includes(sample.id === "english" ? "Output language: English." : "输出语言：中文。")),
+          };
+          for (const [check, passed] of Object.entries(checks)) {
+            if (!passed) failures.push(`general ${sample.id}: ${check} failed`);
+          }
+          console.log(`[general-adaptive-${sample.id}] ${JSON.stringify(checks)}`);
+        } finally {
+          plugin.settings = originalGeneralSettings;
+          briefingOutputOverride = "";
+          noticeMessages.length = noticeStart;
+          frontmatterByPath.delete(path);
+          llmCalls.splice(callStart);
+          files.delete(path);
         }
-        if (!languageInstructionSelected) failures.push("general short session finalization did not set the source-language prompt instruction");
-        console.log(`[general-short-session-finalize] ${JSON.stringify({
-          hasSummaryOnly,
-          hasIndex,
-          hasKnowledgeBlock,
-          preservedTranscript,
-          finalized: !!generalShortSession.finalized,
-          languageInstructionSelected,
-        })}`);
-      } finally {
-        plugin.settings = originalGeneralSettings;
-        briefingOutputOverride = "";
-        noticeMessages.length = generalFinalizeStart;
-        frontmatterByPath.delete(generalShortPath);
-        llmCalls.splice(generalShortCallStart);
-        files.delete(generalShortPath);
       }
       const liveProbeStart = noticeMessages.length;
       const liveProbePath = "QnALog/live-segment-probe.md";
