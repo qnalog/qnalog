@@ -476,17 +476,36 @@ export function topicBlockSourcePaths(markdown: string, block: ParsedTopicBlock)
   return [...paths];
 }
 
-/** Returns member paths cited by footnotes referenced in visible topic blocks. */
+/** Returns footnote IDs referenced in the page body, excluding frontmatter and definition rows. */
+export function citedFootnoteIds(markdown: string): Set<string> {
+  const cited = new Set<string>();
+  for (const line of frontmatter(markdown).body.split(/\r?\n/)) {
+    if (/^\s*\[\^[^\]]+\]:/.test(line)) continue;
+    for (const match of line.matchAll(/\[\^([^\]]+)\]/g)) cited.add(match[1]);
+  }
+  return cited;
+}
+
+/** Returns footnote IDs whose definition links point to the given topic member. */
+export function memberFootnoteIds(markdown: string, memberPath: string): string[] {
+  const normalizedMemberPath = normalizeTopicMemberPath(memberPath);
+  const ids = new Set<string>();
+  for (const line of frontmatter(markdown).body.split(/\r?\n/)) {
+    const match = line.match(/^\s*\[\^([^\]]+)\]:\s*.*?\[\[([^|\]]+)(?:\|[^\]]*)?\]\]/);
+    if (match && normalizeTopicMemberPath(match[2]) === normalizedMemberPath) ids.add(match[1]);
+  }
+  return [...ids];
+}
+
+/** Returns member paths with at least one footnote referenced in the page body. */
 export function contributingMemberPaths(markdown: string, members: readonly string[]): Set<string> {
   const page = parseTopicPage(markdown);
   if (page?.layout !== 2) return new Set();
-  const normalizedMembers = new Set(members.map((path) => normalizeTopicMemberPath(path)));
+  const citedIds = citedFootnoteIds(markdown);
   const contributing = new Set<string>();
-  for (const block of parseTopicPageBlocks(markdown)) {
-    for (const path of topicBlockSourcePaths(markdown, block)) {
-      const normalized = normalizeTopicMemberPath(path);
-      if (normalizedMembers.has(normalized)) contributing.add(normalized);
-    }
+  for (const member of members) {
+    const normalized = normalizeTopicMemberPath(member);
+    if (memberFootnoteIds(markdown, normalized).some((id) => citedIds.has(id))) contributing.add(normalized);
   }
   return contributing;
 }
@@ -510,10 +529,9 @@ function memberLinkTarget(value: string): string {
 
 function removeTopicMember(markdown: string, memberPath: string): string {
   const normalizedMemberPath = normalizeTopicMemberPath(memberPath);
-  for (const block of parseTopicPageBlocks(markdown)) {
-    if (topicBlockSourcePaths(markdown, block).some((path) => normalizeTopicMemberPath(path) === normalizedMemberPath)) {
-      throw new Error(t("This member is still cited by topic content and cannot be removed."));
-    }
+  const citedIds = citedFootnoteIds(markdown);
+  if (memberFootnoteIds(markdown, normalizedMemberPath).some((id) => citedIds.has(id))) {
+    throw new Error(t("This member is still cited by topic content and cannot be removed."));
   }
   const parsed = frontmatter(markdown);
   const lines = parsed.body.split("\n");
