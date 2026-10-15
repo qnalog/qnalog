@@ -150,11 +150,17 @@ function operationDescription(operation: TopicOperation): string {
   return "";
 }
 function operationErrataMatches(operation: TopicOperation, members: readonly TopicIntegrationMember[], errata?: ScopedTopicErrata): boolean {
-  let sourceIds = [operation.sourceId];
-  if (operation.type === "add_point" || operation.type === "add_open") sourceIds = operation.sources;
-  if (operation.type === "add_thread") sourceIds = operation.points.flatMap((point) => point.sources);
-  if (operation.type === "add_disagreement") sourceIds = operation.positions.map((position) => position.sourceId);
-  return [...new Set(sourceIds)].some((sourceId) => errataMatches(operationDescription(operation), sourceId, members, errata));
+  if (operation.type === "add_point" || operation.type === "add_open") {
+    return operation.sources.length > 0 && operation.sources.every((sourceId) => errataMatches(operationDescription(operation), sourceId, members, errata));
+  }
+  if (operation.type === "add_thread") {
+    const claims = operation.points.flatMap((point) => point.sources.map((sourceId) => ({ text: point.text, sourceId })));
+    return claims.length > 0 && claims.every(({ text, sourceId }) => errataMatches(text, sourceId, members, errata));
+  }
+  if (operation.type === "add_disagreement") {
+    return operation.positions.length > 0 && operation.positions.every((position) => errataMatches(position.text, position.sourceId, members, errata));
+  }
+  return !!operation.sourceId && errataMatches(operationDescription(operation), operation.sourceId, members, errata);
 }
 function errataMatches(text: string, sourceId: string, members: readonly TopicIntegrationMember[], errata?: ScopedTopicErrata): boolean {
   if (!errata?.entries.length) return false;
@@ -164,25 +170,54 @@ function errataMatches(text: string, sourceId: string, members: readonly TopicIn
     && errataSimilarity(text, entry.description) >= TOPIC_ERRATA_OVERLAP_THRESHOLD);
 }
 function filterErrataOperations(operations: readonly TopicOperation[], members: readonly TopicIntegrationMember[], errata: ScopedTopicErrata | undefined, diagnostics: { discarded?: Record<string, number> }): TopicOperation[] {
-  return operations.filter((operation) => {
-    if (!operationErrataMatches(operation, members, errata)) return true;
-    diagnostics.discarded = { ...(diagnostics.discarded || {}), "errata-excluded": (diagnostics.discarded?.["errata-excluded"] || 0) + 1 };
-    return false;
+  const noteDiscard = () => { diagnostics.discarded = { ...(diagnostics.discarded || {}), "errata-excluded": (diagnostics.discarded?.["errata-excluded"] || 0) + 1 }; };
+  const remainingSources = (text: string, sources: readonly string[]): string[] => sources.filter((sourceId) => !errataMatches(text, sourceId, members, errata));
+  return operations.flatMap((operation): TopicOperation[] => {
+    if (operationErrataMatches(operation, members, errata)) { noteDiscard(); return []; }
+    if (operation.type === "add_point" || operation.type === "add_open") {
+      const sources = remainingSources(operationDescription(operation), operation.sources);
+      if (sources.length === operation.sources.length) return [operation];
+      noteDiscard();
+      return sources.length ? [{ ...operation, sources }] : [];
+    }
+    if (operation.type === "add_thread") {
+      let changed = false;
+      const points = operation.points.flatMap((point) => {
+        const sources = remainingSources(point.text, point.sources);
+        if (sources.length === point.sources.length) return [point];
+        changed = true;
+        return sources.length ? [{ ...point, sources }] : [];
+      });
+      if (!changed) return [operation];
+      noteDiscard();
+      return points.length ? [{ ...operation, points, summary: points.map((point) => point.text).join(" ") }] : [];
+    }
+    if (operation.type === "add_disagreement") {
+      const positions = operation.positions.filter((position) => !errataMatches(position.text, position.sourceId, members, errata));
+      if (positions.length === operation.positions.length) return [operation];
+      noteDiscard();
+      return positions.length ? [{ ...operation, positions }] : [];
+    }
+    if (operation.sourceId && errataMatches(operationDescription(operation), operation.sourceId, members, errata)) { noteDiscard(); return []; }
+    return [operation];
   });
 }
 function filterErrataModel(model: TopicPageV2Model, members: readonly TopicIntegrationMember[], errata: ScopedTopicErrata | undefined, diagnostics: { discarded?: Record<string, number> }): TopicPageV2Model {
   if (!errata?.entries.length) return model;
   const noteDiscard = () => { diagnostics.discarded = { ...(diagnostics.discarded || {}), "errata-excluded": (diagnostics.discarded?.["errata-excluded"] || 0) + 1 }; };
   const threads = model.threads.flatMap((thread) => {
-    const points = thread.points.filter((point) => {
-      const excluded = point.sources.some((id) => errataMatches(point.text, id, members, errata));
-      if (excluded) noteDiscard();
-      return !excluded;
+    let changed = false;
+    const points = thread.points.flatMap((point) => {
+      const sources = point.sources.filter((id) => !errataMatches(point.text, id, members, errata));
+      if (sources.length === point.sources.length) return [point];
+      changed = true;
+      noteDiscard();
+      return sources.length ? [{ ...point, sources }] : [];
     });
     const summarySources = [...new Set(thread.points.flatMap((point) => point.sources))];
-    const summaryExcluded = summarySources.some((sourceId) => errataMatches(thread.summary, sourceId, members, errata));
+    const summaryExcluded = summarySources.length > 0 && summarySources.every((sourceId) => errataMatches(thread.summary, sourceId, members, errata));
     if (summaryExcluded) noteDiscard();
-    return points.length || !summaryExcluded ? [{ ...thread, points, ...(summaryExcluded ? { summary: points.map((point) => point.text).join(" ") } : {}) }] : [];
+    return points.length || !summaryExcluded ? [{ ...thread, points, ...(summaryExcluded || changed ? { summary: points.map((point) => point.text).join(" ") } : {}) }] : [];
   }).filter((thread) => !!thread.summary);
   const disagreements = model.disagreements.flatMap((item) => {
     const positions = item.positions.filter((position) => {
@@ -192,18 +227,20 @@ function filterErrataModel(model: TopicPageV2Model, members: readonly TopicInteg
     });
     return positions.length ? [{ ...item, positions }] : [];
   });
-  const open = model.open.filter((item) => {
-    const excluded = item.sources.some((id) => errataMatches(item.text, id, members, errata));
-    if (excluded) noteDiscard();
-    return !excluded;
+  const open = model.open.flatMap((item) => {
+    const sources = item.sources.filter((id) => !errataMatches(item.text, id, members, errata));
+    if (sources.length === item.sources.length) return [item];
+    noteDiscard();
+    return sources.length ? [{ ...item, sources }] : [];
   });
   const unsorted = model.unsorted.filter((text) => {
-    const excluded = members.some(({ card }) => errataMatches(text, card.sourceId, members, errata));
+    const sourceIds = members.map(({ card }) => card.sourceId);
+    const excluded = sourceIds.length > 0 && sourceIds.every((sourceId) => errataMatches(text, sourceId, members, errata));
     if (excluded) noteDiscard();
     return !excluded;
   });
   const overviewSources = [...new Set(model.threads.flatMap((thread) => thread.points.flatMap((point) => point.sources)))];
-  const overviewExcluded = overviewSources.some((sourceId) => errataMatches(model.overview, sourceId, members, errata));
+  const overviewExcluded = overviewSources.length > 0 && overviewSources.every((sourceId) => errataMatches(model.overview, sourceId, members, errata));
   if (overviewExcluded) noteDiscard();
   return { ...model, overview: overviewExcluded ? overviewFromThreadSummaries({ ...model, threads }) : model.overview, threads, disagreements, open, unsorted };
 }

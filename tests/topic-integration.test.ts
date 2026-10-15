@@ -64,6 +64,32 @@ describe("topic integration", () => {
     expect(TOPIC_ERRATA_OVERLAP_THRESHOLD).toBeGreaterThan(0);
   });
 
+  it("keeps a multi-source claim when only one member is covered and removes that source", async () => {
+    const sourceA = member("source-a", "Device repair is scheduled for review.");
+    const sourceB = member("source-b", "Device repair is scheduled for review.");
+    const topicErrata = { entries: [{ memberLink: "Notes/source-a.md", memberPath: "Notes/source-a.md", description: "device repair" }], notes: [] };
+    const updatePort = fakePort([response([
+      { type: "add_point", thread: "Maintenance", text: "Device repair follow-up is scheduled.", sources: ["source-a", "source-b"] },
+      { type: "add_point", thread: "Maintenance", text: "Device repair inspection is scheduled.", sources: ["source-a"] },
+    ])]);
+    const updated = await generateTopicPageUpdateOperations(updatePort, { basis: "overview", members: [sourceA, sourceB], currentPage: "", topicErrata });
+    expect(updated.operations).toMatchObject([{ type: "add_point", sources: ["source-b"] }]);
+    expect(updated.updateDiagnostics?.discarded).toMatchObject({ "errata-excluded": 2 });
+
+    const createPort = fakePort([JSON.stringify({
+      overview: "Device repair and public investment are both covered.",
+      threads: [{ title: "Maintenance", summary: "Device repair and investment details.", points: [
+        { text: "Device repair follow-up is scheduled.", sources: ["source-a", "source-b"] },
+        { text: "Public investment increased.", sources: ["source-b"] },
+      ] }], disagreements: [], open: [], unsorted: [],
+    })]);
+    const created = await generateTopicPageContent(createPort, { basis: "overview", members: [sourceA, sourceB], topicErrata });
+    expect(created.model.threads[0].points).toMatchObject([
+      { text: "Device repair follow-up is scheduled.", sources: ["source-b"] },
+      { text: "Public investment increased.", sources: ["source-b"] },
+    ]);
+  });
+
   it("cleans page blocks with deletion and revision operations while preserving footnotes", async () => {
     const markdown = `---\nqnalog_topic_layout: 2\n---\n# Topic\n\n> [!abstract] Overview\n> Current topic summary.\n\n## Progress thread\n### Research\n\nThe page includes device repair and project scheduling. [^source-a]\n- The project schedule was approved. [^source-a]\n\n## Source notes\n[^source-a]: [[Notes/a|Source A]]\n`;
     const ids = new Map((await import("../src/topics/topic-page")).parseTopicPageBlocks(markdown).map((block, index) => [`B${index + 1}`, block]));

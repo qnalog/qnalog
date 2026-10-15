@@ -6,7 +6,7 @@ import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage,
 import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic-errata-store";
 
 describe("topics service", () => {
-  it("adds scoped errata before preview removal and keeps the errata after undo; skips edited blocks", async () => {
+  it("writes scoped errata only after a selected removal succeeds; keeps it after undo and skips edited blocks", async () => {
     const errataFiles = new Map<string, string>();
     const topicErrata = new TopicErrataStore({
       read: async (path) => errataFiles.get(path) ?? null,
@@ -15,26 +15,38 @@ describe("topics service", () => {
       uiLanguage: () => "zh",
     });
     const setup = harness({ topicErrata });
-    const model: TopicPageV2Model = { overview: "Climate planning continues.", threads: [{ id: "work", title: "Work", summary: "The topic has two details.", points: [{ id: "p1", text: "Off-topic device repair detail.", sources: ["Notes/a.md"] }] }], disagreements: [], open: [], unsorted: [] };
+    const model: TopicPageV2Model = { overview: "Climate planning continues.", threads: [{ id: "work", title: "Work", summary: "The topic has two details.", points: [
+      { id: "p1", text: "Off-topic device repair detail. [^source-a]", sources: ["Notes/a.md"] },
+      { id: "p2", text: "Off-topic travel booking detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] };
     const topic = createTopicPage({ id: "clean-topic", title: "Climate", tags: [], basis: "overview", members: [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }] });
     topic.layout = 2;
     topic.body = renderTopicPage(model, [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }]);
     setup.storePort.seed("Topics/Climate.md", serializeTopicPage(topic));
     const block = parseTopicPageBlocks(serializeTopicPage(topic)).find((item) => item.text.includes("device repair"))!;
     const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
-    expect(preview.items[0].operation.type).toBe("remove_block");
     const errataPath = "Topics/Climate 勘误.md";
+    expect(preview.items[0].operation.type).toBe("remove_block");
+    expect(errataFiles.has(errataPath)).toBe(false);
+    setup.service.cancel("clean-topic");
+    expect(errataFiles.has(errataPath)).toBe(false);
+    const appliedBlock = parseTopicPageBlocks(serializeTopicPage(topic)).find((item) => item.text.includes("device repair"))!;
+    const confirmed = await setup.service.previewExcludeBlock("Topics/Climate.md", appliedBlock.id);
+    expect(errataFiles.has(errataPath)).toBe(false);
+    await setup.service.apply(confirmed, [confirmed.items[0].id]);
+    expect(await setup.storePort.read("Topics/Climate.md")).not.toContain("device repair");
     expect(errataFiles.get(errataPath)).toContain("[[Notes/a]]：");
-    await setup.service.apply(preview, [preview.items[0].id]);
-    expect(setup.storePort.read("Topics/Climate.md")).resolves.not.toContain("device repair");
+    expect(errataFiles.get(errataPath)).not.toContain("[^");
     expect(await setup.service.undoLastUpdate("clean-topic")).toMatchObject({ restored: true });
     expect(errataFiles.get(errataPath)).toContain("device repair");
 
-    const fresh = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
-    await setup.storePort.process("Topics/Climate.md", (current) => current.replace("Off-topic device repair detail.", "User-edited device repair detail."));
+    const travelBlock = parseTopicPageBlocks(await setup.storePort.read("Topics/Climate.md")).find((item) => item.text.includes("travel booking"))!;
+    const fresh = await setup.service.previewExcludeBlock("Topics/Climate.md", travelBlock.id);
+    await setup.storePort.process("Topics/Climate.md", (current) => current.replace("Off-topic travel booking detail.", "User-edited travel booking detail."));
     const result = await setup.service.apply(fresh, [fresh.items[0].id]);
-    expect(result.skipped).toEqual([{ id: block.id, reason: "block-modified" }]);
-    expect(result.markdown).toContain("User-edited device repair detail.");
+    expect(result.skipped).toEqual([{ id: travelBlock.id, reason: "block-modified" }]);
+    expect(result.markdown).toContain("User-edited travel booking detail.");
+    expect(errataFiles.get(errataPath)).not.toContain("travel booking");
   });
 
   it("returns no cleaning work without errata and does not call the model", async () => {

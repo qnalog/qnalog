@@ -88,7 +88,7 @@ export function suggestTopicTitle(start?: TopicCandidate): string {
     .replace(/^(?:\u7efc\u5408\u7eaa\u8981|\u7eaa\u8981|Summary|Minutes)[-_\uFF1A: ]*/i, "").trim();
 }
 
-export function isTopicSourceEligible(input: { type: unknown; mergedInto: unknown; underMinutesRoot: boolean; hasMergeMarker: boolean }): boolean {
-  return input.underMinutesRoot && !isDerivedVersionType(input.type) && input.type !== NS_TYPE_TOPIC
+export function isTopicSourceEligible(input: { type: unknown; mergedInto: unknown; isTopicErrata: boolean; underMinutesRoot: boolean; hasMergeMarker: boolean }): boolean {
+  return input.underMinutesRoot && !input.isTopicErrata && !isDerivedVersionType(input.type) && input.type !== NS_TYPE_TOPIC
     && !input.mergedInto && !input.hasMergeMarker;
 }

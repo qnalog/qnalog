@@ -111,10 +111,11 @@ describe("topic create dialog", () => {
   });
 
   it("keeps derived, merged, and topic pages out of the source-note entry", () => {
-    const original = { type: "meeting", mergedInto: null, underMinutesRoot: true, hasMergeMarker: false };
+    const original = { type: "meeting", mergedInto: null, isTopicErrata: false, underMinutesRoot: true, hasMergeMarker: false };
     expect(isTopicSourceEligible(original)).toBe(true);
     expect(isTopicSourceEligible({ ...original, type: NS_TYPE_DERIVED })).toBe(false);
     expect(isTopicSourceEligible({ ...original, type: NS_TYPE_TOPIC })).toBe(false);
+    expect(isTopicSourceEligible({ ...original, isTopicErrata: true })).toBe(false);
     expect(isTopicSourceEligible({ ...original, mergedInto: "[[Primary]]" })).toBe(false);
     expect(isTopicSourceEligible({ ...original, hasMergeMarker: true })).toBe(false);
     expect(isTopicSourceEligible({ ...original, underMinutesRoot: false })).toBe(false);

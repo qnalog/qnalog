@@ -13,6 +13,7 @@ import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
 import { t } from "../shared/i18n";
 import type { TopicErrataStore } from "./topic-errata-store";
+import { stripBlockMarkers } from "./topic-block-markers";
 
 export interface TopicsServiceHost {
   overviewCards: OverviewCardCachePort;
@@ -39,7 +40,11 @@ export interface TopicPreviewProgress { completed: number; total: number }
 export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; rebuild?: boolean; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }
 export interface TopicEstimateInput { memberPaths: string[]; basis: TopicBasis }
 export interface TopicPrompt extends TopicTagMatch { path: string }
-interface PendingPreview { preview: TopicChangePreview; managesActivity: boolean }
+interface PendingPreview {
+  preview: TopicChangePreview;
+  managesActivity: boolean;
+  onApplied?: (selection: ReadonlySet<string>, skipped: readonly { id: string; reason: "block-modified" }[]) => Promise<void>;
+}
 
 function cardDocument(card: OverviewCard): RelatedNoteDocument {
   return { path: card.path, sourceId: card.sourceId, title: card.title, timestamp: overviewCardTimestamp(card), tags: card.tags, people: card.people, topics: [], summary: card.overview, decisions: [], actions: [], questions: [], bodyExcerpt: "", outLinks: card.outLinks, inLinks: card.inLinks, unresolvedTargets: card.unresolvedTargets, precision: card.precision, hasIndexCard: true };
@@ -364,6 +369,7 @@ export class TopicsService {
       const current = (await store.list()).find((entry) => entry.page.id === preview.topicId);
       if (!current) throw new Error(`Topic not found: ${preview.topicId}`);
       const result = await store.apply(current.path, preview, selection);
+      await pendingEntry[1].onApplied?.(new Set(selection), result.skipped);
       this.previews.delete(activityId);
       this.controllers.delete(activityId);
       if (managesActivity) this.host.completeActivity(activityId);
@@ -384,8 +390,7 @@ export class TopicsService {
     const block = parseTopicPageBlocks(markdown).find((item) => item.id === blockId);
     if (!block) throw new Error("The selected topic block could not be found.");
     const sources = topicBlockSourcePaths(markdown, block).filter((path) => topic.page.members.includes(path));
-    const scope = sources.length ? sources : [undefined];
-    for (const source of scope) await this.host.topicErrata.append(topic.path, topic.page.title, block.text, source);
+    const description = stripBlockMarkers(block.text);
     const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: topic.page.members[0] || topic.page.id };
     const preview: TopicChangePreview = {
       topicId: topic.page.id,
@@ -395,7 +400,15 @@ export class TopicsService {
       completedBatches: 0,
       totalBatches: 0,
     };
-    this.previews.set(`topics:manual:${topic.page.id}`, { preview, managesActivity: false });
+    this.previews.set(`topics:manual:${topic.page.id}`, {
+      preview,
+      managesActivity: false,
+      onApplied: async (selection, skipped) => {
+        if (!description || !selection.has(preview.items[0].id) || skipped.some((item) => item.id === block.id)) return;
+        const scope = sources.length ? sources : [undefined];
+        for (const source of scope) await this.host.topicErrata?.append(topic.path, topic.page.title, description, source);
+      },
+    });
     return preview;
   }
 

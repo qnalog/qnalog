@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
-import { NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, readNamespaceFrontmatter } from "./shared/namespace";
+import { NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, isTopicErrataFrontmatter, readNamespaceFrontmatter } from "./shared/namespace";
 import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
@@ -989,6 +989,7 @@ class QnALogPlugin extends obsidian.Plugin {
         const eligible = isTopicSourceEligible({
           type: kind,
           mergedInto: readNamespaceFrontmatter(fm, "mergedInto"),
+          isTopicErrata: isTopicErrataFrontmatter(fm),
           underMinutesRoot: isPathUnderRecentNoteRoots(file.path, getRecentNoteRoots(this)),
           hasMergeMarker: false,
         });
@@ -997,6 +998,7 @@ class QnALogPlugin extends obsidian.Plugin {
         const isSource = isTopicSourceEligible({
           type: kind,
           mergedInto: readNamespaceFrontmatter(fm, "mergedInto"),
+          isTopicErrata: isTopicErrataFrontmatter(fm),
           underMinutesRoot: true,
           hasMergeMarker: NS_MERGE_BLOCK_RE.test(markdown),
         });
@@ -1029,6 +1031,7 @@ class QnALogPlugin extends obsidian.Plugin {
     if (!isTopicSourceEligible({
       type: kind,
       mergedInto: readNamespaceFrontmatter(frontmatter, "mergedInto"),
+      isTopicErrata: isTopicErrataFrontmatter(frontmatter),
       underMinutesRoot: isPathUnderRecentNoteRoots(file.path, getRecentNoteRoots(this)),
       hasMergeMarker: false,
     })) return;
