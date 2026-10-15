@@ -10298,6 +10298,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; max-width: 100%; overflow-y: auto; overscroll-behavior: contain; }
 .qnalog-topics-modal-footer { position: sticky; bottom: 0; flex: 0 0 auto; min-width: 0; padding-top: 8px; background: var(--modal-background, var(--background-primary)); border-top: 1px solid var(--background-modifier-border); }
 .qnalog-topics-modal-actions { flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+.qnalog-topics-empty-secondary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-inline-end: auto; }
+.qnalog-topics-empty-note { color: var(--text-muted); font-size: var(--font-ui-small); }
 .qnalog-topics-candidate-group { margin-block: var(--qnalog-topic-space-lg); }
 .qnalog-topics-candidate { padding-block: var(--qnalog-topic-space-md); }
 .qnalog-topics-candidate input,

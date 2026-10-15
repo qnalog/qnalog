@@ -268,6 +268,7 @@ export class TopicsService {
       );
       const preview: TopicChangePreview = {
         topicId, expectedHash: currentHash, pageWasManuallyEdited,
+        request: { startPath: input.startPath, memberPaths: [...input.memberPaths], basis: input.basis, ...(input.topicId ? { topicId: input.topicId } : {}) },
         ...(existing && /\s\^tpc-[\da-f]{6}\b/i.test(currentPage) ? { legacyAnchorCleanup: true } : {}),
         ...(existing && [t("Legacy topic status prefix zh"), t("Legacy topic status prefix en")].some((prefix) => currentPage.split("\n").some((line) => isLegacyTopicStatusLine(line, [prefix])))
           ? { legacyStatusCleanup: true, legacyStatusPrefixes: [t("Legacy topic status prefix zh"), t("Legacy topic status prefix en")] } : {}),

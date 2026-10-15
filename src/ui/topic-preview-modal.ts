@@ -4,6 +4,8 @@ import { stripTopicUnverifiedMarker } from "../topics/topic-integration";
 import { topicLabelSeparator, topicOpenKindLabel, topicSectionEnglishLabel } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
 import { bindKeyboardFocusOutline, suppressRowActivation } from "./topic-row-activation";
+import { qnalogConfirm } from "./helpers";
+import { runTopicPreviewRequest } from "./topic-preview-runner";
 
 export function topicPreviewTargetLabel(item: TopicChangePreviewItem): string {
   const target = item.target.trim();
@@ -80,6 +82,10 @@ export class TopicPreviewModal extends Modal {
       const checked = diagnostics?.rawOperations || 0;
       const duplicates = diagnostics?.duplicateOperations || 0;
       scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("No page changes were proposed (received {0} candidate operations; {1} duplicates).").replace("{0}", String(checked)).replace("{1}", String(duplicates)) });
+      if (this.preview.request) {
+        const basis = this.preview.request.basis === "overview" ? "Overview" : "Body";
+        scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("This preview used: {0}").replace("{0}", this.port.text(basis)) });
+      }
     }
     if (model) {
       const group = (title: string) => {
@@ -275,7 +281,17 @@ export class TopicPreviewModal extends Modal {
     const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
     const cancel = actions.createEl("button", { text: this.port.text("Cancel"), attr: { type: "button" } });
     cancel.addEventListener("click", () => this.close());
-    const apply = actions.createEl("button", { cls: "mod-cta", text: this.port.text(emptyUpdate ? "Add member and timeline only" : "Apply selected"), attr: { type: "button" } });
+    const request = this.preview.request;
+    if (emptyUpdate && request?.basis === "overview") {
+      const retry = actions.createEl("button", { cls: "mod-cta", text: this.port.text("Retry with body"), attr: { type: "button" } });
+      retry.addEventListener("click", () => {
+        retry.disabled = true;
+        void this.retryWithBody().finally(() => { if (!this.closed) retry.disabled = false; });
+      });
+    }
+    const applyGroup = emptyUpdate ? actions.createDiv({ cls: "qnalog-topics-empty-secondary" }) : actions;
+    if (emptyUpdate) applyGroup.createSpan({ cls: "qnalog-topics-empty-note", text: this.port.text("This note will not contribute content.") });
+    const apply = applyGroup.createEl("button", { cls: emptyUpdate ? "" : "mod-cta", text: this.port.text(emptyUpdate ? "Add member and timeline only" : "Apply selected"), attr: { type: "button" } });
     apply.addEventListener("click", () => {
       apply.disabled = true;
       void this.port.apply(this.preview, [...selected]).then(async (result) => {
@@ -301,5 +317,24 @@ export class TopicPreviewModal extends Modal {
         new Notice(error instanceof Error ? error.message : "Topic update failed.", 8000);
       });
     });
+  }
+
+  private async retryWithBody(): Promise<void> {
+    const request = this.preview.request;
+    if (!request || request.basis !== "overview") return;
+    try {
+      const estimate = await this.port.estimate({ memberPaths: request.memberPaths, basis: "body" });
+      if (this.closed) return;
+      const tokens = Math.ceil(estimate.chars / 4);
+      const message = this.port.text("Estimated input: {0} characters, about {1} tokens.")
+        .replace("{0}", estimate.chars.toLocaleString()).replace("{1}", tokens.toLocaleString());
+      const confirmed = await qnalogConfirm(this.app, this.port.text("Retry with body"), message, this.port.text("Continue"), this.port.text("QnALog · Topics"));
+      if (!confirmed || this.closed) return;
+      this.close();
+      void runTopicPreviewRequest(this.app, this.port, () => this.port.preview({ ...request, basis: "body", bodyConfirmed: true }),
+        (preview) => new TopicPreviewModal(this.app, this.port, preview, this.onApplied).open());
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : String(error), 8000);
+    }
   }
 }

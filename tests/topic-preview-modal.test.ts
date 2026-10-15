@@ -25,18 +25,22 @@ vi.mock("obsidian", () => {
     contentEl = new FakeElement();
     titleEl = new FakeElement();
     constructor(public app: unknown) {}
+    open() { this.onOpen(); }
     close() { this.onClose(); }
     onOpen() {}
     onClose() {}
   }
   class Notice {
+    messageEl = new FakeElement();
     noticeEl = new FakeElement();
     constructor(message: string) { notices.messages.push(message); }
   }
   return { Modal, Notice, setIcon: () => undefined };
 });
+vi.mock("../src/ui/helpers", () => ({ qnalogConfirm: vi.fn() }));
 
 import { topicMemberExcludeSelectionId, type TopicChangePreview } from "../src/topics/topic-integration";
+import { qnalogConfirm } from "../src/ui/helpers";
 import { TopicPreviewModal, topicPreviewTargetLabel } from "../src/ui/topic-preview-modal";
 
 interface FakeTree { text: string; cls: string; checked: boolean; children: FakeTree[]; listeners: Map<string, (event?: { stopPropagation(): void }) => void> }
@@ -158,6 +162,85 @@ describe("topic preview dialog", () => {
     expect(allText(tree)).toContain("No page changes were proposed");
     expect(allText(tree)).toContain("2 changes were adjusted");
     expect(descendants(tree).some((item) => item.text === "Add member and timeline only")).toBe(true);
+  });
+
+  it("offers body retry for an overview empty preview and preserves the original request", async () => {
+    vi.mocked(qnalogConfirm).mockResolvedValue(true);
+    const preview = fixture();
+    preview.items = [];
+    preview.request = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "overview", topicId: "topic-1" };
+    const port = {
+      text: (key: string) => key,
+      estimate: vi.fn(async () => ({ chars: 500, requests: 1 })),
+      preview: vi.fn(async () => fixture()),
+      openSource: vi.fn(), openTopic: vi.fn(async () => undefined), cancel: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn(),
+    };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const tree = modal.contentEl as unknown as FakeTree;
+    expect(allText(tree)).toContain("This preview used: Overview");
+    expect(allText(tree)).toContain("This note will not contribute content.");
+    expect(descendants(tree).some((item) => item.text === "Retry with body")).toBe(true);
+    expect(descendants(tree).some((item) => item.text === "Add member and timeline only")).toBe(true);
+
+    descendants(tree).find((item) => item.text === "Retry with body")?.listeners.get("click")?.();
+    await vi.waitFor(() => expect(port.preview).toHaveBeenCalledOnce());
+    expect(port.estimate).toHaveBeenCalledWith({ memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "body" });
+    expect(qnalogConfirm).toHaveBeenCalledWith(
+      expect.anything(), "Retry with body", "Estimated input: 500 characters, about 125 tokens.", "Continue", "QnALog · Topics",
+    );
+    expect(port.preview).toHaveBeenCalledWith({
+      startPath: "Notes/a.md", memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "body", topicId: "topic-1", bodyConfirmed: true,
+    });
+  });
+
+  it("does not offer another body retry for a body-mode empty preview", () => {
+    const preview = fixture();
+    preview.items = [];
+    preview.request = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "body", topicId: "topic-1" };
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const tree = modal.contentEl as unknown as FakeTree;
+    expect(allText(tree)).toContain("This preview used: Body");
+    expect(allText(tree)).toContain("This note will not contribute content.");
+    expect(descendants(tree).some((item) => item.text === "Retry with body")).toBe(false);
+    expect(descendants(tree).some((item) => item.text === "Add member and timeline only")).toBe(true);
+  });
+
+  it("keeps member-and-timeline-only apply available for an empty body preview", async () => {
+    const preview = fixture();
+    preview.items = [];
+    preview.request = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "body", topicId: "topic-1" };
+    const port = {
+      text: (key: string) => key,
+      openSource: vi.fn(), openTopic: vi.fn(async () => undefined), cancel: vi.fn(),
+      apply: vi.fn(async () => ({ path: "Topics/Topic.md", markdown: "", pageChangedDuringGeneration: false })),
+      undoLastUpdate: vi.fn(async () => ({ restored: true as const })),
+    };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Add member and timeline only")?.listeners.get("click")?.();
+    await vi.waitFor(() => expect(port.apply).toHaveBeenCalledOnce());
+    expect(port.apply).toHaveBeenCalledWith(preview, []);
+  });
+
+  it("does nothing when body-mode retry cost confirmation is cancelled", async () => {
+    vi.mocked(qnalogConfirm).mockResolvedValue(false);
+    const preview = fixture();
+    preview.items = [];
+    preview.request = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview", topicId: "topic-1" };
+    const port = {
+      text: (key: string) => key,
+      estimate: vi.fn(async () => ({ chars: 100, requests: 1 })),
+      preview: vi.fn(), openSource: vi.fn(), openTopic: vi.fn(), cancel: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn(),
+    };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Retry with body")?.listeners.get("click")?.();
+    await vi.waitFor(() => expect(qnalogConfirm).toHaveBeenCalledOnce());
+    expect(port.preview).not.toHaveBeenCalled();
+    expect(port.cancel).not.toHaveBeenCalled();
   });
 
   it("applies only checked operations and opens the resulting topic page", async () => {

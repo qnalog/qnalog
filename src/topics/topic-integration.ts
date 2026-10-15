@@ -33,6 +33,7 @@ export interface TopicChangePreview {
   topicId: string;
   expectedHash: string;
   pageWasManuallyEdited: boolean;
+  request?: { startPath: string; memberPaths: string[]; basis: TopicBasis; topicId?: string };
   items: TopicChangePreviewItem[];
   completedBatches: number;
   totalBatches: number;

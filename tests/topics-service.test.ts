@@ -197,6 +197,17 @@ describe("topics service", () => {
     expect(setup.writes).toEqual([]);
     expect(setup.storePort.created).toEqual([]);
   });
+  it("records the original request for create and update previews", async () => {
+    const setup = harness();
+    const createInput = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "overview" as const, title: "Climate" };
+    const createPreview = await setup.service.preview(createInput);
+    expect(createPreview.request).toEqual({ startPath: createInput.startPath, memberPaths: createInput.memberPaths, basis: createInput.basis });
+
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("climate-topic", "Climate", [], ["Notes/a.md"]));
+    const updateInput = { startPath: "Notes/b.md", memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "overview" as const, topicId: "climate-topic" };
+    const updatePreview = await setup.service.preview(updateInput);
+    expect(updatePreview.request).toEqual(updateInput);
+  });
   it("requires cost confirmation before body-mode model requests", async () => {
     const setup = harness();
     const input = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "body" as const };
