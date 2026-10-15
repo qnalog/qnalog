@@ -13,6 +13,8 @@ import {
   TOPIC_SECTIONS,
   updateTopicFrontmatter,
   topicMemberMetadataCounts,
+  contributingMemberPaths,
+  noContributionMembers,
   type TopicOperation,
 } from "../src/topics/topic-page";
 
@@ -33,6 +35,34 @@ describe("topic pages", () => {
     const end = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
     return lines.slice(start + 1, end < 0 ? lines.length : end).filter(Boolean);
   };
+
+  it("derives contributing members only from block-referenced footnotes", () => {
+    const members = [source("Cited note", "2026-09-30", "cited"), source("Uncited note", "2026-10-01", "uncited")];
+    const page = createTopicPage({ id: "contribution", title: "Contribution", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Thread", summary: "Summary.", points: [
+      { id: "point", text: "A fact from the cited note.", sources: ["cited"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const markdown = serializeTopicPage(page);
+    expect(contributingMemberPaths(markdown, page.members)).toEqual(new Set(["QnALog/Cited note.md"]));
+    expect(noContributionMembers(page, markdown)).toEqual(["QnALog/Uncited note.md"]);
+
+    const handEdited = markdown.replace("A fact from the cited note.", "A manually edited fact from the cited note.");
+    expect(contributingMemberPaths(handEdited, page.members)).toEqual(new Set(["QnALog/Cited note.md"]));
+  });
+
+  it("does not count an unused source definition or judge v1 topic pages", () => {
+    const members = [source("Only footnote", "2026-09-30", "only-footnote")];
+    const page = createTopicPage({ id: "unused-definition", title: "Unused definition", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview without citations.", threads: [], disagreements: [], open: [], unsorted: [] }, members);
+    const markdown = serializeTopicPage(page).replace("## 来源笔记 / Source notes", "[^unused]: [[QnALog/Only footnote|Only footnote]]\n\n## 来源笔记 / Source notes");
+    expect(contributingMemberPaths(markdown, page.members)).toEqual(new Set());
+    expect(noContributionMembers(page, markdown)).toEqual(["QnALog/Only footnote.md"]);
+
+    const legacy = createTopicPage({ id: "legacy", title: "Legacy", tags: [], members, basis: "overview" });
+    expect(noContributionMembers(legacy, serializeTopicPage(legacy))).toEqual([]);
+  });
 
   it.each([
     { name: "earliest", member: source("First note", "2026-09-20"), expected: ["First note", "Middle note", "Last note"] },

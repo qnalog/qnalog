@@ -474,6 +474,33 @@ export function topicBlockSourcePaths(markdown: string, block: ParsedTopicBlock)
   return [...paths];
 }
 
+/** Returns member paths cited by footnotes referenced in visible topic blocks. */
+export function contributingMemberPaths(markdown: string, members: readonly string[]): Set<string> {
+  const page = parseTopicPage(markdown);
+  if (page?.layout !== 2) return new Set();
+  const normalizedMembers = new Set(members.map((path) => normalizeTopicMemberPath(path)));
+  const contributing = new Set<string>();
+  for (const block of parseTopicPageBlocks(markdown)) {
+    for (const path of topicBlockSourcePaths(markdown, block)) {
+      const normalized = normalizeTopicMemberPath(path);
+      if (normalizedMembers.has(normalized)) contributing.add(normalized);
+    }
+  }
+  return contributing;
+}
+
+/** Lists v2 page members that have no footnote cited by a topic block. */
+export function noContributionMembers(page: TopicPage, markdown: string): string[] {
+  if (page.layout !== 2) return [];
+  const contributing = contributingMemberPaths(markdown, page.members);
+  return page.members.filter((path) => !contributing.has(normalizeTopicMemberPath(path)));
+}
+
+function normalizeTopicMemberPath(path: string): string {
+  const normalized = String(path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  return /\.md$/i.test(normalized) ? normalized : `${normalized}.md`;
+}
+
 export function updateTopicFrontmatter(markdown: string, updates: Record<string, string | string[]>): string {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) throw new Error("Topic page frontmatter is missing");
