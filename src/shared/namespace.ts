@@ -10,6 +10,9 @@
 /** 命名空间。 */
 export const NS_TAG = "qnalog";
 
+/** Fixed note text for source wording that cannot be recovered from transcription. */
+export const NS_TRANSCRIPTION_UNCLEAR_MARKER = "（转写不清，待核对）";
+
 /** 知识库数据根目录。 */
 export const NS_ROOT = "QnALog";
 /** User-managed note corrections folder under the QnALog data root. */

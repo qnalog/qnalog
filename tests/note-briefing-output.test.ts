@@ -105,6 +105,21 @@ describe("briefing output contracts", () => {
     const otherMode = postProcessBriefingOutput(raw, "meeting", null, null, "meeting", "", source);
     expect(otherMode).not.toContain("说话人1");
   });
+  it("keeps source speaker labels with both naming forms and numbers above four", () => {
+    const source = "[发言人1] 我负责补完测试。\n[说话人5] 我负责检查结果。";
+    const raw = "- [ ] 事项：补完测试。责任人：发言人1\n- [ ] 事项：检查结果。责任人：说话人5";
+    const result = postProcessBriefingOutput(raw, "general", null, null, "general", "", source);
+    expect(result).toContain("责任人：发言人1");
+    expect(result).toContain("责任人：说话人5");
+    expect(result).not.toContain("说话人1");
+  });
+  it("keeps other modes on placeholder-only owner cleanup", () => {
+    const result = postProcessBriefingOutput(
+      "- [ ] 事项：补完测试。责任人：发言人1",
+      "meeting", null, null, "meeting", "", "[发言人1] 我负责补完测试。",
+    );
+    expect(result).not.toContain("责任人：发言人1");
+  });
 
   it("formats dates via moment and falls back to Date for absent or invalid moment", () => {
     expect(formatYamlDateTime(null)).toBe("");

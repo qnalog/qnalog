@@ -9,7 +9,6 @@ import { buildEmptyLlmOutputFallback } from "./note-write-content";
 import { detectGeneralSourceLanguage, type GeneralSourceLanguage } from "../shared/util-text";
 import { normalizeCallouts } from "./callout-normalize";
 import { cleanObsidianTag } from "../shared/obsidian-tag";
-import { extractSpeakerIdsFromMarkdown, speakerLabelForChannel } from "../audio/channel-speakers";
 
 export type FrontmatterFields = Record<string, unknown>;
 const stringifyBriefingValue = String as (value: unknown) => string;
@@ -36,8 +35,13 @@ function cleanTodoOwnerValue(value: unknown, knownSpeakers: ReadonlySet<string>)
 }
 
 export function scrubBriefingTodoPlaceholders(markdown: unknown, sourceTranscript: string = ""): string {
-  const knownSpeakers = new Set(extractSpeakerIdsFromMarkdown(sourceTranscript)
-    .map(id => speakerLabelForChannel(Number(id.slice(4)))));
+  const knownSpeakers = new Set<string>();
+  // Read labels directly to preserve transcript wording and speaker numbers above the channel limit.
+  for (const match of String(sourceTranscript || "").matchAll(/(?:说话人|发言人)\s*\d+/g)) {
+    const label = match[0];
+    knownSpeakers.add(label);
+    knownSpeakers.add(label.replace(/\s+/g, ""));
+  }
   return stringifyBriefingValue(markdown || "").split(/\r?\n/).map(line => {
     const match = line.match(/^(\s*>?\s*[-*+]\s+\[[ xX]\]\s+)(.*)$/);
     if (!match) return line;
@@ -269,6 +273,7 @@ export function postProcessBriefingOutput(
     body = stripped.slice(fmMatch[0].length).replace(/^\n+/, "");
   }
   const normalizedBody = normalizeCallouts(body);
+  // Only General passes transcript labels; other modes keep their existing placeholder cleanup behavior.
   body = scrubBriefingTodoPlaceholders(mode === "general"
     ? normalizeGeneralTodoLabels(normalizedBody, detectGeneralSourceLanguage(sourceTranscript))
     : normalizedBody, mode === "general" && typeof sourceTranscript === "string" ? sourceTranscript : "");
