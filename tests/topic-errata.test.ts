@@ -49,9 +49,10 @@ describe("topic errata store", () => {
       files.set(path, { file, text: content });
       return file;
     });
+    const listErrataFiles = vi.fn(() => [...files.values()].map(({ file }) => file).filter((file) => file.path.startsWith("QnALog/勘误表/")));
     const port: TopicErrataStorePort = {
       read: async (file) => files.get(file.path)?.text ?? "",
-      listErrataFiles: () => [...files.values()].map(({ file }) => file).filter((file) => file.path.startsWith("QnALog/勘误表/")),
+      listErrataFiles,
       getByPath: (path) => files.get(path)?.file || null,
       getFrontmatter: (file) => files.get(file.path)?.text.includes("qnalog_topic_errata: true") ? { qnalog_topic_errata: true } : {},
       getLinks: (file) => [...(files.get(file.path)?.text.matchAll(/\[\[([^\]]+)\]\]/g) || [])].map((match) => ({ link: match[1] })),
@@ -66,7 +67,7 @@ describe("topic errata store", () => {
       uiLanguage: () => "zh",
       diagnostic,
     };
-    return { files, diagnostic, resolve, create, store: new TopicErrataStore(port) };
+    return { files, diagnostic, resolve, create, listErrataFiles, store: new TopicErrataStore(port) };
   }
 
   it("creates a linked errata document in the errata folder and repeated append is idempotent", async () => {
@@ -86,7 +87,7 @@ describe("topic errata store", () => {
     const f = fixture();
     const topicPath = "QnALog/主题/研究.md";
     const errataPath = "QnALog/勘误表/研究 · 主题勘误.md";
-    expect(await f.store.ensure(topicPath, "研究")).toBe(errataPath);
+    expect(await f.store.ensure(topicPath)).toBe(errataPath);
     const created = f.files.get(errataPath)?.text || "";
     expect(created).toContain("qnalog_topic_errata: true");
     expect(created.split("\n")[3]).toBe("主题：[[QnALog/主题/研究]]");
@@ -95,11 +96,11 @@ describe("topic errata store", () => {
     expect(created).toContain("## 说明");
     expect((await f.store.load(topicPath, [])).entries).toEqual([]);
     expect((await f.store.load(topicPath, [])).notes).toEqual([]);
-    expect(await f.store.ensure(topicPath, "其他标题")).toBe(errataPath);
+    expect(await f.store.ensure(topicPath)).toBe(errataPath);
     expect(f.files.get(errataPath)?.text).toBe(created);
 
     const existing = fixture({ [errataPath]: "主题：[[QnALog/主题/研究]]\n\n## Off-topic\n- User-authored rule\n" });
-    expect(await existing.store.ensure(topicPath, "研究")).toBe(errataPath);
+    expect(await existing.store.ensure(topicPath)).toBe(errataPath);
     expect(existing.files.get(errataPath)?.text).toBe("主题：[[QnALog/主题/研究]]\n\n## Off-topic\n- User-authored rule\n");
   });
 
@@ -117,7 +118,7 @@ describe("topic errata store", () => {
     const oldTopic = "QnALog/主题/研究.md";
     const newTopic = change === "rename" ? "QnALog/主题/研究项目.md" : "QnALog/项目/研究.md";
     const f = fixture();
-    const errataPath = await f.store.ensure(oldTopic, "研究");
+    const errataPath = await f.store.ensure(oldTopic);
     const topicFile = f.files.get(oldTopic)!.file;
     f.files.delete(oldTopic);
     topicFile.path = newTopic;
@@ -127,8 +128,30 @@ describe("topic errata store", () => {
     f.store.refreshForVaultEvent(newTopic, oldTopic);
     expect(await f.store.find(newTopic)).toBe(f.files.get(errataPath)!.file);
     const createsBefore = f.create.mock.calls.length;
-    expect(await f.store.ensure(newTopic, "研究项目")).toBe(errataPath);
+    expect(await f.store.ensure(newTopic)).toBe(errataPath);
     expect(f.create).toHaveBeenCalledTimes(createsBefore);
+  });
+
+  it("rebuilds the index only for known topic or errata paths", async () => {
+    const f = fixture();
+    const topicPath = "QnALog/主题/研究.md";
+    const errataPath = await f.store.ensure(topicPath);
+
+    f.listErrataFiles.mockClear();
+    f.store.refreshForVaultEvent("Notes/a.md");
+    f.store.refreshForVaultEvent("QnALog/主题/新主题.md");
+    expect(f.listErrataFiles).not.toHaveBeenCalled();
+
+    f.store.refreshForVaultEvent("QnALog/勘误表/其他.md");
+    expect(f.listErrataFiles).toHaveBeenCalledTimes(1);
+
+    f.listErrataFiles.mockClear();
+    f.store.refreshForVaultEvent("QnALog/主题/研究-改名.md", topicPath);
+    expect(f.listErrataFiles).toHaveBeenCalledTimes(1);
+
+    f.listErrataFiles.mockClear();
+    f.store.refreshForVaultEvent(errataPath);
+    expect(f.listErrataFiles).toHaveBeenCalledTimes(1);
   });
 
   it.each(["another topic", "broken link"]) ("rejects a target path occupied by %s", async (kind) => {
@@ -139,7 +162,7 @@ describe("topic errata store", () => {
     const link = kind === "another topic" ? "[[QnALog/主题/其他]]" : "[[QnALog/主题/已删除]]";
     const initial = { [otherPath]: "topic", [errataPath]: `${frontmatter}主题：${link}\n\n## 不属于本主题\n` };
     const f = fixture(initial);
-    await expect(f.store.ensure(topicPath, "研究")).rejects.toThrow(t("A different errata note already uses this file name."));
+    await expect(f.store.ensure(topicPath)).rejects.toThrow(t("A different errata note already uses this file name."));
     expect(f.create).not.toHaveBeenCalled();
   });
 
@@ -151,7 +174,7 @@ describe("topic errata store", () => {
       f.files.set(targetPath, { file, text: content });
       throw new Error("already exists");
     });
-    await expect(f.store.ensure("QnALog/主题/研究.md", "研究")).resolves.toBe(path);
+    await expect(f.store.ensure("QnALog/主题/研究.md")).resolves.toBe(path);
   });
 
   it("resolves member links exactly and skips unresolved or non-member targets", async () => {

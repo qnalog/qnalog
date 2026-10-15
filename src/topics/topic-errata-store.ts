@@ -1,5 +1,5 @@
 import * as obsidian from "obsidian";
-import { NS_ERRATA_FOLDER, isTopicErrataFrontmatter } from "../shared/namespace";
+import { NS_ERRATA_FOLDER, NS_FM, isTopicErrataFrontmatter } from "../shared/namespace";
 import { t } from "../shared/i18n";
 import { parseTopicErrata, type ParsedTopicErrata } from "./topic-errata-parser";
 import { getTopicErrataSectionKey, getTopicErrataTitles, getTopicErrataTopicLabel } from "./topic-errata-sections";
@@ -24,7 +24,7 @@ function normalizePath(path: string): string { return obsidian.normalizePath(Str
 function linkToPath(link: string): string { return link.split("#")[0].split("|")[0].trim(); }
 function renderDocument(topicPath: string, sectionTitles: ReturnType<typeof getTopicErrataTitles>, language: string): string {
   const topicLink = normalizePath(topicPath).replace(/\.md$/i, "");
-  return `---\nqnalog_topic_errata: true\n---\n${getTopicErrataTopicLabel(language)}[[${topicLink}]]\n\n## ${sectionTitles.offTopic}\n\n## ${sectionTitles.notes}\n`;
+  return `---\n${NS_FM.topicErrata}: true\n---\n${getTopicErrataTopicLabel(language)}[[${topicLink}]]\n\n## ${sectionTitles.offTopic}\n\n## ${sectionTitles.notes}\n`;
 }
 function insertionPoint(markdown: string): number | null {
   const lines = markdown.split(/\r?\n/);
@@ -77,7 +77,6 @@ export class TopicErrataStore {
     if (this.isErrataFolder(current) || this.isErrataFolder(previous)
       || this.topicToErrata.has(current) || this.topicToErrata.has(previous)
       || this.errataToTopic.has(current) || this.errataToTopic.has(previous)) this.rebuildIndex();
-    else if (path || oldPath) this.rebuildIndex();
   }
 
   async find(topicPath: string): Promise<obsidian.TFile | null> {
@@ -91,7 +90,7 @@ export class TopicErrataStore {
     return file instanceof obsidian.TFile ? file : null;
   }
 
-  async ensure(topicPath: string, _title: string): Promise<string> {
+  async ensure(topicPath: string): Promise<string> {
     const linked = await this.find(topicPath);
     if (linked) return linked.path;
     const path = this.pathForTopic(topicPath);
@@ -137,8 +136,8 @@ export class TopicErrataStore {
     return { entries, notes: parsed.notes };
   }
 
-  async append(topicPath: string, title: string, description: string, memberPath?: string): Promise<string> {
-    const path = await this.ensure(topicPath, title);
+  async append(topicPath: string, _title: string, description: string, memberPath?: string): Promise<string> {
+    const path = await this.ensure(topicPath);
     const file = this.port.getByPath(path);
     if (!(file instanceof obsidian.TFile)) throw new Error(`Topic errata file not found: ${path}`);
     const language = this.language();

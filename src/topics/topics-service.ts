@@ -429,7 +429,7 @@ export class TopicsService {
     if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
     const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
     if (!topic) throw new Error("Topic not found: " + topicId);
-    return this.host.topicErrata.ensure(topic.path, topic.page.title);
+    return this.host.topicErrata.ensure(topic.path);
   }
 
   async previewContentCleaning(topicId: string): Promise<TopicChangePreview> {
