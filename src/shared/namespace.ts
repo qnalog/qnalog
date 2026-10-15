@@ -10,8 +10,8 @@
 /** 命名空间。 */
 export const NS_TAG = "qnalog";
 
-/** Fixed note text for source wording that cannot be recovered from transcription. */
-export const NS_TRANSCRIPTION_UNCLEAR_MARKER = "（转写不清，待核对）";
+/** 不随笔记语言变化，仅含 ASCII，便于任何键盘检索。 */
+export const NS_TRANSCRIPTION_UNCLEAR_MARKER = "[unclear]";
 
 /** 知识库数据根目录。 */
 export const NS_ROOT = "QnALog";

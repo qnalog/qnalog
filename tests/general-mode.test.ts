@@ -22,6 +22,7 @@ import {
 import { buildGeneralSegmentCoverageInstruction, buildGeneralSourceLanguageInstruction, detectGeneralSourceLanguage } from "../src/shared/util-text";
 import { GENERAL_BRIEFING_SYSTEM_PROMPTS, GENERAL_OTHER_LANGUAGE_PROMPTS, MODE_BODIES } from "../src/prompts/mode-bodies";
 import { NS_TRANSCRIPTION_UNCLEAR_MARKER } from "../src/shared/namespace";
+import { SHARED_DISCIPLINE } from "../src/prompts/discipline";
 
 describe("general mode prompt contract", () => {
   it("explains merged segment boundaries only for merged General prompts", () => {
@@ -61,9 +62,13 @@ describe("general mode prompt contract", () => {
   });
 
   it("uses one stable transcription uncertainty marker in both General languages", () => {
-    expect(MODE_BODIES.general).toContain(NS_TRANSCRIPTION_UNCLEAR_MARKER);
-    expect(GENERAL_OTHER_LANGUAGE_PROMPTS.modeBody).toContain(NS_TRANSCRIPTION_UNCLEAR_MARKER);
-    expect(NS_TRANSCRIPTION_UNCLEAR_MARKER).not.toContain("[");
+    expect(NS_TRANSCRIPTION_UNCLEAR_MARKER).toMatch(/^[\x20-\x7E]+$/);
+    for (const prompt of [MODE_BODIES.general, GENERAL_OTHER_LANGUAGE_PROMPTS.modeBody, SHARED_DISCIPLINE]) {
+      expect(prompt.match(/\[unclear\]/g)).toEqual([NS_TRANSCRIPTION_UNCLEAR_MARKER]);
+      const markerLine = prompt.split("\n").find((line) => line.includes(NS_TRANSCRIPTION_UNCLEAR_MARKER)) || "";
+      expect(markerLine).not.toContain("（");
+      expect(markerLine).not.toContain("）");
+    }
   });
 
   it("keeps structure placeholders out of every General prompt construction path", () => {
