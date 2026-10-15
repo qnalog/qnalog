@@ -25,22 +25,29 @@ function isEmptyTodoFieldValue(value: unknown): boolean {
   return !t || /^(无|暂无|没有|未提及|未明确|未指定|未知|不适用|跳过|待定|tbd|n\/a|na|null|none|-)$/i.test(t);
 }
 
-function cleanTodoOwnerValue(value: unknown): string {
+function cleanTodoOwnerValue(value: unknown, knownSpeakers: ReadonlySet<string>): string {
   const parts = stringifyBriefingValue(value || "")
     .split(/[/／、,，;；]|(?:\s+和\s+)/)
     .map(cleanTodoFieldValue)
     .filter(Boolean)
-    .filter(part => !/^(主讲人|发言人\d*|说话人\d*|相关方|业务需求方|负责人|某负责人|某同学|参会人|参与者|人员|未提及|未明确|未指定|未知|待定)$/i.test(part));
+    .filter(part => knownSpeakers.has(part) || !/^(主讲人|发言人\d*|说话人\d*|相关方|业务需求方|负责人|某负责人|某同学|参会人|参与者|人员|未提及|未明确|未指定|未知|待定)$/i.test(part));
   return parts.join("、");
 }
 
-export function scrubBriefingTodoPlaceholders(markdown: unknown): string {
+export function scrubBriefingTodoPlaceholders(markdown: unknown, sourceTranscript: string = ""): string {
+  const knownSpeakers = new Set<string>();
+  // Read labels directly to preserve transcript wording and speaker numbers above the channel limit.
+  for (const match of String(sourceTranscript || "").matchAll(/(?:说话人|发言人)\s*\d+/g)) {
+    const label = match[0];
+    knownSpeakers.add(label);
+    knownSpeakers.add(label.replace(/\s+/g, ""));
+  }
   return stringifyBriefingValue(markdown || "").split(/\r?\n/).map(line => {
     const match = line.match(/^(\s*>?\s*[-*+]\s+\[[ xX]\]\s+)(.*)$/);
     if (!match) return line;
     let body = match[2] || "";
     body = body.replace(/责任人：\s*([^：\n]*?)(?=\s*(?:事项：|截止：|优先级：|$))/g, (_, value) => {
-      const owner = cleanTodoOwnerValue(value);
+      const owner = cleanTodoOwnerValue(value, knownSpeakers);
       return owner ? `责任人：${owner} ` : "";
     });
     body = body.replace(/截止：\s*([^：\n]*?)(?=\s*(?:责任人：|事项：|优先级：|$))/g, (_, value) => {
@@ -266,9 +273,10 @@ export function postProcessBriefingOutput(
     body = stripped.slice(fmMatch[0].length).replace(/^\n+/, "");
   }
   const normalizedBody = normalizeCallouts(body);
+  // Only General passes transcript labels; other modes keep their existing placeholder cleanup behavior.
   body = scrubBriefingTodoPlaceholders(mode === "general"
     ? normalizeGeneralTodoLabels(normalizedBody, detectGeneralSourceLanguage(sourceTranscript))
-    : normalizedBody);
+    : normalizedBody, mode === "general" && typeof sourceTranscript === "string" ? sourceTranscript : "");
   // 一级标题由插件按会话时间统一写入；模型自作主张输出的 # 标题（含连续多条）会在母本里叠成重复标题，剥掉。
   body = body.replace(/^(?:\s*#\s+[^\n]*(?:\n|$))+/, "");
 

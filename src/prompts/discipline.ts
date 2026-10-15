@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
+import { NS_TRANSCRIPTION_UNCLEAR_MARKER } from "../shared/namespace";
+
 // 由 main.ts 抽出的 prompt 常量（审核友好：缩小 main.ts 单文件 AST）。纯数据、零运行时依赖、零行为改动。
 export const SHARED_DISCIPLINE = `## §3 写作纪律
 - **信息密度门槛**：每条 bullet 必须含 [事实 / 判断 / 动作 / 风险] 之一。仅描述对话过程的句子（"双方就 X 进行了讨论"）一律删除。
@@ -12,7 +14,7 @@ export const SHARED_DISCIPLINE = `## §3 写作纪律
 
 ## §4 反幻觉与反遗漏（一体两面，都是底线）
 - 对话中**没出现**的人名、公司名、时间、数字一律不写；责任人、截止时间等可选字段缺少依据时直接省略，不写「主讲人」「未提及」「待定」等占位词。只有结论本身必须回答时，才写「现有证据不足以判断」。
-- 转写质量差或语义不清时，保留仍可辨认的事实片段，并在相邻位置标注「[转写不清，待核对]」；不要补猜，也不要用「信息略」整段跳过。原始转写仍是最终核对依据。
+- 转写质量差或语义不清时，保留仍可辨认的事实片段，并在相邻位置添加标记 ${NS_TRANSCRIPTION_UNCLEAR_MARKER}；不要补猜，也不要用「信息略」整段跳过。原始转写仍是最终核对依据。
 - **任何条件性章节**（共识 / 分歧 / 话术预演 等）对话里没真实出现 → **整块跳过**，不为结构完整性编造。
 - **反向同样成立**：对话中确实出现的事实、数字、判断、立场、待办、风险一律保留，不得以"概括/精炼/结构化"为名删除——**漏写和编造一样都是失真**。
 
@@ -46,6 +48,22 @@ pie title <名称>
 \`\`\`
 
 **不为美观硬塞**——对话里没有真实对比/流程/占比时，**不要编造图表**。`;
+
+// 通用笔记只调整排版深度，保留内容原有的人称与表达形式。
+export const GENERAL_STRUCTURE_LEVEL_INSTRUCTIONS = {
+  loose: {
+    zh: "结构化程度：宽松。优先连贯段落，并列事项可用一层列表，长文按需分节。",
+    en: "Structure: loose. Prefer connected paragraphs; parallel items may use a flat list. Add sections only when useful for a long note.",
+  },
+  balanced: {
+    zh: "结构化程度：均衡。根据内容选段落或列表，列表最多两层，多个复杂话题可分节。",
+    en: "Structure: balanced. Choose paragraphs or lists to fit the content, with at most two list levels. Use sections for complex topics when useful.",
+  },
+  strict: {
+    zh: "结构化程度：严谨。复杂内容使用话题标题和最多三层列表，保留原有关系；短内容仍直接成文，不为分层增加论点或证据。",
+    en: "Structure: strict. Use topic headings and at most three list levels for complex content while preserving source relationships. Short content stays direct; do not invent arguments or evidence to fill a hierarchy.",
+  },
+} as const;
 
 export const STRUCTURE_LEVEL_INSTRUCTIONS = {
   loose: `**结构化程度：宽松**

@@ -5,7 +5,7 @@ import { NS_FM } from "./namespace";
 
 export const MODE_META = {
   synthesis: { prefix: "综合纪要", emoji: "", icon: "layers", label: "Synthesis minutes", goal: "Best for most meetings. First distill the through-line of the whole session, then organize it in three layers: overview, body, and reference material." },
-  general:   { prefix: "通用", emoji: "", icon: "file-text", label: "General", goal: "A neutral structure for spontaneous ideas and conversations: a concise overview followed by organized details, without a fixed meeting or interview format." },
+  general:   { prefix: "通用", emoji: "", icon: "file-text", label: "General", goal: "Notes organized to fit spontaneous recordings: short content stays direct, longer notes use topics and an optional overview, while preserving personal voice and speaker attribution." },
   meeting:   { prefix: "工作纪要", emoji: "📝", icon: "briefcase", label: "Work notes", goal: "Best for work meetings of any size: decisions, todos, risks, and aligning on colleagues' progress." },
   interview: { prefix: "访谈", emoji: "🎙", icon: "message-square", label: "Interview", goal: "Best for external interviews, user research, and expert interviews, turning Q&A into insight." },
   monologue: { prefix: "个人笔记", emoji: "💭", icon: "notebook", label: "Personal notes", goal: "Best for personal dictation, ideas, and retrospectives, turning scattered expression into usable notes." },
