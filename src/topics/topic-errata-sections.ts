@@ -20,3 +20,7 @@ export function getTopicErrataTitles(language: string): Record<TopicErrataSectio
 export function getTopicErrataSuffix(language: string): string {
   return language === "zh" ? "勘误" : "Errata";
 }
+
+export function getTopicErrataTopicLabel(language: string): string {
+  return language === "zh" ? "主题：" : "Topic: ";
+}

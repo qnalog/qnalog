@@ -1,24 +1,30 @@
-import { NS_FM } from "../shared/namespace";
+import * as obsidian from "obsidian";
+import { NS_ERRATA_FOLDER, isTopicErrataFrontmatter } from "../shared/namespace";
+import { t } from "../shared/i18n";
 import { parseTopicErrata, type ParsedTopicErrata } from "./topic-errata-parser";
-import { getTopicErrataSectionKey, getTopicErrataSuffix, getTopicErrataTitles } from "./topic-errata-sections";
+import { getTopicErrataSectionKey, getTopicErrataTitles, getTopicErrataTopicLabel } from "./topic-errata-sections";
 import type { ScopedTopicErrata, ScopedTopicErrataEntry } from "./topic-errata-prompt";
 
+export interface TopicErrataLink { link: string }
 export interface TopicErrataStorePort {
-  read(path: string): Promise<string | null>;
-  create(path: string, content: string): Promise<void>;
-  process(path: string, transform: (current: string) => string): Promise<void>;
+  read(file: obsidian.TFile): Promise<string>;
+  listErrataFiles(): obsidian.TFile[];
+  getByPath(path: string): obsidian.TAbstractFile | null;
+  getFrontmatter(file: obsidian.TFile): unknown;
+  getLinks(file: obsidian.TFile): readonly TopicErrataLink[];
+  resolveLink(link: string, sourcePath: string): obsidian.TAbstractFile | null;
+  ensureFolder(path: string): Promise<void>;
+  create(path: string, content: string): Promise<obsidian.TFile>;
+  process(file: obsidian.TFile, transform: (current: string) => string): Promise<void>;
   uiLanguage(): string;
   diagnostic?(code: string, data: Record<string, unknown>): void;
 }
 
-function normalizePath(path: string): string { return String(path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""); }
-function pathMatchesMember(link: string, path: string): boolean {
-  const target = normalizePath(link).replace(/\.md$/i, "").toLocaleLowerCase();
-  const normalized = normalizePath(path).replace(/\.md$/i, "").toLocaleLowerCase();
-  return target === normalized || (!target.includes("/") && normalized.split("/").pop() === target);
-}
-function renderDocument(title: string, sectionTitles: ReturnType<typeof getTopicErrataTitles>): string {
-  return `---\n${NS_FM.topicErrata}: true\n---\n# ${title}\n\n## ${sectionTitles.offTopic}\n\n## ${sectionTitles.notes}\n`;
+function normalizePath(path: string): string { return obsidian.normalizePath(String(path || "")).replace(/^\/+|\/+$/g, ""); }
+function linkToPath(link: string): string { return link.split("#")[0].split("|")[0].trim(); }
+function renderDocument(topicPath: string, sectionTitles: ReturnType<typeof getTopicErrataTitles>, language: string): string {
+  const topicLink = normalizePath(topicPath).replace(/\.md$/i, "");
+  return `---\nqnalog_topic_errata: true\n---\n${getTopicErrataTopicLabel(language)}[[${topicLink}]]\n\n## ${sectionTitles.offTopic}\n\n## ${sectionTitles.notes}\n`;
 }
 function insertionPoint(markdown: string): number | null {
   const lines = markdown.split(/\r?\n/);
@@ -38,57 +44,128 @@ function entryLine(description: string, memberPath?: string): string {
 
 export class TopicErrataStore {
   private readonly port: TopicErrataStorePort;
+  private readonly topicToErrata = new Map<string, string>();
+  private readonly errataToTopic = new Map<string, string>();
   constructor(port: TopicErrataStorePort) { this.port = port; }
 
+  /** Returns the destination path used when a new topic errata document is created. */
   pathForTopic(topicPath: string): string {
-    const language = this.port.uiLanguage() === "zh" ? "zh" : "en";
-    const suffix = getTopicErrataSuffix(language);
-    const path = normalizePath(topicPath);
-    const slash = path.lastIndexOf("/");
-    const parent = slash >= 0 ? path.slice(0, slash + 1) : "";
-    const name = path.slice(slash + 1).replace(/\.md$/i, "");
-    return `${parent}${name} ${suffix}.md`;
+    const language = this.language();
+    const basename = normalizePath(topicPath).split("/").pop()?.replace(/\.md$/i, "") || "";
+    return normalizePath(`${NS_ERRATA_FOLDER}/${basename} · ${language === "zh" ? "主题勘误" : "Topic errata"}.md`);
   }
 
-  async ensure(topicPath: string, title: string): Promise<string> {
+  rebuildIndex(): void {
+    this.topicToErrata.clear();
+    this.errataToTopic.clear();
+    for (const file of this.port.listErrataFiles()) {
+      if (!isTopicErrataFrontmatter(this.port.getFrontmatter(file))) continue;
+      const first = this.port.getLinks(file)[0];
+      if (!first) continue;
+      const target = this.port.resolveLink(linkToPath(first.link), file.path);
+      if (!(target instanceof obsidian.TFile) || this.isErrataFolder(target.path)) continue;
+      const topicPath = normalizePath(target.path);
+      const errataPath = normalizePath(file.path);
+      this.topicToErrata.set(topicPath, errataPath);
+      this.errataToTopic.set(errataPath, topicPath);
+    }
+  }
+
+  refreshForVaultEvent(path: string, oldPath = ""): void {
+    const current = normalizePath(path);
+    const previous = normalizePath(oldPath);
+    if (this.isErrataFolder(current) || this.isErrataFolder(previous)
+      || this.topicToErrata.has(current) || this.topicToErrata.has(previous)
+      || this.errataToTopic.has(current) || this.errataToTopic.has(previous)) this.rebuildIndex();
+    else if (path || oldPath) this.rebuildIndex();
+  }
+
+  async find(topicPath: string): Promise<obsidian.TFile | null> {
+    const key = normalizePath(topicPath);
+    const indexed = this.topicToErrata.get(key);
+    const indexedFile = indexed ? this.port.getByPath(indexed) : null;
+    if (indexedFile instanceof obsidian.TFile) return indexedFile;
+    this.rebuildIndex();
+    const path = this.topicToErrata.get(key);
+    const file = path ? this.port.getByPath(path) : null;
+    return file instanceof obsidian.TFile ? file : null;
+  }
+
+  async ensure(topicPath: string, _title: string): Promise<string> {
+    const linked = await this.find(topicPath);
+    if (linked) return linked.path;
     const path = this.pathForTopic(topicPath);
-    if (await this.port.read(path) !== null) return path;
-    const language = this.port.uiLanguage() === "zh" ? "zh" : "en";
-    await this.port.create(path, renderDocument(title, getTopicErrataTitles(language)));
-    return path;
+    await this.port.ensureFolder(NS_ERRATA_FOLDER);
+    const existing = this.port.getByPath(path);
+    if (existing instanceof obsidian.TFile) {
+      if (this.pointsToTopic(existing, topicPath)) {
+        this.rebuildIndex();
+        return existing.path;
+      }
+      throw new Error(t("A different errata note already uses this file name."));
+    }
+    const language = this.language();
+    try {
+      const created = await this.port.create(path, renderDocument(topicPath, getTopicErrataTitles(language), language));
+      this.rebuildIndex();
+      return created.path;
+    } catch (error) {
+      const raced = this.port.getByPath(path);
+      if (raced instanceof obsidian.TFile && this.pointsToTopic(raced, topicPath)) {
+        this.rebuildIndex();
+        return raced.path;
+      }
+      throw error;
+    }
   }
 
   async load(topicPath: string, memberPaths: readonly string[]): Promise<ScopedTopicErrata> {
-    const markdown = await this.port.read(this.pathForTopic(topicPath));
-    if (!markdown) return { entries: [], notes: [] };
+    const file = await this.find(topicPath);
+    if (!file) return { entries: [], notes: [] };
+    const markdown = await this.port.read(file);
     const parsed: ParsedTopicErrata = parseTopicErrata(markdown);
+    const members = new Set(memberPaths.map(normalizePath));
     const entries: ScopedTopicErrataEntry[] = parsed.entries.flatMap((entry): ScopedTopicErrataEntry[] => {
       if (!entry.memberLink) return [{ ...entry, memberPath: null }];
-      const member = memberPaths.find((path) => pathMatchesMember(entry.memberLink || "", path));
-      if (!member) {
+      const target = this.port.resolveLink(linkToPath(entry.memberLink), file.path);
+      if (!(target instanceof obsidian.TFile) || !members.has(normalizePath(target.path))) {
         this.port.diagnostic?.("topic.errata_member_not_in_topic", { topicPath, memberLink: entry.memberLink });
         return [];
       }
-      return [{ ...entry, memberPath: member }];
+      return [{ ...entry, memberPath: normalizePath(target.path) }];
     });
     return { entries, notes: parsed.notes };
   }
 
   async append(topicPath: string, title: string, description: string, memberPath?: string): Promise<string> {
-    const path = this.pathForTopic(topicPath);
-    const language = this.port.uiLanguage() === "zh" ? "zh" : "en";
+    const path = await this.ensure(topicPath, title);
+    const file = this.port.getByPath(path);
+    if (!(file instanceof obsidian.TFile)) throw new Error(`Topic errata file not found: ${path}`);
+    const language = this.language();
     const titles = getTopicErrataTitles(language);
     const content = entryLine(description, memberPath);
-    await this.ensure(topicPath, title);
-    await this.port.process(path, (markdown) => {
+    await this.port.process(file, (markdown) => {
       const parsed = parseTopicErrata(markdown);
-      const equivalentLink = memberPath ? normalizePath(memberPath).replace(/\.md$/i, "").toLocaleLowerCase() : null;
-      if (parsed.entries.some((entry) => entry.description.toLocaleLowerCase() === description.trim().replace(/\s+/g, " ").toLocaleLowerCase()
-        && ((entry.memberLink && memberPath && pathMatchesMember(entry.memberLink, memberPath)) || (!entry.memberLink && !equivalentLink)))) return markdown;
+      const normalizedDescription = description.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+      const memberLink = memberPath ? normalizePath(memberPath).replace(/\.md$/i, "").toLocaleLowerCase() : null;
+      if (parsed.entries.some((entry) => entry.description.toLocaleLowerCase() === normalizedDescription
+        && ((entry.memberLink && memberLink && this.linkResolvesToPath(entry.memberLink, path, memberPath || "")) || (!entry.memberLink && !memberLink)))) return markdown;
       const point = insertionPoint(markdown);
       if (point === null) return `${markdown.trimEnd()}\n\n## ${titles.offTopic}\n${content}\n`;
       return `${markdown.slice(0, point)}${content}\n${markdown.slice(point)}`;
     });
     return path;
+  }
+
+  private language(): "zh" | "en" { return this.port.uiLanguage() === "zh" ? "zh" : "en"; }
+  private isErrataFolder(path: string): boolean { return normalizePath(path).startsWith(`${NS_ERRATA_FOLDER}/`); }
+  private pointsToTopic(file: obsidian.TFile, topicPath: string): boolean {
+    const first = this.port.getLinks(file)[0];
+    const target = first && this.port.resolveLink(linkToPath(first.link), file.path);
+    return target instanceof obsidian.TFile && normalizePath(target.path) === normalizePath(topicPath);
+  }
+  private linkResolvesToPath(link: string, errataPath: string, targetPath: string): boolean {
+    const target = this.port.resolveLink(linkToPath(link), errataPath);
+    return target instanceof obsidian.TFile && normalizePath(target.path) === normalizePath(targetPath);
   }
 }

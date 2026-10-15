@@ -13,7 +13,7 @@ describe("errata service source resolution", () => {
   it("logs a diagnostic without errata content when a derived note source is missing", async () => {
     const file = Object.assign(new obsidian.TFile(), { path: "QnALog/Derived/copy.md" });
     const storePort: ErrataStorePort = {
-      read: vi.fn(async () => ""), listErrataFiles: () => [], getByPath: () => null,
+      read: vi.fn(async () => ""), listErrataFiles: () => [], getByPath: () => null, getFrontmatter: () => ({}),
       getLinks: () => [], resolveLink: () => null, ensureFolder: vi.fn(async () => undefined),
       create: vi.fn(async () => { throw new Error("not reached"); }), process: vi.fn(async () => undefined),
     };

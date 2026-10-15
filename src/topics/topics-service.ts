@@ -72,6 +72,10 @@ export class TopicsService {
   private readonly controllers = new Map<string, AbortController>();
   constructor(host: TopicsServiceHost) { this.host = host; }
 
+  refreshTopicErrataForVaultEvent(path: string, oldPath = ""): void {
+    this.host.topicErrata?.refreshForVaultEvent(path, oldPath);
+  }
+
   private cacheForCurrentRoots(): OverviewCardCache {
     const nextRoots = this.host.getRoots();
     const sameRoots = nextRoots.length === this.roots.length && nextRoots.every((root, index) => root === this.roots[index]);

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
-import { NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, isTopicErrataFrontmatter, readNamespaceFrontmatter } from "./shared/namespace";
+import { NS_ERRATA_FOLDER, NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, isTopicErrataFrontmatter, readNamespaceFrontmatter } from "./shared/namespace";
 import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
@@ -270,6 +270,7 @@ class QnALogPlugin extends obsidian.Plugin {
       listErrataFiles: () => this.app.vault.getMarkdownFiles().filter((file) => isErrataPath(file.path)),
       getByPath: (path) => this.app.vault.getAbstractFileByPath(path),
       getLinks: (file) => this.app.metadataCache.getFileCache(file)?.links || [],
+      getFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
       resolveLink: (link, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(link, sourcePath),
       ensureFolder: async (path) => ensureVaultFolder(this.app, path),
       create: (path, content) => this.app.vault.create(path, content),
@@ -429,16 +430,15 @@ class QnALogPlugin extends obsidian.Plugin {
       now: () => Date.now(),
     };
     const topicErrataStore = new TopicErrataStore({
-      read: async (path) => {
-        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
-        return file instanceof obsidian.TFile ? this.app.vault.read(file) : null;
-      },
-      create: async (path, content) => { await this.app.vault.create(obsidian.normalizePath(path), content); },
-      process: async (path, transform) => {
-        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
-        if (!(file instanceof obsidian.TFile)) throw new Error(`Topic errata file not found: ${path}`);
-        await this.app.vault.process(file, transform);
-      },
+      read: (file) => this.app.vault.read(file),
+      listErrataFiles: () => this.app.vault.getMarkdownFiles().filter((file) => file.path.startsWith(`${NS_ERRATA_FOLDER}/`)),
+      getByPath: (path) => this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path)),
+      getFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
+      getLinks: (file) => this.app.metadataCache.getFileCache(file)?.links || [],
+      resolveLink: (link, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(link, sourcePath),
+      ensureFolder: async (path) => ensureVaultFolder(this.app, path),
+      create: (path, content) => this.app.vault.create(obsidian.normalizePath(path), content),
+      process: async (file, transform) => { await this.app.vault.process(file, transform); },
       uiLanguage: () => getActiveUiLanguage().id,
       diagnostic: (code, data) => { void this.diagnostics.logDiagnostic("warn", code, t("Topic errata entry references a note that is no longer a topic member"), data); },
     });
@@ -712,12 +712,14 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.registerEvent(this.app.vault.on("create", (file) => {
       this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
+      this.topics?.refreshTopicErrataForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox handler error", e));
     }));
     // Nutstore Sync / Obsidian Sync may first create a placeholder and then fill it through modify events.
     // Listen to both so a zero-byte placeholder never becomes the only chance to auto-import the file.
     this.registerEvent(this.app.vault.on("modify", (file) => {
       this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
+      this.topics?.refreshTopicErrataForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox modify handler error", e));
     }));
 
@@ -725,6 +727,7 @@ class QnALogPlugin extends obsidian.Plugin {
     // 防止 merge 任务跑完后文件被改名 → 重试时找不到旧路径报"笔记不存在"
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       this.errata.refreshForVaultEvent(file && file.path ? file.path : "", oldPath || "");
+      this.topics?.refreshTopicErrataForVaultEvent(file && file.path ? file.path : "", oldPath || "");
       if (file instanceof obsidian.TFile) {
         this.queueRetry.migrateQueueTasksAfterRename(oldPath, file.path);
         this.continuations.onRename(file, oldPath);
@@ -737,6 +740,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => {
       const path = file && file.path ? file.path : "";
       this.errata.refreshForVaultEvent(path);
+      this.topics?.refreshTopicErrataForVaultEvent(path);
       if (path) this.queueRetry.removeQueueTasksForDeletedMarkdown(path);
     }));
 

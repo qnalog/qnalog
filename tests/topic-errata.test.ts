@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+vi.mock("obsidian", () => ({
+  normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/{2,}/g, "/"),
+  TFile: class TFile {},
+}));
+import * as obsidian from "obsidian";
 import { parseTopicErrata } from "../src/topics/topic-errata-parser";
 import { buildTopicErrataPrompt } from "../src/topics/topic-errata-prompt";
 import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic-errata-store";
 import { isTopicErrataFrontmatter } from "../src/shared/namespace";
+import { isErrataPath } from "../src/errata/errata-path";
+import { t } from "../src/shared/i18n";
 
 describe("topic errata parser", () => {
   it("parses bilingual sections, global entries, member entries, and hand-edited list forms", () => {
@@ -22,62 +29,140 @@ describe("topic errata parser", () => {
 
 describe("topic errata store", () => {
   function fixture(initial: Record<string, string> = {}) {
-    const files = new Map(Object.entries(initial));
+    type File = InstanceType<typeof obsidian.TFile> & { path: string; basename: string; extension: string };
+    const files = new Map<string, { file: File; text: string }>();
+    const makeFile = (path: string): File => Object.assign(new obsidian.TFile(), { path, basename: path.split("/").pop()?.replace(/\.md$/i, "") || "", extension: "md" }) as File;
+    const topicPath = "QnALog/主题/研究.md";
+    files.set(topicPath, { file: makeFile(topicPath), text: "topic" });
+    for (const [path, text] of Object.entries(initial)) files.set(path, { file: makeFile(path), text });
     const processTail: { value: Promise<void> } = { value: Promise.resolve() };
     const diagnostic = vi.fn();
+    const resolve = vi.fn((link: string, sourcePath: string) => {
+      const target = link.split("#")[0].split("|")[0].trim().replace(/\.md$/i, "");
+      const direct = files.get(`${target}.md`)?.file;
+      if (direct) return direct;
+      const basenameMatch = [...files.values()].find(({ file }) => file.path.startsWith("Notes/") && file.basename === target);
+      return basenameMatch?.file || null;
+    });
+    const create = vi.fn(async (path: string, content: string) => {
+      const file = makeFile(path);
+      files.set(path, { file, text: content });
+      return file;
+    });
     const port: TopicErrataStorePort = {
-      read: async (path) => files.get(path) ?? null,
-      create: async (path, content) => { files.set(path, content); },
-      process: async (path, transform) => {
-        const next = processTail.value.then(() => { const value = files.get(path); if (value === undefined) throw new Error("missing"); files.set(path, transform(value)); });
+      read: async (file) => files.get(file.path)?.text ?? "",
+      listErrataFiles: () => [...files.values()].map(({ file }) => file).filter((file) => file.path.startsWith("QnALog/勘误表/")),
+      getByPath: (path) => files.get(path)?.file || null,
+      getFrontmatter: (file) => files.get(file.path)?.text.includes("qnalog_topic_errata: true") ? { qnalog_topic_errata: true } : {},
+      getLinks: (file) => [...(files.get(file.path)?.text.matchAll(/\[\[([^\]]+)\]\]/g) || [])].map((match) => ({ link: match[1] })),
+      resolveLink: resolve,
+      ensureFolder: async () => undefined,
+      create,
+      process: async (file, transform) => {
+        const next = processTail.value.then(() => { const record = files.get(file.path); if (!record) throw new Error("missing"); record.text = transform(record.text); });
         processTail.value = next.catch(() => undefined);
         await next;
       },
       uiLanguage: () => "zh",
       diagnostic,
     };
-    return { files, diagnostic, store: new TopicErrataStore(port) };
+    return { files, diagnostic, resolve, create, store: new TopicErrataStore(port) };
   }
 
-  it("creates a localized sibling document and repeated append is idempotent across blank lines", async () => {
-    const f = fixture();
+  it("creates a linked errata document in the errata folder and repeated append is idempotent", async () => {
+    const f = fixture({ "Notes/a.md": "member" });
     const topicPath = "QnALog/主题/研究.md";
     await f.store.append(topicPath, "研究", "设备维修", "Notes/a.md");
     await f.store.append(topicPath, "研究", "设备维修", "Notes/a.md");
-    const value = f.files.get("QnALog/主题/研究 勘误.md") || "";
+    const value = f.files.get("QnALog/勘误表/研究 · 主题勘误.md")?.text || "";
     expect(value).toContain("qnalog_topic_errata: true");
     expect(value.match(/设备维修/g)).toHaveLength(1);
+    expect(value).toContain("主题：[[QnALog/主题/研究]]");
     expect(value).toContain("## 不属于本主题\n- [[Notes/a]]：设备维修");
+    expect(isErrataPath("QnALog/勘误表/研究 · 主题勘误.md")).toBe(true);
   });
 
   it("ensures a new empty marked document and leaves an existing document unchanged", async () => {
     const f = fixture();
     const topicPath = "QnALog/主题/研究.md";
-    const errataPath = "QnALog/主题/研究 勘误.md";
+    const errataPath = "QnALog/勘误表/研究 · 主题勘误.md";
     expect(await f.store.ensure(topicPath, "研究")).toBe(errataPath);
-    const created = f.files.get(errataPath) || "";
+    const created = f.files.get(errataPath)?.text || "";
     expect(created).toContain("qnalog_topic_errata: true");
+    expect(created.split("\n")[3]).toBe("主题：[[QnALog/主题/研究]]");
     expect(isTopicErrataFrontmatter({ qnalog_topic_errata: true })).toBe(true);
     expect(created).toContain("## 不属于本主题");
     expect(created).toContain("## 说明");
     expect((await f.store.load(topicPath, [])).entries).toEqual([]);
     expect((await f.store.load(topicPath, [])).notes).toEqual([]);
     expect(await f.store.ensure(topicPath, "其他标题")).toBe(errataPath);
-    expect(f.files.get(errataPath)).toBe(created);
+    expect(f.files.get(errataPath)?.text).toBe(created);
 
-    const existing = fixture({ [errataPath]: "## Off-topic\n- User-authored rule\n" });
+    const existing = fixture({ [errataPath]: "主题：[[QnALog/主题/研究]]\n\n## Off-topic\n- User-authored rule\n" });
     expect(await existing.store.ensure(topicPath, "研究")).toBe(errataPath);
-    expect(existing.files.get(errataPath)).toBe("## Off-topic\n- User-authored rule\n");
+    expect(existing.files.get(errataPath)?.text).toBe("主题：[[QnALog/主题/研究]]\n\n## Off-topic\n- User-authored rule\n");
   });
 
   it("ignores stale member links and records a diagnostic while retaining global entries", async () => {
-    const path = "QnALog/主题/研究 勘误.md";
-    const f = fixture({ [path]: "## Off-topic\n- 全局事项\n- [[Notes/removed]]: 旧成员事项\n- [[Notes/current]]：成员事项\n## Notes" });
+    const path = "QnALog/勘误表/研究 · 主题勘误.md";
+    const f = fixture({ [path]: "---\nqnalog_topic_errata: true\n---\n主题：[[QnALog/主题/研究]]\n## Off-topic\n- 全局事项\n- [[Notes/removed]]: 旧成员事项\n- [[Notes/current]]：成员事项\n## Notes", "Notes/current.md": "", "Notes/removed.md": "" });
     const loaded = await f.store.load("QnALog/主题/研究.md", ["Notes/current.md"]);
     expect(loaded.entries.map((entry) => [entry.description, entry.memberPath])).toEqual([
       ["全局事项", null], ["成员事项", "Notes/current.md"],
     ]);
     expect(f.diagnostic).toHaveBeenCalledWith("topic.errata_member_not_in_topic", expect.objectContaining({ memberLink: "Notes/removed" }));
+  });
+
+  it.each(["rename", "move"]) ("finds the linked errata document after topic %s", async (change) => {
+    const oldTopic = "QnALog/主题/研究.md";
+    const newTopic = change === "rename" ? "QnALog/主题/研究项目.md" : "QnALog/项目/研究.md";
+    const f = fixture();
+    const errataPath = await f.store.ensure(oldTopic, "研究");
+    const topicFile = f.files.get(oldTopic)!.file;
+    f.files.delete(oldTopic);
+    topicFile.path = newTopic;
+    topicFile.basename = newTopic.split("/").pop()!.replace(/\.md$/i, "");
+    f.files.set(newTopic, { file: topicFile, text: "topic" });
+    f.resolve.mockImplementation((link) => link === oldTopic.replace(/\.md$/i, "") ? topicFile : null);
+    f.store.refreshForVaultEvent(newTopic, oldTopic);
+    expect(await f.store.find(newTopic)).toBe(f.files.get(errataPath)!.file);
+    const createsBefore = f.create.mock.calls.length;
+    expect(await f.store.ensure(newTopic, "研究项目")).toBe(errataPath);
+    expect(f.create).toHaveBeenCalledTimes(createsBefore);
+  });
+
+  it.each(["another topic", "broken link"]) ("rejects a target path occupied by %s", async (kind) => {
+    const topicPath = "QnALog/主题/研究.md";
+    const errataPath = "QnALog/勘误表/研究 · 主题勘误.md";
+    const otherPath = "QnALog/主题/其他.md";
+    const frontmatter = "---\nqnalog_topic_errata: true\n---\n";
+    const link = kind === "another topic" ? "[[QnALog/主题/其他]]" : "[[QnALog/主题/已删除]]";
+    const initial = { [otherPath]: "topic", [errataPath]: `${frontmatter}主题：${link}\n\n## 不属于本主题\n` };
+    const f = fixture(initial);
+    await expect(f.store.ensure(topicPath, "研究")).rejects.toThrow(t("A different errata note already uses this file name."));
+    expect(f.create).not.toHaveBeenCalled();
+  });
+
+  it("returns the concurrently created matching file after create rejects", async () => {
+    const f = fixture();
+    const path = "QnALog/勘误表/研究 · 主题勘误.md";
+    f.create.mockImplementationOnce(async (targetPath, content) => {
+      const file = Object.assign(new obsidian.TFile(), { path: targetPath, basename: "研究 · 主题勘误", extension: "md" }) as InstanceType<typeof obsidian.TFile> & { path: string; basename: string; extension: string };
+      f.files.set(targetPath, { file, text: content });
+      throw new Error("already exists");
+    });
+    await expect(f.store.ensure("QnALog/主题/研究.md", "研究")).resolves.toBe(path);
+  });
+
+  it("resolves member links exactly and skips unresolved or non-member targets", async () => {
+    const path = "QnALog/勘误表/研究 · 主题勘误.md";
+    const f = fixture({
+      [path]: "---\nqnalog_topic_errata: true\n---\n主题：[[QnALog/主题/研究]]\n## 不属于本主题\n- [[Notes/a/item]]：命中成员\n- [[Other/a/item]]：同名但非成员\n- [[Notes/missing/item]]：断链\n",
+      "Notes/a/item.md": "member", "Other/a/item.md": "other",
+    });
+    const loaded = await f.store.load("QnALog/主题/研究.md", ["Notes/a/item.md"]);
+    expect(loaded.entries.map((entry) => entry.memberPath)).toEqual(["Notes/a/item.md"]);
+    expect(f.diagnostic).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -25,6 +25,7 @@ function fixture() {
     listErrataFiles: () => [...files.values()].map(({ file }) => file).filter((file) => isErrataPath(file.path)),
     getByPath: (path) => files.get(path)?.file || null,
     getLinks: (file) => [...(files.get(file.path)?.text.matchAll(/\[\[([^\]]+)\]\]/g) || [])].map((match) => ({ link: match[1] })),
+    getFrontmatter: (file) => files.get(file.path)?.text.includes("qnalog_topic_errata: true") ? { qnalog_topic_errata: true } : {},
     resolveLink: (link) => [...files.values()].find(({ file }) => file.path.replace(/\.md$/i, "") === link || file.basename === link)?.file || null,
     ensureFolder: async () => undefined,
     create: async (path, text) => {
@@ -59,6 +60,23 @@ describe("errata store", () => {
     expect(await f.store.load(f.source.path)).toMatchObject({ parsed: { replacements: [], noise: [], notes: [] } });
     expect(isErrataPath(created.path)).toBe(true);
     expect(isErrataPath("QnALog/纪要/entry.md")).toBe(false);
+  });
+
+  it("does not index topic errata documents as note errata", async () => {
+    const f = fixture();
+    await f.store.create(f.source.path);
+    const secondSource = Object.assign(new obsidian.TFile(), {
+      path: "QnALog/主题/研究.md", basename: "研究", extension: "md",
+    }) as File;
+    f.files.set(secondSource.path, { file: secondSource, text: "topic source" });
+    const topicErrataPath = "QnALog/勘误表/研究 · 主题勘误.md";
+    const topicErrataFile = Object.assign(new obsidian.TFile(), {
+      path: topicErrataPath, basename: "研究 · 主题勘误", extension: "md",
+    }) as File;
+    f.files.set(topicErrataPath, { file: topicErrataFile, text: "---\nqnalog_topic_errata: true\n---\n主题：[[QnALog/主题/研究]]" });
+    f.store.rebuildIndex();
+    expect(await f.store.find(f.source.path)).toBeInstanceOf(obsidian.TFile);
+    expect(await f.store.find(secondSource.path)).toBeNull();
   });
 
   it("deduplicates repeated additions and keeps concurrent distinct additions", async () => {

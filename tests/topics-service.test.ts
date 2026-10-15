@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("obsidian", () => ({ normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"), TFile: class TFile {} }));
+import * as obsidian from "obsidian";
 import { TopicsService, type TopicsServicePort } from "../src/topics/topics-service";
 import type { TopicStorePort } from "../src/topics/topic-store";
 import type { TopicIntegrationPort } from "../src/topics/topic-integration";
@@ -6,14 +8,38 @@ import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage,
 import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic-errata-store";
 
 describe("topics service", () => {
+  function makeTopicErrata(files: Map<string, string>, language = "zh") {
+    type File = InstanceType<typeof obsidian.TFile> & { path: string; basename: string; extension: string };
+    const fileObjects = new Map<string, File>();
+    const getFile = (path: string): File => {
+      let file = fileObjects.get(path);
+      if (!file) {
+        file = Object.assign(new obsidian.TFile(), { path, basename: path.split("/").pop()?.replace(/\.md$/i, "") || "", extension: "md" }) as File;
+        fileObjects.set(path, file);
+      }
+      return file;
+    };
+    return new TopicErrataStore({
+      read: async (file) => files.get(file.path) ?? "",
+      listErrataFiles: () => [...files.keys()].filter((path) => path.startsWith("QnALog/勘误表/")).map(getFile),
+      getByPath: (path) => files.has(path) ? getFile(path) : null,
+      getFrontmatter: (file) => files.get(file.path)?.includes("qnalog_topic_errata: true") ? { qnalog_topic_errata: true } : {},
+      getLinks: (file) => [...(files.get(file.path)?.matchAll(/\[\[([^\]]+)\]\]/g) || [])].map((match) => ({ link: match[1] })),
+      resolveLink: (link) => {
+        const path = link.replace(/\.md$/i, "");
+        return files.has(`${path}.md`) ? getFile(`${path}.md`) : null;
+      },
+      ensureFolder: async () => undefined,
+      create: async (path, content) => { files.set(path, content); return getFile(path); },
+      process: async (file, transform) => { files.set(file.path, transform(files.get(file.path) || "")); },
+      uiLanguage: () => language,
+    });
+  }
+
   it("writes scoped errata only after a selected removal succeeds; keeps it after undo and skips edited blocks", async () => {
     const errataFiles = new Map<string, string>();
-    const topicErrata = new TopicErrataStore({
-      read: async (path) => errataFiles.get(path) ?? null,
-      create: async (path, content) => { errataFiles.set(path, content); },
-      process: async (path, transform) => { errataFiles.set(path, transform(errataFiles.get(path) || "")); },
-      uiLanguage: () => "zh",
-    });
+    errataFiles.set("Topics/Climate.md", "source topic");
+    const topicErrata = makeTopicErrata(errataFiles);
     const setup = harness({ topicErrata });
     const model: TopicPageV2Model = { overview: "Climate planning continues.", threads: [{ id: "work", title: "Work", summary: "The topic has two details.", points: [
       { id: "p1", text: "Off-topic device repair detail. [^source-a]", sources: ["Notes/a.md"] },
@@ -25,7 +51,7 @@ describe("topics service", () => {
     setup.storePort.seed("Topics/Climate.md", serializeTopicPage(topic));
     const block = parseTopicPageBlocks(serializeTopicPage(topic)).find((item) => item.text.includes("device repair"))!;
     const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
-    const errataPath = "Topics/Climate 勘误.md";
+    const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
     expect(preview.items[0].operation.type).toBe("remove_block");
     expect(errataFiles.has(errataPath)).toBe(false);
     setup.service.cancel("clean-topic");
@@ -50,9 +76,7 @@ describe("topics service", () => {
   });
 
   it("returns no cleaning work without errata and does not call the model", async () => {
-    const topicErrata = new TopicErrataStore({
-      read: async () => null, create: async () => {}, process: async () => {}, uiLanguage: () => "en",
-    });
+    const topicErrata = makeTopicErrata(new Map(), "en");
     const setup = harness({ topicErrata });
     setup.storePort.seed("Topics/Climate.md", topicMarkdown("clean-topic", "Climate", [], ["Notes/a.md"]));
     expect(await setup.service.estimateContentCleaning("clean-topic")).toEqual({ chars: 0, tokens: 0 });
@@ -62,12 +86,8 @@ describe("topics service", () => {
 
   it("ensures the current topic errata document and returns its store path", async () => {
     const errataFiles = new Map<string, string>();
-    const topicErrata = new TopicErrataStore({
-      read: async (path) => errataFiles.get(path) ?? null,
-      create: async (path, content) => { errataFiles.set(path, content); },
-      process: async () => {},
-      uiLanguage: () => "zh",
-    });
+    errataFiles.set("Topics/Climate.md", "source topic");
+    const topicErrata = makeTopicErrata(errataFiles);
     const setup = harness({ topicErrata });
     setup.storePort.seed("Topics/Climate.md", topicMarkdown("clean-topic", "Climate", [], ["Notes/a.md"]));
     const path = await setup.service.ensureTopicErrata("clean-topic");
