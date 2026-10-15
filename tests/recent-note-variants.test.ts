@@ -72,6 +72,23 @@ describe("recent clean-copy grouping", () => {
     expect(result).toEqual([]);
   });
 
+  it("excludes dated errata files even when the configured note root contains them", () => {
+    vi.stubGlobal("window", {});
+    const errataFile = Object.assign(new obsidian.TFile(), {
+      path: "QnALog/勘误表/2026-10-14 项目记录 · 勘误.md",
+      basename: "2026-10-14 项目记录 · 勘误",
+      extension: "md",
+    });
+    const result = getRecentNotes({
+      settings: { mdFolder: "QnALog" },
+      app: {
+        vault: { getMarkdownFiles: () => [errataFile] },
+        metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
+      },
+    }, 24);
+    expect(result).toEqual([]);
+  });
+
   it("excludes topic errata documents located under the recent notes root", () => {
     vi.stubGlobal("window", {});
     const errataFile = Object.assign(new obsidian.TFile(), {
