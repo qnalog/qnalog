@@ -1,6 +1,6 @@
 import { NS_FM, NS_ROOT } from "../shared/namespace";
-import { appendTopicMemberLinks, appendTopicMemberMetadata, buildTopicBlockIndex, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, readLegacyTopicMachineProperties, removeTopicMachineProperties, withTopicBlockIndex, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, topicMemberMetadataCounts, type TopicBlockIndexEntry, type TopicPage } from "./topic-page";
-import type { TopicChangePreview } from "./topic-integration";
+import { appendTopicMemberLinks, appendTopicMemberMetadata, buildTopicBlockIndex, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, readLegacyTopicMachineProperties, removeTopicMachineProperties, withTopicBlockIndex, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, topicMemberMetadataCounts, type TopicBlockIndexEntry, type TopicOperation, type TopicPage } from "./topic-page";
+import { topicMemberExcludeSelectionId, type TopicChangePreview } from "./topic-integration";
 import { rebuildTopicTagAliases } from "./topic-tags";
 
 export const TOPIC_HISTORY_LIMIT = 5;
@@ -197,8 +197,10 @@ export class TopicStore {
   async apply(path: string, preview: TopicChangePreview, selectedIds: readonly string[]): Promise<TopicApplyResult> {
     const selected = new Set(selectedIds);
     const operations = preview.items.filter((item) => selected.has(item.id))
-      .map(({ operation }) => ["add_item", "annotate_item", "add_conflict", "resolve_question", "add_timeline"].includes(operation.type)
+      .map(({ operation }) => "sourceId" in operation && ["add_item", "annotate_item", "add_conflict", "resolve_question", "add_timeline"].includes(operation.type)
         ? { ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId } : operation);
+    const excludedMembers = preview.items.flatMap((item) => item.operation.type === "remove_member"
+      && selected.has(item.id) && selected.has(topicMemberExcludeSelectionId(item.id)) ? [item.operation.path] : []);
     let appliedMarkdown = "";
     let pageChangedDuringGeneration = false;
     let appliedCount = 0;
@@ -214,6 +216,8 @@ export class TopicStore {
       const before = await this.port.read(path);
       const parsed = parseTopicPage(before, path);
       if (!parsed) throw new Error(`Topic page is invalid: ${path}`);
+      const memberRemovals = operations.filter((operation): operation is Extract<TopicOperation, { type: "remove_member" }> => operation.type === "remove_member");
+      if (memberRemovals.length) applyTopicOps(before, memberRemovals);
       const machineState = await this.ensureMachineCache(path, before, parsed);
       const snapshotPath = await this.makeSnapshot(parsed.id, before);
       const beforeHash = hashTopicPage(before);
@@ -246,6 +250,7 @@ export class TopicStore {
         };
         if (preview.memberLinks) updates[NS_FM.topicMembers] = memberLinks;
         if (preview.tags) updates[NS_FM.topicTags] = tags;
+        if (excludedMembers.length) updates[NS_FM.topicExcluded] = [...new Set([...currentPage.excluded, ...excludedMembers])];
         next = updateTopicFrontmatter(next, updates);
         if (!parsed.legacyMachineProperties || (preview.legacyPropertyCleanup === true && selected.has("__clean-legacy-properties__"))) next = removeTopicMachineProperties(next);
         else next = updateTopicFrontmatter(next, {

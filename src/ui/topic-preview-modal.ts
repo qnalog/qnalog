@@ -1,5 +1,5 @@
 import { Modal, Notice, setIcon, type App } from "obsidian";
-import type { TopicChangePreview, TopicChangePreviewItem } from "../topics/topic-integration";
+import { topicMemberExcludeSelectionId, type TopicChangePreview, type TopicChangePreviewItem } from "../topics/topic-integration";
 import { stripTopicUnverifiedMarker } from "../topics/topic-integration";
 import { topicLabelSeparator, topicOpenKindLabel, topicSectionEnglishLabel } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
@@ -167,6 +167,7 @@ export class TopicPreviewModal extends Modal {
       const section = item.operation.type === "add_timeline" ? "Timeline"
         : item.operation.type === "add_conflict" || item.operation.type === "add_disagreement" ? "Disagreements and verification"
           : item.operation.type === "add_open" || item.operation.type === "resolve_open" ? "Open questions and actions"
+        : item.operation.type === "remove_member" ? "Member cleanup"
         : item.operation.type === "add_point" || item.operation.type === "add_thread" || item.operation.type === "revise_block" || item.operation.type === "remove_block" ? "Progress thread"
               : item.operation.type === "add_item" ? topicSectionEnglishLabel(item.operation.section) : "Progress thread";
       let group = sections.get(section);
@@ -191,7 +192,7 @@ export class TopicPreviewModal extends Modal {
       checkbox.checked = true;
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add(item.id) : selected.delete(item.id));
       const icon = heading.createSpan({ cls: "qnalog-topics-operation-icon" });
-      const iconName = item.type === "remove_block" ? "trash-2" : item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
+      const iconName = item.type === "remove_block" || item.type === "remove_member" ? "trash-2" : item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
       try { setIcon(icon, iconName); } catch { /* icon fallback is decorative */ }
       const verification = stripTopicUnverifiedMarker(item.text);
       if (item.operation.type === "revise_block") {
@@ -226,6 +227,8 @@ export class TopicPreviewModal extends Modal {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: verification.text });
       } else if (item.operation.type === "remove_block") {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Will remove this block: {0}").replace("{0}", item.text) });
+      } else if (item.operation.type === "remove_member") {
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Will remove this member from the topic: {0}").replace("{0}", item.text) });
       } else {
         let changeText = verification.text;
         if (item.operation.type === "add_open") {
@@ -248,6 +251,23 @@ export class TopicPreviewModal extends Modal {
         if (date) right.createSpan({ cls: "qnalog-topics-preview-date", text: date });
         if (item.type === "add_conflict") left.createSpan({ cls: "qnalog-topics-preview-badge is-conflict", text: this.port.text("Disagreement") });
         if (verification.unverified) left.createSpan({ cls: "qnalog-topics-unverified", text: this.port.text("Unverified") });
+      }
+      if (item.operation.type === "remove_member") {
+        const suboption = group.createDiv({ cls: "qnalog-topics-preview-suboption" });
+        const exclude = suboption.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Also exclude from future suggestions") } });
+        exclude.checked = false;
+        exclude.disabled = !checkbox.checked;
+        exclude.addEventListener("change", () => exclude.checked
+          ? selected.add(topicMemberExcludeSelectionId(item.id))
+          : selected.delete(topicMemberExcludeSelectionId(item.id)));
+        checkbox.addEventListener("change", () => {
+          exclude.disabled = !checkbox.checked;
+          if (!checkbox.checked) {
+            exclude.checked = false;
+            selected.delete(topicMemberExcludeSelectionId(item.id));
+          }
+        });
+        suboption.createSpan({ text: this.port.text("Also exclude from future suggestions") });
       }
     }
 

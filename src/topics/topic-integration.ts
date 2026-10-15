@@ -27,6 +27,7 @@ export interface TopicChangePreviewItem {
   expectedText?: string;
   programGenerated?: boolean;
 }
+export function topicMemberExcludeSelectionId(itemId: string): string { return `exclude-member:${itemId}`; }
 export interface TopicAssessment { memberId: string; claim: string; relation: "same" | "supplement" | "conflict" | "unrelated"; relatedBlockId?: string }
 export interface TopicChangePreview {
   topicId: string;
@@ -150,6 +151,7 @@ function operationDescription(operation: TopicOperation): string {
   return "";
 }
 function operationErrataMatches(operation: TopicOperation, members: readonly TopicIntegrationMember[], errata?: ScopedTopicErrata): boolean {
+  if (operation.type === "remove_member") return false;
   if (operation.type === "add_point" || operation.type === "add_open") {
     return operation.sources.length > 0 && operation.sources.every((sourceId) => errataMatches(operationDescription(operation), sourceId, members, errata));
   }
@@ -198,6 +200,7 @@ function filterErrataOperations(operations: readonly TopicOperation[], members: 
       noteDiscard();
       return positions.length ? [{ ...operation, positions }] : [];
     }
+    if (operation.type === "remove_member") return [operation];
     if (operation.sourceId && errataMatches(operationDescription(operation), operation.sourceId, members, errata)) { noteDiscard(); return []; }
     return [operation];
   });

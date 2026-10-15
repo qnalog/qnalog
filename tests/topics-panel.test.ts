@@ -44,6 +44,7 @@ describe("topics panel", () => {
     const port = {
       isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
       listTopics: vi.fn(async () => [{ path: "Topics/Planning.md", page: { id: "one", title: "Planning", updated: "2026-10-10T00:00:00Z", members: ["a.md", "b.md"] } }]),
+      getUncontributedMembers: vi.fn(async () => []), previewOrphanMembers: vi.fn(),
       countPending: vi.fn(async () => 3),
       scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(),
       deleteTopic: vi.fn(), mergeTopics: vi.fn(), ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),
@@ -56,6 +57,7 @@ describe("topics panel", () => {
     const row = descendants(section).find((item) => item.cls.includes("qnalog-outline-recent-row"));
     expect(row).toBeDefined();
     row?.listeners.get("contextmenu")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
+    await vi.waitFor(() => expect(menuState.titles).toContain("Scan for notes to integrate"));
     expect(menuState.titles).toEqual(expect.arrayContaining(["Scan for notes to integrate", "Undo last update", "Merge into…", "Delete topic"]));
   });
 
@@ -63,6 +65,7 @@ describe("topics panel", () => {
     const port = {
       isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
       listTopics: vi.fn(async () => [{ path: "Topics/Planning.md", page: { id: "one", title: "Planning", updated: "2026-10-10T00:00:00Z", members: ["a.md", "b.md"] } }]),
+      getUncontributedMembers: vi.fn(async () => []), previewOrphanMembers: vi.fn(),
       countPending: vi.fn(async () => 3),
       scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(),
       deleteTopic: vi.fn(), mergeTopics: vi.fn(), ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),
@@ -84,13 +87,31 @@ describe("topics panel", () => {
     expect(actions.children.map((child) => child.cls)).toEqual(expect.arrayContaining(["qnalog-topics-pending is-visible", "qnalog-outline-recent-action qnalog-topics-more"]));
     const more = actions.children.find((child) => child.cls.includes("qnalog-topics-more")) as unknown as FakePanelEl;
     more.listeners.get("click")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
+    await vi.waitFor(() => expect(menuState.titles).toContain("Scan for notes to integrate"));
     expect(menuState.titles).toEqual(expect.arrayContaining(["Scan for notes to integrate", "Delete topic"]));
+  });
+
+  it("shows the organizer action with the number of uncited members", async () => {
+    const port = {
+      isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
+      listTopics: vi.fn(async () => [{ path: "Topics/Planning.md", page: { id: "one", title: "Planning", updated: "2026-10-10T00:00:00Z", members: ["a.md", "b.md"] } }]),
+      getUncontributedMembers: vi.fn(async () => [{ path: "b.md", title: "B" }]), previewOrphanMembers: vi.fn(),
+      countPending: vi.fn(async () => 0),
+      scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(),
+      deleteTopic: vi.fn(), mergeTopics: vi.fn(), ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),
+    };
+    const root = new FakePanelEl() as unknown as HTMLElement;
+    await new TopicsPanel({} as never, port as never, () => undefined).render(root);
+    const row = descendants((root as unknown as { children: FakeTree[] }).children[0]).find((item) => item.cls.includes("qnalog-outline-recent-row"));
+    row?.listeners.get("contextmenu")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
+    await vi.waitFor(() => expect(menuState.titles).toContain("Organize notes with no contributed content (1)"));
   });
 
   it("shows the pending badge only when notes are waiting", async () => {
     const port = {
       isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
       listTopics: vi.fn(async () => [{ path: "Topics/Quiet.md", page: { id: "quiet", title: "Quiet", updated: "2026-10-10T00:00:00Z", members: [] } }]),
+      getUncontributedMembers: vi.fn(async () => []), previewOrphanMembers: vi.fn(),
       countPending: vi.fn(async () => 0),
       scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(),
       deleteTopic: vi.fn(), mergeTopics: vi.fn(), ignoreNote: vi.fn(), noteArrived: vi.fn(), refreshPrompt: vi.fn(), getPrompts: vi.fn(), removePrompt: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),

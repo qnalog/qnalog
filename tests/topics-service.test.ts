@@ -6,6 +6,7 @@ import type { TopicStorePort } from "../src/topics/topic-store";
 import type { TopicIntegrationPort } from "../src/topics/topic-integration";
 import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
 import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic-errata-store";
+import { topicMemberExcludeSelectionId } from "../src/topics/topic-integration";
 
 describe("topics service", () => {
   function makeTopicErrata(files: Map<string, string>, language = "zh") {
@@ -93,6 +94,45 @@ describe("topics service", () => {
     const path = await setup.service.ensureTopicErrata("clean-topic");
     expect(path).toBe(topicErrata.pathForTopic("Topics/Climate.md"));
     expect(errataFiles.get(path)).toContain("qnalog_topic_errata: true");
+  });
+
+  it("previews uncited members, removes selected metadata, optionally excludes, and supports undo", async () => {
+    const errata = { load: vi.fn(), append: vi.fn(), ensure: vi.fn() } as unknown as TopicErrataStore;
+    const setup = harness({ topicErrata: errata });
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md", date: "2026-01-01", summary: "A contributed note." },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md", date: "2026-01-02", summary: "No topic claim from B." },
+    ];
+    const page = createTopicPage({ id: "climate-topic", title: "Climate", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Funding", summary: "A summary.", points: [
+      { id: "point", text: "A fact from A.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(page));
+
+    expect(await setup.service.getUncontributedMembers("climate-topic")).toEqual([{ path: "Notes/b.md", title: "B" }]);
+    const before = await setup.storePort.read("Topics/Climate.md");
+    const cancelled = await setup.service.previewOrphanMembers("climate-topic");
+    expect(cancelled.items).toHaveLength(1);
+    expect(cancelled.items[0].operation).toEqual({ type: "remove_member", path: "Notes/b.md" });
+    setup.service.cancel("climate-topic");
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(before);
+    expect(setup.writes).toEqual([]);
+
+    const preview = await setup.service.previewOrphanMembers("climate-topic");
+    const itemId = preview.items[0].id;
+    const result = await setup.service.apply(preview, [itemId, topicMemberExcludeSelectionId(itemId)]);
+    const removed = parseTopicPage(result.markdown)!;
+    expect(removed.members).toEqual(["Notes/a.md"]);
+    expect(removed.excluded).toEqual(["Notes/b.md"]);
+    expect(removed.memberLinks).toEqual(["[[Notes/a|A]]"]);
+    expect(setup.writes.filter((write) => write.path === "Topics/Climate.md")).toHaveLength(1);
+    expect(await setup.service.undoLastUpdate("climate-topic")).toMatchObject({ restored: true });
+    const restored = parseTopicPage(await setup.storePort.read("Topics/Climate.md"))!;
+    expect(restored.members).toEqual(["Notes/a.md", "Notes/b.md"]);
+    expect(restored.excluded).toEqual([]);
+    expect(errata.load).not.toHaveBeenCalled();
+    expect(errata.append).not.toHaveBeenCalled();
   });
 
   it("only reads through its port when requested and returns statistics", async () => {

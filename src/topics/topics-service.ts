@@ -7,7 +7,7 @@ import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
 import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, generateTopicCleaningOperations, estimateTopicCleaningInput, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
-import { applyTopicOps, createTopicPage, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, topicBlockSourcePaths, type TopicBasis, type TopicMember, type TopicPageV2Model } from "./topic-page";
+import { applyTopicOps, createTopicPage, hashTopicPage, isLegacyTopicStatusLine, noContributionMembers, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, topicBlockSourcePaths, type TopicBasis, type TopicMember, type TopicPage, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
 import { suggestTopicsAsync, type TopicSuggestion } from "./topic-suggestions";
@@ -53,6 +53,14 @@ function hashText(content: string): string {
   let hash = 2166136261;
   for (let index = 0; index < content.length; index++) hash = Math.imul(hash ^ content.charCodeAt(index), 16777619);
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+function topicMemberTitle(page: TopicPage, path: string): string {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\.md$/i, "");
+  const link = page.memberLinks.find((item) => {
+    const target = item.match(/^\[\[([^|\]]+)/)?.[1] || "";
+    return target.replace(/\\/g, "/").replace(/\.md$/i, "") === normalizedPath;
+  });
+  return link?.match(/\|([^\]]+)\]\]$/)?.[1] || path.split("/").pop()?.replace(/\.md$/i, "") || path;
 }
 function bodyForIntegration(markdown: string): string {
   const raw = extractAllRawBlocksFromText(stripFrontmatterSimple(markdown)).withoutRaw;
@@ -272,7 +280,7 @@ export class TopicsService {
         items: generatedOperations.map((operation, index) => ({
           id: `${index}-${hashText(JSON.stringify(operation))}`, operation, type: operation.type,
           target: "targetId" in operation ? operation.targetId : "blockId" in operation ? (topicBlockHeadingLabel(currentPage, operation.blockId) || t("Corresponding section")) : "thread" in operation ? operation.thread : "title" in operation ? operation.title : "section" in operation ? operation.section : operation.type,
-          text: "text" in operation ? operation.text : "newText" in operation ? operation.newText : "summary" in operation ? operation.summary : "note" in operation ? operation.note : "", sourceId: operation.sourceId, cancellable: true,
+          text: "text" in operation ? operation.text : "newText" in operation ? operation.newText : "summary" in operation ? operation.summary : "note" in operation ? operation.note : "", sourceId: "sourceId" in operation ? operation.sourceId : "", cancellable: true,
           ...( "expectedText" in operation && operation.expectedText ? { expectedText: operation.expectedText } : {}),
           ...(programGeneratedOperationKeys?.includes(JSON.stringify(operation)) ? { programGenerated: true } : {}),
         })),
@@ -350,7 +358,7 @@ export class TopicsService {
         }
         const selected = new Set(selection);
         const operations = preview.items.filter((item) => selected.has(item.id))
-          .map(({ operation }) => ({ ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId }));
+          .map(({ operation }) => "sourceId" in operation ? { ...operation, sourceId: preview.sourceLinks?.[operation.sourceId] || operation.sourceId } : operation);
         const initial = applyTopicOps(serializeTopicPage(page), operations, {
           openQuestion: t("Topic open question"), openAction: t("Topic open action"), openBug: t("Topic open bug"),
         }).markdown;
@@ -463,6 +471,35 @@ export class TopicsService {
       ...(Object.keys(generated.discarded).length ? { validationWarnings: [t("Some topic blocks could not be cleaned because their source or footnotes did not pass validation.")] } : {}),
     };
     this.previews.set(`topics:clean:${topicId}`, { preview, managesActivity: false });
+    return preview;
+  }
+
+  async getUncontributedMembers(topicId: string): Promise<Array<{ path: string; title: string }>> {
+    const store = this.storeForCurrentFolder();
+    const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    const markdown = await store.readIndexedMarkdown(topic.path);
+    return noContributionMembers(topic.page, markdown).map((path) => ({ path, title: topicMemberTitle(topic.page, path) }));
+  }
+
+  async previewOrphanMembers(topicId: string): Promise<TopicChangePreview> {
+    const store = this.storeForCurrentFolder();
+    const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    const markdown = await store.readIndexedMarkdown(topic.path);
+    const members = noContributionMembers(topic.page, markdown).map((path) => ({ path, title: topicMemberTitle(topic.page, path) }));
+    const preview: TopicChangePreview = {
+      topicId,
+      expectedHash: hashTopicPage(markdown),
+      pageWasManuallyEdited: topic.page.cacheStatus !== "valid" || (!!topic.page.appliedHash && topic.page.appliedHash !== hashTopicPage(markdown)),
+      items: members.map(({ path, title }) => {
+        const operation = { type: "remove_member" as const, path };
+        return { id: `orphan-${hashText(path)}`, operation, type: operation.type, target: title, text: title, sourceId: path, cancellable: true };
+      }),
+      completedBatches: 0,
+      totalBatches: 0,
+    };
+    this.previews.set(`topics:orphans:${topicId}`, { preview, managesActivity: false });
     return preview;
   }
 

@@ -972,6 +972,8 @@ class QnALogPlugin extends obsidian.Plugin {
       previewExcludeBlock: (path, blockId) => this.topics.previewExcludeBlock(path, blockId),
       estimateContentCleaning: (topicId) => this.topics.estimateContentCleaning(topicId),
       previewContentCleaning: (topicId) => this.topics.previewContentCleaning(topicId),
+      getUncontributedMembers: (topicId) => this.topics.getUncontributedMembers(topicId),
+      previewOrphanMembers: (topicId) => this.topics.previewOrphanMembers(topicId),
       apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot(); return result; },
       cancel: (id) => this.topics.cancel(id),
       listTopics: () => refreshTopicsSnapshot(),

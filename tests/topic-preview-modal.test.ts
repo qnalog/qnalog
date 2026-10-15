@@ -36,7 +36,7 @@ vi.mock("obsidian", () => {
   return { Modal, Notice, setIcon: () => undefined };
 });
 
-import type { TopicChangePreview } from "../src/topics/topic-integration";
+import { topicMemberExcludeSelectionId, type TopicChangePreview } from "../src/topics/topic-integration";
 import { TopicPreviewModal, topicPreviewTargetLabel } from "../src/ui/topic-preview-modal";
 
 interface FakeTree { text: string; cls: string; checked: boolean; children: FakeTree[]; listeners: Map<string, (event?: { stopPropagation(): void }) => void> }
@@ -72,6 +72,24 @@ describe("topic preview dialog", () => {
     expect(text).toContain("Disagreements and verification");
     expect(text).toContain("Unverified");
     expect(descendants(modal.contentEl as unknown as FakeTree).filter((item) => item.cls.includes("qnalog-topics-preview-item") && item.cls.includes("is-conflict"))).toHaveLength(1);
+  });
+
+  it("offers optional exclusion for a member removal and passes the choice to apply", () => {
+    const preview = fixture();
+    const itemId = "remove-note-b";
+    preview.items = [{ id: itemId, type: "remove_member", operation: { type: "remove_member", path: "Notes/b.md" }, target: "B", text: "B", sourceId: "Notes/b.md", cancellable: true }];
+    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), undoLastUpdate: vi.fn(), cancel: vi.fn(), apply: vi.fn(() => new Promise<never>(() => undefined)) };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    modal.onOpen();
+    const inputs = descendants(modal.contentEl as unknown as FakeTree).filter((item) => item.listeners.has("change"));
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1].checked).toBe(false);
+    expect(allText(modal.contentEl as unknown as FakeTree)).toContain("Also exclude from future suggestions");
+    inputs[1].checked = true;
+    inputs[1].listeners.get("change")?.();
+    const apply = descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Apply selected");
+    apply?.listeners.get("click")?.();
+    expect(port.apply).toHaveBeenCalledWith(preview, [itemId, topicMemberExcludeSelectionId(itemId)]);
   });
 
   it("shows when unknown model enums were normalized", () => {

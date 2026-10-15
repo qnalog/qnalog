@@ -64,6 +64,35 @@ describe("topic pages", () => {
     expect(noContributionMembers(legacy, serializeTopicPage(legacy))).toEqual([]);
   });
 
+  it("removes one uncited member from metadata lists while preserving page prose", () => {
+    const members = [source("First note", "2026-09-20"), source("Second note", "2026-09-30")];
+    const page = createTopicPage({ id: "remove-member", title: "Remove member", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [], disagreements: [], open: [], unsorted: [] }, members);
+    const original = serializeTopicPage(page)
+      .replace("## 时间线\n", "## 时间线\nUser timeline note.\n")
+      .replace("## 来源笔记\n", "## 来源笔记\nUser source note.\n");
+    const result = applyTopicOps(original, [{ type: "remove_member", path: members[0].path }]);
+    const parsed = parseTopicPage(result.markdown)!;
+    expect(parsed.members).toEqual([members[1].path]);
+    expect(parsed.memberLinks).toEqual(["[[QnALog/Second note|Second note]]"]);
+    expect(topicMemberMetadataCounts(result.markdown)).toEqual({ members: 1, timeline: 1, sources: 1 });
+    expect(result.markdown).not.toContain("QnALog/First note");
+    expect(result.markdown).toContain("User timeline note.");
+    expect(result.markdown).toContain("User source note.");
+  });
+
+  it("rejects removing a member that remains cited by a topic block", () => {
+    const member = source("Cited note", "2026-09-30", "cited");
+    const page = createTopicPage({ id: "still-cited", title: "Still cited", tags: [], members: [member], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Thread", summary: "Summary.", points: [
+      { id: "point", text: "This block cites the member.", sources: [member.sourceId] },
+    ] }], disagreements: [], open: [], unsorted: [] }, [member]);
+    expect(() => applyTopicOps(serializeTopicPage(page), [{ type: "remove_member", path: member.path }]))
+      .toThrow("This member is still cited by topic content and cannot be removed.");
+  });
+
   it.each([
     { name: "earliest", member: source("First note", "2026-09-20"), expected: ["First note", "Middle note", "Last note"] },
     { name: "middle", member: source("Between note", "2026-10-01"), expected: ["Middle note", "Between note", "Last note"] },

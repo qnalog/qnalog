@@ -1,4 +1,5 @@
 import { NS_FM, NS_FM_TOPIC_LAYOUT, NS_TYPE_TOPIC } from "../shared/namespace";
+import { t } from "../shared/i18n";
 import { stripBlockMarkers } from "./topic-block-markers";
 
 export type TopicBasis = "overview" | "body";
@@ -56,6 +57,7 @@ export type TopicOperation =
   | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
   | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
   | { type: "remove_block"; blockId: string; expectedText: string; sourceId: string }
+  | { type: "remove_member"; path: string }
   | { type: "add_disagreement"; subject: string; relatedBlockId?: string; positions: TopicDisagreementPosition[]; sourceId: string }
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
@@ -501,6 +503,40 @@ function normalizeTopicMemberPath(path: string): string {
   return /\.md$/i.test(normalized) ? normalized : `${normalized}.md`;
 }
 
+function memberLinkTarget(value: string): string {
+  const target = value.match(/^\s*\[\[([^|\]]+)/)?.[1] || "";
+  return normalizeTopicMemberPath(target);
+}
+
+function removeTopicMember(markdown: string, memberPath: string): string {
+  const normalizedMemberPath = normalizeTopicMemberPath(memberPath);
+  for (const block of parseTopicPageBlocks(markdown)) {
+    if (topicBlockSourcePaths(markdown, block).some((path) => normalizeTopicMemberPath(path) === normalizedMemberPath)) {
+      throw new Error(t("This member is still cited by topic content and cannot be removed."));
+    }
+  }
+  const parsed = frontmatter(markdown);
+  const lines = parsed.body.split("\n");
+  const removeIndexes = new Set<number>();
+  for (const section of ["时间线", "来源笔记"] as const) {
+    const range = sectionRange(lines, section);
+    if (!range) continue;
+    for (let index = range.start + 1; index < range.end; index++) {
+      const line = lines[index];
+      const timelineRow = section === "时间线" && /^\s*-\s*(?:\d{4}-\d{2}-\d{2}|—)\s*[·—-]\s*\[\[/.test(line);
+      const sourceRow = section === "来源笔记" && (/^\s*-\s*\[\[/.test(line) || /^\[\^[^\]]+\]:/.test(line));
+      if ((timelineRow || sourceRow) && [...line.matchAll(/\[\[([^|\]]+)/g)].some((match) => normalizeTopicMemberPath(match[1]) === normalizedMemberPath)) removeIndexes.add(index);
+    }
+  }
+  const body = lines.filter((_line, index) => !removeIndexes.has(index)).join("\n");
+  const result = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${body}`;
+  const page = parseTopicPage(result);
+  if (!page) throw new Error("Topic page is invalid");
+  return updateTopicFrontmatter(result, {
+    [NS_FM.topicMembers]: page.memberLinks.filter((link) => memberLinkTarget(link) !== normalizedMemberPath),
+  });
+}
+
 export function updateTopicFrontmatter(markdown: string, updates: Record<string, string | string[]>): string {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) throw new Error("Topic page frontmatter is missing");
@@ -637,6 +673,11 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
   const applied: AppliedTopicOperation[] = [];
   const skipped: ApplyTopicOpsResult["skipped"] = [];
   for (const operation of ops) {
+    if (operation.type === "remove_member") {
+      current = removeTopicMember(current, operation.path);
+      applied.push({ operation, blockId: null, location: "来源笔记" });
+      continue;
+    }
     const isV2 = parseTopicFrontmatter(frontmatter(current).text)[NS_FM_TOPIC_LAYOUT] === 2;
     if (isV2 && ["add_point", "add_thread", "revise_block", "remove_block", "add_disagreement", "add_open", "resolve_open"].includes(operation.type)) {
       const parsed = frontmatter(current);

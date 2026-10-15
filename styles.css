@@ -10262,6 +10262,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-preview-heading.is-section { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 600; }
 .qnalog-topics-preview-heading.is-thread { color: var(--text-normal); font-size: var(--font-ui-medium); font-weight: 600; }
 .qnalog-topics-preview-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px; border-radius: 5px; }
+.qnalog-topics-preview-suboption { display: flex; align-items: flex-start; gap: 8px; margin: -2px 7px 6px 33px; color: var(--text-muted); font-size: var(--font-ui-small); }
+.qnalog-topics-preview-suboption input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--interactive-accent); }
 .qnalog-topics-operation-icon, .qnalog-topics-operation-icon svg { width: 14px; height: 14px; flex: 0 0 14px; color: var(--text-muted); }
 .qnalog-topics-preview-item.is-conflict { background: var(--background-secondary); border-inline-start: 2px solid var(--text-warning, var(--interactive-accent)); }
 .qnalog-topics-preview-text { flex: 1; min-width: 0; white-space: pre-wrap; line-height: 1.55; }
