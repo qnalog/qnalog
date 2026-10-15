@@ -15,6 +15,7 @@ import {
   buildChunkMergePrompt,
   buildGeneralConsolidationPrompt,
   resolveTemplatePromptForMode,
+  stripGeneralStructurePlaceholders,
   MERGE_PROMPTS,
   POLISH_PROMPTS,
 } from "../src/prompts/briefing-prompts";
@@ -63,6 +64,26 @@ describe("general mode prompt contract", () => {
     expect(MODE_BODIES.general).toContain(NS_TRANSCRIPTION_UNCLEAR_MARKER);
     expect(GENERAL_OTHER_LANGUAGE_PROMPTS.modeBody).toContain(NS_TRANSCRIPTION_UNCLEAR_MARKER);
     expect(NS_TRANSCRIPTION_UNCLEAR_MARKER).not.toContain("[");
+  });
+
+  it("keeps structure placeholders out of every General prompt construction path", () => {
+    for (const language of ["zh", "en"] as const) {
+      const part = applyStructureLevelInstruction(resolveTemplatePromptForMode({ settings: {} }, "general", false, language), {});
+      const merged = applyStructureLevelInstruction(resolveTemplatePromptForMode({ settings: {} }, "general", true, language), {});
+      const consolidation = buildGeneralConsolidationPrompt({
+        parts: [{ index: 0, timeRange: "00:00–00:30", body: "sample" }],
+        sourceLanguage: language,
+      });
+      const repair = buildGeneralCoverageRepairPrompt({
+        segments: [{ segmentNumber: 1, text: "sample" }],
+        missingSegments: [1], initialBody: "draft", sourceLanguage: language,
+      });
+      for (const prompt of [part, merged, consolidation, repair]) {
+        expect(prompt).not.toContain("{{GENERAL_STRUCTURE_INSTRUCTION");
+      }
+    }
+    expect(stripGeneralStructurePlaceholders("{{GENERAL_STRUCTURE_INSTRUCTION}}/{{GENERAL_STRUCTURE_INSTRUCTION_EN}}"))
+      .toBe("/");
   });
 
   it("uses a conservative three-way source-language instruction", () => {
