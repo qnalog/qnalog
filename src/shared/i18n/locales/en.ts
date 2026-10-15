@@ -12,6 +12,7 @@ import type { MessageTable } from "../../i18n";
 export const EN: MessageTable = {
   "Export": "Export",
   "Open errata": "Open errata",
+  "Could not open the topic errata document.": "Could not open the topic errata document.",
   "Generating title": "Generating title",
   "Generating a title for the note": "Generating a title for the note",
   "Updating note index": "Updating note index",

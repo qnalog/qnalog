@@ -14,6 +14,7 @@ export const ZH: MessageTable = {
   "QnALog voice notes panel": "QnALog 语音笔记面板",
   "QnALog: Create or open errata for this note": "QnALog：创建/打开本篇勘误表",
   "Open errata": "打开勘误表",
+  "Could not open the topic errata document.": "无法打开主题勘误表。",
   "QnALog: Correct selected text": "QnALog：订正选中文字",
   "QnALog: Mark selected text as noise": "QnALog：将选中文字标为噪音",
   "The source note could not be found.": "找不到来源笔记。",
