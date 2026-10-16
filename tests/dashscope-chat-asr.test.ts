@@ -155,6 +155,130 @@ describe("聊天式音频输入的空结果重试", () => {
     expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 1 }));
     expect(logDiagnostic).toHaveBeenNthCalledWith(2, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 2 }));
   });
+
+  it("静音的 50 秒块连续空结果返回空文本且不抛错，两次诊断都保留", async () => {
+    const request = vi.fn().mockResolvedValue("");
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    const result = await requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      { diagnostics: { logDiagnostic } },
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/wav", durationMs: 50000, quiet: true },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      request,
+      wait,
+    );
+
+    expect(result).toEqual({ text: "", rawText: "" });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(logDiagnostic).toHaveBeenCalledTimes(2);
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 1 }));
+    expect(logDiagnostic).toHaveBeenNthCalledWith(2, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 2 }));
+  });
+
+  it("有声的 50 秒块连续空结果仍按失败抛错", async () => {
+    const request = vi.fn().mockResolvedValue("");
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    await expect(requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      { diagnostics: { logDiagnostic } },
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/wav", durationMs: 50000, quiet: false },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      request,
+      wait,
+    )).rejects.toThrow();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(logDiagnostic).toHaveBeenCalledTimes(2);
+  });
+
+  it("音量未知且时长 50 秒的块连续空结果仍按失败抛错", async () => {
+    const request = vi.fn().mockResolvedValue("");
+    const wait = vi.fn().mockResolvedValue(undefined);
+    await expect(requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      null,
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/wav", durationMs: 50000 },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      request,
+      wait,
+    )).rejects.toThrow();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("聊天式音频输入的静音标记", () => {
+  // 采样率取 100 Hz 以缩小测试数据；静音判断只看振幅，与采样率的实际取值无关。
+  function stubDecodedAudio(channels: Float32Array[], sampleRate: number, extra: Record<string, unknown> = {}) {
+    const buffer = {
+      duration: channels[0].length / sampleRate,
+      sampleRate,
+      numberOfChannels: channels.length,
+      getChannelData: (i: number) => channels[i],
+      ...extra,
+    };
+    class StubAudioContext {
+      decodeAudioData = vi.fn(async () => buffer);
+      close = vi.fn(async () => undefined);
+    }
+    class StubOfflineAudioContext {
+      destination = {};
+      createBufferSource() { return { buffer: null, connect: () => undefined, start: () => undefined }; }
+      async startRendering() { return { sampleRate: 16000, getChannelData: () => new Float32Array(1) }; }
+    }
+    vi.stubGlobal("window", { AudioContext: StubAudioContext, OfflineAudioContext: StubOfflineAudioContext });
+  }
+
+  it("直发路径：静音音频标记 quiet 为 true，有声音频为 false", async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
+    try {
+      stubDecodedAudio([new Float32Array(50 * 100)], 100);
+      const quietChunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
+      expect(quietChunks).toEqual([{ blob, mime: "audio/webm", durationMs: 50000, quiet: true }]);
+
+      stubDecodedAudio([new Float32Array(50 * 100).fill(0.5)], 100);
+      const loudChunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
+      expect(loudChunks).toEqual([{ blob, mime: "audio/webm", durationMs: 50000, quiet: false }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("分段路径：每个分块分别判断静音，静音块 quiet 为 true、有声块为 false", async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
+    const frames = 6 * 60 * 100; // 6 分钟，100 Hz；前 3 分钟静音，后 3 分钟有声。
+    const samples = new Float32Array(frames);
+    samples.fill(0.5, frames / 2);
+    try {
+      stubDecodedAudio([samples], 100);
+      const chunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
+      expect(chunks.map((c) => c.durationMs)).toEqual([180000, 180000]);
+      expect(chunks.map((c) => c.quiet)).toEqual([true, false]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("无法读取声道数据时 quiet 为未知（undefined），直发结果与原先一致", async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
+    try {
+      vi.stubGlobal("window", { AudioContext: class { decodeAudioData = vi.fn(async () => ({ duration: 2 })); close = vi.fn(async () => undefined); } });
+      const chunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
+      expect(chunks).toEqual([{ blob, mime: "audio/webm", durationMs: 2000 }]);
+      expect(chunks[0].quiet).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("百炼分段服务在设置界面里的归类", () => {
