@@ -441,7 +441,14 @@ class QnALogPlugin extends obsidian.Plugin {
       create: (path, content) => this.app.vault.create(obsidian.normalizePath(path), content),
       process: async (file, transform) => { await this.app.vault.process(file, transform); },
       uiLanguage: () => getActiveUiLanguage().id,
-      diagnostic: (code, data) => { void this.diagnostics.logDiagnostic("warn", code, t("Topic errata entry references a note that is no longer a topic member"), data); },
+      diagnostic: (code, data) => {
+        const message = code === "topic.errata_remove_failed"
+          ? t("Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.")
+          : code === "topic.errata_snapshot_mismatch"
+            ? t("Topic errata could not be linked to the update snapshot.")
+            : t("Topic errata entry references a note that is no longer a topic member");
+        void this.diagnostics.logDiagnostic("warn", code, message, data);
+      },
     });
     this.topics = new TopicsService({
       overviewCards: topicsPort,

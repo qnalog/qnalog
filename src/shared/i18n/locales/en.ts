@@ -62,6 +62,8 @@ export const EN: MessageTable = {
   "QnALog: Mark block as off-topic": "QnALog: Mark block as off-topic",
   "Place the cursor inside a topic block first.": "Place the cursor inside a topic block first.",
   "The selected text contains no topic content blocks (headings cannot be marked on their own).": "The selected text contains no topic content blocks (headings cannot be marked on their own).",
+  "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.": "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.",
+  "Topic errata could not be linked to the update snapshot.": "Topic errata could not be linked to the update snapshot.",
   "Content cleaning": "Content cleaning",
   "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.": "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.",
   "Estimated input: {0} characters, about {1} tokens.": "Estimated input: {0} characters, about {1} tokens.",

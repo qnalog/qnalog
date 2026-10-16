@@ -67,7 +67,7 @@ describe("topic errata store", () => {
       uiLanguage: () => "zh",
       diagnostic,
     };
-    return { files, diagnostic, resolve, create, listErrataFiles, store: new TopicErrataStore(port) };
+    return { files, diagnostic, resolve, create, listErrataFiles, port, store: new TopicErrataStore(port) };
   }
 
   it("creates a linked errata document in the errata folder and repeated append is idempotent", async () => {
@@ -81,6 +81,47 @@ describe("topic errata store", () => {
     expect(value).toContain("主题：[[QnALog/主题/研究]]");
     expect(value).toContain("## 不属于本主题\n- [[Notes/a]]：设备维修");
     expect(isErrataPath("QnALog/勘误表/研究 · 主题勘误.md")).toBe(true);
+  });
+
+  it("reports whether append created a row and removes only matching scoped or global rows", async () => {
+    const f = fixture({ "Notes/a.md": "member" });
+    const topicPath = "QnALog/主题/研究.md";
+    const path = await f.store.ensure(topicPath);
+    const original = f.files.get(path)!.text;
+    const scoped = await f.store.appendEntry(topicPath, "研究", "  设备   维修 ", "Notes/a.md");
+    expect(scoped).toEqual({ path, description: "设备 维修", memberLink: "Notes/a", added: true });
+    const duplicate = await f.store.appendEntry(topicPath, "研究", "设备 维修", "Notes/a.md");
+    expect(duplicate).toMatchObject({ path, description: "设备 维修", memberLink: "Notes/a", added: false });
+    const global = await f.store.appendEntry(topicPath, "研究", "全局事项");
+    expect(global).toMatchObject({ description: "全局事项", memberLink: null, added: true });
+
+    const afterAppend = f.files.get(path)!.text;
+    const removed = await f.store.removeEntries(topicPath, [scoped, global]);
+    expect(removed).toBe(2);
+    expect(f.files.get(path)!.text).toBe(original);
+    expect(afterAppend).toContain("## 不属于本主题");
+  });
+
+  it("skips an edited errata row and preserves unrelated rows, notes, and section headings", async () => {
+    const path = "QnALog/勘误表/研究 · 主题勘误.md";
+    const initial = "---\nqnalog_topic_errata: true\n---\n主题：[[QnALog/主题/研究]]\n\n## 不属于本主题\n- [[Notes/a]]：用户改过的说明\n- 其它全局事项\n\n## 说明\n- 保留这条备注\n";
+    const f = fixture({ [path]: initial, "Notes/a.md": "member" });
+    const removed = await f.store.removeEntries("QnALog/主题/研究.md", [{ path, description: "原始说明", memberLink: "Notes/a" }]);
+    expect(removed).toBe(0);
+    expect(f.files.get(path)!.text).toBe(initial);
+  });
+
+  it("records and rethrows a failed row removal", async () => {
+    const f = fixture();
+    const path = await f.store.ensure("QnALog/主题/研究.md");
+    const row = await f.store.appendEntry("QnALog/主题/研究.md", "研究", "不能删除");
+    const file = f.files.get(path)!.file;
+    const originalProcess = f.port.process;
+    f.port.process = async () => { throw new Error("write failed"); };
+    await expect(f.store.removeEntries("QnALog/主题/研究.md", [row])).rejects.toThrow("write failed");
+    expect(f.diagnostic).toHaveBeenCalledWith("topic.errata_remove_failed", expect.objectContaining({ errataPath: path }));
+    f.port.process = originalProcess;
+    expect(file.path).toBe(path);
   });
 
   it("ensures a new empty marked document and leaves an existing document unchanged", async () => {

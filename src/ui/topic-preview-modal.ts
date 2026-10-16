@@ -306,7 +306,9 @@ export class TopicPreviewModal extends Modal {
           const undo = notice.messageEl.createEl("button", { cls: "qnalog-topics-undo", text: this.port.text("Undo"), attr: { type: "button" } });
           undo.addEventListener("click", () => {
             void this.port.undoLastUpdate(this.preview.topicId).then((outcome) => {
-              if (outcome.restored === true) new Notice(this.port.text("Topic update undone."));
+              if (outcome.restored === true) new Notice(this.port.text(outcome.errataFailed
+                ? "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note."
+                : "Topic update undone."));
               else new Notice(outcome.reason === "page-modified" ? this.port.text("The topic page changed after the update. Undo was not applied.") : this.port.text("No topic update is available to undo."));
             });
           });

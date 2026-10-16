@@ -3110,6 +3110,8 @@ export const ZH: MessageTable = {
   "QnALog: Mark block as off-topic": "QnALog：标记为不属于本主题",
   "Place the cursor inside a topic block first.": "请先将光标放在主题页的内容块中。",
   "The selected text contains no topic content blocks (headings cannot be marked on their own).": "选中的内容里没有可标记的内容块（标题不能单独标记）。",
+  "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.": "主题页已恢复，但主题勘误条目未能移除，请在勘误笔记中手动删除。",
+  "Topic errata could not be linked to the update snapshot.": "主题勘误条目无法关联到本次更新快照。",
   "Content cleaning": "内容清洗",
   "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.": "清洗只检查当前主题页和主题勘误表。预计输入 {0} 个字符，约 {1} 个词元。",
   "Estimated input: {0} characters, about {1} tokens.": "预计输入 {0} 个字符，约 {1} 个词元。",

@@ -36,7 +36,7 @@ export interface TopicsUiPort {
   getTopicsSnapshot(): TopicSummary[];
   countPending(topicId: string): Promise<number>;
   scanUnintegrated(topicId: string, signal?: AbortSignal): Promise<TopicCandidates>;
-  undoLastUpdate(topicId: string): Promise<{ restored: true } | { restored: false; reason: "no-history" | "page-modified" }>;
+  undoLastUpdate(topicId: string): Promise<{ restored: true; errataRemoved?: number; errataFailed?: true } | { restored: false; reason: "no-history" | "page-modified" }>;
   deleteTopic(topicId: string): Promise<void>;
   mergeTopics(sourceId: string, targetId: string): Promise<void>;
   ignoreNote(topicId: string, path: string): Promise<void>;

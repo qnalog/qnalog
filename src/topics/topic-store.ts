@@ -21,8 +21,9 @@ export interface TopicStorePort {
   logDiagnostic?(code: string, data: Record<string, unknown>): void;
 }
 export interface TopicStoreOptions { folder: string; port: TopicStorePort }
-export interface TopicApplyResult { markdown: string; appliedCount: number; pageChangedDuringGeneration: boolean; resultingHash: string; skipped: Array<{ id: string; reason: "block-modified" }> }
-export type TopicUndoResult = { restored: true } | { restored: false; reason: "no-history" | "page-modified" };
+export interface TopicApplyResult { markdown: string; appliedCount: number; pageChangedDuringGeneration: boolean; resultingHash: string; skipped: Array<{ id: string; reason: "block-modified" }>; snapshotPath: string | null }
+export interface TopicSnapshotErrataEntry { path: string; description: string; memberLink: string | null }
+export type TopicUndoResult = { restored: true; errataEntries?: TopicSnapshotErrataEntry[]; errataRemoved?: number; errataFailed?: true } | { restored: false; reason: "no-history" | "page-modified" };
 export interface TopicMachineCache {
   version: 1;
   topicId: string;
@@ -30,6 +31,7 @@ export interface TopicMachineCache {
   tagAliases: Record<string, string[]>;
   blocks: TopicBlockIndexEntry[];
   lastSnapshot: string | null;
+  lastSnapshotErrata?: { snapshotPath: string; entries: TopicSnapshotErrataEntry[] };
   updatedAt: string;
 }
 
@@ -59,7 +61,11 @@ export class TopicStore {
       if (cache.lastSnapshot !== null && typeof cache.lastSnapshot !== "string") return null;
       const blocks = cache.blocks.filter((block): block is TopicBlockIndexEntry => !!block && typeof block.id === "string" && typeof block.kind === "string" && ["overview", "thread-summary", "point", "disagreement", "open", "other"].includes(block.kind) && Array.isArray(block.headingPath) && block.headingPath.every((part) => typeof part === "string") && typeof block.ordinal === "number" && Number.isInteger(block.ordinal) && block.ordinal >= 0 && typeof block.textHash === "string" && typeof block.normalizedPreview === "string" && [...block.normalizedPreview].length <= 40);
       if (blocks.length !== cache.blocks.length) return null;
-      return { version: 1, topicId, pageHash: cache.pageHash, tagAliases: cache.tagAliases, blocks, lastSnapshot: cache.lastSnapshot || null, updatedAt: cache.updatedAt };
+      const undo = cache.lastSnapshotErrata;
+      const lastSnapshotErrata = undo && undo.snapshotPath === cache.lastSnapshot && Array.isArray(undo.entries)
+        && undo.entries.every((entry) => !!entry && typeof entry.path === "string" && typeof entry.description === "string" && (typeof entry.memberLink === "string" || entry.memberLink === null))
+        ? { snapshotPath: undo.snapshotPath, entries: undo.entries } : undefined;
+      return { version: 1, topicId, pageHash: cache.pageHash, tagAliases: cache.tagAliases, blocks, lastSnapshot: cache.lastSnapshot || null, ...(lastSnapshotErrata ? { lastSnapshotErrata } : {}), updatedAt: cache.updatedAt };
     } catch { return null; }
   }
   private async latestSnapshot(topicId: string): Promise<string | null> {
@@ -88,6 +94,8 @@ export class TopicStore {
     const lastSnapshot = (parsed?.lastSnapshot && snapshots.some((file) => file.path === parsed.lastSnapshot))
       ? parsed.lastSnapshot
       : (legacy.lastSnapshot && snapshots.some((file) => file.path === legacy.lastSnapshot) ? legacy.lastSnapshot : await this.latestSnapshot(page.id));
+    const lastSnapshotErrata = parsed?.lastSnapshotErrata?.snapshotPath === lastSnapshot && snapshots.some((file) => file.path === lastSnapshot)
+      ? parsed.lastSnapshotErrata : undefined;
     const cache: TopicMachineCache = {
       version: 1,
       topicId: page.id,
@@ -96,6 +104,7 @@ export class TopicStore {
       tagAliases: aliases,
       blocks: buildTopicBlockIndex(markdown, previousBlocks),
       lastSnapshot,
+      ...(lastSnapshotErrata ? { lastSnapshotErrata } : {}),
       updatedAt: new Date(this.port.now()).toISOString(),
     };
     await this.persistCache(cache);
@@ -117,11 +126,14 @@ export class TopicStore {
       const prior = this.parseCache(await this.readCache(this.cachePath(topicId)), topicId);
       let memberTags: string[] = [];
       try { memberTags = await this.port.readMemberTags(page.members); } catch { /* use canonical topic tags */ }
+      const nextSnapshot = lastSnapshot === undefined ? prior?.lastSnapshot || null : lastSnapshot;
+      const lastSnapshotErrata = prior?.lastSnapshotErrata?.snapshotPath === nextSnapshot ? prior.lastSnapshotErrata : undefined;
       const cache: TopicMachineCache = {
         version: 1, topicId, pageHash: hashTopicPage(markdown),
         tagAliases: tagAliases || prior?.tagAliases || rebuildTopicTagAliases(page.tags, memberTags),
         blocks: blocks ? [...blocks] : buildTopicBlockIndex(markdown, prior?.blocks),
-        lastSnapshot: lastSnapshot === undefined ? prior?.lastSnapshot || null : lastSnapshot,
+        lastSnapshot: nextSnapshot,
+        ...(lastSnapshotErrata ? { lastSnapshotErrata } : {}),
         updatedAt: new Date(this.port.now()).toISOString(),
       };
       await this.persistCache(cache);
@@ -141,6 +153,22 @@ export class TopicStore {
     const sorted = [...files, { path: snapshotPath, name: snapshotPath.split("/").pop() || "" }].sort((a, b) => a.name.localeCompare(b.name));
     for (const old of sorted.slice(0, Math.max(0, sorted.length - TOPIC_HISTORY_LIMIT))) await this.port.deleteHistory(old.path);
     return snapshotPath;
+  }
+
+  async recordSnapshotErrata(topicId: string, snapshotPath: string | null, entries: readonly TopicSnapshotErrataEntry[]): Promise<void> {
+    if (!entries.length) return;
+    const cache = this.parseCache(await this.readCache(this.cachePath(topicId)), topicId);
+    const history = this.historyFolder(topicId);
+    const snapshots = await this.port.listMarkdown(history).catch((): Array<{ path: string; name: string }> => []);
+    if (!snapshotPath || !snapshotPath.startsWith(`${history}/`) || cache?.lastSnapshot !== snapshotPath || !snapshots.some((file) => file.path === snapshotPath)) {
+      this.port.logDiagnostic?.("topic.errata_snapshot_mismatch", { topicId, snapshotPath: snapshotPath || "" });
+      return;
+    }
+    await this.persistCache({
+      ...cache,
+      lastSnapshotErrata: { snapshotPath, entries: [...(cache.lastSnapshotErrata?.snapshotPath === snapshotPath ? cache.lastSnapshotErrata.entries : []), ...entries] },
+      updatedAt: new Date(this.port.now()).toISOString(),
+    });
   }
 
   async create(page: TopicPage, content?: string): Promise<string> {
@@ -210,8 +238,9 @@ export class TopicStore {
     if (!hasChanges) {
       appliedMarkdown = await this.port.read(path);
       pageChangedDuringGeneration = hashTopicPage(appliedMarkdown) !== preview.expectedHash;
-      return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown), skipped: [] };
+      return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown), skipped: [], snapshotPath: null };
     }
+    let appliedSnapshotPath: string | null = null;
     for (;;) {
       const before = await this.port.read(path);
       const parsed = parseTopicPage(before, path);
@@ -220,6 +249,7 @@ export class TopicStore {
       if (memberRemovals.length) applyTopicOps(before, memberRemovals);
       const machineState = await this.ensureMachineCache(path, before, parsed);
       const snapshotPath = await this.makeSnapshot(parsed.id, before);
+      appliedSnapshotPath = snapshotPath;
       const beforeHash = hashTopicPage(before);
       const beforeMetadataCounts = topicMemberMetadataCounts(before);
       if (beforeMetadataCounts.members !== beforeMetadataCounts.timeline || beforeMetadataCounts.members !== beforeMetadataCounts.sources) {
@@ -273,7 +303,7 @@ export class TopicStore {
       await this.cacheAfterWrite(parsed.id, appliedMarkdown, preview.tagAliases || machineState.cache.tagAliases, snapshotPath, updatedBlocks);
       break;
     }
-    return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown), skipped };
+    return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown), skipped, snapshotPath: appliedSnapshotPath };
   }
 
   async replaceWithV2Preview(preview: TopicChangePreview, selectedIds: readonly string[] = []): Promise<TopicApplyResult> {
@@ -303,7 +333,7 @@ export class TopicStore {
     if (changed) throw new Error("The topic page changed after the rebuild preview. Generate a new preview before applying it.");
     const result = await this.port.read(replacement.path);
     await this.cacheAfterWrite(current.id, result, machineState.cache.tagAliases, snapshotPath);
-    return { markdown: result, appliedCount: 1, pageChangedDuringGeneration: false, resultingHash: hashTopicPage(result), skipped: [] };
+    return { markdown: result, appliedCount: 1, pageChangedDuringGeneration: false, resultingHash: hashTopicPage(result), skipped: [], snapshotPath };
   }
 
   async addExcluded(topicId: string, path: string): Promise<void> {
@@ -336,9 +366,23 @@ export class TopicStore {
     const currentMarkdown = await this.port.read(currentPage.path);
     const state = await this.ensureMachineCache(currentPage.path, currentMarkdown, currentPage.page);
     const snapshotPath = state.cache.lastSnapshot;
-    if (!snapshotPath || !snapshotPath.startsWith(`${this.historyFolder(topicId)}/`)) return { restored: false, reason: "no-history" };
+    if (!snapshotPath || !snapshotPath.startsWith(`${this.historyFolder(topicId)}/`)) {
+      if (state.cache.lastSnapshotErrata) {
+        const cache = { ...state.cache };
+        delete cache.lastSnapshotErrata;
+        await this.persistCache(cache);
+      }
+      return { restored: false, reason: "no-history" };
+    }
     const snapshots = await this.port.listMarkdown(this.historyFolder(topicId));
-    if (!snapshots.some((snapshot) => snapshot.path === snapshotPath)) return { restored: false, reason: "no-history" };
+    if (!snapshots.some((snapshot) => snapshot.path === snapshotPath)) {
+      if (state.cache.lastSnapshotErrata) {
+        const cache = { ...state.cache };
+        delete cache.lastSnapshotErrata;
+        await this.persistCache(cache);
+      }
+      return { restored: false, reason: "no-history" };
+    }
     const path = currentPage.path;
     const current = await this.port.read(path);
     if (currentPage.page.cacheStatus !== "valid" || state.status !== "valid" || !state.cache.pageHash || hashTopicPage(current) !== state.cache.pageHash) return { restored: false, reason: "page-modified" };
@@ -348,11 +392,12 @@ export class TopicStore {
     const restored = await this.port.read(path);
     if (hashTopicPage(restored) !== hashTopicPage(snapshot)) return { restored: false, reason: "page-modified" };
     const remaining = snapshots.filter((item) => item.path !== snapshotPath).sort((a, b) => b.name.localeCompare(a.name));
+    const errataEntries = state.cache.lastSnapshotErrata?.snapshotPath === snapshotPath ? state.cache.lastSnapshotErrata.entries : undefined;
     const restoredPage = parseTopicPage(restored, path);
     let restoredTags: string[] = [];
     try { restoredTags = restoredPage ? await this.port.readMemberTags(restoredPage.members) : []; } catch { /* the restored page is already authoritative */ }
     await this.cacheAfterWrite(topicId, restored, restoredPage ? rebuildTopicTagAliases(restoredPage.tags, restoredTags) : undefined, remaining[0]?.path || null);
-    return { restored: true };
+    return errataEntries?.length ? { restored: true, errataEntries } : { restored: true };
   }
 
   async deleteTopic(topicId: string): Promise<void> {

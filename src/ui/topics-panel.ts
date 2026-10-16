@@ -126,7 +126,9 @@ export class TopicsPanel {
     menu.addItem((item) => item.setTitle(this.port.text("Content cleaning")).setIcon("list-filter").onClick(() => void this.cleanTopic(topicId)));
     menu.addItem((item) => item.setTitle(this.port.text("Undo last update")).setIcon("undo-2").onClick(() => {
       void this.port.undoLastUpdate(topicId).then((result) => {
-        if (result.restored === true) new Notice(this.port.text("Topic update undone."));
+        if (result.restored === true) new Notice(this.port.text(result.errataFailed
+          ? "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note."
+          : "Topic update undone."));
         else new Notice(result.reason === "page-modified" ? this.port.text("The topic page changed after the update. Undo was not applied.") : this.port.text("No topic update is available to undo."));
         this.refresh();
       });

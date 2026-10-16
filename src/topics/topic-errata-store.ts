@@ -6,6 +6,8 @@ import { getTopicErrataSectionKey, getTopicErrataTitles, getTopicErrataTopicLabe
 import type { ScopedTopicErrata, ScopedTopicErrataEntry } from "./topic-errata-prompt";
 
 export interface TopicErrataLink { link: string }
+export interface TopicErrataUndoEntry { path: string; description: string; memberLink: string | null }
+export interface TopicErrataAppendResult extends TopicErrataUndoEntry { added: boolean }
 export interface TopicErrataStorePort {
   read(file: obsidian.TFile): Promise<string>;
   listErrataFiles(): obsidian.TFile[];
@@ -40,6 +42,14 @@ function insertionPoint(markdown: string): number | null {
 function entryLine(description: string, memberPath?: string): string {
   const link = memberPath ? `[[${normalizePath(memberPath).replace(/\.md$/i, "")}]]：` : "";
   return `- ${link}${description.trim().replace(/\s+/g, " ")}`;
+}
+function normalizedDescription(description: string): string { return description.trim().replace(/\s+/g, " ").toLocaleLowerCase(); }
+function parsedEntryLine(line: string): { memberLink: string | null; description: string } | null {
+  const cleaned = line.trim().replace(/^[-*+]\s+/, "").replace(/^\d+[.)、]\s+/, "");
+  const match = cleaned.match(/^(?:\[\[(.*?)\]\]\s*[：:]\s*)?(.+)$/);
+  if (!match) return null;
+  const description = match[2].trim().replace(/\s+/g, " ");
+  return description ? { memberLink: match[1]?.split("|")[0].trim() || null, description } : null;
 }
 
 export class TopicErrataStore {
@@ -136,24 +146,82 @@ export class TopicErrataStore {
     return { entries, notes: parsed.notes };
   }
 
-  async append(topicPath: string, _title: string, description: string, memberPath?: string): Promise<string> {
+  async append(topicPath: string, title: string, description: string, memberPath?: string): Promise<string> {
+    return (await this.appendEntry(topicPath, title, description, memberPath)).path;
+  }
+
+  async appendEntry(topicPath: string, _title: string, description: string, memberPath?: string): Promise<TopicErrataAppendResult> {
     const path = await this.ensure(topicPath);
     const file = this.port.getByPath(path);
     if (!(file instanceof obsidian.TFile)) throw new Error(`Topic errata file not found: ${path}`);
     const language = this.language();
     const titles = getTopicErrataTitles(language);
     const content = entryLine(description, memberPath);
+    let added = false;
+    const cleanDescription = description.trim().replace(/\s+/g, " ");
+    const normalizedMemberLink = memberPath ? normalizePath(memberPath).replace(/\.md$/i, "") : null;
     await this.port.process(file, (markdown) => {
       const parsed = parseTopicErrata(markdown);
-      const normalizedDescription = description.trim().replace(/\s+/g, " ").toLocaleLowerCase();
-      const memberLink = memberPath ? normalizePath(memberPath).replace(/\.md$/i, "").toLocaleLowerCase() : null;
-      if (parsed.entries.some((entry) => entry.description.toLocaleLowerCase() === normalizedDescription
-        && ((entry.memberLink && memberLink && this.linkResolvesToPath(entry.memberLink, path, memberPath || "")) || (!entry.memberLink && !memberLink)))) return markdown;
+      const normalized = normalizedDescription(description);
+      if (parsed.entries.some((entry) => normalizedDescription(entry.description) === normalized
+        && ((entry.memberLink && normalizedMemberLink && this.linkResolvesToPath(entry.memberLink, path, memberPath || "")) || (!entry.memberLink && !normalizedMemberLink)))) return markdown;
       const point = insertionPoint(markdown);
+      added = true;
       if (point === null) return `${markdown.trimEnd()}\n\n## ${titles.offTopic}\n${content}\n`;
       return `${markdown.slice(0, point)}${content}\n${markdown.slice(point)}`;
     });
-    return path;
+    return { path, description: cleanDescription, memberLink: normalizedMemberLink, added };
+  }
+
+  async removeEntries(topicPath: string, entries: readonly TopicErrataUndoEntry[]): Promise<number> {
+    if (!entries.length) return 0;
+    const file = await this.find(topicPath);
+    if (!file) return 0;
+    const pending = entries.filter((entry) => normalizePath(entry.path) === normalizePath(file.path)).map((entry) => ({
+      description: normalizedDescription(entry.description),
+      memberLink: entry.memberLink ? normalizePath(entry.memberLink).replace(/\.md$/i, "") : null,
+    }));
+    if (!pending.length) return 0;
+    let removed = 0;
+    try {
+      await this.port.process(file, (markdown) => {
+        const remaining = [...pending];
+        const ranges: Array<[number, number]> = [];
+        let section: "offTopic" | "notes" | null = null;
+        let offset = 0;
+        while (offset < markdown.length) {
+          const lineStart = offset;
+          while (offset < markdown.length && markdown[offset] !== "\r" && markdown[offset] !== "\n") offset++;
+          const line = markdown.slice(lineStart, offset);
+          if (markdown.startsWith("\r\n", offset)) offset += 2;
+          else if (markdown[offset] === "\r" || markdown[offset] === "\n") offset++;
+          const heading = line.match(/^\s*##\s+(.+?)\s*#*\s*$/);
+          if (heading) { section = getTopicErrataSectionKey(heading[1]); continue; }
+          if (section !== "offTopic") continue;
+          const candidate = parsedEntryLine(line);
+          if (!candidate) continue;
+          const index = remaining.findIndex((entry) => {
+            if (normalizedDescription(candidate.description) !== entry.description) return false;
+            if (!candidate.memberLink || !entry.memberLink) return !candidate.memberLink && !entry.memberLink;
+            const target = this.port.resolveLink(linkToPath(candidate.memberLink), file.path);
+            if (target instanceof obsidian.TFile) return normalizePath(target.path).replace(/\.md$/i, "") === entry.memberLink;
+            return normalizePath(linkToPath(candidate.memberLink)).replace(/\.md$/i, "") === entry.memberLink;
+          });
+          if (index >= 0) {
+            remaining.splice(index, 1);
+            ranges.push([lineStart, offset]);
+          }
+        }
+        removed = ranges.length;
+        let next = markdown;
+        for (const [start, end] of ranges.reverse()) next = `${next.slice(0, start)}${next.slice(end)}`;
+        return next;
+      });
+      return removed;
+    } catch (error) {
+      this.port.diagnostic?.("topic.errata_remove_failed", { topicPath, errataPath: file.path, entryCount: pending.length });
+      throw error;
+    }
   }
 
   private language(): "zh" | "en" { return this.port.uiLanguage() === "zh" ? "zh" : "en"; }

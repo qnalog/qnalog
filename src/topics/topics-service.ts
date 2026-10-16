@@ -40,10 +40,11 @@ export interface TopicPreviewProgress { completed: number; total: number }
 export interface TopicPreviewInput { startPath: string; memberPaths: string[]; basis: TopicBasis; title?: string; topicId?: string; rebuild?: boolean; bodyConfirmed?: boolean; signal?: AbortSignal; onProgress?: (progress: TopicPreviewProgress) => void }
 export interface TopicEstimateInput { memberPaths: string[]; basis: TopicBasis }
 export interface TopicPrompt extends TopicTagMatch { path: string }
+export type TopicsUndoResult = { restored: true; errataRemoved?: number; errataFailed?: true } | { restored: false; reason: "no-history" | "page-modified" };
 interface PendingPreview {
   preview: TopicChangePreview;
   managesActivity: boolean;
-  onApplied?: (selection: ReadonlySet<string>, skipped: readonly { id: string; reason: "block-modified" }[]) => Promise<void>;
+  onApplied?: (selection: ReadonlySet<string>, skipped: readonly { id: string; reason: "block-modified" }[], snapshotPath: string | null) => Promise<void>;
 }
 
 function cardDocument(card: OverviewCard): RelatedNoteDocument {
@@ -382,7 +383,7 @@ export class TopicsService {
       const current = (await store.list()).find((entry) => entry.page.id === preview.topicId);
       if (!current) throw new Error(`Topic not found: ${preview.topicId}`);
       const result = await store.apply(current.path, preview, selection);
-      await pendingEntry[1].onApplied?.(new Set(selection), result.skipped);
+      await pendingEntry[1].onApplied?.(new Set(selection), result.skipped, result.snapshotPath);
       this.previews.delete(activityId);
       this.controllers.delete(activityId);
       if (managesActivity) this.host.completeActivity(activityId);
@@ -431,12 +432,17 @@ export class TopicsService {
     this.previews.set(`topics:manual:${topic.page.id}`, {
       preview,
       managesActivity: false,
-      onApplied: async (selection, skipped) => {
+      onApplied: async (selection, skipped, snapshotPath) => {
+        const addedEntries: Array<{ path: string; description: string; memberLink: string | null }> = [];
         for (const entry of entries) {
           if (!entry.description || !selection.has(entry.id) || skipped.some((item) => item.id === entry.block.id)) continue;
           const scope = entry.sources.length ? entry.sources : [undefined];
-          for (const source of scope) await this.host.topicErrata?.append(topic.path, topic.page.title, entry.description, source);
+          for (const source of scope) {
+            const appended = await this.host.topicErrata?.appendEntry(topic.path, topic.page.title, entry.description, source);
+            if (appended?.added) addedEntries.push({ path: appended.path, description: appended.description, memberLink: appended.memberLink });
+          }
         }
+        await store.recordSnapshotErrata(topic.page.id, snapshotPath, addedEntries);
       },
     });
     return preview;
@@ -521,7 +527,20 @@ export class TopicsService {
     return preview;
   }
 
-  async undoLastUpdate(topicId: string) { return this.storeForCurrentFolder().undoLastUpdate(topicId); }
+  async undoLastUpdate(topicId: string): Promise<TopicsUndoResult> {
+    const store = this.storeForCurrentFolder();
+    const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    const result = await store.undoLastUpdate(topicId);
+    if (!result.restored) return result;
+    if (!result.errataEntries?.length) return { restored: true };
+    if (!this.host.topicErrata || !topic) return { restored: true as const, errataRemoved: 0, errataFailed: true as const };
+    try {
+      const errataRemoved = await this.host.topicErrata.removeEntries(topic.path, result.errataEntries);
+      return { restored: true as const, errataRemoved };
+    } catch {
+      return { restored: true as const, errataRemoved: 0, errataFailed: true as const };
+    }
+  }
   async previewRebuild(topicId: string, onProgress?: TopicPreviewInput["onProgress"]): Promise<TopicChangePreview> {
     const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
     if (!topic) throw new Error("Topic not found: " + topicId);
