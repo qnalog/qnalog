@@ -219,7 +219,7 @@ describe("requestApimimoAsrChunkWithEmptyRetry", () => {
     const wait = vi.fn().mockResolvedValue(undefined);
     const logDiagnostic = vi.fn().mockResolvedValue(undefined);
     const result = await requestApimimoAsrChunkWithEmptyRetry(
-      { diagnostics: { logDiagnostic } }, {}, { blob: { size: 123 }, mime: "audio/wav" }, "https://example.test", 1, 3, request, wait,
+      { diagnostics: { logDiagnostic } }, {}, { blob: { size: 123 }, mime: "audio/wav", durationMs: 2000 }, "https://example.test", 1, 3, request, wait,
     );
 
     expect(result).toEqual({ text: "恢复后的正文", rawText: "恢复后的正文" });
@@ -234,5 +234,34 @@ describe("requestApimimoAsrChunkWithEmptyRetry", () => {
       null, {}, { blob: { size: 123 }, mime: "audio/wav" }, "https://example.test", 0, 2, request, async () => {},
     )).rejects.toThrow("chunk 1/2");
     expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("30 秒以下连续空结果返回空文本并保留两次诊断", async () => {
+    const request = vi.fn().mockResolvedValue("");
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    const result = await requestApimimoAsrChunkWithEmptyRetry(
+      { diagnostics: { logDiagnostic } }, {}, { blob: { size: 123 }, mime: "audio/wav", durationMs: 2000 }, "https://example.test", 0, 1, request, wait,
+    );
+
+    expect(result).toEqual({ text: "", rawText: "" });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(wait).toHaveBeenCalledOnce();
+    expect(logDiagnostic).toHaveBeenCalledTimes(2);
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.apimimo_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 1 }));
+    expect(logDiagnostic).toHaveBeenNthCalledWith(2, "warn", "asr.apimimo_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 2 }));
+  });
+
+  it("30 秒及以上或时长未知时连续空结果仍抛错", async () => {
+    const request = vi.fn().mockResolvedValue("");
+    for (const prepared of [
+      { blob: { size: 123 }, mime: "audio/wav", durationMs: 30_000 },
+      { blob: { size: 123 }, mime: "audio/wav" },
+    ]) {
+      await expect(requestApimimoAsrChunkWithEmptyRetry(
+        null, {}, prepared, "https://example.test", 0, 1, request, async () => {},
+      )).rejects.toThrow("chunk 1/1");
+    }
+    expect(request).toHaveBeenCalledTimes(4);
   });
 });

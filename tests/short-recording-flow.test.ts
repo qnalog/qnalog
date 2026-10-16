@@ -173,7 +173,10 @@ function makeHost() {
         return saved;
       },
       update: async () => undefined,
-      remove: async () => undefined,
+      remove: async (id: string) => {
+        const index = queuedTasks.findIndex((task) => (task as { id?: string }).id === id);
+        if (index >= 0) queuedTasks.splice(index, 1);
+      },
       snapshot: () => [],
     },
     requestDeferredAsrRetry: () => undefined,
@@ -470,7 +473,7 @@ describe("短录音整条路径", () => {
     notices.length = 0;
     trashed.length = 0;
     const { host, files, recordingService, finalizeService } = makeHost();
-    stubTranscription("嗯。");
+    stubTranscription("");
     const mdPath = "QnALog/转写纪要/2026-09-18 1201.md";
     files.set(mdPath, { content: sessionHeader("2026-09-18 12:01") });
     const session = makeSession(mdPath);
@@ -483,6 +486,7 @@ describe("短录音整条路径", () => {
     expect([...files.keys()].filter((p) => p.startsWith("QnALog/录音/"))).toEqual([]);
     expect(trashed).toContain(mdPath);
     expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(host.queue.tasks).toEqual([]);
     expect(notices.join("\n")).toContain("Short recording had no recognized content");
   });
 

@@ -12,10 +12,12 @@ import {
   DASHSCOPE_CHAT_ASR_MAX_DURATION_MS,
   DASHSCOPE_CHAT_ASR_PROTOCOL,
   approxBase64Bytes,
+  buildChatInputAudioChunks,
   getChatInputAudioPlan,
   getChatInputAudioProfile,
   isApimimoAsrProvider,
   isChatInputAudioProvider,
+  requestChatInputAudioChunkWithEmptyRetry,
 } from "../src/asr/transcribe";
 
 // MediaRecorder 在桌面录的就是 webm/opus；用它的体积推算时长对不上，
@@ -111,6 +113,47 @@ describe("百炼分段转写的语种参数", () => {
     expect(profile.languageFor("ja")).toBe("ja");
     // 非法值同样不下发，避免把方言名之类的自由文本当成语种发出去。
     expect(profile.languageFor("中文（普通话）")).toBe("");
+  });
+});
+
+describe("聊天式音频输入的空结果重试", () => {
+  it("从解码结果把音频总时长写入直发 chunk", async () => {
+    class StubAudioContext {
+      decodeAudioData = vi.fn(async () => ({ duration: 2 }));
+      close = vi.fn(async () => undefined);
+    }
+    vi.stubGlobal("window", { AudioContext: StubAudioContext });
+    try {
+      const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
+      const chunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
+      expect(chunks).toEqual([{ blob, mime: "audio/webm", durationMs: 2000 }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("百炼 30 秒以下分块连续空结果返回空文本并保留诊断", async () => {
+    const request = vi.fn().mockResolvedValue("");
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    const result = await requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      { diagnostics: { logDiagnostic } },
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/webm", durationMs: 2000 },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      request,
+      wait,
+    );
+
+    expect(result).toEqual({ text: "", rawText: "" });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(wait).toHaveBeenCalledOnce();
+    expect(logDiagnostic).toHaveBeenCalledTimes(2);
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 1 }));
+    expect(logDiagnostic).toHaveBeenNthCalledWith(2, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 2 }));
   });
 });
 
