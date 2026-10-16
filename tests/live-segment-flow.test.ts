@@ -136,6 +136,21 @@ describe("live segment consumer contract", () => {
     expect(notices).toContainEqual(["The transcription result does not match the recording duration. The recording has been kept and can be retried.", 7000]);
   });
 
+  it("uses the live anomaly check for a long continuation segment", async () => {
+    const { service, host, blocks } = makeHost();
+    const session = makeSession({ continuationSourcePath: "Notes/target.md" });
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    transcribeMock.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", units: [] });
+
+    await service.processSegment(session, makeSegment({ endOffsetMs: 11_000 }));
+
+    expect(session.segments[0]).toMatchObject({ text: "", queueTaskId: "task-1", error: expect.stringContaining("recording duration") });
+    expect(blocks.join("\n")).not.toContain(repeatedMarkup);
+    expect(blocks.join("\n")).toContain(t("The transcription result does not match the recording duration. The recording has been kept and can be retried."));
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(host.app.vault.adapter.writeBinary).toHaveBeenCalledOnce();
+  });
+
   it("rejects an anomalous five-second tail segment in a long session", async () => {
     const { service, host, diagnostics, blocks } = makeHost();
     const repeatedMarkup = "<chinese>".repeat(4552);
