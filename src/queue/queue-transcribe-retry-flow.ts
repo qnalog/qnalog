@@ -131,7 +131,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       durationMs: retryDurationMs,
       signals: anomalySignals,
     });
-    throw new Error(message);
+    throw Object.assign(new Error(message), { nonRetryable: true });
   }
   const segmentIndex = sourceSegmentIndex;
   const startOffsetMs = Math.max(0, Number(task.startOffsetMs) || 0);

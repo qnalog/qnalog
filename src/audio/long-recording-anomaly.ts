@@ -29,6 +29,7 @@ export function classifyLongRecordingAnomaly(text: string, durationMs: number): 
   }
 
   const compact = Array.from(source.replace(/\s/gu, ""));
+  // Punctuation-only output has no speech tokens, so its repeated formatting must not classify it as repeated speech.
   if (/[\p{L}\p{N}]/u.test(compact.join(""))
     && compact.length > LONG_RECORDING_REPETITION_MIN_CHARACTERS
     && hasDominantRepeatedSpan(compact)) {

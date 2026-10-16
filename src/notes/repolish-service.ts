@@ -113,6 +113,11 @@ export class RepolishService {
       confirm: (title, body, ctaText) => this.interaction.confirm(title, body, ctaText),
       readAudio: async (file) => new Blob([await app.vault.readBinary(file)]),
       transcribeWhole: (blob, mime, options) => transcribeImportedAudio(this.host, blob, mime, options),
+      queueRetryTask: (task) => {
+        const queue = this.host.tasks.host.queue;
+        if (!queue) throw new Error(t("The transcription retry queue is unavailable."));
+        return queue.add(task);
+      },
       refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, options),
       getBackupFolder: () => `${defaultFolderPaths().archiveFolder}/${t("Original transcript backups")}`,
       createBackupFile: async (path, content) => {

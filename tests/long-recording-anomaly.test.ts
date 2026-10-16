@@ -13,6 +13,13 @@ describe("classifyLongRecordingAnomaly", () => {
     expect(classifyLongRecordingAnomaly(transcript, 600_000)).toEqual([]);
   });
 
+  it("accepts fast English and mixed Chinese-English speech", () => {
+    const fastEnglish = "Confirm scope, review risks, assign owners, and record next steps. Check the timeline and update the team.";
+    const fastMixed = "先确认 project scope，再 review risks，给 each owner 分配 next steps。开会记下 decisions, deadlines 和 blockers。";
+    expect(classifyLongRecordingAnomaly(fastEnglish, 8_000)).toEqual([]);
+    expect(classifyLongRecordingAnomaly(fastMixed, 8_000)).toEqual([]);
+  });
+
   it("detects a repeated service marker in a 41 KB result", () => {
     const repeatedMarkup = "<chinese>".repeat(4552);
     expect(repeatedMarkup.length).toBe(40_968);
