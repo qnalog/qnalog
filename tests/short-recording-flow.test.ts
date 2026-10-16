@@ -154,7 +154,10 @@ function makeHost() {
       },
       insertBeforeSegmentsEnd: async () => undefined,
       removeEmptySessionBlock: async (session: { mdPath: string }) => { files.delete(session.mdPath); },
-      appendPolishBlock: async () => undefined,
+      appendPolishBlock: async (session: { mdPath: string }, polished: string) => {
+        const current = String(files.get(session.mdPath)?.content ?? "");
+        files.set(session.mdPath, { content: `${current}\n${polished}` });
+      },
       rewriteConsolidated: async () => undefined,
       renameMarkdownWithGeneratedTitle: async () => null,
       detectModeFromMarkdown: () => "synthesis",
@@ -186,7 +189,7 @@ function makeHost() {
       return binary ? { blob: new Blob([binary], { type: "audio/webm" }) } : null;
     },
     diagnostics: { logDiagnostic: async (_level: string, event: string, message: string, data: unknown) => { diagnostics.push({ event, message, data }); } },
-    taskMeters: { beginTaskMeter: () => null, endTaskMeter: () => null, logCompletedWork: () => undefined },
+    taskMeters: { beginTaskMeter: vi.fn(() => null), endTaskMeter: () => null, logCompletedWork: () => undefined },
     syncImportBusyFromSessionProgress: () => undefined,
     requestOutlineRefresh: () => undefined,
     requestOpenOutlineView: async () => undefined,
@@ -487,7 +490,111 @@ describe("短录音整条路径", () => {
     expect(trashed).toContain(mdPath);
     expect(transcribeMock).toHaveBeenCalledOnce();
     expect(host.queue.tasks).toEqual([]);
-    expect(notices.join("\n")).toContain("Short recording had no recognized content");
+    expect(notices.join("\n")).toContain("No speech was detected; this recording was discarded.");
+  });
+
+  it("45 秒普通录音全部成功返回空文本时删除笔记和母带，不排队也不整理", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-45.md";
+    const audioPath = "QnALog/录音/blank-45.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:10") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-45.webm";
+    session.segments = [
+      { index: 0, startOffsetMs: 0, endOffsetMs: 15_000, text: "" },
+      { index: 1, startOffsetMs: 15_000, endOffsetMs: 30_000, text: "" },
+      { index: 2, startOffsetMs: 30_000, endOffsetMs: 45_000, text: "" },
+    ];
+
+    await finalizeService.finalizeSession(session as never);
+
+    expect(trashed).toContain(mdPath);
+    expect(trashed).toContain(audioPath);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(notices.join("\n")).toContain("No speech was detected; this recording was discarded.");
+  });
+
+  it("60 秒全空普通录音保留笔记和音频，不调用整理模型", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-60.md";
+    const audioPath = "QnALog/录音/blank-60.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:11") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-60.webm";
+    session.segments = [
+      { index: 0, startOffsetMs: 0, endOffsetMs: 20_000, text: "" },
+      { index: 1, startOffsetMs: 20_000, endOffsetMs: 40_000, text: "" },
+      { index: 2, startOffsetMs: 40_000, endOffsetMs: 60_000, text: "" },
+    ];
+
+    await finalizeService.finalizeSession(session as never);
+
+    expect(files.has(mdPath)).toBe(true);
+    expect(files.has(audioPath)).toBe(true);
+    expect(files.get(mdPath)?.content).toContain("No speech detected");
+    expect(trashed).toEqual([]);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(notices.join("\n")).toContain("No speech was detected; the recording and note were kept.");
+  });
+
+  it("短于 60 秒的导入空白音频保留笔记和音频并提示", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/2026-09-18 imported blank.md";
+    const audioPath = "QnALog/录音/imported-blank.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:12") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.source = "import";
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "imported-blank.webm";
+    session.segments = [{ index: 0, startOffsetMs: 0, endOffsetMs: 20_000, text: "" }];
+
+    await finalizeService.finalizeSession(session as never);
+
+    expect(files.has(mdPath)).toBe(true);
+    expect(files.has(audioPath)).toBe(true);
+    expect(files.get(mdPath)?.content).toContain("No speech detected");
+    expect(trashed).toEqual([]);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(notices.join("\n")).toContain("No speech was detected; the recording and note were kept.");
+  });
+
+  it("短于 60 秒的续录空白结果保留目标笔记和音频并提示", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/existing-note.md";
+    const audioPath = "QnALog/录音/continued-blank.webm";
+    files.set(mdPath, { content: "# Existing note\n" });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.continuationSourcePath = mdPath;
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "continued-blank.webm";
+    session.segments = [{ index: 0, startOffsetMs: 0, endOffsetMs: 20_000, text: "" }];
+
+    await finalizeService.finalizeSession(session as never);
+
+    expect(files.has(mdPath)).toBe(true);
+    expect(files.has(audioPath)).toBe(true);
+    expect(files.get(mdPath)?.content).toContain("No speech detected");
+    expect(trashed).toEqual([]);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(notices.join("\n")).toContain("No speech was detected; the recording and note were kept.");
   });
 
   it("不足 1 秒的误触不调用转写并清理结尾纪要", async () => {

@@ -12,6 +12,8 @@ import { normalizeMeetingWorkbench } from "./meeting-workbench-state";
 import { getErrorMessage, formatElapsed } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 import { getSegmentsForFinalSession } from "./session-finalize-sources";
+import { classifyBlankRecording } from "../audio/blank-recording-policy";
+import { getSegmentsDurationMs } from "./audio-refs";
 export type FinalizeProgress = Omit<SessionWorkProgress, "percent"> & { percent?: number | null };
 
 export interface SessionShortRecordingPort {
@@ -56,7 +58,7 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
   if (tier === "discard") {
     const notice = durationMs < SHORT_RECORDING_MINIMUM_MS
       ? t("Filtered out recordings shorter than one second")
-      : t("Short recording had no recognized content; its audio and note were discarded");
+      : t("No speech was detected; this recording was discarded.");
     new obsidian.Notice(notice);
   } else if (session.shortRecordingText) {
     const text = session.shortRecordingText.length > 40 ? `${session.shortRecordingText.slice(0, 39)}…` : session.shortRecordingText;
@@ -145,6 +147,41 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   let writeSession = segmentsForFinal === session.segments
     ? session
     : Object.assign({}, session, { segments: segmentsForFinal, multiSourceAudio: true });
+  const currentSegments = Array.isArray(session.segments) ? session.segments : [];
+  const durationMs = getSegmentsDurationMs(currentSegments);
+  const blankRecordingDisposition = classifyBlankRecording({
+    durationMs,
+    isOrdinaryRecording: !session.source && !session.continuation && !session.continuationSourcePath && !session.externalAudioSource,
+    segments: currentSegments,
+  });
+  if (blankRecordingDisposition !== "not-applicable") {
+    if (blankRecordingDisposition === "discard") {
+      session.shortRecordingTier = "discard";
+      session.shortRecordingDurationMs = durationMs;
+      await finishShortRecordingFlow(port, session);
+      return;
+    }
+    await port.appendPolishBlock(writeSession, t("No speech detected"), null, false);
+    port.setProgress(session, {
+      stage: "transcript-empty", label: t("No speech detected"), percent: 100,
+      detail: t("No speech was detected; the recording and note were kept."),
+    });
+    try {
+      await port.logDiagnostic("info", "session.blank_recording_kept", t("No speech was detected; the recording and note were kept."), {
+        durationMs, source: session.source || "recording", mdPath: session.mdPath,
+      });
+    } catch { /* diagnostics must not change finalization behavior */ }
+    new obsidian.Notice(t("No speech was detected; the recording and note were kept."), 8000);
+    if (port.getSettings().autoOpenNoteAfterFinish) {
+      const file = port.getVault().getAbstractFileByPath(session.mdPath);
+      if (file instanceof obsidian.TFile) {
+        try { await port.openFile(file); } catch { /* intentionally empty */ }
+      }
+    }
+    port.endSession(session);
+    port.requestOutlineRefresh();
+    return;
+  }
   const usableTranscriptSegments = segmentsForFinal.filter(s => s && String(s.text || "").trim());
   if (!usableTranscriptSegments.length) {
     const noTranscriptError = new Error(t("No usable transcript text for organizing; the recording and failed slices were kept"));

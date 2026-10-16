@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 const notes = new Map<string, string>();
 let importedAudioTexts = ["Imported audio transcript"];
 let importedAudioIndex = 0;
 let importedAudioDurationMs = 1200;
 let importedAudioResultDurationMs = 1200;
+let importedAudioBinary = new Uint8Array([1, 2, 3]).buffer;
 let importedSourceText = "A decision and its owner";
 let lastInitializedSession: RecordingSession | null = null;
 const notices: string[] = [];
@@ -85,7 +87,7 @@ function makeHost(audioPaths = ["QnALog/Import/clip.wav"]): { host: ImportHost; 
         return null;
       },
       async read(file: { path: string }) { return file.path === sourcePath ? importedSourceText : notes.get(file.path) || ""; },
-      async readBinary() { return new Uint8Array([1, 2, 3]).buffer; },
+      async readBinary() { return importedAudioBinary; },
       async createFolder(path: string) { folders.add(path); },
       async create(path: string, content: string) { notes.set(path, content); return new obsidian.TFile(path); },
       async modify(file: { path: string }, content: string) { notes.set(file.path, content); },
@@ -192,6 +194,40 @@ describe("text import session ownership", () => {
 
     expect(sessionStore.get()).toBeNull();
     expect([...notes.values()].join("\n")).toContain("Imported audio transcript");
+  });
+
+  it("imports generated 10-second silent WebM with stub ASR returning empty text", async () => {
+    notes.clear();
+    importedAudioTexts = [""];
+    importedAudioIndex = 0;
+    importedAudioDurationMs = 10_000;
+    importedAudioResultDurationMs = 10_000;
+    const silentAudio = readFileSync("tests/fixtures/silent-10s.webm");
+    importedAudioBinary = silentAudio.buffer.slice(silentAudio.byteOffset, silentAudio.byteOffset + silentAudio.byteLength) as ArrayBuffer;
+    const { host, audioPath } = makeHost();
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20261016-231200" : "2026-10-16",
+        toDate: () => new Date("2026-10-16T23:12:00.000Z"),
+      }),
+      setTimeout: () => 1,
+    });
+    try {
+      const result = await new ImportService(host).importAudioFiles([audioPath], "synthesis");
+      expect(result).toMatchObject({ segmentCount: 1, pendingTranscriptionCount: 0 });
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioTexts = ["Imported audio transcript"];
+      importedAudioIndex = 0;
+      importedAudioDurationMs = 1200;
+      importedAudioResultDurationMs = 1200;
+      importedAudioBinary = new Uint8Array([1, 2, 3]).buffer;
+    }
+
+    expect(lastInitializedSession?.segments[0]?.text).toBe("");
+    expect(lastInitializedSession?.segments[0]?.error).toBeFalsy();
+    expect(host.sessionFinalize.finalizeSession).toHaveBeenCalledOnce();
+    expect(notes.size).toBeGreaterThan(0);
   });
 
   it("keeps anomalous long imported audio retryable and excludes its text", async () => {
