@@ -519,6 +519,67 @@ describe("短录音整条路径", () => {
     expect(notices.join("\n")).toContain("No speech was detected; this recording was discarded.");
   });
 
+  it("10.675 秒录音在 10 秒切点分成 10126ms 与 549ms 两段，全空后删除笔记和母带", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService, diagnostics } = makeHost();
+    routeTranscriptionMock.active = true;
+    transcribeMock
+      .mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [] })
+      .mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [] });
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-split.md";
+    const audioPath = "QnALog/录音/blank-split.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:13") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-split.webm";
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_126), isFinal: false } as never);
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_675), index: 1, startOffsetMs: 10_126, isFinal: true } as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+
+    expect(session.segments.map((segment: { startOffsetMs: number; endOffsetMs: number; text: string }) => [segment.startOffsetMs, segment.endOffsetMs, segment.text]))
+      .toEqual([[0, 10_126, ""], [10_126, 10_675, ""]]);
+    expect(trashed).toContain(mdPath);
+    expect(trashed).toContain(audioPath);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(transcribeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("全空会话含失败分段时保留笔记并保留转写重试任务", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService, diagnostics } = makeHost();
+    routeTranscriptionMock.active = true;
+    transcribeMock
+      .mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [] })
+      .mockRejectedValueOnce(new Error("network timeout"));
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-with-error.md";
+    const audioPath = "QnALog/录音/blank-with-error.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:14") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-with-error.webm";
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_126), isFinal: false } as never);
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_675), index: 1, startOffsetMs: 10_126, isFinal: true } as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+
+    expect(session.segments.map((segment: { error?: string | null; text: string }) => ({ text: segment.text, error: segment.error || null })))
+      .toEqual([{ text: "", error: null }, { text: "", error: "network timeout" }]);
+    expect(trashed).not.toContain(mdPath);
+    expect(files.has(mdPath)).toBe(true);
+    expect(files.has(audioPath)).toBe(true);
+    expect(host.queue.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ type: "transcribe", status: "pending", lastError: "network timeout" })]));
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(diagnostics).toContainEqual(expect.objectContaining({ event: "session.no_transcript" }));
+  });
+
   it("60 秒全空普通录音保留笔记和音频，不调用整理模型", async () => {
     notices.length = 0;
     trashed.length = 0;

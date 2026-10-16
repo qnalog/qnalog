@@ -543,6 +543,7 @@ export class ImportService {
     }
     const persistedMarkdown = await this.host.app.vault.read(transcriptFile);
     const transcriptCheckpoint = verifyTranscriptCheckpoint(persistedMarkdown, session.segments);
+    // The checkpoint requires at least one usable text segment; a successful all-blank import is finalized by the blank-recording policy.
     const allSegmentsSuccessfullyBlank = classifyBlankRecording({
       durationMs: 0,
       isOrdinaryRecording: false,

@@ -1,5 +1,4 @@
-/** 低于此时长的全空普通录音沿用短录音的笔记与音频删除流程。 */
-export const BLANK_RECORDING_DISCARD_LIMIT_MS = 60_000;
+import { BLANK_RECORDING_DISCARD_LIMIT_MS } from "../shared/limits";
 
 export type BlankRecordingDisposition = "discard" | "keep" | "not-applicable";
 

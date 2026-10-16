@@ -420,9 +420,10 @@ describe("text import session ownership", () => {
     expect(readTranscriptBlocks(markdown)[0].segment.transcript?.revisions[0].utterances).toHaveLength(expectedUtteranceCount);
   });
 
-  it("clears failed import activity and marks the retained audio note retryable", async () => {
+  it("does not bypass a failed transcript checkpoint when imported text exists", async () => {
     notes.clear();
-    importedAudioTexts = [makeVariedTranscript(4329)];
+    const importedText = makeVariedTranscript(4329);
+    importedAudioTexts = [importedText];
     importedAudioDurationMs = 300_000;
     importedAudioResultDurationMs = 300_000;
     importedAudioIndex = 0;
@@ -453,6 +454,8 @@ describe("text import session ownership", () => {
     expect(host.tasks._importBusy).toBeNull();
     expect(busyStatus).toHaveBeenCalledOnce();
     expect(activity).toHaveBeenCalledWith(expect.objectContaining({ phase: "persist", error: expect.stringContaining("(0/1)") }));
+    expect(lastInitializedSession?.segments[0]?.text).toBe(importedText);
+    expect(host.sessionFinalize.finalizeSession).not.toHaveBeenCalled();
     const markdown = [...notes.values()].join("\n");
     expect(markdown).toContain("(import failed; audio kept for retry)");
     expect(markdown).not.toContain("(importing…)");

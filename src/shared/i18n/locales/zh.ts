@@ -406,7 +406,6 @@ export const ZH: MessageTable = {
   "Almost no sound was detected in the whole session; please check the selected microphone / computer audio device (Settings → Advanced → Audio device check).": "整场几乎没检测到声音，请检查所选麦克风 / 电脑音频设备（设置 → 进阶 → 音频设备检测）。",
   "⏭ This recording was too short or had no valid audio; skipped": "⏭ 本次录音时长过短或无有效音频，已跳过",
   "Filtered out recordings shorter than one second": "已过滤不足一秒的录音",
-  "Short recording had no recognized content; its audio and note were discarded": "短录音没有识别到内容，已删除音频和笔记",
   "Short recording was not made into a note; audio was kept. Recognized: {0}": "录音较短，未建笔记，已保留音频。识别到：{0}",
   "Short recording transcription result was anomalous (text volume far exceeded recording duration); audio was kept and no note was created. You can manually import it later to retry.": "短录音的识别结果异常（文字量远超录音时长），已保留音频，未建笔记。可稍后手动导入重试。",
   "Short recording transcription failed; audio and a retry task were kept: {0}": "短录音转写失败，已保留音频并加入待处理重试：{0}",

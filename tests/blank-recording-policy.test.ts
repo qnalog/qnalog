@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BLANK_RECORDING_DISCARD_LIMIT_MS, classifyBlankRecording } from "../src/audio/blank-recording-policy";
+import { classifyBlankRecording } from "../src/audio/blank-recording-policy";
+import { BLANK_RECORDING_DISCARD_LIMIT_MS } from "../src/shared/limits";
 
 describe("全空录音收尾判定", () => {
   const blankSegments = [{ text: "" }, { text: "   " }];
