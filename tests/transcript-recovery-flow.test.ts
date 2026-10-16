@@ -19,6 +19,7 @@ import {
   type TranscriptRecoveryPort,
 } from "../src/notes/transcript-recovery-flow";
 import { extractTranscriptSegments } from "../src/notes/note-transcript-ledger";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 
 const f = (path: string) => new obsidian.TFile(path);
 
@@ -54,6 +55,7 @@ describe("recoverOriginalTranscript", () => {
       pickAudioFile: vi.fn(async () => null),
       confirm,
       readAudio: vi.fn(async () => new Blob(["x"])),
+      queueRetryTask: vi.fn(async () => ({ id: "retry-recovery" })),
       transcribeWhole: vi.fn(async () => ({
         text: "今天确认项目下周启动。", rawText: "今天确认项目下周启动。", providerId: "p",
         units: [{ rawText: "今天确认项目下周启动。", normalizedText: "今天确认项目下周启动。", speakerId: null, speakerName: null, startMs: 0, endMs: 5000, timing: "provider" as const }],
@@ -81,6 +83,27 @@ describe("recoverOriginalTranscript", () => {
     expect(await recoverOriginalTranscript(port, note)).toBe(false);
     expect(state.backups.size).toBe(1);
     expect(state.text).toBe(noteText);
+  });
+
+  it("writes a retry placeholder and keeps audio when recovery returns anomalous text", async () => {
+    const { port, note, state } = setup([true]);
+    const repeatedText = "<chinese>".repeat(25);
+    vi.mocked(port.transcribeWhole).mockResolvedValueOnce({
+      text: repeatedText, rawText: repeatedText, providerId: "p", durationMs: 60_000,
+      units: [{ rawText: repeatedText, normalizedText: "", speakerId: null, speakerName: null, startMs: 0, endMs: 60_000, timing: "provider" }],
+    } as never);
+
+    await expect(recoverOriginalTranscript(port, note)).resolves.toBe(false);
+
+    expect(state.text).not.toContain(repeatedText);
+    expect(state.text).toContain("qnalog-transcribe-task:retry-recovery");
+    expect(state.text).toMatch(/Waiting for background transcription|等待后台转写/);
+    expect(state.backups.size).toBe(0);
+    expect(port.queueRetryTask).toHaveBeenCalledWith(expect.objectContaining({
+      audioPath: "QnALog/录音/qnalog-20261013-232149.m4a", status: "failed", retries: 3,
+      lastError: expect.stringContaining("recording duration"), wholeFileImport: true,
+    }));
+    expect(readTranscriptBlocks(state.text)).toHaveLength(1);
   });
 
   it("does not transcribe when the first confirmation is declined", async () => {

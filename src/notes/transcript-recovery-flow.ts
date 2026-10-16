@@ -1,13 +1,15 @@
 import * as obsidian from "obsidian";
 import type { AsrTranscriptResult } from "../asr/transcript-result";
 import { AUDIO_EXT } from "../shared/catalog-import";
-import { NS_AUDIO_ALT, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_AUDIO_ALT, nsMarker, readNamespaceFrontmatter } from "../shared/namespace";
 import { formatElapsed } from "../shared/util-common";
 import { labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
-import type { Segment } from "../shared/types";
+import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
+import type { QueueTaskLifecycle, Segment, TranscribeQueueTaskPayload } from "../shared/types";
 import { attachTranscriptResult } from "../transcript/session-transcript";
-import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
+import { classifyLongRecordingAnomaly } from "../audio/long-recording-anomaly";
 import { getAudioTimeLink } from "./audio-reference-text";
 import { getSourceIdFromMarkdown } from "./note-source-metadata";
 
@@ -20,6 +22,7 @@ export interface TranscriptRecoveryPort {
   confirm(title: string, body: string, ctaText: string): Promise<boolean>;
   readAudio(file: obsidian.TFile): Promise<Blob>;
   transcribeWhole(blob: Blob, mime: string, options: { diarization: boolean; fileName: string }): Promise<AsrTranscriptResult>;
+  queueRetryTask(task: TranscribeQueueTaskPayload & Partial<QueueTaskLifecycle>): Promise<{ id: string }>;
   refreshNoteIndex(file: obsidian.TFile, options: { reason: string }): Promise<unknown>;
   /** 备份文件所在的专用目录（不存在时由 createBackupFile 创建）。 */
   getBackupFolder(): string;
@@ -119,6 +122,48 @@ export async function recoverOriginalTranscript(port: TranscriptRecoveryPort, fi
   const result = await port.transcribeWhole(blob, mimeOf(audio), { diarization: true, fileName: audio.name });
   const text = String(result.text || "").trim();
   if (!text) throw new Error(t("Whole-file transcription returned an empty result."));
+
+  const unitDurationMs = result.units.reduce((max, unit) => Math.max(max, Number(unit.endMs) || 0), 0);
+  const declaredDurationMs = Number((result as AsrTranscriptResult & { durationMs?: unknown }).durationMs);
+  const durationMs = Number.isFinite(declaredDurationMs) && declaredDurationMs > 0 ? declaredDurationMs : unitDurationMs;
+  const anomalySignals = classifyLongRecordingAnomaly(text, durationMs);
+  if (anomalySignals.length) {
+    const error = Object.assign(new Error(t("The transcription result does not match the recording duration. The recording has been kept and can be retried.")), { nonRetryable: true });
+    const content = await port.getVault().read(file);
+    const sourceId = getSourceIdFromMarkdown(content, file);
+    const retryTask = await port.queueRetryTask({
+      type: "transcribe", sessionId: sourceId, mdPath: file.path, audioPath: audio.path,
+      sourceAudioPath: audio.path, sourceAudioName: audio.name, masterAudioPath: audio.path, masterAudioName: audio.name,
+      audioName: audio.name, segmentIndex: 0, startOffsetMs: 0, endOffsetMs: durationMs,
+      isFinal: true, source: "recording", wholeFileImport: true,
+      speakerDiarization: true, lastError: error.message, status: "failed", retries: 3,
+    });
+    const base: Segment = {
+      index: 0, startOffsetMs: 0, endOffsetMs: durationMs,
+      audioStartOffsetMs: 0, audioEndOffsetMs: durationMs,
+      audioName: audio.name, audioPath: audio.path,
+      error: error.message, isFinal: true, source: "recording", queueTaskId: retryTask.id, text: "",
+    };
+    const segment = attachTranscriptResult(base, sourceId, null, "asr");
+    const heading = [
+      `### ${labelText("segment", 1)} (${formatElapsed(0)}–${formatElapsed(durationMs)}) ${getAudioTimeLink(audio.name, 0)}`,
+      nsMarker("transcribe-task", retryTask.id),
+    ].join("\n\n");
+    const placeholder = getTranscribeSegmentPlaceholder(error, { retryable: true });
+    const block = serializeTranscriptBlock(segment, heading, placeholder);
+    await port.getVault().process(file, (latest) => {
+      const existing = readTranscriptBlocks(latest).find((item) => item.segment.transcript?.id === segment.transcript?.id);
+      return existing
+        ? replaceTranscriptBlock(latest, existing, segment, placeholder)
+        : insertRecoveredTranscript(latest, block);
+    });
+    await port.refreshNoteIndex(file, { reason: "transcript-recovery-anomalous" });
+    const reason = anomalySignals.includes("density")
+      ? t("The transcript contains too much text for the recording duration")
+      : t("The transcript contains a dominant repeated pattern");
+    new obsidian.Notice(t("Transcription output appears abnormal ({0}); the audio and retry task were kept. Retry this audio from processing progress.").replace("{0}", reason), 9000);
+    return false;
+  }
 
   const content = await port.getVault().read(file);
   const sourceId = getSourceIdFromMarkdown(content, file);

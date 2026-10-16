@@ -116,6 +116,59 @@ describe("live segment consumer contract", () => {
     expect(session.shortRecordingTier).toBeUndefined();
   });
 
+  it("rejects an anomalous long segment while retaining its audio and retry task", async () => {
+    const { service, host, diagnostics, blocks } = makeHost();
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    transcribeMock.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", units: [] });
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({ endOffsetMs: 11_000 }));
+
+    expect(session.segments[0]).toMatchObject({ text: "", queueTaskId: "task-1", error: expect.stringContaining("recording duration") });
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(host.app.vault.adapter.writeBinary).toHaveBeenCalledOnce();
+    expect(blocks.join("\n")).not.toContain("<chinese>");
+    expect(diagnostics).toContainEqual(expect.arrayContaining([
+      "warn",
+      "asr.long_recording_anomaly",
+      expect.any(String),
+      expect.objectContaining({ provider: "provider", model: "model", textLength: 40_968, durationMs: 10_000, signals: ["density", "repetition"] }),
+    ]));
+    expect(notices).toContainEqual(["The transcription result does not match the recording duration. The recording has been kept and can be retried.", 7000]);
+  });
+
+  it("uses the live anomaly check for a long continuation segment", async () => {
+    const { service, host, blocks } = makeHost();
+    const session = makeSession({ continuationSourcePath: "Notes/target.md" });
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    transcribeMock.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", units: [] });
+
+    await service.processSegment(session, makeSegment({ endOffsetMs: 11_000 }));
+
+    expect(session.segments[0]).toMatchObject({ text: "", queueTaskId: "task-1", error: expect.stringContaining("recording duration") });
+    expect(blocks.join("\n")).not.toContain(repeatedMarkup);
+    expect(blocks.join("\n")).toContain(t("The transcription result does not match the recording duration. The recording has been kept and can be retried."));
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(host.app.vault.adapter.writeBinary).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an anomalous five-second tail segment in a long session", async () => {
+    const { service, host, diagnostics, blocks } = makeHost();
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    transcribeMock.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", units: [] });
+    const session = makeSession({ segments: [{ text: "Earlier long-session segment" }] });
+    await service.processSegment(session, makeSegment({ startOffsetMs: 100_000, endOffsetMs: 105_000 }));
+
+    expect(session.segments[1]).toMatchObject({ text: "", queueTaskId: "task-1", error: expect.stringContaining("recording duration") });
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).toHaveBeenCalledOnce();
+    expect(host.app.vault.adapter.writeBinary).toHaveBeenCalledOnce();
+    expect(blocks.join("\n")).not.toContain("<chinese>");
+    expect(diagnostics).toContainEqual(expect.arrayContaining([
+      "warn", "asr.long_recording_anomaly", expect.any(String),
+      expect.objectContaining({ durationMs: 5000, signals: ["density", "repetition"] }),
+    ]));
+    expect(notices).toContainEqual(["The transcription result does not match the recording duration. The recording has been kept and can be retried.", 7000]);
+  });
+
   it("keeps short recognized fragments with audio and stores the text for the notice", async () => {
     const { service } = makeHost();
     const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });
@@ -221,7 +274,7 @@ describe("live segment consumer contract", () => {
 
   it("writes a long live transcript into the same independent segment area as imports", async () => {
     const { service, host } = makeHost();
-    const text = "Live sentence. ".repeat(300);
+    const text = Array.from({ length: 100 }, (_, index) => `Live sentence ${index} includes varied details. `).join("");
     let markdown = `# In progress\n\n${buildTranscriptSessionSkeleton("s1")}`;
     const file = new (await import("obsidian")).TFile("Notes/s.md");
     const vault = {
@@ -234,7 +287,7 @@ describe("live segment consumer contract", () => {
       await insertBeforeSessionSegmentsEnd({ getVault: () => vault as never, appendToNote: async () => undefined }, path, block, sessionId);
     };
     transcribeMock.mockResolvedValueOnce({ text, rawText: text, providerId: "provider", units: [] });
-    await service.processSegment(makeSession(), makeSegment());
+    await service.processSegment(makeSession(), makeSegment({ endOffsetMs: 601_000 }));
 
     const blocks = readTranscriptBlocks(markdown);
     const detailTags = [...markdown.matchAll(/<\/?details\b[^>]*>/gi)].map((match) => match[0]);

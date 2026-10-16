@@ -14,6 +14,7 @@ import { t } from "../shared/i18n";
 import { attachTranscriptResult } from "../transcript/session-transcript";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import type { AudioBlobSource } from "./transcribe-audio-source";
+import { classifyLongRecordingAnomaly } from "../audio/long-recording-anomaly";
 
 export type TranscribeRetryTask = TranscribeQueueTaskPayload & { id?: string };
 
@@ -26,6 +27,7 @@ export interface QueueTranscribeRetryPort {
   transcribeSegment(blob: Blob, mime: string): Promise<AsrTranscriptResult>;
   transcribeChannels(blob: Blob, mime: string, expectedChannelCount: number, options: { requireSeparatedChannels: boolean }): Promise<AsrTranscriptResult | null>;
   transcribeWhole(blob: Blob, mime: string, options: { providerId?: string; diarization: boolean; speakerCount?: number; fileName: string }): Promise<AsrTranscriptResult>;
+  getTranscribeModel(providerId?: string, wholeFileImport?: boolean): string;
   logDiagnostic(level: "warn" | "error", code: string, message: string, data: Record<string, unknown>): Promise<unknown>;
   refreshNoteIndex(file: obsidian.TFile, options: { reason: string }): Promise<unknown>;
   deleteSegmentCache(audioPath: string, taskId?: string, ephemeral?: boolean): Promise<unknown>;
@@ -114,6 +116,23 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
     throw new Error(t("Transcription retry returned an empty result (the service responded HTTP 200 with no text)"));
   }
   if (!transcriptionResult) throw new Error(t("Transcription retry returned no structured result"));
+  const taskDurationMs = Math.max(0, Number(task.endOffsetMs) - Number(task.startOffsetMs) || 0);
+  const resultDurationMs = Number((transcriptionResult as AsrTranscriptResult & { durationMs?: unknown }).durationMs);
+  const retryDurationMs = taskDurationMs > 0
+    ? taskDurationMs
+    : Number.isFinite(resultDurationMs) && resultDurationMs > 0 ? resultDurationMs : 0;
+  const anomalySignals = classifyLongRecordingAnomaly(text, retryDurationMs);
+  if (anomalySignals.length) {
+    const message = t("The transcription result does not match the recording duration. The recording has been kept and can be retried.");
+    await port.logDiagnostic("warn", "asr.long_recording_anomaly", t("Transcription result rejected because it did not match the recording duration."), {
+      provider: task.providerId || transcriptionResult.providerId || "",
+      model: port.getTranscribeModel(task.providerId, !!task.wholeFileImport),
+      textLength: Array.from(String(text || "")).length,
+      durationMs: retryDurationMs,
+      signals: anomalySignals,
+    });
+    throw Object.assign(new Error(message), { nonRetryable: true });
+  }
   const segmentIndex = sourceSegmentIndex;
   const startOffsetMs = Math.max(0, Number(task.startOffsetMs) || 0);
   const endOffsetMs = Math.max(startOffsetMs, Number(task.endOffsetMs) || startOffsetMs);

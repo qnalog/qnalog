@@ -12,6 +12,7 @@ import { mimeFromExt, getTranscribeSegmentPlaceholder } from "../shared/util-aud
 import { diagnosticError } from "../shared/util-key-diag";
 import { audioImportStageFromWorkProgress, upsertActivityRequest } from "../shared/activity-progress";
 import { extractSpeakerIdsFromMarkdown } from "../audio/channel-speakers";
+import { classifyLongRecordingAnomaly, type LongRecordingAnomalySignal } from "../audio/long-recording-anomaly";
 import { isSpeakerDiarizationProvider, normalizeRequestedSpeakerCount } from "../asr/diarization";
 import { isDashScopeFileTransProvider, resolveImportTranscribeProvider, transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { verifyTranscriptCheckpoint } from "../imports/transcript-checkpoint";
@@ -214,6 +215,7 @@ export class ImportService {
     let cumOffsetMs = 0;
     let processedFiles = 0;
     let successfulTranscriptions = 0;
+    let anomalyNoticeShown = false;
     for (let i = 0; i < paths.length; i++) {
       const audioPath = paths[i];
       const indexedFile = this.host.app.vault.getAbstractFileByPath(audioPath);
@@ -307,6 +309,7 @@ export class ImportService {
       let result = null;
       let error = null;
       let lastImportProgressPhase = "";
+      let anomalySignals: LongRecordingAnomalySignal[] | null = null;
       try {
         result = await transcribeImportedAudio(this.host, blob, mime, {
           providerId: importProvider.id,
@@ -342,6 +345,19 @@ export class ImportService {
             });
           },
         });
+        const transcriptionDurationMs = Math.max(0, Number(result.durationMs) || Number(durationMs) || 0);
+        const signals = classifyLongRecordingAnomaly(result.text, transcriptionDurationMs);
+        if (signals.length) {
+          anomalySignals = signals;
+          await this.host.diagnostics.logDiagnostic("warn", "asr.long_recording_anomaly", t("Transcription result rejected because it did not match the recording duration."), {
+            provider: importProvider.id,
+            model: importProvider.model || "",
+            textLength: Array.from(String(result.text || "")).length,
+            durationMs: transcriptionDurationMs,
+            signals,
+          });
+          throw new Error(t("The transcription result does not match the recording duration. The recording has been kept and can be retried."));
+        }
         const detectedSpeakerIds = speakerDiarization
           ? extractSpeakerIdsFromMarkdown(String(result.text || ""))
           : [];
@@ -410,6 +426,10 @@ export class ImportService {
           activeSegments: 0,
           failedSegments: Math.max(0, Number(this.host.tasks._importBusy && this.host.tasks._importBusy.failedSegments) || 0) + 1,
         });
+        if (anomalySignals) {
+          new obsidian.Notice(t("The transcription result does not match the recording duration. The recording has been kept and can be retried."), 9000);
+          anomalyNoticeShown = true;
+        }
         await this.host.diagnostics.logDiagnostic("error", "asr.import_whole_file_failed", t("Whole-file transcription of the imported audio failed."), {
           provider: importProvider.id,
           model: importProvider.model || "",
@@ -456,7 +476,7 @@ export class ImportService {
       }
 
       const visibleText = error
-        ? getTranscribeSegmentPlaceholder(error, { retryable: true })
+        ? anomalySignals ? error.message : getTranscribeSegmentPlaceholder(error, { retryable: true })
         : (result?.text || labelText("noContentAudio"));
       const segmentRecord = attachTranscriptResult({
         index: segIndex,
@@ -466,7 +486,7 @@ export class ImportService {
         audioPath: keepSourceAudio ? audioPath : "",
         segmentAudioName: keepSourceAudio || error ? displayName : "",
         segmentAudioPath: keepSourceAudio || error ? audioPath : "",
-        text: result ? result.text : "",
+        text: error ? "" : (result ? result.text : ""),
         error: error ? error.message : null,
         isFinal,
         source: "import",
@@ -508,7 +528,7 @@ export class ImportService {
         error: message,
         label: t("Speech transcription not completed"),
       });
-      new obsidian.Notice(message, 9000);
+      if (!anomalyNoticeShown) new obsidian.Notice(message, 9000);
       return {
         mdPath: session.mdPath,
         sessionId: session.id,

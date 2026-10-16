@@ -14,6 +14,7 @@ import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import { getAudioTimeLink } from "./audio-reference-text";
 import type { FinalizeProgress } from "./session-finalize-run-flow";
 import { classifyShortRecordingContent } from "../audio/short-recording-content";
+import { classifyLongRecordingAnomaly, type LongRecordingAnomalySignal } from "../audio/long-recording-anomaly";
 
 const stringifyValue = String as (value: unknown) => string;
 
@@ -118,6 +119,7 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   let streamingRawText = "";
   let batchAsrAttempted = false;
   let batchAsrFailureRecorded = false;
+  let anomalySignals: LongRecordingAnomalySignal[] | null = null;
   const activeProfile = port.getActiveProfile();
   const isStreamingProvider = activeProfile && activeProfile.transcribeMode === "streaming";
   port.setProgress(session, { stage: "transcribing", label: `${t("Transcript segment ")}${segNumber}${t(" segments")}`, percent: null, detail: t("Audio is being sent to the transcription service") });
@@ -206,6 +208,32 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       }
     }
   }
+  if (!err && !session.shortRecordingTier) {
+    const signals = classifyLongRecordingAnomaly(text, segmentDurationMs);
+    if (signals.length) {
+      anomalySignals = signals;
+      const originalTextLength = Array.from(String(text || "")).length;
+      const provider = asrResult && asrResult.providerId
+        || activeProfile && activeProfile.id
+        || session.importTranscribeProviderId
+        || port.getSettings().activeTranscribeProvider
+        || "";
+      const model = activeProfile && activeProfile.model || "";
+      err = new Error(t("The transcription result does not match the recording duration. The recording has been kept and can be retried."));
+      text = "";
+      asrResult = null;
+      port.recordAttemptFailure(session, err, seg);
+      try {
+        await port.logDiagnostic("warn", "asr.long_recording_anomaly", t("Transcription result rejected because it did not match the recording duration."), {
+          provider,
+          model,
+          textLength: originalTextLength,
+          durationMs: segmentDurationMs,
+          signals,
+        });
+      } catch { /* diagnostic storage failure must not restore anomalous text */ }
+    }
+  }
   if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000) {
     err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
     asrResult = null;
@@ -225,7 +253,9 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
         size: (transcribeBlob && transcribeBlob.size) || seg.blobSize || 0,
         segmentIndex, startOffsetMs: displayStartOffsetMs, endOffsetMs: displayEndOffsetMs, mode: session.mode, error: diagnosticError(err),
       });
-      const notice = session.shortRecordingTier === "probe"
+      const notice = anomalySignals
+        ? t("The transcription result does not match the recording duration. The recording has been kept and can be retried.")
+        : session.shortRecordingTier === "probe"
         ? t("Short recording transcription failed; audio and a retry task were kept: {0}").replace("{0}", getErrorMessage(err))
         : isStreamingProvider
           ? t("Segment {0} failed to transcribe in streaming mode and cannot be retried offline; recording continues locally. Use \"Re-organize\" when the whole recording finishes, or record that segment again.").replace("{0}", String(segNumber))
@@ -258,12 +288,14 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   };
   const segmentArrayIndex = session.segments.length;
   session.segments.push(segmentRecord);
-  if (err && (!isStreamingProvider || session.shortRecordingTier === "probe")) {
+  if (err && (!isStreamingProvider || session.shortRecordingTier === "probe" || anomalySignals)) {
     if (err.asrDeferred || isTransientAsrError(err)) port.markSessionAsrJobsDeferred(session);
     const retryTask = await port.keepSegmentTaskForRetry(session, Object.assign({}, seg, { segmentAudioPath, segmentAudioName, segmentIndex, displayStartOffsetMs, displayEndOffsetMs }), err);
     segmentRecord.queueTaskId = retryTask.id;
   }
-  const visibleText = err ? getTranscribeSegmentPlaceholder(err, { streaming: !!isStreamingProvider, deferred: !!err.asrDeferred, retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)) }) : (text ? text : labelText("noContentSegment"));
+  const visibleText = err
+    ? anomalySignals ? err.message : getTranscribeSegmentPlaceholder(err, { streaming: !!isStreamingProvider, deferred: !!err.asrDeferred, retryable: !isStreamingProvider && (err.asrDeferred || isTransientAsrError(err)) })
+    : (text ? text : labelText("noContentSegment"));
   segmentRecord = attachTranscriptResult(segmentRecord, session.id, err ? null : asrResult, isStreamingProvider ? "streaming-transcript" : "asr");
   session.segments[segmentArrayIndex] = segmentRecord;
   if (seg.isFinal && session.shortRecordingTier === "probe") {

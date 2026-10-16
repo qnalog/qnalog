@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const asr = vi.hoisted(() => ({ transcribe: vi.fn(), channels: vi.fn(), whole: vi.fn() }));
+const asr = vi.hoisted(() => ({ transcribe: vi.fn(), channels: vi.fn(), whole: vi.fn(), notices: [] as string[] }));
 vi.mock("obsidian", () => ({
-  TFile: class TFile {}, TFolder: class TFolder {}, Notice: class Notice {},
+  TFile: class TFile {}, TFolder: class TFolder {}, Notice: class Notice { constructor(message?: string) { if (message) asr.notices.push(message); } },
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"),
   requestUrl: vi.fn(async () => ({ status: 200, text: "{}" })),
 }));
@@ -12,6 +12,8 @@ vi.mock("../src/asr/long-audio-transcription", async (importOriginal) => ({ ...(
 
 import * as obsidian from "obsidian";
 import { QueueRetryService } from "../src/queue/queue-retry-service";
+import { TaskQueue } from "../src/queue/task-queue";
+import type { TaskQueueHost } from "../src/queue/task-queue";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { MAX_SPEAKER_CHANNELS } from "../src/audio/channel-speakers";
 
@@ -53,6 +55,86 @@ function setup(markdown = "", targetIsFile = true) {
 }
 
 describe("transcription retry consumer contract", () => {
+  it("keeps an anomalous retry result out of the note and retains the retry audio", async () => {
+    const fixture = setup("Original note.");
+    fixture.task.wholeFileImport = true;
+    fixture.task.providerId = "provider";
+    fixture.task.endOffsetMs = 10_000;
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    asr.whole.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", durationMs: 10_000, units: [] });
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).rejects.toThrow("recording duration");
+
+    expect(fixture.contents.get(fixture.file.path)).toBe("Original note.");
+    expect(fixture.cleanup).not.toHaveBeenCalled();
+    expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.objectContaining({
+      provider: "provider", model: expect.any(String), textLength: 40_968, durationMs: 10_000, signals: ["density", "repetition"],
+    }));
+    expect(asr.notices).toHaveLength(0);
+  });
+
+  it("leaves an anomalous retry failed in the queue without an automatic retry", async () => {
+    const fixture = setup("Original failure placeholder.");
+    fixture.task.wholeFileImport = true;
+    fixture.task.providerId = "provider";
+    fixture.task.endOffsetMs = 10_000;
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    asr.whole.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", durationMs: 10_000, units: [] });
+    const host: TaskQueueHost = {
+      getMaxRetries: () => 3,
+      persistQueue: vi.fn(async () => undefined), updateBusyStatus: vi.fn(),
+      retryTranscribeTask: (task) => fixture.service.retryTranscribeTask(task as never),
+      retryMergeTask: vi.fn(async () => undefined), runGeneratePromptTask: vi.fn(async () => undefined),
+      scheduleTaskQueueRetry: vi.fn(), isAsrServiceCircuitOpen: () => false,
+      getAsrServiceRetryDelayMs: () => 0,
+      getAsrServiceCircuitState: () => ({ consecutiveFailures: 0, openUntilMs: 0, lastError: "" }),
+      recordAsrServiceAttemptSuccess: vi.fn(), recordAsrServiceAttemptFailure: () => ({ consecutiveFailures: 0, openUntilMs: 0, lastError: "" }),
+      completeTaskActivity: vi.fn(), logCompletedWork: vi.fn(), logDiagnostic: vi.fn(async () => undefined),
+    };
+    const queue = new TaskQueue(host);
+    const queued = await queue.add({ ...fixture.task, retries: 1 });
+
+    await expect(queue.processOne(queued)).rejects.toMatchObject({ nonRetryable: true });
+    await queue.processAll();
+
+    expect(queue.snapshot()).toContain(queued);
+    expect(queued).toMatchObject({ status: "failed", retries: 3, audioPath: fixture.task.audioPath, lastError: expect.stringContaining("recording duration") });
+    expect(fixture.contents.get(fixture.file.path)).toBe("Original failure placeholder.");
+    expect(fixture.contents.get(fixture.file.path)).not.toContain(repeatedMarkup);
+    expect(fixture.cleanup).not.toHaveBeenCalled();
+    expect(asr.whole).toHaveBeenCalledOnce();
+  });
+
+  it("rejects repeated retry output when task duration is zero", async () => {
+    const fixture = setup("Original note.");
+    fixture.task.wholeFileImport = true;
+    fixture.task.providerId = "provider";
+    fixture.task.endOffsetMs = 0;
+    const repeatedMarkup = "<chinese>".repeat(4552);
+    asr.whole.mockResolvedValueOnce({ text: repeatedMarkup, rawText: repeatedMarkup, providerId: "provider", units: [] });
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).rejects.toThrow("recording duration");
+
+    expect(fixture.contents.get(fixture.file.path)).toBe("Original note.");
+    expect(fixture.cleanup).not.toHaveBeenCalled();
+    expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.objectContaining({
+      durationMs: 0, signals: ["repetition"],
+    }));
+  });
+
+  it("uses the transcription result duration when task offsets have zero duration", async () => {
+    const fixture = setup("Original note.");
+    fixture.task.wholeFileImport = true;
+    fixture.task.endOffsetMs = 0;
+    const denseTranscript = Array.from({ length: 130 }, (_, index) => String.fromCodePoint(0x4e00 + index)).join("");
+    asr.whole.mockResolvedValueOnce({ text: denseTranscript, rawText: denseTranscript, providerId: "provider", durationMs: 5_000, units: [] });
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).rejects.toThrow("recording duration");
+    expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.objectContaining({
+      durationMs: 5_000, signals: ["density"],
+    }));
+  });
+
   it("routes non-file targets through insertion and file targets through the serialized operation", async () => {
     const missing = setup("", false);
     await missing.service.retryTranscribeTask(missing.task as never);

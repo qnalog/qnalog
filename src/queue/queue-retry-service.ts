@@ -154,6 +154,11 @@ export class QueueRetryService {
       transcribeSegment: (blob, mime) => transcribeAudio(this.host, blob, mime),
       transcribeChannels: (blob, mime, expectedChannelCount, options) => transcribeAudioByChannels(this.host, blob, mime, expectedChannelCount, options),
       transcribeWhole: (blob, mime, options) => transcribeImportedAudio(this.host, blob, mime, options),
+      getTranscribeModel: (providerId, wholeFileImport) => {
+        const id = providerId || (wholeFileImport ? this.host.settings.importTranscribeProvider : this.host.settings.activeTranscribeProvider);
+        return String(this.host.settings.transcribeProviders && this.host.settings.transcribeProviders[id]
+          && this.host.settings.transcribeProviders[id].model || "");
+      },
       logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
       refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, options),
       deleteSegmentCache: (audioPath, taskId, ephemeral) => ephemeral === undefined
