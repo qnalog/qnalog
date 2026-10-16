@@ -977,6 +977,11 @@ export async function transcribeAudioWithChatInputAudio(
     endMs: null,
     timing: "unknown",
   })));
+  // 仅当全部块都是静音块且全文为空时标记 quiet；否则不写该字段（保持 undefined）。
+  const allChunksQuiet = chunks.length > 0 && chunks.every((chunk) => chunk.quiet === true);
+  if (allChunksQuiet && text === "") {
+    return { text, rawText: null, providerId: String(provider.id || ""), units, quiet: true };
+  }
   return { text, rawText: null, providerId: String(provider.id || ""), units };
 }
 

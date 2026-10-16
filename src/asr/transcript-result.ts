@@ -15,4 +15,6 @@ export interface AsrTranscriptResult {
   rawText: string | null;
   providerId: string;
   units: AsrTranscriptUnit[];
+  /** Every audio chunk was below the quiet level and the text is empty. Runtime signal only; never written to notes or ledgers. */
+  quiet?: boolean;
 }

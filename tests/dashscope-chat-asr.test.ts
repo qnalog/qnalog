@@ -6,7 +6,14 @@ vi.mock("obsidian", () => ({
   TFolder: class TFolder {},
 }));
 
+vi.mock("../src/shared/util-audio", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/shared/util-audio")>()),
+  delayMs: async () => undefined,
+}));
+
+import { parseVocabularyGroups } from "../src/vocabulary";
 import {
+  transcribeAudioWithChatInputAudio,
   DASHSCOPE_CHAT_ASR_CHUNK_MS,
   DASHSCOPE_CHAT_ASR_MAX_BASE64_BYTES,
   DASHSCOPE_CHAT_ASR_MAX_DURATION_MS,
@@ -299,5 +306,66 @@ describe("百炼分段服务在设置界面里的归类", () => {
     const profile = service.getTranscribeProviderProfile("dashscope", { model: "paraformer-realtime-v2" });
     expect(profile.title).toContain("paraformer-realtime");
     expect(profile.transcribeMode).toBe("streaming");
+  });
+});
+
+describe("聊天式音频输入的整体结果 quiet 标记", () => {
+  // 音频解码用桩；服务响应用桩 JSON（非流式路径），内容由每个用例指定。
+  function stubAudioAndResponse(channels: Float32Array[], sampleRate: number, content: string) {
+    const buffer = {
+      duration: channels[0].length / sampleRate,
+      sampleRate,
+      numberOfChannels: channels.length,
+      getChannelData: (i: number) => channels[i],
+    };
+    class StubAudioContext {
+      decodeAudioData = vi.fn(async () => buffer);
+      close = vi.fn(async () => undefined);
+    }
+    class StubOfflineAudioContext {
+      destination = {};
+      createBufferSource() { return { buffer: null, connect: () => undefined, start: () => undefined }; }
+      async startRendering() { return { sampleRate: 16000, getChannelData: () => new Float32Array(1) }; }
+    }
+    const fetchStub = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("window", { AudioContext: StubAudioContext, OfflineAudioContext: StubOfflineAudioContext, fetch: fetchStub, setTimeout, clearTimeout });
+    return fetchStub;
+  }
+  const plugin = { diagnostics: { logDiagnostic: vi.fn(async () => undefined) } };
+  const provider = { ...dashscopeProvider, apiKey: "local-test-key", endpoint: "http://127.0.0.1:9444/compatible-mode/v1/chat/completions" };
+  const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
+  const vocabulary = parseVocabularyGroups("");
+  const quietSamples = () => [new Float32Array(50 * 100)];
+  const loudSamples = () => [new Float32Array(50 * 100).fill(0.5)];
+
+  it("全部块静音且文本为空时标记 quiet 为 true", async () => {
+    try {
+      stubAudioAndResponse(quietSamples(), 100, "");
+      const result = await transcribeAudioWithChatInputAudio(profile, plugin, provider, blob, "audio/webm", vocabulary);
+      expect(result.text).toBe("");
+      expect(result.quiet).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("有声块的空结果不标记 quiet 并继续按失败抛错", async () => {
+    try {
+      stubAudioAndResponse(loudSamples(), 100, "");
+      await expect(transcribeAudioWithChatInputAudio(profile, plugin, provider, blob, "audio/webm", vocabulary)).rejects.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("静音块返回非空文本时不标记 quiet", async () => {
+    try {
+      stubAudioAndResponse(quietSamples(), 100, "你好");
+      const result = await transcribeAudioWithChatInputAudio(profile, plugin, provider, blob, "audio/webm", vocabulary);
+      expect(result.text).toBe("你好");
+      expect("quiet" in result).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -234,7 +234,9 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       } catch { /* diagnostic storage failure must not restore anomalous text */ }
     }
   }
-  if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000) {
+  // 静音结果（每个音频块都低于静音阈值）是成功的空白段，不论时长都不按失败处理。
+  const quietEmptyResult = !!asrResult && asrResult.quiet === true;
+  if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000 && !quietEmptyResult) {
     err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
     asrResult = null;
     if (batchAsrAttempted && !batchAsrFailureRecorded) { batchAsrFailureRecorded = true; port.recordAttemptFailure(session, err, seg); }

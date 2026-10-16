@@ -109,7 +109,9 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       text = transcriptionResult.text;
     }
   }
-  if (!String(text || "").trim()) {
+  // 静音结果是成功的空白段：不抛错、不重试，段落写入与实时路径相同的「无内容」文字。
+  const quietEmptyResult = !String(text || "").trim() && transcriptionResult?.quiet === true;
+  if (!String(text || "").trim() && !quietEmptyResult) {
     await port.logDiagnostic("warn", "queue.transcribe_empty_result", t("Transcription retry returned empty text; treating it as a failure and re-queuing"), {
       mdPath: task.mdPath || "", audioName: task.audioName || "", startOffsetMs: task.startOffsetMs, endOffsetMs: task.endOffsetMs,
     });
@@ -121,7 +123,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   const retryDurationMs = taskDurationMs > 0
     ? taskDurationMs
     : Number.isFinite(resultDurationMs) && resultDurationMs > 0 ? resultDurationMs : 0;
-  const anomalySignals = classifyLongRecordingAnomaly(text, retryDurationMs);
+  const anomalySignals = quietEmptyResult ? [] : classifyLongRecordingAnomaly(text, retryDurationMs);
   if (anomalySignals.length) {
     const message = t("The transcription result does not match the recording duration. The recording has been kept and can be retried.");
     await port.logDiagnostic("warn", "asr.long_recording_anomaly", t("Transcription result rejected because it did not match the recording duration."), {
@@ -156,10 +158,12 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
     };
     return attachTranscriptResult(segment, sourceId, transcriptionResult, "asr");
   };
+  // 段落正文：有文字用文字，静音空白段用与实时路径相同的「无内容」文字。
+  const blockVisibleText = String(text || "").trim() ? text : labelText("noContentSegment");
   const makeTranscriptBlock = (segment: Segment): string => {
     const linkOffsetMs = masterAudioPath ? Math.max(0, Number(task.audioStartOffsetMs) || 0) : 0;
     const heading = [`### ${labelText("segment", segmentNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(sourceAudioName, linkOffsetMs)}`, taskMarker].filter(Boolean).join("\n\n");
-    return `\n${serializeTranscriptBlock(segment, heading, text)}\n`;
+    return `\n${serializeTranscriptBlock(segment, heading, blockVisibleText)}\n`;
   };
   const findTarget = (blocks: ReturnType<typeof readTranscriptBlocks>) => {
     const matches = blocks.filter((block) => block.segment.transcript?.id === parentSegmentId || (!!task.id && block.segment.queueTaskId === task.id));
@@ -174,13 +178,13 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       if (target && !target.segment.error && !failMark.test(target.visibleBlock)) { alreadyCommitted = true; return latest; }
       let candidate = latest;
       if (!target) {
-        if (taskPattern && taskPattern.test(candidate)) candidate = candidate.replace(taskPattern, () => `${taskMarker}\n${text}`);
+        if (taskPattern && taskPattern.test(candidate)) candidate = candidate.replace(taskPattern, () => `${taskMarker}\n${blockVisibleText}`);
         else {
           const legacyMatch = legacySegmentPattern.exec(candidate);
           if (legacyMatch) {
             const prefix = legacyMatch[1];
             const addMarker = taskMarker && !prefix.includes(taskMarker) ? `${taskMarker}\n` : "";
-            candidate = candidate.replace(legacySegmentPattern, () => `${prefix}${addMarker}${text}`);
+            candidate = candidate.replace(legacySegmentPattern, () => `${prefix}${addMarker}${blockVisibleText}`);
           }
         }
         if (candidate !== latest) { candidate = ensureTranscriptBlocks(candidate, sourceId, { reconcileEditedText: false }); target = findTarget(readTranscriptBlocks(candidate)); }
@@ -188,7 +192,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       const updated = makeUpdatedSegment(target?.segment || null);
       writtenSegment = updated;
       replaced = true;
-      if (target) return replaceTranscriptBlock(candidate, target, updated, text);
+      if (target) return replaceTranscriptBlock(candidate, target, updated, blockVisibleText);
       const block = makeTranscriptBlock(updated);
       const endMarker = task.sessionId ? nsMarker("segments-end", task.sessionId) : nsMarker("segments-end");
       const endAt = findNoteMarkerOffset(candidate, endMarker, "last");

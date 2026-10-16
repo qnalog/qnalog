@@ -16,6 +16,8 @@ import { TaskQueue } from "../src/queue/task-queue";
 import type { TaskQueueHost } from "../src/queue/task-queue";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { MAX_SPEAKER_CHANNELS } from "../src/audio/channel-speakers";
+import { labelText } from "../src/shared/note-labels";
+import { nsMarker } from "../src/shared/namespace";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -153,6 +155,31 @@ describe("transcription retry consumer contract", () => {
     expect(fixture.contents.get(fixture.file.path)).toBe("Original note.");
     expect(fixture.cleanup).not.toHaveBeenCalled();
     expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "queue.transcribe_empty_result", expect.any(String), expect.objectContaining({ mdPath: fixture.task.mdPath, audioName: fixture.task.audioName }));
+  });
+
+  it("completes a quiet empty retry as a blank segment and replaces the failure placeholder", async () => {
+    const taskMarker = nsMarker("transcribe-task", "retry-1");
+    const placeholder = `${labelText("segment", 1)} (00:00–00:01)\n\n${taskMarker}\n\n${labelText("waitingBackground")}`;
+    const fixture = setup(`Original note.\n\n### ${placeholder}\n`);
+    asr.transcribe.mockResolvedValueOnce({ text: "", rawText: null, providerId: "mock", units: [], quiet: true });
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+
+    const written = fixture.contents.get(fixture.file.path) ?? "";
+    expect(written).toContain(labelText("noContentSegment"));
+    expect(written).not.toContain(labelText("waitingBackground"));
+    expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "queue.transcribe_empty_result", expect.any(String), expect.anything());
+    expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.anything());
+    expect(fixture.cleanup).toHaveBeenCalledWith(fixture.task.audioPath, fixture.task.id, false);
+    expect(fixture.host.repolish.repolishMarkdownFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps throwing for a non-quiet empty retry result", async () => {
+    const fixture = setup("Original note.");
+    asr.transcribe.mockResolvedValueOnce({ text: "", rawText: null, providerId: "mock", units: [] });
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).rejects.toThrow("Transcription retry returned an empty result");
+    expect(fixture.contents.get(fixture.file.path)).toBe("Original note.");
+    expect(fixture.cleanup).not.toHaveBeenCalled();
   });
 
   it("uses the same host object for ASR calls and preserves the three-argument segment call", async () => {

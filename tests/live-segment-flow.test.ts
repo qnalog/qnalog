@@ -376,6 +376,18 @@ describe("live segment consumer contract", () => {
     expect(session.segments[0].error).toBe(t("Transcription returned an empty result (the service responded but returned no text)"));
   });
 
+  it("treats a quiet empty result of a long segment as a successful blank segment", async () => {
+    const { service, host, blocks, diagnostics } = makeHost();
+    transcribeMock.mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], quiet: true });
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({ endOffsetMs: 50_000 }));
+    expect(host.asrPipeline.recordLiveAsrAttemptFailure).not.toHaveBeenCalled();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
+    expect(diagnostics.flat().join(" ")).not.toContain("asr.segment_empty");
+    expect(session.segments[0].error).toBeNull();
+    expect(blocks[0]).toContain(labelText("noContentSegment"));
+  });
+
   it("reports short empty results once and writes the no-content label", async () => {
     const { service, host, blocks, diagnostics } = makeHost();
     transcribeMock.mockResolvedValue({ text: "", rawText: "", providerId: "provider", units: [] });
