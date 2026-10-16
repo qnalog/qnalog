@@ -10,6 +10,9 @@ export const SHORT_RECORDING_MINIMUM_MS = 1000;
 /** 短录音按内容判定的时长上限：低于此值先调用一次转写服务。 */
 export const SHORT_RECORDING_CONTENT_PROBE_MS = 10 * 1000;
 
+/** 低于此时长的音频块连续两次返回空转写时，按有效空白结果返回。 */
+export const ASR_EMPTY_RESULT_SOFT_LIMIT_MS = 30 * 1000;
+
 export const KNOWLEDGE_EXTRACTION_BATCH_LIMIT = 20;
 
 export const SEGMENT_CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;

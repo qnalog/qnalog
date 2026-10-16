@@ -16,6 +16,7 @@ import {
   getChatInputAudioProfile,
   isApimimoAsrProvider,
   isChatInputAudioProvider,
+  requestChatInputAudioChunkWithEmptyRetry,
 } from "../src/asr/transcribe";
 
 // MediaRecorder 在桌面录的就是 webm/opus；用它的体积推算时长对不上，
@@ -111,6 +112,32 @@ describe("百炼分段转写的语种参数", () => {
     expect(profile.languageFor("ja")).toBe("ja");
     // 非法值同样不下发，避免把方言名之类的自由文本当成语种发出去。
     expect(profile.languageFor("中文（普通话）")).toBe("");
+  });
+});
+
+describe("聊天式音频输入的空结果重试", () => {
+  it("百炼 30 秒以下分块连续空结果返回空文本并保留诊断", async () => {
+    const request = vi.fn().mockResolvedValue("");
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    const result = await requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      { diagnostics: { logDiagnostic } },
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/webm", durationMs: 2000 },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      request,
+      wait,
+    );
+
+    expect(result).toEqual({ text: "", rawText: "" });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(wait).toHaveBeenCalledOnce();
+    expect(logDiagnostic).toHaveBeenCalledTimes(2);
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 1 }));
+    expect(logDiagnostic).toHaveBeenNthCalledWith(2, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({ attempt: 2 }));
   });
 });
 

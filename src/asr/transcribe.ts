@@ -11,6 +11,7 @@ import { extractTranscriptText, friendlySpeakerLabel, normalizeInlineSpeakerTags
 import { cleanApimimoAsrRepeatedLoops } from './apimimo-clean';
 import { getSpeakerDiarizationRequestOptions } from './diarization';
 import { t } from "../shared/i18n";
+import { ASR_EMPTY_RESULT_SOFT_LIMIT_MS } from "../shared/limits";
 import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
 import { splitTranscriptTextUnits } from "../transcript/session-transcript";
 
@@ -544,7 +545,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
   }
   const totalMs = Math.max(1, Math.round((audioBuffer.duration || 0) * 1000));
   const decodedPlan = getChatInputAudioPlan(profile, blob, inputMime, totalMs);
-  if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime }];
+  if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime, durationMs: totalMs }];
   const chunkCount = Math.ceil(totalMs / profile.chunkMs);
   if (chunkCount > profile.maxChunks) {
     throw chatInputAudioPermanentError(t("{0} can automatically split at most {1} chunks (about {2} minutes); this is about {3} minutes. Shorten the segment interval, or use an ASR service that supports large files for long recordings.")
@@ -563,7 +564,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
         .replace("{1}", String(Math.round(profile.maxBase64Bytes / 1024 / 1024)))
         .replace("{2}", formatUploadSize(wavBlob.size)));
     }
-    chunks.push({ blob: wavBlob, mime: "audio/wav" });
+    chunks.push({ blob: wavBlob, mime: "audio/wav", durationMs: endMs - startMs });
   }
   return chunks;
 }
@@ -861,6 +862,7 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
   wait = delayMs,
   observer?: AsrLifecycleObserver,
 ): Promise<ChatInputAudioChunkResult> {
+  let lastRawText = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
     const requested = await requestChunk(
       provider,
@@ -876,6 +878,7 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
     const response = typeof requested === "string" ? { text: requested, rawText: requested } : requested;
     const part = String(response && response.text || "").trim();
     if (part) return { text: part, rawText: typeof response.rawText === "string" ? response.rawText : part };
+    lastRawText = typeof response.rawText === "string" ? response.rawText : part;
     try {
       if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
         await plugin.diagnostics.logDiagnostic("warn", `asr.${profile.diagnosticSlug}_empty_chunk`, t("{0} chunk transcription was empty.").replace("{0}", t(profile.shortLabel)), {
@@ -898,6 +901,10 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
       });
       await wait(retryDelayMs);
     }
+  }
+  const durationMs = Number(prepared && prepared.durationMs);
+  if (Number.isFinite(durationMs) && durationMs >= 0 && durationMs < ASR_EMPTY_RESULT_SOFT_LIMIT_MS) {
+    return { text: "", rawText: lastRawText };
   }
   throw new Error(t("{0} chunk {1}/{2} returned empty results in a row; the audio file is kept, so you can retry later.")
     .replace("{0}", t(profile.shortLabel))
