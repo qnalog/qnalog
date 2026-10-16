@@ -1,10 +1,296 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("obsidian", () => ({ normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"), TFile: class TFile {} }));
+import * as obsidian from "obsidian";
 import { TopicsService, type TopicsServicePort } from "../src/topics/topics-service";
 import type { TopicStorePort } from "../src/topics/topic-store";
 import type { TopicIntegrationPort } from "../src/topics/topic-integration";
-import { createTopicPage, parseTopicPage, serializeTopicPage } from "../src/topics/topic-page";
+import { createTopicPage, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, type TopicPageV2Model } from "../src/topics/topic-page";
+import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic-errata-store";
+import { topicMemberExcludeSelectionId } from "../src/topics/topic-integration";
 
 describe("topics service", () => {
+  function makeTopicErrata(files: Map<string, string>, language = "zh") {
+    type File = InstanceType<typeof obsidian.TFile> & { path: string; basename: string; extension: string };
+    const fileObjects = new Map<string, File>();
+    const getFile = (path: string): File => {
+      let file = fileObjects.get(path);
+      if (!file) {
+        file = Object.assign(new obsidian.TFile(), { path, basename: path.split("/").pop()?.replace(/\.md$/i, "") || "", extension: "md" }) as File;
+        fileObjects.set(path, file);
+      }
+      return file;
+    };
+    return new TopicErrataStore({
+      read: async (file) => files.get(file.path) ?? "",
+      listErrataFiles: () => [...files.keys()].filter((path) => path.startsWith("QnALog/勘误表/")).map(getFile),
+      getByPath: (path) => files.has(path) ? getFile(path) : null,
+      getFrontmatter: (file) => files.get(file.path)?.includes("qnalog_topic_errata: true") ? { qnalog_topic_errata: true } : {},
+      getLinks: (file) => [...(files.get(file.path)?.matchAll(/\[\[([^\]]+)\]\]/g) || [])].map((match) => ({ link: match[1] })),
+      resolveLink: (link) => {
+        const path = link.replace(/\.md$/i, "");
+        return files.has(`${path}.md`) ? getFile(`${path}.md`) : null;
+      },
+      ensureFolder: async () => undefined,
+      create: async (path, content) => { files.set(path, content); return getFile(path); },
+      process: async (file, transform) => { files.set(file.path, transform(files.get(file.path) || "")); },
+      uiLanguage: () => language,
+    });
+  }
+
+  it("writes scoped errata only after a selected removal succeeds; keeps it after undo and skips edited blocks", async () => {
+    const errataFiles = new Map<string, string>();
+    errataFiles.set("Topics/Climate.md", "source topic");
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const model: TopicPageV2Model = { overview: "Climate planning continues.", threads: [{ id: "work", title: "Work", summary: "The topic has two details.", points: [
+      { id: "p1", text: "Off-topic device repair detail. [^source-a]", sources: ["Notes/a.md"] },
+      { id: "p2", text: "Off-topic travel booking detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] };
+    const topic = createTopicPage({ id: "clean-topic", title: "Climate", tags: [], basis: "overview", members: [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }] });
+    topic.layout = 2;
+    topic.body = renderTopicPage(model, [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }]);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(topic));
+    const block = parseTopicPageBlocks(serializeTopicPage(topic)).find((item) => item.text.includes("device repair"))!;
+    const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
+    const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
+    expect(preview.items[0].operation.type).toBe("remove_block");
+    expect(errataFiles.has(errataPath)).toBe(false);
+    setup.service.cancel("clean-topic");
+    expect(errataFiles.has(errataPath)).toBe(false);
+    const appliedBlock = parseTopicPageBlocks(serializeTopicPage(topic)).find((item) => item.text.includes("device repair"))!;
+    const confirmed = await setup.service.previewExcludeBlock("Topics/Climate.md", appliedBlock.id);
+    expect(errataFiles.has(errataPath)).toBe(false);
+    await setup.service.apply(confirmed, [confirmed.items[0].id]);
+    expect(await setup.storePort.read("Topics/Climate.md")).not.toContain("device repair");
+    expect(errataFiles.get(errataPath)).toContain("[[Notes/a]]：");
+    expect(errataFiles.get(errataPath)).not.toContain("[^");
+    expect(await setup.service.undoLastUpdate("clean-topic")).toMatchObject({ restored: true });
+    expect(errataFiles.get(errataPath)).not.toContain("device repair");
+
+    const travelBlock = parseTopicPageBlocks(await setup.storePort.read("Topics/Climate.md")).find((item) => item.text.includes("travel booking"))!;
+    const fresh = await setup.service.previewExcludeBlock("Topics/Climate.md", travelBlock.id);
+    await setup.storePort.process("Topics/Climate.md", (current) => current.replace("Off-topic travel booking detail.", "User-edited travel booking detail."));
+    const result = await setup.service.apply(fresh, [fresh.items[0].id]);
+    expect(result.skipped).toEqual([{ id: travelBlock.id, reason: "block-modified" }]);
+    expect(result.markdown).toContain("User-edited travel booking detail.");
+    expect(errataFiles.get(errataPath)).not.toContain("travel booking");
+  });
+
+  it("previews multiple off-topic blocks and writes errata only for selected blocks and their own sources", async () => {
+    const errataFiles = new Map<string, string>();
+    errataFiles.set("Topics/Climate.md", "source topic");
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md" },
+    ];
+    const topic = createTopicPage({ id: "multi-block-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Two details.", points: [
+      { id: "a", text: "Off-topic repair detail.", sources: ["Notes/a.md"] },
+      { id: "b", text: "Off-topic travel detail.", sources: ["Notes/b.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(topic));
+
+    const blocks = parseTopicPageBlocks(serializeTopicPage(topic)).filter((block) => /Off-topic (?:repair|travel) detail/.test(block.text));
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", blocks.map((block) => block.id));
+    expect(preview.items).toHaveLength(2);
+    expect(preview.items.every((item) => item.operation.type === "remove_block")).toBe(true);
+    await setup.service.apply(preview, [preview.items[0].id]);
+
+    const updated = await setup.storePort.read("Topics/Climate.md");
+    expect(updated).not.toContain("Off-topic repair detail.");
+    expect(updated).toContain("Off-topic travel detail.");
+    const errata = errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md") || "";
+    expect(errata).toContain("[[Notes/a]]：Off-topic repair detail.");
+    expect(errata).not.toContain("Off-topic travel detail.");
+    expect(errata).not.toContain("[[Notes/b]]");
+    const undone = await setup.service.undoLastUpdate("multi-block-topic");
+    expect(undone).toMatchObject({ restored: true, errataRemoved: 1 });
+    expect(errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md")).not.toContain("Off-topic repair detail.");
+    expect(await setup.storePort.read("Topics/Climate.md")).toContain("Off-topic repair detail.");
+  });
+
+  it("undoes all newly added scoped and global errata with the matching multi-block snapshot", async () => {
+    const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
+    const originalErrata = "---\nqnalog_topic_errata: true\n---\n主题：[[Topics/Climate]]\n\n## 不属于本主题\n- 既有全局事项\n\n## 说明\n维护者备注\n";
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"], ["Notes/a.md", "member note"], [errataPath, originalErrata]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "undo-multi-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Two details.", points: [
+      { id: "scoped", text: "Off-topic member detail.", sources: ["Notes/a.md"] },
+      { id: "global", text: "Off-topic global detail.", sources: [] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const blocks = parseTopicPageBlocks(originalPage).filter((block) => /Off-topic (?:member|global) detail/.test(block.text));
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", blocks.map((block) => block.id));
+
+    await setup.service.apply(preview, preview.items.map((item) => item.id));
+    expect(errataFiles.get(errataPath)).toContain("[[Notes/a]]：Off-topic member detail.");
+    expect(errataFiles.get(errataPath)).toContain("- Off-topic global detail.");
+    expect(await setup.service.undoLastUpdate("undo-multi-topic")).toEqual({ restored: true, errataRemoved: 2 });
+    expect(errataFiles.get(errataPath)).toBe(originalErrata);
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+  });
+
+  it("leaves a pre-existing duplicate errata entry in place after undo", async () => {
+    const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
+    const originalErrata = "---\nqnalog_topic_errata: true\n---\n主题：[[Topics/Climate]]\n\n## 不属于本主题\n- [[Notes/a]]：Off-topic member detail.\n\n## 说明\nKeep this note.\n";
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"], ["Notes/a.md", "member note"], [errataPath, originalErrata]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "existing-errata-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Current detail.", points: [
+      { id: "point", text: "Off-topic member detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic member detail"))!;
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", [block.id]);
+    await setup.service.apply(preview, [preview.items[0].id]);
+
+    expect(await setup.service.undoLastUpdate("existing-errata-topic")).toEqual({ restored: true });
+    expect(errataFiles.get(errataPath)).toBe(originalErrata);
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+  });
+
+  it("skips an errata row whose description the user edited", async () => {
+    const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
+    const originalErrata = "---\nqnalog_topic_errata: true\n---\n主题：[[Topics/Climate]]\n\n## 不属于本主题\n- 既有全局事项\n\n## 说明\n保留备注\n";
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"], [errataPath, originalErrata]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "edited-entry-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Current detail.", points: [
+      { id: "point", text: "Off-topic original wording.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic original wording"))!;
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", [block.id]);
+    await setup.service.apply(preview, [preview.items[0].id]);
+    const afterAppend = errataFiles.get(errataPath)!;
+    errataFiles.set(errataPath, afterAppend.replace("Off-topic original wording", "Maintainer edited this wording"));
+
+    expect(await setup.service.undoLastUpdate("edited-entry-topic")).toEqual({ restored: true, errataRemoved: 0 });
+    expect(errataFiles.get(errataPath)).toContain("Maintainer edited this wording");
+    expect(errataFiles.get(errataPath)).toContain("既有全局事项");
+    expect(errataFiles.get(errataPath)).toContain("保留备注");
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+  });
+
+  it("keeps errata unchanged when page-modified prevents undo", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "modified-page-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Current detail.", points: [
+      { id: "point", text: "Off-topic detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic detail"))!;
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", [block.id]);
+    await setup.service.apply(preview, [preview.items[0].id]);
+    const errataBeforeUndo = errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md");
+    await setup.storePort.process("Topics/Climate.md", (current) => `${current}\nmanual edit`);
+
+    expect(await setup.service.undoLastUpdate("modified-page-topic")).toEqual({ restored: false, reason: "page-modified" });
+    expect(errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md")).toBe(errataBeforeUndo);
+  });
+
+  it("returns a manual-removal warning when errata cleanup fails after page restoration", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const removeEntries = vi.spyOn(topicErrata, "removeEntries").mockRejectedValueOnce(new Error("write failed"));
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "failed-cleanup-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Current detail.", points: [
+      { id: "point", text: "Off-topic detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic detail"))!;
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", [block.id]);
+    await setup.service.apply(preview, [preview.items[0].id]);
+
+    expect(await setup.service.undoLastUpdate("failed-cleanup-topic")).toEqual({ restored: true, errataRemoved: 0, errataFailed: true });
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+    expect(removeEntries).toHaveBeenCalledOnce();
+  });
+
+  it("returns no cleaning work without errata and does not call the model", async () => {
+    const topicErrata = makeTopicErrata(new Map(), "en");
+    const setup = harness({ topicErrata });
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("clean-topic", "Climate", [], ["Notes/a.md"]));
+    expect(await setup.service.estimateContentCleaning("clean-topic")).toEqual({ chars: 0, tokens: 0 });
+    expect((await setup.service.previewContentCleaning("clean-topic")).items).toEqual([]);
+    expect(setup.requests).toHaveLength(0);
+  });
+
+  it("ensures the current topic errata document and returns its store path", async () => {
+    const errataFiles = new Map<string, string>();
+    errataFiles.set("Topics/Climate.md", "source topic");
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("clean-topic", "Climate", [], ["Notes/a.md"]));
+    const path = await setup.service.ensureTopicErrata("clean-topic");
+    expect(path).toBe(topicErrata.pathForTopic("Topics/Climate.md"));
+    expect(errataFiles.get(path)).toContain("qnalog_topic_errata: true");
+  });
+
+  it("previews uncited members, removes selected metadata, optionally excludes, and supports undo", async () => {
+    const errata = { load: vi.fn(), append: vi.fn(), ensure: vi.fn() } as unknown as TopicErrataStore;
+    const setup = harness({ topicErrata: errata });
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md", date: "2026-01-01", summary: "A contributed note." },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md", date: "2026-01-02", summary: "No topic claim from B." },
+    ];
+    const page = createTopicPage({ id: "climate-topic", title: "Climate", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Funding", summary: "A summary.", points: [
+      { id: "point", text: "A fact from A.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(page));
+
+    expect(await setup.service.getUncontributedMembers("climate-topic")).toEqual([{ path: "Notes/b.md", title: "B" }]);
+    const before = await setup.storePort.read("Topics/Climate.md");
+    const cancelled = await setup.service.previewOrphanMembers("climate-topic");
+    expect(cancelled.items).toHaveLength(1);
+    expect(cancelled.items[0].operation).toEqual({ type: "remove_member", path: "Notes/b.md" });
+    setup.service.cancel("climate-topic");
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(before);
+    expect(setup.writes).toEqual([]);
+
+    const preview = await setup.service.previewOrphanMembers("climate-topic");
+    const itemId = preview.items[0].id;
+    const result = await setup.service.apply(preview, [itemId, topicMemberExcludeSelectionId(itemId)]);
+    const removed = parseTopicPage(result.markdown)!;
+    expect(removed.members).toEqual(["Notes/a.md"]);
+    expect(removed.excluded).toEqual(["Notes/b.md"]);
+    expect(removed.memberLinks).toEqual(["[[Notes/a|A]]"]);
+    expect(setup.writes.filter((write) => write.path === "Topics/Climate.md")).toHaveLength(1);
+    expect(await setup.service.undoLastUpdate("climate-topic")).toMatchObject({ restored: true });
+    const restored = parseTopicPage(await setup.storePort.read("Topics/Climate.md"))!;
+    expect(restored.members).toEqual(["Notes/a.md", "Notes/b.md"]);
+    expect(restored.excluded).toEqual([]);
+    expect(errata.load).not.toHaveBeenCalled();
+    expect(errata.append).not.toHaveBeenCalled();
+  });
+
   it("only reads through its port when requested and returns statistics", async () => {
     let reads = 0;
     const now = Date.now();
@@ -66,6 +352,17 @@ describe("topics service", () => {
     expect(candidates.byTag.find((candidate) => candidate.path === "Notes/b.md")?.alreadyInTopics).toEqual(["topic-other"]);
     expect(setup.writes).toEqual([]);
     expect(setup.storePort.created).toEqual([]);
+  });
+  it("records the original request for create and update previews", async () => {
+    const setup = harness();
+    const createInput = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "overview" as const, title: "Climate" };
+    const createPreview = await setup.service.preview(createInput);
+    expect(createPreview.request).toEqual({ startPath: createInput.startPath, memberPaths: createInput.memberPaths, basis: createInput.basis });
+
+    setup.storePort.seed("Topics/Climate.md", topicMarkdown("climate-topic", "Climate", [], ["Notes/a.md"]));
+    const updateInput = { startPath: "Notes/b.md", memberPaths: ["Notes/a.md", "Notes/b.md"], basis: "overview" as const, topicId: "climate-topic" };
+    const updatePreview = await setup.service.preview(updateInput);
+    expect(updatePreview.request).toEqual(updateInput);
   });
   it("requires cost confirmation before body-mode model requests", async () => {
     const setup = harness();
@@ -270,7 +567,7 @@ function topicMarkdown(id: string, title: string, tags: string[], members: strin
   page.excluded = excluded;
   return serializeTopicPage(page);
 }
-function harness(options: { roots?: string[]; request?: TopicIntegrationPort["request"] } = {}) {
+function harness(options: { roots?: string[]; request?: TopicIntegrationPort["request"]; topicErrata?: TopicErrataStore } = {}) {
   const now = Date.UTC(2026, 0, 2);
   const files = [noteFile("Notes/a.md", "Climate policy reform changes public investment and emissions strategy", ["climate"]), noteFile("Notes/b.md", "Climate policy shifts funding toward clean energy", ["climate"])];
   const writes: Array<{ kind: string; path: string }> = [];
@@ -321,7 +618,7 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
   }
   const activities = { started: [] as Array<[string, string]>, completed: [] as Array<[string]>, failed: [] as Array<[string, unknown]>, cancelled: [] as Array<[string, string]>, progress: [] as Array<{ progress: number; stageLabel: string }> };
   let ids = 0;
-  const service = new TopicsService({ overviewCards, topicStore: storePort, getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
+  const service = new TopicsService({ overviewCards, topicStore: storePort, ...(options.topicErrata ? { topicErrata: options.topicErrata } : {}), getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
     createId: () => `topic-${++ids}`, startActivity: (id, title) => activities.started.push([id, title]), updateActivity: (_id, patch) => activities.progress.push(patch), completeActivity: (id) => activities.completed.push([id]), failActivity: (id, error) => activities.failed.push([id, error]), cancelActivity: (id, reason) => activities.cancelled.push([id, reason]) });
   return { service, files, writes, readPaths, storePort, requests, activities };
 }

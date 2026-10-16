@@ -87,6 +87,46 @@ describe("topic store", () => {
     expect(historyBefore.every((item) => port.files.has(item))).toBe(true);
   });
 
+  it("binds undo errata to the matching snapshot and clears that record when a later update replaces it", async () => {
+    const { port, store } = setup();
+    const first = await store.apply("Topics/topic.md", preview("topic", "ignored", "First update."), ["add"]);
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: "Notes/a" };
+    await store.recordSnapshotErrata("topic", first.snapshotPath, [entry]);
+    const cachePath = "QnALog/.cache/topic-index/topic.json";
+    expect(JSON.parse(port.files.get(cachePath) || "{}").lastSnapshotErrata).toEqual({ snapshotPath: first.snapshotPath, entries: [entry] });
+
+    const second = await store.apply("Topics/topic.md", preview("topic", "ignored", "Second update."), ["add"]);
+    expect(second.snapshotPath).not.toBe(first.snapshotPath);
+    expect(JSON.parse(port.files.get(cachePath) || "{}").lastSnapshotErrata).toBeUndefined();
+    await store.recordSnapshotErrata("topic", first.snapshotPath, [entry]);
+    expect(JSON.parse(port.files.get(cachePath) || "{}").lastSnapshotErrata).toBeUndefined();
+  });
+
+  it("returns snapshot errata only after a successful page restoration", async () => {
+    const { store } = setup();
+    const result = await store.apply("Topics/topic.md", preview("topic", "ignored"), ["add"]);
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    await store.recordSnapshotErrata("topic", result.snapshotPath, [entry]);
+    expect(await store.undoLastUpdate("topic")).toEqual({ restored: true, errataEntries: [entry] });
+  });
+
+  it("snapshots block removals and restores the page on undo", async () => {
+    const { port, store, path } = setup("remove");
+    const model: TopicPageV2Model = { overview: "Overview.", threads: [{ id: "work", title: "Work", summary: "Current work summary.", points: [{ id: "point", text: "Off-topic device repair detail.", sources: ["Notes/a.md"] }] }], disagreements: [], open: [], unsorted: [] };
+    const topic = page("remove", "Remove", [], ["Notes/a.md"]);
+    topic.layout = 2;
+    topic.body = renderTopicPage(model, [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }]);
+    const initial = serializeTopicPage(topic);
+    port.files.set(path, initial);
+    const block = parseTopicPageBlocks(initial).find((item) => item.text.includes("Off-topic device repair"))!;
+    const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: "Notes/a.md" };
+    const change: TopicChangePreview = { topicId: "remove", expectedHash: hashTopicPage(initial), pageWasManuallyEdited: false, items: [{ id: "remove", type: operation.type, operation, target: "Work", text: block.text, sourceId: operation.sourceId, expectedText: block.text, cancellable: true }], completedBatches: 0, totalBatches: 0 };
+    const applied = await store.apply(path, change, ["remove"]);
+    expect(applied.markdown).not.toContain("Off-topic device repair");
+    expect((await store.undoLastUpdate("remove")).restored).toBe(true);
+    expect(port.files.get(path)).toBe(initial);
+  });
+
   it("skips a changed summary block while applying other changes and updates generated sources and timeline", async () => {
     const port = new MemoryPort();
     const store = new TopicStore({ folder: "Topics", port });

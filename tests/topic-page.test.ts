@@ -13,6 +13,11 @@ import {
   TOPIC_SECTIONS,
   updateTopicFrontmatter,
   topicMemberMetadataCounts,
+  withTopicBlockIndex,
+  citedFootnoteIds,
+  memberFootnoteIds,
+  contributingMemberPaths,
+  noContributionMembers,
   type TopicOperation,
 } from "../src/topics/topic-page";
 
@@ -33,6 +38,117 @@ describe("topic pages", () => {
     const end = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
     return lines.slice(start + 1, end < 0 ? lines.length : end).filter(Boolean);
   };
+
+  it("scans body citations while excluding frontmatter and footnote definitions", () => {
+    const markdown = `---\nsummary: "[^frontmatter]"\n---\n\nBody cites [^used].\n\n[^used]: [[Notes/member|Member]]\n[^unused]: [[Notes/member|Member]]\n`;
+    expect(citedFootnoteIds(markdown)).toEqual(new Set(["used"]));
+    expect(memberFootnoteIds(markdown, "Notes/member.md")).toEqual(["used", "unused"]);
+  });
+
+  it("derives contributing members only from block-referenced footnotes", () => {
+    const members = [source("Cited note", "2026-09-30", "cited"), source("Uncited note", "2026-10-01", "uncited")];
+    const page = createTopicPage({ id: "contribution", title: "Contribution", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Thread", summary: "Summary.", points: [
+      { id: "point", text: "A fact from the cited note.", sources: ["cited"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const markdown = serializeTopicPage(page);
+    expect(contributingMemberPaths(markdown, page.members)).toEqual(new Set(["QnALog/Cited note.md"]));
+    expect(noContributionMembers(page, markdown)).toEqual(["QnALog/Uncited note.md"]);
+
+    const handEdited = markdown.replace("A fact from the cited note.", "A manually edited fact from the cited note.");
+    expect(contributingMemberPaths(handEdited, page.members)).toEqual(new Set(["QnALog/Cited note.md"]));
+  });
+
+  it("does not count an unused source definition or judge v1 topic pages", () => {
+    const members = [source("Only footnote", "2026-09-30", "only-footnote")];
+    const page = createTopicPage({ id: "unused-definition", title: "Unused definition", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview without citations.", threads: [], disagreements: [], open: [], unsorted: [] }, members);
+    const markdown = serializeTopicPage(page).replace("## 来源笔记 / Source notes", "[^unused]: [[QnALog/Only footnote|Only footnote]]\n\n## 来源笔记 / Source notes");
+    expect(contributingMemberPaths(markdown, page.members)).toEqual(new Set());
+    expect(noContributionMembers(page, markdown)).toEqual(["QnALog/Only footnote.md"]);
+
+    const legacy = createTopicPage({ id: "legacy", title: "Legacy", tags: [], members, basis: "overview" });
+    expect(noContributionMembers(legacy, serializeTopicPage(legacy))).toEqual([]);
+  });
+
+  it("keeps a member when an indexed block can no longer be located after a user edit", () => {
+    const member = source("Indexed source", "2026-09-30", "indexed-source");
+    const page = createTopicPage({ id: "edited-indexed-block", title: "Edited indexed block", tags: [], members: [member], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Thread", summary: "Summary.", points: [
+      { id: "point", text: "A claim from the source.", sources: [member.sourceId] },
+    ] }], disagreements: [], open: [], unsorted: [] }, [member]);
+    const initial = serializeTopicPage(page);
+    const indexed = withTopicBlockIndex(initial, buildTopicBlockIndex(initial));
+    const footnoteId = initial.match(/^\[\^([^\]]+)\]:/m)?.[1];
+    const edited = indexed.replace("### Thread", "### User edited heading")
+      .replace("A claim from the source.", `An unrelated rewrite [^${footnoteId}].`);
+    expect(parseTopicPageBlocks(edited).some((block) => block.text.includes(`[^${footnoteId}]`))).toBe(false);
+    expect(noContributionMembers(parseTopicPage(edited)!, edited)).toEqual([]);
+    expect(() => applyTopicOps(edited, [{ type: "remove_member", path: member.path }]))
+      .toThrow("This member is still cited by topic content and cannot be removed.");
+  });
+
+  it("keeps a member cited by an ordinary paragraph outside recognized topic blocks", () => {
+    const member = source("Paragraph source", "2026-09-30", "paragraph-source");
+    const page = createTopicPage({ id: "ordinary-paragraph", title: "Ordinary paragraph", tags: [], members: [member], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [], disagreements: [], open: [], unsorted: [] }, [member]);
+    const initial = serializeTopicPage(page);
+    const indexed = withTopicBlockIndex(initial, buildTopicBlockIndex(initial));
+    const citationId = initial.match(/^\[\^([^\]]+)\]:/m)?.[1];
+    const markdown = indexed.replace("## 时间线\n", `## 手写段落\n\nA hand-written paragraph cites the source [^${citationId}].\n\n## 时间线\n`);
+    expect(parseTopicPageBlocks(markdown).some((block) => block.text.includes("hand-written paragraph"))).toBe(false);
+    expect(noContributionMembers(parseTopicPage(markdown)!, markdown)).toEqual([]);
+    expect(() => applyTopicOps(markdown, [{ type: "remove_member", path: member.path }]))
+      .toThrow("This member is still cited by topic content and cannot be removed.");
+  });
+
+  it("allows removing a member with only an unused definition and removes its definition and timeline row", () => {
+    const member = source("Unused source", "2026-09-30", "unused-source");
+    const page = createTopicPage({ id: "unused-definition-removal", title: "Unused definition removal", tags: [], members: [member], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview without citations.", threads: [], disagreements: [], open: [], unsorted: [] }, [member]);
+    const markdown = serializeTopicPage(page);
+    expect(noContributionMembers(page, markdown)).toEqual([member.path]);
+    const result = applyTopicOps(markdown, [{ type: "remove_member", path: member.path }]).markdown;
+    const footnoteId = markdown.match(/^\[\^([^\]]+)\]:/m)?.[1];
+    expect(parseTopicPage(result)?.members).toEqual([]);
+    expect(result).not.toContain(`[^${footnoteId}]:`);
+    expect(result).not.toContain("QnALog/Unused source");
+    expect(topicMemberMetadataCounts(result)).toEqual({ members: 0, timeline: 0, sources: 0 });
+  });
+
+  it("removes one uncited member from metadata lists while preserving page prose", () => {
+    const members = [source("First note", "2026-09-20"), source("Second note", "2026-09-30")];
+    const page = createTopicPage({ id: "remove-member", title: "Remove member", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [], disagreements: [], open: [], unsorted: [] }, members);
+    const original = serializeTopicPage(page)
+      .replace("## 时间线\n", "## 时间线\nUser timeline note.\n")
+      .replace("## 来源笔记\n", "## 来源笔记\nUser source note.\n");
+    const result = applyTopicOps(original, [{ type: "remove_member", path: members[0].path }]);
+    const parsed = parseTopicPage(result.markdown)!;
+    expect(parsed.members).toEqual([members[1].path]);
+    expect(parsed.memberLinks).toEqual(["[[QnALog/Second note|Second note]]"]);
+    expect(topicMemberMetadataCounts(result.markdown)).toEqual({ members: 1, timeline: 1, sources: 1 });
+    expect(result.markdown).not.toContain("QnALog/First note");
+    expect(result.markdown).toContain("User timeline note.");
+    expect(result.markdown).toContain("User source note.");
+  });
+
+  it("rejects removing a member that remains cited by a topic block", () => {
+    const member = source("Cited note", "2026-09-30", "cited");
+    const page = createTopicPage({ id: "still-cited", title: "Still cited", tags: [], members: [member], basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Thread", summary: "Summary.", points: [
+      { id: "point", text: "This block cites the member.", sources: [member.sourceId] },
+    ] }], disagreements: [], open: [], unsorted: [] }, [member]);
+    expect(() => applyTopicOps(serializeTopicPage(page), [{ type: "remove_member", path: member.path }]))
+      .toThrow("This member is still cited by topic content and cannot be removed.");
+  });
 
   it.each([
     { name: "earliest", member: source("First note", "2026-09-20"), expected: ["First note", "Middle note", "Last note"] },

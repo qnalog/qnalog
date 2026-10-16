@@ -8,7 +8,7 @@ describe("knowledge extraction sources", () => {
     const source = { path: "QnALog/Notes/2026-10-14 meeting.md", stat: { mtime: 2 } };
     const errata = { path: "QnALog/勘误表/2026-10-14 meeting · 勘误.md", stat: { mtime: 1 } };
     const service = new KnowledgeExtractionService({
-      app: { vault: { getMarkdownFiles: () => [source, errata] } },
+      app: { vault: { getMarkdownFiles: () => [source, errata] }, metadataCache: { getFileCache: () => null } },
       settings: { mdFolder: "QnALog", vocabularyFile: "", peopleDirectoryFolder: "" } as PluginSettings,
     });
     expect(service.getKnowledgeExtractionSourceFiles("vocabulary")).toEqual([source]);

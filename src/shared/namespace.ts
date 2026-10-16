@@ -192,6 +192,7 @@ export const NS_FM = {
   topicUpdated: "qnalog_topic_updated",
   topicHash: "qnalog_topic_hash",
   topicUndoSnapshot: "qnalog_topic_undo_snapshot",
+  topicErrata: "qnalog_topic_errata",
 } as const;
 
 export type NamespaceFrontmatterField = keyof typeof NS_FM;
@@ -260,6 +261,12 @@ export function readNamespaceFrontmatter(frontmatter: unknown, field: NamespaceF
     }
   }
   return merged || (found ? firstValue : undefined);
+}
+
+export function isTopicErrataFrontmatter(frontmatter: unknown): boolean {
+  if (!frontmatter || typeof frontmatter !== "object" || Array.isArray(frontmatter)) return false;
+  const value = (frontmatter as Record<string, unknown>)[NS_FM.topicErrata];
+  return value === true || value === "true";
 }
 
 /** true when canonical or historical spelling is present, including an explicitly empty value. */

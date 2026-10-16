@@ -1,4 +1,5 @@
 import { NS_FM, NS_FM_TOPIC_LAYOUT, NS_TYPE_TOPIC } from "../shared/namespace";
+import { t } from "../shared/i18n";
 import { stripBlockMarkers } from "./topic-block-markers";
 
 export type TopicBasis = "overview" | "body";
@@ -55,6 +56,8 @@ export type TopicOperation =
   | { type: "add_point"; thread: string; text: string; sources: string[]; sourceId: string }
   | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
   | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
+  | { type: "remove_block"; blockId: string; expectedText: string; sourceId: string }
+  | { type: "remove_member"; path: string }
   | { type: "add_disagreement"; subject: string; relatedBlockId?: string; positions: TopicDisagreementPosition[]; sourceId: string }
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
@@ -462,6 +465,96 @@ export function parseTopicPageBlocks(markdown: string): ParsedTopicBlock[] {
   });
 }
 
+export function topicBlockSourcePaths(markdown: string, block: ParsedTopicBlock): string[] {
+  const footnotes = new Set([...block.text.matchAll(/\[\^([^\]]+)\]/g)].map((match) => match[1]));
+  if (!footnotes.size) return [];
+  const paths = new Set<string>();
+  for (const line of markdown.split(/\r?\n/)) {
+    const match = line.match(/^\[\^([^\]]+)\]:\s*.*?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
+    if (match && footnotes.has(match[1])) paths.add(/\.md$/i.test(match[2]) ? match[2] : `${match[2]}.md`);
+  }
+  return [...paths];
+}
+
+/** Returns footnote IDs referenced in the page body, excluding frontmatter and definition rows. */
+export function citedFootnoteIds(markdown: string): Set<string> {
+  const cited = new Set<string>();
+  for (const line of frontmatter(markdown).body.split(/\r?\n/)) {
+    if (/^\s*\[\^[^\]]+\]:/.test(line)) continue;
+    for (const match of line.matchAll(/\[\^([^\]]+)\]/g)) cited.add(match[1]);
+  }
+  return cited;
+}
+
+/** Returns footnote IDs whose definition links point to the given topic member. */
+export function memberFootnoteIds(markdown: string, memberPath: string): string[] {
+  const normalizedMemberPath = normalizeTopicMemberPath(memberPath);
+  const ids = new Set<string>();
+  for (const line of frontmatter(markdown).body.split(/\r?\n/)) {
+    const match = line.match(/^\s*\[\^([^\]]+)\]:\s*.*?\[\[([^|\]]+)(?:\|[^\]]*)?\]\]/);
+    if (match && normalizeTopicMemberPath(match[2]) === normalizedMemberPath) ids.add(match[1]);
+  }
+  return [...ids];
+}
+
+/** Returns member paths with at least one footnote referenced in the page body. */
+export function contributingMemberPaths(markdown: string, members: readonly string[]): Set<string> {
+  const page = parseTopicPage(markdown);
+  if (page?.layout !== 2) return new Set();
+  const citedIds = citedFootnoteIds(markdown);
+  const contributing = new Set<string>();
+  for (const member of members) {
+    const normalized = normalizeTopicMemberPath(member);
+    if (memberFootnoteIds(markdown, normalized).some((id) => citedIds.has(id))) contributing.add(normalized);
+  }
+  return contributing;
+}
+
+/** Lists v2 page members that have no footnote cited by a topic block. */
+export function noContributionMembers(page: TopicPage, markdown: string): string[] {
+  if (page.layout !== 2) return [];
+  const contributing = contributingMemberPaths(markdown, page.members);
+  return page.members.filter((path) => !contributing.has(normalizeTopicMemberPath(path)));
+}
+
+function normalizeTopicMemberPath(path: string): string {
+  const normalized = String(path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  return /\.md$/i.test(normalized) ? normalized : `${normalized}.md`;
+}
+
+function memberLinkTarget(value: string): string {
+  const target = value.match(/^\s*\[\[([^|\]]+)/)?.[1] || "";
+  return normalizeTopicMemberPath(target);
+}
+
+function removeTopicMember(markdown: string, memberPath: string): string {
+  const normalizedMemberPath = normalizeTopicMemberPath(memberPath);
+  const citedIds = citedFootnoteIds(markdown);
+  if (memberFootnoteIds(markdown, normalizedMemberPath).some((id) => citedIds.has(id))) {
+    throw new Error(t("This member is still cited by topic content and cannot be removed."));
+  }
+  const parsed = frontmatter(markdown);
+  const lines = parsed.body.split("\n");
+  const removeIndexes = new Set<number>();
+  for (const section of ["时间线", "来源笔记"] as const) {
+    const range = sectionRange(lines, section);
+    if (!range) continue;
+    for (let index = range.start + 1; index < range.end; index++) {
+      const line = lines[index];
+      const timelineRow = section === "时间线" && /^\s*-\s*(?:\d{4}-\d{2}-\d{2}|—)\s*[·—-]\s*\[\[/.test(line);
+      const sourceRow = section === "来源笔记" && (/^\s*-\s*\[\[/.test(line) || /^\[\^[^\]]+\]:/.test(line));
+      if ((timelineRow || sourceRow) && [...line.matchAll(/\[\[([^|\]]+)/g)].some((match) => normalizeTopicMemberPath(match[1]) === normalizedMemberPath)) removeIndexes.add(index);
+    }
+  }
+  const body = lines.filter((_line, index) => !removeIndexes.has(index)).join("\n");
+  const result = `${parsed.text ? `---\n${parsed.text}\n---\n` : ""}${body}`;
+  const page = parseTopicPage(result);
+  if (!page) throw new Error("Topic page is invalid");
+  return updateTopicFrontmatter(result, {
+    [NS_FM.topicMembers]: page.memberLinks.filter((link) => memberLinkTarget(link) !== normalizedMemberPath),
+  });
+}
+
 export function updateTopicFrontmatter(markdown: string, updates: Record<string, string | string[]>): string {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) throw new Error("Topic page frontmatter is missing");
@@ -598,14 +691,19 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
   const applied: AppliedTopicOperation[] = [];
   const skipped: ApplyTopicOpsResult["skipped"] = [];
   for (const operation of ops) {
+    if (operation.type === "remove_member") {
+      current = removeTopicMember(current, operation.path);
+      applied.push({ operation, blockId: null, location: "来源笔记" });
+      continue;
+    }
     const isV2 = parseTopicFrontmatter(frontmatter(current).text)[NS_FM_TOPIC_LAYOUT] === 2;
-    if (isV2 && ["add_point", "add_thread", "revise_block", "add_disagreement", "add_open", "resolve_open"].includes(operation.type)) {
+    if (isV2 && ["add_point", "add_thread", "revise_block", "remove_block", "add_disagreement", "add_open", "resolve_open"].includes(operation.type)) {
       const parsed = frontmatter(current);
       const lines = parsed.body.split("\n");
       const source = (id: string) => `[^${sourceFootnoteId(id)}]`;
       let blockId: string | null = null;
       let location: TopicSection = "进展脉络";
-      if (operation.type === "revise_block" || operation.type === "resolve_open") {
+      if (operation.type === "revise_block" || operation.type === "remove_block" || operation.type === "resolve_open") {
         const id = operation.blockId.replace(/^\^/, "");
         const block = parseTopicPageBlocks(current).find((item) => item.id === id);
         if (operation.expectedText !== undefined && block?.text !== operation.expectedText) {
@@ -616,7 +714,14 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
         const at = block ? parsed.body.slice(0, Math.max(0, block.start - bodyOffset)).split("\n").length - 1 : -1;
         if (at >= 0 && block) {
           blockId = id;
-          if (operation.type === "revise_block") {
+          if (operation.type === "remove_block") {
+            const bodyOffset = current.length - parsed.body.length;
+            const relativeStart = Math.max(0, block.start - bodyOffset);
+            const relativeEnd = Math.max(relativeStart, block.end - bodyOffset);
+            const lineStart = parsed.body.slice(0, relativeStart).split("\n").length - 1;
+            const blockLines = parsed.body.slice(relativeStart, relativeEnd).split("\n").length;
+            lines.splice(lineStart, blockLines);
+          } else if (operation.type === "revise_block") {
             if (block.type === "overview") {
               let end = at + 1;
               while (end < lines.length && /^>/.test(lines[end]) && !/^>\s*\*\*/.test(lines[end])) end++;

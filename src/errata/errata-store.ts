@@ -1,5 +1,5 @@
 import * as obsidian from "obsidian";
-import { NS_ERRATA_FOLDER } from "../shared/namespace";
+import { NS_ERRATA_FOLDER, isTopicErrataFrontmatter } from "../shared/namespace";
 import { getActiveUiLanguage, t } from "../shared/i18n";
 import { parseErrata } from "./errata-parser";
 import { isErrataPath } from "./errata-path";
@@ -14,6 +14,7 @@ export interface ErrataStorePort {
   listErrataFiles(): obsidian.TFile[];
   getByPath(path: string): obsidian.TAbstractFile | null;
   getLinks(file: obsidian.TFile): readonly ErrataLink[];
+  getFrontmatter(file: obsidian.TFile): unknown;
   resolveLink(link: string, sourcePath: string): obsidian.TAbstractFile | null;
   ensureFolder(path: string): Promise<void>;
   create(path: string, content: string): Promise<obsidian.TFile>;
@@ -44,6 +45,7 @@ export class ErrataStore {
     this.errataToNote.clear();
     for (const file of this.port.listErrataFiles()) {
       if (!isErrataPath(file.path)) continue;
+      if (isTopicErrataFrontmatter(this.port.getFrontmatter(file))) continue;
       const first = this.port.getLinks(file)[0];
       if (!first) continue;
       const target = this.port.resolveLink(linkToPath(first.link), file.path);

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
-import { NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, readNamespaceFrontmatter } from "./shared/namespace";
+import { NS_ERRATA_FOLDER, NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, isTopicErrataFrontmatter, readNamespaceFrontmatter } from "./shared/namespace";
 import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
@@ -21,7 +21,7 @@ import {DEFAULT_SETTINGS } from "./shared/defaults";
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
 import {SETTINGS_SCHEMA_VERSION, normalizePluginSettings, serializePluginSettings, extractJobItems } from "./shared/settings-io";
-import { resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage, t } from "./shared/i18n";
 import { classifySettingsSchema, hasStoredSettings, migrateSettingsForward, readSavedSchemaVersion, type SettingsSchemaState } from "./shared/settings-schema";
 import { ApiKeyStorageError, createApiKeyStorageNamespace, isValidApiKeyStorageNamespace, restoreApiKeySecrets, storeApiKeySecrets } from "./shared/api-key-storage";
 
@@ -84,6 +84,10 @@ import { AudioTimeLinkService } from "./notes/audio-time-link-service";
 import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { TopicPromptStore } from "./topics/topic-prompt-store";
+import { TopicErrataStore } from "./topics/topic-errata-store";
+import { parseTopicPage } from "./topics/topic-page";
+import { resolveTopicBlocksForRange } from "./topics/topic-block-selection";
+import { TopicPreviewModal } from "./ui/topic-preview-modal";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import type { ErrataUiPort } from "./ui/errata-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
@@ -267,6 +271,7 @@ class QnALogPlugin extends obsidian.Plugin {
       listErrataFiles: () => this.app.vault.getMarkdownFiles().filter((file) => isErrataPath(file.path)),
       getByPath: (path) => this.app.vault.getAbstractFileByPath(path),
       getLinks: (file) => this.app.metadataCache.getFileCache(file)?.links || [],
+      getFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
       resolveLink: (link, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(link, sourcePath),
       ensureFolder: async (path) => ensureVaultFolder(this.app, path),
       create: (path, content) => this.app.vault.create(path, content),
@@ -425,9 +430,30 @@ class QnALogPlugin extends obsidian.Plugin {
       },
       now: () => Date.now(),
     };
+    const topicErrataStore = new TopicErrataStore({
+      read: (file) => this.app.vault.read(file),
+      listErrataFiles: () => this.app.vault.getMarkdownFiles().filter((file) => file.path.startsWith(`${NS_ERRATA_FOLDER}/`)),
+      getByPath: (path) => this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path)),
+      getFrontmatter: (file) => this.app.metadataCache.getFileCache(file)?.frontmatter,
+      getLinks: (file) => this.app.metadataCache.getFileCache(file)?.links || [],
+      resolveLink: (link, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(link, sourcePath),
+      ensureFolder: async (path) => ensureVaultFolder(this.app, path),
+      create: (path, content) => this.app.vault.create(obsidian.normalizePath(path), content),
+      process: async (file, transform) => { await this.app.vault.process(file, transform); },
+      uiLanguage: () => getActiveUiLanguage().id,
+      diagnostic: (code, data) => {
+        const message = code === "topic.errata_remove_failed"
+          ? t("Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.")
+          : code === "topic.errata_snapshot_mismatch"
+            ? t("Topic errata could not be linked to the update snapshot.")
+            : t("Topic errata entry references a note that is no longer a topic member");
+        void this.diagnostics.logDiagnostic("warn", code, message, data);
+      },
+    });
     this.topics = new TopicsService({
       overviewCards: topicsPort,
       topicStore: topicStorePort,
+      topicErrata: topicErrataStore,
       getRoots: () => getRecentNoteRoots(this),
       getFolder: () => this.settings.topicsFolder,
       integration: {
@@ -694,12 +720,14 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.registerEvent(this.app.vault.on("create", (file) => {
       this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
+      this.topics?.refreshTopicErrataForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox handler error", e));
     }));
     // Nutstore Sync / Obsidian Sync may first create a placeholder and then fill it through modify events.
     // Listen to both so a zero-byte placeholder never becomes the only chance to auto-import the file.
     this.registerEvent(this.app.vault.on("modify", (file) => {
       this.errata.refreshForVaultEvent(file && file.path ? file.path : "");
+      this.topics?.refreshTopicErrataForVaultEvent(file && file.path ? file.path : "");
       this.inbox.handleInboxFile(file).catch(e => console.error("[QnALog] inbox modify handler error", e));
     }));
 
@@ -707,6 +735,7 @@ class QnALogPlugin extends obsidian.Plugin {
     // 防止 merge 任务跑完后文件被改名 → 重试时找不到旧路径报"笔记不存在"
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       this.errata.refreshForVaultEvent(file && file.path ? file.path : "", oldPath || "");
+      this.topics?.refreshTopicErrataForVaultEvent(file && file.path ? file.path : "", oldPath || "");
       if (file instanceof obsidian.TFile) {
         this.queueRetry.migrateQueueTasksAfterRename(oldPath, file.path);
         this.continuations.onRename(file, oldPath);
@@ -719,6 +748,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => {
       const path = file && file.path ? file.path : "";
       this.errata.refreshForVaultEvent(path);
+      this.topics?.refreshTopicErrataForVaultEvent(path);
       if (path) this.queueRetry.removeQueueTasksForDeletedMarkdown(path);
     }));
 
@@ -784,10 +814,13 @@ class QnALogPlugin extends obsidian.Plugin {
       const isMinutes = this.noteWriter.detectModeFromMarkdown(file);
       const selection = String(editor.getSelection() || "");
       const hasSelection = !!selection.trim();
+      const editorText = String(editor.getValue() || "");
+      const topicPage = parseTopicPage(editorText, file.path);
+      const isTopic = topicPage?.layout === 2;
       // 本插件的菜单项归入同一组：只在最前面加一条分隔线（与系统项隔开），
       // 「继续录音」与「更正误识别词」之间不再分割——两条中间夹分隔线会把
       // 同一插件的功能切成两组，视觉上像两家来源。
-      if (!isMinutes && !hasSelection) return;
+      if (!isMinutes && !hasSelection && !isTopic) return;
       menu.addSeparator();
       if (isMinutes) {
         // 正文右键（无论是否选中文字）：当前笔记是自家纪要时给「继续录音到这篇纪要」，
@@ -796,6 +829,39 @@ class QnALogPlugin extends obsidian.Plugin {
           item.setTitle(t("QnALog: Continue recording into this note"))
             .setIcon("mic")
             .onClick(() => { void this.recording.startRecording({ appendToFile: file }); });
+        });
+      }
+      if (isTopic) {
+        menu.addItem((item) => {
+          item.setTitle(t("Open errata"))
+            .setIcon("file-pen")
+            .onClick(async () => {
+              try { await this.createTopicsUiPort().openTopicErrata(topicPage.id); }
+              catch (error) { new obsidian.Notice(error instanceof Error ? error.message : String(error)); }
+            });
+        });
+        menu.addItem((item) => {
+          item.setTitle(t("QnALog: Mark block as off-topic"))
+            .setIcon("trash-2")
+            .onClick(async () => {
+              try {
+                const from = editor.getCursor("from");
+                const to = editor.getCursor("to");
+                const hasRange = from.line !== to.line || from.ch !== to.ch;
+                const blocks = resolveTopicBlocksForRange(editorText, from, to);
+                if (!blocks.length) {
+                  const message = hasRange
+                    ? t("The selected text contains no topic content blocks (headings cannot be marked on their own).")
+                    : t("Place the cursor inside a topic block first.");
+                  new obsidian.Notice(message);
+                  return;
+                }
+                const preview = await this.topics.previewExcludeBlocks(file.path, blocks.map((block) => block.id));
+                new TopicPreviewModal(this.app, this.createTopicsUiPort(), preview, () => this.shell.refreshOutlineView()).open();
+              } catch (error) {
+                new obsidian.Notice(error instanceof Error ? error.message : String(error));
+              }
+            });
         });
       }
       if (!hasSelection) return;
@@ -911,6 +977,11 @@ class QnALogPlugin extends obsidian.Plugin {
       estimate: (input) => this.topics.estimate(input),
       preview: (input) => this.topics.preview(input),
       previewRebuild: (topicId, onProgress) => this.topics.previewRebuild(topicId, onProgress),
+      previewExcludeBlock: (path, blockId) => this.topics.previewExcludeBlock(path, blockId),
+      estimateContentCleaning: (topicId) => this.topics.estimateContentCleaning(topicId),
+      previewContentCleaning: (topicId) => this.topics.previewContentCleaning(topicId),
+      getUncontributedMembers: (topicId) => this.topics.getUncontributedMembers(topicId),
+      previewOrphanMembers: (topicId) => this.topics.previewOrphanMembers(topicId),
       apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot(); return result; },
       cancel: (id) => this.topics.cancel(id),
       listTopics: () => refreshTopicsSnapshot(),
@@ -940,6 +1011,7 @@ class QnALogPlugin extends obsidian.Plugin {
         const eligible = isTopicSourceEligible({
           type: kind,
           mergedInto: readNamespaceFrontmatter(fm, "mergedInto"),
+          isTopicErrata: isTopicErrataFrontmatter(fm),
           underMinutesRoot: isPathUnderRecentNoteRoots(file.path, getRecentNoteRoots(this)),
           hasMergeMarker: false,
         });
@@ -948,6 +1020,7 @@ class QnALogPlugin extends obsidian.Plugin {
         const isSource = isTopicSourceEligible({
           type: kind,
           mergedInto: readNamespaceFrontmatter(fm, "mergedInto"),
+          isTopicErrata: isTopicErrataFrontmatter(fm),
           underMinutesRoot: true,
           hasMergeMarker: NS_MERGE_BLOCK_RE.test(markdown),
         });
@@ -957,6 +1030,12 @@ class QnALogPlugin extends obsidian.Plugin {
       openTopic: async (path) => {
         const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
         if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
+      },
+      openTopicErrata: async (topicId) => {
+        const path = await this.topics.ensureTopicErrata(topicId);
+        const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+        if (!(file instanceof obsidian.TFile)) throw new Error(`Topic errata document could not be opened: ${path}`);
+        await openOrRevealFile(this.app, file);
       },
       openSource: async (source) => {
         const target = String(source).match(/^\[\[([^\]|#]+)/)?.[1] || String(source);
@@ -980,6 +1059,7 @@ class QnALogPlugin extends obsidian.Plugin {
     if (!isTopicSourceEligible({
       type: kind,
       mergedInto: readNamespaceFrontmatter(frontmatter, "mergedInto"),
+      isTopicErrata: isTopicErrataFrontmatter(frontmatter),
       underMinutesRoot: isPathUnderRecentNoteRoots(file.path, getRecentNoteRoots(this)),
       hasMergeMarker: false,
     })) return;

@@ -1,9 +1,11 @@
 import { Modal, Notice, setIcon, type App } from "obsidian";
-import type { TopicChangePreview, TopicChangePreviewItem } from "../topics/topic-integration";
+import { topicMemberExcludeSelectionId, type TopicChangePreview, type TopicChangePreviewItem } from "../topics/topic-integration";
 import { stripTopicUnverifiedMarker } from "../topics/topic-integration";
 import { topicLabelSeparator, topicOpenKindLabel, topicSectionEnglishLabel } from "../topics/topic-page";
 import type { TopicsUiPort } from "./topics-ui-port";
 import { bindKeyboardFocusOutline, suppressRowActivation } from "./topic-row-activation";
+import { qnalogConfirm } from "./helpers";
+import { runTopicPreviewRequest } from "./topic-preview-runner";
 
 export function topicPreviewTargetLabel(item: TopicChangePreviewItem): string {
   const target = item.target.trim();
@@ -44,6 +46,7 @@ export class TopicPreviewModal extends Modal {
     content.createDiv({ cls: "qnalog-topics-dialog-heading", text: this.port.text("Preview topic changes") });
     const scroll = content.createDiv({ cls: "qnalog-topics-scroll" });
     if (this.preview.pageWasManuallyEdited) scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("The page may have been modified. Changes will use the current version.") });
+    if (typeof this.preview.estimatedTokens === "number") scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("Estimated input: {0} characters, about {1} tokens.").replace("{0}", String(this.preview.inputChars || 0)).replace("{1}", String(this.preview.estimatedTokens)) });
     if (this.preview.partialFailure) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("Some batches failed; {0}/{1} completed batches were kept.").replace("{0}", String(this.preview.completedBatches)).replace("{1}", String(this.preview.totalBatches)) });
     if (this.preview.create?.overviewGeneratedFromThreads) scroll.createDiv({ cls: "qnalog-topics-notice is-warning", text: this.port.text("The overview was generated from the thread summaries by the program. You can edit it on the page.") });
 
@@ -79,6 +82,10 @@ export class TopicPreviewModal extends Modal {
       const checked = diagnostics?.rawOperations || 0;
       const duplicates = diagnostics?.duplicateOperations || 0;
       scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("No page changes were proposed (received {0} candidate operations; {1} duplicates).").replace("{0}", String(checked)).replace("{1}", String(duplicates)) });
+      if (this.preview.request) {
+        const basis = this.preview.request.basis === "overview" ? "Overview" : "Body";
+        scroll.createDiv({ cls: "qnalog-topics-notice", text: this.port.text("This preview used: {0}").replace("{0}", this.port.text(basis)) });
+      }
     }
     if (model) {
       const group = (title: string) => {
@@ -166,7 +173,8 @@ export class TopicPreviewModal extends Modal {
       const section = item.operation.type === "add_timeline" ? "Timeline"
         : item.operation.type === "add_conflict" || item.operation.type === "add_disagreement" ? "Disagreements and verification"
           : item.operation.type === "add_open" || item.operation.type === "resolve_open" ? "Open questions and actions"
-            : item.operation.type === "add_point" || item.operation.type === "add_thread" || item.operation.type === "revise_block" ? "Progress thread"
+        : item.operation.type === "remove_member" ? "Member cleanup"
+        : item.operation.type === "add_point" || item.operation.type === "add_thread" || item.operation.type === "revise_block" || item.operation.type === "remove_block" ? "Progress thread"
               : item.operation.type === "add_item" ? topicSectionEnglishLabel(item.operation.section) : "Progress thread";
       let group = sections.get(section);
       if (!group) {
@@ -190,7 +198,7 @@ export class TopicPreviewModal extends Modal {
       checkbox.checked = true;
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add(item.id) : selected.delete(item.id));
       const icon = heading.createSpan({ cls: "qnalog-topics-operation-icon" });
-      const iconName = item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
+      const iconName = item.type === "remove_block" || item.type === "remove_member" ? "trash-2" : item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
       try { setIcon(icon, iconName); } catch { /* icon fallback is decorative */ }
       const verification = stripTopicUnverifiedMarker(item.text);
       if (item.operation.type === "revise_block") {
@@ -223,6 +231,10 @@ export class TopicPreviewModal extends Modal {
       } else if (item.operation.type === "resolve_open") {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: `${this.port.text("Will mark this item as resolved")}: ${item.expectedText || item.operation.expectedText || topicPreviewTargetLabel(item) || this.port.text("Open item")}` });
         main.createDiv({ cls: "qnalog-topics-preview-text", text: verification.text });
+      } else if (item.operation.type === "remove_block") {
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Will remove this block: {0}").replace("{0}", item.text) });
+      } else if (item.operation.type === "remove_member") {
+        main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Will remove this member from the topic: {0}").replace("{0}", item.text) });
       } else {
         let changeText = verification.text;
         if (item.operation.type === "add_open") {
@@ -246,13 +258,40 @@ export class TopicPreviewModal extends Modal {
         if (item.type === "add_conflict") left.createSpan({ cls: "qnalog-topics-preview-badge is-conflict", text: this.port.text("Disagreement") });
         if (verification.unverified) left.createSpan({ cls: "qnalog-topics-unverified", text: this.port.text("Unverified") });
       }
+      if (item.operation.type === "remove_member") {
+        const suboption = group.createDiv({ cls: "qnalog-topics-preview-suboption" });
+        const exclude = suboption.createEl("input", { attr: { type: "checkbox", "aria-label": this.port.text("Also exclude from future suggestions") } });
+        exclude.checked = false;
+        exclude.disabled = !checkbox.checked;
+        exclude.addEventListener("change", () => exclude.checked
+          ? selected.add(topicMemberExcludeSelectionId(item.id))
+          : selected.delete(topicMemberExcludeSelectionId(item.id)));
+        checkbox.addEventListener("change", () => {
+          exclude.disabled = !checkbox.checked;
+          if (!checkbox.checked) {
+            exclude.checked = false;
+            selected.delete(topicMemberExcludeSelectionId(item.id));
+          }
+        });
+        suboption.createSpan({ text: this.port.text("Also exclude from future suggestions") });
+      }
     }
 
     const footer = content.createDiv({ cls: "qnalog-topics-modal-footer" });
     const actions = footer.createDiv({ cls: "qnalog-topics-modal-actions" });
     const cancel = actions.createEl("button", { text: this.port.text("Cancel"), attr: { type: "button" } });
     cancel.addEventListener("click", () => this.close());
-    const apply = actions.createEl("button", { cls: "mod-cta", text: this.port.text(emptyUpdate ? "Add member and timeline only" : "Apply selected"), attr: { type: "button" } });
+    const request = this.preview.request;
+    if (emptyUpdate && request?.basis === "overview") {
+      const retry = actions.createEl("button", { cls: "mod-cta", text: this.port.text("Retry with body"), attr: { type: "button" } });
+      retry.addEventListener("click", () => {
+        retry.disabled = true;
+        void this.retryWithBody().finally(() => { if (!this.closed) retry.disabled = false; });
+      });
+    }
+    const applyGroup = emptyUpdate ? actions.createDiv({ cls: "qnalog-topics-empty-secondary" }) : actions;
+    if (emptyUpdate) applyGroup.createSpan({ cls: "qnalog-topics-empty-note", text: this.port.text("This note will not contribute content.") });
+    const apply = applyGroup.createEl("button", { cls: emptyUpdate ? "" : "mod-cta", text: this.port.text(emptyUpdate ? "Add member and timeline only" : "Apply selected"), attr: { type: "button" } });
     apply.addEventListener("click", () => {
       apply.disabled = true;
       void this.port.apply(this.preview, [...selected]).then(async (result) => {
@@ -267,7 +306,9 @@ export class TopicPreviewModal extends Modal {
           const undo = notice.messageEl.createEl("button", { cls: "qnalog-topics-undo", text: this.port.text("Undo"), attr: { type: "button" } });
           undo.addEventListener("click", () => {
             void this.port.undoLastUpdate(this.preview.topicId).then((outcome) => {
-              if (outcome.restored === true) new Notice(this.port.text("Topic update undone."));
+              if (outcome.restored === true) new Notice(this.port.text(outcome.errataFailed
+                ? "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note."
+                : "Topic update undone."));
               else new Notice(outcome.reason === "page-modified" ? this.port.text("The topic page changed after the update. Undo was not applied.") : this.port.text("No topic update is available to undo."));
             });
           });
@@ -278,5 +319,24 @@ export class TopicPreviewModal extends Modal {
         new Notice(error instanceof Error ? error.message : "Topic update failed.", 8000);
       });
     });
+  }
+
+  private async retryWithBody(): Promise<void> {
+    const request = this.preview.request;
+    if (!request || request.basis !== "overview") return;
+    try {
+      const estimate = await this.port.estimate({ memberPaths: request.memberPaths, basis: "body" });
+      if (this.closed) return;
+      const tokens = Math.ceil(estimate.chars / 4);
+      const message = this.port.text("Estimated input: {0} characters, about {1} tokens.")
+        .replace("{0}", estimate.chars.toLocaleString()).replace("{1}", tokens.toLocaleString());
+      const confirmed = await qnalogConfirm(this.app, this.port.text("Retry with body"), message, this.port.text("Continue"), this.port.text("QnALog · Topics"));
+      if (!confirmed || this.closed) return;
+      this.close();
+      void runTopicPreviewRequest(this.app, this.port, () => this.port.preview({ ...request, basis: "body", bodyConfirmed: true }),
+        (preview) => new TopicPreviewModal(this.app, this.port, preview, this.onApplied).open());
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : String(error), 8000);
+    }
   }
 }

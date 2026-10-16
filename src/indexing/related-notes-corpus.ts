@@ -1,7 +1,7 @@
 import { extractIndexSource, readNoteIndex, type QnALogNoteIndexCard } from "./note-index";
 import { extractSessionId } from "../notes/note-document";
 import { readSelectedSessionKnowledge } from "../briefing/session-knowledge";
-import { NS_FM, NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_TOPIC, NS_TYPE_VERSION_CACHE, hasNamespaceFrontmatter, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
+import { isTopicErrataFrontmatter, NS_FM, NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_TOPIC, NS_TYPE_VERSION_CACHE, hasNamespaceFrontmatter, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import { isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "../recent/recent-note-paths";
 import { AUDIO_EXT as AUDIO_FILE_EXTENSIONS } from "../shared/catalog-import";
 import { RELATED_NOTE_MIN_BODY_CHARS, type RelatedNoteDocument } from "./related-notes";
@@ -105,6 +105,7 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
   let excludedDerivedLegacyAliases = 0;
   for (const file of candidates) {
     const fm = (port.getFrontmatter(file.path) || {}) as Record<string, unknown>;
+    if (isTopicErrataFrontmatter(fm)) continue;
     if (readNamespaceFrontmatter(fm, "type") === NS_TYPE_TOPIC) {
       excludedTopicPaths.add(normPath(file.path));
       continue;

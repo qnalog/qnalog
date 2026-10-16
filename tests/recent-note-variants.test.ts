@@ -88,6 +88,23 @@ describe("recent clean-copy grouping", () => {
     }, 24);
     expect(result).toEqual([]);
   });
+
+  it("excludes topic errata documents located under the recent notes root", () => {
+    vi.stubGlobal("window", {});
+    const errataFile = Object.assign(new obsidian.TFile(), {
+      path: "QnALog/转写纪要/Climate Errata.md",
+      basename: "Climate Errata",
+      extension: "md",
+    });
+    const result = getRecentNotes({
+      settings: { mdFolder: "QnALog/转写纪要" },
+      app: {
+        vault: { getMarkdownFiles: () => [errataFile] },
+        metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_topic_errata: true } }) },
+      },
+    }, 24);
+    expect(result).toEqual([]);
+  });
 });
   it("groups a synthesized minutes file under its personal-note source", () => {
     const sourceFile = Object.assign(new obsidian.TFile(), {

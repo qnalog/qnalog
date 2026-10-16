@@ -32,4 +32,13 @@ describe("overview card cache", () => {
     expect(p.reads).toEqual(["QnALog/a.md"]);
     expect(cache.getCards({ windowDays: 3650 }).map((card) => card.path)).toEqual(["QnALog/a.md"]);
   });
+  it("does not load topic errata documents into the overview cache", async () => {
+    const p = port();
+    p.files.push({ path: "QnALog/Topics/topic Errata.md", basename: "topic Errata", mtime: Date.now() });
+    p.getFrontmatter = (path) => path.endsWith("topic Errata.md") ? { qnalog_topic_errata: true } : { qnalog_time: "2001-01-01" };
+    const cache = new OverviewCardCache(p, ["QnALog"]);
+    await cache.refresh({ windowDays: 3650 });
+    expect(p.reads).toEqual(["QnALog/a.md"]);
+    expect(cache.getCards({ windowDays: 3650 }).map((card) => card.path)).toEqual(["QnALog/a.md"]);
+  });
 });

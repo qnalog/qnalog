@@ -74,7 +74,7 @@ export class TopicsPanel {
     row.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.showTopicMenu(event, topic.page.id, topic.page.title, topic.page.layout !== 2);
+      void this.showTopicMenu(event, topic.page.id, topic.page.title, topic.page.layout !== 2);
     });
     const chip = row.createDiv({ cls: "qnalog-outline-recent-chip", attr: { title: this.port.text("Topics") } });
     try { setIcon(chip, "layers"); } catch { /* the icon is decorative */ }
@@ -96,7 +96,7 @@ export class TopicsPanel {
     more.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.showTopicMenu(event, topic.page.id, topic.page.title, topic.page.layout !== 2);
+      void this.showTopicMenu(event, topic.page.id, topic.page.title, topic.page.layout !== 2);
     });
     void this.port.countPending(topic.page.id).then((count) => {
       if (count > 0) { badge.setText(this.port.text("{0} pending").replace("{0}", String(count))); badge.addClass("is-visible"); }
@@ -112,15 +112,23 @@ export class TopicsPanel {
     empty.createDiv({ cls: "qnalog-empty-state-desc", text: this.port.text("Right-click a note and choose Create topic.") });
   }
 
-  private showTopicMenu(event: MouseEvent, topicId: string, title: string, legacy: boolean): void {
+  private async showTopicMenu(event: MouseEvent, topicId: string, title: string, legacy: boolean): Promise<void> {
+    const uncontributed = await this.port.getUncontributedMembers(topicId).catch(() => []);
     const menu = new Menu();
     if (legacy) menu.addItem((item) => item.setTitle(this.port.text("Rebuild topic page in new layout")).setIcon("layout-dashboard").onClick(() => {
       void runTopicPreviewRequest(this.app, this.port, () => this.port.previewRebuild(topicId), () => this.refresh());
     }));
     menu.addItem((item) => item.setTitle(this.port.text("Scan for notes to integrate")).setIcon("scan-search").onClick(() => void this.scan(topicId)));
+    if (uncontributed.length) menu.addItem((item) => item.setTitle(this.port.text("Organize notes with no contributed content ({0})").replace("{0}", String(uncontributed.length))).setIcon("list-minus").onClick(() => void this.organizeUncontributed(topicId)));
+    menu.addItem((item) => item.setTitle(this.port.text("Open errata")).setIcon("file-pen").onClick(() => {
+      void this.port.openTopicErrata(topicId).catch((error: unknown) => new Notice(error instanceof Error ? error.message : this.port.text("Could not open the topic errata document."), 8000));
+    }));
+    menu.addItem((item) => item.setTitle(this.port.text("Content cleaning")).setIcon("list-filter").onClick(() => void this.cleanTopic(topicId)));
     menu.addItem((item) => item.setTitle(this.port.text("Undo last update")).setIcon("undo-2").onClick(() => {
       void this.port.undoLastUpdate(topicId).then((result) => {
-        if (result.restored === true) new Notice(this.port.text("Topic update undone."));
+        if (result.restored === true) new Notice(this.port.text(result.errataFailed
+          ? "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note."
+          : "Topic update undone."));
         else new Notice(result.reason === "page-modified" ? this.port.text("The topic page changed after the update. Undo was not applied.") : this.port.text("No topic update is available to undo."));
         this.refresh();
       });
@@ -134,6 +142,16 @@ export class TopicsPanel {
       this.refresh();
     }));
     menu.showAtMouseEvent(event);
+  }
+
+  private async organizeUncontributed(topicId: string): Promise<void> {
+    try {
+      const preview = await this.port.previewOrphanMembers(topicId);
+      if (!preview.items.length) { new Notice(this.port.text("No notes without contributed content need organizing.")); return; }
+      new TopicPreviewModal(this.app, this.port, preview, () => this.refresh()).open();
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : String(error), 8000);
+    }
   }
 
   private async chooseMergeTarget(sourceId: string, event: MouseEvent): Promise<void> {
@@ -151,6 +169,20 @@ export class TopicsPanel {
 
   private async scan(topicId: string): Promise<void> {
     new TopicScanModal(this.app, this.port, topicId, this.refresh).open();
+  }
+
+  private async cleanTopic(topicId: string): Promise<void> {
+    try {
+      const estimate = await this.port.estimateContentCleaning(topicId);
+      if (estimate.chars === 0) { new Notice(this.port.text("No content needs cleaning.")); return; }
+      const confirmed = await qnalogConfirm(this.app, this.port.text("Content cleaning"), this.port.text("Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.").replace("{0}", String(estimate.chars)).replace("{1}", String(estimate.tokens)), this.port.text("Continue"), this.port.text("QnALog · Topics"));
+      if (!confirmed) return;
+      const preview = await this.port.previewContentCleaning(topicId);
+      if (!preview.items.length) { new Notice(this.port.text("No content needs cleaning.")); return; }
+      new TopicPreviewModal(this.app, this.port, preview, () => this.refresh()).open();
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : String(error), 8000);
+    }
   }
 }
 
