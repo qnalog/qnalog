@@ -85,7 +85,8 @@ import { NoteIndexService } from "./notes/note-index-service";
 import { TopicsService, type TopicsServicePort } from "./topics/topics-service";
 import { TopicPromptStore } from "./topics/topic-prompt-store";
 import { TopicErrataStore } from "./topics/topic-errata-store";
-import { parseTopicPage, parseTopicPageBlocks } from "./topics/topic-page";
+import { parseTopicPage } from "./topics/topic-page";
+import { resolveTopicBlocksForRange } from "./topics/topic-block-selection";
 import { TopicPreviewModal } from "./ui/topic-preview-modal";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import type { ErrataUiPort } from "./ui/errata-ui-port";
@@ -837,18 +838,18 @@ class QnALogPlugin extends obsidian.Plugin {
             .setIcon("trash-2")
             .onClick(async () => {
               try {
-                const cursor = editor.getCursor();
-                const lines = editorText.split("\n");
-                let offset = 0;
-                for (let index = 0; index < cursor.line; index++) offset += (lines[index] || "").length + 1;
-                offset += cursor.ch;
-                if (hasSelection) {
-                  const selectionOffset = editorText.indexOf(selection, Math.max(0, offset - selection.length));
-                  if (selectionOffset >= 0 && selectionOffset <= offset) offset = selectionOffset;
+                const from = editor.getCursor("from");
+                const to = editor.getCursor("to");
+                const hasRange = from.line !== to.line || from.ch !== to.ch;
+                const blocks = resolveTopicBlocksForRange(editorText, from, to);
+                if (!blocks.length) {
+                  const message = hasRange
+                    ? t("The selected text contains no topic content blocks (headings cannot be marked on their own).")
+                    : t("Place the cursor inside a topic block first.");
+                  new obsidian.Notice(message);
+                  return;
                 }
-                const block = parseTopicPageBlocks(editorText).find((candidate) => candidate.start <= offset && offset <= candidate.end);
-                if (!block) { new obsidian.Notice(t("Place the cursor inside a topic block first.")); return; }
-                const preview = await this.topics.previewExcludeBlock(file.path, block.id);
+                const preview = await this.topics.previewExcludeBlocks(file.path, blocks.map((block) => block.id));
                 new TopicPreviewModal(this.app, this.createTopicsUiPort(), preview, () => this.shell.refreshOutlineView()).open();
               } catch (error) {
                 new obsidian.Notice(error instanceof Error ? error.message : String(error));

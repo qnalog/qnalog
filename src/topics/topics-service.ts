@@ -395,21 +395,36 @@ export class TopicsService {
   }
 
   async previewExcludeBlock(topicPath: string, blockId: string): Promise<TopicChangePreview> {
+    return this.previewExcludeBlocks(topicPath, [blockId]);
+  }
+
+  async previewExcludeBlocks(topicPath: string, blockIds: readonly string[]): Promise<TopicChangePreview> {
     if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
     const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.path === topicPath);
     if (!topic) throw new Error("Topic not found: " + topicPath);
     const store = this.storeForCurrentFolder();
     const markdown = await store.readIndexedMarkdown(topic.path);
-    const block = parseTopicPageBlocks(markdown).find((item) => item.id === blockId);
-    if (!block) throw new Error("The selected topic block could not be found.");
-    const sources = topicBlockSourcePaths(markdown, block).filter((path) => topic.page.members.includes(path));
-    const description = stripBlockMarkers(block.text);
-    const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: topic.page.members[0] || topic.page.id };
+    const requested = new Set(blockIds);
+    const blocks = parseTopicPageBlocks(markdown).filter((block) => requested.has(block.id));
+    if (!blocks.length || blocks.length !== requested.size) throw new Error("The selected topic block could not be found.");
+    const entries = blocks.map((block) => {
+      const sources = topicBlockSourcePaths(markdown, block).filter((path) => topic.page.members.includes(path));
+      const description = stripBlockMarkers(block.text);
+      const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: topic.page.members[0] || topic.page.id };
+      const id = `off-topic-${hashText(JSON.stringify(operation))}`;
+      return {
+        block,
+        sources,
+        description,
+        id,
+        item: { id, operation, type: operation.type, target: topicBlockHeadingLabel(markdown, block.id) || t("Corresponding section"), text: block.text, sourceId: operation.sourceId, expectedText: block.text, cancellable: true },
+      };
+    });
     const preview: TopicChangePreview = {
       topicId: topic.page.id,
       expectedHash: hashTopicPage(markdown),
       pageWasManuallyEdited: topic.page.cacheStatus !== "valid" || (!!topic.page.appliedHash && topic.page.appliedHash !== hashTopicPage(markdown)),
-      items: [{ id: `off-topic-${hashText(JSON.stringify(operation))}`, operation, type: operation.type, target: topicBlockHeadingLabel(markdown, block.id) || t("Corresponding section"), text: block.text, sourceId: operation.sourceId, expectedText: block.text, cancellable: true }],
+      items: entries.map(({ item }) => item),
       completedBatches: 0,
       totalBatches: 0,
     };
@@ -417,9 +432,11 @@ export class TopicsService {
       preview,
       managesActivity: false,
       onApplied: async (selection, skipped) => {
-        if (!description || !selection.has(preview.items[0].id) || skipped.some((item) => item.id === block.id)) return;
-        const scope = sources.length ? sources : [undefined];
-        for (const source of scope) await this.host.topicErrata?.append(topic.path, topic.page.title, description, source);
+        for (const entry of entries) {
+          if (!entry.description || !selection.has(entry.id) || skipped.some((item) => item.id === entry.block.id)) continue;
+          const scope = entry.sources.length ? entry.sources : [undefined];
+          for (const source of scope) await this.host.topicErrata?.append(topic.path, topic.page.title, entry.description, source);
+        }
       },
     });
     return preview;

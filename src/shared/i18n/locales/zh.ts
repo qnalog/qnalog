@@ -3109,6 +3109,7 @@ export const ZH: MessageTable = {
   "The errata note is too long; only the first {0} entries were used.": "勘误表过长，只使用了前 {0} 条。",
   "QnALog: Mark block as off-topic": "QnALog：标记为不属于本主题",
   "Place the cursor inside a topic block first.": "请先将光标放在主题页的内容块中。",
+  "The selected text contains no topic content blocks (headings cannot be marked on their own).": "选中的内容里没有可标记的内容块（标题不能单独标记）。",
   "Content cleaning": "内容清洗",
   "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.": "清洗只检查当前主题页和主题勘误表。预计输入 {0} 个字符，约 {1} 个词元。",
   "Estimated input: {0} characters, about {1} tokens.": "预计输入 {0} 个字符，约 {1} 个词元。",

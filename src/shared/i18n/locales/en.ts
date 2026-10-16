@@ -61,6 +61,7 @@ export const EN: MessageTable = {
   "Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console.": "Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console.",
   "QnALog: Mark block as off-topic": "QnALog: Mark block as off-topic",
   "Place the cursor inside a topic block first.": "Place the cursor inside a topic block first.",
+  "The selected text contains no topic content blocks (headings cannot be marked on their own).": "The selected text contains no topic content blocks (headings cannot be marked on their own).",
   "Content cleaning": "Content cleaning",
   "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.": "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.",
   "Estimated input: {0} characters, about {1} tokens.": "Estimated input: {0} characters, about {1} tokens.",

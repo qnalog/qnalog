@@ -76,6 +76,38 @@ describe("topics service", () => {
     expect(errataFiles.get(errataPath)).not.toContain("travel booking");
   });
 
+  it("previews multiple off-topic blocks and writes errata only for selected blocks and their own sources", async () => {
+    const errataFiles = new Map<string, string>();
+    errataFiles.set("Topics/Climate.md", "source topic");
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md" },
+    ];
+    const topic = createTopicPage({ id: "multi-block-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Two details.", points: [
+      { id: "a", text: "Off-topic repair detail.", sources: ["Notes/a.md"] },
+      { id: "b", text: "Off-topic travel detail.", sources: ["Notes/b.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(topic));
+
+    const blocks = parseTopicPageBlocks(serializeTopicPage(topic)).filter((block) => /Off-topic (?:repair|travel) detail/.test(block.text));
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", blocks.map((block) => block.id));
+    expect(preview.items).toHaveLength(2);
+    expect(preview.items.every((item) => item.operation.type === "remove_block")).toBe(true);
+    await setup.service.apply(preview, [preview.items[0].id]);
+
+    const updated = await setup.storePort.read("Topics/Climate.md");
+    expect(updated).not.toContain("Off-topic repair detail.");
+    expect(updated).toContain("Off-topic travel detail.");
+    const errata = errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md") || "";
+    expect(errata).toContain("[[Notes/a]]：Off-topic repair detail.");
+    expect(errata).not.toContain("Off-topic travel detail.");
+    expect(errata).not.toContain("[[Notes/b]]");
+  });
+
   it("returns no cleaning work without errata and does not call the model", async () => {
     const topicErrata = makeTopicErrata(new Map(), "en");
     const setup = harness({ topicErrata });
