@@ -323,7 +323,8 @@ git tag X.Y.Z && git push origin X.Y.Z
 1. **主题层后续**（暂缓）。近似重复要点（措辞不同、事实相同）仍可能同时加入，目前靠预览里取消勾选处理；纪要列表可考虑「展开概要」；已合并的聚类建议暂不使用。
 2. **主题勘误表与内容清洗**（已决定）。主题勘误表记录用户确认的排除方面；整合读取规则，手动清洗现有主题页内容。
 
-3. **长录音的转写异常输出**（取证中）。转写服务可能对短音频返回与时长不符的重复标记文本（例如约 41 KB 的重复 `<chinese>`）；短录音已按文字量与时长拦截（`audio/short-recording-content.ts`），长录音没有同类保护，异常文本会进入整理。先确认长录音是否复现及触发的服务与模型，再决定在转写结果落盘前还是整理前拦截，以及拦截后保留什么、如何提示。
+3. **长录音的转写异常输出**（已决定）。`audio/long-recording-anomaly.ts` 在写入母本前拦截每秒字符数超过 15 或重复片段占比超过 0.6 的文本；拦截后保留音频与失败任务。真实转写服务是否复现此异常仍未证实。
+4. **空白录音收尾**（已决定）。普通录音全部分段成功转写为空时，不足 60 秒丢弃笔记与音频；达到 60 秒时保留笔记与音频并写入「未检测到语音」。导入音频与续录不丢弃，保留材料并提示。
 
 ### 已完成
 
@@ -356,6 +357,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 |---|---|---|
 | 设置迁移与恢复工具 | 正式用户四态迁移见 §4.5；恢复脚本路径边界由 CLI 测试及临时目录冒烟覆盖 | 未进行真实 Obsidian 验证 |
 | 短录音按内容判定 | 不足 1 秒丢弃且不转写；1 秒至不足 10 秒转写一次：空白丢弃，成文建笔记，不成文保留音频并通知，文字量远超时长（`SHORT_RECORDING_ANOMALY_*`）保留音频不建笔记；转写失败保留音频与重试任务；续录与导入音频按 `audio/short-recording-policy.ts` 处理。见 `tests/short-recording-content.test.ts`、`tests/short-recording-flow.test.ts`、`tests/live-segment-flow.test.ts` | 单次录音场景已走查；流式转写服务下的失败任务恢复、续录遇异常结果的收尾仅单测覆盖 |
+| 长录音异常拦截与空白录音收尾 | 长录音在写入母本前按每秒字符数上限 15 或重复片段占比超过 0.6 拦截；普通录音全空时不足 60 秒丢弃，达到 60 秒保留并写入「未检测到语音」，导入与续录保留。见 `tests/blank-recording-policy.test.ts`、`tests/short-recording-flow.test.ts`、`tests/long-recording-anomaly.test.ts`、`tests/dashscope-chat-asr.test.ts` | 2 秒空白录音自动删除已确认；10 秒与 60 秒以上空白、长录音异常拦截仅自动测试 |
 | 密钥写入失败时的队列保存 | `_saveAllSnapshot` 在 SecretStorage 写入失败时只替换已落盘数据中的 `backgroundJobs`；数据缺失或版本更高时不写盘；见 `tests/save-all-secret-failure.test.ts` | 仅自动测试，未做真实宿主验证 |
 | 重试整理的编辑保护 | consolidated 分支用模型调用前读取的正文做提交时比对，变化则不写入并保留失败任务；见 `tests/queue-merge-retry-flow.test.ts` | 仅自动测试，未做真实宿主验证 |
 | 删除带衍生版本的笔记 | 确认框提供「最新衍生版本接替」与「一并删除」，候选由元数据缓存过滤；见 `tests/delete-note-with-variants.test.ts` | 元数据缓存尚未索引的新衍生版本可能漏检，该情形未做真机验证 |

@@ -13,6 +13,7 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { audioImportStageFromWorkProgress, upsertActivityRequest } from "../shared/activity-progress";
 import { extractSpeakerIdsFromMarkdown } from "../audio/channel-speakers";
 import { classifyLongRecordingAnomaly, type LongRecordingAnomalySignal } from "../audio/long-recording-anomaly";
+import { classifyBlankRecording } from "../audio/blank-recording-policy";
 import { isSpeakerDiarizationProvider, normalizeRequestedSpeakerCount } from "../asr/diarization";
 import { isDashScopeFileTransProvider, resolveImportTranscribeProvider, transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { verifyTranscriptCheckpoint } from "../imports/transcript-checkpoint";
@@ -542,7 +543,13 @@ export class ImportService {
     }
     const persistedMarkdown = await this.host.app.vault.read(transcriptFile);
     const transcriptCheckpoint = verifyTranscriptCheckpoint(persistedMarkdown, session.segments);
-    if (!transcriptCheckpoint.ok) {
+    // The checkpoint requires at least one usable text segment; a successful all-blank import is finalized by the blank-recording policy.
+    const allSegmentsSuccessfullyBlank = classifyBlankRecording({
+      durationMs: 0,
+      isOrdinaryRecording: false,
+      segments: session.segments,
+    }) !== "not-applicable";
+    if (!transcriptCheckpoint.ok && !allSegmentsSuccessfullyBlank) {
       const checkpointError = new Error(
         t("The original transcript was not fully written to the note ({0}/{1}); AI organizing stopped.")
           .replace("{0}", String(transcriptCheckpoint.persistedSegments))
