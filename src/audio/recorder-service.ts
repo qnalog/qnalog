@@ -140,6 +140,8 @@ export class RecorderService {
   declare quickCutMarksMs: number[];
   /** 是否正在切片（用于避免重入）。 */
   declare cutting: boolean;
+  /** 正在进行的切段（含交给 onSegment 之前的全部步骤）；停止录音时等它结束，避免同一段音频被交付两次。 */
+  declare cutInFlight: Promise<void> | null;
   /** 段落回调；由 recording-service 传入。 */
   declare onSegment: ((payload: RecorderSegmentPayload) => void | Promise<void>) | null;
   /** 电平状态订阅者。 */
@@ -193,6 +195,7 @@ export class RecorderService {
     this.quickCutMarksMs = [];
     this.nextCutAtElapsed = Infinity;
     this.cutting = false;
+    this.cutInFlight = null;
     this.onSegment = null;
     this.listeners = new Set();
     this.ticker = null;
@@ -252,6 +255,7 @@ export class RecorderService {
       : [];
     this.nextCutAtElapsed = this.getNextCutAtElapsed(0);
     this.cutting = false;
+    this.cutInFlight = null;
     this.sessionStartedAt = Date.now();
     this.state = "recording";
     // 静音统计计数器：每场录音开始时清零（续录也走 start()，故不会跨场污染）。
@@ -648,7 +652,7 @@ export class RecorderService {
   tick(): void {
     this.updateAudioLevel();
     this.emit();
-    if (this.state !== "recording" || this.cutting) return;
+    if (this.state !== "recording" || this.cutting || this.stopping) return;
     const elapsed = this.getInfo().elapsed;
     if (elapsed >= this.nextCutAtElapsed) {
       this.cutSegment().catch((e) => console.error("[QnALog] cutSegment error", e));
@@ -676,6 +680,16 @@ export class RecorderService {
   }
   async cutSegment(): Promise<void> {
     if (this.cutting || this.state !== "recording") return;
+    // _runCut 同步地先置 cutting，再进入第一个 await；此处同步登记 cutInFlight，stop() 才能看到它。
+    const run = this._runCut();
+    this.cutInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (this.cutInFlight === run) this.cutInFlight = null;
+    }
+  }
+  async _runCut(): Promise<void> {
     this.cutting = true;
     const chunksAtCut = this.chunks;
     // recording state requires an active segment recorder.
@@ -691,6 +705,8 @@ export class RecorderService {
       await this._awaitRecorderStop(this.recorder, () => undefined, undefined);
 
       blob = new Blob(chunksAtCut, { type: mimeAtCut });
+      // 这些分片已经交给本段；清空共享数组，否则之后的 stop() 会把同一批音频再交付一次（分段重启失败时尤其如此）。
+      this.chunks = [];
       this.segmentIndex++;
       this.segmentStartOffsetMs = endOffset;
       this.nextCutAtElapsed = this.getNextCutAtElapsed(endOffset);
@@ -784,6 +800,11 @@ export class RecorderService {
     if (this.state === "idle") return null;
     this.stopping = true;
     const elapsedAtStop = this.getInfo().elapsed;
+    // 切段进行中时先等它结束：它会交付停止前的那一段，并重启分段录音器；
+    // 之后收尾的只是剩下的音频，不会与切段交付的分片重复。
+    if (this.cutInFlight !== null) {
+      try { await this.cutInFlight; } catch { /* 切段失败已记录为录音问题并保留整场音频，此处继续收尾 */ }
+    }
     const startOffset = this.segmentStartOffsetMs;
     const index = this.segmentIndex;
     const mime = this.recorder ? (this.recorder.mimeType || this.mime) : this.mime;
