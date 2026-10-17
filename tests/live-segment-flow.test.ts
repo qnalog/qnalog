@@ -32,6 +32,7 @@ import { getAudioTimeLink } from "../src/notes/audio-reference-text";
 import { buildTranscriptSessionSkeleton } from "../src/notes/note-transcript-materials";
 import { insertBeforeSessionSegmentsEnd } from "../src/notes/note-segment-store";
 import { verifyTranscriptCheckpoint } from "../src/imports/transcript-checkpoint";
+import { classifyBlankRecording } from "../src/audio/blank-recording-policy";
 
 function makeHost() {
   const progress: unknown[] = [];
@@ -525,3 +526,65 @@ describe("live segment consumer contract", () => {
   });
 });
 
+
+describe("zero-byte live segment audio", () => {
+  it("treats a 0-byte final tail after a normal segment as an empty success without a request", async () => {
+    const { service, host, progress, diagnostics, blocks } = makeHost();
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({ endOffsetMs: 10_000 }));
+    await service.processSegment(session, makeSegment({ startOffsetMs: 10_000, endOffsetMs: 10_005, isFinal: true, blob: new Blob([], { type: "audio/webm" }) }));
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
+    expect(host.asrPipeline.recordLiveAsrAttemptFailure).not.toHaveBeenCalled();
+    expect(session.segments).toHaveLength(2);
+    expect(session.segments[1]).toMatchObject({ text: "", error: null, isFinal: true });
+    expect(blocks[1]).toContain(labelText("noContentSegment"));
+    expect(progress).toContainEqual(expect.objectContaining({ stage: "transcribe-finalized" }));
+    expect(diagnostics.flat().join(" ")).toContain("asr.empty_segment_skipped");
+  });
+
+  it("treats a 0-byte non-final segment as an empty success without a request", async () => {
+    const { service, host, blocks, diagnostics } = makeHost();
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({ blob: new Blob([], { type: "audio/webm" }) }));
+    expect(transcribeMock).not.toHaveBeenCalled();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
+    expect(host.asrPipeline.removeLiveSegmentQueueTask).toHaveBeenCalledOnce();
+    expect(session.segments[0]).toMatchObject({ text: "", error: null, isFinal: false });
+    expect(blocks[0]).toContain(labelText("noContentSegment"));
+    expect(diagnostics.some(([level, code]) => level === "info" && code === "asr.empty_segment_skipped")).toBe(true);
+    expect(diagnostics.flat().join(" ")).not.toContain("asr.segment_empty");
+  });
+
+  it("still transcribes a 1-byte segment", async () => {
+    const { service, host } = makeHost();
+    const session = makeSession();
+    await service.processSegment(session, makeSegment({ blob: new Blob(["x"], { type: "audio/webm" }) }));
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
+    expect(session.segments[0]).toMatchObject({ text: "recognized text", error: null });
+  });
+
+  it("counts a no-speech segment plus a 0-byte tail as a blank recording, like two empty segments", async () => {
+    const withTail = makeHost();
+    const tailSession = makeSession();
+    transcribeMock.mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], noSpeech: true });
+    await withTail.service.processSegment(tailSession, makeSegment({ endOffsetMs: 10_000 }));
+    await withTail.service.processSegment(tailSession, makeSegment({ startOffsetMs: 10_000, endOffsetMs: 10_005, isFinal: true, blob: new Blob([], { type: "audio/webm" }) }));
+
+    const twoEmpty = makeHost();
+    const pairSession = makeSession();
+    transcribeMock.mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], quiet: true });
+    await twoEmpty.service.processSegment(pairSession, makeSegment({ endOffsetMs: 10_000 }));
+    transcribeMock.mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], quiet: true });
+    await twoEmpty.service.processSegment(pairSession, makeSegment({ startOffsetMs: 10_000, endOffsetMs: 10_005, isFinal: true }));
+
+    const tailSegments = (tailSession as { segments: Array<{ text: string; error: unknown }> }).segments;
+    const pairSegments = (pairSession as { segments: Array<{ text: string; error: unknown }> }).segments;
+    expect(tailSegments.map((s) => [s.text, s.error])).toEqual([["", null], ["", null]]);
+    expect(pairSegments.map((s) => [s.text, s.error])).toEqual([["", null], ["", null]]);
+    expect(classifyBlankRecording({ durationMs: 10_005, isOrdinaryRecording: true, segments: tailSegments })).toBe("discard");
+    expect(classifyBlankRecording({ durationMs: 10_005, isOrdinaryRecording: true, segments: pairSegments })).toBe("discard");
+    expect(withTail.host.asrPipeline.keepLiveSegmentQueueTaskForRetry).not.toHaveBeenCalled();
+  });
+});

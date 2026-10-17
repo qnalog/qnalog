@@ -2255,6 +2255,7 @@ export const ZH: MessageTable = {
   "Some channels failed to transcribe; content from the other channels was kept": "部分声道转写失败，已保留其他声道的内容",
   "Transcription returned an empty result (the service responded but returned no text)": "转写返回空结果（服务已响应但没有文字）",
   "A recorded segment returned an empty transcription; it was kept as a soft failure and queued": "录音分段转写返回空结果，已按软失败保留并排队",
+  "Segment audio is empty; it was recorded as an empty segment without a transcription request": "分段音频为空，已记为空白段，未发送转写请求",
   "The recorded segment skipped the realtime request and moved to the background queue": "录音分段已跳过实时请求并转入后台队列",
   "Transcription failed for a recorded segment": "录音分段转写失败",
   "Segment {0} failed to transcribe in streaming mode and cannot be retried offline; recording continues locally. Use \"Re-organize\" when the whole recording finishes, or record that segment again.": "段 {0} 流式转写失败，无法离线重试；录音仍在本地继续，可整篇结束后用「重新整理」或重录该段。",
