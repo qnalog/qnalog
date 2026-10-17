@@ -58,6 +58,21 @@ export interface LiveSegmentPort {
   scheduleRealtimeOutline(): void;
 }
 
+function isEmptyAudioBlob(blob: Blob | null | undefined): boolean {
+  return !!blob && blob.size === 0;
+}
+
+/** 0 字节段落的成功空白结果：带 noSpeech 标记，使 30 秒空结果闸门不把它当作失败。 */
+function emptySegmentAsrResult(providerId: string): AsrTranscriptResult {
+  return { text: "", rawText: "", providerId, units: [], noSpeech: true };
+}
+
+async function logEmptySegmentSkipped(port: LiveSegmentPort, data: { segmentIndex: number; durationMs: number; isFinal: boolean }): Promise<void> {
+  try {
+    await port.logDiagnostic("info", "asr.empty_segment_skipped", t("Segment audio is empty; it was recorded as an empty segment without a transcription request"), data);
+  } catch { /* intentionally empty */ }
+}
+
 export async function processLiveSegment(port: LiveSegmentPort, session: RecordingSession, seg: PreparedLiveSegment): Promise<void> {
   if (!session) return;
   if (seg && seg.isFinal && seg.masterOnly && !session.shortRecordingTier) {
@@ -148,6 +163,10 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   } else if (isStreamingProvider) {
     err = new Error(t("The streaming transcription connection could not be established. Check your API key and network, then record again."));
     console.error("[QnALog]", err.message);
+  } else if (isEmptyAudioBlob(seg.blob || (spoolResult && spoolResult.fallbackBlob) || null)) {
+    // 0 字节的段落音频没有可转写内容：不发请求、不记失败、不建重试任务，按成功的空白段处理。
+    asrResult = emptySegmentAsrResult(String(activeProfile && activeProfile.id || port.getSettings().activeTranscribeProvider || ""));
+    await logEmptySegmentSkipped(port, { segmentIndex, durationMs: segmentDurationMs, isFinal: !!seg.isFinal });
   } else {
     const circuitOpen = isLiveAsrCircuitOpen(session.asrCircuitState || createLiveAsrCircuitState()) || port.isServiceCircuitOpen();
     if (session.asrDeferredMode || circuitOpen) {
@@ -162,7 +181,11 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       }
       if (!transcribeBlob && seg.blob) transcribeBlob = seg.blob;
       if (!transcribeBlob) err = new Error(t("The recorded segment cache could not be read; the background retry task has been kept"));
-      else {
+      else if (isEmptyAudioBlob(transcribeBlob)) {
+        // 缓存读回的段落音频为 0 字节：与上面的空白段处理保持一致。
+        asrResult = emptySegmentAsrResult(String(activeProfile && activeProfile.id || port.getSettings().activeTranscribeProvider || ""));
+        await logEmptySegmentSkipped(port, { segmentIndex, durationMs: segmentDurationMs, isFinal: !!seg.isFinal });
+      } else {
         batchAsrAttempted = true;
         try {
           const transcribeMime = transcribeBlob.type || seg.blobType || mimeFromExt(seg.ext);
