@@ -285,7 +285,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.repolish = new RepolishService(this, {
       confirm: (title, body, ctaText) => qnalogConfirm(this.app, title, body, ctaText),
       pickAudioFile: (files) => pickAudioFile(this.app, files),
-    });
+    }, (file, polished, mode) => this.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, mode));
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);

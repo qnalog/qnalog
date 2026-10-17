@@ -2551,6 +2551,7 @@ export const ZH: MessageTable = {
   "timed out waiting for a response": "等待响应超时",
   "Could not connect to the transcription service; the audio file is kept, so you can retry after the connection recovers.": "无法连接转写服务；音频已保留，恢复连接后可继续重试",
   "{0} chunk transcription was empty.": "{0} 单块转写为空",
+  "{0} service reported that the chunk contains no words.": "{0} 服务回报该块没有语音",
   "Internal service chunk {0}/{1} returned an empty result.": "服务内部第 {0}/{1} 块返回空结果",
   "{0} chunk {1}/{2} returned empty results in a row; the audio file is kept, so you can retry later.": "{0} 第 {1}/{2} 块连续返回空结果；音频已保留，可稍后重试",
   "{0} transcription may contain a repeating loop; the original transcript is kept.": "{0} 转写疑似存在重复循环，已保留原始转写",

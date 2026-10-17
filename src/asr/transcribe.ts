@@ -11,18 +11,19 @@ import { extractTranscriptText, friendlySpeakerLabel, normalizeInlineSpeakerTags
 import { cleanApimimoAsrRepeatedLoops } from './apimimo-clean';
 import { getSpeakerDiarizationRequestOptions } from './diarization';
 import { t } from "../shared/i18n";
-import { ASR_EMPTY_RESULT_SOFT_LIMIT_MS } from "../shared/limits";
+import { ASR_EMPTY_RESULT_SOFT_LIMIT_MS, QUIET_AUDIO_RMS_LIMIT } from "../shared/limits";
+import { computeAudioRms } from "../audio/audio-level";
 import type { AsrTranscriptResult, AsrTranscriptUnit } from "./transcript-result";
 import { splitTranscriptTextUnits } from "../transcript/session-transcript";
 
 import {
   DASHSCOPE_FLASH_ASR_PROTOCOL,
+  isDashScopeFlashNoWordsError,
   requestDashScopeFlashChunk,
 } from "./dashscope-flash-asr";
 import { resolveBailianAsrRoute, resolveBailianEndpoint } from "./bailian-asr-registry";
 import { transcribeDashScopeFile } from "./dashscope-filetrans-asr";
 
-import type { DashScopeFlashChunkResult } from "./dashscope-flash-asr";
 export type AsrLifecycleSignalType =
   | "attempt-start"
   | "request-start"
@@ -283,7 +284,7 @@ export async function transcribeAudioWithDashScopeFlash(
   observer?: AsrLifecycleObserver,
 ): Promise<AsrTranscriptResult> {
   const chunks = await buildChatInputAudioChunks(DASHSCOPE_FLASH_PROFILE, blob, mime);
-  const parts: DashScopeFlashChunkResult[] = [];
+  const parts: ChatInputAudioChunkResult[] = [];
   for (let i = 0; i < chunks.length; i++) {
     parts.push(await requestChatInputAudioChunkWithEmptyRetry(
       DASHSCOPE_FLASH_PROFILE,
@@ -293,12 +294,20 @@ export async function transcribeAudioWithDashScopeFlash(
       provider.endpoint,
       i,
       chunks.length,
-      (currentProvider, prepared, _url, requestObserver) => requestDashScopeFlashChunk(
-        currentProvider,
-        prepared,
-        getTranscribeRequestTimeoutMs(currentProvider, prepared.blob.size),
-        requestObserver,
-      ),
+      async (currentProvider, prepared, _url, requestObserver): Promise<ChatInputAudioChunkResult> => {
+        try {
+          return await requestDashScopeFlashChunk(
+            currentProvider,
+            prepared,
+            getTranscribeRequestTimeoutMs(currentProvider, prepared.blob.size),
+            requestObserver,
+          );
+        } catch (error) {
+          // 只把「无语音」转为空白结果；其它错误（鉴权、限流、超时、网络及其它 400）原样抛出。
+          if (isDashScopeFlashNoWordsError(error)) return { text: "", rawText: "", noWords: true };
+          throw error;
+        }
+      },
       delayMs,
       observer,
     ));
@@ -313,6 +322,11 @@ export async function transcribeAudioWithDashScopeFlash(
     endMs: null,
     timing: "unknown",
   })));
+  // 仅当全文为空且每块都是「无语音」或静音块时标记 noSpeech；否则不写该字段。
+  const allChunksSilent = chunks.length > 0 && parts.every((part, i) => part.noWords === true || chunks[i].quiet === true);
+  if (text === "" && allChunksSilent) {
+    return { text, rawText: null, providerId: String(provider.id || ""), units, noSpeech: true };
+  }
   return { text, rawText: null, providerId: String(provider.id || ""), units };
 }
 
@@ -359,6 +373,8 @@ export const APIMIMO_ASR_MAX_CHUNKS = 160;
 export interface ChatInputAudioChunkResult {
   text: string;
   rawText: string;
+  /** The service explicitly reported that the chunk has no words (Bailian Flash ASR_RESPONSE_HAVE_NO_WORDS). Runtime signal only. */
+  noWords?: boolean;
 }
 
 export interface ChatInputAudioProfile {
@@ -516,6 +532,19 @@ export function getChatInputAudioPlan(profile, blob, mime, decodedDurationMs?) {
   return { nativeMime, action: "inspect" };
 }
 
+/**
+ * 判断解码音频在 [startMs, endMs) 内是否静音。无法读取声道数据时返回 undefined（未知），
+ * 调用方按原有规则处理，不把未知当成静音。
+ */
+function measureChunkQuiet(audioBuffer, startMs: number, endMs: number): boolean | undefined {
+  if (!audioBuffer || typeof audioBuffer.getChannelData !== "function") return undefined;
+  const channels: Float32Array[] = [];
+  for (let i = 0; i < Number(audioBuffer.numberOfChannels || 0); i++) channels.push(audioBuffer.getChannelData(i));
+  const rms = computeAudioRms(channels, Number(audioBuffer.sampleRate), startMs, endMs);
+  // NaN（无采样）不满足小于上限，结果为 false，即按有声处理。
+  return rms < QUIET_AUDIO_RMS_LIMIT;
+}
+
 export async function buildChatInputAudioChunks(profile, blob, mime) {
   const inputMime = String(mime || (blob && blob.type) || "").toLowerCase();
   const initialPlan = getChatInputAudioPlan(profile, blob, inputMime);
@@ -545,7 +574,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
   }
   const totalMs = Math.max(1, Math.round((audioBuffer.duration || 0) * 1000));
   const decodedPlan = getChatInputAudioPlan(profile, blob, inputMime, totalMs);
-  if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime, durationMs: totalMs }];
+  if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime, durationMs: totalMs, quiet: measureChunkQuiet(audioBuffer, 0, totalMs) }];
   const chunkCount = Math.ceil(totalMs / profile.chunkMs);
   if (chunkCount > profile.maxChunks) {
     throw chatInputAudioPermanentError(t("{0} can automatically split at most {1} chunks (about {2} minutes); this is about {3} minutes. Shorten the segment interval, or use an ASR service that supports large files for long recordings.")
@@ -564,7 +593,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
         .replace("{1}", String(Math.round(profile.maxBase64Bytes / 1024 / 1024)))
         .replace("{2}", formatUploadSize(wavBlob.size)));
     }
-    chunks.push({ blob: wavBlob, mime: "audio/wav", durationMs: endMs - startMs });
+    chunks.push({ blob: wavBlob, mime: "audio/wav", durationMs: endMs - startMs, quiet: measureChunkQuiet(audioBuffer, startMs, endMs) });
   }
   return chunks;
 }
@@ -876,6 +905,19 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
         : undefined,
     );
     const response = typeof requested === "string" ? { text: requested, rawText: requested } : requested;
+    // 服务明确回报「无语音」：这是成功的空白结果，不重试，也不受时长门槛约束。
+    if (response && response.noWords === true) {
+      try {
+        if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
+          await plugin.diagnostics.logDiagnostic("info", `asr.${profile.diagnosticSlug}_no_words`, t("{0} service reported that the chunk contains no words.").replace("{0}", t(profile.shortLabel)), {
+            chunkIndex,
+            chunkCount,
+            chunkBytes: prepared && prepared.blob && prepared.blob.size,
+          });
+        }
+      } catch { /* intentionally empty */ }
+      return { text: "", rawText: "", noWords: true };
+    }
     const part = String(response && response.text || "").trim();
     if (part) return { text: part, rawText: typeof response.rawText === "string" ? response.rawText : part };
     lastRawText = typeof response.rawText === "string" ? response.rawText : part;
@@ -902,8 +944,10 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
       await wait(retryDelayMs);
     }
   }
+  // 静音块（音量低于 QUIET_AUDIO_RMS_LIMIT）与短块一样，按有效空白结果返回，不论时长。
   const durationMs = Number(prepared && prepared.durationMs);
-  if (Number.isFinite(durationMs) && durationMs >= 0 && durationMs < ASR_EMPTY_RESULT_SOFT_LIMIT_MS) {
+  const shortChunk = Number.isFinite(durationMs) && durationMs >= 0 && durationMs < ASR_EMPTY_RESULT_SOFT_LIMIT_MS;
+  if ((prepared && prepared.quiet === true) || shortChunk) {
     return { text: "", rawText: lastRawText };
   }
   throw new Error(t("{0} chunk {1}/{2} returned empty results in a row; the audio file is kept, so you can retry later.")
@@ -961,6 +1005,11 @@ export async function transcribeAudioWithChatInputAudio(
     endMs: null,
     timing: "unknown",
   })));
+  // 仅当全部块都是静音块且全文为空时标记 quiet；否则不写该字段（保持 undefined）。
+  const allChunksQuiet = chunks.length > 0 && chunks.every((chunk) => chunk.quiet === true);
+  if (allChunksQuiet && text === "") {
+    return { text, rawText: null, providerId: String(provider.id || ""), units, quiet: true };
+  }
   return { text, rawText: null, providerId: String(provider.id || ""), units };
 }
 

@@ -16,6 +16,13 @@ export const BLANK_RECORDING_DISCARD_LIMIT_MS = 60 * 1000;
 /** 低于此时长的音频块连续两次返回空转写时，按有效空白结果返回。 */
 export const ASR_EMPTY_RESULT_SOFT_LIMIT_MS = 30 * 1000;
 
+/**
+ * 音频块均方根（RMS，0 到 1）低于此值视为静音：连续两次返回空转写时，不论时长都按有效空白结果返回。
+ * 取值依据：测试用空白录音（粉噪）RMS 约 0.0019（-54.2 dBFS），测试用语音 RMS 约 0.098（-20.2 dBFS）。
+ * 0.01（-40 dBFS）约为空白的 5 倍、语音的 1/10，两侧都有余量。高于此值的响声返回空结果仍按失败处理。
+ */
+export const QUIET_AUDIO_RMS_LIMIT = 0.01;
+
 export const KNOWLEDGE_EXTRACTION_BATCH_LIMIT = 20;
 
 export const SEGMENT_CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;

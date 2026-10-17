@@ -324,7 +324,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 2. **主题勘误表与内容清洗**（已决定）。主题勘误表记录用户确认的排除方面；整合读取规则，手动清洗现有主题页内容。
 
 3. **长录音的转写异常输出**（已决定）。`audio/long-recording-anomaly.ts` 在写入母本前拦截每秒字符数超过 15 或重复片段占比超过 0.6 的文本；拦截后保留音频与失败任务。真实转写服务是否复现此异常仍未证实。
-4. **空白录音收尾**（已决定）。普通录音全部分段成功转写为空时，不足 60 秒丢弃笔记与音频；达到 60 秒时保留笔记与音频并写入「未检测到语音」。导入音频与续录不丢弃，保留材料并提示。
+4. **空白录音收尾**（已决定）。普通录音全部分段成功转写为空时，不足 60 秒丢弃笔记与音频；达到 60 秒时保留笔记与音频并写入「未检测到语音」。导入音频与续录不丢弃，保留材料并提示。音频块的均方根低于 `QUIET_AUDIO_RMS_LIMIT`（`src/shared/limits.ts`）时，该块连续两次返回空结果即按成功的空白结果处理，不论时长；音量达到上限的块返回空结果仍按失败处理。静音标记以 `quiet` 字段附在 ASR 结果上（`src/asr/transcript-result.ts`）。实时分段（`src/notes/live-segment-flow.ts`）与重试（`src/queue/queue-transcribe-retry-flow.ts`）检查到该字段为真时，把空结果记为成功的空白段；百炼 Flash 的「无语音」错误（HTTP 400，错误码 ASR_RESPONSE_HAVE_NO_WORDS）同样视为成功的空白结果，该块不重试，全部块如此时以 `noSpeech` 字段标记（`src/asr/transcribe.ts`）；`quiet` 与 `noSpeech` 均不写入笔记与转写账本。
 
 ### 已完成
 
@@ -835,6 +835,7 @@ OpenRouter 是快捷配置可选预设之一，面向能够访问其服务的用
 | 续录 | 侧边栏 / 文件菜单 / `BubbleWidget` → `RecordingService.startRecording({ appendToFile })` | 入口确定目标；悬浮气泡在点击和异步读取后都核对活动笔记。新音频与逐字稿写入独立暂存；队列确认目标路径和来源身份后，凭完整 v2 转写账本提交成稿与成功标记 | 成稿及逐字稿只写入目标；暂存只在提交、索引更新和清理成功后移除 | `pre-append`；保存时 `activate:false`，保留活动 ID | 缺少外层分段容器不阻止有效账本合入；账本损坏、来源冲突或目标变化时拒绝提交并保留恢复材料。失败进度同步到队列活动，重试按当前尝试和写回阶段显示 |
 | 音频 / 文字导入 | `ImportService` 建立会话并调用 `SessionFinalizeService.finalizeSession` | 导入内容先写入新母本；转写检查通过后进入首次 AI 整理写入 | 音频导入保存 ASR 分段；文字导入保留来源文字；整理结果写母本 | 首次整理本身不创建原稿快照 | 转写检查未通过时停止 AI 整理；收尾错误保留在会话状态及任务进度中 |
 | 后台合并重试 | `QueueRetryService.retryMergeTask` | 重试成功后直接重写或追加母本，再更新索引；不先归档当前可见正文 | 重试成稿写入母本；原始转写仍留在母本 | 不创建版本缓存，不更新 `activeVersionId` | 异常向队列重试路径返回；已有可见正文没有插件快照保护 |
+| 转写重试补齐后的自动整理 | `maybeAutoRepolish`（`src/queue/queue-transcribe-retry-flow.ts`） | 最后一段失败切片补齐、且该笔记没有其他待转写任务时执行。笔记没有整理正文（只剩 AI 整理失败占位，见 `src/notes/organized-body.ts`）则调用原地整理（`reorganizeNoteInPlace(file, { firstOrganizing: true })`）；否则调用普通重新整理。原地整理与首次整理一致：只补缺失的会话键 `qnalog_mode`、`qnalog_time`、`qnalog_duration`、`qnalog_audio`、`qnalog_status`（取值来自笔记的「录音信息」块、`qnalog/<模式>` 标签与音频嵌入，实现见 `src/notes/first-organizing-session.ts`；已有键不覆盖），写入成功后按整理正文与模式自动改名（受 `autoRenameWithTitle` 设置控制）。手动「原地重新整理」不补键、不改名 | 原地整理：整理正文写入母本，原始转写保留；普通重新整理：母本正文不变 | 原地整理：原稿快照更新为新结果，有活动版本时切换到该快照（`src/notes/reorganize-in-place-flow.ts`）；普通重新整理：`minutes`，`activate:false` | 读取笔记或整理失败时记录 `queue.auto_repolish_failed`，已补齐的转写不回滚；改名失败只记录控制台警告，整理结果保留在原文件名下 |
 续录暂存使用队列中保存的 `targetPath` 与 `targetSourceId`；重试不会根据当前活动笔记改写目标。`readTranscriptBlocks` 校验完整逐字稿块及其来源、版本和可见文本；追加布局在现有分段容器结束标记前插入，若缺少容器标记则接在最后一个完整转写块后。整篇布局根据已验证的账本重建原始材料区。只有目标提交路径写入续录成功标记；暂存收尾与普通整篇重写不授予该标记。
 
 同一插件实例按来源 ID 串行执行版本缓存和活动 ID 的 manifest 读改写；它不协调 Obsidian 同步或其他插件对同一文件的写入。仅凭磁盘状态无法归因外部修改或同步冲突。

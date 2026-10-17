@@ -1,5 +1,5 @@
 import * as obsidian from "obsidian";
-import type { AsrTranscriptResult } from "../asr/transcript-result";
+import { isBlankAsrResult, type AsrTranscriptResult } from "../asr/transcript-result";
 import type { AudioChannelMode, Segment, TranscribeQueueTaskPayload } from "../shared/types";
 import { MAX_SPEAKER_CHANNELS, initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -8,6 +8,7 @@ import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { ensureTranscriptBlocks } from "../notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { findNoteMarkerOffset } from "../notes/note-document";
+import { hasOrganizedBody } from "../notes/organized-body";
 import { nsMarker, nsRe } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
@@ -37,6 +38,10 @@ export interface QueueTranscribeRetryPort {
   detectMode(file: obsidian.TFile): string | undefined;
   getDefaultPolishMode(): string;
   repolish(file: obsidian.TFile, mode: string): Promise<void>;
+  /** 读取笔记当前内容，用于判断整理正文是否已有实际内容。 */
+  readNote(file: obsidian.TFile): Promise<string>;
+  /** 原地整理：把整理正文写回原笔记（用于原笔记尚无整理正文的情形）。 */
+  reorganizeInPlace(file: obsidian.TFile): Promise<void>;
 }
 
 export async function retryTranscribeTask(port: QueueTranscribeRetryPort, task: TranscribeRetryTask): Promise<void> {
@@ -109,7 +114,9 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       text = transcriptionResult.text;
     }
   }
-  if (!String(text || "").trim()) {
+  // 空白结果（静音块，或服务明确回报无语音）是成功的空白段：不抛错、不重试，段落写入与实时路径相同的「无内容」文字。
+  const blankEmptyResult = !String(text || "").trim() && isBlankAsrResult(transcriptionResult);
+  if (!String(text || "").trim() && !blankEmptyResult) {
     await port.logDiagnostic("warn", "queue.transcribe_empty_result", t("Transcription retry returned empty text; treating it as a failure and re-queuing"), {
       mdPath: task.mdPath || "", audioName: task.audioName || "", startOffsetMs: task.startOffsetMs, endOffsetMs: task.endOffsetMs,
     });
@@ -121,7 +128,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   const retryDurationMs = taskDurationMs > 0
     ? taskDurationMs
     : Number.isFinite(resultDurationMs) && resultDurationMs > 0 ? resultDurationMs : 0;
-  const anomalySignals = classifyLongRecordingAnomaly(text, retryDurationMs);
+  const anomalySignals = blankEmptyResult ? [] : classifyLongRecordingAnomaly(text, retryDurationMs);
   if (anomalySignals.length) {
     const message = t("The transcription result does not match the recording duration. The recording has been kept and can be retried.");
     await port.logDiagnostic("warn", "asr.long_recording_anomaly", t("Transcription result rejected because it did not match the recording duration."), {
@@ -156,10 +163,12 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
     };
     return attachTranscriptResult(segment, sourceId, transcriptionResult, "asr");
   };
+  // 段落正文：有文字用文字，静音空白段用与实时路径相同的「无内容」文字。
+  const blockVisibleText = String(text || "").trim() ? text : labelText("noContentSegment");
   const makeTranscriptBlock = (segment: Segment): string => {
     const linkOffsetMs = masterAudioPath ? Math.max(0, Number(task.audioStartOffsetMs) || 0) : 0;
     const heading = [`### ${labelText("segment", segmentNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(sourceAudioName, linkOffsetMs)}`, taskMarker].filter(Boolean).join("\n\n");
-    return `\n${serializeTranscriptBlock(segment, heading, text)}\n`;
+    return `\n${serializeTranscriptBlock(segment, heading, blockVisibleText)}\n`;
   };
   const findTarget = (blocks: ReturnType<typeof readTranscriptBlocks>) => {
     const matches = blocks.filter((block) => block.segment.transcript?.id === parentSegmentId || (!!task.id && block.segment.queueTaskId === task.id));
@@ -174,13 +183,13 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       if (target && !target.segment.error && !failMark.test(target.visibleBlock)) { alreadyCommitted = true; return latest; }
       let candidate = latest;
       if (!target) {
-        if (taskPattern && taskPattern.test(candidate)) candidate = candidate.replace(taskPattern, () => `${taskMarker}\n${text}`);
+        if (taskPattern && taskPattern.test(candidate)) candidate = candidate.replace(taskPattern, () => `${taskMarker}\n${blockVisibleText}`);
         else {
           const legacyMatch = legacySegmentPattern.exec(candidate);
           if (legacyMatch) {
             const prefix = legacyMatch[1];
             const addMarker = taskMarker && !prefix.includes(taskMarker) ? `${taskMarker}\n` : "";
-            candidate = candidate.replace(legacySegmentPattern, () => `${prefix}${addMarker}${text}`);
+            candidate = candidate.replace(legacySegmentPattern, () => `${prefix}${addMarker}${blockVisibleText}`);
           }
         }
         if (candidate !== latest) { candidate = ensureTranscriptBlocks(candidate, sourceId, { reconcileEditedText: false }); target = findTarget(readTranscriptBlocks(candidate)); }
@@ -188,7 +197,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       const updated = makeUpdatedSegment(target?.segment || null);
       writtenSegment = updated;
       replaced = true;
-      if (target) return replaceTranscriptBlock(candidate, target, updated, text);
+      if (target) return replaceTranscriptBlock(candidate, target, updated, blockVisibleText);
       const block = makeTranscriptBlock(updated);
       const endMarker = task.sessionId ? nsMarker("segments-end", task.sessionId) : nsMarker("segments-end");
       const endAt = findNoteMarkerOffset(candidate, endMarker, "last");
@@ -220,7 +229,11 @@ function maybeAutoRepolish(port: QueueTranscribeRetryPort, task: TranscribeRetry
   new obsidian.Notice(t("\"{0}\" All failed segments are transcribed; re-organizing the body...").replace("{0}", mdFile.basename), 8000);
   const mode = port.detectMode(mdFile) || port.getDefaultPolishMode();
   void (async () => {
-    try { await port.repolish(mdFile, mode); }
+    try {
+      const content = await port.readNote(mdFile);
+      if (hasOrganizedBody(content)) await port.repolish(mdFile, mode);
+      else await port.reorganizeInPlace(mdFile);
+    }
     catch (error) {
       try { await port.logDiagnostic("error", "queue.auto_repolish_failed", t("Automatic re-organization after backfilling transcription failed"), { mdPath: mdNorm, error: diagnosticError(error) }); }
       catch { /* intentionally empty */ }

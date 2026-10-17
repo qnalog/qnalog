@@ -549,6 +549,34 @@ describe("短录音整条路径", () => {
     expect(transcribeMock).toHaveBeenCalledTimes(2);
   });
 
+  it("10.675 秒录音在 10 秒切点分两段，服务回报无语音时与静音一样删除笔记和母带", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService } = makeHost();
+    routeTranscriptionMock.active = true;
+    transcribeMock
+      .mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], noSpeech: true })
+      .mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], noSpeech: true });
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-no-speech.md";
+    const audioPath = "QnALog/录音/blank-no-speech.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:15") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-no-speech.webm";
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_126), isFinal: false } as never);
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_675), index: 1, startOffsetMs: 10_126, isFinal: true } as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+
+    expect(trashed).toContain(mdPath);
+    expect(trashed).toContain(audioPath);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(transcribeMock).toHaveBeenCalledTimes(2);
+  });
+
   it("全空会话含失败分段时保留笔记并保留转写重试任务", async () => {
     notices.length = 0;
     trashed.length = 0;
@@ -578,6 +606,60 @@ describe("短录音整条路径", () => {
     expect(host.queue.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ type: "transcribe", status: "pending", lastError: "network timeout" })]));
     expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
     expect(diagnostics).toContainEqual(expect.objectContaining({ event: "session.no_transcript" }));
+  });
+
+  it("10 秒、50 秒、15 秒三段全部成功为空的普通录音（共 75 秒）保留笔记和音频，不排队", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-75.md";
+    const audioPath = "QnALog/录音/blank-75.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:20") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-75.webm";
+    session.segments = [
+      { index: 0, startOffsetMs: 0, endOffsetMs: 10_000, text: "" },
+      { index: 1, startOffsetMs: 10_000, endOffsetMs: 60_000, text: "" },
+      { index: 2, startOffsetMs: 60_000, endOffsetMs: 75_000, text: "" },
+    ];
+
+    await finalizeService.finalizeSession(session as never);
+
+    expect(files.has(mdPath)).toBe(true);
+    expect(files.has(audioPath)).toBe(true);
+    expect(files.get(mdPath)?.content).toContain("No speech detected");
+    expect(trashed).toEqual([]);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(notices.join("\n")).toContain("No speech was detected; the recording and note were kept.");
+  });
+
+  it("10 秒、25 秒、15 秒三段全部成功为空的普通录音（共 50 秒）删除笔记和音频，不排队", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, finalizeService } = makeHost();
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-50.md";
+    const audioPath = "QnALog/录音/blank-50.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:21") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-50.webm";
+    session.segments = [
+      { index: 0, startOffsetMs: 0, endOffsetMs: 10_000, text: "" },
+      { index: 1, startOffsetMs: 10_000, endOffsetMs: 35_000, text: "" },
+      { index: 2, startOffsetMs: 35_000, endOffsetMs: 50_000, text: "" },
+    ];
+
+    await finalizeService.finalizeSession(session as never);
+
+    expect(trashed).toContain(mdPath);
+    expect(trashed).toContain(audioPath);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(notices.join("\n")).toContain("No speech was detected; this recording was discarded.");
   });
 
   it("60 秒全空普通录音保留笔记和音频，不调用整理模型", async () => {
