@@ -1,0 +1,54 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { formatAutomaticRetryHint } from "../src/shared/retry-hint";
+import { UI_LANGUAGES, setActiveUiLanguage } from "../src/shared/i18n";
+
+const NOW = Date.parse("2026-10-17T04:00:00.000Z");
+const at = (ms: number) => new Date(NOW + ms).toISOString();
+const zh = UI_LANGUAGES.find((l) => l.id === "zh")!;
+const en = UI_LANGUAGES.find((l) => l.id === "en")!;
+
+afterEach(() => {
+  setActiveUiLanguage(en);
+});
+
+describe("待处理任务的自动重试提示", () => {
+  it("nextRetryAt 为空、缺失或不是有效日期时不显示", () => {
+    setActiveUiLanguage(zh);
+    expect(formatAutomaticRetryHint("", NOW)).toBe("");
+    expect(formatAutomaticRetryHint(undefined, NOW)).toBe("");
+    expect(formatAutomaticRetryHint(null, NOW)).toBe("");
+    expect(formatAutomaticRetryHint("not a date", NOW)).toBe("");
+  });
+
+  it("时间已过或正好到点时不显示", () => {
+    setActiveUiLanguage(zh);
+    expect(formatAutomaticRetryHint(at(-1000), NOW)).toBe("");
+    expect(formatAutomaticRetryHint(at(0), NOW)).toBe("");
+  });
+
+  it("不足 60 秒显示「不到 1 分钟」", () => {
+    setActiveUiLanguage(zh);
+    expect(formatAutomaticRetryHint(at(1), NOW)).toBe("不到 1 分钟后自动重试");
+    expect(formatAutomaticRetryHint(at(59_999), NOW)).toBe("不到 1 分钟后自动重试");
+  });
+
+  it("满 60 秒起按分钟向上取整", () => {
+    setActiveUiLanguage(zh);
+    expect(formatAutomaticRetryHint(at(60_000), NOW)).toBe("约 1 分钟后自动重试");
+    expect(formatAutomaticRetryHint(at(60_001), NOW)).toBe("约 2 分钟后自动重试");
+    expect(formatAutomaticRetryHint(at(4 * 60_000 + 30_000), NOW)).toBe("约 5 分钟后自动重试");
+  });
+
+  it("60 分钟边界", () => {
+    setActiveUiLanguage(zh);
+    expect(formatAutomaticRetryHint(at(60 * 60_000), NOW)).toBe("约 60 分钟后自动重试");
+    expect(formatAutomaticRetryHint(at(60 * 60_000 + 1), NOW)).toBe("约 61 分钟后自动重试");
+  });
+
+  it("英文界面使用英文文案", () => {
+    setActiveUiLanguage(en);
+    expect(formatAutomaticRetryHint(at(5 * 60_000), NOW)).toBe("Automatic retry in about 5 min");
+    expect(formatAutomaticRetryHint(at(30_000), NOW)).toBe("Automatic retry in under 1 min");
+    expect(formatAutomaticRetryHint("", NOW)).toBe("");
+  });
+});

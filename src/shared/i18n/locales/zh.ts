@@ -1275,6 +1275,8 @@ export const ZH: MessageTable = {
   "Identical content": "内容相同",
   "Built-in prompts": "内置提示词",
   "Next retry": "再次尝试",
+  "Automatic retry in about {0} min": "约 {0} 分钟后自动重试",
+  "Automatic retry in under 1 min": "不到 1 分钟后自动重试",
   "Write directory:": "写入目录：",
   "Write to note": "写入笔记",
   "Write selected": "写入选中",

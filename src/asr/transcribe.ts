@@ -533,16 +533,17 @@ export function getChatInputAudioPlan(profile, blob, mime, decodedDurationMs?) {
 }
 
 /**
- * 判断解码音频在 [startMs, endMs) 内是否静音。无法读取声道数据时返回 undefined（未知），
- * 调用方按原有规则处理，不把未知当成静音。
+ * 测量解码音频在 [startMs, endMs) 内的均方根（RMS）并判断是否静音。
+ * 无法读取声道数据时 quiet 与 rms 都为 undefined（未知），调用方按原有规则处理，不把未知当成静音。
+ * 无采样时 rms 为 undefined，quiet 为 false（按有声处理）。
  */
-function measureChunkQuiet(audioBuffer, startMs: number, endMs: number): boolean | undefined {
-  if (!audioBuffer || typeof audioBuffer.getChannelData !== "function") return undefined;
+function measureChunkLevel(audioBuffer, startMs: number, endMs: number): { quiet?: boolean; rms?: number } {
+  if (!audioBuffer || typeof audioBuffer.getChannelData !== "function") return {};
   const channels: Float32Array[] = [];
   for (let i = 0; i < Number(audioBuffer.numberOfChannels || 0); i++) channels.push(audioBuffer.getChannelData(i));
   const rms = computeAudioRms(channels, Number(audioBuffer.sampleRate), startMs, endMs);
   // NaN（无采样）不满足小于上限，结果为 false，即按有声处理。
-  return rms < QUIET_AUDIO_RMS_LIMIT;
+  return { quiet: rms < QUIET_AUDIO_RMS_LIMIT, rms: Number.isFinite(rms) ? rms : undefined };
 }
 
 export async function buildChatInputAudioChunks(profile, blob, mime) {
@@ -574,7 +575,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
   }
   const totalMs = Math.max(1, Math.round((audioBuffer.duration || 0) * 1000));
   const decodedPlan = getChatInputAudioPlan(profile, blob, inputMime, totalMs);
-  if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime, durationMs: totalMs, quiet: measureChunkQuiet(audioBuffer, 0, totalMs) }];
+  if (decodedPlan.action === "direct") return [{ blob, mime: decodedPlan.nativeMime, durationMs: totalMs, ...measureChunkLevel(audioBuffer, 0, totalMs) }];
   const chunkCount = Math.ceil(totalMs / profile.chunkMs);
   if (chunkCount > profile.maxChunks) {
     throw chatInputAudioPermanentError(t("{0} can automatically split at most {1} chunks (about {2} minutes); this is about {3} minutes. Shorten the segment interval, or use an ASR service that supports large files for long recordings.")
@@ -593,7 +594,7 @@ export async function buildChatInputAudioChunks(profile, blob, mime) {
         .replace("{1}", String(Math.round(profile.maxBase64Bytes / 1024 / 1024)))
         .replace("{2}", formatUploadSize(wavBlob.size)));
     }
-    chunks.push({ blob: wavBlob, mime: "audio/wav", durationMs: endMs - startMs, quiet: measureChunkQuiet(audioBuffer, startMs, endMs) });
+    chunks.push({ blob: wavBlob, mime: "audio/wav", durationMs: endMs - startMs, ...measureChunkLevel(audioBuffer, startMs, endMs) });
   }
   return chunks;
 }
@@ -928,6 +929,10 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
           chunkCount,
           chunkBytes: prepared && prepared.blob && prepared.blob.size,
           attempt,
+          // 诊断只记录测得的数值与判定结果，不含音频与文本。未知时为 null。
+          durationMs: prepared && Number.isFinite(Number(prepared.durationMs)) ? Number(prepared.durationMs) : null,
+          quiet: prepared && typeof prepared.quiet === "boolean" ? prepared.quiet : null,
+          rms: prepared && Number.isFinite(Number(prepared.rms)) ? Math.round(Number(prepared.rms) * 10000) / 10000 : null,
         });
       }
     } catch { /* intentionally empty */ }
