@@ -8,6 +8,7 @@ import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } fro
 import { diagnosticError } from "../shared/util-key-diag";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 import { labelText } from "../shared/note-labels";
+import { ASR_EMPTY_RESULT_SOFT_LIMIT_MS } from "../shared/limits";
 import { t } from "../shared/i18n";
 import { attachTranscriptResult, splitTranscriptTextUnits } from "../transcript/session-transcript";
 import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
@@ -236,7 +237,7 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   }
   // 空白结果（静音块，或服务明确回报无语音）是成功的空白段，不论时长都不按失败处理。
   const blankEmptyResult = isBlankAsrResult(asrResult);
-  if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000 && !blankEmptyResult) {
+  if (!err && !String(text || "").trim() && segmentDurationMs >= ASR_EMPTY_RESULT_SOFT_LIMIT_MS && !blankEmptyResult) {
     err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
     asrResult = null;
     if (batchAsrAttempted && !batchAsrFailureRecorded) { batchAsrFailureRecorded = true; port.recordAttemptFailure(session, err, seg); }
