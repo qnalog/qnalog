@@ -324,7 +324,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 2. **主题勘误表与内容清洗**（已决定）。主题勘误表记录用户确认的排除方面；整合读取规则，手动清洗现有主题页内容。
 
 3. **长录音的转写异常输出**（已决定）。`audio/long-recording-anomaly.ts` 在写入母本前拦截每秒字符数超过 15 或重复片段占比超过 0.6 的文本；拦截后保留音频与失败任务。真实转写服务是否复现此异常仍未证实。
-4. **空白录音收尾**（已决定）。普通录音全部分段成功转写为空时，不足 60 秒丢弃笔记与音频；达到 60 秒时保留笔记与音频并写入「未检测到语音」。导入音频与续录不丢弃，保留材料并提示。音频块的均方根低于 `QUIET_AUDIO_RMS_LIMIT`（`src/shared/limits.ts`）时，该块连续两次返回空结果即按成功的空白结果处理，不论时长；音量达到上限的块返回空结果仍按失败处理。静音标记以 `quiet` 字段附在 ASR 结果上（`src/asr/transcript-result.ts`）。实时分段（`src/notes/live-segment-flow.ts`）与重试（`src/queue/queue-transcribe-retry-flow.ts`）检查到该字段为真时，把空结果记为成功的空白段；`quiet` 不写入笔记与转写账本。
+4. **空白录音收尾**（已决定）。普通录音全部分段成功转写为空时，不足 60 秒丢弃笔记与音频；达到 60 秒时保留笔记与音频并写入「未检测到语音」。导入音频与续录不丢弃，保留材料并提示。音频块的均方根低于 `QUIET_AUDIO_RMS_LIMIT`（`src/shared/limits.ts`）时，该块连续两次返回空结果即按成功的空白结果处理，不论时长；音量达到上限的块返回空结果仍按失败处理。静音标记以 `quiet` 字段附在 ASR 结果上（`src/asr/transcript-result.ts`）。实时分段（`src/notes/live-segment-flow.ts`）与重试（`src/queue/queue-transcribe-retry-flow.ts`）检查到该字段为真时，把空结果记为成功的空白段；百炼 Flash 的「无语音」错误（HTTP 400，错误码 ASR_RESPONSE_HAVE_NO_WORDS）同样视为成功的空白结果，该块不重试，全部块如此时以 `noSpeech` 字段标记（`src/asr/transcribe.ts`）；`quiet` 与 `noSpeech` 均不写入笔记与转写账本。
 
 ### 已完成
 
