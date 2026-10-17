@@ -87,6 +87,7 @@
     "src/queue/queue-prompt-task-flow.ts",
     "src/queue/transcribe-audio-source.ts",
     "src/notes/note-document.ts",
+    "src/notes/organized-body.ts",
     "src/versions/version-content.ts",
     "src/views/base-definitions.ts",
     "src/versions/version-manifest-store.ts",

@@ -8,6 +8,7 @@ import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { ensureTranscriptBlocks } from "../notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { findNoteMarkerOffset } from "../notes/note-document";
+import { hasOrganizedBody } from "../notes/organized-body";
 import { nsMarker, nsRe } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
@@ -37,6 +38,10 @@ export interface QueueTranscribeRetryPort {
   detectMode(file: obsidian.TFile): string | undefined;
   getDefaultPolishMode(): string;
   repolish(file: obsidian.TFile, mode: string): Promise<void>;
+  /** 读取笔记当前内容，用于判断整理正文是否已有实际内容。 */
+  readNote(file: obsidian.TFile): Promise<string>;
+  /** 原地整理：把整理正文写回原笔记（用于原笔记尚无整理正文的情形）。 */
+  reorganizeInPlace(file: obsidian.TFile): Promise<void>;
 }
 
 export async function retryTranscribeTask(port: QueueTranscribeRetryPort, task: TranscribeRetryTask): Promise<void> {
@@ -224,7 +229,11 @@ function maybeAutoRepolish(port: QueueTranscribeRetryPort, task: TranscribeRetry
   new obsidian.Notice(t("\"{0}\" All failed segments are transcribed; re-organizing the body...").replace("{0}", mdFile.basename), 8000);
   const mode = port.detectMode(mdFile) || port.getDefaultPolishMode();
   void (async () => {
-    try { await port.repolish(mdFile, mode); }
+    try {
+      const content = await port.readNote(mdFile);
+      if (hasOrganizedBody(content)) await port.repolish(mdFile, mode);
+      else await port.reorganizeInPlace(mdFile);
+    }
     catch (error) {
       try { await port.logDiagnostic("error", "queue.auto_repolish_failed", t("Automatic re-organization after backfilling transcription failed"), { mdPath: mdNorm, error: diagnosticError(error) }); }
       catch { /* intentionally empty */ }

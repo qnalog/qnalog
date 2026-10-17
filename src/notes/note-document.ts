@@ -253,6 +253,9 @@ export function replaceExistingActiveVersionBlock(markdown: string, block: strin
 }
 
 
+/** AI 整理失败时写入整合版正文的占位行（中英文）。 */
+export const AI_FAILURE_PLACEHOLDER_RE = /_\[(?:合并润色失败|AI 整理失败|Merge failed|AI organizing failed)[^\]]*\]_/;
+
 export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts {
   let s = String(text || "");
   const seen = new Set<string>();
@@ -292,7 +295,8 @@ export function extractAllRawBlocksFromText(text: string): RawNoteDocumentParts 
   s = s.replace(NS_SEGMENTS_BLOCK_RE, (match: string) => stash(match));
   s = s.replace(NS_SESSION_LINE_RE, (match: string) => stash(match.trim()));
   s = s.replace(NS_SEDIMENT_BLOCK_RE, (match: string) => stash(match));
-  s = s.replace(/##\s+✨\s+(?:整合版|Merged version)[^\n]*\n+_\[(?:合并润色失败|AI 整理失败|Merge failed|AI organizing failed)[^\]]*\]_\s*\n?/g, "");
+  const aiFailureSectionRe = new RegExp(`${/##\s+✨\s+(?:整合版|Merged version)[^\n]*\n+/.source}${AI_FAILURE_PLACEHOLDER_RE.source}\\s*\\n?`, "g");
+  s = s.replace(aiFailureSectionRe, "");
   s = s.replace(/<details>\s*<\/details>/gi, "");
   s = s.replace(/<details>\s*\n+\s*<\/details>/gi, "");
 

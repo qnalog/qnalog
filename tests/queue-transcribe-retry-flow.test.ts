@@ -43,7 +43,7 @@ function setup(markdown = "", targetIsFile = true) {
     diagnostics, asrPipeline: { maybeDeleteSegmentCacheFile: cleanup }, noteIndex: { refreshNoteIndexSafely: refresh },
     continuations: { runOnTarget: vi.fn(async (_file: unknown, operation: () => Promise<unknown>) => operation()) },
     noteWriter: { insertBeforeSegmentsEnd, detectModeFromMarkdown: vi.fn(() => "meeting") },
-    repolish: { repolishMarkdownFile: vi.fn(async () => undefined) },
+    repolish: { repolishMarkdownFile: vi.fn(async () => undefined), reorganizeNoteInPlace: vi.fn(async () => undefined) },
     queue: { tasks: [] }, confirmSpeakerNames: vi.fn(async () => undefined),
     profiles: { getActiveTranscribeProfile: vi.fn(() => null) },
   };
@@ -160,7 +160,7 @@ describe("transcription retry consumer contract", () => {
   it("completes a quiet empty retry as a blank segment and replaces the failure placeholder", async () => {
     const taskMarker = nsMarker("transcribe-task", "retry-1");
     const placeholder = `${labelText("segment", 1)} (00:00–00:01)\n\n${taskMarker}\n\n${labelText("waitingBackground")}`;
-    const fixture = setup(`Original note.\n\n### ${placeholder}\n`);
+    const fixture = setup(`## ✨ 整合版（meeting）\n\n真实整理正文。\n\n---\n\n## 原始材料\n\n### ${placeholder}\n`);
     asr.transcribe.mockResolvedValueOnce({ text: "", rawText: null, providerId: "mock", units: [], quiet: true });
 
     await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
@@ -239,5 +239,46 @@ describe("transcription retry consumer contract", () => {
     fixture.host.profiles.getActiveTranscribeProfile.mockReturnValue({ transcribeMode: "streaming", title: "Live" } as never);
     await expect(fixture.service.retryTranscribeTask(fixture.task as never)).rejects.toThrow("The current transcription service is a streaming service");
     expect(asr.transcribe).not.toHaveBeenCalled();
+  });
+});
+
+describe("automatic re-organization after backfilling the last failed segment", () => {
+  const failedNoteBody = `## 整合版（meeting）\n\n_[AI 整理失败：没有可用于整理的有效转写文本；录音和失败切片已保留]_\n\n---\n\n## 原始材料\n\n`;
+  function placeholderFor(taskId: string) {
+    const taskMarker = nsMarker("transcribe-task", taskId);
+    return `${labelText("segment", 1)} (00:00–00:01)\n\n${taskMarker}\n\n${labelText("waitingBackground")}`;
+  }
+
+  it("re-organizes the original note in place when it has only the failure placeholder", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledTimes(1));
+    expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file);
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
+    expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
+  });
+
+  it("keeps the derived re-organization when the original note already has an organized body", async () => {
+    const fixture = setup(`## ✨ 整合版（meeting）\n\n真实整理正文。\n\n---\n\n## 原始材料\n\n### ${placeholderFor("retry-1")}\n`);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.host.repolish.repolishMarkdownFile).toHaveBeenCalledTimes(1));
+    expect(fixture.host.repolish.reorganizeNoteInPlace).not.toHaveBeenCalled();
+  });
+
+  it("logs a failed in-place re-organization without rejecting the retry", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.reorganizeNoteInPlace.mockRejectedValueOnce(new Error("organize failed"));
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("error", "queue.auto_repolish_failed", expect.any(String), expect.objectContaining({ mdPath: fixture.file.path })));
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
+  });
+
+  it("does not re-organize while other transcribe tasks for the same note remain queued", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.queue.tasks.push({ id: "retry-2", type: "transcribe", mdPath: fixture.file.path } as never);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fixture.host.repolish.reorganizeNoteInPlace).not.toHaveBeenCalled();
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
   });
 });
