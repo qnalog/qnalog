@@ -549,6 +549,34 @@ describe("短录音整条路径", () => {
     expect(transcribeMock).toHaveBeenCalledTimes(2);
   });
 
+  it("10.675 秒录音在 10 秒切点分两段，服务回报无语音时与静音一样删除笔记和母带", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService } = makeHost();
+    routeTranscriptionMock.active = true;
+    transcribeMock
+      .mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], noSpeech: true })
+      .mockResolvedValueOnce({ text: "", rawText: "", providerId: "provider", units: [], noSpeech: true });
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-no-speech.md";
+    const audioPath = "QnALog/录音/blank-no-speech.webm";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:15") });
+    files.set(audioPath, { binary: new ArrayBuffer(1) });
+    const session = makeSession(mdPath);
+    session.masterAudioPath = audioPath;
+    session.masterAudioName = "blank-no-speech.webm";
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_126), isFinal: false } as never);
+    await recordingService.handleSegment(session as never, { ...finalPayload(10_675), index: 1, startOffsetMs: 10_126, isFinal: true } as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+
+    expect(trashed).toContain(mdPath);
+    expect(trashed).toContain(audioPath);
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(transcribeMock).toHaveBeenCalledTimes(2);
+  });
+
   it("全空会话含失败分段时保留笔记并保留转写重试任务", async () => {
     notices.length = 0;
     trashed.length = 0;

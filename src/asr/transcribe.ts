@@ -18,12 +18,12 @@ import { splitTranscriptTextUnits } from "../transcript/session-transcript";
 
 import {
   DASHSCOPE_FLASH_ASR_PROTOCOL,
+  isDashScopeFlashNoWordsError,
   requestDashScopeFlashChunk,
 } from "./dashscope-flash-asr";
 import { resolveBailianAsrRoute, resolveBailianEndpoint } from "./bailian-asr-registry";
 import { transcribeDashScopeFile } from "./dashscope-filetrans-asr";
 
-import type { DashScopeFlashChunkResult } from "./dashscope-flash-asr";
 export type AsrLifecycleSignalType =
   | "attempt-start"
   | "request-start"
@@ -284,7 +284,7 @@ export async function transcribeAudioWithDashScopeFlash(
   observer?: AsrLifecycleObserver,
 ): Promise<AsrTranscriptResult> {
   const chunks = await buildChatInputAudioChunks(DASHSCOPE_FLASH_PROFILE, blob, mime);
-  const parts: DashScopeFlashChunkResult[] = [];
+  const parts: ChatInputAudioChunkResult[] = [];
   for (let i = 0; i < chunks.length; i++) {
     parts.push(await requestChatInputAudioChunkWithEmptyRetry(
       DASHSCOPE_FLASH_PROFILE,
@@ -294,12 +294,20 @@ export async function transcribeAudioWithDashScopeFlash(
       provider.endpoint,
       i,
       chunks.length,
-      (currentProvider, prepared, _url, requestObserver) => requestDashScopeFlashChunk(
-        currentProvider,
-        prepared,
-        getTranscribeRequestTimeoutMs(currentProvider, prepared.blob.size),
-        requestObserver,
-      ),
+      async (currentProvider, prepared, _url, requestObserver): Promise<ChatInputAudioChunkResult> => {
+        try {
+          return await requestDashScopeFlashChunk(
+            currentProvider,
+            prepared,
+            getTranscribeRequestTimeoutMs(currentProvider, prepared.blob.size),
+            requestObserver,
+          );
+        } catch (error) {
+          // 只把「无语音」转为空白结果；其它错误（鉴权、限流、超时、网络及其它 400）原样抛出。
+          if (isDashScopeFlashNoWordsError(error)) return { text: "", rawText: "", noWords: true };
+          throw error;
+        }
+      },
       delayMs,
       observer,
     ));
@@ -314,6 +322,11 @@ export async function transcribeAudioWithDashScopeFlash(
     endMs: null,
     timing: "unknown",
   })));
+  // 仅当全文为空且每块都是「无语音」或静音块时标记 noSpeech；否则不写该字段。
+  const allChunksSilent = chunks.length > 0 && parts.every((part, i) => part.noWords === true || chunks[i].quiet === true);
+  if (text === "" && allChunksSilent) {
+    return { text, rawText: null, providerId: String(provider.id || ""), units, noSpeech: true };
+  }
   return { text, rawText: null, providerId: String(provider.id || ""), units };
 }
 
@@ -360,6 +373,8 @@ export const APIMIMO_ASR_MAX_CHUNKS = 160;
 export interface ChatInputAudioChunkResult {
   text: string;
   rawText: string;
+  /** The service explicitly reported that the chunk has no words (Bailian Flash ASR_RESPONSE_HAVE_NO_WORDS). Runtime signal only. */
+  noWords?: boolean;
 }
 
 export interface ChatInputAudioProfile {
@@ -890,6 +905,19 @@ export async function requestChatInputAudioChunkWithEmptyRetry(
         : undefined,
     );
     const response = typeof requested === "string" ? { text: requested, rawText: requested } : requested;
+    // 服务明确回报「无语音」：这是成功的空白结果，不重试，也不受时长门槛约束。
+    if (response && response.noWords === true) {
+      try {
+        if (plugin && plugin.diagnostics && typeof plugin.diagnostics.logDiagnostic === "function") {
+          await plugin.diagnostics.logDiagnostic("info", `asr.${profile.diagnosticSlug}_no_words`, t("{0} service reported that the chunk contains no words.").replace("{0}", t(profile.shortLabel)), {
+            chunkIndex,
+            chunkCount,
+            chunkBytes: prepared && prepared.blob && prepared.blob.size,
+          });
+        }
+      } catch { /* intentionally empty */ }
+      return { text: "", rawText: "", noWords: true };
+    }
     const part = String(response && response.text || "").trim();
     if (part) return { text: part, rawText: typeof response.rawText === "string" ? response.rawText : part };
     lastRawText = typeof response.rawText === "string" ? response.rawText : part;

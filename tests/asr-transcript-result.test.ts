@@ -9,7 +9,7 @@ vi.mock("obsidian", () => ({
 import { transcribeAudio } from "../src/asr/transcribe";
 import { transcribeAudioByChannels } from "../src/asr/channel-transcription";
 import { attachTranscriptResult, getCurrentTranscript } from "../src/transcript/session-transcript";
-import type { AsrTranscriptResult } from "../src/asr/transcript-result";
+import { isBlankAsrResult, type AsrTranscriptResult } from "../src/asr/transcript-result";
 import type { Segment } from "../src/shared/types";
 import { replaceSpeakerDisplayName } from "../src/audio/channel-speakers";
 import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
@@ -284,5 +284,25 @@ describe("structured ASR transcript results", () => {
     expect(revision.corrections).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "speaker", from: "说话人1", to: "胡女士" }),
     ]));
+  });
+});
+
+describe("blank ASR result helper and no-speech signal", () => {
+  it("treats only empty results with quiet or noSpeech as blank", () => {
+    const base = { text: "", rawText: null, providerId: "p", units: [] };
+    expect(isBlankAsrResult({ ...base, quiet: true })).toBe(true);
+    expect(isBlankAsrResult({ ...base, noSpeech: true })).toBe(true);
+    expect(isBlankAsrResult({ ...base })).toBe(false);
+    expect(isBlankAsrResult({ ...base, text: "你好", quiet: true, noSpeech: true })).toBe(false);
+    expect(isBlankAsrResult(null)).toBe(false);
+    expect(isBlankAsrResult(undefined)).toBe(false);
+  });
+
+  it("does not copy the no-speech flag into the saved segment or transcript", () => {
+    const segment = { index: 0, startOffsetMs: 0, endOffsetMs: 40_000, text: "" } as unknown as Segment;
+    const result: AsrTranscriptResult = { text: "", rawText: null, providerId: "p", units: [], noSpeech: true };
+    const attached = attachTranscriptResult(segment, "session-1", result, "asr");
+    expect(JSON.stringify(attached)).not.toContain("noSpeech");
+    expect(JSON.stringify(attached)).not.toContain("quiet");
   });
 });

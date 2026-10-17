@@ -1,6 +1,6 @@
 import * as obsidian from "obsidian";
 import type { PluginSettings, PreparedLiveSegment, RecordingSession, Segment } from "../shared/types";
-import type { AsrTranscriptResult, AsrTranscriptUnit } from "../asr/transcript-result";
+import { isBlankAsrResult, type AsrTranscriptResult, type AsrTranscriptUnit } from "../asr/transcript-result";
 import { createLiveAsrCircuitState, isLiveAsrCircuitOpen } from "../asr/live-segment-policy";
 import { DEFAULT_SPEAKER_CHANNELS, MAX_SPEAKER_CHANNELS, buildSpeakerMappings, initialAudioChannelRuntimeMode, normalizeAudioChannelMode, resolveAudioChannelRuntimeMode } from "../audio/channel-speakers";
 import { getErrorMessage, pad, formatElapsed } from "../shared/util-common";
@@ -234,9 +234,9 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       } catch { /* diagnostic storage failure must not restore anomalous text */ }
     }
   }
-  // 静音结果（每个音频块都低于静音阈值）是成功的空白段，不论时长都不按失败处理。
-  const quietEmptyResult = !!asrResult && asrResult.quiet === true;
-  if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000 && !quietEmptyResult) {
+  // 空白结果（静音块，或服务明确回报无语音）是成功的空白段，不论时长都不按失败处理。
+  const blankEmptyResult = isBlankAsrResult(asrResult);
+  if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000 && !blankEmptyResult) {
     err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
     asrResult = null;
     if (batchAsrAttempted && !batchAsrFailureRecorded) { batchAsrFailureRecorded = true; port.recordAttemptFailure(session, err, seg); }

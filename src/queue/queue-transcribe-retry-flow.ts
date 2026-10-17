@@ -1,5 +1,5 @@
 import * as obsidian from "obsidian";
-import type { AsrTranscriptResult } from "../asr/transcript-result";
+import { isBlankAsrResult, type AsrTranscriptResult } from "../asr/transcript-result";
 import type { AudioChannelMode, Segment, TranscribeQueueTaskPayload } from "../shared/types";
 import { MAX_SPEAKER_CHANNELS, initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -109,9 +109,9 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       text = transcriptionResult.text;
     }
   }
-  // 静音结果是成功的空白段：不抛错、不重试，段落写入与实时路径相同的「无内容」文字。
-  const quietEmptyResult = !String(text || "").trim() && transcriptionResult?.quiet === true;
-  if (!String(text || "").trim() && !quietEmptyResult) {
+  // 空白结果（静音块，或服务明确回报无语音）是成功的空白段：不抛错、不重试，段落写入与实时路径相同的「无内容」文字。
+  const blankEmptyResult = !String(text || "").trim() && isBlankAsrResult(transcriptionResult);
+  if (!String(text || "").trim() && !blankEmptyResult) {
     await port.logDiagnostic("warn", "queue.transcribe_empty_result", t("Transcription retry returned empty text; treating it as a failure and re-queuing"), {
       mdPath: task.mdPath || "", audioName: task.audioName || "", startOffsetMs: task.startOffsetMs, endOffsetMs: task.endOffsetMs,
     });
@@ -123,7 +123,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   const retryDurationMs = taskDurationMs > 0
     ? taskDurationMs
     : Number.isFinite(resultDurationMs) && resultDurationMs > 0 ? resultDurationMs : 0;
-  const anomalySignals = quietEmptyResult ? [] : classifyLongRecordingAnomaly(text, retryDurationMs);
+  const anomalySignals = blankEmptyResult ? [] : classifyLongRecordingAnomaly(text, retryDurationMs);
   if (anomalySignals.length) {
     const message = t("The transcription result does not match the recording duration. The recording has been kept and can be retried.");
     await port.logDiagnostic("warn", "asr.long_recording_anomaly", t("Transcription result rejected because it did not match the recording duration."), {

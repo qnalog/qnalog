@@ -174,6 +174,21 @@ describe("transcription retry consumer contract", () => {
     expect(fixture.host.repolish.repolishMarkdownFile).toHaveBeenCalledTimes(1);
   });
 
+  it("completes a no-speech empty retry as a blank segment and replaces the failure placeholder", async () => {
+    const taskMarker = nsMarker("transcribe-task", "retry-1");
+    const placeholder = `${labelText("segment", 1)} (00:00–00:01)\n\n${taskMarker}\n\n${labelText("waitingBackground")}`;
+    const fixture = setup(`Original note.\n\n### ${placeholder}\n`);
+    asr.transcribe.mockResolvedValueOnce({ text: "", rawText: null, providerId: "mock", units: [], noSpeech: true });
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+
+    const written = fixture.contents.get(fixture.file.path) ?? "";
+    expect(written).toContain(labelText("noContentSegment"));
+    expect(written).not.toContain(labelText("waitingBackground"));
+    expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "queue.transcribe_empty_result", expect.any(String), expect.anything());
+    expect(fixture.cleanup).toHaveBeenCalledWith(fixture.task.audioPath, fixture.task.id, false);
+  });
+
   it("keeps throwing for a non-quiet empty retry result", async () => {
     const fixture = setup("Original note.");
     asr.transcribe.mockResolvedValueOnce({ text: "", rawText: null, providerId: "mock", units: [] });
