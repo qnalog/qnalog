@@ -370,3 +370,29 @@ describe("QueueModal rendered recovery states", () => {
     harness.modal.onClose();
   });
 });
+
+describe("QueueModal pending retry hint", () => {
+  it("shows the automatic retry hint on a pending row only while nextRetryAt is in the future", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-17T04:00:00.000Z"));
+    vi.stubGlobal("window", {
+      requestAnimationFrame: (callback: () => void) => { callback(); return 1; },
+      setInterval,
+      clearInterval,
+      moment: (value: number | string) => ({ format: () => new Date(value).toISOString().slice(11, 19) }),
+    });
+    const harness = makeProgressHarness();
+    harness.task.status = "pending";
+    harness.task.lastError = "connection failed";
+    harness.task.nextRetryAt = "2026-10-17T04:05:00.000Z";
+    harness.modal.onOpen();
+    let root = harness.modal.contentEl as never as MemoryElement;
+    expect(root.textContent).toContain("Automatic retry in about 5 min");
+
+    vi.setSystemTime(new Date("2026-10-17T04:06:00.000Z"));
+    harness.modal.onOpen();
+    root = harness.modal.contentEl as never as MemoryElement;
+    expect(root.textContent).not.toContain("Automatic retry in");
+    harness.modal.onClose();
+  });
+});

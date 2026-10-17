@@ -3,6 +3,7 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import { NS_AUDIO_ALT, NS_SESSION_RE, NS_SEGMENTS_START_RE } from "../shared/namespace";
 import { t as i18nT } from '../shared/i18n';
+import { formatAutomaticRetryHint } from '../shared/retry-hint';
 import * as obsidian from "obsidian";
 import { loadPeopleDirectory, normalizePeopleRelation, normalizePeopleSuggestion } from '../people';
 import { diagnosticError, redactDiagnosticText } from "../shared/util-key-diag";
@@ -1282,6 +1283,7 @@ export class QueueModal extends obsidian.Modal {
       ico.createSpan({ cls: "qnalog-progress-dot" });
       titleLine(body, taskTitle(t), "", false);
       subLine(body, `${t.lastError || i18nT("Waiting for the next attempt")}${i18nT(" · tried ")}${t.retries || 0}${i18nT(" times")}`);
+      subLine(body, formatAutomaticRetryHint(t.nextRetryAt, Date.now()));
       const acts = row.createDiv({ cls: "qnalog-progress-queue-actions" });
       const retryBtn = acts.createEl("button", { cls: "qnalog-progress-queue-retry", attr: { type: "button" }, text: i18nT("Retry") });
       retryBtn.onclick = async () => {
