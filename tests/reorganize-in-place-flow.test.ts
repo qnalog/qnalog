@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const notices = vi.hoisted(() => [] as string[]);
@@ -21,6 +22,9 @@ vi.mock("obsidian", () => ({
 
 import * as obsidian from "obsidian";
 import { reorganizeNoteInPlace, type ReorganizeInPlacePort } from "../src/notes/reorganize-in-place-flow";
+import { buildReorganizedNote } from "../src/notes/reorganize-in-place-flow";
+import { extractTranscriptSegments } from "../src/notes/note-transcript-ledger";
+import { buildNoteIndex } from "../src/indexing/note-index";
 
 afterEach(() => { notices.length = 0; vi.restoreAllMocks(); });
 
@@ -281,5 +285,68 @@ describe("in-place note reorganization", () => {
     expect(notices.some((message) => message.includes("wait for the current task"))).toBe(true);
     resolveGate(generated);
     await first;
+  });
+});
+
+describe("reorganize in place: stale AI failure block", () => {
+  const identity = (text: string) => text;
+  const failureLine = "_[AI 整理失败：没有可用于整理的有效转写文本；录音和失败切片已保留]_";
+  const beforeRetry = readFileSync(new URL("./fixtures/reorganize-failure-before-retry.md", import.meta.url), "utf8");
+
+  it("removes the failure heading and line after the raw material boundary, keeping the rest", () => {
+    const next = buildReorganizedNote(beforeRetry, generated, identity);
+    expect(next).not.toContain("AI 整理失败");
+    expect(next).not.toContain("整合版（mock · 通用）");
+    expect(next).toContain("New organized body");
+    expect(next.indexOf("New organized body")).toBeLessThan(next.indexOf("## 原始材料"));
+    expect(next).toContain("录音信息");
+    expect(next).toContain("原始音频（完整录音，00:13）");
+    expect(next).toContain("qnalog-transcript-start:seg:qnalog-mvbw0ngk-b30jyp:0:fragment:1");
+    expect(next).toContain("qnalog-transcript-start:seg:qnalog-mvbw0ngk-b30jyp:1:fragment:1");
+    expect(extractTranscriptSegments(next)).toHaveLength(2);
+  });
+
+  it("is idempotent: a second reorganize with the same output gives the same text", () => {
+    const once = buildReorganizedNote(beforeRetry, generated, identity);
+    expect(buildReorganizedNote(once, generated, identity)).toBe(once);
+  });
+
+  it("builds the note index from the new organized body, not the failure line", () => {
+    const next = buildReorganizedNote(beforeRetry, generated, identity);
+    const index = buildNoteIndex(next, { noteTitle: "2026-10-17 12:19 · 通用（00:13）" });
+    expect(JSON.stringify(index)).not.toContain("AI 整理失败");
+    expect(index?.core.summary).toContain("New organized body");
+  });
+
+  it("keeps a consolidated section that has real text after the failure line", () => {
+    const snapshot = [
+      "# 2026-10-13 10:00 · 通用", "",
+      "---", "", "## 原始材料", "",
+      "<details>", "<summary>录音信息</summary>", "- 时长：00:13", "</details>", "",
+      "## 整合版（通用）", "", failureLine, "", "Real consolidated text that the user kept.", "",
+    ].join("\n");
+    const next = buildReorganizedNote(snapshot, generated, identity);
+    expect(next).toContain("Real consolidated text that the user kept.");
+    expect(next).toContain("## 整合版（通用）");
+    expect(next).toContain("AI 整理失败");
+  });
+
+  it("keeps a consolidated section with real text and no failure line", () => {
+    const snapshot = "# T\n\n---\n\n## 原始材料\n\n<details>\n<summary>录音信息</summary>\n</details>\n\n## 整合版（通用）\n\nReal body.\n";
+    expect(buildReorganizedNote(snapshot, generated, identity)).toContain("Real body.");
+  });
+
+  it("removes a failure block that sits before the raw material boundary", () => {
+    const snapshot = [
+      "# 2026-10-13 10:00 · 通用", "",
+      "<details>", "<summary>原始转写 · 段落 1 (00:00–00:10)</summary>",
+      "<!-- qnalog-transcript-start:seg:x:0:fragment:1 -->", "_[等待后台转写]_", "<!-- qnalog-transcript-end:seg:x:0:fragment:1 -->",
+      "</details>", "",
+      "## 整合版（通用）", "", failureLine, "", "---", "", "## 原始材料", "",
+    ].join("\n");
+    const next = buildReorganizedNote(snapshot, generated, identity);
+    expect(next).not.toContain("AI 整理失败");
+    expect(next).toContain("New organized body");
+    expect(next).toContain("qnalog-transcript-start:seg:x:0:fragment:1");
   });
 });

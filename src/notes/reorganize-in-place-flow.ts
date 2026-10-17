@@ -1,6 +1,6 @@
 import * as obsidian from "obsidian";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
-import { findActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
+import { AI_FAILURE_PLACEHOLDER_RE, findActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
 import { readRepolishInput } from "./repolish-input";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 import { getTaskErrorMessage } from "../shared/task-activity";
@@ -93,6 +93,21 @@ function extractRawTailBeforeBoundary(preBoundary: string): string {
   return tail.slice(anchor).replace(/(?:\r?\n)+\s*---\s*$/, "").trim();
 }
 
+/**
+ * 去掉整合版标题下只剩一行 AI 整理失败占位的旧失败块（标题与占位行之间、前后的空行一并去掉）。
+ * 占位行之后紧跟的不是小节边界（HTML 块、`---`、`##` 标题或文件末尾）时不匹配，原样保留。
+ */
+const ORGANIZED_FAILURE_SECTION_RE = new RegExp(
+  /^##[ \t]+(?:✨[ \t]*)?(?:整合版|Merged version)[^\n]*\n(?:[ \t]*\n)*[ \t]*/.source
+    + AI_FAILURE_PLACEHOLDER_RE.source
+    + /[ \t]*(?:\n|$)(?:[ \t]*\n)*(?=<|---|## |(?![\s\S]))/.source,
+  "gm",
+);
+
+export function removeOrganizedFailureSections(text: string): string {
+  return text.replace(ORGANIZED_FAILURE_SECTION_RE, "");
+}
+
 export function buildReorganizedNote(snapshot: string, generated: string, stripModeSuggestions: (text: string) => string): string {
   const current = splitLeadingFrontmatter(snapshot);
   const generatedParts = splitLeadingFrontmatter(stripModeSuggestions(generated || buildEmptyLlmOutputFallback()).trim());
@@ -101,9 +116,10 @@ export function buildReorganizedNote(snapshot: string, generated: string, stripM
   const rewrittenBody = [retainedTitle, generatedParts.body.trim() || buildEmptyLlmOutputFallback()]
     .filter(Boolean).join("\n\n");
   const frontmatter = mergeFrontmatter(current.frontmatter, generatedParts.frontmatter);
-  const rawTail = extractRawTailBeforeBoundary(current.body.slice(0, boundary.index));
+  const rawTail = removeOrganizedFailureSections(extractRawTailBeforeBoundary(current.body.slice(0, boundary.index)));
   const preservedRaw = rawTail ? `---\n\n${rawTail}\n\n` : "";
-  return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${preservedRaw}${current.body.slice(boundary.index)}`);
+  const keptTail = removeOrganizedFailureSections(current.body.slice(boundary.index));
+  return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${preservedRaw}${keptTail}`);
 }
 
 export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: unknown): Promise<void> {
