@@ -12,6 +12,15 @@ import { buildVersionPayload } from "../versions/version-content";
 import { NS_FM } from "../shared/namespace";
 import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
 import type { ErrataRules } from "../errata/errata-apply";
+import { buildAbsentSessionFrontmatter, readSessionFieldsFromNote, type SessionModeOption } from "./first-organizing-session";
+
+/**
+ * `firstOrganizing`：笔记首次整理（转写补齐后的自动整理）。为 true 时补齐会话 frontmatter 并按标题改名，
+ * 使结果与首次整理一致。默认 false，即侧边栏的手动「原地重新整理」，行为不变。
+ */
+export interface ReorganizeInPlaceOptions {
+  firstOrganizing?: boolean;
+}
 
 export interface ReorganizeInPlacePort {
   getVault(): Pick<obsidian.Vault, "read" | "process">;
@@ -30,6 +39,14 @@ export interface ReorganizeInPlacePort {
   restoreOriginalVersionBody(file: obsidian.TFile, update: OriginalSnapshotBodyUpdate): Promise<void>;
   switchVersion(versionPath: string, sourcePath: string): Promise<void>;
   refreshNoteIndex(file: obsidian.TFile, options: { reason: string }): Promise<unknown>;
+  /** 首次整理：可用的模式选项，用于把「录音信息」的模式行对应回模式标识。 */
+  getModeOptions(): SessionModeOption[];
+  /** 首次整理：按笔记中的链接文件名解析库内完整路径；无法解析时返回 null。 */
+  resolveLinkPath(link: string, sourcePath: string): string | null;
+  /** 首次整理：自动标题改名开关（设置项）。 */
+  getAutoRenameWithTitle(): boolean;
+  /** 首次整理：按整理正文与模式生成标题并改名；改名失败由调用方记录，不影响整理结果。 */
+  renameWithGeneratedTitle(file: obsidian.TFile, polished: string, mode: string): Promise<unknown>;
   tasks: {
     startTaskActivity(input: TaskActivityInput): unknown;
     patchTaskActivity(id: string, patch: Partial<TaskActivity>): unknown;
@@ -54,10 +71,10 @@ function parseFrontmatter(frontmatter: string): Record<string, unknown> {
   }
 }
 
-function mergeFrontmatter(current: string, generated: string): string {
+function mergeFrontmatter(current: string, generated: string, leading: Record<string, unknown>): string {
   const currentFields = parseFrontmatter(current);
   const generatedFields = parseFrontmatter(generated);
-  const merged = { ...currentFields };
+  const merged: Record<string, unknown> = { ...leading, ...currentFields };
   for (const [key, value] of Object.entries(generatedFields)) {
     if (GENERATED_FRONTMATTER_KEYS.has(key)) merged[key] = value;
   }
@@ -108,21 +125,29 @@ export function removeOrganizedFailureSections(text: string): string {
   return text.replace(ORGANIZED_FAILURE_SECTION_RE, "");
 }
 
-export function buildReorganizedNote(snapshot: string, generated: string, stripModeSuggestions: (text: string) => string): string {
+/**
+ * `leadingFrontmatter`：放在现有 frontmatter 之前的键（首次整理的会话键，调用方保证它们在现有 frontmatter 中不存在）。
+ */
+export function buildReorganizedNote(
+  snapshot: string,
+  generated: string,
+  stripModeSuggestions: (text: string) => string,
+  leadingFrontmatter: Record<string, unknown> = {},
+): string {
   const current = splitLeadingFrontmatter(snapshot);
   const generatedParts = splitLeadingFrontmatter(stripModeSuggestions(generated || buildEmptyLlmOutputFallback()).trim());
   const boundary = findOriginalMaterialBoundary(current.body);
   const retainedTitle = current.body.match(/^\s*(#\s+[^\r\n]+)(?:\r?\n|$)/)?.[1] || "";
   const rewrittenBody = [retainedTitle, generatedParts.body.trim() || buildEmptyLlmOutputFallback()]
     .filter(Boolean).join("\n\n");
-  const frontmatter = mergeFrontmatter(current.frontmatter, generatedParts.frontmatter);
+  const frontmatter = mergeFrontmatter(current.frontmatter, generatedParts.frontmatter, leadingFrontmatter);
   const rawTail = removeOrganizedFailureSections(extractRawTailBeforeBoundary(current.body.slice(0, boundary.index)));
   const preservedRaw = rawTail ? `---\n\n${rawTail}\n\n` : "";
   const keptTail = removeOrganizedFailureSections(current.body.slice(boundary.index));
   return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${preservedRaw}${keptTail}`);
 }
 
-export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: unknown): Promise<void> {
+export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: unknown, options: ReorganizeInPlaceOptions = {}): Promise<void> {
   if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
   const lock = `repolish:${file.path}`;
   const inFlight = port.getInFlight();
@@ -143,7 +168,17 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
       input = readRepolishInput(snapshot, port.getCachedFrontmatter(file) || null, errata);
     }
     if (!input.segments.length) throw new Error(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."));
-    const mode = port.getDefaultMode();
+    const firstOrganizing = options.firstOrganizing === true;
+    const noteFields = firstOrganizing ? readSessionFieldsFromNote(snapshot, port.getModeOptions()) : null;
+    const mode = noteFields?.mode || port.getDefaultMode();
+    const leadingFrontmatter = noteFields
+      ? buildAbsentSessionFrontmatter(parseFrontmatter(splitLeadingFrontmatter(snapshot).frontmatter), {
+        mode: noteFields.mode,
+        time: noteFields.time,
+        duration: noteFields.duration,
+        audioPath: noteFields.audioLink ? port.resolveLinkPath(noteFields.audioLink, file.path) : null,
+      })
+      : {};
     port.tasks.startTaskActivity({
       id: taskId, kind: "repolish", title: t("Reorganize note in place"), subject: file.path,
       status: "running", stage: "preparing", stageLabel: t("Preparing"),
@@ -153,7 +188,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     port.tasks.patchTaskActivity(taskId, { stage: "llm", stageLabel: t("AI reorganizing"), detail: t("Generating a new note body"), progress: 10 });
     const sessionMeta = { ...input.sessionMeta, _freshBriefing: true };
     const generated = await port.mergeAndPolish(input.segments, mode, sessionMeta, input.originalFrontmatter);
-    const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text));
+    const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text), leadingFrontmatter);
     if (extractTranscriptSegments(next).length < input.segments.length) {
       throw new Error(t("The reorganized note would lose original transcript segments; the note was not changed."));
     }
@@ -187,10 +222,20 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
       throw error;
     }
     await port.clearCommittedBriefingCheckpoint(sessionMeta);
+    let target = file;
+    if (firstOrganizing && mode !== "off" && port.getAutoRenameWithTitle()) {
+      try {
+        const renamed = await port.renameWithGeneratedTitle(file, generated, mode);
+        if (renamed instanceof obsidian.TFile) target = renamed;
+      } catch (error) {
+        // 改名失败不影响已写入的整理结果；只记录，笔记保持原文件名。
+        console.warn("[QnALog] reorganize-in-place title rename failed", error);
+      }
+    }
     port.tasks.patchTaskActivity(taskId, { stage: "postprocess", stageLabel: t("Updating index"), detail: t("Refreshing the note index"), progress: 94 });
-    await port.refreshNoteIndex(file, { reason: "reorganize" });
+    await port.refreshNoteIndex(target, { reason: "reorganize" });
     new obsidian.Notice(t("Note body reorganized"), 7000);
-    port.tasks.completeTaskActivity(taskId, { stage: "done", stageLabel: t("Reorganize completed"), detail: file.path, subject: file.path, progress: 100 });
+    port.tasks.completeTaskActivity(taskId, { stage: "done", stageLabel: t("Reorganize completed"), detail: target.path, subject: target.path, progress: 100 });
   } catch (error) {
     if (taskStarted) port.tasks.failTaskActivity(taskId, error, {
       stage: "failed", stageLabel: t("Reorganize not completed"), detail: getTaskErrorMessage(error), subject: file.path,

@@ -253,7 +253,7 @@ describe("automatic re-organization after backfilling the last failed segment", 
     const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
     await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
     await vi.waitFor(() => expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledTimes(1));
-    expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file);
+    expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file, { firstOrganizing: true });
     expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
     expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
   });

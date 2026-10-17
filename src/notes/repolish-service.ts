@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：重新整理：按说话人姓名重排当前纪要、生成清稿
 
 import * as obsidian from "obsidian";
-import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getModePrefix } from "../shared/mode-meta";
+import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getModePrefix, getVisibleModeEntries } from "../shared/mode-meta";
 import type { PluginSettings } from "../shared/types";
 import { getLearnedLlmOutputCeiling } from "../llm/output-budget";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
@@ -15,7 +15,7 @@ import { stripModeSuggestionBlocks } from "../llm/core";
 import type { RepolishOptions, RepolishFlowBasePort, RepolishFlowPort } from "./repolish-flow";
 import { repolishMarkdownFile as repolishMarkdownFileFlow } from "./repolish-flow";
 import { reorganizeNoteInPlace as reorganizeNoteInPlaceFlow } from "./reorganize-in-place-flow";
-import type { ReorganizeInPlacePort } from "./reorganize-in-place-flow";
+import type { ReorganizeInPlaceOptions, ReorganizeInPlacePort } from "./reorganize-in-place-flow";
 import type { CleanScriptFlowPort } from "./clean-script-flow";
 import { generateCleanScript as generateCleanScriptFlow, findCleanCopy as findCleanCopyFlow } from "./clean-script-flow";
 import type { Segment } from "../shared/types";
@@ -47,16 +47,21 @@ export interface RepolishInteraction {
   pickAudioFile(files: obsidian.TFile[]): Promise<obsidian.TFile | null>;
 }
 
+/** 按整理正文生成标题并改名（由装配入口注入笔记写入器的同名能力）。 */
+export type RepolishTitleRename = (file: obsidian.TFile, polished: string, mode: string) => Promise<unknown>;
+
 export class RepolishService {
   declare interaction: RepolishInteraction;
+  declare renameWithGeneratedTitle: RepolishTitleRename;
   declare host: RepolishHost;
   /** 同一篇笔记的重新整理串行化标记。 */
   declare _repolishInFlight: Set<string> | null;
   /** 同一来源的清稿任务单飞，避免重复请求同时写同一份版本文件。 */
   declare _cleanInFlight: Set<string>;
-  constructor(host: RepolishHost, interaction: RepolishInteraction) {
+  constructor(host: RepolishHost, interaction: RepolishInteraction, renameWithGeneratedTitle: RepolishTitleRename) {
     this.host = host;
     this.interaction = interaction;
+    this.renameWithGeneratedTitle = renameWithGeneratedTitle;
     this._repolishInFlight = null;
     this._cleanInFlight = new Set();
   }
@@ -65,8 +70,8 @@ export class RepolishService {
     return repolishMarkdownFileFlow(this.repolishPort(), file, mode, repolishOptions);
   }
 
-  async reorganizeNoteInPlace(file: unknown): Promise<void> {
-    return reorganizeNoteInPlaceFlow(this.reorganizeInPlacePort(), file);
+  async reorganizeNoteInPlace(file: unknown, options: ReorganizeInPlaceOptions = {}): Promise<void> {
+    return reorganizeNoteInPlaceFlow(this.reorganizeInPlacePort(), file, options);
   }
 
   async findCleanCopy(sourceFile: obsidian.TFile): Promise<obsidian.TFile | null> {
@@ -164,6 +169,11 @@ export class RepolishService {
       mergeAndPolish: (segments, mode, sessionMeta, frontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, frontmatter, null),
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
       recoverOriginalTranscript: (file) => this.recoverTranscript(file),
+      getModeOptions: () => getVisibleModeEntries(this.host.settings, false)
+        .map(([value]) => ({ value, label: getModeDisplayName(this.host.settings, value) })),
+      resolveLinkPath: (link, sourcePath) => this.host.app.metadataCache.getFirstLinkpathDest(link, sourcePath)?.path ?? null,
+      getAutoRenameWithTitle: () => this.host.settings.autoRenameWithTitle,
+      renameWithGeneratedTitle: (file, polished, mode) => this.renameWithGeneratedTitle(file, polished, mode),
       stripModeSuggestionBlocks,
       validateOriginalVersionForReorganization: (file) => this.host.versions.validateOriginalVersionForReorganization(file),
       replaceOriginalVersionBody: (file, payload) => this.host.versions.replaceOriginalVersionBody(file, payload),
