@@ -4,8 +4,26 @@ import type { TaskQueue } from "./task-queue";
 import { labelPattern } from "../shared/note-labels";
 import { formatElapsed } from "../shared/util-common";
 import { stableHash } from "../shared/stable-hash";
-import { nsMarker, NS_CONTINUATION_COMMITTED_MARKER } from "../shared/namespace";
+import { nsMarker, NS_CONTINUATION_COMMITTED_MARKER, NS_FM_SPEAKERS, readNamespaceFrontmatter } from "../shared/namespace";
 import { t } from "../shared/i18n";
+
+// 续录会整篇替换 frontmatter，本次整理结果没有这些属性时会丢失，因此从目标笔记读出已有值并随任务元信息带入整理。
+// 读取失败或没有该属性时对应字段为空，整理行为与之前一致。
+function readTargetRetainedProperties(markdown: string): { audio: string; people: unknown; speakers: unknown } {
+  const empty = { audio: "", people: undefined, speakers: undefined };
+  const match = String(markdown || "").match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return empty;
+  let fields: unknown;
+  try { fields = obsidian.parseYaml(match[1]) as unknown; } catch { return empty; }
+  const audio = readNamespaceFrontmatter(fields, "audio");
+  const people = readNamespaceFrontmatter(fields, "people");
+  const speakers = fields && typeof fields === "object" ? (fields as Record<string, unknown>)[NS_FM_SPEAKERS] : undefined;
+  return {
+    audio: typeof audio === "string" ? audio.trim() : "",
+    people: people === undefined || people === null || people === "" ? undefined : people,
+    speakers: speakers === undefined || speakers === null ? undefined : speakers,
+  };
+}
 
 export type AppendTask = MergeQueueTaskPayload & { id: string; status: string; dependsOnSessionIds?: string[]; temporarySourcePath?: string };
 type AppendQueue = Pick<TaskQueue, "tasks" | "recoveryEntries" | "update">;
@@ -269,6 +287,11 @@ export async function runAppendTask(port: QueueAppendTaskPort, task: AppendTask)
       duration: formatElapsed(port.getDurationMs(mergedSegments)),
       _previousKnowledge: port.getSessionKnowledge(targetMarkdown),
     });
+    // 续录保持目标笔记已有的完整录音、人物与说话人映射：本次录音不是完整录音，不能替换 qnalog_audio。
+    const retained = readTargetRetainedProperties(targetMarkdown);
+    if (retained.audio) sessionMeta.audioPath = retained.audio;
+    if (retained.people !== undefined) sessionMeta.retainedPeople = retained.people;
+    if (retained.speakers !== undefined) sessionMeta.retainedSpeakers = retained.speakers;
     const writeSession: RecordingSession = {
       id: task.sessionId,
       sessionStamp: port.formatMoment("YYYYMMDD-HHmmss", context.recordedAt),

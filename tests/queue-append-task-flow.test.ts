@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("obsidian", () => ({
-  TFile: class TFile { path: string; basename: string; constructor(path: string) { this.path = path; this.basename = path.split("/").pop()?.replace(/\.md$/, "") || ""; } },
-  TFolder: class TFolder { path: string; constructor(path: string) { this.path = path; } },
-  Notice: class Notice {},
-  normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, ""),
-}));
+vi.mock("obsidian", async () => {
+  const yaml = await import("yaml");
+  return {
+    TFile: class TFile { path: string; basename: string; constructor(path: string) { this.path = path; this.basename = path.split("/").pop()?.replace(/\.md$/, "") || ""; } },
+    TFolder: class TFolder { path: string; constructor(path: string) { this.path = path; } },
+    Notice: class Notice {},
+    normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, ""),
+    parseYaml: (text: string) => yaml.parse(text),
+    stringifyYaml: (value: unknown) => yaml.stringify(value),
+  };
+});
 const { mergeMock, clearMock } = vi.hoisted(() => ({ mergeMock: vi.fn(), clearMock: vi.fn(async () => undefined) }));
 vi.mock("../src/briefing/merge-pipeline", () => ({ mergeAndPolish: mergeMock }));
 vi.mock("../src/prompts/briefing-prompts", async (importOriginal) => ({
@@ -18,6 +23,8 @@ import { QueueRetryService } from "../src/queue/queue-retry-service";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import type { Segment } from "../src/shared/types";
+import { postProcessBriefingOutput } from "../src/notes/note-briefing-output";
+import { appendPolishNoteContent, prepareNotePolishParts } from "../src/notes/note-write-content";
 
 afterEach(() => { vi.unstubAllGlobals(); mergeMock.mockReset(); clearMock.mockReset().mockResolvedValue(undefined); });
 const targetPath = "Minutes/target.md";
@@ -151,5 +158,50 @@ describe("append task recovery consumer contract", () => {
     mergeMock.mockResolvedValueOnce("");
     await expect(setupValue.service.runAppendTask(validTask() as never)).rejects.toThrow("Merge returned an empty result");
     expect(setupValue.queueTask.sessionMeta).toBeUndefined();
+  });
+});
+
+describe("append keeps the target note's frontmatter properties", () => {
+  const audio = "QnALog/录音/qnalog-20261017-223207.m4a";
+  const targetWith = (extra: string[]) => ["---", "qnalog_mode: meeting", "qnalog_time: 2026-10-17T22:32:07", "qnalog_duration: 00:12", ...extra, "qnalog_status: organized", "tags:", "  - qnalog/meeting", "---", "# Target", "<!-- qnalog-session:target -->"].join("\n");
+  const frontmatterKeys = (markdown: string) => markdown.slice(0, markdown.indexOf("\n---", 4)).split("\n").filter(line => /^[^\s-][^:]*:/.test(line)).map(line => line.slice(0, line.indexOf(":")));
+  const frontmatterValue = (markdown: string, key: string) => markdown.slice(0, markdown.indexOf("\n---", 4)).split("\n").find(line => line.startsWith(`${key}:`))?.slice(key.length + 1).trim();
+  function runAppend(targetText: string) {
+    const setupValue = setup({ targetText, stageText: stageMarkdown() });
+    mergeMock.mockImplementation(async (_plugin: unknown, _segments: unknown, mode: string, sessionMeta: unknown) =>
+      postProcessBriefingOutput("## 摘要\n续录正文", mode, sessionMeta as never, null, "meeting", "", ""));
+    setupValue.host.noteWriter.commitContinuation.mockImplementation(async (_session: unknown, polished: string) => {
+      const parts = prepareNotePolishParts(polished, "");
+      setupValue.contents.set(targetPath, appendPolishNoteContent({
+        currentMarkdown: setupValue.contents.get(targetPath) ?? "", block: "", polishedFrontmatter: parts.frontmatter,
+        hasMergeError: false, textImport: false, totalMs: 0, continuationSessionId: "",
+      }));
+    });
+    return { setupValue, run: () => setupValue.service.runAppendTask(validTask() as never) };
+  }
+  it("keeps qnalog_audio unchanged and key order mode, time, duration, audio, status", async () => {
+    const { setupValue, run } = runAppend(targetWith([`qnalog_audio: ${audio}`]));
+    await run();
+    const after = setupValue.contents.get(targetPath) ?? "";
+    expect(frontmatterValue(after, "qnalog_audio")).toBe(audio);
+    expect(after.match(/qnalog_audio:/g)).toHaveLength(1);
+    expect(frontmatterKeys(after)).toEqual(["qnalog_mode", "qnalog_time", "qnalog_duration", "qnalog_audio", "qnalog_status", "tags"]);
+  });
+  it("keeps existing people and speaker mapping when the model output omits them", async () => {
+    const { setupValue, run } = runAppend(targetWith([`qnalog_audio: ${audio}`, "qnalog_people:", "  - 李四", "qnalog_speakers:", "  SPEAKER_0: 张三"]));
+    await run();
+    const after = setupValue.contents.get(targetPath) ?? "";
+    expect(after).toContain("qnalog_people:\n  - 李四");
+    expect(after).toContain("qnalog_speakers:\n  SPEAKER_0: 张三");
+    expect(after.match(/qnalog_people:/g)).toHaveLength(1);
+    expect(after.match(/qnalog_speakers:/g)).toHaveLength(1);
+    expect(frontmatterValue(after, "qnalog_audio")).toBe(audio);
+  });
+  it("adds no qnalog_audio when the target note has none", async () => {
+    const { setupValue, run } = runAppend(targetWith([]));
+    await run();
+    const after = setupValue.contents.get(targetPath) ?? "";
+    expect(after).not.toContain("qnalog_audio");
+    expect(frontmatterKeys(after)).toEqual(["qnalog_mode", "qnalog_time", "qnalog_duration", "qnalog_status", "tags"]);
   });
 });

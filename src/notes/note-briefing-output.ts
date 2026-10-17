@@ -253,7 +253,7 @@ function normalizeGeneralTodoLabels(markdown: string, language: GeneralSourceLan
 export function postProcessBriefingOutput(
   rawOutput: string | null | undefined,
   mode: string,
-  sessionMeta: { startedAt?: unknown; duration?: unknown; audioPath?: unknown } | null | undefined,
+  sessionMeta: { startedAt?: unknown; duration?: unknown; audioPath?: unknown; retainedPeople?: unknown; retainedSpeakers?: unknown } | null | undefined,
   originalFrontmatter: unknown,
   baseKey: string,
   topNotice = "",
@@ -286,6 +286,8 @@ export function postProcessBriefingOutput(
     ? Object.assign({} as Record<string, unknown>, originalFrontmatter)
     : (llmFm && typeof llmFm === "object" ? Object.assign({} as Record<string, unknown>, llmFm) : {});
   const base: FrontmatterFields = normalizeBriefingFrontmatterFields(rawBase, mode, baseKey);
+  // 续录没有原始 frontmatter 可读：调用方传入目标笔记已有的说话人映射时，以它为准保留。
+  if (sessionMeta?.retainedSpeakers !== undefined && sessionMeta.retainedSpeakers !== null) base[NS_FM_SPEAKERS] = sessionMeta.retainedSpeakers;
 
   base[NS_FM.mode] = mode;
   if (sessionMeta && sessionMeta.startedAt) {
@@ -327,7 +329,7 @@ export function postProcessBriefingOutput(
 
   // qnalog_people：合并机器块、标签里的 人物/ 值与已有属性，归一去重。
   // 重新整理时旧 tags 会在此按需迁入 canonical 属性。
-  let people: string[] = splitPersonFieldValue(base[NS_FM.people] || []);
+  let people: string[] = mergeUniqueStrings(splitPersonFieldValue(base[NS_FM.people] || []), sessionMeta?.retainedPeople);
   people = mergeUniqueStrings(people, suggestedPeople);
   people = mergeUniqueStrings(people, peopleFromTags);
   people = mergeUniqueStrings(people, existingPeopleFromTags);
