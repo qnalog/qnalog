@@ -331,7 +331,10 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       session.shortRecordingText = undefined;
     } else {
       const content = classifyShortRecordingContent(text, session.shortRecordingDurationMs || 0);
-      if (content === "blank") session.shortRecordingTier = "discard";
+      if (content === "blank") {
+        session.shortRecordingTier = "discard";
+        session.shortRecordingBlank = true;
+      }
       else if (content === "anomalous") {
         session.shortRecordingTier = "keep-audio";
         session.shortRecordingText = undefined;
