@@ -11,7 +11,8 @@ import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../au
 import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
 import { isSpeakerDiarizationProvider } from "../asr/diarization";
 import { buildTranscriptSessionSkeleton } from "../notes/note-transcript-materials";
-import type { RecorderChannelInfo, RecorderService } from "../audio/recorder-service";
+import type { MasterFlushPayload, RecorderChannelInfo, RecorderService } from "../audio/recorder-service";
+import type { MasterPartialSession, MasterPartialSessionInit } from "./master-partial";
 import type { NoteWriter } from "../notes/note-writer";
 import { handleRecordedSegment, type RecordingSegmentHost } from "./recording-segment-flow";
 import { t } from "../shared/i18n";
@@ -92,6 +93,8 @@ export interface RecordingHost {
     cancelPrepared(taskId: string, stageFile: obsidian.TFile): Promise<void>;
   };
   recorder: Pick<RecorderService, "state" | "start" | "stop" | "releaseStream" | "getInfo" | "masterChunks" | "chunks"> | null;
+  /** 创建本场录音的母带分片写入器；录音中每隔一段时间把新增音频写入分片目录。 */
+  createMasterPartialSession(init: MasterPartialSessionInit): MasterPartialSession;
   saveSettings(): Promise<void>;
   sessionStore: Pick<SessionStore, "begin" | "end">;
   asrPipeline: RecordingPipelineHost;
@@ -366,12 +369,21 @@ export class RecordingService {
         if (providerStreamReady) await providerStreamReady(mediaStream);
       };
 
+      const partialSession = this.host.createMasterPartialSession({
+        sessionId,
+        audioFolder: this.host.settings.audioFolder,
+        notePath: mdPath,
+        startedAt: startedAt.valueOf(),
+        sourceMode: captureMode,
+        mode,
+      });
       await this.getRecorder().start({
         segmentDurationMs,
         quickCutMarksMs: segmentDurationMs > 0 ? QUICK_INTERIM_CUTS_MS : [],
         captureMode,
         onSegment: (seg) => this.handleSegment(sessionRef, seg),
         onStreamReady,
+        onMasterFlush: (payload) => this.flushMasterPartial(sessionId, partialSession, payload),
       });
       if (this.host.settings.autoOpenOutlineOnRecord) {
         try { await this.host.requestOpenOutlineView(); } catch (e: unknown) { console.error("[QnALog] auto-open outline failed", e); }
@@ -430,6 +442,39 @@ export class RecordingService {
     } finally {
       this.starting = false;
     }
+  }
+
+  /** 母带增量落盘：成功返回 true；失败时记录录音问题，分片保留到下一个间隔重试。 */
+  private partialSaveFailed = false;
+  async flushMasterPartial(sessionId: string, partialSession: MasterPartialSession, payload: MasterFlushPayload): Promise<boolean> {
+    const result = await partialSession.append(payload.blob, payload.mime);
+    if (result.ok === true) {
+      if (this.partialSaveFailed) {
+        this.partialSaveFailed = false;
+        this.host.asrPipeline.clearRecordingIssue("service");
+      }
+      void this.host.diagnostics.logDiagnostic("debug", "recording.partial_flushed", t("Recording audio was saved to the in-progress file"), {
+        sessionId,
+        partCount: result.partCount,
+        bytes: result.bytes,
+        writeMs: result.writeMs,
+        chunkCount: payload.chunkCount,
+      });
+      return true;
+    }
+    // 场次已结束（正式保存后关闭）时的迟到结果不算失败。
+    if (result.ok === false && result.reason === "closed") return false;
+    this.partialSaveFailed = true;
+    this.host.asrPipeline.setRecordingIssue("service", {
+      reason: "partial-save-failed",
+      message: t("Saving the in-progress recording audio failed. It stays in memory and will be retried automatically. Check the vault disk space."),
+    });
+    void this.host.diagnostics.logDiagnostic("error", "recording.partial_flush_failed", t("Saving the in-progress recording audio failed; it will be retried"), {
+      sessionId,
+      chunkCount: payload.chunkCount,
+      error: result.ok === false ? diagnosticError(result.error) : null,
+    });
+    return false;
   }
 
   async stopRecording(): Promise<void> {

@@ -1,3 +1,4 @@
+import type { MasterPartialSession } from "../src/audio/master-partial";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // 短录音整条路径的冒烟测试：真的调用 RecordingService.handleSegment 与 SessionFinalizeService，
@@ -228,6 +229,12 @@ function makeHost() {
     classifyRecordingIssue: recordingIssues.classifyRecordingIssue,
     createStreamingTranscriptionClient: recordingIssues.createStreamingTranscriptionClient,
     createPcmEncoder: (stream, options) => new PcmStreamEncoder(stream, options),
+    createMasterPartialSession: () => ({
+      append: async () => ({ ok: true, partCount: 1, bytes: 0, writeMs: 0 }),
+      drain: async () => undefined,
+      close: () => undefined,
+      directory: "",
+    }) as unknown as MasterPartialSession,
   };
   let recordingService: RecordingService;
   recordingService = new RecordingService(recordingHost);
@@ -243,6 +250,7 @@ function makeHost() {
     removeQueueTask: (id) => host.queue.remove(id),
     removeLiveTranscriptBlock: (path, sessionId) => host.meetingWorkbench.removeLiveTranscriptBlock(path, sessionId),
     getRecorderBufferSummary: () => recordingService.getRecorderBufferSummary(),
+    discardMasterPartials: async () => undefined,
     syncImportBusyFromSessionProgress: () => undefined,
     requestOutlineRefresh: () => host.requestOutlineRefresh(),
     requestBubbleUpdate: () => undefined,

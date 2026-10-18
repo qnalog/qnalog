@@ -93,6 +93,7 @@ import type { ErrataUiPort } from "./ui/errata-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
+import { MasterPartialService } from "./audio/master-partial-service";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "./shared/util-vault";
 import { LiveAsrPipelineService } from "./asr/live-asr-pipeline-service";
 import { SessionFinalizeService } from "./notes/session-finalize-service";
@@ -145,6 +146,7 @@ class QnALogPlugin extends obsidian.Plugin {
   declare sessionFinalize: SessionFinalizeService;
   declare continuations: ContinuationService;
   declare recording: RecordingService;
+  declare masterPartials: MasterPartialService;
   declare asrPipeline: LiveAsrPipelineService;
   declare shell: ViewShellService;
   declare library: LibraryViewService;
@@ -289,6 +291,21 @@ class QnALogPlugin extends obsidian.Plugin {
     this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
+    this.masterPartials = new MasterPartialService({
+      adapter: this.app.vault.adapter,
+      getAudioFolder: () => this.settings.audioFolder,
+      logDiagnostic: (level, code, message, data) => this.diagnostics.logDiagnostic(level, code, message, data),
+      importAudioFiles: (paths) => this.imports.importAudioFiles(paths, undefined),
+      showNotice: (message, timeoutMs) => {
+        const notice = new obsidian.Notice(message, timeoutMs);
+        return {
+          addButton: (label, onClick) => {
+            const button = notice.messageEl.createEl("button", { text: label, attr: { type: "button" } });
+            button.addEventListener("click", onClick);
+          },
+        };
+      },
+    });
     const getRecordingOwner = () => this;
     this.recording = new RecordingService({
       ensureFolder: (path) => ensureVaultFolder(getRecordingOwner().app, path),
@@ -312,6 +329,7 @@ class QnALogPlugin extends obsidian.Plugin {
       classifyRecordingIssue,
       createStreamingTranscriptionClient,
       createPcmEncoder: (stream, options) => new PcmStreamEncoder(stream, options),
+      createMasterPartialSession: (init) => this.masterPartials.createSession(init),
     });
     this.asrPipeline = new LiveAsrPipelineService({
       getSettings: () => this.settings,
@@ -328,6 +346,7 @@ class QnALogPlugin extends obsidian.Plugin {
       syncImportBusyFromSessionProgress: (session) => this.tasks.syncImportBusyFromSessionProgress(session),
       requestOutlineRefresh: () => this.shell.refreshOutlineView(),
       requestBubbleUpdate: () => this.bubble?.scheduleUpdate(),
+      discardMasterPartials: (sessionId, savedPath) => this.masterPartials.discard(sessionId, savedPath),
     });
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);
@@ -938,6 +957,7 @@ class QnALogPlugin extends obsidian.Plugin {
       window.setTimeout(() => { void this.queueRetry.retryQueue(); }, 2500);
     }
     this.app.workspace.onLayoutReady(() => {
+      void this.masterPartials.recoverInterrupted();
       this.warnIfBuildManifestSkew();
       this.externalInbox.refreshExternalInboxWatcher();
       const inboxTimer = window.setTimeout(() => {
