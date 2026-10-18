@@ -7,6 +7,7 @@ import { getErrorMessage } from "../shared/util-common";
 import {
   MasterPartialSession,
   markPartialSaved,
+  partialRootPath,
   partialSessionPath,
   removePartialDirectory,
   type MasterPartialAdapter,
@@ -72,6 +73,20 @@ export class MasterPartialService {
           error: diagnosticError(markError),
         });
       }
+      return;
+    }
+    await this.removeEmptyRoot();
+  }
+
+  /** 没有任何场次目录时删除 `.partial` 根目录；仍有其他场次时保留。 */
+  private async removeEmptyRoot(): Promise<void> {
+    const root = partialRootPath(this.host.getAudioFolder());
+    try {
+      if (!(await this.host.adapter.exists(root))) return;
+      const listing = await this.host.adapter.list(root);
+      if (listing.files.length === 0 && listing.folders.length === 0) await this.host.adapter.rmdir(root, false);
+    } catch {
+      // 根目录非空或被占用时保留即可；下次启动的恢复会忽略空根目录。
     }
   }
 

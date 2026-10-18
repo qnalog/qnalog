@@ -77,6 +77,23 @@ describe("MasterPartialService discard after a saved master audio", () => {
     expect(io.dirs.has(dirOf("s-discard"))).toBe(false);
   });
 
+  it("removes the empty partial root after the last session is discarded, and keeps it while another session remains", async () => {
+    const io = new MemoryAdapter();
+    const { host } = makeHost(io);
+    const service = new MasterPartialService(host);
+    const first = service.createSession(init("s-first"));
+    const second = service.createSession(init("s-second"));
+    await first.append(new Blob(["1"], { type: MIME }), MIME);
+    await second.append(new Blob(["2"], { type: MIME }), MIME);
+    const root = `${AUDIO_FOLDER}/.partial`;
+
+    await service.discard("s-first", `${AUDIO_FOLDER}/qnalog-1.webm`);
+    expect(io.dirs.has(root)).toBe(true);
+    await service.discard("s-second", `${AUDIO_FOLDER}/qnalog-2.webm`);
+    expect(io.dirs.has(root)).toBe(false);
+    expect([...io.dirs, ...io.files.keys()].some((key) => key.includes(".partial"))).toBe(false);
+  });
+
   it("marks the folder as saved when removal fails, so a later start does not recover the same audio", async () => {
     const io = new MemoryAdapter();
     const { host, logs } = makeHost(io);

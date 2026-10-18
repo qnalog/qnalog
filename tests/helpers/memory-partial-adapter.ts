@@ -44,7 +44,10 @@ export class MemoryAdapter implements MasterPartialAdapter {
   async remove(path: string): Promise<void> { this.files.delete(path); }
   async rmdir(path: string, recursive: boolean): Promise<void> {
     if (this.hooks.rmdir) this.hooks.rmdir(path);
-    if (!recursive) throw new Error("non-recursive rmdir is not used");
+    const prefix = `${path}/`;
+    const hasChildren = [...this.files.keys()].some((key) => key.startsWith(prefix))
+      || [...this.dirs].some((dir) => dir.startsWith(prefix));
+    if (!recursive && hasChildren) throw new Error(`ENOTEMPTY ${path}`);
     for (const key of [...this.files.keys()]) if (key.startsWith(`${path}/`)) this.files.delete(key);
     for (const dir of [...this.dirs]) if (dir === path || dir.startsWith(`${path}/`)) this.dirs.delete(dir);
   }
