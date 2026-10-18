@@ -7,8 +7,8 @@ import { getErrorMessage } from "../shared/util-common";
 import {
   MasterPartialSession,
   markPartialSaved,
-  partialRootPath,
   partialSessionPath,
+  removeEmptyPartialRoot,
   removePartialDirectory,
   type MasterPartialAdapter,
   type MasterPartialSessionInit,
@@ -75,18 +75,17 @@ export class MasterPartialService {
       }
       return;
     }
-    await this.removeEmptyRoot();
+    await this.cleanupEmptyRoot();
   }
 
-  /** 没有任何场次目录时删除 `.partial` 根目录；仍有其他场次时保留。 */
-  private async removeEmptyRoot(): Promise<void> {
-    const root = partialRootPath(this.host.getAudioFolder());
+  /** 没有任何场次目录时删除 `.partial` 根目录；删除失败只记录警告，不影响已保存的母带。 */
+  private async cleanupEmptyRoot(): Promise<void> {
     try {
-      if (!(await this.host.adapter.exists(root))) return;
-      const listing = await this.host.adapter.list(root);
-      if (listing.files.length === 0 && listing.folders.length === 0) await this.host.adapter.rmdir(root, false);
-    } catch {
-      // 根目录非空或被占用时保留即可；下次启动的恢复会忽略空根目录。
+      await removeEmptyPartialRoot(this.host.adapter, this.host.getAudioFolder());
+    } catch (error) {
+      await this.host.logDiagnostic("warn", "recording.partial_root_kept", t("The empty partial folder could not be removed"), {
+        error: diagnosticError(error),
+      });
     }
   }
 
@@ -107,6 +106,7 @@ export class MasterPartialService {
       });
       return [];
     }
+    await this.cleanupEmptyRoot();
     for (const outcome of outcomes) {
       if (outcome.status === "recovered") this.showRecoveredNotice(outcome.path);
       if (outcome.status === "failed") {

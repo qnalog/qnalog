@@ -210,6 +210,16 @@ export async function removePartialDirectory(adapter: MasterPartialAdapter, dir:
   await adapter.rmdir(dir, true);
 }
 
+/** 录音目录下已没有任何场次目录时删除 `.partial` 根目录；仍有内容时保留。返回是否已删除。 */
+export async function removeEmptyPartialRoot(adapter: MasterPartialAdapter, audioFolder: string): Promise<boolean> {
+  const root = partialRootPath(audioFolder);
+  if (!(await adapter.exists(root))) return false;
+  const listing = await adapter.list(root);
+  if (listing.files.length > 0 || listing.folders.length > 0) return false;
+  await adapter.rmdir(root, false);
+  return true;
+}
+
 /** 在分片目录的 meta.json 中记下已正式保存的完整母带路径；失败时由调用方决定如何处理。 */
 export async function markPartialSaved(adapter: MasterPartialAdapter, dir: string, savedPath: string): Promise<void> {
   const metaPath = `${dir}/${PARTIAL_META_FILE}`;

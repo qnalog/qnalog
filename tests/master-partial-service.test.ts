@@ -94,6 +94,20 @@ describe("MasterPartialService discard after a saved master audio", () => {
     expect([...io.dirs, ...io.files.keys()].some((key) => key.includes(".partial"))).toBe(false);
   });
 
+  it("logs a warning and still succeeds when only the empty root cannot be removed", async () => {
+    const io = new MemoryAdapter();
+    const { host, logs } = makeHost(io);
+    const service = new MasterPartialService(host);
+    const session = service.createSession(init("s-root"));
+    await session.append(new Blob(["r"], { type: MIME }), MIME);
+    io.hooks.rmdir = (path) => { if (path === `${AUDIO_FOLDER}/.partial`) throw new Error("root busy"); };
+
+    await expect(service.discard("s-root", `${AUDIO_FOLDER}/qnalog-root.webm`)).resolves.toBeUndefined();
+    expect(io.dirs.has(dirOf("s-root"))).toBe(false);
+    expect(io.dirs.has(`${AUDIO_FOLDER}/.partial`)).toBe(true);
+    expect(logs.map((entry) => entry.code)).toEqual(["recording.partial_root_kept"]);
+  });
+
   it("marks the folder as saved when removal fails, so a later start does not recover the same audio", async () => {
     const io = new MemoryAdapter();
     const { host, logs } = makeHost(io);
@@ -140,6 +154,7 @@ describe("MasterPartialService startup recovery notices", () => {
     expect(notices[0]!.buttons.map((button) => button.label)).toEqual(["Import and transcribe"]);
     expect(importAudioFiles).not.toHaveBeenCalled();
 
+    expect(io.dirs.has(`${AUDIO_FOLDER}/.partial`)).toBe(false);
     notices[0]!.buttons[0]!.click();
     expect(importAudioFiles).toHaveBeenCalledTimes(1);
     expect(importAudioFiles).toHaveBeenCalledWith([recovered]);

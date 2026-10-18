@@ -3143,4 +3143,5 @@ export const ZH: MessageTable = {
   "Interrupted recording was recovered from its partial files": "已从临时文件恢复中断的录音",
   "The recovered recording was saved, but its partial files could not be removed": "恢复的录音已保存，但临时文件无法删除",
   "The recovery record could not be written; the partial files are still kept": "恢复记录无法写入，临时文件已保留",
+  "The empty partial folder could not be removed": "无法删除空的临时文件夹",
 };
