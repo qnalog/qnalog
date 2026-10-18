@@ -37,11 +37,14 @@ export interface QueueTranscribeRetryPort {
   getQueueTasks(): readonly { id?: string; type?: string; mdPath?: string; continuation?: unknown; sessionId?: string }[];
   detectMode(file: obsidian.TFile): string | undefined;
   getDefaultPolishMode(): string;
-  repolish(file: obsidian.TFile, mode: string): Promise<void>;
+  /** 普通重新整理（派生版本）；返回 true 表示派生版本已写入。 */
+  repolish(file: obsidian.TFile, mode: string): Promise<boolean>;
   /** 读取笔记当前内容，用于判断整理正文是否已有实际内容。 */
   readNote(file: obsidian.TFile): Promise<string>;
-  /** 原地整理：把整理正文写回原笔记（用于原笔记尚无整理正文的情形）。 */
-  reorganizeInPlace(file: obsidian.TFile): Promise<void>;
+  /** 原地整理：把整理正文写回原笔记（用于原笔记尚无整理正文的情形）；返回 true 表示正文已写入。 */
+  reorganizeInPlace(file: obsidian.TFile): Promise<boolean>;
+  /** 移除同一笔记的首次整理（merge）任务，见 TaskQueue.removeMergeTasksForNote。 */
+  removeMergeTasksForNote(mdPaths: readonly string[], sessionId: string | undefined): Promise<number>;
 }
 
 export async function retryTranscribeTask(port: QueueTranscribeRetryPort, task: TranscribeRetryTask): Promise<void> {
@@ -231,8 +234,15 @@ function maybeAutoRepolish(port: QueueTranscribeRetryPort, task: TranscribeRetry
   void (async () => {
     try {
       const content = await port.readNote(mdFile);
-      if (hasOrganizedBody(content)) await port.repolish(mdFile, mode);
-      else await port.reorganizeInPlace(mdFile);
+      const organized = hasOrganizedBody(content)
+        ? await port.repolish(mdFile, mode)
+        : await port.reorganizeInPlace(mdFile);
+      // 整理已成功写回后，首次整理任务持有的旧分段快照已失效，必须移出队列，否则会在笔记已整理后再次运行。
+      // 整理失败时保留这些任务，由队列原有的重试路径处理。
+      if (organized) {
+        // 改名会迁移队列中的路径，因此同时匹配原路径与笔记当前路径。
+        await port.removeMergeTasksForNote([mdNorm, obsidian.normalizePath(mdFile.path)], task.sessionId);
+      }
     }
     catch (error) {
       try { await port.logDiagnostic("error", "queue.auto_repolish_failed", t("Automatic re-organization after backfilling transcription failed"), { mdPath: mdNorm, error: diagnosticError(error) }); }

@@ -147,16 +147,17 @@ export function buildReorganizedNote(
   return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${preservedRaw}${keptTail}`);
 }
 
-export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: unknown, options: ReorganizeInPlaceOptions = {}): Promise<void> {
-  if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
+export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: unknown, options: ReorganizeInPlaceOptions = {}): Promise<boolean> {
+  if (!(file instanceof obsidian.TFile) || file.extension !== "md") return false;
   const lock = `repolish:${file.path}`;
   const inFlight = port.getInFlight();
   if (inFlight.has(lock)) {
     new obsidian.Notice(t("This note is being reorganized; please wait for the current task to finish."), 6000);
-    return;
+    return false;
   }
   inFlight.add(lock);
   const taskId = `reorganize-in-place:${file.path}`;
+  let succeeded = false;
   let taskStarted = false;
   try {
     let snapshot = await port.getVault().read(file);
@@ -221,6 +222,8 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
       if (snapshotUpdate) await port.restoreOriginalVersionBody(file, snapshotUpdate);
       throw error;
     }
+    // The organized body is now in the note; later failures (rename, index) do not undo it.
+    succeeded = true;
     await port.clearCommittedBriefingCheckpoint(sessionMeta);
     let target = file;
     if (firstOrganizing && mode !== "off" && port.getAutoRenameWithTitle()) {
@@ -244,4 +247,5 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
   } finally {
     inFlight.delete(lock);
   }
+  return succeeded;
 }

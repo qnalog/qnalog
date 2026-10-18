@@ -164,6 +164,28 @@ export class TaskQueue {
     await this.host.persistQueue();
     this.emitChange();
   }
+  /**
+   * 移除同一笔记的首次整理（merge）任务，用于补转写后的原地/派生重新整理已成功写回之后：
+   * 这些任务持有的分段快照已被新整理结果取代，留着会在笔记已整理完成后再次运行。
+   * 匹配规则：路径（含改名前后的路径）相同；若给出 sessionId，还要求任务的 sessionId 相同。
+   * 续录（continuation）任务与正在运行的任务不移除。
+   */
+  async removeMergeTasksForNote(mdPaths: readonly string[], sessionId: string | undefined): Promise<number> {
+    const paths = new Set(mdPaths.map(p => obsidian.normalizePath(String(p || ""))).filter(Boolean));
+    const before = this.tasks.length;
+    this.tasks = this.tasks.filter(t => !(t
+      && t.type === "merge"
+      && !t.continuation
+      && t.status !== "running"
+      && paths.has(obsidian.normalizePath(String(t.mdPath || "")))
+      && (!sessionId || String(t.sessionId || "") === sessionId)));
+    const removed = before - this.tasks.length;
+    if (removed > 0) {
+      await this.host.persistQueue();
+      this.emitChange();
+    }
+    return removed;
+  }
   async update(id: string, patch: Partial<QueueTask>): Promise<void> {
     const t = this.tasks.find(x => x.id === id);
     if (!t) return;
