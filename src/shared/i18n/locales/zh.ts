@@ -407,6 +407,7 @@ export const ZH: MessageTable = {
   "⏭ This recording was too short or had no valid audio; skipped": "⏭ 本次录音时长过短或无有效音频，已跳过",
   "Filtered out recordings shorter than one second": "已过滤不足一秒的录音",
   "Short recording was not made into a note; audio was kept. Recognized: {0}": "录音较短，未建笔记，已保留音频。识别到：{0}",
+  "No text was recognized, but sound was detected; the audio was kept in the recording folder and no note was created. Import it manually to retry.": "未识别出文字，但录到了声音；已保留音频到录音文件夹，未建笔记。可手动导入重试。",
   "Short recording transcription result was anomalous (text volume far exceeded recording duration); audio was kept and no note was created. You can manually import it later to retry.": "短录音的识别结果异常（文字量远超录音时长），已保留音频，未建笔记。可稍后手动导入重试。",
   "Short recording transcription failed; audio and a retry task were kept: {0}": "短录音转写失败，已保留音频并加入待处理重试：{0}",
   "The transcription result does not match the recording duration. The recording has been kept and can be retried.": "转写结果与录音时长不符，已保留录音，可重试转写",
