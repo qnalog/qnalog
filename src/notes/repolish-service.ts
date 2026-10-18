@@ -66,11 +66,11 @@ export class RepolishService {
     this._cleanInFlight = new Set();
   }
 
-  async repolishMarkdownFile(file: unknown, mode: string, repolishOptions: RepolishOptions = null): Promise<void> {
+  async repolishMarkdownFile(file: unknown, mode: string, repolishOptions: RepolishOptions = null): Promise<boolean> {
     return repolishMarkdownFileFlow(this.repolishPort(), file, mode, repolishOptions);
   }
 
-  async reorganizeNoteInPlace(file: unknown, options: ReorganizeInPlaceOptions = {}): Promise<void> {
+  async reorganizeNoteInPlace(file: unknown, options: ReorganizeInPlaceOptions = {}): Promise<boolean> {
     return reorganizeNoteInPlaceFlow(this.reorganizeInPlacePort(), file, options);
   }
 
