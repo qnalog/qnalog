@@ -210,13 +210,18 @@ export async function removePartialDirectory(adapter: MasterPartialAdapter, dir:
   await adapter.rmdir(dir, true);
 }
 
-/** 录音目录下已没有任何场次目录时删除 `.partial` 根目录；仍有内容时保留。返回是否已删除。 */
+/**
+ * 录音目录下已没有任何场次目录时删除 `.partial` 根目录；仍有内容时保留。返回是否已删除。
+ * 只能用递归删除：桌面端 `rmdir(路径, false)` 对目录报 EISDIR（实测），不会删除空目录。
+ * 递归删除前已列出目录确认为空；列出与删除之间若有新场次目录出现，会一并删除，
+ * 但新场次要到第一次落盘（录音约 20 秒后）才创建目录，正常使用中不会在这一瞬间出现。
+ */
 export async function removeEmptyPartialRoot(adapter: MasterPartialAdapter, audioFolder: string): Promise<boolean> {
   const root = partialRootPath(audioFolder);
   if (!(await adapter.exists(root))) return false;
   const listing = await adapter.list(root);
   if (listing.files.length > 0 || listing.folders.length > 0) return false;
-  await adapter.rmdir(root, false);
+  await adapter.rmdir(root, true);
   return true;
 }
 
