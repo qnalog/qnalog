@@ -1,11 +1,13 @@
 import * as obsidian from "obsidian";
 import type { RecordingSession, Segment } from "../shared/types";
 import { readTranscriptBlocks, replaceTranscriptBlock } from "../transcript/transcript-markdown";
+import { repairDuplicateTranscriptBlocksInNote } from "../transcript/repair-duplicate-transcript-blocks";
 import { normalizeSegmentsForMergedNote } from "./note-source-metadata";
 
 export interface SessionTranscriptSourcePort {
-  getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "modify">;
+  getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "modify" | "process">;
   bindSegmentToAudio(segment: Segment, masterPath: string, audioName: string): Segment;
+  logDiagnostic(level: "warn" | "error", code: string, message: string, data: Record<string, unknown>): Promise<unknown>;
 }
 
 export async function syncTranscriptAudioSource(port: SessionTranscriptSourcePort, session: RecordingSession): Promise<void> {
@@ -17,7 +19,11 @@ export async function syncTranscriptAudioSource(port: SessionTranscriptSourcePor
   if (!changed.length) return;
   const file = port.getVault().getAbstractFileByPath(session.mdPath);
   if (!(file instanceof obsidian.TFile)) throw new Error("Cannot bind transcript sources without the session note");
-  const markdown = await port.getVault().read(file);
+  const storedMarkdown = await port.getVault().read(file);
+  const markdown = await repairDuplicateTranscriptBlocksInNote({
+    process: (target, update) => port.getVault().process(target, update),
+    logDiagnostic: (level, code, message, data) => port.logDiagnostic(level, code, message, data),
+  }, file, storedMarkdown);
   const blocks = readTranscriptBlocks(markdown);
   const replacements = changed.map((segment) => {
     const id = segment.transcript.id;

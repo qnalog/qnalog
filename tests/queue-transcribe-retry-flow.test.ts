@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const asr = vi.hoisted(() => ({ transcribe: vi.fn(), channels: vi.fn(), whole: vi.fn(), notices: [] as string[] }));
@@ -18,6 +19,7 @@ import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { MAX_SPEAKER_CHANNELS } from "../src/audio/channel-speakers";
 import { labelText } from "../src/shared/note-labels";
 import { nsMarker } from "../src/shared/namespace";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -366,5 +368,27 @@ describe("stale first-time merge tasks after automatic re-organization", () => {
     await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
     await vi.waitFor(() => expect(queue.tasks.map((task) => task.id)).not.toContain("merge-stale"));
     expect(queue.tasks.map((task) => task.id)).toEqual(["merge-similar-suffix", "merge-similar-folder"]);
+  });
+});
+
+describe("transcription retry with duplicated transcript blocks", () => {
+  it("repairs a note with two placeholder blocks for one transcript id, then writes the transcript into the single remaining block", async () => {
+    const duplicated = readFileSync(new URL("./fixtures/duplicate-transcript-blocks.md", import.meta.url), "utf8");
+    const fixture = setup(duplicated);
+    fixture.task.sessionId = "qnalog-mvcjgw9z-b3kio1";
+    fixture.task.id = "qnalog-mvcjh42p-qcw051";
+    fixture.task.endOffsetMs = 10_000;
+
+    await fixture.service.retryTranscribeTask(fixture.task as never);
+
+    const finalMarkdown = fixture.contents.get(fixture.file.path) ?? "";
+    const blocks = readTranscriptBlocks(finalMarkdown);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].segment.transcript?.id).toBe("seg:qnalog-mvcjgw9z-b3kio1:0");
+    expect(blocks[0].visibleBlock).toBe("recognized words");
+    expect(finalMarkdown.match(/qnalog-segments-end:/g)).toHaveLength(1);
+    expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "transcript.duplicate_block_repaired", expect.any(String), expect.objectContaining({
+      ids: ["seg:qnalog-mvcjgw9z-b3kio1:0"], blockCounts: [2], removedCounts: [1],
+    }));
   });
 });
