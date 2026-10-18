@@ -153,6 +153,7 @@ export class SessionFinalizeService {
     return {
       getVault: () => this.host.app.vault,
       bindSegmentToAudio: (segment, path, name) => bindTranscriptSegmentToAudio(segment, path, name),
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
     };
   }
 

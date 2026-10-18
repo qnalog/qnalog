@@ -8,6 +8,7 @@ import { mimeFromExt, getTranscribeSegmentPlaceholder, isTransientAsrError } fro
 import { diagnosticError } from "../shared/util-key-diag";
 import { NS_AUDIO_PREFIX, nsMarker } from "../shared/namespace";
 import { labelText } from "../shared/note-labels";
+import { ASR_EMPTY_RESULT_SOFT_LIMIT_MS } from "../shared/limits";
 import { t } from "../shared/i18n";
 import { attachTranscriptResult, splitTranscriptTextUnits } from "../transcript/session-transcript";
 import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
@@ -56,6 +57,21 @@ export interface LiveSegmentPort {
   logDiagnostic(level: string, code: string, message: string, data: unknown): Promise<unknown>;
   requestOutlineRefresh(): void;
   scheduleRealtimeOutline(): void;
+}
+
+function isEmptyAudioBlob(blob: Blob | null | undefined): boolean {
+  return !!blob && blob.size === 0;
+}
+
+/** 0 字节段落的成功空白结果：带 noSpeech 标记，使 30 秒空结果闸门不把它当作失败。 */
+function emptySegmentAsrResult(providerId: string): AsrTranscriptResult {
+  return { text: "", rawText: "", providerId, units: [], noSpeech: true };
+}
+
+async function logEmptySegmentSkipped(port: LiveSegmentPort, data: { segmentIndex: number; durationMs: number; isFinal: boolean }): Promise<void> {
+  try {
+    await port.logDiagnostic("info", "asr.empty_segment_skipped", t("Segment audio is empty; it was recorded as an empty segment without a transcription request"), data);
+  } catch { /* intentionally empty */ }
 }
 
 export async function processLiveSegment(port: LiveSegmentPort, session: RecordingSession, seg: PreparedLiveSegment): Promise<void> {
@@ -148,6 +164,10 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   } else if (isStreamingProvider) {
     err = new Error(t("The streaming transcription connection could not be established. Check your API key and network, then record again."));
     console.error("[QnALog]", err.message);
+  } else if (isEmptyAudioBlob(seg.blob || (spoolResult && spoolResult.fallbackBlob) || null)) {
+    // 0 字节的段落音频没有可转写内容：不发请求、不记失败、不建重试任务，按成功的空白段处理。
+    asrResult = emptySegmentAsrResult(String(activeProfile && activeProfile.id || port.getSettings().activeTranscribeProvider || ""));
+    await logEmptySegmentSkipped(port, { segmentIndex, durationMs: segmentDurationMs, isFinal: !!seg.isFinal });
   } else {
     const circuitOpen = isLiveAsrCircuitOpen(session.asrCircuitState || createLiveAsrCircuitState()) || port.isServiceCircuitOpen();
     if (session.asrDeferredMode || circuitOpen) {
@@ -162,7 +182,11 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       }
       if (!transcribeBlob && seg.blob) transcribeBlob = seg.blob;
       if (!transcribeBlob) err = new Error(t("The recorded segment cache could not be read; the background retry task has been kept"));
-      else {
+      else if (isEmptyAudioBlob(transcribeBlob)) {
+        // 缓存读回的段落音频为 0 字节：与上面的空白段处理保持一致。
+        asrResult = emptySegmentAsrResult(String(activeProfile && activeProfile.id || port.getSettings().activeTranscribeProvider || ""));
+        await logEmptySegmentSkipped(port, { segmentIndex, durationMs: segmentDurationMs, isFinal: !!seg.isFinal });
+      } else {
         batchAsrAttempted = true;
         try {
           const transcribeMime = transcribeBlob.type || seg.blobType || mimeFromExt(seg.ext);
@@ -236,7 +260,7 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
   }
   // 空白结果（静音块，或服务明确回报无语音）是成功的空白段，不论时长都不按失败处理。
   const blankEmptyResult = isBlankAsrResult(asrResult);
-  if (!err && !String(text || "").trim() && segmentDurationMs >= 30 * 1000 && !blankEmptyResult) {
+  if (!err && !String(text || "").trim() && segmentDurationMs >= ASR_EMPTY_RESULT_SOFT_LIMIT_MS && !blankEmptyResult) {
     err = new Error(t("Transcription returned an empty result (the service responded but returned no text)"));
     asrResult = null;
     if (batchAsrAttempted && !batchAsrFailureRecorded) { batchAsrFailureRecorded = true; port.recordAttemptFailure(session, err, seg); }
@@ -307,7 +331,10 @@ export async function processLiveSegment(port: LiveSegmentPort, session: Recordi
       session.shortRecordingText = undefined;
     } else {
       const content = classifyShortRecordingContent(text, session.shortRecordingDurationMs || 0);
-      if (content === "blank") session.shortRecordingTier = "discard";
+      if (content === "blank") {
+        session.shortRecordingTier = "discard";
+        session.shortRecordingBlank = true;
+      }
       else if (content === "anomalous") {
         session.shortRecordingTier = "keep-audio";
         session.shortRecordingText = undefined;

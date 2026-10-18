@@ -370,3 +370,82 @@ describe("QueueModal rendered recovery states", () => {
     harness.modal.onClose();
   });
 });
+
+describe("QueueModal pending retry hint", () => {
+  it("shows the automatic retry hint on a pending row only while nextRetryAt is in the future", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-17T04:00:00.000Z"));
+    vi.stubGlobal("window", {
+      requestAnimationFrame: (callback: () => void) => { callback(); return 1; },
+      setInterval,
+      clearInterval,
+      moment: (value: number | string) => ({ format: () => new Date(value).toISOString().slice(11, 19) }),
+    });
+    const harness = makeProgressHarness();
+    harness.task.status = "pending";
+    harness.task.lastError = "connection failed";
+    harness.task.nextRetryAt = "2026-10-17T04:05:00.000Z";
+    harness.modal.onOpen();
+    let root = harness.modal.contentEl as never as MemoryElement;
+    expect(root.textContent).toContain("Automatic retry in about 5 min");
+
+    vi.setSystemTime(new Date("2026-10-17T04:06:00.000Z"));
+    harness.modal.onOpen();
+    root = harness.modal.contentEl as never as MemoryElement;
+    expect(root.textContent).not.toContain("Automatic retry in");
+    harness.modal.onClose();
+  });
+});
+
+describe("QueueModal pending transcribe rows and the ASR service cooldown", () => {
+  function transcribeRow(id: string, segmentIndex: number, nextRetryAt?: string) {
+    return {
+      id,
+      type: "transcribe",
+      status: "pending",
+      segmentIndex,
+      retries: 1,
+      lastError: "connection failed",
+      mdPath: "QnALog/Minutes/target.md",
+      audioPath: `QnALog/.cache/segments/seg-${segmentIndex}.m4a`,
+      ...(nextRetryAt ? { nextRetryAt } : {}),
+    };
+  }
+  const HINT = "Automatic retry in about 5 min";
+
+  function openWithCircuit(openUntilMs: number, rows: Array<Record<string, unknown>>) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-17T04:00:00.000Z"));
+    vi.stubGlobal("window", {
+      requestAnimationFrame: (callback: () => void) => { callback(); return 1; },
+      setInterval,
+      clearInterval,
+      moment: (value: number | string) => ({ format: () => new Date(value).toISOString().slice(11, 19) }),
+    });
+    const harness = makeProgressHarness();
+    harness.queue.tasks.splice(0, harness.queue.tasks.length, ...(rows as never[]));
+    (harness.plugin.tasks as Record<string, unknown>).getAsrServiceCircuitOpenUntilMs = () => openUntilMs;
+    harness.modal.onOpen();
+    return { harness, root: harness.modal.contentEl as never as MemoryElement };
+  }
+
+  it("shows the hint on both pending transcribe rows while the circuit is open, even if only the first row has nextRetryAt", () => {
+    const circuitOpenUntil = Date.parse("2026-10-17T04:05:00.000Z");
+    const { harness, root } = openWithCircuit(circuitOpenUntil, [
+      transcribeRow("transcribe-a", 0, "2026-10-17T04:05:00.000Z"),
+      transcribeRow("transcribe-b", 1),
+    ]);
+    expect(root.textContent.split(HINT)).toHaveLength(3);
+    harness.modal.onClose();
+  });
+
+  it("shows no hint on pending transcribe rows when the circuit is closed and no row has nextRetryAt", () => {
+    const { harness, root } = openWithCircuit(0, [
+      transcribeRow("transcribe-a", 0),
+      transcribeRow("transcribe-b", 1),
+    ]);
+    expect(root.textContent).not.toContain("Automatic retry in");
+    harness.modal.onClose();
+  });
+});
+

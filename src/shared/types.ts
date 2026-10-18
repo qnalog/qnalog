@@ -564,6 +564,8 @@ export interface RecordingSession {
   shortRecordingText?: string;
   /** 短录音识别结果的文字量超过时长阈值；进程内字段。 */
   shortRecordingAnomalous?: boolean;
+  /** 短录音转写结果为空白；进程内字段。整场有声时改为只留音频，整场无声时丢弃。 */
+  shortRecordingBlank?: boolean;
   _nextLiveSegmentIndex?: number;
   _interviewBriefBackgroundRunning?: boolean;
   _asrBacklogWarningNotified?: boolean;

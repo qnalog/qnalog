@@ -250,11 +250,11 @@ describe("聊天式音频输入的静音标记", () => {
     try {
       stubDecodedAudio([new Float32Array(50 * 100)], 100);
       const quietChunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
-      expect(quietChunks).toEqual([{ blob, mime: "audio/webm", durationMs: 50000, quiet: true }]);
+      expect(quietChunks).toEqual([{ blob, mime: "audio/webm", durationMs: 50000, quiet: true, rms: expect.any(Number) }]);
 
       stubDecodedAudio([new Float32Array(50 * 100).fill(0.5)], 100);
       const loudChunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
-      expect(loudChunks).toEqual([{ blob, mime: "audio/webm", durationMs: 50000, quiet: false }]);
+      expect(loudChunks).toEqual([{ blob, mime: "audio/webm", durationMs: 50000, quiet: false, rms: expect.any(Number) }]);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -282,6 +282,22 @@ describe("聊天式音频输入的静音标记", () => {
       const chunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
       expect(chunks).toEqual([{ blob, mime: "audio/webm", durationMs: 2000 }]);
       expect(chunks[0].quiet).toBeUndefined();
+      expect(chunks[0].rms).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("每个分块携带测得的 RMS：静音块接近 0，有声块等于振幅（0.5）", async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
+    const frames = 6 * 60 * 100;
+    const samples = new Float32Array(frames);
+    samples.fill(0.5, frames / 2);
+    try {
+      stubDecodedAudio([samples], 100);
+      const chunks = await buildChatInputAudioChunks(profile, blob, "audio/webm");
+      expect(chunks[0].rms).toBeCloseTo(0, 6);
+      expect(chunks[1].rms).toBeCloseTo(0.5, 6);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -306,6 +322,68 @@ describe("百炼分段服务在设置界面里的归类", () => {
     const profile = service.getTranscribeProviderProfile("dashscope", { model: "paraformer-realtime-v2" });
     expect(profile.title).toContain("paraformer-realtime");
     expect(profile.transcribeMode).toBe("streaming");
+  });
+});
+
+describe("聊天式音频输入空块诊断的音量字段", () => {
+  it("空块诊断带上时长、quiet 与四位小数的 rms", async () => {
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    await requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      { diagnostics: { logDiagnostic } },
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/wav", durationMs: 50000, quiet: true, rms: 0.00123456 },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      vi.fn().mockResolvedValue(""),
+      vi.fn().mockResolvedValue(undefined),
+    );
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({
+      durationMs: 50000,
+      quiet: true,
+      rms: 0.0012,
+    }));
+  });
+
+  it("有声块诊断 quiet 为 false、rms 约为振幅", async () => {
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    await expect(requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      { diagnostics: { logDiagnostic } },
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/wav", durationMs: 50000, quiet: false, rms: 0.2 },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      vi.fn().mockResolvedValue(""),
+      vi.fn().mockResolvedValue(undefined),
+    )).rejects.toThrow();
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({
+      durationMs: 50000,
+      quiet: false,
+      rms: 0.2,
+    }));
+  });
+
+  it("音量未知时 rms 与 quiet 写为 null，不写成 0 或 false", async () => {
+    const logDiagnostic = vi.fn().mockResolvedValue(undefined);
+    await expect(requestChatInputAudioChunkWithEmptyRetry(
+      profile,
+      { diagnostics: { logDiagnostic } },
+      dashscopeProvider,
+      { blob: { size: 1024 }, mime: "audio/wav", durationMs: 50000 },
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      0,
+      1,
+      vi.fn().mockResolvedValue(""),
+      vi.fn().mockResolvedValue(undefined),
+    )).rejects.toThrow();
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, "warn", "asr.dashscope_chat_empty_chunk", expect.any(String), expect.objectContaining({
+      durationMs: 50000,
+      quiet: null,
+      rms: null,
+    }));
   });
 });
 

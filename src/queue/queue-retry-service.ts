@@ -81,8 +81,8 @@ export interface QueueRetryHost {
   vocabulary: VocabularyService;
   /** 重新整理服务：导入转写完成后按说话人姓名重排纪要。 */
   repolish: {
-    repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<void>;
-    reorganizeNoteInPlace(file: unknown, options?: { firstOrganizing?: boolean }): Promise<void>;
+    repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<boolean>;
+    reorganizeNoteInPlace(file: unknown, options?: { firstOrganizing?: boolean }): Promise<boolean>;
   };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
@@ -178,6 +178,7 @@ export class QueueRetryService {
       repolish: (file, mode) => this.host.repolish.repolishMarkdownFile(file, mode, null),
       readNote: (file) => this.host.app.vault.read(file),
       reorganizeInPlace: (file) => this.host.repolish.reorganizeNoteInPlace(file, { firstOrganizing: true }),
+      removeMergeTasksForNote: (mdPaths, sessionId) => this.host.queue ? this.host.queue.removeMergeTasksForNote(mdPaths, sessionId) : Promise.resolve(0),
     };
   }
   migrateQueueTasksAfterRename(oldPath, newPath) {

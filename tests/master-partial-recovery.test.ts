@@ -1,0 +1,277 @@
+vi.mock("obsidian", () => ({ normalizePath: (p: string) => String(p || ""), Notice: class {}, TFile: class {}, TFolder: class {} }));
+
+import { describe, expect, it, vi } from "vitest";
+import {
+  MasterPartialSession,
+  parseMasterPartialMeta,
+  parsePartName,
+  removePartialDirectory,
+  type MasterPartialAdapter,
+  type MasterPartialMeta,
+} from "../src/audio/master-partial";
+import { recoverInterruptedMasterPartials, formatRecoveryStamp } from "../src/audio/master-partial-recovery";
+import { MemoryAdapter } from "./helpers/memory-partial-adapter";
+
+const AUDIO_FOLDER = "QnALog/录音";
+const ROOT = `${AUDIO_FOLDER}/.partial`;
+const STARTED_AT = new Date(2026, 9, 6, 12, 0, 0).getTime();
+const MIME = "audio/webm;codecs=opus";
+
+function sessionDir(sessionId: string): string {
+  return `${ROOT}/${sessionId}`;
+}
+
+function metaFor(sessionId: string, partCount: number, overrides: Partial<MasterPartialMeta> = {}): MasterPartialMeta {
+  return {
+    version: 1,
+    sessionId,
+    notePath: "QnALog/notes/a.md",
+    startedAt: STARTED_AT,
+    mime: MIME,
+    ext: "webm",
+    partCount,
+    flushedBytes: 0,
+    lastFlushAt: STARTED_AT,
+    sourceMode: "mic",
+    mode: "meeting",
+    ...overrides,
+  };
+}
+
+/** 在适配器里放入一个分片目录：meta 与 part-0001... 文件，内容为各分片文本。 */
+function seedSession(io: MemoryAdapter, sessionId: string, parts: string[], overrides: Partial<MasterPartialMeta> = {}, names?: string[]): void {
+  const dir = sessionDir(sessionId);
+  io.dirs.add(ROOT);
+  io.dirs.add(dir);
+  io.files.set(`${dir}/meta.json`, JSON.stringify(metaFor(sessionId, parts.length, overrides)));
+  parts.forEach((text, index) => {
+    const name = names ? names[index]! : `part-${String(index + 1).padStart(4, "0")}.webm`;
+    io.files.set(`${dir}/${name}`, new TextEncoder().encode(text).buffer as ArrayBuffer);
+  });
+}
+
+function port(io: MemoryAdapter, extra: { isActiveSession?: (id: string) => boolean } = {}) {
+  const logs: Array<{ level: string; code: string; data: unknown }> = [];
+  return {
+    logs,
+    port: {
+      adapter: io,
+      audioFolder: AUDIO_FOLDER,
+      isActiveSession: extra.isActiveSession ?? (() => false),
+      logDiagnostic: vi.fn(async (level: string, code: string, _message: string, data: unknown) => { logs.push({ level, code, data }); }),
+    },
+  };
+}
+
+const LETTERS = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"];
+
+describe("MasterPartialSession writes", () => {
+  it("writes meta first, then numbered parts, and refreshes meta after every part", async () => {
+    const io = new MemoryAdapter();
+    const session = new MasterPartialSession(io, {
+      sessionId: "s1", audioFolder: AUDIO_FOLDER, notePath: "QnALog/notes/a.md", startedAt: STARTED_AT, sourceMode: "mic", mode: "meeting",
+    });
+    const first = await session.append(new Blob(["aa"], { type: MIME }), MIME);
+    const second = await session.append(new Blob(["bbb"], { type: MIME }), MIME);
+    expect(first).toMatchObject({ ok: true, partCount: 1, bytes: 2 });
+    expect(second).toMatchObject({ ok: true, partCount: 2, bytes: 5 });
+    expect(io.text(`${sessionDir("s1")}/part-0001.webm`)).toBe("aa");
+    expect(io.text(`${sessionDir("s1")}/part-0002.webm`)).toBe("bbb");
+    const meta = parseMasterPartialMeta(io.text(`${sessionDir("s1")}/meta.json`));
+    expect(meta).toMatchObject({ partCount: 2, flushedBytes: 5, ext: "webm", notePath: "QnALog/notes/a.md", startedAt: STARTED_AT, mode: "meeting" });
+  });
+
+  it("keeps the part count after a failed write, so the retry reuses the number and loses no chunk", async () => {
+    const io = new MemoryAdapter();
+    let failNext = true;
+    io.hooks.writeBinary = () => {
+      if (failNext) { failNext = false; throw new Error("disk full"); }
+    };
+    const session = new MasterPartialSession(io, {
+      sessionId: "s2", audioFolder: AUDIO_FOLDER, notePath: "n.md", startedAt: STARTED_AT, sourceMode: "mic", mode: "meeting",
+    });
+    const failed = await session.append(new Blob(["aa"], { type: MIME }), MIME);
+    expect(failed).toMatchObject({ ok: false, reason: "write-failed" });
+    // 调用方会用同一批起点加上新分片重试。
+    const retried = await session.append(new Blob(["aabb"], { type: MIME }), MIME);
+    expect(retried).toMatchObject({ ok: true, partCount: 1, bytes: 4 });
+    expect(io.text(`${sessionDir("s2")}/part-0001.webm`)).toBe("aabb");
+    expect(io.files.has(`${sessionDir("s2")}/part-0002.webm`)).toBe(false);
+  });
+
+  it("writes nothing after close, and drain waits for a write already in flight", async () => {
+    const io = new MemoryAdapter();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    io.hooks.writeBinary = async () => { entered(); await gate; };
+    const session = new MasterPartialSession(io, {
+      sessionId: "s3", audioFolder: AUDIO_FOLDER, notePath: "n.md", startedAt: STARTED_AT, sourceMode: "mic", mode: "meeting",
+    });
+    const inFlight = session.append(new Blob(["xx"], { type: MIME }), MIME);
+    await started;
+    session.close();
+    let drained = false;
+    const drain = session.drain().then(() => { drained = true; });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    release();
+    await drain;
+    expect(await inFlight).toMatchObject({ ok: true, partCount: 1 });
+    const late = await session.append(new Blob(["yy"], { type: MIME }), MIME);
+    expect(late).toMatchObject({ ok: false, reason: "closed" });
+    expect(io.files.has(`${sessionDir("s3")}/part-0002.webm`)).toBe(false);
+  });
+});
+
+describe("partial helpers", () => {
+  it("parses only well-formed part names and rejects malformed meta", () => {
+    expect(parsePartName("part-0007.webm")).toEqual({ index: 7, ext: "webm" });
+    expect(parsePartName("meta.json")).toBeNull();
+    expect(parsePartName("part-0.webm")).toBeNull();
+    expect(() => parseMasterPartialMeta("{not json")).toThrow();
+    expect(() => parseMasterPartialMeta(JSON.stringify({ version: 2 }))).toThrow();
+  });
+
+  it("removes only the given session folder", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "keep", ["k"]);
+    seedSession(io, "drop", ["d"]);
+    await removePartialDirectory(io, sessionDir("drop"));
+    expect(io.dirs.has(sessionDir("drop"))).toBe(false);
+    expect(io.files.has(`${sessionDir("drop")}/meta.json`)).toBe(false);
+    expect(io.files.has(`${sessionDir("keep")}/part-0001.webm`)).toBe(true);
+  });
+});
+
+describe("recoverInterruptedMasterPartials", () => {
+  it("concatenates parts in numeric order into a -recovered file and removes the folder", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-ok", LETTERS);
+    const { port: recoveryPort, logs } = port(io);
+    const outcomes = await recoverInterruptedMasterPartials(recoveryPort);
+    expect(outcomes).toEqual([
+      expect.objectContaining({ sessionId: "s-ok", status: "recovered", bytes: 11, parts: 11, cleanupPending: false }),
+    ]);
+    const path = `${AUDIO_FOLDER}/qnalog-20261006-120000-recovered.webm`;
+    expect(io.text(path)).toBe("abcdefghijk");
+    expect(io.dirs.has(sessionDir("s-ok"))).toBe(false);
+    expect(logs.map((entry) => entry.code)).toEqual(["recording.recovered"]);
+  });
+
+  it("is a no-op on the second run", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-once", ["x", "y"]);
+    await recoverInterruptedMasterPartials(port(io).port);
+    const filesAfterFirst = [...io.files.keys()].sort();
+    const second = await recoverInterruptedMasterPartials(port(io).port);
+    expect(second).toEqual([]);
+    expect([...io.files.keys()].sort()).toEqual(filesAfterFirst);
+  });
+
+  it("keeps every partial file when the written size does not match", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-size", ["abc", "def"]);
+    io.hooks.statSize = (path, size) => (path.endsWith("-recovered.webm") ? size + 1 : size);
+    const { port: recoveryPort, logs } = port(io);
+    const outcomes = await recoverInterruptedMasterPartials(recoveryPort);
+    expect(outcomes[0]).toMatchObject({ sessionId: "s-size", status: "failed", reason: "size-mismatch" });
+    expect(io.files.has(`${AUDIO_FOLDER}/qnalog-20261006-120000-recovered.webm`)).toBe(false);
+    expect(io.files.has(`${sessionDir("s-size")}/part-0001.webm`)).toBe(true);
+    expect(io.files.has(`${sessionDir("s-size")}/part-0002.webm`)).toBe(true);
+    expect(logs).toEqual([expect.objectContaining({ level: "error", code: "recording.recovery_failed" })]);
+    // 诊断数据只含场次与原因，不含音频内容。
+    expect(JSON.stringify(logs[0]!.data)).not.toContain("abc");
+  });
+
+  it("keeps the folder when cleanup fails, records the recovered file, and never recovers it twice", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-clean", ["p", "q"]);
+    let failRemoval = true;
+    io.hooks.rmdir = () => {
+      if (failRemoval) { failRemoval = false; throw new Error("locked"); }
+    };
+    const first = await recoverInterruptedMasterPartials(port(io).port);
+    expect(first[0]).toMatchObject({ status: "recovered", cleanupPending: true });
+    const meta = parseMasterPartialMeta(io.text(`${sessionDir("s-clean")}/meta.json`));
+    expect(meta.recoveredPath).toBe(`${AUDIO_FOLDER}/qnalog-20261006-120000-recovered.webm`);
+    expect(meta.recoveredBytes).toBe(2);
+
+    const second = await recoverInterruptedMasterPartials(port(io).port);
+    expect(second).toEqual([expect.objectContaining({ sessionId: "s-clean", status: "already-handled", reason: "recovered" })]);
+    expect(io.dirs.has(sessionDir("s-clean"))).toBe(false);
+    const recoveredFiles = [...io.files.keys()].filter((key) => key.includes("-recovered"));
+    expect(recoveredFiles).toHaveLength(1);
+  });
+
+  it("keeps a folder whose meta cannot be parsed, and logs the failure", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-bad-meta", ["z"]);
+    io.files.set(`${sessionDir("s-bad-meta")}/meta.json`, "{broken");
+    const { port: recoveryPort, logs } = port(io);
+    const outcomes = await recoverInterruptedMasterPartials(recoveryPort);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "meta-invalid" });
+    expect(io.files.has(`${sessionDir("s-bad-meta")}/part-0001.webm`)).toBe(true);
+    expect(logs[0]).toMatchObject({ code: "recording.recovery_failed" });
+  });
+
+  it("refuses a gap in part numbering and keeps the folder", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-gap", ["one", "three"], {}, ["part-0001.webm", "part-0003.webm"]);
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "part-gap" });
+    expect(io.files.has(`${sessionDir("s-gap")}/part-0003.webm`)).toBe(true);
+  });
+
+  it("refuses parts whose extension differs from the meta", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-ext", ["a"], {}, ["part-0001.m4a"]);
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "ext-mismatch" });
+  });
+
+  it("removes an empty folder that recorded no parts, but keeps one that recorded parts", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-empty", []);
+    seedSession(io, "s-lost", []);
+    io.files.set(`${sessionDir("s-lost")}/meta.json`, JSON.stringify(metaFor("s-lost", 2)));
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    const byId = Object.fromEntries(outcomes.map((item) => [item.sessionId, item]));
+    expect(byId["s-empty"]).toMatchObject({ status: "removed-empty" });
+    expect(io.dirs.has(sessionDir("s-empty"))).toBe(false);
+    expect(byId["s-lost"]).toMatchObject({ status: "failed", reason: "parts-missing" });
+    expect(io.dirs.has(sessionDir("s-lost"))).toBe(true);
+  });
+
+  it("skips the active session and leaves its folder untouched", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "live", ["l1", "l2"]);
+    const outcomes = await recoverInterruptedMasterPartials(port(io, { isActiveSession: (id) => id === "live" }).port);
+    expect(outcomes).toEqual([{ sessionId: "live", status: "active" }]);
+    expect(io.files.has(`${sessionDir("live")}/part-0002.webm`)).toBe(true);
+    expect([...io.files.keys()].some((key) => key.includes("-recovered"))).toBe(false);
+  });
+
+  it("adds a numeric suffix instead of overwriting an existing file with the same name", async () => {
+    const io = new MemoryAdapter();
+    io.files.set(`${AUDIO_FOLDER}/qnalog-20261006-120000-recovered.webm`, "existing");
+    seedSession(io, "s-collide", ["n"]);
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "recovered", path: `${AUDIO_FOLDER}/qnalog-20261006-120000-recovered-2.webm` });
+    expect(io.text(`${AUDIO_FOLDER}/qnalog-20261006-120000-recovered.webm`)).toBe("existing");
+  });
+
+  it("removes a folder already marked as saved without writing a recovered file", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-saved", ["s"], { savedAs: `${AUDIO_FOLDER}/qnalog-x.webm` });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes).toEqual([{ sessionId: "s-saved", status: "already-handled", reason: "saved" }]);
+    expect(io.dirs.has(sessionDir("s-saved"))).toBe(false);
+    expect([...io.files.keys()].some((key) => key.includes("-recovered"))).toBe(false);
+  });
+
+  it("uses the recording file timestamp format for the recovered name", () => {
+    expect(formatRecoveryStamp(new Date(2026, 0, 2, 3, 4, 5).getTime())).toBe("20260102-030405");
+  });
+});

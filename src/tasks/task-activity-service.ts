@@ -127,7 +127,7 @@ export interface TaskActivityHost {
   /** 实时大纲服务：用户取消等待与后台补跑。 */
   outline: RealtimeOutlineService;
   /** 转写服务熔断状态与手动重试入口。 */
-  asrPipeline: Pick<LiveAsrPipelineService, "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry">;
+  asrPipeline: Pick<LiveAsrPipelineService, "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "getAsrServiceCircuitState">;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
 }
@@ -178,6 +178,11 @@ export class TaskActivityService {
       ? this.taskActivityStore.list(Object.assign({ includeDone: true, includeCancelled: true }, options || {}))
       : [];
   }
+  /** 转写服务熔断的恢复时间（毫秒时间戳）；未熔断时为 0。待处理队列弹窗据此提示转写任务的自动重试时间。 */
+  getAsrServiceCircuitOpenUntilMs(): number {
+    return Math.max(0, Number(this.host.asrPipeline.getAsrServiceCircuitState().openUntilMs) || 0);
+  }
+
   getTaskActivityErrorHint(activity) {
     const raw = getTaskErrorMessage(activity && activity.error, "");
     if (/file already exists|文件已存在|already exists/i.test(raw)) {

@@ -324,7 +324,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 2. **主题勘误表与内容清洗**（已决定）。主题勘误表记录用户确认的排除方面；整合读取规则，手动清洗现有主题页内容。
 
 3. **长录音的转写异常输出**（已决定）。`audio/long-recording-anomaly.ts` 在写入母本前拦截每秒字符数超过 15 或重复片段占比超过 0.6 的文本；拦截后保留音频与失败任务。真实转写服务是否复现此异常仍未证实。
-4. **空白录音收尾**（已决定）。普通录音全部分段成功转写为空时，不足 60 秒丢弃笔记与音频；达到 60 秒时保留笔记与音频并写入「未检测到语音」。导入音频与续录不丢弃，保留材料并提示。音频块的均方根低于 `QUIET_AUDIO_RMS_LIMIT`（`src/shared/limits.ts`）时，该块连续两次返回空结果即按成功的空白结果处理，不论时长；音量达到上限的块返回空结果仍按失败处理。静音标记以 `quiet` 字段附在 ASR 结果上（`src/asr/transcript-result.ts`）。实时分段（`src/notes/live-segment-flow.ts`）与重试（`src/queue/queue-transcribe-retry-flow.ts`）检查到该字段为真时，把空结果记为成功的空白段；百炼 Flash 的「无语音」错误（HTTP 400，错误码 ASR_RESPONSE_HAVE_NO_WORDS）同样视为成功的空白结果，该块不重试，全部块如此时以 `noSpeech` 字段标记（`src/asr/transcribe.ts`）；`quiet` 与 `noSpeech` 均不写入笔记与转写账本。
+4. **空白录音收尾**（已决定）。丢弃的条件是转写为空白且整场基本无声；整场有声的录音保留笔记与音频，不因转写结果丢弃。录音器每 160 毫秒统计一次有声或无声，有声占比低于 2% 且统计不少于 5 次时判为基本无声（`src/audio/session-silence.ts`）。普通录音全部分段成功转写为空时，基本无声且不足 60 秒丢弃笔记与音频；有声或达到 60 秒时保留笔记与音频并写入「未检测到语音」。1–10 秒短录音转写为空白时，基本无声则丢弃，有声则只保留音频、不建笔记。导入音频与续录不丢弃，保留材料并提示。音频块的均方根低于 `QUIET_AUDIO_RMS_LIMIT`（`src/shared/limits.ts`）时，该块连续两次返回空结果即按成功的空白结果处理，不论时长；音量达到上限的块返回空结果仍按失败处理。静音标记以 `quiet` 字段附在 ASR 结果上（`src/asr/transcript-result.ts`）。实时分段（`src/notes/live-segment-flow.ts`）与重试（`src/queue/queue-transcribe-retry-flow.ts`）检查到该字段为真时，把空结果记为成功的空白段；百炼 Flash 的「无语音」错误（HTTP 400，错误码 ASR_RESPONSE_HAVE_NO_WORDS）同样视为成功的空白结果，该块不重试，全部块如此时以 `noSpeech` 字段标记（`src/asr/transcribe.ts`）；`quiet` 与 `noSpeech` 均不写入笔记与转写账本。
 
 ### 已完成
 
@@ -347,7 +347,12 @@ git tag X.Y.Z && git push origin X.Y.Z
 - 暂停恢复任务弹窗的排版与状态栏任务条（右下角，点开为待处理队列）的显示，实际界面仍待维护者确认。
 - 真实用户数据损坏或安全问题优先。尚未定位的截图或 `partial` 状态不作为已定位故障。
 - 类型收敛：`SessionFinalizeService`、`QueueRetryService`、`RepolishService` 外壳，`NoteWriter` 材料编排与 `RecordingService` 启停为可选项，按具体需求排期。
-- **采集持久化**（取证中，不立项）。录音数据在内存数组中累积，母带在停止时才写入（`audio/recorder-service.ts:504–536`、`792`）。切段间隔内与禁用切段的整场录音在进程强退时的丢失窗口、母带内存增长均未实测；先在桌面与移动端量化。母带写入失败现在只提示、不返回结果，可单独改为返回保存结果。
+- **采集持久化**（取证中，不立项）。录音数据在内存中累积，完整母带在录音停止时才写入（`audio/recorder-service.ts:504–536`、`792`）。
+  - 开启实时分段时，强制退出只丢失最后一次切段之后的音频。默认切段时刻为 10 秒、60 秒、180 秒，之后按切段间隔切段（默认 5 分钟，`shared/defaults.ts:370`；时刻见 `shared/limits.ts:5`）。已写入分段缓存目录的分段音频最长保留 7 天（`shared/limits.ts:28`），缓存与笔记之间没有反向链接。
+  - 关闭实时分段时，强制退出丢失整场录音。
+  - 内存中的完整母带约每分钟增长 0.8 MiB，仅在停止录音时写入。
+  - 下次启动时不恢复、不提示未完成的录音，笔记标题保持「（录音中…）」。
+  - 恢复方案未定，由维护者决定。
 - **多说话人确认**（待决定）。检测到多个未命名说话人时，整理等待姓名确认（`notes/speaker-confirmation-flow.ts:40`）。是否先以会话内编号整理、之后再命名，由维护者决定。
 - **全库问答**（探索，不进入开发）。范围与退出条件见 §7.3。
 
@@ -356,8 +361,8 @@ git tag X.Y.Z && git push origin X.Y.Z
 | 事项 | 已完成结果与证据入口 | 人工确认范围 |
 |---|---|---|
 | 设置迁移与恢复工具 | 正式用户四态迁移见 §4.5；恢复脚本路径边界由 CLI 测试及临时目录冒烟覆盖 | 未进行真实 Obsidian 验证 |
-| 短录音按内容判定 | 不足 1 秒丢弃且不转写；1 秒至不足 10 秒转写一次：空白丢弃，成文建笔记，不成文保留音频并通知，文字量远超时长（`SHORT_RECORDING_ANOMALY_*`）保留音频不建笔记；转写失败保留音频与重试任务；续录与导入音频按 `audio/short-recording-policy.ts` 处理。见 `tests/short-recording-content.test.ts`、`tests/short-recording-flow.test.ts`、`tests/live-segment-flow.test.ts` | 单次录音场景已走查；流式转写服务下的失败任务恢复、续录遇异常结果的收尾仅单测覆盖 |
-| 长录音异常拦截与空白录音收尾 | 长录音在写入母本前按每秒字符数上限 15 或重复片段占比超过 0.6 拦截；普通录音全空时不足 60 秒丢弃，达到 60 秒保留并写入「未检测到语音」，导入与续录保留。见 `tests/blank-recording-policy.test.ts`、`tests/short-recording-flow.test.ts`、`tests/long-recording-anomaly.test.ts`、`tests/dashscope-chat-asr.test.ts` | 2 秒空白录音自动删除已确认；10 秒与 60 秒以上空白、长录音异常拦截仅自动测试 |
+| 短录音按内容判定 | 不足 1 秒丢弃且不转写；1 秒至不足 10 秒转写一次：转写为空白且整场基本无声则丢弃，转写为空白但有声则只保留音频，成文建笔记，不成文保留音频并通知，文字量远超时长（`SHORT_RECORDING_ANOMALY_*`）保留音频不建笔记；转写失败保留音频与重试任务；续录与导入音频按 `audio/short-recording-policy.ts` 处理。见 `tests/short-recording-content.test.ts`、`tests/short-recording-flow.test.ts`、`tests/live-segment-flow.test.ts` | 单次录音场景已走查；流式转写服务下的失败任务恢复、续录遇异常结果的收尾仅单测覆盖 |
+| 长录音异常拦截与空白录音收尾 | 长录音在写入母本前按每秒字符数上限 15 或重复片段占比超过 0.6 拦截；普通录音全空、整场基本无声时不足 60 秒丢弃，有声或达到 60 秒保留并写入「未检测到语音」，导入与续录保留。见 `tests/blank-recording-policy.test.ts`、`tests/short-recording-flow.test.ts`、`tests/long-recording-anomaly.test.ts`、`tests/dashscope-chat-asr.test.ts` | 2 秒空白录音自动删除已确认；10 秒与 60 秒以上空白、长录音异常拦截仅自动测试 |
 | 密钥写入失败时的队列保存 | `_saveAllSnapshot` 在 SecretStorage 写入失败时只替换已落盘数据中的 `backgroundJobs`；数据缺失或版本更高时不写盘；见 `tests/save-all-secret-failure.test.ts` | 仅自动测试，未做真实宿主验证 |
 | 重试整理的编辑保护 | consolidated 分支用模型调用前读取的正文做提交时比对，变化则不写入并保留失败任务；见 `tests/queue-merge-retry-flow.test.ts` | 仅自动测试，未做真实宿主验证 |
 | 删除带衍生版本的笔记 | 确认框提供「最新衍生版本接替」与「一并删除」，候选由元数据缓存过滤；见 `tests/delete-note-with-variants.test.ts` | 元数据缓存尚未索引的新衍生版本可能漏检，该情形未做真机验证 |

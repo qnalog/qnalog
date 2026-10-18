@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const asr = vi.hoisted(() => ({ transcribe: vi.fn(), channels: vi.fn(), whole: vi.fn(), notices: [] as string[] }));
@@ -18,6 +19,7 @@ import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { MAX_SPEAKER_CHANNELS } from "../src/audio/channel-speakers";
 import { labelText } from "../src/shared/note-labels";
 import { nsMarker } from "../src/shared/namespace";
+import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -280,5 +282,113 @@ describe("automatic re-organization after backfilling the last failed segment", 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fixture.host.repolish.reorganizeNoteInPlace).not.toHaveBeenCalled();
     expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("stale first-time merge tasks after automatic re-organization", () => {
+  const failedNoteBody = `## 整合版（meeting）\n\n_[AI 整理失败：没有可用于整理的有效转写文本；录音和失败切片已保留]_\n\n---\n\n## 原始材料\n\n`;
+  const organizedNoteBody = `## ✨ 整合版（meeting）\n\n真实整理正文。\n\n---\n\n## 原始材料\n\n`;
+  function placeholderFor(taskId: string) {
+    const taskMarker = nsMarker("transcribe-task", taskId);
+    return `${labelText("segment", 1)} (00:00–00:01)\n\n${taskMarker}\n\n${labelText("waitingBackground")}`;
+  }
+  function attachRealQueue(fixture: ReturnType<typeof setup>, tasks: Record<string, unknown>[]) {
+    const queue = new TaskQueue({ persistQueue: vi.fn(async () => undefined), updateBusyStatus: vi.fn() } as unknown as TaskQueueHost);
+    queue.tasks = tasks as never;
+    fixture.host.queue = queue as never;
+    return queue;
+  }
+  const mergeTask = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id, type: "merge", status: "pending", retries: 0, sessionId: "session-1", mdPath: "Notes/retry.md", segments: [{ text: "" }], ...overrides,
+  });
+
+  it("removes the stale first-time merge task of the same session after the in-place re-organization succeeds", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.reorganizeNoteInPlace.mockResolvedValueOnce(true);
+    const queue = attachRealQueue(fixture, [
+      mergeTask("merge-stale"),
+      mergeTask("merge-running", { status: "running" }),
+      mergeTask("merge-continuation", { continuation: true, sessionId: "session-continuation" }),
+      mergeTask("merge-other-session", { sessionId: "session-2" }),
+      mergeTask("merge-other-note", { mdPath: "Notes/other.md" }),
+    ]);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(queue.tasks.map((task) => task.id)).not.toContain("merge-stale"));
+    expect(queue.tasks.map((task) => task.id)).toEqual(["merge-running", "merge-continuation", "merge-other-session", "merge-other-note"]);
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
+  });
+
+  it("removes the stale first-time merge task after the derived re-organization succeeds", async () => {
+    const fixture = setup(`${organizedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.repolishMarkdownFile.mockResolvedValueOnce(true);
+    const queue = attachRealQueue(fixture, [mergeTask("merge-stale"), mergeTask("merge-other-note", { mdPath: "Notes/other.md" })]);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(queue.tasks.map((task) => task.id)).toEqual(["merge-other-note"]));
+    expect(fixture.host.repolish.reorganizeNoteInPlace).not.toHaveBeenCalled();
+  });
+
+  it("keeps the first-time merge task when the in-place re-organization fails", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.reorganizeNoteInPlace.mockResolvedValueOnce(false);
+    const queue = attachRealQueue(fixture, [mergeTask("merge-stale")]);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(queue.tasks.map((task) => task.id)).toEqual(["merge-stale"]);
+  });
+
+  it("keeps the first-time merge task when the in-place re-organization throws", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.reorganizeNoteInPlace.mockRejectedValueOnce(new Error("organize failed"));
+    const queue = attachRealQueue(fixture, [mergeTask("merge-stale")]);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("error", "queue.auto_repolish_failed", expect.any(String), expect.anything()));
+    expect(queue.tasks.map((task) => task.id)).toEqual(["merge-stale"]);
+  });
+
+  it("matches the queued merge task after the re-organization renamed the note", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.reorganizeNoteInPlace.mockImplementationOnce(async (file: { path: string; basename: string }) => {
+      file.path = "Notes/生成标题.md";
+      return true;
+    });
+    const queue = attachRealQueue(fixture, [mergeTask("merge-stale", { mdPath: "Notes/生成标题.md" })]);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(queue.tasks).toHaveLength(0));
+  });
+
+  it("does not remove merge tasks of a note with a similar path", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.reorganizeNoteInPlace.mockResolvedValueOnce(true);
+    const queue = attachRealQueue(fixture, [
+      mergeTask("merge-similar-suffix", { mdPath: "Notes/retry 2.md" }),
+      mergeTask("merge-similar-folder", { mdPath: "Notes/old/retry.md" }),
+      mergeTask("merge-stale"),
+    ]);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(queue.tasks.map((task) => task.id)).not.toContain("merge-stale"));
+    expect(queue.tasks.map((task) => task.id)).toEqual(["merge-similar-suffix", "merge-similar-folder"]);
+  });
+});
+
+describe("transcription retry with duplicated transcript blocks", () => {
+  it("repairs a note with two placeholder blocks for one transcript id, then writes the transcript into the single remaining block", async () => {
+    const duplicated = readFileSync(new URL("./fixtures/duplicate-transcript-blocks.md", import.meta.url), "utf8");
+    const fixture = setup(duplicated);
+    fixture.task.sessionId = "qnalog-mvcjgw9z-b3kio1";
+    fixture.task.id = "qnalog-mvcjh42p-qcw051";
+    fixture.task.endOffsetMs = 10_000;
+
+    await fixture.service.retryTranscribeTask(fixture.task as never);
+
+    const finalMarkdown = fixture.contents.get(fixture.file.path) ?? "";
+    const blocks = readTranscriptBlocks(finalMarkdown);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].segment.transcript?.id).toBe("seg:qnalog-mvcjgw9z-b3kio1:0");
+    expect(blocks[0].visibleBlock).toBe("recognized words");
+    expect(finalMarkdown.match(/qnalog-segments-end:/g)).toHaveLength(1);
+    expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("warn", "transcript.duplicate_block_repaired", expect.any(String), expect.objectContaining({
+      ids: ["seg:qnalog-mvcjgw9z-b3kio1:0"], blockCounts: [2], removedCounts: [1],
+    }));
   });
 });

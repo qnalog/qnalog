@@ -1,3 +1,4 @@
+import type { MasterPartialSession } from "../src/audio/master-partial";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // 短录音整条路径的冒烟测试：真的调用 RecordingService.handleSegment 与 SessionFinalizeService，
@@ -71,7 +72,8 @@ function stubTranscription(text: string): void {
 }
 
 /** 只实现短录音路径真正会碰到的部分；其余能力一旦被调用即抛出，避免测试掩盖真实依赖。 */
-function makeHost() {
+/** 默认整场为无声（计数全部为无声），与既有空白丢弃用例的前提一致；有声用例传入有声计数。 */
+function makeHost(sound: { voicedTicks: number; silentTicks: number } = { voicedTicks: 0, silentTicks: 100 }) {
   const files = new Map<string, { content?: string; binary?: ArrayBuffer }>();
   const folders = new Set<string>();
   const fileRefs = new Map<string, obsidian.TFile>();
@@ -145,7 +147,7 @@ function makeHost() {
     continuations,
     settings: { ...DEFAULT_SETTINGS, audioFolder: "QnALog/录音", mdFolder: "QnALog/转写纪要", segmentCacheFolder: "QnALog/.cache/segments" },
     bubble: null,
-    recorder: { state: "idle", _voicedTicks: 0, _silentTicks: 0, getInfo: () => ({ elapsed: 0, issue: null }), start: async () => { throw new Error("microphone unavailable"); }, stop: async () => undefined, releaseStream: () => undefined },
+    recorder: { state: "idle", _voicedTicks: sound.voicedTicks, _silentTicks: sound.silentTicks, getInfo: () => ({ elapsed: 0, issue: null }), start: async () => { throw new Error("microphone unavailable"); }, stop: async () => undefined, releaseStream: () => undefined },
     meetingWorkbench: { removeLiveTranscriptBlock: async () => undefined, processPendingMeetingWorkbenchInteractions: async () => undefined, scheduleMeetingWorkbenchInteraction: () => undefined, makeStreamingNoteUpdater: () => () => undefined },
     noteWriter: {
       appendToNote: async (path: string, content: string) => {
@@ -228,6 +230,12 @@ function makeHost() {
     classifyRecordingIssue: recordingIssues.classifyRecordingIssue,
     createStreamingTranscriptionClient: recordingIssues.createStreamingTranscriptionClient,
     createPcmEncoder: (stream, options) => new PcmStreamEncoder(stream, options),
+    createMasterPartialSession: () => ({
+      append: async () => ({ ok: true, partCount: 1, bytes: 0, writeMs: 0 }),
+      drain: async () => undefined,
+      close: () => undefined,
+      directory: "",
+    }) as unknown as MasterPartialSession,
   };
   let recordingService: RecordingService;
   recordingService = new RecordingService(recordingHost);
@@ -243,6 +251,7 @@ function makeHost() {
     removeQueueTask: (id) => host.queue.remove(id),
     removeLiveTranscriptBlock: (path, sessionId) => host.meetingWorkbench.removeLiveTranscriptBlock(path, sessionId),
     getRecorderBufferSummary: () => recordingService.getRecorderBufferSummary(),
+    discardMasterPartials: async () => undefined,
     syncImportBusyFromSessionProgress: () => undefined,
     requestOutlineRefresh: () => host.requestOutlineRefresh(),
     requestBubbleUpdate: () => undefined,
@@ -1717,5 +1726,94 @@ describe("NoteWriter segment insertion consumer", () => {
     files.set(mdPath, { content: "NO MARKER\n" });
     await writer.insertBeforeSegmentsEnd(mdPath, content, "missing-session");
     expect(files.get(mdPath)?.content).toBe(`NO MARKER\n${content}`);
+  });
+});
+
+describe("有声音的空白录音不丢弃", () => {
+  it("20 秒普通录音全部成功返回空文本且整场有声：保留笔记和音频，写入未检测到语音，不排队也不整理", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService, finalizeService } = makeHost({ voicedTicks: 125, silentTicks: 0 });
+    stubTranscription("");
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-loud-20.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:30") });
+    const session = makeSession(mdPath);
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, finalPayload(20_000) as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+    await finalizeService.finalizeSession(session as never);
+
+    expect([...files.keys()].filter((p) => p.startsWith("QnALog/录音/"))).toHaveLength(1);
+    expect(trashed).not.toContain(mdPath);
+    expect(files.get(mdPath)?.content).toContain("No speech detected");
+    expect(host.queue.tasks).toEqual([]);
+    expect(host.taskMeters.beginTaskMeter).not.toHaveBeenCalled();
+    expect(notices.filter((n) => n === "No speech was detected; the recording and note were kept.")).toHaveLength(1);
+    expect(notices.join("\n")).not.toContain("this recording was discarded");
+  });
+
+  it("3 秒短录音转写为空白且整场有声：保留音频、不建笔记，并提示未识别出文字", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService, finalizeService } = makeHost({ voicedTicks: 18, silentTicks: 0 });
+    stubTranscription("");
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-loud-3.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:31") });
+    const session = makeSession(mdPath);
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, finalPayload(3000) as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+    await finalizeService.finalizeSession(session as never);
+
+    const audioFiles = [...files.keys()].filter((p) => p.startsWith("QnALog/录音/"));
+    expect(audioFiles).toHaveLength(1);
+    expect(trashed).toContain(mdPath);
+    expect(files.has(mdPath)).toBe(false);
+    expect(transcribeMock).toHaveBeenCalledOnce();
+    expect(host.queue.tasks).toEqual([]);
+    expect(notices.join("\n")).toContain("No text was recognized, but sound was detected");
+    expect(notices.join("\n")).not.toContain("this recording was discarded");
+  });
+
+  it("3 秒短录音转写为空白且整场无声：仍丢弃音频和笔记", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService, finalizeService } = makeHost({ voicedTicks: 0, silentTicks: 18 });
+    stubTranscription("");
+    const mdPath = "QnALog/转写纪要/2026-09-18 blank-silent-3.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:32") });
+    const session = makeSession(mdPath);
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, finalPayload(3000) as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+    await finalizeService.finalizeSession(session as never);
+
+    expect([...files.keys()].filter((p) => p.startsWith("QnALog/录音/"))).toEqual([]);
+    expect(trashed).toContain(mdPath);
+    expect(host.queue.tasks).toEqual([]);
+    expect(notices.join("\n")).toContain("No speech was detected; this recording was discarded.");
+  });
+
+  it("短录音转写失败时不因有声而改判，保留音频与重试任务", async () => {
+    notices.length = 0;
+    trashed.length = 0;
+    const { host, files, recordingService, finalizeService } = makeHost({ voicedTicks: 18, silentTicks: 0 });
+    transcribeMock.mockRejectedValueOnce(new Error("service unavailable"));
+    routeTranscriptionMock.active = true;
+    const mdPath = "QnALog/转写纪要/2026-09-18 failed-loud-3.md";
+    files.set(mdPath, { content: sessionHeader("2026-09-18 12:33") });
+    const session = makeSession(mdPath);
+    host.sessionStore.begin(session);
+
+    await recordingService.handleSegment(session as never, finalPayload(3000) as never);
+    await (session as unknown as { writeQueue: Promise<void> }).writeQueue;
+    await finalizeService.finalizeSession(session as never);
+
+    expect([...files.keys()].filter((p) => p.startsWith("QnALog/录音/"))).toHaveLength(1);
+    expect(trashed).not.toContain(mdPath);
+    expect(host.queue.tasks.length).toBeGreaterThan(0);
   });
 });

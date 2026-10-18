@@ -288,6 +288,79 @@ describe("RecorderService browser boundaries", () => {
     await service.stop();
   });
 
+  it("emits each slice once when stop arrives while a cut is still waiting for its recorder to stop", async () => {
+    vi.useFakeTimers();
+    installBrowser();
+    const onSegment = vi.fn();
+    const service = new RecorderService(makeHost().host);
+    await service.start({ onSegment });
+    const cutRecorder = FakeMediaRecorder.instances[1]!;
+    cutRecorder.data("before cut");
+    cutRecorder.stopBehavior = "silent";
+    const cutting = service.cutSegment();
+    await Promise.resolve();
+    const stopping = service.stop();
+    cutRecorder.emit("stop");
+    await cutting;
+    await stopping;
+    // The cut's own fallback timer (4 s) must not replay the same slice after stop has finished.
+    await vi.advanceTimersByTimeAsync(4000);
+    const payloads = onSegment.mock.calls.map(([payload]) => payload);
+    expect(payloads.map((p) => [p.index, p.isFinal])).toEqual([[0, false], [1, true]]);
+    expect(await payloads[0].blob.text()).toBe("before cut");
+    expect(await payloads[1].blob.text()).not.toBe("before cut");
+    expect(service.segmentIndex).toBe(2);
+    expect(service.state).toBe("idle");
+    vi.useRealTimers();
+  });
+
+  it("emits each slice once when stop is called in the same tick as a cut", async () => {
+    installBrowser();
+    const onSegment = vi.fn();
+    const service = new RecorderService(makeHost().host);
+    await service.start({ onSegment });
+    const cutRecorder = FakeMediaRecorder.instances[1]!;
+    cutRecorder.data("same tick");
+    cutRecorder.stopBehavior = "silent";
+    const cutting = service.cutSegment();
+    const stopping = service.stop();
+    cutRecorder.emit("stop");
+    await Promise.all([cutting, stopping]);
+    const payloads = onSegment.mock.calls.map(([payload]) => payload);
+    expect(payloads.map((p) => [p.index, p.isFinal])).toEqual([[0, false], [1, true]]);
+    expect(await payloads[0].blob.text()).toBe("same tick");
+    expect(await payloads[1].blob.text()).not.toBe("same tick");
+  });
+
+  it("emits each slice once when stop follows a completed cut", async () => {
+    installBrowser();
+    const onSegment = vi.fn();
+    const service = new RecorderService(makeHost().host);
+    await service.start({ onSegment });
+    FakeMediaRecorder.instances[1]!.data("after cut");
+    await service.cutSegment();
+    FakeMediaRecorder.instances.at(-1)!.data("tail");
+    await service.stop();
+    const payloads = onSegment.mock.calls.map(([payload]) => payload);
+    expect(payloads.map((p) => [p.index, p.isFinal])).toEqual([[0, false], [1, true]]);
+    expect(await payloads[0].blob.text()).toBe("after cut");
+    expect(await payloads[1].blob.text()).toBe("tail");
+  });
+
+  it("does not replay the cut audio when stop follows a cut whose segment restart failed", async () => {
+    installBrowser();
+    const onSegment = vi.fn();
+    const service = new RecorderService(makeHost().host);
+    await service.start({ onSegment });
+    FakeMediaRecorder.instances[1]!.data("cut payload");
+    FakeMediaRecorder.failConstructionAt = FakeMediaRecorder.constructionCount + 1;
+    await expect(service.cutSegment()).rejects.toThrow("simulated recorder construction failure");
+    await service.stop();
+    const payloads = onSegment.mock.calls.map(([payload]) => payload);
+    expect(payloads.map((p) => [p.index, p.isFinal])).toEqual([[0, false], [1, true]]);
+    expect(payloads.some((p) => p.isFinal && p.blob.size > 0)).toBe(false);
+  });
+
   it("resumes paused recorders, accumulates pause time, and stays paused when segment resume fails", async () => {
     vi.useFakeTimers();
     installBrowser();

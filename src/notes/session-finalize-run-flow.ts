@@ -13,6 +13,7 @@ import { getErrorMessage, formatElapsed } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 import { getSegmentsForFinalSession } from "./session-finalize-sources";
 import { classifyBlankRecording } from "../audio/blank-recording-policy";
+import { isEssentiallySilentSession } from "../audio/session-silence";
 import { getSegmentsDurationMs } from "./audio-refs";
 export type FinalizeProgress = Omit<SessionWorkProgress, "percent"> & { percent?: number | null };
 
@@ -60,6 +61,8 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
       ? t("Filtered out recordings shorter than one second")
       : t("No speech was detected; this recording was discarded.");
     new obsidian.Notice(notice);
+  } else if (session.shortRecordingBlank) {
+    new obsidian.Notice(t("No text was recognized, but sound was detected; the audio was kept in the recording folder and no note was created. Import it manually to retry."), 8000);
   } else if (session.shortRecordingText) {
     const text = session.shortRecordingText.length > 40 ? `${session.shortRecordingText.slice(0, 39)}…` : session.shortRecordingText;
     new obsidian.Notice(t("Short recording was not made into a note; audio was kept. Recognized: {0}").replace("{0}", text), 8000);
@@ -121,11 +124,26 @@ export interface SessionFinalizeRunPort extends SessionShortRecordingPort {
   buildTitleSource(segments: Segment[]): string;
 }
 
+/**
+ * 短录音转写为空白时，只有整场基本无声才丢弃。
+ * 整场有声（音乐、歌声、转写服务读不出的语言等）则改为只留音频，不建笔记。
+ * 续录、导入与其它来源沿用原有规则，不在这里改动。
+ */
+function keepBlankShortRecordingWhenSoundDetected(session: RecordingSession, sessionEssentiallySilent: boolean): void {
+  if (session.shortRecordingTier !== "discard" || !session.shortRecordingBlank) return;
+  if (sessionEssentiallySilent) return;
+  if (session.source || session.externalAudioSource || session.continuation || session.continuationSourcePath) return;
+  session.shortRecordingTier = "keep-audio";
+  session.shortRecordingText = undefined;
+}
+
 export async function runSessionFinalization(port: SessionFinalizeRunPort, session: RecordingSession): Promise<void> {
   const silence = port.readSilenceTicks();
   const _silVoiced = silence.voiced;
   const _silSilent = silence.silent;
+  const sessionEssentiallySilent = isEssentiallySilentSession(_silVoiced, _silSilent);
   if (session.shortRecordingTier) {
+    keepBlankShortRecordingWhenSoundDetected(session, sessionEssentiallySilent);
     await finishShortRecordingFlow(port, session);
     return;
   }
@@ -155,7 +173,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     segments: currentSegments,
   });
   if (blankRecordingDisposition !== "not-applicable") {
-    if (blankRecordingDisposition === "discard") {
+    if (blankRecordingDisposition === "discard" && sessionEssentiallySilent) {
       session.shortRecordingTier = "discard";
       session.shortRecordingDurationMs = durationMs;
       await finishShortRecordingFlow(port, session);
@@ -168,7 +186,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     });
     try {
       await port.logDiagnostic("info", "session.blank_recording_kept", t("No speech was detected; the recording and note were kept."), {
-        durationMs, source: session.source || "recording", mdPath: session.mdPath,
+        durationMs, source: session.source || "recording", mdPath: session.mdPath, soundDetected: !sessionEssentiallySilent,
       });
     } catch { /* diagnostics must not change finalization behavior */ }
     new obsidian.Notice(t("No speech was detected; the recording and note were kept."), 8000);

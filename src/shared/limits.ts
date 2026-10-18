@@ -27,6 +27,13 @@ export const KNOWLEDGE_EXTRACTION_BATCH_LIMIT = 20;
 
 export const SEGMENT_CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * 录音进行中，整场母带（完整音频）每隔此时长（录音时长，不含暂停）增量写入 `录音/.partial/<场次>/`。
+ * 进程强退或电脑崩溃时，最多丢失最后这段时长内的音频；之前已写入的部分会在下次启动时恢复为录音文件。
+ * 20 秒使增量写入次数约为录音时长除以 20 秒；更短会增加写入次数，更长会扩大丢失窗口。
+ */
+export const MASTER_FLUSH_INTERVAL_MS = 20 * 1000;
+
 export const EXTERNAL_INBOX_SCAN_INTERVAL_MS = 30 * 1000;
 
 export const EXTERNAL_INBOX_RETRY_DELAYS_MS = [60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];

@@ -575,7 +575,7 @@ interface TranscriptDataElement {
   payload: string;
 }
 
-function findTranscriptDataElements(markdown: string): TranscriptDataElement[] {
+export function findTranscriptDataElements(markdown: string): TranscriptDataElement[] {
   const elements: TranscriptDataElement[] = [];
   const spans = new RegExp(`<span\\b(?=[^>]*\\bhidden(?:\\s|=|>))(?=[^>]*\\bdata-${NS_TAG}-transcript-data=["']([^"']*)["'])(?=[^>]*\\bdata-${NS_TAG}-segment=["']([^"']*)["'])[^>]*>\\s*<\\/span>`, "gi");
   for (const match of markdown.matchAll(spans)) {

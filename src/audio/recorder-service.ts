@@ -10,6 +10,7 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { MAX_SPEAKER_CHANNELS, buildMicrophoneAudioConstraints, configureMicrophoneTrackChannels, normalizeAudioChannelMode, clampSpeakerChannelCount } from "./channel-speakers";
 
 import { t } from "../shared/i18n";
+import { MASTER_FLUSH_INTERVAL_MS } from "../shared/limits";
 
 function getRecorderErrorName(error: unknown): string {
   if ((typeof error !== "object" && typeof error !== "function") || error === null || !("name" in error)) return "";
@@ -67,12 +68,23 @@ export interface RecorderInfo {
   channelMode: AudioChannelMode;
   issue: RecordingIssue | null;
 }
+/** 母带增量落盘的一次请求：只含上次成功落盘之后新增的分片。 */
+export interface MasterFlushPayload {
+  blob: Blob;
+  mime: string;
+  /** 本次请求覆盖的母带分片数量。 */
+  chunkCount: number;
+  /** 请求时的录音时长（毫秒，不含暂停）。 */
+  elapsedMs: number;
+}
 export interface RecorderStartOptions {
   captureMode?: unknown;
   segmentDurationMs?: number;
   quickCutMarksMs?: number[];
   onSegment?: (payload: RecorderSegmentPayload) => void | Promise<void>;
   onStreamReady?: (stream: MediaStream, info: RecorderChannelInfo) => void | Promise<void>;
+  /** 返回 true 表示已落盘；返回 false 或抛错时，分片保留，下一个间隔重试。 */
+  onMasterFlush?: (payload: MasterFlushPayload) => boolean | Promise<boolean>;
 }
 export interface RecorderStopResult {
   totalDurationMs: number;
@@ -109,6 +121,16 @@ export class RecorderService {
   declare chunks: Blob[];
   /** 整场录音的音频分片（主录音器）。 */
   declare masterChunks: Blob[];
+  /** 已由 onMasterFlush 确认落盘的母带分片数量（masterChunks 的前缀长度）。 */
+  declare masterFlushedCount: number;
+  /** 上一次发起母带落盘请求时的录音时长（毫秒）。 */
+  declare masterFlushAtElapsed: number;
+  /** 是否有母带落盘请求尚未完成。 */
+  declare masterFlushing: boolean;
+  /** 每次 start 递增；迟到的落盘结果只作用于发起它的那场录音。 */
+  declare masterGeneration: number;
+  /** 母带增量落盘回调；未传入时不落盘。 */
+  declare onMasterFlush: ((payload: MasterFlushPayload) => boolean | Promise<boolean>) | null;
   /** 有声音的计时次数，供「整场几乎没声音」提示使用。 */
   declare _voicedTicks: number;
   /** 静音的计时次数。 */
@@ -140,6 +162,8 @@ export class RecorderService {
   declare quickCutMarksMs: number[];
   /** 是否正在切片（用于避免重入）。 */
   declare cutting: boolean;
+  /** 正在进行的切段（含交给 onSegment 之前的全部步骤）；停止录音时等它结束，避免同一段音频被交付两次。 */
+  declare cutInFlight: Promise<void> | null;
   /** 段落回调；由 recording-service 传入。 */
   declare onSegment: ((payload: RecorderSegmentPayload) => void | Promise<void>) | null;
   /** 电平状态订阅者。 */
@@ -181,6 +205,11 @@ export class RecorderService {
     this.stream = null;
     this.chunks = [];
     this.masterChunks = [];
+    this.masterFlushedCount = 0;
+    this.masterFlushAtElapsed = 0;
+    this.masterFlushing = false;
+    this.masterGeneration = 0;
+    this.onMasterFlush = null;
     this.mime = "";
     this.masterMime = "";
     this.sessionStartedAt = 0;
@@ -193,6 +222,7 @@ export class RecorderService {
     this.quickCutMarksMs = [];
     this.nextCutAtElapsed = Infinity;
     this.cutting = false;
+    this.cutInFlight = null;
     this.onSegment = null;
     this.listeners = new Set();
     this.ticker = null;
@@ -246,12 +276,14 @@ export class RecorderService {
     this.segmentStartOffsetMs = 0;
     this.pausedFor = 0;
     this.onSegment = (options && options.onSegment) || null;
+    this.onMasterFlush = (options && options.onMasterFlush) || null;
     this.segmentDurationMs = (options && options.segmentDurationMs) || 0;
     this.quickCutMarksMs = this.segmentDurationMs > 0 && Array.isArray(options && options.quickCutMarksMs)
       ? (options?.quickCutMarksMs || []).filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b)
       : [];
     this.nextCutAtElapsed = this.getNextCutAtElapsed(0);
     this.cutting = false;
+    this.cutInFlight = null;
     this.sessionStartedAt = Date.now();
     this.state = "recording";
     // 静音统计计数器：每场录音开始时清零（续录也走 start()，故不会跨场污染）。
@@ -509,6 +541,10 @@ export class RecorderService {
     const opts = this.mime ? { mimeType: this.mime } : undefined;
     this.masterRecorder = null;
     this.masterChunks = [];
+    this.masterFlushedCount = 0;
+    this.masterFlushAtElapsed = 0;
+    this.masterFlushing = false;
+    this.masterGeneration++;
     this.masterMime = this.mime || "";
     try {
       // start() acquires a stream before creating an active master recorder.
@@ -648,11 +684,50 @@ export class RecorderService {
   tick(): void {
     this.updateAudioLevel();
     this.emit();
-    if (this.state !== "recording" || this.cutting) return;
+    this.maybeFlushMaster();
+    if (this.state !== "recording" || this.cutting || this.stopping) return;
     const elapsed = this.getInfo().elapsed;
     if (elapsed >= this.nextCutAtElapsed) {
       this.cutSegment().catch((e) => console.error("[QnALog] cutSegment error", e));
     }
+  }
+  /**
+   * 录音时长每满 MASTER_FLUSH_INTERVAL_MS，把尚未落盘的母带分片交给 onMasterFlush。
+   * 分片不从 masterChunks 中移除：停止时的完整母带仍由全部分片合成。
+   * 请求失败时分片保留，并在下一个间隔用同一批起点重新发送。
+   */
+  maybeFlushMaster(): void {
+    const flush = this.onMasterFlush;
+    if (!flush || this.masterFlushing || this.state === "idle") return;
+    const elapsed = this.getInfo().elapsed;
+    if (elapsed - this.masterFlushAtElapsed < MASTER_FLUSH_INTERVAL_MS) return;
+    const from = this.masterFlushedCount;
+    const to = this.masterChunks.length;
+    if (to <= from) return;
+    const mime = this.masterMime || this.mime;
+    const payload: MasterFlushPayload = {
+      blob: new Blob(this.masterChunks.slice(from, to), { type: mime }),
+      mime,
+      chunkCount: to - from,
+      elapsedMs: elapsed,
+    };
+    this.masterFlushing = true;
+    this.masterFlushAtElapsed = elapsed;
+    void this.runMasterFlush(flush, payload, to, this.masterGeneration);
+  }
+  async runMasterFlush(
+    flush: (payload: MasterFlushPayload) => boolean | Promise<boolean>,
+    payload: MasterFlushPayload,
+    end: number,
+    generation: number,
+  ): Promise<void> {
+    let ok = false;
+    try { ok = (await flush(payload)) === true; }
+    catch (e) { console.error("[QnALog] master flush failed", e); }
+    if (generation !== this.masterGeneration) return;
+    this.masterFlushing = false;
+    if (ok) this.masterFlushedCount = end;
+    else this.masterFlushAtElapsed = this.getInfo().elapsed;
   }
   getNextCutAtElapsed(fromElapsed: number): number {
     if (!this.segmentDurationMs || this.segmentDurationMs <= 0) return Infinity;
@@ -676,6 +751,16 @@ export class RecorderService {
   }
   async cutSegment(): Promise<void> {
     if (this.cutting || this.state !== "recording") return;
+    // _runCut 同步地先置 cutting，再进入第一个 await；此处同步登记 cutInFlight，stop() 才能看到它。
+    const run = this._runCut();
+    this.cutInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (this.cutInFlight === run) this.cutInFlight = null;
+    }
+  }
+  async _runCut(): Promise<void> {
     this.cutting = true;
     const chunksAtCut = this.chunks;
     // recording state requires an active segment recorder.
@@ -691,6 +776,8 @@ export class RecorderService {
       await this._awaitRecorderStop(this.recorder, () => undefined, undefined);
 
       blob = new Blob(chunksAtCut, { type: mimeAtCut });
+      // 这些分片已经交给本段；清空共享数组，否则之后的 stop() 会把同一批音频再交付一次（分段重启失败时尤其如此）。
+      this.chunks = [];
       this.segmentIndex++;
       this.segmentStartOffsetMs = endOffset;
       this.nextCutAtElapsed = this.getNextCutAtElapsed(endOffset);
@@ -784,6 +871,11 @@ export class RecorderService {
     if (this.state === "idle") return null;
     this.stopping = true;
     const elapsedAtStop = this.getInfo().elapsed;
+    // 切段进行中时先等它结束：它会交付停止前的那一段，并重启分段录音器；
+    // 之后收尾的只是剩下的音频，不会与切段交付的分片重复。
+    if (this.cutInFlight !== null) {
+      try { await this.cutInFlight; } catch { /* 切段失败已记录为录音问题并保留整场音频，此处继续收尾 */ }
+    }
     const startOffset = this.segmentStartOffsetMs;
     const index = this.segmentIndex;
     const mime = this.recorder ? (this.recorder.mimeType || this.mime) : this.mime;

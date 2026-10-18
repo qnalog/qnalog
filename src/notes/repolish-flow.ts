@@ -72,8 +72,8 @@ export interface RepolishFlowPort extends RepolishFlowBasePort {
 
 export async function repolishMarkdownFile(
   port: RepolishFlowPort, file: unknown, mode: string, repolishOptions: RepolishOptions = null,
-): Promise<void> {
-  if (!(file instanceof obsidian.TFile) || file.extension !== "md") return;
+): Promise<boolean> {
+  if (!(file instanceof obsidian.TFile) || file.extension !== "md") return false;
   const meta = port.getModeMeta(mode);
   const modeDisplayName = port.getModeDisplayName(mode);
   let taskMeter: unknown = null;
@@ -83,10 +83,11 @@ export async function repolishMarkdownFile(
   const inFlight = port.getInFlight();
   if (inFlight.has(lockId)) {
     new obsidian.Notice(t("This note is being reorganized; please wait for the current task to finish."), 5000);
-    return;
+    return false;
   }
   inFlight.add(lockId);
   const repolishLockAcquired = true;
+  let repolished = false;
   try {
     let content = await port.getVault().read(file);
     const sourceId = getSourceIdFromMarkdown(content, file);
@@ -108,7 +109,7 @@ export async function repolishMarkdownFile(
     const { roleMapping, originalFrontmatter: originalFmForRegen } = repolishInput;
     if (!segments.length) {
       new obsidian.Notice(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."), 8000);
-      return;
+      return false;
     }
 
     const preferenceLabel = repolishOptions && repolishOptions.label ? ` · ${repolishOptions.label}` : "";
@@ -183,6 +184,7 @@ export async function repolishMarkdownFile(
     try { port.requestOutlineRefresh(); } catch { /* generation must not fail because the sidebar is unavailable */ }
     const outputPath = derivedFile instanceof obsidian.TFile ? derivedFile.path : dailyTargetFile.path;
     new obsidian.Notice(`${t("QnALog: generated ")}${modeDisplayName}${t(" derived note")}${preferenceLabel}${roleMapping.length ? t(" ({0} role mappings applied)").replace("{0}", String(roleMapping.length)) : ""}${versionCacheError ? t("(the version index can be rebuilt later)") : ""}`);
+    repolished = true;
     const completedTaskMeter = taskMeter ? port.tasks.endTaskMeter(taskMeter) : null;
     taskMeter = null;
     try { port.tasks.logCompletedWork(t("Re-organize completed · {0}").replace("{0}", modeDisplayName), file.path || "", completedTaskMeter); } catch { /* intentionally empty */ }
@@ -216,5 +218,6 @@ export async function repolishMarkdownFile(
     port.tasks.setBusyContext(null);
     port.tasks.updateBusyStatus();
   }
+  return repolished;
 }
 
