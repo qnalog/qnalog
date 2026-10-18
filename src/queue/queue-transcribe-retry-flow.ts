@@ -13,6 +13,7 @@ import { nsMarker, nsRe } from "../shared/namespace";
 import { labelPattern, labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
 import { attachTranscriptResult } from "../transcript/session-transcript";
+import { repairDuplicateTranscriptBlocksInNote } from "../transcript/repair-duplicate-transcript-blocks";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 import type { AudioBlobSource } from "./transcribe-audio-source";
 import { classifyLongRecordingAnomaly } from "../audio/long-recording-anomaly";
@@ -60,7 +61,13 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   const segmentStart = formatElapsed(Math.max(0, Number(task.startOffsetMs) || 0));
   const segmentEnd = formatElapsed(Math.max(Number(task.startOffsetMs) || 0, Number(task.endOffsetMs) || 0));
   const legacySegmentPattern = new RegExp(`((?:^|\\n)###\\s+(?:段落|Segment)\\s+${segmentNumber}\\s+\\(${escapeRegExp(segmentStart)}[–-]${escapeRegExp(segmentEnd)}\\)[^\\n]*\\n(?:\\s*\\n)?(?:<!--\\s*${nsRe("transcribe-task")}:[^>]+-->\\s*)?)(?:${failMark.source})`);
-  const currentMarkdown = mdFile instanceof obsidian.TFile ? await port.getVault().read(mdFile) : "";
+  const storedMarkdown = mdFile instanceof obsidian.TFile ? await port.getVault().read(mdFile) : "";
+  const currentMarkdown = mdFile instanceof obsidian.TFile
+    ? await repairDuplicateTranscriptBlocksInNote({
+      process: (file, update) => port.getVault().process(file, update),
+      logDiagnostic: (level, code, message, data) => port.logDiagnostic(level, code, message, data),
+    }, mdFile, storedMarkdown)
+    : "";
   const sourceId = String(task.sessionId || (mdFile instanceof obsidian.TFile ? getSourceIdFromMarkdown(currentMarkdown, mdFile) : task.mdPath || "note"));
   const sourceSegmentIndex = Math.max(0, Number(task.segmentIndex) || 0);
   const parentSegmentId = `seg:${encodeURIComponent(sourceId)}:${sourceSegmentIndex}`;

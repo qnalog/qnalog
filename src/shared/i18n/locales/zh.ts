@@ -2776,6 +2776,8 @@ export const ZH: MessageTable = {
   "Transcription retry finished: {0} succeeded": "转写重试完成：成功 {0} 个",
   "Transcription retry recovered a temporary clip from the full recording": "转写重试已从完整录音恢复临时切片",
   "Transcription retry returned empty text; treating it as a failure and re-queuing": "转写重试返回空文本，视作失败继续排队",
+  "Duplicate transcript blocks were merged so the note can be read; the transcript text was kept.": "已合并重复的转写段落以便读取笔记，转写文字已保留。",
+  "Duplicate transcript blocks have different text and were left unchanged.": "重复的转写段落文字不同，未做改动。",
   "Transcription retry returned an empty result (the service responded HTTP 200 with no text)": "转写重试返回空结果（服务 HTTP 200 但无文字）",
   "Automatic re-organization after backfilling transcription failed": "补转写后自动重新整理失败",
   "Merge returned an empty result": "合并返回为空",

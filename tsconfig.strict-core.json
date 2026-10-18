@@ -150,6 +150,7 @@
     "src/notes/callout-normalize.ts",
     "src/shared/util-knowledge.ts",
     "src/transcript/audio-binding.ts",
+    "src/transcript/dedupe-transcript-blocks.ts",
     "src/ui/helpers.ts",
     "src/vault/cleanup-service.ts",
     "src/topics/overview-card.ts",
