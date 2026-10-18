@@ -15,7 +15,7 @@ export interface RecordingSegmentHost {
   markSessionAsrJobsDeferred(session: RecordingSession): void;
   finishSessionSegmentWork(session: RecordingSession, jobId: string | undefined, reason: "completed"): void;
   scheduleMeetingWorkbenchInteraction(session: RecordingSession, interaction: unknown): void;
-  logDiagnostic(level: "error", code: string, message: string, data: Record<string, unknown>): Promise<unknown>;
+  logDiagnostic(level: "error" | "warn" | "info" | "debug", code: string, message: string, data: Record<string, unknown>): Promise<unknown>;
   processRecordedSegment(session: RecordingSession, seg: PreparedLiveSegment): Promise<void>;
   finalizeRecordedSession(session: RecordingSession): Promise<void>;
 }
