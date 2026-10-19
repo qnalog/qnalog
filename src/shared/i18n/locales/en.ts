@@ -70,7 +70,7 @@ export const EN: MessageTable = {
   "Undo could not be confirmed. Check the topic page and its errata, then retry Undo.": "Undo could not be confirmed. Check the topic page and its errata, then retry Undo.",
   "The topic folder changed while this preview was open. Generate a new preview.": "The topic folder changed while this preview was open. Generate a new preview.",
   "The target topic page moved or changed identity. Check the page and generate a new preview.": "The target topic page moved or changed identity. Check the page and generate a new preview.",
-  "This topic ID appears more than once in the topic folder. Resolve the duplicate pages before applying this preview.": "This topic ID appears more than once in the topic folder. Resolve the duplicate pages before applying this preview.",
+  "This topic ID appears more than once in the topic folder. Resolve the duplicate pages and generate a new preview.": "This topic ID appears more than once in the topic folder. Resolve the duplicate pages and generate a new preview.",
   "This topic ID is already in use. Generate a new preview.": "This topic ID is already in use. Generate a new preview.",
   "Content cleaning": "Content cleaning",
   "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.": "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.",

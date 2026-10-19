@@ -3070,7 +3070,7 @@ export const ZH: MessageTable = {
   "Undo could not be confirmed. Check the topic page and its errata, then retry Undo.": "无法确认撤销结果。请检查主题页及其勘误，再重试撤销。",
   "The topic folder changed while this preview was open. Generate a new preview.": "预览打开期间主题文件夹发生变化。请重新生成预览。",
   "The target topic page moved or changed identity. Check the page and generate a new preview.": "目标主题页已移动或更换身份。请检查页面并重新生成预览。",
-  "This topic ID appears more than once in the topic folder. Resolve the duplicate pages before applying this preview.": "主题文件夹中存在多个相同 ID 的主题页。请先检查重复页面，再应用预览。",
+  "This topic ID appears more than once in the topic folder. Resolve the duplicate pages and generate a new preview.": "主题文件夹中存在多个相同 ID 的主题页。请先处理重复页面，再重新生成预览。",
   "This topic ID is already in use. Generate a new preview.": "此主题 ID 已被占用。请重新生成预览。",
   "The topic page changed after the update. Undo was not applied.": "主题页在更新后又发生修改，未执行撤销。",
   "No topic update is available to undo.": "没有可撤销的主题更新。",

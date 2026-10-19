@@ -144,7 +144,7 @@ describe("topics service", () => {
     const block = parseTopicPageBlocks(markdown).find((item) => item.text.includes("Off-topic detail"))!;
     const preview = await setup.service.previewExcludeBlocks("Topics/A.md", [block.id]);
 
-    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow();
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("This topic ID appears more than once in the topic folder. Resolve the duplicate pages and generate a new preview.");
     expect(await setup.storePort.read("Topics/A.md")).toBe(markdown);
     expect(await setup.storePort.read("Topics/B.md")).toBe(markdown);
     await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("Topic preview is no longer available");

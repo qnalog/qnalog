@@ -117,7 +117,7 @@ export class TopicsService {
     const topics = await store.list();
     this.assertPreviewFolder(folder);
     if (topics.filter((item) => item.page.id === topicId).length > 1) {
-      throw new Error(t("This topic ID appears more than once in the topic folder. Resolve the duplicate pages before applying this preview."));
+      throw new Error(t("This topic ID appears more than once in the topic folder. Resolve the duplicate pages and generate a new preview."));
     }
     const target = topics.find((item) => item.path === path);
     if (!target || target.page.id !== topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
