@@ -4398,21 +4398,30 @@ export class OutlineView extends obsidian.ItemView {
     const iconWrap = top.createDiv({ cls: "qnalog-recording-blocker-icon" });
     try { obsidian.setIcon(iconWrap, "mic-off"); } catch { /* intentionally empty */ }
     const titleWrap = top.createDiv({ cls: "qnalog-recording-blocker-title-wrap" });
-    titleWrap.createDiv({ cls: "qnalog-recording-blocker-title", text: i18nT("Microphone access denied") });
+    const backgrounded = !!issue && issue.reason === "backgrounded";
+    titleWrap.createDiv({ cls: "qnalog-recording-blocker-title", text: backgrounded ? i18nT("Recording interrupted in the background") : i18nT("Microphone access denied") });
     const stoppedAt = Number(issue && issue.stoppedAtMs);
     const fallbackMs = Math.max(0, Number(recInfo && recInfo.elapsed) || 0);
     titleWrap.createDiv({ cls: "qnalog-recording-blocker-subtitle", text: i18nT("Recording stopped at {0}").replace("{0}", formatElapsed(Number.isFinite(stoppedAt) ? stoppedAt : fallbackMs)) });
     card.createDiv({
       cls: "qnalog-recording-blocker-desc",
-      text: i18nT("The content recorded in this session has been saved locally. The system revoked microphone permission during recording, so no new audio can be recorded."),
+      text: backgrounded
+        ? i18nT("The content recorded in this session has been saved locally. The system suspended the recording input while Obsidian was in the background.")
+        : i18nT("The content recorded in this session has been saved locally. The system revoked microphone permission during recording, so no new audio can be recorded."),
     });
     const steps = card.createDiv({ cls: "qnalog-recording-blocker-steps" });
     steps.createDiv({ text: i18nT("Restore method:") });
-    steps.createDiv({ text: i18nT("1. Open System Settings and allow Obsidian to access the microphone.") });
-    steps.createDiv({ text: i18nT("2. Return to QnALog and start a new recording.") });
+    if (backgrounded) {
+      steps.createDiv({ text: i18nT("1. Tap Save audio only to keep what was recorded.") });
+      steps.createDiv({ text: i18nT("2. Use Continue Recording into This Note to keep recording.") });
+    } else {
+      steps.createDiv({ text: i18nT("1. Open System Settings and allow Obsidian to access the microphone.") });
+      steps.createDiv({ text: i18nT("2. Return to QnALog and start a new recording.") });
+    }
     const actions = card.createDiv({ cls: "qnalog-recording-blocker-actions" });
     const saveOnly = actions.createEl("button", { cls: "qnalog-recording-blocker-secondary", text: i18nT("Save audio only"), attr: { type: "button" } });
     saveOnly.onclick = () => this.plugin.recording.stopRecording();
+    if (backgrounded) return;
     const settings = actions.createEl("button", { cls: "qnalog-recording-blocker-primary", attr: { type: "button" } });
     try { obsidian.setIcon(settings.createSpan({ cls: "qnalog-recording-blocker-action-icon" }), "settings"); } catch { /* intentionally empty */ }
     settings.createSpan({ text: i18nT("+ Add subtask, press Enter to confirm") });

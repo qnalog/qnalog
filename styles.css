@@ -13325,3 +13325,12 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 .qnalog-errata-field input {
   width: 100%;
 }
+
+/* 屏幕常亮兜底用的隐藏视频 */
+.qnalog-wake-video {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

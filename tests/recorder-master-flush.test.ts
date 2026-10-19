@@ -205,4 +205,28 @@ describe("master audio flush while recording", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(onMasterFlush.mock.calls.length).toBe(callsAtStop);
   });
+
+  it("flushMasterNow writes the unsaved chunks immediately, before the interval elapses (page hidden)", async () => {
+    const service = new RecorderService(makeHost());
+    const flushes: MasterFlushPayload[] = [];
+    await service.start({ onMasterFlush: (payload) => { flushes.push(payload); return true; } });
+    await recordSeconds(1, 5);
+    expect(flushes).toHaveLength(0);
+    service.flushMasterNow();
+    expect(flushes).toHaveLength(1);
+    expect(flushes[0]!.chunkCount).toBe(5);
+    expect(await flushes[0]!.blob.text()).toBe("c1;c2;c3;c4;c5;");
+  });
+
+  it("checkInputAliveAfterResume marks the recording interrupted when the track has ended", async () => {
+    const service = new RecorderService(makeHost());
+    const setIssue = vi.spyOn(service.host, "setRecordingIssue");
+    await service.start({});
+    await recordSeconds(1, 3);
+    expect(service.checkInputAliveAfterResume()).toBe(false);
+    (service.stream!.getAudioTracks()[0] as { readyState: string }).readyState = "ended";
+    expect(service.checkInputAliveAfterResume()).toBe(true);
+    expect(service.state).toBe("paused");
+    expect(setIssue).toHaveBeenCalledWith("microphone", expect.objectContaining({ reason: "backgrounded" }));
+  });
 });
