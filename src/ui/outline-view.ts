@@ -15,6 +15,7 @@ import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleMode
 import { stripModePrefixFromTitle } from "../notes/note-title-path";
 
 import { isMobileRuntime } from "../shared/util-platform";
+import { applySafeAreaTopGap } from "./safe-area";
 
 import { getSegmentsDurationMs, parseElapsedMsToken } from "../shared/util-text";
 
@@ -590,6 +591,7 @@ export class OutlineView extends obsidian.ItemView {
     root.empty();
     root.addClass("qnalog-outline");
     root.toggleClass("is-mobile", isMobileRuntime());
+    if (isMobileRuntime()) applySafeAreaTopGap(root);
     root.removeClass("has-meeting-composer");
     this._lastRenderedOutline = "";
 
