@@ -64,6 +64,21 @@ describe("topic store", () => {
     expect(port.files.get(path)).toBe(result.markdown);
   });
 
+  it("does not retry a preview against a different topic ID at the same path", async () => {
+    const { port, store, path, markdown } = setup();
+    const replacement = markdown.replace('qnalog_topic_id: "topic"', 'qnalog_topic_id: "replacement"');
+    let replaced = false;
+    port.onProcess = (target) => {
+      if (target === path && !replaced) {
+        replaced = true;
+        port.files.set(path, replacement);
+      }
+    };
+
+    await expect(store.apply(path, preview("topic", hashTopicPage(markdown)), ["add"])).rejects.toThrow();
+    expect(port.files.get(path)).toBe(replacement);
+  });
+
   it("retains five snapshots and guards undo against intervening edits", async () => {
     const { port, store, path } = setup();
     for (let index = 0; index < 6; index++) await store.apply(path, preview("topic", "ignored", `Evidence supports plan ${index}.`), ["add"]);

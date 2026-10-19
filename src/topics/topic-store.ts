@@ -2,6 +2,7 @@ import { NS_FM, NS_ROOT } from "../shared/namespace";
 import { appendTopicMemberLinks, appendTopicMemberMetadata, buildTopicBlockIndex, hashTopicPage, isLegacyTopicStatusLine, parseTopicPage, readLegacyTopicMachineProperties, removeTopicMachineProperties, withTopicBlockIndex, updateTopicFrontmatter, serializeTopicPage, applyTopicOps, topicMemberMetadataCounts, type TopicBlockIndexEntry, type TopicOperation, type TopicPage } from "./topic-page";
 import { topicMemberExcludeSelectionId, type TopicChangePreview } from "./topic-integration";
 import { rebuildTopicTagAliases } from "./topic-tags";
+import { t } from "../shared/i18n";
 
 export const TOPIC_HISTORY_LIMIT = 5;
 export interface TopicStorePort {
@@ -249,6 +250,8 @@ export class TopicStore {
     const hasChanges = operations.length > 0 || !!preview.memberLinks || !!preview.tags || !!preview.newMembers?.length || (preview.legacyAnchorCleanup === true && selected.has("__clean-legacy-markers__")) || (preview.legacyPropertyCleanup === true && selected.has("__clean-legacy-properties__")) || (preview.legacyStatusCleanup === true && selected.has("__clean-legacy-status__"));
     if (!hasChanges) {
       appliedMarkdown = await this.port.read(path);
+      const current = parseTopicPage(appliedMarkdown, path);
+      if (!current || current.id !== preview.topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
       pageChangedDuringGeneration = hashTopicPage(appliedMarkdown) !== preview.expectedHash;
       return { markdown: appliedMarkdown, appliedCount, pageChangedDuringGeneration, resultingHash: hashTopicPage(appliedMarkdown), skipped: [], snapshotPath: null };
     }
@@ -257,6 +260,7 @@ export class TopicStore {
       const before = await this.port.read(path);
       const parsed = parseTopicPage(before, path);
       if (!parsed) throw new Error(`Topic page is invalid: ${path}`);
+      if (parsed.id !== preview.topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
       const memberRemovals = operations.filter((operation): operation is Extract<TopicOperation, { type: "remove_member" }> => operation.type === "remove_member");
       if (memberRemovals.length) applyTopicOps(before, memberRemovals);
       const machineState = await this.ensureMachineCache(path, before, parsed);
@@ -269,6 +273,11 @@ export class TopicStore {
       }
       let changed = false;
       await this.port.process(path, (current) => {
+        const livePage = parseTopicPage(current, path);
+        if (!livePage || livePage.id !== preview.topicId) {
+          changed = true;
+          return current;
+        }
         if (hashTopicPage(current) !== beforeHash) {
           changed = true;
           return current;
@@ -279,6 +288,7 @@ export class TopicStore {
         if (result.duplicateBlockIds?.length) this.port.logDiagnostic?.("topic.duplicate_block_id", { ids: result.duplicateBlockIds });
         const currentPage = parseTopicPage(result.markdown, path);
         if (!currentPage) throw new Error(`Topic page is invalid: ${path}`);
+        if (currentPage.id !== preview.topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
         const memberLinks = [...new Set([...currentPage.memberLinks, ...(preview.memberLinks || [])])];
         const tags = [...new Set([...currentPage.tags, ...(preview.tags || [])])];
         let next = currentPage.layout === 2 ? result.markdown : appendTopicMemberLinks(result.markdown, memberLinks);
@@ -325,6 +335,7 @@ export class TopicStore {
     if (hashTopicPage(before) !== preview.expectedHash) throw new Error("The topic page changed after the rebuild preview. Generate a new preview before applying it.");
     const current = parseTopicPage(before, replacement.path);
     if (!current) throw new Error("Topic page is invalid: " + replacement.path);
+    if (current.id !== preview.topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
     const machineState = await this.ensureMachineCache(replacement.path, before, current);
     const snapshotPath = await this.makeSnapshot(current.id, before);
     let markdown = updateTopicFrontmatter(replacement.markdown, {
@@ -339,6 +350,8 @@ export class TopicStore {
     });
     let changed = false;
     await this.port.process(replacement.path, (latest) => {
+      const latestPage = parseTopicPage(latest, replacement.path);
+      if (!latestPage || latestPage.id !== preview.topicId) { changed = true; return latest; }
       if (hashTopicPage(latest) !== preview.expectedHash) { changed = true; return latest; }
       return markdown;
     });

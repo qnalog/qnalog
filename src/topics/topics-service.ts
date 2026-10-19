@@ -43,6 +43,9 @@ export interface TopicPrompt extends TopicTagMatch { path: string }
 export type TopicsUndoResult = { restored: true; errataRemoved?: number; errataFailed?: true } | { restored: false; reason: "no-history" | "page-modified" };
 interface PendingPreview {
   preview: TopicChangePreview;
+  folder: string;
+  store: TopicStore;
+  path?: string;
   managesActivity: boolean;
   onApplied?: (selection: ReadonlySet<string>, skipped: readonly { id: string; reason: "block-modified" }[], snapshotPath: string | null) => Promise<void>;
 }
@@ -97,12 +100,28 @@ export class TopicsService {
     return this.cache;
   }
   private storeForCurrentFolder(): TopicStore {
-    const folder = this.host.getFolder();
+    return this.storeForFolder(this.host.getFolder());
+  }
+  private storeForFolder(folder: string): TopicStore {
     if (!this.store || this.storeFolder !== folder) {
       this.storeFolder = folder;
       this.store = new TopicStore({ folder, port: this.host.topicStore });
     }
     return this.store;
+  }
+  private assertPreviewFolder(folder: string): void {
+    if (this.host.getFolder() !== folder) throw new Error(t("The topic folder changed while this preview was open. Generate a new preview."));
+  }
+  private async findPreviewTarget(store: TopicStore, folder: string, path: string, topicId: string): Promise<{ path: string; page: TopicPage }> {
+    this.assertPreviewFolder(folder);
+    const topics = await store.list();
+    this.assertPreviewFolder(folder);
+    if (topics.filter((item) => item.page.id === topicId).length > 1) {
+      throw new Error(t("This topic ID appears more than once in the topic folder. Resolve the duplicate pages and generate a new preview."));
+    }
+    const target = topics.find((item) => item.path === path);
+    if (!target || target.page.id !== topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
+    return target;
   }
   private storeFolder = "";
   private async refresh(options: { windowDays?: number; signal?: AbortSignal } = {}): Promise<{ cache: OverviewCardCache; cards: OverviewCard[] }> {
@@ -158,7 +177,13 @@ export class TopicsService {
   }
 
   async preview(input: TopicPreviewInput): Promise<TopicChangePreview> {
+    return this.previewFor(input);
+  }
+
+  private async previewFor(input: TopicPreviewInput, binding?: { folder: string; path: string }): Promise<TopicChangePreview> {
     if (input.basis === "body" && !input.bodyConfirmed) throw new Error("Estimate body-mode cost first and confirm before generating a preview");
+    const folder = binding?.folder ?? this.host.getFolder();
+    const store = this.storeForFolder(folder);
     const topicId = input.topicId || this.host.createId();
     const activityId = input.topicId ? `topics:update:${input.topicId}` : `topics:create:${topicId}`;
     const controller = new AbortController();
@@ -168,8 +193,16 @@ export class TopicsService {
     this.host.startActivity(activityId, input.topicId ? "Update topic" : "Create topic");
     try {
       const { cards } = await this.refresh({ signal: controller.signal });
-      const existing = input.topicId ? (await this.storeForCurrentFolder().list()).find((item) => item.page.id === input.topicId) : undefined;
-      if (input.topicId && !existing) throw new Error(`Topic not found: ${input.topicId}`);
+      const listedTopics = input.topicId ? await store.list() : [];
+      this.assertPreviewFolder(folder);
+      const existing = input.topicId
+        ? listedTopics.find((item) => binding?.path ? item.path === binding.path : item.page.id === input.topicId)
+        : undefined;
+      if (input.topicId && !existing) {
+        if (binding) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
+        throw new Error(`Topic not found: ${input.topicId}`);
+      }
+      if (binding && existing?.page.id !== input.topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
       const existingMembers = new Set(existing?.page.members || []);
       const requestedPaths = [...new Set(input.memberPaths)];
       const selectedPaths = input.rebuild && existing
@@ -183,7 +216,7 @@ export class TopicsService {
       const existingEvidenceMembers = existing && !input.rebuild
         ? await this.loadMembers(existing.page.members.filter((path) => cards.some((card) => card.path === path)), cards, input.basis)
         : [];
-      const topicStore = this.storeForCurrentFolder();
+      const topicStore = store;
       const currentPage = existing ? await topicStore.readIndexedMarkdown(existing.path) : "";
       const generationInput = { members, existingMembers: existingEvidenceMembers, basis: input.basis, currentPage: input.rebuild ? "" : currentPage, topicErrata, signal: controller.signal,
         onPlanned: (total: number) => input.onProgress?.({ completed: 0, total }),
@@ -258,9 +291,10 @@ export class TopicsService {
       }) : undefined;
       const currentHash = hashTopicPage(currentPage);
       const currentModel = currentPage ? parseTopicPage(currentPage, existing?.path) : null;
-      const latestTopic = existing ? (await this.storeForCurrentFolder().list()).find((item) => item.page.id === topicId) : undefined;
-      if (existing && !latestTopic) throw new Error(`Topic not found: ${topicId}`);
+      const latestTopic = existing ? (await store.list()).find((item) => item.path === existing.path) : undefined;
+      if (existing && (!latestTopic || latestTopic.page.id !== topicId)) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
       const latestPage = latestTopic ? await topicStore.readIndexedMarkdown(latestTopic.path) : "";
+      if (existing && parseTopicPage(latestPage, existing.path)?.id !== topicId) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
       const pageWasManuallyEdited = !!existing && (
         existing.page.cacheStatus !== "valid"
         ||
@@ -305,7 +339,8 @@ export class TopicsService {
           create: { title: input.title || members[0]?.card.title || "Topic", basis: input.basis, tags: learned.tags, tagAliases: learned.aliases, members: memberRecords, ...(generatedModel ? { model: generatedModel } : {}), ...(overviewGeneratedFromThreads ? { overviewGeneratedFromThreads: true } : {}) },
         }),
       };
-      this.previews.set(activityId, { preview, managesActivity: true });
+      this.assertPreviewFolder(folder);
+      this.previews.set(activityId, { preview, folder, store, ...(existing ? { path: existing.path } : {}), managesActivity: true });
       return preview;
     } catch (error) {
       this.controllers.delete(activityId);
@@ -343,10 +378,15 @@ export class TopicsService {
     const pendingEntry = [...this.previews.entries()].find(([, pending]) => pending.preview === preview);
     if (!pendingEntry) throw new Error("Topic preview is no longer available");
     const [activityId] = pendingEntry;
-    const managesActivity = pendingEntry[1].managesActivity;
-    const store = this.storeForCurrentFolder();
+    const pending = pendingEntry[1];
+    const managesActivity = pending.managesActivity;
+    const store = pending.store;
     try {
+      this.assertPreviewFolder(pending.folder);
       if (preview.create) {
+        const existingIds = (await store.list()).filter((item) => item.page.id === preview.topicId);
+        this.assertPreviewFolder(pending.folder);
+        if (existingIds.length) throw new Error(t("This topic ID is already in use. Generate a new preview."));
         const page = createTopicPage({ id: preview.topicId, title: preview.create.title, tags: preview.create.tags, members: preview.create.members, basis: preview.create.basis });
         page.tagAliases = preview.create.tagAliases || {};
         if (preview.create.model) {
@@ -374,14 +414,18 @@ export class TopicsService {
         return { path, markdown: stored, pageChangedDuringGeneration: false, skipped: [] };
       }
       if (preview.replacement) {
-        const result = await store.replaceWithV2Preview(preview, selection);
+        const targetPath = pending.path;
+        if (!targetPath || preview.replacement.path !== targetPath) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
+        await this.findPreviewTarget(store, pending.folder, targetPath, preview.topicId);
+        const result = await store.replaceWithV2Preview({ ...preview, replacement: { ...preview.replacement, path: targetPath } }, selection);
         this.previews.delete(activityId);
         this.controllers.delete(activityId);
         if (managesActivity) this.host.completeActivity(activityId);
         return { path: preview.replacement.path, markdown: result.markdown, pageChangedDuringGeneration: false, skipped: [] };
       }
-      const current = (await store.list()).find((entry) => entry.page.id === preview.topicId);
-      if (!current) throw new Error(`Topic not found: ${preview.topicId}`);
+      const targetPath = pending.path;
+      if (!targetPath) throw new Error(t("The target topic page moved or changed identity. Check the page and generate a new preview."));
+      const current = await this.findPreviewTarget(store, pending.folder, targetPath, preview.topicId);
       const result = await store.apply(current.path, preview, selection);
       this.previews.delete(activityId);
       this.controllers.delete(activityId);
@@ -389,6 +433,7 @@ export class TopicsService {
       if (managesActivity) this.host.completeActivity(activityId);
       return { path: current.path, markdown: result.markdown, pageChangedDuringGeneration: result.pageChangedDuringGeneration, skipped: result.skipped };
     } catch (error) {
+      this.previews.delete(activityId);
       this.controllers.delete(activityId);
       if (managesActivity) this.host.failActivity(activityId, error);
       throw error;
@@ -401,10 +446,13 @@ export class TopicsService {
 
   async previewExcludeBlocks(topicPath: string, blockIds: readonly string[]): Promise<TopicChangePreview> {
     if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
-    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.path === topicPath);
+    const folder = this.host.getFolder();
+    const store = this.storeForFolder(folder);
+    const topic = (await store.list()).find((entry) => entry.path === topicPath);
+    this.assertPreviewFolder(folder);
     if (!topic) throw new Error("Topic not found: " + topicPath);
-    const store = this.storeForCurrentFolder();
     const markdown = await store.readIndexedMarkdown(topic.path);
+    this.assertPreviewFolder(folder);
     const requested = new Set(blockIds);
     const blocks = parseTopicPageBlocks(markdown).filter((block) => requested.has(block.id));
     if (!blocks.length || blocks.length !== requested.size) throw new Error("The selected topic block could not be found.");
@@ -429,8 +477,12 @@ export class TopicsService {
       completedBatches: 0,
       totalBatches: 0,
     };
+    this.assertPreviewFolder(folder);
     this.previews.set(`topics:manual:${topic.page.id}`, {
       preview,
+      folder,
+      store,
+      path: topic.path,
       managesActivity: false,
       onApplied: async (selection, skipped, snapshotPath) => {
         for (const entry of entries) {
@@ -470,20 +522,24 @@ export class TopicsService {
 
   async previewContentCleaning(topicId: string): Promise<TopicChangePreview> {
     if (!this.host.topicErrata) throw new Error("Topic errata storage is unavailable");
-    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
+    const folder = this.host.getFolder();
+    const store = this.storeForFolder(folder);
+    const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    this.assertPreviewFolder(folder);
     if (!topic) throw new Error("Topic not found: " + topicId);
-    const store = this.storeForCurrentFolder();
     const markdown = await store.readIndexedMarkdown(topic.path);
     const errata = await this.host.topicErrata.load(topic.path, topic.page.members);
+    this.assertPreviewFolder(folder);
     if (!errata.entries.length) {
       const preview: TopicChangePreview = {
         topicId, expectedHash: hashTopicPage(markdown), pageWasManuallyEdited: topic.page.cacheStatus !== "valid",
         items: [], completedBatches: 0, totalBatches: 0, inputChars: 0, estimatedTokens: 0,
       };
-      this.previews.set(`topics:clean:${topicId}`, { preview, managesActivity: false });
+      this.previews.set(`topics:clean:${topicId}`, { preview, folder, store, path: topic.path, managesActivity: false });
       return preview;
     }
     const generated = await generateTopicCleaningOperations(this.host.integration, { markdown, members: topic.page.members, errata });
+    this.assertPreviewFolder(folder);
     const items = generated.operations.map((operation, index) => ({
       id: `clean-${index}-${hashText(JSON.stringify(operation))}`,
       operation, type: operation.type,
@@ -498,7 +554,7 @@ export class TopicsService {
       items, completedBatches: 1, totalBatches: 1, inputChars: generated.inputChars, estimatedTokens: Math.ceil(generated.inputChars / 4),
       ...(Object.keys(generated.discarded).length ? { validationWarnings: [t("Some topic blocks could not be cleaned because their source or footnotes did not pass validation.")] } : {}),
     };
-    this.previews.set(`topics:clean:${topicId}`, { preview, managesActivity: false });
+    this.previews.set(`topics:clean:${topicId}`, { preview, folder, store, path: topic.path, managesActivity: false });
     return preview;
   }
 
@@ -511,10 +567,13 @@ export class TopicsService {
   }
 
   async previewOrphanMembers(topicId: string): Promise<TopicChangePreview> {
-    const store = this.storeForCurrentFolder();
+    const folder = this.host.getFolder();
+    const store = this.storeForFolder(folder);
     const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    this.assertPreviewFolder(folder);
     if (!topic) throw new Error("Topic not found: " + topicId);
     const markdown = await store.readIndexedMarkdown(topic.path);
+    this.assertPreviewFolder(folder);
     const members = noContributionMembers(topic.page, markdown).map((path) => ({ path, title: topicMemberTitle(topic.page, path) }));
     const preview: TopicChangePreview = {
       topicId,
@@ -527,7 +586,7 @@ export class TopicsService {
       completedBatches: 0,
       totalBatches: 0,
     };
-    this.previews.set(`topics:orphans:${topicId}`, { preview, managesActivity: false });
+    this.previews.set(`topics:orphans:${topicId}`, { preview, folder, store, path: topic.path, managesActivity: false });
     return preview;
   }
 
@@ -546,11 +605,14 @@ export class TopicsService {
     }
   }
   async previewRebuild(topicId: string, onProgress?: TopicPreviewInput["onProgress"]): Promise<TopicChangePreview> {
-    const topic = (await this.storeForCurrentFolder().list()).find((entry) => entry.page.id === topicId);
+    const folder = this.host.getFolder();
+    const store = this.storeForFolder(folder);
+    const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    this.assertPreviewFolder(folder);
     if (!topic) throw new Error("Topic not found: " + topicId);
     if (topic.page.layout === 2) throw new Error("This topic page already uses the new layout");
     if (!topic.page.members.length) throw new Error("This topic has no member notes to rebuild from");
-    return this.preview({ topicId, startPath: topic.page.members[0], memberPaths: topic.page.members, basis: "overview", rebuild: true, onProgress });
+    return this.previewFor({ topicId, startPath: topic.page.members[0], memberPaths: topic.page.members, basis: "overview", rebuild: true, onProgress }, { folder, path: topic.path });
   }
   async deleteTopic(topicId: string): Promise<void> { return this.storeForCurrentFolder().deleteTopic(topicId); }
   async mergeTopics(sourceId: string, targetId: string): Promise<void> { return this.storeForCurrentFolder().mergeTopics(sourceId, targetId); }
