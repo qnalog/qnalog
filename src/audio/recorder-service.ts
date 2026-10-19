@@ -320,13 +320,13 @@ export class RecorderService {
     }
     this.streamInterruptionCleanup = () => cleanups.forEach((fn) => { try { fn(); } catch { /* intentionally empty */ } });
   }
-  handleStreamInterrupted(reason: string): void {
+  handleStreamInterrupted(reason: string, message = "系统在录音过程中收回了麦克风权限。"): void {
     if (this.stopping || this.state === "idle" || (this.issue && this.issue.kind === "microphone")) return;
     const stoppedAtMs = this.getInfo().elapsed;
     this.issue = this.host.makeRecordingIssue("microphone", {
       reason,
       stoppedAtMs,
-      message: "系统在录音过程中收回了麦克风权限。",
+      message,
     });
     this.state = "paused";
     this.pausedAt = Date.now();
@@ -696,11 +696,11 @@ export class RecorderService {
    * 分片不从 masterChunks 中移除：停止时的完整母带仍由全部分片合成。
    * 请求失败时分片保留，并在下一个间隔用同一批起点重新发送。
    */
-  maybeFlushMaster(): void {
+  maybeFlushMaster(force = false): void {
     const flush = this.onMasterFlush;
     if (!flush || this.masterFlushing || this.state === "idle") return;
     const elapsed = this.getInfo().elapsed;
-    if (elapsed - this.masterFlushAtElapsed < MASTER_FLUSH_INTERVAL_MS) return;
+    if (!force && elapsed - this.masterFlushAtElapsed < MASTER_FLUSH_INTERVAL_MS) return;
     const from = this.masterFlushedCount;
     const to = this.masterChunks.length;
     if (to <= from) return;
@@ -728,6 +728,30 @@ export class RecorderService {
     this.masterFlushing = false;
     if (ok) this.masterFlushedCount = end;
     else this.masterFlushAtElapsed = this.getInfo().elapsed;
+  }
+  /** 页面进入后台前调用：不等间隔，立即把未落盘的母带分片交给 onMasterFlush。 */
+  flushMasterNow(): void {
+    this.maybeFlushMaster(true);
+  }
+  /**
+   * 页面回到前台时调用：录音输入已失效（音轨结束或 AudioContext 已关闭）时，
+   * 按"麦克风被收回"处理（暂停本段并给出可继续录音的提示）；AudioContext 只是被挂起则尝试恢复。
+   * 返回 true 表示发现失效。
+   */
+  checkInputAliveAfterResume(): boolean {
+    if (this.state !== "recording" || this.stopping) return false;
+    const tracks = this.stream && typeof this.stream.getAudioTracks === "function" ? this.stream.getAudioTracks() : [];
+    const trackDead = tracks.length > 0 && tracks.every((track) => track.readyState === "ended");
+    const contexts = (this.levelMeters || []).map((meter) => meter.context);
+    const contextDead = contexts.some((ctx) => ctx.state === "closed");
+    if (trackDead || contextDead) {
+      this.handleStreamInterrupted("backgrounded", t("The recording input was interrupted while the page was in the background."));
+      return true;
+    }
+    for (const ctx of contexts) {
+      if (ctx.state !== "running") ctx.resume().catch(() => { /* the next meter tick retries */ });
+    }
+    return false;
   }
   getNextCutAtElapsed(fromElapsed: number): number {
     if (!this.segmentDurationMs || this.segmentDurationMs <= 0) return Infinity;

@@ -1095,6 +1095,7 @@ class QnALogPlugin extends obsidian.Plugin {
     try { if (this.outlineCoordinator) this.outlineCoordinator.dispose(); } catch { /* intentionally empty */ }
     this.externalInbox.closeExternalInboxWatcher();
     try { if (this.queueRetry) this.queueRetry.dispose(); } catch { /* intentionally empty */ }
+    try { this.recording.endScreenLifecycle(); } catch { /* intentionally empty */ }
     void (async () => {
       try { if (this.recorder && this.recorder.state !== "idle") await this.recorder.stop(); } catch { /* intentionally empty */ }
     })();

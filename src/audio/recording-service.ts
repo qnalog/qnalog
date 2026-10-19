@@ -4,8 +4,10 @@ import * as obsidian from "obsidian";
 import { audioInputModeLabel, normalizeAudioInputMode } from "./audio-input";
 import { getModeMeta, getModePrefix, getEffectivePolishMode } from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
+import { ScreenWakeGuard } from "./screen-wake-guard";
+import { watchRecordingVisibility } from "./recording-visibility-guard";
 import type { PluginSettings, RecordingSession, PreparedLiveSegment, RecorderSegmentPayload, AudioInputMode, ContinuationContext, TranscribeProviderSettings } from "../shared/types";
-import { getErrorMessage, genId } from "../shared/util-common";
+import { getErrorMessage, genId, formatElapsed } from "../shared/util-common";
 import { diagnosticError } from "../shared/util-key-diag";
 import { initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { QUICK_INTERIM_CUTS_MS } from "../shared/limits";
@@ -92,7 +94,7 @@ export interface RecordingHost {
     releaseSession(sessionId: string): void;
     cancelPrepared(taskId: string, stageFile: obsidian.TFile): Promise<void>;
   };
-  recorder: Pick<RecorderService, "state" | "start" | "stop" | "releaseStream" | "getInfo" | "masterChunks" | "chunks"> | null;
+  recorder: Pick<RecorderService, "state" | "start" | "stop" | "releaseStream" | "getInfo" | "masterChunks" | "chunks" | "flushMasterNow" | "checkInputAliveAfterResume"> | null;
   /** 创建本场录音的母带分片写入器；录音中每隔一段时间把新增音频写入分片目录。 */
   createMasterPartialSession(init: MasterPartialSessionInit): MasterPartialSession;
   saveSettings(): Promise<void>;
@@ -125,6 +127,12 @@ export class RecordingService {
   declare _oneShotCaptureMode: AudioInputMode | null;
   declare _oneShotPolishMode: string | null;
   starting = false;
+  private readonly screenGuard = new ScreenWakeGuard({
+    isMobile: isMobileRuntime,
+    isRecording: () => !!this.host.recorder && this.host.recorder.state !== "idle",
+    log: (code, message, data) => { void this.host.diagnostics.logDiagnostic("warn", code, message, data).catch(() => undefined); },
+  });
+  private stopVisibilityWatch: (() => void) | null = null;
   constructor(host: RecordingHost) {
     this.host = host;
     this.segmentHost = {
@@ -408,6 +416,7 @@ export class RecordingService {
       if (forcedMobileMic) {
         new obsidian.Notice(t("Mobile only supports microphone recording for now; use computer audio / virtual audio devices on desktop."), 8000);
       }
+      this.beginScreenLifecycle();
       if (isMobileRuntime()) {
         new obsidian.Notice(t("On mobile, keep Obsidian in the foreground while recording; locking the screen or switching to the background may interrupt the recording."), 8000);
       }
@@ -423,6 +432,7 @@ export class RecordingService {
         console.error("[QnALog] failed to log recording startup failure", diagnosticFailure);
       }
       new obsidian.Notice(`${t("Cannot start recording: ")}${formatRecordingCaughtError(e)}`);
+      this.endScreenLifecycle();
       // 清理半初始化状态：启动异常后只结束本次创建的会话，避免清除随后开始的新会话。
       try { if (this.host.recorder && this.host.recorder.state !== "idle") await this.host.recorder.stop(); } catch { /* intentionally empty */ }
       try { if (this.host.recorder && typeof this.host.recorder.releaseStream === "function") this.host.recorder.releaseStream(); } catch { /* intentionally empty */ }
@@ -481,8 +491,33 @@ export class RecordingService {
     // The host assembles the recorder before registering these public recording operations.
     if (this.getRecorder().state === "idle") return;
     new obsidian.Notice(t("⏹ Stop requested, processing the final segment..."));
+    this.endScreenLifecycle();
     await this.getRecorder().stop();
     this.host.asrPipeline.clearRecordingIssue();
+  }
+
+  /** 移动端录音开始后：保持屏幕常亮，并监听前后台切换。 */
+  private beginScreenLifecycle(): void {
+    if (!isMobileRuntime()) return;
+    void this.screenGuard.acquire();
+    this.stopVisibilityWatch?.();
+    this.stopVisibilityWatch = watchRecordingVisibility({
+      onHidden: () => { this.host.recorder?.flushMasterNow(); },
+      onVisible: () => {
+        const recorder = this.host.recorder;
+        if (!recorder || recorder.state === "idle") return;
+        if (!recorder.checkInputAliveAfterResume()) return;
+        const saved = formatElapsed(recorder.getInfo().elapsed);
+        new obsidian.Notice(t("Recording was interrupted while Obsidian was in the background. Saved {0}; tap Save audio only, then continue recording into this note.").replace("{0}", saved), 10000);
+      },
+    });
+  }
+
+  /** 录音结束或启动失败：释放常亮并取消前后台监听。可重复调用。 */
+  endScreenLifecycle(): void {
+    this.stopVisibilityWatch?.();
+    this.stopVisibilityWatch = null;
+    void this.screenGuard.release();
   }
 
 
