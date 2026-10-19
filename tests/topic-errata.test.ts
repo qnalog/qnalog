@@ -102,6 +102,81 @@ describe("topic errata store", () => {
     expect(afterAppend).toContain("## 不属于本主题");
   });
 
+  it("returns the added row when process writes the complete document before throwing", async () => {
+    const f = fixture({ "Notes/a.md": "member" });
+    const topicPath = "QnALog/主题/研究.md";
+    const path = await f.store.ensure(topicPath);
+    f.port.process = async (file, transform) => {
+      const current = f.files.get(file.path)!.text;
+      f.files.get(file.path)!.text = transform(current);
+      throw new Error("process failed after write");
+    };
+
+    await expect(f.store.appendEntry(topicPath, "研究", "新设备维修", "Notes/a.md")).resolves.toEqual({
+      path,
+      description: "新设备维修",
+      memberLink: "Notes/a",
+      added: true,
+    });
+    expect(f.files.get(path)!.text).toContain("- [[Notes/a]]：新设备维修");
+  });
+
+  it("keeps a duplicate row out of Undo when process throws after a no-op", async () => {
+    const f = fixture({ "Notes/a.md": "member" });
+    const topicPath = "QnALog/主题/研究.md";
+    const path = await f.store.ensure(topicPath);
+    await f.store.appendEntry(topicPath, "研究", "已存在的维修", "Notes/a.md");
+    const before = f.files.get(path)!.text;
+    f.port.process = async (file, transform) => {
+      f.files.get(file.path)!.text = transform(f.files.get(file.path)!.text);
+      throw new Error("process failed after no-op");
+    };
+
+    await expect(f.store.appendEntry(topicPath, "研究", "已存在的维修", "Notes/a.md")).resolves.toMatchObject({ added: false });
+    expect(f.files.get(path)!.text).toBe(before);
+  });
+
+  it("confirms a same-description row in a different scope after a write-then-throw", async () => {
+    const f = fixture({ "Notes/a.md": "member a", "Notes/b.md": "member b" });
+    const topicPath = "QnALog/主题/研究.md";
+    await f.store.ensure(topicPath);
+    await f.store.appendEntry(topicPath, "研究", "同一描述", "Notes/a.md");
+    f.port.process = async (file, transform) => {
+      f.files.get(file.path)!.text = transform(f.files.get(file.path)!.text);
+      throw new Error("process failed after scoped write");
+    };
+
+    await expect(f.store.appendEntry(topicPath, "研究", "同一描述", "Notes/b.md")).resolves.toMatchObject({
+      description: "同一描述",
+      memberLink: "Notes/b",
+      added: true,
+    });
+    expect(f.files.get(f.store.pathForTopic(topicPath))!.text).toContain("- [[Notes/b]]：同一描述");
+  });
+
+  it.each(["before-callback", "callback-without-write", "read-failed", "changed-after-write", "truncated-after-write"] as const)("preserves the process error when post-failure readback is %s", async (failure) => {
+    const f = fixture({ "Notes/a.md": "member" });
+    const topicPath = "QnALog/主题/研究.md";
+    const path = await f.store.ensure(topicPath);
+    const originalRead = f.port.read.bind(f.port);
+    f.port.process = async (file, transform) => {
+      if (failure === "before-callback") throw new Error("process failed before callback");
+      const current = f.files.get(file.path)!.text;
+      const next = transform(current);
+      if (failure === "callback-without-write") throw new Error("process failed before write");
+      if (failure === "changed-after-write") f.files.get(file.path)!.text = `${next}\nmanual edit`;
+      else if (failure === "truncated-after-write") f.files.get(file.path)!.text = next.slice(0, next.length - 8);
+      else f.files.get(file.path)!.text = next;
+      throw new Error("process failed after callback");
+    };
+    if (failure === "read-failed") f.port.read = async () => { throw new Error("read failed"); };
+
+    await expect(f.store.appendEntry(topicPath, "研究", "需要保全的维修", "Notes/a.md")).rejects.toThrow("process failed");
+    if (failure === "read-failed") expect(f.files.get(path)!.text).toContain("需要保全的维修");
+    if (failure === "changed-after-write") expect(f.files.get(path)!.text).toContain("manual edit");
+    f.port.read = originalRead;
+  });
+
   it("skips an edited errata row and preserves unrelated rows, notes, and section headings", async () => {
     const path = "QnALog/勘误表/研究 · 主题勘误.md";
     const initial = "---\nqnalog_topic_errata: true\n---\n主题：[[QnALog/主题/研究]]\n\n## 不属于本主题\n- [[Notes/a]]：用户改过的说明\n- 其它全局事项\n\n## 说明\n- 保留这条备注\n";
