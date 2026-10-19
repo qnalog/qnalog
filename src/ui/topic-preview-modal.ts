@@ -140,7 +140,7 @@ export class TopicPreviewModal extends Modal {
       }
     }
 
-    const selected = new Set(this.preview.items.map((item) => item.id));
+    const selected = new Set(this.preview.items.filter((item) => item.defaultSelected !== false).map((item) => item.id));
     if (this.preview.legacyAnchorCleanup) {
       const row = scroll.createEl("label", { cls: "qnalog-topics-preview-item" });
       bindKeyboardFocusOutline(row);
@@ -195,7 +195,7 @@ export class TopicPreviewModal extends Modal {
         const target = event.target instanceof Element ? event.target : null;
         if (suppressRowActivation({ onCheckbox: target === checkbox, onInteractive: !!target?.closest("button, a"), selectedText: window.getSelection()?.toString() ?? "", disabled: false })) event.preventDefault();
       });
-      checkbox.checked = true;
+      checkbox.checked = item.defaultSelected !== false;
       checkbox.addEventListener("change", () => checkbox.checked ? selected.add(item.id) : selected.delete(item.id));
       const icon = heading.createSpan({ cls: "qnalog-topics-operation-icon" });
       const iconName = item.type === "remove_block" || item.type === "remove_member" ? "trash-2" : item.type === "add_conflict" || item.type === "add_disagreement" ? "alert-triangle" : item.type === "add_timeline" ? "clock-3" : item.type === "resolve_question" || item.type === "resolve_open" ? "check-circle-2" : item.type === "annotate_item" || item.type === "add_point" ? "message-square-plus" : item.type === "revise_block" ? "pencil" : "plus";
@@ -233,8 +233,10 @@ export class TopicPreviewModal extends Modal {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: verification.text });
       } else if (item.operation.type === "remove_block") {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Will remove this block: {0}").replace("{0}", item.text) });
+        if (item.defaultSelected === false) main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("This point cites only the removed note. Check it to delete the point; otherwise it stays without that citation.") });
       } else if (item.operation.type === "remove_member") {
         main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Will remove this member from the topic: {0}").replace("{0}", item.text) });
+        if (item.operation.force) main.createDiv({ cls: "qnalog-topics-preview-text", text: this.port.text("Also removes the member entry, its timeline line and its source footnote. Citations of this note in other points are dropped.") });
       } else {
         let changeText = verification.text;
         if (item.operation.type === "add_open") {

@@ -30,6 +30,7 @@ export interface TopicsUiPort {
   previewContentCleaning(topicId: string): Promise<TopicChangePreview>;
   getUncontributedMembers(topicId: string): Promise<Array<{ path: string; title: string }>>;
   previewOrphanMembers(topicId: string): Promise<TopicChangePreview>;
+  previewRemoveMember(topicId: string, memberPath: string): Promise<TopicChangePreview>;
   apply(preview: TopicChangePreview, selectedIds: readonly string[]): Promise<{ path: string; markdown: string; pageChangedDuringGeneration: boolean; skipped?: Array<{ id: string; reason: "block-modified" }> }>;
   cancel(id: string): void;
   listTopics(): Promise<TopicListEntry[]>;
