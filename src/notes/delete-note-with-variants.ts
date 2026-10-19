@@ -48,7 +48,9 @@ async function findVariants<TFile extends DeletableNoteFile>(
   for (const file of port.listMarkdownFiles()) {
     if (normalizePath(file.path) === sourcePath || !/\.md$/i.test(file.path)) continue;
     const cachedFrontmatter = port.readFrontmatter(file);
-    if (!isLinkedDerivedNote(cachedFrontmatter, sourcePath)) continue;
+    // Obsidian can expose a new Markdown file through the vault before metadataCache has parsed its frontmatter.
+    // Read uncached candidates from disk so the delete confirmation includes newly created derived notes.
+    if (cachedFrontmatter && !isLinkedDerivedNote(cachedFrontmatter, sourcePath)) continue;
     const content = await port.readFile(file);
     const frontmatter = parseFrontmatter(content);
     if (!isLinkedDerivedNote(frontmatter, sourcePath)) continue;

@@ -6295,7 +6295,7 @@ export class OutlineView extends obsidian.ItemView {
     confirm.onclick = async () => {
       confirm.disabled = true;
       try {
-        await this.deleteRecentNoteRecord(file, { deleteAudio });
+        await this.deleteRecentNoteRecord(file, { deleteAudio, variants, variantAction: "delete-all", deletionPort });
         modal.close();
       } catch (e) {
         confirm.disabled = false;
