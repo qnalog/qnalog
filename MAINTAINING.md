@@ -365,7 +365,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 | 长录音异常拦截与空白录音收尾 | 长录音在写入母本前按每秒字符数上限 15 或重复片段占比超过 0.6 拦截；普通录音全空、整场基本无声时不足 60 秒丢弃，有声或达到 60 秒保留并写入「未检测到语音」，导入与续录保留。见 `tests/blank-recording-policy.test.ts`、`tests/short-recording-flow.test.ts`、`tests/long-recording-anomaly.test.ts`、`tests/dashscope-chat-asr.test.ts` | 2 秒空白录音自动删除已确认；10 秒与 60 秒以上空白、长录音异常拦截仅自动测试 |
 | 密钥写入失败时的队列保存 | `_saveAllSnapshot` 在 SecretStorage 写入失败时只替换已落盘数据中的 `backgroundJobs`；数据缺失或版本更高时不写盘；见 `tests/save-all-secret-failure.test.ts` | 仅自动测试，未做真实宿主验证 |
 | 重试整理的编辑保护 | consolidated 分支用模型调用前读取的正文做提交时比对，变化则不写入并保留失败任务；见 `tests/queue-merge-retry-flow.test.ts` | 仅自动测试，未做真实宿主验证 |
-| 删除带衍生版本的笔记 | 确认框提供「最新衍生版本接替」与「一并删除」，候选由元数据缓存过滤；见 `tests/delete-note-with-variants.test.ts` | 元数据缓存尚未索引的新衍生版本可能漏检，该情形未做真机验证 |
+| 删除带衍生版本的笔记 | 确认框提供「最新衍生版本接替」与「一并删除」；元数据缓存缺项时读取文件，所有候选均以当前正文核对来源关系；普通删除也在确认后复核派生稿集合，集合或正文变化时保留文件并提示重新确认。见 `tests/delete-note-with-variants.test.ts`、`tests/outline-tab-behavior.test.ts` | 已在真实桌面 Obsidian 中用合成笔记完成程序验收，覆盖未索引派生稿接替与一并删除、确认期间新增或修改派生稿、读取失败保全及普通删除；未进行维护者视觉确认与移动端验证 |
 | 服务预设与密钥隔离 | `applyLlmServicePresetToWorkingConfig` 选预设后清空活动方案与密钥，选「Custom service…」保持原状；向导仅在地址匹配时回填；见 `tests/llm-config.test.ts`、`tests/setup-wizard.test.ts` | 界面行为已走查 |
 | 初稿/派生稿及重新整理文案 | 有效快照时显示本地化 Original/初稿；任务状态和通知使用界面模式名称；见 `tests/outline-recent-variants.test.ts`、`tests/recent-note-variants.test.ts`、`tests/clean-transcript-storage.test.ts` | 英文新写入、列表观察仍待 §6.4 |
 | 负向装配隔离 | 独立临时 bundle 检查漏装，不改写共享源码；见 `tests/plugin-onload.test.ts` | 不适用 |

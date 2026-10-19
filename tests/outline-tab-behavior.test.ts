@@ -1,11 +1,51 @@
-import { describe, expect, it, vi } from "vitest";
-import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getActiveUiLanguage, resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 
-const uiMocks = vi.hoisted(() => ({ confirm: vi.fn(async () => true), notices: [] as string[] }));
+const uiMocks = vi.hoisted(() => ({ confirm: vi.fn(async () => true), notices: [] as string[], modals: [] as unknown[] }));
 
 vi.mock("obsidian", () => {
+  class FakeElement {
+    children: FakeElement[] = [];
+    text = "";
+    value = "";
+    disabled = false;
+    checked = false;
+    onclick?: () => void | Promise<void>;
+    onchange?: () => void;
+    className = "";
+    constructor(options: { text?: string; cls?: string; attr?: Record<string, string> } = {}) {
+      this.text = options.text || "";
+      this.className = options.cls || "";
+      this.value = options.attr?.value || "";
+    }
+    empty() { this.children = []; }
+    addClass(cls: string) { this.className += ` ${cls}`; }
+    createEl(_tag: string, options: { text?: string; cls?: string; attr?: Record<string, string> } = {}) {
+      const child = new FakeElement(options);
+      this.children.push(child);
+      return child;
+    }
+    createDiv(options: { text?: string; cls?: string } = {}) {
+      const child = new FakeElement(options);
+      this.children.push(child);
+      return child;
+    }
+    createSpan(options: { text?: string } = {}) {
+      const child = new FakeElement(options);
+      this.children.push(child);
+      return child;
+    }
+    setText(text: string) { this.text = text; }
+  }
   class ItemView {}
-  class Modal {}
+  class Modal {
+    contentEl = new FakeElement();
+    closed = false;
+    constructor(_app: unknown) { uiMocks.modals.push(this); }
+    open() {}
+    close() { this.closed = true; }
+  }
+  class TFile {}
   class SuggestModal {}
   class FuzzySuggestModal {}
   class PluginSettingTab {}
@@ -28,8 +68,9 @@ vi.mock("obsidian", () => {
     addSeparator() { this.items.push({}); }
   }
   return {
-    ItemView, Modal, SuggestModal, FuzzySuggestModal, PluginSettingTab, Menu, Notice,
+    ItemView, Modal, TFile, SuggestModal, FuzzySuggestModal, PluginSettingTab, Menu, Notice,
     normalizePath: (path: string) => path.replace(/\\/g, "/"),
+    parseYaml: (yaml: string) => JSON.parse(yaml),
     setIcon: () => undefined,
   };
 });
@@ -43,6 +84,10 @@ vi.mock("../src/recent/recent-notes", async () => {
 });
 
 import { OutlineView } from "../src/ui/outline-view";
+import * as obsidian from "obsidian";
+
+const initialUiLanguage = getActiveUiLanguage();
+afterEach(() => setActiveUiLanguage(initialUiLanguage));
 
 const TABS = ["", "outline", "extract", "ask", "recent", "topics"];
 const BROWSE = new Set(["recent", "topics"]);
@@ -234,5 +279,72 @@ describe("recent note sidebar context actions", () => {
     await Promise.resolve();
     expect(scanned.view.idlePanelTab).toBe("extract");
     expect(scanned.requestSedimentExtraction).not.toHaveBeenCalled();
+  });
+});
+
+interface ModalElement {
+  text: string;
+  children: ModalElement[];
+  disabled?: boolean;
+  onclick?: () => void | Promise<void>;
+  className?: string;
+}
+
+interface TestModal {
+  contentEl: ModalElement;
+  closed: boolean;
+}
+
+function modalElements(root: ModalElement): ModalElement[] {
+  return [root, ...root.children.flatMap(modalElements)];
+}
+
+describe("recent note deletion confirmation", () => {
+  it("keeps the source when an unindexed derived note appears after plain-delete confirmation opens", async () => {
+    setActiveUiLanguage(resolveUiLanguage("en", "en"));
+    uiMocks.modals.length = 0;
+    uiMocks.notices.length = 0;
+    const source = Object.assign(new obsidian.TFile(), {
+      path: "Notes/source.md", basename: "source", extension: "md",
+    });
+    const variant = Object.assign(new obsidian.TFile(), {
+      path: "Notes/derived.md", basename: "derived", extension: "md",
+    });
+    const files: InstanceType<typeof obsidian.TFile>[] = [source];
+    const content = new Map<object, string>([[source, "---\n{}\n---\nsource body"]]);
+    const metadataCache = {
+      getFileCache: (file: object) => file === source ? { frontmatter: {} } : null,
+    };
+    const trashFile = vi.fn(async () => undefined);
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    Object.assign(view, {
+      app: {
+        vault: {
+          getMarkdownFiles: () => files,
+          cachedRead: async (file: object) => content.get(file) || "",
+        },
+        metadataCache,
+        fileManager: { trashFile, processFrontMatter: vi.fn() },
+      },
+      plugin: { queue: { tasks: [] }, settings: {} },
+      render: vi.fn(),
+    });
+
+    await view.confirmDeleteRecentNote(source as never);
+    const modal = uiMocks.modals[0] as TestModal;
+    const confirm = modalElements(modal.contentEl).find((element) => element.text === "Confirm delete");
+    expect(confirm).toBeDefined();
+
+    content.set(variant, `---\n${JSON.stringify({
+      qnalog_type: "QnALog派生版本", variant_kind: "minutes", qnalog_source_path: source.path,
+      source_id: "source-id", qnalog_contains_raw: false,
+    })}\n---\nderived body`);
+    files.push(variant);
+    await confirm?.onclick?.();
+
+    expect(trashFile).not.toHaveBeenCalled();
+    expect(modal.closed).toBe(false);
+    expect(confirm?.disabled).toBe(false);
+    expect(uiMocks.notices.at(-1)).toContain("Derived versions changed while the dialog was open");
   });
 });

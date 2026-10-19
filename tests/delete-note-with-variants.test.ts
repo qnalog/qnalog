@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+?/g, "/"),
@@ -127,6 +130,36 @@ describe("delete note with derived versions", () => {
     expect(f.noteList().map((item) => item.file.path)).toContain(f.root.path);
   });
 
+  it("aborts a plain-delete confirmation if a derived note appears after the dialog opens", async () => {
+    const f = fixture(0);
+    const variantsAtConfirmation = await getDirectNoteVariants(f.port, f.root);
+    expect(variantsAtConfirmation).toEqual([]);
+
+    const newVariant = Object.assign(new obsidian.TFile(), {
+      path: "Notes/new-derived.md", basename: "new-derived", extension: "md", stat: { mtime: 9 },
+    }) as TestFile;
+    const newFrontmatter = {
+      qnalog_type: "QnALog派生版本", variant_kind: "minutes", qnalog_source_path: f.root.path,
+      source_id: "source-id", qnalog_contains_raw: false,
+    };
+    f.files.set(newVariant.path, {
+      file: newVariant,
+      content: `---\n${JSON.stringify(newFrontmatter)}\n---\nnew derived body`,
+      frontmatter: null,
+    });
+
+    const result = await deleteNoteWithVariants({
+      port: f.port,
+      source: f.root,
+      expectedVariants: variantsAtConfirmation,
+      action: "delete-all",
+    });
+
+    expect(result).toBe("stale");
+    expect(f.trashed.has(f.root.path)).toBe(false);
+    expect(f.trashed.has(newVariant.path)).toBe(false);
+  });
+
   it("reads only linked derived candidates in a vault with many unrelated markdown files", async () => {
     const f = fixture(2);
     for (let index = 0; index < 1000; index++) {
@@ -149,14 +182,70 @@ describe("delete note with derived versions", () => {
     expect(f.readFileCalls).toEqual(f.derived.map((file) => file.path));
   });
 
-  it("does not treat files without cached frontmatter as candidates", async () => {
+  it("rejects a cached source link when the current file contents no longer link to the source", async () => {
+    const f = fixture(1);
+    const entry = f.files.get(f.derived[0].path);
+    if (!entry) throw new Error("Missing derived fixture");
+    entry.content = "---\n{}\n---\nno longer linked";
+
+    const variants = await getDirectNoteVariants(f.port, f.root);
+
+    expect(variants).toEqual([]);
+  });
+
+  it("does not treat uncached ordinary Markdown files as derived notes", async () => {
     const f = fixture(1);
     const unindexed = Object.assign(new obsidian.TFile(), {
       path: "Notes/unindexed.md", basename: "unindexed", extension: "md", stat: { ctime: 9, mtime: 9 },
     }) as TestFile;
     f.files.set(unindexed.path, { file: unindexed, content: "---\n{}\n---\nnot indexed", frontmatter: null });
+
     const variants = await getDirectNoteVariants(f.port, f.root);
+
     expect(variants.map((variant) => variant.file.path)).toEqual([f.derived[0].path]);
-    expect(f.readFileCalls).toEqual([f.derived[0].path]);
+    expect(f.readFileCalls).toEqual([f.derived[0].path, unindexed.path]);
+  });
+
+  it("finds a real derived file before metadataCache indexes it, then preserves it on source deletion", async () => {
+    const vaultPath = mkdtempSync(path.join(os.tmpdir(), "qnalog-unindexed-variant-"));
+    try {
+      const sourcePath = path.join(vaultPath, "source.md");
+      const variantPath = path.join(vaultPath, "derived.md");
+      const source = Object.assign(new obsidian.TFile(), { path: sourcePath, basename: "source", extension: "md", stat: { mtime: 1 } }) as TestFile;
+      const variant = Object.assign(new obsidian.TFile(), { path: variantPath, basename: "derived", extension: "md", stat: { mtime: 2 } }) as TestFile;
+      const sourceContent = "---\n{}\n---\nsource body";
+      const variantFrontmatter = {
+        qnalog_type: "QnALog派生版本", variant_kind: "minutes", variant_label: "Minutes",
+        qnalog_source_path: sourcePath, source_id: "source-id", qnalog_contains_raw: false,
+      };
+      writeFileSync(sourcePath, sourceContent, "utf8");
+      writeFileSync(variantPath, `---\n${JSON.stringify(variantFrontmatter)}\n---\nderived body`, "utf8");
+      const trashed = new Set<string>();
+      const port: DeleteNoteWithVariantsPort<TestFile> = {
+        listMarkdownFiles: () => [source, variant].filter((file) => !trashed.has(file.path)),
+        // Simulate Obsidian before its metadata cache has indexed the just-created derived note.
+        readFrontmatter: (file) => file.path === sourcePath ? {} : null,
+        readFile: async (file) => readFileSync(file.path, "utf8"),
+        updateFrontmatter: async (file, update) => {
+          const content = readFileSync(file.path, "utf8");
+          const frontmatter = JSON.parse(content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/u)?.[1] || "{}");
+          update(frontmatter);
+          writeFileSync(file.path, content.replace(/^---\s*\r?\n[\s\S]*?\r?\n---/u, `---\n${JSON.stringify(frontmatter)}\n---`), "utf8");
+        },
+        trashFile: async (file) => { trashed.add(file.path); },
+      };
+
+      const variants = await getDirectNoteVariants(port, source);
+      expect(variants.map((item) => item.file.path)).toEqual([variantPath]);
+      const result = await deleteNoteWithVariants({ port, source, expectedVariants: variants, action: "handoff" });
+
+      expect(result).toBe("handed-off");
+      expect(trashed.has(sourcePath)).toBe(true);
+      expect(trashed.has(variantPath)).toBe(false);
+      expect(readFileSync(variantPath, "utf8")).toContain('"qnalog_promoted_variant":true');
+      expect(readFileSync(variantPath, "utf8")).not.toContain('"qnalog_source_path"');
+    } finally {
+      rmSync(vaultPath, { recursive: true, force: true });
+    }
   });
 });
