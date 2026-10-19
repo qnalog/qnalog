@@ -383,9 +383,9 @@ export class TopicsService {
       const current = (await store.list()).find((entry) => entry.page.id === preview.topicId);
       if (!current) throw new Error(`Topic not found: ${preview.topicId}`);
       const result = await store.apply(current.path, preview, selection);
-      await pendingEntry[1].onApplied?.(new Set(selection), result.skipped, result.snapshotPath);
       this.previews.delete(activityId);
       this.controllers.delete(activityId);
+      await pendingEntry[1].onApplied?.(new Set(selection), result.skipped, result.snapshotPath);
       if (managesActivity) this.host.completeActivity(activityId);
       return { path: current.path, markdown: result.markdown, pageChangedDuringGeneration: result.pageChangedDuringGeneration, skipped: result.skipped };
     } catch (error) {
@@ -433,16 +433,16 @@ export class TopicsService {
       preview,
       managesActivity: false,
       onApplied: async (selection, skipped, snapshotPath) => {
-        const addedEntries: Array<{ path: string; description: string; memberLink: string | null }> = [];
         for (const entry of entries) {
           if (!entry.description || !selection.has(entry.id) || skipped.some((item) => item.id === entry.block.id)) continue;
           const scope = entry.sources.length ? entry.sources : [undefined];
           for (const source of scope) {
             const appended = await this.host.topicErrata?.appendEntry(topic.path, topic.page.title, entry.description, source);
-            if (appended?.added) addedEntries.push({ path: appended.path, description: appended.description, memberLink: appended.memberLink });
+            if (appended?.added) {
+              await store.recordSnapshotErrata(topic.page.id, snapshotPath, [{ path: appended.path, description: appended.description, memberLink: appended.memberLink }]);
+            }
           }
         }
-        await store.recordSnapshotErrata(topic.page.id, snapshotPath, addedEntries);
       },
     });
     return preview;

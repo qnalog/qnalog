@@ -112,6 +112,94 @@ describe("topics service", () => {
     expect(await setup.storePort.read("Topics/Climate.md")).toContain("Off-topic repair detail.");
   });
 
+  it("keeps the first exclusion undoable when a later errata append fails", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const originalAppendEntry = topicErrata.appendEntry.bind(topicErrata);
+    const appendEntry = vi.spyOn(topicErrata, "appendEntry");
+    appendEntry
+      .mockImplementationOnce((...args) => originalAppendEntry(...args))
+      .mockRejectedValueOnce(new Error("second errata write failed"));
+    const setup = harness({ topicErrata });
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md" },
+    ];
+    const topic = createTopicPage({ id: "partial-errata-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Two details.", points: [
+      { id: "repair", text: "Off-topic repair detail.", sources: ["Notes/a.md"] },
+      { id: "travel", text: "Off-topic travel detail.", sources: ["Notes/b.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const blocks = parseTopicPageBlocks(originalPage).filter((block) => /Off-topic (?:repair|travel) detail/.test(block.text));
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", blocks.map((block) => block.id));
+    const selection = preview.items.map((item) => item.id);
+
+    await expect(setup.service.apply(preview, selection)).rejects.toThrow("second errata write failed");
+    expect(await setup.storePort.read("Topics/Climate.md")).not.toMatch(/Off-topic (?:repair|travel) detail/);
+    await expect(setup.service.apply(preview, selection)).rejects.toThrow("Topic preview is no longer available");
+
+    expect(await setup.service.undoLastUpdate("partial-errata-topic")).toMatchObject({ restored: true, errataRemoved: 1 });
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+    const errata = errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md") || "";
+    expect(errata).not.toContain("Off-topic repair detail.");
+    expect(errata).not.toContain("Off-topic travel detail.");
+  });
+
+  it("records each source of a multi-source exclusion before a later append fails", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const originalAppendEntry = topicErrata.appendEntry.bind(topicErrata);
+    const appendEntry = vi.spyOn(topicErrata, "appendEntry");
+    appendEntry
+      .mockImplementationOnce((...args) => originalAppendEntry(...args))
+      .mockRejectedValueOnce(new Error("second source write failed"));
+    const setup = harness({ topicErrata });
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md" },
+    ];
+    const topic = createTopicPage({ id: "multi-source-errata-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "One detail.", points: [
+      { id: "shared", text: "Off-topic shared detail.", sources: ["Notes/a.md", "Notes/b.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic shared detail"))!;
+    const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
+
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("second source write failed");
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("Topic preview is no longer available");
+    expect(await setup.service.undoLastUpdate("multi-source-errata-topic")).toMatchObject({ restored: true, errataRemoved: 1 });
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+    expect(errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md")).not.toContain("Off-topic shared detail.");
+  });
+
+  it("invalidates an exclusion preview when its first errata append fails", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    vi.spyOn(topicErrata, "appendEntry").mockRejectedValueOnce(new Error("first errata write failed"));
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "first-append-failed-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "One detail.", points: [
+      { id: "point", text: "Off-topic detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic detail"))!;
+    const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
+
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("first errata write failed");
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("Topic preview is no longer available");
+    expect(await setup.service.undoLastUpdate("first-append-failed-topic")).toMatchObject({ restored: true });
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+  });
+
   it("undoes all newly added scoped and global errata with the matching multi-block snapshot", async () => {
     const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
     const originalErrata = "---\nqnalog_topic_errata: true\n---\n主题：[[Topics/Climate]]\n\n## 不属于本主题\n- 既有全局事项\n\n## 说明\n维护者备注\n";
