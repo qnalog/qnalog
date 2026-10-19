@@ -110,6 +110,134 @@ describe("topic store", () => {
     expect(await store.undoLastUpdate("topic")).toEqual({ restored: true, errataEntries: [entry] });
   });
 
+  it("returns associated errata when process writes the exact snapshot before throwing", async () => {
+    const { port, store, path, markdown } = setup();
+    const applied = await store.apply(path, preview("topic", "ignored"), ["add"]);
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    await store.recordSnapshotErrata("topic", applied.snapshotPath, [entry]);
+    port.process = async (target, transform) => {
+      port.files.set(target, transform(await port.read(target)));
+      throw new Error("process failed after restore");
+    };
+
+    await expect(store.undoLastUpdate("topic")).resolves.toEqual({ restored: true, errataEntries: [entry] });
+    expect(port.files.get(path)).toBe(markdown);
+  });
+
+  it("keeps errata when restored body matches but ignored machine metadata differs", async () => {
+    const { port, store, path } = setup();
+    const applied = await store.apply(path, preview("topic", "ignored"), ["add"]);
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    await store.recordSnapshotErrata("topic", applied.snapshotPath, [entry]);
+    const snapshot = await port.read(applied.snapshotPath!);
+    const altered = snapshot.replace(/\n---\n/, "\nqnalog_topic_hash: \"different\"\n---\n");
+    expect(altered).not.toBe(snapshot);
+    expect(hashTopicPage(altered)).toBe(hashTopicPage(snapshot));
+    port.process = async (target, transform) => { port.files.set(target, transform(await port.read(target)).replace(/\n---\n/, "\nqnalog_topic_hash: \"different\"\n---\n")); };
+
+    await expect(store.undoLastUpdate("topic")).resolves.toEqual({ restored: false, reason: "page-modified" });
+    expect(port.files.get(path)).toBe(altered);
+    expect(JSON.parse(port.files.get("QnALog/.cache/topic-index/topic.json") || "{}").lastSnapshotErrata).toEqual({ snapshotPath: applied.snapshotPath, entries: [entry] });
+  });
+
+  it.each(["before-write", "callback-without-write", "truncated-write"] as const)("keeps errata and rejects when undo cannot confirm %s", async (failure) => {
+    const { port, store, path } = setup();
+    const applied = await store.apply(path, preview("topic", "ignored"), ["add"]);
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    await store.recordSnapshotErrata("topic", applied.snapshotPath, [entry]);
+    const appliedMarkdown = await port.read(path);
+    let truncatedMarkdown: string | undefined;
+    port.process = async (target, transform) => {
+      if (failure === "before-write") throw new Error("process failed before callback");
+      const next = transform(await port.read(target));
+      if (failure === "truncated-write") {
+        truncatedMarkdown = next.slice(0, next.length - 8);
+        port.files.set(target, truncatedMarkdown);
+      }
+      throw new Error("process failed before complete restore");
+    };
+
+    await expect(store.undoLastUpdate("topic")).rejects.toThrow("process failed");
+    if (failure === "truncated-write") expect(port.files.get(path)).toBe(truncatedMarkdown);
+    else expect(port.files.get(path)).toBe(appliedMarkdown);
+    expect(JSON.parse(port.files.get("QnALog/.cache/topic-index/topic.json") || "{}").lastSnapshotErrata).toEqual({ snapshotPath: applied.snapshotPath, entries: [entry] });
+  });
+
+  it("finishes an exact restored page and errata association after a read failure using a new store", async () => {
+    const { port, store, path, markdown } = setup();
+    const applied = await store.apply(path, preview("topic", "ignored"), ["add"]);
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    await store.recordSnapshotErrata("topic", applied.snapshotPath, [entry]);
+    const originalRead = port.read.bind(port);
+    let failNextPageRead = false;
+    port.process = async (target, transform) => {
+      port.files.set(target, transform(await originalRead(target)));
+      failNextPageRead = true;
+    };
+    port.read = async (target) => {
+      if (target === path && failNextPageRead) {
+        failNextPageRead = false;
+        throw new Error("page read failed after restore");
+      }
+      return originalRead(target);
+    };
+
+    await expect(store.undoLastUpdate("topic")).rejects.toThrow("page read failed after restore");
+    expect(port.files.get(path)).toBe(markdown);
+    port.read = originalRead;
+    const restartedStore = new TopicStore({ folder: "Topics", port });
+    await expect(restartedStore.undoLastUpdate("topic")).resolves.toEqual({ restored: true, errataEntries: [entry] });
+    expect(JSON.parse(port.files.get("QnALog/.cache/topic-index/topic.json") || "{}").lastSnapshot).toBeNull();
+  });
+
+  it("retries a write-then-throw undo after readback fails using a new store", async () => {
+    const { port, store, path } = setup();
+    const applied = await store.apply(path, preview("topic", "ignored"), ["add"]);
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    await store.recordSnapshotErrata("topic", applied.snapshotPath, [entry]);
+    const originalRead = port.read.bind(port);
+    let failNextPageRead = false;
+    port.process = async (target, transform) => {
+      port.files.set(target, transform(await originalRead(target)));
+      failNextPageRead = true;
+      throw new Error("process failed after restore");
+    };
+    port.read = async (target) => {
+      if (target === path && failNextPageRead) {
+        failNextPageRead = false;
+        throw new Error("readback failed");
+      }
+      return originalRead(target);
+    };
+
+    await expect(store.undoLastUpdate("topic")).rejects.toThrow("process failed after restore");
+    port.read = originalRead;
+    const restartedStore = new TopicStore({ folder: "Topics", port });
+    await expect(restartedStore.undoLastUpdate("topic")).resolves.toEqual({ restored: true, errataEntries: [entry] });
+  });
+
+  it("does not resume a stale undo after a page edit, missing association, or missing history", async () => {
+    const edited = setup("edited");
+    const editedApply = await edited.store.apply(edited.path, preview("edited", "ignored"), ["add"]);
+    await edited.store.recordSnapshotErrata("edited", editedApply.snapshotPath, [{ path: "QnALog/勘误表/edited.md", description: "Rule", memberLink: null }]);
+    edited.port.files.set(edited.path, `${edited.port.files.get(edited.path)}\nmanual edit`);
+    await expect(edited.store.undoLastUpdate("edited")).resolves.toEqual({ restored: false, reason: "page-modified" });
+
+    const unassociated = setup("unassociated");
+    await unassociated.store.apply(unassociated.path, preview("unassociated", "ignored"), ["add"]);
+    const unassociatedCache = JSON.parse(unassociated.port.files.get("QnALog/.cache/topic-index/unassociated.json") || "{}");
+    unassociatedCache.pageHash = "old-hash";
+    unassociated.port.files.set("QnALog/.cache/topic-index/unassociated.json", JSON.stringify(unassociatedCache));
+    expect(await unassociated.store.undoLastUpdate("unassociated")).toEqual({ restored: false, reason: "page-modified" });
+
+    const noHistory = setup("no-history");
+    const noHistoryApply = await noHistory.store.apply(noHistory.path, preview("no-history", "ignored"), ["add"]);
+    const noHistoryEntry = { path: "QnALog/勘误表/no-history.md", description: "Rule", memberLink: null };
+    await noHistory.store.recordSnapshotErrata("no-history", noHistoryApply.snapshotPath, [noHistoryEntry]);
+    noHistory.port.files.delete(noHistoryApply.snapshotPath!);
+    expect(await noHistory.store.undoLastUpdate("no-history")).toEqual({ restored: false, reason: "no-history" });
+  });
+
   it("rejects an errata association that cannot be read back and preserves earlier associations", async () => {
     const { port, store } = setup();
     const applied = await store.apply("Topics/topic.md", preview("topic", "ignored"), ["add"]);

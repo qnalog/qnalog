@@ -310,7 +310,7 @@ export class TopicPreviewModal extends Modal {
                 ? "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note."
                 : "Topic update undone."));
               else new Notice(outcome.reason === "page-modified" ? this.port.text("The topic page changed after the update. Undo was not applied.") : this.port.text("No topic update is available to undo."));
-            });
+            }).catch(() => new Notice(this.port.text("Undo could not be confirmed. Check the topic page and its errata, then retry Undo."), 8000));
           });
         }
         this.onApplied(result.path);

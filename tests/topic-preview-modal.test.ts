@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-const notices = vi.hoisted(() => ({ messages: [] as string[] }));
+const notices = vi.hoisted(() => ({ messages: [] as string[], undoClicks: [] as Array<() => void> }));
 vi.mock("obsidian", () => {
   class FakeElement {
     children: FakeElement[] = [];
@@ -33,7 +33,10 @@ vi.mock("obsidian", () => {
   class Notice {
     messageEl = new FakeElement();
     noticeEl = new FakeElement();
-    constructor(message: string) { notices.messages.push(message); }
+    constructor(message: string) {
+      notices.messages.push(message);
+      if (message === "Topic updated. Undo is available.") notices.undoClicks.push(() => this.messageEl.children[0]?.listeners.get("click")?.());
+    }
   }
   return { Modal, Notice, setIcon: () => undefined };
 });
@@ -371,6 +374,26 @@ describe("topic preview dialog", () => {
     expect(items.some((item) => item.cls.includes("qnalog-topics-revision-old"))).toBe(true);
     descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Apply selected")?.listeners.get("click")?.();
     await vi.waitFor(() => expect(notices.messages).toContain("Some revisions were skipped because their blocks changed: tpc-a1b2c3"));
+  });
+
+  it("reports an undo rejection without showing the success notice", async () => {
+    notices.messages.length = 0;
+    notices.undoClicks.length = 0;
+    const port = {
+      text: (key: string) => key,
+      openSource: vi.fn(), openTopic: vi.fn(async () => undefined), cancel: vi.fn(),
+      apply: vi.fn(async () => ({ path: "Topics/Topic.md", markdown: "", pageChangedDuringGeneration: false, skipped: [] })),
+      undoLastUpdate: vi.fn(async () => { throw new Error("storage failure"); }),
+    };
+    const modal = new TopicPreviewModal({} as never, port as never, fixture(), () => undefined);
+    modal.onOpen();
+    descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Apply selected")?.listeners.get("click")?.();
+    await vi.waitFor(() => expect(notices.undoClicks).toHaveLength(1));
+
+    notices.undoClicks[0]();
+
+    await vi.waitFor(() => expect(notices.messages).toContain("Undo could not be confirmed. Check the topic page and its errata, then retry Undo."));
+    expect(notices.messages).not.toContain("Topic update undone.");
   });
   it("shows the exact open item that a grounded resolve operation will mark complete", () => {
     const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), cancel: vi.fn(), undoLastUpdate: vi.fn() };

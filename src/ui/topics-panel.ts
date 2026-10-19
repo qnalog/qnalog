@@ -131,7 +131,7 @@ export class TopicsPanel {
           : "Topic update undone."));
         else new Notice(result.reason === "page-modified" ? this.port.text("The topic page changed after the update. Undo was not applied.") : this.port.text("No topic update is available to undo."));
         this.refresh();
-      });
+      }).catch(() => new Notice(this.port.text("Undo could not be confirmed. Check the topic page and its errata, then retry Undo."), 8000));
     }));
     menu.addItem((item) => item.setTitle(this.port.text("Merge into…")).setIcon("git-merge").onClick(() => void this.chooseMergeTarget(topicId, event)));
     menu.addSeparator();

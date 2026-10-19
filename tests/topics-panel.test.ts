@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-const menuState = vi.hoisted(() => ({ titles: [] as string[] }));
+const menuState = vi.hoisted(() => ({ titles: [] as string[], actions: [] as Array<{ title: string; onClick?: () => void }>, notices: [] as string[] }));
 vi.mock("obsidian", () => {
   class FakeElement {
     children: FakeElement[] = [];
@@ -25,10 +25,10 @@ vi.mock("obsidian", () => {
       this.items.push(item);
     }
     addSeparator() {}
-    showAtMouseEvent() {}
+    showAtMouseEvent() { menuState.actions = [...this.items]; }
   }
   class Modal { contentEl = new FakeElement(); constructor(public app: unknown) {} }
-  class Notice {}
+  class Notice { constructor(message: string) { menuState.notices.push(message); } }
   return { Menu, Modal, Notice, setIcon: () => undefined };
 });
 vi.mock("../src/ui/helpers", () => ({ qnalogConfirm: vi.fn(async () => true) }));
@@ -59,6 +59,28 @@ describe("topics panel", () => {
     row?.listeners.get("contextmenu")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
     await vi.waitFor(() => expect(menuState.titles).toContain("Scan for notes to integrate"));
     expect(menuState.titles).toEqual(expect.arrayContaining(["Scan for notes to integrate", "Undo last update", "Merge into…", "Delete topic"]));
+  });
+
+  it("shows an error notice when undo rejects and does not show undo success", async () => {
+    menuState.notices.length = 0;
+    menuState.actions = [];
+    const port = {
+      isConfigured: () => true, getVersion: () => "x", text: (key: string) => key,
+      listTopics: vi.fn(async () => [{ path: "Topics/Planning.md", page: { id: "one", title: "Planning", layout: 2, updated: "2026-10-10T00:00:00Z", members: ["a.md"] } }]),
+      getUncontributedMembers: vi.fn(async () => []), previewOrphanMembers: vi.fn(), countPending: vi.fn(async () => 0),
+      scanUnintegrated: vi.fn(), preview: vi.fn(), apply: vi.fn(), cancel: vi.fn(), getCandidates: vi.fn(), estimate: vi.fn(), undoLastUpdate: vi.fn(async () => { throw new Error("storage failure"); }),
+      deleteTopic: vi.fn(), mergeTopics: vi.fn(), isSourceNote: vi.fn(), openTopic: vi.fn(), openSource: vi.fn(),
+    };
+    const root = new FakePanelEl() as unknown as HTMLElement;
+    await new TopicsPanel({} as never, port as never, () => undefined).render(root);
+    const row = descendants((root as unknown as { children: FakeTree[] }).children[0]).find((item) => item.cls.includes("qnalog-outline-recent-row"));
+    row?.listeners.get("contextmenu")?.({ preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
+    await vi.waitFor(() => expect(menuState.actions.some((item) => item.title === "Undo last update")).toBe(true));
+
+    menuState.actions.find((item) => item.title === "Undo last update")?.onClick?.();
+
+    await vi.waitFor(() => expect(menuState.notices).toContain("Undo could not be confirmed. Check the topic page and its errata, then retry Undo."));
+    expect(menuState.notices).not.toContain("Topic update undone.");
   });
 
   it("uses the minutes row structure: chip, body with name and meta, and actions with the badge and ⋯", async () => {

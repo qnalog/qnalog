@@ -3067,6 +3067,7 @@ export const ZH: MessageTable = {
   "Source notes": "来源笔记",
   "Unsorted": "待整理",
   "Topic update undone.": "已撤销主题更新。",
+  "Undo could not be confirmed. Check the topic page and its errata, then retry Undo.": "无法确认撤销结果。请检查主题页及其勘误，再重试撤销。",
   "The topic page changed after the update. Undo was not applied.": "主题页在更新后又发生修改，未执行撤销。",
   "No topic update is available to undo.": "没有可撤销的主题更新。",
   "Unverified": "未核实",
