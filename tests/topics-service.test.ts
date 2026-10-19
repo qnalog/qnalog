@@ -118,6 +118,129 @@ describe("topics service", () => {
     expect(await setup.storePort.read("Topics/Climate.md")).toContain("Off-topic repair detail.");
   });
 
+  it("rejects a manual exclusion preview after the topic folder changes", async () => {
+    const errataFiles = new Map<string, string>([["Topics/A.md", "source topic"], ["OtherTopics/B.md", "source topic"]]);
+    const setup = harness({ topicErrata: makeTopicErrata(errataFiles) });
+    const markdown = topicWithBlock("shared-topic-id", "Off-topic detail.");
+    setup.storePort.seed("Topics/A.md", markdown);
+    setup.storePort.seed("OtherTopics/B.md", markdown);
+    const block = parseTopicPageBlocks(markdown).find((item) => item.text.includes("Off-topic detail"))!;
+    const preview = await setup.service.previewExcludeBlocks("Topics/A.md", [block.id]);
+
+    setup.setFolder("OtherTopics");
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow();
+    expect(await setup.storePort.read("Topics/A.md")).toBe(markdown);
+    expect(await setup.storePort.read("OtherTopics/B.md")).toBe(markdown);
+    expect([...errataFiles.keys()].some((path) => path.startsWith("QnALog/"))).toBe(false);
+    setup.setFolder("Topics");
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("Topic preview is no longer available");
+  });
+
+  it("rejects applying a preview when its target ID is duplicated in the captured folder", async () => {
+    const setup = harness({ topicErrata: makeTopicErrata(new Map([["Topics/A.md", "source topic"], ["Topics/B.md", "source topic"]])) });
+    const markdown = topicWithBlock("duplicate-topic-id", "Off-topic detail.");
+    setup.storePort.seed("Topics/A.md", markdown);
+    setup.storePort.seed("Topics/B.md", markdown);
+    const block = parseTopicPageBlocks(markdown).find((item) => item.text.includes("Off-topic detail"))!;
+    const preview = await setup.service.previewExcludeBlocks("Topics/A.md", [block.id]);
+
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow();
+    expect(await setup.storePort.read("Topics/A.md")).toBe(markdown);
+    expect(await setup.storePort.read("Topics/B.md")).toBe(markdown);
+    await expect(setup.service.apply(preview, [preview.items[0].id])).rejects.toThrow("Topic preview is no longer available");
+  });
+
+  it("allows a unique target when unrelated topic IDs are duplicated", async () => {
+    const setup = harness();
+    const target = topicMarkdown("target-topic-id", "Target", [], ["Notes/a.md"]);
+    const unrelated = topicMarkdown("unrelated-duplicate-id", "Duplicate", [], ["Notes/a.md"]);
+    setup.storePort.seed("Topics/Target.md", target);
+    setup.storePort.seed("Topics/Other A.md", unrelated);
+    setup.storePort.seed("Topics/Other B.md", unrelated);
+
+    const preview = await setup.service.preview({ topicId: "target-topic-id", startPath: "Notes/b.md", memberPaths: ["Notes/b.md"], basis: "overview" });
+    const applied = await setup.service.apply(preview, [preview.items[0].id]);
+
+    expect(applied.path).toBe("Topics/Target.md");
+    expect(applied.markdown).toContain("accepted update");
+    expect(await setup.storePort.read("Topics/Other A.md")).toBe(unrelated);
+    expect(await setup.storePort.read("Topics/Other B.md")).toBe(unrelated);
+  });
+
+  it("does not follow a moved target or apply an old ID to a replacement page", async () => {
+    const moved = harness({ topicErrata: makeTopicErrata(new Map([["Topics/Original.md", "source topic"], ["Topics/Moved.md", "source topic"], ["Topics/Replacement.md", "source topic"], ["Topics/Other-copy.md", "source topic"]])) });
+    const markdown = topicWithBlock("moved-topic-id", "Off-topic detail.");
+    moved.storePort.seed("Topics/Original.md", markdown);
+    const block = parseTopicPageBlocks(markdown).find((item) => item.text.includes("Off-topic detail"))!;
+    const movedPreview = await moved.service.previewExcludeBlocks("Topics/Original.md", [block.id]);
+    moved.storePort.seed("Topics/Moved.md", markdown);
+    moved.storePort.seed("Topics/Replacement.md", topicWithBlock("replacement-topic-id", "Off-topic detail."));
+    await moved.storePort.deleteCache("Topics/Original.md");
+    await expect(moved.service.apply(movedPreview, [movedPreview.items[0].id])).rejects.toThrow();
+    expect(await moved.storePort.read("Topics/Moved.md")).toBe(markdown);
+
+    const replaced = harness({ topicErrata: makeTopicErrata(new Map([["Topics/Original.md", "source topic"], ["Topics/Other-copy.md", "source topic"]])) });
+    const original = topicWithBlock("original-topic-id", "Off-topic detail.");
+    replaced.storePort.seed("Topics/Original.md", original);
+    const originalBlock = parseTopicPageBlocks(original).find((item) => item.text.includes("Off-topic detail"))!;
+    const replacedPreview = await replaced.service.previewExcludeBlocks("Topics/Original.md", [originalBlock.id]);
+    replaced.storePort.seed("Topics/Original.md", topicWithBlock("replacement-topic-id", "Off-topic detail."));
+    replaced.storePort.seed("Topics/Other-copy.md", original);
+    await expect(replaced.service.apply(replacedPreview, [replacedPreview.items[0].id])).rejects.toThrow();
+    expect(await replaced.storePort.read("Topics/Other-copy.md")).toBe(original);
+  });
+
+  it("rejects a new-topic preview when the folder changes during model generation", async () => {
+    let folder = "Topics";
+    const setup = harness({ getFolder: () => folder, request: async (messages) => {
+      folder = "OtherTopics";
+      const payload = JSON.parse(messages[1].content) as { members: Array<{ sourceId: string }> };
+      const sourceId = payload.members[0]?.sourceId || "Notes/a.md";
+      return { choices: [{ message: { content: JSON.stringify({ overview: "Generated overview.", status: "active", threads: [{ title: "Progress", summary: "Current detail.", points: [{ text: "Evidence supports the plan.", sources: [sourceId] }] }], disagreements: [], open: [], unsorted: [] }) } }] };
+    } });
+
+    await expect(setup.service.preview({ startPath: "Notes/a.md", memberPaths: [], basis: "overview", title: "New topic" })).rejects.toThrow();
+    expect(setup.storePort.created).toHaveLength(0);
+  });
+
+  it("rejects create and rebuild previews after their topic folder changes", async () => {
+    const setup = harness();
+    const createPreview = await setup.service.preview({ startPath: "Notes/a.md", memberPaths: [], basis: "overview", title: "New topic" });
+    setup.setFolder("OtherTopics");
+    await expect(setup.service.apply(createPreview, [])).rejects.toThrow();
+    expect(setup.storePort.created).toHaveLength(0);
+    await expect(setup.service.apply(createPreview, [])).rejects.toThrow("Topic preview is no longer available");
+
+    setup.setFolder("Topics");
+    const legacy = topicMarkdown("legacy-topic", "Legacy", ["climate"], ["Notes/a.md"]);
+    setup.storePort.seed("Topics/Legacy.md", legacy);
+    const rebuildPreview = await setup.service.previewRebuild("legacy-topic");
+    setup.setFolder("OtherTopics");
+    await expect(setup.service.apply(rebuildPreview, [])).rejects.toThrow();
+    expect(await setup.storePort.read("Topics/Legacy.md")).toBe(legacy);
+    expect(setup.storePort.created.filter(({ path }) => path.includes("topic-history"))).toHaveLength(0);
+  });
+
+  it("keeps a rebuild preview bound to the path captured before its second topic listing", async () => {
+    const setup = harness();
+    const legacy = topicMarkdown("legacy-topic", "Legacy", ["climate"], ["Notes/a.md"]);
+    setup.storePort.seed("Topics/Legacy.md", legacy);
+    const listMarkdown = setup.storePort.listMarkdown.bind(setup.storePort);
+    let calls = 0;
+    setup.storePort.listMarkdown = async (folder) => {
+      calls += 1;
+      if (calls === 2) {
+        setup.storePort.seed("Topics/Moved.md", legacy);
+        await setup.storePort.deleteCache("Topics/Legacy.md");
+      }
+      return listMarkdown(folder);
+    };
+
+    await expect(setup.service.previewRebuild("legacy-topic")).rejects.toThrow();
+    expect(await setup.storePort.read("Topics/Moved.md")).toBe(legacy);
+    expect(setup.storePort.created.filter(({ path }) => path.includes("topic-history"))).toHaveLength(0);
+  });
+
   it("keeps the first exclusion undoable when a later errata append fails", async () => {
     const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
     const topicErrata = makeTopicErrata(errataFiles);
@@ -762,7 +885,14 @@ function topicMarkdown(id: string, title: string, tags: string[], members: strin
   page.excluded = excluded;
   return serializeTopicPage(page);
 }
-function harness(options: { roots?: string[]; request?: TopicIntegrationPort["request"]; topicErrata?: TopicErrataStore } = {}) {
+function topicWithBlock(id: string, text: string): string {
+  const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+  const page = createTopicPage({ id, title: "Topic", tags: [], basis: "overview", members });
+  page.layout = 2;
+  page.body = renderTopicPage({ overview: "Topic overview.", threads: [{ id: "thread", title: "Progress", summary: "Topic detail.", points: [{ id: "point", text, sources: ["Notes/a.md"] }] }], disagreements: [], open: [], unsorted: [] }, members);
+  return serializeTopicPage(page);
+}
+function harness(options: { roots?: string[]; request?: TopicIntegrationPort["request"]; topicErrata?: TopicErrataStore; getFolder?: () => string } = {}) {
   const now = Date.UTC(2026, 0, 2);
   const files = [noteFile("Notes/a.md", "Climate policy reform changes public investment and emissions strategy", ["climate"]), noteFile("Notes/b.md", "Climate policy shifts funding toward clean energy", ["climate"])];
   const writes: Array<{ kind: string; path: string }> = [];
@@ -813,11 +943,12 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
   }
   const activities = { started: [] as Array<[string, string]>, completed: [] as Array<[string]>, failed: [] as Array<[string, unknown]>, cancelled: [] as Array<[string, string]>, progress: [] as Array<{ progress: number; stageLabel: string }> };
   let ids = 0;
-  const serviceHost = { overviewCards, topicStore: storePort, ...(options.topicErrata ? { topicErrata: options.topicErrata } : {}), getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
+  let folder = "Topics";
+  const serviceHost = { overviewCards, topicStore: storePort, ...(options.topicErrata ? { topicErrata: options.topicErrata } : {}), getRoots: () => options.roots ?? ["Notes"], getFolder: options.getFolder ?? (() => folder), integration,
     createId: () => `topic-${++ids}`, startActivity: (id, title) => activities.started.push([id, title]), updateActivity: (_id, patch) => activities.progress.push(patch), completeActivity: (id) => activities.completed.push([id]), failActivity: (id, error) => activities.failed.push([id, error]), cancelActivity: (id, reason) => activities.cancelled.push([id, reason]) };
   const createService = () => new TopicsService(serviceHost);
   const service = createService();
-  return { service, createService, files, writes, readPaths, storePort, requests, activities };
+  return { service, createService, files, writes, readPaths, storePort, requests, activities, setFolder: (path: string) => { folder = path; } };
 }
 
 function emptyHost(overviewCards: TopicsServicePort) {
