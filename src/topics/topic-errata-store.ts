@@ -158,18 +158,38 @@ export class TopicErrataStore {
     const titles = getTopicErrataTitles(language);
     const content = entryLine(description, memberPath);
     let added = false;
+    let callbackRan = false;
+    let expectedMarkdown: string | undefined;
     const cleanDescription = description.trim().replace(/\s+/g, " ");
     const normalizedMemberLink = memberPath ? normalizePath(memberPath).replace(/\.md$/i, "") : null;
-    await this.port.process(file, (markdown) => {
-      const parsed = parseTopicErrata(markdown);
-      const normalized = normalizedDescription(description);
-      if (parsed.entries.some((entry) => normalizedDescription(entry.description) === normalized
-        && ((entry.memberLink && normalizedMemberLink && this.linkResolvesToPath(entry.memberLink, path, memberPath || "")) || (!entry.memberLink && !normalizedMemberLink)))) return markdown;
-      const point = insertionPoint(markdown);
-      added = true;
-      if (point === null) return `${markdown.trimEnd()}\n\n## ${titles.offTopic}\n${content}\n`;
-      return `${markdown.slice(0, point)}${content}\n${markdown.slice(point)}`;
-    });
+    try {
+      await this.port.process(file, (markdown) => {
+        callbackRan = true;
+        const parsed = parseTopicErrata(markdown);
+        const normalized = normalizedDescription(description);
+        if (parsed.entries.some((entry) => normalizedDescription(entry.description) === normalized
+          && ((entry.memberLink && normalizedMemberLink && this.linkResolvesToPath(entry.memberLink, path, memberPath || "")) || (!entry.memberLink && !normalizedMemberLink)))) {
+          added = false;
+          expectedMarkdown = markdown;
+          return markdown;
+        }
+        const point = insertionPoint(markdown);
+        added = true;
+        expectedMarkdown = point === null
+          ? `${markdown.trimEnd()}\n\n## ${titles.offTopic}\n${content}\n`
+          : `${markdown.slice(0, point)}${content}\n${markdown.slice(point)}`;
+        return expectedMarkdown;
+      });
+    } catch (error) {
+      if (!callbackRan || expectedMarkdown === undefined) throw error;
+      let currentMarkdown: string;
+      try {
+        currentMarkdown = await this.port.read(file);
+      } catch {
+        throw error;
+      }
+      if (currentMarkdown !== expectedMarkdown) throw error;
+    }
     return { path, description: cleanDescription, memberLink: normalizedMemberLink, added };
   }
 

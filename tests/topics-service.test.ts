@@ -9,7 +9,7 @@ import { TopicErrataStore, type TopicErrataStorePort } from "../src/topics/topic
 import { topicMemberExcludeSelectionId } from "../src/topics/topic-integration";
 
 describe("topics service", () => {
-  function makeTopicErrata(files: Map<string, string>, language = "zh") {
+  function makeTopicErrata(files: Map<string, string>, language = "zh", throwAfterProcessWrite = false) {
     type File = InstanceType<typeof obsidian.TFile> & { path: string; basename: string; extension: string };
     const fileObjects = new Map<string, File>();
     const getFile = (path: string): File => {
@@ -32,7 +32,13 @@ describe("topics service", () => {
       },
       ensureFolder: async () => undefined,
       create: async (path, content) => { files.set(path, content); return getFile(path); },
-      process: async (file, transform) => { files.set(file.path, transform(files.get(file.path) || "")); },
+      process: async (file, transform) => {
+        files.set(file.path, transform(files.get(file.path) || ""));
+        if (throwAfterProcessWrite) {
+          throwAfterProcessWrite = false;
+          throw new Error("errata process failed after write");
+        }
+      },
       uiLanguage: () => language,
     });
   }
@@ -230,6 +236,31 @@ describe("topics service", () => {
     const errata = errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md") || "";
     expect(errata).toContain("Off-topic repair detail.");
     expect(errata).not.toContain("Off-topic travel detail.");
+  });
+
+  it("associates an errata row written before process throws so Undo removes it", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles, "zh", true);
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "append-throw-after-write-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "One detail.", points: [
+      { id: "repair", text: "Off-topic repair detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic repair detail"))!;
+    const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
+
+    await expect(setup.service.apply(preview, [preview.items[0].id])).resolves.toMatchObject({ path: "Topics/Climate.md" });
+    expect(await setup.storePort.read("Topics/Climate.md")).not.toContain("Off-topic repair detail.");
+    const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
+    expect(errataFiles.get(errataPath)).toContain("Off-topic repair detail.");
+
+    await expect(setup.service.undoLastUpdate("append-throw-after-write-topic")).resolves.toMatchObject({ restored: true, errataRemoved: 1 });
+    expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
+    expect(errataFiles.get(errataPath)).not.toContain("Off-topic repair detail.");
   });
 
   it("undoes all newly added scoped and global errata with the matching multi-block snapshot", async () => {
