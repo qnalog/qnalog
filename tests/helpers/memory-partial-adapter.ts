@@ -6,14 +6,22 @@ export class MemoryAdapter implements MasterPartialAdapter {
   dirs = new Set<string>();
   hooks: {
     writeBinary?: (path: string, data: ArrayBuffer) => Promise<void> | void;
+    writeBinaryAfter?: (path: string, data: ArrayBuffer) => Promise<void> | void;
+    write?: (path: string, data: string) => Promise<void> | void;
+    read?: (path: string) => Promise<void> | void;
+    rename?: (from: string, to: string) => Promise<void> | void;
     rmdir?: (path: string) => void;
     statSize?: (path: string, size: number) => number;
   } = {};
 
   async exists(path: string): Promise<boolean> { return this.files.has(path) || this.dirs.has(path); }
   async mkdir(path: string): Promise<void> { this.dirs.add(path); }
-  async write(path: string, data: string): Promise<void> { this.files.set(path, data); }
+  async write(path: string, data: string): Promise<void> {
+    if (this.hooks.write) await this.hooks.write(path, data);
+    this.files.set(path, data);
+  }
   async read(path: string): Promise<string> {
+    if (this.hooks.read) await this.hooks.read(path);
     const value = this.files.get(path);
     if (typeof value !== "string") throw new Error(`ENOENT ${path}`);
     return value;
@@ -21,6 +29,7 @@ export class MemoryAdapter implements MasterPartialAdapter {
   async writeBinary(path: string, data: ArrayBuffer): Promise<void> {
     if (this.hooks.writeBinary) await this.hooks.writeBinary(path, data);
     this.files.set(path, data.slice(0));
+    if (this.hooks.writeBinaryAfter) await this.hooks.writeBinaryAfter(path, data);
   }
   async readBinary(path: string): Promise<ArrayBuffer> {
     const value = this.files.get(path);
@@ -42,6 +51,14 @@ export class MemoryAdapter implements MasterPartialAdapter {
     return { size: this.hooks.statSize ? this.hooks.statSize(path, size) : size };
   }
   async remove(path: string): Promise<void> { this.files.delete(path); }
+  async rename(from: string, to: string): Promise<void> {
+    if (this.hooks.rename) await this.hooks.rename(from, to);
+    if (this.files.has(to)) throw new Error(`EEXIST ${to}`);
+    const value = this.files.get(from);
+    if (value === undefined) throw new Error(`ENOENT ${from}`);
+    this.files.set(to, value);
+    this.files.delete(from);
+  }
   async rmdir(path: string, recursive: boolean): Promise<void> {
     if (this.hooks.rmdir) this.hooks.rmdir(path);
     const prefix = `${path}/`;
