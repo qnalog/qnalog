@@ -122,4 +122,24 @@ describe("topic page v2", () => {
     expect(english).toContain("Bug: 修正路径。");
     expect(english).not.toContain("进行中");
   });
+
+  it("adds a point under the named existing thread, not under the last thread", () => {
+    const twoThreads: TopicPageV2Model = {
+      ...model,
+      threads: [
+        { id: "first", title: "第一条线索", summary: "第一条线索的概述。", points: [{ id: "f1", text: "第一条旧要点。", sources: ["a"] }] },
+        { id: "second", title: "第二条线索", summary: "第二条线索的概述。", points: [{ id: "s1", text: "第二条旧要点。", sources: ["b"] }] },
+      ],
+    };
+    const page = createTopicPage({ id: "topic-1", title: "主题", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage(twoThreads, members, {});
+    const result = applyTopicOps(serializeTopicPage(page), [{ type: "add_point", thread: "第一条线索", text: "新增要点。", sources: ["b"], sourceId: "b" }]);
+    const lines = result.markdown.split("\n");
+    const heading = (title: string) => lines.findIndex((line) => line.trim() === `### ${title}`);
+    const added = lines.findIndex((line) => line.includes("新增要点。"));
+    expect(added).toBeGreaterThan(heading("第一条线索"));
+    expect(added).toBeLessThan(heading("第二条线索"));
+    expect(result.applied[0]?.location).toBe("进展脉络");
+  });
 });

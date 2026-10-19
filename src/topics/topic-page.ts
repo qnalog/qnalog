@@ -750,8 +750,10 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
         } else if (operation.type === "add_point") {
           const thread = lines.findIndex((line) => line.trim() === `### ${operation.thread}`);
           if (thread >= 0) {
+            // 线索到下一个任意级别标题为止；只认 # 与 ## 会越过后面的 ### 线索，把要点放进最后一条线索。
             let end = thread + 1;
-            while (end < lines.length && !/^#{1,2}\s/.test(lines[end])) end++;
+            while (end < lines.length && !/^#{1,3}\s/.test(lines[end])) end++;
+            while (end > thread + 1 && lines[end - 1].trim() === "") end--;
             const id = stableTopicBlockId("add_point", operation.sourceId, operation.text, new Set(lines.map((line) => line.match(/\^(tpc-[\da-f]{6})\s*$/)?.[1]).filter((value): value is string => !!value)));
             lines.splice(end, 0, `- ${ensureSentencePunctuation(operation.text)}${inlineFootnotes(operation.sources)}`);
             blockId = id;

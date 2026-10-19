@@ -1471,7 +1471,7 @@ ${n.text}
 `).length-1,D=T.body.slice(z,q).split(`
 `).length;A.splice($,D)}else if(g.type==="revise_block")if(B.type==="overview"){let _=E+1;for(;_<A.length&&/^>/.test(A[_])&&!/^>\s*\*\*/.test(A[_]);)_++;A.splice(E+1,_-E-1,...g.newText.split(`
 `).map(z=>`> ${or(z)}`))}else{let _=((m=A[E].match(/^\s*[-*]?\s*(?:\[[ xX]\]\s*)?/))==null?void 0:m[0])||"";A[E]=`${_}${or(g.newText)}`}else A[E]=A[E].replace(/^(\s*[-*]\s*\[)\s(\])/,"$1x$2"),A.splice(E+1,0,`  - ${g.note}${M(g.sourceId)}`)}else{let O;if(g.type==="add_thread"){let B=new Set(A.map(_=>{var z;return(z=_.match(/\^(tpc-[\da-f]{6})\s*$/))==null?void 0:z[1]}).filter(_=>!!_)),C=hs("thread",g.title,g.summary,B);B.add(C);let E=g.points.map(_=>{let z=hs("point",g.title,_.text,B);return B.add(z),`- ${Pd(_.text)}${la(_.sources)}`});O=["",`### ${g.title}`,"",`${g.summary} ^${C}`,...E].join(`
-`)}else if(g.type==="add_point"){let B=A.findIndex(C=>C.trim()===`### ${g.thread}`);if(B>=0){let C=B+1;for(;C<A.length&&!/^#{1,2}\s/.test(A[C]);)C++;let E=hs("add_point",g.sourceId,g.text,new Set(A.map(_=>{var z;return(z=_.match(/\^(tpc-[\da-f]{6})\s*$/))==null?void 0:z[1]}).filter(_=>!!_)));A.splice(C,0,`- ${Pd(g.text)}${la(g.sources)}`),R=E,n=`${T.text?`---
+`)}else if(g.type==="add_point"){let B=A.findIndex(C=>C.trim()===`### ${g.thread}`);if(B>=0){let C=B+1;for(;C<A.length&&!/^#{1,3}\s/.test(A[C]);)C++;for(;C>B+1&&A[C-1].trim()==="";)C--;let E=hs("add_point",g.sourceId,g.text,new Set(A.map(_=>{var z;return(z=_.match(/\^(tpc-[\da-f]{6})\s*$/))==null?void 0:z[1]}).filter(_=>!!_)));A.splice(C,0,`- ${Pd(g.text)}${la(g.sources)}`),R=E,n=`${T.text?`---
 ${T.text}
 ---
 `:""}${A.join(`
