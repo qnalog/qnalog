@@ -19,6 +19,8 @@ export class TopicPreviewModal extends Modal {
   private onApplied: (path: string) => void;
   private closed = false;
   private applied = false;
+  /** 已把旧预览交给“用正文重试”：关闭时不再取消，避免误取消新发起的同主题请求。 */
+  private handedOffToRetry = false;
 
   constructor(app: App, port: TopicsUiPort, preview: TopicChangePreview, onApplied: (path: string) => void) {
     super(app);
@@ -35,7 +37,7 @@ export class TopicPreviewModal extends Modal {
   onClose(): void {
     if (this.closed) return;
     this.closed = true;
-    if (!this.applied) this.port.cancel(this.preview.topicId);
+    if (!this.applied && !this.handedOffToRetry) this.port.cancel(this.preview.topicId);
     this.contentEl.empty();
   }
 
@@ -332,6 +334,10 @@ export class TopicPreviewModal extends Modal {
         .replace("{0}", estimate.chars.toLocaleString()).replace("{1}", tokens.toLocaleString());
       const confirmed = await qnalogConfirm(this.app, this.port.text("Retry with body"), message, this.port.text("Continue"), this.port.text("QnALog · Topics"));
       if (!confirmed || this.closed) return;
+      // 更新已有主题时，新旧请求使用同一个活动 ID。移动端弹窗的 onClose 可能在新请求登记之后才触发，
+      // 所以先同步取消旧预览，再让 onClose 跳过取消。
+      this.port.cancel(this.preview.topicId);
+      this.handedOffToRetry = true;
       this.close();
       void runTopicPreviewRequest(this.app, this.port, () => this.port.preview({ ...request, basis: "body", bodyConfirmed: true }),
         (preview) => new TopicPreviewModal(this.app, this.port, preview, this.onApplied).open());
