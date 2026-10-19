@@ -120,6 +120,7 @@ export class TopicsPanel {
     }));
     menu.addItem((item) => item.setTitle(this.port.text("Scan for notes to integrate")).setIcon("scan-search").onClick(() => void this.scan(topicId)));
     if (uncontributed.length) menu.addItem((item) => item.setTitle(this.port.text("Organize notes with no contributed content ({0})").replace("{0}", String(uncontributed.length))).setIcon("list-minus").onClick(() => void this.organizeUncontributed(topicId)));
+    menu.addItem((item) => item.setTitle(this.port.text("Remove a note from this topic…")).setIcon("file-minus").onClick(() => void this.chooseMemberToRemove(topicId, event)));
     menu.addItem((item) => item.setTitle(this.port.text("Open errata")).setIcon("file-pen").onClick(() => {
       void this.port.openTopicErrata(topicId).catch((error: unknown) => new Notice(error instanceof Error ? error.message : this.port.text("Could not open the topic errata document."), 8000));
     }));
@@ -141,6 +142,19 @@ export class TopicsPanel {
       await this.port.deleteTopic(topicId);
       this.refresh();
     }));
+    menu.showAtMouseEvent(event);
+  }
+
+  private async chooseMemberToRemove(topicId: string, event: MouseEvent): Promise<void> {
+    const topic = (await this.port.listTopics()).find((entry) => entry.page.id === topicId);
+    if (!topic?.page.members.length) { new Notice(this.port.text("This topic has no member notes.")); return; }
+    const menu = new Menu();
+    for (const path of topic.page.members) {
+      const stem = path.replace(/\.md$/i, "");
+      const link = topic.page.memberLinks.find((entry) => entry.match(/^\[\[([^|\]]+)/)?.[1]?.replace(/\.md$/i, "") === stem);
+      const title = link?.match(/\|([^\]]+)\]\]$/)?.[1] || stem.split("/").pop() || path;
+      menu.addItem((item) => item.setTitle(title).onClick(() => void previewMemberRemoval(this.app, this.port, topicId, path, () => this.refresh())));
+    }
     menu.showAtMouseEvent(event);
   }
 
@@ -340,5 +354,14 @@ export class TopicScanModal extends Modal {
       this.failure = this.port.text("The topic page could not be generated. You can retry. The page was not modified.");
       this.render();
     }
+  }
+}
+
+/** Opens the removal preview for one member note; shared by the topic menu and the note's file menu. */
+export async function previewMemberRemoval(app: App, port: TopicsUiPort, topicId: string, memberPath: string, refresh: () => void): Promise<void> {
+  try {
+    new TopicPreviewModal(app, port, await port.previewRemoveMember(topicId, memberPath), refresh).open();
+  } catch (error) {
+    new Notice(error instanceof Error ? error.message : String(error), 8000);
   }
 }

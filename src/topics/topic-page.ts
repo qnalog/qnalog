@@ -57,7 +57,7 @@ export type TopicOperation =
   | { type: "add_thread"; title: string; summary: string; points: Array<{ text: string; sources: string[] }>; sourceId: string }
   | { type: "revise_block"; blockId: string; newText: string; reason: string; expectedText?: string; sourceId: string }
   | { type: "remove_block"; blockId: string; expectedText: string; sourceId: string }
-  | { type: "remove_member"; path: string }
+  | { type: "remove_member"; path: string; /** User-requested removal: citations of the note are stripped instead of blocking the removal. */ force?: boolean }
   | { type: "add_disagreement"; subject: string; relatedBlockId?: string; positions: TopicDisagreementPosition[]; sourceId: string }
   | { type: "add_open"; kind: TopicOpenKind; text: string; sources: string[]; sourceId: string }
   | { type: "resolve_open"; blockId: string; note: string; expectedText?: string; sourceId: string };
@@ -527,14 +527,17 @@ function memberLinkTarget(value: string): string {
   return normalizeTopicMemberPath(target);
 }
 
-function removeTopicMember(markdown: string, memberPath: string): string {
+function removeTopicMember(markdown: string, memberPath: string, force = false): string {
   const normalizedMemberPath = normalizeTopicMemberPath(memberPath);
   const citedIds = citedFootnoteIds(markdown);
-  if (memberFootnoteIds(markdown, normalizedMemberPath).some((id) => citedIds.has(id))) {
+  const memberIds = memberFootnoteIds(markdown, normalizedMemberPath);
+  if (!force && memberIds.some((id) => citedIds.has(id))) {
     throw new Error(t("This member is still cited by topic content and cannot be removed."));
   }
   const parsed = frontmatter(markdown);
-  const lines = parsed.body.split("\n");
+  const citationRefs = new Set(memberIds.map((id) => `[^${id}]`));
+  const lines = parsed.body.split("\n").map((line) => force && citationRefs.size && !/^\s*\[\^[^\]]+\]:/.test(line)
+    ? line.replace(/\[\^[^\]]+\]/g, (ref) => (citationRefs.has(ref) ? "" : ref)) : line);
   const removeIndexes = new Set<number>();
   for (const section of ["时间线", "来源笔记"] as const) {
     const range = sectionRange(lines, section);
@@ -692,7 +695,7 @@ export function applyTopicOps(markdown: string, ops: readonly TopicOperation[], 
   const skipped: ApplyTopicOpsResult["skipped"] = [];
   for (const operation of ops) {
     if (operation.type === "remove_member") {
-      current = removeTopicMember(current, operation.path);
+      current = removeTopicMember(current, operation.path, operation.force === true);
       applied.push({ operation, blockId: null, location: "来源笔记" });
       continue;
     }

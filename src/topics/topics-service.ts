@@ -6,7 +6,7 @@ import type { OverviewCardCachePort } from "./overview-card-cache";
 import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
-import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, generateTopicCleaningOperations, estimateTopicCleaningInput, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
+import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, generateTopicCleaningOperations, estimateTopicCleaningInput, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicChangePreviewItem, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
 import { applyTopicOps, createTopicPage, hashTopicPage, isLegacyTopicStatusLine, noContributionMembers, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, topicBlockSourcePaths, type TopicBasis, type TopicMember, type TopicPage, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
@@ -587,6 +587,39 @@ export class TopicsService {
       totalBatches: 0,
     };
     this.previews.set(`topics:orphans:${topicId}`, { preview, folder, store, path: topic.path, managesActivity: false });
+    return preview;
+  }
+
+  /** Previews taking one member note out of a topic; body points citing only that note are listed unchecked. */
+  async previewRemoveMember(topicId: string, memberPath: string): Promise<TopicChangePreview> {
+    const folder = this.host.getFolder();
+    const store = this.storeForFolder(folder);
+    const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    this.assertPreviewFolder(folder);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    if (!topic.page.members.includes(memberPath)) throw new Error(t("This note is not a member of the topic."));
+    const markdown = await store.readIndexedMarkdown(topic.path);
+    this.assertPreviewFolder(folder);
+    const title = topicMemberTitle(topic.page, memberPath);
+    const exclusive = parseTopicPageBlocks(markdown).filter((block) => {
+      const sources = topicBlockSourcePaths(markdown, block);
+      return sources.length > 0 && sources.every((source) => source === memberPath);
+    });
+    const blockItems = exclusive.map((block): TopicChangePreviewItem => {
+      const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: memberPath };
+      return { id: `member-block-${hashText(block.id)}`, operation, type: operation.type, target: topicBlockHeadingLabel(markdown, block.id) || t("Corresponding section"), text: block.text, sourceId: memberPath, expectedText: block.text, cancellable: true, defaultSelected: false };
+    });
+    const operation = { type: "remove_member" as const, path: memberPath, force: true };
+    const memberItem: TopicChangePreviewItem = { id: `member-${hashText(memberPath)}`, operation, type: operation.type, target: title, text: title, sourceId: memberPath, cancellable: true };
+    const preview: TopicChangePreview = {
+      topicId,
+      expectedHash: hashTopicPage(markdown),
+      pageWasManuallyEdited: topic.page.cacheStatus !== "valid" || (!!topic.page.appliedHash && topic.page.appliedHash !== hashTopicPage(markdown)),
+      items: [...blockItems, memberItem],
+      completedBatches: 0,
+      totalBatches: 0,
+    };
+    this.previews.set(`topics:remove-member:${topicId}`, { preview, folder, store, path: topic.path, managesActivity: false });
     return preview;
   }
 
