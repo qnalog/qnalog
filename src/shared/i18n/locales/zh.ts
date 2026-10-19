@@ -3141,6 +3141,8 @@ export const ZH: MessageTable = {
   "Saving the in-progress recording audio failed; it will be retried": "进行中的录音音频写入失败，将自动重试",
   "The full recording was saved, but its partial files could not be removed": "完整录音已保存，但进行中的录音临时文件无法删除",
   "The partial files could not be marked as saved": "无法在临时文件中标记为已保存",
+  "The saved recording could not be verified; its partial audio was kept": "无法按文件类型和字节数核对已写入录音文件，录音分片已保留",
+  "The partial audio could not be safely cleaned up; its files were kept": "无法安全清理录音分片，临时文件已保留",
   "An interrupted recording could not be recovered; its partial files were kept": "中断的录音无法自动恢复，临时文件已保留",
   "An interrupted recording could not be recovered automatically. Its partial files are kept in the recording folder.": "中断的录音无法自动恢复，临时文件已保留在录音文件夹中。",
   "A previous recording was interrupted before it was saved. Its audio was saved in the recording folder as {0}.": "上一次录音在保存前中断。其音频已保存在录音文件夹中，文件名为 {0}。",

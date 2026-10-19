@@ -62,7 +62,9 @@ describe("MasterPartialService discard after a saved master audio", () => {
     await started;
 
     let discarded = false;
-    const discard = service.discard("s-discard", `${AUDIO_FOLDER}/qnalog-x.webm`).then(() => { discarded = true; });
+    const savedPath = `${AUDIO_FOLDER}/qnalog-x.webm`;
+    io.files.set(savedPath, "0123");
+    const discard = service.discard("s-discard", savedPath, 4).then(() => { discarded = true; });
     await Promise.resolve();
     expect(discarded).toBe(false);
     release();
@@ -85,11 +87,13 @@ describe("MasterPartialService discard after a saved master audio", () => {
     const second = service.createSession(init("s-second"));
     await first.append(new Blob(["1"], { type: MIME }), MIME);
     await second.append(new Blob(["2"], { type: MIME }), MIME);
+    io.files.set(`${AUDIO_FOLDER}/qnalog-1.webm`, "1");
+    io.files.set(`${AUDIO_FOLDER}/qnalog-2.webm`, "2");
     const root = `${AUDIO_FOLDER}/.partial`;
 
-    await service.discard("s-first", `${AUDIO_FOLDER}/qnalog-1.webm`);
+    await service.discard("s-first", `${AUDIO_FOLDER}/qnalog-1.webm`, 1);
     expect(io.dirs.has(root)).toBe(true);
-    await service.discard("s-second", `${AUDIO_FOLDER}/qnalog-2.webm`);
+    await service.discard("s-second", `${AUDIO_FOLDER}/qnalog-2.webm`, 1);
     expect(io.dirs.has(root)).toBe(false);
     expect([...io.dirs, ...io.files.keys()].some((key) => key.includes(".partial"))).toBe(false);
   });
@@ -100,9 +104,10 @@ describe("MasterPartialService discard after a saved master audio", () => {
     const service = new MasterPartialService(host);
     const session = service.createSession(init("s-root"));
     await session.append(new Blob(["r"], { type: MIME }), MIME);
+    io.files.set(`${AUDIO_FOLDER}/qnalog-root.webm`, "r");
     io.hooks.rmdir = (path) => { if (path === `${AUDIO_FOLDER}/.partial`) throw new Error("root busy"); };
 
-    await expect(service.discard("s-root", `${AUDIO_FOLDER}/qnalog-root.webm`)).resolves.toBeUndefined();
+    await expect(service.discard("s-root", `${AUDIO_FOLDER}/qnalog-root.webm`, 1)).resolves.toBeUndefined();
     expect(io.dirs.has(dirOf("s-root"))).toBe(false);
     expect(io.dirs.has(`${AUDIO_FOLDER}/.partial`)).toBe(true);
     expect(logs.map((entry) => entry.code)).toEqual(["recording.partial_root_kept"]);
@@ -114,12 +119,14 @@ describe("MasterPartialService discard after a saved master audio", () => {
     const service = new MasterPartialService(host);
     const session = service.createSession(init("s-stuck"));
     await session.append(new Blob(["aa"], { type: MIME }), MIME);
+    io.files.set(`${AUDIO_FOLDER}/qnalog-stuck.webm`, "full");
     io.hooks.rmdir = () => { throw new Error("locked"); };
 
-    await expect(service.discard("s-stuck", `${AUDIO_FOLDER}/qnalog-stuck.webm`)).resolves.toBeUndefined();
+    await expect(service.discard("s-stuck", `${AUDIO_FOLDER}/qnalog-stuck.webm`, 4)).resolves.toBeUndefined();
     expect(logs.map((entry) => entry.code)).toContain("recording.partial_cleanup_failed");
     const meta = parseMasterPartialMeta(io.text(`${dirOf("s-stuck")}/meta.json`));
     expect(meta.savedAs).toBe(`${AUDIO_FOLDER}/qnalog-stuck.webm`);
+    expect(meta.savedBytes).toBe(4);
 
     io.hooks.rmdir = undefined;
     const { host: nextHost, notices, importAudioFiles } = makeHost(io);
@@ -129,6 +136,55 @@ describe("MasterPartialService discard after a saved master audio", () => {
     expect(notices).toEqual([]);
     expect(importAudioFiles).not.toHaveBeenCalled();
     expect(io.dirs.has(dirOf("s-stuck"))).toBe(false);
+  });
+
+  it("keeps partials and reports when the saved target is truncated", async () => {
+    const io = new MemoryAdapter();
+    const { host, logs, notices } = makeHost(io);
+    const service = new MasterPartialService(host);
+    const session = service.createSession(init("s-short-target"));
+    await session.append(new Blob(["abc"], { type: MIME }), MIME);
+    const savedPath = `${AUDIO_FOLDER}/qnalog-short-target.webm`;
+    io.files.set(savedPath, "abcd");
+
+    await expect(service.discard("s-short-target", savedPath, 5)).rejects.toThrow();
+    expect(io.files.has(`${dirOf("s-short-target")}/part-0001.webm`)).toBe(true);
+    expect(parseMasterPartialMeta(io.text(`${dirOf("s-short-target")}/meta.json`))).toMatchObject({ savedAs: savedPath, savedBytes: 5 });
+    expect(logs.map((entry) => entry.code)).toContain("recording.partial_target_invalid");
+    expect(notices.map((notice) => notice.message)).toContain("The saved recording could not be verified; its partial audio was kept");
+  });
+
+  it("references a size-verified master when partial cleanup alone fails", async () => {
+    const io = new MemoryAdapter();
+    const { host, logs } = makeHost(io);
+    const partials = new MasterPartialService(host);
+    const sessionId = "s-pipeline-cleanup";
+    const partial = partials.createSession(init(sessionId));
+    await partial.append(new Blob(["part"], { type: MIME }), MIME);
+    io.hooks.rmdir = (path) => { if (path === dirOf(sessionId)) throw new Error("locked"); };
+    const pipeline = new LiveAsrPipelineService({
+      getSettings: () => ({ audioFolder: AUDIO_FOLDER }) as never,
+      vault: {
+        getAbstractFileByPath: () => null,
+        createFolder: async () => undefined,
+        createBinary: async (path: string, data: ArrayBuffer) => { io.files.set(path, data.slice(0)); return {} as never; },
+      } as never,
+      discardMasterPartials: (id: string, path: string, bytes: number) => partials.discard(id, path, bytes),
+    } as never);
+    const pipelineSession = {
+      id: sessionId,
+      sessionStamp: "20261006-120000",
+      segments: [{ audioName: "segment.webm", audioPath: "segment.webm" }],
+    };
+
+    await pipeline.saveMasterAudio(pipelineSession as never, { masterBlob: new Blob(["complete"], { type: MIME }), masterMime: MIME, masterExt: "webm" } as never);
+
+    const savedPath = `${AUDIO_FOLDER}/qnalog-20261006-120000.webm`;
+    expect(pipelineSession.masterAudioPath).toBe(savedPath);
+    expect(pipelineSession.segments[0]!.audioPath).toBe(savedPath);
+    expect(io.dirs.has(dirOf(sessionId))).toBe(true);
+    expect(parseMasterPartialMeta(io.text(`${dirOf(sessionId)}/meta.json`))).toMatchObject({ savedAs: savedPath, savedBytes: 8 });
+    expect(logs.map((entry) => entry.code)).toContain("recording.partial_cleanup_failed");
   });
 });
 
@@ -231,8 +287,8 @@ describe("RecordingService master flush result handling", () => {
 });
 
 describe("LiveAsrPipelineService master audio save", () => {
-  function makePipeline(createBinary: () => Promise<unknown>) {
-    const discards: Array<[string, string]> = [];
+  function makePipeline(createBinary: () => Promise<unknown>, discardAction: (sessionId: string, savedPath: string, savedBytes: number) => Promise<void> = async () => undefined) {
+    const discards: Array<[string, string, number]> = [];
     const notices: string[] = [];
     const pipeline = new LiveAsrPipelineService({
       getSettings: () => ({ audioFolder: AUDIO_FOLDER }) as never,
@@ -241,25 +297,43 @@ describe("LiveAsrPipelineService master audio save", () => {
         createFolder: async () => undefined,
         createBinary,
       } as never,
-      discardMasterPartials: async (sessionId: string, savedPath: string) => { discards.push([sessionId, savedPath]); },
+      discardMasterPartials: async (sessionId: string, savedPath: string, savedBytes: number) => {
+        discards.push([sessionId, savedPath, savedBytes]);
+        await discardAction(sessionId, savedPath, savedBytes);
+      },
     } as never);
     return { pipeline, discards, notices };
   }
-  const session = { id: "s-save", sessionStamp: "20261006-120000", segments: [] } as never;
+  const makeSession = (segments: Array<{ audioName?: string; audioPath?: string }> = []) => ({ id: "s-save", sessionStamp: "20261006-120000", segments });
   const seg = { masterBlob: new Blob(["full"], { type: MIME }), masterMime: MIME, masterExt: "webm" } as never;
 
   it("discards the partial files only after the full master audio is written", async () => {
     const createBinary = vi.fn(async () => ({}));
     const { pipeline, discards } = makePipeline(createBinary);
-    await pipeline.saveMasterAudio(session, seg);
+    await pipeline.saveMasterAudio(makeSession() as never, seg);
     expect(createBinary).toHaveBeenCalledTimes(1);
-    expect(discards).toEqual([["s-save", `${AUDIO_FOLDER}/qnalog-20261006-120000.webm`]]);
+    expect(discards).toEqual([["s-save", `${AUDIO_FOLDER}/qnalog-20261006-120000.webm`, 4]]);
   });
 
   it("keeps the partial files when the full master audio cannot be written", async () => {
     const createBinary = vi.fn(async () => { throw new Error("vault locked"); });
     const { pipeline, discards } = makePipeline(createBinary);
-    await pipeline.saveMasterAudio(session, seg);
+    await pipeline.saveMasterAudio(makeSession() as never, seg);
     expect(discards).toEqual([]);
+  });
+
+  it("does not reference a master target when partial verification fails", async () => {
+    const createBinary = vi.fn(async () => ({}));
+    const { pipeline } = makePipeline(createBinary, async () => { throw new Error("target size mismatch"); });
+    const session = makeSession([{ audioName: "segment.webm", audioPath: "segment.webm" }]);
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await pipeline.saveMasterAudio(session as never, seg);
+    } finally {
+      errorLog.mockRestore();
+    }
+    expect(session).not.toHaveProperty("masterAudioPath");
+    expect(session).not.toHaveProperty("masterAudioName");
+    expect(session.segments[0]).toEqual({ audioName: "segment.webm", audioPath: "segment.webm" });
   });
 });
