@@ -97,6 +97,11 @@ export function parseMasterPartialMeta(text: string): MasterPartialMeta {
     if (typeof field !== "number" || !Number.isFinite(field) || field < 0) throw new Error(`meta.${key} is not a number`);
     return field;
   };
+  const counter = (key: string): number => {
+    const field = num(key);
+    if (!Number.isSafeInteger(field)) throw new Error(`meta.${key} is not a safe integer`);
+    return field;
+  };
   if (record.version !== 1) throw new Error("unsupported meta version");
   const meta: MasterPartialMeta = {
     version: 1,
@@ -105,8 +110,8 @@ export function parseMasterPartialMeta(text: string): MasterPartialMeta {
     startedAt: num("startedAt"),
     mime: str("mime"),
     ext: str("ext"),
-    partCount: num("partCount"),
-    flushedBytes: num("flushedBytes"),
+    partCount: counter("partCount"),
+    flushedBytes: counter("flushedBytes"),
     lastFlushAt: num("lastFlushAt"),
     sourceMode: str("sourceMode"),
     mode: str("mode"),

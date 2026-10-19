@@ -116,6 +116,7 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
 
   if (parts.length === 0) {
     if (meta.partCount !== 0) return await fail("parts-missing");
+    if (meta.flushedBytes !== 0) return await fail("committed-size-mismatch");
     try {
       await removePartialDirectory(adapter, dir);
     } catch (error) {
@@ -123,6 +124,8 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
     }
     return { sessionId, status: "removed-empty" };
   }
+  if (parts.length < meta.partCount) return await fail("parts-missing");
+  if (parts.length > meta.partCount + 1) return await fail("unexpected-part-count");
   for (let i = 0; i < parts.length; i++) {
     if (parts[i].parsed.index !== i + 1) return await fail("part-gap");
     if (parts[i].parsed.ext !== meta.ext) return await fail("ext-mismatch");
@@ -135,6 +138,8 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
   } catch (error) {
     return await fail("read-failed", error);
   }
+  const committedBytes = buffers.slice(0, meta.partCount).reduce((sum, buffer) => sum + buffer.byteLength, 0);
+  if (committedBytes !== meta.flushedBytes) return await fail("committed-size-mismatch");
   const total = buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
   if (total === 0) return await fail("empty-parts");
 

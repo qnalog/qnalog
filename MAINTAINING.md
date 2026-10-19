@@ -347,12 +347,6 @@ git tag X.Y.Z && git push origin X.Y.Z
 - 暂停恢复任务弹窗的排版与状态栏任务条（右下角，点开为待处理队列）的显示，实际界面仍待维护者确认。
 - 真实用户数据损坏或安全问题优先。尚未定位的截图或 `partial` 状态不作为已定位故障。
 - 类型收敛：`SessionFinalizeService`、`QueueRetryService`、`RepolishService` 外壳，`NoteWriter` 材料编排与 `RecordingService` 启停为可选项，按具体需求排期。
-- **采集持久化**（取证中，不立项）。录音数据在内存中累积，完整母带在录音停止时才写入（`audio/recorder-service.ts:504–536`、`792`）。
-  - 开启实时分段时，强制退出只丢失最后一次切段之后的音频。默认切段时刻为 10 秒、60 秒、180 秒，之后按切段间隔切段（默认 5 分钟，`shared/defaults.ts:370`；时刻见 `shared/limits.ts:5`）。已写入分段缓存目录的分段音频最长保留 7 天（`shared/limits.ts:28`），缓存与笔记之间没有反向链接。
-  - 关闭实时分段时，强制退出丢失整场录音。
-  - 内存中的完整母带约每分钟增长 0.8 MiB，仅在停止录音时写入。
-  - 下次启动时不恢复、不提示未完成的录音，笔记标题保持「（录音中…）」。
-  - 恢复方案未定，由维护者决定。
 - **多说话人确认**（待决定）。检测到多个未命名说话人时，整理等待姓名确认（`notes/speaker-confirmation-flow.ts:40`）。是否先以会话内编号整理、之后再命名，由维护者决定。
 - **全库问答**（探索，不进入开发）。范围与退出条件见 §7.3。
 
@@ -365,6 +359,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 | 长录音异常拦截与空白录音收尾 | 长录音在写入母本前按每秒字符数上限 15 或重复片段占比超过 0.6 拦截；普通录音全空、整场基本无声时不足 60 秒丢弃，有声或达到 60 秒保留并写入「未检测到语音」，导入与续录保留。见 `tests/blank-recording-policy.test.ts`、`tests/short-recording-flow.test.ts`、`tests/long-recording-anomaly.test.ts`、`tests/dashscope-chat-asr.test.ts` | 2 秒空白录音自动删除已确认；10 秒与 60 秒以上空白、长录音异常拦截仅自动测试 |
 | 密钥写入失败时的队列保存 | `_saveAllSnapshot` 在 SecretStorage 写入失败时只替换已落盘数据中的 `backgroundJobs`；数据缺失或版本更高时不写盘；见 `tests/save-all-secret-failure.test.ts` | 仅自动测试，未做真实宿主验证 |
 | 重试整理的编辑保护 | consolidated 分支用模型调用前读取的正文做提交时比对，变化则不写入并保留失败任务；见 `tests/queue-merge-retry-flow.test.ts` | 仅自动测试，未做真实宿主验证 |
+| 录音母带分片保存与中断恢复 | `MasterPartialSession` 逐片保存母带及已提交片数、字节数；恢复时校验已提交前缀，允许一个写入后尚未更新元数据的尾片，计数或字节不一致时保留分片。见 `src/audio/master-partial.ts`、`src/audio/master-partial-recovery.ts`、`tests/master-partial-recovery.test.ts`、`tests/master-partial-service.test.ts` | 新增的已提交前缀完整性校验待真实 Vault adapter 验收 |
 | 删除带衍生版本的笔记 | 确认框提供「最新衍生版本接替」与「一并删除」；元数据缓存缺项时读取文件，所有候选均以当前正文核对来源关系；普通删除也在确认后复核派生稿集合，集合或正文变化时保留文件并提示重新确认。见 `tests/delete-note-with-variants.test.ts`、`tests/outline-tab-behavior.test.ts` | 已在真实桌面 Obsidian 中用合成笔记完成程序验收，覆盖未索引派生稿接替与一并删除、确认期间新增或修改派生稿、读取失败保全及普通删除；未进行维护者视觉确认与移动端验证 |
 | 服务预设与密钥隔离 | `applyLlmServicePresetToWorkingConfig` 选预设后清空活动方案与密钥，选「Custom service…」保持原状；向导仅在地址匹配时回填；见 `tests/llm-config.test.ts`、`tests/setup-wizard.test.ts` | 界面行为已走查 |
 | 初稿/派生稿及重新整理文案 | 有效快照时显示本地化 Original/初稿；任务状态和通知使用界面模式名称；见 `tests/outline-recent-variants.test.ts`、`tests/recent-note-variants.test.ts`、`tests/clean-transcript-storage.test.ts` | 英文新写入、列表观察仍待 §6.4 |

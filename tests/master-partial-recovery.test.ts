@@ -43,7 +43,8 @@ function seedSession(io: MemoryAdapter, sessionId: string, parts: string[], over
   const dir = sessionDir(sessionId);
   io.dirs.add(ROOT);
   io.dirs.add(dir);
-  io.files.set(`${dir}/meta.json`, JSON.stringify(metaFor(sessionId, parts.length, overrides)));
+  const flushedBytes = parts.reduce((sum, part) => sum + new TextEncoder().encode(part).byteLength, 0);
+  io.files.set(`${dir}/meta.json`, JSON.stringify(metaFor(sessionId, parts.length, { flushedBytes, ...overrides })));
   parts.forEach((text, index) => {
     const name = names ? names[index]! : `part-${String(index + 1).padStart(4, "0")}.webm`;
     io.files.set(`${dir}/${name}`, new TextEncoder().encode(text).buffer as ArrayBuffer);
@@ -134,6 +135,13 @@ describe("partial helpers", () => {
     expect(() => parseMasterPartialMeta(JSON.stringify({ version: 2 }))).toThrow();
   });
 
+  it("rejects fractional and unsafe part counters", () => {
+    const valid = metaFor("s-counter", 0);
+    for (const [key, value] of [["partCount", 0.5], ["partCount", Number.MAX_SAFE_INTEGER + 1], ["flushedBytes", 0.5], ["flushedBytes", Number.MAX_SAFE_INTEGER + 1]] as const) {
+      expect(() => parseMasterPartialMeta(JSON.stringify({ ...valid, [key]: value }))).toThrow();
+    }
+  });
+
   it("removes only the given session folder", async () => {
     const io = new MemoryAdapter();
     seedSession(io, "keep", ["k"]);
@@ -183,6 +191,69 @@ describe("recoverInterruptedMasterPartials", () => {
     expect(logs).toEqual([expect.objectContaining({ level: "error", code: "recording.recovery_failed" })]);
     // 诊断数据只含场次与原因，不含音频内容。
     expect(JSON.stringify(logs[0]!.data)).not.toContain("abc");
+  });
+
+  it("keeps partials when a committed part is truncated", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-truncated", ["abc", "d"], { partCount: 2, flushedBytes: 6 });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "committed-size-mismatch" });
+    expect(io.files.has(`${sessionDir("s-truncated")}/part-0001.webm`)).toBe(true);
+    expect(io.files.has(`${sessionDir("s-truncated")}/part-0002.webm`)).toBe(true);
+    expect([...io.files.keys()].some((key) => key.includes("-recovered"))).toBe(false);
+  });
+
+  it("keeps the committed prefix when the last committed part is missing", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-missing-tail", ["abc"], { partCount: 2, flushedBytes: 7 });
+    const metaBefore = io.text(`${sessionDir("s-missing-tail")}/meta.json`);
+    const partBefore = io.text(`${sessionDir("s-missing-tail")}/part-0001.webm`);
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "parts-missing" });
+    expect(io.text(`${sessionDir("s-missing-tail")}/meta.json`)).toBe(metaBefore);
+    expect(io.text(`${sessionDir("s-missing-tail")}/part-0001.webm`)).toBe(partBefore);
+    expect([...io.files.keys()].some((key) => key.includes("-recovered"))).toBe(false);
+  });
+
+  it("recovers one complete uncommitted tail after the committed prefix", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-tail", ["abc", "d"], { partCount: 1, flushedBytes: 3 });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "recovered", bytes: 4, parts: 2 });
+    expect(io.text(`${AUDIO_FOLDER}/qnalog-20261006-120000-recovered.webm`)).toBe("abcd");
+  });
+
+  it("recovers one uncommitted tail when metadata records an empty prefix", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-zero-tail", ["d"], { partCount: 0, flushedBytes: 0 });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "recovered", bytes: 1, parts: 1 });
+  });
+
+  it("keeps partials when more than one uncommitted tail exists", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-extra-tails", ["a", "b", "c"], { partCount: 1, flushedBytes: 1 });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "unexpected-part-count" });
+    expect(io.files.has(`${sessionDir("s-extra-tails")}/part-0001.webm`)).toBe(true);
+    expect(io.files.has(`${sessionDir("s-extra-tails")}/part-0003.webm`)).toBe(true);
+  });
+
+  it("keeps an empty folder when metadata declares bytes without committed parts", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-zero-bytes-mismatch", [], { partCount: 0, flushedBytes: 2 });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "committed-size-mismatch" });
+    expect(io.dirs.has(sessionDir("s-zero-bytes-mismatch"))).toBe(true);
+  });
+
+  it("checks the committed prefix even when a tail makes the combined byte count match", async () => {
+    const io = new MemoryAdapter();
+    seedSession(io, "s-prefix-only", ["ab", "c"], { partCount: 1, flushedBytes: 3 });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed", reason: "committed-size-mismatch" });
+    expect(io.files.has(`${sessionDir("s-prefix-only")}/part-0001.webm`)).toBe(true);
+    expect(io.files.has(`${sessionDir("s-prefix-only")}/part-0002.webm`)).toBe(true);
   });
 
   it("keeps the folder when cleanup fails, records the recovered file, and never recovers it twice", async () => {
